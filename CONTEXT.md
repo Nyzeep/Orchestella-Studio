@@ -1,0 +1,31 @@
+# DroidLayer
+
+无 Root 的 Android Linux Runtime Platform：在不要求 Root 的 Android 手机上运行完整 ARM64 Linux 用户空间的单一产品。
+
+## Language
+
+### Runtime
+
+**Runtime 类别 (Runtime Class)**:
+产品向用户承诺能力的最高层分类。现有两类：Full Linux Runtime 与 Userspace Compatibility Runtime；实例在创建时归属唯一类别，之后不变。
+_Avoid_: backend（那是执行策略层面的词，不是类别）、mode、level
+
+**Full Linux Runtime**:
+Guest 拥有自己的 Linux kernel 的 Runtime 类别，产品主体。真实 namespace/cgroup、systemd、Docker/Podman、真实 root 等承诺仅在此类别成立。
+_Avoid_: VM 模式（VM 只是它的实现载体之一）、真 Linux
+
+**执行策略 (Execution Strategy)**:
+Full Linux Runtime 内部执行 guest 指令的方式。对上层与用户不可感知，唯一例外是性能徽章；同一 Full Linux 实例应可在策略间互换。
+_Avoid_: backend、engine（实现层词汇，禁入产品语言）
+
+**硬件虚拟化 (Hardware Virtualization)**:
+由 CPU 硬件直接执行 guest 指令的执行策略（AVF/pKVM）。
+_Avoid_: 向用户直呼 KVM/pKVM
+
+**软件虚拟化 (Software Virtualization)**:
+由软件翻译执行 guest 指令的执行策略（QEMU/TCG）。性能特征为 CPU 均匀减速，对用户表述必须以实测数据为准。
+_Avoid_: "模拟器"混称；向用户表述仅限性能徽章用语
+
+**Userspace Compatibility Runtime**:
+不提供 guest kernel、以用户态手段（当前候选：PRoot）提供受限 Linux 环境的 Runtime 类别。能力承诺显著低于 Full Linux（无 Docker/systemd/真实 root），隔离较弱；它是与 Full Linux 并列的独立能力等级，不是 Full Linux 的降级形态。
+_Avoid_: PRoot Linux、轻量模式、第三 backend

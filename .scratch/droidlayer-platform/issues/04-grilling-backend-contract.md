@@ -25,3 +25,7 @@ VmEngine 为核心 seam 但接口里零后端专属类型；能力差异用 capa
 ## Reversibility
 
 接口早期收紧、后期扩宽成本低；反之一旦上层依赖后端专属 API，抽出成本高。
+
+## Comments
+
+- 2026-09-05：前置决策 **ADR-0001** 已定——两层 Runtime 类别，Full Linux 内 AVF/QEMU 为"执行策略"。本票范围相应收窄：要定义的是 **Full Linux Runtime 的策略中性契约**（上层/UX/发行版/桥接不感知 AVF/QEMU 差异；能力差异用能力声明 + 可选增强表达）。PRoot 不在本票范围——它属于 Compatibility Runtime，未来单独定契约。本票已解锁。

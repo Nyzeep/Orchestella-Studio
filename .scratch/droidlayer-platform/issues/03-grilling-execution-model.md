@@ -2,7 +2,7 @@
 
 Labels: wayfinder:grilling
 Type: grilling
-Status: open
+Status: resolved
 
 ## Question
 
@@ -25,3 +25,14 @@ VM-first 确认；PRoot 不进 MVP 架构，也不做成 VmEngine 第三后端�
 ## Reversibility
 
 PRoot 现在不做 → 未来补做成本低（独立子系统）；一旦做成 VmEngine 后端并把差异泄漏进上层 API，撤出成本高。
+
+## Answer
+
+用户于 2026-09-05 全盘采纳推荐（选项 a）。决策固化为 **docs/adr/0001-two-runtime-classes.md** 与 CONTEXT.md 词条。
+
+决定要点：
+1. 两层 Runtime 类别模型：**Full Linux Runtime**（产品主体）+ **Userspace Compatibility Runtime**（并列等级）。
+2. Full Linux 内部 VM-first：AVF/pKVM 硬件优先、QEMU/TCG 兜底；二者是"执行策略"，共享同一 guest kernel 契约 / rootfs 模型 / 桥接协议 / 产品承诺（Podroid 同一 guest 资产双后端互换为实证）。
+3. PRoot：独立 Compatibility Runtime，不做 VmEngine 第三 backend；**定义为正式产品等级，MVP 不交付**。
+4. UI 语义："类别诚实、后端隐形"——实例创建时定死类别；徽章区分「完整 Linux（硬件加速 / 软件模拟·较慢）」与「兼容模式（受限）」；禁止静默降级，兼容模式必须用户主动选择。
+5. 后续：解锁「后端契约」（范围收窄为 Full Linux 策略中性契约）、「兼容性地板」、「图形路线分期」；毕业研究票「PRoot on modern Android」（22 号）。
