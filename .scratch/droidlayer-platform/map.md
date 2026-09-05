@@ -1,0 +1,39 @@
+# Wayfinder Map: DroidLayer Linux Runtime Platform 决策地图
+
+Labels: wayfinder:map
+Effort: droidlayer-platform
+
+## Destination
+
+产出一套已与用户对齐、可进入 `/to-spec` 的产品与架构决策集：DroidLayer（无 Root Android Linux Runtime Platform）的 MVP 边界、执行模型与后端策略、Guest 契约（kernel/发行版/存储）、宿主↔Guest 集成、安全与生命周期边界、许可证立场——每项关键决策有 ADR 支撑，spec 能直接拆垂直切片工单。
+
+## Notes
+
+- **领域**：Android/Linux 系统工程。产品 = 无 Root 的 Linux Runtime Platform（VM-first、能力驱动后端选择、guest 内容器支持）。
+- **用户背景**：领域新手。所有 grilling 必须用通俗语言解释术语（kernel / rootfs / container / namespace / pKVM / AVF / vsock / 9p …），并按固定六段格式提问：①真正要决定的问题 ②为什么重要 ③推荐答案 ④优点 ⑤代价/风险 ⑥可逆性。
+- **工作节奏**：每次 grilling 只问一个问题，等用户回答，写 ADR/CONTEXT.md，再问下一个（`/grill-with-docs` 的节奏）。不把实现细节伪装成需求决策。
+- **Skills**：grilling 票 → 调用 `grilling` + `domain-modeling`；research 票 → 调用 `research`；prototype 票 → 调用 `prototype`。
+- **事实基线**：`docs/research/`（AVF 权限与设备矩阵、TCG 性能、W^X/生命周期、Podroid 源码分析）。`探讨文档1.md` 是历史输入，不是已批准需求。
+- **Standing preferences**：决策先于实现；性能承诺必须可测量（禁用"0% 损耗"）；GPU/USB/桌面不过早进入 MVP；backend abstraction 与 kernel/rootfs 解耦是既定设计倾向（仍需正式确认）；许可证上"借鉴架构 ≠ 复用代码"。
+- **并发提示**：本机 agent 并发额度为 1，research 票逐个领取执行，不要并行开多个子代理。
+
+## Decisions so far
+
+- [Podroid 源码深度分析](issues/01-research-podroid-source.md): VmEngine+双后端+运行时路由属实且值得借鉴；squashfs+ext4-overlay rootfs、vsock 通道、QEMU-as-jniLib 规避 W^X 均核实；警示：GPL-2.0、无 CI、零校验和、guest root 密码公开。
+- [AVF 第三方边界（文档级）](issues/02-research-avf-third-party-boundary.md): AVF API 全 @SystemApi，公开 API 仅 Microdroid 载荷；custom kernel 需 USE_CUSTOM_VIRTUAL_MACHINE（development 级，adb 可授）；TCG 慢 5–20×；设备矩阵碎片化；Android 16 官方 Terminal=Debian VM 先例。
+
+## Not yet specified
+
+- 多 VM 会话模型与实例生命周期语义（等存储/生命周期决策落地）
+- 发行版镜像与 guest 系统的更新/OTA 通道；与 AVF instance identity（VM secret 随代码变化）的交互（等原型「AVF 端到端验证」结果）
+- guest-agent 协议细节：命令集全集、版本化机制、认证令牌分发（等「宿主↔Guest 桥接协议」给出粒度后细分）
+- 测试与 CI 策略：JVM 单测边界、真机测试矩阵、发布可复现性（Podroid 无 CI 的教训）（等兼容性地板与存储决策）
+- 发布渠道定位与商店政策（Play vs F-Droid/GitHub Releases）（等「无 Root 承诺」与「许可证策略」收敛）
+- 性能 benchmark 套件与各档验收数字（等「QEMU TCG 实机基线」产出数据）
+- 桥接功能优先级排序：剪贴板/通知/URL/文件/媒体（等桥接协议决策）
+- UI/UX 产品形态：发行版目录、实例管理、终端与图形界面集成（等发行版与图形决策）
+- 网络高级语义细则：IPv6、VPN 共存、localhost 暴露策略（等「网络模型」决策，可能并入该票）
+
+## Out of scope
+
+- 非 Android 平台（iOS、桌面 OS 移植）——产品定位即 Android App。
