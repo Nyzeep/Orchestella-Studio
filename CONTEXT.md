@@ -69,3 +69,13 @@ _Avoid_: 降级模式（Compatibility Runtime 是显式选择，不是降级）
 **Guest Kernel 契约 (Guest Kernel Contract)**:
 Full Linux Runtime 的内核约定：单一 pinned 版本、两个执行策略共用；必选能力清单进构建校验（缺项即构建失败）；CI 可复现构建、输入全校验；MVP 随 App 分发并附 SHA256 自检。
 _Avoid_: 内核版本浮动、复用第三方预编译内核、内核升级静默发生
+
+### Distro
+
+**发行版清单 (DistroManifest)**:
+一个发行版的完整产品描述：id、版本、架构、来源 URL、SHA256、大小、init 期望、按 runtime 类别的能力说明、风味。新增发行版 = 新增清单数据 + 必要的风味适配。
+_Avoid_: 镜像（未指明形态时）、发行版配置
+
+**Provisioning（首次引导装配）**:
+实例创建后由 initramfs 在 guest 内完成的一次性格式化与 rootfs 解包；无 Root 环境下构建块镜像的唯一位置。
+_Avoid_: 安装（与 App 安装混淆）、刷机、初始化（过泛）

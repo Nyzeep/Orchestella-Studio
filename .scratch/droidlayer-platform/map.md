@@ -26,6 +26,7 @@ Effort: droidlayer-platform
 - [无 Root 三级承诺](issues/05-grilling-rootless-tiers.md): MVP 出厂 L1+L2（安装即用 + 一次授权解锁硬件虚拟化）；授权向导先检测后引导；L3 仅愿景；目标用户=技术早期采用者。见 ADR-0003。
 - [兼容性地板](issues/06-grilling-compat-floor.md): minSdk 26 / arm64-only / RAM≥3GB；L2 纯运行时检测无版本门槛；低于地板诚实拒绝、不留降级假象。见 ADR-0004。
 - [Guest Kernel 契约](issues/07-grilling-guest-kernel-contract.md): 单一 pinned 版本两策略共用；能力清单进构建校验；CI 复现构建全输入校验；MVP 打包分发 + SHA256 自检，解耦下载等 AVF 原型数据。见 ADR-0005。
+- [发行版模型](issues/08-grilling-distro-model.md): DistroManifest 元数据契约；官方 tarball + 首次引导 provisioning；SHA256 强校验；首批 Alpine+Debian；OCI 否决出 MVP 留 variant 位。见 ADR-0006。
 
 ## Not yet specified
 
