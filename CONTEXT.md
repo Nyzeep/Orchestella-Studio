@@ -43,3 +43,13 @@ _Avoid_: feature flag（能力声明不是功能开关）
 **策略专属增强 (Strategy-specific Enhancement)**:
 仅部分执行策略支持的能力。只能通过能力矩阵声明存在，永不升级进契约，除非所有策略都能满足它。
 _Avoid_: 特殊分支、hack、临时绕过
+
+### Rootless tiers
+
+**无 Root 等级 (Rootless Tier)**:
+产品对安装/授权成本的分级承诺。L1=安装即用（仅软件虚拟化）；L2=一次开发级授权（解锁硬件虚拟化）；L3=OEM/系统级（路线图愿景，产品内不承诺）。MVP 出厂 L1+L2。
+_Avoid_: root（产品语言永不声称 root）、特权模式、解锁完整版
+
+**授权向导 (Authorization Wizard)**:
+L2 的应用内引导流程：先能力检测、后引导授权（Shizuku 优先、ADB 命令兜底）；检测不支持的设备不展示向导。
+_Avoid_: 一键 root、一键授权（夸大表述）

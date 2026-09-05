@@ -2,7 +2,7 @@
 
 Labels: wayfinder:grilling
 Type: grilling
-Status: open
+Status: resolved
 
 ## Question
 
@@ -25,3 +25,16 @@ MVP 同时交付 L1（QEMU，全设备兜底）与 L2（AVF，带应用内授权
 ## Reversibility
 
 先只做 L1、后补 L2 会导致 AVF 契约后补；建议 MVP 就把两级纳入能力检测框架，实现可分期。
+
+## Answer
+
+2026-09-05 用户采纳。固化于 **docs/adr/0003-rootless-tiers.md** 与 CONTEXT.md 词条（无 Root 等级 / 授权向导）。
+
+决定要点：
+1. MVP 出厂 **L1 + L2**：L1=安装即用（软件虚拟化，全 arm64 兜底）；L2=一次开发级授权（AVF 硬件虚拟化）。
+2. L2 授权向导：先检测（feature flag + 权限状态 + custom VM 能力谱）、后引导；Shizuku 优先、ADB 命令兜底；检测不通过的设备不展示向导。
+3. L3（OEM/系统级）仅路线图愿景，产品内不承诺。
+4. 目标用户 = 技术早期采用者；MVP 不按大众产品增长叙事规划。
+5. 设置页常驻"提升到硬件加速"入口管理 L1→L2 升级路径。
+
+未决事实：用户是否持有 AVF 设备未声明——领取原型票「AVF 端到端验证（真机）」时需先确认（该票随本票解决而解锁）。
