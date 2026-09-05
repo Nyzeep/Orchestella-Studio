@@ -2,7 +2,7 @@
 
 Labels: wayfinder:grilling
 Type: grilling
-Status: open
+Status: resolved
 Blocked by: 03
 
 ## Question
@@ -26,3 +26,18 @@ MVP = 终端 only（+ 可选最简 VNC 通道，复用已验证的 Xvnc+RFB 模�
 ## Reversibility
 
 终端先行可逆性最好；MVP 一旦承诺桌面体验，砍不掉。
+
+## Answer
+
+2026-09-05 用户采纳（选项 a）。固化于 **docs/adr/0012-graphics-phasing.md** 与 CONTEXT.md 词条（显示通道）。
+
+决定要点：
+1. MVP = 终端 only，连 VNC 不做；文案定位"Linux 终端与服务器环境"。
+2. M2 = VNC 软渲染 + 完整输入/IME（工作量按"图形一半、输入一半"预算）；加入暴露面白名单走 ADR-0010 流程。
+3. M3 = Wayland 评估（条件触发：M2 出现结构性瓶颈）。
+4. M4 = GPU 加速，前置 = 原型证实第三方 VM gfxstream 可用性；否决则改道 2D/软件渲染优化。
+5. MVP 桥协议与能力矩阵不预设图形，预留显示通道增强位。
+
+依赖：M4 前置验证挂在原型票「AVF 端到端验证」清单。
+
+解锁：USB/音频范围票（15）。
