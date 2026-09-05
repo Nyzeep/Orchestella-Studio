@@ -22,6 +22,7 @@ Effort: droidlayer-platform
 - [Podroid 源码深度分析](issues/01-research-podroid-source.md): VmEngine+双后端+运行时路由属实且值得借鉴；squashfs+ext4-overlay rootfs、vsock 通道、QEMU-as-jniLib 规避 W^X 均核实；警示：GPL-2.0、无 CI、零校验和、guest root 密码公开。
 - [AVF 第三方边界（文档级）](issues/02-research-avf-third-party-boundary.md): AVF API 全 @SystemApi，公开 API 仅 Microdroid 载荷；custom kernel 需 USE_CUSTOM_VIRTUAL_MACHINE（development 级，adb 可授）；TCG 慢 5–20×；设备矩阵碎片化；Android 16 官方 Terminal=Debian VM 先例。
 - [执行模型：两层 Runtime 类别](issues/03-grilling-execution-model.md): Full Linux Runtime（VM-first；AVF/QEMU 为执行策略、共享同一契约）+ Userspace Compatibility Runtime（PRoot，定义等级、MVP 不交付）；UI 类别诚实、后端隐形，禁止静默降级。见 ADR-0001。
+- [Full Linux 契约：三层划分与三条纪律](issues/04-grilling-backend-contract.md): 平台层 / 策略中性契约 / 策略专属增强；能力差异只许用能力矩阵数据表达；契约测试套件对所有策略运行；契约 v0 只固化已验证部分。见 ADR-0002。
 
 ## Not yet specified
 

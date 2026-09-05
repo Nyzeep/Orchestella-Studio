@@ -29,3 +29,17 @@ _Avoid_: "模拟器"混称；向用户表述仅限性能徽章用语
 **Userspace Compatibility Runtime**:
 不提供 guest kernel、以用户态手段（当前候选：PRoot）提供受限 Linux 环境的 Runtime 类别。能力承诺显著低于 Full Linux（无 Docker/systemd/真实 root），隔离较弱；它是与 Full Linux 并列的独立能力等级，不是 Full Linux 的降级形态。
 _Avoid_: PRoot Linux、轻量模式、第三 backend
+
+### Contract
+
+**Full Linux 契约 (Full Linux Contract)**:
+Full Linux Runtime 内所有执行策略必须共同满足的策略中性产品契约，覆盖实例生命周期、控制台通道、端口转发、共享目录、桥接协议与磁盘镜像存储。契约内不允许出现执行策略专属概念。
+_Avoid_: VmEngine 接口、backend API（实现层词汇，禁入产品语言）
+
+**能力矩阵 (Capability Matrix)**:
+每个执行策略以数据形式声明"我支持什么"的唯一事实来源；UI 徽章与能力差异提示只消费它，不写策略分支。
+_Avoid_: feature flag（能力声明不是功能开关）
+
+**策略专属增强 (Strategy-specific Enhancement)**:
+仅部分执行策略支持的能力。只能通过能力矩阵声明存在，永不升级进契约，除非所有策略都能满足它。
+_Avoid_: 特殊分支、hack、临时绕过

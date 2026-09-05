@@ -2,7 +2,7 @@
 
 Labels: wayfinder:grilling
 Type: grilling
-Status: open
+Status: resolved
 Blocked by: 03
 
 ## Question
@@ -29,3 +29,14 @@ VmEngine 为核心 seam 但接口里零后端专属类型；能力差异用 capa
 ## Comments
 
 - 2026-09-05：前置决策 **ADR-0001** 已定——两层 Runtime 类别，Full Linux 内 AVF/QEMU 为"执行策略"。本票范围相应收窄：要定义的是 **Full Linux Runtime 的策略中性契约**（上层/UX/发行版/桥接不感知 AVF/QEMU 差异；能力差异用能力声明 + 可选增强表达）。PRoot 不在本票范围——它属于 Compatibility Runtime，未来单独定契约。本票已解锁。
+
+## Answer
+
+2026-09-05 用户全盘采纳。固化于 **docs/adr/0002-full-linux-contract.md** 与 CONTEXT.md 词条（Full Linux 契约 / 能力矩阵 / 策略专属增强）。
+
+决定要点：
+1. 三层划分：**平台层**（Runtime 类别无关）/** Full Linux 契约**（策略中性，契约内零策略专属类型）/** 策略专属增强**（声明制，永不进契约）。
+2. 三条纪律：能力差异只许以能力矩阵数据表达（上层禁止策略分支）；契约测试套件从第一天存在并对所有策略运行；契约 v0 只固化已验证部分（"待原型"条目允许迭代）。
+3. 契约覆盖面 v0：实例生命周期、控制台/终端通道、端口转发语义、共享目录语义、桥接协议、磁盘镜像存储模型。
+4. 典型增强示例（声明制）：USB 直通（当前仅 QEMU）、GPU 配置（AVF，未验证）、QMP 控制（QEMU 内部）、AVF 反射细节。
+5. 解锁：Guest Kernel 契约、网络模型、宿主↔Guest 桥接、生命周期、USB/音频范围五票（均须按"平台级 vs Full Linux 专属"区分契约归属）。
