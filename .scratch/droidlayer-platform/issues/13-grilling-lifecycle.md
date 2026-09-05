@@ -2,7 +2,7 @@
 
 Labels: wayfinder:grilling
 Type: grilling
-Status: open
+Status: resolved
 Blocked by: 04
 
 ## Question
@@ -26,3 +26,17 @@ MVP 承诺：前台使用可靠；后台运行"尽力而为"（FGS+wake lock，�
 ## Reversibility
 
 "App 被杀→VM 停止"日后若要升级（VM 独立存活），需 AVF 层深挖——已在 map fog 中跟踪，不阻塞本票。
+
+## Answer
+
+2026-09-05 用户采纳。固化于 **docs/adr/0011-lifecycle.md** 与 CONTEXT.md 词条（实例状态 / 冷恢复）。
+
+决定要点：
+1. 前台完全可靠；后台尽力而为（specialUse FGS + 唤醒锁 + 忽略电池优化引导 + OEM 风险如实告知）。
+2. 进程死亡 = VM 停止（v1 不承诺独立存活）；实例状态持久化 + 一键冷恢复从第一天存在。
+3. 异常终止标记 + 清理/日志导出路径；重启默认不自启（可选自启）。
+4. 电池两档（性能/均衡）+ 常驻状态通知；锁屏默认继续运行。
+5. phantom killer：宿主进程模型收敛 + 官方开关指引（非功能前提）。
+6. 热恢复进雾区；"VM 独立存活"待 AVF 原型数据，若证实走能力矩阵增强。
+
+解锁：图形路线分期票（14）。
