@@ -2,7 +2,7 @@
 
 Labels: wayfinder:grilling
 Type: grilling
-Status: open
+Status: resolved
 Blocked by: 11
 
 ## Question
@@ -25,3 +25,17 @@ Blocked by: 11
 ## Reversibility
 
 鉴权/校验后补极难（涉及存量用户迁移）；必须从第一天做对。
+
+## Answer
+
+2026-09-05 用户采纳。固化于 **docs/adr/0010-security-boundary.md** 与 CONTEXT.md 词条（隔离承诺 / 暴露面白名单）。
+
+决定要点：
+1. 隔离承诺三级分述：硬件级（L2）/ 进程级（L1）/ 无实质隔离（Compatibility，未来）——措辞宁紧勿松。
+2. guest root 仅触达白名单共享面（当前唯一项：只读 Downloads）。
+3. 暴露面白名单初始三项 + 无云服务 + 无遥测；加面 = 显式决策 + ADR 修订。
+4. 实例凭据每实例随机生成（Podroid 公开常量反例的反转）。
+5. 诚实残余风险清单写入产品文档（VMM 漏洞共性、manifest 渠道、不承诺零风险）。
+6. 承诺只加码不减码；白名单初始清单刻意小。
+
+解锁：生命周期票（13）。

@@ -109,3 +109,13 @@ _Avoid_: 后门程序、守护进程（过泛）
 **共享目录 (Shared Directory)**:
 独立于桥接控制面的文件数据通道（9p 家族）。MVP 仅只读共享 Downloads；扩大范围是显式产品决策。
 _Avoid_: 文件传输（混入控制协议）、任意目录挂载
+
+### Security
+
+**隔离承诺 (Isolation Commitment)**:
+按 runtime 类别与执行策略分级的隔离表述：硬件级（L2·pKVM）、进程级（L1·QEMU）、无实质隔离（Compatibility）。措辞宁紧勿松，只加码不减码。
+_Avoid_: 完全隔离、绝对安全、军用级
+
+**暴露面白名单 (Exposure Whitelist)**:
+guest 可触达宿主资源的显式清单（初始：桥接六命令+token、只读共享 Downloads、转发默认 127.0.0.1）。加面 = 显式产品决策并修订清单。
+_Avoid_: 顺手开口、隐藏通道、临时放开

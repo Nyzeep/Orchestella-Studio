@@ -30,6 +30,7 @@ Effort: droidlayer-platform
 - [存储模型](issues/09-grilling-storage-model.md): raw 稀疏单根盘（两策略同格式）、guest 内自升级；扩容进 MVP、快照不进；SAF 导出备份进 MVP；全私有 + 自动备份排除。FUSE 性能待原型实测。见 ADR-0007。
 - [网络模型](issues/10-grilling-networking.md): 默认出站 NAT + 显式端口转发（默认绑 127.0.0.1）；两策略机制各异语义一致；IPv6/VPN/host mode 为不承诺的非目标。见 ADR-0008。
 - [宿主↔Guest 桥接协议](issues/11-grilling-host-guest-bridge.md): 传输无关版本化协议 + per-VM token；MVP 六条命令；控制/数据面分离（只读共享 Downloads）；N-1 兼容窗口。见 ADR-0009。
+- [安全边界](issues/12-grilling-security-boundary.md): 隔离承诺三级分述（硬件级/进程级/无实质隔离）；guest root 仅触达白名单；暴露面白名单制初始三项；每实例随机凭据；承诺只加码。见 ADR-0010。
 
 ## Not yet specified
 
