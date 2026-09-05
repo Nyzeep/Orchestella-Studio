@@ -95,3 +95,17 @@ _Avoid_: 云备份、同步（均未提供）
 **端口转发规则 (Port Forward Rule)**:
 入站访问的唯一通道：`{协议, 宿主端口, guest 端口, 绑定范围}`。默认绑定 127.0.0.1，LAN 暴露必须显式选择；规则持久化、可热更；两个执行策略语义一致、机制各异。
 _Avoid_: 端口映射混称（规则是产品对象）、默认对外开放
+
+### Bridge
+
+**Guest Bridge（桥接协议）**:
+宿主与 guest 之间传输无关、版本化的控制协议：握手、版本协商、per-VM token 鉴权、命令集与应答。宿主向后兼容 N-1 版 guest agent。
+_Avoid_: 控制后门、私有接口、无版本协议
+
+**Guest Agent（桥接代理）**:
+guest 内承载桥接协议的静态单二进制；随 Provisioning 按 DistroManifest 风味安装为 init 服务。
+_Avoid_: 后门程序、守护进程（过泛）
+
+**共享目录 (Shared Directory)**:
+独立于桥接控制面的文件数据通道（9p 家族）。MVP 仅只读共享 Downloads；扩大范围是显式产品决策。
+_Avoid_: 文件传输（混入控制协议）、任意目录挂载

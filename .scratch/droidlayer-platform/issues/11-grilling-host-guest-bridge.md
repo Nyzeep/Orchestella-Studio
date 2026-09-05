@@ -2,7 +2,7 @@
 
 Labels: wayfinder:grilling
 Type: grilling
-Status: open
+Status: resolved
 Blocked by: 04
 
 ## Question
@@ -25,3 +25,16 @@ Host↔Guest 集成的产品契约：是否收敛为单一、传输无关、版�
 ## Reversibility
 
 从 v1 起带版本协商即可平滑演进；不版本化则不可逆地积累破坏性变更。
+
+## Answer
+
+2026-09-05 用户全盘采纳。固化于 **docs/adr/0009-guest-bridge-protocol.md** 与 CONTEXT.md 词条（Guest Bridge / Guest Agent / 共享目录）。
+
+决定要点：
+1. 单一传输无关协议 v1（握手/版本协商/命令集/应答）+ per-VM token 鉴权（Provisioning 注入）。
+2. MVP 命令集六条：ping/version、resize、port-forward add/remove、notify、open-url、power。
+3. 控制面/数据面分离：文件共享走独立 9p 通道（QEMU=virtio-9p、AVF=9p-over-vsock），MVP 仅只读共享 Downloads。
+4. 宿主向后兼容 N-1 版 agent；guest agent 静态单二进制、按风味装为 init 服务。
+5. 剪贴板等进雾区；命令扩张须走版本流程。
+
+解锁：安全边界票（12）。待实现细节：AVF 档 9p-over-vsock 自研服务端（许可证要求自研）。
