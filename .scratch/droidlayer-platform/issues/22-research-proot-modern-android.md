@@ -2,7 +2,7 @@
 
 Labels: wayfinder:research
 Type: research
-Status: open
+Status: resolved
 
 ## Question
 
@@ -18,3 +18,14 @@ Status: open
 - Termux 依赖 targetSdk 28 的历史包袱 vs 我们 targetSdk 36 的差异（exec 来源、ptrace 权限语义）。
 - 性能参考：proot 开销文献与实测（文件操作密集场景的已知劣化）。
 - 产出：docs/research/proot-modern-android.md。
+
+## Answer
+
+报告已落盘：**docs/research/2026-09-05-proot-modern-android.md**。
+
+核心发现：
+1. 实测：UnixBench 比 chroot 低 44%、CPU 比 native 低 7–10%（Termux #5245）；CPU 密集近原生完胜 TCG，I/O 密集严重劣化；无 guest kernel 的内存优势真实。
+2. 硬限制：嵌套 ptrace 失效、部分内核 TRACEME 被拒、phantom killer 冲突更紧迫、无隔离与内核能力（与 ADR-0001 定位一致）。
+3. 交付方式可行：jniLib 打包 proot + 目录树实例 + tarball 直接解包（无块镜像 provisioning）。
+4. ADR-0001"定义等级、推迟交付"被实测数据支持；无需要重开 ADR 的新证据。
+5. 雾区新增：Compatibility Runtime 契约设计（若交付）。

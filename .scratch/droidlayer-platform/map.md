@@ -40,7 +40,7 @@ Effort: droidlayer-platform
 
 ## Not yet specified
 
-- 多 VM 会话模型与实例生命周期语义 → 已部分毕业：并发语义成票「多实例模型」（24）；热恢复等仍待原型
+- **Compatibility Runtime 契约设计（若未来交付 PRoot）**：与 Full Linux 契约平行的轻量契约——实例=目录树、无 vsock/virtio、终端通道语义、共享面复用白名单。触发条件：用户决定交付 Compatibility Runtime（研究票「PRoot on modern Android」已供数：docs/research/2026-09-05-proot-modern-android.md）。
 - 发行版镜像与 guest 系统的更新/OTA 通道；与 AVF instance identity（VM secret 随代码变化）的交互（等原型「AVF 端到端验证」结果）
 - 性能 benchmark 套件与各档验收数字（等原型「QEMU TCG 实机基线」产出数据）
 - UI/UX 产品形态细化：发行版目录、实例管理、终端集成的具体交互（spec 后由 prototype 票承接）
