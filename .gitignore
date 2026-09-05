@@ -1,6 +1,14 @@
 .DS_Store
 Thumbs.db
 *.iml
+.idea/
 .gradle/
+.kotlin/
+.toolchains/
+.externalNativeBuild/
+.cxx/
 build/
 local.properties
+captures/
+*.apk
+*.aab
