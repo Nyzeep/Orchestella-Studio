@@ -2,7 +2,7 @@
 
 Labels: wayfinder:grilling
 Type: grilling
-Status: open
+Status: resolved
 Blocked by: 04
 
 ## Question
@@ -25,3 +25,17 @@ Guest kernel 是"我们的产品与发行版之间的契约"：它决定 Docker/
 ## Reversibility
 
 config 集可增量扩；"kernel 与 App 解耦分发"一旦定下、逆向绑定的迁移成本中等——先定分发策略。
+
+## Answer
+
+2026-09-05 用户采纳。固化于 **docs/adr/0005-guest-kernel-contract.md** 与 CONTEXT.md 词条（Guest Kernel 契约）。
+
+决定要点：
+1. 单一 pinned stable 版本，两执行策略共用；升级 = 显式决策 + 显式迁移。
+2. 必选能力清单进构建校验（缺项即失败）；清单随后续票（文件共享、USB）微调。
+3. 自有 CI 可复现构建（固定工具链容器 + 全输入 SHA256）；禁止本机构建发布。
+4. MVP kernel 打包进 App + 解压 SHA256 自检（离线优先）；"解耦下载"为 v2 选项，等 AVF 原型 instance 身份实测数据再定。
+5. initramfs 属 kernel 交付物一部分（含首次引导 provisioning）。
+6. 明确否决复用 Podroid 预编译内核（零校验 + GPL 复制义务）。
+
+未决依赖：AVF instance 身份对 kernel 变更的敏感度 → 原型票「AVF 端到端验证」验证清单。
