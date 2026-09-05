@@ -33,6 +33,7 @@ Effort: droidlayer-platform
 - [安全边界](issues/12-grilling-security-boundary.md): 隔离承诺三级分述（硬件级/进程级/无实质隔离）；guest root 仅触达白名单；暴露面白名单制初始三项；每实例随机凭据；承诺只加码。见 ADR-0010。
 - [生命周期](issues/13-grilling-lifecycle.md): 前台可靠、后台尽力而为；进程死亡=VM 停止但实例持久化+冷恢复；电池两档；热恢复进雾区。见 ADR-0011。
 - [图形路线分期](issues/14-grilling-graphics-phasing.md): MVP 终端 only；M2=VNC+输入/IME、M3=Wayland 评估、M4=GPU（gfxstream 原型前置）；MVP 预留显示通道位。见 ADR-0012。
+- [USB/音频范围](issues/15-grilling-usb-audio-scope.md): MVP 均不做（非目标）；USB 挂 M2+ QEMU 档先行；音频挂 M2 仅输出；文案用路线图语言。见 ADR-0013。
 
 ## Not yet specified
 
