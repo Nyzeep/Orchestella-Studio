@@ -1,13 +1,15 @@
 # 25: Guest 资产构建基线
 
 Type: task（全项目唯一允许的非用户可见共享前提票）
-Status: needs-triage
+Status: ready-for-agent
+Blocked by: None
+Scope contract: `docs/reports/tickets/25/worker-scope-contract.zh-CN.md`
 
 ## What to build
 
 建立可复现的 guest 资产构建流水线：按 Guest Kernel 契约（ADR-0005）产出内核 Image 与 initramfs（内含首次引导装配逻辑：格式化根盘、解包官方 tarball、写入随机凭据与桥接 agent 基座），附带 SHA256 清单。必选能力清单进构建校验：清单缺项时构建必须失败（verify-or-fail，ADR-0005）。
 
-**Blocked by:** None（可立即开始）
+本票无前置 ticket；用户已在 2026-09-06 的接管指令中明确放行。
 
 ## Acceptance criteria
 
