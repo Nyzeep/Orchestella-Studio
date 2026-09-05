@@ -2,8 +2,9 @@
 
 DroidLayer（工作名）：无 Root 的 Android Linux Runtime Platform —— 在不要求 Root 的前提下，在 Android 手机上运行完整 ARM64 Linux 用户空间（VM 优先、能力驱动的后端选择、guest 内容器支持）。
 
-**当前阶段**：需求对齐（wayfinder decision map），尚未开始实现。不要跳过决策直接写代码。
+**当前阶段**：规划完成（spec v1.0 + 16 ADR + 15 张 open 工单），进入实现交接——执行由 Codex Orchestrator Agent 按 `docs/agent-handoff/` 接管。不要跳过决策直接写代码。
 
+- 工程交接入口：`docs/agent-handoff/ENGINEERING_HANDOFF.md`
 - 决策地图：`.scratch/droidlayer-platform/map.md`
 - 研究资料（已核实的外部事实）：`docs/research/`
 - 历史上下文（是输入、不是已批准的需求）：`探讨文档1.md`
