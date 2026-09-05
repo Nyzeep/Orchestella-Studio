@@ -10,6 +10,7 @@ Effort: droidlayer-platform
 ## Notes
 
 - **领域**：Android/Linux 系统工程。产品 = 无 Root 的 Linux Runtime Platform（VM-first、能力驱动后端选择、guest 内容器支持）。
+- **Spec 已发布**：[.scratch/droidlayer-platform/spec.md](spec.md)（ready-for-agent，v1.0，依据 ADR-0001~0016 + 六份研究；原型回填条目已标注）。
 - **用户背景**：领域新手。所有 grilling 必须用通俗语言解释术语（kernel / rootfs / container / namespace / pKVM / AVF / vsock / 9p …），并按固定六段格式提问：①真正要决定的问题 ②为什么重要 ③推荐答案 ④优点 ⑤代价/风险 ⑥可逆性。
 - **工作节奏**：每次 grilling 只问一个问题，等用户回答，写 ADR/CONTEXT.md，再问下一个（`/grill-with-docs` 的节奏）。不把实现细节伪装成需求决策。
 - **Skills**：grilling 票 → 调用 `grilling` + `domain-modeling`；research 票 → 调用 `research`；prototype 票 → 调用 `prototype`。
