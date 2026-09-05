@@ -2,7 +2,7 @@
 
 Labels: wayfinder:grilling
 Type: grilling
-Status: open
+Status: resolved
 Blocked by: 04
 
 ## Question
@@ -26,3 +26,16 @@ Blocked by: 04
 ## Reversibility
 
 NAT 语义稳定，后续可加 host-mode/IPv6；端口转发规则模型在本票先定方向、细节并入「宿主↔Guest 桥接协议」票。
+
+## Answer
+
+2026-09-05 用户采纳。固化于 **docs/adr/0008-networking-model.md** 与 CONTEXT.md 词条（端口转发规则）。
+
+决定要点：
+1. 默认出站 NAT（免配置出站可用）。
+2. 入站仅经显式端口转发规则：默认绑 127.0.0.1、LAN 显式开启并提示、规则持久化、运行时热更。
+3. 机制/语义分离：QEMU=SLIRP hostfwd、AVF=vsock 隧道，上层只见规则模型。
+4. 非目标：IPv6、host mode（未来增强）；VPN 共存标注"未验证"并入原型观测项。
+5. 契约测试覆盖两策略转发语义等价；热更命令集归桥接票统一。
+
+待原型：AVF custom VM 网络实际行为（原型票验证清单）；VPN 共存行为。
