@@ -25,3 +25,14 @@ adb 授权 → 最小 custom VM（initrd busybox）→ 逐步换真实 kernel + 
 ## Reversibility
 
 纯实验，无不可逆成本。需要用户提供一台 AVF 设备与 ADB 环境（HITL 协作）。
+
+## Placement（to-tickets 裁定）
+
+- **阻塞**：票 34（AVF 执行策略）——其全部验收以本票数据为前提。
+- **验证的假设**：custom VM 可启动；第三方 VM 网络实际可用；GPU 探测结果；app 更新后 instance 身份行为。
+- **重开触发器**：
+  - 网络不可用 → 重开 ADR-0008 的 AVF 档范围（决策票重开，实现不推进）；
+  - instance 身份随 app/内核更新失效 → OTA 雾区毕业为决策票 + 评估修订 ADR-0005 分发策略；
+  - GPU 不可用 → 仅影响 M4 里程碑（spec 后续版本），不阻塞 MVP；
+  - 反射路径在某 OEM 失效 → 能力矩阵如实降级 + 授权向导回退路径强化。
+- **性质**：prototype，不是 production implementation；其结论只进入能力矩阵与决策重开流程，不直接产生产品代码（实验代码不进主干）。
