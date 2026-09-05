@@ -24,6 +24,7 @@ Effort: droidlayer-platform
 - [执行模型：两层 Runtime 类别](issues/03-grilling-execution-model.md): Full Linux Runtime（VM-first；AVF/QEMU 为执行策略、共享同一契约）+ Userspace Compatibility Runtime（PRoot，定义等级、MVP 不交付）；UI 类别诚实、后端隐形，禁止静默降级。见 ADR-0001。
 - [Full Linux 契约：三层划分与三条纪律](issues/04-grilling-backend-contract.md): 平台层 / 策略中性契约 / 策略专属增强；能力差异只许用能力矩阵数据表达；契约测试套件对所有策略运行；契约 v0 只固化已验证部分。见 ADR-0002。
 - [无 Root 三级承诺](issues/05-grilling-rootless-tiers.md): MVP 出厂 L1+L2（安装即用 + 一次授权解锁硬件虚拟化）；授权向导先检测后引导；L3 仅愿景；目标用户=技术早期采用者。见 ADR-0003。
+- [兼容性地板](issues/06-grilling-compat-floor.md): minSdk 26 / arm64-only / RAM≥3GB；L2 纯运行时检测无版本门槛；低于地板诚实拒绝、不留降级假象。见 ADR-0004。
 
 ## Not yet specified
 

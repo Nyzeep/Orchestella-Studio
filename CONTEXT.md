@@ -53,3 +53,13 @@ _Avoid_: root（产品语言永不声称 root）、特权模式、解锁完整�
 **授权向导 (Authorization Wizard)**:
 L2 的应用内引导流程：先能力检测、后引导授权（Shizuku 优先、ADB 命令兜底）；检测不支持的设备不展示向导。
 _Avoid_: 一键 root、一键授权（夸大表述）
+
+### Support floor
+
+**支持地板 (Support Floor)**:
+创建 Full Linux 实例的最低设备条件：Android 8（minSdk 26）、arm64-v8a、RAM ≥ 3GB、存储余量达标。L2（硬件虚拟化）无独立版本门槛，纯运行时检测。
+_Avoid_: 最低配置（易与 targetSdk 混淆）、门槛值散落
+
+**诚实拒绝 (Honest Refusal)**:
+设备低于支持地板时明确告知原因并拒绝创建实例，绝不提供静默降级的运行路径。
+_Avoid_: 降级模式（Compatibility Runtime 是显式选择，不是降级）
