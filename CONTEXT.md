@@ -79,3 +79,13 @@ _Avoid_: 镜像（未指明形态时）、发行版配置
 **Provisioning（首次引导装配）**:
 实例创建后由 initramfs 在 guest 内完成的一次性格式化与 rootfs 解包；无 Root 环境下构建块镜像的唯一位置。
 _Avoid_: 安装（与 App 安装混淆）、刷机、初始化（过泛）
+
+### Storage
+
+**根盘 (Root Volume)**:
+Full Linux 实例的唯一持久块镜像（raw 稀疏格式，两个执行策略同格式）；Provisioning 时由发行版 tarball 装配，系统升级发生在 guest 内。
+_Avoid_: 系统盘/数据盘分层、镜像（未指明时）
+
+**导出 (Export)**:
+经 SAF 将根镜像与实例元数据写入用户选定位置的单向备份操作；用户数据离开 App 沙箱的唯一正规通道。
+_Avoid_: 云备份、同步（均未提供）

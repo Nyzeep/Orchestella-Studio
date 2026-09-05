@@ -2,7 +2,7 @@
 
 Labels: wayfinder:grilling
 Type: grilling
-Status: open
+Status: resolved
 Blocked by: 08
 
 ## Question
@@ -26,3 +26,14 @@ MVP：raw ext4 稀疏文件（两后端行为一致）+ 显式扩容工具 + 经
 ## Reversibility
 
 raw→qcow2 可转换（qemu-img），格式选择可逆性较好；快照机制后补容易。
+
+## Answer
+
+2026-09-05 用户采纳。固化于 **docs/adr/0007-storage-model.md** 与 CONTEXT.md 词条（根盘 / 导出）。
+
+决定要点：
+1. raw 稀疏镜像，两执行策略同格式；qcow2 不进 MVP（可后转，留后路）。
+2. 单根盘：OS 装配进根盘、guest 内自升级；App 升级永不触碰实例内容（区别于 Podroid squashfs 分层模式）。
+3. 扩容进 MVP（依赖桥接票的 guest 内 resize 通道）；快照明确非目标；SAF 导出备份进 MVP，导入恢复后续。
+4. 全部私有存储 + Android 自动备份排除镜像目录。
+5. 待原型：FUSE 之下私有目录随机写性能（QEMU 基线原型必测）——数据糟糕则本题选型重开。
