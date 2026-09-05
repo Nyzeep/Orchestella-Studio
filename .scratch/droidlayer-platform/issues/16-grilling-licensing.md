@@ -2,7 +2,7 @@
 
 Labels: wayfinder:grilling
 Type: grilling
-Status: open
+Status: resolved
 
 ## Question
 
@@ -25,3 +25,15 @@ Status: open
 ## Reversibility
 
 首次发布前可逆；发布后基本不可逆。必须早决。
+
+## Answer
+
+2026-09-05 用户选定：**① Apache-2.0 + ② 确认零代码复制**（推荐方案全盘采纳）。固化于 **docs/adr/0014-licensing.md** 与 CONTEXT.md 词条（自研立场）。
+
+决定要点：
+1. 项目许可证 Apache-2.0（OEM/商业化选项最大化 + 专利条款；用户知悉无 copyleft 护城河的取舍）。
+2. 零代码复制立场正式化：借鉴架构、实现全自研；不 vendored 任何 GPL 项目代码/二进制（含 Termux 系组件）；组件选型避开 GPL 传染。
+3. GPL 义务（自建 kernel/QEMU 二进制）由 CI 源码清单流程化履行。
+4. 分发边界三分：App 代码 / 随包 GPL 二进制 / guest rootfs——互不传染。
+
+grilling 阶段至此全部完成（14 张决策票全关）。

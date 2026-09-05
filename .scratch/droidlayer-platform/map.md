@@ -34,18 +34,15 @@ Effort: droidlayer-platform
 - [生命周期](issues/13-grilling-lifecycle.md): 前台可靠、后台尽力而为；进程死亡=VM 停止但实例持久化+冷恢复；电池两档；热恢复进雾区。见 ADR-0011。
 - [图形路线分期](issues/14-grilling-graphics-phasing.md): MVP 终端 only；M2=VNC+输入/IME、M3=Wayland 评估、M4=GPU（gfxstream 原型前置）；MVP 预留显示通道位。见 ADR-0012。
 - [USB/音频范围](issues/15-grilling-usb-audio-scope.md): MVP 均不做（非目标）；USB 挂 M2+ QEMU 档先行；音频挂 M2 仅输出；文案用路线图语言。见 ADR-0013。
+- [许可证策略](issues/16-grilling-licensing.md): Apache-2.0 + 零代码复制立场；GPL 义务 CI 清单流程化；分发边界三分互不传染。见 ADR-0014。**grilling 阶段全部完成。**
 
 ## Not yet specified
 
-- 多 VM 会话模型与实例生命周期语义（等存储/生命周期决策落地）
+- 多 VM 会话模型与实例生命周期语义 → 已部分毕业：并发语义成票「多实例模型」（24）；热恢复等仍待原型
 - 发行版镜像与 guest 系统的更新/OTA 通道；与 AVF instance identity（VM secret 随代码变化）的交互（等原型「AVF 端到端验证」结果）
-- guest-agent 协议细节：命令集全集、版本化机制、认证令牌分发（等「宿主↔Guest 桥接协议」给出粒度后细分）
-- 测试与 CI 策略：JVM 单测边界、真机测试矩阵、发布可复现性（Podroid 无 CI 的教训）（等兼容性地板与存储决策）
-- 发布渠道定位与商店政策（Play vs F-Droid/GitHub Releases）（等「无 Root 承诺」与「许可证策略」收敛）
-- 性能 benchmark 套件与各档验收数字（等「QEMU TCG 实机基线」产出数据）
-- 桥接功能优先级排序：剪贴板/通知/URL/文件/媒体（等桥接协议决策）
-- UI/UX 产品形态：发行版目录、实例管理、终端与图形界面集成（等发行版与图形决策）
-- 网络高级语义细则：IPv6、VPN 共存、localhost 暴露策略（等「网络模型」决策，可能并入该票）
+- 性能 benchmark 套件与各档验收数字（等原型「QEMU TCG 实机基线」产出数据）
+- UI/UX 产品形态细化：发行版目录、实例管理、终端集成的具体交互（spec 后由 prototype 票承接）
+- AVF 档独立存活 VM、热恢复、passt 网络增强等能力（等对应原型数据后按能力矩阵声明）
 
 ## Out of scope
 
