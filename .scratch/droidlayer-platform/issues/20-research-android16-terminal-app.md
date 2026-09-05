@@ -2,7 +2,7 @@
 
 Labels: wayfinder:research
 Type: research
-Status: claimed
+Status: open
 
 ## Question
 
@@ -15,3 +15,7 @@ AOSP 官方 Terminal 应用（AVF Debian VM）的源码架构能告诉我们什�
 ## Working notes
 
 AOSP 源码定位（platform/packages/apps/ 下 Terminal / LinuxTerminal 相关目录）+ Android 16 QPR2 行为变化文档；产出对照表：能力 | 官方实现方式 | 第三方可复用性。受本机 agent 并发额度限制，本票由会话逐个领取执行。
+
+## Comments
+
+- 2026-09-05：首次执行尝试失败——后台 agent 与活跃 grilling 会话争抢模型并发额度被中止（运行 53 分钟）。认领已释放。**下次领取应在没有活跃对话的时段单独执行，或拆成多次短检索**；避免与 grilling 并发。
