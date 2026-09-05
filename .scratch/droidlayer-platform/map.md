@@ -34,7 +34,9 @@ Effort: droidlayer-platform
 - [生命周期](issues/13-grilling-lifecycle.md): 前台可靠、后台尽力而为；进程死亡=VM 停止但实例持久化+冷恢复；电池两档；热恢复进雾区。见 ADR-0011。
 - [图形路线分期](issues/14-grilling-graphics-phasing.md): MVP 终端 only；M2=VNC+输入/IME、M3=Wayland 评估、M4=GPU（gfxstream 原型前置）；MVP 预留显示通道位。见 ADR-0012。
 - [USB/音频范围](issues/15-grilling-usb-audio-scope.md): MVP 均不做（非目标）；USB 挂 M2+ QEMU 档先行；音频挂 M2 仅输出；文案用路线图语言。见 ADR-0013。
-- [许可证策略](issues/16-grilling-licensing.md): Apache-2.0 + 零代码复制立场；GPL 义务 CI 清单流程化；分发边界三分互不传染。见 ADR-0014。**grilling 阶段全部完成。**
+- [许可证策略](issues/16-grilling-licensing.md): Apache-2.0 + 零代码复制立场；GPL 义务 CI 清单流程化；分发边界三分互不传染。见 ADR-0014。
+- [发布渠道定位](issues/23-grilling-release-channels.md): GitHub 首发、F-Droid 随后、Play 观望；签名密钥一次做对；更新检查可关闭无遥测。见 ADR-0015。
+- [多实例模型](issues/24-grilling-multi-instance.md): MVP 单运行实例；Distro ≠ Image ≠ Instance ≠ Session 实体模型入册；并发为后续增强。见 ADR-0016。**全部 grilling 票关闭。**
 
 ## Not yet specified
 

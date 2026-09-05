@@ -2,7 +2,7 @@
 
 Labels: wayfinder:grilling
 Type: grilling
-Status: open
+Status: resolved
 
 ## Question
 
@@ -25,3 +25,13 @@ ADR-0003 与 ADR-0011 都指向"Play 意义存疑但未决"；渠道决定签名
 ## Reversibility
 
 渠道是加法（先 GitHub 后 Play 可行）；签名方案一次定对（更新通道与实例数据安全绑定）。真正的成本在文案双轨维护。
+
+## Answer
+
+2026-09-05 用户采纳推荐并补充五条细化。固化于 **docs/adr/0015-release-channels.md**（按用户要求区分【产品决策】/【工程假设】/【待验证】三层并标注证据来源）。
+
+决定要点：
+1. GitHub 首发、F-Droid 第二、Play 观望；更新检查经 GitHub API 且可关闭、无遥测。
+2. 首版建立长期 signing key 管理与备份机制（唯一不可逆项）。
+3. 不因 Play 缺席修改核心架构。
+4. 证据标注：GitHub 人群触达为**类比证据**（Podroid ~20.5k 下载数据）；W^X/jniLib 为一手证据；specialUse 审查口径、Play 版 L2 可行性、F-Droid 复现构建工作量均标【待验证】。

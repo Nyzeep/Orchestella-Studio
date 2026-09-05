@@ -2,7 +2,7 @@
 
 Labels: wayfinder:grilling
 Type: grilling
-Status: open
+Status: resolved
 
 ## Question
 
@@ -25,3 +25,12 @@ MVP = **单运行实例**（同时只跑一个，可存在多个已停止实例�
 ## Reversibility
 
 单→多是加法（资源预算器扩展）；多→单收缩伤 UI 与用户预期。先单后多符合可逆性。
+
+## Answer
+
+2026-09-05 用户采纳推荐并补充领域模型要求。固化于 **docs/adr/0016-multi-instance-and-entities.md**（含三层标注）与 CONTEXT.md 新增实体词条。
+
+决定要点：
+1. MVP 单运行实例；多已停止实例并存；切换 = 停止当前 + 冷启动；多实例并发为后续增强（真机数据决定解锁）。
+2. **领域模型 Distro ≠ Image ≠ Instance ≠ Session** 写入 ADR 与 CONTEXT.md：Instance 为产品基础实体；Session 为与运行中实例的一次交互/访问上下文；MVP 单运行 = Session↔Instance 配对约束，**不是实体合并**——未来并发只放宽配对约束，实体模型不变。
+3. 证据标注：单实例资源现实性为**类比证据**（Podroid DeviceResourcePolicy 旁证）；AVF 多 VM 行为、解锁阈值标【待验证】（并入原型票观察清单）。
