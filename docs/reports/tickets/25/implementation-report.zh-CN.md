@@ -4,7 +4,7 @@
 - 执行 session / 模型 / thinking：Ticket 25 implementation Worker（GPT-5.6 Sol / max）+ Codex Orchestrator 验收接管（GPT-5）
 - 分支：`ticket/25-guest-assets`　基线 commit：`f523f4b`
 - 验收环境：VMware `vctl 1.1.0` / Ubuntu 24.04 amd64 pinned builder / QEMU 8.2.2 TCG
-- 报告性质：实现与真实 Linux/QEMU 验收终态；已提交正式双轴 review
+- 报告性质：实现、真实 Linux/QEMU 验收、正式双轴 review 与 `main` 集成终态
 
 ## 1. 任务目标
 
@@ -223,7 +223,12 @@ SHA256 为 `02ad67fe818fd28b142e57eaf8a729cf88ef81f95303ea8a8d5bdd5605940992`
 - `b72a3b3607425e1bd6871e33eeb456c4de4e427a` — pinned CI verification。
 - `4ea236ae3cf1d9fd21a345e4a7936c610e9fff75` — workflow documentation。
 - `5447d47c9c777fc5be583e4ec6409a3f9bb19d67` — executable script modes。
-- 本报告与 tracker 的 `review` 状态由随后的独立行政 commit 提交。
+- `7045b0c5665e025c1cc12009500eb67bc39f5a9c` — 提交本报告与 tracker 的
+  `review` 状态。
+- `4a144733d30ecf08dc13c117c8ce90473d6fb204` — 正式双轴 review 报告与 approve。
+- `590cc17dafd93dbbba4993976a03e5fff51f3d5e` — Orchestrator 以 `--no-ff` 集成到
+  `main`。
+- Ticket `completed` 状态与本报告终态由当前关闭行政 commit 承载。
 
 真实验收最初对应聚合快照 `75c9f891e4685439589b0cc0dc4b71a89d29ad7b`。正式
 Standards review 要求小步提交后，仅重组 Git 历史；上述八个 commit 的实现树与该快照
@@ -232,8 +237,8 @@ Standards review 要求小步提交后，仅重组 Git 历史；上述八个 com
 
 ## 12. Ticket 状态
 
-当前状态为 `review`：四项 acceptance criteria、规定测试、真实 Linux 双 clean build
-和 QEMU smoke 均已满足，scope audit 无越界；最终 `completed` 仅由 Orchestrator 在
-正式 review 通过并合并后设置。
+当前状态为 `completed`：四项 acceptance criteria、规定测试、真实 Linux 双 clean
+build 和 QEMU smoke 均已满足，scope audit 无越界；正式双轴 review 结论为
+`approve`，Orchestrator 已用 `--no-ff` 合并到 `main`。Ticket 26 未启动、领取或修改。
 
 报告人：Ticket 25 implementation Worker + Codex Orchestrator ｜ 日期：2026-09-07 ｜ 耗时：vctl 验收 56,330.691s（含多轮真实失败与 clean rebuild）

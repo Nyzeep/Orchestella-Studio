@@ -1,7 +1,7 @@
 # 25: Guest 资产构建基线
 
 Type: task（全项目唯一允许的非用户可见共享前提票）
-Status: review
+Status: completed
 Blocked by: None
 Scope contract: `docs/reports/tickets/25/worker-scope-contract.zh-CN.md`
 
