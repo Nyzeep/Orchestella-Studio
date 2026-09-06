@@ -53,11 +53,51 @@
 
 注意：`wayfinder` 已完成（map 进入维护态）；`to-spec`/`to-tickets` 已消费，不重复运行。
 
-## 4. Model Policy（编排级决策，Worker 不得自选）
+## 4. Model Selection Policy（编排级能力策略，Worker 不得自行降级）
 
-- 默认：**GPT-5.6 Sol + reasoning/thinking: Max**，适用于所有 implementation/hardening/review session。
-- research/prototype child 可降档以省额度，但结论性输出（报告、决策建议）必须由默认配置产出或复核。
-- 仅当环境明确不可用时降级，且必须在报告中记录实际使用的模型与理由。
+项目依赖的是模型能力等级，不依赖任何具体模型名称。选择流程固定为：
+
+```text
+Task / Session → Task type → Difficulty / Risk → Required capability
+                → Orchestrator selects an available model
+```
+
+### 4.1 Capability levels
+
+| Level | Capability | 适用任务 |
+| --- | --- | --- |
+| **L1** | lightweight | 简单文档、状态同步、文件索引、简单机械任务 |
+| **L2** | standard | 普通 research、简单辅助任务、常规 review/support |
+| **L3** | high reasoning | 普通 implementation、复杂 research、integration analysis、non-trivial review |
+| **L4** | maximum reasoning | Linux kernel、AVF/pKVM、QEMU、VMM、storage architecture、security boundary、architecture change、高风险 integration、难以验证的系统问题 |
+
+这些是 capability level，不是模型名称。实际模型由用户在创建 session 时选择，或由
+Orchestrator 按任务需要、当前可用模型、context requirements、verification cost、风险与
+quota/cost 选择；新增模型只需成为可用 candidate，不需要改变项目架构或把名称写入本政策。
+用户明确选择的可用模型应被尊重；若其能力不足以满足 required capability，Orchestrator
+必须在执行前说明并重新选择或请求用户调整，而不是静默降低 gate。
+
+### 4.2 Reasoning / thinking
+
+Reasoning band 默认随 capability level 选择，而不是对所有 session 固定为 `Max`：
+
+```text
+L1 → low / medium
+L2 → medium
+L3 → high
+L4 → max
+```
+
+Orchestrator 可以基于实际难度、风险、环境与可用性向上调整；若经重新评估需要向下调整，
+必须记录理由并确认不低于任务的 required capability。Worker 不得为了节省额度私自降低
+被要求的 capability 或 reasoning band。
+
+### 4.3 Child agent selection
+
+Child Agent 不自动继承 parent 的实际模型或 reasoning band。每个 child 独立依据
+`role + scope + difficulty + required capability` 选择可用模型与 reasoning band；例如
+L4 implementation worker 可以派生 L2 research child。child 的选择仍受本节能力要求、
+scope contract 和报告义务约束。
 
 ## 5. Git / Branch 策略
 

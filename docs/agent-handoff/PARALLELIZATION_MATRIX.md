@@ -24,23 +24,23 @@
 
 ## 2. 工单矩阵
 
-| Ticket | Dependencies | Blocked by | 冲突面 | Owned modules | Forbidden modules | Can parallel? | 推荐批次 | Model | Thinking |
+| Ticket | Dependencies | Blocked by | 冲突面 | Owned modules | Forbidden modules | Can parallel? | 推荐批次 | Required capability | Reasoning band |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 25 Guest资产基线 | — | 无 | —（首票） | guest-assets/ | 其余全部 | 否（serial-first） | B0 | GPT-5.6 Sol | Max |
-| 26 第一切片 | 25 | 25 | — | contract, instance, distro, capability, engine-qemu, bridge, ui, terminal（初始骨架） | engine-avf | 否（serial） | B0 | GPT-5.6 Sol | Max |
-| 27 出站网络 | 26 | 26 | 与 29 同模块（先后解）；与 28/30 LOW | engine-qemu(网络), contract, ui(徽章无), tests | engine-avf, storage | 是（B1 组内） | B1 | GPT-5.6 Sol | Max |
-| 28 停止/冷恢复 | 26 | 26 | bridge(power) + instance 状态机；与 30 LOW（guest-assets 装配配置） | bridge, instance, contract, ui, tests | engine-avf, storage | 是（B1 组内） | B1 | GPT-5.6 Sol | Max |
-| 30 只读共享 | 26 | 26 | 9p 数据面 + guest-assets 装配配置（与 28/32 LOW-MEDIUM） | engine-qemu(9p), bridge(数据面), guest-assets(挂载), contract, tests | engine-avf, network | 是（B1 组内） | B1 | GPT-5.6 Sol | Max |
-| 29 端口转发 | 27 | 27 | engine-qemu 网络层（与 27 串行后无冲突）；network/ + ui 规则编辑 | engine-qemu(hostfwd), network, ui, contract, tests | engine-avf, storage | 是（B2 组内） | B2 | GPT-5.6 Sol | Max |
-| 31 桥接补全 | 28 | 28 | bridge 命令集 + 白名单修订 | bridge, ui(通知), contract, tests | engine-avf, storage | 是（B2 组内） | B2 | GPT-5.6 Sol | Max |
-| 32 Debian | 26,27 | 26,27 | guest-assets 风味 + distro 数据（与 30 的装配配置 MEDIUM——错峰或文件分域） | guest-assets(Debian 风味), distro, tests | engine-avf | 是（B2 组内） | B2 | GPT-5.6 Sol | Max |
-| 33 导出/扩容 | 28 | 28 | storage/ + ui | storage, ui, tests | engine-avf, engine-qemu(仅读接口) | 是（B2 组内） | B2 | GPT-5.6 Sol | Max |
-| 34 AVF 策略 | 26,17 | 26,17 | engine-avf + capability + contract 注册（此时 27–33 可已合入，注意 rebase） | engine-avf, capability, bridge(vsock 传输), contract, ui(向导/徽章), tests | storage | 否（serial） | B3 | GPT-5.6 Sol | Max |
-| 36 AVF网络/转发对齐 | 34,27,29 | 34,27,29 | engine-avf + tests/contract（与 37 HIGH——建议串行 36→37） | engine-avf(网络/vsock 隧道), tests | storage, engine-qemu | 否（与 37 串行） | B4 | GPT-5.6 Sol | Max |
-| 37 AVF共享/恢复/桥接对齐 | 34,28,30,31 | 34,28,30,31 | engine-avf(9p-over-vsock 自研服务端——最大件) + tests | engine-avf, bridge, tests | engine-qemu | 否（36 之后） | B4 | GPT-5.6 Sol | Max |
-| 35 硬化 | 26–33,36,37,18 | 全部+P2 | app/ + 全局走查（无并行对象） | app, ui, 全局 | — | 否（最后） | B5 | GPT-5.6 Sol | Max |
-| 17 P1 AVF e2e（prototype） | 需用户真机 | — | 无（不进主干） | 临时分支/实验目录 | 主干全部 | 是（随时） | B2 起（可提前） | GPT-5.6 Sol | Max |
-| 18 P2 QEMU 基线（prototype） | 25/26 产出 | 26 | 无（实验分支） | 实验分支 | 主干全部 | 是（26 后随时） | B1 起 | GPT-5.6 Sol | Max |
+| 25 Guest资产基线 | — | 无 | —（首票） | guest-assets/ | 其余全部 | 否（serial-first） | B0 | L4 | max |
+| 26 第一切片 | 25 | 25 | — | contract, instance, distro, capability, engine-qemu, bridge, ui, terminal（初始骨架） | engine-avf | 否（serial） | B0 | L4 | max |
+| 27 出站网络 | 26 | 26 | 与 29 同模块（先后解）；与 28/30 LOW | engine-qemu(网络), contract, ui(徽章无), tests | engine-avf, storage | 是（B1 组内） | B1 | L3 | high |
+| 28 停止/冷恢复 | 26 | 26 | bridge(power) + instance 状态机；与 30 LOW（guest-assets 装配配置） | bridge, instance, contract, ui, tests | engine-avf, storage | 是（B1 组内） | B1 | L3 | high |
+| 30 只读共享 | 26 | 26 | 9p 数据面 + guest-assets 装配配置（与 28/32 LOW-MEDIUM） | engine-qemu(9p), bridge(数据面), guest-assets(挂载), contract, tests | engine-avf, network | 是（B1 组内） | B1 | L3 | high |
+| 29 端口转发 | 27 | 27 | engine-qemu 网络层（与 27 串行后无冲突）；network/ + ui 规则编辑 | engine-qemu(hostfwd), network, ui, contract, tests | engine-avf, storage | 是（B2 组内） | B2 | L3 | high |
+| 31 桥接补全 | 28 | 28 | bridge 命令集 + 白名单修订 | bridge, ui(通知), contract, tests | engine-avf, storage | 是（B2 组内） | B2 | L3 | high |
+| 32 Debian | 26,27 | 26,27 | guest-assets 风味 + distro 数据（与 30 的装配配置 MEDIUM——错峰或文件分域） | guest-assets(Debian 风味), distro, tests | engine-avf | 是（B2 组内） | B2 | L3 | high |
+| 33 导出/扩容 | 28 | 28 | storage/ + ui | storage, ui, tests | engine-avf, engine-qemu(仅读接口) | 是（B2 组内） | B2 | L3 | high |
+| 34 AVF 策略 | 26,17 | 26,17 | engine-avf + capability + contract 注册（此时 27–33 可已合入，注意 rebase） | engine-avf, capability, bridge(vsock 传输), contract, ui(向导/徽章), tests | storage | 否（serial） | B3 | L4 | max |
+| 36 AVF网络/转发对齐 | 34,27,29 | 34,27,29 | engine-avf + tests/contract（与 37 HIGH——建议串行 36→37） | engine-avf(网络/vsock 隧道), tests | storage, engine-qemu | 否（与 37 串行） | B4 | L4 | max |
+| 37 AVF共享/恢复/桥接对齐 | 34,28,30,31 | 34,28,30,31 | engine-avf(9p-over-vsock 自研服务端——最大件) + tests | engine-avf, bridge, tests | engine-qemu | 否（36 之后） | B4 | L4 | max |
+| 35 硬化 | 26–33,36,37,18 | 全部+P2 | app/ + 全局走查（无并行对象） | app, ui, 全局 | — | 否（最后） | B5 | L4 | max |
+| 17 P1 AVF e2e（prototype） | 需用户真机 | — | 无（不进主干） | 临时分支/实验目录 | 主干全部 | 是（随时） | B2 起（可提前） | L4 | max |
+| 18 P2 QEMU 基线（prototype） | 25/26 产出 | 26 | 无（实验分支） | 实验分支 | 主干全部 | 是（26 后随时） | B1 起 | L4 | max |
 
 ## 3. 批次计划
 
