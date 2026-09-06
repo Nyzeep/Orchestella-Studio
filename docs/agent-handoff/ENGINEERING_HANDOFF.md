@@ -176,6 +176,7 @@ P1/P2 的全部待测项；OTA 通道形态；benchmark 验收数字；Compatibi
 | 并行矩阵 | `docs/agent-handoff/PARALLELIZATION_MATRIX.md` |
 | 报告规范 | `docs/agent-handoff/REPORTING_STANDARD.zh-CN.md` |
 | 架构变更门 | `docs/agent-handoff/ARCHITECTURE_CHANGE_POLICY.md` |
+| 宿主环境修改策略 | `docs/agent-handoff/HOST_ENVIRONMENT_POLICY.md` |
 | 历史上下文（非需求） | `探讨文档1.md` |
 
 ## 15. 新 Agent 接管 Checklist
