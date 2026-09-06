@@ -5,6 +5,8 @@ Thumbs.db
 .gradle/
 .kotlin/
 .toolchains/
+/guest-assets/.work/
+/guest-assets/out/
 .externalNativeBuild/
 .cxx/
 build/

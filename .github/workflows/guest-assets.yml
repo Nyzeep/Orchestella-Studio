@@ -1,0 +1,53 @@
+name: Guest assets
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "guest-assets/**"
+      - ".github/workflows/guest-assets.yml"
+      - "gradle/wrapper/**"
+      - "gradlew"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    container:
+      image: mcr.microsoft.com/devcontainers/base@sha256:3612b800eaae8513e7dca54f21d2e4eda48eda57426f3746a78677f342ac7ee9
+      options: --user 0:0
+    env:
+      GUEST_ASSETS_WORK_DIR: /tmp/droidlayer-guest-assets.build
+      GUEST_ASSETS_DOWNLOAD_CACHE: /tmp/droidlayer-guest-assets.downloads
+      GUEST_ASSETS_SMOKE_WORK: /tmp/droidlayer-guest-assets.smoke
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Install pinned-snapshot dependencies
+        run: ./guest-assets/ci/install-builder-dependencies.sh
+
+      - name: Test JVM tooling and process protocol
+        run: ./guest-assets/scripts/test-local.sh
+
+      - name: Verify a required kernel capability cannot be disabled
+        run: ./guest-assets/scripts/check-config-rejection.sh
+
+      - name: Verify two clean builds are identical
+        run: ./guest-assets/scripts/check-reproducible.sh
+
+      - name: Build delivery assets
+        run: ./guest-assets/build.sh
+
+      - name: Run QEMU Provisioning smoke
+        run: ./guest-assets/smoke/qemu-provisioning-smoke.sh
+
+      - name: Upload verified delivery
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: guest-assets-arm64
+          path: guest-assets/out/
+          if-no-files-found: error

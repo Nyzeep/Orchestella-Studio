@@ -1,0 +1,30 @@
+#!/sbin/openrc-run
+
+name="DroidLayer Guest Agent"
+command="/usr/sbin/droidlayer-guest-agent"
+command_args="--token-file /etc/droidlayer/bridge.token"
+command_background="no"
+
+depend() {
+    need localmount
+}
+
+start_pre() {
+    if [ -z "${bridge_stream:-}" ] || [ ! -e "$bridge_stream" ]; then
+        eerror "bridge_stream is not provisioned by the execution strategy"
+        return 1
+    fi
+}
+
+start() {
+    ebegin "Starting ${name}"
+    exec 3<>"$bridge_stream" || {
+        eend 1 "cannot open bridge_stream read-write"
+        return 1
+    }
+    "$command" $command_args <&3 >&3
+    status=$?
+    exec 3>&-
+    eend "$status"
+    return "$status"
+}

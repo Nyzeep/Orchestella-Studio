@@ -1,0 +1,20 @@
+DroidLayer Guest Assets
+Written Offer for Complete Corresponding Source
+
+For every executable or object-code work covered by GNU GPL version 2 that
+DroidLayer distributes with these guest assets, DroidLayer offers any third
+party a complete machine-readable copy of the corresponding source code,
+including the scripts and configuration used to control compilation and
+installation.
+
+This offer is valid for at least three years after the last date on which
+DroidLayer distributes the applicable object code. The charge, if any, will
+not exceed the physical cost of performing source distribution. A recipient
+may make a request through the publisher or support channel from which the
+recipient obtained DroidLayer. Include the accompanying BUILD-INPUTS file so
+the exact distributed build can be identified.
+
+The accompanying GPL-SOURCES.md also gives immediate source archive URLs,
+SHA256 values, final configuration artifacts, and the build entry point.
+Those download locations supplement this written offer; they do not shorten
+its validity.
