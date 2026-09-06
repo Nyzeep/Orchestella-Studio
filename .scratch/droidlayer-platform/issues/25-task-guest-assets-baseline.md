@@ -1,7 +1,7 @@
 # 25: Guest 资产构建基线
 
 Type: task（全项目唯一允许的非用户可见共享前提票）
-Status: ready-for-agent
+Status: review
 Blocked by: None
 Scope contract: `docs/reports/tickets/25/worker-scope-contract.zh-CN.md`
 
@@ -13,10 +13,10 @@ Scope contract: `docs/reports/tickets/25/worker-scope-contract.zh-CN.md`
 
 ## Acceptance criteria
 
-- [ ] 一次命令产出 kernel Image + initramfs + SHA256 清单，两次构建结果可复现（或差异可解释）
-- [ ] 能力清单校验演示"缺项即失败"（移除一项 config 后构建中断并指明缺失项）
-- [ ] 装配逻辑在 QEMU 上冒烟：引导 → 格盘 → 解包 tarball → 装配完成标志出现
-- [ ] initramfs 内桥接 agent 基座（握手/版本协商/token 校验的最小实现）就位
+- [x] 一次命令产出 kernel Image + initramfs + SHA256 清单，两次构建结果可复现（或差异可解释）
+- [x] 能力清单校验演示"缺项即失败"（移除一项 config 后构建中断并指明缺失项）
+- [x] 装配逻辑在 QEMU 上冒烟：引导 → 格盘 → 解包 tarball → 装配完成标志出现
+- [x] initramfs 内桥接 agent 基座（握手/版本协商/token 校验的最小实现）就位
 
 ## Test strategy
 
