@@ -1,8 +1,9 @@
 # Worker Agent 强约束合同（Agent Worker Contract）
 
 > 读者：被 Orchestrator 派生的 Worker Agent。本合同是强约束：违反任何"必须"即视为该
-> session 失败，其产出退回。session 的 model、reasoning、workflow、Child、worktree 与
-> 发布规则以 ORCHESTRATION_GOVERNANCE_POLICY.md 为准。
+> session 失败，其产出退回。model / reasoning 的风险路由以 `ENGINEERING_HANDOFF.md` §4A
+> 为准；session 的 workflow、Child、worktree 与发布规则以 `ORCHESTRATION_GOVERNANCE_POLICY.md`
+> 为准；文件、报告和 artifact 的存放以 `ARTIFACT_ORGANIZATION_POLICY.md` 为准。
 
 ## 1. 职责边界（硬约束）
 
@@ -19,8 +20,9 @@
 11. 必须产出中文报告（REPORTING_STANDARD 格式），无报告不算完成。
 12. 遇到与 ADR/spec 冲突的现实 → 停止实现，走 ARCHITECTURE_CHANGE_POLICY，不得绕行。
 13. 不得直接修改 `main`；不得合并自己的分支。
-14. 必须使用 Orchestrator 在 dispatch packet 中预先指定的 workflow、required capability、model 与 reasoning；不得自行降档、换模型或重新定义主要 workflow。
+14. 必须使用 Orchestrator 按 `ENGINEERING_HANDOFF.md` §4A 在 dispatch packet 中预先指定的 workflow、required capability、model 与 reasoning；不得自行降档、换模型或重新定义主要 workflow。
 15. 只能在分配的独立 branch/worktree 内工作；发现 scope、共享文件或环境权限与 packet 不一致时先停止并回报。
+16. 创建或修改文件前必须按 `ARTIFACT_ORGANIZATION_POLICY.md` 分类并使用 canonical home；不得创建重复概念、根目录临时文件或将 generated output、cache、下载物和大型产物混入 Git。
 
 ## 2. 交付定义（Definition of Done）
 
@@ -30,11 +32,13 @@
 - [ ] 规定测试全部运行且通过（失败项必须在报告中如实列出）
 - [ ] diff 仅涉及 owned modules
 - [ ] 中文实施报告已写入 `docs/reports/tickets/<ticket-id>/implementation-report.zh-CN.md`
+- [ ] 报告、source-controlled evidence 与 ephemeral output 均位于 dispatch packet 指定的 canonical 路径，且未提交不应入 Git 的 generated output
 - [ ] 分支提交历史干净（只含本票工作，Conventional Commits + `[ticket-NN]`）
 
 ## 3. Child 委派（硬约束）
 
-ORCHESTRATION_GOVERNANCE_POLICY.md §5 是 Child 的唯一正式 Delegation Policy。Worker 只能
+ORCHESTRATION_GOVERNANCE_POLICY.md §5 是 Child 的唯一正式 Delegation Policy；文件和产物
+路径遵循 `ARTIFACT_ORGANIZATION_POLICY.md`。Worker 只能
 提出窄 scope Child 的需求，待 Orchestrator 形成并确认 packet 后才可派发；不得自行选择
 Child 的 workflow、capability、model 或 reasoning。
 

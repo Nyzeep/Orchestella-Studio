@@ -1,13 +1,15 @@
 # 编排治理策略（Orchestration Governance Policy）
 
 > 状态：项目级 active policy。适用于所有 User → Orchestrator → Worker → Child 的正式
-> DroidLayer 工作。它是 session 选择、委派、并行、branch/worktree 生命周期及 Git 发布
-> 的唯一事实来源；报告路径与报告内容由 `REPORTING_STANDARD.zh-CN.md` 单独定义，宿主机
-> 写入由 `HOST_ENVIRONMENT_POLICY.md` 单独定义。
+> DroidLayer 工作。它是 session 委派、并行、branch/worktree 生命周期及 Git 发布的唯一
+> 事实来源；模型选择的唯一 policy 见 `ENGINEERING_HANDOFF.md` §4A；artifact 与仓库组织的
+> 唯一 policy 见 `ARTIFACT_ORGANIZATION_POLICY.md`。报告路径与报告内容由
+> `REPORTING_STANDARD.zh-CN.md` 单独定义，宿主机写入由 `HOST_ENVIRONMENT_POLICY.md` 单独定义。
 
 ## 1. 适用范围与决策顺序
 
 本策略只治理工作如何被编排，不改变产品、ADR、SPEC、CONTEXT 或 tracker 的事实来源。
+模型路由冲突统一按 `ENGINEERING_HANDOFF.md` §4A 处理；本策略不另行定义模型池或默认模型。
 出现治理规则冲突时，按以下顺序执行：
 
 1. 用户对当前任务的明确要求；
@@ -35,6 +37,7 @@ governance / integration / audit 任务。Orchestrator 在创建 Worker 或 Chil
 - difficulty、risk、verification cost、required capability；
 - model 与 reasoning；
 - branch/worktree、测试与报告路径；
+- source-controlled evidence、ephemeral output、retention 与 cleanup 路径（按 `ARTIFACT_ORGANIZATION_POLICY.md`）；
 - 所需宿主环境权限或明确的只读限制。
 
 Worker 只能执行 packet 中的 scope。发现完成当前任务似乎要求修改其他 ticket、ADR、
@@ -43,54 +46,31 @@ Architecture Change Policy；不得自行宣布需求或架构变化。
 
 ## 3. Model Selection Policy
 
-### 3.1 选择顺序与可用池
+`ENGINEERING_HANDOFF.md` §4A 是 Risk-based model routing 的唯一事实来源。本节只规定如何
+把它落实到 session，不复制一套可能漂移的模型表；任何旧报告、历史 dispatch packet 或
+历史 Worker 配置都不能覆盖 §4A。
 
-Orchestrator 必须按以下顺序决定，而不是沿用历史 session 的模型：
+Orchestrator 在创建 Worker 或 Child 前必须按以下顺序决定，并把结论写入 dispatch packet：
 
 ```text
 Task → Session role → Difficulty → Risk → Verification cost
      → Required capability → Model selection → Reasoning selection
 ```
 
-active policy 的可用模型池只有下列组合：
+执行要求：
 
-| 模型 | 允许的 reasoning |
-| --- | --- |
-| GPT-5.6 Sol | `medium`、`high`、`xhigh`、`max` |
-| GPT-5.6 Terra | `xhigh`、`max` |
-
-GPT-5.6 Sol 是最高级推理模型，用于困难、高风险、复杂架构与难验证问题；GPT-5.6 Terra
-是均衡型模型，用于大多数常规工程工作，目标是效率、成本与质量的平衡。
-
-新建 Codex session 的默认值是 **GPT-5.6 Terra / `max`**。这是初始值，不是所有任务的
-强制配置；Orchestrator 必须根据 packet 向下选择足以满足任务的组合，以平衡效率、成本与
-质量。不得在 active policy 中加入其他模型名或虚构 reasoning 档位。
-
-### 3.2 Capability floor 与推荐组合
-
-L1–L4 是治理 capability floor，不是产品的无 Root 等级，也不是模型名称。矩阵给出的
-level 是最低能力要求；它不能替代对当前任务 difficulty、risk 与 verification cost 的判断。
-
-| Level | 适用情形 | 推荐选择 |
-| --- | --- | --- |
-| L1 | 文件索引、状态检查、简单整理 | Sol / `medium`；若简单任务需要稳定长上下文，可用 Terra / `max` |
-| L2 | 普通文档、普通 research、常规 review/support | Sol / `medium` 或 `high`；Terra / `xhigh` 或 `max` |
-| L3 | 普通 implementation、复杂 research、integration analysis、non-trivial review | Terra / `max`，或 Sol / `high`、`xhigh` |
-| L4 | kernel、AVF/pKVM、QEMU、VMM、storage architecture、security boundary、architecture change、高风险或难验证问题 | Sol / `xhigh` 或 `max` |
-
-困难度、风险或验证成本上升时，Orchestrator 从 Terra 升至 Sol，并按 `high` → `xhigh` →
-`max` 选择；不能静默降低 required capability。若当前 session 的模型或 reasoning 不足，
-必须在执行前识别并重新 dispatch 或请求用户调整，不能先以不足能力实施再补充说明。
-
-Worker 不得为节省额度自行降档、换用未授权模型，或以“任务看起来简单”为由忽略 packet
-中的 capability / reasoning。历史报告中的模型记录不构成当前选择依据。
-
-### 3.3 Child 的独立选择
-
-Child 不自动继承 parent 的模型或 reasoning。Orchestrator 对每个 Child 单独依据
-`role + scope + difficulty + risk + verification cost + required capability` 选择模型与
-reasoning，并把结论写入 dispatch packet。例如 L4 Worker 可以获得 Terra / `max` 的
-research Child，或 Sol / `medium` 的文档 Child；parent 的配置不产生自动升级权限。
+- Primary Agent / Orchestrator 默认 `GPT-5.6 Sol / High`；Implementation Worker 按 §4A
+  的风险表使用 `GPT-5.6 Luna / Max`；review、architecture/security 和
+  critical audit 分别按 `Sol / High`、`Sol / XHigh`、`Sol / Max` 路由。
+- `GPT-5.6 Terra` 只作 fallback / second opinion，不是默认模型。具体可用性或 reasoning
+  不满足时，必须在执行前升级、重新 dispatch 或记录经批准的替代；不得静默降级。
+- Risk 由错误成本、不可逆性、blast radius、验证成本和边界影响决定，不由代码量或 ticket
+  大小决定。一个 ticket 的不同子任务可以分属不同 Risk。
+- Child 不自动继承 parent 的模型或 reasoning。每个 Child 由 Orchestrator 依据
+  `role + scope + difficulty + risk + verification cost + required capability` 独立选择，
+  并遵守 §4A 的 Worker/Child 权限边界。
+- 模型选择不授予改变 ADR、spec、产品语义、架构、ticket scope 或 tracker 状态的权力；
+  发现冲突必须停在 §4A 的 escalation rules，并走 Architecture Change Policy。
 
 ## 4. Workflow assignment
 
@@ -121,7 +101,8 @@ depth 为 2：Worker 是第一层，Child 是第二层；Child 不得再派生 C
 
 Child 只能承担窄支撑工作：research、prototype、targeted review、test investigation、
 documentation analysis、environment inspection，或其他明确界定的 supporting work。每个
-Child packet 必须说明输入、允许操作、输出与交回对象。
+Child packet 必须说明输入、允许操作、输出与交回对象，以及遵循 artifact policy 的
+source-controlled evidence、ephemeral output 和 cleanup 路径。
 
 Child 不得自行领取正式 ticket、修改其他 ticket、ADR、SPEC、CONTEXT、产品需求或
 dependency graph；不得修改 `main`、merge、push，或超出自己的 packet。涉及宿主环境的
@@ -160,6 +141,36 @@ contract/test 文件时，必须串行。`PARALLELIZATION_MATRIX.md` 是规划�
   active、dirty、含未合并 commit 或用户明确保留的 worktree/branch 都不得删除。
 - prototype worktree 可因实验复现价值保留，但必须记录原因。定期执行 worktree/merged
   branch/stale worktree audit，并在相关报告中记录实际 cleanup 或“未清理”的理由。
+
+### 7A. Project Directory Boundary & Worktree Freshness
+
+所有 DroidLayer **Git worktree**（包括 ticket、review、prototype 和 governance worktree）
+必须位于以下项目工作区边界内：
+
+```text
+允许：D:\Development project(开发项目)\DroidLayer开发目录\*
+禁止新建 active Git worktree：D:\Development project(开发项目)\DroidLayer\worktrees\*
+```
+
+`D:\Development project(开发项目)\DroidLayer` 仍是 `HOST_ENVIRONMENT_POLICY.md` 定义的
+外部资源根，可保存 toolchain、cache、VM image、运行输出和 evidence；本条只禁止把 Git
+worktree 注册在该资源根下，不要求删除或批量迁移其中的历史资产。历史报告、handoff 和
+旧路径引用继续作为审计记录保留。
+
+创建或迁移 worktree 前，Orchestrator 必须：
+
+1. 用 `git rev-parse --show-toplevel` 确认 repository root；
+2. 确认候选物理路径位于允许边界内且目标不存在；
+3. 使用 `git worktree add`、`git worktree move` 或其他 Git 官方 worktree 管理命令；
+4. 操作后执行 `git worktree list --porcelain`；
+5. 核对 registered path 与 physical path 一致，并记录 branch、HEAD 和未提交状态。
+
+接手任何已有 worktree 时，不能只相信 handoff 或 dispatch packet 中的旧快照。必须重新
+核对 `git worktree list --porcelain`、`git status --short --branch`、`git rev-parse HEAD`、
+`git branch --show-current`、upstream（若无则明确记录）、与 `main` 的 merge-base 及
+ahead/behind、`git diff`、`git ls-files --others --exclude-standard`、ignored 文件摘要和
+最近提交记录。报告至少要明确 HEAD、branch、dirty/clean、ahead/behind、untracked、ignored
+以及是否存在其他同 ticket worktree/branch；不能以“看起来最新”替代核验。
 
 ## 8. Git、push 与 PR
 

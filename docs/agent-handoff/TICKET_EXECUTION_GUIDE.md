@@ -1,8 +1,10 @@
 # Ticket 执行指南（Codex Orchestrator 工作流）
 
-> 读者：Orchestrator Agent。Worker 的约束在 AGENT_WORKER_CONTRACT.md；会话、模型、
-> 委派、并行、worktree 与发布规则以 ORCHESTRATION_GOVERNANCE_POLICY.md 为准；架构变更
-> 走 ARCHITECTURE_CHANGE_POLICY.md。
+> 读者：Orchestrator Agent。Worker 的约束在 AGENT_WORKER_CONTRACT.md；模型路由以
+> ENGINEERING_HANDOFF.md §4A 为准，会话、委派、并行、worktree 与发布规则以
+> ORCHESTRATION_GOVERNANCE_POLICY.md 为准；架构变更
+> 走 ARCHITECTURE_CHANGE_POLICY.md；artifact 与仓库组织以
+> ARTIFACT_ORGANIZATION_POLICY.md 为准。
 
 ## 1. 状态机
 
@@ -30,7 +32,7 @@
 5. **解析依赖**：核对 Blocked by 列表全部 resolved；注意跨票的**逻辑**依赖（如 37 的 vsock 传输依赖 34 的传输基座——已编码进 Blocked by）。
 6. **分析模块归属**：按 PARALLELIZATION_MATRIX.md 的 owned/forbidden modules 确定本票允许触碰的范围。
 7. **决定并行**：按 ORCHESTRATION_GOVERNANCE_POLICY §6 核对依赖、模块、共享测试、共享 contract file、branch 和 worktree；任一项不通过即串行。
-8. **形成 dispatch packet**：在创建 session 前决定唯一 scope、role、Matt Pocock workflow、difficulty/risk/verification cost、required capability、model、reasoning、branch/worktree、测试和报告路径（见 ORCHESTRATION_GOVERNANCE_POLICY §2–§4）。
+8. **形成 dispatch packet**：在创建 session 前按 ENGINEERING_HANDOFF.md §4A 评估 role、difficulty/risk、verification cost、required capability、model 与 reasoning；按 ARTIFACT_ORGANIZATION_POLICY 选择 report、source-controlled evidence、ephemeral output、retention 与 cleanup 路径；scope、Matt Pocock workflow、branch/worktree、测试和报告路径，以及委派与生命周期字段遵循 ORCHESTRATION_GOVERNANCE_POLICY §2–§4。
 9. **创建 Worker / Child session**：注入 packet、工单、scope contract、AGENT_WORKER_CONTRACT.md、词汇表和必要 policy；不得把 workflow 或模型选择留给 Worker 临场决定。
 10. **管理 branch/commit**：按 ORCHESTRATION_GOVERNANCE_POLICY §7–§8；Worker 在自己的独立 branch/worktree 工作。
 11. **收集测试结果**：Worker 报告必须含规定测试的运行结果（REPORTING_STANDARD）；契约测试 + JVM 测试为验收硬条件。
@@ -42,16 +44,20 @@
 
 ## 3. Session governance
 
-ORCHESTRATION_GOVERNANCE_POLICY.md 是 Matt Pocock workflow assignment、Model Selection、
-Delegation、Parallel dispatch、branch/worktree lifecycle 和 Git/push/PR 的唯一事实来源。
-每次创建 Worker 或 Child 前必须先执行其 §2–§6；每次集成、cleanup 或发布前执行其 §7–§8。
+ENGINEERING_HANDOFF.md §4A 是 Model Selection / Risk-based routing 的唯一事实来源；
+ARTIFACT_ORGANIZATION_POLICY.md 是 artifact 与 repository organization 的唯一事实来源；
+ORCHESTRATION_GOVERNANCE_POLICY.md 是 Matt Pocock workflow assignment、Delegation、
+Parallel dispatch、branch/worktree lifecycle 和 Git/push/PR 的唯一事实来源。每次创建
+Worker 或 Child 前必须先执行 handoff §4A 与治理策略 §2–§6；每次集成、cleanup 或发布前
+执行治理策略 §7–§8。
 已完成的 `wayfinder`、`to-spec`、`to-tickets` 只能在出现新的明确触发条件时重新进入。
 
 ## 4. Git / Branch 策略
 
 ticket branch 命名、独立 worktree、Conventional Commit、`--no-ff` integration、prototype
 边界、cleanup、remote preflight 和 push/PR 纪律均以 ORCHESTRATION_GOVERNANCE_POLICY §7–§8
-为准。Worker 不得直接修改 `main` 或 merge 自己的 branch。
+为准；worktree 的项目目录边界与接手 freshness gate 另见该策略 §7A。Worker 不得直接修改
+`main` 或 merge 自己的 branch。
 
 ## 5. 与用户（HITL）的交互点
 

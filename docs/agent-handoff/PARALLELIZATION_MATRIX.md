@@ -1,7 +1,7 @@
 # 并行化矩阵（Parallelization Matrix）
 
 > 依据：工单依赖图 + 计划模块归属（仓库尚无代码，模块为 ADR-0002 三层划分派生的**计划模块**；首批票落地后由 Orchestrator 校准本表）。
-> 冲突面：LOW = 不同模块/不同文件；MEDIUM = 共享测试套件或数据文件；HIGH = 同一模块核心文件。Required capability 是 dispatch floor；实际模型与 reasoning 只按 ORCHESTRATION_GOVERNANCE_POLICY.md §3 选择。本表不能自动批准并行，六项并行 gate 见该策略 §6。
+> 冲突面：LOW = 不同模块/不同文件；MEDIUM = 共享测试套件或数据文件；HIGH = 同一模块核心文件。Risk/model routing 以 `ENGINEERING_HANDOFF.md` §4A 为准；本表只记录已知路由提示，`needs-triage` 工单不得预设具体模型。本表不能自动批准并行，六项并行 gate 见 `ORCHESTRATION_GOVERNANCE_POLICY.md` §6。
 
 ## 1. 计划模块归属表
 
@@ -25,23 +25,23 @@
 
 ## 2. 工单矩阵
 
-| Ticket | Dependencies | Blocked by | 冲突面 | Owned modules | Forbidden modules | Can parallel? | 推荐批次 | Required capability |
+| Ticket | Dependencies | Blocked by | 冲突面 | Owned modules | Forbidden modules | Can parallel? | 推荐批次 | Risk / routing note |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 25 Guest资产基线 | — | 无 | —（首票） | guest-assets/ | 其余全部 | 否（serial-first） | B0 | L4 |
-| 26 第一切片 | 25 | 25 | guest-assets 为受限下游例外；tests/contract 为基线热点 | contract, instance, distro, capability, engine-qemu, bridge, ui, terminal, app（最小 runtime/native packaging）, tools/qemu-android, guest-assets（仅 second-stage/bridge/正常二次启动） | engine-avf；Ticket 25 kernel/capability、既有 Alpine tarball pin、reproducibility baseline；后续 27–33 功能 | 否（serial） | B0 | L4 |
-| 27 出站网络 | 26 | 26 | 与 29 同模块（先后解）；与 28/30 LOW | engine-qemu(网络), contract, ui(徽章无), tests | engine-avf, storage | 是（B1 组内） | B1 | L3 |
-| 28 停止/冷恢复 | 26 | 26 | bridge(power) + instance recovery state；与 30 LOW（guest-assets 不同文件域） | bridge, instance, contract, ui, tests, guest-assets（仅 agent power/进程测试） | engine-avf, storage, initramfs/Provisioning/kernel/inputs lock | 是（B1 组内） | B1 | L3 |
-| 30 只读共享 | 26 | 26 | 9p 数据面 + guest-assets 装配配置（与 28/32 LOW-MEDIUM） | engine-qemu(9p), bridge(数据面), guest-assets(挂载), contract, tests | engine-avf, network | 是（B1 组内） | B1 | L3 |
-| 29 端口转发 | 27 | 27 | engine-qemu 网络层（与 27 串行后无冲突）；network/ + ui 规则编辑 | engine-qemu(hostfwd), network, ui, contract, tests | engine-avf, storage | 是（B2 组内） | B2 | L3 |
-| 31 桥接补全 | 28 | 28 | bridge 命令集 + 白名单修订 | bridge, ui(通知), contract, tests | engine-avf, storage | 是（B2 组内） | B2 | L3 |
-| 32 Debian | 26,27 | 26,27 | guest-assets 风味 + distro 数据（与 30 的装配配置 MEDIUM——错峰或文件分域） | guest-assets(Debian 风味), distro, tests | engine-avf | 是（B2 组内） | B2 | L3 |
-| 33 导出/扩容 | 28 | 28 | storage/ + ui | storage, ui, tests | engine-avf, engine-qemu(仅读接口) | 是（B2 组内） | B2 | L3 |
-| 34 AVF 策略 | 26,17 | 26,17 | engine-avf + capability + contract 注册（此时 27–33 可已合入，注意 rebase） | engine-avf, capability, bridge(vsock 传输), contract, ui(向导/徽章), tests | storage | 否（serial） | B3 | L4 |
-| 36 AVF网络/转发对齐 | 34,27,29 | 34,27,29 | engine-avf + tests/contract（与 37 HIGH——建议串行 36→37） | engine-avf(网络/vsock 隧道), tests | storage, engine-qemu | 否（与 37 串行） | B4 | L4 |
-| 37 AVF共享/恢复/桥接对齐 | 34,28,30,31 | 34,28,30,31 | engine-avf(9p-over-vsock 自研服务端——最大件) + tests | engine-avf, bridge, tests | engine-qemu | 否（36 之后） | B4 | L4 |
-| 35 硬化 | 26–33,36,37,18 | 全部+P2 | app/ + 全局走查（无并行对象） | app, ui, 全局 | — | 否（最后） | B5 | L4 |
-| 17 P1 AVF e2e（prototype） | 需用户真机 | — | 无（不进主干） | 临时分支/实验目录 | 主干全部 | 是（随时） | B2 起（可提前） | L4 |
-| 18 P2 QEMU 基线（prototype） | 25/26 产出 | 26 | 无（实验分支） | 实验分支 | 主干全部 | 是（26 后随时） | B1 起 | L4 |
+| 25 Guest资产基线 | — | 无 | —（首票） | guest-assets/ | 其余全部 | 否（serial-first） | B0 | 已 completed；不重新路由 |
+| 26 第一切片 | 25 | 25 | guest-assets 为受限下游例外；tests/contract 为基线热点 | contract, instance, distro, capability, engine-qemu, bridge, ui, terminal, app（最小 runtime/native packaging）, tools/qemu-android, guest-assets（仅 second-stage/bridge/正常二次启动） | engine-avf；Ticket 25 kernel/capability、既有 Alpine tarball pin、reproducibility baseline；后续 27–33 功能 | 否（serial） | B0 | Risk 2–3；Luna Max；复杂调试 Sol High；架构阻塞 Sol XHigh |
+| 27 出站网络 | 26 | 26 | 与 29 同模块（先后解）；与 28/30 LOW | engine-qemu(网络), contract, ui(徽章无), tests | engine-avf, storage | 是（B1 组内） | B1 | needs-triage；scope/risk 后定 |
+| 28 停止/冷恢复 | 26 | 26 | bridge(power) + instance recovery state；与 30 LOW（guest-assets 不同文件域） | bridge, instance, contract, ui, tests, guest-assets（仅 agent power/进程测试） | engine-avf, storage, initramfs/Provisioning/kernel/inputs lock | 是（B1 组内） | B1 | needs-triage；scope/risk 后定 |
+| 30 只读共享 | 26 | 26 | 9p 数据面 + guest-assets 装配配置（与 28/32 LOW-MEDIUM） | engine-qemu(9p), bridge(数据面), guest-assets(挂载), contract, tests | engine-avf, network | 是（B1 组内） | B1 | needs-triage；scope/risk 后定 |
+| 29 端口转发 | 27 | 27 | engine-qemu 网络层（与 27 串行后无冲突）；network/ + ui 规则编辑 | engine-qemu(hostfwd), network, ui, contract, tests | engine-avf, storage | 是（B2 组内） | B2 | needs-triage；scope/risk 后定 |
+| 31 桥接补全 | 28 | 28 | bridge 命令集 + 白名单修订 | bridge, ui(通知), contract, tests | engine-avf, storage | 是（B2 组内） | B2 | needs-triage；scope/risk 后定 |
+| 32 Debian | 26,27 | 26,27 | guest-assets 风味 + distro 数据（与 30 的装配配置 MEDIUM——错峰或文件分域） | guest-assets(Debian 风味), distro, tests | engine-avf | 是（B2 组内） | B2 | needs-triage；scope/risk 后定 |
+| 33 导出/扩容 | 28 | 28 | storage/ + ui | storage, ui, tests | engine-avf, engine-qemu(仅读接口) | 是（B2 组内） | B2 | needs-triage；scope/risk 后定 |
+| 34 AVF 策略 | 26,17 | 26,17 | engine-avf + capability + contract 注册（此时 27–33 可已合入，注意 rebase） | engine-avf, capability, bridge(vsock 传输), contract, ui(向导/徽章), tests | storage | 否（serial） | B3 | needs-triage；scope/risk 后定 |
+| 36 AVF网络/转发对齐 | 34,27,29 | 34,27,29 | engine-avf + tests/contract（与 37 HIGH——建议串行 36→37） | engine-avf(网络/vsock 隧道), tests | storage, engine-qemu | 否（与 37 串行） | B4 | needs-triage；scope/risk 后定 |
+| 37 AVF共享/恢复/桥接对齐 | 34,28,30,31 | 34,28,30,31 | engine-avf(9p-over-vsock 自研服务端——最大件) + tests | engine-avf, bridge, tests | engine-qemu | 否（36 之后） | B4 | needs-triage；scope/risk 后定 |
+| 35 硬化 | 26–33,36,37,18 | 全部+P2 | app/ + 全局走查（无并行对象） | app, ui, 全局 | — | 否（最后） | B5 | needs-triage；scope/risk 后定 |
+| 17 P1 AVF e2e（prototype） | 需用户真机 | — | 无（不进主干） | 临时分支/实验目录 | 主干全部 | 是（随时） | B2 起（可提前） | Risk 4–5；Sol XHigh；必要时 Sol Max |
+| 18 P2 QEMU 基线（prototype） | 25/26 产出 | 26 | 无（实验分支） | 实验分支 | 主干全部 | 是（26 后随时） | B1 起 | Risk 3–4；设计 Sol High；采集 Luna Max；结论 Sol XHigh |
 
 ## 3. 批次计划
 
