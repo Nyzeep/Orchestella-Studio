@@ -1,6 +1,6 @@
 # DroidLayer 工程交接文档（Engineering Handoff）
 
-> 版本：1.0（2026-09-05）｜ 交接方：Planning/Architecture Agent ｜ 接收方：Codex Orchestrator Agent
+> 版本：1.2（2026-09-07）｜ 交接方：Planning/Architecture Agent ｜ 接收方：Codex Orchestrator Agent
 > 性质：**交接入口，不是事实源**（见 §0）。
 
 ## 0. 事实优先级（最终接管原则）
@@ -70,6 +70,146 @@ MVP 范围：Full Linux；Alpine + Debian；终端 only；QEMU + AVF 双策略�
 | **需真机原型** | 只能靠设备实验 | 票 17（P1 AVF e2e）、票 18（P2 QEMU/TCG 基线） |
 
 **Worker 绝对不能自行修改的内容**：ADR 内容与 status；CONTEXT.md 词条；spec.md 的承诺；暴露面白名单；桥接命令集（走版本流程）；已关闭 decision 票的结论。修改的唯一通道 = 架构变更门（ARCHITECTURE_CHANGE_POLICY.md）。
+
+## 4A. Agent / Model Selection Policy
+
+> 本节是所有后续 Agent session 的**模型路由单一事实来源**。`ORCHESTRATION_GOVERNANCE_POLICY.md` 负责把本节结论落实到 dispatch packet、委派和生命周期；它不得覆盖本节的模型选择。模型能力是任务匹配依据，不是工程决策权限。
+
+### Purpose
+
+模型按 **risk / cost of error** 路由，而不是按代码行数、文件数量或 ticket 大小路由。路由至少考虑不可逆性、blast radius、验证成本、系统边界和错误的补救代价。
+
+### Source of Truth
+
+- repo、tracker、已批准 ADR、spec 和当前工作树提供工程事实；它们的优先级仍以 §0 为准。
+- 《DroidLayer × GPT-5.6 模型选择报告》是本策略的输入，不是产品事实源，也不能覆盖 repo、tracker、ADR 或 spec。
+- **Model capability determines who should handle a task; it does not determine who is allowed to change the project's decisions.** 更强模型同样不能自行改变产品需求、ADR、spec 承诺、架构边界或 ticket scope。
+- **A worker executes approved intent; it does not silently redefine approved intent.** 发现冲突时必须停止并升级，不得以“实现困难”为理由顺手改设计。
+
+### Default Roles
+
+| 角色 | 默认模型 / reasoning | 职责边界 |
+| --- | --- | --- |
+| Primary Agent / Orchestrator | `GPT-5.6 Sol / High` | 读取事实、形成计划和 invariants、选择风险路由、创建 dispatch packet、协调验证与集成；不因此获得改写产品决策的权力 |
+| Implementation Worker | `GPT-5.6 Luna / Max` | 在已批准 scope、ADR、spec 和 packet 内实现；不得自行改变架构、产品语义或扩大 scope |
+| Architecture / Security Reviewer | `GPT-5.6 Sol / XHigh` | 审查跨边界、架构、安全、契约、生命周期和存储完整性风险；发现冲突时冻结实现并升级 |
+| Critical Auditor | `GPT-5.6 Sol / Max` | 处理 critical decision、catastrophic-risk、最终架构/安全审计；必须保持独立，不由原 Worker 自我宣布通过 |
+| Fallback / Second Opinion | `GPT-5.6 Terra` | 仅作可用性 fallback 或独立 second opinion；不是默认主 Agent，具体 reasoning 必须随 packet 记录 |
+
+默认角色不是强制每个 ticket 都调用的流水线。低风险任务可以直接进入 Worker → tests → review；高风险任务才增加规划、升级和独立审计。
+
+### Risk-Based Routing
+
+| Risk | 典型工作 | 默认路由 |
+| --- | --- | --- |
+| **Risk 0 — Mechanical** | formatting、文档、boilerplate、简单 DTO/日志、简单测试生成、已明确设计下的机械修改 | `GPT-5.6 Luna / Max` |
+| **Risk 1 — Normal implementation** | 已明确 ADR/spec 的 feature、普通 Kotlin implementation、明确接口下的 adapter、普通 bug fix/test repair | `GPT-5.6 Luna / Max` |
+| **Risk 2 — Integration / Multi-file** | 跨模块实现、runtime wiring、Android ↔ native integration、QEMU integration、bridge、networking、storage、lifecycle | 默认 `GPT-5.6 Luna / Max`；必要时升级 `GPT-5.6 Sol / High` |
+| **Risk 3 — Complex Engineering** | 跨 domain implementation、complex debugging、tricky runtime interaction、困难 integration、涉及多个已批准 contract 的修改 | `GPT-5.6 Sol / High` |
+| **Risk 4 — Architecture / Security / System Boundary** | AVF、pKVM、QEMU architecture、guest kernel contract、host ↔ guest boundary、security、capability matrix、lifecycle semantics、storage integrity、runtime contract | `GPT-5.6 Sol / XHigh`；必要时升级 `Max` |
+| **Risk 5 — Critical Decision / Audit** | 修改 accepted ADR 核心结论、产品边界、data corruption risk、security-critical change、architecture rewrite、最终安全/架构审计、高风险 AVF 结论 | `GPT-5.6 Sol / Max`，并要求第二个独立 review / audit |
+
+`Risk` 是 task risk，不是模型权限等级；同一 ticket 的不同子任务可以有不同 Risk。选择理由必须记录在 dispatch packet 中。
+
+### Escalation Rules
+
+出现以下任一情况，Worker 必须停止越界修改、保留证据并升级，不能“顺手调整设计”：
+
+- ADR 与代码冲突，或 spec 与实现要求冲突；
+- 当前 ticket 需要改变产品语义、产品边界、已批准 contract 或 dependency graph；
+- 发现新的 security boundary，或 AVF 行为与预期不一致；
+- kernel contract、host ↔ guest contract、data persistence semantics 需要变化；
+- benchmark 结果可能改变 acceptance criteria；
+- 现有 contract 无法解决问题，或出现 architecture smell。
+
+一般复杂性、integration blocker 或难调试问题升级到 `GPT-5.6 Sol / High`。涉及 architecture、security、AVF、kernel、data integrity 或 accepted ADR 变化时升级到 `GPT-5.6 Sol / XHigh`；critical decision 或最终审计使用 `GPT-5.6 Sol / Max`，并形成新的决策记录和独立审计结论。
+
+模型切换不能制造不存在的 infrastructure capability。当前 `vctl` builder 崩溃属于真实环境 blocker；Agent 可以分析、记录和升级它，但不得把“换模型”写成 blocker 已解决，更不得因此声称 Ticket 26 完成。
+
+### Worker Constraints
+
+- Worker 只能执行 approved intent：不得改 ADR、spec、CONTEXT、产品需求、accepted contract、ticket status 或 ticket scope；不得因模型更强而获得例外。
+- Worker 不得自行降 reasoning、换模型、重新定义主要 workflow 或让实现结果反向成为架构决策；不确定时停止并回报 Orchestrator。
+- Orchestrator 也不能以模型选择替代用户/架构变更门的裁决。任何新决策必须走 `ARCHITECTURE_CHANGE_POLICY.md`。
+- 已经 active 的 session 不因本节自动换模型或重派；若需要新的 Worker、review 或 escalation，按本节和当前真实状态重新形成 packet。
+
+### Review Policy
+
+推荐工作流如下；它是按风险选择的工作方式，不是每个 ticket 的强制调用清单：
+
+```text
+Planner / Orchestrator
+        ↓
+   Sol High
+        ↓
+Approved plan / invariants
+        ↓
+Implementation
+        ↓
+Luna Max
+        ↓
+Tests / CI
+        ↓
+Review
+        ↓
+Sol High
+        ↓
+Critical?
+   ┌────┴────┐
+   │         │
+   No       Yes
+   │         │
+   ▼         ▼
+ Merge    Sol XHigh/Max
+```
+
+- Risk 0–1 可采用 `Luna Max → tests → review`；Risk 2–3 通常采用 `Sol High（规划/复杂问题）→ Luna Max → tests → Sol High review`。
+- Risk 4–5 必须由 Sol 参与规划/审查；涉及 critical decision、security 或 architecture 的结论不得由同一个 Agent 自己宣布通过。
+- Benchmark 必须坚持 `raw data → deterministic threshold → acceptance`；不能用 LLM opinion 替代真机数据或验收门槛。
+- Review 的模型和 reasoning 也必须写入 packet；reviewer 必须独立于被审查 Worker，必要时升级到 `Sol XHigh/Max`。
+
+### Current Ticket Routing
+
+以下是本次 handoff 更新所依据的当前项目路由快照；它记录事实和建议模型，不改变任何 ticket 状态，也不替 active worktree 自动重派 Worker。
+
+| Ticket | 当前事实 | Risk | 模型路由 |
+| --- | --- | --- | --- |
+| **26** | `ready-for-agent`；独立 worktree 为 `active`；`active` 不代表完成；尚未通过端到端验收；当前被本地 `vctl` builder 崩溃阻塞 | **Risk 2–3** | implementation：`GPT-5.6 Luna / Max`；complex debugging：`GPT-5.6 Sol / High`；architecture violation / unresolved blocker：`GPT-5.6 Sol / XHigh`。不得用换模型伪装解除 builder blocker，绝对不得标记 `completed` |
+| **17 — AVF E2E** | `open`；涉及 AVF 真机和 Android system boundary | **Risk 4–5** | `GPT-5.6 Sol / XHigh`；必要时 `GPT-5.6 Sol / Max`，并保留独立审计 |
+| **18 — QEMU / TCG benchmark** | `open`；其 raw data 是最终性能验收依据 | **Risk 3–4** | design / methodology：`GPT-5.6 Sol / High`；implementation / data collection：`GPT-5.6 Luna / Max`；result interpretation：`GPT-5.6 Sol / High`；architectural / acceptance conclusion：`GPT-5.6 Sol / XHigh`，必要时升级 |
+| **25** | `completed`，已 merge 到 `main` | 不再路由 | 仅作为 precedent、architecture reference 和 completed baseline，不重新纳入开发 routing |
+| **27–37** | 当前均为 `needs-triage` | 未定 | 不提前指定具体模型；待 ticket scope、risk、verification cost 明确后再路由 |
+
+当前下一里程碑仍是：让 Ticket 26 在合规 Linux builder 路径上完成真实 QEMU/Android 构建、APK supply-chain gate 与 ARM64 真机验收。
+
+### Facts vs Policy
+
+- **事实**：Ticket 状态、worktree 状态、builder blocker、ADR/spec 是否 accepted、benchmark 原始数据和真实设备结果；这些必须回到 repo、tracker、Git 和外部证据核对。
+- **Policy**：上表的 Risk 分类、默认模型、升级条件、Worker 限制和 review/audit 路径；它不能把建议变成事实，也不能改变事实。
+
+### Important Non-Goals
+
+- 本节不是新的架构决策、产品需求、验收标准或 ticket 放行。
+- 本节不授权任何 Agent 修改 ADR、spec、tracker 状态、dependency graph、生产代码或宿主环境。
+- 本节不要求所有 ticket 使用最强模型，也不以代码量推断风险；模型只服务于已批准的工程意图。
+
+## 4B. Artifact & Repository Organization
+
+所有后续 Session 在创建文件、报告、证据、实验产物或生成输出前，必须遵守
+`docs/agent-handoff/ARTIFACT_ORGANIZATION_POLICY.md`。该文件是 artifact 与 repository
+organization 的唯一 policy；本 handoff 只提供入口，不复制其完整内容。Worker/Child 必须
+使用 packet 指定的 canonical path，生成物与临时资源必须与 source-controlled evidence 分离。
+
+## 4C. Project Directory Boundary & Worktree Freshness
+
+Git worktree 的目录边界、创建/迁移命令和接手前 freshness verification 以
+`ORCHESTRATION_GOVERNANCE_POLICY.md` §7A 为唯一 policy。允许的项目工作区是
+`D:\Development project(开发项目)\DroidLayer开发目录\*`；不得新建注册在
+`D:\Development project(开发项目)\DroidLayer\worktrees\*` 下的 active Git worktree。
+外部资源根仍按 `HOST_ENVIRONMENT_POLICY.md` 使用，历史路径和审计记录不因本规则批量删除。
+任何 Agent 接手已有 worktree，必须重新报告 registered/physical path、HEAD、branch、
+upstream、与 main 的关系、dirty/clean、diff、untracked、ignored 和 recent log；handoff
+中的旧 HEAD 不能替代当前 Git 核验。
 
 ## 5. 仓库与 Git 状态（核实于 2026-09-05）
 
@@ -172,7 +312,9 @@ P1/P2 的全部待测项；OTA 通道形态；benchmark 验收数字；Compatibi
 | 研究 | `docs/research/` |
 | tracker/labels/domain 规则 | `docs/agents/issue-tracker.md`、`triage-labels.md`、`domain.md` |
 | 编排流程 | `docs/agent-handoff/TICKET_EXECUTION_GUIDE.md` |
-| 会话、模型、委派、并行与工作树治理 | `docs/agent-handoff/ORCHESTRATION_GOVERNANCE_POLICY.md` |
+| 模型选择与 Agent 路由（唯一 policy） | 本节 §4A |
+| 会话、委派、并行与工作树治理 | `docs/agent-handoff/ORCHESTRATION_GOVERNANCE_POLICY.md` |
+| Artifact 与仓库组织（唯一 policy） | `docs/agent-handoff/ARTIFACT_ORGANIZATION_POLICY.md` |
 | Worker 约束 | `docs/agent-handoff/AGENT_WORKER_CONTRACT.md` |
 | 并行矩阵 | `docs/agent-handoff/PARALLELIZATION_MATRIX.md` |
 | 报告规范 | `docs/agent-handoff/REPORTING_STANDARD.zh-CN.md` |
@@ -182,13 +324,13 @@ P1/P2 的全部待测项；OTA 通道形态；benchmark 验收数字；Compatibi
 
 ## 15. 新 Agent 接管 Checklist
 
-1. 读本文档 + spec.md + map.md（低分辨率地图）。
+1. 读本文档 + spec.md + map.md（低分辨率地图），并阅读 `ARTIFACT_ORGANIZATION_POLICY.md`。
 2. 核对 tracker：`ls .scratch/droidlayer-platform/issues/` 与 §9 表一致；`git log` 确认无未预期提交。
 3. 读 CONTEXT.md（词汇表）与 AGENTS.md（工作约束）。
 4. 抽读 ADR-0001/0002/0009/0010（架构骨架）。
 5. 确认 15 张 open 工单状态与依赖（PARALLELIZATION_MATRIX.md）。
 6. 以当前 tracker 确认候选票的真实状态与用户放行；不得从本文件的历史快照推导启动授权。
-7. 按 TICKET_EXECUTION_GUIDE.md 与 ORCHESTRATION_GOVERNANCE_POLICY.md 创建 dispatch packet，只启动 `ready-for-agent` 且已获放行的 ticket；已完成票不得重新启动。
+7. 先按本节 §4A 确定 session role、Risk、model 与 reasoning，再按 `ARTIFACT_ORGANIZATION_POLICY.md` 确定 report/evidence/output 路径，最后按 TICKET_EXECUTION_GUIDE.md 与 ORCHESTRATION_GOVERNANCE_POLICY.md 创建 dispatch packet；只启动 `ready-for-agent` 且已获放行的 ticket，已完成票不得重新启动。
 8. 遇到与 ADR/现实冲突 → 走 ARCHITECTURE_CHANGE_POLICY.md，不静默改。
 
 ## 16. 交接勘误区（随发现随登记）
