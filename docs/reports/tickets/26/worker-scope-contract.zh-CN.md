@@ -1,10 +1,10 @@
 # Ticket 26 实施前 Scope Contract
 
-> 状态：**pre-dispatch contract，不构成 Worker 派工或 implementation 授权。**
+> 状态：**verified pre-dispatch contract；本身不构成 Worker 领取或产品验收。**
 >
-> 本契约于 2026-09-07 为 Ticket 26 readiness blocker resolution 创建。Ticket 26 当前因
-> 真机/HITL 条件保持 blocked；只有未来 re-audit 为 PASS 后，Orchestrator 才能据此形成
-> 独立 Dispatch Packet、branch 和 worktree。
+> 本契约于 2026-09-07 为 Ticket 26 readiness blocker resolution 创建。随后 re-audit-2 已
+> 验证 B4 的真机资格与 USB ADB 证据，Ticket 26 现为 ready-for-agent；只有 Orchestrator
+> 形成独立 Dispatch Packet、branch 和 worktree 后，Worker 才可领取。
 
 - 票号/标题：26 — 第一垂直切片：创建 Alpine 实例并进入 shell（QEMU 档）
 - 已批准事实源：ADR-0001/0002/0004/0005/0006/0007/0009/0010/0011/0014/0016、Ticket 26
@@ -115,15 +115,18 @@ Ticket 28 在进程死亡后对账的输入，不是 Ticket 26 对该异常边�
    模拟器提示及 supply-chain gates）必须保留脱敏原始证据。JVM/contract/Gradle 测试不能代替
    此项；进程强杀后的状态对账由 Ticket 28 验收。
 
-## 6. 当前外部 unblock condition（B4）
+## 6. 已验证的外部条件（B4）
 
-尚未满足：一台经用户授权、未 Root 的实体 Android 设备，并有可重复、可取证的部署/日志
-路径。记录至少包括 API ≥26、arm64-v8a、RAM ≥3 GiB、可用存储、设备身份信息，以及
-APK hash/commit。若采用 ADB，须先有可审计的 Platform Tools 路径、USB debugging/RSA
-授权；不得修改 system PATH 或擅自安装 OEM driver。
+2026-09-07 的 re-audit-2 已记录一台用户提供、USB 连接且已 RSA 授权的实体设备：API 35、
+arm64-v8a、约 11.03 GiB RAM，并有可用存储和脱敏设备标识。现有
+D:\手机调试与开发相关\platform-tools\adb.exe（Platform Tools 37.0.1）已实际发现设备并完成
+只读属性查询；详见 docs/reports/orchestration/ticket-26-readiness-reaudit-2.zh-CN.md。
 
-详见 docs/research/2026-09-07-ticket-26-device-acceptance-feasibility.md。在它满足并经
-re-audit PASS 前，不创建 Ticket 26 Worker、branch 或 worktree。
+ADB 是这台主机的真机部署/日志通道，不是 Ticket 26 的产品运行时依赖，也不需要 vendoring
+进仓库。Worker 每次使用该通道前必须重新运行其 version 与 devices -l 检查；不得改 system
+PATH、安装 Platform Tools/OEM driver 或将旧的 PATH ADB 当作等价工具。未来 APK install、
+外部缓存或其他会产生宿主/设备写入的步骤，仍须先遵守 Host Environment Policy 和 dispatch
+packet 的授权边界。
 
 ## 7. Architecture / dependency decision
 

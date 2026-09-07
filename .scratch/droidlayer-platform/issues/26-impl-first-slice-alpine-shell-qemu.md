@@ -1,13 +1,13 @@
 # 26: 第一垂直切片——创建 Alpine 实例并进入 shell（QEMU 档）
 
 Type: implementation
-Status: blocked
+Status: ready-for-agent
 Blocked by: 25
 Scope contract: docs/reports/tickets/26/worker-scope-contract.zh-CN.md
 
-> 当前解除条件：Ticket 25 已完成；但本票 Acceptance criteria 的 arm64 真机/HITL 条件尚未被
-> 证实。详见 docs/research/2026-09-07-ticket-26-device-acceptance-feasibility.md。在该条件
-> 满足且新的 readiness re-audit 为 PASS 前，不得创建本票 Worker、branch 或 worktree。
+> 当前 readiness：Ticket 25 已完成，且 arm64 真机/HITL 的资格与可取证 USB ADB 通道已由
+> docs/reports/orchestration/ticket-26-readiness-reaudit-2.zh-CN.md 记录为 PASS。该结论仅
+> 允许形成 dispatch packet 并派发本票；它不表示任何产品 Acceptance criterion 已通过。
 
 ## What to build
 
