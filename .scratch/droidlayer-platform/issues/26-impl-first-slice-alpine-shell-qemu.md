@@ -1,7 +1,13 @@
 # 26: 第一垂直切片——创建 Alpine 实例并进入 shell（QEMU 档）
 
 Type: implementation
-Status: needs-triage
+Status: blocked
+Blocked by: 25
+Scope contract: docs/reports/tickets/26/worker-scope-contract.zh-CN.md
+
+> 当前解除条件：Ticket 25 已完成；但本票 Acceptance criteria 的 arm64 真机/HITL 条件尚未被
+> 证实。详见 docs/research/2026-09-07-ticket-26-device-acceptance-feasibility.md。在该条件
+> 满足且新的 readiness re-audit 为 PASS 前，不得创建本票 Worker、branch 或 worktree。
 
 ## What to build
 
@@ -9,20 +15,38 @@ Status: needs-triage
 
 **本票同时建立最小桥接基座**（ADR-0009 的落地起点）：传输无关协议 v1 的握手、版本协商、per-VM token 校验、ping 与终端通道（控制面）；数据面通道结构预留。后续票（28/29/30/31）在此基座上扩展命令，不再各自搭通道。
 
-**Blocked by:** 25
-
 ## Acceptance criteria
 
 - [ ] 真机（arm64、RAM≥3GB）从安装到 shell 的全流程可重复，全程无 Root
 - [ ] tarball 校验失败时创建被拒绝并给出明确原因
-- [ ] 实例可优雅退出并再次启动；数据在重启后仍在
+- [ ] guest 自主正常关机后，实例可从同一 Root Volume 再次启动；数据仍在
 - [ ] 桥接握手/版本协商/token 校验在真机通过；token 错误时命令被拒绝
-- [ ] 性能徽章正确显示；实例状态（运行中/已停止）跨应用重启持久
+- [ ] 性能徽章正确显示；正常 RUNNING/STOPPED 转换写入持久元数据，并在宿主进程仍存活时跨
+  UI/Activity 重建正确显示。App 进程死亡后的状态对账与 cold restore 仅属 Ticket 28
 - [ ] 模拟器环境给出清晰提示
+- [ ] QEMU 的 official source pin、签名/校验、Android/NDK build、arm64 ABI、APK/
+  nativeLibraryDir、runtime artifact integrity、GPL/NOTICE 与 CI gate 满足
+  QEMU_JNI_SUPPLY_CHAIN_POLICY.md；任一 gate 失败即拒绝交付
 
 ## Test strategy
 
-契约测试 v0（实例生命周期、终端通道、桥接握手——针对 Full Linux 契约，为 34 的 AVF 实现复用做准备）；实例状态机与 DistroManifest 校验 JVM 测试；真机冒烟清单。
+契约测试 v0（实例生命周期、终端通道、桥接握手——针对 Full Linux 契约，为 34 的 AVF
+实现复用做准备）；实例状态机与 DistroManifest 校验 JVM 测试；二阶段 guest smoke；QEMU
+供应链 policy 的 provenance、two-clean-build、ELF/closure、16 KB、APK/tamper/GPL gates；
+以及真机冒烟清单。JVM/contract/Gradle 测试不能替代真机验收。
+
+## Scope boundary
+
+本票仅建立正常路径的基础：创建 Instance / Root Volume / Distro 引用、单运行实例约束、正常
+STOPPED ↔ RUNNING 转换记录的持久化（仅保证宿主进程存活时 UI/Activity 重建对该记录的正确
+显示）、首次 Provisioning、正常启动、guest 自主正常关机后的 STOPPED 识别、同根盘二次启动、
+Bridge handshake/version/token/ping/terminal/resize 基座。
+
+本票不实现 host/UI 发起的 power、shutdown acknowledgement/timeout、App 进程死亡后旧状态
+记录的对账或 UI 一致性、cold restore/stale-state reconciliation、VMM 异常终止标记或日志
+导出；这些均属于 Ticket 28。普通二次启动不是 cold restore；“跨 UI/Activity 重建”也不是
+“App 进程死亡后重启”；Session exit 不等于 Instance 停止。精确 ownership、guest-assets 窄
+例外、QEMU pipeline 和 forbidden scope 以 scope contract 为准。
 
 ## Prototype/research dependency
 

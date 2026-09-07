@@ -7,9 +7,9 @@
 
 | 模块域 | 内容 | 主要属主票 |
 | --- | --- | --- |
-| `guest-assets/` | 内核 config、initramfs、Provisioning 逻辑、SHA256 清单 | 25（创建） |
+| `guest-assets/` | 内核 config、initramfs、Provisioning 逻辑、SHA256 清单 | 25（构建基线）；26（仅 second-stage/bridge、正常二次启动）；28（仅 agent power）；30/32 按各自风味/挂载扩展 |
 | `runtime/contract` | Full Linux 契约定义与契约测试套件 | 26（创建），27–31/34/36/37 扩展 |
-| `runtime/instance` | 实例模型、状态机、元数据 | 26（创建），28 扩展 |
+| `runtime/instance` | 实例模型、状态机、元数据 | 26（创建正常转换记录与基线）；28（App 进程死亡后的对账、恢复与异常扩展） |
 | `runtime/distro` | DistroManifest、校验 | 26（创建），32 扩展 |
 | `runtime/capability` | 能力矩阵、检测、引擎选择 | 26（创建），34 扩展 |
 | `runtime/engine-qemu` | QEMU 执行策略（SLIRP、QMP、磁盘、通道） | 26（创建），27/29/30 扩展 |
@@ -19,7 +19,8 @@
 | `storage/` | 根盘管理、扩容、导出 | 33 |
 | `ui/` | 实例列表、创建向导、授权向导、规则编辑、设置 | 26（最小面），27–31/33/35 扩展 |
 | `terminal/` | 终端会话/视图 | 26 |
-| `app/` | 应用装配、设置、更新检查 | 35 |
+| `tools/qemu-android/` | QEMU source lock、Android/NDK build、artifact manifest、GPL records 与 CI gate | 26（创建） |
+| `app/` | 最小 runtime/native packaging 与 Android manifest 接线；全局装配、设置、更新检查 | 26（最小接线），35（全局硬化/装配） |
 | `tests/contract` | 契约测试套件 | 全部策略票扩展（共享文件——冲突热点） |
 
 ## 2. 工单矩阵
@@ -27,9 +28,9 @@
 | Ticket | Dependencies | Blocked by | 冲突面 | Owned modules | Forbidden modules | Can parallel? | 推荐批次 | Required capability |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 25 Guest资产基线 | — | 无 | —（首票） | guest-assets/ | 其余全部 | 否（serial-first） | B0 | L4 |
-| 26 第一切片 | 25 | 25 | — | contract, instance, distro, capability, engine-qemu, bridge, ui, terminal（初始骨架） | engine-avf | 否（serial） | B0 | L4 |
+| 26 第一切片 | 25 | 25 | guest-assets 为受限下游例外；tests/contract 为基线热点 | contract, instance, distro, capability, engine-qemu, bridge, ui, terminal, app（最小 runtime/native packaging）, tools/qemu-android, guest-assets（仅 second-stage/bridge/正常二次启动） | engine-avf；Ticket 25 kernel/capability、既有 Alpine tarball pin、reproducibility baseline；后续 27–33 功能 | 否（serial） | B0 | L4 |
 | 27 出站网络 | 26 | 26 | 与 29 同模块（先后解）；与 28/30 LOW | engine-qemu(网络), contract, ui(徽章无), tests | engine-avf, storage | 是（B1 组内） | B1 | L3 |
-| 28 停止/冷恢复 | 26 | 26 | bridge(power) + instance 状态机；与 30 LOW（guest-assets 装配配置） | bridge, instance, contract, ui, tests | engine-avf, storage | 是（B1 组内） | B1 | L3 |
+| 28 停止/冷恢复 | 26 | 26 | bridge(power) + instance recovery state；与 30 LOW（guest-assets 不同文件域） | bridge, instance, contract, ui, tests, guest-assets（仅 agent power/进程测试） | engine-avf, storage, initramfs/Provisioning/kernel/inputs lock | 是（B1 组内） | B1 | L3 |
 | 30 只读共享 | 26 | 26 | 9p 数据面 + guest-assets 装配配置（与 28/32 LOW-MEDIUM） | engine-qemu(9p), bridge(数据面), guest-assets(挂载), contract, tests | engine-avf, network | 是（B1 组内） | B1 | L3 |
 | 29 端口转发 | 27 | 27 | engine-qemu 网络层（与 27 串行后无冲突）；network/ + ui 规则编辑 | engine-qemu(hostfwd), network, ui, contract, tests | engine-avf, storage | 是（B2 组内） | B2 | L3 |
 | 31 桥接补全 | 28 | 28 | bridge 命令集 + 白名单修订 | bridge, ui(通知), contract, tests | engine-avf, storage | 是（B2 组内） | B2 | L3 |
