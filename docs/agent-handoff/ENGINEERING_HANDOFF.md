@@ -172,6 +172,7 @@ P1/P2 的全部待测项；OTA 通道形态；benchmark 验收数字；Compatibi
 | 研究 | `docs/research/` |
 | tracker/labels/domain 规则 | `docs/agents/issue-tracker.md`、`triage-labels.md`、`domain.md` |
 | 编排流程 | `docs/agent-handoff/TICKET_EXECUTION_GUIDE.md` |
+| 会话、模型、委派、并行与工作树治理 | `docs/agent-handoff/ORCHESTRATION_GOVERNANCE_POLICY.md` |
 | Worker 约束 | `docs/agent-handoff/AGENT_WORKER_CONTRACT.md` |
 | 并行矩阵 | `docs/agent-handoff/PARALLELIZATION_MATRIX.md` |
 | 报告规范 | `docs/agent-handoff/REPORTING_STANDARD.zh-CN.md` |
@@ -186,8 +187,8 @@ P1/P2 的全部待测项；OTA 通道形态；benchmark 验收数字；Compatibi
 3. 读 CONTEXT.md（词汇表）与 AGENTS.md（工作约束）。
 4. 抽读 ADR-0001/0002/0009/0010（架构骨架）。
 5. 确认 15 张 open 工单状态与依赖（PARALLELIZATION_MATRIX.md）。
-6. 确认用户放行票 25/26（needs-triage → ready-for-agent 的转换权在用户/Orchestrator）。
-7. 按 TICKET_EXECUTION_GUIDE.md 启动首个 ticket（推荐 25）。
+6. 以当前 tracker 确认候选票的真实状态与用户放行；不得从本文件的历史快照推导启动授权。
+7. 按 TICKET_EXECUTION_GUIDE.md 与 ORCHESTRATION_GOVERNANCE_POLICY.md 创建 dispatch packet，只启动 `ready-for-agent` 且已获放行的 ticket；已完成票不得重新启动。
 8. 遇到与 ADR/现实冲突 → 走 ARCHITECTURE_CHANGE_POLICY.md，不静默改。
 
 ## 16. 交接勘误区（随发现随登记）

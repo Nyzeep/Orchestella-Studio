@@ -1,6 +1,8 @@
 # Worker Agent 强约束合同（Agent Worker Contract）
 
-> 读者：被 Orchestrator 派生的 Worker Agent。本合同是强约束：违反任何"必须"即视为该 session 失败，其产出退回。
+> 读者：被 Orchestrator 派生的 Worker Agent。本合同是强约束：违反任何"必须"即视为该
+> session 失败，其产出退回。session 的 model、reasoning、workflow、Child、worktree 与
+> 发布规则以 ORCHESTRATION_GOVERNANCE_POLICY.md 为准。
 
 ## 1. 职责边界（硬约束）
 
@@ -16,7 +18,9 @@
 10. 必须运行工单规定的测试（契约测试 + JVM 测试 + 票内列明的冒烟），并在报告中给出真实结果——禁止报告未运行的测试。
 11. 必须产出中文报告（REPORTING_STANDARD 格式），无报告不算完成。
 12. 遇到与 ADR/spec 冲突的现实 → 停止实现，走 ARCHITECTURE_CHANGE_POLICY，不得绕行。
-13. 不得直接修改 `main`；不得合并自己的分支（见 Git 策略）。
+13. 不得直接修改 `main`；不得合并自己的分支。
+14. 必须使用 Orchestrator 在 dispatch packet 中预先指定的 workflow、required capability、model 与 reasoning；不得自行降档、换模型或重新定义主要 workflow。
+15. 只能在分配的独立 branch/worktree 内工作；发现 scope、共享文件或环境权限与 packet 不一致时先停止并回报。
 
 ## 2. 交付定义（Definition of Done）
 
@@ -28,22 +32,14 @@
 - [ ] 中文实施报告已写入 `docs/reports/tickets/<ticket-id>/implementation-report.zh-CN.md`
 - [ ] 分支提交历史干净（只含本票工作，Conventional Commits + `[ticket-NN]`）
 
-## 3. Child Agent Policy
+## 3. Child 委派（硬约束）
 
-Worker 可在必要时派生子代理，仅限四类角色：
+ORCHESTRATION_GOVERNANCE_POLICY.md §5 是 Child 的唯一正式 Delegation Policy。Worker 只能
+提出窄 scope Child 的需求，待 Orchestrator 形成并确认 packet 后才可派发；不得自行选择
+Child 的 workflow、capability、model 或 reasoning。
 
-| Child 角色 | 允许的 scope | 输入 | 输出 |
-| --- | --- | --- | --- |
-| **research child** | 只读检索外部资料 | 明确的问题清单 | 研究纪要（带来源），交回 Worker 综合 |
-| **prototype child** | 一次性实验分支/临时目录中的验证代码 | 明确的假设与验证步骤 | 实验数据 + 结论（不进主干） |
-| **review child** | 只读审查 Worker 自己的 diff | diff + 工单验收标准 | 审查意见清单 |
-| **handoff child** | 只读整理上下文 | 指定文档/工单 | 摘要 |
-
-规则：
-
-1. 每个 child 必须有明确的 role、scope、输入、输出（写进派生 prompt）。
-2. **最大委托深度 = 2**（Worker → child；child 不得再派生）。
-3. child 不得领取任何正式 implementation ticket。
-4. child 不得修改产品需求、ADR、CONTEXT.md。
-5. child 不得绕过架构变更门：child 发现冲突 → 回报 Worker → Worker 走门流程。
-6. 环境并发额度受限（本机实测：后台子代理易被并发限制中止）——child 应短小、串行；失败时 Worker 以主线程完成同等工作。
+Child 只能做 packet 指定的 research、prototype、targeted review、test investigation、
+documentation analysis、environment inspection 或其他 narrow supporting work。Child 不得
+领取正式 ticket、修改其他 ticket/ADR/SPEC/CONTEXT/产品需求/dependency graph、修改 `main`、
+merge、push 或继续派生。Child 发现架构冲突时只输出 finding 给 parent；parent 依
+ARCHITECTURE_CHANGE_POLICY 处理。

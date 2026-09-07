@@ -1,7 +1,17 @@
 # 报告规范（Reporting Standard · zh-CN）
 
-> 所有正式 session（implementation / prototype / research / review）完成后必须产出中文报告并提交入库。无报告 = 未完成。
+> 所有正式 session（implementation / prototype / research / review / orchestration）完成后必须产出中文报告并提交入库。无报告 = 未完成。
 > 语言：中文正文，技术术语保留英文。禁止虚报：未运行的测试不得写成已通过。
+
+## 0. 目录、命名与通用必填项
+
+新建独立中文报告默认命名为 `<topic>.zh-CN.md`。已建立的 ticket / review / prototype
+固定路径优先，不能为了统一名称再建平行目录。正式研究结论归档在 `docs/research/`，沿用
+已建立的 `<date>-<topic>.md` 结构；不要另建 `docs/reports/research/` 副本。
+
+除本规范为特定类型给出的字段外，每份正式报告必须说明：背景、scope、实际完成内容、
+未完成内容、修改文件、测试、验证结果、commit、branch、风险、后续动作、是否越界，以及
+是否触发 Architecture Change Policy。无对应项时明确写“无”或“不适用”，不得省略。
 
 ## 1. Implementation 报告（每张票一份）
 
@@ -55,7 +65,7 @@
 
 ## 2. Research 报告（研究票 / 临时研究）
 
-路径：`docs/reports/research/<topic>/research-report.zh-CN.md`；正式研究票的最终结论同时归档 `docs/research/<date>-<topic>.md`。
+路径：`docs/research/<date>-<topic>.md`（正式研究结论的单一归档位置）。
 
 ```markdown
 # 研究报告：<主题>
@@ -97,7 +107,26 @@
 - 结论：approve / request-changes（清单）/ escalate（架构变更门）
 ```
 
-## 5. 通用纪律
+## 5. Orchestration 报告
+
+路径：`docs/reports/orchestration/<topic>.zh-CN.md`（如
+`ticket-26-readiness-audit.zh-CN.md`、`model-policy-audit.zh-CN.md`、
+`delegation-policy-update.zh-CN.md`）。
+
+```markdown
+# 编排报告：<主题>
+- 背景 / scope：
+- branch / 基线 / commit：
+## 实际完成
+## 未完成内容
+## 修改文件
+## 模型、委派、workflow 或 worktree 影响（无则写“无”）
+## 测试与验证结果
+## 风险与后续动作
+## 越界与 Architecture Change Policy 检查
+```
+
+## 6. 通用纪律
 
 1. 报告在 `review` 状态前必须存在；Orchestrator 验收时核对报告与 diff 一致。
 2. 所有路径按本规范入库并随票提交（Conventional Commits：`docs(reports): ... [ticket-NN]`）。
