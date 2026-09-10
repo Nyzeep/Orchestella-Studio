@@ -4,6 +4,8 @@
 - branch / 基线 / commit：main，基线 `4047f8b4832f5d6a347b5d8e8ff8551776c3259b`；本报告所在提交以 Git 历史为准（commit ID 无法在自身内容中自指）。
 - 日期：2026-09-11。
 - workflow：`ask-matt` 路由为 repository health / governance，执行“只读审计 → 小步校正 → 验证 → 独立双轴 review”。
+- 执行 session / 模型 / reasoning：Codex Orchestrator；运行时未向会话披露精确模型标识与 reasoning 档位，故不猜测填写。
+- 委派：两个独立只读 review sub-agent，分别执行 Standards 与 Spec；未委派写入、删除、Git 或 Host 操作。
 
 ## 1. Scope 与授权边界
 
@@ -94,10 +96,25 @@ Ticket 26 branch 更新：
 释放空间为 0 bytes，也没有不可恢复的数据变化。本会话没有使用替代 shell、`.NET` API 或
 其他方式绕过安全控制。若维护者后续人工删除，上表即为经过核验的精确目标；删除将不可恢复。
 
-明确保留且未尝试清理：两条 worktree、所有 `.toolchains`、active Ticket 26 的
-`.gradle/.kotlin/build` cache、`guest-assets/out`、`validation-20260906`、
-canonical `downloads`、`source-audit`、`crx-probe`、`mcr-audit`、全部 root logs、
-APK evidence 与 native CI evidence。后四类不因目录名像临时文件就推定可删。
+明确保留且未尝试清理的目录级摘要如下。`inventory SHA-256` 定义为：逐文件计算 SHA-256，
+生成按相对路径排序的 `path|bytes|file-SHA256` UTF-8 清单，再对该清单计算 SHA-256；它是
+目录内容清单摘要，不冒充单个文件 hash。
+
+| 保留项 | files / bytes | hash / 完整性标识 | 理由 |
+| --- | ---: | --- | --- |
+| main Git tracked tree（review-fix 前 `5125659` checkpoint） | 244 / 939,717 | Git tree `fe770b57db9fbceb59265c7826f6d37272b1be46` | source、ADR、spec、tracker、reports；最终报告 commit 不能在自身内容中自指 |
+| Ticket 26 Git tracked tree | 335 / 1,171,686 | Git tree `3eb7b16af5fc398aa5b2ff60a721242a3dc88407` | active ticket source 与报告 |
+| `DroidLayer_dev/.toolchains/` | 24,582 / 2,700,321,333 | inventory SHA-256 `5A648BCDA72B149A38DC418400EB4FD3CB2B09B3D4A44C37B4AD9432A1DBF3A1` | 明确要求复用，不清理 |
+| Ticket 26 `.toolchains/` | 98,040 / 2,851,102,705 | inventory SHA-256 `6B493E8A7AF4DA829391C16DE5510E7816114D564B9F9C45F176621F1D9D1BFB` | 明确要求复用，不清理 |
+| Ticket 26 active ignored cache/build set | 152 / 1,688,755 | inventory SHA-256 `D87E07B8C49E91096F3B29A93B79622D2A40B9C0E6DC061DF7A2B864AA7DF0CB` | active worktree，默认保留 |
+| canonical `guest-assets/.work/downloads/` | 5 / 175,030,558 | inventory SHA-256 `7F1213071E783837DAA3BE59CE0721488E000ADC1AD5B9A0C3E5DEDD4A3682C9` | tracked build scripts 的默认 download cache |
+| `source-audit/` | 10,013 / 59,886,513 | inventory SHA-256 `CD34D2C72AEAC7DC7644DD3C8029363D995CAD2767F4990937E1F897BD6BCECE` | ownership / 长期价值未充分证明前保留 |
+| `crx-probe/` | 1 / 196,608 | inventory SHA-256 `FBC5F9EE8D5A1EE7B10625B27C3C5EFC12C446538506964AAB533198189AB2FB` | ownership 不明，不推定可删 |
+| `mcr-audit/` | 2 / 14,614 | inventory SHA-256 `4DF1EF8AAA63FF4F33A64C523CE839F65D1F4D43E7FAB27B6A5BFD10EAF8B9BC` | 审计材料，保留 |
+| `guest-assets/out/` | 15 / 53,680,363 | `SHA256SUMS` 全 12 个所列资产复算匹配；核心值见 §6 | Ticket 25 已验证产物 |
+| `validation-20260906/` | 54 / 19,515,396 | 每文件 hash 见 §7 | Ticket 25 历史验证证据 |
+| Ticket 26 native CI / implementation evidence | 77 / 1,433,377 | 每文件 hash 见 §7 | raw CI、失败证据、测试日志与唯一 APK |
+| archived `探讨文档1.md` | 1 / 83,686 | SHA-256 `BBE7D43939B323C31C3CB2C1DE4905B6A35A56C2822DEC91B1A93BA2E84C2289` | 历史输入；与 tracked canonical copy 相同 |
 
 ## 6. Ticket 25 完整性验证
 
@@ -264,18 +281,48 @@ workflow-step-4.sh|644|4924F07EF0949FEE5C4C69783AB7DDB0CF04CF226B2D48D207D3A674F
 
 ## 8. 测试与验证
 
-已执行并记录 exit code：
+实际运行的验证命令与结果：
 
-- preflight 两棵工作树 `git diff --check`：0 / 0。
-- preflight main/Ticket 26 `git ls-files --others --exclude-standard`：均为空。
-- `guest-assets/out/SHA256SUMS` 全 12 项复算：全部 match。
-- downloads 与 vctl-downloads：5/5 文件名称、bytes、SHA-256 完全一致。
-- external root ownership：仅 `archive/` 与 `artifacts/`，递归未发现 `.git`。
-- 路径修正后继续执行旧 artifact root 精确检索、两棵工作树 `git diff --check`、状态、
-  worktree 数量及独立 review；结果在提交前补充到最终用户摘要，Git 历史保存提交事实。
-- 未运行 Gradle、QEMU、vctl、真机或大型 build，避免重新生成待清理目录。
+| 命令 / 检查 | exit / 结果 |
+| --- | --- |
+| `git worktree list --porcelain` | 0；preflight 为 2 条，HEAD 分别 `4047f8b` / `1e0ee8e`；校正提交后仍为 2 条 |
+| 两树 `git status --short --branch` | 0；preflight 均 clean；提交后 main `ahead 2`、Ticket 26 clean |
+| 两树 `git diff --check`（preflight） | 0 / 0 |
+| `git diff --check 4047f8b...5125659` | 0 |
+| Ticket 26 `git diff --check 1e0ee8e...e5af40f` | 0 |
+| 两树 `git ls-files --others --exclude-standard` | 0 / 0；均无输出 |
+| 两树 `git status --ignored --short` | 0 / 0；ignored 摘要已用于 retention audit |
+| `rg -F` 精确检索旧 `DroidLayer\\artifacts` root | 1；0 命中（预期无匹配） |
+| `rg -F` 精确检索旧 `DroidLayer\\worktrees` root | 1；0 命中（预期无匹配） |
+| `Test-Path` canonical external root | `True` |
+| `Test-Path D:\Development project(开发项目)\DroidLayer` | `False`；未创建禁止的 sibling |
+| external root ownership / `.git` 递归检查 | 仅 `archive/`、`artifacts/`；`.git` 0 命中 |
+| `guest-assets/out/SHA256SUMS` 逐项 `Get-FileHash` | 12/12 match |
+| downloads 与 vctl-downloads 逐文件比较 | 5/5 名称、bytes、SHA-256 一致 |
+| retained validation / CI / implementation evidence `Get-FileHash` | 54 / 21 / 56 项成功；结果见 §7 |
+| active process audit (`Get-CimInstance Win32_Process`) | 未发现 Gradle、Java、QEMU、vctl |
+| 两次显式 `Remove-Item -LiteralPath ... -Recurse -Force` | process creation 前 `blocked by policy`；无删除 |
 
-## 9. 风险、未完成与后续动作
+提交：
+
+- main `9bd8cdd0ff035cc81325da3e2904d74daa2936f4` — `docs(orchestration): 校正项目资源根并记录目录整理`。
+- main `5125659334f96a508179651c800bdbdd12b78345` — `docs(orchestration): 修正整理报告格式`。
+- Ticket 26 `e5af40fa2892a866e99b173c4faa4ef7a8bd2b00` — `docs(reports): 校正外部证据路径 [ticket-26]`。
+- 本次 review 修正报告所在 commit 以 Git 历史为准，避免在自身 blob 中伪造自引用 SHA。
+
+未运行 Gradle、QEMU、vctl、真机或大型 build，避免重新生成待清理目录。
+
+## 9. 独立 Standards / Spec review
+
+- Standards 初审：2 个 hard findings（最终命令/exit code 未落入报告；模型/委派字段不完整）与
+  2 个 Shotgun Surgery judgement calls。前两项已由本次报告修正；分散绝对路径是本次明确要求
+  的事实校正，长期可考虑让 operational policy 引用唯一 canonical root，但历史 evidence 仍需保留精确路径。
+- Spec 初审：Ticket 26 path-only commit PASS；main 有 1 个 P1（物理删除未完成）与 1 个 P2
+  （验证、commit、保留项 size/hash 不完整）。P2 已由本次报告修正；P1 因安全拦截器持续存在，
+  保持为真实未完成项，不通过扩大权限或绕过控制关闭。
+- 两个 reviewer 均为独立只读 sub-agent；未修改文件、未执行删除、未提交、未接触 Host。
+
+## 10. 风险、未完成与后续动作
 
 唯一未完成项是安全拦截器阻止的物理删除，合计候选 3,896,102,872 bytes；
 这些目录仍占用磁盘，不得报告为已清理。路径校正不会改变 Ticket 26 产品语义，但 Ticket branch
