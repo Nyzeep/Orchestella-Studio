@@ -69,7 +69,7 @@ ticket 三处；报告应链接或引用 canonical artifact。
 
 当前项目 approved external resource root 由 `HOST_ENVIRONMENT_POLICY.md` 定义为：
 
-`D:\Development project(开发项目)\DroidLayer`
+`D:\Development project(开发项目)\DroidLayer开发目录\DroidLayer`
 
 可按用途使用 `external/`、`tools/`、`caches/`、`artifacts/`、`test-runtimes/`、
 `vm-images/` 或 `temp/` 等明确子目录，但必须带有项目用途、ticket/owner 和清理预期。
@@ -83,7 +83,7 @@ disclosure 和最小范围规则。
 - source-controlled 的 lock、manifest、provenance、checksum 和小型结果摘要放在其
   owning tool/ticket 的 canonical home；例如 QEMU 输入 lock 属于 `tools/qemu-android/`。
 - 真实 build、device、benchmark 的大型或敏感原始输出放在
-  `D:\Development project(开发项目)\DroidLayer\artifacts\<ticket-id>\` 对应目录；正式报告只记录路径、命令、摘要和是否可复现。
+  `D:\Development project(开发项目)\DroidLayer开发目录\DroidLayer\artifacts\<ticket-id>\` 对应目录；正式报告只记录路径、命令、摘要和是否可复现。
 - 若某个外部产物后来成为发布或验收所需的长期证据，先保留 raw artifact 的来源和 hash，
   再将经过审查的最小证据提升到仓库 `artifacts/<ticket-id>/`，不要直接把整个输出目录提交。
 

@@ -11,7 +11,7 @@
   均属高风险且验证成本高
 - model / reasoning：GPT-5.6 Sol / xhigh
 - branch：Nyzeep/ticket-26-alpine-shell-qemu
-- worktree：D:\Development project(开发项目)\DroidLayer\worktrees\ticket-26-alpine-shell-qemu
+- worktree：D:\Development project(开发项目)\DroidLayer开发目录\ticket-26-alpine-shell-qemu
 - baseline：包含本 dispatch packet 的 main governance commit
 - implementation report：docs/reports/tickets/26/implementation-report.zh-CN.md
 

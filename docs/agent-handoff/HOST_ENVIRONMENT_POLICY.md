@@ -11,7 +11,7 @@
 1. 当前代码工作区：
    `D:\Development project(开发项目)\DroidLayer开发目录\DroidLayer_dev`
 2. 项目相关外部资源根：
-   `D:\Development project(开发项目)\DroidLayer`
+   `D:\Development project(开发项目)\DroidLayer开发目录\DroidLayer`
 
 代码和正式开发文件优先放入代码工作区。`external`、`tools`、`caches`、`artifacts`、
 `test-runtimes`、`vm-images`、`temp` 等不适合入库的项目资源可放入外部资源根，但目录名、
