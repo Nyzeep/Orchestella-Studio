@@ -205,7 +205,7 @@ organization 的唯一 policy；本 handoff 只提供入口，不复制其完整
 Git worktree 的目录边界、创建/迁移命令和接手前 freshness verification 以
 `ORCHESTRATION_GOVERNANCE_POLICY.md` §7A 为唯一 policy。允许的项目工作区是
 `D:\Development project(开发项目)\DroidLayer开发目录\*`；不得新建注册在
-`D:\Development project(开发项目)\DroidLayer\worktrees\*` 下的 active Git worktree。
+`D:\Development project(开发项目)\DroidLayer开发目录\DroidLayer\worktrees\*` 下的 active Git worktree。
 外部资源根仍按 `HOST_ENVIRONMENT_POLICY.md` 使用，历史路径和审计记录不因本规则批量删除。
 任何 Agent 接手已有 worktree，必须重新报告 registered/physical path、HEAD、branch、
 upstream、与 main 的关系、dirty/clean、diff、untracked、ignored 和 recent log；handoff

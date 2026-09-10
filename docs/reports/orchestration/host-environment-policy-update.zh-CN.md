@@ -23,7 +23,7 @@ Ticket 25 的真实 Linux/QEMU 验收证明，外部工具可能强制创建用�
 
 - 当前代码工作区：
   `D:\Development project(开发项目)\DroidLayer开发目录\DroidLayer_dev`。
-- 项目相关外部资源根：`D:\Development project(开发项目)\DroidLayer`；仅可用于具有
+- 项目相关外部资源根：`D:\Development project(开发项目)\DroidLayer开发目录\DroidLayer`；仅可用于具有
   明确 DroidLayer 用途的 `external`、`tools`、`caches`、`artifacts`、
   `test-runtimes`、`vm-images`、`temp` 等资源。
 

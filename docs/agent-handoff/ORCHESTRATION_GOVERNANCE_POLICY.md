@@ -149,10 +149,10 @@ contract/test 文件时，必须串行。`PARALLELIZATION_MATRIX.md` 是规划�
 
 ```text
 允许：D:\Development project(开发项目)\DroidLayer开发目录\*
-禁止新建 active Git worktree：D:\Development project(开发项目)\DroidLayer\worktrees\*
+禁止新建 active Git worktree：D:\Development project(开发项目)\DroidLayer开发目录\DroidLayer\worktrees\*
 ```
 
-`D:\Development project(开发项目)\DroidLayer` 仍是 `HOST_ENVIRONMENT_POLICY.md` 定义的
+`D:\Development project(开发项目)\DroidLayer开发目录\DroidLayer` 仍是 `HOST_ENVIRONMENT_POLICY.md` 定义的
 外部资源根，可保存 toolchain、cache、VM image、运行输出和 evidence；本条只禁止把 Git
 worktree 注册在该资源根下，不要求删除或批量迁移其中的历史资产。历史报告、handoff 和
 旧路径引用继续作为审计记录保留。
