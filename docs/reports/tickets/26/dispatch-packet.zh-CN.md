@@ -74,3 +74,51 @@ Ticket 26 是 B0 serial-only。开始前确认没有 27/28/30 Worker、没有 sh
 scope audit、风险和 Architecture Change 检查；任何 ADR/spec/契约/暴露面冲突立即停止并上报。
 
 批准人：Codex Orchestrator（用户 2026-09-07 B4 验证与 PASS 后派工授权） ｜ 日期：2026-09-07
+
+## 6. 2026-09-19 真机验收 follow-up dispatch
+
+本节是同一 Ticket 26 的后续 implementation dispatch，不创建新 ticket，不放宽原 scope，也不
+把已有 QEMU/CI 证据重述为 Android 真机验收。Worker 必须先读取
+`docs/agent-handoff/DEFENSIVE_CONSTRAINTS/README.md` 及其目录内全部 policy；其余 handoff
+约束、scope contract、本票正文和当前 implementation report 继续有效。
+
+- session role：Ticket 26 follow-up implementation Worker
+- workflow：`implement + tdd`；遇到难以复现的 terminal/device failure 才按需进入
+  `diagnosing-bugs`；完成实现后必须运行独立 `code-review`（Standards + Spec）
+- risk：Risk 2–3；普通实现按当前 §4A 路由，复杂设备/QEMU 调试升级 Sol/High，安全/架构冲突升级 Sol/XHigh
+- source baseline：Ticket 26 分支 `7194304f59b90eb0fd34457bff806f0f45524551`
+- follow-up branch：`Nyzeep/ticket-26-device-gate-followup`
+- worktree：Codex app 为该分支创建的独立 worktree；Worker 必须在报告中记录注册路径、物理路径、HEAD、clean/dirty、ahead/behind、untracked 与 ignored 摘要
+- canonical implementation report：`docs/reports/tickets/26/implementation-report.zh-CN.md`（在既有报告追加本阶段，不创建平行报告）
+- canonical review report：`docs/reports/reviews/26/review-report.zh-CN.md`（追加本阶段 review 结论，不创建平行目录）
+- external evidence：`D:\Development project(开发项目)\DroidLayer开发目录\DroidLayer\artifacts\26\device-gate\`；大型 APK、设备日志、QEMU/Gradle 输出不得进入 Git，需记录来源、hash、owner、保留与清理责任
+
+### Follow-up 的唯一目标
+
+在不扩大 Ticket 26 scope 的前提下，完成当前 report 仍标记为 `NOT VERIFIED` 的 ARM64 真机
+验收，并修复本票范围内阻塞这些验收的实现缺口：provision-and-run 到 shell、错误 token 拒绝、
+terminal PTY/RESIZE、guest 自主正常关机、同一 Root Volume 的 `stage=run` 二次启动与数据保持、
+真机 devpts/PTY，以及 Ticket 26 正文要求的状态/UI/模拟器提示和 supply-chain 证据缺口（逐项
+按当前代码和 report 核实，不假定已有实现）。
+
+### 已验证设备前置条件
+
+2026-09-19 使用 `D:\手机调试与开发相关\platform-tools\adb.exe` 只读核验：ADB 37.0.1；
+设备为实体 Android 15/API 35、`arm64-v8a`、约 11.03 GiB RAM、约 448 GiB `/data` 可用空间；
+`adb get-state=device`；shell 为 uid 2000，`ro.debuggable=0`、`ro.secure=1`。设备标识和完整
+fingerprint 不进入报告或日志。Worker 在每次设备写入前仍必须重新运行 `adb version`、
+`adb devices -l` 和资格查询；本前置结果不授权安装 APK 或其他设备写入。
+
+### 硬边界
+
+- 原 Ticket 26 scope contract、QEMU_JNI_SUPPLY_CHAIN_POLICY、ADR/spec/CONTEXT、Guest Bridge
+  命令和 Exposure Whitelist 不得静默改变。
+- 不启动 27/28/30 或其他下游票；不实现 Ticket 28 的进程死亡 reconciliation、host power、
+  cold restore、crash/log；不实现 network/share/AVF/Debian/export/resize/notify-open-url。
+- 不修改 `main`、不 merge/rebase/push、不使用旧 PATH ADB、不安装 driver/toolchain、不改 PATH/
+  Registry/firewall/system virtualization；设备安装、Gradle cache 或外部写入按 Host Environment
+  Policy 逐项披露并记录实际影响。
+- 遇到架构/安全/契约冲突立即停止并走 Architecture Change Policy；不得用模拟器、QEMU、CI、
+  JVM 或静态检查替代真机结果。
+
+批准人：Codex Orchestrator（用户 2026-09-19 明确要求继续 Ticket 26 并提供已配置真机）｜日期：2026-09-19
