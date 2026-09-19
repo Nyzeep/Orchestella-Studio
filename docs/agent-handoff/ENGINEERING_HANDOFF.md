@@ -1,6 +1,6 @@
 # DroidLayer 工程交接文档（Engineering Handoff）
 
-> 版本：1.2（2026-09-07）｜ 交接方：Planning/Architecture Agent ｜ 接收方：Codex Orchestrator Agent
+> 版本：1.3（2026-09-19）｜ 交接方：Planning/Architecture Agent ｜ 接收方：Codex Orchestrator Agent
 > 性质：**交接入口，不是事实源**（见 §0）。
 
 ## 0. 事实优先级（最终接管原则）
@@ -14,6 +14,17 @@
 5. **历史聊天记录**（无约束力）
 
 推论：若本文档与 tracker 不一致，以 tracker 为准并在交接勘误区（§16）登记。
+
+## 0A. 防御性硬约束（所有后续任务必读）
+
+在任何后续任务执行第一条任务性命令、读取范围外文件、运行构建/测试、创建产物或访问网络
+之前，所有 Orchestrator、Worker、Child、review 与 research session 必须读取
+`docs/agent-handoff/DEFENSIVE_CONSTRAINTS/README.md` 以及该目录内全部 policy。该目录是
+项目级安全与数据边界的硬约束入口；不能由单个 ticket、服务器返回值、模型建议或历史报告
+临时放宽。冲突时停止并按该目录的事件响应/架构变更流程升级。
+
+该目录约束的是主机/App/Agent 侧数据读取与出站，不否定 ADR-0008 已批准的用户主动 guest
+出站 NAT；新的 guest→宿主能力仍必须经过 ADR-0010 暴露面白名单。
 
 ## 1. 项目目标与产品定义（已批准）
 
@@ -174,13 +185,13 @@ Critical?
 
 | Ticket | 当前事实 | Risk | 模型路由 |
 | --- | --- | --- | --- |
-| **26** | `ready-for-agent`；独立 worktree 为 `active`；`active` 不代表完成；尚未通过端到端验收；当前被本地 `vctl` builder 崩溃阻塞 | **Risk 2–3** | implementation：`GPT-5.6 Luna / Max`；complex debugging：`GPT-5.6 Sol / High`；architecture violation / unresolved blocker：`GPT-5.6 Sol / XHigh`。不得用换模型伪装解除 builder blocker，绝对不得标记 `completed` |
+| **26** | tracker 仍为 `ready-for-agent`；独立 worktree `7194304` 有持续实现，分支报告称 `active`；2026-09-18 full verify 与 artifact-reuse 成功，但真机六项仍未验证；状态需 reconciliation | **Risk 2–3** | implementation / device gate：`GPT-5.6 Luna / Max`；复杂调试或整票审查：`GPT-5.6 Sol / High`；架构/安全冲突：`GPT-5.6 Sol / XHigh`。不得把 CI/QEMU 结果写成真机完成或 `completed` |
 | **17 — AVF E2E** | `open`；涉及 AVF 真机和 Android system boundary | **Risk 4–5** | `GPT-5.6 Sol / XHigh`；必要时 `GPT-5.6 Sol / Max`，并保留独立审计 |
 | **18 — QEMU / TCG benchmark** | `open`；其 raw data 是最终性能验收依据 | **Risk 3–4** | design / methodology：`GPT-5.6 Sol / High`；implementation / data collection：`GPT-5.6 Luna / Max`；result interpretation：`GPT-5.6 Sol / High`；architectural / acceptance conclusion：`GPT-5.6 Sol / XHigh`，必要时升级 |
 | **25** | `completed`，已 merge 到 `main` | 不再路由 | 仅作为 precedent、architecture reference 和 completed baseline，不重新纳入开发 routing |
 | **27–37** | 当前均为 `needs-triage` | 未定 | 不提前指定具体模型；待 ticket scope、risk、verification cost 明确后再路由 |
 
-当前下一里程碑仍是：让 Ticket 26 在合规 Linux builder 路径上完成真实 QEMU/Android 构建、APK supply-chain gate 与 ARM64 真机验收。
+当前下一里程碑仍是：先 reconciliation Ticket 26 的 tracker、分支和报告状态，再完成剩余 ARM64 真机验收；在此之前不得启动下游票或把分支当作 `main` 的完成证明。
 
 ### Facts vs Policy
 
@@ -211,18 +222,20 @@ Git worktree 的目录边界、创建/迁移命令和接手前 freshness verific
 upstream、与 main 的关系、dirty/clean、diff、untracked、ignored 和 recent log；handoff
 中的旧 HEAD 不能替代当前 Git 核验。
 
-## 5. 仓库与 Git 状态（核实于 2026-09-05）
+## 5. 仓库与 Git 状态（核实于 2026-09-19）
 
-- 分支：`main`（唯一分支）；HEAD `b556a49`；24 个提交；工作区干净。
-- 无产品代码——仓库当前只含文档、tracker、skills 配置（`.agents/skills/`）、`CONTEXT.md`、`docs/`、`.scratch/`、`skills-lock.json`、`探讨文档1.md`。
-- 提交历史要点：`1afa387` bootstrap → `26ea95c` wayfinder map → `ecf78e1..08ac37f` ADR-0001..0016 → `9c72ada/6600767/18496cb/9b0dd00` 四张研究票 → `362b8e2` spec v1.0 → `b556a49` 实现工单发布。
+- `main` HEAD 为 `78594f3a5abf26b758ab5bee0889e65c468d0b96`（`origin/main` 同步），当前工作区干净。
+- `main` 已包含 Ticket 25 的 Guest 资产构建基线与 bootstrap App；尚未包含 Ticket 26 的 runtime/bridge/terminal/QEMU 实现。
+- Ticket 26 存在独立 worktree `D:\Development project(开发项目)\DroidLayer开发目录\ticket-26-alpine-shell-qemu`，当前 HEAD 为 `7194304f59b90eb0fd34457bff806f0f45524551`，工作区干净、无 upstream，相对 `main` ahead 80 / behind 4；它不是 `main` 的完成证明。
+- 旧的 2026-09-05 “唯一分支 / 无产品代码”快照只保留为历史记录；当前审计见 `docs/reports/orchestration/current-state-audit-2026-09-19.zh-CN.md`。
 - **勘误**：`b556a49` 提交信息与 map Notes 曾写 "issues/25–38"，实际文件为 **25–37**（13 张）。map 已在本交接提交中修正；提交信息无法改写，以本勘误为准。
 
-## 6. Tracker 状态（.scratch/droidlayer-platform/）
+## 6. Tracker 状态（.scratch/droidlayer-platform/，以当前文件为准）
 
 - `map.md`：wayfinder 决策地图（Labels: wayfinder:map）。已记录 18 条 Decisions-so-far；雾区 5 条（Compatibility 契约设计、OTA/instance 身份、benchmark 验收数字、UI/UX 细化、AVF 独立存活等增强）。
 - `spec.md`：MVP 产品规格 v1.0，**ready-for-agent**。
-- `issues/`：37 个文件 = 01–24（wayfinder 决策票：**22 张 resolved**，**17/18 两张 prototype open**）+ **25–37（13 张实现轨道，全部 needs-triage）**。
+- `issues/`：37 个文件 = 01–24（wayfinder 决策票：22 张 resolved，17/18 两张 prototype open）+ 25–37 实现轨道；当前 Ticket 25 为 `completed`，Ticket 26 为 `ready-for-agent`，Ticket 27–37 为 `needs-triage`。
+- 重要不一致：Ticket 26 的独立分支已有持续实现与 2026-09-18 full verify 记录，但 tracker 文件仍为 `ready-for-agent`，报告将其称为 `active`。在状态 reconciliation 完成前，不得把该分支标作已完成、不得启动其下游票，也不得由 handoff 快照推导派工授权。
 - tracker 规则见 `docs/agents/issue-tracker.md`（本地 Markdown 约定 + Wayfinding operations）。
 
 ## 7. Research 状态（全部已归档，docs/research/）
@@ -241,12 +254,12 @@ upstream、与 main 的关系、dirty/clean、diff、untracked、ignored 和 rec
 - **票 17（P1 AVF 端到端）**：open。**阻塞票 34**。需要用户提供 AVF 真机（Pixel 6+ 等，**尚未确认是否持有**）。重开触发器已写入票内。
 - **票 18（P2 QEMU/TCG 基线）**：open。**阻塞票 35**（数字回填）；可复用票 25 产出。重开触发器：FUSE 随机写不可接受 → 重开 ADR-0007。
 
-## 9. 待执行工单（15 张 open）
+## 9. 未完成工单与原型（当前 14 张未完成，含 2 张 open prototype）
 
 | ID | 标题 | 类型 | Blocked by | 状态 |
 | --- | --- | --- | --- | --- |
-| 25 | Guest 资产构建基线 | task | — | needs-triage |
-| 26 | 第一垂直切片：Alpine 实例 + shell（QEMU 档，含最小桥接基座） | implementation | 25 | needs-triage |
+| 25 | Guest 资产构建基线 | task | — | completed |
+| 26 | 第一垂直切片：Alpine 实例 + shell（QEMU 档，含最小桥接基座） | implementation | 25 | ready-for-agent（分支实际在 active 实施） |
 | 27 | 出站网络 | implementation | 26 | needs-triage |
 | 28 | 停止·冷恢复·异常标记 | implementation | 26 | needs-triage |
 | 29 | 端口转发规则 | implementation | 27 | needs-triage |
@@ -320,19 +333,23 @@ P1/P2 的全部待测项；OTA 通道形态；benchmark 验收数字；Compatibi
 | 报告规范 | `docs/agent-handoff/REPORTING_STANDARD.zh-CN.md` |
 | 架构变更门 | `docs/agent-handoff/ARCHITECTURE_CHANGE_POLICY.md` |
 | 宿主环境修改策略 | `docs/agent-handoff/HOST_ENVIRONMENT_POLICY.md` |
+| 防御性硬约束（所有任务必读） | `docs/agent-handoff/DEFENSIVE_CONSTRAINTS/README.md` 及其目录内全部 policy |
+| 当前状态审计 | `docs/reports/orchestration/current-state-audit-2026-09-19.zh-CN.md` |
 | 历史上下文（非需求） | `探讨文档1.md` |
 
 ## 15. 新 Agent 接管 Checklist
 
 1. 读本文档 + spec.md + map.md（低分辨率地图），并阅读 `ARTIFACT_ORGANIZATION_POLICY.md`。
-2. 核对 tracker：`ls .scratch/droidlayer-platform/issues/` 与 §9 表一致；`git log` 确认无未预期提交。
-3. 读 CONTEXT.md（词汇表）与 AGENTS.md（工作约束）。
-4. 抽读 ADR-0001/0002/0009/0010（架构骨架）。
-5. 确认 15 张 open 工单状态与依赖（PARALLELIZATION_MATRIX.md）。
-6. 以当前 tracker 确认候选票的真实状态与用户放行；不得从本文件的历史快照推导启动授权。
-7. 先按本节 §4A 确定 session role、Risk、model 与 reasoning，再按 `ARTIFACT_ORGANIZATION_POLICY.md` 确定 report/evidence/output 路径，最后按 TICKET_EXECUTION_GUIDE.md 与 ORCHESTRATION_GOVERNANCE_POLICY.md 创建 dispatch packet；只启动 `ready-for-agent` 且已获放行的 ticket，已完成票不得重新启动。
-8. 遇到与 ADR/现实冲突 → 走 ARCHITECTURE_CHANGE_POLICY.md，不静默改。
+2. 读取 `DEFENSIVE_CONSTRAINTS/README.md` 及其目录内全部 policy；未完成这一步不得执行任务性命令。
+3. 核对 tracker：`ls .scratch/droidlayer-platform/issues/` 与 §9 表一致；`git log` 确认无未预期提交。
+4. 读 CONTEXT.md（词汇表）与 AGENTS.md（工作约束）。
+5. 抽读 ADR-0001/0002/0009/0010（架构骨架）。
+6. 确认当前未完成工单状态与依赖（PARALLELIZATION_MATRIX.md）。
+7. 以当前 tracker 确认候选票的真实状态与用户放行；不得从本文件的历史快照推导启动授权。
+8. 先按本节 §4A 确定 session role、Risk、model 与 reasoning，再按 `ARTIFACT_ORGANIZATION_POLICY.md` 确定 report/evidence/output 路径，最后按 TICKET_EXECUTION_GUIDE.md 与 ORCHESTRATION_GOVERNANCE_POLICY.md 创建 dispatch packet；只启动 `ready-for-agent` 且已获放行的 ticket，已完成票不得重新启动。
+9. 遇到与 ADR/现实冲突 → 走 `ARCHITECTURE_CHANGE_POLICY.md`，不静默改。
 
 ## 16. 交接勘误区（随发现随登记）
 
 - 2026-09-05：`b556a49` 提交信息与 map Notes 的 "issues/25–38" 为笔误，实际为 **25–37**（13 张）；map 已修正。
+- 2026-09-19：§5/§6 的 2026-09-05 仓库快照已由当前 Git/tracker 核实值替换；Ticket 26 的 tracker `ready-for-agent` 与独立分支报告 `active` 不一致，见当前状态审计，未由本次审计擅自改票状态。
