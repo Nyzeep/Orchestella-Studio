@@ -27,8 +27,9 @@ DroidLayer 的**规划阶段已完成，产品实现尚未完成**。当前最�
 
 - 当前工作区：`D:\Development project(开发项目)\DroidLayer开发目录\DroidLayer_dev`
 - branch：`main`
-- HEAD：`78594f3a5abf26b758ab5bee0889e65c468d0b96`
-- `origin/main` 与本地 `main` 同步。
+- 产品基线 HEAD：`78594f3a5abf26b758ab5bee0889e65c468d0b96`
+- 治理变更起始提交：`b957103`；该提交只增加 handoff/审计文档，未改变产品代码。
+- `origin/main` 在审计开始时与产品基线同步；本次治理提交尚未声称已推送到远端。
 - `git status --short --branch`：clean。
 - 最近主线提交以编排治理、目录治理和 Ticket 25 集成为主；没有把 Ticket 26 的产品代码合入主线。
 
