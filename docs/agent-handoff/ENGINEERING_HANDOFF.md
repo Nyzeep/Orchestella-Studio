@@ -224,8 +224,8 @@ upstream、与 main 的关系、dirty/clean、diff、untracked、ignored 和 rec
 
 ## 5. 仓库与 Git 状态（核实于 2026-09-19）
 
-- `main` HEAD 为 `78594f3a5abf26b758ab5bee0889e65c468d0b96`（`origin/main` 同步），当前工作区干净。
-- `main` 已包含 Ticket 25 的 Guest 资产构建基线与 bootstrap App；尚未包含 Ticket 26 的 runtime/bridge/terminal/QEMU 实现。
+- 本次审计的 `main` 产品基线为 `78594f3a5abf26b758ab5bee0889e65c468d0b96`；其后仅追加本次 handoff/审计文档提交 `b957103`，未改变产品代码。当前工作区干净。
+- `main` 已包含 Ticket 25 的 Guest 资产构建基线与 bootstrap App；截至本次审计提交，尚未包含 Ticket 26 的 runtime/bridge/terminal/QEMU 实现。
 - Ticket 26 存在独立 worktree `D:\Development project(开发项目)\DroidLayer开发目录\ticket-26-alpine-shell-qemu`，当前 HEAD 为 `7194304f59b90eb0fd34457bff806f0f45524551`，工作区干净、无 upstream，相对 `main` ahead 80 / behind 4；它不是 `main` 的完成证明。
 - 旧的 2026-09-05 “唯一分支 / 无产品代码”快照只保留为历史记录；当前审计见 `docs/reports/orchestration/current-state-audit-2026-09-19.zh-CN.md`。
 - **勘误**：`b556a49` 提交信息与 map Notes 曾写 "issues/25–38"，实际文件为 **25–37**（13 张）。map 已在本交接提交中修正；提交信息无法改写，以本勘误为准。
