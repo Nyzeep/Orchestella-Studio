@@ -1,7 +1,7 @@
 # 26: 第一垂直切片——创建 Alpine 实例并进入 shell（QEMU 档）
 
 Type: implementation
-Status: blocked
+Status: ready-for-agent
 Blocked by: 25
 Scope contract: docs/reports/tickets/26/worker-scope-contract.zh-CN.md
 
@@ -20,6 +20,14 @@ Scope contract: docs/reports/tickets/26/worker-scope-contract.zh-CN.md
 > 因此转为 blocked，尚未派发 active Worker；不得用 Windows/JVM/mock、历史 CI 或静态阅读
 > 代替真实 Linux/QEMU terminal relay 红色反馈。详见
 > docs/reports/orchestration/ticket-26-linux-executor-readiness-2026-09-20.zh-CN.md。
+>
+> 2026-09-20 executor setup 更新：用户批准的最小 WSL 平台已完成；`DroidLayer-T26` Ubuntu
+> 24.04 x86_64 runtime 和 QEMU/TCG 诊断依赖均位于 D: 项目 external runtime。已实际验证
+> `qemu-system-aarch64` 可运行 `virt` + TCG，并在运行期间创建 virtio-serial Unix socket。
+> 因而上述“缺少 executor”的 blocker 已解除，状态恢复为 `ready-for-agent`；本状态只允许
+> 派发一个受限 `diagnosing-bugs` Phase 1 Worker 建立红色反馈环，不授权产品实现、APK/CI、
+> ADB/真机或 Release。详见
+> docs/reports/orchestration/ticket-26-linux-qemu-executor-setup-2026-09-20.zh-CN.md。
 
 ## What to build
 
