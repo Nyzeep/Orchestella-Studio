@@ -2,9 +2,16 @@
 
 - 背景 / scope：核验 DroidLayer 当前规划、主线、Ticket 25/26、tracker、报告、worktree 与后续执行条件；阅读用户提供的两篇 ZCode 静默整仓上传文章并把其中的威胁模型转化为 handoff 硬约束。
 - 审计日期：2026-09-19（Asia/Shanghai）
-- commit：本次治理文档与审计报告由 `docs(handoff): add defensive constraints and state audit` 记录；精确 SHA 以提交后的 Git history 为准。
+- 原始审计基线（2026-09-19）：本文保留当时的产品基线与结论作为历史事实。
+- 2026-09-20 reconciliation verification baseline：main = 0edb956e4f707392304d2f30cbafa42ebc99bb2d；origin/main = 78594f3a5abf26b758ab5bee0889e65c468d0b96；已执行用户明确允许的 git fetch origin，origin/main...main = 0 behind / 5 ahead。除该 fetch 和获准的 Actions metadata-only 查询尝试外，本会话未进行网络操作，且未下载 artifact 或完整日志。
 - 事实优先级：当前 Git / tracker / 文件 → accepted ADR、spec、CONTEXT → research → handoff → 历史报告。
 - 重要范围声明：按用户要求，没有重新检查已经删除的 ZCode 文档、目录、网络流量或本机取证证据；文章只作为防御性设计输入。
+
+## 0. 2026-09-20 治理勘误
+
+- 本文原有 2026-09-19 事实保留；本节补入当前可核验 Git 基线，不把后来的状态倒写为当日事实。
+- main tracker 的 Ticket 26 仍为 ready-for-agent。历史原/canonical 分支内的 active 记录不能替代当前已确认的 Worker、owner 或干净 worktree。
+- 删除原第 6 节的架构扫描、OS 临时 HTML 与 P3 重构建议：它们不属于本次状态审计获授权 scope，也不构成产品或治理结论。
 
 ## 1. 结论先行
 
@@ -14,7 +21,7 @@ DroidLayer 的**规划阶段已完成，产品实现尚未完成**。当前最�
 | --- | --- | --- |
 | 产品/架构决策 | 已完成规划基线 | `docs/adr/0001..0016` 全部 `accepted`；`.scratch/droidlayer-platform/spec.md` 为 `ready-for-agent` |
 | Guest 资产基线 | 已完成并合入 `main` | Ticket 25 tracker 为 `completed`；`docs/reports/reviews/25/review-report.zh-CN.md` 为 `approve`；`b9df782` 之后可达主线 |
-| Android 主线 | 仍是 bootstrap + Guest 资产基线 | `main@78594f3` 干净；主线尚未包含 Ticket 26 的 runtime/bridge/terminal/QEMU 实现 |
+| Android 主线 | 仍是 bootstrap + Guest 资产基线 | reconciliation baseline main@0edb956e4f70 干净；主线仍未包含 Ticket 26 的 runtime/bridge/terminal/QEMU 实现 |
 | Ticket 26 | 分支实现已推进，整票仍未完成 | 独立分支 CI/QEMU 证据通过；报告明确真机六项 `NOT VERIFIED`；分支未合入 `main` |
 | MVP | 尚不可发布 | 网络、生命周期收尾、共享、Debian、Export/resize、AVF 对齐和最终 hardening 尚未完成或尚未验收 |
 | 安全防御 | 本次已补入 handoff 硬约束 | `docs/agent-handoff/DEFENSIVE_CONSTRAINTS/`，并由 handoff 与根 `AGENTS.md` 强制指向 |
@@ -25,22 +32,22 @@ DroidLayer 的**规划阶段已完成，产品实现尚未完成**。当前最�
 
 ### 2.1 主线
 
-- 当前工作区：`D:\Development project(开发项目)\DroidLayer开发目录\DroidLayer_dev`
+- 当前工作区：registered main worktree（绝对宿主路径不在本报告保留）
 - branch：`main`
 - 产品基线 HEAD：`78594f3a5abf26b758ab5bee0889e65c468d0b96`
 - 治理变更起始提交：`b957103`；该提交只增加 handoff/审计文档，未改变产品代码。
-- `origin/main` 在审计开始时与产品基线同步；本次治理提交尚未声称已推送到远端。
-- `git status --short --branch`：clean。
+- 2026-09-20 Phase 0（本 session 写入治理文档之前）的 fetch 后 snapshot：origin/main = 78594f3a5abf26b758ab5bee0889e65c468d0b96，main = 0edb956e4f707392304d2f30cbafa42ebc99bb2d，本地 0 behind / 5 ahead；本文不声称已推送。
+- 同一 Phase 0 snapshot 的 `git status --short --branch`：clean。随后本 session 产生 tracker、withdrawn packet、本文修订与两份 orchestration report；它们在双轴审查和本地提交前故意保持未提交，当前集合见 `ticket-26-governance-reconciliation-2026-09-20.zh-CN.md` §6–§7。
 - 最近主线提交以编排治理、目录治理和 Ticket 25 集成为主；没有把 Ticket 26 的产品代码合入主线。
 
 ### 2.2 Ticket 26 独立 worktree
 
-- physical / registered worktree：`D:\Development project(开发项目)\DroidLayer开发目录\ticket-26-alpine-shell-qemu`
+- physical / registered worktree：稳定别名 ticket-26-original（绝对宿主路径不在本报告保留）
 - branch：`Nyzeep/ticket-26-alpine-shell-qemu`
 - HEAD：`7194304f59b90eb0fd34457bff806f0f45524551`
 - worktree：clean；无 upstream；无 untracked 文件。
 - merge-base：`82e4bef2fd4ce071fb9da562b6c81571e9d2e466`
-- 相对 `main`：ahead 80、behind 4。
+- 2026-09-20 相对 main：ahead 80、behind 9。
 - 该分支包含 runtime、bridge、terminal、QEMU Android build tooling、二阶段 guest smoke 与 CI 修复；这些内容在当前 `main` 上不可见。
 
 ### 2.3 Tracker 的真实状态与不一致
@@ -53,7 +60,7 @@ DroidLayer 的**规划阶段已完成，产品实现尚未完成**。当前最�
 - 26：`ready-for-agent`；
 - 27–37：`needs-triage`。
 
-Ticket 26 的独立分支报告从实现阶段起使用 `active`，并且当前确有 80 个相对 `main` 的提交；tracker 文件仍为 `ready-for-agent`。这是治理事实不一致，不是可以由 Agent 自行猜测的状态转换。本次只在 handoff 和本报告登记，没有擅自修改工单状态、合并分支或启动下游票。
+Ticket 26 的历史原/canonical 分支 tracker 与报告使用过 active，而 main tracker 仍为 ready-for-agent。当前未确认获授权的 active Worker、canonical owner 或可启动的干净 worktree；因此分支提交不能被解释为当前状态转换。本修订只登记勘误、撤回旧 dispatch，并且不合并分支、不启动下游票。
 
 ## 3. 完成度分层
 
@@ -105,41 +112,17 @@ Ticket 26 的独立分支报告从实现阶段起使用 `active`，并且当前�
 
 这些文档没有修改 ADR、spec、CONTEXT、Guest Bridge 命令、Exposure Whitelist、产品代码或 ticket 状态。以后若要放宽约束，必须提交明确的安全优化方案并独立审查，不能按 ticket 临时编辑。
 
-## 6. 架构扫描候选
+## 6. 修订后的范围界限
 
-本次按 `improve-codebase-architecture` 与 `codebase-design` 词汇做了只读扫描；没有提前设计接口。候选的完整 before/after 图在 OS 临时报告 `architecture-review-20260919.html` 中。
+架构扫描、临时 HTML 及 P3 重构建议已从本状态审计移除。它们没有得到本次治理任务的授权，且不应与 Ticket 26 状态、worktree 选择或真实验收相混淆。
 
-| 候选 | 证据 | 深化方向 | 推荐度 |
-| --- | --- | --- | --- |
-| Guest asset build orchestration | `guest-assets/build.sh` 同时承担多个上游构建、装配、打包与 manifest；Ticket 25 review 已记录 `Repeated Switches` / `Divergent Change` | 把构建计划、输入锁和阶段结果收拢到一个更深的编排模块；脚本成为 adapter，测试穿过一个小 interface | Worth exploring |
-| QEMU launch + runtime assets | `QemuRuntimeAssets`、`RuntimeArtifactManifest`、`QemuCommand`、`QemuProcessLauncher` 分担校验、路径、锁和启动；真正启动闭环仍在跨 seam 组合 | 形成一个更深的启动模块，把“可信资产→私有路径→单实例所有权→进程退出”集中；为测试保留本地 substitutable adapter | **Strong** |
-| Guest Bridge / terminal data path | Java bridge、QEMU virtio-serial、initramfs vport resolver、C guest-agent、PTY 跨语言；报告保留投递 flake | 让协议/传输结果在一个更窄的 seam 汇合，测试以 observable terminal/resize/handshake 结果为 surface | Worth exploring |
+## 7. 修订后的唯一后续动作
 
-首推第二项，因为它同时连接 Ticket 26 的安全 gate、生命周期 ownership 和后续 27/28/34 的复用；深化它能带来较高 leverage 与 locality，但必须等用户选择后再进入 grilling / design。
-
-## 7. 建议的后续顺序
-
-### P0：先治理状态，不写新产品功能
-
-1. 由 Orchestrator/用户确认 Ticket 26 的状态语义：tracker `ready-for-agent`、分支报告 `active`、当前 branch 未合入 `main` 三者如何收口。
-2. 维持 `main` 与 Ticket 26 worktree 的隔离；在状态、范围、独立 review 和用户授权明确前，不 merge、不启动 27/28/30。
-3. 后续每个 session 开始前读取防御性硬约束目录；任何新网络/I/O 先提交端点、数据分类和负例测试计划。
-
-### P1：完成 Ticket 26 的真实设备门
-
-在用户提供/授权的 arm64 真机上重新核验 API、ABI、RAM、存储、ADB 和日志通道，然后逐项运行报告中的六项真机验收。QEMU、CI、模拟器和 JVM 结果都不能替代它们。若真机行为推翻 ADR 或 Full Linux 契约，停止并走 Architecture Change Policy。
-
-### P2：按依赖图推进 MVP
-
-Ticket 26 真正收口后，再按 `25 → 26 → (27 ∥ 28 ∥ 30) → (29 ∥ 31 ∥ 32 ∥ 33) → 34 → (36 → 37) → 35` 推进；每张票先把 tracker 状态、ownership、artifact 路径和安全 egress 清单写进 dispatch packet。Ticket 18 的 TCG 性能基线应在已有 QEMU 路径稳定后单独产出原始数据，不能用墙钟时间替代性能验收。
-
-### P3：选择一个架构深化候选
-
-推荐先选“QEMU launch + runtime assets”，随后再开始候选的 grilling；如果用户更关心近期 terminal flake，则先选 Guest Bridge / terminal data path。架构扫描只产生候选，不自动授权重构或改变现有 ticket scope。
+先完成 Ticket 26 governance reconciliation 与 branch convergence audit，确认是否存在获授权的 active Worker、canonical owner 和可启动的干净 worktree。只有这些前置条件被明确登记后，下一会话才可按受限 diagnosing-bugs dispatch 建立 terminal relay 红色反馈环；未确认前不得开始产品实现、真机执行或下游票。
 
 ## 8. 修改、测试与越界检查
 
-### 修改文件
+### 原 2026-09-19 审计修改文件（历史记录）
 
 - `AGENTS.md`
 - `docs/agent-handoff/ENGINEERING_HANDOFF.md`
@@ -148,16 +131,39 @@ Ticket 26 真正收口后，再按 `25 → 26 → (27 ∥ 28 ∥ 30) → (29 ∥
 - `docs/agent-handoff/DEFENSIVE_CONSTRAINTS/INCIDENT_RESPONSE_AND_CREDENTIAL_ROTATION.md`
 - 本报告
 
-### 验证
+### 2026-09-20 修订修改文件
+
+- `.scratch/droidlayer-platform/issues/26-impl-first-slice-alpine-shell-qemu.md`
+- `docs/reports/tickets/26/dispatch-packet.zh-CN.md`
+- `docs/reports/orchestration/current-state-audit-2026-09-19.zh-CN.md`
+- `artifacts/26/evidence/2026-09-20-governance-scope-deviation.md`
+- `docs/reports/orchestration/ticket-26-governance-reconciliation-2026-09-20.zh-CN.md`
+- `docs/reports/orchestration/ticket-26-branch-convergence-audit-2026-09-20.zh-CN.md`
+
+### 原 2026-09-19 验证（历史记录）
 
 - `git status --short --branch`、`git worktree list --porcelain`、主线/分支 HEAD、ahead/behind、upstream、untracked、ignored 和近期 log：已执行。
 - tracker 37 个 issue 文件的 `Status`、Ticket 25/26 报告与 review：已执行。
 - `git diff --check`：已执行；文档变更无 whitespace error。
 - `./gradlew.bat test --offline --no-daemon`：未运行测试，原因已在 §3 记录。
-- 架构 HTML 报告：已生成到 OS temp；未写入仓库。
+- 架构 HTML / 重构建议：已从本修订版移除；不作为本状态审计输出、证据或后续行动。
+
+### 2026-09-20 修订验证
+
+- Phase 0：已重新核验 tracker 25/26、registered worktree 摘要、main/origin 关系、共同祖先与双向独有提交计数；见本报告 §0–§2 及 reconciliation / convergence report。
+- 当前治理 diff：预提交 `git diff --check` 已通过；路径集合限于本节列出的六个路径（含最小 source-controlled incident evidence），未运行 build、CI、ADB、设备操作或 artifact 下载。
+- 双轴审查：本次修订将在 Standards 与 Spec 均 ACCEPT 后才提交；本节不把写入后的未提交文档状态倒写为 Phase 0 clean snapshot。
+
+### 2026-09-20 模型、委派、workflow 与 worktree 影响
+
+- session role：governance / integration Orchestrator；workflow 为 code-review。terminal relay 仅形成 diagnosing-bugs dispatch 草案，不启动实现。
+- 模型 / reasoning：推荐 GPT-5.6 Sol / High；当前运行时未提供该路由。根据用户当前任务 prompt 中“若环境无法提供，记录实际 fallback，不得自行降低风险结论”的直接条件授权，实际采用 GPT-5.6 Terra fallback；风险结论未降低，也不授权越界修改。
+- 委派：独立 Standards 与 Spec reviewer 仅在 main 的五份治理文档及一份最小 source-controlled incident evidence 范围内只读审查；不修改文件、不读取 Ticket 26 WIP、delivery 草案、设备/实例数据或原始 Git 内容。
+- worktree / Git：只在 main 写入本节列出的治理文档与最小 source-controlled incident evidence；三个 Ticket 26 worktree 未被修改、暂存、提交、删除、移动或合并。当前 commit 为待双轴 ACCEPT 后的本地中文 Conventional Commit；不 push。
 
 ### 越界与 Architecture Change Policy
 
-本次没有修改产品实现、ADR、spec、CONTEXT、tracker 状态、依赖图、Guest Bridge 命令、Exposure Whitelist、宿主系统或外部运行时；没有访问网络，也没有重新验证 ZCode 资料。防御性目录是用户明确要求的 handoff 治理增强，不改变既有产品架构，因此未触发 Architecture Change Policy。
+原 2026-09-19 审计没有修改产品实现、ADR、spec、CONTEXT、tracker 状态、依赖图、Guest Bridge 命令、Exposure Whitelist、宿主系统或外部运行时。本次 2026-09-20 修订仅校正治理描述、撤回越界 dispatch 并移除未授权架构扫描；未改变产品架构，Architecture Change Policy 未触发。
 
-报告人：Codex ｜ 日期：2026-09-19 ｜ 耗时：未独立计时
+历史报告人：Codex ｜ 日期：2026-09-19 ｜ 耗时：未独立计时
+报告人：Codex Orchestrator / GPT-5.6 Terra fallback（2026-09-20 修订） ｜ 日期：2026-09-20 ｜ 耗时：未独立计时

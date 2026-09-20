@@ -5,9 +5,15 @@ Status: ready-for-agent
 Blocked by: 25
 Scope contract: docs/reports/tickets/26/worker-scope-contract.zh-CN.md
 
-> 当前 readiness：Ticket 25 已完成，且 arm64 真机/HITL 的资格与可取证 USB ADB 通道已由
-> docs/reports/orchestration/ticket-26-readiness-reaudit-2.zh-CN.md 记录为 PASS。该结论仅
-> 允许形成 dispatch packet 并派发本票；它不表示任何产品 Acceptance criterion 已通过。
+> 历史 readiness（2026-09-07）：Ticket 25 已完成，且 arm64 真机/HITL 的资格与可取证 USB ADB 通道已由
+> docs/reports/orchestration/ticket-26-readiness-reaudit-2.zh-CN.md 记录为 PASS。该 PASS 仅记录当时的
+> readiness prerequisite，不构成当前 dispatch、Worker 领取、真机或产品验收授权。
+>
+> 2026-09-20 治理勘误：main tracker 的权威状态保持 ready-for-agent。历史
+> ticket-26-original 与 ticket-26-canonical 分支中的本地 tracker 曾记录 active，但当前
+> main 未确认一名获授权的 active Worker、canonical branch owner 或可启动的干净 Ticket 26
+> 工作树。因此历史分支、历史 PASS 和已撤回 dispatch 都不构成当前派工或真机执行授权；详见
+> docs/reports/orchestration/ticket-26-governance-reconciliation-2026-09-20.zh-CN.md。
 
 ## What to build
 
