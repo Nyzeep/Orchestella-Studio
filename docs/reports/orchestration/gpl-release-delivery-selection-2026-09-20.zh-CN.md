@@ -42,7 +42,8 @@
 - 已验证：GNU GPLv2 §3 的源码交付选项；QEMU 的 GPLv2 主许可说明；Linux kernel 的 GPL-2.0-only
   许可声明；本地 `main`/`origin/main` 关系。
 - 未运行：构建、CI、QEMU、APK、ADB、真机、tag/Release 创建或公开 URL 可见性检查。
-- 文档验证：待本次 `git diff --check` 与独立治理审查完成后再提交。
+- 文档验证：本次提交前的 `git diff --check` 已通过；内容仅为政策文本，未运行构建或 CI。首个
+  实际 release candidate 仍必须由独立 reviewer 核验 tag、源码包、source record、许可证与校验值。
 
 ## 风险与后续动作
 
