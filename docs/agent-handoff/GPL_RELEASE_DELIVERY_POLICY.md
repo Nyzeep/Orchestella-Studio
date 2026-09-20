@@ -81,8 +81,32 @@ public-source gate.
 
 ## 5. Current status
 
-The delivery model is selected, but no first release is authorized. Before
-the first applicable release, the user must confirm the public repository URL,
-the Release Maintainer, and the recovery/retention owner. No agent may infer
-those facts, create a tag, upload a source bundle, change repository
-visibility, or push a Release without separate user authorization.
+The delivery model and its intended custody roles are selected, but no first
+release is authorized:
+
+- approved future primary public URL:
+  https://github.com/Nyzeep/DroidLayer;
+- Release Maintainer and retention owner: Nyzeep, explicitly designated by
+  the user rather than inferred from a Git identity;
+- primary public delivery: GitHub Releases, with a fixed tag and matching
+  Corresponding Source Release bundle;
+- planned public recovery delivery: an independent GitLab mirror. It is a
+  placeholder only: no GitLab account, mirror URL, mirror contents, public
+  accessibility, protected-tag configuration, or Release asset has yet been
+  created or verified;
+- private disaster-recovery copy: Baidu Netdisk, maintained by Nyzeep and
+  retaining the same versioned source bundle, SHA-256, and release record.
+  It is not a public recovery channel and cannot by itself satisfy this
+  policy's public-access requirement.
+
+For every applicable object-code release, the stated materials must remain
+available for at least three years after the last distribution of that
+release. Before the first applicable release, an independent reviewer must
+verify the actual public visibility and accessibility of both the primary
+delivery and the GitLab recovery delivery, the immutable tag, the matching
+bundle, and the release record. The placeholder does not open the release
+gate.
+
+No agent may create a GitLab account, create or configure a mirror, create a
+tag, upload a source bundle, change repository visibility, or push a Release
+without separate user authorization.
