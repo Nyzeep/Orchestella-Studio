@@ -1,7 +1,7 @@
 # 26: 第一垂直切片——创建 Alpine 实例并进入 shell（QEMU 档）
 
 Type: implementation
-Status: ready-for-agent
+Status: blocked
 Blocked by: 25
 Scope contract: docs/reports/tickets/26/worker-scope-contract.zh-CN.md
 
@@ -9,11 +9,17 @@ Scope contract: docs/reports/tickets/26/worker-scope-contract.zh-CN.md
 > docs/reports/orchestration/ticket-26-readiness-reaudit-2.zh-CN.md 记录为 PASS。该 PASS 仅记录当时的
 > readiness prerequisite，不构成当前 dispatch、Worker 领取、真机或产品验收授权。
 >
-> 2026-09-20 治理勘误：main tracker 的权威状态保持 ready-for-agent。历史
+> 2026-09-20 治理勘误：main tracker 曾保持 ready-for-agent。历史
 > ticket-26-original 与 ticket-26-canonical 分支中的本地 tracker 曾记录 active，但当前
 > main 未确认一名获授权的 active Worker、canonical branch owner 或可启动的干净 Ticket 26
 > 工作树。因此历史分支、历史 PASS 和已撤回 dispatch 都不构成当前派工或真机执行授权；详见
 > docs/reports/orchestration/ticket-26-governance-reconciliation-2026-09-20.zh-CN.md。
+>
+> 2026-09-20 executor readiness：已创建干净的新诊断 branch/worktree，且已完成历史保全
+> 审计；但当前主机没有已注册的 Linux distribution 或可调用 QEMU executor。Ticket 26
+> 因此转为 blocked，尚未派发 active Worker；不得用 Windows/JVM/mock、历史 CI 或静态阅读
+> 代替真实 Linux/QEMU terminal relay 红色反馈。详见
+> docs/reports/orchestration/ticket-26-linux-executor-readiness-2026-09-20.zh-CN.md。
 
 ## What to build
 
