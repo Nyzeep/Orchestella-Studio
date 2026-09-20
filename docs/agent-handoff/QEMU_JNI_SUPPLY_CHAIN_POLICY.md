@@ -118,9 +118,11 @@ publish alongside the release:
 1. GPLv2 text, upstream QEMU LICENSE, and attribution/license records for every bundled dependency;
 2. QEMU-GPL-SOURCES.md: source URL, tag/commit, archive hash, signature/fingerprint, patches, configure
    arguments, builder/NDK identity, build entrypoint, shipped binary/data hashes and dependency closure;
-3. a real written offer and public corresponding-source channel satisfying the ADR-0014 process and GPLv2
-   §3, including scripts/configuration controlling compilation and installation, valid for at least three
-   years after the last applicable object-code distribution;
+3. the ADR-0014 public corresponding-source channel: an approved public repository's fixed release tag plus
+   a matching Corresponding Source Release bundle, including scripts/configuration controlling compilation
+   and installation. A real written offer remains available as a fallback, but a generic publisher/support
+   reference cannot replace the public tag and bundle. The channel and recoverable retention record remain
+   available for at least three years after the last applicable object-code distribution;
 4. a release gate that confirms these materials are actually present, not merely referenced by a stale
    Ticket 25 record.
 
