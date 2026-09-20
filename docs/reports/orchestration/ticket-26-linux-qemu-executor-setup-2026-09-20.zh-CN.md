@@ -17,6 +17,7 @@
 
 - 尚未建立或运行覆盖“PTY first byte → Guest Agent → virtio-serial → host relay → terminal transcript”的 red-capable command；
 - 尚未启动 diagnosis Worker 或 implementation Worker；
+- 当前 clean worktree 没有 Ticket 25 的新鲜 `Image`、`initramfs.cpio.gz`、`SHA256SUMS` 或 Guest Agent binary；Distro 中没有 Docker、Podman、`aarch64-linux-gnu-gcc`、`make` 或 `fakeroot`。不得从冻结的历史 Ticket 26 worktree 或未审查 artifact 借用这些输入；
 - 未下载 Alpine、guest kernel、UEFI firmware、Android/NDK、APK/CI artifact，未运行 Gradle、CI、ADB、真机、产品 Guest Agent 或 terminal transcript；
 - 未完成 Ticket 26 的任何 Acceptance Criteria、GPL delivery、GitHub Release、GitLab mirror、tag 或源码包。
 
@@ -51,14 +52,14 @@
 ## 模型、委派、workflow 或 worktree 影响
 
 - 没有委派 Worker；Orchestrator 完成已获批准的 Host setup 与验证。
-- Ticket 26 在本诊断线从 `blocked` 恢复为 `ready-for-agent`；它合入 `main` 前，`main` 保持旧的 `blocked` 记录。该状态只授权一个 GPT-5.6 Sol / High 的 `diagnosing-bugs` Phase 1 Worker；不等于正式 implementation 已开始。
+- Linux/QEMU executor 的原始 blocker 已解除，但 Ticket 26 保持 `blocked`：完整 Phase 1 仍需要一份新鲜、可复现的 ARM64 guest asset build，而其网络、软件安装、构建与 output 路径尚未获得单独授权。没有 active Worker，也没有授权 GPT-5.6 Sol / High 的 `diagnosing-bugs` Phase 1 Worker。
 - active Worker 在派发前仍为无；历史 original、follow-up、canonical worktree 均未读取、修改、merge、cherry-pick、reset、stash、clean 或删除。
 
 ## 风险与后续动作
 
 - 该 x86_64 Ubuntu/QEMU/TCG runtime 是真实 Linux/QEMU executor，但它不是 Android arm64 APK 或真机环境；它只能用来建立和调试 terminal relay 的真实 QEMU 路径，不能替代 Ticket 26 的交付/真机验收。
-- 下一步只能派发 packet 定义的 Phase 1 diagnosis：先实际得到 tight、red-capable 命令；没有该命令不得提出产品代码假设或写入实现。
-- 若红色 loop 需要 kernel、Alpine、Guest Agent 构建输入、firmware、额外 apt 包、网络下载或任何 Host 写入，Worker 必须停止并申请新的具体授权。
+- 下一步不是派发 diagnosis Worker，而是提交并等待用户批准一份可复现 asset-build disclosure：Linux builder / container runtime 的精确安装路径、固定网络 endpoints、生成输出和 cache 的 D: external root 路径、清理策略，以及不会读取或上传项目内容的失败即停边界。
+- asset build 获批、实际通过且输出已独立校验后，才可派发 packet 定义的 Phase 1 diagnosis：先实际得到 tight、red-capable 命令；没有该命令不得提出产品代码假设或写入实现。
 
 ## 越界与 Architecture Change Policy 检查
 
