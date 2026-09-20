@@ -1,124 +1,81 @@
-# Ticket 26 Dispatch Packet
+# Ticket 26 Dispatch Packet（撤回记录）
 
-> 状态：由 Ticket 26 re-audit-2 PASS 触发的唯一 implementation dispatch。它授权本票
-> Worker 开始受限 implementation，不授权 Ticket 27/28/30 或任何 ADR/SPEC/CONTEXT 变更。
+> 状态：WITHDRAWN / superseded pending reconciliation（2026-09-20）
+>
+> 本文件替代此前的 implementation 与 device-gate dispatch 文本。它不是 Ticket 26 的领取、
+> 实施、真机、CI、APK、Host 或外部证据写入授权；旧文本仍作为 Git 历史审计记录保留，未被改写为
+> 从未派发。
 
 - 票号/标题：26 — 第一垂直切片：创建 Alpine 实例并进入 shell（QEMU 档）
-- session role：implementation Worker
-- dispatch 前提：Ticket 25 completed；B1–B4 均 RESOLVED；re-audit-2 为 PASS
-- workflow：implement + tdd；完成后进入独立 code-review
-- difficulty / risk / verification：L4；QEMU/TCG、JNI/APK、GPL、guest lifecycle、真机 gate
-  均属高风险且验证成本高
-- model / reasoning：GPT-5.6 Sol / xhigh
-- branch：Nyzeep/ticket-26-alpine-shell-qemu
-- worktree：D:\Development project(开发项目)\DroidLayer开发目录\ticket-26-alpine-shell-qemu
-- baseline：包含本 dispatch packet 的 main governance commit
-- implementation report：docs/reports/tickets/26/implementation-report.zh-CN.md
+- main tracker 权威状态：ready-for-agent
+- 已确认 active Worker：无
+- 已确认 canonical branch owner：无
+- 已确认可启动的干净 Ticket 26 worktree：无
+- 当前 workflow：治理修正后的 code-review；后续仅准备 diagnosing-bugs dispatch 草案
+- 默认 Risk：3；一旦触及 QEMU 供应链、host↔guest 安全边界、token、生命周期语义或数据持久化，
+  升为 Risk 4 并停止越界修改/上报。
 
-## 1. 唯一目标与 in-scope
+## 1. 撤回原因
 
-以 docs/reports/tickets/26/worker-scope-contract.zh-CN.md 为唯一 scope contract，交付 Ticket 26
-七项 Acceptance criteria 中的 QEMU/TCG Alpine-to-shell 正常路径。允许范围为 matrix 所列
-contract、instance、distro、capability、engine-qemu、bridge、ui、terminal、受限 app、
-tools/qemu-android 和受限 guest-assets second-stage/bridge 文件。
+1. main tracker 的 ready-for-agent 与历史 Ticket 26 分支中的 active 记录不一致；分支存在、
+   历史提交或旧报告不能取代当前 Worker 的明确领取。
+2. 旧 follow-up dispatch 在 reconciliation 前提前使用，且没有确认当前 active Worker、owner、
+   canonical branch 与干净工作树。
+3. 旧文本包含不稳定的宿主绝对路径，并缺少未来高风险 dispatch 所需的完整风险、能力、保留、
+   Host 权限与六项并行核对记录。
+4. 当前保留的三个 Ticket 26 worktree 含未合并提交、tracked WIP 或冻结 delivery 草案；本文件不
+   授权 merge、cherry-pick、删除、reset、clean、stash、rebase、push 或对 ticket-26-follow-up WIP 的读取/修改。
 
-必须实现 QEMU_JNI_SUPPLY_CHAIN_POLICY.md 的 lock、build、artifact manifest、CI、ABI/APK、
-runtime integrity、GPL/NOTICE 与全部失败即停 gates。不得把尚未证明的 Android/TCG 行为描述为
-已通过。
+## 2. 仍然有效但不构成派工的事实
 
-## 2. Forbidden scope
+- Ticket 25 已 completed 并是 Ticket 26 的已完成依赖。
+- 历史原分支报告记录过 Linux/QEMU full verify 与 artifact-reuse success；这些是历史 CI/QEMU 范围证据，
+  不是当前 canonical HEAD 的动态验证，也不是 Android 真机 Acceptance criteria。
+- 真机安装到 shell、错误 token、terminal PTY/RESIZE、guest 正常关机、同 Root Volume 的 stage=run、
+  真机 devpts/PTY，以及 APK/native delivery 仍不能写为已完成。
+- QEMU GPL delivery 仍缺少用户决定的公开版本化地址、发布/维护负责人和至少三年保留机制。
 
-- Ticket 28 的 host/UI power、进程死亡状态对账、cold restore、crash/log；
-- Ticket 27/29 network、Ticket 30 share、Ticket 31 notify/open-url、Ticket 32 Debian、Ticket 33
-  export/resize、Ticket 34+ AVF；
-- Ticket 25 baseline、kernel/capability、Alpine tarball pin、reproducibility architecture、其
-  tracker 或历史报告；
-- ADR、SPEC、CONTEXT、dependency graph、Bridge command/Exposure Whitelist 扩张；
-- Root、可写目录执行 QEMU、预编译第三方 QEMU、Registry/PATH/driver/service/firewall/system
-  virtualization 变更。
+## 3. 未来受限 dispatch 的必填前提（模板，不是授权）
 
-## 3. 验证与 TDD
+只有治理 reconciliation 与 branch convergence audit 通过、且由 Orchestrator 明确登记后，才能形成
+新的 packet。新 packet 必须逐项写明：
 
-按小步 red → green 交付，每条 Acceptance criterion 逐条留下真实证据：
+| 字段 | 必填内容 |
+| --- | --- |
+| task / session role | 仅为 Linux/QEMU terminal relay diagnosis（本 packet 第 4 节的唯一目标）；不得隐含领取整张 Ticket 26。任何其他 scope 必须另建并经用户/Orchestrator 批准 packet。 |
+| scope / out-of-scope | 目标模块、允许文件、禁止的 Ticket 27–37、ADR/spec/CONTEXT、冻结 delivery 草案和 ticket-26-follow-up WIP。 |
+| workflow | diagnosing-bugs；先建立红色反馈环；没有已运行的 red-capable 命令不得进入假设或代码修改。 |
+| difficulty / Risk / verification cost | 明确复杂度、Risk 3 起点、Risk 4 升级条件与 Linux/QEMU/真机验证成本。 |
+| required capability | Linux/QEMU、PTY/virtio-serial、guest-agent、受控 CI/设备能力；缺失时只输出草案。 |
+| model / reasoning | 推荐 GPT-5.6 Sol / High；若不可用，记录实际 fallback，且不得降低风险结论。 |
+| branch / worktree | 经收敛审计批准、注册路径与物理路径一致、干净、owner 明确的唯一 Ticket 26 worktree；不得假设为 canonical。 |
+| evidence / retention / cleanup | source-controlled 报告使用 ticket canonical home；大证据仅放 canonical-external-resource-root/artifacts/26/diagnosis/，记录 owner、保留期限与清理责任。 |
+| Host 权限 | 只列真实必需的 Linux executor、外部证据写入、CI metadata 或设备写入；无明确逐项授权时不进行 Host/设备写入。 |
+| 六项并行核对 | 依赖、module ownership、shared test ownership、shared contract file、branch、worktree 均须明确 PASS；任一未知即串行。 |
+| 停止条件 | 无干净获准工作树、无 red-capable loop、触及 ADR/spec/暴露面/token/生命周期/持久化冲突、需要读取 ticket-26-follow-up WIP 或 frozen draft、或 GPL 决定仍被误填时停止。 |
 
-1. Contract/JVM：normal lifecycle、DistroManifest、capability、terminal/bridge handshake、
-   token 正负例，并把 normal lifecycle 与 Ticket 28 recovery tests 分文件；
-2. guest integration：首次 Provisioning、guest 自主正常关机、同 Root Volume 二次启动与
-   sentinel 数据保持；
-3. QEMU supply chain：provenance、two-clean-build、ELF/closure、16 KB、APK layout/signature、
-   tamper rejection、GPL gates；
-4. Android build：gradlew.bat :app:testDebugUnitTest、:app:lintDebug、:app:assembleDebug；
-5. 真机：仅在具体设备写入授权与 host disclosure 满足后，运行 Ticket 26 arm64 smoke 清单，
-   记录 APK hash、commit、脱敏设备/日志和每条 AC 的结果。
+## 4. 下一会话的 terminal relay diagnosis 草案（不启动实现）
 
-JVM/contract/Gradle 不能替代真机验收；模拟器不能替代 arm64 device gate。
+- 目标：在 Linux/QEMU 环境建立可无人值守的 terminal relay 红色反馈环。
+- 要验证的路径：PTY 首字节 → Guest Agent → virtio-serial → host relay → terminal transcript。
+- 合格标准：已实际运行一个 agent-runnable、确定性或高复现率的命令；它能准确捕获
+  shell spawned 后 sentinel 未抵达 relay 的症状，并在修复后可转绿。
+- 禁止替代：Windows JVM/mock 不能冒充 QEMU 复现；不得盲改 Guest Agent、增加重试掩盖问题、
+  或混入 frozen delivery 草案。
+- 前置门：若没有干净、收敛批准且 owner 明确的 Ticket 26 worktree，只提交该草案，不启动诊断或实现。
 
-## 4. Host 与 device boundary
+## 5. GPL 的用户决定（不得猜测）
 
-已验证的只读 USB ADB 通道为 D:\手机调试与开发相关\platform-tools\adb.exe，Platform Tools
-37.0.1。每次使用前重检 version 与 devices -l；不要使用旧 PATH ADB，也不要将 Platform Tools
-vendor 到仓库。
+1. 对应源码的公开、版本化地址；
+2. 发布/维护负责人；
+3. 自最后一次适用 object-code 分发起至少三年的保留机制。
 
-本 packet 不授权首次 APK install、OEM driver、Platform Tools 下载、PATH/Registry/system
-configuration 改动，或任何会产生 workspace 外持久写入的 Gradle/SDK cache 操作。Worker 在这些
-操作实际需要前，必须向 Orchestrator 提交 Host Environment Policy 的精确 disclosure，并等待
-所需的用户授权。允许在自身 worktree 创建未提交 local.properties 指向项目 SDK；不得提交它。
+## 6. 数据、Git 与架构边界
 
-## 5. Parallel、Git 与报告纪律
+- 不读取或展示原始 .git、reflog、凭据、token、完整 CI 日志、设备数据、实例数据或 ticket-26-follow-up WIP。
+- 不运行 build、CI、ADB、设备操作，不下载 artifact；Actions 只允许 metadata 查询。
+- 不修改 ADR、spec、CONTEXT、产品代码、QEMU delivery 草案或下游 Ticket。
+- 本撤回是治理校正，不改变产品契约、Guest Bridge 命令或 Exposure Whitelist；Architecture Change
+  Policy 未触发。
 
-Ticket 26 是 B0 serial-only。开始前确认没有 27/28/30 Worker、没有 shared tests/contract
-冲突；只在指定 branch/worktree 提交 Conventional Commits，使用 ticket-26 标记。Worker 不得
-修改 main、merge、push 或创建未授权 Child。
-
-完成前必须在 implementation report 中列出实际命令、exit code、未运行项、host/device 影响、
-scope audit、风险和 Architecture Change 检查；任何 ADR/spec/契约/暴露面冲突立即停止并上报。
-
-批准人：Codex Orchestrator（用户 2026-09-07 B4 验证与 PASS 后派工授权） ｜ 日期：2026-09-07
-
-## 6. 2026-09-19 真机验收 follow-up dispatch
-
-本节是同一 Ticket 26 的后续 implementation dispatch，不创建新 ticket，不放宽原 scope，也不
-把已有 QEMU/CI 证据重述为 Android 真机验收。Worker 必须先读取
-`docs/agent-handoff/DEFENSIVE_CONSTRAINTS/README.md` 及其目录内全部 policy；其余 handoff
-约束、scope contract、本票正文和当前 implementation report 继续有效。
-
-- session role：Ticket 26 follow-up implementation Worker
-- workflow：`implement + tdd`；遇到难以复现的 terminal/device failure 才按需进入
-  `diagnosing-bugs`；完成实现后必须运行独立 `code-review`（Standards + Spec）
-- risk：Risk 2–3；普通实现按当前 §4A 路由，复杂设备/QEMU 调试升级 Sol/High，安全/架构冲突升级 Sol/XHigh
-- source baseline：Ticket 26 分支 `7194304f59b90eb0fd34457bff806f0f45524551`
-- follow-up branch：`Nyzeep/ticket-26-device-gate-followup`
-- worktree：Codex app 为该分支创建的独立 worktree；Worker 必须在报告中记录注册路径、物理路径、HEAD、clean/dirty、ahead/behind、untracked 与 ignored 摘要
-- canonical implementation report：`docs/reports/tickets/26/implementation-report.zh-CN.md`（在既有报告追加本阶段，不创建平行报告）
-- canonical review report：`docs/reports/reviews/26/review-report.zh-CN.md`（追加本阶段 review 结论，不创建平行目录）
-- external evidence：`D:\Development project(开发项目)\DroidLayer开发目录\DroidLayer\artifacts\26\device-gate\`；大型 APK、设备日志、QEMU/Gradle 输出不得进入 Git，需记录来源、hash、owner、保留与清理责任
-
-### Follow-up 的唯一目标
-
-在不扩大 Ticket 26 scope 的前提下，完成当前 report 仍标记为 `NOT VERIFIED` 的 ARM64 真机
-验收，并修复本票范围内阻塞这些验收的实现缺口：provision-and-run 到 shell、错误 token 拒绝、
-terminal PTY/RESIZE、guest 自主正常关机、同一 Root Volume 的 `stage=run` 二次启动与数据保持、
-真机 devpts/PTY，以及 Ticket 26 正文要求的状态/UI/模拟器提示和 supply-chain 证据缺口（逐项
-按当前代码和 report 核实，不假定已有实现）。
-
-### 已验证设备前置条件
-
-2026-09-19 使用 `D:\手机调试与开发相关\platform-tools\adb.exe` 只读核验：ADB 37.0.1；
-设备为实体 Android 15/API 35、`arm64-v8a`、约 11.03 GiB RAM、约 448 GiB `/data` 可用空间；
-`adb get-state=device`；shell 为 uid 2000，`ro.debuggable=0`、`ro.secure=1`。设备标识和完整
-fingerprint 不进入报告或日志。Worker 在每次设备写入前仍必须重新运行 `adb version`、
-`adb devices -l` 和资格查询；本前置结果不授权安装 APK 或其他设备写入。
-
-### 硬边界
-
-- 原 Ticket 26 scope contract、QEMU_JNI_SUPPLY_CHAIN_POLICY、ADR/spec/CONTEXT、Guest Bridge
-  命令和 Exposure Whitelist 不得静默改变。
-- 不启动 27/28/30 或其他下游票；不实现 Ticket 28 的进程死亡 reconciliation、host power、
-  cold restore、crash/log；不实现 network/share/AVF/Debian/export/resize/notify-open-url。
-- 不修改 `main`、不 merge/rebase/push、不使用旧 PATH ADB、不安装 driver/toolchain、不改 PATH/
-  Registry/firewall/system virtualization；设备安装、Gradle cache 或外部写入按 Host Environment
-  Policy 逐项披露并记录实际影响。
-- 遇到架构/安全/契约冲突立即停止并走 Architecture Change Policy；不得用模拟器、QEMU、CI、
-  JVM 或静态检查替代真机结果。
-
-批准人：Codex Orchestrator（用户 2026-09-19 明确要求继续 Ticket 26 并提供已配置真机）｜日期：2026-09-19
+报告人：Codex Orchestrator / GPT-5.6 Terra fallback ｜ 日期：2026-09-20 ｜ 耗时：未独立计时
