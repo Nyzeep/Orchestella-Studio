@@ -1,6 +1,6 @@
 # 编排报告：Ticket 26 Linux/QEMU executor 安装与受限诊断放行（2026-09-20）
 
-- 背景 / scope：此前 Ticket 26 因缺少真实 Linux/QEMU executor 而处于 `blocked`。用户明确批准最小 WSL 平台系统安装，要求项目发行版与诊断 runtime 仅放在当前 D: 项目目录。本报告只记录实际环境变更、验证与诊断放行边界；不记录产品实现、APK、CI、真机或 Release 完成。
+- 背景 / scope：此前 Ticket 26 因缺少真实 Linux/QEMU executor 而处于 `blocked`。用户明确批准最小 WSL 平台系统安装，要求项目发行版与诊断 runtime 仅放在当前 D: 项目目录。本报告记录实际环境变更、验证与诊断放行边界；2026-09-21 的 Phase 1 后续见下文，不记录产品实现、APK、CI、真机或 Release 完成。
 - branch / 基线 / commit：`ticket/26-linux-qemu-rebuild`，基线 `main` `5dc339b`；本次文档改动前该 worktree clean、与 `main` 0 ahead / 0 behind、无 upstream。
 
 ## 实际完成
@@ -13,11 +13,30 @@
 6. 实际启动 `qemu-system-aarch64 -machine virt,accel=tcg` 并配置 `virtio-serial-device`、`virtserialport` 与 Unix socket chardev；在 QEMU 仍存活时确认 socket 存在，随后有序终止，probe 通过。
 7. 安装包默认启用的 `qemu-kvm.service` 只负责 KVM/KSM/hugepages 准备，不属于 TCG 诊断需求；已用标准 `systemctl disable` 移除 enablement link。当前 WSL 没有以 systemd 作为 PID 1，未运行该服务。
 
+## 2026-09-21 Phase 1 后续：资产 gate 与 terminal relay 红色基线
+
+- 独立 freshness gate 通过：本诊断 worktree 的 registered/physical path 一致，HEAD、`main` 与
+  `origin/main` 同为 `8859234a7cd922d4a99385874d1638f31e20c518`，相对 `main` 为 0 ahead / 0 behind，
+  clean、无未跟踪或 ignored 项；冻结的旧 Ticket 26 worktree 仅核对注册存在性，未读取或修改。
+- 用户指定的唯一 Ticket 25 artifact 已逐项重算：`SHA256SUMS` 12/12 项匹配；`Image` 与
+  `initramfs.cpio.gz` 分别匹配已批准 SHA-256；`qemu-smoke-result.txt` 为
+  `DROIDLAYER_QEMU_SMOKE_OK`。没有运行资产构建、网络下载或安装。
+- 在 `DroidLayer-T26:/tmp` 创建并实际运行临时 `run-red-loop.sh`（`bash run-red-loop.sh {1,2,3}`）。
+  每次使用真实 QEMU/TCG、已校验 ARM64 kernel/initramfs/Guest Agent、virtio-serial Unix socket、
+  host `socat` PTY relay 与 transcript。实际 `/bin/sh` 内的启动点和 Agent `READY` 均可观测；同一
+  PTY 首次 payload 中的 terminal sentinel 3/3 未出现在 host transcript，verdict 均为 RED，
+  耗时 5.926 s、5.806 s、5.707 s。
+- 所有 harness、socket、transcript 与日志均以 trap 从 `/tmp/droidlayer-ticket26-phase1-*` 删除；
+  未保留完整日志、harness 源码、token、设备数据或产品输出。
+- “缺少新鲜 guest 资产”的 blocker 已解除，Ticket 26 恢复 `ready-for-agent`。这不是 `active`、
+  `review` 或 `completed`，也不是产品/供应链/真机/GPL delivery 通过；下一步必须形成独立的
+  implementation + TDD dispatch。
+
 ## 未完成内容
 
-- 尚未建立或运行覆盖“PTY first byte → Guest Agent → virtio-serial → host relay → terminal transcript”的 red-capable command；
+- Phase 1 之前（截至 2026-09-20）尚未建立或运行覆盖“PTY first byte → Guest Agent → virtio-serial → host relay → terminal transcript”的 red-capable command；该项已由上述 2026-09-21 运行完成。
 - 尚未启动 diagnosis Worker 或 implementation Worker；
-- 当前 clean worktree 没有 Ticket 25 的新鲜 `Image`、`initramfs.cpio.gz`、`SHA256SUMS` 或 Guest Agent binary；Distro 中没有 Docker、Podman、`aarch64-linux-gnu-gcc`、`make` 或 `fakeroot`。不得从冻结的历史 Ticket 26 worktree 或未审查 artifact 借用这些输入；
+- Phase 1 之前（截至 2026-09-20）当前 clean worktree 没有 Ticket 25 的新鲜 `Image`、`initramfs.cpio.gz`、`SHA256SUMS` 或 Guest Agent binary；2026-09-21 仅以已批准、已核验的外部 artifact 解除该诊断输入 blocker，未从冻结历史 worktree 借用输入；
 - 未下载 Alpine、guest kernel、UEFI firmware、Android/NDK、APK/CI artifact，未运行 Gradle、CI、ADB、真机、产品 Guest Agent 或 terminal transcript；
 - 未完成 Ticket 26 的任何 Acceptance Criteria、GPL delivery、GitHub Release、GitLab mirror、tag 或源码包。
 
@@ -26,6 +45,9 @@
 - `.scratch/droidlayer-platform/issues/26-impl-first-slice-alpine-shell-qemu.md`：环境 blocker 更正为受限诊断 ready 状态；
 - `docs/reports/tickets/26/dispatch-packet.zh-CN.md`：替换为唯一 Phase 1 diagnosis packet；
 - `docs/reports/orchestration/ticket-26-linux-qemu-executor-setup-2026-09-20.zh-CN.md`：本报告。
+
+2026-09-21 的最小治理更新仅涉及上述三份 canonical 文件：tracker 恢复 `ready-for-agent`，
+dispatch packet 与本报告写回资产复核、红色 verdict、清理和未完成边界。
 
 ## Host 与外部资源实际变化
 
@@ -46,20 +68,20 @@
 | rootfs 输入校验 | PASS | 官方 Ubuntu SHA-256 清单与下载 rootfs 一致 |
 | QEMU 可执行性 | PASS | `qemu-system-aarch64` 8.2.2 可执行 |
 | TCG + virtio-serial socket | PASS | QEMU live 时 socket 存在，随后有序终止 |
-| PTY / Guest Agent / relay / transcript | 未运行 | 留给受限 `diagnosing-bugs` Phase 1；当前不能宣称完成 |
+| PTY / Guest Agent / relay / transcript | RED 3/3 | shell 启动点与 Agent `READY` 可观测，但 terminal sentinel 未抵达 transcript；这是待修复诊断基线，不是通过 |
 | APK / CI / 真机 / GPL delivery | 未运行 | 明确不在本 scope |
 
 ## 模型、委派、workflow 或 worktree 影响
 
 - 没有委派 Worker；Orchestrator 完成已获批准的 Host setup 与验证。
-- Linux/QEMU executor 的原始 blocker 已解除，但 Ticket 26 保持 `blocked`：完整 Phase 1 仍需要一份新鲜、可复现的 ARM64 guest asset build，而其网络、软件安装、构建与 output 路径尚未获得单独授权。没有 active Worker，也没有授权 GPT-5.6 Sol / High 的 `diagnosing-bugs` Phase 1 Worker。
+- Linux/QEMU executor、批准资产 integrity gate 与 `diagnosing-bugs` Phase 1 均已完成；没有 active Worker。Ticket 26 已恢复 `ready-for-agent`，但独立 implementation + TDD dispatch 尚未创建。
 - active Worker 在派发前仍为无；历史 original、follow-up、canonical worktree 均未读取、修改、merge、cherry-pick、reset、stash、clean 或删除。
 
 ## 风险与后续动作
 
 - 该 x86_64 Ubuntu/QEMU/TCG runtime 是真实 Linux/QEMU executor，但它不是 Android arm64 APK 或真机环境；它只能用来建立和调试 terminal relay 的真实 QEMU 路径，不能替代 Ticket 26 的交付/真机验收。
-- 下一步不是派发 diagnosis Worker，而是提交并等待用户批准一份可复现 asset-build disclosure：Linux builder / container runtime 的精确安装路径、固定网络 endpoints、生成输出和 cache 的 D: external root 路径、清理策略，以及不会读取或上传项目内容的失败即停边界。
-- asset build 获批、实际通过且输出已独立校验后，才可派发 packet 定义的 Phase 1 diagnosis：先实际得到 tight、red-capable 命令；没有该命令不得提出产品代码假设或写入实现。
+- 下一步是单独形成 implementation + TDD dispatch；它必须以本红色 loop 为反馈基线，且仍不得把 Linux/QEMU 诊断替代 Android APK、CI、真机或 GPL delivery 验收。
+- 本 session 在 Phase 1 停止，不提出根因假设、不增加 instrumentation、不修改产品代码或测试。
 
 ## 越界与 Architecture Change Policy 检查
 

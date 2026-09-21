@@ -1,19 +1,19 @@
-# Ticket 26 Dispatch Packet（Linux/QEMU executor 已就绪，资产输入仍阻断）
+# Ticket 26 Dispatch Packet（Phase 1 Linux/QEMU terminal relay 红色基线已建立）
 
-> 状态：BLOCKED — fresh guest asset / builder authorization pending（2026-09-20）
+> 状态：READY-FOR-AGENT — Phase 1 资产 gate 与红色诊断已完成（2026-09-21）
 >
-> Linux/QEMU executor 已验证，但尚无可用的 ARM64 guest kernel、initramfs 与 Guest Agent
-> binary 来覆盖完整 terminal relay 路径。本记录保留未来 Phase 1 packet 的边界，不授权
-> diagnosis Worker、产品实现、APK/CI、ADB/真机、Release、GitHub/GitLab 写入，或历史 WIP
+> 用户指定的 Ticket 25 新鲜资产已独立校验，真实 Linux/QEMU/TCG terminal relay 红色反馈已
+> 实际运行。此记录只保留完成后的诊断边界与下一次独立 implementation + TDD dispatch 所需事实；
+> 它不授权本 session 实施产品、APK/CI、ADB/真机、Release、GitHub/GitLab 写入，或历史 WIP
 > 的读取、修改、采用与处置。
 
 - 票号/标题：26 — 第一垂直切片：创建 Alpine 实例并进入 shell（QEMU 档）
-- 当前诊断线 tracker 状态：blocked；`main` 也保持 blocked
-- 已确认 active Worker：无；本 packet 目前不允许派发 diagnosis Worker
-- 已确认新实施线 owner：Codex Orchestrator（仅保全和更新 blocker 记录；尚未移交 Worker）
-- 已确认干净诊断 worktree：ticket/26-linux-qemu-rebuild，基于 main `5dc339b`，clean、0 ahead /
-  0 behind、无 upstream；它不是历史 ticket-26-canonical 的替代或清理授权
-- 当前 workflow：executor / asset-input readiness audit；`diagnosing-bugs` 尚未启动
+- 当前诊断线 tracker 状态：`ready-for-agent`；无 active Worker
+- 已确认新实施线 owner：Codex Orchestrator；下一次实施必须先形成独立 implementation + TDD dispatch
+- 已确认干净诊断 worktree：ticket/26-linux-qemu-rebuild，基于 main
+  `8859234a7cd922d4a99385874d1638f31e20c518`，clean、0 ahead / 0 behind、无 upstream；它不是历史
+  ticket-26-canonical 的替代或清理授权
+- 当前 workflow：`diagnosing-bugs` Phase 1 已完成；未进入假设、instrumentation、fix 或产品实现
 - 默认 Risk：3；触及 QEMU 供应链、host↔guest 安全边界、token、生命周期语义、数据持久化、
   Guest Agent 产品代码或任何 accepted ADR 时升为 Risk 4 并停止越界修改/上报。
 
@@ -50,19 +50,21 @@
   firewall、device、network endpoint 或外部 artifact 写入。若 loop 需要额外依赖、kernel、
   rootfs、firmware 或网络下载，必须停止并报告，不得自行安装或下载。
 
-## 3. 当前剩余 blocker：可复现 guest 资产
+## 3. 已解除 blocker：可复现 guest 资产与红色诊断
 
-- 当前 clean worktree 的 `guest-assets/out/` 不存在；`Image`、`initramfs.cpio.gz`、
-  `SHA256SUMS` 与 Guest Agent binary 均不可用。不得从历史 Ticket 26 worktree、冻结 WIP 或
-  未审查 artifact 借用这些输入。
-- Ticket 25 的受控构建入口要求 Docker-compatible Docker / Podman，或一个已经准备好的 Ubuntu
-  Linux builder；当前 `DroidLayer-T26` 中 `docker`、`podman`、`aarch64-linux-gnu-gcc`、`make`
-  与 `fakeroot` 均不存在。
-- 资产构建还会按 tracked lock 从 Microsoft Container Registry、Ubuntu package endpoints 和固定
-  上游输入获取内容，并产生 kernel、initramfs、rootfs、日志与 cache。当前 packet 没有授权这些
-  网络、软件安装、构建或 external artifact 写入。
-- 因此 QEMU runtime probe 的 PASS 不能升级为 terminal relay 的红色反馈或 Ticket 26 开始；
-  正确状态是 `blocked`，等待一份新的、逐项披露的 asset-build authorization。
+- 仅使用用户批准的 Ticket 25 外部 artifact 目录；`SHA256SUMS` 12/12 项匹配，`Image` SHA-256 为
+  `d56677f4a2801ab9a9faa68be448d8ca92de5b1058c68b1e132377d810435dc5`，
+  `initramfs.cpio.gz` SHA-256 为
+  `92766a6f927124d8046348fc4622aa93a842b3eccc279c6ae913f97d8313d7ec`，
+  `qemu-smoke-result.txt` 为 `DROIDLAYER_QEMU_SMOKE_OK`。
+- 未运行资产构建、未安装或下载任何依赖；`guest-assets/out/` 的不存在不再是诊断 blocker，
+  因为该唯一批准的新鲜外部 artifact 已满足本 Phase 1 的只读输入需求。
+- 在真实 `DroidLayer-T26` Linux/QEMU/TCG 中，临时 `/tmp` harness 以实际 `/bin/sh` 内部启动点、
+  Guest Agent `READY`、virtio-serial Unix socket、host `socat` relay 和 PTY transcript 组成
+  red-capable loop。3 次均为 RED：同一首个 PTY payload 的 handshake 已产生 `READY`，但 terminal
+  sentinel 未抵达 transcript；单次约 5.7–5.9 秒，所有临时目录均已清理。
+- 此红色结果是待实现行为的诊断基线，不是 Ticket 26 产品完成、供应链/CI/真机验收或 GPL delivery
+  的通过结论。
 
 ## 4. 历史撤回与保全原因
 
@@ -85,37 +87,35 @@
 - GPL 交付模型、未来 GitHub 主公开地址、Release Maintainer 和三年保留责任已由用户确认；
   GitLab 公开恢复镜像仍只是未创建的占位，百度网盘只是私有灾备，因此 release gate 仍关闭。
 
-## 6. 未来受限 diagnosis dispatch（模板，不是当前授权）
+## 6. 受限 Phase 1 diagnosis dispatch（已完成；不能延伸为 implementation）
 
-治理 reconciliation、branch convergence audit、freshness gate 和 executor setup 均已完成，但
-第 3 节 asset blocker 尚未解决。下表只描述 asset blocker 解除后唯一的 Phase 1 Worker；任何未
-在表内的工作都不是隐含授权。
+治理 reconciliation、branch convergence audit、freshness gate、asset integrity gate 与 executor
+setup 均已完成。下表记录本次唯一获准的 Phase 1 scope；其完成不隐含产品实现授权。
 
 | 字段 | 必填内容 |
 | --- | --- |
-| task / session role | 仅为 Linux/QEMU terminal relay diagnosis（本 packet 第 7 节的唯一目标）；不得隐含领取整张 Ticket 26。任何其他 scope 必须另建并经用户/Orchestrator 批准 packet。 |
+| task / session role | 仅为 Linux/QEMU terminal relay diagnosis（本 packet 第 7 节的唯一目标），现已完成；不得隐含领取整张 Ticket 26。任何其他 scope 必须另建并经用户/Orchestrator 批准 packet。 |
 | scope / out-of-scope | 可读当前 worktree 中 packet、Ticket 26、scope contract、AGENTS/defensive policies、CONTEXT、ADR-0002/0009/0010/0011，及建最小 loop 绝对需要的 tracked source；禁止 Ticket 27–37、ADR/spec/CONTEXT 写入、冻结 delivery 草案和 ticket-26-follow-up WIP。 |
-| workflow | diagnosing-bugs；先建立红色反馈环；没有已运行的 red-capable 命令不得进入假设或代码修改。 |
+| workflow | diagnosing-bugs Phase 1；已建立并实际运行红色反馈环，未进入假设或代码修改。 |
 | difficulty / Risk / verification cost | Risk 3；Linux/QEMU loop 必须实际运行。触及 QEMU supply chain、host↔guest 安全、token、lifecycle、persistence、Guest Agent 产品代码或 ADR 时升 Risk 4 并停。APK/CI/真机/GPL delivery 禁止且不构成通过。 |
 | required capability | 已验证的 Linux/QEMU/TCG + virtio-serial executor；Worker 必须建立实际 PTY、Guest Agent、relay、transcript 路径，而不是 Windows/JVM/mock。 |
 | model / reasoning | GPT-5.6 Sol / High；不可用时不静默降级，停止并由 Orchestrator 重新派发。 |
-| branch / worktree | `ticket/26-linux-qemu-rebuild`；每次接手前重新确认 registered/physical path、HEAD、clean、0/0、untracked/ignored 与 owner。 |
-| evidence / retention / cleanup | 默认零 Git 跟踪写入；临时 harness 只能在 `DroidLayer-T26:/tmp`，会话结束前删除。仅向 Orchestrator 交回脱敏命令、verdict、次数/耗时、覆盖说明和清理状态。 |
+| branch / worktree | `ticket/26-linux-qemu-rebuild`；本次已重新确认 registered/physical path、HEAD、clean、0/0、untracked/ignored 与 owner。 |
+| evidence / retention / cleanup | 默认零 Git 跟踪写入；临时 harness 仅在 `DroidLayer-T26:/tmp`，已在会话结束前删除。交回内容仅为脱敏命令、verdict、次数/耗时、覆盖说明和清理状态。 |
 | Host 权限 | 已有 runtime 只可本地运行；不得新安装、下载、修改 Host 或 external runtime。发现需要 kernel、rootfs、firmware、包或 Host I/O 时停止。 |
 | 六项并行核对 | 依赖、module ownership、shared test、shared contract、branch、worktree 均为 PASS：本 scope 零产品写入、零仓库测试写入、只读 contract、唯一 branch/worktree、无 active Worker。 |
-| 停止条件 | 无实际覆盖症状的 red-capable loop；任何产品/Git 写入、额外下载或安装、Host 写入、frozen WIP、token/credential、ADR/spec 变更、CI/设备工作，或需要扩大 scope。 |
+| 停止条件 | 红色 loop 已达成；在独立 implementation + TDD dispatch 前，任何产品/Git 写入、额外下载或安装、Host 写入、frozen WIP、token/credential、ADR/spec 变更、CI/设备工作，或扩大 scope 均停止。 |
 
-## 7. 未来 terminal relay diagnosis scope（不启动实现）
+## 7. terminal relay diagnosis 结果（不启动实现）
 
-- 目标：在 Linux/QEMU 环境建立可无人值守的 terminal relay 红色反馈环。
+- 目标：在 Linux/QEMU 环境建立可无人值守的 terminal relay 红色反馈环；已完成。
 - 要验证的路径：PTY 首字节 → Guest Agent → virtio-serial → host relay → terminal transcript。
-- 合格标准：已实际运行一个 agent-runnable、确定性或高复现率的命令；它能准确捕获
-  shell spawned 后 sentinel 未抵达 relay 的症状，并在修复后可转绿。
+- 合格标准：已实际运行一个 agent-runnable、3/3 可复现的命令；它准确捕获实际 `/bin/sh` 启动后
+  sentinel 未抵达 relay/transcript 的症状，并在后续修复后可转绿。
 - 禁止替代：Windows JVM/mock 不能冒充 QEMU 复现；不得盲改 Guest Agent、增加重试掩盖问题、
   或混入 frozen delivery 草案。
-- 前置门部分通过：干净、收敛批准、owner 明确的 Ticket 26 worktree 与可用 Linux/QEMU executor
-  均已实际验证；但第 3 节可复现 asset blocker 未解除。解除后 Worker 才可开始 Phase 1，且仍不得
-  进入假设、instrumentation、fix 或 implementation。
+- freshness、批准输入、owner 明确的 Ticket 26 worktree 与 Linux/QEMU executor 均已实际验证；
+  Phase 1 已止于红色基线，不得在本 session 进入假设、instrumentation、fix 或 implementation。
 
 ## 8. GPL 交付状态
 
@@ -131,7 +131,7 @@
 - 不运行 build、CI、ADB、设备操作，不下载 artifact；Phase 1 只允许已安装 QEMU 与现有 WSL
   runtime 的本地诊断命令。
 - 不修改 ADR、spec、CONTEXT、产品代码、QEMU delivery 草案或下游 Ticket。
-- 本撤回是治理校正，不改变产品契约、Guest Bridge 命令或 Exposure Whitelist；Architecture Change
-  Policy 未触发。
+- 本次状态恢复是治理校正，不改变产品契约、Guest Bridge 命令或 Exposure Whitelist；Architecture
+  Change Policy 未触发。
 
-报告人：Codex Orchestrator ｜ 日期：2026-09-20 ｜ 耗时：未独立计时
+报告人：Codex Orchestrator ｜ 日期：2026-09-21 ｜ 耗时：未独立计时
