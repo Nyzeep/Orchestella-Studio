@@ -21,7 +21,7 @@
 - 用户指定的唯一 Ticket 25 artifact 已逐项重算：`SHA256SUMS` 12/12 项匹配；`Image` 与
   `initramfs.cpio.gz` 分别匹配已批准 SHA-256；`qemu-smoke-result.txt` 为
   `DROIDLAYER_QEMU_SMOKE_OK`。没有运行资产构建、网络下载或安装。
-- 在 `DroidLayer-T26:/tmp` 创建并实际运行临时 `run-red-loop.sh`（`bash run-red-loop.sh {1,2,3}`）。
+- 在 `DroidLayer-T26:/tmp` 创建并实际运行临时 `run-red-loop.sh`（`for run_id in 1 2 3; do ./run-red-loop.sh "$run_id"; done`）。
   每次使用真实 QEMU/TCG、已校验 ARM64 kernel/initramfs/Guest Agent、virtio-serial Unix socket、
   host `socat` PTY relay 与 transcript。实际 `/bin/sh` 内的启动点和 Agent `READY` 均可观测；同一
   PTY 首次 payload 中的 terminal sentinel 3/3 未出现在 host transcript，verdict 均为 RED，
