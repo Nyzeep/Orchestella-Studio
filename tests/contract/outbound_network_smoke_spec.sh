@@ -1,7 +1,7 @@
 #!/bin/sh
 # ==============================================================================
 # DroidLayer Ticket 27: Outbound Network & SLIRP Contract Verification Spec
-# Acceptance Criteria: AC-1 (SLIRP/VirtIO), AC-2 (DNS Traversal), AC-4 (apk update)
+# Acceptance Criteria: AC-1 (SLIRP/VirtIO), AC-2 (DNS Traversal), AC-4 (apk update & package install)
 # Standard: ADR-0008, ADR-0010
 # ==============================================================================
 set -eu
@@ -84,20 +84,29 @@ log "Step 5: Testing DNS resolution for Alpine package repository..."
 if nslookup dl-cdn.alpinelinux.org >/dev/null 2>&1; then
     log "PASS: dl-cdn.alpinelinux.org successfully resolved."
 else
-    log "nslookup failed, verifying via getent or ping..."
+    log "nslookup failed, verifying via ping..."
     ping -c 2 8.8.8.8 || fail "Cannot reach public IP 8.8.8.8 via SLIRP gateway!"
 fi
 
 # ------------------------------------------------------------------------------
-# Step 6: Core Acceptance Test: apk update & Package Fetching (AC-4)
+# Step 6: Core Acceptance Test: apk update & Package Installation (AC-4)
 # ------------------------------------------------------------------------------
-log "Step 6: Executing apk update (fetching Alpine package index)..."
+log "Step 6a: Executing apk update (fetching Alpine package index)..."
 apk update || fail "apk update failed! Outbound Internet NAT is not functional."
 log "PASS: apk update succeeded."
 
 log "Step 6b: Testing package metadata query..."
 apk info -v alpine-base || fail "Unable to query package info"
 log "PASS: Alpine base repository is fully operational."
+
+log "Step 6c: Executing actual package installation (curl) to verify end-to-end download..."
+apk add --no-cache curl || fail "apk add curl failed! Incomplete outbound network transmission."
+curl --version >/dev/null 2>&1 || fail "Installed 'curl' binary failed execution!"
+log "Executing HTTP probe with installed curl..."
+curl -I -s --connect-timeout 5 https://dl-cdn.alpinelinux.org/alpine/ | head -n 1 || fail "Curl HTTP probe failed!"
+log "Cleaning up installed package..."
+apk del curl || fail "Failed to remove test package curl"
+log "PASS: Package download, installation, execution, and cleanup completed successfully."
 
 # ------------------------------------------------------------------------------
 # Step 7: Security Boundary & Zero Inbound Exposure Assertion (ADR-0010)
@@ -113,5 +122,16 @@ for ip_entry in $ALL_IPS; do
     esac
 done
 log "PASS: Guest isolated to private NAT; zero unauthorized exposure."
+
+# ------------------------------------------------------------------------------
+# Step 8: Host Network Transition & Resilience Observation Protocol
+# ------------------------------------------------------------------------------
+log "Step 8: Documenting network transition observation protocol:"
+log "  - Network Switch (Wi-Fi <-> Cellular): SLIRP operates in userspace; active TCP"
+log "    connections will drop on host interface change, but new TCP/UDP connections"
+log "    and DNS queries will automatically route through the new default network."
+log "  - Recovery test: after network transition, wait 3-5 seconds and execute:"
+log "      apk update && nslookup dl-cdn.alpinelinux.org"
+log "    Verification PASS criteria: exits with code 0 without instance reboot."
 
 log "=== DroidLayer Ticket 27 Outbound Network Smoke Verification PASSED ==="

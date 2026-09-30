@@ -9,49 +9,51 @@ import java.util.regex.Pattern;
  * <p>Implements ADR-0008 ("默认出站 NAT + 显式端口转发") and ADR-0010 ("安全边界：暴露面白名单制"):
  * <ul>
  *   <li>Outbound traffic is allowed by default using NAT without requiring guest configuration.</li>
- *   <li>IPv6 is explicitly disabled ({@code ipv6=off}) across all virtual machine tiers.</li>
- *   <li>Inbound exposure is zero by default (no unintended port exposure).</li>
- *   <li>DNS traversal supports host-provided DNS servers (e.g. Google 8.8.8.8, Cloudflare 1.1.1.1,
- *       or active system DNS) to mitigate Android's lack of {@code /etc/resolv.conf}.</li>
+ *   <li>IPv6 is explicitly disabled across all virtual machine tiers.</li>
+ *   <li>Strategy-neutral specification: contains only semantic network configuration data;
+ *       all hypervisor-specific command-line serialization (e.g. QEMU CLI arguments)
+ *       is isolated in the corresponding engine layer.</li>
+ *   <li>DNS traversal defaults to a public upstream DNS server ({@value #DEFAULT_FALLBACK_DNS})
+ *       to ensure guest resolution is immediately functional on Android hosts without
+ *       {@code /etc/resolv.conf}.</li>
  * </ul>
  */
 public final class NetworkContract {
     public static final String DEFAULT_NETDEV_ID = "net0";
     public static final String DEFAULT_GUEST_NETWORK_CIDR = "10.0.2.0/24";
     public static final String DEFAULT_GUEST_DHCP_START = "10.0.2.15";
-    public static final String DEFAULT_GATEWAY_IP = "10.0.2.2";
 
-    public static final String GOOGLE_DNS = "8.8.8.8";
-    public static final String CLOUDFLARE_DNS = "1.1.1.1";
+    public static final String DEFAULT_FALLBACK_DNS = "8.8.8.8";
+    public static final String SECONDARY_FALLBACK_DNS = "1.1.1.1";
+
+    public static final String GOOGLE_DNS = DEFAULT_FALLBACK_DNS;
+    public static final String CLOUDFLARE_DNS = SECONDARY_FALLBACK_DNS;
 
     private static final Pattern NETDEV_ID_PATTERN = Pattern.compile("^[A-Za-z0-9_-]+$");
+
+    // Strict IPv4 octet (0-255) without leading zeros to avoid octal parsing hazards
+    private static final String IPV4_OCTET = "(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])";
     private static final Pattern IPV4_PATTERN =
-            Pattern.compile("^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$");
+            Pattern.compile("^(?:" + IPV4_OCTET + "\\.){3}" + IPV4_OCTET + "$");
     private static final Pattern CIDR_PATTERN =
-            Pattern.compile("^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)/(?:[0-9]|[12][0-9]|3[0-2])$");
+            Pattern.compile("^(?:" + IPV4_OCTET + "\\.){3}" + IPV4_OCTET + "/(?:[0-9]|[12][0-9]|3[0-2])$");
 
     private NetworkContract() {}
 
     /**
-     * Supported virtual network interface device models.
+     * Supported virtual network interface device models (strategy-neutral).
      */
     public enum DeviceType {
-        VIRTIO_NET_PCI("virtio-net-pci"),
-        VIRTIO_NET_DEVICE("virtio-net-device");
-
-        private final String qemuDeviceName;
-
-        DeviceType(String qemuDeviceName) {
-            this.qemuDeviceName = qemuDeviceName;
-        }
-
-        public String qemuDeviceName() {
-            return qemuDeviceName;
-        }
+        VIRTIO_NET_PCI,
+        VIRTIO_NET_DEVICE
     }
 
     /**
      * Immutable specification for guest outbound network configuration.
+     *
+     * <p>Holds strategy-neutral network topology and DNS parameters. Engine implementations
+     * (such as QEMU or AVF) consume this specification to configure their respective
+     * device backends and hypervisor parameters.
      */
     public static final class OutboundNetworkSpec {
         private final String netdevId;
@@ -83,14 +85,24 @@ public final class NetworkContract {
             this.cmdlineDns = cmdlineDns != null ? validateIpv4(cmdlineDns, "cmdlineDns") : null;
         }
 
-        /** Creates a baseline outbound specification conforming strictly to ADR-0008. */
+        /**
+         * Creates a baseline outbound specification conforming strictly to ADR-0008.
+         * Default configuration includes public DNS fallback ({@value #DEFAULT_FALLBACK_DNS})
+         * for both the network backend and kernel cmdline.
+         */
         public static OutboundNetworkSpec defaultSpec() {
             return new Builder().build();
         }
 
-        /** Creates an outbound specification with a specific primary DNS server (e.g. 8.8.8.8). */
+        /**
+         * Creates an outbound specification with a specific primary DNS server.
+         * Synchronously configures both the network backend DNS and kernel cmdline DNS.
+         */
         public static OutboundNetworkSpec withDns(String dnsServer) {
-            return new Builder().dnsServer(dnsServer).build();
+            return new Builder()
+                    .dnsServer(dnsServer)
+                    .cmdlineDns(dnsServer)
+                    .build();
         }
 
         public static Builder builder() {
@@ -127,43 +139,6 @@ public final class NetworkContract {
 
         public String cmdlineDns() {
             return cmdlineDns;
-        }
-
-        /**
-         * Reports whether any inbound exposure (port forwarding) is active.
-         * Ticket 27 baseline enforces zero inbound exposure.
-         */
-        public boolean hasInboundExposure() {
-            return false;
-        }
-
-        /**
-         * Number of active inbound port forwarding rules.
-         */
-        public int inboundRulesCount() {
-            return 0;
-        }
-
-        /**
-         * Formats the QEMU {@code -netdev} option argument string.
-         */
-        public String toNetdevArg() {
-            StringBuilder sb = new StringBuilder();
-            sb.append("user,id=").append(netdevId);
-            sb.append(",ipv6=off");
-            sb.append(",net=").append(guestNetworkCidr);
-            sb.append(",dhcpstart=").append(guestDhcpStart);
-            if (dnsServer != null && !dnsServer.isEmpty()) {
-                sb.append(",dns=").append(dnsServer);
-            }
-            return sb.toString();
-        }
-
-        /**
-         * Formats the QEMU {@code -device} option argument string.
-         */
-        public String toDeviceArg() {
-            return deviceType.qemuDeviceName() + ",netdev=" + netdevId;
         }
 
         @Override
@@ -209,8 +184,8 @@ public final class NetworkContract {
             private String guestDhcpStart = DEFAULT_GUEST_DHCP_START;
             private boolean ipv6Enabled = false;
             private DeviceType deviceType = DeviceType.VIRTIO_NET_PCI;
-            private String dnsServer = null;
-            private String cmdlineDns = null;
+            private String dnsServer = DEFAULT_FALLBACK_DNS;
+            private String cmdlineDns = DEFAULT_FALLBACK_DNS;
 
             public Builder() {}
 

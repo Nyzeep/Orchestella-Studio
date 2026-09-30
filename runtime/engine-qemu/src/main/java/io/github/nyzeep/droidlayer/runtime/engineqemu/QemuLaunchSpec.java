@@ -11,9 +11,12 @@ import java.util.Objects;
  * inputs travel inside the initramfs as the embedded segment built by
  * {@link EmbeddedProvisionInput}. Outbound network (SLIRP NAT) and device
  * assembly conform to {@link NetworkContract.OutboundNetworkSpec} (ADR-0008,
- * ADR-0010). The array is executed directly as one argument array by the
- * approved engine seam; no shell is involved and no element is dynamic beyond
- * the caller-supplied paths, socket names, memory size, and network parameters.
+ * ADR-0010). All hypervisor-specific CLI formatting is encapsulated in this
+ * engine class, keeping the contract strategy-neutral.
+ *
+ * <p>The array is executed directly as one argument array by the approved engine seam;
+ * no shell is involved and no element is dynamic beyond the caller-supplied paths,
+ * socket names, memory size, and network parameters.
  */
 public final class QemuLaunchSpec {
     public static final String GUEST_CMDLINE = "console=ttyAMA0 rdinit=/init panic=-1"
@@ -89,12 +92,46 @@ public final class QemuLaunchSpec {
                 "-append", cmdline,
                 "-drive", "if=none,id=root,file=" + rootVolume + ",format=raw,cache=unsafe",
                 "-device", "virtio-blk-device,drive=root",
-                "-netdev", networkSpec.toNetdevArg(),
-                "-device", networkSpec.toDeviceArg(),
+                "-netdev", formatNetdevArg(networkSpec),
+                "-device", formatDeviceArg(networkSpec),
                 "-device", "virtio-serial-device",
                 "-chardev", "socket,id=control,path=" + controlSocketName
                         + ",abstract=on,server=on,wait=off",
                 "-device", "virtserialport,chardev=control,name=droidlayer.bridge",
         };
+    }
+
+    /**
+     * Formats the QEMU {@code -netdev} option argument string for the user/SLIRP backend.
+     */
+    static String formatNetdevArg(NetworkContract.OutboundNetworkSpec spec) {
+        Objects.requireNonNull(spec, "spec");
+        StringBuilder sb = new StringBuilder();
+        sb.append("user,id=").append(spec.netdevId());
+        sb.append(",ipv6=off");
+        sb.append(",net=").append(spec.guestNetworkCidr());
+        sb.append(",dhcpstart=").append(spec.guestDhcpStart());
+        if (spec.dnsServer() != null && !spec.dnsServer().isEmpty()) {
+            sb.append(",dns=").append(spec.dnsServer());
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Formats the QEMU {@code -device} option argument string for the network interface device.
+     */
+    static String formatDeviceArg(NetworkContract.OutboundNetworkSpec spec) {
+        Objects.requireNonNull(spec, "spec");
+        String deviceName;
+        switch (spec.deviceType()) {
+            case VIRTIO_NET_DEVICE:
+                deviceName = "virtio-net-device";
+                break;
+            case VIRTIO_NET_PCI:
+            default:
+                deviceName = "virtio-net-pci";
+                break;
+        }
+        return deviceName + ",netdev=" + spec.netdevId();
     }
 }
