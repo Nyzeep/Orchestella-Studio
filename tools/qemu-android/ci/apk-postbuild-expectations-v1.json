@@ -1,0 +1,56 @@
+{
+  "allowed_unpackaged_dt_needed": [
+    "libc.so",
+    "libdl.so",
+    "libm.so"
+  ],
+  "expected_abi": "arm64-v8a",
+  "expected_apk_bytes": 60148288,
+  "expected_apk_entry": "lib/arm64-v8a/libdroidlayer_qemu.so",
+  "expected_apk_output_path": "app/build/outputs/apk/debug/app-debug.apk",
+  "expected_apk_sha256": "95efecbf61e7c20563abce69edb3f041ab463d4a9398fb3299a5c74e992e6e7b",
+  "expected_manifest_entries": [
+    {
+      "name": "Image",
+      "sha256": "d56677f4a2801ab9a9faa68be448d8ca92de5b1058c68b1e132377d810435dc5"
+    },
+    {
+      "name": "initramfs.cpio.gz",
+      "sha256": "f8db1b52da53e76db897780591388d1b68dccfe488f29af4b95d190549c0af41"
+    },
+    {
+      "name": "QEMU-BUILD-INPUTS",
+      "sha256": "43d2c6e5e1a4800c70caf171b98ae2ee1ee482868ee917dcae416151f550248a"
+    },
+    {
+      "name": "QEMU-GPL-SOURCES.md",
+      "sha256": "64fb9a76ef5565a06b63d223bce528f688d3cf93a7490daa17895607daaf19a2"
+    },
+    {
+      "name": "LICENSE.GPL-2.0",
+      "sha256": "dd3ce02338c3a48abb6ba59b48809f7108a8bd242cb0cc8be90daafa30707c28"
+    },
+    {
+      "name": "NOTICE.QEMU",
+      "sha256": "7d134410f5bb12b5c23c7a1acdbe3d2ea90b56d007bc86303228b49e7d216f0d"
+    },
+    {
+      "name": "lib/arm64-v8a/libdroidlayer_qemu.so",
+      "sha256": "525469bdd64a565e7e52536915321f6ca307a976599f1e6ba72d2a6433573e3a"
+    }
+  ],
+  "expected_manifest_name": "assets/runtime-artifacts-v1.sha256",
+  "expected_native_entries": [
+    {
+      "dt_needed": [
+        "libm.so",
+        "libdl.so",
+        "libc.so"
+      ],
+      "path": "lib/arm64-v8a/libdroidlayer_qemu.so",
+      "sha256": "525469bdd64a565e7e52536915321f6ca307a976599f1e6ba72d2a6433573e3a"
+    }
+  ],
+  "expected_packaging_mode": "extractNativeLibs:true",
+  "schema_version": "apk-postbuild-v1"
+}

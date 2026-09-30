@@ -2,7 +2,6 @@
 
 name="DroidLayer Guest Agent"
 command="/usr/sbin/droidlayer-guest-agent"
-command_args="--token-file /etc/droidlayer/bridge.token"
 command_background="no"
 
 depend() {
@@ -10,8 +9,12 @@ depend() {
 }
 
 start_pre() {
-    if [ -z "${bridge_stream:-}" ] || [ ! -e "$bridge_stream" ]; then
+    if [ -z "${bridge_stream:-}" ] || [ ! -c "$bridge_stream" ]; then
         eerror "bridge_stream is not provisioned by the execution strategy"
+        return 1
+    fi
+    if [ -z "${terminal_device:-}" ] || [ ! -c "$terminal_device" ]; then
+        eerror "terminal_device is not provisioned by the execution strategy"
         return 1
     fi
 }
@@ -22,7 +25,8 @@ start() {
         eend 1 "cannot open bridge_stream read-write"
         return 1
     }
-    "$command" $command_args <&3 >&3
+    "$command" --token-file /etc/droidlayer/bridge.token \
+        --terminal-device "$terminal_device" <&3 >&3
     status=$?
     exec 3>&-
     eend "$status"

@@ -1,7 +1,7 @@
 # 26: 第一垂直切片——创建 Alpine 实例并进入 shell（QEMU 档）
 
 Type: implementation
-Status: blocked
+Status: ready-for-agent
 Blocked by: 25
 Scope contract: docs/reports/tickets/26/worker-scope-contract.zh-CN.md
 
@@ -26,10 +26,18 @@ Scope contract: docs/reports/tickets/26/worker-scope-contract.zh-CN.md
 > `qemu-system-aarch64` 可运行 `virt` + TCG，并在运行期间创建 virtio-serial Unix socket。
 > 因而上述“缺少 executor”的 blocker 已解除，但当前 clean worktree 没有 Ticket 25 的新鲜
 > `Image`、`initramfs`、校验清单或 Guest Agent 二进制，且该 Distro 没有 Docker、Podman 或已
-> 准备的 Linux builder。完整 guest → relay 红色链路仍无法在当前授权下建立，故状态保持
+> 准备的 Linux builder。完整 guest → relay 红色链路当时仍无法在当前授权下建立，故当时状态保持
 > `blocked`；不得派发 diagnosis 或 implementation Worker，直至用户明确批准可复现资产构建
 > 所需的网络、依赖和输出路径。详见
 > docs/reports/orchestration/ticket-26-linux-qemu-executor-setup-2026-09-20.zh-CN.md。
+>
+> 2026-09-21 Phase 1 更新：用户指定的唯一 Ticket 25 新鲜资产目录已独立复核，
+> `SHA256SUMS` 12/12 项、`Image`（`d56677f4…435dc5`）、`initramfs.cpio.gz`
+> （`92766a6f…7d7ec`）与 QEMU smoke verdict 均匹配。真实 `DroidLayer-T26` Linux/QEMU/TCG
+> 临时 harness 已实际运行 3 次：实际 `/bin/sh` 内部启动点与 Guest Agent `READY` 均可观测，
+> 但同一 PTY 首次输入中的 terminal sentinel 均未抵达 host transcript（3/3 RED，约 5.7–5.9 秒/次）。
+> 资产缺失 blocker 因此解除，Ticket 恢复为 `ready-for-agent`。此状态不表示已 `active`、`review`
+> 或 `completed`，也不授权产品实现；后续 implementation + TDD 必须使用独立 dispatch。
 
 ## What to build
 
