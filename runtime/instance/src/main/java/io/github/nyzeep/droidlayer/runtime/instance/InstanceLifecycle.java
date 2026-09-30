@@ -38,7 +38,60 @@ public final class InstanceLifecycle {
         CREATED,
         PROVISIONING,
         STOPPED,
-        RUNNING
+        RUNNING,
+        INTERRUPTED,
+        CRASHED
+    }
+
+    /** Structured diagnostic information for an abnormal termination or VMM crash. */
+    public static final class CrashDiagnostic {
+        private final long timestampMillis;
+        private final int exitCode;
+        private final Path logPath;
+        private final String message;
+
+        public CrashDiagnostic(long timestampMillis, int exitCode, Path logPath, String message) {
+            this.timestampMillis = timestampMillis;
+            this.exitCode = exitCode;
+            this.logPath = logPath != null ? logPath.toAbsolutePath().normalize() : null;
+            this.message = message;
+        }
+
+        public long timestampMillis() {
+            return timestampMillis;
+        }
+
+        public int exitCode() {
+            return exitCode;
+        }
+
+        public Path logPath() {
+            return logPath;
+        }
+
+        public String message() {
+            return message;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
+            CrashDiagnostic that = (CrashDiagnostic) o;
+            return timestampMillis == that.timestampMillis
+                    && exitCode == that.exitCode
+                    && Objects.equals(logPath, that.logPath)
+                    && Objects.equals(message, that.message);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(timestampMillis, exitCode, logPath, message);
+        }
     }
 
     /** Product catalog identity, distinct from a root-volume image and from an Instance. */
@@ -76,6 +129,7 @@ public final class InstanceLifecycle {
         private final State state;
         private final long createdAtMillis;
         private final long updatedAtMillis;
+        private final CrashDiagnostic crashDiagnostic;
 
         private Instance(
                 String id,
@@ -86,6 +140,19 @@ public final class InstanceLifecycle {
                 State state,
                 long createdAtMillis,
                 long updatedAtMillis) {
+            this(id, distro, rootVolume, bridgeToken, runtimeClass, state, createdAtMillis, updatedAtMillis, null);
+        }
+
+        private Instance(
+                String id,
+                DistroReference distro,
+                Path rootVolume,
+                String bridgeToken,
+                FullLinuxContract.RuntimeClass runtimeClass,
+                State state,
+                long createdAtMillis,
+                long updatedAtMillis,
+                CrashDiagnostic crashDiagnostic) {
             requireInstanceId(id);
             this.id = id;
             this.distro = Objects.requireNonNull(distro, "distro");
@@ -95,6 +162,7 @@ public final class InstanceLifecycle {
             this.state = Objects.requireNonNull(state, "state");
             this.createdAtMillis = createdAtMillis;
             this.updatedAtMillis = updatedAtMillis;
+            this.crashDiagnostic = crashDiagnostic;
         }
 
         public String id() {
@@ -134,9 +202,21 @@ public final class InstanceLifecycle {
             return updatedAtMillis;
         }
 
+        public CrashDiagnostic crashDiagnostic() {
+            return crashDiagnostic;
+        }
+
+        public Path diagnosticLogPath() {
+            return crashDiagnostic != null ? crashDiagnostic.logPath() : null;
+        }
+
         private Instance transitioned(State next, Clock clock) {
-            if (!isNormalTransition(state, next)) {
-                throw new InvalidTransitionException(state + " -> " + next + " is not a normal transition");
+            return transitioned(next, clock, null);
+        }
+
+        private Instance transitioned(State next, Clock clock, CrashDiagnostic diagnostic) {
+            if (!isValidTransition(state, next)) {
+                throw new InvalidTransitionException(state + " -> " + next + " is not a valid transition");
             }
             return new Instance(
                     id,
@@ -146,7 +226,8 @@ public final class InstanceLifecycle {
                     runtimeClass,
                     next,
                     createdAtMillis,
-                    Objects.requireNonNull(clock, "clock").millis());
+                    Objects.requireNonNull(clock, "clock").millis(),
+                    diagnostic);
         }
 
         private Properties toProperties() {
@@ -160,11 +241,31 @@ public final class InstanceLifecycle {
             properties.setProperty("state", state.name());
             properties.setProperty("createdAtMillis", Long.toString(createdAtMillis));
             properties.setProperty("updatedAtMillis", Long.toString(updatedAtMillis));
+            if (crashDiagnostic != null) {
+                properties.setProperty("crash.timestampMillis", Long.toString(crashDiagnostic.timestampMillis()));
+                properties.setProperty("crash.exitCode", Integer.toString(crashDiagnostic.exitCode()));
+                if (crashDiagnostic.logPath() != null) {
+                    properties.setProperty("crash.logPath", crashDiagnostic.logPath().toString());
+                }
+                if (crashDiagnostic.message() != null) {
+                    properties.setProperty("crash.message", crashDiagnostic.message());
+                }
+            }
             return properties;
         }
 
         private static Instance fromProperties(Properties properties) {
             try {
+                CrashDiagnostic diagnostic = null;
+                String crashTimestamp = properties.getProperty("crash.timestampMillis");
+                if (crashTimestamp != null) {
+                    long ts = Long.parseLong(crashTimestamp);
+                    int exitCode = Integer.parseInt(required(properties, "crash.exitCode"));
+                    String logPathStr = properties.getProperty("crash.logPath");
+                    Path logPath = logPathStr != null ? Path.of(logPathStr) : null;
+                    String message = properties.getProperty("crash.message");
+                    diagnostic = new CrashDiagnostic(ts, exitCode, logPath, message);
+                }
                 return new Instance(
                         required(properties, "id"),
                         new DistroReference(
@@ -174,7 +275,8 @@ public final class InstanceLifecycle {
                         FullLinuxContract.RuntimeClass.valueOf(required(properties, "runtimeClass")),
                         State.valueOf(required(properties, "state")),
                         Long.parseLong(required(properties, "createdAtMillis")),
-                        Long.parseLong(required(properties, "updatedAtMillis")));
+                        Long.parseLong(required(properties, "updatedAtMillis")),
+                        diagnostic);
             } catch (IllegalArgumentException malformed) {
                 throw new InvalidMetadataException(malformed);
             }
@@ -316,6 +418,11 @@ public final class InstanceLifecycle {
         }
 
         public synchronized Instance start(String id) throws IOException {
+            Instance current = store.load(id);
+            if (current.state() != State.STOPPED) {
+                throw new InvalidTransitionException(
+                        "cannot start instance in state " + current.state() + "; expected STOPPED");
+            }
             for (Instance instance : store.list()) {
                 if (!instance.id().equals(id) && instance.state() == State.RUNNING) {
                     throw new SingleRunningInstanceException("another Instance is already RUNNING");
@@ -327,6 +434,165 @@ public final class InstanceLifecycle {
         /** Records an observed normal guest-initiated stop; it is not a host power command. */
         public synchronized Instance recordNormalGuestStop(String id) throws IOException {
             return transition(id, State.STOPPED);
+        }
+
+        /** Records an intentional graceful stop initiated by the host or guest. */
+        public synchronized Instance recordGracefulStop(String id) throws IOException {
+            return transition(id, State.STOPPED);
+        }
+
+        public synchronized Instance recordCrash(String id, int exitCode, Path logPath) throws IOException {
+            return recordCrash(id, exitCode, logPath, null);
+        }
+
+        public synchronized Instance recordCrash(String id, int exitCode, Path logPath, String message)
+                throws IOException {
+            return recordCrash(id, new CrashDiagnostic(clock.millis(), exitCode, logPath, message));
+        }
+
+        public synchronized Instance recordCrash(String id, CrashDiagnostic diagnostic) throws IOException {
+            Objects.requireNonNull(diagnostic, "diagnostic");
+            Instance current = store.load(id);
+            Instance transitioned = current.transitioned(State.CRASHED, clock, diagnostic);
+            store.save(transitioned);
+            return transitioned;
+        }
+
+        public synchronized Instance recordAbnormalTermination(String id, int exitCode, Path logPath)
+                throws IOException {
+            return recordCrash(id, exitCode, logPath);
+        }
+
+        public synchronized Instance recordAbnormalTermination(String id, CrashDiagnostic diagnostic)
+                throws IOException {
+            return recordCrash(id, diagnostic);
+        }
+
+        /**
+         * Reconciles all stale RUNNING instances to INTERRUPTED (the default cold-restorable state).
+         * Returns the list of reconciled instances.
+         */
+        public synchronized List<Instance> reconcileAfterHostDeath() throws IOException {
+            return reconcileAfterHostDeath(State.INTERRUPTED);
+        }
+
+        /**
+         * Reconciles all stale RUNNING instances to the specified target state (INTERRUPTED or STOPPED).
+         */
+        public synchronized List<Instance> reconcileAfterHostDeath(State targetState) throws IOException {
+            if (targetState != State.INTERRUPTED && targetState != State.STOPPED) {
+                throw new IllegalArgumentException(
+                        "targetState must be INTERRUPTED or STOPPED, got: " + targetState);
+            }
+            List<Instance> reconciled = new ArrayList<>();
+            for (Instance instance : store.list()) {
+                if (instance.state() == State.RUNNING) {
+                    Instance updated = instance.transitioned(targetState, clock);
+                    store.save(updated);
+                    reconciled.add(updated);
+                }
+            }
+            return Collections.unmodifiableList(reconciled);
+        }
+
+        /**
+         * Reconciles a single instance by id if it is in stale RUNNING state, setting it to INTERRUPTED.
+         */
+        public synchronized Instance reconcileAfterHostDeath(String id) throws IOException {
+            return reconcileAfterHostDeath(id, State.INTERRUPTED);
+        }
+
+        /**
+         * Reconciles a single instance by id to the specified target state (INTERRUPTED or STOPPED).
+         */
+        public synchronized Instance reconcileAfterHostDeath(String id, State targetState) throws IOException {
+            if (targetState != State.INTERRUPTED && targetState != State.STOPPED) {
+                throw new IllegalArgumentException(
+                        "targetState must be INTERRUPTED or STOPPED, got: " + targetState);
+            }
+            Instance instance = store.load(id);
+            if (instance.state() == State.RUNNING) {
+                Instance updated = instance.transitioned(targetState, clock);
+                store.save(updated);
+                return updated;
+            }
+            return instance;
+        }
+
+        /**
+         * Restores an instance from an interrupted, crashed, or stopped state and prepares it for execution.
+         * Enforces the single-running-instance constraint and clears prior crash diagnostics.
+         */
+        public synchronized Instance coldRestore(String id) throws IOException {
+            for (Instance instance : store.list()) {
+                if (!instance.id().equals(id) && instance.state() == State.RUNNING) {
+                    throw new SingleRunningInstanceException("another Instance is already RUNNING");
+                }
+            }
+            Instance current = store.load(id);
+            if (current.state() != State.INTERRUPTED
+                    && current.state() != State.CRASHED
+                    && current.state() != State.STOPPED) {
+                throw new InvalidTransitionException(
+                        "cannot cold-restore instance in state "
+                                + current.state()
+                                + "; expected INTERRUPTED, CRASHED, or STOPPED");
+            }
+            Instance transitioned = current.transitioned(State.RUNNING, clock, null);
+            store.save(transitioned);
+            return transitioned;
+        }
+
+        /**
+         * Resets an interrupted or crashed instance back to STOPPED without starting it.
+         */
+        public synchronized Instance resetToStopped(String id) throws IOException {
+            Instance current = store.load(id);
+            if (current.state() != State.INTERRUPTED && current.state() != State.CRASHED) {
+                throw new InvalidTransitionException(
+                        "cannot reset instance in state " + current.state() + " to STOPPED");
+            }
+            Instance transitioned = current.transitioned(State.STOPPED, clock, null);
+            store.save(transitioned);
+            return transitioned;
+        }
+
+        /**
+         * Exports structured diagnostic details and copies referenced log data (if available)
+         * to the given destination path.
+         */
+        public synchronized void exportDiagnostic(String id, Path destination) throws IOException {
+            Objects.requireNonNull(destination, "destination");
+            Instance instance = store.load(id);
+            CrashDiagnostic diagnostic = instance.crashDiagnostic();
+            if (diagnostic == null) {
+                throw new IllegalStateException("instance " + id + " has no crash diagnostic to export");
+            }
+
+            if (destination.getParent() != null) {
+                Files.createDirectories(destination.getParent());
+            }
+
+            StringBuilder report = new StringBuilder();
+            report.append("DroidLayer Crash Diagnostic Report\n");
+            report.append("===================================\n");
+            report.append("Instance ID:       ").append(instance.id()).append("\n");
+            report.append("Distro:            ").append(instance.distro().id())
+                    .append(" ").append(instance.distro().version()).append("\n");
+            report.append("Crash Timestamp:   ").append(diagnostic.timestampMillis()).append("\n");
+            report.append("Exit Code:         ").append(diagnostic.exitCode()).append("\n");
+            if (diagnostic.message() != null) {
+                report.append("Message:           ").append(diagnostic.message()).append("\n");
+            }
+            if (diagnostic.logPath() != null) {
+                report.append("Log Reference:     ").append(diagnostic.logPath()).append("\n");
+                if (Files.isRegularFile(diagnostic.logPath())) {
+                    report.append("\n--- Log Contents ---\n");
+                    report.append(Files.readString(diagnostic.logPath()));
+                }
+            }
+
+            Files.writeString(destination, report.toString());
         }
 
         private Instance transition(String id, State next) throws IOException {
@@ -360,11 +626,36 @@ public final class InstanceLifecycle {
         }
     }
 
-    private static boolean isNormalTransition(State from, State to) {
+    public static boolean isNormalTransition(State from, State to) {
         return (from == State.CREATED && to == State.PROVISIONING)
                 || (from == State.PROVISIONING && to == State.STOPPED)
                 || (from == State.STOPPED && to == State.RUNNING)
                 || (from == State.RUNNING && to == State.STOPPED);
+    }
+
+    private static boolean isValidTransition(State from, State to) {
+        if (isNormalTransition(from, to)) {
+            return true;
+        }
+        if (from == State.RUNNING && to == State.INTERRUPTED) {
+            return true;
+        }
+        if (from == State.RUNNING && to == State.CRASHED) {
+            return true;
+        }
+        if (from == State.INTERRUPTED && to == State.STOPPED) {
+            return true;
+        }
+        if (from == State.INTERRUPTED && to == State.RUNNING) {
+            return true;
+        }
+        if (from == State.CRASHED && to == State.STOPPED) {
+            return true;
+        }
+        if (from == State.CRASHED && to == State.RUNNING) {
+            return true;
+        }
+        return false;
     }
 
     private static String required(Properties properties, String name) {
