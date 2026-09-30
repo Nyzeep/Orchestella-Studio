@@ -1,0 +1,1523 @@
+{
+ "analysis": {
+  "linux_resolved_ga_count": 148,
+  "in_windows_list": 148,
+  "not_in_windows_list": [],
+  "version_drift": [],
+  "windows_list_rows_total_maven": 425,
+  "windows_list_ga_count": 198,
+  "windows_only_out_of_scope_ga_count": 50,
+  "offline_graph_resolution": {
+   "buildEnvironment": "SUCCESS (RC=0, all coordinates cache hits)",
+   "debugCompileClasspath": "SUCCESS (RC=0, all coordinates cache hits)",
+   "debugRuntimeClasspath": "SUCCESS (RC=0, all coordinates cache hits)"
+  },
+  "resolution_level": "graph/metadata (dependency reports); artifact-file closure for the real build is a later verified step",
+  "candidate_rows": [
+   {
+    "coordinate": "com.android.tools.build:aapt2:8.13.2-14304508:linux",
+    "artifact": "aapt2-8.13.2-14304508-linux.jar",
+    "expected_repo": "dl.google.com (google() maven repo, same POM as windows row)",
+    "expected_url_unverified": "https://dl.google.com/dl/android/maven2/com/android/tools/build/aapt2/8.13.2-14304508/aapt2-8.13.2-14304508-linux.jar",
+    "size": "TBD_ENDPOINT_BATCH",
+    "official_checksum": "TBD_ENDPOINT_BATCH",
+    "license_ref": "Apache-2.0 (same project POM family as windows row)",
+    "use": "Linux AGP aapt2 runtime artifact",
+    "status": "PENDING_APPROVAL",
+    "basis": "derived from Windows artifact row com.android.tools.build:aapt2:8.13.2-14304508 (aapt2-8.13.2-14304508-windows.jar, 2525560 B, sha1 a9bf2d9b711ae314...) + AGP 8.13.2; NOT fetched"
+   }
+  ]
+ },
+ "linux_coords": {
+  "com.android.application:com.android.application.gradle.plugin": [
+   "buildEnvironment"
+  ],
+  "com.android.tools.build:gradle": [
+   "buildEnvironment"
+  ],
+  "com.android.tools.build:gradle-settings-api": [
+   "buildEnvironment"
+  ],
+  "org.jetbrains.kotlin:kotlin-stdlib": [
+   "buildEnvironment",
+   "debugCompileClasspath",
+   "debugRuntimeClasspath"
+  ],
+  "org.jetbrains:annotations": [
+   "buildEnvironment",
+   "debugCompileClasspath",
+   "debugRuntimeClasspath"
+  ],
+  "org.jetbrains.kotlin:kotlin-stdlib-jdk8": [
+   "buildEnvironment"
+  ],
+  "org.jetbrains.kotlin:kotlin-stdlib-jdk7": [
+   "buildEnvironment"
+  ],
+  "com.android.tools.build:gradle-common-api": [
+   "buildEnvironment"
+  ],
+  "com.android.tools.build:gradle-api": [
+   "buildEnvironment"
+  ],
+  "com.android.tools:sdk-common": [
+   "buildEnvironment"
+  ],
+  "com.android.tools.analytics-library:shared": [
+   "buildEnvironment"
+  ],
+  "com.android.tools.analytics-library:protos": [
+   "buildEnvironment"
+  ],
+  "com.google.protobuf:protobuf-java": [
+   "buildEnvironment"
+  ],
+  "com.android.tools:annotations": [
+   "buildEnvironment"
+  ],
+  "com.android.tools:common": [
+   "buildEnvironment"
+  ],
+  "com.google.guava:guava": [
+   "buildEnvironment"
+  ],
+  "com.google.guava:failureaccess": [
+   "buildEnvironment"
+  ],
+  "com.google.guava:listenablefuture": [
+   "buildEnvironment"
+  ],
+  "com.google.code.findbugs:jsr305": [
+   "buildEnvironment"
+  ],
+  "org.checkerframework:checker-qual": [
+   "buildEnvironment"
+  ],
+  "com.google.errorprone:error_prone_annotations": [
+   "buildEnvironment"
+  ],
+  "com.google.j2objc:j2objc-annotations": [
+   "buildEnvironment"
+  ],
+  "net.java.dev.jna:jna-platform": [
+   "buildEnvironment"
+  ],
+  "net.java.dev.jna:jna": [
+   "buildEnvironment"
+  ],
+  "com.google.code.gson:gson": [
+   "buildEnvironment"
+  ],
+  "com.android.tools.build:aapt2-proto": [
+   "buildEnvironment"
+  ],
+  "com.android.tools.ddms:ddmlib": [
+   "buildEnvironment"
+  ],
+  "net.sf.kxml:kxml2": [
+   "buildEnvironment"
+  ],
+  "com.android.tools.layoutlib:layoutlib-api": [
+   "buildEnvironment"
+  ],
+  "com.android.tools:sdklib": [
+   "buildEnvironment"
+  ],
+  "com.android.tools:repository": [
+   "buildEnvironment"
+  ],
+  "com.google.jimfs:jimfs": [
+   "buildEnvironment"
+  ],
+  "com.sun.activation:javax.activation": [
+   "buildEnvironment"
+  ],
+  "org.apache.commons:commons-compress": [
+   "buildEnvironment"
+  ],
+  "org.glassfish.jaxb:jaxb-runtime": [
+   "buildEnvironment"
+  ],
+  "jakarta.xml.bind:jakarta.xml.bind-api": [
+   "buildEnvironment"
+  ],
+  "jakarta.activation:jakarta.activation-api": [
+   "buildEnvironment"
+  ],
+  "org.glassfish.jaxb:txw2": [
+   "buildEnvironment"
+  ],
+  "com.sun.istack:istack-commons-runtime": [
+   "buildEnvironment"
+  ],
+  "org.jvnet.staxex:stax-ex": [
+   "buildEnvironment"
+  ],
+  "com.sun.xml.fastinfoset:FastInfoset": [
+   "buildEnvironment"
+  ],
+  "org.jetbrains.kotlinx:kotlinx-coroutines-core": [
+   "buildEnvironment"
+  ],
+  "org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm": [
+   "buildEnvironment"
+  ],
+  "org.jetbrains.kotlinx:kotlinx-coroutines-bom": [
+   "buildEnvironment"
+  ],
+  "com.android.tools:dvlib": [
+   "buildEnvironment"
+  ],
+  "org.apache.httpcomponents:httpcore": [
+   "buildEnvironment"
+  ],
+  "org.apache.httpcomponents:httpmime": [
+   "buildEnvironment"
+  ],
+  "org.apache.httpcomponents:httpclient": [
+   "buildEnvironment"
+  ],
+  "commons-logging:commons-logging": [
+   "buildEnvironment"
+  ],
+  "commons-codec:commons-codec": [
+   "buildEnvironment"
+  ],
+  "javax.inject:javax.inject": [
+   "buildEnvironment"
+  ],
+  "org.bouncycastle:bcpkix-jdk18on": [
+   "buildEnvironment"
+  ],
+  "org.bouncycastle:bcprov-jdk18on": [
+   "buildEnvironment"
+  ],
+  "org.bouncycastle:bcutil-jdk18on": [
+   "buildEnvironment"
+  ],
+  "org.jetbrains.kotlin:kotlin-reflect": [
+   "buildEnvironment"
+  ],
+  "com.android.tools.build:aaptcompiler": [
+   "buildEnvironment"
+  ],
+  "com.android.tools.analytics-library:crash": [
+   "buildEnvironment"
+  ],
+  "com.android.tools.lint:lint-model": [
+   "buildEnvironment"
+  ],
+  "com.android.tools.build:builder-model": [
+   "buildEnvironment"
+  ],
+  "com.android.tools.lint:lint-typedef-remover": [
+   "buildEnvironment"
+  ],
+  "org.ow2.asm:asm": [
+   "buildEnvironment"
+  ],
+  "androidx.databinding:databinding-compiler-common": [
+   "buildEnvironment"
+  ],
+  "androidx.databinding:databinding-common": [
+   "buildEnvironment"
+  ],
+  "com.android.databinding:baseLibrary": [
+   "buildEnvironment"
+  ],
+  "com.android.tools.build.jetifier:jetifier-core": [
+   "buildEnvironment"
+  ],
+  "com.googlecode.juniversalchardet:juniversalchardet": [
+   "buildEnvironment"
+  ],
+  "com.squareup:javapoet": [
+   "buildEnvironment"
+  ],
+  "commons-io:commons-io": [
+   "buildEnvironment"
+  ],
+  "com.android.tools.build:builder-test-api": [
+   "buildEnvironment"
+  ],
+  "com.android.tools.utp:android-device-provider-ddmlib-proto": [
+   "buildEnvironment"
+  ],
+  "com.android.tools.utp:android-device-provider-profile-proto": [
+   "buildEnvironment"
+  ],
+  "com.android.tools.utp:android-test-plugin-host-additional-test-output-proto": [
+   "buildEnvironment"
+  ],
+  "com.android.tools.utp:android-test-plugin-host-coverage-proto": [
+   "buildEnvironment"
+  ],
+  "com.android.tools.utp:android-test-plugin-host-emulator-control-proto": [
+   "buildEnvironment"
+  ],
+  "com.android.tools.utp:android-test-plugin-host-logcat-proto": [
+   "buildEnvironment"
+  ],
+  "com.android.tools.utp:android-test-plugin-host-apk-installer-proto": [
+   "buildEnvironment"
+  ],
+  "com.android.tools.utp:android-test-plugin-result-listener-gradle-proto": [
+   "buildEnvironment"
+  ],
+  "io.grpc:grpc-core": [
+   "buildEnvironment"
+  ],
+  "io.grpc:grpc-api": [
+   "buildEnvironment"
+  ],
+  "com.google.android:annotations": [
+   "buildEnvironment"
+  ],
+  "org.codehaus.mojo:animal-sniffer-annotations": [
+   "buildEnvironment"
+  ],
+  "io.perfmark:perfmark-api": [
+   "buildEnvironment"
+  ],
+  "io.grpc:grpc-context": [
+   "buildEnvironment"
+  ],
+  "io.grpc:grpc-inprocess": [
+   "buildEnvironment"
+  ],
+  "io.grpc:grpc-netty": [
+   "buildEnvironment"
+  ],
+  "io.netty:netty-codec-http2": [
+   "buildEnvironment"
+  ],
+  "io.netty:netty-common": [
+   "buildEnvironment"
+  ],
+  "io.netty:netty-buffer": [
+   "buildEnvironment"
+  ],
+  "io.netty:netty-transport": [
+   "buildEnvironment"
+  ],
+  "io.netty:netty-resolver": [
+   "buildEnvironment"
+  ],
+  "io.netty:netty-codec": [
+   "buildEnvironment"
+  ],
+  "io.netty:netty-handler": [
+   "buildEnvironment"
+  ],
+  "io.netty:netty-transport-native-unix-common": [
+   "buildEnvironment"
+  ],
+  "io.netty:netty-codec-http": [
+   "buildEnvironment"
+  ],
+  "io.netty:netty-handler-proxy": [
+   "buildEnvironment"
+  ],
+  "io.netty:netty-codec-socks": [
+   "buildEnvironment"
+  ],
+  "io.grpc:grpc-util": [
+   "buildEnvironment"
+  ],
+  "io.grpc:grpc-protobuf": [
+   "buildEnvironment"
+  ],
+  "com.google.api.grpc:proto-google-common-protos": [
+   "buildEnvironment"
+  ],
+  "io.grpc:grpc-protobuf-lite": [
+   "buildEnvironment"
+  ],
+  "io.grpc:grpc-stub": [
+   "buildEnvironment"
+  ],
+  "javax.annotation:javax.annotation-api": [
+   "buildEnvironment"
+  ],
+  "com.android.tools.build:transform-api": [
+   "buildEnvironment"
+  ],
+  "org.ow2.asm:asm-analysis": [
+   "buildEnvironment"
+  ],
+  "org.ow2.asm:asm-tree": [
+   "buildEnvironment"
+  ],
+  "org.ow2.asm:asm-commons": [
+   "buildEnvironment"
+  ],
+  "org.ow2.asm:asm-util": [
+   "buildEnvironment"
+  ],
+  "net.sf.jopt-simple:jopt-simple": [
+   "buildEnvironment"
+  ],
+  "com.android.tools.build:bundletool": [
+   "buildEnvironment"
+  ],
+  "com.google.auto.value:auto-value-annotations": [
+   "buildEnvironment"
+  ],
+  "com.google.protobuf:protobuf-java-util": [
+   "buildEnvironment"
+  ],
+  "com.google.dagger:dagger": [
+   "buildEnvironment"
+  ],
+  "org.bitbucket.b_c:jose4j": [
+   "buildEnvironment"
+  ],
+  "org.slf4j:slf4j-api": [
+   "buildEnvironment"
+  ],
+  "com.android.tools.build.jetifier:jetifier-processor": [
+   "buildEnvironment"
+  ],
+  "org.jdom:jdom2": [
+   "buildEnvironment"
+  ],
+  "com.google.crypto.tink:tink": [
+   "buildEnvironment"
+  ],
+  "com.google.testing.platform:core-proto": [
+   "buildEnvironment"
+  ],
+  "com.google.flatbuffers:flatbuffers-java": [
+   "buildEnvironment"
+  ],
+  "org.tensorflow:tensorflow-lite-metadata": [
+   "buildEnvironment"
+  ],
+  "com.android.tools.build:builder": [
+   "buildEnvironment"
+  ],
+  "com.android:signflinger": [
+   "buildEnvironment"
+  ],
+  "com.android.tools.build:apksig": [
+   "buildEnvironment"
+  ],
+  "com.android:zipflinger": [
+   "buildEnvironment"
+  ],
+  "com.android.tools.analytics-library:tracker": [
+   "buildEnvironment"
+  ],
+  "com.android.tools.build:manifest-merger": [
+   "buildEnvironment"
+  ],
+  "com.android.tools.build:apkzlib": [
+   "buildEnvironment"
+  ],
+  "com.squareup:javawriter": [
+   "buildEnvironment"
+  ],
+  "org.jetbrains.kotlin.android:org.jetbrains.kotlin.android.gradle.plugin": [
+   "buildEnvironment"
+  ],
+  "org.jetbrains.kotlin:kotlin-gradle-plugin": [
+   "buildEnvironment"
+  ],
+  "org.jetbrains.kotlin:kotlin-gradle-plugin-idea": [
+   "buildEnvironment"
+  ],
+  "org.jetbrains.kotlin:kotlin-tooling-core": [
+   "buildEnvironment"
+  ],
+  "org.jetbrains.kotlin:kotlin-gradle-plugin-annotations": [
+   "buildEnvironment"
+  ],
+  "org.jetbrains.kotlin:kotlin-gradle-plugin-idea-proto": [
+   "buildEnvironment"
+  ],
+  "org.jetbrains.kotlin:kotlin-klib-commonizer-api": [
+   "buildEnvironment"
+  ],
+  "org.jetbrains.kotlin:kotlin-native-utils": [
+   "buildEnvironment"
+  ],
+  "org.jetbrains.kotlin:kotlin-util-io": [
+   "buildEnvironment"
+  ],
+  "org.jetbrains.kotlin:kotlin-util-klib": [
+   "buildEnvironment"
+  ],
+  "org.jetbrains.kotlin:kotlin-build-statistics": [
+   "buildEnvironment"
+  ],
+  "org.jetbrains.kotlin:kotlin-build-tools-api": [
+   "buildEnvironment"
+  ],
+  "org.jetbrains.kotlin:kotlin-util-klib-metadata": [
+   "buildEnvironment"
+  ],
+  "org.jetbrains.kotlin:abi-tools-api": [
+   "buildEnvironment"
+  ],
+  "org.jetbrains.kotlin:kotlin-gradle-plugins-bom": [
+   "buildEnvironment"
+  ],
+  "org.jetbrains.kotlin:kotlin-gradle-plugin-api": [
+   "buildEnvironment"
+  ],
+  "org.jetbrains.kotlin:kotlin-gradle-plugin-model": [
+   "buildEnvironment"
+  ],
+  "org.jetbrains.kotlin:fus-statistics-gradle-plugin": [
+   "buildEnvironment"
+  ],
+  "org.jetbrains.kotlin:kotlin-compiler-runner": [
+   "buildEnvironment"
+  ],
+  "org.jetbrains.kotlin:kotlin-daemon-client": [
+   "buildEnvironment"
+  ]
+ },
+ "in_windows_list": [
+  {
+   "group_artifact": "androidx.databinding:databinding-common",
+   "linux_versions": "8.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "androidx.databinding:databinding-compiler-common",
+   "linux_versions": "8.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.application:com.android.application.gradle.plugin",
+   "linux_versions": "8.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.databinding:baseLibrary",
+   "linux_versions": "8.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools.analytics-library:crash",
+   "linux_versions": "31.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools.analytics-library:protos",
+   "linux_versions": "31.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools.analytics-library:shared",
+   "linux_versions": "31.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools.analytics-library:tracker",
+   "linux_versions": "31.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools.build.jetifier:jetifier-core",
+   "linux_versions": "1.0.0-beta10",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools.build.jetifier:jetifier-processor",
+   "linux_versions": "1.0.0-beta10",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools.build:aapt2-proto",
+   "linux_versions": "8.13.2-14304508",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools.build:aaptcompiler",
+   "linux_versions": "8.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools.build:apksig",
+   "linux_versions": "8.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools.build:apkzlib",
+   "linux_versions": "8.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools.build:builder",
+   "linux_versions": "8.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools.build:builder-model",
+   "linux_versions": "8.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools.build:builder-test-api",
+   "linux_versions": "8.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools.build:bundletool",
+   "linux_versions": "1.18.1",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools.build:gradle",
+   "linux_versions": "8.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools.build:gradle-api",
+   "linux_versions": "8.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools.build:gradle-common-api",
+   "linux_versions": "8.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools.build:gradle-settings-api",
+   "linux_versions": "8.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools.build:manifest-merger",
+   "linux_versions": "31.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools.build:transform-api",
+   "linux_versions": "2.0.0-deprecated-use-gradle-api",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools.ddms:ddmlib",
+   "linux_versions": "31.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools.layoutlib:layoutlib-api",
+   "linux_versions": "31.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools.lint:lint-model",
+   "linux_versions": "31.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools.lint:lint-typedef-remover",
+   "linux_versions": "31.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools.utp:android-device-provider-ddmlib-proto",
+   "linux_versions": "31.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools.utp:android-device-provider-profile-proto",
+   "linux_versions": "31.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools.utp:android-test-plugin-host-additional-test-output-proto",
+   "linux_versions": "31.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools.utp:android-test-plugin-host-apk-installer-proto",
+   "linux_versions": "31.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools.utp:android-test-plugin-host-coverage-proto",
+   "linux_versions": "31.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools.utp:android-test-plugin-host-emulator-control-proto",
+   "linux_versions": "31.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools.utp:android-test-plugin-host-logcat-proto",
+   "linux_versions": "31.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools.utp:android-test-plugin-result-listener-gradle-proto",
+   "linux_versions": "31.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools:annotations",
+   "linux_versions": "31.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools:common",
+   "linux_versions": "31.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools:dvlib",
+   "linux_versions": "31.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools:repository",
+   "linux_versions": "31.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools:sdk-common",
+   "linux_versions": "31.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android.tools:sdklib",
+   "linux_versions": "31.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android:signflinger",
+   "linux_versions": "8.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.android:zipflinger",
+   "linux_versions": "8.13.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.google.android:annotations",
+   "linux_versions": "4.1.1.4",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.google.api.grpc:proto-google-common-protos",
+   "linux_versions": "2.48.0",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.google.auto.value:auto-value-annotations",
+   "linux_versions": "1.6.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.google.code.findbugs:jsr305",
+   "linux_versions": "3.0.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.google.code.gson:gson",
+   "linux_versions": "2.11.0",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.google.crypto.tink:tink",
+   "linux_versions": "1.7.0",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.google.dagger:dagger",
+   "linux_versions": "2.28.3",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.google.errorprone:error_prone_annotations",
+   "linux_versions": "2.30.0",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.google.flatbuffers:flatbuffers-java",
+   "linux_versions": "1.12.0",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.google.guava:failureaccess",
+   "linux_versions": "1.0.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.google.guava:guava",
+   "linux_versions": "33.3.1-jre",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.google.guava:listenablefuture",
+   "linux_versions": "9999.0-empty-to-avoid-conflict-with-guava",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.google.j2objc:j2objc-annotations",
+   "linux_versions": "3.0.0",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.google.jimfs:jimfs",
+   "linux_versions": "1.1",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.google.protobuf:protobuf-java",
+   "linux_versions": "3.25.5",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.google.protobuf:protobuf-java-util",
+   "linux_versions": "3.25.5",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.google.testing.platform:core-proto",
+   "linux_versions": "0.0.9-alpha03",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.googlecode.juniversalchardet:juniversalchardet",
+   "linux_versions": "1.0.3",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.squareup:javapoet",
+   "linux_versions": "1.10.0",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.squareup:javawriter",
+   "linux_versions": "2.5.0",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.sun.activation:javax.activation",
+   "linux_versions": "1.2.0",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.sun.istack:istack-commons-runtime",
+   "linux_versions": "3.0.8",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "com.sun.xml.fastinfoset:FastInfoset",
+   "linux_versions": "1.2.16",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "commons-codec:commons-codec",
+   "linux_versions": "1.11",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "commons-io:commons-io",
+   "linux_versions": "2.16.1",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "commons-logging:commons-logging",
+   "linux_versions": "1.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "io.grpc:grpc-api",
+   "linux_versions": "1.69.1",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "io.grpc:grpc-context",
+   "linux_versions": "1.69.1",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "io.grpc:grpc-core",
+   "linux_versions": "1.69.1",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "io.grpc:grpc-inprocess",
+   "linux_versions": "1.69.1",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "io.grpc:grpc-netty",
+   "linux_versions": "1.69.1",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "io.grpc:grpc-protobuf",
+   "linux_versions": "1.69.1",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "io.grpc:grpc-protobuf-lite",
+   "linux_versions": "1.69.1",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "io.grpc:grpc-stub",
+   "linux_versions": "1.69.1",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "io.grpc:grpc-util",
+   "linux_versions": "1.69.1",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "io.netty:netty-buffer",
+   "linux_versions": "4.1.110.Final",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "io.netty:netty-codec",
+   "linux_versions": "4.1.110.Final",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "io.netty:netty-codec-http",
+   "linux_versions": "4.1.110.Final",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "io.netty:netty-codec-http2",
+   "linux_versions": "4.1.110.Final",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "io.netty:netty-codec-socks",
+   "linux_versions": "4.1.110.Final",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "io.netty:netty-common",
+   "linux_versions": "4.1.110.Final",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "io.netty:netty-handler",
+   "linux_versions": "4.1.110.Final",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "io.netty:netty-handler-proxy",
+   "linux_versions": "4.1.110.Final",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "io.netty:netty-resolver",
+   "linux_versions": "4.1.110.Final",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "io.netty:netty-transport",
+   "linux_versions": "4.1.110.Final",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "io.netty:netty-transport-native-unix-common",
+   "linux_versions": "4.1.110.Final",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "io.perfmark:perfmark-api",
+   "linux_versions": "0.27.0",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "jakarta.activation:jakarta.activation-api",
+   "linux_versions": "1.2.1",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "jakarta.xml.bind:jakarta.xml.bind-api",
+   "linux_versions": "2.3.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "javax.annotation:javax.annotation-api",
+   "linux_versions": "1.3.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "javax.inject:javax.inject",
+   "linux_versions": "1",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "net.java.dev.jna:jna",
+   "linux_versions": "5.6.0",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "net.java.dev.jna:jna-platform",
+   "linux_versions": "5.6.0",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "net.sf.jopt-simple:jopt-simple",
+   "linux_versions": "4.9",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "net.sf.kxml:kxml2",
+   "linux_versions": "2.3.0",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.apache.commons:commons-compress",
+   "linux_versions": "1.21",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.apache.httpcomponents:httpclient",
+   "linux_versions": "4.5.14",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.apache.httpcomponents:httpcore",
+   "linux_versions": "4.4.16",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.apache.httpcomponents:httpmime",
+   "linux_versions": "4.5.6",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.bitbucket.b_c:jose4j",
+   "linux_versions": "0.9.5",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.bouncycastle:bcpkix-jdk18on",
+   "linux_versions": "1.79",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.bouncycastle:bcprov-jdk18on",
+   "linux_versions": "1.79",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.bouncycastle:bcutil-jdk18on",
+   "linux_versions": "1.79",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.checkerframework:checker-qual",
+   "linux_versions": "3.43.0",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.codehaus.mojo:animal-sniffer-annotations",
+   "linux_versions": "1.24",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.glassfish.jaxb:jaxb-runtime",
+   "linux_versions": "2.3.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.glassfish.jaxb:txw2",
+   "linux_versions": "2.3.2",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.jdom:jdom2",
+   "linux_versions": "2.0.6",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.jetbrains.kotlin.android:org.jetbrains.kotlin.android.gradle.plugin",
+   "linux_versions": "2.2.21",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.jetbrains.kotlin:abi-tools-api",
+   "linux_versions": "2.2.21",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.jetbrains.kotlin:fus-statistics-gradle-plugin",
+   "linux_versions": "2.2.21",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.jetbrains.kotlin:kotlin-build-statistics",
+   "linux_versions": "2.2.21",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.jetbrains.kotlin:kotlin-build-tools-api",
+   "linux_versions": "2.2.21",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.jetbrains.kotlin:kotlin-compiler-runner",
+   "linux_versions": "2.2.21",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.jetbrains.kotlin:kotlin-daemon-client",
+   "linux_versions": "2.2.21",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.jetbrains.kotlin:kotlin-gradle-plugin",
+   "linux_versions": "2.2.21",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.jetbrains.kotlin:kotlin-gradle-plugin-annotations",
+   "linux_versions": "2.2.21",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.jetbrains.kotlin:kotlin-gradle-plugin-api",
+   "linux_versions": "2.2.21",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.jetbrains.kotlin:kotlin-gradle-plugin-idea",
+   "linux_versions": "2.2.21",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.jetbrains.kotlin:kotlin-gradle-plugin-idea-proto",
+   "linux_versions": "2.2.21",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.jetbrains.kotlin:kotlin-gradle-plugin-model",
+   "linux_versions": "2.2.21",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.jetbrains.kotlin:kotlin-gradle-plugins-bom",
+   "linux_versions": "2.2.21",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.jetbrains.kotlin:kotlin-klib-commonizer-api",
+   "linux_versions": "2.2.21",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.jetbrains.kotlin:kotlin-native-utils",
+   "linux_versions": "2.2.21",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.jetbrains.kotlin:kotlin-reflect",
+   "linux_versions": "2.0.21",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.jetbrains.kotlin:kotlin-stdlib",
+   "linux_versions": "2.0.21/2.2.21",
+   "configs": [
+    "buildEnvironment",
+    "debugCompileClasspath",
+    "debugRuntimeClasspath"
+   ]
+  },
+  {
+   "group_artifact": "org.jetbrains.kotlin:kotlin-stdlib-jdk7",
+   "linux_versions": "2.2.0",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.jetbrains.kotlin:kotlin-stdlib-jdk8",
+   "linux_versions": "2.2.0",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.jetbrains.kotlin:kotlin-tooling-core",
+   "linux_versions": "2.2.21",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.jetbrains.kotlin:kotlin-util-io",
+   "linux_versions": "2.2.21",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.jetbrains.kotlin:kotlin-util-klib",
+   "linux_versions": "2.2.21",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.jetbrains.kotlin:kotlin-util-klib-metadata",
+   "linux_versions": "2.2.21",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.jetbrains.kotlinx:kotlinx-coroutines-bom",
+   "linux_versions": "1.9.0",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.jetbrains.kotlinx:kotlinx-coroutines-core",
+   "linux_versions": "1.9.0",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm",
+   "linux_versions": "1.9.0",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.jetbrains:annotations",
+   "linux_versions": "13.0",
+   "configs": [
+    "buildEnvironment",
+    "debugCompileClasspath",
+    "debugRuntimeClasspath"
+   ]
+  },
+  {
+   "group_artifact": "org.jvnet.staxex:stax-ex",
+   "linux_versions": "1.8.1",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.ow2.asm:asm",
+   "linux_versions": "9.8",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.ow2.asm:asm-analysis",
+   "linux_versions": "9.8",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.ow2.asm:asm-commons",
+   "linux_versions": "9.8",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.ow2.asm:asm-tree",
+   "linux_versions": "9.8",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.ow2.asm:asm-util",
+   "linux_versions": "9.8",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.slf4j:slf4j-api",
+   "linux_versions": "1.7.30",
+   "configs": [
+    "buildEnvironment"
+   ]
+  },
+  {
+   "group_artifact": "org.tensorflow:tensorflow-lite-metadata",
+   "linux_versions": "0.2.0",
+   "configs": [
+    "buildEnvironment"
+   ]
+  }
+ ]
+}

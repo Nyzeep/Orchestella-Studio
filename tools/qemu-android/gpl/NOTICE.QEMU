@@ -1,0 +1,47 @@
+NOTICE — QEMU and bundled components in DroidLayer (Ticket 26, 2026-09-25)
+==========================================================================
+
+This application ships QEMU and statically linked libraries inside
+lib/arm64-v8a/libdroidlayer_qemu.so, plus the Ticket 25 guest assets
+(Image, initramfs.cpio.gz). The complete license/source record is in
+QEMU-GPL-SOURCES.md and QEMU-BUILD-INPUTS packaged alongside this notice.
+
+QEMU
+----
+QEMU is copyright its authors; see the accompanying LICENSE.GPL-2.0 file
+(the GNU General Public License, version 2, copied verbatim from the
+verified QEMU 11.1.1 release archive). Source: https://download.qemu.org/
+(tag v11.1.1, commit c3d48b7d1e89604920e5b81b91140c2ad39a1943).
+
+Statically linked libraries
+---------------------------
+glib 2.80.5 — LGPL-2.1-or-later (tools parts GPL-2+)
+pixman 0.42.2 — MIT
+zlib 1.3.2 — Zlib license
+pcre2 10.48 — BSD-3-Clause
+libffi 3.8.0 — MIT
+libfdt (dtc rev b6910bec) — GPL-2.0-or-later OR BSD-2-Clause (dual license)
+libiconv 1.19 — LGPL-2.1 (library), GPL-3 (tools)
+proxy-libintl (commit c03e1a74) — LGPL-2.1-or-later (licensee election
+  exercised from the original LGPL-2.0-or-later terms; election record kept
+  in the build evidence)
+DroidLayer shm stub (self-owned) — Apache-2.0; link-level ENOSYS shim for
+  the POSIX shm symbols that Android/bionic does not provide, per the
+  recorded 2026-09-25 user ruling.
+
+Android bionic (libc.so, libm.so, libdl.so) is provided by the Android OS at
+runtime and is not redistributed by this application.
+
+Guest assets
+------------
+Image (Linux kernel, GPL-2.0) and initramfs.cpio.gz are reproduced from the
+Ticket 25 reproducible guest-assets build; their license records and source
+offers are the ones distributed with that build (GPL-SOURCES.md,
+SOURCE-OFFER.txt, ATTRIBUTION/LICENSE files).
+
+Corresponding source
+--------------------
+Complete corresponding source for every GPL work listed here is offered as
+described in QEMU-GPL-SOURCES.md. A public, immutable release-tag source
+delivery is established by the Release Maintainer before any public binary
+release, per docs/agent-handoff/GPL_RELEASE_DELIVERY_POLICY.md.

@@ -2,7 +2,6 @@ pluginManagement {
     repositories {
         google()
         mavenCentral()
-        gradlePluginPortal()
     }
 }
 
@@ -16,3 +15,8 @@ dependencyResolutionManagement {
 
 rootProject.name = "DroidLayer"
 include(":app")
+include(":runtime:contract")
+include(":runtime:distro")
+include(":runtime:instance")
+include(":runtime:capability")
+include(":runtime:engine-qemu")
