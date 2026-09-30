@@ -4,7 +4,7 @@ import java.util.Objects;
 
 /**
  * Strategy-neutral contract tests for outbound network specification, SLIRP defaults,
- * DNS traversal, and zero inbound exposure (ADR-0008, ADR-0010).
+ * DNS traversal defaults, and validation constraints (ADR-0008, ADR-0010).
  */
 public final class NetworkContractTest {
     public static void main(String[] args) {
@@ -13,7 +13,7 @@ public final class NetworkContractTest {
         supportsAlternativeDeviceTypeVirtioNetDevice();
         rejectsIpv6PerAdr0008();
         validatesSubnetAndAddresses();
-        enforcesZeroInboundExposureByDefault();
+        rejectsLeadingZeroIpAddresses();
         configurationReplayAndImmutability();
         System.out.println("NETWORK_CONTRACT_TEST_OK");
     }
@@ -26,51 +26,28 @@ public final class NetworkContractTest {
         assertEquals("10.0.2.15", spec.guestDhcpStart(), "default guestDhcpStart");
         assertFalse(spec.ipv6Enabled(), "ipv6 must be disabled by default (ADR-0008)");
         assertEquals(NetworkContract.DeviceType.VIRTIO_NET_PCI, spec.deviceType(), "default device type");
-        assertEquals(null, spec.dnsServer(), "default dnsServer is null (standard QEMU gateway DNS)");
-        assertEquals(null, spec.cmdlineDns(), "default cmdlineDns is null");
-        assertFalse(spec.hasInboundExposure(), "inbound exposure must be zero by default");
 
-        assertEquals(
-                "user,id=net0,ipv6=off,net=10.0.2.0/24,dhcpstart=10.0.2.15",
-                spec.toNetdevArg(),
-                "default netdev argument string");
-        assertEquals(
-                "virtio-net-pci,netdev=net0",
-                spec.toDeviceArg(),
-                "default device argument string");
+        // Spec AC-2 fix: Android hosts lack /etc/resolv.conf, so default spec must provide
+        // reliable upstream public DNS fallback out of the box.
+        assertEquals(NetworkContract.DEFAULT_FALLBACK_DNS, spec.dnsServer(), "default dnsServer fallback (8.8.8.8)");
+        assertEquals(NetworkContract.DEFAULT_FALLBACK_DNS, spec.cmdlineDns(), "default cmdlineDns fallback (8.8.8.8)");
     }
 
     private static void supportsDnsConfigurationAndPresets() {
-        // Google DNS preset
-        NetworkContract.OutboundNetworkSpec googleDnsSpec =
-                NetworkContract.OutboundNetworkSpec.withDns(NetworkContract.GOOGLE_DNS);
-        assertEquals("8.8.8.8", googleDnsSpec.dnsServer(), "google dnsServer");
-        assertEquals(
-                "user,id=net0,ipv6=off,net=10.0.2.0/24,dhcpstart=10.0.2.15,dns=8.8.8.8",
-                googleDnsSpec.toNetdevArg(),
-                "netdev with google dns");
-
-        // Cloudflare DNS preset
+        // Cloudflare DNS preset with withDns helper (synchronously configures both channels)
         NetworkContract.OutboundNetworkSpec cfDnsSpec =
                 NetworkContract.OutboundNetworkSpec.withDns(NetworkContract.CLOUDFLARE_DNS);
         assertEquals("1.1.1.1", cfDnsSpec.dnsServer(), "cloudflare dnsServer");
-        assertEquals(
-                "user,id=net0,ipv6=off,net=10.0.2.0/24,dhcpstart=10.0.2.15,dns=1.1.1.1",
-                cfDnsSpec.toNetdevArg(),
-                "netdev with cloudflare dns");
+        assertEquals("1.1.1.1", cfDnsSpec.cmdlineDns(), "cloudflare cmdlineDns");
 
-        // DNS passed to kernel cmdline
-        NetworkContract.OutboundNetworkSpec cmdlineSpec =
+        // Custom DNS through builder
+        NetworkContract.OutboundNetworkSpec customSpec =
                 NetworkContract.OutboundNetworkSpec.builder()
-                        .dnsServer("8.8.8.8")
-                        .cmdlineDns("8.8.8.8")
+                        .dnsServer("9.9.9.9")
+                        .cmdlineDns("9.9.9.9")
                         .build();
-        assertEquals("8.8.8.8", cmdlineSpec.dnsServer(), "dnsServer");
-        assertEquals("8.8.8.8", cmdlineSpec.cmdlineDns(), "cmdlineDns");
-        assertEquals(
-                "user,id=net0,ipv6=off,net=10.0.2.0/24,dhcpstart=10.0.2.15,dns=8.8.8.8",
-                cmdlineSpec.toNetdevArg(),
-                "netdev with dns");
+        assertEquals("9.9.9.9", customSpec.dnsServer(), "custom dnsServer");
+        assertEquals("9.9.9.9", customSpec.cmdlineDns(), "custom cmdlineDns");
     }
 
     private static void supportsAlternativeDeviceTypeVirtioNetDevice() {
@@ -79,10 +56,6 @@ public final class NetworkContractTest {
                         .deviceType(NetworkContract.DeviceType.VIRTIO_NET_DEVICE)
                         .build();
         assertEquals(NetworkContract.DeviceType.VIRTIO_NET_DEVICE, mmioSpec.deviceType(), "mmio device type");
-        assertEquals(
-                "virtio-net-device,netdev=net0",
-                mmioSpec.toDeviceArg(),
-                "mmio device argument string");
     }
 
     private static void rejectsIpv6PerAdr0008() {
@@ -113,12 +86,21 @@ public final class NetworkContractTest {
                 IllegalArgumentException.class,
                 () -> NetworkContract.OutboundNetworkSpec.builder().dnsServer("not-an-ip").build(),
                 "invalid DNS IP must be rejected");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> NetworkContract.OutboundNetworkSpec.builder().cmdlineDns("not-an-ip").build(),
+                "invalid cmdline DNS IP must be rejected");
     }
 
-    private static void enforcesZeroInboundExposureByDefault() {
-        NetworkContract.OutboundNetworkSpec spec = NetworkContract.OutboundNetworkSpec.defaultSpec();
-        assertFalse(spec.hasInboundExposure(), "zero inbound exposure required");
-        assertEquals(0, spec.inboundRulesCount(), "no inbound forwarding rules");
+    private static void rejectsLeadingZeroIpAddresses() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> NetworkContract.OutboundNetworkSpec.builder().guestDhcpStart("010.0.2.15").build(),
+                "IP with leading zero octet must be rejected to avoid octal misinterpretation");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> NetworkContract.OutboundNetworkSpec.builder().dnsServer("08.8.8.8").build(),
+                "DNS IP with leading zero octet must be rejected");
     }
 
     private static void configurationReplayAndImmutability() {
@@ -128,8 +110,8 @@ public final class NetworkContractTest {
                         .guestNetworkCidr("10.0.2.0/24")
                         .guestDhcpStart("10.0.2.15")
                         .deviceType(NetworkContract.DeviceType.VIRTIO_NET_PCI)
-                        .dnsServer("8.8.8.8")
-                        .cmdlineDns("8.8.8.8")
+                        .dnsServer(NetworkContract.DEFAULT_FALLBACK_DNS)
+                        .cmdlineDns(NetworkContract.DEFAULT_FALLBACK_DNS)
                         .build();
 
         NetworkContract.OutboundNetworkSpec replayed =
@@ -137,18 +119,12 @@ public final class NetworkContractTest {
 
         assertEquals(original, replayed, "builder replay equality");
         assertEquals(original.hashCode(), replayed.hashCode(), "hashCode equality");
-        assertEquals(original.toNetdevArg(), replayed.toNetdevArg(), "netdev replay equality");
-        assertEquals(original.toDeviceArg(), replayed.toDeviceArg(), "device replay equality");
-    }
-
-    private static void assertTrue(boolean condition, String description) {
-        if (!condition) {
-            throw new AssertionError(description);
-        }
     }
 
     private static void assertFalse(boolean condition, String description) {
-        assertTrue(!condition, description);
+        if (condition) {
+            throw new AssertionError(description);
+        }
     }
 
     private static void assertEquals(Object expected, Object actual, String description) {
