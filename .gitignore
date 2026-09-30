@@ -14,3 +14,5 @@ local.properties
 captures/
 *.apk
 *.aab
+.agents/
+skills-lock.json
