@@ -1,11 +1,243 @@
 package io.github.nyzeep.droidlayer
 
 import android.app.Activity
+import android.app.ActivityManager
+import android.content.Context
+import android.os.Build
 import android.os.Bundle
+import android.os.StatFs
+import android.view.View
+import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.ProgressBar
+import android.widget.TextView
+import io.github.nyzeep.droidlayer.runtime.capability.DeviceCapabilityEvaluator
+import io.github.nyzeep.droidlayer.runtime.distro.DistroManifest
+import io.github.nyzeep.droidlayer.runtime.distro.OfficialAlpineCatalog
+import io.github.nyzeep.droidlayer.runtime.engineqemu.RuntimeArtifactManifest
+import io.github.nyzeep.droidlayer.runtime.instance.InstanceLifecycle
+import java.io.IOException
+import java.net.HttpURLConnection
+import java.nio.file.Paths
+import java.time.Clock
+import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
+    private val operations = Executors.newSingleThreadExecutor()
+    private lateinit var instanceStore: InstanceLifecycle.FileStore
+    private lateinit var createButton: Button
+    private lateinit var createProgress: ProgressBar
+    private lateinit var createStatus: TextView
+    private lateinit var instanceList: LinearLayout
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        val assessment = DeviceCapabilityEvaluator.evaluate(deviceProfile())
+        findViewById<TextView>(R.id.runtime_status).text = buildString {
+            appendLine(getString(R.string.runtime_class_full_linux))
+            appendLine(assessment.performanceBadge())
+            if (assessment.canCreateFullLinuxInstance()) {
+                appendLine(getString(R.string.support_floor_passed))
+            } else {
+                appendLine(getString(R.string.support_floor_refused, assessment.refusalReason()))
+            }
+            assessment.emulatorNotice()?.let(::appendLine)
+            append(verifiedQemuStatus())
+        }
+        createButton = findViewById(R.id.create_alpine)
+        createProgress = findViewById(R.id.create_progress)
+        createStatus = findViewById(R.id.create_status)
+        instanceList = findViewById(R.id.instance_list)
+        instanceStore = InstanceLifecycle.FileStore(filesDir.toPath().resolve("instances"))
+        createButton.isEnabled = assessment.canCreateFullLinuxInstance()
+        createButton.setOnClickListener { createAlpine() }
+        showInstances()
     }
+
+    override fun onResume() {
+        super.onResume()
+        if (::instanceStore.isInitialized) showInstances()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (isFinishing) operations.shutdown()
+    }
+
+    private fun showInstances() {
+        instanceList.removeAllViews()
+        val instances = try {
+            instanceStore.list()
+        } catch (_: IOException) {
+            createStatus.text = getString(R.string.create_failed, "instance metadata unavailable")
+            return
+        }
+        if (instances.isEmpty()) {
+            instanceList.addView(TextView(this).apply { text = getString(R.string.instances_empty) })
+        }
+        for (instance in instances) {
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            row.addView(TextView(this).apply {
+                text = getString(R.string.instance_row, instance.distro().version(), instance.state().name)
+                layoutParams = LinearLayout.LayoutParams(0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            if (instance.state().name == "STOPPED" || instance.state().name == "CREATED") {
+                row.addView(android.widget.Button(this).apply {
+                    text = getString(R.string.instance_launch)
+                    setOnClickListener { launchInstance(instance) }
+                })
+            }
+            instanceList.addView(row)
+        }
+    }
+
+    private fun launchInstance(instance: InstanceLifecycle.Instance) {
+        createButton.isEnabled = false
+        createStatus.setText(R.string.launch_started)
+        operations.execute {
+            val controller = InstanceLifecycle.Controller(instanceStore, Clock.systemUTC())
+            var running = false
+            try {
+                InstanceLaunchSequence.beforeLaunch(controller, instance)
+                running = true
+                val launcher = QemuInstanceLauncher(this)
+                val session = launcher.launch(
+                    instance.id(),
+                    instance.bridgeToken(),
+                    OfficialAlpineCatalog.alpine().rootfsFileName(),
+                    instance.rootVolume().toString(),
+                    filesDir.resolve("runtime").resolve(instance.id()).absolutePath,
+                    filesDir.resolve("distro-inputs").absolutePath,
+                )
+                Thread {
+                    try {
+                        session.handle.waitFor()
+                        InstanceLaunchSequence.afterGuestExit(controller, instance.id())
+                        runOnUiThread {
+                            createStatus.setText(R.string.launch_guest_exited)
+                            createButton.isEnabled = true
+                            showInstances()
+                        }
+                    } catch (ignored: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                    } catch (failure: Exception) {
+                        runOnUiThread {
+                            createStatus.text = getString(R.string.launch_failed, failure.toString())
+                            createButton.isEnabled = true
+                            showInstances()
+                        }
+                    }
+                }.apply { isDaemon = true }.start()
+                runOnUiThread {
+                    val intent = android.content.Intent(this, TerminalActivity::class.java)
+                        .putExtra("controlSocket", session.controlSocketName)
+                        .putExtra("terminalSocket", session.terminalSocketName)
+                        .putExtra("bridgeToken", instance.bridgeToken())
+                        .putExtra("instanceId", instance.id())
+                    startActivity(intent)
+                }
+            } catch (failure: Exception) {
+                if (running) {
+                    try {
+                        InstanceLaunchSequence.afterGuestExit(controller, instance.id())
+                    } catch (ignored: Exception) {
+                        // best-effort revert of the RUNNING slot; the launch failure is reported
+                    }
+                }
+                runOnUiThread {
+                    createStatus.text = getString(R.string.launch_failed, failure.toString())
+                    createButton.isEnabled = true
+                    showInstances()
+                }
+            }
+        }
+    }
+
+    private fun createAlpine() {
+        val manifest = OfficialAlpineCatalog.alpine()
+        val availableBytes = StatFs(filesDir.path).availableBytes
+        if (availableBytes < AlpineInstanceCreator.ROOT_VOLUME_BYTES + manifest.sizeBytes() + 128L * 1024L * 1024L) {
+            createStatus.setText(R.string.create_storage_low)
+            return
+        }
+        createButton.isEnabled = false
+        createProgress.visibility = View.VISIBLE
+        createProgress.isIndeterminate = true
+        createStatus.setText(R.string.create_downloading)
+        operations.execute {
+            val result = try {
+                val connection = manifest.source().toURL().openConnection() as HttpURLConnection
+                connection.instanceFollowRedirects = false
+                connection.connectTimeout = 15_000
+                connection.readTimeout = 60_000
+                try {
+                    if (connection.responseCode != HttpURLConnection.HTTP_OK ||
+                        connection.url.toURI() != manifest.source() ||
+                        connection.contentLengthLong != manifest.sizeBytes()
+                    ) throw IOException("unexpected Alpine source response")
+                    connection.inputStream.use { input ->
+                        AlpineInstanceCreator(
+                            manifest,
+                            InstanceLifecycle.Controller(instanceStore, Clock.systemUTC()),
+                            filesDir.toPath(),
+                        ).create(input, connection.contentLengthLong)
+                    }
+                    getString(R.string.create_success)
+                } finally {
+                    connection.disconnect()
+                }
+            } catch (rejected: DistroManifest.InputRejectedException) {
+                getString(R.string.create_invalid_input, rejected.reason())
+            } catch (_: IOException) {
+                getString(R.string.create_network_failed)
+            } catch (_: RuntimeException) {
+                getString(R.string.create_failed, "private storage unavailable")
+            }
+            runOnUiThread {
+                createProgress.visibility = View.GONE
+                createButton.isEnabled = DeviceCapabilityEvaluator.evaluate(deviceProfile()).canCreateFullLinuxInstance()
+                createStatus.text = result
+                showInstances()
+            }
+        }
+    }
+
+    private fun deviceProfile(): DeviceCapabilityEvaluator.DeviceProfile {
+        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val memoryInfo = ActivityManager.MemoryInfo().also(activityManager::getMemoryInfo)
+        return DeviceCapabilityEvaluator.DeviceProfile(
+            Build.VERSION.SDK_INT,
+            Build.SUPPORTED_ABIS.toList(),
+            memoryInfo.totalMem,
+            isEmulator(),
+        )
+    }
+
+    private fun isEmulator(): Boolean =
+        Build.FINGERPRINT.startsWith("generic") ||
+            Build.FINGERPRINT.startsWith("unknown") ||
+            Build.MODEL.contains("google_sdk", ignoreCase = true) ||
+            Build.MODEL.contains("Emulator", ignoreCase = true) ||
+            Build.MANUFACTURER.contains("Genymotion", ignoreCase = true) ||
+            Build.BRAND.startsWith("generic") ||
+            Build.DEVICE.startsWith("generic") ||
+            "google_sdk" == Build.PRODUCT
+
+    private fun verifiedQemuStatus(): String =
+        try {
+            assets.open(RuntimeArtifactManifest.SCHEMA_FILE_NAME).use { input ->
+                val manifest = RuntimeArtifactManifest.parse(input)
+                val nativeLibraryDirectory = applicationInfo.nativeLibraryDir
+                    ?: return getString(R.string.qemu_runtime_unavailable, "nativeLibraryDir unavailable")
+                manifest.requireVerifiedInstalledQemu(Paths.get(nativeLibraryDirectory))
+                getString(R.string.qemu_runtime_verified)
+            }
+        } catch (rejection: RuntimeArtifactManifest.IntegrityRejectedException) {
+            getString(R.string.qemu_runtime_unavailable, rejection.reason())
+        } catch (_: IOException) {
+            getString(R.string.qemu_runtime_unavailable, "runtime manifest unavailable")
+        }
 }

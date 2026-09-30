@@ -1,0 +1,102 @@
+# QEMU-BUILD-INPUTS (DroidLayer Ticket 26, 2026-09-25)
+# Machine-readable build-input record for the shipped QEMU Android binaries.
+# Every field is a pin from tools/qemu-android/qemu-jni.lock (125 keys,
+# sha256 d3326352d0078fea3f3f666dd2113614915d53481a8e9eb1f363227efe8c9822)
+# plus the recorded build execution facts. A missing value is a build failure.
+schema=qemu-build-inputs-1
+date_utc=2026-09-25
+component_id=qemu-system-aarch64
+qemu_version=11.1.1
+qemu_target_list=aarch64-softmmu
+qemu_archive_url=https://download.qemu.org/qemu-11.1.1.tar.xz
+qemu_archive_sha256=079ffbff8a7111bbc89022107cbabf3bbfd614d5fc9d7cc675991196aca12482
+qemu_signature_url=https://download.qemu.org/qemu-11.1.1.tar.xz.sig
+qemu_signer_fingerprint=CEACC9E15534EBABB82D3FA03353C9CEF108B584
+qemu_git_tag=v11.1.1
+qemu_git_commit=c3d48b7d1e89604920e5b81b91140c2ad39a1943
+patches=none
+builder_image=mcr.microsoft.com/devcontainers/base@sha256:3612b800eaae8513e7dca54f21d2e4eda48eda57426f3746a78677f342ac7ee9
+builder_platform=linux/amd64
+ubuntu_snapshot=https://snapshot.ubuntu.com/ubuntu/20251017T000000Z/
+android_ndk_revision=28.2.13676358
+android_ndk_archive_url=https://dl.google.com/android/repository/android-ndk-r28c-linux.zip
+android_ndk_metadata_sha1=a7b54a5de87fecd125a17d54f73c446199e72a64
+android_ndk_archive_sha256=dfb20d396df28ca02a8c708314b814a4d961dc9074f9a161932746f815aa552f
+android_api_level=26
+source_date_epoch=0
+python_hash_seed=0
+configure_args=--target-list=aarch64-softmmu,--disable-docs,--disable-download,--disable-vhost-user,--disable-plugins,--disable-virtfs
+cross_prefix=aarch64-linux-android26-
+build_network_policy=fetch-inputs-only
+meson_tool_member=qemu-11.1.1/python/wheels/meson-1.11.1-py3-none-any.whl
+meson_tool_sha256=9b3a023657e393dbc5335b95c561337d49b7a458f5541e47ec44f2cc566e0d80
+# Android target dependency sources (static, cross-built into the prefix)
+glib_version=2.80.5
+glib_source_url=https://download.gnome.org/sources/glib/2.80/glib-2.80.5.tar.xz
+glib_source_sha256=9f23a9de803c695bbfde7e37d6626b18b9a83869689dd79019bf3ae66c3e6771
+pixman_version=0.42.2
+pixman_source_url=https://cairographics.org/releases/pixman-0.42.2.tar.gz
+pixman_source_sha256=ea1480efada2fd948bc75366f7c349e1c96d3297d09a3fe62626e38e234a625e
+zlib_version=1.3.2
+zlib_source_url=https://zlib.net/zlib-1.3.2.tar.gz
+zlib_source_sha256=bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16
+pcre2_version=10.48
+pcre2_source_url=https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.48/pcre2-10.48.tar.gz
+pcre2_source_sha256=ebcc25aadf2a51fa1fefa9b8bc9e7a79b3dae86870a0f1152a22e42befd46888
+libffi_version=3.8.0
+libffi_source_url=https://github.com/libffi/libffi/releases/download/v3.8.0/libffi-3.8.0.tar.gz
+libffi_source_sha256=7da3e2d9a171eb0a038f592ecad3ff2bb2550f3496d87b3b29ad0cf4430c0db4
+libiconv_version=1.19
+libiconv_source_url=https://ftp.gnu.org/gnu/libiconv/libiconv-1.19.tar.gz
+libiconv_official_checksum=absent
+libiconv_source_sha256=88dd96a8c0464eca144fc791ae60cd31cd8ee78321e67397e25fc095c4a19aa6
+proxy_libintl_git_url=https://github.com/frida/proxy-libintl.git
+proxy_libintl_git_revision=0.4
+proxy_libintl_git_commit=c03e1a74b17fa7ec467e110130775409e4828a4c
+proxy_libintl_git_archive_sha256=55b5d8f9d6c4cd844ff349ea932fa3a178f3971c7874c843ddc90523adc5264a
+proxy_libintl_license_original=lgpl-2.0-or-later
+proxy_libintl_license_election=lgpl-2.1-or-later
+dtc_git_url=https://gitlab.com/qemu-project/dtc.git
+dtc_git_revision=b6910bec11614980a21e46fbccc35934b671bd81
+dtc_git_archive_sha256=1df504e71aa4704157ec94f37da2aa82d672349f20bd92ca79516a0a56a1a29a
+libfdt_build=static-pic-from-dtc-frozen-archive-installed-into-prefix
+# Self-owned Android bionic POSIX-shm link shim (user ruling 2026-09-25 option 1)
+android_shim_kind=self-owned-stub
+android_shim_source_path=tools/qemu-android/android-shim/shm_stub.c
+android_shim_source_sha256=5db52032a4ae971c4ecf2522583c4a81c89e5df54bb504167480e5b169e50d75
+android_shim_header_path=tools/qemu-android/android-shim/shm_stub.h
+android_shim_header_sha256=37854061ac5d66463cc357a9f58f4a21efe40e724394e230942d8441abade15f
+android_shim_license=apache-2.0
+android_shim_semantics=shm_open-shm_unlink-enosys
+# Host build-tool pins (Ubuntu snapshot 20251017T000000Z, installed per container run)
+hostpkg_pins=make=4.3-4.1build2,gcc=4:13.2.0-7ubuntu1,libc6-dev=2.39-0ubuntu8.6,ninja-build=1.11.1-2,python3=3.12.3-0ubuntu2,python3-venv=3.12.3-0ubuntu2,python3-pip=24.0+dfsg-1ubuntu1.3,python3-setuptools=68.1.2-2ubuntu1.2,python3-wheel=0.42.0-2,pkgconf=1.8.1-2build1,python3-packaging=24.0-1
+# Archive extraction record (single absolute symlink excluded; read-only probe anchored)
+qemu_archive_entries=85080
+qemu_archive_excluded_entry=qemu-11.1.1/roms/edk2/EmulatorPkg/Unix/Host/X11IncludeHack
+qemu_archive_excluded_target=/opt/X11/include
+qemu_source_staging_sorted_set_sha256=d88022838dff92af042fca48432f88b54c93ca355c664f2cc4e3e7aa09ebd289
+# Build entrypoint (container stage scripts; hashes as executed)
+build_entrypoint=c-android-incontainer-20260925.sh
+build_entrypoint_sha256=f4b27d2289c642de6805fede1814dd2063d1e07e33fdbb74d0f6cf7b9337c338
+host_runner=run-c-builder-android-host-20260925.sh
+wsl_runner=run-c-builder-android-20260925.sh
+# Shipped binaries (two clean builds, identical products)
+qemu_system_aarch64_sha256=525469bdd64a565e7e52536915321f6ca307a976599f1e6ba72d2a6433573e3a
+qemu_system_aarch64_size=132889376
+qemu_img_sha256=bc3b2b866f58fb30d8dc0249c5f6880de9284456d4ecc969a735033451857296
+qemu_io_sha256=5762730040a5a366d7ff724e1dacdcf23a450a2107829e767ac0842af9cc725b
+apk_abi=arm64-v8a
+apk_entry=lib/arm64-v8a/libdroidlayer_qemu.so
+apk_packaging_mode=extractNativeLibs:true
+runtime_data=none
+# Guest assets shipped alongside (Ticket 25, read-only verified 12/12; the
+# initramfs is the Ticket 25 archive with four members substituted from this
+# ticket's narrow exception: init (630fc18da7ad0a6307f8bd5be21d1838046c74e2ada387643fd7217369a9bfb8),
+# opt/droidlayer/guest-agent (471315886f95ddf21abccf61235e5904e7c5b3ac204e7a1affcdeae379114cc1,
+# built from guest-assets/agent/guest-agent.c with NDK r28c clang-19
+# --target=aarch64-linux-android26 -static, stripped), and the two openrc
+# service files from guest-assets/initramfs/openrc/; deterministic substitution
+# per evidence/repack-initramfs-newinit-20260926.py; the base archive remains
+# the Ticket 25 asset 92766a6f927124d8046348fc4622aa93a842b3eccc279c6ae913f97d8313d7ec)
+guest_kernel_image_sha256=d56677f4a2801ab9a9faa68be448d8ca92de5b1058c68b1e132377d810435dc5
+guest_initramfs_sha256=35fd6a06f4b954c59c82e92ceb7d372c414d8fd4621a7b196ad3a0ade0cbd5d3

@@ -59,3 +59,52 @@ safe_reset_directory() {
   rm -rf -- "$resolved"
   mkdir -p -- "$resolved"
 }
+
+verify_ticket26_ticket25_asset_root() {
+  local asset_root="$1"
+  local checksum_line
+  local filename
+  local actual_hash
+  declare -A manifest_hashes=()
+
+  [[ -n "$asset_root" ]] || {
+    printf 'TICKET26_ASSET_ROOT must name the approved read-only Ticket 25 asset directory\n' >&2
+    return 64
+  }
+  [[ -d "$asset_root" && ! -L "$asset_root" ]] || {
+    printf 'approved Ticket 25 asset directory is unavailable or not a direct directory\n' >&2
+    return 66
+  }
+  [[ -f "$asset_root/SHA256SUMS" && ! -L "$asset_root/SHA256SUMS" ]] || {
+    printf 'approved Ticket 25 SHA256SUMS is unavailable or not a direct file\n' >&2
+    return 66
+  }
+
+  while IFS= read -r checksum_line || [[ -n "$checksum_line" ]]; do
+    if [[ ! "$checksum_line" =~ ^([[:xdigit:]]{64})\ ([\ \*])([^/\\]+)$ ]]; then
+      printf 'approved Ticket 25 SHA256SUMS has an unsafe format\n' >&2
+      return 66
+    fi
+    filename="${BASH_REMATCH[3]}"
+    if [[ "$filename" == '.' || "$filename" == '..' || "$filename" == *'..'* \
+      || -n "${manifest_hashes[$filename]+set}" ]]; then
+      printf 'approved Ticket 25 SHA256SUMS has an unsafe or duplicate entry\n' >&2
+      return 66
+    fi
+    manifest_hashes["$filename"]="${BASH_REMATCH[1],,}"
+  done < "$asset_root/SHA256SUMS"
+
+  for filename in Image initramfs.cpio.gz; do
+    [[ -n "${manifest_hashes[$filename]+set}" \
+      && -f "$asset_root/$filename" && ! -L "$asset_root/$filename" ]] || {
+      printf 'approved Ticket 25 input is missing or is not a direct regular file: %s\n' "$filename" >&2
+      return 66
+    }
+    actual_hash="$(sha256sum -- "$asset_root/$filename")"
+    actual_hash="${actual_hash%% *}"
+    if [[ "${actual_hash,,}" != "${manifest_hashes[$filename]}" ]]; then
+      printf 'approved Ticket 25 input checksum mismatch: %s\n' "$filename" >&2
+      return 66
+    fi
+  done
+}

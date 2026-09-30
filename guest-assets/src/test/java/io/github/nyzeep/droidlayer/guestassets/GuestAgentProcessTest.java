@@ -1,6 +1,7 @@
 package io.github.nyzeep.droidlayer.guestassets;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -20,6 +21,7 @@ final class GuestAgentProcessTest {
 
     @Test
     void acceptsAProvisionedTokenAndNegotiatesProtocolVersionOne() throws Exception {
+        assumeFalse(isWindows(), "the authenticated session hands off to the Linux guest shell");
         Path executable = compileAgent();
         Path tokenFile = temporaryDirectory.resolve("bridge.token");
         Files.writeString(tokenFile, TOKEN + "\n", StandardCharsets.US_ASCII);
@@ -29,6 +31,30 @@ final class GuestAgentProcessTest {
 
         assertEquals(0, result.exitCode(), result.standardError());
         assertEquals("DROIDLAYER/READY 1\n", result.standardOutput());
+        assertEquals("", result.standardError());
+    }
+
+    @Test
+    void routesTerminalInputToTheGuestShellAfterAValidHandshake() throws Exception {
+        assumeFalse(isWindows(), "the terminal handoff targets the Linux guest shell");
+        Path executable = compileAgent();
+        Path tokenFile = temporaryDirectory.resolve("bridge.token");
+        Files.writeString(tokenFile, TOKEN + "\n", StandardCharsets.US_ASCII);
+
+        ProcessResult result =
+                runAgent(
+                        executable,
+                        tokenFile,
+                        "DROIDLAYER/HELLO 1 1 "
+                                + TOKEN
+                                + "\n"
+                                + "printf 'DROIDLAYER_TERMINAL_SENTINEL\\n'\n"
+                                + "exit\n");
+
+        assertEquals(0, result.exitCode(), result.standardError());
+        assertEquals(
+                "DROIDLAYER/READY 1\nDROIDLAYER_TERMINAL_SENTINEL\n",
+                result.standardOutput());
         assertEquals("", result.standardError());
     }
 
@@ -66,6 +92,39 @@ final class GuestAgentProcessTest {
     }
 
     @Test
+    void rejectsAnInvalidVersionRangeBeforeStartingATerminalSession() throws Exception {
+        Path executable = compileAgent();
+        Path tokenFile = temporaryDirectory.resolve("bridge.token");
+        Files.writeString(tokenFile, TOKEN + "\n", StandardCharsets.US_ASCII);
+
+        ProcessResult result =
+                runAgent(executable, tokenFile, "DROIDLAYER/HELLO -1 1 " + TOKEN + "\n");
+
+        assertEquals(1, result.exitCode());
+        assertEquals("DROIDLAYER/ERROR malformed-handshake\n", result.standardOutput());
+        assertEquals("", result.standardError());
+    }
+
+    @Test
+    void servesPingOnTheConfiguredControlChannel() throws Exception {
+        Path executable = compileAgent();
+        Path tokenFile = temporaryDirectory.resolve("bridge.token");
+        Files.writeString(tokenFile, TOKEN + "\n", StandardCharsets.US_ASCII);
+
+        ProcessResult result =
+                runAgent(
+                        executable,
+                        tokenFile,
+                        "DROIDLAYER/HELLO 1 1 " + TOKEN + "\nDROIDLAYER/PING\n",
+                        "--terminal-device",
+                        "control-terminal-device");
+
+        assertEquals(0, result.exitCode(), result.standardError());
+        assertEquals("DROIDLAYER/READY 1\nDROIDLAYER/PONG 1\n", result.standardOutput());
+        assertEquals("", result.standardError());
+    }
+
+    @Test
     void refusesToStartWhenTheProvisionedTokenHasAnInvalidFormat() throws Exception {
         Path executable = compileAgent();
         Path tokenFile = temporaryDirectory.resolve("bridge.token");
@@ -95,8 +154,7 @@ final class GuestAgentProcessTest {
     private Path compileAgent() throws Exception {
         Path projectDirectory = Path.of(System.getProperty("guestAssetsProjectDir"));
         Path source = projectDirectory.resolve("agent/guest-agent.c");
-        boolean windows = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win");
-        Path executable = temporaryDirectory.resolve(windows ? "guest-agent.exe" : "guest-agent");
+        Path executable = temporaryDirectory.resolve(isWindows() ? "guest-agent.exe" : "guest-agent");
         String compiler = System.getenv().getOrDefault("CC", "gcc");
         ProcessResult result =
                 runProcess(
@@ -114,10 +172,17 @@ final class GuestAgentProcessTest {
         return executable;
     }
 
-    private static ProcessResult runAgent(Path executable, Path tokenFile, String input)
+    private static ProcessResult runAgent(
+            Path executable, Path tokenFile, String input, String... additionalArguments)
             throws Exception {
-        return runProcess(
-                List.of(executable.toString(), "--token-file", tokenFile.toString()), input);
+        List<String> command = new ArrayList<>();
+        command.add(executable.toString());
+        command.add("--token-file");
+        command.add(tokenFile.toString());
+        for (String additionalArgument : additionalArguments) {
+            command.add(additionalArgument);
+        }
+        return runProcess(command, input);
     }
 
     private static ProcessResult runProcess(List<String> command, String input) throws Exception {
@@ -137,6 +202,10 @@ final class GuestAgentProcessTest {
 
     private static String readFully(java.io.InputStream input) throws IOException {
         return new String(input.readAllBytes(), StandardCharsets.US_ASCII);
+    }
+
+    private static boolean isWindows() {
+        return System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win");
     }
 
     private record ProcessResult(int exitCode, String standardOutput, String standardError) {}
