@@ -28,7 +28,7 @@
 | Ticket | Dependencies | Blocked by | 冲突面 | Owned modules | Forbidden modules | Can parallel? | 推荐批次 | Risk / routing note |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 25 Guest资产基线 | — | 无 | —（首票） | guest-assets/ | 其余全部 | 否（serial-first） | B0 | 已 completed；不重新路由 |
-| 26 第一切片 | 25 | 25 | guest-assets 为受限下游例外；tests/contract 为基线热点 | contract, instance, distro, capability, engine-qemu, bridge, ui, terminal, app（最小 runtime/native packaging）, tools/qemu-android, guest-assets（仅 second-stage/bridge/正常二次启动） | engine-avf；Ticket 25 kernel/capability、既有 Alpine tarball pin、reproducibility baseline；后续 27–33 功能 | 否（serial） | B0 | Risk 2–3；Luna Max；复杂调试 Sol High；架构阻塞 Sol XHigh |
+| 26 QEMU软模拟基准 | 25 | 25 | guest-assets 为受限下游例外；tests/contract 为基线热点 | contract, instance, distro, capability, engine-qemu, bridge, ui, terminal, app（最小 runtime/native packaging）, tools/qemu-android, guest-assets（仅 second-stage/bridge/正常二次启动） | engine-avf；Ticket 25 kernel/capability、既有 Alpine tarball pin、reproducibility baseline；后续 27–33 功能 | 否（serial） | B0 | **已 completed（合流 main，HONOR 80 GT 验收全绿）**；不重新路由 |
 | 27 出站网络 | 26 | 26 | 与 29 同模块（先后解）；与 28/30 LOW | engine-qemu(网络), contract, ui(徽章无), tests | engine-avf, storage | 是（B1 组内） | B1 | needs-triage；scope/risk 后定 |
 | 28 停止/冷恢复 | 26 | 26 | bridge(power) + instance recovery state；与 30 LOW（guest-assets 不同文件域） | bridge, instance, contract, ui, tests, guest-assets（仅 agent power/进程测试） | engine-avf, storage, initramfs/Provisioning/kernel/inputs lock | 是（B1 组内） | B1 | needs-triage；scope/risk 后定 |
 | 30 只读共享 | 26 | 26 | 9p 数据面 + guest-assets 装配配置（与 28/32 LOW-MEDIUM） | engine-qemu(9p), bridge(数据面), guest-assets(挂载), contract, tests | engine-avf, network | 是（B1 组内） | B1 | needs-triage；scope/risk 后定 |
@@ -40,8 +40,8 @@
 | 36 AVF网络/转发对齐 | 34,27,29 | 34,27,29 | engine-avf + tests/contract（与 37 HIGH——建议串行 36→37） | engine-avf(网络/vsock 隧道), tests | storage, engine-qemu | 否（与 37 串行） | B4 | needs-triage；scope/risk 后定 |
 | 37 AVF共享/恢复/桥接对齐 | 34,28,30,31 | 34,28,30,31 | engine-avf(9p-over-vsock 自研服务端——最大件) + tests | engine-avf, bridge, tests | engine-qemu | 否（36 之后） | B4 | needs-triage；scope/risk 后定 |
 | 35 硬化 | 26–33,36,37,18 | 全部+P2 | app/ + 全局走查（无并行对象） | app, ui, 全局 | — | 否（最后） | B5 | needs-triage；scope/risk 后定 |
-| 17 P1 AVF e2e（prototype） | 需用户真机 | — | 无（不进主干） | 临时分支/实验目录 | 主干全部 | 是（随时） | B2 起（可提前） | Risk 4–5；Sol XHigh；必要时 Sol Max |
-| 18 P2 QEMU 基线（prototype） | 25/26 产出 | 26 | 无（实验分支） | 实验分支 | 主干全部 | 是（26 后随时） | B1 起 | Risk 3–4；设计 Sol High；采集 Luna Max；结论 Sol XHigh |
+| 17 P1 AVF e2e（prototype） | 需用户真机 | — | 无（不进主干） | 临时分支/实验目录 | 主干全部 | 是（随时） | B2 起（可提前） | Risk 4–5；Architect Tier；必要时顶格深度 |
+| 18 P2 QEMU 基线（prototype） | 25/26 产出 | 26 | 无（实验分支） | 实验分支 | 主干全部 | 是（26 后随时） | B1 起 | Risk 3–4；方法设计 Architect Tier；数据采集 Implementation Tier；结论审定 Reviewer Tier |
 
 ## 3. 批次计划
 

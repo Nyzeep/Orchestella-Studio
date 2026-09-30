@@ -1,6 +1,6 @@
 # DroidLayer 工程交接文档（Engineering Handoff）
 
-> 版本：1.3（2026-09-19）｜ 交接方：Planning/Architecture Agent ｜ 接收方：Codex Orchestrator Agent
+> 版本：2.0（2026-10-01）｜ 维护方：Chief Research & Architecture Strategist ｜ 接收方：All Agent Sessions
 > 性质：**交接入口，不是事实源**（见 §0）。
 
 ## 0. 事实优先级（最终接管原则）
@@ -82,43 +82,60 @@ MVP 范围：Full Linux；Alpine + Debian；终端 only；QEMU + AVF 双策略�
 
 **Worker 绝对不能自行修改的内容**：ADR 内容与 status；CONTEXT.md 词条；spec.md 的承诺；暴露面白名单；桥接命令集（走版本流程）；已关闭 decision 票的结论。修改的唯一通道 = 架构变更门（ARCHITECTURE_CHANGE_POLICY.md）。
 
-## 4A. Agent / Model Selection Policy
+## 4A. Agent / Model Capability Tiering & Routing Policy
 
-> 本节是所有后续 Agent session 的**模型路由单一事实来源**。`ORCHESTRATION_GOVERNANCE_POLICY.md` 负责把本节结论落实到 dispatch packet、委派和生命周期；它不得覆盖本节的模型选择。模型能力是任务匹配依据，不是工程决策权限。
+> 本节是所有后续 Agent session 的**模型与能力路由单一事实来源**。`ORCHESTRATION_GOVERNANCE_POLICY.md` 负责把本节结论落实到 dispatch packet、委派和生命周期；它不得覆盖本节的能力与层级选择。模型能力是任务匹配依据，不是工程决策权限。
 
 ### Purpose
 
-模型按 **risk / cost of error** 路由，而不是按代码行数、文件数量或 ticket 大小路由。路由至少考虑不可逆性、blast radius、验证成本、系统边界和错误的补救代价。
+模型与 Agent 按 **能力层级（Capability Tiers）** 与 **risk / cost of error** 路由，彻底废除硬编码特定商业模型代号的遗留机制，实现模型中立化（Model-Agnostic）治理。路由综合考量不可逆性、blast radius、验证成本、系统边界和错误的补救代价。
+
+### Capability Tiers（四大能力层级契约）
+
+为保障工程治理的长期稳定性与跨模型迁移弹性，定义四大标准化能力层级：
+
+1. **Architect Tier（高推理/架构层）**
+   - **核心特征**：具备极高逻辑推理深度（High/Extended Reasoning）、大上下文全局把握、严谨的跨系统边界权衡与架构决策能力。
+   - **职责范围**：主导系统设计、ADR 制定/修订、系统边界裁定、高风险系统与安全审计、重大决策门禁。
+2. **Implementation Tier（高执行/代码层）**
+   - **核心特征**：具备卓越的代码生成精度、严格遵循 TDD、深度理解 Bionic/POSIX/JNI 契约、精通构建脚本与指令集优化。
+   - **职责范围**：在已批准 scope、ADR、spec 和 packet 内高效编码、测试编写、构建链维护与局部重构；不得自行改变架构或扩大 scope。
+3. **Reviewer Tier（独立审计层）**
+   - **核心特征**：具备批判性审查能力、严格保持角色独立，擅长代码规范走查（Standards）与规格偏离度审查（Spec Alignment）。
+   - **职责范围**：审查跨模块边界、架构契约、安全白名单、生命周期及并发数据竞争风险；发现冲突时冻结实现并升级，绝不自我宣布通过。
+4. **Lightweight / Research Tier（调研与信息获取层）**
+   - **核心特征**：高响应吞吐、低延迟、高效的信息检索与结构化归纳能力。
+   - **职责范围**：执行外部技术信源探索、官方文档检索、日志分析、元数据校验与代码库机械性巡检。
 
 ### Source of Truth
 
 - repo、tracker、已批准 ADR、spec 和当前工作树提供工程事实；它们的优先级仍以 §0 为准。
-- 《DroidLayer × GPT-5.6 模型选择报告》是本策略的输入，不是产品事实源，也不能覆盖 repo、tracker、ADR 或 spec。
-- **Model capability determines who should handle a task; it does not determine who is allowed to change the project's decisions.** 更强模型同样不能自行改变产品需求、ADR、spec 承诺、架构边界或 ticket scope。
+- 历史模型测试报告是参考输入，不是产品事实源，绝不能覆盖 repo、tracker、ADR 或 spec。
+- **Capability tier determines who should handle a task; it does not determine who is allowed to change the project's decisions.** 拥有更高能力层级的 Agent 同样不能自行改变产品需求、ADR、spec 承诺、架构边界或 ticket scope。
 - **A worker executes approved intent; it does not silently redefine approved intent.** 发现冲突时必须停止并升级，不得以“实现困难”为理由顺手改设计。
 
-### Default Roles
+### Default Roles & Tier Mapping
 
-| 角色 | 默认模型 / reasoning | 职责边界 |
+| 角色 | 契约能力层级 | 职责边界 |
 | --- | --- | --- |
-| Primary Agent / Orchestrator | `GPT-5.6 Sol / High` | 读取事实、形成计划和 invariants、选择风险路由、创建 dispatch packet、协调验证与集成；不因此获得改写产品决策的权力 |
-| Implementation Worker | `GPT-5.6 Luna / Max` | 在已批准 scope、ADR、spec 和 packet 内实现；不得自行改变架构、产品语义或扩大 scope |
-| Architecture / Security Reviewer | `GPT-5.6 Sol / XHigh` | 审查跨边界、架构、安全、契约、生命周期和存储完整性风险；发现冲突时冻结实现并升级 |
-| Critical Auditor | `GPT-5.6 Sol / Max` | 处理 critical decision、catastrophic-risk、最终架构/安全审计；必须保持独立，不由原 Worker 自我宣布通过 |
-| Fallback / Second Opinion | `GPT-5.6 Terra` | 仅作可用性 fallback 或独立 second opinion；不是默认主 Agent，具体 reasoning 必须随 packet 记录 |
+| Primary Agent / Orchestrator | **Architect Tier** (High Reasoning) | 读取事实、形成计划和 invariants、选择风险路由、创建 dispatch packet、协调验证与集成；不因此获得改写产品决策的权力 |
+| Implementation Worker | **Implementation Tier** (High Code Execution) | 在已批准 scope、ADR、spec 和 packet 内实现；不得自行改变架构、产品语义或扩大 scope |
+| Architecture / Security Reviewer | **Reviewer Tier** (Independent Dual-Axis Review) | 独立审查跨边界、架构、安全、契约、生命周期和存储完整性风险；发现冲突时冻结实现并升级 |
+| Critical Auditor | **Architect Tier** (Maximum Depth, Independent) | 处理 critical decision、catastrophic-risk、最终架构/安全审计；必须保持独立，由独立于原 Worker 的会话执行 |
+| Auxiliary / Research Agent | **Lightweight / Research Tier** | 负责一手资料研读、官方技术文档抓取、日志走查与依赖核对，支撑主会话决策 |
 
 默认角色不是强制每个 ticket 都调用的流水线。低风险任务可以直接进入 Worker → tests → review；高风险任务才增加规划、升级和独立审计。
 
 ### Risk-Based Routing
 
-| Risk | 典型工作 | 默认路由 |
+| Risk | 典型工作 | 默认能力路由 |
 | --- | --- | --- |
-| **Risk 0 — Mechanical** | formatting、文档、boilerplate、简单 DTO/日志、简单测试生成、已明确设计下的机械修改 | `GPT-5.6 Luna / Max` |
-| **Risk 1 — Normal implementation** | 已明确 ADR/spec 的 feature、普通 Kotlin implementation、明确接口下的 adapter、普通 bug fix/test repair | `GPT-5.6 Luna / Max` |
-| **Risk 2 — Integration / Multi-file** | 跨模块实现、runtime wiring、Android ↔ native integration、QEMU integration、bridge、networking、storage、lifecycle | 默认 `GPT-5.6 Luna / Max`；必要时升级 `GPT-5.6 Sol / High` |
-| **Risk 3 — Complex Engineering** | 跨 domain implementation、complex debugging、tricky runtime interaction、困难 integration、涉及多个已批准 contract 的修改 | `GPT-5.6 Sol / High` |
-| **Risk 4 — Architecture / Security / System Boundary** | AVF、pKVM、QEMU architecture、guest kernel contract、host ↔ guest boundary、security、capability matrix、lifecycle semantics、storage integrity、runtime contract | `GPT-5.6 Sol / XHigh`；必要时升级 `Max` |
-| **Risk 5 — Critical Decision / Audit** | 修改 accepted ADR 核心结论、产品边界、data corruption risk、security-critical change、architecture rewrite、最终安全/架构审计、高风险 AVF 结论 | `GPT-5.6 Sol / Max`，并要求第二个独立 review / audit |
+| **Risk 0 — Mechanical** | formatting、文档、boilerplate、简单 DTO/日志、简单测试生成、已明确设计下的机械修改 | `Implementation Tier` 或 `Lightweight Tier` |
+| **Risk 1 — Normal implementation** | 已明确 ADR/spec 的 feature、普通 Kotlin implementation、明确接口下的 adapter、普通 bug fix/test repair | `Implementation Tier` |
+| **Risk 2 — Integration / Multi-file** | 跨模块实现、runtime wiring、Android ↔ native integration、QEMU integration、bridge、networking、storage、lifecycle | 默认 `Implementation Tier`；必要时升级 `Architect Tier` 介入 |
+| **Risk 3 — Complex Engineering** | 跨 domain implementation、complex debugging、tricky runtime interaction、困难 integration、涉及多个已批准 contract 的修改 | `Architect Tier` (指导/排障) + `Implementation Tier` (执行) |
+| **Risk 4 — Architecture / Security / System Boundary** | AVF、pKVM、QEMU architecture、guest kernel contract、host ↔ guest boundary、security、capability matrix、lifecycle semantics、storage integrity、runtime contract | `Architect Tier` (深度推理) + 独立 `Reviewer Tier` |
+| **Risk 5 — Critical Decision / Audit** | 修改 accepted ADR 核心结论、产品边界、data corruption risk、security-critical change、architecture rewrite、最终安全/架构审计、高风险 AVF 结论 | `Architect Tier` (顶格推理)，并要求独立的二次 review / audit |
 
 `Risk` 是 task risk，不是模型权限等级；同一 ticket 的不同子任务可以有不同 Risk。选择理由必须记录在 dispatch packet 中。
 
@@ -133,16 +150,16 @@ MVP 范围：Full Linux；Alpine + Debian；终端 only；QEMU + AVF 双策略�
 - benchmark 结果可能改变 acceptance criteria；
 - 现有 contract 无法解决问题，或出现 architecture smell。
 
-一般复杂性、integration blocker 或难调试问题升级到 `GPT-5.6 Sol / High`。涉及 architecture、security、AVF、kernel、data integrity 或 accepted ADR 变化时升级到 `GPT-5.6 Sol / XHigh`；critical decision 或最终审计使用 `GPT-5.6 Sol / Max`，并形成新的决策记录和独立审计结论。
+一般复杂性、integration blocker 或难调试问题升级到 `Architect Tier (Standard/High)`。涉及 architecture、security、AVF、kernel、data integrity 或 accepted ADR 变化时升级到 `Architect Tier (Deep Reasoning)`；critical decision 或最终审计必须由独立的 `Architect Tier / Reviewer Tier` 形成新的决策记录和独立审计结论。
 
-模型切换不能制造不存在的 infrastructure capability。当前 `vctl` builder 崩溃属于真实环境 blocker；Agent 可以分析、记录和升级它，但不得把“换模型”写成 blocker 已解决，更不得因此声称 Ticket 26 完成。
+能力调度不能制造不存在的 infrastructure capability。真实环境 blocker 必须如实记录和升级，不得用提升能力层级代替真实环境验证。
 
 ### Worker Constraints
 
-- Worker 只能执行 approved intent：不得改 ADR、spec、CONTEXT、产品需求、accepted contract、ticket status 或 ticket scope；不得因模型更强而获得例外。
+- Worker 只能执行 approved intent：不得改 ADR、spec、CONTEXT、产品需求、accepted contract、ticket status 或 ticket scope；不得因能力层级更强而获得例外。
 - Worker 不得自行降 reasoning、换模型、重新定义主要 workflow 或让实现结果反向成为架构决策；不确定时停止并回报 Orchestrator。
-- Orchestrator 也不能以模型选择替代用户/架构变更门的裁决。任何新决策必须走 `ARCHITECTURE_CHANGE_POLICY.md`。
-- 已经 active 的 session 不因本节自动换模型或重派；若需要新的 Worker、review 或 escalation，按本节和当前真实状态重新形成 packet。
+- Orchestrator 也不能以能力层级替代用户/架构变更门的裁决。任何新决策必须走 `ARCHITECTURE_CHANGE_POLICY.md`。
+- 已经 active 的 session 不因本节自动重派；若需要新的 Worker、review 或 escalation，按本节和当前真实状态重新形成 packet。
 
 ### Review Policy
 
@@ -151,19 +168,19 @@ MVP 范围：Full Linux；Alpine + Debian；终端 only；QEMU + AVF 双策略�
 ```text
 Planner / Orchestrator
         ↓
-   Sol High
+ Architect Tier
         ↓
 Approved plan / invariants
         ↓
 Implementation
         ↓
-Luna Max
+Implementation Tier
         ↓
 Tests / CI
         ↓
 Review
         ↓
-Sol High
+Reviewer Tier
         ↓
 Critical?
    ┌────┴────┐
@@ -171,38 +188,36 @@ Critical?
    No       Yes
    │         │
    ▼         ▼
- Merge    Sol XHigh/Max
+ Merge   Independent Architect Tier Audit
 ```
 
-- Risk 0–1 可采用 `Luna Max → tests → review`；Risk 2–3 通常采用 `Sol High（规划/复杂问题）→ Luna Max → tests → Sol High review`。
-- Risk 4–5 必须由 Sol 参与规划/审查；涉及 critical decision、security 或 architecture 的结论不得由同一个 Agent 自己宣布通过。
+- Risk 0–1 可采用 `Implementation Tier → tests → Reviewer Tier`；Risk 2–3 通常采用 `Architect Tier（规划/复杂问题）→ Implementation Tier → tests → Reviewer Tier`。
+- Risk 4–5 必须由 Architect Tier 参与规划/审查；涉及 critical decision、security 或 architecture 的结论不得由同一个 Agent 自己宣布通过。
 - Benchmark 必须坚持 `raw data → deterministic threshold → acceptance`；不能用 LLM opinion 替代真机数据或验收门槛。
-- Review 的模型和 reasoning 也必须写入 packet；reviewer 必须独立于被审查 Worker，必要时升级到 `Sol XHigh/Max`。
+- Review 的能力层级也必须写入 packet；reviewer 必须独立于被审查 Worker。
 
-### Current Ticket Routing
+### Current Ticket Snapshot & Routing
 
-以下是本次 handoff 更新所依据的当前项目路由快照；它记录事实和建议模型，不改变任何 ticket 状态，也不替 active worktree 自动重派 Worker。
+以下是反映 Ticket 26 验收合并后最新项目状态的路由快照；它记录工程事实和建议能力层级：
 
-| Ticket | 当前事实 | Risk | 模型路由 |
+| Ticket | 当前事实 | Risk | 能力层级路由 |
 | --- | --- | --- | --- |
-| **26** | tracker 仍为 `ready-for-agent`；独立 worktree `7194304` 有持续实现，分支报告称 `active`；2026-09-18 full verify 与 artifact-reuse 成功，但真机六项仍未验证；状态需 reconciliation | **Risk 2–3** | implementation / device gate：`GPT-5.6 Luna / Max`；复杂调试或整票审查：`GPT-5.6 Sol / High`；架构/安全冲突：`GPT-5.6 Sol / XHigh`。不得把 CI/QEMU 结果写成真机完成或 `completed` |
-| **17 — AVF E2E** | `open`；涉及 AVF 真机和 Android system boundary | **Risk 4–5** | `GPT-5.6 Sol / XHigh`；必要时 `GPT-5.6 Sol / Max`，并保留独立审计 |
-| **18 — QEMU / TCG benchmark** | `open`；其 raw data 是最终性能验收依据 | **Risk 3–4** | design / methodology：`GPT-5.6 Sol / High`；implementation / data collection：`GPT-5.6 Luna / Max`；result interpretation：`GPT-5.6 Sol / High`；architectural / acceptance conclusion：`GPT-5.6 Sol / XHigh`，必要时升级 |
-| **25** | `completed`，已 merge 到 `main` | 不再路由 | 仅作为 precedent、architecture reference 和 completed baseline，不重新纳入开发 routing |
-| **27–37** | 当前均为 `needs-triage` | 未定 | 不提前指定具体模型；待 ticket scope、risk、verification cost 明确后再路由 |
-
-当前下一里程碑仍是：先 reconciliation Ticket 26 的 tracker、分支和报告状态，再完成剩余 ARM64 真机验收；在此之前不得启动下游票或把分支当作 `main` 的完成证明。
+| **26** | **`completed`，已正式合并入 `main`**（commit `5cd059d` / `d91a0ac`）；QEMU 软模拟基线全绿，HONOR 80 GT 真机 167 项验收全过 | 已完结 | 历史成果作为 L1 战略基石；不再重新派发 |
+| **25** | `completed`，已 merge 到 `main` | 已完结 | 作为 Guest 资产与内核契约基线 |
+| **17 — AVF E2E** | `open`（升阶至 Phase 1 双引擎自适应核心）；涉及 AVF 真机与 Android 边界 | **Risk 4–5** | `Architect Tier` 负责边界判定；`Implementation Tier` 负责适配开发；独立 `Reviewer Tier` 审计 |
+| **18 — QEMU / TCG benchmark** | `open`；Ticket 26 已产出真机数据，需系统化固化性能基准 | **Risk 3–4** | Methodology：`Architect Tier`；数据收集：`Implementation Tier`；验收结论：`Architect Tier` |
+| **27–37** | 处于 DroidLayer 2.0 分期规划路径中（Phase 1–4） | 按需评定 | 依据具体工单的 scope、risk 与 verification cost 动态派发 |
 
 ### Facts vs Policy
 
 - **事实**：Ticket 状态、worktree 状态、builder blocker、ADR/spec 是否 accepted、benchmark 原始数据和真实设备结果；这些必须回到 repo、tracker、Git 和外部证据核对。
-- **Policy**：上表的 Risk 分类、默认模型、升级条件、Worker 限制和 review/audit 路径；它不能把建议变成事实，也不能改变事实。
+- **Policy**：上表的 Risk 分类、能力层级、升级条件、Worker 限制和 review/audit 路径；它不能把建议变成事实，也不能改变事实。
 
 ### Important Non-Goals
 
 - 本节不是新的架构决策、产品需求、验收标准或 ticket 放行。
 - 本节不授权任何 Agent 修改 ADR、spec、tracker 状态、dependency graph、生产代码或宿主环境。
-- 本节不要求所有 ticket 使用最强模型，也不以代码量推断风险；模型只服务于已批准的工程意图。
+- 本节不要求所有 ticket 使用最高能力层级，也不以代码量推断风险；模型能力只服务于已批准的工程意图。
 
 ## 4B. Artifact & Repository Organization
 
@@ -222,32 +237,31 @@ Git worktree 的目录边界、创建/迁移命令和接手前 freshness verific
 upstream、与 main 的关系、dirty/clean、diff、untracked、ignored 和 recent log；handoff
 中的旧 HEAD 不能替代当前 Git 核验。
 
-## 5. 仓库与 Git 状态（核实于 2026-09-19）
+## 5. 仓库与 Git 状态（核实于 2026-10-01）
 
-- 本次审计的 `main` 产品基线为 `78594f3a5abf26b758ab5bee0889e65c468d0b96`；其后仅追加本次 handoff/审计文档提交 `b957103`，未改变产品代码。当前工作区干净。
-- `main` 已包含 Ticket 25 的 Guest 资产构建基线与 bootstrap App；截至本次审计提交，尚未包含 Ticket 26 的 runtime/bridge/terminal/QEMU 实现。
-- Ticket 26 存在独立 worktree `D:\Development project(开发项目)\DroidLayer开发目录\ticket-26-alpine-shell-qemu`，当前 HEAD 为 `7194304f59b90eb0fd34457bff806f0f45524551`，工作区干净、无 upstream，相对 `main` ahead 80 / behind 4；它不是 `main` 的完成证明。
-- 旧的 2026-09-05 “唯一分支 / 无产品代码”快照只保留为历史记录；当前审计见 `docs/reports/orchestration/current-state-audit-2026-09-19.zh-CN.md`。
-- **勘误**：`b556a49` 提交信息与 map Notes 曾写 "issues/25–38"，实际文件为 **25–37**（13 张）。map 已在本交接提交中修正；提交信息无法改写，以本勘误为准。
+- 本次交接的 `main` 主分支已正式合流 **Ticket 26 里程碑提交（commit `5cd059d` / `d91a0ac`）**。当前工作区干净，无未处理冲突。
+- `main` 现已完整包含 Ticket 25（Guest 资产构建基线、Alpine 3.24.1 镜像与内核）与 Ticket 26（全功能 Linux/QEMU 软模拟运行时、双抽象套接字控制协议、JNI 桥接层、16-page / 4-byte 对齐 APK 与 HONOR 80 GT 真机验收套件）。
+- 历史独立开发分支 `ticket/26-linux-qemu-rebuild` 已通过 Pull Request #1 完成合流并完成生命周期收口；相关实验性日志与证据已在 `docs/reports/` 归档。
 
-## 6. Tracker 状态（.scratch/droidlayer-platform/，以当前文件为准）
+## 6. Tracker 状态（.scratch/droidlayer-platform/，以当前事实为准）
 
-- `map.md`：wayfinder 决策地图（Labels: wayfinder:map）。已记录 18 条 Decisions-so-far；雾区 5 条（Compatibility 契约设计、OTA/instance 身份、benchmark 验收数字、UI/UX 细化、AVF 独立存活等增强）。
-- `spec.md`：MVP 产品规格 v1.0，**ready-for-agent**。
-- `issues/`：37 个文件 = 01–24（wayfinder 决策票：22 张 resolved，17/18 两张 prototype open）+ 25–37 实现轨道；当前 Ticket 25 为 `completed`，Ticket 26 为 `ready-for-agent`，Ticket 27–37 为 `needs-triage`。
-- 重要不一致：Ticket 26 的独立分支已有持续实现与 2026-09-18 full verify 记录，但 tracker 文件仍为 `ready-for-agent`，报告将其称为 `active`。在状态 reconciliation 完成前，不得把该分支标作已完成、不得启动其下游票，也不得由 handoff 快照推导派工授权。
-- tracker 规则见 `docs/agents/issue-tracker.md`（本地 Markdown 约定 + Wayfinding operations）。
+- `map.md`：wayfinder 决策地图（Labels: wayfinder:map）。已记录 18 条 Decisions-so-far；随着 DroidLayer 2.0 路线图发布，部分雾区（图形栈演化、多发行版支持、容器化）已形成清晰规划。
+- `spec.md`：MVP 产品规格 v1.0。
+- `issues/`：Ticket 25 与 Ticket 26 均已标记为 **`completed`**。Ticket 17（AVF 真机端到端）纳入 Phase 1 规划，Ticket 18（性能基线）已有 Ticket 26 真机数据。后续 Ticket 27–37 正式纳入 DroidLayer 2.0 分期跃升演进路径。
 
 ## 7. Research 状态（全部已归档，docs/research/）
 
-| 报告 | 关键结论（供票引用） |
+| 报告 | 关键结论（供工程与架构引用） |
 | --- | --- |
+| **2026-10-01-android-linux-ecosystem-and-hardware-acceleration** | 2026 最新虚拟化全景（QEMU vs AVF vs PRoot）；高通骁龙 8 Elite 封锁 Non-Protected VM 导致官方 Linux Terminal 停摆深度剖析；16 KB Page 规范与 JIT 代码缓存；Mesa Turnip/Venus 图形突破与 Wayland-over-SurfaceView 架构 |
+| **2026-10-01-droidlayer-architecture-evolution-roadmap** | DroidLayer 2.0 四阶段演进路线图：Phase 1 双引擎自适应架构 $\rightarrow$ Phase 2 多发行版与用户体验 $\rightarrow$ Phase 3 极速 Wayland 桌面与现代输入桥接 $\rightarrow$ Phase 4 轻量容器与移动开发者工作站 |
 | 2026-09-05-前置研究独立审视 | AVF 权限边界（@SystemApi + development 级授权）；TCG 慢 5–20×；W^X/jniLib 约束；设备矩阵 |
 | 2026-09-05-podroid-源码分析 | VmEngine/路由/rootfs/vsock 模式实证；教训清单（零校验、公开凭据、无 CI、GPL-2.0） |
 | 2026-09-05-android16-terminal-参考实现 | 官方应用=特权组件；第三方可用"可授权子集"（nixos-avf/koiTerminal 实证）；gfxstream 链路 |
 | 2026-09-05-license-inventory | crosvm=BSD-3、gfxstream=Apache-2.0；GPL 义务 CI 清单；组件许可矩阵 |
 | 2026-09-05-cn-oem-avf-status | 361 款机型声明支持 AVF；OEM ADB 门控矩阵；pm grant 可用性待实测 |
 | 2026-09-05-proot-modern-android | PRoot 实测开销与硬限制；交付路径（jniLib + 目录树实例） |
+
 
 ## 8. Prototype 状态
 
