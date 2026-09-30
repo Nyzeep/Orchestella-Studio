@@ -1,6 +1,7 @@
 ---
 status: accepted
 date: 2026-09-05
+amended: 2026-10-01
 ---
 
 # 图形路线分期：MVP 终端 only，四里程碑渐进
@@ -24,3 +25,15 @@ date: 2026-09-05
 - TCG 档图形体验 = 软渲染 + 5–20× CPU 减速叠加，M2 发布时性能预期管理必须到位。
 - M4 若 gfxstream 被原型否决，硬件虚拟化档之外的 GPU 加速可能长期缺位——文案不许许诺。
 - M2 工作量预算按"图形一半、输入/IME 一半"的现实排。
+
+## Amendments & Errata (2026-10-01 修订与勘误)
+
+1. **里程碑 M1 闭环确认**：
+   - 伴随 Ticket 26 的合流验收通过，M1（终端 only）在 HONOR 80 GT 真机已达成全功能验证，具备流畅 shell 交互、双套接字控制与进程保活。
+2. **图形路线代际重构：废除 VNC-First，全面转向 Wayland-First**：
+   - **原 M2（VNC 软渲染通道）与 M3（Wayland 评估）合并重构**：2026 年最新调研证实，传统 VNC 协议存在 CPU 差分轮询开销过大、发热严重、无双缓冲以及触摸输入延迟高的物理瓶颈；
+   - **决议升级**：跳过自研独立 RFB/VNC 客户端阶段，直接利用 Android 原生 `SurfaceView` 构建极速 Wayland 原生显示通道。Guest 内运行轻量现代 Wayland 合成器（labwc / Weston），宿主通过 `ashmem` 匿名共享内存与硬件双缓冲机制直连 SurfaceView，将移动桌面交互帧率从 VNC 的 ~15 FPS 跨越式提升至 60 FPS 满帧；
+   - **输入集成前置**：虚拟触控手势（单指滑动、双指滚轮/右键）与宿主输入法（IME）悬浮穿透桥接直接在 Wayland 显示通道中一体化实现。
+3. **GPU 硬件加速路线修正（对齐 Mesa Turnip 与 Venus）**：
+   - 原规划中的 `gfxstream` 受到 Android 平台特权与 OEM 碎片化的严苛制约；
+   - **修正路径**：M4 硬件加速路线全面转向 Mesa 开源生态中的 VirtIO-GPU **Venus**（Vulkan 准虚拟化协议）与 **Turnip**（针对高通 Adreno GPU 并已获 Vulkan 1.3/1.4 官方认证的开源驱动）。在支持的设备上，Guest 内 Vulkan 指令经 Venus 打包后交由宿主 Turnip 驱动直接执行硬件着色器计算，彻底打破移动端虚拟机的 3D 渲染壁垒。

@@ -44,9 +44,9 @@ Worker 只能执行 packet 中的 scope。发现完成当前任务似乎要求�
 SPEC、CONTEXT、产品需求或 dependency graph 时，停止越界修改，记录证据，并走
 Architecture Change Policy；不得自行宣布需求或架构变化。
 
-## 3. Model Selection Policy
+## 3. Model & Capability Tier Selection Policy
 
-`ENGINEERING_HANDOFF.md` §4A 是 Risk-based model routing 的唯一事实来源。本节只规定如何
+`ENGINEERING_HANDOFF.md` §4A 是 Risk-based capability routing 的唯一事实来源。本节只规定如何
 把它落实到 session，不复制一套可能漂移的模型表；任何旧报告、历史 dispatch packet 或
 历史 Worker 配置都不能覆盖 §4A。
 
@@ -54,23 +54,21 @@ Orchestrator 在创建 Worker 或 Child 前必须按以下顺序决定，并把�
 
 ```text
 Task → Session role → Difficulty → Risk → Verification cost
-     → Required capability → Model selection → Reasoning selection
+     → Required Capability Tier → Reasoning Depth selection
 ```
 
 执行要求：
 
-- Primary Agent / Orchestrator 默认 `GPT-5.6 Sol / High`；Implementation Worker 按 §4A
-  的风险表使用 `GPT-5.6 Luna / Max`；review、architecture/security 和
-  critical audit 分别按 `Sol / High`、`Sol / XHigh`、`Sol / Max` 路由。
-- `GPT-5.6 Terra` 只作 fallback / second opinion，不是默认模型。具体可用性或 reasoning
-  不满足时，必须在执行前升级、重新 dispatch 或记录经批准的替代；不得静默降级。
-- Risk 由错误成本、不可逆性、blast radius、验证成本和边界影响决定，不由代码量或 ticket
-  大小决定。一个 ticket 的不同子任务可以分属不同 Risk。
-- Child 不自动继承 parent 的模型或 reasoning。每个 Child 由 Orchestrator 依据
-  `role + scope + difficulty + risk + verification cost + required capability` 独立选择，
-  并遵守 §4A 的 Worker/Child 权限边界。
-- 模型选择不授予改变 ADR、spec、产品语义、架构、ticket scope 或 tracker 状态的权力；
-  发现冲突必须停在 §4A 的 escalation rules，并走 Architecture Change Policy。
+- **能力层级解耦**：彻底消除硬编码具体供应商模型代号的遗留约束，严格按四大标准化能力层级（Architect Tier、Implementation Tier、Reviewer Tier、Lightweight / Research Tier）进行路由；
+- **角色映射规则**：
+  * Primary Agent / Orchestrator 默认采用 **Architect Tier**（高逻辑推理深度）；
+  * Implementation Worker 依据 §4A 的风险表匹配 **Implementation Tier**（高执行与代码精度）；
+  * Review、跨系统边界审查与规范对齐采用独立的 **Reviewer Tier**（双轴独立复评）；
+  * Architecture / Security 审查与 Critical Audit 采用顶格深度的 **Architect Tier**，且必须由独立会话承接，严禁 Worker 自我核准；
+  * 调研、事实检索与辅助分析采用 **Lightweight / Research Tier**；
+- **Risk 驱动匹配**：Risk 由错误成本、不可逆性、blast radius、验证成本和边界影响决定，不由代码量或 ticket 大小决定。一个 ticket 的不同子任务可以分属不同 Risk；
+- **Child 独立选型**：Child 不自动继承 parent 的模型或能力层级。每个 Child 由 Orchestrator 依据 `role + scope + difficulty + risk + verification cost + required capability tier` 独立选择，并遵守 §4A 的 Worker/Child 权限边界；
+- **能力边界约束**：具备更高能力层级不授予改变 ADR、spec、产品语义、架构、ticket scope 或 tracker 状态的权力；发现冲突必须停在 §4A 的 escalation rules，并走 Architecture Change Policy。
 
 ## 4. Workflow assignment
 
