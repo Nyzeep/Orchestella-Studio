@@ -4,6 +4,34 @@ package io.github.nyzeep.droidlayer.runtime.contract;
 public final class BridgeControl {
     private BridgeControl() {}
 
+    /** Strategy-neutral power actions supported by the Bridge v1 control channel. */
+    public enum PowerAction {
+        SHUTDOWN("shutdown"),
+        POWEROFF("poweroff");
+
+        private final String wireValue;
+
+        PowerAction(String wireValue) {
+            this.wireValue = wireValue;
+        }
+
+        public String wireValue() {
+            return wireValue;
+        }
+
+        public static PowerAction fromWire(String value) {
+            if (value == null) {
+                return null;
+            }
+            for (PowerAction action : values()) {
+                if (action.wireValue.equals(value)) {
+                    return action;
+                }
+            }
+            return null;
+        }
+    }
+
     /**
      * Dispatches one already-authenticated control request. Handshake and transport setup happen at
      * their own seams before this method is called.
@@ -23,6 +51,13 @@ public final class BridgeControl {
         if (terminal == null) {
             throw new IllegalArgumentException("terminal");
         }
+        if (isPowerCommand(requestLine)) {
+            PowerRequest req = parsePower(requestLine);
+            if (req == null) {
+                return Result.rejected("DROIDLAYER/ERROR malformed-command\n");
+            }
+            return Result.rejected("DROIDLAYER/ERROR power-unavailable\n");
+        }
         ResizeRequest resize = parseResize(requestLine);
         if (resize == null) {
             return dispatch(requestLine);
@@ -30,6 +65,99 @@ public final class BridgeControl {
         return terminal.resize(resize.columns, resize.rows)
                 ? Result.accepted("DROIDLAYER/OK resize\n")
                 : Result.rejected("DROIDLAYER/ERROR resize-unavailable\n");
+    }
+
+    /**
+     * Dispatches a control request that may operate on the power management seam.
+     */
+    public static Result dispatch(String requestLine, Power power) {
+        if (power == null) {
+            throw new IllegalArgumentException("power");
+        }
+        if (isPowerCommand(requestLine)) {
+            PowerRequest req = parsePower(requestLine);
+            if (req == null) {
+                return Result.rejected("DROIDLAYER/ERROR malformed-command\n");
+            }
+            return power.power(req.action)
+                    ? Result.accepted("DROIDLAYER/OK power\n")
+                    : Result.rejected("DROIDLAYER/ERROR power-unavailable\n");
+        }
+        ResizeRequest resize = parseResize(requestLine);
+        if (resize != null) {
+            return Result.rejected("DROIDLAYER/ERROR resize-unavailable\n");
+        }
+        return dispatch(requestLine);
+    }
+
+    /**
+     * Dispatches a control request that may operate on either the terminal or power management seams.
+     */
+    public static Result dispatch(String requestLine, Terminal terminal, Power power) {
+        if (terminal == null) {
+            throw new IllegalArgumentException("terminal");
+        }
+        if (power == null) {
+            throw new IllegalArgumentException("power");
+        }
+        if (isPowerCommand(requestLine)) {
+            PowerRequest req = parsePower(requestLine);
+            if (req == null) {
+                return Result.rejected("DROIDLAYER/ERROR malformed-command\n");
+            }
+            return power.power(req.action)
+                    ? Result.accepted("DROIDLAYER/OK power\n")
+                    : Result.rejected("DROIDLAYER/ERROR power-unavailable\n");
+        }
+        ResizeRequest resize = parseResize(requestLine);
+        if (resize != null) {
+            return terminal.resize(resize.columns, resize.rows)
+                    ? Result.accepted("DROIDLAYER/OK resize\n")
+                    : Result.rejected("DROIDLAYER/ERROR resize-unavailable\n");
+        }
+        return dispatch(requestLine);
+    }
+
+    private static boolean isPowerCommand(String requestLine) {
+        if (requestLine == null) {
+            return false;
+        }
+        return requestLine.startsWith("DROIDLAYER/POWER ")
+                || "DROIDLAYER/POWER\n".equals(requestLine)
+                || "DROIDLAYER/POWER\r\n".equals(requestLine);
+    }
+
+    private static PowerRequest parsePower(String requestLine) {
+        if (requestLine == null || !requestLine.endsWith("\n")) {
+            return null;
+        }
+        String line = requestLine.substring(0, requestLine.length() - 1);
+        if (line.endsWith("\r")) {
+            line = line.substring(0, line.length() - 1);
+        }
+        String[] fields = line.split(" ", -1);
+        if (fields.length != 2 || !"DROIDLAYER/POWER".equals(fields[0])) {
+            return null;
+        }
+        PowerAction action = PowerAction.fromWire(fields[1]);
+        if (action == null) {
+            return null;
+        }
+        return new PowerRequest(action);
+    }
+
+    /** Adapter for strategy-neutral power management actions (shutdown/poweroff). */
+    @FunctionalInterface
+    public interface Power {
+        boolean power(PowerAction action);
+    }
+
+    private static final class PowerRequest {
+        private final PowerAction action;
+
+        private PowerRequest(PowerAction action) {
+            this.action = action;
+        }
     }
 
     private static ResizeRequest parseResize(String requestLine) {

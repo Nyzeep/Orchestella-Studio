@@ -48,6 +48,22 @@ public final class BridgeClient {
         return classify(readResponseLine());
     }
 
+    /** Requests a power action (shutdown/poweroff) and classifies the agent's response. */
+    public synchronized Result power(BridgeControl.PowerAction action) throws IOException {
+        Objects.requireNonNull(action, "action");
+        write("DROIDLAYER/POWER " + action.wireValue() + "\n");
+        return classify(readResponseLine());
+    }
+
+    /** Requests a power action by wire name ("shutdown" or "poweroff"). */
+    public synchronized Result power(String action) throws IOException {
+        BridgeControl.PowerAction parsed = BridgeControl.PowerAction.fromWire(action);
+        if (parsed == null) {
+            throw new IllegalArgumentException("unsupported power action: " + action);
+        }
+        return power(parsed);
+    }
+
     private void write(String line) throws IOException {
         outbound.write(line.getBytes(StandardCharsets.US_ASCII));
         outbound.flush();
@@ -81,6 +97,9 @@ public final class BridgeClient {
         }
         if ("DROIDLAYER/OK resize\n".equals(line)) {
             return Result.accepted("ok-resize");
+        }
+        if ("DROIDLAYER/OK power\n".equals(line)) {
+            return Result.accepted("ok-power");
         }
         if (line != null && line.startsWith("DROIDLAYER/ERROR ") && line.endsWith("\n")) {
             String kind = line.substring("DROIDLAYER/ERROR ".length(), line.length() - 1);

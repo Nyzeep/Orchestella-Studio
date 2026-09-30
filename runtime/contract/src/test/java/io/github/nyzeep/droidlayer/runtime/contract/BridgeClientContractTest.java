@@ -18,6 +18,8 @@ public final class BridgeClientContractTest {
         handshakeSurfacesAgentErrorKinds();
         pingRoundTripsPong();
         resizeRoundTripsOkResize();
+        powerRoundTripsOkPower();
+        powerSurfacesAgentErrorKinds();
         rejectsNonCanonicalTokensBeforeSend();
     }
 
@@ -57,6 +59,43 @@ public final class BridgeClientContractTest {
 
         assertTrue(result.accepted(), "OK resize must be accepted");
         assertEquals("DROIDLAYER/RESIZE 80 24\n", session.wire(), "resize wire line");
+    }
+
+    private static void powerRoundTripsOkPower() throws Exception {
+        Session shutdownSession = new Session("DROIDLAYER/OK power\n");
+        BridgeClient.Result shutdownResult =
+                shutdownSession.client.power(BridgeControl.PowerAction.SHUTDOWN);
+        assertTrue(shutdownResult.accepted(), "OK power shutdown must be accepted");
+        assertEquals("ok-power", shutdownResult.responseKind(), "ok-power kind");
+        assertEquals("DROIDLAYER/POWER shutdown\n", shutdownSession.wire(), "power shutdown wire line");
+
+        Session poweroffSession = new Session("DROIDLAYER/OK power\n");
+        BridgeClient.Result poweroffResult =
+                poweroffSession.client.power(BridgeControl.PowerAction.POWEROFF);
+        assertTrue(poweroffResult.accepted(), "OK power poweroff must be accepted");
+        assertEquals("ok-power", poweroffResult.responseKind(), "ok-power kind");
+        assertEquals("DROIDLAYER/POWER poweroff\n", poweroffSession.wire(), "power poweroff wire line");
+
+        Session stringSession = new Session("DROIDLAYER/OK power\n");
+        BridgeClient.Result stringResult = stringSession.client.power("shutdown");
+        assertTrue(stringResult.accepted(), "string power shutdown must be accepted");
+        assertEquals("DROIDLAYER/POWER shutdown\n", stringSession.wire(), "string power wire line");
+    }
+
+    private static void powerSurfacesAgentErrorKinds() throws Exception {
+        Session errorSession = new Session("DROIDLAYER/ERROR power-unavailable\n");
+        BridgeClient.Result result =
+                errorSession.client.power(BridgeControl.PowerAction.SHUTDOWN);
+        assertTrue(!result.accepted(), "power error must not be accepted");
+        assertEquals("power-unavailable", result.responseKind(), "power-unavailable error kind");
+
+        Session session = new Session("DROIDLAYER/OK power\n");
+        try {
+            session.client.power("invalid-action");
+            fail("unsupported power action must throw IllegalArgumentException");
+        } catch (IllegalArgumentException expected) {
+            // required
+        }
     }
 
     private static void rejectsNonCanonicalTokensBeforeSend() throws Exception {
