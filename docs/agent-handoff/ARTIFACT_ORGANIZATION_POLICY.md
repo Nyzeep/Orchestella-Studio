@@ -73,6 +73,8 @@ ticket 三处；报告应链接或引用 canonical artifact。
 
 可按用途使用 `external/`、`tools/`、`caches/`、`artifacts/`、`test-runtimes/`、
 `vm-images/` 或 `temp/` 等明确子目录，但必须带有项目用途、ticket/owner 和清理预期。
+针对外部资产的生命周期、复用与清理，必须严格遵守 `ASSET_REUSE_AND_HYGIENE_POLICY.md`
+确立的三级分类法：禁止误删 SDK 工具链、内核/rootfs 底包与 WSL 构建沙箱等 Class A 永久复用资产。
 `.gitignore` 只是防止误提交的安全网，不是把临时文件写入仓库的授权；不要依赖“可能被
 忽略”来决定路径。
 涉及 `C:`、user-level runtime 或系统资源时，仍必须遵守 Host Environment Policy 的

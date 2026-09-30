@@ -2,8 +2,9 @@
 
 > 状态：项目级 active policy。适用于所有 User → Orchestrator → Worker → Child 的正式
 > DroidLayer 工作。它是 session 委派、并行、branch/worktree 生命周期及 Git 发布的唯一
-> 事实来源；模型选择的唯一 policy 见 `ENGINEERING_HANDOFF.md` §4A；artifact 与仓库组织的
-> 唯一 policy 见 `ARTIFACT_ORGANIZATION_POLICY.md`。报告路径与报告内容由
+> 事实来源；模型与能力层级选择的唯一 policy 见 `ENGINEERING_HANDOFF.md` §4A；artifact 与仓库组织的
+> 唯一 policy 见 `ARTIFACT_ORGANIZATION_POLICY.md`；资产保全与精细瘦身的唯一 policy 见
+> `ASSET_REUSE_AND_HYGIENE_POLICY.md`。报告路径与报告内容由
 > `REPORTING_STANDARD.zh-CN.md` 单独定义，宿主机写入由 `HOST_ENVIRONMENT_POLICY.md` 单独定义。
 
 ## 1. 适用范围与决策顺序
@@ -13,7 +14,7 @@
 出现治理规则冲突时，按以下顺序执行：
 
 1. 用户对当前任务的明确要求；
-2. `HOST_ENVIRONMENT_POLICY.md`；
+2. `HOST_ENVIRONMENT_POLICY.md` 与 `ASSET_REUSE_AND_HYGIENE_POLICY.md`；
 3. `ARCHITECTURE_CHANGE_POLICY.md`；
 4. 本策略；
 5. `AGENT_WORKER_CONTRACT.md`；
@@ -37,7 +38,7 @@ governance / integration / audit 任务。Orchestrator 在创建 Worker 或 Chil
 - difficulty、risk、verification cost、required capability；
 - model 与 reasoning；
 - branch/worktree、测试与报告路径；
-- source-controlled evidence、ephemeral output、retention 与 cleanup 路径（按 `ARTIFACT_ORGANIZATION_POLICY.md`）；
+- source-controlled evidence、ephemeral output、retention 与 cleanup 路径（严格按 `ARTIFACT_ORGANIZATION_POLICY.md` 与 `ASSET_REUSE_AND_HYGIENE_POLICY.md` 落实 Class A 资产保全）；
 - 所需宿主环境权限或明确的只读限制。
 
 Worker 只能执行 packet 中的 scope。发现完成当前任务似乎要求修改其他 ticket、ADR、
