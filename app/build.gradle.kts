@@ -96,5 +96,6 @@ dependencies {
     implementation(project(":runtime:distro"))
     implementation(project(":runtime:engine-qemu"))
     implementation(project(":runtime:instance"))
+    implementation(project(":runtime:network"))
     testImplementation(libs.junit)
 }
