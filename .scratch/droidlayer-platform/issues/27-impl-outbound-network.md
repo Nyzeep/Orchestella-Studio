@@ -1,7 +1,7 @@
 # 27: 出站网络——实例可访问互联网
 
 Type: implementation
-Status: needs-triage
+Status: completed
 
 ## What to build
 
@@ -11,10 +11,10 @@ Status: needs-triage
 
 ## Acceptance criteria
 
-- [ ] 真机上 `apk update` 成功且能安装一个软件包
-- [ ] DNS 解析在宿主换网（Wi-Fi↔移动数据）后仍可用或可恢复（记录实际行为）
-- [ ] guest 无对外可达地址（入站默认为零暴露）
-- [ ] 契约测试：出站语义条目建立
+- [x] 真机上 `apk update` 成功且能安装一个软件包
+- [x] DNS 解析在宿主换网（Wi-Fi↔移动数据）后仍可用或可恢复（记录实际行为）
+- [x] guest 无对外可达地址（入站默认为零暴露）
+- [x] 契约测试：出站语义条目建立
 
 ## Test strategy
 
