@@ -44,6 +44,11 @@ tasks.register<JavaExec>("portForwardingContractTest") {
     mainClass.set("io.github.nyzeep.droidlayer.runtime.contract.PortForwardingContractTest")
 }
 
+tasks.register<JavaExec>("sharedDirectoryContractTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.droidlayer.runtime.contract.SharedDirectoryContractTest")
+}
+
 tasks.named("check") {
     dependsOn(
         "bridgeHandshakeContractTest",
@@ -51,6 +56,8 @@ tasks.named("check") {
         "bridgeClientContractTest",
         "fullLinuxContractTest",
         "networkContractTest",
-        "portForwardingContractTest"
+        "portForwardingContractTest",
+        "sharedDirectoryContractTest"
     )
 }
+
