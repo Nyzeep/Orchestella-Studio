@@ -85,6 +85,15 @@ set -eu
 mkdir -p /mnt/downloads /media/downloads
 mount -t 9p -o trans=virtio,version=9p2000.L,ro downloads /mnt/downloads 2>/dev/null || true
 
+# Auto online resize ext4 root filesystem if root-volume was resized (ADR-0007 / Ticket 33)
+if [ -x /sbin/resize2fs ]; then
+    /sbin/resize2fs /dev/vda 2>/dev/null || true
+elif [ -x /usr/sbin/resize2fs ]; then
+    /usr/sbin/resize2fs /dev/vda 2>/dev/null || true
+elif command -v resize2fs >/dev/null 2>&1; then
+    resize2fs /dev/vda 2>/dev/null || true
+fi
+
 [ -c /dev/droidlayer-bridge ] || exit 70
 [ -c /dev/droidlayer-terminal ] || exit 70
 exec 3<> /dev/droidlayer-bridge
@@ -130,6 +139,14 @@ if mount -t ext4 "$ROOT_DEVICE" /newroot 2>/dev/null; then
         if ! grep -qs 'downloads.*mnt/downloads' /newroot/etc/fstab; then
             printf 'downloads\t/mnt/downloads\t9p\ttrans=virtio,version=9p2000.L,ro,nofail\t0\t0\n' >> /newroot/etc/fstab
         fi
+    fi
+    # Auto online resize ext4 root filesystem if root-volume was resized (ADR-0007 / Ticket 33)
+    if [ -x /sbin/resize2fs ]; then
+        /sbin/resize2fs "$ROOT_DEVICE" 2>/dev/null || true
+    elif [ -x /newroot/sbin/resize2fs ]; then
+        /newroot/sbin/resize2fs "$ROOT_DEVICE" 2>/dev/null || true
+    elif [ -x /newroot/usr/sbin/resize2fs ]; then
+        /newroot/usr/sbin/resize2fs "$ROOT_DEVICE" 2>/dev/null || true
     fi
     log 'DROIDLAYER_ROOT_VOLUME_RESTART version=1 distro=alpine-3.24.1'
     mount --move /dev /newroot/dev || fail move-dev

@@ -24,6 +24,7 @@ public final class QemuHostfwdContractTest {
         injectsQmpSocketIntoQemuLaunchSpec();
         qmpClientExecutesHandshakeAndDynamicHostfwdAddAndRemove();
         qmpClientHandlesErrorResponsesGracefully();
+        formatsBlockResizeAndExecutesQmpCommand();
         System.out.println("QEMU_HOSTFWD_CONTRACT_TEST_OK");
     }
 
@@ -160,6 +161,33 @@ public final class QemuHostfwdContractTest {
             }
         }
         throw new AssertionError("Flag " + flag + " not found in spec");
+    }
+
+    private static void formatsBlockResizeAndExecutesQmpCommand() throws IOException {
+        String json = QemuHostfwdFormatter.formatQmpBlockResize("root", 4294967296L);
+        assertEquals("{\"execute\":\"block_resize\",\"arguments\":{\"device\":\"root\",\"size\":4294967296}}",
+                json, "formatQmpBlockResize");
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> QemuHostfwdFormatter.formatQmpBlockResize("root", 0),
+                "zero size must be rejected");
+
+        String simulatedBanner = "{\"QMP\": {\"version\": {\"qemu\": {\"micro\": 0, \"minor\": 2, \"major\": 8}}}}\n";
+        String simulatedCapabilitiesOk = "{\"return\": {}}\n";
+        String simulatedResizeOk = "{\"return\": {}}\n";
+
+        String inboundFeed = simulatedBanner + simulatedCapabilitiesOk + simulatedResizeOk;
+        ByteArrayInputStream inbound = new ByteArrayInputStream(inboundFeed.getBytes(StandardCharsets.UTF_8));
+        ByteArrayOutputStream outbound = new ByteArrayOutputStream();
+
+        try (QemuQmpHostfwdClient client = new QemuQmpHostfwdClient(inbound, outbound, "net0")) {
+            client.init();
+            client.resizeBlockDevice("root", 4294967296L);
+            String transcript = outbound.toString(StandardCharsets.UTF_8);
+            assertTrue(transcript.contains("{\"execute\":\"block_resize\",\"arguments\":{\"device\":\"root\",\"size\":4294967296}}"),
+                    "outbound transcript contains block_resize");
+        }
     }
 
     private static void assertTrue(boolean condition, String description) {
