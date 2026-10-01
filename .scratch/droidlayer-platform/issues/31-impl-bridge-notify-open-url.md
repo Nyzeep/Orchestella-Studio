@@ -1,7 +1,7 @@
 # 31: 桥接命令补全——通知与打开链接
 
 Type: implementation
-Status: ready-for-review
+Status: completed
 
 ## What to build
 
