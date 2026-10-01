@@ -62,6 +62,19 @@ public final class QemuHostfwdFormatter {
                 + escapeJson(hmp) + "\"}}";
     }
 
+    /**
+     * Formats the QMP native block_resize command JSON.
+     * Example: {"execute":"block_resize","arguments":{"device":"root","size":4294967296}}
+     */
+    public static String formatQmpBlockResize(String deviceOrNode, long newSizeBytes) {
+        Objects.requireNonNull(deviceOrNode, "deviceOrNode");
+        if (newSizeBytes <= 0) {
+            throw new IllegalArgumentException("newSizeBytes must be positive: " + newSizeBytes);
+        }
+        return "{\"execute\":\"block_resize\",\"arguments\":{\"device\":\""
+                + escapeJson(deviceOrNode) + "\",\"size\":" + newSizeBytes + "}}";
+    }
+
     private static String escapeJson(String s) {
         return s.replace("\\", "\\\\").replace("\"", "\\\"");
     }

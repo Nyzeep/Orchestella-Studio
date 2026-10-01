@@ -1,5 +1,6 @@
 package io.github.nyzeep.droidlayer;
 
+import io.github.nyzeep.droidlayer.runtime.contract.StorageContract;
 import io.github.nyzeep.droidlayer.runtime.distro.DistroManifest;
 import io.github.nyzeep.droidlayer.runtime.instance.InstanceLifecycle;
 import java.io.FilterInputStream;
@@ -22,14 +23,24 @@ public final class AlpineInstanceCreator {
     private final DistroManifest manifest;
     private final InstanceLifecycle.Controller controller;
     private final Path privateDirectory;
+    private final StorageContract.StorageSpaceChecker spaceChecker;
 
     public AlpineInstanceCreator(
             DistroManifest manifest,
             InstanceLifecycle.Controller controller,
             Path privateDirectory) {
+        this(manifest, controller, privateDirectory, new StorageContract.DefaultStorageSpaceChecker());
+    }
+
+    public AlpineInstanceCreator(
+            DistroManifest manifest,
+            InstanceLifecycle.Controller controller,
+            Path privateDirectory,
+            StorageContract.StorageSpaceChecker spaceChecker) {
         this.manifest = Objects.requireNonNull(manifest, "manifest");
         this.controller = Objects.requireNonNull(controller, "controller");
         this.privateDirectory = Objects.requireNonNull(privateDirectory, "privateDirectory").toAbsolutePath().normalize();
+        this.spaceChecker = Objects.requireNonNull(spaceChecker, "spaceChecker");
         if (!"alpine".equals(manifest.id()) || !"3.24.1".equals(manifest.version())
                 || !"aarch64".equals(manifest.architecture())) {
             throw new IllegalArgumentException("unsupported Alpine manifest");
@@ -73,6 +84,7 @@ public final class AlpineInstanceCreator {
 
         Path volumes = privateDirectory.resolve("root-volumes");
         Files.createDirectories(volumes);
+        StorageContract.StoragePreflight.checkCreationSpace(spaceChecker, volumes, ROOT_VOLUME_BYTES);
         Path volume = volumes.resolve(UUID.randomUUID() + ".raw");
         try {
             try (SeekableByteChannel channel = Files.newByteChannel(volume, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {

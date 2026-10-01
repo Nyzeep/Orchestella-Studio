@@ -78,6 +78,27 @@ public final class AlpineInstanceCreatorTest {
         assertEquals(InstanceLifecycle.State.STOPPED, store.load(created.id()).state());
     }
 
+    @Test
+    public void rejectsCreationWhenStorageSpaceIsInsufficient() throws Exception {
+        Path privateDirectory = temporaryFolder.newFolder("private-enospc").toPath();
+        InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(privateDirectory.resolve("instances"));
+        InstanceLifecycle.Controller controller = new InstanceLifecycle.Controller(store, Clock.systemUTC());
+        io.github.nyzeep.droidlayer.runtime.contract.StorageContract.StorageSpaceChecker insufficientChecker =
+                path -> 1024L * 1024L; // only 1 MiB available
+        AlpineInstanceCreator creator = new AlpineInstanceCreator(
+                manifest(), controller, privateDirectory, insufficientChecker);
+
+        try {
+            creator.create(new ByteArrayInputStream("valid-rootfs".getBytes(StandardCharsets.US_ASCII)), 12);
+            fail("insufficient space must block creation");
+        } catch (io.github.nyzeep.droidlayer.runtime.contract.StorageContract.InsufficientStorageException expected) {
+            assertEquals(AlpineInstanceCreator.ROOT_VOLUME_BYTES, expected.requiredBytes());
+            assertEquals(1024L * 1024L, expected.availableBytes());
+        }
+
+        assertTrue(store.list().isEmpty());
+    }
+
     private static DistroManifest manifest() {
         return new DistroManifest(
                 "alpine",
