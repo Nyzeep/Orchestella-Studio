@@ -1,7 +1,7 @@
 # 30: 只读共享 Downloads
 
 Type: implementation
-Status: needs-triage
+Status: completed
 
 ## What to build
 
@@ -11,9 +11,9 @@ Status: needs-triage
 
 ## Acceptance criteria
 
-- [ ] 向 Downloads 放入文件后，guest 内挂载点可见该文件
-- [ ] guest 内对该挂载点的写入被拒绝（只读语义成立）
-- [ ] 暴露面白名单修订记录完成（新增只读共享条目，ADR-0010 流程）
+- [x] 向 Downloads 放入文件后，guest 内挂载点可见该文件
+- [x] guest 内对该挂载点的写入被拒绝（只读语义成立）
+- [x] 暴露面白名单修订记录完成（新增只读共享条目，ADR-0010 流程）
 
 ## Test strategy
 
