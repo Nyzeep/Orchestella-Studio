@@ -4,7 +4,15 @@ import io.github.nyzeep.droidlayer.runtime.contract.PortConflictException;
 import io.github.nyzeep.droidlayer.runtime.contract.PortForwardingEngine;
 import io.github.nyzeep.droidlayer.runtime.contract.PortForwardingRule;
 import io.github.nyzeep.droidlayer.runtime.contract.Protocol;
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -16,7 +24,7 @@ import java.util.Optional;
 
 /**
  * Contract tests for port forwarding manager, conflict detector, persistent store,
- * and dynamic engine reconciliation (ADR-0008, ADR-0010, Ticket 29 AC-3, AC-4, AC-5).
+ * dynamic engine reconciliation, and live socket traffic (ADR-0008, ADR-0010, Ticket 29 AC-1 to AC-5).
  */
 public final class PortForwardingManagerContractTest {
     public static void main(String[] args) throws Exception {
@@ -32,6 +40,7 @@ public final class PortForwardingManagerContractTest {
             reconcilesWithRunningEngineOnAdditionAndRemoval(tempDir);
             attachingRunningEngineReplaysExistingRules(tempDir);
             removesRuleAndUpdatesStore(tempDir);
+            verifiesLiveTrafficForwardingAndImmediateInvalidationOnRemoval(tempDir);
             System.out.println("PORT_FORWARDING_MANAGER_CONTRACT_TEST_OK");
         } finally {
             cleanDirectory(tempDir);
@@ -196,6 +205,70 @@ public final class PortForwardingManagerContractTest {
         // Verify store on disk has 0 rules
         PortForwardingStore store2 = new FilePortForwardingStore(dir);
         assertEquals(0, store2.loadRules("inst-remove").size(), "store has 0 rules after removal");
+    }
+
+    private static void verifiesLiveTrafficForwardingAndImmediateInvalidationOnRemoval(Path dir) throws Exception {
+        // Start a mock guest server
+        ServerSocket guestServer = new ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"));
+        int guestPort = guestServer.getLocalPort();
+
+        Thread serverThread = new Thread(() -> {
+            try {
+                while (!guestServer.isClosed()) {
+                    Socket client = guestServer.accept();
+                    try (client; OutputStream out = client.getOutputStream()) {
+                        out.write("HELLO FROM GUEST\n".getBytes(StandardCharsets.UTF_8));
+                        out.flush();
+                    }
+                }
+            } catch (IOException ignored) {}
+        }, "mock-guest-server");
+        serverThread.setDaemon(true);
+        serverThread.start();
+
+        // Pick an available host port
+        int hostPort;
+        try (ServerSocket probe = new ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))) {
+            hostPort = probe.getLocalPort();
+        }
+
+        PortForwardingStore store = new FilePortForwardingStore(dir);
+        PortConflictDetector detector = new PortConflictDetector();
+        PortForwardingManager manager = new PortForwardingManager("inst-live", store, detector);
+
+        SocketPortForwarder forwarder = new SocketPortForwarder();
+        manager.attachEngine(forwarder);
+
+        PortForwardingRule rule = PortForwardingRule.defaultRule("live-rule", Protocol.TCP, hostPort, guestPort);
+        manager.addRule(rule);
+
+        // AC-1: Connect to hostPort, traffic must reach guest server and receive payload
+        try (Socket clientSocket = new Socket("127.0.0.1", hostPort)) {
+            BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(clientSocket.getInputStream(), StandardCharsets.UTF_8));
+            String line = reader.readLine();
+            assertEquals("HELLO FROM GUEST", line, "AC-1: host port forward reaches guest server");
+        }
+
+        // AC-2: Remove rule hot without stopping
+        boolean removed = manager.removeRule("live-rule");
+        assertTrue(removed, "rule removed successfully");
+
+        // Allow OS brief moment to close listener
+        Thread.sleep(100);
+
+        // Immediate connection attempt to hostPort must fail (Connection refused)
+        assertThrows(
+                IOException.class,
+                () -> {
+                    try (Socket socket = new Socket()) {
+                        socket.connect(new InetSocketAddress("127.0.0.1", hostPort), 500);
+                    }
+                },
+                "AC-2: connection after hot-removal must immediately fail without VM restart");
+
+        forwarder.close();
+        guestServer.close();
     }
 
     private static final class MockEngine implements PortForwardingEngine {
