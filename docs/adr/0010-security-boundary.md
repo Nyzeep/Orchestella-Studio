@@ -40,3 +40,9 @@ amended: 2026-10-01
 4. **硬件虚拟化“保护与非保护”安全边界细化**：
    - 2026 调研证实：高通骁龙 8 Elite 封锁了 Non-Protected VM，仅提供 Protected VM（pVM）。在 pVM 下宿主完全无法触碰 Guest 内存，虽然隔离性最高，但也阻断了显示帧共享与双向数据交换；
    - DroidLayer 未来在 L2 档引入 Custom VM 时，必须在安全文案中明确标注其属于“Non-Protected VM 边界”，受宿主与 Guest 共享通道的既定白名单管辖。
+5. **只读共享 Downloads 目录（Ticket 30 落地与安全参数锁定）**：
+   - 严格遵循白名单清单第 ② 项（只读共享 Downloads）：宿主仅将用户显式授权的 Downloads 目录通过物理数据面（QEMU 档 virtio-9p）暴露给 Guest；
+   - 强行施加只读物理边界（`security_model=none,readonly=on` 以及 Guest 挂载参数 `ro`），Guest 内部对挂载点进行任何写入、修改、删除操作均被 VFS 与 hypervisor 物理拒绝（`EROFS` / Read-only file system），杜绝 Guest 恶意篡改或勒索宿主个人文件的风险；
+   - 严禁任何越界暴露：绝对禁止共享宿主根目录、应用私有数据目录（`/data/data/...`）或外置 SD 卡根路径；
+   - 传输物理隔离：文件共享走专用 9p 通道，严禁与 Bridge 控制面复用通道（严格符合 ADR-0009）。
+
