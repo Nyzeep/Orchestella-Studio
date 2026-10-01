@@ -82,6 +82,9 @@ install_official_alpine_busybox_init_fallback() {
 #!/bin/sh
 set -eu
 
+mkdir -p /mnt/downloads /media/downloads
+mount -t 9p -o trans=virtio,version=9p2000.L,ro downloads /mnt/downloads 2>/dev/null || true
+
 [ -c /dev/droidlayer-bridge ] || exit 70
 [ -c /dev/droidlayer-terminal ] || exit 70
 exec 3<> /dev/droidlayer-bridge
@@ -122,7 +125,12 @@ if mount -t ext4 "$ROOT_DEVICE" /newroot 2>/dev/null; then
         fail root-volume-unrecognized
     fi
     [ -x /newroot/sbin/init ] || fail root-init-missing
-    mkdir -p /newroot/dev /newroot/proc /newroot/sys
+    mkdir -p /newroot/dev /newroot/proc /newroot/sys /newroot/mnt/downloads /newroot/media/downloads
+    if [ -f /newroot/etc/fstab ]; then
+        if ! grep -qs 'downloads.*mnt/downloads' /newroot/etc/fstab; then
+            printf 'downloads\t/mnt/downloads\t9p\ttrans=virtio,version=9p2000.L,ro,nofail\t0\t0\n' >> /newroot/etc/fstab
+        fi
+    fi
     log 'DROIDLAYER_ROOT_VOLUME_RESTART version=1 distro=alpine-3.24.1'
     mount --move /dev /newroot/dev || fail move-dev
     mount --move /proc /newroot/proc || fail move-proc
@@ -195,6 +203,13 @@ EOF
         /newroot/etc/runlevels/default/droidlayer-guest-agent \
         || fail enable-guest-agent
     install_official_alpine_busybox_init_fallback /newroot
+fi
+
+mkdir -p /newroot/mnt/downloads /newroot/media/downloads
+if [ -f /newroot/etc/fstab ]; then
+    if ! grep -qs 'downloads.*mnt/downloads' /newroot/etc/fstab; then
+        printf 'downloads\t/mnt/downloads\t9p\ttrans=virtio,version=9p2000.L,ro,nofail\t0\t0\n' >> /newroot/etc/fstab
+    fi
 fi
 
 mkdir -p /newroot/var/lib/droidlayer
