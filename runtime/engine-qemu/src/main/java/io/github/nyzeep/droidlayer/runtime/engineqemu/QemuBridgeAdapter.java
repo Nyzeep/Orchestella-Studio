@@ -22,16 +22,33 @@ public final class QemuBridgeAdapter {
     private final OutputStream outbound;
     private final String expectedToken;
     private final BridgeControl.Terminal terminal;
+    private final BridgeControl.Power power;
+    private final BridgeControl.Notification notification;
+    private final BridgeControl.UrlOpener urlOpener;
 
     public QemuBridgeAdapter(
             InputStream inbound,
             OutputStream outbound,
             String expectedToken,
             BridgeControl.Terminal terminal) {
+        this(inbound, outbound, expectedToken, terminal, null, null, null);
+    }
+
+    public QemuBridgeAdapter(
+            InputStream inbound,
+            OutputStream outbound,
+            String expectedToken,
+            BridgeControl.Terminal terminal,
+            BridgeControl.Power power,
+            BridgeControl.Notification notification,
+            BridgeControl.UrlOpener urlOpener) {
         this.inbound = Objects.requireNonNull(inbound, "inbound");
         this.outbound = Objects.requireNonNull(outbound, "outbound");
         this.expectedToken = Objects.requireNonNull(expectedToken, "expectedToken");
         this.terminal = Objects.requireNonNull(terminal, "terminal");
+        this.power = power;
+        this.notification = notification;
+        this.urlOpener = urlOpener;
     }
 
     /**
@@ -51,7 +68,8 @@ public final class QemuBridgeAdapter {
             if (controlLine == null) {
                 return 0;
             }
-            BridgeControl.Result result = BridgeControl.dispatch(controlLine, terminal);
+            BridgeControl.Result result =
+                    BridgeControl.dispatch(controlLine, terminal, power, notification, urlOpener);
             write(result.wireResponse());
             if (!result.accepted()) {
                 return 4;

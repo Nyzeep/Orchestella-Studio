@@ -76,6 +76,10 @@ public class TerminalActivity extends Activity {
             final int gridRows = rows > 0 ? rows : 24;
             new Thread(() -> {
                 try {
+                    AndroidNotificationAdapter notificationAdapter =
+                            new AndroidNotificationAdapter(TerminalActivity.this);
+                    AndroidUrlOpenerAdapter urlOpenerAdapter =
+                            new AndroidUrlOpenerAdapter(TerminalActivity.this);
                     new BridgeConnector().serve(controlSocket, bridgeToken, gridColumns, gridRows,
                             new BridgeConnector.Events() {
                                 @Override
@@ -92,7 +96,19 @@ public class TerminalActivity extends Activity {
                                 public void onResize(int columns, int rows) {
                                     append("[bridge resize " + columns + "x" + rows + "]\n");
                                 }
-                            });
+
+                                @Override
+                                public void onNotification(String title, String message) {
+                                    append("[bridge notify: " + title + " - " + message + "]\n");
+                                }
+
+                                @Override
+                                public void onOpenUrl(String url) {
+                                    append("[bridge open-url: " + url + "]\n");
+                                }
+                            },
+                            notificationAdapter,
+                            urlOpenerAdapter);
                 } catch (Exception e) {
                     append("[bridge ended: " + e.getClass().getSimpleName() + "]\n");
                 }

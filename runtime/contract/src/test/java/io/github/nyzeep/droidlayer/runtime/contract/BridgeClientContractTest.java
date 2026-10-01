@@ -21,6 +21,11 @@ public final class BridgeClientContractTest {
         powerRoundTripsOkPower();
         powerSurfacesAgentErrorKinds();
         rejectsNonCanonicalTokensBeforeSend();
+        notifyRoundTripsOkNotify();
+        notifySurfacesAgentErrorKinds();
+        openUrlRoundTripsOkOpenUrl();
+        openUrlSurfacesAgentErrorKinds();
+        rejectsInvalidParametersBeforeSend();
     }
 
     private static void handshakeSendsHostInitiatedHelloAndAcceptsReady() throws Exception {
@@ -113,6 +118,63 @@ public final class BridgeClientContractTest {
             }
         }
         assertEquals("", session.wire(), "nothing may be written for invalid tokens");
+    }
+
+    private static void notifyRoundTripsOkNotify() throws Exception {
+        Session session = new Session("DROIDLAYER/OK notify\n");
+        BridgeClient.Result result = session.client.notify("Task Done", "Build finished successfully");
+
+        assertTrue(result.accepted(), "OK notify must be accepted");
+        assertEquals("ok-notify", result.responseKind(), "ok-notify kind");
+        assertEquals("DROIDLAYER/NOTIFY Task+Done Build+finished+successfully\n", session.wire(),
+                "notify encoded wire line");
+    }
+
+    private static void notifySurfacesAgentErrorKinds() throws Exception {
+        Session errorSession = new Session("DROIDLAYER/ERROR notify-unavailable\n");
+        BridgeClient.Result result = errorSession.client.notify("Title", "Message");
+        assertTrue(!result.accepted(), "notify error must not be accepted");
+        assertEquals("notify-unavailable", result.responseKind(), "notify-unavailable error kind");
+    }
+
+    private static void openUrlRoundTripsOkOpenUrl() throws Exception {
+        Session session = new Session("DROIDLAYER/OK open-url\n");
+        BridgeClient.Result result = session.client.openUrl("https://droidlayer.github.io");
+
+        assertTrue(result.accepted(), "OK open-url must be accepted");
+        assertEquals("ok-open-url", result.responseKind(), "ok-open-url kind");
+        assertEquals("DROIDLAYER/OPEN-URL https://droidlayer.github.io\n", session.wire(),
+                "open-url wire line");
+    }
+
+    private static void openUrlSurfacesAgentErrorKinds() throws Exception {
+        Session errorSession = new Session("DROIDLAYER/ERROR open-url-unavailable\n");
+        BridgeClient.Result result = errorSession.client.openUrl("https://example.com");
+        assertTrue(!result.accepted(), "open-url error must not be accepted");
+        assertEquals("open-url-unavailable", result.responseKind(), "open-url-unavailable error kind");
+    }
+
+    private static void rejectsInvalidParametersBeforeSend() throws Exception {
+        Session session = new Session("DROIDLAYER/OK notify\n");
+        try {
+            session.client.notify("", "msg");
+            fail("empty title must throw");
+        } catch (IllegalArgumentException expected) {
+            // required
+        }
+        try {
+            session.client.notify("title", "");
+            fail("empty message must throw");
+        } catch (IllegalArgumentException expected) {
+            // required
+        }
+        try {
+            session.client.openUrl("file:///etc/passwd");
+            fail("unsafe url scheme must throw");
+        } catch (IllegalArgumentException expected) {
+            // required
+        }
+        assertEquals("", session.wire(), "nothing may be written for invalid parameters");
     }
 
     private static final class Session {
