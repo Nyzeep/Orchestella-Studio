@@ -45,4 +45,9 @@ amended: 2026-10-01
    - 强行施加只读物理边界（`security_model=none,readonly=on` 以及 Guest 挂载参数 `ro`），Guest 内部对挂载点进行任何写入、修改、删除操作均被 VFS 与 hypervisor 物理拒绝（`EROFS` / Read-only file system），杜绝 Guest 恶意篡改或勒索宿主个人文件的风险；
    - 严禁任何越界暴露：绝对禁止共享宿主根目录、应用私有数据目录（`/data/data/...`）或外置 SD 卡根路径；
    - 传输物理隔离：文件共享走专用 9p 通道，严禁与 Bridge 控制面复用通道（严格符合 ADR-0009）。
-
+6. **桥接交互命令白名单与沙箱穿透防护（Ticket 31 落地与安全参数锁定）**：
+   - 严格遵循暴露面白名单清单第 ① 项（桥接六命令之 `notify` 与 `open-url`）：
+   - **`open-url` Scheme 严格白名单**：URL Scheme 强制限定为 `http://` 与 `https://`，实施严格正则与 URI 校验（`^[hH][tT][tT][pP][sS]?://.+` 且必须包含合法 Host）。严防 `file://`、`content://`、`javascript:`、`intent:`、`data:` 等恶意 Scheme 穿透 Android 应用沙箱或滥用宿主私有文件、ContentProvider 与系统组件；
+   - **超长 Payload 恶意冲击拦截**：命令请求行与 URL/通知文本长度设置 2048 字符硬上限，超长 payload 直接拒斥为 `malformed-command`，杜绝缓冲区膨胀与拒绝服务攻击；
+   - **通知沙箱隔离**：通知统一路由至独立系统通知渠道 `droidlayer_guest_notifications`（“DroidLayer Guest Notifications”），默认普通优先级，不赋予全屏或系统级悬浮权限；通知点击仅触发宿主自身 Activity，具备标准 PendingIntent 与 Dismiss 机制；
+   - **传输与鉴权前置门控**：所有命令仅在完成 v1 握手与 per-VM 64 字符 token 鉴权校验通过后方可被分发执行；未认证、格式畸形或越界请求均返回确定性错误码（`unauthorized`、`malformed-command`、`*-unavailable`），不泄露宿主内部状态。

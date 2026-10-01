@@ -1,7 +1,7 @@
 # 31: 桥接命令补全——通知与打开链接
 
 Type: implementation
-Status: needs-triage
+Status: ready-for-review
 
 ## What to build
 
@@ -11,10 +11,10 @@ Status: needs-triage
 
 ## Acceptance criteria
 
-- [ ] guest 内触发通知，Android 通知栏可见且点击行为合理
-- [ ] guest 内触发 open-url，Android 按默认应用打开链接
-- [ ] token 错误或未协商版本时命令被拒绝（白名单与鉴权一致）
-- [ ] 白名单/命令集文档修订完成（ADR-0009 版本流程）
+- [x] guest 内触发通知，Android 通知栏可见且点击行为合理
+- [x] guest 内触发 open-url，Android 按默认应用打开链接
+- [x] token 错误或未协商版本时命令被拒绝（白名单与鉴权一致）
+- [x] 白名单/命令集文档修订完成（ADR-0009 版本流程）
 
 ## Test strategy
 

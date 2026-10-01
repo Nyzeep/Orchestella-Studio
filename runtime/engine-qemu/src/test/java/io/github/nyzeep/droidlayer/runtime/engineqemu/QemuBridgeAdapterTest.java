@@ -14,6 +14,7 @@ public final class QemuBridgeAdapterTest {
         relaysAuthenticatedControlBytesToTheStrategyNeutralTerminalSeam();
         rejectsAnIncorrectToken();
         rejectsAnIncompatibleVersionRange();
+        relaysAuthenticatedNotifyAndOpenUrlCommands();
     }
 
     private static void relaysAuthenticatedControlBytesToTheStrategyNeutralTerminalSeam()
@@ -96,6 +97,49 @@ public final class QemuBridgeAdapterTest {
                 "DROIDLAYER/ERROR unsupported-version\n",
                 outbound.toString(StandardCharsets.US_ASCII),
                 "incompatible version range must be rejected with the unsupported-version wire response");
+    }
+
+    private static void relaysAuthenticatedNotifyAndOpenUrlCommands() throws Exception {
+        java.util.concurrent.atomic.AtomicReference<String> titleRef =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicReference<String> msgRef =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicReference<String> urlRef =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        ByteArrayOutputStream outbound = new ByteArrayOutputStream();
+
+        QemuBridgeAdapter adapter =
+                new QemuBridgeAdapter(
+                        new ByteArrayInputStream(
+                                ("DROIDLAYER/HELLO 1 1 "
+                                                + TOKEN
+                                                + "\nDROIDLAYER/NOTIFY Alert TaskDone\n"
+                                                + "DROIDLAYER/OPEN-URL https://droidlayer.github.io\n")
+                                        .getBytes(StandardCharsets.US_ASCII)),
+                        outbound,
+                        TOKEN,
+                        (cols, rws) -> true,
+                        action -> true,
+                        (title, msg) -> {
+                            titleRef.set(title);
+                            msgRef.set(msg);
+                            return true;
+                        },
+                        url -> {
+                            urlRef.set(url);
+                            return true;
+                        });
+
+        int exitCode = adapter.serve();
+
+        assertEquals(0, exitCode, "session with notify and open-url should succeed");
+        assertEquals(
+                "DROIDLAYER/READY 1\nDROIDLAYER/OK notify\nDROIDLAYER/OK open-url\n",
+                outbound.toString(StandardCharsets.US_ASCII),
+                "observable notify and open-url responses");
+        assertEquals("Alert", titleRef.get(), "notified title");
+        assertEquals("TaskDone", msgRef.get(), "notified message");
+        assertEquals("https://droidlayer.github.io", urlRef.get(), "opened url");
     }
 
     private static void assertEquals(Object expected, Object actual, String description) {
