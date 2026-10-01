@@ -29,6 +29,16 @@ tasks.register<JavaExec>("fullLinuxContractTest") {
     mainClass.set("io.github.nyzeep.droidlayer.runtime.contract.FullLinuxContractTest")
 }
 
+tasks.register<JavaExec>("networkContractTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.droidlayer.runtime.contract.NetworkContractTest")
+}
+
 tasks.named("check") {
-    dependsOn("bridgeHandshakeContractTest", "bridgeControlContractTest", "fullLinuxContractTest")
+    dependsOn(
+        "bridgeHandshakeContractTest",
+        "bridgeControlContractTest",
+        "fullLinuxContractTest",
+        "networkContractTest"
+    )
 }

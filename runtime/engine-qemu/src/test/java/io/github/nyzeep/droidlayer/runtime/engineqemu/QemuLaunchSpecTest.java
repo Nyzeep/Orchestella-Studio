@@ -1,8 +1,17 @@
 package io.github.nyzeep.droidlayer.runtime.engineqemu;
 
-/** Contract tests for the fixed-argument QEMU launch specification. */
+import io.github.nyzeep.droidlayer.runtime.contract.NetworkContract;
+
+/** Contract tests for the fixed-argument QEMU launch specification and outbound network assembly. */
 public final class QemuLaunchSpecTest {
     public static void main(String[] args) throws Exception {
+        testDefaultLaunchSpecWithOutboundNetwork();
+        testEngineCliFormattersDirectly();
+        testOverloadedLaunchSpecWithCustomDnsAndCmdline();
+        testOverloadedLaunchSpecWithMmioNetDevice();
+    }
+
+    private static void testDefaultLaunchSpecWithOutboundNetwork() {
         String[] spec = QemuLaunchSpec.build(
                 "/native/lib/arm64-v8a/libdroidlayer_qemu.so",
                 "/data/runtime/Image",
@@ -46,6 +55,23 @@ public final class QemuLaunchSpecTest {
         requireArg(spec, "-drive", "if=none,id=root,file=/data/instances/i1/root-volume.raw,format=raw,cache=unsafe");
         requireArg(spec, "-device", "virtio-blk-device,drive=root");
 
+        // Outbound SLIRP network assembly with default Android DNS fallback (8.8.8.8) (AC-1, AC-2, ADR-0008).
+        requireArg(spec, "-netdev", "user,id=net0,ipv6=off,net=10.0.2.0/24,dhcpstart=10.0.2.15,dns=8.8.8.8");
+        requireArg(spec, "-device", "virtio-net-pci,netdev=net0");
+
+        // Explicit IPv6 off assertion (ADR-0008).
+        if (!joined.contains("ipv6=off")) {
+            fail("ipv6=off missing from netdev");
+        }
+        if (joined.contains("ipv6=on")) {
+            fail("ipv6=on present in netdev");
+        }
+
+        // Zero inbound exposure assertion (ADR-0008, ADR-0010).
+        if (joined.contains("hostfwd")) {
+            fail("inbound hostfwd rule leaked into default spec");
+        }
+
         // Bridge and terminal channels use abstract sockets served by QEMU.
         requireArg(spec, "-chardev",
                 "socket,id=terminal,path=droidlayer-terminal-i1,abstract=on,server=on,wait=off");
@@ -55,10 +81,9 @@ public final class QemuLaunchSpecTest {
         requireArg(spec, "-device", "virtserialport,chardev=control,name=droidlayer.bridge");
         requireArg(spec, "-device", "virtio-serial-device");
 
-        // Guest provisioning cmdline matches the proven harness.
-        requireArg(spec, "-append", "console=ttyAMA0 rdinit=/init panic=-1"
-                + " droidlayer.root_device=/dev/vda droidlayer.input_tag=droidlayer-input"
-                + " droidlayer.bridge_device=/dev/vport0p1 droidlayer.terminal_device=/dev/ttyAMA0");
+        // Guest provisioning cmdline with default DNS fallback (AC-2).
+        String expectedDefaultCmdline = QemuLaunchSpec.GUEST_CMDLINE + " droidlayer.dns=8.8.8.8";
+        requireArg(spec, "-append", expectedDefaultCmdline);
 
         // No 9p transport may leak into the launch (virtfs is disabled in the build).
         if (joined.contains("9p") || joined.contains("fsdev") || joined.contains("virtio-9p")) {
@@ -74,7 +99,92 @@ public final class QemuLaunchSpecTest {
             fail("executable is not the packaged QEMU entry");
         }
 
-        System.out.println("QEMU_LAUNCH_SPEC_TEST_OK args=" + spec.length + " no_9p=1 no_shell=1 fixed_shape=1");
+        System.out.println("DEFAULT_LAUNCH_SPEC_OK args=" + spec.length + " outbound_net=1 default_dns=8.8.8.8 no_9p=1");
+    }
+
+    private static void testEngineCliFormattersDirectly() {
+        // Formatter test without DNS
+        NetworkContract.OutboundNetworkSpec noDnsSpec =
+                NetworkContract.OutboundNetworkSpec.builder()
+                        .dnsServer(null)
+                        .cmdlineDns(null)
+                        .build();
+        String netdevNoDns = QemuLaunchSpec.formatNetdevArg(noDnsSpec);
+        if (!netdevNoDns.equals("user,id=net0,ipv6=off,net=10.0.2.0/24,dhcpstart=10.0.2.15")) {
+            fail("formatNetdevArg without DNS mismatch: " + netdevNoDns);
+        }
+
+        // Formatter test with default DNS (8.8.8.8)
+        NetworkContract.OutboundNetworkSpec defaultSpec = NetworkContract.OutboundNetworkSpec.defaultSpec();
+        String netdevWithDns = QemuLaunchSpec.formatNetdevArg(defaultSpec);
+        if (!netdevWithDns.equals("user,id=net0,ipv6=off,net=10.0.2.0/24,dhcpstart=10.0.2.15,dns=8.8.8.8")) {
+            fail("formatNetdevArg with DNS mismatch: " + netdevWithDns);
+        }
+
+        // Device formatter tests
+        String pciDevice = QemuLaunchSpec.formatDeviceArg(defaultSpec);
+        if (!pciDevice.equals("virtio-net-pci,netdev=net0")) {
+            fail("formatDeviceArg PCI mismatch: " + pciDevice);
+        }
+
+        NetworkContract.OutboundNetworkSpec mmioSpec =
+                NetworkContract.OutboundNetworkSpec.builder()
+                        .deviceType(NetworkContract.DeviceType.VIRTIO_NET_DEVICE)
+                        .build();
+        String mmioDevice = QemuLaunchSpec.formatDeviceArg(mmioSpec);
+        if (!mmioDevice.equals("virtio-net-device,netdev=net0")) {
+            fail("formatDeviceArg MMIO mismatch: " + mmioDevice);
+        }
+
+        System.out.println("ENGINE_CLI_FORMATTERS_TEST_OK");
+    }
+
+    private static void testOverloadedLaunchSpecWithCustomDnsAndCmdline() {
+        NetworkContract.OutboundNetworkSpec networkSpec =
+                NetworkContract.OutboundNetworkSpec.withDns(NetworkContract.CLOUDFLARE_DNS);
+
+        String[] spec = QemuLaunchSpec.build(
+                "/native/lib/arm64-v8a/libdroidlayer_qemu.so",
+                "/data/runtime/Image",
+                "/data/runtime/initramfs-embedded.cpio.gz",
+                "/data/instances/i1/root-volume.raw",
+                "droidlayer-control-i1",
+                "droidlayer-terminal-i1",
+                512L,
+                networkSpec);
+
+        requireArg(spec, "-netdev", "user,id=net0,ipv6=off,net=10.0.2.0/24,dhcpstart=10.0.2.15,dns=1.1.1.1");
+        requireArg(spec, "-device", "virtio-net-pci,netdev=net0");
+
+        String expectedCmdline = QemuLaunchSpec.GUEST_CMDLINE + " droidlayer.dns=1.1.1.1";
+        requireArg(spec, "-append", expectedCmdline);
+
+        System.out.println("DNS_LAUNCH_SPEC_OK dns=1.1.1.1 cmdlineDns=1");
+    }
+
+    private static void testOverloadedLaunchSpecWithMmioNetDevice() {
+        NetworkContract.OutboundNetworkSpec networkSpec =
+                NetworkContract.OutboundNetworkSpec.builder()
+                        .deviceType(NetworkContract.DeviceType.VIRTIO_NET_DEVICE)
+                        .dnsServer("9.9.9.9")
+                        .cmdlineDns("9.9.9.9")
+                        .build();
+
+        String[] spec = QemuLaunchSpec.build(
+                "/native/lib/arm64-v8a/libdroidlayer_qemu.so",
+                "/data/runtime/Image",
+                "/data/runtime/initramfs-embedded.cpio.gz",
+                "/data/instances/i1/root-volume.raw",
+                "droidlayer-control-i1",
+                "droidlayer-terminal-i1",
+                512L,
+                networkSpec);
+
+        requireArg(spec, "-netdev", "user,id=net0,ipv6=off,net=10.0.2.0/24,dhcpstart=10.0.2.15,dns=9.9.9.9");
+        requireArg(spec, "-device", "virtio-net-device,netdev=net0");
+        requireArg(spec, "-append", QemuLaunchSpec.GUEST_CMDLINE + " droidlayer.dns=9.9.9.9");
+
+        System.out.println("MMIO_NET_DEVICE_SPEC_OK device=virtio-net-device");
     }
 
     private static void requireArg(String[] spec, String flag, String value) {
