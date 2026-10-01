@@ -51,6 +51,11 @@ tasks.register<JavaExec>("runtimeArtifactManifestSchemaTest") {
     mainClass.set("io.github.nyzeep.droidlayer.runtime.engineqemu.RuntimeArtifactManifestSchemaTest")
 }
 
+tasks.register<JavaExec>("qemuHostfwdContractTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.droidlayer.runtime.engineqemu.QemuHostfwdContractTest")
+}
+
 tasks.named("check") {
     dependsOn(
         "qemuBridgeAdapterTest",
@@ -59,5 +64,6 @@ tasks.named("check") {
         "runtimeAssetInstallerTest",
         "embeddedProvisionInputTest",
         "qemuLaunchSpecTest",
+        "qemuHostfwdContractTest",
     )
 }
