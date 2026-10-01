@@ -64,6 +64,26 @@ public final class BridgeClient {
         return power(parsed);
     }
 
+    /** Requests showing an Android system notification and classifies the agent's response. */
+    public synchronized Result notify(String title, String message) throws IOException {
+        if (title == null || title.isEmpty() || message == null || message.isEmpty()) {
+            throw new IllegalArgumentException("title and message must not be empty");
+        }
+        String encodedTitle = java.net.URLEncoder.encode(title, StandardCharsets.UTF_8);
+        String encodedMessage = java.net.URLEncoder.encode(message, StandardCharsets.UTF_8);
+        write("DROIDLAYER/NOTIFY " + encodedTitle + " " + encodedMessage + "\n");
+        return classify(readResponseLine());
+    }
+
+    /** Requests opening an HTTP/HTTPS URL on the host and classifies the agent's response. */
+    public synchronized Result openUrl(String url) throws IOException {
+        if (url == null || url.length() > 2048 || !url.matches("^[hH][tT][tT][pP][sS]?://.+")) {
+            throw new IllegalArgumentException("invalid url: " + url);
+        }
+        write("DROIDLAYER/OPEN-URL " + url + "\n");
+        return classify(readResponseLine());
+    }
+
     private void write(String line) throws IOException {
         outbound.write(line.getBytes(StandardCharsets.US_ASCII));
         outbound.flush();
@@ -100,6 +120,12 @@ public final class BridgeClient {
         }
         if ("DROIDLAYER/OK power\n".equals(line)) {
             return Result.accepted("ok-power");
+        }
+        if ("DROIDLAYER/OK notify\n".equals(line)) {
+            return Result.accepted("ok-notify");
+        }
+        if ("DROIDLAYER/OK open-url\n".equals(line)) {
+            return Result.accepted("ok-open-url");
         }
         if (line != null && line.startsWith("DROIDLAYER/ERROR ") && line.endsWith("\n")) {
             String kind = line.substring("DROIDLAYER/ERROR ".length(), line.length() - 1);
