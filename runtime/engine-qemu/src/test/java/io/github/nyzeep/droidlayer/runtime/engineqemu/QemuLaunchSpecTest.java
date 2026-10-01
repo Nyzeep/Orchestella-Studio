@@ -1,6 +1,7 @@
 package io.github.nyzeep.droidlayer.runtime.engineqemu;
 
 import io.github.nyzeep.droidlayer.runtime.contract.NetworkContract;
+import io.github.nyzeep.droidlayer.runtime.contract.SharedDirectoryContract;
 
 /** Contract tests for the fixed-argument QEMU launch specification and outbound network assembly. */
 public final class QemuLaunchSpecTest {
@@ -9,6 +10,9 @@ public final class QemuLaunchSpecTest {
         testEngineCliFormattersDirectly();
         testOverloadedLaunchSpecWithCustomDnsAndCmdline();
         testOverloadedLaunchSpecWithMmioNetDevice();
+        testLaunchSpecWithSharedDirectoryPci();
+        testLaunchSpecWithSharedDirectoryMmio();
+        testEngineFsdevFormattersDirectly();
     }
 
     private static void testDefaultLaunchSpecWithOutboundNetwork() {
@@ -185,6 +189,86 @@ public final class QemuLaunchSpecTest {
         requireArg(spec, "-append", QemuLaunchSpec.GUEST_CMDLINE + " droidlayer.dns=9.9.9.9");
 
         System.out.println("MMIO_NET_DEVICE_SPEC_OK device=virtio-net-device");
+    }
+
+    private static void testLaunchSpecWithSharedDirectoryPci() {
+        SharedDirectoryContract.SharedDirectorySpec shareSpec =
+                SharedDirectoryContract.SharedDirectorySpec.defaultDownloads("/storage/emulated/0/Download");
+
+        String[] spec = QemuLaunchSpec.build(
+                "/native/lib/arm64-v8a/libdroidlayer_qemu.so",
+                "/data/runtime/Image",
+                "/data/runtime/initramfs-embedded.cpio.gz",
+                "/data/instances/i1/root-volume.raw",
+                "droidlayer-control-i1",
+                "droidlayer-terminal-i1",
+                512L,
+                shareSpec);
+
+        String joined = String.join("\u0000", spec);
+
+        // 9p fsdev and device assertions (ADR-0009, ADR-0010, Ticket 30)
+        requireArg(spec, "-fsdev", "local,id=fsdev0,path=/storage/emulated/0/Download,security_model=none,readonly=on");
+        requireArg(spec, "-device", "virtio-9p-pci,fsdev=fsdev0,mount_tag=downloads");
+
+        if (!joined.contains("readonly=on")) {
+            fail("readonly=on missing from fsdev");
+        }
+        if (joined.contains("readonly=off")) {
+            fail("readonly=off present in fsdev");
+        }
+
+        // Verify shell safety
+        for (String s : spec) {
+            if (s.contains(";") || s.contains("&") || s.contains("|") || s.contains("`")) {
+                fail("shell metacharacter in argument");
+            }
+        }
+        System.out.println("SHARED_DIRECTORY_PCI_SPEC_OK");
+    }
+
+    private static void testLaunchSpecWithSharedDirectoryMmio() {
+        SharedDirectoryContract.SharedDirectorySpec shareSpec =
+                SharedDirectoryContract.SharedDirectorySpec.builder()
+                        .hostPath("/sdcard/Download")
+                        .deviceType(SharedDirectoryContract.DeviceType.VIRTIO_9P_DEVICE)
+                        .build();
+
+        String[] spec = QemuLaunchSpec.build(
+                "/native/lib/arm64-v8a/libdroidlayer_qemu.so",
+                "/data/runtime/Image",
+                "/data/runtime/initramfs-embedded.cpio.gz",
+                "/data/instances/i1/root-volume.raw",
+                "droidlayer-control-i1",
+                "droidlayer-terminal-i1",
+                512L,
+                NetworkContract.OutboundNetworkSpec.defaultSpec(),
+                shareSpec);
+
+        requireArg(spec, "-fsdev", "local,id=fsdev0,path=/sdcard/Download,security_model=none,readonly=on");
+        requireArg(spec, "-device", "virtio-9p-device,fsdev=fsdev0,mount_tag=downloads");
+        System.out.println("SHARED_DIRECTORY_MMIO_SPEC_OK");
+    }
+
+    private static void testEngineFsdevFormattersDirectly() {
+        SharedDirectoryContract.SharedDirectorySpec pciSpec =
+                SharedDirectoryContract.SharedDirectorySpec.defaultDownloads("/path/to/downloads");
+        if (!QemuLaunchSpec.formatFsdevArg(pciSpec).equals("local,id=fsdev0,path=/path/to/downloads,security_model=none,readonly=on")) {
+            fail("formatFsdevArg mismatch");
+        }
+        if (!QemuLaunchSpec.formatFsDeviceArg(pciSpec).equals("virtio-9p-pci,fsdev=fsdev0,mount_tag=downloads")) {
+            fail("formatFsDeviceArg PCI mismatch");
+        }
+
+        SharedDirectoryContract.SharedDirectorySpec mmioSpec =
+                SharedDirectoryContract.SharedDirectorySpec.builder()
+                        .hostPath("/path/to/downloads")
+                        .deviceType(SharedDirectoryContract.DeviceType.VIRTIO_9P_DEVICE)
+                        .build();
+        if (!QemuLaunchSpec.formatFsDeviceArg(mmioSpec).equals("virtio-9p-device,fsdev=fsdev0,mount_tag=downloads")) {
+            fail("formatFsDeviceArg MMIO mismatch");
+        }
+        System.out.println("ENGINE_FSDEV_FORMATTERS_TEST_OK");
     }
 
     private static void requireArg(String[] spec, String flag, String value) {
