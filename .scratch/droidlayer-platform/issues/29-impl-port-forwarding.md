@@ -1,7 +1,7 @@
 # 29: 端口转发规则
 
 Type: implementation
-Status: ready-for-review
+Status: completed
 
 ## What to build
 
