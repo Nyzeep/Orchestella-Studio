@@ -1,7 +1,7 @@
 # 32: Debian——第二发行版
 
 Type: implementation
-Status: ready-for-review
+Status: completed
 
 ## What to build
 
