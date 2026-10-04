@@ -26,4 +26,19 @@
     <string name="launch_started">正在启动实例（首次引导需要一些时间）…</string>
     <string name="launch_failed">启动失败：%1$s</string>
     <string name="launch_guest_exited">guest 正常关机，实例已停止</string>
+    <!-- ADR-0003 authorization wizard (Ticket 34): detection first, Shizuku
+         preferred, copy-ready ADB command fallback; backend names never shown. -->
+    <string name="wizard_title">提升到硬件加速</string>
+    <string name="wizard_shizuku_steps">本设备支持硬件加速运行完整 Linux，需要一次开发级授权：\n\n1. 安装并打开 Shizuku（可通过无线调试或电脑 ADB 激活）；\n2. 在 Shizuku 中找到 DroidLayer 并授予权限；\n3. 返回本页点击「我已完成授权」。\n\n无法使用 Shizuku 时，可选择「改用 ADB 命令」。</string>
+    <string name="wizard_adb_steps">在电脑上对本机执行一次以下命令（设备已开启 USB 调试），成功后返回点击「我已完成授权」：\n\n%1$s\n\n命令已支持一键复制。</string>
+    <string name="wizard_use_adb">改用 ADB 命令</string>
+    <string name="wizard_back_to_shizuku">返回 Shizuku 步骤</string>
+    <string name="wizard_copy_command">复制命令</string>
+    <string name="wizard_command_copied">授权命令已复制到剪贴板</string>
+    <string name="wizard_authorization_done">我已完成授权</string>
+    <string name="wizard_later">稍后再说</string>
+    <string name="wizard_authorized_toast">授权完成：实例将以硬件加速运行</string>
+    <string name="wizard_not_yet_authorized">尚未检测到授权，请完成命令后再试</string>
+    <string name="launch_started_hardware">正在以硬件加速启动实例…</string>
+    <string name="launch_degraded_to_software">硬件加速启动失败（%1$s），已自动回退软件模拟</string>
 </resources>
