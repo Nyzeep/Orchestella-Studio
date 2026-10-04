@@ -35,7 +35,8 @@ public final class BridgeConnector {
     /** Result of one bridge session. */
     public static final class Session {
         public final int outcome;
-        /** Null when the session ran over caller-owned streams (AVF path). */
+        /** The connected control socket on the abstract-socket path; null
+         * when the session ran over caller-owned streams (AVF path). */
         public final LocalSocket socket;
 
         Session(int outcome, LocalSocket socket) {
@@ -66,8 +67,10 @@ public final class BridgeConnector {
         LocalSocket socket = connectWithRetry(socketName);
         try (InputStream in = socket.getInputStream();
                 OutputStream out = socket.getOutputStream()) {
-            return serveStreams(in, out, bridgeToken, columns, rows, events, notification,
-                    urlOpener);
+            return new Session(
+                    serveControl(in, out, bridgeToken, columns, rows, events, notification,
+                            urlOpener),
+                    socket);
         }
     }
 
@@ -79,9 +82,18 @@ public final class BridgeConnector {
     public Session serveStreams(InputStream in, OutputStream out, String bridgeToken,
             int columns, int rows, Events events, BridgeControl.Notification notification,
             BridgeControl.UrlOpener urlOpener) throws IOException, InterruptedException {
+        return new Session(
+                serveControl(in, out, bridgeToken, columns, rows, events, notification,
+                        urlOpener),
+                null);
+    }
+
+    private int serveControl(InputStream in, OutputStream out, String bridgeToken, int columns,
+            int rows, Events events, BridgeControl.Notification notification,
+            BridgeControl.UrlOpener urlOpener) throws IOException, InterruptedException {
         BridgeClient client = new BridgeClient(in, out);
         if (!client.handshake(bridgeToken).accepted()) {
-            return new Session(3, null);
+            return 3;
         }
         events.onReady();
         if (client.ping().accepted()) {
@@ -91,7 +103,7 @@ public final class BridgeConnector {
             events.onResize(columns, rows);
         }
         serveControlLoop(in, out, events, notification, urlOpener);
-        return new Session(0, null);
+        return 0;
     }
 
     /**
