@@ -20,3 +20,18 @@ date: 2026-09-05
 - initramfs 的 provisioning 逻辑是必须实现且按风味测试的组件。
 - 实例根盘由用户在 guest 内自行升级（apt/apk），App 升级不触碰实例内容——与 Podroid 的 squashfs 系统层模式是两种语义，不沿用。
 - manifest 托管渠道的安全成为供应链一环，纳入风险清单。
+
+## Amendments
+
+### Amendment 1: Debian 13 (Trixie) Manifest & systemd Init Flavor (Ticket 32)
+
+1. **第二官方发行版清单（OfficialDebianCatalog）**：
+   - 增加 Debian 13 (Trixie) aarch64 minimal rootfs 官方清单（`rootfs.tar.xz`，90,371,792 字节，固定 SHA-256：`7677f708be8b4df232ebdd177147b1b77beef7c784ce0fa3fbef5dd3e85ab461`）；
+   - 官方源与镜像站契约保障，支持与 Alpine 3.24.1 实例在宿主实例存储内无缝并存。
+2. **装配风味（DistroFlavor）**：
+   - 抽象 `DistroFlavor` 模型以消除发行版之间的底层装配与 init 差异；
+   - **Init 系统适配**：Debian 采用 `SYSTEMD` 作为 PID 1（`/lib/systemd/systemd`），配置 systemd service unit (`droidlayer-guest-agent.service`) 挂载于 `multi-user.target.wants`，与 Alpine (`OPENRC` / `BUSYBOX`) 的 `/etc/inittab` / `/etc/init.d/` 隔离适配；
+   - **包管理器与网络 DNS 穿透**：适配 Debian `apt`，预置 `/etc/resolv.conf`（`nameserver 10.0.2.3` 对应 QEMU SLIRP DNS 代理，`nameserver 8.8.8.8` 兜底），保证首启后 `apt update` 与软件包安装开箱即用；
+   - **解压格式支持**：initramfs provisioning 支持 `.tar.xz` (`tar -xJpf`) 与 `.tar.gz` (`tar -xzpf`)。
+3. **架构零侵入性核准**：
+   - 运行时引擎 `runtime:engine-qemu` 与生命周期状态机 `runtime:instance` 保持零行修改，严格兑现“新增发行版 = 清单数据 + 风味适配”架构承诺。

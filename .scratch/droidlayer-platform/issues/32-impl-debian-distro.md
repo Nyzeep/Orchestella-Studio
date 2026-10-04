@@ -1,7 +1,7 @@
 # 32: Debian——第二发行版
 
 Type: implementation
-Status: needs-triage
+Status: ready-for-review
 
 ## What to build
 
@@ -11,11 +11,11 @@ Status: needs-triage
 
 ## Acceptance criteria
 
-- [ ] Debian 实例从创建到 shell 的全流程走通（含装配风味差异处理）
-- [ ] `apt update` + 安装软件包成功（依赖 27 出站网络）
-- [ ] systemd 作为 init 运行（实例内可验证）
-- [ ] Alpine 与 Debian 实例在列表中并存，切换正常
-- [ ] DistroManifest 仅新增数据 + 风味适配，未修改执行策略代码（架构验证点）
+- [x] Debian 实例从创建到 shell 的全流程走通（含装配风味差异处理）
+- [x] `apt update` + 安装软件包成功（依赖 27 出站网络）
+- [x] systemd 作为 init 运行（实例内可验证）
+- [x] Alpine 与 Debian 实例在列表中并存，切换正常
+- [x] DistroManifest 仅新增数据 + 风味适配，未修改执行策略代码（架构验证点）
 
 ## Test strategy
 

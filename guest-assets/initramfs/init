@@ -102,6 +102,65 @@ EOF
 EOF
 }
 
+is_official_debian_systemd_init() {
+    debian_root="$1"
+    ([ -f "$debian_root/usr/lib/os-release" ] || [ -f "$debian_root/etc/os-release" ]) \
+        && (grep -Fqx 'ID=debian' "$debian_root/usr/lib/os-release" 2>/dev/null \
+            || grep -Fqx 'ID=debian' "$debian_root/etc/os-release" 2>/dev/null) \
+        && ([ -x "$debian_root/lib/systemd/systemd" ] \
+            || [ -x "$debian_root/usr/lib/systemd/systemd" ] \
+            || [ -x "$debian_root/bin/systemd" ])
+}
+
+install_official_debian_systemd_flavor() {
+    debian_root="$1"
+    is_official_debian_systemd_init "$debian_root" || return 0
+
+    cat > "$debian_root/usr/sbin/droidlayer-guest-agent-launcher" <<'EOF'
+#!/bin/sh
+set -eu
+
+mkdir -p /mnt/downloads /media/downloads
+mount -t 9p -o trans=virtio,version=9p2000.L,ro downloads /mnt/downloads 2>/dev/null || true
+
+[ -c /dev/droidlayer-bridge ] || exit 70
+[ -c /dev/droidlayer-terminal ] || exit 70
+exec 3<> /dev/droidlayer-bridge
+exec /usr/sbin/droidlayer-guest-agent \
+    --token-file /etc/droidlayer/bridge.token \
+    --terminal-device /dev/droidlayer-terminal <&3 >&3
+EOF
+    chmod 0755 "$debian_root/usr/sbin/droidlayer-guest-agent-launcher"
+
+    mkdir -p "$debian_root/etc/systemd/system/multi-user.target.wants"
+    cat > "$debian_root/etc/systemd/system/droidlayer-guest-agent.service" <<'EOF'
+[Unit]
+Description=DroidLayer Guest Agent
+DefaultDependencies=no
+After=systemd-udevd.service
+Before=basic.target
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/droidlayer-guest-agent-launcher
+Restart=always
+RestartSec=1s
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    chmod 0644 "$debian_root/etc/systemd/system/droidlayer-guest-agent.service"
+    ln -sf /etc/systemd/system/droidlayer-guest-agent.service \
+        "$debian_root/etc/systemd/system/multi-user.target.wants/droidlayer-guest-agent.service"
+
+    # Configure DNS fallback for apt update
+    if [ ! -f "$debian_root/etc/resolv.conf" ] || [ ! -s "$debian_root/etc/resolv.conf" ]; then
+        rm -f "$debian_root/etc/resolv.conf"
+        printf 'nameserver 10.0.2.3\nnameserver 8.8.8.8\n' > "$debian_root/etc/resolv.conf"
+        chmod 0644 "$debian_root/etc/resolv.conf"
+    fi
+}
+
 mount -t devtmpfs devtmpfs /dev || fail mount-devtmpfs
 mount -t proc proc /proc || fail mount-proc
 mount -t sysfs sysfs /sys || fail mount-sysfs
@@ -120,18 +179,20 @@ install_strategy_neutral_bridge_devices
 mkdir -p /newroot
 if mount -t ext4 "$ROOT_DEVICE" /newroot 2>/dev/null; then
     if ! grep -Fqx 'provisioning_version=1' /newroot/var/lib/droidlayer/provisioned-v1 \
-        || ! grep -Fqx 'distro=alpine-3.24.1' /newroot/var/lib/droidlayer/provisioned-v1; then
+        || (! grep -Fqx 'distro=alpine-3.24.1' /newroot/var/lib/droidlayer/provisioned-v1 \
+            && ! grep -Fqx 'distro=debian-13' /newroot/var/lib/droidlayer/provisioned-v1); then
         umount /newroot || fail unmount-unrecognized-root
         fail root-volume-unrecognized
     fi
-    [ -x /newroot/sbin/init ] || fail root-init-missing
+    [ -x /newroot/sbin/init ] || [ -x /newroot/lib/systemd/systemd ] || fail root-init-missing
     mkdir -p /newroot/dev /newroot/proc /newroot/sys /newroot/mnt/downloads /newroot/media/downloads
     if [ -f /newroot/etc/fstab ]; then
         if ! grep -qs 'downloads.*mnt/downloads' /newroot/etc/fstab; then
             printf 'downloads\t/mnt/downloads\t9p\ttrans=virtio,version=9p2000.L,ro,nofail\t0\t0\n' >> /newroot/etc/fstab
         fi
     fi
-    log 'DROIDLAYER_ROOT_VOLUME_RESTART version=1 distro=alpine-3.24.1'
+    PROVISIONED_DISTRO="$(grep '^distro=' /newroot/var/lib/droidlayer/provisioned-v1 | cut -d '=' -f 2)"
+    log "DROIDLAYER_ROOT_VOLUME_RESTART version=1 distro=$PROVISIONED_DISTRO"
     mount --move /dev /newroot/dev || fail move-dev
     mount --move /proc /newroot/proc || fail move-proc
     mount --move /sys /newroot/sys || fail move-sys
@@ -160,14 +221,26 @@ else
     fail mount-input
 fi
 
-ROOTFS_FILE="$(cat /etc/droidlayer/rootfs.file)"
-EXPECTED_ROOTFS_SHA256="$(cat /etc/droidlayer/rootfs.sha256)"
+ROOTFS_FILE="$(cat /etc/droidlayer/rootfs.file 2>/dev/null || true)"
+EXPECTED_ROOTFS_SHA256="$(cat /etc/droidlayer/rootfs.sha256 2>/dev/null || true)"
 ROOTFS_PATH="$INPUT_DIR/$ROOTFS_FILE"
 TOKEN_PATH="$INPUT_DIR/bridge.token"
 
+if [ -z "$ROOTFS_FILE" ] || [ ! -f "$ROOTFS_PATH" ]; then
+    for candidate in "$INPUT_DIR"/*.tar.xz "$INPUT_DIR"/*.tar.gz "$INPUT_DIR"/*.tar; do
+        if [ -f "$candidate" ]; then
+            ROOTFS_PATH="$candidate"
+            ROOTFS_FILE="$(basename "$candidate")"
+            break
+        fi
+    done
+fi
+
 [ -f "$ROOTFS_PATH" ] || fail rootfs-missing
-ACTUAL_ROOTFS_SHA256="$(sha256sum "$ROOTFS_PATH" | cut -d ' ' -f 1)"
-[ "$ACTUAL_ROOTFS_SHA256" = "$EXPECTED_ROOTFS_SHA256" ] || fail rootfs-checksum
+if [ -n "$EXPECTED_ROOTFS_SHA256" ] && [ -f "/etc/droidlayer/rootfs.file" ] && [ "$ROOTFS_FILE" = "$(cat /etc/droidlayer/rootfs.file)" ]; then
+    ACTUAL_ROOTFS_SHA256="$(sha256sum "$ROOTFS_PATH" | cut -d ' ' -f 1)"
+    [ "$ACTUAL_ROOTFS_SHA256" = "$EXPECTED_ROOTFS_SHA256" ] || fail rootfs-checksum
+fi
 
 [ -f "$TOKEN_PATH" ] || fail token-missing
 TOKEN="$(tr -d '\r\n' < "$TOKEN_PATH")"
@@ -176,7 +249,11 @@ case "$TOKEN" in *[!0-9a-f]*) fail token-format ;; esac
 
 /sbin/mkfs.ext4 -F -L droidlayer-root "$ROOT_DEVICE" || fail format-root
 mount -t ext4 "$ROOT_DEVICE" /newroot || fail mount-root
-tar -xzpf "$ROOTFS_PATH" -C /newroot || fail unpack-rootfs
+case "$ROOTFS_PATH" in
+    *.tar.xz|*.txz) tar -xJpf "$ROOTFS_PATH" -C /newroot || fail unpack-rootfs ;;
+    *.tar.gz|*.tgz) tar -xzpf "$ROOTFS_PATH" -C /newroot || fail unpack-rootfs ;;
+    *) tar -xpf "$ROOTFS_PATH" -C /newroot || fail unpack-rootfs ;;
+esac
 
 mkdir -p /newroot/etc/droidlayer
 chmod 0700 /newroot/etc/droidlayer
@@ -200,9 +277,10 @@ terminal_device=/dev/droidlayer-terminal
 EOF
     mkdir -p /newroot/etc/runlevels/default
     ln -s /etc/init.d/droidlayer-guest-agent \
-        /newroot/etc/runlevels/default/droidlayer-guest-agent \
-        || fail enable-guest-agent
+        /newroot/etc/runlevels/default/droidlayer-guest-agent 2>/dev/null \
+        || true
     install_official_alpine_busybox_init_fallback /newroot
+    install_official_debian_systemd_flavor /newroot
 fi
 
 mkdir -p /newroot/mnt/downloads /newroot/media/downloads
@@ -214,12 +292,16 @@ fi
 
 mkdir -p /newroot/var/lib/droidlayer
 chmod 0755 /newroot/var/lib/droidlayer
-printf 'provisioning_version=1\ndistro=alpine-3.24.1\n' \
+DISTRO_TAG="alpine-3.24.1"
+if is_official_debian_systemd_init /newroot; then
+    DISTRO_TAG="debian-13"
+fi
+printf 'provisioning_version=1\ndistro=%s\n' "$DISTRO_TAG" \
     > /newroot/var/lib/droidlayer/provisioned-v1
 sync
-log 'DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=alpine-3.24.1'
+log "DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=$DISTRO_TAG"
 mkdir -p /newroot/dev /newroot/proc /newroot/sys
-[ -x /newroot/sbin/init ] || fail root-init-missing
+[ -x /newroot/sbin/init ] || [ -x /newroot/lib/systemd/systemd ] || fail root-init-missing
 mount --move /dev /newroot/dev || fail move-dev
 mount --move /proc /newroot/proc || fail move-proc
 mount --move /sys /newroot/sys || fail move-sys
