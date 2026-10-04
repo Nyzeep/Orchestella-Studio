@@ -1,12 +1,15 @@
 package io.github.nyzeep.droidlayer;
 
 import android.content.Context;
+import io.github.nyzeep.droidlayer.runtime.engineavf.AvfEngineException;
 import io.github.nyzeep.droidlayer.runtime.engineavf.AvfLaunchSpec;
+import io.github.nyzeep.droidlayer.runtime.engineavf.AvfVirtualMachineApi;
 import io.github.nyzeep.droidlayer.runtime.engineavf.AvfVirtualMachineEngine;
 import io.github.nyzeep.droidlayer.runtime.engineavf.ReflectiveAvfVirtualMachineApi;
 import io.github.nyzeep.droidlayer.runtime.engineqemu.RuntimeArtifactManifest;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.file.Paths;
 
 /**
@@ -14,16 +17,68 @@ import java.nio.file.Paths;
  * runtime assets (kernel Image, embedded-provision initramfs) and the raw
  * root volume are prepared by the exact same bootstrapper the QEMU strategy
  * uses — only the VM assembly differs (ADR-0001 asset interop). The AVF SDK
- * surface is driven reflectively inside {@code runtime:engine-avf}; nothing
- * here names it.
+ * surface is driven reflectively inside {@code runtime:engine-avf}; the
+ * session handed to the UX layer is the neutral {@link ExecutionSession}.
  */
 public final class AvfInstanceLauncher {
-    /** Live AVF session for one running instance. */
-    public static final class AvfSession {
-        public final AvfVirtualMachineEngine.AvfVmSession session;
+    /** Live AVF session exposing only the strategy-neutral surface. */
+    public static final class AvfSession implements ExecutionSession {
+        private final AvfVirtualMachineEngine.AvfVmSession session;
 
         AvfSession(AvfVirtualMachineEngine.AvfVmSession session) {
             this.session = session;
+        }
+
+        @Override
+        public int waitFor() throws InterruptedException {
+            return session.waitFor();
+        }
+
+        @Override
+        public OutputStream terminalInput() throws IOException {
+            return terminalChannel().outputStream();
+        }
+
+        @Override
+        public InputStream terminalOutput() throws IOException {
+            return terminalChannel().inputStream();
+        }
+
+        @Override
+        public OutputStream controlInput() throws IOException {
+            return controlChannel().outputStream();
+        }
+
+        @Override
+        public InputStream controlOutput() throws IOException {
+            return controlChannel().inputStream();
+        }
+
+        @Override
+        public void close() {
+            try {
+                session.closeChannels();
+            } catch (IOException ignored) {
+                // channel cleanup is best-effort at teardown
+            }
+        }
+
+        private AvfVirtualMachineApi.AvfVsockChannel terminalChannel() throws IOException {
+            try {
+                return session.terminalChannel();
+            } catch (AvfEngineException failure) {
+                throw new IOException(
+                        "terminal channel unavailable: " + failure.getMessage(), failure);
+            }
+        }
+
+        private AvfVirtualMachineApi.AvfVsockChannel controlChannel() throws IOException {
+            try {
+                return session.controlChannel();
+            } catch (AvfEngineException failure) {
+                throw new IOException(
+                        "control channel unavailable: " + failure.getMessage(), failure);
+            }
         }
     }
 
@@ -36,8 +91,7 @@ public final class AvfInstanceLauncher {
     }
 
     /** Blocking bootstrap+launch; call on a worker thread. */
-    public AvfSession launch(String instanceId, String bridgeToken, String rootfsFileName,
-            String instanceRootVolume, String runtimeDirectory, String distroInputsDirectory)
+    public ExecutionSession launch(InstanceStrategyLauncher.LaunchParameters parameters)
             throws IOException {
         RuntimeArtifactManifest manifest;
         try (InputStream in = context.getAssets().open(RuntimeArtifactManifest.SCHEMA_FILE_NAME)) {
@@ -52,25 +106,25 @@ public final class AvfInstanceLauncher {
                     }
                 },
                 name -> AvfInstanceLauncher.class.getResourceAsStream("/" + name),
-                Paths.get(runtimeDirectory),
-                Paths.get(distroInputsDirectory));
+                Paths.get(parameters.runtimeDirectory),
+                Paths.get(parameters.distroInputsDirectory));
         QemuRuntimeBootstrapper.RuntimePaths paths =
-                bootstrapper.bootstrap(rootfsFileName, bridgeToken,
-                        Paths.get(instanceRootVolume));
+                bootstrapper.bootstrap(parameters.rootfsFileName, parameters.bridgeToken,
+                        Paths.get(parameters.instanceRootVolume));
 
         AvfLaunchSpec spec = AvfLaunchSpec.builder(
-                        instanceId,
+                        parameters.instanceId,
                         paths.kernel.toString(),
                         paths.initramfs.toString(),
-                        instanceRootVolume)
+                        parameters.instanceRootVolume)
                 .memoryMb(INSTANCE_MEMORY_MB)
                 .build();
 
         ReflectiveAvfVirtualMachineApi api = new ReflectiveAvfVirtualMachineApi(
                 context, context.getClass().getClassLoader());
         AvfVirtualMachineEngine engine = new AvfVirtualMachineEngine(api);
-        AvfVirtualMachineEngine.AvfVmSession session = engine.launch(spec);
-        AvfTerminalStreamsRegistry.register(instanceId, session);
-        return new AvfSession(session);
+        AvfSession session = new AvfSession(engine.launch(spec));
+        ExecutionSessionRegistry.register(parameters.instanceId, session);
+        return session;
     }
 }

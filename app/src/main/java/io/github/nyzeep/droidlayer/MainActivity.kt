@@ -54,17 +54,7 @@ class MainActivity : Activity() {
         val assessment = DeviceCapabilityEvaluator.evaluate(deviceProfile())
         avfReadiness = AvfCapabilityEvaluator.evaluate(AvfHostFactsProbe.probe(this))
         wizardModel = AvfAuthorizationWizardModel.fromAssessment(avfReadiness!!)
-        findViewById<TextView>(R.id.runtime_status).text = buildString {
-            appendLine(getString(R.string.runtime_class_full_linux))
-            appendLine(currentBadge(assessment))
-            if (assessment.canCreateFullLinuxInstance()) {
-                appendLine(getString(R.string.support_floor_passed))
-            } else {
-                appendLine(getString(R.string.support_floor_refused, assessment.refusalReason()))
-            }
-            assessment.emulatorNotice()?.let(::appendLine)
-            append(verifiedQemuStatus())
-        }
+        renderRuntimeStatus(assessment)
         createAlpineButton = findViewById(R.id.create_alpine)
         createDebianButton = findViewById(R.id.create_debian)
         createProgress = findViewById(R.id.create_progress)
@@ -184,8 +174,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun rerenderRuntimeStatus() {
-        val assessment = DeviceCapabilityEvaluator.evaluate(deviceProfile())
+    private fun renderRuntimeStatus(assessment: DeviceCapabilityEvaluator.Assessment) {
         findViewById<TextView>(R.id.runtime_status).text = buildString {
             appendLine(getString(R.string.runtime_class_full_linux))
             appendLine(currentBadge(assessment))
@@ -197,6 +186,10 @@ class MainActivity : Activity() {
             assessment.emulatorNotice()?.let(::appendLine)
             append(verifiedQemuStatus())
         }
+    }
+
+    private fun rerenderRuntimeStatus() {
+        renderRuntimeStatus(DeviceCapabilityEvaluator.evaluate(deviceProfile()))
     }
 
     private fun showInstances() {
@@ -253,39 +246,18 @@ class MainActivity : Activity() {
                 val preferAvf =
                     avfReadiness?.status() == AvfCapabilityEvaluator.AvfStatus.READY
                 val strategyLauncher = InstanceStrategyLauncher(
-                    { params ->
-                        AvfInstanceLauncher(this).launch(
-                            params.instanceId,
-                            params.bridgeToken,
-                            params.rootfsFileName,
-                            params.instanceRootVolume,
-                            params.runtimeDirectory,
-                            params.distroInputsDirectory)
-                    },
-                    { params ->
-                        QemuInstanceLauncher(this).launch(
-                            params.instanceId,
-                            params.bridgeToken,
-                            params.rootfsFileName,
-                            params.instanceRootVolume,
-                            params.runtimeDirectory,
-                            params.distroInputsDirectory)
-                    },
+                    { params -> AvfInstanceLauncher(this).launch(params) },
+                    { params -> QemuInstanceLauncher(this).launch(params) },
                     { failure ->
                         AvfDegradationLog(
                             filesDir.resolve("avf-degradations.txt").toPath(),
                         ).record(failure)
                     })
                 val outcome = strategyLauncher.launch(parameters, preferAvf)
-                val avfSession = outcome.avfSession
-                val qemuSession = outcome.qemuSession
+                val session = outcome.session
                 Thread {
                     try {
-                        if (avfSession != null) {
-                            avfSession.session.waitFor()
-                        } else {
-                            qemuSession!!.handle.waitFor()
-                        }
+                        session.waitFor()
                         InstanceLaunchSequence.afterGuestExit(controller, instance.id())
                         runOnUiThread {
                             createStatus.setText(R.string.launch_guest_exited)
@@ -303,15 +275,13 @@ class MainActivity : Activity() {
                     }
                 }.apply { isDaemon = true }.start()
                 runOnUiThread {
-                    if (avfSession != null) {
+                    if (outcome.hardwareAccelerated()) {
                         createStatus.setText(R.string.launch_started_hardware)
                     } else if (outcome.degradationReason != null) {
                         createStatus.text = getString(
                             R.string.launch_degraded_to_software, outcome.degradationReason)
                     }
                     val intent = android.content.Intent(this, TerminalActivity::class.java)
-                        .putExtra("controlSocket", "droidlayer-control-" + instance.id())
-                        .putExtra("terminalSocket", "droidlayer-terminal-" + instance.id())
                         .putExtra("bridgeToken", instance.bridgeToken())
                         .putExtra("instanceId", instance.id())
                     startActivity(intent)

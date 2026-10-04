@@ -9,34 +9,31 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
-import io.github.nyzeep.droidlayer.runtime.engineavf.AvfVirtualMachineEngine;
 import java.io.InputStream;
 import java.io.OutputStream;
-import android.net.LocalSocket;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Minimal root-shell terminal over the instance's terminal channel (the
- * abstract guest console socket under the QEMU strategy, the vsock terminal
- * channel under the AVF strategy). Input lines are sent raw; output bytes
- * append to a monospace transcript. The channel is transport only: the Full
- * Linux contract's terminal behavior is unchanged.
+ * Minimal root-shell terminal over the instance's terminal channel. The
+ * channel arrives as the strategy-neutral {@link ExecutionSession} from the
+ * {@link ExecutionSessionRegistry}: the abstract guest console socket under
+ * the QEMU strategy, the vsock terminal channel under the AVF strategy — the
+ * activity cannot tell them apart (ADR-0002). Input lines are sent raw;
+ * output bytes append to a monospace transcript. The channel is transport
+ * only: the Full Linux contract's terminal behavior is unchanged.
  */
 public class TerminalActivity extends Activity {
     private Handler ui;
     private TextView transcript;
-    private LocalSocket socket;
-    private AvfVirtualMachineEngine.AvfVmSession avfSession;
+    private ExecutionSession session;
     private OutputStream terminalOut;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        String controlSocket = getIntent().getStringExtra("controlSocket");
-        String terminalSocket = getIntent().getStringExtra("terminalSocket");
         String bridgeToken = getIntent().getStringExtra("bridgeToken");
         String instanceId = getIntent().getStringExtra("instanceId");
-        avfSession = AvfTerminalStreamsRegistry.get(instanceId);
+        session = ExecutionSessionRegistry.get(instanceId);
         ui = new Handler(Looper.getMainLooper());
 
         LinearLayout layout = new LinearLayout(this);
@@ -57,19 +54,16 @@ public class TerminalActivity extends Activity {
         setContentView(layout);
 
         append("DroidLayer terminal (" + instanceId + ")\n");
+        if (session == null) {
+            // The host process was restarted: no live session survives it.
+            append("[no live session for instance " + instanceId + "]\n");
+            return;
+        }
         new Thread(() -> {
             try {
-                if (avfSession != null) {
-                    terminalOut = avfSession.terminalChannel().outputStream();
-                    append("[terminal connected]\n");
-                    pumpTerminal(avfSession.terminalChannel().inputStream());
-                } else {
-                    BridgeConnector connector = new BridgeConnector();
-                    socket = connector.connectTerminal(terminalSocket);
-                    terminalOut = socket.getOutputStream();
-                    append("[terminal connected]\n");
-                    pumpTerminal(socket.getInputStream());
-                }
+                terminalOut = session.terminalInput();
+                append("[terminal connected]\n");
+                pumpTerminal(session.terminalOutput());
             } catch (Exception e) {
                 append("[terminal error: " + e + "]\n");
             }
@@ -90,16 +84,10 @@ public class TerminalActivity extends Activity {
                             new AndroidNotificationAdapter(TerminalActivity.this);
                     AndroidUrlOpenerAdapter urlOpenerAdapter =
                             new AndroidUrlOpenerAdapter(TerminalActivity.this);
-                    if (avfSession != null) {
-                        new BridgeConnector().serveStreams(
-                                avfSession.controlChannel().inputStream(),
-                                avfSession.controlChannel().outputStream(),
-                                bridgeToken, gridColumns, gridRows,
-                                eventsForBridge(), notificationAdapter, urlOpenerAdapter);
-                    } else {
-                        new BridgeConnector().serve(controlSocket, bridgeToken, gridColumns, gridRows,
-                                eventsForBridge(), notificationAdapter, urlOpenerAdapter);
-                    }
+                    new BridgeConnector().serveStreams(
+                            session.controlOutput(), session.controlInput(), bridgeToken,
+                            gridColumns, gridRows, eventsForBridge(), notificationAdapter,
+                            urlOpenerAdapter);
                 } catch (Exception e) {
                     append("[bridge ended: " + e.getClass().getSimpleName() + "]\n");
                 }
@@ -146,14 +134,17 @@ public class TerminalActivity extends Activity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        // A configuration change (screen rotation) destroys and recreates the
+        // activity while the guest keeps running: only a real exit may unbind
+        // and tear down the session's streams.
+        if (!isFinishing()) {
+            return;
+        }
         String instanceId = getIntent() != null ? getIntent().getStringExtra("instanceId") : null;
-        if (avfSession != null) {
-            AvfTerminalStreamsRegistry.unregister(instanceId);
-            try {
-                avfSession.closeChannels();
-            } catch (Exception ignored) {
-                // channel cleanup is best-effort at teardown
-            }
+        ExecutionSession bound = session != null ? session : ExecutionSessionRegistry.get(instanceId);
+        if (bound != null) {
+            ExecutionSessionRegistry.unregister(instanceId);
+            bound.close();
         }
     }
 

@@ -11,6 +11,10 @@ import java.util.Objects;
  * to the QEMU strategy automatically and every fallback is recorded with its
  * precise reason. Failures of the shared asset bootstrap are NOT degraded —
  * they would fail the QEMU path identically, so they surface honestly.
+ *
+ * <p>Per ADR-0002, the {@link Outcome} exposes only the strategy-neutral
+ * {@link ExecutionSession} plus the strategy identifier; the UX layer never
+ * sees a strategy-specific type.
  */
 public final class InstanceStrategyLauncher {
     /** Both engines launch from the same caller-supplied parameter set. */
@@ -42,13 +46,13 @@ public final class InstanceStrategyLauncher {
 
     /** Strategy-specific launch seam. */
     public interface AvfLaunch {
-        AvfInstanceLauncher.AvfSession launch(LaunchParameters parameters)
+        ExecutionSession launch(LaunchParameters parameters)
                 throws IOException, AvfEngineException;
     }
 
     /** Strategy-specific launch seam. */
     public interface QemuLaunch {
-        QemuInstanceLauncher.Session launch(LaunchParameters parameters)
+        ExecutionSession launch(LaunchParameters parameters)
                 throws IOException, InterruptedException;
     }
 
@@ -60,20 +64,18 @@ public final class InstanceStrategyLauncher {
     /** Result of one launch through the strategy chain. */
     public static final class Outcome {
         public final FullLinuxContract.ExecutionStrategy strategy;
-        public final AvfInstanceLauncher.AvfSession avfSession;
-        public final QemuInstanceLauncher.Session qemuSession;
+        /** The strategy-neutral live session backing this launch. */
+        public final ExecutionSession session;
         public final String degradationReason;
         public final String degradationDetail;
 
         Outcome(
                 FullLinuxContract.ExecutionStrategy strategy,
-                AvfInstanceLauncher.AvfSession avfSession,
-                QemuInstanceLauncher.Session qemuSession,
+                ExecutionSession session,
                 String degradationReason,
                 String degradationDetail) {
             this.strategy = strategy;
-            this.avfSession = avfSession;
-            this.qemuSession = qemuSession;
+            this.session = session;
             this.degradationReason = degradationReason;
             this.degradationDetail = degradationDetail;
         }
@@ -104,12 +106,11 @@ public final class InstanceStrategyLauncher {
             try {
                 return new Outcome(
                         FullLinuxContract.ExecutionStrategy.HARDWARE_VIRTUALIZATION,
-                        avfLaunch.launch(parameters), null, null, null);
+                        avfLaunch.launch(parameters), null, null);
             } catch (AvfEngineException failure) {
                 degradationSink.record(failure);
                 return new Outcome(
                         FullLinuxContract.ExecutionStrategy.SOFTWARE_VIRTUALIZATION,
-                        null,
                         qemuLaunch.launch(parameters),
                         failure.reason(),
                         failure.getMessage());
@@ -117,7 +118,6 @@ public final class InstanceStrategyLauncher {
         }
         return new Outcome(
                 FullLinuxContract.ExecutionStrategy.SOFTWARE_VIRTUALIZATION,
-                null,
                 qemuLaunch.launch(parameters),
                 null,
                 null);
