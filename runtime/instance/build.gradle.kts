@@ -32,6 +32,17 @@ tasks.register<JavaExec>("reconciliationAndRecoveryLifecycleContractTest") {
     args(recoveryLifecycleOutput.get().asFile.absolutePath)
 }
 
+val storageContractOutput = layout.buildDirectory.dir("storage-contract")
+tasks.register<JavaExec>("instanceStorageContractTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.droidlayer.runtime.instance.InstanceStorageContractTest")
+    args(storageContractOutput.get().asFile.absolutePath)
+}
+
 tasks.named("check") {
-    dependsOn("normalInstanceLifecycleContractTest", "reconciliationAndRecoveryLifecycleContractTest")
+    dependsOn(
+        "normalInstanceLifecycleContractTest",
+        "reconciliationAndRecoveryLifecycleContractTest",
+        "instanceStorageContractTest"
+    )
 }

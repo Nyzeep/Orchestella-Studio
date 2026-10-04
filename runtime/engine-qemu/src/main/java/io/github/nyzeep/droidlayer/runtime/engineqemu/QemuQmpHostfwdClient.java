@@ -19,7 +19,7 @@ import java.util.Objects;
  * performs greeting negotiation and capability exchange, and emits {@code hostfwd_add}
  * and {@code hostfwd_remove} commands using {@code human-monitor-command}.
  */
-public final class QemuQmpHostfwdClient implements PortForwardingEngine {
+public final class QemuQmpHostfwdClient implements PortForwardingEngine, AutoCloseable {
     private final BufferedReader reader;
     private final BufferedWriter writer;
     private final String netdevId;
@@ -70,6 +70,19 @@ public final class QemuQmpHostfwdClient implements PortForwardingEngine {
         String response = readResponse();
         if (response.contains("\"error\"")) {
             throw new IOException("Failed to remove hostfwd rule: " + response);
+        }
+    }
+
+    /**
+     * Resizes a block device on the running QEMU instance via QMP block_resize.
+     */
+    public void resizeBlockDevice(String deviceOrNode, long newSizeBytes) throws IOException {
+        ensureInitialized();
+        String command = QemuHostfwdFormatter.formatQmpBlockResize(deviceOrNode, newSizeBytes);
+        sendCommand(command);
+        String response = readResponse();
+        if (response.contains("\"error\"")) {
+            throw new IOException("Failed to resize block device: " + response);
         }
     }
 
