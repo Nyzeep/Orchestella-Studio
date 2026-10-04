@@ -3,6 +3,8 @@
 Type: implementation
 Status: ready-for-review
 
+> **评审轮记录**：2026-10-05 独立复审裁定 CHANGES_REQUESTED（`docs/reports/reviews/34/review-report.zh-CN.md`）；同日整改轮完成——架构解耦（中立 `ExecutionSession` + 注册表，UX 层零策略类型/分支）、`reflectGuestStopped` 真机数值面、`AvfLaunchSpec.cpuCount` 装配、onDestroy/isFinishing 与连接防卫、`Session.socket` 句柄恢复、MainActivity 去重（详见实施报告 §9）。全量本地测试复跑通过（app 单测 40 例 37 绿，3 例既有失败为票 33 范围）。提请二次复审。
+
 ## What to build
 
 在支持 AVF 的设备上，用户经授权向导（先检测后引导，ADR-0003）完成一次性授权后，同一实例以硬件虚拟化运行，性能徽章切换为"完整 Linux · 硬件加速"。本票证明第二执行策略穿过与 26 相同的切片：创建 Alpine 实例 → 启动（custom VM：自定义内核/initrd/根盘）→ vsock 桥接传输 → shell；实例资产可在两个策略间互换（同一根盘两处可启动）。能力检测（feature flag、权限状态、custom VM 能力谱）驱动策略选择与向导（ADR-0001/0003）。
