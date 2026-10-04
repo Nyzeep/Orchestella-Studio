@@ -230,6 +230,19 @@ public final class InstanceLifecycle {
                     diagnostic);
         }
 
+        private Instance withUpdatedAt(Clock clock) {
+            return new Instance(
+                    id,
+                    distro,
+                    rootVolume,
+                    bridgeToken,
+                    runtimeClass,
+                    state,
+                    createdAtMillis,
+                    Objects.requireNonNull(clock, "clock").millis(),
+                    crashDiagnostic);
+        }
+
         private Properties toProperties() {
             Properties properties = new Properties();
             properties.setProperty("id", id);
@@ -593,6 +606,42 @@ public final class InstanceLifecycle {
             }
 
             Files.writeString(destination, report.toString());
+        }
+
+        /**
+         * Resizes the root volume of an instance to {@code targetSizeBytes}.
+         * Preflights available host storage space using {@code spaceChecker}.
+         */
+        public synchronized void resizeRootVolume(
+                String id,
+                long targetSizeBytes,
+                io.github.nyzeep.droidlayer.runtime.contract.StorageContract.StorageSpaceChecker spaceChecker)
+                throws IOException {
+            Instance instance = store.load(id);
+            InstanceStorageManager.resizeRootVolume(instance, targetSizeBytes, spaceChecker);
+            Instance updated = instance.withUpdatedAt(clock);
+            store.save(updated);
+        }
+
+        /**
+         * Exports an instance (root volume, metadata JSON, and checksums) to a directory.
+         */
+        public synchronized io.github.nyzeep.droidlayer.runtime.contract.StorageContract.InstanceExportMetadata exportToDirectory(
+                String id,
+                Path destinationDirectory,
+                io.github.nyzeep.droidlayer.runtime.contract.StorageContract.StorageSpaceChecker spaceChecker)
+                throws IOException {
+            Instance instance = store.load(id);
+            return InstanceStorageManager.exportToDirectory(instance, destinationDirectory, spaceChecker, clock);
+        }
+
+        /**
+         * Exports an instance as an archive package (ZIP) to an output stream.
+         */
+        public synchronized io.github.nyzeep.droidlayer.runtime.contract.StorageContract.InstanceExportMetadata exportToArchive(
+                String id, OutputStream destinationStream) throws IOException {
+            Instance instance = store.load(id);
+            return InstanceStorageManager.exportToArchive(instance, destinationStream, clock);
         }
 
         private Instance transition(String id, State next) throws IOException {

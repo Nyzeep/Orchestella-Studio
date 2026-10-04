@@ -1,7 +1,7 @@
 # 33: 实例导出备份与磁盘扩容
 
 Type: implementation
-Status: needs-triage
+Status: completed
 
 ## What to build
 
@@ -11,10 +11,10 @@ Status: needs-triage
 
 ## Acceptance criteria
 
-- [ ] 导出产物包含根盘与实例元数据，校验和一致、大小合理
-- [ ] 导出到用户选定的任意位置成功（权限路径验证）
-- [ ] 扩容操作后，guest 内 `df` 反映新容量且既有数据完好
-- [ ] 空间不足时创建/扩容有明确预检与错误反馈（稀疏文件 ENOSPC 行为，ADR-0007）
+- [x] 导出产物包含根盘与实例元数据，校验和一致、大小合理
+- [x] 导出到用户选定的任意位置成功（权限路径验证）
+- [x] 扩容操作后，guest 内 `df` 反映新容量且既有数据完好
+- [x] 空间不足时创建/扩容有明确预检与错误反馈（稀疏文件 ENOSPC 行为，ADR-0007）
 
 ## Test strategy
 
