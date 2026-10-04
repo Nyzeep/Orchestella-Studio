@@ -24,6 +24,21 @@ tasks.register<JavaExec>("officialAlpineCatalogTest") {
     mainClass.set("io.github.nyzeep.droidlayer.runtime.distro.OfficialAlpineCatalogTest")
 }
 
+tasks.register<JavaExec>("officialDebianCatalogTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.droidlayer.runtime.distro.OfficialDebianCatalogTest")
+}
+
+tasks.register<JavaExec>("distroFlavorTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.droidlayer.runtime.distro.DistroFlavorTest")
+}
+
 tasks.named("check") {
-    dependsOn("distroManifestContractTest", "officialAlpineCatalogTest")
+    dependsOn(
+        "distroManifestContractTest",
+        "officialAlpineCatalogTest",
+        "officialDebianCatalogTest",
+        "distroFlavorTest"
+    )
 }
