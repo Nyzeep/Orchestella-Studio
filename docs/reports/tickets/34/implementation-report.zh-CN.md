@@ -6,7 +6,7 @@
 - **能力层级**：Implementation Tier（严格遵循 TDD 节奏，代码实现与契约自测闭环）
 - **工作区与特性分支**：`DroidLayer_dev_t34`，分支 `ticket/34-avf-execution-strategy`（基于 `main`，Commit `6547a32`）
 - **看板跟踪项**：`.scratch/droidlayer-platform/issues/34-impl-avf-execution-strategy.md`（已置 `ready-for-review`）
-- **当前状态**：**Implementation Completed (JVM 模拟层) · Ready for Independent Review · 真机验收待 HITL**
+- **当前状态**：**Rectification Completed（独立评审 CHANGES_REQUESTED 整改轮 2026-10-05 完成，JVM 模拟层）· 提请二次复审 · 真机验收待 HITL**
 
 ---
 
@@ -146,3 +146,63 @@ Ticket 26 交付的 QEMU 纯软模拟（L1）已在真机完成全量验收。�
 - **代码实现**：AC-1/2/3 全部落地，AC-4 在"AVF 适配层模拟实现"上 100% 达成；全量构建零告警、零 `.log` 新增、零 Class A 资产触碰、`runtime/contract` 零改动。
 - **测试**：engine-avf 6 任务 + capability 2 任务 + app 4 新 JUnit 类（12 例）全绿；全仓 40 例 app 单测中 37 绿、3 项既有失败已定界（票 33）。
 - **移交**：① 提交独立 Reviewer 按 Standards+Spec 双轴复评（本实现者不自评）；② 真机 AVF 冒烟待 HITL 与票 17 数据；③ §7 新发现请 Orchestrator 裁量立项。
+
+## 9. 独立评审整改轮（2026-10-05，CHANGES_REQUESTED → 提请二次复审）
+
+独立评审报告（`docs/reports/reviews/34/review-report.zh-CN.md`，提交 `eced25d` 归档）裁定 CHANGES_REQUESTED。本轮按整改核对清单逐项完成如下。
+
+### 9.1 整改项 1：架构解耦（ADR-0002，阻断级）— 已完成
+
+- **新增策略中立会话接口 `ExecutionSession`**（`app` 启动器/适配层）：暴露 `waitFor()`、`terminalInput()`（宿主写入 shell 键入）、`terminalOutput()`（宿主读取控制台输出）、`controlInput()` / `controlOutput()`（Bridge 控制通道流对）与 `close()`（尽力而为，绝不抛出）。
+- **`InstanceStrategyLauncher.Outcome` 仅暴露中立会话与策略标识**：`avfSession` / `qemuSession` 双字段删除，改为单一 `ExecutionSession session` + `strategy`（契约枚举）；`AvfLaunch` / `QemuLaunch` 接缝签名改为返回 `ExecutionSession`，策略专属会话类型不再越过启动器层。
+- **`TerminalActivity` 彻底去策略化**：删除 `AvfVirtualMachineEngine` 导入与全部三处 `if (avfSession != null)` 分支，终端流与 Bridge 控制流统一从 `ExecutionSessionRegistry`（进程内中立会话注册表，替代原 `AvfTerminalStreamsRegistry`）消费；QEMU 与 AVF 两条传输路径收敛为同一代码路径。Intent 中不再携带 socket 名额外参数（由 QEMU 会话实现自行持有连接目标）。
+- **`MainActivity` 去分支**：`if (avfSession != null)` 的会话分支删除，等待退出统一 `outcome.session.waitFor()`；UI 文案分支仅依据策略标识数据（`outcome.hardwareAccelerated()` / `degradationReason`），符合整改单"仅暴露 ExecutionSession 与策略标识"的裁定。
+- **适配说明**：QEMU 策略会话（`QemuInstanceLauncher.Session`）与 AVF 策略会话（`AvfInstanceLauncher.AvfSession`）均实现 `ExecutionSession`，各自的 LocalSocket / vsock 传输细节（含惰性连接与重试）全部封装在启动器层实现内；`AvfVirtualMachineEngine.AvfVmSession` 不再被 `app` 的 UX 类引用。
+- 附带落实评审"Data Clumps（参数泥团）"建议：`AvfInstanceLauncher.launch` / `QemuInstanceLauncher.launch` 改收 `LaunchParameters` 对象，消除 6 个平铺 String 参数。
+
+### 9.2 整改项 2：`reflectGuestStopped` 真机反射修复（阻断级）— 已完成
+
+`ReflectiveAvfVirtualMachineApi.reflectGuestStopped` 现在同时支持两类返回面：
+- **`Number`（真机 AOSP 面）**：`getStatus()` 返回 `@Status int` 经反射装箱为 `Integer`——`0`（STOPPED）与 `2`（DELETED）判定为 guest 已退出，返回退出状态 `0`；其余（如 `1`=RUNNING）继续等待；
+- **`Enum<?>`（JVM 假桩面）**：沿用名称匹配（含 `STOP`/`DEAD`）。
+
+测试：假 SDK `VirtualMachine.getStatus()` 改为可同时模拟两种面（默认枚举桩不变；新增 `withNumericStatus(IntSupplier)` 状态源驱动桩），`AVF_VIRTUAL_MACHINE_ENGINE_TEST` 新增 `numeric_status` 场景——RUNNING(1) 下等待线程保持阻塞、置 0 后即时返回 0、置 2（DELETED）即时返回 0，覆盖真机装箱 Integer 面。
+
+### 9.3 整改项 3：vCPU 核心数装配（规格补齐）— 已完成
+
+- `AvfLaunchSpec` 新增 `cpuCount`（默认 `DEFAULT_CPU_COUNT = 1`，builder 校验 `[1, 32]`——32 为远超手机核心数的理智上限，超出宿主物理核数仍由平台在 VM 创建时拒绝）；
+- `ReflectiveAvfVirtualMachineApi` 新增 `applyCpuCount`：安全反射调用 `setCpuCount(int)`，成功记 `setCpuCount(int): applied`；方法不存在或调用失败按可选步骤纪律写入 `reflectionNotes`（绝不静默）；
+- 假 SDK `VirtualMachineCustomImageConfig.Builder` 补 `setCpuCount(int)` 记录面；测试断言默认装配 `cpuCount=1` 与显式 `.cpuCount(4)` 两条路径（`cpu_count` 场景）。
+
+### 9.4 整改项 4：体验与防卫性修复 — 已完成
+
+1. **`TerminalActivity.onDestroy`**：仅 `isFinishing()` 为 true 时解绑注册表并 `close()` 会话流——屏幕旋转等配置变更引发的销毁不再关闭 VM 的 vsock/本地通道，后台会话与终端重连得以保留；
+2. **`AvfVirtualMachineEngine` 连接防卫**：重试参数构造器对 `connectAttempts <= 0` 抛 `IllegalArgumentException`（同时补 `connectBackoffMs < 0` 防卫），杜绝 `connectWithRetry` 中 `last.reason()` 的潜在 NPE（测试 `connect_guard`：0 / -3 / 负 backoff 三例拒绝）；
+3. **`BridgeConnector.Session.socket` 契约恢复**：`serve(...)` 抽出私有 `serveControl` 计算结果后以 `new Session(outcome, socket)` 返回，抽象插槽路径重新携带已连接的 `LocalSocket` 句柄；`serveStreams(...)`（调用方持有流路径）保持 `null` 语义不变；
+4. **`MainActivity` 重复代码消除**：11 行状态渲染逻辑提炼为 `renderRuntimeStatus(assessment)`，`onCreate` 与 `rerenderRuntimeStatus()` 共用单份实现。
+
+### 9.5 范围裁定记录（评审指出但不在整改清单内）
+
+评审 Spec 轴 AC-2 备注提到"超前装配了 `setNetworkSupported(true)`（属票 36 范围）"，但整改核对清单（1–5）与派工整改单均未包含该项。本轮**未移除**该调用，避免越权行为变更；在此如实登记，请 Orchestrator/Reviewer 裁量：若裁定应随票 36 移除，届时该可选装配步骤随网络档对齐一并处理。
+
+### 9.6 整改轮测试证据
+
+运行环境与 `X:` 别名配方同 §6。门禁命令与结果（均 `--offline`）：
+
+1. `./gradlew --offline :runtime:engine-avf:check` → 全绿，新增两行证据：
+   - `AVF_LAUNCH_SPEC_TEST_OK defaults=1 cpu_count=1 validation=9`
+   - `AVF_VIRTUAL_MACHINE_ENGINE_TEST_OK assembly=1 cpu_count=1 retry=1 connect_guard=1 numeric_status=1 reflection_unavailable=1 manager_unavailable=1 hardware_unsupported=1 permission_denied=1`
+2. `./gradlew --offline :runtime:capability:check :runtime:contract:check :runtime:engine-qemu:check :runtime:instance:check :runtime:distro:check` → 全绿（`runtime/contract` 保持零改动）；
+3. `./gradlew --offline :app:testDebugUnitTest`（subst `X:` 下）→ 40 例中 37 绿、3 失败，失败项与整改前完全一致（`AndroidSafExportAdapterTest` 3 例，票 33 范围，`git diff` 0 行定界）；
+4. `./gradlew --offline :app:lintDebug` → BUILD SUCCESSFUL（零 lint 错误）；
+5. `./gradlew --offline :app:assembleDebug` → BUILD SUCCESSFUL，`app-debug.apk` 1,031,325 字节（整改前 991,320 字节，增量来自中立会话层与 QEMU 会话实现的新增代码）；
+6. 批末负例检查：`git status --porcelain --untracked-files=all | grep '\.log$'` 计数 = **0**。
+
+### 9.7 整改轮提交
+
+| Commit | 内容 |
+| --- | --- |
+| `47a8b01` | fix(engine-avf): 真机 getStatus 数值面感知、vCPU 装配与连接重试防卫（含假 SDK 与测试） |
+| `fea79b0` | refactor(app): 提炼策略中立 ExecutionSession，根除 UX 层策略泄漏（含 MainActivity 去重与参数对象化） |
+| `0c9f8d1` | fix(app): BridgeConnector 恢复抽象插槽路径 Session.socket 句柄传递 |
+| 本提交 | docs(ticket-34): 实施报告整改轮章节与看板状态更新 |
