@@ -9,21 +9,24 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import io.github.nyzeep.droidlayer.runtime.engineavf.AvfVirtualMachineEngine;
 import java.io.InputStream;
 import java.io.OutputStream;
 import android.net.LocalSocket;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Minimal root-shell terminal over the instance's abstract terminal socket
- * (guest console ttyAMA0). Input lines are sent raw; output bytes append to a
- * monospace transcript. The channel is transport only: the Full Linux
- * contract's terminal behavior is unchanged.
+ * Minimal root-shell terminal over the instance's terminal channel (the
+ * abstract guest console socket under the QEMU strategy, the vsock terminal
+ * channel under the AVF strategy). Input lines are sent raw; output bytes
+ * append to a monospace transcript. The channel is transport only: the Full
+ * Linux contract's terminal behavior is unchanged.
  */
 public class TerminalActivity extends Activity {
     private Handler ui;
     private TextView transcript;
     private LocalSocket socket;
+    private AvfVirtualMachineEngine.AvfVmSession avfSession;
     private OutputStream terminalOut;
 
     @Override
@@ -33,6 +36,7 @@ public class TerminalActivity extends Activity {
         String terminalSocket = getIntent().getStringExtra("terminalSocket");
         String bridgeToken = getIntent().getStringExtra("bridgeToken");
         String instanceId = getIntent().getStringExtra("instanceId");
+        avfSession = AvfTerminalStreamsRegistry.get(instanceId);
         ui = new Handler(Looper.getMainLooper());
 
         LinearLayout layout = new LinearLayout(this);
@@ -55,11 +59,17 @@ public class TerminalActivity extends Activity {
         append("DroidLayer terminal (" + instanceId + ")\n");
         new Thread(() -> {
             try {
-                BridgeConnector connector = new BridgeConnector();
-                socket = connector.connectTerminal(terminalSocket);
-                terminalOut = socket.getOutputStream();
-                append("[terminal connected]\n");
-                pumpTerminal();
+                if (avfSession != null) {
+                    terminalOut = avfSession.terminalChannel().outputStream();
+                    append("[terminal connected]\n");
+                    pumpTerminal(avfSession.terminalChannel().inputStream());
+                } else {
+                    BridgeConnector connector = new BridgeConnector();
+                    socket = connector.connectTerminal(terminalSocket);
+                    terminalOut = socket.getOutputStream();
+                    append("[terminal connected]\n");
+                    pumpTerminal(socket.getInputStream());
+                }
             } catch (Exception e) {
                 append("[terminal error: " + e + "]\n");
             }
@@ -80,35 +90,16 @@ public class TerminalActivity extends Activity {
                             new AndroidNotificationAdapter(TerminalActivity.this);
                     AndroidUrlOpenerAdapter urlOpenerAdapter =
                             new AndroidUrlOpenerAdapter(TerminalActivity.this);
-                    new BridgeConnector().serve(controlSocket, bridgeToken, gridColumns, gridRows,
-                            new BridgeConnector.Events() {
-                                @Override
-                                public void onReady() {
-                                    append("[bridge ready]\n");
-                                }
-
-                                @Override
-                                public void onPong() {
-                                    append("[bridge pong]\n");
-                                }
-
-                                @Override
-                                public void onResize(int columns, int rows) {
-                                    append("[bridge resize " + columns + "x" + rows + "]\n");
-                                }
-
-                                @Override
-                                public void onNotification(String title, String message) {
-                                    append("[bridge notify: " + title + " - " + message + "]\n");
-                                }
-
-                                @Override
-                                public void onOpenUrl(String url) {
-                                    append("[bridge open-url: " + url + "]\n");
-                                }
-                            },
-                            notificationAdapter,
-                            urlOpenerAdapter);
+                    if (avfSession != null) {
+                        new BridgeConnector().serveStreams(
+                                avfSession.controlChannel().inputStream(),
+                                avfSession.controlChannel().outputStream(),
+                                bridgeToken, gridColumns, gridRows,
+                                eventsForBridge(), notificationAdapter, urlOpenerAdapter);
+                    } else {
+                        new BridgeConnector().serve(controlSocket, bridgeToken, gridColumns, gridRows,
+                                eventsForBridge(), notificationAdapter, urlOpenerAdapter);
+                    }
                 } catch (Exception e) {
                     append("[bridge ended: " + e.getClass().getSimpleName() + "]\n");
                 }
@@ -123,11 +114,54 @@ public class TerminalActivity extends Activity {
         });
     }
 
-    private void pumpTerminal() {
-        try (InputStream in = socket.getInputStream()) {
+    private BridgeConnector.Events eventsForBridge() {
+        return new BridgeConnector.Events() {
+            @Override
+            public void onReady() {
+                append("[bridge ready]\n");
+            }
+
+            @Override
+            public void onPong() {
+                append("[bridge pong]\n");
+            }
+
+            @Override
+            public void onResize(int columns, int rows) {
+                append("[bridge resize " + columns + "x" + rows + "]\n");
+            }
+
+            @Override
+            public void onNotification(String title, String message) {
+                append("[bridge notify: " + title + " - " + message + "]\n");
+            }
+
+            @Override
+            public void onOpenUrl(String url) {
+                append("[bridge open-url: " + url + "]\n");
+            }
+        };
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        String instanceId = getIntent() != null ? getIntent().getStringExtra("instanceId") : null;
+        if (avfSession != null) {
+            AvfTerminalStreamsRegistry.unregister(instanceId);
+            try {
+                avfSession.closeChannels();
+            } catch (Exception ignored) {
+                // channel cleanup is best-effort at teardown
+            }
+        }
+    }
+
+    private void pumpTerminal(InputStream in) {
+        try (InputStream stream = in) {
             byte[] buffer = new byte[4096];
             int count;
-            while ((count = in.read(buffer)) >= 0) {
+            while ((count = stream.read(buffer)) >= 0) {
                 final String chunk = new String(buffer, 0, count, StandardCharsets.UTF_8);
                 append(chunk);
             }
