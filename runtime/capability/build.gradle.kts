@@ -23,6 +23,20 @@ tasks.register<JavaExec>("deviceCapabilityEvaluatorTest") {
     mainClass.set("io.github.nyzeep.droidlayer.runtime.capability.DeviceCapabilityEvaluatorTest")
 }
 
+tasks.register<JavaExec>("avfCapabilityEvaluatorTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.droidlayer.runtime.capability.AvfCapabilityEvaluatorTest")
+}
+
+tasks.register<JavaExec>("avfAuthorizationWizardModelTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.droidlayer.runtime.capability.AvfAuthorizationWizardModelTest")
+}
+
 tasks.named("check") {
-    dependsOn("deviceCapabilityEvaluatorTest")
+    dependsOn(
+        "deviceCapabilityEvaluatorTest",
+        "avfCapabilityEvaluatorTest",
+        "avfAuthorizationWizardModelTest",
+    )
 }
