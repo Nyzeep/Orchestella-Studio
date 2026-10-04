@@ -25,6 +25,12 @@ public final class AvfVirtualMachineEngine {
     /** Retry-tunable variant for tests; production uses the defaults. */
     AvfVirtualMachineEngine(AvfVirtualMachineApi api, int connectAttempts, long connectBackoffMs) {
         this.api = Objects.requireNonNull(api, "api");
+        if (connectAttempts <= 0) {
+            throw new IllegalArgumentException("connectAttempts must be positive");
+        }
+        if (connectBackoffMs < 0) {
+            throw new IllegalArgumentException("connectBackoffMs must not be negative");
+        }
         this.connectAttempts = connectAttempts;
         this.connectBackoffMs = connectBackoffMs;
     }

@@ -4,9 +4,10 @@ package io.github.nyzeep.droidlayer.runtime.engineavf;
 public final class AvfLaunchSpecTest {
     public static void main(String[] arguments) {
         buildsTheDefaultSpecWithHvcConsoleAndDefaultPorts();
+        appliesTheRequestedCpuCount();
         rejectsBlankPathsAndBadInstanceIds();
-        rejectsInvalidMemoryAndPorts();
-        System.out.println("AVF_LAUNCH_SPEC_TEST_OK defaults=1 validation=6");
+        rejectsInvalidMemoryPortsAndCpuCounts();
+        System.out.println("AVF_LAUNCH_SPEC_TEST_OK defaults=1 cpu_count=1 validation=9");
     }
 
     private static void buildsTheDefaultSpecWithHvcConsoleAndDefaultPorts() {
@@ -16,6 +17,7 @@ public final class AvfLaunchSpecTest {
 
         assertEquals("instance-1", spec.instanceId(), "instance id");
         assertEquals(512L, spec.memoryMb(), "default memory");
+        assertEquals(1, spec.cpuCount(), "default vCPU count");
         assertEquals(9100, spec.controlVsockPort(), "default control vsock port");
         assertEquals(9101, spec.terminalVsockPort(), "default terminal vsock port");
         assertTrue(
@@ -33,6 +35,14 @@ public final class AvfLaunchSpecTest {
                 "guest agent learns both vsock service ports from the cmdline");
     }
 
+    private static void appliesTheRequestedCpuCount() {
+        AvfLaunchSpec spec = AvfLaunchSpec.builder(
+                        "instance-1", "/data/kernel", "/data/initramfs", "/data/root.raw")
+                .cpuCount(4)
+                .build();
+        assertEquals(4, spec.cpuCount(), "requested vCPU count");
+    }
+
     private static void rejectsBlankPathsAndBadInstanceIds() {
         rejects(IllegalArgumentException.class, () ->
                 AvfLaunchSpec.builder("instance-1", " ", "/initramfs", "/root.raw"));
@@ -46,11 +56,13 @@ public final class AvfLaunchSpecTest {
                 AvfLaunchSpec.builder("bad id with spaces", "/kernel", "/initramfs", "/root.raw"));
     }
 
-    private static void rejectsInvalidMemoryAndPorts() {
+    private static void rejectsInvalidMemoryPortsAndCpuCounts() {
         AvfLaunchSpec.Builder valid =
                 AvfLaunchSpec.builder("instance-1", "/kernel", "/initramfs", "/root.raw");
         rejects(IllegalArgumentException.class, () -> valid.memoryMb(0));
         rejects(IllegalArgumentException.class, () -> valid.memoryMb(16385));
+        rejects(IllegalArgumentException.class, () -> valid.cpuCount(0));
+        rejects(IllegalArgumentException.class, () -> valid.cpuCount(33));
         rejects(IllegalArgumentException.class, () -> valid.controlVsockPort(80));
         rejects(IllegalArgumentException.class, () -> valid.terminalVsockPort(65536));
         rejects(IllegalArgumentException.class, () ->

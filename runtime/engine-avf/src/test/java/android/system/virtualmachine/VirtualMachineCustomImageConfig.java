@@ -15,6 +15,7 @@ public class VirtualMachineCustomImageConfig extends VirtualMachineConfig {
     private final List<Disk> disks;
     private final int memoryMbs;
     private final long memoryBytes;
+    private final int cpuCount;
     private final boolean protectedVm;
     private final boolean networkSupported;
 
@@ -24,6 +25,7 @@ public class VirtualMachineCustomImageConfig extends VirtualMachineConfig {
         this.disks = Collections.unmodifiableList(new ArrayList<>(builder.disks));
         this.memoryMbs = builder.memoryMbs;
         this.memoryBytes = builder.memoryBytes;
+        this.cpuCount = builder.cpuCount;
         this.protectedVm = builder.protectedVm;
         this.networkSupported = builder.networkSupported;
     }
@@ -46,6 +48,10 @@ public class VirtualMachineCustomImageConfig extends VirtualMachineConfig {
 
     public long memoryBytes() {
         return memoryBytes;
+    }
+
+    public int cpuCount() {
+        return cpuCount;
     }
 
     public boolean isProtectedVm() {
@@ -82,6 +88,7 @@ public class VirtualMachineCustomImageConfig extends VirtualMachineConfig {
         private final List<Disk> disks = new ArrayList<>();
         private int memoryMbs = -1;
         private long memoryBytes = -1;
+        private int cpuCount = -1;
         private boolean protectedVm;
         private boolean networkSupported = true;
 
@@ -107,6 +114,11 @@ public class VirtualMachineCustomImageConfig extends VirtualMachineConfig {
 
         public Builder setMemoryBytes(long memoryBytes) {
             this.memoryBytes = memoryBytes;
+            return this;
+        }
+
+        public Builder setCpuCount(int cpuCount) {
+            this.cpuCount = cpuCount;
             return this;
         }
 

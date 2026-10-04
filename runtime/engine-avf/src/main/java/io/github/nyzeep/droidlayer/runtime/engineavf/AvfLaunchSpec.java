@@ -27,16 +27,21 @@ public final class AvfLaunchSpec {
 
     public static final int DEFAULT_CONTROL_VSOCK_PORT = 9100;
     public static final int DEFAULT_TERMINAL_VSOCK_PORT = 9101;
+    public static final int DEFAULT_CPU_COUNT = 1;
 
     private static final Pattern INSTANCE_ID = Pattern.compile("[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}");
     private static final int MIN_PORT = 1024;
     private static final int MAX_PORT = 65535;
+    /** Sanity cap well above any phone core count; the platform still rejects
+     * counts above the host's physical CPUs at VM creation time. */
+    private static final int MAX_CPU_COUNT = 32;
 
     private final String instanceId;
     private final String kernelPath;
     private final String initramfsPath;
     private final String rootVolumePath;
     private final long memoryMb;
+    private final int cpuCount;
     private final int controlVsockPort;
     private final int terminalVsockPort;
     private final String guestCmdline;
@@ -47,6 +52,7 @@ public final class AvfLaunchSpec {
         this.initramfsPath = builder.initramfsPath;
         this.rootVolumePath = builder.rootVolumePath;
         this.memoryMb = builder.memoryMb;
+        this.cpuCount = builder.cpuCount;
         this.controlVsockPort = builder.controlVsockPort;
         this.terminalVsockPort = builder.terminalVsockPort;
         this.guestCmdline = String.format(
@@ -73,6 +79,10 @@ public final class AvfLaunchSpec {
         return memoryMb;
     }
 
+    public int cpuCount() {
+        return cpuCount;
+    }
+
     public int controlVsockPort() {
         return controlVsockPort;
     }
@@ -96,6 +106,7 @@ public final class AvfLaunchSpec {
         private final String initramfsPath;
         private final String rootVolumePath;
         private long memoryMb = 512;
+        private int cpuCount = DEFAULT_CPU_COUNT;
         private int controlVsockPort = DEFAULT_CONTROL_VSOCK_PORT;
         private int terminalVsockPort = DEFAULT_TERMINAL_VSOCK_PORT;
 
@@ -112,6 +123,15 @@ public final class AvfLaunchSpec {
                 throw new IllegalArgumentException("memoryMb must be within (0, 16384]");
             }
             this.memoryMb = memoryMb;
+            return this;
+        }
+
+        public Builder cpuCount(int cpuCount) {
+            if (cpuCount < 1 || cpuCount > MAX_CPU_COUNT) {
+                throw new IllegalArgumentException(
+                        "cpuCount must be within [1, " + MAX_CPU_COUNT + "]");
+            }
+            this.cpuCount = cpuCount;
             return this;
         }
 
