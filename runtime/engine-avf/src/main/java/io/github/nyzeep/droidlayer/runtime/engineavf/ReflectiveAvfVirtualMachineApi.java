@@ -102,6 +102,7 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
                 new Object[] {spec.initramfsPath()}, notes);
         addRootDisk(builderClass, builder, spec.rootVolumePath(), notes);
         applyMemory(builderClass, builder, spec.memoryMb(), notes);
+        applyCpuCount(builderClass, builder, spec.cpuCount(), notes);
         invokeOptional(
                 builderClass, builder, "setProtected", new Class<?>[] {boolean.class},
                 new Object[] {Boolean.FALSE}, notes);
@@ -231,6 +232,18 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
             }
         } catch (ReflectiveOperationException | IllegalArgumentException failure) {
             notes.add("memory configuration skipped: " + failure.getClass().getSimpleName());
+        }
+    }
+
+    private void applyCpuCount(Class<?> builderClass, Object builder, int cpuCount,
+            List<String> notes) {
+        try {
+            builderClass.getMethod("setCpuCount", int.class).invoke(builder, cpuCount);
+            notes.add("setCpuCount(int): applied");
+        } catch (NoSuchMethodException absent) {
+            notes.add("cpuCount configuration skipped: no setCpuCount(int) setter");
+        } catch (ReflectiveOperationException | IllegalArgumentException failure) {
+            notes.add("cpuCount configuration skipped: " + failure.getClass().getSimpleName());
         }
     }
 
@@ -397,10 +410,23 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
             }
         }
 
-        /** Null while the guest is running or its status cannot be read. */
+        /**
+         * Null while the guest is running or its status cannot be read. Real
+         * AOSP VirtualMachine.getStatus() returns the {@code @Status} int
+         * (0=STOPPED, 1=RUNNING, 2=DELETED) boxed to an Integer; the JVM
+         * fixture stub returns a named enum — both surfaces must report
+         * guest exit.
+         */
         private Integer reflectGuestStopped() {
             try {
                 Object status = vmClass.getMethod("getStatus").invoke(vm);
+                if (status instanceof Number numeric) {
+                    int value = numeric.intValue();
+                    if (value == 0 || value == 2) {
+                        return 0;
+                    }
+                    return null;
+                }
                 if (status instanceof Enum<?> named) {
                     String name = named.name();
                     if (name.contains("STOP") || name.contains("DEAD")) {
