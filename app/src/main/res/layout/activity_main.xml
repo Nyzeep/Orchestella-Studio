@@ -31,6 +31,14 @@
             android:drawableStart="@android:drawable/ic_input_add"
             android:text="@string/create_alpine" />
 
+        <Button
+            android:id="@+id/create_debian"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:drawableStart="@android:drawable/ic_input_add"
+            android:text="@string/create_debian" />
+
         <ProgressBar
             android:id="@+id/create_progress"
             style="?android:attr/progressBarStyleHorizontal"

@@ -14,6 +14,7 @@ import android.widget.TextView
 import io.github.nyzeep.droidlayer.runtime.capability.DeviceCapabilityEvaluator
 import io.github.nyzeep.droidlayer.runtime.distro.DistroManifest
 import io.github.nyzeep.droidlayer.runtime.distro.OfficialAlpineCatalog
+import io.github.nyzeep.droidlayer.runtime.distro.OfficialDebianCatalog
 import io.github.nyzeep.droidlayer.runtime.engineqemu.RuntimeArtifactManifest
 import io.github.nyzeep.droidlayer.runtime.instance.InstanceLifecycle
 import java.io.IOException
@@ -25,7 +26,8 @@ import java.util.concurrent.Executors
 class MainActivity : Activity() {
     private val operations = Executors.newSingleThreadExecutor()
     private lateinit var instanceStore: InstanceLifecycle.FileStore
-    private lateinit var createButton: Button
+    private lateinit var createAlpineButton: Button
+    private lateinit var createDebianButton: Button
     private lateinit var createProgress: ProgressBar
     private lateinit var createStatus: TextView
     private lateinit var instanceList: LinearLayout
@@ -46,13 +48,16 @@ class MainActivity : Activity() {
             assessment.emulatorNotice()?.let(::appendLine)
             append(verifiedQemuStatus())
         }
-        createButton = findViewById(R.id.create_alpine)
+        createAlpineButton = findViewById(R.id.create_alpine)
+        createDebianButton = findViewById(R.id.create_debian)
         createProgress = findViewById(R.id.create_progress)
         createStatus = findViewById(R.id.create_status)
         instanceList = findViewById(R.id.instance_list)
         instanceStore = InstanceLifecycle.FileStore(filesDir.toPath().resolve("instances"))
-        createButton.isEnabled = assessment.canCreateFullLinuxInstance()
-        createButton.setOnClickListener { createAlpine() }
+        val canCreate = assessment.canCreateFullLinuxInstance()
+        setCreateButtonsEnabled(canCreate)
+        createAlpineButton.setOnClickListener { createDistro(OfficialAlpineCatalog.alpine()) }
+        createDebianButton.setOnClickListener { createDistro(OfficialDebianCatalog.debian()) }
         showInstances()
     }
 
@@ -64,6 +69,11 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         super.onDestroy()
         if (isFinishing) operations.shutdown()
+    }
+
+    private fun setCreateButtonsEnabled(enabled: Boolean) {
+        if (::createAlpineButton.isInitialized) createAlpineButton.isEnabled = enabled
+        if (::createDebianButton.isInitialized) createDebianButton.isEnabled = enabled
     }
 
     private fun showInstances() {
@@ -79,8 +89,9 @@ class MainActivity : Activity() {
         }
         for (instance in instances) {
             val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            val distroName = instance.distro().id().replaceFirstChar { it.uppercase() }
             row.addView(TextView(this).apply {
-                text = getString(R.string.instance_row, instance.distro().version(), instance.state().name)
+                text = getString(R.string.instance_row_distro, distroName, instance.distro().version(), instance.state().name)
                 layoutParams = LinearLayout.LayoutParams(0,
                     LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
@@ -95,7 +106,7 @@ class MainActivity : Activity() {
     }
 
     private fun launchInstance(instance: InstanceLifecycle.Instance) {
-        createButton.isEnabled = false
+        setCreateButtonsEnabled(false)
         createStatus.setText(R.string.launch_started)
         operations.execute {
             val controller = InstanceLifecycle.Controller(instanceStore, Clock.systemUTC())
@@ -103,11 +114,16 @@ class MainActivity : Activity() {
             try {
                 InstanceLaunchSequence.beforeLaunch(controller, instance)
                 running = true
+                val rootfsFileName = when (instance.distro().id()) {
+                    "debian" -> OfficialDebianCatalog.debian().rootfsFileName()
+                    "alpine" -> OfficialAlpineCatalog.alpine().rootfsFileName()
+                    else -> throw IllegalStateException("unsupported distro: " + instance.distro().id())
+                }
                 val launcher = QemuInstanceLauncher(this)
                 val session = launcher.launch(
                     instance.id(),
                     instance.bridgeToken(),
-                    OfficialAlpineCatalog.alpine().rootfsFileName(),
+                    rootfsFileName,
                     instance.rootVolume().toString(),
                     filesDir.resolve("runtime").resolve(instance.id()).absolutePath,
                     filesDir.resolve("distro-inputs").absolutePath,
@@ -118,7 +134,7 @@ class MainActivity : Activity() {
                         InstanceLaunchSequence.afterGuestExit(controller, instance.id())
                         runOnUiThread {
                             createStatus.setText(R.string.launch_guest_exited)
-                            createButton.isEnabled = true
+                            setCreateButtonsEnabled(DeviceCapabilityEvaluator.evaluate(deviceProfile()).canCreateFullLinuxInstance())
                             showInstances()
                         }
                     } catch (ignored: InterruptedException) {
@@ -126,7 +142,7 @@ class MainActivity : Activity() {
                     } catch (failure: Exception) {
                         runOnUiThread {
                             createStatus.text = getString(R.string.launch_failed, failure.toString())
-                            createButton.isEnabled = true
+                            setCreateButtonsEnabled(DeviceCapabilityEvaluator.evaluate(deviceProfile()).canCreateFullLinuxInstance())
                             showInstances()
                         }
                     }
@@ -149,24 +165,24 @@ class MainActivity : Activity() {
                 }
                 runOnUiThread {
                     createStatus.text = getString(R.string.launch_failed, failure.toString())
-                    createButton.isEnabled = true
+                    setCreateButtonsEnabled(DeviceCapabilityEvaluator.evaluate(deviceProfile()).canCreateFullLinuxInstance())
                     showInstances()
                 }
             }
         }
     }
 
-    private fun createAlpine() {
-        val manifest = OfficialAlpineCatalog.alpine()
+    private fun createDistro(manifest: DistroManifest) {
+        val distroDisplayName = manifest.id().replaceFirstChar { it.uppercase() }
         val availableBytes = StatFs(filesDir.path).availableBytes
-        if (availableBytes < AlpineInstanceCreator.ROOT_VOLUME_BYTES + manifest.sizeBytes() + 128L * 1024L * 1024L) {
+        if (availableBytes < DistroInstanceCreator.DEFAULT_ROOT_VOLUME_BYTES + manifest.sizeBytes() + 128L * 1024L * 1024L) {
             createStatus.setText(R.string.create_storage_low)
             return
         }
-        createButton.isEnabled = false
+        setCreateButtonsEnabled(false)
         createProgress.visibility = View.VISIBLE
         createProgress.isIndeterminate = true
-        createStatus.setText(R.string.create_downloading)
+        createStatus.text = getString(R.string.create_downloading_distro, distroDisplayName)
         operations.execute {
             val result = try {
                 val connection = manifest.source().toURL().openConnection() as HttpURLConnection
@@ -177,9 +193,9 @@ class MainActivity : Activity() {
                     if (connection.responseCode != HttpURLConnection.HTTP_OK ||
                         connection.url.toURI() != manifest.source() ||
                         connection.contentLengthLong != manifest.sizeBytes()
-                    ) throw IOException("unexpected Alpine source response")
+                    ) throw IOException("unexpected " + distroDisplayName + " source response")
                     connection.inputStream.use { input ->
-                        AlpineInstanceCreator(
+                        DistroInstanceCreator(
                             manifest,
                             InstanceLifecycle.Controller(instanceStore, Clock.systemUTC()),
                             filesDir.toPath(),
@@ -190,15 +206,15 @@ class MainActivity : Activity() {
                     connection.disconnect()
                 }
             } catch (rejected: DistroManifest.InputRejectedException) {
-                getString(R.string.create_invalid_input, rejected.reason())
+                getString(R.string.create_invalid_input_distro, distroDisplayName, rejected.reason())
             } catch (_: IOException) {
-                getString(R.string.create_network_failed)
+                getString(R.string.create_network_failed_distro, distroDisplayName)
             } catch (_: RuntimeException) {
                 getString(R.string.create_failed, "private storage unavailable")
             }
             runOnUiThread {
                 createProgress.visibility = View.GONE
-                createButton.isEnabled = DeviceCapabilityEvaluator.evaluate(deviceProfile()).canCreateFullLinuxInstance()
+                setCreateButtonsEnabled(DeviceCapabilityEvaluator.evaluate(deviceProfile()).canCreateFullLinuxInstance())
                 createStatus.text = result
                 showInstances()
             }
