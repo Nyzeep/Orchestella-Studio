@@ -1,7 +1,7 @@
 # 39: Android 宿主 SurfaceView 高性能渲染面与双缓冲渲染器
 
 Type: implementation  
-Status: ready-for-review  
+Status: completed  
 
 ## What to build
 
