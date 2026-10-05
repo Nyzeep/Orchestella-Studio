@@ -5,11 +5,17 @@ plugins {
 dependencies {
     api(project(":runtime:contract"))
     // Test-only collaborators: the lifecycle contract test drives the normal
-    // Instance state machine over the AVF adapter, and the interop test
-    // asserts root-volume/kernel/initramfs identity against the QEMU spec.
-    // Neither is a main-scope dependency; the engine stays strategy-neutral.
+    // Instance state machine over the AVF adapter, the interop test
+    // asserts root-volume/kernel/initramfs identity against the QEMU spec, and
+    // the forwarding-parity test re-runs the network module's manager contract
+    // suite with the AVF vsock engine (Ticket 36 AC-3). None is a main-scope
+    // dependency; the engine stays strategy-neutral.
     testImplementation(project(":runtime:instance"))
     testImplementation(project(":runtime:engine-qemu"))
+    testImplementation(project(":runtime:network"))
+    // The strategy-neutral manager contract suite (test classes) re-run on the
+    // AVF vsock engine by the forwarding-parity contract test (Ticket 36 AC-3).
+    testImplementation(project(mapOf("path" to ":runtime:network", "configuration" to "testArtifacts")))
 }
 
 java {
@@ -66,6 +72,11 @@ tasks.register<JavaExec>("avfVsockPortForwarderTest") {
     mainClass.set("io.github.nyzeep.droidlayer.runtime.engineavf.AvfVsockPortForwarderTest")
 }
 
+tasks.register<JavaExec>("avfNetworkForwardingParityContractTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.droidlayer.runtime.engineavf.AvfNetworkForwardingParityContractTest")
+}
+
 tasks.named("check") {
     dependsOn(
         "avfLaunchSpecTest",
@@ -76,5 +87,6 @@ tasks.named("check") {
         "avfQemuInteropTest",
         "avfNetworkAssemblyContractTest",
         "avfVsockPortForwarderTest",
+        "avfNetworkForwardingParityContractTest",
     )
 }
