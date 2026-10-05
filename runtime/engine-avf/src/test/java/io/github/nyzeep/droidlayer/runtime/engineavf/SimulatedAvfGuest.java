@@ -28,6 +28,8 @@ public final class SimulatedAvfGuest implements AutoCloseable {
     private final String expectedToken;
     private final int controlPort;
     private final int terminalPort;
+    private final int sharePort;
+    private final java.util.function.Consumer<Socket> shareHandler;
     private final long listenDelayMs;
     private final List<String> receivedControlLines = Collections.synchronizedList(new ArrayList<>());
     private final List<String> sentResponses = Collections.synchronizedList(new ArrayList<>());
@@ -43,9 +45,27 @@ public final class SimulatedAvfGuest implements AutoCloseable {
     public SimulatedAvfGuest(
             String expectedToken, int controlPort, int terminalPort, long listenDelayMs)
             throws IOException {
+        this(expectedToken, controlPort, terminalPort, -1, null, listenDelayMs);
+    }
+
+    /**
+     * Full-shape guest: also serves the 9p data-plane rendezvous port. The
+     * handler plays the 9p CLIENT the guest kernel's trans=fd mount would be
+     * (the host is the 9p server over the connected channel it opens).
+     */
+    public SimulatedAvfGuest(
+            String expectedToken,
+            int controlPort,
+            int terminalPort,
+            int sharePort,
+            java.util.function.Consumer<Socket> shareHandler,
+            long listenDelayMs)
+            throws IOException {
         this.expectedToken = expectedToken;
         this.controlPort = controlPort;
         this.terminalPort = terminalPort;
+        this.sharePort = sharePort;
+        this.shareHandler = shareHandler;
         this.listenDelayMs = listenDelayMs;
         openListeners();
     }
@@ -74,6 +94,9 @@ public final class SimulatedAvfGuest implements AutoCloseable {
     private synchronized void listenNow() throws IOException {
         network.listen(controlPort, this::serveControl);
         network.listen(terminalPort, this::serveTerminal);
+        if (sharePort > 0 && shareHandler != null) {
+            network.listen(sharePort, shareHandler::accept);
+        }
     }
 
     /** Manager whose creation records the observed config, then boots the guest. */
@@ -188,6 +211,10 @@ public final class SimulatedAvfGuest implements AutoCloseable {
         }
         if (line.startsWith("DROIDLAYER/OPEN-URL ")) {
             return "DROIDLAYER/OK open-url\n";
+        }
+        if (line.equals("DROIDLAYER/POWER shutdown")
+                || line.equals("DROIDLAYER/POWER poweroff")) {
+            return "DROIDLAYER/OK power\n";
         }
         return "DROIDLAYER/ERROR unauthorized\n";
     }
