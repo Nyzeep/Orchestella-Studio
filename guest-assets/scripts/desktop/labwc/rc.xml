@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<labwc_config>
+  <theme>
+    <name>Adwaita</name>
+    <cornerRadius>8</cornerRadius>
+    <font place="ActiveTitle">Noto Sans:size=11:weight=bold</font>
+    <font place="InactiveTitle">Noto Sans:size=11</font>
+    <font place="Menu">Noto Sans:size=10</font>
+    <font place="MenuItem">Noto Sans:size=10</font>
+  </theme>
+
+  <windowRules>
+    <windowRule identifier="*" serverDecoration="yes" />
+  </windowRules>
+
+  <snapping>
+    <range>20</range>
+    <top>yes</top>
+    <bottom>yes</bottom>
+    <left>yes</left>
+    <right>yes</right>
+  </snapping>
+
+  <keyboard>
+    <default />
+    <!-- Window cycling -->
+    <keybind key="A-Tab">
+      <action name="NextWindow" />
+    </keybind>
+    <keybind key="A-S-Tab">
+      <action name="PreviousWindow" />
+    </keybind>
+
+    <!-- Window management -->
+    <keybind key="A-F4">
+      <action name="Close" />
+    </keybind>
+    <keybind key="W-q">
+      <action name="Close" />
+    </keybind>
+    <keybind key="W-m">
+      <action name="ToggleMaximize" />
+    </keybind>
+    <keybind key="W-Down">
+      <action name="Iconify" />
+    </keybind>
+    <keybind key="W-Up">
+      <action name="Maximize" />
+    </keybind>
+
+    <!-- Application launchers and menu -->
+    <keybind key="W-Return">
+      <action name="Execute" command="foot" />
+    </keybind>
+    <keybind key="W-space">
+      <action name="ShowMenu" menu="root-menu" />
+    </keybind>
+    <keybind key="Super_L">
+      <action name="ShowMenu" menu="root-menu" />
+    </keybind>
+  </keyboard>
+
+  <mouse>
+    <default />
+    <!-- Titlebar touch & mouse window controls -->
+    <context name="Title">
+      <mousebind button="Left" action="Press">
+        <action name="Focus" />
+        <action name="Raise" />
+      </mousebind>
+      <mousebind button="Left" action="Drag">
+        <action name="Move" />
+      </mousebind>
+      <mousebind button="Left" action="DoubleClick">
+        <action name="ToggleMaximize" />
+      </mousebind>
+      <mousebind button="Right" action="Click">
+        <action name="ShowMenu" menu="client-menu" />
+      </mousebind>
+    </context>
+
+    <!-- Titlebar window control buttons for touch tapping -->
+    <context name="Close">
+      <mousebind button="Left" action="Click">
+        <action name="Close" />
+      </mousebind>
+    </context>
+
+    <context name="Maximize">
+      <mousebind button="Left" action="Click">
+        <action name="ToggleMaximize" />
+      </mousebind>
+    </context>
+
+    <context name="Iconify">
+      <mousebind button="Left" action="Click">
+        <action name="Iconify" />
+      </mousebind>
+    </context>
+
+    <!-- Window borders for resize gestures -->
+    <context name="Border">
+      <mousebind button="Left" action="Drag">
+        <action name="Resize" />
+      </mousebind>
+    </context>
+
+    <!-- Root desktop click context -->
+    <context name="Root">
+      <mousebind button="Right" action="Click">
+        <action name="ShowMenu" menu="root-menu" />
+      </mousebind>
+    </context>
+  </mouse>
+</labwc_config>

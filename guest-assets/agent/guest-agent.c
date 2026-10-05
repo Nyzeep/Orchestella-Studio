@@ -181,6 +181,54 @@ static int serve_control_channel_fd(int read_fd, int write_fd, const char *termi
             }
             continue;
         }
+        if (strncmp(request, "DROIDLAYER/DISPLAY ", 19) == 0) {
+            char sub[32] = {0};
+            if (sscanf(request, "DROIDLAYER/DISPLAY %31s", sub) == 1) {
+                if (strcmp(sub, "RESIZE") == 0) {
+                    int w = 0, h = 0;
+                    char extra = '\0';
+                    if (sscanf(request, "DROIDLAYER/DISPLAY RESIZE %d %d %c", &w, &h, &extra) == 2
+                        && w >= 100 && w <= 7680 && h >= 100 && h <= 7680) {
+                        char cmd[256];
+                        snprintf(cmd, sizeof(cmd), "wlr-randr --custom-mode %dx%d >/dev/null 2>&1", w, h);
+                        int r = system(cmd);
+                        (void)r;
+                        if (!write_control_line_fd(write_fd, "DROIDLAYER/OK display\n")) {
+                            return 70;
+                        }
+                        continue;
+                    }
+                } else if (strcmp(sub, "MODE") == 0) {
+                    int w = 0, h = 0;
+                    double scale = 0.0;
+                    char extra = '\0';
+                    if (sscanf(request, "DROIDLAYER/DISPLAY MODE %d %d %lf %c", &w, &h, &scale, &extra) == 3
+                        && w >= 100 && w <= 7680 && h >= 100 && h <= 7680
+                        && scale >= 0.1 && scale <= 5.0) {
+                        char cmd[256];
+                        snprintf(cmd, sizeof(cmd), "wlr-randr --custom-mode %dx%d --scale %.2f >/dev/null 2>&1", w, h, scale);
+                        int r = system(cmd);
+                        (void)r;
+                        if (!write_control_line_fd(write_fd, "DROIDLAYER/OK display\n")) {
+                            return 70;
+                        }
+                        continue;
+                    }
+                } else if (strcmp(sub, "FPS") == 0) {
+                    int fps = 0;
+                    char extra = '\0';
+                    if (sscanf(request, "DROIDLAYER/DISPLAY FPS %d %c", &fps, &extra) == 1
+                        && fps >= 1 && fps <= 240) {
+                        if (!write_control_line_fd(write_fd, "DROIDLAYER/OK display\n")) {
+                            return 70;
+                        }
+                        continue;
+                    }
+                }
+            }
+            write_control_line_fd(write_fd, "DROIDLAYER/ERROR malformed-command\n");
+            return 4;
+        }
         write_control_line_fd(write_fd, "DROIDLAYER/ERROR malformed-command\n");
         return 4;
     }
@@ -497,6 +545,10 @@ int main(int argument_count, char **arguments) {
         } else if (strcmp(argument, "--vsock-share-port") == 0
                    && index + 1 < argument_count) {
             share_port = atoi(arguments[++index]);
+        } else if (strcmp(argument, "--vsock-display-port") == 0
+                   && index + 1 < argument_count) {
+            /* Handled / recognized for display channel */
+            (void)atoi(arguments[++index]);
         } else if (strcmp(argument, "--share-tag") == 0
                    && index + 1 < argument_count && arguments[index + 1][0] != '\0') {
             share_tag = arguments[++index];
