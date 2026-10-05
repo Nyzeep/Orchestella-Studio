@@ -19,8 +19,8 @@ public final class PhantomProcessKillerGuide {
     public static void showDialog(Context context) {
         String message = "【什么是幻影进程查杀（Phantom Process Killer）？】\n"
                 + "Android 12 及更高版本默认限制后台应用派生的子进程总数最多为 32 个，且当子进程 CPU 突发占用较高时会被系统强行终止。\n\n"
-                + "【DroidLayer 的防御架构】\n"
-                + "DroidLayer 采用宿主进程收敛设计：所有的容器、编译和系统进程均运行于 Linux Guest 内核内部，而非 Android 应用沙箱层派生的子进程，天然规避了大多数查杀风险。\n\n"
+                + "【Orchestella Studio 的防御架构】\n"
+                + "Orchestella Studio 采用宿主进程收敛设计：所有的容器、编译和系统进程均运行于 Linux Guest 内核内部，而非 Android 应用沙箱层派生的子进程，天然规避了大多数查杀风险。\n\n"
                 + "【彻底解除限制指引】\n"
                 + "1. Android 14+ 官方开关：进入系统「设置」→「开发者选项」→ 开启「停用子进程限制（Disable child process restrictions）」即可。\n\n"
                 + "2. Android 12/13/14 ADB 命令（一键解除 32 进程上限）：\n"

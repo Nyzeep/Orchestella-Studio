@@ -126,7 +126,7 @@ public class DroidLayerForegroundService extends Service {
         if (wakeLock == null) {
             PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
             if (pm != null) {
-                wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "droidlayer:runtime_wakelock");
+                wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "orchestella:runtime_wakelock");
                 wakeLock.setReferenceCounted(false);
             }
         }
@@ -145,7 +145,7 @@ public class DroidLayerForegroundService extends Service {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
                     CHANNEL_ID,
-                    "DroidLayer 运行中实例状态",
+                    "Orchestella 运行中实例状态",
                     NotificationManager.IMPORTANCE_LOW);
             channel.setDescription("持续展示当前运行态 Linux 实例、执行徽章与电池策略");
             NotificationManager manager = getSystemService(NotificationManager.class);

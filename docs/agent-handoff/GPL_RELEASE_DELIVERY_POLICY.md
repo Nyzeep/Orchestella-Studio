@@ -85,7 +85,7 @@ The delivery model and its intended custody roles are selected, but no first
 release is authorized:
 
 - approved future primary public URL:
-  https://github.com/Nyzeep/DroidLayer;
+  https://github.com/Nyzeep/Orchestella-Studio;
 - Release Maintainer and retention owner: Nyzeep, explicitly designated by
   the user rather than inferred from a Git identity;
 - primary public delivery: GitHub Releases, with a fixed tag and matching

@@ -43,7 +43,7 @@ public final class GitHubUpdateCheckerTest {
                 + "  \"tag_name\": \"v0.2.0\",\n"
                 + "  \"name\": \"v0.2.0 Release\",\n"
                 + "  \"body\": \"Ticket 35 hardening features\",\n"
-                + "  \"html_url\": \"https://github.com/nyzeep/DroidLayer/releases/tag/v0.2.0\"\n"
+                + "  \"html_url\": \"https://github.com/Nyzeep/Orchestella-Studio/releases/tag/v0.2.0\"\n"
                 + "}";
 
         try (ServerSocket server = new ServerSocket(0)) {
@@ -62,7 +62,7 @@ public final class GitHubUpdateCheckerTest {
             assertEquals(GitHubUpdateChecker.Status.UPDATE_AVAILABLE, result.status());
             assertEquals("v0.2.0", result.latestVersion());
             assertEquals("Ticket 35 hardening features", result.releaseNotes());
-            assertEquals("https://github.com/nyzeep/DroidLayer/releases/tag/v0.2.0", result.releaseUrl());
+            assertEquals("https://github.com/Nyzeep/Orchestella-Studio/releases/tag/v0.2.0", result.releaseUrl());
         }
     }
 
@@ -71,7 +71,7 @@ public final class GitHubUpdateCheckerTest {
         String json = "{\n"
                 + "  \"tag_name\": \"v0.1.0\",\n"
                 + "  \"body\": \"Release notes\",\n"
-                + "  \"html_url\": \"https://github.com/nyzeep/DroidLayer/releases/tag/v0.1.0\"\n"
+                + "  \"html_url\": \"https://github.com/Nyzeep/Orchestella-Studio/releases/tag/v0.1.0\"\n"
                 + "}";
 
         try (ServerSocket server = new ServerSocket(0)) {

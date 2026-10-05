@@ -53,7 +53,7 @@ public class TerminalActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT));
         setContentView(layout);
 
-        append("DroidLayer terminal (" + instanceId + ")\n");
+        append("Orchestella Studio terminal (" + instanceId + ")\n");
         if (session == null) {
             // The host process was restarted: no live session survives it.
             append("[no live session for instance " + instanceId + "]\n");

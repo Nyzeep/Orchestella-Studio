@@ -18,8 +18,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public final class AndroidNotificationAdapter implements BridgeControl.Notification {
     public static final String CHANNEL_ID = "droidlayer_guest_notifications";
-    public static final String CHANNEL_NAME = "DroidLayer Guest Notifications";
-    public static final String CHANNEL_DESCRIPTION = "Notifications from DroidLayer guest instances";
+    public static final String CHANNEL_NAME = "Orchestella Guest Notifications";
+    public static final String CHANNEL_DESCRIPTION = "Notifications from Orchestella guest instances";
 
     /** Strategy-neutral seam for actual notification display. */
     public interface NotificationPoster {
