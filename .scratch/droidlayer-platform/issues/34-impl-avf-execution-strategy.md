@@ -1,9 +1,9 @@
 # 34: AVF 执行策略——同一契约跑硬件虚拟化
 
 Type: implementation
-Status: ready-for-review
+Status: completed
 
-> **评审轮记录**：2026-10-05 独立复审裁定 CHANGES_REQUESTED（`docs/reports/reviews/34/review-report.zh-CN.md`）；同日整改轮完成——架构解耦（中立 `ExecutionSession` + 注册表，UX 层零策略类型/分支）、`reflectGuestStopped` 真机数值面、`AvfLaunchSpec.cpuCount` 装配、onDestroy/isFinishing 与连接防卫、`Session.socket` 句柄恢复、MainActivity 去重（详见实施报告 §9）。全量本地测试复跑通过（app 单测 40 例 37 绿，3 例既有失败为票 33 范围）。提请二次复审。
+> **评审轮记录**：2026-10-05 独立复审裁定 CHANGES_REQUESTED（`docs/reports/reviews/34/review-report.zh-CN.md`）；同日整改轮完成（架构解耦、真机数值面、vCPU、连接防卫、句柄恢复、UI去重），全量测试复跑通过；二次复查裁定 APPROVE。
 
 ## What to build
 
