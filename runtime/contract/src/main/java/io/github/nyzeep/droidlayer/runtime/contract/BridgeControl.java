@@ -46,7 +46,7 @@ public final class BridgeControl {
      * their own seams before this method is called.
      */
     public static Result dispatch(String requestLine) {
-        return dispatchInternal(requestLine, null, null, null, null);
+        return dispatchInternal(requestLine, null, null, null, null, null);
     }
 
     /**
@@ -57,7 +57,7 @@ public final class BridgeControl {
         if (terminal == null) {
             throw new IllegalArgumentException("terminal");
         }
-        return dispatchInternal(requestLine, terminal, null, null, null);
+        return dispatchInternal(requestLine, terminal, null, null, null, null);
     }
 
     /**
@@ -67,7 +67,7 @@ public final class BridgeControl {
         if (power == null) {
             throw new IllegalArgumentException("power");
         }
-        return dispatchInternal(requestLine, null, power, null, null);
+        return dispatchInternal(requestLine, null, power, null, null, null);
     }
 
     /**
@@ -80,7 +80,7 @@ public final class BridgeControl {
         if (power == null) {
             throw new IllegalArgumentException("power");
         }
-        return dispatchInternal(requestLine, terminal, power, null, null);
+        return dispatchInternal(requestLine, terminal, power, null, null, null);
     }
 
     /**
@@ -90,7 +90,7 @@ public final class BridgeControl {
         if (notification == null) {
             throw new IllegalArgumentException("notification");
         }
-        return dispatchInternal(requestLine, null, null, notification, null);
+        return dispatchInternal(requestLine, null, null, notification, null, null);
     }
 
     /**
@@ -100,7 +100,17 @@ public final class BridgeControl {
         if (urlOpener == null) {
             throw new IllegalArgumentException("urlOpener");
         }
-        return dispatchInternal(requestLine, null, null, null, urlOpener);
+        return dispatchInternal(requestLine, null, null, null, urlOpener, null);
+    }
+
+    /**
+     * Dispatches a control request that operates on the display management seam.
+     */
+    public static Result dispatchDisplay(String requestLine, Display display) {
+        if (display == null) {
+            throw new IllegalArgumentException("display");
+        }
+        return dispatchInternal(requestLine, null, null, null, null, display);
     }
 
     /**
@@ -111,7 +121,12 @@ public final class BridgeControl {
             throw new IllegalArgumentException("seams");
         }
         return dispatchInternal(
-                requestLine, seams.terminal, seams.power, seams.notification, seams.urlOpener);
+                requestLine,
+                seams.terminal,
+                seams.power,
+                seams.notification,
+                seams.urlOpener,
+                seams.display);
     }
 
     /**
@@ -123,7 +138,20 @@ public final class BridgeControl {
             Power power,
             Notification notification,
             UrlOpener urlOpener) {
-        return dispatchInternal(requestLine, terminal, power, notification, urlOpener);
+        return dispatchInternal(requestLine, terminal, power, notification, urlOpener, null);
+    }
+
+    /**
+     * Dispatches a control request across all supported bridge seams including display control.
+     */
+    public static Result dispatch(
+            String requestLine,
+            Terminal terminal,
+            Power power,
+            Notification notification,
+            UrlOpener urlOpener,
+            Display display) {
+        return dispatchInternal(requestLine, terminal, power, notification, urlOpener, display);
     }
 
     private static Result dispatchInternal(
@@ -131,7 +159,8 @@ public final class BridgeControl {
             Terminal terminal,
             Power power,
             Notification notification,
-            UrlOpener urlOpener) {
+            UrlOpener urlOpener,
+            Display display) {
         if ("DROIDLAYER/PING\n".equals(requestLine) || "DROIDLAYER/PING\r\n".equals(requestLine)) {
             return Result.accepted("DROIDLAYER/PONG 1\n");
         }
@@ -183,6 +212,30 @@ public final class BridgeControl {
                     ? Result.accepted("DROIDLAYER/OK open-url\n")
                     : Result.rejected("DROIDLAYER/ERROR open-url-unavailable\n");
         }
+        if (isDisplayCommand(requestLine)) {
+            DisplayRequest req = parseDisplay(requestLine);
+            if (req == null) {
+                return Result.rejected("DROIDLAYER/ERROR malformed-command\n");
+            }
+            if (display == null) {
+                return Result.rejected("DROIDLAYER/ERROR display-unavailable\n");
+            }
+            boolean success = false;
+            switch (req.type) {
+                case MODE:
+                    success = display.setMode(req.width, req.height, req.scale);
+                    break;
+                case RESIZE:
+                    success = display.resize(req.width, req.height);
+                    break;
+                case FPS:
+                    success = display.setFps(req.fps);
+                    break;
+            }
+            return success
+                    ? Result.accepted("DROIDLAYER/OK display\n")
+                    : Result.rejected("DROIDLAYER/ERROR display-unavailable\n");
+        }
         return Result.rejected("DROIDLAYER/ERROR malformed-command\n");
     }
 
@@ -220,6 +273,15 @@ public final class BridgeControl {
         return requestLine.startsWith("DROIDLAYER/OPEN-URL ")
                 || "DROIDLAYER/OPEN-URL\n".equals(requestLine)
                 || "DROIDLAYER/OPEN-URL\r\n".equals(requestLine);
+    }
+
+    public static boolean isDisplayCommand(String requestLine) {
+        if (requestLine == null) {
+            return false;
+        }
+        return requestLine.startsWith("DROIDLAYER/DISPLAY ")
+                || "DROIDLAYER/DISPLAY\n".equals(requestLine)
+                || "DROIDLAYER/DISPLAY\r\n".equals(requestLine);
     }
 
     private static PowerRequest parsePower(String requestLine) {
@@ -335,6 +397,68 @@ public final class BridgeControl {
         return new OpenUrlRequest(url);
     }
 
+    private static DisplayRequest parseDisplay(String requestLine) {
+        if (requestLine == null || !requestLine.endsWith("\n") || requestLine.length() > MAX_PAYLOAD_CHARS) {
+            return null;
+        }
+        String line = requestLine.substring(0, requestLine.length() - 1);
+        if (line.endsWith("\r")) {
+            line = line.substring(0, line.length() - 1);
+        }
+        String[] fields = line.split(" ", -1);
+        if (fields.length < 2 || !"DROIDLAYER/DISPLAY".equals(fields[0])) {
+            return null;
+        }
+        String subcommand = fields[1];
+        if ("MODE".equals(subcommand)) {
+            if (fields.length != 5) {
+                return null;
+            }
+            try {
+                int width = Integer.parseInt(fields[2]);
+                int height = Integer.parseInt(fields[3]);
+                double scale = Double.parseDouble(fields[4]);
+                if (width < 100 || width > 7680 || height < 100 || height > 7680) {
+                    return null;
+                }
+                if (Double.isNaN(scale) || Double.isInfinite(scale) || scale < 0.1 || scale > 5.0) {
+                    return null;
+                }
+                return new DisplayRequest(DisplayCommandType.MODE, width, height, scale, 0);
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        } else if ("RESIZE".equals(subcommand)) {
+            if (fields.length != 4) {
+                return null;
+            }
+            try {
+                int width = Integer.parseInt(fields[2]);
+                int height = Integer.parseInt(fields[3]);
+                if (width < 100 || width > 7680 || height < 100 || height > 7680) {
+                    return null;
+                }
+                return new DisplayRequest(DisplayCommandType.RESIZE, width, height, 0.0, 0);
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        } else if ("FPS".equals(subcommand)) {
+            if (fields.length != 3) {
+                return null;
+            }
+            try {
+                int fps = Integer.parseInt(fields[2]);
+                if (fps < 1 || fps > 240) {
+                    return null;
+                }
+                return new DisplayRequest(DisplayCommandType.FPS, 0, 0, 0.0, fps);
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+        return null;
+    }
+
     /** Adapter for strategy-neutral power management actions (shutdown/poweroff). */
     @FunctionalInterface
     public interface Power {
@@ -359,34 +483,79 @@ public final class BridgeControl {
         boolean openUrl(String url);
     }
 
+    /** Adapter for strategy-neutral display mode, resize, and frame rate management. */
+    public interface Display {
+        boolean setMode(int width, int height, double scale);
+        boolean resize(int width, int height);
+        boolean setFps(int fps);
+
+        /** Adapts a {@link DisplayControl} to the bridge display seam. */
+        static Display from(DisplayControl displayControl) {
+            if (displayControl == null) {
+                throw new IllegalArgumentException("displayControl");
+            }
+            return new Display() {
+                @Override
+                public boolean setMode(int width, int height, double scale) {
+                    return displayControl.resizeDisplay(width, height) && displayControl.updateScale(scale);
+                }
+
+                @Override
+                public boolean resize(int width, int height) {
+                    return displayControl.resizeDisplay(width, height);
+                }
+
+                @Override
+                public boolean setFps(int fps) {
+                    return displayControl.updateTargetFps(fps);
+                }
+            };
+        }
+    }
+
     /** Aggregation of adapter seams for unified Bridge dispatching. */
     public static final class Seams {
         private final Terminal terminal;
         private final Power power;
         private final Notification notification;
         private final UrlOpener urlOpener;
+        private final Display display;
 
         public Seams(
                 Terminal terminal,
                 Power power,
                 Notification notification,
                 UrlOpener urlOpener) {
+            this(terminal, power, notification, urlOpener, null);
+        }
+
+        public Seams(
+                Terminal terminal,
+                Power power,
+                Notification notification,
+                UrlOpener urlOpener,
+                Display display) {
             this.terminal = terminal;
             this.power = power;
             this.notification = notification;
             this.urlOpener = urlOpener;
+            this.display = display;
         }
 
         public static Seams of(Notification notification) {
-            return new Seams(null, null, notification, null);
+            return new Seams(null, null, notification, null, null);
         }
 
         public static Seams of(UrlOpener urlOpener) {
-            return new Seams(null, null, null, urlOpener);
+            return new Seams(null, null, null, urlOpener, null);
+        }
+
+        public static Seams of(Display display) {
+            return new Seams(null, null, null, null, display);
         }
 
         public static Seams of(Notification notification, UrlOpener urlOpener) {
-            return new Seams(null, null, notification, urlOpener);
+            return new Seams(null, null, notification, urlOpener, null);
         }
 
         public static Seams of(
@@ -394,7 +563,58 @@ public final class BridgeControl {
                 Power power,
                 Notification notification,
                 UrlOpener urlOpener) {
-            return new Seams(terminal, power, notification, urlOpener);
+            return new Seams(terminal, power, notification, urlOpener, null);
+        }
+
+        public static Seams of(
+                Terminal terminal,
+                Power power,
+                Notification notification,
+                UrlOpener urlOpener,
+                Display display) {
+            return new Seams(terminal, power, notification, urlOpener, display);
+        }
+
+        public Terminal terminal() {
+            return terminal;
+        }
+
+        public Power power() {
+            return power;
+        }
+
+        public Notification notification() {
+            return notification;
+        }
+
+        public UrlOpener urlOpener() {
+            return urlOpener;
+        }
+
+        public Display display() {
+            return display;
+        }
+    }
+
+    private enum DisplayCommandType {
+        MODE,
+        RESIZE,
+        FPS
+    }
+
+    private static final class DisplayRequest {
+        private final DisplayCommandType type;
+        private final int width;
+        private final int height;
+        private final double scale;
+        private final int fps;
+
+        private DisplayRequest(DisplayCommandType type, int width, int height, double scale, int fps) {
+            this.type = type;
+            this.width = width;
+            this.height = height;
+            this.scale = scale;
+            this.fps = fps;
         }
     }
 
