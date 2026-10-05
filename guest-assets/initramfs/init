@@ -82,6 +82,17 @@ install_official_alpine_busybox_init_fallback() {
 #!/bin/sh
 set -eu
 
+kernel_argument() {
+    key="$1"
+    command_line="$(cat /proc/cmdline)"
+    for argument in $command_line; do
+        case "$argument" in
+            "$key"=*) printf '%s\n' "${argument#*=}"; return 0 ;;
+        esac
+    done
+    return 1
+}
+
 mkdir -p /mnt/downloads /media/downloads
 mount -t 9p -o trans=virtio,version=9p2000.L,ro downloads /mnt/downloads 2>/dev/null || true
 
@@ -89,9 +100,28 @@ mount -t 9p -o trans=virtio,version=9p2000.L,ro downloads /mnt/downloads 2>/dev/
 if [ -x /sbin/resize2fs ]; then
     /sbin/resize2fs /dev/vda 2>/dev/null || true
 elif [ -x /usr/sbin/resize2fs ]; then
-    /usr/sbin/resize2fs /dev/vda 2>/dev/null || true
+    /sbin/resize2fs /dev/vda 2>/dev/null || true
 elif command -v resize2fs >/dev/null 2>&1; then
     resize2fs /dev/vda 2>/dev/null || true
+fi
+
+# AVF data plane (Ticket 37): the vsock ports in the cmdline switch the agent
+# to serving mode — the VM may only listen, the owner app connects. The 9p
+# rendezvous connection feeds a trans=fd mount handled inside the agent.
+VSOCK_CONTROL="$(kernel_argument droidlayer.vsock_control_port || true)"
+if [ -n "$VSOCK_CONTROL" ]; then
+    VSOCK_TERMINAL="$(kernel_argument droidlayer.vsock_terminal_port || true)"
+    VSOCK_SHARE="$(kernel_argument droidlayer.vsock_9p_port || true)"
+    set -- --vsock-control-port "$VSOCK_CONTROL"
+    set -- "$@" --terminal-device /dev/hvc0
+    if [ -n "$VSOCK_TERMINAL" ]; then
+        set -- "$@" --vsock-terminal-port "$VSOCK_TERMINAL"
+    fi
+    if [ -n "$VSOCK_SHARE" ]; then
+        set -- "$@" --vsock-share-port "$VSOCK_SHARE" \
+            --share-tag downloads --share-mount /mnt/downloads
+    fi
+    exec /usr/sbin/droidlayer-guest-agent --token-file /etc/droidlayer/bridge.token "$@"
 fi
 
 [ -c /dev/droidlayer-bridge ] || exit 70
@@ -129,8 +159,38 @@ install_official_debian_systemd_flavor() {
 #!/bin/sh
 set -eu
 
+kernel_argument() {
+    key="$1"
+    command_line="$(cat /proc/cmdline)"
+    for argument in $command_line; do
+        case "$argument" in
+            "$key"=*) printf '%s\n' "${argument#*=}"; return 0 ;;
+        esac
+    done
+    return 1
+}
+
 mkdir -p /mnt/downloads /media/downloads
 mount -t 9p -o trans=virtio,version=9p2000.L,ro downloads /mnt/downloads 2>/dev/null || true
+
+# AVF data plane (Ticket 37): the vsock ports in the cmdline switch the agent
+# to serving mode — the VM may only listen, the owner app connects. The 9p
+# rendezvous connection feeds a trans=fd mount handled inside the agent.
+VSOCK_CONTROL="$(kernel_argument droidlayer.vsock_control_port || true)"
+if [ -n "$VSOCK_CONTROL" ]; then
+    VSOCK_TERMINAL="$(kernel_argument droidlayer.vsock_terminal_port || true)"
+    VSOCK_SHARE="$(kernel_argument droidlayer.vsock_9p_port || true)"
+    set -- --vsock-control-port "$VSOCK_CONTROL"
+    set -- "$@" --terminal-device /dev/hvc0
+    if [ -n "$VSOCK_TERMINAL" ]; then
+        set -- "$@" --vsock-terminal-port "$VSOCK_TERMINAL"
+    fi
+    if [ -n "$VSOCK_SHARE" ]; then
+        set -- "$@" --vsock-share-port "$VSOCK_SHARE" \
+            --share-tag downloads --share-mount /mnt/downloads
+    fi
+    exec /usr/sbin/droidlayer-guest-agent --token-file /etc/droidlayer/bridge.token "$@"
+fi
 
 [ -c /dev/droidlayer-bridge ] || exit 70
 [ -c /dev/droidlayer-terminal ] || exit 70
