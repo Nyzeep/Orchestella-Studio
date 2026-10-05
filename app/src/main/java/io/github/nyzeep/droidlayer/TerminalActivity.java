@@ -38,6 +38,31 @@ public class TerminalActivity extends Activity {
 
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
+
+        LinearLayout topBar = new LinearLayout(this);
+        topBar.setOrientation(LinearLayout.HORIZONTAL);
+        topBar.setPadding(16, 12, 16, 12);
+        topBar.setBackgroundColor(0xFF222222);
+
+        TextView titleView = new TextView(this);
+        titleView.setText("Orchestella Terminal (" + instanceId + ")");
+        titleView.setTextColor(0xFFCCCCCC);
+        titleView.setTextSize(13f);
+        topBar.addView(titleView, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        android.widget.Button btnSwitchDesktop = new android.widget.Button(this);
+        btnSwitchDesktop.setText(R.string.terminal_open_desktop);
+        btnSwitchDesktop.setTextSize(12f);
+        btnSwitchDesktop.setOnClickListener(v -> {
+            DualModeNavigation.navigateToDesktop(TerminalActivity.this, instanceId, bridgeToken);
+        });
+        topBar.addView(btnSwitchDesktop, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        layout.addView(topBar, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
         transcript = new TextView(this);
         transcript.setTypeface(android.graphics.Typeface.MONOSPACE);
         transcript.setTextIsSelectable(true);

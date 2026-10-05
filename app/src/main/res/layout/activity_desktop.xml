@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/desktop_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000"
+    android:fitsSystemWindows="false">
+
+    <!-- Layer 1: Hardware-rendered Wayland SurfaceView -->
+    <io.github.nyzeep.droidlayer.WaylandSurfaceView
+        android:id="@+id/wayland_surface_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Layer 2: Top Floating Bar with Dual Mode Switch & HUD Overlay -->
+    <LinearLayout
+        android:id="@+id/desktop_top_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:orientation="horizontal"
+        android:padding="8dp">
+
+        <Button
+            android:id="@+id/btn_switch_terminal"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:text="@string/desktop_open_terminal"
+            android:textSize="12sp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp" />
+
+        <LinearLayout
+            android:id="@+id/desktop_hud_overlay"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:orientation="horizontal"
+            android:background="#99000000"
+            android:clickable="true"
+            android:focusable="true"
+            android:padding="6dp">
+
+            <TextView
+                android:id="@+id/desktop_hud_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="#00FF66"
+                android:textSize="12sp"
+                android:typeface="monospace"
+                android:text="60 FPS | 1920x1080 @ 1.0x | CONNECTED" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Layer 3: Floating / Docked Virtual Key Bar -->
+    <HorizontalScrollView
+        android:id="@+id/virtual_key_bar_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="#CC1E1E1E"
+        android:padding="4dp">
+
+        <LinearLayout
+            android:id="@+id/virtual_key_bar_layout"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btn_key_esc"
+                android:layout_width="56dp"
+                android:layout_height="40dp"
+                android:text="@string/key_esc"
+                android:textSize="11sp" />
+
+            <Button
+                android:id="@+id/btn_key_tab"
+                android:layout_width="56dp"
+                android:layout_height="40dp"
+                android:text="@string/key_tab"
+                android:textSize="11sp" />
+
+            <Button
+                android:id="@+id/btn_key_ctrl"
+                android:layout_width="56dp"
+                android:layout_height="40dp"
+                android:text="@string/key_ctrl"
+                android:textSize="11sp" />
+
+            <Button
+                android:id="@+id/btn_key_alt"
+                android:layout_width="56dp"
+                android:layout_height="40dp"
+                android:text="@string/key_alt"
+                android:textSize="11sp" />
+
+            <Button
+                android:id="@+id/btn_key_shift"
+                android:layout_width="56dp"
+                android:layout_height="40dp"
+                android:text="@string/key_shift"
+                android:textSize="11sp" />
+
+            <Button
+                android:id="@+id/btn_key_super"
+                android:layout_width="56dp"
+                android:layout_height="40dp"
+                android:text="@string/key_super"
+                android:textSize="11sp" />
+
+            <Button
+                android:id="@+id/btn_key_up"
+                android:layout_width="48dp"
+                android:layout_height="40dp"
+                android:text="@string/key_up"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/btn_key_down"
+                android:layout_width="48dp"
+                android:layout_height="40dp"
+                android:text="@string/key_down"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/btn_key_left"
+                android:layout_width="48dp"
+                android:layout_height="40dp"
+                android:text="@string/key_left"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/btn_key_right"
+                android:layout_width="48dp"
+                android:layout_height="40dp"
+                android:text="@string/key_right"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/btn_toggle_ime"
+                android:layout_width="48dp"
+                android:layout_height="40dp"
+                android:text="@string/key_ime"
+                android:textSize="14sp" />
+        </LinearLayout>
+    </HorizontalScrollView>
+
+</FrameLayout>
