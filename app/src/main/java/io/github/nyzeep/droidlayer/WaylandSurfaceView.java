@@ -1,9 +1,13 @@
 package io.github.nyzeep.droidlayer;
 
 import android.content.Context;
+import android.text.InputType;
 import android.util.AttributeSet;
+import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputConnection;
 import io.github.nyzeep.droidlayer.runtime.contract.DisplayControl;
 import io.github.nyzeep.droidlayer.runtime.contract.WaylandChannel;
 
@@ -21,6 +25,8 @@ import io.github.nyzeep.droidlayer.runtime.contract.WaylandChannel;
 public class WaylandSurfaceView extends SurfaceView implements SurfaceHolder.Callback {
 
     private WaylandSurfaceController controller;
+    private TouchGestureMapper touchGestureMapper;
+    private ImeBridgeInputConnection imeBridge;
 
     public WaylandSurfaceView(Context context) {
         super(context);
@@ -44,6 +50,12 @@ public class WaylandSurfaceView extends SurfaceView implements SurfaceHolder.Cal
     }
 
     private void init(WaylandSurfaceController customController) {
+        try {
+            setFocusable(true);
+            setFocusableInTouchMode(true);
+        } catch (Exception ignored) {
+        }
+
         SurfaceHolder holder = null;
         try {
             holder = getHolder();
@@ -65,12 +77,48 @@ public class WaylandSurfaceView extends SurfaceView implements SurfaceHolder.Cal
         return controller;
     }
 
+    public TouchGestureMapper getTouchGestureMapper() {
+        return touchGestureMapper;
+    }
+
+    public void setTouchGestureMapper(TouchGestureMapper touchGestureMapper) {
+        this.touchGestureMapper = touchGestureMapper;
+    }
+
+    public ImeBridgeInputConnection getImeBridgeInputConnection() {
+        return imeBridge;
+    }
+
+    public void setImeBridgeInputConnection(ImeBridgeInputConnection imeBridge) {
+        this.imeBridge = imeBridge;
+    }
+
     public void bind(DisplayControl displayControl, WaylandChannel waylandChannel) {
         controller.bind(displayControl, waylandChannel);
+        if (waylandChannel != null) {
+            int cw = (displayControl != null && displayControl.currentMode() != null)
+                    ? displayControl.currentMode().width() : 1920;
+            int ch = (displayControl != null && displayControl.currentMode() != null)
+                    ? displayControl.currentMode().height() : 1080;
+            int vw = controller.getRenderer() != null ? controller.getRenderer().getViewportWidth() : 1920;
+            int vh = controller.getRenderer() != null ? controller.getRenderer().getViewportHeight() : 1080;
+            if (vw <= 0) {
+                vw = 1920;
+            }
+            if (vh <= 0) {
+                vh = 1080;
+            }
+            ViewportAspectCalculator.ViewportMapping mapping =
+                    ViewportAspectCalculator.calculate(cw, ch, vw, vh);
+            this.touchGestureMapper = new TouchGestureMapper(waylandChannel, mapping);
+            this.imeBridge = new ImeBridgeInputConnection(waylandChannel);
+        }
     }
 
     public void unbind() {
         controller.unbind();
+        this.touchGestureMapper = null;
+        this.imeBridge = null;
     }
 
     public void onResume() {
@@ -94,6 +142,27 @@ public class WaylandSurfaceView extends SurfaceView implements SurfaceHolder.Cal
     }
 
     @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        if (touchGestureMapper != null && touchGestureMapper.onTouchEvent(event)) {
+            return true;
+        }
+        try {
+            return super.onTouchEvent(event);
+        } catch (Exception fallback) {
+            return false;
+        }
+    }
+
+    @Override
+    public InputConnection onCreateInputConnection(EditorInfo outAttrs) {
+        if (outAttrs != null) {
+            outAttrs.inputType = InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE;
+            outAttrs.imeOptions = EditorInfo.IME_ACTION_NONE | EditorInfo.IME_FLAG_NO_FULLSCREEN;
+        }
+        return imeBridge;
+    }
+
+    @Override
     public void surfaceCreated(SurfaceHolder holder) {
         controller.onSurfaceCreated(holder);
     }
@@ -101,6 +170,14 @@ public class WaylandSurfaceView extends SurfaceView implements SurfaceHolder.Cal
     @Override
     public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
         controller.onSurfaceChanged(holder, format, width, height);
+        if (touchGestureMapper != null && width > 0 && height > 0) {
+            int cw = (controller.getDisplayControl() != null && controller.getDisplayControl().currentMode() != null)
+                    ? controller.getDisplayControl().currentMode().width() : 1920;
+            int ch = (controller.getDisplayControl() != null && controller.getDisplayControl().currentMode() != null)
+                    ? controller.getDisplayControl().currentMode().height() : 1080;
+            touchGestureMapper.setViewportMapping(
+                    ViewportAspectCalculator.calculate(cw, ch, width, height));
+        }
     }
 
     @Override
