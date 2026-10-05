@@ -1,7 +1,7 @@
 # 40: 移动端触控手势映射、虚拟输入条与 Android IME 文本注入桥接
 
 Type: implementation  
-Status: ready-for-agent  
+Status: ready-for-review  
 
 ## What to build
 
@@ -31,11 +31,11 @@ Status: ready-for-agent
 
 ## Acceptance criteria
 
-- [ ] 触控手势映射器精准识别单指点击、长按、移动、双指右键与双指滚轮，手势误触率 $< 3\%$；
-- [ ] 虚拟快捷键栏完整展示，修饰符单次锁存与持续锁定状态机切换准确，`Ctrl+C`、`Ctrl+V`、`Alt+Tab` 等经典组合键准确生效；
-- [ ] 弹出 Android 软键盘时，桌面视图能自适应平移或保持焦点区域可视，软键盘不遮挡输入光标；
-- [ ] 宿主输入法打出的中文汉字与特殊符号通过 `commitText` 能够准确无误地呈现在 Guest 文本编辑器中；
-- [ ] 触控与文本事件序列化后可经由 `WaylandChannel` 稳定传送，无丢包与事件死锁。
+- [x] 触控手势映射器精准识别单指点击、长按、移动、双指右键与双指滚轮，手势误触率 $< 3\%$；
+- [x] 虚拟快捷键栏完整展示，修饰符单次锁存与持续锁定状态机切换准确，`Ctrl+C`、`Ctrl+V`、`Alt+Tab` 等经典组合键准确生效；
+- [x] 弹出 Android 软键盘时，桌面视图能自适应平移或保持焦点区域可视，软键盘不遮挡输入光标；
+- [x] 宿主输入法打出的中文汉字与特殊符号通过 `commitText` 能够准确无误地呈现在 Guest 文本编辑器中；
+- [x] 触控与文本事件序列化后可经由 `WaylandChannel` 稳定传送，无丢包与事件死锁。
 
 ## Test strategy
 
