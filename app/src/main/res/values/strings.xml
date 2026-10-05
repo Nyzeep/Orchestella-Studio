@@ -87,4 +87,22 @@
     <string name="wizard_vendor_failure_steps">尚未检测到权限授予。不同厂商系统存在特殊的开发者限制，请按以下步骤排查：\n\n• 小米 / Redmi（HyperOS / MIUI）：必须在「开发者选项」中开启「USB 调试（安全设置）」（需要插入 SIM 卡登录小米账号）；\n• OPPO / 一加 / Realme（ColorOS）：开发者选项中请开启「禁止权限监控」，并在弹出授权对话框时点击允许；\n• vivo / iQOO（OriginOS）：在开发者选项中关闭「应用安装与调试权限校验」；\n• 华为 / 荣耀（EMUI / MagicOS）：请开启「仅充电模式下允许 ADB 调试」；\n• 替代途径：强烈建议安装 Shizuku 并通过手机自身的「无线调试」直接配对激活，免去电脑连接。</string>
     <string name="wizard_authorized_success_title">🎉 硬件加速解锁成功！</string>
     <string name="wizard_authorized_success_msg">已成功获得 MANAGE_VIRTUAL_MACHINE 权限！\n当前设备已进入 L2 硬件虚拟化档，后续创建和启动 Linux 实例将享受近原生硬件加速性能。</string>
+
+    <!-- Ticket 43: Desktop Activity, Dual Mode Navigation, and Virtual Keys -->
+    <string name="desktop_title">图形桌面</string>
+    <string name="desktop_open_terminal">打开终端</string>
+    <string name="terminal_open_desktop">进入图形桌面</string>
+    <string name="instance_open_terminal">打开终端</string>
+    <string name="instance_launch_desktop">启动图形桌面</string>
+    <string name="key_esc">ESC</string>
+    <string name="key_tab">TAB</string>
+    <string name="key_ctrl">CTRL</string>
+    <string name="key_alt">ALT</string>
+    <string name="key_shift">SHIFT</string>
+    <string name="key_super">SUPER</string>
+    <string name="key_up">↑</string>
+    <string name="key_down">↓</string>
+    <string name="key_left">←</string>
+    <string name="key_right">→</string>
+    <string name="key_ime">⌨</string>
 </resources>
