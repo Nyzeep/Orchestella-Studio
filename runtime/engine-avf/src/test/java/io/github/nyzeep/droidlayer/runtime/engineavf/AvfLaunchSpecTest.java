@@ -1,5 +1,7 @@
 package io.github.nyzeep.droidlayer.runtime.engineavf;
 
+import io.github.nyzeep.droidlayer.runtime.contract.SharedDirectoryContract;
+
 /** Observable AvfLaunchSpec construction and validation behavior. */
 public final class AvfLaunchSpecTest {
     public static void main(String[] arguments) {
@@ -7,7 +9,11 @@ public final class AvfLaunchSpecTest {
         appliesTheRequestedCpuCount();
         rejectsBlankPathsAndBadInstanceIds();
         rejectsInvalidMemoryPortsAndCpuCounts();
-        System.out.println("AVF_LAUNCH_SPEC_TEST_OK defaults=1 cpu_count=1 validation=9");
+        announcesTheVsock9pDataPortOnlyWhenAShareIsConfigured();
+        rejectsAShareDataPortCollidingWithTheControlOrTerminalPorts();
+        System.out.println(
+                "AVF_LAUNCH_SPEC_TEST_OK defaults=1 cpu_count=1 validation=11"
+                        + " share_announce=1 no_share_leak=1");
     }
 
     private static void buildsTheDefaultSpecWithHvcConsoleAndDefaultPorts() {
@@ -67,6 +73,55 @@ public final class AvfLaunchSpecTest {
         rejects(IllegalArgumentException.class, () -> valid.terminalVsockPort(65536));
         rejects(IllegalArgumentException.class, () ->
                 valid.controlVsockPort(9101).terminalVsockPort(9101).build());
+    }
+
+    private static void announcesTheVsock9pDataPortOnlyWhenAShareIsConfigured() {
+        AvfLaunchSpec withoutShare = AvfLaunchSpec.builder(
+                        "instance-1", "/kernel", "/initramfs", "/root.raw")
+                .build();
+        assertTrue(withoutShare.sharedDirectory() == null, "default spec has no shared directory");
+        assertTrue(
+                !withoutShare.guestCmdline().contains("droidlayer.vsock_9p_port"),
+                "no 9p data-plane tokens may leak into the cmdline without a share");
+        assertTrue(
+                !withoutShare.guestCmdline().contains("9102"),
+                "the 9p data port must stay absent when no share is configured");
+
+        SharedDirectoryContract.SharedDirectorySpec share =
+                SharedDirectoryContract.SharedDirectorySpec.defaultDownloads(
+                        "/storage/emulated/0/Download");
+        AvfLaunchSpec withShare = AvfLaunchSpec.builder(
+                        "instance-1", "/kernel", "/initramfs", "/root.raw")
+                .sharedDirectory(share)
+                .build();
+        assertEquals(9102, withShare.sharedDirectoryVsockPort(), "default 9p data vsock port");
+        assertEquals(share, withShare.sharedDirectory(), "the configured share is carried");
+        assertTrue(
+                withShare.guestCmdline().contains("droidlayer.vsock_9p_port=9102"),
+                "the guest learns the 9p rendezvous port from the cmdline: "
+                        + withShare.guestCmdline());
+        assertTrue(
+                withShare.guestCmdline().contains("droidlayer.vsock_control_port=9100")
+                        && withShare.guestCmdline().contains("droidlayer.vsock_terminal_port=9101"),
+                "the control and terminal announce stays intact alongside the share");
+
+        AvfLaunchSpec customPort = AvfLaunchSpec.builder(
+                        "instance-1", "/kernel", "/initramfs", "/root.raw")
+                .sharedDirectory(share)
+                .sharedDirectoryVsockPort(9110)
+                .build();
+        assertTrue(
+                customPort.guestCmdline().contains("droidlayer.vsock_9p_port=9110"),
+                "an explicit 9p data port wins over the default");
+    }
+
+    private static void rejectsAShareDataPortCollidingWithTheControlOrTerminalPorts() {
+        AvfLaunchSpec.Builder valid =
+                AvfLaunchSpec.builder("instance-1", "/kernel", "/initramfs", "/root.raw");
+        rejects(IllegalArgumentException.class, () ->
+                valid.sharedDirectoryVsockPort(9100).build());
+        rejects(IllegalArgumentException.class, () ->
+                valid.sharedDirectoryVsockPort(9101).build());
     }
 
     private static void rejects(Class<? extends Exception> expected, Runnable action) {
