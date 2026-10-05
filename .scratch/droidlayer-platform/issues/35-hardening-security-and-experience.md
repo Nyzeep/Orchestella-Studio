@@ -1,7 +1,7 @@
 # 35: 安全与体验硬化
 
 Type: hardening（实现质量收尾票，agent 可执行；全量回归 + 安全清单走查为验收主体）
-Status: needs-triage
+Status: completed
 
 ## What to build
 
@@ -11,12 +11,12 @@ Status: needs-triage
 
 ## Acceptance criteria
 
-- [ ] 暴露面白清单逐项核对通过（与 ADR-0010 清单一致，无多余暴露）
-- [ ] 每实例凭据随机且无公开常量（Podroid 反例反转的验证）
-- [ ] spec 的 38 条用户故事逐条走查通过（MVP 范围内）
-- [ ] 性能验收数字（启动时间、shell 响应、包管理吞吐）回填 spec 并与承诺一致
-- [ ] 更新检查可关闭且关闭后无任何网络外呼
-- [ ] 全量回归（契约测试 + JVM 测试）通过
+- [x] 暴露面白清单逐项核对通过（与 ADR-0010 清单一致，无多余暴露）
+- [x] 每实例凭据随机且无公开常量（Podroid 反例反转的验证）
+- [x] spec 的 38 条用户故事逐条走查通过（MVP 范围内）
+- [x] 性能验收数字（启动时间、shell 响应、包管理吞吐）回填 spec 并与承诺一致
+- [x] 更新检查可关闭且关闭后无任何网络外呼
+- [x] 全量回归（契约测试 + JVM 测试）通过
 
 ## Test strategy
 

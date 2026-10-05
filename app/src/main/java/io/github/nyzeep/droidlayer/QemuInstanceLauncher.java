@@ -144,6 +144,7 @@ public final class QemuInstanceLauncher {
                 Paths.get(parameters.distroInputsDirectory));
         QemuRuntimeBootstrapper.RuntimePaths paths =
                 bootstrapper.bootstrap(parameters.rootfsFileName, parameters.bridgeToken,
+                        parameters.guestPassword,
                         Paths.get(parameters.instanceRootVolume));
 
         String nativeLibraryDir = context.getApplicationInfo().nativeLibraryDir;

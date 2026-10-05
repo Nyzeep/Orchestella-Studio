@@ -26,6 +26,12 @@ public final class EmbeddedProvisionInput {
 
     /** Builds the gzipped cpio segment for one provisioning input set. */
     public static byte[] build(byte[] rootfsTarball, String rootfsFileName, String bridgeToken) {
+        return build(rootfsTarball, rootfsFileName, bridgeToken, null);
+    }
+
+    /** Builds the gzipped cpio segment with optional per-instance random guest password (ADR-0010). */
+    public static byte[] build(
+            byte[] rootfsTarball, String rootfsFileName, String bridgeToken, String guestPassword) {
         Objects.requireNonNull(rootfsTarball, "rootfsTarball");
         Objects.requireNonNull(rootfsFileName, "rootfsFileName");
         validateToken(bridgeToken);
@@ -42,6 +48,10 @@ public final class EmbeddedProvisionInput {
             appendFile(out, ACTIVE_SENTINEL, new byte[0]);
             appendFile(out, EMBEDDED_DIR + "/bridge.token",
                     (bridgeToken + "\n").getBytes(StandardCharsets.US_ASCII));
+            if (guestPassword != null && !guestPassword.trim().isEmpty()) {
+                appendFile(out, EMBEDDED_DIR + "/guest.password",
+                        (guestPassword.trim() + "\n").getBytes(StandardCharsets.US_ASCII));
+            }
             appendFile(out, EMBEDDED_DIR + "/" + rootfsFileName, rootfsTarball);
             appendTrailer(out);
             raw.flush();
