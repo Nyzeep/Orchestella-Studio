@@ -34,6 +34,13 @@
             android:name=".TerminalActivity"
             android:exported="false" />
 
+        <!-- ADR-0017 & Ticket 43: Android host graphical desktop activity -->
+        <activity
+            android:name=".DesktopActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" />
+
         <!-- ADR-0011: Persistent foreground service for ongoing guest execution -->
         <service
             android:name=".DroidLayerForegroundService"

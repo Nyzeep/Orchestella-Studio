@@ -17,6 +17,7 @@ import android.widget.Toast
 import io.github.nyzeep.droidlayer.runtime.capability.AvfAuthorizationWizardModel
 import io.github.nyzeep.droidlayer.runtime.capability.AvfCapabilityEvaluator
 import io.github.nyzeep.droidlayer.runtime.capability.DeviceCapabilityEvaluator
+import io.github.nyzeep.droidlayer.runtime.contract.FullLinuxContract
 import io.github.nyzeep.droidlayer.runtime.distro.DistroManifest
 import io.github.nyzeep.droidlayer.runtime.distro.OfficialAlpineCatalog
 import io.github.nyzeep.droidlayer.runtime.distro.OfficialDebianCatalog
@@ -114,6 +115,17 @@ class MainActivity : Activity() {
             return readiness.performanceBadge()
         }
         return assessment.performanceBadge()
+    }
+
+    private fun currentCapabilityMatrix(): FullLinuxContract.CapabilityMatrix {
+        val assessment = DeviceCapabilityEvaluator.evaluate(deviceProfile())
+        val readiness = avfReadiness
+        if (assessment.canCreateFullLinuxInstance() && readiness != null &&
+            readiness.status() == AvfCapabilityEvaluator.AvfStatus.READY
+        ) {
+            return FullLinuxContract.CapabilityMatrix.hardwareVirtualizationWithGraphics()
+        }
+        return FullLinuxContract.CapabilityMatrix.softwareVirtualizationWithGraphics()
     }
 
     private fun refreshWizardEntry() {
@@ -243,6 +255,31 @@ class MainActivity : Activity() {
                     text = getString(R.string.instance_launch)
                     setOnClickListener { launchInstance(instance) }
                 })
+            } else if (instance.state().name == "RUNNING") {
+                row.addView(android.widget.Button(this).apply {
+                    text = getString(R.string.instance_open_terminal)
+                    setOnClickListener {
+                        val intent = android.content.Intent(this@MainActivity, TerminalActivity::class.java)
+                            .putExtra("bridgeToken", instance.bridgeToken())
+                            .putExtra("instanceId", instance.id())
+                        startActivity(intent)
+                    }
+                })
+                val matrix = currentCapabilityMatrix()
+                if (matrix.supports(FullLinuxContract.Capability.GRAPHICS_WAYLAND)) {
+                    row.addView(android.widget.Button(this).apply {
+                        text = getString(R.string.instance_launch_desktop)
+                        setOnClickListener {
+                            val intent = DesktopLaunchIntent.create(
+                                this@MainActivity,
+                                instance.id(),
+                                instance.bridgeToken(),
+                                false
+                            )
+                            startActivity(intent)
+                        }
+                    })
+                }
             }
             instanceList.addView(row)
         }
