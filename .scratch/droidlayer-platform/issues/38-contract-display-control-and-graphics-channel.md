@@ -1,7 +1,7 @@
 # 38: 策略中立图形显示与控制协议契约
 
 Type: implementation  
-Status: ready-for-agent  
+Status: ready-for-review  
 
 ## What to build
 
@@ -22,11 +22,11 @@ Status: ready-for-agent
 
 ## Acceptance criteria
 
-- [ ] `FullLinuxContract.Capability` 扩容 `GRAPHICS_WAYLAND`，能力矩阵能准确反映执行策略对图形通道的支持；
-- [ ] `DisplayControl` 与 `WaylandChannel` 契约接口定义完备，纯 Java 编写，无任何 Android SDK/NDK 平台依赖；
-- [ ] `BridgeControl` 成功集成并派发 `DISPLAY MODE`、`DISPLAY RESIZE`、`DISPLAY FPS` 命令，非法参数确定性返回 `DROIDLAYER/ERROR malformed-command\n`；
-- [ ] 策略中立输入事件数据结构支持序列化与校验，单行上限（2048 字符）及格式畸形均被安全拦截；
-- [ ] 契约层 JVM 单元测试覆盖率达到 100%，所有测试在既有构建中全绿通过。
+- [x] `FullLinuxContract.Capability` 扩容 `GRAPHICS_WAYLAND`，能力矩阵能准确反映执行策略对图形通道的支持；
+- [x] `DisplayControl` 与 `WaylandChannel` 契约接口定义完备，纯 Java 编写，无任何 Android SDK/NDK 平台依赖；
+- [x] `BridgeControl` 成功集成并派发 `DISPLAY MODE`、`DISPLAY RESIZE`、`DISPLAY FPS` 命令，非法参数确定性返回 `DROIDLAYER/ERROR malformed-command\n`；
+- [x] 策略中立输入事件数据结构支持序列化与校验，单行上限（2048 字符）及格式畸形均被安全拦截；
+- [x] 契约层 JVM 单元测试覆盖率达到 100%，所有测试在既有构建中全绿通过。
 
 ## Test strategy
 
