@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<openbox_menu>
+  <menu id="root-menu" label="DroidLayer Desktop">
+    <item label="Terminal (foot)">
+      <action name="Execute" command="foot" />
+    </item>
+    <item label="File Manager">
+      <action name="Execute" command="pcmanfm" />
+    </item>
+    <item label="Text Editor">
+      <action name="Execute" command="gedit" />
+    </item>
+    <item label="Web Browser">
+      <action name="Execute" command="firefox" />
+    </item>
+    <separator />
+    <item label="Toggle Fullscreen">
+      <action name="ToggleFullscreen" />
+    </item>
+    <item label="Reconfigure labwc">
+      <action name="Reconfigure" />
+    </item>
+    <separator />
+    <item label="Exit Desktop">
+      <action name="Exit" />
+    </item>
+  </menu>
+</openbox_menu>

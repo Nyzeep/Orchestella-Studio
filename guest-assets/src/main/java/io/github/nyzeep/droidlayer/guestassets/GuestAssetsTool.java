@@ -27,6 +27,9 @@ public final class GuestAssetsTool {
                 return ConfigVerifier.run(
                         Path.of(arguments[1]), Path.of(arguments[2]), standardError);
             }
+            if (arguments.length == 2 && arguments[0].equals("verify-desktop-configs")) {
+                return LabwcConfigVerifier.verifyAll(Path.of(arguments[1]), standardError);
+            }
             if (arguments.length >= 4 && arguments[0].equals("generate-manifest")) {
                 List<Path> artifacts =
                         Arrays.stream(arguments, 3, arguments.length).map(Path::of).toList();
@@ -35,6 +38,8 @@ public final class GuestAssetsTool {
             }
             standardError.println(
                     "usage: guest-assets-tools verify-config <.config> <requirements>");
+            standardError.println(
+                    "   or: guest-assets-tools verify-desktop-configs <desktop-dir>");
             standardError.println(
                     "   or: guest-assets-tools generate-manifest <base> <manifest> <artifact>...");
             return USAGE_ERROR;
