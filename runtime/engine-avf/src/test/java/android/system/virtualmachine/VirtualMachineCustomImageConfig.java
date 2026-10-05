@@ -18,6 +18,7 @@ public class VirtualMachineCustomImageConfig extends VirtualMachineConfig {
     private final int cpuCount;
     private final boolean protectedVm;
     private final boolean networkSupported;
+    private final String kernelCmdline;
 
     private VirtualMachineCustomImageConfig(Builder builder) {
         this.kernelPath = builder.kernelPath;
@@ -28,6 +29,7 @@ public class VirtualMachineCustomImageConfig extends VirtualMachineConfig {
         this.cpuCount = builder.cpuCount;
         this.protectedVm = builder.protectedVm;
         this.networkSupported = builder.networkSupported;
+        this.kernelCmdline = builder.kernelCmdline;
     }
 
     public String kernelPath() {
@@ -62,6 +64,10 @@ public class VirtualMachineCustomImageConfig extends VirtualMachineConfig {
         return networkSupported;
     }
 
+    public String kernelCmdline() {
+        return kernelCmdline;
+    }
+
     /** One recorded disk attachment. */
     public static final class Disk {
         private final String path;
@@ -91,9 +97,15 @@ public class VirtualMachineCustomImageConfig extends VirtualMachineConfig {
         private int cpuCount = -1;
         private boolean protectedVm;
         private boolean networkSupported = true;
+        private String kernelCmdline;
 
         public Builder setKernelPath(String path) {
             this.kernelPath = path;
+            return this;
+        }
+
+        public Builder setKernelCmdline(String cmdline) {
+            this.kernelCmdline = cmdline;
             return this;
         }
 
