@@ -58,9 +58,30 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            val keystorePath = (properties["orchestella.signing.storeFile"] as String?)
+            val keystoreFile = if (keystorePath != null) {
+                file(keystorePath)
+            } else {
+                rootProject.file(".toolchains/release.keystore")
+            }
+            if (keystoreFile.exists()) {
+                storeFile = keystoreFile
+                storePassword = (properties["orchestella.signing.storePassword"] as String?) ?: "orchestella2026"
+                keyAlias = (properties["orchestella.signing.keyAlias"] as String?) ?: "orchestella"
+                keyPassword = (properties["orchestella.signing.keyPassword"] as String?) ?: "orchestella2026"
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            val releaseSigning = signingConfigs.getByName("release")
+            if (releaseSigning.storeFile != null && releaseSigning.storeFile!!.exists()) {
+                signingConfig = releaseSigning
+            }
         }
     }
 
@@ -100,4 +121,12 @@ dependencies {
     implementation(project(":runtime:instance"))
     implementation(project(":runtime:network"))
     testImplementation(libs.junit)
+}
+
+tasks.register<Copy>("packageOrchestellaRelease") {
+    dependsOn("assembleRelease")
+    from(layout.buildDirectory.dir("outputs/apk/release"))
+    into(rootProject.layout.buildDirectory.dir("release"))
+    include("*.apk")
+    rename { "Orchestella-Studio-v${android.defaultConfig.versionName}.apk" }
 }
