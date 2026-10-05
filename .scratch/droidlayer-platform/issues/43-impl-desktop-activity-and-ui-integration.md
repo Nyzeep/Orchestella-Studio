@@ -1,7 +1,7 @@
 # 43: Android 宿主图形桌面 Activity 界面、一键启动与终端/桌面双模切换
 
 Type: implementation  
-Status: ready-for-agent  
+Status: ready-for-review  
 
 ## What to build
 
@@ -30,12 +30,12 @@ Status: ready-for-agent
 
 ## Acceptance criteria
 
-- [ ] `DesktopActivity` 布局完备集成 `WaylandSurfaceView`、`VirtualKeyBar` 与 HUD 监控徽章；
-- [ ] 沉浸式全屏模式稳定运行，软键盘弹出时不引起画面错乱；
-- [ ] HUD 徽章能准确反映当前 FPS、分辨率、连接状态与底层虚拟化策略；
-- [ ] 支持在终端与桌面之间无缝跳转，返回键或返回按钮行为符合 Android 标准体验；
-- [ ] `MainActivity` 实例卡片提供一键直达“启动图形桌面”入口；
-- [ ] 纯 JVM 测试（`:app:testDebugUnitTest`）100% 绿灯通过，零回归。
+- [x] `DesktopActivity` 布局完备集成 `WaylandSurfaceView`、`VirtualKeyBar` 与 HUD 监控徽章；
+- [x] 沉浸式全屏模式稳定运行，软键盘弹出时不引起画面错乱；
+- [x] HUD 徽章能准确反映当前 FPS、分辨率、连接状态与底层虚拟化策略；
+- [x] 支持在终端与桌面之间无缝跳转，返回键或返回按钮行为符合 Android 标准体验；
+- [x] `MainActivity` 实例卡片提供一键直达“启动图形桌面”入口；
+- [x] 纯 JVM 测试（`:app:testDebugUnitTest`）100% 绿灯通过，零回归。
 
 ## Test strategy
 

@@ -51,4 +51,20 @@ public interface ExecutionSession {
      * The guest VM lifecycle is not affected — only the host-side channels.
      */
     void close();
+
+    /**
+     * Optional strategy-neutral display control contract for graphics desktop mode.
+     * Null when the session does not provide Wayland display negotiation.
+     */
+    default io.github.nyzeep.droidlayer.runtime.contract.DisplayControl displayControl() {
+        return null;
+    }
+
+    /**
+     * Optional strategy-neutral Wayland graphics and input channel.
+     * Null when the session does not provide a Wayland graphics stream.
+     */
+    default io.github.nyzeep.droidlayer.runtime.contract.WaylandChannel waylandChannel() {
+        return null;
+    }
 }
