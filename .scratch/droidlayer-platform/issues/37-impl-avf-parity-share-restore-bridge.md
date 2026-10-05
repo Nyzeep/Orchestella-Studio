@@ -1,7 +1,9 @@
 # 37: AVF 档能力对齐——只读共享、恢复语义与桥接命令
 
 Type: implementation
-Status: needs-triage
+Status: ready-for-review
+
+> **实施轮记录**：2026-10-05 实施完成（worktree `DroidLayer_dev_t37`，分支 `ticket/37-avf-share-restore-bridge`，5 个实现提交 + 报告/看板提交）。`runtime:contract` 零修改；自研 9P2000.L 只读服务端经 vsock 数据通道（端口 9102）交付，AC-1/2/3 以 JVM 契约级证据达成，AC-4 两策略全绿（3 例 T33 存量失败如实登记）。guest 侧 vsock 服务模式与 9p trans=fd 挂载为源码级交付（打包 initramfs 重建与真机冒烟为登记遗留，见实施报告 §7）。提请独立评审。
 
 ## What to build
 
