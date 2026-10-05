@@ -53,6 +53,15 @@ public final class AvfVirtualMachineEngineTest {
             assertEquals(1, config.cpuCount(), "default vCPU count applied via setCpuCount");
             assertTrue(!config.isProtectedVm(), "custom VMs are non-protected");
             assertTrue(config.isNetworkSupported(), "outbound network declared for the AVF profile");
+            assertTrue(
+                    config.cmdline() != null
+                            && config.cmdline().contains("droidlayer.vsock_control_port=9100")
+                            && config.cmdline().contains("droidlayer.vsock_terminal_port=9101"),
+                    "the guest contract travels through the kernel cmdline: "
+                            + config.cmdline());
+            assertTrue(
+                    !config.cmdline().contains("droidlayer.vsock_9p_port"),
+                    "no 9p data-plane token without a share: " + config.cmdline());
 
             assertTrue(
                     session.reflectionNotes().stream()

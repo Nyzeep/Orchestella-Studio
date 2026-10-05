@@ -12,6 +12,7 @@ import java.util.List;
 public class VirtualMachineCustomImageConfig extends VirtualMachineConfig {
     private final String kernelPath;
     private final String initrdPath;
+    private final String cmdline;
     private final List<Disk> disks;
     private final int memoryMbs;
     private final long memoryBytes;
@@ -22,6 +23,7 @@ public class VirtualMachineCustomImageConfig extends VirtualMachineConfig {
     private VirtualMachineCustomImageConfig(Builder builder) {
         this.kernelPath = builder.kernelPath;
         this.initrdPath = builder.initrdPath;
+        this.cmdline = builder.cmdline;
         this.disks = Collections.unmodifiableList(new ArrayList<>(builder.disks));
         this.memoryMbs = builder.memoryMbs;
         this.memoryBytes = builder.memoryBytes;
@@ -36,6 +38,11 @@ public class VirtualMachineCustomImageConfig extends VirtualMachineConfig {
 
     public String initrdPath() {
         return initrdPath;
+    }
+
+    /** The guest kernel command line the adapter assembled (null when unset). */
+    public String cmdline() {
+        return cmdline;
     }
 
     public List<Disk> disks() {
@@ -85,6 +92,7 @@ public class VirtualMachineCustomImageConfig extends VirtualMachineConfig {
     public static final class Builder {
         private String kernelPath;
         private String initrdPath;
+        private String cmdline;
         private final List<Disk> disks = new ArrayList<>();
         private int memoryMbs = -1;
         private long memoryBytes = -1;
@@ -99,6 +107,11 @@ public class VirtualMachineCustomImageConfig extends VirtualMachineConfig {
 
         public Builder setInitrdPath(String path) {
             this.initrdPath = path;
+            return this;
+        }
+
+        public Builder setCmdline(String cmdline) {
+            this.cmdline = cmdline;
             return this;
         }
 

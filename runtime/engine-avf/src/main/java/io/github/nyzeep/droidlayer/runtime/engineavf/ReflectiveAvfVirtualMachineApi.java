@@ -100,6 +100,13 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
         invokeRequired(
                 builderClass, builder, "setInitrdPath", new Class<?>[] {String.class},
                 new Object[] {spec.initramfsPath()}, notes);
+        // The droidlayer.* guest contract (root device, vsock ports, the 9p
+        // data-plane rendezvous) reaches the guest only through the kernel
+        // command line; an SDK surface without setCmdline makes the guest
+        // contract undeliverable, so it is recorded, never silently skipped.
+        invokeOptional(
+                builderClass, builder, "setCmdline", new Class<?>[] {String.class},
+                new Object[] {spec.guestCmdline()}, notes);
         addRootDisk(builderClass, builder, spec.rootVolumePath(), notes);
         applyMemory(builderClass, builder, spec.memoryMb(), notes);
         applyCpuCount(builderClass, builder, spec.cpuCount(), notes);
