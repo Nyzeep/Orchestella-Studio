@@ -13,7 +13,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "DroidLayer"
+rootProject.name = "Orchestella-Studio"
 include(":app")
 include(":runtime:contract")
 include(":runtime:distro")

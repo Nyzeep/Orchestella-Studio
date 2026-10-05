@@ -19,7 +19,7 @@ import java.util.Objects;
  */
 public final class GitHubUpdateChecker {
     public static final String DEFAULT_RELEASES_API_URL =
-            "https://api.github.com/repos/nyzeep/DroidLayer/releases/latest";
+            "https://api.github.com/repos/Nyzeep/Orchestella-Studio/releases/latest";
 
     public enum Status {
         DISABLED,
@@ -113,7 +113,7 @@ public final class GitHubUpdateChecker {
             URL url = new URL(apiUrl);
             connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("GET");
-            connection.setRequestProperty("User-Agent", "DroidLayer-Android/" + (currentVersion != null ? currentVersion : "1.0"));
+            connection.setRequestProperty("User-Agent", "Orchestella-Studio-Android/" + (currentVersion != null ? currentVersion : "1.0"));
             connection.setRequestProperty("Accept", "application/vnd.github.v3+json");
             connection.setConnectTimeout(10_000);
             connection.setReadTimeout(10_000);
