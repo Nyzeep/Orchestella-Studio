@@ -13,9 +13,10 @@ public final class AvfLaunchSpecTest {
         rejectsInvalidMemoryPortsAndCpuCounts();
         announcesTheVsock9pDataPortOnlyWhenAShareIsConfigured();
         rejectsAShareDataPortCollidingWithTheControlOrTerminalPorts();
+        rejectsAGraphicsVsockPortCollidingWithOtherPorts();
         System.out.println(
-                "AVF_LAUNCH_SPEC_TEST_OK defaults=1 outbound_net=1 cpu_count=1 validation=11"
-                        + " share_announce=1 no_share_leak=1");
+                "AVF_LAUNCH_SPEC_TEST_OK defaults=1 outbound_net=1 cpu_count=1 validation=14"
+                        + " share_announce=1 no_share_leak=1 graphics_port=1");
     }
 
     private static void buildsTheDefaultSpecWithHvcConsoleAndDefaultPorts() {
@@ -28,6 +29,7 @@ public final class AvfLaunchSpecTest {
         assertEquals(1, spec.cpuCount(), "default vCPU count");
         assertEquals(9100, spec.controlVsockPort(), "default control vsock port");
         assertEquals(9101, spec.terminalVsockPort(), "default terminal vsock port");
+        assertEquals(9103, spec.graphicsVsockPort(), "default graphics vsock port");
         assertTrue(
                 spec.guestCmdline().contains("console=hvc0"),
                 "crosvm/pKVM boots through virtio-console hvc0");
@@ -165,6 +167,17 @@ public final class AvfLaunchSpecTest {
                 valid.sharedDirectoryVsockPort(9100).build());
         rejects(IllegalArgumentException.class, () ->
                 valid.sharedDirectoryVsockPort(9101).build());
+    }
+
+    private static void rejectsAGraphicsVsockPortCollidingWithOtherPorts() {
+        AvfLaunchSpec.Builder valid =
+                AvfLaunchSpec.builder("instance-1", "/kernel", "/initramfs", "/root.raw");
+        rejects(IllegalArgumentException.class, () ->
+                valid.graphicsVsockPort(9100).build());
+        rejects(IllegalArgumentException.class, () ->
+                valid.graphicsVsockPort(9101).build());
+        rejects(IllegalArgumentException.class, () ->
+                valid.graphicsVsockPort(9102).build());
     }
 
     private static void rejects(Class<? extends Exception> expected, Runnable action) {

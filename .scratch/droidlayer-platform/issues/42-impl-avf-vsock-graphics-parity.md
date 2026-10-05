@@ -1,7 +1,7 @@
 # 42: AVF 硬件虚拟化 vsock 高速图形传输通道与双引擎对齐
 
 Type: implementation  
-Status: ready-for-agent  
+Status: ready-for-review  
 
 ## What to build
 
@@ -24,11 +24,11 @@ Status: ready-for-agent
 
 ## Acceptance criteria
 
-- [ ] AVF 虚拟机通过 vsock 端口 9103 稳定传输桌面帧与输入事件，连接握手与鉴权严密可靠；
-- [ ] 传输吞吐达到 1080p 60 FPS 刷新要求，端到端画面刷新延迟 $\le 30\text{ms}$；
-- [ ] 脏矩形按需刷写机制生效，静态桌面时 GPU 渲染与 vsock 吞吐自动回落，CPU 占用率 $\le 2\%$；
-- [ ] 契约测试集（`DisplayControl` 与图形通道测试）在 QEMU 与 AVF 两个执行引擎上 100% 全绿通过；
-- [ ] 用户在支持 AVF 的设备上启动图形桌面，享有完全一致且更流畅的近原生体验。
+- [x] AVF 虚拟机通过 vsock 端口 9103 稳定传输桌面帧与输入事件，连接握手与鉴权严密可靠；
+- [x] 传输吞吐达到 1080p 60 FPS 刷新要求，端到端画面刷新延迟 $\le 30\text{ms}$；
+- [x] 脏矩形按需刷写机制生效，静态桌面时 GPU 渲染与 vsock 吞吐自动回落，CPU 占用率 $\le 2\%$；
+- [x] 契约测试集（`DisplayControl` 与图形通道测试）在 QEMU 与 AVF 两个执行引擎上 100% 全绿通过；
+- [x] 用户在支持 AVF 的设备上启动图形桌面，享有完全一致且更流畅的近原生体验。
 
 ## Test strategy
 
