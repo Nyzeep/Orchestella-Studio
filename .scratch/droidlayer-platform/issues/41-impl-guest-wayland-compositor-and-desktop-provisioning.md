@@ -1,7 +1,7 @@
 # 41: Guest 侧 Wayland 代理、轻量合成器自动化装配与双发行版桌面一键拉起
 
 Type: implementation  
-Status: ready-for-review  
+Status: completed  
 
 ## What to build
 
