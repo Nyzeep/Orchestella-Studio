@@ -1,7 +1,7 @@
 # 41: Guest 侧 Wayland 代理、轻量合成器自动化装配与双发行版桌面一键拉起
 
 Type: implementation  
-Status: ready-for-agent  
+Status: ready-for-review  
 
 ## What to build
 
@@ -29,12 +29,12 @@ Status: ready-for-agent
 
 ## Acceptance criteria
 
-- [ ] 自动化装配脚本在 Alpine 和 Debian 系统下均能一键无报错执行完成，成功部署合成器及桌面必要依赖；
-- [ ] `droidlayer-display-agent` 成功拉起并与宿主建立双向通信，正确创建并维护 `wayland-0` 套接字；
-- [ ] `labwc` 成功启动，在宿主 `SurfaceView` 上呈现清晰、完整的层叠桌面与状态栏；
-- [ ] 点击状态栏启动器可成功打开 `foot` 终端与图形应用（如 Firefox/Chromium、Gedit），窗口可通过触摸拖动与缩放；
-- [ ] 宿主输入法打出的中文汉字与快捷键栏按键在 Guest 桌面应用中能够准确响应并上屏；
-- [ ] 桌面空闲状态下，Guest 端常驻内存占用 $\le 150\text{ MB}$。
+- [x] 自动化装配脚本在 Alpine 和 Debian 系统下均能一键无报错执行完成，成功部署合成器及桌面必要依赖；
+- [x] `droidlayer-display-agent` 成功拉起并与宿主建立双向通信，正确创建并维护 `wayland-0` 套接字；
+- [x] `labwc` 成功启动，在宿主 `SurfaceView` 上呈现清晰、完整的层叠桌面与状态栏；
+- [x] 点击状态栏启动器可成功打开 `foot` 终端与图形应用（如 Firefox/Chromium、Gedit），窗口可通过触摸拖动与缩放；
+- [x] 宿主输入法打出的中文汉字与快捷键栏按键在 Guest 桌面应用中能够准确响应并上屏；
+- [x] 桌面空闲状态下，Guest 端常驻内存占用 $\le 150\text{ MB}$。
 
 ## Test strategy
 
