@@ -61,6 +61,14 @@ tasks.register<JavaExec>("avfInstanceLifecycleContractTest") {
     args(avfLifecycleOutput.get().asFile.absolutePath)
 }
 
+val avfReconcileOutput = layout.buildDirectory.dir("avf-reconcile-contract")
+tasks.register<JavaExec>("avfReconciliationLifecycleContractTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set(
+        "io.github.nyzeep.droidlayer.runtime.engineavf.AvfReconciliationLifecycleContractTest")
+    args(avfReconcileOutput.get().asFile.absolutePath)
+}
+
 tasks.register<JavaExec>("avfQemuInteropTest") {
     classpath = sourceSets["test"].runtimeClasspath
     mainClass.set("io.github.nyzeep.droidlayer.runtime.engineavf.AvfQemuInteropTest")
@@ -74,6 +82,7 @@ tasks.named("check") {
         "avf9pShareContractTest",
         "avfTerminalStreamContractTest",
         "avfInstanceLifecycleContractTest",
+        "avfReconciliationLifecycleContractTest",
         "avfQemuInteropTest",
     )
 }
