@@ -1,9 +1,9 @@
 # 36: AVF 档能力对齐——出站网络与端口转发
 
 Type: implementation
-Status: ready-for-review
+Status: completed
 
-> **实施记录（2026-10-05）**：4 个 TDD Slice 完成（出站网络装配 / vsock 转发引擎 / 等价套件 / 能力声明），runtime 7 模块 `--offline` 全绿（28 条 `_OK`，manager 契约套件在两引擎各跑一次全绿），app 单测 37/40（3 例失败为票 33 既有 `AndroidSafExportAdapterTest` JVM NPE，app 零改动）。实施报告：`docs/reports/tickets/36/implementation-report.zh-CN.md`。**契约级（JVM 模拟层）达成；真机冒烟待 HITL（票 17）；guest 内真实转发代理与 contract `Capability` 枚举升格涉锁/架构门，见报告 §7。**
+> **实施与评审记录（2026-10-05）**：4 个 TDD Slice 完成；独立代码复审裁定 APPROVE（`docs/reports/reviews/36/review-report.zh-CN.md`）；runtime 7 模块 `--offline` 全绿。准入合流。
 
 ## What to build
 
