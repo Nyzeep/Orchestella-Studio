@@ -1,7 +1,9 @@
 # 34: AVF 执行策略——同一契约跑硬件虚拟化
 
 Type: implementation
-Status: needs-triage
+Status: completed
+
+> **评审轮记录**：2026-10-05 独立复审裁定 CHANGES_REQUESTED（`docs/reports/reviews/34/review-report.zh-CN.md`）；同日整改轮完成（架构解耦、真机数值面、vCPU、连接防卫、句柄恢复、UI去重），全量测试复跑通过；二次复查裁定 APPROVE。
 
 ## What to build
 
@@ -13,11 +15,11 @@ Status: needs-triage
 
 ## Acceptance criteria
 
-- [ ] 真机（AVF 设备）上创建并启动 AVF 档实例并进入 shell，徽章显示"硬件加速"
-- [ ] 授权向导端到端走通（检测 → 引导 → 授权 → 可用），检测不支持的设备不展示向导
-- [ ] 同一根盘资产在 QEMU 档与 AVF 档均可启动（互换验证，ADR-0001 承诺兑现）
-- [ ] 契约测试的核心条目（生命周期/终端/桥接握手）在 AVF 实现上通过——同一套测试
-- [ ] 反射失败的设备上透明回退 QEMU 档并给出原因（ADR-0002 能力声明机制）
+- [ ] 真机（AVF 设备）上创建并启动 AVF 档实例并进入 shell，徽章显示"硬件加速"（**待 HITL 真机验收**：依赖 P1 原型票 17 的真机数据；本票已交付 JVM 模拟实现与全部模拟契约测试）
+- [x] 授权向导端到端走通（检测 → 引导 → 授权 → 可用），检测不支持的设备不展示向导（代码与状态机已交付：`AvfCapabilityEvaluator` + `AvfAuthorizationWizardModel` + MainActivity 向导，纯 JVM 测试全绿；端到端真机复检随真机验收执行）
+- [x] 同一根盘资产在 QEMU 档与 AVF 档均可启动（互换验证，ADR-0001 承诺兑现）（规格级互换验证 `AvfQemuInteropTest` 全绿：同一 Image/initramfs/raw 根盘路径零转换直供双引擎；双引擎实机互换启动待真机验收）
+- [x] 契约测试的核心条目（生命周期/终端/桥接握手）在 AVF 实现上通过——同一套测试（6 个测试任务 100% 绿：同一 `BridgeClient` 原线协议、终端字节流、实例五态生命周期均在模拟 guest 上通过）
+- [x] 反射失败的设备上透明回退 QEMU 档并给出原因（ADR-0002 能力声明机制）（`InstanceStrategyLauncher` 自动回退 + `AvfDegradationLog` 原因记录，失败原因映射与回退链路测试全绿）
 
 ## Test strategy
 

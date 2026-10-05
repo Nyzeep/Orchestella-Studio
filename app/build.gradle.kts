@@ -95,6 +95,7 @@ kotlin {
 dependencies {
     implementation(project(":runtime:capability"))
     implementation(project(":runtime:distro"))
+    implementation(project(":runtime:engine-avf"))
     implementation(project(":runtime:engine-qemu"))
     implementation(project(":runtime:instance"))
     implementation(project(":runtime:network"))
