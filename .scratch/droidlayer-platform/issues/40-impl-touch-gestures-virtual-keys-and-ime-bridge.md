@@ -1,7 +1,7 @@
 # 40: 移动端触控手势映射、虚拟输入条与 Android IME 文本注入桥接
 
 Type: implementation  
-Status: ready-for-review  
+Status: completed  
 
 ## What to build
 
