@@ -25,6 +25,7 @@ public final class InstanceStrategyLauncher {
         public final String instanceRootVolume;
         public final String runtimeDirectory;
         public final String distroInputsDirectory;
+        public final String guestPassword;
 
         public LaunchParameters(
                 String instanceId,
@@ -33,6 +34,17 @@ public final class InstanceStrategyLauncher {
                 String instanceRootVolume,
                 String runtimeDirectory,
                 String distroInputsDirectory) {
+            this(instanceId, bridgeToken, rootfsFileName, instanceRootVolume, runtimeDirectory, distroInputsDirectory, null);
+        }
+
+        public LaunchParameters(
+                String instanceId,
+                String bridgeToken,
+                String rootfsFileName,
+                String instanceRootVolume,
+                String runtimeDirectory,
+                String distroInputsDirectory,
+                String guestPassword) {
             this.instanceId = Objects.requireNonNull(instanceId, "instanceId");
             this.bridgeToken = Objects.requireNonNull(bridgeToken, "bridgeToken");
             this.rootfsFileName = Objects.requireNonNull(rootfsFileName, "rootfsFileName");
@@ -41,6 +53,7 @@ public final class InstanceStrategyLauncher {
             this.runtimeDirectory = Objects.requireNonNull(runtimeDirectory, "runtimeDirectory");
             this.distroInputsDirectory =
                     Objects.requireNonNull(distroInputsDirectory, "distroInputsDirectory");
+            this.guestPassword = guestPassword;
         }
     }
 

@@ -338,6 +338,20 @@ umask 077
 printf '%s\n' "$TOKEN" > /newroot/etc/droidlayer/bridge.token
 chmod 0600 /newroot/etc/droidlayer/bridge.token
 
+GUEST_PASS_PATH="$INPUT_DIR/guest.password"
+if [ -f "$GUEST_PASS_PATH" ]; then
+    GUEST_PASS="$(tr -d '\r\n' < "$GUEST_PASS_PATH")"
+    if [ -n "$GUEST_PASS" ]; then
+        if [ -x /newroot/usr/sbin/chpasswd ]; then
+            printf 'root:%s\n' "$GUEST_PASS" | chroot /newroot /usr/sbin/chpasswd 2>/dev/null || true
+        elif [ -x /newroot/usr/bin/chpasswd ]; then
+            printf 'root:%s\n' "$GUEST_PASS" | chroot /newroot /usr/bin/chpasswd 2>/dev/null || true
+        elif [ -x /newroot/sbin/chpasswd ]; then
+            printf 'root:%s\n' "$GUEST_PASS" | chroot /newroot /sbin/chpasswd 2>/dev/null || true
+        fi
+    fi
+fi
+
 mkdir -p /newroot/usr/sbin /newroot/etc/init.d /newroot/etc/conf.d
 cp /opt/droidlayer/guest-agent /newroot/usr/sbin/droidlayer-guest-agent
 cp /opt/droidlayer/openrc/droidlayer-guest-agent \

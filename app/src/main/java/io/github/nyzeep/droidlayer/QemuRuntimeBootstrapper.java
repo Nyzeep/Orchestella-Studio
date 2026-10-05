@@ -50,6 +50,12 @@ public final class QemuRuntimeBootstrapper {
 
     public RuntimePaths bootstrap(String rootfsFileName, String bridgeToken, Path instanceRootVolume)
             throws IOException {
+        return bootstrap(rootfsFileName, bridgeToken, null, instanceRootVolume);
+    }
+
+    public RuntimePaths bootstrap(
+            String rootfsFileName, String bridgeToken, String guestPassword, Path instanceRootVolume)
+            throws IOException {
         Objects.requireNonNull(instanceRootVolume, "instanceRootVolume");
         if (!Files.isRegularFile(instanceRootVolume)) {
             throw new IOException("root-volume-missing");
@@ -61,7 +67,7 @@ public final class QemuRuntimeBootstrapper {
                 () -> resourceStreams.apply("initramfs.cpio.gz"), runtimeDir);
 
         byte[] tarball = Files.readAllBytes(distroInputsDir.resolve(rootfsFileName));
-        byte[] segment = EmbeddedProvisionInput.build(tarball, rootfsFileName, bridgeToken);
+        byte[] segment = EmbeddedProvisionInput.build(tarball, rootfsFileName, bridgeToken, guestPassword);
         Path initramfs = runtimeDir.resolve("initramfs-embedded.cpio.gz");
         Path partial = runtimeDir.resolve("initramfs-embedded.cpio.gz.partial");
         try {
