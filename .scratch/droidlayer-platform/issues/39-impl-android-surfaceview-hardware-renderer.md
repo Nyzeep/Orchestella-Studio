@@ -1,7 +1,7 @@
 # 39: Android 宿主 SurfaceView 高性能渲染面与双缓冲渲染器
 
 Type: implementation  
-Status: ready-for-agent  
+Status: ready-for-review  
 
 ## What to build
 
@@ -26,10 +26,10 @@ Status: ready-for-agent
 
 ## Acceptance criteria
 
-- [ ] `WaylandSurfaceView` 生命周期管理健壮，在 Activity 前后台切换、锁屏与横竖屏旋转时无奔溃与显存泄漏；
-- [ ] NDK 硬件渲染流水线实测达到稳定 60 FPS（VSYNC 锁频），渲染单帧 GPU 上传耗时 $< 4\text{ms}$；
-- [ ] 屏幕旋转后能自适应重新协商分辨率，桌面自动铺满视图且保持纵横比；
-- [ ] 连续渲染 1000 帧无内存泄漏，宿主图形渲染内存占用常驻增量 $\le 60\text{ MB}$。
+- [x] `WaylandSurfaceView` 生命周期管理健壮，在 Activity 前后台切换、锁屏与横竖屏旋转时无奔溃与显存泄漏；
+- [x] NDK 硬件渲染流水线实测达到稳定 60 FPS（VSYNC 锁频），渲染单帧 GPU 上传耗时 $< 4\text{ms}$；
+- [x] 屏幕旋转后能自适应重新协商分辨率，桌面自动铺满视图且保持纵横比；
+- [x] 连续渲染 1000 帧无内存泄漏，宿主图形渲染内存占用常驻增量 $\le 60\text{ MB}$。
 
 ## Test strategy
 
