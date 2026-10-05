@@ -23,6 +23,7 @@ jobs:
       GUEST_ASSETS_WORK_DIR: /tmp/droidlayer-guest-assets.build
       GUEST_ASSETS_DOWNLOAD_CACHE: /tmp/droidlayer-guest-assets.downloads
       GUEST_ASSETS_SMOKE_WORK: /tmp/droidlayer-guest-assets.smoke
+      TICKET26_WORK_ROOT: /tmp/droidlayer-guest-assets.build/ticket26-work
     steps:
       - name: Check out source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683

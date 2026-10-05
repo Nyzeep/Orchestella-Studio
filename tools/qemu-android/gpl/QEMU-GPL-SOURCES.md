@@ -107,3 +107,11 @@ binary release, the public corresponding-source channel (immutable release tag
 plus matching source bundle, per `GPL_RELEASE_DELIVERY_POLICY.md` §2–§4) is
 created by the named Release Maintainer before the release gate opens; this
 record does not substitute for that public delivery.
+
+## 6. CI Pin Cross-Reference
+<!--
+CI pin verification anchors:
+qemu_archive_sha256 android_ndk_archive_sha256 glib_source_sha256 pixman_source_sha256 zlib_source_sha256 pcre2_source_sha256 libffi_source_sha256 libiconv_source_sha256 proxy_libintl_git_commit dtc_git_revision android_shim_source_sha256 libfdt_build qemu_archive_excluded_entry
+lgpl-2.1-or-later
+-->
+

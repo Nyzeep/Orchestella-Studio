@@ -150,38 +150,38 @@ static int resize_terminal(const char *terminal_device, int terminal_columns, in
 #endif
 }
 
-static int serve_control_channel_fd(int stream_fd, const char *terminal_device) {
+static int serve_control_channel_fd(int read_fd, int write_fd, const char *terminal_device) {
     char request[MAX_CONTROL_LINE] = {0};
     int terminal_columns;
     int terminal_rows;
     int line_status;
 
     while (1) {
-        line_status = read_line_fd(stream_fd, request, sizeof(request));
+        line_status = read_line_fd(read_fd, request, sizeof(request));
         if (line_status == 0) {
             return 0;
         }
         if (line_status < 0) {
-            write_control_line_fd(stream_fd, "DROIDLAYER/ERROR malformed-command\n");
+            write_control_line_fd(write_fd, "DROIDLAYER/ERROR malformed-command\n");
             return 4;
         }
         if (strcmp(request, "DROIDLAYER/PING") == 0) {
-            if (!write_control_line_fd(stream_fd, "DROIDLAYER/PONG 1\n")) {
+            if (!write_control_line_fd(write_fd, "DROIDLAYER/PONG 1\n")) {
                 return 70;
             }
             continue;
         }
         if (parse_resize(request, &terminal_columns, &terminal_rows)) {
             if (!resize_terminal(terminal_device, terminal_columns, terminal_rows)) {
-                write_control_line_fd(stream_fd, "DROIDLAYER/ERROR resize-unavailable\n");
+                write_control_line_fd(write_fd, "DROIDLAYER/ERROR resize-unavailable\n");
                 return 4;
             }
-            if (!write_control_line_fd(stream_fd, "DROIDLAYER/OK resize\n")) {
+            if (!write_control_line_fd(write_fd, "DROIDLAYER/OK resize\n")) {
                 return 70;
             }
             continue;
         }
-        write_control_line_fd(stream_fd, "DROIDLAYER/ERROR malformed-command\n");
+        write_control_line_fd(write_fd, "DROIDLAYER/ERROR malformed-command\n");
         return 4;
     }
 }
@@ -194,7 +194,7 @@ static int serve_control_channel_fd(int stream_fd, const char *terminal_device) 
  * serves control commands or hands the stream to the guest shell); any other
  * value is the handshake exit code.
  */
-static int authenticate_control(int stream_fd, const char *expected_token) {
+static int authenticate_control(int read_fd, int write_fd, const char *expected_token) {
     char verb[32] = {0};
     char extra = '\0';
     char request[MAX_CONTROL_LINE] = {0};
@@ -203,7 +203,7 @@ static int authenticate_control(int stream_fd, const char *expected_token) {
     int maximum_version;
     int handshake_status;
 
-    handshake_status = read_line_fd(stream_fd, request, sizeof(request));
+    handshake_status = read_line_fd(read_fd, request, sizeof(request));
     if (handshake_status != 1
         || sscanf(request,
                   "%31s %d %d %65s %c",
@@ -215,23 +215,23 @@ static int authenticate_control(int stream_fd, const char *expected_token) {
                != 4
         || strcmp(verb, "DROIDLAYER/HELLO") != 0
         || !is_lower_hex_token(provided_token)) {
-        write_control_line_fd(stream_fd, "DROIDLAYER/ERROR malformed-handshake\n");
+        write_control_line_fd(write_fd, "DROIDLAYER/ERROR malformed-handshake\n");
         return 1;
     }
     if (minimum_version < 0 || maximum_version < minimum_version) {
-        write_control_line_fd(stream_fd, "DROIDLAYER/ERROR malformed-handshake\n");
+        write_control_line_fd(write_fd, "DROIDLAYER/ERROR malformed-handshake\n");
         return 1;
     }
     if (!constant_time_token_equals(expected_token, provided_token)) {
-        write_control_line_fd(stream_fd, "DROIDLAYER/ERROR unauthorized\n");
+        write_control_line_fd(write_fd, "DROIDLAYER/ERROR unauthorized\n");
         return 3;
     }
     if (minimum_version > 1 || maximum_version < 1) {
-        write_control_line_fd(stream_fd, "DROIDLAYER/ERROR unsupported-version\n");
+        write_control_line_fd(write_fd, "DROIDLAYER/ERROR unsupported-version\n");
         return 2;
     }
 
-    if (!write_control_line_fd(stream_fd, "DROIDLAYER/READY 1\n")) {
+    if (!write_control_line_fd(write_fd, "DROIDLAYER/READY 1\n")) {
         return 70;
     }
     return 0;
@@ -418,11 +418,11 @@ static int serve_vsock_mode(
                     if (share_listener >= 0) {
                         close(share_listener);
                     }
-                    authenticated = authenticate_control(connection, expected_token);
+                    authenticated = authenticate_control(connection, connection, expected_token);
                     if (authenticated != 0) {
                         _exit(authenticated);
                     }
-                    _exit(serve_control_channel_fd(connection, terminal_device));
+                    _exit(serve_control_channel_fd(connection, connection, terminal_device));
                 }
                 close(connection);
             }
@@ -551,14 +551,14 @@ int main(int argument_count, char **arguments) {
     }
 
     if (terminal_device != NULL) {
-        int authenticated = authenticate_control(STDIN_FILENO, expected_token);
+        int authenticated = authenticate_control(STDIN_FILENO, STDOUT_FILENO, expected_token);
         if (authenticated != 0) {
             return authenticated;
         }
-        return serve_control_channel_fd(STDIN_FILENO, terminal_device);
+        return serve_control_channel_fd(STDIN_FILENO, STDOUT_FILENO, terminal_device);
     }
     {
-        int authenticated = authenticate_control(STDIN_FILENO, expected_token);
+        int authenticated = authenticate_control(STDIN_FILENO, STDOUT_FILENO, expected_token);
         if (authenticated != 0) {
             return authenticated;
         }
