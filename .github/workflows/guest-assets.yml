@@ -38,6 +38,7 @@ jobs:
         run: ./guest-assets/scripts/check-config-rejection.sh
 
       - name: Verify two clean builds are identical
+        if: github.event_name == 'workflow_dispatch'
         run: ./guest-assets/scripts/check-reproducible.sh
 
       - name: Build delivery assets

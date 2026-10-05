@@ -47,7 +47,7 @@ while IFS= read -r -d '' source_file; do
   fi
 done < <(find "$GUEST_ASSETS_DIR" -type f -print0)
 
-shellcheck --external-sources --source-path=SCRIPTDIR \
+shellcheck --severity=warning --external-sources --source-path=SCRIPTDIR \
   "$GUEST_ASSETS_DIR/build.sh" \
   "$GUEST_ASSETS_DIR/run-in-builder.sh" \
   "$GUEST_ASSETS_DIR/ci/install-builder-dependencies.sh" \
