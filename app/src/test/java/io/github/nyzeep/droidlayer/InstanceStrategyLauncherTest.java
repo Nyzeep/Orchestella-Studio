@@ -153,4 +153,12 @@ public final class InstanceStrategyLauncherTest {
             org.junit.Assert.fail("unexpected interrupt");
         }
     }
+
+    @Test
+    public void launchParametersRetainsGuestPassword() {
+        InstanceStrategyLauncher.LaunchParameters params =
+                new InstanceStrategyLauncher.LaunchParameters(
+                        "inst-1", "token-1", "rootfs.tar.gz", "/root.raw", "/runtime", "/inputs", "mySecretPass123");
+        assertEquals("mySecretPass123", params.guestPassword);
+    }
 }

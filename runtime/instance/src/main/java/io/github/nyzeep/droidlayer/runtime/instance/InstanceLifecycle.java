@@ -31,6 +31,17 @@ public final class InstanceLifecycle {
     private static final int BRIDGE_TOKEN_BYTE_COUNT = BridgeHandshake.TOKEN_HEX_LENGTH / 2;
     private static final char[] LOWERCASE_HEX = "0123456789abcdef".toCharArray();
     private static final SecureRandom BRIDGE_TOKEN_RANDOM = new SecureRandom();
+    private static final char[] PASSWORD_CHARS =
+            "23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz".toCharArray();
+    private static final int GUEST_PASSWORD_LENGTH = 16;
+
+    public static String newGuestPassword() {
+        char[] chars = new char[GUEST_PASSWORD_LENGTH];
+        for (int i = 0; i < GUEST_PASSWORD_LENGTH; i++) {
+            chars[i] = PASSWORD_CHARS[BRIDGE_TOKEN_RANDOM.nextInt(PASSWORD_CHARS.length)];
+        }
+        return new String(chars);
+    }
 
     private InstanceLifecycle() {}
 
@@ -125,6 +136,7 @@ public final class InstanceLifecycle {
         private final DistroReference distro;
         private final Path rootVolume;
         private final String bridgeToken;
+        private final String guestPassword;
         private final FullLinuxContract.RuntimeClass runtimeClass;
         private final State state;
         private final long createdAtMillis;
@@ -140,7 +152,7 @@ public final class InstanceLifecycle {
                 State state,
                 long createdAtMillis,
                 long updatedAtMillis) {
-            this(id, distro, rootVolume, bridgeToken, runtimeClass, state, createdAtMillis, updatedAtMillis, null);
+            this(id, distro, rootVolume, bridgeToken, newGuestPassword(), runtimeClass, state, createdAtMillis, updatedAtMillis, null);
         }
 
         private Instance(
@@ -153,11 +165,26 @@ public final class InstanceLifecycle {
                 long createdAtMillis,
                 long updatedAtMillis,
                 CrashDiagnostic crashDiagnostic) {
+            this(id, distro, rootVolume, bridgeToken, newGuestPassword(), runtimeClass, state, createdAtMillis, updatedAtMillis, crashDiagnostic);
+        }
+
+        private Instance(
+                String id,
+                DistroReference distro,
+                Path rootVolume,
+                String bridgeToken,
+                String guestPassword,
+                FullLinuxContract.RuntimeClass runtimeClass,
+                State state,
+                long createdAtMillis,
+                long updatedAtMillis,
+                CrashDiagnostic crashDiagnostic) {
             requireInstanceId(id);
             this.id = id;
             this.distro = Objects.requireNonNull(distro, "distro");
             this.rootVolume = Objects.requireNonNull(rootVolume, "rootVolume").normalize();
             this.bridgeToken = requireCanonicalBridgeToken(bridgeToken);
+            this.guestPassword = Objects.requireNonNull(guestPassword, "guestPassword");
             this.runtimeClass = Objects.requireNonNull(runtimeClass, "runtimeClass");
             this.state = Objects.requireNonNull(state, "state");
             this.createdAtMillis = createdAtMillis;
@@ -184,6 +211,14 @@ public final class InstanceLifecycle {
          */
         public String bridgeToken() {
             return bridgeToken;
+        }
+
+        /**
+         * Per-instance random guest user/root credential (ADR-0010).
+         * User-visible and modifiable; never hardcoded or constant.
+         */
+        public String guestPassword() {
+            return guestPassword;
         }
 
         public FullLinuxContract.RuntimeClass runtimeClass() {
@@ -223,6 +258,7 @@ public final class InstanceLifecycle {
                     distro,
                     rootVolume,
                     bridgeToken,
+                    guestPassword,
                     runtimeClass,
                     next,
                     createdAtMillis,
@@ -236,6 +272,21 @@ public final class InstanceLifecycle {
                     distro,
                     rootVolume,
                     bridgeToken,
+                    guestPassword,
+                    runtimeClass,
+                    state,
+                    createdAtMillis,
+                    Objects.requireNonNull(clock, "clock").millis(),
+                    crashDiagnostic);
+        }
+
+        private Instance withGuestPassword(String newPassword, Clock clock) {
+            return new Instance(
+                    id,
+                    distro,
+                    rootVolume,
+                    bridgeToken,
+                    newPassword,
                     runtimeClass,
                     state,
                     createdAtMillis,
@@ -250,6 +301,7 @@ public final class InstanceLifecycle {
             properties.setProperty("distroVersion", distro.version());
             properties.setProperty("rootVolume", rootVolume.toString());
             properties.setProperty("bridgeToken", bridgeToken);
+            properties.setProperty("guestPassword", guestPassword);
             properties.setProperty("runtimeClass", runtimeClass.name());
             properties.setProperty("state", state.name());
             properties.setProperty("createdAtMillis", Long.toString(createdAtMillis));
@@ -279,12 +331,17 @@ public final class InstanceLifecycle {
                     String message = properties.getProperty("crash.message");
                     diagnostic = new CrashDiagnostic(ts, exitCode, logPath, message);
                 }
+                String guestPassword = properties.getProperty("guestPassword");
+                if (guestPassword == null || guestPassword.trim().isEmpty()) {
+                    guestPassword = newGuestPassword();
+                }
                 return new Instance(
                         required(properties, "id"),
                         new DistroReference(
                                 required(properties, "distroId"), required(properties, "distroVersion")),
                         Path.of(required(properties, "rootVolume")),
                         required(properties, "bridgeToken"),
+                        guestPassword,
                         FullLinuxContract.RuntimeClass.valueOf(required(properties, "runtimeClass")),
                         State.valueOf(required(properties, "state")),
                         Long.parseLong(required(properties, "createdAtMillis")),
@@ -414,12 +471,29 @@ public final class InstanceLifecycle {
                             distro,
                             rootVolume,
                             newBridgeToken(),
+                            newGuestPassword(),
                             FullLinuxContract.RuntimeClass.FULL_LINUX,
                             State.CREATED,
                             now,
-                            now);
+                            now,
+                            null);
             store.save(instance);
             return instance;
+        }
+
+        public synchronized Instance updateGuestPassword(String id, String newPassword) throws IOException {
+            Objects.requireNonNull(newPassword, "newPassword");
+            String trimmed = newPassword.trim();
+            if (trimmed.length() < 8) {
+                throw new IllegalArgumentException("guest password must be at least 8 characters");
+            }
+            if (trimmed.contains(" ") || trimmed.contains("\t") || trimmed.contains("\n") || trimmed.contains("\r")) {
+                throw new IllegalArgumentException("guest password must not contain whitespace");
+            }
+            Instance current = store.load(id);
+            Instance updated = current.withGuestPassword(trimmed, clock);
+            store.save(updated);
+            return updated;
         }
 
         public synchronized Instance beginProvisioning(String id) throws IOException {

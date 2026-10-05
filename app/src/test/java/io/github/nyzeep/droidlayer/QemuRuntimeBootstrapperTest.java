@@ -77,6 +77,36 @@ public final class QemuRuntimeBootstrapperTest {
         }
     }
 
+    @Test
+    public void bootstrapSupportsGuestPassword() throws Exception {
+        Path work = temporaryFolder.newFolder("bootstrap-pass").toPath();
+        Path runtimeDir = Files.createDirectories(work.resolve("runtime"));
+        Path distroInputs = Files.createDirectories(work.resolve("distro-inputs"));
+        byte[] kernel = synthetic(4096, 0x5A);
+        byte[] initramfs = synthetic(2048, 0xA5);
+        byte[] tarball = synthetic(1024, 0x11);
+        Files.write(distroInputs.resolve("rootfs.tar.gz"), tarball);
+        Path rootVolume = work.resolve("root-volumes").resolve("instance-pass.raw");
+        Files.createDirectories(rootVolume.getParent());
+        Files.write(rootVolume, new byte[64]);
+
+        QemuRuntimeBootstrapper bootstrapper = new QemuRuntimeBootstrapper(
+                manifest(kernel, initramfs),
+                name -> new ByteArrayInputStream("Image".equals(name) ? kernel : initramfs),
+                name -> new ByteArrayInputStream(initramfs),
+                runtimeDir,
+                distroInputs);
+
+        QemuRuntimeBootstrapper.RuntimePaths paths =
+                bootstrapper.bootstrap("rootfs.tar.gz", TOKEN, "SecretPass123", rootVolume);
+
+        assertEquals(
+                "launch must use the instance root volume", rootVolume, paths.rootVolume);
+        assertTrue(
+                "embedded initramfs exists",
+                Files.isRegularFile(paths.initramfs));
+    }
+
     private static RuntimeArtifactManifest manifest(byte[] kernel, byte[] initramfs) throws Exception {
         return RuntimeArtifactManifest.parse(new ByteArrayInputStream(
                 (entry("Image", kernel)
