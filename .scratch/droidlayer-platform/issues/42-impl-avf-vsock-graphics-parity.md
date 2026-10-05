@@ -1,7 +1,7 @@
 # 42: AVF 硬件虚拟化 vsock 高速图形传输通道与双引擎对齐
 
 Type: implementation  
-Status: ready-for-review  
+Status: completed  
 
 ## What to build
 
