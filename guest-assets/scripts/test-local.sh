@@ -4,15 +4,18 @@ set -euo pipefail
 # shellcheck source=common.sh
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/common.sh"
 
+if [[ -z "${TICKET26_WORK_ROOT:-}" || ! -d "$TICKET26_WORK_ROOT" ]]; then
+  export TICKET26_WORK_ROOT="${GUEST_ASSETS_WORK_DIR:-/tmp}/ticket26-work"
+  mkdir -p "$TICKET26_WORK_ROOT"
+fi
+
 if [[ "${1:-}" == "--init-fallback-only" ]]; then
-  [[ -n "${TICKET26_WORK_ROOT:-}" && -d "$TICKET26_WORK_ROOT" ]] || exit 64
   TICKET26_WORK_ROOT="$TICKET26_WORK_ROOT" sh "$GUEST_ASSETS_DIR/scripts/test-initramfs-init-fallback.sh"
   exit 0
 fi
 
 "$REPOSITORY_DIR/gradlew" --no-daemon -p "$GUEST_ASSETS_DIR" test
 
-[[ -n "${TICKET26_WORK_ROOT:-}" && -d "$TICKET26_WORK_ROOT" ]] || exit 64
 TICKET26_WORK_ROOT="$TICKET26_WORK_ROOT" sh "$GUEST_ASSETS_DIR/scripts/test-initramfs-init-fallback.sh"
 
 bash -n "$GUEST_ASSETS_DIR/build.sh" \
