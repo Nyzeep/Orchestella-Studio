@@ -23,6 +23,7 @@ public final class NormalInstanceLifecycleContractTest {
         persistsNormalProvisioningStartAndGuestStopAcrossStoreReconstruction(testDirectory);
         permitsOnlyOneRunningInstance(testDirectory);
         generatesAndPersistsAUniqueBridgeTokenPerInstance(testDirectory);
+        generatesAndPersistsRandomCredentialsPerInstance(testDirectory);
     }
 
     private static void persistsNormalProvisioningStartAndGuestStopAcrossStoreReconstruction(
@@ -115,6 +116,55 @@ public final class NormalInstanceLifecycleContractTest {
                 "first Instance token persists without disclosure");
     }
 
+    private static void generatesAndPersistsRandomCredentialsPerInstance(Path testDirectory)
+            throws Exception {
+        InstanceLifecycle.FileStore store =
+                new InstanceLifecycle.FileStore(testDirectory.resolve("metadata-cred"));
+        InstanceLifecycle.Controller controller = new InstanceLifecycle.Controller(store, CLOCK);
+        InstanceLifecycle.Instance first =
+                controller.create(
+                        new InstanceLifecycle.DistroReference("alpine", "3.24.1"),
+                        testDirectory.resolve("first-cred.raw"));
+        InstanceLifecycle.Instance second =
+                controller.create(
+                        new InstanceLifecycle.DistroReference("alpine", "3.24.1"),
+                        testDirectory.resolve("second-cred.raw"));
+
+        assertNotNull(first.guestPassword(), "first guest password must not be null");
+        assertNotNull(second.guestPassword(), "second guest password must not be null");
+        assertTrue(first.guestPassword().length() >= 12, "guest password must be at least 12 chars");
+        assertFalse(
+                first.guestPassword().equals(second.guestPassword()),
+                "instances must have distinct random passwords");
+
+        // Persists across reconstructed store
+        InstanceLifecycle.FileStore reconstructed =
+                new InstanceLifecycle.FileStore(testDirectory.resolve("metadata-cred"));
+        assertEquals(
+                first.guestPassword(),
+                reconstructed.load(first.id()).guestPassword(),
+                "guest password persists");
+
+        // Update password
+        InstanceLifecycle.Instance updated =
+                controller.updateGuestPassword(first.id(), "NewSecurePass2026");
+        assertEquals("NewSecurePass2026", updated.guestPassword(), "updated password in memory");
+        assertEquals(
+                "NewSecurePass2026",
+                reconstructed.load(first.id()).guestPassword(),
+                "updated password in store");
+
+        // Invalid update rejected
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> controller.updateGuestPassword(first.id(), "short"),
+                "short password rejected");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> controller.updateGuestPassword(first.id(), "pass with spaces"),
+                "spaces rejected");
+    }
+
     private static void provisionToStopped(InstanceLifecycle.Controller controller, String id) throws Exception {
         controller.beginProvisioning(id);
         controller.completeProvisioning(id);
@@ -144,6 +194,18 @@ public final class NormalInstanceLifecycleContractTest {
     private static void assertCanonicalToken(String token, String description) {
         if (token == null || !token.matches("[0-9a-f]{64}")) {
             throw new AssertionError(description + " must be canonical without logging its value");
+        }
+    }
+
+    private static void assertTrue(boolean condition, String description) {
+        if (!condition) {
+            throw new AssertionError(description);
+        }
+    }
+
+    private static void assertNotNull(Object value, String description) {
+        if (value == null) {
+            throw new AssertionError(description);
         }
     }
 

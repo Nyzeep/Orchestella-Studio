@@ -34,6 +34,10 @@ public final class AndroidSafExportAdapterTest {
 
     @Rule public final TemporaryFolder temporaryFolder = new TemporaryFolder();
 
+    private static Uri dummyUri() {
+        return android.net.TestUri.create("content://dummy");
+    }
+
     @Test
     public void exportsToDocumentUriAsVerifiedArchive() throws Exception {
         Path workDir = temporaryFolder.newFolder("saf-doc").toPath();
@@ -52,7 +56,7 @@ public final class AndroidSafExportAdapterTest {
         AndroidSafExportAdapter.DocumentStreamOpener opener = uri -> capturedOutput;
         AndroidSafExportAdapter adapter = new AndroidSafExportAdapter(opener, CLOCK);
 
-        Uri dummyUri = Uri.EMPTY;
+        Uri dummyUri = dummyUri();
 
         StorageContract.InstanceExportMetadata metadata = adapter.exportToDocumentUri(instance, dummyUri);
         assertNotNull(metadata);
@@ -89,7 +93,7 @@ public final class AndroidSafExportAdapterTest {
         AndroidSafExportAdapter.DocumentStreamOpener opener = uri -> new ByteArrayOutputStream();
         AndroidSafExportAdapter adapter = new AndroidSafExportAdapter(opener, writer, CLOCK);
 
-        Uri dummyTreeUri = Uri.EMPTY;
+        Uri dummyTreeUri = dummyUri();
 
         StorageContract.InstanceExportMetadata metadata = adapter.exportToTreeUri(instance, dummyTreeUri);
         assertNotNull(metadata);
@@ -127,7 +131,7 @@ public final class AndroidSafExportAdapterTest {
         InstanceLifecycle.Instance runningInstance = controller.start(instance.id());
 
         AndroidSafExportAdapter adapter = new AndroidSafExportAdapter(uri -> new ByteArrayOutputStream(), CLOCK);
-        Uri dummyUri = Uri.EMPTY;
+        Uri dummyUri = dummyUri();
 
         try {
             adapter.exportToDocumentUri(runningInstance, dummyUri);

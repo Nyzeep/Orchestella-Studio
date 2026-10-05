@@ -38,6 +38,9 @@ import java.util.concurrent.Executors
 class MainActivity : Activity() {
     private val operations = Executors.newSingleThreadExecutor()
     private lateinit var instanceStore: InstanceLifecycle.FileStore
+    private lateinit var settingsManager: SettingsManager
+    private lateinit var settingsButton: Button
+    private lateinit var refusalBanner: Button
     private lateinit var createAlpineButton: Button
     private lateinit var createDebianButton: Button
     private lateinit var upgradeAuthorizationButton: Button
@@ -51,10 +54,13 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        settingsManager = SettingsManager(this)
         val assessment = DeviceCapabilityEvaluator.evaluate(deviceProfile())
         avfReadiness = AvfCapabilityEvaluator.evaluate(AvfHostFactsProbe.probe(this))
         wizardModel = AvfAuthorizationWizardModel.fromAssessment(avfReadiness!!)
         renderRuntimeStatus(assessment)
+        settingsButton = findViewById(R.id.settings_button)
+        refusalBanner = findViewById(R.id.refusal_banner)
         createAlpineButton = findViewById(R.id.create_alpine)
         createDebianButton = findViewById(R.id.create_debian)
         createProgress = findViewById(R.id.create_progress)
@@ -62,8 +68,17 @@ class MainActivity : Activity() {
         instanceList = findViewById(R.id.instance_list)
         upgradeAuthorizationButton = findViewById(R.id.upgrade_authorization)
         instanceStore = InstanceLifecycle.FileStore(filesDir.toPath().resolve("instances"))
+
+        settingsButton.setOnClickListener { showSettingsDialog() }
         val canCreate = assessment.canCreateFullLinuxInstance()
         setCreateButtonsEnabled(canCreate)
+        if (!canCreate) {
+            refusalBanner.visibility = View.VISIBLE
+            refusalBanner.setOnClickListener { showRefusalDetailsDialog(assessment) }
+        } else {
+            refusalBanner.visibility = View.GONE
+        }
+
         createAlpineButton.setOnClickListener { createDistro(OfficialAlpineCatalog.alpine()) }
         createDebianButton.setOnClickListener { createDistro(OfficialDebianCatalog.debian()) }
         upgradeAuthorizationButton.setOnClickListener { showAvfAuthorizationWizard() }
@@ -168,9 +183,17 @@ class MainActivity : Activity() {
             avfReadiness = AvfCapabilityEvaluator.evaluate(facts)
             refreshWizardEntry()
             rerenderRuntimeStatus()
-            Toast.makeText(this, R.string.wizard_authorized_toast, Toast.LENGTH_SHORT).show()
+            android.app.AlertDialog.Builder(this)
+                .setTitle(R.string.wizard_authorized_success_title)
+                .setMessage(R.string.wizard_authorized_success_msg)
+                .setPositiveButton(R.string.credentials_close, null)
+                .show()
         } else {
-            Toast.makeText(this, R.string.wizard_not_yet_authorized, Toast.LENGTH_SHORT).show()
+            android.app.AlertDialog.Builder(this)
+                .setTitle(R.string.wizard_vendor_failure_title)
+                .setMessage(R.string.wizard_vendor_failure_steps)
+                .setPositiveButton(R.string.credentials_close, null)
+                .show()
         }
     }
 
@@ -211,6 +234,10 @@ class MainActivity : Activity() {
                 layoutParams = LinearLayout.LayoutParams(0,
                     LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
+            row.addView(android.widget.Button(this).apply {
+                text = getString(R.string.instance_credentials)
+                setOnClickListener { showCredentialsDialog(instance) }
+            })
             if (instance.state().name == "STOPPED" || instance.state().name == "CREATED") {
                 row.addView(android.widget.Button(this).apply {
                     text = getString(R.string.instance_launch)
@@ -230,6 +257,10 @@ class MainActivity : Activity() {
             try {
                 InstanceLaunchSequence.beforeLaunch(controller, instance)
                 running = true
+                val distroTitle = instance.distro().id().replaceFirstChar { it.uppercase() } + " " + instance.distro().version()
+                val badge = currentBadge(DeviceCapabilityEvaluator.evaluate(deviceProfile()))
+                settingsManager.lastActiveInstanceId = instance.id()
+                DroidLayerForegroundService.start(this, instance.id(), distroTitle, badge, settingsManager.batteryPolicy)
                 val rootfsFileName = when (instance.distro().id()) {
                     "debian" -> OfficialDebianCatalog.debian().rootfsFileName()
                     "alpine" -> OfficialAlpineCatalog.alpine().rootfsFileName()
@@ -242,6 +273,7 @@ class MainActivity : Activity() {
                     instance.rootVolume().toString(),
                     filesDir.resolve("runtime").resolve(instance.id()).absolutePath,
                     filesDir.resolve("distro-inputs").absolutePath,
+                    instance.guestPassword(),
                 )
                 val preferAvf =
                     avfReadiness?.status() == AvfCapabilityEvaluator.AvfStatus.READY
@@ -258,6 +290,7 @@ class MainActivity : Activity() {
                 Thread {
                     try {
                         session.waitFor()
+                        DroidLayerForegroundService.stop(this)
                         InstanceLaunchSequence.afterGuestExit(controller, instance.id())
                         runOnUiThread {
                             createStatus.setText(R.string.launch_guest_exited)
@@ -265,8 +298,10 @@ class MainActivity : Activity() {
                             showInstances()
                         }
                     } catch (ignored: InterruptedException) {
+                        DroidLayerForegroundService.stop(this)
                         Thread.currentThread().interrupt()
                     } catch (failure: Exception) {
+                        DroidLayerForegroundService.stop(this)
                         runOnUiThread {
                             createStatus.text = getString(R.string.launch_failed, failure.toString())
                             setCreateButtonsEnabled(DeviceCapabilityEvaluator.evaluate(deviceProfile()).canCreateFullLinuxInstance())
@@ -287,6 +322,7 @@ class MainActivity : Activity() {
                     startActivity(intent)
                 }
             } catch (failure: Exception) {
+                DroidLayerForegroundService.stop(this)
                 if (running) {
                     try {
                         InstanceLaunchSequence.afterGuestExit(controller, instance.id())
@@ -387,4 +423,199 @@ class MainActivity : Activity() {
         } catch (_: IOException) {
             getString(R.string.qemu_runtime_unavailable, "runtime manifest unavailable")
         }
+
+    private fun showCredentialsDialog(instance: InstanceLifecycle.Instance) {
+        val message = getString(R.string.credentials_message, instance.guestPassword())
+        android.app.AlertDialog.Builder(this)
+            .setTitle(R.string.credentials_title)
+            .setMessage(message)
+            .setPositiveButton(R.string.credentials_copy) { _, _ ->
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("GuestPassword", instance.guestPassword()))
+                Toast.makeText(this, R.string.credentials_copied, Toast.LENGTH_SHORT).show()
+            }
+            .setNeutralButton(R.string.credentials_change) { _, _ ->
+                showChangePasswordDialog(instance)
+            }
+            .setNegativeButton(R.string.credentials_close, null)
+            .show()
+    }
+
+    private fun showChangePasswordDialog(instance: InstanceLifecycle.Instance) {
+        val input = android.widget.EditText(this).apply {
+            hint = getString(R.string.credentials_change_hint)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(50, 20, 50, 20)
+            addView(input)
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle(R.string.credentials_change_title)
+            .setView(container)
+            .setPositiveButton(R.string.credentials_change) { _, _ ->
+                val newPass = input.text.toString().trim()
+                if (newPass.length < 8 || newPass.contains(" ") || newPass.contains("\t") || newPass.contains("\n")) {
+                    Toast.makeText(this, R.string.credentials_invalid, Toast.LENGTH_LONG).show()
+                    return@setPositiveButton
+                }
+                operations.execute {
+                    try {
+                        val controller = InstanceLifecycle.Controller(instanceStore, Clock.systemUTC())
+                        controller.updateGuestPassword(instance.id(), newPass)
+                        runOnUiThread {
+                            Toast.makeText(this, R.string.credentials_updated, Toast.LENGTH_SHORT).show()
+                            showInstances()
+                        }
+                    } catch (e: Exception) {
+                        runOnUiThread {
+                            Toast.makeText(this, e.message ?: "修改失败", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+            .setNegativeButton(R.string.credentials_close, null)
+            .show()
+    }
+
+    private fun showRefusalDetailsDialog(assessment: DeviceCapabilityEvaluator.Assessment) {
+        android.app.AlertDialog.Builder(this)
+            .setTitle(R.string.refusal_dialog_title)
+            .setMessage(getString(R.string.refusal_dialog_message, assessment.refusalReason()))
+            .setPositiveButton(R.string.credentials_close, null)
+            .show()
+    }
+
+    private fun showSettingsDialog() {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 20, 40, 20)
+        }
+
+        val bootCheckbox = android.widget.CheckBox(this).apply {
+            text = getString(R.string.settings_boot_autostart)
+            isChecked = settingsManager.isBootAutoStartEnabled
+            setOnCheckedChangeListener { _, isChecked ->
+                settingsManager.isBootAutoStartEnabled = isChecked
+            }
+        }
+        val bootDesc = TextView(this).apply {
+            text = getString(R.string.settings_boot_autostart_desc)
+            setTextAppearance(android.R.style.TextAppearance_Material_Caption)
+            setPadding(20, 0, 0, 16)
+        }
+
+        val updateCheckbox = android.widget.CheckBox(this).apply {
+            text = getString(R.string.settings_update_check)
+            isChecked = settingsManager.isUpdateCheckEnabled
+            setOnCheckedChangeListener { _, isChecked ->
+                settingsManager.isUpdateCheckEnabled = isChecked
+            }
+        }
+        val updateDesc = TextView(this).apply {
+            text = getString(R.string.settings_update_check_desc)
+            setTextAppearance(android.R.style.TextAppearance_Material_Caption)
+            setPadding(20, 0, 0, 16)
+        }
+
+        val batteryLabel = TextView(this).apply {
+            text = getString(R.string.settings_battery_policy)
+            setTextAppearance(android.R.style.TextAppearance_Material_Subhead)
+            setPadding(0, 8, 0, 8)
+        }
+        val batteryGroup = android.widget.RadioGroup(this)
+        val balancedRadio = android.widget.RadioButton(this).apply {
+            text = getString(R.string.settings_battery_balanced)
+            isChecked = settingsManager.batteryPolicy == BatteryPolicy.BALANCED
+        }
+        val perfRadio = android.widget.RadioButton(this).apply {
+            text = getString(R.string.settings_battery_performance)
+            isChecked = settingsManager.batteryPolicy == BatteryPolicy.PERFORMANCE
+        }
+        batteryGroup.addView(balancedRadio)
+        batteryGroup.addView(perfRadio)
+        batteryGroup.setOnCheckedChangeListener { _, checkedId ->
+            if (checkedId == balancedRadio.id) {
+                settingsManager.batteryPolicy = BatteryPolicy.BALANCED
+            } else if (checkedId == perfRadio.id) {
+                settingsManager.batteryPolicy = BatteryPolicy.PERFORMANCE
+            }
+        }
+
+        val checkUpdateBtn = Button(this).apply {
+            text = getString(R.string.settings_check_update_now)
+            setOnClickListener { checkForUpdateManual() }
+        }
+
+        val phantomGuideBtn = Button(this).apply {
+            text = getString(R.string.settings_phantom_guide)
+            setOnClickListener { PhantomProcessKillerGuide.showDialog(this@MainActivity) }
+        }
+
+        container.addView(bootCheckbox)
+        container.addView(bootDesc)
+        container.addView(updateCheckbox)
+        container.addView(updateDesc)
+        container.addView(batteryLabel)
+        container.addView(batteryGroup)
+        container.addView(checkUpdateBtn)
+        container.addView(phantomGuideBtn)
+
+        android.app.AlertDialog.Builder(this)
+            .setTitle(R.string.settings_title)
+            .setView(container)
+            .setPositiveButton(R.string.settings_close, null)
+            .show()
+    }
+
+    private fun checkForUpdateManual() {
+        Toast.makeText(this, R.string.update_checking, Toast.LENGTH_SHORT).show()
+        operations.execute {
+            val checker = GitHubUpdateChecker(settingsManager)
+            val versionName = try {
+                packageManager.getPackageInfo(packageName, 0).versionName
+            } catch (_: Exception) {
+                "0.1.0-dev"
+            }
+            val result = checker.checkForUpdate(versionName)
+            runOnUiThread {
+                when (result.status()) {
+                    GitHubUpdateChecker.Status.DISABLED -> {
+                        android.app.AlertDialog.Builder(this)
+                            .setTitle(R.string.settings_update_check)
+                            .setMessage(R.string.update_disabled_msg)
+                            .setPositiveButton(R.string.credentials_close, null)
+                            .show()
+                    }
+                    GitHubUpdateChecker.Status.UP_TO_DATE -> {
+                        android.app.AlertDialog.Builder(this)
+                            .setTitle(R.string.settings_update_check)
+                            .setMessage(getString(R.string.update_up_to_date, result.latestVersion() ?: versionName))
+                            .setPositiveButton(R.string.credentials_close, null)
+                            .show()
+                    }
+                    GitHubUpdateChecker.Status.UPDATE_AVAILABLE -> {
+                        android.app.AlertDialog.Builder(this)
+                            .setTitle(getString(R.string.update_available_title, result.latestVersion()))
+                            .setMessage(getString(R.string.update_available_msg, result.releaseNotes()))
+                            .setPositiveButton(R.string.update_open_browser) { _, _ ->
+                                if (result.releaseUrl() != null) {
+                                    val intent = android.content.Intent(
+                                        android.content.Intent.ACTION_VIEW,
+                                        android.net.Uri.parse(result.releaseUrl())
+                                    )
+                                    startActivity(intent)
+                                }
+                            }
+                            .setNegativeButton(R.string.credentials_close, null)
+                            .show()
+                    }
+                    GitHubUpdateChecker.Status.ERROR -> {
+                        Toast.makeText(this, result.errorMessage() ?: "检查失败", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
+    }
 }

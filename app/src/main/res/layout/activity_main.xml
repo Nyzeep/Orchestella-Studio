@@ -9,11 +9,25 @@
         android:orientation="vertical"
         android:padding="24dp">
 
-        <TextView
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/app_name"
-            android:textAppearance="@android:style/TextAppearance.Material.Headline" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/app_name"
+                android:textAppearance="@android:style/TextAppearance.Material.Headline" />
+
+            <Button
+                android:id="@+id/settings_button"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_title" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/runtime_status"
@@ -22,6 +36,14 @@
             android:layout_marginTop="16dp"
             android:text="@string/runtime_status_loading"
             android:textAppearance="@android:style/TextAppearance.Material.Medium" />
+
+        <Button
+            android:id="@+id/refusal_banner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/refusal_banner_title"
+            android:visibility="gone" />
 
         <Button
             android:id="@+id/upgrade_authorization"
