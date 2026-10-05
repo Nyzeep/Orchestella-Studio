@@ -1,7 +1,7 @@
 # 38: 策略中立图形显示与控制协议契约
 
 Type: implementation  
-Status: ready-for-review  
+Status: completed  
 
 ## What to build
 
