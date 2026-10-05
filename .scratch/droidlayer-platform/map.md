@@ -13,7 +13,8 @@ Effort: droidlayer-platform
 - **Spec 已发布**：M1 MVP 规格见 [.scratch/droidlayer-platform/spec.md](spec.md)；M2 Wayland 原生图形桌面与深度输入规格见 [.scratch/droidlayer-platform/spec-m2.md](spec-m2.md)（ready-for-agent，依据 ADR-0012/0017 与 2026-10-05 调研）。
 - **实现工单状态**：
   * M1 工单（issues/25–37）已全量验收合流完成（Status: completed）；
-  * M2 示踪箭工单（issues/38–42）共 5 张（ready-for-agent）已发布，涵盖契约、SurfaceView 双缓冲渲染、触控/IME 桥接、Guest labwc 桌面装配与 AVF vsock 对齐。
+  * M2 示踪箭工单：Ticket 38~41 已全量验收合流（Status: completed）；
+  * M2 并行前沿工单：Ticket 42（AVF vsock 图形通道对齐，管辖 :runtime:engine-avf）与 Ticket 43（Android 宿主图形桌面 Activity 与 UI 入口，管辖 :app）均为 ready-for-agent，已解耦支持双路并行派发。
 - **工程交接包**：`docs/agent-handoff/`（ENGINEERING_HANDOFF 为入口；执行/合同/并行/报告/变更门五份配套）。
 - **用户背景**：领域新手。所有 grilling 必须用通俗语言解释术语（kernel / rootfs / container / namespace / pKVM / AVF / vsock / 9p …），并按固定六段格式提问：①真正要决定的问题 ②为什么重要 ③推荐答案 ④优点 ⑤代价/风险 ⑥可逆性。
 - **工作节奏**：每次 grilling 只问一个问题，等用户回答，写 ADR/CONTEXT.md，再问下一个（`/grill-with-docs` 的节奏）。不把实现细节伪装成需求决策。
