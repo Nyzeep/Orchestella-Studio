@@ -92,6 +92,17 @@ public final class AvfVirtualMachineEngine {
             return terminalChannel;
         }
 
+        /**
+         * Opens one additional guest-bound vsock channel (retry-connected),
+         * e.g. for the {@link AvfVsockPortForwarder} to reach the in-guest
+         * forward proxy on a forwarded service port. Distinct from the two
+         * dedicated bridge channels, which stay single-open.
+         */
+        public AvfVirtualMachineApi.AvfVsockChannel openChannel(int port)
+                throws AvfEngineException {
+            return connectWithRetry(port);
+        }
+
         /** Blocks until the guest exits; exit observation is best-effort. */
         public int waitFor() throws InterruptedException {
             return handle.waitFor();

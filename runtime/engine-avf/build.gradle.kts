@@ -61,6 +61,11 @@ tasks.register<JavaExec>("avfNetworkAssemblyContractTest") {
     mainClass.set("io.github.nyzeep.droidlayer.runtime.engineavf.AvfNetworkAssemblyContractTest")
 }
 
+tasks.register<JavaExec>("avfVsockPortForwarderTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.droidlayer.runtime.engineavf.AvfVsockPortForwarderTest")
+}
+
 tasks.named("check") {
     dependsOn(
         "avfLaunchSpecTest",
@@ -70,5 +75,6 @@ tasks.named("check") {
         "avfInstanceLifecycleContractTest",
         "avfQemuInteropTest",
         "avfNetworkAssemblyContractTest",
+        "avfVsockPortForwarderTest",
     )
 }
