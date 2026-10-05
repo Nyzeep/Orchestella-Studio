@@ -1,6 +1,7 @@
 package io.github.nyzeep.droidlayer.runtime.engineavf;
 
 import io.github.nyzeep.droidlayer.runtime.contract.BridgeClient;
+import io.github.nyzeep.droidlayer.runtime.contract.BridgeControl;
 
 /**
  * The Full Linux bridge contract exercised over the AVF vsock transport with
@@ -16,9 +17,10 @@ public final class AvfBridgeOverVsockContractTest {
         pingPongAndResizeRoundTripOverVsock();
         aWrongTokenIsRejectedByTheGuestAgent();
         notifyAndOpenUrlRoundTripOverVsock();
+        powerRoundTripsOverVsockForTheGracefulStopPath();
         System.out.println(
                 "AVF_BRIDGE_OVER_VSOCK_CONTRACT_TEST_OK hello=1 ping_resize=1 unauthorized=1"
-                        + " notify_open_url=1");
+                        + " notify_open_url=1 power=1");
     }
 
     private static AvfVirtualMachineEngine.AvfVmSession session(SimulatedAvfGuest guest)
@@ -108,6 +110,28 @@ public final class AvfBridgeOverVsockContractTest {
                     guest.receivedControlLines()
                             .contains("DROIDLAYER/OPEN-URL https://droidlayer.github.io"),
                     "open-url wire line reaches the guest");
+            session.closeChannels();
+        }
+    }
+
+    /** Ticket 28's power command rides the same vsock control channel. */
+    private static void powerRoundTripsOverVsockForTheGracefulStopPath() throws Exception {
+        try (SimulatedAvfGuest guest = new SimulatedAvfGuest(TOKEN, 9100, 9101)) {
+            AvfVirtualMachineEngine.AvfVmSession session = session(guest);
+            BridgeClient client = new BridgeClient(
+                    session.controlChannel().inputStream(),
+                    session.controlChannel().outputStream());
+            client.handshake(TOKEN);
+
+            BridgeClient.Result shutdown = client.power(BridgeControl.PowerAction.SHUTDOWN);
+            assertTrue(shutdown.accepted(), "OK power must be accepted over vsock");
+            assertEquals("ok-power", shutdown.responseKind(), "power kind");
+            assertTrue(
+                    guest.receivedControlLines().contains("DROIDLAYER/POWER shutdown"),
+                    "the exact power wire line reaches the guest");
+            BridgeClient.Result poweroff = client.power("poweroff");
+            assertTrue(poweroff.accepted(), "poweroff by wire name is accepted too");
+            assertEquals("ok-power", poweroff.responseKind(), "poweroff kind");
             session.closeChannels();
         }
     }
