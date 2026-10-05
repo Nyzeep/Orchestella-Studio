@@ -1,5 +1,7 @@
 package io.github.nyzeep.droidlayer.runtime.engineavf;
 
+import io.github.nyzeep.droidlayer.runtime.contract.NetworkContract;
+import java.util.Objects;
 import java.util.regex.Pattern;
 
 /**
@@ -11,6 +13,12 @@ import java.util.regex.Pattern;
  * <p>Asset interop (ADR-0001): the kernel Image, the embedded-provision
  * initramfs and the raw root volume consumed here are the very same files the
  * QEMU strategy consumes — no conversion, no copy, one binary identity.
+ *
+ * <p>Network interop (ADR-0008, Ticket 36): the outbound network assembly
+ * consumes the SAME strategy-neutral {@link NetworkContract.OutboundNetworkSpec}
+ * the QEMU engine consumes; the crosvm network backend is enabled through the
+ * AVF config's network-supported switch and the guest learns the resolver via
+ * the same {@code droidlayer.dns=} kernel cmdline key.
  */
 public final class AvfLaunchSpec {
     /**
@@ -18,7 +26,9 @@ public final class AvfLaunchSpec {
      * console (hvc0); the droidlayer.* keys mirror the QEMU guest contract so
      * the same guest provisioning logic can consume them. The vsock ports
      * tell a vsock-speaking guest agent where to serve the bridge control
-     * channel and the terminal channel.
+     * channel and the terminal channel. {@code droidlayer.dns=} is appended
+     * from the outbound network spec so guest DNS resolution matches the
+     * QEMU profile (Ticket 27/36).
      */
     public static final String GUEST_CMDLINE_TEMPLATE =
             "console=hvc0 rdinit=/init panic=-1"
@@ -44,6 +54,7 @@ public final class AvfLaunchSpec {
     private final int cpuCount;
     private final int controlVsockPort;
     private final int terminalVsockPort;
+    private final NetworkContract.OutboundNetworkSpec networkSpec;
     private final String guestCmdline;
 
     private AvfLaunchSpec(Builder builder) {
@@ -55,8 +66,18 @@ public final class AvfLaunchSpec {
         this.cpuCount = builder.cpuCount;
         this.controlVsockPort = builder.controlVsockPort;
         this.terminalVsockPort = builder.terminalVsockPort;
-        this.guestCmdline = String.format(
-                GUEST_CMDLINE_TEMPLATE, builder.controlVsockPort, builder.terminalVsockPort);
+        this.networkSpec = builder.networkSpec;
+        this.guestCmdline = appendDnsKey(
+                String.format(GUEST_CMDLINE_TEMPLATE, builder.controlVsockPort, builder.terminalVsockPort),
+                builder.networkSpec);
+    }
+
+    private static String appendDnsKey(String cmdline, NetworkContract.OutboundNetworkSpec spec) {
+        String dns = spec.cmdlineDns();
+        if (dns == null || dns.isEmpty()) {
+            return cmdline;
+        }
+        return cmdline + " droidlayer.dns=" + dns;
     }
 
     public String instanceId() {
@@ -91,6 +112,11 @@ public final class AvfLaunchSpec {
         return terminalVsockPort;
     }
 
+    /** The strategy-neutral outbound network assembly shared with the QEMU engine. */
+    public NetworkContract.OutboundNetworkSpec networkSpec() {
+        return networkSpec;
+    }
+
     public String guestCmdline() {
         return guestCmdline;
     }
@@ -109,6 +135,8 @@ public final class AvfLaunchSpec {
         private int cpuCount = DEFAULT_CPU_COUNT;
         private int controlVsockPort = DEFAULT_CONTROL_VSOCK_PORT;
         private int terminalVsockPort = DEFAULT_TERMINAL_VSOCK_PORT;
+        private NetworkContract.OutboundNetworkSpec networkSpec =
+                NetworkContract.OutboundNetworkSpec.defaultSpec();
 
         private Builder(
                 String instanceId, String kernelPath, String initramfsPath, String rootVolumePath) {
@@ -142,6 +170,20 @@ public final class AvfLaunchSpec {
 
         public Builder terminalVsockPort(int port) {
             this.terminalVsockPort = requirePort(port);
+            return this;
+        }
+
+        /**
+         * Replaces the outbound network assembly. IPv6-enabled specifications are
+         * rejected here because the AVF profile must not claim an IPv6-capable
+         * guest network (ADR-0008; the contract type enforces the same rule).
+         */
+        public Builder networkSpec(NetworkContract.OutboundNetworkSpec networkSpec) {
+            Objects.requireNonNull(networkSpec, "networkSpec");
+            if (networkSpec.ipv6Enabled()) {
+                throw new IllegalArgumentException("IPv6 is not supported per ADR-0008");
+            }
+            this.networkSpec = networkSpec;
             return this;
         }
 

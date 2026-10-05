@@ -108,6 +108,51 @@ public final class SimulatedAvfGuest implements AutoCloseable {
         return observedConfigs;
     }
 
+    /**
+     * Registers the in-guest forward proxy (Ticket 36 AC-2): vsock connections
+     * on {@code vsockPort} are relayed to the guest-local service on
+     * {@code 127.0.0.1:targetTcpPort} — the exact shape the real guest agent
+     * implements so the host-side forwarder can reach guest services.
+     */
+    public void listenForwardProxy(int vsockPort, int targetTcpPort) throws IOException {
+        network.listen(vsockPort, socket -> relayToGuestService(socket, targetTcpPort));
+    }
+
+    /** The fake vsock network behind this simulated guest (host-side wiring). */
+    public FakeVsockNetwork network() {
+        return network;
+    }
+
+    private void relayToGuestService(Socket vsockSide, int targetTcpPort) {
+        try (Socket vsock = vsockSide;
+                Socket guest = new Socket(java.net.InetAddress.getLoopbackAddress(), targetTcpPort)) {
+            Thread toGuest = pump(vsock.getInputStream(), guest.getOutputStream());
+            Thread toHost = pump(guest.getInputStream(), vsock.getOutputStream());
+            toGuest.join();
+            toHost.join();
+        } catch (Exception ignored) {
+            // proxy flow ended (either side closed)
+        }
+    }
+
+    private static Thread pump(java.io.InputStream in, OutputStream out) {
+        Thread thread = new Thread(() -> {
+            byte[] buffer = new byte[4096];
+            int count;
+            try {
+                while ((count = in.read(buffer)) >= 0) {
+                    out.write(buffer, 0, count);
+                    out.flush();
+                }
+            } catch (IOException ignored) {
+                // relay direction ended
+            }
+        }, "in-guest-forward-proxy-relay");
+        thread.setDaemon(true);
+        thread.start();
+        return thread;
+    }
+
     /** Bridge v1 host-initiated wire: HELLO/READY, PING/PONG, RESIZE/OK, ... */
     private void serveControl(Socket socket) {
         try (BufferedReader reader =
