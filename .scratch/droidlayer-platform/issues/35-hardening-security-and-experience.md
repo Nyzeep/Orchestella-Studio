@@ -1,7 +1,7 @@
 # 35: 安全与体验硬化
 
 Type: hardening（实现质量收尾票，agent 可执行；全量回归 + 安全清单走查为验收主体）
-Status: ready-for-review
+Status: completed
 
 ## What to build
 
