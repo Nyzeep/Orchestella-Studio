@@ -1,6 +1,10 @@
 package io.github.nyzeep.droidlayer.runtime.engineavf;
 
+import android.system.virtualmachine.FakeVsockNetwork;
 import android.system.virtualmachine.VirtualMachineCustomImageConfig;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.URL;
 import java.net.URLClassLoader;
 
@@ -13,6 +17,43 @@ public final class AvfVirtualMachineApiFixture {
         return new ReflectiveAvfVirtualMachineApi(
                 guest.newContext(guest.newManager(null)),
                 AvfVirtualMachineApiFixture.class.getClassLoader());
+    }
+
+    /**
+     * A {@link AvfVsockPortForwarder.VsockChannelFactory} over the fake vsock
+     * network, adapting the duck-typed {@code VsockConnection} exactly like the
+     * reflective adapter does against the real SDK surface.
+     */
+    public static AvfVsockPortForwarder.VsockChannelFactory channelFactoryOver(
+            FakeVsockNetwork network) {
+        return port -> {
+            android.system.virtualmachine.VsockConnection raw = network.connect(port);
+            return new AvfVirtualMachineApi.AvfVsockChannel() {
+                @Override
+                public InputStream inputStream() {
+                    try {
+                        return raw.getInputStream();
+                    } catch (IOException failure) {
+                        throw new IllegalStateException("vsock stream unavailable", failure);
+                    }
+                }
+
+                @Override
+                public OutputStream outputStream() {
+                    try {
+                        return raw.getOutputStream();
+                    } catch (IOException failure) {
+                        throw new IllegalStateException("vsock stream unavailable", failure);
+                    }
+                }
+
+                @Override
+                public void close() throws IOException {
+                    raw.getInputStream().close();
+                    raw.getOutputStream().close();
+                }
+            };
+        };
     }
 
     /** An api whose manager records observed configs before booting the guest. */

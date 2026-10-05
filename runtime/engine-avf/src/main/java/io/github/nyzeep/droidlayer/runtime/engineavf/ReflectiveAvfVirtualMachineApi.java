@@ -109,6 +109,7 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
         invokeOptional(
                 builderClass, builder, "setNetworkSupported", new Class<?>[] {boolean.class},
                 new Object[] {Boolean.TRUE}, notes);
+        applyKernelCmdline(builderClass, builder, spec.guestCmdline(), notes);
         Object config = invokeRequired(
                 builderClass, builder, "build", new Class<?>[0], new Object[0], notes);
         Object vm = createVm(managerClass, manager, configClass, config, spec.instanceId(), notes);
@@ -245,6 +246,34 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
         } catch (ReflectiveOperationException | IllegalArgumentException failure) {
             notes.add("cpuCount configuration skipped: " + failure.getClass().getSimpleName());
         }
+    }
+
+    /**
+     * Delivers the guest network contract keys (vsock service ports,
+     * {@code droidlayer.dns=}) through the platform's optional kernel-cmdline
+     * setter. Platform versions expose the surface under different names
+     * ({@code setKernelCmdline}/{@code setParams}); the first resolvable
+     * variant wins and its application is recorded, while a fully absent
+     * surface degrades to a note — the guest falls back to the fixed vsock
+     * port conventions and the embedded-provision resolver defaults.
+     */
+    private void applyKernelCmdline(Class<?> builderClass, Object builder, String cmdline,
+            List<String> notes) {
+        String[][] candidates = {{"setKernelCmdline"}, {"setParams"}};
+        for (String[] candidate : candidates) {
+            String method = candidate[0];
+            try {
+                builderClass.getMethod(method, String.class).invoke(builder, cmdline);
+                notes.add(method + ": applied");
+                return;
+            } catch (NoSuchMethodException absent) {
+                notes.add(method + "(String): not resolvable");
+            } catch (ReflectiveOperationException | IllegalArgumentException failure) {
+                notes.add(method + ": skipped (" + failure.getClass().getSimpleName() + ")");
+                return;
+            }
+        }
+        notes.add("guest cmdline delivery skipped: no cmdline setter on this platform");
     }
 
     private Object invokeRequired(
