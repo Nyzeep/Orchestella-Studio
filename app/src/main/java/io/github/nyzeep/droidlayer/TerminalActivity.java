@@ -11,28 +11,29 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import java.io.InputStream;
 import java.io.OutputStream;
-import android.net.LocalSocket;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Minimal root-shell terminal over the instance's abstract terminal socket
- * (guest console ttyAMA0). Input lines are sent raw; output bytes append to a
- * monospace transcript. The channel is transport only: the Full Linux
- * contract's terminal behavior is unchanged.
+ * Minimal root-shell terminal over the instance's terminal channel. The
+ * channel arrives as the strategy-neutral {@link ExecutionSession} from the
+ * {@link ExecutionSessionRegistry}: the abstract guest console socket under
+ * the QEMU strategy, the vsock terminal channel under the AVF strategy — the
+ * activity cannot tell them apart (ADR-0002). Input lines are sent raw;
+ * output bytes append to a monospace transcript. The channel is transport
+ * only: the Full Linux contract's terminal behavior is unchanged.
  */
 public class TerminalActivity extends Activity {
     private Handler ui;
     private TextView transcript;
-    private LocalSocket socket;
+    private ExecutionSession session;
     private OutputStream terminalOut;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        String controlSocket = getIntent().getStringExtra("controlSocket");
-        String terminalSocket = getIntent().getStringExtra("terminalSocket");
         String bridgeToken = getIntent().getStringExtra("bridgeToken");
         String instanceId = getIntent().getStringExtra("instanceId");
+        session = ExecutionSessionRegistry.get(instanceId);
         ui = new Handler(Looper.getMainLooper());
 
         LinearLayout layout = new LinearLayout(this);
@@ -53,13 +54,16 @@ public class TerminalActivity extends Activity {
         setContentView(layout);
 
         append("DroidLayer terminal (" + instanceId + ")\n");
+        if (session == null) {
+            // The host process was restarted: no live session survives it.
+            append("[no live session for instance " + instanceId + "]\n");
+            return;
+        }
         new Thread(() -> {
             try {
-                BridgeConnector connector = new BridgeConnector();
-                socket = connector.connectTerminal(terminalSocket);
-                terminalOut = socket.getOutputStream();
+                terminalOut = session.terminalInput();
                 append("[terminal connected]\n");
-                pumpTerminal();
+                pumpTerminal(session.terminalOutput());
             } catch (Exception e) {
                 append("[terminal error: " + e + "]\n");
             }
@@ -80,34 +84,9 @@ public class TerminalActivity extends Activity {
                             new AndroidNotificationAdapter(TerminalActivity.this);
                     AndroidUrlOpenerAdapter urlOpenerAdapter =
                             new AndroidUrlOpenerAdapter(TerminalActivity.this);
-                    new BridgeConnector().serve(controlSocket, bridgeToken, gridColumns, gridRows,
-                            new BridgeConnector.Events() {
-                                @Override
-                                public void onReady() {
-                                    append("[bridge ready]\n");
-                                }
-
-                                @Override
-                                public void onPong() {
-                                    append("[bridge pong]\n");
-                                }
-
-                                @Override
-                                public void onResize(int columns, int rows) {
-                                    append("[bridge resize " + columns + "x" + rows + "]\n");
-                                }
-
-                                @Override
-                                public void onNotification(String title, String message) {
-                                    append("[bridge notify: " + title + " - " + message + "]\n");
-                                }
-
-                                @Override
-                                public void onOpenUrl(String url) {
-                                    append("[bridge open-url: " + url + "]\n");
-                                }
-                            },
-                            notificationAdapter,
+                    new BridgeConnector().serveStreams(
+                            session.controlOutput(), session.controlInput(), bridgeToken,
+                            gridColumns, gridRows, eventsForBridge(), notificationAdapter,
                             urlOpenerAdapter);
                 } catch (Exception e) {
                     append("[bridge ended: " + e.getClass().getSimpleName() + "]\n");
@@ -123,11 +102,57 @@ public class TerminalActivity extends Activity {
         });
     }
 
-    private void pumpTerminal() {
-        try (InputStream in = socket.getInputStream()) {
+    private BridgeConnector.Events eventsForBridge() {
+        return new BridgeConnector.Events() {
+            @Override
+            public void onReady() {
+                append("[bridge ready]\n");
+            }
+
+            @Override
+            public void onPong() {
+                append("[bridge pong]\n");
+            }
+
+            @Override
+            public void onResize(int columns, int rows) {
+                append("[bridge resize " + columns + "x" + rows + "]\n");
+            }
+
+            @Override
+            public void onNotification(String title, String message) {
+                append("[bridge notify: " + title + " - " + message + "]\n");
+            }
+
+            @Override
+            public void onOpenUrl(String url) {
+                append("[bridge open-url: " + url + "]\n");
+            }
+        };
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        // A configuration change (screen rotation) destroys and recreates the
+        // activity while the guest keeps running: only a real exit may unbind
+        // and tear down the session's streams.
+        if (!isFinishing()) {
+            return;
+        }
+        String instanceId = getIntent() != null ? getIntent().getStringExtra("instanceId") : null;
+        ExecutionSession bound = session != null ? session : ExecutionSessionRegistry.get(instanceId);
+        if (bound != null) {
+            ExecutionSessionRegistry.unregister(instanceId);
+            bound.close();
+        }
+    }
+
+    private void pumpTerminal(InputStream in) {
+        try (InputStream stream = in) {
             byte[] buffer = new byte[4096];
             int count;
-            while ((count = in.read(buffer)) >= 0) {
+            while ((count = stream.read(buffer)) >= 0) {
                 final String chunk = new String(buffer, 0, count, StandardCharsets.UTF_8);
                 append(chunk);
             }
