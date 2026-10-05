@@ -84,6 +84,36 @@ public final class BridgeClient {
         return classify(readResponseLine());
     }
 
+    /** Requests setting the display mode (resolution and scale) and classifies the agent's response. */
+    public synchronized Result displayMode(int width, int height, double scale) throws IOException {
+        if (width < 100 || width > 7680 || height < 100 || height > 7680) {
+            throw new IllegalArgumentException("display dimensions must be between 100 and 7680: " + width + "x" + height);
+        }
+        if (Double.isNaN(scale) || Double.isInfinite(scale) || scale < 0.1 || scale > 5.0) {
+            throw new IllegalArgumentException("display scale must be between 0.1 and 5.0: " + scale);
+        }
+        write("DROIDLAYER/DISPLAY MODE " + width + " " + height + " " + scale + "\n");
+        return classify(readResponseLine());
+    }
+
+    /** Requests dynamic display resize and classifies the agent's response. */
+    public synchronized Result displayResize(int width, int height) throws IOException {
+        if (width < 100 || width > 7680 || height < 100 || height > 7680) {
+            throw new IllegalArgumentException("display dimensions must be between 100 and 7680: " + width + "x" + height);
+        }
+        write("DROIDLAYER/DISPLAY RESIZE " + width + " " + height + "\n");
+        return classify(readResponseLine());
+    }
+
+    /** Requests setting the target display frame rate and classifies the agent's response. */
+    public synchronized Result displayFps(int fps) throws IOException {
+        if (fps < 1 || fps > 240) {
+            throw new IllegalArgumentException("fps must be between 1 and 240: " + fps);
+        }
+        write("DROIDLAYER/DISPLAY FPS " + fps + "\n");
+        return classify(readResponseLine());
+    }
+
     private void write(String line) throws IOException {
         outbound.write(line.getBytes(StandardCharsets.US_ASCII));
         outbound.flush();
@@ -126,6 +156,9 @@ public final class BridgeClient {
         }
         if ("DROIDLAYER/OK open-url\n".equals(line)) {
             return Result.accepted("ok-open-url");
+        }
+        if ("DROIDLAYER/OK display\n".equals(line)) {
+            return Result.accepted("ok-display");
         }
         if (line != null && line.startsWith("DROIDLAYER/ERROR ") && line.endsWith("\n")) {
             String kind = line.substring("DROIDLAYER/ERROR ".length(), line.length() - 1);

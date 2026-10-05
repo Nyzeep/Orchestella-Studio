@@ -27,7 +27,8 @@ public final class FullLinuxContract {
     public enum Capability {
         TERMINAL,
         BRIDGE_HANDSHAKE,
-        HARDWARE_ACCELERATION
+        HARDWARE_ACCELERATION,
+        GRAPHICS_WAYLAND
     }
 
     /** Immutable strategy declaration consumed by callers instead of strategy-specific branches. */
@@ -59,6 +60,34 @@ public final class FullLinuxContract {
                     ExecutionStrategy.SOFTWARE_VIRTUALIZATION, SOFTWARE_VIRTUALIZATION_BASELINE);
         }
 
+        public static CapabilityMatrix softwareVirtualizationWithGraphics() {
+            return new CapabilityMatrix(
+                    ExecutionStrategy.SOFTWARE_VIRTUALIZATION,
+                    EnumSet.of(
+                            Capability.TERMINAL,
+                            Capability.BRIDGE_HANDSHAKE,
+                            Capability.GRAPHICS_WAYLAND));
+        }
+
+        public static CapabilityMatrix hardwareVirtualizationBaseline() {
+            return new CapabilityMatrix(
+                    ExecutionStrategy.HARDWARE_VIRTUALIZATION,
+                    EnumSet.of(
+                            Capability.TERMINAL,
+                            Capability.BRIDGE_HANDSHAKE,
+                            Capability.HARDWARE_ACCELERATION));
+        }
+
+        public static CapabilityMatrix hardwareVirtualizationWithGraphics() {
+            return new CapabilityMatrix(
+                    ExecutionStrategy.HARDWARE_VIRTUALIZATION,
+                    EnumSet.of(
+                            Capability.TERMINAL,
+                            Capability.BRIDGE_HANDSHAKE,
+                            Capability.HARDWARE_ACCELERATION,
+                            Capability.GRAPHICS_WAYLAND));
+        }
+
         public ExecutionStrategy executionStrategy() {
             return executionStrategy;
         }
@@ -75,6 +104,15 @@ public final class FullLinuxContract {
             return executionStrategy == ExecutionStrategy.SOFTWARE_VIRTUALIZATION
                     ? "完整 Linux · 软件模拟（较慢）"
                     : "完整 Linux · 硬件加速";
+        }
+
+        public String graphicsBadge() {
+            if (!supports(Capability.GRAPHICS_WAYLAND)) {
+                return "无图形通道";
+            }
+            return executionStrategy == ExecutionStrategy.SOFTWARE_VIRTUALIZATION
+                    ? "Wayland 原生通道（共享内存）"
+                    : "Wayland 原生通道（vsock 硬件加速）";
         }
     }
 }
