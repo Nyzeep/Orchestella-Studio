@@ -44,6 +44,8 @@ public final class AvfLaunchSpec {
     public static final int DEFAULT_CONTROL_VSOCK_PORT = 9100;
     public static final int DEFAULT_TERMINAL_VSOCK_PORT = 9101;
     public static final int DEFAULT_9P_VSOCK_PORT = 9102;
+    public static final int DEFAULT_GRAPHICS_VSOCK_PORT = 9103;
+    public static final int AVF_GRAPHICS_VSOCK_PORT = 9103;
     public static final int DEFAULT_CPU_COUNT = 1;
 
     private static final Pattern INSTANCE_ID = Pattern.compile("[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}");
@@ -64,6 +66,7 @@ public final class AvfLaunchSpec {
     private final NetworkContract.OutboundNetworkSpec networkSpec;
     private final int sharedDirectoryVsockPort;
     private final SharedDirectoryContract.SharedDirectorySpec sharedDirectory;
+    private final int graphicsVsockPort;
     private final String guestCmdline;
 
     private AvfLaunchSpec(Builder builder) {
@@ -78,6 +81,7 @@ public final class AvfLaunchSpec {
         this.networkSpec = builder.networkSpec;
         this.sharedDirectoryVsockPort = builder.sharedDirectoryVsockPort;
         this.sharedDirectory = builder.sharedDirectory;
+        this.graphicsVsockPort = builder.graphicsVsockPort;
 
         StringBuilder cmdline = new StringBuilder(String.format(
                 GUEST_CMDLINE_TEMPLATE, builder.controlVsockPort, builder.terminalVsockPort));
@@ -143,6 +147,11 @@ public final class AvfLaunchSpec {
         return sharedDirectory;
     }
 
+    /** Dedicated vsock graphics port (defaults to 9103). */
+    public int graphicsVsockPort() {
+        return graphicsVsockPort;
+    }
+
     public String guestCmdline() {
         return guestCmdline;
     }
@@ -165,6 +174,7 @@ public final class AvfLaunchSpec {
                 NetworkContract.OutboundNetworkSpec.defaultSpec();
         private int sharedDirectoryVsockPort = DEFAULT_9P_VSOCK_PORT;
         private SharedDirectoryContract.SharedDirectorySpec sharedDirectory;
+        private int graphicsVsockPort = DEFAULT_GRAPHICS_VSOCK_PORT;
 
         private Builder(
                 String instanceId, String kernelPath, String initramfsPath, String rootVolumePath) {
@@ -226,6 +236,11 @@ public final class AvfLaunchSpec {
             return this;
         }
 
+        public Builder graphicsVsockPort(int port) {
+            this.graphicsVsockPort = requirePort(port);
+            return this;
+        }
+
         public AvfLaunchSpec build() {
             if (controlVsockPort == terminalVsockPort) {
                 throw new IllegalArgumentException("control and terminal vsock ports must differ");
@@ -235,6 +250,13 @@ public final class AvfLaunchSpec {
                 throw new IllegalArgumentException(
                         "the 9p data-plane vsock port must differ from the control"
                                 + " and terminal ports");
+            }
+            if (graphicsVsockPort == controlVsockPort
+                    || graphicsVsockPort == terminalVsockPort
+                    || graphicsVsockPort == sharedDirectoryVsockPort) {
+                throw new IllegalArgumentException(
+                        "the graphics vsock port must differ from the control, terminal,"
+                                + " and 9p ports");
             }
             return new AvfLaunchSpec(this);
         }

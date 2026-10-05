@@ -95,6 +95,21 @@ tasks.register<JavaExec>("avfNetworkForwardingParityContractTest") {
     mainClass.set("io.github.nyzeep.droidlayer.runtime.engineavf.AvfNetworkForwardingParityContractTest")
 }
 
+tasks.register<JavaExec>("avfWaylandChannelContractTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.droidlayer.runtime.engineavf.AvfWaylandChannelContractTest")
+}
+
+tasks.register<JavaExec>("avfGraphicsVsockProtocolTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.droidlayer.runtime.engineavf.AvfGraphicsVsockProtocolTest")
+}
+
+tasks.register<JavaExec>("avfInputEventForwardingTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.droidlayer.runtime.engineavf.AvfInputEventForwardingTest")
+}
+
 tasks.named("check") {
     dependsOn(
         "avfLaunchSpecTest",
@@ -108,5 +123,8 @@ tasks.named("check") {
         "avfNetworkAssemblyContractTest",
         "avfVsockPortForwarderTest",
         "avfNetworkForwardingParityContractTest",
+        "avfWaylandChannelContractTest",
+        "avfGraphicsVsockProtocolTest",
+        "avfInputEventForwardingTest",
     )
 }

@@ -1,5 +1,6 @@
 package io.github.nyzeep.droidlayer.runtime.engineavf;
 
+import io.github.nyzeep.droidlayer.runtime.contract.FullLinuxContract;
 import java.io.IOException;
 import java.util.Objects;
 
@@ -13,6 +14,14 @@ import java.util.Objects;
 public final class AvfVirtualMachineEngine {
     private static final int CONNECT_ATTEMPTS = 100;
     private static final long CONNECT_BACKOFF_MS = 200;
+
+    /**
+     * Returns the strategy-neutral capability matrix reflecting AVF hardware
+     * virtualization with full Wayland graphics channel parity.
+     */
+    public static FullLinuxContract.CapabilityMatrix capabilityMatrix() {
+        return FullLinuxContract.CapabilityMatrix.hardwareVirtualizationWithGraphics();
+    }
 
     private final AvfVirtualMachineApi api;
     private final int connectAttempts;
@@ -52,6 +61,7 @@ public final class AvfVirtualMachineEngine {
         private AvfVirtualMachineApi.AvfVsockChannel controlChannel;
         private AvfVirtualMachineApi.AvfVsockChannel terminalChannel;
         private AvfVirtualMachineApi.AvfVsockChannel shareChannel;
+        private AvfVirtualMachineApi.AvfVsockChannel graphicsChannel;
 
         private AvfVmSession(
                 AvfVirtualMachineApi api,
@@ -148,6 +158,29 @@ public final class AvfVirtualMachineEngine {
             return server;
         }
 
+        /** Launch specification that started this session. */
+        public AvfLaunchSpec spec() {
+            return spec;
+        }
+
+        /**
+         * The graphics data-plane vsock channel (port 9103, retry-connected).
+         */
+        public synchronized AvfVirtualMachineApi.AvfVsockChannel graphicsChannel()
+                throws AvfEngineException {
+            if (graphicsChannel == null) {
+                graphicsChannel = connectWithRetry(spec.graphicsVsockPort());
+            }
+            return graphicsChannel;
+        }
+
+        /**
+         * Creates an authenticated Wayland graphics and control channel over vsock.
+         */
+        public AvfWaylandChannel waylandChannel(String instanceToken) {
+            return new AvfWaylandChannel(this, instanceToken);
+        }
+
         /** Blocks until the guest exits; exit observation is best-effort. */
         public int waitFor() throws InterruptedException {
             return handle.waitFor();
@@ -196,6 +229,10 @@ public final class AvfVirtualMachineEngine {
             if (shareChannel != null) {
                 shareChannel.close();
                 shareChannel = null;
+            }
+            if (graphicsChannel != null) {
+                graphicsChannel.close();
+                graphicsChannel = null;
             }
         }
     }
