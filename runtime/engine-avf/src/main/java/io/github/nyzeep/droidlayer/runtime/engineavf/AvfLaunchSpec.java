@@ -1,5 +1,7 @@
 package io.github.nyzeep.droidlayer.runtime.engineavf;
 
+import io.github.nyzeep.droidlayer.runtime.contract.SharedDirectoryContract;
+import java.util.Objects;
 import java.util.regex.Pattern;
 
 /**
@@ -11,6 +13,13 @@ import java.util.regex.Pattern;
  * <p>Asset interop (ADR-0001): the kernel Image, the embedded-provision
  * initramfs and the raw root volume consumed here are the very same files the
  * QEMU strategy consumes — no conversion, no copy, one binary identity.
+ *
+ * <p>Shared data plane (ADR-0009/0010): when a {@code SharedDirectorySpec} is
+ * configured, the guest cmdline announces the 9p-over-vsock rendezvous port
+ * ({@code droidlayer.vsock_9p_port}) on the independent data channel; the
+ * read-only 9p server itself lives in {@link Avf9pShareServer} and is served
+ * by the engine session. Without a share, no data-plane token appears in the
+ * cmdline (same zero-leak invariant as the QEMU fsdev formatting).
  */
 public final class AvfLaunchSpec {
     /**
@@ -18,7 +27,7 @@ public final class AvfLaunchSpec {
      * console (hvc0); the droidlayer.* keys mirror the QEMU guest contract so
      * the same guest provisioning logic can consume them. The vsock ports
      * tell a vsock-speaking guest agent where to serve the bridge control
-     * channel and the terminal channel.
+     * channel, the terminal channel and the 9p data-plane rendezvous.
      */
     public static final String GUEST_CMDLINE_TEMPLATE =
             "console=hvc0 rdinit=/init panic=-1"
@@ -27,6 +36,7 @@ public final class AvfLaunchSpec {
 
     public static final int DEFAULT_CONTROL_VSOCK_PORT = 9100;
     public static final int DEFAULT_TERMINAL_VSOCK_PORT = 9101;
+    public static final int DEFAULT_9P_VSOCK_PORT = 9102;
     public static final int DEFAULT_CPU_COUNT = 1;
 
     private static final Pattern INSTANCE_ID = Pattern.compile("[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}");
@@ -44,6 +54,8 @@ public final class AvfLaunchSpec {
     private final int cpuCount;
     private final int controlVsockPort;
     private final int terminalVsockPort;
+    private final int sharedDirectoryVsockPort;
+    private final SharedDirectoryContract.SharedDirectorySpec sharedDirectory;
     private final String guestCmdline;
 
     private AvfLaunchSpec(Builder builder) {
@@ -55,8 +67,15 @@ public final class AvfLaunchSpec {
         this.cpuCount = builder.cpuCount;
         this.controlVsockPort = builder.controlVsockPort;
         this.terminalVsockPort = builder.terminalVsockPort;
-        this.guestCmdline = String.format(
-                GUEST_CMDLINE_TEMPLATE, builder.controlVsockPort, builder.terminalVsockPort);
+        this.sharedDirectoryVsockPort = builder.sharedDirectoryVsockPort;
+        this.sharedDirectory = builder.sharedDirectory;
+        StringBuilder cmdline = new StringBuilder(String.format(
+                GUEST_CMDLINE_TEMPLATE, builder.controlVsockPort, builder.terminalVsockPort));
+        if (builder.sharedDirectory != null) {
+            cmdline.append(" droidlayer.vsock_9p_port=")
+                    .append(builder.sharedDirectoryVsockPort);
+        }
+        this.guestCmdline = cmdline.toString();
     }
 
     public String instanceId() {
@@ -91,6 +110,16 @@ public final class AvfLaunchSpec {
         return terminalVsockPort;
     }
 
+    /** The 9p data-plane vsock port; meaningful only with a share configured. */
+    public int sharedDirectoryVsockPort() {
+        return sharedDirectoryVsockPort;
+    }
+
+    /** The read-only shared directory, or null when this boot shares nothing. */
+    public SharedDirectoryContract.SharedDirectorySpec sharedDirectory() {
+        return sharedDirectory;
+    }
+
     public String guestCmdline() {
         return guestCmdline;
     }
@@ -109,6 +138,8 @@ public final class AvfLaunchSpec {
         private int cpuCount = DEFAULT_CPU_COUNT;
         private int controlVsockPort = DEFAULT_CONTROL_VSOCK_PORT;
         private int terminalVsockPort = DEFAULT_TERMINAL_VSOCK_PORT;
+        private int sharedDirectoryVsockPort = DEFAULT_9P_VSOCK_PORT;
+        private SharedDirectoryContract.SharedDirectorySpec sharedDirectory;
 
         private Builder(
                 String instanceId, String kernelPath, String initramfsPath, String rootVolumePath) {
@@ -145,9 +176,26 @@ public final class AvfLaunchSpec {
             return this;
         }
 
+        public Builder sharedDirectoryVsockPort(int port) {
+            this.sharedDirectoryVsockPort = requirePort(port);
+            return this;
+        }
+
+        /** Configures the read-only shared directory; null clears it. */
+        public Builder sharedDirectory(SharedDirectoryContract.SharedDirectorySpec sharedDirectory) {
+            this.sharedDirectory = sharedDirectory;
+            return this;
+        }
+
         public AvfLaunchSpec build() {
             if (controlVsockPort == terminalVsockPort) {
                 throw new IllegalArgumentException("control and terminal vsock ports must differ");
+            }
+            if (sharedDirectoryVsockPort == controlVsockPort
+                    || sharedDirectoryVsockPort == terminalVsockPort) {
+                throw new IllegalArgumentException(
+                        "the 9p data-plane vsock port must differ from the control"
+                                + " and terminal ports");
             }
             return new AvfLaunchSpec(this);
         }

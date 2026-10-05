@@ -51,6 +51,7 @@ public final class AvfVirtualMachineEngine {
         private final long connectBackoffMs;
         private AvfVirtualMachineApi.AvfVsockChannel controlChannel;
         private AvfVirtualMachineApi.AvfVsockChannel terminalChannel;
+        private AvfVirtualMachineApi.AvfVsockChannel shareChannel;
 
         private AvfVmSession(
                 AvfVirtualMachineApi api,
@@ -83,13 +84,57 @@ public final class AvfVirtualMachineEngine {
             return controlChannel;
         }
 
-        /** The terminal console channel (retry-connected while the guest boots). */
+        /**
+         * The terminal console channel (retry-connected while the guest boots).
+         */
         public synchronized AvfVirtualMachineApi.AvfVsockChannel terminalChannel()
                 throws AvfEngineException {
             if (terminalChannel == null) {
                 terminalChannel = connectWithRetry(spec.terminalVsockPort());
             }
             return terminalChannel;
+        }
+
+        /**
+         * The 9p data-plane channel (retry-connected while the guest boots):
+         * the guest agent listens on the rendezvous port announced by the
+         * spec's cmdline and the host connects to serve the read-only 9p
+         * file system over it (ADR-0009 data plane). Requires a share on the
+         * launch spec.
+         */
+        public synchronized AvfVirtualMachineApi.AvfVsockChannel shareChannel()
+                throws AvfEngineException {
+            if (spec.sharedDirectory() == null) {
+                throw new AvfEngineException(
+                        AvfEngineException.VSOCK_CONNECT_FAILED,
+                        "no shared directory is configured for this launch");
+            }
+            if (shareChannel == null) {
+                shareChannel = connectWithRetry(spec.sharedDirectoryVsockPort());
+            }
+            return shareChannel;
+        }
+
+        /**
+         * Starts the read-only 9p2000.L server over the share data channel in
+         * one daemon thread. The returned server stays alive until the
+         * channel closes (guest shutdown) or {@link #closeChannels()} runs.
+         *
+         * @return the started server (for lifecycle observation and tests)
+         */
+        public synchronized Avf9pShareServer startShareServer() throws AvfEngineException {
+            Avf9pShareServer server = new Avf9pShareServer(spec.sharedDirectory());
+            AvfVirtualMachineApi.AvfVsockChannel channel = shareChannel();
+            Thread thread = new Thread(() -> {
+                try {
+                    server.serve(channel.inputStream(), channel.outputStream());
+                } catch (IOException ignored) {
+                    // the share channel ended: the guest went away or closed
+                }
+            }, "avf-9p-share-" + handle.instanceId());
+            thread.setDaemon(true);
+            thread.start();
+            return server;
         }
 
         /** Blocks until the guest exits; exit observation is best-effort. */
@@ -136,6 +181,10 @@ public final class AvfVirtualMachineEngine {
             if (terminalChannel != null) {
                 terminalChannel.close();
                 terminalChannel = null;
+            }
+            if (shareChannel != null) {
+                shareChannel.close();
+                shareChannel = null;
             }
         }
     }
