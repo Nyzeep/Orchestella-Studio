@@ -25,6 +25,20 @@ tasks.register<JavaExec>("portForwardingManagerContractTest") {
     args(networkTestOutput.get().asFile.absolutePath)
 }
 
+// The manager contract suite is strategy-neutral: other engine modules re-run
+// it against their own live forwarding engine (Ticket 36 AC-3), so the test
+// classes are published as consumable artifacts.
+tasks.register<Jar>("testJar") {
+    archiveClassifier.set("tests")
+    from(sourceSets["test"].output)
+}
+
+configurations.create("testArtifacts")
+
+artifacts {
+    add("testArtifacts", tasks.named("testJar"))
+}
+
 tasks.named("check") {
     dependsOn("portForwardingManagerContractTest")
 }
