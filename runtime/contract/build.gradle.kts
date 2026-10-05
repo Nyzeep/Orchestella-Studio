@@ -54,6 +54,21 @@ tasks.register<JavaExec>("storageContractTest") {
     mainClass.set("io.github.nyzeep.droidlayer.runtime.contract.StorageContractTest")
 }
 
+tasks.register<JavaExec>("displayControlContractTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.droidlayer.runtime.contract.DisplayControlContractTest")
+}
+
+tasks.register<JavaExec>("bridgeControlDisplayTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.droidlayer.runtime.contract.BridgeControlDisplayTest")
+}
+
+tasks.register<JavaExec>("inputEventSerializationTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.droidlayer.runtime.contract.InputEventSerializationTest")
+}
+
 tasks.named("check") {
     dependsOn(
         "bridgeHandshakeContractTest",
@@ -63,7 +78,10 @@ tasks.named("check") {
         "networkContractTest",
         "portForwardingContractTest",
         "sharedDirectoryContractTest",
-        "storageContractTest"
+        "storageContractTest",
+        "displayControlContractTest",
+        "bridgeControlDisplayTest",
+        "inputEventSerializationTest"
     )
 }
 
