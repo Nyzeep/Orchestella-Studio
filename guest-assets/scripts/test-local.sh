@@ -33,9 +33,13 @@ bash -n "$GUEST_ASSETS_DIR/build.sh" \
   "$GUEST_ASSETS_DIR/smoke/qemu-terminal-relay-smoke.sh" \
   "$GUEST_ASSETS_DIR/smoke/qemu-bridge-control-terminal-smoke.sh" \
   "$GUEST_ASSETS_DIR/smoke/qemu-provisioned-bridge-terminal-smoke.sh" \
-  "$GUEST_ASSETS_DIR/smoke/qemu-provisioning-restart-smoke.sh"
+  "$GUEST_ASSETS_DIR/smoke/qemu-provisioning-restart-smoke.sh" \
+  "$GUEST_ASSETS_DIR/scripts/droidlayer-desktop-setup.sh" \
+  "$GUEST_ASSETS_DIR/scripts/droidlayer-desktop-launch.sh" \
+  "$GUEST_ASSETS_DIR/smoke/desktop-smoke.sh"
 sh -n "$GUEST_ASSETS_DIR/initramfs/init" \
-  "$GUEST_ASSETS_DIR/initramfs/openrc/droidlayer-guest-agent"
+  "$GUEST_ASSETS_DIR/initramfs/openrc/droidlayer-guest-agent" \
+  "$GUEST_ASSETS_DIR/scripts/desktop/labwc/autostart"
 
 while IFS= read -r -d '' source_file; do
   case "$source_file" in
@@ -63,4 +67,8 @@ shellcheck --severity=warning --external-sources --source-path=SCRIPTDIR \
   "$GUEST_ASSETS_DIR/smoke/qemu-bridge-control-terminal-smoke.sh" \
   "$GUEST_ASSETS_DIR/smoke/qemu-provisioned-bridge-terminal-smoke.sh" \
   "$GUEST_ASSETS_DIR/smoke/qemu-provisioning-restart-smoke.sh" \
+  "$GUEST_ASSETS_DIR/scripts/droidlayer-desktop-setup.sh" \
+  "$GUEST_ASSETS_DIR/scripts/droidlayer-desktop-launch.sh" \
+  "$GUEST_ASSETS_DIR/smoke/desktop-smoke.sh" \
+  "$GUEST_ASSETS_DIR/scripts/desktop/labwc/autostart" \
   "$GUEST_ASSETS_DIR/initramfs/init"
