@@ -1,7 +1,7 @@
 # 43: Android 宿主图形桌面 Activity 界面、一键启动与终端/桌面双模切换
 
 Type: implementation  
-Status: ready-for-review  
+Status: completed  
 
 ## What to build
 
