@@ -39,6 +39,16 @@ tasks.register<JavaExec>("avfBridgeOverVsockContractTest") {
     mainClass.set("io.github.nyzeep.droidlayer.runtime.engineavf.AvfBridgeOverVsockContractTest")
 }
 
+val avf9pShareOutput = layout.buildDirectory.dir("avf-9p-share-contract")
+tasks.register<JavaExec>("avf9pShareContractTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.droidlayer.runtime.engineavf.Avf9pShareContractTest")
+    // the scenarios create temp dirs on their own; the output dir keeps the
+    // task side-effect free for Gradle's up-to-date checks
+    outputs.dir(avf9pShareOutput)
+    doFirst { avf9pShareOutput.get().asFile.mkdirs() }
+}
+
 tasks.register<JavaExec>("avfTerminalStreamContractTest") {
     classpath = sourceSets["test"].runtimeClasspath
     mainClass.set("io.github.nyzeep.droidlayer.runtime.engineavf.AvfTerminalStreamContractTest")
@@ -61,6 +71,7 @@ tasks.named("check") {
         "avfLaunchSpecTest",
         "avfVirtualMachineEngineTest",
         "avfBridgeOverVsockContractTest",
+        "avf9pShareContractTest",
         "avfTerminalStreamContractTest",
         "avfInstanceLifecycleContractTest",
         "avfQemuInteropTest",
