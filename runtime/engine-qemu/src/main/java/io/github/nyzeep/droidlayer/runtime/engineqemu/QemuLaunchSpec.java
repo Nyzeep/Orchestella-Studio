@@ -344,6 +344,41 @@ public final class QemuLaunchSpec {
                 2,
                 Long.toString(memoryMb),
                 null,
+                VmHardwareConfig.DEFAULT_GPU_ACCELERATION_ENABLED,
+                networkSpec,
+                portForwardingRules,
+                sharedDirectorySpec);
+    }
+
+    /**
+     * Builds the QEMU launch argument array with explicit GPU acceleration toggle, customizable network spec,
+     * port forwarding rules, optional QMP control socket, and shared directory specification.
+     */
+    public static String[] build(
+            String qemuExecutable,
+            String kernel,
+            String initramfs,
+            String rootVolume,
+            String controlSocketName,
+            String terminalSocketName,
+            String qmpSocketName,
+            long memoryMb,
+            boolean gpuAccelerationEnabled,
+            NetworkContract.OutboundNetworkSpec networkSpec,
+            List<PortForwardingRule> portForwardingRules,
+            SharedDirectoryContract.SharedDirectorySpec sharedDirectorySpec) {
+        return buildInternal(
+                qemuExecutable,
+                kernel,
+                initramfs,
+                rootVolume,
+                controlSocketName,
+                terminalSocketName,
+                qmpSocketName,
+                2,
+                Long.toString(memoryMb),
+                null,
+                gpuAccelerationEnabled,
                 networkSpec,
                 portForwardingRules,
                 sharedDirectorySpec);
@@ -377,6 +412,7 @@ public final class QemuLaunchSpec {
                 hardwareConfig.cpuCores(),
                 hardwareConfig.ramMegabytes() + "M",
                 hardwareConfig.extraKernelArguments(),
+                hardwareConfig.gpuAccelerationEnabled(),
                 networkSpec,
                 portForwardingRules,
                 sharedDirectorySpec);
@@ -393,6 +429,7 @@ public final class QemuLaunchSpec {
             int cpuCores,
             String memoryArg,
             String extraKernelArgs,
+            boolean gpuAccelerationEnabled,
             NetworkContract.OutboundNetworkSpec networkSpec,
             List<PortForwardingRule> portForwardingRules,
             SharedDirectoryContract.SharedDirectorySpec sharedDirectorySpec) {
@@ -432,6 +469,7 @@ public final class QemuLaunchSpec {
                 "-append", cmdline,
                 "-drive", "if=none,id=root,file=" + rootVolume + ",format=raw,cache=unsafe",
                 "-device", "virtio-blk-device,drive=root",
+                "-device", gpuAccelerationEnabled ? "virtio-gpu-gl-device" : "virtio-gpu-device",
                 "-netdev", formatNetdevArg(networkSpec, portForwardingRules),
                 "-device", formatDeviceArg(networkSpec),
                 "-device", "virtio-serial-device",
