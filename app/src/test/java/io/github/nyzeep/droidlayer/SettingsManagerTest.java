@@ -66,4 +66,15 @@ public final class SettingsManagerTest {
         settings.setLastActiveInstanceId("inst-debian-456");
         assertEquals("inst-debian-456", settings.getLastActiveInstanceId());
     }
+
+    @Test
+    public void onboardingCompletedDefaultsToFalseAndPersists() {
+        assertFalse("onboarding must default to false on clean install", settings.isOnboardingCompleted());
+
+        settings.setOnboardingCompleted(true);
+        assertTrue("onboarding must be true after completion", settings.isOnboardingCompleted());
+
+        settings.setOnboardingCompleted(false);
+        assertFalse(settings.isOnboardingCompleted());
+    }
 }

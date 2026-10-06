@@ -123,6 +123,13 @@ class MainActivity : AppCompatActivity() {
         }
 
         settingsManager = SettingsManager(this)
+        if (!settingsManager.isOnboardingCompleted) {
+            val intent = Intent(this, SetupWizardActivity::class.java)
+            startActivity(intent)
+            finish()
+            return
+        }
+
         val assessment = DeviceCapabilityEvaluator.evaluate(deviceProfile())
         avfReadiness = AvfCapabilityEvaluator.evaluate(AvfHostFactsProbe.probe(this))
         wizardModel = AvfAuthorizationWizardModel.fromAssessment(avfReadiness!!)
@@ -904,6 +911,13 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { PhantomProcessKillerGuide.showDialog(this@MainActivity) }
         }
 
+        val wizardBtn = Button(this).apply {
+            text = "首次启动向导 (设置引导)"
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, SetupWizardActivity::class.java))
+            }
+        }
+
         container.addView(bootCheckbox)
         container.addView(bootDesc)
         container.addView(updateCheckbox)
@@ -912,6 +926,7 @@ class MainActivity : AppCompatActivity() {
         container.addView(batteryGroup)
         container.addView(checkUpdateBtn)
         container.addView(phantomGuideBtn)
+        container.addView(wizardBtn)
 
         AlertDialog.Builder(this)
             .setTitle(R.string.settings_title)

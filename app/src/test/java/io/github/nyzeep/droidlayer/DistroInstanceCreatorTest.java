@@ -122,6 +122,34 @@ public final class DistroInstanceCreatorTest {
         assertEquals("13", loadedDebian.distro().version());
     }
 
+    @Test
+    public void verifiedArchiveWithCustomHardwareConfigAppliesConfig() throws Exception {
+        Path privateDirectory = temporaryFolder.newFolder("private").toPath();
+        InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(privateDirectory.resolve("instances"));
+        InstanceLifecycle.Controller controller = new InstanceLifecycle.Controller(store, Clock.systemUTC());
+
+        DistroInstanceCreator creator = new DistroInstanceCreator(alpineManifest(), controller, privateDirectory);
+        io.github.nyzeep.droidlayer.runtime.contract.VmHardwareConfig customConfig =
+                io.github.nyzeep.droidlayer.runtime.contract.VmHardwareConfig.builder()
+                        .cpuCores(4)
+                        .ramMegabytes(4096)
+                        .diskCapacityBytes(16L * 1024L * 1024L * 1024L)
+                        .gpuAccelerationEnabled(true)
+                        .build();
+
+        InstanceLifecycle.Instance instance =
+                creator.create(new ByteArrayInputStream("valid-alpine".getBytes(StandardCharsets.US_ASCII)), 12, customConfig);
+
+        assertEquals(4, instance.hardwareConfig().cpuCores());
+        assertEquals(4096, instance.hardwareConfig().ramMegabytes());
+        assertEquals(16L * 1024L * 1024L * 1024L, instance.hardwareConfig().diskCapacityBytes());
+        assertTrue(instance.hardwareConfig().gpuAccelerationEnabled());
+
+        InstanceLifecycle.Instance loaded = store.load(instance.id());
+        assertEquals(4, loaded.hardwareConfig().cpuCores());
+        assertEquals(4096, loaded.hardwareConfig().ramMegabytes());
+    }
+
     private static DistroManifest debianManifest() {
         return new DistroManifest(
                 "debian",
