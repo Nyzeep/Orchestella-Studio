@@ -1,7 +1,7 @@
 # 51: 多源弹性下载引擎与 HTTP Range 断点续传调度器
 
 Type: implementation  
-Status: ready-for-agent  
+Status: completed  
 Labels: m4-spec, tracer-bullet, network, resilient-download  
 
 ## User Story
@@ -46,11 +46,11 @@ Labels: m4-spec, tracer-bullet, network, resilient-download
 
 ## Acceptance Criteria
 
-- [ ] HTTP `Range` 断点续传正常工作：模拟下载 50% 时断开连接，再次触发时发送包含对应 offset 的 `Range` 请求头，并在收到 `HTTP 206` 时成功拼接完整文件；
-- [ ] 故障转移（Failover）确定性生效：当第一个镜像源抛出连接超时或 404/500 错误时，引擎在预设重试次数耗尽后平滑转向第二个镜像源并完成下载；
-- [ ] 文件完整性哈希防御：当下载内容被人为篡改导致 SHA-256 不匹配时，确定性抛出异常并自动物理删除被污染的临时文件；
-- [ ] 下载进度监听器以平滑节拍回调当前字节数、总字节数、瞬时速率（MB/s）与节点信息；
-- [ ] 纯 JVM 测试（基于轻量 MockHttpServer）100% 绿灯通过。
+- [x] HTTP `Range` 断点续传正常工作：模拟下载 50% 时断开连接，再次触发时发送包含对应 offset 的 `Range` 请求头，并在收到 `HTTP 206` 时成功拼接完整文件；
+- [x] 故障转移（Failover）确定性生效：当第一个镜像源抛出连接超时或 404/500 错误时，引擎在预设重试次数耗尽后平滑转向第二个镜像源并完成下载；
+- [x] 文件完整性哈希防御：当下载内容被人为篡改导致 SHA-256 不匹配时，确定性抛出异常并自动物理删除被污染的临时文件；
+- [x] 下载进度监听器以平滑节拍回调当前字节数、总字节数、瞬时速率（MB/s）与节点信息；
+- [x] 纯 JVM 测试（基于轻量 MockHttpServer）100% 绿灯通过。
 
 ## Device Verification Steps
 
@@ -58,25 +58,24 @@ Labels: m4-spec, tracer-bullet, network, resilient-download
 ```bash
 # 1. 触发镜像下载（如 Alpine minirootfs）
 # 在 Android UI 上点击创建实例，观察 Logcat 输出的下载进度与镜像源切换
-adb logcat -d -s DroidLayerDownload:D
+adb logcat -d -s DroidLayerDownload:I
 
-# 2. 模拟断网：下载中途关闭手机 Wi-Fi / 蜂窝网络
-adb shell svc wifi disable && adb shell svc data disable
-# 观察日志打印 SocketTimeoutException 并进入指数退避
-
-# 3. 恢复网络：观察是否收到 HTTP 206 并从原进度百分比平滑恢复
+# 2. 模拟中途断网并恢复
+# 在下载进行至 50% 时，通过 adb 控制开关飞行模式或断网 3 秒，恢复后观察是否携带 Range 请求头无缝恢复
+adb shell svc wifi disable
+sleep 3
 adb shell svc wifi enable
-adb logcat -d -s DroidLayerDownload:D | grep "HTTP 206 Partial Content"
+# 断言最终下载文件的 SHA-256 校验和与 DistroManifest 强哈希一致
 ```
 
 ## Test Strategy
 
-- JVM 单元测试：
-  - `RangeResumeTest`：构建本地 Mock HTTP Server，模拟响应 206 与 200，断言数据拼接无损；
-  - `MirrorFailoverTest`：首个端口拒绝连接，断言顺利切换到备用端口并完成下载；
-  - `Sha256StreamingValidationTest`：测试篡改字节导致校验失败与临时文件清除逻辑；
-- 运行 `./gradlew :runtime:network:test`。
+- JVM 纯单元测试：
+  - `RangeResumeTest`：测试 206 追加、200 降级覆盖与 416 游标越界重置；
+  - `MirrorFailoverTest`：测试网络超时、5xx/4xx 故障转移与指数退避时钟；
+  - `Sha256StreamingValidationTest`：测试损坏文件拒绝、物理清除与重试机制；
+- 运行 `./gradlew :app:testDebugUnitTest` 或 `:runtime:network:test`。
 
 ## Prototype/research dependency
 
-依赖 ADR-0006 发行版资产分发规范与 `docs/research/2026-10-06-virtualization-ux-and-competitors.md` 中 PojavLauncher 断点下载分析。
+依赖 ADR-0006 发行版契约与 `docs/research/2026-10-06-virtualization-ux-and-competitors.md` PojavLauncher 断点续传与多源调度调研。
