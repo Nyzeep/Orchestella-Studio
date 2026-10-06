@@ -1,7 +1,7 @@
 # 54: 现代终端 VT100/ANSI 256 色渲染器与移动增强按键栏
 
 Type: implementation  
-Status: ready-for-agent  
+Status: completed  
 Labels: m4-spec, tracer-bullet, terminal, modern-shell, extra-keys  
 
 ## User Story
@@ -41,11 +41,11 @@ Labels: m4-spec, tracer-bullet, terminal, modern-shell, extra-keys
 
 ## Acceptance Criteria
 
-- [ ] `ModernTerminalView` 成功解析 ANSI 转义序列，包含 16 色、256 色代码（如 `\x1b[38;5;196m`）与 TrueColor 代码（`\x1b[38;2;r;g;bm`），颜色正确映射至 Dracula 调色板；
-- [ ] 软键盘上方的辅助按键栏能够准确发送 `ESC`、`TAB`、管道符 `|` 及方向键字节序列；
-- [ ] `Ctrl` 粘滞键逻辑严密：点击 `Ctrl` 后按普通字符键（如 `c` 或 `z`），终端正确向底层 PTY 写入 `\x03` 或 `\x1a`；
-- [ ] 界面在软键盘弹出与收起时无布局错乱，滚动条自动跟随最新日志输出；
-- [ ] 纯 JVM 单元测试（`AnsiEscapeParserTest` 与 `StickyModifierStateMachineTest`）100% 通过。
+- [x] `ModernTerminalView` 成功解析 ANSI 转义序列，包含 16 色、256 色代码（如 `\x1b[38;5;196m`）与 TrueColor 代码（`\x1b[38;2;r;g;bm`），颜色正确映射至 Dracula 调色板；
+- [x] 软键盘上方的辅助按键栏能够准确发送 `ESC`、`TAB`、管道符 `|` 及方向键字节序列；
+- [x] `Ctrl` 粘滞键逻辑严密：点击 `Ctrl` 后按普通字符键（如 `c` 或 `z`），终端正确向底层 PTY 写入 `\x03` 或 `\x1a`；
+- [x] 界面在软键盘弹出与收起时无布局错乱，滚动条自动跟随最新日志输出；
+- [x] 纯 JVM 单元测试（`AnsiEscapeParserTest` 与 `StickyModifierStateMachineTest`）100% 通过。
 
 ## Device Verification Steps
 
