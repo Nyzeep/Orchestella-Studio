@@ -1,7 +1,7 @@
 # 46: Android 宿主剪贴板双向同步桥接器与指针捕获
 
 Type: implementation  
-Status: ready-for-agent  
+Status: ready-for-review  
 
 ## What to build
 
@@ -28,12 +28,12 @@ Status: ready-for-agent
 
 ## Acceptance criteria
 
-- [ ] 宿主复制的文本在 50ms 内成功同步至 BridgeControl，格式完好无损，且不引发回环同步；
-- [ ] Guest 发送的剪贴板更新能准确写入 Android 系统剪贴板，多行代码与特殊符号保留完整；
-- [ ] 物理鼠标接入后能成功激活指针捕获，宿主光标隐匿，位移无边界限制，PC 级手感顺滑；
-- [ ] 按下 `Ctrl+Alt` 能够 100% 稳定释放指针捕获并恢复系统光标；
-- [ ] 拖入系统文件能够异步安全写入共享目录，不阻塞主 UI 线程，超大文件或异常中断具备容错防御；
-- [ ] 模块纯 JVM 测试与 Android Lint 保持零错误、零告警。
+- [x] 宿主复制的文本在 50ms 内成功同步至 BridgeControl，格式完好无损，且不引发回环同步；
+- [x] Guest 发送的剪贴板更新能准确写入 Android 系统剪贴板，多行代码与特殊符号保留完整；
+- [x] 物理鼠标接入后能成功激活指针捕获，宿主光标隐匿，位移无边界限制，PC 级手感顺滑；
+- [x] 按下 `Ctrl+Alt` 能够 100% 稳定释放指针捕获并恢复系统光标；
+- [x] 拖入系统文件能够异步安全写入共享目录，不阻塞主 UI 线程，超大文件或异常中断具备容错防御；
+- [x] 模块纯 JVM 测试与 Android Lint 保持零错误、零告警。
 
 ## Test strategy
 
