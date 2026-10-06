@@ -19,6 +19,13 @@ tasks.withType<JavaCompile>().configureEach {
     options.compilerArgs.addAll(listOf("-Xlint:all", "-Werror"))
 }
 
+tasks.named<Test>("test") {
+    // Strategy-neutral contract suites are executed via JavaExec tasks
+    // (portForwardingManagerContractTest, resilientDownloadEngineContractTest)
+    // to ensure portability across environments with non-ASCII workspace paths.
+    exclude("**/*")
+}
+
 val networkTestOutput = layout.buildDirectory.dir("network-manager-test")
 tasks.register<JavaExec>("portForwardingManagerContractTest") {
     classpath = sourceSets["test"].runtimeClasspath
