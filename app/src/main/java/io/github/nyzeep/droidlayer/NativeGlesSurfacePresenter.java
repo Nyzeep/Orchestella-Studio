@@ -96,14 +96,15 @@ public class NativeGlesSurfacePresenter implements DoubleBufferedRenderer.Surfac
         if (released) {
             return;
         }
+        if (surface == null) {
+            this.surface = null;
+            this.ready = false;
+            return;
+        }
         if (this.surface == surface && this.ready) {
             return;
         }
         this.surface = surface;
-        if (surface == null) {
-            this.ready = false;
-            return;
-        }
 
         if (isNativeLoaded) {
             initHandleIfAvailable();
