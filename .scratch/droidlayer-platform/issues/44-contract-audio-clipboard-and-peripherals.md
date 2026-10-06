@@ -1,7 +1,7 @@
 # 44: 策略中立剪贴板与音频契约扩展
 
 Type: contract  
-Status: ready-for-review  
+Status: completed  
 
 ## What to build
 
