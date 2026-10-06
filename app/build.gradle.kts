@@ -140,3 +140,14 @@ tasks.register<Copy>("packageOrchestellaRelease") {
     include("*.apk")
     rename { "Orchestella-Studio-v${android.defaultConfig.versionName}.apk" }
 }
+
+val syncGuestShellAssets by tasks.registering(Sync::class) {
+    from(rootProject.file("guest-assets/shell"))
+    into(file("src/main/assets/shell"))
+}
+
+tasks.matching {
+    it.name in listOf("mergeDebugAssets", "mergeReleaseAssets", "generateDebugAssets", "generateReleaseAssets", "preBuild", "preDebugBuild", "preReleaseBuild")
+}.configureEach {
+    dependsOn(syncGuestShellAssets)
+}

@@ -150,5 +150,29 @@ if [[ -f "$DESKTOP_SRC/clipboard/droidlayer-clipboard-agent" ]]; then
     execute_cmd chmod 755 "$BIN_DIR/droidlayer-clipboard-agent"
 fi
 
+# 4. Modern Shell and environment profile setup (/etc/profile.d/00-droidlayer-env.sh)
+PROFILE_D="/etc/profile.d"
+DROIDLAYER_SHELL_DIR="/etc/droidlayer/shell"
+SHELL_SRC="$SCRIPT_DIR/../shell"
+if [[ ! -d "$SHELL_SRC" && -d "$SCRIPT_DIR/shell" ]]; then
+    SHELL_SRC="$SCRIPT_DIR/shell"
+fi
+
+if [[ -d "$SHELL_SRC" ]]; then
+    execute_cmd mkdir -p "$PROFILE_D" "$DROIDLAYER_SHELL_DIR"
+    if [[ -f "$SHELL_SRC/droidlayer-prompt.sh" ]]; then
+        execute_cmd cp -f "$SHELL_SRC/droidlayer-prompt.sh" "$DROIDLAYER_SHELL_DIR/droidlayer-prompt.sh"
+        execute_cmd chmod 755 "$DROIDLAYER_SHELL_DIR/droidlayer-prompt.sh"
+    fi
+    if [[ -f "$SHELL_SRC/aliases.sh" ]]; then
+        execute_cmd cp -f "$SHELL_SRC/aliases.sh" "$DROIDLAYER_SHELL_DIR/aliases.sh"
+        execute_cmd chmod 644 "$DROIDLAYER_SHELL_DIR/aliases.sh"
+    fi
+    if [[ -f "$SHELL_SRC/00-droidlayer-env.sh" ]]; then
+        execute_cmd cp -f "$SHELL_SRC/00-droidlayer-env.sh" "$PROFILE_D/00-droidlayer-env.sh"
+        execute_cmd chmod 755 "$PROFILE_D/00-droidlayer-env.sh"
+    fi
+fi
+
 printf 'DroidLayer desktop provisioning completed successfully.\n'
 exit 0

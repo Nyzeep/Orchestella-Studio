@@ -96,6 +96,8 @@ final class DesktopSetupScriptTest {
         assertTrue(content.contains(".config/pulse"), "setup script must deploy pulseaudio user configuration");
         assertTrue(content.contains("droidlayer-clipboard-agent"),
                 "setup script must deploy clipboard agent executable");
+        assertTrue(content.contains("/etc/profile.d/00-droidlayer-env.sh"),
+                "setup script must deploy 00-droidlayer-env.sh environment profile");
     }
 
     @Test
