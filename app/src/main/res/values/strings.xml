@@ -175,4 +175,60 @@
     <string name="crash_dialog_log_path">日志路径：%1$s</string>
     <string name="crash_dialog_message">诊断信息：%1$s</string>
     <string name="crash_dialog_copy">复制日志路径</string>
+
+    <!-- Ticket 53: Setup Wizard & Tiered Onboarding Strings -->
+    <string name="wizard_onboarding_title">首次启动向导</string>
+    <string name="wizard_onboarding_subtitle">欢迎使用 Orchestella Studio · 移动独立 Linux 虚拟化环境</string>
+
+    <string name="wizard_step_indicator">第 %1$d 步 / 共 %2$d 步：%3$s</string>
+    <string name="wizard_step_1_name">环境感知</string>
+    <string name="wizard_step_2_name">发行版选单</string>
+    <string name="wizard_step_3_name">推荐配置与就绪</string>
+
+    <!-- Step 1: Detect -->
+    <string name="wizard_step1_card_title">宿主硬件感知</string>
+    <string name="wizard_step1_card_desc">全面感知芯片架构、多核算力与可用资源</string>
+    <string name="wizard_cpu_arch">芯片架构：%1$s</string>
+    <string name="wizard_cpu_cores">物理 CPU：%1$d 核心</string>
+    <string name="wizard_ram_overview">运存总览：%1$d MB 可用 / %2$d MB 总量</string>
+    <string name="wizard_storage_available">私有存储空间：%1$s 可用</string>
+
+    <string name="wizard_virt_card_title">虚拟化运行引擎</string>
+    <string name="wizard_virt_avf_ready_badge">🎉 L2 硬件虚拟化已就绪</string>
+    <string name="wizard_virt_avf_ready_desc">检测到 pKVM Stage-2 硬件虚拟化能力，将获得近原生计算与图形性能。</string>
+    <string name="wizard_virt_avf_auth_badge">⚡ 可解锁 L2 硬件虚拟化</string>
+    <string name="wizard_virt_avf_auth_desc">本设备支持硬件虚拟化加速！可通过 Shizuku 或 ADB 命令解锁。若暂不授权，系统将自动使用 Class A 引擎（QEMU 软模拟）开箱即用。</string>
+    <string name="wizard_virt_qemu_badge">💡 Class A 软模拟引擎就绪</string>
+    <string name="wizard_virt_qemu_desc">当前系统未开放 AVF，已默认启用 QEMU 完整架构模拟，免 Root 开箱即用。</string>
+
+    <string name="wizard_btn_auth_guide">获取授权指引</string>
+    <string name="wizard_btn_skip_auth">跳过授权并继续</string>
+    <string name="wizard_btn_next">下一步</string>
+    <string name="wizard_btn_prev">上一步</string>
+
+    <!-- Step 2: Distro -->
+    <string name="wizard_step2_card_title">选择首个 Linux 发行版</string>
+    <string name="wizard_step2_card_desc">选择最适合您当前场景的操作系统（可在主界面自由增减）</string>
+    <string name="wizard_distro_selected_badge">✓ 当前选中</string>
+    <string name="wizard_distro_select_btn">选择此版本</string>
+
+    <!-- Step 3: Config & Download -->
+    <string name="wizard_step3_card_title">安全配置推荐与初始化</string>
+    <string name="wizard_step3_card_desc">已自动计算符合手机硬件的安全配额，杜绝 LMK 杀后台</string>
+    <string name="wizard_config_vcpu_info">虚拟 CPU：%1$d 核（宿主保留 1 核用于 UI 调度）</string>
+    <string name="wizard_config_ram_info">运存配额：%1$d MB（宿主保留 ≥2GB 防闪退线）</string>
+    <string name="wizard_config_disk_info">稀疏磁盘：%1$d GB（按需占用宿主空间）</string>
+    <string name="wizard_config_gpu_info">3D 图形加速：已启用（Mesa VirGL 硬件直通）</string>
+    <string name="wizard_config_zone_green">🟢 安全推荐区间：宿主保留充裕内存</string>
+
+    <string name="wizard_download_panel_title">弹性断点续传与部署</string>
+    <string name="wizard_btn_start_init">🚀 立即初始化首个实例</string>
+    <string name="wizard_download_status_fetching">正在拉取 %1$s rootfs 镜像…</string>
+    <string name="wizard_download_speed_info">%1$.1f MB/s · 已下载 %2$s / %3$s · 预计剩余 %4$s</string>
+    <string name="wizard_download_mirror_info">镜像节点：%1$s</string>
+    <string name="wizard_download_retry_info">正在从节点 %1$s 进行第 %2$d 次重试…</string>
+    <string name="wizard_download_failover_info">节点故障，已自动故障转移至：%1$s</string>
+    <string name="wizard_provisioning_info">正在校验 SHA-256 完整性并装配根文件系统…</string>
+    <string name="wizard_init_success">🎉 首个实例已就绪，正在进入控制台…</string>
+    <string name="wizard_init_failed">初始化失败：%1$s</string>
 </resources>
