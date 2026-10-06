@@ -1,10 +1,12 @@
 package io.github.nyzeep.droidlayer.runtime.contract;
 
+import java.io.ByteArrayOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.Objects;
 
 /**
@@ -14,7 +16,7 @@ import java.util.Objects;
  * adapters supply plain byte streams and stay out of the protocol.
  */
 public final class BridgeClient {
-    private static final int MAX_RESPONSE_LINE_BYTES = 512;
+    private static final int MAX_RESPONSE_LINE_BYTES = 512 * 1024;
 
     private final InputStream inbound;
     private final OutputStream outbound;
@@ -114,25 +116,44 @@ public final class BridgeClient {
         return classify(readResponseLine());
     }
 
+    /** Requests sending clipboard text to the agent and classifies the agent's response. */
+    public synchronized Result clipboardPut(String text) throws IOException {
+        if (text == null) {
+            throw new IllegalArgumentException("text must not be null");
+        }
+        byte[] utf8Bytes = text.getBytes(StandardCharsets.UTF_8);
+        if (utf8Bytes.length > BridgeControl.MAX_CLIPBOARD_PAYLOAD_BYTES) {
+            throw new IllegalArgumentException("clipboard payload exceeds 256KB limit: " + utf8Bytes.length + " bytes");
+        }
+        String base64 = Base64.getEncoder().encodeToString(utf8Bytes);
+        write("DROIDLAYER/CLIPBOARD PUT base64:" + base64 + "\n");
+        return classify(readResponseLine());
+    }
+
+    /** Requests retrieving current clipboard text from the agent and classifies the response. */
+    public synchronized Result clipboardGet() throws IOException {
+        write("DROIDLAYER/CLIPBOARD GET\n");
+        return classify(readResponseLine());
+    }
+
     private void write(String line) throws IOException {
         outbound.write(line.getBytes(StandardCharsets.US_ASCII));
         outbound.flush();
     }
 
     private String readResponseLine() throws IOException {
-        byte[] bytes = new byte[MAX_RESPONSE_LINE_BYTES];
-        int length = 0;
-        while (length < bytes.length) {
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        while (buffer.size() < MAX_RESPONSE_LINE_BYTES) {
             int value = inbound.read();
             if (value == -1) {
-                if (length == 0) {
+                if (buffer.size() == 0) {
                     throw new EOFException("bridge response stream ended");
                 }
-                return new String(bytes, 0, length, StandardCharsets.US_ASCII);
+                return buffer.toString(StandardCharsets.US_ASCII);
             }
-            bytes[length++] = (byte) value;
+            buffer.write(value);
             if (value == '\n') {
-                return new String(bytes, 0, length, StandardCharsets.US_ASCII);
+                return buffer.toString(StandardCharsets.US_ASCII);
             }
         }
         return "";
@@ -160,6 +181,22 @@ public final class BridgeClient {
         if ("DROIDLAYER/OK display\n".equals(line)) {
             return Result.accepted("ok-display");
         }
+        if ("DROIDLAYER/OK clipboard\n".equals(line)) {
+            return Result.accepted("ok-clipboard");
+        }
+        if (line != null && line.startsWith("DROIDLAYER/OK clipboard base64:") && line.endsWith("\n")) {
+            String base64 = line.substring("DROIDLAYER/OK clipboard base64:".length(), line.length() - 1);
+            if (base64.isEmpty()) {
+                return Result.accepted("ok-clipboard", "");
+            }
+            try {
+                byte[] decoded = Base64.getDecoder().decode(base64);
+                String text = new String(decoded, StandardCharsets.UTF_8);
+                return Result.accepted("ok-clipboard", text);
+            } catch (IllegalArgumentException e) {
+                return Result.rejected("malformed-response");
+            }
+        }
         if (line != null && line.startsWith("DROIDLAYER/ERROR ") && line.endsWith("\n")) {
             String kind = line.substring("DROIDLAYER/ERROR ".length(), line.length() - 1);
             return Result.rejected(kind);
@@ -171,27 +208,42 @@ public final class BridgeClient {
     public static final class Result {
         private final boolean accepted;
         private final String responseKind;
+        private final String payload;
 
         private Result(boolean accepted, String responseKind) {
+            this(accepted, responseKind, null);
+        }
+
+        private Result(boolean accepted, String responseKind, String payload) {
             this.accepted = accepted;
             this.responseKind = responseKind;
+            this.payload = payload;
         }
 
         static Result accepted(String responseKind) {
-            return new Result(true, responseKind);
+            return new Result(true, responseKind, null);
+        }
+
+        static Result accepted(String responseKind, String payload) {
+            return new Result(true, responseKind, payload);
         }
 
         static Result rejected(String responseKind) {
-            return new Result(false, responseKind);
+            return new Result(false, responseKind, null);
         }
 
         public boolean accepted() {
             return accepted;
         }
 
-        /** Accepted kinds: ready, pong, ok-resize. Rejected kinds: the agent's error kind. */
+        /** Accepted kinds: ready, pong, ok-resize, ok-clipboard. Rejected kinds: the agent's error kind. */
         public String responseKind() {
             return responseKind;
+        }
+
+        /** Optional decoded response payload (e.g. text for clipboard get), or null if not applicable. */
+        public String payload() {
+            return payload;
         }
     }
 }
