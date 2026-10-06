@@ -31,7 +31,8 @@ public final class FullLinuxContract {
         GRAPHICS_WAYLAND,
         AUDIO_OUTPUT,
         CLIPBOARD_SYNC,
-        POINTER_CAPTURE
+        POINTER_CAPTURE,
+        GPU_HARDWARE_ACCELERATION
     }
 
     /** Immutable strategy declaration consumed by callers instead of strategy-specific branches. */
@@ -178,6 +179,60 @@ public final class FullLinuxContract {
                 return "无指针捕获";
             }
             return "相对指针捕获（无边界）";
+        }
+
+        public boolean supportsGpuAcceleration() {
+            return supports(Capability.GPU_HARDWARE_ACCELERATION);
+        }
+
+        public String gpuBadge() {
+            if (!supports(Capability.GPU_HARDWARE_ACCELERATION)) {
+                return "无 GPU 加速（软件光栅）";
+            }
+            return "GPU 硬件加速（VirGL 3D）";
+        }
+    }
+
+    /**
+     * Strategy-neutral contract instance representation attaching identity and hardware configuration.
+     */
+    public static final class Instance {
+        private final String id;
+        private final VmHardwareConfig hardwareConfig;
+
+        public Instance(String id, VmHardwareConfig hardwareConfig) {
+            this.id = Objects.requireNonNull(id, "id");
+            this.hardwareConfig = Objects.requireNonNull(hardwareConfig, "hardwareConfig");
+        }
+
+        public String id() {
+            return id;
+        }
+
+        public VmHardwareConfig hardwareConfig() {
+            return hardwareConfig;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
+            Instance that = (Instance) o;
+            return Objects.equals(id, that.id) && Objects.equals(hardwareConfig, that.hardwareConfig);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(id, hardwareConfig);
+        }
+
+        @Override
+        public String toString() {
+            return "FullLinuxContract.Instance{id='" + id + "', hardwareConfig=" + hardwareConfig + "}";
         }
     }
 }

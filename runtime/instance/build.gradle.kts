@@ -39,10 +39,18 @@ tasks.register<JavaExec>("instanceStorageContractTest") {
     args(storageContractOutput.get().asFile.absolutePath)
 }
 
+val deleteContractOutput = layout.buildDirectory.dir("delete-lifecycle-contract")
+tasks.register<JavaExec>("instanceLifecycleDeleteTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.droidlayer.runtime.instance.InstanceLifecycleDeleteTest")
+    args(deleteContractOutput.get().asFile.absolutePath)
+}
+
 tasks.named("check") {
     dependsOn(
         "normalInstanceLifecycleContractTest",
         "reconciliationAndRecoveryLifecycleContractTest",
-        "instanceStorageContractTest"
+        "instanceStorageContractTest",
+        "instanceLifecycleDeleteTest"
     )
 }
