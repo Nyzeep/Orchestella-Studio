@@ -8,6 +8,7 @@ import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
+import io.github.nyzeep.droidlayer.peripherals.PointerCaptureHandler;
 import io.github.nyzeep.droidlayer.runtime.contract.DisplayControl;
 import io.github.nyzeep.droidlayer.runtime.contract.WaylandChannel;
 
@@ -27,6 +28,7 @@ public class WaylandSurfaceView extends SurfaceView implements SurfaceHolder.Cal
     private WaylandSurfaceController controller;
     private TouchGestureMapper touchGestureMapper;
     private ImeBridgeInputConnection imeBridge;
+    private PointerCaptureHandler pointerCaptureHandler;
 
     public WaylandSurfaceView(Context context) {
         super(context);
@@ -93,6 +95,14 @@ public class WaylandSurfaceView extends SurfaceView implements SurfaceHolder.Cal
         this.imeBridge = imeBridge;
     }
 
+    public PointerCaptureHandler getPointerCaptureHandler() {
+        return pointerCaptureHandler;
+    }
+
+    public void setPointerCaptureHandler(PointerCaptureHandler pointerCaptureHandler) {
+        this.pointerCaptureHandler = pointerCaptureHandler;
+    }
+
     public void bind(DisplayControl displayControl, WaylandChannel waylandChannel) {
         controller.bind(displayControl, waylandChannel);
         if (waylandChannel != null) {
@@ -119,7 +129,9 @@ public class WaylandSurfaceView extends SurfaceView implements SurfaceHolder.Cal
         controller.unbind();
         this.touchGestureMapper = null;
         this.imeBridge = null;
+        this.pointerCaptureHandler = null;
     }
+
 
     public void onResume() {
         controller.onResume();
@@ -152,6 +164,15 @@ public class WaylandSurfaceView extends SurfaceView implements SurfaceHolder.Cal
             return false;
         }
     }
+
+    @Override
+    public boolean onCapturedPointerEvent(MotionEvent event) {
+        if (pointerCaptureHandler != null && pointerCaptureHandler.onCapturedPointerEvent(event)) {
+            return true;
+        }
+        return super.onCapturedPointerEvent(event);
+    }
+
 
     @Override
     public InputConnection onCreateInputConnection(EditorInfo outAttrs) {

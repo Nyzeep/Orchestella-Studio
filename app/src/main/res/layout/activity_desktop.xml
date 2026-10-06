@@ -30,6 +30,17 @@
             android:paddingStart="12dp"
             android:paddingEnd="12dp" />
 
+        <Button
+            android:id="@+id/btn_pointer_capture"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:layout_marginStart="8dp"
+            android:text="@string/mouse_capture"
+            android:textSize="12sp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp" />
+
+
         <LinearLayout
             android:id="@+id/desktop_hud_overlay"
             android:layout_width="wrap_content"

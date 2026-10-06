@@ -272,6 +272,13 @@ public final class LowLatencyAudioPlayer implements AudioStreamContract {
             return;
         }
 
+        if (stream == null) {
+            if (isRunning.get()) {
+                transitionState(State.ERROR);
+            }
+            return;
+        }
+
         byte[] inputBuffer = new byte[CHUNK_SIZE_BYTES];
         byte[] outputBuffer = new byte[CHUNK_SIZE_BYTES];
 

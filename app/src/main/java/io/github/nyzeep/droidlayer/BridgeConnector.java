@@ -64,12 +64,22 @@ public final class BridgeConnector {
     public Session serve(String socketName, String bridgeToken, int columns, int rows,
             Events events, BridgeControl.Notification notification,
             BridgeControl.UrlOpener urlOpener) throws IOException, InterruptedException {
+        return serve(socketName, bridgeToken, columns, rows, events, notification, urlOpener, null);
+    }
+
+    /**
+     * Drives one host-initiated bridge session with notification, url opener, and clipboard adapters.
+     */
+    public Session serve(String socketName, String bridgeToken, int columns, int rows,
+            Events events, BridgeControl.Notification notification,
+            BridgeControl.UrlOpener urlOpener, BridgeControl.Clipboard clipboard)
+            throws IOException, InterruptedException {
         LocalSocket socket = connectWithRetry(socketName);
         try (InputStream in = socket.getInputStream();
                 OutputStream out = socket.getOutputStream()) {
             return new Session(
                     serveControl(in, out, bridgeToken, columns, rows, events, notification,
-                            urlOpener),
+                            urlOpener, clipboard),
                     socket);
         }
     }
@@ -82,15 +92,26 @@ public final class BridgeConnector {
     public Session serveStreams(InputStream in, OutputStream out, String bridgeToken,
             int columns, int rows, Events events, BridgeControl.Notification notification,
             BridgeControl.UrlOpener urlOpener) throws IOException, InterruptedException {
+        return serveStreams(in, out, bridgeToken, columns, rows, events, notification, urlOpener, null);
+    }
+
+    /**
+     * Drives the host-initiated bridge session over caller-owned streams with clipboard support.
+     */
+    public Session serveStreams(InputStream in, OutputStream out, String bridgeToken,
+            int columns, int rows, Events events, BridgeControl.Notification notification,
+            BridgeControl.UrlOpener urlOpener, BridgeControl.Clipboard clipboard)
+            throws IOException, InterruptedException {
         return new Session(
                 serveControl(in, out, bridgeToken, columns, rows, events, notification,
-                        urlOpener),
+                        urlOpener, clipboard),
                 null);
     }
 
     private int serveControl(InputStream in, OutputStream out, String bridgeToken, int columns,
             int rows, Events events, BridgeControl.Notification notification,
-            BridgeControl.UrlOpener urlOpener) throws IOException, InterruptedException {
+            BridgeControl.UrlOpener urlOpener, BridgeControl.Clipboard clipboard)
+            throws IOException, InterruptedException {
         BridgeClient client = new BridgeClient(in, out);
         if (!client.handshake(bridgeToken).accepted()) {
             return 3;
@@ -102,7 +123,7 @@ public final class BridgeConnector {
         if (columns > 0 && rows > 0 && client.resize(columns, rows).accepted()) {
             events.onResize(columns, rows);
         }
-        serveControlLoop(in, out, events, notification, urlOpener);
+        serveControlLoop(in, out, events, notification, urlOpener, clipboard);
         return 0;
     }
 
@@ -113,7 +134,20 @@ public final class BridgeConnector {
     static void serveControlLoop(InputStream in, OutputStream out, Events events,
             BridgeControl.Notification notification, BridgeControl.UrlOpener urlOpener)
             throws IOException {
+        serveControlLoop(in, out, events, notification, urlOpener, null);
+    }
+
+    /**
+     * Serves the bidirectional control loop for guest-initiated commands
+     * (such as NOTIFY, OPEN-URL, and CLIPBOARD) until the guest closes the channel.
+     */
+    static void serveControlLoop(InputStream in, OutputStream out, Events events,
+            BridgeControl.Notification notification, BridgeControl.UrlOpener urlOpener,
+            BridgeControl.Clipboard clipboard)
+            throws IOException {
         BridgeControl.Seams seams = BridgeControl.Seams.of(
+                null,
+                null,
                 (title, message) -> {
                     boolean handled = notification != null && notification.notify(title, message);
                     if (handled && events != null) {
@@ -127,7 +161,9 @@ public final class BridgeConnector {
                         events.onOpenUrl(url);
                     }
                     return handled;
-                });
+                },
+                null,
+                clipboard);
 
         while (true) {
             String requestLine = readLine(in);
@@ -142,6 +178,7 @@ public final class BridgeConnector {
             out.flush();
         }
     }
+
 
     static String readLine(InputStream in) throws IOException {
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();

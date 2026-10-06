@@ -178,6 +178,39 @@ public class LowLatencyAudioPlayerTest {
         assertEquals(AudioStreamContract.State.ERROR, player.state());
     }
 
+    @Test
+    public void testNullStreamTransitionsToErrorStateWithoutCrash() throws Exception {
+        AudioSourceSeam nullSource = new AudioSourceSeam() {
+            @Override
+            public InputStream openStream() {
+                return null;
+            }
+            @Override
+            public boolean isConnected() {
+                return false;
+            }
+            @Override
+            public void close() {}
+        };
+        LowLatencyAudioPlayer nullPlayer = new LowLatencyAudioPlayer(
+                nullSource, fakeTrack, compensator, fakeFocusSeam);
+
+        CountDownLatch errorLatch = new CountDownLatch(1);
+        nullPlayer.addStateListener((oldState, newState) -> {
+            if (newState == AudioStreamContract.State.ERROR) {
+                errorLatch.countDown();
+            }
+        });
+
+        try {
+            nullPlayer.start();
+            assertTrue("Player should transition to ERROR on null stream", errorLatch.await(2, TimeUnit.SECONDS));
+            assertEquals(AudioStreamContract.State.ERROR, nullPlayer.state());
+        } finally {
+            nullPlayer.release();
+        }
+    }
+
     // --- Test Doubles & Fakes ---
 
     private static class FakeAudioSource implements AudioSourceSeam {

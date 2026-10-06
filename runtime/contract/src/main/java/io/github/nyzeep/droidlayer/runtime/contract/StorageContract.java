@@ -57,7 +57,7 @@ public final class StorageContract {
             Path checkPath = Files.isDirectory(path) ? path : (path.getParent() != null ? path.getParent() : path);
             try {
                 return Files.getFileStore(checkPath).getUsableSpace();
-            } catch (IOException fallback) {
+            } catch (Exception fallback) {
                 return checkPath.toFile().getUsableSpace();
             }
         }

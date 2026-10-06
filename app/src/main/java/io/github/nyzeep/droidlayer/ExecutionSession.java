@@ -67,4 +67,34 @@ public interface ExecutionSession {
     default io.github.nyzeep.droidlayer.runtime.contract.WaylandChannel waylandChannel() {
         return null;
     }
+
+    /**
+     * Optional strategy-neutral BridgeClient for host-initiated control commands (such as clipboard sync).
+     * Null when the session does not provide a control channel.
+     */
+    default io.github.nyzeep.droidlayer.runtime.contract.BridgeClient bridgeClient() {
+        return null;
+    }
+
+    /**
+     * Registers a strategy-neutral BridgeControl.Clipboard callback for guest-initiated clipboard sync.
+     */
+    default void registerClipboardBridge(io.github.nyzeep.droidlayer.runtime.contract.BridgeControl.Clipboard clipboard) {
+    }
+
+    /**
+     * Returns the active clipboard bridge registered on this session.
+     */
+    default io.github.nyzeep.droidlayer.runtime.contract.BridgeControl.Clipboard clipboardBridge() {
+        return null;
+    }
+
+    /**
+     * Atomically marks that a bridge serving thread has started for this session.
+     * Returns true if successfully marked (caller should run the loop), or false if already running.
+     */
+    default boolean markBridgeServing() {
+        return false;
+    }
 }
+
