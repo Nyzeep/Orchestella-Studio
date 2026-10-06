@@ -46,11 +46,17 @@ tasks.register<JavaExec>("instanceLifecycleDeleteTest") {
     args(deleteContractOutput.get().asFile.absolutePath)
 }
 
+tasks.register<JavaExec>("sparseDiskResizerTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.droidlayer.runtime.instance.SparseDiskResizerTest")
+}
+
 tasks.named("check") {
     dependsOn(
         "normalInstanceLifecycleContractTest",
         "reconciliationAndRecoveryLifecycleContractTest",
         "instanceStorageContractTest",
-        "instanceLifecycleDeleteTest"
+        "instanceLifecycleDeleteTest",
+        "sparseDiskResizerTest"
     )
 }

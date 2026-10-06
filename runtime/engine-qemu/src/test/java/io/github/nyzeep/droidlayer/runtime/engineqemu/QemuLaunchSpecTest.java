@@ -2,6 +2,7 @@ package io.github.nyzeep.droidlayer.runtime.engineqemu;
 
 import io.github.nyzeep.droidlayer.runtime.contract.NetworkContract;
 import io.github.nyzeep.droidlayer.runtime.contract.SharedDirectoryContract;
+import io.github.nyzeep.droidlayer.runtime.contract.VmHardwareConfig;
 
 /** Contract tests for the fixed-argument QEMU launch specification and outbound network assembly. */
 public final class QemuLaunchSpecTest {
@@ -13,6 +14,9 @@ public final class QemuLaunchSpecTest {
         testLaunchSpecWithSharedDirectoryPci();
         testLaunchSpecWithSharedDirectoryMmio();
         testEngineFsdevFormattersDirectly();
+        testLaunchSpecWithVmHardwareConfig();
+        testLaunchSpecWithVmHardwareConfigAndExtraKernelArgs();
+        testLaunchSpecWithVmHardwareConfigFullOptions();
     }
 
     private static void testDefaultLaunchSpecWithOutboundNetwork() {
@@ -269,6 +273,89 @@ public final class QemuLaunchSpecTest {
             fail("formatFsDeviceArg MMIO mismatch");
         }
         System.out.println("ENGINE_FSDEV_FORMATTERS_TEST_OK");
+    }
+
+    private static void testLaunchSpecWithVmHardwareConfig() {
+        VmHardwareConfig config = VmHardwareConfig.builder()
+                .cpuCores(4)
+                .ramMegabytes(4096)
+                .build();
+
+        String[] spec = QemuLaunchSpec.build(
+                "/native/lib/arm64-v8a/libdroidlayer_qemu.so",
+                "/data/runtime/Image",
+                "/data/runtime/initramfs-embedded.cpio.gz",
+                "/data/instances/i1/root-volume.raw",
+                "droidlayer-control-i1",
+                "droidlayer-terminal-i1",
+                config);
+
+        requireArg(spec, "-smp", "4");
+        requireArg(spec, "-m", "4096M");
+        System.out.println("LAUNCH_SPEC_WITH_VM_HARDWARE_CONFIG_OK");
+    }
+
+    private static void testLaunchSpecWithVmHardwareConfigAndExtraKernelArgs() {
+        VmHardwareConfig config = VmHardwareConfig.builder()
+                .cpuCores(6)
+                .ramMegabytes(2048)
+                .extraKernelArguments("earlycon=uart8250,mmio32,0x9000000 loglevel=7")
+                .build();
+
+        String[] spec = QemuLaunchSpec.build(
+                "/native/lib/arm64-v8a/libdroidlayer_qemu.so",
+                "/data/runtime/Image",
+                "/data/runtime/initramfs-embedded.cpio.gz",
+                "/data/instances/i1/root-volume.raw",
+                "droidlayer-control-i1",
+                "droidlayer-terminal-i1",
+                config);
+
+        requireArg(spec, "-smp", "6");
+        requireArg(spec, "-m", "2048M");
+        String appendArg = null;
+        for (int i = 0; i < spec.length - 1; i++) {
+            if (spec[i].equals("-append")) {
+                appendArg = spec[i + 1];
+                break;
+            }
+        }
+        if (appendArg == null || !appendArg.contains("earlycon=uart8250,mmio32,0x9000000 loglevel=7")) {
+            fail("missing extraKernelArguments in -append: " + appendArg);
+        }
+        System.out.println("LAUNCH_SPEC_WITH_EXTRA_KERNEL_ARGS_OK");
+    }
+
+    private static void testLaunchSpecWithVmHardwareConfigFullOptions() {
+        VmHardwareConfig config = VmHardwareConfig.builder()
+                .cpuCores(8)
+                .ramMegabytes(8192)
+                .extraKernelArguments("cgroup_enable=cpuset")
+                .build();
+
+        SharedDirectoryContract.SharedDirectorySpec shareSpec =
+                SharedDirectoryContract.SharedDirectorySpec.defaultDownloads("/sdcard/Download");
+
+        String[] spec = QemuLaunchSpec.build(
+                "/native/lib/arm64-v8a/libdroidlayer_qemu.so",
+                "/data/runtime/Image",
+                "/data/runtime/initramfs-embedded.cpio.gz",
+                "/data/instances/i1/root-volume.raw",
+                "droidlayer-control-i1",
+                "droidlayer-terminal-i1",
+                "qmp-sock-i1",
+                config,
+                NetworkContract.OutboundNetworkSpec.defaultSpec(),
+                java.util.Collections.emptyList(),
+                shareSpec);
+
+        requireArg(spec, "-smp", "8");
+        requireArg(spec, "-m", "8192M");
+        requireArg(spec, "-chardev", "socket,id=qmp,path=qmp-sock-i1,abstract=on,server=on,wait=off");
+        requireArg(spec, "-mon", "chardev=qmp,mode=control");
+        requireArg(spec, "-fsdev", "local,id=fsdev0,path=/sdcard/Download,security_model=none,readonly=on");
+        requireArg(spec, "-device", "virtio-9p-pci,fsdev=fsdev0,mount_tag=downloads");
+        System.out.println("LAUNCH_SPEC_WITH_FULL_OPTIONS_OK");
     }
 
     private static void requireArg(String[] spec, String flag, String value) {
