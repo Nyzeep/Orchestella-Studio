@@ -1,7 +1,7 @@
 # 55: Guest 极简现代 Shell 预设（Starship / LS_COLORS）与环境美化
 
 Type: implementation  
-Status: ready-for-agent  
+Status: completed  
 Labels: m4-spec, tracer-bullet, guest-assets, shell-beautification  
 
 ## User Story
@@ -45,10 +45,10 @@ Labels: m4-spec, tracer-bullet, guest-assets, shell-beautification
 
 ## Acceptance Criteria
 
-- [ ] `droidlayer-prompt.sh` 在 BusyBox `ash`、Debian `dash` 与 `bash` 环境下均可无错误执行，提示符呈现两行结构且色彩准确；
-- [ ] `LS_COLORS` 环境变量生效，执行 `ll` 时目录、可执行文件与归档文件呈现明显色差区分；
-- [ ] 脚本通过 ShellCheck 静态分析，零 Warning、零 Error；
-- [ ] 纯 JVM 测试（`GuestAssetsShellScriptTest`）验证资产完整性、权限属性与安装逻辑 100% 绿灯。
+- [x] `droidlayer-prompt.sh` 在 BusyBox `ash`、Debian `dash` 与 `bash` 环境下均可无错误执行，提示符呈现两行结构且色彩准确；
+- [x] `LS_COLORS` 环境变量生效，执行 `ll` 时目录、可执行文件与归档文件呈现明显色差区分；
+- [x] 脚本通过 ShellCheck 静态分析，零 Warning、零 Error；
+- [x] 纯 JVM 测试（`GuestAssetsShellScriptTest`）验证资产完整性、权限属性与安装逻辑 100% 绿灯。
 
 ## Device Verification Steps
 
