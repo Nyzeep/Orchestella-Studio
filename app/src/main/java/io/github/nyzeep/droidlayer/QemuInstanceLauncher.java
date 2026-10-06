@@ -2,6 +2,8 @@ package io.github.nyzeep.droidlayer;
 
 import android.content.Context;
 import android.net.LocalSocket;
+import io.github.nyzeep.droidlayer.runtime.contract.BridgeClient;
+import io.github.nyzeep.droidlayer.runtime.contract.BridgeControl;
 import io.github.nyzeep.droidlayer.runtime.engineqemu.QemuLaunchSpec;
 import io.github.nyzeep.droidlayer.runtime.engineqemu.QemuProcessLauncher;
 import io.github.nyzeep.droidlayer.runtime.engineqemu.RuntimeArtifactManifest;
@@ -11,6 +13,7 @@ import java.io.OutputStream;
 import java.nio.file.Paths;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Starts one instance's packaged QEMU from {@code nativeLibraryDir} with the
@@ -30,6 +33,9 @@ public final class QemuInstanceLauncher {
         private final Object terminalLock = new Object();
         private LocalSocket controlSocket;
         private LocalSocket terminalSocket;
+        private BridgeClient bridgeClient;
+        private volatile BridgeControl.Clipboard clipboardBridge;
+        private final AtomicBoolean isBridgeServing = new AtomicBoolean(false);
 
         Session(String controlSocketName, String terminalSocketName,
                 QemuProcessLauncher.ProcessHandle handle) {
@@ -78,6 +84,34 @@ public final class QemuInstanceLauncher {
                 }
             }
         }
+
+        @Override
+        public synchronized BridgeClient bridgeClient() {
+            if (bridgeClient == null) {
+                try {
+                    bridgeClient = new BridgeClient(controlOutput(), controlInput());
+                } catch (IOException e) {
+                    return null;
+                }
+            }
+            return bridgeClient;
+        }
+
+        @Override
+        public void registerClipboardBridge(BridgeControl.Clipboard clipboard) {
+            this.clipboardBridge = clipboard;
+        }
+
+        @Override
+        public BridgeControl.Clipboard clipboardBridge() {
+            return this.clipboardBridge;
+        }
+
+        @Override
+        public boolean markBridgeServing() {
+            return isBridgeServing.compareAndSet(false, true);
+        }
+
 
         private LocalSocket control() throws IOException {
             synchronized (controlLock) {

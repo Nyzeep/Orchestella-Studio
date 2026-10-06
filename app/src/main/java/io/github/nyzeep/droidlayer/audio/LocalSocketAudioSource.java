@@ -34,11 +34,22 @@ public final class LocalSocketAudioSource implements AudioSourceSeam {
             throw new IOException("LocalSocketAudioSource already closed");
         }
         if (localSocket == null || !localSocket.isConnected()) {
-            localSocket = new LocalSocket();
-            localSocket.connect(new LocalSocketAddress(
-                    socketName,
-                    LocalSocketAddress.Namespace.ABSTRACT));
-            inputStream = localSocket.getInputStream();
+            LocalSocket ls = new LocalSocket();
+            try {
+                ls.connect(new LocalSocketAddress(
+                        socketName,
+                        LocalSocketAddress.Namespace.ABSTRACT));
+                inputStream = ls.getInputStream();
+                localSocket = ls;
+            } catch (IOException e) {
+                try {
+                    ls.close();
+                } catch (IOException ignored) {
+                }
+                localSocket = null;
+                inputStream = null;
+                throw e;
+            }
         }
         return inputStream;
     }
