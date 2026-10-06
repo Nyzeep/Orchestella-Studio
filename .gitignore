@@ -16,3 +16,6 @@ captures/
 *.aab
 .agents/
 skills-lock.json
+/app/src/main/jniLibs/
+/app/src/main/assets/
+/app/src/main/resources/

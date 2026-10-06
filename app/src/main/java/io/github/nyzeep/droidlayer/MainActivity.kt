@@ -25,6 +25,7 @@ import io.github.nyzeep.droidlayer.runtime.engineqemu.RuntimeArtifactManifest
 import io.github.nyzeep.droidlayer.runtime.instance.InstanceLifecycle
 import java.io.IOException
 import java.net.HttpURLConnection
+import java.nio.file.Files
 import java.nio.file.Paths
 import java.time.Clock
 import java.util.concurrent.Executors
@@ -387,34 +388,52 @@ class MainActivity : Activity() {
         createProgress.visibility = View.VISIBLE
         createProgress.isIndeterminate = true
         createStatus.text = getString(R.string.create_downloading_distro, distroDisplayName)
+
+        val cachedFile = filesDir.toPath().resolve("distro-inputs").resolve(manifest.rootfsFileName())
+        val hasLocalCache = Files.isRegularFile(cachedFile) && Files.size(cachedFile) == manifest.sizeBytes()
+
         operations.execute {
             val result = try {
-                val connection = manifest.source().toURL().openConnection() as HttpURLConnection
-                connection.instanceFollowRedirects = false
-                connection.connectTimeout = 15_000
-                connection.readTimeout = 60_000
-                try {
-                    if (connection.responseCode != HttpURLConnection.HTTP_OK ||
-                        connection.url.toURI() != manifest.source() ||
-                        connection.contentLengthLong != manifest.sizeBytes()
-                    ) throw IOException("unexpected " + distroDisplayName + " source response")
-                    connection.inputStream.use { input ->
+                if (hasLocalCache) {
+                    Files.newInputStream(cachedFile).use { input ->
                         DistroInstanceCreator(
                             manifest,
                             InstanceLifecycle.Controller(instanceStore, Clock.systemUTC()),
                             filesDir.toPath(),
-                        ).create(input, connection.contentLengthLong)
+                        ).create(input, manifest.sizeBytes())
                     }
                     getString(R.string.create_success)
-                } finally {
-                    connection.disconnect()
+                } else {
+                    val connection = manifest.source().toURL().openConnection() as HttpURLConnection
+                    connection.instanceFollowRedirects = false
+                    connection.connectTimeout = 15_000
+                    connection.readTimeout = 60_000
+                    try {
+                        if (connection.responseCode != HttpURLConnection.HTTP_OK ||
+                            connection.url.toURI() != manifest.source() ||
+                            connection.contentLengthLong != manifest.sizeBytes()
+                        ) throw IOException("unexpected " + distroDisplayName + " source response")
+                        connection.inputStream.use { input ->
+                            DistroInstanceCreator(
+                                manifest,
+                                InstanceLifecycle.Controller(instanceStore, Clock.systemUTC()),
+                                filesDir.toPath(),
+                            ).create(input, connection.contentLengthLong)
+                        }
+                        getString(R.string.create_success)
+                    } finally {
+                        connection.disconnect()
+                    }
                 }
             } catch (rejected: DistroManifest.InputRejectedException) {
+                android.util.Log.e("DroidLayer", "createDistro rejected", rejected)
                 getString(R.string.create_invalid_input_distro, distroDisplayName, rejected.reason())
-            } catch (_: IOException) {
+            } catch (io: IOException) {
+                android.util.Log.e("DroidLayer", "createDistro IO error", io)
                 getString(R.string.create_network_failed_distro, distroDisplayName)
-            } catch (_: RuntimeException) {
-                getString(R.string.create_failed, "private storage unavailable")
+            } catch (e: Exception) {
+                android.util.Log.e("DroidLayer", "createDistro failed", e)
+                getString(R.string.create_failed, "${e.javaClass.simpleName}: ${e.message}")
             }
             runOnUiThread {
                 createProgress.visibility = View.GONE

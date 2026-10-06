@@ -38,10 +38,21 @@ public final class TcpAudioSource implements AudioSourceSeam {
             throw new IOException("TcpAudioSource already closed");
         }
         if (socket == null || socket.isClosed()) {
-            socket = new Socket();
-            socket.setTcpNoDelay(true);
-            socket.connect(new InetSocketAddress(host, port), CONNECT_TIMEOUT_MS);
-            inputStream = socket.getInputStream();
+            Socket s = new Socket();
+            try {
+                s.setTcpNoDelay(true);
+                s.connect(new InetSocketAddress(host, port), CONNECT_TIMEOUT_MS);
+                inputStream = s.getInputStream();
+                socket = s;
+            } catch (IOException e) {
+                try {
+                    s.close();
+                } catch (IOException ignored) {
+                }
+                socket = null;
+                inputStream = null;
+                throw e;
+            }
         }
         return inputStream;
     }

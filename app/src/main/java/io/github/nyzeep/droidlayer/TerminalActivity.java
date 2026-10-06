@@ -103,20 +103,38 @@ public class TerminalActivity extends Activity {
             int rows = (int) (scroll.getHeight() / lineHeight);
             final int gridColumns = columns > 0 ? columns : 80;
             final int gridRows = rows > 0 ? rows : 24;
-            new Thread(() -> {
-                try {
-                    AndroidNotificationAdapter notificationAdapter =
-                            new AndroidNotificationAdapter(TerminalActivity.this);
-                    AndroidUrlOpenerAdapter urlOpenerAdapter =
-                            new AndroidUrlOpenerAdapter(TerminalActivity.this);
-                    new BridgeConnector().serveStreams(
-                            session.controlOutput(), session.controlInput(), bridgeToken,
-                            gridColumns, gridRows, eventsForBridge(), notificationAdapter,
-                            urlOpenerAdapter);
-                } catch (Exception e) {
-                    append("[bridge ended: " + e.getClass().getSimpleName() + "]\n");
-                }
-            }, "bridge-serve").start();
+            if (session != null && session.markBridgeServing()) {
+                new Thread(() -> {
+                    try {
+                        AndroidNotificationAdapter notificationAdapter =
+                                new AndroidNotificationAdapter(TerminalActivity.this);
+                        AndroidUrlOpenerAdapter urlOpenerAdapter =
+                                new AndroidUrlOpenerAdapter(TerminalActivity.this);
+                        new BridgeConnector().serveStreams(
+                                session.controlOutput(), session.controlInput(), bridgeToken,
+                                gridColumns, gridRows, eventsForBridge(), notificationAdapter,
+                                urlOpenerAdapter,
+                                new io.github.nyzeep.droidlayer.runtime.contract.BridgeControl.Clipboard() {
+                                    @Override
+                                    public boolean onClipboardPut(String text) {
+                                        io.github.nyzeep.droidlayer.runtime.contract.BridgeControl.Clipboard cb =
+                                                session != null ? session.clipboardBridge() : null;
+                                        return cb != null && cb.onClipboardPut(text);
+                                    }
+
+                                    @Override
+                                    public String onClipboardGet() {
+                                        io.github.nyzeep.droidlayer.runtime.contract.BridgeControl.Clipboard cb =
+                                                session != null ? session.clipboardBridge() : null;
+                                        return cb != null ? cb.onClipboardGet() : null;
+                                    }
+                                });
+                    } catch (Exception e) {
+                        append("[bridge ended: " + e.getClass().getSimpleName() + "]\n");
+                    }
+                }, "bridge-serve").start();
+            }
+
         });
 
         input.setOnEditorActionListener((v, actionId, event) -> {
