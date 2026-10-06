@@ -373,8 +373,69 @@ if [ -f /etc/droidlayer/shell/droidlayer-prompt.sh ]; then
 elif [ -f "$(dirname "$0")/droidlayer-prompt.sh" ]; then
     . "$(dirname "$0")/droidlayer-prompt.sh"
 fi
+
+# Load graphics acceleration environment
+if [ -f /etc/profile.d/10-droidlayer-graphics.sh ]; then
+    . /etc/profile.d/10-droidlayer-graphics.sh
+elif [ -f /etc/droidlayer/shell/10-droidlayer-graphics.sh ]; then
+    . /etc/droidlayer/shell/10-droidlayer-graphics.sh
+fi
 EOF
     chmod 0755 "$target_root/etc/profile.d/00-droidlayer-env.sh"
+
+    cat > "$target_root/etc/profile.d/10-droidlayer-graphics.sh" <<'EOF'
+#!/bin/sh
+# DroidLayer Guest Mesa 3D Graphics Environment Configuration
+# Automatically configures Mesa Gallium VirGL 3D hardware acceleration
+# or smoothly falls back to llvmpipe CPU rasterization if host GPU is unavailable.
+# Installed into /etc/profile.d/10-droidlayer-graphics.sh
+
+__droidlayer_probe_graphics() {
+    if [ "${DROIDLAYER_GPU_DISABLED:-0}" = "1" ] || [ "${VIRGL_FORCE_LLVMPIPE:-0}" = "1" ]; then
+        export GALLIUM_DRIVER=llvmpipe
+        export DROIDLAYER_GRAPHICS_BACKEND=llvmpipe
+        unset MESA_GL_VERSION_OVERRIDE
+        unset MESA_GLES_VERSION_OVERRIDE
+        return 0
+    fi
+
+    if [ -r /proc/cmdline ]; then
+        if grep -qs 'droidlayer.gpu=0' /proc/cmdline || grep -qs 'nomodeset' /proc/cmdline; then
+            export GALLIUM_DRIVER=llvmpipe
+            export DROIDLAYER_GRAPHICS_BACKEND=llvmpipe
+            unset MESA_GL_VERSION_OVERRIDE
+            unset MESA_GLES_VERSION_OVERRIDE
+            return 0
+        fi
+    fi
+
+    _has_virgl_node=0
+    if [ -c /dev/dri/renderD128 ] || [ -d /sys/class/drm/renderD128 ]; then
+        _has_virgl_node=1
+    elif [ -c /dev/dri/card0 ] || [ -d /sys/class/drm/card0 ]; then
+        if [ -d /sys/bus/virtio/drivers/virtio_gpu ] || grep -qs 'virtio_gpu' /proc/modules 2>/dev/null; then
+            _has_virgl_node=1
+        fi
+    fi
+
+    if [ "$_has_virgl_node" -eq 1 ]; then
+        export GALLIUM_DRIVER=virgl
+        export MESA_GL_VERSION_OVERRIDE=3.2
+        export MESA_GLES_VERSION_OVERRIDE=3.2
+        export DROIDLAYER_GRAPHICS_BACKEND=virgl
+    else
+        export GALLIUM_DRIVER=llvmpipe
+        export DROIDLAYER_GRAPHICS_BACKEND=llvmpipe
+        unset MESA_GL_VERSION_OVERRIDE
+        unset MESA_GLES_VERSION_OVERRIDE
+    fi
+}
+
+__droidlayer_probe_graphics
+unset -f __droidlayer_probe_graphics 2>/dev/null || true
+EOF
+    chmod 0755 "$target_root/etc/profile.d/10-droidlayer-graphics.sh"
+    cp -f "$target_root/etc/profile.d/10-droidlayer-graphics.sh" "$target_root/etc/droidlayer/shell/10-droidlayer-graphics.sh"
 
     if [ -f "$target_root/etc/profile" ] && ! grep -qs '00-droidlayer-env.sh' "$target_root/etc/profile"; then
         printf '\nexport ENV=/etc/profile.d/00-droidlayer-env.sh\n' >> "$target_root/etc/profile"

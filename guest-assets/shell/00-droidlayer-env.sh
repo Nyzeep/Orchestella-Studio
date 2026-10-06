@@ -27,3 +27,15 @@ elif [ -f "$(dirname "$0")/droidlayer-prompt.sh" ]; then
     # shellcheck disable=SC1090
     . "$(dirname "$0")/droidlayer-prompt.sh"
 fi
+
+# Load graphics acceleration environment
+if [ -f /etc/profile.d/10-droidlayer-graphics.sh ]; then
+    # shellcheck disable=SC1091
+    . /etc/profile.d/10-droidlayer-graphics.sh
+elif [ -f /etc/droidlayer/shell/10-droidlayer-graphics.sh ]; then
+    # shellcheck disable=SC1091
+    . /etc/droidlayer/shell/10-droidlayer-graphics.sh
+elif [ -f "$(dirname "$0")/10-droidlayer-graphics.sh" ]; then
+    # shellcheck disable=SC1090
+    . "$(dirname "$0")/10-droidlayer-graphics.sh"
+fi

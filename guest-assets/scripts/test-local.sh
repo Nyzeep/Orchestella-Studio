@@ -42,7 +42,8 @@ sh -n "$GUEST_ASSETS_DIR/initramfs/init" \
   "$GUEST_ASSETS_DIR/scripts/desktop/labwc/autostart" \
   "$GUEST_ASSETS_DIR/shell/droidlayer-prompt.sh" \
   "$GUEST_ASSETS_DIR/shell/aliases.sh" \
-  "$GUEST_ASSETS_DIR/shell/00-droidlayer-env.sh"
+  "$GUEST_ASSETS_DIR/shell/00-droidlayer-env.sh" \
+  "$GUEST_ASSETS_DIR/shell/10-droidlayer-graphics.sh"
 
 
 while IFS= read -r -d '' source_file; do
@@ -78,4 +79,5 @@ shellcheck --severity=warning --external-sources --source-path=SCRIPTDIR \
   "$GUEST_ASSETS_DIR/initramfs/init" \
   "$GUEST_ASSETS_DIR/shell/droidlayer-prompt.sh" \
   "$GUEST_ASSETS_DIR/shell/aliases.sh" \
-  "$GUEST_ASSETS_DIR/shell/00-droidlayer-env.sh"
+  "$GUEST_ASSETS_DIR/shell/00-droidlayer-env.sh" \
+  "$GUEST_ASSETS_DIR/shell/10-droidlayer-graphics.sh"

@@ -55,7 +55,8 @@ final class DesktopSetupScriptTest {
 
         List<String> alpinePackages = List.of(
                 "labwc", "sfwbar", "foot", "xwayland", "font-noto-cjk",
-                "pulseaudio", "pulseaudio-utils", "wl-clipboard");
+                "pulseaudio", "pulseaudio-utils", "wl-clipboard",
+                "mesa-dri-gallium", "mesa-va-gallium");
         for (String pkg : alpinePackages) {
             assertTrue(content.contains(pkg), "Alpine package list must include: " + pkg);
         }
@@ -76,7 +77,8 @@ final class DesktopSetupScriptTest {
 
         List<String> debianPackages = List.of(
                 "labwc", "sfwbar", "foot", "xwayland", "fonts-noto-cjk",
-                "pulseaudio", "pulseaudio-utils", "wl-clipboard");
+                "pulseaudio", "pulseaudio-utils", "wl-clipboard",
+                "libgl1-mesa-dri", "mesa-utils", "glmark2-es2");
         for (String pkg : debianPackages) {
             assertTrue(content.contains(pkg), "Debian package list must include: " + pkg);
         }
@@ -98,6 +100,8 @@ final class DesktopSetupScriptTest {
                 "setup script must deploy clipboard agent executable");
         assertTrue(content.contains("/etc/profile.d/00-droidlayer-env.sh"),
                 "setup script must deploy 00-droidlayer-env.sh environment profile");
+        assertTrue(content.contains("/etc/profile.d/10-droidlayer-graphics.sh"),
+                "setup script must deploy 10-droidlayer-graphics.sh environment profile");
     }
 
     @Test
