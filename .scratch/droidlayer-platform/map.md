@@ -10,16 +10,17 @@ Effort: droidlayer-platform
 ## Notes
 
 - **领域**：Android/Linux 系统工程。产品 = 无 Root 的 Linux Runtime Platform（VM-first、能力驱动后端选择、guest 内容器支持）。
-- **Spec 已发布**：M1 MVP 规格见 [.scratch/droidlayer-platform/spec.md](spec.md)；M2 Wayland 原生图形桌面与深度输入规格见 [.scratch/droidlayer-platform/spec-m2.md](spec-m2.md)；M3 系统级深度互通、音频输出与外设集成规格见 [.scratch/droidlayer-platform/spec-m3.md](spec-m3.md)（ready-for-agent，依据 ADR-0018 与 2026-10-06 调研）。
+- **Spec 已发布**：M1 MVP 规格见 [.scratch/droidlayer-platform/spec.md](spec.md)；M2 Wayland 原生图形桌面与深度输入规格见 [.scratch/droidlayer-platform/spec-m2.md](spec-m2.md)；M3 系统级深度互通、音频输出与外设集成规格见 [.scratch/droidlayer-platform/spec-m3.md](spec-m3.md)（ready-for-agent，依据 ADR-0018 与 2026-10-06 调研）；M4 全栈体验重塑、硬件深度定制与 GPU 加速渲染规格见 [.scratch/droidlayer-platform/spec-m4.md](spec-m4.md)（ready-for-agent，依据 ADR-0019、竞品调研与 2026-10-06 GPU 调研报告）。
 - **实现工单状态**：
   * M1 工单（issues/25–37）已全量验收合流完成（Status: completed）；
   * M2 移动 Wayland 图形桌面与深度输入工单（Ticket 38~43）：全量验收合流完成（Status: completed）。M2 里程碑全链路闭环！
   * M3 系统级深度互通、音频与外设工单（Ticket 44~48）：全量验收合流完成（Status: completed）。M3 里程碑全链路闭环！
+  * M4 全栈体验重塑、硬件定制与 GPU 加速工单（Ticket 49~58）：全量拆解完成（Status: ready-for-agent）。
 - **工程交接包**：`docs/agent-handoff/`（ENGINEERING_HANDOFF 为入口；执行/合同/并行/报告/变更门五份配套；PHASE3_PLATFORM_HANDOFF 为 M3 启动入口）。
 - **用户背景**：领域新手。所有 grilling 必须用通俗语言解释术语（kernel / rootfs / container / namespace / pKVM / AVF / vsock / 9p …），并按固定六段格式提问：①真正要决定的问题 ②为什么重要 ③推荐答案 ④优点 ⑤代价/风险 ⑥可逆性。
 - **工作节奏**：每次 grilling 只问一个问题，等用户回答，写 ADR/CONTEXT.md，再问下一个（`/grill-with-docs` 的节奏）。不把实现细节伪装成需求决策。
 - **Skills**：grilling 票 → 调用 `grilling` + `domain-modeling`；research 票 → 调用 `research`；prototype 票 → 调用 `prototype`。
-- **事实基线**：`docs/research/`（AVF 权限与设备矩阵、TCG 性能、W^X/生命周期、Podroid 源码分析、Wayland 移动图形通道、M3 系统深度互通音频剪贴板）。`探讨文档1.md` 是历史输入，不是已批准需求。
+- **事实基线**：`docs/research/`（AVF 权限与设备矩阵、TCG 性能、W^X/生命周期、Podroid 源码分析、Wayland 移动图形通道、M3 系统深度互通音频剪贴板、2026-10-06 GPU 加速渲染报告、2026-10-06 移动虚拟化体验与生态竞品深度调研）。`探讨文档1.md` 是历史输入，不是已批准需求。
 - **Standing preferences**：决策先于实现；性能承诺必须可测量（禁用"0% 损耗"）；GPU/USB/桌面不过早进入 MVP；backend abstraction 与 kernel/rootfs 解耦是既定设计倾向（仍需正式确认）；许可证上"借鉴架构 ≠ 复用代码"。
 - **并发提示**：本机 agent 并发额度为 1，research 票逐个领取执行，不要并行开多个子代理。
 
@@ -45,13 +46,13 @@ Effort: droidlayer-platform
 - [多实例模型](issues/24-grilling-multi-instance.md): MVP 单运行实例；Distro ≠ Image ≠ Instance ≠ Session 实体模型入册；并发为后续增强。见 ADR-0016。**全部 grilling 票关闭。**
 - [Wayland 移动图形架构](docs/adr/0017-wayland-graphics-channel.md): 彻底废除 VNC-First，全面转向 Wayland-First；NDK ANativeWindow+GLES 双缓冲 60 FPS 上屏；labwc 轻量合成器；双模融合 IME 穿透与移动触控手势；M2 示踪箭工单 38–42 拆解完成。见 ADR-0017 与 spec-m2.md。
 - [系统级深度互通、低延迟音频与外设架构](docs/adr/0018-audio-and-clipboard-bridge.md): 确立前台焦点驱动 SHA-256 哈希防环剪贴板（256KB 纯文本/代码段）；极简无头 PulseAudio 48kHz/16-bit PCM 单向音频输出（vsock 9104 / LocalSocket，AudioTrack 低延迟自适应漂移补偿播放）；API 26+ requestPointerCapture 相对鼠标位移捕获；SAF 文件拖拽暂存分发；M3 示踪箭工单 44–48 拆解完成。见 ADR-0018 与 spec-m3.md。
+- [GPU 硬件加速渲染、驱动隔离与全栈交互体验架构](docs/adr/0019-gpu-hardware-acceleration.md): 确立 QEMU L1 软模拟档内嵌 virglrenderer（MIT 许可，免疫高通 8 Elite 封锁，全机型 100% 覆盖）；升级宿主呈现层至 NDK ANativeWindow + GLES3 PBO 异步上传；建立 EGL Robustness 上下文隔离与显存配额守卫三重防御；确立 Material 3 Expressive 仪表盘、UTM 式卡片管理、VMware 级硬件参数定制（vCPU 1~8、RAM 512M~8G、稀疏磁盘扩容）、`InstanceLifecycle.Store.delete(id)` 物理回收与安全熔断、多源抗阻弹性下载引擎（HTTP Range 断点续传与多镜像 Failover）、ANSI 256 色现代终端与移动辅助键盘栏、首次启动三步闭环向导与分层文档。M4 示踪箭工单 49–58 拆解完成。见 ADR-0019 与 spec-m4.md。
 
 ## Not yet specified
 
 - **Compatibility Runtime 契约设计（若未来交付 PRoot）**：与 Full Linux 契约平行的轻量契约——实例=目录树、无 vsock/virtio、终端通道语义、共享面复用白名单。触发条件：用户决定交付 Compatibility Runtime（研究票「PRoot on modern Android」已供数：docs/research/2026-09-05-proot-modern-android.md）。
 - 发行版镜像与 guest 系统的更新/OTA 通道；与 AVF instance identity（VM secret 随代码变化）的交互（等原型「AVF 端到端验证」结果）
 - 性能 benchmark 套件与各档验收数字（等原型「QEMU TCG 实机基线」产出数据）
-- UI/UX 产品形态细化：发行版目录、实例管理、终端集成的具体交互（spec 后由 prototype 票承接）
 - AVF 档独立存活 VM、热恢复、passt 网络增强等能力（等对应原型数据后按能力矩阵声明）
 
 ## Out of scope
