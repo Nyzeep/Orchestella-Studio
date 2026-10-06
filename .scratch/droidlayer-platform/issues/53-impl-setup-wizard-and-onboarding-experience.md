@@ -1,7 +1,7 @@
 # 53: 首次启动三步闭环设置向导与小白用户分层引导
 
 Type: implementation  
-Status: ready-for-agent  
+Status: ready-for-review  
 Labels: m4-spec, tracer-bullet, onboarding, setup-wizard, documentation  
 
 ## User Story
@@ -37,13 +37,13 @@ Labels: m4-spec, tracer-bullet, onboarding, setup-wizard, documentation
 
 ## Acceptance Criteria
 
-- [ ] 新安装 APK 首次启动时确定性进入 `SetupWizardActivity`；
-- [ ] Step 1 正确展示宿主设备硬件规格与虚拟化状态，点击“稍后授权”或“继续”可顺利流转至 Step 2；
-- [ ] Step 2 能够自由切换 Alpine 与 Debian，选单附带清晰的特性与体积对比描述；
-- [ ] Step 3 自动计算填入符合宿主硬件的安全推荐 vCPU 与 RAM，点击完成能平滑调用 `ResilientDownloadEngine` 进行带进度的镜像拉取；
-- [ ] 镜像部署成功后，系统自动创建首个实例，并将用户重定向至 `MainActivity` 现代仪表盘，且标记向导已完成；
-- [ ] 交付分层文档：`docs/user-guide/quick-start.zh-CN.md` 与 `docs/architecture/advanced-tuning-whitepaper.zh-CN.md` 内容详实完备；
-- [ ] 纯 JVM 测试（`SetupWizardModelTest`）100% 绿灯。
+- [x] 新安装 APK 首次启动时确定性进入 `SetupWizardActivity`；
+- [x] Step 1 正确展示宿主设备硬件规格与虚拟化状态，点击“稍后授权”或“继续”可顺利流转至 Step 2；
+- [x] Step 2 能够自由切换 Alpine 与 Debian，选单附带清晰的特性与体积对比描述；
+- [x] Step 3 自动计算填入符合宿主硬件的安全推荐 vCPU 与 RAM，点击完成能平滑调用 `ResilientDownloadEngine` 进行带进度的镜像拉取；
+- [x] 镜像部署成功后，系统自动创建首个实例，并将用户重定向至 `MainActivity` 现代仪表盘，且标记向导已完成；
+- [x] 交付分层文档：`docs/user-guide/quick-start.zh-CN.md` 与 `docs/architecture/advanced-tuning-whitepaper.zh-CN.md` 内容详实完备；
+- [x] 纯 JVM 测试（`SetupWizardModelTest`）100% 绿灯。
 
 ## Device Verification Steps
 

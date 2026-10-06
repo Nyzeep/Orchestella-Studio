@@ -1,6 +1,7 @@
 package io.github.nyzeep.droidlayer;
 
 import io.github.nyzeep.droidlayer.runtime.contract.StorageContract;
+import io.github.nyzeep.droidlayer.runtime.contract.VmHardwareConfig;
 import io.github.nyzeep.droidlayer.runtime.distro.DistroManifest;
 import io.github.nyzeep.droidlayer.runtime.instance.InstanceLifecycle;
 import java.io.FilterInputStream;
@@ -84,7 +85,12 @@ public class DistroInstanceCreator {
     }
 
     public InstanceLifecycle.Instance create(InputStream archive, long declaredSize) throws IOException {
+        return create(archive, declaredSize, VmHardwareConfig.defaultConfig());
+    }
+
+    public InstanceLifecycle.Instance create(InputStream archive, long declaredSize, VmHardwareConfig hardwareConfig) throws IOException {
         Objects.requireNonNull(archive, "archive");
+        Objects.requireNonNull(hardwareConfig, "hardwareConfig");
         manifest.requireExpectedSize(declaredSize);
         Path inputs = privateDirectory.resolve("distro-inputs");
         Files.createDirectories(inputs);
@@ -127,7 +133,7 @@ public class DistroInstanceCreator {
                 channel.position(rootVolumeBytes - 1L);
                 channel.write(ByteBuffer.wrap(new byte[] {0}));
             }
-            return controller.create(new InstanceLifecycle.DistroReference(manifest.id(), manifest.version()), volume);
+            return controller.create(new InstanceLifecycle.DistroReference(manifest.id(), manifest.version()), volume, hardwareConfig);
         } catch (IOException | RuntimeException failure) {
             Files.deleteIfExists(volume);
             throw failure;
