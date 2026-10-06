@@ -55,6 +55,18 @@ check_installed() {
         wl-clipboard)
             command -v wl-copy >/dev/null 2>&1 || command -v wl-paste >/dev/null 2>&1
             ;;
+        mesa-dri-gallium|mesa-va-gallium)
+            [[ -d "/usr/lib/dri" || -d "/usr/lib64/dri" ]] || apk info -e "$pkg" >/dev/null 2>&1
+            ;;
+        libgl1-mesa-dri)
+            [[ -d "/usr/lib/aarch64-linux-gnu/dri" || -d "/usr/lib/x86_64-linux-gnu/dri" || -d "/usr/lib/dri" ]] || dpkg -s libgl1-mesa-dri >/dev/null 2>&1
+            ;;
+        mesa-utils)
+            command -v glxinfo >/dev/null 2>&1 || command -v es2_info >/dev/null 2>&1
+            ;;
+        glmark2-es2)
+            command -v glmark2-es2 >/dev/null 2>&1
+            ;;
         *)
             command -v "$pkg" >/dev/null 2>&1
             ;;
@@ -63,7 +75,7 @@ check_installed() {
 
 # 1. Package installation per distribution
 if [[ "$OS_ID" == "alpine" ]]; then
-    ALPINE_PACKAGES=("labwc" "sfwbar" "foot" "xwayland" "font-noto-cjk" "pulseaudio" "pulseaudio-utils" "wl-clipboard")
+    ALPINE_PACKAGES=("labwc" "sfwbar" "foot" "xwayland" "font-noto-cjk" "pulseaudio" "pulseaudio-utils" "wl-clipboard" "mesa-dri-gallium" "mesa-va-gallium")
     if [[ "$CHECK_ONLY" -eq 1 ]]; then
         for pkg in "${ALPINE_PACKAGES[@]}"; do
             if ! check_installed "$pkg"; then
@@ -77,7 +89,7 @@ if [[ "$OS_ID" == "alpine" ]]; then
     printf 'Installing Alpine desktop suite...\n'
     execute_cmd apk add --no-cache "${ALPINE_PACKAGES[@]}"
 elif [[ "$OS_ID" == "debian" || "$OS_ID" == "ubuntu" || "${ID_LIKE:-}" =~ debian ]]; then
-    DEBIAN_PACKAGES=("labwc" "sfwbar" "foot" "xwayland" "fonts-noto-cjk" "pulseaudio" "pulseaudio-utils" "wl-clipboard")
+    DEBIAN_PACKAGES=("labwc" "sfwbar" "foot" "xwayland" "fonts-noto-cjk" "pulseaudio" "pulseaudio-utils" "wl-clipboard" "libgl1-mesa-dri" "mesa-utils" "glmark2-es2")
     if [[ "$CHECK_ONLY" -eq 1 ]]; then
         for pkg in "${DEBIAN_PACKAGES[@]}"; do
             if ! check_installed "$pkg"; then
@@ -150,7 +162,7 @@ if [[ -f "$DESKTOP_SRC/clipboard/droidlayer-clipboard-agent" ]]; then
     execute_cmd chmod 755 "$BIN_DIR/droidlayer-clipboard-agent"
 fi
 
-# 4. Modern Shell and environment profile setup (/etc/profile.d/00-droidlayer-env.sh)
+# 4. Modern Shell and environment profile setup (/etc/profile.d/00-droidlayer-env.sh, /etc/profile.d/10-droidlayer-graphics.sh)
 PROFILE_D="/etc/profile.d"
 DROIDLAYER_SHELL_DIR="/etc/droidlayer/shell"
 SHELL_SRC="$SCRIPT_DIR/../shell"
@@ -171,6 +183,12 @@ if [[ -d "$SHELL_SRC" ]]; then
     if [[ -f "$SHELL_SRC/00-droidlayer-env.sh" ]]; then
         execute_cmd cp -f "$SHELL_SRC/00-droidlayer-env.sh" "$PROFILE_D/00-droidlayer-env.sh"
         execute_cmd chmod 755 "$PROFILE_D/00-droidlayer-env.sh"
+    fi
+    if [[ -f "$SHELL_SRC/10-droidlayer-graphics.sh" ]]; then
+        execute_cmd cp -f "$SHELL_SRC/10-droidlayer-graphics.sh" "$PROFILE_D/10-droidlayer-graphics.sh"
+        execute_cmd chmod 755 "$PROFILE_D/10-droidlayer-graphics.sh"
+        execute_cmd cp -f "$SHELL_SRC/10-droidlayer-graphics.sh" "$DROIDLAYER_SHELL_DIR/10-droidlayer-graphics.sh"
+        execute_cmd chmod 755 "$DROIDLAYER_SHELL_DIR/10-droidlayer-graphics.sh"
     fi
 fi
 
