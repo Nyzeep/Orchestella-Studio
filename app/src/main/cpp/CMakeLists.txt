@@ -24,3 +24,29 @@ target_link_libraries(droidlayer_gles
     GLESv3
     log
 )
+
+# Ticket 57: In-process VirGL 3D acceleration engine
+add_library(virglrenderer SHARED
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/virglrenderer/src/virgl_android_gl_loader.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/virglrenderer/src/virgl_memory_quota.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/virglrenderer/src/virglrenderer.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/virglrenderer/src/virgl_jni_bridge.cpp
+)
+
+target_include_directories(virglrenderer PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/virglrenderer/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/virglrenderer/include/drm
+)
+
+target_link_options(virglrenderer PRIVATE
+    "-Wl,-z,max-page-size=16384"
+    "-static-libstdc++"
+)
+
+target_link_libraries(virglrenderer
+    EGL
+    GLESv3
+    log
+    m
+)
+
