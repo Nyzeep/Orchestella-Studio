@@ -37,7 +37,7 @@
         <!-- ADR-0017 & Ticket 43: Android host graphical desktop activity -->
         <activity
             android:name=".DesktopActivity"
-            android:exported="false"
+            android:exported="true"
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" />
 
