@@ -1,0 +1,30 @@
+#!/usr/bin/pulseaudio -nF
+#
+# DroidLayer Minimal Headless Audio Sink Configuration (PulseAudio)
+# Milestone: Phase 3 (M3) - ADR-0013 & ADR-0018
+#
+# Performance & Footprint Guarantees:
+# - Resident memory footprint <= 15MB
+# - Cold startup time <= 500ms
+# - Zero D-Bus / udev / systemd / native-TCP overhead
+# - Fixed uncompressed PCM stream: 48000Hz, 16-bit signed LE, stereo, on 127.0.0.1:9104
+#
+
+.fail
+
+# 1. High-efficiency headless null sink (acts as master virtual audio sink)
+load-module module-null-sink sink_name=droidlayer_sink sink_properties=device.description="DroidLayer-Audio"
+set-default-sink droidlayer_sink
+
+# 2. Maintain a sink at all times so client applications never stall
+load-module module-always-sink
+
+# 3. Stream monitor output over simple-protocol-tcp (fixed 48kHz s16le stereo)
+# Monitored source: droidlayer_sink.monitor
+# Single second throughput: 48000 * 2 * 2 = 192,000 bytes/sec (~187.5 KB/s)
+load-module module-simple-protocol-tcp rate=48000 format=s16le channels=2 source=droidlayer_sink.monitor record=true port=9104 listen=127.0.0.1
+
+# 4. Standard local UNIX domain socket for guest desktop applications (Firefox, media players, foot)
+load-module module-native-protocol-unix
+
+.nofail

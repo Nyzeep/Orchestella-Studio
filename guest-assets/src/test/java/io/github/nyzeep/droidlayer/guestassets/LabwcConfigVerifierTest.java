@@ -101,6 +101,9 @@ final class LabwcConfigVerifierTest {
         String content = Files.readString(autostartPath, StandardCharsets.UTF_8);
         assertFalse(content.contains("\r"), "autostart must use LF line endings only");
         assertTrue(content.contains("sfwbar"), "autostart must launch sfwbar status bar");
+        assertTrue(content.contains("pulseaudio"), "autostart must launch pulseaudio audio sink daemon");
+        assertTrue(content.contains("clipboard") || content.contains("wl-paste"),
+                "autostart must launch clipboard agent");
     }
 
     @Test

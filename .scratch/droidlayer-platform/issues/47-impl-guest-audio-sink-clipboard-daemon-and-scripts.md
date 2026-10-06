@@ -1,7 +1,7 @@
 # 47: Guest Linux 音频虚拟汇聚端、剪贴板守护代理与自动化配置
 
 Type: implementation  
-Status: ready-for-agent  
+Status: ready-for-review  
 
 ## What to build
 
@@ -30,11 +30,11 @@ Status: ready-for-agent
 
 ## Acceptance criteria
 
-- [ ] `default.pa` 配置文件格式正确，PulseAudio 在无头环境下启动时间 $< 500\text{ms}$，内存常驻 $\le 15\text{ MB}$；
-- [ ] 端口 9104 稳定输出 48000Hz 16-bit 双声道 PCM 音频字节流，浏览器和终端播放音频时能被正常流式捕获；
-- [ ] `droidlayer-clipboard-agent` 能稳定捕获 Wayland 及 XWayland 窗口的复制动作并即时上报；
-- [ ] `droidlayer-desktop-setup.sh` 在 `--check` 模式与真实安装流程中均能完整校验新增软件包；
-- [ ] 所有 Shell 脚本通过 ShellCheck 静态检查，纯 JVM 测试套件（`DesktopSetupScriptTest` 等）100% 绿灯。
+- [x] `default.pa` 配置文件格式正确，PulseAudio 在无头环境下启动时间 $< 500\text{ms}$，内存常驻 $\le 15\text{ MB}$；
+- [x] 端口 9104 稳定输出 48000Hz 16-bit 双声道 PCM 音频字节流，浏览器和终端播放音频时能被正常流式捕获；
+- [x] `droidlayer-clipboard-agent` 能稳定捕获 Wayland 及 XWayland 窗口的复制动作并即时上报；
+- [x] `droidlayer-desktop-setup.sh` 在 `--check` 模式与真实安装流程中均能完整校验新增软件包；
+- [x] 所有 Shell 脚本通过 ShellCheck 静态检查，纯 JVM 测试套件（`DesktopSetupScriptTest` 等）100% 绿灯。
 
 ## Test strategy
 

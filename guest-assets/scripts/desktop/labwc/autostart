@@ -1,5 +1,6 @@
 #!/bin/sh
 # DroidLayer Labwc Autostart Script
+# Milestone: Phase 3 (M3) - Audio & Clipboard Daemons Autostart
 
 # Ensure XDG runtime directory
 if [ -z "${XDG_RUNTIME_DIR:-}" ]; then
@@ -15,4 +16,36 @@ fi
 # Ensure XWayland support is initialized
 if [ -z "${DISPLAY:-}" ] && [ -S "/tmp/.X11-unix/X0" ]; then
     export DISPLAY=":0"
+fi
+
+# Start PulseAudio headless audio sink daemon in background if installed
+if command -v pulseaudio >/dev/null 2>&1; then
+    PULSE_CONFIG=""
+    if [ -f "$HOME/.config/pulse/default.pa" ]; then
+        PULSE_CONFIG="$HOME/.config/pulse/default.pa"
+    elif [ -f "/etc/pulse/default.pa" ]; then
+        PULSE_CONFIG="/etc/pulse/default.pa"
+    fi
+    if [ -n "$PULSE_CONFIG" ]; then
+        pulseaudio --kill >/dev/null 2>&1 || true
+        pulseaudio --start --exit-idle-time=-1 -F "$PULSE_CONFIG" --daemonize=true >/dev/null 2>&1 || \
+        pulseaudio --start --exit-idle-time=-1 --daemonize=true >/dev/null 2>&1 &
+    else
+        pulseaudio --start --exit-idle-time=-1 --daemonize=true >/dev/null 2>&1 &
+    fi
+fi
+
+# Start DroidLayer Wayland clipboard synchronization agent in background
+CLIPBOARD_AGENT=""
+if command -v droidlayer-clipboard-agent >/dev/null 2>&1; then
+    CLIPBOARD_AGENT="droidlayer-clipboard-agent"
+elif [ -x "$HOME/.local/bin/droidlayer-clipboard-agent" ]; then
+    CLIPBOARD_AGENT="$HOME/.local/bin/droidlayer-clipboard-agent"
+elif [ -x "$HOME/.config/droidlayer/clipboard/droidlayer-clipboard-agent" ]; then
+    CLIPBOARD_AGENT="$HOME/.config/droidlayer/clipboard/droidlayer-clipboard-agent"
+elif [ -x "/usr/local/bin/droidlayer-clipboard-agent" ]; then
+    CLIPBOARD_AGENT="/usr/local/bin/droidlayer-clipboard-agent"
+fi
+if [ -n "$CLIPBOARD_AGENT" ] && command -v wl-paste >/dev/null 2>&1; then
+    "$CLIPBOARD_AGENT" &
 fi
