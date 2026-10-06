@@ -22,6 +22,7 @@ android {
     namespace = "io.github.nyzeep.droidlayer"
     compileSdk = 36
     buildToolsVersion = "36.1.0"
+    ndkVersion = "27.0.12077973"
 
     defaultConfig {
         applicationId = "io.github.nyzeep.droidlayer"
@@ -32,6 +33,13 @@ android {
 
         ndk {
             abiFilters += "arm64-v8a"
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
         }
     }
 
