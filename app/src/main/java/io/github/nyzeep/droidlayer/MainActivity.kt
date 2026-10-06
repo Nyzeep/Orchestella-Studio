@@ -1,28 +1,44 @@
 package io.github.nyzeep.droidlayer
 
-import android.app.Activity
+import android.animation.Animator
+import android.animation.ObjectAnimator
+import android.animation.ValueAnimator
 import android.app.ActivityManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.os.StatFs
+import android.view.LayoutInflater
 import android.view.View
+import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import com.google.android.material.color.DynamicColors
 import io.github.nyzeep.droidlayer.runtime.capability.AvfAuthorizationWizardModel
 import io.github.nyzeep.droidlayer.runtime.capability.AvfCapabilityEvaluator
 import io.github.nyzeep.droidlayer.runtime.capability.DeviceCapabilityEvaluator
 import io.github.nyzeep.droidlayer.runtime.contract.FullLinuxContract
+import io.github.nyzeep.droidlayer.runtime.contract.VmHardwareConfig
 import io.github.nyzeep.droidlayer.runtime.distro.DistroManifest
 import io.github.nyzeep.droidlayer.runtime.distro.OfficialAlpineCatalog
 import io.github.nyzeep.droidlayer.runtime.distro.OfficialDebianCatalog
 import io.github.nyzeep.droidlayer.runtime.engineqemu.RuntimeArtifactManifest
 import io.github.nyzeep.droidlayer.runtime.instance.InstanceLifecycle
+import io.github.nyzeep.droidlayer.runtime.instance.SparseDiskResizer
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.nio.file.Files
@@ -31,17 +47,22 @@ import java.time.Clock
 import java.util.concurrent.Executors
 
 /**
- * Minimal console: capability status, the ADR-0003 authorization wizard for
- * the hardware-virtualization upgrade, instance creation and launch. The
- * launch goes through {@link InstanceStrategyLauncher} so the hardware
- * strategy is preferred when ready and transparently degrades to the
- * software strategy with a recorded reason.
+ * Material 3 Expressive Dashboard for Orchestella Studio (Ticket 52 / M4).
+ *
+ * <p>Delivers:
+ * <ul>
+ *   <li>Android 15/17 Edge-to-Edge display with dynamic Material You wallpaper coloring.</li>
+ *   <li>Host physical hardware status card with vCPU, RAM, and virtualization badges.</li>
+ *   <li>UTM-style floating instance cards with cyclical alpha breathing animation for RUNNING state.</li>
+ *   <li>Context action bottom sheet with desktop, terminal, hardware config, backup, and physical delete.</li>
+ * </ul>
  */
-class MainActivity : Activity() {
+class MainActivity : AppCompatActivity() {
     private val operations = Executors.newSingleThreadExecutor()
+    private val runningAnimators = mutableListOf<Animator>()
     private lateinit var instanceStore: InstanceLifecycle.FileStore
     private lateinit var settingsManager: SettingsManager
-    private lateinit var settingsButton: Button
+    private lateinit var settingsButton: View
     private lateinit var refusalBanner: Button
     private lateinit var createAlpineButton: Button
     private lateinit var createDebianButton: Button
@@ -49,18 +70,65 @@ class MainActivity : Activity() {
     private lateinit var createProgress: ProgressBar
     private lateinit var createStatus: TextView
     private lateinit var instanceList: LinearLayout
+
     private var avfReadiness: AvfCapabilityEvaluator.AvfReadiness? = null
     private var wizardModel: AvfAuthorizationWizardModel? = null
+    private var pendingExportInstance: InstanceLifecycle.Instance? = null
+
+    private val safExportLauncher = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        uri?.let { destUri ->
+            val instance = pendingExportInstance ?: return@let
+            operations.execute {
+                try {
+                    val adapter = AndroidSafExportAdapter(this, Clock.systemUTC())
+                    adapter.exportToDocumentUri(instance, destUri)
+                    runOnUiThread {
+                        Toast.makeText(this, "实例备份导出成功", Toast.LENGTH_SHORT).show()
+                    }
+                } catch (e: Exception) {
+                    runOnUiThread {
+                        Toast.makeText(this, "导出失败: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
+                } finally {
+                    pendingExportInstance = null
+                }
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Material You dynamic color extraction
+        DynamicColors.applyIfAvailable(this)
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        // Android 15/17 Edge-to-Edge display
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
+
+        val rootContainer = findViewById<View>(R.id.root_container)
+        ViewCompat.setOnApplyWindowInsetsListener(rootContainer) { v, insets ->
+            val statusBarInsets = insets.getInsets(WindowInsetsCompat.Type.statusBars())
+            val navBarInsets = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
+            v.setPadding(
+                statusBarInsets.left,
+                statusBarInsets.top,
+                statusBarInsets.right,
+                navBarInsets.bottom
+            )
+            insets
+        }
 
         settingsManager = SettingsManager(this)
         val assessment = DeviceCapabilityEvaluator.evaluate(deviceProfile())
         avfReadiness = AvfCapabilityEvaluator.evaluate(AvfHostFactsProbe.probe(this))
         wizardModel = AvfAuthorizationWizardModel.fromAssessment(avfReadiness!!)
-        renderRuntimeStatus(assessment)
+
+        renderSystemStatus(assessment)
+
         settingsButton = findViewById(R.id.settings_button)
         refusalBanner = findViewById(R.id.refusal_banner)
         createAlpineButton = findViewById(R.id.create_alpine)
@@ -83,6 +151,9 @@ class MainActivity : Activity() {
 
         createAlpineButton.setOnClickListener { createDistro(OfficialAlpineCatalog.alpine()) }
         createDebianButton.setOnClickListener { createDistro(OfficialDebianCatalog.debian()) }
+        findViewById<View>(R.id.card_create_alpine).setOnClickListener { createDistro(OfficialAlpineCatalog.alpine()) }
+        findViewById<View>(R.id.card_create_debian).setOnClickListener { createDistro(OfficialDebianCatalog.debian()) }
+
         upgradeAuthorizationButton.setOnClickListener { showAvfAuthorizationWizard() }
         refreshWizardEntry()
         showInstances()
@@ -90,11 +161,15 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        if (::instanceStore.isInitialized) showInstances()
+        if (::instanceStore.isInitialized) {
+            renderSystemStatus(DeviceCapabilityEvaluator.evaluate(deviceProfile()))
+            showInstances()
+        }
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        clearRunningAnimators()
         if (isFinishing) operations.shutdown()
     }
 
@@ -103,11 +178,6 @@ class MainActivity : Activity() {
         if (::createDebianButton.isInitialized) createDebianButton.isEnabled = enabled
     }
 
-    /**
-     * The badge is rendered only from CapabilityMatrix data (ADR-0002): the
-     * hardware string once the AVF strategy is fully ready, the software
-     * baseline otherwise.
-     */
     private fun currentBadge(assessment: DeviceCapabilityEvaluator.Assessment): String {
         val readiness = avfReadiness
         if (assessment.canCreateFullLinuxInstance() && readiness != null &&
@@ -146,7 +216,7 @@ class MainActivity : Activity() {
     }
 
     private fun showShizukuStep() {
-        android.app.AlertDialog.Builder(this)
+        AlertDialog.Builder(this)
             .setTitle(R.string.wizard_title)
             .setMessage(R.string.wizard_shizuku_steps)
             .setPositiveButton(R.string.wizard_authorization_done) { _, _ -> recheckAuthorization() }
@@ -161,12 +231,14 @@ class MainActivity : Activity() {
     }
 
     private fun showAdbStep() {
-        android.app.AlertDialog.Builder(this)
+        AlertDialog.Builder(this)
             .setTitle(R.string.wizard_title)
             .setMessage(
                 getString(
                     R.string.wizard_adb_steps,
-                    AvfAuthorizationWizardModel.adbGrantCommand(packageName)))
+                    AvfAuthorizationWizardModel.adbGrantCommand(packageName)
+                )
+            )
             .setPositiveButton(R.string.wizard_authorization_done) { _, _ -> recheckAuthorization() }
             .setNeutralButton(R.string.wizard_copy_command) { _, _ ->
                 copyAdbCommand()
@@ -184,7 +256,9 @@ class MainActivity : Activity() {
         clipboard.setPrimaryClip(
             ClipData.newPlainText(
                 getString(R.string.wizard_copy_command),
-                AvfAuthorizationWizardModel.adbGrantCommand(packageName)))
+                AvfAuthorizationWizardModel.adbGrantCommand(packageName)
+            )
+        )
         Toast.makeText(this, R.string.wizard_command_copied, Toast.LENGTH_SHORT).show()
     }
 
@@ -195,14 +269,14 @@ class MainActivity : Activity() {
         if (grantedNow) {
             avfReadiness = AvfCapabilityEvaluator.evaluate(facts)
             refreshWizardEntry()
-            rerenderRuntimeStatus()
-            android.app.AlertDialog.Builder(this)
+            rerenderSystemStatus()
+            AlertDialog.Builder(this)
                 .setTitle(R.string.wizard_authorized_success_title)
                 .setMessage(R.string.wizard_authorized_success_msg)
                 .setPositiveButton(R.string.credentials_close, null)
                 .show()
         } else {
-            android.app.AlertDialog.Builder(this)
+            AlertDialog.Builder(this)
                 .setTitle(R.string.wizard_vendor_failure_title)
                 .setMessage(R.string.wizard_vendor_failure_steps)
                 .setPositiveButton(R.string.credentials_close, null)
@@ -210,10 +284,19 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun renderRuntimeStatus(assessment: DeviceCapabilityEvaluator.Assessment) {
-        findViewById<TextView>(R.id.runtime_status).text = buildString {
+    private fun renderSystemStatus(assessment: DeviceCapabilityEvaluator.Assessment) {
+        val profile = HostHardwareDetector.detect(this)
+        val cpuChip = findViewById<TextView>(R.id.system_cpu_chip)
+        val ramChip = findViewById<TextView>(R.id.system_ram_chip)
+        val virtBadge = findViewById<TextView>(R.id.system_virtualization_badge)
+        val statusText = findViewById<TextView>(R.id.runtime_status)
+
+        cpuChip?.text = getString(R.string.system_cpu_badge, profile.totalCores())
+        ramChip?.text = getString(R.string.system_ram_badge, profile.availRamMb(), profile.totalRamMb())
+        virtBadge?.text = currentBadge(assessment)
+
+        statusText?.text = buildString {
             appendLine(getString(R.string.runtime_class_full_linux))
-            appendLine(currentBadge(assessment))
             if (assessment.canCreateFullLinuxInstance()) {
                 appendLine(getString(R.string.support_floor_passed))
             } else {
@@ -224,11 +307,28 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun rerenderRuntimeStatus() {
-        renderRuntimeStatus(DeviceCapabilityEvaluator.evaluate(deviceProfile()))
+    private fun rerenderSystemStatus() {
+        renderSystemStatus(DeviceCapabilityEvaluator.evaluate(deviceProfile()))
+    }
+
+    private fun clearRunningAnimators() {
+        runningAnimators.forEach { it.cancel() }
+        runningAnimators.clear()
+    }
+
+    private fun startBreathingAnimation(badgeView: View) {
+        val animator = ObjectAnimator.ofFloat(badgeView, View.ALPHA, 1.0f, 0.35f).apply {
+            duration = 1000L
+            repeatMode = ValueAnimator.REVERSE
+            repeatCount = ValueAnimator.INFINITE
+            interpolator = AccelerateDecelerateInterpolator()
+        }
+        animator.start()
+        runningAnimators.add(animator)
     }
 
     private fun showInstances() {
+        clearRunningAnimators()
         instanceList.removeAllViews()
         val instances = try {
             instanceStore.list()
@@ -236,54 +336,248 @@ class MainActivity : Activity() {
             createStatus.text = getString(R.string.create_failed, "instance metadata unavailable")
             return
         }
+
+        val emptyView = findViewById<TextView>(R.id.instances_empty)
+        val countBadge = findViewById<TextView>(R.id.instances_count_badge)
+        countBadge?.text = "${instances.size} 个实例"
+
         if (instances.isEmpty()) {
-            instanceList.addView(TextView(this).apply { text = getString(R.string.instances_empty) })
+            emptyView?.visibility = View.VISIBLE
+            return
+        } else {
+            emptyView?.visibility = View.GONE
         }
+
+        val capabilityMatrix = currentCapabilityMatrix()
+        val supportsDesktop = capabilityMatrix.supports(FullLinuxContract.Capability.GRAPHICS_WAYLAND)
+        val strategyBadge = currentBadge(DeviceCapabilityEvaluator.evaluate(deviceProfile()))
+
+        val inflater = LayoutInflater.from(this)
         for (instance in instances) {
-            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            val distroName = instance.distro().id().replaceFirstChar { it.uppercase() }
-            row.addView(TextView(this).apply {
-                text = getString(R.string.instance_row_distro, distroName, instance.distro().version(), instance.state().name)
-                layoutParams = LinearLayout.LayoutParams(0,
-                    LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            })
-            row.addView(android.widget.Button(this).apply {
-                text = getString(R.string.instance_credentials)
-                setOnClickListener { showCredentialsDialog(instance) }
-            })
-            if (instance.state().name == "STOPPED" || instance.state().name == "CREATED") {
-                row.addView(android.widget.Button(this).apply {
-                    text = getString(R.string.instance_launch)
-                    setOnClickListener { launchInstance(instance) }
-                })
-            } else if (instance.state().name == "RUNNING") {
-                row.addView(android.widget.Button(this).apply {
-                    text = getString(R.string.instance_open_terminal)
-                    setOnClickListener {
-                        val intent = android.content.Intent(this@MainActivity, TerminalActivity::class.java)
-                            .putExtra("bridgeToken", instance.bridgeToken())
-                            .putExtra("instanceId", instance.id())
-                        startActivity(intent)
-                    }
-                })
-                val matrix = currentCapabilityMatrix()
-                if (matrix.supports(FullLinuxContract.Capability.GRAPHICS_WAYLAND)) {
-                    row.addView(android.widget.Button(this).apply {
-                        text = getString(R.string.instance_launch_desktop)
-                        setOnClickListener {
-                            val intent = DesktopLaunchIntent.create(
-                                this@MainActivity,
-                                instance.id(),
-                                instance.bridgeToken(),
-                                false
-                            )
-                            startActivity(intent)
-                        }
-                    })
+            val cardView = inflater.inflate(R.layout.layout_instance_card, instanceList, false)
+            val uiModel = InstanceCardUiModel.from(instance, strategyBadge, supportsDesktop)
+
+            val distroIcon = cardView.findViewById<ImageView>(R.id.card_distro_icon)
+            val distroTitle = cardView.findViewById<TextView>(R.id.card_distro_title)
+            val instanceIdText = cardView.findViewById<TextView>(R.id.card_instance_id)
+            val statusBadge = cardView.findViewById<TextView>(R.id.card_status_badge)
+            val hardwareSpecs = cardView.findViewById<TextView>(R.id.card_hardware_specs)
+            val btnMore = cardView.findViewById<View>(R.id.card_btn_more)
+
+            val btnLaunch = cardView.findViewById<Button>(R.id.card_btn_launch)
+            val btnDesktop = cardView.findViewById<Button>(R.id.card_btn_desktop)
+            val btnTerminal = cardView.findViewById<Button>(R.id.card_btn_terminal)
+            val btnCrashLog = cardView.findViewById<Button>(R.id.card_btn_crash_log)
+
+            // Distro Icon & Info
+            distroIcon.setImageResource(
+                if (uiModel.distroId == "debian") R.drawable.ic_distro_debian else R.drawable.ic_distro_alpine
+            )
+            distroTitle.text = "${uiModel.distroDisplayName} Linux ${uiModel.distroVersion}"
+            instanceIdText.text = getString(R.string.instance_card_id_prefix, uiModel.shortId)
+
+            // State Badge & Breathing animation
+            statusBadge.text = uiModel.stateBadgeText
+            statusBadge.setTextColor(getColor(uiModel.stateBadgeColorRes))
+            if (uiModel.isBreathing) {
+                startBreathingAnimation(statusBadge)
+            }
+
+            // Hardware Specs
+            hardwareSpecs.text = uiModel.hardwareSpecsText
+
+            // Action Buttons
+            if (uiModel.canLaunch) {
+                btnLaunch.visibility = View.VISIBLE
+                btnLaunch.setOnClickListener { launchInstance(instance) }
+            } else {
+                btnLaunch.visibility = View.GONE
+            }
+
+            if (uiModel.canOpenTerminal) {
+                btnTerminal.visibility = View.VISIBLE
+                btnTerminal.setOnClickListener { openTerminal(instance) }
+            } else {
+                btnTerminal.visibility = View.GONE
+            }
+
+            if (uiModel.canLaunchDesktop) {
+                btnDesktop.visibility = View.VISIBLE
+                btnDesktop.setOnClickListener { launchDesktop(instance) }
+            } else {
+                btnDesktop.visibility = View.GONE
+            }
+
+            if (uiModel.hasCrashDiagnostic) {
+                btnCrashLog.visibility = View.VISIBLE
+                btnCrashLog.setOnClickListener { showCrashDiagnosticDialog(instance) }
+                statusBadge.setOnClickListener { showCrashDiagnosticDialog(instance) }
+            } else {
+                btnCrashLog.visibility = View.GONE
+            }
+
+            // Card click & long click
+            cardView.setOnClickListener {
+                if (instance.state() == InstanceLifecycle.State.RUNNING) {
+                    if (supportsDesktop) launchDesktop(instance) else openTerminal(instance)
+                } else if (instance.state() == InstanceLifecycle.State.STOPPED || instance.state() == InstanceLifecycle.State.CREATED) {
+                    launchInstance(instance)
+                } else if (instance.state() == InstanceLifecycle.State.CRASHED) {
+                    showCrashDiagnosticDialog(instance)
                 }
             }
-            instanceList.addView(row)
+
+            val openSheet = {
+                showInstanceActionBottomSheet(instance, uiModel)
+            }
+            cardView.setOnLongClickListener {
+                openSheet()
+                true
+            }
+            btnMore.setOnClickListener {
+                openSheet()
+            }
+
+            instanceList.addView(cardView)
         }
+    }
+
+    private fun openTerminal(instance: InstanceLifecycle.Instance) {
+        val intent = Intent(this@MainActivity, TerminalActivity::class.java)
+            .putExtra("bridgeToken", instance.bridgeToken())
+            .putExtra("instanceId", instance.id())
+        startActivity(intent)
+    }
+
+    private fun launchDesktop(instance: InstanceLifecycle.Instance) {
+        val intent = DesktopLaunchIntent.create(
+            this@MainActivity,
+            instance.id(),
+            instance.bridgeToken(),
+            false
+        )
+        startActivity(intent)
+    }
+
+    private fun showCrashDiagnosticDialog(instance: InstanceLifecycle.Instance) {
+        val diag = instance.crashDiagnostic() ?: return
+        val message = buildString {
+            appendLine(getString(R.string.crash_dialog_exit_code, diag.exitCode()))
+            if (diag.logPath() != null) {
+                appendLine(getString(R.string.crash_dialog_log_path, diag.logPath()))
+            }
+            if (diag.message() != null) {
+                appendLine(getString(R.string.crash_dialog_message, diag.message()))
+            }
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.crash_dialog_title)
+            .setMessage(message)
+            .setPositiveButton(R.string.credentials_close, null)
+            .apply {
+                if (diag.logPath() != null) {
+                    setNeutralButton(R.string.crash_dialog_copy) { _, _ ->
+                        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("CrashLogPath", diag.logPath().toString()))
+                        Toast.makeText(this@MainActivity, "日志路径已复制", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            .show()
+    }
+
+    private fun showInstanceActionBottomSheet(instance: InstanceLifecycle.Instance, uiModel: InstanceCardUiModel) {
+        val sheet = InstanceActionBottomSheet(this, instance, uiModel, object : InstanceActionBottomSheet.Callbacks {
+            override fun onLaunchDesktop(instance: InstanceLifecycle.Instance) {
+                if (instance.state() == InstanceLifecycle.State.RUNNING) {
+                    launchDesktop(instance)
+                } else {
+                    launchInstance(instance)
+                }
+            }
+
+            override fun onOpenTerminal(instance: InstanceLifecycle.Instance) {
+                if (instance.state() == InstanceLifecycle.State.RUNNING) {
+                    openTerminal(instance)
+                } else {
+                    launchInstance(instance)
+                }
+            }
+
+            override fun onConfigureHardware(instance: InstanceLifecycle.Instance) {
+                val hostProfile = HostHardwareDetector.detect(this@MainActivity)
+                VmHardwareConfigDialog(this@MainActivity, instance, hostProfile) { newConfig, expandedDiskBytes ->
+                    operations.execute {
+                        try {
+                            val controller = InstanceLifecycle.Controller(instanceStore, Clock.systemUTC())
+                            if (expandedDiskBytes != null && instance.state() == InstanceLifecycle.State.STOPPED) {
+                                SparseDiskResizer.resize(instance.rootVolume(), instance.state(), expandedDiskBytes, null)
+                            }
+                            controller.updateHardwareConfig(instance.id(), newConfig)
+                            runOnUiThread {
+                                Toast.makeText(this@MainActivity, R.string.hardware_update_success, Toast.LENGTH_SHORT).show()
+                                showInstances()
+                            }
+                        } catch (e: Exception) {
+                            runOnUiThread {
+                                Toast.makeText(this@MainActivity, getString(R.string.hardware_update_failed, e.message), Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }
+                }.show()
+            }
+
+            override fun onExportBackup(instance: InstanceLifecycle.Instance) {
+                pendingExportInstance = instance
+                safExportLauncher.launch("${instance.id()}-backup.zip")
+            }
+
+            override fun onShowCredentials(instance: InstanceLifecycle.Instance) {
+                showCredentialsDialog(instance)
+            }
+
+            override fun onDelete(instance: InstanceLifecycle.Instance) {
+                confirmDeleteInstance(instance)
+            }
+        })
+        sheet.show()
+    }
+
+    private fun confirmDeleteInstance(instance: InstanceLifecycle.Instance) {
+        if (!InstanceActionSafety.canDelete(instance.state())) {
+            Toast.makeText(this, R.string.action_delete_running_forbidden, Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle(R.string.action_delete_confirm_title)
+            .setMessage(getString(R.string.action_delete_confirm_message, instance.id()))
+            .setPositiveButton(R.string.action_delete_confirm_btn) { _, _ ->
+                operations.execute {
+                    try {
+                        val controller = InstanceLifecycle.Controller(instanceStore, Clock.systemUTC())
+                        controller.delete(instance.id())
+                        runOnUiThread {
+                            Toast.makeText(
+                                this@MainActivity,
+                                getString(R.string.action_delete_success, instance.id()),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                            showInstances()
+                        }
+                    } catch (e: Exception) {
+                        runOnUiThread {
+                            Toast.makeText(
+                                this@MainActivity,
+                                getString(R.string.action_delete_failed, e.message),
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    }
+                }
+            }
+            .setNegativeButton(R.string.action_delete_cancel_btn, null)
+            .show()
     }
 
     private fun launchInstance(instance: InstanceLifecycle.Instance) {
@@ -352,9 +646,10 @@ class MainActivity : Activity() {
                         createStatus.setText(R.string.launch_started_hardware)
                     } else if (outcome.degradationReason != null) {
                         createStatus.text = getString(
-                            R.string.launch_degraded_to_software, outcome.degradationReason)
+                            R.string.launch_degraded_to_software, outcome.degradationReason
+                        )
                     }
-                    val intent = android.content.Intent(this, TerminalActivity::class.java)
+                    val intent = Intent(this, TerminalActivity::class.java)
                         .putExtra("bridgeToken", instance.bridgeToken())
                         .putExtra("instanceId", instance.id())
                     startActivity(intent)
@@ -482,7 +777,7 @@ class MainActivity : Activity() {
 
     private fun showCredentialsDialog(instance: InstanceLifecycle.Instance) {
         val message = getString(R.string.credentials_message, instance.guestPassword())
-        android.app.AlertDialog.Builder(this)
+        AlertDialog.Builder(this)
             .setTitle(R.string.credentials_title)
             .setMessage(message)
             .setPositiveButton(R.string.credentials_copy) { _, _ ->
@@ -507,7 +802,7 @@ class MainActivity : Activity() {
             setPadding(50, 20, 50, 20)
             addView(input)
         }
-        android.app.AlertDialog.Builder(this)
+        AlertDialog.Builder(this)
             .setTitle(R.string.credentials_change_title)
             .setView(container)
             .setPositiveButton(R.string.credentials_change) { _, _ ->
@@ -536,7 +831,7 @@ class MainActivity : Activity() {
     }
 
     private fun showRefusalDetailsDialog(assessment: DeviceCapabilityEvaluator.Assessment) {
-        android.app.AlertDialog.Builder(this)
+        AlertDialog.Builder(this)
             .setTitle(R.string.refusal_dialog_title)
             .setMessage(getString(R.string.refusal_dialog_message, assessment.refusalReason()))
             .setPositiveButton(R.string.credentials_close, null)
@@ -618,7 +913,7 @@ class MainActivity : Activity() {
         container.addView(checkUpdateBtn)
         container.addView(phantomGuideBtn)
 
-        android.app.AlertDialog.Builder(this)
+        AlertDialog.Builder(this)
             .setTitle(R.string.settings_title)
             .setView(container)
             .setPositiveButton(R.string.settings_close, null)
@@ -638,27 +933,27 @@ class MainActivity : Activity() {
             runOnUiThread {
                 when (result.status()) {
                     GitHubUpdateChecker.Status.DISABLED -> {
-                        android.app.AlertDialog.Builder(this)
+                        AlertDialog.Builder(this)
                             .setTitle(R.string.settings_update_check)
                             .setMessage(R.string.update_disabled_msg)
                             .setPositiveButton(R.string.credentials_close, null)
                             .show()
                     }
                     GitHubUpdateChecker.Status.UP_TO_DATE -> {
-                        android.app.AlertDialog.Builder(this)
+                        AlertDialog.Builder(this)
                             .setTitle(R.string.settings_update_check)
                             .setMessage(getString(R.string.update_up_to_date, result.latestVersion() ?: versionName))
                             .setPositiveButton(R.string.credentials_close, null)
                             .show()
                     }
                     GitHubUpdateChecker.Status.UPDATE_AVAILABLE -> {
-                        android.app.AlertDialog.Builder(this)
+                        AlertDialog.Builder(this)
                             .setTitle(getString(R.string.update_available_title, result.latestVersion()))
                             .setMessage(getString(R.string.update_available_msg, result.releaseNotes()))
                             .setPositiveButton(R.string.update_open_browser) { _, _ ->
                                 if (result.releaseUrl() != null) {
-                                    val intent = android.content.Intent(
-                                        android.content.Intent.ACTION_VIEW,
+                                    val intent = Intent(
+                                        Intent.ACTION_VIEW,
                                         android.net.Uri.parse(result.releaseUrl())
                                     )
                                     startActivity(intent)

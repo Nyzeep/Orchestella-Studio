@@ -128,6 +128,8 @@ dependencies {
     implementation(project(":runtime:engine-qemu"))
     implementation(project(":runtime:instance"))
     implementation(project(":runtime:network"))
+    implementation(libs.material)
+    implementation(libs.appcompat)
     testImplementation(libs.junit)
 }
 
