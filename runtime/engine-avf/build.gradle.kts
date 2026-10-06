@@ -110,21 +110,47 @@ tasks.register<JavaExec>("avfInputEventForwardingTest") {
     mainClass.set("io.github.nyzeep.droidlayer.runtime.engineavf.AvfInputEventForwardingTest")
 }
 
-tasks.named("check") {
-    dependsOn(
-        "avfLaunchSpecTest",
-        "avfVirtualMachineEngineTest",
-        "avfBridgeOverVsockContractTest",
-        "avf9pShareContractTest",
-        "avfTerminalStreamContractTest",
-        "avfInstanceLifecycleContractTest",
-        "avfReconciliationLifecycleContractTest",
-        "avfQemuInteropTest",
-        "avfNetworkAssemblyContractTest",
-        "avfVsockPortForwarderTest",
-        "avfNetworkForwardingParityContractTest",
-        "avfWaylandChannelContractTest",
-        "avfGraphicsVsockProtocolTest",
-        "avfInputEventForwardingTest",
-    )
+tasks.register<JavaExec>("avfAudioVsockProtocolTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.droidlayer.runtime.engineavf.AvfAudioVsockProtocolTest")
+}
+
+tasks.register<JavaExec>("avfClipboardOverVsockTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.droidlayer.runtime.engineavf.AvfClipboardOverVsockTest")
+}
+
+tasks.register<JavaExec>("avfInputEventForwardingParityTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.droidlayer.runtime.engineavf.AvfInputEventForwardingParityTest")
+}
+
+tasks.register<JavaExec>("avfCapabilityMatrixAudioTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.droidlayer.runtime.engineavf.AvfCapabilityMatrixAudioTest")
+}
+
+val avfAllTestTasks = listOf(
+    "avfLaunchSpecTest",
+    "avfVirtualMachineEngineTest",
+    "avfBridgeOverVsockContractTest",
+    "avf9pShareContractTest",
+    "avfTerminalStreamContractTest",
+    "avfInstanceLifecycleContractTest",
+    "avfReconciliationLifecycleContractTest",
+    "avfQemuInteropTest",
+    "avfNetworkAssemblyContractTest",
+    "avfVsockPortForwarderTest",
+    "avfNetworkForwardingParityContractTest",
+    "avfWaylandChannelContractTest",
+    "avfGraphicsVsockProtocolTest",
+    "avfInputEventForwardingTest",
+    "avfAudioVsockProtocolTest",
+    "avfClipboardOverVsockTest",
+    "avfInputEventForwardingParityTest",
+    "avfCapabilityMatrixAudioTest",
+)
+
+tasks.named("test") {
+    dependsOn(avfAllTestTasks)
 }
