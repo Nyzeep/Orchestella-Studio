@@ -4,6 +4,7 @@ plugins {
 
 dependencies {
     api(project(":runtime:contract"))
+    testImplementation(libs.junit)
 }
 
 java {
@@ -25,6 +26,11 @@ tasks.register<JavaExec>("portForwardingManagerContractTest") {
     args(networkTestOutput.get().asFile.absolutePath)
 }
 
+tasks.register<JavaExec>("resilientDownloadEngineContractTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.droidlayer.runtime.network.download.ResilientDownloadEngineContractTest")
+}
+
 // The manager contract suite is strategy-neutral: other engine modules re-run
 // it against their own live forwarding engine (Ticket 36 AC-3), so the test
 // classes are published as consumable artifacts.
@@ -40,5 +46,5 @@ artifacts {
 }
 
 tasks.named("check") {
-    dependsOn("portForwardingManagerContractTest")
+    dependsOn("portForwardingManagerContractTest", "resilientDownloadEngineContractTest")
 }
