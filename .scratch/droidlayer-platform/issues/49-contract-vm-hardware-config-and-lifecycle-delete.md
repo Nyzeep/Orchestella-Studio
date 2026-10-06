@@ -1,7 +1,7 @@
 # 49: 策略中立硬件参数配置模型与实例物理删除契约扩展
 
 Type: contract  
-Status: ready-for-agent  
+Status: completed  
 Labels: m4-spec, tracer-bullet, lifecycle, hardware-config  
 
 ## User Story
@@ -43,12 +43,12 @@ Labels: m4-spec, tracer-bullet, lifecycle, hardware-config
 
 ## Acceptance Criteria
 
-- [ ] `VmHardwareConfig` 不可变类定义完整，对非法核心数（$\le 0$ 或 $> 8$）、非法内存（$< 512\text{MB}$）及非法磁盘（$< 2\text{GB}$）准确抛出 `IllegalArgumentException`；
-- [ ] `InstanceLifecycle.Store` 成功声明 `void delete(String id) throws IOException`；
-- [ ] `InstanceLifecycle.FileStore` 实现级联删除：调用 `delete(id)` 后，对应的 `.properties` 元数据与 `.raw` 磁盘文件均被物理移除，`list()` 不再包含该实例；
-- [ ] 当目标实例状态为 `RUNNING` 时，调用 `delete(id)` 确定性抛出 `IllegalStateException`，且磁盘文件与元数据完好无损；
-- [ ] 当试图删除一个不存在的实例 ID 时，抛出 `NoSuchFileException` 或明确的 `IOException`；
-- [ ] 纯 JVM 单元测试覆盖率达 100%，构建通过无任何编译器警告。
+- [x] `VmHardwareConfig` 不可变类定义完整，对非法核心数（$\le 0$ 或 $> 8$）、非法内存（$< 512\text{MB}$）及非法磁盘（$< 2\text{GB}$）准确抛出 `IllegalArgumentException`；
+- [x] `InstanceLifecycle.Store` 成功声明 `void delete(String id) throws IOException`；
+- [x] `InstanceLifecycle.FileStore` 实现级联删除：调用 `delete(id)` 后，对应的 `.properties` 元数据与 `.raw` 磁盘文件均被物理移除，`list()` 不再包含该实例；
+- [x] 当目标实例状态为 `RUNNING` 时，调用 `delete(id)` 确定性抛出 `IllegalStateException`，且磁盘文件与元数据完好无损；
+- [x] 当试图删除一个不存在的实例 ID 时，抛出 `NoSuchFileException` 或明确的 `IOException`；
+- [x] 纯 JVM 单元测试覆盖率达 100%，构建通过无任何编译器警告。
 
 ## Device Verification Steps
 
