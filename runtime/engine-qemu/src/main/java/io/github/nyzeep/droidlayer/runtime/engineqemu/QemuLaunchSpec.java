@@ -1,7 +1,9 @@
 package io.github.nyzeep.droidlayer.runtime.engineqemu;
 
 import io.github.nyzeep.droidlayer.runtime.contract.NetworkContract;
+import io.github.nyzeep.droidlayer.runtime.contract.PortForwardingRule;
 import io.github.nyzeep.droidlayer.runtime.contract.SharedDirectoryContract;
+import io.github.nyzeep.droidlayer.runtime.contract.VmHardwareConfig;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -188,6 +190,134 @@ public final class QemuLaunchSpec {
     }
 
     /**
+     * Builds the standard QEMU launch argument array using a strategy-neutral {@link VmHardwareConfig}
+     * and default outbound network specification.
+     */
+    public static String[] build(
+            String qemuExecutable,
+            String kernel,
+            String initramfs,
+            String rootVolume,
+            String controlSocketName,
+            String terminalSocketName,
+            VmHardwareConfig hardwareConfig) {
+        return build(
+                qemuExecutable,
+                kernel,
+                initramfs,
+                rootVolume,
+                controlSocketName,
+                terminalSocketName,
+                hardwareConfig,
+                NetworkContract.OutboundNetworkSpec.defaultSpec());
+    }
+
+    /**
+     * Builds the QEMU launch argument array with {@link VmHardwareConfig} and customizable network spec.
+     */
+    public static String[] build(
+            String qemuExecutable,
+            String kernel,
+            String initramfs,
+            String rootVolume,
+            String controlSocketName,
+            String terminalSocketName,
+            VmHardwareConfig hardwareConfig,
+            NetworkContract.OutboundNetworkSpec networkSpec) {
+        return build(
+                qemuExecutable,
+                kernel,
+                initramfs,
+                rootVolume,
+                controlSocketName,
+                terminalSocketName,
+                null,
+                hardwareConfig,
+                networkSpec,
+                Collections.emptyList(),
+                null);
+    }
+
+    /**
+     * Builds the QEMU launch argument array with {@link VmHardwareConfig}, default network and shared directory spec.
+     */
+    public static String[] build(
+            String qemuExecutable,
+            String kernel,
+            String initramfs,
+            String rootVolume,
+            String controlSocketName,
+            String terminalSocketName,
+            VmHardwareConfig hardwareConfig,
+            SharedDirectoryContract.SharedDirectorySpec sharedDirectorySpec) {
+        return build(
+                qemuExecutable,
+                kernel,
+                initramfs,
+                rootVolume,
+                controlSocketName,
+                terminalSocketName,
+                hardwareConfig,
+                NetworkContract.OutboundNetworkSpec.defaultSpec(),
+                sharedDirectorySpec);
+    }
+
+    /**
+     * Builds the QEMU launch argument array with {@link VmHardwareConfig}, customizable network and shared directory spec.
+     */
+    public static String[] build(
+            String qemuExecutable,
+            String kernel,
+            String initramfs,
+            String rootVolume,
+            String controlSocketName,
+            String terminalSocketName,
+            VmHardwareConfig hardwareConfig,
+            NetworkContract.OutboundNetworkSpec networkSpec,
+            SharedDirectoryContract.SharedDirectorySpec sharedDirectorySpec) {
+        return build(
+                qemuExecutable,
+                kernel,
+                initramfs,
+                rootVolume,
+                controlSocketName,
+                terminalSocketName,
+                null,
+                hardwareConfig,
+                networkSpec,
+                Collections.emptyList(),
+                sharedDirectorySpec);
+    }
+
+    /**
+     * Builds the QEMU launch argument array with {@link VmHardwareConfig}, customizable network spec,
+     * and port forwarding rules.
+     */
+    public static String[] build(
+            String qemuExecutable,
+            String kernel,
+            String initramfs,
+            String rootVolume,
+            String controlSocketName,
+            String terminalSocketName,
+            VmHardwareConfig hardwareConfig,
+            NetworkContract.OutboundNetworkSpec networkSpec,
+            List<PortForwardingRule> portForwardingRules) {
+        return build(
+                qemuExecutable,
+                kernel,
+                initramfs,
+                rootVolume,
+                controlSocketName,
+                terminalSocketName,
+                null,
+                hardwareConfig,
+                networkSpec,
+                portForwardingRules,
+                null);
+    }
+
+    /**
      * Builds the QEMU launch argument array with customizable network spec, port forwarding rules,
      * optional QMP control socket, and shared directory specification.
      */
@@ -201,7 +331,70 @@ public final class QemuLaunchSpec {
             String qmpSocketName,
             long memoryMb,
             NetworkContract.OutboundNetworkSpec networkSpec,
-            List<io.github.nyzeep.droidlayer.runtime.contract.PortForwardingRule> portForwardingRules,
+            List<PortForwardingRule> portForwardingRules,
+            SharedDirectoryContract.SharedDirectorySpec sharedDirectorySpec) {
+        return buildInternal(
+                qemuExecutable,
+                kernel,
+                initramfs,
+                rootVolume,
+                controlSocketName,
+                terminalSocketName,
+                qmpSocketName,
+                2,
+                Long.toString(memoryMb),
+                null,
+                networkSpec,
+                portForwardingRules,
+                sharedDirectorySpec);
+    }
+
+    /**
+     * Builds the QEMU launch argument array with {@link VmHardwareConfig}, customizable network spec,
+     * port forwarding rules, optional QMP control socket, and shared directory specification.
+     */
+    public static String[] build(
+            String qemuExecutable,
+            String kernel,
+            String initramfs,
+            String rootVolume,
+            String controlSocketName,
+            String terminalSocketName,
+            String qmpSocketName,
+            VmHardwareConfig hardwareConfig,
+            NetworkContract.OutboundNetworkSpec networkSpec,
+            List<PortForwardingRule> portForwardingRules,
+            SharedDirectoryContract.SharedDirectorySpec sharedDirectorySpec) {
+        Objects.requireNonNull(hardwareConfig, "hardwareConfig");
+        return buildInternal(
+                qemuExecutable,
+                kernel,
+                initramfs,
+                rootVolume,
+                controlSocketName,
+                terminalSocketName,
+                qmpSocketName,
+                hardwareConfig.cpuCores(),
+                hardwareConfig.ramMegabytes() + "M",
+                hardwareConfig.extraKernelArguments(),
+                networkSpec,
+                portForwardingRules,
+                sharedDirectorySpec);
+    }
+
+    private static String[] buildInternal(
+            String qemuExecutable,
+            String kernel,
+            String initramfs,
+            String rootVolume,
+            String controlSocketName,
+            String terminalSocketName,
+            String qmpSocketName,
+            int cpuCores,
+            String memoryArg,
+            String extraKernelArgs,
+            NetworkContract.OutboundNetworkSpec networkSpec,
+            List<PortForwardingRule> portForwardingRules,
             SharedDirectoryContract.SharedDirectorySpec sharedDirectorySpec) {
         Objects.requireNonNull(qemuExecutable, "qemuExecutable");
         Objects.requireNonNull(kernel, "kernel");
@@ -215,6 +408,9 @@ public final class QemuLaunchSpec {
         if (networkSpec.cmdlineDns() != null && !networkSpec.cmdlineDns().isEmpty()) {
             cmdline = cmdline + " droidlayer.dns=" + networkSpec.cmdlineDns();
         }
+        if (extraKernelArgs != null && !extraKernelArgs.trim().isEmpty()) {
+            cmdline = cmdline + " " + extraKernelArgs.trim();
+        }
 
         List<String> args = new ArrayList<>(48);
         Collections.addAll(
@@ -223,8 +419,8 @@ public final class QemuLaunchSpec {
                 "-machine", "virt,gic-version=3",
                 "-accel", "tcg,thread=multi",
                 "-cpu", "cortex-a57",
-                "-smp", "2",
-                "-m", Long.toString(memoryMb),
+                "-smp", Integer.toString(cpuCores),
+                "-m", memoryArg,
                 "-nodefaults",
                 "-display", "none",
                 "-monitor", "none",
