@@ -2,11 +2,13 @@ package io.github.nyzeep.droidlayer.runtime.instance;
 
 import io.github.nyzeep.droidlayer.runtime.contract.BridgeHandshake;
 import io.github.nyzeep.droidlayer.runtime.contract.FullLinuxContract;
+import io.github.nyzeep.droidlayer.runtime.contract.VmHardwareConfig;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.SecureRandom;
@@ -142,6 +144,7 @@ public final class InstanceLifecycle {
         private final long createdAtMillis;
         private final long updatedAtMillis;
         private final CrashDiagnostic crashDiagnostic;
+        private final VmHardwareConfig hardwareConfig;
 
         private Instance(
                 String id,
@@ -152,7 +155,7 @@ public final class InstanceLifecycle {
                 State state,
                 long createdAtMillis,
                 long updatedAtMillis) {
-            this(id, distro, rootVolume, bridgeToken, newGuestPassword(), runtimeClass, state, createdAtMillis, updatedAtMillis, null);
+            this(id, distro, rootVolume, bridgeToken, newGuestPassword(), runtimeClass, state, createdAtMillis, updatedAtMillis, null, VmHardwareConfig.defaultConfig());
         }
 
         private Instance(
@@ -165,7 +168,7 @@ public final class InstanceLifecycle {
                 long createdAtMillis,
                 long updatedAtMillis,
                 CrashDiagnostic crashDiagnostic) {
-            this(id, distro, rootVolume, bridgeToken, newGuestPassword(), runtimeClass, state, createdAtMillis, updatedAtMillis, crashDiagnostic);
+            this(id, distro, rootVolume, bridgeToken, newGuestPassword(), runtimeClass, state, createdAtMillis, updatedAtMillis, crashDiagnostic, VmHardwareConfig.defaultConfig());
         }
 
         private Instance(
@@ -179,6 +182,21 @@ public final class InstanceLifecycle {
                 long createdAtMillis,
                 long updatedAtMillis,
                 CrashDiagnostic crashDiagnostic) {
+            this(id, distro, rootVolume, bridgeToken, guestPassword, runtimeClass, state, createdAtMillis, updatedAtMillis, crashDiagnostic, VmHardwareConfig.defaultConfig());
+        }
+
+        private Instance(
+                String id,
+                DistroReference distro,
+                Path rootVolume,
+                String bridgeToken,
+                String guestPassword,
+                FullLinuxContract.RuntimeClass runtimeClass,
+                State state,
+                long createdAtMillis,
+                long updatedAtMillis,
+                CrashDiagnostic crashDiagnostic,
+                VmHardwareConfig hardwareConfig) {
             requireInstanceId(id);
             this.id = id;
             this.distro = Objects.requireNonNull(distro, "distro");
@@ -190,6 +208,7 @@ public final class InstanceLifecycle {
             this.createdAtMillis = createdAtMillis;
             this.updatedAtMillis = updatedAtMillis;
             this.crashDiagnostic = crashDiagnostic;
+            this.hardwareConfig = hardwareConfig != null ? hardwareConfig : VmHardwareConfig.defaultConfig();
         }
 
         public String id() {
@@ -241,6 +260,10 @@ public final class InstanceLifecycle {
             return crashDiagnostic;
         }
 
+        public VmHardwareConfig hardwareConfig() {
+            return hardwareConfig;
+        }
+
         public Path diagnosticLogPath() {
             return crashDiagnostic != null ? crashDiagnostic.logPath() : null;
         }
@@ -263,7 +286,8 @@ public final class InstanceLifecycle {
                     next,
                     createdAtMillis,
                     Objects.requireNonNull(clock, "clock").millis(),
-                    diagnostic);
+                    diagnostic,
+                    hardwareConfig);
         }
 
         private Instance withUpdatedAt(Clock clock) {
@@ -277,7 +301,8 @@ public final class InstanceLifecycle {
                     state,
                     createdAtMillis,
                     Objects.requireNonNull(clock, "clock").millis(),
-                    crashDiagnostic);
+                    crashDiagnostic,
+                    hardwareConfig);
         }
 
         private Instance withGuestPassword(String newPassword, Clock clock) {
@@ -291,7 +316,23 @@ public final class InstanceLifecycle {
                     state,
                     createdAtMillis,
                     Objects.requireNonNull(clock, "clock").millis(),
-                    crashDiagnostic);
+                    crashDiagnostic,
+                    hardwareConfig);
+        }
+
+        private Instance withHardwareConfig(VmHardwareConfig newConfig, Clock clock) {
+            return new Instance(
+                    id,
+                    distro,
+                    rootVolume,
+                    bridgeToken,
+                    guestPassword,
+                    runtimeClass,
+                    state,
+                    createdAtMillis,
+                    Objects.requireNonNull(clock, "clock").millis(),
+                    crashDiagnostic,
+                    Objects.requireNonNull(newConfig, "newConfig"));
         }
 
         private Properties toProperties() {
@@ -316,6 +357,15 @@ public final class InstanceLifecycle {
                     properties.setProperty("crash.message", crashDiagnostic.message());
                 }
             }
+            if (hardwareConfig != null) {
+                properties.setProperty("hardware.cpuCores", Integer.toString(hardwareConfig.cpuCores()));
+                properties.setProperty("hardware.ramMegabytes", Integer.toString(hardwareConfig.ramMegabytes()));
+                properties.setProperty("hardware.diskCapacityBytes", Long.toString(hardwareConfig.diskCapacityBytes()));
+                properties.setProperty("hardware.gpuAccelerationEnabled", Boolean.toString(hardwareConfig.gpuAccelerationEnabled()));
+                if (hardwareConfig.extraKernelArguments() != null) {
+                    properties.setProperty("hardware.extraKernelArguments", hardwareConfig.extraKernelArguments());
+                }
+            }
             return properties;
         }
 
@@ -335,6 +385,16 @@ public final class InstanceLifecycle {
                 if (guestPassword == null || guestPassword.trim().isEmpty()) {
                     guestPassword = newGuestPassword();
                 }
+                VmHardwareConfig hardwareConfig = VmHardwareConfig.defaultConfig();
+                String cpuCoresStr = properties.getProperty("hardware.cpuCores");
+                if (cpuCoresStr != null) {
+                    int cpuCores = Integer.parseInt(cpuCoresStr);
+                    int ramMb = Integer.parseInt(required(properties, "hardware.ramMegabytes"));
+                    long diskBytes = Long.parseLong(required(properties, "hardware.diskCapacityBytes"));
+                    boolean gpuEnabled = Boolean.parseBoolean(properties.getProperty("hardware.gpuAccelerationEnabled", "true"));
+                    String extraArgs = properties.getProperty("hardware.extraKernelArguments");
+                    hardwareConfig = new VmHardwareConfig(cpuCores, ramMb, diskBytes, gpuEnabled, extraArgs);
+                }
                 return new Instance(
                         required(properties, "id"),
                         new DistroReference(
@@ -346,7 +406,8 @@ public final class InstanceLifecycle {
                         State.valueOf(required(properties, "state")),
                         Long.parseLong(required(properties, "createdAtMillis")),
                         Long.parseLong(required(properties, "updatedAtMillis")),
-                        diagnostic);
+                        diagnostic,
+                        hardwareConfig);
             } catch (IllegalArgumentException malformed) {
                 throw new InvalidMetadataException(malformed);
             }
@@ -359,6 +420,8 @@ public final class InstanceLifecycle {
         Instance load(String id) throws IOException;
 
         List<Instance> list() throws IOException;
+
+        void delete(String id) throws IOException;
     }
 
     /**
@@ -423,6 +486,53 @@ public final class InstanceLifecycle {
             return Collections.unmodifiableList(instances);
         }
 
+        @Override
+        public synchronized void delete(String id) throws IOException {
+            requireInstanceId(id);
+            Path target = metadataPath(id);
+            if (!Files.isRegularFile(target)) {
+                throw new NoSuchFileException("instance metadata not found: " + id);
+            }
+            Instance instance = read(target);
+            State state = instance.state();
+            if (state == State.RUNNING || state == State.PROVISIONING) {
+                throw new IllegalStateException("Cannot delete instance while " + state);
+            }
+            if (state != State.STOPPED && state != State.CREATED && state != State.CRASHED) {
+                throw new IllegalStateException("Cannot delete instance in state " + state);
+            }
+
+            if (instance.rootVolume() != null) {
+                Files.deleteIfExists(instance.rootVolume());
+            }
+
+            Files.deleteIfExists(directory.resolve(id + ".raw"));
+            Files.deleteIfExists(directory.resolve(id + ".swap"));
+            Files.deleteIfExists(directory.resolve(id + ".tmp"));
+            Files.deleteIfExists(directory.resolve(id + ".properties.tmp"));
+            if (directory.getParent() != null) {
+                Path rootVolumesDir = directory.getParent().resolve("root-volumes");
+                Files.deleteIfExists(rootVolumesDir.resolve(id + ".raw"));
+            }
+
+            if (instance.crashDiagnostic() != null && instance.crashDiagnostic().logPath() != null) {
+                Files.deleteIfExists(instance.crashDiagnostic().logPath());
+            }
+
+            try (var entries = Files.list(directory)) {
+                entries.filter(p -> {
+                    String name = p.getFileName().toString();
+                    return (name.startsWith(id + ".") || name.startsWith(id + "-")) && !name.equals(id + ".properties");
+                }).forEach(p -> {
+                    try {
+                        Files.deleteIfExists(p);
+                    } catch (IOException ignored) {}
+                });
+            }
+
+            Files.deleteIfExists(target);
+        }
+
         private Instance read(Path path) throws IOException {
             Properties properties = new Properties();
             try (InputStream input = Files.newInputStream(path)) {
@@ -461,9 +571,19 @@ public final class InstanceLifecycle {
             this.clock = Objects.requireNonNull(clock, "clock");
         }
 
+        public synchronized void delete(String id) throws IOException {
+            store.delete(id);
+        }
+
         public synchronized Instance create(DistroReference distro, Path rootVolume) throws IOException {
+            return create(distro, rootVolume, VmHardwareConfig.defaultConfig());
+        }
+
+        public synchronized Instance create(
+                DistroReference distro, Path rootVolume, VmHardwareConfig hardwareConfig) throws IOException {
             Objects.requireNonNull(distro, "distro");
             Objects.requireNonNull(rootVolume, "rootVolume");
+            Objects.requireNonNull(hardwareConfig, "hardwareConfig");
             long now = clock.millis();
             Instance instance =
                     new Instance(
@@ -476,9 +596,21 @@ public final class InstanceLifecycle {
                             State.CREATED,
                             now,
                             now,
-                            null);
+                            null,
+                            hardwareConfig);
             store.save(instance);
             return instance;
+        }
+
+        public synchronized Instance updateHardwareConfig(String id, VmHardwareConfig newConfig) throws IOException {
+            Objects.requireNonNull(newConfig, "newConfig");
+            Instance current = store.load(id);
+            if (current.state() != State.STOPPED && current.state() != State.CREATED) {
+                throw new IllegalStateException("cannot update hardware config while in state: " + current.state());
+            }
+            Instance updated = current.withHardwareConfig(newConfig, clock);
+            store.save(updated);
+            return updated;
         }
 
         public synchronized Instance updateGuestPassword(String id, String newPassword) throws IOException {

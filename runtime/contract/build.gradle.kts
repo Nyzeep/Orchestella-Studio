@@ -89,6 +89,11 @@ tasks.register<JavaExec>("fullLinuxContractAudioCapabilityTest") {
     mainClass.set("io.github.nyzeep.droidlayer.runtime.contract.FullLinuxContractAudioCapabilityTest")
 }
 
+tasks.register<JavaExec>("vmHardwareConfigTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.droidlayer.runtime.contract.VmHardwareConfigTest")
+}
+
 tasks.named("check") {
     dependsOn(
         "bridgeHandshakeContractTest",
@@ -105,7 +110,8 @@ tasks.named("check") {
         "bridgeControlClipboardTest",
         "audioStreamContractTest",
         "pointerEventRelativeMotionTest",
-        "fullLinuxContractAudioCapabilityTest"
+        "fullLinuxContractAudioCapabilityTest",
+        "vmHardwareConfigTest"
     )
 }
 
