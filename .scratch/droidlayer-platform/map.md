@@ -14,7 +14,7 @@ Effort: droidlayer-platform
 - **实现工单状态**：
   * M1 工单（issues/25–37）已全量验收合流完成（Status: completed）；
   * M2 移动 Wayland 图形桌面与深度输入工单（Ticket 38~43）：全量验收合流完成（Status: completed）。M2 里程碑全链路闭环！
-  * M3 系统级深度互通、音频与外设工单（Ticket 44~48）：Ticket 44（契约）、Ticket 45（AudioTrack 播放器）、Ticket 46（剪贴板同步与指针捕获）、Ticket 47（Guest 音频汇聚与剪贴板代理）均已验收合流（Status: completed）；仅剩 Ticket 48（AVF vsock 音频/剪贴板通道对齐）处于就绪前沿（Ready Frontier）。
+  * M3 系统级深度互通、音频与外设工单（Ticket 44~48）：全量验收合流完成（Status: completed）。M3 里程碑全链路闭环！
 - **工程交接包**：`docs/agent-handoff/`（ENGINEERING_HANDOFF 为入口；执行/合同/并行/报告/变更门五份配套；PHASE3_PLATFORM_HANDOFF 为 M3 启动入口）。
 - **用户背景**：领域新手。所有 grilling 必须用通俗语言解释术语（kernel / rootfs / container / namespace / pKVM / AVF / vsock / 9p …），并按固定六段格式提问：①真正要决定的问题 ②为什么重要 ③推荐答案 ④优点 ⑤代价/风险 ⑥可逆性。
 - **工作节奏**：每次 grilling 只问一个问题，等用户回答，写 ADR/CONTEXT.md，再问下一个（`/grill-with-docs` 的节奏）。不把实现细节伪装成需求决策。

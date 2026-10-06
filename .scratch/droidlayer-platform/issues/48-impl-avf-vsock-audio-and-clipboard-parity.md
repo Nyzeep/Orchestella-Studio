@@ -1,7 +1,7 @@
 # 48: AVF vsock 音频流与剪贴板专有通道对齐
 
 Type: implementation  
-Status: ready-for-review  
+Status: completed  
 
 ## What to build
 
