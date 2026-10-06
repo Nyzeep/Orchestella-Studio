@@ -102,6 +102,15 @@ public final class LabwcConfigVerifier {
                 return 1;
             }
 
+            // 7. Verify pulseaudio/default.pa
+            Path defaultPa = desktopDir.resolve("pulseaudio").resolve("default.pa");
+            if (Files.exists(defaultPa)) {
+                int pulseRes = PulseAudioConfigVerifier.verify(defaultPa, errorOutput);
+                if (pulseRes != 0) {
+                    return pulseRes;
+                }
+            }
+
             return 0;
         } catch (Exception ex) {
             errorOutput.println("Error verifying desktop configurations: " + ex.getMessage());

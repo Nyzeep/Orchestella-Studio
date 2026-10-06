@@ -44,13 +44,26 @@ execute_cmd() {
 }
 
 check_installed() {
-    local cmd="$1"
-    command -v "$cmd" >/dev/null 2>&1
+    local pkg="$1"
+    case "$pkg" in
+        font-noto-cjk|fonts-noto-cjk)
+            [[ -d "/usr/share/fonts" ]] || command -v fc-list >/dev/null 2>&1
+            ;;
+        pulseaudio-utils)
+            command -v pactl >/dev/null 2>&1 || command -v pacmd >/dev/null 2>&1 || command -v pulseaudio >/dev/null 2>&1
+            ;;
+        wl-clipboard)
+            command -v wl-copy >/dev/null 2>&1 || command -v wl-paste >/dev/null 2>&1
+            ;;
+        *)
+            command -v "$pkg" >/dev/null 2>&1
+            ;;
+    esac
 }
 
 # 1. Package installation per distribution
 if [[ "$OS_ID" == "alpine" ]]; then
-    ALPINE_PACKAGES=("labwc" "sfwbar" "foot" "xwayland" "font-noto-cjk")
+    ALPINE_PACKAGES=("labwc" "sfwbar" "foot" "xwayland" "font-noto-cjk" "pulseaudio" "pulseaudio-utils" "wl-clipboard")
     if [[ "$CHECK_ONLY" -eq 1 ]]; then
         for pkg in "${ALPINE_PACKAGES[@]}"; do
             if ! check_installed "$pkg"; then
@@ -64,7 +77,7 @@ if [[ "$OS_ID" == "alpine" ]]; then
     printf 'Installing Alpine desktop suite...\n'
     execute_cmd apk add --no-cache "${ALPINE_PACKAGES[@]}"
 elif [[ "$OS_ID" == "debian" || "$OS_ID" == "ubuntu" || "${ID_LIKE:-}" =~ debian ]]; then
-    DEBIAN_PACKAGES=("labwc" "sfwbar" "foot" "xwayland" "fonts-noto-cjk")
+    DEBIAN_PACKAGES=("labwc" "sfwbar" "foot" "xwayland" "fonts-noto-cjk" "pulseaudio" "pulseaudio-utils" "wl-clipboard")
     if [[ "$CHECK_ONLY" -eq 1 ]]; then
         for pkg in "${DEBIAN_PACKAGES[@]}"; do
             if ! check_installed "$pkg"; then
@@ -105,8 +118,11 @@ fi
 LABWC_CONF_DIR="$TARGET_HOME/.config/labwc"
 SFWBAR_CONF_DIR="$TARGET_HOME/.config/sfwbar"
 FOOT_CONF_DIR="$TARGET_HOME/.config/foot"
+PULSE_CONF_DIR="$TARGET_HOME/.config/pulse"
+CLIPBOARD_CONF_DIR="$TARGET_HOME/.config/droidlayer/clipboard"
+BIN_DIR="$TARGET_HOME/.local/bin"
 
-execute_cmd mkdir -p "$LABWC_CONF_DIR" "$SFWBAR_CONF_DIR" "$FOOT_CONF_DIR"
+execute_cmd mkdir -p "$LABWC_CONF_DIR" "$SFWBAR_CONF_DIR" "$FOOT_CONF_DIR" "$PULSE_CONF_DIR" "$CLIPBOARD_CONF_DIR" "$BIN_DIR"
 
 if [[ -d "$DESKTOP_SRC/labwc" ]]; then
     execute_cmd cp -f "$DESKTOP_SRC/labwc/rc.xml" "$LABWC_CONF_DIR/rc.xml"
@@ -121,6 +137,17 @@ fi
 
 if [[ -f "$DESKTOP_SRC/foot/foot.ini" ]]; then
     execute_cmd cp -f "$DESKTOP_SRC/foot/foot.ini" "$FOOT_CONF_DIR/foot.ini"
+fi
+
+if [[ -f "$DESKTOP_SRC/pulseaudio/default.pa" ]]; then
+    execute_cmd cp -f "$DESKTOP_SRC/pulseaudio/default.pa" "$PULSE_CONF_DIR/default.pa"
+fi
+
+if [[ -f "$DESKTOP_SRC/clipboard/droidlayer-clipboard-agent" ]]; then
+    execute_cmd cp -f "$DESKTOP_SRC/clipboard/droidlayer-clipboard-agent" "$CLIPBOARD_CONF_DIR/droidlayer-clipboard-agent"
+    execute_cmd chmod 755 "$CLIPBOARD_CONF_DIR/droidlayer-clipboard-agent"
+    execute_cmd cp -f "$DESKTOP_SRC/clipboard/droidlayer-clipboard-agent" "$BIN_DIR/droidlayer-clipboard-agent"
+    execute_cmd chmod 755 "$BIN_DIR/droidlayer-clipboard-agent"
 fi
 
 printf 'DroidLayer desktop provisioning completed successfully.\n'

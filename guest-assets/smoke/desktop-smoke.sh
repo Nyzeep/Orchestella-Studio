@@ -45,6 +45,8 @@ DESKTOP_DIR="$GUEST_ASSETS_DIR/scripts/desktop"
 [[ -f "$DESKTOP_DIR/sfwbar/sfwbar.config" ]] || { printf 'Missing sfwbar/sfwbar.config\n' >&2; exit 1; }
 [[ -f "$DESKTOP_DIR/foot/foot.ini" ]] || { printf 'Missing foot/foot.ini\n' >&2; exit 1; }
 [[ -f "$DESKTOP_DIR/weston/weston.ini" ]] || { printf 'Missing weston/weston.ini\n' >&2; exit 1; }
+[[ -f "$DESKTOP_DIR/pulseaudio/default.pa" ]] || { printf 'Missing pulseaudio/default.pa\n' >&2; exit 1; }
+[[ -f "$DESKTOP_DIR/clipboard/droidlayer-clipboard-agent" ]] || { printf 'Missing clipboard/droidlayer-clipboard-agent\n' >&2; exit 1; }
 
 printf 'All desktop config templates present and intact.\n'
 
