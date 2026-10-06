@@ -1,32 +1,42 @@
 package io.github.nyzeep.droidlayer;
 
 import android.app.Activity;
+import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.Editable;
+import android.text.TextWatcher;
+import android.util.TypedValue;
+import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.View;
+import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
 import android.widget.TextView;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Minimal root-shell terminal over the instance's terminal channel. The
- * channel arrives as the strategy-neutral {@link ExecutionSession} from the
- * {@link ExecutionSessionRegistry}: the abstract guest console socket under
- * the QEMU strategy, the vsock terminal channel under the AVF strategy — the
- * activity cannot tell them apart (ADR-0002). Input lines are sent raw;
- * output bytes append to a monospace transcript. The channel is transport
- * only: the Full Linux contract's terminal behavior is unchanged.
+ * Modern Full Linux terminal activity featuring:
+ * <ul>
+ *   <li>ANSI 16/256/TrueColor VT100 renderer with Dracula palette via {@link ModernTerminalView};</li>
+ *   <li>Sticky modifier extra keys bar via {@link MobileAuxiliaryKeyBar};</li>
+ *   <li>Soft keyboard adaptive viewport scrolling and desktop switcher navigation.</li>
+ * </ul>
+ * Conforms to ADR-0002, US-26, and US-27.
  */
 public class TerminalActivity extends Activity {
+
     private Handler ui;
-    private TextView transcript;
+    private ModernTerminalView terminalView;
+    private MobileAuxiliaryKeyBar auxiliaryKeyBar;
+    private StickyModifierStateMachine stickyStateMachine;
     private ExecutionSession session;
     private OutputStream terminalOut;
+    private boolean isHandlingModifier = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -35,55 +45,185 @@ public class TerminalActivity extends Activity {
         String instanceId = getIntent().getStringExtra("instanceId");
         session = ExecutionSessionRegistry.get(instanceId);
         ui = new Handler(Looper.getMainLooper());
+        stickyStateMachine = new StickyModifierStateMachine();
 
-        LinearLayout layout = new LinearLayout(this);
-        layout.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout rootLayout = new LinearLayout(this);
+        rootLayout.setOrientation(LinearLayout.VERTICAL);
+        rootLayout.setBackgroundColor(DraculaPalette.BACKGROUND);
 
+        // 1. Top bar with instance title and desktop shuttle button
         LinearLayout topBar = new LinearLayout(this);
         topBar.setOrientation(LinearLayout.HORIZONTAL);
-        topBar.setPadding(16, 12, 16, 12);
-        topBar.setBackgroundColor(0xFF222222);
+        topBar.setGravity(Gravity.CENTER_VERTICAL);
+        topBar.setPadding(dpToPx(16), dpToPx(10), dpToPx(16), dpToPx(10));
+        topBar.setBackgroundColor(0xFF21222C);
 
         TextView titleView = new TextView(this);
         titleView.setText("Orchestella Terminal (" + instanceId + ")");
-        titleView.setTextColor(0xFFCCCCCC);
-        titleView.setTextSize(13f);
+        titleView.setTextColor(DraculaPalette.FOREGROUND);
+        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+        titleView.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         topBar.addView(titleView, new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
-        android.widget.Button btnSwitchDesktop = new android.widget.Button(this);
+        Button btnSwitchDesktop = new Button(this, null, android.R.attr.buttonStyleSmall);
+        btnSwitchDesktop.setId(R.id.btnSwitchDesktop);
         btnSwitchDesktop.setText(R.string.terminal_open_desktop);
-        btnSwitchDesktop.setTextSize(12f);
+        btnSwitchDesktop.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
         btnSwitchDesktop.setOnClickListener(v -> {
             DualModeNavigation.navigateToDesktop(TerminalActivity.this, instanceId, bridgeToken);
         });
         topBar.addView(btnSwitchDesktop, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        layout.addView(topBar, new LinearLayout.LayoutParams(
+        rootLayout.addView(topBar, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        transcript = new TextView(this);
-        transcript.setTypeface(android.graphics.Typeface.MONOSPACE);
-        transcript.setTextIsSelectable(true);
-        ScrollView scroll = new ScrollView(this);
-        scroll.addView(transcript);
-        final EditText input = new EditText(this);
-        input.setHint("shell command");
-        input.setSingleLine(true);
-        layout.addView(scroll, new LinearLayout.LayoutParams(
+        // 2. Modern ANSI terminal transcript view
+        terminalView = new ModernTerminalView(this);
+        rootLayout.addView(terminalView, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
-        layout.addView(input, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
-        setContentView(layout);
+
+        // 3. Mobile auxiliary key bar
+        auxiliaryKeyBar = new MobileAuxiliaryKeyBar(this);
+        TerminalInputSink inputSink = new TerminalInputSink() {
+            @Override
+            public void sendBytes(byte[] bytes) {
+                sendRaw(bytes);
+            }
+        };
+        auxiliaryKeyBar.setInputSink(inputSink);
+        auxiliaryKeyBar.setStateMachine(stickyStateMachine);
+        rootLayout.addView(auxiliaryKeyBar, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        // 4. Input row with monospace EditText and submit button
+        LinearLayout inputBar = new LinearLayout(this);
+        inputBar.setOrientation(LinearLayout.HORIZONTAL);
+        inputBar.setGravity(Gravity.CENTER_VERTICAL);
+        inputBar.setPadding(dpToPx(12), dpToPx(6), dpToPx(12), dpToPx(8));
+        inputBar.setBackgroundColor(0xFF21222C);
+
+        final EditText input = new EditText(this);
+        input.setHint("shell command...");
+        input.setHintTextColor(DraculaPalette.COMMENT);
+        input.setTextColor(DraculaPalette.FOREGROUND);
+        input.setBackground(null);
+        input.setTypeface(Typeface.MONOSPACE);
+        input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+        input.setSingleLine(true);
+        inputBar.addView(input, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        Button btnSend = new Button(this, null, android.R.attr.buttonStyleSmall);
+        btnSend.setText("↵");
+        btnSend.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        btnSend.setTextColor(DraculaPalette.FOREGROUND);
+        btnSend.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        btnSend.setOnClickListener(v -> {
+            String line = input.getText().toString();
+            input.setText("");
+            send(line + "\n");
+        });
+        inputBar.addView(btnSend, new LinearLayout.LayoutParams(
+                dpToPx(42), dpToPx(36)));
+
+        rootLayout.addView(inputBar, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        auxiliaryKeyBar.setTargetInput(input);
+        setContentView(rootLayout);
+
+        // Sticky modifier interception for typed characters
+        input.addTextChangedListener(new TextWatcher() {
+            private int changeStart;
+            private int changeCount;
+
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                changeStart = start;
+                changeCount = count;
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+                if (isHandlingModifier) {
+                    return;
+                }
+                if (changeCount == 1 && s != null && s.length() >= changeStart + 1) {
+                    char typed = s.charAt(changeStart);
+                    if (stickyStateMachine.isCtrlActive()) {
+                        isHandlingModifier = true;
+                        try {
+                            s.delete(changeStart, changeStart + 1);
+                            byte ctrlCode = StickyModifierStateMachine.toControlCode(typed);
+                            sendRaw(new byte[]{ctrlCode});
+                            stickyStateMachine.consumeLatched();
+                        } finally {
+                            isHandlingModifier = false;
+                        }
+                    } else if (stickyStateMachine.isAltActive()) {
+                        isHandlingModifier = true;
+                        try {
+                            s.delete(changeStart, changeStart + 1);
+                            byte[] altSeq = StickyModifierStateMachine.toAltSequence(typed);
+                            sendRaw(altSeq);
+                            stickyStateMachine.consumeLatched();
+                        } finally {
+                            isHandlingModifier = false;
+                        }
+                    }
+                }
+            }
+        });
+
+        input.setOnKeyListener((v, keyCode, event) -> {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                if (stickyStateMachine.isCtrlActive()) {
+                    char ch = (char) event.getUnicodeChar();
+                    if (ch != 0) {
+                        byte ctrlCode = StickyModifierStateMachine.toControlCode(ch);
+                        sendRaw(new byte[]{ctrlCode});
+                        stickyStateMachine.consumeLatched();
+                        return true;
+                    }
+                } else if (stickyStateMachine.isAltActive()) {
+                    char ch = (char) event.getUnicodeChar();
+                    if (ch != 0) {
+                        sendRaw(StickyModifierStateMachine.toAltSequence(ch));
+                        stickyStateMachine.consumeLatched();
+                        return true;
+                    }
+                }
+            }
+            return false;
+        });
+
+        input.setOnEditorActionListener((v, actionId, event) -> {
+            String line = input.getText().toString();
+            input.setText("");
+            send(line + "\n");
+            return true;
+        });
+
+        // Viewport adjustment when soft keyboard opens/closes
+        rootLayout.addOnLayoutChangeListener((v, left, top, right, bottom,
+                                              oldLeft, oldTop, oldRight, oldBottom) -> {
+            if (bottom < oldBottom) {
+                terminalView.scrollToBottom();
+            }
+        });
 
         append("Orchestella Studio terminal (" + instanceId + ")\n");
         if (session == null) {
-            // The host process was restarted: no live session survives it.
             append("[no live session for instance " + instanceId + "]\n");
             return;
         }
+
         new Thread(() -> {
             try {
                 terminalOut = session.terminalInput();
@@ -93,14 +233,12 @@ public class TerminalActivity extends Activity {
                 append("[terminal error: " + e + "]\n");
             }
         }, "terminal-io").start();
-        // The bridge runs as the host initiator (HELLO/READY, PING/PONG,
-        // RESIZE); the console stays clean for the shell and the session
-        // milestones are echoed into the transcript for visibility.
-        scroll.post(() -> {
-            float charWidth = transcript.getPaint().measureText("M");
-            float lineHeight = transcript.getPaint().getFontSpacing();
-            int columns = (int) (scroll.getWidth() / charWidth);
-            int rows = (int) (scroll.getHeight() / lineHeight);
+
+        terminalView.post(() -> {
+            float charWidth = terminalView.getTranscriptView().getPaint().measureText("M");
+            float lineHeight = terminalView.getTranscriptView().getPaint().getFontSpacing();
+            int columns = (int) (terminalView.getWidth() / (charWidth > 0 ? charWidth : 1));
+            int rows = (int) (terminalView.getHeight() / (lineHeight > 0 ? lineHeight : 1));
             final int gridColumns = columns > 0 ? columns : 80;
             final int gridRows = rows > 0 ? rows : 24;
             if (session != null && session.markBridgeServing()) {
@@ -134,14 +272,6 @@ public class TerminalActivity extends Activity {
                     }
                 }, "bridge-serve").start();
             }
-
-        });
-
-        input.setOnEditorActionListener((v, actionId, event) -> {
-            String line = input.getText().toString();
-            input.setText("");
-            send(line + "\n");
-            return true;
         });
     }
 
@@ -177,9 +307,6 @@ public class TerminalActivity extends Activity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        // A configuration change (screen rotation) destroys and recreates the
-        // activity while the guest keeps running: only a real exit may unbind
-        // and tear down the session's streams.
         if (!isFinishing()) {
             return;
         }
@@ -205,13 +332,19 @@ public class TerminalActivity extends Activity {
     }
 
     private void send(String line) {
+        if (line != null) {
+            sendRaw(line.getBytes(StandardCharsets.UTF_8));
+        }
+    }
+
+    private void sendRaw(byte[] bytes) {
         OutputStream out = terminalOut;
-        if (out == null) {
+        if (out == null || bytes == null || bytes.length == 0) {
             return;
         }
         new Thread(() -> {
             try {
-                out.write(line.getBytes(StandardCharsets.UTF_8));
+                out.write(bytes);
                 out.flush();
             } catch (Exception e) {
                 append("[send failed]\n");
@@ -220,10 +353,13 @@ public class TerminalActivity extends Activity {
     }
 
     private void append(String text) {
-        ui.post(() -> {
-            transcript.append(text);
-            View parent = (View) transcript.getParent();
-            parent.scrollTo(0, (int) transcript.getTextSize() * transcript.getLineCount());
-        });
+        if (terminalView != null) {
+            terminalView.appendOutput(text);
+        }
+    }
+
+    private int dpToPx(int dp) {
+        return (int) TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_DIP, dp, getResources().getDisplayMetrics());
     }
 }

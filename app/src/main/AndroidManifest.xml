@@ -32,7 +32,9 @@
 
         <activity
             android:name=".TerminalActivity"
-            android:exported="false" />
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" />
 
         <!-- ADR-0017 & Ticket 43: Android host graphical desktop activity -->
         <activity
