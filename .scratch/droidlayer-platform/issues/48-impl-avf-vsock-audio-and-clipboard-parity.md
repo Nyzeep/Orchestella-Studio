@@ -1,7 +1,7 @@
 # 48: AVF vsock 音频流与剪贴板专有通道对齐
 
 Type: implementation  
-Status: ready-for-agent  
+Status: ready-for-review  
 
 ## What to build
 
@@ -24,10 +24,10 @@ Status: ready-for-agent
 
 ## Acceptance criteria
 
-- [ ] AVF 虚拟机能够通过 vsock 端口 9104 稳定输出 48000Hz 16-bit 双声道 PCM 音频流，延迟与丢帧率指标达到 M3 SLA（$\le 80\text{ms}$，丢帧率 $\le 0.5\%$）；
-- [ ] 剪贴板双向同步在 AVF vsock 9102 通道上稳定运行，双向延迟 $\le 50\text{ms}$，无回环；
-- [ ] 物理鼠标相对位移事件在 vsock 9103 通道上准确转发并无损呈现在 AVF 桌面中；
-- [ ] `:runtime:engine-avf` 纯 JVM 单元测试与双引擎互操作回归测试套件 100% 全绿通过，无警告、无编译错误。
+- [x] AVF 虚拟机能够通过 vsock 端口 9104 稳定输出 48000Hz 16-bit 双声道 PCM 音频流，延迟与丢帧率指标达到 M3 SLA（$\le 80\text{ms}$，丢帧率 $\le 0.5\%$）；
+- [x] 剪贴板双向同步在 AVF vsock 9102 通道上稳定运行，双向延迟 $\le 50\text{ms}$，无回环；
+- [x] 物理鼠标相对位移事件在 vsock 9103 通道上准确转发并无损呈现在 AVF 桌面中；
+- [x] `:runtime:engine-avf` 纯 JVM 单元测试与双引擎互操作回归测试套件 100% 全绿通过，无警告、无编译错误。
 
 ## Test strategy
 
