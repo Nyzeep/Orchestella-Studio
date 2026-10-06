@@ -230,6 +230,162 @@ EOF
     fi
 }
 
+install_guest_shell_profile() {
+    target_root="$1"
+    mkdir -p "$target_root/etc/profile.d" "$target_root/etc/droidlayer/shell"
+
+    cat > "$target_root/etc/droidlayer/shell/aliases.sh" <<'EOF'
+#!/bin/sh
+alias ll='ls -lah --color=auto'
+alias la='ls -A --color=auto'
+alias l='ls -CF --color=auto'
+alias grep='grep --color=auto'
+alias df='df -h'
+alias free='free -m'
+EOF
+    chmod 0644 "$target_root/etc/droidlayer/shell/aliases.sh"
+
+    cat > "$target_root/etc/droidlayer/shell/droidlayer-prompt.sh" <<'EOF'
+#!/bin/sh
+__droidlayer_git_branch() {
+    _cur="${PWD:-.}"
+    _git=""
+    while [ -n "$_cur" ]; do
+        if [ -e "$_cur/.git" ]; then
+            if [ -d "$_cur/.git" ]; then
+                _git="$_cur/.git"
+            elif [ -f "$_cur/.git" ]; then
+                read -r _line < "$_cur/.git" 2>/dev/null || _line=""
+                case "$_line" in
+                    gitdir:*)
+                        _dest="${_line#gitdir: }"
+                        case "$_dest" in
+                            /*) _git="$_dest" ;;
+                            *) _git="$_cur/$_dest" ;;
+                        esac
+                        ;;
+                esac
+            fi
+            break
+        fi
+        _up="${_cur%/*}"
+        [ "$_up" = "$_cur" ] && break
+        _cur="$_up"
+    done
+    [ -n "$_git" ] && [ -f "$_git/HEAD" ] || return 0
+    read -r _ref < "$_git/HEAD" 2>/dev/null || return 0
+    case "$_ref" in
+        ref:\ refs/heads/*) printf '%s' "${_ref#ref: refs/heads/}" ;;
+        ref:\ refs/*) printf '%s' "${_ref#ref: refs/}" ;;
+        *)
+            if [ "${#_ref}" -ge 7 ]; then
+                printf '%.7s' "$_ref"
+            else
+                printf '%s' "$_ref"
+            fi
+            ;;
+    esac
+}
+__droidlayer_dir() {
+    _cwd="${PWD:-$(pwd)}"
+    if [ -n "${HOME:-}" ] && [ "$_cwd" = "$HOME" ]; then
+        printf '~'
+    elif [ -n "${HOME:-}" ]; then
+        case "$_cwd" in
+            "$HOME"/*) printf '~%s' "${_cwd#"$HOME"}" ;;
+            *) printf '%s' "$_cwd" ;;
+        esac
+    else
+        printf '%s' "$_cwd"
+    fi
+}
+__droidlayer_build_prompt() {
+    _last_exit="${1:-0}"
+    _mode="${2:-sh}"
+    _esc=$(printf '\033')
+    if [ "$_mode" = "bash" ]; then
+        _c_reset="\[${_esc}[0m\]"
+        _c_cyan="\[${_esc}[36m\]"
+        _c_yellow="\[${_esc}[33m\]"
+        _c_red="\[${_esc}[31m\]"
+        _c_green="\[${_esc}[32m\]"
+        _c_magenta="\[${_esc}[35m\]"
+    else
+        _c_reset="${_esc}[0m"
+        _c_cyan="${_esc}[36m"
+        _c_yellow="${_esc}[33m"
+        _c_red="${_esc}[31m"
+        _c_green="${_esc}[32m"
+        _c_magenta="${_esc}[35m"
+    fi
+    _dir_str="$(__droidlayer_dir)"
+    _branch="$(__droidlayer_git_branch)"
+    _git_part=""
+    if [ -n "$_branch" ]; then
+        _git_part=" ${_c_yellow}(${_branch})${_c_reset}"
+    fi
+    _err_part=""
+    if [ "$_last_exit" -ne 0 ]; then
+        _err_part=" ${_c_red}✘${_c_reset}"
+    fi
+    _arrow_color="$_c_green"
+    if [ "${UID:-1}" -eq 0 ] 2>/dev/null || [ "${USER:-}" = "root" ]; then
+        _arrow_color="$_c_magenta"
+    elif command -v id >/dev/null 2>&1 && [ "$(id -u 2>/dev/null || echo 1)" -eq 0 ]; then
+        _arrow_color="$_c_magenta"
+    fi
+    printf '%s%s%s%s%s\n%s❯%s ' \
+        "$_c_cyan" "$_dir_str" "$_c_reset" "$_git_part" "$_err_part" \
+        "$_arrow_color" "$_c_reset"
+}
+if [ -n "${BASH_VERSION:-}" ]; then
+    __droidlayer_prompt_cmd() {
+        _exit_status="$?"
+        PS1="$(__droidlayer_build_prompt "$_exit_status" bash)"
+    }
+    PROMPT_COMMAND=__droidlayer_prompt_cmd
+    PS1="$(__droidlayer_build_prompt 0 bash)"
+else
+    PS1='$(__droidlayer_build_prompt "$?" sh)'
+fi
+export PS1
+EOF
+    chmod 0755 "$target_root/etc/droidlayer/shell/droidlayer-prompt.sh"
+
+    cat > "$target_root/etc/profile.d/00-droidlayer-env.sh" <<'EOF'
+#!/bin/sh
+export LS_COLORS="rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=30;41:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;33:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;33:*.war=01;33:*.7z=01;33:*.rar=01;33:*.c=00;36:*.h=00;36:*.cpp=00;36:*.hpp=00;36:*.cc=00;36:*.cxx=00;36:*.rs=01;33:*.py=00;33:*.go=00;34:*.java=00;35:*.kt=01;35:*.kts=01;35:*.js=00;32:*.ts=01;32:*.jsx=00;32:*.tsx=01;32:*.sh=01;32:*.bash=01;32:*.json=00;33:*.xml=00;33:*.yaml=00;33:*.yml=00;33:*.toml=00;33:*.md=00;37:*.txt=00;37"
+export LSCOLORS="Gxfxcxdxbxegedabagacad"
+
+if [ -f /etc/droidlayer/shell/aliases.sh ]; then
+    . /etc/droidlayer/shell/aliases.sh
+else
+    alias ll='ls -lah --color=auto'
+    alias la='ls -A --color=auto'
+    alias l='ls -CF --color=auto'
+    alias grep='grep --color=auto'
+    alias df='df -h'
+    alias free='free -m'
+fi
+
+if [ -f /etc/droidlayer/shell/droidlayer-prompt.sh ]; then
+    . /etc/droidlayer/shell/droidlayer-prompt.sh
+elif [ -f "$(dirname "$0")/droidlayer-prompt.sh" ]; then
+    . "$(dirname "$0")/droidlayer-prompt.sh"
+fi
+EOF
+    chmod 0755 "$target_root/etc/profile.d/00-droidlayer-env.sh"
+
+    if [ -f "$target_root/etc/profile" ] && ! grep -qs '00-droidlayer-env.sh' "$target_root/etc/profile"; then
+        printf '\nexport ENV=/etc/profile.d/00-droidlayer-env.sh\n' >> "$target_root/etc/profile"
+    fi
+
+    if [ -f "$target_root/etc/bash.bashrc" ] && ! grep -qs '00-droidlayer-env.sh' "$target_root/etc/bash.bashrc"; then
+        printf '\nif [ -f /etc/profile.d/00-droidlayer-env.sh ]; then\n    . /etc/profile.d/00-droidlayer-env.sh\nfi\n' >> "$target_root/etc/bash.bashrc"
+    fi
+}
+
+
 mount -t devtmpfs devtmpfs /dev || fail mount-devtmpfs
 mount -t proc proc /proc || fail mount-proc
 mount -t sysfs sysfs /sys || fail mount-sysfs
@@ -267,6 +423,9 @@ if mount -t ext4 "$ROOT_DEVICE" /newroot 2>/dev/null; then
         /newroot/sbin/resize2fs "$ROOT_DEVICE" 2>/dev/null || true
     elif [ -x /newroot/usr/sbin/resize2fs ]; then
         /newroot/usr/sbin/resize2fs "$ROOT_DEVICE" 2>/dev/null || true
+    fi
+    if [ ! -f /newroot/etc/profile.d/00-droidlayer-env.sh ]; then
+        install_guest_shell_profile /newroot
     fi
     PROVISIONED_DISTRO="$(grep '^distro=' /newroot/var/lib/droidlayer/provisioned-v1 | cut -d '=' -f 2)"
     log "DROIDLAYER_ROOT_VOLUME_RESTART version=1 distro=$PROVISIONED_DISTRO"
@@ -372,6 +531,7 @@ EOF
         || true
     install_official_alpine_busybox_init_fallback /newroot
     install_official_debian_systemd_flavor /newroot
+    install_guest_shell_profile /newroot
 fi
 
 mkdir -p /newroot/mnt/downloads /newroot/media/downloads
