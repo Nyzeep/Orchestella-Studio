@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Status Badge Colors -->
+    <color name="status_running">#10B981</color>
+    <color name="status_running_bg">#2010B981</color>
+    <color name="status_stopped">#64748B</color>
+    <color name="status_stopped_bg">#2064748B</color>
+    <color name="status_crashed">#EF4444</color>
+    <color name="status_crashed_bg">#20EF4444</color>
+    <color name="status_provisioning">#3B82F6</color>
+    <color name="status_provisioning_bg">#203B82F6</color>
+    <color name="status_created">#8B5CF6</color>
+    <color name="status_created_bg">#208B5CF6</color>
+
+    <!-- Safety Zones for Hardware Config -->
+    <color name="zone_green">#10B981</color>
+    <color name="zone_green_bg">#1810B981</color>
+    <color name="zone_yellow">#F59E0B</color>
+    <color name="zone_yellow_bg">#18F59E0B</color>
+    <color name="zone_red">#EF4444</color>
+    <color name="zone_red_bg">#18EF4444</color>
+
+    <!-- Distro Palette -->
+    <color name="distro_alpine_tint">#0D597F</color>
+    <color name="distro_debian_tint">#D70A53</color>
+</resources>
