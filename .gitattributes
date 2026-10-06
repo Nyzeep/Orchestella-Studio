@@ -11,3 +11,4 @@ gradlew text eol=lf
 *.properties text eol=lf
 *.md text eol=lf
 *.jar binary
+guest-assets/** text eol=lf
