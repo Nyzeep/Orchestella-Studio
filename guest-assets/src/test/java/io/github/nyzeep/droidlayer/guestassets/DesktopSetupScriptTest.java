@@ -53,7 +53,9 @@ final class DesktopSetupScriptTest {
         assertTrue(content.contains("apk add"), "setup script must use apk add for Alpine");
         assertTrue(content.contains("--no-cache"), "apk add must use --no-cache");
 
-        List<String> alpinePackages = List.of("labwc", "sfwbar", "foot", "xwayland", "font-noto-cjk");
+        List<String> alpinePackages = List.of(
+                "labwc", "sfwbar", "foot", "xwayland", "font-noto-cjk",
+                "pulseaudio", "pulseaudio-utils", "wl-clipboard");
         for (String pkg : alpinePackages) {
             assertTrue(content.contains(pkg), "Alpine package list must include: " + pkg);
         }
@@ -72,7 +74,9 @@ final class DesktopSetupScriptTest {
         assertTrue(content.contains("--no-install-recommends"),
                 "apt-get must use --no-install-recommends to keep footprint minimal");
 
-        List<String> debianPackages = List.of("labwc", "sfwbar", "foot", "xwayland", "fonts-noto-cjk");
+        List<String> debianPackages = List.of(
+                "labwc", "sfwbar", "foot", "xwayland", "fonts-noto-cjk",
+                "pulseaudio", "pulseaudio-utils", "wl-clipboard");
         for (String pkg : debianPackages) {
             assertTrue(content.contains(pkg), "Debian package list must include: " + pkg);
         }
@@ -89,6 +93,9 @@ final class DesktopSetupScriptTest {
         assertTrue(content.contains(".config/labwc"), "setup script must deploy labwc user configuration");
         assertTrue(content.contains(".config/sfwbar"), "setup script must deploy sfwbar user configuration");
         assertTrue(content.contains(".config/foot"), "setup script must deploy foot user configuration");
+        assertTrue(content.contains(".config/pulse"), "setup script must deploy pulseaudio user configuration");
+        assertTrue(content.contains("droidlayer-clipboard-agent"),
+                "setup script must deploy clipboard agent executable");
     }
 
     @Test
