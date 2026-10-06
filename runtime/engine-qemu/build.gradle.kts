@@ -46,6 +46,16 @@ tasks.register<JavaExec>("qemuLaunchSpecTest") {
     mainClass.set("io.github.nyzeep.droidlayer.runtime.engineqemu.QemuLaunchSpecTest")
 }
 
+tasks.register<JavaExec>("qemuGpuLaunchSpecTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.droidlayer.runtime.engineqemu.QemuGpuLaunchSpecTest")
+}
+
+tasks.register<JavaExec>("virglMemoryQuotaTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.droidlayer.runtime.engineqemu.VirglMemoryQuotaTest")
+}
+
 tasks.register<JavaExec>("runtimeArtifactManifestSchemaTest") {
     classpath = sourceSets["test"].runtimeClasspath
     mainClass.set("io.github.nyzeep.droidlayer.runtime.engineqemu.RuntimeArtifactManifestSchemaTest")
@@ -64,6 +74,9 @@ tasks.named("check") {
         "runtimeAssetInstallerTest",
         "embeddedProvisionInputTest",
         "qemuLaunchSpecTest",
+        "qemuGpuLaunchSpecTest",
+        "virglMemoryQuotaTest",
         "qemuHostfwdContractTest",
     )
 }
+

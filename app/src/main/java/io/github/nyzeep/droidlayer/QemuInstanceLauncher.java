@@ -2,11 +2,14 @@ package io.github.nyzeep.droidlayer;
 
 import android.content.Context;
 import android.net.LocalSocket;
+import android.util.Log;
 import io.github.nyzeep.droidlayer.runtime.contract.BridgeClient;
 import io.github.nyzeep.droidlayer.runtime.contract.BridgeControl;
+import io.github.nyzeep.droidlayer.runtime.contract.VmHardwareConfig;
 import io.github.nyzeep.droidlayer.runtime.engineqemu.QemuLaunchSpec;
 import io.github.nyzeep.droidlayer.runtime.engineqemu.QemuProcessLauncher;
 import io.github.nyzeep.droidlayer.runtime.engineqemu.RuntimeArtifactManifest;
+import io.github.nyzeep.droidlayer.runtime.engineqemu.VirglJniBridge;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -184,6 +187,15 @@ public final class QemuInstanceLauncher {
         String nativeLibraryDir = context.getApplicationInfo().nativeLibraryDir;
         String controlSocket = "droidlayer-control-" + parameters.instanceId;
         String terminalSocket = "droidlayer-terminal-" + parameters.instanceId;
+
+        VmHardwareConfig config = VmHardwareConfig.defaultConfig();
+        if (config.gpuAccelerationEnabled()) {
+            Log.i("DroidLayerQemu", "Launching QEMU with virtio-gpu-gl-device (GPU acceleration enabled)");
+            VirglJniBridge.init(1024, true);
+        } else {
+            Log.i("DroidLayerQemu", "Launching QEMU with virtio-gpu-device (software fallback)");
+        }
+
         String[] spec = QemuLaunchSpec.build(
                 Paths.get(nativeLibraryDir, "libdroidlayer_qemu.so").toString(),
                 paths.kernel.toString(),
@@ -191,7 +203,7 @@ public final class QemuInstanceLauncher {
                 parameters.instanceRootVolume,
                 controlSocket,
                 terminalSocket,
-                INSTANCE_MEMORY_MB);
+                config);
 
         QemuProcessLauncher launcher = new QemuProcessLauncher();
         QemuProcessLauncher.Launched launched = launcher.launch(spec);
@@ -201,6 +213,8 @@ public final class QemuInstanceLauncher {
                 handle.waitFor();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
+            } finally {
+                VirglJniBridge.cleanup();
             }
         }, "qemu-exit-" + parameters.instanceId);
         watcher.setDaemon(true);
