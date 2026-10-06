@@ -1,7 +1,7 @@
 # 44: 策略中立剪贴板与音频契约扩展
 
 Type: contract  
-Status: ready-for-agent  
+Status: ready-for-review  
 
 ## What to build
 
@@ -30,11 +30,11 @@ Status: ready-for-agent
 
 ## Acceptance criteria
 
-- [ ] `FullLinuxContract.Capability` 正式扩容 `AUDIO_OUTPUT`、`CLIPBOARD_SYNC`、`POINTER_CAPTURE`，能力矩阵能准确反映执行策略对互通特性的支持；
-- [ ] `BridgeControl` 成功集成并派发 `CLIPBOARD PUT` 与 `CLIPBOARD GET` 命令，合法载荷正确转码，非法或超长（$>256\text{KB}$）载荷被确定性拦截；
-- [ ] `AudioStreamContract` 接口定义完备，采用纯 Java 编写，无任何 Android SDK 专有依赖；
-- [ ] `PointerEvent` 完整支持相对位移与物理按键状态的序列化与反序列化；
-- [ ] 契约层 JVM 纯单元测试保持 100% 覆盖率，在既有构建中全绿通过，保持 Java 17 + `-Xlint:all -Werror` 零告警。
+- [x] `FullLinuxContract.Capability` 正式扩容 `AUDIO_OUTPUT`、`CLIPBOARD_SYNC`、`POINTER_CAPTURE`，能力矩阵能准确反映执行策略对互通特性的支持；
+- [x] `BridgeControl` 成功集成并派发 `CLIPBOARD PUT` 与 `CLIPBOARD GET` 命令，合法载荷正确转码，非法或超长（$>256\text{KB}$）载荷被确定性拦截；
+- [x] `AudioStreamContract` 接口定义完备，采用纯 Java 编写，无任何 Android SDK 专有依赖；
+- [x] `PointerEvent` 完整支持相对位移与物理按键状态的序列化与反序列化；
+- [x] 契约层 JVM 纯单元测试保持 100% 覆盖率，在既有构建中全绿通过，保持 Java 17 + `-Xlint:all -Werror` 零告警。
 
 ## Test strategy
 

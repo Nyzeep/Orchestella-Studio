@@ -2,6 +2,10 @@ package io.github.nyzeep.droidlayer.runtime.contract;
 
 import java.net.URI;
 import java.net.URLDecoder;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.regex.Pattern;
@@ -9,6 +13,7 @@ import java.util.regex.Pattern;
 /** Strategy-neutral control behavior for an authenticated Bridge v1 byte stream. */
 public final class BridgeControl {
     private static final int MAX_PAYLOAD_CHARS = 2048;
+    public static final int MAX_CLIPBOARD_PAYLOAD_BYTES = 262144;
     private static final Pattern SAFE_URL_PATTERN = Pattern.compile("^[hH][tT][tT][pP][sS]?://.+");
 
     private BridgeControl() {}
@@ -46,7 +51,27 @@ public final class BridgeControl {
      * their own seams before this method is called.
      */
     public static Result dispatch(String requestLine) {
-        return dispatchInternal(requestLine, null, null, null, null, null);
+        return dispatchInternal(requestLine, null, null, null, null, null, null);
+    }
+
+    /**
+     * Dispatches a control request that operates on the clipboard seam.
+     */
+    public static Result dispatchClipboard(String requestLine, Clipboard clipboard) {
+        if (clipboard == null) {
+            throw new IllegalArgumentException("clipboard");
+        }
+        return dispatchInternal(requestLine, null, null, null, null, null, clipboard);
+    }
+
+    /**
+     * Dispatches a control request that operates on the clipboard seam.
+     */
+    public static Result dispatch(String requestLine, Clipboard clipboard) {
+        if (clipboard == null) {
+            throw new IllegalArgumentException("clipboard");
+        }
+        return dispatchInternal(requestLine, null, null, null, null, null, clipboard);
     }
 
     /**
@@ -57,7 +82,7 @@ public final class BridgeControl {
         if (terminal == null) {
             throw new IllegalArgumentException("terminal");
         }
-        return dispatchInternal(requestLine, terminal, null, null, null, null);
+        return dispatchInternal(requestLine, terminal, null, null, null, null, null);
     }
 
     /**
@@ -67,7 +92,7 @@ public final class BridgeControl {
         if (power == null) {
             throw new IllegalArgumentException("power");
         }
-        return dispatchInternal(requestLine, null, power, null, null, null);
+        return dispatchInternal(requestLine, null, power, null, null, null, null);
     }
 
     /**
@@ -80,7 +105,7 @@ public final class BridgeControl {
         if (power == null) {
             throw new IllegalArgumentException("power");
         }
-        return dispatchInternal(requestLine, terminal, power, null, null, null);
+        return dispatchInternal(requestLine, terminal, power, null, null, null, null);
     }
 
     /**
@@ -90,7 +115,7 @@ public final class BridgeControl {
         if (notification == null) {
             throw new IllegalArgumentException("notification");
         }
-        return dispatchInternal(requestLine, null, null, notification, null, null);
+        return dispatchInternal(requestLine, null, null, notification, null, null, null);
     }
 
     /**
@@ -100,7 +125,7 @@ public final class BridgeControl {
         if (urlOpener == null) {
             throw new IllegalArgumentException("urlOpener");
         }
-        return dispatchInternal(requestLine, null, null, null, urlOpener, null);
+        return dispatchInternal(requestLine, null, null, null, urlOpener, null, null);
     }
 
     /**
@@ -110,7 +135,7 @@ public final class BridgeControl {
         if (display == null) {
             throw new IllegalArgumentException("display");
         }
-        return dispatchInternal(requestLine, null, null, null, null, display);
+        return dispatchInternal(requestLine, null, null, null, null, display, null);
     }
 
     /**
@@ -126,7 +151,8 @@ public final class BridgeControl {
                 seams.power,
                 seams.notification,
                 seams.urlOpener,
-                seams.display);
+                seams.display,
+                seams.clipboard);
     }
 
     /**
@@ -138,7 +164,7 @@ public final class BridgeControl {
             Power power,
             Notification notification,
             UrlOpener urlOpener) {
-        return dispatchInternal(requestLine, terminal, power, notification, urlOpener, null);
+        return dispatchInternal(requestLine, terminal, power, notification, urlOpener, null, null);
     }
 
     /**
@@ -151,7 +177,21 @@ public final class BridgeControl {
             Notification notification,
             UrlOpener urlOpener,
             Display display) {
-        return dispatchInternal(requestLine, terminal, power, notification, urlOpener, display);
+        return dispatchInternal(requestLine, terminal, power, notification, urlOpener, display, null);
+    }
+
+    /**
+     * Dispatches a control request across all supported bridge seams including display and clipboard control.
+     */
+    public static Result dispatch(
+            String requestLine,
+            Terminal terminal,
+            Power power,
+            Notification notification,
+            UrlOpener urlOpener,
+            Display display,
+            Clipboard clipboard) {
+        return dispatchInternal(requestLine, terminal, power, notification, urlOpener, display, clipboard);
     }
 
     private static Result dispatchInternal(
@@ -160,9 +200,13 @@ public final class BridgeControl {
             Power power,
             Notification notification,
             UrlOpener urlOpener,
-            Display display) {
+            Display display,
+            Clipboard clipboard) {
         if ("DROIDLAYER/PING\n".equals(requestLine) || "DROIDLAYER/PING\r\n".equals(requestLine)) {
             return Result.accepted("DROIDLAYER/PONG 1\n");
+        }
+        if (isClipboardCommand(requestLine)) {
+            return dispatchClipboardInternal(requestLine, clipboard);
         }
         if (isPowerCommand(requestLine)) {
             PowerRequest req = parsePower(requestLine);
@@ -235,6 +279,85 @@ public final class BridgeControl {
             return success
                     ? Result.accepted("DROIDLAYER/OK display\n")
                     : Result.rejected("DROIDLAYER/ERROR display-unavailable\n");
+        }
+        return Result.rejected("DROIDLAYER/ERROR malformed-command\n");
+    }
+
+    public static boolean isClipboardCommand(String requestLine) {
+        if (requestLine == null) {
+            return false;
+        }
+        return requestLine.startsWith("DROIDLAYER/CLIPBOARD ")
+                || "DROIDLAYER/CLIPBOARD\n".equals(requestLine)
+                || "DROIDLAYER/CLIPBOARD\r\n".equals(requestLine);
+    }
+
+    private static Result dispatchClipboardInternal(String requestLine, Clipboard clipboard) {
+        if (requestLine == null || !requestLine.endsWith("\n")) {
+            return Result.rejected("DROIDLAYER/ERROR malformed-command\n");
+        }
+        String line = requestLine.substring(0, requestLine.length() - 1);
+        if (line.endsWith("\r")) {
+            line = line.substring(0, line.length() - 1);
+        }
+        String[] fields = line.split(" ", -1);
+        if (fields.length < 2 || !"DROIDLAYER/CLIPBOARD".equals(fields[0])) {
+            return Result.rejected("DROIDLAYER/ERROR malformed-command\n");
+        }
+        String subcommand = fields[1];
+        if ("PUT".equals(subcommand)) {
+            if (fields.length != 3) {
+                return Result.rejected("DROIDLAYER/ERROR malformed-command\n");
+            }
+            String payloadField = fields[2];
+            if (!payloadField.startsWith("base64:")) {
+                return Result.rejected("DROIDLAYER/ERROR malformed-command\n");
+            }
+            String base64Data = payloadField.substring("base64:".length());
+            if (base64Data.length() > 350000) {
+                return Result.rejected("DROIDLAYER/ERROR payload-too-large\n");
+            }
+            byte[] decodedBytes;
+            try {
+                decodedBytes = Base64.getDecoder().decode(base64Data);
+            } catch (IllegalArgumentException e) {
+                return Result.rejected("DROIDLAYER/ERROR malformed-command\n");
+            }
+            if (decodedBytes.length > MAX_CLIPBOARD_PAYLOAD_BYTES) {
+                return Result.rejected("DROIDLAYER/ERROR payload-too-large\n");
+            }
+            CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT);
+            String text;
+            try {
+                text = decoder.decode(ByteBuffer.wrap(decodedBytes)).toString();
+            } catch (CharacterCodingException e) {
+                return Result.rejected("DROIDLAYER/ERROR malformed-command\n");
+            }
+            if (clipboard == null) {
+                return Result.rejected("DROIDLAYER/ERROR clipboard-unavailable\n");
+            }
+            return clipboard.onClipboardPut(text)
+                    ? Result.accepted("DROIDLAYER/OK clipboard\n")
+                    : Result.rejected("DROIDLAYER/ERROR clipboard-unavailable\n");
+        } else if ("GET".equals(subcommand)) {
+            if (fields.length != 2) {
+                return Result.rejected("DROIDLAYER/ERROR malformed-command\n");
+            }
+            if (clipboard == null) {
+                return Result.rejected("DROIDLAYER/ERROR clipboard-unavailable\n");
+            }
+            String text = clipboard.onClipboardGet();
+            if (text == null || text.isEmpty()) {
+                return Result.accepted("DROIDLAYER/OK clipboard base64:\n");
+            }
+            byte[] utf8Bytes = text.getBytes(StandardCharsets.UTF_8);
+            if (utf8Bytes.length > MAX_CLIPBOARD_PAYLOAD_BYTES) {
+                return Result.rejected("DROIDLAYER/ERROR payload-too-large\n");
+            }
+            String base64 = Base64.getEncoder().encodeToString(utf8Bytes);
+            return Result.accepted("DROIDLAYER/OK clipboard base64:" + base64 + "\n");
         }
         return Result.rejected("DROIDLAYER/ERROR malformed-command\n");
     }
@@ -513,6 +636,12 @@ public final class BridgeControl {
         }
     }
 
+    /** Adapter for strategy-neutral clipboard synchronization. */
+    public interface Clipboard {
+        boolean onClipboardPut(String text);
+        String onClipboardGet();
+    }
+
     /** Aggregation of adapter seams for unified Bridge dispatching. */
     public static final class Seams {
         private final Terminal terminal;
@@ -520,13 +649,14 @@ public final class BridgeControl {
         private final Notification notification;
         private final UrlOpener urlOpener;
         private final Display display;
+        private final Clipboard clipboard;
 
         public Seams(
                 Terminal terminal,
                 Power power,
                 Notification notification,
                 UrlOpener urlOpener) {
-            this(terminal, power, notification, urlOpener, null);
+            this(terminal, power, notification, urlOpener, null, null);
         }
 
         public Seams(
@@ -535,27 +665,42 @@ public final class BridgeControl {
                 Notification notification,
                 UrlOpener urlOpener,
                 Display display) {
+            this(terminal, power, notification, urlOpener, display, null);
+        }
+
+        public Seams(
+                Terminal terminal,
+                Power power,
+                Notification notification,
+                UrlOpener urlOpener,
+                Display display,
+                Clipboard clipboard) {
             this.terminal = terminal;
             this.power = power;
             this.notification = notification;
             this.urlOpener = urlOpener;
             this.display = display;
+            this.clipboard = clipboard;
+        }
+
+        public static Seams of(Clipboard clipboard) {
+            return new Seams(null, null, null, null, null, clipboard);
         }
 
         public static Seams of(Notification notification) {
-            return new Seams(null, null, notification, null, null);
+            return new Seams(null, null, notification, null, null, null);
         }
 
         public static Seams of(UrlOpener urlOpener) {
-            return new Seams(null, null, null, urlOpener, null);
+            return new Seams(null, null, null, urlOpener, null, null);
         }
 
         public static Seams of(Display display) {
-            return new Seams(null, null, null, null, display);
+            return new Seams(null, null, null, null, display, null);
         }
 
         public static Seams of(Notification notification, UrlOpener urlOpener) {
-            return new Seams(null, null, notification, urlOpener, null);
+            return new Seams(null, null, notification, urlOpener, null, null);
         }
 
         public static Seams of(
@@ -563,7 +708,7 @@ public final class BridgeControl {
                 Power power,
                 Notification notification,
                 UrlOpener urlOpener) {
-            return new Seams(terminal, power, notification, urlOpener, null);
+            return new Seams(terminal, power, notification, urlOpener, null, null);
         }
 
         public static Seams of(
@@ -572,7 +717,17 @@ public final class BridgeControl {
                 Notification notification,
                 UrlOpener urlOpener,
                 Display display) {
-            return new Seams(terminal, power, notification, urlOpener, display);
+            return new Seams(terminal, power, notification, urlOpener, display, null);
+        }
+
+        public static Seams of(
+                Terminal terminal,
+                Power power,
+                Notification notification,
+                UrlOpener urlOpener,
+                Display display,
+                Clipboard clipboard) {
+            return new Seams(terminal, power, notification, urlOpener, display, clipboard);
         }
 
         public Terminal terminal() {
@@ -593,6 +748,10 @@ public final class BridgeControl {
 
         public Display display() {
             return display;
+        }
+
+        public Clipboard clipboard() {
+            return clipboard;
         }
     }
 

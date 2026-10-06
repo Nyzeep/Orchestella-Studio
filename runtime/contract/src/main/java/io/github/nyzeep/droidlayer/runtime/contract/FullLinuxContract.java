@@ -28,7 +28,10 @@ public final class FullLinuxContract {
         TERMINAL,
         BRIDGE_HANDSHAKE,
         HARDWARE_ACCELERATION,
-        GRAPHICS_WAYLAND
+        GRAPHICS_WAYLAND,
+        AUDIO_OUTPUT,
+        CLIPBOARD_SYNC,
+        POINTER_CAPTURE
     }
 
     /** Immutable strategy declaration consumed by callers instead of strategy-specific branches. */
@@ -69,6 +72,18 @@ public final class FullLinuxContract {
                             Capability.GRAPHICS_WAYLAND));
         }
 
+        public static CapabilityMatrix softwareVirtualizationWithPeripherals() {
+            return new CapabilityMatrix(
+                    ExecutionStrategy.SOFTWARE_VIRTUALIZATION,
+                    EnumSet.of(
+                            Capability.TERMINAL,
+                            Capability.BRIDGE_HANDSHAKE,
+                            Capability.GRAPHICS_WAYLAND,
+                            Capability.AUDIO_OUTPUT,
+                            Capability.CLIPBOARD_SYNC,
+                            Capability.POINTER_CAPTURE));
+        }
+
         public static CapabilityMatrix hardwareVirtualizationBaseline() {
             return new CapabilityMatrix(
                     ExecutionStrategy.HARDWARE_VIRTUALIZATION,
@@ -88,6 +103,19 @@ public final class FullLinuxContract {
                             Capability.GRAPHICS_WAYLAND));
         }
 
+        public static CapabilityMatrix hardwareVirtualizationWithPeripherals() {
+            return new CapabilityMatrix(
+                    ExecutionStrategy.HARDWARE_VIRTUALIZATION,
+                    EnumSet.of(
+                            Capability.TERMINAL,
+                            Capability.BRIDGE_HANDSHAKE,
+                            Capability.HARDWARE_ACCELERATION,
+                            Capability.GRAPHICS_WAYLAND,
+                            Capability.AUDIO_OUTPUT,
+                            Capability.CLIPBOARD_SYNC,
+                            Capability.POINTER_CAPTURE));
+        }
+
         public ExecutionStrategy executionStrategy() {
             return executionStrategy;
         }
@@ -98,6 +126,18 @@ public final class FullLinuxContract {
 
         public boolean supports(Capability capability) {
             return capabilities.contains(Objects.requireNonNull(capability, "capability"));
+        }
+
+        public boolean supportsAudio() {
+            return supports(Capability.AUDIO_OUTPUT);
+        }
+
+        public boolean supportsClipboard() {
+            return supports(Capability.CLIPBOARD_SYNC);
+        }
+
+        public boolean supportsPointerCapture() {
+            return supports(Capability.POINTER_CAPTURE);
         }
 
         public String performanceBadge() {
@@ -113,6 +153,31 @@ public final class FullLinuxContract {
             return executionStrategy == ExecutionStrategy.SOFTWARE_VIRTUALIZATION
                     ? "Wayland 原生通道（共享内存）"
                     : "Wayland 原生通道（vsock 硬件加速）";
+        }
+
+        public String audioBadge() {
+            if (!supports(Capability.AUDIO_OUTPUT)) {
+                return "无音频输出";
+            }
+            return executionStrategy == ExecutionStrategy.SOFTWARE_VIRTUALIZATION
+                    ? "低延迟 PCM 音频（本地套接字 48kHz）"
+                    : "低延迟 PCM 音频（vsock 硬件加速 48kHz）";
+        }
+
+        public String clipboardBadge() {
+            if (!supports(Capability.CLIPBOARD_SYNC)) {
+                return "无剪贴板同步";
+            }
+            return executionStrategy == ExecutionStrategy.SOFTWARE_VIRTUALIZATION
+                    ? "剪贴板双向同步（本地通道）"
+                    : "剪贴板双向同步（vsock 硬件通道）";
+        }
+
+        public String pointerCaptureBadge() {
+            if (!supports(Capability.POINTER_CAPTURE)) {
+                return "无指针捕获";
+            }
+            return "相对指针捕获（无边界）";
         }
     }
 }

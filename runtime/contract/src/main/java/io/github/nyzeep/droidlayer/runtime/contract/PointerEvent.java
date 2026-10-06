@@ -13,11 +13,17 @@ public final class PointerEvent implements InputEvent {
     public static final int BUTTON_RIGHT = 273;  // Linux BTN_RIGHT (0x111)
     public static final int BUTTON_MIDDLE = 274; // Linux BTN_MIDDLE (0x112)
 
+    // Strategy-neutral physical mouse button masks (aligned with Android MotionEvent)
+    public static final int BUTTON_PRIMARY = 1;
+    public static final int BUTTON_SECONDARY = 2;
+    public static final int BUTTON_TERTIARY = 4;
+
     public enum Action {
         MOVE,
         BUTTON_DOWN,
         BUTTON_UP,
-        SCROLL
+        SCROLL,
+        RELATIVE_MOVE
     }
 
     private final Action action;
@@ -47,6 +53,14 @@ public final class PointerEvent implements InputEvent {
 
     public static PointerEvent motion(double x, double y, double deltaX, double deltaY, long timestampNs) {
         return new PointerEvent(Action.MOVE, x, y, deltaX, deltaY, BUTTON_NONE, timestampNs);
+    }
+
+    public static PointerEvent relativeMotion(double deltaX, double deltaY, int buttonMask, long timestampNs) {
+        return new PointerEvent(Action.RELATIVE_MOVE, 0.0, 0.0, deltaX, deltaY, buttonMask, timestampNs);
+    }
+
+    public static PointerEvent relativeMotion(double deltaX, double deltaY, long timestampNs) {
+        return relativeMotion(deltaX, deltaY, BUTTON_NONE, timestampNs);
     }
 
     public static PointerEvent buttonDown(double x, double y, int button, long timestampNs) {
@@ -88,6 +102,44 @@ public final class PointerEvent implements InputEvent {
 
     public int button() {
         return button;
+    }
+
+    public int buttonMask() {
+        return button;
+    }
+
+    public boolean hasButton(int buttonMask) {
+        return (button & buttonMask) != 0;
+    }
+
+    public boolean isRelativeMotion() {
+        return action == Action.RELATIVE_MOVE;
+    }
+
+    public static int toLinuxButton(int buttonMask) {
+        if ((buttonMask & BUTTON_PRIMARY) != 0) {
+            return BUTTON_LEFT;
+        }
+        if ((buttonMask & BUTTON_SECONDARY) != 0) {
+            return BUTTON_RIGHT;
+        }
+        if ((buttonMask & BUTTON_TERTIARY) != 0) {
+            return BUTTON_MIDDLE;
+        }
+        return BUTTON_NONE;
+    }
+
+    public static int fromLinuxButton(int linuxButton) {
+        switch (linuxButton) {
+            case BUTTON_LEFT:
+                return BUTTON_PRIMARY;
+            case BUTTON_RIGHT:
+                return BUTTON_SECONDARY;
+            case BUTTON_MIDDLE:
+                return BUTTON_TERTIARY;
+            default:
+                return 0;
+        }
     }
 
     @Override
