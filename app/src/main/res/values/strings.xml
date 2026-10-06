@@ -107,4 +107,72 @@
     <string name="key_ime">⌨</string>
     <string name="mouse_capture">捕获鼠标</string>
     <string name="mouse_release">释放鼠标 (Ctrl+Alt)</string>
+
+    <!-- Ticket 52: Material 3 Expressive Dashboard & UTM Instance Management -->
+    <string name="dashboard_title">Orchestella Studio</string>
+    <string name="dashboard_subtitle">无 Root Android Linux Runtime</string>
+    <string name="system_status_title">宿主硬件与虚拟化能力</string>
+    <string name="system_cpu_badge">%1$d 核心 CPU</string>
+    <string name="system_ram_badge">%1$d MB 可用 / %2$d MB</string>
+    <string name="system_storage_badge">%1$d GB 可用空间</string>
+    <string name="quick_create_title">快速创建 Linux 实例</string>
+    <string name="create_alpine_desc">极简轻量 · 50MB · 极客容器</string>
+    <string name="create_debian_desc">完整生态 · 预置工具 · 兼容性佳</string>
+
+    <string name="instance_card_id_prefix">ID: %1$s</string>
+    <string name="instance_hardware_specs">%1$d vCPU · %2$d MB · %3$d GB</string>
+    <string name="instance_hardware_specs_gpu">%1$d vCPU · %2$d MB · %3$d GB · GPU加速</string>
+    <string name="instance_state_running">● 运行中 · %1$s</string>
+    <string name="instance_state_stopped">■ 已停止</string>
+    <string name="instance_state_crashed">▲ 异常终止（点击查看诊断）</string>
+    <string name="instance_state_created">○ 已创建</string>
+    <string name="instance_state_provisioning">⏳ 初始化装配中…</string>
+
+    <!-- Context Actions BottomSheet -->
+    <string name="action_sheet_title">实例操作与配置</string>
+    <string name="action_launch_desktop">🖥️ 启动图形桌面</string>
+    <string name="action_launch_desktop_desc">连接 60 FPS Wayland 硬件渲染桌面环境</string>
+    <string name="action_open_terminal">💻 打开终端控制台</string>
+    <string name="action_open_terminal_desc">连接极客交互式 Shell 终端</string>
+    <string name="action_config_hardware">⚙️ 配置硬件参数</string>
+    <string name="action_config_hardware_desc">调整 vCPU 核心、RAM 配额、磁盘扩容与 GPU 开关</string>
+    <string name="action_config_hardware_disabled_hint">虚拟机运行中，需关机后调整</string>
+    <string name="action_export_backup">📦 导出备份归档</string>
+    <string name="action_export_backup_desc">通过 SAF 导出根磁盘镜像与元数据包</string>
+    <string name="action_credentials_desc">查看或修改本实例专属 root 密码</string>
+    <string name="action_delete_instance">🗑️ 彻底物理删除</string>
+    <string name="action_delete_instance_desc">物理清扫 .raw 磁盘镜像与所有关联元数据</string>
+    <string name="action_delete_running_forbidden">虚拟机运行中，禁止删除！请先关机。</string>
+
+    <!-- Delete Confirmation Alert -->
+    <string name="action_delete_confirm_title">彻底物理删除实例？</string>
+    <string name="action_delete_confirm_message">确定要彻底物理销毁实例「%1$s」吗？\n\n此操作将立即物理清扫私有目录中的 .raw 根磁盘镜像、元数据及所有关联缓存文件，彻底释放宿主存储空间。此操作不可逆！</string>
+    <string name="action_delete_confirm_btn">彻底删除</string>
+    <string name="action_delete_cancel_btn">取消</string>
+    <string name="action_delete_success">实例「%1$s」已彻底物理清除</string>
+    <string name="action_delete_failed">删除失败：%1$s</string>
+
+    <!-- VmHardwareConfig Dialog -->
+    <string name="hardware_dialog_title">⚙️ 虚拟机硬件参数配置</string>
+    <string name="hardware_vcpu_label">虚拟 CPU (vCPU)：%1$d 核</string>
+    <string name="hardware_vcpu_recommended">（宿主推荐：%1$d 核）</string>
+    <string name="hardware_ram_label">运行内存 (RAM)：%1$d MB</string>
+    <string name="hardware_ram_recommended">（宿主推荐：%1$d MB，保留 ≥2GB 宿主运存）</string>
+    <string name="hardware_ram_zone_green">🟢 安全推荐区间：宿主留足缓冲</string>
+    <string name="hardware_ram_zone_yellow">🟡 较高负载区间：可能引发后台清理</string>
+    <string name="hardware_ram_zone_red">🔴 危险过量区间：触犯 2GB 宿主保留线，禁止保存</string>
+    <string name="hardware_disk_label">磁盘容量 (Disk)：%1$d GB</string>
+    <string name="hardware_disk_notice">（稀疏磁盘无损扩容，不可缩容，上限 64 GB）</string>
+    <string name="hardware_gpu_label">3D GPU 硬件加速 (virtio-gpu / VirGL)</string>
+    <string name="hardware_save_btn">保存并生效</string>
+    <string name="hardware_cancel_btn">取消</string>
+    <string name="hardware_update_success">硬件规格配置已更新</string>
+    <string name="hardware_update_failed">保存硬件配置失败：%1$s</string>
+
+    <!-- Crash Diagnostic Dialog -->
+    <string name="crash_dialog_title">虚拟机异常终止诊断</string>
+    <string name="crash_dialog_exit_code">退出代码：%1$d</string>
+    <string name="crash_dialog_log_path">日志路径：%1$s</string>
+    <string name="crash_dialog_message">诊断信息：%1$s</string>
+    <string name="crash_dialog_copy">复制日志路径</string>
 </resources>
