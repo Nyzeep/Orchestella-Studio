@@ -1,7 +1,7 @@
 # 52: Material 3 Expressive 仪表盘重塑与实例 CRUD 交互闭环
 
 Type: implementation  
-Status: ready-for-agent  
+Status: ready-for-review  
 Labels: m4-spec, tracer-bullet, ui-ux, material3-dashboard  
 
 ## User Story
@@ -44,12 +44,12 @@ Labels: m4-spec, tracer-bullet, ui-ux, material3-dashboard
 
 ## Acceptance Criteria
 
-- [ ] 主界面布局符合 Material 3 Expressive 规范，沉浸式底栏与状态栏无遮挡、无布局畸变；
-- [ ] 实例卡片能准确渲染各生命周期状态（`RUNNING` 呼吸动效、`STOPPED` 静态灰度、`CRASHED` 告警）；
-- [ ] 长按卡片能平滑弹出 `InstanceActionBottomSheet`，包含启动桌面、终端、配置、备份、删除五大核心操作项；
-- [ ] 当实例处于 `RUNNING` 状态时，“硬件配置”与“彻底删除”按钮严格置灰，点击给出友好 Toast 提示；
-- [ ] 关机状态下确认删除实例后，后台线程成功执行物理清理并自动从 UI 列表中移除卡片，无需手动杀进程重启；
-- [ ] 纯 JVM 测试（`MainActivityUiStateTest` / `InstanceCardStateTest`）100% 绿灯通过。
+- [x] 主界面布局符合 Material 3 Expressive 规范，沉浸式底栏与状态栏无遮挡、无布局畸变；
+- [x] 实例卡片能准确渲染各生命周期状态（`RUNNING` 呼吸动效、`STOPPED` 静态灰度、`CRASHED` 告警）；
+- [x] 长按卡片能平滑弹出 `InstanceActionBottomSheet`，包含启动桌面、终端、配置、备份、删除五大核心操作项；
+- [x] 当实例处于 `RUNNING` 状态时，“硬件配置”与“彻底删除”按钮严格置灰，点击给出友好 Toast 提示；
+- [x] 关机状态下确认删除实例后，后台线程成功执行物理清理并自动从 UI 列表中移除卡片，无需手动杀进程重启；
+- [x] 纯 JVM 测试（`MainActivityUiStateTest` / `InstanceCardStateTest`）100% 绿灯通过。
 
 ## Device Verification Steps
 
