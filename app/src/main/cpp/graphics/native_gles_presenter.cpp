@@ -117,15 +117,38 @@ bool NativeGlesPresenter::initEgl() {
         return false;
     }
 
-    const EGLint contextAttribs[] = {
+    // EGL Robustness attributes (M4 Ticket 57 / ADR-0019)
+    #ifndef EGL_CONTEXT_OPENGL_ROBUST_ACCESS_EXT
+    #define EGL_CONTEXT_OPENGL_ROBUST_ACCESS_EXT 0x30BE
+    #endif
+    #ifndef EGL_CONTEXT_OPENGL_RESET_NOTIFICATION_STRATEGY_EXT
+    #define EGL_CONTEXT_OPENGL_RESET_NOTIFICATION_STRATEGY_EXT 0x31BD
+    #endif
+    #ifndef EGL_LOSE_CONTEXT_ON_RESET_EXT
+    #define EGL_LOSE_CONTEXT_ON_RESET_EXT 0x31BE
+    #endif
+
+    const EGLint robustAttribs[] = {
         EGL_CONTEXT_CLIENT_VERSION, 3,
+        EGL_CONTEXT_OPENGL_ROBUST_ACCESS_EXT, EGL_TRUE,
+        EGL_CONTEXT_OPENGL_RESET_NOTIFICATION_STRATEGY_EXT, EGL_LOSE_CONTEXT_ON_RESET_EXT,
         EGL_NONE
     };
 
-    eglContext_ = eglCreateContext(eglDisplay_, eglConfig_, EGL_NO_CONTEXT, contextAttribs);
+    eglContext_ = eglCreateContext(eglDisplay_, eglConfig_, EGL_NO_CONTEXT, robustAttribs);
     if (eglContext_ == EGL_NO_CONTEXT) {
-        LOGE("eglCreateContext failed: 0x%x", eglGetError());
-        return false;
+        LOGW("Robust EGL context creation failed (0x%x); falling back to standard EGL context", eglGetError());
+        const EGLint fallbackAttribs[] = {
+            EGL_CONTEXT_CLIENT_VERSION, 3,
+            EGL_NONE
+        };
+        eglContext_ = eglCreateContext(eglDisplay_, eglConfig_, EGL_NO_CONTEXT, fallbackAttribs);
+        if (eglContext_ == EGL_NO_CONTEXT) {
+            LOGE("Standard eglCreateContext also failed: 0x%x", eglGetError());
+            return false;
+        }
+    } else {
+        LOGI("NativeGlesPresenter: EGL context initialized with Robustness (ROBUST_ACCESS + LOSE_CONTEXT_ON_RESET)");
     }
 
     return true;

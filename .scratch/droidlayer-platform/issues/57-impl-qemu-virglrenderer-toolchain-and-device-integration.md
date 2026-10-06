@@ -1,7 +1,7 @@
 # 57: QEMU 运行时内嵌 VirGL 3D 加速与 Android EGL 上下文隔离
 
 Type: implementation  
-Status: ready-for-agent  
+Status: ready-for-review  
 Labels: m4-spec, tracer-bullet, qemu, virglrenderer, gpu-acceleration  
 
 ## User Story
@@ -44,11 +44,11 @@ Labels: m4-spec, tracer-bullet, qemu, virglrenderer, gpu-acceleration
 
 ## Acceptance Criteria
 
-- [ ] `libvirglrenderer.so` 编译完成，体积 $< 1.5\text{MB}$，通过 16KB 内存页对齐检查（`objdump -p`）；
-- [ ] 动态链接表（`readelf -d`）中仅依赖 Android Bionic 标准库（`libc.so`, `libm.so`, `libEGL.so`, `libGLESv3.so`），绝对无 `libepoxy` 或 `libdrm` 外部依赖；
-- [ ] `QemuLaunchSpec` 在开启 GPU 加速时准确生成 `-device virtio-gpu-gl-device`，关闭时安全回退为 `-device virtio-gpu-device`（2D 软渲染）；
-- [ ] 宿主 EGL 驱动配置了 Robustness 上下文属性，模拟注入死循环 Shader 时，宿主 App 保持存活；
-- [ ] 纯 JVM 测试（`QemuGpuLaunchSpecTest`）100% 绿灯。
+- [x] `libvirglrenderer.so` 编译完成，体积 $< 1.5\text{MB}$，通过 16KB 内存页对齐检查（`objdump -p`）；
+- [x] 动态链接表（`readelf -d`）中仅依赖 Android Bionic 标准库（`libc.so`, `libm.so`, `libEGL.so`, `libGLESv3.so`），绝对无 `libepoxy` 或 `libdrm` 外部依赖；
+- [x] `QemuLaunchSpec` 在开启 GPU 加速时准确生成 `-device virtio-gpu-gl-device`，关闭时安全回退为 `-device virtio-gpu-device`（2D 软渲染）；
+- [x] 宿主 EGL 驱动配置了 Robustness 上下文属性，模拟注入死循环 Shader 时，宿主 App 保持存活；
+- [x] 纯 JVM 测试（`QemuGpuLaunchSpecTest`）100% 绿灯。
 
 ## Device Verification Steps
 

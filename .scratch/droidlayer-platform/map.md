@@ -15,7 +15,7 @@ Effort: droidlayer-platform
   * M1 工单（issues/25–37）已全量验收合流完成（Status: completed）；
   * M2 移动 Wayland 图形桌面与深度输入工单（Ticket 38~43）：全量验收合流完成（Status: completed）。M2 里程碑全链路闭环！
   * M3 系统级深度互通、音频与外设工单（Ticket 44~48）：全量验收合流完成（Status: completed）。M3 里程碑全链路闭环！
-  * M4 全栈体验重塑、硬件定制与 GPU 加速工单（Ticket 49~58）：Ticket 49（硬件配置与删除契约）、Ticket 51（多源弹性断点下载引擎）、Ticket 50（硬件感知探测与稀疏扩容）与 Ticket 56（NDK GLES3 原生呈现与双 PBO）已全量验收合流（Status: completed）；Ticket 52（Material 3 仪表盘与实例 CRUD）与 Ticket 57（QEMU VirGL 3D 编译集成）全面进入就绪前沿。
+  * M4 全栈体验重塑、硬件定制与 GPU 加速工单（Ticket 49~58）：Ticket 49（硬件配置与删除契约）、Ticket 51（多源弹性断点下载引擎）、Ticket 50（硬件感知探测与稀疏扩容）与 Ticket 56（NDK GLES3 原生呈现与双 PBO）已全量验收合流（Status: completed）；Ticket 57（QEMU VirGL 3D 编译集成与 EGL 上下文隔离）已全量实施并通过真机实测（Status: ready-for-review）；Ticket 52（Material 3 仪表盘与实例 CRUD）进入就绪前沿。
 - **工程交接包**：`docs/agent-handoff/`（ENGINEERING_HANDOFF 为入口；执行/合同/并行/报告/变更门五份配套；PHASE3_PLATFORM_HANDOFF 为 M3 启动入口）。
 - **用户背景**：领域新手。所有 grilling 必须用通俗语言解释术语（kernel / rootfs / container / namespace / pKVM / AVF / vsock / 9p …），并按固定六段格式提问：①真正要决定的问题 ②为什么重要 ③推荐答案 ④优点 ⑤代价/风险 ⑥可逆性。
 - **工作节奏**：每次 grilling 只问一个问题，等用户回答，写 ADR/CONTEXT.md，再问下一个（`/grill-with-docs` 的节奏）。不把实现细节伪装成需求决策。
