@@ -1,7 +1,7 @@
 # 45: Android 宿主 AudioTrack 低延迟音频流播放器
 
 Type: implementation  
-Status: ready-for-agent  
+Status: ready-for-review  
 
 ## What to build
 
@@ -28,11 +28,11 @@ Status: ready-for-agent
 
 ## Acceptance criteria
 
-- [ ] `LowLatencyAudioPlayer` 能够稳定以 48000Hz 16-bit 双声道格式播放 PCM 音频流，端到端延迟 $\le 80\text{ms}$；
-- [ ] 自适应时钟漂移补偿算法有效运作，长时间播放（>30 分钟）无爆音、无杂音、无延迟单向膨胀；
-- [ ] 正确处理 Android 音频焦点变化，在来电或其他应用播放音乐时平滑避让并可正常恢复；
-- [ ] 播放器生命周期与 Activity 及虚拟机状态严格同步，实例停止时 100% 释放系统底层音频资源，无内存泄漏与常驻线程悬挂；
-- [ ] 宿主音频播放常驻内存增量 $\le 10\text{ MB}$，CPU 占用率 $\le 3\%$。
+- [x] `LowLatencyAudioPlayer` 能够稳定以 48000Hz 16-bit 双声道格式播放 PCM 音频流，端到端延迟 $\le 80\text{ms}$；
+- [x] 自适应时钟漂移补偿算法有效运作，长时间播放（>30 分钟）无爆音、无杂音、无延迟单向膨胀；
+- [x] 正确处理 Android 音频焦点变化，在来电或其他应用播放音乐时平滑避让并可正常恢复；
+- [x] 播放器生命周期与 Activity 及虚拟机状态严格同步，实例停止时 100% 释放系统底层音频资源，无内存泄漏与常驻线程悬挂；
+- [x] 宿主音频播放常驻内存增量 $\le 10\text{ MB}$，CPU 占用率 $\le 3\%$。
 
 ## Test strategy
 
