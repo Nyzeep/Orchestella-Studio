@@ -2,17 +2,38 @@ package io.github.nyzeep.droidlayer;
 
 import android.app.Activity;
 import android.content.Context;
+import android.hardware.input.InputManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.InputDevice;
+import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.TextView;
+import java.io.IOException;
 import io.github.nyzeep.droidlayer.ModifierKeyStateMachine.ModifierKey;
+import io.github.nyzeep.droidlayer.audio.AndroidAudioFocusAdapter;
+import io.github.nyzeep.droidlayer.audio.AndroidAudioTrackAdapter;
+import io.github.nyzeep.droidlayer.audio.AudioDriftCompensator;
+import io.github.nyzeep.droidlayer.audio.AudioFocusSeam;
+import io.github.nyzeep.droidlayer.audio.AudioSourceSeam;
+import io.github.nyzeep.droidlayer.audio.AudioTrackSeam;
+import io.github.nyzeep.droidlayer.audio.FallbackAudioSource;
+import io.github.nyzeep.droidlayer.audio.LocalSocketAudioSource;
+import io.github.nyzeep.droidlayer.audio.LowLatencyAudioPlayer;
+import io.github.nyzeep.droidlayer.audio.TcpAudioSource;
+import io.github.nyzeep.droidlayer.clipboard.ClipboardBridgeManager;
+import io.github.nyzeep.droidlayer.peripherals.FileDropTargetListener;
+import io.github.nyzeep.droidlayer.peripherals.PointerCaptureHandler;
+import io.github.nyzeep.droidlayer.runtime.contract.AudioStreamContract;
+import io.github.nyzeep.droidlayer.runtime.contract.BridgeClient;
+import io.github.nyzeep.droidlayer.runtime.contract.BridgeControl;
 import io.github.nyzeep.droidlayer.runtime.contract.DisplayControl;
 import io.github.nyzeep.droidlayer.runtime.contract.FullLinuxContract;
 import io.github.nyzeep.droidlayer.runtime.contract.WaylandChannel;
@@ -48,14 +69,21 @@ public class DesktopActivity extends Activity {
     private Button btnShift;
     private Button btnSuper;
 
+    private LowLatencyAudioPlayer audioPlayer;
+    private ClipboardBridgeManager clipboardManager;
+    private PointerCaptureHandler pointerCaptureHandler;
+    private FileDropTargetListener fileDropTargetListener;
+    private Button btnPointerCapture;
+    private InputManager.InputDeviceListener inputDeviceListener;
+
     private Runnable hudUpdater;
     private boolean isHudUpdating = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        enableImmersiveMode();
         setContentView(R.layout.activity_desktop);
+        enableImmersiveMode();
 
         instanceId = getIntent() != null ? getIntent().getStringExtra(DesktopLaunchIntent.EXTRA_INSTANCE_ID) : null;
         bridgeToken = getIntent() != null ? getIntent().getStringExtra(DesktopLaunchIntent.EXTRA_BRIDGE_TOKEN) : null;
@@ -63,6 +91,7 @@ public class DesktopActivity extends Activity {
 
         surfaceView = findViewById(R.id.wayland_surface_view);
         btnSwitchTerminal = findViewById(R.id.btn_switch_terminal);
+        btnPointerCapture = findViewById(R.id.btn_pointer_capture);
         View hudContainer = findViewById(R.id.desktop_hud_overlay);
         TextView hudTextView = findViewById(R.id.desktop_hud_text);
 
@@ -84,6 +113,102 @@ public class DesktopActivity extends Activity {
             });
         }
 
+        // 1. LowLatencyAudioPlayer assembly
+        try {
+            AudioSourceSeam audioSource = new FallbackAudioSource(
+                    new LocalSocketAudioSource(LocalSocketAudioSource.DEFAULT_SOCKET_NAME),
+                    new TcpAudioSource(TcpAudioSource.DEFAULT_HOST, TcpAudioSource.DEFAULT_PORT)
+            );
+            AudioTrackSeam audioTrack = new AndroidAudioTrackAdapter();
+            AudioDriftCompensator compensator = new AudioDriftCompensator();
+            AudioFocusSeam focusSeam = new AndroidAudioFocusAdapter(this);
+            audioPlayer = new LowLatencyAudioPlayer(audioSource, audioTrack, compensator, focusSeam);
+        } catch (Exception ignored) {
+            audioPlayer = null;
+        }
+
+        // 2. ClipboardBridgeManager assembly
+        BridgeClient bridgeClient = session != null ? session.bridgeClient() : null;
+        if (bridgeClient != null) {
+            clipboardManager = new ClipboardBridgeManager(this, bridgeClient);
+        } else {
+            clipboardManager = new ClipboardBridgeManager(
+                    new ClipboardBridgeManager.AndroidSystemClipboard(this),
+                    text -> {
+                        BridgeClient client = session != null ? session.bridgeClient() : null;
+                        if (client != null) {
+                            try {
+                                return client.clipboardPut(text).accepted();
+                            } catch (IOException ignored) {
+                                return false;
+                            }
+                        }
+                        return false;
+                    }
+            );
+        }
+        if (session != null) {
+            session.registerClipboardBridge(clipboardManager);
+            if (bridgeToken != null && session.markBridgeServing()) {
+                new Thread(() -> {
+                    try {
+                        AndroidNotificationAdapter notificationAdapter =
+                                new AndroidNotificationAdapter(DesktopActivity.this);
+                        AndroidUrlOpenerAdapter urlOpenerAdapter =
+                                new AndroidUrlOpenerAdapter(DesktopActivity.this);
+                        new BridgeConnector().serveStreams(
+                                session.controlOutput(), session.controlInput(), bridgeToken,
+                                0, 0, new BridgeConnector.Events() {
+                                    @Override public void onReady() {}
+                                    @Override public void onPong() {}
+                                    @Override public void onResize(int c, int r) {}
+                                },
+                                notificationAdapter, urlOpenerAdapter, clipboardManager);
+                    } catch (Exception ignored) {
+                    }
+                }, "desktop-bridge-serve").start();
+            }
+        }
+
+        // 3. PointerCaptureHandler assembly
+        pointerCaptureHandler = new PointerCaptureHandler(surfaceView, waylandChannel);
+        if (surfaceView != null) {
+            surfaceView.setPointerCaptureHandler(pointerCaptureHandler);
+            surfaceView.setOnClickListener(v -> {
+                if (pointerCaptureHandler != null && !pointerCaptureHandler.isCaptured()) {
+                    pointerCaptureHandler.requestCapture();
+                }
+            });
+        }
+        if (btnPointerCapture != null) {
+            btnPointerCapture.setOnClickListener(v -> {
+                if (pointerCaptureHandler == null) return;
+                if (pointerCaptureHandler.isCaptured()) {
+                    pointerCaptureHandler.releaseCapture();
+                } else {
+                    pointerCaptureHandler.requestCapture();
+                }
+            });
+        }
+        pointerCaptureHandler.addCaptureStateListener(isCaptured -> {
+            uiHandler.post(() -> {
+                if (btnPointerCapture != null) {
+                    btnPointerCapture.setText(isCaptured ? R.string.mouse_release : R.string.mouse_capture);
+                }
+            });
+        });
+        setupMouseDetection();
+
+        // 4. FileDropTargetListener assembly
+        fileDropTargetListener = new FileDropTargetListener(this, bridgeClient);
+        View desktopRoot = findViewById(R.id.desktop_root);
+        if (desktopRoot != null) {
+            fileDropTargetListener.attach(desktopRoot);
+        }
+        if (surfaceView != null) {
+            fileDropTargetListener.attach(surfaceView);
+        }
+
         hudUpdater = new Runnable() {
             @Override
             public void run() {
@@ -94,6 +219,7 @@ public class DesktopActivity extends Activity {
             }
         };
     }
+
 
     private void setupVirtualKeyBar() {
         btnCtrl = findViewById(R.id.btn_key_ctrl);
@@ -224,23 +350,28 @@ public class DesktopActivity extends Activity {
     }
 
     private void enableImmersiveMode() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            getWindow().setDecorFitsSystemWindows(false);
-            WindowInsetsController controller = getWindow().getInsetsController();
-            if (controller != null) {
-                controller.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
-                controller.setSystemBarsBehavior(
-                        WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                getWindow().setDecorFitsSystemWindows(false);
+                WindowInsetsController controller = getWindow().getInsetsController();
+                if (controller != null) {
+                    controller.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+                    controller.setSystemBarsBehavior(
+                            WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                }
+            } else {
+                View decor = getWindow().getDecorView();
+                if (decor != null) {
+                    decor.setSystemUiVisibility(
+                            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                                    | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                                    | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                                    | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                                    | View.SYSTEM_UI_FLAG_FULLSCREEN);
+                }
             }
-        } else {
-            View decor = getWindow().getDecorView();
-            decor.setSystemUiVisibility(
-                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                            | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                            | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                            | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                            | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                            | View.SYSTEM_UI_FLAG_FULLSCREEN);
+        } catch (Exception ignored) {
         }
     }
 
@@ -256,6 +387,47 @@ public class DesktopActivity extends Activity {
         uiHandler.removeCallbacks(hudUpdater);
     }
 
+    private void setupMouseDetection() {
+        InputManager inputManager = (InputManager) getSystemService(Context.INPUT_SERVICE);
+        if (inputManager != null) {
+            updateMouseAvailability(hasMouseConnected(inputManager));
+            inputDeviceListener = new InputManager.InputDeviceListener() {
+                @Override
+                public void onInputDeviceAdded(int deviceId) {
+                    updateMouseAvailability(hasMouseConnected(inputManager));
+                }
+
+                @Override
+                public void onInputDeviceRemoved(int deviceId) {
+                    updateMouseAvailability(hasMouseConnected(inputManager));
+                }
+
+                @Override
+                public void onInputDeviceChanged(int deviceId) {
+                    updateMouseAvailability(hasMouseConnected(inputManager));
+                }
+            };
+            inputManager.registerInputDeviceListener(inputDeviceListener, uiHandler);
+        }
+    }
+
+    private boolean hasMouseConnected(InputManager inputManager) {
+        int[] deviceIds = inputManager.getInputDeviceIds();
+        for (int id : deviceIds) {
+            InputDevice device = inputManager.getInputDevice(id);
+            if (device != null && (device.getSources() & InputDevice.SOURCE_MOUSE) == InputDevice.SOURCE_MOUSE) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void updateMouseAvailability(boolean hasMouse) {
+        if (btnPointerCapture != null) {
+            btnPointerCapture.setVisibility(View.VISIBLE);
+        }
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
@@ -264,11 +436,21 @@ public class DesktopActivity extends Activity {
             surfaceView.onResume();
         }
         startHudUpdates();
+        if (audioPlayer != null) {
+            if (audioPlayer.state() == AudioStreamContract.State.PAUSED) {
+                audioPlayer.resume();
+            } else if (audioPlayer.state() == AudioStreamContract.State.IDLE) {
+                audioPlayer.start();
+            }
+        }
     }
 
     @Override
     protected void onPause() {
         stopHudUpdates();
+        if (audioPlayer != null) {
+            audioPlayer.pause();
+        }
         if (surfaceView != null) {
             surfaceView.onPause();
         }
@@ -286,6 +468,25 @@ public class DesktopActivity extends Activity {
     @Override
     protected void onDestroy() {
         stopHudUpdates();
+        if (audioPlayer != null) {
+            audioPlayer.release();
+            audioPlayer = null;
+        }
+        if (clipboardManager != null) {
+            clipboardManager.detach();
+            clipboardManager = null;
+        }
+        if (pointerCaptureHandler != null) {
+            pointerCaptureHandler.detach();
+            pointerCaptureHandler = null;
+        }
+        if (inputDeviceListener != null) {
+            InputManager inputManager = (InputManager) getSystemService(Context.INPUT_SERVICE);
+            if (inputManager != null) {
+                inputManager.unregisterInputDeviceListener(inputDeviceListener);
+            }
+            inputDeviceListener = null;
+        }
         if (surfaceView != null) {
             surfaceView.onDestroy();
             surfaceView.unbind();
@@ -298,6 +499,29 @@ public class DesktopActivity extends Activity {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) {
             enableImmersiveMode();
+        }
+        if (clipboardManager != null) {
+            clipboardManager.onWindowFocusChanged(hasFocus);
+        }
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (pointerCaptureHandler != null && pointerCaptureHandler.isCaptured()) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                if (pointerCaptureHandler.onKeyDown(event.getKeyCode(), event)) {
+                    return true;
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event);
+    }
+
+    @Override
+    public void onPointerCaptureChanged(boolean hasCapture) {
+        super.onPointerCaptureChanged(hasCapture);
+        if (pointerCaptureHandler != null && !hasCapture && pointerCaptureHandler.isCaptured()) {
+            pointerCaptureHandler.releaseCapture();
         }
     }
 }

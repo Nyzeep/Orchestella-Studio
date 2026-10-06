@@ -1,6 +1,8 @@
 package io.github.nyzeep.droidlayer;
 
 import android.content.Context;
+import io.github.nyzeep.droidlayer.runtime.contract.BridgeClient;
+import io.github.nyzeep.droidlayer.runtime.contract.BridgeControl;
 import io.github.nyzeep.droidlayer.runtime.engineavf.AvfEngineException;
 import io.github.nyzeep.droidlayer.runtime.engineavf.AvfLaunchSpec;
 import io.github.nyzeep.droidlayer.runtime.engineavf.AvfVirtualMachineApi;
@@ -11,6 +13,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Paths;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Launches one instance through the AVF execution strategy. The verified
@@ -24,6 +27,9 @@ public final class AvfInstanceLauncher {
     /** Live AVF session exposing only the strategy-neutral surface. */
     public static final class AvfSession implements ExecutionSession {
         private final AvfVirtualMachineEngine.AvfVmSession session;
+        private BridgeClient bridgeClient;
+        private volatile BridgeControl.Clipboard clipboardBridge;
+        private final AtomicBoolean isBridgeServing = new AtomicBoolean(false);
 
         AvfSession(AvfVirtualMachineEngine.AvfVmSession session) {
             this.session = session;
@@ -62,6 +68,34 @@ public final class AvfInstanceLauncher {
                 // channel cleanup is best-effort at teardown
             }
         }
+
+        @Override
+        public synchronized BridgeClient bridgeClient() {
+            if (bridgeClient == null) {
+                try {
+                    bridgeClient = new BridgeClient(controlOutput(), controlInput());
+                } catch (IOException e) {
+                    return null;
+                }
+            }
+            return bridgeClient;
+        }
+
+        @Override
+        public void registerClipboardBridge(BridgeControl.Clipboard clipboard) {
+            this.clipboardBridge = clipboard;
+        }
+
+        @Override
+        public BridgeControl.Clipboard clipboardBridge() {
+            return this.clipboardBridge;
+        }
+
+        @Override
+        public boolean markBridgeServing() {
+            return isBridgeServing.compareAndSet(false, true);
+        }
+
 
         private AvfVirtualMachineApi.AvfVsockChannel terminalChannel() throws IOException {
             try {

@@ -105,4 +105,6 @@
     <string name="key_left">←</string>
     <string name="key_right">→</string>
     <string name="key_ime">⌨</string>
+    <string name="mouse_capture">捕获鼠标</string>
+    <string name="mouse_release">释放鼠标 (Ctrl+Alt)</string>
 </resources>
