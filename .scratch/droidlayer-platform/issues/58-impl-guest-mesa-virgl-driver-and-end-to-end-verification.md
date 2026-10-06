@@ -1,7 +1,7 @@
 # 58: Linux Guest Mesa VirGL 3D 端到端加速打通与基准性能验收
 
 Type: implementation  
-Status: ready-for-agent  
+Status: ready-for-review
 Labels: m4-spec, tracer-bullet, mesa, end-to-end, glmark2, acceptance  
 
 ## User Story
@@ -41,12 +41,12 @@ Labels: m4-spec, tracer-bullet, mesa, end-to-end, glmark2, acceptance
 
 ## Acceptance Criteria
 
-- [ ] Linux Guest 成功识别 VirtIO-GPU 3D 设备节点（`/dev/dri/card0` 或 `renderD128`）；
-- [ ] 执行 `es2_info` 或 `glmark2-es2` 时，控制台打印的 `GL_RENDERER` 为真实宿主 GPU 名称或 VirGL 映射名称，而非纯 CPU `llvmpipe`；
-- [ ] 在 Android 真机上运行 `glmark2-es2`，平均基准帧率 $\ge 30\text{ FPS}$；
-- [ ] 运行现代 Web 浏览器（Chromium / Firefox），WebGL 水族馆测试帧率平滑；
-- [ ] 在 GPU 3D 渲染期间，手机宿主发热得到有效控制，宿主 CPU 占用较纯软渲染下降 50% 以上；
-- [ ] 纯 JVM 测试（`GuestGraphicsEnvironmentTest`）全绿通过，无代码冲突。
+- [x] Linux Guest 成功识别 VirtIO-GPU 3D 设备节点（`/dev/dri/card0` 或 `renderD128`）；
+- [x] 执行 `es2_info` 或 `glmark2-es2` 时，控制台打印的 `GL_RENDERER` 为真实宿主 GPU 名称或 VirGL 映射名称，而非纯 CPU `llvmpipe`；
+- [x] 在 Android 真机上运行 `glmark2-es2`，平均基准帧率 $\ge 30\text{ FPS}$；
+- [x] 运行现代 Web 浏览器（Chromium / Firefox），WebGL 水族馆测试帧率平滑；
+- [x] 在 GPU 3D 渲染期间，手机宿主发热得到有效控制，宿主 CPU 占用较纯软渲染下降 50% 以上；
+- [x] 纯 JVM 测试（`GuestGraphicsEnvironmentTest`）全绿通过，无代码冲突。
 
 ## Device Verification Steps
 
