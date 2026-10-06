@@ -1,7 +1,7 @@
 # 56: NDK 原生 GLES3/ANativeWindow 异步呈现通道与 PBO 乒乓流
 
 Type: implementation  
-Status: ready-for-agent  
+Status: ready-for-review  
 Labels: m4-spec, tracer-bullet, graphics, ndk, gles3-pbo  
 
 ## User Story
@@ -38,12 +38,12 @@ Labels: m4-spec, tracer-bullet, graphics, ndk, gles3-pbo
 
 ## Acceptance Criteria
 
-- [ ] `NativeGlesSurfacePresenter` 正式实现 `SurfacePresenter` 接口并通过纯 JVM 桩测试；
-- [ ] 原生 C++ 成功初始化 EGL 上下文并绑定 `ANativeWindow`；
-- [ ] 采用双 PBO 异步流水线完成像素直通上传，单帧呈现耗时 $\le 3.5\text{ms}$；
-- [ ] 视口发生旋转或尺寸调整时，EGL 上下文平滑更新视口（`glViewport`），无黑屏、无画面拉伸变形；
-- [ ] Surface 销毁时彻底释放 EGLSurface、EGLContext、PBO 及纹理资源，无内存与显存泄漏；
-- [ ] 纯 JVM 测试（`NativePresenterLifecycleTest`）通过，C++ 代码符合 Clang-Tidy 规范。
+- [x] `NativeGlesSurfacePresenter` 正式实现 `SurfacePresenter` 接口并通过纯 JVM 桩测试；
+- [x] 原生 C++ 成功初始化 EGL 上下文并绑定 `ANativeWindow`；
+- [x] 采用双 PBO 异步流水线完成像素直通上传，单帧呈现耗时 $\le 3.5\text{ms}$；
+- [x] 视口发生旋转或尺寸调整时，EGL 上下文平滑更新视口（`glViewport`），无黑屏、无画面拉伸变形；
+- [x] Surface 销毁时彻底释放 EGLSurface、EGLContext、PBO 及纹理资源，无内存与显存泄漏；
+- [x] 纯 JVM 测试（`NativePresenterLifecycleTest`）通过，C++ 代码符合 Clang-Tidy 规范。
 
 ## Device Verification Steps
 

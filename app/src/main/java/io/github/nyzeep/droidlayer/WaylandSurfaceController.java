@@ -294,7 +294,7 @@ public final class WaylandSurfaceController {
 
     public WaylandSurfaceController(SurfaceHolder holder) {
         this.renderer = new DoubleBufferedRenderer(
-                new HardwareCanvasSurfacePresenter(holder),
+                new NativeGlesSurfacePresenter(holder),
                 new ChoreographerVsyncScheduler()
         );
         this.channelStateListener = (state, msg) -> this.connectionState = state;
@@ -351,17 +351,26 @@ public final class WaylandSurfaceController {
 
     public synchronized void onSurfaceCreated(SurfaceHolder holder) {
         this.surfaceState = SurfaceState.CREATED;
+        if (renderer.getPresenter() instanceof SurfaceHolder.Callback) {
+            ((SurfaceHolder.Callback) renderer.getPresenter()).surfaceCreated(holder);
+        }
         renderer.getPresenter().setReady(true);
     }
 
     public synchronized void onSurfaceChanged(SurfaceHolder holder, int format, int width, int height) {
         this.surfaceState = SurfaceState.CHANGED;
+        if (renderer.getPresenter() instanceof SurfaceHolder.Callback) {
+            ((SurfaceHolder.Callback) renderer.getPresenter()).surfaceChanged(holder, format, width, height);
+        }
         renderer.setViewportSize(width, height);
         resizeDebounce.requestResize(width, height);
     }
 
     public synchronized void onSurfaceDestroyed(SurfaceHolder holder) {
         this.surfaceState = SurfaceState.DESTROYED;
+        if (renderer.getPresenter() instanceof SurfaceHolder.Callback) {
+            ((SurfaceHolder.Callback) renderer.getPresenter()).surfaceDestroyed(holder);
+        }
         renderer.getPresenter().setReady(false);
         resizeDebounce.cancel();
         renderer.reset();
