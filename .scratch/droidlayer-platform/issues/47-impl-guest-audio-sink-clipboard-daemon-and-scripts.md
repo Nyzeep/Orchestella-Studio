@@ -1,7 +1,7 @@
 # 47: Guest Linux 音频虚拟汇聚端、剪贴板守护代理与自动化配置
 
 Type: implementation  
-Status: ready-for-review  
+Status: completed  
 
 ## What to build
 

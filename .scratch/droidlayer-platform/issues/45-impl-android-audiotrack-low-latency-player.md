@@ -1,7 +1,7 @@
 # 45: Android 宿主 AudioTrack 低延迟音频流播放器
 
 Type: implementation  
-Status: ready-for-review  
+Status: completed  
 
 ## What to build
 

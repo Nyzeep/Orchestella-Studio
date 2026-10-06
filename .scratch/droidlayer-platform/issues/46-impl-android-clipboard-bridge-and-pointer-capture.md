@@ -1,7 +1,7 @@
 # 46: Android 宿主剪贴板双向同步桥接器与指针捕获
 
 Type: implementation  
-Status: ready-for-review  
+Status: completed  
 
 ## What to build
 
