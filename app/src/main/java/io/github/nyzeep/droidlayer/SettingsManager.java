@@ -22,6 +22,7 @@ public final class SettingsManager {
     public static final String KEY_UPDATE_CHECK = "update_check_enabled";
     public static final String KEY_BATTERY_POLICY = "battery_policy";
     public static final String KEY_LAST_ACTIVE_INSTANCE_ID = "last_active_instance_id";
+    public static final String KEY_ONBOARDING_COMPLETED = "onboarding_completed";
 
     private final SharedPreferences preferences;
 
@@ -73,5 +74,14 @@ public final class SettingsManager {
 
     public void setLastActiveInstanceId(String instanceId) {
         preferences.edit().putString(KEY_LAST_ACTIVE_INSTANCE_ID, instanceId).apply();
+    }
+
+    /** Setup wizard completion status: false on fresh install (Ticket 53, US-28). */
+    public boolean isOnboardingCompleted() {
+        return preferences.getBoolean(KEY_ONBOARDING_COMPLETED, false);
+    }
+
+    public void setOnboardingCompleted(boolean completed) {
+        preferences.edit().putBoolean(KEY_ONBOARDING_COMPLETED, completed).apply();
     }
 }
