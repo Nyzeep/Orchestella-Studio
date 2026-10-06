@@ -17,10 +17,11 @@ public final class AvfVirtualMachineEngine {
 
     /**
      * Returns the strategy-neutral capability matrix reflecting AVF hardware
-     * virtualization with full Wayland graphics channel parity.
+     * virtualization with full Wayland graphics, audio output, clipboard sync,
+     * and pointer capture peripheral parity.
      */
     public static FullLinuxContract.CapabilityMatrix capabilityMatrix() {
-        return FullLinuxContract.CapabilityMatrix.hardwareVirtualizationWithGraphics();
+        return FullLinuxContract.CapabilityMatrix.hardwareVirtualizationWithPeripherals();
     }
 
     private final AvfVirtualMachineApi api;
@@ -62,6 +63,8 @@ public final class AvfVirtualMachineEngine {
         private AvfVirtualMachineApi.AvfVsockChannel terminalChannel;
         private AvfVirtualMachineApi.AvfVsockChannel shareChannel;
         private AvfVirtualMachineApi.AvfVsockChannel graphicsChannel;
+        private AvfVirtualMachineApi.AvfVsockChannel audioChannel;
+        private AvfAudioChannel avfAudioChannel;
 
         private AvfVmSession(
                 AvfVirtualMachineApi api,
@@ -181,6 +184,32 @@ public final class AvfVirtualMachineEngine {
             return new AvfWaylandChannel(this, instanceToken);
         }
 
+        /** Dedicated vsock audio port announced by this session's spec. */
+        public int vsockAudioPort() {
+            return spec.audioVsockPort();
+        }
+
+        /**
+         * The raw audio data-plane vsock channel (port 9104, retry-connected).
+         */
+        public synchronized AvfVirtualMachineApi.AvfVsockChannel audioVsockChannel()
+                throws AvfEngineException {
+            if (audioChannel == null) {
+                audioChannel = connectWithRetry(spec.audioVsockPort());
+            }
+            return audioChannel;
+        }
+
+        /**
+         * Returns the high-performance PCM audio stream channel over vsock (port 9104).
+         */
+        public synchronized AvfAudioChannel audioChannel() throws AvfEngineException {
+            if (avfAudioChannel == null) {
+                avfAudioChannel = new AvfAudioChannel(this);
+            }
+            return avfAudioChannel;
+        }
+
         /** Blocks until the guest exits; exit observation is best-effort. */
         public int waitFor() throws InterruptedException {
             return handle.waitFor();
@@ -233,6 +262,14 @@ public final class AvfVirtualMachineEngine {
             if (graphicsChannel != null) {
                 graphicsChannel.close();
                 graphicsChannel = null;
+            }
+            if (avfAudioChannel != null) {
+                avfAudioChannel.close();
+                avfAudioChannel = null;
+            }
+            if (audioChannel != null) {
+                audioChannel.close();
+                audioChannel = null;
             }
         }
     }
