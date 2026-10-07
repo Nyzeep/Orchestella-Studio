@@ -15,9 +15,11 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import androidx.appcompat.app.AlertDialog;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
+import io.github.nyzeep.droidlayer.runtime.instance.InstanceLifecycle;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
@@ -74,6 +76,14 @@ public class TerminalActivity extends Activity {
         btnSwitchDesktop.setText(R.string.terminal_open_desktop);
         btnSwitchDesktop.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
         btnSwitchDesktop.setOnClickListener(v -> {
+            if (isHeadlessInstance(instanceId)) {
+                new AlertDialog.Builder(TerminalActivity.this)
+                        .setTitle(R.string.desktop_headless_title)
+                        .setMessage(R.string.desktop_headless_message)
+                        .setPositiveButton(R.string.dialog_close, null)
+                        .show();
+                return;
+            }
             DualModeNavigation.navigateToDesktop(TerminalActivity.this, instanceId, bridgeToken);
         });
         topBar.addView(btnSwitchDesktop, new LinearLayout.LayoutParams(
@@ -237,6 +247,7 @@ public class TerminalActivity extends Activity {
             String history = liveSession.getTranscript();
             if (!history.isEmpty()) {
                 append(history);
+                terminalView.post(() -> terminalView.scrollToBottom());
             }
             liveSession.setOutputListener(chunk -> {
                 ui.post(() -> append(chunk));
@@ -351,6 +362,23 @@ public class TerminalActivity extends Activity {
         if (terminalView != null) {
             terminalView.appendOutput(text);
         }
+    }
+
+    private boolean isHeadlessInstance(String instanceId) {
+        if (instanceId == null) {
+            return false;
+        }
+        try {
+            InstanceLifecycle.Store store = new InstanceLifecycle.FileStore(
+                    getFilesDir().toPath().resolve("instances"));
+            InstanceLifecycle.Instance instance = store.load(instanceId);
+            if (instance != null) {
+                String distroId = instance.distro().id();
+                return "alpine".equalsIgnoreCase(distroId) || "debian".equalsIgnoreCase(distroId);
+            }
+        } catch (Exception ignored) {
+        }
+        return false;
     }
 
     private int dpToPx(int dp) {

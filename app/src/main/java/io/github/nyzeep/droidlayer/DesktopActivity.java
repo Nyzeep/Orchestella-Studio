@@ -16,6 +16,8 @@ import android.view.WindowInsetsController;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.TextView;
+import androidx.appcompat.app.AlertDialog;
+import io.github.nyzeep.droidlayer.runtime.instance.InstanceLifecycle;
 import java.io.IOException;
 import io.github.nyzeep.droidlayer.ModifierKeyStateMachine.ModifierKey;
 import io.github.nyzeep.droidlayer.audio.AndroidAudioFocusAdapter;
@@ -106,6 +108,18 @@ public class DesktopActivity extends Activity {
 
         virtualKeyBar = new VirtualKeyBar(waylandChannel);
         setupVirtualKeyBar();
+
+        if (isHeadlessInstance(instanceId)) {
+            new AlertDialog.Builder(this)
+                    .setTitle(R.string.desktop_headless_title)
+                    .setMessage(R.string.desktop_headless_message)
+                    .setPositiveButton(R.string.instance_open_terminal, (dialog, which) -> {
+                        DualModeNavigation.navigateToTerminal(DesktopActivity.this, instanceId, bridgeToken);
+                        finish();
+                    })
+                    .setNegativeButton(R.string.dialog_close, null)
+                    .show();
+        }
 
         if (btnSwitchTerminal != null) {
             btnSwitchTerminal.setOnClickListener(v -> {
@@ -523,5 +537,22 @@ public class DesktopActivity extends Activity {
         if (pointerCaptureHandler != null && !hasCapture && pointerCaptureHandler.isCaptured()) {
             pointerCaptureHandler.releaseCapture();
         }
+    }
+
+    private boolean isHeadlessInstance(String instanceId) {
+        if (instanceId == null) {
+            return false;
+        }
+        try {
+            InstanceLifecycle.Store store = new InstanceLifecycle.FileStore(
+                    getFilesDir().toPath().resolve("instances"));
+            InstanceLifecycle.Instance instance = store.load(instanceId);
+            if (instance != null) {
+                String distroId = instance.distro().id();
+                return "alpine".equalsIgnoreCase(distroId) || "debian".equalsIgnoreCase(distroId);
+            }
+        } catch (Exception ignored) {
+        }
+        return false;
     }
 }
