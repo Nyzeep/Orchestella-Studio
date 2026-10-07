@@ -39,8 +39,11 @@ import io.github.nyzeep.droidlayer.runtime.distro.OfficialDebianCatalog
 import io.github.nyzeep.droidlayer.runtime.engineqemu.RuntimeArtifactManifest
 import io.github.nyzeep.droidlayer.runtime.instance.InstanceLifecycle
 import io.github.nyzeep.droidlayer.runtime.instance.SparseDiskResizer
+import io.github.nyzeep.droidlayer.runtime.network.download.ChecksumMismatchException
+import io.github.nyzeep.droidlayer.runtime.network.download.DownloadProgressCallback
+import io.github.nyzeep.droidlayer.runtime.network.download.ResilientDownloadEngine
 import java.io.IOException
-import java.net.HttpURLConnection
+import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Paths
 import java.time.Clock
@@ -691,45 +694,69 @@ class MainActivity : AppCompatActivity() {
         createProgress.isIndeterminate = true
         createStatus.text = getString(R.string.create_downloading_distro, distroDisplayName)
 
-        val cachedFile = filesDir.toPath().resolve("distro-inputs").resolve(manifest.rootfsFileName())
-        val hasLocalCache = Files.isRegularFile(cachedFile) && Files.size(cachedFile) == manifest.sizeBytes()
+        val cachedFile = filesDir.toPath()
+            .resolve("distro-inputs")
+            .resolve(manifest.rootfsFileName())
 
         operations.execute {
             val result = try {
-                if (hasLocalCache) {
-                    Files.newInputStream(cachedFile).use { input ->
-                        DistroInstanceCreator(
-                            manifest,
-                            InstanceLifecycle.Controller(instanceStore, Clock.systemUTC()),
-                            filesDir.toPath(),
-                        ).create(input, manifest.sizeBytes())
-                    }
-                    getString(R.string.create_success)
-                } else {
-                    val connection = manifest.source().toURL().openConnection() as HttpURLConnection
-                    connection.instanceFollowRedirects = false
-                    connection.connectTimeout = 15_000
-                    connection.readTimeout = 60_000
-                    try {
-                        if (connection.responseCode != HttpURLConnection.HTTP_OK ||
-                            connection.url.toURI() != manifest.source() ||
-                            connection.contentLengthLong != manifest.sizeBytes()
-                        ) throw IOException("unexpected " + distroDisplayName + " source response")
-                        connection.inputStream.use { input ->
-                            DistroInstanceCreator(
-                                manifest,
-                                InstanceLifecycle.Controller(instanceStore, Clock.systemUTC()),
-                                filesDir.toPath(),
-                            ).create(input, connection.contentLengthLong)
+                ResilientDownloadEngine().download(
+                    DistroMirrorCatalog.mirrorsFor(manifest),
+                    cachedFile,
+                    manifest.sha256(),
+                    object : DownloadProgressCallback {
+                        override fun onProgress(
+                            downloadedBytes: Long,
+                            totalBytes: Long,
+                            speedMBps: Double,
+                            etaSeconds: Long,
+                            currentMirror: String
+                        ) {
+                            runOnUiThread {
+                                renderCreateDownloadProgress(
+                                    downloadedBytes,
+                                    totalBytes,
+                                    speedMBps,
+                                    etaSeconds,
+                                    currentMirror,
+                                )
+                            }
                         }
-                        getString(R.string.create_success)
-                    } finally {
-                        connection.disconnect()
-                    }
+
+                        override fun onRetry(currentMirror: String, attempt: Int, backoffMillis: Long, error: Throwable) {
+                            runOnUiThread {
+                                createStatus.text =
+                                    getString(R.string.create_download_retry_info, mirrorHost(currentMirror), attempt)
+                            }
+                        }
+
+                        override fun onMirrorFailover(failedMirror: String, nextMirror: String?, error: Throwable) {
+                            runOnUiThread {
+                                val nextHost = nextMirror?.let(::mirrorHost) ?: "--"
+                                createStatus.text = getString(R.string.create_download_failover_info, nextHost)
+                            }
+                        }
+                    })
+
+                runOnUiThread {
+                    createProgress.isIndeterminate = true
+                    createStatus.setText(R.string.create_provisioning_info)
                 }
+
+                Files.newInputStream(cachedFile).use { input ->
+                    DistroInstanceCreator(
+                        manifest,
+                        InstanceLifecycle.Controller(instanceStore, Clock.systemUTC()),
+                        filesDir.toPath(),
+                    ).create(input, manifest.sizeBytes())
+                }
+                getString(R.string.create_success)
             } catch (rejected: DistroManifest.InputRejectedException) {
                 android.util.Log.e("DroidLayer", "createDistro rejected", rejected)
                 getString(R.string.create_invalid_input_distro, distroDisplayName, rejected.reason())
+            } catch (checksum: ChecksumMismatchException) {
+                android.util.Log.e("DroidLayer", "createDistro checksum mismatch", checksum)
+                getString(R.string.create_checksum_failed_distro, distroDisplayName)
             } catch (io: IOException) {
                 android.util.Log.e("DroidLayer", "createDistro IO error", io)
                 getString(R.string.create_network_failed_distro, distroDisplayName)
@@ -745,6 +772,39 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
+    private fun renderCreateDownloadProgress(
+        downloadedBytes: Long,
+        totalBytes: Long,
+        speedMBps: Double,
+        etaSeconds: Long,
+        currentMirror: String,
+    ) {
+        if (totalBytes > 0) {
+            createProgress.isIndeterminate = false
+            createProgress.progress = ((downloadedBytes * 100) / totalBytes).toInt()
+        } else {
+            createProgress.isIndeterminate = true
+        }
+        val downloadedStr = String.format("%.1f MB", downloadedBytes / (1024.0 * 1024.0))
+        val totalStr = if (totalBytes > 0) String.format("%.1f MB", totalBytes / (1024.0 * 1024.0)) else "--"
+        val etaStr = if (etaSeconds >= 0) "${etaSeconds}s" else "--"
+        createStatus.text = getString(
+            R.string.create_download_progress_info,
+            speedMBps,
+            downloadedStr,
+            totalStr,
+            etaStr,
+            mirrorHost(currentMirror),
+        )
+    }
+
+    private fun mirrorHost(mirrorUrl: String): String =
+        try {
+            URI(mirrorUrl).host ?: mirrorUrl
+        } catch (_: Exception) {
+            mirrorUrl
+        }
 
     private fun deviceProfile(): DeviceCapabilityEvaluator.DeviceProfile {
         val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
