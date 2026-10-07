@@ -18,6 +18,11 @@
     <string name="create_network_failed_distro">%1$s 下载失败</string>
     <string name="create_invalid_input">Alpine rootfs 校验失败（%1$s）</string>
     <string name="create_invalid_input_distro">%1$s rootfs 校验失败（%2$s）</string>
+    <string name="create_download_progress_info">%1$.1f MB/s · 已下载 %2$s / %3$s · 预计剩余 %4$s · 镜像 %5$s</string>
+    <string name="create_download_retry_info">下载中断，正在从节点 %1$s 进行第 %2$d 次重试…</string>
+    <string name="create_download_failover_info">节点故障，已自动故障转移至：%1$s</string>
+    <string name="create_provisioning_info">正在校验 SHA-256 完整性并装配根文件系统…</string>
+    <string name="create_checksum_failed_distro">%1$s rootfs SHA-256 校验失败，已丢弃损坏文件</string>
     <string name="instances_title">实例</string>
     <string name="instances_empty">尚无实例</string>
     <string name="instance_row">Alpine %1$s · %2$s</string>
