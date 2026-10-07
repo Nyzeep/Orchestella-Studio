@@ -120,8 +120,11 @@ public final class LowLatencyAudioPlayer implements AudioStreamContract {
                 return;
             }
 
-            startWorkerThread();
+            // RUNNING must be published before the worker exists: the worker can hit a
+            // null/failing stream immediately and call transitionState(ERROR), and an
+            // unconditional RUNNING write after startWorkerThread() would overwrite it.
             transitionState(State.RUNNING);
+            startWorkerThread();
         }
     }
 
@@ -323,15 +326,27 @@ public final class LowLatencyAudioPlayer implements AudioStreamContract {
     }
 
     private void transitionState(State newState) {
-        State oldState = this.currentState;
-        if (oldState == newState) {
-            return;
-        }
-        this.currentState = newState;
-        for (StateListener listener : stateListeners) {
-            try {
-                listener.onStateChanged(oldState, newState);
-            } catch (Exception ignored) {
+        synchronized (stateLock) {
+            State oldState = this.currentState;
+            if (oldState == newState) {
+                return;
+            }
+            // Terminal states (ERROR/STOPPED) are final: late worker transitions must
+            // never resurrect them into an active state. Only a fresh start() may
+            // leave a terminal state, via STARTING.
+            boolean terminal = oldState == State.ERROR || oldState == State.STOPPED;
+            if (terminal && (newState == State.RUNNING || newState == State.PAUSED)) {
+                return;
+            }
+            if (oldState == State.STOPPED && newState == State.ERROR) {
+                return;
+            }
+            this.currentState = newState;
+            for (StateListener listener : stateListeners) {
+                try {
+                    listener.onStateChanged(oldState, newState);
+                } catch (Exception ignored) {
+                }
             }
         }
     }
