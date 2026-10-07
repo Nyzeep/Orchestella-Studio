@@ -84,6 +84,12 @@ android {
     }
 
     buildTypes {
+        debug {
+            val releaseSigning = signingConfigs.getByName("release")
+            if (releaseSigning.storeFile != null && releaseSigning.storeFile!!.exists()) {
+                signingConfig = releaseSigning
+            }
+        }
         release {
             isMinifyEnabled = false
             val releaseSigning = signingConfigs.getByName("release")
@@ -105,6 +111,7 @@ android {
     packaging {
         jniLibs {
             useLegacyPackaging = true
+            keepDebugSymbols += "**/libdroidlayer_qemu.so"
         }
     }
 

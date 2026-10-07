@@ -322,27 +322,17 @@ class SetupWizardActivity : AppCompatActivity() {
         btnStep3Prev.visibility = View.GONE
         btnWizardInit.visibility = View.GONE
         layoutDownloadProgress.visibility = View.VISIBLE
+        progressDownloadBar.visibility = View.VISIBLE
         progressDownloadBar.isIndeterminate = true
         txtDownloadStatus.text = getString(R.string.wizard_download_status_fetching, wizardModel.selectedDistro.displayName)
+        txtDownloadStatus.setTextColor(getColor(R.color.status_provisioning))
         txtDownloadSpeedEta.text = "正在连接就近镜像节点…"
         txtDownloadMirror.text = "镜像节点：--"
 
         val targetDir = filesDir.toPath().resolve("distro-inputs")
         val targetPath = targetDir.resolve(manifest.rootfsFileName())
 
-        val mirrors = if (manifest.id() == "alpine") {
-            MirrorPriorityList.of(
-                manifest.source().toString(),
-                "https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.24/releases/aarch64/alpine-minirootfs-3.24.1-aarch64.tar.gz",
-                "https://mirrors.ustc.edu.cn/alpine/v3.24/releases/aarch64/alpine-minirootfs-3.24.1-aarch64.tar.gz"
-            )
-        } else {
-            MirrorPriorityList.of(
-                manifest.source().toString(),
-                "https://images.linuxcontainers.org/images/debian/trixie/arm64/default/20260930_05:24/rootfs.tar.xz",
-                "https://mirrors.ustc.edu.cn/lxc-images/images/debian/trixie/arm64/default/20260930_05:24/rootfs.tar.xz"
-            )
-        }
+        val mirrors = DistroMirrorCatalog.mirrorsFor(manifest)
 
         backgroundExecutor.execute {
             try {
@@ -424,7 +414,11 @@ class SetupWizardActivity : AppCompatActivity() {
                     wizardModel.setDownloading(false)
                     btnStep3Prev.visibility = View.VISIBLE
                     btnWizardInit.visibility = View.VISIBLE
-                    layoutDownloadProgress.visibility = View.GONE
+                    btnWizardInit.text = "重试初始化 ${wizardModel.selectedDistro.displayName}"
+                    progressDownloadBar.visibility = View.GONE
+                    txtDownloadStatus.text = "初始化失败：${e.message ?: e.javaClass.simpleName}"
+                    txtDownloadStatus.setTextColor(getColor(R.color.status_crashed))
+                    txtDownloadSpeedEta.text = "请检查网络连接后点击重试"
                     Toast.makeText(
                         this,
                         getString(R.string.wizard_init_failed, e.message ?: e.javaClass.simpleName),
