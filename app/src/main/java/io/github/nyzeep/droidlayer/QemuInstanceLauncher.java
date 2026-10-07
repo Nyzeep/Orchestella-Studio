@@ -205,8 +205,39 @@ public final class QemuInstanceLauncher {
                 terminalSocket,
                 config);
 
-        QemuProcessLauncher launcher = new QemuProcessLauncher();
-        QemuProcessLauncher.Launched launched = launcher.launch(spec);
+        String[] sanitizedSpec = sanitizeSpecForTargetBinary(spec);
+        Log.i("DroidLayerQemu", "Launching QEMU process with sanitized arguments");
+
+        QemuProcessLauncher.ProcessFactory factory = currentSpec -> {
+            Process process = new ProcessBuilder(currentSpec).redirectErrorStream(true).start();
+            Thread logger = new Thread(() -> {
+                try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                        new java.io.InputStreamReader(process.getInputStream()))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        Log.d("DroidLayerQemu", line);
+                    }
+                } catch (IOException ignored) {
+                }
+            }, "qemu-log-" + parameters.instanceId);
+            logger.setDaemon(true);
+            logger.start();
+
+            return new QemuProcessLauncher.ProcessHandle() {
+                @Override
+                public int waitFor() throws InterruptedException {
+                    return process.waitFor();
+                }
+
+                @Override
+                public void destroy() {
+                    process.destroy();
+                }
+            };
+        };
+
+        QemuProcessLauncher launcher = new QemuProcessLauncher(factory);
+        QemuProcessLauncher.Launched launched = launcher.launch(sanitizedSpec);
         QemuProcessLauncher.ProcessHandle handle = launched.handle();
         Thread watcher = new Thread(() -> {
             try {
@@ -222,5 +253,37 @@ public final class QemuInstanceLauncher {
         Session session = new Session(controlSocket, terminalSocket, handle);
         ExecutionSessionRegistry.register(parameters.instanceId, session);
         return session;
+    }
+
+    /**
+     * Adapts abstract hypervisor arguments to the physical arm64 QEMU binary packaged in APK:
+     * 1. virtio-gpu-device is used for VirGL acceleration in this binary build.
+     * 2. SLIRP (user netdev) is omitted if unsupported to prevent immediate exit.
+     */
+    static String[] sanitizeSpecForTargetBinary(String[] spec) {
+        if (spec == null) {
+            return new String[0];
+        }
+        java.util.List<String> list = new java.util.ArrayList<>();
+        for (int i = 0; i < spec.length; i++) {
+            String arg = spec[i];
+            if ("-netdev".equals(arg)) {
+                // Skip -netdev and its parameter because user/slirp is not compiled into packaged binary
+                i++;
+                continue;
+            }
+            if ("-device".equals(arg) && i + 1 < spec.length && spec[i + 1].startsWith("virtio-net-")) {
+                // Skip -device virtio-net-* when netdev is omitted
+                i++;
+                continue;
+            }
+            if ("virtio-gpu-gl-device".equals(arg)) {
+                // In packaged arm64 binary, virgl acceleration is bound to virtio-gpu-device
+                list.add("virtio-gpu-device");
+                continue;
+            }
+            list.add(arg);
+        }
+        return list.toArray(new String[0]);
     }
 }
