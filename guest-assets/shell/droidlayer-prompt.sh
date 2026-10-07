@@ -101,9 +101,15 @@ __droidlayer_build_prompt() {
     fi
 
     _arrow_color="$_c_green"
-    if [ "${UID:-1}" -eq 0 ] 2>/dev/null || [ "${USER:-}" = "root" ]; then
-        _arrow_color="$_c_magenta"
-    elif command -v id >/dev/null 2>&1 && [ "$(id -u 2>/dev/null || echo 1)" -eq 0 ]; then
+    _is_root=0
+    if [ "${USER:-}" = "root" ]; then
+        _is_root=1
+    elif command -v id >/dev/null 2>&1; then
+        if [ "$(id -u 2>/dev/null || echo 1)" -eq 0 ]; then
+            _is_root=1
+        fi
+    fi
+    if [ "$_is_root" -eq 1 ]; then
         _arrow_color="$_c_magenta"
     fi
 
@@ -120,6 +126,10 @@ if [ -n "${BASH_VERSION:-}" ]; then
     PROMPT_COMMAND=__droidlayer_prompt_cmd
     PS1="$(__droidlayer_build_prompt 0 bash)"
 else
+    # PS1 intentionally holds an unevaluated command substitution, re-evaluated
+    # on every prompt draw (POSIX sh has no PROMPT_COMMAND).
+    # shellcheck disable=SC2089
     PS1='$(__droidlayer_build_prompt "$?" sh)'
 fi
+# shellcheck disable=SC2090
 export PS1
