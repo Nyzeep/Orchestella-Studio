@@ -53,14 +53,14 @@ public final class SetupWizardDistroSelectionTest {
         assertEquals("13", option.getVersion());
         assertTrue(option.getTag().contains("完整生态"));
         assertTrue(option.getDescription().contains("apt"));
-        assertEquals("rootfs.tar.xz", option.getRootfsFileName());
+        assertEquals("debian-13-rootfs.tar.xz", option.getRootfsFileName());
 
         DistroManifest manifest = option.manifest();
         assertNotNull(manifest);
         assertEquals("debian", manifest.id());
         assertEquals("13", manifest.version());
         assertEquals("aarch64", manifest.architecture());
-        assertEquals(90_371_792L, manifest.sizeBytes());
+        assertEquals(90_332_396L, manifest.sizeBytes());
     }
 
     @Test

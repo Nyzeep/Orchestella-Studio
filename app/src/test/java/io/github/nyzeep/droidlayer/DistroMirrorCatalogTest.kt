@@ -24,9 +24,9 @@ class DistroMirrorCatalogTest {
     fun debianMirrorsLeadWithPinnedSourceAndAddUpstreamAndUstc() {
         val manifest = OfficialDebianCatalog.debian()
         val expected = listOf(
-            "https://mirrors.tuna.tsinghua.edu.cn/lxc-images/images/debian/trixie/arm64/default/20260930_05:24/rootfs.tar.xz",
-            "https://images.linuxcontainers.org/images/debian/trixie/arm64/default/20260930_05:24/rootfs.tar.xz",
-            "https://mirrors.ustc.edu.cn/lxc-images/images/debian/trixie/arm64/default/20260930_05:24/rootfs.tar.xz",
+            "https://github.com/Nyzeep/Orchestella-Studio/releases/download/v0.4.0/debian-13-rootfs.tar.xz",
+            "https://ghproxy.net/https://github.com/Nyzeep/Orchestella-Studio/releases/download/v0.4.0/debian-13-rootfs.tar.xz",
+            "https://mirror.ghproxy.com/https://github.com/Nyzeep/Orchestella-Studio/releases/download/v0.4.0/debian-13-rootfs.tar.xz",
         )
 
         assertEquals(expected, DistroMirrorCatalog.mirrorsFor(manifest))

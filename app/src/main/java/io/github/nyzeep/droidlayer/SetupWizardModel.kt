@@ -50,7 +50,7 @@ class SetupWizardModel(
             tag = "🐧 完整生态 · 约 90MB · 桌面工作流",
             description = "生态丰富、开箱即用、预置全套 apt 包管理、适合完整桌面开发与编译工作流",
             approxDownloadSize = "~90 MB",
-            rootfsFileName = "rootfs.tar.xz"
+            rootfsFileName = "debian-13-rootfs.tar.xz"
         );
 
         fun manifest(): DistroManifest {

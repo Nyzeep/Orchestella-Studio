@@ -15,6 +15,9 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
@@ -123,7 +126,7 @@ public class TerminalActivity extends Activity {
         btnSend.setOnClickListener(v -> {
             String line = input.getText().toString();
             input.setText("");
-            send(line + "\n");
+            send(line);
         });
         inputBar.addView(btnSend, new LinearLayout.LayoutParams(
                 dpToPx(42), dpToPx(36)));
@@ -206,33 +209,39 @@ public class TerminalActivity extends Activity {
         input.setOnEditorActionListener((v, actionId, event) -> {
             String line = input.getText().toString();
             input.setText("");
-            send(line + "\n");
+            send(line);
             return true;
         });
 
-        // Viewport adjustment when soft keyboard opens/closes
-        rootLayout.addOnLayoutChangeListener((v, left, top, right, bottom,
-                                              oldLeft, oldTop, oldRight, oldBottom) -> {
-            if (bottom < oldBottom) {
-                terminalView.scrollToBottom();
+        // WindowInsets handling for Android 15 Edge-to-Edge & Soft Keyboard (IME)
+        ViewCompat.setOnApplyWindowInsetsListener(rootLayout, (v, insets) -> {
+            Insets imeInsets = insets.getInsets(WindowInsetsCompat.Type.ime());
+            Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
+            int bottomInset = Math.max(imeInsets.bottom, systemBars.bottom);
+            v.setPadding(systemBars.left, systemBars.top, systemBars.right, bottomInset);
+            if (imeInsets.bottom > 0) {
+                terminalView.post(() -> terminalView.scrollToBottom());
             }
+            return insets;
         });
 
         append("Orchestella Studio terminal (" + instanceId + ")\n");
-        if (session == null) {
+        ExecutionSessionRegistry.LiveSession liveSession = ExecutionSessionRegistry.getLiveSession(instanceId);
+        if (session == null && liveSession == null) {
             append("[no live session for instance " + instanceId + "]\n");
             return;
         }
 
-        new Thread(() -> {
-            try {
-                terminalOut = session.terminalInput();
-                append("[terminal connected]\n");
-                pumpTerminal(session.terminalOutput());
-            } catch (Exception e) {
-                append("[terminal error: " + e + "]\n");
+        if (liveSession != null) {
+            append("[terminal connected]\n");
+            String history = liveSession.getTranscript();
+            if (!history.isEmpty()) {
+                append(history);
             }
-        }, "terminal-io").start();
+            liveSession.setOutputListener(chunk -> {
+                ui.post(() -> append(chunk));
+            });
+        }
 
         terminalView.post(() -> {
             float charWidth = terminalView.getTranscriptView().getPaint().measureText("M");
@@ -307,47 +316,33 @@ public class TerminalActivity extends Activity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        if (!isFinishing()) {
-            return;
-        }
         String instanceId = getIntent() != null ? getIntent().getStringExtra("instanceId") : null;
-        ExecutionSession bound = session != null ? session : ExecutionSessionRegistry.get(instanceId);
-        if (bound != null) {
-            ExecutionSessionRegistry.unregister(instanceId);
-            bound.close();
-        }
-    }
-
-    private void pumpTerminal(InputStream in) {
-        try (InputStream stream = in) {
-            byte[] buffer = new byte[4096];
-            int count;
-            while ((count = stream.read(buffer)) >= 0) {
-                final String chunk = new String(buffer, 0, count, StandardCharsets.UTF_8);
-                append(chunk);
-            }
-        } catch (Exception e) {
-            append("[terminal stream ended]\n");
+        ExecutionSessionRegistry.LiveSession liveSession = ExecutionSessionRegistry.getLiveSession(instanceId);
+        if (liveSession != null) {
+            liveSession.setOutputListener(null);
         }
     }
 
     private void send(String line) {
         if (line != null) {
-            sendRaw(line.getBytes(StandardCharsets.UTF_8));
+            String toSend = line.endsWith("\n")
+                    ? line.substring(0, line.length() - 1) + "\r"
+                    : line + "\r";
+            sendRaw(toSend.getBytes(StandardCharsets.UTF_8));
         }
     }
 
     private void sendRaw(byte[] bytes) {
-        OutputStream out = terminalOut;
-        if (out == null || bytes == null || bytes.length == 0) {
+        String instanceId = getIntent() != null ? getIntent().getStringExtra("instanceId") : null;
+        ExecutionSessionRegistry.LiveSession liveSession = ExecutionSessionRegistry.getLiveSession(instanceId);
+        if (liveSession == null || bytes == null || bytes.length == 0) {
             return;
         }
         new Thread(() -> {
             try {
-                out.write(bytes);
-                out.flush();
+                liveSession.sendBytes(bytes);
             } catch (Exception e) {
-                append("[send failed]\n");
+                append("[send failed: " + e.getMessage() + "]\n");
             }
         }, "terminal-send").start();
     }
