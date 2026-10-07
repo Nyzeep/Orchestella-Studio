@@ -19,3 +19,6 @@ skills-lock.json
 /app/src/main/jniLibs/
 /app/src/main/assets/
 /app/src/main/resources/
+temp/
+/doc/
+探讨文档*.md

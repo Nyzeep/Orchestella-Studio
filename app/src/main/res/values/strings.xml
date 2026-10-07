@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Orchestella Studio</string>
+    <string name="app_name">Orchestella</string>
     <string name="runtime_status_loading">正在检查 Full Linux Runtime…</string>
     <string name="runtime_class_full_linux">完整 Linux Runtime</string>
     <string name="support_floor_passed">支持地板：已满足</string>
