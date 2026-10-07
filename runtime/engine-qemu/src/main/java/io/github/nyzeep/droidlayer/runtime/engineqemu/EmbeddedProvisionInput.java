@@ -33,38 +33,47 @@ public final class EmbeddedProvisionInput {
     public static byte[] build(
             byte[] rootfsTarball, String rootfsFileName, String bridgeToken, String guestPassword) {
         Objects.requireNonNull(rootfsTarball, "rootfsTarball");
-        Objects.requireNonNull(rootfsFileName, "rootfsFileName");
-        validateToken(bridgeToken);
-        if (rootfsTarball.length == 0 || rootfsFileName.contains("/")) {
-            throw new IllegalArgumentException("invalid rootfs input");
-        }
-
-        ByteArrayOutputStream raw = new ByteArrayOutputStream();
-        Counting out = new Counting(raw);
-        try {
-            appendDirectory(out, "opt");
-            appendDirectory(out, "opt/droidlayer");
-            appendDirectory(out, EMBEDDED_DIR);
-            appendFile(out, ACTIVE_SENTINEL, new byte[0]);
-            appendFile(out, EMBEDDED_DIR + "/bridge.token",
-                    (bridgeToken + "\n").getBytes(StandardCharsets.US_ASCII));
-            if (guestPassword != null && !guestPassword.trim().isEmpty()) {
-                appendFile(out, EMBEDDED_DIR + "/guest.password",
-                        (guestPassword.trim() + "\n").getBytes(StandardCharsets.US_ASCII));
-            }
-            appendFile(out, EMBEDDED_DIR + "/" + rootfsFileName, rootfsTarball);
-            appendTrailer(out);
-            raw.flush();
-        } catch (IOException impossible) {
-            throw new AssertionError(impossible);
-        }
         ByteArrayOutputStream gz = new ByteArrayOutputStream();
-        try (GZIPOutputStream gzip = new GZIPOutputStream(gz)) {
-            gzip.write(raw.toByteArray());
+        try (java.io.ByteArrayInputStream in = new java.io.ByteArrayInputStream(rootfsTarball)) {
+            writeSegment(in, rootfsTarball.length, rootfsFileName, bridgeToken, guestPassword, gz);
         } catch (IOException impossible) {
             throw new AssertionError(impossible);
         }
         return gz.toByteArray();
+    }
+
+    /** Streams the gzipped cpio segment to {@code targetOut} with O(1) memory overhead. */
+    public static void writeSegment(
+            java.io.InputStream rootfsStream,
+            long rootfsSize,
+            String rootfsFileName,
+            String bridgeToken,
+            String guestPassword,
+            OutputStream targetOut) throws IOException {
+        Objects.requireNonNull(rootfsStream, "rootfsStream");
+        Objects.requireNonNull(rootfsFileName, "rootfsFileName");
+        Objects.requireNonNull(targetOut, "targetOut");
+        validateToken(bridgeToken);
+        if (rootfsSize <= 0 || rootfsFileName.contains("/")) {
+            throw new IllegalArgumentException("invalid rootfs input");
+        }
+
+        GZIPOutputStream gzip = new GZIPOutputStream(targetOut);
+        Counting out = new Counting(gzip);
+        appendDirectory(out, "opt");
+        appendDirectory(out, "opt/droidlayer");
+        appendDirectory(out, EMBEDDED_DIR);
+        appendFile(out, ACTIVE_SENTINEL, new byte[0]);
+        appendFile(out, EMBEDDED_DIR + "/bridge.token",
+                (bridgeToken + "\n").getBytes(StandardCharsets.US_ASCII));
+        if (guestPassword != null && !guestPassword.trim().isEmpty()) {
+            appendFile(out, EMBEDDED_DIR + "/guest.password",
+                    (guestPassword.trim() + "\n").getBytes(StandardCharsets.US_ASCII));
+        }
+        appendStream(out, EMBEDDED_DIR + "/" + rootfsFileName, rootfsStream, rootfsSize);
+        appendTrailer(out);
+        gzip.finish();
+        gzip.flush();
     }
 
     private static void validateToken(String token) {
@@ -86,7 +95,7 @@ public final class EmbeddedProvisionInput {
         writeEntry(out, name, 0100644, data);
     }
 
-    private static void writeEntry(Counting out, String name, int mode, byte[] data)
+    private static void writeEntryHeader(Counting out, String name, int mode, long filesize)
             throws IOException {
         byte[] nameBytes = name.getBytes(StandardCharsets.US_ASCII);
         // newc: magic(6) + 13 octal fields as 8-char hex + name + data, all
@@ -99,7 +108,7 @@ public final class EmbeddedProvisionInput {
         out.writeHex(0);                        // c_gid
         out.writeHex(1);                        // c_nlink
         out.writeHex(0);                        // c_mtime (deterministic)
-        out.writeHex(data.length);              // c_filesize
+        out.writeHex(filesize);                 // c_filesize
         out.writeHex(0);                        // c_devmajor
         out.writeHex(0);                        // c_devminor
         out.writeHex(0);                        // c_rdevmajor
@@ -109,7 +118,29 @@ public final class EmbeddedProvisionInput {
         out.write(nameBytes);
         out.write(0);
         out.align(4);
+    }
+
+    private static void writeEntry(Counting out, String name, int mode, byte[] data)
+            throws IOException {
+        writeEntryHeader(out, name, mode, data.length);
         out.write(data);
+        out.align(4);
+    }
+
+    private static void appendStream(Counting out, String name, java.io.InputStream in, long size)
+            throws IOException {
+        writeEntryHeader(out, name, 0100644, size);
+        byte[] buf = new byte[65536];
+        long remaining = size;
+        while (remaining > 0) {
+            int toRead = (int) Math.min(buf.length, remaining);
+            int read = in.read(buf, 0, toRead);
+            if (read < 0) {
+                throw new IOException("unexpected EOF reading rootfs stream, expected " + size + " bytes");
+            }
+            out.write(buf, 0, read);
+            remaining -= read;
+        }
         out.align(4);
     }
 

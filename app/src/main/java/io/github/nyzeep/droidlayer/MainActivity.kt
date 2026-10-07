@@ -148,6 +148,7 @@ class MainActivity : AppCompatActivity() {
         instanceList = findViewById(R.id.instance_list)
         upgradeAuthorizationButton = findViewById(R.id.upgrade_authorization)
         instanceStore = InstanceLifecycle.FileStore(filesDir.toPath().resolve("instances"))
+        reconcileOrphanInstances()
 
         settingsButton.setOnClickListener { showSettingsDialog() }
         val canCreate = assessment.canCreateFullLinuxInstance()
@@ -172,6 +173,7 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         if (::instanceStore.isInitialized) {
+            reconcileOrphanInstances()
             renderSystemStatus(DeviceCapabilityEvaluator.evaluate(deviceProfile()))
             showInstances()
         }
@@ -613,10 +615,24 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun reconcileOrphanInstances() {
+        if (!::instanceStore.isInitialized) return
+        try {
+            val controller = InstanceLifecycle.Controller(instanceStore, Clock.systemUTC())
+            for (instance in instanceStore.list()) {
+                if (instance.state() == InstanceLifecycle.State.RUNNING && ExecutionSessionRegistry.get(instance.id()) == null) {
+                    controller.reconcileAfterHostDeath(instance.id(), InstanceLifecycle.State.STOPPED)
+                }
+            }
+        } catch (_: Exception) {
+        }
+    }
+
     private fun launchInstance(instance: InstanceLifecycle.Instance) {
         setCreateButtonsEnabled(false)
         createStatus.setText(R.string.launch_started)
         operations.execute {
+            reconcileOrphanInstances()
             val controller = InstanceLifecycle.Controller(instanceStore, Clock.systemUTC())
             var running = false
             try {
@@ -688,13 +704,13 @@ class MainActivity : AppCompatActivity() {
                         .putExtra("instanceId", instance.id())
                     startActivity(intent)
                 }
-            } catch (failure: Exception) {
+            } catch (failure: Throwable) {
                 ExecutionSessionRegistry.unregister(instance.id())
                 DroidLayerForegroundService.stop(this)
                 if (running) {
                     try {
                         InstanceLaunchSequence.afterGuestExit(controller, instance.id())
-                    } catch (ignored: Exception) {
+                    } catch (ignored: Throwable) {
                         // best-effort revert of the RUNNING slot; the launch failure is reported
                     }
                 }
