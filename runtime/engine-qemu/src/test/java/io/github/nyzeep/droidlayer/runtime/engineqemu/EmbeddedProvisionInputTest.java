@@ -19,6 +19,15 @@ public final class EmbeddedProvisionInputTest {
             fail("segment is not deterministic");
         }
 
+        // Streaming writeSegment equivalence: produces identical bytes.
+        java.io.ByteArrayOutputStream streamOut = new java.io.ByteArrayOutputStream();
+        try (ByteArrayInputStream in = new ByteArrayInputStream(rootfs)) {
+            EmbeddedProvisionInput.writeSegment(in, rootfs.length, rootfsName, token, null, streamOut);
+        }
+        if (!Arrays.equals(segment, streamOut.toByteArray())) {
+            fail("writeSegment output does not match build");
+        }
+
         // GZIP wrapper present.
         if ((segment[0] & 0xFF) != 0x1F || (segment[1] & 0xFF) != 0x8B) {
             fail("segment is not gzip");
