@@ -34,13 +34,13 @@ object DistroMirrorCatalog {
                 source,
                 substitutePrefix(
                     source,
-                    "https://mirrors.tuna.tsinghua.edu.cn/lxc-images/",
-                    "https://images.linuxcontainers.org/",
+                    "https://github.com/",
+                    "https://ghproxy.net/https://github.com/",
                 ),
                 substitutePrefix(
                     source,
-                    "https://mirrors.tuna.tsinghua.edu.cn/lxc-images/",
-                    "https://mirrors.ustc.edu.cn/lxc-images/",
+                    "https://github.com/",
+                    "https://mirror.ghproxy.com/https://github.com/",
                 ),
             )
             else -> listOf(source)

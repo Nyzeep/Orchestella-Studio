@@ -429,7 +429,11 @@ class MainActivity : AppCompatActivity() {
             // Card click & long click
             cardView.setOnClickListener {
                 if (instance.state() == InstanceLifecycle.State.RUNNING) {
-                    if (supportsDesktop) launchDesktop(instance) else openTerminal(instance)
+                    if (supportsDesktop && !isHeadless(instance)) {
+                        launchDesktop(instance)
+                    } else {
+                        openTerminal(instance)
+                    }
                 } else if (instance.state() == InstanceLifecycle.State.STOPPED || instance.state() == InstanceLifecycle.State.CREATED) {
                     launchInstance(instance)
                 } else if (instance.state() == InstanceLifecycle.State.CRASHED) {
@@ -452,6 +456,21 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun isHeadless(instance: InstanceLifecycle.Instance): Boolean {
+        return instance.distro().id() == "alpine" || instance.distro().id() == "debian"
+    }
+
+    private fun showHeadlessDesktopDialog(instance: InstanceLifecycle.Instance) {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.desktop_headless_title)
+            .setMessage(R.string.desktop_headless_message)
+            .setPositiveButton(R.string.instance_open_terminal) { _, _ ->
+                openTerminal(instance)
+            }
+            .setNegativeButton(R.string.dialog_close, null)
+            .show()
+    }
+
     private fun openTerminal(instance: InstanceLifecycle.Instance) {
         val intent = Intent(this@MainActivity, TerminalActivity::class.java)
             .putExtra("bridgeToken", instance.bridgeToken())
@@ -460,6 +479,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun launchDesktop(instance: InstanceLifecycle.Instance) {
+        if (isHeadless(instance)) {
+            showHeadlessDesktopDialog(instance)
+            return
+        }
         val intent = DesktopLaunchIntent.create(
             this@MainActivity,
             instance.id(),
@@ -632,20 +655,21 @@ class MainActivity : AppCompatActivity() {
                 Thread {
                     try {
                         session.waitFor()
-                        DroidLayerForegroundService.stop(this)
-                        InstanceLaunchSequence.afterGuestExit(controller, instance.id())
-                        runOnUiThread {
-                            createStatus.setText(R.string.launch_guest_exited)
-                            setCreateButtonsEnabled(DeviceCapabilityEvaluator.evaluate(deviceProfile()).canCreateFullLinuxInstance())
-                            showInstances()
-                        }
                     } catch (ignored: InterruptedException) {
-                        DroidLayerForegroundService.stop(this)
                         Thread.currentThread().interrupt()
                     } catch (failure: Exception) {
-                        DroidLayerForegroundService.stop(this)
                         runOnUiThread {
                             createStatus.text = getString(R.string.launch_failed, failure.toString())
+                        }
+                    } finally {
+                        ExecutionSessionRegistry.unregister(instance.id())
+                        DroidLayerForegroundService.stop(this)
+                        try {
+                            InstanceLaunchSequence.afterGuestExit(controller, instance.id())
+                        } catch (ignored: Exception) {
+                        }
+                        runOnUiThread {
+                            createStatus.setText(R.string.launch_guest_exited)
                             setCreateButtonsEnabled(DeviceCapabilityEvaluator.evaluate(deviceProfile()).canCreateFullLinuxInstance())
                             showInstances()
                         }
@@ -665,6 +689,7 @@ class MainActivity : AppCompatActivity() {
                     startActivity(intent)
                 }
             } catch (failure: Exception) {
+                ExecutionSessionRegistry.unregister(instance.id())
                 DroidLayerForegroundService.stop(this)
                 if (running) {
                     try {

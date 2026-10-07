@@ -98,6 +98,13 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
         // ALT
         btnAlt = addKeyButton(row, "ALT", v -> pressAlt());
 
+        // ^C (Interrupt/Break)
+        addKeyButton(row, "^C", v -> {
+            if (inputSink != null) {
+                inputSink.sendBytes(new byte[]{0x03});
+            }
+        });
+
         // Symbols: |, -, /, ~, $, \
         addKeyButton(row, "|", v -> pressSymbol("|"));
         addKeyButton(row, "-", v -> pressSymbol("-"));

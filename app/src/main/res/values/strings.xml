@@ -236,4 +236,9 @@
     <string name="wizard_provisioning_info">正在校验 SHA-256 完整性并装配根文件系统…</string>
     <string name="wizard_init_success">🎉 首个实例已就绪，正在进入控制台…</string>
     <string name="wizard_init_failed">初始化失败：%1$s</string>
+
+    <!-- Headless desktop guard & user guidance -->
+    <string name="desktop_headless_title">未配置图形桌面环境</string>
+    <string name="desktop_headless_message">当前实例使用的是轻量命令行根文件系统（Headless），尚未安装或配置 Wayland / Labwc 图形桌面。请点击「打开终端」在 Linux 终端中进行操作。</string>
+    <string name="dialog_close">我知道了</string>
 </resources>

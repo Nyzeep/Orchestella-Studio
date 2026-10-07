@@ -299,7 +299,7 @@ public class ResilientDownloadEngine implements DownloadEngine {
             conn.setConnectTimeout(connectTimeoutMillis);
             conn.setReadTimeout(readTimeoutMillis);
             conn.setInstanceFollowRedirects(false); // Manual redirect handling across protocols
-            conn.setRequestProperty("User-Agent", "Orchestella-Studio/0.3.0");
+            conn.setRequestProperty("User-Agent", "Orchestella-Studio/0.4.0");
 
             if (rangeOffset > 0) {
                 conn.setRequestProperty("Range", "bytes=" + rangeOffset + "-");
