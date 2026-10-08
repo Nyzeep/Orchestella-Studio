@@ -62,6 +62,19 @@ public final class EmbeddedProvisionInput {
             String guestPassword,
             byte[] initScript,
             OutputStream targetOut) throws IOException {
+        writeSegment(rootfsStream, rootfsSize, rootfsFileName, bridgeToken, guestPassword, initScript, null, targetOut);
+    }
+
+    /** Streams the gzipped cpio segment with optional multi-distro guest init override and proxy relay binary. */
+    public static void writeSegment(
+            java.io.InputStream rootfsStream,
+            long rootfsSize,
+            String rootfsFileName,
+            String bridgeToken,
+            String guestPassword,
+            byte[] initScript,
+            byte[] proxyRelayBinary,
+            OutputStream targetOut) throws IOException {
         Objects.requireNonNull(rootfsStream, "rootfsStream");
         Objects.requireNonNull(rootfsFileName, "rootfsFileName");
         Objects.requireNonNull(targetOut, "targetOut");
@@ -91,6 +104,10 @@ public final class EmbeddedProvisionInput {
             appendFile(out, "etc/droidlayer/rootfs.file", 0100644,
                     (rootfsFileName + "\n").getBytes(StandardCharsets.US_ASCII));
             appendFile(out, "etc/droidlayer/rootfs.sha256", 0100644, new byte[0]);
+        }
+
+        if (proxyRelayBinary != null && proxyRelayBinary.length > 0) {
+            appendFile(out, "opt/droidlayer/proxy-relay", 0100755, proxyRelayBinary);
         }
 
         appendTrailer(out);

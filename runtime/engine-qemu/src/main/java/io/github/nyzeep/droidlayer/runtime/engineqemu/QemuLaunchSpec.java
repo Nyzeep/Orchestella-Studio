@@ -31,6 +31,19 @@ public final class QemuLaunchSpec {
             + " droidlayer.root_device=/dev/vda droidlayer.input_tag=droidlayer-input"
             + " droidlayer.bridge_device=/dev/vport0p1 droidlayer.terminal_device=/dev/ttyAMA0";
 
+    /**
+     * Derives the corresponding proxy abstract socket name from a control socket name.
+     */
+    public static String defaultProxySocketName(String controlSocketName) {
+        if (controlSocketName == null) {
+            return null;
+        }
+        if (controlSocketName.contains("control")) {
+            return controlSocketName.replace("control", "proxy");
+        }
+        return controlSocketName + "-proxy";
+    }
+
     private QemuLaunchSpec() {
     }
 
@@ -474,7 +487,9 @@ public final class QemuLaunchSpec {
                 "-device", formatDeviceArg(networkSpec),
                 "-device", "virtio-serial-device",
                 "-chardev", "socket,id=control,path=" + controlSocketName + ",abstract=on,server=on,wait=off",
-                "-device", "virtserialport,chardev=control,name=droidlayer.bridge");
+                "-device", "virtserialport,chardev=control,name=droidlayer.bridge",
+                "-chardev", "socket,id=netproxy,path=" + defaultProxySocketName(controlSocketName) + ",abstract=on,server=on,wait=off",
+                "-device", "virtserialport,chardev=netproxy,name=droidlayer.proxy");
 
         if (qmpSocketName != null && !qmpSocketName.trim().isEmpty()) {
             args.add("-chardev");

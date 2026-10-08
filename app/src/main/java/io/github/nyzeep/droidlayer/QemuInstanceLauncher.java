@@ -38,13 +38,44 @@ public final class QemuInstanceLauncher {
         private LocalSocket terminalSocket;
         private BridgeClient bridgeClient;
         private volatile BridgeControl.Clipboard clipboardBridge;
+        private final String proxySocketName;
+        private LocalSocket proxySocket;
+        private io.github.nyzeep.droidlayer.runtime.network.BridgeProxyGateway proxyGateway;
+        private final QemuWaylandChannel waylandChannel;
         private final AtomicBoolean isBridgeServing = new AtomicBoolean(false);
 
         Session(String controlSocketName, String terminalSocketName,
                 QemuProcessLauncher.ProcessHandle handle) {
+            this(controlSocketName, terminalSocketName,
+                    QemuLaunchSpec.defaultProxySocketName(controlSocketName), handle);
+        }
+
+        Session(String controlSocketName, String terminalSocketName, String proxySocketName,
+                QemuProcessLauncher.ProcessHandle handle) {
             this.controlSocketName = controlSocketName;
             this.terminalSocketName = terminalSocketName;
+            this.proxySocketName = proxySocketName;
             this.handle = handle;
+            this.waylandChannel = new QemuWaylandChannel(controlSocketName, null);
+            startProxyGateway();
+        }
+
+        private void startProxyGateway() {
+            if (proxySocketName == null) return;
+            Thread proxyThread = new Thread(() -> {
+                try {
+                    LocalSocket socket = connect(proxySocketName);
+                    this.proxySocket = socket;
+                    this.proxyGateway = new io.github.nyzeep.droidlayer.runtime.network.BridgeProxyGateway(
+                            socket.getInputStream(), socket.getOutputStream());
+                    this.proxyGateway.startAsync();
+                    Log.i("OrchestellaQemu", "Virtio-serial netproxy gateway active on " + proxySocketName);
+                } catch (Exception e) {
+                    Log.w("OrchestellaQemu", "Could not connect to netproxy socket: " + e.getMessage());
+                }
+            }, "proxy-gateway-" + controlSocketName);
+            proxyThread.setDaemon(true);
+            proxyThread.start();
         }
 
         @Override
@@ -74,6 +105,17 @@ public final class QemuInstanceLauncher {
 
         @Override
         public void close() {
+            if (waylandChannel != null) {
+                waylandChannel.close();
+            }
+            if (proxyGateway != null) {
+                proxyGateway.close();
+                proxyGateway = null;
+            }
+            if (proxySocket != null) {
+                closeQuietly(proxySocket);
+                proxySocket = null;
+            }
             synchronized (controlLock) {
                 if (controlSocket != null) {
                     closeQuietly(controlSocket);
@@ -86,6 +128,16 @@ public final class QemuInstanceLauncher {
                     terminalSocket = null;
                 }
             }
+        }
+
+        @Override
+        public io.github.nyzeep.droidlayer.runtime.contract.DisplayControl displayControl() {
+            return waylandChannel;
+        }
+
+        @Override
+        public io.github.nyzeep.droidlayer.runtime.contract.WaylandChannel waylandChannel() {
+            return waylandChannel;
         }
 
         @Override

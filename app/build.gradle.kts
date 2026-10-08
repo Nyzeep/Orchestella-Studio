@@ -153,8 +153,18 @@ val syncGuestShellAssets by tasks.registering(Sync::class) {
     into(file("src/main/assets/shell"))
 }
 
+val syncGuestInitAndRelay by tasks.registering(Copy::class) {
+    from(rootProject.file("guest-assets/initramfs/init")) {
+        rename { "guest_init" }
+    }
+    from(rootProject.file("guest-assets/scripts/droidlayer-proxy-relay.pl")) {
+        rename { "proxy_relay" }
+    }
+    into(file("src/main/resources"))
+}
+
 tasks.matching {
-    it.name in listOf("mergeDebugAssets", "mergeReleaseAssets", "generateDebugAssets", "generateReleaseAssets", "preBuild", "preDebugBuild", "preReleaseBuild")
+    it.name in listOf("mergeDebugAssets", "mergeReleaseAssets", "generateDebugAssets", "generateReleaseAssets", "preBuild", "preDebugBuild", "preReleaseBuild", "processDebugResources", "processReleaseResources", "processDebugJavaRes", "processReleaseJavaRes")
 }.configureEach {
-    dependsOn(syncGuestShellAssets)
+    dependsOn(syncGuestShellAssets, syncGuestInitAndRelay)
 }
