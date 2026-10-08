@@ -38,10 +38,14 @@ public final class QemuLaunchSpec {
         if (controlSocketName == null) {
             return null;
         }
-        if (controlSocketName.contains("control")) {
-            return controlSocketName.replace("control", "proxy");
+        String name = controlSocketName;
+        if (name.startsWith("droidlayer-")) {
+            name = "orchestella-" + name.substring("droidlayer-".length());
         }
-        return controlSocketName + "-proxy";
+        if (name.contains("control")) {
+            return name.replace("control", "proxy");
+        }
+        return name + "-proxy";
     }
 
     private QemuLaunchSpec() {
@@ -489,7 +493,7 @@ public final class QemuLaunchSpec {
                 "-chardev", "socket,id=control,path=" + controlSocketName + ",abstract=on,server=on,wait=off",
                 "-device", "virtserialport,chardev=control,name=droidlayer.bridge",
                 "-chardev", "socket,id=netproxy,path=" + defaultProxySocketName(controlSocketName) + ",abstract=on,server=on,wait=off",
-                "-device", "virtserialport,chardev=netproxy,name=droidlayer.proxy");
+                "-device", "virtserialport,chardev=netproxy,name=orchestella.proxy");
 
         if (qmpSocketName != null && !qmpSocketName.trim().isEmpty()) {
             args.add("-chardev");
