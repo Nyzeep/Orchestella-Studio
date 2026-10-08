@@ -77,4 +77,22 @@ public final class SettingsManagerTest {
         settings.setOnboardingCompleted(false);
         assertFalse(settings.isOnboardingCompleted());
     }
+
+    @Test
+    public void legacyPreferencesAreMigratedWhenCurrentIsEmpty() {
+        FakeSharedPreferences legacyPrefs = new FakeSharedPreferences();
+        legacyPrefs.edit()
+                .putBoolean(SettingsManager.KEY_ONBOARDING_COMPLETED, true)
+                .putString(SettingsManager.KEY_BATTERY_POLICY, BatteryPolicy.PERFORMANCE.name())
+                .putString(SettingsManager.KEY_LAST_ACTIVE_INSTANCE_ID, "inst-migrated-999")
+                .apply();
+
+        FakeSharedPreferences currentPrefs = new FakeSharedPreferences();
+        SettingsManager.migrateFromLegacy(legacyPrefs, currentPrefs);
+
+        SettingsManager migratedManager = new SettingsManager(currentPrefs);
+        assertTrue("onboarding status must be migrated", migratedManager.isOnboardingCompleted());
+        assertEquals("battery policy must be migrated", BatteryPolicy.PERFORMANCE, migratedManager.getBatteryPolicy());
+        assertEquals("last active instance ID must be migrated", "inst-migrated-999", migratedManager.getLastActiveInstanceId());
+    }
 }

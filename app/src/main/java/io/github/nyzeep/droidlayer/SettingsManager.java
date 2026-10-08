@@ -17,6 +17,7 @@ import java.util.Objects;
  */
 public final class SettingsManager {
     public static final String PREFS_NAME = "orchestella_settings";
+    public static final String LEGACY_PREFS_NAME = "droidlayer_settings";
 
     public static final String KEY_BOOT_AUTO_START = "boot_auto_start";
     public static final String KEY_UPDATE_CHECK = "update_check_enabled";
@@ -31,7 +32,52 @@ public final class SettingsManager {
     }
 
     public SettingsManager(Context context) {
-        this(context.getApplicationContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE));
+        this(resolveWithMigration(context));
+    }
+
+    private static SharedPreferences resolveWithMigration(Context context) {
+        Context appContext = context.getApplicationContext();
+        SharedPreferences current = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        SharedPreferences legacy = appContext.getSharedPreferences(LEGACY_PREFS_NAME, Context.MODE_PRIVATE);
+        migrateFromLegacy(legacy, current);
+        return current;
+    }
+
+    public static void migrateFromLegacy(SharedPreferences legacyPrefs, SharedPreferences currentPrefs) {
+        if (legacyPrefs == null || currentPrefs == null) {
+            return;
+        }
+        java.util.Map<String, ?> legacyMap = legacyPrefs.getAll();
+        if (legacyMap == null || legacyMap.isEmpty()) {
+            return;
+        }
+        SharedPreferences.Editor editor = currentPrefs.edit();
+        boolean changed = false;
+        for (java.util.Map.Entry<String, ?> entry : legacyMap.entrySet()) {
+            String key = entry.getKey();
+            if (!currentPrefs.contains(key)) {
+                Object value = entry.getValue();
+                if (value instanceof Boolean) {
+                    editor.putBoolean(key, (Boolean) value);
+                    changed = true;
+                } else if (value instanceof String) {
+                    editor.putString(key, (String) value);
+                    changed = true;
+                } else if (value instanceof Integer) {
+                    editor.putInt(key, (Integer) value);
+                    changed = true;
+                } else if (value instanceof Long) {
+                    editor.putLong(key, (Long) value);
+                    changed = true;
+                } else if (value instanceof Float) {
+                    editor.putFloat(key, (Float) value);
+                    changed = true;
+                }
+            }
+        }
+        if (changed) {
+            editor.apply();
+        }
     }
 
     /** Boot auto-start setting: strictly false by default per ADR-0011. */

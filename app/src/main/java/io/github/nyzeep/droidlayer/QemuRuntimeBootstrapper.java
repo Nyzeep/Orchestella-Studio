@@ -66,6 +66,14 @@ public final class QemuRuntimeBootstrapper {
         Path baseInitramfs = installer.install(manifest, "initramfs.cpio.gz",
                 () -> resourceStreams.apply("initramfs.cpio.gz"), runtimeDir);
 
+        byte[] guestInit = null;
+        try (InputStream in = resourceStreams.apply("guest_init")) {
+            if (in != null) {
+                guestInit = in.readAllBytes();
+            }
+        } catch (Exception ignored) {
+        }
+
         Path rootfsPath = distroInputsDir.resolve(rootfsFileName);
         if (!Files.isRegularFile(rootfsPath)) {
             throw new IOException("rootfs-file-missing: " + rootfsFileName);
@@ -81,7 +89,7 @@ public final class QemuRuntimeBootstrapper {
                  java.io.OutputStream out = Files.newOutputStream(partial,
                          java.nio.file.StandardOpenOption.APPEND)) {
                 EmbeddedProvisionInput.writeSegment(
-                        rootfsIn, rootfsSize, rootfsFileName, bridgeToken, guestPassword, out);
+                        rootfsIn, rootfsSize, rootfsFileName, bridgeToken, guestPassword, guestInit, out);
             }
             Files.move(partial, initramfs, java.nio.file.StandardCopyOption.REPLACE_EXISTING,
                     java.nio.file.StandardCopyOption.ATOMIC_MOVE);

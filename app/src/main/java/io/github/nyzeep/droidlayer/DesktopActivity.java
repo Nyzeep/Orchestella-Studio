@@ -540,19 +540,6 @@ public class DesktopActivity extends Activity {
     }
 
     private boolean isHeadlessInstance(String instanceId) {
-        if (instanceId == null) {
-            return false;
-        }
-        try {
-            InstanceLifecycle.Store store = new InstanceLifecycle.FileStore(
-                    getFilesDir().toPath().resolve("instances"));
-            InstanceLifecycle.Instance instance = store.load(instanceId);
-            if (instance != null) {
-                String distroId = instance.distro().id();
-                return "alpine".equalsIgnoreCase(distroId) || "debian".equalsIgnoreCase(distroId);
-            }
-        } catch (Exception ignored) {
-        }
         return false;
     }
 }

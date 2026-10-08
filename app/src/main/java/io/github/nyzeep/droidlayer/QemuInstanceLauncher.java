@@ -188,7 +188,9 @@ public final class QemuInstanceLauncher {
         String controlSocket = "droidlayer-control-" + parameters.instanceId;
         String terminalSocket = "droidlayer-terminal-" + parameters.instanceId;
 
-        VmHardwareConfig config = VmHardwareConfig.defaultConfig();
+        VmHardwareConfig config = parameters.hardwareConfig != null
+                ? parameters.hardwareConfig
+                : VmHardwareConfig.defaultConfig();
         if (config.gpuAccelerationEnabled()) {
             Log.i("OrchestellaQemu", "Launching QEMU with virtio-gpu-gl-device (GPU acceleration enabled)");
             VirglJniBridge.init(1024, true);

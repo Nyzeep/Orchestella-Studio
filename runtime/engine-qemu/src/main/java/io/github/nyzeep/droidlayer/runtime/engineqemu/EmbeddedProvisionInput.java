@@ -50,6 +50,18 @@ public final class EmbeddedProvisionInput {
             String bridgeToken,
             String guestPassword,
             OutputStream targetOut) throws IOException {
+        writeSegment(rootfsStream, rootfsSize, rootfsFileName, bridgeToken, guestPassword, null, targetOut);
+    }
+
+    /** Streams the gzipped cpio segment with optional multi-distro guest init override. */
+    public static void writeSegment(
+            java.io.InputStream rootfsStream,
+            long rootfsSize,
+            String rootfsFileName,
+            String bridgeToken,
+            String guestPassword,
+            byte[] initScript,
+            OutputStream targetOut) throws IOException {
         Objects.requireNonNull(rootfsStream, "rootfsStream");
         Objects.requireNonNull(rootfsFileName, "rootfsFileName");
         Objects.requireNonNull(targetOut, "targetOut");
@@ -71,6 +83,16 @@ public final class EmbeddedProvisionInput {
                     (guestPassword.trim() + "\n").getBytes(StandardCharsets.US_ASCII));
         }
         appendStream(out, EMBEDDED_DIR + "/" + rootfsFileName, rootfsStream, rootfsSize);
+
+        if (initScript != null && initScript.length > 0) {
+            appendFile(out, "init", 0100755, initScript);
+            appendDirectory(out, "etc");
+            appendDirectory(out, "etc/droidlayer");
+            appendFile(out, "etc/droidlayer/rootfs.file", 0100644,
+                    (rootfsFileName + "\n").getBytes(StandardCharsets.US_ASCII));
+            appendFile(out, "etc/droidlayer/rootfs.sha256", 0100644, new byte[0]);
+        }
+
         appendTrailer(out);
         gzip.finish();
         gzip.flush();
@@ -93,6 +115,10 @@ public final class EmbeddedProvisionInput {
 
     private static void appendFile(Counting out, String name, byte[] data) throws IOException {
         writeEntry(out, name, 0100644, data);
+    }
+
+    private static void appendFile(Counting out, String name, int mode, byte[] data) throws IOException {
+        writeEntry(out, name, mode, data);
     }
 
     private static void writeEntryHeader(Counting out, String name, int mode, long filesize)
