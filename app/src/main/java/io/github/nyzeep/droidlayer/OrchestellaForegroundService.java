@@ -21,8 +21,8 @@ import android.os.PowerManager;
  *   <li>Stops immediately upon guest exit to preserve battery</li>
  * </ul>
  */
-public class DroidLayerForegroundService extends Service {
-    public static final String CHANNEL_ID = "droidlayer_runtime_persistent";
+public class OrchestellaForegroundService extends Service {
+    public static final String CHANNEL_ID = "orchestella_runtime_persistent";
     public static final int NOTIFICATION_ID = 1001;
 
     public static final String ACTION_START = "io.github.nyzeep.droidlayer.action.START_PERSISTENT";
@@ -41,7 +41,7 @@ public class DroidLayerForegroundService extends Service {
             String distroTitle,
             String performanceBadge,
             BatteryPolicy policy) {
-        Intent intent = new Intent(context, DroidLayerForegroundService.class);
+        Intent intent = new Intent(context, OrchestellaForegroundService.class);
         intent.setAction(ACTION_START);
         intent.putExtra(EXTRA_INSTANCE_ID, instanceId);
         intent.putExtra(EXTRA_DISTRO_TITLE, distroTitle);
@@ -55,7 +55,7 @@ public class DroidLayerForegroundService extends Service {
     }
 
     public static void stop(Context context) {
-        Intent intent = new Intent(context, DroidLayerForegroundService.class);
+        Intent intent = new Intent(context, OrchestellaForegroundService.class);
         intent.setAction(ACTION_STOP);
         context.startService(intent);
     }

@@ -1,8 +1,8 @@
 # AGENTS.md
 
-DroidLayer（工作名）：无 Root 的 Android Linux Runtime Platform —— 在不要求 Root 的前提下，在 Android 手机上运行完整 ARM64 Linux 用户空间（VM 优先、能力驱动的后端选择、guest 内容器支持）。
+Orchestella Studio（曾用工作名 DroidLayer）：无需 Root 的 Android 原生双引擎 Linux 运行环境与移动工作站 —— 在不要求 Root 的前提下，在 Android 手机上运行完整 ARM64 Linux 虚拟机（AVF 硬件虚拟化 + QEMU 软件虚拟化全透明降级、Mesa VirGL 3D 加速、Wayland 桌面、每实例随机凭据与持久后台保活）。
 
-**当前阶段**：规划完成（spec v1.0 + 16 ADR + 15 张 open 工单），进入实现交接——执行由 Codex Orchestrator Agent 按 `docs/agent-handoff/` 接管。不要跳过决策直接写代码。
+**当前阶段**：Phase 4.5 稳定性与真机体验打磨期，基线 v0.4.0 已发布，全链路 CI 绿灯。执行由 Orchestella Studio Orchestrator Agent 接管。不要跳过决策直接写代码。
 
 - 工程交接入口：`docs/agent-handoff/ENGINEERING_HANDOFF.md`
 - 防御性硬约束：任何任务开始前先读 `docs/agent-handoff/DEFENSIVE_CONSTRAINTS/README.md` 及其目录内全部 policy；该目录规则是所有 Agent 的硬约束。

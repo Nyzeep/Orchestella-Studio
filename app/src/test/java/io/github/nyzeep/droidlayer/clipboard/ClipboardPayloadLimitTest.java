@@ -92,7 +92,7 @@ public final class ClipboardPayloadLimitTest {
 
     @Test
     public void testMultilingualUtf8Payload() {
-        String complexText = "【DroidLayer 剪贴板测试】\n"
+        String complexText = "【Orchestella 剪贴板测试】\n"
                 + "多语言混合：Hello World, こんにちは, 안녕하세요, Bonjour, Привет!\n"
                 + "Emoji 与符号：🚀 🐧 🇨🇳 💻 🛠️ ✨ 💯\n"
                 + "代码段：fn main() { println!(\"Orchestella Studio 2026\"); }\n";

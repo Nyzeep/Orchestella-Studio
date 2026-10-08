@@ -20,7 +20,7 @@ public final class DistroFlavorTest {
                 debian.serviceEnableSymlink());
 
         String unit = debian.systemdUnitContent();
-        assertTrue(unit.contains("Description=DroidLayer Guest Agent"));
+        assertTrue(unit.contains("Description=Orchestella Guest Agent"));
         assertTrue(unit.contains("ExecStart=/usr/sbin/droidlayer-guest-agent-launcher"));
         assertTrue(unit.contains("WantedBy=multi-user.target"));
 

@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * notification channel and click-to-open pending intent.
  */
 public final class AndroidNotificationAdapter implements BridgeControl.Notification {
-    public static final String CHANNEL_ID = "droidlayer_guest_notifications";
+    public static final String CHANNEL_ID = "orchestella_guest_notifications";
     public static final String CHANNEL_NAME = "Orchestella Guest Notifications";
     public static final String CHANNEL_DESCRIPTION = "Notifications from Orchestella guest instances";
 

@@ -26,7 +26,7 @@ import java.util.concurrent.Executors;
 public final class SocketPortForwarder implements PortForwardingEngine, Closeable {
     private final Map<String, ActiveListener> listeners = new ConcurrentHashMap<>();
     private final ExecutorService executor = Executors.newCachedThreadPool(r -> {
-        Thread t = new Thread(r, "droidlayer-port-forwarder");
+        Thread t = new Thread(r, "orchestella-port-forwarder");
         t.setDaemon(true);
         return t;
     });

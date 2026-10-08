@@ -20,7 +20,7 @@
         android:largeHeap="true"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.DroidLayer">
+        android:theme="@style/Theme.Orchestella">
         <activity
             android:name=".MainActivity"
             android:exported="true">
@@ -34,7 +34,7 @@
         <activity
             android:name=".SetupWizardActivity"
             android:exported="false"
-            android:theme="@style/Theme.DroidLayer" />
+            android:theme="@style/Theme.Orchestella" />
 
         <activity
             android:name=".TerminalActivity"
@@ -51,7 +51,7 @@
 
         <!-- ADR-0011: Persistent foreground service for ongoing guest execution -->
         <service
-            android:name=".DroidLayerForegroundService"
+            android:name=".OrchestellaForegroundService"
             android:exported="false"
             android:foregroundServiceType="specialUse">
             <property

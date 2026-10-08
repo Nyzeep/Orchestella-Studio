@@ -16,7 +16,7 @@ import java.util.Objects;
  * </ul>
  */
 public final class SettingsManager {
-    public static final String PREFS_NAME = "droidlayer_settings";
+    public static final String PREFS_NAME = "orchestella_settings";
 
     public static final String KEY_BOOT_AUTO_START = "boot_auto_start";
     public static final String KEY_UPDATE_CHECK = "update_check_enabled";

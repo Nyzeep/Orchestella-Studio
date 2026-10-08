@@ -290,7 +290,7 @@ public class ClipboardBridgeManager implements BridgeControl.Clipboard {
         @Override
         public void setText(String text) {
             if (clipboardManager != null) {
-                ClipData clip = ClipData.newPlainText("DroidLayer", text);
+                ClipData clip = ClipData.newPlainText("Orchestella", text);
                 clipboardManager.setPrimaryClip(clip);
             }
         }

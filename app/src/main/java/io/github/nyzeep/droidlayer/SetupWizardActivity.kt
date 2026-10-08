@@ -409,7 +409,7 @@ class SetupWizardActivity : AppCompatActivity() {
                     finish()
                 }
             } catch (e: Exception) {
-                android.util.Log.e("DroidLayer", "Wizard initialization failed", e)
+                android.util.Log.e("Orchestella", "Wizard initialization failed", e)
                 runOnUiThread {
                     wizardModel.setDownloading(false)
                     btnStep3Prev.visibility = View.VISIBLE
