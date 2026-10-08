@@ -459,7 +459,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun isHeadless(instance: InstanceLifecycle.Instance): Boolean {
-        return instance.distro().id() == "alpine" || instance.distro().id() == "debian"
+        return false
     }
 
     private fun showHeadlessDesktopDialog(instance: InstanceLifecycle.Instance) {
@@ -655,6 +655,7 @@ class MainActivity : AppCompatActivity() {
                     filesDir.resolve("runtime").resolve(instance.id()).absolutePath,
                     filesDir.resolve("distro-inputs").absolutePath,
                     instance.guestPassword(),
+                    instance.hardwareConfig(),
                 )
                 val preferAvf =
                     avfReadiness?.status() == AvfCapabilityEvaluator.AvfStatus.READY

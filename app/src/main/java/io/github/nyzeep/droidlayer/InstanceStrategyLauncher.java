@@ -26,6 +26,7 @@ public final class InstanceStrategyLauncher {
         public final String runtimeDirectory;
         public final String distroInputsDirectory;
         public final String guestPassword;
+        public final io.github.nyzeep.droidlayer.runtime.contract.VmHardwareConfig hardwareConfig;
 
         public LaunchParameters(
                 String instanceId,
@@ -34,7 +35,7 @@ public final class InstanceStrategyLauncher {
                 String instanceRootVolume,
                 String runtimeDirectory,
                 String distroInputsDirectory) {
-            this(instanceId, bridgeToken, rootfsFileName, instanceRootVolume, runtimeDirectory, distroInputsDirectory, null);
+            this(instanceId, bridgeToken, rootfsFileName, instanceRootVolume, runtimeDirectory, distroInputsDirectory, null, null);
         }
 
         public LaunchParameters(
@@ -45,6 +46,18 @@ public final class InstanceStrategyLauncher {
                 String runtimeDirectory,
                 String distroInputsDirectory,
                 String guestPassword) {
+            this(instanceId, bridgeToken, rootfsFileName, instanceRootVolume, runtimeDirectory, distroInputsDirectory, guestPassword, null);
+        }
+
+        public LaunchParameters(
+                String instanceId,
+                String bridgeToken,
+                String rootfsFileName,
+                String instanceRootVolume,
+                String runtimeDirectory,
+                String distroInputsDirectory,
+                String guestPassword,
+                io.github.nyzeep.droidlayer.runtime.contract.VmHardwareConfig hardwareConfig) {
             this.instanceId = Objects.requireNonNull(instanceId, "instanceId");
             this.bridgeToken = Objects.requireNonNull(bridgeToken, "bridgeToken");
             this.rootfsFileName = Objects.requireNonNull(rootfsFileName, "rootfsFileName");
@@ -54,6 +67,7 @@ public final class InstanceStrategyLauncher {
             this.distroInputsDirectory =
                     Objects.requireNonNull(distroInputsDirectory, "distroInputsDirectory");
             this.guestPassword = guestPassword;
+            this.hardwareConfig = hardwareConfig;
         }
     }
 

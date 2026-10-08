@@ -32,12 +32,18 @@ import java.util.List;
  */
 public class ModernTerminalView extends ScrollView {
 
-    private static final int MAX_BUFFER_CHARS = 100_000;
+    private static final int MAX_BUFFER_CHARS = 80_000;
     private static final int TRIM_CHARS = 20_000;
+    private static final long FLUSH_INTERVAL_MS = 33L; // ~30 FPS UI batching to prevent StaticLayout ANR
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final AnsiEscapeParser parser = new AnsiEscapeParser();
     private final SpannableStringBuilder transcriptBuffer = new SpannableStringBuilder();
+    private final java.util.concurrent.ConcurrentLinkedQueue<String> pendingChunks =
+            new java.util.concurrent.ConcurrentLinkedQueue<>();
+    private final java.util.concurrent.atomic.AtomicBoolean flushScheduled =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+    private final Runnable flushTask = this::flushPendingOutput;
 
     private TextView transcriptView;
 
@@ -73,74 +79,90 @@ public class ModernTerminalView extends ScrollView {
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
         addView(transcriptView, params);
+
+        transcriptView.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+            if (bottom > oldBottom) {
+                post(() -> fullScroll(View.FOCUS_DOWN));
+            }
+        });
     }
 
     /**
-     * Appends ANSI raw output to the terminal transcript. Thread-safe.
+     * Appends ANSI raw output to the terminal transcript. Thread-safe and non-blocking.
      */
     public void appendOutput(String text) {
         if (text == null || text.isEmpty()) {
             return;
         }
+        pendingChunks.offer(text);
+        scheduleFlush();
+    }
 
-        if (Looper.myLooper() == Looper.getMainLooper()) {
-            appendInternal(text);
-        } else {
-            mainHandler.post(() -> appendInternal(text));
+    private void scheduleFlush() {
+        if (flushScheduled.compareAndSet(false, true)) {
+            mainHandler.postDelayed(flushTask, FLUSH_INTERVAL_MS);
         }
     }
 
-    private void appendInternal(String text) {
-        List<TerminalSpan> spans = parser.parse(text);
-        if (spans.isEmpty()) {
-            return;
-        }
-
-        for (TerminalSpan span : spans) {
-            String str = span.getText();
-            if (str.isEmpty()) {
+    private void flushPendingOutput() {
+        flushScheduled.set(false);
+        String chunk;
+        boolean hasContent = false;
+        while ((chunk = pendingChunks.poll()) != null) {
+            if (chunk.isEmpty()) {
                 continue;
             }
+            List<TerminalSpan> spans = parser.parse(chunk);
+            for (TerminalSpan span : spans) {
+                String str = span.getText();
+                if (str.isEmpty()) {
+                    continue;
+                }
+                hasContent = true;
+                int start = transcriptBuffer.length();
+                transcriptBuffer.append(str);
+                int end = transcriptBuffer.length();
 
-            int start = transcriptBuffer.length();
-            transcriptBuffer.append(str);
-            int end = transcriptBuffer.length();
-
-            // Foreground
-            int fg = span.getEffectiveForegroundColor();
-            transcriptBuffer.setSpan(
-                    new ForegroundColorSpan(fg),
-                    start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-
-            // Background
-            Integer bg = span.getEffectiveBackgroundColor();
-            if (bg != null) {
+                // Foreground
+                int fg = span.getEffectiveForegroundColor();
                 transcriptBuffer.setSpan(
-                        new BackgroundColorSpan(bg),
+                        new ForegroundColorSpan(fg),
                         start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+                // Background
+                Integer bg = span.getEffectiveBackgroundColor();
+                if (bg != null) {
+                    transcriptBuffer.setSpan(
+                            new BackgroundColorSpan(bg),
+                            start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                }
+
+                // Bold & Italic
+                if (span.isBold() && span.isItalic()) {
+                    transcriptBuffer.setSpan(
+                            new StyleSpan(Typeface.BOLD_ITALIC),
+                            start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                } else if (span.isBold()) {
+                    transcriptBuffer.setSpan(
+                            new StyleSpan(Typeface.BOLD),
+                            start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                } else if (span.isItalic()) {
+                    transcriptBuffer.setSpan(
+                            new StyleSpan(Typeface.ITALIC),
+                            start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                }
+
+                // Underline
+                if (span.isUnderline()) {
+                    transcriptBuffer.setSpan(
+                            new UnderlineSpan(),
+                            start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                }
             }
+        }
 
-            // Bold & Italic
-            if (span.isBold() && span.isItalic()) {
-                transcriptBuffer.setSpan(
-                        new StyleSpan(Typeface.BOLD_ITALIC),
-                        start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            } else if (span.isBold()) {
-                transcriptBuffer.setSpan(
-                        new StyleSpan(Typeface.BOLD),
-                        start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            } else if (span.isItalic()) {
-                transcriptBuffer.setSpan(
-                        new StyleSpan(Typeface.ITALIC),
-                        start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            }
-
-            // Underline
-            if (span.isUnderline()) {
-                transcriptBuffer.setSpan(
-                        new UnderlineSpan(),
-                        start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            }
+        if (!hasContent) {
+            return;
         }
 
         // Enforce scrollback limit
@@ -153,12 +175,20 @@ public class ModernTerminalView extends ScrollView {
 
         transcriptView.setText(transcriptBuffer, TextView.BufferType.SPANNABLE);
         scrollToBottom();
+
+        // If more chunks arrived while flushing, reschedule
+        if (!pendingChunks.isEmpty()) {
+            scheduleFlush();
+        }
     }
 
     /**
      * Clears all content and resets ANSI parser state.
      */
     public void clear() {
+        pendingChunks.clear();
+        mainHandler.removeCallbacks(flushTask);
+        flushScheduled.set(false);
         if (Looper.myLooper() == Looper.getMainLooper()) {
             clearInternal();
         } else {
@@ -176,7 +206,10 @@ public class ModernTerminalView extends ScrollView {
      * Scrolls the view to the latest output.
      */
     public void scrollToBottom() {
-        post(() -> fullScroll(View.FOCUS_DOWN));
+        post(() -> {
+            fullScroll(View.FOCUS_DOWN);
+            postDelayed(() -> fullScroll(View.FOCUS_DOWN), 60);
+        });
     }
 
     public TextView getTranscriptView() {

@@ -142,6 +142,7 @@ final class GuestAssetsShellScriptTest {
         // Must wire aliases and prompt
         assertTrue(content.contains("aliases.sh"), "00-droidlayer-env.sh must link aliases.sh");
         assertTrue(content.contains("droidlayer-prompt.sh"), "00-droidlayer-env.sh must link droidlayer-prompt.sh");
+        assertTrue(content.contains("http_proxy"), "00-droidlayer-env.sh must configure http_proxy");
     }
 
     @Test
@@ -170,5 +171,7 @@ final class GuestAssetsShellScriptTest {
                 "init profile must include standardized LS_COLORS di=01;34");
         assertTrue(content.contains("ex=01;32"),
                 "init profile must include standardized LS_COLORS ex=01;32");
+        assertTrue(content.contains("serial-getty@ttyAMA0.service.d/autologin.conf"),
+                "init must configure serial-getty autologin for systemd Debian");
     }
 }

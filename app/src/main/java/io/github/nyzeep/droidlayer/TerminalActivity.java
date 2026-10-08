@@ -1,16 +1,19 @@
 package io.github.nyzeep.droidlayer;
 
 import android.app.Activity;
+import android.content.Intent;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.Editable;
+import android.text.InputType;
 import android.text.TextWatcher;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
+import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -42,12 +45,14 @@ public class TerminalActivity extends Activity {
     private ExecutionSession session;
     private OutputStream terminalOut;
     private boolean isHandlingModifier = false;
+    private String instanceId;
+    private String bridgeToken;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        String bridgeToken = getIntent().getStringExtra("bridgeToken");
-        String instanceId = getIntent().getStringExtra("instanceId");
+        bridgeToken = getIntent().getStringExtra("bridgeToken");
+        instanceId = getIntent().getStringExtra("instanceId");
         session = ExecutionSessionRegistry.get(instanceId);
         ui = new Handler(Looper.getMainLooper());
         stickyStateMachine = new StickyModifierStateMachine();
@@ -76,14 +81,6 @@ public class TerminalActivity extends Activity {
         btnSwitchDesktop.setText(R.string.terminal_open_desktop);
         btnSwitchDesktop.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
         btnSwitchDesktop.setOnClickListener(v -> {
-            if (isHeadlessInstance(instanceId)) {
-                new AlertDialog.Builder(TerminalActivity.this)
-                        .setTitle(R.string.desktop_headless_title)
-                        .setMessage(R.string.desktop_headless_message)
-                        .setPositiveButton(R.string.dialog_close, null)
-                        .show();
-                return;
-            }
             DualModeNavigation.navigateToDesktop(TerminalActivity.this, instanceId, bridgeToken);
         });
         topBar.addView(btnSwitchDesktop, new LinearLayout.LayoutParams(
@@ -125,6 +122,8 @@ public class TerminalActivity extends Activity {
         input.setTypeface(Typeface.MONOSPACE);
         input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
         input.setSingleLine(true);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        input.setImeOptions(EditorInfo.IME_ACTION_SEND | EditorInfo.IME_FLAG_NO_EXTRACT_UI);
         inputBar.addView(input, new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
@@ -217,10 +216,14 @@ public class TerminalActivity extends Activity {
         });
 
         input.setOnEditorActionListener((v, actionId, event) -> {
-            String line = input.getText().toString();
-            input.setText("");
-            send(line);
-            return true;
+            if (actionId == EditorInfo.IME_ACTION_SEND
+                    || (event != null && event.getKeyCode() == KeyEvent.KEYCODE_ENTER && event.getAction() == KeyEvent.ACTION_DOWN)) {
+                String line = input.getText().toString();
+                input.setText("");
+                send(line);
+                return true;
+            }
+            return false;
         });
 
         // WindowInsets handling for Android 15 Edge-to-Edge & Soft Keyboard (IME)
@@ -250,7 +253,9 @@ public class TerminalActivity extends Activity {
                 terminalView.post(() -> terminalView.scrollToBottom());
             }
             liveSession.setOutputListener(chunk -> {
-                ui.post(() -> append(chunk));
+                if (terminalView != null) {
+                    terminalView.appendOutput(chunk);
+                }
             });
         }
 
@@ -293,6 +298,8 @@ public class TerminalActivity extends Activity {
                 }, "bridge-serve").start();
             }
         });
+
+        handleCommandExtra(getIntent());
     }
 
     private BridgeConnector.Events eventsForBridge() {
@@ -325,10 +332,47 @@ public class TerminalActivity extends Activity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        if (terminalView != null) {
+            terminalView.post(() -> terminalView.scrollToBottom());
+        }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        if (intent != null) {
+            String newInstanceId = intent.getStringExtra("instanceId");
+            if (newInstanceId != null && !newInstanceId.isEmpty()) {
+                this.instanceId = newInstanceId;
+            }
+            String newBridgeToken = intent.getStringExtra("bridgeToken");
+            if (newBridgeToken != null && !newBridgeToken.isEmpty()) {
+                this.bridgeToken = newBridgeToken;
+            }
+        }
+        handleCommandExtra(intent);
+    }
+
+    private void handleCommandExtra(Intent intent) {
+        if (intent != null && intent.hasExtra("command")) {
+            String cmd = intent.getStringExtra("command");
+            if (cmd != null && !cmd.isEmpty()) {
+                if (terminalView != null) {
+                    terminalView.postDelayed(() -> send(cmd), 300);
+                } else {
+                    send(cmd);
+                }
+            }
+        }
+    }
+
+    @Override
     protected void onDestroy() {
         super.onDestroy();
-        String instanceId = getIntent() != null ? getIntent().getStringExtra("instanceId") : null;
-        ExecutionSessionRegistry.LiveSession liveSession = ExecutionSessionRegistry.getLiveSession(instanceId);
+        ExecutionSessionRegistry.LiveSession liveSession = ExecutionSessionRegistry.getLiveSession(this.instanceId);
         if (liveSession != null) {
             liveSession.setOutputListener(null);
         }
@@ -344,8 +388,7 @@ public class TerminalActivity extends Activity {
     }
 
     private void sendRaw(byte[] bytes) {
-        String instanceId = getIntent() != null ? getIntent().getStringExtra("instanceId") : null;
-        ExecutionSessionRegistry.LiveSession liveSession = ExecutionSessionRegistry.getLiveSession(instanceId);
+        ExecutionSessionRegistry.LiveSession liveSession = ExecutionSessionRegistry.getLiveSession(this.instanceId);
         if (liveSession == null || bytes == null || bytes.length == 0) {
             return;
         }
@@ -365,19 +408,6 @@ public class TerminalActivity extends Activity {
     }
 
     private boolean isHeadlessInstance(String instanceId) {
-        if (instanceId == null) {
-            return false;
-        }
-        try {
-            InstanceLifecycle.Store store = new InstanceLifecycle.FileStore(
-                    getFilesDir().toPath().resolve("instances"));
-            InstanceLifecycle.Instance instance = store.load(instanceId);
-            if (instance != null) {
-                String distroId = instance.distro().id();
-                return "alpine".equalsIgnoreCase(distroId) || "debian".equalsIgnoreCase(distroId);
-            }
-        } catch (Exception ignored) {
-        }
         return false;
     }
 
