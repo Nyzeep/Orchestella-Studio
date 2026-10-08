@@ -247,7 +247,7 @@ public final class LowLatencyAudioPlayer implements AudioStreamContract {
 
     private void startWorkerThread() {
         stopWorkerThread();
-        workerThread = new Thread(this::audioPumpLoop, "DroidLayer-AudioPlayerWorker");
+        workerThread = new Thread(this::audioPumpLoop, "Orchestella-AudioPlayerWorker");
         workerThread.setDaemon(true);
         workerThread.start();
     }

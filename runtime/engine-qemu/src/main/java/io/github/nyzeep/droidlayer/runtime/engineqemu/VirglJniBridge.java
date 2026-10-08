@@ -14,7 +14,7 @@ import java.util.logging.Logger;
  * </ul>
  */
 public final class VirglJniBridge {
-    private static final Logger LOGGER = Logger.getLogger("DroidLayerQemu");
+    private static final Logger LOGGER = Logger.getLogger("OrchestellaQemu");
 
     private static volatile boolean isNativeLoaded = false;
     private static volatile boolean isInitialized = false;

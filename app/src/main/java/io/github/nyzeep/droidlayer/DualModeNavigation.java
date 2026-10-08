@@ -8,7 +8,7 @@ import java.util.Objects;
 /**
  * Manages seamless bidirectional mode switching between {@link TerminalActivity}
  * and {@link DesktopActivity} without interrupting the background guest VM or
- * {@link DroidLayerForegroundService}.
+ * {@link OrchestellaForegroundService}.
  *
  * <p>Conforms to ADR-0011, ADR-0017, and Ticket 43.
  */

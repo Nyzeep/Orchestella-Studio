@@ -1,6 +1,6 @@
-# DroidLayer
+# Orchestella Studio
 
-无 Root 的 Android Linux Runtime Platform：在不要求 Root 的 Android 手机上运行完整 ARM64 Linux 用户空间的单一产品。
+无需 Root 的 Android 原生双引擎 Linux 运行环境与移动工作站：在不要求 Root 的 Android 手机上运行完整 ARM64 Linux 用户空间的单一产品（曾用名 DroidLayer）。
 
 ## Language
 

@@ -110,7 +110,7 @@ public final class FilePortForwardingStore implements PortForwardingStore {
         }
 
         try (OutputStream out = Files.newOutputStream(tempFile)) {
-            properties.store(out, "DroidLayer Port Forwarding Rules - Instance: " + instanceId);
+            properties.store(out, "Orchestella Port Forwarding Rules - Instance: " + instanceId);
         }
 
         try {

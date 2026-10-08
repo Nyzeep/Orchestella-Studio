@@ -43,7 +43,7 @@ public class BootCompletedReceiver extends BroadcastReceiver {
                 String distroName = instance.distro().id();
                 String displayName = distroName.substring(0, 1).toUpperCase(java.util.Locale.ROOT)
                         + distroName.substring(1) + " " + instance.distro().version();
-                DroidLayerForegroundService.start(
+                OrchestellaForegroundService.start(
                         context,
                         instance.id(),
                         displayName,

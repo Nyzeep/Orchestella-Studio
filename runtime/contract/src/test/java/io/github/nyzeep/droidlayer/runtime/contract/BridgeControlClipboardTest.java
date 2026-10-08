@@ -56,7 +56,7 @@ public final class BridgeControlClipboardTest {
             }
         };
 
-        String plainText = "Hello, DroidLayer Clipboard!";
+        String plainText = "Hello, Orchestella Clipboard!";
         String base64 = Base64.getEncoder().encodeToString(plainText.getBytes(StandardCharsets.UTF_8));
         String requestLine = "DROIDLAYER/CLIPBOARD PUT base64:" + base64 + "\n";
 

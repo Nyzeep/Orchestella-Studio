@@ -31,7 +31,7 @@ import java.util.concurrent.Executors;
  *   <li>Implements {@link View.OnDragListener} responding to {@link DragEvent#ACTION_DROP};</li>
  *   <li>Secures cross-app read permissions via {@code Activity.requestDragAndDropPermissions};</li>
  *   <li>Asynchronously reads URI data streams without blocking the main UI thread;</li>
- *   <li>Writes into the staging pool ({@code /storage/emulated/0/Download/DroidLayer-Shared/Inbound/});</li>
+ *   <li>Writes into the staging pool ({@code /storage/emulated/0/Download/Orchestella-Shared/Inbound/});</li>
  *   <li>Applies defensive filename sanitization against directory traversal;</li>
  *   <li>Pure JVM testable via {@link FileContentResolverSeam} and {@link StagingNotificationListener}.</li>
  * </ul>
@@ -39,7 +39,7 @@ import java.util.concurrent.Executors;
 public class FileDropTargetListener implements View.OnDragListener {
 
     public static final String DEFAULT_INBOUND_PATH =
-            "/storage/emulated/0/Download/DroidLayer-Shared/Inbound";
+            "/storage/emulated/0/Download/Orchestella-Shared/Inbound";
 
     /** Seam interface abstracting URI content resolving and metadata extraction. */
     public interface FileContentResolverSeam {

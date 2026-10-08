@@ -104,7 +104,7 @@ public final class DistroFlavor {
 
     public String systemdUnitContent() {
         return "[Unit]\n"
-                + "Description=DroidLayer Guest Agent\n"
+                + "Description=Orchestella Guest Agent\n"
                 + "DefaultDependencies=no\n"
                 + "After=systemd-udevd.service\n"
                 + "Before=basic.target\n"

@@ -641,7 +641,7 @@ class MainActivity : AppCompatActivity() {
                 val distroTitle = instance.distro().id().replaceFirstChar { it.uppercase() } + " " + instance.distro().version()
                 val badge = currentBadge(DeviceCapabilityEvaluator.evaluate(deviceProfile()))
                 settingsManager.lastActiveInstanceId = instance.id()
-                DroidLayerForegroundService.start(this, instance.id(), distroTitle, badge, settingsManager.batteryPolicy)
+                OrchestellaForegroundService.start(this, instance.id(), distroTitle, badge, settingsManager.batteryPolicy)
                 val rootfsFileName = when (instance.distro().id()) {
                     "debian" -> OfficialDebianCatalog.debian().rootfsFileName()
                     "alpine" -> OfficialAlpineCatalog.alpine().rootfsFileName()
@@ -679,7 +679,7 @@ class MainActivity : AppCompatActivity() {
                         }
                     } finally {
                         ExecutionSessionRegistry.unregister(instance.id())
-                        DroidLayerForegroundService.stop(this)
+                        OrchestellaForegroundService.stop(this)
                         try {
                             InstanceLaunchSequence.afterGuestExit(controller, instance.id())
                         } catch (ignored: Exception) {
@@ -706,7 +706,7 @@ class MainActivity : AppCompatActivity() {
                 }
             } catch (failure: Throwable) {
                 ExecutionSessionRegistry.unregister(instance.id())
-                DroidLayerForegroundService.stop(this)
+                OrchestellaForegroundService.stop(this)
                 if (running) {
                     try {
                         InstanceLaunchSequence.afterGuestExit(controller, instance.id())
@@ -793,16 +793,16 @@ class MainActivity : AppCompatActivity() {
                 }
                 getString(R.string.create_success)
             } catch (rejected: DistroManifest.InputRejectedException) {
-                android.util.Log.e("DroidLayer", "createDistro rejected", rejected)
+                android.util.Log.e("Orchestella", "createDistro rejected", rejected)
                 getString(R.string.create_invalid_input_distro, distroDisplayName, rejected.reason())
             } catch (checksum: ChecksumMismatchException) {
-                android.util.Log.e("DroidLayer", "createDistro checksum mismatch", checksum)
+                android.util.Log.e("Orchestella", "createDistro checksum mismatch", checksum)
                 getString(R.string.create_checksum_failed_distro, distroDisplayName)
             } catch (io: IOException) {
-                android.util.Log.e("DroidLayer", "createDistro IO error", io)
+                android.util.Log.e("Orchestella", "createDistro IO error", io)
                 getString(R.string.create_network_failed_distro, distroDisplayName)
             } catch (e: Exception) {
-                android.util.Log.e("DroidLayer", "createDistro failed", e)
+                android.util.Log.e("Orchestella", "createDistro failed", e)
                 getString(R.string.create_failed, "${e.javaClass.simpleName}: ${e.message}")
             }
             runOnUiThread {

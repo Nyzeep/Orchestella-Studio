@@ -22,10 +22,15 @@ public class NativeGlesSurfacePresenter implements DoubleBufferedRenderer.Surfac
 
     static {
         try {
-            System.loadLibrary("droidlayer_gles");
+            System.loadLibrary("orchestella_gles");
             isNativeLoaded = true;
         } catch (Throwable ignored) {
-            isNativeLoaded = false;
+            try {
+                System.loadLibrary("droidlayer_gles");
+                isNativeLoaded = true;
+            } catch (Throwable ignored2) {
+                isNativeLoaded = false;
+            }
         }
     }
 

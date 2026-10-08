@@ -443,7 +443,7 @@ public final class InstanceLifecycle {
             Path temporary = directory.resolve(instance.id() + ".properties.tmp");
             Properties properties = instance.toProperties();
             try (OutputStream output = Files.newOutputStream(temporary)) {
-                properties.store(output, "DroidLayer Instance metadata");
+                properties.store(output, "Orchestella Instance metadata");
             }
             try {
                 Files.move(
@@ -793,7 +793,7 @@ public final class InstanceLifecycle {
             }
 
             StringBuilder report = new StringBuilder();
-            report.append("DroidLayer Crash Diagnostic Report\n");
+            report.append("Orchestella Crash Diagnostic Report\n");
             report.append("===================================\n");
             report.append("Instance ID:       ").append(instance.id()).append("\n");
             report.append("Distro:            ").append(instance.distro().id())

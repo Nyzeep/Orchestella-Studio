@@ -190,10 +190,10 @@ public final class QemuInstanceLauncher {
 
         VmHardwareConfig config = VmHardwareConfig.defaultConfig();
         if (config.gpuAccelerationEnabled()) {
-            Log.i("DroidLayerQemu", "Launching QEMU with virtio-gpu-gl-device (GPU acceleration enabled)");
+            Log.i("OrchestellaQemu", "Launching QEMU with virtio-gpu-gl-device (GPU acceleration enabled)");
             VirglJniBridge.init(1024, true);
         } else {
-            Log.i("DroidLayerQemu", "Launching QEMU with virtio-gpu-device (software fallback)");
+            Log.i("OrchestellaQemu", "Launching QEMU with virtio-gpu-device (software fallback)");
         }
 
         String[] spec = QemuLaunchSpec.build(
@@ -206,7 +206,7 @@ public final class QemuInstanceLauncher {
                 config);
 
         String[] sanitizedSpec = sanitizeSpecForTargetBinary(spec);
-        Log.i("DroidLayerQemu", "Launching QEMU process with sanitized arguments");
+        Log.i("OrchestellaQemu", "Launching QEMU process with sanitized arguments");
 
         QemuProcessLauncher.ProcessFactory factory = currentSpec -> {
             Process process = new ProcessBuilder(currentSpec).redirectErrorStream(true).start();
@@ -215,7 +215,7 @@ public final class QemuInstanceLauncher {
                         new java.io.InputStreamReader(process.getInputStream()))) {
                     String line;
                     while ((line = reader.readLine()) != null) {
-                        Log.d("DroidLayerQemu", line);
+                        Log.d("OrchestellaQemu", line);
                     }
                 } catch (IOException ignored) {
                 }
