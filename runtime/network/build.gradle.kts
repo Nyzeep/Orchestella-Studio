@@ -38,6 +38,11 @@ tasks.register<JavaExec>("resilientDownloadEngineContractTest") {
     mainClass.set("io.github.nyzeep.droidlayer.runtime.network.download.ResilientDownloadEngineContractTest")
 }
 
+tasks.register<JavaExec>("bridgeProxyGatewayContractTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.droidlayer.runtime.network.BridgeProxyGatewayContractTest")
+}
+
 // The manager contract suite is strategy-neutral: other engine modules re-run
 // it against their own live forwarding engine (Ticket 36 AC-3), so the test
 // classes are published as consumable artifacts.
@@ -53,5 +58,9 @@ artifacts {
 }
 
 tasks.named("check") {
-    dependsOn("portForwardingManagerContractTest", "resilientDownloadEngineContractTest")
+    dependsOn(
+        "portForwardingManagerContractTest",
+        "resilientDownloadEngineContractTest",
+        "bridgeProxyGatewayContractTest"
+    )
 }

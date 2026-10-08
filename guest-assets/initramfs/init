@@ -61,6 +61,9 @@ install_strategy_neutral_bridge_devices() {
         || fail terminal-device-name-conflict
     ln -s "$BRIDGE_DEVICE" /dev/droidlayer-bridge || fail bridge-device-link
     ln -s "$TERMINAL_DEVICE" /dev/droidlayer-terminal || fail terminal-device-link
+    if [ -c /dev/vport0p2 ]; then
+        ln -sf /dev/vport0p2 /dev/droidlayer-proxy || true
+    fi
     BRIDGE_DEVICE_MAPPED=1
 }
 
@@ -133,7 +136,14 @@ exec /usr/sbin/droidlayer-guest-agent \
 EOF
     chmod 0755 "$alpine_root/usr/sbin/droidlayer-guest-agent-launcher"
 
+    if [ -f /opt/droidlayer/proxy-relay ]; then
+        mkdir -p "$alpine_root/usr/sbin"
+        cp -f /opt/droidlayer/proxy-relay "$alpine_root/usr/sbin/droidlayer-proxy-relay"
+        chmod 0755 "$alpine_root/usr/sbin/droidlayer-proxy-relay"
+    fi
+
     cat > "$alpine_root/etc/inittab" <<'EOF'
+::respawn:/usr/sbin/droidlayer-proxy-relay
 ::respawn:/usr/sbin/droidlayer-guest-agent-launcher
 ::respawn:/bin/sh
 ::ctrlaltdel:/sbin/reboot
@@ -221,6 +231,46 @@ EOF
     chmod 0644 "$debian_root/etc/systemd/system/droidlayer-guest-agent.service"
     ln -sf /etc/systemd/system/droidlayer-guest-agent.service \
         "$debian_root/etc/systemd/system/multi-user.target.wants/droidlayer-guest-agent.service"
+
+    # Outbound network proxy relay installation & systemd service (ADR-0008, ADR-0010)
+    if [ -f /opt/droidlayer/proxy-relay ]; then
+        mkdir -p "$debian_root/usr/sbin"
+        cp -f /opt/droidlayer/proxy-relay "$debian_root/usr/sbin/droidlayer-proxy-relay"
+        chmod 0755 "$debian_root/usr/sbin/droidlayer-proxy-relay"
+    fi
+
+    cat > "$debian_root/etc/systemd/system/droidlayer-proxy-relay.service" <<'EOF'
+[Unit]
+Description=DroidLayer Outbound Network Proxy Relay
+DefaultDependencies=no
+After=systemd-udevd.service
+Before=basic.target
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/droidlayer-proxy-relay
+Restart=always
+RestartSec=1s
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    chmod 0644 "$debian_root/etc/systemd/system/droidlayer-proxy-relay.service"
+    ln -sf /etc/systemd/system/droidlayer-proxy-relay.service \
+        "$debian_root/etc/systemd/system/multi-user.target.wants/droidlayer-proxy-relay.service"
+
+    mkdir -p "$debian_root/etc/apt/apt.conf.d"
+    cat > "$debian_root/etc/apt/apt.conf.d/99droidlayer-proxy" <<'EOF'
+Acquire::http::Proxy "http://127.0.0.1:8080/";
+Acquire::https::Proxy "http://127.0.0.1:8080/";
+EOF
+    chmod 0644 "$debian_root/etc/apt/apt.conf.d/99droidlayer-proxy"
+
+    if [ -d /opt/droidlayer/scripts ]; then
+        mkdir -p "$debian_root/etc/droidlayer/scripts"
+        cp -rf /opt/droidlayer/scripts/* "$debian_root/etc/droidlayer/scripts/"
+        chmod -R 0755 "$debian_root/etc/droidlayer/scripts"
+    fi
 
     # Configure DNS fallback for apt update
     if [ ! -f "$debian_root/etc/resolv.conf" ] || [ ! -s "$debian_root/etc/resolv.conf" ]; then
@@ -389,6 +439,13 @@ export HTTP_PROXY="${HTTP_PROXY:-http://127.0.0.1:8080}"
 export HTTPS_PROXY="${HTTPS_PROXY:-http://127.0.0.1:8080}"
 export all_proxy="${all_proxy:-socks5://127.0.0.1:1080}"
 export ALL_PROXY="${ALL_PROXY:-socks5://127.0.0.1:1080}"
+
+# Start proxy relay daemon if binary exists and not yet running
+if [ -x /usr/sbin/droidlayer-proxy-relay ]; then
+    if ! pidof droidlayer-proxy-relay >/dev/null 2>&1; then
+        /usr/sbin/droidlayer-proxy-relay >/tmp/droidlayer-proxy-relay.log 2>&1 &
+    fi
+fi
 
 if [ -f /etc/droidlayer/shell/aliases.sh ]; then
     . /etc/droidlayer/shell/aliases.sh
@@ -608,6 +665,10 @@ fi
 
 mkdir -p /newroot/usr/sbin /newroot/etc/init.d /newroot/etc/conf.d
 cp /opt/droidlayer/guest-agent /newroot/usr/sbin/droidlayer-guest-agent
+if [ -f /opt/droidlayer/proxy-relay ]; then
+    cp -f /opt/droidlayer/proxy-relay /newroot/usr/sbin/droidlayer-proxy-relay
+    chmod 0755 /newroot/usr/sbin/droidlayer-proxy-relay
+fi
 cp /opt/droidlayer/openrc/droidlayer-guest-agent \
     /newroot/etc/init.d/droidlayer-guest-agent
 cp /opt/droidlayer/openrc/droidlayer-guest-agent.conf \

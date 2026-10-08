@@ -60,18 +60,25 @@ public final class ResilientDownloadEngineAppTest {
         Files.deleteIfExists(dest);
 
         // Good server responds 200 OK with payload
-        try (ServerSocket goodServer = new ServerSocket(0)) {
+        java.util.concurrent.atomic.AtomicBoolean serverRunning = new java.util.concurrent.atomic.AtomicBoolean(true);
+        try (ServerSocket goodServer = new ServerSocket(0, 50, java.net.InetAddress.getByName("127.0.0.1"))) {
             int goodPort = goodServer.getLocalPort();
             Thread serverThread = new Thread(() -> {
-                try (Socket client = goodServer.accept();
-                     OutputStream out = client.getOutputStream()) {
-                    String header = "HTTP/1.1 200 OK\r\n"
-                            + "Content-Length: " + payload.length + "\r\n"
-                            + "Connection: close\r\n\r\n";
-                    out.write(header.getBytes(StandardCharsets.US_ASCII));
-                    out.write(payload);
-                    out.flush();
-                } catch (Exception ignored) {}
+                while (serverRunning.get()) {
+                    try {
+                        Socket client = goodServer.accept();
+                        try (OutputStream out = client.getOutputStream()) {
+                            String header = "HTTP/1.1 200 OK\r\n"
+                                    + "Content-Length: " + payload.length + "\r\n"
+                                    + "Connection: close\r\n\r\n";
+                            out.write(header.getBytes(StandardCharsets.US_ASCII));
+                            out.write(payload);
+                            out.flush();
+                        } finally {
+                            client.close();
+                        }
+                    } catch (Exception ignored) {}
+                }
             });
             serverThread.setDaemon(true);
             serverThread.start();
@@ -91,6 +98,7 @@ public final class ResilientDownloadEngineAppTest {
             assertEquals(size, Files.size(dest));
             assertArrayEquals(payload, Files.readAllBytes(dest));
             assertEquals(Arrays.asList(100L, 200L, 400L), retries);
+            serverRunning.set(false);
         }
     }
 

@@ -87,6 +87,9 @@ public final class QemuLaunchSpecTest {
         requireArg(spec, "-chardev",
                 "socket,id=control,path=droidlayer-control-i1,abstract=on,server=on,wait=off");
         requireArg(spec, "-device", "virtserialport,chardev=control,name=droidlayer.bridge");
+        requireArg(spec, "-chardev",
+                "socket,id=netproxy,path=droidlayer-proxy-i1,abstract=on,server=on,wait=off");
+        requireArg(spec, "-device", "virtserialport,chardev=netproxy,name=droidlayer.proxy");
         requireArg(spec, "-device", "virtio-serial-device");
 
         // Guest provisioning cmdline with default DNS fallback (AC-2).
