@@ -62,7 +62,7 @@ install_strategy_neutral_bridge_devices() {
     ln -s "$BRIDGE_DEVICE" /dev/droidlayer-bridge || fail bridge-device-link
     ln -s "$TERMINAL_DEVICE" /dev/droidlayer-terminal || fail terminal-device-link
     if [ -c /dev/vport0p2 ]; then
-        ln -sf /dev/vport0p2 /dev/droidlayer-proxy || true
+        ln -sf /dev/vport0p2 /dev/orchestella-proxy || true
     fi
     BRIDGE_DEVICE_MAPPED=1
 }
@@ -136,14 +136,14 @@ exec /usr/sbin/droidlayer-guest-agent \
 EOF
     chmod 0755 "$alpine_root/usr/sbin/droidlayer-guest-agent-launcher"
 
-    if [ -f /opt/droidlayer/proxy-relay ]; then
+    if [ -f /opt/orchestella/proxy-relay ]; then
         mkdir -p "$alpine_root/usr/sbin"
-        cp -f /opt/droidlayer/proxy-relay "$alpine_root/usr/sbin/droidlayer-proxy-relay"
-        chmod 0755 "$alpine_root/usr/sbin/droidlayer-proxy-relay"
+        cp -f /opt/orchestella/proxy-relay "$alpine_root/usr/sbin/orchestella-proxy-relay"
+        chmod 0755 "$alpine_root/usr/sbin/orchestella-proxy-relay"
     fi
 
     cat > "$alpine_root/etc/inittab" <<'EOF'
-::respawn:/usr/sbin/droidlayer-proxy-relay
+::respawn:/usr/sbin/orchestella-proxy-relay
 ::respawn:/usr/sbin/droidlayer-guest-agent-launcher
 ::respawn:/bin/sh
 ::ctrlaltdel:/sbin/reboot
@@ -233,38 +233,41 @@ EOF
         "$debian_root/etc/systemd/system/multi-user.target.wants/droidlayer-guest-agent.service"
 
     # Outbound network proxy relay installation & systemd service (ADR-0008, ADR-0010)
-    if [ -f /opt/droidlayer/proxy-relay ]; then
+    rm -f "$debian_root/etc/systemd/system/droidlayer-proxy-relay.service"
+    rm -f "$debian_root/etc/systemd/system/multi-user.target.wants/droidlayer-proxy-relay.service"
+    rm -f "$debian_root/etc/apt/apt.conf.d/99droidlayer-proxy"
+    rm -f "$debian_root/usr/sbin/droidlayer-proxy-relay"
+    if [ -f /opt/orchestella/proxy-relay ]; then
         mkdir -p "$debian_root/usr/sbin"
-        cp -f /opt/droidlayer/proxy-relay "$debian_root/usr/sbin/droidlayer-proxy-relay"
-        chmod 0755 "$debian_root/usr/sbin/droidlayer-proxy-relay"
+        cp -f /opt/orchestella/proxy-relay "$debian_root/usr/sbin/orchestella-proxy-relay"
+        chmod 0755 "$debian_root/usr/sbin/orchestella-proxy-relay"
     fi
 
-    cat > "$debian_root/etc/systemd/system/droidlayer-proxy-relay.service" <<'EOF'
+    cat > "$debian_root/etc/systemd/system/orchestella-proxy-relay.service" <<'EOF'
 [Unit]
-Description=DroidLayer Outbound Network Proxy Relay
-DefaultDependencies=no
-After=systemd-udevd.service
-Before=basic.target
+Description=Orchestella Outbound Network Proxy Relay
+After=systemd-udevd.service network.target
+Wants=systemd-udevd.service
 
 [Service]
 Type=simple
-ExecStart=/usr/sbin/droidlayer-proxy-relay
+ExecStart=/usr/sbin/orchestella-proxy-relay
 Restart=always
-RestartSec=1s
+RestartSec=2s
 
 [Install]
 WantedBy=multi-user.target
 EOF
-    chmod 0644 "$debian_root/etc/systemd/system/droidlayer-proxy-relay.service"
-    ln -sf /etc/systemd/system/droidlayer-proxy-relay.service \
-        "$debian_root/etc/systemd/system/multi-user.target.wants/droidlayer-proxy-relay.service"
+    chmod 0644 "$debian_root/etc/systemd/system/orchestella-proxy-relay.service"
+    ln -sf /etc/systemd/system/orchestella-proxy-relay.service \
+        "$debian_root/etc/systemd/system/multi-user.target.wants/orchestella-proxy-relay.service"
 
     mkdir -p "$debian_root/etc/apt/apt.conf.d"
-    cat > "$debian_root/etc/apt/apt.conf.d/99droidlayer-proxy" <<'EOF'
+    cat > "$debian_root/etc/apt/apt.conf.d/99orchestella-proxy" <<'EOF'
 Acquire::http::Proxy "http://127.0.0.1:8080/";
 Acquire::https::Proxy "http://127.0.0.1:8080/";
 EOF
-    chmod 0644 "$debian_root/etc/apt/apt.conf.d/99droidlayer-proxy"
+    chmod 0644 "$debian_root/etc/apt/apt.conf.d/99orchestella-proxy"
 
     if [ -d /opt/droidlayer/scripts ]; then
         mkdir -p "$debian_root/etc/droidlayer/scripts"
@@ -441,9 +444,9 @@ export all_proxy="${all_proxy:-socks5://127.0.0.1:1080}"
 export ALL_PROXY="${ALL_PROXY:-socks5://127.0.0.1:1080}"
 
 # Start proxy relay daemon if binary exists and not yet running
-if [ -x /usr/sbin/droidlayer-proxy-relay ]; then
-    if ! pidof droidlayer-proxy-relay >/dev/null 2>&1; then
-        /usr/sbin/droidlayer-proxy-relay >/tmp/droidlayer-proxy-relay.log 2>&1 &
+if [ -x /usr/sbin/orchestella-proxy-relay ]; then
+    if ! pidof orchestella-proxy-relay >/dev/null 2>&1; then
+        /usr/sbin/orchestella-proxy-relay >/tmp/orchestella-proxy-relay.log 2>&1 &
     fi
 fi
 
@@ -665,9 +668,9 @@ fi
 
 mkdir -p /newroot/usr/sbin /newroot/etc/init.d /newroot/etc/conf.d
 cp /opt/droidlayer/guest-agent /newroot/usr/sbin/droidlayer-guest-agent
-if [ -f /opt/droidlayer/proxy-relay ]; then
-    cp -f /opt/droidlayer/proxy-relay /newroot/usr/sbin/droidlayer-proxy-relay
-    chmod 0755 /newroot/usr/sbin/droidlayer-proxy-relay
+if [ -f /opt/orchestella/proxy-relay ]; then
+    cp -f /opt/orchestella/proxy-relay /newroot/usr/sbin/orchestella-proxy-relay
+    chmod 0755 /newroot/usr/sbin/orchestella-proxy-relay
 fi
 cp /opt/droidlayer/openrc/droidlayer-guest-agent \
     /newroot/etc/init.d/droidlayer-guest-agent

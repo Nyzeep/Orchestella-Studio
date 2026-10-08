@@ -24,7 +24,7 @@ import java.util.logging.Logger;
  * Host-side Virtio-Serial Bridge Proxy Gateway (ADR-0008, ADR-0010, Phase 4.5).
  *
  * <p>Serves as high-performance proxy relay between Android Host network stack and
- * Linux Guest operating system across the dedicated {@code droidlayer.proxy} virtio-serial port:
+ * Linux Guest operating system across the dedicated {@code orchestella.proxy} virtio-serial port:
  * <ul>
  *   <li>Demultiplexes concurrent client streams using 9-byte framed protocol across the single serial channel;</li>
  *   <li>Intercepts standard {@code CONNECT host:port HTTP/1.1} tunnels for HTTPS;</li>

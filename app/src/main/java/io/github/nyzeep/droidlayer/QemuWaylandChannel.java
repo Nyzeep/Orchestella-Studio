@@ -27,7 +27,7 @@ import java.util.logging.Logger;
  * <p>Implements {@link WaylandChannel} and {@link DisplayControl}:
  * <ul>
  *   <li>Delivers a smooth, double-buffered 60 FPS presentation frame pump to {@link DoubleBufferedRenderer};</li>
- *   <li>Attempts connection to abstract Unix domain socket {@code @droidlayer-wayland} when served by guest;</li>
+ *   <li>Attempts connection to abstract Unix domain socket {@code @orchestella-wayland} when served by guest;</li>
  *   <li>Handles dynamic display resolution renegotiation and scaling;</li>
  *   <li>Intercepts and forwards touch, mouse pointer, and IME text input events;</li>
  *   <li>Maintains thread-safe lifecycle transitions: CONNECTING, CONNECTED, DISCONNECTED.</li>

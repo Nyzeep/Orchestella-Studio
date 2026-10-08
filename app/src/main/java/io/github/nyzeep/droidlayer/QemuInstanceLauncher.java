@@ -73,7 +73,7 @@ public final class QemuInstanceLauncher {
                 } catch (Exception e) {
                     Log.w("OrchestellaQemu", "Could not connect to netproxy socket: " + e.getMessage());
                 }
-            }, "proxy-gateway-" + controlSocketName);
+            }, "orchestella-proxy-gateway-" + controlSocketName);
             proxyThread.setDaemon(true);
             proxyThread.start();
         }

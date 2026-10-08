@@ -32,9 +32,9 @@ import java.util.List;
  */
 public class ModernTerminalView extends ScrollView {
 
-    private static final int MAX_BUFFER_CHARS = 80_000;
-    private static final int TRIM_CHARS = 20_000;
-    private static final long FLUSH_INTERVAL_MS = 33L; // ~30 FPS UI batching to prevent StaticLayout ANR
+    private static final int MAX_BUFFER_CHARS = 24_000;
+    private static final int TRIM_CHARS = 6_000;
+    private static final long FLUSH_INTERVAL_MS = 66L; // ~15 FPS batching to guarantee UI thread responsiveness and prevent ANRs
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final AnsiEscapeParser parser = new AnsiEscapeParser();
@@ -165,11 +165,20 @@ public class ModernTerminalView extends ScrollView {
             return;
         }
 
-        // Enforce scrollback limit
+        // Enforce scrollback limit without allocating large intermediate strings
         if (transcriptBuffer.length() > MAX_BUFFER_CHARS) {
-            int cutIndex = transcriptBuffer.toString().indexOf('\n', TRIM_CHARS);
-            if (cutIndex != -1 && cutIndex < transcriptBuffer.length() - 1) {
+            int cutIndex = -1;
+            int len = transcriptBuffer.length();
+            for (int i = TRIM_CHARS; i < len; i++) {
+                if (transcriptBuffer.charAt(i) == '\n') {
+                    cutIndex = i;
+                    break;
+                }
+            }
+            if (cutIndex != -1 && cutIndex < len - 1) {
                 transcriptBuffer.delete(0, cutIndex + 1);
+            } else {
+                transcriptBuffer.delete(0, TRIM_CHARS);
             }
         }
 
@@ -206,10 +215,7 @@ public class ModernTerminalView extends ScrollView {
      * Scrolls the view to the latest output.
      */
     public void scrollToBottom() {
-        post(() -> {
-            fullScroll(View.FOCUS_DOWN);
-            postDelayed(() -> fullScroll(View.FOCUS_DOWN), 60);
-        });
+        post(() -> fullScroll(View.FOCUS_DOWN));
     }
 
     public TextView getTranscriptView() {

@@ -7,10 +7,10 @@ use POSIX qw(:errno_h);
 
 $| = 1; # autoflush STDOUT
 
-my @DEVICE_CANDIDATES = (
-    "/dev/virtio-ports/droidlayer.proxy",
+my @CANDIDATE_PATHS = (
+    "/dev/virtio-ports/orchestella.proxy",
+    "/dev/orchestella-proxy",
     "/dev/vport0p2",
-    "/dev/droidlayer-proxy",
 );
 
 my $PORT = 8080;
@@ -18,18 +18,28 @@ my $CMD_DATA  = 1;
 my $CMD_CLOSE = 2;
 my $CMD_RESET = 3;
 
+my $serial_fh;
 my $serial_path;
-for my $path (@DEVICE_CANDIDATES) {
-    if (-e $path) {
-        $serial_path = $path;
-        last;
+
+for my $retry (1..60) {
+    my @paths = @CANDIDATE_PATHS;
+    for my $dev (glob("/dev/virtio-ports/*")) {
+        push @paths, $dev unless $dev =~ /bridge/;
     }
+    for my $path (@paths) {
+        if (-e $path) {
+            if (open(my $fh, "+<", $path)) {
+                $serial_fh = $fh;
+                $serial_path = $path;
+                last;
+            }
+        }
+    }
+    last if $serial_fh;
+    select(undef, undef, undef, 0.5); # sleep 500ms
 }
 
-die "No virtio-serial proxy port found!\n" unless $serial_path;
-
-open(my $serial_fh, "+<", $serial_path)
-    or die "Cannot open $serial_path: $!\n";
+die "[orchestella-proxy-relay] No virtio-serial proxy port found or cannot open after retries: $!\n" unless $serial_fh;
 binmode($serial_fh);
 
 my $server = IO::Socket::INET->new(
@@ -40,7 +50,7 @@ my $server = IO::Socket::INET->new(
     ReuseAddr => 1,
 ) or die "Cannot listen on 127.0.0.1:$PORT: $!\n";
 
-print "[droidlayer-proxy-relay] Serving on 127.0.0.1:$PORT -> $serial_path\n";
+print "[orchestella-proxy-relay] Serving on 127.0.0.1:$PORT -> $serial_path\n";
 
 my $sel = IO::Select->new();
 $sel->add($server);

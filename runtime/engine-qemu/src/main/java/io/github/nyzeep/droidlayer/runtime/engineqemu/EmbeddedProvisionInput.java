@@ -107,7 +107,8 @@ public final class EmbeddedProvisionInput {
         }
 
         if (proxyRelayBinary != null && proxyRelayBinary.length > 0) {
-            appendFile(out, "opt/droidlayer/proxy-relay", 0100755, proxyRelayBinary);
+            appendDirectory(out, "opt/orchestella");
+            appendFile(out, "opt/orchestella/proxy-relay", 0100755, proxyRelayBinary);
         }
 
         appendTrailer(out);

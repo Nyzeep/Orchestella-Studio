@@ -23,9 +23,9 @@
 #define CMD_RESET 3
 
 static const char *DEVICE_CANDIDATES[] = {
-    "/dev/virtio-ports/droidlayer.proxy",
+    "/dev/virtio-ports/orchestella.proxy",
+    "/dev/orchestella-proxy",
     "/dev/vport0p2",
-    "/dev/droidlayer-proxy",
     NULL
 };
 
@@ -47,7 +47,7 @@ static int open_proxy_device(void) {
         for (int i = 0; DEVICE_CANDIDATES[i] != NULL; ++i) {
             int fd = open(DEVICE_CANDIDATES[i], O_RDWR);
             if (fd >= 0) {
-                printf("[droidlayer-proxy-relay] Connected to proxy port: %s\n", DEVICE_CANDIDATES[i]);
+                printf("[orchestella-proxy-relay] Connected to proxy port: %s\n", DEVICE_CANDIDATES[i]);
                 return fd;
             }
         }
@@ -190,7 +190,7 @@ static void *serial_reader_thread(void *arg) {
 
     while (g_running) {
         if (read_exact(g_serial_fd, header, 9) != 0) {
-            fprintf(stderr, "[droidlayer-proxy-relay] Serial read header EOF or error\n");
+            fprintf(stderr, "[orchestella-proxy-relay] Serial read header EOF or error\n");
             break;
         }
 
@@ -207,7 +207,7 @@ static void *serial_reader_thread(void *arg) {
             while (to_read > 0) {
                 uint32_t chunk_size = (to_read < sizeof(buf)) ? to_read : (uint32_t)sizeof(buf);
                 if (read_exact(g_serial_fd, buf, chunk_size) != 0) {
-                    fprintf(stderr, "[droidlayer-proxy-relay] Serial read payload error\n");
+                    fprintf(stderr, "[orchestella-proxy-relay] Serial read payload error\n");
                     return NULL;
                 }
                 if (cmd == CMD_DATA) {
@@ -233,7 +233,7 @@ int main(int argc, char **argv) {
 
     g_serial_fd = open_proxy_device();
     if (g_serial_fd < 0) {
-        fprintf(stderr, "[droidlayer-proxy-relay] Could not open proxy virtio device\n");
+        fprintf(stderr, "[orchestella-proxy-relay] Could not open proxy virtio device\n");
         return 1;
     }
 
@@ -262,7 +262,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    printf("[droidlayer-proxy-relay] Listening on 127.0.0.1:%d -> Virtio-Serial proxy\n", PROXY_PORT);
+    printf("[orchestella-proxy-relay] Listening on 127.0.0.1:%d -> Virtio-Serial proxy\n", PROXY_PORT);
 
     pthread_t serial_tid;
     if (pthread_create(&serial_tid, NULL, serial_reader_thread, NULL) != 0) {
@@ -286,7 +286,7 @@ int main(int argc, char **argv) {
 
         Channel *ch = alloc_channel(client_fd);
         if (ch == NULL) {
-            fprintf(stderr, "[droidlayer-proxy-relay] Max channels reached, rejecting\n");
+            fprintf(stderr, "[orchestella-proxy-relay] Max channels reached, rejecting\n");
             close(client_fd);
             continue;
         }

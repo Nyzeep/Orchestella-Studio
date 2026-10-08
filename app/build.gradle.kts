@@ -157,7 +157,7 @@ val syncGuestInitAndRelay by tasks.registering(Copy::class) {
     from(rootProject.file("guest-assets/initramfs/init")) {
         rename { "guest_init" }
     }
-    from(rootProject.file("guest-assets/scripts/droidlayer-proxy-relay.pl")) {
+    from(rootProject.file("guest-assets/scripts/orchestella-proxy-relay.pl")) {
         rename { "proxy_relay" }
     }
     into(file("src/main/resources"))
