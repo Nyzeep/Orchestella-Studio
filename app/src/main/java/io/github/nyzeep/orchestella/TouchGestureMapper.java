@@ -38,10 +38,14 @@ public final class TouchGestureMapper {
     public static final float DEFAULT_TAP_SLOP_PX = 8.0f;
     public static final long DEFAULT_TWO_FINGER_TAP_TIMEOUT_MS = 250L;
     public static final long DEFAULT_LONG_PRESS_TIMEOUT_MS = 500L;
+    public static final double DEFAULT_DAMPING_FACTOR = 1.0;
+    public static final double DEFAULT_JITTER_DEADZONE_PX = 0.5;
 
     private WaylandChannel channel;
     private ViewportAspectCalculator.ViewportMapping mapping;
     private TouchMode touchMode = TouchMode.TRACKPAD;
+    private double dampingFactor = DEFAULT_DAMPING_FACTOR;
+    private double jitterDeadzonePx = DEFAULT_JITTER_DEADZONE_PX;
     private PinchListener pinchListener;
 
     private long tapTimeoutMs = DEFAULT_TAP_TIMEOUT_MS;
@@ -114,6 +118,31 @@ public final class TouchGestureMapper {
 
     public void setTouchMode(TouchMode touchMode) {
         this.touchMode = Objects.requireNonNull(touchMode, "touchMode");
+    }
+
+    public synchronized TouchMode toggleTouchMode() {
+        if (touchMode == TouchMode.TRACKPAD) {
+            touchMode = TouchMode.TOUCHSCREEN;
+        } else {
+            touchMode = TouchMode.TRACKPAD;
+        }
+        return touchMode;
+    }
+
+    public void setDampingFactor(double factor) {
+        this.dampingFactor = Math.max(0.1, Math.min(5.0, factor));
+    }
+
+    public double getDampingFactor() {
+        return dampingFactor;
+    }
+
+    public void setJitterDeadzonePx(double px) {
+        this.jitterDeadzonePx = Math.max(0.0, px);
+    }
+
+    public double getJitterDeadzonePx() {
+        return jitterDeadzonePx;
     }
 
     public double getCursorX() {
@@ -248,15 +277,22 @@ public final class TouchGestureMapper {
         if (touchMode == TouchMode.TRACKPAD) {
             double deltaX = deltaVx / mapping.scaleX();
             double deltaY = deltaVy / mapping.scaleY();
+            double dist = Math.hypot(deltaX, deltaY);
+
+            if (dist < jitterDeadzonePx) {
+                lastX = vx;
+                lastY = vy;
+                lastTimeNs = timestampNs;
+                return;
+            }
 
             // Dynamic velocity acceleration curve
             double dtMs = Math.max(1.0, elapsedNs / 1_000_000.0);
-            double dist = Math.hypot(deltaX, deltaY);
             double velocity = dist / dtMs; // px per ms
             double accelFactor = 1.0 + Math.min(3.0, velocity * 0.1);
 
-            double finalDeltaX = deltaX * accelFactor;
-            double finalDeltaY = deltaY * accelFactor;
+            double finalDeltaX = deltaX * accelFactor * dampingFactor;
+            double finalDeltaY = deltaY * accelFactor * dampingFactor;
 
             cursorX += finalDeltaX;
             cursorY += finalDeltaY;

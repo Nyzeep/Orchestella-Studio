@@ -113,6 +113,14 @@
     <string name="mouse_capture">捕获鼠标</string>
     <string name="mouse_release">释放鼠标 (Ctrl+Alt)</string>
 
+    <!-- Phase 4.9 Task 4: Wayland Trackpad HUD & Sensitivity Strings -->
+    <string name="touch_mode_trackpad_label">🖱️ 触控板</string>
+    <string name="touch_mode_touchscreen_label">👆 触屏模式</string>
+    <string name="touch_mode_trackpad_active">已切换至触控板模式（相对滑动与智能阻尼）</string>
+    <string name="touch_mode_touchscreen_active">已切换至直接触屏模式（绝对坐标映射）</string>
+    <string name="trackpad_sensitivity_title">触控板阻尼与灵敏度微调</string>
+    <string name="trackpad_sensitivity_updated">阻尼系数已调整为：%1$s</string>
+
     <!-- Ticket 52: Material 3 Expressive Dashboard & UTM Instance Management -->
     <string name="dashboard_title">Orchestella Studio</string>
     <string name="dashboard_subtitle">无 Root Android Linux Runtime</string>

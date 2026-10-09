@@ -16,6 +16,7 @@ import android.view.WindowInsetsController;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.TextView;
+import android.widget.Toast;
 import androidx.appcompat.app.AlertDialog;
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle;
 import java.io.IOException;
@@ -76,6 +77,7 @@ public class DesktopActivity extends Activity {
     private PointerCaptureHandler pointerCaptureHandler;
     private FileDropTargetListener fileDropTargetListener;
     private Button btnPointerCapture;
+    private Button btnToggleTouchMode;
     private InputManager.InputDeviceListener inputDeviceListener;
 
     private Runnable hudUpdater;
@@ -114,6 +116,26 @@ public class DesktopActivity extends Activity {
 
         virtualKeyBar = new VirtualKeyBar(waylandChannel);
         setupVirtualKeyBar();
+
+        btnToggleTouchMode = findViewById(R.id.btn_toggle_touch_mode);
+        if (btnToggleTouchMode != null && surfaceView != null) {
+            updateTouchModeButtonText();
+            btnToggleTouchMode.setOnClickListener(v -> {
+                TouchGestureMapper mapper = surfaceView.getTouchGestureMapper();
+                if (mapper != null) {
+                    TouchGestureMapper.TouchMode newMode = mapper.toggleTouchMode();
+                    updateTouchModeButtonText();
+                    String message = (newMode == TouchGestureMapper.TouchMode.TRACKPAD)
+                            ? getString(R.string.touch_mode_trackpad_active)
+                            : getString(R.string.touch_mode_touchscreen_active);
+                    Toast.makeText(DesktopActivity.this, message, Toast.LENGTH_SHORT).show();
+                }
+            });
+            btnToggleTouchMode.setOnLongClickListener(v -> {
+                showSensitivityAdjustmentDialog();
+                return true;
+            });
+        }
 
         if (isHeadlessInstance(instanceId)) {
             new AlertDialog.Builder(this)
@@ -563,5 +585,52 @@ public class DesktopActivity extends Activity {
 
     private boolean isHeadlessInstance(String instanceId) {
         return false;
+    }
+
+    private void updateTouchModeButtonText() {
+        if (btnToggleTouchMode == null) {
+            return;
+        }
+        TouchGestureMapper mapper = surfaceView != null ? surfaceView.getTouchGestureMapper() : null;
+        if (mapper != null && mapper.getTouchMode() == TouchGestureMapper.TouchMode.TOUCHSCREEN) {
+            btnToggleTouchMode.setText(R.string.touch_mode_touchscreen_label);
+        } else {
+            btnToggleTouchMode.setText(R.string.touch_mode_trackpad_label);
+        }
+    }
+
+    private void showSensitivityAdjustmentDialog() {
+        TouchGestureMapper mapper = surfaceView != null ? surfaceView.getTouchGestureMapper() : null;
+        if (mapper == null) {
+            return;
+        }
+        final String[] options = {
+                "0.6x (高阻尼/平稳防抖)",
+                "0.8x (柔和阻尼)",
+                "1.0x (默认平衡)",
+                "1.3x (轻微阻尼/轻快)",
+                "1.6x (超低阻尼/极速滑动)"
+        };
+        final double[] factors = {0.6, 0.8, 1.0, 1.3, 1.6};
+        int selectedIndex = 2;
+        double currentDamping = mapper.getDampingFactor();
+        for (int i = 0; i < factors.length; i++) {
+            if (Math.abs(factors[i] - currentDamping) < 0.1) {
+                selectedIndex = i;
+                break;
+            }
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.trackpad_sensitivity_title)
+                .setSingleChoiceItems(options, selectedIndex, (dialog, which) -> {
+                    mapper.setDampingFactor(factors[which]);
+                    Toast.makeText(
+                            DesktopActivity.this,
+                            getString(R.string.trackpad_sensitivity_updated, options[which]),
+                            Toast.LENGTH_SHORT).show();
+                    dialog.dismiss();
+                })
+                .setNegativeButton(R.string.dialog_close, null)
+                .show();
     }
 }
