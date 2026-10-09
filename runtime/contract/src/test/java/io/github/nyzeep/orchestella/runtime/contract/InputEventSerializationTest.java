@@ -12,10 +12,25 @@ public final class InputEventSerializationTest {
         keyEventModifierChecks();
         textCommitEventRoundTripWithAsciiAndUnicode();
         textCommitEventRoundTripWithChineseAndEmoji();
+        gestureEventRoundTrip();
         rejectsOversizedSerializedPayload();
         rejectsOversizedDeserializedWire();
         rejectsMalformedWireStrings();
         System.out.println("INPUT_EVENT_SERIALIZATION_TEST_OK");
+    }
+
+    private static void gestureEventRoundTrip() {
+        GestureEvent pinch = GestureEvent.pinch(1.5, 400.0, 300.0, 7000000L);
+        assertEquals(InputEvent.Type.GESTURE, pinch.eventType(), "gesture type");
+        assertEquals(GestureEvent.GestureType.PINCH, pinch.gestureType(), "pinch gestureType");
+        assertEquals(1.5, pinch.scaleFactor(), "scaleFactor");
+        assertEquals(400.0, pinch.focusX(), "focusX");
+        assertEquals(300.0, pinch.focusY(), "focusY");
+        assertEquals(pinch, InputEventSerialization.deserialize(pinch.serialize()), "pinch roundtrip");
+
+        GestureEvent tap = GestureEvent.twoFingerTap(120.0, 80.0, 7500000L);
+        assertEquals(GestureEvent.GestureType.TWO_FINGER_TAP, tap.gestureType(), "twoFingerTap gestureType");
+        assertEquals(tap, InputEventSerialization.deserialize(tap.serialize()), "two finger tap roundtrip");
     }
 
     private static void pointerMotionRoundTrip() {

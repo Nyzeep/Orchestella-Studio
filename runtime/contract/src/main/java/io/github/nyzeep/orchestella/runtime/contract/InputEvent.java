@@ -15,7 +15,8 @@ public interface InputEvent {
         POINTER,
         TOUCH,
         KEY,
-        TEXT_COMMIT
+        TEXT_COMMIT,
+        GESTURE
     }
 
     /**
