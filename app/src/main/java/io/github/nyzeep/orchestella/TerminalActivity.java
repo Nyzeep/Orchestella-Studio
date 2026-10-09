@@ -76,6 +76,12 @@ public class TerminalActivity extends Activity {
                 terminalView.clear();
             }
         });
+        terminalEngine.setTabCompletionHandler(new CommandCompletionEngine());
+        terminalEngine.setTabCompletionListener((buf, pos, candidates) -> {
+            if (terminalView != null && candidates != null && !candidates.isEmpty()) {
+                terminalView.appendOutput(terminalEngine.renderCompletionListing(candidates) + "\n");
+            }
+        });
 
         LinearLayout rootLayout = new LinearLayout(this);
         rootLayout.setOrientation(LinearLayout.VERTICAL);

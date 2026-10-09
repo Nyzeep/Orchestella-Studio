@@ -293,6 +293,14 @@ public final class InteractiveTerminalEngine {
                 notifyLineChanged();
                 return;
             } else if (candidates != null && candidates.size() > 1) {
+                String commonPrefix = CommandCompletionEngine.findLongestCommonPrefix(candidates);
+                if (commonPrefix != null && commonPrefix.length() > cursorPosition && commonPrefix.startsWith(lineBuffer.substring(0, cursorPosition))) {
+                    String afterCursor = lineBuffer.substring(cursorPosition);
+                    lineBuffer.setLength(0);
+                    lineBuffer.append(commonPrefix).append(afterCursor);
+                    cursorPosition = commonPrefix.length();
+                    notifyLineChanged();
+                }
                 if (tabCompletionListener != null) {
                     tabCompletionListener.onCompletionCandidates(lineBuffer.toString(), cursorPosition, candidates);
                 }
@@ -300,6 +308,17 @@ public final class InteractiveTerminalEngine {
             }
         }
         sendRawBytes(new byte[]{'\t'});
+    }
+
+    /**
+     * Helper to format candidate listing and redrawn prompt line for display in terminal output.
+     */
+    public String renderCompletionListing(List<String> candidates) {
+        if (candidates == null || candidates.isEmpty()) {
+            return "";
+        }
+        String listing = CommandCompletionEngine.formatCandidatesListing(candidates);
+        return "\r\n" + listing + "\r\n" + prompt.toPromptString() + lineBuffer.toString();
     }
 
     /**
