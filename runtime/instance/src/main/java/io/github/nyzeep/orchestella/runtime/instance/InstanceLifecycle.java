@@ -602,6 +602,95 @@ public final class InstanceLifecycle {
             return instance;
         }
 
+        /**
+         * Clones an existing instance into a new independent instance, duplicating its configuration
+         * and physical root-volume disk image.
+         *
+         * @param sourceId the id of the source instance to clone
+         * @param targetRootVolume the path for the new instance's root volume
+         * @return the new cloned Instance in CREATED state
+         * @throws IOException on I/O error copying disk
+         * @throws IllegalStateException if source instance is RUNNING or PROVISIONING
+         */
+        public synchronized Instance cloneInstance(String sourceId, Path targetRootVolume) throws IOException {
+            Objects.requireNonNull(targetRootVolume, "targetRootVolume");
+            Instance source = store.load(sourceId);
+            if (source.state() != State.STOPPED && source.state() != State.CREATED) {
+                throw new IllegalStateException(
+                        "cannot clone instance in state: " + source.state() + "; instance must be STOPPED or CREATED");
+            }
+            if (targetRootVolume.getParent() != null) {
+                Files.createDirectories(targetRootVolume.getParent());
+            }
+            if (source.rootVolume() != null && Files.isRegularFile(source.rootVolume())) {
+                Files.copy(source.rootVolume(), targetRootVolume, StandardCopyOption.COPY_ATTRIBUTES, StandardCopyOption.REPLACE_EXISTING);
+            } else if (!Files.exists(targetRootVolume)) {
+                Files.createFile(targetRootVolume);
+            }
+            long now = clock.millis();
+            Instance cloned =
+                    new Instance(
+                            UUID.randomUUID().toString(),
+                            source.distro(),
+                            targetRootVolume,
+                            newBridgeToken(),
+                            newGuestPassword(),
+                            source.runtimeClass(),
+                            State.CREATED,
+                            now,
+                            now,
+                            null,
+                            source.hardwareConfig());
+            store.save(cloned);
+            return cloned;
+        }
+
+        /**
+         * Convenience method to clone an instance, automatically placing the new root volume
+         * beside the original with the new instance ID.
+         */
+        public synchronized Instance cloneInstance(String sourceId) throws IOException {
+            Instance source = store.load(sourceId);
+            String newId = UUID.randomUUID().toString();
+            Path sourceVolume = source.rootVolume();
+            Path targetVolume;
+            if (sourceVolume != null && sourceVolume.getParent() != null) {
+                String fileName = sourceVolume.getFileName().toString();
+                String ext = fileName.contains(".") ? fileName.substring(fileName.lastIndexOf('.')) : ".raw";
+                targetVolume = sourceVolume.getParent().resolve(newId + ext);
+            } else {
+                targetVolume = Path.of(newId + ".raw");
+            }
+            if (source.state() != State.STOPPED && source.state() != State.CREATED) {
+                throw new IllegalStateException(
+                        "cannot clone instance in state: " + source.state() + "; instance must be STOPPED or CREATED");
+            }
+            if (targetVolume.getParent() != null) {
+                Files.createDirectories(targetVolume.getParent());
+            }
+            if (sourceVolume != null && Files.isRegularFile(sourceVolume)) {
+                Files.copy(sourceVolume, targetVolume, StandardCopyOption.COPY_ATTRIBUTES, StandardCopyOption.REPLACE_EXISTING);
+            } else if (!Files.exists(targetVolume)) {
+                Files.createFile(targetVolume);
+            }
+            long now = clock.millis();
+            Instance cloned =
+                    new Instance(
+                            newId,
+                            source.distro(),
+                            targetVolume,
+                            newBridgeToken(),
+                            newGuestPassword(),
+                            source.runtimeClass(),
+                            State.CREATED,
+                            now,
+                            now,
+                            null,
+                            source.hardwareConfig());
+            store.save(cloned);
+            return cloned;
+        }
+
         public synchronized Instance updateHardwareConfig(String id, VmHardwareConfig newConfig) throws IOException {
             Objects.requireNonNull(newConfig, "newConfig");
             Instance current = store.load(id);

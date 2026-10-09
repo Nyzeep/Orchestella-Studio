@@ -46,6 +46,13 @@ tasks.register<JavaExec>("instanceLifecycleDeleteTest") {
     args(deleteContractOutput.get().asFile.absolutePath)
 }
 
+val cloneContractOutput = layout.buildDirectory.dir("clone-lifecycle-contract")
+tasks.register<JavaExec>("instanceLifecycleCloneTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycleCloneTest")
+    args(cloneContractOutput.get().asFile.absolutePath)
+}
+
 tasks.register<JavaExec>("sparseDiskResizerTest") {
     classpath = sourceSets["test"].runtimeClasspath
     mainClass.set("io.github.nyzeep.orchestella.runtime.instance.SparseDiskResizerTest")
@@ -57,6 +64,7 @@ tasks.named("check") {
         "reconciliationAndRecoveryLifecycleContractTest",
         "instanceStorageContractTest",
         "instanceLifecycleDeleteTest",
+        "instanceLifecycleCloneTest",
         "sparseDiskResizerTest"
     )
 }

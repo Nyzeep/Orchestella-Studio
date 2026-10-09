@@ -586,11 +586,52 @@ class MainActivity : AppCompatActivity() {
                 showCredentialsDialog(instance)
             }
 
+            override fun onClone(instance: InstanceLifecycle.Instance) {
+                confirmCloneInstance(instance)
+            }
+
             override fun onDelete(instance: InstanceLifecycle.Instance) {
                 confirmDeleteInstance(instance)
             }
         })
         sheet.show()
+    }
+
+    private fun confirmCloneInstance(instance: InstanceLifecycle.Instance) {
+        if (!InstanceActionSafety.canClone(instance.state())) {
+            Toast.makeText(this, R.string.action_clone_running_forbidden, Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle(R.string.action_clone_confirm_title)
+            .setMessage(getString(R.string.action_clone_confirm_message, instance.id()))
+            .setPositiveButton(R.string.action_clone_confirm_btn) { _, _ ->
+                operations.execute {
+                    try {
+                        val controller = InstanceLifecycle.Controller(instanceStore, Clock.systemUTC())
+                        val cloned = controller.cloneInstance(instance.id())
+                        runOnUiThread {
+                            Toast.makeText(
+                                this@MainActivity,
+                                getString(R.string.action_clone_success, cloned.id()),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                            showInstances()
+                        }
+                    } catch (e: Exception) {
+                        runOnUiThread {
+                            Toast.makeText(
+                                this@MainActivity,
+                                getString(R.string.action_clone_failed, e.message),
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    }
+                }
+            }
+            .setNegativeButton(R.string.action_delete_cancel_btn, null)
+            .show()
     }
 
     private fun confirmDeleteInstance(instance: InstanceLifecycle.Instance) {

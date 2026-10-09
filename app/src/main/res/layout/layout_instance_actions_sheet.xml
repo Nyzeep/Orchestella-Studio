@@ -351,7 +351,55 @@
         </LinearLayout>
     </LinearLayout>
 
-    <!-- Item 6: Delete Instance -->
+    <!-- Item 6: Clone Instance (Phase 4.9 Task 3) -->
+    <LinearLayout
+        android:id="@+id/sheet_action_clone"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:clickable="true"
+        android:focusable="true"
+        android:background="?android:attr/selectableItemBackground"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="12dp">
+
+        <ImageView
+            android:id="@+id/sheet_icon_clone"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_marginEnd="16dp"
+            android:src="@drawable/ic_clone"
+            android:contentDescription="Clone" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/sheet_text_clone"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/action_clone_instance"
+                android:textSize="15sp"
+                android:textColor="?attr/colorOnSurface" />
+
+            <TextView
+                android:id="@+id/sheet_hint_clone"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/action_clone_instance_desc"
+                android:textSize="12sp"
+                android:textColor="?attr/colorOutline" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Item 7: Delete Instance -->
     <LinearLayout
         android:id="@+id/sheet_action_delete"
         android:layout_width="match_parent"

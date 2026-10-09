@@ -74,4 +74,38 @@ public final class InstanceActionSafetyTest {
         InstanceActionSafety.requireCanUpdateHardware(InstanceLifecycle.State.STOPPED);
         InstanceActionSafety.requireCanUpdateHardware(InstanceLifecycle.State.CREATED);
     }
+
+    @Test
+    public void cloneIsAllowedOnlyWhenStoppedOrCreated() {
+        assertTrue(InstanceActionSafety.canClone(InstanceLifecycle.State.STOPPED));
+        assertTrue(InstanceActionSafety.canClone(InstanceLifecycle.State.CREATED));
+
+        assertFalse(InstanceActionSafety.canClone(InstanceLifecycle.State.RUNNING));
+        assertFalse(InstanceActionSafety.canClone(InstanceLifecycle.State.PROVISIONING));
+        assertFalse(InstanceActionSafety.canClone(InstanceLifecycle.State.CRASHED));
+        assertFalse(InstanceActionSafety.canClone(InstanceLifecycle.State.INTERRUPTED));
+    }
+
+    @Test
+    public void requireCanCloneThrowsWhenRunningOrProvisioning() {
+        try {
+            InstanceActionSafety.requireCanClone(InstanceLifecycle.State.RUNNING);
+            fail("Expected IllegalStateException when cloning RUNNING instance");
+        } catch (IllegalStateException e) {
+            assertTrue(e.getMessage().contains("Cannot clone"));
+        }
+
+        try {
+            InstanceActionSafety.requireCanClone(InstanceLifecycle.State.PROVISIONING);
+            fail("Expected IllegalStateException when cloning PROVISIONING instance");
+        } catch (IllegalStateException e) {
+            assertTrue(e.getMessage().contains("Cannot clone"));
+        }
+    }
+
+    @Test
+    public void requireCanCloneSucceedsWhenStoppedOrCreated() {
+        InstanceActionSafety.requireCanClone(InstanceLifecycle.State.STOPPED);
+        InstanceActionSafety.requireCanClone(InstanceLifecycle.State.CREATED);
+    }
 }
