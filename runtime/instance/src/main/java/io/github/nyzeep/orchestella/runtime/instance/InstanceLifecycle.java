@@ -335,6 +335,29 @@ public final class InstanceLifecycle {
                     Objects.requireNonNull(newConfig, "newConfig"));
         }
 
+        static Instance restore(
+                String id,
+                DistroReference distro,
+                Path rootVolume,
+                FullLinuxContract.RuntimeClass runtimeClass,
+                State state,
+                VmHardwareConfig hardwareConfig,
+                Clock clock) {
+            long now = Objects.requireNonNull(clock, "clock").millis();
+            return new Instance(
+                    id,
+                    distro,
+                    rootVolume,
+                    newBridgeToken(),
+                    newGuestPassword(),
+                    runtimeClass != null ? runtimeClass : FullLinuxContract.RuntimeClass.FULL_LINUX,
+                    state != null ? state : State.STOPPED,
+                    now,
+                    now,
+                    null,
+                    hardwareConfig != null ? hardwareConfig : VmHardwareConfig.defaultConfig());
+        }
+
         private Properties toProperties() {
             Properties properties = new Properties();
             properties.setProperty("id", id);
@@ -689,6 +712,19 @@ public final class InstanceLifecycle {
                             source.hardwareConfig());
             store.save(cloned);
             return cloned;
+        }
+
+        public synchronized Instance importFromArchive(
+                InputStream archiveInputStream,
+                Path targetRootVolume) throws IOException {
+            return InstanceStorageManager.importFromArchive(archiveInputStream, targetRootVolume, store, clock);
+        }
+
+        public synchronized Instance importFromArchive(
+                InputStream archiveInputStream,
+                Path targetRootVolume,
+                String targetInstanceId) throws IOException {
+            return InstanceStorageManager.importFromArchive(archiveInputStream, targetRootVolume, targetInstanceId, store, clock);
         }
 
         public synchronized Instance updateHardwareConfig(String id, VmHardwareConfig newConfig) throws IOException {

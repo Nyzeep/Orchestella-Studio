@@ -9,6 +9,7 @@ import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -380,6 +381,173 @@ public final class InstanceStorageManager {
         }
 
         return metadata;
+    }
+
+    /**
+     * Imports an instance from an archive ZIP stream, streaming the root volume to {@code targetRootVolume},
+     * performing on-the-fly SHA-256 integrity verification, and registering a new independent instance.
+     *
+     * @param archiveInputStream input stream containing the backup archive
+     * @param targetRootVolume destination path for the raw root-volume disk
+     * @param store instance store to save the restored instance
+     * @param clock clock for timestamps
+     * @return newly restored instance in STOPPED state
+     * @throws IOException on I/O error or if SHA-256 integrity verification fails
+     */
+    public static InstanceLifecycle.Instance importFromArchive(
+            InputStream archiveInputStream,
+            Path targetRootVolume,
+            InstanceLifecycle.Store store,
+            Clock clock) throws IOException {
+        return importFromArchive(archiveInputStream, targetRootVolume, null, store, clock);
+    }
+
+    /**
+     * Imports an instance from an archive ZIP stream with an explicit instance ID.
+     */
+    public static InstanceLifecycle.Instance importFromArchive(
+            InputStream archiveInputStream,
+            Path targetRootVolume,
+            String targetInstanceId,
+            InstanceLifecycle.Store store,
+            Clock clock) throws IOException {
+        Objects.requireNonNull(archiveInputStream, "archiveInputStream");
+        Objects.requireNonNull(targetRootVolume, "targetRootVolume");
+        Objects.requireNonNull(store, "store");
+        Objects.requireNonNull(clock, "clock");
+
+        if (targetRootVolume.getParent() != null) {
+            Files.createDirectories(targetRootVolume.getParent());
+        }
+
+        Path tempVolume = targetRootVolume.resolveSibling(
+                targetRootVolume.getFileName().toString() + ".import.tmp." + System.nanoTime());
+
+        byte[] metadataBytes = null;
+        String checksumContent = null;
+        String computedVolumeHash = null;
+
+        try {
+            try (ZipInputStream zip = new ZipInputStream(archiveInputStream)) {
+                ZipEntry entry;
+                while ((entry = zip.getNextEntry()) != null) {
+                    String name = entry.getName();
+                    if (StorageContract.ROOT_VOLUME_FILE_NAME.equals(name)) {
+                        MessageDigest digest = createSha256Digest();
+                        try (OutputStream out = Files.newOutputStream(
+                                tempVolume,
+                                StandardOpenOption.CREATE,
+                                StandardOpenOption.TRUNCATE_EXISTING,
+                                StandardOpenOption.WRITE)) {
+                            byte[] buffer = new byte[65536];
+                            int read;
+                            while ((read = zip.read(buffer)) != -1) {
+                                digest.update(buffer, 0, read);
+                                out.write(buffer, 0, read);
+                            }
+                        }
+                        computedVolumeHash = StorageContract.bytesToHex(digest.digest());
+                    } else if (StorageContract.METADATA_FILE_NAME.equals(name)) {
+                        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                        byte[] temp = new byte[8192];
+                        int read;
+                        while ((read = zip.read(temp)) != -1) {
+                            buffer.write(temp, 0, read);
+                        }
+                        metadataBytes = buffer.toByteArray();
+                    } else if (StorageContract.CHECKSUMS_FILE_NAME.equals(name)) {
+                        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                        byte[] temp = new byte[8192];
+                        int read;
+                        while ((read = zip.read(temp)) != -1) {
+                            buffer.write(temp, 0, read);
+                        }
+                        checksumContent = new String(buffer.toByteArray(), StandardCharsets.UTF_8);
+                    }
+                    zip.closeEntry();
+                }
+            }
+
+            if (computedVolumeHash == null || !Files.exists(tempVolume)) {
+                throw new IOException("Archive is missing " + StorageContract.ROOT_VOLUME_FILE_NAME);
+            }
+            if (metadataBytes == null) {
+                throw new IOException("Archive is missing " + StorageContract.METADATA_FILE_NAME);
+            }
+            if (checksumContent == null) {
+                throw new IOException("Archive is missing " + StorageContract.CHECKSUMS_FILE_NAME);
+            }
+
+            StorageContract.ChecksumManifest manifest;
+            try {
+                manifest = StorageContract.ChecksumManifest.parse(checksumContent);
+            } catch (IllegalArgumentException e) {
+                throw new IOException("Invalid SHA256SUMS manifest: " + e.getMessage(), e);
+            }
+            String expectedVolumeHash = manifest.getHash(StorageContract.ROOT_VOLUME_FILE_NAME);
+            if (expectedVolumeHash == null || !expectedVolumeHash.equalsIgnoreCase(computedVolumeHash)) {
+                throw new IOException("archive root-volume checksum mismatch: expected "
+                        + expectedVolumeHash + ", got " + computedVolumeHash);
+            }
+
+            String computedMetadataHash = StorageContract.sha256Hex(metadataBytes);
+            String expectedMetaHash = manifest.getHash(StorageContract.METADATA_FILE_NAME);
+            if (expectedMetaHash == null || !expectedMetaHash.equalsIgnoreCase(computedMetadataHash)) {
+                throw new IOException("archive metadata checksum mismatch: expected "
+                        + expectedMetaHash + ", got " + computedMetadataHash);
+            }
+
+            String metadataJson = new String(metadataBytes, StandardCharsets.UTF_8);
+            StorageContract.InstanceExportMetadata metadata;
+            try {
+                metadata = StorageContract.InstanceExportMetadata.fromJson(metadataJson);
+            } catch (Exception e) {
+                throw new IOException("Invalid instance metadata format: " + e.getMessage(), e);
+            }
+            if (!metadata.sha256RootVolume().equalsIgnoreCase(computedVolumeHash)) {
+                throw new IOException("archive metadata sha256RootVolume mismatch");
+            }
+
+            try {
+                Files.move(tempVolume, targetRootVolume, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+                Files.move(tempVolume, targetRootVolume, StandardCopyOption.REPLACE_EXISTING);
+            }
+
+            String instanceId = (targetInstanceId != null && !targetInstanceId.trim().isEmpty())
+                    ? targetInstanceId.trim()
+                    : java.util.UUID.randomUUID().toString();
+
+            InstanceLifecycle.DistroReference distro = new InstanceLifecycle.DistroReference(
+                    metadata.distroId(),
+                    metadata.distroVersion()
+            );
+
+            io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract.RuntimeClass runtimeClass;
+            try {
+                runtimeClass = io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract.RuntimeClass.valueOf(metadata.runtimeClass());
+            } catch (Exception e) {
+                runtimeClass = io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract.RuntimeClass.FULL_LINUX;
+            }
+
+            InstanceLifecycle.Instance instance = InstanceLifecycle.Instance.restore(
+                    instanceId,
+                    distro,
+                    targetRootVolume,
+                    runtimeClass,
+                    InstanceLifecycle.State.STOPPED,
+                    io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig.defaultConfig(),
+                    clock
+            );
+
+            store.save(instance);
+            return instance;
+        } finally {
+            try {
+                Files.deleteIfExists(tempVolume);
+            } catch (IOException ignored) {
+            }
+        }
     }
 
     private static MessageDigest createSha256Digest() {
