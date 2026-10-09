@@ -261,6 +261,51 @@
         </LinearLayout>
     </LinearLayout>
 
+    <!-- Item: Port Forwarding (Phase 4.8 Task 3) -->
+    <LinearLayout
+        android:id="@+id/sheet_action_port_forwarding"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="56dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:clickable="true"
+        android:focusable="true"
+        android:background="?android:attr/selectableItemBackground"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="12dp">
+
+        <ImageView
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_marginEnd="16dp"
+            android:src="@drawable/ic_network"
+            android:contentDescription="Port Forwarding" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/action_port_forwarding"
+                android:textSize="15sp"
+                android:textColor="?attr/colorOnSurface" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/action_port_forwarding_desc"
+                android:textSize="12sp"
+                android:textColor="?attr/colorOutline" />
+        </LinearLayout>
+    </LinearLayout>
+
     <!-- Item 5: Credentials -->
     <LinearLayout
         android:id="@+id/sheet_action_credentials"

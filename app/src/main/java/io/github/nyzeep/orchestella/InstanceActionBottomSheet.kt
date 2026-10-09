@@ -27,6 +27,7 @@ class InstanceActionBottomSheet(
         fun onOpenTerminal(instance: InstanceLifecycle.Instance)
         fun onConfigureHardware(instance: InstanceLifecycle.Instance)
         fun onExportBackup(instance: InstanceLifecycle.Instance)
+        fun onManagePortForwarding(instance: InstanceLifecycle.Instance)
         fun onShowCredentials(instance: InstanceLifecycle.Instance)
         fun onDelete(instance: InstanceLifecycle.Instance)
     }
@@ -86,6 +87,13 @@ class InstanceActionBottomSheet(
         actionExport.setOnClickListener {
             dialog.dismiss()
             callbacks.onExportBackup(instance)
+        }
+
+        // Action: Port Forwarding
+        val actionPortForwarding = view.findViewById<View>(R.id.sheet_action_port_forwarding)
+        actionPortForwarding.setOnClickListener {
+            dialog.dismiss()
+            callbacks.onManagePortForwarding(instance)
         }
 
         // Action 5: Credentials

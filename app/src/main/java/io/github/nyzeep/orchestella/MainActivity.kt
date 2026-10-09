@@ -39,6 +39,9 @@ import io.github.nyzeep.orchestella.runtime.distro.OfficialDebianCatalog
 import io.github.nyzeep.orchestella.runtime.engineqemu.RuntimeArtifactManifest
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
 import io.github.nyzeep.orchestella.runtime.instance.SparseDiskResizer
+import io.github.nyzeep.orchestella.runtime.network.FilePortForwardingStore
+import io.github.nyzeep.orchestella.runtime.network.PortConflictDetector
+import io.github.nyzeep.orchestella.runtime.network.PortForwardingManager
 import io.github.nyzeep.orchestella.runtime.network.download.ChecksumMismatchException
 import io.github.nyzeep.orchestella.runtime.network.download.DownloadProgressCallback
 import io.github.nyzeep.orchestella.runtime.network.download.ResilientDownloadEngine
@@ -565,6 +568,18 @@ class MainActivity : AppCompatActivity() {
             override fun onExportBackup(instance: InstanceLifecycle.Instance) {
                 pendingExportInstance = instance
                 safExportLauncher.launch("${instance.id()}-backup.zip")
+            }
+
+            override fun onManagePortForwarding(instance: InstanceLifecycle.Instance) {
+                try {
+                    val netPath = filesDir.toPath().resolve("network")
+                    Files.createDirectories(netPath)
+                    val store = FilePortForwardingStore(netPath)
+                    val manager = PortForwardingManager(instance.id(), store, PortConflictDetector())
+                    PortForwardingBottomSheet(this@MainActivity, instance.id(), manager).show()
+                } catch (e: Exception) {
+                    Toast.makeText(this@MainActivity, "打开端口转发管理失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
             }
 
             override fun onShowCredentials(instance: InstanceLifecycle.Instance) {
