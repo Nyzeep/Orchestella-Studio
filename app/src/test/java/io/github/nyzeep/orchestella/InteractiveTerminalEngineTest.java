@@ -208,4 +208,60 @@ public final class InteractiveTerminalEngineTest {
         engine.handleDelete();
         assertEquals("ab", engine.getBuffer());
     }
+
+    @Test
+    public void testLoadHistory() {
+        List<String> commands = List.of("git pull", "cargo build", "cargo test");
+        engine.loadHistory(commands);
+        assertEquals(commands, engine.getHistory());
+
+        // Test Up arrow recalls last loaded command
+        engine.handleArrowUp();
+        assertEquals("cargo test", engine.getBuffer());
+        assertEquals("cargo test".length(), engine.getCursorPosition());
+    }
+
+    @Test
+    public void testHomeAndEndNavigation() {
+        engine.handleTextInserted("echo 'quick navigation'");
+        assertEquals(23, engine.getCursorPosition());
+
+        engine.handleHome();
+        assertEquals(0, engine.getCursorPosition());
+        assertEquals("echo 'quick navigation'", engine.getBuffer());
+
+        engine.handleEnd();
+        assertEquals(23, engine.getCursorPosition());
+        assertEquals("echo 'quick navigation'", engine.getBuffer());
+    }
+
+    @Test
+    public void testHomeAndEndAnsiSequences() {
+        engine.handleTextInserted("command");
+        assertEquals(7, engine.getCursorPosition());
+
+        engine.handleAnsiSequence("\u001b[H"); // Home
+        assertEquals(0, engine.getCursorPosition());
+
+        engine.handleAnsiSequence("\u001b[F"); // End
+        assertEquals(7, engine.getCursorPosition());
+
+        engine.handleAnsiSequence("\\e[1~"); // VT100 Home
+        assertEquals(0, engine.getCursorPosition());
+
+        engine.handleAnsiSequence("\\e[4~"); // VT100 End
+        assertEquals(7, engine.getCursorPosition());
+    }
+
+    @Test
+    public void testClearScreenAndResetLine() {
+        engine.handleTextInserted("uncommitted input");
+        assertEquals("uncommitted input", engine.getBuffer());
+
+        engine.handleClearScreenAndResetLine();
+        assertEquals("", engine.getBuffer());
+        assertEquals(0, engine.getCursorPosition());
+        assertTrue(clearInvoked.get());
+        assertTrue(emittedBytes.stream().anyMatch(b -> b.length == 1 && b[0] == 0x0C));
+    }
 }
