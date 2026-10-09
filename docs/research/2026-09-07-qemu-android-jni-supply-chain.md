@@ -31,7 +31,7 @@ policy；该治理缺口现已解决。Ticket 26 当前保持 blocked 的唯一 
 ### 仓库事实
 
 - Ticket 26 要求 QEMU “以 jniLib 形态打包、`nativeLibraryDir` 执行，规避 W^X”；当前
-  `.scratch/droidlayer-platform/issues/26-impl-first-slice-alpine-shell-qemu.md` 未给出 QEMU
+  `.scratch/orchestella-platform/issues/26-impl-first-slice-alpine-shell-qemu.md` 未给出 QEMU
   source/version/checksum、NDK 构建入口、APK artifact manifest 或许可证输出。
 - `app/build.gradle.kts` 当前已固定 `minSdk = 26`、`targetSdk = 36` 和
   `abiFilters += "arm64-v8a"`，但没有 `externalNativeBuild`、`jniLibs` source set、

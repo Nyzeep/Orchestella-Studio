@@ -34,7 +34,7 @@
 | Prototype / experiment source | `prototypes/<prototype-name>/` | 实验代码必须带有明显的 prototype 名称，可包含 `README.md`、`src/`、`scripts/`；不得混入 `app/`、`guest-assets/` 或未来 production module。 |
 | Orchestration / Agent governance | `docs/agent-handoff/` | handoff、model routing、worker contract、execution、parallelization、host policy 和本文件均归档在此。 |
 | Orchestration report | `docs/reports/orchestration/` | 编排审计、readiness、治理更新和 delegation 报告归档在此；不要放到 handoff policy 目录中。 |
-| Tracker / spec / decision map | `.scratch/droidlayer-platform/` | 这里只放本地 tracker、spec、map 和 issue history；不要用报告或 research 文件替代 tracker 状态。 |
+| Tracker / spec / decision map | `.scratch/orchestella-platform/` | 这里只放本地 tracker、spec、map 和 issue history；不要用报告或 research 文件替代 tracker 状态。 |
 | Existing development guide | `docs/development/` | 保留已有 developer guidance；它不是 research、ADR、正式报告或 Agent policy 的替代目录。 |
 | Small source-controlled evidence | `artifacts/<ticket-id>/` | 只提交小型、可审查、可重现、已脱敏的 manifest、checksum、raw benchmark JSON 或必要日志片段；目录按 ticket 归属。 |
 

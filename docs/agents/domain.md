@@ -39,6 +39,6 @@ If your output contradicts an existing ADR, surface it explicitly rather than si
 
 This project's domain language is still being established (wayfinder phase). When orienting:
 
-1. `.scratch/droidlayer-platform/map.md` — the decision map (what's decided, what's open)
+1. `.scratch/orchestella-platform/map.md` — the decision map (what's decided, what's open)
 2. `docs/research/` — verified external facts (AVF permissions, device matrix, Podroid source analysis)
 3. `探讨文档1.md` — historical prior discussion; **treat as input, not as approved decisions**

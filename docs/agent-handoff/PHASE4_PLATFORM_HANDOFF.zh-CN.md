@@ -8,7 +8,7 @@
 ## 0. 事实优先级与当前基线状态（Fact Baseline）
 
 当本文档与任何其他历史信息源冲突时，按以下优先级判断：
-1. **当前 repo / tracker / Git 实际状态**（`main` 分支最新提交、`.scratch/droidlayer-platform/`）
+1. **当前 repo / tracker / Git 实际状态**（`main` 分支最新提交、`.scratch/orchestella-platform/`）
 2. **已批准的 CONTEXT.md / ADR-0001 ~ ADR-0018 / spec.md / spec-m2.md / spec-m3.md**
 3. **已归档的复盘与发版报告**（`phase1-mvp-retrospective.zh-CN.md`、`phase2-m2-retrospective.zh-CN.md`、`phase3-m3-retrospective.zh-CN.md`、`v0.3.0-alpha-release-notes.zh-CN.md`）
 4. **本交接文档**
@@ -83,7 +83,7 @@
    - 派发专项技术调研任务，广泛搜集 2026 前沿最新实战方案，产出技术调研报告《`2026-10-xx-phase4-gpu-acceleration-research.md`》；
 2. **第二阶段：架构决策与规格固化（ADR & Spec Phase）**：
    - 召开决策推敲，产出 `ADR-0019: GPU 硬件加速渲染与驱动隔离架构`；
-   - 编写产品规格书 `.scratch/droidlayer-platform/spec-m4.md`；
+   - 编写产品规格书 `.scratch/orchestella-platform/spec-m4.md`；
 3. **第三阶段：工单拆解与并行流水线推进（Scaffolding & Implementation）**：
    - 拆解出具备清晰拓扑边界的示踪箭工单（Ticket 49+）；
    - 在独立物理 Worktree 中组织多 Agent 并行实现，严格执行 Standards + Spec 双轴复审，全量绿灯后合流至 `main`。

@@ -181,4 +181,4 @@
 4. **攻破网络阻断瓶颈**：构建支持多镜像源平滑 Failover 和 HTTP `Range` 断点续传的弹性下载引擎，彻底终结 rootfs 下载失败的用户痛点；
 5. **升级终端体验**：改造 `TerminalActivity`，集成 ANSI 256 色解析与移动辅助按键栏，并在 `guest-assets` 中部署 Starship 现代化提示符；
 6. **降低新手认知门槛**：交付 Setup Wizard 首次启动三步向导，重构输出分层清晰的《快速入门指南》与《高级调优与架构白皮书》；
-7. **推进技术规格与工单落地**：将本报告调研成果与 GPU 加速报告融合，全面编制 `.scratch/droidlayer-platform/spec-m4.md`，并在 `.scratch/droidlayer-platform/issues/` 中拆解双轨拓扑示踪箭工单（Ticket 49 ~ Ticket 58）。
+7. **推进技术规格与工单落地**：将本报告调研成果与 GPU 加速报告融合，全面编制 `.scratch/orchestella-platform/spec-m4.md`，并在 `.scratch/orchestella-platform/issues/` 中拆解双轨拓扑示踪箭工单（Ticket 49 ~ Ticket 58）。

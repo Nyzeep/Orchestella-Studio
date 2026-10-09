@@ -7,7 +7,7 @@
 
 当本文档与任何其他信息源冲突时，按以下优先级判断：
 
-1. **当前 repo / tracker / Git 实际状态**（`.scratch/droidlayer-platform/`、`git log`、文件本身）
+1. **当前 repo / tracker / Git 实际状态**（`.scratch/orchestella-platform/`、`git log`、文件本身）
 2. **已批准的 CONTEXT.md / ADR-0001..0016 / spec.md**
 3. **研究证据**（`docs/research/`）
 4. **本交接文档**
@@ -243,7 +243,7 @@ upstream、与 main 的关系、dirty/clean、diff、untracked、ignored 和 rec
 - `main` 现已完整包含 Ticket 25（Guest 资产构建基线、Alpine 3.24.1 镜像与内核）与 Ticket 26（全功能 Linux/QEMU 软模拟运行时、双抽象套接字控制协议、JNI 桥接层、16-page / 4-byte 对齐 APK 与 HONOR 80 GT 真机验收套件）。
 - 历史独立开发分支 `ticket/26-linux-qemu-rebuild` 已通过 Pull Request #1 完成合流并完成生命周期收口；相关实验性日志与证据已在 `docs/reports/` 归档。
 
-## 6. Tracker 状态（.scratch/droidlayer-platform/，以当前事实为准）
+## 6. Tracker 状态（.scratch/orchestella-platform/，以当前事实为准）
 
 - `map.md`：wayfinder 决策地图（Labels: wayfinder:map）。已记录 18 条 Decisions-so-far；随着 DroidLayer 2.0 路线图发布，部分雾区（图形栈演化、多发行版支持、容器化）已形成清晰规划。
 - `spec.md`：MVP 产品规格 v1.0。
@@ -254,7 +254,7 @@ upstream、与 main 的关系、dirty/clean、diff、untracked、ignored 和 rec
 | 报告 | 关键结论（供工程与架构引用） |
 | --- | --- |
 | **2026-10-01-android-linux-ecosystem-and-hardware-acceleration** | 2026 最新虚拟化全景（QEMU vs AVF vs PRoot）；高通骁龙 8 Elite 封锁 Non-Protected VM 导致官方 Linux Terminal 停摆深度剖析；16 KB Page 规范与 JIT 代码缓存；Mesa Turnip/Venus 图形突破与 Wayland-over-SurfaceView 架构 |
-| **2026-10-01-droidlayer-architecture-evolution-roadmap** | DroidLayer 2.0 四阶段演进路线图：Phase 1 双引擎自适应架构 $\rightarrow$ Phase 2 多发行版与用户体验 $\rightarrow$ Phase 3 极速 Wayland 桌面与现代输入桥接 $\rightarrow$ Phase 4 轻量容器与移动开发者工作站 |
+| **2026-10-01-orchestella-architecture-evolution-roadmap** | DroidLayer 2.0 四阶段演进路线图：Phase 1 双引擎自适应架构 $\rightarrow$ Phase 2 多发行版与用户体验 $\rightarrow$ Phase 3 极速 Wayland 桌面与现代输入桥接 $\rightarrow$ Phase 4 轻量容器与移动开发者工作站 |
 | 2026-09-05-前置研究独立审视 | AVF 权限边界（@SystemApi + development 级授权）；TCG 慢 5–20×；W^X/jniLib 约束；设备矩阵 |
 | 2026-09-05-podroid-源码分析 | VmEngine/路由/rootfs/vsock 模式实证；教训清单（零校验、公开凭据、无 CI、GPL-2.0） |
 | 2026-09-05-android16-terminal-参考实现 | 官方应用=特权组件；第三方可用"可授权子集"（nixos-avf/koiTerminal 实证）；gfxstream 链路 |
@@ -331,9 +331,9 @@ P1/P2 的全部待测项；OTA 通道形态；benchmark 验收数字；Compatibi
 
 | 内容 | 路径 |
 | --- | --- |
-| 决策地图 | `.scratch/droidlayer-platform/map.md` |
-| 产品规格 | `.scratch/droidlayer-platform/spec.md` |
-| 工单 | `.scratch/droidlayer-platform/issues/NN-*.md` |
+| 决策地图 | `.scratch/orchestella-platform/map.md` |
+| 产品规格 | `.scratch/orchestella-platform/spec.md` |
+| 工单 | `.scratch/orchestella-platform/issues/NN-*.md` |
 | ADR | `docs/adr/0001..0016-*.md` |
 | 词汇表 | `CONTEXT.md` |
 | 研究 | `docs/research/` |
@@ -355,7 +355,7 @@ P1/P2 的全部待测项；OTA 通道形态；benchmark 验收数字；Compatibi
 
 1. 读本文档 + spec.md + map.md（低分辨率地图），并阅读 `ARTIFACT_ORGANIZATION_POLICY.md`。
 2. 读取 `DEFENSIVE_CONSTRAINTS/README.md` 及其目录内全部 policy；未完成这一步不得执行任务性命令。
-3. 核对 tracker：`ls .scratch/droidlayer-platform/issues/` 与 §9 表一致；`git log` 确认无未预期提交。
+3. 核对 tracker：`ls .scratch/orchestella-platform/issues/` 与 §9 表一致；`git log` 确认无未预期提交。
 4. 读 CONTEXT.md（词汇表）与 AGENTS.md（工作约束）。
 5. 抽读 ADR-0001/0002/0009/0010（架构骨架）。
 6. 确认当前未完成工单状态与依赖（PARALLELIZATION_MATRIX.md）。

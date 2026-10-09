@@ -6,7 +6,7 @@ Orchestella Studio（曾用工作名 DroidLayer）：无需 Root 的 Android 原
 
 - 工程交接入口：`docs/agent-handoff/ENGINEERING_HANDOFF.md`
 - 防御性硬约束：任何任务开始前先读 `docs/agent-handoff/DEFENSIVE_CONSTRAINTS/README.md` 及其目录内全部 policy；该目录规则是所有 Agent 的硬约束。
-- 决策地图：`.scratch/droidlayer-platform/map.md`
+- 决策地图：`.scratch/orchestella-platform/map.md`
 - 研究资料（已核实的外部事实）：`docs/research/`
 - 历史上下文（是输入、不是已批准的需求）：`探讨文档1.md`
 
@@ -14,7 +14,7 @@ Orchestella Studio（曾用工作名 DroidLayer）：无需 Root 的 Android 原
 
 ### Issue tracker
 
-本地 Markdown tracker：工单与 spec 存放在 `.scratch/`，当前 wayfinder map 在 `.scratch/droidlayer-platform/map.md`。见 `docs/agents/issue-tracker.md`。
+本地 Markdown tracker：工单与 spec 存放在 `.scratch/`，当前 wayfinder map 在 `.scratch/orchestella-platform/map.md`。见 `docs/agents/issue-tracker.md`。
 
 ### Triage labels
 

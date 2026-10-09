@@ -131,4 +131,4 @@ Version: 3.0（2026-10-06）
    - 保持为 **M4 里程碑** 规划不变。
 
 ---
-*规格归档：`.scratch/droidlayer-platform/spec-m3.md`*
+*规格归档：`.scratch/orchestella-platform/spec-m3.md`*

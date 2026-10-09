@@ -456,4 +456,4 @@ tools/gpu-accel-toolchain/
 **建议后续立即推进动作**：
 1. 本技术调研报告正式归档至 `docs/research/2026-10-06-phase4-gpu-acceleration.md`；
 2. 召开 Phase 4 策略决策会话（`/grill-with-docs`），基于本报告研讨固化 **`ADR-0019: GPU 硬件加速渲染与驱动隔离架构`**；
-3. 编制 Phase 4 总体规格书 `.scratch/droidlayer-platform/spec-m4.md`，并启动 M4.1 示踪箭工单拆解。
+3. 编制 Phase 4 总体规格书 `.scratch/orchestella-platform/spec-m4.md`，并启动 M4.1 示踪箭工单拆解。
