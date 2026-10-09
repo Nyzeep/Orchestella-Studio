@@ -8,7 +8,7 @@
 ## 0. 事实优先级与当前基线状态（Fact Baseline）
 
 当本文档与任何其他历史信息源冲突时，按以下优先级判断：
-1. **当前 repo / tracker / Git 实际状态**（`main` 分支最新提交、`.scratch/droidlayer-platform/`）
+1. **当前 repo / tracker / Git 实际状态**（`main` 分支最新提交、`.scratch/orchestella-platform/`）
 2. **已批准的 CONTEXT.md / ADR-0001 ~ ADR-0017 / spec.md / spec-m2.md**
 3. **已归档的复盘与发版报告**（`phase1-mvp-retrospective.zh-CN.md`、`phase2-m2-retrospective.zh-CN.md`、`v0.2.0-alpha-release-notes.zh-CN.md`）
 4. **本交接文档**

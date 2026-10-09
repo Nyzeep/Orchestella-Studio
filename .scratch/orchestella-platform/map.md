@@ -1,7 +1,7 @@
 # Wayfinder Map: DroidLayer Linux Runtime Platform 决策地图
 
 Labels: wayfinder:map
-Effort: droidlayer-platform
+Effort: orchestella-platform
 
 ## Destination
 
@@ -10,7 +10,7 @@ Effort: droidlayer-platform
 ## Notes
 
 - **领域**：Android/Linux 系统工程。产品 = 无 Root 的 Linux Runtime Platform（VM-first、能力驱动后端选择、guest 内容器支持）。
-- **Spec 已发布**：M1 MVP 规格见 [.scratch/droidlayer-platform/spec.md](spec.md)；M2 Wayland 原生图形桌面与深度输入规格见 [.scratch/droidlayer-platform/spec-m2.md](spec-m2.md)；M3 系统级深度互通、音频输出与外设集成规格见 [.scratch/droidlayer-platform/spec-m3.md](spec-m3.md)（ready-for-agent，依据 ADR-0018 与 2026-10-06 调研）；M4 全栈体验重塑、硬件深度定制与 GPU 加速渲染规格见 [.scratch/droidlayer-platform/spec-m4.md](spec-m4.md)（ready-for-agent，依据 ADR-0019、竞品调研与 2026-10-06 GPU 调研报告）。
+- **Spec 已发布**：M1 MVP 规格见 [.scratch/orchestella-platform/spec.md](spec.md)；M2 Wayland 原生图形桌面与深度输入规格见 [.scratch/orchestella-platform/spec-m2.md](spec-m2.md)；M3 系统级深度互通、音频输出与外设集成规格见 [.scratch/orchestella-platform/spec-m3.md](spec-m3.md)（ready-for-agent，依据 ADR-0018 与 2026-10-06 调研）；M4 全栈体验重塑、硬件深度定制与 GPU 加速渲染规格见 [.scratch/orchestella-platform/spec-m4.md](spec-m4.md)（ready-for-agent，依据 ADR-0019、竞品调研与 2026-10-06 GPU 调研报告）。
 - **实现工单状态**：
   * M1 工单（issues/25–37）已全量验收合流完成（Status: completed）；
   * M2 移动 Wayland 图形桌面与深度输入工单（Ticket 38~43）：全量验收合流完成（Status: completed）。M2 里程碑全链路闭环！

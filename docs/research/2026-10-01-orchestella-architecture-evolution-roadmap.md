@@ -164,4 +164,4 @@ DroidLayer 的终极愿景是在**不破坏 Android 系统完整性、不获取�
 ```
 
 ---
-*路线图归档索引：`docs/research/2026-10-01-droidlayer-architecture-evolution-roadmap.md`*
+*路线图归档索引：`docs/research/2026-10-01-orchestella-architecture-evolution-roadmap.md`*

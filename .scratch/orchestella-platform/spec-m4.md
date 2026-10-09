@@ -328,4 +328,4 @@ Version: 4.0（2026-10-06）
    - 继续沿用已验证的 Downloads 共享目录模式，不引入实验性外部 FUSE 驱动。
 
 ---
-*规格归档：`.scratch/droidlayer-platform/spec-m4.md`*
+*规格归档：`.scratch/orchestella-platform/spec-m4.md`*

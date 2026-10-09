@@ -8,7 +8,7 @@
 ## 0. 事实优先级与当前基线状态（Fact Baseline）
 
 当本文档与任何其他历史信息源冲突时，按以下优先级判断：
-1. **当前 repo / tracker / Git 实际状态**（`main` 分支最新提交、`.scratch/droidlayer-platform/`）
+1. **当前 repo / tracker / Git 实际状态**（`main` 分支最新提交、`.scratch/orchestella-platform/`）
 2. **已批准的 CONTEXT.md / ADR-0001 ~ ADR-0016 / spec.md**
 3. **已归档的复盘与发版报告**（`docs/reports/retro/phase1-mvp-retrospective.zh-CN.md`）
 4. **本交接文档**
@@ -93,7 +93,7 @@
 1. **第一步（由专项会话 1 执行）**：
    - 启动【图形桌面与输入集成专项调研与工单派发会话】；
    - 充分联网调研 2026 最新技术（如 Android 14/15 上的 `AHardwareBuffer`、`termux-x11` 架构演进、`wayland-android`、`Sommelier` 协议代理等）；
-   - 执行 `/grill-with-docs` 架构推敲，修订/增补 ADR-0012，产出权威规格文档 `.scratch/droidlayer-platform/M2-spec.md`；
+   - 执行 `/grill-with-docs` 架构推敲，修订/增补 ADR-0012，产出权威规格文档 `.scratch/orchestella-platform/spec-m2.md`；
    - 将 M2 拆解为具有严格依赖边（Blocking Edges）的示踪箭工单（如 Ticket 38: Wayland 传输契约与协议桩、Ticket 39: SurfaceView 渲染面与双缓冲通道、Ticket 40: 触控映射与输入法桥接、Ticket 41: Guest 合成器自动化装配与轻量桌面运行）；
    - 汇报任务图谱至策略会话。
 2. **第二步（由策略调度会话执行）**：

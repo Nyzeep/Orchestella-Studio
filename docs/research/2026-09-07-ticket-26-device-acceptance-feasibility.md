@@ -25,7 +25,7 @@
 
 | 事实 | 已核实证据 | 对 B4 的含义 |
 | --- | --- | --- |
-| 真机功能验收是 Ticket 26 的明示条件 | `.scratch/droidlayer-platform/issues/26-impl-first-slice-alpine-shell-qemu.md` 的 Acceptance criteria：arm64、RAM≥3GB 真机全流程；真机桥接正/负路径；模拟器提示 | 真机不是性能研究的替代名词，而是本票的验收装置。模拟器仅覆盖其自身提示条件，不能替代前两项。 |
+| 真机功能验收是 Ticket 26 的明示条件 | `.scratch/orchestella-platform/issues/26-impl-first-slice-alpine-shell-qemu.md` 的 Acceptance criteria：arm64、RAM≥3GB 真机全流程；真机桥接正/负路径；模拟器提示 | 真机不是性能研究的替代名词，而是本票的验收装置。模拟器仅覆盖其自身提示条件，不能替代前两项。 |
 | QEMU/TCG 原型不是 Ticket 26 的前置依赖 | 同一 Ticket 的 Test strategy 与 Prototype/research dependency：真机冒烟清单；“无硬依赖；QEMU TCG 基线（18）在本票完成后领取” | Ticket 18 不能被用于把本票的功能性真机 smoke 延后并视作已验收。 |
 | Ticket 18 的范围是性能/打包基线 | `issues/18-prototype-qemu-baseline.md` 第 8–36 行：启动、shell 响应、吞吐、内存、jniLib/16KB 页对齐；阻塞 35 | 它是后续原型数据门，不是 Ticket 26 的功能验收替代物。 |
 | Ticket 17 的 ADB 是 AVF/L2 语境 | `issues/17-prototype-avf-e2e.md` 第 8–37 行：真实 AVF 设备、custom VM、vsock、网络；阻塞 34 | AVF 授权/能力数据属于另一条策略的原型，不是 QEMU/L1 的 `pm grant` 前提。 |

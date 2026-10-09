@@ -123,4 +123,4 @@ Version: 2.0（2026-10-05）
    - 仅支持手机/平板本机单屏幕的主显示输出，Type-C / HDMI 独立异显作为后续增强能力。
 
 ---
-*规格归档：`.scratch/droidlayer-platform/spec-m2.md`*
+*规格归档：`.scratch/orchestella-platform/spec-m2.md`*
