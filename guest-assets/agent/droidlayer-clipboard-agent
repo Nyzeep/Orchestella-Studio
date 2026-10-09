@@ -2,6 +2,7 @@
 #
 # DroidLayer Wayland Clipboard Daemon Agent (droidlayer-clipboard-agent)
 # Milestone: Phase 3 (M3) - ADR-0018 & Ticket 47
+# Milestone: Phase 4.6 - Bidirectional Echo-Suppressed Synchronization Bridge
 #
 # Features:
 # - Bridges Wayland clipboard (wl-paste --watch / wl-copy) with Bridge v1 protocol
@@ -19,6 +20,7 @@ MAX_CLIPBOARD_BYTES=262144
 STATE_DIR="${XDG_RUNTIME_DIR:-/tmp}/droidlayer-clipboard"
 LAST_HOST_HASH_FILE="$STATE_DIR/last_host_hash"
 LAST_GUEST_HASH_FILE="$STATE_DIR/last_guest_hash"
+INBOUND_FIFO="$STATE_DIR/inbound.fifo"
 BRIDGE_SOCK="${DROIDLAYER_BRIDGE_SOCK:-/run/droidlayer/bridge.sock}"
 BRIDGE_PORT="${DROIDLAYER_BRIDGE_PORT:-9102}"
 BRIDGE_HOST="${DROIDLAYER_BRIDGE_HOST:-127.0.0.1}"
@@ -84,6 +86,57 @@ parse_put_payload() {
     fi
 }
 
+apply_host_put() {
+    local line="${1:-}"
+    if [[ -z "$line" ]]; then
+        read -r line || return 0
+    fi
+    local text
+    text="$(parse_put_payload "$line")" || return 1
+
+    local text_bytes
+    text_bytes="$(printf '%s' "$text" | wc -c)"
+    if [[ "$text_bytes" -gt "$MAX_CLIPBOARD_BYTES" ]]; then
+        printf 'DROIDLAYER/ERROR payload-too-large\n'
+        return 1
+    fi
+
+    local current_hash
+    current_hash="$(printf '%s' "$text" | compute_sha256)"
+
+    # Record hash in LAST_HOST_HASH_FILE so wl-paste --watch knows this originated from host
+    printf '%s' "$current_hash" > "$LAST_HOST_HASH_FILE"
+
+    # Inject into Wayland clipboard via wl-copy
+    if command -v wl-copy >/dev/null 2>&1; then
+        printf '%s' "$text" | wl-copy
+    fi
+
+    printf 'DROIDLAYER/OK clipboard\n'
+    return 0
+}
+
+handle_get() {
+    local text=""
+    if command -v wl-paste >/dev/null 2>&1; then
+        text="$(wl-paste --no-newline 2>/dev/null || true)"
+    fi
+    if [[ -z "$text" ]]; then
+        printf 'DROIDLAYER/OK clipboard base64:\n'
+        return 0
+    fi
+    local text_bytes
+    text_bytes="$(printf '%s' "$text" | wc -c)"
+    if [[ "$text_bytes" -gt "$MAX_CLIPBOARD_BYTES" ]]; then
+        printf 'DROIDLAYER/ERROR payload-too-large\n'
+        return 1
+    fi
+    local b64
+    b64="$(printf '%s' "$text" | encode_base64)"
+    printf 'DROIDLAYER/OK clipboard base64:%s\n' "$b64"
+    return 0
+}
+
 check_dependencies() {
     local missing=0
     for cmd in wl-paste wl-copy; do
@@ -128,6 +181,16 @@ case "${1:-run}" in
         parse_put_payload "${2:-}"
         exit 0
         ;;
+    --apply-host-put)
+        init_state
+        apply_host_put "${2:-}"
+        exit 0
+        ;;
+    --get)
+        init_state
+        handle_get
+        exit 0
+        ;;
     --sha256)
         printf '%s' "${2:-}" | compute_sha256
         exit 0
@@ -137,7 +200,7 @@ case "${1:-run}" in
         exit 0
         ;;
     --help|-h)
-        printf 'Usage: %s [--check|--format-put <text>|--parse-put <line>|--sha256 <text>|--dry-run]\n' "$0"
+        printf 'Usage: %s [--check|--format-put <text>|--parse-put <line>|--apply-host-put <line>|--get|--sha256 <text>|--dry-run]\n' "$0"
         exit 0
         ;;
     run)
@@ -149,6 +212,26 @@ esac
 # --- Daemon Runtime Logic ---
 
 init_state
+
+# Background inbound FIFO listener
+if [[ ! -p "$INBOUND_FIFO" ]]; then
+    rm -f "$INBOUND_FIFO"
+    mkfifo "$INBOUND_FIFO" 2>/dev/null || true
+fi
+
+if [[ -p "$INBOUND_FIFO" ]]; then
+    (
+        while true; do
+            if read -r line < "$INBOUND_FIFO"; then
+                if [[ "$line" =~ ^DROIDLAYER/CLIPBOARD[[:space:]]+PUT ]]; then
+                    apply_host_put "$line" >/dev/null 2>&1 || true
+                elif [[ "$line" =~ ^DROIDLAYER/CLIPBOARD[[:space:]]+GET ]]; then
+                    handle_get >/dev/null 2>&1 || true
+                fi
+            fi
+        done
+    ) &
+fi
 
 # Callback executed by wl-paste --watch whenever Guest clipboard changes
 on_guest_clipboard_change() {
@@ -200,8 +283,8 @@ on_guest_clipboard_change() {
     fi
 }
 
-export -f compute_sha256 encode_base64 format_put_command on_guest_clipboard_change
-export MAX_CLIPBOARD_BYTES STATE_DIR LAST_HOST_HASH_FILE LAST_GUEST_HASH_FILE BRIDGE_SOCK BRIDGE_PORT BRIDGE_HOST
+export -f compute_sha256 encode_base64 format_put_command parse_put_payload apply_host_put handle_get on_guest_clipboard_change
+export MAX_CLIPBOARD_BYTES STATE_DIR LAST_HOST_HASH_FILE LAST_GUEST_HASH_FILE INBOUND_FIFO BRIDGE_SOCK BRIDGE_PORT BRIDGE_HOST
 
 # If executed directly with 'watch-handler', process single change event
 if [[ "${1:-}" == "watch-handler" ]]; then

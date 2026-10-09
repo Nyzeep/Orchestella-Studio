@@ -48,6 +48,7 @@ public final class WaylandSurfaceController {
         private final int contentHeight;
         private final long renderedFrames;
         private final long droppedFrames;
+        private final double scale;
 
         public HudBadgeInfo(
                 int fps,
@@ -58,6 +59,19 @@ public final class WaylandSurfaceController {
                 int contentHeight,
                 long renderedFrames,
                 long droppedFrames) {
+            this(fps, connectionState, viewportWidth, viewportHeight, contentWidth, contentHeight, renderedFrames, droppedFrames, 1.0);
+        }
+
+        public HudBadgeInfo(
+                int fps,
+                WaylandChannel.ConnectionState connectionState,
+                int viewportWidth,
+                int viewportHeight,
+                int contentWidth,
+                int contentHeight,
+                long renderedFrames,
+                long droppedFrames,
+                double scale) {
             this.fps = fps;
             this.connectionState = connectionState;
             this.viewportWidth = viewportWidth;
@@ -66,6 +80,11 @@ public final class WaylandSurfaceController {
             this.contentHeight = contentHeight;
             this.renderedFrames = renderedFrames;
             this.droppedFrames = droppedFrames;
+            this.scale = scale > 0.0 ? scale : 1.0;
+        }
+
+        public double scale() {
+            return scale;
         }
 
         public int fps() {
@@ -266,6 +285,7 @@ public final class WaylandSurfaceController {
     private final WaylandChannel.StateListener channelStateListener;
     private WaylandChannel.ConnectionState connectionState = WaylandChannel.ConnectionState.DISCONNECTED;
     private boolean isBound = false;
+    private double targetScale = 1.0;
 
     public WaylandSurfaceController(
             DoubleBufferedRenderer renderer,
@@ -275,7 +295,7 @@ public final class WaylandSurfaceController {
         this.resizeDebounce = new DisplayResizeDebounce(
                 (w, h) -> {
                     if (displayControl != null) {
-                        return displayControl.resizeDisplay(w, h);
+                        return displayControl.setMode(w, h, targetScale);
                     }
                     return false;
                 },
@@ -301,11 +321,22 @@ public final class WaylandSurfaceController {
         this.resizeDebounce = new DisplayResizeDebounce(
                 (w, h) -> {
                     if (displayControl != null) {
-                        return displayControl.resizeDisplay(w, h);
+                        return displayControl.setMode(w, h, targetScale);
                     }
                     return false;
                 }
         );
+    }
+
+    public synchronized void setTargetScale(double scale) {
+        this.targetScale = scale;
+        if (displayControl != null) {
+            displayControl.updateScale(scale);
+        }
+    }
+
+    public synchronized double getTargetScale() {
+        return targetScale;
     }
 
     /**
@@ -318,6 +349,10 @@ public final class WaylandSurfaceController {
 
         this.displayControl = displayControl;
         this.waylandChannel = waylandChannel;
+
+        if (displayControl != null && targetScale != 1.0) {
+            displayControl.updateScale(targetScale);
+        }
 
         if (waylandChannel != null) {
             waylandChannel.registerFrameListener(renderer);
@@ -437,7 +472,8 @@ public final class WaylandSurfaceController {
                 contentWidth,
                 contentHeight,
                 renderer.getRenderedFrameCount(),
-                renderer.getDroppedFrameCount()
+                renderer.getDroppedFrameCount(),
+                targetScale
         );
     }
 }

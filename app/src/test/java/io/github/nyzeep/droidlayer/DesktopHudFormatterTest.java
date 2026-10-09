@@ -98,9 +98,23 @@ public final class DesktopHudFormatterTest {
 
         String expanded = DesktopHudFormatter.formatExpanded(info, matrix);
         assertTrue(expanded.contains("60 FPS"));
-        assertTrue(expanded.contains("1920x1080"));
+        assertTrue(expanded.contains("1920x1080 @ 1.0x"));
         assertTrue(expanded.contains("CONNECTED"));
         assertTrue(expanded.contains("vsock 硬件加速"));
+
+        WaylandSurfaceController.HudBadgeInfo scaledInfo = new WaylandSurfaceController.HudBadgeInfo(
+                60,
+                WaylandChannel.ConnectionState.CONNECTED,
+                1264,
+                2736,
+                1264,
+                2736,
+                1200L,
+                2L,
+                2.0
+        );
+        String scaledExpanded = DesktopHudFormatter.formatExpanded(scaledInfo, matrix);
+        assertTrue(scaledExpanded.contains("1264x2736 @ 2.0x"));
 
         String collapsed = DesktopHudFormatter.formatCollapsed(info);
         assertEquals("60 FPS | CONNECTED", collapsed);

@@ -92,7 +92,8 @@ public final class DesktopHudFormatter {
         }
         int w = info.contentWidth() > 0 ? info.contentWidth() : info.viewportWidth();
         int h = info.contentHeight() > 0 ? info.contentHeight() : info.viewportHeight();
-        return formatExpanded(info.fps(), w, h, 1.0, info.connectionState(), formatBadge(matrix));
+        double scale = info.scale() > 0.0 ? info.scale() : 1.0;
+        return formatExpanded(info.fps(), w, h, scale, info.connectionState(), formatBadge(matrix));
     }
 
     /**

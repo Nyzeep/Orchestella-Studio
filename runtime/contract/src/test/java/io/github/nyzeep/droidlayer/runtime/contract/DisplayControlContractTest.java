@@ -18,9 +18,25 @@ public final class DisplayControlContractTest {
         notifiesListenersOnModeAndResizeEvents();
         notifiesListenersOnScaleAndFpsEvents();
         listenerRemovalPreventsFurtherNotifications();
+        setModeAtomicNegotiation();
         waylandChannelManagesLifecycleAndStateTransitions();
         waylandChannelDispatchesFramesAndInputEvents();
         System.out.println("DISPLAY_CONTROL_CONTRACT_TEST_OK");
+    }
+
+    private static void setModeAtomicNegotiation() {
+        DisplayMode initial = new DisplayMode(1280, 720, 1.0, 160, 60);
+        SimpleDisplayControl control = new SimpleDisplayControl(initial);
+
+        boolean success = control.setMode(1920, 1080, 2.0);
+        assertTrue(success, "setMode must return true on valid parameters");
+        assertEquals(1920, control.currentMode().width(), "width must be updated");
+        assertEquals(1080, control.currentMode().height(), "height must be updated");
+        assertEquals(2.0, control.currentMode().scale(), "scale must be updated");
+
+        assertFalse(control.setMode(99, 1080, 2.0), "invalid width must fail");
+        assertFalse(control.setMode(1920, 99, 2.0), "invalid height must fail");
+        assertFalse(control.setMode(1920, 1080, 0.05), "invalid scale must fail");
     }
 
     private static void createsDisplayModeWithValidParameters() {
