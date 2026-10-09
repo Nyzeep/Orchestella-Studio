@@ -144,10 +144,21 @@
     <string name="action_config_hardware_disabled_hint">虚拟机运行中，需关机后调整</string>
     <string name="action_export_backup">📦 导出备份归档</string>
     <string name="action_export_backup_desc">通过 SAF 导出根磁盘镜像与元数据包</string>
+    <string name="action_port_forwarding">🌐 动态端口转发管理</string>
+    <string name="action_port_forwarding_desc">查看、添加与管理 TCP/UDP 动态端口映射规则</string>
     <string name="action_credentials_desc">查看或修改本实例专属 root 密码</string>
     <string name="action_delete_instance">🗑️ 彻底物理删除</string>
     <string name="action_delete_instance_desc">物理清扫 .raw 磁盘镜像与所有关联元数据</string>
     <string name="action_delete_running_forbidden">虚拟机运行中，禁止删除！请先关机。</string>
+
+    <!-- Phase 4.8 Task 3: Dynamic Port Forwarding UI Strings -->
+    <string name="port_forwarding_title">端口转发规则管理</string>
+    <string name="port_forwarding_empty">暂无端口转发规则，可通过下方表单添加</string>
+    <string name="port_forwarding_host_port">宿主端口 (1024~65535)</string>
+    <string name="port_forwarding_guest_port">Guest 端口 (1~65535)</string>
+    <string name="port_forwarding_desc_hint">服务说明 (可选，如 Web 8080)</string>
+    <string name="port_forwarding_add_rule">添加转发规则</string>
+    <string name="port_forwarding_rule_format">宿主 %1$d ➔ Guest %2$d</string>
 
     <!-- Delete Confirmation Alert -->
     <string name="action_delete_confirm_title">彻底物理删除实例？</string>
