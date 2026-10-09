@@ -96,6 +96,16 @@ public final class InteractiveTerminalEngine {
         void onClearRequested();
     }
 
+    @FunctionalInterface
+    public interface TabCompletionHandler {
+        List<String> complete(String currentBuffer, int cursorPosition);
+    }
+
+    @FunctionalInterface
+    public interface TabCompletionListener {
+        void onCompletionCandidates(String buffer, int cursorPosition, List<String> candidates);
+    }
+
     private PromptInfo prompt;
     private final StringBuilder lineBuffer = new StringBuilder();
     private int cursorPosition = 0;
@@ -107,6 +117,8 @@ public final class InteractiveTerminalEngine {
     private LineChangeListener changeListener;
     private LineCommitListener commitListener;
     private ClearRequestListener clearListener;
+    private TabCompletionHandler tabCompletionHandler;
+    private TabCompletionListener tabCompletionListener;
 
     public InteractiveTerminalEngine() {
         this(PromptInfo.rootUser());
@@ -130,6 +142,14 @@ public final class InteractiveTerminalEngine {
 
     public void setClearRequestListener(ClearRequestListener clearListener) {
         this.clearListener = clearListener;
+    }
+
+    public void setTabCompletionHandler(TabCompletionHandler tabCompletionHandler) {
+        this.tabCompletionHandler = tabCompletionHandler;
+    }
+
+    public void setTabCompletionListener(TabCompletionListener tabCompletionListener) {
+        this.tabCompletionListener = tabCompletionListener;
     }
 
     public PromptInfo getPrompt() {
@@ -259,10 +279,69 @@ public final class InteractiveTerminalEngine {
     }
 
     /**
-     * Handles Tab key, dispatching \t byte (0x09) to the backend VM stream.
+     * Handles Tab key, triggering smart completion if a handler is attached,
+     * or dispatching \t byte (0x09) to the backend VM stream as fallback.
      */
     public void handleTab() {
+        if (tabCompletionHandler != null) {
+            List<String> candidates = tabCompletionHandler.complete(lineBuffer.toString(), cursorPosition);
+            if (candidates != null && candidates.size() == 1) {
+                String candidate = candidates.get(0);
+                lineBuffer.setLength(0);
+                lineBuffer.append(candidate);
+                cursorPosition = lineBuffer.length();
+                notifyLineChanged();
+                return;
+            } else if (candidates != null && candidates.size() > 1) {
+                if (tabCompletionListener != null) {
+                    tabCompletionListener.onCompletionCandidates(lineBuffer.toString(), cursorPosition, candidates);
+                }
+                return;
+            }
+        }
         sendRawBytes(new byte[]{'\t'});
+    }
+
+    /**
+     * Parses standard ANSI escape sequences for cursor positioning and navigation.
+     *
+     * <p>Supported sequences:
+     * <ul>
+     *   <li>\e[A: Arrow Up (History recall)</li>
+     *   <li>\e[B: Arrow Down (History forward)</li>
+     *   <li>\e[C: Arrow Right</li>
+     *   <li>\e[D: Arrow Left</li>
+     *   <li>\e[3~: Delete key</li>
+     * </ul>
+     */
+    public void handleAnsiSequence(String sequence) {
+        if (sequence == null || sequence.isEmpty()) {
+            return;
+        }
+        switch (sequence) {
+            case "\u001b[A":
+            case "\\e[A":
+                handleArrowUp();
+                break;
+            case "\u001b[B":
+            case "\\e[B":
+                handleArrowDown();
+                break;
+            case "\u001b[C":
+            case "\\e[C":
+                handleArrowRight();
+                break;
+            case "\u001b[D":
+            case "\\e[D":
+                handleArrowLeft();
+                break;
+            case "\u001b[3~":
+            case "\\e[3~":
+                handleDelete();
+                break;
+            default:
+                break;
+        }
     }
 
     /**
