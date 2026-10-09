@@ -110,4 +110,27 @@ public final class TerminalInputDispatcherTest {
         assertArrayEquals(new byte[]{0x1A}, dispatchedBytes.get(0));
         assertFalse(stateMachine.isCtrlActive());
     }
+
+    @Test
+    public void testBacktickSymbolDispatched() {
+        sink.sendText("`");
+        assertEquals(1, dispatchedTexts.size());
+        assertEquals("`", dispatchedTexts.get(0));
+    }
+
+    @Test
+    public void testTerminalEngineKeyIntegration() {
+        InteractiveTerminalEngine engine = new InteractiveTerminalEngine();
+        engine.setByteSink(bytes -> dispatchedBytes.add(bytes));
+
+        // Tab
+        engine.handleTab();
+        assertArrayEquals(new byte[]{'\t'}, dispatchedBytes.get(dispatchedBytes.size() - 1));
+
+        // Ctrl+C
+        engine.handleTextInserted("ping");
+        engine.handleCtrlC();
+        assertArrayEquals(new byte[]{0x03}, dispatchedBytes.get(dispatchedBytes.size() - 1));
+        assertEquals("", engine.getBuffer());
+    }
 }

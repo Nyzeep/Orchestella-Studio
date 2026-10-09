@@ -119,45 +119,7 @@ public class ModernTerminalView extends ScrollView {
                     continue;
                 }
                 hasContent = true;
-                int start = transcriptBuffer.length();
-                transcriptBuffer.append(str);
-                int end = transcriptBuffer.length();
-
-                // Foreground
-                int fg = span.getEffectiveForegroundColor();
-                transcriptBuffer.setSpan(
-                        new ForegroundColorSpan(fg),
-                        start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-
-                // Background
-                Integer bg = span.getEffectiveBackgroundColor();
-                if (bg != null) {
-                    transcriptBuffer.setSpan(
-                            new BackgroundColorSpan(bg),
-                            start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                }
-
-                // Bold & Italic
-                if (span.isBold() && span.isItalic()) {
-                    transcriptBuffer.setSpan(
-                            new StyleSpan(Typeface.BOLD_ITALIC),
-                            start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                } else if (span.isBold()) {
-                    transcriptBuffer.setSpan(
-                            new StyleSpan(Typeface.BOLD),
-                            start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                } else if (span.isItalic()) {
-                    transcriptBuffer.setSpan(
-                            new StyleSpan(Typeface.ITALIC),
-                            start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                }
-
-                // Underline
-                if (span.isUnderline()) {
-                    transcriptBuffer.setSpan(
-                            new UnderlineSpan(),
-                            start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                }
+                appendSpanToBuffer(span);
             }
         }
 
@@ -188,6 +150,110 @@ public class ModernTerminalView extends ScrollView {
         // If more chunks arrived while flushing, reschedule
         if (!pendingChunks.isEmpty()) {
             scheduleFlush();
+        }
+    }
+
+    private void appendSpanToBuffer(TerminalSpan span) {
+        String str = span.getText();
+        if (str == null || str.isEmpty()) {
+            return;
+        }
+
+        // Handle VT100 control characters (\b and standalone \r)
+        int len = str.length();
+        int normalStart = -1;
+
+        for (int i = 0; i < len; i++) {
+            char c = str.charAt(i);
+            if (c == '\b') {
+                if (normalStart != -1) {
+                    appendStyledSubSequence(span, str.substring(normalStart, i));
+                    normalStart = -1;
+                }
+                // Backspace: delete preceding character in transcript if not a newline
+                int bufLen = transcriptBuffer.length();
+                if (bufLen > 0 && transcriptBuffer.charAt(bufLen - 1) != '\n') {
+                    transcriptBuffer.delete(bufLen - 1, bufLen);
+                }
+            } else if (c == '\r') {
+                if (i + 1 < len && str.charAt(i + 1) == '\n') {
+                    // Part of CRLF sequence: let normalStart consume it
+                    if (normalStart == -1) {
+                        normalStart = i;
+                    }
+                } else {
+                    // Standalone CR: carriage return rewinds to beginning of the active line
+                    if (normalStart != -1) {
+                        appendStyledSubSequence(span, str.substring(normalStart, i));
+                        normalStart = -1;
+                    }
+                    int bufLen = transcriptBuffer.length();
+                    int lastNl = -1;
+                    for (int j = bufLen - 1; j >= 0; j--) {
+                        if (transcriptBuffer.charAt(j) == '\n') {
+                            lastNl = j;
+                            break;
+                        }
+                    }
+                    int lineStart = lastNl + 1;
+                    if (lineStart < bufLen) {
+                        transcriptBuffer.delete(lineStart, bufLen);
+                    }
+                }
+            } else {
+                if (normalStart == -1) {
+                    normalStart = i;
+                }
+            }
+        }
+
+        if (normalStart != -1) {
+            appendStyledSubSequence(span, str.substring(normalStart, len));
+        }
+    }
+
+    private void appendStyledSubSequence(TerminalSpan span, String sub) {
+        if (sub.isEmpty()) {
+            return;
+        }
+        int start = transcriptBuffer.length();
+        transcriptBuffer.append(sub);
+        int end = transcriptBuffer.length();
+
+        // Foreground
+        int fg = span.getEffectiveForegroundColor();
+        transcriptBuffer.setSpan(
+                new ForegroundColorSpan(fg),
+                start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+        // Background
+        Integer bg = span.getEffectiveBackgroundColor();
+        if (bg != null) {
+            transcriptBuffer.setSpan(
+                    new BackgroundColorSpan(bg),
+                    start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+
+        // Bold & Italic
+        if (span.isBold() && span.isItalic()) {
+            transcriptBuffer.setSpan(
+                    new StyleSpan(Typeface.BOLD_ITALIC),
+                    start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        } else if (span.isBold()) {
+            transcriptBuffer.setSpan(
+                    new StyleSpan(Typeface.BOLD),
+                    start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        } else if (span.isItalic()) {
+            transcriptBuffer.setSpan(
+                    new StyleSpan(Typeface.ITALIC),
+                    start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+
+        // Underline
+        if (span.isUnderline()) {
+            transcriptBuffer.setSpan(
+                    new UnderlineSpan(),
+                    start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
     }
 
