@@ -16,22 +16,22 @@ tasks.withType<JavaCompile>().configureEach {
 
 tasks.register<JavaExec>("distroManifestContractTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.distro.DistroManifestContractTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.distro.DistroManifestContractTest")
 }
 
 tasks.register<JavaExec>("officialAlpineCatalogTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.distro.OfficialAlpineCatalogTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.distro.OfficialAlpineCatalogTest")
 }
 
 tasks.register<JavaExec>("officialDebianCatalogTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.distro.OfficialDebianCatalogTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.distro.OfficialDebianCatalogTest")
 }
 
 tasks.register<JavaExec>("distroFlavorTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.distro.DistroFlavorTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.distro.DistroFlavorTest")
 }
 
 tasks.named("check") {

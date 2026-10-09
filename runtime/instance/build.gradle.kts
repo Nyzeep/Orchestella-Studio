@@ -21,34 +21,34 @@ tasks.withType<JavaCompile>().configureEach {
 val normalLifecycleOutput = layout.buildDirectory.dir("normal-lifecycle-contract")
 tasks.register<JavaExec>("normalInstanceLifecycleContractTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.instance.NormalInstanceLifecycleContractTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.instance.NormalInstanceLifecycleContractTest")
     args(normalLifecycleOutput.get().asFile.absolutePath)
 }
 
 val recoveryLifecycleOutput = layout.buildDirectory.dir("recovery-lifecycle-contract")
 tasks.register<JavaExec>("reconciliationAndRecoveryLifecycleContractTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.instance.ReconciliationAndRecoveryLifecycleContractTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.instance.ReconciliationAndRecoveryLifecycleContractTest")
     args(recoveryLifecycleOutput.get().asFile.absolutePath)
 }
 
 val storageContractOutput = layout.buildDirectory.dir("storage-contract")
 tasks.register<JavaExec>("instanceStorageContractTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.instance.InstanceStorageContractTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.instance.InstanceStorageContractTest")
     args(storageContractOutput.get().asFile.absolutePath)
 }
 
 val deleteContractOutput = layout.buildDirectory.dir("delete-lifecycle-contract")
 tasks.register<JavaExec>("instanceLifecycleDeleteTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.instance.InstanceLifecycleDeleteTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycleDeleteTest")
     args(deleteContractOutput.get().asFile.absolutePath)
 }
 
 tasks.register<JavaExec>("sparseDiskResizerTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.instance.SparseDiskResizerTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.instance.SparseDiskResizerTest")
 }
 
 tasks.named("check") {

@@ -1,6 +1,6 @@
-package io.github.nyzeep.droidlayer.runtime.engineqemu;
+package io.github.nyzeep.orchestella.runtime.engineqemu;
 
-import io.github.nyzeep.droidlayer.runtime.contract.VmHardwareConfig;
+import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig;
 
 import java.util.Arrays;
 
@@ -8,7 +8,7 @@ public final class Ticket57DeviceVerifier {
     private static void log(String msg) {
         System.out.println(msg);
         try {
-            android.util.Log.i("DroidLayerQemu", msg);
+            android.util.Log.i("OrchestellaQemu", msg);
         } catch (Throwable ignored) {
         }
     }

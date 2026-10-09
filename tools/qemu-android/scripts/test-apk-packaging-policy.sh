@@ -4,7 +4,7 @@ set -euo pipefail
 TOOLS_DIRECTORY="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 REPOSITORY_DIRECTORY="$(cd -- "$TOOLS_DIRECTORY/../.." && pwd -P)"
 MANIFEST="$REPOSITORY_DIRECTORY/app/src/main/AndroidManifest.xml"
-ACTIVITY="$REPOSITORY_DIRECTORY/app/src/main/java/io/github/nyzeep/droidlayer/MainActivity.kt"
+ACTIVITY="$REPOSITORY_DIRECTORY/app/src/main/java/io/github/nyzeep/orchestella/MainActivity.kt"
 APP_BUILD="$REPOSITORY_DIRECTORY/app/build.gradle.kts"
 LOCK="$TOOLS_DIRECTORY/qemu-jni.lock"
 
@@ -24,7 +24,7 @@ grep --fixed-strings 'applicationInfo.nativeLibraryDir' "$ACTIVITY" >/dev/null |
   printf 'runtime does not read the installed nativeLibraryDir\n' >&2
   exit 1
 }
-NATIVE_MANIFEST="$REPOSITORY_DIRECTORY/runtime/engine-qemu/src/main/java/io/github/nyzeep/droidlayer/runtime/engineqemu/RuntimeArtifactManifest.java"
+NATIVE_MANIFEST="$REPOSITORY_DIRECTORY/runtime/engine-qemu/src/main/java/io/github/nyzeep/orchestella/runtime/engineqemu/RuntimeArtifactManifest.java"
 [[ -f "$NATIVE_MANIFEST" ]] || {
   printf 'QEMU installed-path verifier is unavailable\n' >&2
   exit 1
@@ -38,8 +38,8 @@ fi
 # exec of the exact spec array, never a shell) and the app launcher (builds the
 # spec via QemuLaunchSpec and executes from nativeLibraryDir). Any other exec
 # call in production sources remains fail-closed.
-LAUNCHER="$REPOSITORY_DIRECTORY/app/src/main/java/io/github/nyzeep/droidlayer/QemuInstanceLauncher.java"
-SEAM="$REPOSITORY_DIRECTORY/runtime/engine-qemu/src/main/java/io/github/nyzeep/droidlayer/runtime/engineqemu/QemuProcessLauncher.java"
+LAUNCHER="$REPOSITORY_DIRECTORY/app/src/main/java/io/github/nyzeep/orchestella/QemuInstanceLauncher.java"
+SEAM="$REPOSITORY_DIRECTORY/runtime/engine-qemu/src/main/java/io/github/nyzeep/orchestella/runtime/engineqemu/QemuProcessLauncher.java"
 [[ -f "$LAUNCHER" && -f "$SEAM" ]] || {
   printf 'QEMU launcher or engine seam is unavailable\n' >&2
   exit 1

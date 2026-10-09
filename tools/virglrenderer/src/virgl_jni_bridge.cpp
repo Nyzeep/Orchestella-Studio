@@ -26,7 +26,7 @@
 #include <android/log.h>
 #include <jni.h>
 
-#define LOG_TAG "DroidLayerQemu"
+#define LOG_TAG "OrchestellaQemu"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
@@ -34,7 +34,7 @@
 extern "C" {
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_nyzeep_droidlayer_runtime_engineqemu_VirglJniBridge_nativeInit(
+Java_io_github_nyzeep_orchestella_runtime_engineqemu_VirglJniBridge_nativeInit(
         JNIEnv *env, jclass clazz, jint quotaMb, jboolean enableRobustness) {
     (void)env; (void)clazz; (void)enableRobustness;
 
@@ -54,7 +54,7 @@ Java_io_github_nyzeep_droidlayer_runtime_engineqemu_VirglJniBridge_nativeInit(
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_nyzeep_droidlayer_runtime_engineqemu_VirglJniBridge_nativeCleanup(
+Java_io_github_nyzeep_orchestella_runtime_engineqemu_VirglJniBridge_nativeCleanup(
         JNIEnv *env, jclass clazz) {
     (void)env; (void)clazz;
     virgl_renderer_cleanup(nullptr);
@@ -62,49 +62,49 @@ Java_io_github_nyzeep_droidlayer_runtime_engineqemu_VirglJniBridge_nativeCleanup
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_nyzeep_droidlayer_runtime_engineqemu_VirglJniBridge_nativeGetAllocatedMemoryBytes(
+Java_io_github_nyzeep_orchestella_runtime_engineqemu_VirglJniBridge_nativeGetAllocatedMemoryBytes(
         JNIEnv *env, jclass clazz) {
     (void)env; (void)clazz;
     return (jlong)virgl_renderer_get_allocated_bytes();
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_nyzeep_droidlayer_runtime_engineqemu_VirglJniBridge_nativeGetMemoryQuotaMb(
+Java_io_github_nyzeep_orchestella_runtime_engineqemu_VirglJniBridge_nativeGetMemoryQuotaMb(
         JNIEnv *env, jclass clazz) {
     (void)env; (void)clazz;
     return (jint)virgl_renderer_get_memory_quota_mb();
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_nyzeep_droidlayer_runtime_engineqemu_VirglJniBridge_nativeSetMemoryQuotaMb(
+Java_io_github_nyzeep_orchestella_runtime_engineqemu_VirglJniBridge_nativeSetMemoryQuotaMb(
         JNIEnv *env, jclass clazz, jint quotaMb) {
     (void)env; (void)clazz;
     virgl_renderer_set_memory_quota_mb(quotaMb);
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_nyzeep_droidlayer_runtime_engineqemu_VirglJniBridge_nativeIsRobustnessEnabled(
+Java_io_github_nyzeep_orchestella_runtime_engineqemu_VirglJniBridge_nativeIsRobustnessEnabled(
         JNIEnv *env, jclass clazz) {
     (void)env; (void)clazz;
     return virgl_renderer_is_robustness_enabled() ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_nyzeep_droidlayer_runtime_engineqemu_VirglJniBridge_nativeTryAllocateTestMemory(
+Java_io_github_nyzeep_orchestella_runtime_engineqemu_VirglJniBridge_nativeTryAllocateTestMemory(
         JNIEnv *env, jclass clazz, jlong bytes) {
     (void)env; (void)clazz;
     return virgl_quota_try_allocate((size_t)bytes) ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_nyzeep_droidlayer_runtime_engineqemu_VirglJniBridge_nativeReleaseTestMemory(
+Java_io_github_nyzeep_orchestella_runtime_engineqemu_VirglJniBridge_nativeReleaseTestMemory(
         JNIEnv *env, jclass clazz, jlong bytes) {
     (void)env; (void)clazz;
     virgl_quota_release((size_t)bytes);
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_nyzeep_droidlayer_runtime_engineqemu_VirglJniBridge_nativeSimulateShaderCrash(
+Java_io_github_nyzeep_orchestella_runtime_engineqemu_VirglJniBridge_nativeSimulateShaderCrash(
         JNIEnv *env, jclass clazz) {
     (void)env; (void)clazz;
     LOGW("VirglJniBridge: Simulating malicious Guest shader crash to test EGL Robustness recovery...");

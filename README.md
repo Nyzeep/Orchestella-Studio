@@ -1,4 +1,4 @@
-# Orchestella Studio
+﻿# Orchestella Studio
 
 <div align="center">
 
@@ -124,7 +124,7 @@
 - 推荐安装并激活 **Shizuku**，一键为 Orchestella Studio 授予虚拟化权限；
 - 或者通过电脑 USB 调试执行一行 ADB 授权命令：
   ```bash
-  adb shell pm grant io.github.nyzeep.droidlayer android.permission.MANAGE_VIRTUAL_MACHINE
+  adb shell pm grant io.github.nyzeep.orchestella android.permission.MANAGE_VIRTUAL_MACHINE
   ```
 
 ---
