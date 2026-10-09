@@ -174,6 +174,22 @@ public final class InteractiveTerminalEngine {
     }
 
     /**
+     * Replaces the terminal command history with the provided loaded history list (up to 500 entries).
+     */
+    public void loadHistory(List<String> loadedHistory) {
+        history.clear();
+        if (loadedHistory != null && !loadedHistory.isEmpty()) {
+            if (loadedHistory.size() > 500) {
+                history.addAll(loadedHistory.subList(loadedHistory.size() - 500, loadedHistory.size()));
+            } else {
+                history.addAll(loadedHistory);
+            }
+        }
+        historyIndex = -1;
+        savedUncommittedLine = "";
+    }
+
+    /**
      * Handles a single typed character, inserting it at the current cursor position
      * and echoing it immediately.
      */
@@ -234,6 +250,26 @@ public final class InteractiveTerminalEngine {
     public void handleArrowRight() {
         if (cursorPosition < lineBuffer.length()) {
             cursorPosition++;
+            notifyLineChanged();
+        }
+    }
+
+    /**
+     * Moves the cursor to the beginning of the current line (HOME).
+     */
+    public void handleHome() {
+        if (cursorPosition != 0) {
+            cursorPosition = 0;
+            notifyLineChanged();
+        }
+    }
+
+    /**
+     * Moves the cursor to the end of the current line (END).
+     */
+    public void handleEnd() {
+        if (cursorPosition != lineBuffer.length()) {
+            cursorPosition = lineBuffer.length();
             notifyLineChanged();
         }
     }
@@ -358,6 +394,22 @@ public final class InteractiveTerminalEngine {
             case "\\e[3~":
                 handleDelete();
                 break;
+            case "\u001b[H":
+            case "\\e[H":
+            case "\u001b[1~":
+            case "\\e[1~":
+            case "\u001bOH":
+            case "\\eOH":
+                handleHome();
+                break;
+            case "\u001b[F":
+            case "\\e[F":
+            case "\u001b[4~":
+            case "\\e[4~":
+            case "\u001bOF":
+            case "\\eOF":
+                handleEnd();
+                break;
             default:
                 break;
         }
@@ -429,6 +481,21 @@ public final class InteractiveTerminalEngine {
             clearListener.onClearRequested();
         }
         notifyLineChanged();
+    }
+
+    /**
+     * Clears terminal screen display and resets the current interactive input line (CLR).
+     */
+    public void handleClearScreenAndResetLine() {
+        sendRawBytes(new byte[]{0x0C});
+        lineBuffer.setLength(0);
+        cursorPosition = 0;
+        historyIndex = -1;
+        savedUncommittedLine = "";
+        notifyLineChanged();
+        if (clearListener != null) {
+            clearListener.onClearRequested();
+        }
     }
 
     /**

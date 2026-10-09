@@ -26,6 +26,7 @@ import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 /**
  * Modern Full Linux terminal activity featuring:
@@ -46,6 +47,7 @@ public class TerminalActivity extends Activity {
     private boolean isHandlingModifier = false;
     private boolean isUpdatingFromEngine = false;
     private InteractiveTerminalEngine terminalEngine;
+    private TerminalHistoryStore historyStore;
     private String instanceId;
     private String bridgeToken;
 
@@ -65,10 +67,24 @@ public class TerminalActivity extends Activity {
                         "~",
                         "❯",
                         true));
+
+        try {
+            historyStore = new TerminalHistoryStore(getFilesDir().toPath().resolve("terminal_history"));
+            if (instanceId != null) {
+                List<String> existingHistory = historyStore.loadHistory(instanceId);
+                terminalEngine.loadHistory(existingHistory);
+            }
+        } catch (Exception e) {
+            android.util.Log.w("TerminalActivity", "Failed to initialize history store", e);
+        }
+
         terminalEngine.setByteSink(bytes -> sendRaw(bytes));
         terminalEngine.setLineCommitListener((promptInfo, cmd) -> {
             if (terminalView != null && cmd != null && !cmd.isEmpty()) {
                 terminalView.appendOutput(promptInfo.toPromptString() + cmd + "\n");
+            }
+            if (historyStore != null && instanceId != null) {
+                historyStore.saveHistoryAsync(instanceId, terminalEngine.getHistory());
             }
         });
         terminalEngine.setClearRequestListener(() -> {
@@ -435,13 +451,29 @@ public class TerminalActivity extends Activity {
     }
 
     @Override
+    protected void onPause() {
+        super.onPause();
+        persistTerminalHistory();
+    }
+
+    private void persistTerminalHistory() {
+        if (historyStore != null && terminalEngine != null && instanceId != null) {
+            historyStore.saveHistoryAsync(instanceId, terminalEngine.getHistory());
+        }
+    }
+
+    @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
         if (intent != null) {
             String newInstanceId = intent.getStringExtra("instanceId");
-            if (newInstanceId != null && !newInstanceId.isEmpty()) {
+            if (newInstanceId != null && !newInstanceId.isEmpty() && !newInstanceId.equals(this.instanceId)) {
+                persistTerminalHistory();
                 this.instanceId = newInstanceId;
+                if (historyStore != null) {
+                    terminalEngine.loadHistory(historyStore.loadHistory(newInstanceId));
+                }
             }
             String newBridgeToken = intent.getStringExtra("bridgeToken");
             if (newBridgeToken != null && !newBridgeToken.isEmpty()) {
@@ -467,6 +499,7 @@ public class TerminalActivity extends Activity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        persistTerminalHistory();
         ExecutionSessionRegistry.LiveSession liveSession = ExecutionSessionRegistry.getLiveSession(this.instanceId);
         if (liveSession != null) {
             liveSession.setOutputListener(null);

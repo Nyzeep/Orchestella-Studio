@@ -110,6 +110,16 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
         // ^C (Interrupt/Break)
         addKeyButton(row, "^C", v -> pressCtrlC());
 
+        // CLR (Clear screen and reset line)
+        addKeyButton(row, "CLR", v -> pressClr());
+
+        // PASTE (Clipboard quick paste)
+        addKeyButton(row, "PASTE", v -> pressPaste());
+
+        // HOME / END (Line boundary cursor jumps)
+        addKeyButton(row, "HOME", v -> pressHome());
+        addKeyButton(row, "END", v -> pressEnd());
+
         // Symbols: `, |, ~, $, /, \, -
         addKeyButton(row, "`", v -> pressSymbol("`"));
         addKeyButton(row, "|", v -> pressSymbol("|"));
@@ -165,6 +175,60 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
             terminalEngine.handleCtrlC();
         } else if (inputSink != null) {
             inputSink.sendBytes(new byte[]{0x03});
+        }
+    }
+
+    public void pressClr() {
+        if (terminalEngine != null) {
+            terminalEngine.handleClearScreenAndResetLine();
+        } else if (targetInput != null) {
+            targetInput.setText("");
+            if (inputSink != null) {
+                inputSink.sendBytes(new byte[]{0x0C});
+            }
+        } else if (inputSink != null) {
+            inputSink.sendBytes(new byte[]{0x0C});
+        }
+    }
+
+    public void pressPaste() {
+        android.content.ClipboardManager clipboard =
+                (android.content.ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+        if (clipboard != null && clipboard.hasPrimaryClip()) {
+            android.content.ClipData clip = clipboard.getPrimaryClip();
+            if (clip != null && clip.getItemCount() > 0) {
+                CharSequence text = clip.getItemAt(0).coerceToText(getContext());
+                if (text != null && text.length() > 0) {
+                    String str = text.toString();
+                    if (terminalEngine != null) {
+                        terminalEngine.handleTextInserted(str);
+                    } else if (targetInput != null) {
+                        insertTextIntoInput(str);
+                    } else if (inputSink != null) {
+                        inputSink.sendText(str);
+                    }
+                }
+            }
+        }
+    }
+
+    public void pressHome() {
+        if (terminalEngine != null) {
+            terminalEngine.handleHome();
+        } else if (targetInput != null) {
+            targetInput.setSelection(0);
+        } else {
+            sendArrowSequence("\u001B[H");
+        }
+    }
+
+    public void pressEnd() {
+        if (terminalEngine != null) {
+            terminalEngine.handleEnd();
+        } else if (targetInput != null) {
+            targetInput.setSelection(targetInput.getText().length());
+        } else {
+            sendArrowSequence("\u001B[F");
         }
     }
 
