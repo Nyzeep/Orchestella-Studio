@@ -5,7 +5,7 @@
 **无需 Root 的 Android 原生双引擎 Linux 运行环境与移动工作站**  
 *Native Dual-Engine Full Linux Runtime & Mobile Workstation for Android Without Root*
 
-[![Release](https://img.shields.io/badge/Release-v0.4.0-blue.svg?style=flat-square)](https://github.com/Nyzeep/Orchestella-Studio/releases)
+[![Status](https://img.shields.io/badge/Status-Under%20Heavy%20Development-orange.svg?style=flat-square)](https://github.com/Nyzeep/Orchestella-Studio)
 [![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen.svg?style=flat-square)](https://github.com/Nyzeep/Orchestella-Studio)
 [![License](https://img.shields.io/badge/License-Apache--2.0-orange.svg?style=flat-square)](LICENSE)
 [![Android](https://img.shields.io/badge/Android-8.0%2B%20(API%2026%2B)-green.svg?style=flat-square)](https://developer.android.com)
@@ -106,7 +106,9 @@
 - **存储空间**：建议可用内部存储空间 ≥ 4 GiB。
 
 #### 4.2 极速上手三步法
-1. **下载安装**：前往 [Releases 页面](https://github.com/Nyzeep/Orchestella-Studio/releases) 下载最新 APK 安装包；
+> ⚠️ **通知**：当前所有预发行版本因集中体验重塑与深度排障已全量下架撤回。待核心交互与 UX 缺陷彻底歼灭后，将重新分配版本号并开放下载。
+
+1. **源码构建**：克隆本仓库并在开发机执行 `./gradlew.bat assembleDebug` 生成测试包；
 2. **创建实例**：打开应用，选择创建 Alpine 或 Debian 实例，应用将自动完成初始环境校验；
 3. **启动使用**：
    - 点击实例卡片中的「启动」进入交互终端；
@@ -169,7 +171,9 @@ Unlike traditional PRoot containers, chroot hacks, or restricted terminal enviro
 
 ### 3. Quick Start
 
-1. **Download & Install**: Grab the latest APK from the [Releases](https://github.com/Nyzeep/Orchestella-Studio/releases) page.
+> ⚠️ **Notice**: All previous pre-releases have been temporarily recalled for thorough UX bug fixes and ergonomics redesign. Public downloads will be re-enabled once issues are resolved.
+
+1. **Build from Source**: Clone this repository and run `./gradlew.bat assembleDebug` to produce a testing APK.
 2. **Create Instance**: Launch the app and select your preferred Linux distribution (Alpine or Debian).
 3. **Launch & Develop**: Tap "Launch" to start the instance, access the shell, and start developing!
 
