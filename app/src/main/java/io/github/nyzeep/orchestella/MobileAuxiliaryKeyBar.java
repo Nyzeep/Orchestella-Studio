@@ -28,9 +28,18 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
     private TerminalInputSink inputSink;
     private StickyModifierStateMachine stateMachine;
     private EditText targetInput;
+    private InteractiveTerminalEngine terminalEngine;
 
     private Button btnCtrl;
     private Button btnAlt;
+
+    public void setTerminalEngine(InteractiveTerminalEngine terminalEngine) {
+        this.terminalEngine = terminalEngine;
+    }
+
+    public InteractiveTerminalEngine getTerminalEngine() {
+        return terminalEngine;
+    }
 
     public MobileAuxiliaryKeyBar(Context context) {
         super(context);
@@ -99,24 +108,21 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
         btnAlt = addKeyButton(row, "ALT", v -> pressAlt());
 
         // ^C (Interrupt/Break)
-        addKeyButton(row, "^C", v -> {
-            if (inputSink != null) {
-                inputSink.sendBytes(new byte[]{0x03});
-            }
-        });
+        addKeyButton(row, "^C", v -> pressCtrlC());
 
-        // Symbols: |, -, /, ~, $, \
+        // Symbols: `, |, ~, $, /, \, -
+        addKeyButton(row, "`", v -> pressSymbol("`"));
         addKeyButton(row, "|", v -> pressSymbol("|"));
-        addKeyButton(row, "-", v -> pressSymbol("-"));
-        addKeyButton(row, "/", v -> pressSymbol("/"));
         addKeyButton(row, "~", v -> pressSymbol("~"));
         addKeyButton(row, "$", v -> pressSymbol("$"));
+        addKeyButton(row, "/", v -> pressSymbol("/"));
         addKeyButton(row, "\\", v -> pressSymbol("\\"));
+        addKeyButton(row, "-", v -> pressSymbol("-"));
 
-        // Arrows: ↑, ↓, ←, →
+        // Arrows: ←, ↑, ↓, →
+        addKeyButton(row, "←", v -> pressLeft());
         addKeyButton(row, "↑", v -> pressUp());
         addKeyButton(row, "↓", v -> pressDown());
-        addKeyButton(row, "←", v -> pressLeft());
         addKeyButton(row, "→", v -> pressRight());
 
         addView(row, new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
@@ -129,7 +135,9 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
     }
 
     public void pressTab() {
-        if (targetInput != null && targetInput.getText().length() > 0) {
+        if (terminalEngine != null) {
+            terminalEngine.handleTab();
+        } else if (targetInput != null && targetInput.getText().length() > 0) {
             String current = targetInput.getText().toString();
             targetInput.setText("");
             if (inputSink != null) {
@@ -152,24 +160,54 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
         }
     }
 
+    public void pressCtrlC() {
+        if (terminalEngine != null) {
+            terminalEngine.handleCtrlC();
+        } else if (inputSink != null) {
+            inputSink.sendBytes(new byte[]{0x03});
+        }
+    }
+
     public void pressUp() {
-        sendArrowSequence("\u001B[A");
+        if (terminalEngine != null) {
+            terminalEngine.handleArrowUp();
+        } else {
+            sendArrowSequence("\u001B[A");
+        }
     }
 
     public void pressDown() {
-        sendArrowSequence("\u001B[B");
+        if (terminalEngine != null) {
+            terminalEngine.handleArrowDown();
+        } else {
+            sendArrowSequence("\u001B[B");
+        }
     }
 
     public void pressLeft() {
-        sendArrowSequence("\u001B[D");
+        if (terminalEngine != null) {
+            terminalEngine.handleArrowLeft();
+        } else {
+            sendArrowSequence("\u001B[D");
+        }
     }
 
     public void pressRight() {
-        sendArrowSequence("\u001B[C");
+        if (terminalEngine != null) {
+            terminalEngine.handleArrowRight();
+        } else {
+            sendArrowSequence("\u001B[C");
+        }
     }
 
     public void pressSymbol(String symbol) {
-        insertTextIntoInput(symbol);
+        if (targetInput != null) {
+            insertTextIntoInput(symbol);
+        } else if (terminalEngine != null) {
+            terminalEngine.handleTextInserted(symbol);
+        } else if (inputSink != null) {
+            inputSink.sendText(symbol);
+        }
     }
 
     private Button addKeyButton(LinearLayout container, String label, OnClickListener listener) {
@@ -182,8 +220,8 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
         btn.setBackground(createKeyBackground(0xFF343746, 0xFF44475A));
         btn.setAllCaps(false);
 
-        int minW = dpToPx(context, 38);
-        int h = dpToPx(context, 36);
+        int minW = dpToPx(context, 42);
+        int h = dpToPx(context, 44);
         btn.setMinimumWidth(minW);
         btn.setMinWidth(minW);
         btn.setHeight(h);

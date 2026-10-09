@@ -43,8 +43,9 @@ public class TerminalActivity extends Activity {
     private MobileAuxiliaryKeyBar auxiliaryKeyBar;
     private StickyModifierStateMachine stickyStateMachine;
     private ExecutionSession session;
-    private OutputStream terminalOut;
     private boolean isHandlingModifier = false;
+    private boolean isUpdatingFromEngine = false;
+    private InteractiveTerminalEngine terminalEngine;
     private String instanceId;
     private String bridgeToken;
 
@@ -56,6 +57,25 @@ public class TerminalActivity extends Activity {
         session = ExecutionSessionRegistry.get(instanceId);
         ui = new Handler(Looper.getMainLooper());
         stickyStateMachine = new StickyModifierStateMachine();
+
+        terminalEngine = new InteractiveTerminalEngine(
+                new InteractiveTerminalEngine.PromptInfo(
+                        "root",
+                        instanceId != null && !instanceId.isEmpty() ? instanceId : "orchestella",
+                        "~",
+                        "❯",
+                        true));
+        terminalEngine.setByteSink(bytes -> sendRaw(bytes));
+        terminalEngine.setLineCommitListener((promptInfo, cmd) -> {
+            if (terminalView != null && cmd != null && !cmd.isEmpty()) {
+                terminalView.appendOutput(promptInfo.toPromptString() + cmd + "\n");
+            }
+        });
+        terminalEngine.setClearRequestListener(() -> {
+            if (terminalView != null) {
+                terminalView.clear();
+            }
+        });
 
         LinearLayout rootLayout = new LinearLayout(this);
         rootLayout.setOrientation(LinearLayout.VERTICAL);
@@ -79,7 +99,11 @@ public class TerminalActivity extends Activity {
         Button btnSwitchDesktop = new Button(this, null, android.R.attr.buttonStyleSmall);
         btnSwitchDesktop.setId(R.id.btnSwitchDesktop);
         btnSwitchDesktop.setText(R.string.terminal_open_desktop);
-        btnSwitchDesktop.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
+        btnSwitchDesktop.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+        btnSwitchDesktop.setTextColor(DraculaPalette.FOREGROUND);
+        btnSwitchDesktop.setBackground(createPillBackground(0xFF44475A, 0xFF6272A4, 8f));
+        btnSwitchDesktop.setPadding(dpToPx(12), dpToPx(6), dpToPx(12), dpToPx(6));
+        btnSwitchDesktop.setMinHeight(dpToPx(40));
         btnSwitchDesktop.setOnClickListener(v -> {
             DualModeNavigation.navigateToDesktop(TerminalActivity.this, instanceId, bridgeToken);
         });
@@ -104,18 +128,43 @@ public class TerminalActivity extends Activity {
         };
         auxiliaryKeyBar.setInputSink(inputSink);
         auxiliaryKeyBar.setStateMachine(stickyStateMachine);
+        auxiliaryKeyBar.setTerminalEngine(terminalEngine);
         rootLayout.addView(auxiliaryKeyBar, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        // 4. Input row with monospace EditText and submit button
+        // 4. Stylized Starship/Windows Terminal interactive shell prompt bar
         LinearLayout inputBar = new LinearLayout(this);
         inputBar.setOrientation(LinearLayout.HORIZONTAL);
         inputBar.setGravity(Gravity.CENTER_VERTICAL);
-        inputBar.setPadding(dpToPx(12), dpToPx(6), dpToPx(12), dpToPx(8));
+        inputBar.setPadding(dpToPx(10), dpToPx(6), dpToPx(10), dpToPx(8));
         inputBar.setBackgroundColor(0xFF21222C);
 
+        // Prompt capsule: [root@orchestella ~] ❯
+        LinearLayout promptCapsule = new LinearLayout(this);
+        promptCapsule.setOrientation(LinearLayout.HORIZONTAL);
+        promptCapsule.setGravity(Gravity.CENTER_VERTICAL);
+        promptCapsule.setPadding(dpToPx(8), dpToPx(4), dpToPx(8), dpToPx(4));
+        promptCapsule.setBackground(createPillBackground(0xFF282A36, 0xFF44475A, 10f));
+
+        TextView tvContext = new TextView(this);
+        tvContext.setText("root@" + (instanceId != null && !instanceId.isEmpty() ? instanceId : "orchestella") + " ~");
+        tvContext.setTextColor(0xFF8BE9FD); // Dracula Cyan
+        tvContext.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        tvContext.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
+        promptCapsule.addView(tvContext);
+
+        TextView tvSymbol = new TextView(this);
+        tvSymbol.setText(" ❯ ");
+        tvSymbol.setTextColor(0xFF50FA7B); // Dracula Green
+        tvSymbol.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        tvSymbol.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+        promptCapsule.addView(tvSymbol);
+
+        inputBar.addView(promptCapsule, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
         final EditText input = new EditText(this);
-        input.setHint("shell command...");
+        input.setHint("command...");
         input.setHintTextColor(DraculaPalette.COMMENT);
         input.setTextColor(DraculaPalette.FOREGROUND);
         input.setBackground(null);
@@ -124,27 +173,57 @@ public class TerminalActivity extends Activity {
         input.setSingleLine(true);
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         input.setImeOptions(EditorInfo.IME_ACTION_SEND | EditorInfo.IME_FLAG_NO_EXTRACT_UI);
-        inputBar.addView(input, new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        LinearLayout.LayoutParams inputLp = new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        inputLp.setMargins(dpToPx(6), 0, dpToPx(6), 0);
+        inputBar.addView(input, inputLp);
 
         Button btnSend = new Button(this, null, android.R.attr.buttonStyleSmall);
         btnSend.setText("↵");
         btnSend.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         btnSend.setTextColor(DraculaPalette.FOREGROUND);
-        btnSend.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        btnSend.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f);
+        btnSend.setBackground(createPillBackground(0xFF44475A, 0xFF6272A4, 10f));
         btnSend.setOnClickListener(v -> {
-            String line = input.getText().toString();
-            input.setText("");
-            send(line);
+            if (terminalEngine != null) {
+                terminalEngine.syncBuffer(input.getText().toString(), input.getSelectionStart());
+                input.setText("");
+                terminalEngine.handleEnter();
+            } else {
+                String line = input.getText().toString();
+                input.setText("");
+                send(line);
+            }
         });
         inputBar.addView(btnSend, new LinearLayout.LayoutParams(
-                dpToPx(42), dpToPx(36)));
+                dpToPx(48), dpToPx(44)));
 
         rootLayout.addView(inputBar, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
         auxiliaryKeyBar.setTargetInput(input);
         setContentView(rootLayout);
+
+        terminalEngine.setLineChangeListener((p, buf, cursor) -> {
+            if (!isUpdatingFromEngine && input != null && !input.getText().toString().equals(buf)) {
+                isUpdatingFromEngine = true;
+                try {
+                    input.setText(buf);
+                    input.setSelection(Math.min(cursor, buf.length()));
+                } finally {
+                    isUpdatingFromEngine = false;
+                }
+            }
+        });
+
+        terminalView.setOnClickListener(v -> {
+            input.requestFocus();
+            android.view.inputmethod.InputMethodManager imm =
+                    (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                imm.showSoftInput(input, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
+            }
+        });
 
         // Sticky modifier interception for typed characters
         input.addTextChangedListener(new TextWatcher() {
@@ -188,7 +267,11 @@ public class TerminalActivity extends Activity {
                         } finally {
                             isHandlingModifier = false;
                         }
+                        return;
                     }
+                }
+                if (terminalEngine != null) {
+                    terminalEngine.syncBuffer(s != null ? s.toString() : "", input.getSelectionStart());
                 }
             }
         });
@@ -218,9 +301,15 @@ public class TerminalActivity extends Activity {
         input.setOnEditorActionListener((v, actionId, event) -> {
             if (actionId == EditorInfo.IME_ACTION_SEND
                     || (event != null && event.getKeyCode() == KeyEvent.KEYCODE_ENTER && event.getAction() == KeyEvent.ACTION_DOWN)) {
-                String line = input.getText().toString();
-                input.setText("");
-                send(line);
+                if (terminalEngine != null) {
+                    terminalEngine.syncBuffer(input.getText().toString(), input.getSelectionStart());
+                    input.setText("");
+                    terminalEngine.handleEnter();
+                } else {
+                    String line = input.getText().toString();
+                    input.setText("");
+                    send(line);
+                }
                 return true;
             }
             return false;
@@ -414,5 +503,16 @@ public class TerminalActivity extends Activity {
     private int dpToPx(int dp) {
         return (int) TypedValue.applyDimension(
                 TypedValue.COMPLEX_UNIT_DIP, dp, getResources().getDisplayMetrics());
+    }
+
+    private static android.graphics.drawable.GradientDrawable createPillBackground(
+            int fillColor, int strokeColor, float cornerRadiusDp) {
+        android.graphics.drawable.GradientDrawable gd =
+                new android.graphics.drawable.GradientDrawable();
+        gd.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
+        gd.setColor(fillColor);
+        gd.setCornerRadius(cornerRadiusDp * 2.5f);
+        gd.setStroke(2, strokeColor);
+        return gd;
     }
 }
