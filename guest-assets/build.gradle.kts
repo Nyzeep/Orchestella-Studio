@@ -24,7 +24,7 @@ tasks.test {
 tasks.jar {
     archiveFileName = "guest-assets-tools.jar"
     manifest {
-        attributes["Main-Class"] = "io.github.nyzeep.droidlayer.guestassets.GuestAssetsTool"
+        attributes["Main-Class"] = "io.github.nyzeep.orchestella.guestassets.GuestAssetsTool"
     }
     isPreserveFileTimestamps = false
     isReproducibleFileOrder = true

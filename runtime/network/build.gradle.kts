@@ -29,18 +29,18 @@ tasks.named<Test>("test") {
 val networkTestOutput = layout.buildDirectory.dir("network-manager-test")
 tasks.register<JavaExec>("portForwardingManagerContractTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.network.PortForwardingManagerContractTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.network.PortForwardingManagerContractTest")
     args(networkTestOutput.get().asFile.absolutePath)
 }
 
 tasks.register<JavaExec>("resilientDownloadEngineContractTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.network.download.ResilientDownloadEngineContractTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.network.download.ResilientDownloadEngineContractTest")
 }
 
 tasks.register<JavaExec>("bridgeProxyGatewayContractTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.network.BridgeProxyGatewayContractTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.network.BridgeProxyGatewayContractTest")
 }
 
 // The manager contract suite is strategy-neutral: other engine modules re-run

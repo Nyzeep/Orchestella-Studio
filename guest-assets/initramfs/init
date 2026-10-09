@@ -310,9 +310,9 @@ EOF
 
 install_guest_shell_profile() {
     target_root="$1"
-    mkdir -p "$target_root/etc/profile.d" "$target_root/etc/droidlayer/shell"
+    mkdir -p "$target_root/etc/profile.d" "$target_root/etc/orchestella/shell" "$target_root/etc/droidlayer/shell"
 
-    cat > "$target_root/etc/droidlayer/shell/aliases.sh" <<'EOF'
+    cat > "$target_root/etc/orchestella/shell/aliases.sh" <<'EOF'
 #!/bin/sh
 alias ll='ls -lah --color=auto'
 alias la='ls -A --color=auto'
@@ -321,11 +321,12 @@ alias grep='grep --color=auto'
 alias df='df -h'
 alias free='free -m'
 EOF
-    chmod 0644 "$target_root/etc/droidlayer/shell/aliases.sh"
+    chmod 0644 "$target_root/etc/orchestella/shell/aliases.sh"
+    ln -sf /etc/orchestella/shell/aliases.sh "$target_root/etc/droidlayer/shell/aliases.sh" 2>/dev/null || cp -f "$target_root/etc/orchestella/shell/aliases.sh" "$target_root/etc/droidlayer/shell/aliases.sh"
 
-    cat > "$target_root/etc/droidlayer/shell/droidlayer-prompt.sh" <<'EOF'
+    cat > "$target_root/etc/orchestella/shell/orchestella-prompt.sh" <<'EOF'
 #!/bin/sh
-__droidlayer_git_branch() {
+__orchestella_git_branch() {
     _cur="${PWD:-.}"
     _git=""
     while [ -n "$_cur" ]; do
@@ -364,7 +365,7 @@ __droidlayer_git_branch() {
             ;;
     esac
 }
-__droidlayer_dir() {
+__orchestella_dir() {
     _cwd="${PWD:-$(pwd)}"
     if [ -n "${HOME:-}" ] && [ "$_cwd" = "$HOME" ]; then
         printf '~'
@@ -377,7 +378,7 @@ __droidlayer_dir() {
         printf '%s' "$_cwd"
     fi
 }
-__droidlayer_build_prompt() {
+__orchestella_build_prompt() {
     _last_exit="${1:-0}"
     _mode="${2:-sh}"
     _esc=$(printf '\033')
@@ -396,8 +397,8 @@ __droidlayer_build_prompt() {
         _c_green="${_esc}[32m"
         _c_magenta="${_esc}[35m"
     fi
-    _dir_str="$(__droidlayer_dir)"
-    _branch="$(__droidlayer_git_branch)"
+    _dir_str="$(__orchestella_dir)"
+    _branch="$(__orchestella_git_branch)"
     _git_part=""
     if [ -n "$_branch" ]; then
         _git_part=" ${_c_yellow}(${_branch})${_c_reset}"
@@ -416,21 +417,27 @@ __droidlayer_build_prompt() {
         "$_c_cyan" "$_dir_str" "$_c_reset" "$_git_part" "$_err_part" \
         "$_arrow_color" "$_c_reset"
 }
+# Backward compatibility wrappers
+__droidlayer_git_branch() { __orchestella_git_branch "$@"; }
+__droidlayer_dir() { __orchestella_dir "$@"; }
+__droidlayer_build_prompt() { __orchestella_build_prompt "$@"; }
+
 if [ -n "${BASH_VERSION:-}" ]; then
-    __droidlayer_prompt_cmd() {
+    __orchestella_prompt_cmd() {
         _exit_status="$?"
-        PS1="$(__droidlayer_build_prompt "$_exit_status" bash)"
+        PS1="$(__orchestella_build_prompt "$_exit_status" bash)"
     }
-    PROMPT_COMMAND=__droidlayer_prompt_cmd
-    PS1="$(__droidlayer_build_prompt 0 bash)"
+    PROMPT_COMMAND=__orchestella_prompt_cmd
+    PS1="$(__orchestella_build_prompt 0 bash)"
 else
-    PS1='$(__droidlayer_build_prompt "$?" sh)'
+    PS1='$(__orchestella_build_prompt "$?" sh)'
 fi
 export PS1
 EOF
-    chmod 0755 "$target_root/etc/droidlayer/shell/droidlayer-prompt.sh"
+    chmod 0755 "$target_root/etc/orchestella/shell/orchestella-prompt.sh"
+    ln -sf /etc/orchestella/shell/orchestella-prompt.sh "$target_root/etc/droidlayer/shell/droidlayer-prompt.sh" 2>/dev/null || cp -f "$target_root/etc/orchestella/shell/orchestella-prompt.sh" "$target_root/etc/droidlayer/shell/droidlayer-prompt.sh"
 
-    cat > "$target_root/etc/profile.d/00-droidlayer-env.sh" <<'EOF'
+    cat > "$target_root/etc/profile.d/00-orchestella-env.sh" <<'EOF'
 #!/bin/sh
 export LS_COLORS="rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=30;41:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;33:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;33:*.war=01;33:*.7z=01;33:*.rar=01;33:*.c=00;36:*.h=00;36:*.cpp=00;36:*.hpp=00;36:*.cc=00;36:*.cxx=00;36:*.rs=01;33:*.py=00;33:*.go=00;34:*.java=00;35:*.kt=01;35:*.kts=01;35:*.js=00;32:*.ts=01;32:*.jsx=00;32:*.tsx=01;32:*.sh=01;32:*.bash=01;32:*.json=00;33:*.xml=00;33:*.yaml=00;33:*.yml=00;33:*.toml=00;33:*.md=00;37:*.txt=00;37"
 export LSCOLORS="Gxfxcxdxbxegedabagacad"
@@ -450,7 +457,9 @@ if [ -x /usr/sbin/orchestella-proxy-relay ]; then
     fi
 fi
 
-if [ -f /etc/droidlayer/shell/aliases.sh ]; then
+if [ -f /etc/orchestella/shell/aliases.sh ]; then
+    . /etc/orchestella/shell/aliases.sh
+elif [ -f /etc/droidlayer/shell/aliases.sh ]; then
     . /etc/droidlayer/shell/aliases.sh
 else
     alias ll='ls -lah --color=auto'
@@ -461,31 +470,41 @@ else
     alias free='free -m'
 fi
 
-if [ -f /etc/droidlayer/shell/droidlayer-prompt.sh ]; then
+if [ -f /etc/orchestella/shell/orchestella-prompt.sh ]; then
+    . /etc/orchestella/shell/orchestella-prompt.sh
+elif [ -f /etc/droidlayer/shell/droidlayer-prompt.sh ]; then
     . /etc/droidlayer/shell/droidlayer-prompt.sh
+elif [ -f "$(dirname "$0")/orchestella-prompt.sh" ]; then
+    . "$(dirname "$0")/orchestella-prompt.sh"
 elif [ -f "$(dirname "$0")/droidlayer-prompt.sh" ]; then
     . "$(dirname "$0")/droidlayer-prompt.sh"
 fi
 
 # Load graphics acceleration environment
-if [ -f /etc/profile.d/10-droidlayer-graphics.sh ]; then
+if [ -f /etc/profile.d/10-orchestella-graphics.sh ]; then
+    . /etc/profile.d/10-orchestella-graphics.sh
+elif [ -f /etc/profile.d/10-droidlayer-graphics.sh ]; then
     . /etc/profile.d/10-droidlayer-graphics.sh
+elif [ -f /etc/orchestella/shell/10-orchestella-graphics.sh ]; then
+    . /etc/orchestella/shell/10-orchestella-graphics.sh
 elif [ -f /etc/droidlayer/shell/10-droidlayer-graphics.sh ]; then
     . /etc/droidlayer/shell/10-droidlayer-graphics.sh
 fi
 EOF
-    chmod 0755 "$target_root/etc/profile.d/00-droidlayer-env.sh"
+    chmod 0755 "$target_root/etc/profile.d/00-orchestella-env.sh"
+    ln -sf /etc/profile.d/00-orchestella-env.sh "$target_root/etc/profile.d/00-droidlayer-env.sh" 2>/dev/null || cp -f "$target_root/etc/profile.d/00-orchestella-env.sh" "$target_root/etc/profile.d/00-droidlayer-env.sh"
 
-    cat > "$target_root/etc/profile.d/10-droidlayer-graphics.sh" <<'EOF'
+    cat > "$target_root/etc/profile.d/10-orchestella-graphics.sh" <<'EOF'
 #!/bin/sh
-# DroidLayer Guest Mesa 3D Graphics Environment Configuration
+# Orchestella Guest Mesa 3D Graphics Environment Configuration
 # Automatically configures Mesa Gallium VirGL 3D hardware acceleration
 # or smoothly falls back to llvmpipe CPU rasterization if host GPU is unavailable.
-# Installed into /etc/profile.d/10-droidlayer-graphics.sh
+# Installed into /etc/profile.d/10-orchestella-graphics.sh
 
-__droidlayer_probe_graphics() {
-    if [ "${DROIDLAYER_GPU_DISABLED:-0}" = "1" ] || [ "${VIRGL_FORCE_LLVMPIPE:-0}" = "1" ]; then
+__orchestella_probe_graphics() {
+    if [ "${ORCHESTELLA_GPU_DISABLED:-0}" = "1" ] || [ "${DROIDLAYER_GPU_DISABLED:-0}" = "1" ] || [ "${VIRGL_FORCE_LLVMPIPE:-0}" = "1" ]; then
         export GALLIUM_DRIVER=llvmpipe
+        export ORCHESTELLA_GRAPHICS_BACKEND=llvmpipe
         export DROIDLAYER_GRAPHICS_BACKEND=llvmpipe
         unset MESA_GL_VERSION_OVERRIDE
         unset MESA_GLES_VERSION_OVERRIDE
@@ -493,8 +512,9 @@ __droidlayer_probe_graphics() {
     fi
 
     if [ -r /proc/cmdline ]; then
-        if grep -qs 'droidlayer.gpu=0' /proc/cmdline || grep -qs 'nomodeset' /proc/cmdline; then
+        if grep -qs 'orchestella.gpu=0' /proc/cmdline || grep -qs 'droidlayer.gpu=0' /proc/cmdline || grep -qs 'nomodeset' /proc/cmdline; then
             export GALLIUM_DRIVER=llvmpipe
+            export ORCHESTELLA_GRAPHICS_BACKEND=llvmpipe
             export DROIDLAYER_GRAPHICS_BACKEND=llvmpipe
             unset MESA_GL_VERSION_OVERRIDE
             unset MESA_GLES_VERSION_OVERRIDE
@@ -515,27 +535,31 @@ __droidlayer_probe_graphics() {
         export GALLIUM_DRIVER=virgl
         export MESA_GL_VERSION_OVERRIDE=3.2
         export MESA_GLES_VERSION_OVERRIDE=3.2
+        export ORCHESTELLA_GRAPHICS_BACKEND=virgl
         export DROIDLAYER_GRAPHICS_BACKEND=virgl
     else
         export GALLIUM_DRIVER=llvmpipe
+        export ORCHESTELLA_GRAPHICS_BACKEND=llvmpipe
         export DROIDLAYER_GRAPHICS_BACKEND=llvmpipe
         unset MESA_GL_VERSION_OVERRIDE
         unset MESA_GLES_VERSION_OVERRIDE
     fi
 }
 
-__droidlayer_probe_graphics
-unset -f __droidlayer_probe_graphics 2>/dev/null || true
+__orchestella_probe_graphics
+unset -f __orchestella_probe_graphics 2>/dev/null || true
 EOF
-    chmod 0755 "$target_root/etc/profile.d/10-droidlayer-graphics.sh"
-    cp -f "$target_root/etc/profile.d/10-droidlayer-graphics.sh" "$target_root/etc/droidlayer/shell/10-droidlayer-graphics.sh"
+    chmod 0755 "$target_root/etc/profile.d/10-orchestella-graphics.sh"
+    ln -sf /etc/profile.d/10-orchestella-graphics.sh "$target_root/etc/profile.d/10-droidlayer-graphics.sh" 2>/dev/null || cp -f "$target_root/etc/profile.d/10-orchestella-graphics.sh" "$target_root/etc/profile.d/10-droidlayer-graphics.sh"
+    cp -f "$target_root/etc/profile.d/10-orchestella-graphics.sh" "$target_root/etc/orchestella/shell/10-orchestella-graphics.sh"
+    ln -sf /etc/profile.d/10-orchestella-graphics.sh "$target_root/etc/droidlayer/shell/10-droidlayer-graphics.sh" 2>/dev/null || cp -f "$target_root/etc/profile.d/10-orchestella-graphics.sh" "$target_root/etc/droidlayer/shell/10-droidlayer-graphics.sh"
 
-    if [ -f "$target_root/etc/profile" ] && ! grep -qs '00-droidlayer-env.sh' "$target_root/etc/profile"; then
-        printf '\nexport ENV=/etc/profile.d/00-droidlayer-env.sh\n' >> "$target_root/etc/profile"
+    if [ -f "$target_root/etc/profile" ] && ! grep -qs '00-orchestella-env.sh' "$target_root/etc/profile"; then
+        printf '\nexport ENV=/etc/profile.d/00-orchestella-env.sh\n' >> "$target_root/etc/profile"
     fi
 
-    if [ -f "$target_root/etc/bash.bashrc" ] && ! grep -qs '00-droidlayer-env.sh' "$target_root/etc/bash.bashrc"; then
-        printf '\nif [ -f /etc/profile.d/00-droidlayer-env.sh ]; then\n    . /etc/profile.d/00-droidlayer-env.sh\nfi\n' >> "$target_root/etc/bash.bashrc"
+    if [ -f "$target_root/etc/bash.bashrc" ] && ! grep -qs '00-orchestella-env.sh' "$target_root/etc/bash.bashrc"; then
+        printf '\nif [ -f /etc/profile.d/00-orchestella-env.sh ]; then\n    . /etc/profile.d/00-orchestella-env.sh\nfi\n' >> "$target_root/etc/bash.bashrc"
     fi
 }
 

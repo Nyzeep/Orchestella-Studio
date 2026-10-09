@@ -1,5 +1,5 @@
-#ifndef DROIDLAYER_NATIVE_GLES_PRESENTER_H
-#define DROIDLAYER_NATIVE_GLES_PRESENTER_H
+#ifndef ORCHESTELLA_NATIVE_GLES_PRESENTER_H
+#define ORCHESTELLA_NATIVE_GLES_PRESENTER_H
 
 #include <android/native_window.h>
 #include <EGL/egl.h>
@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <cstddef>
 
-namespace droidlayer {
+namespace orchestella {
 
 class NativeGlesPresenter {
 public:
@@ -71,6 +71,6 @@ private:
     float lastPresentTimeMs_ = 0.0f;
 };
 
-} // namespace droidlayer
+} // namespace orchestella
 
-#endif // DROIDLAYER_NATIVE_GLES_PRESENTER_H
+#endif // ORCHESTELLA_NATIVE_GLES_PRESENTER_H

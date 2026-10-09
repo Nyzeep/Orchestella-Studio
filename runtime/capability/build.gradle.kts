@@ -20,22 +20,22 @@ tasks.withType<JavaCompile>().configureEach {
 
 tasks.register<JavaExec>("deviceCapabilityEvaluatorTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.capability.DeviceCapabilityEvaluatorTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.capability.DeviceCapabilityEvaluatorTest")
 }
 
 tasks.register<JavaExec>("avfCapabilityEvaluatorTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.capability.AvfCapabilityEvaluatorTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluatorTest")
 }
 
 tasks.register<JavaExec>("avfAuthorizationWizardModelTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.capability.AvfAuthorizationWizardModelTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.capability.AvfAuthorizationWizardModelTest")
 }
 
 tasks.register<JavaExec>("networkCapabilityDeclarationTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.capability.NetworkCapabilityDeclarationTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.capability.NetworkCapabilityDeclarationTest")
 }
 
 tasks.named("check") {

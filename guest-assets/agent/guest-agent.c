@@ -116,7 +116,7 @@ static int parse_resize(const char *request, int *terminal_columns, int *termina
     int columns;
     int rows;
 
-    if (sscanf(request, "DROIDLAYER/RESIZE %d %d %c", &columns, &rows, &extra) != 2
+    if ((sscanf(request, "ORCHESTELLA/RESIZE %d %d %c", &columns, &rows, &extra) != 2 && sscanf(request, "DROIDLAYER/RESIZE %d %d %c", &columns, &rows, &extra) != 2)
         || columns < 1 || columns > MAX_TERMINAL_COLUMNS
         || rows < 1 || rows > MAX_TERMINAL_ROWS) {
         return 0;
@@ -162,38 +162,44 @@ static int serve_control_channel_fd(int read_fd, int write_fd, const char *termi
             return 0;
         }
         if (line_status < 0) {
-            write_control_line_fd(write_fd, "DROIDLAYER/ERROR malformed-command\n");
+            write_control_line_fd(write_fd, "ORCHESTELLA/ERROR malformed-command\n");
             return 4;
         }
-        if (strcmp(request, "DROIDLAYER/PING") == 0) {
-            if (!write_control_line_fd(write_fd, "DROIDLAYER/PONG 1\n")) {
+        if (strcmp(request, "ORCHESTELLA/PING") == 0 || strcmp(request, "DROIDLAYER/PING") == 0) {
+            if (!write_control_line_fd(write_fd, "ORCHESTELLA/PONG 1\n")) {
                 return 70;
             }
             continue;
         }
         if (parse_resize(request, &terminal_columns, &terminal_rows)) {
             if (!resize_terminal(terminal_device, terminal_columns, terminal_rows)) {
-                write_control_line_fd(write_fd, "DROIDLAYER/ERROR resize-unavailable\n");
+                write_control_line_fd(write_fd, "ORCHESTELLA/ERROR resize-unavailable\n");
                 return 4;
             }
-            if (!write_control_line_fd(write_fd, "DROIDLAYER/OK resize\n")) {
+            if (!write_control_line_fd(write_fd, "ORCHESTELLA/OK resize\n")) {
                 return 70;
             }
             continue;
         }
-        if (strncmp(request, "DROIDLAYER/DISPLAY ", 19) == 0) {
+        const char *display_cmd = NULL;
+        if (strncmp(request, "ORCHESTELLA/DISPLAY ", 20) == 0) {
+            display_cmd = request + 20;
+        } else if (strncmp(request, "DROIDLAYER/DISPLAY ", 19) == 0) {
+            display_cmd = request + 19;
+        }
+        if (display_cmd != NULL) {
             char sub[32] = {0};
-            if (sscanf(request, "DROIDLAYER/DISPLAY %31s", sub) == 1) {
+            if (sscanf(display_cmd, "%31s", sub) == 1) {
                 if (strcmp(sub, "RESIZE") == 0) {
                     int w = 0, h = 0;
                     char extra = '\0';
-                    if (sscanf(request, "DROIDLAYER/DISPLAY RESIZE %d %d %c", &w, &h, &extra) == 2
+                    if (sscanf(display_cmd, "RESIZE %d %d %c", &w, &h, &extra) == 2
                         && w >= 100 && w <= 7680 && h >= 100 && h <= 7680) {
                         char cmd[256];
                         snprintf(cmd, sizeof(cmd), "wlr-randr --custom-mode %dx%d >/dev/null 2>&1", w, h);
                         int r = system(cmd);
                         (void)r;
-                        if (!write_control_line_fd(write_fd, "DROIDLAYER/OK display\n")) {
+                        if (!write_control_line_fd(write_fd, "ORCHESTELLA/OK display\n")) {
                             return 70;
                         }
                         continue;
@@ -202,14 +208,14 @@ static int serve_control_channel_fd(int read_fd, int write_fd, const char *termi
                     int w = 0, h = 0;
                     double scale = 0.0;
                     char extra = '\0';
-                    if (sscanf(request, "DROIDLAYER/DISPLAY MODE %d %d %lf %c", &w, &h, &scale, &extra) == 3
+                    if (sscanf(display_cmd, "MODE %d %d %lf %c", &w, &h, &scale, &extra) == 3
                         && w >= 100 && w <= 7680 && h >= 100 && h <= 7680
                         && scale >= 0.1 && scale <= 5.0) {
                         char cmd[256];
                         snprintf(cmd, sizeof(cmd), "wlr-randr --custom-mode %dx%d --scale %.2f >/dev/null 2>&1", w, h, scale);
                         int r = system(cmd);
                         (void)r;
-                        if (!write_control_line_fd(write_fd, "DROIDLAYER/OK display\n")) {
+                        if (!write_control_line_fd(write_fd, "ORCHESTELLA/OK display\n")) {
                             return 70;
                         }
                         continue;
@@ -217,19 +223,19 @@ static int serve_control_channel_fd(int read_fd, int write_fd, const char *termi
                 } else if (strcmp(sub, "FPS") == 0) {
                     int fps = 0;
                     char extra = '\0';
-                    if (sscanf(request, "DROIDLAYER/DISPLAY FPS %d %c", &fps, &extra) == 1
+                    if (sscanf(display_cmd, "FPS %d %c", &fps, &extra) == 1
                         && fps >= 1 && fps <= 240) {
-                        if (!write_control_line_fd(write_fd, "DROIDLAYER/OK display\n")) {
+                        if (!write_control_line_fd(write_fd, "ORCHESTELLA/OK display\n")) {
                             return 70;
                         }
                         continue;
                     }
                 }
             }
-            write_control_line_fd(write_fd, "DROIDLAYER/ERROR malformed-command\n");
+            write_control_line_fd(write_fd, "ORCHESTELLA/ERROR malformed-command\n");
             return 4;
         }
-        write_control_line_fd(write_fd, "DROIDLAYER/ERROR malformed-command\n");
+        write_control_line_fd(write_fd, "ORCHESTELLA/ERROR malformed-command\n");
         return 4;
     }
 }
@@ -261,25 +267,25 @@ static int authenticate_control(int read_fd, int write_fd, const char *expected_
                   provided_token,
                   &extra)
                != 4
-        || strcmp(verb, "DROIDLAYER/HELLO") != 0
+        || (strcmp(verb, "ORCHESTELLA/HELLO") != 0 && strcmp(verb, "DROIDLAYER/HELLO") != 0)
         || !is_lower_hex_token(provided_token)) {
-        write_control_line_fd(write_fd, "DROIDLAYER/ERROR malformed-handshake\n");
+        write_control_line_fd(write_fd, "ORCHESTELLA/ERROR malformed-handshake\n");
         return 1;
     }
     if (minimum_version < 0 || maximum_version < minimum_version) {
-        write_control_line_fd(write_fd, "DROIDLAYER/ERROR malformed-handshake\n");
+        write_control_line_fd(write_fd, "ORCHESTELLA/ERROR malformed-handshake\n");
         return 1;
     }
     if (!constant_time_token_equals(expected_token, provided_token)) {
-        write_control_line_fd(write_fd, "DROIDLAYER/ERROR unauthorized\n");
+        write_control_line_fd(write_fd, "ORCHESTELLA/ERROR unauthorized\n");
         return 3;
     }
     if (minimum_version > 1 || maximum_version < 1) {
-        write_control_line_fd(write_fd, "DROIDLAYER/ERROR unsupported-version\n");
+        write_control_line_fd(write_fd, "ORCHESTELLA/ERROR unsupported-version\n");
         return 2;
     }
 
-    if (!write_control_line_fd(write_fd, "DROIDLAYER/READY 1\n")) {
+    if (!write_control_line_fd(write_fd, "ORCHESTELLA/READY 1\n")) {
         return 70;
     }
     return 0;
@@ -556,29 +562,29 @@ int main(int argument_count, char **arguments) {
                    && index + 1 < argument_count && arguments[index + 1][0] != '\0') {
             share_mount = arguments[++index];
         } else {
-            fputs("DROIDLAYER/ERROR usage\n", stderr);
+            fputs("ORCHESTELLA/ERROR usage\n", stderr);
             return 64;
         }
     }
     if (token_path == NULL) {
-        fputs("DROIDLAYER/ERROR usage\n", stderr);
+        fputs("ORCHESTELLA/ERROR usage\n", stderr);
         return 64;
     }
 
     token_status = read_token(token_path, expected_token);
     if (token_status == 0) {
-        fputs("DROIDLAYER/ERROR token-unavailable\n", stderr);
+        fputs("ORCHESTELLA/ERROR token-unavailable\n", stderr);
         return 65;
     }
     if (token_status < 0) {
-        fputs("DROIDLAYER/ERROR token-invalid\n", stderr);
+        fputs("ORCHESTELLA/ERROR token-invalid\n", stderr);
         return 65;
     }
 
     if (vsock_mode) {
 #if !defined(_WIN32)
         if (control_port <= 0) {
-            fputs("DROIDLAYER/ERROR usage\n", stderr);
+            fputs("ORCHESTELLA/ERROR usage\n", stderr);
             return 64;
         }
         return serve_vsock_mode(
@@ -597,7 +603,7 @@ int main(int argument_count, char **arguments) {
         (void)share_port;
         (void)share_tag;
         (void)share_mount;
-        fputs("DROIDLAYER/ERROR vsock-unavailable\n", stderr);
+        fputs("ORCHESTELLA/ERROR vsock-unavailable\n", stderr);
         return 70;
 #endif
     }
@@ -616,6 +622,6 @@ int main(int argument_count, char **arguments) {
         }
     }
     execl("/bin/sh", "sh", (char *)NULL);
-    fputs("DROIDLAYER/ERROR terminal-unavailable\n", stderr);
+    fputs("ORCHESTELLA/ERROR terminal-unavailable\n", stderr);
     return 70;
 }

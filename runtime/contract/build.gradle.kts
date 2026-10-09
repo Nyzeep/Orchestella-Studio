@@ -16,82 +16,82 @@ tasks.withType<JavaCompile>().configureEach {
 
 tasks.register<JavaExec>("bridgeHandshakeContractTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.contract.BridgeHandshakeContractTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.contract.BridgeHandshakeContractTest")
 }
 
 tasks.register<JavaExec>("bridgeControlContractTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.contract.BridgeControlContractTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.contract.BridgeControlContractTest")
 }
 
 tasks.register<JavaExec>("fullLinuxContractTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.contract.FullLinuxContractTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.contract.FullLinuxContractTest")
 }
 
 tasks.register<JavaExec>("networkContractTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.contract.NetworkContractTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.contract.NetworkContractTest")
 }
 
 tasks.register<JavaExec>("bridgeClientContractTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.contract.BridgeClientContractTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.contract.BridgeClientContractTest")
 }
 
 tasks.register<JavaExec>("portForwardingContractTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.contract.PortForwardingContractTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.contract.PortForwardingContractTest")
 }
 
 tasks.register<JavaExec>("sharedDirectoryContractTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.contract.SharedDirectoryContractTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.contract.SharedDirectoryContractTest")
 }
 
 tasks.register<JavaExec>("storageContractTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.contract.StorageContractTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.contract.StorageContractTest")
 }
 
 tasks.register<JavaExec>("displayControlContractTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.contract.DisplayControlContractTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.contract.DisplayControlContractTest")
 }
 
 tasks.register<JavaExec>("bridgeControlDisplayTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.contract.BridgeControlDisplayTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.contract.BridgeControlDisplayTest")
 }
 
 tasks.register<JavaExec>("inputEventSerializationTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.contract.InputEventSerializationTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.contract.InputEventSerializationTest")
 }
 
 tasks.register<JavaExec>("bridgeControlClipboardTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.contract.BridgeControlClipboardTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.contract.BridgeControlClipboardTest")
 }
 
 tasks.register<JavaExec>("audioStreamContractTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.contract.AudioStreamContractTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.contract.AudioStreamContractTest")
 }
 
 tasks.register<JavaExec>("pointerEventRelativeMotionTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.contract.PointerEventRelativeMotionTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.contract.PointerEventRelativeMotionTest")
 }
 
 tasks.register<JavaExec>("fullLinuxContractAudioCapabilityTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.contract.FullLinuxContractAudioCapabilityTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.contract.FullLinuxContractAudioCapabilityTest")
 }
 
 tasks.register<JavaExec>("vmHardwareConfigTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.contract.VmHardwareConfigTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfigTest")
 }
 
 tasks.named("check") {

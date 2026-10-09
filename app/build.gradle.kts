@@ -9,9 +9,9 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 // (assets would let aapt decompress and rename *.gz files; read via the
 // classloader), and the native library ships via jniLibs. When absent the APK
 // builds without the payload exactly as before.
-val qemuNativeLibDir: String? = properties["droidlayer.qemu.nativeLibDir"] as String?
-val qemuAssetsDir: String? = properties["droidlayer.qemu.assetsDir"] as String?
-val qemuInitramfsDir: String? = properties["droidlayer.qemu.initramfsDir"] as String?
+val qemuNativeLibDir: String? = (properties["orchestella.qemu.nativeLibDir"] ?: properties["droidlayer.qemu.nativeLibDir"]) as String?
+val qemuAssetsDir: String? = (properties["orchestella.qemu.assetsDir"] ?: properties["droidlayer.qemu.assetsDir"]) as String?
+val qemuInitramfsDir: String? = (properties["orchestella.qemu.initramfsDir"] ?: properties["droidlayer.qemu.initramfsDir"]) as String?
 
 plugins {
     alias(libs.plugins.android.application)
@@ -19,13 +19,13 @@ plugins {
 }
 
 android {
-    namespace = "io.github.nyzeep.droidlayer"
+    namespace = "io.github.nyzeep.orchestella"
     compileSdk = 36
     buildToolsVersion = "36.1.0"
     ndkVersion = "27.0.12077973"
 
     defaultConfig {
-        applicationId = "io.github.nyzeep.droidlayer"
+        applicationId = "io.github.nyzeep.orchestella"
         minSdk = 26
         targetSdk = 36
         versionCode = 4
@@ -111,6 +111,7 @@ android {
     packaging {
         jniLibs {
             useLegacyPackaging = true
+            keepDebugSymbols += "**/liborchestella_qemu.so"
             keepDebugSymbols += "**/libdroidlayer_qemu.so"
         }
     }

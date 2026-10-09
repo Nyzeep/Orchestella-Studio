@@ -7,7 +7,7 @@
     android:fitsSystemWindows="false">
 
     <!-- Layer 1: Hardware-rendered Wayland SurfaceView -->
-    <io.github.nyzeep.droidlayer.WaylandSurfaceView
+    <io.github.nyzeep.orchestella.WaylandSurfaceView
         android:id="@+id/wayland_surface_view"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />

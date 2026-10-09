@@ -20,50 +20,50 @@ tasks.withType<JavaCompile>().configureEach {
 
 tasks.register<JavaExec>("qemuBridgeAdapterTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.engineqemu.QemuBridgeAdapterTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.engineqemu.QemuBridgeAdapterTest")
 }
 
 val runtimeArtifactManifestOutput = layout.buildDirectory.dir("runtime-artifact-manifest-contract")
 tasks.register<JavaExec>("runtimeArtifactManifestTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.engineqemu.RuntimeArtifactManifestTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.engineqemu.RuntimeArtifactManifestTest")
     args(runtimeArtifactManifestOutput.get().asFile.absolutePath)
 }
 
 tasks.register<JavaExec>("runtimeAssetInstallerTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.engineqemu.RuntimeAssetInstallerTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.engineqemu.RuntimeAssetInstallerTest")
     args(layout.buildDirectory.dir("runtime-asset-installer-test").get().asFile.absolutePath)
 }
 
 tasks.register<JavaExec>("embeddedProvisionInputTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.engineqemu.EmbeddedProvisionInputTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.engineqemu.EmbeddedProvisionInputTest")
 }
 
 tasks.register<JavaExec>("qemuLaunchSpecTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.engineqemu.QemuLaunchSpecTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.engineqemu.QemuLaunchSpecTest")
 }
 
 tasks.register<JavaExec>("qemuGpuLaunchSpecTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.engineqemu.QemuGpuLaunchSpecTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.engineqemu.QemuGpuLaunchSpecTest")
 }
 
 tasks.register<JavaExec>("virglMemoryQuotaTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.engineqemu.VirglMemoryQuotaTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.engineqemu.VirglMemoryQuotaTest")
 }
 
 tasks.register<JavaExec>("runtimeArtifactManifestSchemaTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.engineqemu.RuntimeArtifactManifestSchemaTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.engineqemu.RuntimeArtifactManifestSchemaTest")
 }
 
 tasks.register<JavaExec>("qemuHostfwdContractTest") {
     classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.droidlayer.runtime.engineqemu.QemuHostfwdContractTest")
+    mainClass.set("io.github.nyzeep.orchestella.runtime.engineqemu.QemuHostfwdContractTest")
 }
 
 tasks.named("check") {

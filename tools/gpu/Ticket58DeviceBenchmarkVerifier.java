@@ -1,6 +1,6 @@
-package io.github.nyzeep.droidlayer.runtime.engineqemu;
+package io.github.nyzeep.orchestella.runtime.engineqemu;
 
-import io.github.nyzeep.droidlayer.runtime.contract.VmHardwareConfig;
+import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -18,7 +18,7 @@ public final class Ticket58DeviceBenchmarkVerifier {
     private static void log(String msg) {
         System.out.println(msg);
         try {
-            android.util.Log.i("DroidLayerGPU", msg);
+            android.util.Log.i("OrchestellaGPU", msg);
         } catch (Throwable ignored) {
         }
     }
@@ -70,8 +70,8 @@ public final class Ticket58DeviceBenchmarkVerifier {
             // 4. Verify packaged guest graphics environment profile (10-droidlayer-graphics.sh)
             String[] candidateScriptPaths = {
                     "/data/local/tmp/10-droidlayer-graphics.sh",
-                    "/data/data/io.github.nyzeep.droidlayer/files/guest-assets/shell/10-droidlayer-graphics.sh",
-                    "/data/user/0/io.github.nyzeep.droidlayer/files/guest-assets/shell/10-droidlayer-graphics.sh"
+                    "/data/data/io.github.nyzeep.orchestella/files/guest-assets/shell/10-droidlayer-graphics.sh",
+                    "/data/user/0/io.github.nyzeep.orchestella/files/guest-assets/shell/10-droidlayer-graphics.sh"
             };
 
             String scriptContent = null;

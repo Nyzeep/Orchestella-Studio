@@ -1,0 +1,301 @@
+#!/usr/bin/env bash
+#
+# DroidLayer Wayland Clipboard Daemon Agent (orchestella-clipboard-agent)
+# Milestone: Phase 3 (M3) - ADR-0018 & Ticket 47
+# Milestone: Phase 4.6 - Bidirectional Echo-Suppressed Synchronization Bridge
+#
+# Features:
+# - Bridges Wayland clipboard (wl-paste --watch / wl-copy) with Bridge v1 protocol
+# - Dual-direction echo suppression via SHA-256 state tracking (no Ping-Pong loops)
+# - Enforces ADR-0018 maximum payload limit of 256 KB (262144 bytes)
+# - Compliant with BridgeControl wire protocol:
+#     Outbound: ORCHESTELLA/CLIPBOARD PUT base64:<data>\n
+#     Inbound:  ORCHESTELLA/CLIPBOARD PUT base64:<data>\n -> wl-copy -> ORCHESTELLA/OK clipboard\n
+#     Query:    ORCHESTELLA/CLIPBOARD GET\n -> ORCHESTELLA/OK clipboard base64:<data>\n
+#
+
+set -euo pipefail
+
+MAX_CLIPBOARD_BYTES=262144
+STATE_DIR="${XDG_RUNTIME_DIR:-/tmp}/orchestella-clipboard"
+LAST_HOST_HASH_FILE="$STATE_DIR/last_host_hash"
+LAST_GUEST_HASH_FILE="$STATE_DIR/last_guest_hash"
+INBOUND_FIFO="$STATE_DIR/inbound.fifo"
+BRIDGE_SOCK="${ORCHESTELLA_BRIDGE_SOCK:-${DROIDLAYER_BRIDGE_SOCK:-/run/orchestella/bridge.sock}}"
+BRIDGE_PORT="${ORCHESTELLA_BRIDGE_PORT:-9102}"
+BRIDGE_HOST="${ORCHESTELLA_BRIDGE_HOST:-127.0.0.1}"
+
+# --- Helper functions ---
+
+compute_sha256() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 | awk '{print $1}'
+    elif command -v openssl >/dev/null 2>&1; then
+        openssl dgst -sha256 | awk '{print $NF}'
+    else
+        printf 'Error: no SHA-256 implementation available\n' >&2
+        return 1
+    fi
+}
+
+encode_base64() {
+    if base64 -w 0 </dev/null >/dev/null 2>&1; then
+        base64 -w 0
+    else
+        base64 | tr -d '\r\n'
+    fi
+}
+
+decode_base64() {
+    local input="$1"
+    if printf '%s' "$input" | base64 -d >/dev/null 2>&1; then
+        printf '%s' "$input" | base64 -d
+    elif printf '%s' "$input" | base64 -D >/dev/null 2>&1; then
+        printf '%s' "$input" | base64 -D
+    else
+        printf '%s' "$input" | base64 --decode
+    fi
+}
+
+format_put_command() {
+    local text="$1"
+    local raw_len
+    raw_len="$(printf '%s' "$text" | wc -c)"
+    if [[ "$raw_len" -gt "$MAX_CLIPBOARD_BYTES" ]]; then
+        printf 'Error: clipboard payload exceeds 256KB limit: %d bytes\n' "$raw_len" >&2
+        return 1
+    fi
+    local b64
+    b64="$(printf '%s' "$text" | encode_base64)"
+    printf 'ORCHESTELLA/CLIPBOARD PUT base64:%s\n' "$b64"
+}
+
+parse_put_payload() {
+    local line="$1"
+    line="${line%$'\r'}"
+    if [[ "$line" =~ ^(ORCHESTELLA|DROIDLAYER)/CLIPBOARD[[:space:]]+PUT[[:space:]]+base64:(.*)$ ]]; then
+        local b64="${BASH_REMATCH[2]}"
+        if [[ -n "$b64" ]]; then
+            decode_base64 "$b64"
+        fi
+    else
+        printf 'Error: malformed clipboard put command: %s\n' "$line" >&2
+        return 1
+    fi
+}
+
+apply_host_put() {
+    local line="${1:-}"
+    if [[ -z "$line" ]]; then
+        read -r line || return 0
+    fi
+    local text
+    text="$(parse_put_payload "$line")" || return 1
+
+    local text_bytes
+    text_bytes="$(printf '%s' "$text" | wc -c)"
+    if [[ "$text_bytes" -gt "$MAX_CLIPBOARD_BYTES" ]]; then
+        printf 'ORCHESTELLA/ERROR payload-too-large\n'
+        return 1
+    fi
+
+    local current_hash
+    current_hash="$(printf '%s' "$text" | compute_sha256)"
+
+    # Record hash in LAST_HOST_HASH_FILE so wl-paste --watch knows this originated from host
+    printf '%s' "$current_hash" > "$LAST_HOST_HASH_FILE"
+
+    # Inject into Wayland clipboard via wl-copy
+    if command -v wl-copy >/dev/null 2>&1; then
+        printf '%s' "$text" | wl-copy
+    fi
+
+    printf 'ORCHESTELLA/OK clipboard\n'
+    return 0
+}
+
+handle_get() {
+    local text=""
+    if command -v wl-paste >/dev/null 2>&1; then
+        text="$(wl-paste --no-newline 2>/dev/null || true)"
+    fi
+    if [[ -z "$text" ]]; then
+        printf 'ORCHESTELLA/OK clipboard base64:\n'
+        return 0
+    fi
+    local text_bytes
+    text_bytes="$(printf '%s' "$text" | wc -c)"
+    if [[ "$text_bytes" -gt "$MAX_CLIPBOARD_BYTES" ]]; then
+        printf 'ORCHESTELLA/ERROR payload-too-large\n'
+        return 1
+    fi
+    local b64
+    b64="$(printf '%s' "$text" | encode_base64)"
+    printf 'ORCHESTELLA/OK clipboard base64:%s\n' "$b64"
+    return 0
+}
+
+check_dependencies() {
+    local missing=0
+    for cmd in wl-paste wl-copy; do
+        if ! command -v "$cmd" >/dev/null 2>&1; then
+            printf 'Missing required clipboard dependency: %s\n' "$cmd" >&2
+            missing=1
+        fi
+    done
+    if ! command -v sha256sum >/dev/null 2>&1 && ! command -v shasum >/dev/null 2>&1 && ! command -v openssl >/dev/null 2>&1; then
+        printf 'Missing required hashing tool: sha256sum\n' >&2
+        missing=1
+    fi
+    if ! command -v base64 >/dev/null 2>&1; then
+        printf 'Missing required encoding tool: base64\n' >&2
+        missing=1
+    fi
+    return "$missing"
+}
+
+init_state() {
+    mkdir -p "$STATE_DIR"
+    chmod 700 "$STATE_DIR"
+    touch "$LAST_HOST_HASH_FILE" "$LAST_GUEST_HASH_FILE"
+}
+
+# --- CLI subcommands for verification, contracts & testing ---
+
+case "${1:-run}" in
+    --check)
+        if check_dependencies; then
+            printf 'All clipboard agent dependencies verified.\n'
+            exit 0
+        else
+            exit 1
+        fi
+        ;;
+    --format-put)
+        format_put_command "${2:-}"
+        exit 0
+        ;;
+    --parse-put)
+        parse_put_payload "${2:-}"
+        exit 0
+        ;;
+    --apply-host-put)
+        init_state
+        apply_host_put "${2:-}"
+        exit 0
+        ;;
+    --get)
+        init_state
+        handle_get
+        exit 0
+        ;;
+    --sha256)
+        printf '%s' "${2:-}" | compute_sha256
+        exit 0
+        ;;
+    --dry-run)
+        printf 'Clipboard agent dry-run: OK (MAX_BYTES=%d)\n' "$MAX_CLIPBOARD_BYTES"
+        exit 0
+        ;;
+    --help|-h)
+        printf 'Usage: %s [--check|--format-put <text>|--parse-put <line>|--apply-host-put <line>|--get|--sha256 <text>|--dry-run]\n' "$0"
+        exit 0
+        ;;
+    run)
+        ;;
+    *)
+        ;;
+esac
+
+# --- Daemon Runtime Logic ---
+
+init_state
+
+# Background inbound FIFO listener
+if [[ ! -p "$INBOUND_FIFO" ]]; then
+    rm -f "$INBOUND_FIFO"
+    mkfifo "$INBOUND_FIFO" 2>/dev/null || true
+fi
+
+if [[ -p "$INBOUND_FIFO" ]]; then
+    (
+        while true; do
+            if read -r line < "$INBOUND_FIFO"; then
+                if [[ "$line" =~ ^(ORCHESTELLA|DROIDLAYER)/CLIPBOARD[[:space:]]+PUT ]]; then
+                    apply_host_put "$line" >/dev/null 2>&1 || true
+                elif [[ "$line" =~ ^(ORCHESTELLA|DROIDLAYER)/CLIPBOARD[[:space:]]+GET ]]; then
+                    handle_get >/dev/null 2>&1 || true
+                fi
+            fi
+        done
+    ) &
+fi
+
+# Callback executed by wl-paste --watch whenever Guest clipboard changes
+on_guest_clipboard_change() {
+    local text
+    text="$(wl-paste --no-newline 2>/dev/null || true)"
+    if [[ -z "$text" ]]; then
+        return 0
+    fi
+
+    local text_bytes
+    text_bytes="$(printf '%s' "$text" | wc -c)"
+    if [[ "$text_bytes" -gt "$MAX_CLIPBOARD_BYTES" ]]; then
+        printf 'ORCHESTELLA/ERROR payload-too-large\n' >&2
+        return 0
+    fi
+
+    local current_hash
+    current_hash="$(printf '%s' "$text" | compute_sha256)"
+
+    # Echo Suppression: compare against last hash received from host
+    local last_host_hash=""
+    if [[ -f "$LAST_HOST_HASH_FILE" ]]; then
+        last_host_hash="$(cat "$LAST_HOST_HASH_FILE")"
+    fi
+    if [[ "$current_hash" == "$last_host_hash" ]]; then
+        # Content originated from host; suppress echo back to host
+        return 0
+    fi
+
+    # Deduplication: do not re-send identical consecutive guest copies
+    local last_guest_hash=""
+    if [[ -f "$LAST_GUEST_HASH_FILE" ]]; then
+        last_guest_hash="$(cat "$LAST_GUEST_HASH_FILE")"
+    fi
+    if [[ "$current_hash" == "$last_guest_hash" ]]; then
+        return 0
+    fi
+
+    # Update state and transmit to host
+    printf '%s' "$current_hash" > "$LAST_GUEST_HASH_FILE"
+    local command_wire
+    command_wire="$(format_put_command "$text")"
+
+    # Send outbound command to Bridge
+    if [[ -S "$BRIDGE_SOCK" ]]; then
+        printf '%s' "$command_wire" | nc -U "$BRIDGE_SOCK" 2>/dev/null || true
+    elif command -v nc >/dev/null 2>&1; then
+        printf '%s' "$command_wire" | nc -w 1 "$BRIDGE_HOST" "$BRIDGE_PORT" 2>/dev/null || true
+    fi
+}
+
+export -f compute_sha256 encode_base64 format_put_command parse_put_payload apply_host_put handle_get on_guest_clipboard_change
+export MAX_CLIPBOARD_BYTES STATE_DIR LAST_HOST_HASH_FILE LAST_GUEST_HASH_FILE INBOUND_FIFO BRIDGE_SOCK BRIDGE_PORT BRIDGE_HOST
+
+# If executed directly with 'watch-handler', process single change event
+if [[ "${1:-}" == "watch-handler" ]]; then
+    on_guest_clipboard_change
+    exit 0
+fi
+
+# In daemon mode: launch wl-paste --watch loop in foreground or subshell
+if command -v wl-paste >/dev/null 2>&1; then
+    exec wl-paste --no-newline --watch "$0" watch-handler
+else
+    printf 'Warning: wl-paste not available. Clipboard agent standing by.\n'
+    sleep infinity
+fi
