@@ -366,6 +366,21 @@
                     android:textStyle="bold"
                     android:textColor="?attr/colorOnBackground" />
 
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_import_instance"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:layout_marginEnd="8dp"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="12dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    app:icon="@drawable/ic_backup"
+                    app:iconSize="16dp"
+                    android:text="@string/import_instance_btn"
+                    android:textSize="12sp" />
+
                 <TextView
                     android:id="@+id/instances_count_badge"
                     android:layout_width="wrap_content"

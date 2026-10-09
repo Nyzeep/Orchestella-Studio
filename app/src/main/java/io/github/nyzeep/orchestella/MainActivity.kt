@@ -104,6 +104,45 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private val safImportLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let { srcUri ->
+            operations.execute {
+                runOnUiThread {
+                    createProgress.visibility = View.VISIBLE
+                    createStatus.text = getString(R.string.import_instance_progress)
+                }
+                try {
+                    val adapter = AndroidSafImportAdapter(this, Clock.systemUTC())
+                    val controller = InstanceLifecycle.Controller(instanceStore, Clock.systemUTC())
+                    val storageDir = filesDir.toPath().resolve("instances")
+                    val imported = adapter.importArchiveToStorage(srcUri, storageDir, controller)
+                    runOnUiThread {
+                        createProgress.visibility = View.GONE
+                        createStatus.text = ""
+                        Toast.makeText(
+                            this@MainActivity,
+                            getString(R.string.import_instance_success, imported.id()),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        showInstances()
+                    }
+                } catch (e: Exception) {
+                    runOnUiThread {
+                        createProgress.visibility = View.GONE
+                        createStatus.text = getString(R.string.import_instance_failed, e.message)
+                        Toast.makeText(
+                            this@MainActivity,
+                            getString(R.string.import_instance_failed, e.message),
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // Material You dynamic color extraction
         DynamicColors.applyIfAvailable(this)
@@ -169,6 +208,9 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.card_create_debian).setOnClickListener { createDistro(OfficialDebianCatalog.debian()) }
 
         upgradeAuthorizationButton.setOnClickListener { showAvfAuthorizationWizard() }
+        findViewById<View>(R.id.btn_import_instance)?.setOnClickListener {
+            safImportLauncher.launch(arrayOf("application/zip", "application/octet-stream", "*/*"))
+        }
         refreshWizardEntry()
         showInstances()
     }
@@ -548,12 +590,16 @@ class MainActivity : AppCompatActivity() {
                     operations.execute {
                         try {
                             val controller = InstanceLifecycle.Controller(instanceStore, Clock.systemUTC())
-                            if (expandedDiskBytes != null && instance.state() == InstanceLifecycle.State.STOPPED) {
-                                SparseDiskResizer.resize(instance.rootVolume(), instance.state(), expandedDiskBytes, null)
-                            }
-                            controller.updateHardwareConfig(instance.id(), newConfig)
+                            val result = InstanceHardwareConfigEditor.apply(
+                                instance,
+                                newConfig,
+                                expandedDiskBytes,
+                                controller,
+                                hostProfile,
+                                null
+                            )
                             runOnUiThread {
-                                Toast.makeText(this@MainActivity, R.string.hardware_update_success, Toast.LENGTH_SHORT).show()
+                                Toast.makeText(this@MainActivity, result.noticeMessage, Toast.LENGTH_SHORT).show()
                                 showInstances()
                             }
                         } catch (e: Exception) {

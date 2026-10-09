@@ -159,6 +159,14 @@
     <string name="action_delete_instance_desc">物理清扫 .raw 磁盘镜像与所有关联元数据</string>
     <string name="action_delete_running_forbidden">虚拟机运行中，禁止删除！请先关机。</string>
 
+    <!-- Phase 5.0: SAF Instance Import Strings -->
+    <string name="import_instance_btn">导入备份</string>
+    <string name="import_instance_title">从备份文件导入实例</string>
+    <string name="import_instance_desc">选择 SAF 归档文件（.zip）并校验还原为独立实例</string>
+    <string name="import_instance_progress">正在导入并校验备份文件…</string>
+    <string name="import_instance_success">实例「%1$s」导入恢复成功</string>
+    <string name="import_instance_failed">导入恢复失败：%1$s</string>
+
     <!-- Phase 4.8 Task 3: Dynamic Port Forwarding UI Strings -->
     <string name="port_forwarding_title">端口转发规则管理</string>
     <string name="port_forwarding_empty">暂无端口转发规则，可通过下方表单添加</string>
