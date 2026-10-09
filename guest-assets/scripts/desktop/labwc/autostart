@@ -47,14 +47,22 @@ if command -v pulseaudio >/dev/null 2>&1; then
     fi
 fi
 
-# Start DroidLayer Wayland clipboard synchronization agent in background
+# Start Orchestella Wayland clipboard synchronization agent in background
 CLIPBOARD_AGENT=""
-if command -v droidlayer-clipboard-agent >/dev/null 2>&1; then
+if command -v orchestella-clipboard-agent >/dev/null 2>&1; then
+    CLIPBOARD_AGENT="orchestella-clipboard-agent"
+elif command -v droidlayer-clipboard-agent >/dev/null 2>&1; then
     CLIPBOARD_AGENT="droidlayer-clipboard-agent"
+elif [ -x "$HOME/.local/bin/orchestella-clipboard-agent" ]; then
+    CLIPBOARD_AGENT="$HOME/.local/bin/orchestella-clipboard-agent"
 elif [ -x "$HOME/.local/bin/droidlayer-clipboard-agent" ]; then
     CLIPBOARD_AGENT="$HOME/.local/bin/droidlayer-clipboard-agent"
+elif [ -x "$HOME/.config/orchestella/clipboard/orchestella-clipboard-agent" ]; then
+    CLIPBOARD_AGENT="$HOME/.config/orchestella/clipboard/orchestella-clipboard-agent"
 elif [ -x "$HOME/.config/droidlayer/clipboard/droidlayer-clipboard-agent" ]; then
     CLIPBOARD_AGENT="$HOME/.config/droidlayer/clipboard/droidlayer-clipboard-agent"
+elif [ -x "/usr/local/bin/orchestella-clipboard-agent" ]; then
+    CLIPBOARD_AGENT="/usr/local/bin/orchestella-clipboard-agent"
 elif [ -x "/usr/local/bin/droidlayer-clipboard-agent" ]; then
     CLIPBOARD_AGENT="/usr/local/bin/droidlayer-clipboard-agent"
 fi

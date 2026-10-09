@@ -13,6 +13,8 @@
 #include <poll.h>
 #include <signal.h>
 #include <sys/ioctl.h>
+#include <sys/stat.h>
+#include <sys/un.h>
 #include <sys/wait.h>
 #include <termios.h>
 
@@ -150,23 +152,189 @@ static int resize_terminal(const char *terminal_device, int terminal_columns, in
 #endif
 }
 
+#if !defined(_WIN32)
+#define ORCHESTELLA_BRIDGE_SOCK "/run/orchestella/bridge.sock"
+#define DROIDLAYER_BRIDGE_SOCK "/run/droidlayer/bridge.sock"
+#define MAX_IPC_CLIENTS 8
+
+static int setup_bridge_ipc_socket(void) {
+    int server_fd;
+    struct sockaddr_un address;
+
+    mkdir("/run", 0755);
+    mkdir("/run/orchestella", 0755);
+    mkdir("/run/droidlayer", 0755);
+    unlink(ORCHESTELLA_BRIDGE_SOCK);
+    unlink(DROIDLAYER_BRIDGE_SOCK);
+
+    server_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (server_fd < 0) {
+        return -1;
+    }
+
+    memset(&address, 0, sizeof(address));
+    address.sun_family = AF_UNIX;
+    strncpy(address.sun_path, ORCHESTELLA_BRIDGE_SOCK, sizeof(address.sun_path) - 1);
+
+    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) != 0) {
+        close(server_fd);
+        return -1;
+    }
+
+    chmod(ORCHESTELLA_BRIDGE_SOCK, 0666);
+    symlink(ORCHESTELLA_BRIDGE_SOCK, DROIDLAYER_BRIDGE_SOCK);
+
+    if (listen(server_fd, MAX_IPC_CLIENTS) != 0) {
+        close(server_fd);
+        return -1;
+    }
+
+    int flags = fcntl(server_fd, F_GETFL, 0);
+    if (flags >= 0) {
+        fcntl(server_fd, F_SETFL, flags | O_NONBLOCK);
+    }
+
+    return server_fd;
+}
+#endif
+
+#define MAX_PAYLOAD_LINE (384 * 1024U)
+
 static int serve_control_channel_fd(int read_fd, int write_fd, const char *terminal_device) {
-    char request[MAX_CONTROL_LINE] = {0};
+    char *request = (char *)malloc(MAX_PAYLOAD_LINE);
+    if (request == NULL) {
+        return 71;
+    }
     int terminal_columns;
     int terminal_rows;
     int line_status;
 
+#if !defined(_WIN32)
+    int ipc_server_fd = setup_bridge_ipc_socket();
+    int ipc_clients[MAX_IPC_CLIENTS];
+    int i;
+    for (i = 0; i < MAX_IPC_CLIENTS; ++i) {
+        ipc_clients[i] = -1;
+    }
+#endif
+
     while (1) {
-        line_status = read_line_fd(read_fd, request, sizeof(request));
+#if !defined(_WIN32)
+        struct pollfd poll_fds[2 + MAX_IPC_CLIENTS];
+        int num_poll_fds = 0;
+        int host_idx = -1;
+        int ipc_server_idx = -1;
+        int client_map[2 + MAX_IPC_CLIENTS];
+
+        for (i = 0; i < 2 + MAX_IPC_CLIENTS; ++i) {
+            client_map[i] = -1;
+        }
+
+        /* 1. Host bridge descriptor (read_fd) */
+        poll_fds[num_poll_fds].fd = read_fd;
+        poll_fds[num_poll_fds].events = POLLIN;
+        host_idx = num_poll_fds++;
+
+        /* 2. IPC server listener */
+        if (ipc_server_fd >= 0) {
+            poll_fds[num_poll_fds].fd = ipc_server_fd;
+            poll_fds[num_poll_fds].events = POLLIN;
+            ipc_server_idx = num_poll_fds++;
+        }
+
+        /* 3. Connected IPC clients */
+        for (i = 0; i < MAX_IPC_CLIENTS; ++i) {
+            if (ipc_clients[i] >= 0) {
+                client_map[num_poll_fds] = i;
+                poll_fds[num_poll_fds].fd = ipc_clients[i];
+                poll_fds[num_poll_fds].events = POLLIN;
+                num_poll_fds++;
+            }
+        }
+
+        int poll_res = poll(poll_fds, (nfds_t)num_poll_fds, -1);
+        if (poll_res < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            free(request);
+            if (ipc_server_fd >= 0) {
+                close(ipc_server_fd);
+            }
+            return 70;
+        }
+
+        /* Accept new IPC connections */
+        if (ipc_server_idx >= 0 && (poll_fds[ipc_server_idx].revents & POLLIN)) {
+            int new_client = accept(ipc_server_fd, NULL, NULL);
+            if (new_client >= 0) {
+                int added = 0;
+                for (i = 0; i < MAX_IPC_CLIENTS; ++i) {
+                    if (ipc_clients[i] < 0) {
+                        ipc_clients[i] = new_client;
+                        added = 1;
+                        break;
+                    }
+                }
+                if (!added) {
+                    close(new_client);
+                }
+            }
+        }
+
+        /* Check connected IPC clients for outbound commands to host */
+        for (i = 0; i < num_poll_fds; ++i) {
+            int client_slot = client_map[i];
+            if (client_slot >= 0 && (poll_fds[i].revents & (POLLIN | POLLHUP | POLLERR))) {
+                char client_buffer[4096];
+                ssize_t bytes = read(ipc_clients[client_slot], client_buffer, sizeof(client_buffer));
+                if (bytes > 0) {
+                    /* Forward outbound bytes directly to host bridge write_fd */
+                    ssize_t written = 0;
+                    while (written < bytes) {
+                        ssize_t w = write(write_fd, client_buffer + written, (size_t)(bytes - written));
+                        if (w <= 0) {
+                            break;
+                        }
+                        written += w;
+                    }
+                } else if (bytes == 0 || (bytes < 0 && errno != EAGAIN && errno != EINTR)) {
+                    /* Client closed connection */
+                    close(ipc_clients[client_slot]);
+                    ipc_clients[client_slot] = -1;
+                }
+            }
+        }
+
+        /* Check if host bridge (read_fd) has incoming data */
+        if (host_idx < 0 || !(poll_fds[host_idx].revents & (POLLIN | POLLHUP))) {
+            continue;
+        }
+#endif
+
+        line_status = read_line_fd(read_fd, request, MAX_PAYLOAD_LINE);
         if (line_status == 0) {
+            free(request);
+#if !defined(_WIN32)
+            if (ipc_server_fd >= 0) {
+                close(ipc_server_fd);
+            }
+#endif
             return 0;
         }
         if (line_status < 0) {
             write_control_line_fd(write_fd, "ORCHESTELLA/ERROR malformed-command\n");
+            free(request);
+#if !defined(_WIN32)
+            if (ipc_server_fd >= 0) {
+                close(ipc_server_fd);
+            }
+#endif
             return 4;
         }
         if (strcmp(request, "ORCHESTELLA/PING") == 0 || strcmp(request, "DROIDLAYER/PING") == 0) {
             if (!write_control_line_fd(write_fd, "ORCHESTELLA/PONG 1\n")) {
+                free(request);
                 return 70;
             }
             continue;
@@ -174,9 +342,11 @@ static int serve_control_channel_fd(int read_fd, int write_fd, const char *termi
         if (parse_resize(request, &terminal_columns, &terminal_rows)) {
             if (!resize_terminal(terminal_device, terminal_columns, terminal_rows)) {
                 write_control_line_fd(write_fd, "ORCHESTELLA/ERROR resize-unavailable\n");
+                free(request);
                 return 4;
             }
             if (!write_control_line_fd(write_fd, "ORCHESTELLA/OK resize\n")) {
+                free(request);
                 return 70;
             }
             continue;
@@ -200,6 +370,7 @@ static int serve_control_channel_fd(int read_fd, int write_fd, const char *termi
                         int r = system(cmd);
                         (void)r;
                         if (!write_control_line_fd(write_fd, "ORCHESTELLA/OK display\n")) {
+                            free(request);
                             return 70;
                         }
                         continue;
@@ -216,6 +387,7 @@ static int serve_control_channel_fd(int read_fd, int write_fd, const char *termi
                         int r = system(cmd);
                         (void)r;
                         if (!write_control_line_fd(write_fd, "ORCHESTELLA/OK display\n")) {
+                            free(request);
                             return 70;
                         }
                         continue;
@@ -226,6 +398,7 @@ static int serve_control_channel_fd(int read_fd, int write_fd, const char *termi
                     if (sscanf(display_cmd, "FPS %d %c", &fps, &extra) == 1
                         && fps >= 1 && fps <= 240) {
                         if (!write_control_line_fd(write_fd, "ORCHESTELLA/OK display\n")) {
+                            free(request);
                             return 70;
                         }
                         continue;
@@ -233,9 +406,52 @@ static int serve_control_channel_fd(int read_fd, int write_fd, const char *termi
                 }
             }
             write_control_line_fd(write_fd, "ORCHESTELLA/ERROR malformed-command\n");
+            free(request);
+#if !defined(_WIN32)
+            if (ipc_server_fd >= 0) {
+                close(ipc_server_fd);
+            }
+#endif
             return 4;
         }
+
+        /* Inbound clipboard command from host to guest */
+        if (strncmp(request, "ORCHESTELLA/CLIPBOARD", 21) == 0
+            || strncmp(request, "DROIDLAYER/CLIPBOARD", 20) == 0) {
+#if !defined(_WIN32)
+            /* 1. Forward to any persistent connected IPC clients */
+            for (i = 0; i < MAX_IPC_CLIENTS; ++i) {
+                if (ipc_clients[i] >= 0) {
+                    write_control_line_fd(ipc_clients[i], request);
+                    write_control_line_fd(ipc_clients[i], "\n");
+                }
+            }
+            /* 2. Write to clipboard inbound FIFO */
+            int fifo_fd = open("/run/orchestella/clipboard-inbound.fifo", O_WRONLY | O_NONBLOCK);
+            if (fifo_fd < 0) {
+                fifo_fd = open("/tmp/orchestella-clipboard/inbound.fifo", O_WRONLY | O_NONBLOCK);
+            }
+            if (fifo_fd >= 0) {
+                size_t req_len = strlen(request);
+                write(fifo_fd, request, req_len);
+                write(fifo_fd, "\n", 1);
+                close(fifo_fd);
+            }
+#endif
+            if (!write_control_line_fd(write_fd, "ORCHESTELLA/OK clipboard\n")) {
+                free(request);
+                return 70;
+            }
+            continue;
+        }
+
         write_control_line_fd(write_fd, "ORCHESTELLA/ERROR malformed-command\n");
+        free(request);
+#if !defined(_WIN32)
+        if (ipc_server_fd >= 0) {
+            close(ipc_server_fd);
+        }
+#endif
         return 4;
     }
 }
