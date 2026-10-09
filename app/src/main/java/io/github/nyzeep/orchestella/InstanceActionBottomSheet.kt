@@ -29,6 +29,7 @@ class InstanceActionBottomSheet(
         fun onExportBackup(instance: InstanceLifecycle.Instance)
         fun onManagePortForwarding(instance: InstanceLifecycle.Instance)
         fun onShowCredentials(instance: InstanceLifecycle.Instance)
+        fun onClone(instance: InstanceLifecycle.Instance)
         fun onDelete(instance: InstanceLifecycle.Instance)
     }
 
@@ -103,7 +104,24 @@ class InstanceActionBottomSheet(
             callbacks.onShowCredentials(instance)
         }
 
-        // Action 6: Delete Instance (Guarded: strictly forbidden while running)
+        // Action 6: Clone Instance (Guarded: only when stopped/created)
+        val actionClone = view.findViewById<View>(R.id.sheet_action_clone)
+        val hintClone = view.findViewById<TextView>(R.id.sheet_hint_clone)
+        if (!uiModel.canClone) {
+            actionClone.alpha = 0.5f
+            hintClone.text = context.getString(R.string.action_clone_running_forbidden)
+            actionClone.setOnClickListener {
+                Toast.makeText(context, R.string.action_clone_running_forbidden, Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            actionClone.alpha = 1.0f
+            actionClone.setOnClickListener {
+                dialog.dismiss()
+                callbacks.onClone(instance)
+            }
+        }
+
+        // Action 7: Delete Instance (Guarded: strictly forbidden while running)
         val actionDelete = view.findViewById<View>(R.id.sheet_action_delete)
         val hintDelete = view.findViewById<TextView>(R.id.sheet_hint_delete)
         if (!uiModel.canDelete) {

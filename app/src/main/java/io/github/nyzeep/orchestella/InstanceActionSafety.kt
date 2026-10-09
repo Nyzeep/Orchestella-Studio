@@ -52,4 +52,25 @@ object InstanceActionSafety {
             throw IllegalStateException("Cannot update hardware config while in state: $state; must stop VM first")
         }
     }
+
+    /**
+     * Determines whether an instance in the given state can be safely cloned.
+     * Only STOPPED and CREATED instances can be cloned to guarantee filesystem consistency.
+     */
+    @JvmStatic
+    fun canClone(state: InstanceLifecycle.State): Boolean {
+        return state == InstanceLifecycle.State.STOPPED ||
+                state == InstanceLifecycle.State.CREATED
+    }
+
+    /**
+     * Asserts that an instance in the given state can be safely cloned,
+     * throwing {@link IllegalStateException} if it is currently running or provisioning.
+     */
+    @JvmStatic
+    fun requireCanClone(state: InstanceLifecycle.State) {
+        if (!canClone(state)) {
+            throw IllegalStateException("Cannot clone instance while in state: $state; must stop VM first")
+        }
+    }
 }

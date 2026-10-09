@@ -160,6 +160,16 @@
     <string name="port_forwarding_add_rule">添加转发规则</string>
     <string name="port_forwarding_rule_format">宿主 %1$d ➔ Guest %2$d</string>
 
+    <!-- Phase 4.9 Task 3: Instance Clone Strings -->
+    <string name="action_clone_instance">📑 快速克隆实例</string>
+    <string name="action_clone_instance_desc">复制实例配置与底层磁盘镜像生成新的独立实例</string>
+    <string name="action_clone_running_forbidden">虚拟机运行中，禁止克隆！请先关机。</string>
+    <string name="action_clone_confirm_title">克隆 Linux 实例</string>
+    <string name="action_clone_confirm_message">确定要快速克隆实例「%1$s」吗？\n\n系统将复制其硬件规格与根磁盘镜像，并生成全新的独立实例。</string>
+    <string name="action_clone_confirm_btn">立即克隆</string>
+    <string name="action_clone_success">实例已成功克隆，新实例 ID: %1$s</string>
+    <string name="action_clone_failed">克隆实例失败：%1$s</string>
+
     <!-- Delete Confirmation Alert -->
     <string name="action_delete_confirm_title">彻底物理删除实例？</string>
     <string name="action_delete_confirm_message">确定要彻底物理销毁实例「%1$s」吗？\n\n此操作将立即物理清扫私有目录中的 .raw 根磁盘镜像、元数据及所有关联缓存文件，彻底释放宿主存储空间。此操作不可逆！</string>

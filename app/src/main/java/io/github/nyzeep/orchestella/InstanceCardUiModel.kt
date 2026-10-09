@@ -29,6 +29,7 @@ data class InstanceCardUiModel(
     val canOpenTerminal: Boolean,
     val canLaunchDesktop: Boolean,
     val canConfigureHardware: Boolean,
+    val canClone: Boolean = false,
     val canDelete: Boolean,
     val hasCrashDiagnostic: Boolean,
     val crashDiagnostic: InstanceLifecycle.CrashDiagnostic?
@@ -101,6 +102,7 @@ data class InstanceCardUiModel(
                 canOpenTerminal = isRunning,
                 canLaunchDesktop = isRunning && supportsDesktop,
                 canConfigureHardware = isStopped || isCreated,
+                canClone = isStopped || isCreated,
                 canDelete = isStopped || isCreated || isCrashed,
                 hasCrashDiagnostic = instance.crashDiagnostic() != null,
                 crashDiagnostic = instance.crashDiagnostic()

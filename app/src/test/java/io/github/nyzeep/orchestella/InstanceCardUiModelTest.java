@@ -84,6 +84,7 @@ public final class InstanceCardUiModelTest {
 
         // Safety assertions
         assertFalse("Cannot edit hardware config while running", model.getCanConfigureHardware());
+        assertFalse("Cannot clone instance while running", model.getCanClone());
         assertFalse("Cannot delete instance while running", model.getCanDelete());
         assertFalse("Cannot launch an already running instance", model.getCanLaunch());
         assertTrue("Can open terminal while running", model.getCanOpenTerminal());
@@ -118,6 +119,7 @@ public final class InstanceCardUiModelTest {
         assertEquals(R.color.status_stopped, model.getStateBadgeColorRes());
 
         assertTrue("Can edit hardware config when stopped", model.getCanConfigureHardware());
+        assertTrue("Can clone instance when stopped", model.getCanClone());
         assertTrue("Can delete instance when stopped", model.getCanDelete());
         assertTrue("Can launch when stopped", model.getCanLaunch());
         assertFalse("Cannot open terminal when stopped", model.getCanOpenTerminal());
@@ -159,6 +161,7 @@ public final class InstanceCardUiModelTest {
         assertEquals("Segmentation fault", model.getCrashDiagnostic().message());
 
         assertTrue("Can delete crashed instance", model.getCanDelete());
+        assertFalse("Cannot clone crashed instance", model.getCanClone());
         assertFalse("Cannot edit hardware directly on crashed instance", model.getCanConfigureHardware());
     }
 
