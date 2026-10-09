@@ -94,6 +94,11 @@ tasks.register<JavaExec>("vmHardwareConfigTest") {
     mainClass.set("io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfigTest")
 }
 
+tasks.register<JavaExec>("gestureStateEngineTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.contract.GestureStateEngineTest")
+}
+
 tasks.named("check") {
     dependsOn(
         "bridgeHandshakeContractTest",
@@ -111,7 +116,8 @@ tasks.named("check") {
         "audioStreamContractTest",
         "pointerEventRelativeMotionTest",
         "fullLinuxContractAudioCapabilityTest",
-        "vmHardwareConfigTest"
+        "vmHardwareConfigTest",
+        "gestureStateEngineTest"
     )
 }
 

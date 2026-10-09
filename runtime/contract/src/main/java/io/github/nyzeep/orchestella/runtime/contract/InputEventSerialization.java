@@ -15,6 +15,7 @@ public final class InputEventSerialization {
     private static final String PREFIX_TOUCH = "INPUT/TOUCH";
     private static final String PREFIX_KEY = "INPUT/KEY";
     private static final String PREFIX_TEXT = "INPUT/TEXT";
+    private static final String PREFIX_GESTURE = "INPUT/GESTURE";
 
     private InputEventSerialization() {}
 
@@ -60,6 +61,14 @@ public final class InputEventSerialization {
             sb.append(PREFIX_TEXT).append(" base64:")
                     .append(base64).append(' ')
                     .append(tc.timestampNs()).append('\n');
+        } else if (event instanceof GestureEvent) {
+            GestureEvent g = (GestureEvent) event;
+            sb.append(PREFIX_GESTURE).append(' ')
+                    .append(g.gestureType().name()).append(' ')
+                    .append(g.scaleFactor()).append(' ')
+                    .append(g.focusX()).append(' ')
+                    .append(g.focusY()).append(' ')
+                    .append(g.timestampNs()).append('\n');
         } else {
             throw new IllegalArgumentException("Unsupported event type: " + event.getClass().getName());
         }
@@ -147,6 +156,17 @@ public final class InputEventSerialization {
                     String text = new String(decoded, StandardCharsets.UTF_8);
                     long tcTs = Long.parseLong(tokens[2]);
                     return new TextCommitEvent(text, tcTs);
+
+                case PREFIX_GESTURE:
+                    if (tokens.length != 6) {
+                        throw new IllegalArgumentException("Expected 6 tokens for gesture event, found: " + tokens.length);
+                    }
+                    GestureEvent.GestureType gType = GestureEvent.GestureType.valueOf(tokens[1]);
+                    double scaleFactor = Double.parseDouble(tokens[2]);
+                    double focusX = Double.parseDouble(tokens[3]);
+                    double focusY = Double.parseDouble(tokens[4]);
+                    long gTs = Long.parseLong(tokens[5]);
+                    return new GestureEvent(gType, scaleFactor, focusX, focusY, gTs);
 
                 default:
                     throw new IllegalArgumentException("Unknown event prefix: " + tokens[0]);

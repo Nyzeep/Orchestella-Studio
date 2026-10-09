@@ -270,4 +270,40 @@ public final class TouchGestureMapperTest {
         // Should not dispatch any events because it's outside content
         assertEquals(0, channel.events.size());
     }
+
+    @Test
+    public void testTwoFingerPinchGeneratesGestureEventAndNotifiesListener() {
+        long t0 = 1_000_000_000L;
+        // Two fingers 100px apart: (400, 500) and (500, 500)
+        mapper.onDown(0, 400f, 500f, t0);
+        mapper.onPointerDown(1, 500f, 500f, t0 + 10_000_000L);
+
+        final java.util.concurrent.atomic.AtomicBoolean listenerCalled = new java.util.concurrent.atomic.AtomicBoolean(false);
+        mapper.setPinchListener((scale, fx, fy) -> {
+            listenerCalled.set(true);
+            assertEquals(1.5, scale, 0.05);
+            assertEquals(450.0, fx, 1.0);
+            assertEquals(500.0, fy, 1.0);
+        });
+
+        // Spread fingers to 150px apart: (375, 500) and (525, 500) -> 50% change > 15%
+        int[] ids = new int[]{0, 1};
+        float[] xs = new float[]{375f, 525f};
+        float[] ys = new float[]{500f, 500f};
+        mapper.onTwoFingerMove(ids, xs, ys, t0 + 50_000_000L);
+
+        assertTrue("Pinch listener must be called", listenerCalled.get());
+
+        io.github.nyzeep.orchestella.runtime.contract.GestureEvent pinchEvent = null;
+        for (InputEvent ev : channel.events) {
+            if (ev instanceof io.github.nyzeep.orchestella.runtime.contract.GestureEvent) {
+                pinchEvent = (io.github.nyzeep.orchestella.runtime.contract.GestureEvent) ev;
+                break;
+            }
+        }
+
+        assertNotNull("GestureEvent must be dispatched on channel", pinchEvent);
+        assertEquals(io.github.nyzeep.orchestella.runtime.contract.GestureEvent.GestureType.PINCH, pinchEvent.gestureType());
+        assertEquals(1.5, pinchEvent.scaleFactor(), 0.05);
+    }
 }

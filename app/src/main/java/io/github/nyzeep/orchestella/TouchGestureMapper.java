@@ -30,6 +30,10 @@ public final class TouchGestureMapper {
         TRACKPAD
     }
 
+    public interface PinchListener {
+        void onPinch(double scaleFactor, double focusX, double focusY);
+    }
+
     public static final long DEFAULT_TAP_TIMEOUT_MS = 200L;
     public static final float DEFAULT_TAP_SLOP_PX = 8.0f;
     public static final long DEFAULT_TWO_FINGER_TAP_TIMEOUT_MS = 250L;
@@ -38,6 +42,7 @@ public final class TouchGestureMapper {
     private WaylandChannel channel;
     private ViewportAspectCalculator.ViewportMapping mapping;
     private TouchMode touchMode = TouchMode.TRACKPAD;
+    private PinchListener pinchListener;
 
     private long tapTimeoutMs = DEFAULT_TAP_TIMEOUT_MS;
     private float tapSlopPx = DEFAULT_TAP_SLOP_PX;
@@ -68,6 +73,12 @@ public final class TouchGestureMapper {
     private float secondLastY;
     private boolean isTwoFingerGesture;
     private boolean twoFingerTapTriggered;
+    private float initialTwoFingerDistance;
+    private boolean isPinchGesture;
+
+    public void setPinchListener(PinchListener pinchListener) {
+        this.pinchListener = pinchListener;
+    }
 
     public TouchGestureMapper(WaylandChannel channel, ViewportAspectCalculator.ViewportMapping mapping) {
         this.channel = channel;
@@ -192,7 +203,9 @@ public final class TouchGestureMapper {
         secondDownY = vy;
         secondLastX = vx;
         secondLastY = vy;
+        initialTwoFingerDistance = (float) Math.hypot(vx - lastX, vy - lastY);
         isTwoFingerGesture = true;
+        isPinchGesture = false;
     }
 
     /**
@@ -273,26 +286,41 @@ public final class TouchGestureMapper {
     }
 
     /**
-     * Handles simultaneous two-finger movement for smooth scrolling.
+     * Handles simultaneous two-finger movement for smooth scrolling or pinch-to-zoom.
      */
     public synchronized void onTwoFingerMove(int[] pointerIds, float[] xs, float[] ys, long timestampNs) {
         if (!isDownAccepted || mapping == null || xs.length < 2 || ys.length < 2) {
             return;
         }
 
-        isDragging = true;
-        float deltaX0 = xs[0] - lastX;
-        float deltaY0 = ys[0] - lastY;
-        float deltaX1 = xs[1] - secondLastX;
-        float deltaY1 = ys[1] - secondLastY;
+        float curDist = (float) Math.hypot(xs[1] - xs[0], ys[1] - ys[0]);
+        float distDelta = Math.abs(curDist - initialTwoFingerDistance);
+        float distRatio = initialTwoFingerDistance > 0f ? distDelta / initialTwoFingerDistance : 0f;
 
-        float avgDeltaVx = (deltaX0 + deltaX1) / 2.0f;
-        float avgDeltaVy = (deltaY0 + deltaY1) / 2.0f;
+        if (distRatio > 0.15f || isPinchGesture) {
+            isPinchGesture = true;
+            double scaleFactor = initialTwoFingerDistance > 0f ? (double) curDist / initialTwoFingerDistance : 1.0;
+            double focusX = (xs[0] + xs[1]) / 2.0;
+            double focusY = (ys[0] + ys[1]) / 2.0;
+            sendEvent(io.github.nyzeep.orchestella.runtime.contract.GestureEvent.pinch(scaleFactor, focusX, focusY, timestampNs));
+            if (pinchListener != null) {
+                pinchListener.onPinch(scaleFactor, focusX, focusY);
+            }
+        } else {
+            isDragging = true;
+            float deltaX0 = xs[0] - lastX;
+            float deltaY0 = ys[0] - lastY;
+            float deltaX1 = xs[1] - secondLastX;
+            float deltaY1 = ys[1] - secondLastY;
 
-        double scrollX = avgDeltaVx / mapping.scaleX();
-        double scrollY = avgDeltaVy / mapping.scaleY();
+            float avgDeltaVx = (deltaX0 + deltaX1) / 2.0f;
+            float avgDeltaVy = (deltaY0 + deltaY1) / 2.0f;
 
-        sendEvent(PointerEvent.scroll(cursorX, cursorY, scrollX, scrollY, timestampNs));
+            double scrollX = avgDeltaVx / mapping.scaleX();
+            double scrollY = avgDeltaVy / mapping.scaleY();
+
+            sendEvent(PointerEvent.scroll(cursorX, cursorY, scrollX, scrollY, timestampNs));
+        }
 
         lastX = xs[0];
         lastY = ys[0];
@@ -362,6 +390,7 @@ public final class TouchGestureMapper {
         isLongPressTriggered = false;
         isTwoFingerGesture = false;
         twoFingerTapTriggered = false;
+        isPinchGesture = false;
     }
 
     /**
@@ -381,6 +410,7 @@ public final class TouchGestureMapper {
         isLongPressTriggered = false;
         isTwoFingerGesture = false;
         twoFingerTapTriggered = false;
+        isPinchGesture = false;
     }
 
     /**
