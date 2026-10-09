@@ -219,6 +219,11 @@ if [[ ! -p "$INBOUND_FIFO" ]]; then
     mkfifo "$INBOUND_FIFO" 2>/dev/null || true
 fi
 
+# Ensure /run/orchestella/clipboard-inbound.fifo links to INBOUND_FIFO
+if [[ -d "/run/orchestella" && ! -e "/run/orchestella/clipboard-inbound.fifo" ]]; then
+    ln -sf "$INBOUND_FIFO" "/run/orchestella/clipboard-inbound.fifo" 2>/dev/null || true
+fi
+
 if [[ -p "$INBOUND_FIFO" ]]; then
     (
         while true; do
@@ -275,11 +280,19 @@ on_guest_clipboard_change() {
     local command_wire
     command_wire="$(format_put_command "$text")"
 
-    # Send outbound command to Bridge
+    # Send outbound command to Bridge via Unix Domain Socket IPC (Bug 2 fix)
     if [[ -S "$BRIDGE_SOCK" ]]; then
-        printf '%s' "$command_wire" | nc -U "$BRIDGE_SOCK" 2>/dev/null || true
+        if command -v nc >/dev/null 2>&1 && nc -h 2>&1 | grep -q -- '-U'; then
+            printf '%s\n' "$command_wire" | nc -U "$BRIDGE_SOCK" 2>/dev/null || true
+        elif command -v socat >/dev/null 2>&1; then
+            printf '%s\n' "$command_wire" | socat - UNIX-CONNECT:"$BRIDGE_SOCK" 2>/dev/null || true
+        elif command -v python3 >/dev/null 2>&1; then
+            python3 -c "import socket, sys; s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); s.connect('$BRIDGE_SOCK'); s.sendall((sys.argv[1] + '\n').encode('utf-8')); s.close()" "$command_wire" 2>/dev/null || true
+        else
+            printf '%s\n' "$command_wire" | nc -U "$BRIDGE_SOCK" 2>/dev/null || true
+        fi
     elif command -v nc >/dev/null 2>&1; then
-        printf '%s' "$command_wire" | nc -w 1 "$BRIDGE_HOST" "$BRIDGE_PORT" 2>/dev/null || true
+        printf '%s\n' "$command_wire" | nc -w 1 "$BRIDGE_HOST" "$BRIDGE_PORT" 2>/dev/null || true
     fi
 }
 

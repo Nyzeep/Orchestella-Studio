@@ -68,6 +68,12 @@ if [[ ! -d "/dev/dri" ]] || [[ ! -e "/dev/dri/card0" ]]; then
     export WLR_RENDERER="${WLR_RENDERER:-pixman}"
 fi
 
+# Ensure headless backend initializes at least one virtual output (Bug 1 fix)
+# Without this, wlroots headless backend creates 0 outputs, preventing window mapping
+if [[ "${WLR_BACKENDS:-}" =~ headless ]]; then
+    export WLR_HEADLESS_OUTPUTS="${WLR_HEADLESS_OUTPUTS:-1}"
+fi
+
 unset WAYLAND_DISPLAY
 if command -v labwc >/dev/null 2>&1; then
     exec labwc "$@"
