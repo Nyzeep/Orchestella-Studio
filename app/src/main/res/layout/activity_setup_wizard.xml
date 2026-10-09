@@ -210,6 +210,8 @@
                                 style="@style/Widget.Material3.Button.TonalButton"
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
+                                android:minHeight="48dp"
+                                app:cornerRadius="12dp"
                                 android:layout_weight="1"
                                 android:text="@string/wizard_btn_auth_guide" />
 
@@ -218,6 +220,8 @@
                                 style="@style/Widget.Material3.Button.TextButton"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
+                                android:minHeight="48dp"
+                                app:cornerRadius="12dp"
                                 android:layout_marginStart="8dp"
                                 android:text="@string/wizard_btn_skip_auth" />
                         </LinearLayout>
@@ -230,6 +234,8 @@
                     style="@style/Widget.Material3.Button"
                     android:layout_width="match_parent"
                     android:layout_height="52dp"
+                    android:minHeight="52dp"
+                    app:cornerRadius="16dp"
                     android:text="@string/wizard_btn_next"
                     android:textSize="15sp"
                     android:textStyle="bold" />
@@ -437,6 +443,8 @@
                         style="@style/Widget.Material3.Button.TonalButton"
                         android:layout_width="0dp"
                         android:layout_height="52dp"
+                        android:minHeight="52dp"
+                        app:cornerRadius="16dp"
                         android:layout_weight="1"
                         android:layout_marginEnd="8dp"
                         android:text="@string/wizard_btn_prev"
@@ -447,6 +455,8 @@
                         style="@style/Widget.Material3.Button"
                         android:layout_width="0dp"
                         android:layout_height="52dp"
+                        android:minHeight="52dp"
+                        app:cornerRadius="16dp"
                         android:layout_weight="2"
                         android:text="@string/wizard_btn_next"
                         android:textSize="15sp"
@@ -589,6 +599,8 @@
                             style="@style/Widget.Material3.Button"
                             android:layout_width="match_parent"
                             android:layout_height="52dp"
+                            android:minHeight="52dp"
+                            app:cornerRadius="16dp"
                             android:layout_marginTop="12dp"
                             android:text="@string/wizard_btn_start_init"
                             android:textSize="15sp"
@@ -651,6 +663,8 @@
                     style="@style/Widget.Material3.Button.TonalButton"
                     android:layout_width="match_parent"
                     android:layout_height="52dp"
+                    android:minHeight="52dp"
+                    app:cornerRadius="16dp"
                     android:text="@string/wizard_btn_prev"
                     android:textSize="15sp" />
             </LinearLayout>

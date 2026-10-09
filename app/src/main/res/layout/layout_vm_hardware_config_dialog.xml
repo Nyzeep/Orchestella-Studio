@@ -63,6 +63,7 @@
             android:id="@+id/hw_vcpu_seekbar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:minHeight="48dp"
             android:layout_marginTop="6dp"
             android:max="7"
             android:progress="1" />
@@ -112,6 +113,7 @@
             android:id="@+id/hw_ram_seekbar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:minHeight="48dp"
             android:layout_marginTop="6dp"
             android:max="30"
             android:progress="6" />
@@ -155,6 +157,7 @@
             android:id="@+id/hw_disk_seekbar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:minHeight="48dp"
             android:layout_marginTop="6dp"
             android:max="62"
             android:progress="6" />
@@ -178,19 +181,28 @@
             android:orientation="horizontal"
             android:gravity="end">
 
-            <Button
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/hw_btn_cancel"
                 style="@style/Widget.Material3.Button.TextButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                app:cornerRadius="12dp"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
                 android:layout_marginEnd="8dp"
                 android:text="@string/hardware_cancel_btn" />
 
-            <Button
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/hw_btn_save"
                 style="@style/Widget.Material3.Button"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                app:cornerRadius="12dp"
+                android:paddingStart="20dp"
+                android:paddingEnd="20dp"
+                android:textStyle="bold"
                 android:text="@string/hardware_save_btn" />
         </LinearLayout>
 

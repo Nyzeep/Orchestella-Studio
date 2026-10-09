@@ -86,8 +86,10 @@
 
             <ImageButton
                 android:id="@+id/card_btn_more"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:minWidth="48dp"
+                android:minHeight="48dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:src="@drawable/ic_more_vert"
                 android:contentDescription="More options" />
@@ -111,67 +113,67 @@
             android:id="@+id/card_actions_container"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="14dp"
             android:orientation="horizontal"
             android:gravity="center_vertical|end">
 
-            <Button
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/card_btn_crash_log"
                 style="@style/Widget.Material3.Button.TonalButton"
                 android:layout_width="wrap_content"
-                android:layout_height="36dp"
-                android:minHeight="36dp"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                android:paddingStart="12dp"
-                android:paddingEnd="12dp"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                app:cornerRadius="14dp"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
                 android:textSize="13sp"
+                android:textStyle="bold"
                 android:layout_marginEnd="8dp"
                 android:text="崩溃诊断"
                 android:textColor="@color/status_crashed"
                 android:visibility="gone" />
 
-            <Button
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/card_btn_terminal"
                 style="@style/Widget.Material3.Button.OutlinedButton"
                 android:layout_width="wrap_content"
-                android:layout_height="36dp"
-                android:minHeight="36dp"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                android:paddingStart="12dp"
-                android:paddingEnd="12dp"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                app:cornerRadius="14dp"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
                 android:textSize="13sp"
+                android:textStyle="bold"
                 android:layout_marginEnd="8dp"
                 android:text="@string/instance_open_terminal"
                 android:visibility="gone" />
 
-            <Button
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/card_btn_desktop"
                 style="@style/Widget.Material3.Button"
                 android:layout_width="wrap_content"
-                android:layout_height="36dp"
-                android:minHeight="36dp"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                android:paddingStart="12dp"
-                android:paddingEnd="12dp"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                app:cornerRadius="14dp"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
                 android:textSize="13sp"
+                android:textStyle="bold"
                 android:layout_marginEnd="8dp"
                 android:text="@string/instance_launch_desktop"
                 android:visibility="gone" />
 
-            <Button
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/card_btn_launch"
                 style="@style/Widget.Material3.Button"
                 android:layout_width="wrap_content"
-                android:layout_height="36dp"
-                android:minHeight="36dp"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                android:paddingStart="12dp"
-                android:paddingEnd="12dp"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                app:cornerRadius="14dp"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
                 android:textSize="13sp"
+                android:textStyle="bold"
                 android:text="@string/instance_launch" />
         </LinearLayout>
 
