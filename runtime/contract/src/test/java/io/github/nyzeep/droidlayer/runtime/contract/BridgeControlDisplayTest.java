@@ -14,6 +14,7 @@ public final class BridgeControlDisplayTest {
         dispatchesDisplayModeCommandSuccessfully();
         dispatchesDisplayResizeCommandSuccessfully();
         dispatchesDisplayFpsCommandSuccessfully();
+        dispatchesDisplayLaunchCommandSuccessfully();
         handlesCrlfEndingsForDisplayCommands();
         acceptsExactBoundaryValues();
         rejectsOutOfBoundsDimensions();
@@ -118,6 +119,42 @@ public final class BridgeControlDisplayTest {
         assertEquals("DROIDLAYER/OK display\n", result.wireResponse(), "display fps ok response");
         assertTrue(result.accepted(), "display fps must be accepted");
         assertEquals(120, fpsRef.get(), "fps value");
+    }
+
+    private static void dispatchesDisplayLaunchCommandSuccessfully() {
+        AtomicBoolean launchCalled = new AtomicBoolean(false);
+        BridgeControl.Display display = new BridgeControl.Display() {
+            @Override
+            public boolean setMode(int width, int height, double scale) {
+                return false;
+            }
+
+            @Override
+            public boolean resize(int width, int height) {
+                return false;
+            }
+
+            @Override
+            public boolean setFps(int fps) {
+                return false;
+            }
+
+            @Override
+            public boolean launchDesktop() {
+                launchCalled.set(true);
+                return true;
+            }
+        };
+
+        BridgeControl.Result result =
+                BridgeControl.dispatchDisplay("DROIDLAYER/DISPLAY LAUNCH\n", display);
+        assertEquals("DROIDLAYER/OK display\n", result.wireResponse(), "display launch ok response");
+        assertTrue(result.accepted(), "display launch must be accepted");
+        assertTrue(launchCalled.get(), "launchDesktop callback must be invoked");
+
+        BridgeControl.Result crlfResult =
+                BridgeControl.dispatchDisplay("DROIDLAYER/DISPLAY LAUNCH\r\n", display);
+        assertTrue(crlfResult.accepted(), "display launch with CRLF must be accepted");
     }
 
     private static void handlesCrlfEndingsForDisplayCommands() {
@@ -322,6 +359,7 @@ public final class BridgeControlDisplayTest {
                 ("DROIDLAYER/OK display\n"
                         + "DROIDLAYER/OK display\n"
                         + "DROIDLAYER/OK display\n"
+                        + "DROIDLAYER/OK display\n"
                         + "DROIDLAYER/ERROR display-unavailable\n").getBytes(StandardCharsets.US_ASCII));
 
         BridgeClient client = new BridgeClient(fromAgent, toAgent);
@@ -338,6 +376,10 @@ public final class BridgeControlDisplayTest {
         assertTrue(fpsResult.accepted(), "client displayFps accepted");
         assertEquals("ok-display", fpsResult.responseKind(), "ok-display kind");
 
+        BridgeClient.Result launchResult = client.desktopLaunch();
+        assertTrue(launchResult.accepted(), "client desktopLaunch accepted");
+        assertEquals("ok-display", launchResult.responseKind(), "ok-display kind");
+
         BridgeClient.Result failResult = client.displayFps(144);
         assertFalse(failResult.accepted(), "client displayFps fail rejected");
         assertEquals("display-unavailable", failResult.responseKind(), "display-unavailable kind");
@@ -346,6 +388,7 @@ public final class BridgeControlDisplayTest {
         assertTrue(outbound.contains("DROIDLAYER/DISPLAY MODE 1920 1080 1.5\n"), "contains mode wire command");
         assertTrue(outbound.contains("DROIDLAYER/DISPLAY RESIZE 1280 720\n"), "contains resize wire command");
         assertTrue(outbound.contains("DROIDLAYER/DISPLAY FPS 60\n"), "contains fps wire command");
+        assertTrue(outbound.contains("DROIDLAYER/DISPLAY LAUNCH\n"), "contains launch wire command");
     }
 
     private static final class TestDisplay implements BridgeControl.Display {

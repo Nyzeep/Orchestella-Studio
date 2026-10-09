@@ -226,6 +226,27 @@ public final class QemuWaylandChannel implements WaylandChannel, DisplayControl 
     }
 
     @Override
+    public boolean setMode(int width, int height, double scale) {
+        if (width < 100 || width > 7680 || height < 100 || height > 7680 || scale < 0.1 || scale > 5.0) {
+            return false;
+        }
+        synchronized (this) {
+            this.currentWidth = width;
+            this.currentHeight = height;
+            this.currentScale = scale;
+            initFrameTemplate(width, height);
+        }
+        DisplayMode mode = currentMode();
+        for (DisplayListener listener : displayListeners) {
+            try {
+                listener.onDisplayResized(width, height);
+                listener.onModeChanged(mode);
+            } catch (Throwable ignored) {}
+        }
+        return true;
+    }
+
+    @Override
     public boolean updateScale(double scale) {
         if (scale < 0.1 || scale > 5.0) {
             return false;

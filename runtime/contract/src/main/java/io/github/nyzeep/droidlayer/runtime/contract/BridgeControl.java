@@ -275,6 +275,9 @@ public final class BridgeControl {
                 case FPS:
                     success = display.setFps(req.fps);
                     break;
+                case LAUNCH:
+                    success = display.launchDesktop();
+                    break;
             }
             return success
                     ? Result.accepted("DROIDLAYER/OK display\n")
@@ -578,6 +581,11 @@ public final class BridgeControl {
             } catch (NumberFormatException e) {
                 return null;
             }
+        } else if ("LAUNCH".equals(subcommand)) {
+            if (fields.length != 2) {
+                return null;
+            }
+            return new DisplayRequest(DisplayCommandType.LAUNCH, 0, 0, 0.0, 0);
         }
         return null;
     }
@@ -611,6 +619,15 @@ public final class BridgeControl {
         boolean setMode(int width, int height, double scale);
         boolean resize(int width, int height);
         boolean setFps(int fps);
+
+        /**
+         * Requests launching or ensuring the graphical desktop compositor on the guest.
+         *
+         * @return true if accepted, false otherwise
+         */
+        default boolean launchDesktop() {
+            return true;
+        }
 
         /** Adapts a {@link DisplayControl} to the bridge display seam. */
         static Display from(DisplayControl displayControl) {
@@ -758,7 +775,8 @@ public final class BridgeControl {
     private enum DisplayCommandType {
         MODE,
         RESIZE,
-        FPS
+        FPS,
+        LAUNCH
     }
 
     private static final class DisplayRequest {

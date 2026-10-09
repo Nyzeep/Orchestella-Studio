@@ -1,6 +1,7 @@
 #!/bin/sh
 # DroidLayer Labwc Autostart Script
 # Milestone: Phase 3 (M3) - Audio & Clipboard Daemons Autostart
+# Milestone: Phase 4.6 - High-DPI Desktop Scaling & Foot Autostart
 
 # Ensure XDG runtime directory
 if [ -z "${XDG_RUNTIME_DIR:-}" ]; then
@@ -8,9 +9,20 @@ if [ -z "${XDG_RUNTIME_DIR:-}" ]; then
     export XDG_RUNTIME_DIR
 fi
 
+# High-DPI Desktop Scaling (2.0x default for high density mobile displays)
+export GDK_SCALE="${GDK_SCALE:-2}"
+export QT_SCALE_FACTOR="${QT_SCALE_FACTOR:-2}"
+export XCURSOR_SIZE="${XCURSOR_SIZE:-32}"
+export QT_AUTO_SCREEN_SCALE_FACTOR=1
+
 # Start sfwbar status bar in background if installed
 if command -v sfwbar >/dev/null 2>&1; then
     sfwbar &
+fi
+
+# Start foot terminal in background if installed
+if command -v foot >/dev/null 2>&1; then
+    foot &
 fi
 
 # Ensure XWayland support is initialized

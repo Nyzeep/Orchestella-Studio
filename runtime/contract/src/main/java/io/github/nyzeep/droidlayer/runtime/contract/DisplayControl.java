@@ -24,6 +24,18 @@ public interface DisplayControl {
     boolean resizeDisplay(int width, int height);
 
     /**
+     * Requests setting both display dimensions and UI scaling factor.
+     *
+     * @param width  new width in pixels (100..7680)
+     * @param height new height in pixels (100..7680)
+     * @param scale  scaling multiplier (0.1..5.0)
+     * @return true if accepted and dispatched to the guest/compositor, false otherwise
+     */
+    default boolean setMode(int width, int height, double scale) {
+        return resizeDisplay(width, height) && updateScale(scale);
+    }
+
+    /**
      * Requests updating the display UI scaling factor.
      *
      * @param scale scaling multiplier (0.1..5.0)

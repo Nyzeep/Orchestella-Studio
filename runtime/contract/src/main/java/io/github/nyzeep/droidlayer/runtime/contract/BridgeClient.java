@@ -116,6 +116,12 @@ public final class BridgeClient {
         return classify(readResponseLine());
     }
 
+    /** Requests launching or ensuring the graphical desktop compositor on the guest. */
+    public synchronized Result desktopLaunch() throws IOException {
+        write("DROIDLAYER/DISPLAY LAUNCH\n");
+        return classify(readResponseLine());
+    }
+
     /** Requests sending clipboard text to the agent and classifies the agent's response. */
     public synchronized Result clipboardPut(String text) throws IOException {
         if (text == null) {

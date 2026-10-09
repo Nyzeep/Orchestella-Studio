@@ -100,9 +100,15 @@ public class DesktopActivity extends Activity {
         FullLinuxContract.CapabilityMatrix capabilityMatrix = resolveCapabilityMatrix();
         hudOverlay = new DesktopHudOverlay(hudContainer, hudTextView, capabilityMatrix);
 
+        int densityDpi = getResources().getConfiguration().densityDpi;
+        int screenWidth = getResources().getDisplayMetrics().widthPixels;
+        int screenHeight = getResources().getDisplayMetrics().heightPixels;
+        double targetScale = DisplayDpiCalculator.calculateScale(densityDpi, screenWidth, screenHeight);
+
         DisplayControl displayControl = session != null ? session.displayControl() : null;
         WaylandChannel waylandChannel = session != null ? session.waylandChannel() : null;
         if (surfaceView != null) {
+            surfaceView.getController().setTargetScale(targetScale);
             surfaceView.bind(displayControl, waylandChannel);
         }
 
@@ -182,6 +188,22 @@ public class DesktopActivity extends Activity {
                     }
                 }, "desktop-bridge-serve").start();
             }
+        }
+
+        // Asynchronously negotiate display mode and launch compositor if uninitialized
+        if (session != null) {
+            new Thread(() -> {
+                BridgeClient client = session.bridgeClient();
+                if (client != null) {
+                    try {
+                        if (waylandChannel != null && !waylandChannel.isConnected()) {
+                            client.desktopLaunch();
+                        }
+                        client.displayMode(screenWidth, screenHeight, targetScale);
+                    } catch (Exception ignored) {
+                    }
+                }
+            }, "desktop-launch-and-mode-negotiation").start();
         }
 
         // 3. PointerCaptureHandler assembly
