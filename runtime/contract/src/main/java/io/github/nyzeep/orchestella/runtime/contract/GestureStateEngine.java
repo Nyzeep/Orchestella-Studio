@@ -50,9 +50,13 @@ public final class GestureStateEngine {
     public static final long DEFAULT_TWO_FINGER_TAP_TIMEOUT_MS = 250L;
     public static final long DEFAULT_LONG_PRESS_TIMEOUT_MS = 500L;
     public static final double DEFAULT_PINCH_THRESHOLD_RATIO = 0.15;
+    public static final double DEFAULT_DAMPING_FACTOR = 1.0;
+    public static final double DEFAULT_JITTER_DEADZONE_PX = 0.5;
 
     private TouchMode touchMode = TouchMode.VIRTUAL_TRACKPAD;
     private State state = State.IDLE;
+    private double dampingFactor = DEFAULT_DAMPING_FACTOR;
+    private double jitterDeadzonePx = DEFAULT_JITTER_DEADZONE_PX;
 
     private double displayWidth = 1920.0;
     private double displayHeight = 1080.0;
@@ -115,6 +119,31 @@ public final class GestureStateEngine {
 
     public synchronized void setMode(TouchMode mode) {
         this.touchMode = Objects.requireNonNull(mode, "mode");
+    }
+
+    public synchronized TouchMode toggleMode() {
+        if (this.touchMode == TouchMode.VIRTUAL_TRACKPAD) {
+            this.touchMode = TouchMode.DIRECT_TOUCH;
+        } else {
+            this.touchMode = TouchMode.VIRTUAL_TRACKPAD;
+        }
+        return this.touchMode;
+    }
+
+    public synchronized void setDampingFactor(double factor) {
+        this.dampingFactor = Math.max(0.1, Math.min(5.0, factor));
+    }
+
+    public synchronized double getDampingFactor() {
+        return dampingFactor;
+    }
+
+    public synchronized void setJitterDeadzonePx(double px) {
+        this.jitterDeadzonePx = Math.max(0.0, px);
+    }
+
+    public synchronized double getJitterDeadzonePx() {
+        return jitterDeadzonePx;
     }
 
     public synchronized State getState() {
@@ -222,13 +251,19 @@ public final class GestureStateEngine {
         long elapsedNs = Math.max(1L, timestampNs - lastTimeNs);
 
         if (touchMode == TouchMode.VIRTUAL_TRACKPAD) {
-            double dtMs = Math.max(1.0, elapsedNs / 1_000_000.0);
             double dist = Math.hypot(deltaX, deltaY);
+            if (dist < jitterDeadzonePx) {
+                lastX = x;
+                lastY = y;
+                lastTimeNs = timestampNs;
+                return;
+            }
+            double dtMs = Math.max(1.0, elapsedNs / 1_000_000.0);
             double velocity = dist / dtMs;
             double accelFactor = 1.0 + Math.min(3.0, velocity * 0.1);
 
-            double finalDx = deltaX * accelFactor;
-            double finalDy = deltaY * accelFactor;
+            double finalDx = deltaX * accelFactor * dampingFactor;
+            double finalDy = deltaY * accelFactor * dampingFactor;
 
             cursorX += finalDx;
             cursorY += finalDy;

@@ -19,6 +19,9 @@ public final class GestureStateEngineTest {
         testTwoFingerVerticalScrollGeneratesScrollEvent();
         testTwoFingerPinchGeneratesGestureEvent();
         testModeSwitchBetweenDirectTouchAndVirtualTrackpad();
+        testToggleModeAlternatesBetweenTouchscreenAndTrackpad();
+        testDampingFactorScalesPointerDisplacement();
+        testJitterDeadzoneSuppressesMicroMovements();
         testDisplayBoundaryClamping();
         System.out.println("GESTURE_STATE_ENGINE_TEST_OK");
     }
@@ -254,6 +257,59 @@ public final class GestureStateEngineTest {
 
         engine.setMode(GestureStateEngine.TouchMode.VIRTUAL_TRACKPAD);
         assertEquals(GestureStateEngine.TouchMode.VIRTUAL_TRACKPAD, engine.getMode(), "switched back to trackpad");
+    }
+
+    private static void testToggleModeAlternatesBetweenTouchscreenAndTrackpad() {
+        GestureStateEngine engine = new GestureStateEngine(1920.0, 1080.0);
+        assertEquals(GestureStateEngine.TouchMode.VIRTUAL_TRACKPAD, engine.getMode(), "initial mode");
+
+        GestureStateEngine.TouchMode toggled1 = engine.toggleMode();
+        assertEquals(GestureStateEngine.TouchMode.DIRECT_TOUCH, toggled1, "first toggle -> DIRECT_TOUCH");
+        assertEquals(GestureStateEngine.TouchMode.DIRECT_TOUCH, engine.getMode(), "mode is DIRECT_TOUCH");
+
+        GestureStateEngine.TouchMode toggled2 = engine.toggleMode();
+        assertEquals(GestureStateEngine.TouchMode.VIRTUAL_TRACKPAD, toggled2, "second toggle -> VIRTUAL_TRACKPAD");
+        assertEquals(GestureStateEngine.TouchMode.VIRTUAL_TRACKPAD, engine.getMode(), "mode is VIRTUAL_TRACKPAD");
+    }
+
+    private static void testDampingFactorScalesPointerDisplacement() {
+        // Engine 1: Default damping 1.0
+        GestureStateEngine normalEngine = new GestureStateEngine(1920.0, 1080.0);
+        normalEngine.setCursorPosition(500.0, 500.0);
+        normalEngine.onDown(0, 100.0, 100.0, 1_000_000_000L);
+        normalEngine.onMove(0, 150.0, 100.0, 1_020_000_000L);
+        double normalDisplacement = normalEngine.getCursorX() - 500.0;
+
+        // Engine 2: Damped at 0.5
+        GestureStateEngine dampedEngine = new GestureStateEngine(1920.0, 1080.0);
+        dampedEngine.setCursorPosition(500.0, 500.0);
+        dampedEngine.setDampingFactor(0.5);
+        dampedEngine.onDown(0, 100.0, 100.0, 1_000_000_000L);
+        dampedEngine.onMove(0, 150.0, 100.0, 1_020_000_000L);
+        double dampedDisplacement = dampedEngine.getCursorX() - 500.0;
+
+        assertEquals(normalDisplacement * 0.5, dampedDisplacement, 0.001, "0.5 damping factor halves displacement");
+    }
+
+    private static void testJitterDeadzoneSuppressesMicroMovements() {
+        GestureStateEngine engine = new GestureStateEngine(1920.0, 1080.0);
+        engine.setCursorPosition(500.0, 500.0);
+        engine.setJitterDeadzonePx(1.0);
+
+        List<InputEvent> emitted = new ArrayList<>();
+        engine.setEventConsumer(emitted::add);
+
+        engine.onDown(0, 100.0, 100.0, 1_000_000_000L);
+        // Micro-jitter: 0.3px delta < 1.0px deadzone
+        engine.onMove(0, 100.3, 100.0, 1_010_000_000L);
+
+        assertEquals(500.0, engine.getCursorX(), "cursorX unmoved on micro-jitter");
+        assertTrue(emitted.isEmpty(), "no motion event dispatched on micro-jitter below deadzone");
+
+        // Legitimate movement: 10px delta > 1.0px deadzone
+        engine.onMove(0, 110.0, 100.0, 1_020_000_000L);
+        assertTrue(engine.getCursorX() > 500.0, "cursorX moves on legitimate move");
+        assertEquals(1, emitted.size(), "motion event dispatched");
     }
 
     private static void testDisplayBoundaryClamping() {

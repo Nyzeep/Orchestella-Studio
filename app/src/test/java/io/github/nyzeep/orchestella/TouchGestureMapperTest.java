@@ -306,4 +306,60 @@ public final class TouchGestureMapperTest {
         assertEquals(io.github.nyzeep.orchestella.runtime.contract.GestureEvent.GestureType.PINCH, pinchEvent.gestureType());
         assertEquals(1.5, pinchEvent.scaleFactor(), 0.05);
     }
+
+    @Test
+    public void testToggleTouchMode() {
+        assertEquals(TouchMode.TRACKPAD, mapper.getTouchMode());
+        TouchMode mode1 = mapper.toggleTouchMode();
+        assertEquals(TouchMode.TOUCHSCREEN, mode1);
+        assertEquals(TouchMode.TOUCHSCREEN, mapper.getTouchMode());
+
+        TouchMode mode2 = mapper.toggleTouchMode();
+        assertEquals(TouchMode.TRACKPAD, mode2);
+        assertEquals(TouchMode.TRACKPAD, mapper.getTouchMode());
+    }
+
+    @Test
+    public void testDampingFactorScalesPointerMotion() {
+        mapper.setTouchMode(TouchMode.TRACKPAD);
+        mapper.setCursorPosition(500.0, 500.0);
+        mapper.setDampingFactor(1.0);
+
+        long t0 = 1_000_000_000L;
+        mapper.onDown(0, 100f, 100f, t0);
+        mapper.onMove(0, 150f, 100f, t0 + 20_000_000L);
+        double normalDeltaX = mapper.getCursorX() - 500.0;
+
+        // Reset and test with 0.5 damping factor
+        mapper.onUp(0, 150f, 100f, t0 + 30_000_000L);
+        mapper.setCursorPosition(500.0, 500.0);
+        mapper.setDampingFactor(0.5);
+
+        mapper.onDown(0, 100f, 100f, t0 + 100_000_000L);
+        mapper.onMove(0, 150f, 100f, t0 + 120_000_000L);
+        double dampedDeltaX = mapper.getCursorX() - 500.0;
+
+        assertEquals(normalDeltaX * 0.5, dampedDeltaX, 0.01);
+    }
+
+    @Test
+    public void testJitterDeadzoneSuppressesMicroMotion() {
+        mapper.setTouchMode(TouchMode.TRACKPAD);
+        mapper.setCursorPosition(500.0, 500.0);
+        mapper.setJitterDeadzonePx(1.0);
+        channel.events.clear();
+
+        long t0 = 1_000_000_000L;
+        mapper.onDown(0, 100f, 100f, t0);
+        // Small 0.3px micro movement < 1.0px deadzone
+        mapper.onMove(0, 100.3f, 100f, t0 + 10_000_000L);
+
+        assertEquals(500.0, mapper.getCursorX(), 0.001);
+        assertTrue(channel.events.isEmpty());
+
+        // Legitimate movement > 1.0px deadzone
+        mapper.onMove(0, 110f, 100f, t0 + 20_000_000L);
+        assertTrue(mapper.getCursorX() > 500.0);
+        assertFalse(channel.events.isEmpty());
+    }
 }
