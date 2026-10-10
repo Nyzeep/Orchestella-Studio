@@ -213,6 +213,27 @@ class MainActivity : AppCompatActivity() {
         }
         refreshWizardEntry()
         showInstances()
+        handleLaunchIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleLaunchIntent(intent)
+    }
+
+    private fun handleLaunchIntent(intent: Intent?) {
+        val targetLaunchId = intent?.getStringExtra("action_launch_instance_id")
+        if (targetLaunchId != null && ::instanceStore.isInitialized) {
+            intent.removeExtra("action_launch_instance_id")
+            try {
+                val instance = instanceStore.load(targetLaunchId)
+                if (instance != null) {
+                    launchInstance(instance)
+                }
+            } catch (_: Exception) {
+            }
+        }
     }
 
     override fun onResume() {

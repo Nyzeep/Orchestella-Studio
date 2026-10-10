@@ -1,0 +1,210 @@
+package io.github.nyzeep.orchestella;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.PipedInputStream;
+import java.io.PipedOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
+
+public final class PersistentTerminalSessionPoolTest {
+
+    private PersistentTerminalSessionPool pool;
+
+    @Before
+    public void setUp() {
+        pool = new PersistentTerminalSessionPool();
+    }
+
+    @After
+    public void tearDown() {
+        if (pool != null) {
+            pool.clear();
+        }
+    }
+
+    private static final class FakeExecutionSession implements ExecutionSession {
+        private final InputStream termOut;
+        private final OutputStream termIn;
+        private final AtomicBoolean closed = new AtomicBoolean(false);
+
+        FakeExecutionSession(InputStream termOut, OutputStream termIn) {
+            this.termOut = termOut;
+            this.termIn = termIn;
+        }
+
+        @Override
+        public int waitFor() {
+            return 0;
+        }
+
+        @Override
+        public OutputStream terminalInput() {
+            return termIn;
+        }
+
+        @Override
+        public InputStream terminalOutput() {
+            return termOut;
+        }
+
+        @Override
+        public OutputStream controlInput() {
+            return new ByteArrayOutputStream();
+        }
+
+        @Override
+        public InputStream controlOutput() {
+            return new ByteArrayInputStream(new byte[0]);
+        }
+
+        @Override
+        public void close() {
+            closed.set(true);
+            try {
+                termIn.close();
+            } catch (IOException ignored) {
+            }
+            try {
+                termOut.close();
+            } catch (IOException ignored) {
+            }
+        }
+    }
+
+    @Test
+    public void testAttachDetachConcurrentSafetyAndTranscriptReplay() throws Exception {
+        PipedOutputStream pipeOut = new PipedOutputStream();
+        PipedInputStream pipeIn = new PipedInputStream(pipeOut);
+        ByteArrayOutputStream inputSink = new ByteArrayOutputStream();
+
+        FakeExecutionSession session = new FakeExecutionSession(pipeIn, inputSink);
+        PersistentTerminalSessionPool.SessionHolder holder = pool.register("test-vm-1", session);
+
+        // Feed some initial shell prompt output
+        pipeOut.write("root@orchestella:~$ \n".getBytes(StandardCharsets.UTF_8));
+        pipeOut.flush();
+        Thread.sleep(50);
+
+        // First attachment
+        List<String> receivedChunks = Collections.synchronizedList(new ArrayList<>());
+        Consumer<String> listener = receivedChunks::add;
+        String replay = holder.attach(listener);
+
+        assertTrue("Replay should contain prompt", replay.contains("root@orchestella:~$"));
+
+        // Feed ongoing output
+        pipeOut.write("echo hello world\n".getBytes(StandardCharsets.UTF_8));
+        pipeOut.flush();
+        Thread.sleep(50);
+
+        assertFalse(receivedChunks.isEmpty());
+
+        // Detach listener (simulating Activity onStop/onDestroy)
+        holder.detach(listener);
+        assertEquals(0, holder.subscriberCount());
+
+        // Background session keeps receiving output while detached!
+        pipeOut.write("background output while detached\n".getBytes(StandardCharsets.UTF_8));
+        pipeOut.flush();
+        Thread.sleep(50);
+
+        // Re-attach second Activity
+        List<String> secondChunks = Collections.synchronizedList(new ArrayList<>());
+        String secondReplay = holder.attach(secondChunks::add);
+
+        assertTrue("Second re-attach must contain background output",
+                secondReplay.contains("background output while detached"));
+
+        // Send input bytes
+        holder.sendBytes("ls -la\n".getBytes(StandardCharsets.UTF_8));
+        assertEquals("ls -la\n", inputSink.toString(StandardCharsets.UTF_8));
+
+        holder.close();
+        assertTrue(session.closed.get());
+    }
+
+    @Test
+    public void testRingBufferEnforcesBoundaries() {
+        TerminalRingBuffer buffer = new TerminalRingBuffer(100);
+        buffer.append("1234567890");
+        assertEquals(10, buffer.length());
+        assertEquals("1234567890", buffer.snapshot());
+
+        // Append 100 characters
+        String hundred = "a".repeat(100);
+        buffer.append(hundred);
+        assertEquals(100, buffer.length());
+        assertEquals(hundred, buffer.snapshot());
+
+        // Append 20 characters: oldest 20 must be evicted
+        buffer.append("bbbbbbbbbbbbbbbbbbbb");
+        assertEquals(100, buffer.length());
+        assertTrue(buffer.snapshot().endsWith("bbbbbbbbbbbbbbbbbbbb"));
+        assertEquals("a".repeat(80) + "b".repeat(20), buffer.snapshot());
+    }
+
+    @Test
+    public void testConcurrentAttachDetachStress() throws Exception {
+        PipedOutputStream pipeOut = new PipedOutputStream();
+        PipedInputStream pipeIn = new PipedInputStream(pipeOut);
+        FakeExecutionSession session = new FakeExecutionSession(pipeIn, new ByteArrayOutputStream());
+        PersistentTerminalSessionPool.SessionHolder holder = pool.register("stress-vm", session);
+
+        int threads = 8;
+        int iterations = 200;
+        ExecutorService executor = Executors.newFixedThreadPool(threads);
+        CountDownLatch latch = new CountDownLatch(threads);
+
+        for (int i = 0; i < threads; i++) {
+            executor.submit(() -> {
+                try {
+                    for (int j = 0; j < iterations; j++) {
+                        Consumer<String> l = chunk -> {};
+                        holder.attach(l);
+                        holder.detach(l);
+                    }
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+
+        // Simultaneously pump data
+        new Thread(() -> {
+            try {
+                for (int k = 0; k < 50; k++) {
+                    pipeOut.write(("log " + k + "\n").getBytes(StandardCharsets.UTF_8));
+                    pipeOut.flush();
+                    Thread.sleep(5);
+                }
+            } catch (Exception ignored) {
+            }
+        }).start();
+
+        boolean finished = latch.await(5, TimeUnit.SECONDS);
+        assertTrue("Concurrent attach/detach must not deadlock", finished);
+        executor.shutdown();
+        holder.close();
+    }
+}

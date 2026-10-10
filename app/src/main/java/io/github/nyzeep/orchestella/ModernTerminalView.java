@@ -46,6 +46,9 @@ public class ModernTerminalView extends ScrollView {
     private final Runnable flushTask = this::flushPendingOutput;
 
     private TextView transcriptView;
+    private TerminalInputSink inputSink;
+    private StickyModifierStateMachine stickyStateMachine;
+    private TerminalInputConnection currentInputConnection;
 
     public ModernTerminalView(Context context) {
         super(context);
@@ -62,16 +65,82 @@ public class ModernTerminalView extends ScrollView {
         init(context);
     }
 
+    public void setInputSink(TerminalInputSink inputSink) {
+        this.inputSink = inputSink;
+    }
+
+    public void setStickyStateMachine(StickyModifierStateMachine stickyStateMachine) {
+        this.stickyStateMachine = stickyStateMachine;
+    }
+
+    public TerminalInputConnection getCurrentInputConnection() {
+        return currentInputConnection;
+    }
+
+    @Override
+    public boolean onCheckIsTextEditor() {
+        return true;
+    }
+
+    @Override
+    public android.view.inputmethod.InputConnection onCreateInputConnection(android.view.inputmethod.EditorInfo outAttrs) {
+        if (outAttrs != null) {
+            outAttrs.inputType = android.text.InputType.TYPE_NULL;
+            outAttrs.imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_NONE
+                    | android.view.inputmethod.EditorInfo.IME_FLAG_NO_FULLSCREEN;
+        }
+        if (inputSink != null) {
+            currentInputConnection = new TerminalInputConnection(inputSink, stickyStateMachine);
+            return currentInputConnection;
+        }
+        return null;
+    }
+
+    public void requestTerminalFocus() {
+        requestFocus();
+        android.view.inputmethod.InputMethodManager imm =
+                (android.view.inputmethod.InputMethodManager) getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (imm != null) {
+            imm.showSoftInput(this, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
+        }
+    }
+
+    @Override
+    public boolean onTouchEvent(android.view.MotionEvent ev) {
+        if (ev.getAction() == android.view.MotionEvent.ACTION_UP) {
+            requestTerminalFocus();
+        }
+        return super.onTouchEvent(ev);
+    }
+
+    @Override
+    public boolean onKeyDown(int keyCode, android.view.KeyEvent event) {
+        if (currentInputConnection != null && currentInputConnection.sendKeyEvent(event)) {
+            return true;
+        }
+        return super.onKeyDown(keyCode, event);
+    }
+
+    @Override
+    public boolean onKeyUp(int keyCode, android.view.KeyEvent event) {
+        if (currentInputConnection != null && currentInputConnection.sendKeyEvent(event)) {
+            return true;
+        }
+        return super.onKeyUp(keyCode, event);
+    }
+
     private void init(Context context) {
         setBackgroundColor(DraculaPalette.BACKGROUND);
         setFillViewport(true);
+        setFocusable(true);
+        setFocusableInTouchMode(true);
 
         transcriptView = new TextView(context);
         transcriptView.setTypeface(Typeface.MONOSPACE);
         transcriptView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
         transcriptView.setTextColor(DraculaPalette.FOREGROUND);
         transcriptView.setBackgroundColor(DraculaPalette.BACKGROUND);
-        transcriptView.setTextIsSelectable(true);
+        transcriptView.setTextIsSelectable(false);
 
         int paddingPx = dpToPx(context, 12);
         transcriptView.setPadding(paddingPx, paddingPx, paddingPx, paddingPx);
@@ -79,6 +148,15 @@ public class ModernTerminalView extends ScrollView {
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
         addView(transcriptView, params);
+
+        setOnClickListener(v -> requestTerminalFocus());
+        transcriptView.setOnClickListener(v -> requestTerminalFocus());
+        transcriptView.setOnTouchListener((v, event) -> {
+            if (event.getAction() == android.view.MotionEvent.ACTION_UP) {
+                requestTerminalFocus();
+            }
+            return false;
+        });
 
         transcriptView.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
             if (bottom > oldBottom) {

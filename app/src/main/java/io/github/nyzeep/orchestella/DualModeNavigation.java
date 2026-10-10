@@ -10,7 +10,10 @@ import java.util.Objects;
  * and {@link DesktopActivity} without interrupting the background guest VM or
  * {@link OrchestellaForegroundService}.
  *
- * <p>Conforms to ADR-0011, ADR-0017, and Ticket 43.
+ * <p>Decoupled from specific UI button placements; supports invocation from instance
+ * details console, navigation drawer, or external action links.
+ *
+ * <p>Conforms to ADR-0011, ADR-0017, and Phase 6.0 Ticket 09.
  */
 public final class DualModeNavigation {
 
