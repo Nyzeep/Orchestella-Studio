@@ -56,6 +56,18 @@ public final class QemuRuntimeBootstrapper {
     public RuntimePaths bootstrap(
             String rootfsFileName, String bridgeToken, String guestPassword, Path instanceRootVolume)
             throws IOException {
+        return bootstrap(rootfsFileName, bridgeToken, guestPassword, instanceRootVolume, null, null, null);
+    }
+
+    public RuntimePaths bootstrap(
+            String rootfsFileName,
+            String bridgeToken,
+            String guestPassword,
+            Path instanceRootVolume,
+            String mirrorConfigFileName,
+            byte[] mirrorConfigFileContent,
+            byte[] firstBootScript)
+            throws IOException {
         Objects.requireNonNull(instanceRootVolume, "instanceRootVolume");
         if (!Files.isRegularFile(instanceRootVolume)) {
             throw new IOException("root-volume-missing");
@@ -97,7 +109,17 @@ public final class QemuRuntimeBootstrapper {
                  java.io.OutputStream out = Files.newOutputStream(partial,
                          java.nio.file.StandardOpenOption.APPEND)) {
                 EmbeddedProvisionInput.writeSegment(
-                        rootfsIn, rootfsSize, rootfsFileName, bridgeToken, guestPassword, guestInit, proxyRelay, out);
+                        rootfsIn,
+                        rootfsSize,
+                        rootfsFileName,
+                        bridgeToken,
+                        guestPassword,
+                        guestInit,
+                        proxyRelay,
+                        mirrorConfigFileName,
+                        mirrorConfigFileContent,
+                        firstBootScript,
+                        out);
             }
             Files.move(partial, initramfs, java.nio.file.StandardCopyOption.REPLACE_EXISTING,
                     java.nio.file.StandardCopyOption.ATOMIC_MOVE);

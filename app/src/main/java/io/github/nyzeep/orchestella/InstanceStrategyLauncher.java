@@ -27,6 +27,9 @@ public final class InstanceStrategyLauncher {
         public final String distroInputsDirectory;
         public final String guestPassword;
         public final io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig hardwareConfig;
+        public final String mirrorConfigFileName;
+        public final byte[] mirrorConfigFileContent;
+        public final byte[] firstBootScript;
 
         public LaunchParameters(
                 String instanceId,
@@ -58,6 +61,21 @@ public final class InstanceStrategyLauncher {
                 String distroInputsDirectory,
                 String guestPassword,
                 io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig hardwareConfig) {
+            this(instanceId, bridgeToken, rootfsFileName, instanceRootVolume, runtimeDirectory, distroInputsDirectory, guestPassword, hardwareConfig, null, null, null);
+        }
+
+        public LaunchParameters(
+                String instanceId,
+                String bridgeToken,
+                String rootfsFileName,
+                String instanceRootVolume,
+                String runtimeDirectory,
+                String distroInputsDirectory,
+                String guestPassword,
+                io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig hardwareConfig,
+                String mirrorConfigFileName,
+                byte[] mirrorConfigFileContent,
+                byte[] firstBootScript) {
             this.instanceId = Objects.requireNonNull(instanceId, "instanceId");
             this.bridgeToken = Objects.requireNonNull(bridgeToken, "bridgeToken");
             this.rootfsFileName = Objects.requireNonNull(rootfsFileName, "rootfsFileName");
@@ -68,6 +86,33 @@ public final class InstanceStrategyLauncher {
                     Objects.requireNonNull(distroInputsDirectory, "distroInputsDirectory");
             this.guestPassword = guestPassword;
             this.hardwareConfig = hardwareConfig;
+            this.mirrorConfigFileName = mirrorConfigFileName;
+            this.mirrorConfigFileContent = mirrorConfigFileContent;
+            this.firstBootScript = firstBootScript;
+        }
+
+        public LaunchParameters(
+                String instanceId,
+                String bridgeToken,
+                String rootfsFileName,
+                String instanceRootVolume,
+                String runtimeDirectory,
+                String distroInputsDirectory,
+                String guestPassword,
+                io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig hardwareConfig,
+                FirstBootProvisionPipeline.ProvisionPayload provisionPayload) {
+            this(
+                    instanceId,
+                    bridgeToken,
+                    rootfsFileName,
+                    instanceRootVolume,
+                    runtimeDirectory,
+                    distroInputsDirectory,
+                    guestPassword,
+                    hardwareConfig,
+                    provisionPayload != null ? provisionPayload.mirrorConfigFileName() : null,
+                    provisionPayload != null ? provisionPayload.mirrorConfigFileContent() : null,
+                    provisionPayload != null ? provisionPayload.firstBootScript() : null);
         }
     }
 
