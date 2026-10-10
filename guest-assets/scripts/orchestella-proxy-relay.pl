@@ -1,4 +1,10 @@
-#!/usr/bin/perl
+#!/bin/sh
+# Shell preamble: if perl is not installed on this guest (e.g. Alpine minimal), exit cleanly without crashing
+if ! command -v perl >/dev/null 2>&1; then
+    exit 0
+fi
+exec perl -x "$0" "$@"
+#!perl
 use strict;
 use warnings;
 use IO::Socket::INET;

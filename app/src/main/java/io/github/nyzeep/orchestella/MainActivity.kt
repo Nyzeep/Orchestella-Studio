@@ -500,6 +500,11 @@ class MainActivity : AppCompatActivity() {
                 startActivity(intent, options.toBundle())
             }
 
+            cardView.setOnLongClickListener {
+                showInstanceActionBottomSheet(instance, uiModel)
+                true
+            }
+
             instanceList.addView(cardView)
         }
     }
@@ -1033,7 +1038,7 @@ class MainActivity : AppCompatActivity() {
         }
 
     private fun showCredentialsDialog(instance: InstanceLifecycle.Instance) {
-        val message = getString(R.string.credentials_message, instance.guestPassword())
+        val message = "默认主机名：${instance.hostname()}\n用户名：${instance.defaultUser()}\n密码：${instance.guestPassword()}\n\n提示：遵循工单 03 规范，默认主机名为 orchestella，超级用户为 root / 1234。"
         AlertDialog.Builder(this)
             .setTitle(R.string.credentials_title)
             .setMessage(message)
