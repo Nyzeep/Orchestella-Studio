@@ -44,7 +44,7 @@ class InstanceActionBottomSheet(
         val subtitle = view.findViewById<TextView>(R.id.sheet_subtitle)
         val badge = view.findViewById<TextView>(R.id.sheet_status_badge)
 
-        val iconRes = if (uiModel.distroId == "debian") R.drawable.ic_distro_debian else R.drawable.ic_distro_alpine
+        val iconRes = DistroIconHelper.getIconRes(uiModel.distroId)
         distroIcon.setImageResource(iconRes)
         title.text = "${uiModel.distroDisplayName} Linux ${uiModel.distroVersion}"
         subtitle.text = "ID: ${uiModel.shortId} · ${uiModel.hardwareSpecsText}"

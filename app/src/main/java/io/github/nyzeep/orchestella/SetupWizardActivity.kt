@@ -35,8 +35,8 @@ import com.google.android.material.textfield.TextInputEditText
 import io.github.nyzeep.orchestella.runtime.capability.AvfAuthorizationWizardModel
 import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig
+import io.github.nyzeep.orchestella.runtime.distro.DistroCatalogRegistry
 import io.github.nyzeep.orchestella.runtime.distro.DistroManifest
-import io.github.nyzeep.orchestella.runtime.distro.OfficialAlpineCatalog
 import io.github.nyzeep.orchestella.runtime.distro.OfficialDebianCatalog
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
 import io.github.nyzeep.orchestella.runtime.network.download.DownloadProgressCallback
@@ -88,7 +88,7 @@ class SetupWizardActivity : AppCompatActivity() {
     private lateinit var step4Container: LinearLayout
 
     // Step 1 Views (Storage)
-    private lateinit var btnDistroAlpine: MaterialButton
+    private lateinit var btnDistroUbuntu: MaterialButton
     private lateinit var btnDistroDebian: MaterialButton
     private lateinit var txtHwStorage: TextView
     private lateinit var btnDisk4g: MaterialButton
@@ -194,10 +194,12 @@ class SetupWizardActivity : AppCompatActivity() {
         settingsManager = SettingsManager(this)
         hostProfile = HostHardwareDetector.detect(this)
 
-        val targetDistro = intent.getStringExtra(EXTRA_TARGET_DISTRO)?.lowercase() ?: "alpine"
+        val targetDistro = intent.getStringExtra(EXTRA_TARGET_DISTRO)?.lowercase() ?: "ubuntu"
+        val initialManifest = DistroCatalogRegistry.getInstance().get(targetDistro)
+            ?: DistroCatalogRegistry.getInstance().get("ubuntu")
         wizardModel = InstanceCreationWizardModel(
             distroId = targetDistro,
-            distroVersion = if (targetDistro == "debian") "13" else "3.24.1",
+            distroVersion = initialManifest?.version() ?: "24.04",
             hardwareProfile = hostProfile
         )
 
@@ -227,7 +229,7 @@ class SetupWizardActivity : AppCompatActivity() {
         step4Container = findViewById(R.id.step4_container)
 
         // Step 1
-        btnDistroAlpine = findViewById(R.id.btn_distro_alpine)
+        btnDistroUbuntu = findViewById(R.id.btn_distro_ubuntu)
         btnDistroDebian = findViewById(R.id.btn_distro_debian)
         txtHwStorage = findViewById(R.id.txt_hw_storage)
         btnDisk4g = findViewById(R.id.btn_disk_4g)
@@ -281,7 +283,7 @@ class SetupWizardActivity : AppCompatActivity() {
 
     private fun setupListeners() {
         // Step 1 Distro Switch
-        btnDistroAlpine.setOnClickListener { switchDistro("alpine") }
+        btnDistroUbuntu.setOnClickListener { switchDistro("ubuntu") }
         btnDistroDebian.setOnClickListener { switchDistro("debian") }
 
         // Step 1 Presets
@@ -406,9 +408,11 @@ class SetupWizardActivity : AppCompatActivity() {
         val currentDistro = wizardModel.distroId
         if (currentDistro == distroId) return
 
+        val manifest = DistroCatalogRegistry.getInstance().get(distroId)
+        val version = manifest?.version() ?: "latest"
         wizardModel = InstanceCreationWizardModel(
             distroId = distroId,
-            distroVersion = if (distroId == "debian") "13" else "3.24.1",
+            distroVersion = version,
             hardwareProfile = hostProfile,
             initialStep = wizardModel.currentStep
         )
@@ -419,12 +423,12 @@ class SetupWizardActivity : AppCompatActivity() {
     }
 
     private fun refreshDistroPillStyles() {
-        val isAlpine = wizardModel.distroId == "alpine"
-        if (isAlpine) {
-            btnDistroAlpine.setIconResource(android.R.drawable.checkbox_on_background)
+        val isUbuntu = wizardModel.distroId == "ubuntu"
+        if (isUbuntu) {
+            btnDistroUbuntu.setIconResource(android.R.drawable.checkbox_on_background)
             btnDistroDebian.icon = null
         } else {
-            btnDistroAlpine.icon = null
+            btnDistroUbuntu.icon = null
             btnDistroDebian.setIconResource(android.R.drawable.checkbox_on_background)
         }
     }
@@ -671,7 +675,7 @@ class SetupWizardActivity : AppCompatActivity() {
     }
 
     private fun updateCreationSummary() {
-        val distroName = if (wizardModel.distroId == "debian") "Debian GNU/Linux 13" else "Alpine Linux 3.24"
+        val distroName = DistroIconHelper.getDisplayName(wizardModel.distroId)
         val diskGb = wizardModel.diskSizeGb
         val vcpu = wizardModel.hardwareConfig.cpuCores()
         val ram = wizardModel.hardwareConfig.ramMegabytes()
@@ -714,11 +718,9 @@ class SetupWizardActivity : AppCompatActivity() {
     }
 
     private fun getManifest(): DistroManifest {
-        return if (wizardModel.distroId == "debian") {
-            OfficialDebianCatalog.debian()
-        } else {
-            OfficialAlpineCatalog.alpine()
-        }
+        return DistroCatalogRegistry.getInstance().get(wizardModel.distroId)
+            ?: DistroCatalogRegistry.getInstance().get("ubuntu")
+            ?: OfficialDebianCatalog.debian()
     }
 
     private fun startDownloadAndInitialize() {

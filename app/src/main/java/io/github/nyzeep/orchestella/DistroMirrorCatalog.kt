@@ -17,19 +17,6 @@ object DistroMirrorCatalog {
     fun mirrorsFor(manifest: DistroManifest): List<String> {
         val source = manifest.source().toString()
         val candidates = when (manifest.id()) {
-            "alpine" -> listOf(
-                source,
-                substitutePrefix(
-                    source,
-                    "https://dl-cdn.alpinelinux.org/alpine/",
-                    "https://mirrors.tuna.tsinghua.edu.cn/alpine/",
-                ),
-                substitutePrefix(
-                    source,
-                    "https://dl-cdn.alpinelinux.org/alpine/",
-                    "https://mirrors.ustc.edu.cn/alpine/",
-                ),
-            )
             "debian" -> listOf(
                 source,
                 substitutePrefix(

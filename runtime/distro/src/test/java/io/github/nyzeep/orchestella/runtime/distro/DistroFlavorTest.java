@@ -3,7 +3,12 @@ package io.github.nyzeep.orchestella.runtime.distro;
 public final class DistroFlavorTest {
     public static void main(String[] arguments) {
         testsDebianFlavor();
-        testsAlpineFlavor();
+        testsUbuntuFlavor();
+        testsFedoraFlavor();
+        testsArchFlavor();
+        testsOpenSuseFlavor();
+        testsAlmaLinuxFlavor();
+        testsRockyLinuxFlavor();
         rejectsUnsupportedDistro();
     }
 
@@ -35,15 +40,60 @@ public final class DistroFlavorTest {
         assertTrue(launcher.contains("--terminal-device /dev/orchestella-terminal"));
     }
 
-    private static void testsAlpineFlavor() {
-        DistroFlavor alpine = DistroFlavor.forManifest(OfficialAlpineCatalog.alpine());
-        assertEquals("alpine", alpine.distroId());
-        assertEquals("Alpine Linux", alpine.displayName());
-        assertEquals(DistroFlavor.InitSystem.OPENRC, alpine.initSystem());
-        assertEquals("apk", alpine.packageManager());
-        assertEquals("alpine-3.24.1", alpine.provisionedDistroTag());
-        assertEquals("/etc/init.d/orchestella-guest-agent", alpine.serviceUnitPath());
-        assertEquals("/etc/runlevels/default/orchestella-guest-agent", alpine.serviceEnableSymlink());
+    private static void testsUbuntuFlavor() {
+        DistroFlavor ubuntu = DistroFlavor.forManifest(OfficialUbuntuCatalog.ubuntu());
+        assertEquals("ubuntu", ubuntu.distroId());
+        assertEquals("Ubuntu Linux", ubuntu.displayName());
+        assertEquals(DistroFlavor.InitSystem.SYSTEMD, ubuntu.initSystem());
+        assertEquals("apt", ubuntu.packageManager());
+        assertEquals("ubuntu-24.04", ubuntu.provisionedDistroTag());
+        assertEquals("/etc/systemd/system/orchestella-guest-agent.service", ubuntu.serviceUnitPath());
+        assertEquals("/etc/systemd/system/multi-user.target.wants/orchestella-guest-agent.service", ubuntu.serviceEnableSymlink());
+    }
+
+    private static void testsFedoraFlavor() {
+        DistroFlavor fedora = DistroFlavor.forManifest(OfficialFedoraCatalog.fedora());
+        assertEquals("fedora", fedora.distroId());
+        assertEquals("Fedora Linux", fedora.displayName());
+        assertEquals(DistroFlavor.InitSystem.SYSTEMD, fedora.initSystem());
+        assertEquals("dnf", fedora.packageManager());
+        assertEquals("fedora-41", fedora.provisionedDistroTag());
+    }
+
+    private static void testsArchFlavor() {
+        DistroFlavor arch = DistroFlavor.forManifest(OfficialArchCatalog.arch());
+        assertEquals("arch", arch.distroId());
+        assertEquals("Arch Linux ARM", arch.displayName());
+        assertEquals(DistroFlavor.InitSystem.SYSTEMD, arch.initSystem());
+        assertEquals("pacman", arch.packageManager());
+        assertEquals("archlinux", arch.provisionedDistroTag());
+    }
+
+    private static void testsOpenSuseFlavor() {
+        DistroFlavor opensuse = DistroFlavor.forManifest(OfficialOpenSuseCatalog.opensuse());
+        assertEquals("opensuse", opensuse.distroId());
+        assertEquals("openSUSE Tumbleweed", opensuse.displayName());
+        assertEquals(DistroFlavor.InitSystem.SYSTEMD, opensuse.initSystem());
+        assertEquals("zypper", opensuse.packageManager());
+        assertEquals("opensuse-tumbleweed", opensuse.provisionedDistroTag());
+    }
+
+    private static void testsAlmaLinuxFlavor() {
+        DistroFlavor almalinux = DistroFlavor.forManifest(OfficialAlmaLinuxCatalog.almalinux());
+        assertEquals("almalinux", almalinux.distroId());
+        assertEquals("AlmaLinux", almalinux.displayName());
+        assertEquals(DistroFlavor.InitSystem.SYSTEMD, almalinux.initSystem());
+        assertEquals("dnf", almalinux.packageManager());
+        assertEquals("almalinux-9", almalinux.provisionedDistroTag());
+    }
+
+    private static void testsRockyLinuxFlavor() {
+        DistroFlavor rocky = DistroFlavor.forManifest(OfficialRockyLinuxCatalog.rocky());
+        assertEquals("rocky", rocky.distroId());
+        assertEquals("Rocky Linux", rocky.displayName());
+        assertEquals(DistroFlavor.InitSystem.SYSTEMD, rocky.initSystem());
+        assertEquals("dnf", rocky.packageManager());
+        assertEquals("rocky-9", rocky.provisionedDistroTag());
     }
 
     private static void rejectsUnsupportedDistro() {
@@ -52,6 +102,13 @@ public final class DistroFlavorTest {
             throw new AssertionError("archlinux should be unsupported");
         } catch (IllegalArgumentException expected) {
             assertTrue(expected.getMessage().contains("archlinux"));
+        }
+
+        try {
+            DistroFlavor.forDistroId("alpine");
+            throw new AssertionError("alpine should be unsupported");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("alpine"));
         }
     }
 

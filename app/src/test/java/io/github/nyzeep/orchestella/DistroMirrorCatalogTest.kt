@@ -1,24 +1,11 @@
 package io.github.nyzeep.orchestella
 
 import io.github.nyzeep.orchestella.runtime.distro.DistroManifest
-import io.github.nyzeep.orchestella.runtime.distro.OfficialAlpineCatalog
 import io.github.nyzeep.orchestella.runtime.distro.OfficialDebianCatalog
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class DistroMirrorCatalogTest {
-
-    @Test
-    fun alpineMirrorsLeadWithPinnedSourceAndAddDomesticAcceleration() {
-        val manifest = OfficialAlpineCatalog.alpine()
-        val expected = listOf(
-            "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/aarch64/alpine-minirootfs-3.24.1-aarch64.tar.gz",
-            "https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.24/releases/aarch64/alpine-minirootfs-3.24.1-aarch64.tar.gz",
-            "https://mirrors.ustc.edu.cn/alpine/v3.24/releases/aarch64/alpine-minirootfs-3.24.1-aarch64.tar.gz",
-        )
-
-        assertEquals(expected, DistroMirrorCatalog.mirrorsFor(manifest))
-    }
 
     @Test
     fun debianMirrorsLeadWithPinnedSourceAndAddUpstreamAndUstc() {
@@ -35,23 +22,23 @@ class DistroMirrorCatalogTest {
     @Test
     fun mirrorsFollowCatalogVersionBumpWithoutManualMirrorEdits() {
         val bumped = DistroManifest(
-            "alpine",
-            "3.25.0",
+            "debian",
+            "14",
             "aarch64",
-            "https://dl-cdn.alpinelinux.org/alpine/v3.25/releases/aarch64/alpine-minirootfs-3.25.0-aarch64.tar.gz",
-            "alpine-minirootfs-3.25.0-aarch64.tar.gz",
+            "https://github.com/Nyzeep/Orchestella-Studio/releases/download/v0.5.0/debian-14-rootfs.tar.xz",
+            "debian-14-rootfs.tar.xz",
             "aa".repeat(32),
-            4_000_000L,
+            95_000_000L,
         )
 
         val mirrors = DistroMirrorCatalog.mirrorsFor(bumped)
 
         assertEquals(
-            "https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.25/releases/aarch64/alpine-minirootfs-3.25.0-aarch64.tar.gz",
+            "https://ghproxy.net/https://github.com/Nyzeep/Orchestella-Studio/releases/download/v0.5.0/debian-14-rootfs.tar.xz",
             mirrors[1],
         )
         assertEquals(
-            "https://mirrors.ustc.edu.cn/alpine/v3.25/releases/aarch64/alpine-minirootfs-3.25.0-aarch64.tar.gz",
+            "https://mirror.ghproxy.com/https://github.com/Nyzeep/Orchestella-Studio/releases/download/v0.5.0/debian-14-rootfs.tar.xz",
             mirrors[2],
         )
     }

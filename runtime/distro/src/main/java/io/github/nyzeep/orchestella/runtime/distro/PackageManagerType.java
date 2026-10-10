@@ -18,17 +18,6 @@ public enum PackageManagerType {
             return "apt-get install -y " + joinPackages(packages);
         }
     },
-    APK("apk") {
-        @Override
-        public String defaultUpdateCommand() {
-            return "apk update";
-        }
-
-        @Override
-        public String defaultInstallCommand(Collection<String> packages) {
-            return "apk add --no-cache " + joinPackages(packages);
-        }
-    },
     PACMAN("pacman") {
         @Override
         public String defaultUpdateCommand() {
@@ -80,10 +69,9 @@ public enum PackageManagerType {
     public static PackageManagerType forDistroId(String distroId) {
         Objects.requireNonNull(distroId, "distroId must not be null");
         return switch (distroId.toLowerCase()) {
-            case "ubuntu", "debian", "kali" -> APT;
-            case "alpine" -> APK;
+            case "ubuntu", "debian" -> APT;
             case "arch" -> PACMAN;
-            case "fedora" -> DNF;
+            case "fedora", "almalinux", "rocky" -> DNF;
             case "opensuse" -> ZYPPER;
             default -> throw new IllegalArgumentException("unsupported package manager for distro: " + distroId);
         };

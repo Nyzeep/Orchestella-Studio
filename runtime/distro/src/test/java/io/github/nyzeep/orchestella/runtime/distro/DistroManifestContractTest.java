@@ -30,7 +30,7 @@ public final class DistroManifestContractTest {
                 manifest.requireVerified(
                         new ByteArrayInputStream(VERIFIED_ROOTFS), VERIFIED_ROOTFS.length);
 
-        assertEquals("alpine", verified.distroId(), "distro identity");
+        assertEquals("ubuntu", verified.distroId(), "distro identity");
         assertEquals(VERIFIED_SHA256, verified.sha256(), "verified digest");
         assertEquals((long) VERIFIED_ROOTFS.length, verified.sizeBytes(), "verified size");
     }
@@ -56,8 +56,8 @@ public final class DistroManifestContractTest {
                         DistroManifest.InputRejectedException.class,
                         () ->
                                 manifest.requireVerified(
-                                        new ByteArrayInputStream(VERIFIED_ROOTFS),
-                                        VERIFIED_ROOTFS.length - 1L),
+                                         new ByteArrayInputStream(VERIFIED_ROOTFS),
+                                         VERIFIED_ROOTFS.length - 1L),
                         "a short declared input must be rejected");
 
         assertEquals("rootfs-size-mismatch", rejection.reason(), "clear size rejection reason");
@@ -68,8 +68,8 @@ public final class DistroManifestContractTest {
                 IllegalArgumentException.class,
                 () ->
                         new DistroManifest(
-                                "alpine",
-                                "3.24.1",
+                                "ubuntu",
+                                "24.04",
                                 "aarch64",
                                 "http://example.invalid/rootfs.tar.gz",
                                 "rootfs.tar.gz",
@@ -80,8 +80,8 @@ public final class DistroManifestContractTest {
                 IllegalArgumentException.class,
                 () ->
                         new DistroManifest(
-                                "alpine",
-                                "3.24.1",
+                                "ubuntu",
+                                "24.04",
                                 "aarch64",
                                 "https://example.invalid/rootfs.tar.gz?latest=true",
                                 "rootfs.tar.gz",
@@ -155,11 +155,11 @@ public final class DistroManifestContractTest {
 
     private static DistroManifest manifest() {
         return new DistroManifest(
-                "alpine",
-                "3.24.1",
+                "ubuntu",
+                "24.04",
                 "aarch64",
-                "https://example.invalid/alpine-minirootfs-3.24.1-aarch64.tar.gz",
-                "alpine-minirootfs-3.24.1-aarch64.tar.gz",
+                "https://example.invalid/ubuntu-base-24.04-base-arm64.tar.gz",
+                "ubuntu-base-24.04-base-arm64.tar.gz",
                 VERIFIED_SHA256,
                 VERIFIED_ROOTFS.length);
     }

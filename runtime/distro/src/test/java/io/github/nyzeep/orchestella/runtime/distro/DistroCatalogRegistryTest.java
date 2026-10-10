@@ -12,11 +12,11 @@ public final class DistroCatalogRegistryTest {
     private static final List<String> EXPECTED_7_DISTROS = Arrays.asList(
             "ubuntu",
             "debian",
-            "arch",
-            "alpine",
             "fedora",
+            "arch",
             "opensuse",
-            "kali"
+            "almalinux",
+            "rocky"
     );
 
     public static void main(String[] args) {
@@ -66,11 +66,11 @@ public final class DistroCatalogRegistryTest {
 
         assertEquals(PackageManagerType.APT, registry.getPackageManager("ubuntu"));
         assertEquals(PackageManagerType.APT, registry.getPackageManager("debian"));
-        assertEquals(PackageManagerType.PACMAN, registry.getPackageManager("arch"));
-        assertEquals(PackageManagerType.APK, registry.getPackageManager("alpine"));
         assertEquals(PackageManagerType.DNF, registry.getPackageManager("fedora"));
+        assertEquals(PackageManagerType.PACMAN, registry.getPackageManager("arch"));
         assertEquals(PackageManagerType.ZYPPER, registry.getPackageManager("opensuse"));
-        assertEquals(PackageManagerType.APT, registry.getPackageManager("kali"));
+        assertEquals(PackageManagerType.DNF, registry.getPackageManager("almalinux"));
+        assertEquals(PackageManagerType.DNF, registry.getPackageManager("rocky"));
     }
 
     private static void testListAllMatchesSupportedIds() {

@@ -203,7 +203,7 @@
                 android:layout_marginBottom="12dp">
 
                 <com.google.android.material.card.MaterialCardView
-                    android:id="@+id/card_create_alpine"
+                    android:id="@+id/card_create_ubuntu"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
@@ -231,14 +231,14 @@
                             <ImageView
                                 android:layout_width="32dp"
                                 android:layout_height="32dp"
-                                android:src="@drawable/ic_distro_alpine"
-                                android:contentDescription="Alpine" />
+                                android:src="@drawable/ic_distro_ubuntu"
+                                android:contentDescription="Ubuntu" />
 
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginStart="8dp"
-                                android:text="Alpine"
+                                android:text="Ubuntu"
                                 android:textSize="15sp"
                                 android:textStyle="bold"
                                 android:textColor="?attr/colorOnSurface" />
@@ -248,19 +248,19 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="6dp"
-                            android:text="@string/create_alpine_desc"
+                            android:text="@string/create_ubuntu_desc"
                             android:textSize="11sp"
                             android:textColor="?attr/colorOutline" />
 
                         <com.google.android.material.button.MaterialButton
-                            android:id="@+id/create_alpine"
+                            android:id="@+id/create_ubuntu"
                             style="@style/Widget.Material3.Button.TonalButton"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:minHeight="48dp"
                             app:cornerRadius="12dp"
                             android:layout_marginTop="10dp"
-                            android:text="@string/create_alpine"
+                            android:text="@string/create_ubuntu"
                             android:textSize="13sp"
                             android:textStyle="bold" />
                     </LinearLayout>

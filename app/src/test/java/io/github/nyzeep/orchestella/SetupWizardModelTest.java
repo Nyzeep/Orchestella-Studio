@@ -26,7 +26,7 @@ public final class SetupWizardModelTest {
                 4L * 1024L * 1024L * 1024L,
                 512L * 1024L * 1024L,
                 false);
-        wizard = new SetupWizardModel(profile, SetupWizardModel.Step.STEP_DETECT, SetupWizardModel.DistroOption.ALPINE, null);
+        wizard = new SetupWizardModel(profile, SetupWizardModel.Step.STEP_DETECT, SetupWizardModel.DistroOption.UBUNTU, null);
     }
 
     @Test
@@ -34,7 +34,7 @@ public final class SetupWizardModelTest {
         assertEquals(SetupWizardModel.Step.STEP_DETECT, wizard.getCurrentStep());
         assertEquals(1, wizard.getStepIndex());
         assertEquals(3, wizard.getTotalSteps());
-        assertEquals(SetupWizardModel.DistroOption.ALPINE, wizard.getSelectedDistro());
+        assertEquals(SetupWizardModel.DistroOption.UBUNTU, wizard.getSelectedDistro());
 
         // Recommended config derived automatically: 7 vCPUs (8 - 1), recommended RAM
         VmHardwareConfig config = wizard.getHardwareConfig();

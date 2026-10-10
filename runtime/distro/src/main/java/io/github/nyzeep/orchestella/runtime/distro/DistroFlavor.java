@@ -24,16 +24,6 @@ public final class DistroFlavor {
                     "/etc/systemd/system/orchestella-guest-agent.service",
                     "/etc/systemd/system/multi-user.target.wants/orchestella-guest-agent.service");
 
-    public static final DistroFlavor ALPINE =
-            new DistroFlavor(
-                    "alpine",
-                    "Alpine Linux",
-                    InitSystem.OPENRC,
-                    "apk",
-                    "alpine-3.24.1",
-                    "/etc/init.d/orchestella-guest-agent",
-                    "/etc/runlevels/default/orchestella-guest-agent");
-
     public static final DistroFlavor UBUNTU =
             new DistroFlavor(
                     "ubuntu",
@@ -41,16 +31,6 @@ public final class DistroFlavor {
                     InitSystem.SYSTEMD,
                     "apt",
                     "ubuntu-24.04",
-                    "/etc/systemd/system/orchestella-guest-agent.service",
-                    "/etc/systemd/system/multi-user.target.wants/orchestella-guest-agent.service");
-
-    public static final DistroFlavor ARCH =
-            new DistroFlavor(
-                    "arch",
-                    "Arch Linux ARM",
-                    InitSystem.SYSTEMD,
-                    "pacman",
-                    "archlinux",
                     "/etc/systemd/system/orchestella-guest-agent.service",
                     "/etc/systemd/system/multi-user.target.wants/orchestella-guest-agent.service");
 
@@ -64,6 +44,16 @@ public final class DistroFlavor {
                     "/etc/systemd/system/orchestella-guest-agent.service",
                     "/etc/systemd/system/multi-user.target.wants/orchestella-guest-agent.service");
 
+    public static final DistroFlavor ARCH =
+            new DistroFlavor(
+                    "arch",
+                    "Arch Linux ARM",
+                    InitSystem.SYSTEMD,
+                    "pacman",
+                    "archlinux",
+                    "/etc/systemd/system/orchestella-guest-agent.service",
+                    "/etc/systemd/system/multi-user.target.wants/orchestella-guest-agent.service");
+
     public static final DistroFlavor OPENSUSE =
             new DistroFlavor(
                     "opensuse",
@@ -74,13 +64,23 @@ public final class DistroFlavor {
                     "/etc/systemd/system/orchestella-guest-agent.service",
                     "/etc/systemd/system/multi-user.target.wants/orchestella-guest-agent.service");
 
-    public static final DistroFlavor KALI =
+    public static final DistroFlavor ALMALINUX =
             new DistroFlavor(
-                    "kali",
-                    "Kali Linux",
+                    "almalinux",
+                    "AlmaLinux",
                     InitSystem.SYSTEMD,
-                    "apt",
-                    "kali-rolling",
+                    "dnf",
+                    "almalinux-9",
+                    "/etc/systemd/system/orchestella-guest-agent.service",
+                    "/etc/systemd/system/multi-user.target.wants/orchestella-guest-agent.service");
+
+    public static final DistroFlavor ROCKY =
+            new DistroFlavor(
+                    "rocky",
+                    "Rocky Linux",
+                    InitSystem.SYSTEMD,
+                    "dnf",
+                    "rocky-9",
                     "/etc/systemd/system/orchestella-guest-agent.service",
                     "/etc/systemd/system/multi-user.target.wants/orchestella-guest-agent.service");
 
@@ -113,12 +113,12 @@ public final class DistroFlavor {
         Objects.requireNonNull(distroId, "distroId");
         return switch (distroId.toLowerCase()) {
             case "debian" -> DEBIAN;
-            case "alpine" -> ALPINE;
             case "ubuntu" -> UBUNTU;
-            case "arch" -> ARCH;
             case "fedora" -> FEDORA;
+            case "arch" -> ARCH;
             case "opensuse" -> OPENSUSE;
-            case "kali" -> KALI;
+            case "almalinux" -> ALMALINUX;
+            case "rocky" -> ROCKY;
             default -> throw new IllegalArgumentException("unsupported distro flavor: " + distroId);
         };
     }
