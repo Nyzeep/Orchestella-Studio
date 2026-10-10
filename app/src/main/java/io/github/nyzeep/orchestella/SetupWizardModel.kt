@@ -1,9 +1,10 @@
 package io.github.nyzeep.orchestella
 
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig
+import io.github.nyzeep.orchestella.runtime.distro.AlpineEssentialPackageSuite
+import io.github.nyzeep.orchestella.runtime.distro.DistroCatalogRegistry
 import io.github.nyzeep.orchestella.runtime.distro.DistroManifest
-import io.github.nyzeep.orchestella.runtime.distro.OfficialAlpineCatalog
-import io.github.nyzeep.orchestella.runtime.distro.OfficialDebianCatalog
+import java.util.Collections
 
 /**
  * Pure Kotlin decoupled state machine for the first-launch Setup Wizard (Ticket 53, US-28).
@@ -34,29 +35,77 @@ class SetupWizardModel(
         val approxDownloadSize: String,
         val rootfsFileName: String
     ) {
-        ALPINE(
-            id = "alpine",
-            displayName = "Alpine Linux",
-            version = "3.24.1",
-            tag = "⚡ 极简轻量 · 约 4MB · 极客容器",
-            description = "极简轻巧、约 4MB 极速下载、极低内存占用、完美适配移动端命令行与轻量容器实验",
-            approxDownloadSize = "~4 MB",
-            rootfsFileName = "alpine-minirootfs-3.24.1-aarch64.tar.gz"
+        UBUNTU(
+            id = "ubuntu",
+            displayName = "Ubuntu Linux",
+            version = "24.04",
+            tag = "🐧 工业标准 · 广泛支持 · 云原生首选",
+            description = "工业标准、生态广泛、深度集成云原生开发栈、云原生首选",
+            approxDownloadSize = "~85 MB",
+            rootfsFileName = "ubuntu-base-24.04-base-arm64.tar.gz"
         ),
         DEBIAN(
             id = "debian",
             displayName = "Debian Linux",
             version = "13",
-            tag = "🐧 完整生态 · 约 90MB · 桌面工作流",
+            tag = "🌀 稳如磐石 · 纯净开源 · 经典基石",
             description = "生态丰富、开箱即用、预置全套 apt 包管理、适合完整桌面开发与编译工作流",
             approxDownloadSize = "~90 MB",
             rootfsFileName = "debian-13-rootfs.tar.xz"
+        ),
+        ARCH(
+            id = "arch",
+            displayName = "Arch Linux ARM",
+            version = "rolling",
+            tag = "🏹 极客首选 · 滚动更新 · 软件前沿",
+            description = "极客首选、pacman 极速滚动更新、软件前沿与轻量定制",
+            approxDownloadSize = "~180 MB",
+            rootfsFileName = "ArchLinuxARM-aarch64-latest.tar.gz"
+        ),
+        ALPINE(
+            id = "alpine",
+            displayName = "Alpine Linux",
+            version = "3.24.1",
+            tag = "⚡ 极致轻量 · 极速启动 · 容器实验",
+            description = "极简轻巧、约 4MB 极速下载、极低内存占用、完美适配移动端命令行与轻量容器实验",
+            approxDownloadSize = "~4 MB",
+            rootfsFileName = "alpine-minirootfs-3.24.1-aarch64.tar.gz"
+        ),
+        FEDORA(
+            id = "fedora",
+            displayName = "Fedora Linux",
+            version = "41",
+            tag = "🎩 前沿创新 · RPM 生态 · 开发者友好",
+            description = "前沿创新、DNF 与 RPM 现代生态、开发者友好且兼容最新技术",
+            approxDownloadSize = "~120 MB",
+            rootfsFileName = "Fedora-Container-Minimal-Base-41-aarch64.tar.xz"
+        ),
+        OPENSUSE(
+            id = "opensuse",
+            displayName = "openSUSE Tumbleweed",
+            version = "tumbleweed",
+            tag = "🦎 稳定滚更 · YaST 工具 · 严谨规范",
+            description = "稳定滚动发行、严谨规范、zypper 依赖解析与企业级 JeOS 架构",
+            approxDownloadSize = "~110 MB",
+            rootfsFileName = "openSUSE-Tumbleweed-ARM-JeOS-rootfs.aarch64.tar.xz"
+        ),
+        KALI(
+            id = "kali",
+            displayName = "Kali Linux",
+            version = "rolling",
+            tag = "🐉 渗透测试 · 安全审计 · 攻防套件",
+            description = "专业安全评估、网络审计与渗透测试攻防套件生态",
+            approxDownloadSize = "~130 MB",
+            rootfsFileName = "kali-linux-rolling-arm64-rootfs.tar.xz"
         );
 
         fun manifest(): DistroManifest {
-            return when (this) {
-                ALPINE -> OfficialAlpineCatalog.alpine()
-                DEBIAN -> OfficialDebianCatalog.debian()
+            return DistroCatalogRegistry.getInstance().require(id)
+        }
+
+        companion object {
+            fun fromId(id: String): DistroOption? {
+                return entries.firstOrNull { it.id.equals(id, ignoreCase = true) }
             }
         }
     }
@@ -66,6 +115,39 @@ class SetupWizardModel(
 
     var selectedDistro: DistroOption = initialDistro
         private set
+
+    var isAlpineEssentialSuiteEnabled: Boolean = true
+        private set
+
+    private val _selectedAlpinePackages: MutableSet<String> =
+        AlpineEssentialPackageSuite.getRecommendedPackages().toMutableSet()
+
+    val selectedAlpinePackages: Set<String>
+        get() = Collections.unmodifiableSet(_selectedAlpinePackages)
+
+    fun setAlpineEssentialSuiteEnabled(enabled: Boolean) {
+        isAlpineEssentialSuiteEnabled = enabled
+    }
+
+    fun toggleAlpinePackage(packageName: String, selected: Boolean) {
+        if (selected) {
+            _selectedAlpinePackages.add(packageName)
+        } else {
+            _selectedAlpinePackages.remove(packageName)
+        }
+    }
+
+    fun isAlpinePackageSelected(packageName: String): Boolean {
+        return _selectedAlpinePackages.contains(packageName)
+    }
+
+    fun generateAlpineProvisioningScript(): String {
+        if (!isAlpineEssentialSuiteEnabled) {
+            return ""
+        }
+        return AlpineEssentialPackageSuite.generateFullProvisioningScript(_selectedAlpinePackages)
+    }
+
 
     var hardwareConfig: VmHardwareConfig = initialConfig ?: hardwareProfile.createRecommendedHardwareConfig()
         private set
