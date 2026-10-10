@@ -492,30 +492,34 @@ class SetupWizardActivity : AppCompatActivity() {
         var dnsList = "10.0.2.3, 8.8.8.8"
         var gateway = "10.0.2.2 (QEMU 默认)"
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val net = cm?.activeNetwork
-            val caps = cm?.getNetworkCapabilities(net)
-            isWifi = caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
-            isCellular = caps?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true
-            isConnected = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val net = cm?.activeNetwork
+                val caps = cm?.getNetworkCapabilities(net)
+                isWifi = caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+                isCellular = caps?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true
+                isConnected = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
 
-            val linkProps = net?.let { cm.getLinkProperties(it) }
-            if (linkProps != null) {
-                val detectedDns = linkProps.dnsServers.mapNotNull { it.hostAddress }.joinToString(", ")
-                if (detectedDns.isNotBlank()) {
-                    dnsList = detectedDns
+                val linkProps = net?.let { cm.getLinkProperties(it) }
+                if (linkProps != null) {
+                    val detectedDns = linkProps.dnsServers.mapNotNull { it.hostAddress }.joinToString(", ")
+                    if (detectedDns.isNotBlank()) {
+                        dnsList = detectedDns
+                    }
+                    val detectedGw = linkProps.routes.firstOrNull { it.isDefaultRoute && it.gateway != null }?.gateway?.hostAddress
+                    if (!detectedGw.isNullOrBlank()) {
+                        gateway = detectedGw
+                    }
                 }
-                val detectedGw = linkProps.routes.firstOrNull { it.isDefaultRoute && it.gateway != null }?.gateway?.hostAddress
-                if (!detectedGw.isNullOrBlank()) {
-                    gateway = detectedGw
-                }
+            } else {
+                @Suppress("DEPRECATION")
+                val info = cm?.activeNetworkInfo
+                isWifi = info?.type == ConnectivityManager.TYPE_WIFI
+                isCellular = info?.type == ConnectivityManager.TYPE_MOBILE
+                isConnected = info?.isConnected == true
             }
-        } else {
-            @Suppress("DEPRECATION")
-            val info = cm?.activeNetworkInfo
-            isWifi = info?.type == ConnectivityManager.TYPE_WIFI
-            isCellular = info?.type == ConnectivityManager.TYPE_MOBILE
-            isConnected = info?.isConnected == true
+        } catch (_: Exception) {
+            // Defensively fallback if network state permission is restricted or throws SecurityException
         }
 
         val mode = when {
@@ -609,11 +613,15 @@ class SetupWizardActivity : AppCompatActivity() {
         val initialCores = wizardModel.hardwareConfig.cpuCores().toFloat().coerceIn(1f, maxCores)
         sliderVcpu.value = initialCores
 
-        val maxRam = (profile.totalRamMb() - 2048).toFloat().coerceAtLeast(1024f)
+        val rawMaxRam = profile.totalRamMb() - 2048
+        val ramSteps = ((rawMaxRam - 512) / 256).coerceAtLeast(2)
+        val maxRam = (512 + ramSteps * 256).toFloat()
         sliderRam.valueFrom = 512f
         sliderRam.valueTo = maxRam
         sliderRam.stepSize = 256f
-        val initialRam = wizardModel.hardwareConfig.ramMegabytes().toFloat().coerceIn(512f, maxRam)
+        val rawInitialRam = wizardModel.hardwareConfig.ramMegabytes()
+        val initialSteps = ((rawInitialRam - 512) / 256).coerceAtLeast(0)
+        val initialRam = (512f + initialSteps * 256f).coerceIn(512f, maxRam)
         sliderRam.value = initialRam
 
         val facts = AvfHostFactsProbe.probe(this)

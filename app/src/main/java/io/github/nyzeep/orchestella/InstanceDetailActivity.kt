@@ -306,6 +306,7 @@ class InstanceDetailActivity : AppCompatActivity() {
         )
         instanceTitle.text = "${state.distroDisplayName} Linux ${state.distroVersion}"
         instanceIdText.text = "ID: ${state.instanceId} · ${state.defaultUser}@${state.hostname}"
+        instanceIdText.setOnClickListener { showCredentialsDialog(state.instance) }
         statusBadge.text = state.stateBadgeText
         statusBadge.setTextColor(getColor(state.stateBadgeColorRes))
 
@@ -658,6 +659,20 @@ class InstanceDetailActivity : AppCompatActivity() {
                     }
                 }
             }
+            .show()
+    }
+
+    private fun showCredentialsDialog(instance: InstanceLifecycle.Instance) {
+        val message = "默认主机名：${instance.hostname()}\n用户名：${instance.defaultUser()}\n密码：${instance.guestPassword()}\n\n提示：遵循工单 03 规范，默认主机名为 orchestella，超级用户凭据为 root / 1234。"
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.credentials_title)
+            .setMessage(message)
+            .setPositiveButton(R.string.credentials_copy) { _, _ ->
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("GuestPassword", instance.guestPassword()))
+                Toast.makeText(this, R.string.credentials_copied, Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton(R.string.credentials_close, null)
             .show()
     }
 

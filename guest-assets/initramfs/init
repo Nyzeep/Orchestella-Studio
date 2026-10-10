@@ -134,6 +134,11 @@ if [ -f /opt/orchestella/firstboot.sh ] && [ ! -f /opt/orchestella/.firstboot-do
     touch /opt/orchestella/.firstboot-done
     /opt/orchestella/firstboot.sh >/var/log/firstboot.log 2>&1 &
 fi
+if [ -x /usr/sbin/orchestella-proxy-relay ] && command -v perl >/dev/null 2>&1; then
+    if ! pidof orchestella-proxy-relay >/dev/null 2>&1; then
+        /usr/sbin/orchestella-proxy-relay >/tmp/orchestella-proxy-relay.log 2>&1 &
+    fi
+fi
 exec 3<> /dev/droidlayer-bridge
 exec /usr/sbin/droidlayer-guest-agent \
     --token-file /etc/droidlayer/bridge.token \
@@ -148,7 +153,6 @@ EOF
     fi
 
     cat > "$alpine_root/etc/inittab" <<'EOF'
-::respawn:/usr/sbin/orchestella-proxy-relay
 ::respawn:/usr/sbin/droidlayer-guest-agent-launcher
 ::respawn:/bin/sh
 ::ctrlaltdel:/sbin/reboot
@@ -253,6 +257,8 @@ EOF
 Description=Orchestella Outbound Network Proxy Relay
 After=systemd-udevd.service network.target
 Wants=systemd-udevd.service
+ConditionPathExists=/usr/sbin/orchestella-proxy-relay
+ConditionFileIsExecutable=/usr/bin/perl
 
 [Service]
 Type=simple
@@ -488,8 +494,8 @@ export HTTPS_PROXY="${HTTPS_PROXY:-http://127.0.0.1:8080}"
 export all_proxy="${all_proxy:-socks5://127.0.0.1:1080}"
 export ALL_PROXY="${ALL_PROXY:-socks5://127.0.0.1:1080}"
 
-# Start proxy relay daemon if binary exists and not yet running
-if [ -x /usr/sbin/orchestella-proxy-relay ]; then
+# Start proxy relay daemon if binary exists, perl is available, and not yet running
+if [ -x /usr/sbin/orchestella-proxy-relay ] && command -v perl >/dev/null 2>&1; then
     if ! pidof orchestella-proxy-relay >/dev/null 2>&1; then
         /usr/sbin/orchestella-proxy-relay >/tmp/orchestella-proxy-relay.log 2>&1 &
     fi
@@ -732,6 +738,17 @@ if mount -t ext4 "$ROOT_DEVICE" /newroot 2>/dev/null; then
     fi
     if is_official_debian_systemd_init /newroot; then
         install_official_debian_systemd_flavor /newroot
+    fi
+    # Clean up broken proxy-relay respawn entry in inittab if present (ADR-0010 fix)
+    if [ -f /newroot/etc/inittab ]; then
+        sed -i '/orchestella-proxy-relay/d' /newroot/etc/inittab 2>/dev/null || true
+        sed -i '/droidlayer-proxy-relay/d' /newroot/etc/inittab 2>/dev/null || true
+    fi
+    # Update orchestella-proxy-relay if payload is embedded
+    if [ -f /opt/orchestella/proxy-relay ]; then
+        mkdir -p /newroot/usr/sbin
+        cp -f /opt/orchestella/proxy-relay /newroot/usr/sbin/orchestella-proxy-relay
+        chmod 0755 /newroot/usr/sbin/orchestella-proxy-relay
     fi
     if [ ! -f /newroot/etc/hostname ]; then
         printf 'orchestella\n' > /newroot/etc/hostname
