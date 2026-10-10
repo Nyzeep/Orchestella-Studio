@@ -295,11 +295,14 @@
     <string name="wizard_network_card_desc">检测网络环境并为包管理器预设极速软件源</string>
     <string name="wizard_net_mode">网络连接：%1$s</string>
     <string name="wizard_net_ip">宿主 IP：%1$s</string>
+    <string name="wizard_net_gateway">默认网关：%1$s</string>
     <string name="wizard_net_dns">DNS 服务器：%1$s</string>
     <string name="wizard_net_test_btn">测试网络连通性</string>
-    <string name="wizard_net_test_ok">网络连通正常（HTTP 200 OK）</string>
+    <string name="wizard_net_test_ok">网络就绪（系统已验证可访问互联网）</string>
     <string name="wizard_net_test_failed">网络探测失败，请检查网络</string>
-    <string name="wizard_net_testing">正在探测网络连通性…</string>
+    <string name="wizard_net_testing">正在检测网络状态…</string>
+    <string name="wizard_select_shared_folder">📁 选择外部共享文件夹 (SAF)</string>
+    <string name="wizard_shared_folder_selected">已选择外部目录：%1$s</string>
     <string name="wizard_mirror_selector_label">包管理器镜像软件源：</string>
 
     <string name="wizard_hardware_card_title">vCPU 与 RAM 资源配置</string>

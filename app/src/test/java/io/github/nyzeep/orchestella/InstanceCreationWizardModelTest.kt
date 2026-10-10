@@ -162,6 +162,26 @@ class InstanceCreationWizardModelTest {
     }
 
     @Test
+    fun defaultHardwareAllocationRespectsFiftyPercentRule() {
+        // 8 cores -> 50% = 4 cores
+        assertEquals(4, wizard.hardwareConfig.cpuCores())
+
+        // 2 cores profile -> 50% = 1 core
+        val dualCoreProfile = HostHardwareProfile(
+            2,
+            4L * 1024L * 1024L * 1024L,
+            2L * 1024L * 1024L * 1024L,
+            512L * 1024L * 1024L,
+            false
+        )
+        val dualWizard = InstanceCreationWizardModel(
+            distroId = "alpine",
+            hardwareProfile = dualCoreProfile
+        )
+        assertEquals(1, dualWizard.hardwareConfig.cpuCores())
+    }
+
+    @Test
     fun firstBootScriptGeneration() {
         wizard.setAutoUpdateOnFirstBoot(true)
         assertTrue(wizard.autoUpdateOnFirstBoot)
@@ -171,5 +191,11 @@ class InstanceCreationWizardModelTest {
         assertTrue(script.contains("#!/bin/sh"))
         assertTrue(script.contains("apt-get update && apt-get upgrade -y"))
         assertTrue(script.contains("/var/log/firstboot-update.log"))
+        assertTrue(script.contains("timeout 300s"))
+        assertTrue(script.contains(".firstboot-done"))
+
+        val alpineScript = wizard.generateFirstBootScript("alpine")
+        assertTrue(alpineScript.contains("timeout 120s"))
+        assertTrue(alpineScript.contains("apk update && apk upgrade"))
     }
 }

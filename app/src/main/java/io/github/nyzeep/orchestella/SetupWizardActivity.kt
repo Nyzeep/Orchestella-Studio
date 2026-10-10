@@ -1,10 +1,14 @@
 package io.github.nyzeep.orchestella
 
+import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.StatFs
@@ -17,6 +21,7 @@ import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -27,6 +32,8 @@ import com.google.android.material.color.DynamicColors
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.slider.Slider
 import com.google.android.material.textfield.TextInputEditText
+import io.github.nyzeep.orchestella.runtime.capability.AvfAuthorizationWizardModel
+import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig
 import io.github.nyzeep.orchestella.runtime.distro.DistroManifest
 import io.github.nyzeep.orchestella.runtime.distro.OfficialAlpineCatalog
@@ -91,11 +98,14 @@ class SetupWizardActivity : AppCompatActivity() {
     private lateinit var editCustomDiskGb: TextInputEditText
     private lateinit var txtStorageWarning: TextView
     private lateinit var chkMountSharedDir: MaterialCheckBox
+    private lateinit var btnPickSharedDir: MaterialButton
+    private lateinit var txtSharedFolderPath: TextView
     private lateinit var btnStep1Next: MaterialButton
 
     // Step 2 Views (Network & Mirror)
     private lateinit var txtNetMode: TextView
     private lateinit var txtNetIp: TextView
+    private lateinit var txtNetGateway: TextView
     private lateinit var txtNetDns: TextView
     private lateinit var btnTestNetwork: MaterialButton
     private lateinit var txtNetTestResult: TextView
@@ -107,9 +117,12 @@ class SetupWizardActivity : AppCompatActivity() {
     // Step 3 Views (Hardware)
     private lateinit var txtCfgVcpu: TextView
     private lateinit var sliderVcpu: Slider
+    private lateinit var btnVcpuMinus: MaterialButton
+    private lateinit var btnVcpuPlus: MaterialButton
     private lateinit var txtCfgRam: TextView
     private lateinit var sliderRam: Slider
     private lateinit var badgeCfgZone: TextView
+    private lateinit var btnAvfAuthWizard: MaterialButton
     private lateinit var btnStep3Prev: MaterialButton
     private lateinit var btnStep3Next: MaterialButton
 
@@ -125,6 +138,35 @@ class SetupWizardActivity : AppCompatActivity() {
     private lateinit var txtDownloadSpeedEta: TextView
     private lateinit var txtDownloadMirror: TextView
     private lateinit var btnStep4Prev: MaterialButton
+
+    private var authWizardModel: AvfAuthorizationWizardModel? = null
+    private var avfReadiness: AvfCapabilityEvaluator.AvfReadiness? = null
+
+    private val pickSharedDirLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            try {
+                contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: Exception) {}
+            val displayPath = uri.lastPathSegment ?: uri.path ?: uri.toString()
+            wizardModel.setMountHostSharedDirectory(true)
+            wizardModel.setHostSharedDirectoryPath(displayPath)
+            chkMountSharedDir.isChecked = true
+            txtSharedFolderPath.text = getString(R.string.wizard_shared_folder_selected, displayPath)
+            txtSharedFolderPath.visibility = View.VISIBLE
+            btnPickSharedDir.visibility = View.VISIBLE
+        } else {
+            if (wizardModel.hostSharedDirectoryPath == null) {
+                chkMountSharedDir.isChecked = false
+                txtSharedFolderPath.visibility = View.GONE
+                btnPickSharedDir.visibility = View.GONE
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         DynamicColors.applyIfAvailable(this)
@@ -195,11 +237,14 @@ class SetupWizardActivity : AppCompatActivity() {
         editCustomDiskGb = findViewById(R.id.edit_custom_disk_gb)
         txtStorageWarning = findViewById(R.id.txt_storage_warning)
         chkMountSharedDir = findViewById(R.id.chk_mount_shared_dir)
+        btnPickSharedDir = findViewById(R.id.btn_pick_shared_dir)
+        txtSharedFolderPath = findViewById(R.id.txt_shared_folder_path)
         btnStep1Next = findViewById(R.id.btn_step1_next)
 
         // Step 2
         txtNetMode = findViewById(R.id.txt_net_mode)
         txtNetIp = findViewById(R.id.txt_net_ip)
+        txtNetGateway = findViewById(R.id.txt_net_gateway)
         txtNetDns = findViewById(R.id.txt_net_dns)
         btnTestNetwork = findViewById(R.id.btn_test_network)
         txtNetTestResult = findViewById(R.id.txt_net_test_result)
@@ -211,9 +256,12 @@ class SetupWizardActivity : AppCompatActivity() {
         // Step 3
         txtCfgVcpu = findViewById(R.id.txt_cfg_vcpu)
         sliderVcpu = findViewById(R.id.slider_vcpu)
+        btnVcpuMinus = findViewById(R.id.btn_vcpu_minus)
+        btnVcpuPlus = findViewById(R.id.btn_vcpu_plus)
         txtCfgRam = findViewById(R.id.txt_cfg_ram)
         sliderRam = findViewById(R.id.slider_ram)
         badgeCfgZone = findViewById(R.id.badge_cfg_zone)
+        btnAvfAuthWizard = findViewById(R.id.btn_avf_auth_wizard)
         btnStep3Prev = findViewById(R.id.btn_step3_prev)
         btnStep3Next = findViewById(R.id.btn_step3_next)
 
@@ -260,6 +308,21 @@ class SetupWizardActivity : AppCompatActivity() {
 
         chkMountSharedDir.setOnCheckedChangeListener { _, isChecked ->
             wizardModel.setMountHostSharedDirectory(isChecked)
+            if (isChecked) {
+                if (wizardModel.hostSharedDirectoryPath == null) {
+                    pickSharedDirLauncher.launch(null)
+                } else {
+                    btnPickSharedDir.visibility = View.VISIBLE
+                    txtSharedFolderPath.visibility = View.VISIBLE
+                }
+            } else {
+                wizardModel.setHostSharedDirectoryPath(null)
+                btnPickSharedDir.visibility = View.GONE
+                txtSharedFolderPath.visibility = View.GONE
+            }
+        }
+        btnPickSharedDir.setOnClickListener {
+            pickSharedDirLauncher.launch(null)
         }
 
         btnStep1Next.setOnClickListener {
@@ -285,6 +348,21 @@ class SetupWizardActivity : AppCompatActivity() {
         }
 
         // Step 3 Listeners
+        btnVcpuMinus.setOnClickListener {
+            val newVal = (sliderVcpu.value - 1f).coerceAtLeast(sliderVcpu.valueFrom)
+            sliderVcpu.value = newVal
+            wizardModel.updateCpuCores(newVal.toInt())
+            updateHardwareLabels()
+        }
+        btnVcpuPlus.setOnClickListener {
+            val newVal = (sliderVcpu.value + 1f).coerceAtMost(sliderVcpu.valueTo)
+            sliderVcpu.value = newVal
+            wizardModel.updateCpuCores(newVal.toInt())
+            updateHardwareLabels()
+        }
+        btnAvfAuthWizard.setOnClickListener {
+            showAvfAuthorizationWizard()
+        }
         sliderVcpu.addOnChangeListener { _, value, fromUser ->
             if (fromUser) {
                 wizardModel.updateCpuCores(value.toInt())
@@ -408,15 +486,30 @@ class SetupWizardActivity : AppCompatActivity() {
 
     private fun bindStep2Network() {
         val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-        val isWifi: Boolean
-        val isCellular: Boolean
-        val isConnected: Boolean
+        var isWifi = false
+        var isCellular = false
+        var isConnected = false
+        var dnsList = "10.0.2.3, 8.8.8.8"
+        var gateway = "10.0.2.2 (QEMU 默认)"
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             val net = cm?.activeNetwork
             val caps = cm?.getNetworkCapabilities(net)
             isWifi = caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
             isCellular = caps?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true
             isConnected = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+
+            val linkProps = net?.let { cm.getLinkProperties(it) }
+            if (linkProps != null) {
+                val detectedDns = linkProps.dnsServers.mapNotNull { it.hostAddress }.joinToString(", ")
+                if (detectedDns.isNotBlank()) {
+                    dnsList = detectedDns
+                }
+                val detectedGw = linkProps.routes.firstOrNull { it.isDefaultRoute && it.gateway != null }?.gateway?.hostAddress
+                if (!detectedGw.isNullOrBlank()) {
+                    gateway = detectedGw
+                }
+            }
         } else {
             @Suppress("DEPRECATION")
             val info = cm?.activeNetworkInfo
@@ -433,7 +526,8 @@ class SetupWizardActivity : AppCompatActivity() {
         }
         txtNetMode.text = getString(R.string.wizard_net_mode, mode)
         txtNetIp.text = getString(R.string.wizard_net_ip, getLocalIpAddress() ?: "127.0.0.1")
-        txtNetDns.text = getString(R.string.wizard_net_dns, "10.0.2.3, 8.8.8.8")
+        txtNetGateway.text = getString(R.string.wizard_net_gateway, gateway)
+        txtNetDns.text = getString(R.string.wizard_net_dns, dnsList)
 
         // Setup Mirror Spinner
         val sources = DistroMirrorProvisioner.MirrorSource.values()
@@ -476,13 +570,16 @@ class SetupWizardActivity : AppCompatActivity() {
         backgroundExecutor.execute {
             var ok = false
             try {
-                val url = URL("https://mirrors.tuna.tsinghua.edu.cn")
-                val conn = url.openConnection() as HttpURLConnection
-                conn.connectTimeout = 3000
-                conn.readTimeout = 3000
-                conn.requestMethod = "HEAD"
-                val code = conn.responseCode
-                ok = code in 200..399
+                val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+                val net = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) cm?.activeNetwork else null
+                val caps = net?.let { cm?.getNetworkCapabilities(it) }
+                ok = if (caps != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                } else {
+                    @Suppress("DEPRECATION")
+                    cm?.activeNetworkInfo?.isConnected == true
+                }
             } catch (_: Exception) {
                 ok = false
             }
@@ -518,6 +615,16 @@ class SetupWizardActivity : AppCompatActivity() {
         sliderRam.stepSize = 256f
         val initialRam = wizardModel.hardwareConfig.ramMegabytes().toFloat().coerceIn(512f, maxRam)
         sliderRam.value = initialRam
+
+        val facts = AvfHostFactsProbe.probe(this)
+        val readiness = AvfCapabilityEvaluator.evaluate(facts)
+        avfReadiness = readiness
+        if (readiness.status() == AvfCapabilityEvaluator.AvfStatus.NEEDS_AUTHORIZATION) {
+            btnAvfAuthWizard.visibility = View.VISIBLE
+            authWizardModel = AvfAuthorizationWizardModel.fromAssessment(readiness)
+        } else {
+            btnAvfAuthWizard.visibility = View.GONE
+        }
 
         updateHardwareLabels()
     }
@@ -699,23 +806,25 @@ class SetupWizardActivity : AppCompatActivity() {
                     creator.create(input, manifest.sizeBytes(), wizardModel.hardwareConfig)
                 }
 
-                // Save injected mirror configuration and firstboot script into instance store
-                val mirrorConfigContent = DistroMirrorProvisioner.generateMirrorConfig(
+                // Save injected mirror configuration and firstboot script into instance store via FirstBootProvisionPipeline
+                val payload = FirstBootProvisionPipeline.create(
                     wizardModel.distroId,
-                    wizardModel.distroVersion,
-                    wizardModel.selectedMirror
+                    wizardModel.selectedMirror,
+                    wizardModel.autoUpdateOnFirstBoot
                 )
-                val mirrorConfigFile = instancesDir.resolve("${createdInstance.id()}.mirror")
-                Files.write(mirrorConfigFile, mirrorConfigContent.toByteArray(StandardCharsets.UTF_8))
-
-                if (wizardModel.autoUpdateOnFirstBoot) {
-                    val scriptContent = wizardModel.generateFirstBootScript(wizardModel.distroId)
+                if (payload.hasMirrorConfig()) {
+                    val mirrorConfigFile = instancesDir.resolve("${createdInstance.id()}.mirror")
+                    Files.write(mirrorConfigFile, payload.mirrorConfigFileContent())
+                }
+                if (payload.hasFirstBootScript()) {
                     val firstbootFile = instancesDir.resolve("${createdInstance.id()}.firstboot")
-                    Files.write(firstbootFile, scriptContent.toByteArray(StandardCharsets.UTF_8))
+                    Files.write(firstbootFile, payload.firstBootScript())
                 }
 
-                // Mark onboarding completed
-                settingsManager.isOnboardingCompleted = true
+                // Mark onboarding completed if not already set
+                if (!settingsManager.isOnboardingCompleted) {
+                    settingsManager.isOnboardingCompleted = true
+                }
 
                 runOnUiThread {
                     Toast.makeText(this, R.string.wizard_init_success, Toast.LENGTH_LONG).show()
@@ -743,6 +852,81 @@ class SetupWizardActivity : AppCompatActivity() {
                     ).show()
                 }
             }
+        }
+    }
+
+    // --- AVF Authorization Assistance Dialogs (ADR-0003 & Ticket 53) ---
+    private fun showAvfAuthorizationWizard() {
+        val model = authWizardModel ?: return
+        authWizardModel = model.start()
+        showShizukuStep()
+    }
+
+    private fun showShizukuStep() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.wizard_title)
+            .setMessage(R.string.wizard_shizuku_steps)
+            .setPositiveButton(R.string.wizard_authorization_done) { _, _ -> recheckAuthorization() }
+            .setNeutralButton(R.string.wizard_use_adb) { _, _ ->
+                authWizardModel = authWizardModel?.chooseAdbFallback()
+                showAdbStep()
+            }
+            .setNegativeButton(R.string.wizard_later) { _, _ ->
+                authWizardModel = authWizardModel?.decline()
+            }
+            .show()
+    }
+
+    private fun showAdbStep() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.wizard_title)
+            .setMessage(
+                getString(
+                    R.string.wizard_adb_steps,
+                    AvfAuthorizationWizardModel.adbGrantCommand(packageName)
+                )
+            )
+            .setPositiveButton(R.string.wizard_authorization_done) { _, _ -> recheckAuthorization() }
+            .setNeutralButton(R.string.wizard_copy_command) { _, _ ->
+                copyAdbCommand()
+                showAdbStep()
+            }
+            .setNegativeButton(R.string.wizard_back_to_shizuku) { _, _ ->
+                authWizardModel = authWizardModel?.backToShizuku()
+                showShizukuStep()
+            }
+            .show()
+    }
+
+    private fun copyAdbCommand() {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(
+            ClipData.newPlainText(
+                getString(R.string.wizard_copy_command),
+                AvfAuthorizationWizardModel.adbGrantCommand(packageName)
+            )
+        )
+        Toast.makeText(this, R.string.wizard_command_copied, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun recheckAuthorization() {
+        val facts = AvfHostFactsProbe.probe(this)
+        val granted = facts.manageVirtualMachinePermission()
+        authWizardModel = authWizardModel?.confirmAuthorized(granted)
+        if (granted) {
+            avfReadiness = AvfCapabilityEvaluator.evaluate(facts)
+            bindStep3Hardware()
+            AlertDialog.Builder(this)
+                .setTitle(R.string.wizard_authorized_success_title)
+                .setMessage(R.string.wizard_authorized_success_msg)
+                .setPositiveButton(R.string.credentials_close, null)
+                .show()
+        } else {
+            AlertDialog.Builder(this)
+                .setTitle(R.string.wizard_vendor_failure_title)
+                .setMessage(R.string.wizard_vendor_failure_steps)
+                .setPositiveButton(R.string.credentials_close, null)
+                .show()
         }
     }
 
