@@ -34,11 +34,37 @@ tasks.register<JavaExec>("distroFlavorTest") {
     mainClass.set("io.github.nyzeep.orchestella.runtime.distro.DistroFlavorTest")
 }
 
-tasks.named("check") {
-    dependsOn(
-        "distroManifestContractTest",
-        "officialAlpineCatalogTest",
-        "officialDebianCatalogTest",
-        "distroFlavorTest"
-    )
+tasks.register<JavaExec>("packageManagerTypeTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.distro.PackageManagerTypeTest")
 }
+
+tasks.register<JavaExec>("distroCatalogRegistryTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.distro.DistroCatalogRegistryTest")
+}
+
+tasks.register<JavaExec>("alpineEssentialPackageSuiteTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.distro.AlpineEssentialPackageSuiteTest")
+}
+
+val allCustomTestTasks = listOf(
+    "distroManifestContractTest",
+    "officialAlpineCatalogTest",
+    "officialDebianCatalogTest",
+    "distroFlavorTest",
+    "packageManagerTypeTest",
+    "distroCatalogRegistryTest",
+    "alpineEssentialPackageSuiteTest"
+)
+
+tasks.named<Test>("test") {
+    dependsOn(allCustomTestTasks)
+}
+
+tasks.named("check") {
+    dependsOn(allCustomTestTasks)
+}
+
+
