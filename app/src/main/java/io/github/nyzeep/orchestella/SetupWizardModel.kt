@@ -149,6 +149,34 @@ class SetupWizardModel(
     }
 
 
+    var userConfig: io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig =
+        io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig.defaultRoot()
+        private set
+
+    var isCustomUserEnabled: Boolean = false
+        private set
+
+    fun enableCustomUser(username: String, password: String, hasSudo: Boolean, hostname: String = "orchestella"): Boolean {
+        if (!io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig.isValidUsername(username)) {
+            return false
+        }
+        val safeHostname = if (io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig.isValidHostname(hostname)) {
+            hostname
+        } else {
+            "orchestella"
+        }
+        userConfig = io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig(
+            username, password, hasSudo, safeHostname
+        )
+        isCustomUserEnabled = true
+        return true
+    }
+
+    fun skipToDefaultRoot() {
+        userConfig = io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig.defaultRoot()
+        isCustomUserEnabled = false
+    }
+
     var hardwareConfig: VmHardwareConfig = initialConfig ?: hardwareProfile.createRecommendedHardwareConfig()
         private set
 
