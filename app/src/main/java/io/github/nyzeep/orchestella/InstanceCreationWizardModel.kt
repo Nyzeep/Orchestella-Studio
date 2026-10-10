@@ -70,7 +70,7 @@ class InstanceCreationWizardModel(
     var hostSharedDirectoryPath: String? = null
         private set
 
-    var selectedMirror: DistroMirrorProvisioner.MirrorSource = DistroMirrorProvisioner.MirrorSource.OFFICIAL
+    var selectedMirror: DistroMirrorProvisioner.MirrorSource = DistroMirrorProvisioner.MirrorSource.MULTI_TIER
         private set
 
     var hardwareConfig: VmHardwareConfig = run {
@@ -217,9 +217,8 @@ class InstanceCreationWizardModel(
         val id = targetDistro.trim().lowercase(Locale.ROOT)
         return when (id) {
             "debian", "ubuntu", "kali" -> "DEBIAN_FRONTEND=noninteractive apt-get update && apt-get upgrade -y"
-            "alpine" -> "apk update && apk upgrade"
             "arch" -> "pacman -Sy --noconfirm && pacman -Su --noconfirm"
-            "fedora" -> "dnf upgrade -y --refresh"
+            "fedora", "almalinux", "rocky" -> "dnf upgrade -y --refresh"
             "opensuse" -> "zypper --non-interactive refresh && zypper --non-interactive update -y"
             else -> "echo 'No update command configured'"
         }
@@ -228,8 +227,7 @@ class InstanceCreationWizardModel(
     fun resolveUpdateTimeoutSeconds(targetDistro: String = distroId): Long {
         val id = targetDistro.trim().lowercase(Locale.ROOT)
         return when (id) {
-            "alpine" -> 120L
-            "fedora" -> 360L
+            "fedora", "almalinux", "rocky" -> 360L
             "debian", "ubuntu", "kali", "arch", "opensuse" -> 300L
             else -> 300L
         }

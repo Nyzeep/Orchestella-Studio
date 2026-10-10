@@ -186,47 +186,141 @@
 
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- 2. Quick Create Section -->
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="8dp"
-                android:text="@string/quick_create_title"
-                android:textSize="14sp"
-                android:textStyle="bold"
-                android:textColor="?attr/colorOnBackground" />
-
-            <LinearLayout
+            <!-- 2. Linux Instance Creation Entrance (7 Official Distros) -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/card_create_linux_main"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginBottom="12dp">
+                android:layout_marginBottom="16dp"
+                android:clickable="true"
+                android:focusable="true"
+                app:cardCornerRadius="20dp"
+                app:cardElevation="2dp"
+                app:strokeWidth="1dp"
+                app:strokeColor="?attr/colorOutlineVariant"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer">
 
-                <com.google.android.material.card.MaterialCardView
-                    android:id="@+id/card_create_ubuntu"
-                    android:layout_width="0dp"
+                <LinearLayout
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginEnd="6dp"
-                    android:clickable="true"
-                    android:focusable="true"
-                    app:cardCornerRadius="16dp"
-                    app:cardElevation="1dp"
-                    app:strokeWidth="1dp"
-                    app:strokeColor="?attr/colorOutlineVariant"
-                    app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
+                    android:orientation="vertical"
+                    android:padding="18dp">
 
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="14dp">
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <ImageView
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:src="@drawable/ic_distro_ubuntu"
+                            android:contentDescription="Linux Distros" />
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="12dp"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="创建 Linux 虚拟机实例"
+                                android:textSize="17sp"
+                                android:textStyle="bold"
+                                android:textColor="?attr/colorOnSurface" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="支持 Ubuntu LTS, Debian, Fedora, Arch, openSUSE, AlmaLinux, Rocky"
+                                android:textSize="12sp"
+                                android:textColor="?attr/colorPrimary" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="四级向导式创建流程：官方发行版阵容 · 版本分支 · 多层容灾镜像源 · 硬件规格调优。"
+                        android:textSize="12sp"
+                        android:textColor="?attr/colorOutline" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_create_linux_instance"
+                        style="@style/Widget.Material3.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:minHeight="48dp"
+                        app:cornerRadius="12dp"
+                        android:layout_marginTop="12dp"
+                        android:text="🚀 选择发行版并启动创建向导"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- 3. Quick Create Section (7 Official Distros Carousel) -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="8dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="官方发行版阵容 (7 大主流)"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="?attr/colorOnBackground" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="左右滑动查看 ➔"
+                    android:textSize="11sp"
+                    android:textColor="?attr/colorPrimary" />
+            </LinearLayout>
+
+            <HorizontalScrollView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:scrollbars="none"
+                android:clipToPadding="false"
+                android:layout_marginBottom="16dp">
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <!-- 1. Ubuntu -->
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/card_create_ubuntu"
+                        android:layout_width="140dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="8dp"
+                        android:clickable="true"
+                        android:focusable="true"
+                        app:cardCornerRadius="20dp"
+                        app:cardElevation="2dp"
+                        app:strokeWidth="1dp"
+                        app:strokeColor="?attr/colorOutlineVariant"
+                        app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
 
                         <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:orientation="horizontal"
-                            android:gravity="center_vertical">
+                            android:orientation="vertical"
+                            android:padding="12dp">
 
                             <ImageView
                                 android:layout_width="32dp"
@@ -237,60 +331,53 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:layout_marginStart="8dp"
-                                android:text="Ubuntu"
-                                android:textSize="15sp"
+                                android:layout_marginTop="6dp"
+                                android:text="Ubuntu LTS"
+                                android:textSize="14sp"
                                 android:textStyle="bold"
                                 android:textColor="?attr/colorOnSurface" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="24.04 · 云原生"
+                                android:textSize="11sp"
+                                android:textColor="?attr/colorOutline" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/create_ubuntu"
+                                style="@style/Widget.Material3.Button.TonalButton"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:minHeight="40dp"
+                                app:cornerRadius="10dp"
+                                android:layout_marginTop="8dp"
+                                android:text="快速创建"
+                                android:textSize="11sp"
+                                android:textStyle="bold" />
                         </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
 
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
-                            android:text="@string/create_ubuntu_desc"
-                            android:textSize="11sp"
-                            android:textColor="?attr/colorOutline" />
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/create_ubuntu"
-                            style="@style/Widget.Material3.Button.TonalButton"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:minHeight="48dp"
-                            app:cornerRadius="12dp"
-                            android:layout_marginTop="10dp"
-                            android:text="@string/create_ubuntu"
-                            android:textSize="13sp"
-                            android:textStyle="bold" />
-                    </LinearLayout>
-                </com.google.android.material.card.MaterialCardView>
-
-                <com.google.android.material.card.MaterialCardView
-                    android:id="@+id/card_create_debian"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="6dp"
-                    android:clickable="true"
-                    android:focusable="true"
-                    app:cardCornerRadius="16dp"
-                    app:cardElevation="1dp"
-                    app:strokeWidth="1dp"
-                    app:strokeColor="?attr/colorOutlineVariant"
-                    app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
+                    <!-- 2. Debian -->
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/card_create_debian"
+                        android:layout_width="140dp"
                         android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="14dp">
+                        android:layout_marginEnd="8dp"
+                        android:clickable="true"
+                        android:focusable="true"
+                        app:cardCornerRadius="20dp"
+                        app:cardElevation="2dp"
+                        app:strokeWidth="1dp"
+                        app:strokeColor="?attr/colorOutlineVariant"
+                        app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
 
                         <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:orientation="horizontal"
-                            android:gravity="center_vertical">
+                            android:orientation="vertical"
+                            android:padding="12dp">
 
                             <ImageView
                                 android:layout_width="32dp"
@@ -301,36 +388,320 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:layout_marginStart="8dp"
-                                android:text="Debian"
-                                android:textSize="15sp"
+                                android:layout_marginTop="6dp"
+                                android:text="Debian Stable"
+                                android:textSize="14sp"
                                 android:textStyle="bold"
                                 android:textColor="?attr/colorOnSurface" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="13 · 稳如磐石"
+                                android:textSize="11sp"
+                                android:textColor="?attr/colorOutline" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/create_debian"
+                                style="@style/Widget.Material3.Button.TonalButton"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:minHeight="40dp"
+                                app:cornerRadius="10dp"
+                                android:layout_marginTop="8dp"
+                                android:text="快速创建"
+                                android:textSize="11sp"
+                                android:textStyle="bold" />
                         </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
 
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
-                            android:text="@string/create_debian_desc"
-                            android:textSize="11sp"
-                            android:textColor="?attr/colorOutline" />
+                    <!-- 3. Fedora -->
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/card_create_fedora"
+                        android:layout_width="140dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="8dp"
+                        android:clickable="true"
+                        android:focusable="true"
+                        app:cardCornerRadius="20dp"
+                        app:cardElevation="2dp"
+                        app:strokeWidth="1dp"
+                        app:strokeColor="?attr/colorOutlineVariant"
+                        app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
 
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/create_debian"
-                            style="@style/Widget.Material3.Button.TonalButton"
+                        <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:minHeight="48dp"
-                            app:cornerRadius="12dp"
-                            android:layout_marginTop="10dp"
-                            android:text="@string/create_debian"
-                            android:textSize="13sp"
-                            android:textStyle="bold" />
-                    </LinearLayout>
-                </com.google.android.material.card.MaterialCardView>
+                            android:orientation="vertical"
+                            android:padding="12dp">
 
-            </LinearLayout>
+                            <ImageView
+                                android:layout_width="32dp"
+                                android:layout_height="32dp"
+                                android:src="@drawable/ic_distro_fedora"
+                                android:contentDescription="Fedora" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="6dp"
+                                android:text="Fedora"
+                                android:textSize="14sp"
+                                android:textStyle="bold"
+                                android:textColor="?attr/colorOnSurface" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="41 · 前沿技术"
+                                android:textSize="11sp"
+                                android:textColor="?attr/colorOutline" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/create_fedora"
+                                style="@style/Widget.Material3.Button.TonalButton"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:minHeight="40dp"
+                                app:cornerRadius="10dp"
+                                android:layout_marginTop="8dp"
+                                android:text="快速创建"
+                                android:textSize="11sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
+
+                    <!-- 4. Arch Linux -->
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/card_create_arch"
+                        android:layout_width="140dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="8dp"
+                        android:clickable="true"
+                        android:focusable="true"
+                        app:cardCornerRadius="20dp"
+                        app:cardElevation="2dp"
+                        app:strokeWidth="1dp"
+                        app:strokeColor="?attr/colorOutlineVariant"
+                        app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:padding="12dp">
+
+                            <ImageView
+                                android:layout_width="32dp"
+                                android:layout_height="32dp"
+                                android:src="@drawable/ic_distro_arch"
+                                android:contentDescription="Arch" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="6dp"
+                                android:text="Arch Linux"
+                                android:textSize="14sp"
+                                android:textStyle="bold"
+                                android:textColor="?attr/colorOnSurface" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="Rolling · 极客"
+                                android:textSize="11sp"
+                                android:textColor="?attr/colorOutline" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/create_arch"
+                                style="@style/Widget.Material3.Button.TonalButton"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:minHeight="40dp"
+                                app:cornerRadius="10dp"
+                                android:layout_marginTop="8dp"
+                                android:text="快速创建"
+                                android:textSize="11sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
+
+                    <!-- 5. openSUSE -->
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/card_create_opensuse"
+                        android:layout_width="140dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="8dp"
+                        android:clickable="true"
+                        android:focusable="true"
+                        app:cardCornerRadius="20dp"
+                        app:cardElevation="2dp"
+                        app:strokeWidth="1dp"
+                        app:strokeColor="?attr/colorOutlineVariant"
+                        app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:padding="12dp">
+
+                            <ImageView
+                                android:layout_width="32dp"
+                                android:layout_height="32dp"
+                                android:src="@drawable/ic_distro_opensuse"
+                                android:contentDescription="openSUSE" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="6dp"
+                                android:text="openSUSE"
+                                android:textSize="14sp"
+                                android:textStyle="bold"
+                                android:textColor="?attr/colorOnSurface" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="Tumbleweed · 快照"
+                                android:textSize="11sp"
+                                android:textColor="?attr/colorOutline" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/create_opensuse"
+                                style="@style/Widget.Material3.Button.TonalButton"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:minHeight="40dp"
+                                app:cornerRadius="10dp"
+                                android:layout_marginTop="8dp"
+                                android:text="快速创建"
+                                android:textSize="11sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
+
+                    <!-- 6. AlmaLinux -->
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/card_create_almalinux"
+                        android:layout_width="140dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="8dp"
+                        android:clickable="true"
+                        android:focusable="true"
+                        app:cardCornerRadius="20dp"
+                        app:cardElevation="2dp"
+                        app:strokeWidth="1dp"
+                        app:strokeColor="?attr/colorOutlineVariant"
+                        app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:padding="12dp">
+
+                            <ImageView
+                                android:layout_width="32dp"
+                                android:layout_height="32dp"
+                                android:src="@drawable/ic_distro_almalinux"
+                                android:contentDescription="AlmaLinux" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="6dp"
+                                android:text="AlmaLinux"
+                                android:textSize="14sp"
+                                android:textStyle="bold"
+                                android:textColor="?attr/colorOnSurface" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="9.5 · 企业级 RHEL"
+                                android:textSize="11sp"
+                                android:textColor="?attr/colorOutline" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/create_almalinux"
+                                style="@style/Widget.Material3.Button.TonalButton"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:minHeight="40dp"
+                                app:cornerRadius="10dp"
+                                android:layout_marginTop="8dp"
+                                android:text="快速创建"
+                                android:textSize="11sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
+
+                    <!-- 7. Rocky Linux -->
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/card_create_rocky"
+                        android:layout_width="140dp"
+                        android:layout_height="wrap_content"
+                        android:clickable="true"
+                        android:focusable="true"
+                        app:cardCornerRadius="20dp"
+                        app:cardElevation="2dp"
+                        app:strokeWidth="1dp"
+                        app:strokeColor="?attr/colorOutlineVariant"
+                        app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:padding="12dp">
+
+                            <ImageView
+                                android:layout_width="32dp"
+                                android:layout_height="32dp"
+                                android:src="@drawable/ic_distro_rocky"
+                                android:contentDescription="Rocky" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="6dp"
+                                android:text="Rocky Linux"
+                                android:textSize="14sp"
+                                android:textStyle="bold"
+                                android:textColor="?attr/colorOnSurface" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="9.5 · 生产级稳定"
+                                android:textSize="11sp"
+                                android:textColor="?attr/colorOutline" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/create_rocky"
+                                style="@style/Widget.Material3.Button.TonalButton"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:minHeight="40dp"
+                                app:cornerRadius="10dp"
+                                android:layout_marginTop="8dp"
+                                android:text="快速创建"
+                                android:textSize="11sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
+
+                </LinearLayout>
+            </HorizontalScrollView>
 
             <ProgressBar
                 android:id="@+id/create_progress"

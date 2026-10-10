@@ -34,12 +34,17 @@
 
         <activity
             android:name=".SetupWizardActivity"
-            android:exported="false"
+            android:exported="true"
             android:theme="@style/Theme.Orchestella" />
 
         <activity
             android:name=".InstanceDetailActivity"
             android:exported="false"
+            android:theme="@style/Theme.Orchestella" />
+
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="true"
             android:theme="@style/Theme.Orchestella" />
 
         <activity

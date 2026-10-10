@@ -97,8 +97,14 @@ public final class AnsiEscapeParser {
                     if (finalChar == 'm') {
                         // SGR sequence
                         handleSgr(params);
+                    } else if (finalChar == 'J') {
+                        // Erase in Display (clear screen):
+                        // 2J = clear entire screen, 3J = clear scrollback buffer
+                        if (params.isEmpty() || params.contains("2") || params.contains("3")) {
+                            spans.add(TerminalSpan.clearScreen());
+                        }
                     }
-                    // Non-SGR CSI commands (e.g., 'H', 'J', 'K', 'A', etc.) are stripped
+                    // Non-SGR CSI commands (e.g., 'H', 'K', 'A', etc.) are stripped
                     i = csiEnd + 1;
                     continue;
 
@@ -121,6 +127,14 @@ public final class AnsiEscapeParser {
                         break;
                     }
                     i += 3;
+                    continue;
+
+                } else if (next == 'c') {
+                    // Full Reset (RIS: \033c)
+                    flushText(textBuffer, spans);
+                    spans.add(TerminalSpan.clearScreen());
+                    resetStyles();
+                    i += 2;
                     continue;
 
                 } else {

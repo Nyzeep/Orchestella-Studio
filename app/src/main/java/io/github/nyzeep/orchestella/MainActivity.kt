@@ -161,14 +161,17 @@ class MainActivity : AppCompatActivity() {
         window.navigationBarColor = Color.TRANSPARENT
 
         val rootContainer = findViewById<View>(R.id.root_container)
+        val density = resources.displayMetrics.density
+        val baseHorizontalPad = (16 * density).toInt()
+        val baseBottomPad = (24 * density).toInt()
         ViewCompat.setOnApplyWindowInsetsListener(rootContainer) { v, insets ->
             val statusBarInsets = insets.getInsets(WindowInsetsCompat.Type.statusBars())
             val navBarInsets = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
             v.setPadding(
-                statusBarInsets.left,
-                statusBarInsets.top,
-                statusBarInsets.right,
-                navBarInsets.bottom
+                baseHorizontalPad + statusBarInsets.left,
+                statusBarInsets.top + (8 * density).toInt(),
+                baseHorizontalPad + statusBarInsets.right,
+                navBarInsets.bottom + baseBottomPad
             )
             insets
         }
@@ -198,7 +201,9 @@ class MainActivity : AppCompatActivity() {
         instanceStore = InstanceLifecycle.FileStore(filesDir.toPath().resolve("instances"))
         reconcileOrphanInstances()
 
-        settingsButton.setOnClickListener { showSettingsDialog() }
+        settingsButton.setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }
         val canCreate = assessment.canCreateFullLinuxInstance()
         setCreateButtonsEnabled(canCreate)
         if (!canCreate) {
@@ -208,10 +213,22 @@ class MainActivity : AppCompatActivity() {
             refusalBanner.visibility = View.GONE
         }
 
+        findViewById<View>(R.id.card_create_linux_main)?.setOnClickListener { launchCreationWizard("ubuntu") }
+        findViewById<View>(R.id.btn_create_linux_instance)?.setOnClickListener { launchCreationWizard("ubuntu") }
         createUbuntuButton.setOnClickListener { launchCreationWizard("ubuntu") }
         createDebianButton.setOnClickListener { launchCreationWizard("debian") }
-        findViewById<View>(R.id.card_create_ubuntu).setOnClickListener { launchCreationWizard("ubuntu") }
-        findViewById<View>(R.id.card_create_debian).setOnClickListener { launchCreationWizard("debian") }
+        findViewById<View>(R.id.card_create_ubuntu)?.setOnClickListener { launchCreationWizard("ubuntu") }
+        findViewById<View>(R.id.card_create_debian)?.setOnClickListener { launchCreationWizard("debian") }
+        findViewById<View>(R.id.card_create_fedora)?.setOnClickListener { launchCreationWizard("fedora") }
+        findViewById<View>(R.id.create_fedora)?.setOnClickListener { launchCreationWizard("fedora") }
+        findViewById<View>(R.id.card_create_arch)?.setOnClickListener { launchCreationWizard("arch") }
+        findViewById<View>(R.id.create_arch)?.setOnClickListener { launchCreationWizard("arch") }
+        findViewById<View>(R.id.card_create_opensuse)?.setOnClickListener { launchCreationWizard("opensuse") }
+        findViewById<View>(R.id.create_opensuse)?.setOnClickListener { launchCreationWizard("opensuse") }
+        findViewById<View>(R.id.card_create_almalinux)?.setOnClickListener { launchCreationWizard("almalinux") }
+        findViewById<View>(R.id.create_almalinux)?.setOnClickListener { launchCreationWizard("almalinux") }
+        findViewById<View>(R.id.card_create_rocky)?.setOnClickListener { launchCreationWizard("rocky") }
+        findViewById<View>(R.id.create_rocky)?.setOnClickListener { launchCreationWizard("rocky") }
 
         upgradeAuthorizationButton.setOnClickListener { showAvfAuthorizationWizard() }
         findViewById<View>(R.id.btn_import_instance)?.setOnClickListener {
@@ -267,6 +284,11 @@ class MainActivity : AppCompatActivity() {
     private fun setCreateButtonsEnabled(enabled: Boolean) {
         if (::createUbuntuButton.isInitialized) createUbuntuButton.isEnabled = enabled
         if (::createDebianButton.isInitialized) createDebianButton.isEnabled = enabled
+        findViewById<View>(R.id.create_fedora)?.isEnabled = enabled
+        findViewById<View>(R.id.create_arch)?.isEnabled = enabled
+        findViewById<View>(R.id.create_opensuse)?.isEnabled = enabled
+        findViewById<View>(R.id.create_almalinux)?.isEnabled = enabled
+        findViewById<View>(R.id.create_rocky)?.isEnabled = enabled
     }
 
     private fun currentBadge(assessment: DeviceCapabilityEvaluator.Assessment): String {

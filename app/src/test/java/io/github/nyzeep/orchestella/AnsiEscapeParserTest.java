@@ -245,4 +245,33 @@ public final class AnsiEscapeParserTest {
         assertEquals("RedAfter", partial2.get(0).getText());
         assertEquals(Integer.valueOf(DraculaPalette.COLOR_RED), partial2.get(0).getForegroundColor());
     }
+
+    @Test
+    public void testClearScreenSequencesParsedProperly() {
+        // \033[2J clears screen
+        List<TerminalSpan> spans = parser.parse("\u001b[2J");
+        assertEquals(1, spans.size());
+        assertTrue(spans.get(0).isClearScreen());
+
+        // \033[3J clears scrollback
+        parser.reset();
+        spans = parser.parse("\u001b[3J");
+        assertEquals(1, spans.size());
+        assertTrue(spans.get(0).isClearScreen());
+
+        // Typical Linux clear command: \033[H\033[2J\033[3J followed by shell prompt
+        parser.reset();
+        spans = parser.parse("\u001b[H\u001b[2J\u001b[3Jroot@orchestella:~# ");
+        assertEquals(3, spans.size());
+        assertTrue(spans.get(0).isClearScreen());
+        assertTrue(spans.get(1).isClearScreen());
+        assertEquals("root@orchestella:~# ", spans.get(2).getText());
+
+        // RIS reset \033c
+        parser.reset();
+        spans = parser.parse("\u001bcPrompt");
+        assertEquals(2, spans.size());
+        assertTrue(spans.get(0).isClearScreen());
+        assertEquals("Prompt", spans.get(1).getText());
+    }
 }

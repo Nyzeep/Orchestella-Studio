@@ -23,24 +23,49 @@
             android:paddingTop="20dp"
             android:paddingBottom="28dp">
 
-            <!-- Wizard Header -->
-            <TextView
-                android:id="@+id/wizard_title"
-                android:layout_width="wrap_content"
+            <!-- Wizard Top Header with Skip Button -->
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/wizard_creation_title"
-                android:textSize="26sp"
-                android:textStyle="bold"
-                android:textColor="?attr/colorOnBackground" />
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
 
-            <TextView
-                android:id="@+id/wizard_subtitle"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:text="@string/wizard_creation_subtitle"
-                android:textSize="13sp"
-                android:textColor="?attr/colorOutline" />
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/wizard_title"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/wizard_creation_title"
+                        android:textSize="24sp"
+                        android:textStyle="bold"
+                        android:textColor="?attr/colorOnBackground" />
+
+                    <TextView
+                        android:id="@+id/wizard_subtitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="@string/wizard_creation_subtitle"
+                        android:textSize="12sp"
+                        android:textColor="?attr/colorOutline" />
+                </LinearLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_wizard_skip"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    app:cornerRadius="12dp"
+                    android:text="跳过引导"
+                    android:textSize="12sp"
+                    android:textColor="?attr/colorPrimary" />
+            </LinearLayout>
 
             <!-- Step Indicator Badge -->
             <TextView
@@ -69,13 +94,98 @@
                 android:orientation="vertical"
                 android:visibility="visible">
 
-                <!-- Distro Selection Card -->
+                <!-- 1. Realtime AVF Hardware Virtualization Probe Card -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/card_wizard_avf_detection"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="14dp"
+                    app:cardCornerRadius="20dp"
+                    app:cardElevation="1dp"
+                    app:strokeWidth="1dp"
+                    app:strokeColor="?attr/colorOutlineVariant"
+                    app:cardBackgroundColor="?attr/colorSurfaceContainer">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="⚡ AVF 硬件虚拟化检测"
+                                android:textSize="15sp"
+                                android:textStyle="bold"
+                                android:textColor="?attr/colorOnSurface" />
+
+                            <TextView
+                                android:id="@+id/txt_wizard_avf_badge"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:background="@drawable/bg_status_badge"
+                                android:paddingStart="8dp"
+                                android:paddingTop="3dp"
+                                android:paddingEnd="8dp"
+                                android:paddingBottom="3dp"
+                                android:text="检测中…"
+                                android:textSize="11sp"
+                                android:textStyle="bold"
+                                android:textColor="?attr/colorPrimary" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/txt_wizard_avf_details"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:textSize="12sp"
+                            android:textColor="?attr/colorOutline" />
+
+                        <LinearLayout
+                            android:id="@+id/layout_wizard_avf_fallback"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:background="@drawable/bg_status_badge"
+                            android:padding="8dp"
+                            android:orientation="vertical"
+                            android:visibility="gone">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="💡 平滑降级方案说明"
+                                android:textSize="12sp"
+                                android:textStyle="bold"
+                                android:textColor="?attr/colorPrimary" />
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="当前宿主设备未开放硬件虚拟化，平台已无缝降级采用 QEMU TCG 仿真引擎。所有 7 大 Linux 发行版与开发工具链 100% 完整支持。"
+                                android:textSize="11sp"
+                                android:textColor="?attr/colorOnSurfaceVariant" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- 2. Distro Selection Card (7 Major Official Distros) -->
                 <com.google.android.material.card.MaterialCardView
                     android:id="@+id/card_distro_selector"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="14dp"
-                    app:cardCornerRadius="16dp"
+                    app:cardCornerRadius="20dp"
                     app:cardElevation="1dp"
                     app:strokeWidth="1dp"
                     app:strokeColor="?attr/colorOutlineVariant"
@@ -90,36 +200,82 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="目标 Linux 发行版"
-                            android:textSize="16sp"
+                            android:text="目标 Linux 发行版 (7 大主流官方阵容)"
+                            android:textSize="15sp"
                             android:textStyle="bold"
                             android:textColor="?attr/colorOnSurface" />
 
-                        <LinearLayout
+                        <!-- Dropdown Spinner for 7 distros with official icons and dropdown chevron -->
+                        <Spinner
+                            android:id="@+id/spinner_distro_select"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
+                            android:minHeight="52dp"
+                            android:layout_marginTop="10dp"
+                            android:background="@drawable/bg_dropdown_field"
+                            android:paddingStart="14dp"
+                            android:paddingEnd="36dp" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:text="▼ 点击上方下拉菜单可在 7 大主流官方发行版间切换"
+                            android:textSize="11sp"
+                            android:textColor="?attr/colorPrimary" />
+
+                        <!-- Distro Info Preview -->
+                        <LinearLayout
+                            android:id="@+id/layout_distro_preview"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:background="?attr/colorSurfaceContainerLow"
+                            android:padding="12dp"
                             android:orientation="horizontal"
-                            android:layout_marginTop="12dp">
+                            android:gravity="center_vertical">
 
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/btn_distro_ubuntu"
-                                style="@style/Widget.Material3.Button.TonalButton"
+                            <ImageView
+                                android:id="@+id/img_distro_icon_preview"
+                                android:layout_width="40dp"
+                                android:layout_height="40dp"
+                                android:layout_marginEnd="12dp"
+                                android:src="@drawable/ic_distro_ubuntu"
+                                android:contentDescription="Distro Icon" />
+
+                            <LinearLayout
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
-                                android:layout_marginEnd="6dp"
-                                app:cornerRadius="12dp"
-                                android:text="🐧 Ubuntu 24.04" />
+                                android:orientation="vertical">
 
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/btn_distro_debian"
-                                style="@style/Widget.Material3.Button.OutlinedButton"
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:layout_marginStart="6dp"
-                                app:cornerRadius="12dp"
-                                android:text="🐧 Debian 13" />
+                                <TextView
+                                    android:id="@+id/txt_distro_name_preview"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="Ubuntu Linux"
+                                    android:textSize="15sp"
+                                    android:textStyle="bold"
+                                    android:textColor="?attr/colorOnSurface" />
+
+                                <TextView
+                                    android:id="@+id/txt_distro_tag_preview"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp"
+                                    android:text="🐧 通用开发 · 云原生首选"
+                                    android:textSize="12sp"
+                                    android:textColor="?attr/colorPrimary" />
+
+                                <TextView
+                                    android:id="@+id/txt_distro_desc_preview"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp"
+                                    android:text="预设 APT 极速多层镜像源与 Docker 加速"
+                                    android:textSize="11sp"
+                                    android:textColor="?attr/colorOutline" />
+                            </LinearLayout>
                         </LinearLayout>
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
@@ -130,7 +286,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="14dp"
-                    app:cardCornerRadius="16dp"
+                    app:cardCornerRadius="20dp"
                     app:cardElevation="1dp"
                     app:strokeWidth="1dp"
                     app:strokeColor="?attr/colorOutlineVariant"
@@ -195,7 +351,7 @@
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btn_disk_8g"
-                                style="@style/Widget.Material3.Button.TonalButton"
+                                style="@style/Widget.Material3.Button.OutlinedButton"
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
@@ -332,7 +488,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="14dp"
-                    app:cardCornerRadius="16dp"
+                    app:cardCornerRadius="20dp"
                     app:cardElevation="1dp"
                     app:strokeWidth="1dp"
                     app:strokeColor="?attr/colorOutlineVariant"
@@ -435,7 +591,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="16dp"
-                    app:cardCornerRadius="16dp"
+                    app:cardCornerRadius="20dp"
                     app:cardElevation="1dp"
                     app:strokeWidth="1dp"
                     app:strokeColor="?attr/colorOutlineVariant"
@@ -460,9 +616,32 @@
                             android:layout_width="match_parent"
                             android:layout_height="48dp"
                             android:layout_marginTop="8dp"
-                            android:background="@drawable/bg_status_badge"
-                            android:paddingStart="12dp"
-                            android:paddingEnd="12dp" />
+                            android:background="@drawable/bg_dropdown_field"
+                            android:paddingStart="14dp"
+                            android:paddingEnd="36dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_wizard_speed_test"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:minHeight="44dp"
+                            app:cornerRadius="12dp"
+                            android:layout_marginTop="10dp"
+                            app:icon="@drawable/ic_network"
+                            app:iconSize="16dp"
+                            android:text="一键测速并自动优选最快源"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/txt_wizard_speed_test_results"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:textSize="11sp"
+                            android:textColor="?attr/colorPrimary"
+                            android:visibility="gone" />
 
                         <TextView
                             android:id="@+id/txt_mirror_preview"
@@ -523,7 +702,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="16dp"
-                    app:cardCornerRadius="16dp"
+                    app:cardCornerRadius="20dp"
                     app:cardElevation="1dp"
                     app:strokeWidth="1dp"
                     app:strokeColor="?attr/colorOutlineVariant"
@@ -714,7 +893,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="14dp"
-                    app:cardCornerRadius="16dp"
+                    app:cardCornerRadius="20dp"
                     app:cardElevation="1dp"
                     app:strokeWidth="1dp"
                     app:strokeColor="?attr/colorOutlineVariant"
