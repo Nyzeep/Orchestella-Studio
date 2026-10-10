@@ -105,10 +105,21 @@ public class ModernTerminalView extends ScrollView {
         }
     }
 
+    private float touchDownX;
+    private float touchDownY;
+
     @Override
     public boolean onTouchEvent(android.view.MotionEvent ev) {
-        if (ev.getAction() == android.view.MotionEvent.ACTION_UP) {
-            requestTerminalFocus();
+        if (ev.getAction() == android.view.MotionEvent.ACTION_DOWN) {
+            touchDownX = ev.getX();
+            touchDownY = ev.getY();
+        } else if (ev.getAction() == android.view.MotionEvent.ACTION_UP) {
+            float dx = ev.getX() - touchDownX;
+            float dy = ev.getY() - touchDownY;
+            float slop = android.view.ViewConfiguration.get(getContext()).getScaledTouchSlop();
+            if (Math.hypot(dx, dy) < slop) {
+                requestTerminalFocus();
+            }
         }
         return super.onTouchEvent(ev);
     }

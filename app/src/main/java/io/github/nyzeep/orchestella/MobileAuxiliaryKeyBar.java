@@ -170,10 +170,10 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
     }
 
     public void pressTab() {
-        if (terminalEngine != null) {
-            terminalEngine.handleTab();
-        } else if (inputSink != null) {
+        if (inputSink != null) {
             inputSink.sendBytes(new byte[]{'\t'});
+        } else if (terminalEngine != null) {
+            terminalEngine.handleTab();
         }
     }
 
@@ -190,18 +190,18 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
     }
 
     public void pressCtrlC() {
-        if (terminalEngine != null) {
-            terminalEngine.handleCtrlC();
-        } else if (inputSink != null) {
+        if (inputSink != null) {
             inputSink.sendBytes(new byte[]{0x03});
+        } else if (terminalEngine != null) {
+            terminalEngine.handleCtrlC();
         }
     }
 
     public void pressClr() {
-        if (terminalEngine != null) {
-            terminalEngine.handleClearScreenAndResetLine();
-        } else if (inputSink != null) {
+        if (inputSink != null) {
             inputSink.sendBytes(new byte[]{0x0C});
+        } else if (terminalEngine != null) {
+            terminalEngine.handleClearScreenAndResetLine();
         }
     }
 
@@ -214,10 +214,10 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
                 CharSequence text = clip.getItemAt(0).coerceToText(getContext());
                 if (text != null && text.length() > 0) {
                     String str = text.toString();
-                    if (terminalEngine != null) {
-                        terminalEngine.handleTextInserted(str);
-                    } else if (inputSink != null) {
+                    if (inputSink != null) {
                         inputSink.sendText(str);
+                    } else if (terminalEngine != null) {
+                        terminalEngine.handleTextInserted(str);
                     }
                 }
             }
@@ -225,7 +225,9 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
     }
 
     public void pressHome() {
-        if (terminalEngine != null) {
+        if (inputSink != null) {
+            sendArrowSequence("\u001B[H");
+        } else if (terminalEngine != null) {
             terminalEngine.handleHome();
         } else {
             sendArrowSequence("\u001B[H");
@@ -233,7 +235,9 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
     }
 
     public void pressEnd() {
-        if (terminalEngine != null) {
+        if (inputSink != null) {
+            sendArrowSequence("\u001B[F");
+        } else if (terminalEngine != null) {
             terminalEngine.handleEnd();
         } else {
             sendArrowSequence("\u001B[F");
@@ -241,7 +245,9 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
     }
 
     public void pressUp() {
-        if (terminalEngine != null) {
+        if (inputSink != null) {
+            sendArrowSequence("\u001B[A");
+        } else if (terminalEngine != null) {
             terminalEngine.handleArrowUp();
         } else {
             sendArrowSequence("\u001B[A");
@@ -249,7 +255,9 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
     }
 
     public void pressDown() {
-        if (terminalEngine != null) {
+        if (inputSink != null) {
+            sendArrowSequence("\u001B[B");
+        } else if (terminalEngine != null) {
             terminalEngine.handleArrowDown();
         } else {
             sendArrowSequence("\u001B[B");
@@ -257,7 +265,9 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
     }
 
     public void pressLeft() {
-        if (terminalEngine != null) {
+        if (inputSink != null) {
+            sendArrowSequence("\u001B[D");
+        } else if (terminalEngine != null) {
             terminalEngine.handleArrowLeft();
         } else {
             sendArrowSequence("\u001B[D");
@@ -265,7 +275,9 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
     }
 
     public void pressRight() {
-        if (terminalEngine != null) {
+        if (inputSink != null) {
+            sendArrowSequence("\u001B[C");
+        } else if (terminalEngine != null) {
             terminalEngine.handleArrowRight();
         } else {
             sendArrowSequence("\u001B[C");
@@ -273,10 +285,10 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
     }
 
     public void pressSymbol(String symbol) {
-        if (terminalEngine != null) {
-            terminalEngine.handleTextInserted(symbol);
-        } else if (inputSink != null) {
+        if (inputSink != null) {
             inputSink.sendText(symbol);
+        } else if (terminalEngine != null) {
+            terminalEngine.handleTextInserted(symbol);
         }
     }
 

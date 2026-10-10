@@ -59,17 +59,29 @@ public class TerminalInputConnection implements InputConnection {
             return false;
         }
 
+        boolean hasActiveModifier = stickyStateMachine != null
+                && (stickyStateMachine.isCtrlActive() || stickyStateMachine.isAltActive());
+
+        if (!hasActiveModifier) {
+            String str = text.toString();
+            if (str.indexOf('\n') >= 0 || str.indexOf('\r') >= 0) {
+                str = str.replace("\r\n", "\r").replace('\n', '\r');
+            }
+            sink.sendBytes(str.getBytes(StandardCharsets.UTF_8));
+            return true;
+        }
+
         int length = text.length();
         for (int i = 0; i < length; ) {
             int codePoint = Character.codePointAt(text, i);
             int charCount = Character.charCount(codePoint);
             char ch = text.charAt(i);
 
-            if (stickyStateMachine != null && stickyStateMachine.isCtrlActive() && codePoint < 128) {
+            if (stickyStateMachine.isCtrlActive() && codePoint < 128) {
                 byte ctrlCode = StickyModifierStateMachine.toControlCode(ch);
                 sink.sendBytes(new byte[]{ctrlCode});
                 stickyStateMachine.consumeLatched();
-            } else if (stickyStateMachine != null && stickyStateMachine.isAltActive() && codePoint < 128) {
+            } else if (stickyStateMachine.isAltActive() && codePoint < 128) {
                 byte[] altSeq = StickyModifierStateMachine.toAltSequence(ch);
                 sink.sendBytes(altSeq);
                 stickyStateMachine.consumeLatched();
@@ -118,6 +130,32 @@ public class TerminalInputConnection implements InputConnection {
         return handleKeyEvent(action, keyCode, 0, false, false);
     }
 
+    private static boolean isSystemKey(int keyCode) {
+        return keyCode == KeyEvent.KEYCODE_BACK
+                || keyCode == KeyEvent.KEYCODE_VOLUME_UP
+                || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN
+                || keyCode == KeyEvent.KEYCODE_VOLUME_MUTE
+                || keyCode == KeyEvent.KEYCODE_POWER
+                || keyCode == KeyEvent.KEYCODE_HOME
+                || keyCode == KeyEvent.KEYCODE_APP_SWITCH;
+    }
+
+    private static boolean isHandledTerminalKeyCode(int keyCode) {
+        return keyCode == KeyEvent.KEYCODE_DEL
+                || keyCode == KeyEvent.KEYCODE_ENTER
+                || keyCode == KeyEvent.KEYCODE_TAB
+                || keyCode == KeyEvent.KEYCODE_FORWARD_DEL
+                || keyCode == KeyEvent.KEYCODE_DPAD_UP
+                || keyCode == KeyEvent.KEYCODE_DPAD_DOWN
+                || keyCode == KeyEvent.KEYCODE_DPAD_LEFT
+                || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
+                || keyCode == KeyEvent.KEYCODE_PAGE_UP
+                || keyCode == KeyEvent.KEYCODE_PAGE_DOWN
+                || keyCode == KeyEvent.KEYCODE_MOVE_HOME
+                || keyCode == KeyEvent.KEYCODE_MOVE_END
+                || keyCode == KeyEvent.KEYCODE_ESCAPE;
+    }
+
     public boolean sendKey(int action, int keyCode, int unicode) {
         return handleKeyEvent(action, keyCode, unicode, false, false);
     }
@@ -140,11 +178,11 @@ public class TerminalInputConnection implements InputConnection {
     }
 
     public boolean handleKeyEvent(int action, int keyCode, int unicode, boolean isCtrl, boolean isAlt) {
-        if (sink == null) {
+        if (sink == null || isSystemKey(keyCode)) {
             return false;
         }
         if (action == KeyEvent.ACTION_UP) {
-            return true;
+            return isHandledTerminalKeyCode(keyCode) || unicode != 0;
         }
         if (action != KeyEvent.ACTION_DOWN) {
             return false;
@@ -174,6 +212,21 @@ public class TerminalInputConnection implements InputConnection {
                 return true;
             case KeyEvent.KEYCODE_DPAD_RIGHT:
                 sink.sendBytes("\u001B[C".getBytes(StandardCharsets.UTF_8));
+                return true;
+            case KeyEvent.KEYCODE_PAGE_UP:
+                sink.sendBytes("\u001B[5~".getBytes(StandardCharsets.UTF_8));
+                return true;
+            case KeyEvent.KEYCODE_PAGE_DOWN:
+                sink.sendBytes("\u001B[6~".getBytes(StandardCharsets.UTF_8));
+                return true;
+            case KeyEvent.KEYCODE_MOVE_HOME:
+                sink.sendBytes("\u001B[H".getBytes(StandardCharsets.UTF_8));
+                return true;
+            case KeyEvent.KEYCODE_MOVE_END:
+                sink.sendBytes("\u001B[F".getBytes(StandardCharsets.UTF_8));
+                return true;
+            case KeyEvent.KEYCODE_ESCAPE:
+                sink.sendBytes(new byte[]{0x1B});
                 return true;
             default:
                 break;
