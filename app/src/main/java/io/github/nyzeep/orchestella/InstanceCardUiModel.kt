@@ -32,7 +32,8 @@ data class InstanceCardUiModel(
     val canClone: Boolean = false,
     val canDelete: Boolean,
     val hasCrashDiagnostic: Boolean,
-    val crashDiagnostic: InstanceLifecycle.CrashDiagnostic?
+    val crashDiagnostic: InstanceLifecycle.CrashDiagnostic?,
+    val ipAddress: String = if (state == InstanceLifecycle.State.RUNNING) "10.0.2.15" else "离线"
 ) {
     companion object {
         fun from(
@@ -56,6 +57,7 @@ data class InstanceCardUiModel(
                 InstanceLifecycle.State.STOPPED -> "■ 已停止"
                 InstanceLifecycle.State.CRASHED -> "▲ 异常终止（点击查看诊断）"
                 InstanceLifecycle.State.INTERRUPTED -> "⚠️ 运行中断"
+                InstanceLifecycle.State.SUSPENDED -> "⏸ 已挂起"
                 InstanceLifecycle.State.CREATED -> "○ 已创建"
                 InstanceLifecycle.State.PROVISIONING -> "⏳ 初始化装配中…"
             }
@@ -65,6 +67,7 @@ data class InstanceCardUiModel(
                 InstanceLifecycle.State.STOPPED -> Pair(R.color.status_stopped, R.color.status_stopped_bg)
                 InstanceLifecycle.State.CRASHED -> Pair(R.color.status_crashed, R.color.status_crashed_bg)
                 InstanceLifecycle.State.INTERRUPTED -> Pair(R.color.status_crashed, R.color.status_crashed_bg)
+                InstanceLifecycle.State.SUSPENDED -> Pair(R.color.status_suspended, R.color.status_suspended_bg)
                 InstanceLifecycle.State.PROVISIONING -> Pair(R.color.status_provisioning, R.color.status_provisioning_bg)
                 InstanceLifecycle.State.CREATED -> Pair(R.color.status_created, R.color.status_created_bg)
             }
