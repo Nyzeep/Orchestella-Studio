@@ -34,6 +34,56 @@ public final class DistroFlavor {
                     "/etc/init.d/orchestella-guest-agent",
                     "/etc/runlevels/default/orchestella-guest-agent");
 
+    public static final DistroFlavor UBUNTU =
+            new DistroFlavor(
+                    "ubuntu",
+                    "Ubuntu Linux",
+                    InitSystem.SYSTEMD,
+                    "apt",
+                    "ubuntu-24.04",
+                    "/etc/systemd/system/orchestella-guest-agent.service",
+                    "/etc/systemd/system/multi-user.target.wants/orchestella-guest-agent.service");
+
+    public static final DistroFlavor ARCH =
+            new DistroFlavor(
+                    "arch",
+                    "Arch Linux ARM",
+                    InitSystem.SYSTEMD,
+                    "pacman",
+                    "archlinux",
+                    "/etc/systemd/system/orchestella-guest-agent.service",
+                    "/etc/systemd/system/multi-user.target.wants/orchestella-guest-agent.service");
+
+    public static final DistroFlavor FEDORA =
+            new DistroFlavor(
+                    "fedora",
+                    "Fedora Linux",
+                    InitSystem.SYSTEMD,
+                    "dnf",
+                    "fedora-41",
+                    "/etc/systemd/system/orchestella-guest-agent.service",
+                    "/etc/systemd/system/multi-user.target.wants/orchestella-guest-agent.service");
+
+    public static final DistroFlavor OPENSUSE =
+            new DistroFlavor(
+                    "opensuse",
+                    "openSUSE Tumbleweed",
+                    InitSystem.SYSTEMD,
+                    "zypper",
+                    "opensuse-tumbleweed",
+                    "/etc/systemd/system/orchestella-guest-agent.service",
+                    "/etc/systemd/system/multi-user.target.wants/orchestella-guest-agent.service");
+
+    public static final DistroFlavor KALI =
+            new DistroFlavor(
+                    "kali",
+                    "Kali Linux",
+                    InitSystem.SYSTEMD,
+                    "apt",
+                    "kali-rolling",
+                    "/etc/systemd/system/orchestella-guest-agent.service",
+                    "/etc/systemd/system/multi-user.target.wants/orchestella-guest-agent.service");
+
     private final String distroId;
     private final String displayName;
     private final InitSystem initSystem;
@@ -61,12 +111,16 @@ public final class DistroFlavor {
 
     public static DistroFlavor forDistroId(String distroId) {
         Objects.requireNonNull(distroId, "distroId");
-        if ("debian".equals(distroId)) {
-            return DEBIAN;
-        } else if ("alpine".equals(distroId)) {
-            return ALPINE;
-        }
-        throw new IllegalArgumentException("unsupported distro flavor: " + distroId);
+        return switch (distroId.toLowerCase()) {
+            case "debian" -> DEBIAN;
+            case "alpine" -> ALPINE;
+            case "ubuntu" -> UBUNTU;
+            case "arch" -> ARCH;
+            case "fedora" -> FEDORA;
+            case "opensuse" -> OPENSUSE;
+            case "kali" -> KALI;
+            default -> throw new IllegalArgumentException("unsupported distro flavor: " + distroId);
+        };
     }
 
     public static DistroFlavor forManifest(DistroManifest manifest) {

@@ -150,6 +150,22 @@ public final class DistroInstanceCreatorTest {
         assertEquals(4096, loaded.hardwareConfig().ramMegabytes());
     }
 
+    @Test
+    public void creatorAcceptsAllManifestsFromRegistry() throws Exception {
+        io.github.nyzeep.orchestella.runtime.distro.DistroCatalogRegistry registry =
+                io.github.nyzeep.orchestella.runtime.distro.DistroCatalogRegistry.getInstance();
+        Path privateDirectory = temporaryFolder.newFolder("registry-instances").toPath();
+        InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(privateDirectory.resolve("instances"));
+        InstanceLifecycle.Controller controller = new InstanceLifecycle.Controller(store, Clock.systemUTC());
+
+        for (String distroId : registry.supportedDistroIds()) {
+            DistroManifest manifest = registry.get(distroId);
+            DistroInstanceCreator creator = new DistroInstanceCreator(manifest, controller, privateDirectory);
+            assertEquals(distroId, creator.manifest().id());
+            assertEquals(manifest.rootfsFileName(), creator.manifest().rootfsFileName());
+        }
+    }
+
     private static DistroManifest debianManifest() {
         return new DistroManifest(
                 "debian",

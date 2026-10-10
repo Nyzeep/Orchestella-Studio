@@ -53,6 +53,38 @@ public final class InteractiveTerminalEngineTest {
     }
 
     @Test
+    public void testPromptSolidifiesOrchestellaBrandAndRejectsUuid() {
+        // When instanceId UUID is supplied, it must be neutralized to orchestella
+        InteractiveTerminalEngine.PromptInfo uuidPrompt =
+                new InteractiveTerminalEngine.PromptInfo("root", "1c283e7c-daa9-4192-974c-41f4cc139ea7", "~", "❯", true);
+        assertEquals("orchestella", uuidPrompt.getHost());
+        assertEquals("root@orchestella:~#", uuidPrompt.getContextIdentifier());
+        assertEquals("[root@orchestella ~] ❯ ", uuidPrompt.toPromptString());
+
+        // Null and empty host defaults to orchestella
+        InteractiveTerminalEngine.PromptInfo nullHostPrompt =
+                new InteractiveTerminalEngine.PromptInfo("root", null, "~", "❯", true);
+        assertEquals("orchestella", nullHostPrompt.getHost());
+
+        // Default non-root user
+        InteractiveTerminalEngine.PromptInfo devPrompt =
+                new InteractiveTerminalEngine.PromptInfo("dev", "orchestella", "~", "❯", false);
+        assertEquals("dev@orchestella:~$", devPrompt.getContextIdentifier());
+        assertEquals("[dev@orchestella ~] ❯ ", devPrompt.toPromptString());
+        assertFalse(devPrompt.isRoot());
+
+        // Factory defaults
+        InteractiveTerminalEngine.PromptInfo defaultUserPrompt = InteractiveTerminalEngine.PromptInfo.defaultUser();
+        assertEquals("orchestella", defaultUserPrompt.getHost());
+        assertFalse(defaultUserPrompt.isRoot());
+
+        InteractiveTerminalEngine.PromptInfo rootUserPrompt = InteractiveTerminalEngine.PromptInfo.rootUser();
+        assertEquals("root", rootUserPrompt.getUser());
+        assertEquals("orchestella", rootUserPrompt.getHost());
+        assertTrue(rootUserPrompt.isRoot());
+    }
+
+    @Test
     public void testKeystrokeRealTimeEcho() {
         // Type 'l' then 's'
         engine.handleKeyTyped('l');

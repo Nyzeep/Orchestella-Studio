@@ -21,7 +21,7 @@ public final class InstanceCredentialsTest {
     public final TemporaryFolder temporaryFolder = new TemporaryFolder();
 
     @Test
-    public void perInstanceCredentialsAreRandomAndUnique() throws IOException {
+    public void perInstanceCredentialsConformToBrandingAndUserConfig() throws IOException {
         Path root = temporaryFolder.newFolder("instances").toPath();
         InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(root);
         InstanceLifecycle.Controller controller = new InstanceLifecycle.Controller(store, Clock.systemUTC());
@@ -31,15 +31,23 @@ public final class InstanceCredentialsTest {
 
         InstanceLifecycle.Instance inst1 = controller.create(
                 new InstanceLifecycle.DistroReference("alpine", "3.24.1"), root1);
-        InstanceLifecycle.Instance inst2 = controller.create(
-                new InstanceLifecycle.DistroReference("alpine", "3.24.1"), root2);
 
-        assertNotNull("guest password inst1 must not be null", inst1.guestPassword());
-        assertNotNull("guest password inst2 must not be null", inst2.guestPassword());
-        assertTrue("password length >= 12", inst1.guestPassword().length() >= 12);
-        assertTrue("password length >= 12", inst2.guestPassword().length() >= 12);
-        assertNotEquals("passwords must be distinct random credentials (ADR-0010)",
-                inst1.guestPassword(), inst2.guestPassword());
+        assertEquals("1234", inst1.guestPassword());
+        assertEquals("orchestella", inst1.hostname());
+        assertEquals("root", inst1.defaultUser());
+
+        io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig customConfig =
+                new io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig(
+                        "customuser", "MySecretPass999", true, "customhost");
+        InstanceLifecycle.Instance inst2 = controller.create(
+                new InstanceLifecycle.DistroReference("alpine", "3.24.1"),
+                root2,
+                io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig.defaultConfig(),
+                customConfig);
+
+        assertEquals("MySecretPass999", inst2.guestPassword());
+        assertEquals("customhost", inst2.hostname());
+        assertEquals("customuser", inst2.defaultUser());
     }
 
     @Test

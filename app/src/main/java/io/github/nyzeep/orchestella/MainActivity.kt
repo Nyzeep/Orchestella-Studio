@@ -36,6 +36,7 @@ import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig
 import io.github.nyzeep.orchestella.runtime.distro.DistroManifest
 import io.github.nyzeep.orchestella.runtime.distro.OfficialAlpineCatalog
 import io.github.nyzeep.orchestella.runtime.distro.OfficialDebianCatalog
+import io.github.nyzeep.orchestella.runtime.engineavf.AvfEngineException
 import io.github.nyzeep.orchestella.runtime.engineqemu.RuntimeArtifactManifest
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
 import io.github.nyzeep.orchestella.runtime.instance.SparseDiskResizer
@@ -543,6 +544,8 @@ class MainActivity : AppCompatActivity() {
         val intent = Intent(this@MainActivity, TerminalActivity::class.java)
             .putExtra("bridgeToken", instance.bridgeToken())
             .putExtra("instanceId", instance.id())
+            .putExtra("hostname", instance.hostname())
+            .putExtra("defaultUser", instance.defaultUser())
         startActivity(intent)
     }
 
@@ -826,6 +829,8 @@ class MainActivity : AppCompatActivity() {
                     val intent = Intent(this, TerminalActivity::class.java)
                         .putExtra("bridgeToken", instance.bridgeToken())
                         .putExtra("instanceId", instance.id())
+                        .putExtra("hostname", instance.hostname())
+                        .putExtra("defaultUser", instance.defaultUser())
                     startActivity(intent)
                 }
             } catch (failure: Throwable) {

@@ -145,6 +145,8 @@ public final class InstanceLifecycle {
         private final long updatedAtMillis;
         private final CrashDiagnostic crashDiagnostic;
         private final VmHardwareConfig hardwareConfig;
+        private final String hostname;
+        private final String defaultUser;
 
         private Instance(
                 String id,
@@ -155,7 +157,7 @@ public final class InstanceLifecycle {
                 State state,
                 long createdAtMillis,
                 long updatedAtMillis) {
-            this(id, distro, rootVolume, bridgeToken, newGuestPassword(), runtimeClass, state, createdAtMillis, updatedAtMillis, null, VmHardwareConfig.defaultConfig());
+            this(id, distro, rootVolume, bridgeToken, InstanceUserConfig.DEFAULT_ROOT_PASSWORD, runtimeClass, state, createdAtMillis, updatedAtMillis, null, VmHardwareConfig.defaultConfig(), InstanceUserConfig.DEFAULT_HOSTNAME, InstanceUserConfig.DEFAULT_ROOT_USER);
         }
 
         private Instance(
@@ -168,7 +170,7 @@ public final class InstanceLifecycle {
                 long createdAtMillis,
                 long updatedAtMillis,
                 CrashDiagnostic crashDiagnostic) {
-            this(id, distro, rootVolume, bridgeToken, newGuestPassword(), runtimeClass, state, createdAtMillis, updatedAtMillis, crashDiagnostic, VmHardwareConfig.defaultConfig());
+            this(id, distro, rootVolume, bridgeToken, InstanceUserConfig.DEFAULT_ROOT_PASSWORD, runtimeClass, state, createdAtMillis, updatedAtMillis, crashDiagnostic, VmHardwareConfig.defaultConfig(), InstanceUserConfig.DEFAULT_HOSTNAME, InstanceUserConfig.DEFAULT_ROOT_USER);
         }
 
         private Instance(
@@ -182,7 +184,7 @@ public final class InstanceLifecycle {
                 long createdAtMillis,
                 long updatedAtMillis,
                 CrashDiagnostic crashDiagnostic) {
-            this(id, distro, rootVolume, bridgeToken, guestPassword, runtimeClass, state, createdAtMillis, updatedAtMillis, crashDiagnostic, VmHardwareConfig.defaultConfig());
+            this(id, distro, rootVolume, bridgeToken, guestPassword, runtimeClass, state, createdAtMillis, updatedAtMillis, crashDiagnostic, VmHardwareConfig.defaultConfig(), InstanceUserConfig.DEFAULT_HOSTNAME, InstanceUserConfig.DEFAULT_ROOT_USER);
         }
 
         private Instance(
@@ -197,6 +199,23 @@ public final class InstanceLifecycle {
                 long updatedAtMillis,
                 CrashDiagnostic crashDiagnostic,
                 VmHardwareConfig hardwareConfig) {
+            this(id, distro, rootVolume, bridgeToken, guestPassword, runtimeClass, state, createdAtMillis, updatedAtMillis, crashDiagnostic, hardwareConfig, InstanceUserConfig.DEFAULT_HOSTNAME, InstanceUserConfig.DEFAULT_ROOT_USER);
+        }
+
+        private Instance(
+                String id,
+                DistroReference distro,
+                Path rootVolume,
+                String bridgeToken,
+                String guestPassword,
+                FullLinuxContract.RuntimeClass runtimeClass,
+                State state,
+                long createdAtMillis,
+                long updatedAtMillis,
+                CrashDiagnostic crashDiagnostic,
+                VmHardwareConfig hardwareConfig,
+                String hostname,
+                String defaultUser) {
             requireInstanceId(id);
             this.id = id;
             this.distro = Objects.requireNonNull(distro, "distro");
@@ -209,6 +228,12 @@ public final class InstanceLifecycle {
             this.updatedAtMillis = updatedAtMillis;
             this.crashDiagnostic = crashDiagnostic;
             this.hardwareConfig = hardwareConfig != null ? hardwareConfig : VmHardwareConfig.defaultConfig();
+            this.hostname = (hostname != null && !hostname.trim().isEmpty())
+                    ? hostname.trim().toLowerCase()
+                    : InstanceUserConfig.DEFAULT_HOSTNAME;
+            this.defaultUser = (defaultUser != null && !defaultUser.trim().isEmpty())
+                    ? defaultUser.trim()
+                    : InstanceUserConfig.DEFAULT_ROOT_USER;
         }
 
         public String id() {
@@ -238,6 +263,14 @@ public final class InstanceLifecycle {
          */
         public String guestPassword() {
             return guestPassword;
+        }
+
+        public String hostname() {
+            return hostname;
+        }
+
+        public String defaultUser() {
+            return defaultUser;
         }
 
         public FullLinuxContract.RuntimeClass runtimeClass() {
@@ -287,7 +320,9 @@ public final class InstanceLifecycle {
                     createdAtMillis,
                     Objects.requireNonNull(clock, "clock").millis(),
                     diagnostic,
-                    hardwareConfig);
+                    hardwareConfig,
+                    hostname,
+                    defaultUser);
         }
 
         private Instance withUpdatedAt(Clock clock) {
@@ -302,7 +337,9 @@ public final class InstanceLifecycle {
                     createdAtMillis,
                     Objects.requireNonNull(clock, "clock").millis(),
                     crashDiagnostic,
-                    hardwareConfig);
+                    hardwareConfig,
+                    hostname,
+                    defaultUser);
         }
 
         private Instance withGuestPassword(String newPassword, Clock clock) {
@@ -317,7 +354,9 @@ public final class InstanceLifecycle {
                     createdAtMillis,
                     Objects.requireNonNull(clock, "clock").millis(),
                     crashDiagnostic,
-                    hardwareConfig);
+                    hardwareConfig,
+                    hostname,
+                    defaultUser);
         }
 
         private Instance withHardwareConfig(VmHardwareConfig newConfig, Clock clock) {
@@ -332,7 +371,9 @@ public final class InstanceLifecycle {
                     createdAtMillis,
                     Objects.requireNonNull(clock, "clock").millis(),
                     crashDiagnostic,
-                    Objects.requireNonNull(newConfig, "newConfig"));
+                    Objects.requireNonNull(newConfig, "newConfig"),
+                    hostname,
+                    defaultUser);
         }
 
         static Instance restore(
@@ -343,19 +384,35 @@ public final class InstanceLifecycle {
                 State state,
                 VmHardwareConfig hardwareConfig,
                 Clock clock) {
+            return restore(id, distro, rootVolume, runtimeClass, state, hardwareConfig,
+                    InstanceUserConfig.DEFAULT_HOSTNAME, InstanceUserConfig.DEFAULT_ROOT_USER, clock);
+        }
+
+        static Instance restore(
+                String id,
+                DistroReference distro,
+                Path rootVolume,
+                FullLinuxContract.RuntimeClass runtimeClass,
+                State state,
+                VmHardwareConfig hardwareConfig,
+                String hostname,
+                String defaultUser,
+                Clock clock) {
             long now = Objects.requireNonNull(clock, "clock").millis();
             return new Instance(
                     id,
                     distro,
                     rootVolume,
                     newBridgeToken(),
-                    newGuestPassword(),
+                    InstanceUserConfig.DEFAULT_ROOT_PASSWORD,
                     runtimeClass != null ? runtimeClass : FullLinuxContract.RuntimeClass.FULL_LINUX,
                     state != null ? state : State.STOPPED,
                     now,
                     now,
                     null,
-                    hardwareConfig != null ? hardwareConfig : VmHardwareConfig.defaultConfig());
+                    hardwareConfig != null ? hardwareConfig : VmHardwareConfig.defaultConfig(),
+                    hostname,
+                    defaultUser);
         }
 
         private Properties toProperties() {
@@ -370,6 +427,8 @@ public final class InstanceLifecycle {
             properties.setProperty("state", state.name());
             properties.setProperty("createdAtMillis", Long.toString(createdAtMillis));
             properties.setProperty("updatedAtMillis", Long.toString(updatedAtMillis));
+            properties.setProperty("hostname", hostname);
+            properties.setProperty("defaultUser", defaultUser);
             if (crashDiagnostic != null) {
                 properties.setProperty("crash.timestampMillis", Long.toString(crashDiagnostic.timestampMillis()));
                 properties.setProperty("crash.exitCode", Integer.toString(crashDiagnostic.exitCode()));
@@ -406,7 +465,15 @@ public final class InstanceLifecycle {
                 }
                 String guestPassword = properties.getProperty("guestPassword");
                 if (guestPassword == null || guestPassword.trim().isEmpty()) {
-                    guestPassword = newGuestPassword();
+                    guestPassword = InstanceUserConfig.DEFAULT_ROOT_PASSWORD;
+                }
+                String hostname = properties.getProperty("hostname");
+                if (hostname == null || hostname.trim().isEmpty()) {
+                    hostname = InstanceUserConfig.DEFAULT_HOSTNAME;
+                }
+                String defaultUser = properties.getProperty("defaultUser");
+                if (defaultUser == null || defaultUser.trim().isEmpty()) {
+                    defaultUser = InstanceUserConfig.DEFAULT_ROOT_USER;
                 }
                 VmHardwareConfig hardwareConfig = VmHardwareConfig.defaultConfig();
                 String cpuCoresStr = properties.getProperty("hardware.cpuCores");
@@ -430,7 +497,9 @@ public final class InstanceLifecycle {
                         Long.parseLong(required(properties, "createdAtMillis")),
                         Long.parseLong(required(properties, "updatedAtMillis")),
                         diagnostic,
-                        hardwareConfig);
+                        hardwareConfig,
+                        hostname,
+                        defaultUser);
             } catch (IllegalArgumentException malformed) {
                 throw new InvalidMetadataException(malformed);
             }
@@ -599,14 +668,23 @@ public final class InstanceLifecycle {
         }
 
         public synchronized Instance create(DistroReference distro, Path rootVolume) throws IOException {
-            return create(distro, rootVolume, VmHardwareConfig.defaultConfig());
+            return create(distro, rootVolume, VmHardwareConfig.defaultConfig(), InstanceUserConfig.defaultRoot());
         }
 
         public synchronized Instance create(
                 DistroReference distro, Path rootVolume, VmHardwareConfig hardwareConfig) throws IOException {
+            return create(distro, rootVolume, hardwareConfig, InstanceUserConfig.defaultRoot());
+        }
+
+        public synchronized Instance create(
+                DistroReference distro,
+                Path rootVolume,
+                VmHardwareConfig hardwareConfig,
+                InstanceUserConfig userConfig) throws IOException {
             Objects.requireNonNull(distro, "distro");
             Objects.requireNonNull(rootVolume, "rootVolume");
             Objects.requireNonNull(hardwareConfig, "hardwareConfig");
+            InstanceUserConfig effectiveConfig = userConfig != null ? userConfig : InstanceUserConfig.defaultRoot();
             long now = clock.millis();
             Instance instance =
                     new Instance(
@@ -614,13 +692,15 @@ public final class InstanceLifecycle {
                             distro,
                             rootVolume,
                             newBridgeToken(),
-                            newGuestPassword(),
+                            effectiveConfig.password(),
                             FullLinuxContract.RuntimeClass.FULL_LINUX,
                             State.CREATED,
                             now,
                             now,
                             null,
-                            hardwareConfig);
+                            hardwareConfig,
+                            effectiveConfig.hostname(),
+                            effectiveConfig.username());
             store.save(instance);
             return instance;
         }
@@ -657,13 +737,15 @@ public final class InstanceLifecycle {
                             source.distro(),
                             targetRootVolume,
                             newBridgeToken(),
-                            newGuestPassword(),
+                            source.guestPassword(),
                             source.runtimeClass(),
                             State.CREATED,
                             now,
                             now,
                             null,
-                            source.hardwareConfig());
+                            source.hardwareConfig(),
+                            source.hostname(),
+                            source.defaultUser());
             store.save(cloned);
             return cloned;
         }
@@ -703,13 +785,15 @@ public final class InstanceLifecycle {
                             source.distro(),
                             targetVolume,
                             newBridgeToken(),
-                            newGuestPassword(),
+                            source.guestPassword(),
                             source.runtimeClass(),
                             State.CREATED,
                             now,
                             now,
                             null,
-                            source.hardwareConfig());
+                            source.hardwareConfig(),
+                            source.hostname(),
+                            source.defaultUser());
             store.save(cloned);
             return cloned;
         }

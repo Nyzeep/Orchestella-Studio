@@ -75,13 +75,19 @@ public class TerminalActivity extends Activity {
         ui = new Handler(Looper.getMainLooper());
         stickyStateMachine = new StickyModifierStateMachine();
 
+        String intentHostname = getIntent().getStringExtra("hostname");
+        String intentUser = getIntent().getStringExtra("defaultUser");
+        String effectiveHost = (intentHostname != null && !intentHostname.isEmpty()) ? intentHostname : "orchestella";
+        String effectiveUser = (intentUser != null && !intentUser.isEmpty()) ? intentUser : "root";
+        boolean isRoot = "root".equals(effectiveUser);
+
         terminalEngine = new InteractiveTerminalEngine(
                 new InteractiveTerminalEngine.PromptInfo(
-                        "root",
-                        instanceId != null && !instanceId.isEmpty() ? instanceId : "orchestella",
+                        effectiveUser,
+                        effectiveHost,
                         "~",
                         "❯",
-                        true));
+                        isRoot));
 
         try {
             historyStore = new TerminalHistoryStore(getFilesDir().toPath().resolve("terminal_history"));
