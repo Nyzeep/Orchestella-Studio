@@ -118,32 +118,82 @@ public final class NormalInstanceLifecycleContractTest {
 
     private static void generatesAndPersistsRandomCredentialsPerInstance(Path testDirectory)
             throws Exception {
-        InstanceLifecycle.FileStore store =
-                new InstanceLifecycle.FileStore(testDirectory.resolve("metadata-cred"));
+        Path storeDir = testDirectory.resolve("metadata-cred");
+        InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(storeDir);
         InstanceLifecycle.Controller controller = new InstanceLifecycle.Controller(store, CLOCK);
         InstanceLifecycle.Instance first =
                 controller.create(
                         new InstanceLifecycle.DistroReference("alpine", "3.24.1"),
                         testDirectory.resolve("first-cred.raw"));
-        InstanceLifecycle.Instance second =
+
+        // Default credentials match Ticket 03 spec
+        assertEquals("1234", first.guestPassword(), "first guest password defaults to 1234");
+        assertEquals("orchestella", first.hostname(), "first hostname defaults to orchestella");
+        assertEquals("root", first.defaultUser(), "first user defaults to root");
+
+        // Custom credentials support
+        InstanceUserConfig devConfig = new InstanceUserConfig("dev", "DevSecure2026", true, "workstation");
+        InstanceLifecycle.Instance custom =
                 controller.create(
                         new InstanceLifecycle.DistroReference("alpine", "3.24.1"),
-                        testDirectory.resolve("second-cred.raw"));
+                        testDirectory.resolve("custom-cred.raw"),
+                        io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig.defaultConfig(),
+                        devConfig);
+        assertEquals("DevSecure2026", custom.guestPassword(), "custom guest password");
+        assertEquals("workstation", custom.hostname(), "custom hostname");
+        assertEquals("dev", custom.defaultUser(), "custom user");
 
-        assertNotNull(first.guestPassword(), "first guest password must not be null");
-        assertNotNull(second.guestPassword(), "second guest password must not be null");
-        assertTrue(first.guestPassword().length() >= 12, "guest password must be at least 12 chars");
-        assertFalse(
-                first.guestPassword().equals(second.guestPassword()),
-                "instances must have distinct random passwords");
+        // Legacy metadata backward-compatibility test (missing hostname & defaultUser)
+        String legacyId = java.util.UUID.randomUUID().toString();
+        Path legacyPropPath = storeDir.resolve(legacyId + ".properties");
+        java.util.Properties legacyProps = new java.util.Properties();
+        legacyProps.setProperty("id", legacyId);
+        legacyProps.setProperty("distroId", "alpine");
+        legacyProps.setProperty("distroVersion", "3.24.1");
+        legacyProps.setProperty("rootVolume", testDirectory.resolve("legacy.raw").toString());
+        legacyProps.setProperty("bridgeToken", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+        legacyProps.setProperty("guestPassword", "LegacyPass999");
+        legacyProps.setProperty("runtimeClass", "FULL_LINUX");
+        legacyProps.setProperty("state", "STOPPED");
+        legacyProps.setProperty("createdAtMillis", "1000");
+        legacyProps.setProperty("updatedAtMillis", "1000");
+        try (java.io.OutputStream out = Files.newOutputStream(legacyPropPath)) {
+            legacyProps.store(out, "Legacy test");
+        }
 
         // Persists across reconstructed store
-        InstanceLifecycle.FileStore reconstructed =
-                new InstanceLifecycle.FileStore(testDirectory.resolve("metadata-cred"));
+        InstanceLifecycle.FileStore reconstructed = new InstanceLifecycle.FileStore(storeDir);
         assertEquals(
                 first.guestPassword(),
                 reconstructed.load(first.id()).guestPassword(),
                 "guest password persists");
+        assertEquals(
+                "orchestella",
+                reconstructed.load(first.id()).hostname(),
+                "hostname persists");
+        assertEquals(
+                "root",
+                reconstructed.load(first.id()).defaultUser(),
+                "defaultUser persists");
+
+        assertEquals(
+                "DevSecure2026",
+                reconstructed.load(custom.id()).guestPassword(),
+                "custom guest password persists");
+        assertEquals(
+                "workstation",
+                reconstructed.load(custom.id()).hostname(),
+                "custom hostname persists");
+        assertEquals(
+                "dev",
+                reconstructed.load(custom.id()).defaultUser(),
+                "custom user persists");
+
+        // Verify legacy instance migration
+        InstanceLifecycle.Instance loadedLegacy = reconstructed.load(legacyId);
+        assertEquals("LegacyPass999", loadedLegacy.guestPassword(), "legacy guest password preserved");
+        assertEquals("orchestella", loadedLegacy.hostname(), "legacy hostname defaults to orchestella");
+        assertEquals("root", loadedLegacy.defaultUser(), "legacy defaultUser defaults to root");
 
         // Update password
         InstanceLifecycle.Instance updated =

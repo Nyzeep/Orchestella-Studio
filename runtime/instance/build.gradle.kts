@@ -58,6 +58,11 @@ tasks.register<JavaExec>("sparseDiskResizerTest") {
     mainClass.set("io.github.nyzeep.orchestella.runtime.instance.SparseDiskResizerTest")
 }
 
+tasks.register<JavaExec>("instanceUserConfigTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfigTest")
+}
+
 tasks.named("check") {
     dependsOn(
         "normalInstanceLifecycleContractTest",
@@ -65,6 +70,8 @@ tasks.named("check") {
         "instanceStorageContractTest",
         "instanceLifecycleDeleteTest",
         "instanceLifecycleCloneTest",
-        "sparseDiskResizerTest"
+        "sparseDiskResizerTest",
+        "instanceUserConfigTest"
     )
 }
+
