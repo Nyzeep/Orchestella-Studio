@@ -53,6 +53,12 @@ public class TerminalActivity extends Activity {
     private InstanceSessionReconciler sessionReconciler;
     private InstanceLifecycle.FileStore instanceStore;
     private InstanceLifecycle.Controller instanceController;
+    private final java.util.concurrent.ExecutorService sendExecutor =
+            java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "terminal-send-queue");
+                t.setDaemon(true);
+                return t;
+            });
     private final Consumer<String> terminalOutputListener = chunk -> {
         if (terminalView != null) {
             terminalView.appendOutput(chunk);
@@ -278,6 +284,7 @@ public class TerminalActivity extends Activity {
         if (instanceId != null) {
             PersistentTerminalSessionPool.getInstance().detach(instanceId, terminalOutputListener);
         }
+        sendExecutor.shutdown();
     }
 
     private void reconcileAndConnect() {
@@ -539,13 +546,15 @@ public class TerminalActivity extends Activity {
         if (instanceId == null || bytes == null || bytes.length == 0) {
             return;
         }
-        new Thread(() -> {
+        sendExecutor.execute(() -> {
             try {
                 PersistentTerminalSessionPool.getInstance().sendBytes(this.instanceId, bytes);
             } catch (Exception e) {
-                append("[send failed: " + e.getMessage() + "]\n");
+                if (ui != null) {
+                    ui.post(() -> append("[send failed: " + e.getMessage() + "]\n"));
+                }
             }
-        }, "terminal-send").start();
+        });
     }
 
     private void append(String text) {
