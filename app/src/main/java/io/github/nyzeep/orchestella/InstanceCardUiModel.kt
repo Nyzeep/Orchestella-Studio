@@ -21,6 +21,7 @@ data class InstanceCardUiModel(
     val stateBadgeBgColorRes: Int,
     val isBreathing: Boolean,
     val hardwareSpecsText: String,
+    val ipAddress: String = "离线",
     val cpuCores: Int,
     val ramMb: Int,
     val diskGb: Int,
@@ -32,8 +33,7 @@ data class InstanceCardUiModel(
     val canClone: Boolean = false,
     val canDelete: Boolean,
     val hasCrashDiagnostic: Boolean,
-    val crashDiagnostic: InstanceLifecycle.CrashDiagnostic?,
-    val ipAddress: String = if (state == InstanceLifecycle.State.RUNNING) "10.0.2.15" else "离线"
+    val crashDiagnostic: InstanceLifecycle.CrashDiagnostic?
 ) {
     companion object {
         fun from(
@@ -85,6 +85,8 @@ data class InstanceCardUiModel(
                 }
             }
 
+            val ipAddress = if (isRunning) "10.0.2.15" else "离线"
+
             return InstanceCardUiModel(
                 instanceId = instance.id(),
                 shortId = shortId,
@@ -97,6 +99,7 @@ data class InstanceCardUiModel(
                 stateBadgeBgColorRes = stateBgColor,
                 isBreathing = isRunning,
                 hardwareSpecsText = hwText,
+                ipAddress = ipAddress,
                 cpuCores = cpuCores,
                 ramMb = ramMb,
                 diskGb = diskGb,

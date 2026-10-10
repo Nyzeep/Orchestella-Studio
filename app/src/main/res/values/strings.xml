@@ -318,4 +318,40 @@
     <string name="desktop_headless_title">未配置图形桌面环境</string>
     <string name="desktop_headless_message">当前实例使用的是轻量命令行根文件系统（Headless），尚未安装或配置 Wayland / Labwc 图形桌面。请点击「打开终端」在 Linux 终端中进行操作。</string>
     <string name="dialog_close">我知道了</string>
+
+    <!-- Ticket 04: 二级实例详情控制台与极简卡片 -->
+    <string name="instance_detail_title">虚拟机详情控制台</string>
+    <string name="instance_card_ip_offline">离线</string>
+    <string name="console_section_header_actions">状态与核心控制</string>
+    <string name="console_btn_terminal">💻 打开终端</string>
+    <string name="console_btn_desktop">🖥️ 进入桌面</string>
+    <string name="console_btn_power">⚡ 电源管理</string>
+    <string name="console_btn_start">开机</string>
+    <string name="console_btn_stop">正常关机 (Graceful)</string>
+    <string name="console_btn_force_stop">强制断电 (Force Kill)</string>
+    <string name="console_btn_restart">重启虚拟机</string>
+    <string name="console_section_hardware">硬件规格调整 (Hardware Specification)</string>
+    <string name="console_hw_running_hint">请先关机后再调整硬件参数</string>
+    <string name="console_hw_save">保存并更新规格</string>
+    <string name="console_section_storage">存储与挂载管理 (Storage &amp; Mounts)</string>
+    <string name="console_storage_physical">实际物理占用：%1$s</string>
+    <string name="console_storage_logical">逻辑磁盘容量：%1$s</string>
+    <string name="console_storage_expand_disk">扩容虚拟磁盘</string>
+    <string name="console_storage_export_backup">📦 导出整机 SAF 备份</string>
+    <string name="console_section_network">网络与端口转发 (Networking)</string>
+    <string name="console_network_mode">网络模式：NAT 虚拟网络 (10.0.2.x)</string>
+    <string name="console_network_ip">虚拟 IP 地址：%1$s</string>
+    <string name="console_network_port_forwarding">端口映射规则管理</string>
+    <string name="console_section_danger">危险管理区 (Danger Zone)</string>
+    <string name="console_danger_clone">🐑 克隆实例 (Clone Instance)</string>
+    <string name="console_danger_clone_desc">一键完整复制并派生全新独立实例</string>
+    <string name="console_danger_reset">🔄 重置运行状态 (Reset State)</string>
+    <string name="console_danger_reset_desc">针对异常宿主断电导致的死锁进行状态对齐修复</string>
+    <string name="console_danger_delete">🗑️ 永久物理删除 (Delete Permanently)</string>
+    <string name="console_danger_delete_desc">彻底物理回收虚拟磁盘与元数据，必须二次验证输入</string>
+    <string name="console_delete_dialog_title">危险操作：永久物理删除</string>
+    <string name="console_delete_dialog_message">此操作将永久销毁实例数据，磁盘将被物理抹除且不可恢复！\n\n为防止误触，请输入实例完整 ID「%1$s」以确认删除：</string>
+    <string name="console_delete_dialog_confirm">我已知晓风险，永久删除</string>
+    <string name="console_delete_dialog_mismatch">输入的实例 ID 不匹配，删除已拦截取消</string>
+    <string name="console_delete_success">实例已彻底物理删除</string>
 </resources>
