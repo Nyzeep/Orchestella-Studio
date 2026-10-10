@@ -27,11 +27,35 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private TerminalInputSink inputSink;
     private StickyModifierStateMachine stateMachine;
-    private EditText targetInput;
     private InteractiveTerminalEngine terminalEngine;
 
     private Button btnCtrl;
     private Button btnAlt;
+
+    /**
+     * Dynamically calculates target bottom padding for the auxiliary key bar.
+     * When the soft keyboard (IME) is visible (imeBottom > 0), the bar docks exactly
+     * on top of the keyboard. When hidden, it docks cleanly above the system navigation bar.
+     */
+    public static int calculateTargetBottomPadding(int imeBottom, int navBottom) {
+        if (imeBottom > 0) {
+            return imeBottom;
+        }
+        return Math.max(0, navBottom);
+    }
+
+    /**
+     * Binds WindowInsets listener to this view to dynamically update bottom padding with IME.
+     */
+    public void bindWindowInsets() {
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(this, (v, insets) -> {
+            androidx.core.graphics.Insets imeInsets = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.ime());
+            androidx.core.graphics.Insets navInsets = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.navigationBars());
+            int targetBottomPadding = calculateTargetBottomPadding(imeInsets.bottom, navInsets.bottom);
+            v.setPadding(v.getPaddingLeft(), v.getPaddingTop(), v.getPaddingRight(), targetBottomPadding);
+            return insets;
+        });
+    }
 
     public void setTerminalEngine(InteractiveTerminalEngine terminalEngine) {
         this.terminalEngine = terminalEngine;
@@ -75,8 +99,9 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
         }
     }
 
+    @Deprecated
     public void setTargetInput(EditText targetInput) {
-        this.targetInput = targetInput;
+        // Deprecated: Ticket 06 eliminates isolated EditText; auxiliary bar sends directly to PTY sink
     }
 
     public StickyModifierStateMachine getStateMachine() {
@@ -147,12 +172,6 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
     public void pressTab() {
         if (terminalEngine != null) {
             terminalEngine.handleTab();
-        } else if (targetInput != null && targetInput.getText().length() > 0) {
-            String current = targetInput.getText().toString();
-            targetInput.setText("");
-            if (inputSink != null) {
-                inputSink.sendText(current + "\t");
-            }
         } else if (inputSink != null) {
             inputSink.sendBytes(new byte[]{'\t'});
         }
@@ -181,11 +200,6 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
     public void pressClr() {
         if (terminalEngine != null) {
             terminalEngine.handleClearScreenAndResetLine();
-        } else if (targetInput != null) {
-            targetInput.setText("");
-            if (inputSink != null) {
-                inputSink.sendBytes(new byte[]{0x0C});
-            }
         } else if (inputSink != null) {
             inputSink.sendBytes(new byte[]{0x0C});
         }
@@ -202,8 +216,6 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
                     String str = text.toString();
                     if (terminalEngine != null) {
                         terminalEngine.handleTextInserted(str);
-                    } else if (targetInput != null) {
-                        insertTextIntoInput(str);
                     } else if (inputSink != null) {
                         inputSink.sendText(str);
                     }
@@ -215,8 +227,6 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
     public void pressHome() {
         if (terminalEngine != null) {
             terminalEngine.handleHome();
-        } else if (targetInput != null) {
-            targetInput.setSelection(0);
         } else {
             sendArrowSequence("\u001B[H");
         }
@@ -225,8 +235,6 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
     public void pressEnd() {
         if (terminalEngine != null) {
             terminalEngine.handleEnd();
-        } else if (targetInput != null) {
-            targetInput.setSelection(targetInput.getText().length());
         } else {
             sendArrowSequence("\u001B[F");
         }
@@ -265,9 +273,7 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
     }
 
     public void pressSymbol(String symbol) {
-        if (targetInput != null) {
-            insertTextIntoInput(symbol);
-        } else if (terminalEngine != null) {
+        if (terminalEngine != null) {
             terminalEngine.handleTextInserted(symbol);
         } else if (inputSink != null) {
             inputSink.sendText(symbol);
@@ -298,21 +304,6 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
         btn.setOnClickListener(listener);
         container.addView(btn, lp);
         return btn;
-    }
-
-    private void insertTextIntoInput(String symbol) {
-        if (targetInput != null) {
-            int start = targetInput.getSelectionStart();
-            int end = targetInput.getSelectionEnd();
-            if (start >= 0 && end >= 0) {
-                targetInput.getText().replace(Math.min(start, end), Math.max(start, end), symbol);
-            } else {
-                targetInput.append(symbol);
-            }
-            targetInput.requestFocus();
-        } else if (inputSink != null) {
-            inputSink.sendText(symbol);
-        }
     }
 
     private void sendArrowSequence(String seq) {
