@@ -100,8 +100,29 @@ public final class EmbeddedProvisionInputTest {
                 // required
             }
         }
+        // Identity & credentials streaming (Ticket 03)
+        java.io.ByteArrayOutputStream idOut = new java.io.ByteArrayOutputStream();
+        try (ByteArrayInputStream in = new ByteArrayInputStream(rootfs)) {
+            EmbeddedProvisionInput.writeSegment(
+                    in, rootfs.length, rootfsName, token, "MyPass1234", null, null,
+                    "orchestella-host", "devuser", true, idOut);
+        }
+        byte[] idCpio = gunzip(idOut.toByteArray());
+        String idText = new String(idCpio, StandardCharsets.US_ASCII);
+        if (!idText.contains("opt/droidlayer/embedded-input/hostname")) {
+            fail("missing embedded hostname entry");
+        }
+        if (!idText.contains("opt/droidlayer/embedded-input/guest.user")) {
+            fail("missing embedded guest.user entry");
+        }
+        if (!idText.contains("opt/droidlayer/embedded-input/guest.sudo")) {
+            fail("missing embedded guest.sudo entry");
+        }
+        if (!idText.contains("opt/droidlayer/embedded-input/guest.password")) {
+            fail("missing embedded guest.password entry");
+        }
 
-        System.out.println("EMBEDDED_PROVISION_INPUT_TEST_OK deterministic=1 gzip=1 newc_entries=3 trailer=1 parent_dirs=2 token_validation=2");
+        System.out.println("EMBEDDED_PROVISION_INPUT_TEST_OK deterministic=1 gzip=1 newc_entries=3 trailer=1 parent_dirs=2 token_validation=2 identity_credentials=1");
     }
 
     private static void fail(String reason) {

@@ -89,8 +89,17 @@ public class DistroInstanceCreator {
     }
 
     public InstanceLifecycle.Instance create(InputStream archive, long declaredSize, VmHardwareConfig hardwareConfig) throws IOException {
+        return create(archive, declaredSize, hardwareConfig, io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig.defaultRoot());
+    }
+
+    public InstanceLifecycle.Instance create(
+            InputStream archive,
+            long declaredSize,
+            VmHardwareConfig hardwareConfig,
+            io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig userConfig) throws IOException {
         Objects.requireNonNull(archive, "archive");
         Objects.requireNonNull(hardwareConfig, "hardwareConfig");
+        Objects.requireNonNull(userConfig, "userConfig");
         manifest.requireExpectedSize(declaredSize);
         Path inputs = privateDirectory.resolve("distro-inputs");
         Files.createDirectories(inputs);
@@ -133,7 +142,11 @@ public class DistroInstanceCreator {
                 channel.position(rootVolumeBytes - 1L);
                 channel.write(ByteBuffer.wrap(new byte[] {0}));
             }
-            return controller.create(new InstanceLifecycle.DistroReference(manifest.id(), manifest.version()), volume, hardwareConfig);
+            return controller.create(
+                    new InstanceLifecycle.DistroReference(manifest.id(), manifest.version()),
+                    volume,
+                    hardwareConfig,
+                    userConfig);
         } catch (IOException | RuntimeException failure) {
             Files.deleteIfExists(volume);
             throw failure;

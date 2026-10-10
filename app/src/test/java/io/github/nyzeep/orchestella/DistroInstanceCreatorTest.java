@@ -5,6 +5,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig;
 import io.github.nyzeep.orchestella.runtime.distro.DistroManifest;
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle;
 import java.io.ByteArrayInputStream;
@@ -166,6 +167,35 @@ public final class DistroInstanceCreatorTest {
         }
     }
 
+    @Test
+    public void createsInstanceWithCustomUserCredentialsAndHostname() throws Exception {
+        Path privateDirectory = temporaryFolder.newFolder("private-user-creds").toPath();
+        InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(privateDirectory.resolve("instances"));
+        DistroInstanceCreator creator =
+                new DistroInstanceCreator(
+                        alpineManifest(),
+                        new InstanceLifecycle.Controller(store, Clock.systemUTC()),
+                        privateDirectory);
+
+        io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig userConfig =
+                new io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig("developer", "DevPass2026", true, "workstation");
+
+        InstanceLifecycle.Instance instance =
+                creator.create(
+                        new ByteArrayInputStream("valid-alpine".getBytes(StandardCharsets.US_ASCII)),
+                        12,
+                        VmHardwareConfig.defaultConfig(),
+                        userConfig);
+
+        assertEquals("developer", instance.defaultUser());
+        assertEquals("DevPass2026", instance.guestPassword());
+        assertEquals("workstation", instance.hostname());
+
+        InstanceLifecycle.Instance loaded = store.load(instance.id());
+        assertEquals("developer", loaded.defaultUser());
+        assertEquals("DevPass2026", loaded.guestPassword());
+        assertEquals("workstation", loaded.hostname());
+    }
     private static DistroManifest debianManifest() {
         return new DistroManifest(
                 "debian",

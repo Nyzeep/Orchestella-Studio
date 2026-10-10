@@ -164,10 +164,12 @@ public final class InstanceLifecycleCloneTest {
 
         InstanceLifecycle.Instance cloned = controller.cloneInstance(source.id());
 
-        // New bridge token and guest password
+        // New bridge token, while credentials and identity are preserved
         assertFalse(cloned.bridgeToken().equals(source.bridgeToken()), "bridgeToken must be freshly generated");
-        assertFalse(cloned.guestPassword().equals(source.guestPassword()), "guestPassword must be freshly generated");
-        assertEquals(16, cloned.guestPassword().length(), "guest password valid length");
+        assertEquals(source.guestPassword(), cloned.guestPassword(), "guestPassword must be preserved from source");
+        assertEquals(source.hostname(), cloned.hostname(), "hostname must be preserved from source");
+        assertEquals(source.defaultUser(), cloned.defaultUser(), "defaultUser must be preserved from source");
+
 
         // Hardware config is replicated
         assertEquals(customConfig, cloned.hardwareConfig(), "hardwareConfig must be duplicated");
