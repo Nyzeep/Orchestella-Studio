@@ -15,8 +15,8 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 printf '=== [1/4] Checking desktop provisioning and launch scripts ===\n'
-SETUP_SCRIPT="$GUEST_ASSETS_DIR/scripts/droidlayer-desktop-setup.sh"
-LAUNCH_SCRIPT="$GUEST_ASSETS_DIR/scripts/droidlayer-desktop-launch.sh"
+SETUP_SCRIPT="$GUEST_ASSETS_DIR/scripts/orchestella-desktop-setup.sh"
+LAUNCH_SCRIPT="$GUEST_ASSETS_DIR/scripts/orchestella-desktop-launch.sh"
 
 [[ -f "$SETUP_SCRIPT" && -x "$SETUP_SCRIPT" ]] || {
     printf 'Error: setup script missing or not executable: %s\n' "$SETUP_SCRIPT" >&2
@@ -46,7 +46,7 @@ DESKTOP_DIR="$GUEST_ASSETS_DIR/scripts/desktop"
 [[ -f "$DESKTOP_DIR/foot/foot.ini" ]] || { printf 'Missing foot/foot.ini\n' >&2; exit 1; }
 [[ -f "$DESKTOP_DIR/weston/weston.ini" ]] || { printf 'Missing weston/weston.ini\n' >&2; exit 1; }
 [[ -f "$DESKTOP_DIR/pulseaudio/default.pa" ]] || { printf 'Missing pulseaudio/default.pa\n' >&2; exit 1; }
-[[ -f "$DESKTOP_DIR/clipboard/droidlayer-clipboard-agent" ]] || { printf 'Missing clipboard/droidlayer-clipboard-agent\n' >&2; exit 1; }
+[[ -f "$DESKTOP_DIR/clipboard/orchestella-clipboard-agent" ]] || { printf 'Missing clipboard/orchestella-clipboard-agent\n' >&2; exit 1; }
 
 printf 'All desktop config templates present and intact.\n'
 
