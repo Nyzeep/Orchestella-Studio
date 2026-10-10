@@ -75,6 +75,22 @@ public final class EmbeddedProvisionInput {
             byte[] initScript,
             byte[] proxyRelayBinary,
             OutputStream targetOut) throws IOException {
+        writeSegment(rootfsStream, rootfsSize, rootfsFileName, bridgeToken, guestPassword, initScript, proxyRelayBinary, null, null, false, targetOut);
+    }
+
+    /** Streams the gzipped cpio segment with optional user identity, password, sudo and hostname. */
+    public static void writeSegment(
+            java.io.InputStream rootfsStream,
+            long rootfsSize,
+            String rootfsFileName,
+            String bridgeToken,
+            String guestPassword,
+            byte[] initScript,
+            byte[] proxyRelayBinary,
+            String hostname,
+            String guestUser,
+            boolean guestSudo,
+            OutputStream targetOut) throws IOException {
         Objects.requireNonNull(rootfsStream, "rootfsStream");
         Objects.requireNonNull(rootfsFileName, "rootfsFileName");
         Objects.requireNonNull(targetOut, "targetOut");
@@ -94,6 +110,18 @@ public final class EmbeddedProvisionInput {
         if (guestPassword != null && !guestPassword.trim().isEmpty()) {
             appendFile(out, EMBEDDED_DIR + "/guest.password",
                     (guestPassword.trim() + "\n").getBytes(StandardCharsets.US_ASCII));
+        }
+        if (hostname != null && !hostname.trim().isEmpty()) {
+            appendFile(out, EMBEDDED_DIR + "/hostname",
+                    (hostname.trim() + "\n").getBytes(StandardCharsets.US_ASCII));
+        }
+        if (guestUser != null && !guestUser.trim().isEmpty()) {
+            appendFile(out, EMBEDDED_DIR + "/guest.user",
+                    (guestUser.trim() + "\n").getBytes(StandardCharsets.US_ASCII));
+        }
+        if (guestSudo) {
+            appendFile(out, EMBEDDED_DIR + "/guest.sudo",
+                    "1\n".getBytes(StandardCharsets.US_ASCII));
         }
         appendStream(out, EMBEDDED_DIR + "/" + rootfsFileName, rootfsStream, rootfsSize);
 

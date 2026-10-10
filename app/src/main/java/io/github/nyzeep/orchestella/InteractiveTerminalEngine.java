@@ -31,16 +31,24 @@ public final class InteractiveTerminalEngine {
         private final String symbol;
         private final boolean root;
 
+        private static final java.util.regex.Pattern UUID_PATTERN =
+                java.util.regex.Pattern.compile("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
+
         public PromptInfo(String user, String host, String workingDirectory, String symbol, boolean root) {
-            this.user = user != null && !user.isEmpty() ? user : "orchestella";
-            this.host = host != null && !host.isEmpty() ? host : "guest";
+            this.user = user != null && !user.isEmpty() ? user : (root ? "root" : "dev");
+            String normalizedHost = host;
+            if (normalizedHost == null || normalizedHost.isEmpty() || "guest".equals(normalizedHost)
+                    || UUID_PATTERN.matcher(normalizedHost).matches()) {
+                normalizedHost = "orchestella";
+            }
+            this.host = normalizedHost;
             this.workingDirectory = workingDirectory != null && !workingDirectory.isEmpty() ? workingDirectory : "~";
             this.symbol = symbol != null && !symbol.isEmpty() ? symbol : "❯";
             this.root = root;
         }
 
         public static PromptInfo defaultUser() {
-            return new PromptInfo("orchestella", "guest", "~", "❯", false);
+            return new PromptInfo("dev", "orchestella", "~", "❯", false);
         }
 
         public static PromptInfo rootUser() {
