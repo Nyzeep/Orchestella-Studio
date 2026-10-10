@@ -4,6 +4,7 @@ plugins {
 
 dependencies {
     api(project(":runtime:contract"))
+    testImplementation(libs.junit)
 }
 
 java {
@@ -63,6 +64,20 @@ tasks.register<JavaExec>("instanceUserConfigTest") {
     mainClass.set("io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfigTest")
 }
 
+val powerControllerOutput = layout.buildDirectory.dir("power-controller-test")
+tasks.register<JavaExec>("instancePowerControllerTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.instance.InstancePowerControllerTest")
+    args(powerControllerOutput.get().asFile.absolutePath)
+}
+
+val snapshotManagerOutput = layout.buildDirectory.dir("snapshot-manager-test")
+tasks.register<JavaExec>("instanceSnapshotManagerTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.instance.InstanceSnapshotManagerTest")
+    args(snapshotManagerOutput.get().asFile.absolutePath)
+}
+
 tasks.named("check") {
     dependsOn(
         "normalInstanceLifecycleContractTest",
@@ -71,7 +86,13 @@ tasks.named("check") {
         "instanceLifecycleDeleteTest",
         "instanceLifecycleCloneTest",
         "sparseDiskResizerTest",
-        "instanceUserConfigTest"
+        "instanceUserConfigTest",
+        "instancePowerControllerTest",
+        "instanceSnapshotManagerTest"
     )
+}
+
+tasks.named<Test>("test") {
+    dependsOn("instancePowerControllerTest", "instanceSnapshotManagerTest")
 }
 

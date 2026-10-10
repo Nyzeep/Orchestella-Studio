@@ -53,7 +53,8 @@ public final class InstanceLifecycle {
         STOPPED,
         RUNNING,
         INTERRUPTED,
-        CRASHED
+        CRASHED,
+        SUSPENDED
     }
 
     /** Structured diagnostic information for an abnormal termination or VMM crash. */
@@ -359,7 +360,7 @@ public final class InstanceLifecycle {
                     defaultUser);
         }
 
-        private Instance withHardwareConfig(VmHardwareConfig newConfig, Clock clock) {
+        Instance withHardwareConfig(VmHardwareConfig newConfig, Clock clock) {
             return new Instance(
                     id,
                     distro,
@@ -587,7 +588,7 @@ public final class InstanceLifecycle {
             }
             Instance instance = read(target);
             State state = instance.state();
-            if (state == State.RUNNING || state == State.PROVISIONING) {
+            if (state == State.RUNNING || state == State.PROVISIONING || state == State.SUSPENDED) {
                 throw new IllegalStateException("Cannot delete instance while " + state);
             }
             if (state != State.STOPPED && state != State.CREATED && state != State.CRASHED) {
@@ -859,6 +860,46 @@ public final class InstanceLifecycle {
             return transition(id, State.RUNNING);
         }
 
+        /**
+         * Suspends a currently RUNNING instance, freezing CPU scheduling.
+         */
+        public synchronized Instance suspend(String id) throws IOException {
+            Instance current = store.load(id);
+            if (current.state() != State.RUNNING) {
+                throw new InvalidTransitionException(
+                        "cannot suspend instance in state " + current.state() + "; expected RUNNING");
+            }
+            return transition(id, State.SUSPENDED);
+        }
+
+        /**
+         * Resumes a SUSPENDED instance, unfreezing CPU scheduling and returning to RUNNING.
+         */
+        public synchronized Instance resume(String id) throws IOException {
+            Instance current = store.load(id);
+            if (current.state() != State.SUSPENDED) {
+                throw new InvalidTransitionException(
+                        "cannot resume instance in state " + current.state() + "; expected SUSPENDED");
+            }
+            for (Instance instance : store.list()) {
+                if (!instance.id().equals(id) && instance.state() == State.RUNNING) {
+                    throw new SingleRunningInstanceException("another Instance is already RUNNING");
+                }
+            }
+            return transition(id, State.RUNNING);
+        }
+
+        /**
+         * Force stops an instance, transitioning RUNNING or SUSPENDED states directly to STOPPED.
+         */
+        public synchronized Instance forceStop(String id) throws IOException {
+            Instance current = store.load(id);
+            if (current.state() == State.STOPPED) {
+                return current;
+            }
+            return transition(id, State.STOPPED);
+        }
+
         /** Records an observed normal guest-initiated stop; it is not a host power command. */
         public synchronized Instance recordNormalGuestStop(String id) throws IOException {
             return transition(id, State.STOPPED);
@@ -897,7 +938,7 @@ public final class InstanceLifecycle {
         }
 
         /**
-         * Reconciles all stale RUNNING instances to INTERRUPTED (the default cold-restorable state).
+         * Reconciles all stale RUNNING or SUSPENDED instances to INTERRUPTED (the default cold-restorable state).
          * Returns the list of reconciled instances.
          */
         public synchronized List<Instance> reconcileAfterHostDeath() throws IOException {
@@ -905,7 +946,7 @@ public final class InstanceLifecycle {
         }
 
         /**
-         * Reconciles all stale RUNNING instances to the specified target state (INTERRUPTED or STOPPED).
+         * Reconciles all stale RUNNING or SUSPENDED instances to the specified target state (INTERRUPTED or STOPPED).
          */
         public synchronized List<Instance> reconcileAfterHostDeath(State targetState) throws IOException {
             if (targetState != State.INTERRUPTED && targetState != State.STOPPED) {
@@ -914,7 +955,7 @@ public final class InstanceLifecycle {
             }
             List<Instance> reconciled = new ArrayList<>();
             for (Instance instance : store.list()) {
-                if (instance.state() == State.RUNNING) {
+                if (instance.state() == State.RUNNING || instance.state() == State.SUSPENDED) {
                     Instance updated = instance.transitioned(targetState, clock);
                     store.save(updated);
                     reconciled.add(updated);
@@ -924,7 +965,7 @@ public final class InstanceLifecycle {
         }
 
         /**
-         * Reconciles a single instance by id if it is in stale RUNNING state, setting it to INTERRUPTED.
+         * Reconciles a single instance by id if it is in stale RUNNING or SUSPENDED state, setting it to INTERRUPTED.
          */
         public synchronized Instance reconcileAfterHostDeath(String id) throws IOException {
             return reconcileAfterHostDeath(id, State.INTERRUPTED);
@@ -939,7 +980,7 @@ public final class InstanceLifecycle {
                         "targetState must be INTERRUPTED or STOPPED, got: " + targetState);
             }
             Instance instance = store.load(id);
-            if (instance.state() == State.RUNNING) {
+            if (instance.state() == State.RUNNING || instance.state() == State.SUSPENDED) {
                 Instance updated = instance.transitioned(targetState, clock);
                 store.save(updated);
                 return updated;
@@ -1069,7 +1110,7 @@ public final class InstanceLifecycle {
     public static class InvalidTransitionException extends IllegalStateException {
         private static final long serialVersionUID = 1L;
 
-        private InvalidTransitionException(String message) {
+        public InvalidTransitionException(String message) {
             super(message);
         }
     }
@@ -1077,7 +1118,7 @@ public final class InstanceLifecycle {
     public static final class SingleRunningInstanceException extends InvalidTransitionException {
         private static final long serialVersionUID = 1L;
 
-        private SingleRunningInstanceException(String message) {
+        public SingleRunningInstanceException(String message) {
             super(message);
         }
     }
@@ -1117,6 +1158,21 @@ public final class InstanceLifecycle {
             return true;
         }
         if (from == State.CRASHED && to == State.RUNNING) {
+            return true;
+        }
+        if (from == State.RUNNING && to == State.SUSPENDED) {
+            return true;
+        }
+        if (from == State.SUSPENDED && to == State.RUNNING) {
+            return true;
+        }
+        if (from == State.SUSPENDED && to == State.STOPPED) {
+            return true;
+        }
+        if (from == State.SUSPENDED && to == State.INTERRUPTED) {
+            return true;
+        }
+        if (from == State.SUSPENDED && to == State.CRASHED) {
             return true;
         }
         return false;
