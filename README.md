@@ -5,181 +5,182 @@
 **无需 Root 的 Android 原生双引擎 Linux 运行环境与移动工作站**  
 *Native Dual-Engine Full Linux Runtime & Mobile Workstation for Android Without Root*
 
-[![Status](https://img.shields.io/badge/Status-Under%20Heavy%20Development-orange.svg?style=flat-square)](https://github.com/Nyzeep/Orchestella-Studio)
-[![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen.svg?style=flat-square)](https://github.com/Nyzeep/Orchestella-Studio)
+[![Release](https://img.shields.io/badge/Release-v0.1.0--preview-blue.svg?style=flat-square)](https://github.com/Nyzeep/Orchestella-Studio/releases)
+[![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen.svg?style=flat-square)](https://github.com/Nyzeep/Orchestella-Studio/actions)
 [![License](https://img.shields.io/badge/License-Apache--2.0-orange.svg?style=flat-square)](LICENSE)
 [![Android](https://img.shields.io/badge/Android-8.0%2B%20(API%2026%2B)-green.svg?style=flat-square)](https://developer.android.com)
 [![Architecture](https://img.shields.io/badge/Arch-ARM64--v8a-purple.svg?style=flat-square)](https://developer.android.com/ndk/guides/abis)
-[![Tests](https://img.shields.io/badge/Tests-100%25%20Passing-success.svg?style=flat-square)](https://github.com/Nyzeep/Orchestella-Studio/actions)
+[![Tests](https://img.shields.io/badge/Tests-100%25%20Passing%20(458%2B)-success.svg?style=flat-square)](https://github.com/Nyzeep/Orchestella-Studio/actions)
 
-[简体中文](#简体中文) | [English](#english)
+[🇨🇳 简体中文](#-简体中文) | [🌐 English](#-english)
 
 </div>
 
 ---
 
-<a name="简体中文"></a>
+<a name="-简体中文"></a>
 ## 🇨🇳 简体中文
 
 ### 1. 项目简介
 
-**Orchestella Studio** 是一款面向现代化 Android 设备的**免 Root 完整 Linux 虚拟机运行环境与移动开发工作站**。
+**Orchestella Studio** 是一款面向现代化 Android 设备的**免 Root 完整 Linux 虚拟机运行环境与移动专业开发工作站**。
 
-与传统的 PRoot 容器、chroot 方案或受限终端不同，Orchestella Studio 依托 Android 原生生态，为每个运行实例提供**具备真实独立 Linux 内核（Linux 6.6 LTS）的完整系统虚拟机**。它摆脱了 PRoot 对 `ptrace` 机制的重度依赖与性能惩罚，彻底消除了系统调用拦截失效、多线程竞态与伪特权陷阱，在移动设备上提供 100% 工业级标准的 Linux 开发、计算与图形桌面体验。
+与传统的 PRoot 容器、chroot 方案或受限终端不同，Orchestella Studio 依托 Android 原生生态，为每个运行实例提供**具备真实独立 Linux 内核（Linux 6.6 LTS）的完整系统虚拟机**。它彻底摒弃了 PRoot 对 `ptrace` 机制的系统调用拦截与性能损耗，消除了多线程竞态与伪特权陷阱，在移动设备上带来具备工业级稳定性的真实 Linux 开发、编译、网络与桌面体验。
+
+在全新的 **v0.1.0-preview** 版本中，项目历经全面架构升级与工业级 UX 重构，引入了**媲美 VMware 的快速创建向导**、**7 大主流 Linux 发行版矩阵**、**二级实例详情控制台**、**外部电源与快照管理**、**直接键入式交互终端**及**多终端并发抽屉**等里程碑特性。
 
 ---
 
 ### 2. 核心架构与功能特性
 
 ```
-+-----------------------------------------------------------------------------------+
-|                            Orchestella Studio (App Layer)                         |
-|   [Material 3 仪表盘]  [即时交互终端]  [Wayland 图形桌面]  [SAF 零拷贝导入导出]   |
-+-----------------------------------------+-----------------------------------------+
-|      硬件虚拟化引擎 (AVF / pKVM)        |        软件虚拟化引擎 (QEMU TCG 8.2)      |
-|    - 近原生硬件加速 (L2 硬件级)          |    - 全架构兜底兼容 (L1 软件级)           |
-|    - Vsock 高性能双向桥接通道           |    - Unix 抽象套接字与桥接代理通道        |
-|    - 自动透明优雅降级保障               |    - GPL 边界与 nativeLibraryDir 纯净装配 |
-+-----------------------------------------+-----------------------------------------+
-|                             不可变契约层 (:runtime:contract)                      |
-|   [Rootfs 装配]  [出站 NAT 网络]  [动态端口转发]  [双向剪贴板]  [音频与外设管理]   |
-+-----------------------------------------------------------------------------------+
-|                        Linux Guest 独立虚拟机环境 (Linux 6.6)                     |
-|           Alpine Linux 3.24.1 (apk)     |     Debian 12/13 Bookworm/Trixie (apt)  |
-+-----------------------------------------------------------------------------------+
++---------------------------------------------------------------------------------------------------+
+|                                 Orchestella Studio (App Layer)                                    |
+|   [Material 3 仪表盘]  [极简卡片]  [二级详情控制台]  [多终端滑出抽屉]  [直接键入Shell]  [Wayland桌面]       |
++-------------------------------------------------+-------------------------------------------------+
+|          硬件虚拟化引擎 (AVF / pKVM)            |           软件虚拟化引擎 (QEMU TCG 8.2)           |
+|        - 近原生硬件加速 (L2 硬件级)              |       - 全架构高保真动态翻译 (L1 软件级)           |
+|        - Vsock 高性能双向桥接通道               |       - Unix 抽象套接字与桥接代理通道             |
+|        - 自动透明优雅降级保障                   |       - 严格遵守 GPL 隔离与 JNI 纯净加载           |
++-------------------------------------------------+-------------------------------------------------+
+|                                 不可变契约层 (:runtime:contract)                                  |
+|   [Rootfs 装配]  [出站 NAT 网络]  [动态端口转发]  [双向剪贴板]  [音频与外设通道]  [PTY 多路复用]    |
++---------------------------------------------------------------------------------------------------+
+|                             Linux Guest 独立虚拟机环境 (Linux 6.6 LTS)                             |
+|   Ubuntu 24.04 | Debian 12 | Arch ARM | Fedora 41 | openSUSE Tumbleweed | Kali | Alpine 3.20  |
++---------------------------------------------------------------------------------------------------+
 ```
 
 #### 🚀 1. 双执行引擎融合（Dual-Engine Architecture）
-- **硬件虚拟化（AVF / pKVM 策略）**：在支持 Android 虚拟化框架的设备上，获得 CPU 与内存的近原生硬件加速执行；
-- **软件虚拟化（QEMU TCG 8.2 策略）**：在未解锁虚拟化权限或不受支持的设备上，自动无缝回退至工业级软件动态翻译引擎，确保 100% 机型覆盖；
-- **诚实能力矩阵与透明降级**：内置严谨的设备硬件探针，透明汇报当前性能档位，绝不虚标假体验。
+- **硬件虚拟化（AVF / pKVM 策略）**：在支持 Android 虚拟化框架的旗舰设备上，获得 CPU 与内存的近原生硬件加速；
+- **软件虚拟化（QEMU TCG 8.2 策略）**：在未解锁虚拟化权限或普通设备上，自动无缝回退至工业级软件动态翻译引擎，确保 100% 机型覆盖；
+- **透明能力感知与优雅降级**：内置严谨的宿主硬件探针，透明汇报当前性能档位，绝不虚标假体验。
 
-#### 🐧 2. 真实完整的 Linux 系统环境
-- **独立完整内核**：搭载独立 Linux 6.6 LTS 内核，原生支持完整 Linux 系统调用（System Calls）、命名空间（Namespaces）、Cgroups 与网络协议栈；
-- **官方主流发行版**：开箱即用支持 Alpine Linux 3.24.1（轻量迅捷）与 Debian 12 Bookworm / 13 Trixie（全生态包仓库），支持使用原生 `apk` 与 `apt` 包管理器；
-- **真实 Root 特权**：提供真正的 `uid=0 (root)` 权限环境，告别 PRoot 的假 root 破坏与权限模拟崩溃。
+#### 🧙 2. VMware 级快速创建向导与初始自动化装配
+- **四步分步引导体验 (`SetupWizardActivity`)**：
+  - **步骤 1：发行版矩阵选择**：可视化挑选主流官方发行版，支持极速轻量与完整开发生态；
+  - **步骤 2：虚拟存储预检**：稀疏磁盘分配（Sparse raw image），内置宿主可用存储深度预检，容量不足时精准预警拦截；
+  - **步骤 3：网络模式与国内镜像源配置**：出站 NAT 网络配置，内置官方源与国内高速镜像源（清华大学、阿里云、中科大等）下拉切换，可选首启自动执行更新；
+  - **步骤 4：硬件配置与初始凭据注入**：灵活分配 vCPU 核心数、内存及 GPU 加速；配置主机名（默认 `orchestella`）与初始管理员凭据（默认 `root / 1234`），支持自定义普通用户与免密 sudo 权限。
+- **Guest 首启管线联动 (`FirstBootProvisionPipeline`)**：在 Guest 内核启动时通过 initramfs 自动固化主机名、账户凭据、包管理器镜像源及首次启动脚本。
 
-#### 🖥️ 3. Wayland 原生移动图形桌面与 High-DPI 缩放
-- **Wayland-First 架构**：内置轻量级合成器与原生 Wayland 显示通道，支持一键拉起 Linux 图形应用；
-- **NDK 高性能渲染管线**：基于 `ANativeWindow` 与 OpenGL ES 双缓冲流水线，保障流畅上屏；
-- **动态 High-DPI 缩放协商**：自动适配高分屏移动设备，根据物理屏幕密度自适应调整缩放比例，告别界面字体过小；
-- **双模热切换**：终端控制台与图形桌面平滑无缝切换，后台虚拟机生命周期不中断。
+#### 🐧 3. 7 大主流 Linux 发行版矩阵与全包管理器覆盖
+- **官方发行版矩阵支持**：
+  - **Ubuntu 24.04 LTS (Noble Numbat)**：通用服务器与开发首选，全生态包支持；
+  - **Debian 12 Bookworm**：极致稳定与通用基础平台；
+  - **Arch Linux ARM Rolling**：最新软件栈，极客首选滚动发行版；
+  - **Fedora 41 Minimal**：前沿技术体验；
+  - **openSUSE Tumbleweed JeOS**：企业级高可靠滚动系统；
+  - **Kali Linux Rolling**：网络安全与渗透测试环境；
+  - **Alpine Linux 3.20**：极致轻量（~15MB 极速下载与启动），集成 `AlpineEssentialPackageSuite` 开箱常用工具链（bash, curl, tar, sudo, htop 等）。
+- **5 大包管理器深度抽象**：统一支持 `APT`、`APK`、`PACMAN`、`DNF`、`ZYPPER`，提供标准的更新与软件安装支持。
 
-#### ⌨️ 4. 现代风格化 Shell 与即时交互终端
-- **字符级按键即打即显（Real-time Keystroke Echo）**：告别单行输入弹窗，击键、退格与控制序列实时渲染；
-- **现代化 Prompt 视觉**：集成风格化胶囊提示符与状态指示，提供高品质命令行交互体验；
-- **人体工程学触控辅助栏**：内置 `ESC`、`TAB`、`CTRL`、`ALT`、方向键、管道符 `|` 与反引号等关键开发按键，触控区域完全符合触控规范。
+#### 🎛️ 4. 极简卡片与全屏二级详情控制台（Instance Detail Console）
+- **一级概览卡片极简化**：
+  - 彻底移除主界面卡片上堆砌的滑块与易误触删除按钮；
+  - 呈现发行版徽标、运行状态胶囊 Badge（`● 运行中`、`○ 已关机`、`⏸ 已挂起`、`⚠ 崩溃告警`）、硬件规格摘要及虚拟 IP；
+  - 保留高优先级「快捷电源」操作，点击卡片主体通过 Material 缩放动画直达二级控制台。
+- **全屏二级管理控制台 (`InstanceDetailActivity`)**：
+  - **分区 1：头部状态看板与核心操作**：动态负荷看板，智能亮起 `[💻 打开终端]`、`[🖥️ 进入桌面]` 及 `[⚡ 电源管理]`；
+  - **分区 2：硬件规格调整 (Hardware Specs)**：运行态严格**置灰锁定**硬件滑块，显著提示「请先关机后再调整硬件参数」，彻底消除运行中热改硬件引发内核崩溃的隐患；关机状态下提供内存安全阈值变色指示器；
+  - **分区 3：存储与挂载管理 (Storage & Mounts)**：物理/逻辑容量对比、增量无损扩容与 SAF 零拷贝整机导出备份；
+  - **分区 4：网络与端口转发 (Networking)**：NAT 虚拟 IP 查看，可视化增删端口映射规则（如 `8080 -> 8080`, `22 -> 2222`）；
+  - **分区 5：危险管理区 (Danger Zone)**：一键克隆派生新实例、死锁状态复位自愈、物理删除二次输入实例名校验隔离。
 
-#### 🌐 5. 完整网络协议栈与系统级深度互通
-- **用户态出站 NAT**：虚拟机内部开箱即用访问公网，流畅进行软件包更新、Git 操作与网络请求；
-- **动态运行态端口转发**：支持运行时添加/移除端口映射规则（如 `8080 -> 8080`, `22 -> 2222`）；
-- **防回环双向剪贴板同步**：基于 SHA-256 哈希比对与容量保护，实现 Android 宿主与 Linux Guest 的剪贴板无缝双向互通；
-- **低延迟音频通道**：内置 PulseAudio 48kHz PCM 单向低延迟音频串流通道。
+#### ⚡ 5. 外部电源管理与 COW 状态快照系统
+- **工业级外部电源控制 (`InstancePowerController`)**：
+  - **平滑关机 (ACPI Shutdown)**：外部一键向 Guest 发送 ACPI 电源关机信号，安全同步脏页并携带 30 秒超时优雅等待守卫；
+  - **强制断电 (Force Kill)**：不可阻挡地终止 VMM 进程，彻底回收宿主内存与网络端口；
+  - **挂起与恢复唤醒 (Suspend & Resume)**：瞬间冻结 vCPU 调度与计算资源，进入 `SUSPENDED`（琥珀色）状态，恢复时秒级续接。
+- **轻量级快照管理系统 (`InstanceSnapshotManager`)**：
+  - 关机态下为磁盘根卷创建差分检查点，记录 `snapshots.json` 元数据索引；
+  - 在系统变更或高危编译前打下快照节点，出现异常随时**一键秒级回滚 (`revertToSnapshot`)**，完全还原磁盘数据与硬件规格；
+  - 支持多快照历史时间线与级联清理。
 
-#### 🎨 6. Material 3 移动生产力交互
-- **卡片化实例管理**：清晰呈现实例运行状态、资源占用与快捷操作入口；
-- **人体工程学规范**：所有核心交互按钮保证触摸靶心 $\ge 48\times 48\text{ dp}$，操作精准舒适；
-- **硬件参数灵活定制**：支持自由配置虚拟 CPU 核心数、内存上限及磁盘容量。
-
-#### 🛡️ 7. 安全合规与后台长效常驻
-- **每实例高熵独立凭据**：杜绝默认弱密码，支持安全查看、复制与凭据重置；
-- **Android 14+ 前台服务合规**：常驻运行态通知与系统唤醒锁（WakeLock），保障长时间编译与后台服务不中断；
-- **零遥测隐私铁律**：更新检查可完全关闭；关闭状态下保持 0 外部网络连接，绝不收集设备信息或隐私数据。
+#### ⌨️ 6. 原生直接键入式交互终端与多终端并发抽屉
+- **直接键入式终端交互**：
+  - 彻底废除“输入框打字并确认”的落后设计，点击终端画布直接键入，所敲即所得；
+  - 软键盘呼出随动、滚动查看与轻触打字精准防误触；
+  - 物理与手势返回键、音量键精准透传，不再被终端盲目拦截；
+  - 串行 FIFO 队列保障高频输入与粘贴零乱序；
+  - 人体工程学移动辅助按键栏（`ESC`, `TAB`, `CTRL`, `ALT`, 方向键等）随软键盘平滑动态吸附。
+- **后台会话常驻与零卡死连接池 (`TerminalSessionPool`)**：
+  - 虚拟机与终端后台长效运行，切出切入秒级重连，彻底消灭历史版本 `[no live session]` 卡死缺陷。
+- **多终端并发与右侧滑出抽屉 (`TerminalDrawerPanel`)**：
+  - 屏幕右边缘向左滑动手势或点击右上角手柄（`◫ 终端 (N)`）呼出 Dracula 主题抽屉；
+  - 单实例支持多达 16 个并发终端，后台各终端独占 Ring Buffer 独立输出，帧协议（`PtyMultiplexerProtocol`）杜绝串流；
+  - 支持长按重命名终端标签、平滑会话切换与关闭活动会话时的指针自动迁移（Failover）。
 
 ---
 
-### 3. 性能表现概览
+### 3. 运行要求与快速上手
 
-- **极速热启动**：秒级极速热恢复进入终端；
-- **交互低延迟**：基于本地双工数据通道，实现肉眼零延迟击键体验；
-- **宿主内存友好**：轻量级内存开销，针对移动端资源限制深度调优；
-- **磁盘弹性扩容**：支持稀疏镜像在线扩容与 Storage Access Framework (SAF) 零拷贝整机备份。
-
----
-
-### 4. 快速上手指南
-
-#### 4.1 运行要求
+#### 3.1 运行要求
 - **系统版本**：Android 8.0 (API 26) 或更高版本；
 - **芯片架构**：ARM64 (arm64-v8a)；
-- **物理内存**：建议 ≥ 3 GiB（低于配置时应用将提供友好提示以保护系统稳定性）；
+- **物理内存**：建议 ≥ 3 GiB（4 GiB 及以上体验最佳）；
 - **存储空间**：建议可用内部存储空间 ≥ 4 GiB。
 
-#### 4.2 极速上手三步法
-> ⚠️ **通知**：当前所有预发行版本因集中体验重塑与深度排障已全量下架撤回。待核心交互与 UX 缺陷彻底歼灭后，将重新分配版本号并开放下载。
-
-1. **源码构建**：克隆本仓库并在开发机执行 `./gradlew.bat assembleDebug` 生成测试包；
-2. **创建实例**：打开应用，选择创建 Alpine 或 Debian 实例，应用将自动完成初始环境校验；
-3. **启动使用**：
-   - 点击实例卡片中的「启动」进入交互终端；
-   - 执行 `uname -a` 查看 Linux 6.6 LTS 内核信息；
-   - 执行 `apk` 或 `apt` 安装所需开发工具链，尽享完整的移动 Linux 环境。
-
-#### 4.3 硬件加速升级（可选）
-在支持 Android 虚拟化框架（pKVM）的设备上：
-- 可在应用向导中通过 **Shizuku** 一键完成虚拟化权限配置；
-- 或在电脑端通过 ADB 执行授权：
-  ```bash
-  adb shell pm grant io.github.nyzeep.orchestella android.permission.MANAGE_VIRTUAL_MACHINE
-  ```
+#### 3.2 安装与上手
+1. 前往 [Releases](https://github.com/Nyzeep/Orchestella-Studio/releases) 下载最新的 `Orchestella-Studio-v0.1.0-preview.apk` 安装包；
+2. 打开应用，点击首页 **「+ 创建新实例」** 按钮进入快速向导；
+3. 选择发行版（如 Alpine 或 Ubuntu）、分配磁盘与内存、确认用户名与密码；
+4. 点击卡片上的 **「启动」** 按钮，直接在终端中开始您的移动 Linux 工作流！
 
 ---
 
-<a name="english"></a>
+<a name="-english"></a>
 ## 🌐 English
 
 ### 1. Introduction
 
 **Orchestella Studio** is a rootless full Linux virtual machine runtime and mobile workstation engineered for modern Android devices.
 
-Unlike traditional PRoot containers, chroot hacks, or restricted terminal environments, Orchestella Studio runs an **independent virtual machine powered by a genuine Linux kernel (Linux 6.6 LTS)** for every instance. It eliminates PRoot's heavy `ptrace` overhead, avoids system call interception race conditions, and provides a genuine 100% industrial-grade Linux computing and graphical desktop experience right inside your pocket.
+Unlike traditional PRoot containers, chroot hacks, or restricted terminal environments, Orchestella Studio runs an **independent virtual machine powered by a genuine Linux kernel (Linux 6.6 LTS)** for every instance. It eliminates PRoot's heavy `ptrace` system call interception overhead, avoids multi-threading race conditions, and provides an authentic 100% industrial-grade Linux computing, networking, and graphical desktop experience right inside your pocket.
+
+In the brand-new **v0.1.0-preview** release, Orchestella Studio undergoes a monumental architectural elevation and UX overhaul, featuring a **VMware-grade 4-step creation wizard**, a **7-distro ecosystem matrix**, a **full-screen secondary detail console**, **external power and COW snapshot management**, **direct-input native interactive shell**, and **multi-terminal concurrent sessions with right slide-out drawer**.
 
 ---
 
 ### 2. Architectural Highlights & Features
 
 - **Dual Execution Engine Architecture**:
-  - **AVF / pKVM Engine**: Delivers near-native CPU and memory performance through hardware virtualization on supported devices;
-  - **QEMU TCG 8.2 Engine**: Universal software dynamic translation engine fallback providing 100% device compatibility;
-  - **Honest Capability Matrix**: Transparently evaluates hardware capabilities and degrades gracefully without fake claims.
-- **Genuine & Full Linux Operating System**:
-  - Independent Linux 6.6 LTS kernel with full namespaces, cgroups, and network stack support;
-  - Native distributions: Alpine Linux 3.24.1 & Debian 12/13 with official package managers (`apk` & `apt`);
-  - True `uid=0 (root)` privilege inside the guest without host sandbox compromises.
-- **Wayland Graphical Desktop & High-DPI Adaptation**:
-  - Lightweight compositor integration and native Wayland graphics channel;
-  - NDK `ANativeWindow` and OpenGL ES double-buffered rendering pipeline;
-  - Dynamic High-DPI scale negotiation tailored for high-resolution mobile displays;
-  - Smooth dual-mode hot switching between interactive terminal and desktop.
-- **Modern Styled Shell & Real-time Keystroke Echo**:
-  - Character-level interactive terminal engine with immediate keystroke echo, VT100 controls, and prompt styling;
-  - Ergonomic mobile auxiliary key bar (`ESC`, `TAB`, `CTRL`, `ALT`, arrows, `|`, etc.) meeting Material 3 touch target standards.
-- **Complete Networking & Deep Host Integration**:
-  - Outbound NAT for internet access and dynamic runtime port forwarding;
-  - Bidirectional clipboard synchronization with SHA-256 echo suppression;
-  - Low-latency PulseAudio 48kHz PCM audio output streaming;
-  - Storage Access Framework (SAF) zero-copy backup, export, and dynamic disk resizing.
-- **Material 3 Productivity UI & Ergonomics**:
-  - Touch target standards ($\ge 48\times 48\text{ dp}$) across all interactive controls;
-  - Customizable virtual hardware allocation (vCPU cores, RAM limits, sparse disk).
-- **Security & Background Longevity**:
-  - High-entropy per-instance random credentials;
-  - Android 14+ persistent foreground service with wake lock protection;
-  - Zero-telemetry privacy policy with optional update notifications.
+  - **AVF / pKVM Engine**: Hardware-accelerated CPU and memory virtualization delivering near-native performance on supported devices;
+  - **QEMU TCG 8.2 Engine**: Universal software dynamic binary translation fallback providing 100% device compatibility;
+  - **Transparent Capability Matrix**: Rigorous hardware probe reporting honest performance tiers with zero false claims.
+- **VMware-Grade 4-Step Creation Wizard & First-Boot Automation**:
+  - Step 1: Visual distro selection across 7 major distributions;
+  - Step 2: Sparse raw disk preflight checks with host storage exhaustion protection;
+  - Step 3: Outbound NAT network setup and high-speed mirror repository configuration;
+  - Step 4: Virtual hardware sizing and credentials provisioning (`orchestella` hostname, `root/1234` default credentials, custom sudo user).
+  - Automated guest provisioning pipeline injecting `/etc/hostname`, `/etc/shadow`, mirror sources, and first-boot bootstrap scripts.
+- **7 Major Linux Distributions & Unified Package Manager Abstraction**:
+  - Ubuntu 24.04 LTS, Debian 12 Bookworm, Arch Linux ARM Rolling, Fedora 41 Minimal, openSUSE Tumbleweed JeOS, Kali Linux Rolling, and Alpine Linux 3.20 (with `AlpineEssentialPackageSuite`);
+  - Unified package manager contract across `APT`, `APK`, `PACMAN`, `DNF`, and `ZYPPER`.
+- **Minimalist Instance Cards & Full-Screen Secondary Detail Console (`InstanceDetailActivity`)**:
+  - Clean overview cards displaying distro emblem, status badge, hardware spec summary, and IP address;
+  - 5-section detail console: Header status billboard, hardware spec editor (locked during runtime to prevent kernel crashes), storage and SAF backup governance, network and port forwarding manager, and isolated danger zone with confirmation safeguards.
+- **Industrial External Power Controls & COW Snapshot System**:
+  - External ACPI graceful shutdown (30s guard), force kill, and suspend & resume (`SUSPENDED` state);
+  - Lightweight snapshot manager (`InstanceSnapshotManager`) providing copy-on-write disk checkpoints, atomic metadata persistence (`snapshots.json`), and instant byte-for-byte rollbacks.
+- **Direct-Input Native Terminal & Multi-Terminal Concurrency**:
+  - Canvas direct input eliminating antiquated separate input boxes;
+  - Smooth soft keyboard integration, touch slop scroll separation, and system key transparency;
+  - Zero-lag persistent session pool eliminating `[no live session]` deadlocks;
+  - Right slide-out gesture drawer managing up to 16 concurrent background terminals with zero cross-session data bleed.
 
 ---
 
 ### 3. Quick Start
 
-> ⚠️ **Notice**: All previous pre-releases have been temporarily recalled for thorough UX bug fixes and ergonomics redesign. Public downloads will be re-enabled once issues are resolved.
-
-1. **Build from Source**: Clone this repository and run `./gradlew.bat assembleDebug` to produce a testing APK.
-2. **Create Instance**: Launch the app and select your preferred Linux distribution (Alpine or Debian).
-3. **Launch & Develop**: Tap "Launch" to start the instance, access the shell, and start developing!
+1. Download the latest `Orchestella-Studio-v0.1.0-preview.apk` from [GitHub Releases](https://github.com/Nyzeep/Orchestella-Studio/releases).
+2. Launch the app and tap **「+ Create Instance」** to walk through the creation wizard.
+3. Choose your preferred distro (e.g., Alpine or Ubuntu), customize hardware specs and credentials.
+4. Tap **「Launch」** on the instance card to start using your mobile Linux workstation!
 
 ---
 
 ### 4. License
 
 Orchestella Studio is distributed under the [Apache License 2.0](LICENSE).  
-The guest kernel and QEMU components are licensed under the GNU General Public License (GPL) and strictly isolated at the distribution and process boundary in full compliance with ADR-0014.
+The guest kernel and QEMU binaries are licensed under the GNU General Public License (GPL) and strictly isolated at the distribution and process boundaries in full compliance with ADR-0014.
