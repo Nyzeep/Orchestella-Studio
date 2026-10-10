@@ -90,6 +90,30 @@ public final class InstanceStrategyLauncher {
             this.mirrorConfigFileContent = mirrorConfigFileContent;
             this.firstBootScript = firstBootScript;
         }
+
+        public LaunchParameters(
+                String instanceId,
+                String bridgeToken,
+                String rootfsFileName,
+                String instanceRootVolume,
+                String runtimeDirectory,
+                String distroInputsDirectory,
+                String guestPassword,
+                io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig hardwareConfig,
+                FirstBootProvisionPipeline.ProvisionPayload provisionPayload) {
+            this(
+                    instanceId,
+                    bridgeToken,
+                    rootfsFileName,
+                    instanceRootVolume,
+                    runtimeDirectory,
+                    distroInputsDirectory,
+                    guestPassword,
+                    hardwareConfig,
+                    provisionPayload != null ? provisionPayload.mirrorConfigFileName() : null,
+                    provisionPayload != null ? provisionPayload.mirrorConfigFileContent() : null,
+                    provisionPayload != null ? provisionPayload.firstBootScript() : null);
+        }
     }
 
     /** Strategy-specific launch seam. */

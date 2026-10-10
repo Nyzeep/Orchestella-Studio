@@ -129,9 +129,9 @@ fi
 
 [ -c /dev/droidlayer-bridge ] || exit 70
 [ -c /dev/droidlayer-terminal ] || exit 70
-if [ -f /opt/orchestella/firstboot.sh ] && [ ! -f /var/run/orchestella-firstboot.done ]; then
-    mkdir -p /var/run
-    touch /var/run/orchestella-firstboot.done
+if [ -f /opt/orchestella/firstboot.sh ] && [ ! -f /opt/orchestella/.firstboot-done ]; then
+    mkdir -p /opt/orchestella
+    touch /opt/orchestella/.firstboot-done
     /opt/orchestella/firstboot.sh >/var/log/firstboot.log 2>&1 &
 fi
 exec 3<> /dev/droidlayer-bridge
@@ -331,6 +331,19 @@ ExecStart=
 ExecStart=-/sbin/agetty --autologin root --noclear %I 38400 linux
 EOF
     chmod 0644 "$debian_root/etc/systemd/system/getty@tty1.service.d/autologin.conf"
+}
+
+configure_fstab_mounts() {
+    target_root="$1"
+    mkdir -p "$target_root/mnt/downloads" "$target_root/media/downloads" "$target_root/mnt/shared"
+    if [ -f "$target_root/etc/fstab" ]; then
+        if ! grep -qs 'downloads.*mnt/downloads' "$target_root/etc/fstab"; then
+            printf 'downloads\t/mnt/downloads\t9p\ttrans=virtio,version=9p2000.L,ro,nofail\t0\t0\n' >> "$target_root/etc/fstab"
+        fi
+        if ! grep -qs 'shared.*mnt/shared' "$target_root/etc/fstab"; then
+            printf 'shared\t/mnt/shared\t9p\ttrans=virtio,version=9p2000.L,ro,nofail\t0\t0\n' >> "$target_root/etc/fstab"
+        fi
+    fi
 }
 
 install_guest_shell_profile() {
@@ -613,15 +626,8 @@ if mount -t ext4 "$ROOT_DEVICE" /newroot 2>/dev/null; then
         fail root-volume-unrecognized
     fi
     [ -x /newroot/sbin/init ] || [ -x /newroot/lib/systemd/systemd ] || fail root-init-missing
-    mkdir -p /newroot/dev /newroot/proc /newroot/sys /newroot/mnt/downloads /newroot/media/downloads /newroot/mnt/shared
-    if [ -f /newroot/etc/fstab ]; then
-        if ! grep -qs 'downloads.*mnt/downloads' /newroot/etc/fstab; then
-            printf 'downloads\t/mnt/downloads\t9p\ttrans=virtio,version=9p2000.L,ro,nofail\t0\t0\n' >> /newroot/etc/fstab
-        fi
-        if ! grep -qs 'shared.*mnt/shared' /newroot/etc/fstab; then
-            printf 'shared\t/mnt/shared\t9p\ttrans=virtio,version=9p2000.L,nofail\t0\t0\n' >> /newroot/etc/fstab
-        fi
-    fi
+    mkdir -p /newroot/dev /newroot/proc /newroot/sys
+    configure_fstab_mounts /newroot
     # Auto online resize ext4 root filesystem if root-volume was resized (ADR-0007 / Ticket 33)
     if [ -x /sbin/resize2fs ]; then
         /sbin/resize2fs "$ROOT_DEVICE" 2>/dev/null || true
@@ -769,15 +775,7 @@ EOF
     install_guest_shell_profile /newroot
 fi
 
-mkdir -p /newroot/mnt/downloads /newroot/media/downloads /newroot/mnt/shared
-if [ -f /newroot/etc/fstab ]; then
-    if ! grep -qs 'downloads.*mnt/downloads' /newroot/etc/fstab; then
-        printf 'downloads\t/mnt/downloads\t9p\ttrans=virtio,version=9p2000.L,ro,nofail\t0\t0\n' >> /newroot/etc/fstab
-    fi
-    if ! grep -qs 'shared.*mnt/shared' /newroot/etc/fstab; then
-        printf 'shared\t/mnt/shared\t9p\ttrans=virtio,version=9p2000.L,nofail\t0\t0\n' >> /newroot/etc/fstab
-    fi
-fi
+configure_fstab_mounts /newroot
 
 mkdir -p /newroot/var/lib/droidlayer
 chmod 0755 /newroot/var/lib/droidlayer

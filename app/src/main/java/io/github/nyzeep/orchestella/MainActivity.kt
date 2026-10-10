@@ -779,9 +779,19 @@ class MainActivity : AppCompatActivity() {
                 }
                 val mirrorConfigFile = filesDir.resolve("instances").resolve("${instance.id()}.mirror")
                 val firstbootFile = filesDir.resolve("instances").resolve("${instance.id()}.firstboot")
-                val mirrorConfigName = if (instance.distro().id() == "alpine") "repositories" else "sources.list"
+                val mirrorConfigName = DistroMirrorProvisioner.getConfigFileName(instance.distro().id())
                 val mirrorBytes = if (mirrorConfigFile.exists()) Files.readAllBytes(mirrorConfigFile.toPath()) else null
-                val firstbootBytes = if (firstbootFile.exists()) Files.readAllBytes(firstbootFile.toPath()) else null
+                val firstbootBytes = if (firstbootFile.exists()) {
+                    val bytes = Files.readAllBytes(firstbootFile.toPath())
+                    firstbootFile.delete()
+                    bytes
+                } else null
+
+                val provisionPayload = FirstBootProvisionPipeline.ProvisionPayload(
+                    mirrorConfigName,
+                    mirrorBytes,
+                    firstbootBytes
+                )
 
                 val parameters = InstanceStrategyLauncher.LaunchParameters(
                     instance.id(),
@@ -792,9 +802,7 @@ class MainActivity : AppCompatActivity() {
                     filesDir.resolve("distro-inputs").absolutePath,
                     instance.guestPassword(),
                     instance.hardwareConfig(),
-                    mirrorConfigName,
-                    mirrorBytes,
-                    firstbootBytes,
+                    provisionPayload
                 )
                 val preferAvf =
                     avfReadiness?.status() == AvfCapabilityEvaluator.AvfStatus.READY

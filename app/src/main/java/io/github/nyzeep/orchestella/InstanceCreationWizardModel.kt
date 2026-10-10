@@ -73,7 +73,10 @@ class InstanceCreationWizardModel(
     var selectedMirror: DistroMirrorProvisioner.MirrorSource = DistroMirrorProvisioner.MirrorSource.OFFICIAL
         private set
 
-    var hardwareConfig: VmHardwareConfig = hardwareProfile.createRecommendedHardwareConfig()
+    var hardwareConfig: VmHardwareConfig = run {
+        val defaultCores = (hardwareProfile.totalCores() / 2).coerceIn(1, 4)
+        hardwareProfile.createRecommendedHardwareConfig().withCpuCores(defaultCores)
+    }
         private set
 
     var autoUpdateOnFirstBoot: Boolean = false
@@ -226,20 +229,32 @@ class InstanceCreationWizardModel(
 
     fun generateFirstBootScript(targetDistro: String = distroId): String {
         val cmd = resolveUpdateCommand(targetDistro)
-        val d = "$"
+        val timeoutSeconds = resolveUpdateTimeoutSeconds(targetDistro)
+        val dollar = "$"
         return """
             |#!/bin/sh
             |# Orchestella First-Boot Software Update Script (Ticket 01)
-            |LOG_FILE="/var/log/firstboot-update.log"
-            |mkdir -p /var/log
-            |echo "[${d}(date '+%Y-%m-%d %H:%M:%S')] Starting initial software update..." >> "${d}LOG_FILE"
+            |FLAG_FILE="/opt/orchestella/.firstboot-done"
+            |if [ -f "${dollar}FLAG_FILE" ]; then
+            |    exit 0
+            |fi
             |
-            |# Run update in background with timeout guard
+            |LOG_FILE="/var/log/firstboot-update.log"
+            |mkdir -p /var/log /opt/orchestella
+            |touch "${dollar}FLAG_FILE"
+            |echo "[${dollar}(date '+%Y-%m-%d %H:%M:%S')] Starting initial software update..." >> "${dollar}LOG_FILE"
+            |
+            |# Run update in background with timeout guard (${timeoutSeconds}s)
             |(
-            |    $cmd
-            |    STATUS=${d}?
-            |    echo "[${d}(date '+%Y-%m-%d %H:%M:%S')] Software update finished with exit status: ${d}STATUS" >> "${d}LOG_FILE"
-            |) >> "${d}LOG_FILE" 2>&1 &
+            |    if command -v timeout >/dev/null 2>&1; then
+            |        timeout ${timeoutSeconds}s sh -c '$cmd'
+            |    else
+            |        $cmd
+            |    fi
+            |    STATUS=${dollar}?
+            |    echo "[${dollar}(date '+%Y-%m-%d %H:%M:%S')] Software update finished with exit status: ${dollar}STATUS" >> "${dollar}LOG_FILE"
+            |    rm -f /opt/orchestella/firstboot.sh 2>/dev/null || true
+            |) >> "${dollar}LOG_FILE" 2>&1 &
             |
         """.trimMargin()
     }

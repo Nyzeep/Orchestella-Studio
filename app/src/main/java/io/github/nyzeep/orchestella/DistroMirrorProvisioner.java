@@ -56,6 +56,16 @@ public final class DistroMirrorProvisioner {
         }
     }
 
+    public static String getConfigFileName(String distroId) {
+        String path = getTargetConfigPath(distroId);
+        int lastSlash = path.lastIndexOf('/');
+        return lastSlash >= 0 ? path.substring(lastSlash + 1) : path;
+    }
+
+    public static String generateConfig(String distroId, MirrorSource source) {
+        return generateMirrorConfig(distroId, "latest", source);
+    }
+
     public static String generateMirrorConfig(String distroId, MirrorSource source) {
         return generateMirrorConfig(distroId, "latest", source);
     }
