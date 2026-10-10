@@ -102,4 +102,38 @@ public final class DualModeNavigationTest {
         assertEquals(Boolean.TRUE, map.get(DesktopLaunchIntent.EXTRA_FROM_TERMINAL));
         assertEquals(DualModeNavigation.MODE_DESKTOP, map.get(DualModeNavigation.EXTRA_TARGET_MODE));
     }
+
+    @Test
+    public void testDecoupledNavigationRequestFlagsAndIntentTarget() {
+        DualModeNavigation.NavigationRequest desktopReq = DualModeNavigation.buildDesktopNavigation(
+                "inst-abc", "tok-xyz"
+        );
+        assertTrue(desktopReq.reorderToFront());
+        assertTrue(desktopReq.preserveForegroundService());
+        assertEquals(DesktopActivity.class, desktopReq.targetActivityClass());
+
+        DualModeNavigation.NavigationRequest termReq = DualModeNavigation.buildTerminalNavigation(
+                "inst-abc", "tok-xyz"
+        );
+        assertTrue(termReq.reorderToFront());
+        assertTrue(termReq.preserveForegroundService());
+        assertEquals(TerminalActivity.class, termReq.targetActivityClass());
+
+        Map<String, Object> termMap = new HashMap<>();
+        termReq.populate(new DesktopLaunchIntent.IntentSink() {
+            @Override
+            public void putExtra(String key, String value) {
+                termMap.put(key, value);
+            }
+
+            @Override
+            public void putExtra(String key, boolean value) {
+                termMap.put(key, value);
+            }
+        });
+        assertEquals("inst-abc", termMap.get(DesktopLaunchIntent.EXTRA_INSTANCE_ID));
+        assertEquals("tok-xyz", termMap.get(DesktopLaunchIntent.EXTRA_BRIDGE_TOKEN));
+        assertEquals(Boolean.FALSE, termMap.get(DesktopLaunchIntent.EXTRA_FROM_TERMINAL));
+        assertEquals(DualModeNavigation.MODE_TERMINAL, termMap.get(DualModeNavigation.EXTRA_TARGET_MODE));
+    }
 }

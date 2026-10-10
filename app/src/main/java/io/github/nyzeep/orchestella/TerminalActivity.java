@@ -6,34 +6,30 @@ import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.text.Editable;
-import android.text.InputType;
-import android.text.TextWatcher;
 import android.util.TypedValue;
 import android.view.Gravity;
-import android.view.KeyEvent;
 import android.view.View;
-import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
-import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import androidx.appcompat.app.AlertDialog;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
+import io.github.nyzeep.orchestella.runtime.engineqemu.QemuProcessLauncher;
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.util.List;
+import java.util.function.Consumer;
 
 /**
  * Modern Full Linux terminal activity featuring:
  * <ul>
  *   <li>ANSI 16/256/TrueColor VT100 renderer with Dracula palette via {@link ModernTerminalView};</li>
  *   <li>Sticky modifier extra keys bar via {@link MobileAuxiliaryKeyBar};</li>
- *   <li>Soft keyboard adaptive viewport scrolling and desktop switcher navigation.</li>
+ *   <li>Soft keyboard adaptive viewport scrolling and edge-to-edge status bar insets.</li>
  * </ul>
  * Conforms to ADR-0002, US-26, and US-27.
  */
@@ -41,19 +37,38 @@ public class TerminalActivity extends Activity {
 
     private Handler ui;
     private ModernTerminalView terminalView;
+    private FrameLayout contentArea;
+    private View offlineCardView;
+    private TextView tvOfflineTitle;
+    private TextView tvOfflineMessage;
+    private Button btnOfflineAction;
+    private Button btnOfflineBack;
     private MobileAuxiliaryKeyBar auxiliaryKeyBar;
     private StickyModifierStateMachine stickyStateMachine;
     private ExecutionSession session;
-    private boolean isHandlingModifier = false;
-    private boolean isUpdatingFromEngine = false;
     private InteractiveTerminalEngine terminalEngine;
     private TerminalHistoryStore historyStore;
     private String instanceId;
     private String bridgeToken;
+    private InstanceSessionReconciler sessionReconciler;
+    private InstanceLifecycle.FileStore instanceStore;
+    private InstanceLifecycle.Controller instanceController;
+    private final java.util.concurrent.ExecutorService sendExecutor =
+            java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "terminal-send-queue");
+                t.setDaemon(true);
+                return t;
+            });
+    private final Consumer<String> terminalOutputListener = chunk -> {
+        if (terminalView != null) {
+            terminalView.appendOutput(chunk);
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         bridgeToken = getIntent().getStringExtra("bridgeToken");
         instanceId = getIntent().getStringExtra("instanceId");
         session = ExecutionSessionRegistry.get(instanceId);
@@ -80,9 +95,6 @@ public class TerminalActivity extends Activity {
 
         terminalEngine.setByteSink(bytes -> sendRaw(bytes));
         terminalEngine.setLineCommitListener((promptInfo, cmd) -> {
-            if (terminalView != null && cmd != null && !cmd.isEmpty()) {
-                terminalView.appendOutput(promptInfo.toPromptString() + cmd + "\n");
-            }
             if (historyStore != null && instanceId != null) {
                 historyStore.saveHistoryAsync(instanceId, terminalEngine.getHistory());
             }
@@ -103,313 +115,61 @@ public class TerminalActivity extends Activity {
         rootLayout.setOrientation(LinearLayout.VERTICAL);
         rootLayout.setBackgroundColor(DraculaPalette.BACKGROUND);
 
-        // 1. Top bar with instance title and desktop shuttle button
-        LinearLayout topBar = new LinearLayout(this);
-        topBar.setOrientation(LinearLayout.HORIZONTAL);
-        topBar.setGravity(Gravity.CENTER_VERTICAL);
-        topBar.setPadding(dpToPx(16), dpToPx(10), dpToPx(16), dpToPx(10));
-        topBar.setBackgroundColor(0xFF21222C);
-
-        TextView titleView = new TextView(this);
-        titleView.setText("Orchestella Terminal (" + instanceId + ")");
-        titleView.setTextColor(DraculaPalette.FOREGROUND);
-        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
-        titleView.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-        topBar.addView(titleView, new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-
-        Button btnSwitchDesktop = new Button(this, null, android.R.attr.buttonStyleSmall);
-        btnSwitchDesktop.setId(R.id.btnSwitchDesktop);
-        btnSwitchDesktop.setText(R.string.terminal_open_desktop);
-        btnSwitchDesktop.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
-        btnSwitchDesktop.setTextColor(DraculaPalette.FOREGROUND);
-        btnSwitchDesktop.setBackground(createPillBackground(0xFF44475A, 0xFF6272A4, 8f));
-        btnSwitchDesktop.setPadding(dpToPx(12), dpToPx(6), dpToPx(12), dpToPx(6));
-        btnSwitchDesktop.setMinHeight(dpToPx(40));
-        btnSwitchDesktop.setOnClickListener(v -> {
-            DualModeNavigation.navigateToDesktop(TerminalActivity.this, instanceId, bridgeToken);
-        });
-        topBar.addView(btnSwitchDesktop, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        rootLayout.addView(topBar, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        // 2. Modern ANSI terminal transcript view
+        // 1. Content area with modern terminal view and offline/crashed recovery card
+        contentArea = new FrameLayout(this);
         terminalView = new ModernTerminalView(this);
-        rootLayout.addView(terminalView, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
-
-        // 3. Mobile auxiliary key bar
-        auxiliaryKeyBar = new MobileAuxiliaryKeyBar(this);
         TerminalInputSink inputSink = new TerminalInputSink() {
             @Override
             public void sendBytes(byte[] bytes) {
                 sendRaw(bytes);
             }
         };
+        terminalView.setInputSink(inputSink);
+        terminalView.setStickyStateMachine(stickyStateMachine);
+        contentArea.addView(terminalView, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
+        offlineCardView = buildOfflineCardView();
+        offlineCardView.setVisibility(View.GONE);
+        contentArea.addView(offlineCardView, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
+        rootLayout.addView(contentArea, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        // 2. Mobile auxiliary key bar (floating dynamically above the soft keyboard)
+        auxiliaryKeyBar = new MobileAuxiliaryKeyBar(this);
         auxiliaryKeyBar.setInputSink(inputSink);
         auxiliaryKeyBar.setStateMachine(stickyStateMachine);
-        auxiliaryKeyBar.setTerminalEngine(terminalEngine);
         rootLayout.addView(auxiliaryKeyBar, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        // 4. Stylized Starship/Windows Terminal interactive shell prompt bar
-        LinearLayout inputBar = new LinearLayout(this);
-        inputBar.setOrientation(LinearLayout.HORIZONTAL);
-        inputBar.setGravity(Gravity.CENTER_VERTICAL);
-        inputBar.setPadding(dpToPx(10), dpToPx(6), dpToPx(10), dpToPx(8));
-        inputBar.setBackgroundColor(0xFF21222C);
-
-        // Prompt capsule: [root@orchestella ~] ❯
-        LinearLayout promptCapsule = new LinearLayout(this);
-        promptCapsule.setOrientation(LinearLayout.HORIZONTAL);
-        promptCapsule.setGravity(Gravity.CENTER_VERTICAL);
-        promptCapsule.setPadding(dpToPx(8), dpToPx(4), dpToPx(8), dpToPx(4));
-        promptCapsule.setBackground(createPillBackground(0xFF282A36, 0xFF44475A, 10f));
-
-        TextView tvContext = new TextView(this);
-        tvContext.setText("root@" + (instanceId != null && !instanceId.isEmpty() ? instanceId : "orchestella") + " ~");
-        tvContext.setTextColor(0xFF8BE9FD); // Dracula Cyan
-        tvContext.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-        tvContext.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
-        promptCapsule.addView(tvContext);
-
-        TextView tvSymbol = new TextView(this);
-        tvSymbol.setText(" ❯ ");
-        tvSymbol.setTextColor(0xFF50FA7B); // Dracula Green
-        tvSymbol.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-        tvSymbol.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
-        promptCapsule.addView(tvSymbol);
-
-        inputBar.addView(promptCapsule, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        final EditText input = new EditText(this);
-        input.setHint("command...");
-        input.setHintTextColor(DraculaPalette.COMMENT);
-        input.setTextColor(DraculaPalette.FOREGROUND);
-        input.setBackground(null);
-        input.setTypeface(Typeface.MONOSPACE);
-        input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
-        input.setSingleLine(true);
-        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        input.setImeOptions(EditorInfo.IME_ACTION_SEND | EditorInfo.IME_FLAG_NO_EXTRACT_UI);
-        LinearLayout.LayoutParams inputLp = new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-        inputLp.setMargins(dpToPx(6), 0, dpToPx(6), 0);
-        inputBar.addView(input, inputLp);
-
-        Button btnSend = new Button(this, null, android.R.attr.buttonStyleSmall);
-        btnSend.setText("↵");
-        btnSend.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-        btnSend.setTextColor(DraculaPalette.FOREGROUND);
-        btnSend.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f);
-        btnSend.setBackground(createPillBackground(0xFF44475A, 0xFF6272A4, 10f));
-        btnSend.setOnClickListener(v -> {
-            if (terminalEngine != null) {
-                terminalEngine.syncBuffer(input.getText().toString(), input.getSelectionStart());
-                input.setText("");
-                terminalEngine.handleEnter();
-            } else {
-                String line = input.getText().toString();
-                input.setText("");
-                send(line);
-            }
-        });
-        inputBar.addView(btnSend, new LinearLayout.LayoutParams(
-                dpToPx(48), dpToPx(44)));
-
-        rootLayout.addView(inputBar, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        auxiliaryKeyBar.setTargetInput(input);
         setContentView(rootLayout);
 
-        terminalEngine.setLineChangeListener((p, buf, cursor) -> {
-            if (!isUpdatingFromEngine && input != null && !input.getText().toString().equals(buf)) {
-                isUpdatingFromEngine = true;
-                try {
-                    input.setText(buf);
-                    input.setSelection(Math.min(cursor, buf.length()));
-                } finally {
-                    isUpdatingFromEngine = false;
-                }
-            }
-        });
-
-        terminalView.setOnClickListener(v -> {
-            input.requestFocus();
-            android.view.inputmethod.InputMethodManager imm =
-                    (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
-            if (imm != null) {
-                imm.showSoftInput(input, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
-            }
-        });
-
-        // Sticky modifier interception for typed characters
-        input.addTextChangedListener(new TextWatcher() {
-            private int changeStart;
-            private int changeCount;
-
-            @Override
-            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
-            }
-
-            @Override
-            public void onTextChanged(CharSequence s, int start, int before, int count) {
-                changeStart = start;
-                changeCount = count;
-            }
-
-            @Override
-            public void afterTextChanged(Editable s) {
-                if (isHandlingModifier) {
-                    return;
-                }
-                if (changeCount == 1 && s != null && s.length() >= changeStart + 1) {
-                    char typed = s.charAt(changeStart);
-                    if (stickyStateMachine.isCtrlActive()) {
-                        isHandlingModifier = true;
-                        try {
-                            s.delete(changeStart, changeStart + 1);
-                            byte ctrlCode = StickyModifierStateMachine.toControlCode(typed);
-                            sendRaw(new byte[]{ctrlCode});
-                            stickyStateMachine.consumeLatched();
-                        } finally {
-                            isHandlingModifier = false;
-                        }
-                    } else if (stickyStateMachine.isAltActive()) {
-                        isHandlingModifier = true;
-                        try {
-                            s.delete(changeStart, changeStart + 1);
-                            byte[] altSeq = StickyModifierStateMachine.toAltSequence(typed);
-                            sendRaw(altSeq);
-                            stickyStateMachine.consumeLatched();
-                        } finally {
-                            isHandlingModifier = false;
-                        }
-                        return;
-                    }
-                }
-                if (terminalEngine != null) {
-                    terminalEngine.syncBuffer(s != null ? s.toString() : "", input.getSelectionStart());
-                }
-            }
-        });
-
-        input.setOnKeyListener((v, keyCode, event) -> {
-            if (event.getAction() == KeyEvent.ACTION_DOWN) {
-                if (stickyStateMachine.isCtrlActive()) {
-                    char ch = (char) event.getUnicodeChar();
-                    if (ch != 0) {
-                        byte ctrlCode = StickyModifierStateMachine.toControlCode(ch);
-                        sendRaw(new byte[]{ctrlCode});
-                        stickyStateMachine.consumeLatched();
-                        return true;
-                    }
-                } else if (stickyStateMachine.isAltActive()) {
-                    char ch = (char) event.getUnicodeChar();
-                    if (ch != 0) {
-                        sendRaw(StickyModifierStateMachine.toAltSequence(ch));
-                        stickyStateMachine.consumeLatched();
-                        return true;
-                    }
-                }
-            }
-            return false;
-        });
-
-        input.setOnEditorActionListener((v, actionId, event) -> {
-            if (actionId == EditorInfo.IME_ACTION_SEND
-                    || (event != null && event.getKeyCode() == KeyEvent.KEYCODE_ENTER && event.getAction() == KeyEvent.ACTION_DOWN)) {
-                if (terminalEngine != null) {
-                    terminalEngine.syncBuffer(input.getText().toString(), input.getSelectionStart());
-                    input.setText("");
-                    terminalEngine.handleEnter();
-                } else {
-                    String line = input.getText().toString();
-                    input.setText("");
-                    send(line);
-                }
-                return true;
-            }
-            return false;
-        });
-
-        // WindowInsets handling for Android 15 Edge-to-Edge & Soft Keyboard (IME)
+        // WindowInsets handling: Edge-to-Edge status bar padding on rootLayout,
+        // while IME and navigation bar bottom insets are dynamically handled by auxiliaryKeyBar
         ViewCompat.setOnApplyWindowInsetsListener(rootLayout, (v, insets) -> {
+            Insets statusBarAndCutoutInsets = insets.getInsets(
+                    WindowInsetsCompat.Type.statusBars() | WindowInsetsCompat.Type.displayCutout());
+            Insets navBars = insets.getInsets(WindowInsetsCompat.Type.navigationBars());
+            int leftInset = Math.max(statusBarAndCutoutInsets.left, navBars.left);
+            int rightInset = Math.max(statusBarAndCutoutInsets.right, navBars.right);
+            v.setPadding(leftInset, statusBarAndCutoutInsets.top, rightInset, 0);
+            return insets;
+        });
+
+        ViewCompat.setOnApplyWindowInsetsListener(auxiliaryKeyBar, (v, insets) -> {
             Insets imeInsets = insets.getInsets(WindowInsetsCompat.Type.ime());
-            Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
-            int bottomInset = Math.max(imeInsets.bottom, systemBars.bottom);
-            v.setPadding(systemBars.left, systemBars.top, systemBars.right, bottomInset);
-            if (imeInsets.bottom > 0) {
+            Insets navInsets = insets.getInsets(WindowInsetsCompat.Type.navigationBars());
+            int targetBottomPadding = MobileAuxiliaryKeyBar.calculateTargetBottomPadding(imeInsets.bottom, navInsets.bottom);
+            v.setPadding(v.getPaddingLeft(), v.getPaddingTop(), v.getPaddingRight(), targetBottomPadding);
+            if (imeInsets.bottom > 0 && terminalView != null) {
                 terminalView.post(() -> terminalView.scrollToBottom());
             }
             return insets;
         });
 
-        append("Orchestella Studio terminal (" + instanceId + ")\n");
-        ExecutionSessionRegistry.LiveSession liveSession = ExecutionSessionRegistry.getLiveSession(instanceId);
-        if (session == null && liveSession == null) {
-            append("[no live session for instance " + instanceId + "]\n");
-            return;
-        }
-
-        if (liveSession != null) {
-            append("[terminal connected]\n");
-            String history = liveSession.getTranscript();
-            if (!history.isEmpty()) {
-                append(history);
-                terminalView.post(() -> terminalView.scrollToBottom());
-            }
-            liveSession.setOutputListener(chunk -> {
-                if (terminalView != null) {
-                    terminalView.appendOutput(chunk);
-                }
-            });
-        }
-
-        terminalView.post(() -> {
-            float charWidth = terminalView.getTranscriptView().getPaint().measureText("M");
-            float lineHeight = terminalView.getTranscriptView().getPaint().getFontSpacing();
-            int columns = (int) (terminalView.getWidth() / (charWidth > 0 ? charWidth : 1));
-            int rows = (int) (terminalView.getHeight() / (lineHeight > 0 ? lineHeight : 1));
-            final int gridColumns = columns > 0 ? columns : 80;
-            final int gridRows = rows > 0 ? rows : 24;
-            if (session != null && session.markBridgeServing()) {
-                new Thread(() -> {
-                    try {
-                        AndroidNotificationAdapter notificationAdapter =
-                                new AndroidNotificationAdapter(TerminalActivity.this);
-                        AndroidUrlOpenerAdapter urlOpenerAdapter =
-                                new AndroidUrlOpenerAdapter(TerminalActivity.this);
-                        new BridgeConnector().serveStreams(
-                                session.controlOutput(), session.controlInput(), bridgeToken,
-                                gridColumns, gridRows, eventsForBridge(), notificationAdapter,
-                                urlOpenerAdapter,
-                                new io.github.nyzeep.orchestella.runtime.contract.BridgeControl.Clipboard() {
-                                    @Override
-                                    public boolean onClipboardPut(String text) {
-                                        io.github.nyzeep.orchestella.runtime.contract.BridgeControl.Clipboard cb =
-                                                session != null ? session.clipboardBridge() : null;
-                                        return cb != null && cb.onClipboardPut(text);
-                                    }
-
-                                    @Override
-                                    public String onClipboardGet() {
-                                        io.github.nyzeep.orchestella.runtime.contract.BridgeControl.Clipboard cb =
-                                                session != null ? session.clipboardBridge() : null;
-                                        return cb != null ? cb.onClipboardGet() : null;
-                                    }
-                                });
-                    } catch (Exception e) {
-                        append("[bridge ended: " + e.getClass().getSimpleName() + "]\n");
-                    }
-                }, "bridge-serve").start();
-            }
-        });
-
+        reconcileAndConnect();
         handleCommandExtra(getIntent());
     }
 
@@ -443,10 +203,19 @@ public class TerminalActivity extends Activity {
     }
 
     @Override
+    protected void onStart() {
+        super.onStart();
+        reconcileAndConnect();
+    }
+
+    @Override
     protected void onResume() {
         super.onResume();
-        if (terminalView != null) {
-            terminalView.post(() -> terminalView.scrollToBottom());
+        if (terminalView != null && terminalView.getVisibility() == View.VISIBLE) {
+            terminalView.post(() -> {
+                terminalView.scrollToBottom();
+                terminalView.requestTerminalFocus();
+            });
         }
     }
 
@@ -454,6 +223,14 @@ public class TerminalActivity extends Activity {
     protected void onPause() {
         super.onPause();
         persistTerminalHistory();
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        if (instanceId != null) {
+            PersistentTerminalSessionPool.getInstance().detach(instanceId, terminalOutputListener);
+        }
     }
 
     private void persistTerminalHistory() {
@@ -470,6 +247,9 @@ public class TerminalActivity extends Activity {
             String newInstanceId = intent.getStringExtra("instanceId");
             if (newInstanceId != null && !newInstanceId.isEmpty() && !newInstanceId.equals(this.instanceId)) {
                 persistTerminalHistory();
+                if (this.instanceId != null) {
+                    PersistentTerminalSessionPool.getInstance().detach(this.instanceId, terminalOutputListener);
+                }
                 this.instanceId = newInstanceId;
                 if (historyStore != null) {
                     terminalEngine.loadHistory(historyStore.loadHistory(newInstanceId));
@@ -480,6 +260,7 @@ public class TerminalActivity extends Activity {
                 this.bridgeToken = newBridgeToken;
             }
         }
+        reconcileAndConnect();
         handleCommandExtra(intent);
     }
 
@@ -500,10 +281,256 @@ public class TerminalActivity extends Activity {
     protected void onDestroy() {
         super.onDestroy();
         persistTerminalHistory();
-        ExecutionSessionRegistry.LiveSession liveSession = ExecutionSessionRegistry.getLiveSession(this.instanceId);
-        if (liveSession != null) {
-            liveSession.setOutputListener(null);
+        if (instanceId != null) {
+            PersistentTerminalSessionPool.getInstance().detach(instanceId, terminalOutputListener);
         }
+        sendExecutor.shutdown();
+    }
+
+    private void reconcileAndConnect() {
+        if (instanceId == null || instanceId.isEmpty()) {
+            append("[error: instanceId is missing]\n");
+            return;
+        }
+
+        try {
+            if (instanceStore == null) {
+                instanceStore = new InstanceLifecycle.FileStore(getFilesDir().toPath().resolve("instances"));
+                instanceController = new InstanceLifecycle.Controller(instanceStore, Clock.systemUTC());
+            }
+
+            if (sessionReconciler == null) {
+                sessionReconciler = new InstanceSessionReconciler(
+                        PersistentTerminalSessionPool.getInstance(),
+                        instanceStore,
+                        instanceController,
+                        this::probeAndRecoverSession);
+            }
+
+            InstanceSessionReconciler.ReconcileResult result =
+                    sessionReconciler.ensureSessionAliveOrRecover(instanceId);
+
+            switch (result.status()) {
+                case ATTACHED:
+                    showTerminalSession(result.sessionHolder());
+                    break;
+                case OFFLINE:
+                    showOfflinePlaceholder(result.instance(), false);
+                    break;
+                case CRASHED:
+                    showOfflinePlaceholder(result.instance(), true);
+                    break;
+                case NOT_FOUND:
+                default:
+                    showMissingPlaceholder(instanceId);
+                    break;
+            }
+        } catch (Exception e) {
+            append("[reconcile error: " + e.getMessage() + "]\n");
+        }
+    }
+
+    private void showTerminalSession(PersistentTerminalSessionPool.SessionHolder holder) {
+        if (offlineCardView != null) {
+            offlineCardView.setVisibility(View.GONE);
+        }
+        if (auxiliaryKeyBar != null) {
+            auxiliaryKeyBar.setVisibility(View.VISIBLE);
+        }
+        if (terminalView != null) {
+            terminalView.setVisibility(View.VISIBLE);
+        }
+
+        session = holder.rawSession();
+        String replay = holder.attach(terminalOutputListener);
+        if (terminalView != null) {
+            terminalView.clear();
+            if (replay != null && !replay.isEmpty()) {
+                terminalView.appendOutput(replay);
+            } else {
+                terminalView.appendOutput("Orchestella Studio terminal (" + instanceId + ")\n[terminal connected]\n");
+            }
+            terminalView.post(() -> terminalView.scrollToBottom());
+        }
+
+        startBridgeServingIfNecessary(session);
+    }
+
+    private void showOfflinePlaceholder(InstanceLifecycle.Instance instance, boolean isCrashed) {
+        if (offlineCardView != null) {
+            offlineCardView.setVisibility(View.VISIBLE);
+        }
+        if (auxiliaryKeyBar != null) {
+            auxiliaryKeyBar.setVisibility(View.GONE);
+        }
+        if (terminalView != null) {
+            terminalView.setVisibility(View.GONE);
+        }
+
+        if (isCrashed) {
+            tvOfflineTitle.setText("⚠️ 实例异常退出 (Crashed)");
+            String detail = (instance != null && instance.crashDiagnostic() != null)
+                    ? "退出码: " + instance.crashDiagnostic().exitCode() + "\n"
+                    + (instance.crashDiagnostic().message() != null ? instance.crashDiagnostic().message() : "")
+                    : "底层虚拟机或终端进程已异常退出。";
+            tvOfflineMessage.setText(detail);
+            btnOfflineAction.setText("🔄 立即重启实例");
+        } else {
+            String stateStr = instance != null ? instance.state().name() : "STOPPED";
+            tvOfflineTitle.setText("🚀 实例处于离线状态 (" + stateStr + ")");
+            tvOfflineMessage.setText("当前实例尚未启动，终端交互未连接。\n点击下方按钮即可一键启动并自动进入 Shell。");
+            btnOfflineAction.setText("🚀 启动该实例");
+        }
+        btnOfflineAction.setOnClickListener(v -> launchInstanceFromTerminal(instanceId));
+        btnOfflineBack.setOnClickListener(v -> finish());
+    }
+
+    private void showMissingPlaceholder(String id) {
+        if (offlineCardView != null) {
+            offlineCardView.setVisibility(View.VISIBLE);
+        }
+        if (auxiliaryKeyBar != null) {
+            auxiliaryKeyBar.setVisibility(View.GONE);
+        }
+        if (terminalView != null) {
+            terminalView.setVisibility(View.GONE);
+        }
+        tvOfflineTitle.setText("❌ 实例不存在");
+        tvOfflineMessage.setText("在本地数据库中未找到 ID 为 " + id + " 的实例。");
+        btnOfflineAction.setVisibility(View.GONE);
+        btnOfflineBack.setOnClickListener(v -> finish());
+    }
+
+    private View buildOfflineCardView() {
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.setGravity(Gravity.CENTER);
+        container.setPadding(dpToPx(24), dpToPx(24), dpToPx(24), dpToPx(24));
+        container.setBackgroundColor(DraculaPalette.BACKGROUND);
+
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setGravity(Gravity.CENTER);
+        card.setPadding(dpToPx(24), dpToPx(24), dpToPx(24), dpToPx(24));
+        card.setBackground(createPillBackground(0xFF282A36, 0xFF44475A, 16f));
+
+        tvOfflineTitle = new TextView(this);
+        tvOfflineTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
+        tvOfflineTitle.setTextColor(0xFFFF79C6);
+        tvOfflineTitle.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        tvOfflineTitle.setGravity(Gravity.CENTER);
+        card.addView(tvOfflineTitle);
+
+        tvOfflineMessage = new TextView(this);
+        tvOfflineMessage.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+        tvOfflineMessage.setTextColor(0xFFF8F8F2);
+        tvOfflineMessage.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams msgLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        msgLp.setMargins(0, dpToPx(12), 0, dpToPx(24));
+        card.addView(tvOfflineMessage, msgLp);
+
+        btnOfflineAction = new Button(this, null, android.R.attr.buttonStyleSmall);
+        btnOfflineAction.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        btnOfflineAction.setTextColor(DraculaPalette.FOREGROUND);
+        btnOfflineAction.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        btnOfflineAction.setBackground(createPillBackground(0xFF6272A4, 0xFFBD93F9, 12f));
+        btnOfflineAction.setPadding(dpToPx(20), dpToPx(10), dpToPx(20), dpToPx(10));
+        card.addView(btnOfflineAction);
+
+        btnOfflineBack = new Button(this, null, android.R.attr.buttonStyleSmall);
+        btnOfflineBack.setText("返回实例列表");
+        btnOfflineBack.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+        btnOfflineBack.setTextColor(DraculaPalette.COMMENT);
+        btnOfflineBack.setTypeface(Typeface.MONOSPACE);
+        btnOfflineBack.setBackground(createPillBackground(0xFF21222C, 0xFF44475A, 10f));
+        btnOfflineBack.setPadding(dpToPx(16), dpToPx(8), dpToPx(16), dpToPx(8));
+        LinearLayout.LayoutParams backLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        backLp.setMargins(0, dpToPx(12), 0, 0);
+        card.addView(btnOfflineBack, backLp);
+
+        container.addView(card, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        return container;
+    }
+
+    private void launchInstanceFromTerminal(String targetId) {
+        Intent intent = new Intent(this, MainActivity.class);
+        intent.putExtra("action_launch_instance_id", targetId);
+        intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+        startActivity(intent);
+        finish();
+    }
+
+    private ExecutionSession probeAndRecoverSession(InstanceLifecycle.Instance instance) throws Exception {
+        String socketSuffix = instance.id();
+        String controlSocket = "orchestella-" + socketSuffix + "-ctrl";
+        String terminalSocket = "orchestella-" + socketSuffix + "-term";
+
+        android.net.LocalSocket termSock = new android.net.LocalSocket();
+        termSock.connect(new android.net.LocalSocketAddress(
+                terminalSocket, android.net.LocalSocketAddress.Namespace.ABSTRACT));
+        termSock.close();
+
+        android.net.LocalSocket ctrlSock = new android.net.LocalSocket();
+        ctrlSock.connect(new android.net.LocalSocketAddress(
+                controlSocket, android.net.LocalSocketAddress.Namespace.ABSTRACT));
+        ctrlSock.close();
+
+        return new QemuInstanceLauncher.Session(controlSocket, terminalSocket, new QemuProcessLauncher.ProcessHandle() {
+            @Override
+            public int waitFor() {
+                return 0;
+            }
+
+            @Override
+            public void destroy() {
+            }
+        });
+    }
+
+    private void startBridgeServingIfNecessary(ExecutionSession s) {
+        if (s == null || !s.markBridgeServing()) {
+            return;
+        }
+        terminalView.post(() -> {
+            float charWidth = terminalView.getTranscriptView().getPaint().measureText("M");
+            float lineHeight = terminalView.getTranscriptView().getPaint().getFontSpacing();
+            int columns = (int) (terminalView.getWidth() / (charWidth > 0 ? charWidth : 1));
+            int rows = (int) (terminalView.getHeight() / (lineHeight > 0 ? lineHeight : 1));
+            final int gridColumns = columns > 0 ? columns : 80;
+            final int gridRows = rows > 0 ? rows : 24;
+            new Thread(() -> {
+                try {
+                    AndroidNotificationAdapter notificationAdapter =
+                            new AndroidNotificationAdapter(TerminalActivity.this);
+                    AndroidUrlOpenerAdapter urlOpenerAdapter =
+                            new AndroidUrlOpenerAdapter(TerminalActivity.this);
+                    new BridgeConnector().serveStreams(
+                            s.controlOutput(), s.controlInput(), bridgeToken,
+                            gridColumns, gridRows, eventsForBridge(), notificationAdapter,
+                            urlOpenerAdapter,
+                            new io.github.nyzeep.orchestella.runtime.contract.BridgeControl.Clipboard() {
+                                @Override
+                                public boolean onClipboardPut(String text) {
+                                    io.github.nyzeep.orchestella.runtime.contract.BridgeControl.Clipboard cb =
+                                            s != null ? s.clipboardBridge() : null;
+                                    return cb != null && cb.onClipboardPut(text);
+                                }
+
+                                @Override
+                                public String onClipboardGet() {
+                                    io.github.nyzeep.orchestella.runtime.contract.BridgeControl.Clipboard cb =
+                                            s != null ? s.clipboardBridge() : null;
+                                    return cb != null ? cb.onClipboardGet() : null;
+                                }
+                            });
+                } catch (Exception e) {
+                    append("[bridge ended: " + e.getClass().getSimpleName() + "]\n");
+                }
+            }, "bridge-serve").start();
+        });
     }
 
     private void send(String line) {
@@ -516,27 +543,24 @@ public class TerminalActivity extends Activity {
     }
 
     private void sendRaw(byte[] bytes) {
-        ExecutionSessionRegistry.LiveSession liveSession = ExecutionSessionRegistry.getLiveSession(this.instanceId);
-        if (liveSession == null || bytes == null || bytes.length == 0) {
+        if (instanceId == null || bytes == null || bytes.length == 0) {
             return;
         }
-        new Thread(() -> {
+        sendExecutor.execute(() -> {
             try {
-                liveSession.sendBytes(bytes);
+                PersistentTerminalSessionPool.getInstance().sendBytes(this.instanceId, bytes);
             } catch (Exception e) {
-                append("[send failed: " + e.getMessage() + "]\n");
+                if (ui != null) {
+                    ui.post(() -> append("[send failed: " + e.getMessage() + "]\n"));
+                }
             }
-        }, "terminal-send").start();
+        });
     }
 
     private void append(String text) {
         if (terminalView != null) {
             terminalView.appendOutput(text);
         }
-    }
-
-    private boolean isHeadlessInstance(String instanceId) {
-        return false;
     }
 
     private int dpToPx(int dp) {

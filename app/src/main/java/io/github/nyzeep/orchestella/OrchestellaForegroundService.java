@@ -34,6 +34,7 @@ public class OrchestellaForegroundService extends Service {
     public static final String EXTRA_BATTERY_POLICY = "extra_battery_policy";
 
     private PowerManager.WakeLock wakeLock;
+    private String currentInstanceId;
 
     public static void start(
             Context context,
@@ -74,6 +75,7 @@ public class OrchestellaForegroundService extends Service {
         }
 
         if (ACTION_START.equals(intent.getAction())) {
+            currentInstanceId = intent.getStringExtra(EXTRA_INSTANCE_ID);
             String distroTitle = intent.getStringExtra(EXTRA_DISTRO_TITLE);
             if (distroTitle == null || distroTitle.isBlank()) {
                 distroTitle = "Linux";
@@ -92,8 +94,11 @@ public class OrchestellaForegroundService extends Service {
                 }
             }
 
+            // Pin session pool in memory alongside the foreground service
+            PersistentTerminalSessionPool.getInstance();
+
             acquireWakeLock();
-            Notification notification = buildPersistentNotification(distroTitle, badge, policy);
+            Notification notification = buildPersistentNotification(distroTitle, badge, policy, currentInstanceId);
             startForeground(NOTIFICATION_ID, notification);
             return START_STICKY;
         }
@@ -104,6 +109,7 @@ public class OrchestellaForegroundService extends Service {
     @Override
     public void onDestroy() {
         releaseWakeLock();
+        currentInstanceId = null;
         super.onDestroy();
     }
 
@@ -113,6 +119,7 @@ public class OrchestellaForegroundService extends Service {
     }
 
     private void stopRunning() {
+        currentInstanceId = null;
         releaseWakeLock();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE);
@@ -156,8 +163,14 @@ public class OrchestellaForegroundService extends Service {
     }
 
     private Notification buildPersistentNotification(
-            String distroTitle, String performanceBadge, BatteryPolicy policy) {
-        Intent notificationIntent = new Intent(this, MainActivity.class);
+            String distroTitle, String performanceBadge, BatteryPolicy policy, String instanceId) {
+        Intent notificationIntent;
+        if (instanceId != null && !instanceId.isEmpty()) {
+            notificationIntent = new Intent(this, TerminalActivity.class);
+            notificationIntent.putExtra("instanceId", instanceId);
+        } else {
+            notificationIntent = new Intent(this, MainActivity.class);
+        }
         notificationIntent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         int pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
