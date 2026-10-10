@@ -393,7 +393,7 @@ class SetupWizardActivity : AppCompatActivity() {
                 val controller = InstanceLifecycle.Controller(instanceStore, Clock.systemUTC())
                 val creator = DistroInstanceCreator(manifest, controller, filesDir.toPath())
                 Files.newInputStream(targetPath).use { input ->
-                    creator.create(input, manifest.sizeBytes(), wizardModel.hardwareConfig)
+                    creator.create(input, manifest.sizeBytes(), wizardModel.hardwareConfig, wizardModel.userConfig)
                 }
 
                 // Mark onboarding completed and transition to MainActivity

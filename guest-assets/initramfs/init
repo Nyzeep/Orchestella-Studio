@@ -563,6 +563,100 @@ EOF
     fi
 }
 
+provision_guest_identity_and_credentials() {
+    target_root="$1"
+    input_dir="$2"
+
+    # 1. Solidify Hostname (solidify 'orchestella' brand and eliminate random UUIDs)
+    target_hostname=""
+    if command -v kernel_argument >/dev/null 2>&1; then
+        target_hostname="$(kernel_argument orchestella.hostname || true)"
+    fi
+    if [ -z "$target_hostname" ] && [ -f "$input_dir/hostname" ]; then
+        target_hostname="$(tr -d '\r\n' < "$input_dir/hostname")"
+    fi
+    if [ -z "$target_hostname" ]; then
+        target_hostname="orchestella"
+    fi
+    # Sanitize hostname: lowercase alphanumeric and hyphens, reject raw UUIDs
+    target_hostname="$(printf '%s' "$target_hostname" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-')"
+    case "$target_hostname" in
+        [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]|"")
+            target_hostname="orchestella"
+            ;;
+    esac
+    [ -n "$target_hostname" ] || target_hostname="orchestella"
+
+    mkdir -p "$target_root/etc"
+    printf '%s\n' "$target_hostname" > "$target_root/etc/hostname"
+
+    # 2. Solidify /etc/hosts resolution
+    cat > "$target_root/etc/hosts" <<EOF
+127.0.0.1	localhost $target_hostname
+::1	localhost ip6-localhost ip6-loopback $target_hostname
+EOF
+
+    # 3. Provision root password (defaults to 1234 if not configured)
+    guest_pass="1234"
+    if [ -f "$input_dir/guest.password" ]; then
+        _p="$(tr -d '\r\n' < "$input_dir/guest.password")"
+        if [ -n "$_p" ]; then
+            guest_pass="$_p"
+        fi
+    fi
+
+    if [ -x "$target_root/usr/sbin/chpasswd" ]; then
+        printf 'root:%s\n' "$guest_pass" | chroot "$target_root" /usr/sbin/chpasswd 2>/dev/null || true
+    elif [ -x "$target_root/usr/bin/chpasswd" ]; then
+        printf 'root:%s\n' "$guest_pass" | chroot "$target_root" /usr/bin/chpasswd 2>/dev/null || true
+    elif [ -x "$target_root/sbin/chpasswd" ]; then
+        printf 'root:%s\n' "$guest_pass" | chroot "$target_root" /sbin/chpasswd 2>/dev/null || true
+    fi
+
+    # 4. Provision custom user and sudoers if configured
+    guest_user=""
+    if command -v kernel_argument >/dev/null 2>&1; then
+        guest_user="$(kernel_argument orchestella.user || true)"
+    fi
+    if [ -z "$guest_user" ] && [ -f "$input_dir/guest.user" ]; then
+        guest_user="$(tr -d '\r\n' < "$input_dir/guest.user")"
+    fi
+
+    if [ -n "$guest_user" ] && [ "$guest_user" != "root" ]; then
+        # Create non-root user
+        if [ -x "$target_root/usr/sbin/useradd" ] || [ -x "$target_root/sbin/useradd" ]; then
+            chroot "$target_root" useradd -m -s /bin/bash "$guest_user" 2>/dev/null || \
+            chroot "$target_root" useradd -m -s /bin/sh "$guest_user" 2>/dev/null || true
+        elif [ -x "$target_root/usr/sbin/adduser" ] || [ -x "$target_root/sbin/adduser" ]; then
+            chroot "$target_root" adduser -D -s /bin/bash "$guest_user" 2>/dev/null || \
+            chroot "$target_root" adduser -D -s /bin/sh "$guest_user" 2>/dev/null || true
+        fi
+
+        # Set user password
+        if [ -x "$target_root/usr/sbin/chpasswd" ]; then
+            printf '%s:%s\n' "$guest_user" "$guest_pass" | chroot "$target_root" /usr/sbin/chpasswd 2>/dev/null || true
+        elif [ -x "$target_root/usr/bin/chpasswd" ]; then
+            printf '%s:%s\n' "$guest_user" "$guest_pass" | chroot "$target_root" /usr/bin/chpasswd 2>/dev/null || true
+        elif [ -x "$target_root/sbin/chpasswd" ]; then
+            printf '%s:%s\n' "$guest_user" "$guest_pass" | chroot "$target_root" /sbin/chpasswd 2>/dev/null || true
+        fi
+
+        # Sudo privileges (NOPASSWD:ALL)
+        guest_sudo=""
+        if command -v kernel_argument >/dev/null 2>&1; then
+            guest_sudo="$(kernel_argument orchestella.sudo || true)"
+        fi
+        if [ -z "$guest_sudo" ] && [ -f "$input_dir/guest.sudo" ]; then
+            guest_sudo="$(tr -d '\r\n' < "$input_dir/guest.sudo")"
+        fi
+        if [ "$guest_sudo" = "1" ] || [ "$guest_sudo" = "true" ]; then
+            mkdir -p "$target_root/etc/sudoers.d"
+            chmod 0750 "$target_root/etc/sudoers.d"
+            printf '%s ALL=(ALL) NOPASSWD:ALL\n' "$guest_user" > "$target_root/etc/sudoers.d/99-orchestella-user"
+            chmod 0440 "$target_root/etc/sudoers.d/99-orchestella-user"
+        fi
+    fi
+}
 
 mount -t devtmpfs devtmpfs /dev || fail mount-devtmpfs
 mount -t proc proc /proc || fail mount-proc
@@ -604,6 +698,9 @@ if mount -t ext4 "$ROOT_DEVICE" /newroot 2>/dev/null; then
     fi
     if is_official_debian_systemd_init /newroot; then
         install_official_debian_systemd_flavor /newroot
+    fi
+    if [ ! -f /newroot/etc/hostname ]; then
+        printf 'orchestella\n' > /newroot/etc/hostname
     fi
     install_guest_shell_profile /newroot
     PROVISIONED_DISTRO="$(grep '^distro=' /newroot/var/lib/droidlayer/provisioned-v1 | cut -d '=' -f 2)"
@@ -675,20 +772,7 @@ chmod 0700 /newroot/etc/droidlayer
 umask 077
 printf '%s\n' "$TOKEN" > /newroot/etc/droidlayer/bridge.token
 chmod 0600 /newroot/etc/droidlayer/bridge.token
-
-GUEST_PASS_PATH="$INPUT_DIR/guest.password"
-if [ -f "$GUEST_PASS_PATH" ]; then
-    GUEST_PASS="$(tr -d '\r\n' < "$GUEST_PASS_PATH")"
-    if [ -n "$GUEST_PASS" ]; then
-        if [ -x /newroot/usr/sbin/chpasswd ]; then
-            printf 'root:%s\n' "$GUEST_PASS" | chroot /newroot /usr/sbin/chpasswd 2>/dev/null || true
-        elif [ -x /newroot/usr/bin/chpasswd ]; then
-            printf 'root:%s\n' "$GUEST_PASS" | chroot /newroot /usr/bin/chpasswd 2>/dev/null || true
-        elif [ -x /newroot/sbin/chpasswd ]; then
-            printf 'root:%s\n' "$GUEST_PASS" | chroot /newroot /sbin/chpasswd 2>/dev/null || true
-        fi
-    fi
-fi
+provision_guest_identity_and_credentials /newroot "$INPUT_DIR"
 
 mkdir -p /newroot/usr/sbin /newroot/etc/init.d /newroot/etc/conf.d
 cp /opt/droidlayer/guest-agent /newroot/usr/sbin/droidlayer-guest-agent

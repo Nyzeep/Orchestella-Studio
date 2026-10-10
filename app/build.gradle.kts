@@ -145,6 +145,25 @@ dependencies {
     testImplementation(libs.junit)
 }
 
+tasks.register<JavaExec>("runPureJvmAppTests") {
+    dependsOn("compileDebugUnitTestSources")
+    val testClasses = files(
+        layout.buildDirectory.dir("intermediates/javac/debugUnitTest/compileDebugUnitTestJavaWithJavac/classes"),
+        layout.buildDirectory.dir("tmp/kotlin-classes/debugUnitTest"),
+        layout.buildDirectory.dir("intermediates/javac/debug/compileDebugJavaWithJavac/classes"),
+        layout.buildDirectory.dir("tmp/kotlin-classes/debug")
+    )
+    val testClasspath = configurations.getByName("debugUnitTestRuntimeClasspath")
+    classpath = testClasses + testClasspath
+    mainClass.set("org.junit.runner.JUnitCore")
+    args(
+        "io.github.nyzeep.orchestella.InteractiveTerminalEngineTest",
+        "io.github.nyzeep.orchestella.InstanceCredentialsTest",
+        "io.github.nyzeep.orchestella.SetupWizardModelTest",
+        "io.github.nyzeep.orchestella.DistroInstanceCreatorTest"
+    )
+}
+
 tasks.register<Copy>("packageOrchestellaRelease") {
     dependsOn("assembleRelease")
     from(layout.buildDirectory.dir("outputs/apk/release"))

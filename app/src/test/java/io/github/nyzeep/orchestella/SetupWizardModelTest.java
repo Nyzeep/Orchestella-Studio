@@ -92,4 +92,33 @@ public final class SetupWizardModelTest {
 
         assertEquals("4 vCPU · 3072 MB · 8 GB · GPU 加速", wizard.hardwareSpecsSummary());
     }
+
+    @Test
+    public void defaultUserConfigDefaultsToRootAndOrchestellaBrand() {
+        assertEquals("root", wizard.getUserConfig().username());
+        assertEquals("1234", wizard.getUserConfig().password());
+        assertEquals("orchestella", wizard.getUserConfig().hostname());
+        assertTrue(wizard.getUserConfig().hasSudo());
+        assertFalse(wizard.isCustomUserEnabled());
+    }
+
+    @Test
+    public void enableCustomUserValidatesUsernameAndSetsState() {
+        assertFalse(wizard.enableCustomUser("9invalid", "pass", true, "workstation"));
+        assertFalse(wizard.isCustomUserEnabled());
+
+        assertTrue(wizard.enableCustomUser("dev", "DevSecret2026", true, "workstation"));
+        assertTrue(wizard.isCustomUserEnabled());
+        assertEquals("dev", wizard.getUserConfig().username());
+        assertEquals("DevSecret2026", wizard.getUserConfig().password());
+        assertEquals("workstation", wizard.getUserConfig().hostname());
+        assertTrue(wizard.getUserConfig().hasSudo());
+
+        // Skip resets back to defaultRoot
+        wizard.skipToDefaultRoot();
+        assertFalse(wizard.isCustomUserEnabled());
+        assertEquals("root", wizard.getUserConfig().username());
+        assertEquals("1234", wizard.getUserConfig().password());
+        assertEquals("orchestella", wizard.getUserConfig().hostname());
+    }
 }
