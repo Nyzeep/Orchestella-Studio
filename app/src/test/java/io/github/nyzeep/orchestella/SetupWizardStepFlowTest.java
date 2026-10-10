@@ -24,7 +24,7 @@ public final class SetupWizardStepFlowTest {
                 4L * 1024L * 1024L * 1024L,
                 512L * 1024L * 1024L,
                 false);
-        wizard = new SetupWizardModel(profile, SetupWizardModel.Step.STEP_DETECT, SetupWizardModel.DistroOption.ALPINE, null);
+        wizard = new SetupWizardModel(profile, SetupWizardModel.Step.STEP_DETECT, SetupWizardModel.DistroOption.UBUNTU, null);
     }
 
     @Test

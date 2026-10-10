@@ -1,10 +1,8 @@
 package io.github.nyzeep.orchestella
 
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig
-import io.github.nyzeep.orchestella.runtime.distro.AlpineEssentialPackageSuite
 import io.github.nyzeep.orchestella.runtime.distro.DistroCatalogRegistry
 import io.github.nyzeep.orchestella.runtime.distro.DistroManifest
-import java.util.Collections
 
 /**
  * Pure Kotlin decoupled state machine for the first-launch Setup Wizard (Ticket 53, US-28).
@@ -16,7 +14,7 @@ import java.util.Collections
 class SetupWizardModel(
     val hardwareProfile: HostHardwareProfile,
     initialStep: Step = Step.STEP_DETECT,
-    initialDistro: DistroOption = DistroOption.ALPINE,
+    initialDistro: DistroOption = DistroOption.UBUNTU,
     initialConfig: VmHardwareConfig? = null
 ) {
 
@@ -53,24 +51,6 @@ class SetupWizardModel(
             approxDownloadSize = "~90 MB",
             rootfsFileName = "debian-13-rootfs.tar.xz"
         ),
-        ARCH(
-            id = "arch",
-            displayName = "Arch Linux ARM",
-            version = "rolling",
-            tag = "🏹 极客首选 · 滚动更新 · 软件前沿",
-            description = "极客首选、pacman 极速滚动更新、软件前沿与轻量定制",
-            approxDownloadSize = "~180 MB",
-            rootfsFileName = "ArchLinuxARM-aarch64-latest.tar.gz"
-        ),
-        ALPINE(
-            id = "alpine",
-            displayName = "Alpine Linux",
-            version = "3.24.1",
-            tag = "⚡ 极致轻量 · 极速启动 · 容器实验",
-            description = "极简轻巧、约 4MB 极速下载、极低内存占用、完美适配移动端命令行与轻量容器实验",
-            approxDownloadSize = "~4 MB",
-            rootfsFileName = "alpine-minirootfs-3.24.1-aarch64.tar.gz"
-        ),
         FEDORA(
             id = "fedora",
             displayName = "Fedora Linux",
@@ -79,6 +59,15 @@ class SetupWizardModel(
             description = "前沿创新、DNF 与 RPM 现代生态、开发者友好且兼容最新技术",
             approxDownloadSize = "~120 MB",
             rootfsFileName = "Fedora-Container-Minimal-Base-41-aarch64.tar.xz"
+        ),
+        ARCH(
+            id = "arch",
+            displayName = "Arch Linux ARM",
+            version = "rolling",
+            tag = "🏹 极客首选 · 滚动更新 · 软件前沿",
+            description = "极客首选、pacman 极速滚动更新、软件前沿与轻量定制",
+            approxDownloadSize = "~180 MB",
+            rootfsFileName = "ArchLinuxARM-aarch64-latest.tar.gz"
         ),
         OPENSUSE(
             id = "opensuse",
@@ -89,14 +78,23 @@ class SetupWizardModel(
             approxDownloadSize = "~110 MB",
             rootfsFileName = "openSUSE-Tumbleweed-ARM-JeOS-rootfs.aarch64.tar.xz"
         ),
-        KALI(
-            id = "kali",
-            displayName = "Kali Linux",
-            version = "rolling",
-            tag = "🐉 渗透测试 · 安全审计 · 攻防套件",
-            description = "专业安全评估、网络审计与渗透测试攻防套件生态",
-            approxDownloadSize = "~130 MB",
-            rootfsFileName = "kali-linux-rolling-arm64-rootfs.tar.xz"
+        ALMALINUX(
+            id = "almalinux",
+            displayName = "AlmaLinux",
+            version = "9.5",
+            tag = "💼 企业就绪 · RHEL 二进制兼容 · 社区驱动",
+            description = "企业级 Linux、1:1 二进制兼容 RHEL、DNF/RPM 稳定生态与长期支持保障",
+            approxDownloadSize = "~140 MB",
+            rootfsFileName = "AlmaLinux-9-Container-Minimal-9.5-aarch64.tar.xz"
+        ),
+        ROCKY(
+            id = "rocky",
+            displayName = "Rocky Linux",
+            version = "9.5",
+            tag = "🏔️ 坚如磐石 · 企业计算 · 生产级稳定",
+            description = "生产级企业发行版、严格遵循上游 RHEL 标准、云原生容器与服务器首选",
+            approxDownloadSize = "~145 MB",
+            rootfsFileName = "Rocky-9-Container-Base-9.5-aarch64.tar.xz"
         );
 
         fun manifest(): DistroManifest {
@@ -115,38 +113,6 @@ class SetupWizardModel(
 
     var selectedDistro: DistroOption = initialDistro
         private set
-
-    var isAlpineEssentialSuiteEnabled: Boolean = true
-        private set
-
-    private val _selectedAlpinePackages: MutableSet<String> =
-        AlpineEssentialPackageSuite.getRecommendedPackages().toMutableSet()
-
-    val selectedAlpinePackages: Set<String>
-        get() = Collections.unmodifiableSet(_selectedAlpinePackages)
-
-    fun setAlpineEssentialSuiteEnabled(enabled: Boolean) {
-        isAlpineEssentialSuiteEnabled = enabled
-    }
-
-    fun toggleAlpinePackage(packageName: String, selected: Boolean) {
-        if (selected) {
-            _selectedAlpinePackages.add(packageName)
-        } else {
-            _selectedAlpinePackages.remove(packageName)
-        }
-    }
-
-    fun isAlpinePackageSelected(packageName: String): Boolean {
-        return _selectedAlpinePackages.contains(packageName)
-    }
-
-    fun generateAlpineProvisioningScript(): String {
-        if (!isAlpineEssentialSuiteEnabled) {
-            return ""
-        }
-        return AlpineEssentialPackageSuite.generateFullProvisioningScript(_selectedAlpinePackages)
-    }
 
 
     var userConfig: io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig =

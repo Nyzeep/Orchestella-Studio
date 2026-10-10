@@ -30,7 +30,7 @@
             android:layout_width="36dp"
             android:layout_height="36dp"
             android:layout_marginEnd="12dp"
-            android:src="@drawable/ic_distro_alpine"
+            android:src="@drawable/ic_distro_ubuntu"
             android:contentDescription="Distro Icon" />
 
         <LinearLayout
@@ -43,7 +43,7 @@
                 android:id="@+id/sheet_title"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Alpine Linux"
+                android:text="Ubuntu Linux"
                 android:textSize="18sp"
                 android:textStyle="bold"
                 android:textColor="?attr/colorOnSurface" />

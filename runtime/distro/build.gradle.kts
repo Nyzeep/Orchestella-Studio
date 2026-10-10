@@ -19,14 +19,19 @@ tasks.register<JavaExec>("distroManifestContractTest") {
     mainClass.set("io.github.nyzeep.orchestella.runtime.distro.DistroManifestContractTest")
 }
 
-tasks.register<JavaExec>("officialAlpineCatalogTest") {
-    classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.orchestella.runtime.distro.OfficialAlpineCatalogTest")
-}
-
 tasks.register<JavaExec>("officialDebianCatalogTest") {
     classpath = sourceSets["test"].runtimeClasspath
     mainClass.set("io.github.nyzeep.orchestella.runtime.distro.OfficialDebianCatalogTest")
+}
+
+tasks.register<JavaExec>("officialAlmaLinuxCatalogTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.distro.OfficialAlmaLinuxCatalogTest")
+}
+
+tasks.register<JavaExec>("officialRockyLinuxCatalogTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.distro.OfficialRockyLinuxCatalogTest")
 }
 
 tasks.register<JavaExec>("distroFlavorTest") {
@@ -44,19 +49,14 @@ tasks.register<JavaExec>("distroCatalogRegistryTest") {
     mainClass.set("io.github.nyzeep.orchestella.runtime.distro.DistroCatalogRegistryTest")
 }
 
-tasks.register<JavaExec>("alpineEssentialPackageSuiteTest") {
-    classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.orchestella.runtime.distro.AlpineEssentialPackageSuiteTest")
-}
-
 val allCustomTestTasks = listOf(
     "distroManifestContractTest",
-    "officialAlpineCatalogTest",
     "officialDebianCatalogTest",
+    "officialAlmaLinuxCatalogTest",
+    "officialRockyLinuxCatalogTest",
     "distroFlavorTest",
     "packageManagerTypeTest",
-    "distroCatalogRegistryTest",
-    "alpineEssentialPackageSuiteTest"
+    "distroCatalogRegistryTest"
 )
 
 tasks.named<Test>("test") {

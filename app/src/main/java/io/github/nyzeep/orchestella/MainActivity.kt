@@ -38,8 +38,8 @@ import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator
 import io.github.nyzeep.orchestella.runtime.capability.DeviceCapabilityEvaluator
 import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig
+import io.github.nyzeep.orchestella.runtime.distro.DistroCatalogRegistry
 import io.github.nyzeep.orchestella.runtime.distro.DistroManifest
-import io.github.nyzeep.orchestella.runtime.distro.OfficialAlpineCatalog
 import io.github.nyzeep.orchestella.runtime.distro.OfficialDebianCatalog
 import io.github.nyzeep.orchestella.runtime.engineavf.AvfEngineException
 import io.github.nyzeep.orchestella.runtime.engineqemu.RuntimeArtifactManifest
@@ -76,7 +76,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var settingsManager: SettingsManager
     private lateinit var settingsButton: View
     private lateinit var refusalBanner: Button
-    private lateinit var createAlpineButton: Button
+    private lateinit var createUbuntuButton: Button
     private lateinit var createDebianButton: Button
     private lateinit var upgradeAuthorizationButton: Button
     private lateinit var createProgress: ProgressBar
@@ -189,7 +189,7 @@ class MainActivity : AppCompatActivity() {
 
         settingsButton = findViewById(R.id.settings_button)
         refusalBanner = findViewById(R.id.refusal_banner)
-        createAlpineButton = findViewById(R.id.create_alpine)
+        createUbuntuButton = findViewById(R.id.create_ubuntu)
         createDebianButton = findViewById(R.id.create_debian)
         createProgress = findViewById(R.id.create_progress)
         createStatus = findViewById(R.id.create_status)
@@ -208,9 +208,9 @@ class MainActivity : AppCompatActivity() {
             refusalBanner.visibility = View.GONE
         }
 
-        createAlpineButton.setOnClickListener { launchCreationWizard("alpine") }
+        createUbuntuButton.setOnClickListener { launchCreationWizard("ubuntu") }
         createDebianButton.setOnClickListener { launchCreationWizard("debian") }
-        findViewById<View>(R.id.card_create_alpine).setOnClickListener { launchCreationWizard("alpine") }
+        findViewById<View>(R.id.card_create_ubuntu).setOnClickListener { launchCreationWizard("ubuntu") }
         findViewById<View>(R.id.card_create_debian).setOnClickListener { launchCreationWizard("debian") }
 
         upgradeAuthorizationButton.setOnClickListener { showAvfAuthorizationWizard() }
@@ -265,7 +265,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setCreateButtonsEnabled(enabled: Boolean) {
-        if (::createAlpineButton.isInitialized) createAlpineButton.isEnabled = enabled
+        if (::createUbuntuButton.isInitialized) createUbuntuButton.isEnabled = enabled
         if (::createDebianButton.isInitialized) createDebianButton.isEnabled = enabled
     }
 
@@ -458,7 +458,7 @@ class MainActivity : AppCompatActivity() {
 
             // Distro Icon & Info
             distroIcon?.setImageResource(
-                if (uiModel.distroId == "debian") R.drawable.ic_distro_debian else R.drawable.ic_distro_alpine
+                DistroIconHelper.getIconRes(uiModel.distroId)
             )
             distroTitle?.text = "${uiModel.distroDisplayName} Linux ${uiModel.distroVersion}"
             instanceIdText?.text = getString(R.string.instance_card_id_prefix, uiModel.shortId)
@@ -776,11 +776,9 @@ class MainActivity : AppCompatActivity() {
                 val badge = currentBadge(DeviceCapabilityEvaluator.evaluate(deviceProfile()))
                 settingsManager.lastActiveInstanceId = instance.id()
                 OrchestellaForegroundService.start(this, instance.id(), distroTitle, badge, settingsManager.batteryPolicy)
-                val rootfsFileName = when (instance.distro().id()) {
-                    "debian" -> OfficialDebianCatalog.debian().rootfsFileName()
-                    "alpine" -> OfficialAlpineCatalog.alpine().rootfsFileName()
-                    else -> throw IllegalStateException("unsupported distro: " + instance.distro().id())
-                }
+                val rootfsFileName = DistroCatalogRegistry.getInstance().get(instance.distro().id())?.rootfsFileName()
+                    ?: if (instance.distro().id() == "alpine") "alpine-minirootfs-3.24.1-aarch64.tar.gz"
+                    else "${instance.distro().id()}-rootfs.tar.xz"
                 val mirrorConfigFile = filesDir.resolve("instances").resolve("${instance.id()}.mirror")
                 val firstbootFile = filesDir.resolve("instances").resolve("${instance.id()}.firstboot")
                 val mirrorConfigName = DistroMirrorProvisioner.getConfigFileName(instance.distro().id())

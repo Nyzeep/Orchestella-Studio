@@ -1,7 +1,6 @@
 package io.github.nyzeep.orchestella;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -10,7 +9,7 @@ import org.junit.Before;
 import org.junit.Test;
 
 /**
- * Pure JVM tests for distro selection, manifest binding, and Alpine package suite in Setup Wizard.
+ * Pure JVM tests for 7 distro options, manifest binding in Setup Wizard.
  */
 public final class SetupWizardDistroSelectionTest {
 
@@ -25,25 +24,23 @@ public final class SetupWizardDistroSelectionTest {
                 4L * 1024L * 1024L * 1024L,
                 512L * 1024L * 1024L,
                 false);
-        wizard = new SetupWizardModel(profile, SetupWizardModel.Step.STEP_DISTRO, SetupWizardModel.DistroOption.ALPINE, null);
+        wizard = new SetupWizardModel(profile, SetupWizardModel.Step.STEP_DISTRO, SetupWizardModel.DistroOption.UBUNTU, null);
     }
 
     @Test
-    public void alpineDistroManifestAndMetadata() {
-        SetupWizardModel.DistroOption option = SetupWizardModel.DistroOption.ALPINE;
-        assertEquals("alpine", option.getId());
-        assertEquals("Alpine Linux", option.getDisplayName());
-        assertEquals("3.24.1", option.getVersion());
-        assertTrue(option.getTag().contains("极"));
-        assertTrue(option.getDescription().contains("4MB"));
-        assertEquals("alpine-minirootfs-3.24.1-aarch64.tar.gz", option.getRootfsFileName());
+    public void ubuntuDistroManifestAndMetadata() {
+        SetupWizardModel.DistroOption option = SetupWizardModel.DistroOption.UBUNTU;
+        assertEquals("ubuntu", option.getId());
+        assertEquals("Ubuntu Linux", option.getDisplayName());
+        assertEquals("24.04", option.getVersion());
+        assertTrue(option.getTag().contains("工业标准"));
+        assertEquals("ubuntu-base-24.04-base-arm64.tar.gz", option.getRootfsFileName());
 
         DistroManifest manifest = option.manifest();
         assertNotNull(manifest);
-        assertEquals("alpine", manifest.id());
-        assertEquals("3.24.1", manifest.version());
+        assertEquals("ubuntu", manifest.id());
+        assertEquals("24.04", manifest.version());
         assertEquals("aarch64", manifest.architecture());
-        assertEquals(4_023_732L, manifest.sizeBytes());
     }
 
     @Test
@@ -65,18 +62,18 @@ public final class SetupWizardDistroSelectionTest {
     }
 
     @Test
-    public void ubuntuDistroManifestAndMetadata() {
-        SetupWizardModel.DistroOption option = SetupWizardModel.DistroOption.UBUNTU;
-        assertEquals("ubuntu", option.getId());
-        assertEquals("Ubuntu Linux", option.getDisplayName());
-        assertEquals("24.04", option.getVersion());
-        assertTrue(option.getTag().contains("工业标准"));
-        assertEquals("ubuntu-base-24.04-base-arm64.tar.gz", option.getRootfsFileName());
+    public void fedoraDistroManifestAndMetadata() {
+        SetupWizardModel.DistroOption option = SetupWizardModel.DistroOption.FEDORA;
+        assertEquals("fedora", option.getId());
+        assertEquals("Fedora Linux", option.getDisplayName());
+        assertEquals("41", option.getVersion());
+        assertTrue(option.getTag().contains("前沿创新"));
+        assertEquals("Fedora-Container-Minimal-Base-41-aarch64.tar.xz", option.getRootfsFileName());
 
         DistroManifest manifest = option.manifest();
         assertNotNull(manifest);
-        assertEquals("ubuntu", manifest.id());
-        assertEquals("24.04", manifest.version());
+        assertEquals("fedora", manifest.id());
+        assertEquals("41", manifest.version());
         assertEquals("aarch64", manifest.architecture());
     }
 
@@ -92,22 +89,6 @@ public final class SetupWizardDistroSelectionTest {
         DistroManifest manifest = option.manifest();
         assertNotNull(manifest);
         assertEquals("arch", manifest.id());
-        assertEquals("aarch64", manifest.architecture());
-    }
-
-    @Test
-    public void fedoraDistroManifestAndMetadata() {
-        SetupWizardModel.DistroOption option = SetupWizardModel.DistroOption.FEDORA;
-        assertEquals("fedora", option.getId());
-        assertEquals("Fedora Linux", option.getDisplayName());
-        assertEquals("41", option.getVersion());
-        assertTrue(option.getTag().contains("前沿创新"));
-        assertEquals("Fedora-Container-Minimal-Base-41-aarch64.tar.xz", option.getRootfsFileName());
-
-        DistroManifest manifest = option.manifest();
-        assertNotNull(manifest);
-        assertEquals("fedora", manifest.id());
-        assertEquals("41", manifest.version());
         assertEquals("aarch64", manifest.architecture());
     }
 
@@ -128,18 +109,34 @@ public final class SetupWizardDistroSelectionTest {
     }
 
     @Test
-    public void kaliDistroManifestAndMetadata() {
-        SetupWizardModel.DistroOption option = SetupWizardModel.DistroOption.KALI;
-        assertEquals("kali", option.getId());
-        assertEquals("Kali Linux", option.getDisplayName());
-        assertEquals("rolling", option.getVersion());
-        assertTrue(option.getTag().contains("渗透测试"));
-        assertEquals("kali-linux-rolling-arm64-rootfs.tar.xz", option.getRootfsFileName());
+    public void almaLinuxDistroManifestAndMetadata() {
+        SetupWizardModel.DistroOption option = SetupWizardModel.DistroOption.ALMALINUX;
+        assertEquals("almalinux", option.getId());
+        assertEquals("AlmaLinux", option.getDisplayName());
+        assertEquals("9.5", option.getVersion());
+        assertTrue(option.getTag().contains("企业就绪"));
+        assertEquals("AlmaLinux-9-Container-Minimal-9.5-aarch64.tar.xz", option.getRootfsFileName());
 
         DistroManifest manifest = option.manifest();
         assertNotNull(manifest);
-        assertEquals("kali", manifest.id());
-        assertEquals("rolling", manifest.version());
+        assertEquals("almalinux", manifest.id());
+        assertEquals("9.5", manifest.version());
+        assertEquals("aarch64", manifest.architecture());
+    }
+
+    @Test
+    public void rockyDistroManifestAndMetadata() {
+        SetupWizardModel.DistroOption option = SetupWizardModel.DistroOption.ROCKY;
+        assertEquals("rocky", option.getId());
+        assertEquals("Rocky Linux", option.getDisplayName());
+        assertEquals("9.5", option.getVersion());
+        assertTrue(option.getTag().contains("坚如磐石"));
+        assertEquals("Rocky-9-Container-Base-9.5-aarch64.tar.xz", option.getRootfsFileName());
+
+        DistroManifest manifest = option.manifest();
+        assertNotNull(manifest);
+        assertEquals("rocky", manifest.id());
+        assertEquals("9.5", manifest.version());
         assertEquals("aarch64", manifest.architecture());
     }
 
@@ -153,47 +150,32 @@ public final class SetupWizardDistroSelectionTest {
 
     @Test
     public void switchingDistroUpdatesSelectedManifest() {
-        assertEquals(SetupWizardModel.DistroOption.ALPINE, wizard.getSelectedDistro());
-        assertEquals("alpine", wizard.getSelectedManifest().id());
+        assertEquals(SetupWizardModel.DistroOption.UBUNTU, wizard.getSelectedDistro());
+        assertEquals("ubuntu", wizard.getSelectedManifest().id());
 
         wizard.selectDistro(SetupWizardModel.DistroOption.DEBIAN);
         assertEquals(SetupWizardModel.DistroOption.DEBIAN, wizard.getSelectedDistro());
         assertEquals("debian", wizard.getSelectedManifest().id());
         assertEquals("13", wizard.getSelectedManifest().version());
 
-        wizard.selectDistro(SetupWizardModel.DistroOption.UBUNTU);
-        assertEquals(SetupWizardModel.DistroOption.UBUNTU, wizard.getSelectedDistro());
-        assertEquals("ubuntu", wizard.getSelectedManifest().id());
+        wizard.selectDistro(SetupWizardModel.DistroOption.FEDORA);
+        assertEquals(SetupWizardModel.DistroOption.FEDORA, wizard.getSelectedDistro());
+        assertEquals("fedora", wizard.getSelectedManifest().id());
 
         wizard.selectDistro(SetupWizardModel.DistroOption.ARCH);
         assertEquals(SetupWizardModel.DistroOption.ARCH, wizard.getSelectedDistro());
         assertEquals("arch", wizard.getSelectedManifest().id());
 
-        wizard.selectDistro(SetupWizardModel.DistroOption.ALPINE);
-        assertEquals(SetupWizardModel.DistroOption.ALPINE, wizard.getSelectedDistro());
-        assertEquals("alpine", wizard.getSelectedManifest().id());
-    }
+        wizard.selectDistro(SetupWizardModel.DistroOption.OPENSUSE);
+        assertEquals(SetupWizardModel.DistroOption.OPENSUSE, wizard.getSelectedDistro());
+        assertEquals("opensuse", wizard.getSelectedManifest().id());
 
-    @Test
-    public void alpineEssentialPackageSuiteDefaultsAndToggle() {
-        assertTrue(wizard.isAlpineEssentialSuiteEnabled());
-        assertTrue(wizard.isAlpinePackageSelected("bash"));
-        assertTrue(wizard.isAlpinePackageSelected("curl"));
-        assertTrue(wizard.isAlpinePackageSelected("sudo"));
+        wizard.selectDistro(SetupWizardModel.DistroOption.ALMALINUX);
+        assertEquals(SetupWizardModel.DistroOption.ALMALINUX, wizard.getSelectedDistro());
+        assertEquals("almalinux", wizard.getSelectedManifest().id());
 
-        String defaultScript = wizard.generateAlpineProvisioningScript();
-        assertTrue(defaultScript.contains("apk add --no-cache"));
-        assertTrue(defaultScript.contains("bash"));
-        assertTrue(defaultScript.contains("chsh -s /bin/bash root"));
-
-        // Toggle a package off
-        wizard.toggleAlpinePackage("nano", false);
-        assertFalse(wizard.isAlpinePackageSelected("nano"));
-        assertFalse(wizard.generateAlpineProvisioningScript().contains("nano"));
-
-        // Toggle essential suite completely off
-        wizard.setAlpineEssentialSuiteEnabled(false);
-        assertFalse(wizard.isAlpineEssentialSuiteEnabled());
-        assertEquals("", wizard.generateAlpineProvisioningScript());
+        wizard.selectDistro(SetupWizardModel.DistroOption.ROCKY);
+        assertEquals(SetupWizardModel.DistroOption.ROCKY, wizard.getSelectedDistro());
+        assertEquals("rocky", wizard.getSelectedManifest().id());
     }
 }

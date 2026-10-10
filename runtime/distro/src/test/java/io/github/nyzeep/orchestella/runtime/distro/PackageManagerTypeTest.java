@@ -18,7 +18,6 @@ public final class PackageManagerTypeTest {
 
     private static void testEnumValuesAndCommandNames() {
         assertEquals("apt", PackageManagerType.APT.commandName());
-        assertEquals("apk", PackageManagerType.APK.commandName());
         assertEquals("pacman", PackageManagerType.PACMAN.commandName());
         assertEquals("dnf", PackageManagerType.DNF.commandName());
         assertEquals("zypper", PackageManagerType.ZYPPER.commandName());
@@ -26,7 +25,6 @@ public final class PackageManagerTypeTest {
 
     private static void testDefaultUpdateCommands() {
         assertTrue(PackageManagerType.APT.defaultUpdateCommand().contains("apt"));
-        assertTrue(PackageManagerType.APK.defaultUpdateCommand().contains("apk update"));
         assertTrue(PackageManagerType.PACMAN.defaultUpdateCommand().contains("pacman -Sy"));
         assertTrue(PackageManagerType.DNF.defaultUpdateCommand().contains("dnf"));
         assertTrue(PackageManagerType.ZYPPER.defaultUpdateCommand().contains("zypper refresh"));
@@ -37,9 +35,6 @@ public final class PackageManagerTypeTest {
 
         String aptInstall = PackageManagerType.APT.defaultInstallCommand(packages);
         assertTrue(aptInstall.contains("install -y") && aptInstall.contains("bash curl"));
-
-        String apkInstall = PackageManagerType.APK.defaultInstallCommand(packages);
-        assertTrue(apkInstall.contains("apk add") && apkInstall.contains("bash curl"));
 
         String pacmanInstall = PackageManagerType.PACMAN.defaultInstallCommand(packages);
         assertTrue(pacmanInstall.contains("pacman -S") && pacmanInstall.contains("bash curl"));
@@ -54,19 +49,25 @@ public final class PackageManagerTypeTest {
     private static void testDistroIdMappings() {
         assertEquals(PackageManagerType.APT, PackageManagerType.forDistroId("ubuntu"));
         assertEquals(PackageManagerType.APT, PackageManagerType.forDistroId("debian"));
-        assertEquals(PackageManagerType.APT, PackageManagerType.forDistroId("kali"));
-        assertEquals(PackageManagerType.APK, PackageManagerType.forDistroId("alpine"));
         assertEquals(PackageManagerType.PACMAN, PackageManagerType.forDistroId("arch"));
         assertEquals(PackageManagerType.DNF, PackageManagerType.forDistroId("fedora"));
+        assertEquals(PackageManagerType.DNF, PackageManagerType.forDistroId("almalinux"));
+        assertEquals(PackageManagerType.DNF, PackageManagerType.forDistroId("rocky"));
         assertEquals(PackageManagerType.ZYPPER, PackageManagerType.forDistroId("opensuse"));
     }
 
     private static void testRejectsUnknownDistroId() {
+        assertRejects("unknown_distro");
+        assertRejects("alpine");
+        assertRejects("kali");
+    }
+
+    private static void assertRejects(String distroId) {
         try {
-            PackageManagerType.forDistroId("unknown_distro");
-            throw new AssertionError("Should reject unknown distro id");
+            PackageManagerType.forDistroId(distroId);
+            throw new AssertionError("Should reject distro id: " + distroId);
         } catch (IllegalArgumentException expected) {
-            assertTrue(expected.getMessage().contains("unknown_distro"));
+            assertTrue(expected.getMessage().contains(distroId));
         }
     }
 

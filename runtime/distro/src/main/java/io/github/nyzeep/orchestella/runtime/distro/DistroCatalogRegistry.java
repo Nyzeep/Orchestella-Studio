@@ -33,11 +33,11 @@ public final class DistroCatalogRegistry {
         DistroCatalogRegistry registry = new DistroCatalogRegistry();
         registry.register(OfficialUbuntuCatalog.ubuntu());
         registry.register(OfficialDebianCatalog.debian());
-        registry.register(OfficialArchCatalog.arch());
-        registry.register(OfficialAlpineCatalog.alpine());
         registry.register(OfficialFedoraCatalog.fedora());
+        registry.register(OfficialArchCatalog.arch());
         registry.register(OfficialOpenSuseCatalog.opensuse());
-        registry.register(OfficialKaliCatalog.kali());
+        registry.register(OfficialAlmaLinuxCatalog.almalinux());
+        registry.register(OfficialRockyLinuxCatalog.rocky());
         return registry;
     }
 

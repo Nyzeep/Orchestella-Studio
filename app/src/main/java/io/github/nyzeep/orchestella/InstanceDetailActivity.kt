@@ -302,7 +302,7 @@ class InstanceDetailActivity : AppCompatActivity() {
     private fun renderState(state: InstanceDetailUiState) {
         // Section 1: Header
         distroIcon.setImageResource(
-            if (state.distroId == "debian") R.drawable.ic_distro_debian else R.drawable.ic_distro_alpine
+            DistroIconHelper.getIconRes(state.distroId)
         )
         instanceTitle.text = "${state.distroDisplayName} Linux ${state.distroVersion}"
         instanceIdText.text = "ID: ${state.instanceId} · ${state.defaultUser}@${state.hostname}"
