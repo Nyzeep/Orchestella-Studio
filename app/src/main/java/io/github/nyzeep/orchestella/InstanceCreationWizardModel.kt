@@ -82,6 +82,14 @@ class InstanceCreationWizardModel(
     var autoUpdateOnFirstBoot: Boolean = false
         private set
 
+    var userConfig: io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig =
+        io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig.defaultRoot()
+        private set
+
+    fun setUserConfig(config: io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig) {
+        this.userConfig = config
+    }
+
     var isCreating: Boolean = false
         private set
 
