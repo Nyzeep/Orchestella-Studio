@@ -182,9 +182,18 @@ final class DisplayAgentProtocolTest {
     private static ProcessResult runProcess(List<String> command, String input) throws Exception {
         Process process = new ProcessBuilder(new ArrayList<>(command)).start();
         if (input != null) {
-            process.getOutputStream().write(input.getBytes(StandardCharsets.US_ASCII));
+            try {
+                process.getOutputStream().write(input.getBytes(StandardCharsets.US_ASCII));
+                process.getOutputStream().flush();
+            } catch (IOException ignored) {
+                // If child process terminates before reading input, pipe may break.
+            }
         }
-        process.getOutputStream().close();
+        try {
+            process.getOutputStream().close();
+        } catch (IOException ignored) {
+            // Child process may have already exited and closed its stdin pipe.
+        }
         String standardOutput = readFully(process.getInputStream());
         String standardError = readFully(process.getErrorStream());
         int exitCode = process.waitFor();
