@@ -274,6 +274,43 @@
     <string name="wizard_init_success">🎉 首个实例已就绪，正在进入控制台…</string>
     <string name="wizard_init_failed">初始化失败：%1$s</string>
 
+    <!-- Ticket 01: Instance Creation Wizard Strings -->
+    <string name="wizard_creation_title">新建实例向导</string>
+    <string name="wizard_creation_subtitle">工业级分步引导 · 虚拟磁盘、网络源与自动化配置</string>
+    <string name="wizard_step_storage_name">存储与挂载</string>
+    <string name="wizard_step_network_name">网络与镜像源</string>
+    <string name="wizard_step_hardware_name">硬件配额分配</string>
+    <string name="wizard_step_startup_name">启动任务与部署</string>
+
+    <string name="wizard_storage_card_title">虚拟磁盘与存储配额</string>
+    <string name="wizard_storage_card_desc">选择稀疏虚拟磁盘容量，并预检宿主保留空间</string>
+    <string name="wizard_disk_size_label">虚拟磁盘容量：</string>
+    <string name="wizard_disk_custom_hint">自定义容量 (GB)</string>
+    <string name="wizard_storage_insufficient_warn">⚠️ 宿主内部存储空间不足！当前可用 %1$.1f GB，需至少预留 %2$.1f GB（含 2GB 宿主系统安全缓冲）。</string>
+    <string name="wizard_mount_shared_dir_label">挂载宿主共享目录 (/mnt/shared)</string>
+    <string name="wizard_mount_shared_dir_desc">勾选后将宿主共享目录映射为 Guest 内的 /mnt/shared</string>
+    <string name="wizard_shared_dir_default">默认映射宿主 Documents / 外部存储</string>
+
+    <string name="wizard_network_card_title">网络看板与镜像软件源</string>
+    <string name="wizard_network_card_desc">检测网络环境并为包管理器预设极速软件源</string>
+    <string name="wizard_net_mode">网络连接：%1$s</string>
+    <string name="wizard_net_ip">宿主 IP：%1$s</string>
+    <string name="wizard_net_dns">DNS 服务器：%1$s</string>
+    <string name="wizard_net_test_btn">测试网络连通性</string>
+    <string name="wizard_net_test_ok">网络连通正常（HTTP 200 OK）</string>
+    <string name="wizard_net_test_failed">网络探测失败，请检查网络</string>
+    <string name="wizard_net_testing">正在探测网络连通性…</string>
+    <string name="wizard_mirror_selector_label">包管理器镜像软件源：</string>
+
+    <string name="wizard_hardware_card_title">vCPU 与 RAM 资源配置</string>
+    <string name="wizard_hardware_card_desc">手动指定虚拟机规格，动态感知宿主安全红黄绿阈值</string>
+
+    <string name="wizard_startup_card_title">初次引导与自动化任务</string>
+    <string name="wizard_startup_card_desc">实例初次就绪后，在后台静默执行系统软件更新与初始化</string>
+    <string name="wizard_startup_auto_update_label">🚀 实例初次引导时自动执行系统软件更新</string>
+    <string name="wizard_startup_auto_update_desc">勾选后将自动生成 firstboot 脚本，后台静默执行对应发行版升级指令：\n%1$s</string>
+    <string name="wizard_btn_create_instance">🚀 立即创建并部署实例</string>
+
     <!-- Headless desktop guard & user guidance -->
     <string name="desktop_headless_title">未配置图形桌面环境</string>
     <string name="desktop_headless_message">当前实例使用的是轻量命令行根文件系统（Headless），尚未安装或配置 Wayland / Labwc 图形桌面。请点击「打开终端」在 Linux 终端中进行操作。</string>

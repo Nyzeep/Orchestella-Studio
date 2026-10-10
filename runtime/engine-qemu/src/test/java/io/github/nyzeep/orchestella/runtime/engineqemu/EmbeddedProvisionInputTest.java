@@ -101,7 +101,28 @@ public final class EmbeddedProvisionInputTest {
             }
         }
 
-        System.out.println("EMBEDDED_PROVISION_INPUT_TEST_OK deterministic=1 gzip=1 newc_entries=3 trailer=1 parent_dirs=2 token_validation=2");
+        // Verify mirror config and firstboot script streaming
+        java.io.ByteArrayOutputStream extOut = new java.io.ByteArrayOutputStream();
+        byte[] mirrorContent = "https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.24/main\n".getBytes(StandardCharsets.UTF_8);
+        byte[] firstbootContent = "#!/bin/sh\necho hello\n".getBytes(StandardCharsets.UTF_8);
+        try (ByteArrayInputStream in = new ByteArrayInputStream(rootfs)) {
+            EmbeddedProvisionInput.writeSegment(
+                    in, rootfs.length, rootfsName, token, "secret", null, null,
+                    "repositories", mirrorContent, firstbootContent, extOut);
+        }
+        byte[] extCpio = gunzip(extOut.toByteArray());
+        String extText = new String(extCpio, StandardCharsets.US_ASCII);
+        if (!extText.contains("opt/droidlayer/embedded-input/repositories")) {
+            fail("missing embedded repositories entry");
+        }
+        if (!extText.contains("opt/droidlayer/embedded-input/firstboot.sh")) {
+            fail("missing embedded firstboot.sh entry");
+        }
+        if (!extText.contains("opt/droidlayer/embedded-input/guest.password")) {
+            fail("missing embedded guest.password entry");
+        }
+
+        System.out.println("EMBEDDED_PROVISION_INPUT_TEST_OK deterministic=1 gzip=1 newc_entries=3 trailer=1 parent_dirs=2 token_validation=2 mirror_firstboot=1");
     }
 
     private static void fail(String reason) {

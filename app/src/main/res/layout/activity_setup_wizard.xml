@@ -28,7 +28,7 @@
                 android:id="@+id/wizard_title"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/wizard_onboarding_title"
+                android:text="@string/wizard_creation_title"
                 android:textSize="26sp"
                 android:textStyle="bold"
                 android:textColor="?attr/colorOnBackground" />
@@ -38,7 +38,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
-                android:text="@string/wizard_onboarding_subtitle"
+                android:text="@string/wizard_creation_subtitle"
                 android:textSize="13sp"
                 android:textColor="?attr/colorOutline" />
 
@@ -54,13 +54,13 @@
                 android:paddingTop="6dp"
                 android:paddingEnd="12dp"
                 android:paddingBottom="6dp"
-                android:text="第 1 步 / 共 3 步：环境感知"
+                android:text="第 1 步 / 共 4 步：存储与挂载"
                 android:textSize="13sp"
                 android:textStyle="bold"
                 android:textColor="?attr/colorPrimary" />
 
             <!-- ========================================== -->
-            <!-- STEP 1: Environment Detection              -->
+            <!-- STEP 1: Storage & Mounts                   -->
             <!-- ========================================== -->
             <LinearLayout
                 android:id="@+id/step1_container"
@@ -69,9 +69,9 @@
                 android:orientation="vertical"
                 android:visibility="visible">
 
-                <!-- Host Hardware Card -->
+                <!-- Distro Selection Card -->
                 <com.google.android.material.card.MaterialCardView
-                    android:id="@+id/card_hardware_detect"
+                    android:id="@+id/card_distro_selector"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="14dp"
@@ -90,69 +90,46 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="@string/wizard_step1_card_title"
+                            android:text="目标 Linux 发行版"
                             android:textSize="16sp"
                             android:textStyle="bold"
                             android:textColor="?attr/colorOnSurface" />
 
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:text="@string/wizard_step1_card_desc"
-                            android:textSize="12sp"
-                            android:textColor="?attr/colorOutline" />
-
-                        <View
-                            android:layout_width="match_parent"
-                            android:layout_height="1dp"
-                            android:layout_marginTop="10dp"
-                            android:layout_marginBottom="10dp"
-                            android:background="?attr/colorOutlineVariant" />
-
-                        <TextView
-                            android:id="@+id/txt_hw_cpu_arch"
+                        <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="芯片架构：ARM64 (aarch64)"
-                            android:textSize="13sp"
-                            android:textColor="?attr/colorOnSurface" />
+                            android:orientation="horizontal"
+                            android:layout_marginTop="12dp">
 
-                        <TextView
-                            android:id="@+id/txt_hw_cpu_cores"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
-                            android:text="物理 CPU：8 核心"
-                            android:textSize="13sp"
-                            android:textColor="?attr/colorOnSurface" />
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btn_distro_alpine"
+                                style="@style/Widget.Material3.Button.TonalButton"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginEnd="6dp"
+                                app:cornerRadius="12dp"
+                                android:text="⚡ Alpine Linux" />
 
-                        <TextView
-                            android:id="@+id/txt_hw_ram_overview"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
-                            android:text="运存总览：4096 MB 可用 / 8192 MB 总量"
-                            android:textSize="13sp"
-                            android:textColor="?attr/colorOnSurface" />
-
-                        <TextView
-                            android:id="@+id/txt_hw_storage"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
-                            android:text="私有存储空间：充足可用"
-                            android:textSize="13sp"
-                            android:textColor="?attr/colorOnSurface" />
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btn_distro_debian"
+                                style="@style/Widget.Material3.Button.OutlinedButton"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginStart="6dp"
+                                app:cornerRadius="12dp"
+                                android:text="🐧 Debian 13" />
+                        </LinearLayout>
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
-                <!-- Virtualization Engine Card -->
+                <!-- Virtual Disk Capacity Card -->
                 <com.google.android.material.card.MaterialCardView
-                    android:id="@+id/card_virt_detect"
+                    android:id="@+id/card_storage_config"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="16dp"
+                    android:layout_marginBottom="14dp"
                     app:cardCornerRadius="16dp"
                     app:cardElevation="1dp"
                     app:strokeWidth="1dp"
@@ -168,63 +145,140 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="@string/wizard_virt_card_title"
+                            android:text="@string/wizard_storage_card_title"
                             android:textSize="16sp"
                             android:textStyle="bold"
                             android:textColor="?attr/colorOnSurface" />
 
                         <TextView
-                            android:id="@+id/txt_virt_status_badge"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
-                            android:background="@drawable/bg_status_badge"
-                            android:paddingStart="8dp"
-                            android:paddingTop="4dp"
-                            android:paddingEnd="8dp"
-                            android:paddingBottom="4dp"
-                            android:text="🎉 L2 硬件虚拟化已就绪"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/wizard_storage_card_desc"
                             android:textSize="12sp"
-                            android:textStyle="bold"
-                            android:textColor="@color/status_running" />
+                            android:textColor="?attr/colorOutline" />
 
                         <TextView
-                            android:id="@+id/txt_virt_status_desc"
+                            android:id="@+id/txt_hw_storage"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
-                            android:text="检测到 pKVM Stage-2 硬件虚拟化能力，将获得近原生计算与图形性能。"
+                            android:layout_marginTop="10dp"
+                            android:text="私有存储空间：-- GB 可用"
                             android:textSize="13sp"
                             android:textColor="?attr/colorOnSurfaceVariant" />
 
-                        <LinearLayout
-                            android:id="@+id/layout_virt_auth_actions"
-                            android:layout_width="match_parent"
+                        <!-- Disk Preset Capsules -->
+                        <TextView
+                            android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="12dp"
+                            android:text="@string/wizard_disk_size_label"
+                            android:textSize="13sp"
+                            android:textStyle="bold"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
                             android:orientation="horizontal"
-                            android:visibility="gone">
+                            android:layout_marginTop="8dp">
 
                             <com.google.android.material.button.MaterialButton
-                                android:id="@+id/btn_wizard_auth"
+                                android:id="@+id/btn_disk_4g"
+                                style="@style/Widget.Material3.Button.OutlinedButton"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginEnd="4dp"
+                                app:cornerRadius="12dp"
+                                android:text="4 GB" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btn_disk_8g"
                                 style="@style/Widget.Material3.Button.TonalButton"
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
-                                android:minHeight="48dp"
-                                app:cornerRadius="12dp"
                                 android:layout_weight="1"
-                                android:text="@string/wizard_btn_auth_guide" />
+                                android:layout_marginEnd="4dp"
+                                app:cornerRadius="12dp"
+                                android:text="8 GB" />
 
                             <com.google.android.material.button.MaterialButton
-                                android:id="@+id/btn_wizard_skip_auth"
-                                style="@style/Widget.Material3.Button.TextButton"
-                                android:layout_width="wrap_content"
+                                android:id="@+id/btn_disk_16g"
+                                style="@style/Widget.Material3.Button.OutlinedButton"
+                                android:layout_width="0dp"
                                 android:layout_height="wrap_content"
-                                android:minHeight="48dp"
+                                android:layout_weight="1"
+                                android:layout_marginEnd="4dp"
                                 app:cornerRadius="12dp"
-                                android:layout_marginStart="8dp"
-                                android:text="@string/wizard_btn_skip_auth" />
+                                android:text="16 GB" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btn_disk_32g"
+                                style="@style/Widget.Material3.Button.OutlinedButton"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                app:cornerRadius="12dp"
+                                android:text="32 GB" />
                         </LinearLayout>
+
+                        <!-- Custom Disk Input -->
+                        <com.google.android.material.textfield.TextInputLayout
+                            android:id="@+id/layout_custom_disk"
+                            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            app:boxCornerRadiusTopStart="12dp"
+                            app:boxCornerRadiusTopEnd="12dp"
+                            app:boxCornerRadiusBottomStart="12dp"
+                            app:boxCornerRadiusBottomEnd="12dp"
+                            android:hint="@string/wizard_disk_custom_hint">
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/edit_custom_disk_gb"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="number"
+                                android:textSize="14sp"
+                                android:text="8" />
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <!-- Insufficient Storage Warning Alert -->
+                        <TextView
+                            android:id="@+id/txt_storage_warning"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:textSize="12sp"
+                            android:textColor="@color/zone_red"
+                            android:visibility="gone" />
+
+                        <View
+                            android:layout_width="match_parent"
+                            android:layout_height="1dp"
+                            android:layout_marginTop="12dp"
+                            android:layout_marginBottom="12dp"
+                            android:background="?attr/colorOutlineVariant" />
+
+                        <!-- Host Shared Directory Mount Checkbox -->
+                        <com.google.android.material.checkbox.MaterialCheckBox
+                            android:id="@+id/chk_mount_shared_dir"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/wizard_mount_shared_dir_label"
+                            android:textSize="14sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/txt_shared_dir_desc"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="32dp"
+                            android:text="@string/wizard_mount_shared_dir_desc"
+                            android:textSize="12sp"
+                            android:textColor="?attr/colorOutline" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
@@ -242,7 +296,7 @@
             </LinearLayout>
 
             <!-- ========================================== -->
-            <!-- STEP 2: Distro Selection                   -->
+            <!-- STEP 2: Network & Mirror Selector          -->
             <!-- ========================================== -->
             <LinearLayout
                 android:id="@+id/step2_container"
@@ -251,113 +305,12 @@
                 android:orientation="vertical"
                 android:visibility="gone">
 
-                <TextView
-                    android:layout_width="wrap_content"
+                <!-- Network Diagnosis Card -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/card_network_diag"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="@string/wizard_step2_card_title"
-                    android:textSize="16sp"
-                    android:textStyle="bold"
-                    android:textColor="?attr/colorOnBackground" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
                     android:layout_marginBottom="14dp"
-                    android:text="@string/wizard_step2_card_desc"
-                    android:textSize="12sp"
-                    android:textColor="?attr/colorOutline" />
-
-                <!-- Distro Card 1: Alpine -->
-                <com.google.android.material.card.MaterialCardView
-                    android:id="@+id/card_distro_alpine"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="12dp"
-                    android:clickable="true"
-                    android:focusable="true"
-                    app:cardCornerRadius="16dp"
-                    app:cardElevation="2dp"
-                    app:strokeWidth="2dp"
-                    app:strokeColor="?attr/colorPrimary"
-                    app:cardBackgroundColor="?attr/colorSurfaceContainer">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="16dp">
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:orientation="horizontal"
-                            android:gravity="center_vertical">
-
-                            <ImageView
-                                android:layout_width="36dp"
-                                android:layout_height="36dp"
-                                android:src="@drawable/ic_distro_alpine"
-                                android:contentDescription="Alpine Linux" />
-
-                            <LinearLayout
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:layout_marginStart="12dp"
-                                android:orientation="vertical">
-
-                                <TextView
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:text="Alpine Linux 3.24"
-                                    android:textSize="16sp"
-                                    android:textStyle="bold"
-                                    android:textColor="?attr/colorOnSurface" />
-
-                                <TextView
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:text="⚡ 极简轻量 · 约 4MB · 极客容器"
-                                    android:textSize="12sp"
-                                    android:textColor="@color/distro_alpine_tint" />
-                            </LinearLayout>
-
-                            <TextView
-                                android:id="@+id/badge_selected_alpine"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:background="@drawable/bg_status_badge"
-                                android:paddingStart="8dp"
-                                android:paddingTop="3dp"
-                                android:paddingEnd="8dp"
-                                android:paddingBottom="3dp"
-                                android:text="@string/wizard_distro_selected_badge"
-                                android:textSize="11sp"
-                                android:textStyle="bold"
-                                android:textColor="?attr/colorPrimary"
-                                android:visibility="visible" />
-                        </LinearLayout>
-
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="10dp"
-                            android:lineSpacingExtra="3dp"
-                            android:text="• 极小镜像：rootfs 仅约 4 MB，秒级拉取完毕\n• 超低运存：空闲仅占数十兆 RAM，低配机型毫无压力\n• 极客利器：apk 极速包管理器，适配命令行与轻量容器"
-                            android:textSize="12sp"
-                            android:textColor="?attr/colorOnSurfaceVariant" />
-                    </LinearLayout>
-                </com.google.android.material.card.MaterialCardView>
-
-                <!-- Distro Card 2: Debian -->
-                <com.google.android.material.card.MaterialCardView
-                    android:id="@+id/card_distro_debian"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="16dp"
-                    android:clickable="true"
-                    android:focusable="true"
                     app:cardCornerRadius="16dp"
                     app:cardElevation="1dp"
                     app:strokeWidth="1dp"
@@ -370,65 +323,125 @@
                         android:orientation="vertical"
                         android:padding="16dp">
 
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/wizard_network_card_title"
+                            android:textSize="16sp"
+                            android:textStyle="bold"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/wizard_network_card_desc"
+                            android:textSize="12sp"
+                            android:textColor="?attr/colorOutline" />
+
+                        <View
+                            android:layout_width="match_parent"
+                            android:layout_height="1dp"
+                            android:layout_marginTop="10dp"
+                            android:layout_marginBottom="10dp"
+                            android:background="?attr/colorOutlineVariant" />
+
+                        <TextView
+                            android:id="@+id/txt_net_mode"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="网络连接：Wi-Fi"
+                            android:textSize="13sp"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <TextView
+                            android:id="@+id/txt_net_ip"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:text="宿主 IP：192.168.1.100"
+                            android:textSize="13sp"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <TextView
+                            android:id="@+id/txt_net_dns"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:text="DNS 服务器：8.8.8.8"
+                            android:textSize="13sp"
+                            android:textColor="?attr/colorOnSurface" />
+
                         <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
                             android:orientation="horizontal"
                             android:gravity="center_vertical">
 
-                            <ImageView
-                                android:layout_width="36dp"
-                                android:layout_height="36dp"
-                                android:src="@drawable/ic_distro_debian"
-                                android:contentDescription="Debian Linux" />
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btn_test_network"
+                                style="@style/Widget.Material3.Button.TonalButton"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                app:cornerRadius="12dp"
+                                android:text="@string/wizard_net_test_btn" />
 
-                            <LinearLayout
+                            <TextView
+                                android:id="@+id/txt_net_test_result"
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
-                                android:layout_marginStart="12dp"
-                                android:orientation="vertical">
-
-                                <TextView
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:text="Debian GNU/Linux 13"
-                                    android:textSize="16sp"
-                                    android:textStyle="bold"
-                                    android:textColor="?attr/colorOnSurface" />
-
-                                <TextView
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:text="🐧 完整生态 · 约 90MB · 桌面工作流"
-                                    android:textSize="12sp"
-                                    android:textColor="@color/distro_debian_tint" />
-                            </LinearLayout>
-
-                            <TextView
-                                android:id="@+id/badge_selected_debian"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:background="@drawable/bg_status_badge"
-                                android:paddingStart="8dp"
-                                android:paddingTop="3dp"
-                                android:paddingEnd="8dp"
-                                android:paddingBottom="3dp"
-                                android:text="@string/wizard_distro_selected_badge"
-                                android:textSize="11sp"
-                                android:textStyle="bold"
-                                android:textColor="?attr/colorPrimary"
-                                android:visibility="gone" />
+                                android:layout_marginStart="10dp"
+                                android:textSize="12sp"
+                                android:textColor="@color/zone_green" />
                         </LinearLayout>
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- Mirror Selection Card -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/card_mirror_select"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="16dp"
+                    app:cardCornerRadius="16dp"
+                    app:cardElevation="1dp"
+                    app:strokeWidth="1dp"
+                    app:strokeColor="?attr/colorOutlineVariant"
+                    app:cardBackgroundColor="?attr/colorSurfaceContainer">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
 
                         <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/wizard_mirror_selector_label"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <Spinner
+                            android:id="@+id/spinner_mirror_source"
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:layout_marginTop="8dp"
+                            android:background="@drawable/bg_status_badge"
+                            android:paddingStart="12dp"
+                            android:paddingEnd="12dp" />
+
+                        <TextView
+                            android:id="@+id/txt_mirror_preview"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="10dp"
-                            android:lineSpacingExtra="3dp"
-                            android:text="• 浩瀚生态：海量预编译 apt 软件包，兼容全套桌面与服务器开发栈\n• 完整工作流：完美适配 Wayland 桌面、Rust、Python、VS Code Server\n• 开箱即用：内置完整系统运行库与标准 glibc 生态"
                             android:textSize="12sp"
-                            android:textColor="?attr/colorOnSurfaceVariant" />
+                            android:lineSpacingExtra="2dp"
+                            android:textColor="?attr/colorOutline" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
@@ -465,7 +478,7 @@
             </LinearLayout>
 
             <!-- ========================================== -->
-            <!-- STEP 3: Config Confirmation & Download     -->
+            <!-- STEP 3: Hardware Quota                     -->
             <!-- ========================================== -->
             <LinearLayout
                 android:id="@+id/step3_container"
@@ -474,102 +487,9 @@
                 android:orientation="vertical"
                 android:visibility="gone">
 
-                <!-- Hardware Quota Confirmation Card -->
+                <!-- Hardware Allocation Card -->
                 <com.google.android.material.card.MaterialCardView
-                    android:id="@+id/card_recommended_config"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="14dp"
-                    app:cardCornerRadius="16dp"
-                    app:cardElevation="1dp"
-                    app:strokeWidth="1dp"
-                    app:strokeColor="?attr/colorOutlineVariant"
-                    app:cardBackgroundColor="?attr/colorSurfaceContainer">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="16dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/wizard_step3_card_title"
-                            android:textSize="16sp"
-                            android:textStyle="bold"
-                            android:textColor="?attr/colorOnSurface" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:text="@string/wizard_step3_card_desc"
-                            android:textSize="12sp"
-                            android:textColor="?attr/colorOutline" />
-
-                        <View
-                            android:layout_width="match_parent"
-                            android:layout_height="1dp"
-                            android:layout_marginTop="10dp"
-                            android:layout_marginBottom="10dp"
-                            android:background="?attr/colorOutlineVariant" />
-
-                        <TextView
-                            android:id="@+id/txt_cfg_vcpu"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="虚拟 CPU：7 核（宿主保留 1 核用于 UI 调度）"
-                            android:textSize="13sp"
-                            android:textColor="?attr/colorOnSurface" />
-
-                        <TextView
-                            android:id="@+id/txt_cfg_ram"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
-                            android:text="运存配额：2048 MB（宿主保留 ≥2GB 防闪退线）"
-                            android:textSize="13sp"
-                            android:textColor="?attr/colorOnSurface" />
-
-                        <TextView
-                            android:id="@+id/txt_cfg_disk"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
-                            android:text="稀疏磁盘：8 GB（按需占用宿主空间）"
-                            android:textSize="13sp"
-                            android:textColor="?attr/colorOnSurface" />
-
-                        <TextView
-                            android:id="@+id/txt_cfg_gpu"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
-                            android:text="3D 图形加速：已启用（Mesa VirGL 硬件直通）"
-                            android:textSize="13sp"
-                            android:textColor="?attr/colorOnSurface" />
-
-                        <TextView
-                            android:id="@+id/badge_cfg_zone"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="10dp"
-                            android:background="@drawable/bg_status_badge"
-                            android:paddingStart="8dp"
-                            android:paddingTop="3dp"
-                            android:paddingEnd="8dp"
-                            android:paddingBottom="3dp"
-                            android:text="@string/wizard_config_zone_green"
-                            android:textSize="11sp"
-                            android:textStyle="bold"
-                            android:textColor="@color/zone_green" />
-                    </LinearLayout>
-                </com.google.android.material.card.MaterialCardView>
-
-                <!-- Resilient Download & Initialization Panel -->
-                <com.google.android.material.card.MaterialCardView
-                    android:id="@+id/card_download_panel"
+                    android:id="@+id/card_hardware_quota"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="16dp"
@@ -588,12 +508,254 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="@string/wizard_download_panel_title"
+                            android:text="@string/wizard_hardware_card_title"
                             android:textSize="16sp"
                             android:textStyle="bold"
                             android:textColor="?attr/colorOnSurface" />
 
-                        <!-- Start Button (visible initially) -->
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/wizard_hardware_card_desc"
+                            android:textSize="12sp"
+                            android:textColor="?attr/colorOutline" />
+
+                        <View
+                            android:layout_width="match_parent"
+                            android:layout_height="1dp"
+                            android:layout_marginTop="10dp"
+                            android:layout_marginBottom="10dp"
+                            android:background="?attr/colorOutlineVariant" />
+
+                        <!-- vCPU Slider -->
+                        <TextView
+                            android:id="@+id/txt_cfg_vcpu"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="虚拟 CPU：4 核心"
+                            android:textSize="13sp"
+                            android:textStyle="bold"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <com.google.android.material.slider.Slider
+                            android:id="@+id/slider_vcpu"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:valueFrom="1"
+                            android:valueTo="8"
+                            android:stepSize="1"
+                            android:value="4" />
+
+                        <!-- RAM Slider -->
+                        <TextView
+                            android:id="@+id/txt_cfg_ram"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:text="运行内存 (RAM)：2048 MB"
+                            android:textSize="13sp"
+                            android:textStyle="bold"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <com.google.android.material.slider.Slider
+                            android:id="@+id/slider_ram"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:valueFrom="512"
+                            android:valueTo="6144"
+                            android:stepSize="256"
+                            android:value="2048" />
+
+                        <!-- Dynamic Safety Zone Indicator -->
+                        <TextView
+                            android:id="@+id/badge_cfg_zone"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:background="@drawable/bg_status_badge"
+                            android:paddingStart="10dp"
+                            android:paddingTop="4dp"
+                            android:paddingEnd="10dp"
+                            android:paddingBottom="4dp"
+                            android:text="@string/wizard_config_zone_green"
+                            android:textSize="12sp"
+                            android:textStyle="bold"
+                            android:textColor="@color/zone_green" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- Step 3 Navigation Buttons -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_step3_prev"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="0dp"
+                        android:layout_height="52dp"
+                        android:minHeight="52dp"
+                        app:cornerRadius="16dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="8dp"
+                        android:text="@string/wizard_btn_prev"
+                        android:textSize="15sp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_step3_next"
+                        style="@style/Widget.Material3.Button"
+                        android:layout_width="0dp"
+                        android:layout_height="52dp"
+                        android:minHeight="52dp"
+                        app:cornerRadius="16dp"
+                        android:layout_weight="2"
+                        android:text="@string/wizard_btn_next"
+                        android:textSize="15sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- ========================================== -->
+            <!-- STEP 4: Startup Tasks & Creation           -->
+            <!-- ========================================== -->
+            <LinearLayout
+                android:id="@+id/step4_container"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <!-- Startup Tasks Card -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/card_startup_tasks"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="14dp"
+                    app:cardCornerRadius="16dp"
+                    app:cardElevation="1dp"
+                    app:strokeWidth="1dp"
+                    app:strokeColor="?attr/colorOutlineVariant"
+                    app:cardBackgroundColor="?attr/colorSurfaceContainer">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/wizard_startup_card_title"
+                            android:textSize="16sp"
+                            android:textStyle="bold"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/wizard_startup_card_desc"
+                            android:textSize="12sp"
+                            android:textColor="?attr/colorOutline" />
+
+                        <View
+                            android:layout_width="match_parent"
+                            android:layout_height="1dp"
+                            android:layout_marginTop="10dp"
+                            android:layout_marginBottom="10dp"
+                            android:background="?attr/colorOutlineVariant" />
+
+                        <!-- Auto Update Checkbox -->
+                        <com.google.android.material.checkbox.MaterialCheckBox
+                            android:id="@+id/chk_auto_update"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/wizard_startup_auto_update_label"
+                            android:textSize="14sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/txt_update_command_desc"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="32dp"
+                            android:layout_marginTop="2dp"
+                            android:text="勾选后将自动生成 firstboot 脚本并在后台执行更新"
+                            android:textSize="12sp"
+                            android:textColor="?attr/colorOutline" />
+
+                        <TextView
+                            android:id="@+id/txt_update_command_preview"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="32dp"
+                            android:layout_marginTop="6dp"
+                            android:background="@drawable/bg_status_badge"
+                            android:padding="8dp"
+                            android:typeface="monospace"
+                            android:textSize="11sp"
+                            android:textColor="?attr/colorPrimary" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- Spec Summary Card -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/card_spec_summary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="14dp"
+                    app:cardCornerRadius="16dp"
+                    app:cardElevation="1dp"
+                    app:strokeWidth="1dp"
+                    app:strokeColor="?attr/colorOutlineVariant"
+                    app:cardBackgroundColor="?attr/colorSurfaceContainer">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="实例配置清单"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <TextView
+                            android:id="@+id/txt_creation_summary"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:lineSpacingExtra="3dp"
+                            android:textSize="13sp"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- Creation & Download Panel -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/card_download_panel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="16dp"
+                    app:cardCornerRadius="16dp"
+                    app:cardElevation="1dp"
+                    app:strokeWidth="1dp"
+                    app:strokeColor="?attr/colorOutlineVariant"
+                    app:cardBackgroundColor="?attr/colorSurfaceContainer">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btn_wizard_init"
                             style="@style/Widget.Material3.Button"
@@ -601,12 +763,11 @@
                             android:layout_height="52dp"
                             android:minHeight="52dp"
                             app:cornerRadius="16dp"
-                            android:layout_marginTop="12dp"
-                            android:text="@string/wizard_btn_start_init"
+                            android:text="@string/wizard_btn_create_instance"
                             android:textSize="15sp"
                             android:textStyle="bold" />
 
-                        <!-- Active Download Progress Layout (visible during download) -->
+                        <!-- Active Download Progress Layout -->
                         <LinearLayout
                             android:id="@+id/layout_download_progress"
                             android:layout_width="match_parent"
@@ -619,7 +780,7 @@
                                 android:id="@+id/txt_download_status"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:text="正在拉取 Alpine Linux rootfs 镜像…"
+                                android:text="正在拉取 rootfs 镜像…"
                                 android:textSize="14sp"
                                 android:textStyle="bold"
                                 android:textColor="?attr/colorOnSurface" />
@@ -657,9 +818,9 @@
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
-                <!-- Step 3 Bottom Action -->
+                <!-- Step 4 Bottom Prev Button -->
                 <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btn_step3_prev"
+                    android:id="@+id/btn_step4_prev"
                     style="@style/Widget.Material3.Button.TonalButton"
                     android:layout_width="match_parent"
                     android:layout_height="52dp"

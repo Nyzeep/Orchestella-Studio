@@ -202,10 +202,10 @@ class MainActivity : AppCompatActivity() {
             refusalBanner.visibility = View.GONE
         }
 
-        createAlpineButton.setOnClickListener { createDistro(OfficialAlpineCatalog.alpine()) }
-        createDebianButton.setOnClickListener { createDistro(OfficialDebianCatalog.debian()) }
-        findViewById<View>(R.id.card_create_alpine).setOnClickListener { createDistro(OfficialAlpineCatalog.alpine()) }
-        findViewById<View>(R.id.card_create_debian).setOnClickListener { createDistro(OfficialDebianCatalog.debian()) }
+        createAlpineButton.setOnClickListener { launchCreationWizard("alpine") }
+        createDebianButton.setOnClickListener { launchCreationWizard("debian") }
+        findViewById<View>(R.id.card_create_alpine).setOnClickListener { launchCreationWizard("alpine") }
+        findViewById<View>(R.id.card_create_debian).setOnClickListener { launchCreationWizard("debian") }
 
         upgradeAuthorizationButton.setOnClickListener { showAvfAuthorizationWizard() }
         findViewById<View>(R.id.btn_import_instance)?.setOnClickListener {
@@ -214,6 +214,13 @@ class MainActivity : AppCompatActivity() {
         refreshWizardEntry()
         showInstances()
         handleLaunchIntent(intent)
+    }
+
+    private fun launchCreationWizard(distroId: String) {
+        val intent = Intent(this, SetupWizardActivity::class.java).apply {
+            putExtra(SetupWizardActivity.EXTRA_TARGET_DISTRO, distroId)
+        }
+        startActivity(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -770,6 +777,12 @@ class MainActivity : AppCompatActivity() {
                     "alpine" -> OfficialAlpineCatalog.alpine().rootfsFileName()
                     else -> throw IllegalStateException("unsupported distro: " + instance.distro().id())
                 }
+                val mirrorConfigFile = filesDir.resolve("instances").resolve("${instance.id()}.mirror")
+                val firstbootFile = filesDir.resolve("instances").resolve("${instance.id()}.firstboot")
+                val mirrorConfigName = if (instance.distro().id() == "alpine") "repositories" else "sources.list"
+                val mirrorBytes = if (mirrorConfigFile.exists()) Files.readAllBytes(mirrorConfigFile.toPath()) else null
+                val firstbootBytes = if (firstbootFile.exists()) Files.readAllBytes(firstbootFile.toPath()) else null
+
                 val parameters = InstanceStrategyLauncher.LaunchParameters(
                     instance.id(),
                     instance.bridgeToken(),
@@ -779,6 +792,9 @@ class MainActivity : AppCompatActivity() {
                     filesDir.resolve("distro-inputs").absolutePath,
                     instance.guestPassword(),
                     instance.hardwareConfig(),
+                    mirrorConfigName,
+                    mirrorBytes,
+                    firstbootBytes,
                 )
                 val preferAvf =
                     avfReadiness?.status() == AvfCapabilityEvaluator.AvfStatus.READY
