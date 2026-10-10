@@ -33,22 +33,22 @@ public final class FirstBootProvisionPipelineTest {
     }
 
     @Test
-    public void alpineWithUstcMirrorAndAutoUpdate() {
+    public void fedoraWithUstcMirrorAndAutoUpdate() {
         FirstBootProvisionPipeline.ProvisionPayload payload = FirstBootProvisionPipeline.create(
-                "alpine",
+                "fedora",
                 DistroMirrorProvisioner.MirrorSource.USTC,
                 true
         );
 
         assertTrue(payload.hasMirrorConfig());
-        assertEquals("repositories", payload.mirrorConfigFileName());
+        assertEquals("fedora.repo", payload.mirrorConfigFileName());
         String mirrorText = new String(payload.mirrorConfigFileContent(), StandardCharsets.UTF_8);
         assertTrue(mirrorText.contains("mirrors.ustc.edu.cn"));
 
         assertTrue(payload.hasFirstBootScript());
         String script = new String(payload.firstBootScript(), StandardCharsets.UTF_8);
-        assertTrue(script.contains("apk update && apk upgrade"));
-        assertTrue(script.contains("timeout 120s"));
+        assertTrue(script.contains("dnf upgrade -y --refresh"));
+        assertTrue(script.contains("timeout 360s"));
     }
 
     @Test

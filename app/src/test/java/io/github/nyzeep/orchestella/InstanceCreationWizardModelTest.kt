@@ -140,11 +140,6 @@ class InstanceCreationWizardModelTest {
         val ubuntuCmd = wizard.resolveUpdateCommand("ubuntu")
         assertEquals("DEBIAN_FRONTEND=noninteractive apt-get update && apt-get upgrade -y", ubuntuCmd)
 
-        // Alpine
-        val alpineCmd = wizard.resolveUpdateCommand("alpine")
-        assertEquals("apk update && apk upgrade", alpineCmd)
-        assertEquals(120L, wizard.resolveUpdateTimeoutSeconds("alpine"))
-
         // Arch
         val archCmd = wizard.resolveUpdateCommand("arch")
         assertEquals("pacman -Sy --noconfirm && pacman -Su --noconfirm", archCmd)
@@ -154,6 +149,15 @@ class InstanceCreationWizardModelTest {
         val fedoraCmd = wizard.resolveUpdateCommand("fedora")
         assertEquals("dnf upgrade -y --refresh", fedoraCmd)
         assertEquals(360L, wizard.resolveUpdateTimeoutSeconds("fedora"))
+
+        // AlmaLinux & Rocky Linux
+        val almaCmd = wizard.resolveUpdateCommand("almalinux")
+        assertEquals("dnf upgrade -y --refresh", almaCmd)
+        assertEquals(360L, wizard.resolveUpdateTimeoutSeconds("almalinux"))
+
+        val rockyCmd = wizard.resolveUpdateCommand("rocky")
+        assertEquals("dnf upgrade -y --refresh", rockyCmd)
+        assertEquals(360L, wizard.resolveUpdateTimeoutSeconds("rocky"))
 
         // openSUSE
         val suseCmd = wizard.resolveUpdateCommand("opensuse")
@@ -175,7 +179,7 @@ class InstanceCreationWizardModelTest {
             false
         )
         val dualWizard = InstanceCreationWizardModel(
-            distroId = "alpine",
+            distroId = "ubuntu",
             hardwareProfile = dualCoreProfile
         )
         assertEquals(1, dualWizard.hardwareConfig.cpuCores())
@@ -194,8 +198,8 @@ class InstanceCreationWizardModelTest {
         assertTrue(script.contains("timeout 300s"))
         assertTrue(script.contains(".firstboot-done"))
 
-        val alpineScript = wizard.generateFirstBootScript("alpine")
-        assertTrue(alpineScript.contains("timeout 120s"))
-        assertTrue(alpineScript.contains("apk update && apk upgrade"))
+        val fedoraScript = wizard.generateFirstBootScript("fedora")
+        assertTrue(fedoraScript.contains("timeout 360s"))
+        assertTrue(fedoraScript.contains("dnf upgrade -y --refresh"))
     }
 }

@@ -282,6 +282,7 @@
             android:layout_height="28dp"
             android:layout_marginEnd="16dp"
             android:src="@drawable/ic_network"
+            app:tint="?attr/colorPrimary"
             android:contentDescription="Port Forwarding" />
 
         <LinearLayout

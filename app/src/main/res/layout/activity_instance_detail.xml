@@ -90,7 +90,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
-                                android:text="ID: alpine-001 · root@alpine"
+                                android:text="ID: instance-001 · root@orchestella"
                                 android:textSize="13sp"
                                 android:textColor="?attr/colorOutline" />
                         </LinearLayout>
@@ -136,6 +136,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:drawableStart="@drawable/ic_network"
+                            android:drawableTint="?attr/colorOnSurfaceVariant"
                             android:drawablePadding="6dp"
                             android:gravity="center_vertical"
                             android:text="IP: 离线"
@@ -412,6 +413,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:drawableStart="@drawable/ic_network"
+                        android:drawableTint="?attr/colorOnSurface"
                         android:drawablePadding="6dp"
                         android:text="@string/console_network_mode"
                         android:textSize="13sp"
@@ -423,6 +425,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="6dp"
                         android:drawableStart="@drawable/ic_network"
+                        android:drawableTint="?attr/colorOutline"
                         android:drawablePadding="6dp"
                         android:text="分配虚拟 IP：10.0.2.15"
                         android:textSize="13sp"

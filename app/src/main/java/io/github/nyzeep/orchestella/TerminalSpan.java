@@ -14,9 +14,16 @@ public final class TerminalSpan {
     private final boolean italic;
     private final boolean underline;
     private final boolean inverse;
+    private final boolean clearScreen;
 
     public TerminalSpan(String text, Integer foregroundColor, Integer backgroundColor,
                         boolean bold, boolean italic, boolean underline, boolean inverse) {
+        this(text, foregroundColor, backgroundColor, bold, italic, underline, inverse, false);
+    }
+
+    public TerminalSpan(String text, Integer foregroundColor, Integer backgroundColor,
+                        boolean bold, boolean italic, boolean underline, boolean inverse,
+                        boolean clearScreen) {
         this.text = Objects.requireNonNull(text, "text");
         this.foregroundColor = foregroundColor;
         this.backgroundColor = backgroundColor;
@@ -24,6 +31,15 @@ public final class TerminalSpan {
         this.italic = italic;
         this.underline = underline;
         this.inverse = inverse;
+        this.clearScreen = clearScreen;
+    }
+
+    public static TerminalSpan clearScreen() {
+        return new TerminalSpan("", null, null, false, false, false, false, true);
+    }
+
+    public boolean isClearScreen() {
+        return clearScreen;
     }
 
     public String getText() {
@@ -84,6 +100,7 @@ public final class TerminalSpan {
                 italic == that.italic &&
                 underline == that.underline &&
                 inverse == that.inverse &&
+                clearScreen == that.clearScreen &&
                 Objects.equals(text, that.text) &&
                 Objects.equals(foregroundColor, that.foregroundColor) &&
                 Objects.equals(backgroundColor, that.backgroundColor);
@@ -91,7 +108,7 @@ public final class TerminalSpan {
 
     @Override
     public int hashCode() {
-        return Objects.hash(text, foregroundColor, backgroundColor, bold, italic, underline, inverse);
+        return Objects.hash(text, foregroundColor, backgroundColor, bold, italic, underline, inverse, clearScreen);
     }
 
     @Override
@@ -104,6 +121,7 @@ public final class TerminalSpan {
                 ", italic=" + italic +
                 ", underline=" + underline +
                 ", inverse=" + inverse +
+                ", clearScreen=" + clearScreen +
                 '}';
     }
 }

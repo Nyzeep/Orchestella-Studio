@@ -187,6 +187,74 @@ public class ModernTerminalView extends ScrollView {
         scheduleFlush();
     }
 
+    private static final String CURSOR_CHAR = "█";
+    private boolean cursorVisible = true;
+    private boolean cursorEnabled = true;
+    private final Runnable cursorBlinkTask = new Runnable() {
+        @Override
+        public void run() {
+            cursorVisible = !cursorVisible;
+            renderTranscriptWithCursor();
+            mainHandler.postDelayed(this, 500L);
+        }
+    };
+
+    public void setCursorEnabled(boolean enabled) {
+        this.cursorEnabled = enabled;
+        if (!enabled) {
+            stopCursorBlink();
+        } else {
+            startCursorBlink();
+        }
+    }
+
+    public boolean isCursorEnabled() {
+        return cursorEnabled;
+    }
+
+    public void startCursorBlink() {
+        mainHandler.removeCallbacks(cursorBlinkTask);
+        if (cursorEnabled) {
+            cursorVisible = true;
+            renderTranscriptWithCursor();
+            mainHandler.postDelayed(cursorBlinkTask, 500L);
+        }
+    }
+
+    public void stopCursorBlink() {
+        mainHandler.removeCallbacks(cursorBlinkTask);
+        cursorVisible = false;
+        renderTranscriptWithCursor();
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        startCursorBlink();
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        super.onDetachedFromWindow();
+        stopCursorBlink();
+    }
+
+    private void renderTranscriptWithCursor() {
+        if (!cursorEnabled) {
+            transcriptView.setText(transcriptBuffer, TextView.BufferType.SPANNABLE);
+            return;
+        }
+        SpannableStringBuilder display = new SpannableStringBuilder(transcriptBuffer);
+        display.append(CURSOR_CHAR);
+        int cursorColor = cursorVisible ? DraculaPalette.COLOR_GREEN : android.graphics.Color.TRANSPARENT;
+        display.setSpan(
+                new ForegroundColorSpan(cursorColor),
+                display.length() - 1,
+                display.length(),
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        transcriptView.setText(display, TextView.BufferType.SPANNABLE);
+    }
+
     private void scheduleFlush() {
         if (flushScheduled.compareAndSet(false, true)) {
             mainHandler.postDelayed(flushTask, FLUSH_INTERVAL_MS);
@@ -197,12 +265,19 @@ public class ModernTerminalView extends ScrollView {
         flushScheduled.set(false);
         String chunk;
         boolean hasContent = false;
+        boolean cleared = false;
         while ((chunk = pendingChunks.poll()) != null) {
             if (chunk.isEmpty()) {
                 continue;
             }
             List<TerminalSpan> spans = parser.parse(chunk);
             for (TerminalSpan span : spans) {
+                if (span.isClearScreen()) {
+                    transcriptBuffer.clear();
+                    cleared = true;
+                    hasContent = true;
+                    continue;
+                }
                 String str = span.getText();
                 if (str.isEmpty()) {
                     continue;
@@ -233,8 +308,12 @@ public class ModernTerminalView extends ScrollView {
             }
         }
 
-        transcriptView.setText(transcriptBuffer, TextView.BufferType.SPANNABLE);
-        scrollToBottom();
+        renderTranscriptWithCursor();
+        if (cleared && transcriptBuffer.length() == 0) {
+            post(() -> scrollTo(0, 0));
+        } else {
+            scrollToBottom();
+        }
 
         // If more chunks arrived while flushing, reschedule
         if (!pendingChunks.isEmpty()) {
@@ -362,8 +441,9 @@ public class ModernTerminalView extends ScrollView {
 
     private void clearInternal() {
         transcriptBuffer.clear();
-        transcriptView.setText("");
         parser.reset();
+        renderTranscriptWithCursor();
+        post(() -> scrollTo(0, 0));
     }
 
     /**

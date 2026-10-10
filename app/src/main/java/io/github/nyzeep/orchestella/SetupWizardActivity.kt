@@ -14,9 +14,12 @@ import android.os.Bundle
 import android.os.StatFs
 import android.text.Editable
 import android.text.TextWatcher
+import android.view.LayoutInflater
 import android.view.View
+import android.view.ViewGroup
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
@@ -26,9 +29,11 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import android.content.res.ColorStateList
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.checkbox.MaterialCheckBox
 import com.google.android.material.color.DynamicColors
+import com.google.android.material.color.MaterialColors
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.slider.Slider
 import com.google.android.material.textfield.TextInputEditText
@@ -77,9 +82,29 @@ class SetupWizardActivity : AppCompatActivity() {
     private lateinit var hostProfile: HostHardwareProfile
     private lateinit var wizardModel: InstanceCreationWizardModel
 
+    // Distro descriptor for custom spinner
+    data class DistroItem(
+        val id: String,
+        val displayName: String,
+        val tag: String,
+        val desc: String,
+        val iconRes: Int
+    )
+
+    private val officialDistros = listOf(
+        DistroItem("ubuntu", "Ubuntu LTS", "🐧 通用开发 · 云原生首选 · 24.04 LTS", "工业标准、生态最广，预设多层 APT 源与 Docker 加速", R.drawable.ic_distro_ubuntu),
+        DistroItem("debian", "Debian Stable", "🌀 稳如磐石 · 经典基石 · Debian 13", "全开源坚实底座，极高稳定性与完整 GNU 工具链", R.drawable.ic_distro_debian),
+        DistroItem("fedora", "Fedora Workstation", "🎩 前沿技术 · RPM 生态 · Fedora 41", "集成最新内核与 DNF 现代工具链，Red Hat 社区前沿", R.drawable.ic_distro_fedora),
+        DistroItem("arch", "Arch Linux", "🏹 极客首选 · 滚动更新 · pacman", "轻量 DIY，滚动更新最新软件包与强大的社区支持", R.drawable.ic_distro_arch),
+        DistroItem("opensuse", "openSUSE Tumbleweed", "🦎 滚动更新 · 快照回滚 · zypper", "滚动更新同时提供系统快照与回滚，保障可靠性", R.drawable.ic_distro_opensuse),
+        DistroItem("almalinux", "AlmaLinux", "💼 企业级 · RHEL 1:1 二进制兼容 · 9.5", "稳定企业环境模拟，长期支持保障与 DNF 生态", R.drawable.ic_distro_almalinux),
+        DistroItem("rocky", "Rocky Linux", "🏔️ 生产级稳定 · 企业计算 · 9.5", "CentOS 官方替代，生产级高可靠性与 RHEL 兼容", R.drawable.ic_distro_rocky)
+    )
+
     // Header views
     private lateinit var txtWizardTitle: TextView
     private lateinit var txtStepBadge: TextView
+    private lateinit var btnWizardSkip: MaterialButton
 
     // Step containers
     private lateinit var step1Container: LinearLayout
@@ -87,9 +112,19 @@ class SetupWizardActivity : AppCompatActivity() {
     private lateinit var step3Container: LinearLayout
     private lateinit var step4Container: LinearLayout
 
+    // Step 1 Views (AVF Detection Card)
+    private lateinit var txtWizardAvfBadge: TextView
+    private lateinit var txtWizardAvfDetails: TextView
+    private lateinit var layoutWizardAvfFallback: LinearLayout
+
+    // Step 1 Views (Distro Spinner & Preview)
+    private lateinit var spinnerDistroSelect: Spinner
+    private lateinit var imgDistroIconPreview: ImageView
+    private lateinit var txtDistroNamePreview: TextView
+    private lateinit var txtDistroTagPreview: TextView
+    private lateinit var txtDistroDescPreview: TextView
+
     // Step 1 Views (Storage)
-    private lateinit var btnDistroUbuntu: MaterialButton
-    private lateinit var btnDistroDebian: MaterialButton
     private lateinit var txtHwStorage: TextView
     private lateinit var btnDisk4g: MaterialButton
     private lateinit var btnDisk8g: MaterialButton
@@ -110,6 +145,8 @@ class SetupWizardActivity : AppCompatActivity() {
     private lateinit var btnTestNetwork: MaterialButton
     private lateinit var txtNetTestResult: TextView
     private lateinit var spinnerMirrorSource: Spinner
+    private lateinit var btnWizardSpeedTest: MaterialButton
+    private lateinit var txtWizardSpeedTestResults: TextView
     private lateinit var txtMirrorPreview: TextView
     private lateinit var btnStep2Prev: MaterialButton
     private lateinit var btnStep2Next: MaterialButton
@@ -179,14 +216,17 @@ class SetupWizardActivity : AppCompatActivity() {
         window.navigationBarColor = Color.TRANSPARENT
 
         val rootContainer = findViewById<View>(R.id.wizard_root_container)
+        val density = resources.displayMetrics.density
+        val baseHorizontalPad = (16 * density).toInt()
+        val baseBottomPad = (28 * density).toInt()
         ViewCompat.setOnApplyWindowInsetsListener(rootContainer) { v, insets ->
             val statusBarInsets = insets.getInsets(WindowInsetsCompat.Type.statusBars())
             val navBarInsets = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
             v.setPadding(
-                statusBarInsets.left,
-                statusBarInsets.top,
-                statusBarInsets.right,
-                navBarInsets.bottom
+                baseHorizontalPad + statusBarInsets.left,
+                statusBarInsets.top + (12 * density).toInt(),
+                baseHorizontalPad + statusBarInsets.right,
+                navBarInsets.bottom + baseBottomPad
             )
             insets
         }
@@ -205,6 +245,8 @@ class SetupWizardActivity : AppCompatActivity() {
 
         initViews()
         setupListeners()
+        bindWizardAvfCard()
+        setupDistroSpinner()
         bindStep1Storage()
         bindStep2Network()
         bindStep3Hardware()
@@ -222,15 +264,24 @@ class SetupWizardActivity : AppCompatActivity() {
     private fun initViews() {
         txtWizardTitle = findViewById(R.id.wizard_title)
         txtStepBadge = findViewById(R.id.wizard_step_badge)
+        btnWizardSkip = findViewById(R.id.btn_wizard_skip)
 
         step1Container = findViewById(R.id.step1_container)
         step2Container = findViewById(R.id.step2_container)
         step3Container = findViewById(R.id.step3_container)
         step4Container = findViewById(R.id.step4_container)
 
-        // Step 1
-        btnDistroUbuntu = findViewById(R.id.btn_distro_ubuntu)
-        btnDistroDebian = findViewById(R.id.btn_distro_debian)
+        // Step 1 - AVF Detection Card
+        txtWizardAvfBadge = findViewById(R.id.txt_wizard_avf_badge)
+        txtWizardAvfDetails = findViewById(R.id.txt_wizard_avf_details)
+        layoutWizardAvfFallback = findViewById(R.id.layout_wizard_avf_fallback)
+
+        // Step 1 - Distro Selection & Preview
+        spinnerDistroSelect = findViewById(R.id.spinner_distro_select)
+        imgDistroIconPreview = findViewById(R.id.img_distro_icon_preview)
+        txtDistroNamePreview = findViewById(R.id.txt_distro_name_preview)
+        txtDistroTagPreview = findViewById(R.id.txt_distro_tag_preview)
+        txtDistroDescPreview = findViewById(R.id.txt_distro_desc_preview)
         txtHwStorage = findViewById(R.id.txt_hw_storage)
         btnDisk4g = findViewById(R.id.btn_disk_4g)
         btnDisk8g = findViewById(R.id.btn_disk_8g)
@@ -251,6 +302,8 @@ class SetupWizardActivity : AppCompatActivity() {
         btnTestNetwork = findViewById(R.id.btn_test_network)
         txtNetTestResult = findViewById(R.id.txt_net_test_result)
         spinnerMirrorSource = findViewById(R.id.spinner_mirror_source)
+        btnWizardSpeedTest = findViewById(R.id.btn_wizard_speed_test)
+        txtWizardSpeedTestResults = findViewById(R.id.txt_wizard_speed_test_results)
         txtMirrorPreview = findViewById(R.id.txt_mirror_preview)
         btnStep2Prev = findViewById(R.id.btn_step2_prev)
         btnStep2Next = findViewById(R.id.btn_step2_next)
@@ -282,9 +335,12 @@ class SetupWizardActivity : AppCompatActivity() {
     }
 
     private fun setupListeners() {
-        // Step 1 Distro Switch
-        btnDistroUbuntu.setOnClickListener { switchDistro("ubuntu") }
-        btnDistroDebian.setOnClickListener { switchDistro("debian") }
+        btnWizardSkip.setOnClickListener {
+            settingsManager.isOnboardingCompleted = true
+            val intent = Intent(this, MainActivity::class.java)
+            startActivity(intent)
+            finish()
+        }
 
         // Step 1 Presets
         btnDisk4g.setOnClickListener { selectDiskPreset(4) }
@@ -404,6 +460,91 @@ class SetupWizardActivity : AppCompatActivity() {
         btnWizardInit.setOnClickListener { startDownloadAndInitialize() }
     }
 
+    private fun bindWizardAvfCard() {
+        val facts = io.github.nyzeep.orchestella.AvfHostFactsProbe.probe(this)
+        val readiness = AvfCapabilityEvaluator.evaluate(facts)
+        avfReadiness = readiness
+        authWizardModel = AvfAuthorizationWizardModel.fromAssessment(readiness)
+
+        when (readiness.status()) {
+            AvfCapabilityEvaluator.AvfStatus.READY -> {
+                txtWizardAvfBadge.text = "✅ 硬件虚拟化已就绪"
+                txtWizardAvfBadge.setTextColor(getColor(R.color.zone_green))
+                txtWizardAvfDetails.text = "检测到设备具备完整 AVF 硬件虚拟化扩展，已通过 /dev/kvm 探针校验，可享受近原生虚拟化性能。"
+                layoutWizardAvfFallback.visibility = View.GONE
+            }
+            AvfCapabilityEvaluator.AvfStatus.NEEDS_AUTHORIZATION -> {
+                txtWizardAvfBadge.text = "⚠️ 需开发级授权"
+                txtWizardAvfBadge.setTextColor(getColor(R.color.zone_yellow))
+                val reason = readiness.reasons().firstOrNull() ?: "需要开发级授权才能启用硬件加速"
+                txtWizardAvfDetails.text = "设备支持硬件虚拟化，但尚未授权 MANAGE_VIRTUAL_MACHINE 权限（$reason）。"
+                layoutWizardAvfFallback.visibility = View.VISIBLE
+            }
+            AvfCapabilityEvaluator.AvfStatus.UNSUPPORTED -> {
+                txtWizardAvfBadge.text = "⚠️ 未开放硬件虚拟化"
+                txtWizardAvfBadge.setTextColor(getColor(R.color.zone_yellow))
+                val reason = readiness.reasons().firstOrNull() ?: "未检测到硬件虚拟化支持"
+                txtWizardAvfDetails.text = "未检测到 /dev/kvm 节点或 pKVM 扩展支持（$reason）。"
+                layoutWizardAvfFallback.visibility = View.VISIBLE
+            }
+            else -> {
+                txtWizardAvfBadge.text = "⚠️ 未开放硬件虚拟化"
+                txtWizardAvfBadge.setTextColor(getColor(R.color.zone_yellow))
+                layoutWizardAvfFallback.visibility = View.VISIBLE
+            }
+        }
+    }
+
+    private fun setupDistroSpinner() {
+        val adapter = object : ArrayAdapter<DistroItem>(
+            this,
+            R.layout.item_distro_spinner,
+            officialDistros
+        ) {
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                return createDistroItemView(position, convertView, parent)
+            }
+
+            override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View {
+                return createDistroItemView(position, convertView, parent)
+            }
+
+            private fun createDistroItemView(position: Int, convertView: View?, parent: ViewGroup): View {
+                val view = convertView ?: LayoutInflater.from(context).inflate(
+                    R.layout.item_distro_spinner, parent, false
+                )
+                val item = getItem(position) ?: return view
+                view.findViewById<ImageView>(R.id.item_distro_icon).setImageResource(item.iconRes)
+                view.findViewById<TextView>(R.id.item_distro_name).text = item.displayName
+                view.findViewById<TextView>(R.id.item_distro_tag).text = item.tag
+                return view
+            }
+        }
+        spinnerDistroSelect.adapter = adapter
+
+        val initialIdx = officialDistros.indexOfFirst { it.id.equals(wizardModel.distroId, ignoreCase = true) }
+        val targetIdx = if (initialIdx >= 0) initialIdx else 0
+        spinnerDistroSelect.setSelection(targetIdx)
+        updateDistroPreview(officialDistros[targetIdx])
+
+        spinnerDistroSelect.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val item = officialDistros[position]
+                updateDistroPreview(item)
+                switchDistro(item.id)
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+    }
+
+    private fun updateDistroPreview(item: DistroItem) {
+        imgDistroIconPreview.setImageResource(item.iconRes)
+        txtDistroNamePreview.text = item.displayName
+        txtDistroTagPreview.text = item.tag
+        txtDistroDescPreview.text = item.desc
+    }
+
     private fun switchDistro(distroId: String) {
         val currentDistro = wizardModel.distroId
         if (currentDistro == distroId) return
@@ -416,21 +557,14 @@ class SetupWizardActivity : AppCompatActivity() {
             hardwareProfile = hostProfile,
             initialStep = wizardModel.currentStep
         )
-        refreshDistroPillStyles()
+        val targetIdx = officialDistros.indexOfFirst { it.id.equals(distroId, ignoreCase = true) }
+        if (targetIdx >= 0 && spinnerDistroSelect.selectedItemPosition != targetIdx) {
+            spinnerDistroSelect.setSelection(targetIdx)
+            updateDistroPreview(officialDistros[targetIdx])
+        }
         updateMirrorPreview()
         updateStartupTaskPreview()
         updateCreationSummary()
-    }
-
-    private fun refreshDistroPillStyles() {
-        val isUbuntu = wizardModel.distroId == "ubuntu"
-        if (isUbuntu) {
-            btnDistroUbuntu.setIconResource(android.R.drawable.checkbox_on_background)
-            btnDistroDebian.icon = null
-        } else {
-            btnDistroUbuntu.icon = null
-            btnDistroDebian.setIconResource(android.R.drawable.checkbox_on_background)
-        }
     }
 
     private fun selectDiskPreset(gb: Int) {
@@ -447,17 +581,27 @@ class SetupWizardActivity : AppCompatActivity() {
             btnDisk16g to 16,
             btnDisk32g to 32
         )
+        val colorPrimary = MaterialColors.getColor(this, com.google.android.material.R.attr.colorPrimary, Color.CYAN)
+        val colorOnPrimary = MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnPrimary, Color.BLACK)
+        val colorOutlineVariant = MaterialColors.getColor(this, com.google.android.material.R.attr.colorOutlineVariant, Color.GRAY)
+        val colorOnSurfaceVariant = MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurfaceVariant, Color.LTGRAY)
+
         for ((btn, gb) in buttons) {
             if (gb == selectedGb) {
+                btn.backgroundTintList = ColorStateList.valueOf(colorPrimary)
+                btn.strokeColor = ColorStateList.valueOf(colorPrimary)
                 btn.strokeWidth = dpToPx(2)
+                btn.setTextColor(colorOnPrimary)
             } else {
+                btn.backgroundTintList = ColorStateList.valueOf(Color.TRANSPARENT)
+                btn.strokeColor = ColorStateList.valueOf(colorOutlineVariant)
                 btn.strokeWidth = dpToPx(1)
+                btn.setTextColor(colorOnSurfaceVariant)
             }
         }
     }
 
     private fun bindStep1Storage() {
-        refreshDistroPillStyles()
         highlightPresetButton(wizardModel.diskSizeGb)
         validateAndRefreshStorage()
     }
@@ -545,6 +689,7 @@ class SetupWizardActivity : AppCompatActivity() {
             sources.map { it.displayName() }
         )
         spinnerMirrorSource.adapter = adapter
+        spinnerMirrorSource.setSelection(wizardModel.selectedMirror.ordinal)
         spinnerMirrorSource.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                 wizardModel.selectMirror(sources[position])
@@ -552,6 +697,32 @@ class SetupWizardActivity : AppCompatActivity() {
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
+
+        // Setup Speed Test Button
+        btnWizardSpeedTest.setOnClickListener {
+            txtWizardSpeedTestResults.visibility = View.VISIBLE
+            txtWizardSpeedTestResults.text = "⚡ 正在对主流云镜像源进行并发测速..."
+            btnWizardSpeedTest.isEnabled = false
+            backgroundExecutor.execute {
+                val candidates = MirrorSpeedTester.defaultSystemCandidates()
+                val results = MirrorSpeedTester.probeAll(candidates, 3000)
+                val fastest = MirrorSpeedTester.selectFastest(results, candidates.first())
+                runOnUiThread {
+                    btnWizardSpeedTest.isEnabled = true
+                    if (fastest != null) {
+                        val fastestResult = results.firstOrNull { it.candidate() == fastest && it.isSuccess }
+                        val latencyInfo = if (fastestResult != null) " (${fastestResult.latencyMs()}ms)" else ""
+                        txtWizardSpeedTestResults.text = "✅ 测速完成！最优推荐节点：${fastest.name()}$latencyInfo\n已优先锁定多层级容灾回退架构。"
+                        spinnerMirrorSource.setSelection(DistroMirrorProvisioner.MirrorSource.MULTI_TIER.ordinal)
+                        wizardModel.selectMirror(DistroMirrorProvisioner.MirrorSource.MULTI_TIER)
+                        updateMirrorPreview()
+                    } else {
+                        txtWizardSpeedTestResults.text = "⚠️ 测速超时，已默认选用多层级容灾回退架构。"
+                    }
+                }
+            }
+        }
+
         updateMirrorPreview()
     }
 
