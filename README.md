@@ -5,7 +5,7 @@
 **无需 Root 的 Android 原生双引擎 Linux 运行环境与移动工作站**  
 *Native Dual-Engine Full Linux Runtime & Mobile Workstation for Android Without Root*
 
-[![Release](https://img.shields.io/badge/Release-v0.1.5--preview-blue.svg?style=flat-square)](https://github.com/Nyzeep/Orchestella-Studio/releases)
+[![Release](https://img.shields.io/badge/Release-v0.1.5-blue.svg?style=flat-square)](https://github.com/Nyzeep/Orchestella-Studio/releases)
 [![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen.svg?style=flat-square)](https://github.com/Nyzeep/Orchestella-Studio/actions)
 [![License](https://img.shields.io/badge/License-Apache--2.0-orange.svg?style=flat-square)](LICENSE)
 [![Android](https://img.shields.io/badge/Android-8.0%2B%20(API%2026%2B)-green.svg?style=flat-square)](https://developer.android.com)
@@ -118,7 +118,7 @@
 - **存储空间**：建议可用内部存储空间 ≥ 4 GiB。
 
 #### 4.2 安装与上手指南
-1. 前往 [Releases](https://github.com/Nyzeep/Orchestella-Studio/releases) 下载最新的 `Orchestella-Studio-v0.1.5-preview.apk` 安装包；
+1. 前往 [Releases](https://github.com/Nyzeep/Orchestella-Studio/releases) 下载最新的 `Orchestella-Studio-v0.1.5.apk`（或 `Orchestella-Studio-v0.1.5-preview.apk`）安装包；
 2. 打开应用，欢迎向导将自动展示设备虚拟化支持状态（支持跳过）；
 3. 点击 **「+ 创建 Linux 实例」**，通过下拉菜单挑选心仪发行版（如 Ubuntu 24.04 LTS 或 Debian 13）；
 4. 分配磁盘规格并一键测速优选镜像源；
@@ -138,10 +138,15 @@
 
 | 资产文件名 | 文件大小 | 适用架构 | 签名状态 |
 | :--- | :--- | :---: | :---: |
+| **`Orchestella-Studio-v0.1.5.apk`** | **57.3 MB** (60,101,387 字节) | `ARM64-v8a` (Android 8.0+) | 🟢 已签名 (Release Keystore) |
 | **`Orchestella-Studio-v0.1.5-preview.apk`** | **57.3 MB** (60,101,451 字节) | `ARM64-v8a` (Android 8.0+) | 🟢 已签名 (Release Keystore) |
 
 #### SHA-256 完整性校验哈希
 ```text
+# v0.1.5 (正式版)
+1106D924EF1DCEB1FD5DE365CBB237EBBD76ED1AC31BAB07196D8DBE3EDEDAD8
+
+# v0.1.5-preview (预览版)
 F340C5FF34F6667FBA4B7CE4CE83475DADB062179220BBD53F9CAACB1E90E1E4
 ```
 
@@ -247,7 +252,7 @@ Eliminates package download timeouts and network stalls on mobile devices:
 - **Storage**: Recommended internal storage ≥ 4 GiB.
 
 #### 4.2 Quick Start
-1. Download the latest `Orchestella-Studio-v0.1.5-preview.apk` from [GitHub Releases](https://github.com/Nyzeep/Orchestella-Studio/releases).
+1. Download the latest `Orchestella-Studio-v0.1.5.apk` (or `Orchestella-Studio-v0.1.5-preview.apk`) from [GitHub Releases](https://github.com/Nyzeep/Orchestella-Studio/releases).
 2. Launch the app and check virtualization status in the wizard (or tap Skip).
 3. Tap **「+ Create Linux Instance」**, pick your distro from the dropdown (e.g. Ubuntu 24.04 LTS or Debian 13).
 4. Allocate disk space and run 1-click speedtest to select the fastest mirror.
@@ -267,10 +272,15 @@ Eliminates package download timeouts and network stalls on mobile devices:
 
 | Asset Filename | Size | Architecture | Signature |
 | :--- | :--- | :---: | :---: |
+| **`Orchestella-Studio-v0.1.5.apk`** | **57.3 MB** (60,101,387 bytes) | `ARM64-v8a` (Android 8.0+) | 🟢 Signed (Release Keystore) |
 | **`Orchestella-Studio-v0.1.5-preview.apk`** | **57.3 MB** (60,101,451 bytes) | `ARM64-v8a` (Android 8.0+) | 🟢 Signed (Release Keystore) |
 
 #### SHA-256 Integrity Hash
 ```text
+# v0.1.5 (Official Release)
+1106D924EF1DCEB1FD5DE365CBB237EBBD76ED1AC31BAB07196D8DBE3EDEDAD8
+
+# v0.1.5-preview (Preview Release)
 F340C5FF34F6667FBA4B7CE4CE83475DADB062179220BBD53F9CAACB1E90E1E4
 ```
 

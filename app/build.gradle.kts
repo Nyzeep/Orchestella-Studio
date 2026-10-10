@@ -28,8 +28,8 @@ android {
         applicationId = "io.github.nyzeep.orchestella"
         minSdk = 26
         targetSdk = 36
-        versionCode = 7
-        versionName = "0.1.5-preview"
+        versionCode = 8
+        versionName = "0.1.5"
 
         ndk {
             abiFilters += "arm64-v8a"
