@@ -15,6 +15,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import io.github.nyzeep.orchestella.runtime.engineqemu.QemuProcessLauncher;
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle;
@@ -42,12 +43,9 @@ public class TerminalActivity extends Activity {
     private TextView tvOfflineMessage;
     private Button btnOfflineAction;
     private Button btnOfflineBack;
-    private LinearLayout inputBar;
     private MobileAuxiliaryKeyBar auxiliaryKeyBar;
     private StickyModifierStateMachine stickyStateMachine;
     private ExecutionSession session;
-    private boolean isHandlingModifier = false;
-    private boolean isUpdatingFromEngine = false;
     private InteractiveTerminalEngine terminalEngine;
     private TerminalHistoryStore historyStore;
     private String instanceId;
@@ -64,6 +62,7 @@ public class TerminalActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         bridgeToken = getIntent().getStringExtra("bridgeToken");
         instanceId = getIntent().getStringExtra("instanceId");
         session = ExecutionSessionRegistry.get(instanceId);
@@ -144,11 +143,12 @@ public class TerminalActivity extends Activity {
         // WindowInsets handling: Edge-to-Edge status bar padding on rootLayout,
         // while IME and navigation bar bottom insets are dynamically handled by auxiliaryKeyBar
         ViewCompat.setOnApplyWindowInsetsListener(rootLayout, (v, insets) -> {
-            Insets statusBars = insets.getInsets(WindowInsetsCompat.Type.statusBars() | WindowInsetsCompat.Type.displayCutout());
+            Insets statusBarAndCutoutInsets = insets.getInsets(
+                    WindowInsetsCompat.Type.statusBars() | WindowInsetsCompat.Type.displayCutout());
             Insets navBars = insets.getInsets(WindowInsetsCompat.Type.navigationBars());
-            int leftInset = Math.max(statusBars.left, navBars.left);
-            int rightInset = Math.max(statusBars.right, navBars.right);
-            v.setPadding(leftInset, statusBars.top, rightInset, 0);
+            int leftInset = Math.max(statusBarAndCutoutInsets.left, navBars.left);
+            int rightInset = Math.max(statusBarAndCutoutInsets.right, navBars.right);
+            v.setPadding(leftInset, statusBarAndCutoutInsets.top, rightInset, 0);
             return insets;
         });
 
