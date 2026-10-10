@@ -234,7 +234,10 @@ public final class QemuInstanceLauncher {
         QemuRuntimeBootstrapper.RuntimePaths paths =
                 bootstrapper.bootstrap(parameters.rootfsFileName, parameters.bridgeToken,
                         parameters.guestPassword,
-                        Paths.get(parameters.instanceRootVolume));
+                        Paths.get(parameters.instanceRootVolume),
+                        parameters.mirrorConfigFileName,
+                        parameters.mirrorConfigFileContent,
+                        parameters.firstBootScript);
 
         String nativeLibraryDir = context.getApplicationInfo().nativeLibraryDir;
         String controlSocket = "droidlayer-control-" + parameters.instanceId;

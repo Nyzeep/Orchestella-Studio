@@ -145,15 +145,23 @@ public final class AvfInstanceLauncher {
         QemuRuntimeBootstrapper.RuntimePaths paths =
                 bootstrapper.bootstrap(parameters.rootfsFileName, parameters.bridgeToken,
                         parameters.guestPassword,
-                        Paths.get(parameters.instanceRootVolume));
+                        Paths.get(parameters.instanceRootVolume),
+                        parameters.mirrorConfigFileName,
+                        parameters.mirrorConfigFileContent,
+                        parameters.firstBootScript);
 
-        AvfLaunchSpec spec = AvfLaunchSpec.builder(
+        AvfLaunchSpec.Builder specBuilder = AvfLaunchSpec.builder(
                         parameters.instanceId,
                         paths.kernel.toString(),
                         paths.initramfs.toString(),
-                        parameters.instanceRootVolume)
-                .memoryMb(INSTANCE_MEMORY_MB)
-                .build();
+                        parameters.instanceRootVolume);
+        if (parameters.hardwareConfig != null) {
+            specBuilder.memoryMb(parameters.hardwareConfig.ramMegabytes());
+            specBuilder.cpuCount(parameters.hardwareConfig.cpuCores());
+        } else {
+            specBuilder.memoryMb(INSTANCE_MEMORY_MB);
+        }
+        AvfLaunchSpec spec = specBuilder.build();
 
         ReflectiveAvfVirtualMachineApi api = new ReflectiveAvfVirtualMachineApi(
                 context, context.getClass().getClassLoader());

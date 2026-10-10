@@ -75,7 +75,7 @@ public final class EmbeddedProvisionInput {
             byte[] initScript,
             byte[] proxyRelayBinary,
             OutputStream targetOut) throws IOException {
-        writeSegment(rootfsStream, rootfsSize, rootfsFileName, bridgeToken, guestPassword, initScript, proxyRelayBinary, null, null, false, targetOut);
+        writeSegment(rootfsStream, rootfsSize, rootfsFileName, bridgeToken, guestPassword, initScript, proxyRelayBinary, null, null, false, null, null, null, targetOut);
     }
 
     /** Streams the gzipped cpio segment with optional user identity, password, sudo and hostname. */
@@ -90,6 +90,41 @@ public final class EmbeddedProvisionInput {
             String hostname,
             String guestUser,
             boolean guestSudo,
+            OutputStream targetOut) throws IOException {
+        writeSegment(rootfsStream, rootfsSize, rootfsFileName, bridgeToken, guestPassword, initScript, proxyRelayBinary, hostname, guestUser, guestSudo, null, null, null, targetOut);
+    }
+
+    /** Streams the gzipped cpio segment with optional multi-distro guest init override, proxy relay binary, mirror config, and first-boot script. */
+    public static void writeSegment(
+            java.io.InputStream rootfsStream,
+            long rootfsSize,
+            String rootfsFileName,
+            String bridgeToken,
+            String guestPassword,
+            byte[] initScript,
+            byte[] proxyRelayBinary,
+            String mirrorConfigFileName,
+            byte[] mirrorConfigFileContent,
+            byte[] firstBootScript,
+            OutputStream targetOut) throws IOException {
+        writeSegment(rootfsStream, rootfsSize, rootfsFileName, bridgeToken, guestPassword, initScript, proxyRelayBinary, null, null, false, mirrorConfigFileName, mirrorConfigFileContent, firstBootScript, targetOut);
+    }
+
+    /** Master writeSegment method supporting credentials, identity, mirror config, and first-boot automation. */
+    public static void writeSegment(
+            java.io.InputStream rootfsStream,
+            long rootfsSize,
+            String rootfsFileName,
+            String bridgeToken,
+            String guestPassword,
+            byte[] initScript,
+            byte[] proxyRelayBinary,
+            String hostname,
+            String guestUser,
+            boolean guestSudo,
+            String mirrorConfigFileName,
+            byte[] mirrorConfigFileContent,
+            byte[] firstBootScript,
             OutputStream targetOut) throws IOException {
         Objects.requireNonNull(rootfsStream, "rootfsStream");
         Objects.requireNonNull(rootfsFileName, "rootfsFileName");
@@ -124,6 +159,13 @@ public final class EmbeddedProvisionInput {
                     "1\n".getBytes(StandardCharsets.US_ASCII));
         }
         appendStream(out, EMBEDDED_DIR + "/" + rootfsFileName, rootfsStream, rootfsSize);
+
+        if (mirrorConfigFileContent != null && mirrorConfigFileContent.length > 0 && mirrorConfigFileName != null) {
+            appendFile(out, EMBEDDED_DIR + "/" + mirrorConfigFileName, mirrorConfigFileContent);
+        }
+        if (firstBootScript != null && firstBootScript.length > 0) {
+            appendFile(out, EMBEDDED_DIR + "/firstboot.sh", 0100755, firstBootScript);
+        }
 
         if (initScript != null && initScript.length > 0) {
             appendFile(out, "init", 0100755, initScript);

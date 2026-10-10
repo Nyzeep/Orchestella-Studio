@@ -129,6 +129,11 @@ fi
 
 [ -c /dev/droidlayer-bridge ] || exit 70
 [ -c /dev/droidlayer-terminal ] || exit 70
+if [ -f /opt/orchestella/firstboot.sh ] && [ ! -f /opt/orchestella/.firstboot-done ]; then
+    mkdir -p /opt/orchestella
+    touch /opt/orchestella/.firstboot-done
+    /opt/orchestella/firstboot.sh >/var/log/firstboot.log 2>&1 &
+fi
 exec 3<> /dev/droidlayer-bridge
 exec /usr/sbin/droidlayer-guest-agent \
     --token-file /etc/droidlayer/bridge.token \
@@ -269,6 +274,26 @@ Acquire::https::Proxy "http://127.0.0.1:8080/";
 EOF
     chmod 0644 "$debian_root/etc/apt/apt.conf.d/99orchestella-proxy"
 
+    if [ -f "$debian_root/opt/orchestella/firstboot.sh" ]; then
+        cat > "$debian_root/etc/systemd/system/orchestella-firstboot.service" <<'EOF'
+[Unit]
+Description=Orchestella First Boot Setup and Update
+After=network.target orchestella-proxy-relay.service
+Wants=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/orchestella/firstboot.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+        chmod 0644 "$debian_root/etc/systemd/system/orchestella-firstboot.service"
+        ln -sf /etc/systemd/system/orchestella-firstboot.service \
+            "$debian_root/etc/systemd/system/multi-user.target.wants/orchestella-firstboot.service"
+    fi
+
     if [ -d /opt/droidlayer/scripts ]; then
         mkdir -p "$debian_root/etc/droidlayer/scripts"
         cp -rf /opt/droidlayer/scripts/* "$debian_root/etc/droidlayer/scripts/"
@@ -306,6 +331,19 @@ ExecStart=
 ExecStart=-/sbin/agetty --autologin root --noclear %I 38400 linux
 EOF
     chmod 0644 "$debian_root/etc/systemd/system/getty@tty1.service.d/autologin.conf"
+}
+
+configure_fstab_mounts() {
+    target_root="$1"
+    mkdir -p "$target_root/mnt/downloads" "$target_root/media/downloads" "$target_root/mnt/shared"
+    if [ -f "$target_root/etc/fstab" ]; then
+        if ! grep -qs 'downloads.*mnt/downloads' "$target_root/etc/fstab"; then
+            printf 'downloads\t/mnt/downloads\t9p\ttrans=virtio,version=9p2000.L,ro,nofail\t0\t0\n' >> "$target_root/etc/fstab"
+        fi
+        if ! grep -qs 'shared.*mnt/shared' "$target_root/etc/fstab"; then
+            printf 'shared\t/mnt/shared\t9p\ttrans=virtio,version=9p2000.L,ro,nofail\t0\t0\n' >> "$target_root/etc/fstab"
+        fi
+    fi
 }
 
 install_guest_shell_profile() {
@@ -682,12 +720,8 @@ if mount -t ext4 "$ROOT_DEVICE" /newroot 2>/dev/null; then
         fail root-volume-unrecognized
     fi
     [ -x /newroot/sbin/init ] || [ -x /newroot/lib/systemd/systemd ] || fail root-init-missing
-    mkdir -p /newroot/dev /newroot/proc /newroot/sys /newroot/mnt/downloads /newroot/media/downloads
-    if [ -f /newroot/etc/fstab ]; then
-        if ! grep -qs 'downloads.*mnt/downloads' /newroot/etc/fstab; then
-            printf 'downloads\t/mnt/downloads\t9p\ttrans=virtio,version=9p2000.L,ro,nofail\t0\t0\n' >> /newroot/etc/fstab
-        fi
-    fi
+    mkdir -p /newroot/dev /newroot/proc /newroot/sys
+    configure_fstab_mounts /newroot
     # Auto online resize ext4 root filesystem if root-volume was resized (ADR-0007 / Ticket 33)
     if [ -x /sbin/resize2fs ]; then
         /sbin/resize2fs "$ROOT_DEVICE" 2>/dev/null || true
@@ -774,6 +808,30 @@ printf '%s\n' "$TOKEN" > /newroot/etc/droidlayer/bridge.token
 chmod 0600 /newroot/etc/droidlayer/bridge.token
 provision_guest_identity_and_credentials /newroot "$INPUT_DIR"
 
+# Ticket 01: Injected Distro Mirror Configuration
+if [ -f "$INPUT_DIR/sources.list" ]; then
+    mkdir -p /newroot/etc/apt
+    cp -f "$INPUT_DIR/sources.list" /newroot/etc/apt/sources.list
+    chmod 0644 /newroot/etc/apt/sources.list
+fi
+if [ -f "$INPUT_DIR/repositories" ]; then
+    mkdir -p /newroot/etc/apk
+    cp -f "$INPUT_DIR/repositories" /newroot/etc/apk/repositories
+    chmod 0644 /newroot/etc/apk/repositories
+fi
+if [ -f "$INPUT_DIR/mirrorlist" ]; then
+    mkdir -p /newroot/etc/pacman.d
+    cp -f "$INPUT_DIR/mirrorlist" /newroot/etc/pacman.d/mirrorlist
+    chmod 0644 /newroot/etc/pacman.d/mirrorlist
+fi
+
+# Ticket 01: First-Boot Software Update Script
+if [ -f "$INPUT_DIR/firstboot.sh" ]; then
+    mkdir -p /newroot/opt/orchestella
+    cp -f "$INPUT_DIR/firstboot.sh" /newroot/opt/orchestella/firstboot.sh
+    chmod 0755 /newroot/opt/orchestella/firstboot.sh
+fi
+
 mkdir -p /newroot/usr/sbin /newroot/etc/init.d /newroot/etc/conf.d
 cp /opt/droidlayer/guest-agent /newroot/usr/sbin/droidlayer-guest-agent
 if [ -f /opt/orchestella/proxy-relay ]; then
@@ -801,12 +859,7 @@ EOF
     install_guest_shell_profile /newroot
 fi
 
-mkdir -p /newroot/mnt/downloads /newroot/media/downloads
-if [ -f /newroot/etc/fstab ]; then
-    if ! grep -qs 'downloads.*mnt/downloads' /newroot/etc/fstab; then
-        printf 'downloads\t/mnt/downloads\t9p\ttrans=virtio,version=9p2000.L,ro,nofail\t0\t0\n' >> /newroot/etc/fstab
-    fi
-fi
+configure_fstab_mounts /newroot
 
 mkdir -p /newroot/var/lib/droidlayer
 chmod 0755 /newroot/var/lib/droidlayer
