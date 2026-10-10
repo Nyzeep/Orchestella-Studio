@@ -24,9 +24,14 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityOptionsCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.google.android.material.color.DynamicColors
 import io.github.nyzeep.orchestella.runtime.capability.AvfAuthorizationWizardModel
 import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator
@@ -448,88 +453,79 @@ class MainActivity : AppCompatActivity() {
             val instanceIdText = cardView.findViewById<TextView>(R.id.card_instance_id)
             val statusBadge = cardView.findViewById<TextView>(R.id.card_status_badge)
             val hardwareSpecs = cardView.findViewById<TextView>(R.id.card_hardware_specs)
-            val btnMore = cardView.findViewById<View>(R.id.card_btn_more)
-
-            val btnLaunch = cardView.findViewById<Button>(R.id.card_btn_launch)
-            val btnDesktop = cardView.findViewById<Button>(R.id.card_btn_desktop)
-            val btnTerminal = cardView.findViewById<Button>(R.id.card_btn_terminal)
-            val btnCrashLog = cardView.findViewById<Button>(R.id.card_btn_crash_log)
+            val ipAddress = cardView.findViewById<TextView>(R.id.card_ip_address)
+            val btnPower = cardView.findViewById<com.google.android.material.button.MaterialButton>(R.id.card_btn_power)
 
             // Distro Icon & Info
-            distroIcon.setImageResource(
+            distroIcon?.setImageResource(
                 if (uiModel.distroId == "debian") R.drawable.ic_distro_debian else R.drawable.ic_distro_alpine
             )
-            distroTitle.text = "${uiModel.distroDisplayName} Linux ${uiModel.distroVersion}"
-            instanceIdText.text = getString(R.string.instance_card_id_prefix, uiModel.shortId)
+            distroTitle?.text = "${uiModel.distroDisplayName} Linux ${uiModel.distroVersion}"
+            instanceIdText?.text = getString(R.string.instance_card_id_prefix, uiModel.shortId)
 
             // State Badge & Breathing animation
-            statusBadge.text = uiModel.stateBadgeText
-            statusBadge.setTextColor(getColor(uiModel.stateBadgeColorRes))
+            statusBadge?.text = uiModel.stateBadgeText
+            statusBadge?.setTextColor(getColor(uiModel.stateBadgeColorRes))
             if (uiModel.isBreathing) {
                 startBreathingAnimation(statusBadge)
             }
 
-            // Hardware Specs
-            hardwareSpecs.text = uiModel.hardwareSpecsText
+            // Hardware Specs & Virtual IP Address
+            hardwareSpecs?.text = uiModel.hardwareSpecsText
+            ipAddress?.text = uiModel.ipAddress
 
-            // Action Buttons
-            if (uiModel.canLaunch) {
-                btnLaunch.visibility = View.VISIBLE
-                btnLaunch.setOnClickListener { launchInstance(instance) }
+            // Quick Power Action Button
+            if (instance.state() == InstanceLifecycle.State.RUNNING) {
+                btnPower?.text = "关机"
+                btnPower?.setIconResource(R.drawable.ic_power)
+                btnPower?.setOnClickListener {
+                    showPowerDialog(instance)
+                }
             } else {
-                btnLaunch.visibility = View.GONE
-            }
-
-            if (uiModel.canOpenTerminal) {
-                btnTerminal.visibility = View.VISIBLE
-                btnTerminal.setOnClickListener { openTerminal(instance) }
-            } else {
-                btnTerminal.visibility = View.GONE
-            }
-
-            if (uiModel.canLaunchDesktop) {
-                btnDesktop.visibility = View.VISIBLE
-                btnDesktop.setOnClickListener { launchDesktop(instance) }
-            } else {
-                btnDesktop.visibility = View.GONE
-            }
-
-            if (uiModel.hasCrashDiagnostic) {
-                btnCrashLog.visibility = View.VISIBLE
-                btnCrashLog.setOnClickListener { showCrashDiagnosticDialog(instance) }
-                statusBadge.setOnClickListener { showCrashDiagnosticDialog(instance) }
-            } else {
-                btnCrashLog.visibility = View.GONE
-            }
-
-            // Card click & long click
-            cardView.setOnClickListener {
-                if (instance.state() == InstanceLifecycle.State.RUNNING) {
-                    if (supportsDesktop && !isHeadless(instance)) {
-                        launchDesktop(instance)
-                    } else {
-                        openTerminal(instance)
-                    }
-                } else if (instance.state() == InstanceLifecycle.State.STOPPED || instance.state() == InstanceLifecycle.State.CREATED) {
+                btnPower?.text = "开机"
+                btnPower?.setIconResource(R.drawable.ic_power)
+                btnPower?.setOnClickListener {
                     launchInstance(instance)
-                } else if (instance.state() == InstanceLifecycle.State.CRASHED) {
-                    showCrashDiagnosticDialog(instance)
                 }
             }
 
-            val openSheet = {
-                showInstanceActionBottomSheet(instance, uiModel)
-            }
-            cardView.setOnLongClickListener {
-                openSheet()
-                true
-            }
-            btnMore.setOnClickListener {
-                openSheet()
+            // Material scale-up transition to InstanceDetailActivity
+            cardView.setOnClickListener {
+                val intent = Intent(this, InstanceDetailActivity::class.java).apply {
+                    putExtra(InstanceDetailActivity.EXTRA_INSTANCE_ID, instance.id())
+                }
+                val options = ActivityOptionsCompat.makeScaleUpAnimation(
+                    cardView, 0, 0, cardView.width.coerceAtLeast(1), cardView.height.coerceAtLeast(1)
+                )
+                startActivity(intent, options.toBundle())
             }
 
             instanceList.addView(cardView)
         }
+    }
+
+    private fun showPowerDialog(instance: InstanceLifecycle.Instance) {
+        val options = arrayOf("正常关机 (Graceful Shutdown)", "强制断电 (Force Kill)")
+        AlertDialog.Builder(this)
+            .setTitle("电源管理 · ${instance.id().take(8)}")
+            .setItems(options) { _, which ->
+                lifecycleScope.launch(Dispatchers.IO) {
+                    try {
+                        val controller = InstanceLifecycle.Controller(instanceStore, Clock.systemUTC())
+                        controller.recordGracefulStop(instance.id())
+                        OrchestellaForegroundService.stop(this@MainActivity)
+                        withContext(Dispatchers.Main) {
+                            showInstances()
+                        }
+                    } catch (e: Exception) {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(this@MainActivity, "操作失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     private fun isHeadless(instance: InstanceLifecycle.Instance): Boolean {
