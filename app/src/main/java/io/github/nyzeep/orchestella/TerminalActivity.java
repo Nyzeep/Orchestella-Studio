@@ -14,11 +14,16 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import androidx.core.graphics.Insets;
+import androidx.core.view.GravityCompat;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
+import androidx.drawerlayout.widget.DrawerLayout;
 import io.github.nyzeep.orchestella.runtime.engineqemu.QemuProcessLauncher;
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle;
+import io.github.nyzeep.orchestella.terminal.MultiTerminalSessionManager;
+import io.github.nyzeep.orchestella.terminal.TerminalDrawerPanel;
+import io.github.nyzeep.orchestella.terminal.TerminalSessionInstance;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.util.List;
@@ -53,6 +58,10 @@ public class TerminalActivity extends Activity {
     private InstanceSessionReconciler sessionReconciler;
     private InstanceLifecycle.FileStore instanceStore;
     private InstanceLifecycle.Controller instanceController;
+    private DrawerLayout drawerLayout;
+    private TerminalDrawerPanel drawerPanel;
+    private Button btnDrawerHandle;
+    private MultiTerminalSessionManager multiManager;
     private final java.util.concurrent.ExecutorService sendExecutor =
             java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
                 Thread t = new Thread(r, "terminal-send-queue");
@@ -60,8 +69,20 @@ public class TerminalActivity extends Activity {
                 return t;
             });
     private final Consumer<String> terminalOutputListener = chunk -> {
+        if (chunk == null || chunk.isEmpty()) {
+            return;
+        }
+        if (instanceId != null && multiManager != null) {
+            TerminalSessionInstance active = multiManager.getActiveSession(instanceId);
+            if (active != null) {
+                active.appendOutput(chunk);
+            }
+        }
         if (terminalView != null) {
             terminalView.appendOutput(chunk);
+        }
+        if (drawerPanel != null) {
+            drawerPanel.post(() -> drawerPanel.refresh());
         }
     };
 
@@ -140,6 +161,32 @@ public class TerminalActivity extends Activity {
         contentArea.addView(offlineCardView, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
+        // Floating quick drawer handle button in top-right corner
+        btnDrawerHandle = new Button(this, null, android.R.attr.buttonStyleSmall);
+        btnDrawerHandle.setText("◫ 终端 (1)");
+        btnDrawerHandle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+        btnDrawerHandle.setTextColor(DraculaPalette.COLOR_CYAN);
+        btnDrawerHandle.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        btnDrawerHandle.setBackground(createPillBackground(0xCC282A36, 0xFF6272A4, 12f));
+        btnDrawerHandle.setPadding(dpToPx(12), dpToPx(6), dpToPx(12), dpToPx(6));
+        FrameLayout.LayoutParams handleLp = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP | Gravity.END);
+        handleLp.setMargins(0, dpToPx(10), dpToPx(12), 0);
+        btnDrawerHandle.setOnClickListener(v -> {
+            if (drawerLayout != null) {
+                if (drawerLayout.isDrawerOpen(GravityCompat.END)) {
+                    drawerLayout.closeDrawer(GravityCompat.END);
+                } else {
+                    if (drawerPanel != null) {
+                        drawerPanel.refresh();
+                    }
+                    drawerLayout.openDrawer(GravityCompat.END);
+                }
+            }
+        });
+        contentArea.addView(btnDrawerHandle, handleLp);
+
         rootLayout.addView(contentArea, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
@@ -150,7 +197,102 @@ public class TerminalActivity extends Activity {
         rootLayout.addView(auxiliaryKeyBar, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        setContentView(rootLayout);
+        // 3. Multi-terminal right slide-out drawer layout container
+        multiManager = MultiTerminalSessionManager.getInstance();
+        drawerLayout = new DrawerLayout(this);
+        drawerLayout.setScrimColor(0x88000000);
+        drawerLayout.addView(rootLayout, new DrawerLayout.LayoutParams(
+                DrawerLayout.LayoutParams.MATCH_PARENT, DrawerLayout.LayoutParams.MATCH_PARENT));
+
+        drawerPanel = new TerminalDrawerPanel(this, instanceId, new TerminalDrawerPanel.DrawerCallback() {
+            @Override
+            public void onSessionSelected(TerminalSessionInstance targetSession) {
+                if (multiManager != null && instanceId != null) {
+                    multiManager.switchActiveSession(instanceId, targetSession.getSessionId());
+                }
+                if (drawerLayout != null) {
+                    drawerLayout.closeDrawer(GravityCompat.END);
+                }
+                switchToSessionUi(targetSession);
+            }
+
+            @Override
+            public void onNewSessionRequested() {
+                if (multiManager != null && instanceId != null) {
+                    try {
+                        TerminalSessionInstance newSession = multiManager.createSession(instanceId, null);
+                        multiManager.switchActiveSession(instanceId, newSession.getSessionId());
+                        if (drawerLayout != null) {
+                            drawerLayout.closeDrawer(GravityCompat.END);
+                        }
+                        switchToSessionUi(newSession);
+                        newSession.appendOutput("\n[已开辟新终端: " + newSession.getTitle() + "]\n");
+                        if (terminalView != null) {
+                            terminalView.appendOutput("\n[已开辟新终端: " + newSession.getTitle() + "]\n");
+                        }
+                    } catch (Exception e) {
+                        android.widget.Toast.makeText(TerminalActivity.this, e.getMessage(), android.widget.Toast.LENGTH_SHORT).show();
+                    }
+                    if (drawerPanel != null) {
+                        drawerPanel.refresh();
+                    }
+                }
+            }
+
+            @Override
+            public void onSessionRenamed(TerminalSessionInstance targetSession, String newTitle) {
+                if (multiManager != null && instanceId != null) {
+                    multiManager.renameSession(instanceId, targetSession.getSessionId(), newTitle);
+                    TerminalSessionInstance currentActive = multiManager.getActiveSession(instanceId);
+                    updateDrawerHandleText(currentActive);
+                    if (drawerPanel != null) {
+                        drawerPanel.refresh();
+                    }
+                }
+            }
+
+            @Override
+            public void onSessionClosed(TerminalSessionInstance targetSession) {
+                if (multiManager != null && instanceId != null) {
+                    boolean wasActive = targetSession.getSessionId().equals(
+                            multiManager.getActiveSession(instanceId) != null
+                                    ? multiManager.getActiveSession(instanceId).getSessionId()
+                                    : "");
+                    multiManager.closeSession(instanceId, targetSession.getSessionId());
+                    if (wasActive) {
+                        TerminalSessionInstance nextActive = multiManager.getActiveSession(instanceId);
+                        if (nextActive != null) {
+                            switchToSessionUi(nextActive);
+                        } else {
+                            TerminalSessionInstance fallback = multiManager.createSession(instanceId, "终端 1");
+                            switchToSessionUi(fallback);
+                        }
+                    } else {
+                        TerminalSessionInstance currentActive = multiManager.getActiveSession(instanceId);
+                        updateDrawerHandleText(currentActive);
+                    }
+                    if (drawerPanel != null) {
+                        drawerPanel.refresh();
+                    }
+                }
+            }
+
+            @Override
+            public void onCloseDrawerRequested() {
+                if (drawerLayout != null) {
+                    drawerLayout.closeDrawer(GravityCompat.END);
+                }
+            }
+        });
+
+        int drawerWidth = Math.min(dpToPx(300), (int) (getResources().getDisplayMetrics().widthPixels * 0.82f));
+        DrawerLayout.LayoutParams drawerLp = new DrawerLayout.LayoutParams(
+                drawerWidth,
+                DrawerLayout.LayoutParams.MATCH_PARENT,
+                GravityCompat.END);
+        drawerLayout.addView(drawerPanel, drawerLp);
+
+        setContentView(drawerLayout);
 
         // WindowInsets handling: Edge-to-Edge status bar padding on rootLayout,
         // while IME and navigation bar bottom insets are dynamically handled by auxiliaryKeyBar
@@ -346,6 +488,27 @@ public class TerminalActivity extends Activity {
         if (terminalView != null) {
             terminalView.setVisibility(View.VISIBLE);
         }
+        if (btnDrawerHandle != null) {
+            btnDrawerHandle.setVisibility(View.VISIBLE);
+        }
+
+        if (instanceId != null) {
+            if (multiManager == null) {
+                multiManager = MultiTerminalSessionManager.getInstance();
+            }
+            TerminalSessionInstance active = multiManager.getActiveSession(instanceId);
+            if (active == null) {
+                active = multiManager.createSession(instanceId, "终端 1");
+                String snapshot = holder.getTranscript();
+                if (snapshot != null && !snapshot.isEmpty()) {
+                    active.appendOutput(snapshot);
+                }
+            }
+            updateDrawerHandleText(active);
+            if (drawerPanel != null) {
+                drawerPanel.refresh();
+            }
+        }
 
         session = holder.rawSession();
         String replay = holder.attach(terminalOutputListener);
@@ -371,6 +534,9 @@ public class TerminalActivity extends Activity {
         }
         if (terminalView != null) {
             terminalView.setVisibility(View.GONE);
+        }
+        if (btnDrawerHandle != null) {
+            btnDrawerHandle.setVisibility(View.GONE);
         }
 
         if (isCrashed) {
@@ -400,6 +566,9 @@ public class TerminalActivity extends Activity {
         }
         if (terminalView != null) {
             terminalView.setVisibility(View.GONE);
+        }
+        if (btnDrawerHandle != null) {
+            btnDrawerHandle.setVisibility(View.GONE);
         }
         tvOfflineTitle.setText("❌ 实例不存在");
         tvOfflineMessage.setText("在本地数据库中未找到 ID 为 " + id + " 的实例。");
@@ -583,5 +752,39 @@ public class TerminalActivity extends Activity {
         gd.setCornerRadius(cornerRadiusDp * 2.5f);
         gd.setStroke(2, strokeColor);
         return gd;
+    }
+
+    private void switchToSessionUi(TerminalSessionInstance targetSession) {
+        if (targetSession == null || terminalView == null) {
+            return;
+        }
+        updateDrawerHandleText(targetSession);
+        terminalView.clear();
+        String transcript = targetSession.getTranscript();
+        if (transcript != null && !transcript.isEmpty()) {
+            terminalView.appendOutput(transcript);
+        }
+        terminalView.post(() -> {
+            terminalView.scrollToBottom();
+            terminalView.requestTerminalFocus();
+        });
+        if (drawerPanel != null) {
+            drawerPanel.refresh();
+        }
+    }
+
+    private void updateDrawerHandleText(TerminalSessionInstance session) {
+        if (btnDrawerHandle == null) {
+            return;
+        }
+        int count = 1;
+        String title = "终端";
+        if (multiManager != null && instanceId != null) {
+            count = multiManager.listSessions(instanceId).size();
+        }
+        if (session != null && session.getTitle() != null && !session.getTitle().isEmpty()) {
+            title = session.getTitle();
+        }
+        btnDrawerHandle.setText("◫ " + title + " (" + count + ")");
     }
 }
