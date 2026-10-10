@@ -11,6 +11,8 @@
     <color name="status_provisioning_bg">#203B82F6</color>
     <color name="status_created">#8B5CF6</color>
     <color name="status_created_bg">#208B5CF6</color>
+    <color name="status_suspended">#F59E0B</color>
+    <color name="status_suspended_bg">#20F59E0B</color>
 
     <!-- Safety Zones for Hardware Config -->
     <color name="zone_green">#10B981</color>

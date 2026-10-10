@@ -6,11 +6,11 @@
     android:layout_height="wrap_content"
     android:layout_marginStart="4dp"
     android:layout_marginEnd="4dp"
-    android:layout_marginBottom="14dp"
+    android:layout_marginBottom="12dp"
     android:clickable="true"
     android:focusable="true"
     android:foreground="?android:attr/selectableItemBackground"
-    app:cardCornerRadius="18dp"
+    app:cardCornerRadius="16dp"
     app:cardElevation="2dp"
     app:strokeWidth="1dp"
     app:strokeColor="?attr/colorOutlineVariant"
@@ -22,7 +22,7 @@
         android:orientation="vertical"
         android:padding="16dp">
 
-        <!-- Header: Distro Icon + Title + ID + Badge + More -->
+        <!-- Row 1: Distro Icon + Title & ID + State Capsule Badge -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -73,108 +73,119 @@
                 android:maxWidth="160dp"
                 android:singleLine="true"
                 android:ellipsize="end"
-                android:layout_marginEnd="6dp"
                 android:background="@drawable/bg_status_badge"
                 android:paddingStart="10dp"
                 android:paddingTop="5dp"
                 android:paddingEnd="10dp"
                 android:paddingBottom="5dp"
-                android:text="■ 已停止"
+                android:text="○ 已关机"
                 android:textSize="11sp"
                 android:textStyle="bold"
                 android:textColor="@color/status_stopped" />
-
-            <ImageButton
-                android:id="@+id/card_btn_more"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:minWidth="48dp"
-                android:minHeight="48dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:src="@drawable/ic_more_vert"
-                android:contentDescription="More options" />
         </LinearLayout>
 
-        <!-- Hardware Specs summary -->
-        <TextView
-            android:id="@+id/card_hardware_specs"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:drawableStart="@drawable/ic_cpu"
-            android:drawablePadding="6dp"
-            android:gravity="center_vertical"
-            android:text="2 vCPU · 2048 MB · 8 GB · GPU加速"
-            android:textSize="12sp"
-            android:textColor="?attr/colorOnSurfaceVariant" />
-
-        <!-- Quick actions buttons -->
+        <!-- Row 2: Specs Summary & Virtual IP -->
         <LinearLayout
-            android:id="@+id/card_actions_container"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
+            android:layout_marginTop="10dp"
             android:orientation="horizontal"
-            android:gravity="center_vertical|end">
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/card_hardware_specs"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:drawableStart="@drawable/ic_cpu"
+                android:drawablePadding="6dp"
+                android:gravity="center_vertical"
+                android:singleLine="true"
+                android:ellipsize="end"
+                android:text="2 vCPU · 2048 MB · 8 GB"
+                android:textSize="12sp"
+                android:textColor="?attr/colorOnSurfaceVariant" />
+
+            <TextView
+                android:id="@+id/card_ip_address"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:drawableStart="@drawable/ic_network"
+                android:drawablePadding="4dp"
+                android:gravity="center_vertical"
+                android:text="10.0.2.15"
+                android:textSize="12sp"
+                android:textColor="?attr/colorOnSurfaceVariant" />
+        </LinearLayout>
+
+        <!-- Divider line -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="10dp"
+            android:layout_marginBottom="8dp"
+            android:background="?attr/colorOutlineVariant" />
+
+        <!-- Row 3: Detail Hint & High-Priority Quick Power Action Button -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="点击进入控制台"
+                android:textSize="11sp"
+                android:textColor="?attr/colorOutline" />
 
             <com.google.android.material.button.MaterialButton
-                android:id="@+id/card_btn_crash_log"
+                android:id="@+id/card_btn_power"
                 style="@style/Widget.Material3.Button.TonalButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:minHeight="48dp"
-                app:cornerRadius="14dp"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
-                android:textSize="13sp"
+                android:minHeight="40dp"
+                app:cornerRadius="12dp"
+                app:icon="@drawable/ic_power"
+                app:iconSize="16dp"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:textSize="12sp"
                 android:textStyle="bold"
-                android:layout_marginEnd="8dp"
-                android:text="崩溃诊断"
-                android:textColor="@color/status_crashed"
+                android:text="开机" />
+
+            <!-- Hidden alias button for backward compatibility if any callers reference it -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/card_btn_launch"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:visibility="gone" />
+
+            <ImageButton
+                android:id="@+id/card_btn_more"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
                 android:visibility="gone" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/card_btn_terminal"
-                style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:minHeight="48dp"
-                app:cornerRadius="14dp"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
-                android:textSize="13sp"
-                android:textStyle="bold"
-                android:layout_marginEnd="8dp"
-                android:text="@string/instance_open_terminal"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
                 android:visibility="gone" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/card_btn_desktop"
-                style="@style/Widget.Material3.Button"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:minHeight="48dp"
-                app:cornerRadius="14dp"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
-                android:textSize="13sp"
-                android:textStyle="bold"
-                android:layout_marginEnd="8dp"
-                android:text="@string/instance_launch_desktop"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
                 android:visibility="gone" />
 
             <com.google.android.material.button.MaterialButton
-                android:id="@+id/card_btn_launch"
-                style="@style/Widget.Material3.Button"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:minHeight="48dp"
-                app:cornerRadius="14dp"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
-                android:textSize="13sp"
-                android:textStyle="bold"
-                android:text="@string/instance_launch" />
+                android:id="@+id/card_btn_crash_log"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:visibility="gone" />
         </LinearLayout>
 
     </LinearLayout>

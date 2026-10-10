@@ -21,6 +21,7 @@ data class InstanceCardUiModel(
     val stateBadgeBgColorRes: Int,
     val isBreathing: Boolean,
     val hardwareSpecsText: String,
+    val ipAddress: String = "离线",
     val cpuCores: Int,
     val ramMb: Int,
     val diskGb: Int,
@@ -55,7 +56,7 @@ data class InstanceCardUiModel(
                 InstanceLifecycle.State.RUNNING -> "● 运行中 · $strategyBadge"
                 InstanceLifecycle.State.STOPPED -> "■ 已停止"
                 InstanceLifecycle.State.CRASHED -> "▲ 异常终止（点击查看诊断）"
-                InstanceLifecycle.State.INTERRUPTED -> "⚠️ 运行中断"
+                InstanceLifecycle.State.INTERRUPTED -> "⏸ 已挂起"
                 InstanceLifecycle.State.CREATED -> "○ 已创建"
                 InstanceLifecycle.State.PROVISIONING -> "⏳ 初始化装配中…"
             }
@@ -64,7 +65,7 @@ data class InstanceCardUiModel(
                 InstanceLifecycle.State.RUNNING -> Pair(R.color.status_running, R.color.status_running_bg)
                 InstanceLifecycle.State.STOPPED -> Pair(R.color.status_stopped, R.color.status_stopped_bg)
                 InstanceLifecycle.State.CRASHED -> Pair(R.color.status_crashed, R.color.status_crashed_bg)
-                InstanceLifecycle.State.INTERRUPTED -> Pair(R.color.status_crashed, R.color.status_crashed_bg)
+                InstanceLifecycle.State.INTERRUPTED -> Pair(R.color.status_suspended, R.color.status_suspended_bg)
                 InstanceLifecycle.State.PROVISIONING -> Pair(R.color.status_provisioning, R.color.status_provisioning_bg)
                 InstanceLifecycle.State.CREATED -> Pair(R.color.status_created, R.color.status_created_bg)
             }
@@ -82,6 +83,8 @@ data class InstanceCardUiModel(
                 }
             }
 
+            val ipAddress = if (isRunning) "10.0.2.15" else "离线"
+
             return InstanceCardUiModel(
                 instanceId = instance.id(),
                 shortId = shortId,
@@ -94,6 +97,7 @@ data class InstanceCardUiModel(
                 stateBadgeBgColorRes = stateBgColor,
                 isBreathing = isRunning,
                 hardwareSpecsText = hwText,
+                ipAddress = ipAddress,
                 cpuCores = cpuCores,
                 ramMb = ramMb,
                 diskGb = diskGb,
