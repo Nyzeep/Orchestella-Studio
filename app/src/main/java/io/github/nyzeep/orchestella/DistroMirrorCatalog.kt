@@ -17,6 +17,16 @@ object DistroMirrorCatalog {
     fun mirrorsFor(manifest: DistroManifest): List<String> {
         val source = manifest.source().toString()
         val candidates = when (manifest.id()) {
+            "ubuntu" -> listOf(
+                substituteHost(source, "cdimage.ubuntu.com", "mirrors.tuna.tsinghua.edu.cn/ubuntu-cdimage"),
+                substituteHost(source, "cdimage.ubuntu.com", "mirrors.ustc.edu.cn/ubuntu-cdimage"),
+                source,
+            )
+            "arch" -> listOf(
+                substituteHost(source, "archlinuxarm.org", "mirrors.tuna.tsinghua.edu.cn/archlinuxarm"),
+                substituteHost(source, "archlinuxarm.org", "mirrors.ustc.edu.cn/archlinuxarm"),
+                source,
+            )
             "debian" -> listOf(
                 source,
                 substitutePrefix(
@@ -34,6 +44,9 @@ object DistroMirrorCatalog {
         }
         return MirrorPriorityList.of(*candidates.distinct().toTypedArray())
     }
+
+    private fun substituteHost(url: String, fromHost: String, toHost: String): String =
+        if (url.contains("://$fromHost/")) url.replace("://$fromHost/", "://$toHost/") else url
 
     private fun substitutePrefix(url: String, fromPrefix: String, toPrefix: String): String =
         if (url.startsWith(fromPrefix)) toPrefix + url.removePrefix(fromPrefix) else url

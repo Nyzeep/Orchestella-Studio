@@ -57,6 +57,17 @@
                 </LinearLayout>
 
                 <com.google.android.material.button.MaterialButton
+                    android:id="@+id/about_button"
+                    style="@style/Widget.Material3.Button.IconButton.Filled.Tonal"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:minWidth="48dp"
+                    android:minHeight="48dp"
+                    android:layout_marginEnd="8dp"
+                    app:icon="@drawable/ic_info"
+                    android:contentDescription="@string/about_title" />
+
+                <com.google.android.material.button.MaterialButton
                     android:id="@+id/settings_button"
                     style="@style/Widget.Material3.Button.IconButton.Filled.Tonal"
                     android:layout_width="48dp"

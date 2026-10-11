@@ -19,6 +19,7 @@
         android:allowBackup="false"
         android:extractNativeLibs="true"
         android:largeHeap="true"
+        android:usesCleartextTraffic="true"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.Orchestella">
@@ -31,6 +32,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".AboutActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Orchestella" />
 
         <activity
             android:name=".SetupWizardActivity"

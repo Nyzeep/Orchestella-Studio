@@ -187,7 +187,10 @@ public class ModernTerminalView extends ScrollView {
         scheduleFlush();
     }
 
-    private static final String CURSOR_CHAR = "█";
+    /**
+     * Windows PowerShell / Windows Terminal style thin vertical bar cursor (Left One-Eighth Block: \u258F).
+     */
+    private static final String CURSOR_CHAR = "\u258F";
     private boolean cursorVisible = true;
     private boolean cursorEnabled = true;
     private final Runnable cursorBlinkTask = new Runnable() {
@@ -246,7 +249,7 @@ public class ModernTerminalView extends ScrollView {
         }
         SpannableStringBuilder display = new SpannableStringBuilder(transcriptBuffer);
         display.append(CURSOR_CHAR);
-        int cursorColor = cursorVisible ? DraculaPalette.COLOR_GREEN : android.graphics.Color.TRANSPARENT;
+        int cursorColor = cursorVisible ? DraculaPalette.FOREGROUND : android.graphics.Color.TRANSPARENT;
         display.setSpan(
                 new ForegroundColorSpan(cursorColor),
                 display.length() - 1,

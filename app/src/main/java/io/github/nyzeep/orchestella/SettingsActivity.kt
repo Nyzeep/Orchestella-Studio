@@ -92,6 +92,8 @@ class SettingsActivity : AppCompatActivity() {
         txtAvfBadge = findViewById(R.id.txt_settings_avf_badge)
         txtAvfDetails = findViewById(R.id.txt_settings_avf_details)
         switchCursorBlink = findViewById(R.id.switch_settings_cursor_blink)
+
+        findViewById<TextView>(R.id.txt_settings_version)?.text = "版本：v${BuildConfig.VERSION_NAME} · Phase 5.0"
     }
 
     private fun setupMirrorSection() {

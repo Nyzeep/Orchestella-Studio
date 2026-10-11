@@ -204,6 +204,9 @@ class MainActivity : AppCompatActivity() {
         settingsButton.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
+        findViewById<View>(R.id.about_button)?.setOnClickListener {
+            startActivity(Intent(this, AboutActivity::class.java))
+        }
         val canCreate = assessment.canCreateFullLinuxInstance()
         setCreateButtonsEnabled(canCreate)
         if (!canCreate) {

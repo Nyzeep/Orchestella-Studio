@@ -339,6 +339,144 @@ EOF
     chmod 0644 "$debian_root/etc/systemd/system/getty@tty1.service.d/autologin.conf"
 }
 
+install_generic_linux_init_fallback() {
+    target_root="$1"
+    if [ -x "$target_root/sbin/init" ] || [ -x "$target_root/lib/systemd/systemd" ] || [ -x "$target_root/usr/lib/systemd/systemd" ]; then
+        return 0
+    fi
+
+    mkdir -p "$target_root/sbin" "$target_root/usr/sbin" "$target_root/etc" "$target_root/bin"
+
+    if [ ! -f "$target_root/usr/sbin/droidlayer-guest-agent-launcher" ]; then
+        cat > "$target_root/usr/sbin/droidlayer-guest-agent-launcher" <<'EOF'
+#!/bin/sh
+set -eu
+
+kernel_argument() {
+    key="$1"
+    command_line="$(cat /proc/cmdline)"
+    for argument in $command_line; do
+        case "$argument" in
+            "$key"=*) printf '%s\n' "${argument#*=}"; return 0 ;;
+        esac
+    done
+    return 1
+}
+
+mkdir -p /mnt/downloads /media/downloads
+mount -t 9p -o trans=virtio,version=9p2000.L,ro downloads /mnt/downloads 2>/dev/null || true
+
+VSOCK_CONTROL="$(kernel_argument droidlayer.vsock_control_port || true)"
+if [ -n "$VSOCK_CONTROL" ]; then
+    VSOCK_TERMINAL="$(kernel_argument droidlayer.vsock_terminal_port || true)"
+    VSOCK_SHARE="$(kernel_argument droidlayer.vsock_9p_port || true)"
+    set -- --vsock-control-port "$VSOCK_CONTROL"
+    set -- "$@" --terminal-device /dev/hvc0
+    if [ -n "$VSOCK_TERMINAL" ]; then
+        set -- "$@" --vsock-terminal-port "$VSOCK_TERMINAL"
+    fi
+    if [ -n "$VSOCK_SHARE" ]; then
+        set -- "$@" --vsock-share-port "$VSOCK_SHARE" \
+            --share-tag downloads --share-mount /mnt/downloads
+    fi
+    exec /usr/sbin/droidlayer-guest-agent --token-file /etc/droidlayer/bridge.token "$@"
+fi
+
+[ -c /dev/droidlayer-bridge ] || exit 70
+[ -c /dev/droidlayer-terminal ] || exit 70
+exec 3<> /dev/droidlayer-bridge
+exec /usr/sbin/droidlayer-guest-agent \
+    --token-file /etc/droidlayer/bridge.token \
+    --terminal-device /dev/droidlayer-terminal <&3 >&3
+EOF
+        chmod 0755 "$target_root/usr/sbin/droidlayer-guest-agent-launcher"
+    fi
+
+    if [ ! -x "$target_root/bin/busybox" ] && [ -x /bin/busybox ]; then
+        cp -f /bin/busybox "$target_root/bin/busybox" 2>/dev/null || true
+        chmod 0755 "$target_root/bin/busybox" 2>/dev/null || true
+    fi
+
+    cat > "$target_root/sbin/init" <<'EOF'
+#!/bin/sh
+# Orchestella minimal Linux init supervisor
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export HOME=/root
+export TERM=xterm-256color
+
+mount -t proc proc /proc 2>/dev/null || true
+mount -t sysfs sysfs /sys 2>/dev/null || true
+mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
+mkdir -p /dev/pts /dev/shm /run
+mount -t devpts devpts /dev/pts 2>/dev/null || true
+mount -t tmpfs tmpfs /dev/shm 2>/dev/null || true
+mount -t tmpfs tmpfs /run 2>/dev/null || true
+
+ip link set lo up 2>/dev/null || ifconfig lo 127.0.0.1 up 2>/dev/null || true
+ip link set eth0 up 2>/dev/null || true
+ip addr add 10.0.2.15/24 dev eth0 2>/dev/null || ifconfig eth0 10.0.2.15 netmask 255.255.255.0 up 2>/dev/null || true
+ip route add default via 10.0.2.2 dev eth0 2>/dev/null || route add default gw 10.0.2.2 2>/dev/null || true
+
+rm -f /etc/resolv.conf 2>/dev/null || true
+printf "nameserver 10.0.2.3\nnameserver 8.8.8.8\nnameserver 1.1.1.1\n" > /etc/resolv.conf
+chmod 0644 /etc/resolv.conf 2>/dev/null || true
+
+if [ -f /opt/orchestella/firstboot.sh ] && [ ! -f /opt/orchestella/.firstboot-done ]; then
+    mkdir -p /opt/orchestella
+    touch /opt/orchestella/.firstboot-done
+    /opt/orchestella/firstboot.sh >/var/log/firstboot.log 2>&1 &
+fi
+
+if [ -x /usr/sbin/orchestella-proxy-relay ] && command -v perl >/dev/null 2>&1; then
+    (
+        while true; do
+            /usr/sbin/orchestella-proxy-relay >/tmp/orchestella-proxy-relay.log 2>&1 || true
+            sleep 2
+        done
+    ) &
+fi
+
+(
+    while true; do
+        if [ -x /usr/sbin/droidlayer-guest-agent-launcher ]; then
+            /usr/sbin/droidlayer-guest-agent-launcher 2>/dev/null || true
+        fi
+        sleep 2
+    done
+) &
+
+CONSOLE_DEV=""
+if [ -c /dev/ttyAMA0 ]; then
+    CONSOLE_DEV="/dev/ttyAMA0"
+elif [ -c /dev/hvc0 ]; then
+    CONSOLE_DEV="/dev/hvc0"
+elif [ -c /dev/console ]; then
+    CONSOLE_DEV="/dev/console"
+fi
+
+SHELL_BIN="/bin/sh"
+if [ -x /bin/bash ]; then
+    SHELL_BIN="/bin/bash"
+fi
+
+while true; do
+    if [ -n "$CONSOLE_DEV" ]; then
+        if command -v setsid >/dev/null 2>&1; then
+            setsid -c "$SHELL_BIN" -l < "$CONSOLE_DEV" > "$CONSOLE_DEV" 2>&1 \
+                || setsid "$SHELL_BIN" -l < "$CONSOLE_DEV" > "$CONSOLE_DEV" 2>&1 \
+                || "$SHELL_BIN" -l < "$CONSOLE_DEV" > "$CONSOLE_DEV" 2>&1 || sleep 1
+        else
+            "$SHELL_BIN" -l < "$CONSOLE_DEV" > "$CONSOLE_DEV" 2>&1 || sleep 1
+        fi
+    else
+        "$SHELL_BIN" -l || sleep 1
+    fi
+    sleep 1
+done
+EOF
+    chmod 0755 "$target_root/sbin/init"
+}
+
 configure_fstab_mounts() {
     target_root="$1"
     mkdir -p "$target_root/mnt/downloads" "$target_root/media/downloads" "$target_root/mnt/shared"
@@ -719,12 +857,11 @@ install_strategy_neutral_bridge_devices
 
 mkdir -p /newroot
 if mount -t ext4 "$ROOT_DEVICE" /newroot 2>/dev/null; then
-    if ! grep -Fqx 'provisioning_version=1' /newroot/var/lib/droidlayer/provisioned-v1 \
-        || (! grep -Fqx 'distro=alpine-3.24.1' /newroot/var/lib/droidlayer/provisioned-v1 \
-            && ! grep -Fqx 'distro=debian-13' /newroot/var/lib/droidlayer/provisioned-v1); then
+    if ! grep -Fqx 'provisioning_version=1' /newroot/var/lib/droidlayer/provisioned-v1; then
         umount /newroot || fail unmount-unrecognized-root
         fail root-volume-unrecognized
     fi
+    install_generic_linux_init_fallback /newroot
     [ -x /newroot/sbin/init ] || [ -x /newroot/lib/systemd/systemd ] || fail root-init-missing
     mkdir -p /newroot/dev /newroot/proc /newroot/sys
     configure_fstab_mounts /newroot
@@ -873,6 +1010,7 @@ EOF
         || true
     install_official_alpine_busybox_init_fallback /newroot
     install_official_debian_systemd_flavor /newroot
+    install_generic_linux_init_fallback /newroot
     install_guest_shell_profile /newroot
 fi
 
@@ -880,9 +1018,17 @@ configure_fstab_mounts /newroot
 
 mkdir -p /newroot/var/lib/droidlayer
 chmod 0755 /newroot/var/lib/droidlayer
-DISTRO_TAG="alpine-3.24.1"
-if is_official_debian_systemd_init /newroot; then
+DISTRO_TAG="linux"
+if [ -f /newroot/etc/os-release ]; then
+    _id="$(grep -E '^ID=' /newroot/etc/os-release 2>/dev/null | head -n1 | cut -d= -f2 | tr -d '"'\')"
+    [ -n "$_id" ] && DISTRO_TAG="$_id"
+elif [ -f /newroot/usr/lib/os-release ]; then
+    _id="$(grep -E '^ID=' /newroot/usr/lib/os-release 2>/dev/null | head -n1 | cut -d= -f2 | tr -d '"'\')"
+    [ -n "$_id" ] && DISTRO_TAG="$_id"
+elif is_official_debian_systemd_init /newroot; then
     DISTRO_TAG="debian-13"
+elif is_official_alpine_busybox_init /newroot; then
+    DISTRO_TAG="alpine-3.24.1"
 fi
 printf 'provisioning_version=1\ndistro=%s\n' "$DISTRO_TAG" \
     > /newroot/var/lib/droidlayer/provisioned-v1
@@ -894,6 +1040,7 @@ if [ "$BRIDGE_DEVICE_MAPPED" -eq 0 ] || [ "$(kernel_argument droidlayer.poweroff
     while :; do sleep 3600; done
 fi
 mkdir -p /newroot/dev /newroot/proc /newroot/sys
+install_generic_linux_init_fallback /newroot
 [ -x /newroot/sbin/init ] || [ -x /newroot/lib/systemd/systemd ] || fail root-init-missing
 mount --move /dev /newroot/dev || fail move-dev
 mount --move /proc /newroot/proc || fail move-proc
