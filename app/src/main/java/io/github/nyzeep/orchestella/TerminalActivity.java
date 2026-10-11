@@ -84,6 +84,9 @@ public class TerminalActivity extends Activity {
         if (!replayingTranscript && terminalView != null) {
             terminalView.appendOutput(chunk);
         }
+        // Persist the console stream so field failures are diagnosable in-app
+        // (InstanceDetailActivity -> Linux 日志) without adb.
+        LogViewerActivity.appendGuestConsole(this, instanceId, chunk);
         if (drawerPanel != null) {
             drawerPanel.post(() -> drawerPanel.refresh());
         }

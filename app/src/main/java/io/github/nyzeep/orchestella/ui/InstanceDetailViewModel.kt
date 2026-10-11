@@ -112,9 +112,15 @@ class InstanceDetailViewModel(
         }
     }
 
+    companion object {
+        const val DELETE_CONFIRM_PHRASE = "确认删除"
+    }
+
     fun requestDelete(confirmName: String): Boolean {
         val current = uiState?.instance ?: return false
-        if (confirmName != current.id()) {
+        // Field feedback: typing a full UUID on mobile is hostile; the confirmation
+        // phrase is the fixed string 确认删除 instead.
+        if (confirmName != DELETE_CONFIRM_PHRASE) {
             return false
         }
         if (!InstanceActionSafety.canDelete(current.state())) {

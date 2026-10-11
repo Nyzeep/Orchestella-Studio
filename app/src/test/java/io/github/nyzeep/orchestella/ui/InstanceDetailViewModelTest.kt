@@ -131,14 +131,15 @@ class InstanceDetailViewModelTest {
         viewModel.loadInstance(instance.id())
         assertTrue(viewModel.uiState!!.canDelete)
 
-        // 3. Name mismatch is intercepted
+        // 3. Phrase mismatch is intercepted (the confirmation phrase replaced the UUID)
         assertFalse(viewModel.requestDelete("wrong-name"))
         assertFalse(viewModel.requestDelete(""))
+        assertFalse(viewModel.requestDelete(instance.id()))
         assertFalse(viewModel.requestDelete(instance.id().substring(0, 3)))
         assertNotNull(store.load(instance.id()))
 
-        // 4. Exact match executes deletion successfully
-        assertTrue(viewModel.requestDelete(instance.id()))
+        // 4. Exact phrase match executes deletion successfully
+        assertTrue(viewModel.requestDelete(InstanceDetailViewModel.DELETE_CONFIRM_PHRASE))
         assertTrue(store.list().none { it.id() == instance.id() })
         assertNull(viewModel.uiState)
     }
