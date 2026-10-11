@@ -276,7 +276,7 @@ public final class QemuInstanceLauncher {
                 controlSocket,
                 terminalSocket,
                 config,
-                gateway.unixSocketPath,
+                String.valueOf(gateway.tcpPort),
                 guestKernelArgs);
 
         String[] sanitizedSpec = sanitizeSpecForTargetBinary(spec);
