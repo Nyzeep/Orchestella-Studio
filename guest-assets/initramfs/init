@@ -857,11 +857,15 @@ install_strategy_neutral_bridge_devices
 
 mkdir -p /newroot
 if mount -t ext4 "$ROOT_DEVICE" /newroot 2>/dev/null; then
-    if ! grep -Fqx 'provisioning_version=1' /newroot/var/lib/droidlayer/provisioned-v1; then
-        umount /newroot || fail unmount-unrecognized-root
-        fail root-volume-unrecognized
-    fi
-    install_generic_linux_init_fallback /newroot
+    if ! grep -Fqx 'provisioning_version=1' /newroot/var/lib/droidlayer/provisioned-v1 2>/dev/null; then
+        # Self-heal (ADR-0006): a marker-less ext4 root volume can only be a half-finished
+        # provisioning — the volume was formatted but the unpack never completed, so no user
+        # data can exist yet. Every launch embeds fresh provisioning input, so wipe and
+        # re-provision below instead of failing the instance permanently.
+        log 'DROIDLAYER_ROOT_VOLUME_INCOMPLETE marker-missing re-provisioning'
+        umount /newroot 2>/dev/null || fail unmount-unrecognized-root
+    else
+        install_generic_linux_init_fallback /newroot
     [ -x /newroot/sbin/init ] || [ -x /newroot/lib/systemd/systemd ] || fail root-init-missing
     mkdir -p /newroot/dev /newroot/proc /newroot/sys
     configure_fstab_mounts /newroot
@@ -897,10 +901,16 @@ if mount -t ext4 "$ROOT_DEVICE" /newroot 2>/dev/null; then
     mount --move /proc /newroot/proc || fail move-proc
     mount --move /sys /newroot/sys || fail move-sys
     exec /sbin/switch_root /newroot /sbin/init || fail switch-root
+    fi
 fi
 
 ROOT_FILESYSTEM_TYPE="$(/sbin/blkid -o value -s TYPE "$ROOT_DEVICE" 2>/dev/null || true)"
-[ -z "$ROOT_FILESYSTEM_TYPE" ] || fail root-volume-unmountable
+if [ -n "$ROOT_FILESYSTEM_TYPE" ]; then
+    # A foreign or half-provisioned filesystem on the root volume is reformattable here:
+    # provisioning input availability is verified below before mkfs runs, and only
+    # provisioning ever writes user data, so nothing recoverable can be lost.
+    log "DROIDLAYER_ROOT_VOLUME_FOREIGN type=$ROOT_FILESYSTEM_TYPE reformatting"
+fi
 
 INPUT_TAG="$(kernel_argument droidlayer.input_tag || true)"
 case "$INPUT_TAG" in *[!A-Za-z0-9._-]*|'') fail invalid-input-tag ;; esac
