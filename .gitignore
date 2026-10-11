@@ -23,3 +23,7 @@ temp/
 /doc/
 探讨文档*.md
 .scratch/
+
+# Developer-local assets (kept out of the public repo by owner decision)
+/docs/
+/temp/

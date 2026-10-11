@@ -452,13 +452,13 @@ EOF
 
 install_generic_linux_init_fallback() {
     target_root="$1"
-    if [ -x "$target_root/sbin/init" ] || [ -x "$target_root/lib/systemd/systemd" ] || [ -x "$target_root/usr/lib/systemd/systemd" ]; then
-        return 0
-    fi
-
+    # Unconditionally (re)write both the launcher and the init: distros without a
+    # native init use OUR init as the real one, and instances provisioned by older
+    # app versions carry a stale copy on their root volume — rewriting at every
+    # boot upgrades them in place (network addressing changed across versions).
     mkdir -p "$target_root/sbin" "$target_root/usr/sbin" "$target_root/etc" "$target_root/bin"
 
-    if [ ! -f "$target_root/usr/sbin/droidlayer-guest-agent-launcher" ]; then
+    if true; then
         cat > "$target_root/usr/sbin/droidlayer-guest-agent-launcher" <<'EOF'
 #!/bin/sh
 set -eu
@@ -557,12 +557,29 @@ fi
 
 rm -f /etc/resolv.conf 2>/dev/null || true
 GUEST_DNS="$(kernel_argument orchestella.guest_dns || true)"
-if [ -n "$GUEST_DNS" ]; then
-    printf 'nameserver %s\n' "$GUEST_DNS" > /etc/resolv.conf
-else
-    printf "nameserver 10.0.2.3\nnameserver 8.8.8.8\nnameserver 1.1.1.1\n" > /etc/resolv.conf
-fi
+{
+    [ -n "$GUEST_DNS" ] && printf 'nameserver %s\n' "$GUEST_DNS"
+    printf 'nameserver 119.29.29.29\n'
+    printf 'nameserver 8.8.8.8\n'
+} > /etc/resolv.conf 2>/dev/null || true
 chmod 0644 /etc/resolv.conf 2>/dev/null || true
+
+# Boot-time network diagnostics: printed to the console (captured in the app log
+# viewer) so field failures are diagnosable without interactive typing.
+{
+    echo "== Orchestella network diagnostics =="
+    ip -4 addr show eth0 2>/dev/null || ifconfig eth0 2>/dev/null
+    ip route 2>/dev/null || route -n 2>/dev/null
+    echo "-- resolv.conf --"
+    cat /etc/resolv.conf 2>/dev/null
+    echo "-- gateway probe (192.168.127.1) --"
+    ping -c1 -W2 192.168.127.1 2>&1 | tail -2
+    echo "-- upstream probe (223.5.5.5) --"
+    ping -c1 -W2 223.5.5.5 2>&1 | tail -2
+    echo "-- dns probe --"
+    getent hosts mirrors.tuna.tsinghua.edu.cn 2>&1 | head -2
+    echo "== diagnostics end =="
+} > /dev/console 2>&1 || true
 
 if [ -f /opt/orchestella/firstboot.sh ] && [ ! -f /opt/orchestella/.firstboot-done ]; then
     mkdir -p /opt/orchestella
@@ -620,6 +637,49 @@ EOF
     chmod 0755 "$target_root/sbin/init"
 }
 
+# Configures eth0 in the INITRAMFS (busybox ip) before switch_root: the IP and
+# routes live in the kernel and survive switch_root, so distros without any
+# network tooling (ubuntu-base ships no ip/ifconfig/ping) inherit a working
+# uplink. Addressing comes from the host via kernel arguments (gvproxy plane).
+configure_guest_network() {
+    mount_point="$1"
+    GUEST_IP="$(kernel_argument orchestella.guest_ip || true)"
+    GUEST_GW="$(kernel_argument orchestella.guest_gw || true)"
+    GUEST_MASK="$(kernel_argument orchestella.guest_mask || true)"
+    GUEST_DNS="$(kernel_argument orchestella.guest_dns || true)"
+    BUSYBOX=""
+    [ -x /bin/busybox ] && BUSYBOX="/bin/busybox"
+    [ -z "$BUSYBOX" ] && [ -x /usr/bin/busybox ] && BUSYBOX="/usr/bin/busybox"
+    if [ -z "$BUSYBOX" ] || [ -z "$GUEST_IP" ]; then
+        return 0
+    fi
+    "$BUSYBOX" ip link set eth0 up 2>/dev/null || true
+    "$BUSYBOX" ip addr add "$GUEST_IP/${GUEST_MASK:-255.255.255.0}" dev eth0 2>/dev/null || true
+    [ -n "$GUEST_GW" ] && "$BUSYBOX" ip route add default via "$GUEST_GW" 2>/dev/null || true
+    {
+        [ -n "$GUEST_DNS" ] && printf 'nameserver %s\n' "$GUEST_DNS"
+        printf 'nameserver 119.29.29.29\n'
+        printf 'nameserver 8.8.8.8\n'
+    } > "$mount_point/etc/resolv.conf" 2>/dev/null || true
+    {
+        echo "== Orchestella network diagnostics (initramfs) =="
+        "$BUSYBOX" ip -4 addr show eth0 2>/dev/null
+        "$BUSYBOX" ip route 2>/dev/null
+        echo "-- resolv.conf --"
+        cat "$mount_point/etc/resolv.conf" 2>/dev/null
+        echo "-- gateway ping (192.168.127.1) --"
+        "$BUSYBOX" ping -c1 -W2 192.168.127.1 2>&1 | tail -2
+        echo "-- upstream ping (223.5.5.5) --"
+        "$BUSYBOX" ping -c1 -W2 223.5.5.5 2>&1 | tail -2
+        echo "-- dns lookup via 223.5.5.5 --"
+        "$BUSYBOX" nslookup mirrors.tuna.tsinghua.edu.cn 223.5.5.5 2>&1 | head -6
+        echo "-- tcp probe (nc 223.5.5.5:53, no dns needed) --"
+        echo "" | "$BUSYBOX" nc -w3 223.5.5.5 53 2>&1 && echo "tcp53: connected" || echo "tcp53: failed"
+        echo "-- tcp probe (nc 223.5.5.5:80) --"
+        echo "" | "$BUSYBOX" nc -w3 223.5.5.5 80 2>&1 && echo "tcp80: connected" || echo "tcp80: failed"
+        echo "== diagnostics end =="
+    } > /dev/console 2>&1 || true
+}
 configure_fstab_mounts() {
     target_root="$1"
     mkdir -p "$target_root/mnt/downloads" "$target_root/media/downloads" "$target_root/mnt/shared"
@@ -1048,7 +1108,8 @@ if mount -t ext4 "$ROOT_DEVICE" /newroot 2>/dev/null; then
     install_guest_shell_profile /newroot
     PROVISIONED_DISTRO="$(grep '^distro=' /newroot/var/lib/droidlayer/provisioned-v1 | cut -d '=' -f 2)"
     log "DROIDLAYER_ROOT_VOLUME_RESTART version=1 distro=$PROVISIONED_DISTRO"
-    mount --move /dev /newroot/dev || fail move-dev
+    configure_guest_network /newroot
+mount --move /dev /newroot/dev || fail move-dev
     mount --move /proc /newroot/proc || fail move-proc
     mount --move /sys /newroot/sys || fail move-sys
     exec /sbin/switch_root /newroot /sbin/init || fail switch-root
@@ -1210,6 +1271,7 @@ fi
 mkdir -p /newroot/dev /newroot/proc /newroot/sys
 install_generic_linux_init_fallback /newroot
 [ -x /newroot/sbin/init ] || [ -x /newroot/lib/systemd/systemd ] || fail root-init-missing
+configure_guest_network /newroot
 mount --move /dev /newroot/dev || fail move-dev
 mount --move /proc /newroot/proc || fail move-proc
 mount --move /sys /newroot/sys || fail move-sys
