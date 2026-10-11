@@ -94,11 +94,11 @@ class SetupWizardActivity : AppCompatActivity() {
     private val officialDistros = listOf(
         DistroItem("ubuntu", "Ubuntu LTS", "🐧 通用开发 · 云原生首选 · 24.04 LTS", "工业标准、生态最广，预设多层 APT 源与 Docker 加速", R.drawable.ic_distro_ubuntu),
         DistroItem("debian", "Debian Stable", "🌀 稳如磐石 · 经典基石 · Debian 13", "全开源坚实底座，极高稳定性与完整 GNU 工具链", R.drawable.ic_distro_debian),
-        DistroItem("fedora", "Fedora Workstation", "🎩 前沿技术 · RPM 生态 · Fedora 41", "集成最新内核与 DNF 现代工具链，Red Hat 社区前沿", R.drawable.ic_distro_fedora),
+        DistroItem("fedora", "Fedora", "🎩 前沿技术 · RPM 生态 · Fedora 43", "集成最新内核与 DNF 现代工具链，Red Hat 社区前沿", R.drawable.ic_distro_fedora),
         DistroItem("arch", "Arch Linux", "🏹 极客首选 · 滚动更新 · pacman", "轻量 DIY，滚动更新最新软件包与强大的社区支持", R.drawable.ic_distro_arch),
-        DistroItem("opensuse", "openSUSE Tumbleweed", "🦎 滚动更新 · 快照回滚 · zypper", "滚动更新同时提供系统快照与回滚，保障可靠性", R.drawable.ic_distro_opensuse),
-        DistroItem("almalinux", "AlmaLinux", "💼 企业级 · RHEL 1:1 二进制兼容 · 9.5", "稳定企业环境模拟，长期支持保障与 DNF 生态", R.drawable.ic_distro_almalinux),
-        DistroItem("rocky", "Rocky Linux", "🏔️ 生产级稳定 · 企业计算 · 9.5", "CentOS 官方替代，生产级高可靠性与 RHEL 兼容", R.drawable.ic_distro_rocky)
+        DistroItem("opensuse", "openSUSE Leap", "🦎 严谨规范 · 版本化发布 · zypper", "版本化稳定发布，zypper 依赖解析与企业级基线", R.drawable.ic_distro_opensuse),
+        DistroItem("almalinux", "AlmaLinux", "💼 企业级 · RHEL 1:1 二进制兼容 · 9", "稳定企业环境模拟，长期支持保障与 DNF 生态", R.drawable.ic_distro_almalinux),
+        DistroItem("rocky", "Rocky Linux", "🏔️ 生产级稳定 · 企业计算 · 9.6", "CentOS 官方替代，生产级高可靠性与 RHEL 兼容", R.drawable.ic_distro_rocky)
     )
 
     // Header views
