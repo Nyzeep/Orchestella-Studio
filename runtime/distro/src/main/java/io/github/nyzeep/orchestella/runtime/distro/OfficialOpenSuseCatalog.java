@@ -1,7 +1,12 @@
 package io.github.nyzeep.orchestella.runtime.distro;
 
 /**
- * Pinned official catalog entry for openSUSE Tumbleweed JeOS rootfs.
+ * Pinned official catalog entry for openSUSE Leap 16.0 rootfs (aarch64, networkd flavor).
+ *
+ * <p>Switched from the Tumbleweed JeOS appliance (mutable rolling file, upstream now
+ * prunes it) to the versioned, immutable Leap 16.0 Build18.75 rootfs tarball whose
+ * upstream sha256 file matches the pinned digest; self-hosted on the project's
+ * {@code distro-catalog-v1} release.
  */
 public final class OfficialOpenSuseCatalog {
     private OfficialOpenSuseCatalog() {}
@@ -9,11 +14,11 @@ public final class OfficialOpenSuseCatalog {
     public static DistroManifest opensuse() {
         return new DistroManifest(
                 "opensuse",
-                "tumbleweed",
+                "16.0",
                 "aarch64",
-                "https://download.opensuse.org/ports/aarch64/tumbleweed/appliances/openSUSE-Tumbleweed-ARM-JeOS-rootfs.aarch64.tar.xz",
-                "openSUSE-Tumbleweed-ARM-JeOS-rootfs.aarch64.tar.xz",
-                "c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2",
-                115_343_360L);
+                "https://github.com/Nyzeep/Orchestella-Studio/releases/download/distro-catalog-v1/opensuse-leap-image.aarch64-1.0.0-networkd-Build18.75.tar.xz",
+                "opensuse-leap-image.aarch64-1.0.0-networkd-Build18.75.tar.xz",
+                "d43d3e63203c3e08dbd5164a904fbf92df69ff21713ff18c82da179e00639ef6",
+                31_426_856L);
     }
 }

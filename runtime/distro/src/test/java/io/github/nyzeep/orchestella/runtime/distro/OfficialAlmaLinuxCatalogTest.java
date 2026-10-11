@@ -6,14 +6,14 @@ public final class OfficialAlmaLinuxCatalogTest {
     public static void main(String[] arguments) {
         DistroManifest almalinux = OfficialAlmaLinuxCatalog.almalinux();
         assertEquals("almalinux", almalinux.id());
-        assertEquals("9.5", almalinux.version());
+        assertEquals("9", almalinux.version());
         assertEquals("aarch64", almalinux.architecture());
         assertEquals(
-                URI.create("https://repo.almalinux.org/almalinux/9.5/cloud/aarch64/images/AlmaLinux-9-Container-Minimal-9.5-aarch64.tar.xz"),
+                URI.create("https://github.com/Nyzeep/Orchestella-Studio/releases/download/distro-catalog-v1/AlmaLinux-9-Base-rootfs.tar.gz"),
                 almalinux.source());
-        assertEquals("AlmaLinux-9-Container-Minimal-9.5-aarch64.tar.xz", almalinux.rootfsFileName());
-        assertEquals("e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4", almalinux.sha256());
-        assertEquals(142_606_336L, almalinux.sizeBytes());
+        assertEquals("AlmaLinux-9-Base-rootfs.tar.gz", almalinux.rootfsFileName());
+        assertEquals("ae65b206007f1635dfb045e9ac0e67dbdd9820c536115298b7e89cc078895d37", almalinux.sha256());
+        assertEquals(66_985_382L, almalinux.sizeBytes());
     }
 
     private static void assertEquals(Object expected, Object actual) {

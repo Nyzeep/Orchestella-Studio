@@ -6,14 +6,14 @@ public final class OfficialRockyLinuxCatalogTest {
     public static void main(String[] arguments) {
         DistroManifest rocky = OfficialRockyLinuxCatalog.rocky();
         assertEquals("rocky", rocky.id());
-        assertEquals("9.5", rocky.version());
+        assertEquals("9.6", rocky.version());
         assertEquals("aarch64", rocky.architecture());
         assertEquals(
-                URI.create("https://download.rockylinux.org/pub/rocky/9.5/images/aarch64/Rocky-9-Container-Base-9.5-aarch64.tar.xz"),
+                URI.create("https://github.com/Nyzeep/Orchestella-Studio/releases/download/distro-catalog-v1/Rocky-9-Container-Base-9.6-20250531.0.aarch64.tar.xz"),
                 rocky.source());
-        assertEquals("Rocky-9-Container-Base-9.5-aarch64.tar.xz", rocky.rootfsFileName());
-        assertEquals("f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5", rocky.sha256());
-        assertEquals(146_800_640L, rocky.sizeBytes());
+        assertEquals("Rocky-9-Container-Base-9.6-20250531.0.aarch64.tar.xz", rocky.rootfsFileName());
+        assertEquals("257534a55c3422b91cf1bf2dfcd02a752d3b2661902b76350b7a9ca39cc27edb", rocky.sha256());
+        assertEquals(50_342_584L, rocky.sizeBytes());
     }
 
     private static void assertEquals(Object expected, Object actual) {

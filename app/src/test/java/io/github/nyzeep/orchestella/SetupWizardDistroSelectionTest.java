@@ -58,7 +58,7 @@ public final class SetupWizardDistroSelectionTest {
         assertEquals("debian", manifest.id());
         assertEquals("13", manifest.version());
         assertEquals("aarch64", manifest.architecture());
-        assertEquals(90_332_396L, manifest.sizeBytes());
+        assertEquals(90_346_224L, manifest.sizeBytes());
     }
 
     @Test
@@ -66,14 +66,14 @@ public final class SetupWizardDistroSelectionTest {
         SetupWizardModel.DistroOption option = SetupWizardModel.DistroOption.FEDORA;
         assertEquals("fedora", option.getId());
         assertEquals("Fedora Linux", option.getDisplayName());
-        assertEquals("41", option.getVersion());
+        assertEquals("43", option.getVersion());
         assertTrue(option.getTag().contains("前沿创新"));
-        assertEquals("Fedora-Container-Minimal-Base-41-aarch64.tar.xz", option.getRootfsFileName());
+        assertEquals("fedora-43-minimal-rootfs.tar.gz", option.getRootfsFileName());
 
         DistroManifest manifest = option.manifest();
         assertNotNull(manifest);
         assertEquals("fedora", manifest.id());
-        assertEquals("41", manifest.version());
+        assertEquals("43", manifest.version());
         assertEquals("aarch64", manifest.architecture());
     }
 
@@ -96,15 +96,15 @@ public final class SetupWizardDistroSelectionTest {
     public void openSuseDistroManifestAndMetadata() {
         SetupWizardModel.DistroOption option = SetupWizardModel.DistroOption.OPENSUSE;
         assertEquals("opensuse", option.getId());
-        assertEquals("openSUSE Tumbleweed", option.getDisplayName());
-        assertEquals("tumbleweed", option.getVersion());
-        assertTrue(option.getTag().contains("稳定滚更"));
-        assertEquals("openSUSE-Tumbleweed-ARM-JeOS-rootfs.aarch64.tar.xz", option.getRootfsFileName());
+        assertEquals("openSUSE Leap", option.getDisplayName());
+        assertEquals("16.0", option.getVersion());
+        assertTrue(option.getTag().contains("严谨规范"));
+        assertEquals("opensuse-leap-image.aarch64-1.0.0-networkd-Build18.75.tar.xz", option.getRootfsFileName());
 
         DistroManifest manifest = option.manifest();
         assertNotNull(manifest);
         assertEquals("opensuse", manifest.id());
-        assertEquals("tumbleweed", manifest.version());
+        assertEquals("16.0", manifest.version());
         assertEquals("aarch64", manifest.architecture());
     }
 
@@ -113,14 +113,14 @@ public final class SetupWizardDistroSelectionTest {
         SetupWizardModel.DistroOption option = SetupWizardModel.DistroOption.ALMALINUX;
         assertEquals("almalinux", option.getId());
         assertEquals("AlmaLinux", option.getDisplayName());
-        assertEquals("9.5", option.getVersion());
+        assertEquals("9", option.getVersion());
         assertTrue(option.getTag().contains("企业就绪"));
-        assertEquals("AlmaLinux-9-Container-Minimal-9.5-aarch64.tar.xz", option.getRootfsFileName());
+        assertEquals("AlmaLinux-9-Base-rootfs.tar.gz", option.getRootfsFileName());
 
         DistroManifest manifest = option.manifest();
         assertNotNull(manifest);
         assertEquals("almalinux", manifest.id());
-        assertEquals("9.5", manifest.version());
+        assertEquals("9", manifest.version());
         assertEquals("aarch64", manifest.architecture());
     }
 
@@ -129,14 +129,14 @@ public final class SetupWizardDistroSelectionTest {
         SetupWizardModel.DistroOption option = SetupWizardModel.DistroOption.ROCKY;
         assertEquals("rocky", option.getId());
         assertEquals("Rocky Linux", option.getDisplayName());
-        assertEquals("9.5", option.getVersion());
+        assertEquals("9.6", option.getVersion());
         assertTrue(option.getTag().contains("坚如磐石"));
-        assertEquals("Rocky-9-Container-Base-9.5-aarch64.tar.xz", option.getRootfsFileName());
+        assertEquals("Rocky-9-Container-Base-9.6-20250531.0.aarch64.tar.xz", option.getRootfsFileName());
 
         DistroManifest manifest = option.manifest();
         assertNotNull(manifest);
         assertEquals("rocky", manifest.id());
-        assertEquals("9.5", manifest.version());
+        assertEquals("9.6", manifest.version());
         assertEquals("aarch64", manifest.architecture());
     }
 

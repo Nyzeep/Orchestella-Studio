@@ -1,7 +1,11 @@
 package io.github.nyzeep.orchestella.runtime.distro;
 
 /**
- * Pinned official catalog entry for AlmaLinux 9.5 Minimal Container rootfs.
+ * Pinned official catalog entry for AlmaLinux 9 Base rootfs (aarch64).
+ *
+ * <p>The pinned asset is the official {@code quay.io/almalinuxorg/9-base} arm64 layer
+ * (digest-verified during capture) self-hosted on the project's
+ * {@code distro-catalog-v1} release.
  */
 public final class OfficialAlmaLinuxCatalog {
     private OfficialAlmaLinuxCatalog() {}
@@ -9,11 +13,11 @@ public final class OfficialAlmaLinuxCatalog {
     public static DistroManifest almalinux() {
         return new DistroManifest(
                 "almalinux",
-                "9.5",
+                "9",
                 "aarch64",
-                "https://repo.almalinux.org/almalinux/9.5/cloud/aarch64/images/AlmaLinux-9-Container-Minimal-9.5-aarch64.tar.xz",
-                "AlmaLinux-9-Container-Minimal-9.5-aarch64.tar.xz",
-                "e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4",
-                142_606_336L);
+                "https://github.com/Nyzeep/Orchestella-Studio/releases/download/distro-catalog-v1/AlmaLinux-9-Base-rootfs.tar.gz",
+                "AlmaLinux-9-Base-rootfs.tar.gz",
+                "ae65b206007f1635dfb045e9ac0e67dbdd9820c536115298b7e89cc078895d37",
+                66_985_382L);
     }
 }

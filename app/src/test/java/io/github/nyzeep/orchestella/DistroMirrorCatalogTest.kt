@@ -20,12 +20,13 @@ class DistroMirrorCatalogTest {
     }
 
     @Test
-    fun debianMirrorsLeadWithPinnedSourceAndAddUpstreamAndUstc() {
+    fun debianMirrorsLeadWithTunaLxcImagesThenPinnedSourceAndProxies() {
         val manifest = OfficialDebianCatalog.debian()
         val expected = listOf(
-            "https://github.com/Nyzeep/Orchestella-Studio/releases/download/v0.4.0/debian-13-rootfs.tar.xz",
-            "https://ghproxy.net/https://github.com/Nyzeep/Orchestella-Studio/releases/download/v0.4.0/debian-13-rootfs.tar.xz",
-            "https://mirror.ghproxy.com/https://github.com/Nyzeep/Orchestella-Studio/releases/download/v0.4.0/debian-13-rootfs.tar.xz",
+            "https://mirrors.tuna.tsinghua.edu.cn/lxc-images/images/debian/trixie/arm64/default/20261010_05%3A24/rootfs.tar.xz",
+            "https://github.com/Nyzeep/Orchestella-Studio/releases/download/distro-catalog-v1/debian-13-rootfs.tar.xz",
+            "https://ghproxy.net/https://github.com/Nyzeep/Orchestella-Studio/releases/download/distro-catalog-v1/debian-13-rootfs.tar.xz",
+            "https://mirror.ghproxy.com/https://github.com/Nyzeep/Orchestella-Studio/releases/download/distro-catalog-v1/debian-13-rootfs.tar.xz",
         )
 
         assertEquals(expected, DistroMirrorCatalog.mirrorsFor(manifest))
@@ -46,12 +47,16 @@ class DistroMirrorCatalogTest {
         val mirrors = DistroMirrorCatalog.mirrorsFor(bumped)
 
         assertEquals(
-            "https://ghproxy.net/https://github.com/Nyzeep/Orchestella-Studio/releases/download/v0.5.0/debian-14-rootfs.tar.xz",
+            "https://github.com/Nyzeep/Orchestella-Studio/releases/download/v0.5.0/debian-14-rootfs.tar.xz",
             mirrors[1],
         )
         assertEquals(
-            "https://mirror.ghproxy.com/https://github.com/Nyzeep/Orchestella-Studio/releases/download/v0.5.0/debian-14-rootfs.tar.xz",
+            "https://ghproxy.net/https://github.com/Nyzeep/Orchestella-Studio/releases/download/v0.5.0/debian-14-rootfs.tar.xz",
             mirrors[2],
+        )
+        assertEquals(
+            "https://mirror.ghproxy.com/https://github.com/Nyzeep/Orchestella-Studio/releases/download/v0.5.0/debian-14-rootfs.tar.xz",
+            mirrors[3],
         )
     }
 

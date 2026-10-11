@@ -1,7 +1,13 @@
 package io.github.nyzeep.orchestella.runtime.distro;
 
 /**
- * Pinned official catalog entry for Fedora 41 Minimal Container rootfs.
+ * Pinned official catalog entry for Fedora 43 Minimal Container rootfs.
+ *
+ * <p>Fedora ships current container images only as OCI archives, so the pinned asset is
+ * the inner rootfs layer extracted from
+ * {@code Fedora-Container-Base-Generic-Minimal-43-1.6.aarch64.oci.tar.xz} (layer
+ * digest-verified during capture) and self-hosted on the project's
+ * {@code distro-catalog-v1} release.
  */
 public final class OfficialFedoraCatalog {
     private OfficialFedoraCatalog() {}
@@ -9,11 +15,11 @@ public final class OfficialFedoraCatalog {
     public static DistroManifest fedora() {
         return new DistroManifest(
                 "fedora",
-                "41",
+                "43",
                 "aarch64",
-                "https://download.fedoraproject.org/pub/fedora/linux/releases/41/Container/aarch64/images/Fedora-Container-Minimal-Base-41-aarch64.tar.xz",
-                "Fedora-Container-Minimal-Base-41-aarch64.tar.xz",
-                "b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1",
-                125_829_120L);
+                "https://github.com/Nyzeep/Orchestella-Studio/releases/download/distro-catalog-v1/fedora-43-minimal-rootfs.tar.gz",
+                "fedora-43-minimal-rootfs.tar.gz",
+                "59327d988a136a185148842cf6625366e4815cb7e85d3d0802453c7b9e4af497",
+                51_525_008L);
     }
 }
