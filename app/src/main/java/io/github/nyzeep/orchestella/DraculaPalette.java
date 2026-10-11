@@ -60,14 +60,42 @@ public final class DraculaPalette {
     private DraculaPalette() {
     }
 
+    // Theme override: when the user selects a palette (ThemeCatalog), the ANSI 16 and
+    // default fg/bg resolve from here so every consumer (parser, cursor, view) follows.
+    private static volatile int[] ansiOverride;
+    private static volatile int fgOverride;
+    private static volatile int bgOverride;
+    private static volatile boolean overridesActive;
+
+    /** Installs a theme palette override; pass null to restore the built-in Dracula set. */
+    public static void setPaletteOverride(int[] ansi16, int foreground, int background) {
+        if (ansi16 == null || ansi16.length != 16) {
+            overridesActive = false;
+            return;
+        }
+        ansiOverride = ansi16.clone();
+        fgOverride = foreground;
+        bgOverride = background;
+        overridesActive = true;
+    }
+
+    public static int themedBackground() {
+        return overridesActive ? bgOverride : BACKGROUND;
+    }
+
+    public static int themedForeground() {
+        return overridesActive ? fgOverride : FOREGROUND;
+    }
+
     /**
      * Resolves ANSI 16 color index (0-15).
      */
     public static int getAnsi16(int index) {
-        if (index < 0 || index >= ANSI_16.length) {
-            return FOREGROUND;
+        int[] palette = overridesActive ? ansiOverride : ANSI_16;
+        if (index < 0 || index >= palette.length) {
+            return overridesActive ? fgOverride : FOREGROUND;
         }
-        return ANSI_16[index];
+        return palette[index];
     }
 
     /**

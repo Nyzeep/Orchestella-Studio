@@ -435,6 +435,60 @@ public final class QemuLaunchSpec {
                 sharedDirectorySpec);
     }
 
+    /**
+     * Builds the QEMU launch argument array wired to a passt user-space network daemon
+     * over a UNIX stream socket. The packaged QEMU binary has no slirp support, so the
+     * passt backend (socket mode, spawned by the app) is the rootless network plane:
+     * the daemon bridges guest Ethernet frames onto the host network stack, following
+     * host connectivity including VPNs. Guest addressing rides the host parameters the
+     * caller passes via the extra kernel arguments.
+     */
+    public static String[] buildWithPasst(
+            String qemuExecutable,
+            String kernel,
+            String initramfs,
+            String rootVolume,
+            String controlSocketName,
+            String terminalSocketName,
+            VmHardwareConfig hardwareConfig,
+            String passtUnixSocketPath,
+            String extraKernelArgs) {
+        Objects.requireNonNull(passtUnixSocketPath, "passtUnixSocketPath");
+        String cmdline = GUEST_CMDLINE;
+        if (extraKernelArgs != null && !extraKernelArgs.trim().isEmpty()) {
+            cmdline = cmdline + " " + extraKernelArgs.trim();
+        }
+        List<String> args = new ArrayList<>(48);
+        Collections.addAll(
+                args,
+                qemuExecutable,
+                "-machine", "virt,gic-version=3",
+                "-accel", "tcg,thread=multi",
+                "-cpu", "cortex-a57",
+                "-smp", Integer.toString(hardwareConfig.cpuCores()),
+                "-m", hardwareConfig.ramMegabytes() + "M",
+                "-nodefaults",
+                "-display", "none",
+                "-monitor", "none",
+                "-no-reboot",
+                "-chardev", "socket,id=terminal,path=" + terminalSocketName + ",abstract=on,server=on,wait=off",
+                "-serial", "chardev:terminal",
+                "-kernel", kernel,
+                "-initrd", initramfs,
+                "-append", cmdline,
+                "-drive", "if=none,id=root,file=" + rootVolume + ",format=raw,cache=unsafe",
+                "-device", "virtio-blk-device,drive=root",
+                "-device", hardwareConfig.gpuAccelerationEnabled() ? "virtio-gpu-gl-device" : "virtio-gpu-device",
+                "-netdev", "socket,id=orchestella-net,server=off,addr.type=unix,addr.path=" + passtUnixSocketPath,
+                "-device", "virtio-net-pci,netdev=orchestella-net",
+                "-device", "virtio-serial-device",
+                "-chardev", "socket,id=control,path=" + controlSocketName + ",abstract=on,server=on,wait=off",
+                "-device", "virtserialport,chardev=control,name=droidlayer.bridge",
+                "-chardev", "socket,id=netproxy,path=" + defaultProxySocketName(controlSocketName) + ",abstract=on,server=on,wait=off",
+                "-device", "virtserialport,chardev=netproxy,name=orchestella.proxy");
+        return args.toArray(new String[0]);
+    }
+
     private static String[] buildInternal(
             String qemuExecutable,
             String kernel,

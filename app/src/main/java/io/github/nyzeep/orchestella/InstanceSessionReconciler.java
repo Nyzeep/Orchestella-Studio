@@ -132,6 +132,12 @@ public final class InstanceSessionReconciler {
         }
 
         if (instance.state() == InstanceLifecycle.State.RUNNING) {
+            // A launch that is still in flight has not registered its session yet; never
+            // judge it crashed while the host is mid-launch (observed as spurious CRASHED
+            // when the terminal opened before QEMU's sockets were ready).
+            if (InstanceLaunchGuard.isInFlight(instanceId)) {
+                return ReconcileResult.offline(instance, "Instance launch in progress");
+            }
             // Attempt auto re-attach probe
             if (sessionRecoverer != null) {
                 try {
