@@ -451,9 +451,9 @@ public final class QemuLaunchSpec {
             String controlSocketName,
             String terminalSocketName,
             VmHardwareConfig hardwareConfig,
-            String passtUnixSocketPath,
+            String passtTcpPort,
             String extraKernelArgs) {
-        Objects.requireNonNull(passtUnixSocketPath, "passtUnixSocketPath");
+        Objects.requireNonNull(passtTcpPort, "passtTcpPort");
         String cmdline = GUEST_CMDLINE;
         if (extraKernelArgs != null && !extraKernelArgs.trim().isEmpty()) {
             cmdline = cmdline + " " + extraKernelArgs.trim();
@@ -479,8 +479,8 @@ public final class QemuLaunchSpec {
                 "-drive", "if=none,id=root,file=" + rootVolume + ",format=raw,cache=unsafe",
                 "-device", "virtio-blk-device,drive=root",
                 "-device", hardwareConfig.gpuAccelerationEnabled() ? "virtio-gpu-gl-device" : "virtio-gpu-device",
-                "-netdev", "socket,id=orchestella-net,server=off,addr.type=unix,addr.path=" + passtUnixSocketPath,
-                "-device", "virtio-net-pci,netdev=orchestella-net",
+                "-netdev", "socket,id=orchestella-net,connect=127.0.0.1:" + passtTcpPort,
+                "-device", "virtio-net-device,netdev=orchestella-net",
                 "-device", "virtio-serial-device",
                 "-chardev", "socket,id=control,path=" + controlSocketName + ",abstract=on,server=on,wait=off",
                 "-device", "virtserialport,chardev=control,name=droidlayer.bridge",

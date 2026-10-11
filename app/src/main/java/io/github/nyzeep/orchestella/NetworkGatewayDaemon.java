@@ -25,10 +25,12 @@ public final class NetworkGatewayDaemon {
     /** Snapshot of one daemon run: socket path + the live process handle. */
     public static final class Running {
         public final String unixSocketPath;
+        public final int tcpPort;
         public final Process process;
 
-        Running(String unixSocketPath, Process process) {
-            this.unixSocketPath = unixSocketPath;
+        Running(String configPath, int tcpPort, Process process) {
+            this.unixSocketPath = configPath;
+            this.tcpPort = tcpPort;
             this.process = process;
         }
     }
@@ -66,19 +68,16 @@ public final class NetworkGatewayDaemon {
         if (!new File(gvproxyPath).isFile()) {
             throw new IOException("gvproxy payload missing from jniLibs");
         }
-        // UNIX sockets cap sun_path at ~108 bytes; the instance runtime dir path plus
-        // the full UUID exceeds it, so the socket lives in cacheDir with a short name.
-        String shortId = instanceId.length() > 8 ? instanceId.substring(0, 8) : instanceId;
-        File socketFile = new File(context.getCacheDir(), "gvproxy-" + shortId + ".sock");
-        if (socketFile.exists() && !socketFile.delete()) {
-            throw new IOException("cannot reset gateway socket " + socketFile);
-        }
+        // The packaged QEMU's socket netdev only speaks the legacy TCP syntax
+        // (connect=host:port), so the gateway listens on loopback TCP instead of a
+        // UNIX socket. The port is picked per instance with collision fallback.
+        int port = NetworkGatewayDaemon.listenPortFor(instanceId);
         File configFile = new File(runtimeDirectory, "net-" + instanceId + ".yaml");
         String nl = System.lineSeparator();
         List<String> yaml = new ArrayList<>();
         yaml.add("log-level: info");
         yaml.add("interfaces:");
-        yaml.add("  qemu: \"unix://" + socketFile.getAbsolutePath() + "\"");
+        yaml.add("  qemu: \"tcp://127.0.0.1:" + port + "\"");
         yaml.add("stack:");
         yaml.add("  mtu: 1500");
         yaml.add("  subnet: 192.168.127.0/24");
@@ -119,11 +118,13 @@ public final class NetworkGatewayDaemon {
             if (!process.isAlive()) {
                 throw new IOException("gvproxy exited during startup");
             }
-            // Existence check only: connecting would make gvproxy treat the probe as
-            // its QEMU client, and the EOF on close tears the gateway down.
-            if (socketFile.exists()) {
-                Log.i(TAG, "gateway socket ready: " + socketFile);
-                return new Running(socketFile.getAbsolutePath(), process);
+            // Readiness probe without touching the listener: a CONNECT would make
+            // gvproxy treat the probe as its QEMU client (EOF then kills the gateway).
+            // Instead, try to bind the port ourselves — a bind failure means gvproxy
+            // is already listening.
+            if (portBound(port)) {
+                Log.i(TAG, "gateway ready on 127.0.0.1:" + port);
+                return new Running(configFile.getAbsolutePath(), port, process);
             }
             try {
                 Thread.sleep(120);
@@ -143,6 +144,21 @@ public final class NetworkGatewayDaemon {
             return;
         }
         running.process.destroy();
+    }
+
+    private static boolean portBound(int port) {
+        try (java.net.ServerSocket ss = new java.net.ServerSocket()) {
+            ss.bind(new java.net.InetSocketAddress("127.0.0.1", port));
+            return false;
+        } catch (IOException e) {
+            return true;
+        }
+    }
+
+    /** Deterministic base port per instance; the caller retries on bind conflicts. */
+    static int listenPortFor(String instanceId) {
+        int hash = instanceId != null ? instanceId.hashCode() : 0;
+        return 24100 + (Math.abs(hash) % 800);
     }
 
 }
