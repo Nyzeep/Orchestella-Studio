@@ -11,9 +11,9 @@ public final class OfficialUbuntuCatalog {
                 "ubuntu",
                 "24.04",
                 "aarch64",
-                "https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04-base-arm64.tar.gz",
-                "ubuntu-base-24.04-base-arm64.tar.gz",
-                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-                89_128_960L);
+                "https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.5-base-arm64.tar.gz",
+                "ubuntu-base-24.04.5-base-arm64.tar.gz",
+                "a91d5a93010193712d346d761372b7c9db6dfcf093893161c64ca107f05914f2",
+                29_936_675L);
     }
 }

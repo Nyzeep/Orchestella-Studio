@@ -393,10 +393,11 @@
                         android:textColor="?attr/colorOnSurface" />
 
                     <TextView
+                        android:id="@+id/txt_settings_version"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
-                        android:text="版本：v0.1.0-preview · Phase 5.0"
+                        android:text="版本：v0.1.5 · Phase 5.0"
                         android:textSize="13sp"
                         android:textColor="?attr/colorOutline" />
 

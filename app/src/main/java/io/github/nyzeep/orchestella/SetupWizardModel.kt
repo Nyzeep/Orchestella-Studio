@@ -39,8 +39,8 @@ class SetupWizardModel(
             version = "24.04",
             tag = "🐧 工业标准 · 广泛支持 · 云原生首选",
             description = "工业标准、生态广泛、深度集成云原生开发栈、云原生首选",
-            approxDownloadSize = "~85 MB",
-            rootfsFileName = "ubuntu-base-24.04-base-arm64.tar.gz"
+            approxDownloadSize = "~30 MB",
+            rootfsFileName = "ubuntu-base-24.04.5-base-arm64.tar.gz"
         ),
         DEBIAN(
             id = "debian",

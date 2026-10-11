@@ -8,6 +8,18 @@ import org.junit.Test
 class DistroMirrorCatalogTest {
 
     @Test
+    fun ubuntuMirrorsLeadWithTunaAndUstcAndOfficialUpstream() {
+        val manifest = io.github.nyzeep.orchestella.runtime.distro.OfficialUbuntuCatalog.ubuntu()
+        val expected = listOf(
+            "https://mirrors.tuna.tsinghua.edu.cn/ubuntu-cdimage/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.5-base-arm64.tar.gz",
+            "https://mirrors.ustc.edu.cn/ubuntu-cdimage/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.5-base-arm64.tar.gz",
+            "https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.5-base-arm64.tar.gz",
+        )
+
+        assertEquals(expected, DistroMirrorCatalog.mirrorsFor(manifest))
+    }
+
+    @Test
     fun debianMirrorsLeadWithPinnedSourceAndAddUpstreamAndUstc() {
         val manifest = OfficialDebianCatalog.debian()
         val expected = listOf(

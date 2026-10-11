@@ -34,7 +34,7 @@ public final class SetupWizardDistroSelectionTest {
         assertEquals("Ubuntu Linux", option.getDisplayName());
         assertEquals("24.04", option.getVersion());
         assertTrue(option.getTag().contains("工业标准"));
-        assertEquals("ubuntu-base-24.04-base-arm64.tar.gz", option.getRootfsFileName());
+        assertEquals("ubuntu-base-24.04.5-base-arm64.tar.gz", option.getRootfsFileName());
 
         DistroManifest manifest = option.manifest();
         assertNotNull(manifest);
