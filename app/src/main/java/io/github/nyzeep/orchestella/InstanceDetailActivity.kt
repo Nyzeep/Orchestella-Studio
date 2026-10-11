@@ -74,6 +74,8 @@ class InstanceDetailActivity : AppCompatActivity() {
     private lateinit var btnTerminal: MaterialButton
     private lateinit var btnDesktop: MaterialButton
     private lateinit var btnPower: MaterialButton
+    private lateinit var btnGuestLog: MaterialButton
+    private lateinit var btnAppLog: MaterialButton
 
     // Views - Section 2
     private lateinit var hwLockedHint: TextView
@@ -216,6 +218,8 @@ class InstanceDetailActivity : AppCompatActivity() {
         btnTerminal = findViewById(R.id.btn_detail_terminal)
         btnDesktop = findViewById(R.id.btn_detail_desktop)
         btnPower = findViewById(R.id.btn_detail_power)
+        btnGuestLog = findViewById(R.id.btn_detail_guest_log)
+        btnAppLog = findViewById(R.id.btn_detail_app_log)
 
         // Section 2
         hwLockedHint = findViewById(R.id.tv_hw_locked_hint)
@@ -392,6 +396,26 @@ class InstanceDetailActivity : AppCompatActivity() {
             }
         }
 
+        btnGuestLog.setOnClickListener {
+            val state = viewModel.uiState ?: return@setOnClickListener
+            startActivity(
+                Intent(this, LogViewerActivity::class.java).apply {
+                    putExtra(LogViewerActivity.EXTRA_KIND, LogViewerActivity.KIND_GUEST)
+                    putExtra(LogViewerActivity.EXTRA_INSTANCE_ID, state.instanceId)
+                    putExtra(LogViewerActivity.EXTRA_TITLE, "Linux 运行日志 · " + state.hostname)
+                }
+            )
+        }
+
+        btnAppLog.setOnClickListener {
+            startActivity(
+                Intent(this, LogViewerActivity::class.java).apply {
+                    putExtra(LogViewerActivity.EXTRA_KIND, LogViewerActivity.KIND_APP)
+                    putExtra(LogViewerActivity.EXTRA_TITLE, "应用运行日志")
+                }
+            )
+        }
+
         btnPower.setOnClickListener {
             val state = viewModel.uiState ?: return@setOnClickListener
             if (state.state == InstanceLifecycle.State.RUNNING) {
@@ -522,7 +546,7 @@ class InstanceDetailActivity : AppCompatActivity() {
             }
 
             val inputEdit = EditText(this).apply {
-                hint = state.instanceId
+                hint = InstanceDetailViewModel.DELETE_CONFIRM_PHRASE
                 setSingleLine(true)
                 val pad = (20 * resources.displayMetrics.density).toInt()
                 setPadding(pad, pad, pad, pad)
@@ -530,11 +554,11 @@ class InstanceDetailActivity : AppCompatActivity() {
 
             MaterialAlertDialogBuilder(this)
                 .setTitle(R.string.console_delete_dialog_title)
-                .setMessage(getString(R.string.console_delete_dialog_message, state.instanceId))
+                .setMessage(R.string.console_delete_dialog_message_phrase)
                 .setView(inputEdit)
                 .setPositiveButton(R.string.console_delete_dialog_confirm) { _, _ ->
                     val entered = inputEdit.text.toString().trim()
-                    if (entered != state.instanceId) {
+                    if (entered != InstanceDetailViewModel.DELETE_CONFIRM_PHRASE) {
                         Toast.makeText(this, R.string.console_delete_dialog_mismatch, Toast.LENGTH_LONG).show()
                         return@setPositiveButton
                     }

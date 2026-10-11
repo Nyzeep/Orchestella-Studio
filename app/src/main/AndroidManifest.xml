@@ -60,6 +60,13 @@
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" />
 
+        <!-- Runtime log viewer: guest console stream + app logcat, for field diagnosis -->
+        <activity
+            android:name=".LogViewerActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Orchestella"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" />
+
         <!-- ADR-0017 & Ticket 43: Android host graphical desktop activity -->
         <activity
             android:name=".DesktopActivity"

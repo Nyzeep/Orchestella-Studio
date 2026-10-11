@@ -352,7 +352,7 @@
     <string name="console_delete_dialog_title">危险操作：永久物理删除</string>
     <string name="console_delete_dialog_message">此操作将永久销毁实例数据，磁盘将被物理抹除且不可恢复！\n\n为防止误触，请输入实例完整 ID「%1$s」以确认删除：</string>
     <string name="console_delete_dialog_confirm">我已知晓风险，永久删除</string>
-    <string name="console_delete_dialog_mismatch">输入的实例 ID 不匹配，删除已拦截取消</string>
+    <string name="console_delete_dialog_mismatch">输入不一致（需输入「确认删除」），删除已拦截取消</string>
     <string name="console_delete_success">实例已彻底物理删除</string>
 
     <!-- About Screen -->
@@ -371,4 +371,9 @@
     <string name="about_link_copied">链接已复制到剪贴板</string>
     <string name="about_avatar_desc">作者 GitHub 头像</string>
     <string name="about_avatar_loading_failed">已显示字母头像（网络加载失败）</string>
+    <string name="console_delete_dialog_message_phrase">此操作将永久销毁实例数据，磁盘将被物理抹除且不可恢复！
+
+为防止误触，请输入「确认删除」以继续：</string>
+    <string name="console_btn_guest_log">Linux 日志</string>
+    <string name="console_btn_app_log">应用日志</string>
 </resources>

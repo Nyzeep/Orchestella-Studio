@@ -191,6 +191,40 @@
                             android:textSize="12sp" />
                     </LinearLayout>
 
+                    <!-- Runtime log viewers: guest console + app logcat (field diagnosis) -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:orientation="horizontal"
+                        android:gravity="center">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_detail_guest_log"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="6dp"
+                            app:cornerRadius="14dp"
+                            app:icon="@drawable/ic_terminal"
+                            app:iconSize="18dp"
+                            android:text="@string/console_btn_guest_log"
+                            android:textSize="12sp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_detail_app_log"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            app:cornerRadius="14dp"
+                            app:icon="@drawable/ic_info"
+                            app:iconSize="18dp"
+                            android:text="@string/console_btn_app_log"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
