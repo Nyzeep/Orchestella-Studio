@@ -460,6 +460,21 @@ public class ModernTerminalView extends ScrollView {
         return transcriptView;
     }
 
+    /**
+     * Applies a theme (chrome + palette) and terminal typography to the console.
+     * Call after construction and whenever the user changes appearance settings.
+     */
+    public void applyTheme(io.github.nyzeep.orchestella.ui.theme.AppTheme theme,
+            int fontSizeSp, float letterSpacingEm, float lineSpacingExtraPx) {
+        setBackgroundColor(theme.getTerminalBackground());
+        transcriptView.setBackgroundColor(theme.getTerminalBackground());
+        transcriptView.setTextColor(theme.getTerminalForeground());
+        transcriptView.setTextSize(TypedValue.COMPLEX_UNIT_SP, fontSizeSp);
+        transcriptView.setLetterSpacing(letterSpacingEm);
+        transcriptView.setLineSpacing(lineSpacingExtraPx, 1f);
+        invalidate();
+    }
+
     public AnsiEscapeParser getParser() {
         return parser;
     }

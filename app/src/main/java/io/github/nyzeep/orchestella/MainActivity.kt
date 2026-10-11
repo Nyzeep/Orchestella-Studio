@@ -41,6 +41,8 @@ import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig
 import io.github.nyzeep.orchestella.runtime.distro.DistroCatalogRegistry
 import io.github.nyzeep.orchestella.runtime.distro.DistroManifest
 import io.github.nyzeep.orchestella.runtime.distro.OfficialDebianCatalog
+import io.github.nyzeep.orchestella.ui.theme.AppTheme
+import io.github.nyzeep.orchestella.ui.theme.ThemeStore
 import io.github.nyzeep.orchestella.runtime.engineavf.AvfEngineException
 import io.github.nyzeep.orchestella.runtime.engineqemu.RuntimeArtifactManifest
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
@@ -84,6 +86,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var instanceList: LinearLayout
 
     private var avfReadiness: AvfCapabilityEvaluator.AvfReadiness? = null
+    private lateinit var themeStore: ThemeStore
+    private var activeTheme: AppTheme? = null
     private var wizardModel: AvfAuthorizationWizardModel? = null
     private var pendingExportInstance: InstanceLifecycle.Instance? = null
 
@@ -160,6 +164,7 @@ class MainActivity : AppCompatActivity() {
         window.statusBarColor = Color.TRANSPARENT
         window.navigationBarColor = Color.TRANSPARENT
 
+        applyThemeToDashboard()
         val rootContainer = findViewById<View>(R.id.root_container)
         val density = resources.displayMetrics.density
         val baseHorizontalPad = (16 * density).toInt()
@@ -177,6 +182,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         settingsManager = SettingsManager(this)
+        themeStore = ThemeStore(this)
         if (!settingsManager.isOnboardingCompleted) {
             val intent = Intent(this, SetupWizardActivity::class.java)
             startActivity(intent)
@@ -264,6 +270,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (::themeStore.isInitialized) {
+            applyThemeToDashboard()
+        }
         if (::instanceStore.isInitialized) {
             reconcileOrphanInstances()
             renderSystemStatus(DeviceCapabilityEvaluator.evaluate(deviceProfile()))
@@ -393,15 +402,134 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun applyThemeToDashboard() {
+        try {
+            val theme = themeStore.resolve()
+            activeTheme = theme
+            val root = findViewById<View>(R.id.root_container)
+            val bgUri = themeStore.backgroundUri()
+            if (bgUri != null) {
+                val sampled = decodeSampledBackground(android.net.Uri.parse(bgUri))
+                if (sampled != null) {
+                    root.background = android.graphics.drawable.LayerDrawable(
+                        arrayOf(sampled, android.graphics.drawable.ColorDrawable(theme.background and 0x8AFFFFFF.toInt()))
+                    )
+                } else {
+                    root.setBackgroundColor(theme.background)
+                }
+            } else {
+                root.setBackgroundColor(theme.background)
+            }
+            findViewById<com.google.android.material.card.MaterialCardView>(R.id.system_status_card)?.let {
+                it.setCardBackgroundColor(theme.surfaceTranslucent)
+                attachPressGlow(it, theme)
+            }
+            findViewById<View>(R.id.card_create_linux_main)?.let { hero ->
+                hero.background = buildGlowCardDrawable(theme)
+                attachPressGlow(hero, theme)
+            }
+            renderGauges(theme)
+        } catch (e: Exception) {
+            android.util.Log.w("MainActivity", "theme apply failed", e)
+        }
+    }
+
+    private fun buildGlowCardDrawable(theme: AppTheme): android.graphics.drawable.Drawable {
+        val outer = android.graphics.drawable.GradientDrawable().apply {
+            cornerRadius = 22f * resources.displayMetrics.density
+            setStroke(
+                (1.5f * resources.displayMetrics.density).toInt(),
+                (theme.glow and 0x00FFFFFF or 0x40000000.toInt()),
+            )
+            setColor(android.graphics.Color.TRANSPARENT)
+        }
+        val inner = android.graphics.drawable.GradientDrawable().apply {
+            cornerRadius = 18f * resources.displayMetrics.density
+            setColor(theme.surfaceTranslucent)
+        }
+        val inset = (5f * resources.displayMetrics.density).toInt()
+        return android.graphics.drawable.LayerDrawable(arrayOf(outer, inner)).apply {
+            setLayerInset(1, inset, inset, inset, inset)
+        }
+    }
+
+    private fun attachPressGlow(view: View, theme: AppTheme) {
+        view.setOnTouchListener { v, event ->
+            when (event.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN, android.view.MotionEvent.ACTION_HOVER_ENTER -> {
+                    v.animate().scaleX(1.015f).scaleY(1.015f).setDuration(90).start()
+                }
+                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL,
+                android.view.MotionEvent.ACTION_HOVER_EXIT -> {
+                    v.animate().scaleX(1f).scaleY(1f).setDuration(120).start()
+                }
+            }
+            false
+        }
+    }
+
+    private fun decodeSampledBackground(uri: android.net.Uri): android.graphics.drawable.Drawable? {
+        return try {
+            val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, bounds) }
+            val targetW = resources.displayMetrics.widthPixels
+            var sample = 1
+            while (bounds.outWidth / (sample * 2) >= targetW) sample *= 2
+            val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+            val bitmap = contentResolver.openInputStream(uri)?.use {
+                android.graphics.BitmapFactory.decodeStream(it, null, opts)
+            } ?: return null
+            android.graphics.drawable.BitmapDrawable(resources, bitmap)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun renderGauges(theme: AppTheme) {
+        val density = resources.displayMetrics.density
+        val memory = findViewById<io.github.nyzeep.orchestella.ui.RingProgressView>(R.id.ring_memory)
+        val storage = findViewById<io.github.nyzeep.orchestella.ui.RingProgressView>(R.id.ring_storage)
+        val battery = findViewById<io.github.nyzeep.orchestella.ui.RingProgressView>(R.id.ring_battery)
+        memory?.configure(theme.primary, theme.text, theme.textDim, density)
+        storage?.configure(theme.accent, theme.text, theme.textDim, density)
+        battery?.configure(theme.glow, theme.text, theme.textDim, density)
+
+        val profile = HostHardwareDetector.detect(this)
+        val totalRamMb = profile.totalRamMb().coerceAtLeast(1)
+        val availRamMb = profile.availRamMb().coerceIn(0, totalRamMb)
+        val usedRam = totalRamMb - availRamMb
+        memory?.setProgress(usedRam.toFloat() / totalRamMb,
+            "${usedRam / 1024}G", "内存")
+
+        val stat = android.os.StatFs(filesDir.path)
+        val totalBytes = stat.totalBytes
+        val freeBytes = stat.availableBytes
+        val usedBytes = totalBytes - freeBytes
+        storage?.setProgress(usedBytes.toFloat() / totalBytes.coerceAtLeast(1),
+            "${usedBytes / (1024L * 1024L * 1024L)}G", "存储")
+
+        val intent = registerForBattery()
+        val level = intent?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
+        val scale = intent?.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, -1) ?: -1
+        if (level >= 0 && scale > 0) {
+            val pct = level.toFloat() / scale
+            battery?.setProgress(pct, "${(pct * 100).toInt()}%", "电池")
+        } else {
+            battery?.setProgress(0f, "--", "电池")
+        }
+    }
+
+    private fun registerForBattery(): android.content.Intent? {
+        return registerReceiver(null, android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED))
+    }
+
     private fun renderSystemStatus(assessment: DeviceCapabilityEvaluator.Assessment) {
         val profile = HostHardwareDetector.detect(this)
         val cpuChip = findViewById<TextView>(R.id.system_cpu_chip)
-        val ramChip = findViewById<TextView>(R.id.system_ram_chip)
         val virtBadge = findViewById<TextView>(R.id.system_virtualization_badge)
         val statusText = findViewById<TextView>(R.id.runtime_status)
 
         cpuChip?.text = getString(R.string.system_cpu_badge, profile.totalCores())
-        ramChip?.text = getString(R.string.system_ram_badge, profile.availRamMb(), profile.totalRamMb())
         virtBadge?.text = currentBadge(assessment)
 
         statusText?.text = buildString {
@@ -772,6 +900,9 @@ class MainActivity : AppCompatActivity() {
         try {
             val controller = InstanceLifecycle.Controller(instanceStore, Clock.systemUTC())
             for (instance in instanceStore.list()) {
+                if (InstanceLaunchGuard.isInFlight(instance.id())) {
+                    continue
+                }
                 if (instance.state() == InstanceLifecycle.State.RUNNING && ExecutionSessionRegistry.get(instance.id()) == null) {
                     controller.reconcileAfterHostDeath(instance.id(), InstanceLifecycle.State.STOPPED)
                 }
@@ -784,10 +915,18 @@ class MainActivity : AppCompatActivity() {
         setCreateButtonsEnabled(false)
         createStatus.setText(R.string.launch_started)
         operations.execute {
+            // A live session means the VM is already running: launching again would fork a
+            // second QEMU that fails to bind the instance's sockets AND unregister the live
+            // session in the failure path (observed on-device as "无法输入指令"). Attach instead.
+            if (ExecutionSessionRegistry.get(instance.id()) != null) {
+                runOnUiThread { openTerminal(instance) }
+                return@execute
+            }
             reconcileOrphanInstances()
             val controller = InstanceLifecycle.Controller(instanceStore, Clock.systemUTC())
             var running = false
             try {
+                InstanceLaunchGuard.begin(instance.id())
                 InstanceLaunchSequence.beforeLaunch(controller, instance)
                 running = true
                 val distroTitle = instance.distro().id().replaceFirstChar { it.uppercase() } + " " + instance.distro().version()
@@ -846,6 +985,7 @@ class MainActivity : AppCompatActivity() {
                             createStatus.text = getString(R.string.launch_failed, failure.toString())
                         }
                     } finally {
+                        InstanceLaunchGuard.end(instance.id())
                         ExecutionSessionRegistry.unregister(instance.id())
                         OrchestellaForegroundService.stop(this)
                         try {
@@ -875,6 +1015,7 @@ class MainActivity : AppCompatActivity() {
                     startActivity(intent)
                 }
             } catch (failure: Throwable) {
+                InstanceLaunchGuard.end(instance.id())
                 ExecutionSessionRegistry.unregister(instance.id())
                 OrchestellaForegroundService.stop(this)
                 if (running) {

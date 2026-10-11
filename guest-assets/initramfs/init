@@ -229,25 +229,74 @@ EOF
 configure_systemd_network_dhcp() {
     target_root="$1"
     # Non-debian systemd distros (openSUSE/Alma/Rocky/Fedora/Arch) may ship no DHCP
-    # client wiring for eth0; SLIRP NAT provides DHCP at 10.0.2.2. Install a minimal
-    # match-all network file and enable networkd so the guest comes up online.
+    # client wiring for eth0. The passt plane pins the guest to the host's own
+    # addressing passed on the kernel command line; write it statically when present
+    # and keep DHCP as the fallback so the guest comes up online either way.
+    GUEST_IP="$(kernel_argument orchestella.guest_ip || true)"
+    GUEST_GW="$(kernel_argument orchestella.guest_gw || true)"
+    GUEST_MASK="$(kernel_argument orchestella.guest_mask || true)"
+    GUEST_DNS="$(kernel_argument orchestella.guest_dns || true)"
     mkdir -p "$target_root/etc/systemd/network" "$target_root/etc/systemd/system/multi-user.target.wants"
-    cat > "$target_root/etc/systemd/network/80-orchestella-dhcp.network" <<'EOF'
+    if [ -n "$GUEST_IP" ]; then
+        _prefix=24
+        if [ -n "$GUEST_MASK" ]; then
+            _prefix=0; _acc=0
+            for _octet in $(printf '%s' "$GUEST_MASK" | tr '.' ' '); do
+                case "$_octet" in
+                    255) _acc=$((_acc + 8)) ;;
+                    254) _acc=$((_acc + 7)) ;;
+                    252) _acc=$((_acc + 6)) ;;
+                    248) _acc=$((_acc + 5)) ;;
+                    240) _acc=$((_acc + 4)) ;;
+                    224) _acc=$((_acc + 3)) ;;
+                    192) _acc=$((_acc + 2)) ;;
+                    128) _acc=$((_acc + 1)) ;;
+                esac
+                break
+            done
+            _prefix=$_acc
+        fi
+        cat > "$target_root/etc/systemd/network/80-orchestella.network" <<EOF
+[Match]
+Name=eth0 en* end*
+
+[Network]
+Address=$GUEST_IP/$_prefix
+${GUEST_GW:+Gateway=$GUEST_GW}
+${GUEST_DNS:+DNS=$GUEST_DNS}
+EOF
+        chmod 0644 "$target_root/etc/systemd/network/80-orchestella.network"
+        ln -sf /usr/lib/systemd/system/systemd-networkd.service \
+            "$target_root/etc/systemd/system/multi-user.target.wants/systemd-networkd.service" 2>/dev/null || true
+        ln -sf /usr/lib/systemd/system/systemd-resolved.service \
+            "$target_root/etc/systemd/system/multi-user.target.wants/systemd-resolved.service" 2>/dev/null || true
+        if [ ! -e "$target_root/etc/resolv.conf" ] || [ ! -s "$target_root/etc/resolv.conf" ]; then
+            rm -f "$target_root/etc/resolv.conf"
+            if [ -n "$GUEST_DNS" ]; then
+                printf 'nameserver %s\n' "$GUEST_DNS" > "$target_root/etc/resolv.conf"
+            else
+                printf 'nameserver 8.8.8.8\n' > "$target_root/etc/resolv.conf"
+            fi
+            chmod 0644 "$target_root/etc/resolv.conf" 2>/dev/null || true
+        fi
+    else
+        cat > "$target_root/etc/systemd/network/80-orchestella-dhcp.network" <<'EOF'
 [Match]
 Name=eth0 en* end*
 
 [Network]
 DHCP=yes
 EOF
-    chmod 0644 "$target_root/etc/systemd/network/80-orchestella-dhcp.network"
-    ln -sf /usr/lib/systemd/system/systemd-networkd.service \
-        "$target_root/etc/systemd/system/multi-user.target.wants/systemd-networkd.service" 2>/dev/null || true
-    ln -sf /usr/lib/systemd/system/systemd-resolved.service \
-        "$target_root/etc/systemd/system/multi-user.target.wants/systemd-resolved.service" 2>/dev/null || true
-    if [ ! -e "$target_root/etc/resolv.conf" ] || [ ! -s "$target_root/etc/resolv.conf" ]; then
-        rm -f "$target_root/etc/resolv.conf"
-        printf 'nameserver 10.0.2.3\nnameserver 8.8.8.8\n' > "$target_root/etc/resolv.conf" 2>/dev/null || true
-        chmod 0644 "$target_root/etc/resolv.conf" 2>/dev/null || true
+        chmod 0644 "$target_root/etc/systemd/network/80-orchestella-dhcp.network"
+        ln -sf /usr/lib/systemd/system/systemd-networkd.service \
+            "$target_root/etc/systemd/system/multi-user.target.wants/systemd-networkd.service" 2>/dev/null || true
+        ln -sf /usr/lib/systemd/system/systemd-resolved.service \
+            "$target_root/etc/systemd/system/multi-user.target.wants/systemd-resolved.service" 2>/dev/null || true
+        if [ ! -e "$target_root/etc/resolv.conf" ] || [ ! -s "$target_root/etc/resolv.conf" ]; then
+            rm -f "$target_root/etc/resolv.conf"
+            printf 'nameserver 10.0.2.3\nnameserver 8.8.8.8\n' > "$target_root/etc/resolv.conf" 2>/dev/null || true
+            chmod 0644 "$target_root/etc/resolv.conf" 2>/dev/null || true
+        fi
     fi
 }
 
@@ -330,10 +379,13 @@ install_official_debian_systemd_flavor() {
 
     install_systemd_guest_agent_service "$debian_root"
 
-    # Outbound network proxy relay installation & systemd service (ADR-0008, ADR-0010)
+    # Outbound proxy relay installation & systemd service (ADR-0008, ADR-0010):
+    # optional and gated on orchestella.proxy_enabled=1 — the passt plane provides
+    # direct NAT, so a stale proxy must never black-hole package traffic.
     rm -f "$debian_root/etc/systemd/system/droidlayer-proxy-relay.service"
     rm -f "$debian_root/etc/systemd/system/multi-user.target.wants/droidlayer-proxy-relay.service"
     rm -f "$debian_root/etc/apt/apt.conf.d/99droidlayer-proxy"
+    rm -f "$debian_root/etc/apt/apt.conf.d/99orchestella-proxy"
     rm -f "$debian_root/usr/sbin/droidlayer-proxy-relay"
     if [ -f /opt/orchestella/proxy-relay ]; then
         mkdir -p "$debian_root/usr/sbin"
@@ -344,8 +396,7 @@ install_official_debian_systemd_flavor() {
     cat > "$debian_root/etc/systemd/system/orchestella-proxy-relay.service" <<'EOF'
 [Unit]
 Description=Orchestella Outbound Network Proxy Relay
-After=systemd-udevd.service network.target
-Wants=systemd-udevd.service
+ConditionKernelCommandLine=orchestella.proxy_enabled=1
 ConditionPathExists=/usr/sbin/orchestella-proxy-relay
 ConditionFileIsExecutable=/usr/bin/perl
 
@@ -361,13 +412,6 @@ EOF
     chmod 0644 "$debian_root/etc/systemd/system/orchestella-proxy-relay.service"
     ln -sf /etc/systemd/system/orchestella-proxy-relay.service \
         "$debian_root/etc/systemd/system/multi-user.target.wants/orchestella-proxy-relay.service"
-
-    mkdir -p "$debian_root/etc/apt/apt.conf.d"
-    cat > "$debian_root/etc/apt/apt.conf.d/99orchestella-proxy" <<'EOF'
-Acquire::http::Proxy "http://127.0.0.1:8080/";
-Acquire::https::Proxy "http://127.0.0.1:8080/";
-EOF
-    chmod 0644 "$debian_root/etc/apt/apt.conf.d/99orchestella-proxy"
 
     if [ -f "$debian_root/opt/orchestella/firstboot.sh" ]; then
         cat > "$debian_root/etc/systemd/system/orchestella-firstboot.service" <<'EOF'
@@ -479,13 +523,45 @@ mount -t devpts devpts /dev/pts 2>/dev/null || true
 mount -t tmpfs tmpfs /dev/shm 2>/dev/null || true
 mount -t tmpfs tmpfs /run 2>/dev/null || true
 
+kernel_argument() {
+    key="$1"
+    command_line="$(cat /proc/cmdline)"
+    for argument in $command_line; do
+        case "$argument" in
+            "$key"=*) printf '%s\n' "${argument#*=}"; return 0 ;;
+        esac
+    done
+    return 1
+}
+
 ip link set lo up 2>/dev/null || ifconfig lo 127.0.0.1 up 2>/dev/null || true
 ip link set eth0 up 2>/dev/null || true
-ip addr add 10.0.2.15/24 dev eth0 2>/dev/null || ifconfig eth0 10.0.2.15 netmask 255.255.255.0 up 2>/dev/null || true
-ip route add default via 10.0.2.2 dev eth0 2>/dev/null || route add default gw 10.0.2.2 2>/dev/null || true
+# Guest addressing comes from the host via kernel arguments (the passt plane pins the
+# guest to the host's own address); fall back to the classic slirp allocation.
+GUEST_IP="$(kernel_argument orchestella.guest_ip || true)"
+GUEST_GW="$(kernel_argument orchestella.guest_gw || true)"
+GUEST_MASK="$(kernel_argument orchestella.guest_mask || true)"
+if [ -n "$GUEST_IP" ]; then
+    ip addr add "$GUEST_IP/${GUEST_MASK:-255.255.255.0}" dev eth0 2>/dev/null \
+        || ifconfig eth0 "$GUEST_IP" netmask "${GUEST_MASK:-255.255.255.0}" up 2>/dev/null || true
+    if [ -n "$GUEST_GW" ]; then
+        ip route add default via "$GUEST_GW" dev eth0 2>/dev/null \
+            || route add default gw "$GUEST_GW" 2>/dev/null || true
+    fi
+else
+    ip addr add 10.0.2.15/24 dev eth0 2>/dev/null \
+        || ifconfig eth0 10.0.2.15 netmask 255.255.255.0 up 2>/dev/null || true
+    ip route add default via 10.0.2.2 dev eth0 2>/dev/null \
+        || route add default gw 10.0.2.2 2>/dev/null || true
+fi
 
 rm -f /etc/resolv.conf 2>/dev/null || true
-printf "nameserver 10.0.2.3\nnameserver 8.8.8.8\nnameserver 1.1.1.1\n" > /etc/resolv.conf
+GUEST_DNS="$(kernel_argument orchestella.guest_dns || true)"
+if [ -n "$GUEST_DNS" ]; then
+    printf 'nameserver %s\n' "$GUEST_DNS" > /etc/resolv.conf
+else
+    printf "nameserver 10.0.2.3\nnameserver 8.8.8.8\nnameserver 1.1.1.1\n" > /etc/resolv.conf
+fi
 chmod 0644 /etc/resolv.conf 2>/dev/null || true
 
 if [ -f /opt/orchestella/firstboot.sh ] && [ ! -f /opt/orchestella/.firstboot-done ]; then
@@ -691,19 +767,17 @@ EOF
 export LS_COLORS="rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=30;41:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;33:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;33:*.war=01;33:*.7z=01;33:*.rar=01;33:*.c=00;36:*.h=00;36:*.cpp=00;36:*.hpp=00;36:*.cc=00;36:*.cxx=00;36:*.rs=01;33:*.py=00;33:*.go=00;34:*.java=00;35:*.kt=01;35:*.kts=01;35:*.js=00;32:*.ts=01;32:*.jsx=00;32:*.tsx=01;32:*.sh=01;32:*.bash=01;32:*.json=00;33:*.xml=00;33:*.yaml=00;33:*.yml=00;33:*.toml=00;33:*.md=00;37:*.txt=00;37"
 export LSCOLORS="Gxfxcxdxbxegedabagacad"
 
-# Outbound network proxy relay (Orchestella Bridge proxy)
-export http_proxy="${http_proxy:-http://127.0.0.1:8080}"
-export https_proxy="${https_proxy:-http://127.0.0.1:8080}"
-export HTTP_PROXY="${HTTP_PROXY:-http://127.0.0.1:8080}"
-export HTTPS_PROXY="${HTTPS_PROXY:-http://127.0.0.1:8080}"
-export all_proxy="${all_proxy:-socks5://127.0.0.1:1080}"
-export ALL_PROXY="${ALL_PROXY:-socks5://127.0.0.1:1080}"
-
-# Start proxy relay daemon if binary exists, perl is available, and not yet running
-if [ -x /usr/sbin/orchestella-proxy-relay ] && command -v perl >/dev/null 2>&1; then
-    if ! pidof orchestella-proxy-relay >/dev/null 2>&1; then
-        /usr/sbin/orchestella-proxy-relay >/tmp/orchestella-proxy-relay.log 2>&1 &
-    fi
+# Outbound proxy relay is OPTIONAL: the passt plane gives the guest direct NAT, so the
+# proxy exports are only set when the host explicitly enabled the relay
+# (orchestella.proxy_enabled=1) AND the relay binary is installed.
+if grep -qs 'orchestella.proxy_enabled=1' /proc/cmdline 2>/dev/null \
+    && [ -x /usr/sbin/orchestella-proxy-relay ]; then
+    export http_proxy="${http_proxy:-http://127.0.0.1:8080}"
+    export https_proxy="${https_proxy:-http://127.0.0.1:8080}"
+    export HTTP_PROXY="${HTTP_PROXY:-http://127.0.0.1:8080}"
+    export HTTPS_PROXY="${HTTPS_PROXY:-http://127.0.0.1:8080}"
+    export all_proxy="${all_proxy:-socks5://127.0.0.1:1080}"
+    export ALL_PROXY="${ALL_PROXY:-socks5://127.0.0.1:1080}"
 fi
 
 if [ -f /etc/orchestella/shell/aliases.sh ]; then

@@ -123,28 +123,32 @@
                             android:id="@+id/system_cpu_chip"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
-                            android:layout_weight="1"
+                            android:layout_weight="1.1"
                             android:layout_marginStart="12dp"
                             android:drawableStart="@drawable/ic_cpu"
-                            android:drawablePadding="4dp"
-                            android:gravity="center_vertical|end"
+                            android:drawablePadding="6dp"
+                            android:gravity="center_vertical"
                             android:text="8 核心 CPU"
                             android:textSize="12sp"
                             android:textColor="?attr/colorOnSurfaceVariant" />
 
-                        <TextView
-                            android:id="@+id/system_ram_chip"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1.2"
-                            android:layout_marginStart="12dp"
-                            android:drawableStart="@drawable/ic_ram"
-                            android:drawablePadding="4dp"
-                            android:gravity="center_vertical|end"
-                            android:text="4.2 GB / 12 GB"
-                            android:textSize="12sp"
-                            android:textColor="?attr/colorOnSurfaceVariant" />
-                    </LinearLayout>
+                        <io.github.nyzeep.orchestella.ui.RingProgressView
+                            android:id="@+id/ring_memory"
+                            android:layout_width="72dp"
+                            android:layout_height="72dp" />
+
+                        <io.github.nyzeep.orchestella.ui.RingProgressView
+                            android:id="@+id/ring_storage"
+                            android:layout_width="72dp"
+                            android:layout_height="72dp"
+                            android:layout_marginStart="10dp" />
+
+                        <io.github.nyzeep.orchestella.ui.RingProgressView
+                            android:id="@+id/ring_battery"
+                            android:layout_width="72dp"
+                            android:layout_height="72dp"
+                            android:layout_marginStart="10dp" />
+</LinearLayout>
 
                     <!-- Detailed Runtime Floor & Strategy status -->
                     <TextView

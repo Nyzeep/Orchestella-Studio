@@ -20,6 +20,8 @@ import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.drawerlayout.widget.DrawerLayout;
 import io.github.nyzeep.orchestella.runtime.engineqemu.QemuProcessLauncher;
+import io.github.nyzeep.orchestella.ui.theme.AppTheme;
+import io.github.nyzeep.orchestella.ui.theme.ThemeStore;
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle;
 import io.github.nyzeep.orchestella.terminal.MultiTerminalSessionManager;
 import io.github.nyzeep.orchestella.terminal.TerminalDrawerPanel;
@@ -59,6 +61,7 @@ public class TerminalActivity extends Activity {
     private InstanceLifecycle.FileStore instanceStore;
     private InstanceLifecycle.Controller instanceController;
     private DrawerLayout drawerLayout;
+    private LinearLayout rootLayout;
     private TerminalDrawerPanel drawerPanel;
     private Button btnDrawerHandle;
     private MultiTerminalSessionManager multiManager;
@@ -144,7 +147,7 @@ public class TerminalActivity extends Activity {
             }
         });
 
-        LinearLayout rootLayout = new LinearLayout(this);
+        rootLayout = new LinearLayout(this);
         rootLayout.setOrientation(LinearLayout.VERTICAL);
         rootLayout.setBackgroundColor(DraculaPalette.BACKGROUND);
 
@@ -323,8 +326,35 @@ public class TerminalActivity extends Activity {
             return insets;
         });
 
+        applyAppearance();
+
         reconcileAndConnect();
         handleCommandExtra(getIntent());
+    }
+
+    private void applyAppearance() {
+        try {
+            ThemeStore store = new ThemeStore(this);
+            AppTheme theme = store.resolve();
+            int[] ansi = new int[theme.getAnsi().size()];
+            for (int i = 0; i < ansi.length; i++) {
+                ansi[i] = theme.getAnsi().get(i);
+            }
+            DraculaPalette.setPaletteOverride(
+                    ansi, theme.getTerminalForeground(), theme.getTerminalBackground());
+            rootLayout.setBackgroundColor(theme.getBackground());
+            if (terminalView != null) {
+                terminalView.applyTheme(theme,
+                        store.terminalFontSizeSp(),
+                        store.terminalLetterSpacingEm(),
+                        store.terminalLineSpacingPx());
+            }
+            if (offlineCardView != null) {
+                offlineCardView.setBackgroundColor(theme.getBackground());
+            }
+        } catch (Exception e) {
+            android.util.Log.w("TerminalActivity", "appearance apply failed", e);
+        }
     }
 
     private BridgeConnector.Events eventsForBridge() {

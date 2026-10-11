@@ -8,14 +8,14 @@ import org.junit.Test;
 public class QemuInstanceLauncherSanitizeTest {
 
     @Test
-    public void testSanitizeSpecRemovesNetdevAndMapsGpu() {
+    public void testSanitizeSpecMapsGpuAndKeepsPasstNetworkPlane() {
         String[] original = new String[]{
                 "/path/to/libdroidlayer_qemu.so",
                 "-machine", "virt,gic-version=3",
                 "-m", "1024M",
                 "-device", "virtio-gpu-gl-device",
-                "-netdev", "user,id=net0,ipv6=off",
-                "-device", "virtio-net-pci,netdev=net0",
+                "-netdev", "stream,id=orchestella-net,server=off,addr.type=unix,addr.path=/x/passt.sock",
+                "-device", "virtio-net-pci,netdev=orchestella-net",
                 "-device", "virtio-serial-device"
         };
 
@@ -26,6 +26,8 @@ public class QemuInstanceLauncherSanitizeTest {
                 "-machine", "virt,gic-version=3",
                 "-m", "1024M",
                 "-device", "virtio-gpu-device",
+                "-netdev", "stream,id=orchestella-net,server=off,addr.type=unix,addr.path=/x/passt.sock",
+                "-device", "virtio-net-pci,netdev=orchestella-net",
                 "-device", "virtio-serial-device"
         };
 

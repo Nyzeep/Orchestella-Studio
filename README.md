@@ -5,7 +5,7 @@
 **无需 Root 的 Android 原生双引擎 Linux 运行环境与移动工作站**  
 *Native Dual-Engine Full Linux Runtime & Mobile Workstation for Android Without Root*
 
-[![Release](https://img.shields.io/badge/Release-v0.1.5-blue.svg?style=flat-square)](https://github.com/Nyzeep/Orchestella-Studio/releases)
+[![Release](https://img.shields.io/badge/Release-v0.2.0-blue.svg?style=flat-square)](https://github.com/Nyzeep/Orchestella-Studio/releases)
 [![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen.svg?style=flat-square)](https://github.com/Nyzeep/Orchestella-Studio/actions)
 [![License](https://img.shields.io/badge/License-Apache--2.0-orange.svg?style=flat-square)](LICENSE)
 [![Android](https://img.shields.io/badge/Android-8.0%2B%20(API%2026%2B)-green.svg?style=flat-square)](https://developer.android.com)

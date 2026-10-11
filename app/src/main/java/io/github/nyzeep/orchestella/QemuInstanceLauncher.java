@@ -205,6 +205,7 @@ public final class QemuInstanceLauncher {
     }
 
     private static final long INSTANCE_MEMORY_MB = 512;
+    private static final String TAG = "OrchestellaQemu";
 
     private final Context context;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -246,24 +247,40 @@ public final class QemuInstanceLauncher {
         VmHardwareConfig config = parameters.hardwareConfig != null
                 ? parameters.hardwareConfig
                 : VmHardwareConfig.defaultConfig();
+
+        // Rootless network plane: gvproxy bridges the guest onto the host stack (the
+        // packaged QEMU has no slirp; passt is blocked by Android SELinux). Guest
+        // addressing rides the kernel command line so distros without a DHCP client
+        // still come up deterministically.
+        NetworkGatewayDaemon.Running gateway =
+                NetworkGatewayDaemon.start(context, parameters.instanceId,
+                        Paths.get(parameters.runtimeDirectory).toFile());
+        String guestKernelArgs = "orchestella.guest_ip=" + NetworkGatewayDaemon.GUEST_IP
+                + " orchestella.guest_gw=" + NetworkGatewayDaemon.GUEST_GATEWAY
+                + " orchestella.guest_mask=" + NetworkGatewayDaemon.GUEST_NETMASK
+                + " orchestella.guest_dns=" + NetworkGatewayDaemon.GUEST_DNS
+                + " orchestella.proxy_enabled=0";
+
         if (config.gpuAccelerationEnabled()) {
-            Log.i("OrchestellaQemu", "Launching QEMU with virtio-gpu-gl-device (GPU acceleration enabled)");
+            Log.i(TAG, "Launching QEMU with virtio-gpu-gl-device (GPU acceleration enabled)");
             VirglJniBridge.init(1024, true);
         } else {
-            Log.i("OrchestellaQemu", "Launching QEMU with virtio-gpu-device (software fallback)");
+            Log.i(TAG, "Launching QEMU with virtio-gpu-device (software fallback)");
         }
 
-        String[] spec = QemuLaunchSpec.build(
+        String[] spec = QemuLaunchSpec.buildWithPasst(
                 Paths.get(nativeLibraryDir, "libdroidlayer_qemu.so").toString(),
                 paths.kernel.toString(),
                 paths.initramfs.toString(),
                 parameters.instanceRootVolume,
                 controlSocket,
                 terminalSocket,
-                config);
+                config,
+                gateway.unixSocketPath,
+                guestKernelArgs);
 
         String[] sanitizedSpec = sanitizeSpecForTargetBinary(spec);
-        Log.i("OrchestellaQemu", "Launching QEMU process with sanitized arguments");
+        Log.i(TAG, "Launching QEMU process with sanitized arguments");
 
         QemuProcessLauncher.ProcessFactory factory = currentSpec -> {
             Process process = new ProcessBuilder(currentSpec).redirectErrorStream(true).start();
@@ -303,6 +320,7 @@ public final class QemuInstanceLauncher {
                 Thread.currentThread().interrupt();
             } finally {
                 VirglJniBridge.cleanup();
+                NetworkGatewayDaemon.stop(gateway);
             }
         }, "qemu-exit-" + parameters.instanceId);
         watcher.setDaemon(true);
@@ -314,8 +332,8 @@ public final class QemuInstanceLauncher {
 
     /**
      * Adapts abstract hypervisor arguments to the physical arm64 QEMU binary packaged in APK:
-     * 1. virtio-gpu-device is used for VirGL acceleration in this binary build.
-     * 2. SLIRP (user netdev) is omitted if unsupported to prevent immediate exit.
+     * virtio-gpu-gl-device is bound to virtio-gpu-device in this binary build. The passt
+     * -netdev/-device pair is no longer stripped: the passt stream backend is the network plane.
      */
     static String[] sanitizeSpecForTargetBinary(String[] spec) {
         if (spec == null) {
@@ -324,16 +342,6 @@ public final class QemuInstanceLauncher {
         java.util.List<String> list = new java.util.ArrayList<>();
         for (int i = 0; i < spec.length; i++) {
             String arg = spec[i];
-            if ("-netdev".equals(arg)) {
-                // Skip -netdev and its parameter because user/slirp is not compiled into packaged binary
-                i++;
-                continue;
-            }
-            if ("-device".equals(arg) && i + 1 < spec.length && spec[i + 1].startsWith("virtio-net-")) {
-                // Skip -device virtio-net-* when netdev is omitted
-                i++;
-                continue;
-            }
             if ("virtio-gpu-gl-device".equals(arg)) {
                 // In packaged arm64 binary, virgl acceleration is bound to virtio-gpu-device
                 list.add("virtio-gpu-device");

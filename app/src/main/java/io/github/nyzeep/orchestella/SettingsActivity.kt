@@ -16,6 +16,9 @@ import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.color.DynamicColors
 import com.google.android.material.materialswitch.MaterialSwitch
+import io.github.nyzeep.orchestella.ui.theme.AppTheme
+import io.github.nyzeep.orchestella.ui.theme.ThemeStore
+import androidx.activity.result.contract.ActivityResultContracts
 import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator
 import java.util.concurrent.Executors
 
@@ -45,6 +48,15 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var txtAvfBadge: TextView
     private lateinit var txtAvfDetails: TextView
     private lateinit var switchCursorBlink: MaterialSwitch
+    private lateinit var themeStore: ThemeStore
+    private val backgroundPicker = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri ?: return@registerForActivityResult
+        themeStore.setBackgroundUri(uri.toString())
+        themeStore.persistBackgroundPermission(this, uri)
+        Toast.makeText(this, "背景图片已更新", Toast.LENGTH_SHORT).show()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         DynamicColors.applyIfAvailable(this)
@@ -70,9 +82,11 @@ class SettingsActivity : AppCompatActivity() {
 
         settingsManager = SettingsManager(this)
         initViews()
+        themeStore = ThemeStore(this)
         setupMirrorSection()
         setupAvfSection()
         setupTerminalSection()
+        setupThemeSection()
     }
 
     override fun onDestroy() {
@@ -199,5 +213,92 @@ class SettingsActivity : AppCompatActivity() {
                 Toast.LENGTH_SHORT
             ).show()
         }
+    }
+
+    private fun setupThemeSection() {
+        val btnPickTheme = findViewById<MaterialButton?>(R.id.btn_pick_theme)
+        val btnPickAccent = findViewById<MaterialButton?>(R.id.btn_pick_accent)
+        val btnPickBackground = findViewById<MaterialButton?>(R.id.btn_pick_background)
+        val btnClearBackground = findViewById<MaterialButton?>(R.id.btn_clear_background)
+        val fontLabel = findViewById<android.widget.TextView?>(R.id.tv_font_size_label)
+        val fontSeek = findViewById<android.widget.SeekBar?>(R.id.seek_terminal_font)
+        val spacingLabel = findViewById<android.widget.TextView?>(R.id.tv_letter_spacing_label)
+        val spacingSeek = findViewById<android.widget.SeekBar?>(R.id.seek_letter_spacing)
+        if (btnPickTheme == null || fontSeek == null) return
+
+        fun refreshLabels() {
+            fontLabel?.text = "终端字号：${themeStore.terminalFontSizeSp()}sp"
+            fontSeek.progress = themeStore.terminalFontSizeSp() - ThemeStore.MIN_TERMINAL_FONT_SP
+            val em = themeStore.terminalLetterSpacingEm()
+            spacingLabel?.text = "终端字间距：%.2fem".format(em)
+            spacingSeek?.progress = (em * 100).toInt()
+        }
+        refreshLabels()
+
+        btnPickTheme.setOnClickListener {
+            val themes = io.github.nyzeep.orchestella.ui.theme.ThemeCatalog.all
+            val names = themes.map { it.displayName + if (it.isDark) " · 暗" else " · 亮" }.toTypedArray()
+            val current = themes.indexOfFirst { it.id == themeStore.themeId() }
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("选择主题")
+                .setSingleChoiceItems(names, current) { dialog, which ->
+                    themeStore.setThemeId(themes[which].id)
+                    themeStore.setCustomAccent(null)
+                    themeStore.setCustomText(null)
+                    refreshLabels()
+                    dialog.dismiss()
+                    Toast.makeText(this, "主题：${themes[which].displayName}", Toast.LENGTH_SHORT).show()
+                }
+                .setNegativeButton("取消", null)
+                .show()
+        }
+
+        btnPickAccent?.setOnClickListener {
+            val accents = listOf(
+                "紫" to 0xFFBD93F9.toInt(), "青" to 0xFF8BE9FD.toInt(), "粉" to 0xFFFF79C6.toInt(),
+                "绿" to 0xFF50FA7B.toInt(), "蓝" to 0xFF61AFEF.toInt(), "橙" to 0xFFFE8019.toInt(),
+                "黄" to 0xFFF1FA8C.toInt(), "红" to 0xFFFF5555.toInt(),
+            )
+            val names = accents.map { it.first }.toTypedArray()
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("自定义强调色（影响发光与仪表）")
+                .setItems(names) { dialog, which ->
+                    themeStore.setCustomAccent(accents[which].second)
+                    refreshLabels()
+                    dialog.dismiss()
+                }
+                .setNeutralButton("跟随主题") { _, _ -> themeStore.setCustomAccent(null) }
+                .setNegativeButton("取消", null)
+                .show()
+        }
+
+        btnPickBackground?.setOnClickListener {
+            backgroundPicker.launch(arrayOf("image/*"))
+        }
+
+        btnClearBackground?.setOnClickListener {
+            themeStore.setBackgroundUri(null)
+            Toast.makeText(this, "已恢复纯色背景", Toast.LENGTH_SHORT).show()
+        }
+
+        fontSeek.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
+                val sp = ThemeStore.MIN_TERMINAL_FONT_SP + progress
+                themeStore.setTerminalFontSizeSp(sp)
+                fontLabel?.text = "终端字号：${themeStore.terminalFontSizeSp()}sp"
+            }
+            override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {}
+        })
+
+        spacingSeek?.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
+                val em = progress / 100f
+                themeStore.setTerminalLetterSpacingEm(em)
+                spacingLabel?.text = "终端字间距：%.2fem".format(em)
+            }
+            override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {}
+        })
     }
 }
