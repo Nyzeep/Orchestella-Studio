@@ -25,4 +25,13 @@
     <!-- Distro Palette -->
     <color name="distro_alpine_tint">#0D597F</color>
     <color name="distro_debian_tint">#D70A53</color>
+
+    <!-- Glow (泛光) accents, mirroring DraculaPalette constants -->
+    <color name="glow_purple">#FFBD93F9</color>
+    <color name="glow_cyan">#FF8BE9FD</color>
+    <color name="glow_pink">#FFFF79C6</color>
+    <color name="glow_purple_soft">#40BD93F9</color>
+    <color name="glow_purple_faint">#26BD93F9</color>
+    <color name="glow_cyan_soft">#408BE9FD</color>
+    <color name="glow_cyan_faint">#268BE9FD</color>
 </resources>

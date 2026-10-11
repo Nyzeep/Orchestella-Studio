@@ -63,12 +63,22 @@ public final class TerminalDrawerPanel extends LinearLayout {
         tvHeader.setTextColor(DraculaPalette.FOREGROUND);
         LinearLayout.LayoutParams headerLp = new LinearLayout.LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
-        headerLp.setMargins(0, dpToPx(8), 0, dpToPx(12));
+        headerLp.setMargins(0, dpToPx(8), 0, dpToPx(2));
         addView(tvHeader, headerLp);
 
-        // Top: "+ 新建终端" prominent action button
+        // Honest labeling: each entry is an independent output view over the one guest shell.
+        TextView tvHeaderHint = new TextView(context);
+        tvHeaderHint.setText("输出视图共享同一 Shell 会话");
+        tvHeaderHint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
+        tvHeaderHint.setTextColor(DraculaPalette.COMMENT);
+        LinearLayout.LayoutParams hintLp = new LinearLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
+        hintLp.setMargins(0, 0, 0, dpToPx(10));
+        addView(tvHeaderHint, hintLp);
+
+        // Top: "+ 新建输出视图" prominent action button
         Button btnNewTerminal = new Button(context, null, android.R.attr.buttonStyleSmall);
-        btnNewTerminal.setText("+ 新建终端");
+        btnNewTerminal.setText("+ 新建输出视图");
         btnNewTerminal.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
         btnNewTerminal.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         btnNewTerminal.setTextColor(0xFF282A36);

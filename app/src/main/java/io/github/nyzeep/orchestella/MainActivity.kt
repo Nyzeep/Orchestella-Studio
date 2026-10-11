@@ -220,17 +220,10 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.btn_create_linux_instance)?.setOnClickListener { launchCreationWizard("ubuntu") }
         createUbuntuButton.setOnClickListener { launchCreationWizard("ubuntu") }
         createDebianButton.setOnClickListener { launchCreationWizard("debian") }
-        findViewById<View>(R.id.card_create_ubuntu)?.setOnClickListener { launchCreationWizard("ubuntu") }
-        findViewById<View>(R.id.card_create_debian)?.setOnClickListener { launchCreationWizard("debian") }
-        findViewById<View>(R.id.card_create_fedora)?.setOnClickListener { launchCreationWizard("fedora") }
         findViewById<View>(R.id.create_fedora)?.setOnClickListener { launchCreationWizard("fedora") }
-        findViewById<View>(R.id.card_create_arch)?.setOnClickListener { launchCreationWizard("arch") }
         findViewById<View>(R.id.create_arch)?.setOnClickListener { launchCreationWizard("arch") }
-        findViewById<View>(R.id.card_create_opensuse)?.setOnClickListener { launchCreationWizard("opensuse") }
         findViewById<View>(R.id.create_opensuse)?.setOnClickListener { launchCreationWizard("opensuse") }
-        findViewById<View>(R.id.card_create_almalinux)?.setOnClickListener { launchCreationWizard("almalinux") }
         findViewById<View>(R.id.create_almalinux)?.setOnClickListener { launchCreationWizard("almalinux") }
-        findViewById<View>(R.id.card_create_rocky)?.setOnClickListener { launchCreationWizard("rocky") }
         findViewById<View>(R.id.create_rocky)?.setOnClickListener { launchCreationWizard("rocky") }
 
         upgradeAuthorizationButton.setOnClickListener { showAvfAuthorizationWizard() }

@@ -31,6 +31,11 @@ public final class DraculaPalette {
     public static final int COLOR_BRIGHT_CYAN = 0xFFA4FFFF;
     public static final int COLOR_BRIGHT_WHITE = 0xFFFFFFFF;
 
+    // Glow (泛光) accents for hero surfaces and rings; mirrored in res/values/colors.xml
+    public static final int GLOW_PURPLE = 0xFFBD93F9;
+    public static final int GLOW_CYAN = 0xFF8BE9FD;
+    public static final int GLOW_PINK = 0xFFFF79C6;
+
     private static final int[] ANSI_16 = {
             COLOR_BLACK,
             COLOR_RED,

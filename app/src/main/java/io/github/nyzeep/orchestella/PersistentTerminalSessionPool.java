@@ -37,6 +37,7 @@ public final class PersistentTerminalSessionPool {
         private final AtomicBoolean pumpFinished = new AtomicBoolean(false);
         private final ReentrantReadWriteLock rwLock = new ReentrantReadWriteLock();
         private final Thread pumpThread;
+        private volatile java.util.function.Consumer<String> sessionEndListener;
 
         public SessionHolder(String instanceId, ExecutionSession session) {
             this(instanceId, session, TerminalRingBuffer.DEFAULT_MAX_CAPACITY);
@@ -52,6 +53,15 @@ public final class PersistentTerminalSessionPool {
             this.pumpThread.start();
         }
 
+        /**
+         * Registers a one-shot callback fired when the underlying stream pump ends
+         * (guest exit or stream failure). Invoked once, on the pump thread; callers
+         * must hop to their own UI thread.
+         */
+        public void setSessionEndListener(java.util.function.Consumer<String> listener) {
+            this.sessionEndListener = listener;
+        }
+
         private void pumpLoop() {
             try {
                 InputStream in = session.terminalOutput();
@@ -62,10 +72,12 @@ public final class PersistentTerminalSessionPool {
                         continue;
                     }
                     String chunk = new String(buffer, 0, count, StandardCharsets.UTF_8);
-                    ringBuffer.append(chunk);
-
-                    rwLock.readLock().lock();
+                    // Append and deliver under one write lock so attach() snapshots can
+                    // never overlap delivery: a chunk is either in the snapshot or handed
+                    // to the listener, never both and never neither.
+                    rwLock.writeLock().lock();
                     try {
+                        ringBuffer.append(chunk);
                         for (Consumer<String> listener : outputListeners) {
                             try {
                                 listener.accept(chunk);
@@ -73,12 +85,19 @@ public final class PersistentTerminalSessionPool {
                             }
                         }
                     } finally {
-                        rwLock.readLock().unlock();
+                        rwLock.writeLock().unlock();
                     }
                 }
             } catch (Exception ignored) {
             } finally {
                 pumpFinished.set(true);
+                Consumer<String> endListener = sessionEndListener;
+                if (endListener != null) {
+                    try {
+                        endListener.accept(instanceId);
+                    } catch (Exception ignored) {
+                    }
+                }
             }
         }
 
