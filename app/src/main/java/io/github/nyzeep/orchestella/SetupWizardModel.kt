@@ -54,11 +54,11 @@ class SetupWizardModel(
         FEDORA(
             id = "fedora",
             displayName = "Fedora Linux",
-            version = "41",
+            version = "43",
             tag = "🎩 前沿创新 · RPM 生态 · 开发者友好",
             description = "前沿创新、DNF 与 RPM 现代生态、开发者友好且兼容最新技术",
-            approxDownloadSize = "~120 MB",
-            rootfsFileName = "Fedora-Container-Minimal-Base-41-aarch64.tar.xz"
+            approxDownloadSize = "~50 MB",
+            rootfsFileName = "fedora-43-minimal-rootfs.tar.gz"
         ),
         ARCH(
             id = "arch",
@@ -66,35 +66,35 @@ class SetupWizardModel(
             version = "rolling",
             tag = "🏹 极客首选 · 滚动更新 · 软件前沿",
             description = "极客首选、pacman 极速滚动更新、软件前沿与轻量定制",
-            approxDownloadSize = "~180 MB",
+            approxDownloadSize = "~830 MB",
             rootfsFileName = "ArchLinuxARM-aarch64-latest.tar.gz"
         ),
         OPENSUSE(
             id = "opensuse",
-            displayName = "openSUSE Tumbleweed",
-            version = "tumbleweed",
-            tag = "🦎 稳定滚更 · YaST 工具 · 严谨规范",
-            description = "稳定滚动发行、严谨规范、zypper 依赖解析与企业级 JeOS 架构",
-            approxDownloadSize = "~110 MB",
-            rootfsFileName = "openSUSE-Tumbleweed-ARM-JeOS-rootfs.aarch64.tar.xz"
+            displayName = "openSUSE Leap",
+            version = "16.0",
+            tag = "🦎 严谨规范 · YaST 工具 · 企业基线",
+            description = "严谨规范、zypper 依赖解析与企业级基线架构，版本化稳定发布",
+            approxDownloadSize = "~31 MB",
+            rootfsFileName = "opensuse-leap-image.aarch64-1.0.0-networkd-Build18.75.tar.xz"
         ),
         ALMALINUX(
             id = "almalinux",
             displayName = "AlmaLinux",
-            version = "9.5",
+            version = "9",
             tag = "💼 企业就绪 · RHEL 二进制兼容 · 社区驱动",
             description = "企业级 Linux、1:1 二进制兼容 RHEL、DNF/RPM 稳定生态与长期支持保障",
-            approxDownloadSize = "~140 MB",
-            rootfsFileName = "AlmaLinux-9-Container-Minimal-9.5-aarch64.tar.xz"
+            approxDownloadSize = "~64 MB",
+            rootfsFileName = "AlmaLinux-9-Base-rootfs.tar.gz"
         ),
         ROCKY(
             id = "rocky",
             displayName = "Rocky Linux",
-            version = "9.5",
+            version = "9.6",
             tag = "🏔️ 坚如磐石 · 企业计算 · 生产级稳定",
             description = "生产级企业发行版、严格遵循上游 RHEL 标准、云原生容器与服务器首选",
-            approxDownloadSize = "~145 MB",
-            rootfsFileName = "Rocky-9-Container-Base-9.5-aarch64.tar.xz"
+            approxDownloadSize = "~60 MB",
+            rootfsFileName = "Rocky-9-Container-Base-9.6-20250531.0.aarch64.tar.xz"
         );
 
         fun manifest(): DistroManifest {
