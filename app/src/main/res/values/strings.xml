@@ -369,4 +369,6 @@
     <string name="about_btn_visit_project">访问项目主页</string>
     <string name="about_btn_copy_link">复制链接</string>
     <string name="about_link_copied">链接已复制到剪贴板</string>
+    <string name="about_avatar_desc">作者 GitHub 头像</string>
+    <string name="about_avatar_loading_failed">已显示字母头像（网络加载失败）</string>
 </resources>

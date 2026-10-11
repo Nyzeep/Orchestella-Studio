@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Letter-avatar fallback shown until the GitHub profile photo loads. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <gradient
+        android:type="linear"
+        android:angle="315"
+        android:startColor="@color/glow_purple"
+        android:endColor="@color/glow_cyan" />
+</shape>

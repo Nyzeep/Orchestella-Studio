@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Soft purple glow ring: layered translucent strokes bloom outward from the avatar. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:top="-4dp" android:bottom="-4dp" android:left="-4dp" android:right="-4dp">
+        <shape android:shape="oval">
+            <stroke android:width="8dp" android:color="@color/glow_purple_faint" />
+            <solid android:color="@android:color/transparent" />
+        </shape>
+    </item>
+    <item android:top="-2dp" android:bottom="-2dp" android:left="-2dp" android:right="-2dp">
+        <shape android:shape="oval">
+            <stroke android:width="5dp" android:color="@color/glow_purple_soft" />
+            <solid android:color="@android:color/transparent" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="oval">
+            <stroke android:width="2dp" android:color="@color/glow_purple" />
+            <solid android:color="@android:color/transparent" />
+        </shape>
+    </item>
+</layer-list>

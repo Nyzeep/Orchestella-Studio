@@ -62,6 +62,9 @@ public class TerminalActivity extends Activity {
     private TerminalDrawerPanel drawerPanel;
     private Button btnDrawerHandle;
     private MultiTerminalSessionManager multiManager;
+    private final java.util.concurrent.atomic.AtomicBoolean sessionDeathHandled =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+    private volatile boolean replayingTranscript = false;
     private final java.util.concurrent.ExecutorService sendExecutor =
             java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
                 Thread t = new Thread(r, "terminal-send-queue");
@@ -78,7 +81,7 @@ public class TerminalActivity extends Activity {
                 active.appendOutput(chunk);
             }
         }
-        if (terminalView != null) {
+        if (!replayingTranscript && terminalView != null) {
             terminalView.appendOutput(chunk);
         }
         if (drawerPanel != null) {
@@ -226,9 +229,9 @@ public class TerminalActivity extends Activity {
                             drawerLayout.closeDrawer(GravityCompat.END);
                         }
                         switchToSessionUi(newSession);
-                        newSession.appendOutput("\n[已开辟新终端: " + newSession.getTitle() + "]\n");
+                        newSession.appendOutput("\n[已新建输出视图: " + newSession.getTitle() + "（与当前 Shell 共享会话）]\n");
                         if (terminalView != null) {
-                            terminalView.appendOutput("\n[已开辟新终端: " + newSession.getTitle() + "]\n");
+                            terminalView.appendOutput("\n[已新建输出视图: " + newSession.getTitle() + "（与当前 Shell 共享会话）]\n");
                         }
                     } catch (Exception e) {
                         android.widget.Toast.makeText(TerminalActivity.this, e.getMessage(), android.widget.Toast.LENGTH_SHORT).show();
@@ -511,13 +514,31 @@ public class TerminalActivity extends Activity {
         }
 
         session = holder.rawSession();
+        sessionDeathHandled.set(false);
+        holder.setSessionEndListener(id -> {
+            // Guest exited or the stream pump ended: reconcile on the UI thread, which
+            // renders the offline/crashed recovery card instead of a dead terminal.
+            if (ui != null) {
+                ui.post(() -> {
+                    if (!sessionDeathHandled.compareAndSet(false, true)) {
+                        return;
+                    }
+                    reconcileAndConnect();
+                });
+            }
+        });
         String replay = holder.attach(terminalOutputListener);
         if (terminalView != null) {
-            terminalView.clear();
-            if (replay != null && !replay.isEmpty()) {
-                terminalView.appendOutput(replay);
-            } else {
-                terminalView.appendOutput("Orchestella Studio terminal (" + instanceId + ")\n[terminal connected]\n");
+            replayingTranscript = true;
+            try {
+                terminalView.clear();
+                if (replay != null && !replay.isEmpty()) {
+                    terminalView.appendOutput(replay);
+                } else {
+                    terminalView.appendOutput("Orchestella Studio terminal (" + instanceId + ")\n[terminal connected]\n");
+                }
+            } finally {
+                replayingTranscript = false;
             }
             terminalView.post(() -> terminalView.scrollToBottom());
         }
@@ -725,8 +746,10 @@ public class TerminalActivity extends Activity {
             try {
                 PersistentTerminalSessionPool.getInstance().sendBytes(this.instanceId, bytes);
             } catch (Exception e) {
-                if (ui != null) {
-                    ui.post(() -> append("[send failed: " + e.getMessage() + "]\n"));
+                // A dead or missing session means the guest is gone: reconcile once to
+                // swap in the offline/recovery card instead of spamming an error per key.
+                if (sessionDeathHandled.compareAndSet(false, true) && ui != null) {
+                    ui.post(this::reconcileAndConnect);
                 }
             }
         });
@@ -759,10 +782,17 @@ public class TerminalActivity extends Activity {
             return;
         }
         updateDrawerHandleText(targetSession);
-        terminalView.clear();
-        String transcript = targetSession.getTranscript();
-        if (transcript != null && !transcript.isEmpty()) {
-            terminalView.appendOutput(transcript);
+        // Pause live chunks while replaying the transcript so a chunk cannot land both in
+        // the replayed snapshot and the live view (out-of-order/duplicate rendering).
+        replayingTranscript = true;
+        try {
+            terminalView.clear();
+            String transcript = targetSession.getTranscript();
+            if (transcript != null && !transcript.isEmpty()) {
+                terminalView.appendOutput(transcript);
+            }
+        } finally {
+            replayingTranscript = false;
         }
         terminalView.post(() -> {
             terminalView.scrollToBottom();

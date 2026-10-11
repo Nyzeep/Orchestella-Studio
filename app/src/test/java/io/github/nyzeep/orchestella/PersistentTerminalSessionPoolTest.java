@@ -207,4 +207,58 @@ public final class PersistentTerminalSessionPoolTest {
         executor.shutdown();
         holder.close();
     }
+
+    @Test
+    public void testSessionEndListenerFiresOnStreamEof() throws Exception {
+        PipedOutputStream pipeOut = new PipedOutputStream();
+        PipedInputStream pipeIn = new PipedInputStream(pipeOut);
+        FakeExecutionSession session = new FakeExecutionSession(pipeIn, new ByteArrayOutputStream());
+        PersistentTerminalSessionPool.SessionHolder holder = pool.register("eof-vm", session);
+
+        CountDownLatch endLatch = new CountDownLatch(1);
+        List<String> endedIds = Collections.synchronizedList(new ArrayList<>());
+        holder.setSessionEndListener(id -> {
+            endedIds.add(id);
+            endLatch.countDown();
+        });
+
+        pipeOut.write("booting\n".getBytes(StandardCharsets.UTF_8));
+        pipeOut.flush();
+        Thread.sleep(30);
+        pipeOut.close(); // guest exit: pump hits EOF
+
+        assertTrue("Session end listener must fire on stream EOF", endLatch.await(3, TimeUnit.SECONDS));
+        assertEquals(1, endedIds.size());
+        assertEquals("eof-vm", endedIds.get(0));
+        assertFalse("Holder must report dead after EOF", holder.isAlive());
+    }
+
+    @Test
+    public void testAttachSnapshotAndDeliveryAreDisjoint() throws Exception {
+        PipedOutputStream pipeOut = new PipedOutputStream();
+        PipedInputStream pipeIn = new PipedInputStream(pipeOut);
+        FakeExecutionSession session = new FakeExecutionSession(pipeIn, new ByteArrayOutputStream());
+        PersistentTerminalSessionPool.SessionHolder holder = pool.register("atomic-vm", session);
+
+        List<String> delivered = Collections.synchronizedList(new ArrayList<>());
+        List<String> inconsistencies = Collections.synchronizedList(new ArrayList<>());
+        int attachRounds = 60;
+        for (int round = 0; round < attachRounds; round++) {
+            pipeOut.write(("chunk-" + round + "\n").getBytes(StandardCharsets.UTF_8));
+            pipeOut.flush();
+            Thread.sleep(2);
+            List<String> local = Collections.synchronizedList(new ArrayList<>());
+            String replay = holder.attach(local::add);
+            // The replayed snapshot must never contain a chunk that is ALSO delivered to
+            // the freshly attached listener, and every delivered chunk must be new.
+            for (String chunk : local) {
+                if (replay.contains(chunk)) {
+                    inconsistencies.add("duplicate chunk " + chunk + " in replay at round " + round);
+                }
+            }
+            holder.detach(local::add);
+        }
+        assertTrue("Attach/deliver overlap detected: " + inconsistencies, inconsistencies.isEmpty());
+        holder.close();
+    }
 }
