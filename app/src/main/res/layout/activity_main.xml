@@ -57,24 +57,50 @@
                 </LinearLayout>
 
                 <com.google.android.material.button.MaterialButton
+                    android:id="@+id/ssh_manager_button"
+                    style="@style/Widget.Material3.Button.IconButton.Filled.Tonal"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:minWidth="40dp"
+                    android:minHeight="40dp"
+                    android:layout_marginEnd="6dp"
+                    app:icon="@drawable/ic_ssh"
+                    app:iconSize="20dp"
+                    android:contentDescription="SSH 连接管理器" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/theme_toggle_button"
+                    style="@style/Widget.Material3.Button.IconButton.Filled.Tonal"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:minWidth="40dp"
+                    android:minHeight="40dp"
+                    android:layout_marginEnd="6dp"
+                    app:icon="@drawable/ic_palette"
+                    app:iconSize="20dp"
+                    android:contentDescription="切换主题风格" />
+
+                <com.google.android.material.button.MaterialButton
                     android:id="@+id/about_button"
                     style="@style/Widget.Material3.Button.IconButton.Filled.Tonal"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
-                    android:minWidth="48dp"
-                    android:minHeight="48dp"
-                    android:layout_marginEnd="8dp"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:minWidth="40dp"
+                    android:minHeight="40dp"
+                    android:layout_marginEnd="6dp"
                     app:icon="@drawable/ic_info"
+                    app:iconSize="20dp"
                     android:contentDescription="@string/about_title" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/settings_button"
                     style="@style/Widget.Material3.Button.IconButton.Filled.Tonal"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
-                    android:minWidth="48dp"
-                    android:minHeight="48dp"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:minWidth="40dp"
+                    android:minHeight="40dp"
                     app:icon="@drawable/ic_settings"
+                    app:iconSize="20dp"
                     android:contentDescription="@string/settings_title" />
             </LinearLayout>
 
@@ -85,10 +111,10 @@
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="16dp"
                 app:cardCornerRadius="20dp"
-                app:cardElevation="2dp"
+                app:cardElevation="0dp"
                 app:strokeWidth="1dp"
-                app:strokeColor="?attr/colorOutlineVariant"
-                app:cardBackgroundColor="?attr/colorSurfaceContainer">
+                app:strokeColor="@color/glass_card_stroke_dark"
+                app:cardBackgroundColor="@color/glass_card_bg_dark">
 
                 <LinearLayout
                     android:layout_width="match_parent"

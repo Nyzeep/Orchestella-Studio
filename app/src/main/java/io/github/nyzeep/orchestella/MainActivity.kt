@@ -213,6 +213,12 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.about_button)?.setOnClickListener {
             startActivity(Intent(this, AboutActivity::class.java))
         }
+        findViewById<View>(R.id.ssh_manager_button)?.setOnClickListener {
+            io.github.nyzeep.orchestella.ssh.SshManagerDialog.show(this)
+        }
+        findViewById<View>(R.id.theme_toggle_button)?.setOnClickListener {
+            showThemeSelectionDialog()
+        }
         val canCreate = assessment.canCreateFullLinuxInstance()
         setCreateButtonsEnabled(canCreate)
         if (!canCreate) {
@@ -420,17 +426,77 @@ class MainActivity : AppCompatActivity() {
             } else {
                 root.setBackgroundColor(theme.background)
             }
-            findViewById<com.google.android.material.card.MaterialCardView>(R.id.system_status_card)?.let {
-                it.setCardBackgroundColor(theme.surfaceTranslucent)
-                attachPressGlow(it, theme)
+
+            // Typography & Chrome
+            findViewById<TextView>(R.id.dashboard_title)?.setTextColor(theme.text)
+            findViewById<TextView>(R.id.dashboard_subtitle)?.setTextColor(theme.textDim)
+            findViewById<TextView>(R.id.instances_title)?.setTextColor(theme.text)
+            findViewById<TextView>(R.id.instances_empty)?.setTextColor(theme.textDim)
+
+            // Header Action Buttons
+            val iconBtnTint = android.content.res.ColorStateList.valueOf(theme.surfaceTranslucent)
+            val iconContentTint = android.content.res.ColorStateList.valueOf(theme.text)
+            listOf(R.id.ssh_manager_button, R.id.theme_toggle_button, R.id.about_button, R.id.settings_button).forEach { id ->
+                findViewById<com.google.android.material.button.MaterialButton>(id)?.let { btn ->
+                    btn.backgroundTintList = iconBtnTint
+                    btn.iconTint = iconContentTint
+                    btn.strokeColor = android.content.res.ColorStateList.valueOf((theme.glow and 0x00FFFFFF) or 0x33000000)
+                    btn.strokeWidth = (1 * resources.displayMetrics.density).toInt()
+                }
+            }
+
+            findViewById<com.google.android.material.card.MaterialCardView>(R.id.system_status_card)?.let { card ->
+                card.setCardBackgroundColor(theme.surfaceTranslucent)
+                card.strokeColor = (theme.glow and 0x00FFFFFF) or 0x33000000
+                card.strokeWidth = (1 * resources.displayMetrics.density).toInt()
+                attachPressGlow(card, theme)
             }
             findViewById<View>(R.id.card_create_linux_main)?.let { hero ->
                 hero.background = buildGlowCardDrawable(theme)
                 attachPressGlow(hero, theme)
             }
             renderGauges(theme)
+            applyThemeToInstances(theme)
         } catch (e: Exception) {
             android.util.Log.w("MainActivity", "theme apply failed", e)
+        }
+    }
+
+    private fun showThemeSelectionDialog() {
+        val themes = io.github.nyzeep.orchestella.ui.theme.ThemeCatalog.all
+        val names = themes.map { theme ->
+            if (theme.id == themeStore.themeId()) "● ${theme.displayName}" else "○ ${theme.displayName}"
+        }.toTypedArray()
+
+        AlertDialog.Builder(this)
+            .setTitle("美学主题 · 选择视觉风格")
+            .setItems(names) { _, which ->
+                val selected = themes[which]
+                themeStore.setThemeId(selected.id)
+                applyThemeToDashboard()
+                showInstances()
+                Toast.makeText(this, "已应用主题: ${selected.displayName}", Toast.LENGTH_SHORT).show()
+            }
+            .setPositiveButton("主题高级设置") { _, _ ->
+                startActivity(Intent(this, SettingsActivity::class.java))
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun applyThemeToInstances(theme: AppTheme) {
+        val list = findViewById<LinearLayout>(R.id.instance_list) ?: return
+        for (i in 0 until list.childCount) {
+            val cardView = list.getChildAt(i)
+            if (cardView is com.google.android.material.card.MaterialCardView) {
+                cardView.setCardBackgroundColor(theme.surfaceTranslucent)
+                cardView.strokeColor = (theme.glow and 0x00FFFFFF) or 0x30000000
+                cardView.strokeWidth = (1 * resources.displayMetrics.density).toInt()
+                cardView.findViewById<TextView>(R.id.card_distro_title)?.setTextColor(theme.text)
+                cardView.findViewById<TextView>(R.id.card_instance_id)?.setTextColor(theme.textDim)
+                cardView.findViewById<TextView>(R.id.card_hardware_specs)?.setTextColor(theme.textDim)
+                cardView.findViewById<TextView>(R.id.card_ip_address)?.setTextColor(theme.textDim)
+            }
         }
     }
 
@@ -649,6 +715,18 @@ class MainActivity : AppCompatActivity() {
             cardView.setOnLongClickListener {
                 showInstanceActionBottomSheet(instance, uiModel)
                 true
+            }
+
+            val currentTheme = activeTheme ?: themeStore.resolve()
+            if (cardView is com.google.android.material.card.MaterialCardView) {
+                cardView.setCardBackgroundColor(currentTheme.surfaceTranslucent)
+                cardView.strokeColor = (currentTheme.glow and 0x00FFFFFF) or 0x30000000
+                cardView.strokeWidth = (1 * resources.displayMetrics.density).toInt()
+                distroTitle?.setTextColor(currentTheme.text)
+                instanceIdText?.setTextColor(currentTheme.textDim)
+                hardwareSpecs?.setTextColor(currentTheme.textDim)
+                ipAddress?.setTextColor(currentTheme.textDim)
+                attachPressGlow(cardView, currentTheme)
             }
 
             instanceList.addView(cardView)

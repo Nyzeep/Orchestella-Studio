@@ -27,3 +27,16 @@ temp/
 # Developer-local assets (kept out of the public repo by owner decision)
 /docs/
 /temp/
+
+# Private developer assets, screenshots, and logs
+*.png
+*.jpg
+*.jpeg
+*.mp4
+*.xml.dump
+window_dump*.xml
+installer*.xml
+installer*.png
+screen_*.png
+test_*.md
+*.log

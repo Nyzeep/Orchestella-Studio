@@ -303,7 +303,74 @@ object ThemeCatalog {
         ),
     )
 
+    val moonshotDark = AppTheme(
+        id = "moonshot-dark",
+        displayName = "Moonshot (暗面深空)",
+        isDark = true,
+        background = 0xFF0C1017.toInt(),
+        surface = 0xFF161B22.toInt(),
+        surfaceTranslucent = 0xD9161B22.toInt(),
+        primary = 0xFF007CFF.toInt(),
+        accent = 0xFF00F6FF.toInt(),
+        text = 0xFFF0F6FC.toInt(),
+        textDim = 0xFF8B949E.toInt(),
+        glow = 0xFF00A1FF.toInt(),
+        terminalBackground = 0xFF0C1017.toInt(),
+        terminalForeground = 0xFFE6EDF3.toInt(),
+        ansi = ansi(
+            0xFF21262D.toInt(), 0xFFFA7970.toInt(), 0xFF7CE38B.toInt(), 0xFFFAA356.toInt(),
+            0xFF77BDFB.toInt(), 0xFFCEA5FB.toInt(), 0xFF00F6FF.toInt(), 0xFFC9D1D9.toInt(),
+            0xFF484F58.toInt(), 0xFFFA7970.toInt(), 0xFF7CE38B.toInt(), 0xFFFAA356.toInt(),
+            0xFF77BDFB.toInt(), 0xFFCEA5FB.toInt(), 0xFF00F6FF.toInt(), 0xFFF0F6FC.toInt(),
+        ),
+    )
+
+    val claudeDark = AppTheme(
+        id = "claude-dark",
+        displayName = "Claude (岩板碳黑)",
+        isDark = true,
+        background = 0xFF18181B.toInt(),
+        surface = 0xFF222226.toInt(),
+        surfaceTranslucent = 0xD9222226.toInt(),
+        primary = 0xFFD97706.toInt(),
+        accent = 0xFFE07A5F.toInt(),
+        text = 0xFFF4EFEA.toInt(),
+        textDim = 0xFFA19E9A.toInt(),
+        glow = 0xFFE07A5F.toInt(),
+        terminalBackground = 0xFF141416.toInt(),
+        terminalForeground = 0xFFF4EFEA.toInt(),
+        ansi = ansi(
+            0xFF27272A.toInt(), 0xFFE07A5F.toInt(), 0xFF81B29A.toInt(), 0xFFF4A261.toInt(),
+            0xFF3D5A80.toInt(), 0xFF9B5DE5.toInt(), 0xFF00B4D8.toInt(), 0xFFE4E4E7.toInt(),
+            0xFF52525B.toInt(), 0xFFE07A5F.toInt(), 0xFF81B29A.toInt(), 0xFFF4A261.toInt(),
+            0xFF3D5A80.toInt(), 0xFF9B5DE5.toInt(), 0xFF00B4D8.toInt(), 0xFFFAFAFA.toInt(),
+        ),
+    )
+
+    val claudeLight = AppTheme(
+        id = "claude-light",
+        displayName = "Claude (温暖浅沙)",
+        isDark = false,
+        background = 0xFFFAF8F5.toInt(),
+        surface = 0xFFF3EFEA.toInt(),
+        surfaceTranslucent = 0xEBF3EFEA.toInt(),
+        primary = 0xFFC05621.toInt(),
+        accent = 0xFF9C4221.toInt(),
+        text = 0xFF2D2825.toInt(),
+        textDim = 0xFF78716C.toInt(),
+        glow = 0xFFC05621.toInt(),
+        terminalBackground = 0xFFFAF8F5.toInt(),
+        terminalForeground = 0xFF2D2825.toInt(),
+        ansi = ansi(
+            0xFF44403C.toInt(), 0xFFC05621.toInt(), 0xFF2E7D32.toInt(), 0xFFD97706.toInt(),
+            0xFF1D4ED8.toInt(), 0xFF7C3AED.toInt(), 0xFF0284C7.toInt(), 0xFFE7E5E4.toInt(),
+            0xFF78716C.toInt(), 0xFFC05621.toInt(), 0xFF2E7D32.toInt(), 0xFFD97706.toInt(),
+            0xFF1D4ED8.toInt(), 0xFF7C3AED.toInt(), 0xFF0284C7.toInt(), 0xFF2D2825.toInt(),
+        ),
+    )
+
     val all: List<AppTheme> = listOf(
+        moonshotDark, claudeDark, claudeLight,
         catppuccinMocha, catppuccinLatte, catppuccinFrappe, catppuccinMacchiato,
         dracula, nord, tokyoNight, gruvboxDark, gruvboxLight,
         solarizedDark, solarizedLight, oneDark, everforestDark,
@@ -312,5 +379,5 @@ object ThemeCatalog {
     fun byId(id: String?): AppTheme? = all.firstOrNull { it.id == id }
 
     /** Resolves a stored theme id, falling back to the Dracula default. */
-    fun resolve(id: String?): AppTheme = byId(id) ?: dracula
+    fun resolve(id: String?): AppTheme = byId(id) ?: moonshotDark
 }

@@ -22,6 +22,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.button.MaterialButtonToggleGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator
 import io.github.nyzeep.orchestella.runtime.capability.DeviceCapabilityEvaluator
@@ -101,6 +102,19 @@ class InstanceDetailActivity : AppCompatActivity() {
     private lateinit var btnDangerReset: MaterialButton
     private lateinit var btnDangerDelete: MaterialButton
 
+    // Secondary Navigation Tabs & Containers
+    private lateinit var navToggleGroup: MaterialButtonToggleGroup
+    private lateinit var containerOverview: View
+    private lateinit var containerHardware: View
+    private lateinit var containerStorage: View
+    private lateinit var containerNetwork: View
+    private lateinit var containerMaintenance: View
+
+    // SSH Quick Access Card
+    private lateinit var tvDetailSshCmd: TextView
+    private lateinit var btnDetailSshCopy: MaterialButton
+    private lateinit var btnDetailSshManage: MaterialButton
+
     // Slider mutable state
     private var selectedVcpu: Int = 2
     private var selectedRamMb: Int = 2048
@@ -151,6 +165,7 @@ class InstanceDetailActivity : AppCompatActivity() {
         }
 
         bindViews()
+        applyTheme()
 
         toolbar.setNavigationOnClickListener { finish() }
 
@@ -244,6 +259,19 @@ class InstanceDetailActivity : AppCompatActivity() {
         btnDangerClone = findViewById(R.id.btn_danger_clone)
         btnDangerReset = findViewById(R.id.btn_danger_reset)
         btnDangerDelete = findViewById(R.id.btn_danger_delete)
+
+        // Secondary Navigation & Containers
+        navToggleGroup = findViewById(R.id.detail_nav_toggle_group)
+        containerOverview = findViewById(R.id.container_detail_overview)
+        containerHardware = findViewById(R.id.container_detail_hardware)
+        containerStorage = findViewById(R.id.container_detail_storage)
+        containerNetwork = findViewById(R.id.container_detail_network)
+        containerMaintenance = findViewById(R.id.container_detail_maintenance)
+
+        // SSH Quick Access Card
+        tvDetailSshCmd = findViewById(R.id.tv_detail_ssh_cmd)
+        btnDetailSshCopy = findViewById(R.id.btn_detail_ssh_copy)
+        btnDetailSshManage = findViewById(R.id.btn_detail_ssh_manage)
     }
 
     private fun initHardwareSliders(state: InstanceDetailUiState) {
@@ -324,10 +352,7 @@ class InstanceDetailActivity : AppCompatActivity() {
         ipAddressText.text = "IP: ${state.ipAddress}"
 
         btnTerminal.isEnabled = state.canOpenTerminal
-        btnTerminal.alpha = if (state.canOpenTerminal) 1.0f else 0.45f
-
         btnDesktop.isEnabled = state.canLaunchDesktop
-        btnDesktop.alpha = if (state.canLaunchDesktop) 1.0f else 0.45f
 
         if (state.state == InstanceLifecycle.State.RUNNING) {
             btnPower.text = getString(R.string.console_btn_power)
@@ -362,13 +387,38 @@ class InstanceDetailActivity : AppCompatActivity() {
 
         // Section 5: Danger Zone
         btnDangerClone.isEnabled = state.canClone
-        btnDangerClone.alpha = if (state.canClone) 1.0f else 0.45f
-
         btnDangerDelete.isEnabled = state.canDelete
-        btnDangerDelete.alpha = if (state.canDelete) 1.0f else 0.45f
+
+        // Overview SSH Quick Card
+        val sshCmd = "ssh -p 2222 ${state.defaultUser}@127.0.0.1"
+        tvDetailSshCmd.text = sshCmd
+        btnDetailSshCopy.setOnClickListener {
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("SSH Command", sshCmd))
+            Toast.makeText(this, "已复制: $sshCmd", Toast.LENGTH_SHORT).show()
+        }
+        btnDetailSshManage.setOnClickListener {
+            io.github.nyzeep.orchestella.ssh.SshManagerDialog.show(
+                this,
+                defaultInstanceId = state.instanceId,
+                defaultUser = state.defaultUser,
+                defaultPort = 2222
+            )
+        }
     }
 
     private fun setupActionListeners() {
+        // Modular Secondary Navigation Tabs
+        navToggleGroup.check(R.id.tab_detail_overview)
+        navToggleGroup.addOnButtonCheckedListener { _, checkedId, isChecked ->
+            if (!isChecked) return@addOnButtonCheckedListener
+            containerOverview.visibility = if (checkedId == R.id.tab_detail_overview) View.VISIBLE else View.GONE
+            containerHardware.visibility = if (checkedId == R.id.tab_detail_hardware) View.VISIBLE else View.GONE
+            containerStorage.visibility = if (checkedId == R.id.tab_detail_storage) View.VISIBLE else View.GONE
+            containerNetwork.visibility = if (checkedId == R.id.tab_detail_network) View.VISIBLE else View.GONE
+            containerMaintenance.visibility = if (checkedId == R.id.tab_detail_maintenance) View.VISIBLE else View.GONE
+        }
+
         // Section 1 Buttons
         btnTerminal.setOnClickListener {
             val state = viewModel.uiState ?: return@setOnClickListener
@@ -739,6 +789,59 @@ class InstanceDetailActivity : AppCompatActivity() {
             String.format(Locale.US, "%.1f GB", mb / 1024.0)
         } else {
             String.format(Locale.US, "%.0f MB", mb)
+        }
+    }
+
+    private fun applyTheme() {
+        try {
+            val themeStore = io.github.nyzeep.orchestella.ui.theme.ThemeStore(this)
+            val theme = themeStore.resolve()
+            findViewById<View>(R.id.detail_root)?.setBackgroundColor(theme.background)
+            toolbar.setTitleTextColor(theme.text)
+            toolbar.navigationIcon?.setTint(theme.text)
+
+            // Distro Title & ID
+            findViewById<TextView>(R.id.detail_instance_title)?.setTextColor(theme.text)
+            findViewById<TextView>(R.id.detail_instance_id)?.setTextColor(theme.textDim)
+
+            // Frosted Cards with delicate hairline stroke
+            val cardIds = listOf(
+                R.id.card_header_dashboard,
+                R.id.card_detail_ssh_connect,
+                R.id.card_hardware_specs_editor,
+                R.id.card_network_port_forwarding,
+                R.id.card_storage_manager
+            )
+            cardIds.forEach { id ->
+                findViewById<com.google.android.material.card.MaterialCardView>(id)?.let { card ->
+                    card.setCardBackgroundColor(theme.surfaceTranslucent)
+                    card.strokeColor = (theme.glow and 0x00FFFFFF) or 0x33000000
+                    card.strokeWidth = (1 * resources.displayMetrics.density).toInt()
+                }
+            }
+
+            // Navigation Tab Button Styling
+            listOf(
+                R.id.tab_detail_overview,
+                R.id.tab_detail_hardware,
+                R.id.tab_detail_storage,
+                R.id.tab_detail_network,
+                R.id.tab_detail_maintenance
+            ).forEach { tabId ->
+                findViewById<MaterialButton>(tabId)?.let { tabBtn ->
+                    tabBtn.strokeColor = ColorStateList.valueOf((theme.glow and 0x00FFFFFF) or 0x33000000)
+                    tabBtn.setTextColor(theme.text)
+                }
+            }
+
+            // Danger Zone Card with subtle red stroke
+            findViewById<com.google.android.material.card.MaterialCardView>(R.id.card_danger_zone)?.let { card ->
+                card.setCardBackgroundColor(theme.surfaceTranslucent)
+                card.strokeColor = 0x40EF4444.toInt()
+                card.strokeWidth = (1 * resources.displayMetrics.density).toInt()
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("InstanceDetailActivity", "Theme apply failed", e)
         }
     }
 }

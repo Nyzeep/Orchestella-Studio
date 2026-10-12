@@ -45,10 +45,10 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 app:cardCornerRadius="20dp"
-                app:cardElevation="2dp"
+                app:cardElevation="0dp"
                 app:strokeWidth="1dp"
-                app:strokeColor="?attr/colorOutlineVariant"
-                app:cardBackgroundColor="?attr/colorSurfaceContainer">
+                app:strokeColor="@color/glass_card_stroke_dark"
+                app:cardBackgroundColor="@color/glass_card_bg_dark">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -62,13 +62,20 @@
                         android:orientation="horizontal"
                         android:gravity="center_vertical">
 
-                        <ImageView
-                            android:id="@+id/detail_distro_icon"
-                            android:layout_width="48dp"
-                            android:layout_height="48dp"
+                        <FrameLayout
+                            android:layout_width="52dp"
+                            android:layout_height="52dp"
                             android:layout_marginEnd="16dp"
-                            android:src="@drawable/ic_distro_ubuntu"
-                            android:contentDescription="Distro Icon" />
+                            android:background="@drawable/bg_icon_container">
+
+                            <ImageView
+                                android:id="@+id/detail_distro_icon"
+                                android:layout_width="34dp"
+                                android:layout_height="34dp"
+                                android:layout_gravity="center"
+                                android:src="@drawable/ic_distro_ubuntu"
+                                android:contentDescription="Distro Icon" />
+                        </FrameLayout>
 
                         <LinearLayout
                             android:layout_width="0dp"
@@ -159,9 +166,12 @@
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
                             android:layout_marginEnd="6dp"
+                            android:paddingTop="10dp"
+                            android:paddingBottom="10dp"
                             app:cornerRadius="14dp"
                             app:icon="@drawable/ic_terminal"
-                            app:iconSize="18dp"
+                            app:iconSize="20dp"
+                            app:iconGravity="textTop"
                             android:text="@string/console_btn_terminal"
                             android:textSize="12sp" />
 
@@ -172,9 +182,12 @@
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
                             android:layout_marginEnd="6dp"
+                            android:paddingTop="10dp"
+                            android:paddingBottom="10dp"
                             app:cornerRadius="14dp"
                             app:icon="@drawable/ic_desktop"
-                            app:iconSize="18dp"
+                            app:iconSize="20dp"
+                            app:iconGravity="textTop"
                             android:text="@string/console_btn_desktop"
                             android:textSize="12sp" />
 
@@ -184,9 +197,12 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
+                            android:paddingTop="10dp"
+                            android:paddingBottom="10dp"
                             app:cornerRadius="14dp"
                             app:icon="@drawable/ic_power"
-                            app:iconSize="18dp"
+                            app:iconSize="20dp"
+                            app:iconGravity="textTop"
                             android:text="@string/console_btn_power"
                             android:textSize="12sp" />
                     </LinearLayout>
@@ -229,300 +245,128 @@
             </com.google.android.material.card.MaterialCardView>
 
             <!-- ============================================== -->
-            <!-- 分区 2：硬件规格调整 (Hardware Specification)    -->
+            <!-- 二级导航栏：模块化分段导航 (Segmented Navigation)   -->
             <!-- ============================================== -->
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="22dp"
-                android:layout_marginBottom="8dp"
-                android:text="@string/console_section_hardware"
-                android:textSize="14sp"
-                android:textStyle="bold"
-                android:textColor="?attr/colorPrimary" />
-
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/card_hardware_specs_editor"
+            <HorizontalScrollView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                app:cardCornerRadius="18dp"
-                app:cardElevation="1dp"
-                app:strokeWidth="1dp"
-                app:strokeColor="?attr/colorOutlineVariant"
-                app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
+                android:layout_marginTop="16dp"
+                android:layout_marginBottom="14dp"
+                android:scrollbars="none"
+                android:overScrollMode="never">
 
-                <LinearLayout
-                    android:layout_width="match_parent"
+                <com.google.android.material.button.MaterialButtonToggleGroup
+                    android:id="@+id/detail_nav_toggle_group"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="16dp">
+                    app:singleSelection="true"
+                    app:selectionRequired="true">
 
-                    <!-- Running Lock Warning Banner -->
-                    <TextView
-                        android:id="@+id/tv_hw_locked_hint"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginBottom="12dp"
-                        android:background="@drawable/bg_status_badge"
-                        android:padding="10dp"
-                        android:gravity="center"
-                        android:text="@string/console_hw_running_hint"
-                        android:textSize="13sp"
-                        android:textStyle="bold"
-                        android:textColor="@color/status_crashed"
-                        android:visibility="gone" />
-
-                    <!-- vCPU Allocation -->
-                    <TextView
-                        android:id="@+id/tv_detail_vcpu_label"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="CPU 核心分配：2 vCPU"
-                        android:textSize="14sp"
-                        android:textStyle="bold"
-                        android:textColor="?attr/colorOnSurface" />
-
-                    <SeekBar
-                        android:id="@+id/seek_detail_vcpu"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
-                        android:max="7"
-                        android:progress="1" />
-
-                    <!-- RAM Allocation -->
-                    <TextView
-                        android:id="@+id/tv_detail_ram_label"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="14dp"
-                        android:text="运存 (RAM) 配额：2048 MB"
-                        android:textSize="14sp"
-                        android:textStyle="bold"
-                        android:textColor="?attr/colorOnSurface" />
-
-                    <SeekBar
-                        android:id="@+id/seek_detail_ram"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
-                        android:max="15"
-                        android:progress="3" />
-
-                    <!-- RAM Safety Zone Indicator -->
-                    <TextView
-                        android:id="@+id/tv_detail_ram_safety_zone"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
-                        android:text="@string/hardware_ram_zone_green"
-                        android:textSize="12sp"
-                        android:textColor="@color/zone_green" />
-
-                    <!-- Save Hardware Button -->
                     <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_save_hardware"
-                        style="@style/Widget.Material3.Button"
+                        android:id="@+id/tab_detail_overview"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
                         android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="14dp"
-                        android:layout_gravity="end"
-                        app:cornerRadius="12dp"
-                        android:text="@string/console_hw_save" />
+                        android:layout_height="40dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:paddingStart="11dp"
+                        android:paddingEnd="11dp"
+                        android:text="📌 概览"
+                        android:textSize="13sp" />
 
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/tab_detail_hardware"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="40dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:paddingStart="11dp"
+                        android:paddingEnd="11dp"
+                        android:text="⚡ 硬件"
+                        android:textSize="13sp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/tab_detail_storage"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="40dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:paddingStart="11dp"
+                        android:paddingEnd="11dp"
+                        android:text="💾 存储"
+                        android:textSize="13sp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/tab_detail_network"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="40dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:paddingStart="11dp"
+                        android:paddingEnd="11dp"
+                        android:text="🌐 网络"
+                        android:textSize="13sp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/tab_detail_maintenance"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="40dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:paddingStart="11dp"
+                        android:paddingEnd="11dp"
+                        android:text="⚠️ 维护"
+                        android:textSize="13sp" />
+
+                </com.google.android.material.button.MaterialButtonToggleGroup>
+            </HorizontalScrollView>
 
             <!-- ============================================== -->
-            <!-- 分区 3：存储与挂载管理 (Storage & Mounts)       -->
+            <!-- 容器 1：概览与 SSH 快捷接入 (Overview & SSH)       -->
             <!-- ============================================== -->
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="22dp"
-                android:layout_marginBottom="8dp"
-                android:text="@string/console_section_storage"
-                android:textSize="14sp"
-                android:textStyle="bold"
-                android:textColor="?attr/colorPrimary" />
-
-            <com.google.android.material.card.MaterialCardView
+            <LinearLayout
+                android:id="@+id/container_detail_overview"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                app:cardCornerRadius="18dp"
-                app:cardElevation="1dp"
-                app:strokeWidth="1dp"
-                app:strokeColor="?attr/colorOutlineVariant"
-                app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
+                android:orientation="vertical"
+                android:visibility="visible">
 
-                <LinearLayout
+                <!-- SSH Quick Connect Card -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/card_detail_ssh_connect"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="16dp">
-
-                    <TextView
-                        android:id="@+id/tv_storage_physical"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:drawableStart="@drawable/ic_disk"
-                        android:drawablePadding="6dp"
-                        android:text="实际物理占用：1.2 GB"
-                        android:textSize="13sp"
-                        android:textColor="?attr/colorOnSurface" />
-
-                    <TextView
-                        android:id="@+id/tv_storage_logical"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
-                        android:drawableStart="@drawable/ic_disk"
-                        android:drawablePadding="6dp"
-                        android:text="逻辑虚拟上限：8 GB (稀疏增量扩容)"
-                        android:textSize="13sp"
-                        android:textColor="?attr/colorOutline" />
+                    android:layout_marginBottom="14dp"
+                    app:cardCornerRadius="18dp"
+                    app:cardElevation="1dp"
+                    app:strokeWidth="1dp"
+                    app:strokeColor="?attr/colorOutlineVariant"
+                    app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
 
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp"
-                        android:orientation="horizontal">
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btn_expand_disk"
-                            style="@style/Widget.Material3.Button.OutlinedButton"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:layout_marginEnd="8dp"
-                            app:cornerRadius="12dp"
-                            android:text="@string/console_storage_expand_disk"
-                            android:textSize="12sp" />
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btn_export_backup"
-                            style="@style/Widget.Material3.Button.TonalButton"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            app:cornerRadius="12dp"
-                            app:icon="@drawable/ic_backup"
-                            app:iconSize="16dp"
-                            android:text="@string/console_storage_export_backup"
-                            android:textSize="12sp" />
-                    </LinearLayout>
-
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- ============================================== -->
-            <!-- 分区 4：网络与端口转发 (Networking)             -->
-            <!-- ============================================== -->
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="22dp"
-                android:layout_marginBottom="8dp"
-                android:text="@string/console_section_network"
-                android:textSize="14sp"
-                android:textStyle="bold"
-                android:textColor="?attr/colorPrimary" />
-
-            <com.google.android.material.card.MaterialCardView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                app:cardCornerRadius="18dp"
-                app:cardElevation="1dp"
-                app:strokeWidth="1dp"
-                app:strokeColor="?attr/colorOutlineVariant"
-                app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="16dp">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:drawableStart="@drawable/ic_network"
-                        android:drawableTint="?attr/colorOnSurface"
-                        android:drawablePadding="6dp"
-                        android:text="@string/console_network_mode"
-                        android:textSize="13sp"
-                        android:textColor="?attr/colorOnSurface" />
-
-                    <TextView
-                        android:id="@+id/tv_network_ip_detail"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
-                        android:drawableStart="@drawable/ic_network"
-                        android:drawableTint="?attr/colorOutline"
-                        android:drawablePadding="6dp"
-                        android:text="分配虚拟 IP：10.0.2.15"
-                        android:textSize="13sp"
-                        android:textColor="?attr/colorOutline" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_manage_port_forwarding"
-                        style="@style/Widget.Material3.Button.TonalButton"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp"
-                        app:cornerRadius="12dp"
-                        android:text="@string/console_network_port_forwarding"
-                        android:textSize="12sp" />
-
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- ============================================== -->
-            <!-- 分区 5：危险管理区 (Danger Zone)                -->
-            <!-- ============================================== -->
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="26dp"
-                android:layout_marginBottom="8dp"
-                android:text="@string/console_section_danger"
-                android:textSize="14sp"
-                android:textStyle="bold"
-                android:textColor="@color/status_crashed" />
-
-            <com.google.android.material.card.MaterialCardView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                app:cardCornerRadius="18dp"
-                app:cardElevation="1dp"
-                app:strokeWidth="1.5dp"
-                app:strokeColor="@color/status_crashed"
-                app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="16dp">
-
-                    <!-- Clone Action -->
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical">
+                        android:orientation="vertical"
+                        android:padding="16dp">
 
                         <LinearLayout
-                            android:layout_width="0dp"
+                            android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical">
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
 
                             <TextView
-                                android:layout_width="wrap_content"
+                                android:layout_width="0dp"
                                 android:layout_height="wrap_content"
-                                android:text="@string/console_danger_clone"
+                                android:layout_weight="1"
+                                android:drawableStart="@drawable/ic_terminal"
+                                android:drawablePadding="6dp"
+                                android:gravity="center_vertical"
+                                android:text="SSH 远程终端连接"
                                 android:textSize="14sp"
                                 android:textStyle="bold"
                                 android:textColor="?attr/colorOnSurface" />
@@ -530,117 +374,563 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="@string/console_danger_clone_desc"
+                                android:background="@drawable/bg_status_badge"
+                                android:paddingStart="8dp"
+                                android:paddingTop="2dp"
+                                android:paddingEnd="8dp"
+                                android:paddingBottom="2dp"
+                                android:text="端口 2222"
                                 android:textSize="11sp"
-                                android:textColor="?attr/colorOutline" />
+                                android:textColor="?attr/colorPrimary" />
                         </LinearLayout>
 
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btn_danger_clone"
-                            style="@style/Widget.Material3.Button.OutlinedButton"
-                            android:layout_width="wrap_content"
+                        <TextView
+                            android:id="@+id/tv_detail_ssh_cmd"
+                            android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            app:cornerRadius="10dp"
-                            app:icon="@drawable/ic_clone"
-                            app:iconSize="16dp"
-                            android:text="克隆" />
+                            android:layout_marginTop="10dp"
+                            android:background="@drawable/bg_status_badge"
+                            android:padding="10dp"
+                            android:text="ssh -p 2222 root@127.0.0.1"
+                            android:fontFamily="monospace"
+                            android:textSize="13sp"
+                            android:textColor="?attr/colorPrimary" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:orientation="horizontal">
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btn_detail_ssh_copy"
+                                style="@style/Widget.Material3.Button.TonalButton"
+                                android:layout_width="0dp"
+                                android:layout_height="40dp"
+                                android:layout_weight="1"
+                                android:layout_marginEnd="6dp"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                app:cornerRadius="10dp"
+                                android:text="📋 复制命令"
+                                android:textSize="12sp" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btn_detail_ssh_manage"
+                                style="@style/Widget.Material3.Button.OutlinedButton"
+                                android:layout_width="0dp"
+                                android:layout_height="40dp"
+                                android:layout_weight="1"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                app:cornerRadius="10dp"
+                                android:text="⚙️ SSH 管理器"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+
                     </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
 
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginTop="12dp"
-                        android:layout_marginBottom="12dp"
-                        android:background="?attr/colorOutlineVariant" />
+                <!-- System Fact Specs Overview Card -->
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardCornerRadius="18dp"
+                    app:cardElevation="1dp"
+                    app:strokeWidth="1dp"
+                    app:strokeColor="?attr/colorOutlineVariant"
+                    app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
 
-                    <!-- Reset Deadlock State -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical">
+                        android:orientation="vertical"
+                        android:padding="16dp">
 
-                        <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical">
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="@string/console_danger_reset"
-                                android:textSize="14sp"
-                                android:textStyle="bold"
-                                android:textColor="?attr/colorOnSurface" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="@string/console_danger_reset_desc"
-                                android:textSize="11sp"
-                                android:textColor="?attr/colorOutline" />
-                        </LinearLayout>
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btn_danger_reset"
-                            style="@style/Widget.Material3.Button.OutlinedButton"
+                        <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            app:cornerRadius="10dp"
-                            android:text="复位" />
+                            android:text="运行架构与环境特征"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:text="• 内核架构：Linux 6.x aarch64 / arm64 架构隔离运行"
+                            android:textSize="12sp"
+                            android:textColor="?attr/colorOutline" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:text="• 网络通道：用户态 GVProxy SLIRP NAT / 双向端口转发"
+                            android:textSize="12sp"
+                            android:textColor="?attr/colorOutline" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:text="• 磁盘驱动：virtio-blk 硬件增量稀疏镜像"
+                            android:textSize="12sp"
+                            android:textColor="?attr/colorOutline" />
                     </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
 
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginTop="12dp"
-                        android:layout_marginBottom="12dp"
-                        android:background="?attr/colorOutlineVariant" />
+            </LinearLayout>
 
-                    <!-- Delete Permanently -->
+            <!-- ============================================== -->
+            <!-- 容器 2：硬件规格调整 (Hardware Specification)    -->
+            <!-- ============================================== -->
+            <LinearLayout
+                android:id="@+id/container_detail_hardware"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="8dp"
+                    android:text="@string/console_section_hardware"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="?attr/colorPrimary" />
+
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/card_hardware_specs_editor"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardCornerRadius="18dp"
+                    app:cardElevation="1dp"
+                    app:strokeWidth="1dp"
+                    app:strokeColor="?attr/colorOutlineVariant"
+                    app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
+
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical">
+                        android:orientation="vertical"
+                        android:padding="16dp">
 
-                        <LinearLayout
-                            android:layout_width="0dp"
+                        <!-- Running Lock Warning Banner -->
+                        <TextView
+                            android:id="@+id/tv_hw_locked_hint"
+                            android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical">
+                            android:layout_marginBottom="12dp"
+                            android:background="@drawable/bg_status_badge"
+                            android:padding="10dp"
+                            android:gravity="center"
+                            android:text="@string/console_hw_running_hint"
+                            android:textSize="13sp"
+                            android:textStyle="bold"
+                            android:textColor="@color/status_crashed"
+                            android:visibility="gone" />
 
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="@string/console_danger_delete"
-                                android:textSize="14sp"
-                                android:textStyle="bold"
-                                android:textColor="@color/status_crashed" />
+                        <!-- vCPU Allocation -->
+                        <TextView
+                            android:id="@+id/tv_detail_vcpu_label"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="CPU 核心分配：2 vCPU"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:textColor="?attr/colorOnSurface" />
 
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="@string/console_danger_delete_desc"
-                                android:textSize="11sp"
-                                android:textColor="?attr/colorOutline" />
-                        </LinearLayout>
+                        <SeekBar
+                            android:id="@+id/seek_detail_vcpu"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:max="7"
+                            android:progress="1" />
 
+                        <!-- RAM Allocation -->
+                        <TextView
+                            android:id="@+id/tv_detail_ram_label"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="14dp"
+                            android:text="运存 (RAM) 配额：2048 MB"
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <SeekBar
+                            android:id="@+id/seek_detail_ram"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:max="15"
+                            android:progress="3" />
+
+                        <!-- RAM Safety Zone Indicator -->
+                        <TextView
+                            android:id="@+id/tv_detail_ram_safety_zone"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:text="@string/hardware_ram_zone_green"
+                            android:textSize="12sp"
+                            android:textColor="@color/zone_green" />
+
+                        <!-- Save Hardware Button -->
                         <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btn_danger_delete"
+                            android:id="@+id/btn_save_hardware"
                             style="@style/Widget.Material3.Button"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            app:backgroundTint="@color/status_crashed"
-                            app:cornerRadius="10dp"
-                            app:icon="@drawable/ic_delete"
-                            app:iconSize="16dp"
-                            android:text="删除" />
-                    </LinearLayout>
+                            android:layout_marginTop="14dp"
+                            android:layout_gravity="end"
+                            app:cornerRadius="12dp"
+                            android:text="@string/console_hw_save" />
 
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+            </LinearLayout>
+
+            <!-- ============================================== -->
+            <!-- 容器 3：存储与挂载管理 (Storage & Mounts)       -->
+            <!-- ============================================== -->
+            <LinearLayout
+                android:id="@+id/container_detail_storage"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="8dp"
+                    android:text="@string/console_section_storage"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="?attr/colorPrimary" />
+
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/card_storage_manager"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardCornerRadius="18dp"
+                    app:cardElevation="1dp"
+                    app:strokeWidth="1dp"
+                    app:strokeColor="?attr/colorOutlineVariant"
+                    app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <TextView
+                            android:id="@+id/tv_storage_physical"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:drawableStart="@drawable/ic_disk"
+                            android:drawablePadding="6dp"
+                            android:text="实际物理占用：1.2 GB"
+                            android:textSize="13sp"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <TextView
+                            android:id="@+id/tv_storage_logical"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:drawableStart="@drawable/ic_disk"
+                            android:drawablePadding="6dp"
+                            android:text="逻辑虚拟上限：8 GB (稀疏增量扩容)"
+                            android:textSize="13sp"
+                            android:textColor="?attr/colorOutline" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:orientation="horizontal">
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btn_expand_disk"
+                                style="@style/Widget.Material3.Button.OutlinedButton"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginEnd="8dp"
+                                app:cornerRadius="12dp"
+                                android:text="@string/console_storage_expand_disk"
+                                android:textSize="12sp" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btn_export_backup"
+                                style="@style/Widget.Material3.Button.TonalButton"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                app:cornerRadius="12dp"
+                                app:icon="@drawable/ic_backup"
+                                app:iconSize="16dp"
+                                android:text="@string/console_storage_export_backup"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+            </LinearLayout>
+
+            <!-- ============================================== -->
+            <!-- 容器 4：网络与端口转发 (Networking)             -->
+            <!-- ============================================== -->
+            <LinearLayout
+                android:id="@+id/container_detail_network"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="8dp"
+                    android:text="@string/console_section_network"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="?attr/colorPrimary" />
+
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/card_network_port_forwarding"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardCornerRadius="18dp"
+                    app:cardElevation="1dp"
+                    app:strokeWidth="1dp"
+                    app:strokeColor="?attr/colorOutlineVariant"
+                    app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:drawableStart="@drawable/ic_network"
+                            android:drawableTint="?attr/colorOnSurface"
+                            android:drawablePadding="6dp"
+                            android:text="@string/console_network_mode"
+                            android:textSize="13sp"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <TextView
+                            android:id="@+id/tv_network_ip_detail"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:drawableStart="@drawable/ic_network"
+                            android:drawableTint="?attr/colorOutline"
+                            android:drawablePadding="6dp"
+                            android:text="分配虚拟 IP：10.0.2.15"
+                            android:textSize="13sp"
+                            android:textColor="?attr/colorOutline" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_manage_port_forwarding"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            app:cornerRadius="12dp"
+                            android:text="@string/console_network_port_forwarding"
+                            android:textSize="12sp" />
+
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+            </LinearLayout>
+
+            <!-- ============================================== -->
+            <!-- 容器 5：危险管理区 (Danger Zone)                -->
+            <!-- ============================================== -->
+            <LinearLayout
+                android:id="@+id/container_detail_maintenance"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="8dp"
+                    android:text="@string/console_section_danger"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/status_crashed" />
+
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/card_danger_zone"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardCornerRadius="18dp"
+                    app:cardElevation="1dp"
+                    app:strokeWidth="1.5dp"
+                    app:strokeColor="@color/status_crashed"
+                    app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <!-- Clone Action -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/console_danger_clone"
+                                    android:textSize="14sp"
+                                    android:textStyle="bold"
+                                    android:textColor="?attr/colorOnSurface" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/console_danger_clone_desc"
+                                    android:textSize="11sp"
+                                    android:textColor="?attr/colorOutline" />
+                            </LinearLayout>
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btn_danger_clone"
+                                style="@style/Widget.Material3.Button.OutlinedButton"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                app:cornerRadius="10dp"
+                                app:icon="@drawable/ic_clone"
+                                app:iconSize="16dp"
+                                android:text="克隆" />
+                        </LinearLayout>
+
+                        <View
+                            android:layout_width="match_parent"
+                            android:layout_height="1dp"
+                            android:layout_marginTop="12dp"
+                            android:layout_marginBottom="12dp"
+                            android:background="?attr/colorOutlineVariant" />
+
+                        <!-- Reset Deadlock State -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/console_danger_reset"
+                                    android:textSize="14sp"
+                                    android:textStyle="bold"
+                                    android:textColor="?attr/colorOnSurface" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/console_danger_reset_desc"
+                                    android:textSize="11sp"
+                                    android:textColor="?attr/colorOutline" />
+                            </LinearLayout>
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btn_danger_reset"
+                                style="@style/Widget.Material3.Button.OutlinedButton"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                app:cornerRadius="10dp"
+                                android:text="复位" />
+                        </LinearLayout>
+
+                        <View
+                            android:layout_width="match_parent"
+                            android:layout_height="1dp"
+                            android:layout_marginTop="12dp"
+                            android:layout_marginBottom="12dp"
+                            android:background="?attr/colorOutlineVariant" />
+
+                        <!-- Delete Permanently -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/console_danger_delete"
+                                    android:textSize="14sp"
+                                    android:textStyle="bold"
+                                    android:textColor="@color/status_crashed" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/console_danger_delete_desc"
+                                    android:textSize="11sp"
+                                    android:textColor="?attr/colorOutline" />
+                            </LinearLayout>
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btn_danger_delete"
+                                style="@style/Widget.Material3.Button"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                app:backgroundTint="@color/status_crashed"
+                                app:cornerRadius="10dp"
+                                app:icon="@drawable/ic_delete"
+                                app:iconSize="16dp"
+                                android:text="删除" />
+                        </LinearLayout>
+
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+            </LinearLayout>
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>

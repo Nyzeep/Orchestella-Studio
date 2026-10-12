@@ -15,10 +15,27 @@ class ThemeStore(context: Context) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences("orchestella_theme", Context.MODE_PRIVATE)
 
-    fun themeId(): String = prefs.getString(KEY_THEME_ID, null) ?: "dracula"
+    init {
+        applyNightMode()
+    }
+
+    fun themeId(): String = prefs.getString(KEY_THEME_ID, null) ?: "moonshot-dark"
 
     fun setThemeId(id: String) {
         prefs.edit().putString(KEY_THEME_ID, id).apply()
+        applyNightMode()
+    }
+
+    fun applyNightMode() {
+        val theme = ThemeCatalog.resolve(prefs.getString(KEY_THEME_ID, null) ?: "moonshot-dark")
+        val targetMode = if (theme.isDark) {
+            androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_YES
+        } else {
+            androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_NO
+        }
+        if (androidx.appcompat.app.AppCompatDelegate.getDefaultNightMode() != targetMode) {
+            androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(targetMode)
+        }
     }
 
     /** Custom accent color (ARGB int), or null when following the built-in theme. */
