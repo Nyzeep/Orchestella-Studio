@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Standardized rounded icon frame (40x40dp / 44x44dp) ensuring pixel-perfect optical alignment. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <corners android:radius="12dp" />
+    <solid android:color="@color/icon_container_bg_dark" />
+    <stroke
+        android:width="1dp"
+        android:color="@color/glass_card_stroke_dark" />
+</shape>

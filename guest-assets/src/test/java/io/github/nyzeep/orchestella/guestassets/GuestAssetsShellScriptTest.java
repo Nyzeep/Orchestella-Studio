@@ -171,7 +171,9 @@ final class GuestAssetsShellScriptTest {
                 "init profile must include standardized LS_COLORS di=01;34");
         assertTrue(content.contains("ex=01;32"),
                 "init profile must include standardized LS_COLORS ex=01;32");
-        assertTrue(content.contains("serial-getty@ttyAMA0.service.d/autologin.conf"),
-                "init must configure serial-getty autologin for systemd Debian");
+        assertTrue(content.contains("orchestella-console.service"),
+                "init must configure orchestella-console autologin for systemd distros");
+        assertTrue(content.contains("serial-getty@hvc0.service.d/autologin.conf"),
+                "init must configure serial-getty autologin for hvc0");
     }
 }

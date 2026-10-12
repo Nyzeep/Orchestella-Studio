@@ -75,9 +75,9 @@ public final class TerminalSpan {
      */
     public int getEffectiveForegroundColor() {
         if (inverse) {
-            return backgroundColor != null ? backgroundColor : DraculaPalette.BACKGROUND;
+            return backgroundColor != null ? backgroundColor : DraculaPalette.themedBackground();
         }
-        return foregroundColor != null ? foregroundColor : DraculaPalette.FOREGROUND;
+        return foregroundColor != null ? foregroundColor : DraculaPalette.themedForeground();
     }
 
     /**
@@ -86,7 +86,7 @@ public final class TerminalSpan {
      */
     public Integer getEffectiveBackgroundColor() {
         if (inverse) {
-            return foregroundColor != null ? foregroundColor : DraculaPalette.FOREGROUND;
+            return foregroundColor != null ? foregroundColor : DraculaPalette.themedForeground();
         }
         return backgroundColor;
     }

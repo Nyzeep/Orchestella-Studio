@@ -135,6 +135,16 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
         // ^C (Interrupt/Break)
         addKeyButton(row, "^C", v -> pressCtrlC());
 
+        // ^Z (Suspend/Background)
+        addKeyButton(row, "^Z", v -> pressCtrlZ());
+
+        // ^D (EOF/Logout)
+        addKeyButton(row, "^D", v -> pressCtrlD());
+
+        // ^A / ^E (tmux / Line start & end)
+        addKeyButton(row, "^A", v -> pressCtrlA());
+        addKeyButton(row, "^E", v -> pressCtrlE());
+
         // CLR (Clear screen and reset line)
         addKeyButton(row, "CLR", v -> pressClr());
 
@@ -145,7 +155,7 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
         addKeyButton(row, "HOME", v -> pressHome());
         addKeyButton(row, "END", v -> pressEnd());
 
-        // Symbols: `, |, ~, $, /, \, -
+        // Symbols: `, |, ~, $, /, \, -, &, _, =, :, ;
         addKeyButton(row, "`", v -> pressSymbol("`"));
         addKeyButton(row, "|", v -> pressSymbol("|"));
         addKeyButton(row, "~", v -> pressSymbol("~"));
@@ -153,6 +163,11 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
         addKeyButton(row, "/", v -> pressSymbol("/"));
         addKeyButton(row, "\\", v -> pressSymbol("\\"));
         addKeyButton(row, "-", v -> pressSymbol("-"));
+        addKeyButton(row, "_", v -> pressSymbol("_"));
+        addKeyButton(row, "&", v -> pressSymbol("&"));
+        addKeyButton(row, "=", v -> pressSymbol("="));
+        addKeyButton(row, ":", v -> pressSymbol(":"));
+        addKeyButton(row, ";", v -> pressSymbol(";"));
 
         // Arrows: ←, ↑, ↓, →
         addKeyButton(row, "←", v -> pressLeft());
@@ -194,6 +209,30 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
             inputSink.sendBytes(new byte[]{0x03});
         } else if (terminalEngine != null) {
             terminalEngine.handleCtrlC();
+        }
+    }
+
+    public void pressCtrlZ() {
+        if (inputSink != null) {
+            inputSink.sendBytes(new byte[]{0x1A});
+        }
+    }
+
+    public void pressCtrlD() {
+        if (inputSink != null) {
+            inputSink.sendBytes(new byte[]{0x04});
+        }
+    }
+
+    public void pressCtrlA() {
+        if (inputSink != null) {
+            inputSink.sendBytes(new byte[]{0x01});
+        }
+    }
+
+    public void pressCtrlE() {
+        if (inputSink != null) {
+            inputSink.sendBytes(new byte[]{0x05});
         }
     }
 

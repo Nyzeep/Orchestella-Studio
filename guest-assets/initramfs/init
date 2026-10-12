@@ -270,15 +270,17 @@ EOF
             "$target_root/etc/systemd/system/multi-user.target.wants/systemd-networkd.service" 2>/dev/null || true
         ln -sf /usr/lib/systemd/system/systemd-resolved.service \
             "$target_root/etc/systemd/system/multi-user.target.wants/systemd-resolved.service" 2>/dev/null || true
-        if [ ! -e "$target_root/etc/resolv.conf" ] || [ ! -s "$target_root/etc/resolv.conf" ]; then
-            rm -f "$target_root/etc/resolv.conf"
+        rm -f "$target_root/etc/resolv.conf" 2>/dev/null || true
+        {
             if [ -n "$GUEST_DNS" ]; then
-                printf 'nameserver %s\n' "$GUEST_DNS" > "$target_root/etc/resolv.conf"
-            else
-                printf 'nameserver 8.8.8.8\n' > "$target_root/etc/resolv.conf"
+                printf 'nameserver %s\n' "$GUEST_DNS"
             fi
-            chmod 0644 "$target_root/etc/resolv.conf" 2>/dev/null || true
-        fi
+            printf 'nameserver 223.5.5.5\n'
+            printf 'nameserver 119.29.29.29\n'
+            printf 'nameserver 1.1.1.1\n'
+            printf 'nameserver 8.8.8.8\n'
+        } > "$target_root/etc/resolv.conf" 2>/dev/null || true
+        chmod 0644 "$target_root/etc/resolv.conf" 2>/dev/null || true
     else
         cat > "$target_root/etc/systemd/network/80-orchestella-dhcp.network" <<'EOF'
 [Match]
@@ -292,11 +294,15 @@ EOF
             "$target_root/etc/systemd/system/multi-user.target.wants/systemd-networkd.service" 2>/dev/null || true
         ln -sf /usr/lib/systemd/system/systemd-resolved.service \
             "$target_root/etc/systemd/system/multi-user.target.wants/systemd-resolved.service" 2>/dev/null || true
-        if [ ! -e "$target_root/etc/resolv.conf" ] || [ ! -s "$target_root/etc/resolv.conf" ]; then
-            rm -f "$target_root/etc/resolv.conf"
-            printf 'nameserver 10.0.2.3\nnameserver 8.8.8.8\n' > "$target_root/etc/resolv.conf" 2>/dev/null || true
-            chmod 0644 "$target_root/etc/resolv.conf" 2>/dev/null || true
-        fi
+        rm -f "$target_root/etc/resolv.conf" 2>/dev/null || true
+        {
+            printf 'nameserver 10.0.2.3\n'
+            printf 'nameserver 223.5.5.5\n'
+            printf 'nameserver 119.29.29.29\n'
+            printf 'nameserver 1.1.1.1\n'
+            printf 'nameserver 8.8.8.8\n'
+        } > "$target_root/etc/resolv.conf" 2>/dev/null || true
+        chmod 0644 "$target_root/etc/resolv.conf" 2>/dev/null || true
     fi
 }
 
@@ -440,11 +446,15 @@ EOF
     fi
 
     # Configure DNS fallback for apt update
-    if [ ! -f "$debian_root/etc/resolv.conf" ] || [ ! -s "$debian_root/etc/resolv.conf" ]; then
-        rm -f "$debian_root/etc/resolv.conf"
-        printf 'nameserver 10.0.2.3\nnameserver 8.8.8.8\n' > "$debian_root/etc/resolv.conf"
-        chmod 0644 "$debian_root/etc/resolv.conf"
-    fi
+    rm -f "$debian_root/etc/resolv.conf" 2>/dev/null || true
+    {
+        printf 'nameserver 10.0.2.3\n'
+        printf 'nameserver 223.5.5.5\n'
+        printf 'nameserver 119.29.29.29\n'
+        printf 'nameserver 1.1.1.1\n'
+        printf 'nameserver 8.8.8.8\n'
+    } > "$debian_root/etc/resolv.conf" 2>/dev/null || true
+    chmod 0644 "$debian_root/etc/resolv.conf" 2>/dev/null || true
 
     # Enable automatic root login on serial consoles (shared with all systemd distros)
     install_serial_autologin_getty "$debian_root"
@@ -559,7 +569,9 @@ rm -f /etc/resolv.conf 2>/dev/null || true
 GUEST_DNS="$(kernel_argument orchestella.guest_dns || true)"
 {
     [ -n "$GUEST_DNS" ] && printf 'nameserver %s\n' "$GUEST_DNS"
+    printf 'nameserver 223.5.5.5\n'
     printf 'nameserver 119.29.29.29\n'
+    printf 'nameserver 1.1.1.1\n'
     printf 'nameserver 8.8.8.8\n'
 } > /etc/resolv.conf 2>/dev/null || true
 chmod 0644 /etc/resolv.conf 2>/dev/null || true
@@ -573,9 +585,17 @@ chmod 0644 /etc/resolv.conf 2>/dev/null || true
     echo "-- resolv.conf --"
     cat /etc/resolv.conf 2>/dev/null
     echo "-- gateway probe (192.168.127.1) --"
-    ping -c1 -W2 192.168.127.1 2>&1 | tail -2
+    if command -v ping >/dev/null 2>&1; then
+        ping -c1 -W2 192.168.127.1 2>&1 | tail -2
+    else
+        echo "ping: not installed in minimal rootfs"
+    fi
     echo "-- upstream probe (223.5.5.5) --"
-    ping -c1 -W2 223.5.5.5 2>&1 | tail -2
+    if command -v ping >/dev/null 2>&1; then
+        ping -c1 -W2 223.5.5.5 2>&1 | tail -2
+    else
+        echo "ping: not installed in minimal rootfs"
+    fi
     echo "-- dns probe --"
     getent hosts mirrors.tuna.tsinghua.edu.cn 2>&1 | head -2
     echo "== diagnostics end =="
@@ -656,11 +676,15 @@ configure_guest_network() {
     "$BUSYBOX" ip link set eth0 up 2>/dev/null || true
     "$BUSYBOX" ip addr add "$GUEST_IP/${GUEST_MASK:-255.255.255.0}" dev eth0 2>/dev/null || true
     [ -n "$GUEST_GW" ] && "$BUSYBOX" ip route add default via "$GUEST_GW" 2>/dev/null || true
+    rm -f "$mount_point/etc/resolv.conf" 2>/dev/null || true
     {
         [ -n "$GUEST_DNS" ] && printf 'nameserver %s\n' "$GUEST_DNS"
+        printf 'nameserver 223.5.5.5\n'
         printf 'nameserver 119.29.29.29\n'
+        printf 'nameserver 1.1.1.1\n'
         printf 'nameserver 8.8.8.8\n'
     } > "$mount_point/etc/resolv.conf" 2>/dev/null || true
+    chmod 0644 "$mount_point/etc/resolv.conf" 2>/dev/null || true
     {
         echo "== Orchestella network diagnostics (initramfs) =="
         "$BUSYBOX" ip -4 addr show eth0 2>/dev/null

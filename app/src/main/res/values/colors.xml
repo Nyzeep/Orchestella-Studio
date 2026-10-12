@@ -34,4 +34,25 @@
     <color name="glow_purple_faint">#26BD93F9</color>
     <color name="glow_cyan_soft">#408BE9FD</color>
     <color name="glow_cyan_faint">#268BE9FD</color>
+
+    <!-- Moonshot AI (Kimi) & Claude Aesthetics -->
+    <color name="moonshot_blue">#007CFF</color>
+    <color name="moonshot_blue_glow">#00A1FF</color>
+    <color name="moonshot_cyan">#00F6FF</color>
+    <color name="moonshot_dark_bg">#0C1017</color>
+    <color name="moonshot_glass_surface">#D9161B22</color>
+    <color name="moonshot_glass_stroke">#3300A1FF</color>
+
+    <color name="claude_terracotta">#D97706</color>
+    <color name="claude_clay">#E07A5F</color>
+    <color name="claude_sand_bg">#FAF8F5</color>
+    <color name="claude_slate_bg">#18181B</color>
+
+    <!-- Glassmorphism Surface & Hairline Stroke -->
+    <color name="glass_card_bg_dark">#C0161B22</color>
+    <color name="glass_card_bg_light">#E0FFFFFF</color>
+    <color name="glass_card_stroke_dark">#26FFFFFF</color>
+    <color name="glass_card_stroke_light">#1A000000</color>
+    <color name="icon_container_bg_dark">#20FFFFFF</color>
+    <color name="icon_container_bg_light">#0D000000</color>
 </resources>
