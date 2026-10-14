@@ -96,7 +96,18 @@ public final class SetupWizardModelTest {
     @Test
     public void defaultUserConfigDefaultsToRootAndOrchestellaBrand() {
         assertEquals("root", wizard.getUserConfig().username());
-        assertEquals("1234", wizard.getUserConfig().password());
+        String initialPassword = wizard.getUserConfig().password();
+        assertTrue("default password must have at least 24 characters", initialPassword.length() >= 24);
+        assertTrue("default password must use guest-safe characters", initialPassword.matches("[23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+"));
+        assertFalse("default password must not be public", "1234".equals(initialPassword));
+        assertTrue("reading the model must preserve its initial random password",
+                initialPassword.equals(wizard.getUserConfig().password()));
+        SetupWizardModel anotherWizard = new SetupWizardModel(profile, SetupWizardModel.Step.STEP_DETECT,
+                SetupWizardModel.DistroOption.UBUNTU, null);
+        assertTrue("second default password must be strong and guest-safe",
+                anotherWizard.getUserConfig().password().matches("[23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{24,}"));
+        assertFalse("wizard instances must not share default passwords",
+                initialPassword.equals(anotherWizard.getUserConfig().password()));
         assertEquals("orchestella", wizard.getUserConfig().hostname());
         assertTrue(wizard.getUserConfig().hasSudo());
         assertFalse(wizard.isCustomUserEnabled());
@@ -104,8 +115,13 @@ public final class SetupWizardModelTest {
 
     @Test
     public void enableCustomUserValidatesUsernameAndSetsState() {
+        String initialPassword = wizard.getUserConfig().password();
+        assertTrue("initial default password must be strong and guest-safe",
+                initialPassword.matches("[23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{24,}"));
         assertFalse(wizard.enableCustomUser("9invalid", "pass", true, "workstation"));
         assertFalse(wizard.isCustomUserEnabled());
+        assertTrue("rejected custom user must retain the same initial random password",
+                initialPassword.equals(wizard.getUserConfig().password()));
 
         assertTrue(wizard.enableCustomUser("dev", "DevSecret2026", true, "workstation"));
         assertTrue(wizard.isCustomUserEnabled());
@@ -114,11 +130,18 @@ public final class SetupWizardModelTest {
         assertEquals("workstation", wizard.getUserConfig().hostname());
         assertTrue(wizard.getUserConfig().hasSudo());
 
-        // Skip resets back to defaultRoot
+        // An explicit return to defaultRoot creates a fresh root configuration.
         wizard.skipToDefaultRoot();
         assertFalse(wizard.isCustomUserEnabled());
         assertEquals("root", wizard.getUserConfig().username());
-        assertEquals("1234", wizard.getUserConfig().password());
+        String resetPassword = wizard.getUserConfig().password();
+        assertTrue("reset default password must have at least 24 characters", resetPassword.length() >= 24);
+        assertTrue("reset default password must use guest-safe characters", resetPassword.matches("[23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+"));
+        assertFalse("reset default password must not be public", "1234".equals(resetPassword));
+        assertFalse("reset must not reuse the original default password", initialPassword.equals(resetPassword));
+        assertFalse("reset must not retain the explicit custom password", "DevSecret2026".equals(resetPassword));
+        assertTrue("reading the reset configuration must not regenerate its password",
+                resetPassword.equals(wizard.getUserConfig().password()));
         assertEquals("orchestella", wizard.getUserConfig().hostname());
     }
 }

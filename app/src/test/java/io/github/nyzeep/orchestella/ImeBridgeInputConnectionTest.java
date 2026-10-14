@@ -25,7 +25,7 @@ public final class ImeBridgeInputConnectionTest {
     private FakeWaylandChannel channel;
     private ImeBridgeInputConnection inputConnection;
 
-    private static final class FakeWaylandChannel implements WaylandChannel {
+    private static class FakeWaylandChannel implements WaylandChannel {
         final List<InputEvent> sentEvents = new ArrayList<>();
         ConnectionState state = ConnectionState.CONNECTED;
 
@@ -155,6 +155,40 @@ public final class ImeBridgeInputConnectionTest {
             reassembled.append(tc.text());
         }
         assertEquals(largeText, reassembled.toString());
+    }
+
+    @Test public void emojiAtChunkBoundaryRemainsAWholeCodePointOnWire() {
+        String text = "a".repeat(ImeBridgeInputConnection.MAX_SAFE_CHUNK_CHARS - 1) + "😀" + "b".repeat(410);
+        assertTrue(inputConnection.commitText(text, 1));
+        StringBuilder decoded = new StringBuilder();
+        for (InputEvent event : channel.sentEvents) {
+            String chunk = ((TextCommitEvent) event).text();
+            assertFalse(Character.isHighSurrogate(chunk.charAt(chunk.length() - 1)));
+            assertFalse(Character.isLowSurrogate(chunk.charAt(0)));
+            decoded.append(new String(chunk.getBytes(java.nio.charset.StandardCharsets.UTF_8), java.nio.charset.StandardCharsets.UTF_8));
+        }
+        assertEquals(text, decoded.toString());
+    }
+
+    @Test public void compositionBackspaceAndCommitStayLocalUntilFinalCandidate() {
+        inputConnection.setComposingText("ni", 1);
+        inputConnection.deleteSurroundingText(1, 0);
+        assertEquals("n", inputConnection.getTextBeforeCursor(10, 0));
+        assertEquals(0, channel.sentEvents.size());
+        inputConnection.commitText("你", 1);
+        inputConnection.finishComposingText();
+        assertEquals(1, channel.sentEvents.size());
+        assertEquals("你", ((TextCommitEvent) channel.sentEvents.get(0)).text());
+    }
+
+    @Test public void failedChunkStopsFurtherSends() {
+        final int[] sends = {0};
+        WaylandChannel failing = new FakeWaylandChannel() {
+            @Override public boolean sendInputEvent(InputEvent event) { return ++sends[0] < 2; }
+        };
+        ImeBridgeInputConnection connection = new ImeBridgeInputConnection(failing);
+        assertFalse(connection.commitText("x".repeat(1600), 1));
+        assertEquals(2, sends[0]);
     }
 
     @Test

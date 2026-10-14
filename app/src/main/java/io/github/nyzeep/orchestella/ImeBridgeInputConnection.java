@@ -35,12 +35,21 @@ public class ImeBridgeInputConnection implements InputConnection {
     public static final int MAX_SAFE_CHUNK_CHARS = 400;
 
     private WaylandChannel channel;
+    private final io.github.nyzeep.orchestella.terminal.ImeCompositionBuffer composition =
+            new io.github.nyzeep.orchestella.terminal.ImeCompositionBuffer();
+    private boolean closed;
+    private java.util.function.Consumer<String> unsupportedInput = ignored -> { };
+
+    public void setUnsupportedInputListener(java.util.function.Consumer<String> listener) {
+        unsupportedInput = listener == null ? ignored -> { } : listener;
+    }
 
     public ImeBridgeInputConnection(WaylandChannel channel) {
         this.channel = channel;
     }
 
     public void setChannel(WaylandChannel channel) {
+        if (this.channel != channel) composition.clear();
         this.channel = channel;
     }
 
@@ -73,39 +82,33 @@ public class ImeBridgeInputConnection implements InputConnection {
 
     @Override
     public boolean commitText(CharSequence text, int newCursorPosition) {
-        if (text == null || text.length() == 0) {
-            return true;
-        }
-        if (channel == null || !channel.isConnected()) {
-            return false;
-        }
-
+        if (closed) return false;
+        if (text == null || text.length() == 0) { composition.clear(); return true; }
+        if (channel == null || !channel.isConnected()) return false;
+        composition.clear();
         String content = text.toString();
-        int length = content.length();
-        boolean allSent = true;
-
-        if (length <= MAX_SAFE_CHUNK_CHARS) {
-            TextCommitEvent event = new TextCommitEvent(content, System.nanoTime());
-            return channel.sendInputEvent(event);
-        } else {
-            for (int i = 0; i < length; i += MAX_SAFE_CHUNK_CHARS) {
-                int end = Math.min(length, i + MAX_SAFE_CHUNK_CHARS);
-                String chunk = content.substring(i, end);
-                TextCommitEvent event = new TextCommitEvent(chunk, System.nanoTime());
-                if (!channel.sendInputEvent(event)) {
-                    allSent = false;
-                }
+        for (int offset = 0; offset < content.length();) {
+            int end = Math.min(content.length(), offset + MAX_SAFE_CHUNK_CHARS);
+            if (end < content.length() && Character.isHighSurrogate(content.charAt(end - 1))
+                    && Character.isLowSurrogate(content.charAt(end))) end--;
+            if (!channel.sendInputEvent(new TextCommitEvent(content.substring(offset, end), System.nanoTime()))) {
+                unsupportedInput.accept("当前桌面输入能力未验证或传输不可用；Unicode 输入请先使用 Linux 终端。");
+                return false;
             }
-            return allSent;
+            offset = end;
         }
+        return true;
     }
 
     @Override
     public boolean deleteSurroundingText(int beforeLength, int afterLength) {
-        if (channel == null || !channel.isConnected()) {
-            return false;
-        }
+        return deleteText(beforeLength, afterLength, false);
+    }
 
+    private boolean deleteText(int beforeLength, int afterLength, boolean codePoints) {
+        if (closed || channel == null || !channel.isConnected() || beforeLength < 0 || afterLength < 0) return false;
+        int[] remaining = composition.delete(beforeLength, afterLength, codePoints);
+        beforeLength = remaining[0]; afterLength = remaining[1];
         long now = System.nanoTime();
         boolean success = true;
 
@@ -138,7 +141,7 @@ public class ImeBridgeInputConnection implements InputConnection {
 
     @Override
     public boolean sendKeyEvent(KeyEvent event) {
-        if (channel == null || !channel.isConnected() || event == null) {
+        if (closed || channel == null || !channel.isConnected() || event == null) {
             return false;
         }
         try {
@@ -175,12 +178,12 @@ public class ImeBridgeInputConnection implements InputConnection {
 
     @Override
     public CharSequence getTextBeforeCursor(int n, int flags) {
-        return "";
+        return composition.before(n);
     }
 
     @Override
     public CharSequence getTextAfterCursor(int n, int flags) {
-        return "";
+        return composition.after(n);
     }
 
     @Override
@@ -200,11 +203,13 @@ public class ImeBridgeInputConnection implements InputConnection {
 
     @Override
     public boolean deleteSurroundingTextInCodePoints(int beforeLength, int afterLength) {
-        return deleteSurroundingText(beforeLength, afterLength);
+        return deleteText(beforeLength, afterLength, true);
     }
 
     @Override
     public boolean setComposingText(CharSequence text, int newCursorPosition) {
+        if (closed) return false;
+        composition.replace(text, newCursorPosition);
         return true;
     }
 
@@ -215,7 +220,9 @@ public class ImeBridgeInputConnection implements InputConnection {
 
     @Override
     public boolean finishComposingText() {
-        return true;
+        if (closed) return false;
+        String text = composition.value();
+        return text.isEmpty() || commitText(text, 1);
     }
 
     @Override
@@ -238,12 +245,15 @@ public class ImeBridgeInputConnection implements InputConnection {
 
     @Override
     public boolean setSelection(int start, int end) {
-        return true;
+        return composition.select(start, end);
     }
 
     @Override
     public boolean performEditorAction(int editorAction) {
-        return false;
+        if (closed || channel == null || !channel.isConnected() || !finishComposingText()) return false;
+        long now = System.nanoTime();
+        return channel.sendInputEvent(io.github.nyzeep.orchestella.runtime.contract.KeyEvent.press(LINUX_KEY_ENTER, 0, now))
+                && channel.sendInputEvent(io.github.nyzeep.orchestella.runtime.contract.KeyEvent.release(LINUX_KEY_ENTER, 0, now + 1));
     }
 
     @Override
@@ -288,7 +298,8 @@ public class ImeBridgeInputConnection implements InputConnection {
 
     @Override
     public void closeConnection() {
-        // No-op
+        closed = true;
+        composition.clear();
     }
 
     @Override

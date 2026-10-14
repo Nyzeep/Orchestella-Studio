@@ -88,7 +88,12 @@ __orchestella_build_prompt() {
         _c_magenta="${_esc}[35m"
     fi
 
+    _prompt_user="${USER:-${LOGNAME:-$(id -un 2>/dev/null)}}"
+    _prompt_host="${HOSTNAME:-$(hostname 2>/dev/null)}"
     _dir_str="$(__orchestella_dir)"
+    if [ -n "$_prompt_user" ] && [ -n "$_prompt_host" ]; then
+        _dir_str="${_prompt_user}@${_prompt_host}:${_dir_str}"
+    fi
     _branch="$(__orchestella_git_branch)"
     _git_part=""
     if [ -n "$_branch" ]; then

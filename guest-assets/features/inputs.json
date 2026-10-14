@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "units_version": 2,
+  "desktop": {
+    "distro": "debian",
+    "version": "13",
+    "architecture": "arm64",
+    "minimum_versions": {"labwc": "0.8.3", "wayvnc": "0.9.1", "wlr-randr": "0.4.1"},
+    "evidence": "2026-10-13-phase5-desktop-matrix.md: signed Debian 13 ARM64 metadata; guest execution unverified"
+  },
+  "code_server": {
+    "version": "4.141.0",
+    "architecture": "arm64",
+    "url": "https://github.com/coder/code-server/releases/download/v4.141.0/code-server-4.141.0-linux-arm64.tar.gz",
+    "size": 234587826,
+    "sha256": "e5cc78da1d631c6cf6162f9b18eeaa8ee9d3239e1a88bb99d0602cdc5fa1852d",
+    "tag_revision": "8b41915d25547e2edd553bab03ea4cbd621f98c5",
+    "max_extracted_bytes": 2147483648,
+    "license": "MIT",
+    "evidence": "B/evidence/code-server-arm64-fixed-input.json: official digest and downloaded size/SHA verified by coordinator; not guest execution"
+  },
+  "podman_acceptance": {
+    "hello": "quay.io/podman/hello@sha256:5c44ef36dc5e35a76904da0e028cf9413e0176a653525162368af13fed03571c",
+    "alpine": "docker.io/library/alpine@sha256:24bb3511a0db7b5114a4aee033c65a8a4148f39b7b80a398e548546db967a36f",
+    "network": "slirp4netns",
+    "dns_name": "example.com",
+    "tls_url": "https://example.com/",
+    "evidence": "OCI ARM64 manifest bytes and digest verified by coordinator; layers/run unverified"
+  }
+}

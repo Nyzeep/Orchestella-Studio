@@ -55,7 +55,7 @@
                 android:id="@+id/card_settings_mirrors"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                app:cardCornerRadius="20dp"
+                app:cardCornerRadius="0dp"
                 app:cardElevation="2dp"
                 app:strokeWidth="1dp"
                 app:strokeColor="?attr/colorOutlineVariant"
@@ -105,11 +105,14 @@
                             android:id="@+id/btn_settings_speed_test"
                             style="@style/Widget.Material3.Button.TonalButton"
                             android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:minHeight="48dp"
+                            android:layout_height="64dp"
+                            android:minHeight="64dp"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:gravity="center"
                             android:layout_weight="1"
                             android:layout_marginEnd="6dp"
-                            app:cornerRadius="14dp"
+                            app:cornerRadius="0dp"
                             app:icon="@drawable/ic_network"
                             app:iconSize="18dp"
                             android:text="一键测速并优选"
@@ -120,11 +123,14 @@
                             android:id="@+id/btn_settings_reset_mirror"
                             style="@style/Widget.Material3.Button.OutlinedButton"
                             android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:minHeight="48dp"
+                            android:layout_height="64dp"
+                            android:minHeight="64dp"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:gravity="center"
                             android:layout_weight="1"
                             android:layout_marginStart="6dp"
-                            app:cornerRadius="14dp"
+                            app:cornerRadius="0dp"
                             android:text="恢复默认配置"
                             android:textSize="12sp" />
                     </LinearLayout>
@@ -181,7 +187,7 @@
                 android:id="@+id/card_settings_virtualization"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                app:cardCornerRadius="20dp"
+                app:cardCornerRadius="0dp"
                 app:cardElevation="2dp"
                 app:strokeWidth="1dp"
                 app:strokeColor="?attr/colorOutlineVariant"
@@ -203,7 +209,7 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="AVF 硬件虚拟化探针状态"
+                            android:text="AVF 平台声明与权限"
                             android:textSize="15sp"
                             android:textStyle="bold"
                             android:textColor="?attr/colorOnSurface" />
@@ -230,7 +236,7 @@
                         android:layout_marginTop="10dp"
                         android:background="?attr/colorSurfaceContainerLow"
                         android:padding="12dp"
-                        android:text="正在探测宿主硬件虚拟化能力…"
+                        android:text="正在读取平台声明与权限…"
                         android:textSize="12sp"
                         android:textColor="?attr/colorOnSurfaceVariant" />
 
@@ -247,7 +253,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="💡 架构平滑降级保障机制"
+                            android:text="启动验证与回退"
                             android:textSize="13sp"
                             android:textStyle="bold"
                             android:textColor="?attr/colorPrimary" />
@@ -256,7 +262,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="4dp"
-                            android:text="当宿主设备未开放 pKVM 硬件虚拟化权限时，平台自动平滑切换至 QEMU TCG 仿真内核运行。无论硬件环境如何，7 大官方发行版、包管理与终端/图形化界面均保持 100% 完整可用。"
+                            android:text="当前仅检查 AVF 平台声明与应用权限。custom VM 在实例启动时验证创建与运行；预检不满足或启动失败时自动回退至 QEMU。"
                             android:textSize="11sp"
                             android:textColor="?attr/colorOnSurfaceVariant" />
                     </LinearLayout>
@@ -281,7 +287,7 @@
                 android:id="@+id/card_settings_terminal"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                app:cardCornerRadius="20dp"
+                app:cardCornerRadius="0dp"
                 app:cardElevation="2dp"
                 app:strokeWidth="1dp"
                 app:strokeColor="?attr/colorOutlineVariant"
@@ -317,7 +323,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
-                                android:text="在终端输入行末尾保持 500ms 呼吸闪烁，提升输入状态感知"
+                                android:text="关闭后保持光标可见；偏好会保存并立即应用"
                                 android:textSize="12sp"
                                 android:textColor="?attr/colorOutline" />
                         </LinearLayout>
@@ -326,6 +332,9 @@
                             android:id="@+id/switch_settings_cursor_blink"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
+                            android:minWidth="48dp"
+                            android:minHeight="48dp"
+                            android:contentDescription="终端光标闪烁"
                             android:checked="true" />
                     </LinearLayout>
 
@@ -345,10 +354,11 @@
                         android:textColor="?attr/colorOnSurface" />
 
                     <TextView
-                        android:layout_width="wrap_content"
+                        android:id="@+id/txt_settings_terminal_palette"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
-                        android:text="主题：Dracula Official Palette (#282A36)\n字体：Monospace 等宽对齐\nClear 命令：支持 VT100 [2J / [3J / [H 视口与历史清空"
+                        android:text="配色与 16 色 ANSI 调色板跟随当前主题\n字体：等宽对齐"
                         android:textSize="12sp"
                         android:textColor="?attr/colorOutline" />
 
@@ -372,7 +382,7 @@
                 android:id="@+id/card_settings_about"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                app:cardCornerRadius="20dp"
+                app:cardCornerRadius="0dp"
                 app:cardElevation="2dp"
                 app:strokeWidth="1dp"
                 app:strokeColor="?attr/colorOutlineVariant"
@@ -430,7 +440,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                app:cardCornerRadius="20dp"
+                app:cardCornerRadius="0dp"
                 app:cardElevation="2dp"
                 app:strokeWidth="1dp"
                 app:strokeColor="?attr/colorOutlineVariant"
@@ -442,50 +452,64 @@
                     android:orientation="vertical"
                     android:padding="20dp">
 
+                    <TextView
+                        android:id="@+id/txt_settings_theme_summary"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="12dp"
+                        android:text="当前主题"
+                        android:textSize="13sp"
+                        android:accessibilityLiveRegion="polite"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
+
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_pick_theme"
                         style="@style/Widget.Material3.Button.TonalButton"
                         android:layout_width="match_parent"
-                        android:layout_height="48dp"
+                        android:layout_height="wrap_content"
+                        android:minHeight="48dp"
                         android:insetTop="0dp"
                         android:insetBottom="0dp"
-                        app:cornerRadius="12dp"
-                        android:text="🎨 选择主题（内置 Catppuccin / Dracula / Nord 等）"
+                        app:cornerRadius="0dp"
+                        android:text="选择主题"
                         android:textSize="13sp" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_pick_accent"
                         style="@style/Widget.Material3.Button.TonalButton"
                         android:layout_width="match_parent"
-                        android:layout_height="48dp"
+                        android:layout_height="wrap_content"
+                        android:minHeight="48dp"
                         android:layout_marginTop="8dp"
                         android:insetTop="0dp"
                         android:insetBottom="0dp"
-                        app:cornerRadius="12dp"
-                        android:text="✨ 自定义强调色"
+                        app:cornerRadius="0dp"
+                        android:text="自定义强调色"
                         android:textSize="13sp" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_pick_background"
                         style="@style/Widget.Material3.Button.TonalButton"
                         android:layout_width="match_parent"
-                        android:layout_height="48dp"
+                        android:layout_height="wrap_content"
+                        android:minHeight="48dp"
                         android:layout_marginTop="8dp"
                         android:insetTop="0dp"
                         android:insetBottom="0dp"
-                        app:cornerRadius="12dp"
-                        android:text="🖼️ 自定义背景图片"
+                        app:cornerRadius="0dp"
+                        android:text="选择背景图片"
                         android:textSize="13sp" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_clear_background"
                         style="@style/Widget.Material3.Button.OutlinedButton"
                         android:layout_width="match_parent"
-                        android:layout_height="44dp"
+                        android:layout_height="wrap_content"
+                        android:minHeight="48dp"
                         android:layout_marginTop="8dp"
                         android:insetTop="0dp"
                         android:insetBottom="0dp"
-                        app:cornerRadius="12dp"
+                        app:cornerRadius="0dp"
                         android:text="清除自定义背景"
                         android:textSize="12sp" />
 
@@ -502,8 +526,10 @@
                         android:id="@+id/seek_terminal_font"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:min="10"
-                        android:max="22" />
+                        android:minHeight="48dp"
+                        android:contentDescription="终端字号"
+                        android:min="0"
+                        android:max="12" />
 
                     <TextView
                         android:id="@+id/tv_letter_spacing_label"
@@ -518,7 +544,26 @@
                         android:id="@+id/seek_letter_spacing"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:minHeight="48dp"
+                        android:contentDescription="终端字间距"
                         android:max="20" />
+
+                    <TextView
+                        android:id="@+id/tv_line_spacing_label"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="终端额外行距：0px"
+                        android:textSize="12sp"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
+
+                    <SeekBar
+                        android:id="@+id/seek_terminal_line_spacing"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:minHeight="48dp"
+                        android:contentDescription="终端额外行距"
+                        android:max="8" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 

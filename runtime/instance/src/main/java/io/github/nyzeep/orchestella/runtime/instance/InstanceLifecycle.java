@@ -33,16 +33,8 @@ public final class InstanceLifecycle {
     private static final int BRIDGE_TOKEN_BYTE_COUNT = BridgeHandshake.TOKEN_HEX_LENGTH / 2;
     private static final char[] LOWERCASE_HEX = "0123456789abcdef".toCharArray();
     private static final SecureRandom BRIDGE_TOKEN_RANDOM = new SecureRandom();
-    private static final char[] PASSWORD_CHARS =
-            "23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz".toCharArray();
-    private static final int GUEST_PASSWORD_LENGTH = 16;
-
     public static String newGuestPassword() {
-        char[] chars = new char[GUEST_PASSWORD_LENGTH];
-        for (int i = 0; i < GUEST_PASSWORD_LENGTH; i++) {
-            chars[i] = PASSWORD_CHARS[BRIDGE_TOKEN_RANDOM.nextInt(PASSWORD_CHARS.length)];
-        }
-        return new String(chars);
+        return InstanceUserConfig.newPassword();
     }
 
     private InstanceLifecycle() {}
@@ -148,31 +140,7 @@ public final class InstanceLifecycle {
         private final VmHardwareConfig hardwareConfig;
         private final String hostname;
         private final String defaultUser;
-
-        private Instance(
-                String id,
-                DistroReference distro,
-                Path rootVolume,
-                String bridgeToken,
-                FullLinuxContract.RuntimeClass runtimeClass,
-                State state,
-                long createdAtMillis,
-                long updatedAtMillis) {
-            this(id, distro, rootVolume, bridgeToken, InstanceUserConfig.DEFAULT_ROOT_PASSWORD, runtimeClass, state, createdAtMillis, updatedAtMillis, null, VmHardwareConfig.defaultConfig(), InstanceUserConfig.DEFAULT_HOSTNAME, InstanceUserConfig.DEFAULT_ROOT_USER);
-        }
-
-        private Instance(
-                String id,
-                DistroReference distro,
-                Path rootVolume,
-                String bridgeToken,
-                FullLinuxContract.RuntimeClass runtimeClass,
-                State state,
-                long createdAtMillis,
-                long updatedAtMillis,
-                CrashDiagnostic crashDiagnostic) {
-            this(id, distro, rootVolume, bridgeToken, InstanceUserConfig.DEFAULT_ROOT_PASSWORD, runtimeClass, state, createdAtMillis, updatedAtMillis, crashDiagnostic, VmHardwareConfig.defaultConfig(), InstanceUserConfig.DEFAULT_HOSTNAME, InstanceUserConfig.DEFAULT_ROOT_USER);
-        }
+        private final boolean hasSudo;
 
         private Instance(
                 String id,
@@ -217,6 +185,26 @@ public final class InstanceLifecycle {
                 VmHardwareConfig hardwareConfig,
                 String hostname,
                 String defaultUser) {
+            this(id, distro, rootVolume, bridgeToken, guestPassword, runtimeClass, state,
+                    createdAtMillis, updatedAtMillis, crashDiagnostic, hardwareConfig,
+                    hostname, defaultUser, false);
+        }
+
+        private Instance(
+                String id,
+                DistroReference distro,
+                Path rootVolume,
+                String bridgeToken,
+                String guestPassword,
+                FullLinuxContract.RuntimeClass runtimeClass,
+                State state,
+                long createdAtMillis,
+                long updatedAtMillis,
+                CrashDiagnostic crashDiagnostic,
+                VmHardwareConfig hardwareConfig,
+                String hostname,
+                String defaultUser,
+                boolean hasSudo) {
             requireInstanceId(id);
             this.id = id;
             this.distro = Objects.requireNonNull(distro, "distro");
@@ -229,12 +217,13 @@ public final class InstanceLifecycle {
             this.updatedAtMillis = updatedAtMillis;
             this.crashDiagnostic = crashDiagnostic;
             this.hardwareConfig = hardwareConfig != null ? hardwareConfig : VmHardwareConfig.defaultConfig();
-            this.hostname = (hostname != null && !hostname.trim().isEmpty())
-                    ? hostname.trim().toLowerCase()
-                    : InstanceUserConfig.DEFAULT_HOSTNAME;
-            this.defaultUser = (defaultUser != null && !defaultUser.trim().isEmpty())
-                    ? defaultUser.trim()
-                    : InstanceUserConfig.DEFAULT_ROOT_USER;
+            this.hostname = InstanceUserConfig.normalizeHostname(hostname);
+            this.defaultUser = defaultUser == null || defaultUser.trim().isEmpty()
+                    ? InstanceUserConfig.DEFAULT_ROOT_USER : defaultUser;
+            if (!InstanceUserConfig.isValidUsername(this.defaultUser)) {
+                throw new IllegalArgumentException("invalid guest username");
+            }
+            this.hasSudo = hasSudo;
         }
 
         public String id() {
@@ -260,7 +249,8 @@ public final class InstanceLifecycle {
 
         /**
          * Per-instance random guest user/root credential (ADR-0010).
-         * User-visible and modifiable; never hardcoded or constant.
+         * User-visible and modifiable; must never be logged. An empty value marks an
+         * unknown legacy/imported credential and must not trigger a guest password reset.
          */
         public String guestPassword() {
             return guestPassword;
@@ -272,6 +262,11 @@ public final class InstanceLifecycle {
 
         public String defaultUser() {
             return defaultUser;
+        }
+
+        /** Persisted explicit sudo choice; absent legacy metadata never grants sudo. */
+        public boolean hasSudo() {
+            return hasSudo;
         }
 
         public FullLinuxContract.RuntimeClass runtimeClass() {
@@ -323,7 +318,8 @@ public final class InstanceLifecycle {
                     diagnostic,
                     hardwareConfig,
                     hostname,
-                    defaultUser);
+                    defaultUser,
+                    hasSudo);
         }
 
         private Instance withUpdatedAt(Clock clock) {
@@ -340,7 +336,8 @@ public final class InstanceLifecycle {
                     crashDiagnostic,
                     hardwareConfig,
                     hostname,
-                    defaultUser);
+                    defaultUser,
+                    hasSudo);
         }
 
         private Instance withGuestPassword(String newPassword, Clock clock) {
@@ -357,7 +354,8 @@ public final class InstanceLifecycle {
                     crashDiagnostic,
                     hardwareConfig,
                     hostname,
-                    defaultUser);
+                    defaultUser,
+                    hasSudo);
         }
 
         Instance withHardwareConfig(VmHardwareConfig newConfig, Clock clock) {
@@ -374,7 +372,8 @@ public final class InstanceLifecycle {
                     crashDiagnostic,
                     Objects.requireNonNull(newConfig, "newConfig"),
                     hostname,
-                    defaultUser);
+                    defaultUser,
+                    hasSudo);
         }
 
         static Instance restore(
@@ -405,7 +404,7 @@ public final class InstanceLifecycle {
                     distro,
                     rootVolume,
                     newBridgeToken(),
-                    InstanceUserConfig.DEFAULT_ROOT_PASSWORD,
+                    "", // Imported root volumes retain their existing, unknown guest credential.
                     runtimeClass != null ? runtimeClass : FullLinuxContract.RuntimeClass.FULL_LINUX,
                     state != null ? state : State.STOPPED,
                     now,
@@ -413,7 +412,8 @@ public final class InstanceLifecycle {
                     null,
                     hardwareConfig != null ? hardwareConfig : VmHardwareConfig.defaultConfig(),
                     hostname,
-                    defaultUser);
+                    defaultUser,
+                    false);
         }
 
         private Properties toProperties() {
@@ -423,13 +423,16 @@ public final class InstanceLifecycle {
             properties.setProperty("distroVersion", distro.version());
             properties.setProperty("rootVolume", rootVolume.toString());
             properties.setProperty("bridgeToken", bridgeToken);
-            properties.setProperty("guestPassword", guestPassword);
+            if (!guestPassword.isEmpty()) {
+                properties.setProperty("guestPassword", guestPassword);
+            }
             properties.setProperty("runtimeClass", runtimeClass.name());
             properties.setProperty("state", state.name());
             properties.setProperty("createdAtMillis", Long.toString(createdAtMillis));
             properties.setProperty("updatedAtMillis", Long.toString(updatedAtMillis));
             properties.setProperty("hostname", hostname);
             properties.setProperty("defaultUser", defaultUser);
+            properties.setProperty("hasSudo", Boolean.toString(hasSudo));
             if (crashDiagnostic != null) {
                 properties.setProperty("crash.timestampMillis", Long.toString(crashDiagnostic.timestampMillis()));
                 properties.setProperty("crash.exitCode", Integer.toString(crashDiagnostic.exitCode()));
@@ -466,7 +469,9 @@ public final class InstanceLifecycle {
                 }
                 String guestPassword = properties.getProperty("guestPassword");
                 if (guestPassword == null || guestPassword.trim().isEmpty()) {
-                    guestPassword = InstanceUserConfig.DEFAULT_ROOT_PASSWORD;
+                    // Metadata cannot prove the password installed on an existing root volume.
+                    // Keep it unknown so upgrades do not silently reset the guest account.
+                    guestPassword = "";
                 }
                 String hostname = properties.getProperty("hostname");
                 if (hostname == null || hostname.trim().isEmpty()) {
@@ -476,6 +481,11 @@ public final class InstanceLifecycle {
                 if (defaultUser == null || defaultUser.trim().isEmpty()) {
                     defaultUser = InstanceUserConfig.DEFAULT_ROOT_USER;
                 }
+                String storedSudo = properties.getProperty("hasSudo", "false");
+                if (!"true".equals(storedSudo) && !"false".equals(storedSudo)) {
+                    throw new IllegalArgumentException("invalid stored sudo choice");
+                }
+                boolean hasSudo = Boolean.parseBoolean(storedSudo);
                 VmHardwareConfig hardwareConfig = VmHardwareConfig.defaultConfig();
                 String cpuCoresStr = properties.getProperty("hardware.cpuCores");
                 if (cpuCoresStr != null) {
@@ -500,7 +510,8 @@ public final class InstanceLifecycle {
                         diagnostic,
                         hardwareConfig,
                         hostname,
-                        defaultUser);
+                        defaultUser,
+                        hasSudo);
             } catch (IllegalArgumentException malformed) {
                 throw new InvalidMetadataException(malformed);
             }
@@ -701,7 +712,8 @@ public final class InstanceLifecycle {
                             null,
                             hardwareConfig,
                             effectiveConfig.hostname(),
-                            effectiveConfig.username());
+                            effectiveConfig.username(),
+                            effectiveConfig.hasSudo());
             store.save(instance);
             return instance;
         }
@@ -746,7 +758,8 @@ public final class InstanceLifecycle {
                             null,
                             source.hardwareConfig(),
                             source.hostname(),
-                            source.defaultUser());
+                            source.defaultUser(),
+                            source.hasSudo());
             store.save(cloned);
             return cloned;
         }
@@ -794,7 +807,8 @@ public final class InstanceLifecycle {
                             null,
                             source.hardwareConfig(),
                             source.hostname(),
-                            source.defaultUser());
+                            source.defaultUser(),
+                            source.hasSudo());
             store.save(cloned);
             return cloned;
         }

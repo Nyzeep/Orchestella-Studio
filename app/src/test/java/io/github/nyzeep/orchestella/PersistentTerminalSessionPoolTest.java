@@ -144,6 +144,70 @@ public final class PersistentTerminalSessionPoolTest {
         assertTrue(session.closed.get());
     }
 
+    @Test public void utf8DecoderPreservesCharactersSplitAtEveryByte() throws Exception {
+        byte[] bytes = "中文😀é\r\n".getBytes(StandardCharsets.UTF_8);
+        InputStream split = new ByteArrayInputStream(bytes) {
+            @Override public synchronized int read(byte[] buffer, int offset, int length) {
+                return super.read(buffer, offset, Math.min(1, length));
+            }
+        };
+        PersistentTerminalSessionPool.SessionHolder holder = pool.register("utf8-vm",
+                new FakeExecutionSession(split, new ByteArrayOutputStream()));
+        CountDownLatch ended = new CountDownLatch(1);
+        holder.setSessionEndListener(id -> ended.countDown());
+        assertTrue(ended.await(3, TimeUnit.SECONDS));
+        assertEquals("中文😀é\r\n", holder.getTranscript());
+        assertFalse(holder.getTranscript().contains("\ufffd"));
+    }
+
+    @Test public void persistentScreenSurvivesTruncatedRawHistoryAndRespondsWhileDetached() throws Exception {
+        PipedOutputStream pipeOut = new PipedOutputStream();
+        PipedInputStream pipeIn = new PipedInputStream(pipeOut, 32768);
+        ByteArrayOutputStream input = new ByteArrayOutputStream();
+        PersistentTerminalSessionPool.SessionHolder holder = new PersistentTerminalSessionPool.SessionHolder(
+                "persistent-vm", new FakeExecutionSession(pipeIn, input), 64);
+        try {
+            pipeOut.write("shell$ \u001b[?1049h\u001b[31m\u001b[?1h".getBytes(StandardCharsets.UTF_8));
+            for (int i = 0; i < 50; i++)
+                pipeOut.write(("\u001b[Hframe-" + i + "\u001b[K").getBytes(StandardCharsets.UTF_8));
+            pipeOut.write("\u001b[3;4H\u001b[6n".getBytes(StandardCharsets.UTF_8));
+            pipeOut.flush();
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+            while (!input.toString(StandardCharsets.UTF_8).contains("\u001b[3;4R") && System.nanoTime() < deadline)
+                Thread.sleep(2);
+            assertTrue("Background DSR must be answered without a View", input.toString(StandardCharsets.UTF_8).contains("\u001b[3;4R"));
+            assertFalse(holder.getTranscript().contains("1049h"));
+            assertTrue(holder.getScreenModel().isAlternateScreen());
+            assertTrue(holder.getScreenModel().isApplicationCursorKeys());
+            assertEquals(2, holder.getScreenModel().cursorRow());
+            assertEquals(3, holder.getScreenModel().cursorColumn());
+            assertTrue(holder.getScreenModel().snapshot().text().startsWith("frame-49"));
+            Consumer<String> listener = chunk -> {};
+            holder.attach(listener); holder.detach(listener); holder.attach(listener);
+            assertTrue(holder.getScreenModel().isAlternateScreen());
+            pipeOut.write("\u001b[?1049l".getBytes(StandardCharsets.UTF_8));
+            pipeOut.flush();
+            while (holder.getScreenModel().isAlternateScreen() && System.nanoTime() < deadline) Thread.sleep(2);
+            assertFalse(holder.getScreenModel().isAlternateScreen());
+            assertTrue(holder.getScreenModel().snapshot().text().startsWith("shell$"));
+        } finally { holder.close(); pipeOut.close(); }
+    }
+
+    @Test public void endListenerRegisteredAfterEofIsNotLostAndDeadStreamRejectsInput() throws Exception {
+        PersistentTerminalSessionPool.SessionHolder holder = pool.register("ended-vm",
+                new FakeExecutionSession(new ByteArrayInputStream(new byte[0]), new ByteArrayOutputStream()));
+        CountDownLatch first = new CountDownLatch(1);
+        holder.setSessionEndListener(id -> first.countDown());
+        assertTrue(first.await(3, TimeUnit.SECONDS));
+        CountDownLatch second = new CountDownLatch(1);
+        holder.setSessionEndListener(id -> second.countDown());
+        assertTrue(second.await(1, TimeUnit.SECONDS));
+        try {
+            holder.sendBytes(new byte[]{'x'});
+            org.junit.Assert.fail("Ended stream accepted input");
+        } catch (IOException expected) { }
+    }
+
     @Test
     public void testRingBufferEnforcesBoundaries() {
         TerminalRingBuffer buffer = new TerminalRingBuffer(100);

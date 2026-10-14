@@ -16,6 +16,8 @@ public final class AvfEngineException extends RuntimeException {
     public static final String VM_MANAGER_UNAVAILABLE = "VM_MANAGER_UNAVAILABLE";
     /** VM creation failed for a generic, recorded reason. */
     public static final String VM_CREATE_FAILED = "VM_CREATE_FAILED";
+    /** A same-name persistent VM cannot be verified as matching the requested launch config. */
+    public static final String CONFIG_MISMATCH = "CONFIG_MISMATCH";
     /** The hardware/firmware refuses non-protected custom VMs (e.g. blocked SoCs). */
     public static final String HARDWARE_UNSUPPORTED = "HARDWARE_UNSUPPORTED";
     /** The MANAGE_VIRTUAL_MACHINE authorization is missing or was revoked. */

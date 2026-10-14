@@ -1,5 +1,6 @@
 package io.github.nyzeep.orchestella.runtime.instance;
 
+import java.security.SecureRandom;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.regex.Pattern;
@@ -14,10 +15,14 @@ public final class InstanceUserConfig {
 
     public static final String DEFAULT_HOSTNAME = "orchestella";
     public static final String DEFAULT_ROOT_USER = "root";
-    public static final String DEFAULT_ROOT_PASSWORD = "1234";
+
+    private static final SecureRandom PASSWORD_RANDOM = new SecureRandom();
+    private static final char[] PASSWORD_CHARS =
+            "23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz".toCharArray();
+    private static final int PASSWORD_LENGTH = 24;
 
     private static final Pattern USERNAME_PATTERN = Pattern.compile("^[a-z_][a-z0-9_-]{1,15}$");
-    private static final Pattern HOSTNAME_PATTERN = Pattern.compile("^[a-z0-9][a-z0-9-]{0,62}$");
+    private static final Pattern HOSTNAME_PATTERN = Pattern.compile("^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$");
 
     private final String username;
     private final String password;
@@ -44,13 +49,17 @@ public final class InstanceUserConfig {
         this.hostname = normalizedHost;
     }
 
-    /**
-     * Standard initial root configuration factory (Ticket 03).
-     *
-     * <p>Username: {@code "root"}, Password: {@code "1234"}, Hostname: {@code "orchestella"}, Sudo: {@code true}.
-     */
+    /** Creates a fresh root configuration with a strong per-instance credential (ADR-0010). */
     public static InstanceUserConfig defaultRoot() {
-        return new InstanceUserConfig(DEFAULT_ROOT_USER, DEFAULT_ROOT_PASSWORD, true, DEFAULT_HOSTNAME);
+        return new InstanceUserConfig(DEFAULT_ROOT_USER, newPassword(), true, DEFAULT_HOSTNAME);
+    }
+
+    static String newPassword() {
+        char[] password = new char[PASSWORD_LENGTH];
+        for (int i = 0; i < password.length; i++) {
+            password[i] = PASSWORD_CHARS[PASSWORD_RANDOM.nextInt(PASSWORD_CHARS.length)];
+        }
+        return new String(password);
     }
 
     /**
@@ -74,11 +83,14 @@ public final class InstanceUserConfig {
         return HOSTNAME_PATTERN.matcher(hostname).matches();
     }
 
-    private static String normalizeHostname(String hostname) {
-        if (hostname == null || hostname.trim().isEmpty()) {
-            return DEFAULT_HOSTNAME;
+    /** Canonical identity validation is usable without inventing an unknown legacy password. */
+    public static String normalizeHostname(String hostname) {
+        String normalized = hostname == null || hostname.trim().isEmpty()
+                ? DEFAULT_HOSTNAME : hostname.trim().toLowerCase(java.util.Locale.ROOT);
+        if (!isValidHostname(normalized)) {
+            throw new IllegalArgumentException("invalid guest hostname");
         }
-        return hostname.trim().toLowerCase();
+        return normalized;
     }
 
     public String username() {
@@ -110,13 +122,17 @@ public final class InstanceUserConfig {
         Objects.requireNonNull(properties, "properties");
         String user = properties.getProperty("username", DEFAULT_ROOT_USER);
         if (!isValidUsername(user)) {
-            user = DEFAULT_ROOT_USER;
+            throw new IllegalArgumentException("invalid stored guest username");
         }
-        String pass = properties.getProperty("password", DEFAULT_ROOT_PASSWORD);
+        String pass = properties.getProperty("password");
         if (pass == null || pass.trim().isEmpty()) {
-            pass = DEFAULT_ROOT_PASSWORD;
+            throw new IllegalArgumentException("stored user password is unknown");
         }
-        boolean sudo = Boolean.parseBoolean(properties.getProperty("hasSudo", "true"));
+        String storedSudo = properties.getProperty("hasSudo", "false");
+        if (!"true".equals(storedSudo) && !"false".equals(storedSudo)) {
+            throw new IllegalArgumentException("invalid stored sudo choice");
+        }
+        boolean sudo = Boolean.parseBoolean(storedSudo);
         String host = properties.getProperty("hostname", DEFAULT_HOSTNAME);
         return new InstanceUserConfig(user, pass, sudo, host);
     }

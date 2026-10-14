@@ -160,5 +160,29 @@ public final class InstanceStrategyLauncherTest {
                 new InstanceStrategyLauncher.LaunchParameters(
                         "inst-1", "token-1", "rootfs.tar.gz", "/root.raw", "/runtime", "/inputs", "mySecretPass123");
         assertEquals("mySecretPass123", params.guestPassword);
+        assertEquals("root", params.guestUser);
+        assertEquals("orchestella", params.hostname);
+        org.junit.Assert.assertFalse(params.hasSudo);
+    }
+
+    @Test
+    public void transparentFallbackRetainsExactOrdinaryIdentityAndUnknownPassword() throws Exception {
+        InstanceStrategyLauncher.LaunchParameters parameters = new InstanceStrategyLauncher.LaunchParameters(
+                "inst-1", "token-1", "rootfs.tar.gz", "/root.raw", "/runtime", "/inputs", "", null,
+                (FirstBootProvisionPipeline.ProvisionPayload) null, "Dev-Box", "developer", false);
+        List<InstanceStrategyLauncher.LaunchParameters> seen = new ArrayList<>();
+        InstanceStrategyLauncher launcher = new InstanceStrategyLauncher(params -> {
+            seen.add(params);
+            throw new AvfEngineException(AvfEngineException.HARDWARE_UNSUPPORTED, "synthetic unsupported");
+        }, params -> { seen.add(params); return stubSession(); }, failure -> { });
+        launcher.launch(parameters, true);
+        assertEquals(2, seen.size());
+        for (InstanceStrategyLauncher.LaunchParameters params : seen) {
+            assertSame(parameters, params);
+            assertEquals("developer", params.guestUser);
+            assertEquals("dev-box", params.hostname);
+            assertEquals("", params.guestPassword);
+            org.junit.Assert.assertFalse(params.hasSudo);
+        }
     }
 }

@@ -38,4 +38,10 @@ public final class DebianInstanceCreator {
     public InstanceLifecycle.Instance create(InputStream archive, long declaredSize) throws IOException {
         return delegate.create(archive, declaredSize);
     }
+
+    public InstanceLifecycle.Instance create(InputStream archive, long declaredSize,
+            io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig hardwareConfig,
+            io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig userConfig) throws IOException {
+        return delegate.create(archive, declaredSize, hardwareConfig, userConfig);
+    }
 }

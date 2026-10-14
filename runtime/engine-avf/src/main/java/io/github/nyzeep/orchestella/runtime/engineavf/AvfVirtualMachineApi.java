@@ -47,7 +47,18 @@ public interface AvfVirtualMachineApi {
         void stop();
     }
 
-    /** One bidirectional host-guest vsock channel. */
+    /**
+     * Android-boundary adapter for a verified ParcelFileDescriptor returned by connectVsock(long).
+     * Success transfers ownership to the returned channel. On failure the caller closes the original
+     * descriptor; the adapter must first release any duplicates it created. No descriptor or stream
+     * may be retained after failure. Kept Android-free so the App can inject its typed FD adapter.
+     */
+    @FunctionalInterface
+    interface DescriptorAdapter {
+        AvfVsockChannel adopt(Object parcelFileDescriptor) throws IOException;
+    }
+
+    /** One bidirectional host-guest vsock channel. Close must release both directions idempotently. */
     interface AvfVsockChannel extends AutoCloseable {
         InputStream inputStream();
 

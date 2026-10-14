@@ -5,14 +5,16 @@
 **无需 Root 的 Android 原生 Linux 虚拟机与移动工作站运行环境**  
 *Native Full-Linux VM Runtime & Mobile Workstation for Android — No Root Required*
 
-[![Release](https://img.shields.io/badge/Release-v0.2.0-blue.svg?style=flat-square)](https://github.com/Nyzeep/Orchestella-Studio/releases)
+[![Release](https://img.shields.io/badge/Release-v0.1.5-blue.svg?style=flat-square)](https://github.com/Nyzeep/Orchestella-Studio/releases/tag/v0.1.5)
 [![License](https://img.shields.io/badge/License-Apache--2.0-orange.svg?style=flat-square)](LICENSE)
 [![Android](https://img.shields.io/badge/Android-8.0%2B%20(API%2026%2B)-green.svg)](https://developer.android.com)
 [![Arch](https://img.shields.io/badge/Arch-ARM64--v8a-purple.svg)](#)
 [![CI](https://img.shields.io/github/actions/workflow/status/Nyzeep/Orchestella-Studio/ci.yml?branch=main&label=CI&style=flat-square)](https://github.com/Nyzeep/Orchestella-Studio/actions)
 
 **🚧 项目处于积极演进期（Active Development）**  
-当前版本提供公测预览能力（v0.2.0），底层内核架构已在 Android 15 实体机完成全链路闭环验证。
+当前公开的应用发布版为 [v0.1.5](https://github.com/Nyzeep/Orchestella-Studio/releases/tag/v0.1.5)。品质优化与 Phase 5 合流候选为 `0.3.0-preview.1`，源码位于 [integration/quality-phase5](https://github.com/Nyzeep/Orchestella-Studio/tree/integration/quality-phase5)，尚未作为公开 APK 发布；宿主测试通过不代表桌面、IDE 或所有设备能力已完成真机验收。
+
+源码仓库已公开，可直接访问 [GitHub 项目](https://github.com/Nyzeep/Orchestella-Studio) 或下载 [main 源码 ZIP](https://github.com/Nyzeep/Orchestella-Studio/archive/refs/heads/main.zip)。如果旧链接提示 404，请使用上述规范地址。
 
 </div>
 
@@ -107,7 +109,7 @@
 ## 🚀 快速开始
 
 ### 安装与运行
-1. **下载安装**：从 [Releases](https://github.com/Nyzeep/Orchestella-Studio/releases) 获取最新的预编译 APK（要求 Android 8.0+，ARM64 架构）。
+1. **下载安装**：下载 [v0.1.5 应用 APK](https://github.com/Nyzeep/Orchestella-Studio/releases/download/v0.1.5/Orchestella-Studio-v0.1.5.apk)，或查看 [v0.1.5 发布说明](https://github.com/Nyzeep/Orchestella-Studio/releases/tag/v0.1.5)（要求 Android 8.0+，ARM64 架构）。`distro-catalog-v1` 是发行版素材发布，不包含应用 APK；不要将它当作最新应用安装包。当前合流候选 APK 尚未公开发布。
 2. **启动向导**：
    - 打开 Orchestella Studio，点击首页的 **「🚀 选择发行版并启动创建向导」**。
    - 选择您偏好的发行版（如 Ubuntu 24.04），选择就近镜像源（默认国内智能优选清华源）。
@@ -133,7 +135,7 @@ ssh -p 2222 root@127.0.0.1
 
 ```bash
 # 1. 克隆代码仓库
-git clone git@github.com:Nyzeep/Orchestella-Studio.git
+git clone https://github.com/Nyzeep/Orchestella-Studio.git
 cd Orchestella-Studio
 
 # 2. 运行协议合规检查与基础单元测试

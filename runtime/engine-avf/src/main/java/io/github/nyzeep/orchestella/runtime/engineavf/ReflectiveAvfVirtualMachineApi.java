@@ -4,68 +4,51 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
 /**
- * Production {@link AvfVirtualMachineApi} that drives the Android AVF SDK
- * purely through reflection (the {@code android.system.virtualmachine.*}
- * surface, including the Custom VM config builder, is not part of the public
- * SDK on the Android 13/14 devices this strategy targets, and the module must
- * stay a pure-JVM, strategy-neutral unit).
- *
- * <p>Reflection on hidden API surface is subject to the platform's hidden-API
- * enforcement. On Android 15+ the SDK classes are public and plain reflection
- * suffices; on Android 13/14 the host app must supply a hidden-API exemption
- * step (e.g. a HiddenApiBypass-style hook) through the constructor. Its
- * absence is recorded as a reflection note, never silently ignored.
- *
- * <p>Every required reflective step fails closed with a precise
- * {@link AvfEngineException} reason; genuinely optional configuration steps
- * are recorded in the handle's reflection notes instead.
+ * Pure-Java boundary for the restricted AOSP AVF SystemApi. Based on Virtualization revision
+ * c984fc337c11ca5edc03ccf02037b2455dd8fcaf (Android 16), not a duck-typed stream API.
+ * MANAGE_VIRTUAL_MACHINE and USE_CUSTOM_VIRTUAL_MACHINE are both required. Reflection never
+ * grants permission or makes hidden APIs public; unavailable methods fail closed.
  */
 public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineApi {
-    private static final String MANAGER_CLASS =
-            "android.system.virtualmachine.VirtualMachineManager";
-    private static final String CONFIG_CLASS =
-            "android.system.virtualmachine.VirtualMachineConfig";
-    private static final String CONFIG_BUILDER_CLASS =
-            "android.system.virtualmachine.VirtualMachineCustomImageConfig$Builder";
-    private static final String VM_CLASS = "android.system.virtualmachine.VirtualMachine";
-    private static final String VIRTUALIZATION_SERVICE = "virtualization_service";
-
+    private static final String PACKAGE = "android.system.virtualmachine.";
+    private static final String MANAGE_PERMISSION = "android.permission.MANAGE_VIRTUAL_MACHINE";
+    private static final String CUSTOM_PERMISSION = "android.permission.USE_CUSTOM_VIRTUAL_MACHINE";
     private final Object context;
     private final ClassLoader classLoader;
     private final Runnable hiddenApiExemption;
+    private final DescriptorAdapter descriptorAdapter;
     private boolean exemptionApplied;
 
     public ReflectiveAvfVirtualMachineApi(Object context, ClassLoader classLoader) {
         this(context, classLoader, null);
     }
 
-    /**
-     * @param hiddenApiExemption optional one-shot hook (e.g. HiddenApiBypass)
-     *     executed before the first reflective access; null means no-op.
-     */
-    public ReflectiveAvfVirtualMachineApi(
-            Object context, ClassLoader classLoader, Runnable hiddenApiExemption) {
+    /** Optional explicitly supplied access hook; no exemption is installed by this adapter. */
+    public ReflectiveAvfVirtualMachineApi(Object context, ClassLoader classLoader,
+            Runnable hiddenApiExemption) {
+        this(context, classLoader, hiddenApiExemption, null);
+    }
+
+    /** Inject a typed App FD adapter, or use the exact PFD AutoCloseStreams reflection boundary. */
+    public ReflectiveAvfVirtualMachineApi(Object context, ClassLoader classLoader,
+            Runnable hiddenApiExemption, DescriptorAdapter descriptorAdapter) {
         this.context = Objects.requireNonNull(context, "context");
         this.classLoader = Objects.requireNonNull(classLoader, "classLoader");
         this.hiddenApiExemption = hiddenApiExemption;
+        this.descriptorAdapter = descriptorAdapter == null ? this::adoptParcelFileDescriptor : descriptorAdapter;
     }
 
     @Override
     public boolean isReflectionAvailable() {
         try {
-            classLoader.loadClass(MANAGER_CLASS);
-            classLoader.loadClass(CONFIG_CLASS);
-            classLoader.loadClass(CONFIG_BUILDER_CLASS);
-            classLoader.loadClass(VM_CLASS);
+            loadShape();
             return true;
-        } catch (ClassNotFoundException | LinkageError unavailable) {
+        } catch (ReflectiveOperationException | LinkageError | RuntimeException unavailable) {
             return false;
         }
     }
@@ -74,431 +57,541 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
     public AvfVirtualMachineHandle startCustomVm(AvfLaunchSpec spec) throws AvfEngineException {
         Objects.requireNonNull(spec, "spec");
         List<String> notes = new ArrayList<>();
-        Class<?> managerClass;
-        Class<?> configClass;
-        Class<?> builderClass;
-        Class<?> vmClass;
+        applyAccessHook(notes);
+        Shape shape;
         try {
-            managerClass = classLoader.loadClass(MANAGER_CLASS);
-            configClass = classLoader.loadClass(CONFIG_CLASS);
-            builderClass = classLoader.loadClass(CONFIG_BUILDER_CLASS);
-            vmClass = classLoader.loadClass(VM_CLASS);
-        } catch (ClassNotFoundException | LinkageError unavailable) {
-            throw new AvfEngineException(
-                    AvfEngineException.REFLECTION_UNAVAILABLE,
-                    "AVF SDK classes are not resolvable on this host",
-                    unavailable);
+            shape = loadShape();
+        } catch (ReflectiveOperationException | LinkageError failure) {
+            throw error(AvfEngineException.REFLECTION_UNAVAILABLE, "required AVF SystemApi is absent", failure);
+        } catch (SecurityException denied) {
+            throw error(AvfEngineException.REFLECTION_UNAVAILABLE, "AVF SystemApi access is denied", denied);
         }
+        if (!shape.context.isInstance(context)) {
+            throw error(AvfEngineException.REFLECTION_UNAVAILABLE, "Android Context is required", null);
+        }
+        requirePermission(shape, MANAGE_PERMISSION, notes);
+        requirePermission(shape, CUSTOM_PERMISSION, notes);
+        Object manager = invoke(shape.context, context, "getSystemService", new Class<?>[] {Class.class},
+                new Object[] {shape.manager}, AvfEngineException.VM_MANAGER_UNAVAILABLE, notes);
+        if (!shape.manager.isInstance(manager)) {
+            throw error(AvfEngineException.VM_MANAGER_UNAVAILABLE, "AVF manager is unavailable", null);
+        }
+        Object capabilities = invoke(shape.manager, manager, "getCapabilities", new Class<?>[0],
+                new Object[0], AvfEngineException.VM_MANAGER_UNAVAILABLE, notes);
+        int nonProtected = intField(shape.manager, "CAPABILITY_NON_PROTECTED_VM");
+        if (!(capabilities instanceof Integer value) || (value & nonProtected) == 0) {
+            throw error(AvfEngineException.HARDWARE_UNSUPPORTED, "non-protected custom VMs are unavailable", null);
+        }
+        // The pinned public SystemApi has ONE_CPU/MATCH_HOST topology, not an exact-count setter.
+        // MATCH_HOST is not a faithful substitute for the launch spec's requested count.
+        if (spec.cpuCount() != 1) {
+            throw error(AvfEngineException.HARDWARE_UNSUPPORTED,
+                    "this AVF SystemApi cannot express the requested exact vCPU count", null);
+        }
+        Object imageBuilder = construct(shape.imageBuilder, new Class<?>[0], new Object[0]);
+        set(shape.imageBuilder, imageBuilder, "setName", String.class, spec.instanceId(), notes);
+        set(shape.imageBuilder, imageBuilder, "setKernelPath", String.class, spec.kernelPath(), notes);
+        set(shape.imageBuilder, imageBuilder, "setInitrdPath", String.class, spec.initramfsPath(), notes);
+        for (String param : spec.guestCmdline().split("\\s+")) {
+            set(shape.imageBuilder, imageBuilder, "addParam", String.class, param, notes);
+        }
+        Object disk = invoke(shape.disk, null, "RWDisk", new Class<?>[] {String.class},
+                new Object[] {spec.rootVolumePath()}, AvfEngineException.VM_CREATE_FAILED, notes);
+        set(shape.imageBuilder, imageBuilder, "addDisk", shape.disk, disk, notes);
+        set(shape.imageBuilder, imageBuilder, "useNetwork", boolean.class, true, notes);
+        Object image = invoke(shape.imageBuilder, imageBuilder, "build", new Class<?>[0],
+                new Object[0], AvfEngineException.VM_CREATE_FAILED, notes);
+        if (!shape.image.isInstance(image)) {
+            throw error(AvfEngineException.REFLECTION_UNAVAILABLE, "invalid custom image config type", null);
+        }
+        Object configBuilder = construct(shape.configBuilder, new Class<?>[] {shape.context},
+                new Object[] {context});
+        set(shape.configBuilder, configBuilder, "setCustomImageConfig", shape.image, image, notes);
+        set(shape.configBuilder, configBuilder, "setProtectedVm", boolean.class, false, notes);
+        set(shape.configBuilder, configBuilder, "setMemoryBytes", long.class,
+                Math.multiplyExact(spec.memoryMb(), 1024L * 1024L), notes);
+        set(shape.configBuilder, configBuilder, "setCpuTopology", int.class,
+                intField(shape.config, "CPU_TOPOLOGY_ONE_CPU"), notes);
+        Object config = invoke(shape.configBuilder, configBuilder, "build", new Class<?>[0],
+                new Object[0], AvfEngineException.VM_CREATE_FAILED, notes);
+        if (!shape.config.isInstance(config)) {
+            throw error(AvfEngineException.REFLECTION_UNAVAILABLE, "invalid VM config type", null);
+        }
+        // getOrCreate would silently ignore a new config for an existing name. Retrieve first,
+        // verify every supported boot setting, and never delete or rewrite persistent VM data.
+        Object vm = invoke(shape.manager, manager, "get", new Class<?>[] {String.class},
+                new Object[] {spec.instanceId()}, AvfEngineException.VM_CREATE_FAILED, notes);
+        if (vm == null) {
+            vm = invoke(shape.manager, manager, "create", new Class<?>[] {String.class, shape.config},
+                    new Object[] {spec.instanceId(), config}, AvfEngineException.VM_CREATE_FAILED, notes);
+            if (!shape.vm.isInstance(vm)) {
+                throw error(AvfEngineException.VM_CREATE_FAILED, "manager returned no VM", null);
+            }
+            notes.add("persistent-vm: created");
+        } else {
+            if (!shape.vm.isInstance(vm)) throw configMismatch("VM type");
+            Object stored = invoke(shape.vm, vm, "getConfig", new Class<?>[0], new Object[0],
+                    AvfEngineException.CONFIG_MISMATCH, notes);
+            verifyStoredConfig(shape, stored, config);
+            Object status = invoke(shape.vm, vm, "getStatus", new Class<?>[0], new Object[0],
+                    AvfEngineException.VM_CREATE_FAILED, notes);
+            if (!(status instanceof Integer state) || state != 0) {
+                throw error(AvfEngineException.VM_CREATE_FAILED,
+                        "persistent VM must be stopped before cold restore", null);
+            }
+            notes.add("persistent-vm: reused");
+        }
+        try {
+            invoke(shape.vm, vm, "run", new Class<?>[0], new Object[0],
+                    AvfEngineException.VM_CREATE_FAILED, notes);
+        } catch (AvfEngineException failure) {
+            closeAfterFailure(shape.vm, vm, failure);
+            throw failure;
+        }
+        return new ReflectiveHandle(this, spec.instanceId(), shape.vm, vm, notes);
+    }
 
-        applyHiddenApiExemption(notes);
+    private static void verifyStoredConfig(Shape shape, Object stored, Object expected) {
+        if (!shape.config.isInstance(stored)) throw configMismatch("VM config type");
+        try {
+            // Official isCompatibleWith tests identity compatibility, not full custom config equality.
+            Object compatible = invoke(shape.config, stored, "isCompatibleWith", new Class<?>[] {shape.config},
+                    new Object[] {expected}, AvfEngineException.CONFIG_MISMATCH, new ArrayList<>());
+            if (!Boolean.TRUE.equals(compatible)) throw configMismatch("VM identity");
+            for (String getter : new String[] {"isProtectedVm", "getMemoryBytes", "getCpuTopology",
+                    "getEncryptedStorageBytes", "shouldUseHugepages"}) {
+                requireSameField(shape.config, stored, expected, getter);
+            }
+            Object actualImage = configValue(shape.config, stored, "getCustomImageConfig");
+            Object expectedImage = configValue(shape.config, expected, "getCustomImageConfig");
+            if (!shape.image.isInstance(actualImage) || !shape.image.isInstance(expectedImage)) {
+                throw configMismatch("custom image type");
+            }
+            for (String getter : new String[] {"getName", "getKernelPath", "getInitrdPath", "getBootloaderPath",
+                    "getParams", "useNetwork", "getSharedPaths", "getAudioConfig", "getDisplayConfig",
+                    "getGpuConfig", "getUsbConfig", "useTouch", "useKeyboard", "useMouse", "useSwitches",
+                    "useTrackpad", "useAutoMemoryBalloon"}) {
+                requireSameField(shape.image, actualImage, expectedImage, getter);
+            }
+            Object actualDisks = configValue(shape.image, actualImage, "getDisks");
+            Object wantedDisks = configValue(shape.image, expectedImage, "getDisks");
+            if (!(actualDisks instanceof Object[] disks) || !(wantedDisks instanceof Object[] wanted)
+                    || disks.length != 1 || wanted.length != 1
+                    || !shape.disk.isInstance(disks[0]) || !shape.disk.isInstance(wanted[0])) {
+                throw configMismatch("root disk count/type");
+            }
+            requireSameField(shape.disk, disks[0], wanted[0], "getImagePath");
+            requireSameField(shape.disk, disks[0], wanted[0], "isWritable");
+            requireSameField(shape.disk, disks[0], wanted[0], "getPartitions");
+        } catch (AvfEngineException failure) {
+            if (AvfEngineException.PERMISSION_DENIED.equals(failure.reason())
+                    || AvfEngineException.CONFIG_MISMATCH.equals(failure.reason())) throw failure;
+            throw error(AvfEngineException.CONFIG_MISMATCH,
+                    "persistent VM configuration cannot be verified with this platform API", failure);
+        }
+    }
 
-        Object manager = getSystemService(managerClass);
-        Object builder = newInstance(builderClass, notes);
-        invokeRequired(
-                builderClass, builder, "setKernelPath", new Class<?>[] {String.class},
-                new Object[] {spec.kernelPath()}, notes);
-        invokeRequired(
-                builderClass, builder, "setInitrdPath", new Class<?>[] {String.class},
-                new Object[] {spec.initramfsPath()}, notes);
-        // The droidlayer.* guest contract (root device, vsock ports, the 9p
-        // data-plane rendezvous) reaches the guest only through the kernel
-        // command line; an SDK surface without setCmdline makes the guest
-        // contract undeliverable, so it is recorded, never silently skipped.
-        invokeOptional(
-                builderClass, builder, "setCmdline", new Class<?>[] {String.class},
-                new Object[] {spec.guestCmdline()}, notes);
-        addRootDisk(builderClass, builder, spec.rootVolumePath(), notes);
-        applyMemory(builderClass, builder, spec.memoryMb(), notes);
-        applyCpuCount(builderClass, builder, spec.cpuCount(), notes);
-        invokeOptional(
-                builderClass, builder, "setProtected", new Class<?>[] {boolean.class},
-                new Object[] {Boolean.FALSE}, notes);
-        invokeOptional(
-                builderClass, builder, "setNetworkSupported", new Class<?>[] {boolean.class},
-                new Object[] {Boolean.TRUE}, notes);
-        applyKernelCmdline(builderClass, builder, spec.guestCmdline(), notes);
-        Object config = invokeRequired(
-                builderClass, builder, "build", new Class<?>[0], new Object[0], notes);
-        Object vm = createVm(managerClass, manager, configClass, config, spec.instanceId(), notes);
-        return new ReflectiveHandle(spec.instanceId(), vmClass, vm, notes);
+    private static Object configValue(Class<?> type, Object config, String getter) {
+        return invoke(type, config, getter, new Class<?>[0], new Object[0],
+                AvfEngineException.CONFIG_MISMATCH, new ArrayList<>());
+    }
+
+    private static void requireSameField(Class<?> type, Object actual, Object expected, String getter) {
+        if (!Objects.deepEquals(configValue(type, actual, getter), configValue(type, expected, getter))) {
+            // No stored/requested paths or user values are embedded in fallback diagnostics.
+            throw configMismatch(getter);
+        }
+    }
+
+    private static AvfEngineException configMismatch(String field) {
+        return error(AvfEngineException.CONFIG_MISMATCH,
+                "persistent VM configuration mismatch: " + field, null);
     }
 
     @Override
     public AvfVsockChannel connectVsock(AvfVirtualMachineHandle handle, int port)
             throws AvfEngineException {
-        ReflectiveHandle reflective = requireReflective(handle);
+        ReflectiveHandle reflective = requireHandle(handle);
+        if (port < 1024 || port > 65535) {
+            throw error(AvfEngineException.VSOCK_CONNECT_FAILED, "vsock port is outside the launch contract", null);
+        }
+        Class<?> pfdClass;
+        try { pfdClass = classLoader.loadClass("android.os.ParcelFileDescriptor"); }
+        catch (ClassNotFoundException failure) {
+            throw error(AvfEngineException.REFLECTION_UNAVAILABLE, "PFD API unavailable", failure);
+        }
+        reflective.ensureOpen();
         Object raw;
         try {
-            Method connect = reflective.vmClass.getMethod("connectVsock", int.class);
-            raw = connect.invoke(reflective.vm, port);
-        } catch (NoSuchMethodException missing) {
-            throw new AvfEngineException(
-                    AvfEngineException.REFLECTION_UNAVAILABLE,
-                    "connectVsock(int) is not resolvable",
-                    missing);
-        } catch (IllegalAccessException | InvocationTargetException failure) {
-            Throwable cause =
-                    failure instanceof InvocationTargetException ? failure.getCause() : failure;
-            throw new AvfEngineException(
-                    AvfEngineException.VSOCK_CONNECT_FAILED,
-                    "vsock connect to port " + port + " failed",
-                    cause);
-        }
-        return adaptChannel(raw, port);
-    }
-
-    private void applyHiddenApiExemption(List<String> notes) {
-        if (exemptionApplied) {
-            return;
-        }
-        exemptionApplied = true;
-        if (hiddenApiExemption == null) {
-            notes.add("hidden-api-exemption: none supplied (public-SDK devices only)");
-        } else {
-            hiddenApiExemption.run();
-            notes.add("hidden-api-exemption: applied");
-        }
-    }
-
-    private Object getSystemService(Class<?> managerClass) throws AvfEngineException {
-        Object manager;
-        try {
-            manager = context.getClass()
-                    .getMethod("getSystemService", String.class)
-                    .invoke(context, VIRTUALIZATION_SERVICE);
-        } catch (ReflectiveOperationException | IllegalArgumentException failure) {
-            throw new AvfEngineException(
-                    AvfEngineException.VM_MANAGER_UNAVAILABLE,
-                    "getSystemService reflection failed",
-                    failure);
-        }
-        if (manager == null || !managerClass.isInstance(manager)) {
-            throw new AvfEngineException(
-                    AvfEngineException.VM_MANAGER_UNAVAILABLE,
-                    "virtualization service is not available on this device");
-        }
-        return manager;
-    }
-
-    private Object newInstance(Class<?> type, List<String> notes) throws AvfEngineException {
-        try {
-            return type.getDeclaredConstructor().newInstance();
-        } catch (ReflectiveOperationException failure) {
-            notes.add("builder construction failed");
-            throw new AvfEngineException(
-                    AvfEngineException.REFLECTION_UNAVAILABLE,
-                    "cannot construct " + type.getName(),
-                    failure);
-        }
-    }
-
-    private void addRootDisk(Class<?> builderClass, Object builder, String rootVolumePath,
-            List<String> notes) throws AvfEngineException {
-        try {
-            builderClass.getMethod("addDisk", String.class, boolean.class)
-                    .invoke(builder, rootVolumePath, Boolean.TRUE);
-            notes.add("addDisk(String,boolean): applied");
-        } catch (NoSuchMethodException fallback) {
-            try {
-                builderClass.getMethod("addDisk", String.class).invoke(builder, rootVolumePath);
-                notes.add("addDisk(String): applied (writable-by-default variant)");
-            } catch (ReflectiveOperationException failure) {
-                throw new AvfEngineException(
-                        AvfEngineException.REFLECTION_UNAVAILABLE,
-                        "no usable addDisk variant for the root volume",
-                        failure);
-            } catch (IllegalArgumentException failure) {
-                throw new AvfEngineException(
-                        AvfEngineException.REFLECTION_UNAVAILABLE,
-                        "addDisk(String) invocation failed",
-                        failure);
+            // No Java handle monitor spans a platform call that can block.
+            raw = invoke(reflective.vmClass, reflective.vm, "connectVsock",
+                    new Class<?>[] {long.class}, new Object[] {(long) port},
+                    AvfEngineException.VSOCK_CONNECT_FAILED, new ArrayList<>());
+        } catch (AvfEngineException failure) {
+            if (reflective.hostStopped) {
+                AvfEngineException closed = reflective.closedFailure();
+                closed.addSuppressed(failure);
+                throw closed;
             }
-        } catch (IllegalAccessException | InvocationTargetException | IllegalArgumentException
-                failure) {
-            throw new AvfEngineException(
-                    AvfEngineException.REFLECTION_UNAVAILABLE,
-                    "addDisk(String,boolean) invocation failed",
-                    failure);
+            throw failure;
         }
-    }
-
-    private void applyMemory(Class<?> builderClass, Object builder, long memoryMb,
-            List<String> notes) {
-        try {
-            builderClass.getMethod("setMemoryMbs", int.class)
-                    .invoke(builder, (int) memoryMb);
-            notes.add("setMemoryMbs(int): applied");
-        } catch (NoSuchMethodException fallback) {
-            try {
-                builderClass.getMethod("setMemoryBytes", long.class)
-                        .invoke(builder, memoryMb * 1024L * 1024L);
-                notes.add("setMemoryBytes(long): applied");
-            } catch (NoSuchMethodException absent) {
-                notes.add("memory configuration skipped: no supported setter");
-            } catch (ReflectiveOperationException | IllegalArgumentException failure) {
-                notes.add("memory configuration skipped: " + failure.getClass().getSimpleName());
-            }
-        } catch (ReflectiveOperationException | IllegalArgumentException failure) {
-            notes.add("memory configuration skipped: " + failure.getClass().getSimpleName());
-        }
-    }
-
-    private void applyCpuCount(Class<?> builderClass, Object builder, int cpuCount,
-            List<String> notes) {
-        try {
-            builderClass.getMethod("setCpuCount", int.class).invoke(builder, cpuCount);
-            notes.add("setCpuCount(int): applied");
-        } catch (NoSuchMethodException absent) {
-            notes.add("cpuCount configuration skipped: no setCpuCount(int) setter");
-        } catch (ReflectiveOperationException | IllegalArgumentException failure) {
-            notes.add("cpuCount configuration skipped: " + failure.getClass().getSimpleName());
-        }
-    }
-
-    /**
-     * Delivers the guest network contract keys (vsock service ports,
-     * {@code droidlayer.dns=}) through the platform's optional kernel-cmdline
-     * setter. Platform versions expose the surface under different names
-     * ({@code setKernelCmdline}/{@code setParams}); the first resolvable
-     * variant wins and its application is recorded, while a fully absent
-     * surface degrades to a note — the guest falls back to the fixed vsock
-     * port conventions and the embedded-provision resolver defaults.
-     */
-    private void applyKernelCmdline(Class<?> builderClass, Object builder, String cmdline,
-            List<String> notes) {
-        String[][] candidates = {{"setKernelCmdline"}, {"setParams"}};
-        for (String[] candidate : candidates) {
-            String method = candidate[0];
-            try {
-                builderClass.getMethod(method, String.class).invoke(builder, cmdline);
-                notes.add(method + ": applied");
-                return;
-            } catch (NoSuchMethodException absent) {
-                notes.add(method + "(String): not resolvable");
-            } catch (ReflectiveOperationException | IllegalArgumentException failure) {
-                notes.add(method + ": skipped (" + failure.getClass().getSimpleName() + ")");
-                return;
-            }
-        }
-        notes.add("guest cmdline delivery skipped: no cmdline setter on this platform");
-    }
-
-    private Object invokeRequired(
-            Class<?> declared, Object target, String method, Class<?>[] parameterTypes,
-            Object[] arguments, List<String> notes) throws AvfEngineException {
-        try {
-            return declared.getMethod(method, parameterTypes).invoke(target, arguments);
-        } catch (NoSuchMethodException missing) {
-            notes.add("required method missing: " + method);
-            throw new AvfEngineException(
-                    AvfEngineException.REFLECTION_UNAVAILABLE,
-                    "required method is not resolvable: " + method,
-                    missing);
-        } catch (IllegalAccessException | InvocationTargetException | IllegalArgumentException
-                failure) {
-            notes.add("required invocation failed: " + method);
-            throw new AvfEngineException(
-                    AvfEngineException.REFLECTION_UNAVAILABLE,
-                    "required invocation failed: " + method,
-                    failure);
-        }
-    }
-
-    private void invokeOptional(
-            Class<?> declared, Object target, String method, Class<?>[] parameterTypes,
-            Object[] arguments, List<String> notes) {
-        try {
-            declared.getMethod(method, parameterTypes).invoke(target, arguments);
-            notes.add(method + ": applied");
-        } catch (ReflectiveOperationException | IllegalArgumentException failure) {
-            notes.add(method + ": skipped (" + failure.getClass().getSimpleName() + ")");
-        }
-    }
-
-    private Object createVm(
-            Class<?> managerClass,
-            Object manager,
-            Class<?> configClass,
-            Object config,
-            String instanceId,
-            List<String> notes) throws AvfEngineException {
-        for (String candidate : new String[] {"createVm", "getOrCreateVm"}) {
-            try {
-                return managerClass
-                        .getMethod(candidate, String.class, configClass)
-                        .invoke(manager, instanceId, config);
-            } catch (NoSuchMethodException missing) {
-                notes.add(candidate + "(String,config): not resolvable");
-            } catch (IllegalAccessException failure) {
-                notes.add(candidate + ": inaccessible");
-            } catch (InvocationTargetException failure) {
-                throw mapCreateFailure(candidate, failure.getCause(), notes);
-            }
-        }
-        throw new AvfEngineException(
-                AvfEngineException.REFLECTION_UNAVAILABLE,
-                "no usable VM creation method on the manager");
-    }
-
-    private AvfEngineException mapCreateFailure(String method, Throwable cause,
-            List<String> notes) {
-        String causeName = cause == null ? "" : cause.getClass().getName();
-        if (cause instanceof SecurityException) {
-            notes.add(method + ": permission denied");
-            return new AvfEngineException(
-                    AvfEngineException.PERMISSION_DENIED,
-                    "VM creation was refused by the permission gate",
-                    cause);
-        }
-        if (cause instanceof UnsupportedOperationException
-                || causeName.contains("Unsupported")
-                || (cause != null
-                        && String.valueOf(cause.getMessage()).contains("not supported"))) {
-            notes.add(method + ": hardware refused non-protected VM");
-            return new AvfEngineException(
-                    AvfEngineException.HARDWARE_UNSUPPORTED,
-                    "the hardware or firmware refused the non-protected custom VM",
-                    cause);
-        }
-        notes.add(method + ": creation failed (" + causeName + ")");
-        return new AvfEngineException(
-                AvfEngineException.VM_CREATE_FAILED,
-                "VM creation failed",
-                cause);
-    }
-
-    private AvfVsockChannel adaptChannel(Object raw, int port) throws AvfEngineException {
         if (raw == null) {
-            throw new AvfEngineException(
-                    AvfEngineException.VSOCK_CONNECT_FAILED,
-                    "vsock connect to port " + port + " returned no channel");
+            reflective.ensureOpen();
+            throw error(AvfEngineException.VSOCK_CONNECT_FAILED, "vsock returned no descriptor", null);
         }
+        if (!pfdClass.isInstance(raw)) {
+            throw error(AvfEngineException.REFLECTION_UNAVAILABLE, "vsock did not return a PFD", null);
+        }
+        if (reflective.hostStopped) {
+            AvfEngineException closed = reflective.closedFailure();
+            closeAfterFailure(pfdClass, raw, closed);
+            throw closed;
+        }
+        AvfVsockChannel channel = null;
+        InputStream input;
+        OutputStream output;
         try {
-            Method in = raw.getClass().getMethod("getInputStream");
-            Method out = raw.getClass().getMethod("getOutputStream");
-            return new ReflectiveVsockChannel(in.invoke(raw), out.invoke(raw));
-        } catch (ReflectiveOperationException | IllegalArgumentException failure) {
-            throw new AvfEngineException(
-                    AvfEngineException.VSOCK_CONNECT_FAILED,
-                    "vsock connection object for port " + port + " exposes no stream pair",
-                    failure);
+            // In-flight adoption owns raw until it can publish. STOP does not close raw while
+            // dup/AutoCloseStreams are constructing; late completion closes the adopted owner.
+            channel = descriptorAdapter.adopt(raw);
+            input = channel == null ? null : channel.inputStream();
+            output = channel == null ? null : channel.outputStream();
+            if (input == null || output == null) throw new IOException("FD adapter returned no complete channel");
+        } catch (IOException | RuntimeException | LinkageError failure) {
+            AvfEngineException mapped = reflective.hostStopped ? reflective.closedFailure()
+                    : mapped("PFD stream adoption", AvfEngineException.VSOCK_CONNECT_FAILED, failure);
+            if (reflective.hostStopped) mapped.addSuppressed(failure);
+            if (channel == null) closeAfterFailure(pfdClass, raw, mapped);
+            else closeChannelAfterFailure(channel, mapped);
+            throw mapped;
+        }
+        HandleChannel owned = new HandleChannel(reflective, channel, input, output);
+        synchronized (reflective) {
+            if (!reflective.hostStopped) {
+                reflective.channels.add(owned);
+                return owned;
+            }
+        }
+        AvfEngineException closed = reflective.closedFailure();
+        closeChannelAfterFailure(owned, closed);
+        throw closed;
+    }
+
+    private AvfVsockChannel adoptParcelFileDescriptor(Object raw) throws IOException {
+        Object outputDescriptor = null;
+        try {
+            Class<?> pfd = classLoader.loadClass("android.os.ParcelFileDescriptor");
+            var inputConstructor = classLoader.loadClass("android.os.ParcelFileDescriptor$AutoCloseInputStream")
+                    .getConstructor(pfd);
+            var outputConstructor = classLoader.loadClass("android.os.ParcelFileDescriptor$AutoCloseOutputStream")
+                    .getConstructor(pfd);
+            // Each AutoCloseStream owns exactly one descriptor, never two owners for the same FD.
+            outputDescriptor = pfd.getMethod("dup").invoke(raw);
+            if (!pfd.isInstance(outputDescriptor) || outputDescriptor == raw) {
+                throw new IOException("PFD dup returned no independent descriptor");
+            }
+            InputStream input = (InputStream) inputConstructor.newInstance(raw);
+            OutputStream output = (OutputStream) outputConstructor.newInstance(outputDescriptor);
+            return new OwnedStreams(input, output);
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
+            Throwable cause = failure instanceof InvocationTargetException wrapped ? wrapped.getCause() : failure;
+            IOException error = new IOException("PFD AutoCloseStreams unavailable", cause);
+            if (outputDescriptor != null && outputDescriptor != raw) {
+                closeAfterFailure(outputDescriptor.getClass(), outputDescriptor, error);
+            }
+            // Original descriptor is still owned by connectVsock on this failure path.
+            throw error;
+        } catch (IOException failure) {
+            if (outputDescriptor != null && outputDescriptor != raw) {
+                closeAfterFailure(outputDescriptor.getClass(), outputDescriptor, failure);
+            }
+            throw failure;
         }
     }
 
-    private ReflectiveHandle requireReflective(AvfVirtualMachineHandle handle) {
-        if (!(handle instanceof ReflectiveHandle reflective)) {
-            throw new IllegalArgumentException("foreign handle for reflective api");
+    private static void closeChannelAfterFailure(AvfVsockChannel channel, Throwable primary) {
+        try { channel.close(); }
+        catch (IOException | RuntimeException cleanup) { primary.addSuppressed(cleanup); }
+    }
+
+    /** One published FD owner: caller close and handle.stop claim it once under a short lock. */
+    private static final class HandleChannel implements AvfVsockChannel {
+        private final ReflectiveHandle handle;
+        private final AvfVsockChannel raw;
+        private final InputStream input;
+        private final OutputStream output;
+        private boolean closed;
+        HandleChannel(ReflectiveHandle handle, AvfVsockChannel raw, InputStream inputStream, OutputStream outputStream) {
+            this.handle = handle;
+            this.raw = raw;
+            input = new java.io.FilterInputStream(inputStream) {
+                @Override public void close() throws IOException { HandleChannel.this.close(); }
+            };
+            output = new java.io.FilterOutputStream(outputStream) {
+                @Override public void write(byte[] bytes, int offset, int length) throws IOException {
+                    out.write(bytes, offset, length);
+                }
+                @Override public void close() throws IOException { HandleChannel.this.close(); }
+            };
+        }
+        public InputStream inputStream() { return input; }
+        public OutputStream outputStream() { return output; }
+        public void close() throws IOException {
+            synchronized (handle) {
+                if (closed) return;
+                closed = true;
+                handle.channels.remove(this);
+            }
+            raw.close();
+        }
+    }
+
+    private static final class OwnedStreams implements AvfVsockChannel {
+        private final InputStream input;
+        private final OutputStream output;
+        private final InputStream inputView;
+        private final OutputStream outputView;
+        private volatile boolean closed;
+        OwnedStreams(InputStream input, OutputStream output) {
+            this.input = input;
+            this.output = output;
+            inputView = new java.io.FilterInputStream(input) {
+                @Override public void close() throws IOException { OwnedStreams.this.close(); }
+            };
+            outputView = new java.io.FilterOutputStream(output) {
+                @Override public void write(byte[] bytes, int offset, int length) throws IOException {
+                    out.write(bytes, offset, length);
+                }
+                @Override public void close() throws IOException { OwnedStreams.this.close(); }
+            };
+        }
+        public InputStream inputStream() { return inputView; }
+        public OutputStream outputStream() { return outputView; }
+        public synchronized void close() throws IOException {
+            if (closed) return;
+            closed = true;
+            IOException failure = closeStream(output, null);
+            failure = closeStream(input, failure);
+            if (failure != null) throw failure;
+        }
+        private static IOException closeStream(AutoCloseable stream, IOException primary) {
+            try { stream.close(); }
+            catch (Exception failure) {
+                IOException io = failure instanceof IOException value ? value : new IOException("FD stream close failed", failure);
+                if (primary == null) return io;
+                if (primary != io) primary.addSuppressed(io);
+            }
+            return primary;
+        }
+    }
+
+    private Shape loadShape() throws ReflectiveOperationException {
+        Class<?> ctx = classLoader.loadClass("android.content.Context");
+        Class<?> manager = classLoader.loadClass(PACKAGE + "VirtualMachineManager");
+        Class<?> config = classLoader.loadClass(PACKAGE + "VirtualMachineConfig");
+        Class<?> configBuilder = classLoader.loadClass(PACKAGE + "VirtualMachineConfig$Builder");
+        Class<?> image = classLoader.loadClass(PACKAGE + "VirtualMachineCustomImageConfig");
+        Class<?> imageBuilder = classLoader.loadClass(PACKAGE + "VirtualMachineCustomImageConfig$Builder");
+        Class<?> disk = classLoader.loadClass(PACKAGE + "VirtualMachineCustomImageConfig$Disk");
+        Class<?> vm = classLoader.loadClass(PACKAGE + "VirtualMachine");
+        ctx.getMethod("getSystemService", Class.class);
+        ctx.getMethod("checkSelfPermission", String.class);
+        configBuilder.getConstructor(ctx);
+        imageBuilder.getConstructor();
+        configBuilder.getMethod("setCustomImageConfig", image);
+        configBuilder.getMethod("setProtectedVm", boolean.class);
+        configBuilder.getMethod("setMemoryBytes", long.class);
+        configBuilder.getMethod("setCpuTopology", int.class);
+        configBuilder.getMethod("build");
+        imageBuilder.getMethod("setName", String.class);
+        imageBuilder.getMethod("setKernelPath", String.class);
+        imageBuilder.getMethod("setInitrdPath", String.class);
+        imageBuilder.getMethod("addParam", String.class);
+        imageBuilder.getMethod("addDisk", disk);
+        imageBuilder.getMethod("useNetwork", boolean.class);
+        imageBuilder.getMethod("build");
+        disk.getMethod("RWDisk", String.class);
+        manager.getMethod("getCapabilities");
+        manager.getMethod("create", String.class, config);
+        manager.getMethod("get", String.class);
+        vm.getMethod("getConfig");
+        manager.getField("CAPABILITY_NON_PROTECTED_VM");
+        config.getField("CPU_TOPOLOGY_ONE_CPU");
+        vm.getMethod("run");
+        vm.getMethod("getStatus");
+        vm.getMethod("stop");
+        vm.getMethod("close");
+        Class<?> pfd = classLoader.loadClass("android.os.ParcelFileDescriptor");
+        if (vm.getMethod("connectVsock", long.class).getReturnType() != pfd
+                || vm.getMethod("getStatus").getReturnType() != int.class
+                || vm.getMethod("run").getReturnType() != void.class
+                || vm.getMethod("stop").getReturnType() != void.class
+                || vm.getMethod("close").getReturnType() != void.class
+                || manager.getMethod("create", String.class, config).getReturnType() != vm
+                || manager.getMethod("get", String.class).getReturnType() != vm
+                || vm.getMethod("getConfig").getReturnType() != config
+                || manager.getMethod("getCapabilities").getReturnType() != int.class
+                || configBuilder.getMethod("build").getReturnType() != config
+                || imageBuilder.getMethod("build").getReturnType() != image
+                || disk.getMethod("RWDisk", String.class).getReturnType() != disk) {
+            throw new NoSuchMethodException("official config/create/run/PFD signatures are required");
+        }
+        pfd.getMethod("close");
+        return new Shape(ctx, manager, config, configBuilder, image, imageBuilder, disk, vm);
+    }
+
+    private record Shape(Class<?> context, Class<?> manager, Class<?> config, Class<?> configBuilder,
+            Class<?> image, Class<?> imageBuilder, Class<?> disk, Class<?> vm) {}
+
+    private synchronized void applyAccessHook(List<String> notes) {
+        if (!exemptionApplied && hiddenApiExemption != null) {
+            try {
+                hiddenApiExemption.run();
+                exemptionApplied = true;
+            } catch (RuntimeException | LinkageError failure) {
+                throw error(AvfEngineException.REFLECTION_UNAVAILABLE, "supplied access hook failed", failure);
+            }
+        }
+        notes.add(hiddenApiExemption == null ? "access-hook: none supplied" : "access-hook: supplied");
+    }
+
+    private void requirePermission(Shape shape, String name, List<String> notes) {
+        Object result = invoke(shape.context, context, "checkSelfPermission", new Class<?>[] {String.class},
+                new Object[] {name}, AvfEngineException.PERMISSION_DENIED, notes);
+        if (!(result instanceof Integer value) || value != 0) {
+            throw error(AvfEngineException.PERMISSION_DENIED, "required permission missing: " + name, null);
+        }
+    }
+
+    private static Object construct(Class<?> type, Class<?>[] params, Object[] args) {
+        try {
+            return type.getConstructor(params).newInstance(args);
+        } catch (InvocationTargetException failure) {
+            throw mapped("builder construction", AvfEngineException.VM_CREATE_FAILED, failure.getCause());
+        } catch (ReflectiveOperationException | LinkageError failure) {
+            throw error(AvfEngineException.REFLECTION_UNAVAILABLE, "AVF builder is inaccessible", failure);
+        }
+    }
+
+    private static int intField(Class<?> type, String name) {
+        try { return type.getField(name).getInt(null); }
+        catch (ReflectiveOperationException | IllegalArgumentException failure) {
+            throw error(AvfEngineException.REFLECTION_UNAVAILABLE, "AVF constant is inaccessible: " + name, failure);
+        }
+    }
+
+    private static void set(Class<?> type, Object target, String method, Class<?> param, Object value,
+            List<String> notes) {
+        invoke(type, target, method, new Class<?>[] {param}, new Object[] {value},
+                AvfEngineException.VM_CREATE_FAILED, notes);
+    }
+
+    private static Object invoke(Class<?> type, Object target, String name, Class<?>[] params,
+            Object[] args, String reason, List<String> notes) {
+        try {
+            Object value = type.getMethod(name, params).invoke(target, args);
+            notes.add(name + ": applied");
+            return value;
+        } catch (InvocationTargetException failure) {
+            throw mapped(name, reason, failure.getCause());
+        } catch (ReflectiveOperationException | LinkageError failure) {
+            throw error(AvfEngineException.REFLECTION_UNAVAILABLE, "required AVF method inaccessible: " + name, failure);
+        } catch (SecurityException | IllegalArgumentException failure) {
+            throw error(AvfEngineException.REFLECTION_UNAVAILABLE, "required AVF method rejected: " + name, failure);
+        }
+    }
+
+    private static AvfEngineException mapped(String stage, String reason, Throwable cause) {
+        Throwable boundary = cause instanceof IOException && cause.getCause() != null ? cause.getCause() : cause;
+        if (boundary instanceof SecurityException) reason = AvfEngineException.PERMISSION_DENIED;
+        else if (boundary instanceof UnsupportedOperationException) reason = AvfEngineException.HARDWARE_UNSUPPORTED;
+        else if (boundary instanceof ReflectiveOperationException || boundary instanceof LinkageError) {
+            reason = AvfEngineException.REFLECTION_UNAVAILABLE;
+        }
+        return error(reason, "AVF operation failed: " + stage, cause);
+    }
+
+    private static AvfEngineException error(String reason, String message, Throwable cause) {
+        return new AvfEngineException(reason, message, cause);
+    }
+
+    private static void closeAfterFailure(Class<?> type, Object object, Throwable primary) {
+        try { type.getMethod("close").invoke(object); }
+        catch (InvocationTargetException failure) { primary.addSuppressed(failure.getCause()); }
+        catch (ReflectiveOperationException | RuntimeException failure) { primary.addSuppressed(failure); }
+    }
+
+    private ReflectiveHandle requireHandle(AvfVirtualMachineHandle handle) {
+        if (!(handle instanceof ReflectiveHandle reflective) || reflective.owner != this) {
+            throw error(AvfEngineException.VSOCK_CONNECT_FAILED, "VM handle belongs to another adapter", null);
         }
         return reflective;
     }
 
     private static final class ReflectiveHandle implements AvfVirtualMachineHandle {
+        private final ReflectiveAvfVirtualMachineApi owner;
         private final String instanceId;
         private final Class<?> vmClass;
         private final Object vm;
         private final List<String> notes;
+        private final java.util.Set<HandleChannel> channels =
+                java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         private volatile boolean hostStopped;
 
-        ReflectiveHandle(String instanceId, Class<?> vmClass, Object vm, List<String> notes) {
-            this.instanceId = instanceId;
+        ReflectiveHandle(ReflectiveAvfVirtualMachineApi owner, String id, Class<?> vmClass,
+                Object vm, List<String> notes) {
+            this.owner = owner;
+            instanceId = id;
             this.vmClass = vmClass;
             this.vm = vm;
-            this.notes = Collections.synchronizedList(notes);
+            this.notes = new ArrayList<>(notes);
         }
-
-        @Override
-        public String instanceId() {
-            return instanceId;
-        }
-
-        @Override
-        public List<String> reflectionNotes() {
-            return Collections.unmodifiableList(new ArrayList<>(notes));
-        }
-
-        @Override
+        public String instanceId() { return instanceId; }
+        public synchronized List<String> reflectionNotes() { return List.copyOf(notes); }
         public int waitFor() throws InterruptedException {
-            while (true) {
-                Integer stopped = reflectGuestStopped();
-                if (stopped != null) {
-                    return stopped;
+            while (!hostStopped) {
+                Object status = invoke(vmClass, vm, "getStatus", new Class<?>[0], new Object[0],
+                        AvfEngineException.VM_CREATE_FAILED, new ArrayList<>());
+                if (!(status instanceof Integer value) || value < 0 || value > 2) {
+                    throw error(AvfEngineException.REFLECTION_UNAVAILABLE, "invalid AVF numeric status", null);
                 }
-                if (hostStopped) {
-                    return 0;
-                }
-                synchronized (this) {
-                    wait(500);
-                }
+                if (value == 0 || value == 2) return 0;
+                synchronized (this) { if (!hostStopped) wait(100); }
             }
+            return 0;
         }
-
-        @Override
+        private void ensureOpen() {
+            if (hostStopped) throw closedFailure();
+        }
+        private AvfEngineException closedFailure() {
+            return error(AvfEngineException.VSOCK_CONNECT_FAILED, "VM handle is closed", null);
+        }
         public void stop() {
-            hostStopped = true;
-            try {
-                vmClass.getMethod("stop").invoke(vm);
-            } catch (ReflectiveOperationException | IllegalArgumentException failure) {
-                notes.add("stop: skipped (" + failure.getClass().getSimpleName() + ")");
-            } finally {
-                synchronized (this) {
-                    notifyAll();
-                }
+            List<HandleChannel> closing;
+            synchronized (this) {
+                if (hostStopped) return;
+                hostStopped = true;
+                closing = new ArrayList<>(channels);
+                channels.clear();
+                notifyAll();
             }
-        }
-
-        /**
-         * Null while the guest is running or its status cannot be read. Real
-         * AOSP VirtualMachine.getStatus() returns the {@code @Status} int
-         * (0=STOPPED, 1=RUNNING, 2=DELETED) boxed to an Integer; the JVM
-         * fixture stub returns a named enum — both surfaces must report
-         * guest exit.
-         */
-        private Integer reflectGuestStopped() {
+            List<String> stoppedNotes = new ArrayList<>();
             try {
-                Object status = vmClass.getMethod("getStatus").invoke(vm);
-                if (status instanceof Number numeric) {
-                    int value = numeric.intValue();
-                    if (value == 0 || value == 2) {
-                        return 0;
-                    }
-                    return null;
+                // Platform I/O is outside this handle's monitor, including stop and close.
+                invoke(vmClass, vm, "stop", new Class<?>[0], new Object[0],
+                        AvfEngineException.VM_CREATE_FAILED, stoppedNotes);
+            } catch (AvfEngineException failure) { stoppedNotes.add("stop: failed (" + failure.reason() + ")"); }
+            finally {
+                try {
+                    invoke(vmClass, vm, "close", new Class<?>[0], new Object[0],
+                            AvfEngineException.VM_CREATE_FAILED, stoppedNotes);
+                } catch (AvfEngineException failure) { stoppedNotes.add("close: failed (" + failure.reason() + ")"); }
+                for (HandleChannel channel : closing) {
+                    try { channel.close(); }
+                    catch (IOException | RuntimeException failure) { stoppedNotes.add("channel-close: failed"); }
                 }
-                if (status instanceof Enum<?> named) {
-                    String name = named.name();
-                    if (name.contains("STOP") || name.contains("DEAD")) {
-                        return 0;
-                    }
-                }
-                return null;
-            } catch (ReflectiveOperationException | IllegalArgumentException unreadable) {
-                return null;
+                synchronized (this) { notes.addAll(stoppedNotes); }
             }
-        }
-    }
-
-    private static final class ReflectiveVsockChannel implements AvfVsockChannel {
-        private final InputStream inputStream;
-        private final OutputStream outputStream;
-
-        ReflectiveVsockChannel(Object input, Object output) {
-            this.inputStream = (InputStream) input;
-            this.outputStream = (OutputStream) output;
-        }
-
-        @Override
-        public InputStream inputStream() {
-            return inputStream;
-        }
-
-        @Override
-        public OutputStream outputStream() {
-            return outputStream;
-        }
-
-        @Override
-        public void close() throws IOException {
-            inputStream.close();
-            outputStream.close();
         }
     }
 }

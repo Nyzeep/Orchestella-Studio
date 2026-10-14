@@ -59,12 +59,14 @@ public final class AvfVirtualMachineEngine {
         private final AvfLaunchSpec spec;
         private final int connectAttempts;
         private final long connectBackoffMs;
-        private AvfVirtualMachineApi.AvfVsockChannel controlChannel;
-        private AvfVirtualMachineApi.AvfVsockChannel terminalChannel;
-        private AvfVirtualMachineApi.AvfVsockChannel shareChannel;
-        private AvfVirtualMachineApi.AvfVsockChannel graphicsChannel;
-        private AvfVirtualMachineApi.AvfVsockChannel audioChannel;
+        private final java.util.Map<Integer, java.util.concurrent.CompletableFuture<AvfVirtualMachineApi.AvfVsockChannel>>
+                lazyChannels = new java.util.HashMap<>();
         private AvfAudioChannel avfAudioChannel;
+        private final java.util.Set<AvfVirtualMachineApi.AvfVsockChannel> ownedChannels =
+                java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        private final java.util.concurrent.CountDownLatch closedSignal = new java.util.concurrent.CountDownLatch(1);
+        private volatile boolean channelsClosed;
+        private boolean stopClaimed;
 
         private AvfVmSession(
                 AvfVirtualMachineApi api,
@@ -89,23 +91,15 @@ public final class AvfVirtualMachineEngine {
         }
 
         /** The bridge control channel (retry-connected while the guest boots). */
-        public synchronized AvfVirtualMachineApi.AvfVsockChannel controlChannel()
-                throws AvfEngineException {
-            if (controlChannel == null) {
-                controlChannel = connectWithRetry(spec.controlVsockPort());
-            }
-            return controlChannel;
+        public AvfVirtualMachineApi.AvfVsockChannel controlChannel() throws AvfEngineException {
+            return lazyChannel(spec.controlVsockPort());
         }
 
         /**
          * The terminal console channel (retry-connected while the guest boots).
          */
-        public synchronized AvfVirtualMachineApi.AvfVsockChannel terminalChannel()
-                throws AvfEngineException {
-            if (terminalChannel == null) {
-                terminalChannel = connectWithRetry(spec.terminalVsockPort());
-            }
-            return terminalChannel;
+        public AvfVirtualMachineApi.AvfVsockChannel terminalChannel() throws AvfEngineException {
+            return lazyChannel(spec.terminalVsockPort());
         }
 
         /**
@@ -126,17 +120,14 @@ public final class AvfVirtualMachineEngine {
          * file system over it (ADR-0009 data plane). Requires a share on the
          * launch spec.
          */
-        public synchronized AvfVirtualMachineApi.AvfVsockChannel shareChannel()
+        public AvfVirtualMachineApi.AvfVsockChannel shareChannel()
                 throws AvfEngineException {
             if (spec.sharedDirectory() == null) {
                 throw new AvfEngineException(
                         AvfEngineException.VSOCK_CONNECT_FAILED,
                         "no shared directory is configured for this launch");
             }
-            if (shareChannel == null) {
-                shareChannel = connectWithRetry(spec.sharedDirectoryVsockPort());
-            }
-            return shareChannel;
+            return lazyChannel(spec.sharedDirectoryVsockPort());
         }
 
         /**
@@ -146,7 +137,7 @@ public final class AvfVirtualMachineEngine {
          *
          * @return the started server (for lifecycle observation and tests)
          */
-        public synchronized Avf9pShareServer startShareServer() throws AvfEngineException {
+        public Avf9pShareServer startShareServer() throws AvfEngineException {
             Avf9pShareServer server = new Avf9pShareServer(spec.sharedDirectory());
             AvfVirtualMachineApi.AvfVsockChannel channel = shareChannel();
             Thread thread = new Thread(() -> {
@@ -169,12 +160,8 @@ public final class AvfVirtualMachineEngine {
         /**
          * The graphics data-plane vsock channel (port 9103, retry-connected).
          */
-        public synchronized AvfVirtualMachineApi.AvfVsockChannel graphicsChannel()
-                throws AvfEngineException {
-            if (graphicsChannel == null) {
-                graphicsChannel = connectWithRetry(spec.graphicsVsockPort());
-            }
-            return graphicsChannel;
+        public AvfVirtualMachineApi.AvfVsockChannel graphicsChannel() throws AvfEngineException {
+            return lazyChannel(spec.graphicsVsockPort());
         }
 
         /**
@@ -192,22 +179,30 @@ public final class AvfVirtualMachineEngine {
         /**
          * The raw audio data-plane vsock channel (port 9104, retry-connected).
          */
-        public synchronized AvfVirtualMachineApi.AvfVsockChannel audioVsockChannel()
-                throws AvfEngineException {
-            if (audioChannel == null) {
-                audioChannel = connectWithRetry(spec.audioVsockPort());
-            }
-            return audioChannel;
+        public AvfVirtualMachineApi.AvfVsockChannel audioVsockChannel() throws AvfEngineException {
+            return lazyChannel(spec.audioVsockPort());
         }
 
         /**
          * Returns the high-performance PCM audio stream channel over vsock (port 9104).
          */
-        public synchronized AvfAudioChannel audioChannel() throws AvfEngineException {
-            if (avfAudioChannel == null) {
-                avfAudioChannel = new AvfAudioChannel(this);
+        public AvfAudioChannel audioChannel() throws AvfEngineException {
+            synchronized (this) {
+                ensureOpen();
+                if (avfAudioChannel != null) return avfAudioChannel;
             }
-            return avfAudioChannel;
+            AvfAudioChannel created = new AvfAudioChannel(this);
+            AvfAudioChannel published;
+            synchronized (this) {
+                if (channelsClosed) published = null;
+                else {
+                    if (avfAudioChannel == null) avfAudioChannel = created;
+                    published = avfAudioChannel;
+                }
+            }
+            if (published != created) created.close();
+            if (published == null) throw closedFailure();
+            return published;
         }
 
         /** Blocks until the guest exits; exit observation is best-effort. */
@@ -217,60 +212,179 @@ public final class AvfVirtualMachineEngine {
 
         /** Best-effort host-side stop; guests own their lifecycle otherwise. */
         public void stop() {
-            handle.stop();
+            synchronized (this) {
+                if (stopClaimed) return;
+                stopClaimed = true;
+            }
+            CloseBatch closing = claimClose();
+            rejectPending(closing);
+            try {
+                // A blocked connect or channel close must not delay the platform stop call.
+                handle.stop();
+            } finally {
+                try { closeAll(closing.resources()); }
+                catch (IOException ignored) {
+                    // Best-effort stop; closeAll has attempted every detached owner.
+                }
+            }
+        }
+
+        private AvfVirtualMachineApi.AvfVsockChannel lazyChannel(int port) {
+            java.util.concurrent.CompletableFuture<AvfVirtualMachineApi.AvfVsockChannel> pending;
+            boolean connector;
+            synchronized (this) {
+                ensureOpen();
+                pending = lazyChannels.get(port);
+                connector = pending == null;
+                if (connector) {
+                    pending = new java.util.concurrent.CompletableFuture<>();
+                    lazyChannels.put(port, pending);
+                }
+            }
+            if (connector) {
+                try {
+                    AvfVirtualMachineApi.AvfVsockChannel channel = connectWithRetry(port);
+                    // Closing can reject pending while the API call is still blocked.
+                    if (!pending.complete(channel)) channel.close();
+                } catch (RuntimeException | IOException failure) {
+                    pending.completeExceptionally(failure);
+                    synchronized (this) { lazyChannels.remove(port, pending); }
+                }
+            }
+            try {
+                AvfVirtualMachineApi.AvfVsockChannel channel = pending.get();
+                ensureOpen();
+                return channel;
+            } catch (InterruptedException failure) {
+                Thread.currentThread().interrupt();
+                throw new AvfEngineException(AvfEngineException.VSOCK_CONNECT_FAILED,
+                        "interrupted while waiting for vsock port " + port, failure);
+            } catch (java.util.concurrent.ExecutionException failure) {
+                Throwable cause = failure.getCause();
+                if (cause instanceof AvfEngineException engineFailure) throw engineFailure;
+                throw new AvfEngineException(AvfEngineException.VSOCK_CONNECT_FAILED,
+                        "vsock port connection failed", cause);
+            }
         }
 
         private AvfVirtualMachineApi.AvfVsockChannel connectWithRetry(int port)
                 throws AvfEngineException {
+            if (port < 1024 || port > 65535) {
+                throw new AvfEngineException(AvfEngineException.VSOCK_CONNECT_FAILED,
+                        "vsock port outside launch contract");
+            }
             AvfEngineException last = null;
             for (int attempt = 0; attempt < connectAttempts; attempt++) {
-                try {
-                    return api.connectVsock(handle, port);
-                } catch (AvfEngineException failure) {
-                    last = failure;
-                }
-                try {
-                    Thread.sleep(connectBackoffMs);
-                } catch (InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
-                    throw new AvfEngineException(
-                            AvfEngineException.VSOCK_CONNECT_FAILED,
+                ensureOpen();
+                if (Thread.currentThread().isInterrupted()) {
+                    throw new AvfEngineException(AvfEngineException.VSOCK_CONNECT_FAILED,
                             "interrupted while connecting vsock port " + port);
                 }
+                AvfVirtualMachineApi.AvfVsockChannel raw;
+                try {
+                    // Official connectVsock can block. No session monitor is held here.
+                    raw = api.connectVsock(handle, port);
+                    if (raw == null) throw new AvfEngineException(AvfEngineException.VSOCK_CONNECT_FAILED,
+                            "vsock adapter returned no channel");
+                } catch (AvfEngineException failure) {
+                    ensureOpen();
+                    if (!AvfEngineException.VSOCK_CONNECT_FAILED.equals(failure.reason())) throw failure;
+                    last = failure;
+                    if (attempt + 1 < connectAttempts) awaitRetry(port);
+                    continue;
+                }
+                SessionChannel owned = new SessionChannel(raw);
+                synchronized (this) {
+                    if (!channelsClosed) {
+                        ownedChannels.add(owned);
+                        return owned;
+                    }
+                }
+                AvfEngineException closed = closedFailure();
+                try { owned.close(); }
+                catch (IOException | RuntimeException cleanup) { closed.addSuppressed(cleanup); }
+                throw closed;
             }
-            throw new AvfEngineException(
-                    last.reason(),
-                    "vsock port " + port + " unreachable after " + connectAttempts
-                            + " attempts",
-                    last);
+            throw new AvfEngineException(last.reason(),
+                    "vsock port " + port + " unreachable after " + connectAttempts + " attempts", last);
+        }
+
+        private void awaitRetry(int port) {
+            try { closedSignal.await(connectBackoffMs, java.util.concurrent.TimeUnit.MILLISECONDS); }
+            catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new AvfEngineException(AvfEngineException.VSOCK_CONNECT_FAILED,
+                        "interrupted while connecting vsock port " + port, interrupted);
+            }
+            ensureOpen();
+        }
+
+        private void ensureOpen() {
+            if (channelsClosed) throw closedFailure();
+        }
+
+        private static AvfEngineException closedFailure() {
+            return new AvfEngineException(AvfEngineException.VSOCK_CONNECT_FAILED,
+                    "session channels are closed");
+        }
+
+        /** Ensures caller close and session teardown do not both close the same descriptor. */
+        private final class SessionChannel implements AvfVirtualMachineApi.AvfVsockChannel {
+            private final AvfVirtualMachineApi.AvfVsockChannel raw;
+            private boolean closed;
+            SessionChannel(AvfVirtualMachineApi.AvfVsockChannel raw) { this.raw = raw; }
+            public java.io.InputStream inputStream() { return raw.inputStream(); }
+            public java.io.OutputStream outputStream() { return raw.outputStream(); }
+            public void close() throws IOException {
+                synchronized (AvfVmSession.this) {
+                    if (closed) return;
+                    closed = true;
+                    ownedChannels.remove(this);
+                }
+                raw.close();
+            }
         }
 
         /** Closes any channels opened through this session. */
-        public synchronized void closeChannels() throws IOException {
-            if (controlChannel != null) {
-                controlChannel.close();
-                controlChannel = null;
+        public void closeChannels() throws IOException {
+            CloseBatch closing = claimClose();
+            rejectPending(closing);
+            closeAll(closing.resources());
+        }
+
+        private synchronized CloseBatch claimClose() {
+            if (channelsClosed) return new CloseBatch(java.util.List.of(), java.util.List.of());
+            channelsClosed = true;
+            closedSignal.countDown();
+            java.util.List<AutoCloseable> closing = new java.util.ArrayList<>(ownedChannels);
+            if (avfAudioChannel != null) closing.add(avfAudioChannel);
+            java.util.List<java.util.concurrent.CompletableFuture<AvfVirtualMachineApi.AvfVsockChannel>>
+                    pending = new java.util.ArrayList<>(lazyChannels.values());
+            ownedChannels.clear();
+            lazyChannels.clear();
+            avfAudioChannel = null;
+            return new CloseBatch(closing, pending);
+        }
+
+        private record CloseBatch(java.util.List<AutoCloseable> resources,
+                java.util.List<java.util.concurrent.CompletableFuture<AvfVirtualMachineApi.AvfVsockChannel>> pending) {}
+
+        private static void rejectPending(CloseBatch closing) {
+            for (var future : closing.pending()) future.completeExceptionally(closedFailure());
+        }
+
+        private static void closeAll(java.util.List<AutoCloseable> closing) throws IOException {
+            IOException first = null;
+            for (AutoCloseable channel : closing) {
+                try { channel.close(); }
+                catch (Exception failure) {
+                    IOException io = failure instanceof IOException value ? value
+                            : new IOException("AVF channel cleanup failed", failure);
+                    if (first == null) first = io;
+                    else if (first != io) first.addSuppressed(io);
+                }
             }
-            if (terminalChannel != null) {
-                terminalChannel.close();
-                terminalChannel = null;
-            }
-            if (shareChannel != null) {
-                shareChannel.close();
-                shareChannel = null;
-            }
-            if (graphicsChannel != null) {
-                graphicsChannel.close();
-                graphicsChannel = null;
-            }
-            if (avfAudioChannel != null) {
-                avfAudioChannel.close();
-                avfAudioChannel = null;
-            }
-            if (audioChannel != null) {
-                audioChannel.close();
-                audioChannel = null;
-            }
+            if (first != null) throw first;
         }
     }
 }

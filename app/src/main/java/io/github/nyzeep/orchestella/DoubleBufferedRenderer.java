@@ -25,6 +25,7 @@ public class DoubleBufferedRenderer implements WaylandChannel.FrameListener {
         boolean isReady();
         default void setReady(boolean ready) {}
         void present(int[] pixels, int width, int height, ViewportAspectCalculator.ViewportMapping mapping);
+        default boolean lastPresentationSucceeded() { return isReady(); }
         void clear(int color);
         void release();
     }
@@ -64,6 +65,13 @@ public class DoubleBufferedRenderer implements WaylandChannel.FrameListener {
     private int currentFps = 0;
 
     private boolean isVsyncRequested = false;
+    private boolean active = true;
+    private boolean released;
+    private java.util.function.Consumer<WaylandChannel.FrameData> presentationObserver;
+
+    public synchronized void setPresentationObserver(java.util.function.Consumer<WaylandChannel.FrameData> observer) {
+        presentationObserver = observer;
+    }
 
     public DoubleBufferedRenderer(SurfacePresenter presenter, VsyncScheduler vsyncScheduler) {
         this.presenter = Objects.requireNonNull(presenter, "presenter");
@@ -99,7 +107,7 @@ public class DoubleBufferedRenderer implements WaylandChannel.FrameListener {
      */
     @Override
     public synchronized void onFrameAvailable(WaylandChannel.FrameData frame) {
-        if (frame == null) {
+        if (frame == null || !active || released) {
             return;
         }
 
@@ -124,7 +132,7 @@ public class DoubleBufferedRenderer implements WaylandChannel.FrameListener {
     public synchronized void tickVsync() {
         isVsyncRequested = false;
 
-        if (!hasNewFrame || backBuffer == null) {
+        if (!active || released || !hasNewFrame || backBuffer == null) {
             // Static scene: zero redraw, saving CPU and GPU power
             return;
         }
@@ -153,11 +161,13 @@ public class DoubleBufferedRenderer implements WaylandChannel.FrameListener {
                 ViewportAspectCalculator.calculate(width, height, viewportWidth, viewportHeight);
 
         presenter.present(pixelBuffer, width, height, mapping);
+        if (!presenter.lastPresentationSucceeded()) { droppedFramesCount++; return; }
 
         renderedFramesCount++;
         lastFrameTimestampNs = System.nanoTime();
 
         updateFpsMetrics(lastFrameTimestampNs);
+        if (presentationObserver != null) presentationObserver.accept(frontBuffer);
     }
 
     private void updateFpsMetrics(long nowNs) {
@@ -253,6 +263,13 @@ public class DoubleBufferedRenderer implements WaylandChannel.FrameListener {
         return backBuffer;
     }
 
+    /** Pausing rejects producer callbacks until the controller explicitly resumes presentation. */
+    public synchronized void setActive(boolean active) {
+        if (released) return;
+        this.active = active;
+        if (!active) reset();
+    }
+
     public synchronized void reset() {
         vsyncScheduler.cancel();
         isVsyncRequested = false;
@@ -262,6 +279,10 @@ public class DoubleBufferedRenderer implements WaylandChannel.FrameListener {
     }
 
     public synchronized void release() {
+        if (released) return;
+        released = true;
+        active = false;
+        presentationObserver = null;
         reset();
         presenter.release();
         pixelBuffer = null;

@@ -28,7 +28,6 @@ import io.github.nyzeep.orchestella.terminal.TerminalDrawerPanel;
 import io.github.nyzeep.orchestella.terminal.TerminalSessionInstance;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
-import java.util.List;
 import java.util.function.Consumer;
 
 /**
@@ -53,8 +52,25 @@ public class TerminalActivity extends Activity {
     private MobileAuxiliaryKeyBar auxiliaryKeyBar;
     private StickyModifierStateMachine stickyStateMachine;
     private ExecutionSession session;
-    private InteractiveTerminalEngine terminalEngine;
-    private TerminalHistoryStore historyStore;
+    private ThemeStore themeStore;
+    private SettingsManager settingsManager;
+    private final android.content.SharedPreferences.OnSharedPreferenceChangeListener appearanceListener =
+            (preferences, key) -> { if (ui != null) ui.post(this::applyAppearance); };
+    private PersistentTerminalSessionPool.SessionHolder attachedHolder;
+    private Consumer<String> terminalOutputListener;
+    private int bindingGeneration;
+    private volatile boolean terminalConnected;
+    private volatile boolean foregroundActive;
+    private volatile int foregroundGeneration;
+    private volatile io.github.nyzeep.orchestella.runtime.contract.BridgeClient activeBridgeClient;
+    private String bridgeStatus = "正在启动";
+    private final java.util.concurrent.ExecutorService resizeExecutor =
+            java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                Thread thread = new Thread(r, "terminal-resize-queue");
+                thread.setDaemon(true);
+                return thread;
+            });
+    private final Runnable resizeTask = this::sendTerminalResize;
     private String instanceId;
     private String bridgeToken;
     private InstanceSessionReconciler sessionReconciler;
@@ -63,37 +79,18 @@ public class TerminalActivity extends Activity {
     private DrawerLayout drawerLayout;
     private LinearLayout rootLayout;
     private TerminalDrawerPanel drawerPanel;
+    private LinearLayout sessionHeader;
+    private TextView tvSessionTitle;
     private Button btnDrawerHandle;
     private MultiTerminalSessionManager multiManager;
     private final java.util.concurrent.atomic.AtomicBoolean sessionDeathHandled =
             new java.util.concurrent.atomic.AtomicBoolean(false);
-    private volatile boolean replayingTranscript = false;
     private final java.util.concurrent.ExecutorService sendExecutor =
             java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
                 Thread t = new Thread(r, "terminal-send-queue");
                 t.setDaemon(true);
                 return t;
             });
-    private final Consumer<String> terminalOutputListener = chunk -> {
-        if (chunk == null || chunk.isEmpty()) {
-            return;
-        }
-        if (instanceId != null && multiManager != null) {
-            TerminalSessionInstance active = multiManager.getActiveSession(instanceId);
-            if (active != null) {
-                active.appendOutput(chunk);
-            }
-        }
-        if (!replayingTranscript && terminalView != null) {
-            terminalView.appendOutput(chunk);
-        }
-        // Persist the console stream so field failures are diagnosable in-app
-        // (InstanceDetailActivity -> Linux 日志) without adb.
-        LogViewerActivity.appendGuestConsole(this, instanceId, chunk);
-        if (drawerPanel != null) {
-            drawerPanel.post(() -> drawerPanel.refresh());
-        }
-    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -105,47 +102,10 @@ public class TerminalActivity extends Activity {
         ui = new Handler(Looper.getMainLooper());
         stickyStateMachine = new StickyModifierStateMachine();
 
-        String intentHostname = getIntent().getStringExtra("hostname");
-        String intentUser = getIntent().getStringExtra("defaultUser");
-        String effectiveHost = (intentHostname != null && !intentHostname.isEmpty()) ? intentHostname : "orchestella";
-        String effectiveUser = (intentUser != null && !intentUser.isEmpty()) ? intentUser : "root";
-        boolean isRoot = "root".equals(effectiveUser);
-
-        terminalEngine = new InteractiveTerminalEngine(
-                new InteractiveTerminalEngine.PromptInfo(
-                        effectiveUser,
-                        effectiveHost,
-                        "~",
-                        "❯",
-                        isRoot));
-
-        try {
-            historyStore = new TerminalHistoryStore(getFilesDir().toPath().resolve("terminal_history"));
-            if (instanceId != null) {
-                List<String> existingHistory = historyStore.loadHistory(instanceId);
-                terminalEngine.loadHistory(existingHistory);
-            }
-        } catch (Exception e) {
-            android.util.Log.w("TerminalActivity", "Failed to initialize history store", e);
-        }
-
-        terminalEngine.setByteSink(bytes -> sendRaw(bytes));
-        terminalEngine.setLineCommitListener((promptInfo, cmd) -> {
-            if (historyStore != null && instanceId != null) {
-                historyStore.saveHistoryAsync(instanceId, terminalEngine.getHistory());
-            }
-        });
-        terminalEngine.setClearRequestListener(() -> {
-            if (terminalView != null) {
-                terminalView.clear();
-            }
-        });
-        terminalEngine.setTabCompletionHandler(new CommandCompletionEngine());
-        terminalEngine.setTabCompletionListener((buf, pos, candidates) -> {
-            if (terminalView != null && candidates != null && !candidates.isEmpty()) {
-                terminalView.appendOutput(terminalEngine.renderCompletionListing(candidates) + "\n");
-            }
-        });
+        themeStore = new ThemeStore(this);
+        settingsManager = new SettingsManager(this);
+        // The guest shell owns prompts, history and completion. All input streams to it.
+        io.github.nyzeep.orchestella.ui.theme.ThemeApplier.prepare(this);
 
         rootLayout = new LinearLayout(this);
         rootLayout.setOrientation(LinearLayout.VERTICAL);
@@ -162,6 +122,8 @@ public class TerminalActivity extends Activity {
         };
         terminalView.setInputSink(inputSink);
         terminalView.setStickyStateMachine(stickyStateMachine);
+        terminalView.setSizeListener((columns, rows) -> scheduleTerminalResize());
+        terminalView.setTerminalInputEnabled(false);
         contentArea.addView(terminalView, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
@@ -170,18 +132,37 @@ public class TerminalActivity extends Activity {
         contentArea.addView(offlineCardView, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        // Floating quick drawer handle button in top-right corner
+        // Reserve header height above the VT viewport; controls must never cover output.
+        sessionHeader = new LinearLayout(this);
+        sessionHeader.setOrientation(LinearLayout.HORIZONTAL);
+        sessionHeader.setGravity(Gravity.CENTER_VERTICAL);
+        sessionHeader.setPadding(dpToPx(10), 0, dpToPx(8), 0);
+        sessionHeader.setBackgroundColor(0xFF21222C);
+        tvSessionTitle = new TextView(this);
+        tvSessionTitle.setText("终端 1");
+        tvSessionTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+        tvSessionTitle.setTextColor(DraculaPalette.FOREGROUND);
+        tvSessionTitle.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        tvSessionTitle.setSingleLine(true);
+        tvSessionTitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        tvSessionTitle.setGravity(Gravity.CENTER_VERTICAL);
+        sessionHeader.addView(tvSessionTitle, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.MATCH_PARENT, 1f));
+
         btnDrawerHandle = new Button(this, null, android.R.attr.buttonStyleSmall);
-        btnDrawerHandle.setText("◫ 终端 (1)");
+        btnDrawerHandle.setText("1个输出视图");
         btnDrawerHandle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
         btnDrawerHandle.setTextColor(DraculaPalette.COLOR_CYAN);
         btnDrawerHandle.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-        btnDrawerHandle.setBackground(createPillBackground(0xCC282A36, 0xFF6272A4, 12f));
-        btnDrawerHandle.setPadding(dpToPx(12), dpToPx(6), dpToPx(12), dpToPx(6));
-        FrameLayout.LayoutParams handleLp = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.TOP | Gravity.END);
-        handleLp.setMargins(0, dpToPx(10), dpToPx(12), 0);
+        btnDrawerHandle.setAllCaps(false);
+        btnDrawerHandle.setSingleLine(true);
+        btnDrawerHandle.setFocusable(false);
+        btnDrawerHandle.setMinWidth(0);
+        btnDrawerHandle.setMinimumWidth(0);
+        btnDrawerHandle.setMinHeight(0);
+        btnDrawerHandle.setMinimumHeight(0);
+        btnDrawerHandle.setBackground(createPillBackground(0xFF282A36, 0xFF6272A4, 8f));
+        btnDrawerHandle.setPadding(dpToPx(10), 0, dpToPx(10), 0);
         btnDrawerHandle.setOnClickListener(v -> {
             if (drawerLayout != null) {
                 if (drawerLayout.isDrawerOpen(GravityCompat.END)) {
@@ -194,8 +175,10 @@ public class TerminalActivity extends Activity {
                 }
             }
         });
-        contentArea.addView(btnDrawerHandle, handleLp);
-
+        sessionHeader.addView(btnDrawerHandle, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.MATCH_PARENT));
+        rootLayout.addView(sessionHeader, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(40)));
         rootLayout.addView(contentArea, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
@@ -203,6 +186,8 @@ public class TerminalActivity extends Activity {
         auxiliaryKeyBar = new MobileAuxiliaryKeyBar(this);
         auxiliaryKeyBar.setInputSink(inputSink);
         auxiliaryKeyBar.setStateMachine(stickyStateMachine);
+        auxiliaryKeyBar.setTerminalView(terminalView);
+        auxiliaryKeyBar.setCommandEntryAction(this::showCommandEntryDialog);
         rootLayout.addView(auxiliaryKeyBar, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
@@ -235,10 +220,8 @@ public class TerminalActivity extends Activity {
                             drawerLayout.closeDrawer(GravityCompat.END);
                         }
                         switchToSessionUi(newSession);
-                        newSession.appendOutput("\n[已新建输出视图: " + newSession.getTitle() + "（与当前 Shell 共享会话）]\n");
-                        if (terminalView != null) {
-                            terminalView.appendOutput("\n[已新建输出视图: " + newSession.getTitle() + "（与当前 Shell 共享会话）]\n");
-                        }
+                        android.widget.Toast.makeText(TerminalActivity.this,
+                                "已新建输出视图，与当前 Shell 共享输入", android.widget.Toast.LENGTH_SHORT).show();
                     } catch (Exception e) {
                         android.widget.Toast.makeText(TerminalActivity.this, e.getMessage(), android.widget.Toast.LENGTH_SHORT).show();
                     }
@@ -320,9 +303,7 @@ public class TerminalActivity extends Activity {
             Insets navInsets = insets.getInsets(WindowInsetsCompat.Type.navigationBars());
             int targetBottomPadding = MobileAuxiliaryKeyBar.calculateTargetBottomPadding(imeInsets.bottom, navInsets.bottom);
             v.setPadding(v.getPaddingLeft(), v.getPaddingTop(), v.getPaddingRight(), targetBottomPadding);
-            if (imeInsets.bottom > 0 && terminalView != null) {
-                terminalView.post(() -> terminalView.scrollToBottom());
-            }
+            if (terminalView != null) terminalView.scrollToBottomIfFollowing();
             return insets;
         });
 
@@ -334,7 +315,7 @@ public class TerminalActivity extends Activity {
 
     private void applyAppearance() {
         try {
-            ThemeStore store = new ThemeStore(this);
+            ThemeStore store = themeStore != null ? themeStore : new ThemeStore(this);
             AppTheme theme = store.resolve();
             int[] ansi = new int[theme.getAnsi().size()];
             for (int i = 0; i < ansi.length; i++) {
@@ -342,12 +323,14 @@ public class TerminalActivity extends Activity {
             }
             DraculaPalette.setPaletteOverride(
                     ansi, theme.getTerminalForeground(), theme.getTerminalBackground());
-            rootLayout.setBackgroundColor(theme.getBackground());
+            rootLayout.setBackgroundColor(theme.getTerminalBackground());
+            io.github.nyzeep.orchestella.ui.theme.ThemeApplier.bind(this);
             if (terminalView != null) {
                 terminalView.applyTheme(theme,
                         store.terminalFontSizeSp(),
                         store.terminalLetterSpacingEm(),
                         store.terminalLineSpacingPx());
+                terminalView.setCursorBlinkEnabled(settingsManager == null || settingsManager.isTerminalCursorBlinkEnabled());
             }
             if (offlineCardView != null) {
                 offlineCardView.setBackgroundColor(theme.getBackground());
@@ -357,31 +340,46 @@ public class TerminalActivity extends Activity {
         }
     }
 
-    private BridgeConnector.Events eventsForBridge() {
+    private BridgeConnector.Events eventsForBridge(ExecutionSession target,
+            io.github.nyzeep.orchestella.runtime.contract.BridgeClient expectedClient) {
+        final int foreground = foregroundGeneration;
+        final int binding = bindingGeneration;
+        final String selectedInstance = instanceId;
         return new BridgeConnector.Events() {
             @Override
             public void onReady() {
-                append("[bridge ready]\n");
+                if (ui != null) ui.post(() -> {
+                    if (session != target || activeBridgeClient != expectedClient || target.bridgeClient() != expectedClient
+                            || foreground != foregroundGeneration || binding != bindingGeneration
+                            || !foregroundActive || isDestroyed()) return;
+                    GuestFeatureSelections.startSelected(TerminalActivity.this, selectedInstance, expectedClient,
+                            () -> session == target && activeBridgeClient == expectedClient
+                                    && target.bridgeClient() == expectedClient && foregroundActive && !isDestroyed()
+                                    && foreground == foregroundGeneration && binding == bindingGeneration);
+                    bridgeStatus = "";
+                    updateDrawerHandleText(multiManager.getActiveSession(instanceId));
+                    scheduleTerminalResize();
+                });
             }
 
             @Override
             public void onPong() {
-                append("[bridge pong]\n");
+                // Keep protocol diagnostics outside the guest's screen/cursor state.
             }
 
             @Override
             public void onResize(int columns, int rows) {
-                append("[bridge resize " + columns + "x" + rows + "]\n");
+                // A resize acknowledgement must not overwrite the guest's terminal grid.
             }
 
             @Override
             public void onNotification(String title, String message) {
-                append("[bridge notify: " + title + " - " + message + "]\n");
+                // AndroidNotificationAdapter owns this user-visible notification.
             }
 
             @Override
             public void onOpenUrl(String url) {
-                append("[bridge open-url: " + url + "]\n");
+                // AndroidUrlOpenerAdapter owns this user-visible action.
             }
         };
     }
@@ -389,7 +387,13 @@ public class TerminalActivity extends Activity {
     @Override
     protected void onStart() {
         super.onStart();
+        foregroundActive = true;
+        foregroundGeneration++;
+        if (themeStore != null) themeStore.addOnThemeChangeListener(appearanceListener);
+        if (settingsManager != null) settingsManager.addOnSettingsChangeListener(appearanceListener);
+        applyAppearance();
         reconcileAndConnect();
+        recoverControlOnForeground();
     }
 
     @Override
@@ -397,30 +401,34 @@ public class TerminalActivity extends Activity {
         super.onResume();
         if (terminalView != null && terminalView.getVisibility() == View.VISIBLE) {
             terminalView.post(() -> {
-                terminalView.scrollToBottom();
+                terminalView.scrollToBottomIfFollowing();
                 terminalView.requestTerminalFocus();
+                // Getty may reset winsize after the early bridge handshake. Reassert
+                // the current viewport on every foreground entry, even if it is unchanged.
+                scheduleTerminalResize();
             });
         }
     }
 
     @Override
-    protected void onPause() {
-        super.onPause();
-        persistTerminalHistory();
-    }
-
-    @Override
     protected void onStop() {
+        foregroundActive = false;
+        if (themeStore != null) themeStore.removeOnThemeChangeListener(appearanceListener);
+        if (settingsManager != null) settingsManager.removeOnSettingsChangeListener(appearanceListener);
+        detachTerminalListener();
+        if (ui != null) ui.removeCallbacks(resizeTask);
+        if (terminalView != null) terminalView.stopCursorBlink();
         super.onStop();
-        if (instanceId != null) {
-            PersistentTerminalSessionPool.getInstance().detach(instanceId, terminalOutputListener);
-        }
     }
 
-    private void persistTerminalHistory() {
-        if (historyStore != null && terminalEngine != null && instanceId != null) {
-            historyStore.saveHistoryAsync(instanceId, terminalEngine.getHistory());
+    private void detachTerminalListener() {
+        bindingGeneration++;
+        if (attachedHolder != null) {
+            attachedHolder.detach(terminalOutputListener);
+            attachedHolder.setSessionEndListener(null);
         }
+        attachedHolder = null;
+        terminalOutputListener = null;
     }
 
     @Override
@@ -430,14 +438,16 @@ public class TerminalActivity extends Activity {
         if (intent != null) {
             String newInstanceId = intent.getStringExtra("instanceId");
             if (newInstanceId != null && !newInstanceId.isEmpty() && !newInstanceId.equals(this.instanceId)) {
-                persistTerminalHistory();
-                if (this.instanceId != null) {
-                    PersistentTerminalSessionPool.getInstance().detach(this.instanceId, terminalOutputListener);
-                }
+                detachTerminalListener();
+                terminalConnected = false;
                 this.instanceId = newInstanceId;
-                if (historyStore != null) {
-                    terminalEngine.loadHistory(historyStore.loadHistory(newInstanceId));
+                session = null;
+                stickyStateMachine.reset();
+                if (terminalView != null) {
+                    terminalView.setTerminalInputEnabled(false);
+                    terminalView.setSessionScreen(null);
                 }
+                if (drawerPanel != null) drawerPanel.setInstanceId(newInstanceId);
             }
             String newBridgeToken = intent.getStringExtra("bridgeToken");
             if (newBridgeToken != null && !newBridgeToken.isEmpty()) {
@@ -451,12 +461,16 @@ public class TerminalActivity extends Activity {
     private void handleCommandExtra(Intent intent) {
         if (intent != null && intent.hasExtra("command")) {
             String cmd = intent.getStringExtra("command");
+            // A lifecycle restart must never re-run a previously consumed command.
+            intent.removeExtra("command");
             if (cmd != null && !cmd.isEmpty()) {
-                if (terminalView != null) {
-                    terminalView.postDelayed(() -> send(cmd), 300);
-                } else {
+                final String commandInstance = instanceId;
+                Runnable dispatch = () -> {
+                    if (!java.util.Objects.equals(commandInstance, instanceId) || !terminalConnected) return;
                     send(cmd);
-                }
+                };
+                if (terminalView != null) terminalView.postDelayed(dispatch, 300L);
+                else dispatch.run();
             }
         }
     }
@@ -464,16 +478,18 @@ public class TerminalActivity extends Activity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        persistTerminalHistory();
-        if (instanceId != null) {
-            PersistentTerminalSessionPool.getInstance().detach(instanceId, terminalOutputListener);
-        }
-        sendExecutor.shutdown();
+        detachTerminalListener();
+        terminalConnected = false;
+        if (ui != null) ui.removeCallbacksAndMessages(null);
+        sendExecutor.shutdownNow();
+        // The client belongs to the persistent session. Rotation must not interrupt an
+        // in-flight request and thereby close that session's authenticated control stream.
+        resizeExecutor.shutdown();
     }
 
     private void reconcileAndConnect() {
         if (instanceId == null || instanceId.isEmpty()) {
-            append("[error: instanceId is missing]\n");
+            showMissingPlaceholder("未提供实例 ID");
             return;
         }
 
@@ -524,8 +540,8 @@ public class TerminalActivity extends Activity {
         if (terminalView != null) {
             terminalView.setVisibility(View.VISIBLE);
         }
-        if (btnDrawerHandle != null) {
-            btnDrawerHandle.setVisibility(View.VISIBLE);
+        if (sessionHeader != null) {
+            sessionHeader.setVisibility(View.VISIBLE);
         }
 
         if (instanceId != null) {
@@ -546,40 +562,50 @@ public class TerminalActivity extends Activity {
             }
         }
 
+        if (session != holder.rawSession()) bridgeStatus = "正在启动";
         session = holder.rawSession();
-        sessionDeathHandled.set(false);
-        holder.setSessionEndListener(id -> {
-            // Guest exited or the stream pump ended: reconcile on the UI thread, which
-            // renders the offline/crashed recovery card instead of a dead terminal.
-            if (ui != null) {
-                ui.post(() -> {
-                    if (!sessionDeathHandled.compareAndSet(false, true)) {
-                        return;
-                    }
-                    reconcileAndConnect();
-                });
-            }
-        });
-        String replay = holder.attach(terminalOutputListener);
-        if (terminalView != null) {
-            replayingTranscript = true;
-            try {
-                terminalView.clear();
-                if (replay != null && !replay.isEmpty()) {
-                    terminalView.appendOutput(replay);
-                } else {
-                    terminalView.appendOutput("Orchestella Studio terminal (" + instanceId + ")\n[terminal connected]\n");
-                }
-            } finally {
-                replayingTranscript = false;
-            }
-            terminalView.post(() -> terminalView.scrollToBottom());
+        terminalConnected = true;
+        terminalView.setTerminalInputEnabled(true);
+        terminalView.startCursorBlink();
+        if (attachedHolder == holder) {
+            scheduleTerminalResize();
+            return;
         }
-
+        detachTerminalListener();
+        final int generation = bindingGeneration;
+        final String boundInstanceId = instanceId;
+        terminalOutputListener = chunk -> {
+            if (chunk == null || chunk.isEmpty()) return;
+            // Posting before rendering guarantees attach's locked snapshot precedes all live
+            // chunks on the UI thread. No clear() can race a pump callback anymore.
+            ui.post(() -> {
+                if (generation != bindingGeneration || attachedHolder != holder) return;
+                TerminalSessionInstance active = multiManager.getActiveSession(boundInstanceId);
+                if (active != null) active.appendOutput(chunk);
+                terminalView.appendOutput(chunk);
+                LogViewerActivity.appendGuestConsole(this, boundInstanceId, chunk);
+            });
+        };
+        attachedHolder = holder;
+        sessionDeathHandled.set(false);
+        holder.setSessionEndListener(id -> ui.post(() -> {
+            if (generation != bindingGeneration || attachedHolder != holder) return;
+            if (sessionDeathHandled.compareAndSet(false, true)) reconcileAndConnect();
+        }));
+        String replay = holder.attach(terminalOutputListener);
+        terminalView.setSessionScreen(holder.getScreenModel());
+        TerminalSessionInstance active = multiManager.getActiveSession(boundInstanceId);
+        if (active != null) { active.clear(); active.appendOutput(replay); }
         startBridgeServingIfNecessary(session);
+        scheduleTerminalResize();
     }
 
     private void showOfflinePlaceholder(InstanceLifecycle.Instance instance, boolean isCrashed) {
+        detachTerminalListener();
+        terminalConnected = false;
+        session = null;
+        stickyStateMachine.reset();
+        if (terminalView != null) terminalView.setTerminalInputEnabled(false);
         if (offlineCardView != null) {
             offlineCardView.setVisibility(View.VISIBLE);
         }
@@ -589,29 +615,34 @@ public class TerminalActivity extends Activity {
         if (terminalView != null) {
             terminalView.setVisibility(View.GONE);
         }
-        if (btnDrawerHandle != null) {
-            btnDrawerHandle.setVisibility(View.GONE);
+        if (sessionHeader != null) {
+            sessionHeader.setVisibility(View.GONE);
         }
 
+        btnOfflineAction.setVisibility(View.VISIBLE);
         if (isCrashed) {
-            tvOfflineTitle.setText("⚠️ 实例异常退出 (Crashed)");
+            tvOfflineTitle.setText("实例异常退出");
             String detail = (instance != null && instance.crashDiagnostic() != null)
                     ? "退出码: " + instance.crashDiagnostic().exitCode() + "\n"
                     + (instance.crashDiagnostic().message() != null ? instance.crashDiagnostic().message() : "")
                     : "底层虚拟机或终端进程已异常退出。";
             tvOfflineMessage.setText(detail);
-            btnOfflineAction.setText("🔄 立即重启实例");
+            btnOfflineAction.setText("重启实例");
         } else {
             String stateStr = instance != null ? instance.state().name() : "STOPPED";
-            tvOfflineTitle.setText("🚀 实例处于离线状态 (" + stateStr + ")");
+            tvOfflineTitle.setText("实例处于离线状态 (" + stateStr + ")");
             tvOfflineMessage.setText("当前实例尚未启动，终端交互未连接。\n点击下方按钮即可一键启动并自动进入 Shell。");
-            btnOfflineAction.setText("🚀 启动该实例");
+            btnOfflineAction.setText("启动实例");
         }
         btnOfflineAction.setOnClickListener(v -> launchInstanceFromTerminal(instanceId));
         btnOfflineBack.setOnClickListener(v -> finish());
     }
 
     private void showMissingPlaceholder(String id) {
+        detachTerminalListener();
+        terminalConnected = false;
+        session = null;
+        if (terminalView != null) terminalView.setTerminalInputEnabled(false);
         if (offlineCardView != null) {
             offlineCardView.setVisibility(View.VISIBLE);
         }
@@ -621,10 +652,10 @@ public class TerminalActivity extends Activity {
         if (terminalView != null) {
             terminalView.setVisibility(View.GONE);
         }
-        if (btnDrawerHandle != null) {
-            btnDrawerHandle.setVisibility(View.GONE);
+        if (sessionHeader != null) {
+            sessionHeader.setVisibility(View.GONE);
         }
-        tvOfflineTitle.setText("❌ 实例不存在");
+        tvOfflineTitle.setText("实例不存在");
         tvOfflineMessage.setText("在本地数据库中未找到 ID 为 " + id + " 的实例。");
         btnOfflineAction.setVisibility(View.GONE);
         btnOfflineBack.setOnClickListener(v -> finish());
@@ -716,29 +747,96 @@ public class TerminalActivity extends Activity {
             @Override
             public void destroy() {
             }
+        }, instance.id());
+    }
+
+    private void recoverControlOnForeground() {
+        if (!foregroundActive || !terminalConnected || session == null || resizeExecutor.isShutdown()) return;
+        final ExecutionSession target = session;
+        final int foreground = foregroundGeneration;
+        final int binding = bindingGeneration;
+        // Exactly one task per explicit onStart. Output/layout/IME never trigger recovery.
+        resizeExecutor.execute(() -> {
+            if (!foregroundActive || foreground != foregroundGeneration || target != session || binding != bindingGeneration) return;
+            io.github.nyzeep.orchestella.runtime.contract.BridgeClient failed = target.bridgeClient();
+            if (failed == null || !"failed".equals(failed.readinessState())) return;
+            android.util.Log.i("OrchestellaBridge", "control_reconnect_begin");
+            boolean recovered = target.recoverControlChannel();
+            android.util.Log.i("OrchestellaBridge", "control_reconnect_result recovered=" + recovered);
+            ui.post(() -> {
+                if (!foregroundActive || foreground != foregroundGeneration || target != session || binding != bindingGeneration || isDestroyed()) return;
+                bridgeStatus = recovered ? "正在连接" : "控制不可用";
+                if (recovered) {
+                    activeBridgeClient = null; // Retire old callbacks before publishing the new client.
+                    startBridgeServingIfNecessary(target);
+                }
+                updateDrawerHandleText(multiManager.getActiveSession(instanceId));
+            });
         });
     }
 
+    static boolean awaitCurrentControlReady(
+            io.github.nyzeep.orchestella.runtime.contract.BridgeClient client,
+            java.util.function.BooleanSupplier isCurrent, long timeoutMs)
+            throws java.io.IOException, InterruptedException {
+        long timeout = Math.max(1L, Math.min(timeoutMs,
+                io.github.nyzeep.orchestella.runtime.contract.BridgeClient.DEFAULT_STARTUP_TIMEOUT_MS));
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(timeout);
+        while (isCurrent.getAsBoolean() && System.nanoTime() < deadline) {
+            if (client.isReady()) return isCurrent.getAsBoolean();
+            if ("failed".equals(client.readinessState())) return false;
+            long remaining = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime());
+            if (remaining <= 0L) return false;
+            if (client.awaitReady(Math.min(250L, remaining)) && isCurrent.getAsBoolean()) return true;
+            Thread.sleep(10L);
+        }
+        return false;
+    }
+
     private void startBridgeServingIfNecessary(ExecutionSession s) {
-        if (s == null || !s.markBridgeServing()) {
+        if (s == null) return;
+        if (!s.markBridgeServing()) {
+            io.github.nyzeep.orchestella.runtime.contract.BridgeClient current = s.bridgeClient();
+            if (s == session && foregroundActive && current != null) {
+                activeBridgeClient = current;
+                BridgeConnector.Events events = eventsForBridge(s, current);
+                if (current.isReady()) {
+                    events.onReady();
+                } else {
+                    final int foreground = foregroundGeneration;
+                    final int binding = bindingGeneration;
+                    new Thread(() -> {
+                        try {
+                            if (awaitCurrentControlReady(current,
+                                    () -> session == s && activeBridgeClient == current
+                                            && s.bridgeClient() == current && foregroundActive && !isDestroyed()
+                                            && foreground == foregroundGeneration && binding == bindingGeneration,
+                                    io.github.nyzeep.orchestella.runtime.contract.BridgeClient.DEFAULT_STARTUP_TIMEOUT_MS)) {
+                                events.onReady();
+                            }
+                        } catch (InterruptedException interrupted) {
+                            Thread.currentThread().interrupt();
+                        } catch (java.io.IOException unavailable) { }
+                    }, "terminal-current-ready").start();
+                }
+            }
             return;
         }
+        final String sessionBridgeToken = bridgeToken;
         terminalView.post(() -> {
-            float charWidth = terminalView.getTranscriptView().getPaint().measureText("M");
-            float lineHeight = terminalView.getTranscriptView().getPaint().getFontSpacing();
-            int columns = (int) (terminalView.getWidth() / (charWidth > 0 ? charWidth : 1));
-            int rows = (int) (terminalView.getHeight() / (lineHeight > 0 ? lineHeight : 1));
-            final int gridColumns = columns > 0 ? columns : 80;
-            final int gridRows = rows > 0 ? rows : 24;
+            final int gridColumns = terminalView.getTerminalColumns();
+            final int gridRows = terminalView.getTerminalRows();
             new Thread(() -> {
+                final io.github.nyzeep.orchestella.runtime.contract.BridgeClient expectedClient = s.bridgeClient();
+                activeBridgeClient = expectedClient;
                 try {
                     AndroidNotificationAdapter notificationAdapter =
                             new AndroidNotificationAdapter(TerminalActivity.this);
                     AndroidUrlOpenerAdapter urlOpenerAdapter =
                             new AndroidUrlOpenerAdapter(TerminalActivity.this);
-                    new BridgeConnector().serveStreams(
-                            s.controlOutput(), s.controlInput(), bridgeToken,
-                            gridColumns, gridRows, eventsForBridge(), notificationAdapter,
+                    new BridgeConnector().serveSession(
+                            s, sessionBridgeToken,
+                            gridColumns, gridRows, eventsForBridge(s, expectedClient), notificationAdapter,
                             urlOpenerAdapter,
                             new io.github.nyzeep.orchestella.runtime.contract.BridgeControl.Clipboard() {
                                 @Override
@@ -756,10 +854,50 @@ public class TerminalActivity extends Activity {
                                 }
                             });
                 } catch (Exception e) {
-                    append("[bridge ended: " + e.getClass().getSimpleName() + "]\n");
+                    android.util.Log.w("TerminalActivity", "Bridge control ended: " + e.getClass().getSimpleName());
+                    ui.post(() -> {
+                        if (session == s && activeBridgeClient == expectedClient && foregroundActive && !isDestroyed()) {
+                            bridgeStatus = "控制不可用";
+                            updateDrawerHandleText(multiManager.getActiveSession(instanceId));
+                        }
+                    });
                 }
             }, "bridge-serve").start();
         });
+    }
+
+    private void showCommandEntryDialog() {
+        if (!terminalConnected) return;
+        final ExecutionSession commandSession = session;
+        android.widget.EditText input = new android.widget.EditText(this);
+        input.setHint("输入要发送给当前 Shell 的命令");
+        input.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                | android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        input.setTypeface(Typeface.MONOSPACE);
+        input.setMinLines(2);
+        input.setMaxLines(6);
+        input.setPadding(dpToPx(16), dpToPx(12), dpToPx(16), dpToPx(12));
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
+                .setTitle("发送命令")
+                .setMessage("命令将发送到当前 Shell；输出由 Shell 返回。")
+                .setView(input)
+                .setPositiveButton("发送", (owner, which) -> {
+                    if (!terminalConnected || session != commandSession || input.length() == 0) return;
+                    TerminalInputConnection connection = terminalView.getCurrentInputConnection();
+                    if (connection != null && connection.pasteText(input.getText()))
+                        terminalView.sendTerminalKey(android.view.KeyEvent.KEYCODE_ENTER);
+                    terminalView.requestTerminalFocus();
+                })
+                .setNegativeButton("取消", null).create();
+        dialog.setOnShowListener(owner -> {
+            io.github.nyzeep.orchestella.ui.theme.ThemeApplier.apply(dialog);
+            input.requestFocus();
+            android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager)
+                    getSystemService(INPUT_METHOD_SERVICE);
+            if (imm != null) imm.showSoftInput(input, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
+        });
+        dialog.show();
     }
 
     private void send(String line) {
@@ -772,19 +910,56 @@ public class TerminalActivity extends Activity {
     }
 
     private void sendRaw(byte[] bytes) {
-        if (instanceId == null || bytes == null || bytes.length == 0) {
-            return;
-        }
+        if (!terminalConnected || instanceId == null || bytes == null || bytes.length == 0 || sendExecutor.isShutdown()) return;
+        final PersistentTerminalSessionPool.SessionHolder target = attachedHolder;
+        final int generation = bindingGeneration;
+        final byte[] payload = bytes.clone();
+        if (target == null) return;
         sendExecutor.execute(() -> {
             try {
-                PersistentTerminalSessionPool.getInstance().sendBytes(this.instanceId, bytes);
+                // Bind to the holder at enqueue time. A queued key can never reach a newly
+                // selected instance or a restarted shell with the same instance ID.
+                target.sendBytes(payload);
             } catch (Exception e) {
-                // A dead or missing session means the guest is gone: reconcile once to
-                // swap in the offline/recovery card instead of spamming an error per key.
-                if (sessionDeathHandled.compareAndSet(false, true) && ui != null) {
-                    ui.post(this::reconcileAndConnect);
-                }
+                if (ui != null) ui.post(() -> {
+                    if (generation == bindingGeneration && sessionDeathHandled.compareAndSet(false, true))
+                        reconcileAndConnect();
+                });
             }
+        });
+    }
+
+    private void scheduleTerminalResize() {
+        if (ui == null || terminalView == null) return;
+        ui.removeCallbacks(resizeTask);
+        ui.postDelayed(resizeTask, 150L);
+    }
+
+    private void sendTerminalResize() {
+        if (!terminalConnected || session == null || resizeExecutor.isShutdown()) return;
+        final ExecutionSession target = session;
+        final int columns = terminalView.getTerminalColumns();
+        final int rows = terminalView.getTerminalRows();
+        final int generation = bindingGeneration;
+        resizeExecutor.execute(() -> {
+            if (generation != bindingGeneration || target != session) return;
+            io.github.nyzeep.orchestella.runtime.contract.BridgeClient client = target.bridgeClient();
+            if (client == null || !client.isReady()) {
+                android.util.Log.i("OrchestellaBridge", "resize skipped state="
+                        + (client == null ? "client-unavailable" : client.readinessState()));
+                return;
+            }
+            ui.post(() -> {
+                if (session == target && !bridgeStatus.isEmpty()) {
+                    bridgeStatus = "";
+                    updateDrawerHandleText(multiManager.getActiveSession(instanceId));
+                }
+            });
+            try {
+                android.util.Log.i("OrchestellaBridge", "resize request columns=" + columns + " rows=" + rows);
+                boolean accepted = client.resize(columns, rows).accepted();
+                android.util.Log.i("OrchestellaBridge", "resize accepted=" + accepted);
+            } catch (Exception failure) { android.util.Log.w("TerminalActivity", "Terminal resize unavailable"); }
         });
     }
 
@@ -815,18 +990,14 @@ public class TerminalActivity extends Activity {
             return;
         }
         updateDrawerHandleText(targetSession);
-        // Pause live chunks while replaying the transcript so a chunk cannot land both in
-        // the replayed snapshot and the live view (out-of-order/duplicate rendering).
-        replayingTranscript = true;
-        try {
-            terminalView.clear();
-            String transcript = targetSession.getTranscript();
-            if (transcript != null && !transcript.isEmpty()) {
-                terminalView.appendOutput(transcript);
-            }
-        } finally {
-            replayingTranscript = false;
-        }
+        stickyStateMachine.reset();
+        // These are output views of one shell. Replay the canonical shell snapshot so
+        // a view switch never invents an independent shell/cursor state.
+        PersistentTerminalSessionPool.SessionHolder holder = attachedHolder;
+        if (holder != null) {
+            detachTerminalListener();
+            showTerminalSession(holder);
+        } else terminalView.replaceTranscript(targetSession.getTranscript());
         terminalView.post(() -> {
             terminalView.scrollToBottom();
             terminalView.requestTerminalFocus();
@@ -837,7 +1008,7 @@ public class TerminalActivity extends Activity {
     }
 
     private void updateDrawerHandleText(TerminalSessionInstance session) {
-        if (btnDrawerHandle == null) {
+        if (btnDrawerHandle == null || tvSessionTitle == null) {
             return;
         }
         int count = 1;
@@ -848,6 +1019,10 @@ public class TerminalActivity extends Activity {
         if (session != null && session.getTitle() != null && !session.getTitle().isEmpty()) {
             title = session.getTitle();
         }
-        btnDrawerHandle.setText("◫ " + title + " (" + count + ")");
+        String status = bridgeStatus.isEmpty() ? "" : bridgeStatus + " · ";
+        tvSessionTitle.setText(status + title);
+        tvSessionTitle.setContentDescription(status + title);
+        btnDrawerHandle.setText(count + "个输出视图");
+        btnDrawerHandle.setContentDescription("打开输出视图列表，" + count + "个输出视图共享同一 Shell");
     }
 }

@@ -9,6 +9,7 @@ import android.content.res.ColorStateList
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.View
 import android.widget.EditText
 import android.widget.ImageView
@@ -29,18 +30,23 @@ import io.github.nyzeep.orchestella.runtime.capability.DeviceCapabilityEvaluator
 import io.github.nyzeep.orchestella.runtime.network.FilePortForwardingStore
 import io.github.nyzeep.orchestella.runtime.network.PortConflictDetector
 import io.github.nyzeep.orchestella.runtime.network.PortForwardingManager
-import io.github.nyzeep.orchestella.runtime.contract.BridgeClient
 import io.github.nyzeep.orchestella.runtime.contract.BridgeControl
+import io.github.nyzeep.orchestella.runtime.contract.PortForwardingRule
+import io.github.nyzeep.orchestella.runtime.contract.Protocol
 import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
 import io.github.nyzeep.orchestella.ui.InstanceDetailViewModel
 import io.github.nyzeep.orchestella.ui.InstanceDetailViewModel.InstanceDetailUiState
 import io.github.nyzeep.orchestella.ui.InstanceDetailViewModel.UpdateHardwareResult
-import java.nio.file.Files
+import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
+import java.io.IOException
 import java.time.Clock
 import java.util.Locale
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Fullscreen Level-2 Instance Detail Console (Ticket 04).
@@ -58,11 +64,20 @@ class InstanceDetailActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_INSTANCE_ID = "extra_instance_id"
+        private const val PENDING_EXPORT_ID = "pending_export_instance_id"
+        private const val EXIT_TIMEOUT_MS = 60_000L
     }
 
     private lateinit var viewModel: InstanceDetailViewModel
     private var hostProfile: HostHardwareProfile? = null
-    private val operations = Executors.newSingleThreadExecutor()
+    private val operations = Executors.newSingleThreadScheduledExecutor()
+    private var refreshTask: ScheduledFuture<*>? = null
+    private var powerExitTask: ScheduledFuture<*>? = null
+    private val powerOperationPending = AtomicBoolean(false)
+    private val exportInProgress = AtomicBoolean(false)
+    private var pendingExportInstanceId: String? = null
+    @Volatile private var detailResumed = false
+    @Volatile private var detailDestroyed = false
 
     // Views - Section 1
     private lateinit var toolbar: MaterialToolbar
@@ -124,18 +139,33 @@ class InstanceDetailActivity : AppCompatActivity() {
     private val safExportLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument("application/zip")
     ) { uri ->
-        uri?.let { destUri ->
-            val state = viewModel.uiState ?: return@let
+        val instanceId = pendingExportInstanceId
+        pendingExportInstanceId = null
+        if (uri != null && instanceId != null && ::viewModel.isInitialized) {
+            exportInProgress.set(true)
+            viewModel.uiState?.let(::renderState)
             operations.execute {
-                try {
-                    val adapter = AndroidSafExportAdapter(this, Clock.systemUTC())
-                    adapter.exportToDocumentUri(state.instance, destUri)
-                    runOnUiThread {
-                        Toast.makeText(this, "实例备份导出成功", Toast.LENGTH_SHORT).show()
-                    }
-                } catch (e: Exception) {
-                    runOnUiThread {
-                        Toast.makeText(this, "导出失败: ${e.message}", Toast.LENGTH_LONG).show()
+                val message = try {
+                    val instance = requireColdBackup(instanceId)
+                    val adapter = AndroidSafExportAdapter(
+                        AndroidSafExportAdapter.DocumentStreamOpener { documentUri ->
+                            // Recheck after the chooser and immediately before opening the destination.
+                            requireColdBackup(instanceId)
+                            contentResolver.openOutputStream(documentUri)
+                                ?: throw IOException("无法打开备份文件")
+                        }, Clock.systemUTC()
+                    )
+                    adapter.exportToDocumentUri(instance, uri)
+                    requireColdBackup(instanceId)
+                    "实例冷备份导出成功"
+                } catch (_: Exception) {
+                    "备份未完成，请确认实例已完全关机且目标文件可写；不要使用未完成的备份。"
+                }
+                exportInProgress.set(false)
+                runOnUiThread {
+                    if (!detailDestroyed && detailResumed && !isFinishing) {
+                        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+                        viewModel.loadInstance(instanceId)
                     }
                 }
             }
@@ -144,6 +174,7 @@ class InstanceDetailActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingExportInstanceId = savedInstanceState?.getString(PENDING_EXPORT_ID)
         setContentView(R.layout.activity_instance_detail)
 
         // Edge-to-Edge display
@@ -182,10 +213,8 @@ class InstanceDetailActivity : AppCompatActivity() {
 
         viewModel.onStateChanged = { state ->
             runOnUiThread {
-                if (state != null) {
-                    renderState(state)
-                } else {
-                    finish()
+                if (!detailDestroyed && !isFinishing && detailResumed) {
+                    if (state != null) renderState(state) else finish()
                 }
             }
         }
@@ -207,17 +236,39 @@ class InstanceDetailActivity : AppCompatActivity() {
         }
 
         initHardwareSliders(initialState)
+        renderState(initialState)
     }
 
     override fun onResume() {
         super.onResume()
-        val current = viewModel.uiState ?: return
-        viewModel.loadInstance(current.instanceId)
+        detailResumed = true
+        if (!::viewModel.isInitialized) return
+        val instanceId = viewModel.uiState?.instanceId ?: return
+        refreshTask?.cancel(false)
+        refreshTask = operations.scheduleWithFixedDelay({
+            if (detailResumed && !detailDestroyed) viewModel.loadInstance(instanceId)
+        }, 0, 1, TimeUnit.SECONDS)
+    }
+
+    override fun onPause() {
+        detailResumed = false
+        refreshTask?.cancel(false)
+        refreshTask = null
+        super.onPause()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString(PENDING_EXPORT_ID, pendingExportInstanceId)
+        super.onSaveInstanceState(outState)
     }
 
     override fun onDestroy() {
+        detailDestroyed = true
+        refreshTask?.cancel(false)
+        powerExitTask?.cancel(false)
+        if (::viewModel.isInitialized) viewModel.onStateChanged = null
+        operations.shutdownNow()
         super.onDestroy()
-        operations.shutdown()
     }
 
     private fun bindViews() {
@@ -311,7 +362,11 @@ class InstanceDetailActivity : AppCompatActivity() {
     private fun updateRamZoneUi(ramMb: Int, profile: HostHardwareProfile) {
         ramLabel.text = getString(R.string.hardware_ram_label, ramMb)
         val zone = profile.evaluateRamZone(ramMb)
-        val canModify = viewModel.uiState?.canModifyHardware == true
+        val canModify = viewModel.uiState?.let {
+            it.canModifyHardware && ExecutionSessionRegistry.get(it.instanceId) == null &&
+                !InstanceLaunchGuard.isInFlight(it.instanceId) &&
+                !powerOperationPending.get() && !exportInProgress.get()
+        } == true
         when (zone) {
             HostHardwareProfile.SafetyZone.GREEN -> {
                 ramSafetyZone.text = getString(R.string.hardware_ram_zone_green)
@@ -332,6 +387,10 @@ class InstanceDetailActivity : AppCompatActivity() {
     }
 
     private fun renderState(state: InstanceDetailUiState) {
+        val hasSession = ExecutionSessionRegistry.get(state.instanceId) != null
+        val launching = InstanceLaunchGuard.isInFlight(state.instanceId)
+        val busy = powerOperationPending.get() || exportInProgress.get()
+        val inactive = !hasSession && !launching && !busy
         // Section 1: Header
         distroIcon.setImageResource(
             DistroIconHelper.getIconRes(state.distroId)
@@ -351,10 +410,20 @@ class InstanceDetailActivity : AppCompatActivity() {
         specsSummary.text = "${state.vCpu} vCPU · ${state.ramMb} MB · ${state.diskCapacityGb} GB"
         ipAddressText.text = "IP: ${state.ipAddress}"
 
-        btnTerminal.isEnabled = state.canOpenTerminal
-        btnDesktop.isEnabled = state.canLaunchDesktop
+        btnTerminal.isEnabled = state.canOpenTerminal && hasSession && !busy
+        btnDesktop.isEnabled = hasSession && !busy
+        btnDesktop.text = "桌面与开发工具"
+        btnDesktop.contentDescription = "查看当前实例的可选功能安装、启动与真实状态"
+        btnPower.isEnabled = !busy && (hasSession || (state.canPowerOn && !launching))
+        if (powerOperationPending.get()) {
+            statusBadge.text = "正在等待虚拟机退出"
+        } else if (hasSession && state.state == InstanceLifecycle.State.STOPPED) {
+            statusBadge.text = "运行会话尚未退出"
+        } else if (launching && !hasSession) {
+            statusBadge.text = "正在启动"
+        }
 
-        if (state.state == InstanceLifecycle.State.RUNNING) {
+        if (hasSession) {
             btnPower.text = getString(R.string.console_btn_power)
             btnPower.setIconResource(R.drawable.ic_power)
         } else {
@@ -363,7 +432,7 @@ class InstanceDetailActivity : AppCompatActivity() {
         }
 
         // Section 2: Hardware Lock
-        if (state.canModifyHardware) {
+        if (state.canModifyHardware && inactive) {
             hwLockedHint.visibility = View.GONE
             vcpuSeekBar.isEnabled = true
             ramSeekBar.isEnabled = true
@@ -381,30 +450,85 @@ class InstanceDetailActivity : AppCompatActivity() {
         // Section 3: Storage
         storagePhysicalText.text = getString(R.string.console_storage_physical, formatDiskSize(state.diskPhysicalBytes))
         storageLogicalText.text = getString(R.string.console_storage_logical, "${state.diskCapacityGb} GB")
+        btnExpandDisk.isEnabled = state.canModifyHardware && inactive
+        btnExportBackup.isEnabled = !busy && pendingExportInstanceId == null &&
+            InstanceDetailActionRules.canColdBackup(state.state, hasSession, launching)
 
         // Section 4: Networking
         networkIpText.text = getString(R.string.console_network_ip, state.ipAddress)
 
         // Section 5: Danger Zone
-        btnDangerClone.isEnabled = state.canClone
-        btnDangerDelete.isEnabled = state.canDelete
+        btnDangerClone.isEnabled = state.canClone && inactive
+        btnDangerDelete.isEnabled = state.canDelete && inactive
+        btnDangerReset.isEnabled = state.canResetState && inactive
 
-        // Overview SSH Quick Card
-        val sshCmd = "ssh -p 2222 ${state.defaultUser}@127.0.0.1"
-        tvDetailSshCmd.text = sshCmd
+        renderSshConnection(state)
+    }
+
+    private fun sshRules(instanceId: String): List<PortForwardingRule> =
+        FilePortForwardingStore(filesDir.toPath().resolve("network")).loadRules(instanceId)
+
+    private fun renderSshConnection(state: InstanceDetailUiState) {
+        val command = try {
+            InstanceDetailActionRules.sshCommand(state.defaultUser, sshRules(state.instanceId))
+        } catch (_: Exception) {
+            null
+        }
+        tvDetailSshCmd.text = command ?: "SSH 端口转发未配置，请先配置 TCP → 22 映射"
+        btnDetailSshCopy.isEnabled = command != null
         btnDetailSshCopy.setOnClickListener {
-            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            clipboard.setPrimaryClip(ClipData.newPlainText("SSH Command", sshCmd))
-            Toast.makeText(this, "已复制: $sshCmd", Toast.LENGTH_SHORT).show()
+            val latestCommand = try {
+                val instance = viewModel.instanceStore.load(state.instanceId)
+                InstanceDetailActionRules.sshCommand(instance.defaultUser(), sshRules(state.instanceId))
+            } catch (_: Exception) {
+                null
+            }
+            if (latestCommand == null) {
+                renderSshConnection(state)
+                Toast.makeText(this, "SSH 端口转发未配置，无法复制连接命令", Toast.LENGTH_SHORT).show()
+            } else {
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("SSH Command", latestCommand))
+                Toast.makeText(this, "SSH 命令已复制", Toast.LENGTH_SHORT).show()
+            }
         }
         btnDetailSshManage.setOnClickListener {
-            io.github.nyzeep.orchestella.ssh.SshManagerDialog.show(
-                this,
-                defaultInstanceId = state.instanceId,
-                defaultUser = state.defaultUser,
-                defaultPort = 2222
-            )
+            val rule = try {
+                InstanceDetailActionRules.sshRule(sshRules(state.instanceId))
+            } catch (_: Exception) {
+                null
+            }
+            if (rule == null) {
+                showPortForwarding(state.instanceId)
+            } else {
+                io.github.nyzeep.orchestella.ssh.SshManagerDialog.show(
+                    this,
+                    defaultInstanceId = state.instanceId,
+                    defaultHost = InstanceDetailActionRules.sshHost(rule),
+                    defaultUser = state.defaultUser,
+                    defaultPort = rule.hostPort()
+                )
+            }
         }
+    }
+
+    private fun showPortForwarding(instanceId: String) {
+        try {
+            val store = FilePortForwardingStore(filesDir.toPath().resolve("network"))
+            val manager = PortForwardingManager(instanceId, store, PortConflictDetector())
+            PortForwardingBottomSheet(this, instanceId, manager).show()
+        } catch (_: Exception) {
+            Toast.makeText(this, "无法读取端口转发配置，请稍后重试", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun requireColdBackup(instanceId: String): InstanceLifecycle.Instance {
+        val instance = viewModel.instanceStore.load(instanceId)
+        if (!InstanceDetailActionRules.canColdBackup(instance.state(),
+                ExecutionSessionRegistry.get(instanceId) != null, InstanceLaunchGuard.isInFlight(instanceId))) {
+            throw IllegalStateException("请先完全关机后再导出冷备份")
+        }
+        return instance
     }
 
     private fun setupActionListeners() {
@@ -435,14 +559,10 @@ class InstanceDetailActivity : AppCompatActivity() {
 
         btnDesktop.setOnClickListener {
             val state = viewModel.uiState ?: return@setOnClickListener
-            if (state.canLaunchDesktop) {
-                val intent = DesktopLaunchIntent.create(
-                    this,
-                    state.instanceId,
-                    state.instance.bridgeToken(),
-                    false
-                )
-                startActivity(intent)
+            if (ExecutionSessionRegistry.get(state.instanceId) != null) {
+                startActivity(Intent(this, GuestFeaturesActivity::class.java)
+                    .putExtra("instanceId", state.instanceId)
+                    .putExtra("bridgeToken", state.instance.bridgeToken()))
             }
         }
 
@@ -468,9 +588,10 @@ class InstanceDetailActivity : AppCompatActivity() {
 
         btnPower.setOnClickListener {
             val state = viewModel.uiState ?: return@setOnClickListener
-            if (state.state == InstanceLifecycle.State.RUNNING) {
+            if (powerOperationPending.get() || exportInProgress.get()) return@setOnClickListener
+            if (ExecutionSessionRegistry.get(state.instanceId) != null) {
                 showPowerManagementDialog(state)
-            } else if (state.canPowerOn) {
+            } else if (state.canPowerOn && !InstanceLaunchGuard.isInFlight(state.instanceId)) {
                 launchInstanceFromDetail(state.instanceId)
             }
         }
@@ -524,21 +645,24 @@ class InstanceDetailActivity : AppCompatActivity() {
 
         btnExportBackup.setOnClickListener {
             val state = viewModel.uiState ?: return@setOnClickListener
-            safExportLauncher.launch("${state.instanceId}-backup.zip")
+            if (powerOperationPending.get() || exportInProgress.get() || pendingExportInstanceId != null) {
+                return@setOnClickListener
+            }
+            try {
+                requireColdBackup(state.instanceId)
+                pendingExportInstanceId = state.instanceId
+                renderState(state)
+                safExportLauncher.launch("${state.instanceId}-backup.zip")
+            } catch (_: Exception) {
+                pendingExportInstanceId = null
+                Toast.makeText(this, "请先完全关机后再导出冷备份", Toast.LENGTH_LONG).show()
+            }
         }
 
         // Section 4: Port Forwarding
         btnManagePortForwarding.setOnClickListener {
             val state = viewModel.uiState ?: return@setOnClickListener
-            try {
-                val netPath = filesDir.toPath().resolve("network")
-                Files.createDirectories(netPath)
-                val store = FilePortForwardingStore(netPath)
-                val manager = PortForwardingManager(state.instanceId, store, PortConflictDetector())
-                PortForwardingBottomSheet(this, state.instanceId, manager).show()
-            } catch (e: Exception) {
-                Toast.makeText(this, "打开端口转发管理失败: ${e.message}", Toast.LENGTH_SHORT).show()
-            }
+            showPortForwarding(state.instanceId)
         }
 
         // Section 5: Danger Zone
@@ -564,7 +688,7 @@ class InstanceDetailActivity : AppCompatActivity() {
                     }
                 }
                 .setNegativeButton(R.string.action_delete_cancel_btn, null)
-                .show()
+                .show().also { ThemeApplier.apply(it) }
         }
 
         btnDangerReset.setOnClickListener {
@@ -585,7 +709,7 @@ class InstanceDetailActivity : AppCompatActivity() {
                     }
                 }
                 .setNegativeButton(R.string.action_delete_cancel_btn, null)
-                .show()
+                .show().also { ThemeApplier.apply(it) }
         }
 
         btnDangerDelete.setOnClickListener {
@@ -625,7 +749,7 @@ class InstanceDetailActivity : AppCompatActivity() {
                     }
                 }
                 .setNegativeButton(R.string.action_delete_cancel_btn, null)
-                .show()
+                .show().also { ThemeApplier.apply(it) }
         }
     }
 
@@ -640,64 +764,113 @@ class InstanceDetailActivity : AppCompatActivity() {
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> gracefulPowerOff(state)
-                    1 -> forceStop(state)
+                    1 -> confirmForceStop(state)
                     2 -> restartInstance(state)
                 }
             }
             .setNegativeButton(R.string.action_delete_cancel_btn, null)
-            .show()
+            .show().also { ThemeApplier.apply(it) }
     }
 
     private fun gracefulPowerOff(state: InstanceDetailUiState) {
-        operations.execute {
-            val session = ExecutionSessionRegistry.get(state.instanceId)
-            if (session != null) {
-                try {
-                    val client = BridgeClient(session.controlOutput(), session.controlInput())
-                    client.power(BridgeControl.PowerAction.POWEROFF)
-                } catch (_: Exception) {
-                    session.close()
-                }
-            }
-            runOnUiThread {
-                Toast.makeText(this, "正在优雅关机...", Toast.LENGTH_SHORT).show()
-                viewModel.loadInstance(state.instanceId)
-            }
-        }
+        requestPowerChange(state.instanceId, force = false, restart = false)
     }
 
-    private fun forceStop(state: InstanceDetailUiState) {
-        operations.execute {
-            val session = ExecutionSessionRegistry.get(state.instanceId)
-            session?.close()
-            ExecutionSessionRegistry.unregister(state.instanceId)
-            OrchestellaForegroundService.stop(this)
-            try {
-                InstanceLaunchSequence.afterGuestExit(viewModel.controller, state.instanceId)
-            } catch (_: Exception) {
+    private fun confirmForceStop(state: InstanceDetailUiState) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle("确认强制断电")
+            .setMessage("强制断电会立即终止虚拟机，未保存的数据可能丢失，并可能损坏文件系统。确认后才会请求断电。")
+            .setPositiveButton("强制断电") { _, _ ->
+                requestPowerChange(state.instanceId, force = true, restart = false)
             }
-            runOnUiThread {
-                Toast.makeText(this, "已强制断电", Toast.LENGTH_SHORT).show()
-                viewModel.loadInstance(state.instanceId)
-            }
-        }
+            .setNegativeButton("取消", null)
+            .show().also { ThemeApplier.apply(it) }
     }
 
     private fun restartInstance(state: InstanceDetailUiState) {
+        requestPowerChange(state.instanceId, force = false, restart = true)
+    }
+
+    private fun requestPowerChange(instanceId: String, force: Boolean, restart: Boolean) {
+        if (exportInProgress.get() || !powerOperationPending.compareAndSet(false, true)) return
+        val requestedSession = ExecutionSessionRegistry.get(instanceId)
+        viewModel.uiState?.let(::renderState)
         operations.execute {
-            val session = ExecutionSessionRegistry.get(state.instanceId)
-            if (session != null) {
+            try {
+                if (requestedSession == null || ExecutionSessionRegistry.get(instanceId) !== requestedSession) {
+                    throw IOException("运行会话已变化")
+                }
+                if (force) {
+                    requestedSession.terminate()
+                } else {
+                    InstanceDetailActionRules.requestShutdown(requestedSession)
+                }
+                waitForActualExit(instanceId, requestedSession, restart, force)
+                runOnUiThread {
+                    if (detailResumed && !detailDestroyed && !isFinishing) {
+                        Toast.makeText(this, if (force) "已请求强制断电，正在等待虚拟机退出"
+                            else "关机请求已接受，正在等待虚拟机退出", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (_: Exception) {
+                finishPowerChange(instanceId, false,
+                    if (force) "强制断电请求失败，实例状态未更改，请检查运行日志"
+                    else "关机请求未被接受或连接失败，实例状态未更改，请检查运行日志")
+            }
+        }
+    }
+
+    private fun waitForActualExit(instanceId: String, requestedSession: ExecutionSession,
+            restart: Boolean, force: Boolean) {
+        val deadline = SystemClock.elapsedRealtime() + EXIT_TIMEOUT_MS
+        powerExitTask = operations.scheduleWithFixedDelay({
+            if (detailDestroyed) {
+                powerExitTask?.cancel(false)
+            } else {
                 try {
-                    val client = BridgeClient(session.controlOutput(), session.controlInput())
-                    client.power(BridgeControl.PowerAction.SHUTDOWN)
+                    val session = ExecutionSessionRegistry.get(instanceId)
+                    val instance = viewModel.instanceStore.load(instanceId)
+                    when (InstanceDetailActionRules.exitDecision(instance.state(), session != null,
+                        InstanceLaunchGuard.isInFlight(instanceId),
+                        session != null && session !== requestedSession,
+                        SystemClock.elapsedRealtime() >= deadline)) {
+                        InstanceDetailActionRules.ExitDecision.READY -> finishPowerChange(instanceId, restart,
+                            if (force) "虚拟机已退出" else "实例已关机")
+                        InstanceDetailActionRules.ExitDecision.REPLACED -> finishPowerChange(instanceId, false,
+                            "运行会话已变化，已取消本次操作")
+                        InstanceDetailActionRules.ExitDecision.TIMED_OUT -> finishPowerChange(instanceId, false,
+                            "等待虚拟机退出超时；未执行重启，请查看运行日志")
+                        InstanceDetailActionRules.ExitDecision.WAITING -> Unit
+                    }
                 } catch (_: Exception) {
-                    session.close()
+                    finishPowerChange(instanceId, false, "无法确认虚拟机退出；未执行重启，请查看运行日志")
                 }
             }
-            runOnUiThread {
-                Toast.makeText(this, "正在重启实例...", Toast.LENGTH_SHORT).show()
-                launchInstanceFromDetail(state.instanceId)
+        }, 0, 250, TimeUnit.MILLISECONDS)
+    }
+
+    private fun finishPowerChange(instanceId: String, restart: Boolean, message: String) {
+        powerExitTask?.cancel(false)
+        powerExitTask = null
+        runOnUiThread {
+            if (detailDestroyed || isFinishing) return@runOnUiThread
+            if (restart && detailResumed) {
+                // Recheck on the UI handoff, so another launch cannot reattach this action to an old VM.
+                val latest = try { viewModel.instanceStore.load(instanceId) } catch (_: Exception) { null }
+                val ready = latest != null && InstanceDetailActionRules.exitDecision(latest.state(),
+                    ExecutionSessionRegistry.get(instanceId) != null, InstanceLaunchGuard.isInFlight(instanceId),
+                    false, false) == InstanceDetailActionRules.ExitDecision.READY
+                powerOperationPending.set(false)
+                if (ready) launchInstanceFromDetail(instanceId)
+                else Toast.makeText(this, "实例尚未完全退出，重启已取消", Toast.LENGTH_LONG).show()
+            } else {
+                powerOperationPending.set(false)
+                if (detailResumed) {
+                    Toast.makeText(this, if (restart) "实例已关机；离开详情页后已取消自动启动" else message,
+                        Toast.LENGTH_LONG).show()
+                }
             }
+            viewModel.loadInstance(instanceId)
         }
     }
 
@@ -733,32 +906,29 @@ class InstanceDetailActivity : AppCompatActivity() {
                     }
                 }
             }
-            .show()
+            .show().also { ThemeApplier.apply(it) }
     }
 
     private fun showCredentialsDialog(instance: InstanceLifecycle.Instance) {
-        val message = "默认主机名：${instance.hostname()}\n用户名：${instance.defaultUser()}\n密码：${instance.guestPassword()}\n\n提示：遵循工单 03 规范，默认主机名为 orchestella，超级用户凭据为 root / 1234。"
+        val password = instance.guestPassword()
+        val message = "主机名：${instance.hostname()}\n用户名：${instance.defaultUser()}\n密码：${password.ifBlank { "未记录，请在 Linux 中使用 passwd 设置" }}\n\n新实例使用独立随机凭据，请妥善保存。"
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.credentials_title)
             .setMessage(message)
             .setPositiveButton(R.string.credentials_copy) { _, _ ->
-                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                clipboard.setPrimaryClip(ClipData.newPlainText("GuestPassword", instance.guestPassword()))
-                Toast.makeText(this, R.string.credentials_copied, Toast.LENGTH_SHORT).show()
+                if (password.isNotBlank()) {
+                    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("GuestPassword", password))
+                    Toast.makeText(this, R.string.credentials_copied, Toast.LENGTH_SHORT).show()
+                }
             }
             .setNegativeButton(R.string.credentials_close, null)
-            .show()
+            .show().also { ThemeApplier.apply(it) }
     }
 
     private fun currentSupportsDesktop(): Boolean {
-        val assessment = DeviceCapabilityEvaluator.evaluate(deviceProfile())
-        val readiness = AvfCapabilityEvaluator.evaluate(AvfHostFactsProbe.probe(this))
-        val matrix = if (assessment.canCreateFullLinuxInstance() && readiness.status() == AvfCapabilityEvaluator.AvfStatus.READY) {
-            FullLinuxContract.CapabilityMatrix.hardwareVirtualizationWithGraphics()
-        } else {
-            FullLinuxContract.CapabilityMatrix.softwareVirtualizationWithGraphics()
-        }
-        return matrix.supports(FullLinuxContract.Capability.GRAPHICS_WAYLAND)
+        // Phase 5 must verify actual guest frames and input before enabling this gate.
+        return false
     }
 
     private fun deviceProfile(): DeviceCapabilityEvaluator.DeviceProfile {
@@ -843,5 +1013,50 @@ class InstanceDetailActivity : AppCompatActivity() {
         } catch (e: Exception) {
             android.util.Log.w("InstanceDetailActivity", "Theme apply failed", e)
         }
+    }
+}
+
+/** Decisions shared by the detail actions and their pure JVM regressions. */
+internal object InstanceDetailActionRules {
+    enum class ExitDecision { READY, WAITING, REPLACED, TIMED_OUT }
+
+    fun canColdBackup(state: InstanceLifecycle.State, hasSession: Boolean, launching: Boolean): Boolean =
+        !hasSession && !launching && state in setOf(InstanceLifecycle.State.STOPPED,
+            InstanceLifecycle.State.CREATED, InstanceLifecycle.State.CRASHED, InstanceLifecycle.State.INTERRUPTED)
+
+    fun exitDecision(state: InstanceLifecycle.State, hasSession: Boolean, launching: Boolean,
+            sessionReplaced: Boolean, timedOut: Boolean): ExitDecision = when {
+        sessionReplaced -> ExitDecision.REPLACED
+        !hasSession && !launching && state == InstanceLifecycle.State.STOPPED -> ExitDecision.READY
+        timedOut -> ExitDecision.TIMED_OUT
+        else -> ExitDecision.WAITING
+    }
+
+    fun requestShutdown(session: ExecutionSession) {
+        val client = session.bridgeClient() ?: throw IOException("运行会话没有控制连接")
+        if (!client.isReady) throw IOException("控制连接尚未完成认证")
+        if (!client.power(BridgeControl.PowerAction.POWEROFF).accepted()) {
+            throw IOException("Linux 未接受关机请求")
+        }
+    }
+
+    fun sshRule(rules: List<PortForwardingRule>): PortForwardingRule? = rules
+        .filter { it.protocol() == Protocol.TCP && it.guestPort() == 22 }
+        .minWithOrNull(compareBy<PortForwardingRule> {
+            when (it.bindAddress()) {
+                PortForwardingRule.LOOPBACK_ADDRESS -> 0
+                PortForwardingRule.LAN_EXPOSED_ADDRESS -> 1
+                else -> 2
+            }
+        }.thenBy { it.hostPort() }.thenBy { it.id() })
+
+    fun sshHost(rule: PortForwardingRule): String =
+        if (rule.bindAddress() == PortForwardingRule.LAN_EXPOSED_ADDRESS)
+            PortForwardingRule.LOOPBACK_ADDRESS else rule.bindAddress()
+
+    fun sshCommand(user: String, rules: List<PortForwardingRule>): String? {
+        if (!user.matches(Regex("[a-z_][a-z0-9_-]{1,15}"))) return null
+        val rule = sshRule(rules) ?: return null
+        return "ssh -p ${rule.hostPort()} $user@${sshHost(rule)}"
     }
 }

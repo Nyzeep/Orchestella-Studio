@@ -5,13 +5,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.Socket;
 
-/**
- * Test-only stand-in for the object the real {@code connectVsock} returns.
- * The reflective adapter adapts whatever object comes back by looking up
- * {@code getInputStream()}/{@code getOutputStream()}, exactly as it must do
- * against the real SDK surface.
- */
-public final class VsockConnection {
+/** JVM socket helper behind the fixture network; not an Android AVF return type. */
+public final class VsockConnection implements AutoCloseable {
     private final Socket socket;
 
     public VsockConnection(Socket socket) {
@@ -24,5 +19,10 @@ public final class VsockConnection {
 
     public OutputStream getOutputStream() throws IOException {
         return socket.getOutputStream();
+    }
+
+    @Override
+    public void close() throws IOException {
+        socket.close();
     }
 }

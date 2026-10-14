@@ -248,7 +248,8 @@ public final class DisplayControlContractTest {
         AtomicReference<WaylandChannel.FrameData> frameRef = new AtomicReference<>();
         channel.registerFrameListener(frameRef::set);
 
-        byte[] pixels = new byte[] {1, 2, 3, 4};
+        byte[] pixels = new byte[1920 * 1080 * 4];
+        pixels[0] = 1; pixels[1] = 2; pixels[2] = 3; pixels[3] = 4;
         WaylandChannel.FrameData frame = new WaylandChannel.FrameData(
                 1920, 1080, 7680, WaylandChannel.FrameData.FORMAT_RGBA_8888, pixels, 1L, 1000000L);
         channel.dispatchFrame(frame);

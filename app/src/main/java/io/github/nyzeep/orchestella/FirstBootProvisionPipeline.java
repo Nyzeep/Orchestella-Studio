@@ -49,26 +49,24 @@ public final class FirstBootProvisionPipeline {
             String distroId,
             DistroMirrorProvisioner.MirrorSource mirrorSource,
             boolean autoUpdate) {
+        return create(distroId, "latest", mirrorSource, autoUpdate);
+    }
+
+    public static ProvisionPayload create(
+            String distroId,
+            String distroVersion,
+            DistroMirrorProvisioner.MirrorSource mirrorSource,
+            boolean autoUpdate) {
+        Objects.requireNonNull(distroId, "distroId");
+        Objects.requireNonNull(mirrorSource, "mirrorSource");
         String fileName = DistroMirrorProvisioner.getConfigFileName(distroId);
-        String mirrorText = DistroMirrorProvisioner.generateConfig(distroId, mirrorSource);
-        byte[] mirrorBytes = mirrorText != null ? mirrorText.getBytes(StandardCharsets.UTF_8) : null;
-
-        byte[] scriptBytes = null;
-        if (autoUpdate) {
-            String script = generateScriptForDistro(distroId);
-            if (script != null) {
-                scriptBytes = script.getBytes(StandardCharsets.UTF_8);
-            }
-        }
-
-        return new ProvisionPayload(fileName, mirrorBytes, scriptBytes);
+        String mirrorText = DistroMirrorProvisioner.generateMirrorConfig(distroId, distroVersion, mirrorSource);
+        byte[] mirrorBytes = mirrorText.getBytes(StandardCharsets.UTF_8);
+        return new ProvisionPayload(fileName, mirrorBytes,
+                GuestRuntimeProvisioner.firstBootBytes(distroId, autoUpdate));
     }
 
     public static String generateScriptForDistro(String distroId) {
-        HostHardwareProfile dummyProfile = new HostHardwareProfile(
-                2, 2L * 1024L * 1024L * 1024L, 1024L * 1024L * 1024L, 512L * 1024L * 1024L, false);
-        InstanceCreationWizardModel model = new InstanceCreationWizardModel(
-                distroId, "latest", dummyProfile, InstanceCreationWizardModel.CreationStep.STEP_STORAGE);
-        return model.generateFirstBootScript(distroId);
+        return GuestRuntimeProvisioner.firstBootScript(distroId, false);
     }
 }

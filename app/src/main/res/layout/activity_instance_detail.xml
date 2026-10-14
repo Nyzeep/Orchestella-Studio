@@ -44,7 +44,7 @@
                 android:id="@+id/card_header_dashboard"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                app:cardCornerRadius="20dp"
+                app:cardCornerRadius="0dp"
                 app:cardElevation="0dp"
                 app:strokeWidth="1dp"
                 app:strokeColor="@color/glass_card_stroke_dark"
@@ -168,7 +168,7 @@
                             android:layout_marginEnd="6dp"
                             android:paddingTop="10dp"
                             android:paddingBottom="10dp"
-                            app:cornerRadius="14dp"
+                            app:cornerRadius="0dp"
                             app:icon="@drawable/ic_terminal"
                             app:iconSize="20dp"
                             app:iconGravity="textTop"
@@ -184,7 +184,7 @@
                             android:layout_marginEnd="6dp"
                             android:paddingTop="10dp"
                             android:paddingBottom="10dp"
-                            app:cornerRadius="14dp"
+                            app:cornerRadius="0dp"
                             app:icon="@drawable/ic_desktop"
                             app:iconSize="20dp"
                             app:iconGravity="textTop"
@@ -199,7 +199,7 @@
                             android:layout_weight="1"
                             android:paddingTop="10dp"
                             android:paddingBottom="10dp"
-                            app:cornerRadius="14dp"
+                            app:cornerRadius="0dp"
                             app:icon="@drawable/ic_power"
                             app:iconSize="20dp"
                             app:iconGravity="textTop"
@@ -222,7 +222,7 @@
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
                             android:layout_marginEnd="6dp"
-                            app:cornerRadius="14dp"
+                            app:cornerRadius="0dp"
                             app:icon="@drawable/ic_terminal"
                             app:iconSize="18dp"
                             android:text="@string/console_btn_guest_log"
@@ -234,7 +234,7 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            app:cornerRadius="14dp"
+                            app:cornerRadius="0dp"
                             app:icon="@drawable/ic_info"
                             app:iconSize="18dp"
                             android:text="@string/console_btn_app_log"
@@ -341,7 +341,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="14dp"
-                    app:cardCornerRadius="18dp"
+                    app:cardCornerRadius="0dp"
                     app:cardElevation="1dp"
                     app:strokeWidth="1dp"
                     app:strokeColor="?attr/colorOutlineVariant"
@@ -411,7 +411,7 @@
                                 android:layout_marginEnd="6dp"
                                 android:insetTop="0dp"
                                 android:insetBottom="0dp"
-                                app:cornerRadius="10dp"
+                                app:cornerRadius="0dp"
                                 android:text="📋 复制命令"
                                 android:textSize="12sp" />
 
@@ -423,7 +423,7 @@
                                 android:layout_weight="1"
                                 android:insetTop="0dp"
                                 android:insetBottom="0dp"
-                                app:cornerRadius="10dp"
+                                app:cornerRadius="0dp"
                                 android:text="⚙️ SSH 管理器"
                                 android:textSize="12sp" />
                         </LinearLayout>
@@ -435,7 +435,7 @@
                 <com.google.android.material.card.MaterialCardView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    app:cardCornerRadius="18dp"
+                    app:cardCornerRadius="0dp"
                     app:cardElevation="1dp"
                     app:strokeWidth="1dp"
                     app:strokeColor="?attr/colorOutlineVariant"
@@ -506,7 +506,7 @@
                     android:id="@+id/card_hardware_specs_editor"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    app:cardCornerRadius="18dp"
+                    app:cardCornerRadius="0dp"
                     app:cardElevation="1dp"
                     app:strokeWidth="1dp"
                     app:strokeColor="?attr/colorOutlineVariant"
@@ -588,7 +588,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="14dp"
                             android:layout_gravity="end"
-                            app:cornerRadius="12dp"
+                            app:cornerRadius="0dp"
                             android:text="@string/console_hw_save" />
 
                     </LinearLayout>
@@ -619,7 +619,7 @@
                     android:id="@+id/card_storage_manager"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    app:cardCornerRadius="18dp"
+                    app:cardCornerRadius="0dp"
                     app:cardElevation="1dp"
                     app:strokeWidth="1dp"
                     app:strokeColor="?attr/colorOutlineVariant"
@@ -665,7 +665,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
                                 android:layout_marginEnd="8dp"
-                                app:cornerRadius="12dp"
+                                app:cornerRadius="0dp"
                                 android:text="@string/console_storage_expand_disk"
                                 android:textSize="12sp" />
 
@@ -675,7 +675,7 @@
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
-                                app:cornerRadius="12dp"
+                                app:cornerRadius="0dp"
                                 app:icon="@drawable/ic_backup"
                                 app:iconSize="16dp"
                                 android:text="@string/console_storage_export_backup"
@@ -710,7 +710,7 @@
                     android:id="@+id/card_network_port_forwarding"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    app:cardCornerRadius="18dp"
+                    app:cardCornerRadius="0dp"
                     app:cardElevation="1dp"
                     app:strokeWidth="1dp"
                     app:strokeColor="?attr/colorOutlineVariant"
@@ -750,7 +750,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="12dp"
-                            app:cornerRadius="12dp"
+                            app:cornerRadius="0dp"
                             android:text="@string/console_network_port_forwarding"
                             android:textSize="12sp" />
 
@@ -782,7 +782,7 @@
                     android:id="@+id/card_danger_zone"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    app:cardCornerRadius="18dp"
+                    app:cardCornerRadius="0dp"
                     app:cardElevation="1dp"
                     app:strokeWidth="1.5dp"
                     app:strokeColor="@color/status_crashed"
@@ -828,7 +828,7 @@
                                 style="@style/Widget.Material3.Button.OutlinedButton"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                app:cornerRadius="10dp"
+                                app:cornerRadius="0dp"
                                 app:icon="@drawable/ic_clone"
                                 app:iconSize="16dp"
                                 android:text="克隆" />
@@ -875,7 +875,7 @@
                                 style="@style/Widget.Material3.Button.OutlinedButton"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                app:cornerRadius="10dp"
+                                app:cornerRadius="0dp"
                                 android:text="复位" />
                         </LinearLayout>
 
@@ -921,7 +921,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 app:backgroundTint="@color/status_crashed"
-                                app:cornerRadius="10dp"
+                                app:cornerRadius="0dp"
                                 app:icon="@drawable/ic_delete"
                                 app:iconSize="16dp"
                                 android:text="删除" />
