@@ -150,37 +150,32 @@ public final class StickyModifierStateMachine {
      * E.g. 'c' or 'C' -> 0x03 (SIGINT), 'z' or 'Z' -> 0x1A (SIGTSTP), 'd' or 'D' -> 0x04 (EOF).
      */
     public static byte toControlCode(char ch) {
-        if (ch >= 'a' && ch <= 'z') {
-            return (byte) (ch - 'a' + 1);
-        }
-        if (ch >= 'A' && ch <= 'Z') {
-            return (byte) (ch - 'A' + 1);
-        }
-        switch (ch) {
-            case '@':
-            case ' ':
-                return 0;
-            case '[':
-                return 27; // ESC (0x1B)
-            case '\\':
-                return 28;
-            case ']':
-                return 29;
-            case '^':
-                return 30;
-            case '_':
-                return 31;
-            case '?':
-                return 127; // DEL
-            default:
-                return (byte) (Character.toUpperCase(ch) & 0x1F);
+        return (byte) toControlCodePoint(ch);
+    }
+
+    /** Ctrl aliases used by terminal keyboards; other Unicode stays intact. */
+    public static int toControlCodePoint(int codePoint) {
+        if (codePoint >= 'a' && codePoint <= 'z') return codePoint - 'a' + 1;
+        if (codePoint >= 'A' && codePoint <= 'Z') return codePoint - 'A' + 1;
+        switch (codePoint) {
+            case '@': case ' ': case '2': return 0;
+            case '[': case '3': return 27;
+            case '\\': case '4': return 28;
+            case ']': case '5': return 29;
+            case '^': case '6': return 30;
+            case '_': case '7': case '/': return 31;
+            case '?': case '8': return 127;
+            default: return codePoint;
         }
     }
 
-    /**
-     * Generates standard Alt escape sequence bytes (ESC followed by the character).
-     */
+    /** Generates ESC followed by a complete UTF-8 code point. */
     public static byte[] toAltSequence(char ch) {
-        return new byte[]{0x1B, (byte) ch};
+        return toAltSequence((int) ch);
+    }
+
+    public static byte[] toAltSequence(int codePoint) {
+        return ("\u001b" + new String(Character.toChars(codePoint)))
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8);
     }
 }

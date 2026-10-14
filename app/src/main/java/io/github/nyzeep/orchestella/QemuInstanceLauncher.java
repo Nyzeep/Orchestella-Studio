@@ -30,11 +30,13 @@ public final class QemuInstanceLauncher {
     public static final class Session implements ExecutionSession {
         private final String controlSocketName;
         private final String terminalSocketName;
+        private final String instanceId;
         private final QemuProcessLauncher.ProcessHandle handle;
         private final BridgeConnector connector = new BridgeConnector();
         private final Object controlLock = new Object();
         private final Object terminalLock = new Object();
         private LocalSocket controlSocket;
+        private boolean controlClosed;
         private LocalSocket terminalSocket;
         private BridgeClient bridgeClient;
         private volatile BridgeControl.Clipboard clipboardBridge;
@@ -52,8 +54,20 @@ public final class QemuInstanceLauncher {
 
         Session(String controlSocketName, String terminalSocketName, String proxySocketName,
                 QemuProcessLauncher.ProcessHandle handle) {
+            this(controlSocketName, terminalSocketName, proxySocketName, handle, null);
+        }
+
+        Session(String controlSocketName, String terminalSocketName,
+                QemuProcessLauncher.ProcessHandle handle, String instanceId) {
+            this(controlSocketName, terminalSocketName,
+                    QemuLaunchSpec.defaultProxySocketName(controlSocketName), handle, instanceId);
+        }
+
+        Session(String controlSocketName, String terminalSocketName, String proxySocketName,
+                QemuProcessLauncher.ProcessHandle handle, String instanceId) {
             this.controlSocketName = controlSocketName;
             this.terminalSocketName = terminalSocketName;
+            this.instanceId = instanceId;
             this.proxySocketName = proxySocketName;
             this.handle = handle;
             this.waylandChannel = new QemuWaylandChannel(controlSocketName, null);
@@ -84,6 +98,11 @@ public final class QemuInstanceLauncher {
         }
 
         @Override
+        public void terminate() {
+            handle.destroy();
+        }
+
+        @Override
         public OutputStream terminalInput() throws IOException {
             return terminal().getOutputStream();
         }
@@ -95,12 +114,16 @@ public final class QemuInstanceLauncher {
 
         @Override
         public OutputStream controlInput() throws IOException {
-            return control().getOutputStream();
+            synchronized (controlLock) {
+                return control().getOutputStream();
+            }
         }
 
         @Override
         public InputStream controlOutput() throws IOException {
-            return control().getInputStream();
+            synchronized (controlLock) {
+                return control().getInputStream();
+            }
         }
 
         @Override
@@ -117,6 +140,7 @@ public final class QemuInstanceLauncher {
                 proxySocket = null;
             }
             synchronized (controlLock) {
+                controlClosed = true;
                 if (controlSocket != null) {
                     closeQuietly(controlSocket);
                     controlSocket = null;
@@ -141,15 +165,61 @@ public final class QemuInstanceLauncher {
         }
 
         @Override
-        public synchronized BridgeClient bridgeClient() {
-            if (bridgeClient == null) {
-                try {
-                    bridgeClient = new BridgeClient(controlOutput(), controlInput());
-                } catch (IOException e) {
-                    return null;
+        public BridgeClient bridgeClient() {
+            synchronized (controlLock) {
+                if (controlClosed) return null;
+                if (bridgeClient == null) {
+                    try {
+                        bridgeClient = new BridgeClient(controlOutput(), controlInput());
+                    } catch (IOException e) {
+                        return null;
+                    }
+                }
+                return bridgeClient;
+            }
+        }
+
+        @Override
+        public boolean recoverControlChannel() {
+            BridgeClient failedClient;
+            synchronized (controlLock) {
+                failedClient = bridgeClient;
+                if (controlClosed || failedClient == null
+                        || !"failed".equals(failedClient.readinessState()) || !hasLiveTerminal()) {
+                    return false;
                 }
             }
-            return bridgeClient;
+            // Never hold a session lock while joining the old reader. The
+            // failed transport must be fully retired before another can read.
+            try {
+                if (!failedClient.awaitDisconnectedReader(5000L)) return false;
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+            synchronized (controlLock) {
+                if (controlClosed || bridgeClient != failedClient
+                        || !"failed".equals(failedClient.readinessState()) || !hasLiveTerminal()) {
+                    return false;
+                }
+                if (controlSocket != null) {
+                    try {
+                        controlSocket.close();
+                    } catch (IOException unavailable) {
+                        return false;
+                    }
+                    controlSocket = null;
+                }
+                bridgeClient = null;
+                isBridgeServing.set(false);
+                return true;
+            }
+        }
+
+        private boolean hasLiveTerminal() {
+            PersistentTerminalSessionPool.SessionHolder holder =
+                    PersistentTerminalSessionPool.getInstance().getHolder(instanceId);
+            return holder != null && holder.rawSession() == this && holder.isAlive();
         }
 
         @Override
@@ -164,12 +234,17 @@ public final class QemuInstanceLauncher {
 
         @Override
         public boolean markBridgeServing() {
-            return isBridgeServing.compareAndSet(false, true);
+            synchronized (controlLock) {
+                if (controlClosed || (bridgeClient != null
+                        && "failed".equals(bridgeClient.readinessState()))) return false;
+                return isBridgeServing.compareAndSet(false, true);
+            }
         }
 
 
         private LocalSocket control() throws IOException {
             synchronized (controlLock) {
+                if (controlClosed) throw new IOException("Control channel is closed");
                 if (controlSocket == null) {
                     controlSocket = connect(controlSocketName);
                 }
@@ -258,7 +333,7 @@ public final class QemuInstanceLauncher {
         String guestKernelArgs = "orchestella.guest_ip=" + NetworkGatewayDaemon.GUEST_IP
                 + " orchestella.guest_gw=" + NetworkGatewayDaemon.GUEST_GATEWAY
                 + " orchestella.guest_mask=" + NetworkGatewayDaemon.GUEST_NETMASK
-                + " orchestella.guest_dns=" + NetworkGatewayDaemon.GUEST_DNS
+                + " orchestella.guest_dns=" + NetworkGatewayDaemon.guestDnsFor(context)
                 + " orchestella.proxy_enabled=0";
 
         if (config.gpuAccelerationEnabled()) {
@@ -325,7 +400,7 @@ public final class QemuInstanceLauncher {
         }, "qemu-exit-" + parameters.instanceId);
         watcher.setDaemon(true);
         watcher.start();
-        Session session = new Session(controlSocket, terminalSocket, handle);
+        Session session = new Session(controlSocket, terminalSocket, handle, parameters.instanceId);
         ExecutionSessionRegistry.register(parameters.instanceId, session);
         return session;
     }

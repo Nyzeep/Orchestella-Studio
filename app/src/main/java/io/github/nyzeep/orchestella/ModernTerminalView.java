@@ -1,9 +1,14 @@
 package io.github.nyzeep.orchestella;
 
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
+import android.graphics.Canvas;
+import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.Layout;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.style.BackgroundColorSpan;
@@ -12,458 +17,485 @@ import android.text.style.StyleSpan;
 import android.text.style.UnderlineSpan;
 import android.util.AttributeSet;
 import android.util.TypedValue;
+import android.view.ActionMode;
+import android.view.KeyEvent;
+import android.view.Menu;
+import android.view.MenuItem;
+import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewConfiguration;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputConnection;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.FrameLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
-import java.util.List;
+import io.github.nyzeep.orchestella.terminal.TerminalScreenModel;
 
-/**
- * Modern terminal view rendering ANSI/VT100 styled text with Monospace font and Dracula theme.
- *
- * <p>Features:
- * <ul>
- *   <li>Parses ANSI escape sequences into Android spans via {@link AnsiEscapeParser};</li>
- *   <li>Monospace font alignment for CLI tables and tree rendering;</li>
- *   <li>Dracula theme palette (background #282A36, default text #F8F8F2);</li>
- *   <li>Bounded scrollback buffer to prevent memory exhaustion on large outputs;</li>
- *   <li>Thread-safe append operations and smooth auto-scrolling to bottom.</li>
- * </ul>
- */
+/** Selectable, bounded VT screen with a single input path for IME, hardware and extra keys. */
 public class ModernTerminalView extends ScrollView {
-
-    private static final int MAX_BUFFER_CHARS = 24_000;
-    private static final int TRIM_CHARS = 6_000;
-    private static final long FLUSH_INTERVAL_MS = 66L; // ~15 FPS batching to guarantee UI thread responsiveness and prevent ANRs
-
+    private static final long FLUSH_INTERVAL_MS = 32L;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
-    private final AnsiEscapeParser parser = new AnsiEscapeParser();
-    private final SpannableStringBuilder transcriptBuffer = new SpannableStringBuilder();
+    private TerminalScreenModel screen = new TerminalScreenModel(80, 24);
+    private boolean sessionScreen;
     private final java.util.concurrent.ConcurrentLinkedQueue<String> pendingChunks =
             new java.util.concurrent.ConcurrentLinkedQueue<>();
     private final java.util.concurrent.atomic.AtomicBoolean flushScheduled =
             new java.util.concurrent.atomic.AtomicBoolean(false);
     private final Runnable flushTask = this::flushPendingOutput;
-
-    private TextView transcriptView;
+    private TranscriptView transcriptView;
     private TerminalInputSink inputSink;
     private StickyModifierStateMachine stickyStateMachine;
     private TerminalInputConnection currentInputConnection;
+    private boolean inputEnabled = true;
+    private final io.github.nyzeep.orchestella.terminal.TerminalScrollState scrollState =
+            new io.github.nyzeep.orchestella.terminal.TerminalScrollState();
+    private boolean selecting;
+    private boolean viewportRestorePending;
+    private boolean restoringViewport;
+    private boolean userScrollAnimation;
+    private long lastDisplayEpoch;
+    private android.view.ActionMode selectionActionMode;
+    private final Runnable restoreViewportTask = this::restoreViewport;
+    private final Runnable finishUserScrollTask = () -> {
+        userScrollAnimation = false;
+        renderScreen();
+    };
+    private boolean cursorEnabled = true;
+    private boolean cursorVisible = true;
+    private boolean cursorBlinkEnabled = true;
+    private boolean suppressResponses;
+    private int cursorOffset;
+    private long lastEvictedHistoryRows;
+    private float touchDownX;
+    private float touchDownY;
+    private long touchDownTime;
+    private SizeListener sizeListener;
 
-    public ModernTerminalView(Context context) {
-        super(context);
-        init(context);
+    public interface SizeListener { void onTerminalSizeChanged(int columns, int rows); }
+
+    public ModernTerminalView(Context context) { super(context); init(context); }
+    public ModernTerminalView(Context context, AttributeSet attrs) { super(context, attrs); init(context); }
+    public ModernTerminalView(Context context, AttributeSet attrs, int style) { super(context, attrs, style); init(context); }
+
+    public void setInputSink(TerminalInputSink sink) {
+        inputSink = sink;
+        resetInputConnection();
     }
 
-    public ModernTerminalView(Context context, AttributeSet attrs) {
-        super(context, attrs);
-        init(context);
+    public void setStickyStateMachine(StickyModifierStateMachine stateMachine) {
+        stickyStateMachine = stateMachine;
+        resetInputConnection();
     }
 
-    public ModernTerminalView(Context context, AttributeSet attrs, int defStyleAttr) {
-        super(context, attrs, defStyleAttr);
-        init(context);
+    public void setSizeListener(SizeListener listener) {
+        sizeListener = listener;
+        if (listener != null) listener.onTerminalSizeChanged(screen.columns(), screen.rows());
     }
 
-    public void setInputSink(TerminalInputSink inputSink) {
-        this.inputSink = inputSink;
+    public void setSessionScreen(TerminalScreenModel model) {
+        sessionScreen = model != null;
+        screen = model != null ? model : new TerminalScreenModel(screen.columns(), screen.rows());
+        resetInputConnection();
+        scrollState.follow();
+        lastDisplayEpoch = screen.displayEpoch();
+        lastEvictedHistoryRows = screen.displaySnapshot().evictedHistoryRows;
+        pendingChunks.clear();
+        mainHandler.removeCallbacks(flushTask);
+        flushScheduled.set(false);
+        if (!sessionScreen) screen.setResponseSink(response -> {
+            if (!suppressResponses && inputEnabled && inputSink != null) inputSink.sendText(response);
+        });
+        updateTerminalSize();
+        renderScreen();
     }
 
-    public void setStickyStateMachine(StickyModifierStateMachine stickyStateMachine) {
-        this.stickyStateMachine = stickyStateMachine;
-    }
+    public int getTerminalColumns() { return screen.columns(); }
+    public int getTerminalRows() { return screen.rows(); }
+    public TerminalInputConnection getCurrentInputConnection() { return ensureInputConnection(); }
 
-    public TerminalInputConnection getCurrentInputConnection() {
+    private TerminalInputConnection ensureInputConnection() {
+        if (!inputEnabled || inputSink == null) return null;
+        if (currentInputConnection == null || currentInputConnection.isClosed()) {
+            currentInputConnection = new TerminalInputConnection(inputSink, stickyStateMachine);
+            currentInputConnection.setTerminalModes(screen::isApplicationCursorKeys, screen::isBracketedPaste);
+            currentInputConnection.setContextMenuHandler(this::performTerminalContextAction);
+        }
         return currentInputConnection;
     }
 
-    @Override
-    public boolean onCheckIsTextEditor() {
-        return true;
+    private void resetInputConnection() {
+        if (currentInputConnection != null) currentInputConnection.closeConnection();
+        currentInputConnection = null;
     }
 
-    @Override
-    public android.view.inputmethod.InputConnection onCreateInputConnection(android.view.inputmethod.EditorInfo outAttrs) {
-        if (outAttrs != null) {
-            outAttrs.inputType = android.text.InputType.TYPE_NULL;
-            outAttrs.imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_NONE
-                    | android.view.inputmethod.EditorInfo.IME_FLAG_NO_FULLSCREEN;
+    public void setTerminalInputEnabled(boolean enabled) {
+        inputEnabled = enabled;
+        setCursorEnabled(enabled);
+        if (!enabled) {
+            resetInputConnection();
+            InputMethodManager imm = (InputMethodManager) getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) imm.hideSoftInputFromWindow(getWindowToken(), 0);
         }
-        if (inputSink != null) {
-            currentInputConnection = new TerminalInputConnection(inputSink, stickyStateMachine);
-            return currentInputConnection;
+    }
+
+    @Override public boolean onCheckIsTextEditor() { return inputEnabled; }
+
+    @Override public InputConnection onCreateInputConnection(EditorInfo attributes) {
+        if (attributes != null) {
+            attributes.inputType = android.text.InputType.TYPE_NULL;
+            attributes.imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN | EditorInfo.IME_FLAG_NO_EXTRACT_UI
+                    | EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING;
         }
-        return null;
+        resetInputConnection();
+        return ensureInputConnection();
     }
 
     public void requestTerminalFocus() {
+        if (!inputEnabled || selecting) return;
         requestFocus();
-        android.view.inputmethod.InputMethodManager imm =
-                (android.view.inputmethod.InputMethodManager) getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
-        if (imm != null) {
-            imm.showSoftInput(this, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
-        }
+        InputMethodManager imm = (InputMethodManager) getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (imm != null) imm.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT);
     }
 
-    private float touchDownX;
-    private float touchDownY;
-
-    @Override
-    public boolean onTouchEvent(android.view.MotionEvent ev) {
-        if (ev.getAction() == android.view.MotionEvent.ACTION_DOWN) {
-            touchDownX = ev.getX();
-            touchDownY = ev.getY();
-        } else if (ev.getAction() == android.view.MotionEvent.ACTION_UP) {
-            float dx = ev.getX() - touchDownX;
-            float dy = ev.getY() - touchDownY;
-            float slop = android.view.ViewConfiguration.get(getContext()).getScaledTouchSlop();
-            if (Math.hypot(dx, dy) < slop) {
-                requestTerminalFocus();
+    @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        if (inputEnabled && event.isCtrlPressed() && event.isShiftPressed()
+                && (event.getKeyCode() == KeyEvent.KEYCODE_C || event.getKeyCode() == KeyEvent.KEYCODE_V)) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                if (event.getKeyCode() == KeyEvent.KEYCODE_C) copySelection(); else pasteFromClipboard();
             }
-        }
-        return super.onTouchEvent(ev);
-    }
-
-    @Override
-    public boolean onKeyDown(int keyCode, android.view.KeyEvent event) {
-        if (currentInputConnection != null && currentInputConnection.sendKeyEvent(event)) {
             return true;
         }
-        return super.onKeyDown(keyCode, event);
-    }
-
-    @Override
-    public boolean onKeyUp(int keyCode, android.view.KeyEvent event) {
-        if (currentInputConnection != null && currentInputConnection.sendKeyEvent(event)) {
+        TerminalInputConnection connection = ensureInputConnection();
+        if (!selecting && connection != null && connection.sendKeyEvent(event)) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) scrollToBottom();
             return true;
         }
-        return super.onKeyUp(keyCode, event);
+        return super.dispatchKeyEvent(event);
+    }
+
+    public boolean sendTerminalKey(int keyCode) {
+        TerminalInputConnection connection = ensureInputConnection();
+        if (connection == null) return false;
+        boolean sent = connection.sendKey(KeyEvent.ACTION_DOWN, keyCode);
+        if (sent) scrollToBottom();
+        return sent;
+    }
+
+    public boolean sendTerminalText(CharSequence text) {
+        TerminalInputConnection connection = ensureInputConnection();
+        if (connection == null) return false;
+        boolean sent = connection.commitText(text, 1);
+        if (sent) scrollToBottom();
+        return sent;
+    }
+
+    public boolean pasteFromClipboard() {
+        ClipboardManager clipboard = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+        TerminalInputConnection connection = ensureInputConnection();
+        if (clipboard == null || connection == null || !clipboard.hasPrimaryClip()) return false;
+        ClipData clip = clipboard.getPrimaryClip();
+        if (clip == null || clip.getItemCount() == 0) return false;
+        CharSequence text = clip.getItemAt(0).coerceToText(getContext());
+        if (text == null) return false;
+        boolean sent = connection.pasteText(text);
+        if (sent) scrollToBottom();
+        return sent;
+    }
+
+    public boolean copySelection() {
+        int start = transcriptView.getSelectionStart();
+        int end = transcriptView.getSelectionEnd();
+        if (start < 0 || end < 0 || start == end) return false;
+        ClipboardManager clipboard = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+        if (clipboard == null) return false;
+        clipboard.setPrimaryClip(ClipData.newPlainText("终端", transcriptView.getText()
+                .subSequence(Math.min(start, end), Math.max(start, end))));
+        return true;
+    }
+
+    private boolean performTerminalContextAction(int id) {
+        if (id == android.R.id.paste || id == android.R.id.pasteAsPlainText) return pasteFromClipboard();
+        if (id == android.R.id.copy) return copySelection();
+        if (id == android.R.id.selectAll) return transcriptView.onTextContextMenuItem(id);
+        return false;
     }
 
     private void init(Context context) {
-        setBackgroundColor(DraculaPalette.BACKGROUND);
+        setBackgroundColor(DraculaPalette.themedBackground());
         setFillViewport(true);
         setFocusable(true);
         setFocusableInTouchMode(true);
-
-        transcriptView = new TextView(context);
+        transcriptView = new TranscriptView(context);
         transcriptView.setTypeface(Typeface.MONOSPACE);
         transcriptView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
-        transcriptView.setTextColor(DraculaPalette.FOREGROUND);
-        transcriptView.setBackgroundColor(DraculaPalette.BACKGROUND);
-        transcriptView.setTextIsSelectable(false);
-
-        int paddingPx = dpToPx(context, 12);
-        transcriptView.setPadding(paddingPx, paddingPx, paddingPx, paddingPx);
-
-        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
-        addView(transcriptView, params);
-
-        setOnClickListener(v -> requestTerminalFocus());
-        transcriptView.setOnClickListener(v -> requestTerminalFocus());
-        transcriptView.setOnTouchListener((v, event) -> {
-            if (event.getAction() == android.view.MotionEvent.ACTION_UP) {
-                requestTerminalFocus();
+        transcriptView.setTextColor(DraculaPalette.themedForeground());
+        transcriptView.setBackgroundColor(DraculaPalette.themedBackground());
+        transcriptView.setIncludeFontPadding(false);
+        // The VT model owns wrapping. Android must not add a second, glyph-dependent wrap.
+        transcriptView.setHorizontallyScrolling(true);
+        transcriptView.setTextIsSelectable(true);
+        int padding = dpToPx(context, 10);
+        transcriptView.setPadding(padding, padding, padding, padding);
+        addView(transcriptView, new FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        transcriptView.setOnTouchListener((view, event) -> {
+            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                touchDownX = event.getX(); touchDownY = event.getY(); touchDownTime = event.getEventTime();
+            } else if (event.getActionMasked() == MotionEvent.ACTION_UP && !selecting
+                    && event.getEventTime() - touchDownTime < ViewConfiguration.getLongPressTimeout()
+                    && Math.hypot(event.getX() - touchDownX, event.getY() - touchDownY)
+                    < ViewConfiguration.get(context).getScaledTouchSlop()) {
+                post(this::requestTerminalFocus);
             }
             return false;
         });
-
-        transcriptView.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
-            if (bottom > oldBottom) {
-                post(() -> fullScroll(View.FOCUS_DOWN));
+        transcriptView.setCustomSelectionActionModeCallback(new ActionMode.Callback() {
+            @Override public boolean onCreateActionMode(ActionMode mode, Menu menu) {
+                selecting = true;
+                selectionActionMode = mode;
+                scrollState.selectionChanged(true, getScrollY());
+                transcriptView.invalidate();
+                return true;
             }
+            @Override public boolean onPrepareActionMode(ActionMode mode, Menu menu) { return false; }
+            @Override public boolean onActionItemClicked(ActionMode mode, MenuItem item) { return false; }
+            @Override public void onDestroyActionMode(ActionMode mode) {
+                selecting = false;
+                selectionActionMode = null;
+                scrollState.selectionChanged(false, getScrollY());
+                post(() -> { renderScreen(); requestFocus(); });
+            }
+        });
+        screen.setResponseSink(response -> {
+            if (!suppressResponses && inputEnabled && inputSink != null) inputSink.sendText(response);
         });
     }
 
-    /**
-     * Appends ANSI raw output to the terminal transcript. Thread-safe and non-blocking.
-     */
+    @Override public boolean dispatchTouchEvent(MotionEvent event) {
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_DOWN) {
+            mainHandler.removeCallbacks(finishUserScrollTask);
+            mainHandler.removeCallbacks(restoreViewportTask);
+            userScrollAnimation = false;
+            viewportRestorePending = false;
+            scrollState.beginTouch(getScrollY());
+        }
+        boolean handled = super.dispatchTouchEvent(event);
+        if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+            scrollState.endTouch(getScrollY(), maximumScrollY(), Math.max(2, transcriptView.getLineHeight()));
+            userScrollAnimation = true;
+            mainHandler.postDelayed(finishUserScrollTask, 100L);
+        }
+        return handled;
+    }
+
+    @Override protected void onScrollChanged(int x, int y, int oldX, int oldY) {
+        super.onScrollChanged(x, y, oldX, oldY);
+        if (!restoringViewport && !viewportRestorePending && (scrollState.isTouching() || userScrollAnimation)) {
+            scrollState.userScrolled(y, maximumScrollY(), Math.max(2, transcriptView.getLineHeight()));
+            if (userScrollAnimation) {
+                mainHandler.removeCallbacks(finishUserScrollTask);
+                mainHandler.postDelayed(finishUserScrollTask, 100L);
+            }
+        }
+    }
+
+    @Override public void requestChildFocus(View child, View focused) {
+        // TextView focus does not decide which terminal rows the user is reading.
+        int previousY = getScrollY();
+        boolean oldRestoring = restoringViewport;
+        restoringViewport = true;
+        super.requestChildFocus(child, focused);
+        scrollTo(0, previousY);
+        restoringViewport = oldRestoring;
+    }
+
+    @Override public boolean requestChildRectangleOnScreen(View child, android.graphics.Rect rectangle, boolean immediate) {
+        // Selecting output uses touch scrolling; setText/cursor focus must not jump to row zero.
+        return false;
+    }
+
+    private int maximumScrollY() {
+        int viewport = getHeight() - getPaddingTop() - getPaddingBottom();
+        return Math.max(0, transcriptView.getHeight() - viewport);
+    }
+
+    private void restoreViewport() {
+        if (transcriptView.isLayoutRequested()) return;
+        viewportRestorePending = false;
+        int target = scrollState.targetY(maximumScrollY(), screen.isAlternateScreen());
+        if (target < 0 || userScrollAnimation) return;
+        restoringViewport = true;
+        scrollTo(0, target);
+        restoringViewport = false;
+    }
+
+    @Override protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
+        boolean oldRestoring = restoringViewport;
+        restoringViewport = true;
+        super.onLayout(changed, left, top, right, bottom);
+        restoringViewport = oldRestoring;
+        // Restore after TextView has its new measured height, not before a queued traversal.
+        if (!scrollState.isTouching() && !selecting && !userScrollAnimation) restoreViewport();
+    }
+
+    @Override protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
+        super.onSizeChanged(width, height, oldWidth, oldHeight);
+        updateTerminalSize();
+    }
+
+    private void updateTerminalSize() {
+        if (transcriptView == null || getWidth() <= 0 || getHeight() <= 0) return;
+        float cellWidth = transcriptView.getPaint().measureText("M")
+                + transcriptView.getLetterSpacing() * transcriptView.getTextSize();
+        int width = getWidth() - getPaddingLeft() - getPaddingRight()
+                - transcriptView.getPaddingLeft() - transcriptView.getPaddingRight();
+        int height = getHeight() - getPaddingTop() - getPaddingBottom()
+                - transcriptView.getPaddingTop() - transcriptView.getPaddingBottom();
+        int columns = Math.max(2, Math.min(512, (int) (width / Math.max(1f, cellWidth))));
+        int rows = Math.max(2, Math.min(256, height / Math.max(1, transcriptView.getLineHeight())));
+        if (columns != screen.columns() || rows != screen.rows()) {
+            screen.resize(columns, rows);
+            renderScreen();
+            if (sizeListener != null) sizeListener.onTerminalSizeChanged(columns, rows);
+        }
+        if (scrollState.isFollowing() && !selecting) scrollToBottom();
+    }
+
+    /** Thread-safe output ingestion; parsing and rendering always run on the UI thread. */
     public void appendOutput(String text) {
-        if (text == null || text.isEmpty()) {
-            return;
-        }
+        if (text == null || text.isEmpty()) return;
         pendingChunks.offer(text);
-        scheduleFlush();
-    }
-
-    /**
-     * Windows PowerShell / Windows Terminal style thin vertical bar cursor (Left One-Eighth Block: \u258F).
-     */
-    private static final String CURSOR_CHAR = "\u258F";
-    private boolean cursorVisible = true;
-    private boolean cursorEnabled = true;
-    private final Runnable cursorBlinkTask = new Runnable() {
-        @Override
-        public void run() {
-            cursorVisible = !cursorVisible;
-            renderTranscriptWithCursor();
-            mainHandler.postDelayed(this, 500L);
-        }
-    };
-
-    public void setCursorEnabled(boolean enabled) {
-        this.cursorEnabled = enabled;
-        if (!enabled) {
-            stopCursorBlink();
-        } else {
-            startCursorBlink();
-        }
-    }
-
-    public boolean isCursorEnabled() {
-        return cursorEnabled;
-    }
-
-    public void startCursorBlink() {
-        mainHandler.removeCallbacks(cursorBlinkTask);
-        if (cursorEnabled) {
-            cursorVisible = true;
-            renderTranscriptWithCursor();
-            mainHandler.postDelayed(cursorBlinkTask, 500L);
-        }
-    }
-
-    public void stopCursorBlink() {
-        mainHandler.removeCallbacks(cursorBlinkTask);
-        cursorVisible = false;
-        renderTranscriptWithCursor();
-    }
-
-    @Override
-    protected void onAttachedToWindow() {
-        super.onAttachedToWindow();
-        startCursorBlink();
-    }
-
-    @Override
-    protected void onDetachedFromWindow() {
-        super.onDetachedFromWindow();
-        stopCursorBlink();
-    }
-
-    private void renderTranscriptWithCursor() {
-        if (!cursorEnabled) {
-            transcriptView.setText(transcriptBuffer, TextView.BufferType.SPANNABLE);
-            return;
-        }
-        SpannableStringBuilder display = new SpannableStringBuilder(transcriptBuffer);
-        display.append(CURSOR_CHAR);
-        int cursorColor = cursorVisible ? DraculaPalette.FOREGROUND : android.graphics.Color.TRANSPARENT;
-        display.setSpan(
-                new ForegroundColorSpan(cursorColor),
-                display.length() - 1,
-                display.length(),
-                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        transcriptView.setText(display, TextView.BufferType.SPANNABLE);
-    }
-
-    private void scheduleFlush() {
-        if (flushScheduled.compareAndSet(false, true)) {
-            mainHandler.postDelayed(flushTask, FLUSH_INTERVAL_MS);
-        }
+        if (flushScheduled.compareAndSet(false, true)) mainHandler.postDelayed(flushTask, FLUSH_INTERVAL_MS);
     }
 
     private void flushPendingOutput() {
         flushScheduled.set(false);
         String chunk;
-        boolean hasContent = false;
-        boolean cleared = false;
+        boolean changed = false;
         while ((chunk = pendingChunks.poll()) != null) {
-            if (chunk.isEmpty()) {
-                continue;
-            }
-            List<TerminalSpan> spans = parser.parse(chunk);
-            for (TerminalSpan span : spans) {
-                if (span.isClearScreen()) {
-                    transcriptBuffer.clear();
-                    cleared = true;
-                    hasContent = true;
-                    continue;
-                }
-                String str = span.getText();
-                if (str.isEmpty()) {
-                    continue;
-                }
-                hasContent = true;
-                appendSpanToBuffer(span);
-            }
+            if (!sessionScreen) screen.append(chunk);
+            changed = true;
         }
-
-        if (!hasContent) {
-            return;
-        }
-
-        // Enforce scrollback limit without allocating large intermediate strings
-        if (transcriptBuffer.length() > MAX_BUFFER_CHARS) {
-            int cutIndex = -1;
-            int len = transcriptBuffer.length();
-            for (int i = TRIM_CHARS; i < len; i++) {
-                if (transcriptBuffer.charAt(i) == '\n') {
-                    cutIndex = i;
-                    break;
-                }
-            }
-            if (cutIndex != -1 && cutIndex < len - 1) {
-                transcriptBuffer.delete(0, cutIndex + 1);
-            } else {
-                transcriptBuffer.delete(0, TRIM_CHARS);
-            }
-        }
-
-        renderTranscriptWithCursor();
-        if (cleared && transcriptBuffer.length() == 0) {
-            post(() -> scrollTo(0, 0));
-        } else {
-            scrollToBottom();
-        }
-
-        // If more chunks arrived while flushing, reschedule
-        if (!pendingChunks.isEmpty()) {
-            scheduleFlush();
-        }
+        if (changed) renderScreen();
+        if (!pendingChunks.isEmpty() && flushScheduled.compareAndSet(false, true))
+            mainHandler.postDelayed(flushTask, FLUSH_INTERVAL_MS);
     }
 
-    private void appendSpanToBuffer(TerminalSpan span) {
-        String str = span.getText();
-        if (str == null || str.isEmpty()) {
-            return;
+    private void renderScreen() {
+        // While a gesture/selection owns the viewport, only the persistent model changes.
+        if (selecting || scrollState.isTouching() || userScrollAnimation) return;
+        if (!viewportRestorePending) scrollState.captureAnchor(getScrollY());
+        TerminalScreenModel.Snapshot snapshot = screen.displaySnapshot();
+        long epoch = screen.displayEpoch();
+        if (epoch != lastDisplayEpoch) {
+            scrollState.displayCleared();
+            lastDisplayEpoch = epoch;
+            lastEvictedHistoryRows = snapshot.evictedHistoryRows;
         }
-
-        // Handle VT100 control characters (\b and standalone \r)
-        int len = str.length();
-        int normalStart = -1;
-
-        for (int i = 0; i < len; i++) {
-            char c = str.charAt(i);
-            if (c == '\b') {
-                if (normalStart != -1) {
-                    appendStyledSubSequence(span, str.substring(normalStart, i));
-                    normalStart = -1;
-                }
-                // Backspace: delete preceding character in transcript if not a newline
-                int bufLen = transcriptBuffer.length();
-                if (bufLen > 0 && transcriptBuffer.charAt(bufLen - 1) != '\n') {
-                    transcriptBuffer.delete(bufLen - 1, bufLen);
-                }
-            } else if (c == '\r') {
-                if (i + 1 < len && str.charAt(i + 1) == '\n') {
-                    // Part of CRLF sequence: let normalStart consume it
-                    if (normalStart == -1) {
-                        normalStart = i;
-                    }
-                } else {
-                    // Standalone CR: carriage return rewinds to beginning of the active line
-                    if (normalStart != -1) {
-                        appendStyledSubSequence(span, str.substring(normalStart, i));
-                        normalStart = -1;
-                    }
-                    int bufLen = transcriptBuffer.length();
-                    int lastNl = -1;
-                    for (int j = bufLen - 1; j >= 0; j--) {
-                        if (transcriptBuffer.charAt(j) == '\n') {
-                            lastNl = j;
-                            break;
-                        }
-                    }
-                    int lineStart = lastNl + 1;
-                    if (lineStart < bufLen) {
-                        transcriptBuffer.delete(lineStart, bufLen);
-                    }
-                }
-            } else {
-                if (normalStart == -1) {
-                    normalStart = i;
-                }
-            }
-        }
-
-        if (normalStart != -1) {
-            appendStyledSubSequence(span, str.substring(normalStart, len));
-        }
+        SpannableStringBuilder display = new SpannableStringBuilder();
+        for (TerminalSpan span : snapshot.spans) appendStyled(display, span);
+        cursorOffset = snapshot.cursorOffset;
+        long trimmedRows = Math.max(0, snapshot.evictedHistoryRows - lastEvictedHistoryRows);
+        scrollState.rowsEvicted(trimmedRows, transcriptView.getLineHeight());
+        lastEvictedHistoryRows = snapshot.evictedHistoryRows;
+        viewportRestorePending = true;
+        transcriptView.setText(display, TextView.BufferType.SPANNABLE);
+        cursorVisible = true;
+        mainHandler.removeCallbacks(restoreViewportTask);
+        mainHandler.post(restoreViewportTask);
     }
 
-    private void appendStyledSubSequence(TerminalSpan span, String sub) {
-        if (sub.isEmpty()) {
-            return;
-        }
-        int start = transcriptBuffer.length();
-        transcriptBuffer.append(sub);
-        int end = transcriptBuffer.length();
-
-        // Foreground
-        int fg = span.getEffectiveForegroundColor();
-        transcriptBuffer.setSpan(
-                new ForegroundColorSpan(fg),
-                start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-
-        // Background
-        Integer bg = span.getEffectiveBackgroundColor();
-        if (bg != null) {
-            transcriptBuffer.setSpan(
-                    new BackgroundColorSpan(bg),
-                    start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        }
-
-        // Bold & Italic
-        if (span.isBold() && span.isItalic()) {
-            transcriptBuffer.setSpan(
-                    new StyleSpan(Typeface.BOLD_ITALIC),
-                    start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        } else if (span.isBold()) {
-            transcriptBuffer.setSpan(
-                    new StyleSpan(Typeface.BOLD),
-                    start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        } else if (span.isItalic()) {
-            transcriptBuffer.setSpan(
-                    new StyleSpan(Typeface.ITALIC),
-                    start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        }
-
-        // Underline
-        if (span.isUnderline()) {
-            transcriptBuffer.setSpan(
-                    new UnderlineSpan(),
-                    start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        }
+    private static void appendStyled(SpannableStringBuilder display, TerminalSpan span) {
+        int start = display.length();
+        display.append(span.getText());
+        int end = display.length();
+        if (start == end) return;
+        display.setSpan(new ForegroundColorSpan(span.getEffectiveForegroundColor()), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        Integer background = span.getEffectiveBackgroundColor();
+        if (background != null) display.setSpan(new BackgroundColorSpan(background), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        int font = (span.isBold() ? Typeface.BOLD : 0) | (span.isItalic() ? Typeface.ITALIC : 0);
+        if (font != 0) display.setSpan(new StyleSpan(font), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        if (span.isUnderline()) display.setSpan(new UnderlineSpan(), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
     }
 
-    /**
-     * Clears all content and resets ANSI parser state.
-     */
-    public void clear() {
+    /** Replace replay and queued output together, without replying to historical terminal queries. UI thread only. */
+    public void replaceTranscript(String transcript) {
+        if (sessionScreen) { renderScreen(); return; }
         pendingChunks.clear();
         mainHandler.removeCallbacks(flushTask);
         flushScheduled.set(false);
-        if (Looper.myLooper() == Looper.getMainLooper()) {
-            clearInternal();
-        } else {
-            mainHandler.post(this::clearInternal);
-        }
+        screen.reset();
+        suppressResponses = true;
+        try { screen.append(transcript); } finally { suppressResponses = false; }
+        scrollState.follow();
+        renderScreen();
     }
 
-    private void clearInternal() {
-        transcriptBuffer.clear();
-        parser.reset();
-        renderTranscriptWithCursor();
-        post(() -> scrollTo(0, 0));
+    public void clear() {
+        if (Looper.myLooper() == Looper.getMainLooper()) replaceTranscript("");
+        else mainHandler.post(() -> replaceTranscript(""));
     }
 
-    /**
-     * Scrolls the view to the latest output.
-     */
     public void scrollToBottom() {
-        post(() -> fullScroll(View.FOCUS_DOWN));
+        scrollState.follow();
+        mainHandler.removeCallbacks(restoreViewportTask);
+        mainHandler.post(restoreViewportTask);
     }
 
-    public TextView getTranscriptView() {
-        return transcriptView;
+    public void scrollToBottomIfFollowing() { if (scrollState.isFollowing() && !selecting) scrollToBottom(); }
+
+    /** Explicit UI display clear; guest Ctrl+L performs the real prompt/program redraw. */
+    public void clearVisibleScreen() {
+        if (selectionActionMode != null) selectionActionMode.finish();
+        if (screen.clearVisibleHistory()) {
+            scrollState.displayCleared();
+            renderScreen();
+        }
+        if (inputEnabled && inputSink != null) {
+            // CLEAR is an explicit control action, not text input or a sticky Alt chord.
+            inputSink.sendBytes(new byte[]{0x0c});
+            if (stickyStateMachine != null) stickyStateMachine.consumeLatched();
+        }
+        scrollToBottom();
+    }
+    public TextView getTranscriptView() { return transcriptView; }
+    public AnsiEscapeParser getParser() { return screen.getStyleParser(); }
+
+    private final Runnable cursorBlinkTask = new Runnable() {
+        @Override public void run() {
+            cursorVisible = !cursorVisible;
+            transcriptView.invalidate();
+            if (cursorEnabled && cursorBlinkEnabled) mainHandler.postDelayed(this, 500L);
+        }
+    };
+
+    public void setCursorEnabled(boolean enabled) {
+        cursorEnabled = enabled;
+        if (enabled) startCursorBlink(); else stopCursorBlink();
+    }
+    public boolean isCursorEnabled() { return cursorEnabled; }
+    public void setCursorBlinkEnabled(boolean enabled) { cursorBlinkEnabled = enabled; startCursorBlink(); }
+    public void startCursorBlink() {
+        mainHandler.removeCallbacks(cursorBlinkTask);
+        cursorVisible = true;
+        transcriptView.invalidate();
+        if (cursorEnabled && cursorBlinkEnabled && isAttachedToWindow()) mainHandler.postDelayed(cursorBlinkTask, 500L);
+    }
+    public void stopCursorBlink() {
+        mainHandler.removeCallbacks(cursorBlinkTask);
+        cursorVisible = false;
+        transcriptView.invalidate();
+    }
+    @Override protected void onAttachedToWindow() { super.onAttachedToWindow(); startCursorBlink(); }
+    @Override protected void onDetachedFromWindow() {
+        mainHandler.removeCallbacks(cursorBlinkTask);
+        mainHandler.removeCallbacks(restoreViewportTask);
+        mainHandler.removeCallbacks(finishUserScrollTask);
+        resetInputConnection();
+        super.onDetachedFromWindow();
     }
 
-    /**
-     * Applies a theme (chrome + palette) and terminal typography to the console.
-     * Call after construction and whenever the user changes appearance settings.
-     */
     public void applyTheme(io.github.nyzeep.orchestella.ui.theme.AppTheme theme,
             int fontSizeSp, float letterSpacingEm, float lineSpacingExtraPx) {
         setBackgroundColor(theme.getTerminalBackground());
@@ -472,15 +504,32 @@ public class ModernTerminalView extends ScrollView {
         transcriptView.setTextSize(TypedValue.COMPLEX_UNIT_SP, fontSizeSp);
         transcriptView.setLetterSpacing(letterSpacingEm);
         transcriptView.setLineSpacing(lineSpacingExtraPx, 1f);
-        invalidate();
+        updateTerminalSize();
+        renderScreen();
     }
 
-    public AnsiEscapeParser getParser() {
-        return parser;
+    private final class TranscriptView extends androidx.appcompat.widget.AppCompatTextView {
+        private final Paint cursorPaint = new Paint();
+        TranscriptView(Context context) { super(context); }
+        @Override public boolean onTextContextMenuItem(int id) {
+            if (id == android.R.id.paste || id == android.R.id.pasteAsPlainText) return pasteFromClipboard();
+            return super.onTextContextMenuItem(id);
+        }
+        @Override protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            Layout layout = getLayout();
+            if (layout == null || !cursorEnabled || !cursorVisible || !screen.isCursorVisible() || selecting) return;
+            int offset = Math.max(0, Math.min(cursorOffset, getText().length()));
+            int line = layout.getLineForOffset(offset);
+            float x = getTotalPaddingLeft() + layout.getPrimaryHorizontal(offset);
+            float y = getTotalPaddingTop() + layout.getLineTop(line);
+            cursorPaint.setColor(DraculaPalette.themedForeground());
+            canvas.drawRect(x, y, x + Math.max(2f, getTextSize() / 10f),
+                    getTotalPaddingTop() + layout.getLineBottom(line), cursorPaint);
+        }
     }
 
     private static int dpToPx(Context context, int dp) {
-        return (int) TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, dp, context.getResources().getDisplayMetrics());
+        return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, dp, context.getResources().getDisplayMetrics());
     }
 }

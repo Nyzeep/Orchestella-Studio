@@ -2,6 +2,7 @@ package io.github.nyzeep.orchestella;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
@@ -32,12 +33,18 @@ public final class PersistentTerminalSessionPool {
         private final String instanceId;
         private final ExecutionSession session;
         private final TerminalRingBuffer ringBuffer;
+        private final io.github.nyzeep.orchestella.terminal.TerminalScreenModel screenModel =
+                new io.github.nyzeep.orchestella.terminal.TerminalScreenModel(80, 24);
+
+        /** The emulator lives with the shell, so reattachment never replays a truncated VT stream. */
+        public io.github.nyzeep.orchestella.terminal.TerminalScreenModel getScreenModel() { return screenModel; }
         private final Set<Consumer<String>> outputListeners = new CopyOnWriteArraySet<>();
         private final AtomicBoolean closed = new AtomicBoolean(false);
         private final AtomicBoolean pumpFinished = new AtomicBoolean(false);
         private final ReentrantReadWriteLock rwLock = new ReentrantReadWriteLock();
         private final Thread pumpThread;
-        private volatile java.util.function.Consumer<String> sessionEndListener;
+        private final java.util.concurrent.atomic.AtomicReference<Consumer<String>> sessionEndListener =
+                new java.util.concurrent.atomic.AtomicReference<>();
 
         public SessionHolder(String instanceId, ExecutionSession session) {
             this(instanceId, session, TerminalRingBuffer.DEFAULT_MAX_CAPACITY);
@@ -47,6 +54,9 @@ public final class PersistentTerminalSessionPool {
             this.instanceId = Objects.requireNonNull(instanceId, "instanceId");
             this.session = Objects.requireNonNull(session, "session");
             this.ringBuffer = new TerminalRingBuffer(ringBufferCapacity);
+            screenModel.setResponseSink(response -> {
+                try { sendBytes(response.getBytes(StandardCharsets.UTF_8)); } catch (IOException ignored) { }
+            });
 
             this.pumpThread = new Thread(this::pumpLoop, "pty-term-pump-" + instanceId);
             this.pumpThread.setDaemon(true);
@@ -59,25 +69,34 @@ public final class PersistentTerminalSessionPool {
          * must hop to their own UI thread.
          */
         public void setSessionEndListener(java.util.function.Consumer<String> listener) {
-            this.sessionEndListener = listener;
+            sessionEndListener.set(listener);
+            if (pumpFinished.get()) notifySessionEnded();
+        }
+
+        private void notifySessionEnded() {
+            Consumer<String> listener = sessionEndListener.getAndSet(null);
+            if (listener != null) {
+                try { listener.accept(instanceId); } catch (Exception ignored) { }
+            }
         }
 
         private void pumpLoop() {
             try {
-                InputStream in = session.terminalOutput();
-                byte[] buffer = new byte[4096];
+                // One decoder owns the whole stream: read boundaries may split a UTF-8
+                // character (including CJK and supplementary emoji) at any byte.
+                InputStreamReader in = new InputStreamReader(session.terminalOutput(), StandardCharsets.UTF_8);
+                char[] buffer = new char[4096];
                 int count;
                 while (!closed.get() && (count = in.read(buffer)) >= 0) {
-                    if (count == 0) {
-                        continue;
-                    }
-                    String chunk = new String(buffer, 0, count, StandardCharsets.UTF_8);
+                    if (count == 0) continue;
+                    String chunk = new String(buffer, 0, count);
                     // Append and deliver under one write lock so attach() snapshots can
                     // never overlap delivery: a chunk is either in the snapshot or handed
                     // to the listener, never both and never neither.
                     rwLock.writeLock().lock();
                     try {
                         ringBuffer.append(chunk);
+                        screenModel.append(chunk);
                         for (Consumer<String> listener : outputListeners) {
                             try {
                                 listener.accept(chunk);
@@ -91,13 +110,7 @@ public final class PersistentTerminalSessionPool {
             } catch (Exception ignored) {
             } finally {
                 pumpFinished.set(true);
-                Consumer<String> endListener = sessionEndListener;
-                if (endListener != null) {
-                    try {
-                        endListener.accept(instanceId);
-                    } catch (Exception ignored) {
-                    }
-                }
+                notifySessionEnded();
             }
         }
 
@@ -134,8 +147,8 @@ public final class PersistentTerminalSessionPool {
         }
 
         public void sendBytes(byte[] bytes) throws IOException {
-            if (closed.get()) {
-                throw new IOException("Session holder is closed for instance " + instanceId);
+            if (!isAlive()) {
+                throw new IOException("Terminal stream has ended for instance " + instanceId);
             }
             OutputStream out = session.terminalInput();
             if (out != null && bytes != null && bytes.length > 0) {

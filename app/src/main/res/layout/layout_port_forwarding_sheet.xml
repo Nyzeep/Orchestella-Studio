@@ -217,7 +217,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:minHeight="52dp"
-        app:cornerRadius="14dp"
+        app:cornerRadius="0dp"
         android:text="@string/port_forwarding_add_rule"
         android:textSize="14sp"
         android:textStyle="bold"

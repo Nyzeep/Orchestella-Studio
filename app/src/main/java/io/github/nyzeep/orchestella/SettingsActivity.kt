@@ -14,9 +14,10 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
-import com.google.android.material.color.DynamicColors
 import com.google.android.material.materialswitch.MaterialSwitch
-import io.github.nyzeep.orchestella.ui.theme.AppTheme
+import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
+import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
+import io.github.nyzeep.orchestella.ui.theme.ThemeColors
 import io.github.nyzeep.orchestella.ui.theme.ThemeStore
 import androidx.activity.result.contract.ActivityResultContracts
 import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator
@@ -53,13 +54,17 @@ class SettingsActivity : AppCompatActivity() {
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri ?: return@registerForActivityResult
-        themeStore.setBackgroundUri(uri.toString())
-        themeStore.persistBackgroundPermission(this, uri)
-        Toast.makeText(this, "背景图片已更新", Toast.LENGTH_SHORT).show()
+        if (themeStore.persistBackgroundPermission(this, uri)) {
+            themeStore.setBackgroundUri(uri.toString())
+            refreshAppearance()
+            Toast.makeText(this, "背景图片已更新", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(this, "无法保留图片访问权限，请重新选择本地图片", Toast.LENGTH_LONG).show()
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        DynamicColors.applyIfAvailable(this)
+        ThemeApplier.prepare(this)
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
 
@@ -87,6 +92,17 @@ class SettingsActivity : AppCompatActivity() {
         setupAvfSection()
         setupTerminalSection()
         setupThemeSection()
+        refreshAppearance()
+    }
+
+    private fun refreshAppearance() {
+        val theme = themeStore.resolve()
+        findViewById<TextView>(R.id.txt_settings_theme_summary).text =
+            "${theme.displayName} · ${if (theme.isDark) "深色" else "浅色"} · 立即应用到全部页面"
+        findViewById<TextView>(R.id.txt_settings_terminal_palette).text =
+            "配色：${theme.displayName}\n等宽字体与 16 色 ANSI 调色板跟随主题"
+        findViewById<MaterialButton>(R.id.btn_clear_background).isEnabled = themeStore.backgroundUri() != null
+        ThemeApplier.bind(this)
     }
 
     override fun onDestroy() {
@@ -107,7 +123,10 @@ class SettingsActivity : AppCompatActivity() {
         txtAvfDetails = findViewById(R.id.txt_settings_avf_details)
         switchCursorBlink = findViewById(R.id.switch_settings_cursor_blink)
 
-        findViewById<TextView>(R.id.txt_settings_version)?.text = "版本：v${BuildConfig.VERSION_NAME} · Phase 5.0"
+        findViewById<TextView>(R.id.txt_settings_version)?.text = "版本：v${BuildConfig.VERSION_NAME}"
+        toolbar.navigationContentDescription = "返回"
+        ThemeApplier.setRole(btnResetMirror, ThemeApplier.Role.SECONDARY_ACTION)
+        ThemeApplier.setRole(findViewById(R.id.btn_clear_background), ThemeApplier.Role.SECONDARY_ACTION)
     }
 
     private fun setupMirrorSection() {
@@ -173,45 +192,39 @@ class SettingsActivity : AppCompatActivity() {
     private fun setupAvfSection() {
         val facts = AvfHostFactsProbe.probe(this)
         val readiness = AvfCapabilityEvaluator.evaluate(facts)
+        val factsSummary = """
+            • 硬件平台：${facts.socModel() ?: facts.deviceModel() ?: "ARM64 设备"}
+            • Android 版本：API ${facts.sdkInt()}
+            • AVF feature：${if (facts.virtualizationFrameworkFeature()) "已声明" else "未声明"}
+            • 虚拟化属性：${facts.virtualizationProperty()?.takeIf { it.isNotBlank() } ?: "无法读取或未提供"}
+            • MANAGE_VIRTUAL_MACHINE：${if (facts.manageVirtualMachinePermission()) "已授权" else "未授权"}
+        """.trimIndent()
+        val launchNotice = "当前仅检查平台声明与权限。custom VM 的创建和运行将在实例启动时验证，启动失败会自动回退至 QEMU。"
 
         when (readiness.status()) {
             AvfCapabilityEvaluator.AvfStatus.READY -> {
-                txtAvfBadge.text = "✓ pKVM 硬件虚拟化已就绪"
+                txtAvfBadge.text = "AVF 声明/授权可用"
                 txtAvfBadge.setTextColor(getColor(R.color.zone_green))
-                txtAvfDetails.text = """
-                    • 硬件平台：${facts.socModel() ?: facts.deviceModel() ?: "ARM64 设备"}
-                    • Android 版本：API ${facts.sdkInt()}
-                    • pKVM 虚拟化支持：已开启并开放非保护虚拟机
-                    • 架构执行策略：原生硬件虚拟化 (AVF / pKVM)
-                """.trimIndent()
+                txtAvfDetails.text = "$factsSummary\n• 预检：声明与权限条件满足\n$launchNotice"
             }
             AvfCapabilityEvaluator.AvfStatus.NEEDS_AUTHORIZATION -> {
-                txtAvfBadge.text = "⚠️ 需要开发级授权"
+                txtAvfBadge.text = "AVF 尚未授权"
                 txtAvfBadge.setTextColor(getColor(R.color.zone_yellow))
-                txtAvfDetails.text = "设备具备硬件虚拟化支持，但需授予 MANAGE_VIRTUAL_MACHINE 权限。"
+                txtAvfDetails.text = "$factsSummary\n• 预检：平台声明满足，应用尚未获得 MANAGE_VIRTUAL_MACHINE 权限\n$launchNotice"
             }
             AvfCapabilityEvaluator.AvfStatus.UNSUPPORTED -> {
-                txtAvfBadge.text = "✕ 硬件虚拟化不支持 (已平滑降级)"
+                txtAvfBadge.text = "AVF 预检未满足"
                 txtAvfBadge.setTextColor(getColor(R.color.zone_red))
                 val reasons = readiness.reasons().joinToString("；")
-                txtAvfDetails.text = """
-                    • 检测状态：$reasons
-                    • 硬件平台：${facts.deviceModel() ?: "通用设备"} (API ${facts.sdkInt()})
-                    • 当前调度内核：QEMU TCG 纯软件仿真架构
-                    • 运行保障：7 大 Linux 发行版与桌面环境功能 100% 正常运行
-                """.trimIndent()
+                txtAvfDetails.text = "$factsSummary\n• 预检原因：$reasons\n• 启动路径：QEMU\n$launchNotice"
             }
         }
     }
 
     private fun setupTerminalSection() {
-        switchCursorBlink.isChecked = true
+        switchCursorBlink.isChecked = settingsManager.isTerminalCursorBlinkEnabled
         switchCursorBlink.setOnCheckedChangeListener { _, isChecked ->
-            Toast.makeText(
-                this,
-                if (isChecked) "已开启终端光标闪烁动画" else "已禁用光标闪烁",
-                Toast.LENGTH_SHORT
-            ).show()
+            settingsManager.isTerminalCursorBlinkEnabled = isChecked
         }
     }
 
@@ -224,33 +237,36 @@ class SettingsActivity : AppCompatActivity() {
         val fontSeek = findViewById<android.widget.SeekBar?>(R.id.seek_terminal_font)
         val spacingLabel = findViewById<android.widget.TextView?>(R.id.tv_letter_spacing_label)
         val spacingSeek = findViewById<android.widget.SeekBar?>(R.id.seek_letter_spacing)
+        val lineLabel = findViewById<TextView>(R.id.tv_line_spacing_label)
+        val lineSeek = findViewById<android.widget.SeekBar>(R.id.seek_terminal_line_spacing)
         if (btnPickTheme == null || fontSeek == null) return
 
         fun refreshLabels() {
             fontLabel?.text = "终端字号：${themeStore.terminalFontSizeSp()}sp"
-            fontSeek.progress = themeStore.terminalFontSizeSp() - ThemeStore.MIN_TERMINAL_FONT_SP
+            fontSeek.progress = ThemeColors.fontProgress(themeStore.terminalFontSizeSp())
             val em = themeStore.terminalLetterSpacingEm()
             spacingLabel?.text = "终端字间距：%.2fem".format(em)
             spacingSeek?.progress = (em * 100).toInt()
+            lineLabel.text = "终端额外行距：%.1fpx".format(themeStore.terminalLineSpacingPx())
+            lineSeek.progress = themeStore.terminalLineSpacingPx().toInt()
         }
         refreshLabels()
 
         btnPickTheme.setOnClickListener {
-            val themes = io.github.nyzeep.orchestella.ui.theme.ThemeCatalog.all
+            val themes = ThemeCatalog.all
             val names = themes.map { it.displayName + if (it.isDark) " · 暗" else " · 亮" }.toTypedArray()
             val current = themes.indexOfFirst { it.id == themeStore.themeId() }
             androidx.appcompat.app.AlertDialog.Builder(this)
                 .setTitle("选择主题")
                 .setSingleChoiceItems(names, current) { dialog, which ->
                     themeStore.setThemeId(themes[which].id)
-                    themeStore.setCustomAccent(null)
-                    themeStore.setCustomText(null)
                     refreshLabels()
+                    refreshAppearance()
                     dialog.dismiss()
                     Toast.makeText(this, "主题：${themes[which].displayName}", Toast.LENGTH_SHORT).show()
                 }
                 .setNegativeButton("取消", null)
-                .show()
+                .show().also(ThemeApplier::apply)
         }
 
         btnPickAccent?.setOnClickListener {
@@ -261,15 +277,18 @@ class SettingsActivity : AppCompatActivity() {
             )
             val names = accents.map { it.first }.toTypedArray()
             androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("自定义强调色（影响发光与仪表）")
+                .setTitle("自定义强调色（按钮、导航与仪表）")
                 .setItems(names) { dialog, which ->
                     themeStore.setCustomAccent(accents[which].second)
-                    refreshLabels()
+                    refreshAppearance()
                     dialog.dismiss()
                 }
-                .setNeutralButton("跟随主题") { _, _ -> themeStore.setCustomAccent(null) }
+                .setNeutralButton("跟随主题") { _, _ ->
+                    themeStore.setCustomAccent(null)
+                    refreshAppearance()
+                }
                 .setNegativeButton("取消", null)
-                .show()
+                .show().also(ThemeApplier::apply)
         }
 
         btnPickBackground?.setOnClickListener {
@@ -278,12 +297,14 @@ class SettingsActivity : AppCompatActivity() {
 
         btnClearBackground?.setOnClickListener {
             themeStore.setBackgroundUri(null)
+            refreshAppearance()
             Toast.makeText(this, "已恢复纯色背景", Toast.LENGTH_SHORT).show()
         }
 
         fontSeek.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
-                val sp = ThemeStore.MIN_TERMINAL_FONT_SP + progress
+                if (!fromUser) return
+                val sp = ThemeColors.fontSize(progress)
                 themeStore.setTerminalFontSizeSp(sp)
                 fontLabel?.text = "终端字号：${themeStore.terminalFontSizeSp()}sp"
             }
@@ -293,9 +314,19 @@ class SettingsActivity : AppCompatActivity() {
 
         spacingSeek?.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
                 val em = progress / 100f
                 themeStore.setTerminalLetterSpacingEm(em)
                 spacingLabel?.text = "终端字间距：%.2fem".format(em)
+            }
+            override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {}
+        })
+        lineSeek.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                themeStore.setTerminalLineSpacingPx(progress.toFloat())
+                lineLabel.text = "终端额外行距：${progress}px"
             }
             override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) {}
             override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {}

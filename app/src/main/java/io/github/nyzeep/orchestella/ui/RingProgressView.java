@@ -42,9 +42,11 @@ public class RingProgressView extends View {
     private void init() {
         ringTrack.setStyle(Paint.Style.STROKE);
         ringValue.setStyle(Paint.Style.STROKE);
-        ringValue.setStrokeCap(Paint.Cap.ROUND);
+        ringValue.setStrokeCap(Paint.Cap.SQUARE);
         labelPaint.setTextAlign(Paint.Align.CENTER);
+        labelPaint.setTypeface(android.graphics.Typeface.MONOSPACE);
         captionPaint.setTextAlign(Paint.Align.CENTER);
+        captionPaint.setTypeface(android.graphics.Typeface.MONOSPACE);
     }
 
     public void configure(int color, int labelColor, int captionColor, float density) {

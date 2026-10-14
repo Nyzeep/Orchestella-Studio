@@ -369,7 +369,74 @@ object ThemeCatalog {
         ),
     )
 
+    val constructivistWorkstation = AppTheme(
+        id = "constructivist-workstation",
+        displayName = "Constructivist (构成主义工控 · 红)",
+        isDark = true,
+        background = 0xFF0D0E11.toInt(),
+        surface = 0xFF16171D.toInt(),
+        surfaceTranslucent = 0xE616171D.toInt(),
+        primary = 0xFFD62828.toInt(),
+        accent = 0xFFFDBB24.toInt(),
+        text = 0xFFF5F4F0.toInt(),
+        textDim = 0xFF8E929B.toInt(),
+        glow = 0xFFD62828.toInt(),
+        terminalBackground = 0xFF07080A.toInt(),
+        terminalForeground = 0xFFF1F2F5.toInt(),
+        ansi = ansi(
+            0xFF0D0E11.toInt(), 0xFFD62828.toInt(), 0xFF52B788.toInt(), 0xFFFDBB24.toInt(),
+            0xFF0047AB.toInt(), 0xFFE056FD.toInt(), 0xFF00E5FF.toInt(), 0xFFF5F4F0.toInt(),
+            0xFF2E323B.toInt(), 0xFFFF5A5A.toInt(), 0xFF74C69D.toInt(), 0xFFFFD166.toInt(),
+            0xFF3B82F6.toInt(), 0xFFF772FA.toInt(), 0xFF48CAE4.toInt(), 0xFFFFFFFF.toInt(),
+        ),
+    )
+
+    val constructivistCobalt = AppTheme(
+        id = "constructivist-cobalt",
+        displayName = "Constructivist (钴蓝张力 · 蓝)",
+        isDark = true,
+        background = 0xFF0D0E11.toInt(),
+        surface = 0xFF16171D.toInt(),
+        surfaceTranslucent = 0xE616171D.toInt(),
+        primary = 0xFF0047AB.toInt(),
+        accent = 0xFFD62828.toInt(),
+        text = 0xFFF5F4F0.toInt(),
+        textDim = 0xFF8E929B.toInt(),
+        glow = 0xFF0047AB.toInt(),
+        terminalBackground = 0xFF07080A.toInt(),
+        terminalForeground = 0xFFF1F2F5.toInt(),
+        ansi = ansi(
+            0xFF0D0E11.toInt(), 0xFF0047AB.toInt(), 0xFF52B788.toInt(), 0xFFFDBB24.toInt(),
+            0xFFD62828.toInt(), 0xFFE056FD.toInt(), 0xFF00E5FF.toInt(), 0xFFF5F4F0.toInt(),
+            0xFF2E323B.toInt(), 0xFF3B82F6.toInt(), 0xFF74C69D.toInt(), 0xFFFFD166.toInt(),
+            0xFFFF5A5A.toInt(), 0xFFF772FA.toInt(), 0xFF48CAE4.toInt(), 0xFFFFFFFF.toInt(),
+        ),
+    )
+
+    val constructivistAmber = AppTheme(
+        id = "constructivist-amber",
+        displayName = "Constructivist (镉黄警示 · 黄)",
+        isDark = true,
+        background = 0xFF0D0E11.toInt(),
+        surface = 0xFF16171D.toInt(),
+        surfaceTranslucent = 0xE616171D.toInt(),
+        primary = 0xFFFDBB24.toInt(),
+        accent = 0xFFD62828.toInt(),
+        text = 0xFFF5F4F0.toInt(),
+        textDim = 0xFF8E929B.toInt(),
+        glow = 0xFFFDBB24.toInt(),
+        terminalBackground = 0xFF07080A.toInt(),
+        terminalForeground = 0xFFF1F2F5.toInt(),
+        ansi = ansi(
+            0xFF0D0E11.toInt(), 0xFFD62828.toInt(), 0xFF52B788.toInt(), 0xFFFDBB24.toInt(),
+            0xFF0047AB.toInt(), 0xFFE056FD.toInt(), 0xFF00E5FF.toInt(), 0xFFF5F4F0.toInt(),
+            0xFF2E323B.toInt(), 0xFFFF5A5A.toInt(), 0xFF74C69D.toInt(), 0xFFFFD166.toInt(),
+            0xFF3B82F6.toInt(), 0xFFF772FA.toInt(), 0xFF48CAE4.toInt(), 0xFFFFFFFF.toInt(),
+        ),
+    )
+
     val all: List<AppTheme> = listOf(
+        constructivistWorkstation, constructivistCobalt, constructivistAmber,
         moonshotDark, claudeDark, claudeLight,
         catppuccinMocha, catppuccinLatte, catppuccinFrappe, catppuccinMacchiato,
         dracula, nord, tokyoNight, gruvboxDark, gruvboxLight,
@@ -378,6 +445,6 @@ object ThemeCatalog {
 
     fun byId(id: String?): AppTheme? = all.firstOrNull { it.id == id }
 
-    /** Resolves a stored theme id, falling back to the Dracula default. */
-    fun resolve(id: String?): AppTheme = byId(id) ?: moonshotDark
+    /** Resolves a stored theme id, falling back to the flagship Constructivist Workstation default. */
+    fun resolve(id: String?): AppTheme = byId(id) ?: constructivistWorkstation
 }

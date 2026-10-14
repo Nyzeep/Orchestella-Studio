@@ -139,6 +139,12 @@ public class DistroInstanceCreator {
         Path volume = volumes.resolve(UUID.randomUUID() + ".raw");
         try {
             try (SeekableByteChannel channel = Files.newByteChannel(volume, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
+                byte[] creationSignature = GuestRuntimeProvisioner.ROOT_VOLUME_CREATION_SIGNATURE
+                        .getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+                if (rootVolumeBytes <= creationSignature.length) {
+                    throw new IOException("root-volume-too-small-for-creation-signature");
+                }
+                channel.write(ByteBuffer.wrap(creationSignature));
                 channel.position(rootVolumeBytes - 1L);
                 channel.write(ByteBuffer.wrap(new byte[] {0}));
             }

@@ -10,11 +10,11 @@
     android:clickable="true"
     android:focusable="true"
     android:foreground="?android:attr/selectableItemBackground"
-    app:cardCornerRadius="20dp"
+    app:cardCornerRadius="0dp"
     app:cardElevation="0dp"
-    app:strokeWidth="1dp"
-    app:strokeColor="?attr/colorOutlineVariant"
-    app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
+    app:strokeWidth="1.5dp"
+    app:strokeColor="#2E323B"
+    app:cardBackgroundColor="#16171D">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -59,7 +59,7 @@
                     android:text="Ubuntu Linux"
                     android:textSize="16sp"
                     android:textStyle="bold"
-                    android:textColor="?attr/colorOnSurface" />
+                    android:textColor="#F5F4F0" />
 
                 <TextView
                     android:id="@+id/card_instance_id"
@@ -68,9 +68,10 @@
                     android:layout_marginTop="2dp"
                     android:singleLine="true"
                     android:ellipsize="end"
+                    android:fontFamily="monospace"
                     android:text="ID: alpine-001"
-                    android:textSize="12sp"
-                    android:textColor="?attr/colorOutline" />
+                    android:textSize="11sp"
+                    android:textColor="#8E929B" />
             </LinearLayout>
 
             <TextView
@@ -80,13 +81,14 @@
                 android:maxWidth="160dp"
                 android:singleLine="true"
                 android:ellipsize="end"
+                android:fontFamily="monospace"
                 android:background="@drawable/bg_status_badge"
-                android:paddingStart="10dp"
-                android:paddingTop="5dp"
-                android:paddingEnd="10dp"
-                android:paddingBottom="5dp"
-                android:text="○ 已关机"
-                android:textSize="11sp"
+                android:paddingStart="8dp"
+                android:paddingTop="4dp"
+                android:paddingEnd="8dp"
+                android:paddingBottom="4dp"
+                android:text="[ 已停止 ]"
+                android:textSize="10sp"
                 android:textStyle="bold"
                 android:textColor="@color/status_stopped" />
         </LinearLayout>
@@ -105,26 +107,28 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:drawableStart="@drawable/ic_cpu"
-                android:drawableTint="?attr/colorOnSurfaceVariant"
+                android:drawableTint="#8E929B"
                 android:drawablePadding="6dp"
                 android:gravity="center_vertical"
                 android:singleLine="true"
                 android:ellipsize="end"
+                android:fontFamily="monospace"
                 android:text="2 vCPU · 2048 MB · 8 GB"
-                android:textSize="12sp"
-                android:textColor="?attr/colorOnSurfaceVariant" />
+                android:textSize="11sp"
+                android:textColor="#8E929B" />
 
             <TextView
                 android:id="@+id/card_ip_address"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:drawableStart="@drawable/ic_network"
-                android:drawableTint="?attr/colorOnSurfaceVariant"
+                android:drawableTint="#8E929B"
                 android:drawablePadding="4dp"
                 android:gravity="center_vertical"
+                android:fontFamily="monospace"
                 android:text="10.0.2.15"
-                android:textSize="12sp"
-                android:textColor="?attr/colorOnSurfaceVariant" />
+                android:textSize="11sp"
+                android:textColor="#8E929B" />
         </LinearLayout>
 
         <!-- Divider line -->
@@ -133,7 +137,7 @@
             android:layout_height="1dp"
             android:layout_marginTop="10dp"
             android:layout_marginBottom="8dp"
-            android:background="?attr/colorOutlineVariant" />
+            android:background="#2E323B" />
 
         <!-- Row 3: Detail Hint & High-Priority Quick Power Action Button -->
         <LinearLayout
@@ -146,22 +150,24 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="点击进入控制台"
-                android:textSize="11sp"
-                android:textColor="?attr/colorOutline" />
+                android:fontFamily="monospace"
+                android:text="MACH.ID // 点击进入控制台"
+                android:textSize="10sp"
+                android:textColor="#8E929B" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/card_btn_power"
                 style="@style/Widget.Material3.Button.TonalButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:minHeight="40dp"
-                app:cornerRadius="12dp"
+                android:minHeight="38dp"
+                app:cornerRadius="0dp"
                 app:icon="@drawable/ic_power"
                 app:iconSize="16dp"
                 android:paddingStart="12dp"
                 android:paddingEnd="12dp"
-                android:textSize="12sp"
+                android:fontFamily="monospace"
+                android:textSize="11sp"
                 android:textStyle="bold"
                 android:text="开机" />
 

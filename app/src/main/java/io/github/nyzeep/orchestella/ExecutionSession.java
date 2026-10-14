@@ -52,6 +52,11 @@ public interface ExecutionSession {
      */
     void close();
 
+    /** Stops the VM itself after an explicit force-stop action. */
+    default void terminate() throws IOException {
+        throw new IOException("This session cannot be forcibly stopped");
+    }
+
     /**
      * Optional strategy-neutral display control contract for graphics desktop mode.
      * Null when the session does not provide Wayland display negotiation.
@@ -74,6 +79,17 @@ public interface ExecutionSession {
      */
     default io.github.nyzeep.orchestella.runtime.contract.BridgeClient bridgeClient() {
         return null;
+    }
+
+    /**
+     * Retires a failed control transport after its reader has ended, without
+     * affecting the VM or terminal. Call once on a worker thread for an explicit
+     * UI re-entry. True means a fresh control client can be obtained and must
+     * authenticate again; it does not mean control is ready. Unsupported, live,
+     * or unsafe-to-retire channels return false without resetting their caches.
+     */
+    default boolean recoverControlChannel() {
+        return false;
     }
 
     /**

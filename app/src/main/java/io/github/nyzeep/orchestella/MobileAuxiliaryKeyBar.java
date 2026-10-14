@@ -22,12 +22,21 @@ import java.nio.charset.StandardCharsets;
  * Provides high-frequency developer keys (ESC, TAB, CTRL, ALT, |, -, /, ~, $, \, arrows)
  * and coordinates with {@link StickyModifierStateMachine}.
  */
-public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
+public class MobileAuxiliaryKeyBar extends LinearLayout {
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private TerminalInputSink inputSink;
     private StickyModifierStateMachine stateMachine;
     private InteractiveTerminalEngine terminalEngine;
+    private ModernTerminalView terminalView;
+    private Runnable commandEntryAction;
+    public void setCommandEntryAction(Runnable action) { commandEntryAction = action; }
+    private final StickyModifierStateMachine.Listener modifierListener = (modifier, state) -> {
+        if (Looper.myLooper() == Looper.getMainLooper()) updateModifierVisual(modifier, state);
+        else mainHandler.post(() -> updateModifierVisual(modifier, state));
+    };
+
+    public void setTerminalView(ModernTerminalView view) { terminalView = view; }
 
     private Button btnCtrl;
     private Button btnAlt;
@@ -85,15 +94,10 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
     }
 
     public void setStateMachine(StickyModifierStateMachine stateMachine) {
+        if (this.stateMachine != null) this.stateMachine.removeListener(modifierListener);
         this.stateMachine = stateMachine;
         if (stateMachine != null) {
-            stateMachine.addListener((modifier, state) -> {
-                if (Looper.myLooper() == Looper.getMainLooper()) {
-                    updateModifierVisual(modifier, state);
-                } else {
-                    mainHandler.post(() -> updateModifierVisual(modifier, state));
-                }
-            });
+            stateMachine.addListener(modifierListener);
             updateModifierVisual(Modifier.CTRL, stateMachine.getState(Modifier.CTRL));
             updateModifierVisual(Modifier.ALT, stateMachine.getState(Modifier.ALT));
         }
@@ -109,29 +113,35 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
     }
 
     private void init(Context context) {
-        setBackgroundColor(0xFF21222C); // Dracula dark bar background
-        setHorizontalScrollBarEnabled(false);
-        setOverScrollMode(OVER_SCROLL_NEVER);
-
+        setOrientation(VERTICAL);
+        setBackgroundColor(0xFF21222C);
+        // Only the secondary tools scroll horizontally. An outer HorizontalScrollView
+        // measures its child with unbounded width and defeats the primary-row weights.
+        LinearLayout rows = new LinearLayout(context);
+        rows.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout primary = new LinearLayout(context);
+        primary.setPadding(dpToPx(context, 4), dpToPx(context, 4), dpToPx(context, 4), 0);
+        addPrimaryKey(primary, "ESC", v -> pressEsc());
+        addPrimaryKey(primary, "TAB", v -> pressTab());
+        btnCtrl = addPrimaryKey(primary, "CTRL", v -> pressCtrl());
+        btnAlt = addPrimaryKey(primary, "ALT", v -> pressAlt());
+        Button clear = addPrimaryKey(primary, "CLEAR", v -> pressClr());
+        clear.setContentDescription("清屏，保留 Shell 历史并请求当前程序重绘");
+        rows.addView(primary, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        LinearLayout lower = new LinearLayout(context);
+        lower.setGravity(Gravity.CENTER_VERTICAL);
+        addNavigationKey(lower, "←", v -> pressLeft());
+        addNavigationKey(lower, "↓", v -> pressDown());
+        addNavigationKey(lower, "↑", v -> pressUp());
+        addNavigationKey(lower, "→", v -> pressRight());
+        HorizontalScrollView secondary = new HorizontalScrollView(context);
+        secondary.setHorizontalScrollBarEnabled(false);
         LinearLayout row = new LinearLayout(context);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        int padH = dpToPx(context, 8);
-        int padV = dpToPx(context, 4);
-        row.setPadding(padH, padV, padH, padV);
+        row.setPadding(dpToPx(context, 4), dpToPx(context, 4), dpToPx(context, 4), dpToPx(context, 4));
 
-        // ESC
-        addKeyButton(row, "ESC", v -> pressEsc());
-
-        // TAB
-        addKeyButton(row, "TAB", v -> pressTab());
-
-        // CTRL
-        btnCtrl = addKeyButton(row, "CTRL", v -> pressCtrl());
-
-        // ALT
-        btnAlt = addKeyButton(row, "ALT", v -> pressAlt());
-
+        addKeyButton(row, "命令", v -> { if (commandEntryAction != null) commandEntryAction.run(); });
         // ^C (Interrupt/Break)
         addKeyButton(row, "^C", v -> pressCtrlC());
 
@@ -146,9 +156,8 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
         addKeyButton(row, "^E", v -> pressCtrlE());
 
         // CLR (Clear screen and reset line)
-        addKeyButton(row, "CLR", v -> pressClr());
-
-        // PASTE (Clipboard quick paste)
+        addKeyButton(row, "^L", v -> pressClr());
+        addKeyButton(row, "COPY", v -> { if (terminalView != null) terminalView.copySelection(); });
         addKeyButton(row, "PASTE", v -> pressPaste());
 
         // HOME / END (Line boundary cursor jumps)
@@ -169,28 +178,32 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
         addKeyButton(row, ":", v -> pressSymbol(":"));
         addKeyButton(row, ";", v -> pressSymbol(";"));
 
-        // Arrows: ←, ↑, ↓, →
-        addKeyButton(row, "←", v -> pressLeft());
-        addKeyButton(row, "↑", v -> pressUp());
-        addKeyButton(row, "↓", v -> pressDown());
-        addKeyButton(row, "→", v -> pressRight());
-
-        addView(row, new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
-    }
-
-    public void pressEsc() {
-        if (inputSink != null) {
-            inputSink.sendBytes(new byte[]{0x1B});
+        addKeyButton(row, "PGUP", v -> sendKey(android.view.KeyEvent.KEYCODE_PAGE_UP));
+        addKeyButton(row, "PGDN", v -> sendKey(android.view.KeyEvent.KEYCODE_PAGE_DOWN));
+        for (int index = 0; index < 12; index++) {
+            final int key = android.view.KeyEvent.KEYCODE_F1 + index;
+            addKeyButton(row, "F" + (index + 1), v -> sendKey(key));
         }
+        secondary.addView(row, new HorizontalScrollView.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
+        lower.addView(secondary, new LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
+        rows.addView(lower, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        addView(rows, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
     }
 
-    public void pressTab() {
-        if (inputSink != null) {
-            inputSink.sendBytes(new byte[]{'\t'});
-        } else if (terminalEngine != null) {
-            terminalEngine.handleTab();
-        }
+    private boolean sendKey(int keyCode) {
+        if (terminalView != null) return terminalView.sendTerminalKey(keyCode);
+        return inputSink != null && new TerminalInputConnection(inputSink, stateMachine)
+                .sendKey(android.view.KeyEvent.ACTION_DOWN, keyCode);
     }
+
+    private void sendControl(char value) {
+        if (terminalView != null) terminalView.sendTerminalText(String.valueOf(value));
+        else if (inputSink != null) new TerminalInputConnection(inputSink, stateMachine).commitText(String.valueOf(value), 1);
+    }
+
+    public void pressEsc() { sendKey(android.view.KeyEvent.KEYCODE_ESCAPE); }
+
+    public void pressTab() { sendKey(android.view.KeyEvent.KEYCODE_TAB); }
 
     public void pressCtrl() {
         if (stateMachine != null) {
@@ -204,47 +217,18 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
         }
     }
 
-    public void pressCtrlC() {
-        if (inputSink != null) {
-            inputSink.sendBytes(new byte[]{0x03});
-        } else if (terminalEngine != null) {
-            terminalEngine.handleCtrlC();
-        }
-    }
-
-    public void pressCtrlZ() {
-        if (inputSink != null) {
-            inputSink.sendBytes(new byte[]{0x1A});
-        }
-    }
-
-    public void pressCtrlD() {
-        if (inputSink != null) {
-            inputSink.sendBytes(new byte[]{0x04});
-        }
-    }
-
-    public void pressCtrlA() {
-        if (inputSink != null) {
-            inputSink.sendBytes(new byte[]{0x01});
-        }
-    }
-
-    public void pressCtrlE() {
-        if (inputSink != null) {
-            inputSink.sendBytes(new byte[]{0x05});
-        }
-    }
-
+    public void pressCtrlC() { sendControl('\u0003'); }
+    public void pressCtrlZ() { sendControl('\u001a'); }
+    public void pressCtrlD() { sendControl('\u0004'); }
+    public void pressCtrlA() { sendControl('\u0001'); }
+    public void pressCtrlE() { sendControl('\u0005'); }
     public void pressClr() {
-        if (inputSink != null) {
-            inputSink.sendBytes(new byte[]{0x0C});
-        } else if (terminalEngine != null) {
-            terminalEngine.handleClearScreenAndResetLine();
-        }
+        if (terminalView != null) terminalView.clearVisibleScreen();
+        else sendControl('\u000c');
     }
 
     public void pressPaste() {
+        if (terminalView != null) { terminalView.pasteFromClipboard(); return; }
         android.content.ClipboardManager clipboard =
                 (android.content.ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
         if (clipboard != null && clipboard.hasPrimaryClip()) {
@@ -254,81 +238,40 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
                 if (text != null && text.length() > 0) {
                     String str = text.toString();
                     if (inputSink != null) {
-                        inputSink.sendText(str);
-                    } else if (terminalEngine != null) {
-                        terminalEngine.handleTextInserted(str);
+                        new TerminalInputConnection(inputSink, stateMachine).pasteText(str);
                     }
                 }
             }
         }
     }
 
-    public void pressHome() {
-        if (inputSink != null) {
-            sendArrowSequence("\u001B[H");
-        } else if (terminalEngine != null) {
-            terminalEngine.handleHome();
-        } else {
-            sendArrowSequence("\u001B[H");
-        }
-    }
-
-    public void pressEnd() {
-        if (inputSink != null) {
-            sendArrowSequence("\u001B[F");
-        } else if (terminalEngine != null) {
-            terminalEngine.handleEnd();
-        } else {
-            sendArrowSequence("\u001B[F");
-        }
-    }
-
-    public void pressUp() {
-        if (inputSink != null) {
-            sendArrowSequence("\u001B[A");
-        } else if (terminalEngine != null) {
-            terminalEngine.handleArrowUp();
-        } else {
-            sendArrowSequence("\u001B[A");
-        }
-    }
-
-    public void pressDown() {
-        if (inputSink != null) {
-            sendArrowSequence("\u001B[B");
-        } else if (terminalEngine != null) {
-            terminalEngine.handleArrowDown();
-        } else {
-            sendArrowSequence("\u001B[B");
-        }
-    }
-
-    public void pressLeft() {
-        if (inputSink != null) {
-            sendArrowSequence("\u001B[D");
-        } else if (terminalEngine != null) {
-            terminalEngine.handleArrowLeft();
-        } else {
-            sendArrowSequence("\u001B[D");
-        }
-    }
-
-    public void pressRight() {
-        if (inputSink != null) {
-            sendArrowSequence("\u001B[C");
-        } else if (terminalEngine != null) {
-            terminalEngine.handleArrowRight();
-        } else {
-            sendArrowSequence("\u001B[C");
-        }
-    }
+    public void pressHome() { sendKey(android.view.KeyEvent.KEYCODE_MOVE_HOME); }
+    public void pressEnd() { sendKey(android.view.KeyEvent.KEYCODE_MOVE_END); }
+    public void pressUp() { sendKey(android.view.KeyEvent.KEYCODE_DPAD_UP); }
+    public void pressDown() { sendKey(android.view.KeyEvent.KEYCODE_DPAD_DOWN); }
+    public void pressLeft() { sendKey(android.view.KeyEvent.KEYCODE_DPAD_LEFT); }
+    public void pressRight() { sendKey(android.view.KeyEvent.KEYCODE_DPAD_RIGHT); }
 
     public void pressSymbol(String symbol) {
-        if (inputSink != null) {
-            inputSink.sendText(symbol);
-        } else if (terminalEngine != null) {
-            terminalEngine.handleTextInserted(symbol);
-        }
+        if (terminalView != null) terminalView.sendTerminalText(symbol);
+        else if (inputSink != null) new TerminalInputConnection(inputSink, stateMachine).commitText(symbol, 1);
+    }
+
+    private void addNavigationKey(LinearLayout row, String label, OnClickListener listener) {
+        Button button = addKeyButton(row, label, listener);
+        button.setPadding(0, 0, 0, 0);
+        button.setLayoutParams(new LinearLayout.LayoutParams(dpToPx(getContext(), 48), dpToPx(getContext(), 48)));
+    }
+
+    private Button addPrimaryKey(LinearLayout row, String label, OnClickListener listener) {
+        Button button = addKeyButton(row, label, listener);
+        button.setMinWidth(0);
+        button.setMinimumWidth(0);
+        button.setPadding(0, 0, 0, 0);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dpToPx(getContext(), 48), 1f);
+        params.setMargins(dpToPx(getContext(), 1), 0, dpToPx(getContext(), 1), 0);
+        button.setLayoutParams(params);
+        return button;
     }
 
     private Button addKeyButton(LinearLayout container, String label, OnClickListener listener) {
@@ -340,9 +283,12 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
         btn.setTextColor(DraculaPalette.FOREGROUND);
         btn.setBackground(createKeyBackground(0xFF343746, 0xFF44475A));
         btn.setAllCaps(false);
+        btn.setFocusable(false);
+        btn.setFocusableInTouchMode(false);
+        btn.setContentDescription(label);
 
-        int minW = dpToPx(context, 42);
-        int h = dpToPx(context, 44);
+        int minW = dpToPx(context, 48);
+        int h = dpToPx(context, 48);
         btn.setMinimumWidth(minW);
         btn.setMinWidth(minW);
         btn.setHeight(h);
@@ -357,18 +303,15 @@ public class MobileAuxiliaryKeyBar extends HorizontalScrollView {
         return btn;
     }
 
-    private void sendArrowSequence(String seq) {
-        if (inputSink != null) {
-            inputSink.sendBytes(seq.getBytes(StandardCharsets.UTF_8));
-        }
-    }
-
     private void updateModifierVisual(Modifier modifier, State state) {
         Button targetBtn = (modifier == Modifier.CTRL) ? btnCtrl : btnAlt;
         if (targetBtn == null) {
             return;
         }
 
+        targetBtn.setSelected(state != State.OFF);
+        targetBtn.setContentDescription(modifier.name() + (state == State.LATCHED ? "，下一键生效"
+                : state == State.LOCKED ? "，已锁定" : "，未启用"));
         switch (state) {
             case LATCHED:
                 // Highlighting active latched modifier: Dracula Purple background with dark text

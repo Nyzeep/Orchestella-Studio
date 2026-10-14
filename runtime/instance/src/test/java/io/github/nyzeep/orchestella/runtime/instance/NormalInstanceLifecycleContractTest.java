@@ -126,8 +126,22 @@ public final class NormalInstanceLifecycleContractTest {
                         new InstanceLifecycle.DistroReference("alpine", "3.24.1"),
                         testDirectory.resolve("first-cred.raw"));
 
-        // Default credentials match Ticket 03 spec
-        assertEquals("1234", first.guestPassword(), "first guest password defaults to 1234");
+        // New default root instances get independent credentials while retaining root identity.
+        assertTrue(first.guestPassword().matches("[A-Za-z0-9]{24}"), "strong guest-safe default password");
+        assertFalse("1234".equals(first.guestPassword()), "new default must not use a public password");
+        InstanceLifecycle.Instance second =
+                controller.create(
+                        new InstanceLifecycle.DistroReference("alpine", "3.24.1"),
+                        testDirectory.resolve("second-cred.raw"));
+        assertFalse(first.guestPassword().equals(second.guestPassword()),
+                "instances must have independent default passwords");
+        InstanceLifecycle.Instance nullConfig = controller.create(
+                new InstanceLifecycle.DistroReference("alpine", "3.24.1"),
+                testDirectory.resolve("null-config.raw"),
+                io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig.defaultConfig(), null);
+        assertFalse(first.guestPassword().equals(nullConfig.guestPassword()),
+                "null user config must generate a fresh password");
+        assertTrue(nullConfig.guestPassword().matches("[A-Za-z0-9]{24}"), "null-config strong password");
         assertEquals("orchestella", first.hostname(), "first hostname defaults to orchestella");
         assertEquals("root", first.defaultUser(), "first user defaults to root");
 
@@ -195,6 +209,51 @@ public final class NormalInstanceLifecycleContractTest {
         assertEquals("orchestella", loadedLegacy.hostname(), "legacy hostname defaults to orchestella");
         assertEquals("root", loadedLegacy.defaultUser(), "legacy defaultUser defaults to root");
 
+        // A known old password remains exact; upgrades must not reset guest accounts.
+        legacyProps.setProperty("guestPassword", "1234");
+        try (java.io.OutputStream out = Files.newOutputStream(legacyPropPath)) {
+            legacyProps.store(out, "Synthetic known legacy password");
+        }
+        assertEquals("1234", reconstructed.load(legacyId).guestPassword(), "known legacy password remains exact");
+
+        // Missing or blank legacy credentials stay unknown across transitions and persistence.
+        for (String unknown : new String[] {null, "", "   "}) {
+            if (unknown == null) {
+                legacyProps.remove("guestPassword");
+            } else {
+                legacyProps.setProperty("guestPassword", unknown);
+            }
+            try (java.io.OutputStream out = Files.newOutputStream(legacyPropPath)) {
+                legacyProps.store(out, "Synthetic unknown legacy credential");
+            }
+            InstanceLifecycle.Instance legacyUnknown = reconstructed.load(legacyId);
+            assertEquals("", legacyUnknown.guestPassword(), "legacy unknown password must not be guessed");
+            byte[] metadataBeforeRead = Files.readAllBytes(legacyPropPath);
+            reconstructed.load(legacyId);
+            assertTrue(java.util.Arrays.equals(metadataBeforeRead, Files.readAllBytes(legacyPropPath)),
+                    "loading legacy metadata must not silently rewrite credentials");
+            controller.start(legacyId);
+            controller.recordNormalGuestStop(legacyId);
+            assertEquals("", reconstructed.load(legacyId).guestPassword(),
+                    "unknown password must remain unknown across lifecycle saves");
+        }
+        InstanceLifecycle.Instance imported = InstanceLifecycle.Instance.restore(
+                java.util.UUID.randomUUID().toString(),
+                new InstanceLifecycle.DistroReference("alpine", "3.24.1"),
+                testDirectory.resolve("imported.raw"), FullLinuxContract.RuntimeClass.FULL_LINUX,
+                InstanceLifecycle.State.STOPPED,
+                io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig.defaultConfig(), CLOCK);
+        assertEquals("", imported.guestPassword(), "imported guest password must remain unknown");
+        store.save(imported);
+        assertEquals("", reconstructed.load(imported.id()).guestPassword(), "unknown imported password persists");
+
+        // Provisioning and normal start/stop never regenerate a persisted credential.
+        provisionToStopped(controller, second.id());
+        controller.start(second.id());
+        controller.recordNormalGuestStop(second.id());
+        assertEquals(second.guestPassword(), reconstructed.load(second.id()).guestPassword(),
+                "per-instance password survives normal lifecycle transitions");
+
         // Update password
         InstanceLifecycle.Instance updated =
                 controller.updateGuestPassword(first.id(), "NewSecurePass2026");
@@ -237,7 +296,7 @@ public final class NormalInstanceLifecycleContractTest {
 
     private static void assertEquals(Object expected, Object actual, String description) {
         if (!java.util.Objects.equals(expected, actual)) {
-            throw new AssertionError(description + ": expected=" + expected + ", actual=" + actual);
+            throw new AssertionError(description + ": values differ (redacted)");
         }
     }
 

@@ -29,11 +29,10 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
-import android.content.res.ColorStateList
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.checkbox.MaterialCheckBox
-import com.google.android.material.color.DynamicColors
-import com.google.android.material.color.MaterialColors
+import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
+import io.github.nyzeep.orchestella.ui.theme.ThemeStore
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.slider.Slider
 import com.google.android.material.textfield.TextInputEditText
@@ -42,7 +41,6 @@ import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig
 import io.github.nyzeep.orchestella.runtime.distro.DistroCatalogRegistry
 import io.github.nyzeep.orchestella.runtime.distro.DistroManifest
-import io.github.nyzeep.orchestella.runtime.distro.OfficialDebianCatalog
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
 import io.github.nyzeep.orchestella.runtime.network.download.DownloadProgressCallback
 import io.github.nyzeep.orchestella.runtime.network.download.ResilientDownloadEngine
@@ -206,7 +204,7 @@ class SetupWizardActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        DynamicColors.applyIfAvailable(this)
+        ThemeApplier.prepare(this)
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_setup_wizard)
 
@@ -252,6 +250,7 @@ class SetupWizardActivity : AppCompatActivity() {
         bindStep3Hardware()
         bindStep4StartupTasks()
         updateStepVisibility()
+        ThemeApplier.bind(this)
     }
 
     override fun onDestroy() {
@@ -265,6 +264,9 @@ class SetupWizardActivity : AppCompatActivity() {
         txtWizardTitle = findViewById(R.id.wizard_title)
         txtStepBadge = findViewById(R.id.wizard_step_badge)
         btnWizardSkip = findViewById(R.id.btn_wizard_skip)
+        btnWizardSkip.text = "取消创建"
+        btnWizardSkip.contentDescription = "取消创建并返回"
+        ThemeApplier.setRole(btnWizardSkip, ThemeApplier.Role.SECONDARY_ACTION)
 
         step1Container = findViewById(R.id.step1_container)
         step2Container = findViewById(R.id.step2_container)
@@ -287,11 +289,18 @@ class SetupWizardActivity : AppCompatActivity() {
         btnDisk8g = findViewById(R.id.btn_disk_8g)
         btnDisk16g = findViewById(R.id.btn_disk_16g)
         btnDisk32g = findViewById(R.id.btn_disk_32g)
+        listOf(btnDisk4g, btnDisk8g, btnDisk16g, btnDisk32g).forEach {
+            ThemeApplier.setRole(it, ThemeApplier.Role.SECONDARY_ACTION)
+        }
         editCustomDiskGb = findViewById(R.id.edit_custom_disk_gb)
         txtStorageWarning = findViewById(R.id.txt_storage_warning)
         chkMountSharedDir = findViewById(R.id.chk_mount_shared_dir)
         btnPickSharedDir = findViewById(R.id.btn_pick_shared_dir)
         txtSharedFolderPath = findViewById(R.id.txt_shared_folder_path)
+        chkMountSharedDir.isEnabled = false
+        chkMountSharedDir.text = "共享目录通道尚未接通，可通过 SSH / SFTP 传输文件"
+        btnPickSharedDir.visibility = View.GONE
+        txtSharedFolderPath.visibility = View.GONE
         btnStep1Next = findViewById(R.id.btn_step1_next)
 
         // Step 2
@@ -335,12 +344,7 @@ class SetupWizardActivity : AppCompatActivity() {
     }
 
     private fun setupListeners() {
-        btnWizardSkip.setOnClickListener {
-            settingsManager.isOnboardingCompleted = true
-            val intent = Intent(this, MainActivity::class.java)
-            startActivity(intent)
-            finish()
-        }
+        btnWizardSkip.setOnClickListener { finish() }
 
         // Step 1 Presets
         btnDisk4g.setOnClickListener { selectDiskPreset(4) }
@@ -440,6 +444,11 @@ class SetupWizardActivity : AppCompatActivity() {
             }
         }
         btnStep3Next.setOnClickListener {
+            val hardwareError = hardwareValidationMessage()
+            if (hardwareError != null) {
+                Toast.makeText(this, hardwareError, Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
             if (wizardModel.canGoNext()) {
                 wizardModel.nextStep()
                 updateStepVisibility()
@@ -465,31 +474,37 @@ class SetupWizardActivity : AppCompatActivity() {
         val readiness = AvfCapabilityEvaluator.evaluate(facts)
         avfReadiness = readiness
         authWizardModel = AvfAuthorizationWizardModel.fromAssessment(readiness)
+        val factsSummary = """
+            AVF feature：${if (facts.virtualizationFrameworkFeature()) "已声明" else "未声明"}
+            虚拟化属性：${facts.virtualizationProperty()?.takeIf { it.isNotBlank() } ?: "无法读取或未提供"}
+            MANAGE_VIRTUAL_MACHINE：${if (facts.manageVirtualMachinePermission()) "已授权" else "未授权"}
+        """.trimIndent()
+        val launchNotice = "当前仅检查平台声明与权限。custom VM 的创建和运行将在实例启动时验证，启动失败会自动回退至 QEMU。"
 
         when (readiness.status()) {
             AvfCapabilityEvaluator.AvfStatus.READY -> {
-                txtWizardAvfBadge.text = "✅ 硬件虚拟化已就绪"
+                txtWizardAvfBadge.text = "AVF 声明/授权可用"
                 txtWizardAvfBadge.setTextColor(getColor(R.color.zone_green))
-                txtWizardAvfDetails.text = "检测到设备具备完整 AVF 硬件虚拟化扩展，已通过 /dev/kvm 探针校验，可享受近原生虚拟化性能。"
+                txtWizardAvfDetails.text = "$factsSummary\n声明与权限条件满足。\n$launchNotice"
                 layoutWizardAvfFallback.visibility = View.GONE
             }
             AvfCapabilityEvaluator.AvfStatus.NEEDS_AUTHORIZATION -> {
-                txtWizardAvfBadge.text = "⚠️ 需开发级授权"
+                txtWizardAvfBadge.text = "AVF 尚未授权"
                 txtWizardAvfBadge.setTextColor(getColor(R.color.zone_yellow))
-                val reason = readiness.reasons().firstOrNull() ?: "需要开发级授权才能启用硬件加速"
-                txtWizardAvfDetails.text = "设备支持硬件虚拟化，但尚未授权 MANAGE_VIRTUAL_MACHINE 权限（$reason）。"
+                txtWizardAvfDetails.text = "$factsSummary\n平台声明满足，应用尚未获得 MANAGE_VIRTUAL_MACHINE 权限。\n$launchNotice"
                 layoutWizardAvfFallback.visibility = View.VISIBLE
             }
             AvfCapabilityEvaluator.AvfStatus.UNSUPPORTED -> {
-                txtWizardAvfBadge.text = "⚠️ 未开放硬件虚拟化"
+                txtWizardAvfBadge.text = "AVF 预检未满足"
                 txtWizardAvfBadge.setTextColor(getColor(R.color.zone_yellow))
-                val reason = readiness.reasons().firstOrNull() ?: "未检测到硬件虚拟化支持"
-                txtWizardAvfDetails.text = "未检测到 /dev/kvm 节点或 pKVM 扩展支持（$reason）。"
+                val reason = readiness.reasons().joinToString("；")
+                txtWizardAvfDetails.text = "$factsSummary\n预检原因：$reason\n启动路径：QEMU\n$launchNotice"
                 layoutWizardAvfFallback.visibility = View.VISIBLE
             }
             else -> {
-                txtWizardAvfBadge.text = "⚠️ 未开放硬件虚拟化"
+                txtWizardAvfBadge.text = "AVF 预检未满足"
                 txtWizardAvfBadge.setTextColor(getColor(R.color.zone_yellow))
+                txtWizardAvfDetails.text = "$factsSummary\n$launchNotice"
                 layoutWizardAvfFallback.visibility = View.VISIBLE
             }
         }
@@ -551,12 +566,23 @@ class SetupWizardActivity : AppCompatActivity() {
 
         val manifest = DistroCatalogRegistry.getInstance().get(distroId)
         val version = manifest?.version() ?: "latest"
+        val previousModel = wizardModel
         wizardModel = InstanceCreationWizardModel(
             distroId = distroId,
             distroVersion = version,
             hardwareProfile = hostProfile,
-            initialStep = wizardModel.currentStep
-        )
+            initialStep = previousModel.currentStep
+        ).also {
+            it.setCustomDiskSizeGb(previousModel.diskSizeGb)
+            it.updateCpuCores(previousModel.hardwareConfig.cpuCores())
+            it.updateRamMegabytes(previousModel.hardwareConfig.ramMegabytes())
+            it.setUserConfig(previousModel.userConfig)
+            it.selectMirror(previousModel.selectedMirror)
+            it.setAutoUpdateOnFirstBoot(previousModel.autoUpdateOnFirstBoot)
+            it.setMountHostSharedDirectory(previousModel.mountHostSharedDirectory)
+            it.setHostSharedDirectoryPath(previousModel.hostSharedDirectoryPath)
+        }
+        bindRamHardware()
         val targetIdx = officialDistros.indexOfFirst { it.id.equals(distroId, ignoreCase = true) }
         if (targetIdx >= 0 && spinnerDistroSelect.selectedItemPosition != targetIdx) {
             spinnerDistroSelect.setSelection(targetIdx)
@@ -581,23 +607,11 @@ class SetupWizardActivity : AppCompatActivity() {
             btnDisk16g to 16,
             btnDisk32g to 32
         )
-        val colorPrimary = MaterialColors.getColor(this, com.google.android.material.R.attr.colorPrimary, Color.CYAN)
-        val colorOnPrimary = MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnPrimary, Color.BLACK)
-        val colorOutlineVariant = MaterialColors.getColor(this, com.google.android.material.R.attr.colorOutlineVariant, Color.GRAY)
-        val colorOnSurfaceVariant = MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurfaceVariant, Color.LTGRAY)
-
+        val theme = ThemeStore(this).resolve()
         for ((btn, gb) in buttons) {
-            if (gb == selectedGb) {
-                btn.backgroundTintList = ColorStateList.valueOf(colorPrimary)
-                btn.strokeColor = ColorStateList.valueOf(colorPrimary)
-                btn.strokeWidth = dpToPx(2)
-                btn.setTextColor(colorOnPrimary)
-            } else {
-                btn.backgroundTintList = ColorStateList.valueOf(Color.TRANSPARENT)
-                btn.strokeColor = ColorStateList.valueOf(colorOutlineVariant)
-                btn.strokeWidth = dpToPx(1)
-                btn.setTextColor(colorOnSurfaceVariant)
-            }
+            btn.isSelected = gb == selectedGb
+            btn.strokeWidth = dpToPx(if (btn.isSelected) 2 else 1)
+            ThemeApplier.apply(btn, theme)
         }
     }
 
@@ -636,9 +650,11 @@ class SetupWizardActivity : AppCompatActivity() {
         val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
         var isWifi = false
         var isCellular = false
+        var isVpn = false
+        var isEthernet = false
         var isConnected = false
-        var dnsList = "10.0.2.3, 8.8.8.8"
-        var gateway = "10.0.2.2 (QEMU 默认)"
+        var dnsList = "未提供"
+        var gateway = "未提供"
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -646,6 +662,8 @@ class SetupWizardActivity : AppCompatActivity() {
                 val caps = cm?.getNetworkCapabilities(net)
                 isWifi = caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
                 isCellular = caps?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true
+                isVpn = caps?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
+                isEthernet = caps?.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) == true
                 isConnected = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
 
                 val linkProps = net?.let { cm.getLinkProperties(it) }
@@ -654,7 +672,10 @@ class SetupWizardActivity : AppCompatActivity() {
                     if (detectedDns.isNotBlank()) {
                         dnsList = detectedDns
                     }
-                    val detectedGw = linkProps.routes.firstOrNull { it.isDefaultRoute && it.gateway != null }?.gateway?.hostAddress
+                    val detectedGw = linkProps.routes.asSequence()
+                        .filter { it.isDefaultRoute }
+                        .mapNotNull { it.gateway?.takeUnless { address -> address.isAnyLocalAddress }?.hostAddress }
+                        .firstOrNull()
                     if (!detectedGw.isNullOrBlank()) {
                         gateway = detectedGw
                     }
@@ -671,13 +692,15 @@ class SetupWizardActivity : AppCompatActivity() {
         }
 
         val mode = when {
+            isVpn -> "VPN (当前默认网络)"
             isWifi -> "Wi-Fi (无线局域网)"
-            isCellular -> "移动蜂窝网络 (Mobile LTE/5G)"
-            isConnected -> "以太网 / 专线联网"
-            else -> "离线 (Offline)"
+            isCellular -> "移动蜂窝网络"
+            isEthernet -> "以太网"
+            isConnected -> "其他网络 (系统声明可访问互联网)"
+            else -> "离线或无法读取网络状态"
         }
         txtNetMode.text = getString(R.string.wizard_net_mode, mode)
-        txtNetIp.text = getString(R.string.wizard_net_ip, getLocalIpAddress() ?: "127.0.0.1")
+        txtNetIp.text = getString(R.string.wizard_net_ip, getLocalIpAddress() ?: "未提供")
         txtNetGateway.text = getString(R.string.wizard_net_gateway, gateway)
         txtNetDns.text = getString(R.string.wizard_net_dns, dnsList)
 
@@ -788,16 +811,7 @@ class SetupWizardActivity : AppCompatActivity() {
         val initialCores = wizardModel.hardwareConfig.cpuCores().toFloat().coerceIn(1f, maxCores)
         sliderVcpu.value = initialCores
 
-        val rawMaxRam = profile.totalRamMb() - 2048
-        val ramSteps = ((rawMaxRam - 512) / 256).coerceAtLeast(2)
-        val maxRam = (512 + ramSteps * 256).toFloat()
-        sliderRam.valueFrom = 512f
-        sliderRam.valueTo = maxRam
-        sliderRam.stepSize = 256f
-        val rawInitialRam = wizardModel.hardwareConfig.ramMegabytes()
-        val initialSteps = ((rawInitialRam - 512) / 256).coerceAtLeast(0)
-        val initialRam = (512f + initialSteps * 256f).coerceIn(512f, maxRam)
-        sliderRam.value = initialRam
+        bindRamHardware()
 
         val facts = AvfHostFactsProbe.probe(this)
         val readiness = AvfCapabilityEvaluator.evaluate(facts)
@@ -812,10 +826,84 @@ class SetupWizardActivity : AppCompatActivity() {
         updateHardwareLabels()
     }
 
+    private fun bindRamHardware() {
+        val manifestSize = try {
+            getManifest().sizeBytes()
+        } catch (_: IllegalArgumentException) {
+            sliderRam.isEnabled = false
+            sliderRam.visibility = View.GONE
+            updateHardwareLabels()
+            return
+        }
+        val minimumRam = try {
+            DistroResourceRequirements.minimumBootRamMb(manifestSize)
+        } catch (_: IllegalArgumentException) {
+            sliderRam.isEnabled = false
+            sliderRam.visibility = View.GONE
+            updateHardwareLabels()
+            return
+        }
+        if (minimumRam > VmHardwareConfig.MAX_RAM_MEGABYTES) {
+            sliderRam.isEnabled = false
+            sliderRam.visibility = View.GONE
+            updateHardwareLabels()
+            return
+        }
+        val safeMaximumRam = ((hostProfile.totalRamMb().toLong()
+            - HostHardwareProfile.HOST_RESERVED_RAM_MB).coerceIn(
+                0L, VmHardwareConfig.MAX_RAM_MEGABYTES.toLong()
+            ) / 256L * 256L).toInt()
+        val suggestedRam = DistroResourceRequirements.suggestedWizardRamMb(
+            manifestSize, wizardModel.hardwareConfig.ramMegabytes(), safeMaximumRam
+        )
+        wizardModel.updateRamMegabytes(suggestedRam)
+        // A disabled slider still needs a non-empty range when the host cannot fit the minimum.
+        sliderRam.stepSize = 0f
+        sliderRam.valueTo = maxOf(safeMaximumRam, minimumRam + 256, suggestedRam).toFloat()
+        sliderRam.valueFrom = minimumRam.toFloat()
+        sliderRam.value = suggestedRam.toFloat()
+        // Preserve an existing allocation that was not made with this slider's 256 MB steps.
+        sliderRam.stepSize = if (suggestedRam % 256 == 0) 256f else 0f
+        sliderRam.isEnabled = safeMaximumRam > minimumRam ||
+            (safeMaximumRam == minimumRam && suggestedRam > minimumRam)
+        sliderRam.visibility = View.VISIBLE
+        updateHardwareLabels()
+    }
+
+    private fun hardwareValidationMessage(): String? {
+        val manifest = try {
+            getManifest()
+        } catch (rejected: IllegalArgumentException) {
+            return rejected.message
+        }
+        try {
+            DistroResourceRequirements.requireBootRam(
+                manifest.sizeBytes(), wizardModel.hardwareConfig.ramMegabytes()
+            )
+        } catch (rejected: IllegalArgumentException) {
+            return rejected.message
+        }
+        if (wizardModel.safetyZone() == HostHardwareProfile.SafetyZone.RED) {
+            val minimumRam = DistroResourceRequirements.minimumBootRamMb(manifest.sizeBytes())
+            return "该镜像首次装配至少需要 $minimumRam MB；当前硬件分配超过宿主安全边界，请调整硬件或选择较小镜像。"
+        }
+        return null
+    }
+
     private fun updateHardwareLabels() {
         txtCfgVcpu.text = getString(R.string.wizard_config_vcpu_info, wizardModel.hardwareConfig.cpuCores())
         txtCfgRam.text = getString(R.string.wizard_config_ram_info, wizardModel.hardwareConfig.ramMegabytes())
 
+        val hardwareError = hardwareValidationMessage()
+        btnStep3Next.isEnabled = hardwareError == null && !wizardModel.isCreating
+        btnWizardInit.isEnabled = hardwareError == null && !wizardModel.isCreating
+        if (hardwareError != null) {
+            badgeCfgZone.text = hardwareError
+            badgeCfgZone.setTextColor(getColor(R.color.zone_red))
+            return
+        }
+        val minimumRam = DistroResourceRequirements.minimumBootRamMb(getManifest().sizeBytes())
+        txtCfgRam.append("\n该镜像首次装配至少需要 $minimumRam MB。")
         val zone = wizardModel.safetyZone()
         when (zone) {
             HostHardwareProfile.SafetyZone.GREEN -> {
@@ -834,6 +922,7 @@ class SetupWizardActivity : AppCompatActivity() {
     }
 
     private fun bindStep4StartupTasks() {
+        chkAutoUpdate.text = "额外系统升级（可选）"
         chkAutoUpdate.isChecked = wizardModel.autoUpdateOnFirstBoot
         updateStartupTaskPreview()
         updateCreationSummary()
@@ -841,8 +930,8 @@ class SetupWizardActivity : AppCompatActivity() {
 
     private fun updateStartupTaskPreview() {
         val cmd = wizardModel.resolveUpdateCommand()
-        txtUpdateCommandPreview.text = cmd
-        txtUpdateCommandDesc.text = getString(R.string.wizard_startup_auto_update_desc, cmd)
+        txtUpdateCommandPreview.text = if (wizardModel.autoUpdateOnFirstBoot) cmd else "额外系统升级已关闭；基础环境仍需安装与验证。"
+        txtUpdateCommandDesc.text = "基础环境在首次启动时安装并验证，失败可重试。此复选项仅控制额外系统升级；开启后执行下方升级指令。"
     }
 
     private fun updateCreationSummary() {
@@ -851,7 +940,7 @@ class SetupWizardActivity : AppCompatActivity() {
         val vcpu = wizardModel.hardwareConfig.cpuCores()
         val ram = wizardModel.hardwareConfig.ramMegabytes()
         val mirror = wizardModel.selectedMirror.displayName()
-        val updateText = if (wizardModel.autoUpdateOnFirstBoot) "已启用 (后台静默自动更新)" else "已禁用 (保持镜像原状)"
+        val updateText = if (wizardModel.autoUpdateOnFirstBoot) "基础环境安装与验证，额外系统升级开启" else "基础环境安装与验证，额外系统升级关闭"
         val sharedText = if (wizardModel.mountHostSharedDirectory) "已挂载 (/mnt/shared)" else "未挂载"
 
         txtCreationSummary.text = """
@@ -860,7 +949,8 @@ class SetupWizardActivity : AppCompatActivity() {
             • 宿主共享目录：$sharedText
             • 硬件资源规格：$vcpu vCPU · $ram MB RAM
             • 镜像软件源：$mirror
-            • 首次引导更新：$updateText
+            • 首次启动任务：$updateText
+            • 安装失败：可重试
         """.trimIndent()
 
         btnWizardInit.text = "🚀 立即创建 $distroName"
@@ -890,11 +980,18 @@ class SetupWizardActivity : AppCompatActivity() {
 
     private fun getManifest(): DistroManifest {
         return DistroCatalogRegistry.getInstance().get(wizardModel.distroId)
-            ?: DistroCatalogRegistry.getInstance().get("ubuntu")
-            ?: OfficialDebianCatalog.debian()
+            ?: throw IllegalArgumentException("无法确认该发行版的镜像清单及首次装配内存需求；请重新选择镜像。")
     }
 
     private fun startDownloadAndInitialize() {
+        val hardwareError = hardwareValidationMessage()
+        if (hardwareError != null) {
+            wizardModel.goToStep(InstanceCreationWizardModel.CreationStep.STEP_HARDWARE)
+            updateStepVisibility()
+            updateHardwareLabels()
+            Toast.makeText(this, hardwareError, Toast.LENGTH_LONG).show()
+            return
+        }
         val manifest = getManifest()
         val availableBytes = StatFs(filesDir.path).availableBytes
         val requiredBytes = wizardModel.requestedDiskBytes + manifest.sizeBytes() + 128L * 1024L * 1024L
@@ -990,6 +1087,7 @@ class SetupWizardActivity : AppCompatActivity() {
                 // Save injected mirror configuration and firstboot script into instance store via FirstBootProvisionPipeline
                 val payload = FirstBootProvisionPipeline.create(
                     wizardModel.distroId,
+                    manifest.version(),
                     wizardModel.selectedMirror,
                     wizardModel.autoUpdateOnFirstBoot
                 )
@@ -1008,7 +1106,7 @@ class SetupWizardActivity : AppCompatActivity() {
                 }
 
                 runOnUiThread {
-                    Toast.makeText(this, R.string.wizard_init_success, Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, "实例已创建。首次启动将安装并验证基础环境。", Toast.LENGTH_LONG).show()
                     val intent = Intent(this, MainActivity::class.java).apply {
                         flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
                     }
@@ -1055,7 +1153,7 @@ class SetupWizardActivity : AppCompatActivity() {
             .setNegativeButton(R.string.wizard_later) { _, _ ->
                 authWizardModel = authWizardModel?.decline()
             }
-            .show()
+            .show().also(ThemeApplier::apply)
     }
 
     private fun showAdbStep() {
@@ -1076,7 +1174,7 @@ class SetupWizardActivity : AppCompatActivity() {
                 authWizardModel = authWizardModel?.backToShizuku()
                 showShizukuStep()
             }
-            .show()
+            .show().also(ThemeApplier::apply)
     }
 
     private fun copyAdbCommand() {
@@ -1101,13 +1199,13 @@ class SetupWizardActivity : AppCompatActivity() {
                 .setTitle(R.string.wizard_authorized_success_title)
                 .setMessage(R.string.wizard_authorized_success_msg)
                 .setPositiveButton(R.string.credentials_close, null)
-                .show()
+                .show().also(ThemeApplier::apply)
         } else {
             AlertDialog.Builder(this)
                 .setTitle(R.string.wizard_vendor_failure_title)
                 .setMessage(R.string.wizard_vendor_failure_steps)
                 .setPositiveButton(R.string.credentials_close, null)
-                .show()
+                .show().also(ThemeApplier::apply)
         }
     }
 

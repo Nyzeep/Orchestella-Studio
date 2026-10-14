@@ -78,86 +78,7 @@ is_official_alpine_busybox_init() {
 }
 
 install_official_alpine_busybox_init_fallback() {
-    alpine_root="$1"
-    is_official_alpine_busybox_init "$alpine_root" || return 0
-
-    cat > "$alpine_root/usr/sbin/droidlayer-guest-agent-launcher" <<'EOF'
-#!/bin/sh
-set -eu
-
-kernel_argument() {
-    key="$1"
-    command_line="$(cat /proc/cmdline)"
-    for argument in $command_line; do
-        case "$argument" in
-            "$key"=*) printf '%s\n' "${argument#*=}"; return 0 ;;
-        esac
-    done
-    return 1
-}
-
-mkdir -p /mnt/downloads /media/downloads
-mount -t 9p -o trans=virtio,version=9p2000.L,ro downloads /mnt/downloads 2>/dev/null || true
-
-# Auto online resize ext4 root filesystem if root-volume was resized (ADR-0007 / Ticket 33)
-if [ -x /sbin/resize2fs ]; then
-    /sbin/resize2fs /dev/vda 2>/dev/null || true
-elif [ -x /usr/sbin/resize2fs ]; then
-    /sbin/resize2fs /dev/vda 2>/dev/null || true
-elif command -v resize2fs >/dev/null 2>&1; then
-    resize2fs /dev/vda 2>/dev/null || true
-fi
-
-# AVF data plane (Ticket 37): the vsock ports in the cmdline switch the agent
-# to serving mode — the VM may only listen, the owner app connects. The 9p
-# rendezvous connection feeds a trans=fd mount handled inside the agent.
-VSOCK_CONTROL="$(kernel_argument droidlayer.vsock_control_port || true)"
-if [ -n "$VSOCK_CONTROL" ]; then
-    VSOCK_TERMINAL="$(kernel_argument droidlayer.vsock_terminal_port || true)"
-    VSOCK_SHARE="$(kernel_argument droidlayer.vsock_9p_port || true)"
-    set -- --vsock-control-port "$VSOCK_CONTROL"
-    set -- "$@" --terminal-device /dev/hvc0
-    if [ -n "$VSOCK_TERMINAL" ]; then
-        set -- "$@" --vsock-terminal-port "$VSOCK_TERMINAL"
-    fi
-    if [ -n "$VSOCK_SHARE" ]; then
-        set -- "$@" --vsock-share-port "$VSOCK_SHARE" \
-            --share-tag downloads --share-mount /mnt/downloads
-    fi
-    exec /usr/sbin/droidlayer-guest-agent --token-file /etc/droidlayer/bridge.token "$@"
-fi
-
-[ -c /dev/droidlayer-bridge ] || exit 70
-[ -c /dev/droidlayer-terminal ] || exit 70
-if [ -f /opt/orchestella/firstboot.sh ] && [ ! -f /opt/orchestella/.firstboot-done ]; then
-    mkdir -p /opt/orchestella
-    touch /opt/orchestella/.firstboot-done
-    /opt/orchestella/firstboot.sh >/var/log/firstboot.log 2>&1 &
-fi
-if [ -x /usr/sbin/orchestella-proxy-relay ] && command -v perl >/dev/null 2>&1; then
-    if ! pidof orchestella-proxy-relay >/dev/null 2>&1; then
-        /usr/sbin/orchestella-proxy-relay >/tmp/orchestella-proxy-relay.log 2>&1 &
-    fi
-fi
-exec 3<> /dev/droidlayer-bridge
-exec /usr/sbin/droidlayer-guest-agent \
-    --token-file /etc/droidlayer/bridge.token \
-    --terminal-device /dev/droidlayer-terminal <&3 >&3
-EOF
-    chmod 0755 "$alpine_root/usr/sbin/droidlayer-guest-agent-launcher"
-
-    if [ -f /opt/orchestella/proxy-relay ]; then
-        mkdir -p "$alpine_root/usr/sbin"
-        cp -f /opt/orchestella/proxy-relay "$alpine_root/usr/sbin/orchestella-proxy-relay"
-        chmod 0755 "$alpine_root/usr/sbin/orchestella-proxy-relay"
-    fi
-
-    cat > "$alpine_root/etc/inittab" <<'EOF'
-::respawn:/usr/sbin/droidlayer-guest-agent-launcher
-::respawn:/bin/sh
-::ctrlaltdel:/sbin/reboot
-::shutdown:/sbin/poweroff
-EOF
+    install_alpine_native_services "$1"
 }
 
 is_systemd_root() {
@@ -252,7 +173,6 @@ configure_systemd_network_dhcp() {
                     192) _acc=$((_acc + 2)) ;;
                     128) _acc=$((_acc + 1)) ;;
                 esac
-                break
             done
             _prefix=$_acc
         fi
@@ -460,202 +380,1221 @@ EOF
     install_serial_autologin_getty "$debian_root"
 }
 
-install_generic_linux_init_fallback() {
+# ORCHESTELLA_RUNTIME_MODULES_BEGIN
+# Guest boot and service installation functions embedded into /init by sync-guest-init.py.
+stage_guest_package_repositories() {
+    repo_root="$1"; repo_input="$2"
+    repo_os_release="$(guest_root_path "$repo_root" /etc/os-release || true)"
+    [ -f "$repo_os_release" ] || repo_os_release="$repo_root/usr/lib/os-release"
+    repo_distro="$(sed -n 's/^ID=//p' "$repo_os_release" 2>/dev/null | tr -d '\"\047' | head -n 1)"
+    case "$repo_distro" in
+        fedora) repo_file=fedora.repo; repo_ids='fedora updates' ;;
+        almalinux) repo_file=almalinux.repo; repo_ids='baseos appstream' ;;
+        rocky) repo_file=rocky.repo; repo_ids='baseos appstream' ;;
+        opensuse*) repo_distro=opensuse; repo_file=opensuse.repo; repo_ids=repo-oss ;;
+        *) return 0 ;;
+    esac
+    # Only an explicit existing provisioning payload is managed. Never adopt vendor/user files.
+    [ -f "$repo_input/$repo_file" ] || return 0
+    [ ! -L "$repo_input/$repo_file" ] || fail package-repository-input-link
+    repo_sections="$(sed -n 's/^\[\([^]]*\)\]$/\1/p' "$repo_input/$repo_file" | tr '\n' ' ' | sed 's/ $//')"
+    [ "$repo_sections" = "$repo_ids" ] || fail package-repository-ids-invalid
+    repo_count=0
+    for repo_id in $repo_ids; do repo_count=$((repo_count + 1)); done
+    [ "$(grep -c '^gpgcheck=1$' "$repo_input/$repo_file")" = "$repo_count" ] || fail package-repository-signatures-required
+    [ "$(grep -c '^gpgkey=.' "$repo_input/$repo_file")" = "$repo_count" ] || fail package-repository-key-missing
+    if grep -Eiq '^[[:space:]]*(gpgcheck|sslverify)[[:space:]]*=[[:space:]]*(0|false|no)([[:space:]]|$)' "$repo_input/$repo_file"; then
+        fail package-repository-verification-disabled
+    fi
+    repo_directory="$repo_root/etc/orchestella/provision-repos/$repo_distro"
+    mkdir -p "$repo_directory" || fail package-repository-directory
+    [ ! -L "$repo_directory" ] && [ ! -L "$repo_directory/$repo_file" ] || fail package-repository-output-link
+    cp "$repo_input/$repo_file" "$repo_directory/$repo_file.tmp" || fail package-repository-copy
+    chmod 0644 "$repo_directory/$repo_file.tmp"
+    mv "$repo_directory/$repo_file.tmp" "$repo_directory/$repo_file" || fail package-repository-install
+    repo_digest="$(sha256sum "$repo_directory/$repo_file" | cut -d ' ' -f 1)"
+    printf 'managed_repositories_version=1\ndistro=%s\nfile=%s\nids=%s\nsha256=%s\n' \
+        "$repo_distro" "$repo_file" "$repo_ids" "$repo_digest" > "$repo_directory/owned-v1.tmp"
+    chmod 0644 "$repo_directory/owned-v1.tmp"
+    mv "$repo_directory/owned-v1.tmp" "$repo_directory/owned-v1" || fail package-repository-marker
+}
+configure_fstab_mounts() {
     target_root="$1"
-    # Unconditionally (re)write both the launcher and the init: distros without a
-    # native init use OUR init as the real one, and instances provisioned by older
-    # app versions carry a stale copy on their root volume — rewriting at every
-    # boot upgrades them in place (network addressing changed across versions).
-    mkdir -p "$target_root/sbin" "$target_root/usr/sbin" "$target_root/etc" "$target_root/bin"
-
-    if true; then
-        cat > "$target_root/usr/sbin/droidlayer-guest-agent-launcher" <<'EOF'
-#!/bin/sh
-set -eu
-
-kernel_argument() {
-    key="$1"
-    command_line="$(cat /proc/cmdline)"
-    for argument in $command_line; do
-        case "$argument" in
-            "$key"=*) printf '%s\n' "${argument#*=}"; return 0 ;;
-        esac
+    mkdir -p "$target_root/mnt/downloads" "$target_root/media/downloads" "$target_root/mnt/shared"
+    fstab="$target_root/etc/fstab"
+    [ -f "$fstab" ] || return 0
+    # Retire only the exact legacy project-generated rows and our bounded block. User rows remain.
+    sed '/^# ORCHESTELLA_SHARES_BEGIN$/,/^# ORCHESTELLA_SHARES_END$/d; /^downloads[[:space:]]\+\/mnt\/downloads[[:space:]]\+9p[[:space:]]\+trans=virtio,version=9p2000.L,ro,nofail[[:space:]]\+0[[:space:]]\+0$/d; /^shared[[:space:]]\+\/mnt\/shared[[:space:]]\+9p[[:space:]]\+trans=virtio,version=9p2000.L,ro,nofail[[:space:]]\+0[[:space:]]\+0$/d' \
+        "$fstab" > "$fstab.tmp" || fail shared-fstab-read
+    printf '# ORCHESTELLA_SHARES_BEGIN\n' >> "$fstab.tmp"
+    # A tag is physically present only when the host explicitly supplied the data plane.
+    # AVF vsock shares are mounted by the existing authenticated agent launcher, not fstab.
+    virtio_devices="${ORCHESTELLA_VIRTIO_FIXTURE:-/sys/bus/virtio/devices}"
+    if [ -n "${ORCHESTELLA_VIRTIO_FIXTURE:-}" ] && [ ! -f "$virtio_devices/.orchestella-virtio-fixture" ]; then
+        fail shared-fixture-invalid
+    fi
+    for share_tag in downloads shared; do
+        share_present=0
+        for tag_file in "$virtio_devices"/*/mount_tag; do
+            if [ -f "$tag_file" ] && [ "$(cat "$tag_file")" = "$share_tag" ]; then share_present=1; break; fi
+        done
+        if [ "$share_present" -eq 1 ] && ! grep -Eq "^$share_tag[[:space:]]+/mnt/$share_tag[[:space:]]" "$fstab.tmp"; then
+            printf '%s\t/mnt/%s\t9p\ttrans=virtio,version=9p2000.L,ro,nofail\t0\t0\n' "$share_tag" "$share_tag" >> "$fstab.tmp"
+        fi
     done
-    return 1
+    printf '# ORCHESTELLA_SHARES_END\n' >> "$fstab.tmp"
+    chmod 0644 "$fstab.tmp"
+    mv "$fstab.tmp" "$fstab" || fail shared-fstab-write
 }
-
-mkdir -p /mnt/downloads /media/downloads
-mount -t 9p -o trans=virtio,version=9p2000.L,ro downloads /mnt/downloads 2>/dev/null || true
-
-VSOCK_CONTROL="$(kernel_argument droidlayer.vsock_control_port || true)"
-if [ -n "$VSOCK_CONTROL" ]; then
-    VSOCK_TERMINAL="$(kernel_argument droidlayer.vsock_terminal_port || true)"
-    VSOCK_SHARE="$(kernel_argument droidlayer.vsock_9p_port || true)"
-    set -- --vsock-control-port "$VSOCK_CONTROL"
-    set -- "$@" --terminal-device /dev/hvc0
-    if [ -n "$VSOCK_TERMINAL" ]; then
-        set -- "$@" --vsock-terminal-port "$VSOCK_TERMINAL"
-    fi
-    if [ -n "$VSOCK_SHARE" ]; then
-        set -- "$@" --vsock-share-port "$VSOCK_SHARE" \
-            --share-tag downloads --share-mount /mnt/downloads
-    fi
-    exec /usr/sbin/droidlayer-guest-agent --token-file /etc/droidlayer/bridge.token "$@"
-fi
-
-[ -c /dev/droidlayer-bridge ] || exit 70
-[ -c /dev/droidlayer-terminal ] || exit 70
-exec 3<> /dev/droidlayer-bridge
-exec /usr/sbin/droidlayer-guest-agent \
-    --token-file /etc/droidlayer/bridge.token \
-    --terminal-device /dev/droidlayer-terminal <&3 >&3
-EOF
-        chmod 0755 "$target_root/usr/sbin/droidlayer-guest-agent-launcher"
-    fi
-
-    if [ ! -x "$target_root/bin/busybox" ] && [ -x /bin/busybox ]; then
-        cp -f /bin/busybox "$target_root/bin/busybox" 2>/dev/null || true
-        chmod 0755 "$target_root/bin/busybox" 2>/dev/null || true
-    fi
-
-    cat > "$target_root/sbin/init" <<'EOF'
-#!/bin/sh
-# Orchestella minimal Linux init supervisor
-export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-export HOME=/root
-export TERM=xterm-256color
-
-mount -t proc proc /proc 2>/dev/null || true
-mount -t sysfs sysfs /sys 2>/dev/null || true
-mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
-mkdir -p /dev/pts /dev/shm /run
-mount -t devpts devpts /dev/pts 2>/dev/null || true
-mount -t tmpfs tmpfs /dev/shm 2>/dev/null || true
-mount -t tmpfs tmpfs /run 2>/dev/null || true
-
-kernel_argument() {
-    key="$1"
-    command_line="$(cat /proc/cmdline)"
-    for argument in $command_line; do
-        case "$argument" in
-            "$key"=*) printf '%s\n' "${argument#*=}"; return 0 ;;
-        esac
-    done
-    return 1
-}
-
-ip link set lo up 2>/dev/null || ifconfig lo 127.0.0.1 up 2>/dev/null || true
-ip link set eth0 up 2>/dev/null || true
-# Guest addressing comes from the host via kernel arguments (the passt plane pins the
-# guest to the host's own address); fall back to the classic slirp allocation.
-GUEST_IP="$(kernel_argument orchestella.guest_ip || true)"
-GUEST_GW="$(kernel_argument orchestella.guest_gw || true)"
-GUEST_MASK="$(kernel_argument orchestella.guest_mask || true)"
-if [ -n "$GUEST_IP" ]; then
-    ip addr add "$GUEST_IP/${GUEST_MASK:-255.255.255.0}" dev eth0 2>/dev/null \
-        || ifconfig eth0 "$GUEST_IP" netmask "${GUEST_MASK:-255.255.255.0}" up 2>/dev/null || true
-    if [ -n "$GUEST_GW" ]; then
-        ip route add default via "$GUEST_GW" dev eth0 2>/dev/null \
-            || route add default gw "$GUEST_GW" 2>/dev/null || true
-    fi
-else
-    ip addr add 10.0.2.15/24 dev eth0 2>/dev/null \
-        || ifconfig eth0 10.0.2.15 netmask 255.255.255.0 up 2>/dev/null || true
-    ip route add default via 10.0.2.2 dev eth0 2>/dev/null \
-        || route add default gw 10.0.2.2 2>/dev/null || true
-fi
-
-rm -f /etc/resolv.conf 2>/dev/null || true
-GUEST_DNS="$(kernel_argument orchestella.guest_dns || true)"
-{
-    [ -n "$GUEST_DNS" ] && printf 'nameserver %s\n' "$GUEST_DNS"
-    printf 'nameserver 223.5.5.5\n'
-    printf 'nameserver 119.29.29.29\n'
-    printf 'nameserver 1.1.1.1\n'
-    printf 'nameserver 8.8.8.8\n'
-} > /etc/resolv.conf 2>/dev/null || true
-chmod 0644 /etc/resolv.conf 2>/dev/null || true
-
-# Boot-time network diagnostics: printed to the console (captured in the app log
-# viewer) so field failures are diagnosable without interactive typing.
-{
-    echo "== Orchestella network diagnostics =="
-    ip -4 addr show eth0 2>/dev/null || ifconfig eth0 2>/dev/null
-    ip route 2>/dev/null || route -n 2>/dev/null
-    echo "-- resolv.conf --"
-    cat /etc/resolv.conf 2>/dev/null
-    echo "-- gateway probe (192.168.127.1) --"
-    if command -v ping >/dev/null 2>&1; then
-        ping -c1 -W2 192.168.127.1 2>&1 | tail -2
-    else
-        echo "ping: not installed in minimal rootfs"
-    fi
-    echo "-- upstream probe (223.5.5.5) --"
-    if command -v ping >/dev/null 2>&1; then
-        ping -c1 -W2 223.5.5.5 2>&1 | tail -2
-    else
-        echo "ping: not installed in minimal rootfs"
-    fi
-    echo "-- dns probe --"
-    getent hosts mirrors.tuna.tsinghua.edu.cn 2>&1 | head -2
-    echo "== diagnostics end =="
-} > /dev/console 2>&1 || true
-
-if [ -f /opt/orchestella/firstboot.sh ] && [ ! -f /opt/orchestella/.firstboot-done ]; then
-    mkdir -p /opt/orchestella
-    touch /opt/orchestella/.firstboot-done
-    /opt/orchestella/firstboot.sh >/var/log/firstboot.log 2>&1 &
-fi
-
-if [ -x /usr/sbin/orchestella-proxy-relay ] && command -v perl >/dev/null 2>&1; then
+# Never write through /sbin/init: it commonly links to the distro's systemd or BusyBox.
+verify_rootfs_input() {
+    input_dir="$1"
+    metadata_dir="$input_dir"
+    if [ ! -f "$metadata_dir/rootfs.file" ]; then metadata_dir=/etc/droidlayer; fi
+    ROOTFS_FILE="$(cat "$metadata_dir/rootfs.file" 2>/dev/null || true)"
+    EXPECTED_ROOTFS_SHA256="$(cat "$metadata_dir/rootfs.sha256" 2>/dev/null || true)"
+    EXPECTED_ROOTFS_SIZE="$(cat "$metadata_dir/rootfs.size" 2>/dev/null || true)"
+    case "$ROOTFS_FILE" in ''|.*|*[!A-Za-z0-9._+-]*|*/*) fail rootfs-filename-invalid ;; esac
+    case "$ROOTFS_FILE" in *.tar|*.tar.gz|*.tar.xz|*.tgz|*.txz) ;; *) fail unsupported-rootfs-archive ;; esac
+    [ "${#EXPECTED_ROOTFS_SHA256}" -eq 64 ] || fail rootfs-checksum-missing
+    case "$EXPECTED_ROOTFS_SHA256" in *[!0-9a-f]*) fail rootfs-checksum-invalid ;; esac
+    case "$EXPECTED_ROOTFS_SIZE" in ''|0|0*|*[!0-9]*) fail rootfs-size-missing ;; esac
+    ROOTFS_PATH="$input_dir/$ROOTFS_FILE"
+    [ -f "$ROOTFS_PATH" ] || fail rootfs-missing
+    actual_size="$(wc -c < "$ROOTFS_PATH" | tr -d ' \n')"
+    [ "$actual_size" = "$EXPECTED_ROOTFS_SIZE" ] || fail rootfs-size-mismatch
     (
-        while true; do
-            /usr/sbin/orchestella-proxy-relay >/tmp/orchestella-proxy-relay.log 2>&1 || true
-            sleep 2
+        checksum_sleep=
+        trap 'if [ -n "$checksum_sleep" ]; then kill "$checksum_sleep" 2>/dev/null || true; wait "$checksum_sleep" 2>/dev/null || true; fi; exit 0' TERM INT
+        while :; do
+            sleep 30 &
+            checksum_sleep=$!
+            wait "$checksum_sleep" || true
+            checksum_sleep=
+            log 'ORCHESTELLA_GUEST_ASSEMBLY phase=input-verification status=running heartbeat=1 timeout_seconds=1800'
         done
     ) &
-fi
-
-(
-    while true; do
-        if [ -x /usr/sbin/droidlayer-guest-agent-launcher ]; then
-            /usr/sbin/droidlayer-guest-agent-launcher 2>/dev/null || true
+    checksum_heartbeat=$!
+    checksum_exit=0
+    checksum_output="$(timeout 1800 sha256sum "$ROOTFS_PATH")" || checksum_exit=$?
+    kill "$checksum_heartbeat" 2>/dev/null || true
+    wait "$checksum_heartbeat" 2>/dev/null || true
+    case "$checksum_exit" in
+        0) ;;
+        124|137|143) fail rootfs-checksum-timeout ;;
+        *) fail rootfs-checksum-unavailable ;;
+    esac
+    actual_digest="${checksum_output%% *}"
+    [ "$actual_digest" = "$EXPECTED_ROOTFS_SHA256" ] || fail rootfs-checksum
+}
+stage_pending_guest_credentials() {
+    target_root="$1"; input_dir="$2"
+    [ -f "$input_dir/guest.password" ] || return 0
+    mkdir -p "$target_root/etc/orchestella/provision-input" "$target_root/var/lib/orchestella/provision"
+    chmod 0700 "$target_root/etc/orchestella" "$target_root/etc/orchestella/provision-input"
+    guest_pass="$(cat "$input_dir/guest.password")"
+    case "$guest_pass" in ''|*:*|*[[:space:]]*) fail guest-password-invalid ;; esac
+    if [ "${#guest_pass}" -lt 8 ]; then
+        printf 'legacy-credential-action-required\n' > "$target_root/var/lib/orchestella/provision/legacy-weak-credentials"
+        log 'ORCHESTELLA_GUEST_CREDENTIALS status=action-required reason=legacy-weak-password ssh=password-disabled'
+        unset guest_pass
+        return 0
+    fi
+    guest_user=root; guest_sudo=0
+    if [ -f "$input_dir/guest.user" ]; then guest_user="$(cat "$input_dir/guest.user")"; fi
+    case "$guest_user" in ''|[!a-z_]*|*[!a-z0-9_-]*) fail guest-user-invalid ;; esac
+    if grep -Fqx '1' "$input_dir/guest.sudo" 2>/dev/null; then guest_sudo=1; fi
+    input_fingerprint="$(printf '%s\n%s\n%s\n' "$guest_pass" "$guest_user" "$guest_sudo" | sha256sum | cut -d ' ' -f 1)"
+    rm -f "$target_root/var/lib/orchestella/provision/legacy-weak-credentials"
+    # A private, unlogged change fingerprint avoids resetting a password changed inside the guest.
+    if grep -Fqx "input_sha256=$input_fingerprint" "$target_root/var/lib/orchestella/provision/credentials-v2" 2>/dev/null; then
+        unset guest_pass
+        return 0
+    fi
+    previous_umask="$(umask)"
+    umask 077
+    printf '%s\n' "$guest_pass" > "$target_root/etc/orchestella/provision-input/guest.password"
+    printf '%s\n' "$guest_user" > "$target_root/etc/orchestella/provision-input/guest.user"
+    printf '%s\n' "$guest_sudo" > "$target_root/etc/orchestella/provision-input/guest.sudo"
+    chmod 0600 "$target_root/etc/orchestella/provision-input/guest.password" \
+        "$target_root/etc/orchestella/provision-input/guest.user" "$target_root/etc/orchestella/provision-input/guest.sudo"
+    umask "$previous_umask"
+    unset guest_pass
+}
+provision_guest_identity_and_credentials() {
+    target_root="$1"; input_dir="$2"
+    target_hostname="$(kernel_argument orchestella.hostname || true)"
+    if [ -z "$target_hostname" ] && [ -f "$input_dir/hostname" ]; then
+        target_hostname="$(cat "$input_dir/hostname")"
+    fi
+    target_hostname="${target_hostname:-orchestella}"
+    case "$target_hostname" in *[!A-Za-z0-9-]*|-*|*-) fail hostname-invalid ;; esac
+    [ "${#target_hostname}" -le 63 ] || fail hostname-invalid
+    mkdir -p "$target_root/etc/orchestella/provision-input"
+    chmod 0700 "$target_root/etc/orchestella" "$target_root/etc/orchestella/provision-input"
+    printf '%s\n' "$target_hostname" > "$target_root/etc/hostname"
+    printf '127.0.0.1\tlocalhost %s\n::1\tlocalhost ip6-localhost ip6-loopback %s\n' \
+        "$target_hostname" "$target_hostname" > "$target_root/etc/hosts"
+    chmod 0644 "$target_root/etc/hostname" "$target_root/etc/hosts"
+    # Defer account tools until the real package baseline exists. Never use a public default.
+    # An absent password keeps the root account locked; SSH is always key-only by default.
+    if [ -f "$target_root/etc/shadow" ]; then
+        sed -i 's/^root:[^:]*:/root:!:/' "$target_root/etc/shadow" || fail credentials-lock-root
+    fi
+    stage_pending_guest_credentials "$target_root" "$input_dir"
+}
+is_alpine_root() {
+    grep -Eq '^ID="?alpine"?$' "$1/etc/os-release" "$1/usr/lib/os-release" 2>/dev/null
+}
+guest_root_path() {
+    path_root="$1"; path_name="$2"; path_hops=0
+    while [ -L "$path_root$path_name" ]; do
+        path_hops=$((path_hops + 1)); [ "$path_hops" -le 16 ] || return 1
+        path_link="$(readlink "$path_root$path_name")" || return 1
+        case "$path_link" in
+            /*) path_name="$path_link" ;;
+            *) path_name="${path_name%/*}/$path_link" ;;
+        esac
+    done
+    printf '%s\n' "$path_root$path_name"
+}
+is_guest_elf() {
+    [ -f "$1" ] && [ "$(dd if="$1" bs=4 count=1 2>/dev/null | od -An -tx1 | tr -d ' \n')" = 7f454c46 ]
+}
+select_native_guest_init() {
+    target_root="$1"
+    if is_alpine_root "$target_root"; then
+        resolved="$(guest_root_path "$target_root" /bin/busybox)" || return 1
+        is_guest_elf "$resolved" && [ -x "$target_root/sbin/openrc" ] || return 1
+        chroot "$target_root" /bin/busybox true >/dev/null 2>&1 || return 1
+        # Use the native BusyBox applet explicitly; an old regular /sbin/init shell is not native init.
+        printf '/bin/busybox\n'
+        return 0
+    fi
+    for candidate in /usr/lib/systemd/systemd /lib/systemd/systemd; do
+        resolved="$(guest_root_path "$target_root" "$candidate")" || continue
+        is_guest_elf "$resolved" || continue
+        chroot "$target_root" "$candidate" --version >/dev/null 2>&1 || continue
+        printf '%s\n' "$candidate"
+        return 0
+    done
+    return 1
+}
+install_alpine_native_services() {
+    target_root="$1"
+    is_alpine_root "$target_root" || return 0
+    mkdir -p "$target_root/etc/init.d" "$target_root/etc/conf.d"
+    # Keep the distro/user inittab. Only our bounded block is regenerated on restart.
+    inittab="$target_root/etc/inittab"
+    [ -f "$inittab" ] || touch "$inittab"
+    sed '/^# ORCHESTELLA_OPENRC_BEGIN$/,/^# ORCHESTELLA_OPENRC_END$/d; /^::respawn:\/usr\/sbin\/orchestella-proxy-relay$/d; /^::respawn:\/usr\/sbin\/droidlayer-proxy-relay$/d' "$inittab" > "$inittab.tmp" \
+        || fail alpine-inittab-read
+    if grep -Fqx '::respawn:/usr/sbin/droidlayer-guest-agent-launcher' "$inittab.tmp"; then
+        # Migrate only entries emitted by the legacy project fallback, preserving all custom entries.
+        sed '/^::respawn:\/usr\/sbin\/droidlayer-guest-agent-launcher$/d; /^::respawn:\/bin\/sh$/d; /^::shutdown:\/sbin\/poweroff$/d' \
+            "$inittab.tmp" > "$inittab.legacy-migration" || fail alpine-inittab-migration
+        mv "$inittab.legacy-migration" "$inittab.tmp"
+    fi
+    if [ -s "$inittab.tmp" ] && [ -n "$(tail -c 1 "$inittab.tmp")" ]; then printf '\n' >> "$inittab.tmp"; fi
+    printf '# ORCHESTELLA_OPENRC_BEGIN\n' >> "$inittab.tmp"
+    for runlevel in sysinit boot; do
+        if ! grep -Fq "/sbin/openrc $runlevel" "$inittab.tmp"; then
+            printf '::sysinit:/sbin/openrc %s\n' "$runlevel" >> "$inittab.tmp"
         fi
+    done
+    if ! grep -Fq '/sbin/openrc default' "$inittab.tmp"; then
+        printf '::wait:/sbin/openrc default\n' >> "$inittab.tmp"
+    fi
+    for tty in ttyAMA0 hvc0; do
+        if ! grep -Eq "^$tty:|agetty.*$tty" "$inittab.tmp"; then
+            printf '%s::respawn:/sbin/agetty --autologin root --noclear %s 115200 vt220\n' "$tty" "$tty" >> "$inittab.tmp"
+        fi
+    done
+    if ! grep -Fq '::ctrlaltdel:' "$inittab.tmp"; then printf '::ctrlaltdel:/sbin/reboot\n' >> "$inittab.tmp"; fi
+    if ! grep -Fq '/sbin/openrc shutdown' "$inittab.tmp"; then printf '::shutdown:/sbin/openrc shutdown\n' >> "$inittab.tmp"; fi
+    printf '# ORCHESTELLA_OPENRC_END\n' >> "$inittab.tmp"
+    chmod 0644 "$inittab.tmp"
+    mv "$inittab.tmp" "$inittab" || fail alpine-inittab-write
+    cat > "$target_root/etc/init.d/droidlayer-guest-agent" <<'EOF'
+#!/sbin/openrc-run
+name="Orchestella Guest Agent"
+command="/usr/sbin/droidlayer-guest-agent-launcher"
+supervisor="supervise-daemon"
+respawn_delay=2
+respawn_max=5
+respawn_period=30
+depend() { need localmount; }
+EOF
+    chmod 0755 "$target_root/etc/init.d/droidlayer-guest-agent"
+    cat > "$target_root/etc/init.d/orchestella-firstboot" <<'EOF'
+#!/sbin/openrc-run
+name="Orchestella Guest Baseline"
+depend() { need localmount; after dbus sshd; }
+start() {
+    ebegin "Verifying complete Linux baseline"
+    /opt/orchestella/firstboot.sh --native
+    result=$?
+    eend "$result" "Baseline incomplete; use orchestella-guest-provision --status or --retry"
+    return "$result"
+}
+EOF
+    chmod 0755 "$target_root/etc/init.d/orchestella-firstboot"
+}
+install_guest_firstboot_service() {
+    target_root="$1"
+    mkdir -p "$target_root/opt/orchestella" "$target_root/etc/orchestella" "$target_root/var/lib/orchestella/provision"
+    # Legacy scripts wrote success before executing and backgrounded failures. Never run them again.
+    if ! grep -Fqx '# orchestella-guest-runtime-version=2' "$target_root/opt/orchestella/firstboot.sh" 2>/dev/null; then
+        cat > "$target_root/opt/orchestella/firstboot.sh" <<'EOF'
+#!/bin/sh
+# orchestella-guest-runtime-version=2
+export ORCHESTELLA_AUTO_UPDATE=0
+exec /usr/lib/orchestella/busybox sh /usr/sbin/orchestella-guest-provision "$@"
+EOF
+        chmod 0755 "$target_root/opt/orchestella/firstboot.sh"
+    fi
+    if is_alpine_root "$target_root"; then
+        install_alpine_native_services "$target_root"
+        # The bootstrap has to install OpenRC before these services can be started.
+    else
+        mkdir -p "$target_root/etc/systemd/system/multi-user.target.wants"
+        cat > "$target_root/etc/systemd/system/orchestella-firstboot.service" <<'EOF'
+[Unit]
+Description=Orchestella Linux Baseline and Service Verification
+After=network.target
+Wants=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/orchestella/firstboot.sh --native
+TimeoutStartSec=2h
+RemainAfterExit=yes
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target
+EOF
+        chmod 0644 "$target_root/etc/systemd/system/orchestella-firstboot.service"
+        ln -sf /etc/systemd/system/orchestella-firstboot.service \
+            "$target_root/etc/systemd/system/multi-user.target.wants/orchestella-firstboot.service"
+    fi
+    # Surface failed/offline/pending state on login, without printing credentials or raw package output.
+    mkdir -p "$target_root/etc/profile.d"
+    cat > "$target_root/etc/profile.d/02-orchestella-provision-status.sh" <<'EOF'
+#!/bin/sh
+if [ -f /var/lib/orchestella/provision/state ]; then
+    _os_status="$(sed -n 's/^status=//p' /var/lib/orchestella/provision/state)"
+    if [ "$_os_status" != ready ]; then
+        printf '\nOrchestella Linux baseline: %s\n' "$_os_status"
+        sed -n '/^stage=/p; /^reason=/p' /var/lib/orchestella/provision/state
+        printf 'Inspect: orchestella-guest-provision --status; retry: orchestella-guest-provision --retry\n\n'
+    fi
+    unset _os_status
+fi
+EOF
+    chmod 0644 "$target_root/etc/profile.d/02-orchestella-provision-status.sh"
+}
+install_generic_linux_init_fallback() {
+    target_root="$1"
+    mkdir -p "$target_root/usr/lib/orchestella/bin" "$target_root/usr/sbin" "$target_root/etc/orchestella"
+    # This private recovery binary is independent of a potentially corrupted /bin/busybox.
+    cp /bin/busybox "$target_root/usr/lib/orchestella/busybox" || fail recovery-busybox-copy
+    chmod 0755 "$target_root/usr/lib/orchestella/busybox"
+    for applet in sh mount mkdir cat sed grep head tr dd od readlink cp mv rm rmdir chmod ln sleep \
+        kill setsid sync reboot poweroff timeout date touch; do
+        ln -sf /usr/lib/orchestella/busybox "$target_root/usr/lib/orchestella/bin/$applet"
+    done
+    cat > "$target_root/usr/sbin/orchestella-boot" <<'EOF'
+#!/usr/lib/orchestella/busybox sh
+export PATH=/usr/lib/orchestella/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ORCHESTELLA_RECOVERY_MANUAL=0
+for boot_argument in $(cat /proc/cmdline); do
+    if [ "$boot_argument" = orchestella.recovery=1 ]; then
+        export ORCHESTELLA_RECOVERY_MANUAL=1
+        exec /usr/sbin/orchestella-recovery-init
+    fi
+done
+native="$(cat /etc/orchestella/native-init 2>/dev/null || true)"
+case "$native" in
+    /bin/busybox) exec /bin/busybox init ;;
+    /usr/lib/systemd/systemd|/lib/systemd/systemd) exec "$native" ;;
+    *) exec /usr/sbin/orchestella-recovery-init ;;
+esac
+EOF
+    chmod 0755 "$target_root/usr/sbin/orchestella-boot"
+    cat > "$target_root/usr/sbin/orchestella-recovery-init" <<'EOF'
+#!/usr/lib/orchestella/busybox sh
+# Recovery only. Real distro init remains PID1 after a successful bootstrap handoff.
+export PATH=/usr/lib/orchestella/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export HOME=/root TERM=xterm-256color
+mkdir -p /run /dev/pts /dev/shm /var/lib/orchestella/provision
+mount -t tmpfs tmpfs /run 2>/dev/null || true
+mount -t devpts devpts /dev/pts 2>/dev/null || true
+mount -t tmpfs tmpfs /dev/shm 2>/dev/null || true
+if [ "${ORCHESTELLA_RECOVERY_MANUAL:-0}" = 1 ]; then
+    printf 'ORCHESTELLA_GUEST_RECOVERY reason=owner-requested mode=manual baseline=not-ready automatic_provision=disabled\n' > /dev/console
+else
+    printf 'ORCHESTELLA_GUEST_RECOVERY reason=native-init-missing-or-failed baseline=not-ready\n' > /dev/console
+fi
+select_recovery_login_shell() {
+    # Bash-specific distro profiles must run under Bash. Probe once before the respawn loop;
+    # private BusyBox remains independent of a damaged distro /bin/sh or /bin/busybox.
+    for shell_candidate in /bin/bash /usr/bin/bash; do
+        [ -x "$shell_candidate" ] || continue
+        [ "$(dd if="$shell_candidate" bs=4 count=1 2>/dev/null | od -An -tx1 | tr -d ' \n')" = 7f454c46 ] || continue
+        if /usr/lib/orchestella/busybox timeout 5 "$shell_candidate" --noprofile --norc --version >/dev/null 2>&1; then
+            printf '%s\n' "$shell_candidate"
+            return 0
+        fi
+    done
+    printf '/usr/lib/orchestella/busybox\n'
+}
+recovery_shell="$(select_recovery_login_shell)"
+printf 'ORCHESTELLA_GUEST_RECOVERY shell=%s baseline=not-ready\n' "$recovery_shell" > /dev/console
+# Only the existing authenticated bridge and owner console are available during recovery.
+(
+    worker_pid=
+    trap 'if [ -n "$worker_pid" ]; then kill -TERM -- "-$worker_pid" 2>/dev/null || true; kill -KILL -- "-$worker_pid" 2>/dev/null || true; wait "$worker_pid" 2>/dev/null || true; fi; exit 0' TERM INT
+    while :; do
+        /usr/lib/orchestella/busybox setsid /usr/lib/orchestella/busybox sh /usr/sbin/droidlayer-guest-agent-launcher &
+        worker_pid=$!
+        wait "$worker_pid" || true
+        worker_pid=
         sleep 2
     done
 ) &
-
-CONSOLE_DEV=""
-if [ -c /dev/ttyAMA0 ]; then
-    CONSOLE_DEV="/dev/ttyAMA0"
+agent_pid=$!
+console=/dev/console
+if [ -c /dev/droidlayer-terminal ]; then
+    console=/dev/droidlayer-terminal
+elif [ -c /dev/ttyAMA0 ]; then
+    console=/dev/ttyAMA0
 elif [ -c /dev/hvc0 ]; then
-    CONSOLE_DEV="/dev/hvc0"
-elif [ -c /dev/console ]; then
-    CONSOLE_DEV="/dev/console"
+    console=/dev/hvc0
 fi
-
-SHELL_BIN="/bin/sh"
-if [ -x /bin/bash ]; then
-    SHELL_BIN="/bin/bash"
-fi
-
-while true; do
-    if [ -n "$CONSOLE_DEV" ]; then
-        if command -v setsid >/dev/null 2>&1; then
-            setsid -c "$SHELL_BIN" -l < "$CONSOLE_DEV" > "$CONSOLE_DEV" 2>&1 \
-                || setsid "$SHELL_BIN" -l < "$CONSOLE_DEV" > "$CONSOLE_DEV" 2>&1 \
-                || "$SHELL_BIN" -l < "$CONSOLE_DEV" > "$CONSOLE_DEV" 2>&1 || sleep 1
-        else
-            "$SHELL_BIN" -l < "$CONSOLE_DEV" > "$CONSOLE_DEV" 2>&1 || sleep 1
-        fi
+(
+    worker_pid=
+    trap 'if [ -n "$worker_pid" ]; then kill -TERM -- "-$worker_pid" 2>/dev/null || true; kill -KILL -- "-$worker_pid" 2>/dev/null || true; wait "$worker_pid" 2>/dev/null || true; fi; exit 0' TERM INT
+    if [ "$recovery_shell" = /usr/lib/orchestella/busybox ]; then
+        set -- /usr/lib/orchestella/busybox sh -l
     else
-        "$SHELL_BIN" -l || sleep 1
+        set -- "$recovery_shell" -l
     fi
-    sleep 1
-done
-EOF
-    chmod 0755 "$target_root/sbin/init"
+    while :; do
+        /usr/lib/orchestella/busybox setsid -c "$@" < "$console" > "$console" 2>&1 &
+        worker_pid=$!
+        wait "$worker_pid" || true
+        worker_pid=
+        sleep 1
+    done
+) &
+console_pid=$!
+stop_recovery() {
+    kill "$agent_pid" "$console_pid" 2>/dev/null || true
+    wait "$agent_pid" "$console_pid" 2>/dev/null || true
 }
+trap 'stop_recovery; sync; poweroff -f' TERM INT
+# One automatic attempt per ordinary recovery boot; explicit owner diagnostics preserve state.
+if [ "${ORCHESTELLA_RECOVERY_MANUAL:-0}" != 1 ]; then
+    /usr/lib/orchestella/busybox sh /opt/orchestella/firstboot.sh --bootstrap || true
+fi
+while :; do
+    if [ "${ORCHESTELLA_RECOVERY_MANUAL:-0}" != 1 ] && grep -Fqx 'status=awaiting-init' /var/lib/orchestella/provision/state 2>/dev/null; then
+        native=""
+        if grep -Eq '^ID="?alpine"?$' /etc/os-release /usr/lib/os-release 2>/dev/null \
+            && /bin/busybox true >/dev/null 2>&1 && [ -x /sbin/openrc ]; then
+            native=/bin/busybox
+        else
+            for candidate in /usr/lib/systemd/systemd /lib/systemd/systemd; do
+                if "$candidate" --version >/dev/null 2>&1; then native="$candidate"; break; fi
+            done
+        fi
+        if [ -n "$native" ]; then
+            stop_recovery
+            sync
+            case "$native" in /bin/busybox) exec /bin/busybox init ;; *) exec "$native" ;; esac
+        fi
+        printf 'ORCHESTELLA_GUEST_RECOVERY reason=native-init-probe-failed baseline=not-ready\n' > /dev/console
+        printf 'version=2\nstatus=failed\nstage=native-handoff\nreason=native-init-probe-failed\n' \
+            > /var/lib/orchestella/provision/state.tmp
+        mv -f /var/lib/orchestella/provision/state.tmp /var/lib/orchestella/provision/state
+    fi
+    sleep 2 &
+    wait "$!" || true
+ done
+EOF
+    chmod 0755 "$target_root/usr/sbin/orchestella-recovery-init"
+}
+install_native_guest_runtime() {
+    target_root="$1"
+    install_generic_linux_init_fallback "$target_root"
+    install_guest_runtime_provisioner "$target_root"
+    # The systemd installer also provides the strategy-neutral launcher, used by OpenRC/recovery.
+    install_systemd_guest_agent_service "$target_root"
+    if is_official_debian_systemd_init "$target_root"; then
+        install_official_debian_systemd_flavor "$target_root"
+    fi
+    if ! is_alpine_root "$target_root"; then
+        install_serial_autologin_getty "$target_root"
+        if ! is_official_debian_systemd_init "$target_root"; then
+            configure_systemd_network_dhcp "$target_root"
+        fi
+    fi
+    install_guest_firstboot_service "$target_root"
+    mkdir -p "$target_root/run"
+    selected="$(select_native_guest_init "$target_root" || true)"
+    if [ -n "$selected" ]; then
+        printf '%s\n' "$selected" > "$target_root/etc/orchestella/native-init"
+        rm -f "$target_root/var/lib/orchestella/provision/init-repair-needed"
+    else
+        printf 'recovery\n' > "$target_root/etc/orchestella/native-init"
+        printf 'native-init-missing-or-invalid\n' > "$target_root/var/lib/orchestella/provision/init-repair-needed"
+        log 'ORCHESTELLA_GUEST_RECOVERY reason=native-init-missing-or-invalid baseline=not-ready'
+    fi
+}
+
+install_guest_terminal_integration() {
+    mkdir -p "$1/etc/orchestella/shell"
+    cat > "$1/etc/orchestella/shell/20-orchestella-terminal-integration.sh" <<'ORCHESTELLA_TERMINAL_HOOK_EOF'
+#!/bin/bash
+# Bash-only, opt-in semantic markers for the guest's real prompt and submitted commands.
+# No Android input is mirrored. Only a newly added Bash history entry may be annotated;
+# HISTCONTROL/HISTIGNORE exclusions and silent password reads remain excluded.
+[ -n "${BASH_VERSION:-}" ] || return 0
+case "$-" in *i*) ;; *) return 0 ;; esac
+case "${TERM:-}" in dumb|'') return 0 ;; esac
+
+__orchestella_terminal_before_prompt() {
+    local result=$?
+    printf '\033]133;D;%s\007' "$result"
+    __orchestella_terminal_history_index=$HISTCMD
+    return "$result"
+}
+
+__orchestella_terminal_after_prompt() {
+    local result=$?
+    local begin='\[\e]133;A;orchestella=1\a\]'
+    local end='\[\e]133;B\a\]'
+    # Existing prompt hooks (including Starship) run first. Remove only our own wrappers
+    # so a static PS1 and repeated environment sourcing never accumulate markers.
+    PS1="${PS1#"$begin"}"
+    PS1="${PS1%"$end"}"
+    PS1="$begin$PS1$end"
+    local continuation_begin='\[\e]133;B;continuation=1\a\]'
+    local continuation_end='\[\e]133;B;continuation=2\a\]'
+    PS2="${PS2#"$continuation_begin"}"
+    PS2="${PS2%"$continuation_end"}"
+    PS2="$continuation_begin${PS2-'> '}$continuation_end"
+    return "$result"
+}
+
+__orchestella_terminal_before_command() {
+    local entry command_text encoded HISTTIMEFORMAT='' LC_ALL=C
+    # PS0 expands before execution. Unlike fc -ln -1, history 1 identifies THIS entry.
+    # A command omitted by ignorespace/HISTIGNORE does not advance HISTCMD.
+    if [[ $HISTCMD -gt ${__orchestella_terminal_history_index:-$HISTCMD} ]] \
+            && [[ -o history ]] && command -v base64 >/dev/null 2>&1; then
+        entry="$(builtin history 1)"
+        if [[ $entry =~ ^[[:space:]]*[0-9]+[[:space:]]+(.*)$ ]]; then
+            command_text=${BASH_REMATCH[1]}
+            if [[ ${#command_text} -le 8192 ]]; then
+                encoded="$(printf '%s' "$command_text" | base64 | tr -d '\r\n')"
+                printf '\033]133;C;cmd=%s\007' "$encoded"
+                return 0
+            fi
+        fi
+    fi
+    # Boundary only: do not archive an ignored/private command or stale history entry.
+    printf '\033]133;C\007'
+}
+
+if [[ ${PS0:-} != *'__orchestella_terminal_before_command'* ]]; then
+    PS0='$(__orchestella_terminal_before_command)'"${PS0:-}"
+fi
+if [[ ${PROMPT_COMMAND[*]:-} != *'__orchestella_terminal_before_prompt'* ]]; then
+    if [[ $(declare -p PROMPT_COMMAND 2>/dev/null) == 'declare -a '* ]]; then
+        PROMPT_COMMAND=(__orchestella_terminal_before_prompt "${PROMPT_COMMAND[@]}" __orchestella_terminal_after_prompt)
+    else
+        PROMPT_COMMAND="__orchestella_terminal_before_prompt${PROMPT_COMMAND:+; $PROMPT_COMMAND}; __orchestella_terminal_after_prompt"
+    fi
+fi
+ORCHESTELLA_TERMINAL_HOOK_EOF
+    chmod 0644 "$1/etc/orchestella/shell/20-orchestella-terminal-integration.sh"
+}
+
+install_guest_runtime_provisioner() {
+    mkdir -p "$1/usr/sbin"
+    cat > "$1/usr/sbin/orchestella-guest-provision" <<'ORCHESTELLA_GUEST_PROVISION_EOF'
+#!/usr/lib/orchestella/busybox sh
+# orchestella-guest-runtime-version=2
+# Mandatory guest baseline. This runs inside the VM, never on the Android host.
+set -u
+umask 077
+ROOT="${ORCHESTELLA_PROVISION_ROOT:-}"
+if [ -n "$ROOT" ] && [ ! -f "$ROOT/.orchestella-provision-fixture" ]; then
+    printf 'Refusing a non-guest root without the synthetic fixture sentinel.\n' >&2
+    exit 64
+fi
+# Recovery uses an independent static BusyBox when an older init damaged /bin/busybox.
+if [ -z "$ROOT" ] && [ -d /usr/lib/orchestella/bin ]; then
+    PATH=/usr/lib/orchestella/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    export PATH
+fi
+export LANG=C LC_ALL=C
+STATE_DIR="$ROOT/var/lib/orchestella/provision"
+STATE_FILE="$STATE_DIR/state"
+DONE="$ROOT/opt/orchestella/.firstboot-done"
+LOG="$ROOT/var/log/orchestella-provision.log.txt"
+LOCK="$ROOT/run/orchestella-provision.lock"
+MODE="${1:---native}"
+case "$MODE" in --native|--bootstrap|--retry|--status) ;; *) exit 64 ;; esac
+if [ "$MODE" = --status ]; then
+    if [ -f "$STATE_FILE" ]; then cat "$STATE_FILE"; else printf 'status=pending\nstage=not-started\n'; fi
+    exit 0
+fi
+mkdir -p "$STATE_DIR" "$ROOT/var/log" "$ROOT/opt/orchestella" "$ROOT/run" || exit 1
+if ! mkdir "$LOCK" 2>/dev/null; then
+    owner="$(cat "$LOCK/pid" 2>/dev/null || true)"
+    case "$owner" in ''|*[!0-9]*) owner=0 ;; esac
+    if [ "$owner" -gt 0 ] && kill -0 "$owner" 2>/dev/null; then
+        printf 'ORCHESTELLA_GUEST_PROVISION status=busy stage=locked\n'
+        exit 75
+    fi
+    rm -rf "$LOCK" || exit 1
+    mkdir "$LOCK" || exit 75
+fi
+printf '%s\n' "$$" > "$LOCK/pid"
+status=running
+stage=start
+reason=none
+operation_exit_code=0
+operation_timeout_seconds=0
+last_step_stage=
+last_step_exit_code=0
+last_operation_stage=not-started
+last_operation_exit_code=not-run
+attempt=0
+if [ -f "$STATE_FILE" ]; then
+    attempt="$(sed -n 's/^attempt=//p' "$STATE_FILE")"
+fi
+case "$attempt" in ''|*[!0-9]*) attempt=0 ;; esac
+attempt=$((attempt + 1))
+write_state() {
+    printf 'version=2\nstatus=%s\nstage=%s\nattempt=%s\nreason=%s\noperation_exit_code=%s\noperation_timeout_seconds=%s\nlast_operation_stage=%s\nlast_operation_exit_code=%s\n' \
+        "$status" "$stage" "$attempt" "$reason" "$operation_exit_code" "$operation_timeout_seconds" \
+        "$last_operation_stage" "$last_operation_exit_code" > "$STATE_FILE.tmp" \
+        && mv -f "$STATE_FILE.tmp" "$STATE_FILE"
+}
+report() {
+    line="ORCHESTELLA_GUEST_PROVISION status=$status stage=$stage reason=$reason attempt=$attempt operation_exit_code=$operation_exit_code last_operation_stage=$last_operation_stage last_operation_exit_code=$last_operation_exit_code"
+    printf '%s\n' "$line" >> "$LOG"
+    if [ "$status" = failed ]; then
+        # Atomic rename publishes the state, but does not flush ext4's journal or log data.
+        # Request a guest flush before the driver can observe failure and stop the VM.
+        if ! sync; then
+            printf 'ORCHESTELLA_GUEST_PROVISION_DURABILITY_ERROR reason=sync-failed\n' >&2
+        fi
+    fi
+    printf '%s\n' "$line"
+    if [ -z "$ROOT" ] && [ -w /dev/console ]; then printf '%s\n' "$line" > /dev/console; fi
+}
+cleanup() {
+    code="$?"
+    trap - EXIT INT TERM HUP
+    if [ "$status" = running ]; then
+        status=failed
+        reason=interrupted-or-command-error
+        [ "$code" -ne 0 ] || code=1
+        operation_exit_code="$code"
+        rm -f "$DONE"
+        write_state || true
+        report
+    fi
+    if [ "${created_policy:-0}" -eq 1 ]; then rm -f "${policy:-}"; fi
+    rm -f "$LOCK/pid"
+    rmdir "$LOCK" 2>/dev/null || true
+    exit "$code"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM HUP
+fail_stage() {
+    failure_return=$?
+    stage="$1"; reason="$2"; status=failed
+    # A negated `if ! run_step` loses its shell return value; keep the original command
+    # status from run_step instead of replacing it with this function's generic exit 1.
+    if [ "$last_step_stage" = "$stage" ] && [ "$last_step_exit_code" -ne 0 ]; then
+        operation_exit_code="$last_step_exit_code"
+        case "$last_step_exit_code" in 124|137|143) reason=operation-timeout ;; esac
+    elif [ "$failure_return" -ne 0 ]; then
+        operation_exit_code="$failure_return"
+    else
+        operation_exit_code=not-run
+    fi
+    if [ "${created_policy:-0}" -eq 1 ]; then rm -f "${policy:-}"; created_policy=0; fi
+    rm -f "$DONE"
+    write_state || true
+    report
+    exit 1
+}
+run_step() {
+    stage="$1"; shift
+    status=running; reason=none
+    case "$stage" in
+        repository-refresh|certificate-bootstrap-refresh|certificate-bootstrap-install|package-install|package-recovery|init-repair|optional-upgrade|locale)
+            operation_timeout_seconds=1800 ;;
+        *) operation_timeout_seconds=600 ;;
+    esac
+    operation_exit_code=0; last_step_stage="$stage"; last_step_exit_code=0
+    write_state || fail_stage state-write persistent-state-unavailable
+    report
+    command -v timeout >/dev/null 2>&1 || fail_stage "$stage" timeout-tool-missing
+    # The transaction includes CPU-heavy metadata/solver/package work under TCG.
+    # Individual network requests retain the package manager's short timeout/retry policy.
+    if timeout "$operation_timeout_seconds" "$@" >> "$LOG" 2>&1; then
+        last_operation_stage="$stage"; last_operation_exit_code=0
+        return 0
+    else
+        operation_exit_code=$?
+        last_step_exit_code="$operation_exit_code"
+        last_operation_stage="$stage"; last_operation_exit_code="$operation_exit_code"
+        case "$operation_exit_code" in 124|137|143) reason=operation-timeout ;; *) reason=command-failed ;; esac
+        write_state || fail_stage state-write persistent-state-unavailable
+        return "$operation_exit_code"
+    fi
+}
+read_os_field() {
+    file="$ROOT/etc/os-release"
+    [ -f "$file" ] || file="$ROOT/usr/lib/os-release"
+    sed -n "s/^$1=//p" "$file" 2>/dev/null | tr -d '\"\047\r' | head -n 1
+}
+distro="$(read_os_field ID)"
+case "$distro" in
+    debian|ubuntu|alpine|fedora|almalinux|rocky|arch) ;;
+    archarm) distro=arch ;;
+    opensuse*) distro=opensuse ;;
+    *) fail_stage distro unsupported-distro ;;
+esac
+expected="${ORCHESTELLA_EXPECTED_DISTRO:-$distro}"
+[ "$expected" = "$distro" ] || fail_stage distro manifest-distro-mismatch
+case "$distro" in
+    debian|ubuntu)
+        manager=apt
+        packages='systemd systemd-sysv udev dbus openssh-server ca-certificates locales bash coreutils util-linux iproute2 iputils-ping procps curl wget git tar gzip xz-utils sudo nano less tmux ncurses-term'
+        ;;
+    alpine)
+        manager=apk
+        packages='alpine-base openrc busybox dbus openssh ca-certificates musl-locales bash coreutils util-linux iproute2 iputils procps curl wget git tar xz sudo nano less tmux ncurses-terminfo'
+        ;;
+    fedora|almalinux|rocky)
+        manager=dnf
+        packages='systemd systemd-udev dbus dbus-tools openssh-server openssh-clients ca-certificates glibc-langpack-en bash coreutils util-linux iproute iputils procps-ng curl wget git tar gzip xz sudo dnf nano less tmux ncurses-term'
+        ;;
+    arch)
+        manager=pacman
+        packages='base systemd dbus openssh ca-certificates glibc bash coreutils util-linux iproute2 iputils procps-ng curl wget git tar gzip xz sudo nano less tmux ncurses'
+        ;;
+    opensuse)
+        manager=zypper
+        packages='systemd udev dbus-1 dbus-1-tools openssh-server openssh-clients ca-certificates ca-certificates-mozilla glibc-locale bash coreutils util-linux iproute2 iputils procps curl wget git tar gzip xz sudo nano less tmux ncurses-utils terminfo'
+        ;;
+esac
+if [ "$distro" = fedora ]; then
+    packages="$(printf '%s\n' "$packages" | sed 's/ dnf / dnf5 /; s/ wget / wget2-wget /')"
+    if rpm -q wget1-wget >/dev/null 2>&1; then
+        packages="$(printf '%s\n' "$packages" | sed 's/ wget2-wget / wget1-wget /')"
+    fi
+fi
+if [ "$manager" = dnf ]; then
+    # Official minimal RPM roots can ship the same CLI via minimal/single packages.
+    # Keep their installed, signed variants instead of requiring conflicting full packages.
+    if rpm -q curl-minimal >/dev/null 2>&1; then
+        packages="$(printf '%s\n' "$packages" | sed 's/ curl / curl-minimal /')"
+    fi
+    if rpm -q coreutils-single >/dev/null 2>&1; then
+        packages="$(printf '%s\n' "$packages" | sed 's/ coreutils / coreutils-single /')"
+    fi
+fi
+package_installed() {
+    case "$manager" in
+        apt) [ "$(dpkg-query -W -f='${db:Status-Status}' "$1" 2>/dev/null)" = installed ] ;;
+        apk) apk info -e "$1" >/dev/null 2>&1 ;;
+        dnf|zypper) rpm -q "$1" >/dev/null 2>&1 ;;
+        pacman) pacman -Q "$1" >/dev/null 2>&1 ;;
+    esac
+}
+verify_packages() {
+    for package in $packages; do package_installed "$package" || return 1; done
+}
+# Resolve links within the guest root (absolute links must never resolve in a fixture host).
+guest_path() {
+    relative="$1"
+    hops=0
+    while [ -L "$ROOT$relative" ]; do
+        hops=$((hops + 1)); [ "$hops" -le 16 ] || return 1
+        link="$(readlink "$ROOT$relative")" || return 1
+        case "$link" in
+            /*) relative="$link" ;;
+            *) relative="${relative%/*}/$link" ;;
+        esac
+    done
+    printf '%s\n' "$ROOT$relative"
+}
+is_elf() {
+    [ -f "$1" ] && [ "$(dd if="$1" bs=4 count=1 2>/dev/null | od -An -tx1 | tr -d ' \n')" = 7f454c46 ]
+}
+native_init_valid() {
+    if [ "$distro" = alpine ]; then
+        native="$(guest_path /bin/busybox)" || return 1
+        is_elf "$native" && [ -x "$ROOT/sbin/openrc" ]
+    else
+        for candidate in /usr/lib/systemd/systemd /lib/systemd/systemd; do
+            native="$(guest_path "$candidate")" || continue
+            is_elf "$native" && return 0
+        done
+        return 1
+    fi
+}
+native_pid1() {
+    comm="$(cat "$ROOT/proc/1/comm" 2>/dev/null || true)"
+    if [ "$distro" = alpine ]; then
+        [ "$comm" = init ] && [ -d "$ROOT/run/openrc" ]
+    else
+        [ "$comm" = systemd ]
+    fi
+}
+services_active() {
+    if [ "$distro" = alpine ]; then
+        rc-service dbus status >/dev/null 2>&1 && rc-service sshd status >/dev/null 2>&1
+    else
+        systemctl is-active --quiet dbus.service && systemctl is-active --quiet "$ssh_unit"
+    fi
+}
+ssh_unit=sshd.service
+[ "$manager" != apt ] || ssh_unit=ssh.service
+# A previous marker is advisory: validate the actual packages/PID1/services on each boot.
+if [ ! -f "$ROOT/etc/orchestella/provision-input/guest.password" ] \
+    && [ ! -f "$ROOT/etc/orchestella/provision-input/guest.user" ] \
+    && [ ! -f "$ROOT/etc/orchestella/provision-input/guest.sudo" ] \
+    && [ ! -f "$STATE_DIR/legacy-weak-credentials" ] \
+    && [ -f "$DONE" ] && grep -Fqx 'runtime_version=2' "$DONE" \
+    && verify_packages && native_init_valid && native_pid1 \
+    && sshd -t -f "$ROOT/etc/ssh/sshd_config.orchestella" >> "$LOG" 2>&1 && services_active; then
+    status=ready; stage=verified; reason=already-complete
+    write_state || fail_stage state-write persistent-state-unavailable
+    report
+    exit 0
+fi
+rm -f "$DONE"
+write_state || fail_stage state-write persistent-state-unavailable
+init_repair=0
+native_init_valid || init_repair=1
+[ ! -f "$STATE_DIR/init-repair-needed" ] || init_repair=1
+if [ "$distro" = alpine ]; then
+    busybox_path="$(guest_path /bin/busybox)" || fail_stage init-repair busybox-link-invalid
+    if ! is_elf "$busybox_path"; then
+        # Old /sbin/init writes followed the link and corrupted /bin/sh too. Recover only
+        # the recognized project script from the verified static initramfs copy, then apk
+        # reinstalls the distro-owned package. Unknown binary damage stays a visible failure.
+        if grep -Fq '# Orchestella minimal Linux init supervisor' "$busybox_path" \
+            && is_elf "$ROOT/usr/lib/orchestella/busybox"; then
+            cp "$ROOT/usr/lib/orchestella/busybox" "$busybox_path.orchestella-restore" \
+                && chmod 0755 "$busybox_path.orchestella-restore" \
+                && mv -f "$busybox_path.orchestella-restore" "$busybox_path" \
+                || fail_stage init-repair busybox-bootstrap-restore-failed
+            init_repair=1
+        else
+            fail_stage init-repair unknown-busybox-damage
+        fi
+    fi
+fi
+# APT must not silently accept an incomplete refresh. Retain signatures and TLS verification.
+refresh_apt() {
+    run_step repository-refresh apt-get -o APT::Update::Error-Mode=any -o Acquire::Retries=0 \
+        -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
+}
+# Multi-tier APT configs are tried one tier at a time, never as simultaneous repositories.
+refresh_apt_tiers() {
+    sources="$ROOT/etc/apt/sources.list"
+    backup="$ROOT/etc/orchestella/apt-multi-tier.sources"
+    active="$ROOT/etc/orchestella/apt-managed-active.sources"
+    mkdir -p "$ROOT/etc/orchestella" || return 1
+    if grep -Fq '# orchestella-mirror-policy=multi-tier' "$sources" 2>/dev/null; then
+        cp "$sources" "$backup" || return 1
+    elif [ ! -f "$active" ] || [ "$(cat "$sources")" != "$(cat "$active")" ]; then
+        # A user-selected single mirror or edited sources must not be replaced by stale tiers.
+        refresh_apt
+        return "$?"
+    fi
+    if [ -f "$backup" ]; then
+        for tier in 1 2 3; do
+            selected_tier=0
+            while IFS= read -r repo_line; do
+                case "$repo_line" in
+                    "# Tier $tier:"*) selected_tier=1 ;;
+                    '# Tier '*) selected_tier=0 ;;
+                    deb\ *) [ "$selected_tier" -ne 1 ] || printf '%s\n' "$repo_line" ;;
+                esac
+            done < "$backup" > "$sources.tmp"
+            [ -s "$sources.tmp" ] || continue
+            mv -f "$sources.tmp" "$sources" || return 1
+            if refresh_apt; then return 0; fi
+            printf 'APT mirror tier %s failed; trying next configured tier.\n' "$tier"
+        done
+        return 1
+    fi
+    refresh_apt
+}
+managed_repos_directory=
+managed_repo_ids=
+prepare_package_repositories() {
+    case "$distro" in
+        fedora) managed_repo_file=fedora.repo; expected_repo_ids='fedora updates' ;;
+        almalinux) managed_repo_file=almalinux.repo; expected_repo_ids='baseos appstream' ;;
+        rocky) managed_repo_file=rocky.repo; expected_repo_ids='baseos appstream' ;;
+        opensuse) managed_repo_file=opensuse.repo; expected_repo_ids=repo-oss ;;
+        *) return 0 ;;
+    esac
+    owned_directory="$ROOT/etc/orchestella/provision-repos/$distro"
+    owned_marker="$owned_directory/owned-v1"
+    if [ ! -f "$owned_marker" ]; then
+        printf 'Package baseline repository scope: original vendor configuration (no injected managed input).\n' >> "$LOG"
+        return 0
+    fi
+    [ ! -L "$owned_directory" ] && [ ! -L "$owned_marker" ] && [ ! -L "$owned_directory/$managed_repo_file" ] \
+        || fail_stage repository-configuration managed-repository-link-invalid
+    grep -Fqx 'managed_repositories_version=1' "$owned_marker" \
+        && grep -Fqx "distro=$distro" "$owned_marker" \
+        && grep -Fqx "file=$managed_repo_file" "$owned_marker" \
+        && grep -Fqx "ids=$expected_repo_ids" "$owned_marker" \
+        || fail_stage repository-configuration managed-repository-marker-invalid
+    for owned_repo in "$owned_directory"/*.repo; do
+        [ "$owned_repo" = "$owned_directory/$managed_repo_file" ] \
+            || fail_stage repository-configuration unexpected-managed-repository
+    done
+    [ -f "$owned_directory/$managed_repo_file" ] || fail_stage repository-configuration managed-repository-missing
+    owned_digest="$(sha256sum "$owned_directory/$managed_repo_file" | cut -d ' ' -f 1)"
+    grep -Fqx "sha256=$owned_digest" "$owned_marker" \
+        || fail_stage repository-configuration managed-repository-checksum-mismatch
+    managed_repos_directory="$owned_directory"
+    managed_repo_ids="$expected_repo_ids"
+    printf 'Package baseline repository scope: managed IDs=%s; vendor files and cache retained.\n' "$managed_repo_ids" >> "$LOG"
+}
+dnf_step() {
+    dnf_stage="$1"; shift
+    if [ -n "$managed_repos_directory" ]; then
+        set -- --setopt="reposdir=$managed_repos_directory" "$@"
+    fi
+    run_step "$dnf_stage" "$rpm_manager" -y --setopt=timeout=20 --setopt=retries=0 "$@"
+}
+zypper_step() {
+    zypper_stage="$1"; zypper_action="$2"; shift 2
+    if [ -n "$managed_repos_directory" ]; then
+        case "$zypper_action" in
+            refresh) set -- $managed_repo_ids "$@" ;;
+            install)
+                for managed_id in $managed_repo_ids; do set -- --repo "$managed_id" "$@"; done ;;
+        esac
+        set -- --no-refresh "$zypper_action" "$@"
+        set -- --reposd-dir "$managed_repos_directory" --servicesd-dir "$STATE_DIR/empty-zypp-services" "$@"
+    else
+        set -- "$zypper_action" "$@"
+    fi
+    run_step "$zypper_stage" env "ZYPP_CONF=$STATE_DIR/zypp-baseline.conf" zypper --non-interactive "$@"
+}
+prepare_package_repositories
+if [ "$manager" = zypper ]; then
+    mkdir -p "$STATE_DIR/empty-zypp-services" || fail_stage repository-configuration services-directory-failed
+    # Copy vendor policy for this transaction only; update its network limits, never TLS/GPG.
+    if [ -f "$ROOT/etc/zypp/zypp.conf" ]; then
+        sed '/^[[:space:]]*download[.]\(connect_timeout\|transfer_timeout\|max_silent_tries\)[[:space:]]*=/d' \
+            "$ROOT/etc/zypp/zypp.conf" > "$STATE_DIR/zypp-baseline.conf.tmp" \
+            || fail_stage repository-configuration zypp-config-copy-failed
+    else
+        printf '[main]\n' > "$STATE_DIR/zypp-baseline.conf.tmp"
+    fi
+    # libzypp's max_silent_tries=0 means unlimited; 1 means one try with no retry.
+    printf '\n[main]\ndownload.connect_timeout = 20\ndownload.transfer_timeout = 20\ndownload.max_silent_tries = 1\n' \
+        >> "$STATE_DIR/zypp-baseline.conf.tmp"
+    mv "$STATE_DIR/zypp-baseline.conf.tmp" "$STATE_DIR/zypp-baseline.conf" \
+        || fail_stage repository-configuration zypp-config-install-failed
+fi
+baseline_verified=0
+if [ "$init_repair" -eq 0 ] \
+    && grep -Fqx 'packages_version=2' "$STATE_DIR/packages-v2" 2>/dev/null \
+    && grep -Fqx "distro=$distro" "$STATE_DIR/packages-v2" 2>/dev/null \
+    && verify_packages && native_init_valid; then
+    baseline_verified=1
+    # A CA store deleted after bootstrap still requires repair; never trust only the checkpoint.
+    if [ "$manager" = apt ] && [ ! -s "$ROOT/etc/ssl/certs/ca-certificates.crt" ]; then baseline_verified=0; fi
+fi
+if [ "$baseline_verified" -eq 0 ]; then
+case "$manager" in
+    apt)
+        command -v apt-get >/dev/null 2>&1 || fail_stage package-manager apt-missing
+        export DEBIAN_FRONTEND=noninteractive
+        # Repair interrupted dpkg transactions without starting services before configuration.
+        policy="$ROOT/usr/sbin/policy-rc.d"
+        created_policy=0
+        if [ ! -e "$policy" ]; then
+            printf '#!/bin/sh\nexit 101\n' > "$policy" && chmod 0755 "$policy" || fail_stage package-policy write-failed
+            created_policy=1
+        fi
+        if ! run_step package-recovery dpkg --configure -a; then
+            [ "$created_policy" -eq 0 ] || rm -f "$policy"
+            fail_stage package-recovery interrupted-package-transaction
+        fi
+        if [ ! -s "$ROOT/etc/ssl/certs/ca-certificates.crt" ]; then
+            codename="$(read_os_field VERSION_CODENAME)"
+            version="$(read_os_field VERSION_ID)"
+            case "$distro:$codename:$version" in
+                debian:trixie:*|debian::13*) codename=trixie ;;
+                debian:bookworm:*|debian::12*) codename=bookworm ;;
+                debian:bullseye:*|debian::11*) codename=bullseye ;;
+                ubuntu:noble:*|ubuntu::24.04*) codename=noble ;;
+                ubuntu:jammy:*|ubuntu::22.04*) codename=jammy ;;
+                *) fail_stage certificate-bootstrap unsupported-release ;;
+            esac
+            ca_sources="$STATE_DIR/ca-bootstrap.list"
+            if [ "$distro" = ubuntu ]; then
+                printf 'deb http://ports.ubuntu.com/ubuntu-ports/ %s main\n' "$codename" > "$ca_sources"
+            else
+                printf 'deb http://deb.debian.org/debian/ %s main\n' "$codename" > "$ca_sources"
+            fi
+            mkdir -p "$STATE_DIR/ca-apt-lists/partial" || fail_stage certificate-bootstrap state-directory-failed
+            # Only signed APT metadata/packages bootstrap the CA store. TLS/signature checks are
+            # never weakened, and the user's selected sources remain byte-identical.
+            run_step certificate-bootstrap-refresh apt-get -o APT::Update::Error-Mode=any \
+                -o Dir::Etc::sourcelist="$ca_sources" -o Dir::Etc::sourceparts=- \
+                -o Dir::State::lists="$STATE_DIR/ca-apt-lists" -o Acquire::Retries=0 \
+                -o Acquire::http::Timeout=20 update || fail_stage certificate-bootstrap-refresh offline-or-signature-error
+            run_step certificate-bootstrap-install apt-get \
+                -o Dir::Etc::sourcelist="$ca_sources" -o Dir::Etc::sourceparts=- \
+                -o Dir::State::lists="$STATE_DIR/ca-apt-lists" -o Acquire::Retries=0 \
+                -o Acquire::http::Timeout=20 install -y --no-install-recommends ca-certificates \
+                || fail_stage certificate-bootstrap-install ca-install-failed
+            [ -s "$ROOT/etc/ssl/certs/ca-certificates.crt" ] || fail_stage certificate-bootstrap-verification ca-store-missing
+        fi
+        stage=repository-refresh
+        write_state || fail_stage state-write persistent-state-unavailable
+        report
+        # The function runs under the already bounded package-manager network timeouts.
+        if ! refresh_apt_tiers >> "$LOG" 2>&1; then
+            [ "$created_policy" -eq 0 ] || rm -f "$policy"
+            fail_stage repository-refresh offline-or-repository-error
+        fi
+        if ! run_step package-install apt-get -o Acquire::Retries=0 -o Acquire::http::Timeout=20 \
+            -o Acquire::https::Timeout=20 install -y --no-install-recommends $packages; then
+            [ "$created_policy" -eq 0 ] || rm -f "$policy"
+            fail_stage package-install package-install-failed
+        fi
+        if [ "$init_repair" -eq 1 ]; then
+            if ! run_step init-repair apt-get -o Acquire::Retries=0 install -y --reinstall systemd systemd-sysv; then
+                [ "$created_policy" -eq 0 ] || rm -f "$policy"
+                fail_stage init-repair native-init-reinstall-failed
+            fi
+        fi
+        [ "$created_policy" -eq 0 ] || rm -f "$policy"
+        ;;
+    apk)
+        command -v apk >/dev/null 2>&1 || fail_stage package-manager apk-missing
+        run_step repository-refresh apk update || fail_stage repository-refresh offline-or-repository-error
+        if [ "$init_repair" -eq 1 ]; then
+            run_step init-repair apk fix --no-cache --reinstall busybox || fail_stage init-repair native-init-reinstall-failed
+        fi
+        run_step package-install apk add --no-cache $packages || fail_stage package-install package-install-failed
+        ;;
+    dnf)
+        rpm_manager=dnf
+        command -v dnf >/dev/null 2>&1 || rpm_manager=microdnf
+        command -v "$rpm_manager" >/dev/null 2>&1 || fail_stage package-manager dnf-and-microdnf-missing
+        dnf_step repository-refresh makecache || fail_stage repository-refresh offline-or-repository-error
+        dnf_step package-install --setopt=install_weak_deps=False install $packages \
+            || fail_stage package-install package-install-failed
+        if [ "$init_repair" -eq 1 ]; then
+            rpm_manager=dnf
+            dnf_step init-repair reinstall systemd || fail_stage init-repair native-init-reinstall-failed
+        fi
+        ;;
+    pacman)
+        command -v pacman >/dev/null 2>&1 || fail_stage package-manager pacman-missing
+        if [ ! -f "$ROOT/etc/pacman.d/gnupg/pubring.gpg" ]; then
+            run_step package-signing pacman-key --init || fail_stage package-signing keyring-init-failed
+            run_step package-signing pacman-key --populate archlinuxarm || fail_stage package-signing keyring-populate-failed
+        fi
+        run_step package-install pacman -Syu --noconfirm --needed $packages || fail_stage package-install offline-or-package-install-failed
+        if [ "$init_repair" -eq 1 ]; then
+            run_step init-repair pacman -S --noconfirm systemd || fail_stage init-repair native-init-reinstall-failed
+        fi
+        ;;
+    zypper)
+        command -v zypper >/dev/null 2>&1 || fail_stage package-manager zypper-missing
+        zypper_step repository-refresh refresh || fail_stage repository-refresh offline-or-repository-error
+        zypper_step package-install install --no-recommends $packages || fail_stage package-install package-install-failed
+        if [ "$init_repair" -eq 1 ]; then
+            zypper_step init-repair install --force systemd || fail_stage init-repair native-init-reinstall-failed
+        fi
+        ;;
+esac
+else
+    stage=baseline-checkpoint; reason=packages-already-verified
+    write_state || fail_stage state-write persistent-state-unavailable
+    report
+fi
+stage=package-verification
+verify_packages || fail_stage "$stage" installed-package-inventory-incomplete
+native_init_valid || fail_stage init-verification native-init-invalid
+rm -f "$STATE_DIR/init-repair-needed"
+# Credentials arrive from the host only through the existing verified input channel.
+identity="$ROOT/etc/orchestella/provision-input"
+if [ -f "$identity/guest.password" ]; then
+    password="$(cat "$identity/guest.password")"
+    case "$password" in ''|*:*|*[[:space:]]*) fail_stage credentials invalid-password ;; esac
+    [ "${#password}" -ge 8 ] || fail_stage credentials weak-password
+    if ! printf 'root:%s\n' "$password" | chpasswd >> "$LOG" 2>&1; then fail_stage credentials password-application-failed; fi
+    if [ -f "$identity/guest.user" ]; then
+        user="$(cat "$identity/guest.user")"
+        case "$user" in ''|root) user=root ;; [!a-z_]*|*[!a-z0-9_-]*) fail_stage credentials invalid-user ;; esac
+        if [ "$user" != root ]; then
+            if ! id -u "$user" >/dev/null 2>&1; then
+                if [ "$distro" = alpine ]; then
+                    adduser -D -s /bin/bash "$user" >> "$LOG" 2>&1 || fail_stage credentials user-creation-failed
+                else
+                    useradd -m -s /bin/bash "$user" >> "$LOG" 2>&1 || fail_stage credentials user-creation-failed
+                fi
+            fi
+            printf '%s:%s\n' "$user" "$password" | chpasswd >> "$LOG" 2>&1 || fail_stage credentials password-application-failed
+            if grep -Fqx '1' "$identity/guest.sudo" 2>/dev/null; then
+                mkdir -p "$ROOT/etc/sudoers.d" || fail_stage credentials sudo-configuration-failed
+                printf '%s ALL=(ALL) NOPASSWD:ALL\n' "$user" > "$ROOT/etc/sudoers.d/99-orchestella-user"
+                chmod 0440 "$ROOT/etc/sudoers.d/99-orchestella-user" || fail_stage credentials sudo-configuration-failed
+                visudo -cf "$ROOT/etc/sudoers.d/99-orchestella-user" >> "$LOG" 2>&1 || fail_stage credentials sudo-configuration-invalid
+            fi
+        fi
+    fi
+    credential_user="$(cat "$identity/guest.user" 2>/dev/null || printf root)"
+    credential_sudo=0
+    if grep -Fqx '1' "$identity/guest.sudo" 2>/dev/null; then credential_sudo=1; fi
+    input_fingerprint="$(printf '%s\n%s\n%s\n' "$password" "$credential_user" "$credential_sudo" | sha256sum | cut -d ' ' -f 1)"
+    unset password
+    printf 'credentials_version=2\npassword_applied=1\ninput_sha256=%s\n' "$input_fingerprint" > "$STATE_DIR/credentials-v2.tmp" \
+        && mv -f "$STATE_DIR/credentials-v2.tmp" "$STATE_DIR/credentials-v2" \
+        || fail_stage credentials credential-state-write-failed
+    rm -f "$identity/guest.password" "$identity/guest.user" "$identity/guest.sudo"
+fi
+if [ "$baseline_verified" -eq 0 ]; then
+    case "$manager" in
+        dnf|pacman) run_step certificates update-ca-trust extract || fail_stage certificates certificate-store-failed ;;
+        *) run_step certificates update-ca-certificates || fail_stage certificates certificate-store-failed ;;
+    esac
+fi
+if [ ! -s "$ROOT/etc/machine-id" ]; then
+    run_step machine-identity dbus-uuidgen --ensure="$ROOT/etc/machine-id" || fail_stage machine-identity machine-id-failed
+fi
+mkdir -p "$ROOT/etc/default" "$ROOT/etc/profile.d" "$ROOT/etc/ssh" || fail_stage configuration write-failed
+printf 'LANG=C.UTF-8\n' > "$ROOT/etc/default/locale"
+printf 'LANG=C.UTF-8\n' > "$ROOT/etc/locale.conf"
+printf 'export LANG=C.UTF-8\n' > "$ROOT/etc/profile.d/01-orchestella-locale.sh"
+if [ "$manager" = apt ] || [ "$manager" = pacman ]; then
+    if [ -f "$ROOT/etc/locale.gen" ] && ! grep -Fqx 'en_US.UTF-8 UTF-8' "$ROOT/etc/locale.gen"; then
+        printf '\nen_US.UTF-8 UTF-8\n' >> "$ROOT/etc/locale.gen"
+    fi
+    if ! locale -a 2>/dev/null | grep -Eiq '^en_US[.]utf-?8$'; then
+        run_step locale locale-gen || fail_stage locale utf8-locale-generation-failed
+    fi
+fi
+# A dedicated config prevents distro defaults enabling empty auth. Random host credentials
+# become usable only after their application succeeds; no host listener is created here.
+password_auth=no
+root_login=prohibit-password
+if [ ! -f "$STATE_DIR/legacy-weak-credentials" ] \
+    && grep -Fqx 'password_applied=1' "$STATE_DIR/credentials-v2" 2>/dev/null; then
+    password_auth=yes
+    root_login=yes
+fi
+printf 'HostKey /etc/ssh/ssh_host_ed25519_key\nPermitRootLogin %s\nPasswordAuthentication %s\nKbdInteractiveAuthentication no\nPermitEmptyPasswords no\nPubkeyAuthentication yes\nUsePAM no\nX11Forwarding no\nSubsystem sftp internal-sftp\n' "$root_login" "$password_auth" \
+    > "$ROOT/etc/ssh/sshd_config.orchestella" || fail_stage ssh-configuration write-failed
+if [ ! -f "$ROOT/etc/ssh/ssh_host_ed25519_key" ]; then
+    run_step ssh-host-keys ssh-keygen -q -t ed25519 -N '' -f "$ROOT/etc/ssh/ssh_host_ed25519_key" \
+        || fail_stage ssh-host-keys key-generation-failed
+fi
+mkdir -p "$ROOT/run/sshd" || fail_stage ssh-configuration write-failed
+run_step ssh-configuration sshd -t -f "$ROOT/etc/ssh/sshd_config.orchestella" || fail_stage ssh-configuration config-validation-failed
+# Only guest-internal services. No host port-forwarding or LAN binding is created here.
+if [ "$distro" = alpine ]; then
+    mkdir -p "$ROOT/etc/conf.d" "$ROOT/etc/runlevels/sysinit" "$ROOT/etc/runlevels/boot" "$ROOT/etc/runlevels/default"
+    printf 'sshd_opts="-f /etc/ssh/sshd_config.orchestella"\n' > "$ROOT/etc/conf.d/sshd"
+    for service in devfs dmesg mdev; do
+        [ ! -f "$ROOT/etc/init.d/$service" ] || ln -sf "/etc/init.d/$service" "$ROOT/etc/runlevels/sysinit/$service"
+    done
+    for service in bootmisc hostname sysctl syslog; do
+        [ ! -f "$ROOT/etc/init.d/$service" ] || ln -sf "/etc/init.d/$service" "$ROOT/etc/runlevels/boot/$service"
+    done
+    for service in dbus sshd droidlayer-guest-agent orchestella-firstboot; do
+        [ -f "$ROOT/etc/init.d/$service" ] || fail_stage services required-openrc-service-missing
+        ln -sf "/etc/init.d/$service" "$ROOT/etc/runlevels/default/$service" || fail_stage services enable-failed
+    done
+else
+    sshd_program="$(command -v sshd)"
+    if [ -n "$ROOT" ]; then
+        sshd_program=/usr/sbin/sshd # synthetic backend, never a host path
+        [ "$distro" != fedora ] || sshd_program=/usr/bin/sshd
+    fi
+    case "$sshd_program" in /usr/bin/sshd|/usr/sbin/sshd|/sbin/sshd) ;; *) fail_stage ssh-configuration unsupported-daemon-path ;; esac
+    mkdir -p "$ROOT/etc/systemd/system/$ssh_unit.d" "$ROOT/etc/systemd/system/multi-user.target.wants"
+    printf '[Service]\nExecStartPre=\nExecStartPre=%s -t -f /etc/ssh/sshd_config.orchestella\nExecStart=\nExecStart=%s -D -f /etc/ssh/sshd_config.orchestella\n' "$sshd_program" "$sshd_program" \
+        > "$ROOT/etc/systemd/system/$ssh_unit.d/orchestella.conf"
+    # Broker implementations expose dbus.service as an alias; enable the real installed unit.
+    dbus_enable_unit=dbus.service
+    if [ -f "$ROOT/usr/lib/systemd/system/dbus-broker.service" ]; then dbus_enable_unit=dbus-broker.service; fi
+    # --root configures enablement without requiring a running manager during bootstrap.
+    run_step service-enablement systemctl --root="${ROOT:-/}" enable "$dbus_enable_unit" "$ssh_unit" \
+        || fail_stage service-enablement service-enable-failed
+fi
+if [ "${ORCHESTELLA_AUTO_UPDATE:-0}" = 1 ] && [ ! -f "$STATE_DIR/update-v2" ]; then
+    case "$manager" in
+        apt) run_step optional-upgrade apt-get -o Acquire::Retries=0 upgrade -y || fail_stage optional-upgrade upgrade-failed ;;
+        apk) run_step optional-upgrade apk upgrade || fail_stage optional-upgrade upgrade-failed ;;
+        dnf) run_step optional-upgrade dnf -y --setopt=timeout=20 --setopt=retries=0 upgrade || fail_stage optional-upgrade upgrade-failed ;;
+        pacman) : ;; # The baseline transaction already performed a full supported upgrade.
+        zypper) run_step optional-upgrade zypper --non-interactive update || fail_stage optional-upgrade upgrade-failed ;;
+    esac
+    printf 'update_version=2\n' > "$STATE_DIR/update-v2.tmp" && mv -f "$STATE_DIR/update-v2.tmp" "$STATE_DIR/update-v2" \
+        || fail_stage state-write persistent-state-unavailable
+fi
+printf 'packages_version=2\ndistro=%s\n' "$distro" > "$STATE_DIR/packages-v2.tmp" \
+    && mv -f "$STATE_DIR/packages-v2.tmp" "$STATE_DIR/packages-v2" || fail_stage state-write persistent-state-unavailable
+if [ "$MODE" = --bootstrap ] || ! native_pid1; then
+    status=awaiting-init; stage=native-handoff; reason=services-not-yet-verified
+    write_state || fail_stage state-write persistent-state-unavailable
+    report
+    exit 0
+fi
+if [ "$distro" = alpine ]; then
+    run_step dbus-start rc-service dbus start || fail_stage dbus-start service-start-failed
+    run_step ssh-start rc-service sshd restart || fail_stage ssh-start service-start-failed
+else
+    run_step manager-reload systemctl daemon-reload || fail_stage manager-reload manager-unavailable
+    run_step dbus-start systemctl start dbus.service || fail_stage dbus-start service-start-failed
+    run_step ssh-start systemctl restart "$ssh_unit" || fail_stage ssh-start service-start-failed
+fi
+native_pid1 && services_active || fail_stage service-verification native-init-or-service-not-active
+if [ -f "$STATE_DIR/legacy-weak-credentials" ]; then
+    status=action-required; stage=credentials; reason=legacy-credential-action-required
+    write_state || fail_stage state-write persistent-state-unavailable
+    report
+    exit 0
+fi
+printf 'runtime_version=2\ndistro=%s\n' "$distro" > "$DONE.tmp" \
+    && mv -f "$DONE.tmp" "$DONE" || fail_stage state-write persistent-state-unavailable
+status=ready; stage=verified; reason=none
+write_state || fail_stage state-write persistent-state-unavailable
+report
+ORCHESTELLA_GUEST_PROVISION_EOF
+    chmod 0755 "$1/usr/sbin/orchestella-guest-provision"
+}
+# ORCHESTELLA_RUNTIME_MODULES_END
 
 # Configures eth0 in the INITRAMFS (busybox ip) before switch_root: the IP and
 # routes live in the kernel and survive switch_root, so distros without any
@@ -704,19 +1643,6 @@ configure_guest_network() {
         echo "== diagnostics end =="
     } > /dev/console 2>&1 || true
 }
-configure_fstab_mounts() {
-    target_root="$1"
-    mkdir -p "$target_root/mnt/downloads" "$target_root/media/downloads" "$target_root/mnt/shared"
-    if [ -f "$target_root/etc/fstab" ]; then
-        if ! grep -qs 'downloads.*mnt/downloads' "$target_root/etc/fstab"; then
-            printf 'downloads\t/mnt/downloads\t9p\ttrans=virtio,version=9p2000.L,ro,nofail\t0\t0\n' >> "$target_root/etc/fstab"
-        fi
-        if ! grep -qs 'shared.*mnt/shared' "$target_root/etc/fstab"; then
-            printf 'shared\t/mnt/shared\t9p\ttrans=virtio,version=9p2000.L,ro,nofail\t0\t0\n' >> "$target_root/etc/fstab"
-        fi
-    fi
-}
-
 install_guest_shell_profile() {
     target_root="$1"
     mkdir -p "$target_root/etc/profile.d" "$target_root/etc/orchestella/shell" "$target_root/etc/droidlayer/shell"
@@ -735,6 +1661,10 @@ EOF
 
     cat > "$target_root/etc/orchestella/shell/orchestella-prompt.sh" <<'EOF'
 #!/bin/sh
+# Orchestella Starship-Style Universal Two-Line Shell Prompt
+# Compatible with POSIX sh, BusyBox ash, Debian dash, and GNU bash.
+# Zero external binary dependencies, execution time < 2ms.
+
 __orchestella_git_branch() {
     _cur="${PWD:-.}"
     _git=""
@@ -760,11 +1690,17 @@ __orchestella_git_branch() {
         [ "$_up" = "$_cur" ] && break
         _cur="$_up"
     done
+
     [ -n "$_git" ] && [ -f "$_git/HEAD" ] || return 0
+
     read -r _ref < "$_git/HEAD" 2>/dev/null || return 0
     case "$_ref" in
-        ref:\ refs/heads/*) printf '%s' "${_ref#ref: refs/heads/}" ;;
-        ref:\ refs/*) printf '%s' "${_ref#ref: refs/}" ;;
+        ref:\ refs/heads/*)
+            printf '%s' "${_ref#ref: refs/heads/}"
+            ;;
+        ref:\ refs/*)
+            printf '%s' "${_ref#ref: refs/}"
+            ;;
         *)
             if [ "${#_ref}" -ge 7 ]; then
                 printf '%.7s' "$_ref"
@@ -774,22 +1710,29 @@ __orchestella_git_branch() {
             ;;
     esac
 }
+
 __orchestella_dir() {
     _cwd="${PWD:-$(pwd)}"
     if [ -n "${HOME:-}" ] && [ "$_cwd" = "$HOME" ]; then
         printf '~'
     elif [ -n "${HOME:-}" ]; then
         case "$_cwd" in
-            "$HOME"/*) printf '~%s' "${_cwd#"$HOME"}" ;;
-            *) printf '%s' "$_cwd" ;;
+            "$HOME"/*)
+                printf '~%s' "${_cwd#"$HOME"}"
+                ;;
+            *)
+                printf '%s' "$_cwd"
+                ;;
         esac
     else
         printf '%s' "$_cwd"
     fi
 }
+
 __orchestella_build_prompt() {
     _last_exit="${1:-0}"
     _mode="${2:-sh}"
+
     _esc=$(printf '\033')
     if [ "$_mode" = "bash" ]; then
         _c_reset="\[${_esc}[0m\]"
@@ -806,30 +1749,41 @@ __orchestella_build_prompt() {
         _c_green="${_esc}[32m"
         _c_magenta="${_esc}[35m"
     fi
+
+    _prompt_user="${USER:-${LOGNAME:-$(id -un 2>/dev/null)}}"
+    _prompt_host="${HOSTNAME:-$(hostname 2>/dev/null)}"
     _dir_str="$(__orchestella_dir)"
+    if [ -n "$_prompt_user" ] && [ -n "$_prompt_host" ]; then
+        _dir_str="${_prompt_user}@${_prompt_host}:${_dir_str}"
+    fi
     _branch="$(__orchestella_git_branch)"
     _git_part=""
     if [ -n "$_branch" ]; then
         _git_part=" ${_c_yellow}(${_branch})${_c_reset}"
     fi
+
     _err_part=""
     if [ "$_last_exit" -ne 0 ]; then
         _err_part=" ${_c_red}✘${_c_reset}"
     fi
+
     _arrow_color="$_c_green"
-    if [ "${UID:-1}" -eq 0 ] 2>/dev/null || [ "${USER:-}" = "root" ]; then
-        _arrow_color="$_c_magenta"
-    elif command -v id >/dev/null 2>&1 && [ "$(id -u 2>/dev/null || echo 1)" -eq 0 ]; then
+    _is_root=0
+    if [ "${USER:-}" = "root" ]; then
+        _is_root=1
+    elif command -v id >/dev/null 2>&1; then
+        if [ "$(id -u 2>/dev/null || echo 1)" -eq 0 ]; then
+            _is_root=1
+        fi
+    fi
+    if [ "$_is_root" -eq 1 ]; then
         _arrow_color="$_c_magenta"
     fi
+
     printf '%s%s%s%s%s\n%s❯%s ' \
         "$_c_cyan" "$_dir_str" "$_c_reset" "$_git_part" "$_err_part" \
         "$_arrow_color" "$_c_reset"
 }
-# Backward compatibility wrappers
-__droidlayer_git_branch() { __orchestella_git_branch "$@"; }
-__droidlayer_dir() { __orchestella_dir "$@"; }
-__droidlayer_build_prompt() { __orchestella_build_prompt "$@"; }
 
 if [ -n "${BASH_VERSION:-}" ]; then
     __orchestella_prompt_cmd() {
@@ -839,9 +1793,15 @@ if [ -n "${BASH_VERSION:-}" ]; then
     PROMPT_COMMAND=__orchestella_prompt_cmd
     PS1="$(__orchestella_build_prompt 0 bash)"
 else
+    # PS1 intentionally holds an unevaluated command substitution, re-evaluated
+    # on every prompt draw (POSIX sh has no PROMPT_COMMAND).
+    # shellcheck disable=SC2089
     PS1='$(__orchestella_build_prompt "$?" sh)'
 fi
+# shellcheck disable=SC2090
 export PS1
+
+__droidlayer_build_prompt() { __orchestella_build_prompt "$@"; }
 EOF
     chmod 0755 "$target_root/etc/orchestella/shell/orchestella-prompt.sh"
     ln -sf /etc/orchestella/shell/orchestella-prompt.sh "$target_root/etc/droidlayer/shell/droidlayer-prompt.sh" 2>/dev/null || cp -f "$target_root/etc/orchestella/shell/orchestella-prompt.sh" "$target_root/etc/droidlayer/shell/droidlayer-prompt.sh"
@@ -886,6 +1846,12 @@ elif [ -f "$(dirname "$0")/orchestella-prompt.sh" ]; then
 elif [ -f "$(dirname "$0")/droidlayer-prompt.sh" ]; then
     . "$(dirname "$0")/droidlayer-prompt.sh"
 fi
+
+# ORCHESTELLA_TERMINAL_PROFILE_BEGIN
+if [ -n "${BASH_VERSION:-}" ] && [ -r /etc/orchestella/shell/20-orchestella-terminal-integration.sh ]; then
+    . /etc/orchestella/shell/20-orchestella-terminal-integration.sh
+fi
+# ORCHESTELLA_TERMINAL_PROFILE_END
 
 # Load graphics acceleration environment
 if [ -f /etc/profile.d/10-orchestella-graphics.sh ]; then
@@ -970,193 +1936,89 @@ EOF
     fi
 }
 
-provision_guest_identity_and_credentials() {
-    target_root="$1"
-    input_dir="$2"
-
-    # 1. Solidify Hostname (solidify 'orchestella' brand and eliminate random UUIDs)
-    target_hostname=""
-    if command -v kernel_argument >/dev/null 2>&1; then
-        target_hostname="$(kernel_argument orchestella.hostname || true)"
-    fi
-    if [ -z "$target_hostname" ] && [ -f "$input_dir/hostname" ]; then
-        target_hostname="$(tr -d '\r\n' < "$input_dir/hostname")"
-    fi
-    if [ -z "$target_hostname" ]; then
-        target_hostname="orchestella"
-    fi
-    # Sanitize hostname: lowercase alphanumeric and hyphens, reject raw UUIDs
-    target_hostname="$(printf '%s' "$target_hostname" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-')"
-    case "$target_hostname" in
-        [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]|"")
-            target_hostname="orchestella"
-            ;;
-    esac
-    [ -n "$target_hostname" ] || target_hostname="orchestella"
-
-    mkdir -p "$target_root/etc"
-    printf '%s\n' "$target_hostname" > "$target_root/etc/hostname"
-
-    # 2. Solidify /etc/hosts resolution
-    cat > "$target_root/etc/hosts" <<EOF
-127.0.0.1	localhost $target_hostname
-::1	localhost ip6-localhost ip6-loopback $target_hostname
-EOF
-
-    # 3. Provision root password (defaults to 1234 if not configured)
-    guest_pass="1234"
-    if [ -f "$input_dir/guest.password" ]; then
-        _p="$(tr -d '\r\n' < "$input_dir/guest.password")"
-        if [ -n "$_p" ]; then
-            guest_pass="$_p"
-        fi
-    fi
-
-    if [ -x "$target_root/usr/sbin/chpasswd" ]; then
-        printf 'root:%s\n' "$guest_pass" | chroot "$target_root" /usr/sbin/chpasswd 2>/dev/null || true
-    elif [ -x "$target_root/usr/bin/chpasswd" ]; then
-        printf 'root:%s\n' "$guest_pass" | chroot "$target_root" /usr/bin/chpasswd 2>/dev/null || true
-    elif [ -x "$target_root/sbin/chpasswd" ]; then
-        printf 'root:%s\n' "$guest_pass" | chroot "$target_root" /sbin/chpasswd 2>/dev/null || true
-    fi
-
-    # 4. Provision custom user and sudoers if configured
-    guest_user=""
-    if command -v kernel_argument >/dev/null 2>&1; then
-        guest_user="$(kernel_argument orchestella.user || true)"
-    fi
-    if [ -z "$guest_user" ] && [ -f "$input_dir/guest.user" ]; then
-        guest_user="$(tr -d '\r\n' < "$input_dir/guest.user")"
-    fi
-
-    if [ -n "$guest_user" ] && [ "$guest_user" != "root" ]; then
-        # Create non-root user
-        if [ -x "$target_root/usr/sbin/useradd" ] || [ -x "$target_root/sbin/useradd" ]; then
-            chroot "$target_root" useradd -m -s /bin/bash "$guest_user" 2>/dev/null || \
-            chroot "$target_root" useradd -m -s /bin/sh "$guest_user" 2>/dev/null || true
-        elif [ -x "$target_root/usr/sbin/adduser" ] || [ -x "$target_root/sbin/adduser" ]; then
-            chroot "$target_root" adduser -D -s /bin/bash "$guest_user" 2>/dev/null || \
-            chroot "$target_root" adduser -D -s /bin/sh "$guest_user" 2>/dev/null || true
-        fi
-
-        # Set user password
-        if [ -x "$target_root/usr/sbin/chpasswd" ]; then
-            printf '%s:%s\n' "$guest_user" "$guest_pass" | chroot "$target_root" /usr/sbin/chpasswd 2>/dev/null || true
-        elif [ -x "$target_root/usr/bin/chpasswd" ]; then
-            printf '%s:%s\n' "$guest_user" "$guest_pass" | chroot "$target_root" /usr/bin/chpasswd 2>/dev/null || true
-        elif [ -x "$target_root/sbin/chpasswd" ]; then
-            printf '%s:%s\n' "$guest_user" "$guest_pass" | chroot "$target_root" /sbin/chpasswd 2>/dev/null || true
-        fi
-
-        # Sudo privileges (NOPASSWD:ALL)
-        guest_sudo=""
-        if command -v kernel_argument >/dev/null 2>&1; then
-            guest_sudo="$(kernel_argument orchestella.sudo || true)"
-        fi
-        if [ -z "$guest_sudo" ] && [ -f "$input_dir/guest.sudo" ]; then
-            guest_sudo="$(tr -d '\r\n' < "$input_dir/guest.sudo")"
-        fi
-        if [ "$guest_sudo" = "1" ] || [ "$guest_sudo" = "true" ]; then
-            mkdir -p "$target_root/etc/sudoers.d"
-            chmod 0750 "$target_root/etc/sudoers.d"
-            printf '%s ALL=(ALL) NOPASSWD:ALL\n' "$guest_user" > "$target_root/etc/sudoers.d/99-orchestella-user"
-            chmod 0440 "$target_root/etc/sudoers.d/99-orchestella-user"
-        fi
-    fi
-}
-
+# ORCHESTELLA_RUNTIME_ENTRY_BEGIN
 mount -t devtmpfs devtmpfs /dev || fail mount-devtmpfs
 mount -t proc proc /proc || fail mount-proc
 mount -t sysfs sysfs /sys || fail mount-sysfs
 
 ROOT_DEVICE="$(kernel_argument droidlayer.root_device || true)"
 case "$ROOT_DEVICE" in /dev/vd[a-z]) ;; *) fail invalid-root-device ;; esac
-
 for _ in 1 2 3 4 5 6 7 8 9 10; do
     [ -b "$ROOT_DEVICE" ] && break
     sleep 1
 done
 [ -b "$ROOT_DEVICE" ] || fail root-device-missing
-
 install_strategy_neutral_bridge_devices
 
-mkdir -p /newroot
-if mount -t ext4 "$ROOT_DEVICE" /newroot 2>/dev/null; then
-    if ! grep -Fqx 'provisioning_version=1' /newroot/var/lib/droidlayer/provisioned-v1 2>/dev/null; then
-        # Self-heal (ADR-0006): a marker-less ext4 root volume can only be a half-finished
-        # provisioning — the volume was formatted but the unpack never completed, so no user
-        # data can exist yet. Every launch embeds fresh provisioning input, so wipe and
-        # re-provision below instead of failing the instance permanently.
-        log 'DROIDLAYER_ROOT_VOLUME_INCOMPLETE marker-missing re-provisioning'
-        umount /newroot 2>/dev/null || fail unmount-unrecognized-root
-    else
-        install_generic_linux_init_fallback /newroot
-    [ -x /newroot/sbin/init ] || [ -x /newroot/lib/systemd/systemd ] || fail root-init-missing
-    mkdir -p /newroot/dev /newroot/proc /newroot/sys
+boot_guest_root() {
     configure_fstab_mounts /newroot
-    # Auto online resize ext4 root filesystem if root-volume was resized (ADR-0007 / Ticket 33)
-    if [ -x /sbin/resize2fs ]; then
-        /sbin/resize2fs "$ROOT_DEVICE" 2>/dev/null || true
-    elif [ -x /newroot/sbin/resize2fs ]; then
-        /newroot/sbin/resize2fs "$ROOT_DEVICE" 2>/dev/null || true
-    elif [ -x /newroot/usr/sbin/resize2fs ]; then
-        /newroot/usr/sbin/resize2fs "$ROOT_DEVICE" 2>/dev/null || true
-    fi
-    # Every systemd distro needs the guest agent service and autologin getty; without
-    # them the app terminal sees console output but input has no reader (observed on
-    # openSUSE/Arch/Alma/Rocky/Fedora, which previously only got the Debian flavor).
-    if is_systemd_root /newroot; then
-        install_systemd_guest_agent_service /newroot
-        install_serial_autologin_getty /newroot
-        if ! is_official_debian_systemd_init /newroot; then
-            configure_systemd_network_dhcp /newroot
-        fi
-    fi
-    if is_official_debian_systemd_init /newroot; then
-        install_official_debian_systemd_flavor /newroot
-    fi
-    # Clean up broken proxy-relay respawn entry in inittab if present (ADR-0010 fix)
-    if [ -f /newroot/etc/inittab ]; then
-        sed -i '/orchestella-proxy-relay/d' /newroot/etc/inittab 2>/dev/null || true
-        sed -i '/droidlayer-proxy-relay/d' /newroot/etc/inittab 2>/dev/null || true
-    fi
-    # Update orchestella-proxy-relay if payload is embedded
+    mkdir -p /newroot/dev /newroot/proc /newroot/sys /newroot/run
+    if [ -x /sbin/resize2fs ]; then /sbin/resize2fs "$ROOT_DEVICE" 2>/dev/null || true; fi
+    mkdir -p /newroot/usr/sbin
+    cp /opt/droidlayer/guest-agent /newroot/usr/sbin/droidlayer-guest-agent || fail guest-agent-install
+    chmod 0755 /newroot/usr/sbin/droidlayer-guest-agent
     if [ -f /opt/orchestella/proxy-relay ]; then
-        mkdir -p /newroot/usr/sbin
-        cp -f /opt/orchestella/proxy-relay /newroot/usr/sbin/orchestella-proxy-relay
+        cp /opt/orchestella/proxy-relay /newroot/usr/sbin/orchestella-proxy-relay || fail proxy-relay-install
         chmod 0755 /newroot/usr/sbin/orchestella-proxy-relay
     fi
-    if [ ! -f /newroot/etc/hostname ]; then
-        printf 'orchestella\n' > /newroot/etc/hostname
-    fi
+    log 'ORCHESTELLA_GUEST_ASSEMBLY phase=runtime-services status=running'
+    install_native_guest_runtime /newroot
     install_guest_shell_profile /newroot
-    PROVISIONED_DISTRO="$(grep '^distro=' /newroot/var/lib/droidlayer/provisioned-v1 | cut -d '=' -f 2)"
-    log "DROIDLAYER_ROOT_VOLUME_RESTART version=1 distro=$PROVISIONED_DISTRO"
+    install_guest_terminal_integration /newroot
+    log 'ORCHESTELLA_GUEST_ASSEMBLY phase=runtime-services status=complete'
+    # Flavor service setup may replace resolv.conf. Reapply the proven host-supplied DNS
+    # and BusyBox eth0/route configuration immediately before the native-init handoff.
     configure_guest_network /newroot
-mount --move /dev /newroot/dev || fail move-dev
+    # systemd and OpenRC need volatile runtime state and a real cgroup hierarchy.
+    mount -t tmpfs -o mode=0755 tmpfs /newroot/run || fail mount-guest-run
+    mkdir -p /sys/fs/cgroup
+    mount -t cgroup2 cgroup2 /sys/fs/cgroup || fail mount-guest-cgroup2
+    # No package/SSH/dbus readiness is implied by an assembled root volume.
+    log 'ORCHESTELLA_GUEST_BOOT phase=native-init runtime=unverified'
+    mount --move /dev /newroot/dev || fail move-dev
     mount --move /proc /newroot/proc || fail move-proc
     mount --move /sys /newroot/sys || fail move-sys
-    exec /sbin/switch_root /newroot /sbin/init || fail switch-root
-    fi
-fi
+    exec /sbin/switch_root /newroot /usr/sbin/orchestella-boot
+}
 
-ROOT_FILESYSTEM_TYPE="$(/sbin/blkid -o value -s TYPE "$ROOT_DEVICE" 2>/dev/null || true)"
-if [ -n "$ROOT_FILESYSTEM_TYPE" ]; then
-    # A foreign or half-provisioned filesystem on the root volume is reformattable here:
-    # provisioning input availability is verified below before mkfs runs, and only
-    # provisioning ever writes user data, so nothing recoverable can be lost.
-    log "DROIDLAYER_ROOT_VOLUME_FOREIGN type=$ROOT_FILESYSTEM_TYPE reformatting"
+mkdir -p /newroot
+RESUME_ASSEMBLY=0
+if mount -t ext4 "$ROOT_DEVICE" /newroot 2>/dev/null; then
+    if grep -Fqx 'provisioning_version=1' /newroot/var/lib/droidlayer/provisioned-v1 2>/dev/null; then
+        log 'DROIDLAYER_ROOT_VOLUME_RESTART version=1 runtime=unverified'
+        if [ -f /opt/droidlayer/embedded-input/.active ]; then
+            stage_pending_guest_credentials /newroot /opt/droidlayer/embedded-input
+            stage_guest_package_repositories /newroot /opt/droidlayer/embedded-input
+        else
+            restart_input_tag="$(kernel_argument droidlayer.input_tag || true)"
+            case "$restart_input_tag" in ''|*[!A-Za-z0-9._-]*) fail invalid-input-tag ;; esac
+            mkdir -p /run/droidlayer-input
+            if mount -t 9p -o trans=virtio,version=9p2000.L,ro "$restart_input_tag" /run/droidlayer-input 2>/dev/null; then
+                stage_pending_guest_credentials /newroot /run/droidlayer-input
+                stage_guest_package_repositories /newroot /run/droidlayer-input
+            fi
+        fi
+        boot_guest_root
+        fail switch-root
+    elif grep -Fqx 'assembly_version=2' /newroot/var/lib/droidlayer/assembly-in-progress 2>/dev/null; then
+        # Only our explicit interrupted-assembly marker permits re-extraction, never mkfs.
+        RESUME_ASSEMBLY=1
+        log 'DROIDLAYER_ROOT_VOLUME_RESUME phase=assembly preserving-filesystem'
+    else
+        log 'DROIDLAYER_ROOT_VOLUME_REFUSED reason=unrecognized-existing-filesystem data=preserved'
+        fail existing-root-volume-unrecognized
+    fi
+else
+    ROOT_FILESYSTEM_TYPE="$(/sbin/blkid -o value -s TYPE "$ROOT_DEVICE" 2>/dev/null || true)"
+    [ -z "$ROOT_FILESYSTEM_TYPE" ] || fail existing-root-volume-unmountable
+    # Only a volume marked at creation by the host may be formatted. Unknown/legacy data is preserved.
+    creation_signature="$(dd if="$ROOT_DEVICE" bs=1 count=32 2>/dev/null)"
+    [ "$creation_signature" = ORCHESTELLA_EMPTY_ROOT_VOLUME_V2 ] || fail root-volume-not-created-for-provisioning
 fi
 
 INPUT_TAG="$(kernel_argument droidlayer.input_tag || true)"
 case "$INPUT_TAG" in *[!A-Za-z0-9._-]*|'') fail invalid-input-tag ;; esac
 mkdir -p /run/droidlayer-input
-# Provisioning input transport: the 9p virtio mount is the canonical channel.
-# Builders that ship without virtio-9p (Android bionic build disables virtfs)
-# receive the same verified input files as a second, gzipped newc cpio segment
-# appended to the initramfs; the kernel unpacks it into
-# /opt/droidlayer/embedded-input and the .active sentinel keeps the fallback
-# fail-closed. The guest still re-verifies the rootfs digest below.
 INPUT_DIR=""
 if mount -t 9p -o trans=virtio,version=9p2000.L,ro "$INPUT_TAG" /run/droidlayer-input 2>/dev/null; then
     INPUT_DIR=/run/droidlayer-input
@@ -1166,137 +2028,122 @@ elif [ -f /opt/droidlayer/embedded-input/.active ]; then
 else
     fail mount-input
 fi
-
-ROOTFS_FILE="$(cat /etc/droidlayer/rootfs.file 2>/dev/null || true)"
-EXPECTED_ROOTFS_SHA256="$(cat /etc/droidlayer/rootfs.sha256 2>/dev/null || true)"
-ROOTFS_PATH="$INPUT_DIR/$ROOTFS_FILE"
+log 'ORCHESTELLA_GUEST_ASSEMBLY phase=input-verification status=running'
+verify_rootfs_input "$INPUT_DIR"
+log 'ORCHESTELLA_GUEST_ASSEMBLY phase=input-verification status=verified'
 TOKEN_PATH="$INPUT_DIR/bridge.token"
-
-if [ -z "$ROOTFS_FILE" ] || [ ! -f "$ROOTFS_PATH" ]; then
-    for candidate in "$INPUT_DIR"/*.tar.xz "$INPUT_DIR"/*.tar.gz "$INPUT_DIR"/*.tar; do
-        if [ -f "$candidate" ]; then
-            ROOTFS_PATH="$candidate"
-            ROOTFS_FILE="$(basename "$candidate")"
-            break
-        fi
-    done
-fi
-
-[ -f "$ROOTFS_PATH" ] || fail rootfs-missing
-if [ -n "$EXPECTED_ROOTFS_SHA256" ] && [ -f "/etc/droidlayer/rootfs.file" ] && [ "$ROOTFS_FILE" = "$(cat /etc/droidlayer/rootfs.file)" ]; then
-    ACTUAL_ROOTFS_SHA256="$(sha256sum "$ROOTFS_PATH" | cut -d ' ' -f 1)"
-    [ "$ACTUAL_ROOTFS_SHA256" = "$EXPECTED_ROOTFS_SHA256" ] || fail rootfs-checksum
-fi
-
 [ -f "$TOKEN_PATH" ] || fail token-missing
 TOKEN="$(tr -d '\r\n' < "$TOKEN_PATH")"
 [ "${#TOKEN}" -eq 64 ] || fail token-format
 case "$TOKEN" in *[!0-9a-f]*) fail token-format ;; esac
 
-/sbin/mkfs.ext4 -F -L droidlayer-root "$ROOT_DEVICE" || fail format-root
-mount -t ext4 "$ROOT_DEVICE" /newroot || fail mount-root
-case "$ROOTFS_PATH" in
-    *.tar.xz|*.txz) tar -xJpf "$ROOTFS_PATH" -C /newroot || fail unpack-rootfs ;;
-    *.tar.gz|*.tgz) tar -xzpf "$ROOTFS_PATH" -C /newroot || fail unpack-rootfs ;;
-    *) tar -xpf "$ROOTFS_PATH" -C /newroot || fail unpack-rootfs ;;
-esac
+if [ "$RESUME_ASSEMBLY" -eq 1 ]; then
+    grep -Fqx "rootfs_sha256=$EXPECTED_ROOTFS_SHA256" /newroot/var/lib/droidlayer/assembly-in-progress \
+        || fail resumed-rootfs-checksum-mismatch
+else
+    log 'ORCHESTELLA_GUEST_ASSEMBLY phase=format status=running'
+    /sbin/mkfs.ext4 -F -L droidlayer-root "$ROOT_DEVICE" || fail format-root
+    mount -t ext4 "$ROOT_DEVICE" /newroot || fail mount-root
+    log 'ORCHESTELLA_GUEST_ASSEMBLY phase=format status=mounted'
+    mkdir -p /newroot/var/lib/droidlayer
+    printf 'assembly_version=2\nrootfs_sha256=%s\n' "$EXPECTED_ROOTFS_SHA256" \
+        > /newroot/var/lib/droidlayer/assembly-in-progress
+    log 'ORCHESTELLA_GUEST_ASSEMBLY phase=marker-sync status=running'
+    sync
+    log 'ORCHESTELLA_GUEST_ASSEMBLY phase=marker-sync status=complete'
+fi
+log 'ORCHESTELLA_GUEST_ASSEMBLY phase=unpack status=running'
+unpack_rootfs_archive() {
+    case "$ROOTFS_PATH" in
+        *.tar.xz|*.txz) timeout 1800 tar -xJpf "$ROOTFS_PATH" -C /newroot ;;
+        *.tar.gz|*.tgz) timeout 1800 tar -xzpf "$ROOTFS_PATH" -C /newroot ;;
+        *.tar) timeout 1800 tar -xpf "$ROOTFS_PATH" -C /newroot ;;
+        *) return 64 ;;
+    esac
+}
+unpack_rootfs_archive &
+unpack_pid=$!
+(
+    heartbeat_sleep=
+    trap 'if [ -n "$heartbeat_sleep" ]; then kill "$heartbeat_sleep" 2>/dev/null || true; wait "$heartbeat_sleep" 2>/dev/null || true; fi; exit 0' TERM INT
+    while kill -0 "$unpack_pid" 2>/dev/null; do
+        sleep 15 &
+        heartbeat_sleep=$!
+        wait "$heartbeat_sleep" || true
+        heartbeat_sleep=
+        if kill -0 "$unpack_pid" 2>/dev/null; then
+            log 'ORCHESTELLA_GUEST_ASSEMBLY phase=unpack status=running heartbeat=1'
+        fi
+    done
+) &
+heartbeat_pid=$!
+unpack_status=0
+wait "$unpack_pid" || unpack_status=$?
+kill "$heartbeat_pid" 2>/dev/null || true
+wait "$heartbeat_pid" 2>/dev/null || true
+[ "$unpack_status" -eq 0 ] || fail unpack-rootfs
+log 'ORCHESTELLA_GUEST_ASSEMBLY phase=unpack status=complete'
 
 mkdir -p /newroot/etc/droidlayer
 chmod 0700 /newroot/etc/droidlayer
 umask 077
 printf '%s\n' "$TOKEN" > /newroot/etc/droidlayer/bridge.token
 chmod 0600 /newroot/etc/droidlayer/bridge.token
+unset TOKEN
+log 'ORCHESTELLA_GUEST_ASSEMBLY phase=identity status=running'
 provision_guest_identity_and_credentials /newroot "$INPUT_DIR"
+log 'ORCHESTELLA_GUEST_ASSEMBLY phase=identity status=complete'
+umask 022
+# Per-instance identities must not inherit a shared cloud/container image's machine id or SSH keys.
+rm -f /newroot/etc/machine-id /newroot/var/lib/dbus/machine-id
+for host_key in /newroot/etc/ssh/ssh_host_*; do
+    [ ! -f "$host_key" ] || rm -f "$host_key"
+done
 
-# Ticket 01: Injected Distro Mirror Configuration
 if [ -f "$INPUT_DIR/sources.list" ]; then
     mkdir -p /newroot/etc/apt
-    cp -f "$INPUT_DIR/sources.list" /newroot/etc/apt/sources.list
+    cp "$INPUT_DIR/sources.list" /newroot/etc/apt/sources.list || fail apt-source-install
+    # Avoid duplicate cloud-image deb822 repositories bypassing the selected mirror policy.
+    if [ -f /newroot/etc/apt/sources.list.d/ubuntu.sources ]; then
+        mv /newroot/etc/apt/sources.list.d/ubuntu.sources /newroot/etc/apt/sources.list.d/ubuntu.sources.orchestella-original
+    fi
+    if [ -f /newroot/etc/apt/sources.list.d/debian.sources ]; then
+        mv /newroot/etc/apt/sources.list.d/debian.sources /newroot/etc/apt/sources.list.d/debian.sources.orchestella-original
+    fi
     chmod 0644 /newroot/etc/apt/sources.list
 fi
 if [ -f "$INPUT_DIR/repositories" ]; then
     mkdir -p /newroot/etc/apk
-    cp -f "$INPUT_DIR/repositories" /newroot/etc/apk/repositories
+    cp "$INPUT_DIR/repositories" /newroot/etc/apk/repositories || fail apk-source-install
     chmod 0644 /newroot/etc/apk/repositories
 fi
 if [ -f "$INPUT_DIR/mirrorlist" ]; then
     mkdir -p /newroot/etc/pacman.d
-    cp -f "$INPUT_DIR/mirrorlist" /newroot/etc/pacman.d/mirrorlist
+    cp "$INPUT_DIR/mirrorlist" /newroot/etc/pacman.d/mirrorlist || fail pacman-source-install
     chmod 0644 /newroot/etc/pacman.d/mirrorlist
 fi
-
-# Ticket 01: First-Boot Software Update Script
-if [ -f "$INPUT_DIR/firstboot.sh" ]; then
+# Mandatory baseline loads only this explicit owned copy; preserve all vendor/user .repo files.
+stage_guest_package_repositories /newroot "$INPUT_DIR"
+if grep -Fqx '# orchestella-guest-runtime-version=2' "$INPUT_DIR/firstboot.sh" 2>/dev/null; then
     mkdir -p /newroot/opt/orchestella
-    cp -f "$INPUT_DIR/firstboot.sh" /newroot/opt/orchestella/firstboot.sh
+    cp "$INPUT_DIR/firstboot.sh" /newroot/opt/orchestella/firstboot.sh || fail firstboot-script-install
     chmod 0755 /newroot/opt/orchestella/firstboot.sh
 fi
 
-mkdir -p /newroot/usr/sbin /newroot/etc/init.d /newroot/etc/conf.d
-cp /opt/droidlayer/guest-agent /newroot/usr/sbin/droidlayer-guest-agent
-if [ -f /opt/orchestella/proxy-relay ]; then
-    cp -f /opt/orchestella/proxy-relay /newroot/usr/sbin/orchestella-proxy-relay
-    chmod 0755 /newroot/usr/sbin/orchestella-proxy-relay
-fi
-cp /opt/droidlayer/openrc/droidlayer-guest-agent \
-    /newroot/etc/init.d/droidlayer-guest-agent
-cp /opt/droidlayer/openrc/droidlayer-guest-agent.conf \
-    /newroot/etc/conf.d/droidlayer-guest-agent
-chmod 0755 /newroot/usr/sbin/droidlayer-guest-agent \
-    /newroot/etc/init.d/droidlayer-guest-agent
-chmod 0644 /newroot/etc/conf.d/droidlayer-guest-agent
-if [ "$BRIDGE_DEVICE_MAPPED" -eq 1 ]; then
-    cat >> /newroot/etc/conf.d/droidlayer-guest-agent <<'EOF'
-bridge_stream=/dev/droidlayer-bridge
-terminal_device=/dev/droidlayer-terminal
-EOF
-    mkdir -p /newroot/etc/runlevels/default
-    ln -s /etc/init.d/droidlayer-guest-agent \
-        /newroot/etc/runlevels/default/droidlayer-guest-agent 2>/dev/null \
-        || true
-    install_official_alpine_busybox_init_fallback /newroot
-    if is_systemd_root /newroot; then
-        install_systemd_guest_agent_service /newroot
-        install_serial_autologin_getty /newroot
-        if ! is_official_debian_systemd_init /newroot; then
-            configure_systemd_network_dhcp /newroot
-        fi
-    fi
-    install_official_debian_systemd_flavor /newroot
-    install_generic_linux_init_fallback /newroot
-    install_guest_shell_profile /newroot
-fi
-
-configure_fstab_mounts /newroot
-
 mkdir -p /newroot/var/lib/droidlayer
-chmod 0755 /newroot/var/lib/droidlayer
-DISTRO_TAG="linux"
-if [ -f /newroot/etc/os-release ]; then
-    _id="$(grep -E '^ID=' /newroot/etc/os-release 2>/dev/null | head -n1 | cut -d= -f2 | tr -d '"'\')"
-    [ -n "$_id" ] && DISTRO_TAG="$_id"
-elif [ -f /newroot/usr/lib/os-release ]; then
-    _id="$(grep -E '^ID=' /newroot/usr/lib/os-release 2>/dev/null | head -n1 | cut -d= -f2 | tr -d '"'\')"
-    [ -n "$_id" ] && DISTRO_TAG="$_id"
-elif is_official_debian_systemd_init /newroot; then
-    DISTRO_TAG="debian-13"
-elif is_official_alpine_busybox_init /newroot; then
-    DISTRO_TAG="alpine-3.24.1"
-fi
-printf 'provisioning_version=1\ndistro=%s\n' "$DISTRO_TAG" \
-    > /newroot/var/lib/droidlayer/provisioned-v1
+DISTRO_TAG="$(sed -n 's/^ID=//p' /newroot/etc/os-release 2>/dev/null | tr -d '\"\047' | head -n 1)"
+[ -n "$DISTRO_TAG" ] || DISTRO_TAG=linux
+printf 'provisioning_version=1\nassembly_version=2\ndistro=%s\nrootfs_sha256=%s\n' "$DISTRO_TAG" "$EXPECTED_ROOTFS_SHA256" \
+    > /newroot/var/lib/droidlayer/provisioned-v1.tmp
+mv /newroot/var/lib/droidlayer/provisioned-v1.tmp /newroot/var/lib/droidlayer/provisioned-v1
+rm -f /newroot/var/lib/droidlayer/assembly-in-progress
 sync
-log "DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=$DISTRO_TAG"
-if [ "$BRIDGE_DEVICE_MAPPED" -eq 0 ] || [ "$(kernel_argument droidlayer.poweroff || true)" = "1" ]; then
-    umount /newroot || true
+log "DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=$DISTRO_TAG phase=rootfs runtime=pending"
+if [ "$(kernel_argument droidlayer.poweroff || true)" = 1 ]; then
+    umount /newroot || fail unmount-provisioned-root
     poweroff -f || true
     while :; do sleep 3600; done
 fi
-mkdir -p /newroot/dev /newroot/proc /newroot/sys
-install_generic_linux_init_fallback /newroot
-[ -x /newroot/sbin/init ] || [ -x /newroot/lib/systemd/systemd ] || fail root-init-missing
-configure_guest_network /newroot
-mount --move /dev /newroot/dev || fail move-dev
-mount --move /proc /newroot/proc || fail move-proc
-mount --move /sys /newroot/sys || fail move-sys
-exec /sbin/switch_root /newroot /sbin/init || fail switch-root
+boot_guest_root
+fail switch-root
+# ORCHESTELLA_RUNTIME_ENTRY_END
