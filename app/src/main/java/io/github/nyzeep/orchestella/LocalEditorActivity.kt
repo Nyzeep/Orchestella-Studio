@@ -1,5 +1,6 @@
 package io.github.nyzeep.orchestella
 
+import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -86,7 +87,7 @@ class LocalEditorActivity : AppCompatActivity() {
         owner?.takeIf { it !== this }?.retireEditor()
         owner = this
         id = intent.getStringExtra("instanceId")
-        if (id == null) { finish(); return }
+        if (id.isNullOrBlank()) { finish(); return }
         status = TextView(this).apply { text = "正在核对 guest 服务与本地监听…"; textSize = 14f }
         lanButton = MaterialButton(this).apply {
             text = "开启/关闭局域网协作"; isEnabled = false
@@ -178,6 +179,19 @@ class LocalEditorActivity : AppCompatActivity() {
                 main.post { if (!closed) status.text = failure.message ?: "本地服务连接失败" }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        LocalEditorReentry.select(
+            currentId = id,
+            selectedId = intent.getStringExtra("instanceId"),
+            closed = closed,
+            retire = ::retireEditor,
+            recreate = { recreate() },
+            finish = { finish() }
+        )
     }
 
     private fun allowed(address: String, resource: Boolean): Boolean {
