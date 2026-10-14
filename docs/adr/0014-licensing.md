@@ -1,27 +1,35 @@
 ---
-status: accepted
+status: amended
 date: 2026-09-05
-amended: 2026-09-20
+amended: 2026-10-14
 ---
 
-# 许可证策略：Apache-2.0 + 零代码复制立场
+# 许可证策略：GNU GPL v3.0 or later (GPL-3.0-or-later) + 强开源保障立场
 
-1. **项目许可证：Apache-2.0**——最大化 OEM 合作（L3 愿景）与商业化选项，含显式专利授权条款；用户在知悉"无 copyleft 护城河"取舍后选定。
-2. **零代码复制立场（Original-Implementation Stance）**：对 GPL 参考项目（Podroid GPL-2.0、Droidspaces GPL-3.0、Termux 系 GPL）借鉴架构、不复制代码与二进制；不 vendored Termux 系组件；终端等组件选型必须避开 GPL 传染（选型时记录）。
-3. **GPL 义务流程化**：随 App 分发的 GPL 二进制（kernel、QEMU——ADR-0005 的 CI 自建产物）由 CI 生成"对应源码清单"。公开发布的默认交付路径为：已确认公开的项目 Git 仓库中的固定版本 tag，加与该 tag 一一对应的 Release 源码包；该包必须含实际分发二进制的完整对应源码、补丁、配置、控制编译/安装的脚本、LICENSE/NOTICE 与校验记录。每次组件升级或发布都原子更新该记录、tag 和源码包。书面源码 offer 保留为兜底承诺，不能用泛称的 "publisher/support channel" 代替真实公开源码路径。
-4. **分发边界三分**：App 代码（Apache-2.0）/ 随包 GPL 二进制（独立程序边界 + 对应源码义务）/ guest rootfs（官方 tarball，义务在上游发行版渠道）——互不传染；未来 guest 内加入 GPL 工具不传染宿主 App，但须 NOTICE 如实标注。
+1. **项目许可证：GNU General Public License v3.0 or later (GPL-3.0-or-later)**——建立强 Copyleft 开源护城河，防止闭源 fork 与商业专有化包装；同时保障移动设备用户的反 Tivo 自由与专利安全。
+2. **零代码复制立场（Original-Implementation Stance）**：保持架构参考与自研实现，对 GPL 参考项目（Podroid、Droidspaces、Termux 等）坚持零未经授权代码复制；核心组件与契约代码自研，确保清晰合规的著作权链。
+3. **GPL 义务流程化**：随 App 分发的 GPL 二进制（kernel、QEMU——ADR-0005 的 CI 自建产物）由 CI 生成"对应源码清单"。公开发布的默认交付路径为：已确认公开的项目 Git 仓库中的固定版本 tag，加与该 tag 一一对应的 Release 源码包；该包必须含实际分发二进制的完整对应源码、补丁、配置、控制编译/安装的脚本、LICENSE/NOTICE 与校验记录。每次组件升级或发布都原子更新该记录、tag 和源码包。
+4. **分发边界与依赖兼容性**：
+   - App 代码与自研运行时遵循 GPL-3.0-or-later；
+   - Android 官方依赖（Jetpack、Material 3、Kotlin 库）遵循 Apache-2.0，依据 FSF 官方结论与 GPLv3 第 7 条款，Apache-2.0 代码与 GPLv3 **完全单向兼容**，可合法编译打包为 GPLv3 二进制（解决 GPLv2 与 Apache-2.0 不兼容的问题）；
+   - 随包 GPL 二进制（kernel/QEMU）通过独立程序/虚拟化边界隔离，履行对应源码义务；
+   - guest rootfs 官方 tarball 义务在上游发行版渠道。
 
-## Considered Options
+## Considered Options & Transition Analysis (2026-10-14 修订)
 
-- **GPL-3.0（备选，未选）**：copyleft 护城河防闭源 fork，代价是 OEM 合作与商业化路径受阻——用户权衡后选 Apache-2.0。
-- **MIT（否决）**：无显式专利条款，虚拟化/模拟领域是实质短板。
-- **复用 Podroid 等项目代码（否决）**：许可证传染 + 与 ADR-0001~0013 已建立的自研路线自相矛盾。
+- **GPL-3.0-or-later（采纳，最优方案）**：
+  - **强 Copyleft 保护**：彻底阻断第三方仅打包换皮即转闭源商业化的路径，确保社区改进必须回馈；
+  - **依赖库兼容**：完全兼容 Android 框架主流的 Apache-2.0 依赖库，免除合规死锁；
+  - **反 Tivo 化条款 (Section 6)**：防止硬件厂商锁定设备禁止用户运行修改后的虚拟机；
+  - **显式专利许可 (Section 11)**：保护贡献者与终端用户免受专利纠纷威胁；
+  - **"or later" 弹性**：规避未来 GNU 许可证版本升级带来的割裂风险。
+- **GPL-2.0（否决）**：与 Android 核心依赖普遍采用的 Apache-2.0 存在**法定不兼容**（FSF/ASF 均明确认定），强行采用将导致合规死锁；且缺乏反 Tivo 化和专利防御条款。
+- **LGPL-3.0（否决）**：弱 Copyleft 允许专有软件直接动态链接或套壳打包，无法起到保护 Orchestella 整体终端工作站应用的目的。
+- **AGPL-3.0（否决）**：面向云端/网络服务交互场景（第 13 条网络触发），Orchestella 是运行于本地物理手机的 Android 客户端 APK，非云服务；且 AGPL 在移动开发与开源应用商店生态中易引入不必要的合规摩擦。
+- **Apache-2.0（原方案，退役）**：原为 OEM 商业合作预留，但缺乏 Copyleft 保护，存在项目被第三方恶意闭源侵占的实质风险。首次正式发布前为唯一调整窗口，经用户确认正式切换至 GPL-3.0-or-later。
 
 ## Consequences
 
-- 全自研工程成本为既定预算：9p-over-vsock 服务端、终端组件、未来 RFB 客户端等（前序各票已按此预算）。
-- CI 许可清单任务是每次 kernel/QEMU 升级的固定步骤，漏更即合规瑕疵。
-- 首次含 GPL 二进制的公开发布前，必须确认公开仓库 URL、Release Maintainer、至少三年的可恢复保留记录与对应源码包的实际可下载性；这些事实未确认时，发布 gate 保持关闭。
-- 项目护城河 = 决策记录、契约测试、发行版适配经验、持续维护——而非代码独占；与 wayfinder 流程的投入结构一致。
-- 研究票「许可证与再分发义务盘点」继续保留（补齐 crosvm 等细节），不阻塞本题。
-- 首次发布前是本决策的唯一可逆窗口；发布后宽松↔严格方向调整受存量贡献者授权约束。
+- 项目源码仓库顶层 `LICENSE` 全面更新为 GNU GPL v3.0 官方文本。
+- 项目 README、应用内关于页（`activity_about.xml`）与对外声明全部对齐为 GPL-3.0-or-later。
+- 确保持续保持与 Android 生态依赖的许可证合规性，CI 与发布流程中既定的 QEMU/Kernel 对应源码交付门禁（`QEMU-GPL-SOURCES.md`、Release source bundles）继续严格执行。

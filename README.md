@@ -6,7 +6,7 @@
 *Native Dual-Engine Linux VM Runtime & Mobile Workstation for Android (No Root Required)*
 
 [![Release](https://img.shields.io/badge/Release-v0.3.0--preview.1-blue.svg?style=flat-square)](https://github.com/Nyzeep/Orchestella-Studio/releases)
-[![License](https://img.shields.io/badge/License-Apache--2.0-orange.svg?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg?style=flat-square)](LICENSE)
 [![Android](https://img.shields.io/badge/Android-8.0%2B%20(API%2026%2B)-green.svg?style=flat-square)](https://developer.android.com)
 [![Arch](https://img.shields.io/badge/Arch-ARM64--v8a-purple.svg?style=flat-square)](#)
 [![CI](https://img.shields.io/github/actions/workflow/status/Nyzeep/Orchestella-Studio/ci.yml?branch=main&label=CI&style=flat-square)](https://github.com/Nyzeep/Orchestella-Studio/actions)
@@ -167,9 +167,14 @@ cd Orchestella-Studio
 
 ## 开源协议
 
-本项目采用 **Apache License 2.0** 开源许可证。
+本项目主体采用 **GNU General Public License v3.0 or later (GPL-3.0-or-later)** 开源许可证。
 
-底层引用的第三方开源组件（包括但不限于 QEMU、Linux Kernel、Busybox、Dropbear、gvproxy 等）均严格遵循原作者著作权及对应的 GPL/LGPL/MIT 开源授权，详见各目录下的独立许可证与 `NOTICE` 文件。
+* **强开源保障 (Strong Copyleft)**：保障本项目及其衍生版本持续保持自由与开源，防止任何第三方进行闭源商业专有化封装；
+* **反 Tivo 化与专利授权保障**：依照 GPLv3 条款，保护移动设备用户的自由修改与安装运行权利，并提供显式专利防御；
+* **第三方组件授权遵循**：
+  * Android 依赖库（Jetpack、Material 3 等）遵循 Apache 2.0 许可证（与 GPLv3 完全兼容）；
+  * 随包分发的 Linux Kernel 及 QEMU 运行时二进制严格遵循原作者著作权及 GPL-2.0 / LGPL 等相应条款，对应源码与构建脚本详见 `QEMU-GPL-SOURCES.md` 及官方 Release 对应源码包；
+  * 各发行版 Guest Rootfs 镜像遵循上游对应发行版的开源许可。
 
 ---
 
