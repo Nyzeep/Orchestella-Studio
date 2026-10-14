@@ -35,6 +35,8 @@ public final class SimulatedAvfGuest implements AutoCloseable {
     private final List<String> sentResponses = Collections.synchronizedList(new ArrayList<>());
     private final List<VirtualMachineCustomImageConfig> observedConfigs =
             Collections.synchronizedList(new ArrayList<>());
+    private final List<VirtualMachineConfig> observedVmConfigs =
+            Collections.synchronizedList(new ArrayList<>());
 
     public SimulatedAvfGuest(String expectedToken, int controlPort, int terminalPort)
             throws IOException {
@@ -102,7 +104,8 @@ public final class SimulatedAvfGuest implements AutoCloseable {
     /** Manager whose creation records the observed config, then boots the guest. */
     public VirtualMachineManager newManager(Consumer<VirtualMachineCustomImageConfig> recorder) {
         return new VirtualMachineManager((name, config) -> {
-            VirtualMachineCustomImageConfig custom = (VirtualMachineCustomImageConfig) config;
+            VirtualMachineCustomImageConfig custom = config.getCustomImageConfig();
+            observedVmConfigs.add(config);
             observedConfigs.add(custom);
             if (recorder != null) {
                 recorder.accept(custom);
@@ -129,6 +132,10 @@ public final class SimulatedAvfGuest implements AutoCloseable {
 
     public List<VirtualMachineCustomImageConfig> observedConfigs() {
         return observedConfigs;
+    }
+
+    public List<VirtualMachineConfig> observedVmConfigs() {
+        return observedVmConfigs;
     }
 
     /**

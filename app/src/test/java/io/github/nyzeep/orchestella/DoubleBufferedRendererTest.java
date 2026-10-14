@@ -304,6 +304,38 @@ public final class DoubleBufferedRendererTest {
     }
 
     @Test
+    public void pausedAndReleasedRenderersRejectLateFramesAndPresentationCallbacks() {
+        TestPresenter presenter = new TestPresenter();
+        TestVsyncScheduler scheduler = new TestVsyncScheduler();
+        DoubleBufferedRenderer renderer = new DoubleBufferedRenderer(presenter, scheduler);
+        int[] confirmations = {0};
+        renderer.setPresentationObserver(frame -> confirmations[0]++);
+        WaylandChannel.FrameData frame = createFrame(2, 2, 1, new byte[16], 1);
+        renderer.onFrameAvailable(frame);
+        Runnable staleVsync = scheduler.registeredCallback;
+        renderer.setActive(false);
+        renderer.onFrameAvailable(frame);
+        staleVsync.run();
+        assertFalse(renderer.hasNewFrame());
+        assertEquals(0, presenter.presentations.size());
+        assertEquals(0, confirmations[0]);
+        renderer.setActive(true);
+        renderer.onFrameAvailable(frame);
+        scheduler.triggerVsync();
+        assertEquals(1, presenter.presentations.size());
+        assertEquals(1, confirmations[0]);
+        renderer.release();
+        renderer.setActive(true);
+        renderer.onFrameAvailable(frame);
+        renderer.tickVsync();
+        assertFalse(renderer.hasNewFrame());
+        assertEquals(1, presenter.presentations.size());
+        assertEquals(1, confirmations[0]);
+        renderer.release();
+        assertEquals(1, presenter.releaseCount);
+    }
+
+    @Test
     public void aspectRatioPreservedInPresentedViewportMapping() {
         TestPresenter presenter = new TestPresenter();
         TestVsyncScheduler scheduler = new TestVsyncScheduler();

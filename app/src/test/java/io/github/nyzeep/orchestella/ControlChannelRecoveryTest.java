@@ -195,6 +195,76 @@ public final class ControlChannelRecoveryTest {
         });
     }
 
+    @Test(timeout = 4000L)
+    public void reenteredTerminalWaitsForTheExistingHandshakeWithoutAnotherReader() throws Exception {
+        java.io.PipedInputStream inbound = new java.io.PipedInputStream(8192);
+        try (java.io.PipedOutputStream replies = new java.io.PipedOutputStream(inbound)) {
+            java.util.Set<Thread> readers = java.util.Collections.synchronizedSet(new java.util.HashSet<>());
+            BridgeClient client = new BridgeClient(new java.io.FilterInputStream(inbound) {
+                @Override public int read() throws IOException {
+                    readers.add(Thread.currentThread());
+                    return super.read();
+                }
+            }, new ByteArrayOutputStream());
+            client.startResponsePump(null, 1000L, 2000L);
+            java.util.concurrent.ExecutorService callers = java.util.concurrent.Executors.newFixedThreadPool(2);
+            try {
+                java.util.concurrent.Future<BridgeClient.Result> handshake = callers.submit(() -> client.handshake(TOKEN));
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
+                while (!"handshaking".equals(client.readinessState()) && System.nanoTime() < deadline) Thread.yield();
+                assertEquals("handshaking", client.readinessState());
+                java.util.concurrent.Future<Boolean> reentered = callers.submit(
+                        () -> TerminalActivity.awaitCurrentControlReady(client, () -> true, 1500L));
+                assertFalse(reentered.isDone());
+                replies.write("ORCHESTELLA/READY 1\n".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+                replies.flush();
+                assertTrue(handshake.get(1L, TimeUnit.SECONDS).accepted());
+                assertTrue(reentered.get(1L, TimeUnit.SECONDS));
+                assertEquals(1, readers.size());
+            } finally {
+                callers.shutdownNow();
+            }
+        }
+    }
+
+    @Test(timeout = 4000L)
+    public void obsoleteTerminalWaiterRetiresWithoutInterruptingThePersistentHandshake() throws Exception {
+        java.io.PipedInputStream inbound = new java.io.PipedInputStream(8192);
+        try (java.io.PipedOutputStream replies = new java.io.PipedOutputStream(inbound)) {
+            BridgeClient client = new BridgeClient(inbound, new ByteArrayOutputStream());
+            client.startResponsePump(null, 1000L, 2000L);
+            java.util.concurrent.atomic.AtomicBoolean current = new java.util.concurrent.atomic.AtomicBoolean(true);
+            java.util.concurrent.ExecutorService callers = java.util.concurrent.Executors.newFixedThreadPool(2);
+            try {
+                java.util.concurrent.Future<BridgeClient.Result> handshake = callers.submit(() -> client.handshake(TOKEN));
+                CountDownLatch checking = new CountDownLatch(1);
+                java.util.concurrent.Future<Boolean> retired = callers.submit(() ->
+                        TerminalActivity.awaitCurrentControlReady(client, () -> {
+                            checking.countDown();
+                            return current.get();
+                        }, 1500L));
+                assertTrue(checking.await(1L, TimeUnit.SECONDS));
+                current.set(false);
+                assertFalse(retired.get(1L, TimeUnit.SECONDS));
+                assertFalse(handshake.isDone());
+                replies.write("ORCHESTELLA/READY 1\n".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+                replies.flush();
+                assertTrue(handshake.get(1L, TimeUnit.SECONDS).accepted());
+                assertTrue(client.isReady());
+            } finally {
+                callers.shutdownNow();
+            }
+        }
+    }
+
+    @Test(timeout = 2000L)
+    public void currentTerminalWaitHasABoundedDeadlineAndDoesNotSendAnotherHello() throws Exception {
+        ByteArrayOutputStream outbound = new ByteArrayOutputStream();
+        BridgeClient client = new BridgeClient(new ByteArrayInputStream(new byte[0]), outbound);
+        assertFalse(TerminalActivity.awaitCurrentControlReady(client, () -> true, 30L));
+        assertEquals(0, outbound.size());
+    }
+
     private static String nextId() {
         return "control-recovery-test-" + IDS.incrementAndGet();
     }

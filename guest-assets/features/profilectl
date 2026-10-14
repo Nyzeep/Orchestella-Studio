@@ -1,0 +1,20 @@
+#!/bin/sh
+# Root-owned entry point. The coordinator embeds this payload and signed python3.
+set -eu
+if ! command -v python3 >/dev/null 2>&1 || [ -d /var/lib/orchestella/features/python-bootstrap.lock ]; then
+    case "${1:-}" in
+        install) [ "$#" -eq 2 ] && exec /bin/sh /usr/local/lib/orchestella/bootstrap-python.sh start "$2" ;;
+        status|probe) [ "$#" -eq 2 ] && exec /bin/sh /usr/local/lib/orchestella/bootstrap-python.sh status "$2" ;;
+        cancel|stop) [ "$#" -eq 2 ] && exec /bin/sh /usr/local/lib/orchestella/bootstrap-python.sh cancel "$2" ;;
+    esac
+    printf '%s\n' '{"version":1,"profile":"none","state":"failed","installed":false,"reason":"python3-unavailable"}'
+    exit 1
+fi
+if [ "${1:-}" = status ] && [ "$#" -eq 2 ]; then
+    case "$2" in desktop-labwc|podman|code-server|docker-cli)
+        if [ -f "/var/lib/orchestella/features/bootstrap-$2.json" ] && [ ! -f "/var/lib/orchestella/features/$2.json" ]; then
+            exec /bin/sh /usr/local/lib/orchestella/bootstrap-python.sh status "$2"
+        fi ;;
+    esac
+fi
+exec python3 -B /usr/local/lib/orchestella/profilectl.py "$@"

@@ -392,8 +392,9 @@ public final class BridgeClient {
 
     /** Requests setting the display mode (resolution and scale) and classifies the agent's response. */
     public synchronized Result displayMode(int width, int height, double scale) throws IOException {
-        if (width < 100 || width > 7680 || height < 100 || height > 7680) {
-            throw new IllegalArgumentException("display dimensions must be between 100 and 7680: " + width + "x" + height);
+        if (width < 100 || width > 4096 || height < 100 || height > 4096
+                || (long) width * height > 4_194_304L) {
+            throw new IllegalArgumentException("display dimensions exceed the supported frame bounds");
         }
         if (Double.isNaN(scale) || Double.isInfinite(scale) || scale < 0.1 || scale > 5.0) {
             throw new IllegalArgumentException("display scale must be between 0.1 and 5.0: " + scale);
@@ -403,8 +404,9 @@ public final class BridgeClient {
 
     /** Requests dynamic display resize and classifies the agent's response. */
     public synchronized Result displayResize(int width, int height) throws IOException {
-        if (width < 100 || width > 7680 || height < 100 || height > 7680) {
-            throw new IllegalArgumentException("display dimensions must be between 100 and 7680: " + width + "x" + height);
+        if (width < 100 || width > 4096 || height < 100 || height > 4096
+                || (long) width * height > 4_194_304L) {
+            throw new IllegalArgumentException("display dimensions exceed the supported frame bounds");
         }
         return exchange("ORCHESTELLA/DISPLAY RESIZE " + width + " " + height + "\n", "ok-display", false);
     }
@@ -420,6 +422,24 @@ public final class BridgeClient {
     /** Requests launching or ensuring the graphical desktop compositor on the guest. */
     public synchronized Result desktopLaunch() throws IOException {
         return exchange("ORCHESTELLA/DISPLAY LAUNCH\n", "ok-display", false);
+    }
+
+    /** Versioned optional feature extension; legacy agents can reject it without ending the session. */
+    public synchronized Result feature(String action, String profile) throws IOException {
+        if (action == null || !java.util.Set.of("PROBE", "INSTALL", "STATUS", "START", "STOP", "CANCEL", "EXPOSE", "UNEXPOSE").contains(action)
+                || profile == null || !java.util.Set.of("desktop-labwc", "podman", "code-server", "docker-cli").contains(profile)) {
+            throw new IllegalArgumentException("unsupported feature operation");
+        }
+        if (!isReady()) throw new IOException("Bridge has not authenticated");
+        return exchange("ORCHESTELLA/FEATURES 1 " + action + " " + profile + "\n", "ok-features", false);
+    }
+
+    /** Confirms a presented frame only for the currently probed guest start generation. */
+    public synchronized Result confirmDesktopFrame(String generation) throws IOException {
+        if (generation == null || !generation.matches("[0-9a-f]{32}"))
+            throw new IllegalArgumentException("invalid desktop generation");
+        if (!isReady()) throw new IOException("Bridge has not authenticated");
+        return exchange("ORCHESTELLA/FEATURES 1 CONFIRM-FRAME desktop-labwc " + generation + "\n", "ok-features", false);
     }
 
     /** Requests sending clipboard text to the agent and classifies the agent's response. */
@@ -495,6 +515,15 @@ public final class BridgeClient {
         }
         if ("ORCHESTELLA/OK display\n".equals(normalized)) {
             return Result.accepted("ok-display");
+        }
+        if (normalized.startsWith("ORCHESTELLA/OK features ") && normalized.endsWith("\n")) {
+            String json = normalized.substring("ORCHESTELLA/OK features ".length(), normalized.length() - 1);
+            if (json.length() < 2 || json.length() > 4096 || !json.startsWith("{") || !json.endsWith("}"))
+                return Result.rejected("malformed-response");
+            for (int index = 0; index < json.length(); index++) {
+                if (json.charAt(index) < 0x20) return Result.rejected("malformed-response");
+            }
+            return Result.accepted("ok-features", json);
         }
         if ("ORCHESTELLA/OK clipboard\n".equals(normalized)) {
             return Result.accepted("ok-clipboard");

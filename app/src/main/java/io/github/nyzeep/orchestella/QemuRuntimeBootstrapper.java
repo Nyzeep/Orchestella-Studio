@@ -82,6 +82,27 @@ public final class QemuRuntimeBootstrapper {
             byte[] mirrorConfigFileContent,
             byte[] firstBootScript)
             throws IOException {
+        return bootstrap(rootfsFileName, bridgeToken, guestPassword, instanceRootVolume,
+                mirrorConfigFileName, mirrorConfigFileContent, firstBootScript, null, null, false);
+    }
+
+    public RuntimePaths bootstrap(
+            String rootfsFileName,
+            String bridgeToken,
+            String guestPassword,
+            Path instanceRootVolume,
+            String mirrorConfigFileName,
+            byte[] mirrorConfigFileContent,
+            byte[] firstBootScript,
+            String hostname,
+            String guestUser,
+            boolean hasSudo)
+            throws IOException {
+        String validatedHostname = hostname == null ? null
+                : io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig.normalizeHostname(hostname);
+        if (guestUser != null && !io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig.isValidUsername(guestUser)) {
+            throw new IllegalArgumentException("invalid guest username");
+        }
         Objects.requireNonNull(instanceRootVolume, "instanceRootVolume");
         if (!Files.isRegularFile(instanceRootVolume)) {
             throw new IOException("root-volume-missing");
@@ -134,9 +155,9 @@ public final class QemuRuntimeBootstrapper {
                         guestPassword,
                         guestInit,
                         proxyRelay,
-                        null,
-                        null,
-                        false,
+                        validatedHostname,
+                        guestUser,
+                        hasSudo,
                         mirrorConfigFileName,
                         mirrorConfigFileContent,
                         firstBootScript,

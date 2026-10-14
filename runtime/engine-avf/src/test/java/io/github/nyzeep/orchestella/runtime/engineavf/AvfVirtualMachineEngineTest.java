@@ -14,7 +14,7 @@ public final class AvfVirtualMachineEngineTest {
 
     public static void main(String[] arguments) throws Exception {
         assemblesTheCustomVmReflectivelyAndOpensBothVsockChannels();
-        appliesTheRequestedCpuCount();
+        rejectsUnsupportedExactCpuCount();
         retriesVsockWhileTheSimulatedGuestBoots();
         rejectsNonPositiveConnectAttempts();
         observesGuestExitThroughTheRealNumericStatusSurface();
@@ -49,9 +49,10 @@ public final class AvfVirtualMachineEngineTest {
             assertEquals(1, config.disks().size(), "exactly the root disk");
             assertEquals("/data/root.raw", config.disks().get(0).path(), "raw root volume path");
             assertTrue(config.disks().get(0).writable(), "root volume must be writable");
-            assertEquals(384, config.memoryMbs(), "memory applied via the MiB setter");
-            assertEquals(1, config.cpuCount(), "default vCPU count applied via setCpuCount");
-            assertTrue(!config.isProtectedVm(), "custom VMs are non-protected");
+            android.system.virtualmachine.VirtualMachineConfig vmConfig = guest.observedVmConfigs().get(0);
+            assertEquals(402653184L, vmConfig.getMemoryBytes(), "memory on the VM builder in bytes");
+            assertEquals(0, vmConfig.getCpuTopology(), "ONE_CPU topology, not an invented count setter");
+            assertTrue(!vmConfig.isProtectedVm(), "custom VMs are non-protected");
             assertTrue(config.isNetworkSupported(), "outbound network declared for the AVF profile");
             assertTrue(
                     config.cmdline() != null
@@ -63,18 +64,8 @@ public final class AvfVirtualMachineEngineTest {
                     !config.cmdline().contains("droidlayer.vsock_9p_port"),
                     "no 9p data-plane token without a share: " + config.cmdline());
 
-            assertTrue(
-                    session.reflectionNotes().stream()
-                            .anyMatch(note -> note.contains("addDisk(String,boolean): applied")),
-                    "disk attachment variant recorded: " + session.reflectionNotes());
-            assertTrue(
-                    session.reflectionNotes().stream()
-                            .anyMatch(note -> note.contains("setProtected: applied")),
-                    "non-protected declaration recorded");
-            assertTrue(
-                    session.reflectionNotes().stream()
-                            .anyMatch(note -> note.contains("setCpuCount(int): applied")),
-                    "vCPU assembly recorded: " + session.reflectionNotes());
+            assertEquals("engine-test-1", config.getName(), "custom image name");
+            assertTrue(session.reflectionNotes().contains("run: applied"), "VM run was invoked");
 
             session.controlChannel().outputStream().write("ORCHESTELLA/PING\n".getBytes("US-ASCII"));
             session.controlChannel().outputStream().flush();
@@ -102,7 +93,7 @@ public final class AvfVirtualMachineEngineTest {
         }
     }
 
-    private static void appliesTheRequestedCpuCount() throws Exception {
+    private static void rejectsUnsupportedExactCpuCount() throws Exception {
         try (SimulatedAvfGuest guest = new SimulatedAvfGuest(TOKEN, 9100, 9101)) {
             AvfLaunchSpec spec = AvfLaunchSpec.builder(
                             "engine-cpu-1", "/data/kernel", "/data/initramfs.cpio.gz",
@@ -112,15 +103,9 @@ public final class AvfVirtualMachineEngineTest {
                     .build();
             AvfVirtualMachineEngine engine =
                     new AvfVirtualMachineEngine(AvfVirtualMachineApiFixture.recordingApiOver(guest));
-            AvfVirtualMachineEngine.AvfVmSession session = engine.launch(spec);
-
-            VirtualMachineCustomImageConfig config = guest.observedConfigs().get(0);
-            assertEquals(4, config.cpuCount(), "requested vCPU count reaches the config builder");
-            assertTrue(
-                    session.reflectionNotes().stream()
-                            .anyMatch(note -> note.contains("setCpuCount(int): applied")),
-                    "vCPU assembly recorded: " + session.reflectionNotes());
-            session.closeChannels();
+            rejects(AvfEngineException.class, AvfEngineException.HARDWARE_UNSUPPORTED,
+                    () -> engine.launch(spec));
+            assertTrue(guest.observedConfigs().isEmpty(), "unsupported CPU count must not create VM");
         }
     }
 
@@ -140,9 +125,8 @@ public final class AvfVirtualMachineEngineTest {
 
     private static void observesGuestExitThroughTheRealNumericStatusSurface() throws Exception {
         // Real AOSP VirtualMachine.getStatus() returns a @Status int boxed to
-        // an Integer (0=STOPPED, 1=RUNNING, 2=DELETED); only the JVM fixture
-        // stub returns a named enum. The exit watcher must observe guest stop
-        // on both surfaces.
+        // an Integer (0=STOPPED, 1=RUNNING, 2=DELETED). The fixture uses that
+        // same numeric signature; no enum-shaped compatibility shortcut is accepted.
         try (SimulatedAvfGuest guest = new SimulatedAvfGuest(TOKEN, 9100, 9101)) {
             AtomicInteger status = new AtomicInteger(1); // VirtualMachine.Status.STATUS_RUNNING
             AvfVirtualMachineEngine.AvfVmSession session = engineOverNumericStatus(guest,

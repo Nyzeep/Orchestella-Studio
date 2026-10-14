@@ -527,7 +527,8 @@ if [ -f "$identity/guest.password" ]; then
     if ! printf 'root:%s\n' "$password" | chpasswd >> "$LOG" 2>&1; then fail_stage credentials password-application-failed; fi
     if [ -f "$identity/guest.user" ]; then
         user="$(cat "$identity/guest.user")"
-        case "$user" in ''|root) user=root ;; [!a-z_]*|*[!a-z0-9_-]*) fail_stage credentials invalid-user ;; esac
+        case "$user" in ''|[!a-z_]*|*[!a-z0-9_-]*) fail_stage credentials invalid-user ;; esac
+        [ "${#user}" -ge 2 ] && [ "${#user}" -le 16 ] || fail_stage credentials invalid-user
         if [ "$user" != root ]; then
             if ! id -u "$user" >/dev/null 2>&1; then
                 if [ "$distro" = alpine ]; then
@@ -537,11 +538,21 @@ if [ -f "$identity/guest.password" ]; then
                 fi
             fi
             printf '%s:%s\n' "$user" "$password" | chpasswd >> "$LOG" 2>&1 || fail_stage credentials password-application-failed
+            managed_sudo="$ROOT/etc/sudoers.d/99-orchestella-user"
+            [ ! -L "$managed_sudo" ] || fail_stage credentials sudo-configuration-unsafe
+            if [ -f "$managed_sudo" ] \
+                && ! grep -Fqx '# Orchestella owned sudo schema=1' "$managed_sudo" \
+                && ! { [ "$(wc -l < "$managed_sudo")" -eq 1 ] && grep -Eq '^[a-z_][a-z0-9_-]{1,15} ALL=\(ALL\) NOPASSWD:ALL$' "$managed_sudo"; }; then
+                fail_stage credentials sudo-configuration-user-owned
+            fi
             if grep -Fqx '1' "$identity/guest.sudo" 2>/dev/null; then
                 mkdir -p "$ROOT/etc/sudoers.d" || fail_stage credentials sudo-configuration-failed
-                printf '%s ALL=(ALL) NOPASSWD:ALL\n' "$user" > "$ROOT/etc/sudoers.d/99-orchestella-user"
-                chmod 0440 "$ROOT/etc/sudoers.d/99-orchestella-user" || fail_stage credentials sudo-configuration-failed
-                visudo -cf "$ROOT/etc/sudoers.d/99-orchestella-user" >> "$LOG" 2>&1 || fail_stage credentials sudo-configuration-invalid
+                printf '# Orchestella owned sudo schema=1\n%s ALL=(ALL) NOPASSWD:ALL\n' "$user" > "$managed_sudo"
+                chmod 0440 "$managed_sudo" || fail_stage credentials sudo-configuration-failed
+                visudo -cf "$managed_sudo" >> "$LOG" 2>&1 || fail_stage credentials sudo-configuration-invalid
+            else
+                # Revoke only this exact managed grant; preserve all user-authored sudo configuration.
+                rm -f "$managed_sudo" || fail_stage credentials sudo-configuration-failed
             fi
         fi
     fi

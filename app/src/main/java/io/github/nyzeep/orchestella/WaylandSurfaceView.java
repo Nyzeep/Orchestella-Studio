@@ -29,6 +29,26 @@ public class WaylandSurfaceView extends SurfaceView implements SurfaceHolder.Cal
     private TouchGestureMapper touchGestureMapper;
     private ImeBridgeInputConnection imeBridge;
     private PointerCaptureHandler pointerCaptureHandler;
+    private volatile WaylandChannel boundChannel;
+    private WaylandChannel.FrameListener sizeObserver;
+    private final java.util.concurrent.atomic.AtomicBoolean mappingPending = new java.util.concurrent.atomic.AtomicBoolean();
+    private volatile int pendingWidth, pendingHeight;
+
+    private void updateFrameSize(int frameWidth, int frameHeight, WaylandChannel expected) {
+        if (boundChannel != expected || pendingWidth == frameWidth && pendingHeight == frameHeight) return;
+        pendingWidth = frameWidth;
+        pendingHeight = frameHeight;
+        if (!mappingPending.compareAndSet(false, true)) return;
+        post(() -> {
+            mappingPending.set(false);
+            if (boundChannel == null || touchGestureMapper == null) return;
+            int frameWidthNow = pendingWidth, frameHeightNow = pendingHeight;
+            int width = controller.getRenderer().getViewportWidth();
+            int height = controller.getRenderer().getViewportHeight();
+            if (frameWidthNow > 0 && frameHeightNow > 0 && width > 0 && height > 0) touchGestureMapper.setViewportMapping(
+                    ViewportAspectCalculator.calculate(frameWidthNow, frameHeightNow, width, height));
+        });
+    }
 
     public WaylandSurfaceView(Context context) {
         super(context);
@@ -104,6 +124,12 @@ public class WaylandSurfaceView extends SurfaceView implements SurfaceHolder.Cal
     }
 
     public void bind(DisplayControl displayControl, WaylandChannel waylandChannel) {
+        if (waylandChannel == null) { unbind(); return; }
+        if (imeBridge != null) imeBridge.closeConnection();
+        if (boundChannel != null) boundChannel.unregisterFrameListener(sizeObserver);
+        boundChannel = waylandChannel;
+        pendingWidth = 0; pendingHeight = 0;
+        sizeObserver = frame -> updateFrameSize(frame.width(), frame.height(), waylandChannel);
         controller.bind(displayControl, waylandChannel);
         if (waylandChannel != null) {
             int cw = (displayControl != null && displayControl.currentMode() != null)
@@ -122,10 +148,16 @@ public class WaylandSurfaceView extends SurfaceView implements SurfaceHolder.Cal
                     ViewportAspectCalculator.calculate(cw, ch, vw, vh);
             this.touchGestureMapper = new TouchGestureMapper(waylandChannel, mapping);
             this.imeBridge = new ImeBridgeInputConnection(waylandChannel);
+            this.imeBridge.setUnsupportedInputListener(message -> post(() -> android.widget.Toast.makeText(
+                    getContext(), message, android.widget.Toast.LENGTH_SHORT).show()));
+            waylandChannel.registerFrameListener(sizeObserver);
         }
     }
 
     public void unbind() {
+        if (imeBridge != null) imeBridge.closeConnection();
+        if (boundChannel != null) boundChannel.unregisterFrameListener(sizeObserver);
+        boundChannel = null;
         controller.unbind();
         this.touchGestureMapper = null;
         this.imeBridge = null;
@@ -146,6 +178,7 @@ public class WaylandSurfaceView extends SurfaceView implements SurfaceHolder.Cal
     }
 
     public void onDestroy() {
+        unbind();
         controller.onDestroy();
     }
 

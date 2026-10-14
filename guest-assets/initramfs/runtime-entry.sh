@@ -26,6 +26,9 @@ boot_guest_root() {
     install_native_guest_runtime /newroot
     install_guest_shell_profile /newroot
     install_guest_terminal_integration /newroot
+    if ! install_guest_optional_features /newroot; then
+        log 'ORCHESTELLA_OPTIONAL_FEATURES phase=payload-install status=failed base-linux=preserved'
+    fi
     log 'ORCHESTELLA_GUEST_ASSEMBLY phase=runtime-services status=complete'
     # Flavor service setup may replace resolv.conf. Reapply the proven host-supplied DNS
     # and BusyBox eth0/route configuration immediately before the native-init handoff.

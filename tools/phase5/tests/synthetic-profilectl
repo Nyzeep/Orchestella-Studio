@@ -1,0 +1,65 @@
+#!/usr/bin/python3 -B
+"""Fixed synthetic helper. No system config, package install, or child spawning."""
+import datetime as dt
+import json
+import os
+from pathlib import Path
+import signal
+import sys
+import time
+
+TEMP = Path(os.environ['ORCH_POSIX_TEMP'])
+EVIDENCE = Path(os.environ['ORCH_POSIX_EVIDENCE'])
+PRESERVED = Path(os.environ['ORCH_POSIX_PRESERVED'])
+case = os.environ['ORCH_POSIX_CASE']
+if not case.replace('-', '').replace('_', '').isalnum():
+    raise SystemExit(72)
+mode = (TEMP / (case + '.mode')).read_text(encoding='ascii').strip()
+descriptors = {}
+for descriptor in range(0, 32):
+    try:
+        descriptors[str(descriptor)] = os.readlink('/proc/self/fd/' + str(descriptor))
+    except FileNotFoundError:
+        pass
+invocation = {'case': case, 'mode': mode, 'pid': os.getpid(), 'ppid': os.getppid(),
+              'argv': sys.argv[1:], 'sigchld_disposition': int(signal.getsignal(signal.SIGCHLD)),
+              'fds': descriptors, 'utc': dt.datetime.now(dt.timezone.utc).isoformat()}
+for location in (EVIDENCE, PRESERVED):
+    with (location / ('fixture-' + case + '.log.txt')).open('a', encoding='utf-8') as stream:
+        stream.write(json.dumps(invocation, ensure_ascii=False, separators=(',', ':')) + '\n')
+        stream.flush()
+        os.fsync(stream.fileno())
+if descriptors.get('0') != '/dev/null' or set(descriptors) != {'0', '1', '2'}:
+    raise SystemExit(73)
+# Reading /dev/null ensures this helper cannot eat subsequent control requests.
+if os.read(0, 1) != b'':
+    raise SystemExit(74)
+if mode == 'success' or mode == 'json-nonzero':
+    reply = {'synthetic': True, 'action': sys.argv[1], 'profile': sys.argv[2], 'args': sys.argv[3:]}
+    print(json.dumps(reply, separators=(',', ':')), flush=True)
+    raise SystemExit(9 if mode == 'json-nonzero' else 0)
+if mode == 'nonzero':
+    raise SystemExit(7)
+if mode == 'empty':
+    raise SystemExit(0)
+if mode == 'malformed':
+    print('synthetic-not-json', flush=True)
+    raise SystemExit(0)
+if mode == 'multiline':
+    print('{\n"synthetic":true\n}', flush=True)
+    raise SystemExit(0)
+if mode == 'oversize':
+    sys.stdout.write('{"synthetic":"' + 'X' * 8192 + '"}\n')
+    sys.stdout.flush()
+    raise SystemExit(0)
+if mode == 'delay':
+    time.sleep(20)
+    print('{"synthetic":true}', flush=True)
+    raise SystemExit(0)
+if mode == 'stdout-close-hang':
+    os.close(1)
+    time.sleep(20)
+    raise SystemExit(0)
+if mode == 'signal':
+    os.kill(os.getpid(), signal.SIGTERM)
+raise SystemExit(75)

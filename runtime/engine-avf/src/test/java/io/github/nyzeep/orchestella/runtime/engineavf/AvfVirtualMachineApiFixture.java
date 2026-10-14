@@ -1,7 +1,6 @@
 package io.github.nyzeep.orchestella.runtime.engineavf;
 
 import android.system.virtualmachine.FakeVsockNetwork;
-import android.system.virtualmachine.VirtualMachineCustomImageConfig;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -21,8 +20,8 @@ public final class AvfVirtualMachineApiFixture {
 
     /**
      * A {@link AvfVsockPortForwarder.VsockChannelFactory} over the fake vsock
-     * network, adapting the duck-typed {@code VsockConnection} exactly like the
-     * reflective adapter does against the real SDK surface.
+     * network using a JVM-only socket helper. This helper is not the real SDK
+     * return value; the production API path separately exercises ParcelFileDescriptor.
      */
     public static AvfVsockPortForwarder.VsockChannelFactory channelFactoryOver(
             FakeVsockNetwork network) {
@@ -58,10 +57,8 @@ public final class AvfVirtualMachineApiFixture {
 
     /** An api whose manager records observed configs before booting the guest. */
     public static ReflectiveAvfVirtualMachineApi recordingApiOver(SimulatedAvfGuest guest) {
-        java.util.function.Consumer<VirtualMachineCustomImageConfig> recorder =
-                guest.observedConfigs()::add;
         return new ReflectiveAvfVirtualMachineApi(
-                guest.newContext(guest.newManager(recorder)),
+                guest.newContext(guest.newManager(null)),
                 AvfVirtualMachineApiFixture.class.getClassLoader());
     }
 
@@ -73,11 +70,7 @@ public final class AvfVirtualMachineApiFixture {
     /** An api over a context without a virtualization service. */
     public static ReflectiveAvfVirtualMachineApi apiWithoutService() {
         return new ReflectiveAvfVirtualMachineApi(
-                new Object() {
-                    public Object getSystemService(String name) {
-                        return null;
-                    }
-                },
+                new android.system.virtualmachine.FakeVirtualizationContext(null),
                 AvfVirtualMachineApiFixture.class.getClassLoader());
     }
 }

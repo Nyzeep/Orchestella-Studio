@@ -140,6 +140,7 @@ public final class InstanceLifecycle {
         private final VmHardwareConfig hardwareConfig;
         private final String hostname;
         private final String defaultUser;
+        private final boolean hasSudo;
 
         private Instance(
                 String id,
@@ -184,6 +185,26 @@ public final class InstanceLifecycle {
                 VmHardwareConfig hardwareConfig,
                 String hostname,
                 String defaultUser) {
+            this(id, distro, rootVolume, bridgeToken, guestPassword, runtimeClass, state,
+                    createdAtMillis, updatedAtMillis, crashDiagnostic, hardwareConfig,
+                    hostname, defaultUser, false);
+        }
+
+        private Instance(
+                String id,
+                DistroReference distro,
+                Path rootVolume,
+                String bridgeToken,
+                String guestPassword,
+                FullLinuxContract.RuntimeClass runtimeClass,
+                State state,
+                long createdAtMillis,
+                long updatedAtMillis,
+                CrashDiagnostic crashDiagnostic,
+                VmHardwareConfig hardwareConfig,
+                String hostname,
+                String defaultUser,
+                boolean hasSudo) {
             requireInstanceId(id);
             this.id = id;
             this.distro = Objects.requireNonNull(distro, "distro");
@@ -196,12 +217,13 @@ public final class InstanceLifecycle {
             this.updatedAtMillis = updatedAtMillis;
             this.crashDiagnostic = crashDiagnostic;
             this.hardwareConfig = hardwareConfig != null ? hardwareConfig : VmHardwareConfig.defaultConfig();
-            this.hostname = (hostname != null && !hostname.trim().isEmpty())
-                    ? hostname.trim().toLowerCase()
-                    : InstanceUserConfig.DEFAULT_HOSTNAME;
-            this.defaultUser = (defaultUser != null && !defaultUser.trim().isEmpty())
-                    ? defaultUser.trim()
-                    : InstanceUserConfig.DEFAULT_ROOT_USER;
+            this.hostname = InstanceUserConfig.normalizeHostname(hostname);
+            this.defaultUser = defaultUser == null || defaultUser.trim().isEmpty()
+                    ? InstanceUserConfig.DEFAULT_ROOT_USER : defaultUser;
+            if (!InstanceUserConfig.isValidUsername(this.defaultUser)) {
+                throw new IllegalArgumentException("invalid guest username");
+            }
+            this.hasSudo = hasSudo;
         }
 
         public String id() {
@@ -240,6 +262,11 @@ public final class InstanceLifecycle {
 
         public String defaultUser() {
             return defaultUser;
+        }
+
+        /** Persisted explicit sudo choice; absent legacy metadata never grants sudo. */
+        public boolean hasSudo() {
+            return hasSudo;
         }
 
         public FullLinuxContract.RuntimeClass runtimeClass() {
@@ -291,7 +318,8 @@ public final class InstanceLifecycle {
                     diagnostic,
                     hardwareConfig,
                     hostname,
-                    defaultUser);
+                    defaultUser,
+                    hasSudo);
         }
 
         private Instance withUpdatedAt(Clock clock) {
@@ -308,7 +336,8 @@ public final class InstanceLifecycle {
                     crashDiagnostic,
                     hardwareConfig,
                     hostname,
-                    defaultUser);
+                    defaultUser,
+                    hasSudo);
         }
 
         private Instance withGuestPassword(String newPassword, Clock clock) {
@@ -325,7 +354,8 @@ public final class InstanceLifecycle {
                     crashDiagnostic,
                     hardwareConfig,
                     hostname,
-                    defaultUser);
+                    defaultUser,
+                    hasSudo);
         }
 
         Instance withHardwareConfig(VmHardwareConfig newConfig, Clock clock) {
@@ -342,7 +372,8 @@ public final class InstanceLifecycle {
                     crashDiagnostic,
                     Objects.requireNonNull(newConfig, "newConfig"),
                     hostname,
-                    defaultUser);
+                    defaultUser,
+                    hasSudo);
         }
 
         static Instance restore(
@@ -381,7 +412,8 @@ public final class InstanceLifecycle {
                     null,
                     hardwareConfig != null ? hardwareConfig : VmHardwareConfig.defaultConfig(),
                     hostname,
-                    defaultUser);
+                    defaultUser,
+                    false);
         }
 
         private Properties toProperties() {
@@ -400,6 +432,7 @@ public final class InstanceLifecycle {
             properties.setProperty("updatedAtMillis", Long.toString(updatedAtMillis));
             properties.setProperty("hostname", hostname);
             properties.setProperty("defaultUser", defaultUser);
+            properties.setProperty("hasSudo", Boolean.toString(hasSudo));
             if (crashDiagnostic != null) {
                 properties.setProperty("crash.timestampMillis", Long.toString(crashDiagnostic.timestampMillis()));
                 properties.setProperty("crash.exitCode", Integer.toString(crashDiagnostic.exitCode()));
@@ -448,6 +481,11 @@ public final class InstanceLifecycle {
                 if (defaultUser == null || defaultUser.trim().isEmpty()) {
                     defaultUser = InstanceUserConfig.DEFAULT_ROOT_USER;
                 }
+                String storedSudo = properties.getProperty("hasSudo", "false");
+                if (!"true".equals(storedSudo) && !"false".equals(storedSudo)) {
+                    throw new IllegalArgumentException("invalid stored sudo choice");
+                }
+                boolean hasSudo = Boolean.parseBoolean(storedSudo);
                 VmHardwareConfig hardwareConfig = VmHardwareConfig.defaultConfig();
                 String cpuCoresStr = properties.getProperty("hardware.cpuCores");
                 if (cpuCoresStr != null) {
@@ -472,7 +510,8 @@ public final class InstanceLifecycle {
                         diagnostic,
                         hardwareConfig,
                         hostname,
-                        defaultUser);
+                        defaultUser,
+                        hasSudo);
             } catch (IllegalArgumentException malformed) {
                 throw new InvalidMetadataException(malformed);
             }
@@ -673,7 +712,8 @@ public final class InstanceLifecycle {
                             null,
                             hardwareConfig,
                             effectiveConfig.hostname(),
-                            effectiveConfig.username());
+                            effectiveConfig.username(),
+                            effectiveConfig.hasSudo());
             store.save(instance);
             return instance;
         }
@@ -718,7 +758,8 @@ public final class InstanceLifecycle {
                             null,
                             source.hardwareConfig(),
                             source.hostname(),
-                            source.defaultUser());
+                            source.defaultUser(),
+                            source.hasSudo());
             store.save(cloned);
             return cloned;
         }
@@ -766,7 +807,8 @@ public final class InstanceLifecycle {
                             null,
                             source.hardwareConfig(),
                             source.hostname(),
-                            source.defaultUser());
+                            source.defaultUser(),
+                            source.hasSudo());
             store.save(cloned);
             return cloned;
         }

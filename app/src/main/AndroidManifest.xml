@@ -8,6 +8,7 @@
          hardware-virtualization strategy; granted via Shizuku or adb pm grant
          through the in-app wizard. -->
     <uses-permission android:name="android.permission.MANAGE_VIRTUAL_MACHINE" />
+    <uses-permission android:name="android.permission.USE_CUSTOM_VIRTUAL_MACHINE" />
     <!-- ADR-0011: lifecycle and background execution -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
@@ -73,6 +74,12 @@
             android:exported="true"
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" />
+
+        <activity android:name=".GuestFeaturesActivity" android:exported="false"
+            android:theme="@style/Theme.Orchestella" />
+        <activity android:name=".LocalEditorActivity" android:exported="false"
+            android:launchMode="singleTask" android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.Orchestella" />
 
         <!-- ADR-0011: Persistent foreground service for ongoing guest execution -->
         <service

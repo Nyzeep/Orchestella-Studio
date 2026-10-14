@@ -8,6 +8,10 @@ java {
     }
 }
 
+dependencies {
+    testImplementation("junit:junit:4.13.2")
+}
+
 tasks.withType<JavaCompile>().configureEach {
     options.encoding = "UTF-8"
     options.release.set(17)
@@ -99,6 +103,11 @@ tasks.register<JavaExec>("gestureStateEngineTest") {
     mainClass.set("io.github.nyzeep.orchestella.runtime.contract.GestureStateEngineTest")
 }
 
+tasks.register<JavaExec>("bridgeClientResponsePumpTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.contract.BridgeClientResponsePumpTest")
+}
+
 tasks.named("check") {
     dependsOn(
         "bridgeHandshakeContractTest",
@@ -117,7 +126,8 @@ tasks.named("check") {
         "pointerEventRelativeMotionTest",
         "fullLinuxContractAudioCapabilityTest",
         "vmHardwareConfigTest",
-        "gestureStateEngineTest"
+        "gestureStateEngineTest",
+        "bridgeClientResponsePumpTest"
     )
 }
 

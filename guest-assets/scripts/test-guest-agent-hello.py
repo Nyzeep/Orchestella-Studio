@@ -60,8 +60,35 @@ check("retry_long_line_rejected", hello + f"ORCHESTELLA/HELLO 1 1 {token}" + " "
       ready + "ORCHESTELLA/ERROR malformed-handshake\n")
 check("malformed_verb_does_not_allow_commands", hello + f"ORCHESTELLA/HELLOX 1 1 {token}\n", 1,
       ready + "ORCHESTELLA/ERROR malformed-handshake\n")
-check("unknown_command_still_fails_closed", hello + "ORCHESTELLA/UNRECOGNIZED\n", 4,
-      ready + "ORCHESTELLA/ERROR malformed-command\n")
+# Unknown optional commands are explicit, non-fatal rejections. Authentication
+# and malformed POWER remain fail-closed; this probe must neither invoke a helper
+# nor dispatch power. Compile-time POWER instrumentation never runs host utilities.
+helper_record = fixture / "unknown-helper-dispatch.txt"
+helper_probe = fixture / "unknown-helper-probe"
+helper_probe.write_text("#!/usr/bin/python3 -B\nfrom pathlib import Path\n"
+                        + "Path(" + repr(str(helper_record)) + ").write_text('unexpected-helper')\n",
+                        encoding="utf-8")
+helper_probe.chmod(0o755)
+unknown_probe = fixture / ("guest-agent-unknown-mock.exe" if os.name == "nt" else "guest-agent-unknown-mock")
+subprocess.run([os.environ.get("CC", "gcc"), "-std=c11", "-Os", "-Wall", "-Wextra", "-Werror",
+                "-DORCHESTELLA_TEST_POWER",
+                '-DORCHESTELLA_PROFILECTL_PATH="' + helper_probe.as_posix() + '"',
+                str(source), "-o", str(unknown_probe)], check=True, capture_output=True, timeout=60)
+executable = unknown_probe
+power_record = fixture / "unknown-power-dispatch.txt"
+previous_record = os.environ.get("ORCHESTELLA_TEST_POWER_RECORD")
+os.environ["ORCHESTELLA_TEST_POWER_RECORD"] = str(power_record)
+try:
+    check("unknown_command_rejected_without_retiring_control",
+          hello + "ORCHESTELLA/UNRECOGNIZED\nORCHESTELLA/PING\n", 0,
+          ready + "ORCHESTELLA/ERROR unsupported-command\nORCHESTELLA/PONG 1\n")
+    assert not helper_record.exists(), "unknown command must not invoke a feature helper"
+    assert not power_record.exists(), "unknown command must not dispatch POWER"
+finally:
+    if previous_record is None:
+        os.environ.pop("ORCHESTELLA_TEST_POWER_RECORD", None)
+    else:
+        os.environ["ORCHESTELLA_TEST_POWER_RECORD"] = previous_record
 evidence = work / "guest-agent-hello-results.txt"
 evidence.write_text("\n".join(checks) + f"\nPASS count={len(checks)}\n"
                     + "protocol_version=1\nsource_sha256=" + hashlib.sha256(source.read_bytes()).hexdigest()

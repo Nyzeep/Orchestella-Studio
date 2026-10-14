@@ -94,6 +94,12 @@ public class ModernTerminalView extends ScrollView {
     }
 
     public void setSessionScreen(TerminalScreenModel model) {
+        if (model != null && sessionScreen && screen == model) {
+            resetInputConnection();
+            updateTerminalSize();
+            renderScreen();
+            return;
+        }
         sessionScreen = model != null;
         screen = model != null ? model : new TerminalScreenModel(screen.columns(), screen.rows());
         resetInputConnection();

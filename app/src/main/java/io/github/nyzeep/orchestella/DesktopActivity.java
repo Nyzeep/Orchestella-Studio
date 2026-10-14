@@ -82,6 +82,11 @@ public class DesktopActivity extends Activity {
 
     private Runnable hudUpdater;
     private boolean isHudUpdating = false;
+    private final DesktopPresentationGate presentationGate = new DesktopPresentationGate();
+    private final java.util.concurrent.ScheduledExecutorService displayEvidence = java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
+    private volatile boolean displayForeground;
+    private volatile long displayGeneration;
+    private Runnable displayStartup;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -112,6 +117,28 @@ public class DesktopActivity extends Activity {
         if (surfaceView != null) {
             surfaceView.getController().setTargetScale(targetScale);
             surfaceView.bind(displayControl, waylandChannel);
+            surfaceView.getController().getRenderer().setPresentationObserver(frame -> {
+                ExecutionSession target = session;
+                BridgeClient client = target != null ? target.bridgeClient() : null;
+                long lifecycle = displayGeneration;
+                if (client == null || !isCurrentDisplay(target, client, lifecycle)) return;
+                DesktopPresentationGate.Confirmation ticket = presentationGate.begin(frame);
+                if (ticket == null) return;
+                try {
+                    displayEvidence.execute(() -> {
+                        boolean accepted = false;
+                        try {
+                            if (isCurrentDisplay(target, client, lifecycle) && presentationGate.isCurrent(ticket)) {
+                                accepted = client.confirmDesktopFrame(ticket.generation()).accepted()
+                                        && isCurrentDisplay(target, client, lifecycle);
+                            }
+                        } catch (Exception ignored) { }
+                        presentationGate.finish(ticket, accepted);
+                    });
+                } catch (java.util.concurrent.RejectedExecutionException stopped) {
+                    presentationGate.finish(ticket, false);
+                }
+            });
         }
 
         virtualKeyBar = new VirtualKeyBar(waylandChannel);
@@ -120,17 +147,9 @@ public class DesktopActivity extends Activity {
         btnToggleTouchMode = findViewById(R.id.btn_toggle_touch_mode);
         if (btnToggleTouchMode != null && surfaceView != null) {
             updateTouchModeButtonText();
-            btnToggleTouchMode.setOnClickListener(v -> {
-                TouchGestureMapper mapper = surfaceView.getTouchGestureMapper();
-                if (mapper != null) {
-                    TouchGestureMapper.TouchMode newMode = mapper.toggleTouchMode();
-                    updateTouchModeButtonText();
-                    String message = (newMode == TouchGestureMapper.TouchMode.TRACKPAD)
-                            ? getString(R.string.touch_mode_trackpad_active)
-                            : getString(R.string.touch_mode_touchscreen_active);
-                    Toast.makeText(DesktopActivity.this, message, Toast.LENGTH_SHORT).show();
-                }
-            });
+            btnToggleTouchMode.setText("触控板灵敏度");
+            btnToggleTouchMode.setContentDescription("当前触摸转换为鼠标事件，调整触控板灵敏度");
+            btnToggleTouchMode.setOnClickListener(v -> showSensitivityAdjustmentDialog());
             btnToggleTouchMode.setOnLongClickListener(v -> {
                 showSensitivityAdjustmentDialog();
                 return true;
@@ -212,24 +231,58 @@ public class DesktopActivity extends Activity {
             }
         }
 
-        // Asynchronously negotiate display mode and launch compositor if uninitialized
-        if (session != null) {
+        displayStartup = () -> {
+            ExecutionSession target = session;
+            long lifecycle = displayGeneration;
+            if (target == null) return;
             new Thread(() -> {
-                BridgeClient client = session.bridgeClient();
-                if (client != null) {
-                    try {
-                        // The same cached client may still be authenticating in the terminal
-                        // or desktop bridge thread. Never create a second reader or race HELLO.
-                        if (!client.awaitReady(BridgeClient.DEFAULT_STARTUP_TIMEOUT_MS)) return;
-                        if (waylandChannel != null && !waylandChannel.isConnected()) {
-                            client.desktopLaunch();
-                        }
-                        client.displayMode(screenWidth, screenHeight, targetScale);
-                    } catch (Exception ignored) {
+                BridgeClient client = target.bridgeClient();
+                if (client == null) return;
+                try {
+                    long startupDeadline = System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS
+                            .toNanos(BridgeClient.DEFAULT_STARTUP_TIMEOUT_MS);
+                    while (isCurrentDisplay(target, client, lifecycle) && !client.isReady()
+                            && System.nanoTime() < startupDeadline) {
+                        client.awaitReady(1000L);
                     }
+                    if (!isCurrentDisplay(target, client, lifecycle) || !client.isReady()) return;
+                    if (waylandChannel == null) throw new IOException("显示通道在当前实例不可用");
+                    if (!waylandChannel.isConnected()) {
+                        BridgeClient.Result launched = client.desktopLaunch();
+                        if (!launched.accepted()) throw new IOException(launched.responseKind());
+                        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(120);
+                        boolean attached = false;
+                        while (isCurrentDisplay(target, client, lifecycle) && System.nanoTime() < deadline) {
+                            BridgeClient.Result result = client.feature("STATUS", "desktop-labwc");
+                            if (!result.accepted()) throw new IOException(result.responseKind());
+                            org.json.JSONObject guest = new org.json.JSONObject(result.payload());
+                            String state = guest.optString("state");
+                            if ("failed".equals(state) || "cancelled".equals(state))
+                                throw new IOException(guest.optString("reason", "桌面启动失败"));
+                            if ("awaiting-frame".equals(state) || "ready".equals(state)) {
+                                attached = applyDesktopEvidence(guest, target, client, lifecycle);
+                                if (!attached && isCurrentDisplay(target, client, lifecycle))
+                                    throw new IOException("显示连接请求未受理");
+                                break;
+                            }
+                            Thread.sleep(500);
+                        }
+                        if (!isCurrentDisplay(target, client, lifecycle)) return;
+                        if (!attached) throw new IOException("桌面启动超过期限，请返回终端查看 guest 状态");
+                    }
+                    if (!isCurrentDisplay(target, client, lifecycle)) return;
+                    int width = Math.min(1920, Math.max(100, screenWidth));
+                    int height = Math.min(1080, Math.max(100, screenHeight));
+                    BridgeClient.Result mode = client.displayMode(width, height, targetScale);
+                    if (!mode.accepted()) throw new IOException(mode.responseKind());
+                } catch (Exception failure) {
+                    uiHandler.post(() -> {
+                        if (isCurrentDisplay(target, client, lifecycle))
+                            hudTextView.setText("桌面连接失败：" + failure.getMessage() + "。可返回终端查看日志。");
+                    });
                 }
             }, "desktop-launch-and-mode-negotiation").start();
-        }
+        };
 
         // 3. PointerCaptureHandler assembly
         pointerCaptureHandler = new PointerCaptureHandler(surfaceView, waylandChannel);
@@ -270,17 +323,55 @@ public class DesktopActivity extends Activity {
             fileDropTargetListener.attach(surfaceView);
         }
 
+        displayEvidence.scheduleWithFixedDelay(() -> {
+            ExecutionSession target = session;
+            BridgeClient client = target != null ? target.bridgeClient() : null;
+            long lifecycle = displayGeneration;
+            if (client == null || !client.isReady() || !isCurrentDisplay(target, client, lifecycle)) return;
+            try {
+                BridgeClient.Result state = client.feature("STATUS", "desktop-labwc");
+                if (state.accepted())
+                    applyDesktopEvidence(new org.json.JSONObject(state.payload()), target, client, lifecycle);
+            } catch (Exception ignored) { }
+        }, 1, 1, java.util.concurrent.TimeUnit.SECONDS);
+
         hudUpdater = new Runnable() {
             @Override
             public void run() {
                 if (isHudUpdating && surfaceView != null && !isFinishing()) {
                     hudOverlay.update(surfaceView.getHudBadgeInfo());
+                    hudTextView.append("\nWayland CPU 拷贝实验通路 · " + (session != null ? session.displayStatus() : "实例未运行")
+                            + "\n触摸使用鼠标回退；Unicode 输入未验证。帧流连接不代表 GPU 加速或设备验收");
                     uiHandler.postDelayed(this, 500);
                 }
             }
         };
     }
 
+
+    private boolean isCurrentDisplay(ExecutionSession target, BridgeClient client, long lifecycle) {
+        return displayForeground && displayGeneration == lifecycle && session == target
+                && ExecutionSessionRegistry.get(instanceId) == target && target.bridgeClient() == client
+                && !isFinishing() && !isDestroyed();
+    }
+
+    private synchronized boolean applyDesktopEvidence(org.json.JSONObject guest, ExecutionSession target,
+            BridgeClient client, long lifecycle) {
+        if (!isCurrentDisplay(target, client, lifecycle)) return false;
+        String state = guest.optString("state");
+        if (!"awaiting-frame".equals(state) && !"ready".equals(state)) {
+            presentationGate.invalidate();
+            return false;
+        }
+        boolean changed = presentationGate.observe(guest.optString("generation"), guest.optString("capture_generation"),
+                guest.optInt("capture_width"), guest.optInt("capture_height"), System.nanoTime());
+        if (changed) {
+            org.json.JSONObject inputs = guest.optJSONObject("input");
+            return session.reconnectDisplay(inputs != null && inputs.optBoolean("keyboard"),
+                    inputs != null && inputs.optBoolean("unicodeText"), inputs != null && inputs.optBoolean("pointer"));
+        }
+        return session.waylandChannel() != null;
+    }
 
     private void setupVirtualKeyBar() {
         btnCtrl = findViewById(R.id.btn_key_ctrl);
@@ -400,14 +491,8 @@ public class DesktopActivity extends Activity {
     }
 
     private FullLinuxContract.CapabilityMatrix resolveCapabilityMatrix() {
-        try {
-            boolean hasAvf = AvfHostFactsProbe.probe(this).manageVirtualMachinePermission();
-            if (hasAvf) {
-                return FullLinuxContract.CapabilityMatrix.hardwareVirtualizationWithGraphics();
-            }
-        } catch (Exception ignored) {
-        }
-        return FullLinuxContract.CapabilityMatrix.softwareVirtualizationWithGraphics();
+        return session != null ? session.capabilityMatrix()
+                : FullLinuxContract.CapabilityMatrix.softwareVirtualizationBaseline();
     }
 
     private void enableImmersiveMode() {
@@ -492,6 +577,9 @@ public class DesktopActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        displayGeneration++;
+        displayForeground = true;
+        if (displayStartup != null) displayStartup.run();
         enableImmersiveMode();
         if (surfaceView != null) {
             surfaceView.onResume();
@@ -508,6 +596,9 @@ public class DesktopActivity extends Activity {
 
     @Override
     protected void onPause() {
+        displayForeground = false;
+        displayGeneration++;
+        presentationGate.invalidate();
         stopHudUpdates();
         if (audioPlayer != null) {
             audioPlayer.pause();
@@ -528,6 +619,10 @@ public class DesktopActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        displayForeground = false;
+        displayEvidence.shutdown();
+        presentationGate.invalidate();
+        if (surfaceView != null) surfaceView.getController().getRenderer().setPresentationObserver(null);
         stopHudUpdates();
         if (audioPlayer != null) {
             audioPlayer.release();
@@ -575,6 +670,15 @@ public class DesktopActivity extends Activity {
                 }
             }
         }
+        WaylandChannel channel = session != null ? session.waylandChannel() : null;
+        int linuxCode = DesktopKeyMapper.linuxCode(event.getKeyCode());
+        if (channel != null && linuxCode != 0 && (event.getAction() == KeyEvent.ACTION_DOWN || event.getAction() == KeyEvent.ACTION_UP)) {
+            int modifiers = DesktopKeyMapper.modifiers(event.getMetaState());
+            io.github.nyzeep.orchestella.runtime.contract.KeyEvent input = event.getAction() == KeyEvent.ACTION_DOWN
+                    ? io.github.nyzeep.orchestella.runtime.contract.KeyEvent.press(linuxCode, modifiers, System.nanoTime())
+                    : io.github.nyzeep.orchestella.runtime.contract.KeyEvent.release(linuxCode, modifiers, System.nanoTime());
+            return channel.sendInputEvent(input);
+        }
         return super.dispatchKeyEvent(event);
     }
 
@@ -587,7 +691,7 @@ public class DesktopActivity extends Activity {
     }
 
     private boolean isHeadlessInstance(String instanceId) {
-        return false;
+        return session == null || session.waylandChannel() == null;
     }
 
     private void updateTouchModeButtonText() {

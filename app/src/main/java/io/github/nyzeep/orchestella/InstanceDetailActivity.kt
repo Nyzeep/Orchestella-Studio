@@ -411,11 +411,9 @@ class InstanceDetailActivity : AppCompatActivity() {
         ipAddressText.text = "IP: ${state.ipAddress}"
 
         btnTerminal.isEnabled = state.canOpenTerminal && hasSession && !busy
-        val desktopReady = currentSupportsDesktop()
-        btnDesktop.isEnabled = desktopReady && state.canLaunchDesktop && hasSession && !busy
-        btnDesktop.text = if (desktopReady) getString(R.string.console_btn_desktop) else "图形桌面尚未就绪"
-        btnDesktop.contentDescription = if (desktopReady) getString(R.string.console_btn_desktop)
-            else "App 图形 guest frame/input 通道尚未就绪，基础 Linux 终端可用；图形通道将在 Phase 5 独立开发。"
+        btnDesktop.isEnabled = hasSession && !busy
+        btnDesktop.text = "桌面与开发工具"
+        btnDesktop.contentDescription = "查看当前实例的可选功能安装、启动与真实状态"
         btnPower.isEnabled = !busy && (hasSession || (state.canPowerOn && !launching))
         if (powerOperationPending.get()) {
             statusBadge.text = "正在等待虚拟机退出"
@@ -561,14 +559,10 @@ class InstanceDetailActivity : AppCompatActivity() {
 
         btnDesktop.setOnClickListener {
             val state = viewModel.uiState ?: return@setOnClickListener
-            if (state.canLaunchDesktop) {
-                val intent = DesktopLaunchIntent.create(
-                    this,
-                    state.instanceId,
-                    state.instance.bridgeToken(),
-                    false
-                )
-                startActivity(intent)
+            if (ExecutionSessionRegistry.get(state.instanceId) != null) {
+                startActivity(Intent(this, GuestFeaturesActivity::class.java)
+                    .putExtra("instanceId", state.instanceId)
+                    .putExtra("bridgeToken", state.instance.bridgeToken()))
             }
         }
 

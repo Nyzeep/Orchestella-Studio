@@ -151,6 +151,63 @@ public final class QemuRuntimeBootstrapperTest {
         assertFalse(Files.exists(fixture.runtimeDir.resolve("initramfs-embedded.cpio.gz")));
     }
 
+    @Test
+    public void coldLoadedIdentityReachesEmbeddedInputsWithoutGrantingSudo() throws Exception {
+        Fixture fixture = new Fixture();
+        Path metadata = fixture.work.resolve("instances");
+        io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle.FileStore store =
+                new io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle.FileStore(metadata);
+        io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle.Instance created =
+                new io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle.Controller(store, java.time.Clock.systemUTC())
+                        .create(new io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle.DistroReference("debian", "13"),
+                                fixture.rootVolume, io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig.defaultConfig(),
+                                new io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig("developer", "SyntheticSecret2026", false, "Dev-Box"));
+        io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle.Instance cold =
+                new io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle.FileStore(metadata).load(created.id());
+        InstanceStrategyLauncher.LaunchParameters parameters = new InstanceStrategyLauncher.LaunchParameters(
+                cold.id(), cold.bridgeToken(), ROOTFS_NAME, cold.rootVolume().toString(), fixture.runtimeDir.toString(),
+                fixture.distroInputs.toString(), cold.guestPassword(), cold.hardwareConfig(),
+                (FirstBootProvisionPipeline.ProvisionPayload) null, cold.hostname(), cold.defaultUser(), cold.hasSudo());
+        QemuRuntimeBootstrapper.RuntimePaths paths = fixture.bootstrapper.bootstrap(parameters.rootfsFileName,
+                parameters.bridgeToken, parameters.guestPassword, Path.of(parameters.instanceRootVolume),
+                parameters.mirrorConfigFileName, parameters.mirrorConfigFileContent, parameters.firstBootScript,
+                parameters.hostname, parameters.guestUser, parameters.hasSudo);
+        Map<String, byte[]> entries = fixture.entries(paths.initramfs);
+        assertEntry(entries, EmbeddedProvisionInput.EMBEDDED_DIR + "/guest.user", "developer\n");
+        assertEntry(entries, EmbeddedProvisionInput.EMBEDDED_DIR + "/hostname", "dev-box\n");
+        assertEntry(entries, EmbeddedProvisionInput.EMBEDDED_DIR + "/guest.password", "SyntheticSecret2026\n");
+        assertFalse(entries.containsKey(EmbeddedProvisionInput.EMBEDDED_DIR + "/guest.sudo"));
+    }
+
+    @Test
+    public void identityDoesNotInventUnknownLegacyPasswordAndPreservesExplicitSudo() throws Exception {
+        for (String unknown : new String[] {null, "", "   "}) {
+            Fixture fixture = new Fixture();
+            QemuRuntimeBootstrapper.RuntimePaths paths = fixture.bootstrapper.bootstrap(ROOTFS_NAME, TOKEN, unknown,
+                    fixture.rootVolume, null, null, null, "dev-box", "developer", true);
+            Map<String, byte[]> entries = fixture.entries(paths.initramfs);
+            assertEntry(entries, EmbeddedProvisionInput.EMBEDDED_DIR + "/guest.user", "developer\n");
+            assertEntry(entries, EmbeddedProvisionInput.EMBEDDED_DIR + "/guest.sudo", "1\n");
+            assertFalse("unknown legacy password must never be replaced", entries.containsKey(EmbeddedProvisionInput.EMBEDDED_DIR + "/guest.password"));
+        }
+    }
+
+    @Test
+    public void invalidIdentityIsRefusedBeforeAnyRuntimePublication() throws Exception {
+        for (String[] identity : new String[][] {{"box-", "developer"}, {"box", "root;id"}, {"box", ""}}) {
+            Fixture fixture = new Fixture();
+            try {
+                fixture.bootstrapper.bootstrap(ROOTFS_NAME, TOKEN, "SyntheticSecret2026", fixture.rootVolume,
+                        null, null, null, identity[0], identity[1], false);
+                fail("invalid identity must be refused");
+            } catch (IllegalArgumentException expected) {
+                assertFalse(expected.getMessage().contains("SyntheticSecret2026"));
+            }
+            assertFalse(Files.exists(fixture.runtimeDir.resolve("initramfs-embedded.cpio.gz")));
+            assertFalse(Files.exists(fixture.runtimeDir.resolve("initramfs-embedded.cpio.gz.partial")));
+        }
+    }
+
     private static void expectRejected(Fixture fixture, String reason, String fileName) throws Exception {
         try {
             fixture.bootstrapper.bootstrap(fileName, TOKEN, "SyntheticGuestPassword", fixture.rootVolume);

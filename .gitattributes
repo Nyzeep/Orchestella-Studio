@@ -12,3 +12,7 @@ gradlew text eol=lf
 *.md text eol=lf
 *.jar binary
 guest-assets/** text eol=lf
+
+# Runtime manifests validate the exact packaged bytes, including license text.
+app/src/main/assets/** -text whitespace=cr-at-eol
+app/src/main/assets/NOTICE.GUEST-RUNTIME whitespace=-blank-at-eof,cr-at-eol

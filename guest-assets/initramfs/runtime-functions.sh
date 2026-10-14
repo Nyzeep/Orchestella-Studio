@@ -104,8 +104,28 @@ verify_rootfs_input() {
     actual_digest="${checksum_output%% *}"
     [ "$actual_digest" = "$EXPECTED_ROOTFS_SHA256" ] || fail rootfs-checksum
 }
+stage_guest_profile_identity() {
+    identity_root="$1"; identity_input="$2"
+    # Persist only an explicit validated identity. Missing legacy input must remain unknown.
+    [ -f "$identity_input/guest.user" ] || return 0
+    [ ! -L "$identity_input/guest.user" ] || fail guest-user-invalid
+    identity_user="$(cat "$identity_input/guest.user")"
+    case "$identity_user" in ''|[!a-z_]*|*[!a-z0-9_-]*) fail guest-user-invalid ;; esac
+    [ "${#identity_user}" -ge 2 ] && [ "${#identity_user}" -le 16 ] || fail guest-user-invalid
+    [ ! -L "$identity_root/etc/orchestella" ] && [ ! -L "$identity_root/etc/orchestella/instance-user" ] || fail guest-identity-unsafe
+    mkdir -p "$identity_root/etc/orchestella" || fail guest-identity-write
+    chmod 0700 "$identity_root/etc/orchestella" || fail guest-identity-write
+    identity_next="$(mktemp "$identity_root/etc/orchestella/.instance-user.XXXXXX")" || fail guest-identity-write
+    if ! printf '%s\n' "$identity_user" > "$identity_next" \
+        || ! chmod 0600 "$identity_next" || ! chown 0:0 "$identity_next" \
+        || ! mv -f "$identity_next" "$identity_root/etc/orchestella/instance-user"; then
+        rm -f "$identity_next"
+        fail guest-identity-write
+    fi
+}
 stage_pending_guest_credentials() {
     target_root="$1"; input_dir="$2"
+    stage_guest_profile_identity "$target_root" "$input_dir"
     [ -f "$input_dir/guest.password" ] || return 0
     mkdir -p "$target_root/etc/orchestella/provision-input" "$target_root/var/lib/orchestella/provision"
     chmod 0700 "$target_root/etc/orchestella" "$target_root/etc/orchestella/provision-input"

@@ -162,6 +162,12 @@ class SetupWizardActivity : AppCompatActivity() {
     private lateinit var btnStep3Next: MaterialButton
 
     // Step 4 Views (Startup Tasks & Creation)
+    private lateinit var chkDesktop: MaterialCheckBox
+    private lateinit var chkPodman: MaterialCheckBox
+    private lateinit var chkEditor: MaterialCheckBox
+    private lateinit var editGuestUser: TextInputEditText
+    private lateinit var editGuestHostname: TextInputEditText
+    private lateinit var chkGuestSudo: MaterialCheckBox
     private lateinit var chkAutoUpdate: MaterialCheckBox
     private lateinit var txtUpdateCommandDesc: TextView
     private lateinit var txtUpdateCommandPreview: TextView
@@ -478,8 +484,9 @@ class SetupWizardActivity : AppCompatActivity() {
             AVF feature：${if (facts.virtualizationFrameworkFeature()) "已声明" else "未声明"}
             虚拟化属性：${facts.virtualizationProperty()?.takeIf { it.isNotBlank() } ?: "无法读取或未提供"}
             MANAGE_VIRTUAL_MACHINE：${if (facts.manageVirtualMachinePermission()) "已授权" else "未授权"}
+            USE_CUSTOM_VIRTUAL_MACHINE：${if (checkSelfPermission("android.permission.USE_CUSTOM_VIRTUAL_MACHINE") == android.content.pm.PackageManager.PERMISSION_GRANTED) "已授权" else "未授权"}
         """.trimIndent()
-        val launchNotice = "当前仅检查平台声明与权限。custom VM 的创建和运行将在实例启动时验证，启动失败会自动回退至 QEMU。"
+        val launchNotice = "当前仅检查平台声明与权限。custom VM 还要求 USE_CUSTOM_VIRTUAL_MACHINE 和兼容的平台 API；MANAGE 单项授权不能证明可运行。创建、run 与连接会在实例启动时验证，失败后同一实例使用软件虚拟化。GPU 加速尚未实测。"
 
         when (readiness.status()) {
             AvfCapabilityEvaluator.AvfStatus.READY -> {
@@ -922,6 +929,40 @@ class SetupWizardActivity : AppCompatActivity() {
     }
 
     private fun bindStep4StartupTasks() {
+        val choices = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        choices.addView(TextView(this).apply {
+            text = "Linux 用户与主机名\n桌面和开发服务需要普通用户；密码沿用本实例随机生成的凭据，可在实例详情查看。"
+        })
+        editGuestUser = TextInputEditText(this).apply {
+            hint = "Linux 用户名"
+            setSingleLine(true)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            setText(wizardModel.userConfig.username())
+        }
+        editGuestHostname = TextInputEditText(this).apply {
+            hint = "主机名"
+            setSingleLine(true)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            setText(wizardModel.userConfig.hostname())
+        }
+        chkGuestSudo = MaterialCheckBox(this).apply {
+            text = "允许此用户使用 sudo"
+            isChecked = wizardModel.userConfig.hasSudo()
+        }
+        choices.addView(editGuestUser)
+        choices.addView(editGuestHostname)
+        choices.addView(chkGuestSudo)
+        choices.addView(TextView(this).apply {
+            text = "图形与开发环境（默认仅终端）\n可选功能在基础 Linux 启动后下载并安装，实际进度在实例的“桌面与开发工具”页查看。实验功能尚未取得本设备运行验收。"
+        })
+        chkDesktop = MaterialCheckBox(this).apply {
+            text = "labwc 轻量 Wayland · Debian 13 · 实验 CPU 拷贝通路\n需联网安装桌面、字体与会话组件；建议 2 GB 以上 guest RAM、至少 2 GB 额外磁盘预算。实际下载量由签名仓库计划确定。"
+        }
+        chkPodman = MaterialCheckBox(this).apply { text = "Rootless Podman · 需普通用户与内核探针验证（另需下载容器镜像）" }
+        chkEditor = MaterialCheckBox(this).apply { text = "code-server 本机开发服务 · ARM64 固定包约 224 MiB，另需依赖和工作空间" }
+        choices.addView(chkDesktop); choices.addView(chkPodman); choices.addView(chkEditor)
+        step4Container.addView(choices, 0)
+        updateOptionalProfiles()
         chkAutoUpdate.text = "额外系统升级（可选）"
         chkAutoUpdate.isChecked = wizardModel.autoUpdateOnFirstBoot
         updateStartupTaskPreview()
@@ -934,7 +975,17 @@ class SetupWizardActivity : AppCompatActivity() {
         txtUpdateCommandDesc.text = "基础环境在首次启动时安装并验证，失败可重试。此复选项仅控制额外系统升级；开启后执行下方升级指令。"
     }
 
+    private fun updateOptionalProfiles() {
+        if (!::chkDesktop.isInitialized) return
+        chkDesktop.isEnabled = wizardModel.distroId == "debian"
+        if (!chkDesktop.isEnabled) chkDesktop.isChecked = false
+        val supported = wizardModel.distroId in setOf("debian", "ubuntu")
+        chkPodman.isEnabled = supported; chkEditor.isEnabled = supported
+        if (!supported) { chkPodman.isChecked = false; chkEditor.isChecked = false }
+    }
+
     private fun updateCreationSummary() {
+        updateOptionalProfiles()
         val distroName = DistroIconHelper.getDisplayName(wizardModel.distroId)
         val diskGb = wizardModel.diskSizeGb
         val vcpu = wizardModel.hardwareConfig.cpuCores()
@@ -984,6 +1035,34 @@ class SetupWizardActivity : AppCompatActivity() {
     }
 
     private fun startDownloadAndInitialize() {
+        val username = editGuestUser.text?.toString()?.trim().orEmpty()
+        val hostname = editGuestHostname.text?.toString()?.trim().orEmpty()
+        editGuestUser.error = null
+        editGuestHostname.error = null
+        if (!io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig.isValidUsername(username)) {
+            editGuestUser.error = "用户名须以小写字母或下划线开头，仅包含小写字母、数字、下划线和连字符。"
+            editGuestUser.requestFocus()
+            return
+        }
+        if (hostname.isBlank()) {
+            editGuestHostname.error = "请填写主机名。"
+            editGuestHostname.requestFocus()
+            return
+        }
+        val userConfig = try {
+            io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig(
+                username, wizardModel.userConfig.password(), chkGuestSudo.isChecked, hostname)
+        } catch (invalid: IllegalArgumentException) {
+            editGuestHostname.error = "主机名须为有效的字母、数字或连字符标签。"
+            editGuestHostname.requestFocus()
+            return
+        }
+        if ((chkDesktop.isChecked || chkPodman.isChecked || chkEditor.isChecked) && userConfig.username() == "root") {
+            editGuestUser.error = "所选桌面和开发服务需要普通用户，请填写新的 Linux 用户名。"
+            editGuestUser.requestFocus()
+            return
+        }
+        wizardModel.setUserConfig(userConfig)
         val hardwareError = hardwareValidationMessage()
         if (hardwareError != null) {
             wizardModel.goToStep(InstanceCreationWizardModel.CreationStep.STEP_HARDWARE)
@@ -1014,6 +1093,11 @@ class SetupWizardActivity : AppCompatActivity() {
         val targetDir = filesDir.toPath().resolve("distro-inputs")
         val targetPath = targetDir.resolve(manifest.rootfsFileName())
         val mirrors = DistroMirrorCatalog.mirrorsFor(manifest)
+        val selectedProfiles = buildSet {
+            if (chkDesktop.isChecked) add("desktop-labwc")
+            if (chkPodman.isChecked) add("podman")
+            if (chkEditor.isChecked) add("code-server")
+        }
 
         backgroundExecutor.execute {
             try {
@@ -1083,6 +1167,8 @@ class SetupWizardActivity : AppCompatActivity() {
                 val createdInstance = Files.newInputStream(targetPath).use { input ->
                     creator.create(input, manifest.sizeBytes(), wizardModel.hardwareConfig, wizardModel.userConfig)
                 }
+
+                GuestFeatureSelections.save(this, createdInstance.id(), selectedProfiles)
 
                 // Save injected mirror configuration and firstboot script into instance store via FirstBootProvisionPipeline
                 val payload = FirstBootProvisionPipeline.create(

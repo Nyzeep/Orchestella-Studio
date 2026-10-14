@@ -24,6 +24,8 @@ public final class NormalInstanceLifecycleContractTest {
         permitsOnlyOneRunningInstance(testDirectory);
         generatesAndPersistsAUniqueBridgeTokenPerInstance(testDirectory);
         generatesAndPersistsRandomCredentialsPerInstance(testDirectory);
+        preservesIdentityAndNoSudoAcrossColdRestoreAndClone(testDirectory);
+        rejectsMalformedStoredIdentityWithoutRewritingMetadata(testDirectory);
     }
 
     private static void persistsNormalProvisioningStartAndGuestStopAcrossStoreReconstruction(
@@ -156,6 +158,9 @@ public final class NormalInstanceLifecycleContractTest {
         assertEquals("DevSecure2026", custom.guestPassword(), "custom guest password");
         assertEquals("workstation", custom.hostname(), "custom hostname");
         assertEquals("dev", custom.defaultUser(), "custom user");
+        assertTrue(custom.hasSudo(), "explicit sudo choice survives creation");
+        assertTrue(new InstanceLifecycle.FileStore(storeDir).load(custom.id()).hasSudo(),
+                "explicit sudo choice survives cold metadata load");
 
         // Legacy metadata backward-compatibility test (missing hostname & defaultUser)
         String legacyId = java.util.UUID.randomUUID().toString();
@@ -272,6 +277,74 @@ public final class NormalInstanceLifecycleContractTest {
                 IllegalArgumentException.class,
                 () -> controller.updateGuestPassword(first.id(), "pass with spaces"),
                 "spaces rejected");
+    }
+
+    private static void preservesIdentityAndNoSudoAcrossColdRestoreAndClone(Path testDirectory)
+            throws Exception {
+        Path directory = testDirectory.resolve("identity-cold-store");
+        InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(directory);
+        InstanceLifecycle.Controller controller = new InstanceLifecycle.Controller(store, CLOCK);
+        InstanceLifecycle.Instance created = controller.create(
+                new InstanceLifecycle.DistroReference("debian", "13"),
+                testDirectory.resolve("ordinary-user.raw"),
+                io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig.defaultConfig(),
+                new InstanceUserConfig("developer", "SyntheticSecret2026", false, "Dev-Box"));
+        provisionToStopped(controller, created.id());
+        controller.start(created.id());
+        controller.reconcileAfterHostDeath(created.id());
+        InstanceLifecycle.FileStore coldStore = new InstanceLifecycle.FileStore(directory);
+        InstanceLifecycle.Controller coldController = new InstanceLifecycle.Controller(coldStore, CLOCK);
+        InstanceLifecycle.Instance restored = coldController.coldRestore(created.id());
+        assertEquals("developer", restored.defaultUser(), "cold restore retains ordinary username");
+        assertEquals("dev-box", restored.hostname(), "cold restore retains canonical hostname");
+        assertFalse(restored.hasSudo(), "cold restore never grants unselected sudo");
+        coldController.recordNormalGuestStop(created.id());
+        coldController.updateHardwareConfig(created.id(),
+                io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig.defaultConfig());
+        coldController.updateGuestPassword(created.id(), "ChangedSyntheticSecret2026");
+        InstanceLifecycle.Instance clone = coldController.cloneInstance(created.id(),
+                testDirectory.resolve("ordinary-user-clone.raw"));
+        InstanceLifecycle.Instance loaded = new InstanceLifecycle.FileStore(directory).load(clone.id());
+        assertEquals("developer", loaded.defaultUser(), "clone retains username");
+        assertEquals("dev-box", loaded.hostname(), "clone retains hostname");
+        assertFalse(loaded.hasSudo(), "clone retains no-sudo selection");
+        assertEquals("ChangedSyntheticSecret2026", loaded.guestPassword(), "clone retains known password");
+
+        Path metadata = directory.resolve(created.id() + ".properties");
+        java.util.Properties properties = new java.util.Properties();
+        try (var input = Files.newInputStream(metadata)) { properties.load(input); }
+        properties.remove("hasSudo");
+        properties.remove("guestPassword");
+        try (var output = Files.newOutputStream(metadata)) { properties.store(output, "Synthetic legacy identity"); }
+        byte[] before = Files.readAllBytes(metadata);
+        InstanceLifecycle.Instance legacy = new InstanceLifecycle.FileStore(directory).load(created.id());
+        assertEquals("developer", legacy.defaultUser(), "legacy ordinary identity is not replaced by root");
+        assertEquals("", legacy.guestPassword(), "unknown legacy password stays unknown");
+        assertFalse(legacy.hasSudo(), "absent legacy sudo choice does not grant privilege");
+        assertTrue(java.util.Arrays.equals(before, Files.readAllBytes(metadata)), "read does not migrate or reset metadata");
+    }
+
+    private static void rejectsMalformedStoredIdentityWithoutRewritingMetadata(Path testDirectory)
+            throws Exception {
+        Path directory = testDirectory.resolve("malformed-identity-store");
+        InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(directory);
+        InstanceLifecycle.Instance instance = new InstanceLifecycle.Controller(store, CLOCK).create(
+                new InstanceLifecycle.DistroReference("debian", "13"), testDirectory.resolve("malformed.raw"));
+        Path metadata = directory.resolve(instance.id() + ".properties");
+        java.util.Properties original = new java.util.Properties();
+        try (var input = Files.newInputStream(metadata)) { original.load(input); }
+        for (String[] field : new String[][] {
+                {"defaultUser", "root;id"}, {"defaultUser", "Developer"},
+                {"hostname", "box-"}, {"hostname", "box\ncommand"}, {"hasSudo", "yes"}}) {
+            java.util.Properties malformed = new java.util.Properties();
+            malformed.putAll(original);
+            malformed.setProperty(field[0], field[1]);
+            try (var output = Files.newOutputStream(metadata)) { malformed.store(output, "Synthetic invalid identity"); }
+            byte[] before = Files.readAllBytes(metadata);
+            assertThrows(java.io.IOException.class, () -> new InstanceLifecycle.FileStore(directory).load(instance.id()),
+                    "invalid stored identity is refused");
+            assertTrue(java.util.Arrays.equals(before, Files.readAllBytes(metadata)), "refusal never rewrites identity or password");
+        }
     }
 
     private static void provisionToStopped(InstanceLifecycle.Controller controller, String id) throws Exception {
