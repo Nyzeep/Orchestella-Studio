@@ -1,11 +1,10 @@
 package io.github.nyzeep.orchestella.runtime.distro;
 
 /**
- * Pinned official catalog entry for Rocky Linux 9.6 Container Base rootfs.
+ * Pinned official catalog entry for Rocky Linux 9 Container Base rootfs.
  *
- * <p>The 9.5 artifact the previous catalog pointed at was pulled from upstream CDN, so
- * the pinned copy is the immutable 9.6 vault artifact (official CHECKSUM sha256
- * 257534a5...) self-hosted on the project's {@code distro-catalog-v1} release.
+ * <p>Uses the versioned linuxcontainers.org distrobuilder build {@code 20261013_03:17}
+ * (upstream SHA256SUMS verified) with the TUNA lxc-images mirror leading the mirror chain.
  */
 public final class OfficialRockyLinuxCatalog {
     private OfficialRockyLinuxCatalog() {}
@@ -17,7 +16,7 @@ public final class OfficialRockyLinuxCatalog {
                 "aarch64",
                 "https://github.com/Nyzeep/Orchestella-Studio/releases/download/distro-catalog-v1/Rocky-9-Container-Base-9.6-20250531.0.aarch64.tar.xz",
                 "Rocky-9-Container-Base-9.6-20250531.0.aarch64.tar.xz",
-                "257534a55c3422b91cf1bf2dfcd02a752d3b2661902b76350b7a9ca39cc27edb",
-                50_342_584L);
+                "a68ba3a9ac9da45a69b3b3b6c420aa2b74d446548813adcbfdb46fc238f33d1b",
+                103_658_208L);
     }
 }

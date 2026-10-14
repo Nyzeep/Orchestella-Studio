@@ -829,11 +829,16 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            findViewById<com.google.android.material.card.MaterialCardView>(R.id.system_status_card)?.let { card ->
-                card.setCardBackgroundColor(theme.surfaceTranslucent)
-                card.strokeColor = (theme.glow and 0x00FFFFFF) or 0x33000000
-                card.strokeWidth = (1 * resources.displayMetrics.density).toInt()
-                attachPressGlow(card, theme)
+            findViewById<View>(R.id.system_status_card)?.let { card ->
+                if (card is com.google.android.material.card.MaterialCardView) {
+                    card.setCardBackgroundColor(theme.surfaceTranslucent)
+                    card.strokeColor = (theme.glow and 0x00FFFFFF) or 0x33000000
+                    card.strokeWidth = (1 * resources.displayMetrics.density).toInt()
+                    attachPressGlow(card, theme)
+                } else {
+                    card.background = buildGlowCardDrawable(theme)
+                    attachPressGlow(card, theme)
+                }
             }
             findViewById<View>(R.id.card_create_linux_main)?.let { hero ->
                 hero.background = buildGlowCardDrawable(theme)

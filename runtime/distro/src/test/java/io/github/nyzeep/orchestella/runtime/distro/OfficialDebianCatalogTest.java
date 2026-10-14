@@ -12,8 +12,8 @@ public final class OfficialDebianCatalogTest {
                 URI.create("https://github.com/Nyzeep/Orchestella-Studio/releases/download/distro-catalog-v1/debian-13-rootfs.tar.xz"),
                 debian.source());
         assertEquals("debian-13-rootfs.tar.xz", debian.rootfsFileName());
-        assertEquals("e4d504e13e43a384227639b74391ef164a67d916aa8f8a9871ecd73dc577db91", debian.sha256());
-        assertEquals(90_346_224L, debian.sizeBytes());
+        assertEquals("000f18fbcea39b276754dee7a1972df357f53329371c2df477e6504e15ed2907", debian.sha256());
+        assertEquals(90_351_092L, debian.sizeBytes());
     }
 
     private static void assertEquals(Object expected, Object actual) {

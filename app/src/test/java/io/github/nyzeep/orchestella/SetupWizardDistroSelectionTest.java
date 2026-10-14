@@ -58,7 +58,7 @@ public final class SetupWizardDistroSelectionTest {
         assertEquals("debian", manifest.id());
         assertEquals("13", manifest.version());
         assertEquals("aarch64", manifest.architecture());
-        assertEquals(90_346_224L, manifest.sizeBytes());
+        assertEquals(90_351_092L, manifest.sizeBytes());
     }
 
     @Test
@@ -97,14 +97,14 @@ public final class SetupWizardDistroSelectionTest {
         SetupWizardModel.DistroOption option = SetupWizardModel.DistroOption.OPENSUSE;
         assertEquals("opensuse", option.getId());
         assertEquals("openSUSE Leap", option.getDisplayName());
-        assertEquals("16.0", option.getVersion());
+        assertEquals("15.6", option.getVersion());
         assertTrue(option.getTag().contains("严谨规范"));
-        assertEquals("opensuse-leap-image.aarch64-1.0.0-networkd-Build18.75.tar.xz", option.getRootfsFileName());
+        assertEquals("opensuse-leap-image.aarch64-15.6.0-lxc-Build19.146.tar.xz", option.getRootfsFileName());
 
         DistroManifest manifest = option.manifest();
         assertNotNull(manifest);
         assertEquals("opensuse", manifest.id());
-        assertEquals("16.0", manifest.version());
+        assertEquals("15.6", manifest.version());
         assertEquals("aarch64", manifest.architecture());
     }
 
