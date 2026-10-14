@@ -36,8 +36,31 @@ class BootstrapTest {
             content.contains("::respawn:/usr/sbin/orchestella-proxy-relay")
         )
         org.junit.Assert.assertTrue(
-            "Init script must clean up legacy inittab proxy-relay on restart",
-            content.contains("sed -i '/orchestella-proxy-relay/d' /newroot/etc/inittab")
+            "Managed Alpine inittab must remove the exact legacy proxy respawn entry",
+            content.contains("/^::respawn:\\/usr\\/sbin\\/orchestella-proxy-relay$/d")
+        )
+        org.junit.Assert.assertTrue(
+            "Managed Alpine inittab must remove the legacy DroidLayer entry too",
+            content.contains("/^::respawn:\\/usr\\/sbin\\/droidlayer-proxy-relay$/d")
+        )
+        org.junit.Assert.assertTrue(
+            "Managed block must preserve distro and custom inittab entries",
+            content.contains("# ORCHESTELLA_OPENRC_BEGIN") &&
+                content.contains("# ORCHESTELLA_OPENRC_END") &&
+                content.contains("Keep the distro/user inittab")
+        )
+        org.junit.Assert.assertFalse(
+            "Alpine restart must not overwrite the complete user inittab",
+            content.contains("cat > \"\$target_root/etc/inittab\"")
+        )
+        org.junit.Assert.assertTrue(
+            "OpenRC must invoke the synchronous provision script instead of pre-writing success",
+            content.contains("/opt/orchestella/firstboot.sh --native") &&
+                content.contains("required-openrc-service-missing")
+        )
+        org.junit.Assert.assertTrue(
+            "Systemd dbus-broker enablement must target the real installed unit",
+            content.contains("dbus_enable_unit=dbus-broker.service")
         )
     }
 

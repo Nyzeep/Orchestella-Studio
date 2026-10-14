@@ -41,6 +41,11 @@ public final class AvfInstanceLauncher {
         }
 
         @Override
+        public void terminate() {
+            session.stop();
+        }
+
+        @Override
         public OutputStream terminalInput() throws IOException {
             return terminalChannel().outputStream();
         }
@@ -79,6 +84,13 @@ public final class AvfInstanceLauncher {
                 }
             }
             return bridgeClient;
+        }
+
+        @Override
+        public boolean recoverControlChannel() {
+            // AvfVmSession has no control-only cache invalidation API. Its
+            // closeChannels() also closes the live terminal and data channels.
+            return false;
         }
 
         @Override
@@ -161,6 +173,8 @@ public final class AvfInstanceLauncher {
         } else {
             specBuilder.memoryMb(INSTANCE_MEMORY_MB);
         }
+        specBuilder.networkSpec(io.github.nyzeep.orchestella.runtime.contract.NetworkContract.OutboundNetworkSpec
+                .withDns(NetworkGatewayDaemon.guestDnsFor(context)));
         AvfLaunchSpec spec = specBuilder.build();
 
         ReflectiveAvfVirtualMachineApi api = new ReflectiveAvfVirtualMachineApi(

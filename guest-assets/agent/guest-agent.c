@@ -200,7 +200,147 @@ static int setup_bridge_ipc_socket(void) {
 
 #define MAX_PAYLOAD_LINE (384 * 1024U)
 
-static int serve_control_channel_fd(int read_fd, int write_fd, const char *terminal_device) {
+#if !defined(_WIN32) && !defined(ORCHESTELLA_TEST_POWER)
+static int executable_power_program(const char *path) {
+    struct stat info;
+    unsigned char magic[4];
+    FILE *program;
+    size_t count;
+    if (stat(path, &info) != 0 || !S_ISREG(info.st_mode) || access(path, X_OK) != 0) {
+        return 0;
+    }
+    program = fopen(path, "rb");
+    if (program == NULL) {
+        return 0;
+    }
+    count = fread(magic, 1U, sizeof(magic), program);
+    fclose(program);
+    return count == sizeof(magic) && magic[0] == 0x7fU
+            && magic[1] == 'E' && magic[2] == 'L' && magic[3] == 'F';
+}
+#endif
+
+/* Returns 0 for an acknowledged dispatch, 1 when unavailable, or 70 on reply failure.
+ * Both existing v1 actions shut down the guest. No request bytes reach argv or a shell. */
+static int dispatch_power_request(int write_fd) {
+#if defined(ORCHESTELLA_TEST_POWER)
+    /* Compile-time test seam: never executes power utilities, including on Windows. */
+    const char *fault = getenv("ORCHESTELLA_TEST_POWER_FAULT");
+    const char *record_path = getenv("ORCHESTELLA_TEST_POWER_RECORD");
+    const char *mode = getenv("ORCHESTELLA_TEST_POWER_MODE");
+    FILE *record;
+    if (fault != NULL && (strcmp(fault, "access") == 0 || strcmp(fault, "fork") == 0
+                          || strcmp(fault, "pipe") == 0)) {
+        return 1;
+    }
+    if (record_path == NULL || (record = fopen(record_path, "ab")) == NULL) {
+        return 1;
+    }
+    if ((fault != NULL && strcmp(fault, "reply") == 0)
+        || !write_control_line_fd(write_fd, "ORCHESTELLA/OK power\n")) {
+        fclose(record);
+        return 70;
+    }
+    fputs(mode != NULL && strcmp(mode, "recovery") == 0
+                  ? "/usr/lib/orchestella/busybox poweroff -f\n"
+                  : "/sbin/poweroff\n", record);
+    fclose(record);
+    return 0;
+#elif !defined(_WIN32)
+    const char *program;
+    char init_name[64] = {0};
+    FILE *init_comm;
+    int recovery;
+    int gate[2];
+    pid_t worker;
+    char release = 'G';
+    if (geteuid() != 0 || (init_comm = fopen("/proc/1/comm", "rb")) == NULL) {
+        return 1;
+    }
+    if (fgets(init_name, sizeof(init_name), init_comm) == NULL) {
+        fclose(init_comm);
+        return 1;
+    }
+    fclose(init_comm);
+    init_name[strcspn(init_name, "\r\n")] = '\0';
+    recovery = strcmp(init_name, "systemd") != 0 && strcmp(init_name, "init") != 0;
+    program = recovery ? "/usr/lib/orchestella/busybox" : "/sbin/poweroff";
+    if (!executable_power_program(program) || pipe(gate) != 0) {
+        return 1;
+    }
+    worker = fork();
+    if (worker < 0) {
+        close(gate[0]);
+        close(gate[1]);
+        return 1;
+    }
+    if (worker == 0) {
+        ssize_t received;
+        struct timespec pause = {0, 250000000L};
+        close(gate[1]);
+        do {
+            received = read(gate[0], &release, 1U);
+        } while (received < 0 && errno == EINTR);
+        close(gate[0]);
+        if (received != 1 || release != 'G') {
+            _exit(0); /* No successful parent acknowledgement: do not shut down. */
+        }
+        while (nanosleep(&pause, &pause) != 0 && errno == EINTR) {}
+        close(write_fd); /* Utility output must not pollute the bridge protocol. */
+        if (recovery) {
+            execl(program, "busybox", "poweroff", "-f", (char *)NULL);
+        } else {
+            execl(program, "poweroff", (char *)NULL);
+        }
+        fputs("ORCHESTELLA_GUEST_POWER_ERROR stage=exec\n", stderr);
+        _exit(71);
+    }
+    close(gate[0]);
+    if (!write_control_line_fd(write_fd, "ORCHESTELLA/OK power\n")) {
+        close(gate[1]); /* EOF cancels the child before exec. */
+        while (waitpid(worker, NULL, 0) < 0 && errno == EINTR) {}
+        return 70;
+    }
+    /* The child cannot execute before the reply has been written. Allow it to drain. */
+    while (write(gate[1], &release, 1U) < 0 && errno == EINTR) {}
+    close(gate[1]);
+    return 0;
+#else
+    (void)write_fd;
+    return 1; /* Production Windows never invokes host power commands. */
+#endif
+}
+
+/* The same v1 authentication rules apply to startup retries on an already-open channel. */
+static int answer_control_hello(int write_fd, const char *request, const char *expected_token) {
+    char verb[32] = {0};
+    char extra = '\0';
+    char provided_token[TOKEN_HEX_LENGTH + 2U] = {0};
+    int minimum_version;
+    int maximum_version;
+
+    if (strlen(request) >= MAX_CONTROL_LINE
+        || sscanf(request, "%31s %d %d %65s %c", verb, &minimum_version,
+                  &maximum_version, provided_token, &extra) != 4
+        || (strcmp(verb, "ORCHESTELLA/HELLO") != 0 && strcmp(verb, "DROIDLAYER/HELLO") != 0)
+        || !is_lower_hex_token(provided_token)
+        || minimum_version < 0 || maximum_version < minimum_version) {
+        write_control_line_fd(write_fd, "ORCHESTELLA/ERROR malformed-handshake\n");
+        return 1;
+    }
+    if (!constant_time_token_equals(expected_token, provided_token)) {
+        write_control_line_fd(write_fd, "ORCHESTELLA/ERROR unauthorized\n");
+        return 3;
+    }
+    if (minimum_version > 1 || maximum_version < 1) {
+        write_control_line_fd(write_fd, "ORCHESTELLA/ERROR unsupported-version\n");
+        return 2;
+    }
+    return write_control_line_fd(write_fd, "ORCHESTELLA/READY 1\n") ? 0 : 70;
+}
+
+static int serve_control_channel_fd(int read_fd, int write_fd, const char *terminal_device,
+                                    const char *expected_token) {
     char *request = (char *)malloc(MAX_PAYLOAD_LINE);
     if (request == NULL) {
         return 71;
@@ -332,8 +472,45 @@ static int serve_control_channel_fd(int read_fd, int write_fd, const char *termi
 #endif
             return 4;
         }
+        if (strncmp(request, "ORCHESTELLA/HELLO", 16U) == 0
+            || strncmp(request, "DROIDLAYER/HELLO", 15U) == 0) {
+            int repeated_hello = answer_control_hello(write_fd, request, expected_token);
+            if (repeated_hello != 0) {
+                free(request);
+#if !defined(_WIN32)
+                if (ipc_server_fd >= 0) {
+                    close(ipc_server_fd);
+                }
+#endif
+                return repeated_hello;
+            }
+            continue;
+        }
         if (strcmp(request, "ORCHESTELLA/PING") == 0 || strcmp(request, "DROIDLAYER/PING") == 0) {
             if (!write_control_line_fd(write_fd, "ORCHESTELLA/PONG 1\n")) {
+                free(request);
+                return 70;
+            }
+            continue;
+        }
+        if (strncmp(request, "ORCHESTELLA/POWER", sizeof("ORCHESTELLA/POWER") - 1U) == 0
+            || strncmp(request, "DROIDLAYER/POWER", sizeof("DROIDLAYER/POWER") - 1U) == 0) {
+            int power_status;
+            if (strcmp(request, "ORCHESTELLA/POWER shutdown") != 0
+                && strcmp(request, "ORCHESTELLA/POWER poweroff") != 0
+                && strcmp(request, "DROIDLAYER/POWER shutdown") != 0
+                && strcmp(request, "DROIDLAYER/POWER poweroff") != 0) {
+                write_control_line_fd(write_fd, "ORCHESTELLA/ERROR malformed-command\n");
+                free(request);
+                return 4;
+            }
+            power_status = dispatch_power_request(write_fd);
+            if (power_status == 70) {
+                free(request);
+                return 70;
+            }
+            if (power_status != 0
+                && !write_control_line_fd(write_fd, "ORCHESTELLA/ERROR power-unavailable\n")) {
                 free(request);
                 return 70;
             }
@@ -465,46 +642,12 @@ static int serve_control_channel_fd(int read_fd, int write_fd, const char *termi
  * value is the handshake exit code.
  */
 static int authenticate_control(int read_fd, int write_fd, const char *expected_token) {
-    char verb[32] = {0};
-    char extra = '\0';
     char request[MAX_CONTROL_LINE] = {0};
-    char provided_token[TOKEN_HEX_LENGTH + 2U] = {0};
-    int minimum_version;
-    int maximum_version;
-    int handshake_status;
-
-    handshake_status = read_line_fd(read_fd, request, sizeof(request));
-    if (handshake_status != 1
-        || sscanf(request,
-                  "%31s %d %d %65s %c",
-                  verb,
-                  &minimum_version,
-                  &maximum_version,
-                  provided_token,
-                  &extra)
-               != 4
-        || (strcmp(verb, "ORCHESTELLA/HELLO") != 0 && strcmp(verb, "DROIDLAYER/HELLO") != 0)
-        || !is_lower_hex_token(provided_token)) {
+    if (read_line_fd(read_fd, request, sizeof(request)) != 1) {
         write_control_line_fd(write_fd, "ORCHESTELLA/ERROR malformed-handshake\n");
         return 1;
     }
-    if (minimum_version < 0 || maximum_version < minimum_version) {
-        write_control_line_fd(write_fd, "ORCHESTELLA/ERROR malformed-handshake\n");
-        return 1;
-    }
-    if (!constant_time_token_equals(expected_token, provided_token)) {
-        write_control_line_fd(write_fd, "ORCHESTELLA/ERROR unauthorized\n");
-        return 3;
-    }
-    if (minimum_version > 1 || maximum_version < 1) {
-        write_control_line_fd(write_fd, "ORCHESTELLA/ERROR unsupported-version\n");
-        return 2;
-    }
-
-    if (!write_control_line_fd(write_fd, "ORCHESTELLA/READY 1\n")) {
-        return 70;
-    }
-    return 0;
+    return answer_control_hello(write_fd, request, expected_token);
 }
 
 #if !defined(_WIN32)
@@ -692,7 +835,7 @@ static int serve_vsock_mode(
                     if (authenticated != 0) {
                         _exit(authenticated);
                     }
-                    _exit(serve_control_channel_fd(connection, connection, terminal_device));
+                    _exit(serve_control_channel_fd(connection, connection, terminal_device, expected_token));
                 }
                 close(connection);
             }
@@ -829,7 +972,7 @@ int main(int argument_count, char **arguments) {
         if (authenticated != 0) {
             return authenticated;
         }
-        return serve_control_channel_fd(STDIN_FILENO, STDOUT_FILENO, terminal_device);
+        return serve_control_channel_fd(STDIN_FILENO, STDOUT_FILENO, terminal_device, expected_token);
     }
     {
         int authenticated = authenticate_control(STDIN_FILENO, STDOUT_FILENO, expected_token);

@@ -36,11 +36,42 @@ public class TerminalInputConnection implements InputConnection {
 
     private final TerminalInputSink sink;
     private final StickyModifierStateMachine stickyStateMachine;
+    private final io.github.nyzeep.orchestella.terminal.ImeCompositionBuffer composition =
+            new io.github.nyzeep.orchestella.terminal.ImeCompositionBuffer();
+    private java.util.function.BooleanSupplier applicationCursorKeys = () -> false;
+    private java.util.function.BooleanSupplier bracketedPaste = () -> false;
+    private java.util.function.IntPredicate contextMenuHandler = id -> false;
+    private boolean closed;
+
+    public void setTerminalModes(java.util.function.BooleanSupplier applicationCursorKeys,
+            java.util.function.BooleanSupplier bracketedPaste) {
+        this.applicationCursorKeys = applicationCursorKeys;
+        this.bracketedPaste = bracketedPaste;
+    }
+
+    public void setContextMenuHandler(java.util.function.IntPredicate handler) {
+        contextMenuHandler = handler;
+    }
+
+    /** Paste bypasses sticky shortcuts and is framed only when the guest enabled DECSET 2004. */
+    public boolean pasteText(CharSequence text) {
+        if (closed || sink == null) return false;
+        if (text == null || text.length() == 0) return true;
+        finishComposingText();
+        String value = text.toString().replace("\r\n", "\r").replace('\n', '\r');
+        // ESC must not be able to terminate a bracketed paste early.
+        value = value.replace("\u001b", "");
+        if (bracketedPaste.getAsBoolean()) value = "\u001b[200~" + value + "\u001b[201~";
+        sink.sendBytes(value.getBytes(StandardCharsets.UTF_8));
+        return true;
+    }
 
     public TerminalInputConnection(TerminalInputSink sink, StickyModifierStateMachine stickyStateMachine) {
         this.sink = sink;
         this.stickyStateMachine = stickyStateMachine;
     }
+
+    public boolean isClosed() { return closed; }
 
     public TerminalInputSink getSink() {
         return sink;
@@ -52,78 +83,57 @@ public class TerminalInputConnection implements InputConnection {
 
     @Override
     public boolean commitText(CharSequence text, int newCursorPosition) {
+        if (closed) return false;
         if (text == null || text.length() == 0) {
+            composition.clear();
             return true;
         }
-        if (sink == null) {
-            return false;
-        }
-
-        boolean hasActiveModifier = stickyStateMachine != null
-                && (stickyStateMachine.isCtrlActive() || stickyStateMachine.isAltActive());
-
-        if (!hasActiveModifier) {
-            String str = text.toString();
-            if (str.indexOf('\n') >= 0 || str.indexOf('\r') >= 0) {
-                str = str.replace("\r\n", "\r").replace('\n', '\r');
-            }
-            sink.sendBytes(str.getBytes(StandardCharsets.UTF_8));
+        if (sink == null) return false;
+        composition.clear();
+        String value = text.toString().replace("\r\n", "\r").replace('\n', '\r');
+        if (stickyStateMachine == null
+                || (!stickyStateMachine.isCtrlActive() && !stickyStateMachine.isAltActive())) {
+            sink.sendBytes(value.getBytes(StandardCharsets.UTF_8));
             return true;
         }
-
-        int length = text.length();
-        for (int i = 0; i < length; ) {
-            int codePoint = Character.codePointAt(text, i);
-            int charCount = Character.charCount(codePoint);
-            char ch = text.charAt(i);
-
-            if (stickyStateMachine.isCtrlActive() && codePoint < 128) {
-                byte ctrlCode = StickyModifierStateMachine.toControlCode(ch);
-                sink.sendBytes(new byte[]{ctrlCode});
-                stickyStateMachine.consumeLatched();
-            } else if (stickyStateMachine.isAltActive() && codePoint < 128) {
-                byte[] altSeq = StickyModifierStateMachine.toAltSequence(ch);
-                sink.sendBytes(altSeq);
-                stickyStateMachine.consumeLatched();
-            } else if (ch == '\n' || ch == '\r') {
-                sink.sendBytes(new byte[]{ASCII_CR});
-            } else {
-                String s = new String(Character.toChars(codePoint));
-                sink.sendBytes(s.getBytes(StandardCharsets.UTF_8));
-            }
-            i += charCount;
+        for (int offset = 0; offset < value.length();) {
+            int codePoint = value.codePointAt(offset);
+            writeCodePoint(codePoint, false, false);
+            offset += Character.charCount(codePoint);
         }
         return true;
     }
 
+    private void writeCodePoint(int codePoint, boolean ctrl, boolean alt) {
+        ctrl |= stickyStateMachine != null && stickyStateMachine.isCtrlActive();
+        alt |= stickyStateMachine != null && stickyStateMachine.isAltActive();
+        if (codePoint == '\n') codePoint = '\r';
+        if (ctrl) codePoint = StickyModifierStateMachine.toControlCodePoint(codePoint);
+        String value = (alt ? "\u001b" : "") + new String(Character.toChars(codePoint));
+        sink.sendBytes(value.getBytes(StandardCharsets.UTF_8));
+        consumeModifiers();
+    }
+
+    private void consumeModifiers() {
+        if (stickyStateMachine != null) stickyStateMachine.consumeLatched();
+    }
+
     @Override
     public boolean deleteSurroundingText(int beforeLength, int afterLength) {
-        if (sink == null) {
-            return false;
-        }
-        if (beforeLength <= 0 && afterLength <= 0) {
-            return true;
-        }
+        return deleteText(beforeLength, afterLength, false);
+    }
 
-        if (beforeLength > 0) {
-            byte[] delBytes = new byte[beforeLength];
-            for (int i = 0; i < beforeLength; i++) {
-                delBytes[i] = ASCII_DEL;
-            }
-            sink.sendBytes(delBytes);
-        }
-
-        if (afterLength > 0) {
-            for (int i = 0; i < afterLength; i++) {
-                sink.sendBytes(FORWARD_DEL_SEQUENCE);
-            }
-        }
+    private boolean deleteText(int beforeLength, int afterLength, boolean codePoints) {
+        if (closed || sink == null || beforeLength < 0 || afterLength < 0) return false;
+        int[] remaining = composition.delete(beforeLength, afterLength, codePoints);
+        for (int i = 0; i < remaining[0]; i++) sendKey(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL);
+        for (int i = 0; i < remaining[1]; i++) sendKey(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_FORWARD_DEL);
         return true;
     }
 
     @Override
     public boolean deleteSurroundingTextInCodePoints(int beforeLength, int afterLength) {
-        return deleteSurroundingText(beforeLength, afterLength);
+        return deleteText(beforeLength, afterLength, true);
     }
 
     public boolean sendKey(int action, int keyCode) {
@@ -168,129 +178,89 @@ public class TerminalInputConnection implements InputConnection {
         try {
             int action = event.getAction();
             int keyCode = event.getKeyCode();
-            int unicode = event.getUnicodeChar();
-            boolean isCtrl = event.isCtrlPressed();
-            boolean isAlt = event.isAltPressed();
-            return handleKeyEvent(action, keyCode, unicode, isCtrl, isAlt);
+            // Android's modified unicode can be zero for Ctrl keys, and Alt may compose
+            // a layout character. Encode the terminal modifiers ourselves from the base key.
+            int meta = event.getMetaState() & ~(KeyEvent.META_CTRL_MASK | KeyEvent.META_ALT_MASK);
+            int unicode = event.getUnicodeChar(meta);
+            return handleKeyEvent(action, keyCode, unicode, event.isCtrlPressed(),
+                    event.isAltPressed(), event.isShiftPressed());
         } catch (Exception e) {
             return false;
         }
     }
 
     public boolean handleKeyEvent(int action, int keyCode, int unicode, boolean isCtrl, boolean isAlt) {
-        if (sink == null || isSystemKey(keyCode)) {
-            return false;
-        }
-        if (action == KeyEvent.ACTION_UP) {
-            return isHandledTerminalKeyCode(keyCode) || unicode != 0;
-        }
-        if (action != KeyEvent.ACTION_DOWN) {
-            return false;
-        }
+        return handleKeyEvent(action, keyCode, unicode, isCtrl, isAlt, false);
+    }
 
+    public boolean handleKeyEvent(int action, int keyCode, int unicode,
+            boolean ctrl, boolean alt, boolean shift) {
+        if (closed || sink == null || isSystemKey(keyCode)) return false;
+        if (action == KeyEvent.ACTION_UP) return isHandledTerminalKeyCode(keyCode) || unicode != 0;
+        if (action != KeyEvent.ACTION_DOWN) return false;
+        ctrl |= stickyStateMachine != null && stickyStateMachine.isCtrlActive();
+        alt |= stickyStateMachine != null && stickyStateMachine.isAltActive();
+        int modifier = 1 + (shift ? 1 : 0) + (alt ? 2 : 0) + (ctrl ? 4 : 0);
+        String sequence = null;
+        String finalKey = null;
+        int tildeKey = 0;
         switch (keyCode) {
-            case KeyEvent.KEYCODE_DEL:
-                sink.sendBytes(new byte[]{ASCII_DEL});
-                return true;
-            case KeyEvent.KEYCODE_ENTER:
-                sink.sendBytes(new byte[]{ASCII_CR});
-                return true;
-            case KeyEvent.KEYCODE_TAB:
-                sink.sendBytes(new byte[]{ASCII_TAB});
-                return true;
-            case KeyEvent.KEYCODE_FORWARD_DEL:
-                sink.sendBytes(FORWARD_DEL_SEQUENCE);
-                return true;
-            case KeyEvent.KEYCODE_DPAD_UP:
-                sink.sendBytes("\u001B[A".getBytes(StandardCharsets.UTF_8));
-                return true;
-            case KeyEvent.KEYCODE_DPAD_DOWN:
-                sink.sendBytes("\u001B[B".getBytes(StandardCharsets.UTF_8));
-                return true;
-            case KeyEvent.KEYCODE_DPAD_LEFT:
-                sink.sendBytes("\u001B[D".getBytes(StandardCharsets.UTF_8));
-                return true;
-            case KeyEvent.KEYCODE_DPAD_RIGHT:
-                sink.sendBytes("\u001B[C".getBytes(StandardCharsets.UTF_8));
-                return true;
-            case KeyEvent.KEYCODE_PAGE_UP:
-                sink.sendBytes("\u001B[5~".getBytes(StandardCharsets.UTF_8));
-                return true;
-            case KeyEvent.KEYCODE_PAGE_DOWN:
-                sink.sendBytes("\u001B[6~".getBytes(StandardCharsets.UTF_8));
-                return true;
-            case KeyEvent.KEYCODE_MOVE_HOME:
-                sink.sendBytes("\u001B[H".getBytes(StandardCharsets.UTF_8));
-                return true;
-            case KeyEvent.KEYCODE_MOVE_END:
-                sink.sendBytes("\u001B[F".getBytes(StandardCharsets.UTF_8));
-                return true;
-            case KeyEvent.KEYCODE_ESCAPE:
-                sink.sendBytes(new byte[]{0x1B});
-                return true;
-            default:
-                break;
+            case KeyEvent.KEYCODE_DEL: sequence = (alt ? "\u001b" : "") + (ctrl ? "\b" : "\u007f"); break;
+            case KeyEvent.KEYCODE_ENTER: sequence = (alt ? "\u001b" : "") + "\r"; break;
+            case KeyEvent.KEYCODE_TAB: sequence = shift ? "\u001b[Z" : (alt ? "\u001b\t" : "\t"); break;
+            case KeyEvent.KEYCODE_ESCAPE: sequence = alt ? "\u001b\u001b" : "\u001b"; break;
+            case KeyEvent.KEYCODE_DPAD_UP: finalKey = "A"; break;
+            case KeyEvent.KEYCODE_DPAD_DOWN: finalKey = "B"; break;
+            case KeyEvent.KEYCODE_DPAD_RIGHT: finalKey = "C"; break;
+            case KeyEvent.KEYCODE_DPAD_LEFT: finalKey = "D"; break;
+            case KeyEvent.KEYCODE_MOVE_HOME: finalKey = "H"; break;
+            case KeyEvent.KEYCODE_MOVE_END: finalKey = "F"; break;
+            case KeyEvent.KEYCODE_INSERT: tildeKey = 2; break;
+            case KeyEvent.KEYCODE_FORWARD_DEL: tildeKey = 3; break;
+            case KeyEvent.KEYCODE_PAGE_UP: tildeKey = 5; break;
+            case KeyEvent.KEYCODE_PAGE_DOWN: tildeKey = 6; break;
+            default: break;
         }
-
-        if (unicode == 0 && keyCode >= KeyEvent.KEYCODE_A && keyCode <= KeyEvent.KEYCODE_Z) {
-            unicode = 'a' + (keyCode - KeyEvent.KEYCODE_A);
-        }
-
-        if (stickyStateMachine != null && stickyStateMachine.isCtrlActive() && unicode != 0) {
-            byte ctrl = StickyModifierStateMachine.toControlCode((char) unicode);
-            sink.sendBytes(new byte[]{ctrl});
-            stickyStateMachine.consumeLatched();
-            return true;
-        }
-
-        if (stickyStateMachine != null && stickyStateMachine.isAltActive() && unicode != 0) {
-            byte[] alt = StickyModifierStateMachine.toAltSequence((char) unicode);
-            sink.sendBytes(alt);
-            stickyStateMachine.consumeLatched();
-            return true;
-        }
-
-        if (isCtrl && unicode != 0) {
-            byte ctrl = StickyModifierStateMachine.toControlCode((char) unicode);
-            sink.sendBytes(new byte[]{ctrl});
-            return true;
-        }
-
-        if (isAlt && unicode != 0) {
-            byte[] alt = StickyModifierStateMachine.toAltSequence((char) unicode);
-            sink.sendBytes(alt);
-            return true;
-        }
-
-        if (unicode != 0) {
-            if (unicode == '\n' || unicode == '\r') {
-                sink.sendBytes(new byte[]{ASCII_CR});
-            } else {
-                sink.sendBytes(new String(Character.toChars(unicode)).getBytes(StandardCharsets.UTF_8));
+        if (finalKey != null) {
+            sequence = modifier != 1 ? "\u001b[1;" + modifier + finalKey
+                    : (applicationCursorKeys.getAsBoolean() ? "\u001bO" : "\u001b[") + finalKey;
+        } else if (tildeKey != 0) {
+            sequence = "\u001b[" + tildeKey + (modifier == 1 ? "" : ";" + modifier) + "~";
+        } else if (keyCode >= KeyEvent.KEYCODE_F1 && keyCode <= KeyEvent.KEYCODE_F12) {
+            int index = keyCode - KeyEvent.KEYCODE_F1;
+            if (index < 4) sequence = (modifier == 1 ? "\u001bO" : "\u001b[1;" + modifier) + (char) ('P' + index);
+            else {
+                int number = new int[]{15, 17, 18, 19, 20, 21, 23, 24}[index - 4];
+                sequence = "\u001b[" + number + (modifier == 1 ? "" : ";" + modifier) + "~";
             }
+        }
+        if (sequence != null) {
+            finishComposingText();
+            sink.sendBytes(sequence.getBytes(StandardCharsets.UTF_8));
+            consumeModifiers();
             return true;
         }
-
-        return false;
+        if (unicode == 0 && keyCode >= KeyEvent.KEYCODE_A && keyCode <= KeyEvent.KEYCODE_Z)
+            unicode = 'a' + keyCode - KeyEvent.KEYCODE_A;
+        if (unicode == 0 || !Character.isValidCodePoint(unicode)) return false;
+        finishComposingText();
+        writeCodePoint(unicode, ctrl, alt);
+        return true;
     }
 
     @Override
     public boolean performEditorAction(int editorAction) {
-        if (sink != null) {
-            sink.sendBytes(new byte[]{ASCII_CR});
-            return true;
-        }
-        return false;
+        return sendKey(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER);
     }
 
     @Override
     public CharSequence getTextBeforeCursor(int n, int flags) {
-        return "";
+        return composition.before(n);
     }
 
     @Override
     public CharSequence getTextAfterCursor(int n, int flags) {
-        return "";
+        return composition.after(n);
     }
 
     @Override
@@ -310,6 +280,8 @@ public class TerminalInputConnection implements InputConnection {
 
     @Override
     public boolean setComposingText(CharSequence text, int newCursorPosition) {
+        if (closed) return false;
+        composition.replace(text, newCursorPosition);
         return true;
     }
 
@@ -320,7 +292,10 @@ public class TerminalInputConnection implements InputConnection {
 
     @Override
     public boolean finishComposingText() {
-        return true;
+        if (closed) return false;
+        String value = composition.value();
+        if (value.isEmpty()) return true;
+        return commitText(value, 1);
     }
 
     @Override
@@ -338,12 +313,12 @@ public class TerminalInputConnection implements InputConnection {
 
     @Override
     public boolean setSelection(int start, int end) {
-        return true;
+        return composition.select(start, end);
     }
 
     @Override
     public boolean performContextMenuAction(int id) {
-        return false;
+        return !closed && contextMenuHandler.test(id);
     }
 
     @Override
@@ -383,7 +358,8 @@ public class TerminalInputConnection implements InputConnection {
 
     @Override
     public void closeConnection() {
-        // No-op
+        composition.clear();
+        closed = true;
     }
 
     @Override

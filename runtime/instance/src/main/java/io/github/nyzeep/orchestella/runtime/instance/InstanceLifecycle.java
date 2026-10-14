@@ -33,16 +33,8 @@ public final class InstanceLifecycle {
     private static final int BRIDGE_TOKEN_BYTE_COUNT = BridgeHandshake.TOKEN_HEX_LENGTH / 2;
     private static final char[] LOWERCASE_HEX = "0123456789abcdef".toCharArray();
     private static final SecureRandom BRIDGE_TOKEN_RANDOM = new SecureRandom();
-    private static final char[] PASSWORD_CHARS =
-            "23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz".toCharArray();
-    private static final int GUEST_PASSWORD_LENGTH = 16;
-
     public static String newGuestPassword() {
-        char[] chars = new char[GUEST_PASSWORD_LENGTH];
-        for (int i = 0; i < GUEST_PASSWORD_LENGTH; i++) {
-            chars[i] = PASSWORD_CHARS[BRIDGE_TOKEN_RANDOM.nextInt(PASSWORD_CHARS.length)];
-        }
-        return new String(chars);
+        return InstanceUserConfig.newPassword();
     }
 
     private InstanceLifecycle() {}
@@ -154,31 +146,6 @@ public final class InstanceLifecycle {
                 DistroReference distro,
                 Path rootVolume,
                 String bridgeToken,
-                FullLinuxContract.RuntimeClass runtimeClass,
-                State state,
-                long createdAtMillis,
-                long updatedAtMillis) {
-            this(id, distro, rootVolume, bridgeToken, InstanceUserConfig.DEFAULT_ROOT_PASSWORD, runtimeClass, state, createdAtMillis, updatedAtMillis, null, VmHardwareConfig.defaultConfig(), InstanceUserConfig.DEFAULT_HOSTNAME, InstanceUserConfig.DEFAULT_ROOT_USER);
-        }
-
-        private Instance(
-                String id,
-                DistroReference distro,
-                Path rootVolume,
-                String bridgeToken,
-                FullLinuxContract.RuntimeClass runtimeClass,
-                State state,
-                long createdAtMillis,
-                long updatedAtMillis,
-                CrashDiagnostic crashDiagnostic) {
-            this(id, distro, rootVolume, bridgeToken, InstanceUserConfig.DEFAULT_ROOT_PASSWORD, runtimeClass, state, createdAtMillis, updatedAtMillis, crashDiagnostic, VmHardwareConfig.defaultConfig(), InstanceUserConfig.DEFAULT_HOSTNAME, InstanceUserConfig.DEFAULT_ROOT_USER);
-        }
-
-        private Instance(
-                String id,
-                DistroReference distro,
-                Path rootVolume,
-                String bridgeToken,
                 String guestPassword,
                 FullLinuxContract.RuntimeClass runtimeClass,
                 State state,
@@ -260,7 +227,8 @@ public final class InstanceLifecycle {
 
         /**
          * Per-instance random guest user/root credential (ADR-0010).
-         * User-visible and modifiable; never hardcoded or constant.
+         * User-visible and modifiable; must never be logged. An empty value marks an
+         * unknown legacy/imported credential and must not trigger a guest password reset.
          */
         public String guestPassword() {
             return guestPassword;
@@ -405,7 +373,7 @@ public final class InstanceLifecycle {
                     distro,
                     rootVolume,
                     newBridgeToken(),
-                    InstanceUserConfig.DEFAULT_ROOT_PASSWORD,
+                    "", // Imported root volumes retain their existing, unknown guest credential.
                     runtimeClass != null ? runtimeClass : FullLinuxContract.RuntimeClass.FULL_LINUX,
                     state != null ? state : State.STOPPED,
                     now,
@@ -423,7 +391,9 @@ public final class InstanceLifecycle {
             properties.setProperty("distroVersion", distro.version());
             properties.setProperty("rootVolume", rootVolume.toString());
             properties.setProperty("bridgeToken", bridgeToken);
-            properties.setProperty("guestPassword", guestPassword);
+            if (!guestPassword.isEmpty()) {
+                properties.setProperty("guestPassword", guestPassword);
+            }
             properties.setProperty("runtimeClass", runtimeClass.name());
             properties.setProperty("state", state.name());
             properties.setProperty("createdAtMillis", Long.toString(createdAtMillis));
@@ -466,7 +436,9 @@ public final class InstanceLifecycle {
                 }
                 String guestPassword = properties.getProperty("guestPassword");
                 if (guestPassword == null || guestPassword.trim().isEmpty()) {
-                    guestPassword = InstanceUserConfig.DEFAULT_ROOT_PASSWORD;
+                    // Metadata cannot prove the password installed on an existing root volume.
+                    // Keep it unknown so upgrades do not silently reset the guest account.
+                    guestPassword = "";
                 }
                 String hostname = properties.getProperty("hostname");
                 if (hostname == null || hostname.trim().isEmpty()) {

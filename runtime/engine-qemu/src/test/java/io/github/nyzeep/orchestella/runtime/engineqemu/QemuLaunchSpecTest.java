@@ -60,7 +60,8 @@ public final class QemuLaunchSpecTest {
         // Kernel/initrd/root volume wiring.
         requireArg(spec, "-kernel", "/data/runtime/Image");
         requireArg(spec, "-initrd", "/data/runtime/initramfs-embedded.cpio.gz");
-        requireArg(spec, "-drive", "if=none,id=root,file=/data/instances/i1/root-volume.raw,format=raw,cache=unsafe");
+        requireArg(spec, "-drive", "if=none,id=root,file=/data/instances/i1/root-volume.raw,format=raw,cache=writeback");
+        if (joined.contains("cache=unsafe")) fail("guest disk flushes must not be ignored");
         requireArg(spec, "-device", "virtio-blk-device,drive=root");
 
         // Outbound SLIRP network assembly with default Android DNS fallback (8.8.8.8) (AC-1, AC-2, ADR-0008).

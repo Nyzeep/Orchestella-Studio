@@ -40,7 +40,9 @@ public final class TerminalDrawerPanel extends LinearLayout {
         void onCloseDrawerRequested();
     }
 
-    private final String instanceId;
+    private String instanceId;
+
+    public void setInstanceId(String id) { instanceId = id; refresh(); }
     private final DrawerCallback callback;
     private final SessionListAdapter adapter;
     private final TextView tvSessionCount;
@@ -57,7 +59,7 @@ public final class TerminalDrawerPanel extends LinearLayout {
 
         // Header Title
         TextView tvHeader = new TextView(context);
-        tvHeader.setText("终端会话列表");
+        tvHeader.setText("终端输出视图");
         tvHeader.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
         tvHeader.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         tvHeader.setTextColor(DraculaPalette.FOREGROUND);
@@ -110,7 +112,7 @@ public final class TerminalDrawerPanel extends LinearLayout {
         bottomBar.setPadding(0, dpToPx(12), 0, dpToPx(8));
 
         tvSessionCount = new TextView(context);
-        tvSessionCount.setText("共 0 个终端");
+        tvSessionCount.setText("共 0 个视图");
         tvSessionCount.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
         tvSessionCount.setTextColor(DraculaPalette.COMMENT);
         LinearLayout.LayoutParams countLp = new LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1.0f);
@@ -144,7 +146,7 @@ public final class TerminalDrawerPanel extends LinearLayout {
         List<TerminalSessionInstance> sessions =
                 MultiTerminalSessionManager.getInstance().listSessions(instanceId);
         adapter.setSessions(sessions);
-        tvSessionCount.setText(String.format("共 %d 个终端", sessions.size()));
+        tvSessionCount.setText(String.format(java.util.Locale.getDefault(), "共 %d 个视图", sessions.size()));
     }
 
     private final class SessionListAdapter extends RecyclerView.Adapter<SessionViewHolder> {
@@ -233,15 +235,17 @@ public final class TerminalDrawerPanel extends LinearLayout {
 
         public void bind(TerminalSessionInstance session) {
             tvTitle.setText(session.getTitle());
-            boolean isActive = session.isActive();
+            TerminalSessionInstance selected = MultiTerminalSessionManager.getInstance().getActiveSession(instanceId);
+            boolean isActive = selected != null && selected.getSessionId().equals(session.getSessionId());
+            boolean connected = io.github.nyzeep.orchestella.PersistentTerminalSessionPool.getInstance().hasActiveSession(instanceId);
+            tvStatusDot.setTextColor(connected ? DraculaPalette.COLOR_GREEN : DraculaPalette.COMMENT);
+            tvStatusDot.setContentDescription(connected ? "Shell 已连接" : "Shell 已离线");
 
             if (isActive) {
-                tvStatusDot.setTextColor(DraculaPalette.COLOR_GREEN);
                 tvActiveBadge.setVisibility(View.VISIBLE);
                 itemView.setBackground(createPillBackground(0xFF383A59, DraculaPalette.COLOR_BLUE, 10f));
                 tvTitle.setTextColor(DraculaPalette.COLOR_MAGENTA);
             } else {
-                tvStatusDot.setTextColor(DraculaPalette.COMMENT);
                 tvActiveBadge.setVisibility(View.GONE);
                 itemView.setBackground(createPillBackground(0xFF282A36, 0x336272A4, 10f));
                 tvTitle.setTextColor(DraculaPalette.FOREGROUND);
@@ -271,7 +275,7 @@ public final class TerminalDrawerPanel extends LinearLayout {
             input.setTextColor(DraculaPalette.FOREGROUND);
 
             new AlertDialog.Builder(ctx)
-                    .setTitle("重命名终端")
+                    .setTitle("重命名输出视图")
                     .setView(input)
                     .setPositiveButton("确定", (dialog, which) -> {
                         String newTitle = input.getText().toString().trim();
@@ -286,8 +290,8 @@ public final class TerminalDrawerPanel extends LinearLayout {
         private void showCloseConfirmDialog(TerminalSessionInstance session) {
             Context ctx = itemView.getContext();
             new AlertDialog.Builder(ctx)
-                    .setTitle("关闭终端")
-                    .setMessage("确定要关闭终端 \"" + session.getTitle() + "\" 吗？")
+                    .setTitle("关闭输出视图")
+                    .setMessage("关闭 \"" + session.getTitle() + "\"？Shell 会话继续运行。")
                     .setPositiveButton("关闭", (dialog, which) -> {
                         if (callback != null) {
                             callback.onSessionClosed(session);

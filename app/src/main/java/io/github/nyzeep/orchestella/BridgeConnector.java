@@ -108,6 +108,27 @@ public final class BridgeConnector {
                 null);
     }
 
+    /** Uses the session's cached client; no second reader may ever own its control stream. */
+    public Session serveSession(ExecutionSession session, String bridgeToken, int columns, int rows,
+            Events events, BridgeControl.Notification notification, BridgeControl.UrlOpener urlOpener,
+            BridgeControl.Clipboard clipboard) throws IOException, InterruptedException {
+        BridgeClient client = session.bridgeClient();
+        if (client == null) throw new IOException("Bridge control is unavailable");
+        client.setDiagnosticListener(message -> android.util.Log.i("OrchestellaBridge", message));
+        android.util.Log.i("OrchestellaBridge", "session control start state=" + client.readinessState());
+        BridgeControl.Seams seams = createSeams(events, notification, urlOpener, clipboard);
+        client.startResponsePump(line -> {
+            if (!client.isReady()) return "ORCHESTELLA/ERROR unauthenticated\n";
+            return BridgeControl.dispatch(line, seams).wireResponse();
+        });
+        if (!client.handshake(bridgeToken).accepted()) return new Session(3, null);
+        events.onReady();
+        if (client.ping().accepted()) events.onPong();
+        if (columns > 0 && rows > 0 && client.resize(columns, rows).accepted()) events.onResize(columns, rows);
+        client.awaitResponsePump();
+        return new Session(0, null);
+    }
+
     private int serveControl(InputStream in, OutputStream out, String bridgeToken, int columns,
             int rows, Events events, BridgeControl.Notification notification,
             BridgeControl.UrlOpener urlOpener, BridgeControl.Clipboard clipboard)
@@ -145,7 +166,20 @@ public final class BridgeConnector {
             BridgeControl.Notification notification, BridgeControl.UrlOpener urlOpener,
             BridgeControl.Clipboard clipboard)
             throws IOException {
-        BridgeControl.Seams seams = BridgeControl.Seams.of(
+        BridgeControl.Seams seams = createSeams(events, notification, urlOpener, clipboard);
+        while (true) {
+            String requestLine = readLine(in);
+            if (requestLine == null) break;
+            if (requestLine.isEmpty()) continue;
+            BridgeControl.Result result = BridgeControl.dispatch(requestLine, seams);
+            out.write(result.wireResponse().getBytes(StandardCharsets.US_ASCII));
+            out.flush();
+        }
+    }
+
+    private static BridgeControl.Seams createSeams(Events events, BridgeControl.Notification notification,
+            BridgeControl.UrlOpener urlOpener, BridgeControl.Clipboard clipboard) {
+        return BridgeControl.Seams.of(
                 null,
                 null,
                 (title, message) -> {
@@ -165,18 +199,6 @@ public final class BridgeConnector {
                 null,
                 clipboard);
 
-        while (true) {
-            String requestLine = readLine(in);
-            if (requestLine == null) {
-                break;
-            }
-            if (requestLine.isEmpty()) {
-                continue;
-            }
-            BridgeControl.Result result = BridgeControl.dispatch(requestLine, seams);
-            out.write(result.wireResponse().getBytes(StandardCharsets.US_ASCII));
-            out.flush();
-        }
     }
 
 

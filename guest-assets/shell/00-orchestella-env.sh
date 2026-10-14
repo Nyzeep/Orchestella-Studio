@@ -50,6 +50,11 @@ elif [ -f "$(dirname "$0")/droidlayer-prompt.sh" ]; then
     . "$(dirname "$0")/droidlayer-prompt.sh"
 fi
 
+# Mark the real Bash prompt/command boundaries after the prompt hook is installed.
+if [ -n "${BASH_VERSION:-}" ] && [ -f /etc/orchestella/shell/20-orchestella-terminal-integration.sh ]; then
+    . /etc/orchestella/shell/20-orchestella-terminal-integration.sh
+fi
+
 # Load graphics acceleration environment
 if [ -f /etc/profile.d/10-orchestella-graphics.sh ]; then
     # shellcheck disable=SC1091

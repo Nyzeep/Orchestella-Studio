@@ -1,0 +1,23 @@
+{
+  "base": "8d0e8c75d769ecc645ea102b90a304c8657344a1",
+  "branch": "integration/quality-phase5",
+  "qualitySourcePaths": 131,
+  "qualitySourceDrift": 0,
+  "applyCheckExit": 0,
+  "applyExit": 0,
+  "app": {
+    "tests": 628,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "gradleExit": 0,
+  "runtimeChecks": [
+    "contract",
+    "instance",
+    "engine-qemu",
+    "engine-avf"
+  ],
+  "initialFailure": "Wrong read-only cache; material/appcompat absent; retried with existing gradle-home-ascii cache offline",
+  "device": "adb devices empty; NOT_RUN"
+}

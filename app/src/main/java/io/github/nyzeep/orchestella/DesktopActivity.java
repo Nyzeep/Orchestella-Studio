@@ -198,8 +198,8 @@ public class DesktopActivity extends Activity {
                                 new AndroidNotificationAdapter(DesktopActivity.this);
                         AndroidUrlOpenerAdapter urlOpenerAdapter =
                                 new AndroidUrlOpenerAdapter(DesktopActivity.this);
-                        new BridgeConnector().serveStreams(
-                                session.controlOutput(), session.controlInput(), bridgeToken,
+                        new BridgeConnector().serveSession(
+                                session, bridgeToken,
                                 0, 0, new BridgeConnector.Events() {
                                     @Override public void onReady() {}
                                     @Override public void onPong() {}
@@ -218,6 +218,9 @@ public class DesktopActivity extends Activity {
                 BridgeClient client = session.bridgeClient();
                 if (client != null) {
                     try {
+                        // The same cached client may still be authenticating in the terminal
+                        // or desktop bridge thread. Never create a second reader or race HELLO.
+                        if (!client.awaitReady(BridgeClient.DEFAULT_STARTUP_TIMEOUT_MS)) return;
                         if (waylandChannel != null && !waylandChannel.isConnected()) {
                             client.desktopLaunch();
                         }

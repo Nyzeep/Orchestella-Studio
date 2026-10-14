@@ -4,489 +4,2489 @@
     android:id="@+id/root_coordinator"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="?android:attr/colorBackground">
+    android:background="#0D0E11">
 
-    <androidx.core.widget.NestedScrollView
-        android:id="@+id/main_scroll_view"
+    <!-- 1. Top Constructivist Masthead Header -->
+    <LinearLayout
+        android:id="@+id/constructivist_masthead"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="#121318"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/root_container"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:fillViewport="true"
-        android:clipToPadding="false">
+        android:orientation="vertical">
 
+        <!-- Constructivist Android Status Strip -->
         <LinearLayout
-            android:id="@+id/root_container"
+            android:id="@+id/header_status_strip"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp"
-            android:paddingTop="16dp"
-            android:paddingBottom="24dp">
+            android:minHeight="32dp"
+            android:orientation="horizontal"
+            android:baselineAligned="false"
+            android:gravity="center_vertical"
+            android:background="#0B0C0F"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp">
 
-            <!-- Top Header: Title + Subtitle + Settings Icon Button -->
-            <LinearLayout
-                android:layout_width="match_parent"
+            <TextView
+                android:id="@+id/tv_status_time"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:layout_marginBottom="16dp">
+                android:background="#D62828"
+                android:paddingStart="6dp"
+                android:paddingTop="1dp"
+                android:paddingEnd="6dp"
+                android:paddingBottom="1dp"
+                android:fontFamily="monospace"
+                android:text="[ 09:41 ]"
+                android:textColor="#FFFFFF"
+                android:textSize="10sp"
+                android:textStyle="bold" />
 
-                <LinearLayout
-                    android:layout_width="0dp"
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="8dp"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:fontFamily="monospace"
+                android:text="ORCHESTELLA // WORKSTATION"
+                android:textColor="#8E929B"
+                android:textSize="10sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tv_status_net"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:text="NET:--"
+                android:textColor="#8E929B"
+                android:textSize="10sp" />
+
+            <TextView
+                android:id="@+id/tv_status_bat"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:fontFamily="monospace"
+                android:text="BAT:--"
+                android:textColor="#FDBB24"
+                android:textSize="10sp"
+                android:textStyle="bold" />
+
+            <View
+                android:id="@+id/indicator_status_pulse"
+                android:layout_width="6dp"
+                android:layout_height="6dp"
+                android:layout_marginStart="8dp"
+                android:background="#D62828" />
+        </LinearLayout>
+
+        <!-- Constructivist Masthead Header -->
+        <LinearLayout
+            android:id="@+id/header_masthead"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="58dp"
+            android:orientation="horizontal"
+            android:baselineAligned="false"
+            android:gravity="center_vertical"
+            android:background="#121318"
+            android:paddingStart="12dp"
+            android:paddingTop="5dp"
+            android:paddingEnd="8dp"
+            android:paddingBottom="5dp">
+
+            <!-- Title + Manifest Index -->
+            <FrameLayout
+                android:id="@+id/masthead_index_box"
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:background="#D62828">
+
+                <TextView
+                    android:id="@+id/masthead_index_text"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
+                    android:layout_gravity="center"
+                    android:fontFamily="monospace"
+                    android:text="01/K"
+                    android:textColor="#FFFFFF"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+            </FrameLayout>
 
-                    <TextView
-                        android:id="@+id/dashboard_title"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/dashboard_title"
-                        android:textSize="24sp"
-                        android:textStyle="bold"
-                        android:textColor="?attr/colorOnBackground" />
-
-                    <TextView
-                        android:id="@+id/dashboard_subtitle"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:text="@string/dashboard_subtitle"
-                        android:textSize="13sp"
-                        android:textColor="?attr/colorOutline" />
-                </LinearLayout>
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/ssh_manager_button"
-                    style="@style/Widget.Material3.Button.IconButton.Filled.Tonal"
-                    android:layout_width="40dp"
-                    android:layout_height="40dp"
-                    android:minWidth="40dp"
-                    android:minHeight="40dp"
-                    android:layout_marginEnd="6dp"
-                    app:icon="@drawable/ic_ssh"
-                    app:iconSize="20dp"
-                    android:contentDescription="SSH 连接管理器" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/theme_toggle_button"
-                    style="@style/Widget.Material3.Button.IconButton.Filled.Tonal"
-                    android:layout_width="40dp"
-                    android:layout_height="40dp"
-                    android:minWidth="40dp"
-                    android:minHeight="40dp"
-                    android:layout_marginEnd="6dp"
-                    app:icon="@drawable/ic_palette"
-                    app:iconSize="20dp"
-                    android:contentDescription="切换主题风格" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/about_button"
-                    style="@style/Widget.Material3.Button.IconButton.Filled.Tonal"
-                    android:layout_width="40dp"
-                    android:layout_height="40dp"
-                    android:minWidth="40dp"
-                    android:minHeight="40dp"
-                    android:layout_marginEnd="6dp"
-                    app:icon="@drawable/ic_info"
-                    app:iconSize="20dp"
-                    android:contentDescription="@string/about_title" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/settings_button"
-                    style="@style/Widget.Material3.Button.IconButton.Filled.Tonal"
-                    android:layout_width="40dp"
-                    android:layout_height="40dp"
-                    android:minWidth="40dp"
-                    android:minHeight="40dp"
-                    app:icon="@drawable/ic_settings"
-                    app:iconSize="20dp"
-                    android:contentDescription="@string/settings_title" />
-            </LinearLayout>
-
-            <!-- 1. System Hardware Status Card (Host Profile & Virtualization Badge) -->
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/system_status_card"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                app:cardCornerRadius="20dp"
-                app:cardElevation="0dp"
-                app:strokeWidth="1dp"
-                app:strokeColor="@color/glass_card_stroke_dark"
-                app:cardBackgroundColor="@color/glass_card_bg_dark">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:paddingStart="14dp"
-                    android:paddingTop="12dp"
-                    android:paddingEnd="14dp"
-                    android:paddingBottom="12dp">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical">
-
-                        <TextView
-                            android:id="@+id/system_virtualization_badge"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:background="@drawable/bg_status_badge"
-                            android:paddingStart="8dp"
-                            android:paddingTop="3dp"
-                            android:paddingEnd="8dp"
-                            android:paddingBottom="3dp"
-                            android:text="pKVM 硬件虚拟化"
-                            android:textSize="11sp"
-                            android:textStyle="bold"
-                            android:textColor="?attr/colorPrimary" />
-
-                        <TextView
-                            android:id="@+id/system_cpu_chip"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1.1"
-                            android:layout_marginStart="12dp"
-                            android:drawableStart="@drawable/ic_cpu"
-                            android:drawablePadding="6dp"
-                            android:gravity="center_vertical"
-                            android:text="8 核心 CPU"
-                            android:textSize="12sp"
-                            android:textColor="?attr/colorOnSurfaceVariant" />
-
-                        <io.github.nyzeep.orchestella.ui.RingProgressView
-                            android:id="@+id/ring_memory"
-                            android:layout_width="72dp"
-                            android:layout_height="72dp" />
-
-                        <io.github.nyzeep.orchestella.ui.RingProgressView
-                            android:id="@+id/ring_storage"
-                            android:layout_width="72dp"
-                            android:layout_height="72dp"
-                            android:layout_marginStart="10dp" />
-
-                        <io.github.nyzeep.orchestella.ui.RingProgressView
-                            android:id="@+id/ring_battery"
-                            android:layout_width="72dp"
-                            android:layout_height="72dp"
-                            android:layout_marginStart="10dp" />
-</LinearLayout>
-
-                    <!-- Detailed Runtime Floor & Strategy status -->
-                    <TextView
-                        android:id="@+id/runtime_status"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        android:text="@string/runtime_status_loading"
-                        android:textSize="12sp"
-                        android:textColor="?attr/colorOutline" />
-
-                    <!-- Refusal Banner (Honest Refusal) -->
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/refusal_banner"
-                        style="@style/Widget.Material3.Button.TonalButton"
-                        android:layout_width="match_parent"
-                        android:layout_height="48dp"
-                        android:insetTop="0dp"
-                        android:insetBottom="0dp"
-                        app:cornerRadius="12dp"
-                        android:layout_marginTop="10dp"
-                        android:text="@string/refusal_banner_title"
-                        android:textSize="14sp"
-                        android:textColor="@color/status_crashed"
-                        android:visibility="gone" />
-
-                    <!-- AVF Authorization Wizard Button -->
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/upgrade_authorization"
-                        style="@style/Widget.Material3.Button"
-                        android:layout_width="match_parent"
-                        android:layout_height="48dp"
-                        android:insetTop="0dp"
-                        android:insetBottom="0dp"
-                        app:cornerRadius="12dp"
-                        android:layout_marginTop="10dp"
-                        android:text="@string/wizard_title"
-                        android:textSize="14sp"
-                        android:visibility="gone" />
-
-                </LinearLayout>
-
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- 2. Hero Create Card: single creation entrance with glow bloom and distro chips.
-                 Replaces the former big button card + 7-card carousel; the compact chips reuse
-                 the create_* ids so MainActivity wiring keeps working unchanged. -->
             <LinearLayout
-                android:id="@+id/card_create_linux_main"
-                android:layout_width="match_parent"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                android:orientation="vertical"
-                android:background="@drawable/bg_glow_card"
-                android:clickable="true"
-                android:focusable="true">
+                android:layout_weight="1"
+                android:layout_marginStart="10dp"
+                android:orientation="vertical">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingStart="16dp"
-                    android:paddingTop="14dp"
-                    android:paddingEnd="16dp">
+                    android:baselineAligned="false"
+                    android:gravity="center_vertical">
 
-                    <ImageView
-                        android:layout_width="36dp"
-                        android:layout_height="36dp"
-                        android:src="@drawable/ic_distro_ubuntu"
-                        android:contentDescription="Linux Distros" />
+                    <TextView
+                        android:id="@+id/dashboard_title"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="sans-serif"
+                        android:text="ORCHESTELLA"
+                        android:maxLines="2"
+                        android:ellipsize="end"
+                        android:textColor="#F5F4F0"
+                        android:textSize="15sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/header_sys_badge"
+                        android:visibility="gone"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="6dp"
+                        android:background="#FFFFFF"
+                        android:paddingStart="4dp"
+                        android:paddingTop="1dp"
+                        android:paddingEnd="4dp"
+                        android:paddingBottom="1dp"
+                        android:fontFamily="monospace"
+                        android:text="IDLE"
+                        android:textColor="#000000"
+                        android:textSize="9sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:orientation="horizontal"
+                    android:baselineAligned="false"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:id="@+id/dashboard_subtitle"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="monospace"
+                        android:text="无 Root Linux 工作站"
+                        android:textColor="#8E929B"
+                        android:textSize="10sp" android:maxLines="2"
+                                android:ellipsize="end" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="monospace"
+                        android:text=""
+                        android:textColor="#D62828"
+                        android:textSize="10sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tv_masthead_latency"
+                        android:visibility="gone"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="monospace"
+                        android:text="待机"
+                        android:textColor="#FDBB24"
+                        android:textSize="10sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Icon-only buttons center the drawable as a zero-text content group. -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/ssh_manager_button"
+                style="@style/Widget.Material3.Button.IconButton"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:minWidth="0dp"
+                android:minHeight="48dp"
+                android:gravity="center"
+                app:cornerRadius="0dp"
+                android:backgroundTint="#1A1B22"
+                app:icon="@drawable/ic_ssh"
+                app:iconSize="18dp"
+                app:iconGravity="textStart"
+                app:iconPadding="0dp"
+                app:iconTint="#FFFFFF"
+                android:contentDescription="SSH 连接管理器"
+                android:padding="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/theme_toggle_button"
+                style="@style/Widget.Material3.Button.IconButton"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_marginStart="4dp"
+                android:minWidth="0dp"
+                android:minHeight="48dp"
+                android:gravity="center"
+                app:cornerRadius="0dp"
+                android:backgroundTint="#1A1B22"
+                app:icon="@drawable/ic_palette"
+                app:iconSize="18dp"
+                app:iconGravity="textStart"
+                app:iconPadding="0dp"
+                app:iconTint="#FFFFFF"
+                android:contentDescription="切换主题风格"
+                android:padding="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/settings_button"
+                style="@style/Widget.Material3.Button.IconButton"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_marginStart="4dp"
+                android:minWidth="0dp"
+                android:minHeight="48dp"
+                android:gravity="center"
+                app:cornerRadius="0dp"
+                android:backgroundTint="#FFFFFF"
+                app:icon="@drawable/ic_tune"
+                app:iconSize="18dp"
+                app:iconGravity="textStart"
+                app:iconPadding="0dp"
+                app:iconTint="#000000"
+                android:contentDescription="@string/settings_title"
+                android:padding="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/about_button"
+                style="@style/Widget.Material3.Button.IconButton"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:visibility="gone"
+                android:contentDescription="@string/about_title" />
+        </LinearLayout>
+
+        <!-- Red Accent Border Line -->
+        <View
+            android:id="@+id/masthead_accent_bar"
+            android:layout_width="match_parent"
+            android:layout_height="2dp"
+            android:background="#D62828" />
+
+        <!-- 2. Main Scrollable Container (Swappable Tabs) -->
+        <androidx.core.widget.NestedScrollView
+            android:id="@+id/main_scroll_view"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:fillViewport="true"
+            android:scrollbars="none"
+            android:clipToPadding="false">
+
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingBottom="16dp">
+
+                <!-- ============================================== -->
+                <!-- TAB 1: 01/控制台 (Workstation Console View)       -->
+                <!-- ============================================== -->
+                <LinearLayout
+                    android:id="@+id/container_tab_console"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingStart="12dp"
+                    android:paddingTop="12dp"
+                    android:paddingEnd="12dp"
+                    android:visibility="visible">
+
+                    <!-- Constructivist Graphic Ribbon Banner -->
+                    <LinearLayout
+                        android:id="@+id/banner_active_machine"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:background="@drawable/bg_glow_card"
+                        android:padding="12dp"
+                        android:layout_marginBottom="12dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:paddingBottom="8dp">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:background="#D62828"
+                                android:paddingStart="6dp"
+                                android:paddingTop="2dp"
+                                android:paddingEnd="6dp"
+                                android:paddingBottom="2dp"
+                                android:fontFamily="monospace"
+                                android:text="MACH-ID"
+                                android:textColor="#FFFFFF"
+                                android:textSize="10sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tv_active_mach_name"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginStart="8dp"
+                                android:fontFamily="monospace"
+                                android:text="尚未创建实例"
+                                android:textColor="#FFFFFF"
+                                android:textSize="12sp"
+                                android:textStyle="bold" android:maxLines="2"
+                                android:ellipsize="end" />
+
+                            <TextView
+                                android:id="@+id/tv_active_fps_ping"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="monospace"
+                                android:text="未配置"
+                                android:textColor="#FDBB24"
+                                android:textSize="11sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                        <!-- Dual Engine Selector: Stark Constructivist Architectural Switch -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:layout_marginTop="4dp">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical">
+
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:fontFamily="monospace"
+                                    android:text="运行引擎"
+                                    android:textColor="#8E929B"
+                                    android:textSize="10sp" />
+
+                                <TextView
+                                    android:id="@+id/tv_engine_subtext"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:fontFamily="monospace"
+                                    android:text="自动选择"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="10sp"
+                                    android:textStyle="bold" />
+                            </LinearLayout>
+
+                            <LinearLayout
+                                android:id="@+id/engine_segmented_group"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:background="#0C0D10"
+                                android:padding="3dp"
+                                android:layout_marginTop="6dp">
+
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/seg_pkvm"
+                                    style="@style/Widget.Material3.Button"
+                                    android:layout_width="0dp"
+                                    android:layout_height="38dp"
+                                    android:layout_weight="1"
+                                    app:cornerRadius="0dp"
+                                    android:backgroundTint="#D62828"
+                                    android:fontFamily="monospace"
+                                    android:text="ARM64 pKVM"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="11sp"
+                                    android:textStyle="bold"
+                                    android:insetTop="0dp"
+                                    android:insetBottom="0dp" />
+
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/seg_qemu"
+                                    style="@style/Widget.Material3.Button.TonalButton"
+                                    android:layout_width="0dp"
+                                    android:layout_height="38dp"
+                                    android:layout_weight="1"
+                                    android:layout_marginStart="4dp"
+                                    app:cornerRadius="0dp"
+                                    android:backgroundTint="#171820"
+                                    android:fontFamily="monospace"
+                                    android:text="QEMU TCG"
+                                    android:textColor="#8E929B"
+                                    android:textSize="11sp"
+                                    android:insetTop="0dp"
+                                    android:insetBottom="0dp" />
+                            </LinearLayout>
+
+                            <!-- SSH Tunnel Bridge Strip -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:minHeight="48dp"
+                                android:orientation="horizontal"
+                                android:baselineAligned="false"
+                                android:gravity="center_vertical"
+                                android:background="#0E0F14"
+                                android:layout_marginTop="8dp">
+
+                                <TextView
+                                    android:layout_width="40dp"
+                                    android:layout_height="match_parent"
+                                    android:gravity="center"
+                                    android:background="#1E2028"
+                                    android:fontFamily="monospace"
+                                    android:text="SSH"
+                                    android:textColor="#FDBB24"
+                                    android:textSize="11sp"
+                                    android:textStyle="bold" />
+
+                                <TextView
+                                    android:id="@+id/ssh_string"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:layout_marginStart="8dp"
+                                    android:fontFamily="monospace"
+                                    android:singleLine="true"
+                                    android:ellipsize="middle"
+                                    android:text="尚未配置 SSH 端口映射"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="11sp"
+                                    android:textStyle="bold" />
+
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/copy_ssh_btn"
+                                    style="@style/Widget.Material3.Button"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="match_parent"
+                                    android:minWidth="0dp"
+                                    android:minHeight="48dp"
+                                    android:gravity="center"
+                                    android:paddingStart="12dp"
+                                    android:paddingEnd="12dp"
+                                    android:insetLeft="0dp"
+                                    android:insetRight="0dp"
+                                    app:iconGravity="textStart"
+                                    app:iconPadding="6dp"
+                                    app:cornerRadius="0dp"
+                                    android:backgroundTint="#FFFFFF"
+                                    android:fontFamily="monospace"
+                                    android:text="COPY"
+                                    android:textColor="#000000"
+                                    android:textSize="11sp"
+                                    android:textStyle="bold"
+                                    app:icon="@drawable/ic_copy"
+                                    app:iconSize="14dp"
+                                    app:iconTint="#000000"
+                                    android:insetTop="0dp"
+                                    android:insetBottom="0dp" />
+                            </LinearLayout>
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <!-- Measure the tallest meter, then give both cards that height. -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:baselineAligned="false"
+                        android:layout_marginBottom="12dp">
+
+                        <!-- Meter 1: vCPU Load -->
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:minHeight="120dp"
+                            android:layout_weight="1"
+                            android:orientation="vertical"
+                            android:background="@drawable/bg_constructivist_card"
+                            android:padding="12dp">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical">
+
+                                <View
+                                    android:layout_width="6dp"
+                                    android:layout_height="6dp"
+                                    android:background="#D62828" />
+
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:layout_marginStart="6dp"
+                                    android:fontFamily="monospace"
+                                    android:text="HOST // CPU"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="10sp"
+                                    android:textStyle="bold" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:background="#D62828"
+                                    android:paddingStart="4dp"
+                                    android:paddingEnd="4dp"
+                                    android:fontFamily="monospace"
+                                    android:text="物理"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="8sp"
+                                    android:textStyle="bold" />
+                            </LinearLayout>
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical"
+                                android:layout_marginTop="10dp"
+                                android:layout_marginBottom="10dp">
+
+                                <LinearLayout
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:orientation="vertical">
+
+                                    <TextView
+                                        android:id="@+id/cpu_percent"
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:fontFamily="monospace"
+                                        android:text="--"
+                                        android:textColor="#FFFFFF"
+                                        android:textSize="28sp"
+                                        android:textStyle="bold" />
+
+                                    <TextView
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:fontFamily="monospace"
+                                        android:text="物理核心数"
+                                        android:textColor="#8E929B"
+                                        android:textSize="9sp" />
+                                </LinearLayout>
+
+                                <io.github.nyzeep.orchestella.ui.RingProgressView
+                                    android:id="@+id/cpu_gauge_ring"
+                                    android:layout_width="56dp"
+                                    android:layout_height="56dp" />
+                            </LinearLayout>
+
+                            <TextView
+                                android:id="@+id/tv_cpu_core_specs"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="monospace"
+                                android:text="读取设备芯片信息"
+                                android:textColor="#8E929B"
+                                android:textSize="9sp" />
+                        </LinearLayout>
+
+                        <!-- Meter 2: RAM Physical Memory -->
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:minHeight="120dp"
+                            android:layout_weight="1"
+                            android:layout_marginStart="8dp"
+                            android:orientation="vertical"
+                            android:background="@drawable/bg_constructivist_card"
+                            android:padding="12dp">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical">
+
+                                <View
+                                    android:layout_width="6dp"
+                                    android:layout_height="6dp"
+                                    android:background="#FDBB24" />
+
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:layout_marginStart="6dp"
+                                    android:fontFamily="monospace"
+                                    android:text="HOST // RAM"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="10sp"
+                                    android:textStyle="bold" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:background="#FDBB24"
+                                    android:paddingStart="4dp"
+                                    android:paddingEnd="4dp"
+                                    android:fontFamily="monospace"
+                                    android:text="实时"
+                                    android:textColor="#000000"
+                                    android:textSize="8sp"
+                                    android:textStyle="bold" />
+                            </LinearLayout>
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical"
+                                android:layout_marginTop="10dp"
+                                android:layout_marginBottom="10dp">
+
+                                <LinearLayout
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:orientation="vertical">
+
+                                    <TextView
+                                        android:id="@+id/ram_metric"
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:fontFamily="monospace"
+                                        android:text="--"
+                                        android:textColor="#FFFFFF"
+                                        android:textSize="28sp"
+                                        android:textStyle="bold" />
+
+                                    <TextView
+                                        android:id="@+id/ram_cap_text"
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:fontFamily="monospace"
+                                        android:text="宿主已用内存"
+                                        android:textColor="#8E929B"
+                                        android:textSize="9sp" />
+                                </LinearLayout>
+
+                                <io.github.nyzeep.orchestella.ui.RingProgressView
+                                    android:id="@+id/ram_gauge_ring"
+                                    android:layout_width="56dp"
+                                    android:layout_height="56dp" />
+                            </LinearLayout>
+
+                            <TextView
+                                android:id="@+id/tv_ram_free_swap"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="monospace"
+                                android:text="读取系统内存"
+                                android:textColor="#8E929B"
+                                android:textSize="9sp" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <!-- Live Telemetry Vector Banner -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:background="@drawable/bg_constructivist_card"
+                        android:padding="12dp"
+                        android:layout_marginBottom="12dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:layout_marginBottom="6dp">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:background="#FFFFFF"
+                                android:paddingStart="4dp"
+                                android:paddingEnd="4dp"
+                                android:fontFamily="monospace"
+                                android:text="THERMAL"
+                                android:textColor="#000000"
+                                android:textSize="9sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tv_telemetry_temp"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="6dp"
+                                android:fontFamily="monospace"
+                                android:text="读取电池温度"
+                                android:textColor="#FFFFFF"
+                                android:textSize="11sp"
+                                android:textStyle="bold" />
+
+                            <View
+                                android:layout_width="0dp"
+                                android:layout_height="1dp"
+                                android:layout_weight="1" />
+
+                            <View
+                                android:layout_width="6dp"
+                                android:layout_height="6dp"
+                                android:background="#D62828" />
+
+                            <TextView
+                                android:id="@+id/disk_iops"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="6dp"
+                                android:fontFamily="monospace"
+                                android:text="读取存储余量"
+                                android:textColor="#FFFFFF"
+                                android:textSize="11sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                        <!-- High contrast banner graphic strip -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="28dp"
+                            android:background="#0D0E12"
+                            android:gravity="center_vertical"
+                            android:paddingStart="8dp"
+                            android:paddingEnd="8dp">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="monospace"
+                                android:id="@+id/network_runtime_summary"
+                                android:text="网络随实例启动 · 默认无 LAN 暴露"
+                                android:textColor="#8E929B"
+                                android:textSize="9sp" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <!-- Quick Action Matrix: Constructivist Architectural Tiles -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:layout_marginBottom="12dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:layout_marginBottom="6dp">
+
+                            <View
+                                android:layout_width="6dp"
+                                android:layout_height="6dp"
+                                android:background="#D62828" />
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginStart="6dp"
+                                android:fontFamily="monospace"
+                                android:text="CONTROL MATRIX [SYS.OVERRIDE]"
+                                android:textColor="#FFFFFF"
+                                android:textSize="11sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="monospace"
+                                android:text="DIRECT I/O"
+                                android:textColor="#8E929B"
+                                android:textSize="10sp" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:baselineAligned="false">
+
+                            <!-- Action 1: 唤起终端 -->
+                            <LinearLayout
+                                android:id="@+id/act_terminal"
+                                android:layout_width="0dp"
+                                android:layout_height="match_parent"
+                                android:minHeight="100dp"
+                                android:layout_weight="1"
+                                android:orientation="vertical"
+                                android:background="@drawable/bg_constructivist_card"
+                                android:padding="10dp"
+                                android:clickable="true"
+                                android:focusable="true">
+
+                                <LinearLayout
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:orientation="horizontal"
+                                    android:gravity="center_vertical">
+
+                                    <FrameLayout
+                                        android:layout_width="26dp"
+                                        android:layout_height="26dp"
+                                        android:background="#FFFFFF">
+
+                                        <ImageView
+                                            android:layout_width="18dp"
+                                            android:layout_height="18dp"
+                                            android:layout_gravity="center"
+                                            android:src="@drawable/ic_terminal"
+                                            app:tint="#000000" />
+                                    </FrameLayout>
+
+                                    <View
+                                        android:layout_width="0dp"
+                                        android:layout_height="1dp"
+                                        android:layout_weight="1" />
+
+                                    <TextView
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:fontFamily="monospace"
+                                        android:text="ACT.01"
+                                        android:textColor="#8E929B"
+                                        android:textSize="9sp"
+                                        android:textStyle="bold" />
+                                </LinearLayout>
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="6dp"
+                                    android:fontFamily="sans-serif"
+                                    android:text="唤起终端"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="13sp"
+                                    android:textStyle="bold" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:fontFamily="monospace"
+                                    android:text="真实 Linux 控制台"
+                                    android:textColor="#8E929B"
+                                    android:textSize="9sp" />
+                            </LinearLayout>
+
+                            <!-- Action 2: 端口映射 -->
+                            <LinearLayout
+                                android:id="@+id/act_port_forwarding"
+                                android:layout_width="0dp"
+                                android:layout_height="match_parent"
+                                android:minHeight="100dp"
+                                android:layout_weight="1"
+                                android:layout_marginStart="8dp"
+                                android:orientation="vertical"
+                                android:background="@drawable/bg_constructivist_card"
+                                android:padding="10dp"
+                                android:clickable="true"
+                                android:focusable="true">
+
+                                <LinearLayout
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:orientation="horizontal"
+                                    android:gravity="center_vertical">
+
+                                    <FrameLayout
+                                        android:layout_width="26dp"
+                                        android:layout_height="26dp"
+                                        android:background="#FDBB24">
+
+                                        <ImageView
+                                            android:layout_width="18dp"
+                                            android:layout_height="18dp"
+                                            android:layout_gravity="center"
+                                            android:src="@drawable/ic_cell_tower"
+                                            app:tint="#000000" />
+                                    </FrameLayout>
+
+                                    <View
+                                        android:layout_width="0dp"
+                                        android:layout_height="1dp"
+                                        android:layout_weight="1" />
+
+                                    <TextView
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:fontFamily="monospace"
+                                        android:text="ACT.02"
+                                        android:textColor="#8E929B"
+                                        android:textSize="9sp"
+                                        android:textStyle="bold" />
+                                </LinearLayout>
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="6dp"
+                                    android:fontFamily="sans-serif"
+                                    android:text="端口映射"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="13sp"
+                                    android:textStyle="bold" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:fontFamily="monospace"
+                                    android:text="管理显式映射规则"
+                                    android:textColor="#8E929B"
+                                    android:textSize="9sp" />
+                            </LinearLayout>
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:baselineAligned="false"
+                            android:layout_marginTop="8dp">
+
+                            <!-- Action 3: 重启内核 -->
+                            <LinearLayout
+                                android:id="@+id/act_restart_kernel"
+                                android:layout_width="0dp"
+                                android:layout_height="match_parent"
+                                android:minHeight="100dp"
+                                android:layout_weight="1"
+                                android:orientation="vertical"
+                                android:background="@drawable/bg_constructivist_card"
+                                android:padding="10dp"
+                                android:clickable="true"
+                                android:focusable="true">
+
+                                <LinearLayout
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:orientation="horizontal"
+                                    android:gravity="center_vertical">
+
+                                    <FrameLayout
+                                        android:layout_width="26dp"
+                                        android:layout_height="26dp"
+                                        android:background="#0047AB">
+
+                                        <ImageView
+                                            android:layout_width="18dp"
+                                            android:layout_height="18dp"
+                                            android:layout_gravity="center"
+                                            android:src="@drawable/ic_restart_alt"
+                                            app:tint="#FFFFFF" />
+                                    </FrameLayout>
+
+                                    <View
+                                        android:layout_width="0dp"
+                                        android:layout_height="1dp"
+                                        android:layout_weight="1" />
+
+                                    <TextView
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:fontFamily="monospace"
+                                        android:text="ACT.03"
+                                        android:textColor="#8E929B"
+                                        android:textSize="9sp"
+                                        android:textStyle="bold" />
+                                </LinearLayout>
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="6dp"
+                                    android:fontFamily="sans-serif"
+                                    android:text="运行日志"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="13sp"
+                                    android:textStyle="bold" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:fontFamily="monospace"
+                                    android:text="查看初始化与服务输出"
+                                    android:textColor="#8E929B"
+                                    android:textSize="9sp" />
+                            </LinearLayout>
+
+                            <!-- Action 4: 快照存档 -->
+                            <LinearLayout
+                                android:id="@+id/act_snapshot"
+                                android:layout_width="0dp"
+                                android:layout_height="match_parent"
+                                android:minHeight="100dp"
+                                android:layout_weight="1"
+                                android:layout_marginStart="8dp"
+                                android:orientation="vertical"
+                                android:background="@drawable/bg_constructivist_card"
+                                android:padding="10dp"
+                                android:clickable="true"
+                                android:focusable="true">
+
+                                <LinearLayout
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:orientation="horizontal"
+                                    android:gravity="center_vertical">
+
+                                    <FrameLayout
+                                        android:layout_width="26dp"
+                                        android:layout_height="26dp"
+                                        android:background="#D62828">
+
+                                        <ImageView
+                                            android:layout_width="18dp"
+                                            android:layout_height="18dp"
+                                            android:layout_gravity="center"
+                                            android:src="@drawable/ic_snapshot"
+                                            app:tint="#FFFFFF" />
+                                    </FrameLayout>
+
+                                    <View
+                                        android:layout_width="0dp"
+                                        android:layout_height="1dp"
+                                        android:layout_weight="1" />
+
+                                    <TextView
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:fontFamily="monospace"
+                                        android:text="ACT.04"
+                                        android:textColor="#8E929B"
+                                        android:textSize="9sp"
+                                        android:textStyle="bold" />
+                                </LinearLayout>
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="6dp"
+                                    android:fontFamily="sans-serif"
+                                    android:text="导出备份"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="13sp"
+                                    android:textStyle="bold" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:fontFamily="monospace"
+                                    android:text="关机后完整冷备份"
+                                    android:textColor="#8E929B"
+                                    android:textSize="9sp" />
+                            </LinearLayout>
+                        </LinearLayout>
+                    </LinearLayout>
 
                     <LinearLayout
-                        android:layout_width="0dp"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginStart="12dp"
-                        android:orientation="vertical">
+                        android:orientation="vertical"
+                        android:background="@drawable/bg_constructivist_card"
+                        android:padding="12dp"
+                        android:layout_marginBottom="12dp">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:fontFamily="monospace"
+                            android:text="[ WORKSPACE // 运行状态 ]"
+                            android:textColor="#F5F4F0"
+                            android:textStyle="bold"
+                            android:textSize="12sp" />
+
+                        <TextView
+                            android:id="@+id/vm_allocation_summary"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:fontFamily="monospace"
+                            android:text="尚无 VM 资源分配"
+                            android:textColor="#F5F4F0"
+                            android:textSize="12sp" />
+
+                        <TextView
+                            android:id="@+id/console_tty_text"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:text="选择发行版创建实例，随后在真实终端中使用 Linux。"
+                            android:textColor="#8E929B"
+                            android:textSize="13sp"
+                            android:lineSpacingExtra="3dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_fullscreen_terminal"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:layout_marginTop="12dp"
+                            android:text="查看运行日志"
+                            app:cornerRadius="0dp"
+                            app:icon="@drawable/ic_terminal" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- ============================================== -->
+                <!-- TAB 2: 02/实例 (Instances Manager View)           -->
+                <!-- ============================================== -->
+                <LinearLayout
+                    android:id="@+id/container_tab_instances"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingStart="12dp"
+                    android:paddingTop="12dp"
+                    android:paddingEnd="12dp"
+                    android:visibility="gone">
+
+                    <!-- Header & Quick Action Row -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="12dp">
+
+                        <TextView
+                            android:id="@+id/instances_title"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:fontFamily="sans-serif"
+                            android:text="实例仓库 (REPOSITORIES)"
+                            android:textColor="#FFFFFF"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/instances_count_badge"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:background="@drawable/bg_constructivist_badge"
+                            android:paddingStart="8dp"
+                            android:paddingTop="3dp"
+                            android:paddingEnd="8dp"
+                            android:paddingBottom="3dp"
+                            android:fontFamily="monospace"
+                            android:text="0 个实例"
+                            android:textColor="#FDBB24"
+                            android:textSize="10sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <!-- Create/import share the row's content height, including wrapped labels. -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:baselineAligned="false"
+                        android:layout_marginBottom="14dp">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_create_linux_instance_top"
+                            style="@style/Widget.Material3.Button"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:minWidth="0dp"
+                            android:minHeight="48dp"
+                            android:gravity="center"
+                            android:paddingStart="8dp"
+                            android:paddingEnd="8dp"
+                            android:layout_weight="1"
+                            app:cornerRadius="0dp"
+                            android:backgroundTint="#D62828"
+                            android:fontFamily="monospace"
+                            android:text="+ 新建实例"
+                            android:textColor="#FFFFFF"
+                            android:textSize="12sp"
+                            android:textStyle="bold"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_import_instance"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:minWidth="0dp"
+                            android:minHeight="48dp"
+                            android:gravity="center"
+                            android:paddingStart="8dp"
+                            android:paddingEnd="8dp"
+                            app:iconGravity="textStart"
+                            app:iconPadding="6dp"
+                            android:layout_weight="1"
+                            android:layout_marginStart="8dp"
+                            app:cornerRadius="0dp"
+                            android:backgroundTint="#1F2026"
+                            android:fontFamily="monospace"
+                            android:text="导入备份归档"
+                            android:textColor="#F5F4F0"
+                            android:textSize="12sp"
+                            app:icon="@drawable/ic_backup"
+                            app:iconSize="16dp"
+                            app:iconTint="#FFFFFF"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp" />
+                    </LinearLayout>
+
+                    <!-- Creation Progress & Status if active -->
+                    <ProgressBar
+                        android:id="@+id/create_progress"
+                        style="?android:attr/progressBarStyleHorizontal"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="6dp"
+                        android:visibility="gone" />
+
+                    <TextView
+                        android:id="@+id/create_status"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="12dp"
+                        android:fontFamily="monospace"
+                        android:textSize="11sp"
+                        android:textColor="#FDBB24"
+                        android:accessibilityLiveRegion="polite" />
+
+                    <!-- Empty state -->
+                    <LinearLayout
+                        android:id="@+id/layout_empty_state_holder"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:paddingTop="36dp"
+                        android:paddingBottom="36dp">
+
+                        <TextView
+                            android:id="@+id/instances_empty"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:fontFamily="monospace"
+                            android:text="[ 尚无活跃实例 // REPOSITORY EMPTY ]"
+                            android:textColor="#8E929B"
+                            android:textSize="13sp" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="创建 Linux 实例"
-                            android:textSize="17sp"
+                            android:layout_marginTop="8dp"
+                            android:fontFamily="sans-serif"
+                            android:text="点击上方「+ 新建实例」或切至「04/发行版」装配运行"
+                            android:textColor="#8E929B"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+
+                    <!-- Dynamic Instances Cards Container -->
+                    <LinearLayout
+                        android:id="@+id/instance_list"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical" />
+                </LinearLayout>
+
+                <!-- ============================================== -->
+                <!-- TAB 3: 03/硬件 (Dedicated Hardware Specs View)     -->
+                <!-- ============================================== -->
+                <LinearLayout
+                    android:id="@+id/container_tab_hardware"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingStart="12dp"
+                    android:paddingTop="12dp"
+                    android:paddingEnd="12dp"
+                    android:visibility="gone">
+
+                    <!-- Hardware Screen Header -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="12dp">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:fontFamily="sans-serif"
+                            android:text="硬件规格与运行支持地板检测"
+                            android:textColor="#FFFFFF"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_hw_refresh"
+                            style="@style/Widget.Material3.Button"
+                            android:layout_width="wrap_content"
+                            android:layout_height="36dp"
+                            app:cornerRadius="0dp"
+                            android:backgroundTint="#1F2026"
+                            android:fontFamily="monospace"
+                            android:text="重新检测"
+                            android:textColor="#FFFFFF"
+                            android:textSize="10sp"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp" />
+                    </LinearLayout>
+
+                    <!-- Card 1: Virtualization Engine & Support Floor -->
+                    <LinearLayout
+                        android:id="@+id/system_status_card"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:background="@drawable/bg_constructivist_card"
+                        android:padding="14dp"
+                        android:layout_marginBottom="12dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:background="#D62828"
+                                android:paddingStart="6dp"
+                                android:paddingEnd="6dp"
+                                android:fontFamily="monospace"
+                                android:text="SEC.01"
+                                android:textColor="#FFFFFF"
+                                android:textSize="9sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginStart="8dp"
+                                android:fontFamily="sans-serif"
+                                android:text="虚拟化框架与运行支持地板"
+                                android:textColor="#FFFFFF"
+                                android:textSize="13sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/system_virtualization_badge"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:background="@drawable/bg_constructivist_badge"
+                                android:paddingStart="8dp"
+                                android:paddingTop="3dp"
+                                android:paddingEnd="8dp"
+                                android:paddingBottom="3dp"
+                                android:fontFamily="monospace"
+                                android:text="pKVM 硬件虚拟化"
+                                android:textColor="#D62828"
+                                android:textSize="10sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/runtime_status"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:fontFamily="monospace"
+                            android:text="@string/runtime_status_loading"
+                            android:textColor="#8E929B"
+                            android:textSize="11sp" />
+
+                        <!-- Detailed Specs Readout Grid -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:background="#0D0E12"
+                            android:padding="10dp"
+                            android:layout_marginTop="10dp">
+
+                            <TextView
+                                android:id="@+id/hw_detail_platform_declared"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="monospace"
+                                android:text="• 平台虚拟化声明：android.software.virtualization_framework"
+                                android:textColor="#F5F4F0"
+                                android:textSize="10sp" />
+
+                            <TextView
+                                android:id="@+id/hw_detail_avf_permission"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:fontFamily="monospace"
+                                android:text="• 开发级授权 (MANAGE_VM)：检测中…"
+                                android:textColor="#F5F4F0"
+                                android:textSize="10sp" />
+
+                            <TextView
+                                android:id="@+id/hw_detail_kvm_node"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:fontFamily="monospace"
+                                android:text="• /dev/kvm 设备节点：探测中…"
+                                android:textColor="#8E929B"
+                                android:textSize="10sp" />
+                        </LinearLayout>
+
+                        <!-- Honest Refusal Banner if failed floor -->
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/refusal_banner"
+                            style="@style/Widget.Material3.Button"
+                            android:layout_width="match_parent"
+                            android:layout_height="44dp"
+                            app:cornerRadius="0dp"
+                            android:backgroundTint="#EF4444"
+                            android:layout_marginTop="10dp"
+                            android:fontFamily="monospace"
+                            android:text="@string/refusal_banner_title"
+                            android:textColor="#FFFFFF"
+                            android:textSize="12sp"
                             android:textStyle="bold"
-                            android:textColor="?attr/colorOnSurface" />
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:visibility="gone" />
+
+                        <!-- AVF Authorization Wizard CTA -->
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/upgrade_authorization"
+                            style="@style/Widget.Material3.Button"
+                            android:layout_width="match_parent"
+                            android:layout_height="44dp"
+                            app:cornerRadius="0dp"
+                            android:backgroundTint="#D62828"
+                            android:layout_marginTop="10dp"
+                            android:fontFamily="monospace"
+                            android:text="⚡ 启动 AVF 硬件加速授权向导"
+                            android:textColor="#FFFFFF"
+                            android:textSize="12sp"
+                            android:textStyle="bold"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:visibility="gone" />
+                    </LinearLayout>
+
+                    <!-- Card 2: Physical CPU & Processor -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:background="@drawable/bg_constructivist_card"
+                        android:padding="14dp"
+                        android:layout_marginBottom="12dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:background="#FDBB24"
+                                android:paddingStart="6dp"
+                                android:paddingEnd="6dp"
+                                android:fontFamily="monospace"
+                                android:text="SEC.02"
+                                android:textColor="#000000"
+                                android:textSize="9sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginStart="8dp"
+                                android:fontFamily="sans-serif"
+                                android:text="物理处理器与核心拓扑"
+                                android:textColor="#FFFFFF"
+                                android:textSize="13sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/system_cpu_chip"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="monospace"
+                                android:text="8 核心 CPU"
+                                android:textColor="#FDBB24"
+                                android:textSize="11sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:background="#0D0E12"
+                            android:padding="10dp"
+                            android:layout_marginTop="10dp">
+
+                            <TextView
+                                android:id="@+id/hw_detail_cpu_arch"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="monospace"
+                                android:text="• 指令集架构：ARM64 (arm64-v8a)"
+                                android:textColor="#F5F4F0"
+                                android:textSize="10sp" />
+
+                            <TextView
+                                android:id="@+id/hw_detail_cpu_model"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:fontFamily="monospace"
+                                android:text="• 硬件芯片识别：Qualcomm Snapdragon"
+                                android:textColor="#F5F4F0"
+                                android:textSize="10sp" />
+
+                            <TextView
+                                android:id="@+id/hw_detail_cpu_cores"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:fontFamily="monospace"
+                                android:text="• CPU 调度拓扑：big.LITTLE 异构集群"
+                                android:textColor="#8E929B"
+                                android:textSize="10sp" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <!-- Card 3: Physical Memory & Resource Gauges -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:background="@drawable/bg_constructivist_card"
+                        android:padding="14dp"
+                        android:layout_marginBottom="12dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:background="#0047AB"
+                                android:paddingStart="6dp"
+                                android:paddingEnd="6dp"
+                                android:fontFamily="monospace"
+                                android:text="SEC.03"
+                                android:textColor="#FFFFFF"
+                                android:textSize="9sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginStart="8dp"
+                                android:fontFamily="sans-serif"
+                                android:text="物理内存、存储与电池三维度量"
+                                android:textColor="#FFFFFF"
+                                android:textSize="13sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                        <!-- 3 Circular Telemetry Gauges -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center"
+                            android:layout_marginTop="12dp"
+                            android:layout_marginBottom="12dp">
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:gravity="center"
+                                android:orientation="vertical">
+
+                                <io.github.nyzeep.orchestella.ui.RingProgressView
+                                    android:id="@+id/ring_memory"
+                                    android:layout_width="72dp"
+                                    android:layout_height="72dp" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="4dp"
+                                    android:fontFamily="monospace"
+                                    android:text="MEM / 内存"
+                                    android:textColor="#8E929B"
+                                    android:textSize="9sp" />
+                            </LinearLayout>
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:gravity="center"
+                                android:orientation="vertical">
+
+                                <io.github.nyzeep.orchestella.ui.RingProgressView
+                                    android:id="@+id/ring_storage"
+                                    android:layout_width="72dp"
+                                    android:layout_height="72dp" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="4dp"
+                                    android:fontFamily="monospace"
+                                    android:text="DISK / 存储"
+                                    android:textColor="#8E929B"
+                                    android:textSize="9sp" />
+                            </LinearLayout>
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:gravity="center"
+                                android:orientation="vertical">
+
+                                <io.github.nyzeep.orchestella.ui.RingProgressView
+                                    android:id="@+id/ring_battery"
+                                    android:layout_width="72dp"
+                                    android:layout_height="72dp" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="4dp"
+                                    android:fontFamily="monospace"
+                                    android:text="BAT / 电量"
+                                    android:textColor="#8E929B"
+                                    android:textSize="9sp" />
+                            </LinearLayout>
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:background="#0D0E12"
+                            android:padding="10dp">
+
+                            <TextView
+                                android:id="@+id/hw_detail_ram_specs"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="monospace"
+                                android:text="• 物理运存总额：读取中…"
+                                android:textColor="#F5F4F0"
+                                android:textSize="10sp" />
+
+                            <TextView
+                                android:id="@+id/hw_detail_ram_reserve"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:fontFamily="monospace"
+                                android:text="• 宿主强制保留：2048 MB (防 LMK 闪退线)"
+                                android:textColor="#FDBB24"
+                                android:textSize="10sp" />
+
+                            <TextView
+                                android:id="@+id/hw_detail_storage_specs"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:fontFamily="monospace"
+                                android:text="• 内部存储余量：读取中…"
+                                android:textColor="#8E929B"
+                                android:textSize="10sp" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <!-- Card 4: OS & Platform Profile -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:background="@drawable/bg_constructivist_card"
+                        android:padding="14dp"
+                        android:layout_marginBottom="12dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:fontFamily="monospace"
+                            android:text="[ SEC.04 // OS &amp; KERNEL PROFILE ]"
+                            android:textColor="#8E929B"
+                            android:textSize="10sp"
+                            android:layout_marginBottom="8dp" />
+
+                        <TextView
+                            android:id="@+id/hw_detail_os_release"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:fontFamily="monospace"
+                            android:text="• Android 系统：Android 15 (API 35)"
+                            android:textColor="#F5F4F0"
+                            android:textSize="10sp" />
+
+                        <TextView
+                            android:id="@+id/hw_detail_kernel_release"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:fontFamily="monospace"
+                            android:text="• 宿主内核版本：Linux 6.6 aarch64"
+                            android:textColor="#F5F4F0"
+                            android:textSize="10sp" />
+
+                        <TextView
+                            android:id="@+id/hw_detail_device_model"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:fontFamily="monospace"
+                            android:text="• 设备厂商型号：读取中…"
+                            android:textColor="#8E929B"
+                            android:textSize="10sp" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- ============================================== -->
+                <!-- TAB 4: 04/发行版 (Distro Catalog View)            -->
+                <!-- ============================================== -->
+                <LinearLayout
+                    android:id="@+id/container_tab_distros"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingStart="12dp"
+                    android:paddingTop="12dp"
+                    android:paddingEnd="12dp"
+                    android:visibility="gone">
+
+                    <!-- Distro Header -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:layout_marginBottom="12dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:fontFamily="sans-serif"
+                            android:text="官方 Linux 发行版阵列"
+                            android:textColor="#FFFFFF"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
-                            android:text="官方发行版阵容 · 多层容灾镜像源"
+                            android:fontFamily="monospace"
+                            android:text="官方 rootfs tarball 直源 · 多层容灾镜像 · 一键引导装配"
+                            android:textColor="#8E929B"
+                            android:textSize="10sp" />
+                    </LinearLayout>
+
+                    <!-- Hero Create Button Card (Main creation entrance) -->
+                    <LinearLayout
+                        android:id="@+id/card_create_linux_main"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:background="@drawable/bg_glow_card"
+                        android:padding="14dp"
+                        android:layout_marginBottom="12dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+
+                            <ImageView
+                                android:layout_width="36dp"
+                                android:layout_height="36dp"
+                                android:src="@drawable/ic_distro_ubuntu"
+                                android:contentDescription="Ubuntu Distro" />
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginStart="10dp"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:fontFamily="sans-serif"
+                                    android:text="装配全新 Linux 实例"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="14sp"
+                                    android:textStyle="bold" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp"
+                                    android:fontFamily="monospace"
+                                    android:text="7 大发行版矩阵 · 独立块存储与会话"
+                                    android:textColor="#D62828"
+                                    android:textSize="10sp" />
+                            </LinearLayout>
+                        </LinearLayout>
+
+                        <!-- Horizontal Scroll of Quick Select Distro Chips -->
+                        <HorizontalScrollView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:scrollbars="none">
+
+                            <LinearLayout
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:baselineAligned="false">
+
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/create_ubuntu"
+                                    style="@style/Widget.Material3.Button"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="match_parent"
+                                    android:minWidth="0dp"
+                                    android:minHeight="48dp"
+                                    android:gravity="center"
+                                    android:paddingStart="12dp"
+                                    android:paddingEnd="12dp"
+                                    app:cornerRadius="0dp"
+                                    android:backgroundTint="#D62828"
+                                    android:fontFamily="monospace"
+                                    android:text="Ubuntu"
+                                    android:textSize="11sp"
+                                    android:textStyle="bold"
+                                    android:insetTop="0dp"
+                                    android:insetBottom="0dp" />
+
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/create_debian"
+                                    style="@style/Widget.Material3.Button.TonalButton"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="match_parent"
+                                    android:minWidth="0dp"
+                                    android:minHeight="48dp"
+                                    android:gravity="center"
+                                    android:paddingStart="12dp"
+                                    android:paddingEnd="12dp"
+                                    android:layout_marginStart="6dp"
+                                    app:cornerRadius="0dp"
+                                    android:backgroundTint="#1F2026"
+                                    android:fontFamily="monospace"
+                                    android:text="Debian"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="11sp"
+                                    android:insetTop="0dp"
+                                    android:insetBottom="0dp" />
+
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/create_fedora"
+                                    style="@style/Widget.Material3.Button.TonalButton"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="match_parent"
+                                    android:minWidth="0dp"
+                                    android:minHeight="48dp"
+                                    android:gravity="center"
+                                    android:paddingStart="12dp"
+                                    android:paddingEnd="12dp"
+                                    android:layout_marginStart="6dp"
+                                    app:cornerRadius="0dp"
+                                    android:backgroundTint="#1F2026"
+                                    android:fontFamily="monospace"
+                                    android:text="Fedora"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="11sp"
+                                    android:insetTop="0dp"
+                                    android:insetBottom="0dp" />
+
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/create_arch"
+                                    style="@style/Widget.Material3.Button.TonalButton"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="match_parent"
+                                    android:minWidth="0dp"
+                                    android:minHeight="48dp"
+                                    android:gravity="center"
+                                    android:paddingStart="12dp"
+                                    android:paddingEnd="12dp"
+                                    android:layout_marginStart="6dp"
+                                    app:cornerRadius="0dp"
+                                    android:backgroundTint="#1F2026"
+                                    android:fontFamily="monospace"
+                                    android:text="Arch"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="11sp"
+                                    android:insetTop="0dp"
+                                    android:insetBottom="0dp" />
+
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/create_opensuse"
+                                    style="@style/Widget.Material3.Button.TonalButton"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="match_parent"
+                                    android:minWidth="0dp"
+                                    android:minHeight="48dp"
+                                    android:gravity="center"
+                                    android:paddingStart="12dp"
+                                    android:paddingEnd="12dp"
+                                    android:layout_marginStart="6dp"
+                                    app:cornerRadius="0dp"
+                                    android:backgroundTint="#1F2026"
+                                    android:fontFamily="monospace"
+                                    android:text="openSUSE"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="11sp"
+                                    android:insetTop="0dp"
+                                    android:insetBottom="0dp" />
+
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/create_almalinux"
+                                    style="@style/Widget.Material3.Button.TonalButton"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="match_parent"
+                                    android:minWidth="0dp"
+                                    android:minHeight="48dp"
+                                    android:gravity="center"
+                                    android:paddingStart="12dp"
+                                    android:paddingEnd="12dp"
+                                    android:layout_marginStart="6dp"
+                                    app:cornerRadius="0dp"
+                                    android:backgroundTint="#1F2026"
+                                    android:fontFamily="monospace"
+                                    android:text="AlmaLinux"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="11sp"
+                                    android:insetTop="0dp"
+                                    android:insetBottom="0dp" />
+
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/create_rocky"
+                                    style="@style/Widget.Material3.Button.TonalButton"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="match_parent"
+                                    android:minWidth="0dp"
+                                    android:minHeight="48dp"
+                                    android:gravity="center"
+                                    android:paddingStart="12dp"
+                                    android:paddingEnd="12dp"
+                                    android:layout_marginStart="6dp"
+                                    app:cornerRadius="0dp"
+                                    android:backgroundTint="#1F2026"
+                                    android:fontFamily="monospace"
+                                    android:text="Rocky"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="11sp"
+                                    android:insetTop="0dp"
+                                    android:insetBottom="0dp" />
+                            </LinearLayout>
+                        </HorizontalScrollView>
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_create_linux_instance"
+                            style="@style/Widget.Material3.Button"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:minHeight="48dp"
+                            android:gravity="center"
+                            android:layout_marginTop="12dp"
+                            app:cornerRadius="0dp"
+                            android:backgroundTint="#D62828"
+                            android:fontFamily="monospace"
+                            android:text="🚀 启动发行版创建引导向导"
+                            android:textColor="#FFFFFF"
                             android:textSize="12sp"
-                            android:textColor="?attr/colorPrimary" />
+                            android:textStyle="bold"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp" />
                     </LinearLayout>
                 </LinearLayout>
 
-                <HorizontalScrollView
+                <!-- ============================================== -->
+                <!-- TAB 5: 05/配置 (Preferences & Theme View)        -->
+                <!-- ============================================== -->
+                <LinearLayout
+                    android:id="@+id/container_tab_settings"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:scrollbars="none"
-                    android:clipToPadding="false"
-                    android:paddingStart="16dp"
-                    android:paddingEnd="16dp">
+                    android:orientation="vertical"
+                    android:paddingStart="12dp"
+                    android:paddingTop="12dp"
+                    android:paddingEnd="12dp"
+                    android:visibility="gone">
 
-                    <LinearLayout
+                    <!-- Preferences Header -->
+                    <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:orientation="horizontal">
+                        android:fontFamily="sans-serif"
+                        android:text="全局配置与工控主题风格"
+                        android:textColor="#FFFFFF"
+                        android:textSize="15sp"
+                        android:textStyle="bold"
+                        android:layout_marginBottom="12dp" />
 
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/create_ubuntu"
-                            style="@style/Widget.Material3.Button.TonalButton"
-                            android:layout_width="wrap_content"
-                            android:layout_height="40dp"
-                            android:insetTop="0dp"
-                            android:insetBottom="0dp"
-                            app:cornerRadius="10dp"
-                            android:paddingStart="14dp"
-                            android:paddingEnd="14dp"
-                            android:text="Ubuntu"
-                            android:textSize="12sp" />
+                    <!-- Theme Palette Selection Card -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:background="@drawable/bg_constructivist_card"
+                        android:padding="14dp"
+                        android:layout_marginBottom="12dp">
 
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/create_debian"
-                            style="@style/Widget.Material3.Button.TonalButton"
+                        <TextView
                             android:layout_width="wrap_content"
-                            android:layout_height="40dp"
-                            android:layout_marginStart="8dp"
-                            android:insetTop="0dp"
-                            android:insetBottom="0dp"
-                            app:cornerRadius="10dp"
-                            android:paddingStart="14dp"
-                            android:paddingEnd="14dp"
-                            android:text="Debian"
-                            android:textSize="12sp" />
+                            android:layout_height="wrap_content"
+                            android:fontFamily="monospace"
+                            android:text="[ THEME SELECTION // 工控色彩风格 ]"
+                            android:textColor="#8E929B"
+                            android:textSize="10sp"
+                            android:textStyle="bold"
+                            android:layout_marginBottom="10dp" />
 
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/create_fedora"
-                            style="@style/Widget.Material3.Button.TonalButton"
-                            android:layout_width="wrap_content"
-                            android:layout_height="40dp"
-                            android:layout_marginStart="8dp"
-                            android:insetTop="0dp"
-                            android:insetBottom="0dp"
-                            app:cornerRadius="10dp"
-                            android:paddingStart="14dp"
-                            android:paddingEnd="14dp"
-                            android:text="Fedora"
-                            android:textSize="12sp" />
+                        <!-- Theme 1: Constructivist Workstation (Red) -->
+                        <LinearLayout
+                            android:id="@+id/btn_theme_constructivist_red"
+                            android:layout_width="match_parent"
+                            android:layout_height="46dp"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:background="#1F2026"
+                            android:paddingStart="10dp"
+                            android:paddingEnd="10dp"
+                            android:clickable="true"
+                            android:focusable="true">
 
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/create_arch"
-                            style="@style/Widget.Material3.Button.TonalButton"
-                            android:layout_width="wrap_content"
-                            android:layout_height="40dp"
-                            android:layout_marginStart="8dp"
-                            android:insetTop="0dp"
-                            android:insetBottom="0dp"
-                            app:cornerRadius="10dp"
-                            android:paddingStart="14dp"
-                            android:paddingEnd="14dp"
-                            android:text="Arch"
-                            android:textSize="12sp" />
+                            <View
+                                android:layout_width="16dp"
+                                android:layout_height="16dp"
+                                android:background="#D62828" />
 
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/create_opensuse"
-                            style="@style/Widget.Material3.Button.TonalButton"
-                            android:layout_width="wrap_content"
-                            android:layout_height="40dp"
-                            android:layout_marginStart="8dp"
-                            android:insetTop="0dp"
-                            android:insetBottom="0dp"
-                            app:cornerRadius="10dp"
-                            android:paddingStart="14dp"
-                            android:paddingEnd="14dp"
-                            android:text="openSUSE"
-                            android:textSize="12sp" />
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginStart="10dp"
+                                android:fontFamily="monospace"
+                                android:text="构成主义工控 · 红"
+                                android:textColor="#FFFFFF"
+                                android:textSize="11sp"
+                                android:textStyle="bold" />
 
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/create_almalinux"
-                            style="@style/Widget.Material3.Button.TonalButton"
-                            android:layout_width="wrap_content"
-                            android:layout_height="40dp"
-                            android:layout_marginStart="8dp"
-                            android:insetTop="0dp"
-                            android:insetBottom="0dp"
-                            app:cornerRadius="10dp"
-                            android:paddingStart="14dp"
-                            android:paddingEnd="14dp"
-                            android:text="AlmaLinux"
-                            android:textSize="12sp" />
+                            <TextView
+                                android:id="@+id/badge_theme_red_active"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:background="#D62828"
+                                android:paddingStart="6dp"
+                                android:paddingEnd="6dp"
+                                android:fontFamily="monospace"
+                                android:text="ACTIVE"
+                                android:textColor="#FFFFFF"
+                                android:textSize="9sp" />
+                        </LinearLayout>
 
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/create_rocky"
-                            style="@style/Widget.Material3.Button.TonalButton"
-                            android:layout_width="wrap_content"
-                            android:layout_height="40dp"
-                            android:layout_marginStart="8dp"
-                            android:insetTop="0dp"
-                            android:insetBottom="0dp"
-                            app:cornerRadius="10dp"
-                            android:paddingStart="14dp"
-                            android:paddingEnd="14dp"
-                            android:text="Rocky"
-                            android:textSize="12sp" />
+                        <!-- Theme 2: Constructivist Cobalt (Blue) -->
+                        <LinearLayout
+                            android:id="@+id/btn_theme_constructivist_blue"
+                            android:layout_width="match_parent"
+                            android:layout_height="46dp"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:background="#1F2026"
+                            android:paddingStart="10dp"
+                            android:paddingEnd="10dp"
+                            android:layout_marginTop="6dp"
+                            android:clickable="true"
+                            android:focusable="true">
+
+                            <View
+                                android:layout_width="16dp"
+                                android:layout_height="16dp"
+                                android:background="#0047AB" />
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginStart="10dp"
+                                android:fontFamily="monospace"
+                                android:text="钴蓝张力 · 蓝"
+                                android:textColor="#FFFFFF"
+                                android:textSize="11sp" />
+
+                            <TextView
+                                android:id="@+id/badge_theme_blue_active"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:background="#0047AB"
+                                android:paddingStart="6dp"
+                                android:paddingEnd="6dp"
+                                android:fontFamily="monospace"
+                                android:text="ACTIVE"
+                                android:textColor="#FFFFFF"
+                                android:textSize="9sp"
+                                android:visibility="gone" />
+                        </LinearLayout>
+
+                        <!-- Theme 3: Constructivist Amber (Yellow) -->
+                        <LinearLayout
+                            android:id="@+id/btn_theme_constructivist_yellow"
+                            android:layout_width="match_parent"
+                            android:layout_height="46dp"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:background="#1F2026"
+                            android:paddingStart="10dp"
+                            android:paddingEnd="10dp"
+                            android:layout_marginTop="6dp"
+                            android:clickable="true"
+                            android:focusable="true">
+
+                            <View
+                                android:layout_width="16dp"
+                                android:layout_height="16dp"
+                                android:background="#FDBB24" />
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginStart="10dp"
+                                android:fontFamily="monospace"
+                                android:text="镉黄警示 · 黄"
+                                android:textColor="#FFFFFF"
+                                android:textSize="11sp" />
+
+                            <TextView
+                                android:id="@+id/badge_theme_yellow_active"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:background="#FDBB24"
+                                android:paddingStart="6dp"
+                                android:paddingEnd="6dp"
+                                android:fontFamily="monospace"
+                                android:text="ACTIVE"
+                                android:textColor="#000000"
+                                android:textSize="9sp"
+                                android:visibility="gone" />
+                        </LinearLayout>
                     </LinearLayout>
-                </HorizontalScrollView>
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btn_create_linux_instance"
-                    style="@style/Widget.Material3.Button"
-                    android:layout_width="match_parent"
-                    android:layout_height="48dp"
-                    android:layout_marginStart="16dp"
-                    android:layout_marginTop="12dp"
-                    android:layout_marginEnd="16dp"
-                    android:layout_marginBottom="14dp"
-                    android:insetTop="0dp"
-                    android:insetBottom="0dp"
-                    app:cornerRadius="12dp"
-                    android:text="🚀 选择发行版并启动创建向导"
-                    android:textSize="14sp"
+                    <!-- Advanced Sub-Page Entrances -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:background="@drawable/bg_constructivist_card"
+                        android:padding="14dp"
+                        android:layout_marginBottom="12dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:fontFamily="monospace"
+                            android:text="[ MULTI-LEVEL MANAGEMENT ENTRIES ]"
+                            android:textColor="#8E929B"
+                            android:textSize="10sp"
+                            android:textStyle="bold"
+                            android:layout_marginBottom="10dp" />
+
+                        <!-- SSH Entry -->
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_settings_open_ssh"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="match_parent"
+                            android:layout_height="44dp"
+                            app:cornerRadius="0dp"
+                            android:backgroundTint="#1F2026"
+                            android:fontFamily="monospace"
+                            android:text="SSH 配置文件与凭据管理"
+                            android:textColor="#FFFFFF"
+                            android:textSize="11sp"
+                            app:icon="@drawable/ic_ssh"
+                            app:iconSize="16dp"
+                            app:iconTint="#FFFFFF"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp" />
+
+                        <!-- System Settings Entry -->
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_settings_open_system"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="match_parent"
+                            android:layout_height="44dp"
+                            android:layout_marginTop="8dp"
+                            app:cornerRadius="0dp"
+                            android:backgroundTint="#1F2026"
+                            android:fontFamily="monospace"
+                            android:text="系统镜像源策略与更新设置"
+                            android:textColor="#FFFFFF"
+                            android:textSize="11sp"
+                            app:icon="@drawable/ic_tune"
+                            app:iconSize="16dp"
+                            app:iconTint="#FFFFFF"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp" />
+
+                        <!-- About Entry -->
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_settings_open_about"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="match_parent"
+                            android:layout_height="44dp"
+                            android:layout_marginTop="8dp"
+                            app:cornerRadius="0dp"
+                            android:backgroundTint="#1F2026"
+                            android:fontFamily="monospace"
+                            android:text="关于 Orchestella Studio"
+                            android:textColor="#FFFFFF"
+                            android:textSize="11sp"
+                            app:icon="@drawable/ic_info"
+                            app:iconSize="16dp"
+                            app:iconTint="#FFFFFF"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp" />
+                    </LinearLayout>
+                </LinearLayout>
+
+            </FrameLayout>
+        </androidx.core.widget.NestedScrollView>
+
+        <!-- 3. Constructivist Bottom Navigation Bar (5 Monolithic Rectangular Tabs) -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="2dp"
+            android:background="#2E323B" />
+
+        <LinearLayout
+            android:id="@+id/constructivist_bottom_nav"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:orientation="horizontal"
+            android:background="#0C0D11">
+
+            <!-- Tab 1: 控制台 (Active default) -->
+            <LinearLayout
+                android:id="@+id/nav_tab_console"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:background="#D62828"
+                android:clickable="true"
+                android:focusable="true">
+
+                <ImageView
+                    android:id="@+id/nav_icon_console"
+                    android:layout_width="18dp"
+                    android:layout_height="18dp"
+                    android:src="@drawable/ic_developer_board"
+                    app:tint="#FFFFFF" />
+
+                <TextView
+                    android:id="@+id/nav_text_console"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:fontFamily="monospace"
+                    android:text="01/工作站"
+                    android:textColor="#FFFFFF"
+                    android:textSize="9sp"
                     android:textStyle="bold" />
             </LinearLayout>
 
-            <ProgressBar
-                android:id="@+id/create_progress"
-                style="?android:attr/progressBarStyleHorizontal"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="6dp"
-                android:visibility="gone" />
-
-            <TextView
-                android:id="@+id/create_status"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                android:textSize="12sp"
-                android:accessibilityLiveRegion="polite" />
-
-            <!-- 3. Instances Section Header -->
+            <!-- Tab 2: 实例 -->
             <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:layout_marginBottom="12dp">
+                android:id="@+id/nav_tab_instances"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:background="#0C0D11"
+                android:clickable="true"
+                android:focusable="true">
+
+                <ImageView
+                    android:id="@+id/nav_icon_instances"
+                    android:layout_width="18dp"
+                    android:layout_height="18dp"
+                    android:src="@drawable/ic_layers"
+                    app:tint="#8E929B" />
 
                 <TextView
-                    android:id="@+id/instances_title"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/instances_title"
-                    android:textSize="16sp"
-                    android:textStyle="bold"
-                    android:textColor="?attr/colorOnBackground" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btn_import_instance"
-                    style="@style/Widget.Material3.Button.TonalButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="40dp"
-                    android:layout_marginEnd="8dp"
-                    android:insetTop="0dp"
-                    android:insetBottom="0dp"
-                    android:paddingStart="12dp"
-                    android:paddingEnd="14dp"
-                    app:icon="@drawable/ic_backup"
-                    app:iconSize="16dp"
-                    android:text="@string/import_instance_btn"
-                    android:textSize="12sp" />
-
-                <TextView
-                    android:id="@+id/instances_count_badge"
+                    android:id="@+id/nav_text_instances"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:background="@drawable/bg_status_badge"
-                    android:paddingStart="8dp"
-                    android:paddingTop="2dp"
-                    android:paddingEnd="8dp"
-                    android:paddingBottom="2dp"
-                    android:text="0 个实例"
-                    android:textSize="11sp"
-                    android:textColor="?attr/colorOutline" />
+                    android:layout_marginTop="2dp"
+                    android:fontFamily="monospace"
+                    android:text="02/实例"
+                    android:textColor="#8E929B"
+                    android:textSize="9sp" />
             </LinearLayout>
 
-            <!-- Empty instances state -->
-            <TextView
-                android:id="@+id/instances_empty"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center"
-                android:paddingTop="32dp"
-                android:paddingBottom="32dp"
-                android:text="@string/instances_empty"
-                android:textSize="14sp"
-                android:textColor="?attr/colorOutline"
-                android:visibility="gone" />
-
-            <!-- Dynamic UTM Instance Cards Container -->
+            <!-- Tab 3: 硬件 (Independent Screen!) -->
             <LinearLayout
-                android:id="@+id/instance_list"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical" />
+                android:id="@+id/nav_tab_hardware"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:background="#0C0D11"
+                android:clickable="true"
+                android:focusable="true">
 
+                <ImageView
+                    android:id="@+id/nav_icon_hardware"
+                    android:layout_width="18dp"
+                    android:layout_height="18dp"
+                    android:src="@drawable/ic_hardware_spec"
+                    app:tint="#8E929B" />
+
+                <TextView
+                    android:id="@+id/nav_text_hardware"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:fontFamily="monospace"
+                    android:text="03/硬件"
+                    android:textColor="#8E929B"
+                    android:textSize="9sp" />
+            </LinearLayout>
+
+            <!-- Tab 4: 发行版 -->
+            <LinearLayout
+                android:id="@+id/nav_tab_distros"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:background="#0C0D11"
+                android:clickable="true"
+                android:focusable="true">
+
+                <ImageView
+                    android:id="@+id/nav_icon_distros"
+                    android:layout_width="18dp"
+                    android:layout_height="18dp"
+                    android:src="@drawable/ic_distro_ubuntu"
+                    app:tint="#8E929B" />
+
+                <TextView
+                    android:id="@+id/nav_text_distros"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:fontFamily="monospace"
+                    android:text="04/发行版"
+                    android:textColor="#8E929B"
+                    android:textSize="9sp" />
+            </LinearLayout>
+
+            <!-- Tab 5: 配置 -->
+            <LinearLayout
+                android:id="@+id/nav_tab_settings"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:background="#0C0D11"
+                android:clickable="true"
+                android:focusable="true">
+
+                <ImageView
+                    android:id="@+id/nav_icon_settings"
+                    android:layout_width="18dp"
+                    android:layout_height="18dp"
+                    android:src="@drawable/ic_tune"
+                    app:tint="#8E929B" />
+
+                <TextView
+                    android:id="@+id/nav_text_settings"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:fontFamily="monospace"
+                    android:text="05/配置"
+                    android:textColor="#8E929B"
+                    android:textSize="9sp" />
+            </LinearLayout>
         </LinearLayout>
 
-    </androidx.core.widget.NestedScrollView>
+    </LinearLayout>
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

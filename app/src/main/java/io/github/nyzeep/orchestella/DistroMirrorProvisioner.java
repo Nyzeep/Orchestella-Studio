@@ -56,6 +56,8 @@ public final class DistroMirrorProvisioner {
         }
         String id = distroId.trim().toLowerCase(Locale.ROOT);
         switch (id) {
+            case "alpine":
+                return "/etc/apk/repositories";
             case "arch":
                 return "/etc/pacman.d/mirrorlist";
             case "fedora":
@@ -106,6 +108,8 @@ public final class DistroMirrorProvisioner {
         Objects.requireNonNull(source, "source");
         String id = distroId != null ? distroId.trim().toLowerCase(Locale.ROOT) : "debian";
         switch (id) {
+            case "alpine":
+                return generateAlpineRepositories(distroVersion, source);
             case "arch":
                 return generateArchMirrorlist(source);
             case "ubuntu":
@@ -113,7 +117,7 @@ public final class DistroMirrorProvisioner {
             case "fedora":
                 return generateFedoraRepo(distroVersion, source);
             case "opensuse":
-                return generateOpenSuseRepo(source);
+                return generateOpenSuseRepo(distroVersion, source);
             case "almalinux":
                 return generateAlmaLinuxRepo(distroVersion, source);
             case "rocky":
@@ -129,35 +133,44 @@ public final class DistroMirrorProvisioner {
         String id = distroId != null ? distroId.trim().toLowerCase(Locale.ROOT) : "debian";
         List<String> list = new ArrayList<>();
         switch (id) {
+            case "alpine":
+                String branch = alpineBranch(distroVersion);
+                String base = source == MirrorSource.TUNA ? "https://mirrors.tuna.tsinghua.edu.cn/alpine/"
+                        : source == MirrorSource.USTC ? "https://mirrors.ustc.edu.cn/alpine/"
+                        : source == MirrorSource.ALIYUN ? "https://mirrors.aliyun.com/alpine/"
+                        : "https://dl-cdn.alpinelinux.org/alpine/";
+                list.add(base + branch + "/main");
+                list.add(base + branch + "/community");
+                break;
             case "arch":
                 if (source == MirrorSource.MULTI_TIER) {
-                    list.add("https://mirrors.aliyun.com/archlinux/$repo/os/$arch");
-                    list.add("https://mirrors.tuna.tsinghua.edu.cn/archlinux/$repo/os/$arch");
-                    list.add("https://mirrors.ustc.edu.cn/archlinux/$repo/os/$arch");
-                    list.add("https://geo.mirror.pkgbuild.com/$repo/os/$arch");
+                    list.add("https://mirrors.aliyun.com/archlinuxarm/$arch/$repo");
+                    list.add("https://mirrors.tuna.tsinghua.edu.cn/archlinuxarm/$arch/$repo");
+                    list.add("https://mirrors.ustc.edu.cn/archlinuxarm/$arch/$repo");
+                    list.add("https://ca.us.mirror.archlinuxarm.org/$arch/$repo");
                 } else if (source == MirrorSource.TUNA) {
-                    list.add("https://mirrors.tuna.tsinghua.edu.cn/archlinux/$repo/os/$arch");
+                    list.add("https://mirrors.tuna.tsinghua.edu.cn/archlinuxarm/$arch/$repo");
                 } else if (source == MirrorSource.USTC) {
-                    list.add("https://mirrors.ustc.edu.cn/archlinux/$repo/os/$arch");
+                    list.add("https://mirrors.ustc.edu.cn/archlinuxarm/$arch/$repo");
                 } else if (source == MirrorSource.ALIYUN) {
-                    list.add("https://mirrors.aliyun.com/archlinux/$repo/os/$arch");
+                    list.add("https://mirrors.aliyun.com/archlinuxarm/$arch/$repo");
                 } else {
-                    list.add("https://geo.mirror.pkgbuild.com/$repo/os/$arch");
+                    list.add("https://ca.us.mirror.archlinuxarm.org/$arch/$repo");
                 }
                 break;
             case "ubuntu":
                 if (source == MirrorSource.MULTI_TIER) {
-                    list.add("https://mirrors.aliyun.com/ubuntu/");
-                    list.add("https://mirrors.tuna.tsinghua.edu.cn/ubuntu/");
-                    list.add("http://archive.ubuntu.com/ubuntu/");
+                    list.add("https://mirrors.aliyun.com/ubuntu-ports/");
+                    list.add("https://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/");
+                    list.add("http://ports.ubuntu.com/ubuntu-ports/");
                 } else if (source == MirrorSource.TUNA) {
-                    list.add("https://mirrors.tuna.tsinghua.edu.cn/ubuntu/");
+                    list.add("https://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/");
                 } else if (source == MirrorSource.USTC) {
-                    list.add("https://mirrors.ustc.edu.cn/ubuntu/");
+                    list.add("https://mirrors.ustc.edu.cn/ubuntu-ports/");
                 } else if (source == MirrorSource.ALIYUN) {
-                    list.add("https://mirrors.aliyun.com/ubuntu/");
+                    list.add("https://mirrors.aliyun.com/ubuntu-ports/");
                 } else {
-                    list.add("http://archive.ubuntu.com/ubuntu/");
+                    list.add("http://ports.ubuntu.com/ubuntu-ports/");
                 }
                 break;
             case "fedora":
@@ -240,6 +253,20 @@ public final class DistroMirrorProvisioner {
         return Collections.unmodifiableList(list);
     }
 
+    private static String alpineBranch(String version) {
+        if (version == null || "latest".equalsIgnoreCase(version)) return "v3.24";
+        String normalized = version.startsWith("v") ? version.substring(1) : version;
+        if (!normalized.matches("3\\.[0-9]+(\\.[0-9]+)?")) {
+            throw new IllegalArgumentException("unsupported Alpine version");
+        }
+        String[] parts = normalized.split("\\.");
+        return "v" + parts[0] + "." + parts[1];
+    }
+
+    private static String generateAlpineRepositories(String version, MirrorSource source) {
+        return String.join("\n", resolveMirrorUrls("alpine", version, source)) + "\n";
+    }
+
     private static String parseDebianCodename(String version) {
         if (version == null || version.trim().isEmpty() || "latest".equalsIgnoreCase(version)) {
             return "trixie";
@@ -271,7 +298,7 @@ public final class DistroMirrorProvisioner {
     private static String generateDebianSources(String distroVersion, MirrorSource source) {
         String codename = parseDebianCodename(distroVersion);
         if (source == MirrorSource.MULTI_TIER) {
-            return "# Orchestella Multi-Tier Mirror Configuration (Debian)\n"
+            return "# orchestella-mirror-policy=multi-tier\n# Orchestella Multi-Tier Mirror Configuration (Debian)\n"
                     + "# Tier 1: Aliyun Cloud (国内极速云镜像)\n"
                     + "deb https://mirrors.aliyun.com/debian/ " + codename + " main contrib non-free non-free-firmware\n"
                     + "deb https://mirrors.aliyun.com/debian/ " + codename + "-updates main contrib non-free non-free-firmware\n"
@@ -322,46 +349,46 @@ public final class DistroMirrorProvisioner {
     private static String generateUbuntuSources(String distroVersion, MirrorSource source) {
         String codename = parseUbuntuCodename(distroVersion);
         if (source == MirrorSource.MULTI_TIER) {
-            return "# Orchestella Multi-Tier Mirror Configuration (Ubuntu)\n"
+            return "# orchestella-mirror-policy=multi-tier\n# Orchestella Multi-Tier Mirror Configuration (Ubuntu)\n"
                     + "# Tier 1: Aliyun Cloud (国内极速云镜像)\n"
-                    + "deb https://mirrors.aliyun.com/ubuntu/ " + codename + " main restricted universe multiverse\n"
-                    + "deb https://mirrors.aliyun.com/ubuntu/ " + codename + "-updates main restricted universe multiverse\n"
-                    + "deb https://mirrors.aliyun.com/ubuntu/ " + codename + "-security main restricted universe multiverse\n\n"
+                    + "deb https://mirrors.aliyun.com/ubuntu-ports/ " + codename + " main restricted universe multiverse\n"
+                    + "deb https://mirrors.aliyun.com/ubuntu-ports/ " + codename + "-updates main restricted universe multiverse\n"
+                    + "deb https://mirrors.aliyun.com/ubuntu-ports/ " + codename + "-security main restricted universe multiverse\n\n"
                     + "# Tier 2: Tsinghua TUNA (教育网骨干加速)\n"
-                    + "deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ " + codename + " main restricted universe multiverse\n"
-                    + "deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ " + codename + "-updates main restricted universe multiverse\n\n"
+                    + "deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/ " + codename + " main restricted universe multiverse\n"
+                    + "deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/ " + codename + "-updates main restricted universe multiverse\n\n"
                     + "# Tier 3: Official Upstream (官方兜底保障)\n"
-                    + "deb http://archive.ubuntu.com/ubuntu/ " + codename + " main restricted universe multiverse\n"
-                    + "deb http://security.ubuntu.com/ubuntu/ " + codename + "-security main restricted universe multiverse\n";
+                    + "deb http://ports.ubuntu.com/ubuntu-ports/ " + codename + " main restricted universe multiverse\n"
+                    + "deb http://ports.ubuntu.com/ubuntu-ports/ " + codename + "-security main restricted universe multiverse\n";
         }
 
         String base;
         String securityBase;
         switch (source) {
             case TUNA:
-                base = "https://mirrors.tuna.tsinghua.edu.cn/ubuntu/";
-                securityBase = "https://mirrors.tuna.tsinghua.edu.cn/ubuntu/";
+                base = "https://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/";
+                securityBase = "https://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports/";
                 break;
             case USTC:
-                base = "https://mirrors.ustc.edu.cn/ubuntu/";
-                securityBase = "https://mirrors.ustc.edu.cn/ubuntu/";
+                base = "https://mirrors.ustc.edu.cn/ubuntu-ports/";
+                securityBase = "https://mirrors.ustc.edu.cn/ubuntu-ports/";
                 break;
             case HUAWEICLOUD:
-                base = "https://repo.huaweicloud.com/ubuntu/";
-                securityBase = "https://repo.huaweicloud.com/ubuntu/";
+                base = "https://repo.huaweicloud.com/ubuntu-ports/";
+                securityBase = "https://repo.huaweicloud.com/ubuntu-ports/";
                 break;
             case TENCENT:
-                base = "https://mirrors.cloud.tencent.com/ubuntu/";
-                securityBase = "https://mirrors.cloud.tencent.com/ubuntu/";
+                base = "https://mirrors.cloud.tencent.com/ubuntu-ports/";
+                securityBase = "https://mirrors.cloud.tencent.com/ubuntu-ports/";
                 break;
             case ALIYUN:
-                base = "https://mirrors.aliyun.com/ubuntu/";
-                securityBase = "https://mirrors.aliyun.com/ubuntu/";
+                base = "https://mirrors.aliyun.com/ubuntu-ports/";
+                securityBase = "https://mirrors.aliyun.com/ubuntu-ports/";
                 break;
             case OFFICIAL:
             default:
-                base = "http://archive.ubuntu.com/ubuntu/";
-                securityBase = "http://security.ubuntu.com/ubuntu/";
+                base = "http://ports.ubuntu.com/ubuntu-ports/";
+                securityBase = "http://ports.ubuntu.com/ubuntu-ports/";
                 break;
         }
 
@@ -374,34 +401,34 @@ public final class DistroMirrorProvisioner {
         if (source == MirrorSource.MULTI_TIER) {
             return "## Orchestella Multi-Tier Mirrorlist (Arch Linux)\n"
                     + "## Tier 1: Aliyun Cloud (国内极速云镜像)\n"
-                    + "Server = https://mirrors.aliyun.com/archlinux/$repo/os/$arch\n\n"
+                    + "Server = https://mirrors.aliyun.com/archlinuxarm/$arch/$repo\n\n"
                     + "## Tier 2: Tsinghua TUNA & USTC (教育网骨干加速)\n"
-                    + "Server = https://mirrors.tuna.tsinghua.edu.cn/archlinux/$repo/os/$arch\n"
-                    + "Server = https://mirrors.ustc.edu.cn/archlinux/$repo/os/$arch\n\n"
+                    + "Server = https://mirrors.tuna.tsinghua.edu.cn/archlinuxarm/$arch/$repo\n"
+                    + "Server = https://mirrors.ustc.edu.cn/archlinuxarm/$arch/$repo\n\n"
                     + "## Tier 3: Official Upstream (官方兜底保障)\n"
-                    + "Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch\n";
+                    + "Server = https://ca.us.mirror.archlinuxarm.org/$arch/$repo\n";
         }
 
         String server;
         switch (source) {
             case TUNA:
-                server = "Server = https://mirrors.tuna.tsinghua.edu.cn/archlinux/$repo/os/$arch";
+                server = "Server = https://mirrors.tuna.tsinghua.edu.cn/archlinuxarm/$arch/$repo";
                 break;
             case USTC:
-                server = "Server = https://mirrors.ustc.edu.cn/archlinux/$repo/os/$arch";
+                server = "Server = https://mirrors.ustc.edu.cn/archlinuxarm/$arch/$repo";
                 break;
             case HUAWEICLOUD:
-                server = "Server = https://repo.huaweicloud.com/archlinux/$repo/os/$arch";
+                server = "Server = https://repo.huaweicloud.com/archlinuxarm/$arch/$repo";
                 break;
             case TENCENT:
-                server = "Server = https://mirrors.cloud.tencent.com/archlinux/$repo/os/$arch";
+                server = "Server = https://mirrors.cloud.tencent.com/archlinuxarm/$arch/$repo";
                 break;
             case ALIYUN:
-                server = "Server = https://mirrors.aliyun.com/archlinux/$repo/os/$arch";
+                server = "Server = https://mirrors.aliyun.com/archlinuxarm/$arch/$repo";
                 break;
             case OFFICIAL:
             default:
-                server = "Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch";
+                server = "Server = https://ca.us.mirror.archlinuxarm.org/$arch/$repo";
                 break;
         }
         return server + "\n";
@@ -415,14 +442,16 @@ public final class DistroMirrorProvisioner {
                     + "        https://mirrors.tuna.tsinghua.edu.cn/fedora/releases/$releasever/Everything/$basearch/os/\n"
                     + "        https://download.fedoraproject.org/pub/fedora/linux/releases/$releasever/Everything/$basearch/os/\n"
                     + "enabled=1\n"
-                    + "gpgcheck=1\n\n"
+                    + "gpgcheck=1\n"
+                    + "gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-fedora-$releasever-$basearch\n\n"
                     + "[updates]\n"
                     + "name=Fedora $releasever - Updates - $basearch\n"
                     + "baseurl=https://mirrors.aliyun.com/fedora/updates/$releasever/Everything/$basearch/\n"
                     + "        https://mirrors.tuna.tsinghua.edu.cn/fedora/updates/$releasever/Everything/$basearch/\n"
                     + "        https://download.fedoraproject.org/pub/fedora/linux/updates/$releasever/Everything/$basearch/\n"
                     + "enabled=1\n"
-                    + "gpgcheck=1\n";
+                    + "gpgcheck=1\n"
+                    + "gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-fedora-$releasever-$basearch\n";
         }
         String base = (source == MirrorSource.TUNA) ? "https://mirrors.tuna.tsinghua.edu.cn/fedora" :
                 (source == MirrorSource.USTC) ? "https://mirrors.ustc.edu.cn/fedora" :
@@ -431,11 +460,21 @@ public final class DistroMirrorProvisioner {
         return "[fedora]\n"
                 + "name=Fedora $releasever - $basearch\n"
                 + "baseurl=" + base + "/releases/$releasever/Everything/$basearch/os/\n"
-                + "enabled=1\n"
-                + "gpgcheck=1\n";
+                + "enabled=1\ngpgcheck=1\n"
+                + "gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-fedora-$releasever-$basearch\n\n"
+                + "[updates]\nname=Fedora $releasever Updates - $basearch\n"
+                + "baseurl=" + base + "/updates/$releasever/Everything/$basearch/\n"
+                + "enabled=1\ngpgcheck=1\n"
+                + "gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-fedora-$releasever-$basearch\n";
     }
 
-    private static String generateOpenSuseRepo(MirrorSource source) {
+    private static String generateOpenSuseRepo(String version, MirrorSource source) {
+        if (version == null || "latest".equalsIgnoreCase(version) || version.startsWith("16")) {
+            return "[repo-oss]\nname=openSUSE Leap 16.0 OSS\n"
+                    + "baseurl=https://cdn.opensuse.org/distribution/leap/16.0/repo/oss/$basearch/\n"
+                    + "enabled=1\ngpgcheck=1\n"
+                    + "gpgkey=https://cdn.opensuse.org/distribution/leap/16.0/repo/oss/$basearch/repodata/repomd.xml.key\n";
+        }
         if (source == MirrorSource.MULTI_TIER) {
             return "[repo-oss]\n"
                     + "name=openSUSE-Tumbleweed-Oss\n"
@@ -456,45 +495,40 @@ public final class DistroMirrorProvisioner {
                 + "gpgcheck=1\n";
     }
 
-    private static String generateAlmaLinuxRepo(String distroVersion, MirrorSource source) {
-        if (source == MirrorSource.MULTI_TIER) {
-            return "[baseos]\n"
-                    + "name=AlmaLinux $releasever - BaseOS\n"
-                    + "baseurl=https://mirrors.aliyun.com/almalinux/$releasever/BaseOS/$basearch/os/\n"
-                    + "        https://mirrors.tuna.tsinghua.edu.cn/almalinux/$releasever/BaseOS/$basearch/os/\n"
-                    + "        https://repo.almalinux.org/almalinux/$releasever/BaseOS/$basearch/os/\n"
-                    + "enabled=1\n"
-                    + "gpgcheck=1\n";
+    private static String enterpriseRepos(String name, String base, String key) {
+        StringBuilder text = new StringBuilder();
+        for (String repo : new String[] {"BaseOS", "AppStream"}) {
+            text.append('[').append(repo.toLowerCase(Locale.ROOT)).append("]\nname=")
+                    .append(name).append(' ').append(repo).append("\nbaseurl=")
+                    .append(base).append("$releasever/").append(repo).append("/$basearch/os/\n")
+                    .append("enabled=1\ngpgcheck=1\ngpgkey=").append(key).append("\n\n");
         }
-        String base = (source == MirrorSource.TUNA) ? "https://mirrors.tuna.tsinghua.edu.cn/almalinux" :
-                (source == MirrorSource.USTC) ? "https://mirrors.ustc.edu.cn/almalinux" :
-                (source == MirrorSource.ALIYUN) ? "https://mirrors.aliyun.com/almalinux" :
-                "https://repo.almalinux.org/almalinux";
-        return "[baseos]\n"
-                + "name=AlmaLinux $releasever - BaseOS\n"
-                + "baseurl=" + base + "/$releasever/BaseOS/$basearch/os/\n"
-                + "enabled=1\n"
-                + "gpgcheck=1\n";
+        return text.toString();
+    }
+
+    private static String generateAlmaLinuxRepo(String distroVersion, MirrorSource source) {
+        if (source == MirrorSource.OFFICIAL || source == MirrorSource.MULTI_TIER) {
+            return enterpriseRepos("AlmaLinux", "https://repo.almalinux.org/almalinux/",
+                    "file:///etc/pki/rpm-gpg/RPM-GPG-KEY-AlmaLinux-9");
+        }
+        String base = (source == MirrorSource.TUNA) ? "https://mirrors.tuna.tsinghua.edu.cn/almalinux/" :
+                (source == MirrorSource.USTC) ? "https://mirrors.ustc.edu.cn/almalinux/" :
+                (source == MirrorSource.ALIYUN) ? "https://mirrors.aliyun.com/almalinux/" :
+                "https://repo.almalinux.org/almalinux/";
+        return enterpriseRepos("AlmaLinux", base,
+                "file:///etc/pki/rpm-gpg/RPM-GPG-KEY-AlmaLinux-9");
     }
 
     private static String generateRockyLinuxRepo(String distroVersion, MirrorSource source) {
-        if (source == MirrorSource.MULTI_TIER) {
-            return "[baseos]\n"
-                    + "name=Rocky Linux $releasever - BaseOS\n"
-                    + "baseurl=https://mirrors.aliyun.com/rocky/$releasever/BaseOS/$basearch/os/\n"
-                    + "        https://mirrors.tuna.tsinghua.edu.cn/rocky/$releasever/BaseOS/$basearch/os/\n"
-                    + "        https://dl.rockylinux.org/pub/rocky/$releasever/BaseOS/$basearch/os/\n"
-                    + "enabled=1\n"
-                    + "gpgcheck=1\n";
+        if (source == MirrorSource.OFFICIAL || source == MirrorSource.MULTI_TIER) {
+            return enterpriseRepos("Rocky Linux", "https://dl.rockylinux.org/pub/rocky/",
+                    "file:///etc/pki/rpm-gpg/RPM-GPG-KEY-Rocky-9");
         }
-        String base = (source == MirrorSource.TUNA) ? "https://mirrors.tuna.tsinghua.edu.cn/rocky" :
-                (source == MirrorSource.USTC) ? "https://mirrors.ustc.edu.cn/rocky" :
-                (source == MirrorSource.ALIYUN) ? "https://mirrors.aliyun.com/rocky" :
-                "https://dl.rockylinux.org/pub/rocky";
-        return "[baseos]\n"
-                + "name=Rocky Linux $releasever - BaseOS\n"
-                + "baseurl=" + base + "/$releasever/BaseOS/$basearch/os/\n"
-                + "enabled=1\n"
-                + "gpgcheck=1\n";
+        String base = (source == MirrorSource.TUNA) ? "https://mirrors.tuna.tsinghua.edu.cn/rocky/" :
+                (source == MirrorSource.USTC) ? "https://mirrors.ustc.edu.cn/rocky/" :
+                (source == MirrorSource.ALIYUN) ? "https://mirrors.aliyun.com/rocky/" :
+                "https://dl.rockylinux.org/pub/rocky/";
+        return enterpriseRepos("Rocky Linux", base,
+                "file:///etc/pki/rpm-gpg/RPM-GPG-KEY-Rocky-9");
     }
 }

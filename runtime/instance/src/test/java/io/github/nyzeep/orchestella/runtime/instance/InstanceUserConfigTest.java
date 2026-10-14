@@ -15,13 +15,23 @@ public final class InstanceUserConfigTest {
         testConstructorValidation();
         testHostnameNormalizationAndValidation();
         testPropertiesSerializationRoundtrip();
+        testUnknownStoredPasswordIsNotInvented();
+        testStoredLegacyPasswordIsPreserved();
         System.out.println("InstanceUserConfigTest passed successfully!");
     }
 
     private static void testDefaultRootFactory() {
         InstanceUserConfig config = InstanceUserConfig.defaultRoot();
         assertEquals("root", config.username(), "defaultRoot username");
-        assertEquals("1234", config.password(), "defaultRoot password");
+        assertTrue(config.password().length() >= 16, "defaultRoot must generate a strong password");
+        assertFalse("1234".equals(config.password()), "defaultRoot must not use a public password");
+        java.util.Set<String> passwords = new java.util.HashSet<>();
+        for (int i = 0; i < 64; i++) {
+            String password = InstanceUserConfig.defaultRoot().password();
+            assertTrue(password.matches("[A-Za-z0-9]{16,}"), "generated password must be guest-safe");
+            assertTrue(passwords.add(password), "new instances must not share generated passwords");
+        }
+        assertFalse(config.toString().contains(config.password()), "toString must not disclose password");
         assertEquals("orchestella", config.hostname(), "defaultRoot hostname");
         assertTrue(config.hasSudo(), "defaultRoot hasSudo");
     }
@@ -114,9 +124,31 @@ public final class InstanceUserConfigTest {
         assertEquals(original.hashCode(), restored.hashCode(), "hashcode across roundtrip");
     }
 
+    private static void testUnknownStoredPasswordIsNotInvented() {
+        for (String password : new String[] {null, "", "   "}) {
+            Properties properties = new Properties();
+            if (password != null) {
+                properties.setProperty("password", password);
+            }
+            assertThrows(IllegalArgumentException.class,
+                    () -> InstanceUserConfig.fromProperties(properties),
+                    "missing stored password must not be replaced by a guessed or random value");
+        }
+    }
+
+    private static void testStoredLegacyPasswordIsPreserved() {
+        Properties properties = new Properties();
+        properties.setProperty("password", "1234");
+        InstanceUserConfig legacy = InstanceUserConfig.fromProperties(properties);
+        assertEquals("1234", legacy.password(), "known legacy password is preserved on read");
+        InstanceUserConfig generated = InstanceUserConfig.defaultRoot();
+        assertEquals(generated.password(), InstanceUserConfig.fromProperties(generated.toProperties()).password(),
+                "generated password survives serialization without regeneration");
+    }
+
     private static void assertEquals(Object expected, Object actual, String description) {
         if (!Objects.equals(expected, actual)) {
-            throw new AssertionError(description + ": expected=" + expected + ", actual=" + actual);
+            throw new AssertionError(description + ": values differ (redacted)");
         }
     }
 

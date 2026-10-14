@@ -1,5 +1,6 @@
 package io.github.nyzeep.orchestella.runtime.instance;
 
+import java.security.SecureRandom;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.regex.Pattern;
@@ -14,7 +15,11 @@ public final class InstanceUserConfig {
 
     public static final String DEFAULT_HOSTNAME = "orchestella";
     public static final String DEFAULT_ROOT_USER = "root";
-    public static final String DEFAULT_ROOT_PASSWORD = "1234";
+
+    private static final SecureRandom PASSWORD_RANDOM = new SecureRandom();
+    private static final char[] PASSWORD_CHARS =
+            "23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz".toCharArray();
+    private static final int PASSWORD_LENGTH = 24;
 
     private static final Pattern USERNAME_PATTERN = Pattern.compile("^[a-z_][a-z0-9_-]{1,15}$");
     private static final Pattern HOSTNAME_PATTERN = Pattern.compile("^[a-z0-9][a-z0-9-]{0,62}$");
@@ -44,13 +49,17 @@ public final class InstanceUserConfig {
         this.hostname = normalizedHost;
     }
 
-    /**
-     * Standard initial root configuration factory (Ticket 03).
-     *
-     * <p>Username: {@code "root"}, Password: {@code "1234"}, Hostname: {@code "orchestella"}, Sudo: {@code true}.
-     */
+    /** Creates a fresh root configuration with a strong per-instance credential (ADR-0010). */
     public static InstanceUserConfig defaultRoot() {
-        return new InstanceUserConfig(DEFAULT_ROOT_USER, DEFAULT_ROOT_PASSWORD, true, DEFAULT_HOSTNAME);
+        return new InstanceUserConfig(DEFAULT_ROOT_USER, newPassword(), true, DEFAULT_HOSTNAME);
+    }
+
+    static String newPassword() {
+        char[] password = new char[PASSWORD_LENGTH];
+        for (int i = 0; i < password.length; i++) {
+            password[i] = PASSWORD_CHARS[PASSWORD_RANDOM.nextInt(PASSWORD_CHARS.length)];
+        }
+        return new String(password);
     }
 
     /**
@@ -112,9 +121,9 @@ public final class InstanceUserConfig {
         if (!isValidUsername(user)) {
             user = DEFAULT_ROOT_USER;
         }
-        String pass = properties.getProperty("password", DEFAULT_ROOT_PASSWORD);
+        String pass = properties.getProperty("password");
         if (pass == null || pass.trim().isEmpty()) {
-            pass = DEFAULT_ROOT_PASSWORD;
+            throw new IllegalArgumentException("stored user password is unknown");
         }
         boolean sudo = Boolean.parseBoolean(properties.getProperty("hasSudo", "true"));
         String host = properties.getProperty("hostname", DEFAULT_HOSTNAME);
