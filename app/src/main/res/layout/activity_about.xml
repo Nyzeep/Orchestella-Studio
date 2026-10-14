@@ -264,7 +264,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
-                        android:text="开源协议：Apache License 2.0 · 自由开放"
+                        android:text="开源协议：GNU GPL v3.0 · 强开源保障"
                         android:textSize="13sp"
                         android:textColor="?attr/colorOnSurfaceVariant" />
 
