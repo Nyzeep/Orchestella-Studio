@@ -1,10 +1,13 @@
 package io.github.nyzeep.orchestella;
 
+import io.github.nyzeep.orchestella.runtime.distro.DistroCatalogRegistry;
+import io.github.nyzeep.orchestella.runtime.distro.DistroManifest;
 import io.github.nyzeep.orchestella.runtime.engineqemu.EmbeddedProvisionInput;
 import io.github.nyzeep.orchestella.runtime.engineqemu.RuntimeArtifactManifest;
 import io.github.nyzeep.orchestella.runtime.engineqemu.RuntimeAssetInstaller;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
@@ -36,16 +39,27 @@ public final class QemuRuntimeBootstrapper {
     private final java.util.function.Function<String, InputStream> resourceStreams;
     private final Path runtimeDir;
     private final Path distroInputsDir;
+    private final java.util.List<DistroManifest> distroManifests;
 
     public QemuRuntimeBootstrapper(RuntimeArtifactManifest manifest,
             java.util.function.Function<String, InputStream> assetStreams,
             java.util.function.Function<String, InputStream> resourceStreams,
             Path runtimeDir, Path distroInputsDir) {
-        this.manifest = manifest;
-        this.assetStreams = assetStreams;
-        this.resourceStreams = resourceStreams;
-        this.runtimeDir = runtimeDir;
-        this.distroInputsDir = distroInputsDir;
+        this(manifest, assetStreams, resourceStreams, runtimeDir, distroInputsDir,
+                DistroCatalogRegistry.createDefault().listAll());
+    }
+
+    /** Supplies a versioned, trusted manifest catalog; never derive it from downloaded files. */
+    public QemuRuntimeBootstrapper(RuntimeArtifactManifest manifest,
+            java.util.function.Function<String, InputStream> assetStreams,
+            java.util.function.Function<String, InputStream> resourceStreams,
+            Path runtimeDir, Path distroInputsDir, java.util.List<DistroManifest> distroManifests) {
+        this.manifest = Objects.requireNonNull(manifest, "manifest");
+        this.assetStreams = Objects.requireNonNull(assetStreams, "assetStreams");
+        this.resourceStreams = Objects.requireNonNull(resourceStreams, "resourceStreams");
+        this.runtimeDir = Objects.requireNonNull(runtimeDir, "runtimeDir");
+        this.distroInputsDir = Objects.requireNonNull(distroInputsDir, "distroInputsDir");
+        this.distroManifests = java.util.List.copyOf(distroManifests);
     }
 
     public RuntimePaths bootstrap(String rootfsFileName, String bridgeToken, Path instanceRootVolume)
@@ -68,10 +82,37 @@ public final class QemuRuntimeBootstrapper {
             byte[] mirrorConfigFileContent,
             byte[] firstBootScript)
             throws IOException {
+        return bootstrap(rootfsFileName, bridgeToken, guestPassword, instanceRootVolume,
+                mirrorConfigFileName, mirrorConfigFileContent, firstBootScript, null, null, false);
+    }
+
+    public RuntimePaths bootstrap(
+            String rootfsFileName,
+            String bridgeToken,
+            String guestPassword,
+            Path instanceRootVolume,
+            String mirrorConfigFileName,
+            byte[] mirrorConfigFileContent,
+            byte[] firstBootScript,
+            String hostname,
+            String guestUser,
+            boolean hasSudo)
+            throws IOException {
+        String validatedHostname = hostname == null ? null
+                : io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig.normalizeHostname(hostname);
+        if (guestUser != null && !io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig.isValidUsername(guestUser)) {
+            throw new IllegalArgumentException("invalid guest username");
+        }
         Objects.requireNonNull(instanceRootVolume, "instanceRootVolume");
         if (!Files.isRegularFile(instanceRootVolume)) {
             throw new IOException("root-volume-missing");
         }
+        DistroManifest distroManifest = requireDistroManifest(rootfsFileName);
+        Path rootfsPath = distroInputsDir.resolve(rootfsFileName);
+        if (!Files.isRegularFile(rootfsPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            throw new IOException("rootfs-file-missing");
+        }
+        distroManifest.requireExpectedSize(Files.size(rootfsPath));
         RuntimeAssetInstaller installer = new RuntimeAssetInstaller();
         Path kernel = installer.install(manifest, "Image",
                 () -> assetStreams.apply("Image"), runtimeDir);
@@ -81,24 +122,22 @@ public final class QemuRuntimeBootstrapper {
         byte[] guestInit = null;
         try (InputStream in = resourceStreams.apply("guest_init")) {
             if (in != null) {
-                guestInit = in.readAllBytes();
+                guestInit = readGuestScript(in);
             }
-        } catch (Exception ignored) {
+        } catch (Exception failure) {
+            throw new IOException("guest-init-unavailable", failure);
         }
 
         byte[] proxyRelay = null;
         try (InputStream in = resourceStreams.apply("proxy_relay")) {
             if (in != null) {
-                proxyRelay = in.readAllBytes();
+                proxyRelay = readGuestScript(in);
             }
         } catch (Exception ignored) {
         }
 
-        Path rootfsPath = distroInputsDir.resolve(rootfsFileName);
-        if (!Files.isRegularFile(rootfsPath)) {
-            throw new IOException("rootfs-file-missing: " + rootfsFileName);
-        }
-        long rootfsSize = Files.size(rootfsPath);
+        // The manifest is the trust anchor; observed download metadata is used only for comparison.
+        long rootfsSize = distroManifest.sizeBytes();
         Path initramfs = runtimeDir.resolve("initramfs-embedded.cpio.gz");
         Path partial = runtimeDir.resolve("initramfs-embedded.cpio.gz.partial");
         try {
@@ -116,17 +155,62 @@ public final class QemuRuntimeBootstrapper {
                         guestPassword,
                         guestInit,
                         proxyRelay,
+                        validatedHostname,
+                        guestUser,
+                        hasSudo,
                         mirrorConfigFileName,
                         mirrorConfigFileContent,
                         firstBootScript,
+                        distroManifest.sha256(),
                         out);
             }
             Files.move(partial, initramfs, java.nio.file.StandardCopyOption.REPLACE_EXISTING,
                     java.nio.file.StandardCopyOption.ATOMIC_MOVE);
-        } catch (IOException failure) {
-            Files.deleteIfExists(partial);
+        } catch (IOException | RuntimeException failure) {
+            try {
+                Files.deleteIfExists(partial);
+            } catch (IOException cleanupFailure) {
+                failure.addSuppressed(cleanupFailure);
+            }
             throw failure;
         }
         return new RuntimePaths(kernel, initramfs, instanceRootVolume);
+    }
+
+    private static byte[] readGuestScript(InputStream input) throws IOException {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        byte[] buffer = new byte[8192];
+        int count;
+        while ((count = input.read(buffer)) != -1) {
+            if (count == 0) {
+                int value = input.read();
+                if (value == -1) break;
+                if (output.size() >= 1024 * 1024) throw new IOException("guest-script-too-large");
+                output.write(value);
+            } else {
+                if (count > 1024 * 1024 - output.size()) throw new IOException("guest-script-too-large");
+                output.write(buffer, 0, count);
+            }
+        }
+        return output.toByteArray();
+    }
+
+    private DistroManifest requireDistroManifest(String rootfsFileName) throws IOException {
+        if (rootfsFileName == null || !rootfsFileName.matches("[A-Za-z0-9][A-Za-z0-9._-]*")) {
+            throw new IOException("rootfs-manifest-unknown");
+        }
+        DistroManifest selected = null;
+        for (DistroManifest candidate : distroManifests) {
+            if (candidate.rootfsFileName().equals(rootfsFileName)) {
+                if (selected != null) {
+                    throw new IOException("rootfs-manifest-ambiguous");
+                }
+                selected = candidate;
+            }
+        }
+        if (selected == null) {
+            throw new IOException("rootfs-manifest-unknown");
+        }
+        return selected;
     }
 }

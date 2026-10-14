@@ -1,61 +1,71 @@
 package android.system.virtualmachine;
 
+import android.os.ParcelFileDescriptor;
 import java.io.IOException;
 import java.util.function.IntSupplier;
 
-/**
- * Test-only stand-in for the hidden AVF VirtualMachine. vsock connects are
- * routed through the fixture network; a stopped VM refuses new connections.
- * getStatus() is declared to return Object so both the real-device surface
- * (a {@code @Status} int boxed to Integer) and the legacy named-enum stub can
- * be simulated through the same reflective call site.
- */
-public class VirtualMachine {
-    public enum Status {
-        RUNNING,
-        STOPPED
-    }
+/** Official run/status/connectVsock(long) shape over a JVM guest network. */
+public class VirtualMachine implements AutoCloseable {
+    public static final int STATUS_STOPPED = 0;
+    public static final int STATUS_RUNNING = 1;
+    public static final int STATUS_DELETED = 2;
+    private final FakeVsockNetwork network;
+    private volatile boolean running;
+    private int runCount;
+    private int stopCount;
+    private int closeCount;
+    private VirtualMachineConfig config;
+    public RuntimeException configReadFailureForTest;
 
-    private final android.system.virtualmachine.FakeVsockNetwork network;
-    private volatile boolean stopped;
-
-    VirtualMachine(FakeVsockNetwork network) {
-        this.network = network;
-    }
-
-    /** Fixture-visible construction for cross-package simulated guests. */
+    private VirtualMachine(FakeVsockNetwork network) { this.network = network; }
     public static VirtualMachine over(FakeVsockNetwork network) {
         return new VirtualMachine(network);
     }
-
-    public Object getStatus() {
-        return stopped ? Status.STOPPED : Status.RUNNING;
+    public void run() throws Exception {
+        if (running) throw new IllegalStateException("already running");
+        runCount++;
+        running = true;
     }
-
-    public VsockConnection connectVsock(int port) throws IOException {
-        if (stopped) {
-            throw new IllegalStateException("VM is stopped");
-        }
-        return network.connect(port);
+    public int getStatus() { return running ? STATUS_RUNNING : STATUS_STOPPED; }
+    public VirtualMachineConfig getConfig() {
+        if (configReadFailureForTest != null) throw configReadFailureForTest;
+        return config;
     }
-
+    /** Fixture persistence observation; not called by the production adapter. */
+    public void recordConfigForTest(VirtualMachineConfig value) { config = value; }
+    public ParcelFileDescriptor connectVsock(long port) throws IOException {
+        if (!running) throw new IllegalStateException("VM is stopped");
+        return new ParcelFileDescriptor(network.connect(Math.toIntExact(port)));
+    }
     public void stop() {
-        stopped = true;
-        network.closeGuestSide();
+        stopCount++;
+        running = false;
+        if (network != null) network.closeGuestSide();
     }
-
-    /**
-     * Status-only stub for the real AOSP surface, where getStatus() returns
-     * the {@code @Status} int (0=STOPPED, 1=RUNNING, 2=DELETED) boxed to an
-     * Integer by reflection. The status source is externally driven so tests
-     * can stage RUNNING → STOPPED transitions; no vsock fixture is attached.
-     */
-    public static VirtualMachine withNumericStatus(IntSupplier statusSource) {
+    public int runCountForTest() { return runCount; }
+    public int stopCountForTest() { return stopCount; }
+    public int closeCountForTest() { return closeCount; }
+    @Override public void close() {
+        closeCount++;
+        if (running) stop();
+    }
+    @FunctionalInterface public interface RunAction { void run() throws Exception; }
+    @FunctionalInterface public interface VsockConnector { ParcelFileDescriptor connect(long port) throws IOException; }
+    public static VirtualMachine withBehavior(RunAction run, VsockConnector connector) {
         return new VirtualMachine(null) {
-            @Override
-            public Object getStatus() {
-                return statusSource.getAsInt();
+            @Override public void run() throws Exception {
+                super.run();
+                run.run();
             }
+            @Override public ParcelFileDescriptor connectVsock(long port) throws IOException {
+                if (getStatus() != STATUS_RUNNING) throw new IllegalStateException("VM is stopped");
+                return connector.connect(port);
+            }
+        };
+    }
+    public static VirtualMachine withNumericStatus(IntSupplier source) {
+        return new VirtualMachine(null) {
+            @Override public int getStatus() { return source.getAsInt(); }
         };
     }
 }

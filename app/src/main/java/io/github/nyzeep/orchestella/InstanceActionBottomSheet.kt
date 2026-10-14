@@ -8,6 +8,7 @@ import android.widget.TextView
 import android.widget.Toast
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
+import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
 
 /**
  * Context action bottom sheet for virtual machine instances (Ticket 52 / M4).
@@ -50,6 +51,8 @@ class InstanceActionBottomSheet(
         subtitle.text = "ID: ${uiModel.shortId} · ${uiModel.hardwareSpecsText}"
         badge.text = uiModel.stateBadgeText
         badge.setTextColor(context.getColor(uiModel.stateBadgeColorRes))
+        ThemeApplier.setRole(distroIcon, ThemeApplier.Role.PRESERVE)
+        ThemeApplier.setRole(badge, ThemeApplier.Role.PRESERVE)
 
         // Action 1: Launch Desktop
         val actionDesktop = view.findViewById<View>(R.id.sheet_action_desktop)
@@ -124,6 +127,8 @@ class InstanceActionBottomSheet(
         // Action 7: Delete Instance (Guarded: strictly forbidden while running)
         val actionDelete = view.findViewById<View>(R.id.sheet_action_delete)
         val hintDelete = view.findViewById<TextView>(R.id.sheet_hint_delete)
+        ThemeApplier.setRole(view.findViewById(R.id.sheet_icon_delete), ThemeApplier.Role.PRESERVE)
+        ThemeApplier.setRole(view.findViewById(R.id.sheet_text_delete), ThemeApplier.Role.PRESERVE)
         if (!uiModel.canDelete) {
             actionDelete.alpha = 0.4f
             hintDelete.text = context.getString(R.string.action_delete_running_forbidden)
@@ -139,5 +144,6 @@ class InstanceActionBottomSheet(
         }
 
         dialog.show()
+        ThemeApplier.apply(dialog)
     }
 }

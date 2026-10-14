@@ -240,37 +240,28 @@ public final class WaylandSurfaceController {
      * Default Android VSYNC scheduler delegating to Choreographer frame callbacks.
      */
     public static final class ChoreographerVsyncScheduler implements DoubleBufferedRenderer.VsyncScheduler {
-        private Choreographer.FrameCallback currentCallback = null;
-        private boolean isScheduled = false;
+        private final android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+        private Choreographer.FrameCallback currentCallback;
+        private final java.util.concurrent.atomic.AtomicLong generation = new java.util.concurrent.atomic.AtomicLong();
 
-        @Override
-        public void requestVsync(Runnable callback) {
-            if (isScheduled) {
-                return;
-            }
-            isScheduled = true;
-            currentCallback = frameTimeNanos -> {
-                isScheduled = false;
-                callback.run();
-            };
-            try {
+        @Override public void requestVsync(Runnable callback) {
+            long expected = generation.get();
+            main.post(() -> {
+                if (generation.get() != expected || currentCallback != null) return;
+                currentCallback = frameTimeNanos -> {
+                    currentCallback = null;
+                    if (generation.get() == expected) callback.run();
+                };
                 Choreographer.getInstance().postFrameCallback(currentCallback);
-            } catch (Exception fallback) {
-                isScheduled = false;
-                callback.run();
-            }
+            });
         }
 
-        @Override
-        public void cancel() {
-            if (isScheduled && currentCallback != null) {
-                try {
-                    Choreographer.getInstance().removeFrameCallback(currentCallback);
-                } catch (Exception ignored) {
-                }
-                isScheduled = false;
+        @Override public void cancel() {
+            generation.incrementAndGet();
+            main.post(() -> {
+                if (currentCallback != null) Choreographer.getInstance().removeFrameCallback(currentCallback);
                 currentCallback = null;
-            }
+            });
         }
     }
 
@@ -282,7 +273,9 @@ public final class WaylandSurfaceController {
 
     private DisplayControl displayControl = null;
     private WaylandChannel waylandChannel = null;
-    private final WaylandChannel.StateListener channelStateListener;
+    private WaylandChannel.StateListener channelStateListener;
+    private WaylandChannel.FrameListener channelFrameListener;
+    private long bindingEpoch;
     private WaylandChannel.ConnectionState connectionState = WaylandChannel.ConnectionState.DISCONNECTED;
     private boolean isBound = false;
     private double targetScale = 1.0;
@@ -291,7 +284,6 @@ public final class WaylandSurfaceController {
             DoubleBufferedRenderer renderer,
             DisplayResizeDebounce.TaskScheduler scheduler) {
         this.renderer = Objects.requireNonNull(renderer, "renderer");
-        this.channelStateListener = (state, msg) -> this.connectionState = state;
         this.resizeDebounce = new DisplayResizeDebounce(
                 (w, h) -> {
                     if (displayControl != null) {
@@ -308,7 +300,6 @@ public final class WaylandSurfaceController {
             DoubleBufferedRenderer renderer,
             DisplayResizeDebounce resizeDebounce) {
         this.renderer = Objects.requireNonNull(renderer, "renderer");
-        this.channelStateListener = (state, msg) -> this.connectionState = state;
         this.resizeDebounce = Objects.requireNonNull(resizeDebounce, "resizeDebounce");
     }
 
@@ -317,7 +308,6 @@ public final class WaylandSurfaceController {
                 new NativeGlesSurfacePresenter(holder),
                 new ChoreographerVsyncScheduler()
         );
-        this.channelStateListener = (state, msg) -> this.connectionState = state;
         this.resizeDebounce = new DisplayResizeDebounce(
                 (w, h) -> {
                     if (displayControl != null) {
@@ -354,8 +344,22 @@ public final class WaylandSurfaceController {
             displayControl.updateScale(targetScale);
         }
 
+        long expected = ++bindingEpoch;
+        renderer.reset();
         if (waylandChannel != null) {
-            waylandChannel.registerFrameListener(renderer);
+            channelFrameListener = frame -> {
+                synchronized (WaylandSurfaceController.this) {
+                    if (bindingEpoch == expected && this.waylandChannel == waylandChannel)
+                        renderer.onFrameAvailable(frame);
+                }
+            };
+            channelStateListener = (state, message) -> {
+                synchronized (WaylandSurfaceController.this) {
+                    if (bindingEpoch == expected && this.waylandChannel == waylandChannel)
+                        this.connectionState = state;
+                }
+            };
+            waylandChannel.registerFrameListener(channelFrameListener);
             waylandChannel.addStateListener(channelStateListener);
             this.connectionState = waylandChannel.state();
         }
@@ -367,12 +371,15 @@ public final class WaylandSurfaceController {
      * Unbinds the channel and display control, unregistering all frame and state observers.
      */
     public synchronized void unbind() {
+        bindingEpoch++;
         if (waylandChannel != null) {
-            waylandChannel.unregisterFrameListener(renderer);
+            waylandChannel.unregisterFrameListener(channelFrameListener);
             waylandChannel.removeStateListener(channelStateListener);
             this.connectionState = WaylandChannel.ConnectionState.DISCONNECTED;
         }
-
+        channelFrameListener = null;
+        channelStateListener = null;
+        renderer.reset();
         resizeDebounce.cancel();
 
         this.displayControl = null;
@@ -390,6 +397,8 @@ public final class WaylandSurfaceController {
             ((SurfaceHolder.Callback) renderer.getPresenter()).surfaceCreated(holder);
         }
         renderer.getPresenter().setReady(true);
+        renderer.setActive(lifecycleState == LifecycleState.RESUMED);
+        replayGuestFrame();
     }
 
     public synchronized void onSurfaceChanged(SurfaceHolder holder, int format, int width, int height) {
@@ -408,20 +417,33 @@ public final class WaylandSurfaceController {
         }
         renderer.getPresenter().setReady(false);
         resizeDebounce.cancel();
-        renderer.reset();
+        renderer.setActive(false);
+    }
+
+    private void replayGuestFrame() {
+        if (isRenderingActive() && waylandChannel != null && renderer.getPresenter().isReady()) {
+            waylandChannel.unregisterFrameListener(channelFrameListener);
+            waylandChannel.registerFrameListener(channelFrameListener);
+        }
     }
 
     public synchronized void onResume() {
+        if (lifecycleState == LifecycleState.DESTROYED) return;
         this.lifecycleState = LifecycleState.RESUMED;
+        renderer.setActive(isRenderingActive());
+        replayGuestFrame();
     }
 
     public synchronized void onPause() {
         this.lifecycleState = LifecycleState.PAUSED;
-        renderer.reset();
+        resizeDebounce.cancel();
+        renderer.setActive(false);
     }
 
     public synchronized void onStop() {
         this.lifecycleState = LifecycleState.STOPPED;
+        resizeDebounce.cancel();
+        renderer.setActive(false);
     }
 
     public synchronized void onDestroy() {

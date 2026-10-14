@@ -24,6 +24,7 @@ public final class SettingsManager {
     public static final String KEY_BATTERY_POLICY = "battery_policy";
     public static final String KEY_LAST_ACTIVE_INSTANCE_ID = "last_active_instance_id";
     public static final String KEY_ONBOARDING_COMPLETED = "onboarding_completed";
+    public static final String KEY_TERMINAL_CURSOR_BLINK = "terminal_cursor_blink";
 
     private final SharedPreferences preferences;
 
@@ -122,7 +123,25 @@ public final class SettingsManager {
         preferences.edit().putString(KEY_LAST_ACTIVE_INSTANCE_ID, instanceId).apply();
     }
 
-    /** Setup wizard completion status: false on fresh install (Ticket 53, US-28). */
+    /** Affects the terminal renderer; defaults to the existing blinking behavior. */
+    public boolean isTerminalCursorBlinkEnabled() {
+        return preferences.getBoolean(KEY_TERMINAL_CURSOR_BLINK, true);
+    }
+
+    public void setTerminalCursorBlinkEnabled(boolean enabled) {
+        preferences.edit().putBoolean(KEY_TERMINAL_CURSOR_BLINK, enabled).apply();
+    }
+
+    /** Keep the listener strongly referenced; register in onStart and remove in onStop. */
+    public void addOnSettingsChangeListener(SharedPreferences.OnSharedPreferenceChangeListener listener) {
+        preferences.registerOnSharedPreferenceChangeListener(Objects.requireNonNull(listener, "listener"));
+    }
+
+    public void removeOnSettingsChangeListener(SharedPreferences.OnSharedPreferenceChangeListener listener) {
+        preferences.unregisterOnSharedPreferenceChangeListener(Objects.requireNonNull(listener, "listener"));
+    }
+
+    /** Legacy completion flag retained for compatibility; never a prerequisite to opening the app. */
     public boolean isOnboardingCompleted() {
         return preferences.getBoolean(KEY_ONBOARDING_COMPLETED, false);
     }

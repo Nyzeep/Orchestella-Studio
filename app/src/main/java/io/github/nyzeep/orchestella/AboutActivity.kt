@@ -24,7 +24,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
-import com.google.android.material.color.DynamicColors
+import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -54,7 +54,7 @@ class AboutActivity : AppCompatActivity() {
     private val avatarLoadStarted = AtomicBoolean(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        DynamicColors.applyIfAvailable(this)
+        ThemeApplier.prepare(this)
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_about)
 
@@ -83,6 +83,8 @@ class AboutActivity : AppCompatActivity() {
 
         val avatarView = findViewById<ImageView>(R.id.img_author_avatar)
         val avatarPlaceholder = findViewById<TextView>(R.id.txt_avatar_placeholder)
+        ThemeApplier.setRole(avatarView, ThemeApplier.Role.PRESERVE)
+        ThemeApplier.setRole(avatarPlaceholder, ThemeApplier.Role.PRESERVE)
         val cached = File(filesDir, AVATAR_CACHE_FILE)
         val cachedBitmap = if (cached.isFile) decodeAvatar(cached) else null
         if (cachedBitmap != null) {
@@ -111,6 +113,7 @@ class AboutActivity : AppCompatActivity() {
         findViewById<View>(R.id.btn_copy_project_repo).setOnClickListener {
             copyToClipboard(PROJECT_REPO_URL, getString(R.string.about_link_copied))
         }
+        ThemeApplier.bind(this)
     }
 
     private fun loadAvatar(avatarView: ImageView, placeholder: TextView) {

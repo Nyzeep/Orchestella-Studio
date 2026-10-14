@@ -1,6 +1,9 @@
 package io.github.nyzeep.orchestella
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
+import java.util.concurrent.Executors
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.LinearLayout
@@ -15,6 +18,7 @@ import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import io.github.nyzeep.orchestella.runtime.contract.Protocol
 import io.github.nyzeep.orchestella.runtime.network.PortForwardingManager
+import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
 
 /**
  * Material 3 bottom sheet for managing instance dynamic port forwarding rules (Phase 4.8 Task 3).
@@ -33,8 +37,16 @@ class PortForwardingBottomSheet(
     private val manager: PortForwardingManager
 ) : PortForwardingPresenter.View {
 
-    private val presenter = PortForwardingPresenter(instanceId, manager)
+    private val presenter = PortForwardingPresenter(instanceId, manager,
+        NetworkGatewayDaemon.forwardingEngine(instanceId))
+    private val operations = Executors.newSingleThreadExecutor()
+    private val main = Handler(Looper.getMainLooper())
     private var dialog: BottomSheetDialog? = null
+    private fun updateUi(action: () -> Unit) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            if (dialog?.isShowing == true) action()
+        } else main.post { if (dialog?.isShowing == true) action() }
+    }
 
     private var containerRulesList: LinearLayout? = null
     private var tvNoRulesHint: TextView? = null
@@ -53,7 +65,9 @@ class PortForwardingBottomSheet(
 
         // Bind header
         val tvSubtitle = view.findViewById<TextView>(R.id.port_sheet_subtitle)
-        tvSubtitle.text = "实例 $instanceId · 动态端口映射规则"
+        tvSubtitle.text = if (presenter.hasLiveEngine())
+            "QEMU 本机 TCP 映射 · 服务需在 Linux 中运行"
+        else "当前没有可用的 QEMU 网关。配置仅保存；AVF 尚未接入端口转发，需切换 QEMU 使用。"
 
         // Bind list container
         containerRulesList = view.findViewById(R.id.container_rules_list)
@@ -65,6 +79,8 @@ class PortForwardingBottomSheet(
         tilGuestPort = view.findViewById(R.id.til_guest_port)
         etGuestPort = view.findViewById(R.id.et_guest_port)
         rbTcp = view.findViewById(R.id.rb_tcp)
+        rbTcp?.isChecked = true
+        view.findViewById<RadioButton>(R.id.rb_udp).isEnabled = false
         etDescription = view.findViewById(R.id.et_description)
 
         val btnAddRule = view.findViewById<MaterialButton>(R.id.btn_add_rule)
@@ -77,20 +93,25 @@ class PortForwardingBottomSheet(
             val protocol = if (rbTcp?.isChecked == true) Protocol.TCP else Protocol.UDP
             val desc = etDescription?.text?.toString().orEmpty()
 
-            presenter.addRule(hostPortText, guestPortText, protocol, desc)
+            operations.execute { presenter.addRule(hostPortText, guestPortText, protocol, desc) }
         }
 
         bottomSheet.setOnDismissListener {
             presenter.detachView()
+            operations.shutdown()
         }
 
         presenter.attachView(this)
-        presenter.loadRules()
-
         bottomSheet.show()
+        ThemeApplier.apply(bottomSheet)
+        operations.execute { presenter.loadRules() }
     }
 
     override fun displayRules(rules: List<PortForwardingPresenter.RuleItemModel>) {
+        updateUi { renderRules(rules) }
+    }
+
+    private fun renderRules(rules: List<PortForwardingPresenter.RuleItemModel>) {
         val container = containerRulesList ?: return
         val hint = tvNoRulesHint ?: return
 
@@ -121,19 +142,27 @@ class PortForwardingBottomSheet(
             }
 
             switchEnabled.isChecked = rule.isEnabled
+            switchEnabled.isEnabled = presenter.hasLiveEngine() && rule.protocol == Protocol.TCP
             switchEnabled.setOnCheckedChangeListener { _, isChecked ->
-                presenter.toggleRule(rule.id, isChecked)
+                switchEnabled.isEnabled = false
+                operations.execute { presenter.toggleRule(rule.id, isChecked) }
             }
 
             btnDelete.setOnClickListener {
-                presenter.deleteRule(rule.id)
+                btnDelete.isEnabled = false
+                operations.execute { presenter.deleteRule(rule.id) }
             }
 
+            ThemeApplier.apply(itemView)
             container.addView(itemView)
         }
     }
 
     override fun showValidationError(message: String?) {
+        updateUi { renderValidationError(message) }
+    }
+
+    private fun renderValidationError(message: String?) {
         val msg = message ?: "输入错误"
         if (msg.contains("Host port", ignoreCase = true) || msg.contains("1024", ignoreCase = true)) {
             tilHostPort?.error = msg
@@ -145,22 +174,20 @@ class PortForwardingBottomSheet(
     }
 
     override fun clearInputForm() {
-        etHostPort?.setText("")
-        etGuestPort?.setText("")
-        etDescription?.setText("")
-        tilHostPort?.error = null
-        tilGuestPort?.error = null
+        updateUi {
+            etHostPort?.setText("")
+            etGuestPort?.setText("")
+            etDescription?.setText("")
+            tilHostPort?.error = null
+            tilGuestPort?.error = null
+        }
     }
 
     override fun showSuccess(message: String?) {
-        if (!message.isNullOrEmpty()) {
-            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-        }
+        updateUi { if (!message.isNullOrEmpty()) Toast.makeText(context, message, Toast.LENGTH_SHORT).show() }
     }
 
     override fun showError(message: String?) {
-        if (!message.isNullOrEmpty()) {
-            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
-        }
+        updateUi { if (!message.isNullOrEmpty()) Toast.makeText(context, message, Toast.LENGTH_LONG).show() }
     }
 }

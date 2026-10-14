@@ -13,7 +13,7 @@ import android.view.SurfaceHolder;
  *   <li>Initializes EGL 1.4 + OpenGL ES 3.0 context locked to hardware VSYNC via {@code eglSwapInterval(1)};</li>
  *   <li>Maintains dual PBOs ({@code pboIds[2]}) for asynchronous DMA texture upload ($<= 3.5\text{ms}$);</li>
  *   <li>Performs aspect-ratio letterboxing and full-screen shader quad presentation;</li>
- *   <li>Gracefully degrades to mock JVM presentation under host unit testing environments.</li>
+ *   <li>Requires actual native initialization and presentation results; host tests inject the native boundary.</li>
  * </ul>
  */
 public class NativeGlesSurfacePresenter implements DoubleBufferedRenderer.SurfacePresenter, SurfaceHolder.Callback {
@@ -45,9 +45,43 @@ public class NativeGlesSurfacePresenter implements DoubleBufferedRenderer.Surfac
             } catch (Throwable ignored) {
             }
         }
-        return "GLES3-PBO-Mock";
+        return "GLES presenter unavailable";
     }
 
+    /** Native calls are injected explicitly by host tests; production always uses the JNI adapter. */
+    interface NativeAdapter {
+        boolean available();
+        boolean isSurfaceValid(Surface surface);
+        long create();
+        void release(long handle);
+        boolean surfaceCreated(long handle, Surface surface);
+        void surfaceChanged(long handle, int width, int height);
+        void surfaceDestroyed(long handle);
+        boolean present(long handle, int[] pixels, int width, int height,
+                ViewportAspectCalculator.ViewportMapping mapping);
+        void clear(long handle, int color);
+        float lastPresentTimeMs(long handle);
+    }
+
+    private static final NativeAdapter JNI = new NativeAdapter() {
+        @Override public boolean available() { return isNativeLoaded; }
+        @Override public boolean isSurfaceValid(Surface surface) { return surface != null && surface.isValid(); }
+        @Override public long create() { return nativeCreate(); }
+        @Override public void release(long handle) { nativeRelease(handle); }
+        @Override public boolean surfaceCreated(long handle, Surface surface) { return nativeOnSurfaceCreated(handle, surface); }
+        @Override public void surfaceChanged(long handle, int width, int height) { nativeOnSurfaceChanged(handle, width, height); }
+        @Override public void surfaceDestroyed(long handle) { nativeOnSurfaceDestroyed(handle); }
+        @Override public boolean present(long handle, int[] pixels, int width, int height,
+                ViewportAspectCalculator.ViewportMapping mapping) {
+            return nativePresent(handle, pixels, width, height, mapping.destX(), mapping.destY(),
+                    mapping.destWidth(), mapping.destHeight(), mapping.viewportWidth(), mapping.viewportHeight());
+        }
+        @Override public void clear(long handle, int color) { nativeClear(handle, color); }
+        @Override public float lastPresentTimeMs(long handle) { return nativeGetLastPresentTimeMs(handle); }
+    };
+
+    private final NativeAdapter nativeAdapter;
+    private boolean enabled = true;
     private long nativeHandle = 0;
     private SurfaceHolder holder = null;
     private Surface surface = null;
@@ -57,31 +91,47 @@ public class NativeGlesSurfacePresenter implements DoubleBufferedRenderer.Surfac
     private float lastPresentTimeMs = 0.0f;
     private long presentCallCount = 0;
     private boolean released = false;
+    private long nextRecoveryNs;
+    private boolean lastSuccess;
+    @Override public synchronized boolean lastPresentationSucceeded() { return lastSuccess; }
 
     public NativeGlesSurfacePresenter() {
+        this(JNI);
+    }
+
+    NativeGlesSurfacePresenter(NativeAdapter nativeAdapter) {
+        this.nativeAdapter = java.util.Objects.requireNonNull(nativeAdapter, "nativeAdapter");
         initHandleIfAvailable();
     }
 
     public NativeGlesSurfacePresenter(SurfaceHolder holder) {
+        this(holder, JNI);
+    }
+
+    NativeGlesSurfacePresenter(SurfaceHolder holder, NativeAdapter nativeAdapter) {
+        this(nativeAdapter);
         this.holder = holder;
-        initHandleIfAvailable();
         if (holder != null) {
             holder.addCallback(this);
         }
     }
 
     public NativeGlesSurfacePresenter(Surface surface) {
-        initHandleIfAvailable();
-        if (surface != null && surface.isValid()) {
+        this(JNI);
+        if (validSurface(surface)) {
             onSurfaceCreated(surface);
         }
     }
 
+    private boolean validSurface(Surface candidate) {
+        return candidate != null && nativeAdapter.isSurfaceValid(candidate);
+    }
+
     private void initHandleIfAvailable() {
-        if (isNativeLoaded && nativeHandle == 0) {
+        if (nativeAdapter.available() && nativeHandle == 0 && !released) {
             try {
-                nativeHandle = nativeCreate();
-            } catch (Throwable ignored) {
+                nativeHandle = nativeAdapter.create();
+            } catch (RuntimeException | LinkageError ignored) {
                 nativeHandle = 0;
             }
         }
@@ -89,40 +139,43 @@ public class NativeGlesSurfacePresenter implements DoubleBufferedRenderer.Surfac
 
     @Override
     public synchronized boolean isReady() {
-        return ready && !released;
+        if (!ready && enabled && !released && nativeAdapter.available() && validSurface(surface)
+                && System.nanoTime() >= nextRecoveryNs) {
+            onSurfaceCreated(surface);
+        }
+        return ready && enabled && !released && nativeHandle != 0
+                && nativeAdapter.available() && validSurface(surface);
     }
 
     @Override
     public synchronized void setReady(boolean ready) {
-        this.ready = ready;
+        // This is a presentation enable switch, never evidence that EGL initialization succeeded.
+        enabled = ready && !released;
+        if (!enabled) lastSuccess = false;
     }
 
     public synchronized void onSurfaceCreated(Surface surface) {
-        if (released) {
+        if (released) return;
+        if (!validSurface(surface)) {
+            onSurfaceDestroyed();
             return;
         }
-        if (surface == null) {
-            this.surface = null;
-            this.ready = false;
-            return;
-        }
-        if (this.surface == surface && this.ready) {
-            return;
-        }
+        if (this.surface == surface && this.ready) return;
         this.surface = surface;
-
-        if (isNativeLoaded) {
+        ready = false;
+        lastSuccess = false;
+        lastPresentTimeMs = Float.NaN;
+        nextRecoveryNs = System.nanoTime() + 2_000_000_000L;
+        if (nativeAdapter.available()) {
             initHandleIfAvailable();
             if (nativeHandle != 0) {
                 try {
-                    this.ready = nativeOnSurfaceCreated(nativeHandle, surface);
-                    return;
-                } catch (Throwable ignored) {
+                    ready = nativeAdapter.surfaceCreated(nativeHandle, surface);
+                } catch (RuntimeException | LinkageError ignored) {
+                    // Initialization failure never becomes readiness, including under host tests.
                 }
             }
         }
-        // JVM host / test fallback
-        this.ready = true;
     }
 
     public synchronized void onSurfaceChanged(int width, int height) {
@@ -132,67 +185,60 @@ public class NativeGlesSurfacePresenter implements DoubleBufferedRenderer.Surfac
         this.surfaceWidth = width;
         this.surfaceHeight = height;
 
-        if (isNativeLoaded && nativeHandle != 0) {
+        if (nativeAdapter.available() && nativeHandle != 0) {
             try {
-                nativeOnSurfaceChanged(nativeHandle, width, height);
-            } catch (Throwable ignored) {
+                nativeAdapter.surfaceChanged(nativeHandle, width, height);
+            } catch (RuntimeException | LinkageError ignored) {
+                ready = false;
+                lastSuccess = false;
             }
         }
     }
 
     public synchronized void onSurfaceDestroyed() {
-        this.ready = false;
-        if (isNativeLoaded && nativeHandle != 0) {
+        ready = false;
+        lastSuccess = false;
+        lastPresentTimeMs = Float.NaN;
+        if (!released && surface != null && nativeAdapter.available() && nativeHandle != 0) {
             try {
-                nativeOnSurfaceDestroyed(nativeHandle);
-            } catch (Throwable ignored) {
+                nativeAdapter.surfaceDestroyed(nativeHandle);
+            } catch (RuntimeException | LinkageError ignored) {
+                // The surface stays invalid even when native cleanup fails.
             }
         }
-        this.surface = null;
+        surface = null;
     }
 
     @Override
     public synchronized void present(int[] pixels, int width, int height, ViewportAspectCalculator.ViewportMapping mapping) {
-        if (!ready || released || pixels == null || mapping == null || width <= 0 || height <= 0) {
-            return;
-        }
-
-        presentCallCount++;
-
-        if (isNativeLoaded && nativeHandle != 0) {
-            try {
-                nativePresent(
-                        nativeHandle,
-                        pixels,
-                        width,
-                        height,
-                        mapping.destX(),
-                        mapping.destY(),
-                        mapping.destWidth(),
-                        mapping.destHeight(),
-                        mapping.viewportWidth(),
-                        mapping.viewportHeight()
-                );
-                lastPresentTimeMs = nativeGetLastPresentTimeMs(nativeHandle);
+        lastSuccess = false;
+        if (!isReady() || pixels == null || mapping == null || width <= 0 || height <= 0
+                || width > 4096 || height > 4096 || (long) width * height > 4_194_304
+                || pixels.length < (long) width * height) return;
+        lastPresentTimeMs = Float.NaN;
+        try {
+            if (nativeAdapter.present(nativeHandle, pixels, width, height, mapping)) {
+                lastSuccess = true;
+                presentCallCount++;
+                try { lastPresentTimeMs = nativeAdapter.lastPresentTimeMs(nativeHandle); }
+                catch (RuntimeException | LinkageError ignored) { /* Missing metrics do not undo a real swap. */ }
                 return;
-            } catch (Throwable ignored) {
             }
+        } catch (RuntimeException | LinkageError ignored) {
+            // A failed JNI call has no presentation evidence.
         }
-
-        // JVM mock fallback
-        lastPresentTimeMs = 1.5f;
+        ready = false;
+        nextRecoveryNs = System.nanoTime() + 2_000_000_000L;
     }
 
     @Override
     public synchronized void clear(int color) {
-        if (released) {
-            return;
-        }
-        if (isNativeLoaded && nativeHandle != 0) {
-            try {
-                nativeClear(nativeHandle, color);
-            } catch (Throwable ignored) {
-            }
+        if (!isReady()) return;
+        try {
+            nativeAdapter.clear(nativeHandle, color);
+        } catch (RuntimeException | LinkageError ignored) {
+            ready = false;
+            lastSuccess = false;
         }
     }
 
@@ -202,6 +248,9 @@ public class NativeGlesSurfacePresenter implements DoubleBufferedRenderer.Surfac
             return;
         }
         this.ready = false;
+        this.enabled = false;
+        this.lastSuccess = false;
+        this.lastPresentTimeMs = Float.NaN;
         this.released = true;
 
         if (holder != null) {
@@ -209,27 +258,23 @@ public class NativeGlesSurfacePresenter implements DoubleBufferedRenderer.Surfac
             holder = null;
         }
 
-        if (isNativeLoaded && nativeHandle != 0) {
-            try {
-                nativeRelease(nativeHandle);
-            } catch (Throwable ignored) {
-            }
+        if (nativeHandle != 0) {
+            long handle = nativeHandle;
             nativeHandle = 0;
+            try {
+                nativeAdapter.release(handle);
+            } catch (RuntimeException | LinkageError ignored) {
+                // The detached handle is never retried or revived after release.
+            }
         }
         this.surface = null;
     }
 
     @Override
     public synchronized void surfaceCreated(SurfaceHolder holder) {
+        if (released) return;
         this.holder = holder;
-        if (holder != null) {
-            Surface s = holder.getSurface();
-            if (s != null) {
-                onSurfaceCreated(s);
-            } else {
-                this.ready = true;
-            }
-        }
+        onSurfaceCreated(holder == null ? null : holder.getSurface());
     }
 
     @Override
@@ -278,7 +323,7 @@ public class NativeGlesSurfacePresenter implements DoubleBufferedRenderer.Surfac
     private static native boolean nativeOnSurfaceCreated(long handle, Surface surface);
     private static native void nativeOnSurfaceChanged(long handle, int width, int height);
     private static native void nativeOnSurfaceDestroyed(long handle);
-    private static native void nativePresent(
+    private static native boolean nativePresent(
             long handle,
             int[] pixels,
             int width,

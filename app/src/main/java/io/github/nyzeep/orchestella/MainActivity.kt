@@ -11,7 +11,11 @@ import android.content.Intent
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.StatFs
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.view.LayoutInflater
 import android.view.View
 import android.view.animation.AccelerateDecelerateInterpolator
@@ -32,7 +36,7 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.google.android.material.color.DynamicColors
+import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
 import io.github.nyzeep.orchestella.runtime.capability.AvfAuthorizationWizardModel
 import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator
 import io.github.nyzeep.orchestella.runtime.capability.DeviceCapabilityEvaluator
@@ -43,6 +47,7 @@ import io.github.nyzeep.orchestella.runtime.distro.DistroManifest
 import io.github.nyzeep.orchestella.runtime.distro.OfficialDebianCatalog
 import io.github.nyzeep.orchestella.ui.theme.AppTheme
 import io.github.nyzeep.orchestella.ui.theme.ThemeStore
+import io.github.nyzeep.orchestella.ui.theme.ThemeColors
 import io.github.nyzeep.orchestella.runtime.engineavf.AvfEngineException
 import io.github.nyzeep.orchestella.runtime.engineqemu.RuntimeArtifactManifest
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
@@ -90,6 +95,27 @@ class MainActivity : AppCompatActivity() {
     private var activeTheme: AppTheme? = null
     private var wizardModel: AvfAuthorizationWizardModel? = null
     private var pendingExportInstance: InstanceLifecycle.Instance? = null
+    private var currentTabIndex = 0
+    private var dashboardInstance: InstanceLifecycle.Instance? = null
+    private var sshCommand: String? = null
+    private var lastInstanceState = ""
+    private val dashboardHandler = Handler(Looper.getMainLooper())
+    private val refreshDashboard = object : Runnable {
+        override fun run() {
+            if (!::instanceStore.isInitialized || isFinishing || isDestroyed) return
+            val theme = activeTheme ?: themeStore.resolve()
+            renderGauges(theme)
+            val instances = try { instanceStore.list() } catch (_: IOException) { emptyList() }
+            val state = instances.joinToString { "${it.id()}:${it.state()}" }
+            if (state != lastInstanceState) {
+                showInstances()
+            } else {
+                updateConsoleWithInstance(dashboardInstance)
+            }
+            if (currentTabIndex == 2) renderHardwareSpecDetails()
+            dashboardHandler.postDelayed(this, 3000L)
+        }
+    }
 
     private val safExportLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument("application/zip")
@@ -98,8 +124,13 @@ class MainActivity : AppCompatActivity() {
             val instance = pendingExportInstance ?: return@let
             operations.execute {
                 try {
-                    val adapter = AndroidSafExportAdapter(this, Clock.systemUTC())
-                    adapter.exportToDocumentUri(instance, destUri)
+                    val current = requireColdBackup(instance.id())
+                    val adapter = AndroidSafExportAdapter(
+                        AndroidSafExportAdapter.DocumentStreamOpener {
+                            requireColdBackup(instance.id())
+                            contentResolver.openOutputStream(it) ?: throw IOException("无法写入备份文件")
+                        }, Clock.systemUTC())
+                    adapter.exportToDocumentUri(current, destUri)
                     runOnUiThread {
                         Toast.makeText(this, "实例备份导出成功", Toast.LENGTH_SHORT).show()
                     }
@@ -154,10 +185,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // Material You dynamic color extraction
-        DynamicColors.applyIfAvailable(this)
+        ThemeApplier.prepare(this)
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        settingsManager = SettingsManager(this)
+        themeStore = ThemeStore(this)
 
         // Android 15/17 Edge-to-Edge display
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -167,8 +199,8 @@ class MainActivity : AppCompatActivity() {
         applyThemeToDashboard()
         val rootContainer = findViewById<View>(R.id.root_container)
         val density = resources.displayMetrics.density
-        val baseHorizontalPad = (16 * density).toInt()
-        val baseBottomPad = (24 * density).toInt()
+        val baseHorizontalPad = 0
+        val baseBottomPad = 0
         ViewCompat.setOnApplyWindowInsetsListener(rootContainer) { v, insets ->
             val statusBarInsets = insets.getInsets(WindowInsetsCompat.Type.statusBars())
             val navBarInsets = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
@@ -179,15 +211,6 @@ class MainActivity : AppCompatActivity() {
                 navBarInsets.bottom + baseBottomPad
             )
             insets
-        }
-
-        settingsManager = SettingsManager(this)
-        themeStore = ThemeStore(this)
-        if (!settingsManager.isOnboardingCompleted) {
-            val intent = Intent(this, SetupWizardActivity::class.java)
-            startActivity(intent)
-            finish()
-            return
         }
 
         val assessment = DeviceCapabilityEvaluator.evaluate(deviceProfile())
@@ -243,8 +266,357 @@ class MainActivity : AppCompatActivity() {
             safImportLauncher.launch(arrayOf("application/zip", "application/octet-stream", "*/*"))
         }
         refreshWizardEntry()
+        setupNavigationTabs()
+        setupConsoleControls()
+        setupHardwareTab()
+        setupSettingsTab()
         showInstances()
+        switchTab(savedInstanceState?.getInt("dashboard_tab", 0) ?: 0)
+        ThemeApplier.bind(this)
         handleLaunchIntent(intent)
+    }
+
+    private fun setupNavigationTabs() {
+        findViewById<View>(R.id.nav_tab_console)?.setOnClickListener { switchTab(0) }
+        findViewById<View>(R.id.nav_tab_instances)?.setOnClickListener { switchTab(1) }
+        findViewById<View>(R.id.nav_tab_hardware)?.setOnClickListener { switchTab(2) }
+        findViewById<View>(R.id.nav_tab_distros)?.setOnClickListener { switchTab(3) }
+        findViewById<View>(R.id.nav_tab_settings)?.setOnClickListener { switchTab(4) }
+    }
+
+    private fun switchTab(tabIndex: Int) {
+        currentTabIndex = tabIndex
+        val theme = activeTheme ?: themeStore.resolve()
+        val activeColor = theme.primary
+        val inactiveBg = theme.surface
+        val inactiveText = theme.textDim
+
+        val tabs = listOf(
+            Triple(R.id.container_tab_console, R.id.nav_tab_console, Pair(R.id.nav_icon_console, R.id.nav_text_console)),
+            Triple(R.id.container_tab_instances, R.id.nav_tab_instances, Pair(R.id.nav_icon_instances, R.id.nav_text_instances)),
+            Triple(R.id.container_tab_hardware, R.id.nav_tab_hardware, Pair(R.id.nav_icon_hardware, R.id.nav_text_hardware)),
+            Triple(R.id.container_tab_distros, R.id.nav_tab_distros, Pair(R.id.nav_icon_distros, R.id.nav_text_distros)),
+            Triple(R.id.container_tab_settings, R.id.nav_tab_settings, Pair(R.id.nav_icon_settings, R.id.nav_text_settings)),
+        )
+
+        val indexLabels = listOf("01/K", "02/I", "03/H", "04/D", "05/S")
+        val titleLabels = listOf(
+            "ORCHESTELLA",
+            "实例管理",
+            "设备状态",
+            "Linux 发行版",
+            "设置与主题"
+        )
+
+        findViewById<TextView>(R.id.masthead_index_text)?.text = indexLabels.getOrElse(tabIndex) { "01/K" }
+        findViewById<TextView>(R.id.dashboard_title)?.text = titleLabels.getOrElse(tabIndex) { "ORCHESTELLA // pKVM" }
+
+        findViewById<View>(R.id.masthead_index_box)?.setBackgroundColor(activeColor)
+        findViewById<TextView>(R.id.tv_status_time)?.setBackgroundColor(activeColor)
+        findViewById<View>(R.id.indicator_status_pulse)?.setBackgroundColor(activeColor)
+        findViewById<TextView>(R.id.tv_status_time)?.setTextColor(ThemeColors.onColor(activeColor))
+        findViewById<TextView>(R.id.masthead_index_text)?.setTextColor(ThemeColors.onColor(activeColor))
+
+        try {
+            val nowTime = java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
+            findViewById<TextView>(R.id.tv_status_time)?.text = "[ $nowTime ]"
+        } catch (_: Exception) {}
+
+        tabs.forEachIndexed { index, (containerId, navTabId, navElements) ->
+            val container = findViewById<View>(containerId)
+            val navTab = findViewById<View>(navTabId)
+            val icon = findViewById<ImageView>(navElements.first)
+            val text = findViewById<TextView>(navElements.second)
+            navTab?.isSelected = index == tabIndex
+            navTab?.let { ThemeApplier.setRole(it, ThemeApplier.Role.NAVIGATION) }
+
+            if (index == tabIndex) {
+                container?.visibility = View.VISIBLE
+                navTab?.setBackgroundColor(activeColor)
+                icon?.imageTintList = android.content.res.ColorStateList.valueOf(ThemeColors.onColor(activeColor))
+                text?.setTextColor(ThemeColors.onColor(activeColor))
+                text?.paint?.isFakeBoldText = true
+            } else {
+                container?.visibility = View.GONE
+                navTab?.setBackgroundColor(inactiveBg)
+                icon?.imageTintList = android.content.res.ColorStateList.valueOf(inactiveText)
+                text?.setTextColor(inactiveText)
+                text?.paint?.isFakeBoldText = false
+            }
+        }
+
+        if (tabIndex == 2) {
+            renderHardwareSpecDetails()
+            renderGauges(theme)
+        }
+    }
+
+    private fun setupConsoleControls() {
+        findViewById<View>(R.id.seg_pkvm)?.setOnClickListener { switchTab(2) }
+        findViewById<View>(R.id.seg_qemu)?.setOnClickListener { switchTab(2) }
+
+        findViewById<View>(R.id.copy_ssh_btn)?.setOnClickListener {
+            val command = sshCommand
+            if (command == null) {
+                dashboardInstance?.let(::openPortForwarding) ?: switchTab(3)
+            } else {
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("SSH", command))
+                Toast.makeText(this, "已复制已配置的 SSH 映射指令", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        findViewById<View>(R.id.act_terminal)?.setOnClickListener {
+            val instances = try { instanceStore.list() } catch (_: Exception) { emptyList() }
+            val running = instances.firstOrNull { it.state() == InstanceLifecycle.State.RUNNING }
+            if (running != null) {
+                openTerminal(running)
+            } else if (instances.isNotEmpty()) {
+                val target = instances.firstOrNull { it.id() == settingsManager.lastActiveInstanceId } ?: instances.first()
+                Toast.makeText(this, "正在启动 ${target.hostname()}...", Toast.LENGTH_SHORT).show()
+                launchInstance(target)
+            } else {
+                Toast.makeText(this, "尚未创建任何实例，请先在发行版矩阵中装配", Toast.LENGTH_SHORT).show()
+                switchTab(3)
+            }
+        }
+
+        findViewById<View>(R.id.btn_fullscreen_terminal)?.setOnClickListener { openRuntimeLogs() }
+
+        findViewById<View>(R.id.act_port_forwarding)?.setOnClickListener {
+            val instances = try { instanceStore.list() } catch (_: Exception) { emptyList() }
+            val target = instances.firstOrNull { it.state() == InstanceLifecycle.State.RUNNING }
+                ?: instances.firstOrNull { it.id() == settingsManager.lastActiveInstanceId }
+                ?: instances.firstOrNull()
+            if (target != null) {
+                openPortForwarding(target)
+            } else {
+                Toast.makeText(this, "无可用实例配置端口转发", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        findViewById<View>(R.id.act_restart_kernel)?.setOnClickListener { openRuntimeLogs() }
+
+        findViewById<View>(R.id.act_snapshot)?.setOnClickListener {
+            val instances = try { instanceStore.list() } catch (_: Exception) { emptyList() }
+            val target = instances.firstOrNull { it.state() == InstanceLifecycle.State.RUNNING }
+                ?: instances.firstOrNull { it.id() == settingsManager.lastActiveInstanceId }
+                ?: instances.firstOrNull()
+            if (target != null) {
+                exportStoppedInstance(target)
+            } else {
+                Toast.makeText(this, "无可用实例进行存档", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+    }
+
+    private fun openRuntimeLogs() {
+        val instance = dashboardInstance
+        startActivity(Intent(this, LogViewerActivity::class.java).apply {
+            putExtra(LogViewerActivity.EXTRA_KIND,
+                if (instance != null) LogViewerActivity.KIND_GUEST else LogViewerActivity.KIND_APP)
+            instance?.let { putExtra(LogViewerActivity.EXTRA_INSTANCE_ID, it.id()) }
+        })
+    }
+
+    private fun requireColdBackup(instanceId: String): InstanceLifecycle.Instance {
+        val current = instanceStore.load(instanceId) ?: throw IOException("实例已不存在")
+        if (current.state() == InstanceLifecycle.State.RUNNING ||
+            current.state() == InstanceLifecycle.State.PROVISIONING ||
+            current.state() == InstanceLifecycle.State.SUSPENDED ||
+            ExecutionSessionRegistry.get(instanceId) != null || InstanceLaunchGuard.isInFlight(instanceId)) {
+            throw IOException("请先关闭实例，再导出完整冷备份")
+        }
+        return current
+    }
+
+    private fun exportStoppedInstance(instance: InstanceLifecycle.Instance) {
+        try {
+            pendingExportInstance = requireColdBackup(instance.id())
+            safExportLauncher.launch("${instance.id()}-backup.zip")
+        } catch (e: IOException) {
+            Toast.makeText(this, e.message, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun setupHardwareTab() {
+        findViewById<View>(R.id.btn_hw_refresh)?.setOnClickListener {
+            renderHardwareSpecDetails()
+            val theme = activeTheme ?: themeStore.resolve()
+            renderGauges(theme)
+            Toast.makeText(this, "硬件遥测状态已刷新", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun setupSettingsTab() {
+        listOf(
+            Triple(R.id.btn_theme_constructivist_red, "constructivist-workstation", R.id.badge_theme_red_active),
+            Triple(R.id.btn_theme_constructivist_blue, "constructivist-cobalt", R.id.badge_theme_blue_active),
+            Triple(R.id.btn_theme_constructivist_yellow, "constructivist-amber", R.id.badge_theme_yellow_active)
+        ).forEach { (rowId, themeId, _) ->
+            findViewById<LinearLayout>(rowId)?.getChildAt(0)?.let {
+                ThemeApplier.setRole(it, ThemeApplier.Role.PRESERVE)
+                val preview = io.github.nyzeep.orchestella.ui.theme.ThemeCatalog.all.first { it.id == themeId }
+                it.setBackgroundColor(preview.primary)
+            }
+        }
+        findViewById<View>(R.id.btn_create_linux_instance_top)?.setOnClickListener {
+            switchTab(3)
+        }
+        findViewById<View>(R.id.btn_theme_constructivist_red)?.setOnClickListener {
+            themeStore.setThemeId("constructivist-workstation")
+            applyThemeToDashboard()
+            switchTab(4)
+            Toast.makeText(this, "已应用主题: 构成主义工控 · 红", Toast.LENGTH_SHORT).show()
+        }
+        findViewById<View>(R.id.btn_theme_constructivist_blue)?.setOnClickListener {
+            themeStore.setThemeId("constructivist-cobalt")
+            applyThemeToDashboard()
+            switchTab(4)
+            Toast.makeText(this, "已应用主题: 钴蓝张力 · 蓝", Toast.LENGTH_SHORT).show()
+        }
+        findViewById<View>(R.id.btn_theme_constructivist_yellow)?.setOnClickListener {
+            themeStore.setThemeId("constructivist-amber")
+            applyThemeToDashboard()
+            switchTab(4)
+            Toast.makeText(this, "已应用主题: 镉黄警示 · 黄", Toast.LENGTH_SHORT).show()
+        }
+        findViewById<View>(R.id.btn_settings_open_ssh)?.setOnClickListener {
+            io.github.nyzeep.orchestella.ssh.SshManagerDialog.show(this)
+        }
+        findViewById<View>(R.id.btn_settings_open_system)?.setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }
+        findViewById<View>(R.id.btn_settings_open_about)?.setOnClickListener {
+            startActivity(Intent(this, AboutActivity::class.java))
+        }
+    }
+
+    private fun renderHardwareSpecDetails() {
+        val profile = HostHardwareDetector.detect(this)
+        val facts = AvfHostFactsProbe.probe(this)
+
+        findViewById<TextView>(R.id.hw_detail_platform_declared)?.text =
+            if (facts.virtualizationFrameworkFeature() || "true".equals(facts.virtualizationProperty(), ignoreCase = true))
+                "SUPPORTED (FEATURE_VIRTUALIZATION=true)"
+            else "NOT DECLARED (FEATURE_VIRTUALIZATION=false)"
+
+        findViewById<TextView>(R.id.hw_detail_avf_permission)?.text =
+            if (facts.manageVirtualMachinePermission())
+                "GRANTED (android.permission.MANAGE_VIRTUAL_MACHINE)"
+            else "UNAUTHORIZED (Need Shizuku / adb grant)"
+
+        val kvmFile = java.io.File("/dev/kvm")
+        findViewById<TextView>(R.id.hw_detail_kvm_node)?.text = when {
+            kvmFile.canRead() && kvmFile.canWrite() -> "可读写 /dev/kvm（仍需后端运行验证）"
+            kvmFile.exists() -> "/dev/kvm 存在，App 无读写权限"
+            else -> "当前 App 未发现 /dev/kvm"
+        }
+
+        findViewById<TextView>(R.id.hw_detail_cpu_arch)?.text =
+            "${System.getProperty("os.arch")} (${Build.SUPPORTED_ABIS.joinToString(", ")})"
+
+        val soc = if (Build.VERSION.SDK_INT >= 31) Build.SOC_MODEL else "ARM-v8"
+        findViewById<TextView>(R.id.hw_detail_cpu_model)?.text =
+            "${Build.HARDWARE} / ${Build.BOARD} ($soc)"
+
+        findViewById<TextView>(R.id.hw_detail_cpu_cores)?.text =
+            "${profile.totalCores()} Cores (SMP Architecture, Multi-threaded)"
+
+        val totalRamMb = profile.totalRamMb()
+        val availRamMb = profile.availRamMb()
+        findViewById<TextView>(R.id.hw_detail_ram_specs)?.text =
+            "物理 RAM: ${totalRamMb} MB / 可用: ${availRamMb} MB"
+
+        findViewById<TextView>(R.id.hw_detail_ram_reserve)?.text =
+            "LowMem阈值: ${profile.thresholdRamMb()} MB / 紧张状态: ${if (profile.isLowMemory()) "YES" else "NO"}"
+
+        val stat = StatFs(filesDir.path)
+        val totalGb = stat.totalBytes / (1024L * 1024L * 1024L)
+        val freeGb = stat.availableBytes / (1024L * 1024L * 1024L)
+        findViewById<TextView>(R.id.hw_detail_storage_specs)?.text =
+            "应用沙箱存储: ${totalGb} GB (剩余: ${freeGb} GB, 块大小: ${stat.blockSizeLong} B)"
+
+        findViewById<TextView>(R.id.hw_detail_os_release)?.text =
+            "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}, Build ${Build.DISPLAY})"
+
+        findViewById<TextView>(R.id.hw_detail_kernel_release)?.text =
+            "Linux Kernel ${System.getProperty("os.version") ?: "unknown"}"
+
+        findViewById<TextView>(R.id.hw_detail_device_model)?.text =
+            "${Build.MANUFACTURER} ${Build.MODEL} (${Build.BRAND} / ${Build.DEVICE})"
+    }
+
+    private fun openPortForwarding(instance: InstanceLifecycle.Instance) {
+        try {
+            val netPath = filesDir.toPath().resolve("network")
+            Files.createDirectories(netPath)
+            val store = FilePortForwardingStore(netPath)
+            val manager = PortForwardingManager(instance.id(), store, PortConflictDetector())
+            PortForwardingBottomSheet(this@MainActivity, instance.id(), manager).show()
+        } catch (e: Exception) {
+            Toast.makeText(this@MainActivity, "打开端口转发管理失败: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun updateConsoleWithInstance(instance: InstanceLifecycle.Instance?) {
+        dashboardInstance = instance
+        val theme = activeTheme ?: themeStore.resolve()
+        val session = instance?.let { ExecutionSessionRegistry.get(it.id()) }
+        val running = instance?.state() == InstanceLifecycle.State.RUNNING && session != null
+        val engine = when (session) {
+            is QemuInstanceLauncher.Session -> "QEMU TCG · 软件虚拟化"
+            is AvfInstanceLauncher.AvfSession -> "AVF · 硬件虚拟化"
+            else -> if (instance != null) "启动时自动选择可用引擎" else "创建 Linux 实例后可用"
+        }
+        findViewById<TextView>(R.id.tv_active_mach_name)?.text = instance?.let {
+            "${it.hostname()} · ${it.distro().id()} ${it.distro().version()}"
+        } ?: "尚未创建 Linux 实例"
+        findViewById<TextView>(R.id.tv_active_fps_ping)?.apply {
+            text = if (running) "运行中" else instance?.state()?.name ?: "未配置"
+            setTextColor(if (running) theme.accent else theme.textDim)
+        }
+        findViewById<TextView>(R.id.tv_engine_subtext)?.text = engine
+        findViewById<TextView>(R.id.header_sys_badge)?.text = if (running) "RUNNING" else "IDLE"
+        findViewById<TextView>(R.id.tv_masthead_latency)?.text = if (running) "在线" else "待机"
+        findViewById<TextView>(R.id.dashboard_subtitle)?.text =
+            if (running) engine else "无 Root Linux 工作站"
+        findViewById<com.google.android.material.button.MaterialButton>(R.id.seg_pkvm)?.text =
+            if (session is AvfInstanceLauncher.AvfSession) "AVF · 正在使用" else
+                if (avfReadiness?.status() == AvfCapabilityEvaluator.AvfStatus.READY) "AVF · 预检通过" else "AVF · 预检未通过"
+        findViewById<com.google.android.material.button.MaterialButton>(R.id.seg_qemu)?.text =
+            if (session is QemuInstanceLauncher.Session) "QEMU · 正在使用" else "QEMU · 可用"
+        sshCommand = instance?.let { target ->
+            try {
+                val rule = FilePortForwardingStore(filesDir.toPath().resolve("network"))
+                    .loadRules(target.id()).firstOrNull {
+                        it.guestPort() == 22 && it.protocol().wireName() == "tcp"
+                    }
+                rule?.let {
+                    val host = if (it.isLanExposed()) "<手机IP>" else it.bindAddress()
+                    "ssh -p ${it.hostPort()} ${target.defaultUser()}@$host"
+                }
+            } catch (_: Exception) { null }
+        }
+        findViewById<TextView>(R.id.ssh_string)?.text = sshCommand ?: "尚未配置 SSH 端口映射"
+        findViewById<com.google.android.material.button.MaterialButton>(R.id.copy_ssh_btn)?.text =
+            if (sshCommand == null) "配置" else "复制"
+        val guestStatus = if (running) {
+            GuestRuntimeStatus.latest(ExecutionSessionRegistry.getLiveSession(instance.id())?.transcript)
+        } else null
+        val operationNotice = if (::createStatus.isInitialized) createStatus.text.toString() else ""
+        findViewById<TextView>(R.id.console_tty_text)?.text = when {
+            instance == null -> "选择发行版创建实例，随后在真实终端中使用 Linux。"
+            running -> guestStatus?.description() ?: "Linux 正在引导，打开终端查看装配与启动进度。"
+            operationNotice.isNotBlank() -> operationNotice
+            else -> "实例数据已保留。打开终端会启动该实例；冷备份需在关机后导出。"
+        }
+        findViewById<TextView>(R.id.vm_allocation_summary)?.text = instance?.let {
+            "VM 配置 · ${it.hardwareConfig().cpuCores()} vCPU / ${it.hardwareConfig().ramMegabytes()} MB RAM"
+        } ?: "尚无 VM 资源分配"
+        findViewById<TextView>(R.id.network_runtime_summary)?.text =
+            if (running) "出站 NAT · 入站访问需显式配置端口映射" else "网络随实例启动 · 默认无 LAN 暴露"
     }
 
     private fun launchCreationWizard(distroId: String) {
@@ -269,7 +641,9 @@ class MainActivity : AppCompatActivity() {
                 if (instance != null) {
                     launchInstance(instance)
                 }
-            } catch (_: Exception) {
+            } catch (failure: Exception) {
+                createStatus.text = "读取实例失败：${failure.message ?: failure.javaClass.simpleName}"
+                Toast.makeText(this, createStatus.text, Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -283,10 +657,26 @@ class MainActivity : AppCompatActivity() {
             reconcileOrphanInstances()
             renderSystemStatus(DeviceCapabilityEvaluator.evaluate(deviceProfile()))
             showInstances()
+            if (currentTabIndex == 2) {
+                renderHardwareSpecDetails()
+            }
         }
+        dashboardHandler.removeCallbacks(refreshDashboard)
+        dashboardHandler.post(refreshDashboard)
+    }
+
+    override fun onPause() {
+        dashboardHandler.removeCallbacks(refreshDashboard)
+        super.onPause()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putInt("dashboard_tab", currentTabIndex)
+        super.onSaveInstanceState(outState)
     }
 
     override fun onDestroy() {
+        dashboardHandler.removeCallbacks(refreshDashboard)
         super.onDestroy()
         clearRunningAnimators()
         if (isFinishing) operations.shutdown()
@@ -351,7 +741,7 @@ class MainActivity : AppCompatActivity() {
             .setNegativeButton(R.string.wizard_later) { _, _ ->
                 wizardModel = wizardModel!!.decline()
             }
-            .show()
+            .show().also { ThemeApplier.apply(it) }
     }
 
     private fun showAdbStep() {
@@ -372,7 +762,7 @@ class MainActivity : AppCompatActivity() {
                 wizardModel = wizardModel!!.backToShizuku()
                 showShizukuStep()
             }
-            .show()
+            .show().also { ThemeApplier.apply(it) }
     }
 
     private fun copyAdbCommand() {
@@ -398,13 +788,13 @@ class MainActivity : AppCompatActivity() {
                 .setTitle(R.string.wizard_authorized_success_title)
                 .setMessage(R.string.wizard_authorized_success_msg)
                 .setPositiveButton(R.string.credentials_close, null)
-                .show()
+                .show().also { ThemeApplier.apply(it) }
         } else {
             AlertDialog.Builder(this)
                 .setTitle(R.string.wizard_vendor_failure_title)
                 .setMessage(R.string.wizard_vendor_failure_steps)
                 .setPositiveButton(R.string.credentials_close, null)
-                .show()
+                .show().also { ThemeApplier.apply(it) }
         }
     }
 
@@ -412,19 +802,13 @@ class MainActivity : AppCompatActivity() {
         try {
             val theme = themeStore.resolve()
             activeTheme = theme
-            val root = findViewById<View>(R.id.root_container)
-            val bgUri = themeStore.backgroundUri()
-            if (bgUri != null) {
-                val sampled = decodeSampledBackground(android.net.Uri.parse(bgUri))
-                if (sampled != null) {
-                    root.background = android.graphics.drawable.LayerDrawable(
-                        arrayOf(sampled, android.graphics.drawable.ColorDrawable(theme.background and 0x8AFFFFFF.toInt()))
-                    )
-                } else {
-                    root.setBackgroundColor(theme.background)
-                }
-            } else {
-                root.setBackgroundColor(theme.background)
+            ThemeApplier.bind(this)
+            listOf(
+                R.id.badge_theme_red_active to "constructivist-workstation",
+                R.id.badge_theme_blue_active to "constructivist-cobalt",
+                R.id.badge_theme_yellow_active to "constructivist-amber"
+            ).forEach { (id, themeId) ->
+                findViewById<View>(id)?.visibility = if (themeStore.themeId() == themeId) View.VISIBLE else View.GONE
             }
 
             // Typography & Chrome
@@ -457,6 +841,7 @@ class MainActivity : AppCompatActivity() {
             }
             renderGauges(theme)
             applyThemeToInstances(theme)
+            switchTab(currentTabIndex)
         } catch (e: Exception) {
             android.util.Log.w("MainActivity", "theme apply failed", e)
         }
@@ -481,7 +866,7 @@ class MainActivity : AppCompatActivity() {
                 startActivity(Intent(this, SettingsActivity::class.java))
             }
             .setNegativeButton("取消", null)
-            .show()
+            .show().also { ThemeApplier.apply(it) }
     }
 
     private fun applyThemeToInstances(theme: AppTheme) {
@@ -502,7 +887,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun buildGlowCardDrawable(theme: AppTheme): android.graphics.drawable.Drawable {
         val outer = android.graphics.drawable.GradientDrawable().apply {
-            cornerRadius = 22f * resources.displayMetrics.density
+            cornerRadius = 0f
             setStroke(
                 (1.5f * resources.displayMetrics.density).toInt(),
                 (theme.glow and 0x00FFFFFF or 0x40000000.toInt()),
@@ -510,10 +895,10 @@ class MainActivity : AppCompatActivity() {
             setColor(android.graphics.Color.TRANSPARENT)
         }
         val inner = android.graphics.drawable.GradientDrawable().apply {
-            cornerRadius = 18f * resources.displayMetrics.density
+            cornerRadius = 0f
             setColor(theme.surfaceTranslucent)
         }
-        val inset = (5f * resources.displayMetrics.density).toInt()
+        val inset = (2f * resources.displayMetrics.density).toInt()
         return android.graphics.drawable.LayerDrawable(arrayOf(outer, inner)).apply {
             setLayerInset(1, inset, inset, inset, inset)
         }
@@ -534,31 +919,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun decodeSampledBackground(uri: android.net.Uri): android.graphics.drawable.Drawable? {
-        return try {
-            val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, bounds) }
-            val targetW = resources.displayMetrics.widthPixels
-            var sample = 1
-            while (bounds.outWidth / (sample * 2) >= targetW) sample *= 2
-            val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
-            val bitmap = contentResolver.openInputStream(uri)?.use {
-                android.graphics.BitmapFactory.decodeStream(it, null, opts)
-            } ?: return null
-            android.graphics.drawable.BitmapDrawable(resources, bitmap)
-        } catch (_: Exception) {
-            null
-        }
-    }
-
     private fun renderGauges(theme: AppTheme) {
         val density = resources.displayMetrics.density
         val memory = findViewById<io.github.nyzeep.orchestella.ui.RingProgressView>(R.id.ring_memory)
         val storage = findViewById<io.github.nyzeep.orchestella.ui.RingProgressView>(R.id.ring_storage)
         val battery = findViewById<io.github.nyzeep.orchestella.ui.RingProgressView>(R.id.ring_battery)
+        val cpuRing = findViewById<io.github.nyzeep.orchestella.ui.RingProgressView>(R.id.cpu_gauge_ring)
+        val ramRing = findViewById<io.github.nyzeep.orchestella.ui.RingProgressView>(R.id.ram_gauge_ring)
         memory?.configure(theme.primary, theme.text, theme.textDim, density)
         storage?.configure(theme.accent, theme.text, theme.textDim, density)
         battery?.configure(theme.glow, theme.text, theme.textDim, density)
+        cpuRing?.configure(theme.primary, theme.text, theme.textDim, density)
+        ramRing?.configure(theme.accent, theme.text, theme.textDim, density)
 
         val profile = HostHardwareDetector.detect(this)
         val totalRamMb = profile.totalRamMb().coerceAtLeast(1)
@@ -566,6 +938,18 @@ class MainActivity : AppCompatActivity() {
         val usedRam = totalRamMb - availRamMb
         memory?.setProgress(usedRam.toFloat() / totalRamMb,
             "${usedRam / 1024}G", "内存")
+        ramRing?.setProgress(usedRam.toFloat() / totalRamMb,
+            "${((usedRam.toFloat() / totalRamMb) * 100).toInt()}%", "RAM")
+        cpuRing?.setProgress(1f, "${profile.totalCores()}", "核心")
+        findViewById<TextView>(R.id.cpu_percent)?.text = "${profile.totalCores()}"
+        findViewById<TextView>(R.id.tv_cpu_core_specs)?.text =
+            if (Build.VERSION.SDK_INT >= 31) Build.SOC_MODEL else Build.HARDWARE
+        findViewById<TextView>(R.id.ram_metric)?.text =
+            String.format(java.util.Locale.getDefault(), "%.1fG", usedRam / 1024.0)
+        findViewById<TextView>(R.id.ram_cap_text)?.text =
+            String.format(java.util.Locale.getDefault(), "已用 / 共 %.1f GB", totalRamMb / 1024.0)
+        findViewById<TextView>(R.id.tv_ram_free_swap)?.text =
+            String.format(java.util.Locale.getDefault(), "可用 %.1f GB · 每 3 秒刷新", availRamMb / 1024.0)
 
         val stat = android.os.StatFs(filesDir.path)
         val totalBytes = stat.totalBytes
@@ -580,9 +964,30 @@ class MainActivity : AppCompatActivity() {
         if (level >= 0 && scale > 0) {
             val pct = level.toFloat() / scale
             battery?.setProgress(pct, "${(pct * 100).toInt()}%", "电池")
+            findViewById<TextView>(R.id.tv_status_bat)?.text = "BAT:${(pct * 100).toInt()}%"
         } else {
             battery?.setProgress(0f, "--", "电池")
+            findViewById<TextView>(R.id.tv_status_bat)?.text = "BAT:--"
         }
+        val temperature = intent?.getIntExtra(android.os.BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE)
+        findViewById<TextView>(R.id.tv_telemetry_temp)?.text =
+            if (temperature != null && temperature != Int.MIN_VALUE)
+                String.format(java.util.Locale.getDefault(), "电池 %.1f°C", temperature / 10.0)
+            else "电池温度不可用"
+        findViewById<TextView>(R.id.disk_iops)?.text =
+            String.format(java.util.Locale.getDefault(), "存储余量 %.1f GB", freeBytes / (1024.0 * 1024 * 1024))
+        findViewById<TextView>(R.id.tv_status_time)?.text = "[ ${java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))} ]"
+        val network = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val capabilities = network.activeNetwork?.let(network::getNetworkCapabilities)
+        val transport = when {
+            capabilities == null -> "OFFLINE"
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN) -> "VPN"
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "Wi-Fi"
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "移动"
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "有线"
+            else -> "在线"
+        }
+        findViewById<TextView>(R.id.tv_status_net)?.text = "NET:$transport"
     }
 
     private fun registerForBattery(): android.content.Intent? {
@@ -640,9 +1045,14 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        lastInstanceState = instances.joinToString { "${it.id()}:${it.state()}" }
         val emptyView = findViewById<TextView>(R.id.instances_empty)
         val countBadge = findViewById<TextView>(R.id.instances_count_badge)
         countBadge?.text = "${instances.size} 个实例"
+
+        val runningInstance = instances.firstOrNull { it.state() == InstanceLifecycle.State.RUNNING }
+        val primaryInstance = runningInstance ?: instances.firstOrNull { it.id() == settingsManager.lastActiveInstanceId } ?: instances.firstOrNull()
+        updateConsoleWithInstance(primaryInstance)
 
         if (instances.isEmpty()) {
             emptyView?.visibility = View.VISIBLE
@@ -651,14 +1061,18 @@ class MainActivity : AppCompatActivity() {
             emptyView?.visibility = View.GONE
         }
 
-        val capabilityMatrix = currentCapabilityMatrix()
-        val supportsDesktop = capabilityMatrix.supports(FullLinuxContract.Capability.GRAPHICS_WAYLAND)
+        val supportsDesktop = false
         val strategyBadge = currentBadge(DeviceCapabilityEvaluator.evaluate(deviceProfile()))
 
         val inflater = LayoutInflater.from(this)
         for (instance in instances) {
             val cardView = inflater.inflate(R.layout.layout_instance_card, instanceList, false)
-            val uiModel = InstanceCardUiModel.from(instance, strategyBadge, supportsDesktop)
+            val runningStrategy = when (ExecutionSessionRegistry.get(instance.id())) {
+                is QemuInstanceLauncher.Session -> "QEMU 软件虚拟化"
+                is AvfInstanceLauncher.AvfSession -> "AVF 硬件虚拟化"
+                else -> strategyBadge
+            }
+            val uiModel = InstanceCardUiModel.from(instance, runningStrategy, supportsDesktop)
 
             val distroIcon = cardView.findViewById<ImageView>(R.id.card_distro_icon)
             val distroTitle = cardView.findViewById<TextView>(R.id.card_distro_title)
@@ -730,46 +1144,69 @@ class MainActivity : AppCompatActivity() {
             }
 
             instanceList.addView(cardView)
+            ThemeApplier.apply(cardView, currentTheme)
         }
     }
 
     private fun showPowerDialog(instance: InstanceLifecycle.Instance) {
-        val options = arrayOf("正常关机 (Graceful Shutdown)", "强制断电 (Force Kill)")
+        val options = arrayOf("正常关机", "强制断电（可能丢失未写入的数据）")
         AlertDialog.Builder(this)
-            .setTitle("电源管理 · ${instance.id().take(8)}")
+            .setTitle("电源管理 · ${instance.hostname()}")
             .setItems(options) { _, which ->
-                lifecycleScope.launch(Dispatchers.IO) {
-                    try {
-                        val controller = InstanceLifecycle.Controller(instanceStore, Clock.systemUTC())
-                        controller.recordGracefulStop(instance.id())
-                        OrchestellaForegroundService.stop(this@MainActivity)
-                        withContext(Dispatchers.Main) {
-                            showInstances()
-                        }
-                    } catch (e: Exception) {
-                        withContext(Dispatchers.Main) {
-                            Toast.makeText(this@MainActivity, "操作失败: ${e.message}", Toast.LENGTH_SHORT).show()
-                        }
-                    }
+                if (which == 1) {
+                    AlertDialog.Builder(this)
+                        .setTitle("强制关闭实例")
+                        .setMessage("这会直接停止虚拟机。建议先在 Linux 中保存文件并正常关机。")
+                        .setPositiveButton("确认断电") { _, _ -> requestInstanceStop(instance, true) }
+                        .setNegativeButton("取消", null)
+                        .show().also { ThemeApplier.apply(it) }
+                } else {
+                    requestInstanceStop(instance, false)
                 }
             }
             .setNegativeButton("取消", null)
-            .show()
+            .show().also { ThemeApplier.apply(it) }
+    }
+
+    private fun requestInstanceStop(instance: InstanceLifecycle.Instance, force: Boolean) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val session = ExecutionSessionRegistry.get(instance.id())
+                    ?: throw IOException("实例已离线")
+                if (force) {
+                    session.terminate()
+                } else {
+                    val client = session.bridgeClient()
+                        ?: throw IOException("控制通道尚未就绪，请在终端执行 poweroff")
+                    if (!client.isReady) throw IOException("Linux 控制通道仍在初始化，请稍后再试")
+                    val result = client.power(io.github.nyzeep.orchestella.runtime.contract.BridgeControl.PowerAction.SHUTDOWN)
+                    if (!result.accepted()) throw IOException("Linux 拒绝关机请求")
+                }
+                withContext(Dispatchers.Main) {
+                    createStatus.text = "关机请求已发送，等待实例退出"
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "操作失败: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 
     private fun isHeadless(instance: InstanceLifecycle.Instance): Boolean {
-        return false
+        // The production channel does not yet carry guest frames and input.
+        return true
     }
 
     private fun showHeadlessDesktopDialog(instance: InstanceLifecycle.Instance) {
         AlertDialog.Builder(this)
-            .setTitle(R.string.desktop_headless_title)
-            .setMessage(R.string.desktop_headless_message)
+            .setTitle("图形桌面通道尚未就绪")
+            .setMessage("当前基础 Linux 环境可在终端使用。App 的真实 guest 图形帧与输入通道仍在独立 Phase 5 开发中，安装桌面软件包后也需要该通道才能在 App 内交互。")
             .setPositiveButton(R.string.instance_open_terminal) { _, _ ->
                 openTerminal(instance)
             }
             .setNegativeButton(R.string.dialog_close, null)
-            .show()
+            .show().also { ThemeApplier.apply(it) }
     }
 
     private fun openTerminal(instance: InstanceLifecycle.Instance) {
@@ -819,7 +1256,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             }
-            .show()
+            .show().also { ThemeApplier.apply(it) }
     }
 
     private fun showInstanceActionBottomSheet(instance: InstanceLifecycle.Instance, uiModel: InstanceCardUiModel) {
@@ -868,8 +1305,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onExportBackup(instance: InstanceLifecycle.Instance) {
-                pendingExportInstance = instance
-                safExportLauncher.launch("${instance.id()}-backup.zip")
+                exportStoppedInstance(instance)
             }
 
             override fun onManagePortForwarding(instance: InstanceLifecycle.Instance) {
@@ -933,7 +1369,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             .setNegativeButton(R.string.action_delete_cancel_btn, null)
-            .show()
+            .show().also { ThemeApplier.apply(it) }
     }
 
     private fun confirmDeleteInstance(instance: InstanceLifecycle.Instance) {
@@ -970,7 +1406,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             .setNegativeButton(R.string.action_delete_cancel_btn, null)
-            .show()
+            .show().also { ThemeApplier.apply(it) }
     }
 
     private fun reconcileOrphanInstances() {
@@ -997,13 +1433,18 @@ class MainActivity : AppCompatActivity() {
             // second QEMU that fails to bind the instance's sockets AND unregister the live
             // session in the failure path (observed on-device as "无法输入指令"). Attach instead.
             if (ExecutionSessionRegistry.get(instance.id()) != null) {
-                runOnUiThread { openTerminal(instance) }
+                runOnUiThread {
+                    setCreateButtonsEnabled(DeviceCapabilityEvaluator.evaluate(deviceProfile()).canCreateFullLinuxInstance())
+                    createStatus.text = "已连接到运行中的实例"
+                    openTerminal(instance)
+                }
                 return@execute
             }
             reconcileOrphanInstances()
             val controller = InstanceLifecycle.Controller(instanceStore, Clock.systemUTC())
             var running = false
             try {
+                DistroResourceRequirements.requireBootRam(instance.distro().id(), instance.hardwareConfig().ramMegabytes())
                 InstanceLaunchGuard.begin(instance.id())
                 InstanceLaunchSequence.beforeLaunch(controller, instance)
                 running = true
@@ -1019,10 +1460,9 @@ class MainActivity : AppCompatActivity() {
                 val mirrorConfigName = DistroMirrorProvisioner.getConfigFileName(instance.distro().id())
                 val mirrorBytes = if (mirrorConfigFile.exists()) Files.readAllBytes(mirrorConfigFile.toPath()) else null
                 val firstbootBytes = if (firstbootFile.exists()) {
-                    val bytes = Files.readAllBytes(firstbootFile.toPath())
-                    firstbootFile.delete()
-                    bytes
-                } else null
+                    Files.readAllBytes(firstbootFile.toPath())
+                } else FirstBootProvisionPipeline.generateScriptForDistro(instance.distro().id())
+                    .toByteArray(Charsets.UTF_8)
 
                 val provisionPayload = FirstBootProvisionPipeline.ProvisionPayload(
                     mirrorConfigName,
@@ -1039,7 +1479,10 @@ class MainActivity : AppCompatActivity() {
                     filesDir.resolve("distro-inputs").absolutePath,
                     instance.guestPassword(),
                     instance.hardwareConfig(),
-                    provisionPayload
+                    provisionPayload,
+                    instance.hostname(),
+                    instance.defaultUser(),
+                    instance.hasSudo()
                 )
                 val preferAvf =
                     avfReadiness?.status() == AvfCapabilityEvaluator.AvfStatus.READY
@@ -1053,6 +1496,9 @@ class MainActivity : AppCompatActivity() {
                     })
                 val outcome = strategyLauncher.launch(parameters, preferAvf)
                 val session = outcome.session
+                OrchestellaForegroundService.start(this, instance.id(), distroTitle,
+                    if (outcome.hardwareAccelerated()) "AVF 硬件虚拟化" else "QEMU 软件虚拟化",
+                    settingsManager.batteryPolicy)
                 Thread {
                     try {
                         session.waitFor()
@@ -1105,6 +1551,8 @@ class MainActivity : AppCompatActivity() {
                 }
                 runOnUiThread {
                     createStatus.text = getString(R.string.launch_failed, failure.toString())
+                    Toast.makeText(this, createStatus.text, Toast.LENGTH_LONG).show()
+                    android.util.Log.w("OrchestellaLaunch", "launch failed type=${failure.javaClass.simpleName}")
                     setCreateButtonsEnabled(DeviceCapabilityEvaluator.evaluate(deviceProfile()).canCreateFullLinuxInstance())
                     showInstances()
                 }
@@ -1273,20 +1721,23 @@ class MainActivity : AppCompatActivity() {
         }
 
     private fun showCredentialsDialog(instance: InstanceLifecycle.Instance) {
-        val message = "默认主机名：${instance.hostname()}\n用户名：${instance.defaultUser()}\n密码：${instance.guestPassword()}\n\n提示：遵循工单 03 规范，默认主机名为 orchestella，超级用户为 root / 1234。"
+        val password = instance.guestPassword()
+        val message = "主机名：${instance.hostname()}\n用户名：${instance.defaultUser()}\n密码：${password.ifBlank { "未记录，请在 Linux 中使用 passwd 设置" }}\n\n新实例使用独立随机凭据。修改密码后请妥善保存。"
         AlertDialog.Builder(this)
             .setTitle(R.string.credentials_title)
             .setMessage(message)
             .setPositiveButton(R.string.credentials_copy) { _, _ ->
-                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                clipboard.setPrimaryClip(ClipData.newPlainText("GuestPassword", instance.guestPassword()))
-                Toast.makeText(this, R.string.credentials_copied, Toast.LENGTH_SHORT).show()
+                if (password.isNotBlank()) {
+                    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("GuestPassword", password))
+                    Toast.makeText(this, R.string.credentials_copied, Toast.LENGTH_SHORT).show()
+                }
             }
             .setNeutralButton(R.string.credentials_change) { _, _ ->
                 showChangePasswordDialog(instance)
             }
             .setNegativeButton(R.string.credentials_close, null)
-            .show()
+            .show().also { ThemeApplier.apply(it) }
     }
 
     private fun showChangePasswordDialog(instance: InstanceLifecycle.Instance) {
@@ -1324,7 +1775,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             .setNegativeButton(R.string.credentials_close, null)
-            .show()
+            .show().also { ThemeApplier.apply(it) }
     }
 
     private fun showRefusalDetailsDialog(assessment: DeviceCapabilityEvaluator.Assessment) {
@@ -1332,7 +1783,7 @@ class MainActivity : AppCompatActivity() {
             .setTitle(R.string.refusal_dialog_title)
             .setMessage(getString(R.string.refusal_dialog_message, assessment.refusalReason()))
             .setPositiveButton(R.string.credentials_close, null)
-            .show()
+            .show().also { ThemeApplier.apply(it) }
     }
 
     private fun showSettingsDialog() {
@@ -1422,7 +1873,7 @@ class MainActivity : AppCompatActivity() {
             .setTitle(R.string.settings_title)
             .setView(container)
             .setPositiveButton(R.string.settings_close, null)
-            .show()
+            .show().also { ThemeApplier.apply(it) }
     }
 
     private fun checkForUpdateManual() {
@@ -1442,14 +1893,14 @@ class MainActivity : AppCompatActivity() {
                             .setTitle(R.string.settings_update_check)
                             .setMessage(R.string.update_disabled_msg)
                             .setPositiveButton(R.string.credentials_close, null)
-                            .show()
+                            .show().also { ThemeApplier.apply(it) }
                     }
                     GitHubUpdateChecker.Status.UP_TO_DATE -> {
                         AlertDialog.Builder(this)
                             .setTitle(R.string.settings_update_check)
                             .setMessage(getString(R.string.update_up_to_date, result.latestVersion() ?: versionName))
                             .setPositiveButton(R.string.credentials_close, null)
-                            .show()
+                            .show().also { ThemeApplier.apply(it) }
                     }
                     GitHubUpdateChecker.Status.UPDATE_AVAILABLE -> {
                         AlertDialog.Builder(this)
@@ -1465,7 +1916,7 @@ class MainActivity : AppCompatActivity() {
                                 }
                             }
                             .setNegativeButton(R.string.credentials_close, null)
-                            .show()
+                            .show().also { ThemeApplier.apply(it) }
                     }
                     GitHubUpdateChecker.Status.ERROR -> {
                         Toast.makeText(this, result.errorMessage() ?: "检查失败", Toast.LENGTH_LONG).show()

@@ -4,6 +4,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Objects;
 import java.util.zip.GZIPOutputStream;
 
@@ -38,6 +40,19 @@ public final class EmbeddedProvisionInput {
             writeSegment(in, rootfsTarball.length, rootfsFileName, bridgeToken, guestPassword, gz);
         } catch (IOException impossible) {
             throw new AssertionError(impossible);
+        }
+        return gz.toByteArray();
+    }
+
+    /** Builds a segment using a SHA-256 pinned independently in the distro manifest. */
+    public static byte[] build(
+            byte[] rootfsTarball, String rootfsFileName, String bridgeToken,
+            String guestPassword, String rootfsSha256) throws IOException {
+        Objects.requireNonNull(rootfsTarball, "rootfsTarball");
+        ByteArrayOutputStream gz = new ByteArrayOutputStream();
+        try (java.io.ByteArrayInputStream in = new java.io.ByteArrayInputStream(rootfsTarball)) {
+            writeSegment(in, rootfsTarball.length, rootfsFileName, bridgeToken, guestPassword,
+                    null, null, null, null, false, null, null, null, rootfsSha256, gz);
         }
         return gz.toByteArray();
     }
@@ -126,12 +141,47 @@ public final class EmbeddedProvisionInput {
             byte[] mirrorConfigFileContent,
             byte[] firstBootScript,
             OutputStream targetOut) throws IOException {
+        // Legacy callers without a manifest digest must fail closed before writing anything.
+        writeSegment(rootfsStream, rootfsSize, rootfsFileName, bridgeToken, guestPassword,
+                initScript, proxyRelayBinary, hostname, guestUser, guestSudo,
+                mirrorConfigFileName, mirrorConfigFileContent, firstBootScript, null, targetOut);
+    }
+
+    /**
+     * Streams inputs against the manifest's exact size and SHA-256. The caller must discard
+     * partial output on failure and publish it only after this method returns successfully.
+     */
+    public static void writeSegment(
+            java.io.InputStream rootfsStream,
+            long rootfsSize,
+            String rootfsFileName,
+            String bridgeToken,
+            String guestPassword,
+            byte[] initScript,
+            byte[] proxyRelayBinary,
+            String hostname,
+            String guestUser,
+            boolean guestSudo,
+            String mirrorConfigFileName,
+            byte[] mirrorConfigFileContent,
+            byte[] firstBootScript,
+            String rootfsSha256,
+            OutputStream targetOut) throws IOException {
         Objects.requireNonNull(rootfsStream, "rootfsStream");
-        Objects.requireNonNull(rootfsFileName, "rootfsFileName");
         Objects.requireNonNull(targetOut, "targetOut");
         validateToken(bridgeToken);
-        if (rootfsSize <= 0 || rootfsFileName.contains("/")) {
-            throw new IllegalArgumentException("invalid rootfs input");
+        validateInputFileName(rootfsFileName);
+        if (rootfsSize <= 0 || rootfsSize > 0xffff_ffffL) {
+            throw new IllegalArgumentException("invalid rootfs size");
+        }
+        if (rootfsSha256 == null || !rootfsSha256.matches("[0-9a-f]{64}")) {
+            throw new IllegalArgumentException("manifest rootfs SHA-256 required");
+        }
+        if (mirrorConfigFileName != null) {
+            validateInputFileName(mirrorConfigFileName);
+            if (mirrorConfigFileName.equals(rootfsFileName)) {
+                throw new IllegalArgumentException("mirror config must not replace rootfs");
+            }
         }
 
         GZIPOutputStream gzip = new GZIPOutputStream(targetOut);
@@ -140,6 +190,7 @@ public final class EmbeddedProvisionInput {
         appendDirectory(out, "opt/droidlayer");
         appendDirectory(out, EMBEDDED_DIR);
         appendFile(out, ACTIVE_SENTINEL, new byte[0]);
+        appendRootfsTrust(out, EMBEDDED_DIR, rootfsFileName, rootfsSha256, rootfsSize);
         appendFile(out, EMBEDDED_DIR + "/bridge.token",
                 (bridgeToken + "\n").getBytes(StandardCharsets.US_ASCII));
         if (guestPassword != null && !guestPassword.trim().isEmpty()) {
@@ -158,7 +209,7 @@ public final class EmbeddedProvisionInput {
             appendFile(out, EMBEDDED_DIR + "/guest.sudo",
                     "1\n".getBytes(StandardCharsets.US_ASCII));
         }
-        appendStream(out, EMBEDDED_DIR + "/" + rootfsFileName, rootfsStream, rootfsSize);
+        appendStream(out, EMBEDDED_DIR + "/" + rootfsFileName, rootfsStream, rootfsSize, rootfsSha256);
 
         if (mirrorConfigFileContent != null && mirrorConfigFileContent.length > 0 && mirrorConfigFileName != null) {
             appendFile(out, EMBEDDED_DIR + "/" + mirrorConfigFileName, mirrorConfigFileContent);
@@ -171,9 +222,7 @@ public final class EmbeddedProvisionInput {
             appendFile(out, "init", 0100755, initScript);
             appendDirectory(out, "etc");
             appendDirectory(out, "etc/droidlayer");
-            appendFile(out, "etc/droidlayer/rootfs.file", 0100644,
-                    (rootfsFileName + "\n").getBytes(StandardCharsets.US_ASCII));
-            appendFile(out, "etc/droidlayer/rootfs.sha256", 0100644, new byte[0]);
+            appendRootfsTrust(out, "etc/droidlayer", rootfsFileName, rootfsSha256, rootfsSize);
         }
 
         if (proxyRelayBinary != null && proxyRelayBinary.length > 0) {
@@ -184,6 +233,27 @@ public final class EmbeddedProvisionInput {
         appendTrailer(out);
         gzip.finish();
         gzip.flush();
+    }
+
+    private static void validateInputFileName(String name) {
+        if (name == null || !name.matches("[A-Za-z0-9][A-Za-z0-9._-]*")
+                || name.equals("rootfs.file") || name.equals("rootfs.sha256")
+                || name.equals("rootfs.size") || name.equals("bridge.token")
+                || name.startsWith("guest.") || name.equals("hostname")
+                || name.equals("firstboot.sh")) {
+            throw new IllegalArgumentException("input must be one non-reserved file name");
+        }
+    }
+
+    private static void appendRootfsTrust(
+            Counting out, String directory, String fileName, String sha256, long size)
+            throws IOException {
+        appendFile(out, directory + "/rootfs.file",
+                (fileName + "\n").getBytes(StandardCharsets.US_ASCII));
+        appendFile(out, directory + "/rootfs.sha256",
+                (sha256 + "\n").getBytes(StandardCharsets.US_ASCII));
+        appendFile(out, directory + "/rootfs.size",
+                (Long.toString(size) + "\n").getBytes(StandardCharsets.US_ASCII));
     }
 
     private static void validateToken(String token) {
@@ -241,8 +311,15 @@ public final class EmbeddedProvisionInput {
         out.align(4);
     }
 
-    private static void appendStream(Counting out, String name, java.io.InputStream in, long size)
+    private static void appendStream(
+            Counting out, String name, java.io.InputStream in, long size, String expectedSha256)
             throws IOException {
+        MessageDigest digest;
+        try {
+            digest = MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new AssertionError(impossible);
+        }
         writeEntryHeader(out, name, 0100644, size);
         byte[] buf = new byte[65536];
         long remaining = size;
@@ -250,10 +327,29 @@ public final class EmbeddedProvisionInput {
             int toRead = (int) Math.min(buf.length, remaining);
             int read = in.read(buf, 0, toRead);
             if (read < 0) {
-                throw new IOException("unexpected EOF reading rootfs stream, expected " + size + " bytes");
+                throw new IOException("rootfs-size-mismatch");
             }
+            if (read == 0) {
+                int next = in.read();
+                if (next < 0) {
+                    throw new IOException("rootfs-size-mismatch");
+                }
+                buf[0] = (byte) next;
+                read = 1;
+            }
+            digest.update(buf, 0, read);
             out.write(buf, 0, read);
             remaining -= read;
+        }
+        if (in.read() != -1) {
+            throw new IOException("rootfs-size-mismatch");
+        }
+        byte[] expected = new byte[32];
+        for (int i = 0; i < expected.length; i++) {
+            expected[i] = (byte) Integer.parseInt(expectedSha256.substring(i * 2, i * 2 + 2), 16);
+        }
+        if (!MessageDigest.isEqual(expected, digest.digest())) {
+            throw new IOException("rootfs-checksum-mismatch");
         }
         out.align(4);
     }

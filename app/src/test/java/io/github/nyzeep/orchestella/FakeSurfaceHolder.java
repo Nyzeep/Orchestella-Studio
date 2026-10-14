@@ -32,6 +32,7 @@ public final class FakeSurfaceHolder implements SurfaceHolder {
     }
 
     @Override
+    @SuppressWarnings("deprecation") // SurfaceHolder still requires this legacy interface method.
     public void setType(int type) {}
 
     @Override

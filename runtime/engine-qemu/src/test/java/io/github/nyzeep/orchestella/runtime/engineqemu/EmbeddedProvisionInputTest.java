@@ -1,167 +1,193 @@
 package io.github.nyzeep.orchestella.runtime.engineqemu;
 
 import java.io.ByteArrayInputStream;
-import java.io.InputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.zip.GZIPInputStream;
 
-/** Contract tests for the embedded provision input builder (gzipped newc cpio). */
+/** Contract tests for manifest-verified, gzipped newc provisioning inputs. */
 public final class EmbeddedProvisionInputTest {
+    private static final String TOKEN =
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    private static final String ROOTFS_NAME = "alpine-minirootfs-3.24.1-aarch64.tar.gz";
+
     public static void main(String[] args) throws Exception {
         byte[] rootfs = synthetic(4096, 0x11);
-        String token = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-        String rootfsName = "alpine-minirootfs-3.24.1-aarch64.tar.gz";
+        String pinnedSha256 = sha256(rootfs);
+        byte[] segment = EmbeddedProvisionInput.build(rootfs, ROOTFS_NAME, TOKEN, null, pinnedSha256);
+        check(Arrays.equals(segment,
+                EmbeddedProvisionInput.build(rootfs, ROOTFS_NAME, TOKEN, null, pinnedSha256)),
+                "identical trusted inputs must produce deterministic output");
+        check(Arrays.equals(segment, write(rootfs, rootfs.length, ROOTFS_NAME, pinnedSha256,
+                TOKEN, null, null, null, null, false, null, null, null)),
+                "streaming and byte-array builders must agree");
+        check((segment[0] & 0xff) == 0x1f && (segment[1] & 0xff) == 0x8b, "gzip wrapper");
 
-        byte[] segment = EmbeddedProvisionInput.build(rootfs, rootfsName, token);
+        Map<String, byte[]> entries = entries(segment);
+        assertTrust(entries, EmbeddedProvisionInput.EMBEDDED_DIR, pinnedSha256, rootfs.length);
+        check(entries.containsKey(EmbeddedProvisionInput.ACTIVE_SENTINEL), "active sentinel");
+        assertEntry(entries, EmbeddedProvisionInput.EMBEDDED_DIR + "/bridge.token", TOKEN + "\n");
+        check(Arrays.equals(rootfs, entries.get(EmbeddedProvisionInput.EMBEDDED_DIR + "/" + ROOTFS_NAME)),
+                "rootfs bytes must survive streaming");
+        java.util.List<String> names = new java.util.ArrayList<>(entries.keySet());
+        check(names.indexOf("opt") < names.indexOf("opt/droidlayer")
+                && names.indexOf("opt/droidlayer") < names.indexOf(EmbeddedProvisionInput.EMBEDDED_DIR)
+                && names.indexOf(EmbeddedProvisionInput.EMBEDDED_DIR)
+                        < names.indexOf(EmbeddedProvisionInput.ACTIVE_SENTINEL),
+                "parent directories must precede nested members");
 
-        // Deterministic: identical inputs produce identical bytes.
-        if (!Arrays.equals(segment, EmbeddedProvisionInput.build(rootfs, rootfsName, token))) {
-            fail("segment is not deterministic");
-        }
+        byte[] init = "#!/bin/sh\nexit 0\n".getBytes(StandardCharsets.US_ASCII);
+        byte[] mirror = "https://example.invalid/alpine/main\n".getBytes(StandardCharsets.US_ASCII);
+        byte[] firstboot = "#!/bin/sh\ntrue\n".getBytes(StandardCharsets.US_ASCII);
+        Map<String, byte[]> configured = entries(write(rootfs, rootfs.length, ROOTFS_NAME, pinnedSha256,
+                TOKEN, "SyntheticPassword24", init, "orchestella-host", "devuser", true,
+                "repositories", mirror, firstboot));
+        assertTrust(configured, EmbeddedProvisionInput.EMBEDDED_DIR, pinnedSha256, rootfs.length);
+        assertTrust(configured, "etc/droidlayer", pinnedSha256, rootfs.length);
+        assertEntry(configured, EmbeddedProvisionInput.EMBEDDED_DIR + "/guest.password", "SyntheticPassword24\n");
+        assertEntry(configured, EmbeddedProvisionInput.EMBEDDED_DIR + "/guest.user", "devuser\n");
+        assertEntry(configured, EmbeddedProvisionInput.EMBEDDED_DIR + "/hostname", "orchestella-host\n");
+        assertEntry(configured, EmbeddedProvisionInput.EMBEDDED_DIR + "/guest.sudo", "1\n");
+        check(Arrays.equals(init, configured.get("init")), "guest init override");
+        check(Arrays.equals(mirror, configured.get(EmbeddedProvisionInput.EMBEDDED_DIR + "/repositories")),
+                "mirror configuration");
+        check(Arrays.equals(firstboot, configured.get(EmbeddedProvisionInput.EMBEDDED_DIR + "/firstboot.sh")),
+                "first-boot script");
+        Map<String, byte[]> unknownPassword = entries(write(rootfs, rootfs.length, ROOTFS_NAME, pinnedSha256,
+                TOKEN, "", init, null, null, false, null, null, null));
+        check(!unknownPassword.containsKey(EmbeddedProvisionInput.EMBEDDED_DIR + "/guest.password"),
+                "unknown legacy password must not be provisioned");
 
-        // Streaming writeSegment equivalence: produces identical bytes.
-        java.io.ByteArrayOutputStream streamOut = new java.io.ByteArrayOutputStream();
-        try (ByteArrayInputStream in = new ByteArrayInputStream(rootfs)) {
-            EmbeddedProvisionInput.writeSegment(in, rootfs.length, rootfsName, token, null, streamOut);
+        for (String bad : new String[] {"short", "a".repeat(63), "a".repeat(63) + "Z"}) {
+            rejectArgument(() -> EmbeddedProvisionInput.build(rootfs, ROOTFS_NAME, bad, null, pinnedSha256));
         }
-        if (!Arrays.equals(segment, streamOut.toByteArray())) {
-            fail("writeSegment output does not match build");
+        for (String bad : new String[] {null, "", "a".repeat(63), "A".repeat(64), pinnedSha256 + "\n"}) {
+            rejectArgument(() -> EmbeddedProvisionInput.build(rootfs, ROOTFS_NAME, TOKEN, null, bad));
         }
-
-        // GZIP wrapper present.
-        if ((segment[0] & 0xFF) != 0x1F || (segment[1] & 0xFF) != 0x8B) {
-            fail("segment is not gzip");
+        rejectArgument(() -> EmbeddedProvisionInput.build(rootfs, ROOTFS_NAME, TOKEN));
+        for (String bad : new String[] {"../rootfs.tar.gz", "..\\rootfs.tar.gz", "/rootfs.tar.gz", ".", "..",
+                "", "rootfs\n.tar.gz", "rootfs\u0000.tar.gz", "C:rootfs.tar.gz", "rootfs.sha256", "bridge.token"}) {
+            rejectArgument(() -> EmbeddedProvisionInput.build(rootfs, bad, TOKEN, null, pinnedSha256));
         }
-
-        // Decompress and inspect the newc structure.
-        byte[] cpio = gunzip(segment);
-        String text = new String(cpio, StandardCharsets.US_ASCII);
-        if (!text.startsWith("070701")) {
-            fail("segment does not start with newc magic");
+        for (String badMirror : new String[] {"../repositories", "..\\repositories", "rootfs.file", "rootfs.sha256",
+                "rootfs.size", "guest.password", ".active", ROOTFS_NAME}) {
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            rejectArgument(() -> EmbeddedProvisionInput.writeSegment(new ByteArrayInputStream(rootfs),
+                    rootfs.length, ROOTFS_NAME, TOKEN, null, init, null, null, null, false,
+                    badMirror, mirror, null, pinnedSha256, output));
+            check(output.size() == 0, "invalid archive paths must fail before output");
         }
-        for (String required : new String[] {
-                "opt/droidlayer/embedded-input/.active",
-                "opt/droidlayer/embedded-input/bridge.token",
-                "opt/droidlayer/embedded-input/" + rootfsName,
-                "TRAILER!!!",
-        }) {
-            if (!text.contains(required)) {
-                fail("segment missing entry: " + required);
-            }
+        for (long badSize : new long[] {0, -1, 0x1_0000_0000L}) {
+            rejectArgument(() -> write(rootfs, badSize, ROOTFS_NAME, pinnedSha256, TOKEN,
+                    null, null, null, null, false, null, null, null));
         }
-        int activeAt = text.indexOf("opt/droidlayer/embedded-input/.active");
-        if (activeAt < 0 || text.indexOf("070701", 0) != 0) {
-            fail("structure broken");
-        }
-        // Parent directory entries must precede nested members: the kernel's
-        // initramfs unpacker never creates intermediate directories, so a
-        // segment without them is silently dropped on-device.
-        java.util.List<String> names = new java.util.ArrayList<>();
-        int pos = 0;
-        while (pos + 110 <= cpio.length) {
-            if (!"070701".equals(new String(cpio, pos, 6, StandardCharsets.US_ASCII))) {
-                fail("bad newc magic at offset " + pos);
-            }
-            int nameSize = Integer.parseInt(
-                    new String(cpio, pos + 94, 8, StandardCharsets.US_ASCII), 16);
-            int fileSize = Integer.parseInt(
-                    new String(cpio, pos + 54, 8, StandardCharsets.US_ASCII), 16);
-            String name = new String(cpio, pos + 110, nameSize - 1, StandardCharsets.US_ASCII);
-            names.add(name);
-            if ("TRAILER!!!".equals(name)) {
-                break;
-            }
-            int dataStart = ((pos + 110 + nameSize + 3) / 4) * 4;
-            pos = ((dataStart + fileSize + 3) / 4) * 4;
-        }
-        for (String parent : new String[] {"opt", "opt/droidlayer", "opt/droidlayer/embedded-input"}) {
-            if (!names.contains(parent)) {
-                fail("segment missing parent directory entry: " + parent);
-            }
-        }
-        if (!(names.indexOf("opt") < names.indexOf("opt/droidlayer")
-                && names.indexOf("opt/droidlayer") < names.indexOf("opt/droidlayer/embedded-input"))) {
-            fail("parent directory entries must precede nested members");
-        }
-        // bridge.token content must be exactly the token plus one newline.
-        String tokenText = new String(cpio, StandardCharsets.US_ASCII);
-        int nameOffset = tokenText.indexOf("opt/droidlayer/embedded-input/bridge.token");
-        if (nameOffset < 0) {
-            fail("bridge.token entry missing");
-        }
-
-        // Token validation: wrong length and non-hex are rejected.
-        for (String bad : new String[] {"short", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde",
-                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdeZ"}) {
-            try {
-                EmbeddedProvisionInput.build(rootfs, rootfsName, bad);
-                fail("invalid token accepted");
-            } catch (IllegalArgumentException expected) {
-                // required
-            }
-        }
-        // Identity & credentials streaming (Ticket 03)
-        java.io.ByteArrayOutputStream idOut = new java.io.ByteArrayOutputStream();
-        try (ByteArrayInputStream in = new ByteArrayInputStream(rootfs)) {
-            EmbeddedProvisionInput.writeSegment(
-                    in, rootfs.length, rootfsName, token, "MyPass1234", null, null,
-                    "orchestella-host", "devuser", true, idOut);
-        }
-        byte[] idCpio = gunzip(idOut.toByteArray());
-        String idText = new String(idCpio, StandardCharsets.US_ASCII);
-        if (!idText.contains("opt/droidlayer/embedded-input/hostname")) {
-            fail("missing embedded hostname entry");
-        }
-        if (!idText.contains("opt/droidlayer/embedded-input/guest.user")) {
-            fail("missing embedded guest.user entry");
-        }
-        if (!idText.contains("opt/droidlayer/embedded-input/guest.sudo")) {
-            fail("missing embedded guest.sudo entry");
-        }
-        if (!idText.contains("opt/droidlayer/embedded-input/guest.password")) {
-            fail("missing embedded guest.password entry");
-        }
-
-        // Verify mirror config and firstboot script streaming
-        java.io.ByteArrayOutputStream extOut = new java.io.ByteArrayOutputStream();
-        byte[] mirrorContent = "https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.24/main\n".getBytes(StandardCharsets.UTF_8);
-        byte[] firstbootContent = "#!/bin/sh\necho hello\n".getBytes(StandardCharsets.UTF_8);
-        try (ByteArrayInputStream in = new ByteArrayInputStream(rootfs)) {
-            EmbeddedProvisionInput.writeSegment(
-                    in, rootfs.length, rootfsName, token, "secret", null, null,
-                    "repositories", mirrorContent, firstbootContent, extOut);
-        }
-        byte[] extCpio = gunzip(extOut.toByteArray());
-        String extText = new String(extCpio, StandardCharsets.US_ASCII);
-        if (!extText.contains("opt/droidlayer/embedded-input/repositories")) {
-            fail("missing embedded repositories entry");
-        }
-        if (!extText.contains("opt/droidlayer/embedded-input/firstboot.sh")) {
-            fail("missing embedded firstboot.sh entry");
-        }
-        if (!extText.contains("opt/droidlayer/embedded-input/guest.password")) {
-            fail("missing embedded guest.password entry");
-        }
-
-        System.out.println("EMBEDDED_PROVISION_INPUT_TEST_OK deterministic=1 gzip=1 newc_entries=3 trailer=1 parent_dirs=2 token_validation=2 identity_credentials=1 mirror_firstboot=1");
+        rejectInput("rootfs-size-mismatch", () -> write(rootfs, rootfs.length - 1, ROOTFS_NAME, pinnedSha256,
+                TOKEN, null, init, null, null, false, null, null, null));
+        rejectInput("rootfs-size-mismatch", () -> write(rootfs, rootfs.length + 1, ROOTFS_NAME, pinnedSha256,
+                TOKEN, null, init, null, null, false, null, null, null));
+        byte[] altered = rootfs.clone();
+        altered[altered.length / 2] ^= 1;
+        rejectInput("rootfs-checksum-mismatch", () -> write(altered, rootfs.length, ROOTFS_NAME, pinnedSha256,
+                TOKEN, null, init, null, null, false, null, null, null));
+        rejectInput("rootfs-checksum-mismatch", () -> write(rootfs, rootfs.length, ROOTFS_NAME, "0".repeat(64),
+                TOKEN, null, init, null, null, false, null, null, null));
+        System.out.println("EMBEDDED_PROVISION_INPUT_TEST_OK trust_records=2 deterministic=1 size_hash_rejection=4 path_rejection=1 unknown_password=1");
     }
 
-    private static void fail(String reason) {
-        System.out.println("EMBEDDED_PROVISION_INPUT_TEST_FAIL reason=" + reason);
-        System.exit(1);
+    private static byte[] write(byte[] rootfs, long expectedSize, String name, String expectedSha256,
+            String token, String password, byte[] init, String hostname, String user, boolean sudo,
+            String mirrorName, byte[] mirror, byte[] firstboot) throws IOException {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        try (ByteArrayInputStream in = new ByteArrayInputStream(rootfs)) {
+            EmbeddedProvisionInput.writeSegment(in, expectedSize, name, token, password, init, null,
+                    hostname, user, sudo, mirrorName, mirror, firstboot, expectedSha256, output);
+        }
+        return output.toByteArray();
+    }
+
+    private static void assertTrust(Map<String, byte[]> entries, String directory, String sha256, long size) {
+        assertEntry(entries, directory + "/rootfs.file", ROOTFS_NAME + "\n");
+        assertEntry(entries, directory + "/rootfs.sha256", sha256 + "\n");
+        assertEntry(entries, directory + "/rootfs.size", Long.toString(size) + "\n");
+    }
+
+    private static void assertEntry(Map<String, byte[]> entries, String name, String expected) {
+        check(Arrays.equals(expected.getBytes(StandardCharsets.US_ASCII), entries.get(name)),
+                "exact content mismatch: " + name);
+    }
+
+    private static Map<String, byte[]> entries(byte[] gzip) throws IOException {
+        byte[] cpio;
+        try (GZIPInputStream in = new GZIPInputStream(new ByteArrayInputStream(gzip))) {
+            cpio = in.readAllBytes();
+        }
+        Map<String, byte[]> entries = new LinkedHashMap<>();
+        int position = 0;
+        while (position + 110 <= cpio.length) {
+            check("070701".equals(new String(cpio, position, 6, StandardCharsets.US_ASCII)), "newc magic");
+            int nameSize = Integer.parseInt(new String(cpio, position + 94, 8, StandardCharsets.US_ASCII), 16);
+            int fileSize = Integer.parseInt(new String(cpio, position + 54, 8, StandardCharsets.US_ASCII), 16);
+            String name = new String(cpio, position + 110, nameSize - 1, StandardCharsets.US_ASCII);
+            int start = (position + 110 + nameSize + 3) / 4 * 4;
+            check(start + fileSize <= cpio.length, "complete newc entry");
+            check(!entries.containsKey(name), "duplicate newc entry");
+            entries.put(name, Arrays.copyOfRange(cpio, start, start + fileSize));
+            if ("TRAILER!!!".equals(name)) {
+                return entries;
+            }
+            position = (start + fileSize + 3) / 4 * 4;
+        }
+        throw new AssertionError("newc trailer missing");
+    }
+
+    private static void rejectArgument(Operation operation) throws Exception {
+        try {
+            operation.run();
+        } catch (IllegalArgumentException expected) {
+            return;
+        }
+        throw new AssertionError("untrusted or invalid input accepted");
+    }
+
+    private static void rejectInput(String reason, Operation operation) throws Exception {
+        try {
+            operation.run();
+        } catch (IOException expected) {
+            check(reason.equals(expected.getMessage()), "stable input rejection reason");
+            return;
+        }
+        throw new AssertionError("altered input accepted");
+    }
+
+    private static void check(boolean condition, String reason) {
+        if (!condition) {
+            throw new AssertionError(reason);
+        }
     }
 
     private static byte[] synthetic(int size, int seed) {
-        byte[] out = new byte[size];
+        byte[] output = new byte[size];
         for (int i = 0; i < size; i++) {
-            out[i] = (byte) (seed + i * 17);
+            output[i] = (byte) (seed + i * 17);
         }
-        return out;
+        return output;
     }
 
-    private static byte[] gunzip(byte[] gz) throws Exception {
-        java.util.zip.InflaterInputStream in = new java.util.zip.GZIPInputStream(
-                new ByteArrayInputStream(gz));
-        return in.readAllBytes();
+    private static String sha256(byte[] input) throws Exception {
+        StringBuilder hex = new StringBuilder();
+        for (byte value : MessageDigest.getInstance("SHA-256").digest(input)) {
+            hex.append(String.format(java.util.Locale.ROOT, "%02x", value & 0xff));
+        }
+        return hex.toString();
+    }
+
+    @FunctionalInterface
+    private interface Operation {
+        void run() throws Exception;
     }
 }

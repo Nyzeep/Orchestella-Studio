@@ -1,22 +1,35 @@
 package android.system.virtualmachine;
 
-/**
- * Test-only stand-in for the Android Context the reflective adapter queries
- * with {@code getSystemService("virtualization_service")}. Returns null for
- * every other service name so the adapter's manager-unavailable path is
- * exercised exactly as on a device without the service.
- */
-public final class FakeVirtualizationContext {
-    private final Object virtualizationService;
+import android.content.Context;
+
+/** Fixture Context with the official typed service and runtime permission methods. */
+public final class FakeVirtualizationContext extends Context {
+    private final VirtualMachineManager virtualizationService;
+    private final boolean manageGranted;
+    private final boolean customGranted;
 
     public FakeVirtualizationContext(Object virtualizationService) {
-        this.virtualizationService = virtualizationService;
+        this((VirtualMachineManager) virtualizationService, true, true);
     }
 
-    public Object getSystemService(String name) {
-        if ("virtualization_service".equals(name)) {
-            return virtualizationService;
-        }
-        return null;
+    public FakeVirtualizationContext(VirtualMachineManager manager, boolean manage, boolean custom) {
+        this.virtualizationService = manager;
+        this.manageGranted = manage;
+        this.customGranted = custom;
+    }
+
+    @Override
+    public <T> T getSystemService(Class<T> serviceClass) {
+        return serviceClass == VirtualMachineManager.class ? serviceClass.cast(virtualizationService) : null;
+    }
+
+    @Override
+    public int checkSelfPermission(String permission) {
+        boolean granted = switch (permission) {
+            case "android.permission.MANAGE_VIRTUAL_MACHINE" -> manageGranted;
+            case "android.permission.USE_CUSTOM_VIRTUAL_MACHINE" -> customGranted;
+            default -> false;
+        };
+        return granted ? 0 : -1;
     }
 }

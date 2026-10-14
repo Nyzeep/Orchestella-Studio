@@ -52,6 +52,11 @@ public interface ExecutionSession {
      */
     void close();
 
+    /** Stops the VM itself after an explicit force-stop action. */
+    default void terminate() throws IOException {
+        throw new IOException("This session cannot be forcibly stopped");
+    }
+
     /**
      * Optional strategy-neutral display control contract for graphics desktop mode.
      * Null when the session does not provide Wayland display negotiation.
@@ -68,12 +73,45 @@ public interface ExecutionSession {
         return null;
     }
 
+    /** Connects the separate display transport using capabilities established by the guest probe. */
+    default boolean connectDisplay(boolean keyboard, boolean unicodeText, boolean pointer) { return false; }
+    default boolean reconnectDisplay(boolean keyboard, boolean unicodeText, boolean pointer) {
+        return connectDisplay(keyboard, unicodeText, pointer);
+    }
+
+    default String displayStatus() { return "显示数据面不可用"; }
+
+    interface ServiceForward extends AutoCloseable {
+        int hostPort();
+        boolean isActive();
+        @Override void close() throws IOException;
+    }
+
+    default ServiceForward openServiceForward(int guestPort) throws IOException {
+        throw new IOException("本地服务转发在当前执行策略尚未验证");
+    }
+
+    default io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract.CapabilityMatrix capabilityMatrix() {
+        return io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract.CapabilityMatrix.softwareVirtualizationBaseline();
+    }
+
     /**
      * Optional strategy-neutral BridgeClient for host-initiated control commands (such as clipboard sync).
      * Null when the session does not provide a control channel.
      */
     default io.github.nyzeep.orchestella.runtime.contract.BridgeClient bridgeClient() {
         return null;
+    }
+
+    /**
+     * Retires a failed control transport after its reader has ended, without
+     * affecting the VM or terminal. Call once on a worker thread for an explicit
+     * UI re-entry. True means a fresh control client can be obtained and must
+     * authenticate again; it does not mean control is ready. Unsupported, live,
+     * or unsafe-to-retire channels return false without resetting their caches.
+     */
+    default boolean recoverControlChannel() {
+        return false;
     }
 
     /**

@@ -61,7 +61,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:minHeight="48dp"
-                    app:cornerRadius="12dp"
+                    app:cornerRadius="0dp"
                     android:text="跳过引导"
                     android:textSize="12sp"
                     android:textColor="?attr/colorPrimary" />
@@ -100,7 +100,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="14dp"
-                    app:cardCornerRadius="20dp"
+                    app:cardCornerRadius="0dp"
                     app:cardElevation="1dp"
                     app:strokeWidth="1dp"
                     app:strokeColor="?attr/colorOutlineVariant"
@@ -122,7 +122,7 @@
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
-                                android:text="⚡ AVF 硬件虚拟化检测"
+                                android:text="AVF 平台声明与权限"
                                 android:textSize="15sp"
                                 android:textStyle="bold"
                                 android:textColor="?attr/colorOnSurface" />
@@ -163,7 +163,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="💡 平滑降级方案说明"
+                                android:text="启动验证与回退"
                                 android:textSize="12sp"
                                 android:textStyle="bold"
                                 android:textColor="?attr/colorPrimary" />
@@ -172,7 +172,7 @@
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
-                                android:text="当前宿主设备未开放硬件虚拟化，平台已无缝降级采用 QEMU TCG 仿真引擎。所有 7 大 Linux 发行版与开发工具链 100% 完整支持。"
+                                android:text="当前仅检查 AVF 平台声明与应用权限。custom VM 在实例启动时验证创建与运行；预检不满足或启动失败时自动回退至 QEMU。"
                                 android:textSize="11sp"
                                 android:textColor="?attr/colorOnSurfaceVariant" />
                         </LinearLayout>
@@ -185,7 +185,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="14dp"
-                    app:cardCornerRadius="20dp"
+                    app:cardCornerRadius="0dp"
                     app:cardElevation="1dp"
                     app:strokeWidth="1dp"
                     app:strokeColor="?attr/colorOutlineVariant"
@@ -286,7 +286,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="14dp"
-                    app:cardCornerRadius="20dp"
+                    app:cardCornerRadius="0dp"
                     app:cardElevation="1dp"
                     app:strokeWidth="1dp"
                     app:strokeColor="?attr/colorOutlineVariant"
@@ -346,7 +346,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
                                 android:layout_marginEnd="4dp"
-                                app:cornerRadius="12dp"
+                                app:cornerRadius="0dp"
                                 android:text="4 GB" />
 
                             <com.google.android.material.button.MaterialButton
@@ -356,7 +356,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
                                 android:layout_marginEnd="4dp"
-                                app:cornerRadius="12dp"
+                                app:cornerRadius="0dp"
                                 android:text="8 GB" />
 
                             <com.google.android.material.button.MaterialButton
@@ -366,7 +366,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
                                 android:layout_marginEnd="4dp"
-                                app:cornerRadius="12dp"
+                                app:cornerRadius="0dp"
                                 android:text="16 GB" />
 
                             <com.google.android.material.button.MaterialButton
@@ -375,7 +375,7 @@
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
-                                app:cornerRadius="12dp"
+                                app:cornerRadius="0dp"
                                 android:text="32 GB" />
                         </LinearLayout>
 
@@ -386,10 +386,10 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="10dp"
-                            app:boxCornerRadiusTopStart="12dp"
-                            app:boxCornerRadiusTopEnd="12dp"
-                            app:boxCornerRadiusBottomStart="12dp"
-                            app:boxCornerRadiusBottomEnd="12dp"
+                            app:boxCornerRadiusTopStart="0dp"
+                            app:boxCornerRadiusTopEnd="0dp"
+                            app:boxCornerRadiusBottomStart="0dp"
+                            app:boxCornerRadiusBottomEnd="0dp"
                             android:hint="@string/wizard_disk_custom_hint">
 
                             <com.google.android.material.textfield.TextInputEditText
@@ -443,7 +443,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginStart="32dp"
                             android:layout_marginTop="6dp"
-                            app:cornerRadius="12dp"
+                            app:cornerRadius="0dp"
                             android:text="@string/wizard_select_shared_folder"
                             android:visibility="gone" />
 
@@ -466,7 +466,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="52dp"
                     android:minHeight="52dp"
-                    app:cornerRadius="16dp"
+                    app:cornerRadius="0dp"
                     android:text="@string/wizard_btn_next"
                     android:textSize="15sp"
                     android:textStyle="bold" />
@@ -488,7 +488,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="14dp"
-                    app:cardCornerRadius="20dp"
+                    app:cardCornerRadius="0dp"
                     app:cardElevation="1dp"
                     app:strokeWidth="1dp"
                     app:strokeColor="?attr/colorOutlineVariant"
@@ -570,7 +570,7 @@
                                 style="@style/Widget.Material3.Button.TonalButton"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                app:cornerRadius="12dp"
+                                app:cornerRadius="0dp"
                                 android:text="@string/wizard_net_test_btn" />
 
                             <TextView
@@ -591,7 +591,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="16dp"
-                    app:cardCornerRadius="20dp"
+                    app:cardCornerRadius="0dp"
                     app:cardElevation="1dp"
                     app:strokeWidth="1dp"
                     app:strokeColor="?attr/colorOutlineVariant"
@@ -626,7 +626,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:minHeight="44dp"
-                            app:cornerRadius="12dp"
+                            app:cornerRadius="0dp"
                             android:layout_marginTop="10dp"
                             app:icon="@drawable/ic_network"
                             app:iconSize="16dp"
@@ -666,7 +666,7 @@
                         android:layout_width="0dp"
                         android:layout_height="52dp"
                         android:minHeight="52dp"
-                        app:cornerRadius="16dp"
+                        app:cornerRadius="0dp"
                         android:layout_weight="1"
                         android:layout_marginEnd="8dp"
                         android:text="@string/wizard_btn_prev"
@@ -678,7 +678,7 @@
                         android:layout_width="0dp"
                         android:layout_height="52dp"
                         android:minHeight="52dp"
-                        app:cornerRadius="16dp"
+                        app:cornerRadius="0dp"
                         android:layout_weight="2"
                         android:text="@string/wizard_btn_next"
                         android:textSize="15sp"
@@ -702,7 +702,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="16dp"
-                    app:cardCornerRadius="20dp"
+                    app:cardCornerRadius="0dp"
                     app:cardElevation="1dp"
                     app:strokeWidth="1dp"
                     app:strokeColor="?attr/colorOutlineVariant"
@@ -764,7 +764,7 @@
                                 android:insetTop="0dp"
                                 android:insetRight="0dp"
                                 android:insetBottom="0dp"
-                                app:cornerRadius="12dp"
+                                app:cornerRadius="0dp"
                                 android:text="-"
                                 android:textSize="18sp"
                                 android:textStyle="bold" />
@@ -791,7 +791,7 @@
                                 android:insetTop="0dp"
                                 android:insetRight="0dp"
                                 android:insetBottom="0dp"
-                                app:cornerRadius="12dp"
+                                app:cornerRadius="0dp"
                                 android:text="+"
                                 android:textSize="18sp"
                                 android:textStyle="bold" />
@@ -839,7 +839,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="10dp"
-                            app:cornerRadius="12dp"
+                            app:cornerRadius="0dp"
                             android:text="@string/wizard_btn_auth_guide"
                             android:visibility="gone" />
                     </LinearLayout>
@@ -857,7 +857,7 @@
                         android:layout_width="0dp"
                         android:layout_height="52dp"
                         android:minHeight="52dp"
-                        app:cornerRadius="16dp"
+                        app:cornerRadius="0dp"
                         android:layout_weight="1"
                         android:layout_marginEnd="8dp"
                         android:text="@string/wizard_btn_prev"
@@ -869,7 +869,7 @@
                         android:layout_width="0dp"
                         android:layout_height="52dp"
                         android:minHeight="52dp"
-                        app:cornerRadius="16dp"
+                        app:cornerRadius="0dp"
                         android:layout_weight="2"
                         android:text="@string/wizard_btn_next"
                         android:textSize="15sp"
@@ -893,7 +893,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="14dp"
-                    app:cardCornerRadius="20dp"
+                    app:cardCornerRadius="0dp"
                     app:cardElevation="1dp"
                     app:strokeWidth="1dp"
                     app:strokeColor="?attr/colorOutlineVariant"
@@ -908,7 +908,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="@string/wizard_startup_card_title"
+                            android:text="首次启动基础环境与可选升级"
                             android:textSize="16sp"
                             android:textStyle="bold"
                             android:textColor="?attr/colorOnSurface" />
@@ -917,7 +917,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
-                            android:text="@string/wizard_startup_card_desc"
+                            android:text="首次启动必须安装并验证基础环境：按发行版使用 systemd 或 OpenRC，包含证书、网络、SSH 与常用工具。安装失败可重试；下方选项仅控制额外系统升级。"
                             android:textSize="12sp"
                             android:textColor="?attr/colorOutline" />
 
@@ -933,7 +933,7 @@
                             android:id="@+id/chk_auto_update"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="@string/wizard_startup_auto_update_label"
+                            android:text="额外系统升级（可选）"
                             android:textSize="14sp"
                             android:textStyle="bold" />
 
@@ -967,7 +967,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="14dp"
-                    app:cardCornerRadius="16dp"
+                    app:cardCornerRadius="0dp"
                     app:cardElevation="1dp"
                     app:strokeWidth="1dp"
                     app:strokeColor="?attr/colorOutlineVariant"
@@ -1004,7 +1004,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="16dp"
-                    app:cardCornerRadius="16dp"
+                    app:cardCornerRadius="0dp"
                     app:cardElevation="1dp"
                     app:strokeWidth="1dp"
                     app:strokeColor="?attr/colorOutlineVariant"
@@ -1022,7 +1022,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="52dp"
                             android:minHeight="52dp"
-                            app:cornerRadius="16dp"
+                            app:cornerRadius="0dp"
                             android:text="@string/wizard_btn_create_instance"
                             android:textSize="15sp"
                             android:textStyle="bold" />
@@ -1054,7 +1054,7 @@
                                 android:progress="0"
                                 app:indicatorColor="?attr/colorPrimary"
                                 app:trackColor="?attr/colorOutlineVariant"
-                                app:trackCornerRadius="4dp"
+                                app:trackCornerRadius="0dp"
                                 app:trackThickness="8dp" />
 
                             <TextView
@@ -1085,7 +1085,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="52dp"
                     android:minHeight="52dp"
-                    app:cornerRadius="16dp"
+                    app:cornerRadius="0dp"
                     android:text="@string/wizard_btn_prev"
                     android:textSize="15sp" />
             </LinearLayout>

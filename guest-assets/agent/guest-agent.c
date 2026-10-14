@@ -90,6 +90,7 @@ static int read_line_fd(int stream_fd, char *request, size_t request_size) {
             return length == 0U ? 0 : -1;
         }
         if (bytes_read < 0) {
+            if (errno == EINTR) continue;
             return -1;
         }
         ++length;
@@ -106,9 +107,12 @@ static int read_line_fd(int stream_fd, char *request, size_t request_size) {
 
 static int write_control_line_fd(int stream_fd, const char *line) {
     size_t length = strlen(line);
-    ssize_t written = write(stream_fd, line, length);
-    if (written != (ssize_t)length) {
-        return 0;
+    size_t offset = 0U;
+    while (offset < length) {
+        ssize_t written = write(stream_fd, line + offset, length - offset);
+        if (written < 0 && errno == EINTR) continue;
+        if (written <= 0) return 0;
+        offset += (size_t)written;
     }
     return 1;
 }
@@ -199,8 +203,281 @@ static int setup_bridge_ipc_socket(void) {
 #endif
 
 #define MAX_PAYLOAD_LINE (384 * 1024U)
+#define MAX_FEATURE_RESULT 4096U
+#ifndef ORCHESTELLA_PROFILECTL_PATH
+#define ORCHESTELLA_PROFILECTL_PATH "/usr/local/lib/orchestella/profilectl"
+#endif
 
-static int serve_control_channel_fd(int read_fd, int write_fd, const char *terminal_device) {
+static int feature_profile_allowed(const char *profile) {
+    return strcmp(profile, "desktop-labwc") == 0 || strcmp(profile, "podman") == 0
+        || strcmp(profile, "code-server") == 0 || strcmp(profile, "docker-cli") == 0;
+}
+
+static int feature_action_allowed(const char *action) {
+    return strcmp(action, "probe") == 0 || strcmp(action, "install") == 0
+        || strcmp(action, "status") == 0 || strcmp(action, "start") == 0
+        || strcmp(action, "stop") == 0 || strcmp(action, "cancel") == 0
+        || strcmp(action, "resize") == 0 || strcmp(action, "expose") == 0
+        || strcmp(action, "unexpose") == 0 || strcmp(action, "confirm-frame") == 0;
+}
+
+/* The helper only dispatches short jobs; package installation runs outside the control reader. */
+static int run_feature_helper(const char *action, const char *profile,
+                              const char *width, const char *height, const char *scale,
+                              char result[MAX_FEATURE_RESULT + 1U]) {
+#if !defined(_WIN32)
+    int descriptors[2];
+    pid_t child;
+    size_t length = 0U;
+    int valid = 1;
+    int child_status = 0;
+    struct timespec started, now;
+    if (!feature_action_allowed(action) || !feature_profile_allowed(profile)
+        || pipe(descriptors) != 0) return 0;
+    child = fork();
+    if (child < 0) { close(descriptors[0]); close(descriptors[1]); return 0; }
+    if (child == 0) {
+        int null_fd = open("/dev/null", O_RDWR);
+        close(descriptors[0]);
+        if (dup2(descriptors[1], STDOUT_FILENO) < 0) _exit(70);
+        close(descriptors[1]);
+        if (null_fd >= 0) {
+            dup2(null_fd, STDIN_FILENO);
+            dup2(null_fd, STDERR_FILENO);
+            if (null_fd > STDERR_FILENO) close(null_fd);
+        }
+        /* No inherited VM/control/IPC descriptors or untrusted shell evaluation. */
+        long bound = sysconf(_SC_OPEN_MAX);
+        if (bound < 0 || bound > 65536) bound = 65536;
+        for (int descriptor = 3; descriptor < bound; ++descriptor) close(descriptor);
+        if (strcmp(action, "confirm-frame") == 0) {
+            execl(ORCHESTELLA_PROFILECTL_PATH, "profilectl", action, profile, width, (char *)NULL);
+        } else if (width != NULL) {
+            execl(ORCHESTELLA_PROFILECTL_PATH, "profilectl", action, profile,
+                  width, height, scale, (char *)NULL);
+        } else {
+            execl(ORCHESTELLA_PROFILECTL_PATH, "profilectl", action, profile, (char *)NULL);
+        }
+        _exit(69);
+    }
+    close(descriptors[1]);
+    if (clock_gettime(CLOCK_MONOTONIC, &started) != 0) valid = 0;
+    while (valid) {
+        struct pollfd pending = { descriptors[0], POLLIN, 0 };
+        if (clock_gettime(CLOCK_MONOTONIC, &now) != 0
+            || now.tv_sec - started.tv_sec >= 3) { valid = 0; break; }
+        int polled = poll(&pending, 1, 100);
+        if (polled < 0 && errno == EINTR) continue;
+        if (polled < 0) { valid = 0; break; }
+        if (polled == 0) continue;
+        char buffer[512];
+        ssize_t count = read(descriptors[0], buffer, sizeof(buffer));
+        if (count < 0 && errno == EINTR) continue;
+        if (count < 0 || length + (size_t)count > MAX_FEATURE_RESULT) { valid = 0; break; }
+        if (count == 0) break;
+        memcpy(result + length, buffer, (size_t)count);
+        length += (size_t)count;
+    }
+    close(descriptors[0]);
+    while (valid) {
+        pid_t completed = waitpid(child, &child_status, WNOHANG);
+        if (completed == child) break;
+        if (completed < 0 && errno != EINTR) { valid = 0; break; }
+        if (clock_gettime(CLOCK_MONOTONIC, &now) != 0
+            || now.tv_sec - started.tv_sec >= 3) { valid = 0; break; }
+        poll(NULL, 0, 10);
+    }
+    if (!valid) {
+        kill(child, SIGKILL);
+        while (waitpid(child, &child_status, 0) < 0 && errno == EINTR) { }
+    }
+    if (!valid || !WIFEXITED(child_status) || WEXITSTATUS(child_status) != 0) return 0;
+    while (length > 0 && (result[length - 1] == '\n' || result[length - 1] == '\r')) --length;
+    if (length < 2 || result[0] != '{' || result[length - 1] != '}') return 0;
+    for (size_t index = 0; index < length; ++index) {
+        if ((unsigned char)result[index] < 0x20U) return 0;
+    }
+    result[length] = '\0';
+    return 1;
+#else
+    (void)action; (void)profile; (void)width; (void)height; (void)scale; (void)result;
+    return 0;
+#endif
+}
+
+static int handle_features(int write_fd, const char *command) {
+    int version = 0;
+    char action[16] = {0};
+    char profile[32] = {0};
+    char extra = '\0';
+    char result[MAX_FEATURE_RESULT + 1U];
+    char generation[33] = {0};
+    if (sscanf(command, "%d %15s %31s %32s %c", &version, action, profile, generation, &extra) == 4
+        && version == 1 && strcmp(action, "CONFIRM-FRAME") == 0 && strcmp(profile, "desktop-labwc") == 0) {
+        int valid = strlen(generation) == 32U;
+        for (size_t index = 0; valid && index < 32U; ++index)
+            valid = (generation[index] >= '0' && generation[index] <= '9')
+                || (generation[index] >= 'a' && generation[index] <= 'f');
+        if (!valid) return write_control_line_fd(write_fd, "ORCHESTELLA/ERROR malformed-command\n");
+        if (!run_feature_helper("confirm-frame", "desktop-labwc", generation, NULL, NULL, result))
+            return write_control_line_fd(write_fd, "ORCHESTELLA/ERROR display-confirm-unavailable\n");
+        return write_control_line_fd(write_fd, "ORCHESTELLA/OK features ")
+            && write_control_line_fd(write_fd, result) && write_control_line_fd(write_fd, "\n");
+    }
+    if (strlen(command) > 128U || sscanf(command, "%d %15s %31s %c", &version, action, profile, &extra) != 3)
+        return write_control_line_fd(write_fd, "ORCHESTELLA/ERROR malformed-command\n");
+    if (version != 1) return write_control_line_fd(write_fd, "ORCHESTELLA/ERROR unsupported-feature-version\n");
+    for (char *value = action; *value != '\0'; ++value) *value = (char)tolower((unsigned char)*value);
+    if (!feature_action_allowed(action) || strcmp(action, "resize") == 0 || strcmp(action, "confirm-frame") == 0 || !feature_profile_allowed(profile)
+        || ((strcmp(action, "expose") == 0 || strcmp(action, "unexpose") == 0) && strcmp(profile, "code-server") != 0))
+        return write_control_line_fd(write_fd, "ORCHESTELLA/ERROR unsupported-feature-command\n");
+    if (!run_feature_helper(action, profile, NULL, NULL, NULL, result))
+        return write_control_line_fd(write_fd, "ORCHESTELLA/ERROR features-unavailable\n");
+    return write_control_line_fd(write_fd, "ORCHESTELLA/OK features ")
+        && write_control_line_fd(write_fd, result) && write_control_line_fd(write_fd, "\n");
+}
+
+#if !defined(_WIN32) && !defined(ORCHESTELLA_TEST_POWER)
+static int executable_power_program(const char *path) {
+    struct stat info;
+    unsigned char magic[4];
+    FILE *program;
+    size_t count;
+    if (stat(path, &info) != 0 || !S_ISREG(info.st_mode) || access(path, X_OK) != 0) {
+        return 0;
+    }
+    program = fopen(path, "rb");
+    if (program == NULL) {
+        return 0;
+    }
+    count = fread(magic, 1U, sizeof(magic), program);
+    fclose(program);
+    return count == sizeof(magic) && magic[0] == 0x7fU
+            && magic[1] == 'E' && magic[2] == 'L' && magic[3] == 'F';
+}
+#endif
+
+/* Returns 0 for an acknowledged dispatch, 1 when unavailable, or 70 on reply failure.
+ * Both existing v1 actions shut down the guest. No request bytes reach argv or a shell. */
+static int dispatch_power_request(int write_fd) {
+#if defined(ORCHESTELLA_TEST_POWER)
+    /* Compile-time test seam: never executes power utilities, including on Windows. */
+    const char *fault = getenv("ORCHESTELLA_TEST_POWER_FAULT");
+    const char *record_path = getenv("ORCHESTELLA_TEST_POWER_RECORD");
+    const char *mode = getenv("ORCHESTELLA_TEST_POWER_MODE");
+    FILE *record;
+    if (fault != NULL && (strcmp(fault, "access") == 0 || strcmp(fault, "fork") == 0
+                          || strcmp(fault, "pipe") == 0)) {
+        return 1;
+    }
+    if (record_path == NULL || (record = fopen(record_path, "ab")) == NULL) {
+        return 1;
+    }
+    if ((fault != NULL && strcmp(fault, "reply") == 0)
+        || !write_control_line_fd(write_fd, "ORCHESTELLA/OK power\n")) {
+        fclose(record);
+        return 70;
+    }
+    fputs(mode != NULL && strcmp(mode, "recovery") == 0
+                  ? "/usr/lib/orchestella/busybox poweroff -f\n"
+                  : "/sbin/poweroff\n", record);
+    fclose(record);
+    return 0;
+#elif !defined(_WIN32)
+    const char *program;
+    char init_name[64] = {0};
+    FILE *init_comm;
+    int recovery;
+    int gate[2];
+    pid_t worker;
+    char release = 'G';
+    if (geteuid() != 0 || (init_comm = fopen("/proc/1/comm", "rb")) == NULL) {
+        return 1;
+    }
+    if (fgets(init_name, sizeof(init_name), init_comm) == NULL) {
+        fclose(init_comm);
+        return 1;
+    }
+    fclose(init_comm);
+    init_name[strcspn(init_name, "\r\n")] = '\0';
+    recovery = strcmp(init_name, "systemd") != 0 && strcmp(init_name, "init") != 0;
+    program = recovery ? "/usr/lib/orchestella/busybox" : "/sbin/poweroff";
+    if (!executable_power_program(program) || pipe(gate) != 0) {
+        return 1;
+    }
+    worker = fork();
+    if (worker < 0) {
+        close(gate[0]);
+        close(gate[1]);
+        return 1;
+    }
+    if (worker == 0) {
+        ssize_t received;
+        struct timespec pause = {0, 250000000L};
+        close(gate[1]);
+        do {
+            received = read(gate[0], &release, 1U);
+        } while (received < 0 && errno == EINTR);
+        close(gate[0]);
+        if (received != 1 || release != 'G') {
+            _exit(0); /* No successful parent acknowledgement: do not shut down. */
+        }
+        while (nanosleep(&pause, &pause) != 0 && errno == EINTR) {}
+        close(write_fd); /* Utility output must not pollute the bridge protocol. */
+        if (recovery) {
+            execl(program, "busybox", "poweroff", "-f", (char *)NULL);
+        } else {
+            execl(program, "poweroff", (char *)NULL);
+        }
+        fputs("ORCHESTELLA_GUEST_POWER_ERROR stage=exec\n", stderr);
+        _exit(71);
+    }
+    close(gate[0]);
+    if (!write_control_line_fd(write_fd, "ORCHESTELLA/OK power\n")) {
+        close(gate[1]); /* EOF cancels the child before exec. */
+        while (waitpid(worker, NULL, 0) < 0 && errno == EINTR) {}
+        return 70;
+    }
+    /* The child cannot execute before the reply has been written. Allow it to drain. */
+    while (write(gate[1], &release, 1U) < 0 && errno == EINTR) {}
+    close(gate[1]);
+    return 0;
+#else
+    (void)write_fd;
+    return 1; /* Production Windows never invokes host power commands. */
+#endif
+}
+
+/* The same v1 authentication rules apply to startup retries on an already-open channel. */
+static int answer_control_hello(int write_fd, const char *request, const char *expected_token) {
+    char verb[32] = {0};
+    char extra = '\0';
+    char provided_token[TOKEN_HEX_LENGTH + 2U] = {0};
+    int minimum_version;
+    int maximum_version;
+
+    if (strlen(request) >= MAX_CONTROL_LINE
+        || sscanf(request, "%31s %d %d %65s %c", verb, &minimum_version,
+                  &maximum_version, provided_token, &extra) != 4
+        || (strcmp(verb, "ORCHESTELLA/HELLO") != 0 && strcmp(verb, "DROIDLAYER/HELLO") != 0)
+        || !is_lower_hex_token(provided_token)
+        || minimum_version < 0 || maximum_version < minimum_version) {
+        write_control_line_fd(write_fd, "ORCHESTELLA/ERROR malformed-handshake\n");
+        return 1;
+    }
+    if (!constant_time_token_equals(expected_token, provided_token)) {
+        write_control_line_fd(write_fd, "ORCHESTELLA/ERROR unauthorized\n");
+        return 3;
+    }
+    if (minimum_version > 1 || maximum_version < 1) {
+        write_control_line_fd(write_fd, "ORCHESTELLA/ERROR unsupported-version\n");
+        return 2;
+    }
+    return write_control_line_fd(write_fd, "ORCHESTELLA/READY 1\n") ? 0 : 70;
+}
+
+static int serve_control_channel_fd(int read_fd, int write_fd, const char *terminal_device,
+                                    const char *expected_token) {
     char *request = (char *)malloc(MAX_PAYLOAD_LINE);
     if (request == NULL) {
         return 71;
@@ -332,8 +609,45 @@ static int serve_control_channel_fd(int read_fd, int write_fd, const char *termi
 #endif
             return 4;
         }
+        if (strncmp(request, "ORCHESTELLA/HELLO", 16U) == 0
+            || strncmp(request, "DROIDLAYER/HELLO", 15U) == 0) {
+            int repeated_hello = answer_control_hello(write_fd, request, expected_token);
+            if (repeated_hello != 0) {
+                free(request);
+#if !defined(_WIN32)
+                if (ipc_server_fd >= 0) {
+                    close(ipc_server_fd);
+                }
+#endif
+                return repeated_hello;
+            }
+            continue;
+        }
         if (strcmp(request, "ORCHESTELLA/PING") == 0 || strcmp(request, "DROIDLAYER/PING") == 0) {
             if (!write_control_line_fd(write_fd, "ORCHESTELLA/PONG 1\n")) {
+                free(request);
+                return 70;
+            }
+            continue;
+        }
+        if (strncmp(request, "ORCHESTELLA/POWER", sizeof("ORCHESTELLA/POWER") - 1U) == 0
+            || strncmp(request, "DROIDLAYER/POWER", sizeof("DROIDLAYER/POWER") - 1U) == 0) {
+            int power_status;
+            if (strcmp(request, "ORCHESTELLA/POWER shutdown") != 0
+                && strcmp(request, "ORCHESTELLA/POWER poweroff") != 0
+                && strcmp(request, "DROIDLAYER/POWER shutdown") != 0
+                && strcmp(request, "DROIDLAYER/POWER poweroff") != 0) {
+                write_control_line_fd(write_fd, "ORCHESTELLA/ERROR malformed-command\n");
+                free(request);
+                return 4;
+            }
+            power_status = dispatch_power_request(write_fd);
+            if (power_status == 70) {
+                free(request);
+                return 70;
+            }
+            if (power_status != 0
+                && !write_control_line_fd(write_fd, "ORCHESTELLA/ERROR power-unavailable\n")) {
                 free(request);
                 return 70;
             }
@@ -351,68 +665,46 @@ static int serve_control_channel_fd(int read_fd, int write_fd, const char *termi
             }
             continue;
         }
-        const char *display_cmd = NULL;
-        if (strncmp(request, "ORCHESTELLA/DISPLAY ", 20) == 0) {
-            display_cmd = request + 20;
-        } else if (strncmp(request, "DROIDLAYER/DISPLAY ", 19) == 0) {
-            display_cmd = request + 19;
+        const char *feature_cmd = NULL;
+        if (strncmp(request, "ORCHESTELLA/FEATURES ", sizeof("ORCHESTELLA/FEATURES ") - 1U) == 0)
+            feature_cmd = request + sizeof("ORCHESTELLA/FEATURES ") - 1U;
+        if (feature_cmd != NULL) {
+            if (!handle_features(write_fd, feature_cmd)) { free(request); return 70; }
+            continue;
         }
+        const char *display_cmd = NULL;
+        if (strncmp(request, "ORCHESTELLA/DISPLAY ", sizeof("ORCHESTELLA/DISPLAY ") - 1U) == 0)
+            display_cmd = request + sizeof("ORCHESTELLA/DISPLAY ") - 1U;
+        else if (strncmp(request, "DROIDLAYER/DISPLAY ", sizeof("DROIDLAYER/DISPLAY ") - 1U) == 0)
+            display_cmd = request + sizeof("DROIDLAYER/DISPLAY ") - 1U;
         if (display_cmd != NULL) {
-            char sub[32] = {0};
-            if (sscanf(display_cmd, "%31s", sub) == 1) {
-                if (strcmp(sub, "RESIZE") == 0) {
-                    int w = 0, h = 0;
-                    char extra = '\0';
-                    if (sscanf(display_cmd, "RESIZE %d %d %c", &w, &h, &extra) == 2
-                        && w >= 100 && w <= 7680 && h >= 100 && h <= 7680) {
-                        char cmd[256];
-                        snprintf(cmd, sizeof(cmd), "wlr-randr --custom-mode %dx%d >/dev/null 2>&1", w, h);
-                        int r = system(cmd);
-                        (void)r;
-                        if (!write_control_line_fd(write_fd, "ORCHESTELLA/OK display\n")) {
-                            free(request);
-                            return 70;
-                        }
-                        continue;
-                    }
-                } else if (strcmp(sub, "MODE") == 0) {
-                    int w = 0, h = 0;
-                    double scale = 0.0;
-                    char extra = '\0';
-                    if (sscanf(display_cmd, "MODE %d %d %lf %c", &w, &h, &scale, &extra) == 3
-                        && w >= 100 && w <= 7680 && h >= 100 && h <= 7680
-                        && scale >= 0.1 && scale <= 5.0) {
-                        char cmd[256];
-                        snprintf(cmd, sizeof(cmd), "wlr-randr --custom-mode %dx%d --scale %.2f >/dev/null 2>&1", w, h, scale);
-                        int r = system(cmd);
-                        (void)r;
-                        if (!write_control_line_fd(write_fd, "ORCHESTELLA/OK display\n")) {
-                            free(request);
-                            return 70;
-                        }
-                        continue;
-                    }
-                } else if (strcmp(sub, "FPS") == 0) {
+            char result[MAX_FEATURE_RESULT + 1U];
+            const char *response = "ORCHESTELLA/ERROR malformed-command\n";
+            if (strcmp(display_cmd, "LAUNCH") == 0) {
+                response = run_feature_helper("start", "desktop-labwc", NULL, NULL, NULL, result)
+                    ? "ORCHESTELLA/OK display\n" : "ORCHESTELLA/ERROR display-launch-unavailable\n";
+            } else {
+                int width = 0, height = 0;
+                double scale = 1.0;
+                char extra = '\0';
+                int mode = sscanf(display_cmd, "MODE %d %d %lf %c", &width, &height, &scale, &extra) == 3;
+                int resize = !mode && sscanf(display_cmd, "RESIZE %d %d %c", &width, &height, &extra) == 2;
+                if ((mode || resize) && width >= 100 && width <= 4096 && height >= 100 && height <= 4096
+                    && (long long)width * height <= 4194304LL && scale >= 0.1 && scale <= 5.0) {
+                    char width_arg[16], height_arg[16], scale_arg[32];
+                    snprintf(width_arg, sizeof(width_arg), "%d", width);
+                    snprintf(height_arg, sizeof(height_arg), "%d", height);
+                    snprintf(scale_arg, sizeof(scale_arg), "%.3f", scale);
+                    response = run_feature_helper("resize", "desktop-labwc", width_arg, height_arg, scale_arg, result)
+                        ? "ORCHESTELLA/OK display\n" : "ORCHESTELLA/ERROR display-mode-unavailable\n";
+                } else {
                     int fps = 0;
-                    char extra = '\0';
-                    if (sscanf(display_cmd, "FPS %d %c", &fps, &extra) == 1
-                        && fps >= 1 && fps <= 240) {
-                        if (!write_control_line_fd(write_fd, "ORCHESTELLA/OK display\n")) {
-                            free(request);
-                            return 70;
-                        }
-                        continue;
-                    }
+                    if (sscanf(display_cmd, "FPS %d %c", &fps, &extra) == 1 && fps >= 1 && fps <= 240)
+                        response = "ORCHESTELLA/ERROR display-fps-unavailable\n";
                 }
             }
-            write_control_line_fd(write_fd, "ORCHESTELLA/ERROR malformed-command\n");
-            free(request);
-#if !defined(_WIN32)
-            if (ipc_server_fd >= 0) {
-                close(ipc_server_fd);
-            }
-#endif
-            return 4;
+            if (!write_control_line_fd(write_fd, response)) { free(request); return 70; }
+            continue;
         }
 
         /* Inbound clipboard command from host to guest */
@@ -445,14 +737,10 @@ static int serve_control_channel_fd(int read_fd, int write_fd, const char *termi
             continue;
         }
 
-        write_control_line_fd(write_fd, "ORCHESTELLA/ERROR malformed-command\n");
-        free(request);
-#if !defined(_WIN32)
-        if (ipc_server_fd >= 0) {
-            close(ipc_server_fd);
+        if (!write_control_line_fd(write_fd, "ORCHESTELLA/ERROR unsupported-command\n")) {
+            free(request);
+            return 70;
         }
-#endif
-        return 4;
     }
 }
 
@@ -465,46 +753,12 @@ static int serve_control_channel_fd(int read_fd, int write_fd, const char *termi
  * value is the handshake exit code.
  */
 static int authenticate_control(int read_fd, int write_fd, const char *expected_token) {
-    char verb[32] = {0};
-    char extra = '\0';
     char request[MAX_CONTROL_LINE] = {0};
-    char provided_token[TOKEN_HEX_LENGTH + 2U] = {0};
-    int minimum_version;
-    int maximum_version;
-    int handshake_status;
-
-    handshake_status = read_line_fd(read_fd, request, sizeof(request));
-    if (handshake_status != 1
-        || sscanf(request,
-                  "%31s %d %d %65s %c",
-                  verb,
-                  &minimum_version,
-                  &maximum_version,
-                  provided_token,
-                  &extra)
-               != 4
-        || (strcmp(verb, "ORCHESTELLA/HELLO") != 0 && strcmp(verb, "DROIDLAYER/HELLO") != 0)
-        || !is_lower_hex_token(provided_token)) {
+    if (read_line_fd(read_fd, request, sizeof(request)) != 1) {
         write_control_line_fd(write_fd, "ORCHESTELLA/ERROR malformed-handshake\n");
         return 1;
     }
-    if (minimum_version < 0 || maximum_version < minimum_version) {
-        write_control_line_fd(write_fd, "ORCHESTELLA/ERROR malformed-handshake\n");
-        return 1;
-    }
-    if (!constant_time_token_equals(expected_token, provided_token)) {
-        write_control_line_fd(write_fd, "ORCHESTELLA/ERROR unauthorized\n");
-        return 3;
-    }
-    if (minimum_version > 1 || maximum_version < 1) {
-        write_control_line_fd(write_fd, "ORCHESTELLA/ERROR unsupported-version\n");
-        return 2;
-    }
-
-    if (!write_control_line_fd(write_fd, "ORCHESTELLA/READY 1\n")) {
-        return 70;
-    }
-    return 0;
+    return answer_control_hello(write_fd, request, expected_token);
 }
 
 #if !defined(_WIN32)
@@ -681,6 +935,8 @@ static int serve_vsock_mode(
                 pid_t worker = fork();
                 if (worker == 0) {
                     int authenticated;
+                    /* This worker must wait for its own feature dispatch children. */
+                    signal(SIGCHLD, SIG_DFL);
                     close(control_listener);
                     if (terminal_listener >= 0) {
                         close(terminal_listener);
@@ -692,7 +948,7 @@ static int serve_vsock_mode(
                     if (authenticated != 0) {
                         _exit(authenticated);
                     }
-                    _exit(serve_control_channel_fd(connection, connection, terminal_device));
+                    _exit(serve_control_channel_fd(connection, connection, terminal_device, expected_token));
                 }
                 close(connection);
             }
@@ -829,7 +1085,7 @@ int main(int argument_count, char **arguments) {
         if (authenticated != 0) {
             return authenticated;
         }
-        return serve_control_channel_fd(STDIN_FILENO, STDOUT_FILENO, terminal_device);
+        return serve_control_channel_fd(STDIN_FILENO, STDOUT_FILENO, terminal_device, expected_token);
     }
     {
         int authenticated = authenticate_control(STDIN_FILENO, STDOUT_FILENO, expected_token);

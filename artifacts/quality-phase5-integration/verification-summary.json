@@ -1,0 +1,156 @@
+{
+  "schema": 1,
+  "sourceCommit": "6bbc31c29e97c0eba64122d22d9ea301d658d097",
+  "foundationCommit": "3b637e48f51fb4b78282d468d9c78b37d582de87",
+  "base": "8d0e8c75d769ecc645ea102b90a304c8657344a1",
+  "branch": "integration/quality-phase5",
+  "apk": {
+    "apk": "Orchestella-Quality-Phase5-local-debug.apk",
+    "bytes": 71969178,
+    "sha256": "e0ac730bd4e0441e6d9d347e7f25643f1ba9b0b00c4c8fa5a63474fdd8e7101a",
+    "applicationId": "io.github.nyzeep.orchestella",
+    "versionCode": 300,
+    "versionName": "0.3.0-preview.1",
+    "minSdk": 26,
+    "targetSdk": 36,
+    "signing": "Android Debug",
+    "sourceGate": "evidence/merge-host/editor-reentry-final/gradle-result.json",
+    "sourceCommit": "6bbc31c29e97c0eba64122d22d9ea301d658d097",
+    "previousCandidateRetained": "history/pre-editor-reentry"
+  },
+  "app": {
+    "tests": 663,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "lint": {
+    "errors": 0,
+    "warnings": 688
+  },
+  "runtimeChecks": {
+    "modules": [
+      "contract",
+      "instance",
+      "engine-qemu",
+      "engine-avf",
+      "network",
+      "distro",
+      "capability"
+    ],
+    "exitCode": 0,
+    "supplementalMainBasedTests": "AVF API shape/resource and BridgeClient response pump explicitly registered/executed"
+  },
+  "guestAssets": {
+    "tests": 73,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 2,
+    "platform": "Windows; two Linux-only process cases not run in this JVM suite"
+  },
+  "profiles": {
+    "tests": 39,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0,
+    "exitCode": 0,
+    "seconds": 262.819
+  },
+  "guestBaseline": [
+    {
+      "gate": "distro-runtime-matrix",
+      "checks": 133,
+      "exitCode": 0,
+      "skips": 0
+    },
+    {
+      "gate": "distro-failure-diagnostics",
+      "checks": 14,
+      "exitCode": 0,
+      "skips": 0
+    },
+    {
+      "gate": "native-recovery-loader",
+      "checks": 56,
+      "exitCode": 0,
+      "skips": 0
+    },
+    {
+      "gate": "manual-recovery",
+      "checks": 11,
+      "exitCode": 0,
+      "skips": 0
+    }
+  ],
+  "controlProtocol": {
+    "posixCases": 50,
+    "posixAssertions": 865,
+    "helloCases": 14,
+    "helloAssertions": 44,
+    "powerMockCases": 24,
+    "powerAssertions": 96,
+    "failures": 0
+  },
+  "displayServicesData": {
+    "focusedJvm": 21,
+    "servicesSelectionUsbModels": 27,
+    "linuxRelay": 15,
+    "nativePixelColor": "PASS; same source static host executable",
+    "linux9p": "PASS; 1500 sessions FD8->8, 400 symlink races outsideReads=0"
+  },
+  "nativeBuild": {
+    "abi": "arm64-v8a",
+    "exitCode": 0
+  },
+  "agent": {
+    "sourceSha256": "f1250967916612da9680526a51fa99973c711b21ed6b4044cbd2468dff1c5fb5",
+    "inputLockSha256": "f2631c082d40dbda20b3046956c7cd94ed5e309c60784d128f669061812947e3",
+    "agentBytes": 477400,
+    "agentSha256": "6c6470872f2bc45c56729bb4d9848f0f0b5e559f79dc8b3e64e3ba4c643893e1",
+    "stackExecutable": false
+  },
+  "bundle": {
+    "name": "runtime/initramfs.cpio.gz",
+    "bytes": 1267115,
+    "sha256": "c96fe6e6d95b097b7b7509a669b8aaf19acf73de4541d4b4e069795213540361"
+  },
+  "generatedInit": {
+    "name": "runtime/guest_init",
+    "bytes": 230603,
+    "sha256": "75c4d6e7b30013092f1220b9980ba552f22c9b50490fcc8687c970935f0a72b8"
+  },
+  "device": {
+    "deviceAlias": "HONOR-MEY-AN00",
+    "apiLevel": 36,
+    "preflight": "PASS",
+    "existingRuntimeProcesses": 0,
+    "signatureCompatible": false,
+    "installAttempted": false,
+    "runtimeRegression": "NOT_RUN",
+    "existingAppDataPreserved": true,
+    "cancelledSevenDistroQueueRestarted": false
+  },
+  "temporaryResources": {
+    "profileRecordedChildren": 39,
+    "liveOwnedProfileChildren": 0,
+    "remainingProfileLocks": 0,
+    "createdDeviceForwards": 0,
+    "createdDeviceLeases": 0
+  },
+  "reviewStatus": "APPROVE_BOTH_AXES",
+  "pushStatus": "RECORDED_IN_FINAL_DELIVERY",
+  "reviews": {
+    "qualityProtocol": "docs/reports/reviews/quality-phase5-integration/standards-review.zh-CN.md",
+    "phase5DataArtifacts": "docs/reports/reviews/quality-phase5-integration/spec-review.zh-CN.md",
+    "reviewedSourceCommit": "6bbc31c29e97c0eba64122d22d9ea301d658d097",
+    "openBlockingFindings": 0
+  },
+  "integrationSourceCommit": "cfec895ca0bd0186b212f7c73d27b8d6bb06898c",
+  "editorReentry": {
+    "tests": 5,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0,
+    "status": "PASS"
+  }
+}

@@ -130,7 +130,19 @@ tasks.register<JavaExec>("avfCapabilityMatrixAudioTest") {
     mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.AvfCapabilityMatrixAudioTest")
 }
 
+tasks.register<JavaExec>("reflectiveAvfVirtualMachineApiTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.ReflectiveAvfVirtualMachineApiTest")
+}
+
+tasks.register<JavaExec>("avfVirtualMachineEngineResourceTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.AvfVirtualMachineEngineResourceTest")
+}
+
 val avfAllTestTasks = listOf(
+    "reflectiveAvfVirtualMachineApiTest",
+    "avfVirtualMachineEngineResourceTest",
     "avfLaunchSpecTest",
     "avfVirtualMachineEngineTest",
     "avfBridgeOverVsockContractTest",

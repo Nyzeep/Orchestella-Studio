@@ -18,6 +18,7 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import io.github.nyzeep.orchestella.R
+import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
 import io.github.nyzeep.orchestella.ui.theme.ThemeStore
 
 /**
@@ -35,7 +36,6 @@ object SshManagerDialog {
         onConnect: ((SshProfile) -> Unit)? = null
     ) {
         val store = SshProfileStore(context)
-        val theme = ThemeStore(context).resolve()
 
         fun renderDialog() {
             var profiles = store.getAllProfiles()
@@ -69,6 +69,7 @@ object SshManagerDialog {
                 .create()
 
             fun populateProfiles() {
+                val theme = ThemeStore(context).resolve()
                 container.removeAllViews()
                 val currentProfiles = store.getAllProfiles()
                 if (currentProfiles.isEmpty()) {
@@ -79,6 +80,7 @@ object SshManagerDialog {
                         setPadding(0, dpToPx(context, 24), 0, dpToPx(context, 24))
                         gravity = android.view.Gravity.CENTER
                     }
+                    ThemeApplier.apply(emptyTv, theme)
                     container.addView(emptyTv)
                     return
                 }
@@ -127,6 +129,7 @@ object SshManagerDialog {
                             populateProfiles()
                         }
                     }
+                    ThemeApplier.setRole(btnDelete, ThemeApplier.Role.DANGER_ACTION)
                     titleRow.addView(btnDelete)
                     cardContent.addView(titleRow)
 
@@ -165,6 +168,7 @@ object SshManagerDialog {
                             Toast.makeText(context, "已复制: ${profile.buildCliCommand()}", Toast.LENGTH_SHORT).show()
                         }
                     }
+                    ThemeApplier.setRole(btnCopy, ThemeApplier.Role.SECONDARY_ACTION)
                     actionRow.addView(btnCopy)
 
                     val btnConnect = MaterialButton(context).apply {
@@ -194,10 +198,12 @@ object SshManagerDialog {
                             }
                         }
                     }
+                    ThemeApplier.setRole(btnConnect, ThemeApplier.Role.PRIMARY_ACTION)
                     actionRow.addView(btnConnect)
                     cardContent.addView(actionRow)
 
                     card.addView(cardContent)
+                    ThemeApplier.apply(card, theme)
                     container.addView(card)
                 }
             }
@@ -205,6 +211,7 @@ object SshManagerDialog {
             populateProfiles()
 
             dialog.show()
+            ThemeApplier.apply(dialog)
             dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setOnClickListener {
                 showEditProfileDialog(context, null, defaultInstanceId, defaultHost, defaultPort, defaultUser) { newProf ->
                     store.saveOrUpdate(newProf)
@@ -275,7 +282,7 @@ object SshManagerDialog {
                 onSaved(profile)
             }
             .setNegativeButton("取消", null)
-            .show()
+            .show().also { ThemeApplier.apply(it) }
     }
 
     private fun dpToPx(context: Context, dp: Int): Int =

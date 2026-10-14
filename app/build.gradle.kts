@@ -28,8 +28,8 @@ android {
         applicationId = "io.github.nyzeep.orchestella"
         minSdk = 26
         targetSdk = 36
-        versionCode = 200
-        versionName = "0.2.0"
+        versionCode = 300
+        versionName = "0.3.0-preview.1"
 
         ndk {
             abiFilters += "arm64-v8a"
@@ -40,6 +40,7 @@ android {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
             version = "3.22.1"
+            buildStagingDirectory = rootProject.layout.buildDirectory.dir("native").get().asFile
         }
     }
 
@@ -67,6 +68,15 @@ android {
     }
 
     signingConfigs {
+        val phase5Keystore = providers.gradleProperty("orchestella.phase5.debugKeystore").orNull
+        if (phase5Keystore != null) {
+            create("phase5Debug") {
+                storeFile = file(phase5Keystore)
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
         create("release") {
             val keystorePath = (properties["orchestella.signing.storeFile"] as String?)
             val keystoreFile = if (keystorePath != null) {
@@ -86,7 +96,11 @@ android {
     buildTypes {
         debug {
             val releaseSigning = signingConfigs.getByName("release")
-            if (releaseSigning.storeFile != null && releaseSigning.storeFile!!.exists()) {
+            if (signingConfigs.findByName("phase5Debug") != null) {
+                applicationIdSuffix = ".phase5"
+                versionNameSuffix = "-phase5-local"
+                signingConfig = signingConfigs.getByName("phase5Debug")
+            } else if (releaseSigning.storeFile != null && releaseSigning.storeFile!!.exists()) {
                 signingConfig = releaseSigning
             }
         }
@@ -104,6 +118,7 @@ android {
     }
 
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -134,6 +149,7 @@ kotlin {
 }
 
 dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     implementation(project(":runtime:capability"))
     implementation(project(":runtime:distro"))
     implementation(project(":runtime:engine-avf"))
@@ -161,6 +177,27 @@ tasks.register<JavaExec>("runPureJvmAppTests") {
         "io.github.nyzeep.orchestella.InstanceCredentialsTest",
         "io.github.nyzeep.orchestella.SetupWizardModelTest",
         "io.github.nyzeep.orchestella.DistroInstanceCreatorTest"
+    )
+}
+
+tasks.register<JavaExec>("runPhase5JvmAppTests") {
+    dependsOn("compileDebugUnitTestSources")
+    classpath = files(
+        layout.buildDirectory.dir("intermediates/javac/debugUnitTest/compileDebugUnitTestJavaWithJavac/classes"),
+        layout.buildDirectory.dir("tmp/kotlin-classes/debugUnitTest"),
+        layout.buildDirectory.dir("intermediates/javac/debug/compileDebugJavaWithJavac/classes"),
+        layout.buildDirectory.dir("tmp/kotlin-classes/debug")
+    ) + configurations.getByName("debugUnitTestRuntimeClasspath")
+    mainClass.set("org.junit.runner.JUnitCore")
+    args(
+        "io.github.nyzeep.orchestella.DesktopPresentationGateTest",
+        "io.github.nyzeep.orchestella.DesktopKeyMapperTest",
+        "io.github.nyzeep.orchestella.QemuWaylandChannelTest",
+        "io.github.nyzeep.orchestella.DoubleBufferedRendererTest",
+        "io.github.nyzeep.orchestella.FirstBootProvisionPipelineTest",
+        "io.github.nyzeep.orchestella.QemuRuntimeBootstrapperTest",
+        "io.github.nyzeep.orchestella.NetworkGatewayDaemonTest",
+        "io.github.nyzeep.orchestella.PortForwardingPresenterTest"
     )
 }
 

@@ -11,6 +11,7 @@ import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.materialswitch.MaterialSwitch
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
+import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
 
 /**
  * VMware-style hardware customization dialog (Ticket 52 / M4).
@@ -62,6 +63,7 @@ class VmHardwareConfigDialog(
         val ramLabel = view.findViewById<TextView>(R.id.hw_ram_label)
         val ramRecBadge = view.findViewById<TextView>(R.id.hw_ram_rec_badge)
         val ramZoneStatus = view.findViewById<TextView>(R.id.hw_ram_zone_status)
+        ThemeApplier.setRole(ramZoneStatus, ThemeApplier.Role.PRESERVE)
         val ramSeekbar = view.findViewById<SeekBar>(R.id.hw_ram_seekbar)
         val btnSave = view.findViewById<Button>(R.id.hw_btn_save)
 
@@ -142,6 +144,8 @@ class VmHardwareConfigDialog(
 
         // 5. Buttons
         val btnCancel = view.findViewById<Button>(R.id.hw_btn_cancel)
+        ThemeApplier.setRole(btnCancel, ThemeApplier.Role.SECONDARY_ACTION)
+        ThemeApplier.setRole(btnSave, ThemeApplier.Role.PRIMARY_ACTION)
         btnCancel.setOnClickListener { dialog.dismiss() }
 
         btnSave.setOnClickListener {
@@ -163,5 +167,6 @@ class VmHardwareConfigDialog(
         }
 
         dialog.show()
+        ThemeApplier.apply(dialog)
     }
 }

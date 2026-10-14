@@ -2,8 +2,6 @@ package io.github.nyzeep.orchestella;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotEquals;
-import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -32,9 +30,22 @@ public final class InstanceCredentialsTest {
         InstanceLifecycle.Instance inst1 = controller.create(
                 new InstanceLifecycle.DistroReference("alpine", "3.24.1"), root1);
 
-        assertEquals("1234", inst1.guestPassword());
+        String initialPassword = inst1.guestPassword();
+        assertTrue("default password must have at least 24 characters", initialPassword.length() >= 24);
+        assertTrue("default password must use guest-safe characters", initialPassword.matches("[23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+"));
+        assertFalse("default password must not be public", "1234".equals(initialPassword));
         assertEquals("orchestella", inst1.hostname());
         assertEquals("root", inst1.defaultUser());
+
+        Path anotherRoot = Files.createFile(temporaryFolder.getRoot().toPath().resolve("another-default.raw"));
+        InstanceLifecycle.Instance anotherDefault = controller.create(
+                new InstanceLifecycle.DistroReference("alpine", "3.24.1"), anotherRoot);
+        assertTrue("second default password must be strong and guest-safe",
+                anotherDefault.guestPassword().matches("[23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{24,}"));
+        assertFalse("new default instances must have independent passwords",
+                initialPassword.equals(anotherDefault.guestPassword()));
+        assertTrue("loading an instance must preserve its initial random password",
+                initialPassword.equals(store.load(inst1.id()).guestPassword()));
 
         io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig customConfig =
                 new io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig(
@@ -46,6 +57,9 @@ public final class InstanceCredentialsTest {
                 customConfig);
 
         assertEquals("MySecretPass999", inst2.guestPassword());
+        assertEquals("MySecretPass999", store.load(inst2.id()).guestPassword());
+        assertTrue("creating a custom instance must not change the first instance password",
+                initialPassword.equals(store.load(inst1.id()).guestPassword()));
         assertEquals("customhost", inst2.hostname());
         assertEquals("customuser", inst2.defaultUser());
     }

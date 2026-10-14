@@ -30,6 +30,9 @@ public final class InstanceStrategyLauncher {
         public final String mirrorConfigFileName;
         public final byte[] mirrorConfigFileContent;
         public final byte[] firstBootScript;
+        public final String hostname;
+        public final String guestUser;
+        public final boolean hasSudo;
 
         public LaunchParameters(
                 String instanceId,
@@ -76,6 +79,27 @@ public final class InstanceStrategyLauncher {
                 String mirrorConfigFileName,
                 byte[] mirrorConfigFileContent,
                 byte[] firstBootScript) {
+            this(instanceId, bridgeToken, rootfsFileName, instanceRootVolume, runtimeDirectory,
+                    distroInputsDirectory, guestPassword, hardwareConfig, mirrorConfigFileName,
+                    mirrorConfigFileContent, firstBootScript, null, null, false);
+        }
+
+        /** Identity is independent of password knowledge for legacy/imported instances. */
+        public LaunchParameters(
+                String instanceId,
+                String bridgeToken,
+                String rootfsFileName,
+                String instanceRootVolume,
+                String runtimeDirectory,
+                String distroInputsDirectory,
+                String guestPassword,
+                io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig hardwareConfig,
+                String mirrorConfigFileName,
+                byte[] mirrorConfigFileContent,
+                byte[] firstBootScript,
+                String hostname,
+                String guestUser,
+                boolean hasSudo) {
             this.instanceId = Objects.requireNonNull(instanceId, "instanceId");
             this.bridgeToken = Objects.requireNonNull(bridgeToken, "bridgeToken");
             this.rootfsFileName = Objects.requireNonNull(rootfsFileName, "rootfsFileName");
@@ -89,6 +113,13 @@ public final class InstanceStrategyLauncher {
             this.mirrorConfigFileName = mirrorConfigFileName;
             this.mirrorConfigFileContent = mirrorConfigFileContent;
             this.firstBootScript = firstBootScript;
+            this.hostname = io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig.normalizeHostname(hostname);
+            this.guestUser = guestUser == null
+                    ? io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig.DEFAULT_ROOT_USER : guestUser;
+            if (!io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig.isValidUsername(this.guestUser)) {
+                throw new IllegalArgumentException("invalid guest username");
+            }
+            this.hasSudo = hasSudo;
         }
 
         public LaunchParameters(
@@ -113,6 +144,27 @@ public final class InstanceStrategyLauncher {
                     provisionPayload != null ? provisionPayload.mirrorConfigFileName() : null,
                     provisionPayload != null ? provisionPayload.mirrorConfigFileContent() : null,
                     provisionPayload != null ? provisionPayload.firstBootScript() : null);
+        }
+
+        public LaunchParameters(
+                String instanceId,
+                String bridgeToken,
+                String rootfsFileName,
+                String instanceRootVolume,
+                String runtimeDirectory,
+                String distroInputsDirectory,
+                String guestPassword,
+                io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig hardwareConfig,
+                FirstBootProvisionPipeline.ProvisionPayload provisionPayload,
+                String hostname,
+                String guestUser,
+                boolean hasSudo) {
+            this(instanceId, bridgeToken, rootfsFileName, instanceRootVolume, runtimeDirectory,
+                    distroInputsDirectory, guestPassword, hardwareConfig,
+                    provisionPayload != null ? provisionPayload.mirrorConfigFileName() : null,
+                    provisionPayload != null ? provisionPayload.mirrorConfigFileContent() : null,
+                    provisionPayload != null ? provisionPayload.firstBootScript() : null,
+                    hostname, guestUser, hasSudo);
         }
     }
 

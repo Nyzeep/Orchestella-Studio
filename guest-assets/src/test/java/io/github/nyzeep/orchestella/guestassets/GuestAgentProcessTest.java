@@ -144,6 +144,108 @@ final class GuestAgentProcessTest {
     }
 
     @Test
+    void repeatsAValidHelloWithoutClosingTheExistingControlChannel() throws Exception {
+        Path executable = compileAgent();
+        Path tokenFile = temporaryDirectory.resolve("bridge.token");
+        Files.writeString(tokenFile, TOKEN + "\n", StandardCharsets.US_ASCII);
+        String hello = "ORCHESTELLA/HELLO 1 1 " + TOKEN + "\n";
+        ProcessResult result = runAgent(executable, tokenFile,
+                hello + "ORCHESTELLA/PING\n" + hello + "DROIDLAYER/PING\n",
+                "--terminal-device", "control-terminal-device");
+        assertEquals(0, result.exitCode(), result.standardError());
+        assertEquals("ORCHESTELLA/READY 1\nORCHESTELLA/PONG 1\nORCHESTELLA/READY 1\nORCHESTELLA/PONG 1\n",
+                result.standardOutput());
+    }
+
+    @Test
+    void reauthenticatesRepeatedHelloAndRejectsAnIncorrectToken() throws Exception {
+        Path executable = compileAgent();
+        Path tokenFile = temporaryDirectory.resolve("bridge.token");
+        Files.writeString(tokenFile, TOKEN + "\n", StandardCharsets.US_ASCII);
+        ProcessResult result = runAgent(executable, tokenFile,
+                "ORCHESTELLA/HELLO 1 1 " + TOKEN + "\n"
+                        + "ORCHESTELLA/HELLO 1 1 " + "1" + TOKEN.substring(1) + "\n"
+                        + "ORCHESTELLA/PING\n",
+                "--terminal-device", "control-terminal-device");
+        assertEquals(3, result.exitCode());
+        assertEquals("ORCHESTELLA/READY 1\nORCHESTELLA/ERROR unauthorized\n", result.standardOutput());
+    }
+
+    @Test
+    void rejectsUnsupportedOrMalformedRepeatedHello() throws Exception {
+        Path executable = compileAgent();
+        Path tokenFile = temporaryDirectory.resolve("bridge.token");
+        Files.writeString(tokenFile, TOKEN + "\n", StandardCharsets.US_ASCII);
+        ProcessResult version = runAgent(executable, tokenFile,
+                "ORCHESTELLA/HELLO 1 1 " + TOKEN + "\nDROIDLAYER/HELLO 2 3 " + TOKEN + "\n",
+                "--terminal-device", "control-terminal-device");
+        assertEquals(2, version.exitCode());
+        assertEquals("ORCHESTELLA/READY 1\nORCHESTELLA/ERROR unsupported-version\n", version.standardOutput());
+        ProcessResult malformed = runAgent(executable, tokenFile,
+                "ORCHESTELLA/HELLO 1 1 " + TOKEN + "\nORCHESTELLA/HELLO 1 1 " + TOKEN + " extra\n",
+                "--terminal-device", "control-terminal-device");
+        assertEquals(1, malformed.exitCode());
+        assertEquals("ORCHESTELLA/READY 1\nORCHESTELLA/ERROR malformed-handshake\n", malformed.standardOutput());
+    }
+
+    @Test
+    void dispatchesExistingPowerActionsWithFixedArgvUsingCompileTimeMockOnly() throws Exception {
+        Path executable = compileAgent(true); // Never run Linux or Windows host power utilities.
+        Path tokenFile = temporaryDirectory.resolve("bridge.token");
+        Path dispatches = temporaryDirectory.resolve("dispatches.txt");
+        Files.writeString(tokenFile, TOKEN + "\n", StandardCharsets.US_ASCII);
+        for (String action : List.of("shutdown", "poweroff")) {
+            Files.deleteIfExists(dispatches);
+            ProcessResult result = runProcess(List.of(executable.toString(), "--token-file", tokenFile.toString(),
+                    "--terminal-device", "synthetic-terminal"),
+                    "ORCHESTELLA/HELLO 1 1 " + TOKEN + "\nORCHESTELLA/POWER " + action + "\n",
+                    java.util.Map.of("ORCHESTELLA_TEST_POWER_RECORD", dispatches.toString()));
+            assertEquals(0, result.exitCode(), result.standardError());
+            assertEquals("ORCHESTELLA/READY 1\nORCHESTELLA/OK power\n", result.standardOutput());
+            assertEquals("/sbin/poweroff\n", Files.readString(dispatches).replace("\r\n", "\n"));
+        }
+    }
+
+    @Test
+    void powerDispatchFailuresCannotReturnSuccessOrExecuteAnAction() throws Exception {
+        Path executable = compileAgent(true);
+        Path tokenFile = temporaryDirectory.resolve("bridge.token");
+        Path dispatches = temporaryDirectory.resolve("dispatches.txt");
+        Files.writeString(tokenFile, TOKEN + "\n", StandardCharsets.US_ASCII);
+        for (String fault : List.of("access", "fork", "pipe", "reply")) {
+            Files.deleteIfExists(dispatches);
+            ProcessResult result = runProcess(List.of(executable.toString(), "--token-file", tokenFile.toString(),
+                    "--terminal-device", "synthetic-terminal"),
+                    "ORCHESTELLA/HELLO 1 1 " + TOKEN + "\nORCHESTELLA/POWER shutdown\nORCHESTELLA/PING\n",
+                    java.util.Map.of("ORCHESTELLA_TEST_POWER_RECORD", dispatches.toString(),
+                            "ORCHESTELLA_TEST_POWER_FAULT", fault));
+            assertEquals("reply".equals(fault) ? 70 : 0, result.exitCode(), result.standardError());
+            assertEquals("reply".equals(fault) ? "ORCHESTELLA/READY 1\n"
+                    : "ORCHESTELLA/READY 1\nORCHESTELLA/ERROR power-unavailable\nORCHESTELLA/PONG 1\n",
+                    result.standardOutput());
+            assertEquals(0L, Files.exists(dispatches) ? Files.size(dispatches) : 0L);
+        }
+    }
+
+    @Test
+    void malformedPowerActionsNeverReachTheDispatchSeam() throws Exception {
+        Path executable = compileAgent(true);
+        Path tokenFile = temporaryDirectory.resolve("bridge.token");
+        Path dispatches = temporaryDirectory.resolve("dispatches.txt");
+        Files.writeString(tokenFile, TOKEN + "\n", StandardCharsets.US_ASCII);
+        for (String action : List.of("reboot", "shutdown now", "poweroff extra", "shutdown;touch /tmp/sentinel")) {
+            Files.deleteIfExists(dispatches);
+            ProcessResult result = runProcess(List.of(executable.toString(), "--token-file", tokenFile.toString(),
+                    "--terminal-device", "synthetic-terminal"),
+                    "ORCHESTELLA/HELLO 1 1 " + TOKEN + "\nORCHESTELLA/POWER " + action + "\n",
+                    java.util.Map.of("ORCHESTELLA_TEST_POWER_RECORD", dispatches.toString()));
+            assertEquals(4, result.exitCode());
+            assertEquals("ORCHESTELLA/READY 1\nORCHESTELLA/ERROR malformed-command\n", result.standardOutput());
+            assertEquals(0L, Files.exists(dispatches) ? Files.size(dispatches) : 0L);
+        }
+    }
+
+    @Test
     void refusesToStartWhenTheProvisionedTokenHasAnInvalidFormat() throws Exception {
         Path executable = compileAgent();
         Path tokenFile = temporaryDirectory.resolve("bridge.token");
@@ -171,22 +273,19 @@ final class GuestAgentProcessTest {
     }
 
     private Path compileAgent() throws Exception {
+        return compileAgent(false);
+    }
+
+    private Path compileAgent(boolean mockPower) throws Exception {
         Path projectDirectory = Path.of(System.getProperty("guestAssetsProjectDir"));
         Path source = projectDirectory.resolve("agent/guest-agent.c");
-        Path executable = temporaryDirectory.resolve(isWindows() ? "guest-agent.exe" : "guest-agent");
+        String name = mockPower ? "guest-agent-power-mock" : "guest-agent";
+        Path executable = temporaryDirectory.resolve(name + (isWindows() ? ".exe" : ""));
         String compiler = System.getenv().getOrDefault("CC", "gcc");
-        ProcessResult result =
-                runProcess(
-                        List.of(
-                                compiler,
-                                "-std=c11",
-                                "-Wall",
-                                "-Wextra",
-                                "-Werror",
-                                source.toString(),
-                                "-o",
-                                executable.toString()),
-                        null);
+        List<String> command = new ArrayList<>(List.of(compiler, "-std=c11", "-Wall", "-Wextra", "-Werror"));
+        if (mockPower) command.add("-DORCHESTELLA_TEST_POWER");
+        command.addAll(List.of(source.toString(), "-o", executable.toString()));
+        ProcessResult result = runProcess(command, null);
         assertEquals(0, result.exitCode(), result.standardError());
         return executable;
     }
@@ -205,7 +304,14 @@ final class GuestAgentProcessTest {
     }
 
     private static ProcessResult runProcess(List<String> command, String input) throws Exception {
-        Process process = new ProcessBuilder(new ArrayList<>(command)).start();
+        return runProcess(command, input, java.util.Map.of());
+    }
+
+    private static ProcessResult runProcess(List<String> command, String input,
+            java.util.Map<String, String> environment) throws Exception {
+        ProcessBuilder builder = new ProcessBuilder(new ArrayList<>(command));
+        builder.environment().putAll(environment);
+        Process process = builder.start();
         if (input != null) {
             try {
                 process.getOutputStream().write(input.getBytes(StandardCharsets.US_ASCII));

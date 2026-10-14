@@ -1,0 +1,129 @@
+{
+  "schema": 1,
+  "sourceBase": "8d0e8c75d769ecc645ea102b90a304c8657344a1",
+  "publicInputs": [
+    {
+      "target": "app/src/main/assets/Image",
+      "bytes": 52070912,
+      "sha256": "d56677f4a2801ab9a9faa68be448d8ca92de5b1058c68b1e132377d810435dc5",
+      "frozenInput": "quality-phase5-merge-handoff/quality-main/build-inputs/app/src/main/assets/Image",
+      "frozenBytes": 52070912,
+      "frozenSha256": "d56677f4a2801ab9a9faa68be448d8ca92de5b1058c68b1e132377d810435dc5",
+      "packagedSha256": "d56677f4a2801ab9a9faa68be448d8ca92de5b1058c68b1e132377d810435dc5",
+      "note": "",
+      "currentSourceIncluded": false
+    },
+    {
+      "target": "app/src/main/assets/QEMU-BUILD-INPUTS",
+      "bytes": 6588,
+      "sha256": "43d2c6e5e1a4800c70caf171b98ae2ee1ee482868ee917dcae416151f550248a",
+      "frozenInput": "quality-phase5-merge-handoff/quality-main/build-inputs/app/src/main/assets/QEMU-BUILD-INPUTS",
+      "frozenBytes": 6588,
+      "frozenSha256": "43d2c6e5e1a4800c70caf171b98ae2ee1ee482868ee917dcae416151f550248a",
+      "packagedSha256": "43d2c6e5e1a4800c70caf171b98ae2ee1ee482868ee917dcae416151f550248a",
+      "note": "",
+      "currentSourceIncluded": true
+    },
+    {
+      "target": "app/src/main/assets/QEMU-GPL-SOURCES.md",
+      "bytes": 8397,
+      "sha256": "08b7abc753d8b209ea9e022109ae1128842d9a272ce47aea5bc9c7053dfd55a6",
+      "frozenInput": "quality-phase5-merge-handoff/quality-main/build-inputs/app/src/main/assets/QEMU-GPL-SOURCES.md",
+      "frozenBytes": 8134,
+      "frozenSha256": "64fb9a76ef5565a06b63d223bce528f688d3cf93a7490daa17895607daaf19a2",
+      "packagedSha256": "08b7abc753d8b209ea9e022109ae1128842d9a272ce47aea5bc9c7053dfd55a6",
+      "note": "",
+      "currentSourceIncluded": true
+    },
+    {
+      "target": "app/src/main/assets/LICENSE.GPL-2.0",
+      "bytes": 17880,
+      "sha256": "dd3ce02338c3a48abb6ba59b48809f7108a8bd242cb0cc8be90daafa30707c28",
+      "frozenInput": "quality-phase5-merge-handoff/quality-main/build-inputs/app/src/main/assets/LICENSE.GPL-2.0",
+      "frozenBytes": 17880,
+      "frozenSha256": "dd3ce02338c3a48abb6ba59b48809f7108a8bd242cb0cc8be90daafa30707c28",
+      "packagedSha256": "dd3ce02338c3a48abb6ba59b48809f7108a8bd242cb0cc8be90daafa30707c28",
+      "note": "",
+      "currentSourceIncluded": true
+    },
+    {
+      "target": "app/src/main/assets/NOTICE.QEMU",
+      "bytes": 2172,
+      "sha256": "7d134410f5bb12b5c23c7a1acdbe3d2ea90b56d007bc86303228b49e7d216f0d",
+      "frozenInput": "quality-phase5-merge-handoff/quality-main/build-inputs/app/src/main/assets/NOTICE.QEMU",
+      "frozenBytes": 2172,
+      "frozenSha256": "7d134410f5bb12b5c23c7a1acdbe3d2ea90b56d007bc86303228b49e7d216f0d",
+      "packagedSha256": "7d134410f5bb12b5c23c7a1acdbe3d2ea90b56d007bc86303228b49e7d216f0d",
+      "note": "",
+      "currentSourceIncluded": true
+    },
+    {
+      "target": "app/src/main/jniLibs/arm64-v8a/libdroidlayer_qemu.so",
+      "bytes": 132889376,
+      "sha256": "525469bdd64a565e7e52536915321f6ca307a976599f1e6ba72d2a6433573e3a",
+      "frozenInput": "quality-phase5-merge-handoff/quality-main/build-inputs/app/src/main/jniLibs/arm64-v8a/libdroidlayer_qemu.so",
+      "frozenBytes": 132889376,
+      "frozenSha256": "525469bdd64a565e7e52536915321f6ca307a976599f1e6ba72d2a6433573e3a",
+      "packagedSha256": "525469bdd64a565e7e52536915321f6ca307a976599f1e6ba72d2a6433573e3a",
+      "note": "",
+      "currentSourceIncluded": false
+    },
+    {
+      "target": "app/src/main/jniLibs/arm64-v8a/libgvproxy.so",
+      "bytes": 12714144,
+      "sha256": "c1ea864636182a774235c8866c70f2a0223dfcd4f08d24e37a7e82d9882beb9c",
+      "frozenInput": "quality-phase5-merge-handoff/quality-main/build-inputs/app/src/main/jniLibs/arm64-v8a/libgvproxy.so",
+      "frozenBytes": 12714144,
+      "frozenSha256": "c1ea864636182a774235c8866c70f2a0223dfcd4f08d24e37a7e82d9882beb9c",
+      "packagedSha256": "0f21c658fb7870a95682c37784de24a12806b97bea49e6c0ae5a93fad66b5d37",
+      "note": "AGP strips this source native ELF during packaging; verify source and final APK independently.",
+      "currentSourceIncluded": false
+    }
+  ],
+  "baseBundle": {
+    "frozenInput": "quality-phase5-merge-handoff/quality-main/runtime-inputs/initramfs.cpio.gz",
+    "bytes": 1272335,
+    "sha256": "0caf5f9a6e2334ce3608fb745b69983b2328b15fcee0b31b9a2eca5685636fba",
+    "producer": "guest-assets/scripts/repack-guest-agent.py"
+  },
+  "integratedAgent": {
+    "source": "guest-assets/agent/guest-agent.c",
+    "sourceSha256": "f1250967916612da9680526a51fa99973c711b21ed6b4044cbd2468dff1c5fb5",
+    "inputLock": "tools/phase5/guest-agent-inputs.lock.json",
+    "inputLockSha256": "f2631c082d40dbda20b3046956c7cd94ed5e309c60784d128f669061812947e3",
+    "producer": "tools/phase5/build-guest-agent.py",
+    "bytes": 477400,
+    "sha256": "6c6470872f2bc45c56729bb4d9848f0f0b5e559f79dc8b3e64e3ba4c643893e1",
+    "target": "Linux AArch64 static musl; no PT_INTERP/PT_DYNAMIC; non-executable stack"
+  },
+  "integratedBundle": {
+    "target": "app/src/main/resources/initramfs.cpio.gz",
+    "bytes": 1267115,
+    "sha256": "c96fe6e6d95b097b7b7509a669b8aaf19acf73de4541d4b4e069795213540361",
+    "preservedNonAgentEntries": 428
+  },
+  "generatedInit": {
+    "canonical": "guest-assets/initramfs/init",
+    "projection": "app/src/main/resources/guest_init",
+    "producer": "guest-assets/scripts/sync-guest-init.py",
+    "bytes": 230603,
+    "sha256": "75c4d6e7b30013092f1220b9980ba552f22c9b50490fcc8687c970935f0a72b8",
+    "optionalPayloads": 7
+  },
+  "proxyRelay": {
+    "source": "guest-assets/scripts/orchestella-proxy-relay.pl",
+    "target": "app/src/main/resources/proxy_relay",
+    "sha256": "37867488b7246388a8d9d3c53f0ad8ec0426328a2b21dbd1e31b2152664eca13"
+  },
+  "desugaring": {
+    "coordinate": "com.android.tools:desugar_jdk_libs:2.1.5",
+    "jarSha256": "d8044befae095781b9a80bf1faa92edc30382d75d437476784c1bf991598a976",
+    "configurationCoordinate": "com.android.tools:desugar_jdk_libs_configuration:2.1.5",
+    "configurationJarSha256": "7bc9051b3a1ec19806311dcb6aa9b9ba7ef9c22caa6f4810da55bde285fb7770",
+    "licenseRevision": "092407c51c3eaaaa9e46f7b7e436dc642f614064",
+    "licenseSha256": "b71b9ac72f1b646d1baf99ebe68c2afa040c8874d76f7c393e92a02287b90e8e",
+    "assemblyExceptionSha256": "ffd732b027f8e74c013b0e18a31f326caae2d8b46e7918da9181505af27e29c4"
+  },
+  "binaryDistribution": "Large public inputs, runtime bundle and APK remain in the approved external artifact root. No binary release is published by this integration branch push.",
+  "correspondingSource": "QEMU build lock/scripts and app/src/main/assets/QEMU-GPL-SOURCES.md preserve the existing source offer; this integration does not satisfy or execute a public binary release gate."
+}

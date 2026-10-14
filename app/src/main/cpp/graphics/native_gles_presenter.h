@@ -24,7 +24,7 @@ public:
     void onSurfaceDestroyed();
     void release();
 
-    void present(const int32_t* pixels, int width, int height,
+    bool present(const int32_t* pixels, int width, int height,
                  int destX, int destY, int destWidth, int destHeight,
                  int viewportWidth, int viewportHeight);
 

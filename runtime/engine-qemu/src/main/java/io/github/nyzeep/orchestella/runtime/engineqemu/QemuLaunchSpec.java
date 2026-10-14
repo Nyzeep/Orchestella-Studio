@@ -476,7 +476,7 @@ public final class QemuLaunchSpec {
                 "-kernel", kernel,
                 "-initrd", initramfs,
                 "-append", cmdline,
-                "-drive", "if=none,id=root,file=" + rootVolume + ",format=raw,cache=unsafe",
+                "-drive", "if=none,id=root,file=" + rootVolume + ",format=raw,cache=writeback",
                 "-device", "virtio-blk-device,drive=root",
                 "-device", hardwareConfig.gpuAccelerationEnabled() ? "virtio-gpu-gl-device" : "virtio-gpu-device",
                 "-netdev", "socket,id=orchestella-net,connect=127.0.0.1:" + passtTcpPort,
@@ -487,6 +487,22 @@ public final class QemuLaunchSpec {
                 "-chardev", "socket,id=netproxy,path=" + defaultProxySocketName(controlSocketName) + ",abstract=on,server=on,wait=off",
                 "-device", "virtserialport,chardev=netproxy,name=orchestella.proxy");
         return args.toArray(new String[0]);
+    }
+
+    /** Adds an independent authenticated display data plane to an existing virtio-serial controller. */
+    public static String[] withDisplayChannel(String[] launch, String privateSocketPath) {
+        Objects.requireNonNull(launch, "launch");
+        if (privateSocketPath == null || !privateSocketPath.startsWith("/")
+                || privateSocketPath.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 100
+                || privateSocketPath.indexOf(',') >= 0 || privateSocketPath.indexOf('\\') >= 0
+                || privateSocketPath.chars().anyMatch(value -> value < 0x20)) {
+            throw new IllegalArgumentException("invalid private display socket path");
+        }
+        List<String> arguments = new ArrayList<>(java.util.Arrays.asList(launch));
+        if (!arguments.contains("virtio-serial-device")) throw new IllegalArgumentException("virtio serial is absent");
+        Collections.addAll(arguments, "-chardev", "socket,id=display,path=" + privateSocketPath + ",server=on,wait=off",
+                "-device", "virtserialport,chardev=display,name=orchestella.display");
+        return arguments.toArray(new String[0]);
     }
 
     private static String[] buildInternal(
@@ -538,7 +554,7 @@ public final class QemuLaunchSpec {
                 "-kernel", kernel,
                 "-initrd", initramfs,
                 "-append", cmdline,
-                "-drive", "if=none,id=root,file=" + rootVolume + ",format=raw,cache=unsafe",
+                "-drive", "if=none,id=root,file=" + rootVolume + ",format=raw,cache=writeback",
                 "-device", "virtio-blk-device,drive=root",
                 "-device", gpuAccelerationEnabled ? "virtio-gpu-gl-device" : "virtio-gpu-device",
                 "-netdev", formatNetdevArg(networkSpec, portForwardingRules),

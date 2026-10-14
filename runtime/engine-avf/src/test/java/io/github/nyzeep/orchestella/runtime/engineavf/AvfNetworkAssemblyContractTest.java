@@ -8,9 +8,8 @@ import io.github.nyzeep.orchestella.runtime.contract.NetworkContract;
  * The launched custom VM must declare network support (the crosvm backend
  * switch that pairs the guest virtio-net with the host-side bridge/NAT) and
  * must receive the exact guest network contract keys — vsock service ports and
- * {@code droidlayer.dns=} — through the kernel cmdline setter the platform
- * builder exposes. The setter surface is optional by platform version, so its
- * absence is recorded in the reflection notes, never silently dropped.
+ * {@code droidlayer.dns=} — through the official custom image addParam API.
+ * Missing required configuration methods reject launch rather than silently dropping settings.
  */
 public final class AvfNetworkAssemblyContractTest {
     private static final String TOKEN =
@@ -38,7 +37,7 @@ public final class AvfNetworkAssemblyContractTest {
             assertTrue(config.isNetworkSupported(), "outbound network must be declared (AC-1)");
             assertTrue(
                     session.reflectionNotes().stream()
-                            .anyMatch(note -> note.contains("setNetworkSupported: applied")),
+                            .anyMatch(note -> note.contains("useNetwork: applied")),
                     "the network switch must be a recorded assembly step: "
                             + session.reflectionNotes());
 
@@ -53,7 +52,7 @@ public final class AvfNetworkAssemblyContractTest {
                             + cmdline);
             assertTrue(
                     session.reflectionNotes().stream()
-                            .anyMatch(note -> note.contains("setKernelCmdline: applied")),
+                            .anyMatch(note -> note.contains("addParam: applied")),
                     "the cmdline delivery step must be recorded: " + session.reflectionNotes());
             session.closeChannels();
         }
