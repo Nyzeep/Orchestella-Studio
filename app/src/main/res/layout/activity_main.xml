@@ -284,10 +284,25 @@
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/about_button"
                 style="@style/Widget.Material3.Button.IconButton"
-                android:layout_width="0dp"
-                android:layout_height="0dp"
-                android:visibility="gone"
-                android:contentDescription="@string/about_title" />
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_marginStart="4dp"
+                android:minWidth="0dp"
+                android:minHeight="48dp"
+                android:gravity="center"
+                app:cornerRadius="0dp"
+                android:backgroundTint="#1A1B22"
+                app:icon="@drawable/ic_info"
+                app:iconSize="18dp"
+                app:iconGravity="textStart"
+                app:iconPadding="0dp"
+                app:iconTint="#FFFFFF"
+                android:contentDescription="@string/about_title"
+                android:padding="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp" />
         </LinearLayout>
 
         <!-- Red Accent Border Line -->
@@ -1847,14 +1862,18 @@
                             android:textSize="10sp" />
                     </LinearLayout>
 
-                    <!-- Hero Create Button Card (Main creation entrance) -->
+                    <!-- ============================================== -->
+                    <!-- 1. Ubuntu Card                                 -->
+                    <!-- ============================================== -->
                     <LinearLayout
                         android:id="@+id/card_create_linux_main"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
                         android:background="@drawable/bg_glow_card"
-                        android:padding="14dp"
+                        android:padding="16dp"
+                        android:clickable="true"
+                        android:focusable="true"
                         android:layout_marginBottom="12dp">
 
                         <LinearLayout
@@ -1863,205 +1882,749 @@
                             android:orientation="horizontal"
                             android:gravity="center_vertical">
 
-                            <ImageView
-                                android:layout_width="36dp"
-                                android:layout_height="36dp"
-                                android:src="@drawable/ic_distro_ubuntu"
-                                android:contentDescription="Ubuntu Distro" />
+                            <FrameLayout
+                                android:layout_width="44dp"
+                                android:layout_height="44dp"
+                                android:background="@drawable/bg_icon_container">
+
+                                <ImageView
+                                    android:layout_width="30dp"
+                                    android:layout_height="30dp"
+                                    android:layout_gravity="center"
+                                    android:src="@drawable/ic_distro_ubuntu"
+                                    android:contentDescription="Ubuntu Distro" />
+                            </FrameLayout>
 
                             <LinearLayout
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
-                                android:layout_marginStart="10dp"
+                                android:layout_marginStart="12dp"
                                 android:orientation="vertical">
 
-                                <TextView
-                                    android:layout_width="wrap_content"
+                                <LinearLayout
+                                    android:layout_width="match_parent"
                                     android:layout_height="wrap_content"
-                                    android:fontFamily="sans-serif"
-                                    android:text="装配全新 Linux 实例"
-                                    android:textColor="#FFFFFF"
-                                    android:textSize="14sp"
-                                    android:textStyle="bold" />
+                                    android:orientation="horizontal"
+                                    android:gravity="center_vertical">
+
+                                    <TextView
+                                        android:layout_width="0dp"
+                                        android:layout_height="wrap_content"
+                                        android:layout_weight="1"
+                                        android:fontFamily="sans-serif"
+                                        android:text="Ubuntu"
+                                        android:textColor="#FFFFFF"
+                                        android:textSize="16sp"
+                                        android:textStyle="bold" />
+
+                                    <TextView
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:background="@drawable/bg_constructivist_tag_red"
+                                        android:paddingStart="6dp"
+                                        android:paddingTop="2dp"
+                                        android:paddingEnd="6dp"
+                                        android:paddingBottom="2dp"
+                                        android:fontFamily="monospace"
+                                        android:text="官方 LTS · 推荐"
+                                        android:textColor="#D62828"
+                                        android:textSize="10sp"
+                                        android:textStyle="bold" />
+                                </LinearLayout>
 
                                 <TextView
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:layout_marginTop="2dp"
                                     android:fontFamily="monospace"
-                                    android:text="7 大发行版矩阵 · 独立块存储与会话"
-                                    android:textColor="#D62828"
-                                    android:textSize="10sp" />
+                                    android:text="24.04 LTS (Noble Numbat) · 默认官方源"
+                                    android:textColor="#8E929B"
+                                    android:textSize="11sp" />
                             </LinearLayout>
                         </LinearLayout>
 
-                        <!-- Horizontal Scroll of Quick Select Distro Chips -->
-                        <HorizontalScrollView
+                        <TextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="12dp"
-                            android:scrollbars="none">
-
-                            <LinearLayout
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:orientation="horizontal"
-                                android:baselineAligned="false">
-
-                                <com.google.android.material.button.MaterialButton
-                                    android:id="@+id/create_ubuntu"
-                                    style="@style/Widget.Material3.Button"
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="match_parent"
-                                    android:minWidth="0dp"
-                                    android:minHeight="48dp"
-                                    android:gravity="center"
-                                    android:paddingStart="12dp"
-                                    android:paddingEnd="12dp"
-                                    app:cornerRadius="0dp"
-                                    android:backgroundTint="#D62828"
-                                    android:fontFamily="monospace"
-                                    android:text="Ubuntu"
-                                    android:textSize="11sp"
-                                    android:textStyle="bold"
-                                    android:insetTop="0dp"
-                                    android:insetBottom="0dp" />
-
-                                <com.google.android.material.button.MaterialButton
-                                    android:id="@+id/create_debian"
-                                    style="@style/Widget.Material3.Button.TonalButton"
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="match_parent"
-                                    android:minWidth="0dp"
-                                    android:minHeight="48dp"
-                                    android:gravity="center"
-                                    android:paddingStart="12dp"
-                                    android:paddingEnd="12dp"
-                                    android:layout_marginStart="6dp"
-                                    app:cornerRadius="0dp"
-                                    android:backgroundTint="#1F2026"
-                                    android:fontFamily="monospace"
-                                    android:text="Debian"
-                                    android:textColor="#FFFFFF"
-                                    android:textSize="11sp"
-                                    android:insetTop="0dp"
-                                    android:insetBottom="0dp" />
-
-                                <com.google.android.material.button.MaterialButton
-                                    android:id="@+id/create_fedora"
-                                    style="@style/Widget.Material3.Button.TonalButton"
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="match_parent"
-                                    android:minWidth="0dp"
-                                    android:minHeight="48dp"
-                                    android:gravity="center"
-                                    android:paddingStart="12dp"
-                                    android:paddingEnd="12dp"
-                                    android:layout_marginStart="6dp"
-                                    app:cornerRadius="0dp"
-                                    android:backgroundTint="#1F2026"
-                                    android:fontFamily="monospace"
-                                    android:text="Fedora"
-                                    android:textColor="#FFFFFF"
-                                    android:textSize="11sp"
-                                    android:insetTop="0dp"
-                                    android:insetBottom="0dp" />
-
-                                <com.google.android.material.button.MaterialButton
-                                    android:id="@+id/create_arch"
-                                    style="@style/Widget.Material3.Button.TonalButton"
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="match_parent"
-                                    android:minWidth="0dp"
-                                    android:minHeight="48dp"
-                                    android:gravity="center"
-                                    android:paddingStart="12dp"
-                                    android:paddingEnd="12dp"
-                                    android:layout_marginStart="6dp"
-                                    app:cornerRadius="0dp"
-                                    android:backgroundTint="#1F2026"
-                                    android:fontFamily="monospace"
-                                    android:text="Arch"
-                                    android:textColor="#FFFFFF"
-                                    android:textSize="11sp"
-                                    android:insetTop="0dp"
-                                    android:insetBottom="0dp" />
-
-                                <com.google.android.material.button.MaterialButton
-                                    android:id="@+id/create_opensuse"
-                                    style="@style/Widget.Material3.Button.TonalButton"
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="match_parent"
-                                    android:minWidth="0dp"
-                                    android:minHeight="48dp"
-                                    android:gravity="center"
-                                    android:paddingStart="12dp"
-                                    android:paddingEnd="12dp"
-                                    android:layout_marginStart="6dp"
-                                    app:cornerRadius="0dp"
-                                    android:backgroundTint="#1F2026"
-                                    android:fontFamily="monospace"
-                                    android:text="openSUSE"
-                                    android:textColor="#FFFFFF"
-                                    android:textSize="11sp"
-                                    android:insetTop="0dp"
-                                    android:insetBottom="0dp" />
-
-                                <com.google.android.material.button.MaterialButton
-                                    android:id="@+id/create_almalinux"
-                                    style="@style/Widget.Material3.Button.TonalButton"
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="match_parent"
-                                    android:minWidth="0dp"
-                                    android:minHeight="48dp"
-                                    android:gravity="center"
-                                    android:paddingStart="12dp"
-                                    android:paddingEnd="12dp"
-                                    android:layout_marginStart="6dp"
-                                    app:cornerRadius="0dp"
-                                    android:backgroundTint="#1F2026"
-                                    android:fontFamily="monospace"
-                                    android:text="AlmaLinux"
-                                    android:textColor="#FFFFFF"
-                                    android:textSize="11sp"
-                                    android:insetTop="0dp"
-                                    android:insetBottom="0dp" />
-
-                                <com.google.android.material.button.MaterialButton
-                                    android:id="@+id/create_rocky"
-                                    style="@style/Widget.Material3.Button.TonalButton"
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="match_parent"
-                                    android:minWidth="0dp"
-                                    android:minHeight="48dp"
-                                    android:gravity="center"
-                                    android:paddingStart="12dp"
-                                    android:paddingEnd="12dp"
-                                    android:layout_marginStart="6dp"
-                                    app:cornerRadius="0dp"
-                                    android:backgroundTint="#1F2026"
-                                    android:fontFamily="monospace"
-                                    android:text="Rocky"
-                                    android:textColor="#FFFFFF"
-                                    android:textSize="11sp"
-                                    android:insetTop="0dp"
-                                    android:insetBottom="0dp" />
-                            </LinearLayout>
-                        </HorizontalScrollView>
+                            android:layout_marginTop="10dp"
+                            android:fontFamily="sans-serif"
+                            android:text="Canonical 长期技术支持旗舰版本。生态极其繁荣，标配 APT 软件源，开箱即用适配绝大多数编译环境与应用工具栈。"
+                            android:textColor="#CCCCCC"
+                            android:textSize="12sp"
+                            android:lineSpacingExtra="2dp" />
 
                         <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btn_create_linux_instance"
+                            android:id="@+id/create_ubuntu"
                             style="@style/Widget.Material3.Button"
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:minHeight="48dp"
-                            android:gravity="center"
+                            android:layout_height="44dp"
                             android:layout_marginTop="12dp"
+                            android:gravity="center"
                             app:cornerRadius="0dp"
                             android:backgroundTint="#D62828"
                             android:fontFamily="monospace"
-                            android:text="🚀 启动发行版创建引导向导"
+                            android:text="装配 Ubuntu 实例 ➔"
+                            android:textColor="#FFFFFF"
+                            android:textSize="12sp"
+                            android:textStyle="bold"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp" />
+                    </LinearLayout>
+
+                    <!-- ============================================== -->
+                    <!-- 2. Debian Card                                 -->
+                    <!-- ============================================== -->
+                    <LinearLayout
+                        android:id="@+id/card_distro_debian"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:background="@drawable/bg_glow_card"
+                        android:padding="16dp"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:layout_marginBottom="12dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+
+                            <FrameLayout
+                                android:layout_width="44dp"
+                                android:layout_height="44dp"
+                                android:background="@drawable/bg_icon_container">
+
+                                <ImageView
+                                    android:layout_width="30dp"
+                                    android:layout_height="30dp"
+                                    android:layout_gravity="center"
+                                    android:src="@drawable/ic_distro_debian"
+                                    android:contentDescription="Debian Distro" />
+                            </FrameLayout>
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginStart="12dp"
+                                android:orientation="vertical">
+
+                                <LinearLayout
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:orientation="horizontal"
+                                    android:gravity="center_vertical">
+
+                                    <TextView
+                                        android:layout_width="0dp"
+                                        android:layout_height="wrap_content"
+                                        android:layout_weight="1"
+                                        android:fontFamily="sans-serif"
+                                        android:text="Debian"
+                                        android:textColor="#FFFFFF"
+                                        android:textSize="16sp"
+                                        android:textStyle="bold" />
+
+                                    <TextView
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:background="@drawable/bg_constructivist_tag_white"
+                                        android:paddingStart="6dp"
+                                        android:paddingTop="2dp"
+                                        android:paddingEnd="6dp"
+                                        android:paddingBottom="2dp"
+                                        android:fontFamily="monospace"
+                                        android:text="坚如磐石 · 极简稳定"
+                                        android:textColor="#F5F4F0"
+                                        android:textSize="10sp"
+                                        android:textStyle="bold" />
+                                </LinearLayout>
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp"
+                                    android:fontFamily="monospace"
+                                    android:text="13 (Trixie) · 官方通用操作系统"
+                                    android:textColor="#8E929B"
+                                    android:textSize="11sp" />
+                            </LinearLayout>
+                        </LinearLayout>
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:fontFamily="sans-serif"
+                            android:text="以极高稳定性与严谨自由哲学著称的通用操作系统。资源占用极低，系统结构精炼，提供纯正可靠的 Linux 基底。"
+                            android:textColor="#CCCCCC"
+                            android:textSize="12sp"
+                            android:lineSpacingExtra="2dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/create_debian"
+                            style="@style/Widget.Material3.Button"
+                            android:layout_width="match_parent"
+                            android:layout_height="44dp"
+                            android:layout_marginTop="12dp"
+                            android:gravity="center"
+                            app:cornerRadius="0dp"
+                            android:backgroundTint="#A80030"
+                            android:fontFamily="monospace"
+                            android:text="装配 Debian 实例 ➔"
+                            android:textColor="#FFFFFF"
+                            android:textSize="12sp"
+                            android:textStyle="bold"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp" />
+                    </LinearLayout>
+
+                    <!-- ============================================== -->
+                    <!-- 3. Fedora Card                                 -->
+                    <!-- ============================================== -->
+                    <LinearLayout
+                        android:id="@+id/card_distro_fedora"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:background="@drawable/bg_glow_card"
+                        android:padding="16dp"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:layout_marginBottom="12dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+
+                            <FrameLayout
+                                android:layout_width="44dp"
+                                android:layout_height="44dp"
+                                android:background="@drawable/bg_icon_container">
+
+                                <ImageView
+                                    android:layout_width="30dp"
+                                    android:layout_height="30dp"
+                                    android:layout_gravity="center"
+                                    android:src="@drawable/ic_distro_fedora"
+                                    android:contentDescription="Fedora Distro" />
+                            </FrameLayout>
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginStart="12dp"
+                                android:orientation="vertical">
+
+                                <LinearLayout
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:orientation="horizontal"
+                                    android:gravity="center_vertical">
+
+                                    <TextView
+                                        android:layout_width="0dp"
+                                        android:layout_height="wrap_content"
+                                        android:layout_weight="1"
+                                        android:fontFamily="sans-serif"
+                                        android:text="Fedora"
+                                        android:textColor="#FFFFFF"
+                                        android:textSize="16sp"
+                                        android:textStyle="bold" />
+
+                                    <TextView
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:background="@drawable/bg_constructivist_tag_white"
+                                        android:paddingStart="6dp"
+                                        android:paddingTop="2dp"
+                                        android:paddingEnd="6dp"
+                                        android:paddingBottom="2dp"
+                                        android:fontFamily="monospace"
+                                        android:text="前沿创新 · DNF5"
+                                        android:textColor="#51A2DA"
+                                        android:textSize="10sp"
+                                        android:textStyle="bold" />
+                                </LinearLayout>
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp"
+                                    android:fontFamily="monospace"
+                                    android:text="43 (Rawhide) · 现代创新平台"
+                                    android:textColor="#8E929B"
+                                    android:textSize="11sp" />
+                            </LinearLayout>
+                        </LinearLayout>
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:fontFamily="sans-serif"
+                            android:text="Red Hat 赞助的开源前沿阵地。搭载极速 DNF5 包管理器与最新开源软件包，适合追求新技术栈的敏捷开发者。"
+                            android:textColor="#CCCCCC"
+                            android:textSize="12sp"
+                            android:lineSpacingExtra="2dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/create_fedora"
+                            style="@style/Widget.Material3.Button"
+                            android:layout_width="match_parent"
+                            android:layout_height="44dp"
+                            android:layout_marginTop="12dp"
+                            android:gravity="center"
+                            app:cornerRadius="0dp"
+                            android:backgroundTint="#0047AB"
+                            android:fontFamily="monospace"
+                            android:text="装配 Fedora 实例 ➔"
+                            android:textColor="#FFFFFF"
+                            android:textSize="12sp"
+                            android:textStyle="bold"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp" />
+                    </LinearLayout>
+
+                    <!-- ============================================== -->
+                    <!-- 4. Arch Linux Card                             -->
+                    <!-- ============================================== -->
+                    <LinearLayout
+                        android:id="@+id/card_distro_arch"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:background="@drawable/bg_glow_card"
+                        android:padding="16dp"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:layout_marginBottom="12dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+
+                            <FrameLayout
+                                android:layout_width="44dp"
+                                android:layout_height="44dp"
+                                android:background="@drawable/bg_icon_container">
+
+                                <ImageView
+                                    android:layout_width="30dp"
+                                    android:layout_height="30dp"
+                                    android:layout_gravity="center"
+                                    android:src="@drawable/ic_distro_arch"
+                                    android:contentDescription="Arch Linux Distro" />
+                            </FrameLayout>
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginStart="12dp"
+                                android:orientation="vertical">
+
+                                <LinearLayout
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:orientation="horizontal"
+                                    android:gravity="center_vertical">
+
+                                    <TextView
+                                        android:layout_width="0dp"
+                                        android:layout_height="wrap_content"
+                                        android:layout_weight="1"
+                                        android:fontFamily="sans-serif"
+                                        android:text="Arch Linux"
+                                        android:textColor="#FFFFFF"
+                                        android:textSize="16sp"
+                                        android:textStyle="bold" />
+
+                                    <TextView
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:background="@drawable/bg_constructivist_tag_white"
+                                        android:paddingStart="6dp"
+                                        android:paddingTop="2dp"
+                                        android:paddingEnd="6dp"
+                                        android:paddingBottom="2dp"
+                                        android:fontFamily="monospace"
+                                        android:text="滚动前沿 · Pacman"
+                                        android:textColor="#1793D1"
+                                        android:textSize="10sp"
+                                        android:textStyle="bold" />
+                                </LinearLayout>
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp"
+                                    android:fontFamily="monospace"
+                                    android:text="Rolling Release · 极客专属平台"
+                                    android:textColor="#8E929B"
+                                    android:textSize="11sp" />
+                            </LinearLayout>
+                        </LinearLayout>
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:fontFamily="sans-serif"
+                            android:text="轻量简洁、完全可控的滚动发布版本。软件永保最新版本，搭载极简 Pacman 管理器，深受进阶开发者青睐。"
+                            android:textColor="#CCCCCC"
+                            android:textSize="12sp"
+                            android:lineSpacingExtra="2dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/create_arch"
+                            style="@style/Widget.Material3.Button"
+                            android:layout_width="match_parent"
+                            android:layout_height="44dp"
+                            android:layout_marginTop="12dp"
+                            android:gravity="center"
+                            app:cornerRadius="0dp"
+                            android:backgroundTint="#1793D1"
+                            android:fontFamily="monospace"
+                            android:text="装配 Arch Linux 实例 ➔"
+                            android:textColor="#FFFFFF"
+                            android:textSize="12sp"
+                            android:textStyle="bold"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp" />
+                    </LinearLayout>
+
+                    <!-- ============================================== -->
+                    <!-- 5. openSUSE Card                               -->
+                    <!-- ============================================== -->
+                    <LinearLayout
+                        android:id="@+id/card_distro_opensuse"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:background="@drawable/bg_glow_card"
+                        android:padding="16dp"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:layout_marginBottom="12dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+
+                            <FrameLayout
+                                android:layout_width="44dp"
+                                android:layout_height="44dp"
+                                android:background="@drawable/bg_icon_container">
+
+                                <ImageView
+                                    android:layout_width="30dp"
+                                    android:layout_height="30dp"
+                                    android:layout_gravity="center"
+                                    android:src="@drawable/ic_distro_opensuse"
+                                    android:contentDescription="openSUSE Distro" />
+                            </FrameLayout>
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginStart="12dp"
+                                android:orientation="vertical">
+
+                                <LinearLayout
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:orientation="horizontal"
+                                    android:gravity="center_vertical">
+
+                                    <TextView
+                                        android:layout_width="0dp"
+                                        android:layout_height="wrap_content"
+                                        android:layout_weight="1"
+                                        android:fontFamily="sans-serif"
+                                        android:text="openSUSE"
+                                        android:textColor="#FFFFFF"
+                                        android:textSize="16sp"
+                                        android:textStyle="bold" />
+
+                                    <TextView
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:background="@drawable/bg_constructivist_tag_white"
+                                        android:paddingStart="6dp"
+                                        android:paddingTop="2dp"
+                                        android:paddingEnd="6dp"
+                                        android:paddingBottom="2dp"
+                                        android:fontFamily="monospace"
+                                        android:text="稳健严谨 · Zypper"
+                                        android:textColor="#73BA25"
+                                        android:textSize="10sp"
+                                        android:textStyle="bold" />
+                                </LinearLayout>
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp"
+                                    android:fontFamily="monospace"
+                                    android:text="Leap 15.6 · 企业级代码同源"
+                                    android:textColor="#8E929B"
+                                    android:textSize="11sp" />
+                            </LinearLayout>
+                        </LinearLayout>
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:fontFamily="sans-serif"
+                            android:text="基于 SUSE Linux Enterprise 核心代码构建。搭载强大的 Zypper 包管理器，企业级内核稳定性与丰富工具链。"
+                            android:textColor="#CCCCCC"
+                            android:textSize="12sp"
+                            android:lineSpacingExtra="2dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/create_opensuse"
+                            style="@style/Widget.Material3.Button"
+                            android:layout_width="match_parent"
+                            android:layout_height="44dp"
+                            android:layout_marginTop="12dp"
+                            android:gravity="center"
+                            app:cornerRadius="0dp"
+                            android:backgroundTint="#73BA25"
+                            android:fontFamily="monospace"
+                            android:text="装配 openSUSE 实例 ➔"
+                            android:textColor="#FFFFFF"
+                            android:textSize="12sp"
+                            android:textStyle="bold"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp" />
+                    </LinearLayout>
+
+                    <!-- ============================================== -->
+                    <!-- 6. AlmaLinux Card                              -->
+                    <!-- ============================================== -->
+                    <LinearLayout
+                        android:id="@+id/card_distro_almalinux"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:background="@drawable/bg_glow_card"
+                        android:padding="16dp"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:layout_marginBottom="12dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+
+                            <FrameLayout
+                                android:layout_width="44dp"
+                                android:layout_height="44dp"
+                                android:background="@drawable/bg_icon_container">
+
+                                <ImageView
+                                    android:layout_width="30dp"
+                                    android:layout_height="30dp"
+                                    android:layout_gravity="center"
+                                    android:src="@drawable/ic_distro_almalinux"
+                                    android:contentDescription="AlmaLinux Distro" />
+                            </FrameLayout>
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginStart="12dp"
+                                android:orientation="vertical">
+
+                                <LinearLayout
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:orientation="horizontal"
+                                    android:gravity="center_vertical">
+
+                                    <TextView
+                                        android:layout_width="0dp"
+                                        android:layout_height="wrap_content"
+                                        android:layout_weight="1"
+                                        android:fontFamily="sans-serif"
+                                        android:text="AlmaLinux"
+                                        android:textColor="#FFFFFF"
+                                        android:textSize="16sp"
+                                        android:textStyle="bold" />
+
+                                    <TextView
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:background="@drawable/bg_constructivist_tag_white"
+                                        android:paddingStart="6dp"
+                                        android:paddingTop="2dp"
+                                        android:paddingEnd="6dp"
+                                        android:paddingBottom="2dp"
+                                        android:fontFamily="monospace"
+                                        android:text="1:1 RHEL 兼容"
+                                        android:textColor="#FF6F00"
+                                        android:textSize="10sp"
+                                        android:textStyle="bold" />
+                                </LinearLayout>
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp"
+                                    android:fontFamily="monospace"
+                                    android:text="9.5 (Teal Chinchilla) · 社区完全自治"
+                                    android:textColor="#8E929B"
+                                    android:textSize="11sp" />
+                            </LinearLayout>
+                        </LinearLayout>
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:fontFamily="sans-serif"
+                            android:text="由社区完全自治的 1:1 RHEL 二进制兼容企业级操作系统。提供长达十年的企业级安全生命周期与极致兼容。"
+                            android:textColor="#CCCCCC"
+                            android:textSize="12sp"
+                            android:lineSpacingExtra="2dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/create_almalinux"
+                            style="@style/Widget.Material3.Button"
+                            android:layout_width="match_parent"
+                            android:layout_height="44dp"
+                            android:layout_marginTop="12dp"
+                            android:gravity="center"
+                            app:cornerRadius="0dp"
+                            android:backgroundTint="#FF6F00"
+                            android:fontFamily="monospace"
+                            android:text="装配 AlmaLinux 实例 ➔"
+                            android:textColor="#FFFFFF"
+                            android:textSize="12sp"
+                            android:textStyle="bold"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp" />
+                    </LinearLayout>
+
+                    <!-- ============================================== -->
+                    <!-- 7. Rocky Linux Card                            -->
+                    <!-- ============================================== -->
+                    <LinearLayout
+                        android:id="@+id/card_distro_rocky"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:background="@drawable/bg_glow_card"
+                        android:padding="16dp"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:layout_marginBottom="12dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+
+                            <FrameLayout
+                                android:layout_width="44dp"
+                                android:layout_height="44dp"
+                                android:background="@drawable/bg_icon_container">
+
+                                <ImageView
+                                    android:layout_width="30dp"
+                                    android:layout_height="30dp"
+                                    android:layout_gravity="center"
+                                    android:src="@drawable/ic_distro_rocky"
+                                    android:contentDescription="Rocky Linux Distro" />
+                            </FrameLayout>
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginStart="12dp"
+                                android:orientation="vertical">
+
+                                <LinearLayout
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:orientation="horizontal"
+                                    android:gravity="center_vertical">
+
+                                    <TextView
+                                        android:layout_width="0dp"
+                                        android:layout_height="wrap_content"
+                                        android:layout_weight="1"
+                                        android:fontFamily="sans-serif"
+                                        android:text="Rocky Linux"
+                                        android:textColor="#FFFFFF"
+                                        android:textSize="16sp"
+                                        android:textStyle="bold" />
+
+                                    <TextView
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:background="@drawable/bg_constructivist_tag_white"
+                                        android:paddingStart="6dp"
+                                        android:paddingTop="2dp"
+                                        android:paddingEnd="6dp"
+                                        android:paddingBottom="2dp"
+                                        android:fontFamily="monospace"
+                                        android:text="企业生产 · 超高可用"
+                                        android:textColor="#10B981"
+                                        android:textSize="10sp"
+                                        android:textStyle="bold" />
+                                </LinearLayout>
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="2dp"
+                                    android:fontFamily="monospace"
+                                    android:text="9.5 (Blue Onyx) · 原 CentOS 创始人打造"
+                                    android:textColor="#8E929B"
+                                    android:textSize="11sp" />
+                            </LinearLayout>
+                        </LinearLayout>
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:fontFamily="sans-serif"
+                            android:text="由原 CentOS 创始人领衔打造的企业级发行版。专为高并发、高可用与关键任务生产负载设计。"
+                            android:textColor="#CCCCCC"
+                            android:textSize="12sp"
+                            android:lineSpacingExtra="2dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/create_rocky"
+                            style="@style/Widget.Material3.Button"
+                            android:layout_width="match_parent"
+                            android:layout_height="44dp"
+                            android:layout_marginTop="12dp"
+                            android:gravity="center"
+                            app:cornerRadius="0dp"
+                            android:backgroundTint="#10B981"
+                            android:fontFamily="monospace"
+                            android:text="装配 Rocky Linux 实例 ➔"
                             android:textColor="#FFFFFF"
                             android:textSize="12sp"
                             android:textStyle="bold"
@@ -2442,7 +3005,7 @@
                     android:id="@+id/nav_icon_distros"
                     android:layout_width="18dp"
                     android:layout_height="18dp"
-                    android:src="@drawable/ic_distro_ubuntu"
+                    android:src="@drawable/ic_distro_catalog"
                     app:tint="#8E929B" />
 
                 <TextView

@@ -484,16 +484,415 @@ object ThemeCatalog {
         ),
     )
 
+    private fun lightAnsi(
+        black: Int = 0xFF24292F.toInt(),
+        red: Int = 0xFFCF222E.toInt(),
+        green: Int = 0xFF1A7F37.toInt(),
+        yellow: Int = 0xFF9A6700.toInt(),
+        blue: Int = 0xFF0969DA.toInt(),
+        magenta: Int = 0xFF8250DF.toInt(),
+        cyan: Int = 0xFF1B7C83.toInt(),
+        white: Int = 0xFF6E7781.toInt(),
+        brightBlack: Int = 0xFF57606A.toInt(),
+        brightRed: Int = 0xFFA40E26.toInt(),
+        brightGreen: Int = 0xFF116329.toInt(),
+        brightYellow: Int = 0xFF633C01.toInt(),
+        brightBlue: Int = 0xFF0550AE.toInt(),
+        brightMagenta: Int = 0xFF6639BA.toInt(),
+        brightCyan: Int = 0xFF0E5C63.toInt(),
+        brightWhite: Int = 0xFF24292F.toInt(),
+    ): List<Int> = ansi(
+        black, red, green, yellow, blue, magenta, cyan, white,
+        brightBlack, brightRed, brightGreen, brightYellow, brightBlue, brightMagenta, brightCyan, brightWhite
+    )
+
+    // --- Paired Light Variants for Every Theme Family ---
+
+    val constructivistWorkstationLight = AppTheme(
+        id = "constructivist-workstation-light",
+        displayName = "Constructivist (构成主义工控 · 红)",
+        isDark = false,
+        background = 0xFFF5F4F0.toInt(),
+        surface = 0xFFEAE8E2.toInt(),
+        surfaceTranslucent = 0xE6EAE8E2.toInt(),
+        primary = 0xFFD62828.toInt(),
+        accent = 0xFFC2410C.toInt(),
+        text = 0xFF16171D.toInt(),
+        textDim = 0xFF5F6368.toInt(),
+        glow = 0xFFD62828.toInt(),
+        terminalBackground = 0xFFF8F7F4.toInt(),
+        terminalForeground = 0xFF16171D.toInt(),
+        ansi = lightAnsi(red = 0xFFD62828.toInt(), blue = 0xFF0047AB.toInt()),
+    )
+
+    val constructivistCobaltLight = AppTheme(
+        id = "constructivist-cobalt-light",
+        displayName = "Constructivist (钴蓝张力 · 蓝)",
+        isDark = false,
+        background = 0xFFF0F4F8.toInt(),
+        surface = 0xFFE2E8F0.toInt(),
+        surfaceTranslucent = 0xE6E2E8F0.toInt(),
+        primary = 0xFF0047AB.toInt(),
+        accent = 0xFFD62828.toInt(),
+        text = 0xFF0F172A.toInt(),
+        textDim = 0xFF475569.toInt(),
+        glow = 0xFF0047AB.toInt(),
+        terminalBackground = 0xFFF8FAFC.toInt(),
+        terminalForeground = 0xFF0F172A.toInt(),
+        ansi = lightAnsi(blue = 0xFF0047AB.toInt(), red = 0xFFD62828.toInt()),
+    )
+
+    val constructivistAmberLight = AppTheme(
+        id = "constructivist-amber-light",
+        displayName = "Constructivist (镉黄警示 · 黄)",
+        isDark = false,
+        background = 0xFFFEFCE8.toInt(),
+        surface = 0xFFFEF9C3.toInt(),
+        surfaceTranslucent = 0xE6FEF9C3.toInt(),
+        primary = 0xFFB45309.toInt(),
+        accent = 0xFFD62828.toInt(),
+        text = 0xFF1F2937.toInt(),
+        textDim = 0xFF4B5563.toInt(),
+        glow = 0xFFB45309.toInt(),
+        terminalBackground = 0xFFFEFCE8.toInt(),
+        terminalForeground = 0xFF1F2937.toInt(),
+        ansi = lightAnsi(yellow = 0xFFB45309.toInt(), red = 0xFFD62828.toInt()),
+    )
+
+    val moonshotLight = AppTheme(
+        id = "moonshot-light",
+        displayName = "Moonshot (昼面晨曦)",
+        isDark = false,
+        background = 0xFFF6F8FA.toInt(),
+        surface = 0xFFFFFFFF.toInt(),
+        surfaceTranslucent = 0xE6FFFFFF.toInt(),
+        primary = 0xFF0969DA.toInt(),
+        accent = 0xFF0550AE.toInt(),
+        text = 0xFF1F2328.toInt(),
+        textDim = 0xFF57606A.toInt(),
+        glow = 0xFF0969DA.toInt(),
+        terminalBackground = 0xFFF6F8FA.toInt(),
+        terminalForeground = 0xFF1F2328.toInt(),
+        ansi = lightAnsi(blue = 0xFF0969DA.toInt(), cyan = 0xFF0550AE.toInt()),
+    )
+
+    val absolutelyLight = AppTheme(
+        id = "absolutely-light",
+        displayName = "Absolutely",
+        isDark = false,
+        background = 0xFFFAF6F0.toInt(),
+        surface = 0xFFF2ECE1.toInt(),
+        surfaceTranslucent = 0xE6F2ECE1.toInt(),
+        primary = 0xFFC2410C.toInt(),
+        accent = 0xFFEA580C.toInt(),
+        text = 0xFF292524.toInt(),
+        textDim = 0xFF57534E.toInt(),
+        glow = 0xFFC2410C.toInt(),
+        terminalBackground = 0xFFFAF6F0.toInt(),
+        terminalForeground = 0xFF292524.toInt(),
+        ansi = lightAnsi(red = 0xFFC2410C.toInt()),
+    )
+
+    val catppuccinLatte = AppTheme(
+        id = "catppuccin-latte",
+        displayName = "Catppuccin (Latte)",
+        isDark = false,
+        background = 0xFFEFF1F5.toInt(),
+        surface = 0xFFE6E9EF.toInt(),
+        surfaceTranslucent = 0xE6E6E9EF.toInt(),
+        primary = 0xFF8839EF.toInt(),
+        accent = 0xFF1E66F5.toInt(),
+        text = 0xFF4C4F69.toInt(),
+        textDim = 0xFF6C6F85.toInt(),
+        glow = 0xFF8839EF.toInt(),
+        terminalBackground = 0xFFEFF1F5.toInt(),
+        terminalForeground = 0xFF4C4F69.toInt(),
+        ansi = lightAnsi(magenta = 0xFF8839EF.toInt(), blue = 0xFF1E66F5.toInt()),
+    )
+
+    val everforestLight = AppTheme(
+        id = "everforest-light",
+        displayName = "Everforest",
+        isDark = false,
+        background = 0xFFFDF6E3.toInt(),
+        surface = 0xFFF4EBD5.toInt(),
+        surfaceTranslucent = 0xE6F4EBD5.toInt(),
+        primary = 0xFF4F7E32.toInt(),
+        accent = 0xFF3A94C5.toInt(),
+        text = 0xFF5C6A72.toInt(),
+        textDim = 0xFF708089.toInt(),
+        glow = 0xFF4F7E32.toInt(),
+        terminalBackground = 0xFFFDF6E3.toInt(),
+        terminalForeground = 0xFF5C6A72.toInt(),
+        ansi = lightAnsi(green = 0xFF4F7E32.toInt(), cyan = 0xFF3A94C5.toInt()),
+    )
+
+    val githubLight = AppTheme(
+        id = "github-light",
+        displayName = "GitHub",
+        isDark = false,
+        background = 0xFFFFFFFF.toInt(),
+        surface = 0xFFF6F8FA.toInt(),
+        surfaceTranslucent = 0xE6F6F8FA.toInt(),
+        primary = 0xFF0969DA.toInt(),
+        accent = 0xFF1A7F37.toInt(),
+        text = 0xFF1F2328.toInt(),
+        textDim = 0xFF57606A.toInt(),
+        glow = 0xFF0969DA.toInt(),
+        terminalBackground = 0xFFFFFFFF.toInt(),
+        terminalForeground = 0xFF1F2328.toInt(),
+        ansi = lightAnsi(blue = 0xFF0969DA.toInt(), green = 0xFF1A7F37.toInt()),
+    )
+
+    val gruvboxLight = AppTheme(
+        id = "gruvbox-light",
+        displayName = "Gruvbox",
+        isDark = false,
+        background = 0xFFFBF1C7.toInt(),
+        surface = 0xFFEBDBB2.toInt(),
+        surfaceTranslucent = 0xE6EBDBB2.toInt(),
+        primary = 0xFFAF3A03.toInt(),
+        accent = 0xFFB57614.toInt(),
+        text = 0xFF3C3836.toInt(),
+        textDim = 0xFF504945.toInt(),
+        glow = 0xFFAF3A03.toInt(),
+        terminalBackground = 0xFFFBF1C7.toInt(),
+        terminalForeground = 0xFF3C3836.toInt(),
+        ansi = lightAnsi(red = 0xFFAF3A03.toInt(), yellow = 0xFFB57614.toInt()),
+    )
+
+    val linearLight = AppTheme(
+        id = "linear-light",
+        displayName = "Linear",
+        isDark = false,
+        background = 0xFFF7F8F9.toInt(),
+        surface = 0xFFFFFFFF.toInt(),
+        surfaceTranslucent = 0xE6FFFFFF.toInt(),
+        primary = 0xFF5E6AD2.toInt(),
+        accent = 0xFF4C58B8.toInt(),
+        text = 0xFF1A1A1A.toInt(),
+        textDim = 0xFF525252.toInt(),
+        glow = 0xFF5E6AD2.toInt(),
+        terminalBackground = 0xFFF7F8F9.toInt(),
+        terminalForeground = 0xFF1A1A1A.toInt(),
+        ansi = lightAnsi(blue = 0xFF5E6AD2.toInt()),
+    )
+
+    val notionLight = AppTheme(
+        id = "notion-light",
+        displayName = "Notion",
+        isDark = false,
+        background = 0xFFFFFFFF.toInt(),
+        surface = 0xFFF7F6F3.toInt(),
+        surfaceTranslucent = 0xE6F7F6F3.toInt(),
+        primary = 0xFF0B6E99.toInt(),
+        accent = 0xFF0F7B6C.toInt(),
+        text = 0xFF37352F.toInt(),
+        textDim = 0xFF5A5852.toInt(),
+        glow = 0xFF0B6E99.toInt(),
+        terminalBackground = 0xFFFFFFFF.toInt(),
+        terminalForeground = 0xFF37352F.toInt(),
+        ansi = lightAnsi(blue = 0xFF0B6E99.toInt(), green = 0xFF0F7B6C.toInt()),
+    )
+
+    val oneLight = AppTheme(
+        id = "one-light",
+        displayName = "One",
+        isDark = false,
+        background = 0xFFFAFAFA.toInt(),
+        surface = 0xFFF0F0F0.toInt(),
+        surfaceTranslucent = 0xE6F0F0F0.toInt(),
+        primary = 0xFF4078F2.toInt(),
+        accent = 0xFF0184BC.toInt(),
+        text = 0xFF383A42.toInt(),
+        textDim = 0xFF4F525D.toInt(),
+        glow = 0xFF4078F2.toInt(),
+        terminalBackground = 0xFFFAFAFA.toInt(),
+        terminalForeground = 0xFF383A42.toInt(),
+        ansi = lightAnsi(blue = 0xFF4078F2.toInt(), cyan = 0xFF0184BC.toInt()),
+    )
+
+    val proofLight = AppTheme(
+        id = "proof-light",
+        displayName = "Proof",
+        isDark = false,
+        background = 0xFFF4F6F8.toInt(),
+        surface = 0xFFFFFFFF.toInt(),
+        surfaceTranslucent = 0xE6FFFFFF.toInt(),
+        primary = 0xFF059669.toInt(),
+        accent = 0xFF10B981.toInt(),
+        text = 0xFF111827.toInt(),
+        textDim = 0xFF4B5563.toInt(),
+        glow = 0xFF059669.toInt(),
+        terminalBackground = 0xFFF4F6F8.toInt(),
+        terminalForeground = 0xFF111827.toInt(),
+        ansi = lightAnsi(green = 0xFF059669.toInt()),
+    )
+
+    val raycastLight = AppTheme(
+        id = "raycast-light",
+        displayName = "Raycast",
+        isDark = false,
+        background = 0xFFFAFAFA.toInt(),
+        surface = 0xFFFFFFFF.toInt(),
+        surfaceTranslucent = 0xE6FFFFFF.toInt(),
+        primary = 0xFFE11D48.toInt(),
+        accent = 0xFFF43F5E.toInt(),
+        text = 0xFF191919.toInt(),
+        textDim = 0xFF525252.toInt(),
+        glow = 0xFFE11D48.toInt(),
+        terminalBackground = 0xFFFAFAFA.toInt(),
+        terminalForeground = 0xFF191919.toInt(),
+        ansi = lightAnsi(red = 0xFFE11D48.toInt()),
+    )
+
+    val rosePineDawn = AppTheme(
+        id = "rose-pine-dawn",
+        displayName = "Rose Pine (Dawn)",
+        isDark = false,
+        background = 0xFFFAF4ED.toInt(),
+        surface = 0xFFFFFDF8.toInt(),
+        surfaceTranslucent = 0xE6FFFDF8.toInt(),
+        primary = 0xFF907AA9.toInt(),
+        accent = 0xFFD7827E.toInt(),
+        text = 0xFF575279.toInt(),
+        textDim = 0xFF6F6B8A.toInt(),
+        glow = 0xFF907AA9.toInt(),
+        terminalBackground = 0xFFFAF4ED.toInt(),
+        terminalForeground = 0xFF575279.toInt(),
+        ansi = lightAnsi(magenta = 0xFF907AA9.toInt(), red = 0xFFD7827E.toInt()),
+    )
+
+    val solarizedLight = AppTheme(
+        id = "solarized-light",
+        displayName = "Solarized",
+        isDark = false,
+        background = 0xFFFDF6E3.toInt(),
+        surface = 0xFFEEE8D5.toInt(),
+        surfaceTranslucent = 0xE6EEE8D5.toInt(),
+        primary = 0xFF268BD2.toInt(),
+        accent = 0xFF2AA198.toInt(),
+        text = 0xFF657B83.toInt(),
+        textDim = 0xFF586E75.toInt(),
+        glow = 0xFF268BD2.toInt(),
+        terminalBackground = 0xFFFDF6E3.toInt(),
+        terminalForeground = 0xFF657B83.toInt(),
+        ansi = lightAnsi(blue = 0xFF268BD2.toInt(), cyan = 0xFF2AA198.toInt()),
+    )
+
+    val vercelLight = AppTheme(
+        id = "vercel-light",
+        displayName = "Vercel",
+        isDark = false,
+        background = 0xFFFFFFFF.toInt(),
+        surface = 0xFFFAFAFA.toInt(),
+        surfaceTranslucent = 0xE6FAFAFA.toInt(),
+        primary = 0xFF000000.toInt(),
+        accent = 0xFF0070F3.toInt(),
+        text = 0xFF171717.toInt(),
+        textDim = 0xFF525252.toInt(),
+        glow = 0xFF000000.toInt(),
+        terminalBackground = 0xFFFFFFFF.toInt(),
+        terminalForeground = 0xFF171717.toInt(),
+        ansi = lightAnsi(black = 0xFF000000.toInt(), blue = 0xFF0070F3.toInt()),
+    )
+
+    val vsCodePlusLight = AppTheme(
+        id = "vscode-plus-light",
+        displayName = "VS Code Plus",
+        isDark = false,
+        background = 0xFFFFFFFF.toInt(),
+        surface = 0xFFF3F3F3.toInt(),
+        surfaceTranslucent = 0xE6F3F3F3.toInt(),
+        primary = 0xFF005FB8.toInt(),
+        accent = 0xFF007ACC.toInt(),
+        text = 0xFF3B3B3B.toInt(),
+        textDim = 0xFF505050.toInt(),
+        glow = 0xFF005FB8.toInt(),
+        terminalBackground = 0xFFFFFFFF.toInt(),
+        terminalForeground = 0xFF3B3B3B.toInt(),
+        ansi = lightAnsi(blue = 0xFF005FB8.toInt()),
+    )
+
+    val xcodeLight = AppTheme(
+        id = "xcode-light",
+        displayName = "Xcode",
+        isDark = false,
+        background = 0xFFFFFFFF.toInt(),
+        surface = 0xFFF6F6F6.toInt(),
+        surfaceTranslucent = 0xE6F6F6F6.toInt(),
+        primary = 0xFF0062D2.toInt(),
+        accent = 0xFFFF3B30.toInt(),
+        text = 0xFF1D1D1F.toInt(),
+        textDim = 0xFF555558.toInt(),
+        glow = 0xFF0062D2.toInt(),
+        terminalBackground = 0xFFFFFFFF.toInt(),
+        terminalForeground = 0xFF1D1D1F.toInt(),
+        ansi = lightAnsi(blue = 0xFF0062D2.toInt(), red = 0xFFFF3B30.toInt()),
+    )
+
+    val darkToLightMap: Map<String, String> = mapOf(
+        constructivistWorkstation.id to constructivistWorkstationLight.id,
+        constructivistCobalt.id to constructivistCobaltLight.id,
+        constructivistAmber.id to constructivistAmberLight.id,
+        moonshotDark.id to moonshotLight.id,
+        claudeDark.id to claudeLight.id,
+        absolutely.id to absolutelyLight.id,
+        catppuccin.id to catppuccinLatte.id,
+        everforest.id to everforestLight.id,
+        github.id to githubLight.id,
+        gruvbox.id to gruvboxLight.id,
+        linear.id to linearLight.id,
+        notion.id to notionLight.id,
+        one.id to oneLight.id,
+        proof.id to proofLight.id,
+        raycast.id to raycastLight.id,
+        rosePine.id to rosePineDawn.id,
+        solarized.id to solarizedLight.id,
+        vercel.id to vercelLight.id,
+        vsCodePlus.id to vsCodePlusLight.id,
+        xcode.id to xcodeLight.id,
+    )
+
+    val lightToDarkMap: Map<String, String> = darkToLightMap.entries.associate { (k, v) -> v to k }
+
     val all: List<AppTheme> = listOf(
-        constructivistWorkstation, constructivistCobalt, constructivistAmber,
-        moonshotDark, claudeDark, claudeLight,
-        absolutely, catppuccin, everforest, github, gruvbox,
-        linear, notion, one, proof, raycast,
-        rosePine, solarized, vercel, vsCodePlus, xcode,
+        constructivistWorkstation, constructivistWorkstationLight,
+        constructivistCobalt, constructivistCobaltLight,
+        constructivistAmber, constructivistAmberLight,
+        moonshotDark, moonshotLight,
+        claudeDark, claudeLight,
+        absolutely, absolutelyLight,
+        catppuccin, catppuccinLatte,
+        everforest, everforestLight,
+        github, githubLight,
+        gruvbox, gruvboxLight,
+        linear, linearLight,
+        notion, notionLight,
+        one, oneLight,
+        proof, proofLight,
+        raycast, raycastLight,
+        rosePine, rosePineDawn,
+        solarized, solarizedLight,
+        vercel, vercelLight,
+        vsCodePlus, vsCodePlusLight,
+        xcode, xcodeLight,
     )
 
     fun byId(id: String?): AppTheme? = all.firstOrNull { it.id == id }
 
     /** Resolves a stored theme id, falling back to the flagship Constructivist Workstation default. */
     fun resolve(id: String?): AppTheme = byId(id) ?: constructivistWorkstation
+
+    /** Resolves a stored theme id for the given target dark/light mode dynamically. */
+    fun resolveForMode(id: String?, isDark: Boolean): AppTheme {
+        val base = resolve(id)
+        if (base.isDark == isDark) return base
+        val targetId = if (isDark) {
+            lightToDarkMap[base.id] ?: base.id
+        } else {
+            darkToLightMap[base.id] ?: base.id
+        }
+        return byId(targetId) ?: base
+    }
 }

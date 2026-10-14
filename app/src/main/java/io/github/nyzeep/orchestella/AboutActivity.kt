@@ -113,6 +113,47 @@ class AboutActivity : AppCompatActivity() {
         findViewById<View>(R.id.btn_copy_project_repo).setOnClickListener {
             copyToClipboard(PROJECT_REPO_URL, getString(R.string.about_link_copied))
         }
+
+        val btnCheckUpdates = findViewById<MaterialButton>(R.id.btn_check_updates)
+        btnCheckUpdates?.setOnClickListener {
+            btnCheckUpdates.isEnabled = false
+            btnCheckUpdates.text = "正在检测新版本..."
+            val settings = SettingsManager(this)
+            val checker = GitHubUpdateChecker(settings)
+            Executors.newSingleThreadExecutor().execute {
+                val result = checker.checkForUpdate(BuildConfig.VERSION_NAME, true)
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    btnCheckUpdates.isEnabled = true
+                    btnCheckUpdates.text = "🔄 立即检测更新"
+                    when (result.status()) {
+                        GitHubUpdateChecker.Status.UPDATE_AVAILABLE -> {
+                            androidx.appcompat.app.AlertDialog.Builder(this)
+                                .setTitle("发现新版本 (${result.latestVersion()})")
+                                .setMessage("当前安装版本：v${BuildConfig.VERSION_NAME}\n最新可用版本：${result.latestVersion()}\n\n更新日志：\n${result.releaseNotes() ?: "无详细说明"}")
+                                .setPositiveButton("前往下载") { _, _ ->
+                                    openUrl(result.releaseUrl() ?: "$PROJECT_REPO_URL/releases")
+                                }
+                                .setNegativeButton("稍后再说", null)
+                                .show()
+                        }
+                        GitHubUpdateChecker.Status.UP_TO_DATE -> {
+                            Toast.makeText(this, "当前已是最新版本 (v${BuildConfig.VERSION_NAME})", Toast.LENGTH_SHORT).show()
+                        }
+                        else -> {
+                            androidx.appcompat.app.AlertDialog.Builder(this)
+                                .setTitle("检查更新结果")
+                                .setMessage((result.errorMessage() ?: "无法获取版本信息") + "\n\n您可以直接前往 GitHub 仓库 Releases 页面手动查看与获取最新构建。")
+                                .setPositiveButton("访问 Releases 页面") { _, _ ->
+                                    openUrl("$PROJECT_REPO_URL/releases")
+                                }
+                                .setNegativeButton("知道了", null)
+                                .show()
+                        }
+                    }
+                }
+            }
+        }
         ThemeApplier.bind(this)
     }
 

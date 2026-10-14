@@ -45,10 +45,17 @@ public final class AvfCapabilityEvaluator {
             return AvfReadiness.unsupported(List.of(
                     "该机型芯片在硬件层面不开放非保护虚拟机，已自动保持在软件模拟模式"));
         }
-        boolean declared;
+        boolean declared = false;
         String property = facts.virtualizationProperty();
         if (property != null && !property.isBlank()) {
-            declared = "true".equalsIgnoreCase(property.trim());
+            String p = property.trim().toLowerCase(Locale.ROOT);
+            if ("true".equals(p) || "1".equals(p) || "yes".equals(p) || "on".equals(p)) {
+                declared = true;
+            } else if ("false".equals(p) || "0".equals(p) || "no".equals(p) || "off".equals(p)) {
+                declared = false;
+            } else {
+                declared = facts.virtualizationFrameworkFeature();
+            }
         } else {
             declared = facts.virtualizationFrameworkFeature();
         }

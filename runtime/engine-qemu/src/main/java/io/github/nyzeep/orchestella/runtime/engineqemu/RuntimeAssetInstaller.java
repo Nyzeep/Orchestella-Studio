@@ -35,8 +35,16 @@ public final class RuntimeAssetInstaller {
             throw new IOException("runtime-asset-installer-invalid-path");
         }
         Files.createDirectories(targetDir);
-        Path partial = targetDir.resolve(artifactPath + ".partial");
         Path finalPath = targetDir.resolve(artifactPath);
+        if (Files.isRegularFile(finalPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            try (InputStream check = Files.newInputStream(finalPath)) {
+                manifest.requireVerifiedPackagedAsset(artifactPath, check);
+                return finalPath;
+            } catch (Exception ignored) {
+                // If invalid or tampered, proceed to re-extract below
+            }
+        }
+        Path partial = targetDir.resolve(artifactPath + ".partial");
         try {
             try (InputStream in = source.open(); OutputStream out = Files.newOutputStream(partial)) {
                 in.transferTo(out);

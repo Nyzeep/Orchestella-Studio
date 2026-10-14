@@ -100,6 +100,20 @@
                         android:textSize="14sp"
                         android:lineSpacingExtra="3dp"
                         android:textColor="?attr/colorOnSurfaceVariant" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_check_updates"
+                        style="@style/Widget.Material3.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="44dp"
+                        android:layout_marginTop="16dp"
+                        android:gravity="center"
+                        app:cornerRadius="0dp"
+                        android:text="🔄 立即检测更新"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 

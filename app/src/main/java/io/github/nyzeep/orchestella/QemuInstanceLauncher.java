@@ -404,18 +404,24 @@ public final class QemuInstanceLauncher {
     public ExecutionSession launch(InstanceStrategyLauncher.LaunchParameters parameters)
             throws IOException, InterruptedException {
         RuntimeArtifactManifest manifest;
-        try (InputStream in = context.getAssets().open(RuntimeArtifactManifest.SCHEMA_FILE_NAME)) {
+        try (InputStream in = PackagedAssetStreams.openAsset(context, RuntimeArtifactManifest.SCHEMA_FILE_NAME)) {
             manifest = RuntimeArtifactManifest.parse(in);
         }
         QemuRuntimeBootstrapper bootstrapper = new QemuRuntimeBootstrapper(manifest,
                 name -> {
                     try {
-                        return context.getAssets().open(name);
+                        return PackagedAssetStreams.openAsset(context, name);
                     } catch (IOException e) {
                         throw new RuntimeException(e);
                     }
                 },
-                name -> QemuInstanceLauncher.class.getResourceAsStream("/" + name),
+                name -> {
+                    try {
+                        return PackagedAssetStreams.openResource(context, name);
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                },
                 Paths.get(parameters.runtimeDirectory),
                 Paths.get(parameters.distroInputsDirectory));
         QemuRuntimeBootstrapper.RuntimePaths paths =

@@ -1,0 +1,58 @@
+# Orchestella 语义化版本命名硬约束标准 (Versioning Standard)
+
+> **状态**：项目级硬约束 (Active Hard Policy)  
+> **生效日期**：2026-10-14  
+> **约束范围**：所有构建产物、Release 标签、Gradle 配置、以及 Orchestrator / Sub-Agent 开发会话
+
+---
+
+## 1. 规范基础：行业通用语义化版本 2.0.0 (SemVer 2.0.0)
+
+Orchestella 项目的所有发布版本与构建标签严格遵循 [Semantic Versioning 2.0.0](https://semver.org/) 规范，格式为：
+
+$$\text{MAJOR}.\text{MINOR}.\text{PATCH}[-\text{PRERELEASE}]$$
+
+### 1.1 字段语义与严格判定标准
+
+| 级别 | 名称 | 递增触发条件（依据修改性质） | 进位规则 |
+| :--- | :--- | :--- | :--- |
+| **MAJOR** | 主版本号 | 1. 包含破坏向后兼容性的重大架构重构或契约变更<br>2. 移除已公开的契约能力或存储格式不再自动兼容旧实例<br>3. 产品发生根本性代际演进 | `MAJOR++`<br>`MINOR = 0`<br>`PATCH = 0` |
+| **MINOR** | 次版本号 | 1. 新增用户可见的重要功能或全新页面（如新增独立发行版大卡片、关于与在线更新检测）<br>2. 现有模块深度重构与体验升级（如主题系统双模动态跟随）<br>3. 底层能力矩阵向后兼容扩展（如新增 Linux 发行版镜像支持、AVF 框架兼容性判定增强） | `MINOR++`<br>`PATCH = 0` |
+| **PATCH** | 补丁版本号 | 1. 向后兼容的纯 Bug 修复（如解压缓存校验修复、空指针防护、边距对齐）<br>2. 性能调优、零功能变动的日志/文档修缮<br>3. 单元测试用例补充与 CI 配置优化 | `PATCH++` |
+| **PRERELEASE** | 预发布标签 | 仅在内测、候选阶段使用，格式如 `-preview.1`, `-beta.1`, `-rc.1`。正式发布时必须移除。 | 视阶段迭代 |
+
+---
+
+## 2. Android `versionCode` 映射硬约束
+
+为防止多个构建版本同时使用同一版本号导致应用商店、ADB 或系统安装器识别混淆与覆盖冲突，`versionCode` 必须满足**单调递增性**：
+
+$$\text{versionCode} = \text{MAJOR} \times 10000 + \text{MINOR} \times 100 + \text{PATCH}$$
+
+- 示例：
+  - `0.3.0` $\rightarrow$ `versionCode = 300`
+  - `0.3.1` $\rightarrow$ `versionCode = 301`
+  - `0.4.0` $\rightarrow$ `versionCode = 400`
+  - `1.0.0` $\rightarrow$ `versionCode = 10000`
+
+---
+
+## 3. Agent 与构建流水线执行硬准则
+
+1. **版本号不可回退与不可复用**：已打 tag、已构建或已对外分发的版本号绝对禁止再次包含不同的代码提交。
+2. **每次发布必须评估变更性质**：
+   - 包含新页面、新交互、新特性的 PR/Commit，严禁仅递增 PATCH。
+   - 仅修复已知 issue 且无任何交互或功能扩展的，必须递增 PATCH。
+3. **版本更新落地文件清单**：
+   - `app/build.gradle.kts` (`versionName`, `versionCode`)
+   - `docs/standards/VERSIONING.md` (版本迭代审计追踪)
+   - Git Tag 统一前缀：`vX.Y.Z` (如 `v0.4.0`)
+
+---
+
+## 4. 版本迭代审计历史
+
+| 版本号 | versionCode | 发布日期 | 变更性质评估 | 关键修改摘要 |
+| :--- | :--- | :--- | :--- | :--- |
+| `0.3.0` | 300 | 2026-10-13 | MINOR | 全面支持 7 大 Linux 官方镜像拉取与完整 Linux 契约基座 |
+| **`0.4.0`** | **400** | **2026-10-14** | **MINOR** | **重大功能新增与界面重构**：<br>1. 7 大发行版独立卡片与一键装配界面（去除冗余下拉选择）<br>2. 主题引擎全面跟随系统暗色/亮色，20 款调色板全配暗/亮双模<br>3. 新增关于主界面与基于 GitHub Releases 的在线检测更新功能<br>4. 修复 QEMU 启动实例解包校验失败（PackagedAssetStreams 直接流式读取）<br>5. 修复物理机 AVF "1" 判定失败 Bug，优化预检状态反馈<br>6. 修复卡片 4dp 边距未对齐与底部导航图标渲染缺陷 |

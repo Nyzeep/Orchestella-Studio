@@ -28,8 +28,8 @@ android {
         applicationId = "io.github.nyzeep.orchestella"
         minSdk = 26
         targetSdk = 36
-        versionCode = 300
-        versionName = "0.3.0-preview.1"
+        versionCode = 400
+        versionName = "0.4.0"
 
         ndk {
             abiFilters += "arm64-v8a"
@@ -133,6 +133,10 @@ android {
             keepDebugSymbols += "**/liborchestella_qemu.so"
             keepDebugSymbols += "**/libdroidlayer_qemu.so"
         }
+    }
+
+    aaptOptions {
+        noCompress += listOf("Image", "initramfs.cpio.gz", "cpio.gz", "gz")
     }
 
     lint {

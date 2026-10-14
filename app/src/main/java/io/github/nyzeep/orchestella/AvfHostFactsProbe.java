@@ -51,11 +51,25 @@ public final class AvfHostFactsProbe {
                 Build.SUPPORTED_ABIS,
                 socModel,
                 Build.MODEL,
-                () -> readSystemProperty("ro.virtualization.supported"),
+                () -> {
+                    String prop = readSystemProperty("ro.virtualization.supported");
+                    if (prop == null || prop.isBlank() || "0".equals(prop.trim()) || "false".equalsIgnoreCase(prop.trim())) {
+                        String bootProp = readSystemProperty("ro.boot.hypervisor.vm.supported");
+                        if (bootProp != null && !bootProp.isBlank()) {
+                            return bootProp;
+                        }
+                    }
+                    return prop;
+                },
                 feature -> {
                     try {
-                        return context.getPackageManager().hasSystemFeature(feature);
-                    } catch (RuntimeException failure) {
+                        if (context.getPackageManager().hasSystemFeature(feature)) {
+                            return true;
+                        }
+                        // Some OEM ROMs omit declaring the feature string while VirtualMachineManager is functional
+                        Class<?> vmmClass = Class.forName("android.system.virtualmachine.VirtualMachineManager");
+                        return context.getSystemService(vmmClass) != null;
+                    } catch (Throwable failure) {
                         return false;
                     }
                 },

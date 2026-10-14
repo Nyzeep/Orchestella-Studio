@@ -315,6 +315,11 @@ EOF
         chmod 0644 "$target_root/etc/systemd/system/orchestella-firstboot.service"
         ln -sf /etc/systemd/system/orchestella-firstboot.service \
             "$target_root/etc/systemd/system/multi-user.target.wants/orchestella-firstboot.service"
+        mkdir -p "$target_root/etc/systemd/system-preset"
+        cat > "$target_root/etc/systemd/system-preset/00-orchestella.preset" <<'EOF'
+enable *
+EOF
+        chmod 0644 "$target_root/etc/systemd/system-preset/00-orchestella.preset"
     fi
     # Surface failed/offline/pending state on login, without printing credentials or raw package output.
     mkdir -p "$target_root/etc/profile.d"

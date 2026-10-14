@@ -67,7 +67,10 @@ public final class ResilientDownloadEngineAppTest {
                 while (serverRunning.get()) {
                     try {
                         Socket client = goodServer.accept();
-                        try (OutputStream out = client.getOutputStream()) {
+                        try (BufferedReader reader = new BufferedReader(new InputStreamReader(client.getInputStream(), StandardCharsets.US_ASCII));
+                             OutputStream out = client.getOutputStream()) {
+                            String reqLine;
+                            while ((reqLine = reader.readLine()) != null && !reqLine.isEmpty()) {}
                             String header = "HTTP/1.1 200 OK\r\n"
                                     + "Content-Length: " + payload.length + "\r\n"
                                     + "Connection: close\r\n\r\n";
