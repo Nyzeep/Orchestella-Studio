@@ -116,7 +116,9 @@ public final class RuntimeArtifactManifest {
         if (!MessageDigest.isEqual(
                 expectedHash.getBytes(StandardCharsets.US_ASCII),
                 actualHash.getBytes(StandardCharsets.US_ASCII))) {
-            throw rejected("runtime-artifact-checksum-mismatch");
+            throw rejected("runtime-artifact-checksum-mismatch",
+                    "runtime-artifact-checksum-mismatch for " + QEMU_ARTIFACT_PATH
+                            + " expected=" + expectedHash + " actual=" + actualHash);
         }
         return canonicalCandidate;
     }
@@ -140,7 +142,9 @@ public final class RuntimeArtifactManifest {
         if (!MessageDigest.isEqual(
                 expectedHash.getBytes(StandardCharsets.US_ASCII),
                 actualHash.getBytes(StandardCharsets.US_ASCII))) {
-            throw rejected("runtime-artifact-checksum-mismatch");
+            throw rejected("runtime-artifact-checksum-mismatch",
+                    "runtime-artifact-checksum-mismatch for " + artifactPath
+                            + " expected=" + expectedHash + " actual=" + actualHash);
         }
     }
 
@@ -184,11 +188,15 @@ public final class RuntimeArtifactManifest {
     }
 
     private static IntegrityRejectedException rejected(String reason) {
-        return new IntegrityRejectedException(reason, null);
+        return new IntegrityRejectedException(reason, reason, null);
+    }
+
+    private static IntegrityRejectedException rejected(String reason, String detail) {
+        return new IntegrityRejectedException(reason, detail, null);
     }
 
     private static IntegrityRejectedException rejected(String reason, Throwable cause) {
-        return new IntegrityRejectedException(reason, cause);
+        return new IntegrityRejectedException(reason, reason, cause);
     }
 
     /** Stable, non-secret failure reason for an integrity gate. */
@@ -197,8 +205,8 @@ public final class RuntimeArtifactManifest {
 
         private final String reason;
 
-        private IntegrityRejectedException(String reason, Throwable cause) {
-            super(reason, cause);
+        private IntegrityRejectedException(String reason, String message, Throwable cause) {
+            super(message != null ? message : reason, cause);
             this.reason = reason;
         }
 

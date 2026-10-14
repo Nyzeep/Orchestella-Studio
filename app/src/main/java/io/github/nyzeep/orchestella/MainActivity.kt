@@ -252,7 +252,13 @@ class MainActivity : AppCompatActivity() {
         }
 
         findViewById<View>(R.id.card_create_linux_main)?.setOnClickListener { launchCreationWizard("ubuntu") }
-        findViewById<View>(R.id.btn_create_linux_instance)?.setOnClickListener { launchCreationWizard("ubuntu") }
+        findViewById<View>(R.id.card_distro_debian)?.setOnClickListener { launchCreationWizard("debian") }
+        findViewById<View>(R.id.card_distro_fedora)?.setOnClickListener { launchCreationWizard("fedora") }
+        findViewById<View>(R.id.card_distro_arch)?.setOnClickListener { launchCreationWizard("arch") }
+        findViewById<View>(R.id.card_distro_opensuse)?.setOnClickListener { launchCreationWizard("opensuse") }
+        findViewById<View>(R.id.card_distro_almalinux)?.setOnClickListener { launchCreationWizard("almalinux") }
+        findViewById<View>(R.id.card_distro_rocky)?.setOnClickListener { launchCreationWizard("rocky") }
+
         createUbuntuButton.setOnClickListener { launchCreationWizard("ubuntu") }
         createDebianButton.setOnClickListener { launchCreationWizard("debian") }
         findViewById<View>(R.id.create_fedora)?.setOnClickListener { launchCreationWizard("fedora") }
@@ -352,7 +358,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupConsoleControls() {
-        findViewById<View>(R.id.seg_pkvm)?.setOnClickListener { switchTab(2) }
+        findViewById<View>(R.id.seg_pkvm)?.setOnClickListener {
+            when (avfReadiness?.status()) {
+                AvfCapabilityEvaluator.AvfStatus.NEEDS_AUTHORIZATION -> {
+                    showAvfAuthorizationWizard()
+                }
+                AvfCapabilityEvaluator.AvfStatus.UNSUPPORTED -> {
+                    val reasons = avfReadiness?.reasons()?.joinToString("\n") ?: "设备未声明虚拟化框架支持"
+                    androidx.appcompat.app.AlertDialog.Builder(this)
+                        .setTitle("AVF 硬件加速检测")
+                        .setMessage("当前设备状态：\n$reasons\n\n应用已切换至完整 QEMU 软件仿真引擎，支持所有 Linux 实例及图形桌面运行。")
+                        .setPositiveButton("了解", null)
+                        .show()
+                }
+                else -> switchTab(2)
+            }
+        }
         findViewById<View>(R.id.seg_qemu)?.setOnClickListener { switchTab(2) }
 
         findViewById<View>(R.id.copy_ssh_btn)?.setOnClickListener {
@@ -583,8 +604,13 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.dashboard_subtitle)?.text =
             if (running) engine else "无 Root Linux 工作站"
         findViewById<com.google.android.material.button.MaterialButton>(R.id.seg_pkvm)?.text =
-            if (session is AvfInstanceLauncher.AvfSession) "AVF · 正在使用" else
-                if (avfReadiness?.status() == AvfCapabilityEvaluator.AvfStatus.READY) "AVF · 预检通过" else "AVF · 预检未通过"
+            if (session is AvfInstanceLauncher.AvfSession) {
+                "AVF · 正在使用"
+            } else when (avfReadiness?.status()) {
+                AvfCapabilityEvaluator.AvfStatus.READY -> "AVF · 预检通过"
+                AvfCapabilityEvaluator.AvfStatus.NEEDS_AUTHORIZATION -> "AVF · 待授权"
+                else -> "AVF · 未就绪"
+            }
         findViewById<com.google.android.material.button.MaterialButton>(R.id.seg_qemu)?.text =
             if (session is QemuInstanceLauncher.Session) "QEMU · 正在使用" else "QEMU · 可用"
         sshCommand = instance?.let { target ->
@@ -840,9 +866,20 @@ class MainActivity : AppCompatActivity() {
                     attachPressGlow(card, theme)
                 }
             }
-            findViewById<View>(R.id.card_create_linux_main)?.let { hero ->
-                hero.background = buildGlowCardDrawable(theme)
-                attachPressGlow(hero, theme)
+            val distroCards = listOf(
+                R.id.card_create_linux_main,
+                R.id.card_distro_debian,
+                R.id.card_distro_fedora,
+                R.id.card_distro_arch,
+                R.id.card_distro_opensuse,
+                R.id.card_distro_almalinux,
+                R.id.card_distro_rocky
+            )
+            for (cardId in distroCards) {
+                findViewById<View>(cardId)?.let { c ->
+                    c.background = buildGlowCardDrawable(theme)
+                    attachPressGlow(c, theme)
+                }
             }
             renderGauges(theme)
             applyThemeToInstances(theme)
@@ -1712,7 +1749,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun verifiedQemuStatus(): String =
         try {
-            assets.open(RuntimeArtifactManifest.SCHEMA_FILE_NAME).use { input ->
+            PackagedAssetStreams.openAsset(this, RuntimeArtifactManifest.SCHEMA_FILE_NAME).use { input ->
                 val manifest = RuntimeArtifactManifest.parse(input)
                 val nativeLibraryDirectory = applicationInfo.nativeLibraryDir
                     ?: return getString(R.string.qemu_runtime_unavailable, "nativeLibraryDir unavailable")

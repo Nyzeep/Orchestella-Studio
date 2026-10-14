@@ -118,12 +118,30 @@ else
 fi
 log 'ORCHESTELLA_GUEST_ASSEMBLY phase=unpack status=running'
 unpack_rootfs_archive() {
-    case "$ROOTFS_PATH" in
-        *.tar.xz|*.txz) timeout 1800 tar -xJpf "$ROOTFS_PATH" -C /newroot ;;
-        *.tar.gz|*.tgz) timeout 1800 tar -xzpf "$ROOTFS_PATH" -C /newroot ;;
-        *.tar) timeout 1800 tar -xpf "$ROOTFS_PATH" -C /newroot ;;
-        *) return 64 ;;
+    local magic=""
+    if [ -r "$ROOTFS_PATH" ]; then
+        magic="$(head -c 6 "$ROOTFS_PATH" 2>/dev/null | od -A n -t x1 2>/dev/null | tr -d ' \n\r' || true)"
+    fi
+    case "$magic" in
+        fd377a585a00*) timeout 1800 tar -xJpf "$ROOTFS_PATH" -C /newroot && return 0 ;;
+        1f8b*)         timeout 1800 tar -xzpf "$ROOTFS_PATH" -C /newroot && return 0 ;;
+        425a68*)       timeout 1800 tar -xjpf "$ROOTFS_PATH" -C /newroot && return 0 ;;
+        28b52ffd*)
+            if command -v zstd >/dev/null 2>&1; then
+                timeout 1800 zstd -dc "$ROOTFS_PATH" | tar -xpf - -C /newroot && return 0
+            fi
+            ;;
     esac
+    case "$ROOTFS_PATH" in
+        *.tar.xz|*.txz)   timeout 1800 tar -xJpf "$ROOTFS_PATH" -C /newroot && return 0 ;;
+        *.tar.gz|*.tgz)   timeout 1800 tar -xzpf "$ROOTFS_PATH" -C /newroot && return 0 ;;
+        *.tar.bz2|*.tbz2) timeout 1800 tar -xjpf "$ROOTFS_PATH" -C /newroot && return 0 ;;
+        *.tar)            timeout 1800 tar -xpf "$ROOTFS_PATH" -C /newroot && return 0 ;;
+    esac
+    timeout 1800 tar -xJpf "$ROOTFS_PATH" -C /newroot 2>/dev/null && return 0
+    timeout 1800 tar -xzpf "$ROOTFS_PATH" -C /newroot 2>/dev/null && return 0
+    timeout 1800 tar -xpf "$ROOTFS_PATH" -C /newroot 2>/dev/null && return 0
+    return 64
 }
 unpack_rootfs_archive &
 unpack_pid=$!

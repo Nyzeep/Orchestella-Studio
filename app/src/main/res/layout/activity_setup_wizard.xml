@@ -200,29 +200,18 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="目标 Linux 发行版 (7 大主流官方阵容)"
-                            android:textSize="15sp"
+                            android:text="已选定装配发行版"
+                            android:textSize="14sp"
+                            android:fontFamily="sans-serif"
                             android:textStyle="bold"
                             android:textColor="?attr/colorOnSurface" />
 
-                        <!-- Dropdown Spinner for 7 distros with official icons and dropdown chevron -->
+                        <!-- Distro selection spinner kept hidden to directly display selected distro configuration -->
                         <Spinner
                             android:id="@+id/spinner_distro_select"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:minHeight="52dp"
-                            android:layout_marginTop="10dp"
-                            android:background="@drawable/bg_dropdown_field"
-                            android:paddingStart="14dp"
-                            android:paddingEnd="36dp" />
-
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
-                            android:text="▼ 点击上方下拉菜单可在 7 大主流官方发行版间切换"
-                            android:textSize="11sp"
-                            android:textColor="?attr/colorPrimary" />
+                            android:visibility="gone" />
 
                         <!-- Distro Info Preview -->
                         <LinearLayout

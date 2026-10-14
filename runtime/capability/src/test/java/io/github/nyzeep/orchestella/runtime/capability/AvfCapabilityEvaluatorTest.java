@@ -18,6 +18,19 @@ public final class AvfCapabilityEvaluatorTest {
         extraBlockedHintCatchesUnknownSocNames();
         supportedButUnauthorizedDeviceNeedsTheWizardAndKeepsTheSoftwareBadge();
         reasonsNeverNameExecutionEngines();
+        numericOnePropertyIsRecognizedAsTruthy();
+    }
+
+    private static void numericOnePropertyIsRecognizedAsTruthy() {
+        AvfCapabilityEvaluator.AvfReadiness readiness =
+                AvfCapabilityEvaluator.evaluate(
+                        new AvfCapabilityEvaluator.AvfHostFacts.Builder(
+                                        35, List.of("arm64-v8a"), "1", false, true)
+                                .socModel("MT6991")
+                                .deviceModel("Test Device")
+                                .build());
+
+        assertTrue(readiness.status() == AvfCapabilityEvaluator.AvfStatus.READY, "property '1' is recognized as READY");
     }
 
     private static AvfCapabilityEvaluator.AvfHostFacts.Builder readyDevice() {

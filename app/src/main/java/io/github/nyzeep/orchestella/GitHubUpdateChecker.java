@@ -104,7 +104,11 @@ public final class GitHubUpdateChecker {
      * @return UpdateResult containing version info or error
      */
     public UpdateResult checkForUpdate(String currentVersion) {
-        if (!settings.isUpdateCheckEnabled()) {
+        return checkForUpdate(currentVersion, false);
+    }
+
+    public UpdateResult checkForUpdate(String currentVersion, boolean force) {
+        if (!force && !settings.isUpdateCheckEnabled()) {
             return UpdateResult.disabled();
         }
 

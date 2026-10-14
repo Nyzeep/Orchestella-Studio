@@ -7,9 +7,10 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 
 /** One persistent appearance source, also usable with in-memory preferences in JVM tests. */
-class ThemeStore(private val prefs: SharedPreferences) {
+class ThemeStore(private val prefs: SharedPreferences, private val context: Context? = null) {
     constructor(context: Context) : this(
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE),
+        context.applicationContext
     ) {
         ThemeApplier.install(context)
     }
@@ -24,10 +25,9 @@ class ThemeStore(private val prefs: SharedPreferences) {
             .remove(KEY_CUSTOM_ACCENT).remove(KEY_CUSTOM_TEXT).apply()
     }
 
-    /** Set only before onCreate; live colors must not recreate an in-progress instance workflow. */
+    /** Follows system dark/light configuration dynamically. */
     fun applyNightMode(activity: AppCompatActivity) {
-        val targetMode = if (resolve().isDark) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO
-        activity.delegate.localNightMode = targetMode
+        activity.delegate.localNightMode = AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
     }
 
     fun customAccent(): Int? =
@@ -88,8 +88,15 @@ class ThemeStore(private val prefs: SharedPreferences) {
         prefs.unregisterOnSharedPreferenceChangeListener(listener)
     }
 
-    fun resolve(): AppTheme {
-        val base = ThemeCatalog.resolve(themeId())
+    @JvmOverloads
+    fun resolve(callerContext: Context? = this.context): AppTheme {
+        val base = if (callerContext != null) {
+            val uiMode = callerContext.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
+            val isDark = uiMode == android.content.res.Configuration.UI_MODE_NIGHT_YES
+            ThemeCatalog.resolveForMode(themeId(), isDark)
+        } else {
+            ThemeCatalog.resolve(themeId())
+        }
         val accent = customAccent()
         val text = customText()
         if (accent == null && text == null) return base
