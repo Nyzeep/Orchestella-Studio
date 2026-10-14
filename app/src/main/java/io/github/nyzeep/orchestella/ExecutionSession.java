@@ -73,6 +73,28 @@ public interface ExecutionSession {
         return null;
     }
 
+    /** Connects the separate display transport using capabilities established by the guest probe. */
+    default boolean connectDisplay(boolean keyboard, boolean unicodeText, boolean pointer) { return false; }
+    default boolean reconnectDisplay(boolean keyboard, boolean unicodeText, boolean pointer) {
+        return connectDisplay(keyboard, unicodeText, pointer);
+    }
+
+    default String displayStatus() { return "显示数据面不可用"; }
+
+    interface ServiceForward extends AutoCloseable {
+        int hostPort();
+        boolean isActive();
+        @Override void close() throws IOException;
+    }
+
+    default ServiceForward openServiceForward(int guestPort) throws IOException {
+        throw new IOException("本地服务转发在当前执行策略尚未验证");
+    }
+
+    default io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract.CapabilityMatrix capabilityMatrix() {
+        return io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract.CapabilityMatrix.softwareVirtualizationBaseline();
+    }
+
     /**
      * Optional strategy-neutral BridgeClient for host-initiated control commands (such as clipboard sync).
      * Null when the session does not provide a control channel.

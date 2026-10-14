@@ -1,4 +1,5 @@
 #include "native_gles_presenter.h"
+#include "pixel_format.h"
 
 #include <android/log.h>
 #include <chrono>
@@ -33,9 +34,7 @@ uniform sampler2D uTexture;
 
 void main() {
     vec4 c = texture(uTexture, vTexCoord);
-    // Wayland little-endian ARGB unpacks into memory bytes as [B, G, R, A].
-    // Swizzle color channels to standard RGBA.
-    fragColor = vec4(c.b, c.g, c.r, c.a);
+    fragColor = c;
 }
 )glsl";
 
@@ -242,10 +241,17 @@ void NativeGlesPresenter::deleteGlResources() {
         }
     }
 
+    pboIds_[0] = 0;
+    pboIds_[1] = 0;
+    targetTexture_ = 0;
+    vbo_ = 0;
+    program_ = 0;
     pboInitialized_ = false;
     pboCapacityBytes_ = 0;
     textureWidth_ = 0;
     textureHeight_ = 0;
+    pboIndex_ = 0;
+    firstFrame_ = true;
 }
 
 bool NativeGlesPresenter::onSurfaceCreated(ANativeWindow* window) {
@@ -256,9 +262,15 @@ bool NativeGlesPresenter::onSurfaceCreated(ANativeWindow* window) {
 
     if (window_ == window && eglSurface_ != EGL_NO_SURFACE && isReady_) {
         LOGI("NativeGlesPresenter::onSurfaceCreated: window already bound and active");
+        ANativeWindow_release(window);
         return true;
     }
 
+    // JNI supplies a newly acquired window reference on every attempt, including same-pointer
+    // recovery after eglGetDisplay/eglInitialize failed before a context existed.
+    if (!isReady_ && (window_ != nullptr || eglDisplay_ != EGL_NO_DISPLAY || eglContext_ != EGL_NO_CONTEXT)) {
+        onSurfaceDestroyed();
+    }
     if (eglSurface_ != EGL_NO_SURFACE) {
         eglMakeCurrent(eglDisplay_, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
         eglDestroySurface(eglDisplay_, eglSurface_);
@@ -313,6 +325,7 @@ void NativeGlesPresenter::onSurfaceChanged(int width, int height) {
 void NativeGlesPresenter::onSurfaceDestroyed() {
     LOGI("NativeGlesPresenter::onSurfaceDestroyed");
     isReady_ = false;
+    deleteGlResources();
     if (eglDisplay_ != EGL_NO_DISPLAY) {
         eglMakeCurrent(eglDisplay_, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
         if (eglSurface_ != EGL_NO_SURFACE) {
@@ -324,6 +337,8 @@ void NativeGlesPresenter::onSurfaceDestroyed() {
         ANativeWindow_release(window_);
         window_ = nullptr;
     }
+    terminateEgl();
+    lastPresentTimeMs_ = -1.0f;
 }
 
 void NativeGlesPresenter::release() {
@@ -333,17 +348,21 @@ void NativeGlesPresenter::release() {
     terminateEgl();
 }
 
-void NativeGlesPresenter::present(const int32_t* pixels, int width, int height,
+bool NativeGlesPresenter::present(const int32_t* pixels, int width, int height,
                                  int destX, int destY, int destWidth, int destHeight,
                                  int viewportWidth, int viewportHeight) {
-    if (!isReady_ || !pixels || width <= 0 || height <= 0 || destWidth <= 0 || destHeight <= 0) {
-        return;
+    lastPresentTimeMs_ = -1.0f;
+    if (!isReady_ || !pixels || width <= 0 || height <= 0 || width > 4096 || height > 4096
+        || static_cast<int64_t>(width) * height > 4194304 || destWidth <= 0 || destHeight <= 0) {
+        return false;
     }
 
     const auto startTime = std::chrono::steady_clock::now();
 
-    if (eglDisplay_ == EGL_NO_DISPLAY || eglSurface_ == EGL_NO_SURFACE) {
-        return;
+    if (eglDisplay_ == EGL_NO_DISPLAY || eglSurface_ == EGL_NO_SURFACE
+        || !eglMakeCurrent(eglDisplay_, eglSurface_, eglSurface_, eglContext_)) {
+        isReady_ = false;
+        return false;
     }
 
     const size_t requiredBytes = static_cast<size_t>(width) * static_cast<size_t>(height) * 4;
@@ -381,7 +400,6 @@ void NativeGlesPresenter::present(const int32_t* pixels, int width, int height,
     }
 
     const int nextIndex = pboIndex_;
-    const int prevIndex = 1 - pboIndex_;
 
     // 1. Asynchronously map next PBO and copy current frame CPU pixels via DMA-friendly buffer
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pboIds_[nextIndex]);
@@ -389,26 +407,22 @@ void NativeGlesPresenter::present(const int32_t* pixels, int width, int height,
     void* mappedPtr = glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, static_cast<GLsizeiptr>(requiredBytes),
                                        GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT);
     if (mappedPtr != nullptr) {
-        std::memcpy(mappedPtr, pixels, requiredBytes);
-        glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
+        auto* rgba = static_cast<uint8_t*>(mappedPtr);
+        copyArgbToRgba(pixels, rgba, static_cast<size_t>(width) * height);
+        if (!glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER)) { isReady_ = false; return false; }
     } else {
-        // Fallback if glMapBufferRange is not supported or returns null
-        glBufferSubData(GL_PIXEL_UNPACK_BUFFER, 0, static_cast<GLsizeiptr>(requiredBytes), pixels);
+        std::vector<uint8_t> rgba(requiredBytes);
+        copyArgbToRgba(pixels, rgba.data(), static_cast<size_t>(width) * height);
+        glBufferSubData(GL_PIXEL_UNPACK_BUFFER, 0, static_cast<GLsizeiptr>(requiredBytes), rgba.data());
     }
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 
     // 2. Trigger GPU DMA unpack upload
     glBindTexture(GL_TEXTURE_2D, targetTexture_);
-    if (firstFrame_) {
-        // First frame: unpack immediately from current nextIndex PBO so screen is not blank
-        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pboIds_[nextIndex]);
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-        firstFrame_ = false;
-    } else {
-        // Subsequent frames: unpack from previous PBO while next PBO is ready for next frame
-        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pboIds_[prevIndex]);
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-    }
+    // Idle guests may never send a successor frame to flush a previous PBO.
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pboIds_[nextIndex]);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    firstFrame_ = false;
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 
     // Toggle ping-pong PBO index
@@ -459,10 +473,15 @@ void NativeGlesPresenter::present(const int32_t* pixels, int width, int height,
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindTexture(GL_TEXTURE_2D, 0);
 
-    eglSwapBuffers(eglDisplay_, eglSurface_);
+    if (glGetError() != GL_NO_ERROR || !eglSwapBuffers(eglDisplay_, eglSurface_)) {
+        isReady_ = false;
+        lastPresentTimeMs_ = -1.0f;
+        return false;
+    }
 
     const auto endTime = std::chrono::steady_clock::now();
     lastPresentTimeMs_ = std::chrono::duration<float, std::milli>(endTime - startTime).count();
+    return true;
 }
 
 void NativeGlesPresenter::clear(int32_t argbColor) {

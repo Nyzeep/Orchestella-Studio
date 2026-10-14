@@ -1,162 +1,107 @@
 package android.system.virtualmachine;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
-/**
- * Test-only stand-in for the hidden Custom VM config. The Builder records
- * every reflective call the production adapter makes so tests can assert the
- * exact VM assembly (kernel, initramfs, raw root disk, memory, non-protected).
- */
-public class VirtualMachineCustomImageConfig extends VirtualMachineConfig {
+/** Official custom image shape; it does not inherit VirtualMachineConfig. */
+public final class VirtualMachineCustomImageConfig {
+    private final String name;
     private final String kernelPath;
     private final String initrdPath;
-    private final String cmdline;
+    private final List<String> params;
     private final List<Disk> disks;
-    private final int memoryMbs;
-    private final long memoryBytes;
-    private final int cpuCount;
-    private final boolean protectedVm;
-    private final boolean networkSupported;
-    private final String kernelCmdline;
+    private final boolean network;
+    private final String bootloaderPath;
 
     private VirtualMachineCustomImageConfig(Builder builder) {
-        this.kernelPath = builder.kernelPath;
-        this.initrdPath = builder.initrdPath;
-        this.cmdline = builder.cmdline;
-        this.disks = Collections.unmodifiableList(new ArrayList<>(builder.disks));
-        this.memoryMbs = builder.memoryMbs;
-        this.memoryBytes = builder.memoryBytes;
-        this.cpuCount = builder.cpuCount;
-        this.protectedVm = builder.protectedVm;
-        this.networkSupported = builder.networkSupported;
-        this.kernelCmdline = builder.kernelCmdline;
+        name = builder.name;
+        kernelPath = builder.kernelPath;
+        initrdPath = builder.initrdPath;
+        params = List.copyOf(builder.params);
+        disks = List.copyOf(builder.disks);
+        network = builder.network;
+        bootloaderPath = builder.bootloaderPath;
     }
 
-    public String kernelPath() {
-        return kernelPath;
-    }
+    public String getName() { return name; }
+    public String getKernelPath() { return kernelPath; }
+    public String getInitrdPath() { return initrdPath; }
+    public String[] getParams() { return params.toArray(String[]::new); }
+    public Disk[] getDisks() { return disks.toArray(Disk[]::new); }
+    public boolean useNetwork() { return network; }
+    public String getBootloaderPath() { return bootloaderPath; }
+    public SharedPath[] getSharedPaths() { return new SharedPath[0]; }
+    public AudioConfig getAudioConfig() { return null; }
+    public DisplayConfig getDisplayConfig() { return null; }
+    public GpuConfig getGpuConfig() { return null; }
+    public UsbConfig getUsbConfig() { return null; }
+    public boolean useTouch() { return false; }
+    public boolean useKeyboard() { return false; }
+    public boolean useMouse() { return false; }
+    public boolean useSwitches() { return false; }
+    public boolean useTrackpad() { return false; }
+    public boolean useAutoMemoryBalloon() { return false; }
+    // Names match official return types; no backend behavior is simulated here.
+    public static final class SharedPath { }
+    public static final class AudioConfig { }
+    public static final class DisplayConfig { }
+    public static final class GpuConfig { }
+    public static final class UsbConfig { }
 
-    public String initrdPath() {
-        return initrdPath;
-    }
+    // Fixture observation helpers; none is called by the production adapter.
+    public String kernelPath() { return kernelPath; }
+    public String initrdPath() { return initrdPath; }
+    public String cmdline() { return String.join(" ", params); }
+    public String kernelCmdline() { return cmdline(); }
+    public List<Disk> disks() { return disks; }
+    public boolean isNetworkSupported() { return network; }
 
-    /** The guest kernel command line the adapter assembled (null when unset). */
-    public String cmdline() {
-        return cmdline;
-    }
-
-    public List<Disk> disks() {
-        return disks;
-    }
-
-    public int memoryMbs() {
-        return memoryMbs;
-    }
-
-    public long memoryBytes() {
-        return memoryBytes;
-    }
-
-    public int cpuCount() {
-        return cpuCount;
-    }
-
-    public boolean isProtectedVm() {
-        return protectedVm;
-    }
-
-    public boolean isNetworkSupported() {
-        return networkSupported;
-    }
-
-    public String kernelCmdline() {
-        return kernelCmdline;
-    }
-
-    /** One recorded disk attachment. */
     public static final class Disk {
-        private final String path;
+        private final String imagePath;
         private final boolean writable;
-
-        public Disk(String path, boolean writable) {
-            this.path = path;
+        private final List<Partition> partitions = new ArrayList<>();
+        private Disk(String path, boolean writable) {
+            imagePath = path;
             this.writable = writable;
         }
+        public static Disk RWDisk(String path) { return new Disk(path, true); }
+        public static Disk RODisk(String path) { return new Disk(path, false); }
+        public String getImagePath() { return imagePath; }
+        public boolean isWritable() { return writable; }
+        public List<Partition> getPartitions() { return partitions; }
+        public Disk addPartition(Partition partition) { partitions.add(partition); return this; }
+        public String path() { return imagePath; }
+        public boolean writable() { return writable; }
+    }
 
-        public String path() {
-            return path;
-        }
-
-        public boolean writable() {
-            return writable;
+    public static final class Partition {
+        public final String name;
+        public final String imagePath;
+        public final boolean writable;
+        public final String guid;
+        public Partition(String name, String imagePath, boolean writable, String guid) {
+            this.name = name;
+            this.imagePath = imagePath;
+            this.writable = writable;
+            this.guid = guid;
         }
     }
 
-    /** Mirror of the hidden builder surface the reflective adapter drives. */
     public static final class Builder {
+        private String name;
+        private String bootloaderPath;
         private String kernelPath;
         private String initrdPath;
-        private String cmdline;
+        private final List<String> params = new ArrayList<>();
         private final List<Disk> disks = new ArrayList<>();
-        private int memoryMbs = -1;
-        private long memoryBytes = -1;
-        private int cpuCount = -1;
-        private boolean protectedVm;
-        private boolean networkSupported = true;
-        private String kernelCmdline;
-
-        public Builder setKernelPath(String path) {
-            this.kernelPath = path;
-            return this;
-        }
-
-        public Builder setKernelCmdline(String cmdline) {
-            this.kernelCmdline = cmdline;
-            return this;
-        }
-
-        public Builder setInitrdPath(String path) {
-            this.initrdPath = path;
-            return this;
-        }
-
-        public Builder setCmdline(String cmdline) {
-            this.cmdline = cmdline;
-            return this;
-        }
-
-        public Builder addDisk(String path, boolean writable) {
-            this.disks.add(new Disk(path, writable));
-            return this;
-        }
-
-        public Builder setMemoryMbs(int memoryMbs) {
-            this.memoryMbs = memoryMbs;
-            return this;
-        }
-
-        public Builder setMemoryBytes(long memoryBytes) {
-            this.memoryBytes = memoryBytes;
-            return this;
-        }
-
-        public Builder setCpuCount(int cpuCount) {
-            this.cpuCount = cpuCount;
-            return this;
-        }
-
-        public Builder setProtected(boolean protectedVm) {
-            this.protectedVm = protectedVm;
-            return this;
-        }
-
-        public Builder setNetworkSupported(boolean networkSupported) {
-            this.networkSupported = networkSupported;
-            return this;
-        }
-
+        private boolean network;
+        public Builder setName(String value) { name = value; return this; }
+        public Builder setBootloaderPath(String value) { bootloaderPath = value; return this; }
+        public Builder setKernelPath(String value) { kernelPath = value; return this; }
+        public Builder setInitrdPath(String value) { initrdPath = value; return this; }
+        public Builder addParam(String value) { params.add(value); return this; }
+        public Builder addDisk(Disk disk) { disks.add(disk); return this; }
+        public Builder useNetwork(boolean value) { network = value; return this; }
         public VirtualMachineCustomImageConfig build() {
             return new VirtualMachineCustomImageConfig(this);
         }

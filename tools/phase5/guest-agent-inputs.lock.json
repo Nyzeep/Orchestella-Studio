@@ -1,0 +1,542 @@
+{
+  "schema": 1,
+  "source": "guest-assets/agent/guest-agent.c",
+  "sourceBytes": 42245,
+  "sourceSha256": "f1250967916612da9680526a51fa99973c711b21ed6b4044cbd2468dff1c5fb5",
+  "target": "aarch64-linux-musl",
+  "inputs": [
+    {
+      "root": "musl",
+      "path": "usr/include/asm-generic/bitsperlong.h",
+      "bytes": 1092,
+      "sha256": "3a8e58cc67210c5a2b3bf24c84a96328e974dfe94206c74e5478d3142c991cf7",
+      "package": "linux-headers",
+      "archiveMember": "usr/include/asm-generic/bitsperlong.h",
+      "packageArchiveSha256": "d61656e81116040ebac0bc8d9046a3ba97f01a00ee085809103576e8a437468f"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/asm-generic/int-ll64.h",
+      "bytes": 864,
+      "sha256": "eb8b891e775ebb50af0353fdcbc625854fd98780399b3a57a404d36af6c29749",
+      "package": "linux-headers",
+      "archiveMember": "usr/include/asm-generic/int-ll64.h",
+      "packageArchiveSha256": "d61656e81116040ebac0bc8d9046a3ba97f01a00ee085809103576e8a437468f"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/asm-generic/posix_types.h",
+      "bytes": 2420,
+      "sha256": "f9b2bcd020a7041ca71acdc66ed04113d37d4141eba74a26f9a9fd81286c14fe",
+      "package": "linux-headers",
+      "archiveMember": "usr/include/asm-generic/posix_types.h",
+      "packageArchiveSha256": "d61656e81116040ebac0bc8d9046a3ba97f01a00ee085809103576e8a437468f"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/asm-generic/types.h",
+      "bytes": 233,
+      "sha256": "09b4477d655ddd2c5657e83a0761700d6706f012c7365f310a6b0a6696936a10",
+      "package": "linux-headers",
+      "archiveMember": "usr/include/asm-generic/types.h",
+      "packageArchiveSha256": "d61656e81116040ebac0bc8d9046a3ba97f01a00ee085809103576e8a437468f"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/asm/bitsperlong.h",
+      "bytes": 841,
+      "sha256": "84fc9dd6bb62530cda94516a8cc023483dcfc29ba55566c0a551b98159da400e",
+      "package": "linux-headers",
+      "archiveMember": "usr/include/asm/bitsperlong.h",
+      "packageArchiveSha256": "d61656e81116040ebac0bc8d9046a3ba97f01a00ee085809103576e8a437468f"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/asm/posix_types.h",
+      "bytes": 325,
+      "sha256": "ef6ce264aa33309c5b69ad09c2bd293c9bb79a6fc2c3cd22f34dbbd8f5acfb1f",
+      "package": "linux-headers",
+      "archiveMember": "usr/include/asm/posix_types.h",
+      "packageArchiveSha256": "d61656e81116040ebac0bc8d9046a3ba97f01a00ee085809103576e8a437468f"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/asm/types.h",
+      "bytes": 31,
+      "sha256": "b6bdcd528bce555b2ecb58e8a1624e3e13e09312c31318023c4e86b957e2b01f",
+      "package": "linux-headers",
+      "archiveMember": "usr/include/asm/types.h",
+      "packageArchiveSha256": "d61656e81116040ebac0bc8d9046a3ba97f01a00ee085809103576e8a437468f"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/bits/alltypes.h",
+      "bytes": 11548,
+      "sha256": "2e643832d88c292c67ed8fa735924b2fb0664eb4c04ab00068c37b35d7d65c71",
+      "package": "musl-dev",
+      "archiveMember": "usr/include/bits/alltypes.h",
+      "packageArchiveSha256": "ca72b84f4eb3c36bbbec04d919eb10159d414c7a43413cc2253841d301fa9486"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/bits/errno.h",
+      "bytes": 3669,
+      "sha256": "1760adb5572357ae1fa93625bd501e975c1ba03fdb3f97fc4fce46398772ae7b",
+      "package": "musl-dev",
+      "archiveMember": "usr/include/bits/errno.h",
+      "packageArchiveSha256": "ca72b84f4eb3c36bbbec04d919eb10159d414c7a43413cc2253841d301fa9486"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/bits/fcntl.h",
+      "bytes": 839,
+      "sha256": "66c37030b995805fb951315d3b0935d5fb6d0c3e1ddcf651ddf42c6e418b61b7",
+      "package": "musl-dev",
+      "archiveMember": "usr/include/bits/fcntl.h",
+      "packageArchiveSha256": "ca72b84f4eb3c36bbbec04d919eb10159d414c7a43413cc2253841d301fa9486"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/bits/ioctl.h",
+      "bytes": 3054,
+      "sha256": "a1ef9fa70d6d1f14e1a370b21c428b27c5f89e88ebe7500174d60683b096219e",
+      "package": "musl-dev",
+      "archiveMember": "usr/include/bits/ioctl.h",
+      "packageArchiveSha256": "ca72b84f4eb3c36bbbec04d919eb10159d414c7a43413cc2253841d301fa9486"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/bits/ioctl_fix.h",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "package": "musl-dev",
+      "archiveMember": "usr/include/bits/ioctl_fix.h",
+      "packageArchiveSha256": "ca72b84f4eb3c36bbbec04d919eb10159d414c7a43413cc2253841d301fa9486"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/bits/poll.h",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "package": "musl-dev",
+      "archiveMember": "usr/include/bits/poll.h",
+      "packageArchiveSha256": "ca72b84f4eb3c36bbbec04d919eb10159d414c7a43413cc2253841d301fa9486"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/bits/signal.h",
+      "bytes": 4028,
+      "sha256": "82bc3d39e13cbb85ba355fc6e8e2b2d157e31d46e5c37369e67c22c5807cefa4",
+      "package": "musl-dev",
+      "archiveMember": "usr/include/bits/signal.h",
+      "packageArchiveSha256": "ca72b84f4eb3c36bbbec04d919eb10159d414c7a43413cc2253841d301fa9486"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/bits/socket.h",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "package": "musl-dev",
+      "archiveMember": "usr/include/bits/socket.h",
+      "packageArchiveSha256": "ca72b84f4eb3c36bbbec04d919eb10159d414c7a43413cc2253841d301fa9486"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/bits/stat.h",
+      "bytes": 330,
+      "sha256": "5c3c51b0dfd3167f6d1d691cfebddaf63e571df39d70797c70e8a6e43c28a258",
+      "package": "musl-dev",
+      "archiveMember": "usr/include/bits/stat.h",
+      "packageArchiveSha256": "ca72b84f4eb3c36bbbec04d919eb10159d414c7a43413cc2253841d301fa9486"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/bits/termios.h",
+      "bytes": 3509,
+      "sha256": "9d2247d093e9ed7b6dd2c4305f500987d0bbb8a5b1c4df10d51154d2e41d133a",
+      "package": "musl-dev",
+      "archiveMember": "usr/include/bits/termios.h",
+      "packageArchiveSha256": "ca72b84f4eb3c36bbbec04d919eb10159d414c7a43413cc2253841d301fa9486"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/ctype.h",
+      "bytes": 1787,
+      "sha256": "0bf45ee657538bf2033a9a17f286f5a4cbcba22a19667deb28d43ac8952c6d30",
+      "package": "musl-dev",
+      "archiveMember": "usr/include/ctype.h",
+      "packageArchiveSha256": "ca72b84f4eb3c36bbbec04d919eb10159d414c7a43413cc2253841d301fa9486"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/errno.h",
+      "bytes": 369,
+      "sha256": "a461912e4058202de8ec414cbd67e04a84965bbff9aff61523bd3baf090b217d",
+      "package": "musl-dev",
+      "archiveMember": "usr/include/errno.h",
+      "packageArchiveSha256": "ca72b84f4eb3c36bbbec04d919eb10159d414c7a43413cc2253841d301fa9486"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/fcntl.h",
+      "bytes": 4661,
+      "sha256": "22fb6921bcfbfd1ca74cdbea97ad811c9ce3df9ec410f6c9dedacd1da3d9680c",
+      "package": "musl-dev",
+      "archiveMember": "usr/include/fcntl.h",
+      "packageArchiveSha256": "ca72b84f4eb3c36bbbec04d919eb10159d414c7a43413cc2253841d301fa9486"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/features.h",
+      "bytes": 865,
+      "sha256": "6d228e77b88b69f70f9157548b6ec673ffc6b998ce6035fbbee0caddb8442903",
+      "package": "musl-dev",
+      "archiveMember": "usr/include/features.h",
+      "packageArchiveSha256": "ca72b84f4eb3c36bbbec04d919eb10159d414c7a43413cc2253841d301fa9486"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/linux/posix_types.h",
+      "bytes": 1098,
+      "sha256": "bc68636a383418f235d3457e4b21cf27cefc7c7f3edea4c1f6706f1018db196f",
+      "package": "linux-headers",
+      "archiveMember": "usr/include/linux/posix_types.h",
+      "packageArchiveSha256": "d61656e81116040ebac0bc8d9046a3ba97f01a00ee085809103576e8a437468f"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/linux/socket.h",
+      "bytes": 1040,
+      "sha256": "f4331fd201269894f63242a2521b3d5b3290ca556969011d7858908d5fe658c4",
+      "package": "linux-headers",
+      "archiveMember": "usr/include/linux/socket.h",
+      "packageArchiveSha256": "d61656e81116040ebac0bc8d9046a3ba97f01a00ee085809103576e8a437468f"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/linux/stddef.h",
+      "bytes": 2196,
+      "sha256": "8de0ac8eae3695cbf769f27069f44dd622f9bb4ba2ca8e35e4af8c2a14f0bf5f",
+      "package": "linux-headers",
+      "archiveMember": "usr/include/linux/stddef.h",
+      "packageArchiveSha256": "d61656e81116040ebac0bc8d9046a3ba97f01a00ee085809103576e8a437468f"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/linux/types.h",
+      "bytes": 1829,
+      "sha256": "4152b3c5d095f5cf0adf5cc13ee0670e737eb7c4efef5fa08e9d1eb87e68ed78",
+      "package": "linux-headers",
+      "archiveMember": "usr/include/linux/types.h",
+      "packageArchiveSha256": "d61656e81116040ebac0bc8d9046a3ba97f01a00ee085809103576e8a437468f"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/linux/vm_sockets.h",
+      "bytes": 7428,
+      "sha256": "d210a0bdd556ab0876cb03ca5d3eb61883d608dcd23f1c63509285d80acfaba4",
+      "package": "linux-headers",
+      "archiveMember": "usr/include/linux/vm_sockets.h",
+      "packageArchiveSha256": "d61656e81116040ebac0bc8d9046a3ba97f01a00ee085809103576e8a437468f"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/poll.h",
+      "bytes": 994,
+      "sha256": "ef87cc4be6730c93f508e5ebde9e67f9cb3697486d92d607e26e5a7b562cbddc",
+      "package": "musl-dev",
+      "archiveMember": "usr/include/poll.h",
+      "packageArchiveSha256": "ca72b84f4eb3c36bbbec04d919eb10159d414c7a43413cc2253841d301fa9486"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/signal.h",
+      "bytes": 7500,
+      "sha256": "2410adbea406ecb28e00e2f376ef772837dae5a7ce187ace1d9eb2aec9cc9d44",
+      "package": "musl-dev",
+      "archiveMember": "usr/include/signal.h",
+      "packageArchiveSha256": "ca72b84f4eb3c36bbbec04d919eb10159d414c7a43413cc2253841d301fa9486"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/stdio.h",
+      "bytes": 6061,
+      "sha256": "f158cf8fed586a99533f0d16de2f5e0b4678a3b5bd2aac619c1d277e7bc2811b",
+      "package": "musl-dev",
+      "archiveMember": "usr/include/stdio.h",
+      "packageArchiveSha256": "ca72b84f4eb3c36bbbec04d919eb10159d414c7a43413cc2253841d301fa9486"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/stdlib.h",
+      "bytes": 4875,
+      "sha256": "9dade04aa761839017a0de3023d9e5500cb1e431682fc89d84f9a956e4a7c9d6",
+      "package": "musl-dev",
+      "archiveMember": "usr/include/stdlib.h",
+      "packageArchiveSha256": "ca72b84f4eb3c36bbbec04d919eb10159d414c7a43413cc2253841d301fa9486"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/string.h",
+      "bytes": 3013,
+      "sha256": "714a7724b0051be159c0fb7ec7f97c4ff9dd16c22e1be926c957f747cc6a8906",
+      "package": "musl-dev",
+      "archiveMember": "usr/include/string.h",
+      "packageArchiveSha256": "ca72b84f4eb3c36bbbec04d919eb10159d414c7a43413cc2253841d301fa9486"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/sys/ioctl.h",
+      "bytes": 3083,
+      "sha256": "18cc2b9eee923943e198f03f77cae411bd8f34d9a3fc2202851a1e95dc73532e",
+      "package": "musl-dev",
+      "archiveMember": "usr/include/sys/ioctl.h",
+      "packageArchiveSha256": "ca72b84f4eb3c36bbbec04d919eb10159d414c7a43413cc2253841d301fa9486"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/sys/socket.h",
+      "bytes": 11299,
+      "sha256": "1e6f196e7ae112b3295078b45e705b7f69ae2a1ade7f3b72522f66fb695eda65",
+      "package": "musl-dev",
+      "archiveMember": "usr/include/sys/socket.h",
+      "packageArchiveSha256": "ca72b84f4eb3c36bbbec04d919eb10159d414c7a43413cc2253841d301fa9486"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/sys/stat.h",
+      "bytes": 5030,
+      "sha256": "db664a6dcc1a348460e427b5910e40bc0fd36db153b15ebb36de080a0401e173",
+      "package": "musl-dev",
+      "archiveMember": "usr/include/sys/stat.h",
+      "packageArchiveSha256": "ca72b84f4eb3c36bbbec04d919eb10159d414c7a43413cc2253841d301fa9486"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/sys/un.h",
+      "bytes": 472,
+      "sha256": "186fe17ae60beb1c76395f0642bfd6ec126793987d39b04e94662be8f581cb70",
+      "package": "musl-dev",
+      "archiveMember": "usr/include/sys/un.h",
+      "packageArchiveSha256": "ca72b84f4eb3c36bbbec04d919eb10159d414c7a43413cc2253841d301fa9486"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/sys/wait.h",
+      "bytes": 1446,
+      "sha256": "acde94b89d03174f7ae945e3fe671f5fefc3beb815c99cbff0b596958377d36f",
+      "package": "musl-dev",
+      "archiveMember": "usr/include/sys/wait.h",
+      "packageArchiveSha256": "ca72b84f4eb3c36bbbec04d919eb10159d414c7a43413cc2253841d301fa9486"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/termios.h",
+      "bytes": 968,
+      "sha256": "09b969e2fc65d080cd77a889cc728fa464de38a1edabbed145d9cbf1d567da51",
+      "package": "musl-dev",
+      "archiveMember": "usr/include/termios.h",
+      "packageArchiveSha256": "ca72b84f4eb3c36bbbec04d919eb10159d414c7a43413cc2253841d301fa9486"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/time.h",
+      "bytes": 4410,
+      "sha256": "f1574ec543bc9e810f7369a0e50290d51f5b7b57082eedc41db5060ff3b9c0a6",
+      "package": "musl-dev",
+      "archiveMember": "usr/include/time.h",
+      "packageArchiveSha256": "ca72b84f4eb3c36bbbec04d919eb10159d414c7a43413cc2253841d301fa9486"
+    },
+    {
+      "root": "musl",
+      "path": "usr/include/unistd.h",
+      "bytes": 13741,
+      "sha256": "ab2782955f7f5cd22b4feaa7dd48195a4e6d86c6d022bfd39e14ebb610b165e1",
+      "package": "musl-dev",
+      "archiveMember": "usr/include/unistd.h",
+      "packageArchiveSha256": "ca72b84f4eb3c36bbbec04d919eb10159d414c7a43413cc2253841d301fa9486"
+    },
+    {
+      "root": "musl",
+      "path": "usr/lib/crt1.o",
+      "bytes": 5672,
+      "sha256": "8003d17572ce3732863fe433906b80a4d49a7d90d51b78dae6866acf8c97619d"
+    },
+    {
+      "root": "musl",
+      "path": "usr/lib/crti.o",
+      "bytes": 2872,
+      "sha256": "0a41066ed58a85e048c5f511d82f08cb56db22bfe1d4ce4b518b904ad159b511"
+    },
+    {
+      "root": "musl",
+      "path": "usr/lib/crtn.o",
+      "bytes": 2816,
+      "sha256": "d3ecf418f9cba2d900901eb438cf037d8bf725051b0bb504a0131079cdb0278f"
+    },
+    {
+      "root": "musl",
+      "path": "usr/lib/libc.a",
+      "bytes": 11179820,
+      "sha256": "f82a6354e55ace2881b15f90dc6a81f598b6b40a60fcbb2cf3fd9b1eed2ddde1"
+    },
+    {
+      "root": "ndk",
+      "path": "bin/clang.exe",
+      "bytes": 126674024,
+      "sha256": "83ba04ec516c95aaff278319c36cd928b7b005f5c9cdef5ed0926e979665811d"
+    },
+    {
+      "root": "ndk",
+      "path": "bin/ld.lld.exe",
+      "bytes": 73834088,
+      "sha256": "d2f5b2e3f34eb5e4596d679e2f8de9091b14ea7cae9d9570cbf5b3577bf466a4"
+    },
+    {
+      "root": "ndk",
+      "path": "bin/llvm-readelf.exe",
+      "bytes": 8252008,
+      "sha256": "7294a9e3e9f8db5a26e4e93acf952d91849dfbb465bfe5d0e140f5874e4821d7"
+    },
+    {
+      "root": "ndk",
+      "path": "lib/clang/18/lib/baremetal/libclang_rt.builtins-aarch64.a",
+      "bytes": 360788,
+      "sha256": "d049ccd356bf0b0872afafeaef11c997779f85ab09372356246b65536a629331"
+    }
+  ],
+  "provenance": {
+    "resourceRoot": "Orchestella/artifacts/quality-20261013/guest-toolchain",
+    "toolchainManifest": {
+      "path": "evidence/toolchain-provenance.json",
+      "bytes": 26886,
+      "sha256": "9eef078c962123456bfffaa4f9ee74fb4873ea49728a59bb33cae3f2d2527e25"
+    },
+    "licenseManifest": {
+      "path": "evidence/license-provenance.json",
+      "bytes": 1329,
+      "sha256": "d7850a61f1d37d7e76757b836aee79213fe5de82d5e4b87b6176261024f88dfe"
+    },
+    "alpineBranch": "v3.24",
+    "alpineRelease": "3.24.2",
+    "packages": [
+      {
+        "name": "musl",
+        "version": "1.2.6-r2",
+        "architecture": "aarch64",
+        "file": "musl-1.2.6-r2.apk",
+        "bytes": 417710,
+        "sha256": "5e9674b7f41152fe2119093b5cb4c13eaaadb19c2d5422b2d7267913e663ee6e",
+        "url": "https://dl-cdn.alpinelinux.org/alpine/v3.24/main/aarch64/musl-1.2.6-r2.apk",
+        "signedIndexControlChecksum": "Q1JNQts+O/Z+jaJ4QHLMXQ5svftIU=",
+        "datahashSha256": "bdf59e919031242f2cdf96ea84180fd309de5e66821cc80103b6109164d7c2be"
+      },
+      {
+        "name": "musl-dev",
+        "version": "1.2.6-r2",
+        "architecture": "aarch64",
+        "file": "musl-dev-1.2.6-r2.apk",
+        "bytes": 2539434,
+        "sha256": "ca72b84f4eb3c36bbbec04d919eb10159d414c7a43413cc2253841d301fa9486",
+        "url": "https://dl-cdn.alpinelinux.org/alpine/v3.24/main/aarch64/musl-dev-1.2.6-r2.apk",
+        "signedIndexControlChecksum": "Q1fd1f//8oIPvl7Tx7qmQcaJh84FQ=",
+        "datahashSha256": "f08ee0cbda798fc4a615981a2ae6d6f8748b0c705f3bfd73431e4ecad1df13e1"
+      },
+      {
+        "name": "linux-headers",
+        "version": "7.0.0-r1",
+        "architecture": "aarch64",
+        "file": "linux-headers-7.0.0-r1.apk",
+        "bytes": 1964140,
+        "sha256": "d61656e81116040ebac0bc8d9046a3ba97f01a00ee085809103576e8a437468f",
+        "url": "https://dl-cdn.alpinelinux.org/alpine/v3.24/main/aarch64/linux-headers-7.0.0-r1.apk",
+        "signedIndexControlChecksum": "Q10L75G8gal3VsCE6vAfDSjwSwkPE=",
+        "datahashSha256": "d6efca155342c5f0bbbfd28c72385dbd3c88155b6adeab978193545656fab147"
+      }
+    ],
+    "apkindex": {
+      "url": "https://dl-cdn.alpinelinux.org/alpine/v3.24/main/aarch64/APKINDEX.tar.gz",
+      "file": "inputs/v3.24-aarch64-APKINDEX.tar.gz",
+      "bytes": 529423,
+      "sha256": "3fde43dc10e3bf4e0900ddee9988c40c02881626050a872815d7c828d2e9308b",
+      "signedStream": {
+        "file": "inputs/APKINDEX-signed-stream.gz",
+        "sha256": "8bf8f5642016c64e7a21bc60c5466010b798dbc6a22a019a8a03a23c066fc9c5"
+      },
+      "publicKey": {
+        "file": "inputs/alpine-devel@lists.alpinelinux.org-616ae350.rsa.pub",
+        "sha256": "d11f6b21c61b4274e182eb888883a8ba8acdbf820dcc7a6d82a7d9fc2fd2836d"
+      },
+      "signature": "inputs/.SIGN.RSA.alpine-devel@lists.alpinelinux.org-616ae350.rsa.pub"
+    },
+    "ndk": {
+      "revision": "27.0.12077973",
+      "host": "windows-x86_64",
+      "sourceProperties": {
+        "ndkRootRelativePath": "source.properties",
+        "sha256": "1c4a54b31c5ed242a901b4a472d412819b5e08405df1c58066bd555f9dd52515"
+      },
+      "builtins": "lib/clang/18/lib/baremetal/libclang_rt.builtins-aarch64.a"
+    },
+    "verification": "All actual consumed headers (39), four musl link inputs, clang/lld/readelf/builtins are individually size/SHA pinned; headers match named official package members.",
+    "roots": "ndk/musl filesystem roots are provided through producer CLI; this lock contains no local absolute paths.",
+    "consumedHeaderClosure": {
+      "sourceSha256": "f1250967916612da9680526a51fa99973c711b21ed6b4044cbd2468dff1c5fb5",
+      "headerCount": 39,
+      "paths": [
+        "usr/include/asm-generic/bitsperlong.h",
+        "usr/include/asm-generic/int-ll64.h",
+        "usr/include/asm-generic/posix_types.h",
+        "usr/include/asm-generic/types.h",
+        "usr/include/asm/bitsperlong.h",
+        "usr/include/asm/posix_types.h",
+        "usr/include/asm/types.h",
+        "usr/include/bits/alltypes.h",
+        "usr/include/bits/errno.h",
+        "usr/include/bits/fcntl.h",
+        "usr/include/bits/ioctl.h",
+        "usr/include/bits/ioctl_fix.h",
+        "usr/include/bits/poll.h",
+        "usr/include/bits/signal.h",
+        "usr/include/bits/socket.h",
+        "usr/include/bits/stat.h",
+        "usr/include/bits/termios.h",
+        "usr/include/ctype.h",
+        "usr/include/errno.h",
+        "usr/include/fcntl.h",
+        "usr/include/features.h",
+        "usr/include/linux/posix_types.h",
+        "usr/include/linux/socket.h",
+        "usr/include/linux/stddef.h",
+        "usr/include/linux/types.h",
+        "usr/include/linux/vm_sockets.h",
+        "usr/include/poll.h",
+        "usr/include/signal.h",
+        "usr/include/stdio.h",
+        "usr/include/stdlib.h",
+        "usr/include/string.h",
+        "usr/include/sys/ioctl.h",
+        "usr/include/sys/socket.h",
+        "usr/include/sys/stat.h",
+        "usr/include/sys/un.h",
+        "usr/include/sys/wait.h",
+        "usr/include/termios.h",
+        "usr/include/time.h",
+        "usr/include/unistd.h"
+      ],
+      "verification": "Actual clang -M consumed-header dependency closure, then each named pinned Alpine data tar member compared byte-for-byte with the current sysroot; all package SHA/size and compressed datahash verified. No sysroot enumeration or extraction writes.",
+      "preprocessingFlags": [
+        "--target=aarch64-linux-musl",
+        "-static",
+        "-nostdinc",
+        "-std=c11",
+        "-Os",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-fno-ident"
+      ],
+      "roots": "Producer supplies --sysroot=<musl> and -isystem <musl>/usr/include; source path is integration guest-assets/agent/guest-agent.c."
+    }
+  }
+}

@@ -28,6 +28,14 @@ public final class Avf9pShareContractTest {
     private static final int SHARE_PORT = 9102;
 
     public static void main(String[] arguments) throws Exception {
+        Path capabilityFixture = Files.createTempDirectory("avf9p-secure-provider");
+        if (!StandardReadonlyNinePTest.secureProvider(capabilityFixture)) {
+            StandardReadonlyNinePTest.main(new String[] {capabilityFixture.toString()});
+            keepTheDataPlaneSilentWithoutAShare();
+            System.out.println("AVF_9P_SHARE_CONTRACT_TEST_OK secure_provider_unavailable=1"
+                    + " browse_not_run=1 no_share_leak=1");
+            return;
+        }
         browseReadonlyThroughTheContractSpecOver9p();
         rejectEveryWriteClassOperationWithErofs();
         refuseUnknownAttachNamesAndContainEscapes();
@@ -48,24 +56,24 @@ public final class Avf9pShareContractTest {
         CountDownLatch done = new CountDownLatch(1);
         Consumer<Socket> mountClient = client -> {
             try {
-                TestNinePClient nineP = new TestNinePClient(
+                StandardNinePClient nineP = new StandardNinePClient(
                         client.getInputStream(), client.getOutputStream());
                 String negotiated = nineP.version();
-                TestNinePClient.assertEquals("9P2000.L", negotiated, "negotiated version");
+                StandardNinePClient.assertEquals("9P2000.L", negotiated, "negotiated version");
                 nineP.attach(1, "downloads");
                 int walked = nineP.walk(1, 2, "nested", "deep.txt");
-                TestNinePClient.assertEquals(2, walked, "two-element walk succeeds");
+                StandardNinePClient.assertEquals(2, walked, "two-element walk succeeds");
                 nineP.lopen(2);
                 byte[] content = nineP.read(2, 0, 1024);
-                TestNinePClient.assertEquals(
+                StandardNinePClient.assertEquals(
                         "deep", new String(content, StandardCharsets.UTF_8), "file content");
-                TestNinePClient.Attr attr = nineP.getattr(2);
-                TestNinePClient.assertEquals(4L, attr.size, "getattr size");
+                StandardNinePClient.Attr attr = nineP.getattr(2);
+                StandardNinePClient.assertEquals(4L, attr.size, "getattr size");
 
                 nineP.attach(3, "downloads");
                 nineP.lopen(3);
                 List<String> names = nineP.readDirNames(3);
-                TestNinePClient.assertEquals(
+                StandardNinePClient.assertEquals(
                         Arrays.asList("hello.txt", "nested"), names, "root listing");
                 nineP.clunk(3);
                 nineP.clunk(2);
@@ -87,18 +95,15 @@ public final class Avf9pShareContractTest {
         CountDownLatch done = new CountDownLatch(1);
         Consumer<Socket> mountClient = client -> {
             try {
-                TestNinePClient nineP = new TestNinePClient(
+                StandardNinePClient nineP = new StandardNinePClient(
                         client.getInputStream(), client.getOutputStream());
                 nineP.version();
                 nineP.attach(1, "downloads");
                 nineP.lopen(1);
 
-                nineP.writeIsRejectedWithErofs(nineP.writeRequest(1, "write".getBytes()));
-                nineP.writeIsRejectedWithErofs(nineP.mkdirRequest(1, "sneaky"));
-                nineP.writeIsRejectedWithErofs(nineP.lcreateRequest(1));
-                nineP.writeIsRejectedWithErofs(nineP.setattrRequest(1));
-                nineP.writeIsRejectedWithErofs(nineP.removeRequest(1));
-                nineP.writeIsRejectedWithErofs(nineP.unlinkatRequest(1, "entry.txt"));
+                for (int type : new int[] {118, 72, 14, 26, 122, 74, 20, 76, 16, 70, 18, 32}) {
+                    nineP.mutationRejected(type, new byte[0]);
+                }
             } catch (Throwable thrown) {
                 failure.set(thrown);
             } finally {
@@ -117,7 +122,7 @@ public final class Avf9pShareContractTest {
         CountDownLatch done = new CountDownLatch(1);
         Consumer<Socket> mountClient = client -> {
             try {
-                TestNinePClient nineP = new TestNinePClient(
+                StandardNinePClient nineP = new StandardNinePClient(
                         client.getInputStream(), client.getOutputStream());
                 nineP.version();
                 nineP.attach(1, "downloads");
@@ -130,9 +135,9 @@ public final class Avf9pShareContractTest {
                     nineP.walk(1, 3, "missing-name");
                     failure.set(new IllegalStateException("a missing name must not walk"));
                     return;
-                } catch (TestNinePClient.NinePError refused) {
-                    TestNinePClient.assertEquals(
-                            TestNinePClient.ENOENT, refused.errno, "missing walk element");
+                } catch (StandardNinePClient.NinePError refused) {
+                    StandardNinePClient.assertEquals(
+                            StandardNinePClient.ENOENT, refused.errno, "missing walk element");
                 }
                 // A slash-bearing element never reaches the file system.
                 try {
@@ -140,9 +145,9 @@ public final class Avf9pShareContractTest {
                     failure.set(new IllegalStateException(
                             "a slash-bearing element must not walk"));
                     return;
-                } catch (TestNinePClient.NinePError refused) {
-                    TestNinePClient.assertEquals(
-                            TestNinePClient.ENOENT, refused.errno, "slash-bearing element");
+                } catch (StandardNinePClient.NinePError refused) {
+                    StandardNinePClient.assertEquals(
+                            StandardNinePClient.ENOENT, refused.errno, "slash-bearing element");
                 }
                 // Inside a subdirectory ".." returns to the root, never above.
                 nineP.walk(1, 5, "sub");
@@ -152,9 +157,9 @@ public final class Avf9pShareContractTest {
                     nineP.attach(7, "elsewhere");
                     failure.set(new IllegalStateException("an unknown attach name must fail"));
                     return;
-                } catch (TestNinePClient.NinePError refused) {
-                    TestNinePClient.assertEquals(
-                            TestNinePClient.ENOENT, refused.errno, "unknown attach name");
+                } catch (StandardNinePClient.NinePError refused) {
+                    StandardNinePClient.assertEquals(
+                            StandardNinePClient.ENOENT, refused.errno, "unknown attach name");
                 }
             } catch (Throwable thrown) {
                 failure.set(thrown);
@@ -179,10 +184,10 @@ public final class Avf9pShareContractTest {
                 // the data plane stays closed when nothing is shared
             }
             List<VirtualMachineCustomImageConfig> observed = guest.observedConfigs();
-            TestNinePClient.assertEquals(
+            StandardNinePClient.assertEquals(
                     true, !observed.isEmpty(), "at least one observed config");
             String cmdline = observed.get(0).cmdline();
-            TestNinePClient.assertEquals(true, cmdline != null, "cmdline assembled");
+            StandardNinePClient.assertEquals(true, cmdline != null, "cmdline assembled");
             if (cmdline.contains("droidlayer.vsock_9p_port")) {
                 fail("no 9p data-plane token may appear without a share: " + cmdline);
             }

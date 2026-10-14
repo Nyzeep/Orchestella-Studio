@@ -4,6 +4,7 @@
 Use --check in tests. This only reads/writes production source templates, never artifacts.
 """
 from pathlib import Path
+import hashlib
 import sys
 
 assets = Path(__file__).resolve().parent.parent
@@ -19,6 +20,19 @@ functions += ("\ninstall_guest_terminal_integration() {\n"
               '    cat > "$1/etc/orchestella/shell/20-orchestella-terminal-integration.sh" <<\'ORCHESTELLA_TERMINAL_HOOK_EOF\'\n'
               + terminal_hook + "ORCHESTELLA_TERMINAL_HOOK_EOF\n"
               '    chmod 0644 "$1/etc/orchestella/shell/20-orchestella-terminal-integration.sh"\n}\n')
+optional = "\ninstall_guest_optional_features() {\n    mkdir -p \"$1/usr/local/lib/orchestella\" || return 1\n"
+feature_inputs = [("features/" + name, name, "0755" if name != "inputs.json" else "0644")
+                  for name in ("profilectl", "profilectl.py", "inputs.json", "bootstrap-python.sh", "feature-session.py", "rootless-probe.py")]
+feature_inputs.append(("display/display-relay.py", "display-relay.py", "0755"))
+for relative, destination, mode in feature_inputs:
+    content = (assets / relative).read_text(encoding="utf-8")
+    delimiter = "ORCHESTELLA_FEATURE_" + hashlib.sha256(content.encode()).hexdigest()[:16].upper()
+    optional += ('    cat > "$1/usr/local/lib/orchestella/' + destination + '.next" <<\'' + delimiter + "' || return 1\n"
+                 + content.rstrip("\n") + "\n" + delimiter + "\n"
+                 + '    chmod ' + mode + ' "$1/usr/local/lib/orchestella/' + destination + '.next" || return 1\n'
+                 + '    mv "$1/usr/local/lib/orchestella/' + destination + '.next" "$1/usr/local/lib/orchestella/' + destination + '" || return 1\n')
+optional += "}\n"
+functions += optional
 provision = (assets / "scripts/orchestella-guest-provision.sh").read_text(encoding="utf-8")
 # The installed retry entrypoint must also work while /bin/sh's BusyBox is being repaired.
 provision = provision.replace("#!/bin/sh\n", "#!/usr/lib/orchestella/busybox sh\n", 1)

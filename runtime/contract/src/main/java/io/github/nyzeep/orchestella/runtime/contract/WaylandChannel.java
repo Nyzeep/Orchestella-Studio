@@ -112,11 +112,20 @@ public interface WaylandChannel extends AutoCloseable {
                 byte[] data,
                 long frameId,
                 long timestampNs) {
-            if (width <= 0 || height <= 0) {
-                throw new IllegalArgumentException("dimensions must be positive: " + width + "x" + height);
+            if (width <= 0 || width > 4096 || height <= 0 || height > 4096
+                    || (long) width * height > 4_194_304L) {
+                throw new IllegalArgumentException("frame dimensions exceed the display budget");
             }
-            if (stride < width * 4) {
-                throw new IllegalArgumentException("stride cannot be less than width * 4: " + stride);
+            if (stride < (long) width * 4 || (stride & 3) != 0
+                    || (long) stride * height > 16_777_216L) {
+                throw new IllegalArgumentException("invalid frame stride or byte budget");
+            }
+            if (format < FORMAT_RGBA_8888 || format > FORMAT_BGRX_8888) {
+                throw new IllegalArgumentException("unsupported frame format");
+            }
+            Objects.requireNonNull(data, "data");
+            if (data.length != (long) stride * height) {
+                throw new IllegalArgumentException("frame payload does not match stride and height");
             }
             this.width = width;
             this.height = height;

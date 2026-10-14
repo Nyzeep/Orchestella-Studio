@@ -95,6 +95,23 @@ public final class DebianInstanceCreatorTest {
         assertEquals(InstanceLifecycle.State.STOPPED, store.load(created.id()).state());
     }
 
+    @Test
+    public void explicitOrdinaryUserAndNoSudoSurviveColdCreatorLoad() throws Exception {
+        Path directory = temporaryFolder.newFolder("ordinary-user").toPath();
+        InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(directory.resolve("instances"));
+        DebianInstanceCreator creator = new DebianInstanceCreator(manifest(),
+                new InstanceLifecycle.Controller(store, Clock.systemUTC()), directory, 4096);
+        InstanceLifecycle.Instance created = creator.create(
+                new ByteArrayInputStream("valid-debian".getBytes(StandardCharsets.US_ASCII)), 12,
+                io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig.defaultConfig(),
+                new io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig("developer", "SyntheticSecret2026", false, "dev-box"));
+        InstanceLifecycle.Instance cold = new InstanceLifecycle.FileStore(directory.resolve("instances")).load(created.id());
+        assertEquals("developer", cold.defaultUser());
+        assertEquals("dev-box", cold.hostname());
+        assertFalse(cold.hasSudo());
+        assertEquals("SyntheticSecret2026", cold.guestPassword());
+    }
+
     private static DistroManifest manifest() {
         return new DistroManifest(
                 "debian",

@@ -38,6 +38,11 @@ public class ImeBridgeInputConnection implements InputConnection {
     private final io.github.nyzeep.orchestella.terminal.ImeCompositionBuffer composition =
             new io.github.nyzeep.orchestella.terminal.ImeCompositionBuffer();
     private boolean closed;
+    private java.util.function.Consumer<String> unsupportedInput = ignored -> { };
+
+    public void setUnsupportedInputListener(java.util.function.Consumer<String> listener) {
+        unsupportedInput = listener == null ? ignored -> { } : listener;
+    }
 
     public ImeBridgeInputConnection(WaylandChannel channel) {
         this.channel = channel;
@@ -86,8 +91,10 @@ public class ImeBridgeInputConnection implements InputConnection {
             int end = Math.min(content.length(), offset + MAX_SAFE_CHUNK_CHARS);
             if (end < content.length() && Character.isHighSurrogate(content.charAt(end - 1))
                     && Character.isLowSurrogate(content.charAt(end))) end--;
-            if (!channel.sendInputEvent(new TextCommitEvent(content.substring(offset, end), System.nanoTime())))
+            if (!channel.sendInputEvent(new TextCommitEvent(content.substring(offset, end), System.nanoTime()))) {
+                unsupportedInput.accept("当前桌面输入能力未验证或传输不可用；Unicode 输入请先使用 Linux 终端。");
                 return false;
+            }
             offset = end;
         }
         return true;

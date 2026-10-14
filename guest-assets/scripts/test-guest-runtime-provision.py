@@ -214,6 +214,87 @@ def manual_recovery_checks():
     return results
 
 
+def identity_checks():
+    identity_root = fixture / "identity-root"
+    identity_input = fixture / "identity-input"
+    identity_root.mkdir()
+    identity_input.mkdir()
+    functions = assets / "initramfs/runtime-functions.sh"
+    commands = (f". {shlex.quote(unix(functions))}; fail() {{ printf '%s\\n' \"$1\"; exit 1; }}; "
+                f"log() {{ :; }}; stage_pending_guest_credentials {shlex.quote(unix(identity_root))} {shlex.quote(unix(identity_input))}")
+    marker = identity_root / "etc/orchestella/instance-user"
+    result = subprocess.run(["sh", "-c", commands], capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0 and not marker.exists(), "unknown legacy identity is never invented"
+    checks.append("missing_legacy_identity_not_invented")
+    (identity_input / "guest.user").write_text("developer\n")
+    result = subprocess.run(["sh", "-c", commands], capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result
+    assert marker.read_text() == "developer\n"
+    assert not (identity_root / "etc/orchestella/provision-input/guest.password").exists()
+    checks.append("ordinary_identity_marker_written_without_unknown_password_reset")
+    for invalid in ("root;id\n", "Developer\n", "u\n", "a" * 17 + "\n", "developer\nroot\n"):
+        (identity_input / "guest.user").write_text(invalid)
+        before = marker.read_bytes()
+        result = subprocess.run(["sh", "-c", commands], capture_output=True, text=True, timeout=10)
+        assert result.returncode != 0 and marker.read_bytes() == before, "invalid identity preserves old marker"
+    checks.append("invalid_identity_refused_before_marker_replacement")
+    (identity_input / "guest.user").write_text("developer\n")
+    (identity_input / "guest.password").write_text("SyntheticSecret2026\n")
+    (identity_input / "guest.sudo").write_text("1\n")
+    result = subprocess.run(["sh", "-c", commands], capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result
+    pending = identity_root / "etc/orchestella/provision-input"
+    assert (pending / "guest.user").read_text() == "developer\n"
+    assert (pending / "guest.sudo").read_text() == "1\n"
+    checks.append("explicit_sudo_and_ordinary_user_staged_with_credentials")
+    # Execute the production account block with synthetic account tools. Never invoke real useradd/chpasswd.
+    source = (assets / "scripts/orchestella-guest-provision.sh").read_text()
+    block = source[source.index('identity="$ROOT/etc/orchestella/provision-input"\n'):source.index('\nif [ "$baseline_verified" -eq 0 ]; then', source.index('identity="$ROOT/etc/orchestella/provision-input"\n'))]
+    fake_bin = fixture / "identity-tools"
+    write(fake_bin / "chpasswd", "#!/bin/sh\nwhile IFS=: read -r user ignored; do printf '%s\\n' \"$user\" >> \"$ROOT/accounts-applied\"; done\n")
+    write(fake_bin / "id", "#!/bin/sh\nexit 1\n")
+    write(fake_bin / "useradd", "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$ROOT/account-created\"\n")
+    write(fake_bin / "visudo", "#!/bin/sh\nexit 0\n")
+    state_dir = identity_root / "var/lib/orchestella/provision"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    execute = (f"export ROOT={shlex.quote(unix(identity_root))}; export PATH={shlex.quote(unix(fake_bin))}:$PATH; "
+               f"STATE_DIR={shlex.quote(unix(state_dir))}; LOG=/dev/null; distro=debian; "
+               "fail_stage() { exit 1; }; " + block)
+    result = subprocess.run(["sh", "-c", execute], capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result
+    sudo = identity_root / "etc/sudoers.d/99-orchestella-user"
+    assert "developer ALL=(ALL) NOPASSWD:ALL" in sudo.read_text()
+    assert (identity_root / "accounts-applied").read_text().splitlines() == ["root", "developer"]
+    assert marker.read_text() == "developer\n"
+    checks.append("real_account_block_applies_ordinary_identity_and_preserves_marker")
+    # An explicit no-sudo update revokes only the owned grant, not a separate user-authored file.
+    (pending / "guest.user").write_text("developer\n")
+    (pending / "guest.password").write_text("ChangedSyntheticSecret2026\n")
+    (pending / "guest.sudo").write_text("0\n")
+    user_sudo = sudo.parent / "user-policy"
+    user_sudo.write_text("# User-owned configuration must survive\n")
+    preserved = user_sudo.read_bytes()
+    result = subprocess.run(["sh", "-c", execute], capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result
+    assert not sudo.exists() and user_sudo.read_bytes() == preserved
+    checks.append("explicit_no_sudo_revokes_only_managed_grant")
+    applied = (identity_root / "accounts-applied").read_bytes()
+    result = subprocess.run(["sh", "-c", execute], capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0 and (identity_root / "accounts-applied").read_bytes() == applied
+    checks.append("unknown_absent_password_never_calls_account_password_tools")
+    return checks
+
+
+if "--identity-only" in sys.argv:
+    import json
+    identity_checks()
+    evidence = work / "identity-results.json"
+    evidence.write_text(json.dumps({"checks": checks, "passed": len(checks), "guestValidated": False}, indent=2), encoding="utf-8")
+    shutil.copyfile(evidence, work / "identity-results.preserved.json")
+    print(f"IDENTITY_TEST_OK checks={len(checks)} guestValidated=false")
+    raise SystemExit(0)
+
+
 if "--manual-recovery-only" in sys.argv:
     checks.extend(manual_recovery_checks())
     evidence = work / "manual-recovery-results.txt"

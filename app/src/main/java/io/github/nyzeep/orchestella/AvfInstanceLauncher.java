@@ -30,9 +30,34 @@ public final class AvfInstanceLauncher {
         private BridgeClient bridgeClient;
         private volatile BridgeControl.Clipboard clipboardBridge;
         private final AtomicBoolean isBridgeServing = new AtomicBoolean(false);
+        private final QemuWaylandChannel display;
 
-        AvfSession(AvfVirtualMachineEngine.AvfVmSession session) {
+        AvfSession(AvfVirtualMachineEngine.AvfVmSession session) { this(session, null); }
+
+        AvfSession(AvfVirtualMachineEngine.AvfVmSession session, String token) {
             this.session = session;
+            this.display = token == null ? null : new QemuWaylandChannel(() -> {
+                try {
+                    AvfVirtualMachineApi.AvfVsockChannel channel = session.openChannel(9103);
+                    return new io.github.nyzeep.orchestella.runtime.contract.display.RfbDisplayChannel.Streams(
+                            channel.inputStream(), channel.outputStream(), channel);
+                } catch (AvfEngineException failure) { throw new IOException("AVF display transport unavailable", failure); }
+            }, token, this::bridgeClient);
+        }
+
+        @Override public io.github.nyzeep.orchestella.runtime.contract.DisplayControl displayControl() { return display; }
+        @Override public io.github.nyzeep.orchestella.runtime.contract.WaylandChannel waylandChannel() { return display; }
+        @Override public boolean connectDisplay(boolean keyboard, boolean unicodeText, boolean pointer) {
+            return display != null && display.connect(new io.github.nyzeep.orchestella.runtime.contract.display.RfbDisplayChannel.InputCapabilities(
+                    keyboard, unicodeText, pointer));
+        }
+        @Override public boolean reconnectDisplay(boolean keyboard, boolean unicodeText, boolean pointer) {
+            return display != null && display.connect(new io.github.nyzeep.orchestella.runtime.contract.display.RfbDisplayChannel.InputCapabilities(
+                    keyboard, unicodeText, pointer), true);
+        }
+        @Override public String displayStatus() { return display == null ? "AVF 显示未配置" : display.message(); }
+        @Override public io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract.CapabilityMatrix capabilityMatrix() {
+            return io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract.CapabilityMatrix.hardwareVirtualizationBaseline();
         }
 
         @Override
@@ -67,6 +92,7 @@ public final class AvfInstanceLauncher {
 
         @Override
         public void close() {
+            if (display != null) display.close();
             try {
                 session.closeChannels();
             } catch (IOException ignored) {
@@ -160,7 +186,8 @@ public final class AvfInstanceLauncher {
                         Paths.get(parameters.instanceRootVolume),
                         parameters.mirrorConfigFileName,
                         parameters.mirrorConfigFileContent,
-                        parameters.firstBootScript);
+                        parameters.firstBootScript,
+                        parameters.hostname, parameters.guestUser, parameters.hasSudo);
 
         AvfLaunchSpec.Builder specBuilder = AvfLaunchSpec.builder(
                         parameters.instanceId,
@@ -180,7 +207,7 @@ public final class AvfInstanceLauncher {
         ReflectiveAvfVirtualMachineApi api = new ReflectiveAvfVirtualMachineApi(
                 context, context.getClass().getClassLoader());
         AvfVirtualMachineEngine engine = new AvfVirtualMachineEngine(api);
-        AvfSession session = new AvfSession(engine.launch(spec));
+        AvfSession session = new AvfSession(engine.launch(spec), parameters.bridgeToken);
         ExecutionSessionRegistry.register(parameters.instanceId, session);
         return session;
     }

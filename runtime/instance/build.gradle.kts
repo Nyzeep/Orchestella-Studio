@@ -78,6 +78,11 @@ tasks.register<JavaExec>("instanceSnapshotManagerTest") {
     args(snapshotManagerOutput.get().asFile.absolutePath)
 }
 
+tasks.register<JavaExec>("guestFeatureContractTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.instance.features.GuestFeatureContractTest")
+}
+
 tasks.named("check") {
     dependsOn(
         "normalInstanceLifecycleContractTest",
@@ -88,7 +93,8 @@ tasks.named("check") {
         "sparseDiskResizerTest",
         "instanceUserConfigTest",
         "instancePowerControllerTest",
-        "instanceSnapshotManagerTest"
+        "instanceSnapshotManagerTest",
+        "guestFeatureContractTest"
     )
 }
 

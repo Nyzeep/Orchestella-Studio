@@ -1479,7 +1479,10 @@ class MainActivity : AppCompatActivity() {
                     filesDir.resolve("distro-inputs").absolutePath,
                     instance.guestPassword(),
                     instance.hardwareConfig(),
-                    provisionPayload
+                    provisionPayload,
+                    instance.hostname(),
+                    instance.defaultUser(),
+                    instance.hasSudo()
                 )
                 val preferAvf =
                     avfReadiness?.status() == AvfCapabilityEvaluator.AvfStatus.READY

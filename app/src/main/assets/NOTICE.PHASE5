@@ -1,0 +1,30 @@
+Orchestella quality / Phase 5 integrated local review build (2026-10-14)
+
+Original host display codec, bounded service/sharing modules, guest display relay,
+and optional profile controllers are Orchestella source under Apache License 2.0.
+Public GPL reference source was inspected for architecture and permissions;
+no reference implementation was copied into these host modules.
+
+Guest packages are optional, fetched only following explicit profile selection
+through signed distribution repositories. labwc, wayvnc, Mesa, fonts, Podman,
+rootless helpers and Docker CLI remain independent guest programs; their licenses
+and corresponding source are supplied by the selected distribution.
+
+Optional code-server 4.141.0 is an independent guest service under MIT License.
+It is not bundled in this APK. The official ARM64 input, SHA-256 and ABI constraints
+are locked in guest-assets/features/inputs.json. Its included LICENSE/third-party
+notices remain in the verified installation. This build does not install or
+redistribute the proprietary Microsoft VS Code Server, enable a cloud tunnel,
+or create third-party identities.
+
+Packaged kernel and QEMU retain their pre-existing GPL-2.0 notices and build input
+records. Their runtime binaries are unchanged; the independently compiled guest
+agent is updated with its matching source and manifest. This is a local review
+artifact, not a published release. A public release still requires exact
+corresponding-source delivery and the project release gates.
+
+API-26 core library desugaring uses com.android.tools:desugar_jdk_libs:2.1.5,
+maintained by Google; dependency licenses are preserved in the build input
+records. Desktop CPU-copy, AVF/GPU, USB/SAF and IDE runtime validation levels are
+recorded separately in the Phase 5 verification matrix. No hardware acceleration
+or zero-copy claim follows from host EGL initialization or JVM tests.

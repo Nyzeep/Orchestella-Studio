@@ -61,7 +61,8 @@ public final class BridgeClientResponsePumpTest {
         allControlOperationsRefreshAuthenticationOnTheSameClient();
         diagnosticsDistinguishControlStagesWithoutForeignMessages();
         failedReaderMustRetireBeforeTransportRecovery();
-        System.out.println("BRIDGE_RESPONSE_PUMP_OK tests=24");
+        featureRejectionRetainsTheAuthenticatedSingleReader();
+        System.out.println("BRIDGE_RESPONSE_PUMP_OK tests=25");
     }
 
     private static void initialReadyBacklogSettlesBeforeOrdinaryDeadlineApplies() throws Exception {
@@ -545,6 +546,8 @@ public final class BridgeClientResponsePumpTest {
                 {"ORCHESTELLA/DISPLAY RESIZE 1080 1920", "ORCHESTELLA/OK display\n"},
                 {"ORCHESTELLA/DISPLAY FPS 60", "ORCHESTELLA/OK display\n"},
                 {"ORCHESTELLA/DISPLAY LAUNCH", "ORCHESTELLA/OK display\n"},
+                {"ORCHESTELLA/FEATURES 1 STATUS desktop-labwc", "ORCHESTELLA/OK features {\"state\":\"awaiting-frame\"}\n"},
+                {"ORCHESTELLA/FEATURES 1 CONFIRM-FRAME desktop-labwc " + "a".repeat(32), "ORCHESTELLA/OK features {\"state\":\"ready\"}\n"},
                 {"ORCHESTELLA/CLIPBOARD PUT base64:c2FmZQ==", "ORCHESTELLA/OK clipboard\n"},
                 {"ORCHESTELLA/CLIPBOARD GET", "ORCHESTELLA/OK clipboard base64:c2FmZQ==\n"}
             };
@@ -566,6 +569,8 @@ public final class BridgeClientResponsePumpTest {
             require(pair.client.displayResize(1080, 1920).accepted(), "display resize failed");
             require(pair.client.displayFps(60).accepted(), "display fps failed");
             require(pair.client.desktopLaunch().accepted(), "desktop launch failed");
+            require(pair.client.feature("STATUS", "desktop-labwc").accepted(), "feature status failed");
+            require(pair.client.confirmDesktopFrame("a".repeat(32)).accepted(), "frame confirmation failed");
             require(pair.client.clipboardPut("safe").accepted(), "clipboard put failed");
             require("safe".equals(pair.client.clipboardGet().payload()), "clipboard get failed");
             require(pair.readers.size() == 1, "control operations used competing readers");
@@ -643,6 +648,30 @@ public final class BridgeClientResponsePumpTest {
         try { failing.awaitResponsePump(); } catch (IOException expected) { }
         require(!selfRetirement.get(), "reader retired itself from a failure callback");
         require(failing.awaitDisconnectedReader(100L), "terminated reader could not be retired by its owner");
+    }
+
+    private static void featureRejectionRetainsTheAuthenticatedSingleReader() throws Exception {
+        try (Pair pair = new Pair()) {
+            pair.client.startResponsePump(line -> null, 1000L);
+            AtomicReference<Throwable> failed = new AtomicReference<>();
+            Thread guest = guest(failed, () -> {
+                pair.requests.readLine(); pair.reply("ORCHESTELLA/READY 1\n");
+                require("ORCHESTELLA/FEATURES 1 PROBE desktop-labwc".equals(readAuthenticatedCommand(pair)),
+                        "feature probe bypassed the authentication barrier");
+                pair.reply("ORCHESTELLA/ERROR unsupported-command\n");
+                require(("ORCHESTELLA/FEATURES 1 CONFIRM-FRAME desktop-labwc " + "b".repeat(32))
+                        .equals(readAuthenticatedCommand(pair)), "confirmation bypassed the authentication barrier");
+                pair.reply("ORCHESTELLA/ERROR display-confirm-unavailable\n");
+                require("ORCHESTELLA/PING".equals(readAuthenticatedCommand(pair)), "rejection lost the control stream");
+                pair.reply("ORCHESTELLA/PONG 1\n");
+            });
+            require(pair.client.handshake(TOKEN).accepted(), "handshake rejected");
+            require(!pair.client.feature("PROBE", "desktop-labwc").accepted(), "unsupported extension was accepted");
+            require(!pair.client.confirmDesktopFrame("b".repeat(32)).accepted(), "rejected frame was accepted");
+            require(pair.client.ping().accepted(), "rejected extension prevented PING");
+            require(pair.readers.size() == 1, "extension introduced a second control reader");
+            join(guest, failed);
+        }
     }
 
     /** Each ordinary command must prove auth to this server context before it can act. */

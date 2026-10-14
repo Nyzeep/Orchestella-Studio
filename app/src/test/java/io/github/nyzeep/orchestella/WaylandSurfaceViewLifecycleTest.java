@@ -298,6 +298,67 @@ public final class WaylandSurfaceViewLifecycleTest {
     }
 
     @Test
+    public void pausedAndRetiredBindingsCannotPresentOrOverwriteCurrentState() {
+        TestPresenter presenter = new TestPresenter();
+        DoubleBufferedRenderer renderer = new DoubleBufferedRenderer(presenter, Runnable::run);
+        WaylandSurfaceController controller = new WaylandSurfaceController(renderer, new TestScheduler());
+        FakeWaylandChannel first = new FakeWaylandChannel();
+        controller.bind(new FakeDisplayControl(), first);
+        controller.onSurfaceCreated(new FakeSurfaceHolder());
+        WaylandChannel.FrameListener retiredFrame = first.frameListeners.get(0);
+        WaylandChannel.StateListener retiredState = first.stateListeners.get(0);
+        WaylandChannel.FrameData frame = new WaylandChannel.FrameData(2, 2, 8, 1, new byte[16], 1, 1);
+        retiredFrame.onFrameAvailable(frame);
+        assertEquals(1, presenter.presentCount);
+        controller.onPause();
+        retiredFrame.onFrameAvailable(frame);
+        assertEquals(1, presenter.presentCount);
+        assertNull(renderer.getFrontBuffer());
+        controller.onResume();
+        assertEquals(1, first.frameListeners.size());
+        retiredFrame.onFrameAvailable(frame);
+        assertEquals(2, presenter.presentCount);
+        FakeWaylandChannel current = new FakeWaylandChannel();
+        controller.bind(new FakeDisplayControl(), current);
+        retiredFrame.onFrameAvailable(frame);
+        retiredState.onStateChanged(WaylandChannel.ConnectionState.ERROR, "late retired stream");
+        assertEquals(2, presenter.presentCount);
+        assertEquals(WaylandChannel.ConnectionState.CONNECTED, controller.getHudBadgeInfo().connectionState());
+        current.frameListeners.get(0).onFrameAvailable(frame);
+        assertEquals(3, presenter.presentCount);
+        WaylandChannel.FrameListener lateAfterDestroy = current.frameListeners.get(0);
+        controller.onDestroy();
+        lateAfterDestroy.onFrameAvailable(frame);
+        assertEquals(3, presenter.presentCount);
+        assertNull(renderer.getFrontBuffer());
+    }
+
+    @Test
+    public void rebindingAndDestroyCloseAndroidHeldImeConnections() {
+        TestPresenter presenter = new TestPresenter();
+        WaylandSurfaceController controller = new WaylandSurfaceController(
+                new DoubleBufferedRenderer(presenter, Runnable::run), new TestScheduler());
+        WaylandSurfaceView view = new WaylandSurfaceView(null, controller);
+        FakeWaylandChannel first = new FakeWaylandChannel();
+        view.bind(new FakeDisplayControl(), first);
+        ImeBridgeInputConnection previous = view.getImeBridgeInputConnection();
+        assertTrue(previous.commitText("first", 1));
+        view.bind(new FakeDisplayControl(), new FakeWaylandChannel());
+        assertFalse(previous.commitText("late input for the old instance", 1));
+        ImeBridgeInputConnection current = view.getImeBridgeInputConnection();
+        assertTrue(current.commitText("current", 1));
+        view.bind(null, null);
+        assertFalse(current.commitText("late input after unbind", 1));
+        assertNull(view.getTouchGestureMapper());
+        assertNull(view.getImeBridgeInputConnection());
+        view.bind(new FakeDisplayControl(), new FakeWaylandChannel());
+        ImeBridgeInputConnection destroyed = view.getImeBridgeInputConnection();
+        view.onDestroy();
+        assertFalse(destroyed.commitText("late input after destroy", 1));
+        assertFalse(controller.isBound());
+    }
+
+    @Test
     public void waylandSurfaceViewDelegatesToController() {
         TestPresenter presenter = new TestPresenter();
         TestScheduler scheduler = new TestScheduler();

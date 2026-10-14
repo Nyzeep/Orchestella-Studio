@@ -1,97 +1,65 @@
 package io.github.nyzeep.orchestella;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-
-import io.github.nyzeep.orchestella.runtime.contract.DisplayMode;
-import io.github.nyzeep.orchestella.runtime.contract.InputEvent;
-import io.github.nyzeep.orchestella.runtime.contract.PointerEvent;
+import static org.junit.Assert.*;
 import io.github.nyzeep.orchestella.runtime.contract.TextCommitEvent;
 import io.github.nyzeep.orchestella.runtime.contract.WaylandChannel;
+import io.github.nyzeep.orchestella.runtime.contract.display.RfbDisplayChannel;
+import java.io.IOException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
 import org.junit.Test;
 
 public class QemuWaylandChannelTest {
-
-    @Test
-    public void testChannelInitialStateAndMode() {
-        try (QemuWaylandChannel channel = new QemuWaylandChannel("test-instance", "test-token")) {
-            assertEquals(WaylandChannel.ConnectionState.CONNECTED, channel.state());
-            assertTrue(channel.isConnected());
-
-            DisplayMode mode = channel.currentMode();
-            assertNotNull(mode);
-            assertEquals(1280, mode.width());
-            assertEquals(720, mode.height());
-            assertEquals(60, mode.targetFps());
+    @Test public void unopenedChannelNeverProducesTemplateFramesOrAcceptsInput() throws Exception {
+        try (QemuWaylandChannel channel = new QemuWaylandChannel(() -> { throw new IOException("no display endpoint"); },
+                "a".repeat(64), () -> null)) {
+            CountDownLatch frame = new CountDownLatch(1);
+            channel.registerFrameListener(ignored -> frame.countDown());
+            assertEquals(WaylandChannel.ConnectionState.DISCONNECTED, channel.state());
+            assertFalse(channel.isConnected());
+            assertFalse(frame.await(50, TimeUnit.MILLISECONDS));
+            assertFalse(channel.sendInputEvent(new TextCommitEvent("guest text", 1)));
+            assertFalse(channel.setMode(1280, 720, 1));
+            assertFalse(channel.updateTargetFps(60));
         }
     }
 
-    @Test
-    public void testFramePumpDeliversFrames() throws Exception {
-        try (QemuWaylandChannel channel = new QemuWaylandChannel("test-instance", "test-token")) {
-            CountDownLatch frameLatch = new CountDownLatch(3);
-            AtomicInteger frameCount = new AtomicInteger(0);
-            AtomicReference<WaylandChannel.FrameData> lastFrame = new AtomicReference<>();
-
-            channel.registerFrameListener(frame -> {
-                lastFrame.set(frame);
-                frameCount.incrementAndGet();
-                frameLatch.countDown();
-            });
-
-            boolean received = frameLatch.await(500, TimeUnit.MILLISECONDS);
-            assertTrue("Expected to receive frames from pump", received);
-            assertTrue(frameCount.get() >= 3);
-
-            WaylandChannel.FrameData frame = lastFrame.get();
-            assertNotNull(frame);
-            assertEquals(1280, frame.width());
-            assertEquals(720, frame.height());
-            assertEquals(1280 * 4, frame.stride());
-            assertEquals(WaylandChannel.FrameData.FORMAT_RGBA_8888, frame.format());
-            assertNotNull(frame.data());
-            assertEquals(1280 * 720 * 4, frame.data().length);
+    @SuppressWarnings("try") // Explicit callback close is the retirement behavior under test.
+    @Test public void closingFromARealFrameCallbackStopsRetiredFrameFanout() throws Exception {
+        java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+        java.io.DataOutputStream wire = new java.io.DataOutputStream(bytes);
+        wire.write("ORCHESTELLA/DISPLAY READY 1\nRFB 003.008\n".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+        wire.write(new byte[] {1, 1});
+        wire.writeInt(0);
+        wire.writeShort(1); wire.writeShort(1);
+        wire.write(new byte[] {32, 24, 0, 1, 0, (byte) 255, 0, (byte) 255, 0, (byte) 255, 16, 8, 0, 0, 0, 0});
+        wire.writeInt(0);
+        wire.writeByte(0); wire.writeByte(0); wire.writeShort(1);
+        wire.writeShort(0); wire.writeShort(0); wire.writeShort(1); wire.writeShort(1); wire.writeInt(0);
+        wire.write(new byte[] {0, 0, (byte) 255, 0});
+        try (QemuWaylandChannel channel = new QemuWaylandChannel(() -> new RfbDisplayChannel.Streams(
+                new java.io.ByteArrayInputStream(bytes.toByteArray()), new java.io.ByteArrayOutputStream()),
+                "a".repeat(64), () -> null)) {
+            CountDownLatch first = new CountDownLatch(1);
+            CountDownLatch stale = new CountDownLatch(1);
+            channel.registerFrameListener(frame -> { channel.close(); first.countDown(); });
+            channel.registerFrameListener(frame -> stale.countDown());
+            assertTrue(channel.connect(RfbDisplayChannel.InputCapabilities.NONE));
+            assertTrue("literal authenticated RFB frame must arrive", first.await(2, TimeUnit.SECONDS));
+            assertFalse("retired stream must stop notifying the remaining listeners", stale.await(150, TimeUnit.MILLISECONDS));
+            assertEquals(WaylandChannel.ConnectionState.DISCONNECTED, channel.state());
+            assertFalse(channel.connect(RfbDisplayChannel.InputCapabilities.NONE));
         }
     }
 
-    @Test
-    public void testResizeAndScaleDisplay() {
-        try (QemuWaylandChannel channel = new QemuWaylandChannel("test-instance", "test-token")) {
-            assertTrue(channel.resizeDisplay(1920, 1080));
-            DisplayMode mode = channel.currentMode();
-            assertEquals(1920, mode.width());
-            assertEquals(1080, mode.height());
-
-            assertTrue(channel.updateScale(1.5));
-            assertEquals(1.5, channel.currentMode().scale(), 0.001);
-
-            assertTrue(channel.updateTargetFps(30));
-            assertEquals(30, channel.currentMode().targetFps());
+    @Test public void transportFailureCannotAdvertiseAConnectedDesktop() throws Exception {
+        try (QemuWaylandChannel channel = new QemuWaylandChannel(() -> { throw new IOException("unavailable"); },
+                "a".repeat(64), () -> null)) {
+            CountDownLatch error = new CountDownLatch(1);
+            channel.addStateListener((state, message) -> { if (state == WaylandChannel.ConnectionState.ERROR) error.countDown(); });
+            assertTrue(channel.connect(RfbDisplayChannel.InputCapabilities.NONE));
+            assertTrue(error.await(2, TimeUnit.SECONDS));
+            assertFalse(channel.isConnected());
         }
-    }
-
-    @Test
-    public void testInputEventForwarding() {
-        try (QemuWaylandChannel channel = new QemuWaylandChannel("test-instance", "test-token")) {
-            InputEvent pointerEvent = new PointerEvent(
-                    PointerEvent.Action.MOVE, 100.0, 200.0, 0.0, 0.0, PointerEvent.BUTTON_NONE, System.nanoTime());
-            assertTrue(channel.sendInputEvent(pointerEvent));
-
-            InputEvent textEvent = new TextCommitEvent("Hello Wayland", System.nanoTime());
-            assertTrue(channel.sendInputEvent(textEvent));
-        }
-    }
-
-    @Test
-    public void testCloseTransitionsToDisconnected() {
-        QemuWaylandChannel channel = new QemuWaylandChannel("test-instance", "test-token");
-        assertEquals(WaylandChannel.ConnectionState.CONNECTED, channel.state());
-        channel.close();
-        assertEquals(WaylandChannel.ConnectionState.DISCONNECTED, channel.state());
     }
 }

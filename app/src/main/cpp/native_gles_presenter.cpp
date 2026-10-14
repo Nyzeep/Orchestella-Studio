@@ -53,28 +53,21 @@ Java_io_github_nyzeep_orchestella_NativeGlesSurfacePresenter_nativeOnSurfaceDest
     }
 }
 
-JNIEXPORT void JNICALL
+JNIEXPORT jboolean JNICALL
 Java_io_github_nyzeep_orchestella_NativeGlesSurfacePresenter_nativePresent(
     JNIEnv* env, jclass /*clazz*/, jlong handle, jintArray pixels,
     jint width, jint height, jint destX, jint destY,
     jint destWidth, jint destHeight, jint viewportWidth, jint viewportHeight) {
-    if (handle == 0 || pixels == nullptr) {
-        return;
-    }
+    if (handle == 0 || pixels == nullptr || width <= 0 || height <= 0 || width > 4096 || height > 4096
+        || static_cast<int64_t>(width) * height > 4194304
+        || env->GetArrayLength(pixels) < static_cast<int64_t>(width) * height) return JNI_FALSE;
     auto* presenter = reinterpret_cast<orchestella::NativeGlesPresenter*>(handle);
-    void* ptr = env->GetPrimitiveArrayCritical(pixels, nullptr);
-    if (ptr != nullptr) {
-        presenter->present(reinterpret_cast<const int32_t*>(ptr), width, height,
-                           destX, destY, destWidth, destHeight, viewportWidth, viewportHeight);
-        env->ReleasePrimitiveArrayCritical(pixels, ptr, JNI_ABORT);
-    } else {
-        jint* fallback = env->GetIntArrayElements(pixels, nullptr);
-        if (fallback != nullptr) {
-            presenter->present(reinterpret_cast<const int32_t*>(fallback), width, height,
-                               destX, destY, destWidth, destHeight, viewportWidth, viewportHeight);
-            env->ReleaseIntArrayElements(pixels, fallback, JNI_ABORT);
-        }
-    }
+    jint* data = env->GetIntArrayElements(pixels, nullptr);
+    if (data == nullptr) return JNI_FALSE;
+    bool presented = presenter->present(reinterpret_cast<const int32_t*>(data), width, height,
+                                       destX, destY, destWidth, destHeight, viewportWidth, viewportHeight);
+    env->ReleaseIntArrayElements(pixels, data, JNI_ABORT);
+    return presented ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT void JNICALL

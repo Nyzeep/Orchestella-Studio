@@ -342,11 +342,20 @@ public class TerminalActivity extends Activity {
 
     private BridgeConnector.Events eventsForBridge(ExecutionSession target,
             io.github.nyzeep.orchestella.runtime.contract.BridgeClient expectedClient) {
+        final int foreground = foregroundGeneration;
+        final int binding = bindingGeneration;
+        final String selectedInstance = instanceId;
         return new BridgeConnector.Events() {
             @Override
             public void onReady() {
                 if (ui != null) ui.post(() -> {
-                    if (session != target || activeBridgeClient != expectedClient || !foregroundActive || isDestroyed()) return;
+                    if (session != target || activeBridgeClient != expectedClient || target.bridgeClient() != expectedClient
+                            || foreground != foregroundGeneration || binding != bindingGeneration
+                            || !foregroundActive || isDestroyed()) return;
+                    GuestFeatureSelections.startSelected(TerminalActivity.this, selectedInstance, expectedClient,
+                            () -> session == target && activeBridgeClient == expectedClient
+                                    && target.bridgeClient() == expectedClient && foregroundActive && !isDestroyed()
+                                    && foreground == foregroundGeneration && binding == bindingGeneration);
                     bridgeStatus = "";
                     updateDrawerHandleText(multiManager.getActiveSession(instanceId));
                     scheduleTerminalResize();
@@ -766,8 +775,51 @@ public class TerminalActivity extends Activity {
         });
     }
 
+    static boolean awaitCurrentControlReady(
+            io.github.nyzeep.orchestella.runtime.contract.BridgeClient client,
+            java.util.function.BooleanSupplier isCurrent, long timeoutMs)
+            throws java.io.IOException, InterruptedException {
+        long timeout = Math.max(1L, Math.min(timeoutMs,
+                io.github.nyzeep.orchestella.runtime.contract.BridgeClient.DEFAULT_STARTUP_TIMEOUT_MS));
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(timeout);
+        while (isCurrent.getAsBoolean() && System.nanoTime() < deadline) {
+            if (client.isReady()) return isCurrent.getAsBoolean();
+            if ("failed".equals(client.readinessState())) return false;
+            long remaining = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime());
+            if (remaining <= 0L) return false;
+            if (client.awaitReady(Math.min(250L, remaining)) && isCurrent.getAsBoolean()) return true;
+            Thread.sleep(10L);
+        }
+        return false;
+    }
+
     private void startBridgeServingIfNecessary(ExecutionSession s) {
-        if (s == null || !s.markBridgeServing()) {
+        if (s == null) return;
+        if (!s.markBridgeServing()) {
+            io.github.nyzeep.orchestella.runtime.contract.BridgeClient current = s.bridgeClient();
+            if (s == session && foregroundActive && current != null) {
+                activeBridgeClient = current;
+                BridgeConnector.Events events = eventsForBridge(s, current);
+                if (current.isReady()) {
+                    events.onReady();
+                } else {
+                    final int foreground = foregroundGeneration;
+                    final int binding = bindingGeneration;
+                    new Thread(() -> {
+                        try {
+                            if (awaitCurrentControlReady(current,
+                                    () -> session == s && activeBridgeClient == current
+                                            && s.bridgeClient() == current && foregroundActive && !isDestroyed()
+                                            && foreground == foregroundGeneration && binding == bindingGeneration,
+                                    io.github.nyzeep.orchestella.runtime.contract.BridgeClient.DEFAULT_STARTUP_TIMEOUT_MS)) {
+                                events.onReady();
+                            }
+                        } catch (InterruptedException interrupted) {
+                            Thread.currentThread().interrupt();
+                        } catch (java.io.IOException unavailable) { }
+                    }, "terminal-current-ready").start();
+                }
+            }
             return;
         }
         final String sessionBridgeToken = bridgeToken;
