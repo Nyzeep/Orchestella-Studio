@@ -28,14 +28,39 @@ object DistroMirrorCatalog {
                 source,
             )
             "debian" -> listOf(
-                // CN-fast lead: TUNA's lxc-images mirror of the exact pinned distrobuilder
-                // build (20261010_05:24), byte-identical to the self-hosted release asset.
                 DEBIAN_TUNA_LXC_IMAGES_MIRROR,
                 source,
                 substitutePrefix(source, "https://github.com/", "https://ghproxy.net/https://github.com/"),
                 substitutePrefix(source, "https://github.com/", "https://mirror.ghproxy.com/https://github.com/"),
             )
-            "fedora", "opensuse", "almalinux", "rocky", "arch" -> listOf(
+            "fedora" -> listOf(
+                FEDORA_TUNA_LXC_IMAGES_MIRROR,
+                source,
+                substitutePrefix(source, "https://github.com/", "https://ghproxy.net/https://github.com/"),
+                substitutePrefix(source, "https://github.com/", "https://mirror.ghproxy.com/https://github.com/"),
+            )
+            "arch" -> listOf(
+                ARCH_TUNA_MIRROR,
+                ARCH_USTC_MIRROR,
+                source,
+                substitutePrefix(source, "https://github.com/", "https://ghproxy.net/https://github.com/"),
+                substitutePrefix(source, "https://github.com/", "https://mirror.ghproxy.com/https://github.com/"),
+            )
+            "opensuse" -> listOf(
+                OPENSUSE_TUNA_MIRROR,
+                OPENSUSE_UPSTREAM_MIRROR,
+                source,
+                substitutePrefix(source, "https://github.com/", "https://ghproxy.net/https://github.com/"),
+                substitutePrefix(source, "https://github.com/", "https://mirror.ghproxy.com/https://github.com/"),
+            )
+            "almalinux" -> listOf(
+                ALMALINUX_TUNA_LXC_IMAGES_MIRROR,
+                source,
+                substitutePrefix(source, "https://github.com/", "https://ghproxy.net/https://github.com/"),
+                substitutePrefix(source, "https://github.com/", "https://mirror.ghproxy.com/https://github.com/"),
+            )
+            "rocky" -> listOf(
+                ROCKY_TUNA_LXC_IMAGES_MIRROR,
                 source,
                 substitutePrefix(source, "https://github.com/", "https://ghproxy.net/https://github.com/"),
                 substitutePrefix(source, "https://github.com/", "https://mirror.ghproxy.com/https://github.com/"),
@@ -45,9 +70,37 @@ object DistroMirrorCatalog {
         return MirrorPriorityList.of(*candidates.distinct().toTypedArray())
     }
 
-    /** TUNA mirror of the pinned Debian 13 rootfs (linuxcontainers.org build 20261010_05:24). */
-    private const val DEBIAN_TUNA_LXC_IMAGES_MIRROR =
-        "https://mirrors.tuna.tsinghua.edu.cn/lxc-images/images/debian/trixie/arm64/default/20261010_05%3A24/rootfs.tar.xz"
+    /** TUNA mirror of the pinned Debian 13 rootfs (linuxcontainers.org build 20261013_05:24). */
+    const val DEBIAN_TUNA_LXC_IMAGES_MIRROR =
+        "https://mirrors.tuna.tsinghua.edu.cn/lxc-images/images/debian/trixie/arm64/default/20261013_05%3A24/rootfs.tar.xz"
+
+    /** TUNA mirror of the pinned Fedora 43 rootfs (linuxcontainers.org build 20261013_20:33). */
+    const val FEDORA_TUNA_LXC_IMAGES_MIRROR =
+        "https://mirrors.tuna.tsinghua.edu.cn/lxc-images/images/fedora/43/arm64/default/20261013_20%3A33/rootfs.tar.xz"
+
+    /** TUNA mirror of the pinned Arch Linux ARM aarch64 rootfs. */
+    const val ARCH_TUNA_MIRROR =
+        "https://mirrors.tuna.tsinghua.edu.cn/archlinuxarm/os/ArchLinuxARM-aarch64-latest.tar.gz"
+
+    /** USTC mirror of the pinned Arch Linux ARM aarch64 rootfs. */
+    const val ARCH_USTC_MIRROR =
+        "https://mirrors.ustc.edu.cn/archlinuxarm/os/ArchLinuxARM-aarch64-latest.tar.gz"
+
+    /** TUNA mirror of the pinned openSUSE Leap 15.6 appliance rootfs. */
+    const val OPENSUSE_TUNA_MIRROR =
+        "https://mirrors.tuna.tsinghua.edu.cn/opensuse/distribution/leap/15.6/appliances/opensuse-leap-image.aarch64-15.6.0-lxc-Build19.146.tar.xz"
+
+    /** Upstream mirror of the pinned openSUSE Leap 15.6 appliance rootfs. */
+    const val OPENSUSE_UPSTREAM_MIRROR =
+        "https://download.opensuse.org/distribution/leap/15.6/appliances/opensuse-leap-image.aarch64-15.6.0-lxc-Build19.146.tar.xz"
+
+    /** TUNA mirror of the pinned AlmaLinux 9 rootfs (linuxcontainers.org build 20261012_23:08). */
+    const val ALMALINUX_TUNA_LXC_IMAGES_MIRROR =
+        "https://mirrors.tuna.tsinghua.edu.cn/lxc-images/images/almalinux/9/arm64/default/20261012_23%3A08/rootfs.tar.xz"
+
+    /** TUNA mirror of the pinned Rocky Linux 9 rootfs (linuxcontainers.org build 20261013_03:17). */
+    const val ROCKY_TUNA_LXC_IMAGES_MIRROR =
+        "https://mirrors.tuna.tsinghua.edu.cn/lxc-images/images/rockylinux/9/arm64/default/20261013_03%3A17/rootfs.tar.xz"
 
     private fun substituteHost(url: String, fromHost: String, toHost: String): String =
         if (url.contains("://$fromHost/")) url.replace("://$fromHost/", "://$toHost/") else url

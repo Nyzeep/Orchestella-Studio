@@ -26,8 +26,8 @@ class ThemeColorsTest {
     @Test fun sourceRolesStillResolveAgainstTheNewPaletteAfterRepeatedSwitches() {
         val textRole = ThemeColors.textRole(0xFF8E929B.toInt())
         val actionRole = ThemeColors.backgroundRole(0xFFD62828.toInt())
-        for (theme in listOf(ThemeCatalog.constructivistWorkstation, ThemeCatalog.catppuccinLatte,
-            ThemeCatalog.nord, ThemeCatalog.constructivistAmber, ThemeCatalog.dracula)) {
+        for (theme in listOf(ThemeCatalog.constructivistWorkstation, ThemeCatalog.claudeLight,
+            ThemeCatalog.github, ThemeCatalog.constructivistAmber, ThemeCatalog.catppuccin)) {
             assertEquals(theme.primary, ThemeColors.color(theme, actionRole))
             assertTrue(ThemeColors.contrast(ThemeColors.color(theme, textRole), theme.surface) >= 4.5)
             assertEquals(theme.background, ThemeColors.color(theme, ThemeColors.Role.BACKGROUND))

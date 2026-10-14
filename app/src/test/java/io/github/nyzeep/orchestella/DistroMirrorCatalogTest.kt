@@ -23,13 +23,52 @@ class DistroMirrorCatalogTest {
     fun debianMirrorsLeadWithTunaLxcImagesThenPinnedSourceAndProxies() {
         val manifest = OfficialDebianCatalog.debian()
         val expected = listOf(
-            "https://mirrors.tuna.tsinghua.edu.cn/lxc-images/images/debian/trixie/arm64/default/20261010_05%3A24/rootfs.tar.xz",
+            "https://mirrors.tuna.tsinghua.edu.cn/lxc-images/images/debian/trixie/arm64/default/20261013_05%3A24/rootfs.tar.xz",
             "https://github.com/Nyzeep/Orchestella-Studio/releases/download/distro-catalog-v1/debian-13-rootfs.tar.xz",
             "https://ghproxy.net/https://github.com/Nyzeep/Orchestella-Studio/releases/download/distro-catalog-v1/debian-13-rootfs.tar.xz",
             "https://mirror.ghproxy.com/https://github.com/Nyzeep/Orchestella-Studio/releases/download/distro-catalog-v1/debian-13-rootfs.tar.xz",
         )
 
         assertEquals(expected, DistroMirrorCatalog.mirrorsFor(manifest))
+    }
+
+    @Test
+    fun archMirrorsLeadWithTunaAndUstcThenPinnedSourceAndProxies() {
+        val manifest = io.github.nyzeep.orchestella.runtime.distro.OfficialArchCatalog.arch()
+        val mirrors = DistroMirrorCatalog.mirrorsFor(manifest)
+        assertEquals(DistroMirrorCatalog.ARCH_TUNA_MIRROR, mirrors[0])
+        assertEquals(DistroMirrorCatalog.ARCH_USTC_MIRROR, mirrors[1])
+        assertEquals(manifest.source().toString(), mirrors[2])
+    }
+
+    @Test
+    fun openSuseMirrorsLeadWithTunaAndUpstreamThenPinnedSourceAndProxies() {
+        val manifest = io.github.nyzeep.orchestella.runtime.distro.OfficialOpenSuseCatalog.opensuse()
+        val mirrors = DistroMirrorCatalog.mirrorsFor(manifest)
+        assertEquals(DistroMirrorCatalog.OPENSUSE_TUNA_MIRROR, mirrors[0])
+        assertEquals(DistroMirrorCatalog.OPENSUSE_UPSTREAM_MIRROR, mirrors[1])
+        assertEquals(manifest.source().toString(), mirrors[2])
+    }
+
+    @Test
+    fun fedoraMirrorsLeadWithTunaLxcImages() {
+        val manifest = io.github.nyzeep.orchestella.runtime.distro.OfficialFedoraCatalog.fedora()
+        val mirrors = DistroMirrorCatalog.mirrorsFor(manifest)
+        assertEquals(DistroMirrorCatalog.FEDORA_TUNA_LXC_IMAGES_MIRROR, mirrors[0])
+    }
+
+    @Test
+    fun almaLinuxMirrorsLeadWithTunaLxcImages() {
+        val manifest = io.github.nyzeep.orchestella.runtime.distro.OfficialAlmaLinuxCatalog.almalinux()
+        val mirrors = DistroMirrorCatalog.mirrorsFor(manifest)
+        assertEquals(DistroMirrorCatalog.ALMALINUX_TUNA_LXC_IMAGES_MIRROR, mirrors[0])
+    }
+
+    @Test
+    fun rockyMirrorsLeadWithTunaLxcImages() {
+        val manifest = io.github.nyzeep.orchestella.runtime.distro.OfficialRockyLinuxCatalog.rocky()
+        val mirrors = DistroMirrorCatalog.mirrorsFor(manifest)
+        assertEquals(DistroMirrorCatalog.ROCKY_TUNA_LXC_IMAGES_MIRROR, mirrors[0])
     }
 
     @Test

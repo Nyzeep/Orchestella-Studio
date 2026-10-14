@@ -28,9 +28,9 @@ class ThemePreferencesTest {
         store.setTerminalLineSpacingPx(4f)
         store.setCustomAccent(0xFF123456.toInt())
         store.setCustomText(0xFFEEDDCC.toInt())
-        store.setThemeId(ThemeCatalog.catppuccinLatte.id)
+        store.setThemeId(ThemeCatalog.claudeLight.id)
         val restored = ThemeStore(prefs)
-        assertEquals(ThemeCatalog.catppuccinLatte, restored.resolve())
+        assertEquals(ThemeCatalog.claudeLight, restored.resolve())
         assertNull(restored.customAccent())
         assertNull(restored.customText())
         assertEquals("content://test/images/42", restored.backgroundUri())
@@ -43,22 +43,22 @@ class ThemePreferencesTest {
 
     @Test fun customAccentControlsButtonsNavigationAndGlowWithoutReplacingTerminalAnsi() {
         val store = ThemeStore(FakeSharedPreferences())
-        store.setThemeId(ThemeCatalog.nord.id)
+        store.setThemeId(ThemeCatalog.github.id)
         store.setCustomAccent(0x00123456)
         val theme = store.resolve()
         assertEquals(0xFF123456.toInt(), theme.primary)
         assertEquals(theme.primary, theme.accent)
         assertEquals(theme.primary, theme.glow)
-        assertEquals(ThemeCatalog.nord.ansi, theme.ansi)
+        assertEquals(ThemeCatalog.github.ansi, theme.ansi)
         store.setCustomAccent(null)
-        assertEquals(ThemeCatalog.nord, store.resolve())
+        assertEquals(ThemeCatalog.github, store.resolve())
     }
 
     @Test fun invalidThemeSelectionAndNonLocalWallpaperCannotReplaceSavedPreferences() {
         val store = ThemeStore(FakeSharedPreferences())
-        store.setThemeId(ThemeCatalog.dracula.id)
+        store.setThemeId(ThemeCatalog.raycast.id)
         store.setThemeId("unknown")
-        assertEquals(ThemeCatalog.dracula, store.resolve())
+        assertEquals(ThemeCatalog.raycast, store.resolve())
         store.setBackgroundUri("content://test/images/1")
         for (uri in listOf("https://example.test/image", "file:///private/image")) {
             try {
@@ -93,15 +93,15 @@ class ThemePreferencesTest {
         var snapshots = 0
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
             snapshots++
-            assertEquals(ThemeCatalog.gruvboxLight, store.resolve())
+            assertEquals(ThemeCatalog.gruvbox, store.resolve())
         }
         store.setCustomAccent(0xFFFF0000.toInt())
         store.addOnThemeChangeListener(listener)
-        store.setThemeId(ThemeCatalog.gruvboxLight.id)
+        store.setThemeId(ThemeCatalog.gruvbox.id)
         assertTrue(snapshots > 0)
         store.removeOnThemeChangeListener(listener)
         val before = snapshots
-        store.setThemeId(ThemeCatalog.dracula.id)
+        store.setThemeId(ThemeCatalog.raycast.id)
         assertEquals(before, snapshots)
     }
 
