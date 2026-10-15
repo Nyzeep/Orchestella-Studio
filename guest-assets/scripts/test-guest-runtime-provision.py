@@ -285,6 +285,209 @@ def identity_checks():
     return checks
 
 
+def serial_console_checks():
+    # Replay the competing getty units seen in the captured Debian console and the
+    # missing .device dependency seen in Fedora. Run the real installer, then resolve
+    # its emitted units/drop-ins against a minimal vendor+generator filesystem.
+    if os.name == "nt":
+        raise SystemExit("serial console probes need Linux symlinks; run this mode with the existing WSL Python")
+    source = (assets / "initramfs/init").read_text()
+    start = source.index("install_serial_autologin_getty() {\n")
+    finish = source.index("\nconfigure_systemd_network_dhcp() {", start)
+    installer = source[start:finish]
+    results = []
+    failures = []
+
+    def properties(path):
+        data = {}
+        for line in path.read_text().splitlines():
+            if line and not line.startswith(("#", "[")) and "=" in line:
+                key, value = line.split("=", 1)
+                if not value:
+                    data.pop(key, None)
+                else:
+                    data[key] = value
+        return data
+
+    for label, terminal, device_ready in [
+        ("debian_duplicate_console_readers", "ttyAMA0", True),
+        ("fedora_serial_device_unit_not_ready", "ttyAMA0", False),
+        ("fedora_legacy_owned_console_and_generator", "ttyAMA0", True),
+        ("avf_hvc0_has_one_console_owner", "hvc0", True),
+    ]:
+        tree = fixture / label
+        local = tree / "etc/systemd/system"
+        vendor = tree / "usr/lib/systemd/system"
+        generated = tree / "run/systemd/generator/getty.target.wants"
+        write(vendor / "console-getty.service", "[Service]\nTTYPath=/dev/console\nExecStart=-/sbin/agetty --noclear --keep-baud console 115200 vt220\n")
+        write(vendor / "serial-getty@.service", "[Unit]\nBindsTo=dev-%i.device\n[Service]\nTTYPath=/dev/%I\nExecStart=-/sbin/agetty --noclear %I 115200 vt220\n")
+        write(vendor / "getty@.service", "[Service]\nTTYPath=/dev/%I\nExecStart=-/sbin/agetty --noclear %I 38400 linux\n")
+        write(local / "serial-getty@ttyS9.service.d/user.conf", "[Service]\nEnvironment=USER_CUSTOM=keep\n")
+        custom = local / "serial-getty@ttyS9.service.d/user.conf"
+        before = custom.read_bytes()
+        write(tree / "etc/shadow", "root:synthetic-existing-password-hash:20000:0:99999:7:::\n")
+        write(tree / "var/lib/orchestella/provision/credentials-v2", "input_sha256=synthetic-existing-fingerprint\n")
+        preserved = {p: p.read_bytes() for p in [tree / "etc/shadow", tree / "var/lib/orchestella/provision/credentials-v2"]}
+        if "legacy_owned" in label:
+            write(local / "orchestella-console.service", "[Service]\nTTYPath=/dev/ttyAMA0\nExecStart=-/sbin/agetty --autologin root --noclear ttyAMA0 115200 vt220\n")
+            (local / "getty.target.wants").mkdir()
+            (local / "getty.target.wants/orchestella-console.service").symlink_to("/etc/systemd/system/orchestella-console.service")
+        generated.mkdir(parents=True)
+        for unit in ["console-getty.service", f"serial-getty@{terminal}.service", "getty@tty1.service"]:
+            (generated / unit).symlink_to(f"/usr/lib/systemd/system/{unit}")
+        # Model only the kernel command-line reader; all installation I/O is real.
+        cmd = ("fail() { printf '%s\\n' \"$1\"; exit 1; }; "
+               + "kernel_argument() { case \"$1\" in console) printf '%s\\n' "
+               + terminal + ";; *) return 1;; esac; }; "
+               + installer + "\ninstall_serial_autologin_getty " + shlex.quote(unix(tree)))
+        subprocess.run(["sh", "-c", cmd], check=True, capture_output=True, text=True, timeout=10)
+        assert custom.read_bytes() == before, "custom getty configuration must survive"
+
+        def snapshot():
+            return {str(p.relative_to(local)): ("link", os.readlink(p)) if p.is_symlink() else ("file", p.read_bytes())
+                    for p in local.rglob("*") if p.is_symlink() or p.is_file()}
+
+        first = snapshot()
+        subprocess.run(["sh", "-c", cmd], check=True, capture_output=True, text=True, timeout=10)
+        assert snapshot() == first, "console installation must be byte-idempotent"
+        assert all(p.read_bytes() == content for p, content in preserved.items()), "existing passwords and input fingerprints must survive"
+        units = {p.name for p in generated.iterdir()}
+        for target in ["getty.target.wants", "multi-user.target.wants"]:
+            if (local / target).exists():
+                units.update(p.name for p in (local / target).iterdir())
+        readers = []
+        for unit in sorted(units):
+            unit_path = local / unit
+            if unit_path.is_symlink() and os.readlink(unit_path) == "/dev/null":
+                continue
+            if not unit_path.is_file():
+                template = unit.split("@", 1)[0] + "@.service" if "@" in unit else unit
+                unit_path = vendor / (template if "@" in unit else unit)
+            if not unit_path.is_file():
+                continue
+            config = properties(unit_path)
+            instance = unit.split("@", 1)[1].removesuffix(".service") if "@" in unit else ""
+            dropin_names = ([unit.split("@", 1)[0] + "@.service.d"] if instance else []) + [unit + ".d"]
+            for dropin in dropin_names:
+                for path in sorted((local / dropin).glob("*.conf")):
+                    config.update(properties(path))
+            if not device_ready and any(".device" in config.get(key, "") for key in ["Requires", "BindsTo"]):
+                continue
+            tty = config.get("TTYPath", "").replace("%I", instance).replace("%i", instance)
+            if tty == "/dev/console":
+                tty = "/dev/" + terminal  # console=ttyAMA0 (QEMU), console=hvc0 (AVF)
+            if tty == "/dev/" + terminal:
+                readers.append((unit, config.get("ExecStart", "")))
+        if len(readers) != 1 or "--autologin root" not in readers[0][1]:
+            failures.append(f"{label}: expected one usable autologin reader; actual={readers}")
+        else:
+            results.append(label)
+    # Reject unrecognized console paths before creating any units or masks.
+    rejected = fixture / "rejected-console"
+    cmd = ("fail() { printf '%s\\n' \"$1\"; exit 1; }; "
+           "kernel_argument() { printf '%s\\n' '../../outside'; }; "
+           + installer + "\ninstall_serial_autologin_getty " + shlex.quote(unix(rejected)))
+    outcome = subprocess.run(["sh", "-c", cmd], capture_output=True, text=True, timeout=10)
+    assert outcome.returncode != 0 and "serial-console-device-unsupported" in outcome.stdout
+    assert not rejected.exists(), "invalid console input must not write any units"
+    results.append("unsupported_console_refused_without_filesystem_changes")
+    evidence = work / "serial-console-results.txt"
+    evidence.write_text("\n".join(results + failures) + f"\nPASS count={len(results)} FAIL count={len(failures)}\nmode=real-installer-with-synthetic-vendor-and-generator-units\n", encoding="utf-8")
+    shutil.copyfile(evidence, work / "serial-console-results.preserved.txt")
+    assert not failures, "\n".join(failures)
+    return results
+
+
+def embedded_init_checks():
+    # Exercise the production newc writer against the actual shipped base archive.
+    # No image is repacked or published; the per-launch override lives in this fixture.
+    import gzip
+    import json
+    repo = assets.parent
+    java_source = fixture / "EmbeddedGuestInitProbe.java"
+    write(java_source, """import java.io.*;
+import java.nio.file.*;
+import java.security.MessageDigest;
+import java.util.HexFormat;
+import io.github.nyzeep.orchestella.runtime.engineqemu.EmbeddedProvisionInput;
+public final class EmbeddedGuestInitProbe {
+    public static void main(String[] args) throws Exception {
+        byte[] rootfs = "synthetic rootfs only".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+        byte[] init = Files.readAllBytes(Path.of(args[0]));
+        String digest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(rootfs));
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        EmbeddedProvisionInput.writeSegment(new ByteArrayInputStream(rootfs), rootfs.length,
+                "synthetic-rootfs.tar.gz", "a".repeat(64), null, init, null, null, null,
+                false, null, null, null, digest, out);
+        Files.write(Path.of(args[1]), out.toByteArray());
+    }
+}
+""")
+    writer = repo / "runtime/engine-qemu/src/main/java/io/github/nyzeep/orchestella/runtime/engineqemu/EmbeddedProvisionInput.java"
+    subprocess.run(["javac", "-J-XX:-UsePerfData", "-J-Djava.io.tmpdir=" + str(fixture), "-encoding", "UTF-8", "-d", str(fixture), str(writer), str(java_source)], check=True, timeout=30)
+    segment = fixture / "guest-init-override.cpio.gz"
+    subprocess.run(["java", "-XX:-UsePerfData", "-Djava.io.tmpdir=" + str(fixture), "-cp", str(fixture), "EmbeddedGuestInitProbe", str(assets / "initramfs/init"), str(segment)], check=True, timeout=30)
+    base = repo / "app/src/main/resources/initramfs.cpio.gz"
+    raw = gzip.decompress(base.read_bytes() + segment.read_bytes())
+    position = 0
+    inits = []
+    trailers = 0
+    while position < len(raw):
+        while position < len(raw) and raw[position] == 0:
+            position += 1
+        if position == len(raw):
+            break
+        assert raw[position:position + 6] == b"070701", "base/override must contain valid newc headers"
+        mode = int(raw[position + 14:position + 22], 16)
+        size = int(raw[position + 54:position + 62], 16)
+        namesize = int(raw[position + 94:position + 102], 16)
+        name = raw[position + 110:position + 110 + namesize - 1].decode("utf-8")
+        start = (position + 110 + namesize + 3) & ~3
+        end = start + size
+        assert end <= len(raw), "complete archive entry"
+        if name.removeprefix("./") == "init":
+            inits.append((mode, raw[start:end]))
+        if name == "TRAILER!!!":
+            trailers += 1
+        position = (end + 3) & ~3
+    expected = (assets / "initramfs/init").read_bytes()
+    assert trailers == 2 and len(inits) == 2, "base archive and per-launch override must both be processed"
+    assert inits[-1] == (0o100755, expected), "the executable final /init must be the current guest source"
+    assert b"serial-console-mask" in inits[-1][1] and b"orchestella-console.service" in inits[-1][1]
+    # The shipping chain consumes the resource copied by Gradle, then passes its bytes
+    # into this same writer. A full APK check is left to the owning device/build agent.
+    build = (repo / "app/build.gradle.kts").read_text()
+    bootstrapper = (repo / "app/src/main/java/io/github/nyzeep/orchestella/QemuRuntimeBootstrapper.java").read_text()
+    assert 'from(rootProject.file("guest-assets/initramfs/init"))' in build and 'rename { "guest_init" }' in build
+    assert 'resourceStreams.apply("guest_init")' in bootstrapper and "EmbeddedProvisionInput.writeSegment(" in bootstrapper
+    entry = (assets / "initramfs/runtime-entry.sh").read_text()
+    runtime = (assets / "initramfs/runtime-functions.sh").read_text()
+    restart = entry.split("if grep -Fqx 'provisioning_version=1'", 1)[1].split("elif grep -Fqx", 1)[0]
+    assert "boot_guest_root" in restart and "install_native_guest_runtime /newroot" in entry
+    assert 'install_serial_autologin_getty "$target_root"' in runtime
+    report = {"checks": ["real_writer_last_init_bytes_and_executable_mode", "resource_copy_and_bootstrap_writer_chain", "existing_root_restart_installs_console_fix"],
+              "currentInitSha256": hashlib.sha256(expected).hexdigest(), "archiveCount": trailers,
+              "baseContainsCurrentInit": inits[0][1] == expected, "deviceValidated": False}
+    evidence = work / "embedded-guest-init-results.json"
+    evidence.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    shutil.copyfile(evidence, work / "embedded-guest-init-results.preserved.json")
+    return report["checks"]
+
+
+if "--embedded-init-only" in sys.argv:
+    checks.extend(embedded_init_checks())
+    shutil.rmtree(fixture)
+    print(f"EMBEDDED_GUEST_INIT_TEST_OK checks={len(checks)}")
+    raise SystemExit(0)
+
+
+if "--serial-console-only" in sys.argv:
+    checks.extend(serial_console_checks())
+    shutil.rmtree(fixture)
+    print(f"SERIAL_CONSOLE_TEST_OK checks={len(checks)}")
+    raise SystemExit(0)
+
+
 if "--identity-only" in sys.argv:
     import json
     identity_checks()
@@ -312,6 +515,12 @@ if "--recovery-shell-only" in sys.argv:
     shutil.rmtree(fixture)
     print(f"RECOVERY_SHELL_SELECTION_TEST_OK checks={len(checks)}")
     raise SystemExit(0)
+
+
+if os.name != "nt":
+    checks.extend(serial_console_checks())
+else:
+    skips.append("SERIAL_CONSOLE_NATIVE_SYMLINK_PROBE_SKIPPED platform=win32 run=--serial-console-only-under-WSL")
 
 
 def run(mode="--native", extra=""):

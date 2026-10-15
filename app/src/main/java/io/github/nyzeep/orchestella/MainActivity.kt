@@ -891,8 +891,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun showThemeSelectionDialog() {
         val themes = io.github.nyzeep.orchestella.ui.theme.ThemeCatalog.all
+        val currentId = themeStore.resolve().id
         val names = themes.map { theme ->
-            if (theme.id == themeStore.themeId()) "● ${theme.displayName}" else "○ ${theme.displayName}"
+            if (theme.id == currentId) "● ${theme.selectionLabel}" else "○ ${theme.selectionLabel}"
         }.toTypedArray()
 
         AlertDialog.Builder(this)
@@ -902,7 +903,7 @@ class MainActivity : AppCompatActivity() {
                 themeStore.setThemeId(selected.id)
                 applyThemeToDashboard()
                 showInstances()
-                Toast.makeText(this, "已应用主题: ${selected.displayName}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "已应用主题: ${selected.selectionLabel}", Toast.LENGTH_SHORT).show()
             }
             .setPositiveButton("主题高级设置") { _, _ ->
                 startActivity(Intent(this, SettingsActivity::class.java))

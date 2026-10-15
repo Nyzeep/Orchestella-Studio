@@ -376,10 +376,13 @@ public final class TerminalScreenModel {
             case 's': saveCursor(); break;
             case 'u': restoreCursor(); break;
             case 'n':
-                if (!privateMode && n == 5) responseSink.accept("\u001b[0n");
-                if (!privateMode && n == 6) responseSink.accept("\u001b[" + (screen.row + 1) + ";" + (screen.column + 1) + "R");
+                if (raw.equals("5")) responseSink.accept("\u001b[0n");
+                if (raw.equals("6")) responseSink.accept("\u001b[" + (screen.row + 1) + ";" + (screen.column + 1) + "R");
                 break;
-            case 'c': if (!raw.startsWith(">")) responseSink.accept("\u001b[?1;2c"); break;
+            case 'c':
+                // Serial terminals can echo replies; capability reports are not queries.
+                if (raw.isEmpty() || raw.equals("0")) responseSink.accept("\u001b[?1;2c");
+                break;
             default: break;
         }
         screen.wrapPending = false;

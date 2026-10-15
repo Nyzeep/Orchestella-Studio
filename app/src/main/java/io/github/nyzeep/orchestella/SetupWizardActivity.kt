@@ -347,6 +347,14 @@ class SetupWizardActivity : AppCompatActivity() {
         txtDownloadSpeedEta = findViewById(R.id.txt_download_speed_eta)
         txtDownloadMirror = findViewById(R.id.txt_download_mirror)
         btnStep4Prev = findViewById(R.id.btn_step4_prev)
+
+        listOf(btnStep1Next, btnStep2Next, btnStep3Next, btnWizardInit).forEach {
+            ThemeApplier.setRole(it, ThemeApplier.Role.PRIMARY_ACTION)
+        }
+        listOf(btnStep2Prev, btnStep3Prev, btnStep4Prev, btnPickSharedDir,
+            btnTestNetwork, btnWizardSpeedTest, btnVcpuMinus, btnVcpuPlus, btnAvfAuthWizard).forEach {
+            ThemeApplier.setRole(it, ThemeApplier.Role.SECONDARY_ACTION)
+        }
     }
 
     private fun setupListeners() {
