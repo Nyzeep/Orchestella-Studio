@@ -1,5 +1,15 @@
 # Host preparation for distro smoke
 
+## Terminal keyboard tap regression
+
+With an existing connected terminal in the foreground, `test_terminal_keyboard.py` dismisses the soft keyboard and taps two alternating points in the terminal viewport. It checks the Android IME visibility and verifies that `ModernTerminalView` owns the served input connection. It sends no guest text, changes no keyboard settings and never creates or deletes an instance.
+
+```powershell
+python tools/device-validation/test_terminal_keyboard.py --adb '<existing-adb-path>' --serial '<device-serial>' --output '<existing-external-evidence-directory>' --label terminal-keyboard-check --cycles 3
+```
+
+Use a fresh label for each run. The command exits nonzero on a visibility/focus failure, an unsupported diagnostic format or a missing foreground terminal. A successful result covers keyboard reopening only; separately verify command delivery, history scrolling and text selection. The only phone temporary file is the fixed UI hierarchy path used by this probe, removed at exit. Evidence contains safe state summaries, not terminal text or credentials.
+
 `PrepareDistroSmokeInputs.java` prepares offline inputs through the production Java APIs. It does not run a guest binary, Gradle, Android, a device, or a network client. All four arguments are mandatory. Supported IDs come from `DistroCatalogRegistry`: `ubuntu,debian,fedora,arch,opensuse,almalinux,rocky`.
 
 Compile with the existing JDK and cached build classes, without downloading anything. Example PowerShell (run from the repository root; choose a new external build directory):

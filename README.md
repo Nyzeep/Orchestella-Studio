@@ -5,7 +5,7 @@
 **无需 Root 的 Android 原生双引擎 Linux 虚拟机与移动工作站**  
 *Native Dual-Engine Linux VM Runtime & Mobile Workstation for Android (No Root Required)*
 
-[![Release](https://img.shields.io/badge/Release-v0.4.2%20Dev%20Preview-orange.svg?style=flat-square)](https://github.com/Nyzeep/Orchestella-Studio/releases/tag/v0.4.2)
+[![Release](https://img.shields.io/badge/Release-v0.4.5%20Dev%20Preview-orange.svg?style=flat-square)](https://github.com/Nyzeep/Orchestella-Studio/releases/tag/v0.4.5)
 [![License](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg?style=flat-square)](LICENSE)
 [![Android](https://img.shields.io/badge/Android-8.0%2B%20(API%2026%2B)-green.svg?style=flat-square)](https://developer.android.com)
 [![Arch](https://img.shields.io/badge/Arch-ARM64--v8a-purple.svg?style=flat-square)](#)
@@ -17,19 +17,19 @@
 
 ## 开发预览版说明
 
-> **当前版本 v0.4.2 仍为开发预览版（Development Preview），尚非稳定正式版。** 欢迎下载体验，并积极反馈启动、终端输入、主题显示、网络或设备兼容性问题。不同机型、Android 定制系统与发行版的表现可能存在差异，重要数据请先备份。
+> **当前版本 v0.4.5 仍为开发预览版（Development Preview），尚非稳定正式版。** 欢迎下载体验，并积极反馈启动、终端输入、主题显示、网络或设备兼容性问题。不同机型、Android 定制系统与发行版的表现可能存在差异，重要数据请先备份。
 
-- **下载安装**：[v0.4.2 发行说明与安装包](https://github.com/Nyzeep/Orchestella-Studio/releases/tag/v0.4.2)。请同时阅读其中的验证范围、已知限制和升级说明。
+- **下载安装**：[v0.4.5 发行说明与安装包](https://github.com/Nyzeep/Orchestella-Studio/releases/tag/v0.4.5)。请同时阅读其中的验证范围、已知限制和升级说明。
 - **问题反馈**：[提交 Issue](https://github.com/Nyzeep/Orchestella-Studio/issues/new)，建议附上应用版本、设备型号、Android / 系统版本、发行版、复现步骤及脱敏日志或截图。
 - **体验交流**：[GitHub Discussions](https://github.com/Nyzeep/Orchestella-Studio/discussions)。欢迎报告问题、提出建议，也欢迎分享成功运行的机型与使用场景。
 
-### v0.4.2 本次更新
+### v0.4.5 本次更新
 
-- 修复 Fedora / Debian 多个登录服务争用同一控制台引起的重复登录、输出干扰与输入异常；已有实例重启时自动应用修复，无需重建根盘。
-- 修复终端设备报告被再次当作查询处理的应答回路，以及部分 ANSI 索引色不跟随主题的问题。
-- 修复选择浅色主题仍被系统深色覆盖的问题，提供“跟随系统 / 浅色 / 深色”，统一主页、终端和发行版配置页配色。
-- 统一向导按钮的配色与选中态，修复容量预设标签换行和高度不齐；即时切换主题保留向导步骤及已填配置。
-- 包含此前本地 v0.4.0 的发行版独立卡片、主题扩充、应用内更新检查，以及引导装配和 AVF 预检修正。
+- **终端与登录**：修复点击终端无法重新呼出键盘、Fedora / Debian 重复登录与输入干扰，以及终端协议应答回路。
+- **主题与配置**：统一浅色、深色和跟随系统的页面/终端配色，修复 ANSI 索引色、容量按钮换行与高度不齐；切换主题保留向导配置。
+- **Guest 恢复**：修复 BusyBox 遮蔽原生命令导致 Ubuntu SSH 软件包配置失败，已有实例重启即可应用，无需重建根盘。
+- **更新与构建**：开发预览通道按语义版本检查更新，避免旧版误报升级；默认使用官方依赖仓库，补齐 Python 3 和 lint 验证。
+- 包含发行版独立卡片、40 套明暗主题及应用内更新入口。**AVF 已验证授权与回退，当前测试设备仍受隐藏接口访问限制，实际使用 QEMU。**
 
 ## 项目概述
 
@@ -171,18 +171,17 @@ Guest shell 回归需要 Python 3；容器构建依赖安装器已显式包含�
 
 ## 当前版本验证范围
 
-v0.4.2 已完成以下回归，验证结果仅覆盖所列场景：
+v0.4.5 已完成以下回归，验证结果仅覆盖所列场景：
 
 | 校验维度 | 本轮结果 |
 | :--- | :--- |
-| **Android 应用测试** | 683 项单元测试通过，APK 构建与签名验证通过 |
-| **Guest 启动回归** | 61 项检查通过，另有初始化脚本打包与凭据兼容性检查 |
-| **真机环境** | ARM64 Android 设备，QEMU 软件虚拟化 |
-| **发行版控制台** | Fedora 43、Debian 13 已有实例启动、命令输入、前后台切换及无重复登录验证通过 |
-| **密码与数据保留** | Fedora 原实例密码认证成功；三个已有实例的身份、凭据和根盘引用保持不变 |
-| **主题与向导** | 明确亮暗选择、跟随系统、在线/离线终端、按钮对齐及切换主题后保留向导步骤与容量选择验证通过 |
+| **构建与检查** | 713 项 App 测试、65 项 Guest 检查及 Android lint 通过；lint 仍有非阻断警告 |
+| **终端与主题** | 键盘收起后点击唤起、前后台返回、实际命令输入、浅深色显示与向导状态保留验证通过 |
+| **发行版回归** | Fedora / Debian 登录修复已验证；本轮 Ubuntu 包恢复达到 ready/verified，DBus 与 SSH 服务 active |
+| **数据保留** | 四个已有实例的身份、凭据和根盘引用保持不变，测试后均正常停止 |
+| **AVF 边界** | 两项权限已授予；自定义 VM 隐藏接口被系统拦截，实际回退 QEMU，未实现 AVF 端到端运行 |
 
-当前设备未授权 AVF 硬件虚拟化，本轮未逐个安装验证其他发行版，也未对每套主题和所有厂商系统逐一进行真机验收。Android lint 在生成测试模型时遇到 Gradle 内部异常，尚未通过；这与已通过的 APK 构建和单元测试分别记录，完整限制见发行说明。
+验证覆盖所列 ARM64 真机与场景，不代表所有机型、发行版、输入法或图形/GPU 工作负载均已兼容。完整限制见发行说明；欢迎反馈未覆盖的使用场景。
 
 ---
 

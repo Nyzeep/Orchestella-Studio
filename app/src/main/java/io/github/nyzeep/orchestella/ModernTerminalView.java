@@ -232,6 +232,8 @@ public class ModernTerminalView extends ScrollView {
         setFillViewport(true);
         setFocusable(true);
         setFocusableInTouchMode(true);
+        // The parent owns the IME connection; the selectable transcript may still take focus for selection.
+        setDescendantFocusability(FOCUS_BEFORE_DESCENDANTS);
         transcriptView = new TranscriptView(context);
         transcriptView.setTypeface(Typeface.MONOSPACE);
         transcriptView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);

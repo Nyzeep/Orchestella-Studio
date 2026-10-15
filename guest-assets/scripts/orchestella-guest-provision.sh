@@ -281,6 +281,12 @@ if [ "$distro" = alpine ]; then
         fi
     fi
 fi
+# Rescue tools are needed above while the distro BusyBox may still be damaged.
+# Package maintainer scripts need native tools first (GNU chmod --reference, mv -Z).
+if [ -z "$ROOT" ] && [ -d /usr/lib/orchestella/bin ]; then
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/lib/orchestella/bin
+    export PATH
+fi
 # APT must not silently accept an incomplete refresh. Retain signatures and TLS verification.
 refresh_apt() {
     run_step repository-refresh apt-get -o APT::Update::Error-Mode=any -o Acquire::Retries=0 \
