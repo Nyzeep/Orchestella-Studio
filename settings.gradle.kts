@@ -1,7 +1,24 @@
 pluginManagement {
+    // Mirrors are an explicit regional opt-in, not a fallback on HTTP 5xx.
+    val useAliyunMirror = providers.gradleProperty("orchestella.repositories.useAliyunMirror")
+        .map { it.toBooleanStrict() }
+        .getOrElse(false)
     repositories {
-        maven { url = uri("https://maven.aliyun.com/repository/google") }
-        maven { url = uri("https://maven.aliyun.com/repository/public") }
+        if (useAliyunMirror) {
+            maven {
+                name = "aliyunGoogle"
+                url = uri("https://maven.aliyun.com/repository/google")
+                content {
+                    includeGroupByRegex("androidx(\\..*)?")
+                    includeGroupByRegex("com\\.android(\\..*)?")
+                    includeGroupByRegex("com\\.google(\\..*)?")
+                }
+            }
+            maven {
+                name = "aliyunPublic"
+                url = uri("https://maven.aliyun.com/repository/public")
+            }
+        }
         google()
         mavenCentral()
     }
@@ -9,9 +26,25 @@ pluginManagement {
 
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    val useAliyunMirror = providers.gradleProperty("orchestella.repositories.useAliyunMirror")
+        .map { it.toBooleanStrict() }
+        .getOrElse(false)
     repositories {
-        maven { url = uri("https://maven.aliyun.com/repository/google") }
-        maven { url = uri("https://maven.aliyun.com/repository/public") }
+        if (useAliyunMirror) {
+            maven {
+                name = "aliyunGoogle"
+                url = uri("https://maven.aliyun.com/repository/google")
+                content {
+                    includeGroupByRegex("androidx(\\..*)?")
+                    includeGroupByRegex("com\\.android(\\..*)?")
+                    includeGroupByRegex("com\\.google(\\..*)?")
+                }
+            }
+            maven {
+                name = "aliyunPublic"
+                url = uri("https://maven.aliyun.com/repository/public")
+            }
+        }
         google()
         mavenCentral()
     }

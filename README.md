@@ -159,9 +159,13 @@ cd Orchestella-Studio
 # 3. 运行 Guest Assets 资产验证套件
 ./gradlew -p guest-assets test
 
-# 4. 构建生成安装包
-./gradlew assembleDebug
+# 4. 构建生成安装包并执行 Android lint
+./gradlew :app:assembleDebug :app:lintDebug
 ```
+
+开发主分支默认从官方 Google Maven 与 Maven Central 获取依赖。如所在网络确实需要区域镜像，可显式使用 `-Porchestella.repositories.useAliyunMirror=true`；不启用时不会优先访问镜像。首次完整执行测试和 lint 后可使用 `--offline` 复用依赖缓存；缺少依赖时应先通过正常解析补齐，不跳过检查。
+
+Guest shell 回归需要 Python 3；容器构建依赖安装器已显式包含该工具，入口会在启动 Gradle 前检查它。本地开发构建使用明确的预览通道标记检查 GitHub Releases，版本比较不会将较旧版本当作更新；发布稳定构建前需同步检查通道标记。
 
 ---
 

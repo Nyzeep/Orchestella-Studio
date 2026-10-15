@@ -9,6 +9,13 @@ if [[ -z "${TICKET26_WORK_ROOT:-}" || ! -d "$TICKET26_WORK_ROOT" ]]; then
   mkdir -p "$TICKET26_WORK_ROOT"
 fi
 
+command -v python3 >/dev/null 2>&1 || {
+  printf 'python3 is required for guest runtime tests\n' >&2
+  exit 69
+}
+
+bash "$GUEST_ASSETS_DIR/scripts/test-builder-python.sh"
+
 if [[ "${1:-}" == "--init-fallback-only" ]]; then
   TICKET26_WORK_ROOT="$TICKET26_WORK_ROOT" sh "$GUEST_ASSETS_DIR/scripts/test-initramfs-init-fallback.sh"
   exit 0
@@ -27,6 +34,7 @@ bash -n "$GUEST_ASSETS_DIR/build.sh" \
   "$GUEST_ASSETS_DIR/scripts/check-reproducible.sh" \
   "$GUEST_ASSETS_DIR/scripts/test-local.sh" \
   "$GUEST_ASSETS_DIR/scripts/test-initramfs-init-fallback.sh" \
+  "$GUEST_ASSETS_DIR/scripts/test-builder-python.sh" \
   "$GUEST_ASSETS_DIR/smoke/qemu-provisioning-smoke.sh" \
   "$GUEST_ASSETS_DIR/smoke/qemu-official-alpine-provisioning-smoke.sh" \
   "$GUEST_ASSETS_DIR/smoke/qemu-official-alpine-restart-smoke.sh" \
@@ -65,6 +73,7 @@ shellcheck --severity=warning --external-sources --source-path=SCRIPTDIR \
   "$GUEST_ASSETS_DIR/scripts/check-reproducible.sh" \
   "$GUEST_ASSETS_DIR/scripts/test-local.sh" \
   "$GUEST_ASSETS_DIR/scripts/test-initramfs-init-fallback.sh" \
+  "$GUEST_ASSETS_DIR/scripts/test-builder-python.sh" \
   "$GUEST_ASSETS_DIR/smoke/qemu-provisioning-smoke.sh" \
   "$GUEST_ASSETS_DIR/smoke/qemu-official-alpine-provisioning-smoke.sh" \
   "$GUEST_ASSETS_DIR/smoke/qemu-official-alpine-restart-smoke.sh" \

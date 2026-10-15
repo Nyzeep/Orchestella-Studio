@@ -63,6 +63,7 @@ apt-get install --yes --no-install-recommends \
   libelf-dev \
   libssl-dev \
   openjdk-17-jdk-headless \
+  python3 \
   qemu-system-arm \
   rsync \
   shellcheck \
@@ -71,6 +72,12 @@ apt-get install --yes --no-install-recommends \
 dpkg-query --show --showformat='${binary:Package}=${Version}\n' \
   bc binutils-aarch64-linux-gnu bison build-essential ca-certificates cpio \
   curl diffutils e2fsprogs file findutils flex gawk gcc-aarch64-linux-gnu \
-  gzip libelf-dev libssl-dev openjdk-17-jdk-headless \
+  gzip libelf-dev libssl-dev openjdk-17-jdk-headless python3 \
   qemu-system-arm rsync shellcheck xz-utils \
   | LC_ALL=C sort > /tmp/droidlayer-builder-packages.txt
+
+command -v python3 >/dev/null 2>&1 || {
+  printf 'python3 is required for guest runtime tests\n' >&2
+  exit 69
+}
+python3 --version
