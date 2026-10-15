@@ -28,8 +28,8 @@ android {
         applicationId = "io.github.nyzeep.orchestella"
         minSdk = 26
         targetSdk = 36
-        versionCode = 403
-        versionName = "0.4.3"
+        versionCode = 405
+        versionName = "0.4.5"
         buildConfigField("boolean", "DEVELOPMENT_PREVIEW", "true")
 
         ndk {

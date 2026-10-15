@@ -149,6 +149,76 @@ printf '%s\\n' "$*" >> "$RECOVERY_SELECTOR_FIXTURE/probes"
     return results
 
 
+def provision_path_checks():
+    # Execute the production rescue prelude and post-repair boundary in real Bash.
+    # Only guest paths are mapped; child command lookup and GNU option handling are real.
+    source = (assets / "scripts/orchestella-guest-provision.sh").read_text()
+    prelude = source[source.index("# Recovery uses an independent static BusyBox"):
+                     source.index("export LANG=C LC_ALL=C\n")]
+    repair_start = source.index('if [ "$distro" = alpine ]; then\n    busybox_path=')
+    repaired = source[repair_start:source.index("# APT must not silently accept", repair_start)]
+    path_fixture = fixture / "provision-path"
+    native = path_fixture / "native-bin"
+    recovery = path_fixture / "recovery-bin"
+    empty = path_fixture / "empty-bin"
+    empty.mkdir(parents=True)
+    bash = subprocess.check_output(["sh", "-c", "command -v bash"], text=True).strip()
+    for name, rejected in [("chmod", "--reference="), ("mv", "-Z")]:
+        program = subprocess.check_output(["sh", "-c", f"command -v {name}"], text=True).strip()
+        write(native / name, f'#!/bin/sh\nexec {shlex.quote(program)} "$@"\n')
+        write(recovery / name, '#!/bin/sh\n'
+              + f'case "$1" in {rejected}*) printf "{name}: unsupported BusyBox option: %s\\n" "$1" >&2; exit 1;; esac\n'
+              + f'exec {shlex.quote(program)} "$@"\n')
+    write(recovery / "orchestella-fixture-rescue", "#!/bin/sh\nprintf 'private-fallback-available\\n'\n")
+    reference = path_fixture / "shells"
+    target = path_fixture / "shells.new"
+    destination = path_fixture / "shells.installed"
+    write(reference, "synthetic shells reference\n")
+    native_paths = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    results = []
+
+    def execute(label, native_directory, child, private_directory=recovery):
+        def mapped(block):
+            return block.replace(native_paths, shlex.quote(unix(native_directory))).replace(
+                "/usr/lib/orchestella/bin", shlex.quote(unix(private_directory)))
+        write(target, "synthetic postinst input\n")
+        commands = ('ROOT=; distro=ubuntu; ' + mapped(prelude)
+                    + '\nprintf "early_chmod=%s\\n" "$(command -v chmod)"\n'
+                    + mapped(repaired) + '\n' + shlex.quote(bash)
+                    + " --noprofile --norc -c " + shlex.quote(child))
+        # Resolve explicitly: Windows also ships a System32 bash.exe WSL launcher.
+        outcome = subprocess.run([shutil.which("bash"), "--noprofile", "--norc", "-c", commands],
+                                 capture_output=True, text=True, timeout=10)
+        evidence = work / ("provision-path-" + label + ".txt")
+        evidence.write_text(f"exit_code={outcome.returncode}\n{outcome.stdout}{outcome.stderr}", encoding="utf-8")
+        shutil.copyfile(evidence, evidence.with_suffix(".preserved.txt"))
+        return outcome
+
+    child = ('printf "child_chmod=%s\\n" "$(command -v chmod)"; '
+             'printf "child_mv=%s\\n" "$(command -v mv)"; '
+             f'chmod --reference={shlex.quote(unix(reference))} {shlex.quote(unix(target))}; chmod_code=$?; '
+             f'mv -Z {shlex.quote(unix(target))} {shlex.quote(unix(destination))}; mv_code=$?; '
+             'orchestella-fixture-rescue; '
+             'printf "chmod_exit=%s mv_exit=%s\\n" "$chmod_code" "$mv_code"; '
+             '[ "$chmod_code" -eq 0 ] && [ "$mv_code" -eq 0 ]')
+    outcome = execute("native-child", native, child)
+    assert f"early_chmod={unix(recovery / 'chmod')}" in outcome.stdout, outcome
+    assert outcome.returncode == 0, ("package_child_rejects_busybox_shadow", outcome)
+    assert f"child_chmod={unix(native / 'chmod')}" in outcome.stdout, outcome
+    assert f"child_mv={unix(native / 'mv')}" in outcome.stdout, outcome
+    assert "private-fallback-available" in outcome.stdout and destination.is_file(), outcome
+    results.append("post_repair_package_child_uses_native_gnu_chmod_and_mv")
+    results.append("early_recovery_retains_private_tools_before_repair")
+    results.append("package_child_keeps_missing_tool_private_fallback")
+    fallback_child = (f'chmod 0600 {shlex.quote(unix(target))} && '
+                      f'mv -f {shlex.quote(unix(target))} {shlex.quote(unix(destination))} && '
+                      'orchestella-fixture-rescue')
+    outcome = execute("missing-native", empty, fallback_child)
+    assert outcome.returncode == 0 and "private-fallback-available" in outcome.stdout, outcome
+    results.append("missing_native_tools_still_use_private_recovery_fallback")
+    return results
+
+
 def manual_recovery_checks():
     source = (assets / "initramfs/runtime-functions.sh").read_text()
     boot = source.split('cat > "$target_root/usr/sbin/orchestella-boot" <<\'EOF\'\n', 1)[1].split("EOF\n", 1)[0]
@@ -506,6 +576,16 @@ if "--manual-recovery-only" in sys.argv:
     shutil.rmtree(fixture)
     print(f"MANUAL_RECOVERY_TEST_OK checks={len(checks)}")
     raise SystemExit(0)
+
+checks.extend(provision_path_checks())
+if "--provision-path-only" in sys.argv:
+    evidence = work / "provision-path-results.txt"
+    evidence.write_text("\n".join(checks) + f"\nPASS count={len(checks)}\nmode=real-bash-child-path-with-gnu-tools-and-synthetic-busybox-rejections\n", encoding="utf-8")
+    shutil.copyfile(evidence, work / "provision-path-results.preserved.txt")
+    shutil.rmtree(fixture)
+    print(f"PROVISION_PATH_TEST_OK checks={len(checks)} guestValidated=false")
+    raise SystemExit(0)
+
 
 checks.extend(recovery_shell_checks())
 if "--recovery-shell-only" in sys.argv:
