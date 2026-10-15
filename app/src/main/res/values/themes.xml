@@ -8,4 +8,17 @@
     </style>
 
     <style name="Theme.DroidLayer" parent="Theme.Orchestella" />
+
+    <style name="Widget.Orchestella.DiskPreset" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="android:minWidth">0dp</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="android:paddingStart">4dp</item>
+        <item name="android:paddingEnd">4dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:letterSpacing">0</item>
+        <item name="cornerRadius">0dp</item>
+    </style>
 </resources>

@@ -102,14 +102,14 @@ object ThemeApplier {
     /** Apply to a new card, navigation group or other subtree after updating its UI state. */
     @JvmStatic
     @JvmOverloads
-    fun apply(root: View, theme: AppTheme = ThemeStore(root.context).resolve()) {
+    fun apply(root: View, theme: AppTheme = ThemeStore(root.context).resolve(root.context)) {
         walk(root, theme, force = true)
     }
 
     /** Call after show(); Dialog windows are separate from the Activity content tree. */
     @JvmStatic
     fun apply(dialog: Dialog) {
-        val theme = ThemeStore(dialog.context).resolve()
+        val theme = ThemeStore(dialog.context).resolve(dialog.context)
         dialog.window?.let { window ->
             // Sheets need transparent window space outside their themed content and existing scrim.
             window.setBackgroundDrawable(ColorDrawable(if (dialog is BottomSheetDialog) Color.TRANSPARENT else theme.surface))
@@ -165,7 +165,7 @@ object ThemeApplier {
 
     private class Registration(val app: Application) : Application.ActivityLifecycleCallbacks {
         val prefs = app.getSharedPreferences(ThemeStore.PREFS_NAME, Context.MODE_PRIVATE)
-        val store = ThemeStore(prefs)
+        val store = ThemeStore(prefs, app)
         val activities = WeakHashMap<Activity, RootBinding>()
         private var imageUri: String? = null
         private var image: Bitmap? = null
@@ -186,8 +186,9 @@ object ThemeApplier {
 
         fun bind(activity: Activity) {
             if (activity.isDestroyed) return
+            // Live changes only repaint: changing the delegate here would recreate in-flight editors/wizards.
             val content = activity.findViewById<ViewGroup>(android.R.id.content) ?: return
-            val theme = store.resolve()
+            val theme = store.resolve(app)
             val binding = activities[activity]?.takeIf { it.root.get() === content } ?: RootBinding(content, theme).also {
                 activities.remove(activity)?.let(::detach)
                 activities[activity] = it
@@ -567,10 +568,10 @@ object ThemeApplier {
         override fun isEnabled(position: Int) = (source as? ListAdapter)?.isEnabled(position) ?: true
         override fun areAllItemsEnabled() = (source as? ListAdapter)?.areAllItemsEnabled() ?: true
         override fun getView(position: Int, convertView: View?, parent: ViewGroup): View =
-            source.getView(position, convertView, parent).also { apply(it, ThemeStore(context).resolve()) }
+            source.getView(position, convertView, parent).also { apply(it, ThemeStore(context).resolve(context)) }
         override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View =
             source.getDropDownView(position, convertView, parent).also {
-                val theme = ThemeStore(context).resolve()
+                val theme = ThemeStore(context).resolve(context)
                 apply(it, theme)
                 it.setBackgroundColor(theme.surface)
             }

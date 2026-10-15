@@ -98,14 +98,52 @@ is_official_debian_systemd_init() {
 
 install_serial_autologin_getty() {
     target_root="$1"
-    # Serial console must always carry an autologin root shell: on QEMU the app-side
-    # terminal IS /dev/ttyAMA0, and the guest agent shuttles bytes between the bridge
-    # and the serial device. Some distros (openSUSE Leap 16) ship a serial-getty@
-    # template with a hard Requires=dev-ttyAMA0.device dependency; when udev has not
-    # plugged that device unit the getty fails and the serial has NO reader at all —
-    # the user cannot type. So mask the distro template and install a static console
-    # service that agetty-retries on its own, without any .device unit dependency.
-    mkdir -p "$target_root/etc/systemd/system"
+    # /dev/console aliases the strategy's serial tty. A distro console-getty,
+    # generated serial-getty and an older orchestella-console can otherwise all
+    # read it and hang up each other's login sessions. Keep one owner, including
+    # on existing roots where the old project service remains enabled.
+    console_tty="$(kernel_argument console || true)"
+    console_tty="${console_tty%%,*}"
+    case "$console_tty" in
+        ''|ttyAMA0) console_tty=ttyAMA0 ;;
+        hvc0) ;;
+        *) fail serial-console-device-unsupported ;;
+    esac
+    console_units="$target_root/etc/systemd/system"
+    mkdir -p "$console_units/getty.target.wants"
+    # Mask only the console alias and the two app serial instances, not the
+    # vendor template: unrelated user/distro serial gettys remain available.
+    for console_unit in console-getty.service serial-getty@ttyAMA0.service serial-getty@hvc0.service; do
+        ln -sf /dev/null "$console_units/$console_unit" || fail serial-console-mask
+    done
+    cat > "$console_units/orchestella-console.service" <<EOF
+[Unit]
+Description=Orchestella Owner Serial Console (autologin root)
+After=systemd-user-sessions.service
+Before=getty.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=idle
+ExecStart=-/sbin/agetty --autologin root --noclear $console_tty 115200,38400,9600 vt220
+Restart=always
+RestartSec=2s
+StandardInput=tty
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/$console_tty
+TTYReset=yes
+TTYVHangup=yes
+SendSIGHUP=yes
+
+[Install]
+WantedBy=getty.target
+EOF
+    chmod 0644 "$console_units/orchestella-console.service"
+    # No dev-*.device dependency: agetty retries if udev has not announced the
+    # tty yet, instead of leaving this instance without a console reader.
+    ln -sf /etc/systemd/system/orchestella-console.service \
+        "$console_units/getty.target.wants/orchestella-console.service" || fail serial-console-enable
 
     mkdir -p "$target_root/etc/systemd/system/serial-getty@ttyAMA0.service.d"
     cat > "$target_root/etc/systemd/system/serial-getty@ttyAMA0.service.d/autologin.conf" <<'EOF'

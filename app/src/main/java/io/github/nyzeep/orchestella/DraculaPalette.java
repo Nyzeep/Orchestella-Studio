@@ -106,10 +106,10 @@ public final class DraculaPalette {
      */
     public static int get256(int index) {
         if (index < 0 || index > 255) {
-            return FOREGROUND;
+            return themedForeground();
         }
         if (index < 16) {
-            return ANSI_16[index];
+            return getAnsi16(index);
         }
         if (index < 232) {
             int cubeIndex = index - 16;

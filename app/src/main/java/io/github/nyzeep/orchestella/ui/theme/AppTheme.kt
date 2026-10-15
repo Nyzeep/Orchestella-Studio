@@ -24,6 +24,8 @@ data class AppTheme(
     val terminalForeground: Int,
     val ansi: List<Int>,
 ) {
+    val selectionLabel: String get() = "$displayName · ${if (isDark) "暗" else "亮"}"
+
     companion object {
         const val CUSTOM_ID = "custom"
     }

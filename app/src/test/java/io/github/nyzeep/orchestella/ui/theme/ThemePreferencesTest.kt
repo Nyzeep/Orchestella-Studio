@@ -1,12 +1,144 @@
 package io.github.nyzeep.orchestella.ui.theme
 
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.SharedPreferences
+import android.content.res.Configuration
+import android.content.res.Resources
 import io.github.nyzeep.orchestella.FakeSharedPreferences
 import io.github.nyzeep.orchestella.SettingsManager
 import org.junit.Assert.*
 import org.junit.Test
 
 class ThemePreferencesTest {
+    @Test fun liveSystemModeReadsApplicationConfigurationInsteadOfActivityNightOverride() {
+        val prefs = FakeSharedPreferences()
+        prefs.edit().putString(ThemeStore.KEY_THEME_ID, ThemeCatalog.github.id).apply()
+        val store = ThemeStore(prefs)
+        val system = ModeContext(isDark = true)
+        val activity = ModeContext(isDark = false, system = system)
+        assertEquals(ThemeCatalog.github, store.resolve(activity))
+        system.modeConfiguration.uiMode = Configuration.UI_MODE_NIGHT_NO
+        assertEquals(ThemeCatalog.githubLight, store.resolve(activity))
+        assertEquals("live resolution must not read the Activity's creation-time override", 0, activity.resourceReads)
+    }
+
+    @Test fun returningToSystemModeUsesExternalSystemOnTheSameContextWithoutResettingPreferences() {
+        val store = ThemeStore(FakeSharedPreferences())
+        val system = ModeContext(isDark = true)
+        val activity = ModeContext(isDark = false, system = system)
+        store.setThemeId(ThemeCatalog.claudeLight.id)
+        store.setTerminalFontSizeSp(18)
+        store.setCustomAccent(0xFF123456.toInt())
+        assertFalse(store.resolve(activity).isDark)
+        store.setMode(ThemeStore.Mode.SYSTEM)
+        val resolved = store.resolve(activity)
+        assertTrue(resolved.isDark)
+        assertEquals(ThemeCatalog.claudeDark.terminalBackground, resolved.terminalBackground)
+        assertEquals(0xFF123456.toInt(), resolved.primary)
+        assertEquals(18, store.terminalFontSizeSp())
+        assertEquals(ThemeCatalog.claudeLight.id, store.themeId())
+        assertEquals(0, activity.resourceReads)
+    }
+
+    @Test fun selectingLightPresetOverridesDarkSystemForTerminalAndPageActions() {
+        val store = ThemeStore(FakeSharedPreferences())
+        store.setThemeId(ThemeCatalog.constructivistAmberLight.id)
+        val resolved = store.resolveForMode(true)
+        assertEquals("selected light terminal survives a dark system", ThemeCatalog.constructivistAmberLight.terminalBackground,
+            resolved.terminalBackground)
+        assertEquals("preset and page actions share light primary", ThemeCatalog.constructivistAmberLight.primary,
+            resolved.primary)
+        assertFalse(resolved.isDark)
+    }
+
+    @Test fun selectingDarkPresetOverridesLightSystemAndPreservesItsAnsiPalette() {
+        val store = ThemeStore(FakeSharedPreferences())
+        store.setThemeId(ThemeCatalog.github.id)
+        val resolved = store.resolveForMode(false)
+        assertEquals(ThemeCatalog.github.terminalBackground, resolved.terminalBackground)
+        assertEquals(ThemeCatalog.github.primary, resolved.primary)
+        assertEquals(ThemeCatalog.github.ansi, resolved.ansi)
+        assertTrue(resolved.isDark)
+    }
+
+    @Test fun legacyAndUnknownModePreferencesFollowSystemWithoutRewritingSavedTheme() {
+        val prefs = FakeSharedPreferences()
+        prefs.edit().putString(ThemeStore.KEY_THEME_ID, ThemeCatalog.github.id).apply()
+        val store = ThemeStore(prefs)
+        assertEquals(ThemeStore.Mode.SYSTEM, store.mode())
+        assertEquals(ThemeCatalog.githubLight, store.resolveForMode(false))
+        assertEquals(ThemeCatalog.github, store.resolveForMode(true))
+        assertFalse(prefs.contains(ThemeStore.KEY_THEME_MODE))
+        prefs.edit().putString(ThemeStore.KEY_THEME_MODE, "obsolete-mode").apply()
+        assertEquals(ThemeStore.Mode.SYSTEM, store.mode())
+        assertEquals(ThemeCatalog.githubLight, store.resolveForMode(false))
+        assertEquals("obsolete-mode", prefs.getString(ThemeStore.KEY_THEME_MODE, null))
+        assertEquals(ThemeCatalog.github.id, store.themeId())
+    }
+
+    @Test fun everyPresetCanOverrideEitherSystemModeAndReturnToFollowingSystem() {
+        for (preset in ThemeCatalog.all) {
+            val prefs = FakeSharedPreferences()
+            val store = ThemeStore(prefs)
+            store.setThemeId(preset.id)
+            assertEquals(preset, store.resolveForMode(true))
+            assertEquals(preset, store.resolveForMode(false))
+            assertEquals(if (preset.isDark) ThemeStore.Mode.DARK else ThemeStore.Mode.LIGHT, store.mode())
+            val restored = ThemeStore(prefs)
+            assertEquals(preset, restored.resolveForMode(!preset.isDark))
+            restored.setMode(ThemeStore.Mode.SYSTEM)
+            for (systemDark in listOf(false, true)) {
+                assertEquals(ThemeCatalog.resolveForMode(preset.id, systemDark), restored.resolveForMode(systemDark))
+            }
+            assertEquals(preset.id, restored.themeId())
+        }
+    }
+
+    @Test fun changingOnlyModePreservesCustomColorsWallpaperTypographyAndInstancePreferences() {
+        val prefs = FakeSharedPreferences()
+        val store = ThemeStore(prefs)
+        store.setThemeId(ThemeCatalog.catppuccin.id)
+        store.setCustomAccent(0xFF123456.toInt())
+        store.setCustomText(0xFF654321.toInt())
+        store.setBackgroundUri("content://test/images/42")
+        store.setTerminalFontSizeSp(18)
+        store.setTerminalLetterSpacingEm(0.10f)
+        store.setTerminalLineSpacingPx(3f)
+        SettingsManager(prefs).lastActiveInstanceId = "keep-instance"
+        for (mode in ThemeStore.Mode.entries) {
+            store.setMode(mode)
+            for (systemDark in listOf(false, true)) {
+                val resolved = store.resolveForMode(systemDark)
+                assertEquals(0xFF123456.toInt(), resolved.primary)
+                assertEquals(0xFF654321.toInt(), resolved.text)
+                assertEquals(resolved.text, resolved.terminalForeground)
+                assertEquals(if (resolved.isDark) ThemeCatalog.catppuccin.ansi else ThemeCatalog.catppuccinLatte.ansi, resolved.ansi)
+                assertEquals(if (mode == ThemeStore.Mode.SYSTEM) systemDark else mode == ThemeStore.Mode.DARK, resolved.isDark)
+            }
+            assertEquals(mode, ThemeStore(prefs).mode())
+            assertEquals("content://test/images/42", store.backgroundUri())
+            assertEquals(18, store.terminalFontSizeSp())
+            assertEquals(0.10f, store.terminalLetterSpacingEm(), 0f)
+            assertEquals(3f, store.terminalLineSpacingPx(), 0f)
+            assertEquals("keep-instance", SettingsManager(prefs).lastActiveInstanceId)
+        }
+    }
+
+    @Test fun modeUpdatesNotifyObserversWithTheEffectivePaletteAndCanBeRemoved() {
+        val prefs = ObservablePreferences()
+        val store = ThemeStore(prefs)
+        store.setThemeId(ThemeCatalog.claudeDark.id)
+        val snapshots = mutableListOf<AppTheme>()
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> snapshots += store.resolveForMode(true) }
+        store.addOnThemeChangeListener(listener)
+        store.setMode(ThemeStore.Mode.LIGHT)
+        assertEquals(listOf(ThemeCatalog.claudeLight), snapshots)
+        store.removeOnThemeChangeListener(listener)
+        store.setMode(ThemeStore.Mode.DARK)
+        assertEquals(1, snapshots.size)
+    }
+
     @Test fun freshAndUnknownThemeIdsUseCatalogDefaultWithoutRewritingUserData() {
         val prefs = FakeSharedPreferences()
         assertEquals(ThemeCatalog.constructivistWorkstation, ThemeStore(prefs).resolve())
@@ -122,6 +254,23 @@ class ThemePreferencesTest {
         settings.removeOnSettingsChangeListener(listener)
         settings.isTerminalCursorBlinkEnabled = true
         assertEquals(1, changes.size)
+    }
+
+    /** Only the configuration boundary is faked; tests execute the real resolve(Context) path. */
+    @Suppress("DEPRECATION")
+    private class ModeContext(isDark: Boolean, private val system: Context? = null) : ContextWrapper(null) {
+        val modeConfiguration = Configuration().apply {
+            uiMode = if (isDark) Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO
+        }
+        var resourceReads = 0
+        private val modeResources = object : Resources(null, null, null) {
+            override fun getConfiguration(): Configuration = modeConfiguration
+        }
+        override fun getApplicationContext(): Context = system ?: this
+        override fun getResources(): Resources {
+            resourceReads++
+            return modeResources
+        }
     }
 
     /** Exercises the registration seam without an emulator, Robolectric or Android Context. */

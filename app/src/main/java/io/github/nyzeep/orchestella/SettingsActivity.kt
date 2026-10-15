@@ -98,11 +98,17 @@ class SettingsActivity : AppCompatActivity() {
     private fun refreshAppearance() {
         val theme = themeStore.resolve()
         findViewById<TextView>(R.id.txt_settings_theme_summary).text =
-            "${theme.displayName} · ${if (theme.isDark) "深色" else "浅色"} · 立即应用到全部页面"
+            "${theme.selectionLabel} · ${themeStore.mode().displayName} · 立即应用到全部页面"
+        findViewById<MaterialButton>(R.id.btn_pick_theme_mode).text = "明暗模式：${themeStore.mode().displayName}"
         findViewById<TextView>(R.id.txt_settings_terminal_palette).text =
             "配色：${theme.displayName}\n等宽字体与 16 色 ANSI 调色板跟随主题"
         findViewById<MaterialButton>(R.id.btn_clear_background).isEnabled = themeStore.backgroundUri() != null
         ThemeApplier.bind(this)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::themeStore.isInitialized) refreshAppearance()
     }
 
     override fun onDestroy() {
@@ -125,7 +131,9 @@ class SettingsActivity : AppCompatActivity() {
 
         findViewById<TextView>(R.id.txt_settings_version)?.text = "版本：v${BuildConfig.VERSION_NAME}"
         toolbar.navigationContentDescription = "返回"
+        ThemeApplier.setRole(btnSpeedTest, ThemeApplier.Role.PRIMARY_ACTION)
         ThemeApplier.setRole(btnResetMirror, ThemeApplier.Role.SECONDARY_ACTION)
+        ThemeApplier.setRole(findViewById(R.id.btn_pick_theme_mode), ThemeApplier.Role.SECONDARY_ACTION)
         ThemeApplier.setRole(findViewById(R.id.btn_clear_background), ThemeApplier.Role.SECONDARY_ACTION)
     }
 
@@ -252,10 +260,23 @@ class SettingsActivity : AppCompatActivity() {
         }
         refreshLabels()
 
+        findViewById<MaterialButton>(R.id.btn_pick_theme_mode).setOnClickListener {
+            val modes = ThemeStore.Mode.entries
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("明暗模式")
+                .setSingleChoiceItems(modes.map { it.displayName }.toTypedArray(), themeStore.mode().ordinal) { dialog, which ->
+                    themeStore.setMode(modes[which])
+                    dialog.dismiss()
+                    refreshAppearance()
+                }
+                .setNegativeButton("取消", null)
+                .show().also(ThemeApplier::apply)
+        }
+
         btnPickTheme.setOnClickListener {
             val themes = ThemeCatalog.all
-            val names = themes.map { it.displayName + if (it.isDark) " · 暗" else " · 亮" }.toTypedArray()
-            val current = themes.indexOfFirst { it.id == themeStore.themeId() }
+            val names = themes.map { it.selectionLabel }.toTypedArray()
+            val current = themes.indexOfFirst { it.id == themeStore.resolve().id }
             androidx.appcompat.app.AlertDialog.Builder(this)
                 .setTitle("选择主题")
                 .setSingleChoiceItems(names, current) { dialog, which ->
@@ -263,7 +284,7 @@ class SettingsActivity : AppCompatActivity() {
                     refreshLabels()
                     refreshAppearance()
                     dialog.dismiss()
-                    Toast.makeText(this, "主题：${themes[which].displayName}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "主题：${themes[which].selectionLabel}", Toast.LENGTH_SHORT).show()
                 }
                 .setNegativeButton("取消", null)
                 .show().also(ThemeApplier::apply)

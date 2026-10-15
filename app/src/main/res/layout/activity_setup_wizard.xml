@@ -326,11 +326,12 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:orientation="horizontal"
+                            android:baselineAligned="false"
                             android:layout_marginTop="8dp">
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btn_disk_4g"
-                                style="@style/Widget.Material3.Button.OutlinedButton"
+                                style="@style/Widget.Orchestella.DiskPreset"
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
@@ -340,7 +341,7 @@
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btn_disk_8g"
-                                style="@style/Widget.Material3.Button.OutlinedButton"
+                                style="@style/Widget.Orchestella.DiskPreset"
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
@@ -350,7 +351,7 @@
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btn_disk_16g"
-                                style="@style/Widget.Material3.Button.OutlinedButton"
+                                style="@style/Widget.Orchestella.DiskPreset"
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
@@ -360,7 +361,7 @@
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btn_disk_32g"
-                                style="@style/Widget.Material3.Button.OutlinedButton"
+                                style="@style/Widget.Orchestella.DiskPreset"
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"

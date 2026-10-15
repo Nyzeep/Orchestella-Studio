@@ -8,6 +8,10 @@ import androidx.appcompat.app.AppCompatDelegate
 
 /** One persistent appearance source, also usable with in-memory preferences in JVM tests. */
 class ThemeStore(private val prefs: SharedPreferences, private val context: Context? = null) {
+    enum class Mode(val value: String, val displayName: String) {
+        SYSTEM("system", "跟随系统"), LIGHT("light", "浅色"), DARK("dark", "深色")
+    }
+
     constructor(context: Context) : this(
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE),
         context.applicationContext
@@ -18,16 +22,28 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
     /** Missing/obsolete ids resolve through the catalog, without overwriting saved preferences. */
     fun themeId(): String = ThemeCatalog.resolve(prefs.getString(KEY_THEME_ID, null)).id
 
-    /** Choosing a preset replaces color overrides atomically; wallpaper and typography stay saved. */
+    /** Choosing a labeled light/dark preset also selects its mode, atomically with its colors. */
     fun setThemeId(id: String) {
         val theme = ThemeCatalog.byId(id) ?: return
         prefs.edit().putString(KEY_THEME_ID, theme.id)
+            .putString(KEY_THEME_MODE, if (theme.isDark) Mode.DARK.value else Mode.LIGHT.value)
             .remove(KEY_CUSTOM_ACCENT).remove(KEY_CUSTOM_TEXT).apply()
     }
 
-    /** Follows system dark/light configuration dynamically. */
+    /** Existing preferences retain their follow-system behavior until the user makes a selection. */
+    fun mode(): Mode = Mode.entries.firstOrNull { it.value == prefs.getString(KEY_THEME_MODE, null) } ?: Mode.SYSTEM
+
+    fun setMode(mode: Mode) {
+        prefs.edit().putString(KEY_THEME_MODE, mode.value).apply()
+    }
+
+    /** Creation-time only (ThemeApplier.prepare); live changes repaint without recreating Activities. */
     fun applyNightMode(activity: AppCompatActivity) {
-        activity.delegate.localNightMode = AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+        activity.delegate.localNightMode = when (mode()) {
+            Mode.SYSTEM -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+            Mode.LIGHT -> AppCompatDelegate.MODE_NIGHT_NO
+            Mode.DARK -> AppCompatDelegate.MODE_NIGHT_YES
+        }
     }
 
     fun customAccent(): Int? =
@@ -90,13 +106,27 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
 
     @JvmOverloads
     fun resolve(callerContext: Context? = this.context): AppTheme {
-        val base = if (callerContext != null) {
-            val uiMode = callerContext.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
-            val isDark = uiMode == android.content.res.Configuration.UI_MODE_NIGHT_YES
-            ThemeCatalog.resolveForMode(themeId(), isDark)
+        val systemDark = if (callerContext == null) {
+            ThemeCatalog.resolve(themeId()).isDark
         } else {
-            ThemeCatalog.resolve(themeId())
+            // Activity/dialog resources may retain a creation-time localNightMode override.
+            val uiMode = callerContext.applicationContext.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
+            uiMode == android.content.res.Configuration.UI_MODE_NIGHT_YES
         }
+        return resolveForMode(systemDark)
+    }
+
+    /** Android-free mode seam shared by chrome, terminal rendering and preferences tests. */
+    fun resolveForMode(systemDark: Boolean): AppTheme {
+        val isDark = when (mode()) {
+            Mode.SYSTEM -> systemDark
+            Mode.LIGHT -> false
+            Mode.DARK -> true
+        }
+        return withOverrides(ThemeCatalog.resolveForMode(themeId(), isDark))
+    }
+
+    private fun withOverrides(base: AppTheme): AppTheme {
         val accent = customAccent()
         val text = customText()
         if (accent == null && text == null) return base
@@ -120,6 +150,7 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
     companion object {
         const val PREFS_NAME = "orchestella_theme"
         const val KEY_THEME_ID = "theme_id"
+        const val KEY_THEME_MODE = "theme_mode"
         const val KEY_CUSTOM_ACCENT = "custom_accent"
         const val KEY_CUSTOM_TEXT = "custom_text"
         const val KEY_BACKGROUND_URI = "background_uri"

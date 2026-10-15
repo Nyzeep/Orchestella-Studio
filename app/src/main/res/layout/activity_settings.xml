@@ -463,10 +463,23 @@
                         android:textColor="?attr/colorOnSurfaceVariant" />
 
                     <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_pick_theme_mode"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:minHeight="48dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        app:cornerRadius="0dp"
+                        android:text="明暗模式：跟随系统"
+                        android:textSize="13sp" />
+
+                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_pick_theme"
                         style="@style/Widget.Material3.Button.TonalButton"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
                         android:minHeight="48dp"
                         android:insetTop="0dp"
                         android:insetBottom="0dp"
