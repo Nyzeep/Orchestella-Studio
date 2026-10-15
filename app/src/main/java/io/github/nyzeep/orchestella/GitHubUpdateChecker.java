@@ -1,9 +1,11 @@
 package io.github.nyzeep.orchestella;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
@@ -19,7 +21,7 @@ import java.util.Objects;
  */
 public final class GitHubUpdateChecker {
     public static final String DEFAULT_RELEASES_API_URL =
-            "https://api.github.com/repos/Nyzeep/Orchestella-Studio/releases/latest";
+            ReleaseSelector.RELEASES_API + "?per_page=" + ReleaseSelector.MAX_RELEASES;
 
     public enum Status {
         DISABLED,
@@ -85,125 +87,105 @@ public final class GitHubUpdateChecker {
         }
     }
 
+    @FunctionalInterface
+    interface ConnectionFactory {
+        HttpURLConnection open(URL url) throws IOException;
+    }
+
     private final String apiUrl;
     private final SettingsManager settings;
+    private final boolean developmentPreview;
+    private final ConnectionFactory connections;
 
     public GitHubUpdateChecker(SettingsManager settings) {
         this(DEFAULT_RELEASES_API_URL, settings);
     }
 
+    /** Retains the constructor signature; unapproved endpoints are refused before opening a connection. */
     public GitHubUpdateChecker(String apiUrl, SettingsManager settings) {
-        this.apiUrl = Objects.requireNonNull(apiUrl, "apiUrl");
-        this.settings = Objects.requireNonNull(settings, "settings");
+        this(apiUrl, settings, BuildConfig.DEVELOPMENT_PREVIEW,
+                url -> (HttpURLConnection) url.openConnection());
     }
 
-    /**
-     * Checks for updates against GitHub Releases.
-     *
-     * @param currentVersion current application version name (e.g. "0.1.0-dev")
-     * @return UpdateResult containing version info or error
-     */
+    // Test seam replaces only connection creation; the real HTTP/JSON/selection path still executes.
+    GitHubUpdateChecker(String apiUrl, SettingsManager settings, boolean developmentPreview, ConnectionFactory connections) {
+        this.apiUrl = Objects.requireNonNull(apiUrl, "apiUrl");
+        this.settings = Objects.requireNonNull(settings, "settings");
+        this.developmentPreview = developmentPreview;
+        this.connections = Objects.requireNonNull(connections, "connections");
+    }
+
+    public static ReleaseSelector.Channel channelForVersion(String currentVersion) {
+        return ReleaseSelector.channelForBuild(currentVersion, BuildConfig.DEVELOPMENT_PREVIEW);
+    }
+
+    /** Checks only when invoked. No scheduling, installation, download or background retry. */
     public UpdateResult checkForUpdate(String currentVersion) {
         return checkForUpdate(currentVersion, false);
     }
 
+    /** force is reserved for an explicit user action, preserving the existing About behavior. */
     public UpdateResult checkForUpdate(String currentVersion, boolean force) {
-        if (!force && !settings.isUpdateCheckEnabled()) {
-            return UpdateResult.disabled();
-        }
+        if (!force && !settings.isUpdateCheckEnabled()) return UpdateResult.disabled();
+        if (SemVer.parseTag(currentVersion) == null) return UpdateResult.error("当前版本号无效，无法安全比较更新");
+        if (!DEFAULT_RELEASES_API_URL.equals(apiUrl)) return UpdateResult.error("更新来源不在允许的 GitHub 仓库范围内");
 
         HttpURLConnection connection = null;
         try {
-            URL url = new URL(apiUrl);
-            connection = (HttpURLConnection) url.openConnection();
+            connection = connections.open(new URL(apiUrl));
             connection.setRequestMethod("GET");
-            connection.setRequestProperty("User-Agent", "Orchestella-Studio-Android/" + (currentVersion != null ? currentVersion : "1.0"));
-            connection.setRequestProperty("Accept", "application/vnd.github.v3+json");
+            connection.setRequestProperty("User-Agent", "Orchestella-Studio-Android/" + currentVersion);
+            connection.setRequestProperty("Accept", "application/vnd.github+json");
             connection.setConnectTimeout(10_000);
             connection.setReadTimeout(10_000);
-            connection.setInstanceFollowRedirects(true);
+            connection.setUseCaches(false);
+            connection.setInstanceFollowRedirects(false);
 
             int responseCode = connection.getResponseCode();
-            if (responseCode != HttpURLConnection.HTTP_OK) {
-                return UpdateResult.error("GitHub API 返回状态码 " + responseCode);
+            if (responseCode != HttpURLConnection.HTTP_OK) return UpdateResult.error("GitHub API 返回状态码 " + responseCode);
+            String links = connection.getHeaderField("Link");
+            if (links != null && links.contains("rel=\"next\"")) {
+                return UpdateResult.error("发布列表超出检查范围，请在 GitHub Releases 页面手动查看");
             }
-
-            StringBuilder sb = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    sb.append(line).append('\n');
-                }
+            if (connection.getContentLengthLong() > ReleaseSelector.MAX_RESPONSE_BYTES) {
+                return UpdateResult.error("发布列表超出检查范围");
             }
-
-            String responseBody = sb.toString();
-            String tagName = extractStringField(responseBody, "tag_name");
-            String releaseNotes = extractStringField(responseBody, "body");
-            String releaseUrl = extractStringField(responseBody, "html_url");
-
-            String cleanRemote = tagName.startsWith("v") ? tagName.substring(1) : tagName;
-            String cleanCurrent = currentVersion != null && currentVersion.startsWith("v")
-                    ? currentVersion.substring(1)
-                    : (currentVersion != null ? currentVersion : "");
-
-            if (!cleanRemote.isBlank() && isNewerVersion(cleanRemote, cleanCurrent)) {
-                return UpdateResult.updateAvailable(tagName, releaseNotes, releaseUrl);
-            } else {
-                return UpdateResult.upToDate(tagName.isBlank() ? currentVersion : tagName);
+            ReleaseSelector.Channel channel = ReleaseSelector.channelForBuild(currentVersion, developmentPreview);
+            String responseBody = readResponse(connection);
+            ReleaseSelector.Release release;
+            try {
+                release = ReleaseSelector.select(responseBody, currentVersion, channel);
+            } catch (IllegalArgumentException ex) {
+                // Only selector diagnostics are fixed local messages; transport errors are not.
+                return UpdateResult.error(ex.getMessage());
             }
+            return release == null ? UpdateResult.upToDate(currentVersion)
+                    : UpdateResult.updateAvailable(release.tag(), release.notes(), release.pageUrl());
         } catch (Exception ex) {
-            return UpdateResult.error("检查更新失败: " + ex.getMessage());
+            // Transport errors may contain an untrusted URL/body; keep diagnostics content-free.
+            return UpdateResult.error("检查更新失败，请稍后手动重试");
         } finally {
-            if (connection != null) {
-                connection.disconnect();
+            if (connection != null) connection.disconnect();
+        }
+    }
+
+    private static String readResponse(HttpURLConnection connection) throws IOException {
+        try (InputStream input = connection.getInputStream(); ByteArrayOutputStream bytes = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[8192];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                if (count > ReleaseSelector.MAX_RESPONSE_BYTES - bytes.size()) {
+                    throw new IllegalArgumentException("发布列表超出检查范围");
+                }
+                bytes.write(buffer, 0, count);
             }
+            return StandardCharsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(bytes.toByteArray())).toString();
         }
     }
 
     static boolean isNewerVersion(String remote, String current) {
-        if (remote.isBlank()) {
-            return false;
-        }
-        if (current.isBlank()) {
-            return true;
-        }
-        // Dev versions always show update when a formal release tag exists
-        if (current.contains("-dev")) {
-            return true;
-        }
-        return !remote.equalsIgnoreCase(current);
-    }
-
-    static String extractStringField(String json, String field) {
-        if (json == null || field == null) {
-            return "";
-        }
-        String pattern = "\"" + field + "\"\\s*:\\s*\"";
-        java.util.regex.Pattern p = java.util.regex.Pattern.compile(pattern);
-        java.util.regex.Matcher m = p.matcher(json);
-        if (!m.find()) {
-            return "";
-        }
-        int start = m.end();
-        StringBuilder sb = new StringBuilder();
-        boolean escape = false;
-        for (int i = start; i < json.length(); i++) {
-            char c = json.charAt(i);
-            if (escape) {
-                if (c == 'n') sb.append('\n');
-                else if (c == 'r') sb.append('\r');
-                else if (c == 't') sb.append('\t');
-                else sb.append(c);
-                escape = false;
-            } else if (c == '\\') {
-                escape = true;
-            } else if (c == '"') {
-                break;
-            } else {
-                sb.append(c);
-            }
-        }
-        return sb.toString();
+        SemVer candidate = SemVer.parseTag(remote);
+        SemVer installed = SemVer.parseTag(current);
+        return candidate != null && installed != null && candidate.compareTo(installed) > 0;
     }
 }

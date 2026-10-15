@@ -115,9 +115,11 @@ class AboutActivity : AppCompatActivity() {
         }
 
         val btnCheckUpdates = findViewById<MaterialButton>(R.id.btn_check_updates)
+        val updateChannel = GitHubUpdateChecker.channelForVersion(BuildConfig.VERSION_NAME).label()
+        btnCheckUpdates?.text = "立即检测更新 · $updateChannel"
         btnCheckUpdates?.setOnClickListener {
             btnCheckUpdates.isEnabled = false
-            btnCheckUpdates.text = "正在检测新版本..."
+            btnCheckUpdates.text = "正在检测新版本 · $updateChannel..."
             val settings = SettingsManager(this)
             val checker = GitHubUpdateChecker(settings)
             Executors.newSingleThreadExecutor().execute {
@@ -125,12 +127,12 @@ class AboutActivity : AppCompatActivity() {
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
                     btnCheckUpdates.isEnabled = true
-                    btnCheckUpdates.text = "🔄 立即检测更新"
+                    btnCheckUpdates.text = "立即检测更新 · $updateChannel"
                     when (result.status()) {
                         GitHubUpdateChecker.Status.UPDATE_AVAILABLE -> {
                             androidx.appcompat.app.AlertDialog.Builder(this)
                                 .setTitle("发现新版本 (${result.latestVersion()})")
-                                .setMessage("当前安装版本：v${BuildConfig.VERSION_NAME}\n最新可用版本：${result.latestVersion()}\n\n更新日志：\n${result.releaseNotes() ?: "无详细说明"}")
+                                .setMessage("$updateChannel\n当前安装版本：v${BuildConfig.VERSION_NAME}\n最新可用版本：${result.latestVersion()}\n\n更新日志：\n${result.releaseNotes() ?: "无详细说明"}")
                                 .setPositiveButton("前往下载") { _, _ ->
                                     openUrl(result.releaseUrl() ?: "$PROJECT_REPO_URL/releases")
                                 }
@@ -138,12 +140,12 @@ class AboutActivity : AppCompatActivity() {
                                 .show()
                         }
                         GitHubUpdateChecker.Status.UP_TO_DATE -> {
-                            Toast.makeText(this, "当前已是最新版本 (v${BuildConfig.VERSION_NAME})", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(this, "$updateChannel：当前已是最新版本 (v${BuildConfig.VERSION_NAME})", Toast.LENGTH_SHORT).show()
                         }
                         else -> {
                             androidx.appcompat.app.AlertDialog.Builder(this)
                                 .setTitle("检查更新结果")
-                                .setMessage((result.errorMessage() ?: "无法获取版本信息") + "\n\n您可以直接前往 GitHub 仓库 Releases 页面手动查看与获取最新构建。")
+                                .setMessage("$updateChannel\n" + (result.errorMessage() ?: "无法获取版本信息") + "\n\n您可以直接前往 GitHub 仓库 Releases 页面手动查看与获取最新构建。")
                                 .setPositiveButton("访问 Releases 页面") { _, _ ->
                                     openUrl("$PROJECT_REPO_URL/releases")
                                 }

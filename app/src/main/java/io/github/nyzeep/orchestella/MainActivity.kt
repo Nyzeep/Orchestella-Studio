@@ -1856,7 +1856,8 @@ class MainActivity : AppCompatActivity() {
             }
         }
         val updateDesc = TextView(this).apply {
-            text = getString(R.string.settings_update_check_desc)
+            text = getString(R.string.settings_update_check_desc) + "\n" +
+                GitHubUpdateChecker.channelForVersion(BuildConfig.VERSION_NAME).label()
             setTextAppearance(android.R.style.TextAppearance_Material_Caption)
             setPadding(20, 0, 0, 16)
         }
@@ -1923,32 +1924,29 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, R.string.update_checking, Toast.LENGTH_SHORT).show()
         operations.execute {
             val checker = GitHubUpdateChecker(settingsManager)
-            val versionName = try {
-                packageManager.getPackageInfo(packageName, 0).versionName
-            } catch (_: Exception) {
-                "0.1.0-dev"
-            }
+            val versionName = BuildConfig.VERSION_NAME
+            val updateChannel = GitHubUpdateChecker.channelForVersion(versionName).label()
             val result = checker.checkForUpdate(versionName)
             runOnUiThread {
                 when (result.status()) {
                     GitHubUpdateChecker.Status.DISABLED -> {
                         AlertDialog.Builder(this)
                             .setTitle(R.string.settings_update_check)
-                            .setMessage(R.string.update_disabled_msg)
+                            .setMessage("$updateChannel\n" + getString(R.string.update_disabled_msg))
                             .setPositiveButton(R.string.credentials_close, null)
                             .show().also { ThemeApplier.apply(it) }
                     }
                     GitHubUpdateChecker.Status.UP_TO_DATE -> {
                         AlertDialog.Builder(this)
                             .setTitle(R.string.settings_update_check)
-                            .setMessage(getString(R.string.update_up_to_date, result.latestVersion() ?: versionName))
+                            .setMessage("$updateChannel\n" + getString(R.string.update_up_to_date, result.latestVersion() ?: versionName))
                             .setPositiveButton(R.string.credentials_close, null)
                             .show().also { ThemeApplier.apply(it) }
                     }
                     GitHubUpdateChecker.Status.UPDATE_AVAILABLE -> {
                         AlertDialog.Builder(this)
                             .setTitle(getString(R.string.update_available_title, result.latestVersion()))
-                            .setMessage(getString(R.string.update_available_msg, result.releaseNotes()))
+                            .setMessage("$updateChannel\n" + getString(R.string.update_available_msg, result.releaseNotes()))
                             .setPositiveButton(R.string.update_open_browser) { _, _ ->
                                 if (result.releaseUrl() != null) {
                                     val intent = Intent(
@@ -1962,7 +1960,7 @@ class MainActivity : AppCompatActivity() {
                             .show().also { ThemeApplier.apply(it) }
                     }
                     GitHubUpdateChecker.Status.ERROR -> {
-                        Toast.makeText(this, result.errorMessage() ?: "检查失败", Toast.LENGTH_LONG).show()
+                        Toast.makeText(this, "$updateChannel：" + (result.errorMessage() ?: "检查失败"), Toast.LENGTH_LONG).show()
                     }
                 }
             }
