@@ -32,9 +32,11 @@ public class OrchestellaForegroundService extends Service {
     public static final String EXTRA_DISTRO_TITLE = "extra_distro_title";
     public static final String EXTRA_PERFORMANCE_BADGE = "extra_performance_badge";
     public static final String EXTRA_BATTERY_POLICY = "extra_battery_policy";
+    public static final String EXTRA_SESSION_GENERATION = "extra_session_generation";
 
     private PowerManager.WakeLock wakeLock;
     private String currentInstanceId;
+    private final ForegroundSessionBinding binding = new ForegroundSessionBinding();
 
     public static void start(
             Context context,
@@ -42,8 +44,14 @@ public class OrchestellaForegroundService extends Service {
             String distroTitle,
             String performanceBadge,
             BatteryPolicy policy) {
+        start(context, instanceId, distroTitle, performanceBadge, policy, null);
+    }
+
+    public static void start(Context context, String instanceId, String distroTitle,
+            String performanceBadge, BatteryPolicy policy, String generation) {
         Intent intent = new Intent(context, OrchestellaForegroundService.class);
         intent.setAction(ACTION_START);
+        intent.putExtra(EXTRA_SESSION_GENERATION, generation);
         intent.putExtra(EXTRA_INSTANCE_ID, instanceId);
         intent.putExtra(EXTRA_DISTRO_TITLE, distroTitle);
         intent.putExtra(EXTRA_PERFORMANCE_BADGE, performanceBadge);
@@ -56,8 +64,14 @@ public class OrchestellaForegroundService extends Service {
     }
 
     public static void stop(Context context) {
+        stop(context, null, null);
+    }
+
+    public static void stop(Context context, String instanceId, String generation) {
         Intent intent = new Intent(context, OrchestellaForegroundService.class);
         intent.setAction(ACTION_STOP);
+        intent.putExtra(EXTRA_INSTANCE_ID, instanceId);
+        intent.putExtra(EXTRA_SESSION_GENERATION, generation);
         context.startService(intent);
     }
 
@@ -69,13 +83,34 @@ public class OrchestellaForegroundService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent == null || ACTION_STOP.equals(intent.getAction())) {
-            stopRunning();
+        if (intent == null) {
+            if (!binding.isActive()) stopSelfResult(startId);
             return START_NOT_STICKY;
+        }
+        if (ACTION_STOP.equals(intent.getAction())) {
+            if (binding.stop(intent.getStringExtra(EXTRA_INSTANCE_ID),
+                    intent.getStringExtra(EXTRA_SESSION_GENERATION))) {
+                stopRunning();
+            } else if (!binding.isActive()) {
+                // A cold or duplicate STOP must not create a service with no work.
+                stopSelfResult(startId);
+            }
+            return binding.isActive() ? START_STICKY : START_NOT_STICKY;
         }
 
         if (ACTION_START.equals(intent.getAction())) {
-            currentInstanceId = intent.getStringExtra(EXTRA_INSTANCE_ID);
+            String requestedId = intent.getStringExtra(EXTRA_INSTANCE_ID);
+            String generation = intent.getStringExtra(EXTRA_SESSION_GENERATION);
+            if (generation != null && (!InstanceLaunchGuard.isLatest(requestedId, generation)
+                    || (!generation.equals(InstanceLaunchGuard.generation(requestedId))
+                        && !generation.equals(ExecutionSessionRegistry.generation(requestedId,
+                                ExecutionSessionRegistry.get(requestedId)))))) {
+                if (!binding.isActive()) stopSelfResult(startId);
+                return binding.isActive() ? START_STICKY : START_NOT_STICKY;
+            }
+            if (generation == null && binding.isActive()) return START_STICKY;
+            binding.start(requestedId, generation);
+            currentInstanceId = requestedId;
             String distroTitle = intent.getStringExtra(EXTRA_DISTRO_TITLE);
             if (distroTitle == null || distroTitle.isBlank()) {
                 distroTitle = "Linux";

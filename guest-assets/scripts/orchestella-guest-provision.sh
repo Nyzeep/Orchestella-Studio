@@ -68,8 +68,13 @@ report() {
             printf 'ORCHESTELLA_GUEST_PROVISION_DURABILITY_ERROR reason=sync-failed\n' >&2
         fi
     fi
+    # The owned native unit journals progress; recovery/interactive callers inherit
+    # their visible stdout. Never send the same report through both routes.
     printf '%s\n' "$line"
-    if [ -z "$ROOT" ] && [ -w /dev/console ]; then printf '%s\n' "$line" > /dev/console; fi
+    if [ "${ORCHESTELLA_PROVISION_REPORT:-stdout}" = journal ] && [ "$status" = failed ] \
+        && [ -z "$ROOT" ] && [ -w /dev/console ]; then
+        printf '%s\n' "$line" > /dev/console
+    fi
 }
 cleanup() {
     code="$?"

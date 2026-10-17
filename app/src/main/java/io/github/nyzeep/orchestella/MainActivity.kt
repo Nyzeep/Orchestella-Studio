@@ -524,9 +524,9 @@ class MainActivity : AppCompatActivity() {
             else "NOT DECLARED (FEATURE_VIRTUALIZATION=false)"
 
         findViewById<TextView>(R.id.hw_detail_avf_permission)?.text =
-            if (facts.manageVirtualMachinePermission())
-                "GRANTED (android.permission.MANAGE_VIRTUAL_MACHINE)"
-            else "UNAUTHORIZED (Need Shizuku / adb grant)"
+            "MANAGE：${AvfHostFactsProbe.permissionLabel(facts.manageVirtualMachinePermissionState())}\n" +
+                "CUSTOM：${AvfHostFactsProbe.permissionLabel(facts.useCustomVirtualMachinePermissionState())}\n" +
+                getString(R.string.avf_preflight_boundary)
 
         val kvmFile = java.io.File("/dev/kvm")
         findViewById<TextView>(R.id.hw_detail_kvm_node)?.text = when {
@@ -680,6 +680,8 @@ class MainActivity : AppCompatActivity() {
             applyThemeToDashboard()
         }
         if (::instanceStore.isInitialized) {
+            avfReadiness = AvfCapabilityEvaluator.evaluate(AvfHostFactsProbe.probe(this))
+            refreshWizardEntry()
             reconcileOrphanInstances()
             renderSystemStatus(DeviceCapabilityEvaluator.evaluate(deviceProfile()))
             showInstances()
@@ -751,7 +753,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showAvfAuthorizationWizard() {
-        wizardModel = wizardModel!!.start()
+        avfReadiness = AvfCapabilityEvaluator.evaluate(AvfHostFactsProbe.probe(this))
+        val current = AvfAuthorizationWizardModel.fromAssessment(avfReadiness!!)
+        if (!current.canStart()) return
+        wizardModel = current.start()
         showShizukuStep()
     }
 
@@ -759,14 +764,14 @@ class MainActivity : AppCompatActivity() {
         AlertDialog.Builder(this)
             .setTitle(R.string.wizard_title)
             .setMessage(R.string.wizard_shizuku_steps)
-            .setPositiveButton(R.string.wizard_authorization_done) { _, _ -> recheckAuthorization() }
+            .setPositiveButton(R.string.shizuku_client_entry) { _, _ ->
+                ShizukuClientDialog().show(supportFragmentManager, "shizuku-client")
+            }
             .setNeutralButton(R.string.wizard_use_adb) { _, _ ->
                 wizardModel = wizardModel!!.chooseAdbFallback()
                 showAdbStep()
             }
-            .setNegativeButton(R.string.wizard_later) { _, _ ->
-                wizardModel = wizardModel!!.decline()
-            }
+            .setNegativeButton(R.string.wizard_recheck_permissions) { _, _ -> recheckAuthorization() }
             .show().also { ThemeApplier.apply(it) }
     }
 
@@ -804,8 +809,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun recheckAuthorization() {
         val facts = AvfHostFactsProbe.probe(this)
-        val grantedNow = facts.manageVirtualMachinePermission()
-        wizardModel = wizardModel!!.confirmAuthorized(grantedNow)
+        val grantedNow = facts.hasBothVirtualMachinePermissions()
+        wizardModel = wizardModel!!.confirmAuthorized(
+            facts.manageVirtualMachinePermission(), facts.useCustomVirtualMachinePermission())
+        avfReadiness = AvfCapabilityEvaluator.evaluate(facts)
+        refreshWizardEntry()
         if (grantedNow) {
             avfReadiness = AvfCapabilityEvaluator.evaluate(facts)
             refreshWizardEntry()
@@ -1212,18 +1220,23 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun requestInstanceStop(instance: InstanceLifecycle.Instance, force: Boolean) {
+        val requestedSession = ExecutionSessionRegistry.get(instance.id())
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val session = ExecutionSessionRegistry.get(instance.id())
-                    ?: throw IOException("实例已离线")
-                if (force) {
-                    session.terminate()
-                } else {
-                    val client = session.bridgeClient()
-                        ?: throw IOException("控制通道尚未就绪，请在终端执行 poweroff")
-                    if (!client.isReady) throw IOException("Linux 控制通道仍在初始化，请稍后再试")
-                    val result = client.power(io.github.nyzeep.orchestella.runtime.contract.BridgeControl.PowerAction.SHUTDOWN)
-                    if (!result.accepted()) throw IOException("Linux 拒绝关机请求")
+                val session = requestedSession ?: throw IOException("实例已离线")
+                if (ExecutionSessionRegistry.get(instance.id()) !== session) throw IOException("运行会话已变化")
+                val intent = if (force) PersistentTerminalSessionPool.StopIntent.FORCE
+                    else PersistentTerminalSessionPool.StopIntent.GRACEFUL
+                ExecutionSessionRegistry.requestStop(instance.id(), session, intent) {
+                    if (force) {
+                        session.terminate()
+                    } else {
+                        val client = session.bridgeClient()
+                            ?: throw IOException("控制通道尚未就绪，请在终端执行 poweroff")
+                        if (!client.isReady) throw IOException("Linux 控制通道仍在初始化，请稍后再试")
+                        val result = client.power(io.github.nyzeep.orchestella.runtime.contract.BridgeControl.PowerAction.SHUTDOWN)
+                        if (!result.accepted()) throw IOException("Linux 拒绝关机请求")
+                    }
                 }
                 withContext(Dispatchers.Main) {
                     createStatus.text = "关机请求已发送，等待实例退出"
@@ -1461,7 +1474,7 @@ class MainActivity : AppCompatActivity() {
                     continue
                 }
                 if (instance.state() == InstanceLifecycle.State.RUNNING && ExecutionSessionRegistry.get(instance.id()) == null) {
-                    controller.reconcileAfterHostDeath(instance.id(), InstanceLifecycle.State.STOPPED)
+                    controller.reconcileAfterHostDeath(instance.id(), InstanceLifecycle.State.INTERRUPTED)
                 }
             }
         } catch (_: Exception) {
@@ -1486,15 +1499,24 @@ class MainActivity : AppCompatActivity() {
             reconcileOrphanInstances()
             val controller = InstanceLifecycle.Controller(instanceStore, Clock.systemUTC())
             var running = false
+            var launchGeneration: String? = null
             try {
                 DistroResourceRequirements.requireBootRam(instance.distro().id(), instance.hardwareConfig().ramMegabytes())
-                InstanceLaunchGuard.begin(instance.id())
+                launchGeneration = InstanceLaunchGuard.begin(instance.id())
+                if (launchGeneration == null) {
+                    runOnUiThread {
+                        createStatus.text = "实例正在启动，请稍后再试"
+                        setCreateButtonsEnabled(DeviceCapabilityEvaluator.evaluate(deviceProfile()).canCreateFullLinuxInstance())
+                    }
+                    return@execute
+                }
                 InstanceLaunchSequence.beforeLaunch(controller, instance)
                 running = true
                 val distroTitle = instance.distro().id().replaceFirstChar { it.uppercase() } + " " + instance.distro().version()
                 val badge = currentBadge(DeviceCapabilityEvaluator.evaluate(deviceProfile()))
                 settingsManager.lastActiveInstanceId = instance.id()
-                OrchestellaForegroundService.start(this, instance.id(), distroTitle, badge, settingsManager.batteryPolicy)
+                OrchestellaForegroundService.start(this, instance.id(), distroTitle, badge,
+                    settingsManager.batteryPolicy, launchGeneration)
                 val rootfsFileName = DistroCatalogRegistry.getInstance().get(instance.distro().id())?.rootfsFileName()
                     ?: if (instance.distro().id() == "alpine") "alpine-minirootfs-3.24.1-aarch64.tar.gz"
                     else "${instance.distro().id()}-rootfs.tar.xz"
@@ -1539,34 +1561,36 @@ class MainActivity : AppCompatActivity() {
                     })
                 val outcome = strategyLauncher.launch(parameters, preferAvf)
                 val session = outcome.session
-                OrchestellaForegroundService.start(this, instance.id(), distroTitle,
-                    if (outcome.hardwareAccelerated()) "AVF 硬件虚拟化" else "QEMU 软件虚拟化",
-                    settingsManager.batteryPolicy)
+                val sessionGeneration = ExecutionSessionRegistry.generation(instance.id(), session)
+                    ?: throw IOException("运行会话已变化")
                 Thread {
                     try {
-                        session.waitFor()
-                    } catch (ignored: InterruptedException) {
-                        Thread.currentThread().interrupt()
-                    } catch (failure: Exception) {
-                        runOnUiThread {
-                            createStatus.text = getString(R.string.launch_failed, failure.toString())
+                        val exit = InstanceLaunchSequence.awaitGuestExit(controller, instance.id(), session) {
+                            OrchestellaForegroundService.stop(this, instance.id(), sessionGeneration)
                         }
-                    } finally {
-                        InstanceLaunchGuard.end(instance.id())
-                        ExecutionSessionRegistry.unregister(instance.id())
-                        OrchestellaForegroundService.stop(this)
-                        try {
-                            InstanceLaunchSequence.afterGuestExit(controller, instance.id())
-                        } catch (ignored: Exception) {
-                        }
-                        runOnUiThread {
-                            createStatus.setText(R.string.launch_guest_exited)
+                        if (exit.status() != InstanceLaunchSequence.ExitStatus.STALE) runOnUiThread {
+                            if (!InstanceLaunchGuard.isLatest(instance.id(), sessionGeneration)) return@runOnUiThread
+                            createStatus.text = when (exit.status()) {
+                                InstanceLaunchSequence.ExitStatus.NORMAL -> getString(R.string.launch_guest_exited)
+                                InstanceLaunchSequence.ExitStatus.CRASHED -> "实例异常退出（退出码 ${exit.exitCode()}），可查看诊断并冷恢复"
+                                else -> "无法确认虚拟机退出，已保留运行会话，请检查运行状态"
+                            }
                             setCreateButtonsEnabled(DeviceCapabilityEvaluator.evaluate(deviceProfile()).canCreateFullLinuxInstance())
                             showInstances()
                         }
+                    } catch (failure: Exception) {
+                        runOnUiThread {
+                            if (!InstanceLaunchGuard.isLatest(instance.id(), sessionGeneration)) return@runOnUiThread
+                            createStatus.text = getString(R.string.launch_failed, failure.javaClass.simpleName)
+                        }
                     }
                 }.apply { isDaemon = true }.start()
+                OrchestellaForegroundService.start(this, instance.id(), distroTitle,
+                    if (outcome.hardwareAccelerated()) "AVF 硬件虚拟化" else "QEMU 软件虚拟化",
+                    settingsManager.batteryPolicy, sessionGeneration)
                 runOnUiThread {
+                    if (!InstanceLaunchGuard.isLatest(instance.id(), sessionGeneration)
+                        || ExecutionSessionRegistry.get(instance.id()) !== session) return@runOnUiThread
                     if (outcome.hardwareAccelerated()) {
                         createStatus.setText(R.string.launch_started_hardware)
                     } else if (outcome.degradationReason != null) {
@@ -1582,18 +1606,17 @@ class MainActivity : AppCompatActivity() {
                     startActivity(intent)
                 }
             } catch (failure: Throwable) {
-                InstanceLaunchGuard.end(instance.id())
-                ExecutionSessionRegistry.unregister(instance.id())
-                OrchestellaForegroundService.stop(this)
-                if (running) {
-                    try {
-                        InstanceLaunchSequence.afterGuestExit(controller, instance.id())
-                    } catch (ignored: Throwable) {
-                        // best-effort revert of the RUNNING slot; the launch failure is reported
+                val failedGeneration = launchGeneration
+                try {
+                    InstanceLaunchSequence.afterLaunchFailure(controller, instance.id(), failedGeneration, running) {
+                        OrchestellaForegroundService.stop(this, instance.id(), failedGeneration)
                     }
+                } catch (_: Exception) {
+                    // A metadata/observer failure is not evidence of VM death; retain its owner.
                 }
                 runOnUiThread {
-                    createStatus.text = getString(R.string.launch_failed, failure.toString())
+                    if (failedGeneration != null && !InstanceLaunchGuard.isLatest(instance.id(), failedGeneration)) return@runOnUiThread
+                    createStatus.text = getString(R.string.launch_failed, failure.javaClass.simpleName)
                     Toast.makeText(this, createStatus.text, Toast.LENGTH_LONG).show()
                     android.util.Log.w("OrchestellaLaunch", "launch failed type=${failure.javaClass.simpleName}")
                     setCreateButtonsEnabled(DeviceCapabilityEvaluator.evaluate(deviceProfile()).canCreateFullLinuxInstance())

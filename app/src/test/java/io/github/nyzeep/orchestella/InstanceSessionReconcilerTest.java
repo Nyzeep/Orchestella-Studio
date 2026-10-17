@@ -117,7 +117,7 @@ public final class InstanceSessionReconcilerTest {
     }
 
     @Test
-    public void testInstanceRunningInStoreAutoReattachSucceeds() throws Exception {
+    public void missingOwnerRequiresColdRestoreEvenIfSocketProbeCouldSucceed() throws Exception {
         InstanceLifecycle.Instance instance = controller.create(
                 new InstanceLifecycle.DistroReference("debian", "13"),
                 temporaryFolder.newFile("root-running.raw").toPath());
@@ -138,9 +138,11 @@ public final class InstanceSessionReconcilerTest {
         InstanceSessionReconciler.ReconcileResult result =
                 reconciler.ensureSessionAliveOrRecover(instance.id());
 
-        assertEquals(InstanceSessionReconciler.Status.ATTACHED, result.status());
-        assertNotNull(result.sessionHolder());
-        assertTrue(pool.hasActiveSession(instance.id()));
+        assertEquals(InstanceSessionReconciler.Status.CRASHED, result.status());
+        assertNull(result.sessionHolder());
+        assertEquals(InstanceLifecycle.State.INTERRUPTED, store.load(instance.id()).state());
+        org.junit.Assert.assertFalse(pool.hasActiveSession(instance.id()));
+        recoveredSession.close();
     }
 
     @Test
@@ -166,10 +168,11 @@ public final class InstanceSessionReconcilerTest {
         assertEquals(InstanceSessionReconciler.Status.CRASHED, result.status());
         assertNull(result.sessionHolder());
 
-        // Verify that the instance state in store transitioned to CRASHED with diagnostic
+        // Without a VM owner there is no observed exit code. Persist interruption,
+        // retain all instance data, and let an explicit cold restore rebuild runtime.
         InstanceLifecycle.Instance loaded = store.load(instance.id());
-        assertEquals(InstanceLifecycle.State.CRASHED, loaded.state());
-        assertNotNull(loaded.crashDiagnostic());
+        assertEquals(InstanceLifecycle.State.INTERRUPTED, loaded.state());
+        assertNull(loaded.crashDiagnostic());
     }
 
     @Test
@@ -186,6 +189,51 @@ public final class InstanceSessionReconcilerTest {
 
         assertEquals(InstanceSessionReconciler.Status.OFFLINE, result.status());
         assertEquals(InstanceLifecycle.State.CREATED, result.instance().state());
+    }
+
+    @Test
+    public void terminalEofDoesNotReplaceTheOwnedRunningSessionOrWriteCrashMetadata() throws Exception {
+        InstanceLifecycle.Instance instance = controller.create(
+                new InstanceLifecycle.DistroReference("debian", "13"),
+                temporaryFolder.getRoot().toPath().resolve("never-opened.raw"));
+        InstanceLaunchSequence.beforeLaunch(controller, instance);
+        FakeSession owner = new FakeSession();
+        PersistentTerminalSessionPool.SessionHolder holder = pool.register(instance.id(), owner);
+        java.util.concurrent.CountDownLatch eof = new java.util.concurrent.CountDownLatch(1);
+        holder.setSessionEndListener(id -> eof.countDown());
+        owner.pipeOut.close();
+        assertTrue(eof.await(2, java.util.concurrent.TimeUnit.SECONDS));
+        java.util.concurrent.atomic.AtomicInteger recoveryCalls = new java.util.concurrent.atomic.AtomicInteger();
+        InstanceSessionReconciler reconciler = new InstanceSessionReconciler(
+                pool, store, controller, inst -> { recoveryCalls.incrementAndGet(); return null; });
+
+        InstanceSessionReconciler.ReconcileResult result = reconciler.ensureSessionAliveOrRecover(instance.id());
+
+        assertEquals("Terminal EOF does not prove VM death", InstanceSessionReconciler.Status.ATTACHED, result.status());
+        assertTrue("The supervised owner must be retained", result.sessionHolder() == holder);
+        assertEquals(0, recoveryCalls.get());
+        assertEquals(InstanceLifecycle.State.RUNNING, store.load(instance.id()).state());
+        assertNull(store.load(instance.id()).crashDiagnostic());
+        assertTrue(!owner.closed.get());
+    }
+
+    @Test
+    public void socketRecoveryCannotInventAReplacementForAMissingSupervisedOwner() throws Exception {
+        InstanceLifecycle.Instance instance = controller.create(
+                new InstanceLifecycle.DistroReference("debian", "13"),
+                temporaryFolder.getRoot().toPath().resolve("orphan-never-opened.raw"));
+        InstanceLaunchSequence.beforeLaunch(controller, instance);
+        java.util.concurrent.atomic.AtomicInteger probes = new java.util.concurrent.atomic.AtomicInteger();
+        InstanceSessionReconciler reconciler = new InstanceSessionReconciler(
+                pool, store, controller, inst -> { probes.incrementAndGet(); return new FakeSession(); });
+        InstanceSessionReconciler.ReconcileResult result = reconciler.ensureSessionAliveOrRecover(instance.id());
+        assertEquals(InstanceSessionReconciler.Status.CRASHED, result.status());
+        assertEquals(InstanceLifecycle.State.INTERRUPTED, store.load(instance.id()).state());
+        assertEquals(0, probes.get());
+        assertNull(pool.getSession(instance.id()));
+        assertEquals(instance.bridgeToken(), store.load(instance.id()).bridgeToken());
+        assertEquals(instance.guestPassword(), store.load(instance.id()).guestPassword());
+        assertEquals(instance.rootVolume(), store.load(instance.id()).rootVolume());
     }
 
     @Test

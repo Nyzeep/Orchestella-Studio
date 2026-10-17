@@ -73,12 +73,15 @@ class SetupWizardActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_TARGET_DISTRO = "extra_target_distro"
+        private const val STATE_DRAFT = "creation_draft_v1"
     }
 
     private val backgroundExecutor = Executors.newSingleThreadExecutor()
     private lateinit var settingsManager: SettingsManager
     private lateinit var hostProfile: HostHardwareProfile
     private lateinit var wizardModel: InstanceCreationWizardModel
+    private var draftNotice: String? = null
+    private var applyingDraftViews = false
 
     // Distro descriptor for custom spinner
     data class DistroItem(
@@ -242,10 +245,11 @@ class SetupWizardActivity : AppCompatActivity() {
         val initialManifest = DistroCatalogRegistry.getInstance().get(targetDistro)
             ?: DistroCatalogRegistry.getInstance().get("ubuntu")
         wizardModel = InstanceCreationWizardModel(
-            distroId = targetDistro,
+            distroId = initialManifest?.id() ?: "ubuntu",
             distroVersion = initialManifest?.version() ?: "24.04",
             hardwareProfile = hostProfile
         )
+        restoreDraft(savedInstanceState)
 
         initViews()
         setupListeners()
@@ -255,8 +259,98 @@ class SetupWizardActivity : AppCompatActivity() {
         bindStep2Network()
         bindStep3Hardware()
         bindStep4StartupTasks()
-        updateStepVisibility()
+        bindDraftViews()
         ThemeApplier.bind(this)
+    }
+
+    private fun restoreDraft(state: Bundle?) {
+        if (state == null || !state.containsKey(STATE_DRAFT)) return
+        try {
+            val saved = requireNotNull(state.getBundle(STATE_DRAFT))
+            val draft = saved.keySet().associateWith { key ->
+                requireNotNull(saved.getString(key))
+            }
+            val versions = officialDistros.mapNotNull { item ->
+                DistroCatalogRegistry.getInstance().get(item.id)?.let { item.id to it.version() }
+            }.toMap()
+            wizardModel = InstanceCreationWizardModel.restoreDraft(draft, hostProfile, versions) { id ->
+                DistroResourceRequirements.minimumBootRamMb(
+                    requireNotNull(DistroCatalogRegistry.getInstance().get(id)).sizeBytes())
+            }
+        } catch (_: Exception) {
+            // A stale field must not turn an in-flight operation into an automatic retry.
+            val wasCreating = try { state.getBundle(STATE_DRAFT)?.getString("creating") == "true" }
+                catch (_: Exception) { true }
+            if (wasCreating) {
+                wizardModel.goToStep(InstanceCreationWizardModel.CreationStep.STEP_STARTUP_TASKS)
+                wizardModel.setCreating(true)
+            }
+            // Do not log the Bundle or raw editable values.
+            draftNotice = "草稿无法恢复或设备条件已变化，请重新确认发行版和硬件配置。"
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        captureIdentityDraft()
+        val draft = Bundle()
+        wizardModel.saveDraft().forEach { (key, value) -> draft.putString(key, value) }
+        outState.putBundle(STATE_DRAFT, draft)
+        super.onSaveInstanceState(outState)
+    }
+
+    override fun onRestoreInstanceState(savedInstanceState: Bundle) {
+        // Let Android restore unrelated view state, then bind owned controls from the validated model.
+        applyingDraftViews = true
+        try { super.onRestoreInstanceState(savedInstanceState) }
+        finally { applyingDraftViews = false }
+        bindDraftViews()
+    }
+
+    private fun captureIdentityDraft() {
+        if (wizardModel.isCreating || !::editGuestUser.isInitialized || !::editGuestHostname.isInitialized) return
+        wizardModel.updateGuestIdentityDraft(editGuestUser.text?.toString().orEmpty(),
+            editGuestHostname.text?.toString().orEmpty(), chkGuestSudo.isChecked)
+        wizardModel.setOptionalProfiles(chkDesktop.isChecked, chkPodman.isChecked, chkEditor.isChecked)
+    }
+
+    private fun bindDraftViews() {
+        applyingDraftViews = true
+        try {
+            editCustomDiskGb.setText(wizardModel.diskSizeGb.toString())
+            spinnerDistroSelect.setSelection(officialDistros.indexOfFirst { it.id == wizardModel.distroId }.coerceAtLeast(0))
+            spinnerMirrorSource.setSelection(wizardModel.selectedMirror.ordinal)
+            sliderVcpu.value = wizardModel.hardwareConfig.cpuCores().toFloat()
+            sliderRam.value = wizardModel.hardwareConfig.ramMegabytes().toFloat()
+            editGuestUser.setText(wizardModel.guestUsernameDraft)
+            editGuestHostname.setText(wizardModel.guestHostnameDraft)
+            chkGuestSudo.isChecked = wizardModel.guestSudoDraft
+            chkDesktop.isChecked = wizardModel.desktopSelected
+            chkPodman.isChecked = wizardModel.podmanSelected
+            chkEditor.isChecked = wizardModel.editorSelected
+            chkAutoUpdate.isChecked = wizardModel.autoUpdateOnFirstBoot
+        } finally { applyingDraftViews = false }
+        highlightPresetButton(wizardModel.diskSizeGb)
+        officialDistros.firstOrNull { it.id == wizardModel.distroId }?.let(::updateDistroPreview)
+        updateMirrorPreview()
+        updateStartupTaskPreview()
+        updateHardwareLabels()
+        updateStepVisibility()
+        updateCreationSummary()
+        renderDraftState()
+    }
+
+    private fun renderDraftState() {
+        draftNotice?.let { Toast.makeText(this, it, Toast.LENGTH_LONG).show() }
+        draftNotice = null
+        if (wizardModel.isCreating) {
+            btnWizardInit.visibility = View.GONE
+            btnStep4Prev.visibility = View.GONE
+            layoutDownloadProgress.visibility = View.VISIBLE
+            progressDownloadBar.visibility = View.GONE
+            txtDownloadStatus.text = "已保留创建中状态，不会重复下载或创建。请返回实例列表确认任务结果。"
+            txtDownloadSpeedEta.text = ""
+            txtDownloadMirror.text = ""
+        }
     }
 
     override fun onDestroy() {
@@ -371,11 +465,13 @@ class SetupWizardActivity : AppCompatActivity() {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
+                if (applyingDraftViews || wizardModel.isCreating) return
                 val gb = s?.toString()?.toIntOrNull()
                 if (gb != null && gb > 0) {
                     wizardModel.setCustomDiskSizeGb(gb)
                     highlightPresetButton(gb)
                     validateAndRefreshStorage()
+                    updateCreationSummary()
                 } else if (s.isNullOrEmpty()) {
                     btnStep1Next.isEnabled = false
                 }
@@ -383,6 +479,7 @@ class SetupWizardActivity : AppCompatActivity() {
         })
 
         chkMountSharedDir.setOnCheckedChangeListener { _, isChecked ->
+            if (applyingDraftViews || wizardModel.isCreating) return@setOnCheckedChangeListener
             wizardModel.setMountHostSharedDirectory(isChecked)
             if (isChecked) {
                 if (wizardModel.hostSharedDirectoryPath == null) {
@@ -402,6 +499,9 @@ class SetupWizardActivity : AppCompatActivity() {
         }
 
         btnStep1Next.setOnClickListener {
+            if (!wizardModel.isCreating) {
+                officialDistros.getOrNull(spinnerDistroSelect.selectedItemPosition)?.let { switchDistro(it.id) }
+            }
             if (wizardModel.canGoNext()) {
                 wizardModel.nextStep()
                 updateStepVisibility()
@@ -471,8 +571,10 @@ class SetupWizardActivity : AppCompatActivity() {
 
         // Step 4 Listeners
         chkAutoUpdate.setOnCheckedChangeListener { _, isChecked ->
+            if (applyingDraftViews || wizardModel.isCreating) return@setOnCheckedChangeListener
             wizardModel.setAutoUpdateOnFirstBoot(isChecked)
             updateStartupTaskPreview()
+            updateCreationSummary()
         }
         btnStep4Prev.setOnClickListener {
             if (wizardModel.canGoBack()) {
@@ -483,22 +585,26 @@ class SetupWizardActivity : AppCompatActivity() {
         btnWizardInit.setOnClickListener { startDownloadAndInitialize() }
     }
 
-    private fun bindWizardAvfCard() {
-        val facts = io.github.nyzeep.orchestella.AvfHostFactsProbe.probe(this)
+    private fun bindWizardAvfCard(
+        facts: AvfCapabilityEvaluator.AvfHostFacts = AvfHostFactsProbe.probe(this)
+    ) {
         val readiness = AvfCapabilityEvaluator.evaluate(facts)
         avfReadiness = readiness
         authWizardModel = AvfAuthorizationWizardModel.fromAssessment(readiness)
+        btnAvfAuthWizard.visibility =
+            if (readiness.status() == AvfCapabilityEvaluator.AvfStatus.NEEDS_AUTHORIZATION)
+                View.VISIBLE else View.GONE
         val factsSummary = """
             AVF feature：${if (facts.virtualizationFrameworkFeature()) "已声明" else "未声明"}
             虚拟化属性：${facts.virtualizationProperty()?.takeIf { it.isNotBlank() } ?: "无法读取或未提供"}
-            MANAGE_VIRTUAL_MACHINE：${if (facts.manageVirtualMachinePermission()) "已授权" else "未授权"}
-            USE_CUSTOM_VIRTUAL_MACHINE：${if (checkSelfPermission("android.permission.USE_CUSTOM_VIRTUAL_MACHINE") == android.content.pm.PackageManager.PERMISSION_GRANTED) "已授权" else "未授权"}
+            MANAGE_VIRTUAL_MACHINE：${AvfHostFactsProbe.permissionLabel(facts.manageVirtualMachinePermissionState())}
+            USE_CUSTOM_VIRTUAL_MACHINE：${AvfHostFactsProbe.permissionLabel(facts.useCustomVirtualMachinePermissionState())}
         """.trimIndent()
-        val launchNotice = "当前仅检查平台声明与权限。custom VM 还要求 USE_CUSTOM_VIRTUAL_MACHINE 和兼容的平台 API；MANAGE 单项授权不能证明可运行。创建、run 与连接会在实例启动时验证，失败后同一实例使用软件虚拟化。GPU 加速尚未实测。"
+        val launchNotice = getString(R.string.avf_preflight_boundary)
 
         when (readiness.status()) {
             AvfCapabilityEvaluator.AvfStatus.READY -> {
-                txtWizardAvfBadge.text = "AVF 声明/授权可用"
+                txtWizardAvfBadge.text = "硬件虚拟化权限预检满足"
                 txtWizardAvfBadge.setTextColor(getColor(R.color.zone_green))
                 txtWizardAvfDetails.text = "$factsSummary\n声明与权限条件满足。\n$launchNotice"
                 layoutWizardAvfFallback.visibility = View.GONE
@@ -506,7 +612,7 @@ class SetupWizardActivity : AppCompatActivity() {
             AvfCapabilityEvaluator.AvfStatus.NEEDS_AUTHORIZATION -> {
                 txtWizardAvfBadge.text = "AVF 尚未授权"
                 txtWizardAvfBadge.setTextColor(getColor(R.color.zone_yellow))
-                txtWizardAvfDetails.text = "$factsSummary\n平台声明满足，应用尚未获得 MANAGE_VIRTUAL_MACHINE 权限。\n$launchNotice"
+                txtWizardAvfDetails.text = "$factsSummary\n${readiness.reasons().joinToString("；")}\n$launchNotice"
                 layoutWizardAvfFallback.visibility = View.VISIBLE
             }
             AvfCapabilityEvaluator.AvfStatus.UNSUPPORTED -> {
@@ -559,6 +665,7 @@ class SetupWizardActivity : AppCompatActivity() {
 
         spinnerDistroSelect.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                if (applyingDraftViews || wizardModel.isCreating) return
                 val item = officialDistros[position]
                 updateDistroPreview(item)
                 switchDistro(item.id)
@@ -576,8 +683,10 @@ class SetupWizardActivity : AppCompatActivity() {
     }
 
     private fun switchDistro(distroId: String) {
+        if (wizardModel.isCreating) return
         val currentDistro = wizardModel.distroId
         if (currentDistro == distroId) return
+        captureIdentityDraft()
 
         val manifest = DistroCatalogRegistry.getInstance().get(distroId)
         val version = manifest?.version() ?: "latest"
@@ -592,6 +701,9 @@ class SetupWizardActivity : AppCompatActivity() {
             it.updateCpuCores(previousModel.hardwareConfig.cpuCores())
             it.updateRamMegabytes(previousModel.hardwareConfig.ramMegabytes())
             it.setUserConfig(previousModel.userConfig)
+            it.updateGuestIdentityDraft(previousModel.guestUsernameDraft, previousModel.guestHostnameDraft,
+                previousModel.guestSudoDraft)
+            it.setOptionalProfiles(previousModel.desktopSelected, previousModel.podmanSelected, previousModel.editorSelected)
             it.selectMirror(previousModel.selectedMirror)
             it.setAutoUpdateOnFirstBoot(previousModel.autoUpdateOnFirstBoot)
             it.setMountHostSharedDirectory(previousModel.mountHostSharedDirectory)
@@ -730,8 +842,10 @@ class SetupWizardActivity : AppCompatActivity() {
         spinnerMirrorSource.setSelection(wizardModel.selectedMirror.ordinal)
         spinnerMirrorSource.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                if (applyingDraftViews || wizardModel.isCreating) return
                 wizardModel.selectMirror(sources[position])
                 updateMirrorPreview()
+                updateCreationSummary()
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
@@ -906,6 +1020,7 @@ class SetupWizardActivity : AppCompatActivity() {
     }
 
     private fun updateHardwareLabels() {
+        if (::txtCreationSummary.isInitialized) updateCreationSummary()
         txtCfgVcpu.text = getString(R.string.wizard_config_vcpu_info, wizardModel.hardwareConfig.cpuCores())
         txtCfgRam.text = getString(R.string.wizard_config_ram_info, wizardModel.hardwareConfig.ramMegabytes())
 
@@ -945,17 +1060,17 @@ class SetupWizardActivity : AppCompatActivity() {
             hint = "Linux 用户名"
             setSingleLine(true)
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-            setText(wizardModel.userConfig.username())
+            setText(wizardModel.guestUsernameDraft)
         }
         editGuestHostname = TextInputEditText(this).apply {
             hint = "主机名"
             setSingleLine(true)
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-            setText(wizardModel.userConfig.hostname())
+            setText(wizardModel.guestHostnameDraft)
         }
         chkGuestSudo = MaterialCheckBox(this).apply {
             text = "允许此用户使用 sudo"
-            isChecked = wizardModel.userConfig.hasSudo()
+            isChecked = wizardModel.guestSudoDraft
         }
         choices.addView(editGuestUser)
         choices.addView(editGuestHostname)
@@ -973,6 +1088,31 @@ class SetupWizardActivity : AppCompatActivity() {
         updateOptionalProfiles()
         chkAutoUpdate.text = "额外系统升级（可选）"
         chkAutoUpdate.isChecked = wizardModel.autoUpdateOnFirstBoot
+        val identityWatcher = object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                if (applyingDraftViews || wizardModel.isCreating) return
+                captureIdentityDraft()
+                updateCreationSummary()
+            }
+        }
+        editGuestUser.addTextChangedListener(identityWatcher)
+        editGuestHostname.addTextChangedListener(identityWatcher)
+        chkGuestSudo.setOnCheckedChangeListener { _, _ ->
+            if (!applyingDraftViews && !wizardModel.isCreating) {
+                captureIdentityDraft()
+                updateCreationSummary()
+            }
+        }
+        listOf(chkDesktop, chkPodman, chkEditor).forEach { checkbox ->
+            checkbox.setOnCheckedChangeListener { _, _ ->
+                if (!applyingDraftViews && !wizardModel.isCreating) {
+                    captureIdentityDraft()
+                    updateCreationSummary()
+                }
+            }
+        }
         updateStartupTaskPreview()
         updateCreationSummary()
     }
@@ -985,11 +1125,17 @@ class SetupWizardActivity : AppCompatActivity() {
 
     private fun updateOptionalProfiles() {
         if (!::chkDesktop.isInitialized) return
-        chkDesktop.isEnabled = wizardModel.distroId == "debian"
-        if (!chkDesktop.isEnabled) chkDesktop.isChecked = false
-        val supported = wizardModel.distroId in setOf("debian", "ubuntu")
-        chkPodman.isEnabled = supported; chkEditor.isEnabled = supported
-        if (!supported) { chkPodman.isChecked = false; chkEditor.isChecked = false }
+        val wasApplying = applyingDraftViews
+        applyingDraftViews = true
+        try {
+            chkDesktop.isEnabled = wizardModel.distroId == "debian" && !wizardModel.isCreating
+            val supported = wizardModel.distroId in setOf("debian", "ubuntu") && !wizardModel.isCreating
+            chkPodman.isEnabled = supported
+            chkEditor.isEnabled = supported
+            chkDesktop.isChecked = wizardModel.desktopSelected
+            chkPodman.isChecked = wizardModel.podmanSelected
+            chkEditor.isChecked = wizardModel.editorSelected
+        } finally { applyingDraftViews = wasApplying }
     }
 
     private fun updateCreationSummary() {
@@ -1008,6 +1154,9 @@ class SetupWizardActivity : AppCompatActivity() {
             • 宿主共享目录：$sharedText
             • 硬件资源规格：$vcpu vCPU · $ram MB RAM
             • 镜像软件源：$mirror
+            • Linux 用户：${wizardModel.guestUsernameDraft} · 主机名：${wizardModel.guestHostnameDraft}
+            • sudo：${if (wizardModel.guestSudoDraft) "允许" else "关闭"}
+            • 可选功能：${listOfNotNull(if (wizardModel.desktopSelected) "桌面" else null, if (wizardModel.podmanSelected) "Podman" else null, if (wizardModel.editorSelected) "code-server" else null).joinToString("、").ifEmpty { "仅终端" }}
             • 首次启动任务：$updateText
             • 安装失败：可重试
         """.trimIndent()
@@ -1032,9 +1181,8 @@ class SetupWizardActivity : AppCompatActivity() {
 
         if (current == InstanceCreationWizardModel.CreationStep.STEP_STORAGE) {
             validateAndRefreshStorage()
-        } else if (current == InstanceCreationWizardModel.CreationStep.STEP_STARTUP_TASKS) {
-            updateCreationSummary()
         }
+        updateCreationSummary()
     }
 
     private fun getManifest(): DistroManifest {
@@ -1043,6 +1191,7 @@ class SetupWizardActivity : AppCompatActivity() {
     }
 
     private fun startDownloadAndInitialize() {
+        if (wizardModel.isCreating) return
         val username = editGuestUser.text?.toString()?.trim().orEmpty()
         val hostname = editGuestHostname.text?.toString()?.trim().orEmpty()
         editGuestUser.error = null
@@ -1087,7 +1236,7 @@ class SetupWizardActivity : AppCompatActivity() {
             return
         }
 
-        wizardModel.setCreating(true)
+        if (!wizardModel.tryBeginCreation()) return
         btnStep4Prev.visibility = View.GONE
         btnWizardInit.visibility = View.GONE
         layoutDownloadProgress.visibility = View.VISIBLE
@@ -1230,7 +1379,9 @@ class SetupWizardActivity : AppCompatActivity() {
 
     // --- AVF Authorization Assistance Dialogs (ADR-0003 & Ticket 53) ---
     private fun showAvfAuthorizationWizard() {
-        val model = authWizardModel ?: return
+        avfReadiness = AvfCapabilityEvaluator.evaluate(AvfHostFactsProbe.probe(this))
+        val model = AvfAuthorizationWizardModel.fromAssessment(avfReadiness!!)
+        if (!model.canStart()) return
         authWizardModel = model.start()
         showShizukuStep()
     }
@@ -1239,14 +1390,14 @@ class SetupWizardActivity : AppCompatActivity() {
         AlertDialog.Builder(this)
             .setTitle(R.string.wizard_title)
             .setMessage(R.string.wizard_shizuku_steps)
-            .setPositiveButton(R.string.wizard_authorization_done) { _, _ -> recheckAuthorization() }
+            .setPositiveButton(R.string.shizuku_client_entry) { _, _ ->
+                ShizukuClientDialog().show(supportFragmentManager, "shizuku-client")
+            }
             .setNeutralButton(R.string.wizard_use_adb) { _, _ ->
                 authWizardModel = authWizardModel?.chooseAdbFallback()
                 showAdbStep()
             }
-            .setNegativeButton(R.string.wizard_later) { _, _ ->
-                authWizardModel = authWizardModel?.decline()
-            }
+            .setNegativeButton(R.string.wizard_recheck_permissions) { _, _ -> recheckAuthorization() }
             .show().also(ThemeApplier::apply)
     }
 
@@ -1284,11 +1435,13 @@ class SetupWizardActivity : AppCompatActivity() {
 
     private fun recheckAuthorization() {
         val facts = AvfHostFactsProbe.probe(this)
-        val granted = facts.manageVirtualMachinePermission()
-        authWizardModel = authWizardModel?.confirmAuthorized(granted)
+        val granted = facts.hasBothVirtualMachinePermissions()
+        authWizardModel = authWizardModel?.confirmAuthorized(
+            facts.manageVirtualMachinePermission(), facts.useCustomVirtualMachinePermission())
+        // Refresh the card and authorization entry from this same read, without rebinding
+        // CPU/RAM controls or changing the user's selected hardware configuration.
+        bindWizardAvfCard(facts)
         if (granted) {
-            avfReadiness = AvfCapabilityEvaluator.evaluate(facts)
-            bindStep3Hardware()
             AlertDialog.Builder(this)
                 .setTitle(R.string.wizard_authorized_success_title)
                 .setMessage(R.string.wizard_authorized_success_msg)

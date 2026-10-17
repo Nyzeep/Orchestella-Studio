@@ -306,8 +306,9 @@ Type=oneshot
 ExecStart=/opt/orchestella/firstboot.sh --native
 TimeoutStartSec=2h
 RemainAfterExit=yes
-StandardOutput=journal+console
-StandardError=journal+console
+Environment=ORCHESTELLA_PROVISION_REPORT=journal
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target

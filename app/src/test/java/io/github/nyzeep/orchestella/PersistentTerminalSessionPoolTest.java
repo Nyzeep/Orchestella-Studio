@@ -209,6 +209,39 @@ public final class PersistentTerminalSessionPoolTest {
     }
 
     @Test
+    public void conditionalUnregisterKeepsReplacementAndClosesOnlyTheExpectedOwnerOnce() throws Exception {
+        FakeExecutionSession old = new FakeExecutionSession(new ByteArrayInputStream(new byte[0]), new ByteArrayOutputStream());
+        FakeExecutionSession replacement = new FakeExecutionSession(new ByteArrayInputStream(new byte[0]), new ByteArrayOutputStream());
+        pool.register("generation-vm", old);
+        pool.register("generation-vm", replacement);
+        assertFalse(pool.unregister("generation-vm", old));
+        org.junit.Assert.assertSame(replacement, pool.getSession("generation-vm"));
+        assertFalse(replacement.closed.get());
+        assertTrue(pool.unregister("generation-vm", replacement));
+        assertFalse(pool.unregister("generation-vm", replacement));
+        assertTrue(replacement.closed.get());
+        assertNull(pool.getSession("generation-vm"));
+    }
+
+    @Test
+    public void ownerRetirementNotifiesAfterTerminalEofSoUiCanReconcileConfirmedExit() throws Exception {
+        FakeExecutionSession session = new FakeExecutionSession(new ByteArrayInputStream(new byte[0]), new ByteArrayOutputStream());
+        PersistentTerminalSessionPool.SessionHolder holder = pool.register("eof-then-owner-exit", session);
+        CountDownLatch terminalEnded = new CountDownLatch(1);
+        CountDownLatch ownerRetired = new CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicInteger events = new java.util.concurrent.atomic.AtomicInteger();
+        holder.setSessionEndListener(id -> {
+            if (events.incrementAndGet() == 1) terminalEnded.countDown();
+            else if (pool.getSession(id) == null) ownerRetired.countDown();
+        });
+        assertTrue(terminalEnded.await(2, TimeUnit.SECONDS));
+        assertTrue(holder.hasOwner());
+        assertTrue(pool.unregister("eof-then-owner-exit", session));
+        assertTrue("The confirmed owner exit must trigger a second reconciliation", ownerRetired.await(2, TimeUnit.SECONDS));
+        assertEquals(2, events.get());
+    }
+
+    @Test
     public void testRingBufferEnforcesBoundaries() {
         TerminalRingBuffer buffer = new TerminalRingBuffer(100);
         buffer.append("1234567890");

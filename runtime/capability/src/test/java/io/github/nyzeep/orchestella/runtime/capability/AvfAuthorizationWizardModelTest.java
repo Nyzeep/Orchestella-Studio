@@ -11,6 +11,7 @@ public final class AvfAuthorizationWizardModelTest {
     private static final String APPLICATION_ID = "io.github.nyzeep.orchestella";
 
     public static void main(String[] arguments) {
+        manageOnlyConfirmationDoesNotCompleteTheWizard();
         unsupportedReadinessNeverOpensTheWizard();
         readyReadinessNeedsNoWizardSteps();
         needsAuthorizationStartsWithShizukuGuidance();
@@ -18,6 +19,14 @@ public final class AvfAuthorizationWizardModelTest {
         confirmAuthorizedOnlyAdvancesWhenPermissionIsGranted();
         declineClosesTheWizard();
         adbGrantCommandIsExact();
+    }
+
+    private static void manageOnlyConfirmationDoesNotCompleteTheWizard() {
+        AvfAuthorizationWizardModel started = AvfAuthorizationWizardModel.fromAssessment(
+                readiness(AvfCapabilityEvaluator.AvfStatus.NEEDS_AUTHORIZATION)).start();
+        assertTrue(started.confirmAuthorized(true).step()
+                        == AvfAuthorizationWizardModel.Step.SHIZUKU_GUIDANCE,
+                "legacy MANAGE-only confirmation cannot prove CUSTOM was granted");
     }
 
     private static AvfCapabilityEvaluator.AvfReadiness readiness(
@@ -91,7 +100,13 @@ public final class AvfAuthorizationWizardModelTest {
         assertTrue(stillWaiting.step() == AvfAuthorizationWizardModel.Step.SHIZUKU_GUIDANCE,
                 "a failed re-check stays on the current step");
 
-        AvfAuthorizationWizardModel authorized = started.confirmAuthorized(true);
+        assertTrue(started.confirmAuthorized(true, false).step()
+                        == AvfAuthorizationWizardModel.Step.SHIZUKU_GUIDANCE,
+                "CUSTOM missing keeps guidance open");
+        assertTrue(started.confirmAuthorized(false, true).step()
+                        == AvfAuthorizationWizardModel.Step.SHIZUKU_GUIDANCE,
+                "MANAGE missing keeps guidance open");
+        AvfAuthorizationWizardModel authorized = started.confirmAuthorized(true, true);
         assertTrue(authorized.step() == AvfAuthorizationWizardModel.Step.AUTHORIZED,
                 "a successful re-check completes the wizard");
     }
@@ -115,7 +130,8 @@ public final class AvfAuthorizationWizardModelTest {
         String command = AvfAuthorizationWizardModel.adbGrantCommand(APPLICATION_ID);
 
         assertEquals(
-                "adb shell pm grant " + APPLICATION_ID + " android.permission.MANAGE_VIRTUAL_MACHINE",
+                "adb shell pm grant " + APPLICATION_ID + " android.permission.MANAGE_VIRTUAL_MACHINE\n"
+                        + "adb shell pm grant " + APPLICATION_ID + " android.permission.USE_CUSTOM_VIRTUAL_MACHINE",
                 command,
                 "copy-ready ADB grant command");
     }

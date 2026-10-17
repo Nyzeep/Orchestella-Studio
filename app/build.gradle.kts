@@ -28,8 +28,8 @@ android {
         applicationId = "io.github.nyzeep.orchestella"
         minSdk = 26
         targetSdk = 36
-        versionCode = 405
-        versionName = "0.4.5"
+        versionCode = 503
+        versionName = "0.5.3"
         buildConfigField("boolean", "DEVELOPMENT_PREVIEW", "true")
 
         ndk {
@@ -163,6 +163,8 @@ dependencies {
     implementation(project(":runtime:network"))
     implementation(libs.material)
     implementation(libs.appcompat)
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
     testImplementation(libs.junit)
 }
 

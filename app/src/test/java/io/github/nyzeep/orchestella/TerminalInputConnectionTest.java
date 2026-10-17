@@ -39,7 +39,12 @@ public final class TerminalInputConnectionTest {
             }
         };
         stickyStateMachine = new StickyModifierStateMachine();
-        inputConnection = new TerminalInputConnection(inputSink, stickyStateMachine);
+        inputConnection = new TerminalInputConnection(inputSink, stickyStateMachine,
+                (accent, base) -> {
+                    if (accent == 0x00b4 && base == 'e') return 0x00e9;
+                    if (accent == 0x00b4 && base == ' ') return 0x00b4;
+                    return 0;
+                });
     }
 
     @Test
@@ -261,6 +266,77 @@ public final class TerminalInputConnectionTest {
         assertFalse(inputConnection.sendKey(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_BACK));
         assertEquals(0, ptyStream.size());
         assertTrue(stickyStateMachine.isCtrlActive());
+    }
+
+    @Test public void rightAltUsesLayoutCharacterWithoutShellEscape() {
+        int altGr = KeyEvent.META_ALT_ON | KeyEvent.META_ALT_RIGHT_ON;
+        assertTrue(inputConnection.sendKeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_Q, altGr,
+                meta -> (meta & KeyEvent.META_ALT_RIGHT_ON) != 0 ? '@' : 'q'));
+        assertArrayEquals(new byte[]{0x40}, ptyStream.toByteArray());
+    }
+
+    @Test public void deadAccentWaitsForBaseAndCombinesThroughLayoutResolver() {
+        assertTrue(inputConnection.handleKeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_APOSTROPHE,
+                0x80000000 | 0x00b4, false, false));
+        assertEquals(0, ptyStream.size());
+        assertTrue(inputConnection.sendKey(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_E, 'e'));
+        assertArrayEquals(new byte[]{(byte) 0xc3, (byte) 0xa9}, ptyStream.toByteArray());
+    }
+
+    @Test public void leftAltAndExplicitCtrlAltRemainShellShortcuts() {
+        int leftAlt = KeyEvent.META_ALT_ON | KeyEvent.META_ALT_LEFT_ON;
+        inputConnection.sendKeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_B, leftAlt,
+                meta -> (meta & KeyEvent.META_ALT_MASK) == 0 ? 'b' : 0x00df);
+        int ctrlAlt = KeyEvent.META_CTRL_ON | KeyEvent.META_ALT_ON | KeyEvent.META_ALT_RIGHT_ON;
+        inputConnection.sendKeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_C, ctrlAlt,
+                meta -> (meta & (KeyEvent.META_ALT_MASK | KeyEvent.META_CTRL_MASK)) == 0 ? 'c' : 0x00a9);
+        assertArrayEquals(new byte[]{0x1b, 'b', 0x1b, 3}, ptyStream.toByteArray());
+    }
+
+    @Test public void rightAltKeepsShiftAndCapsLayoutState() {
+        int shifted = KeyEvent.META_ALT_ON | KeyEvent.META_ALT_RIGHT_ON
+                | KeyEvent.META_SHIFT_ON | KeyEvent.META_CAPS_LOCK_ON;
+        inputConnection.sendKeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_E, shifted,
+                meta -> meta == shifted ? 0x20ac : 'E');
+        assertArrayEquals(new byte[]{(byte) 0xe2, (byte) 0x82, (byte) 0xac}, ptyStream.toByteArray());
+    }
+
+    @Test public void deadAccentSpaceAndUncombinableBaseKeepExactCharacters() {
+        inputConnection.handleKeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_APOSTROPHE,
+                0x80000000 | 0x00b4, false, false);
+        inputConnection.sendKey(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_SPACE, ' ');
+        inputConnection.handleKeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_APOSTROPHE,
+                0x80000000 | 0x00b4, false, false);
+        inputConnection.sendKey(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_X, 'x');
+        assertArrayEquals(new byte[]{(byte) 0xc2, (byte) 0xb4, (byte) 0xc2, (byte) 0xb4, 'x'},
+                ptyStream.toByteArray());
+    }
+
+    @Test public void deadAccentKeyUpDoesNotCommitAndCloseDiscardsIt() {
+        inputConnection.handleKeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_APOSTROPHE,
+                0x80000000 | 0x00b4, false, false);
+        assertTrue(inputConnection.handleKeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_APOSTROPHE,
+                0x80000000 | 0x00b4, false, false));
+        inputConnection.closeConnection();
+        assertFalse(inputConnection.sendKey(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_E, 'e'));
+        assertFalse(inputConnection.finishComposingText());
+        assertFalse(inputConnection.setComposingText("你", 1));
+        assertFalse(inputConnection.pasteText("😀"));
+        assertEquals(0, ptyStream.size());
+    }
+
+    @Test public void retiredConnectionCannotWriteToEitherBinding() {
+        inputConnection.setComposingText("ni", 1);
+        inputConnection.closeConnection();
+        TerminalInputConnection replacement = new TerminalInputConnection(inputSink, stickyStateMachine);
+        assertFalse(inputConnection.commitText("你", 1));
+        assertFalse(inputConnection.sendKeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_Q,
+                KeyEvent.META_ALT_RIGHT_ON, meta -> { throw new AssertionError("retired lookup"); }));
+        replacement.setComposingText("hao", 1);
+        replacement.commitText("好😀", 1);
+        replacement.finishComposingText();
+        assertArrayEquals(new byte[]{(byte) 0xe5, (byte) 0xa5, (byte) 0xbd,
+                (byte) 0xf0, (byte) 0x9f, (byte) 0x98, (byte) 0x80}, ptyStream.toByteArray());
     }
 
     @Test

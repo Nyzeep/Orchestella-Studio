@@ -33,6 +33,11 @@ tasks.register<JavaExec>("avfAuthorizationWizardModelTest") {
     mainClass.set("io.github.nyzeep.orchestella.runtime.capability.AvfAuthorizationWizardModelTest")
 }
 
+tasks.register<JavaExec>("shizukuClientControllerTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.capability.ShizukuClientControllerTest")
+}
+
 tasks.register<JavaExec>("networkCapabilityDeclarationTest") {
     classpath = sourceSets["test"].runtimeClasspath
     mainClass.set("io.github.nyzeep.orchestella.runtime.capability.NetworkCapabilityDeclarationTest")
@@ -43,6 +48,7 @@ tasks.named("check") {
         "deviceCapabilityEvaluatorTest",
         "avfCapabilityEvaluatorTest",
         "avfAuthorizationWizardModelTest",
+        "shizukuClientControllerTest",
         "networkCapabilityDeclarationTest",
     )
 }

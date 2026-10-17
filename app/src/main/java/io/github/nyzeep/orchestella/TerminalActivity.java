@@ -590,7 +590,7 @@ public class TerminalActivity extends Activity {
         sessionDeathHandled.set(false);
         holder.setSessionEndListener(id -> ui.post(() -> {
             if (generation != bindingGeneration || attachedHolder != holder) return;
-            if (sessionDeathHandled.compareAndSet(false, true)) reconcileAndConnect();
+            if (!holder.hasOwner() || sessionDeathHandled.compareAndSet(false, true)) reconcileAndConnect();
         }));
         String replay = holder.attach(terminalOutputListener);
         terminalView.setSessionScreen(holder.getScreenModel());

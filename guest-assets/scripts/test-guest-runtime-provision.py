@@ -13,6 +13,10 @@ assets = Path(__file__).resolve().parent.parent
 work = Path(os.environ.get("GUEST_RUNTIME_TEST_ROOT", ""))
 if not os.environ.get("GUEST_RUNTIME_TEST_ROOT") or not work.is_dir():
     raise SystemExit("GUEST_RUNTIME_TEST_ROOT must be an existing approved external evidence directory")
+# Direct invocations need the same validated generated template as test-local.
+# Preparation never rewrites canonical init, and drift fails before fixture I/O.
+if "--owned-report-only" not in sys.argv:
+    subprocess.run([sys.executable, str(assets / "scripts/sync-guest-init.py"), "--prepare-resource"], check=True)
 fixture = Path(tempfile.mkdtemp(prefix="guest-runtime-", dir=work))
 
 
@@ -88,6 +92,77 @@ state = root / "var/lib/orchestella/provision/state"
 done = root / "opt/orchestella/.firstboot-done"
 checks = []
 skips = []
+
+
+def owned_report_checks():
+    # Execute the production prelude/report/run_step/failure code as a real child.
+    # Only guest /dev/console is mapped to a regular-file stream sink; systemd
+    # fanout is controlled from the actual emitted owned unit, not a real journal.
+    source = (assets / "scripts/orchestella-guest-provision.sh").read_text()
+    prefix = source[:source.index("read_os_field() {\n")]
+    module = (assets / "initramfs/runtime-functions.sh").read_text()
+    unit = module.split('cat > "$target_root/etc/systemd/system/orchestella-firstboot.service" <<\'EOF\'\n', 1)[1].split("EOF\n", 1)[0]
+    route = dict(line.split("=", 1) for line in unit.splitlines() if "=" in line)
+    observed = []
+    for mode, failed in [("native", False), ("native", True), ("recovery", False),
+                         ("recovery", True), ("interactive", False)]:
+        label = mode + ("-failed" if failed else "-progress")
+        tree = fixture / ("owned-report-" + label)
+        write(tree / ".orchestella-provision-fixture", "synthetic report fixture\n")
+        console = tree / "console.txt"
+        console.touch()
+        body = prefix.replace('[ -z "$ROOT" ] && [ -w /dev/console ]', '[ -w /dev/console ]')
+        # Opening a character console does not truncate received bytes. Append is
+        # the equivalent stream operation for this controlled regular-file sink.
+        body = body.replace(" > /dev/console", " >> /dev/console")
+        body = body.replace("/dev/console", shlex.quote(unix(console)))
+        body += '\nsync() { printf "sync-requested\\n" >> "$ROOT/sync-calls.txt"; }; '
+        body += "if run_step fixture-operation sh -c 'printf \"synthetic-child-output\\n\"; exit "
+        body += ("23" if failed else "0") + "'; then "
+        body += "status=ready; stage=verified; write_state; report; else fail_stage fixture-operation synthetic-operation-failed; fi\n"
+        child = tree / "report-child.sh"
+        write(child, body)
+        env = dict(os.environ)
+        env["ORCHESTELLA_PROVISION_ROOT"] = unix(tree)
+        env.pop("ORCHESTELLA_PROVISION_REPORT", None)
+        if mode == "native" and "Environment=ORCHESTELLA_PROVISION_REPORT=journal" in unit:
+            env["ORCHESTELLA_PROVISION_REPORT"] = "journal"
+        outcome = subprocess.run(["sh", unix(child), "--bootstrap" if mode == "recovery" else "--native"],
+                                 env=env, capture_output=True, text=True, timeout=10)
+        journal = outcome.stdout if mode == "native" and route.get("StandardOutput", "").startswith("journal") else ""
+        inherited = outcome.stdout if mode != "native" or "console" in route.get("StandardOutput", "") else ""
+        visible = inherited + console.read_text()
+        reports = [line for line in outcome.stdout.splitlines() if line.startswith("ORCHESTELLA_GUEST_PROVISION status=")]
+        assert len(reports) == 2, (label, outcome)
+        expected = [0, int(failed)] if mode == "native" else [1, 1]
+        counts = [visible.splitlines().count(line) for line in reports]
+        assert counts == expected, (label, counts, expected)
+        if mode == "native":
+            assert all(journal.splitlines().count(line) == 1 for line in reports), label
+        owned_file = (tree / "var/log/orchestella-provision.log.txt").read_text()
+        assert all(owned_file.splitlines().count(line) == 1 for line in reports), label
+        assert "synthetic-child-output" in owned_file and "synthetic-child-output" not in visible
+        state_data = dict(line.split("=", 1) for line in (tree / "var/lib/orchestella/provision/state").read_text().splitlines())
+        assert outcome.returncode == (1 if failed else 0), (label, outcome)
+        assert state_data["status"] == ("failed" if failed else "ready"), (label, state_data)
+        assert not (tree / "opt/orchestella/.firstboot-done").exists()
+        if failed:
+            assert state_data["operation_exit_code"] == "23", (label, state_data)
+            assert (tree / "sync-calls.txt").read_text() == "sync-requested\n", label
+        observed.append({"case": label, "console_copies": counts, "exit": outcome.returncode,
+                         "status": state_data["status"], "operation_exit_code": state_data["operation_exit_code"]})
+    import json
+    evidence = work / "owned-report-results.json"
+    evidence.write_text(json.dumps({"cases": observed, "passed": len(observed), "guestValidated": False,
+                                   "mode": "real-owned-report-child-with-controlled-native-recovery-sinks"}, indent=2) + "\n", encoding="utf-8")
+    shutil.copyfile(evidence, work / "owned-report-results.preserved.json")
+    return ["owned_report_" + case["case"] for case in observed]
+
+
+if "--owned-report-only" in sys.argv:
+    checks.extend(owned_report_checks())
+    print(f"OWNED_REPORT_TEST_OK checks={len(checks)} guestValidated=false")
+    raise SystemExit(0)
 
 
 def recovery_shell_checks():

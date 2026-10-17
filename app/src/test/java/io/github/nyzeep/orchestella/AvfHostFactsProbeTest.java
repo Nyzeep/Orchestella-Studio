@@ -16,6 +16,44 @@ import org.junit.Test;
  */
 public final class AvfHostFactsProbeTest {
     @Test
+    public void customDenialIsReadIndependentlyFromManageGrant() {
+        AvfCapabilityEvaluator.AvfHostFacts facts = AvfHostFactsProbe.probe(
+                35, new String[] {"arm64-v8a"}, "QA", "QA", () -> "true", feature -> true,
+                permission -> AvfCapabilityEvaluator.MANAGE_VIRTUAL_MACHINE_PERMISSION.equals(permission));
+        assertEquals(AvfCapabilityEvaluator.PermissionState.GRANTED, facts.manageVirtualMachinePermissionState());
+        assertEquals(AvfCapabilityEvaluator.PermissionState.DENIED, facts.useCustomVirtualMachinePermissionState());
+        assertEquals(AvfCapabilityEvaluator.AvfStatus.NEEDS_AUTHORIZATION,
+                AvfCapabilityEvaluator.evaluate(facts).status());
+    }
+
+    @Test
+    public void recheckReplacesOldDenialAndLaterReadFailure() {
+        int[] stage = {0};
+        java.util.function.Predicate<String> permissions = permission -> {
+            if (AvfCapabilityEvaluator.MANAGE_VIRTUAL_MACHINE_PERMISSION.equals(permission)) return true;
+            if (stage[0] == 2) throw new IllegalStateException("synthetic permission read failure");
+            return stage[0] == 1;
+        };
+        java.util.function.Supplier<AvfCapabilityEvaluator.AvfHostFacts> read = () ->
+                AvfHostFactsProbe.probe(35, new String[] {"arm64-v8a"}, "QA", "QA",
+                        () -> "true", feature -> true, permissions);
+        assertEquals(AvfCapabilityEvaluator.AvfStatus.NEEDS_AUTHORIZATION,
+                AvfCapabilityEvaluator.evaluate(read.get()).status());
+        stage[0] = 1;
+        AvfCapabilityEvaluator.AvfHostFacts granted = read.get();
+        assertEquals(AvfCapabilityEvaluator.AvfStatus.READY,
+                AvfCapabilityEvaluator.evaluate(granted).status());
+        assertEquals("已授权", AvfHostFactsProbe.permissionLabel(granted.useCustomVirtualMachinePermissionState()));
+        stage[0] = 2;
+        AvfCapabilityEvaluator.AvfHostFacts unknown = read.get();
+        assertEquals(AvfCapabilityEvaluator.AvfStatus.NEEDS_AUTHORIZATION,
+                AvfCapabilityEvaluator.evaluate(unknown).status());
+        assertEquals(AvfCapabilityEvaluator.PermissionState.UNKNOWN, unknown.useCustomVirtualMachinePermissionState());
+        assertEquals("读取失败或尚未确认",
+                AvfHostFactsProbe.permissionLabel(unknown.useCustomVirtualMachinePermissionState()));
+    }
+
+    @Test
     public void assemblesFactsFromTheSuppliedReads() {
         AvfCapabilityEvaluator.AvfHostFacts facts = AvfHostFactsProbe.probe(
                 35,
@@ -57,6 +95,9 @@ public final class AvfHostFactsProbeTest {
         assertNull(facts.virtualizationProperty());
         assertFalse(facts.virtualizationFrameworkFeature());
         assertFalse(facts.manageVirtualMachinePermission());
+        assertFalse(facts.useCustomVirtualMachinePermission());
+        assertEquals(AvfCapabilityEvaluator.PermissionState.UNKNOWN, facts.manageVirtualMachinePermissionState());
+        assertEquals(AvfCapabilityEvaluator.PermissionState.UNKNOWN, facts.useCustomVirtualMachinePermissionState());
         assertNull(facts.socModel());
     }
 

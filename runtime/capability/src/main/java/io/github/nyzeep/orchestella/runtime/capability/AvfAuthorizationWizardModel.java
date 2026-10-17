@@ -18,7 +18,8 @@ public final class AvfAuthorizationWizardModel {
     }
 
     private static final String GRANT_COMMAND_TEMPLATE =
-            "adb shell pm grant %s " + AvfCapabilityEvaluator.MANAGE_VIRTUAL_MACHINE_PERMISSION;
+            "adb shell pm grant %s " + AvfCapabilityEvaluator.MANAGE_VIRTUAL_MACHINE_PERMISSION
+                    + "\nadb shell pm grant %s " + AvfCapabilityEvaluator.USE_CUSTOM_VIRTUAL_MACHINE_PERMISSION;
 
     private final Step step;
     private final boolean startable;
@@ -68,9 +69,14 @@ public final class AvfAuthorizationWizardModel {
      * Re-checks the permission after the user completes an authorization
      * path; a failed re-check stays on the current step.
      */
-    public AvfAuthorizationWizardModel confirmAuthorized(boolean permissionNowGranted) {
+    /** A legacy MANAGE-only confirmation cannot establish the CUSTOM permission. */
+    public AvfAuthorizationWizardModel confirmAuthorized(boolean manageNowGranted) {
+        return confirmAuthorized(manageNowGranted, false);
+    }
+
+    public AvfAuthorizationWizardModel confirmAuthorized(boolean manageNowGranted, boolean customNowGranted) {
         requireGuidanceStep("confirmAuthorized");
-        if (!permissionNowGranted) {
+        if (!manageNowGranted || !customNowGranted) {
             return this;
         }
         return new AvfAuthorizationWizardModel(Step.AUTHORIZED, startable);
@@ -84,10 +90,10 @@ public final class AvfAuthorizationWizardModel {
     /** The exact, copy-ready ADB grant command for this application id. */
     public static String adbGrantCommand(String applicationId) {
         Objects.requireNonNull(applicationId, "applicationId");
-        if (applicationId.isBlank()) {
+        if (!applicationId.matches("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+")) {
             throw new IllegalArgumentException("applicationId must not be blank");
         }
-        return String.format(GRANT_COMMAND_TEMPLATE, applicationId);
+        return String.format(GRANT_COMMAND_TEMPLATE, applicationId, applicationId);
     }
 
     private void requireGuidanceStep(String action) {

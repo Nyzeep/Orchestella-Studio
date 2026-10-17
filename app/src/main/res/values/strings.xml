@@ -34,7 +34,8 @@
     <!-- ADR-0003 authorization wizard (Ticket 34): detection first, Shizuku
          preferred, copy-ready ADB command fallback; backend names never shown. -->
     <string name="wizard_title">提升到硬件加速</string>
-    <string name="wizard_shizuku_steps">本设备支持硬件加速运行完整 Linux，需要一次开发级授权：\n\n1. 安装并打开 Shizuku（可通过无线调试或电脑 ADB 激活）；\n2. 在 Shizuku 中找到 Orchestella Studio 并授予权限；\n3. 返回本页点击「我已完成授权」。\n\n无法使用 Shizuku 时，可选择「改用 ADB 命令」。</string>
+    <string name="wizard_shizuku_steps">设备已声明虚拟化支持，仍需分别确认 Android 两项权限与实际运行能力。\n\nShizuku 客户端授权与 Android 的 MANAGE / CUSTOM 授权各自独立；仅在管理器中允许本应用不会自动授予这两项权限。当前可查看 Shizuku 连接状态，或选择「改用 ADB 命令」完成两项开发授权后重新检查。</string>
+    <string name="avf_preflight_boundary">当前仅检查平台声明与 Android 两项权限。平台 API 可访问性、非保护虚拟机能力与 Guest 仍待启动验证；授予权限不会解除隐藏 API 限制。当前硬件虚拟化适配器仅能准确表达 1 vCPU，多核选择将保持原值并使用软件路径。GPU 与性能未由预检验证。</string>
     <string name="wizard_adb_steps">在电脑上对本机执行一次以下命令（设备已开启 USB 调试），成功后返回点击「我已完成授权」：\n\n%1$s\n\n命令已支持一键复制。</string>
     <string name="wizard_use_adb">改用 ADB 命令</string>
     <string name="wizard_back_to_shizuku">返回 Shizuku 步骤</string>
@@ -42,7 +43,7 @@
     <string name="wizard_command_copied">授权命令已复制到剪贴板</string>
     <string name="wizard_authorization_done">我已完成授权</string>
     <string name="wizard_later">稍后再说</string>
-    <string name="wizard_authorized_toast">授权完成：实例将以硬件加速运行</string>
+    <string name="wizard_authorized_toast">两项权限已确认，实际运行仍待启动验证</string>
     <string name="wizard_not_yet_authorized">尚未检测到授权，请完成命令后再试</string>
     <string name="launch_started_hardware">正在以硬件加速启动实例…</string>
     <string name="launch_degraded_to_software">硬件加速启动失败（%1$s），已自动回退软件模拟</string>
@@ -89,9 +90,9 @@
 
     <!-- AC-4: Authorization Wizard Terminal States & Vendor Guidance (US-38) -->
     <string name="wizard_vendor_failure_title">硬件加速授权排查指引（厂商特定机制）</string>
-    <string name="wizard_vendor_failure_steps">尚未检测到权限授予。不同厂商系统存在特殊的开发者限制，请按以下步骤排查：\n\n• 小米 / Redmi（HyperOS / MIUI）：必须在「开发者选项」中开启「USB 调试（安全设置）」（需要插入 SIM 卡登录小米账号）；\n• OPPO / 一加 / Realme（ColorOS）：开发者选项中请开启「禁止权限监控」，并在弹出授权对话框时点击允许；\n• vivo / iQOO（OriginOS）：在开发者选项中关闭「应用安装与调试权限校验」；\n• 华为 / 荣耀（EMUI / MagicOS）：请开启「仅充电模式下允许 ADB 调试」；\n• 替代途径：强烈建议安装 Shizuku 并通过手机自身的「无线调试」直接配对激活，免去电脑连接。</string>
-    <string name="wizard_authorized_success_title">🎉 硬件加速解锁成功！</string>
-    <string name="wizard_authorized_success_msg">已成功获得 MANAGE_VIRTUAL_MACHINE 权限！\n当前设备已进入 L2 硬件虚拟化档，后续创建和启动 Linux 实例将享受近原生硬件加速性能。</string>
+    <string name="wizard_vendor_failure_steps">两项 Android 权限尚未全部确认。请在设备状态中查看分别缺少的权限或读取失败原因，并核对两条 ADB 命令的实际结果。\n\n系统或用户策略可能拒绝开发授权；Shizuku 客户端授权不能替代这两项权限。请参考系统与 Shizuku 官方说明，不需要更改全局安全策略。当前仍可使用软件虚拟化。</string>
+    <string name="wizard_authorized_success_title">两项 Android 权限已确认</string>
+    <string name="wizard_authorized_success_msg">MANAGE_VIRTUAL_MACHINE 与 USE_CUSTOM_VIRTUAL_MACHINE 均已授权。\n这只完成权限预检。平台 API、非保护虚拟机与 Guest 是否可运行，仍需实例启动验证；不能据此确认硬件加速、隔离或性能。当前适配器只支持精确 1 vCPU。</string>
 
     <!-- Ticket 43: Desktop Activity, Dual Mode Navigation, and Virtual Keys -->
     <string name="desktop_title">图形桌面</string>
@@ -236,10 +237,10 @@
     <string name="wizard_storage_available">私有存储空间：%1$s 可用</string>
 
     <string name="wizard_virt_card_title">虚拟化运行引擎</string>
-    <string name="wizard_virt_avf_ready_badge">🎉 L2 硬件虚拟化已就绪</string>
-    <string name="wizard_virt_avf_ready_desc">检测到 pKVM Stage-2 硬件虚拟化能力，将获得近原生计算与图形性能。</string>
-    <string name="wizard_virt_avf_auth_badge">⚡ 可解锁 L2 硬件虚拟化</string>
-    <string name="wizard_virt_avf_auth_desc">本设备支持硬件虚拟化加速！可通过 Shizuku 或 ADB 命令解锁。若暂不授权，系统将自动使用 Class A 引擎（QEMU 软模拟）开箱即用。</string>
+    <string name="wizard_virt_avf_ready_badge">硬件虚拟化权限预检满足</string>
+    <string name="wizard_virt_avf_ready_desc">平台声明与两项 Android 权限满足；实际调用、非保护虚拟机与 Guest 待启动验证，性能与隔离不能由预检确认。</string>
+    <string name="wizard_virt_avf_auth_badge">硬件虚拟化权限待确认</string>
+    <string name="wizard_virt_avf_auth_desc">请分别确认 MANAGE 与 CUSTOM 权限。授权流程尚不能证明实际运行能力；暂不授权可继续使用软件虚拟化。</string>
     <string name="wizard_virt_qemu_badge">💡 Class A 软模拟引擎就绪</string>
     <string name="wizard_virt_qemu_desc">当前系统未开放 AVF，已默认启用 QEMU 完整架构模拟，免 Root 开箱即用。</string>
 
@@ -376,4 +377,29 @@
 为防止误触，请输入「确认删除」以继续：</string>
     <string name="console_btn_guest_log">Linux 日志</string>
     <string name="console_btn_app_log">应用日志</string>
+    <string name="shizuku_client_entry">Shizuku 连接与授权</string>
+    <string name="shizuku_client_title">Shizuku 客户端授权</string>
+    <string name="shizuku_client_boundary">本页只请求 Shizuku 对本应用的客户端授权，不自动授予 Android MANAGE / CUSTOM，不执行命令或启动虚拟机。客户端授权、Android 两项权限、平台 API 与 Guest 可运行性各自独立。\n\nAndroid 11 及以上可按官方指引在本机配对和启动 Shizuku；设备每次重启后仍需用户重新启动 server。管理器撤回可能停止本应用，重新打开时将重新检查。</string>
+    <string name="shizuku_request_client">请求客户端授权</string>
+    <string name="shizuku_open_manager">打开 Shizuku</string>
+    <string name="shizuku_official_install">官方安装页面</string>
+    <string name="shizuku_official_setup">官方配对与启动指引</string>
+    <string name="shizuku_copy_adb">复制两条 ADB 授权命令</string>
+    <string name="shizuku_refresh">重新检查连接</string>
+    <string name="wizard_recheck_permissions">检查 Android 两权限</string>
+    <string name="shizuku_open_failed">无法打开，请手动打开 Shizuku 或使用 ADB 指引</string>
+    <string name="shizuku_state_missing">当前用户未安装可见的 Shizuku 管理器。请先通过官方页面安装。</string>
+    <string name="shizuku_state_pending">已安装，尚未连接到 server。请打开 Shizuku 检查是否已启动；Binder 也可能尚未到达。</string>
+    <string name="shizuku_state_unauthorized">已连接 server，本应用尚未获客户端授权。仅在您点击下方按钮后请求。</string>
+    <string name="shizuku_state_requesting">已发出本次客户端授权请求，等待用户选择；30 秒未收到结果将显示超时，不自动重试。</string>
+    <string name="shizuku_state_denied">本次客户端授权被拒绝。不会自动再次请求，您可以稍后主动重试。</string>
+    <string name="shizuku_state_denied_remembered">管理器记住了拒绝。请在 Shizuku 中调整本应用授权后重新检查。</string>
+    <string name="shizuku_state_authorized">当前 Shizuku 客户端已授权。Android 两项权限与实际虚拟机运行能力仍需分别确认。</string>
+    <string name="shizuku_state_dead">server 连接已断开，旧授权请求已失效。请由用户重新启动 Shizuku 后检查连接。</string>
+    <string name="shizuku_state_unsupported">Shizuku server API 版本不受支持，请从官方渠道更新；仍可使用 ADB 指引。</string>
+    <string name="shizuku_state_timeout">本次授权请求未及时返回，结果已退役。请检查管理器，主动刷新或重试；不会自动重试。</string>
+    <string name="shizuku_state_error">无法确认当前连接或授权，尚未执行任何特权操作。请检查 Shizuku，再主动刷新或使用 ADB 指引。</string>
+    <string name="shizuku_state_stopped">连接观察已停止，重新打开时再检查。</string>
+    <string name="third_party_notices_title">第三方开源许可</string>
+    <string name="third_party_notices_unavailable">许可文件暂时不可读，请重新打开此页面。</string>
 </resources>

@@ -21,6 +21,11 @@ public final class AvfCapabilityEvaluator {
     public static final String VIRTUALIZATION_FEATURE = "android.software.virtualization_framework";
     public static final String MANAGE_VIRTUAL_MACHINE_PERMISSION =
             "android.permission.MANAGE_VIRTUAL_MACHINE";
+    public static final String USE_CUSTOM_VIRTUAL_MACHINE_PERMISSION =
+            "android.permission.USE_CUSTOM_VIRTUAL_MACHINE";
+
+    /** A failed permission read is distinct from a confirmed denial. */
+    public enum PermissionState { GRANTED, DENIED, UNKNOWN }
 
     /**
      * SoCs whose firmware blocks non-protected (custom) VMs even when the
@@ -62,11 +67,21 @@ public final class AvfCapabilityEvaluator {
         if (!declared) {
             return AvfReadiness.unsupported(List.of("设备未声明虚拟化框架支持"));
         }
-        if (!facts.manageVirtualMachinePermission()) {
-            return AvfReadiness.needsAuthorization(
-                    List.of("需要一次开发级授权才能启用硬件加速"));
+        List<String> authorizationReasons = new ArrayList<>();
+        permissionReason(authorizationReasons, MANAGE_VIRTUAL_MACHINE_PERMISSION,
+                facts.manageVirtualMachinePermissionState());
+        permissionReason(authorizationReasons, USE_CUSTOM_VIRTUAL_MACHINE_PERMISSION,
+                facts.useCustomVirtualMachinePermissionState());
+        if (!authorizationReasons.isEmpty()) {
+            return AvfReadiness.needsAuthorization(authorizationReasons);
         }
         return AvfReadiness.ready(hardwareMatrix());
+    }
+
+    private static void permissionReason(List<String> reasons, String name, PermissionState state) {
+        if (state != PermissionState.GRANTED) {
+            reasons.add(name + (state == PermissionState.UNKNOWN ? "：读取失败或尚未确认" : "：未授权"));
+        }
     }
 
     private static String blockedHintMatch(AvfHostFacts facts) {
@@ -110,7 +125,8 @@ public final class AvfCapabilityEvaluator {
         private final List<String> supportedAbis;
         private final String virtualizationProperty;
         private final boolean virtualizationFrameworkFeature;
-        private final boolean manageVirtualMachinePermission;
+        private final PermissionState manageVirtualMachinePermission;
+        private final PermissionState useCustomVirtualMachinePermission;
         private final String socModel;
         private final String deviceModel;
         private final List<String> extraBlockedHints;
@@ -134,6 +150,7 @@ public final class AvfCapabilityEvaluator {
             this.virtualizationProperty = builder.virtualizationProperty;
             this.virtualizationFrameworkFeature = builder.virtualizationFrameworkFeature;
             this.manageVirtualMachinePermission = builder.manageVirtualMachinePermission;
+            this.useCustomVirtualMachinePermission = builder.useCustomVirtualMachinePermission;
             this.socModel = builder.socModel;
             this.deviceModel = builder.deviceModel;
             this.extraBlockedHints = Collections.unmodifiableList(copiedHints);
@@ -157,7 +174,23 @@ public final class AvfCapabilityEvaluator {
         }
 
         public boolean manageVirtualMachinePermission() {
+            return manageVirtualMachinePermission == PermissionState.GRANTED;
+        }
+
+        public boolean useCustomVirtualMachinePermission() {
+            return useCustomVirtualMachinePermission == PermissionState.GRANTED;
+        }
+
+        public PermissionState manageVirtualMachinePermissionState() {
             return manageVirtualMachinePermission;
+        }
+
+        public PermissionState useCustomVirtualMachinePermissionState() {
+            return useCustomVirtualMachinePermission;
+        }
+
+        public boolean hasBothVirtualMachinePermissions() {
+            return manageVirtualMachinePermission() && useCustomVirtualMachinePermission();
         }
 
         public String socModel() {
@@ -177,22 +210,36 @@ public final class AvfCapabilityEvaluator {
             private final List<String> supportedAbis;
             private final String virtualizationProperty;
             private final boolean virtualizationFrameworkFeature;
-            private final boolean manageVirtualMachinePermission;
+            private final PermissionState manageVirtualMachinePermission;
+        private final PermissionState useCustomVirtualMachinePermission;
             private String socModel;
             private String deviceModel;
             private List<String> extraBlockedHints = Collections.emptyList();
 
-            public Builder(
-                    int sdkInt,
-                    List<String> supportedAbis,
-                    String virtualizationProperty,
-                    boolean virtualizationFrameworkFeature,
-                    boolean manageVirtualMachinePermission) {
+            /** Compatibility input: a MANAGE-only caller has not established CUSTOM. */
+            public Builder(int sdkInt, List<String> supportedAbis, String virtualizationProperty,
+                    boolean virtualizationFrameworkFeature, boolean managePermission) {
+                this(sdkInt, supportedAbis, virtualizationProperty, virtualizationFrameworkFeature,
+                        managePermission ? PermissionState.GRANTED : PermissionState.DENIED,
+                        PermissionState.UNKNOWN);
+            }
+
+            public Builder(int sdkInt, List<String> supportedAbis, String virtualizationProperty,
+                    boolean virtualizationFrameworkFeature, boolean managePermission, boolean customPermission) {
+                this(sdkInt, supportedAbis, virtualizationProperty, virtualizationFrameworkFeature,
+                        managePermission ? PermissionState.GRANTED : PermissionState.DENIED,
+                        customPermission ? PermissionState.GRANTED : PermissionState.DENIED);
+            }
+
+            public Builder(int sdkInt, List<String> supportedAbis, String virtualizationProperty,
+                    boolean virtualizationFrameworkFeature, PermissionState managePermission,
+                    PermissionState customPermission) {
                 this.sdkInt = sdkInt;
                 this.supportedAbis = supportedAbis;
                 this.virtualizationProperty = virtualizationProperty;
                 this.virtualizationFrameworkFeature = virtualizationFrameworkFeature;
-                this.manageVirtualMachinePermission = manageVirtualMachinePermission;
+                this.manageVirtualMachinePermission = Objects.requireNonNull(managePermission, "managePermission");
+                this.useCustomVirtualMachinePermission = Objects.requireNonNull(customPermission, "customPermission");
             }
 
             public Builder socModel(String socModel) {
@@ -279,7 +326,9 @@ public final class AvfCapabilityEvaluator {
         }
 
         public String performanceBadge() {
-            return capabilityMatrix.performanceBadge();
+            return status == AvfStatus.READY
+                    ? "完整 Linux · 权限预检满足（启动待验证）"
+                    : capabilityMatrix.performanceBadge();
         }
     }
 }
