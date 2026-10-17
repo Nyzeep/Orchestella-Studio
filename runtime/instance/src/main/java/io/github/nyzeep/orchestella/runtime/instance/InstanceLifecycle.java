@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
 /**
@@ -526,6 +527,14 @@ public final class InstanceLifecycle {
         List<Instance> list() throws IOException;
 
         void delete(String id) throws IOException;
+
+        /**
+         * Monitor shared by every Store instance backed by the same state data. Callers must hold
+         * it across read-modify-write sequences; custom stores default to instance-local locking.
+         */
+        default Object stateMonitor() {
+            return this;
+        }
     }
 
     /**
@@ -533,65 +542,86 @@ public final class InstanceLifecycle {
      * Android private-files path in production.
      */
     public static final class FileStore implements Store {
+        private static final ConcurrentHashMap<Path, Object> STATE_MONITORS = new ConcurrentHashMap<>();
+
         private final Path directory;
+        private final Object stateMonitor;
 
         public FileStore(Path directory) throws IOException {
             this.directory = Objects.requireNonNull(directory, "directory").toAbsolutePath().normalize();
             Files.createDirectories(this.directory);
+            this.stateMonitor = STATE_MONITORS.computeIfAbsent(this.directory.toRealPath(), ignored -> new Object());
         }
 
         @Override
-        public synchronized void save(Instance instance) throws IOException {
-            Objects.requireNonNull(instance, "instance");
-            Path target = metadataPath(instance.id());
-            Path temporary = directory.resolve(instance.id() + ".properties.tmp");
-            Properties properties = instance.toProperties();
-            try (OutputStream output = Files.newOutputStream(temporary)) {
-                properties.store(output, "Orchestella Instance metadata");
-            }
-            try {
-                Files.move(
-                        temporary,
-                        target,
-                        StandardCopyOption.ATOMIC_MOVE,
-                        StandardCopyOption.REPLACE_EXISTING);
-            } catch (AtomicMoveNotSupportedException unsupported) {
-                Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
+        public Object stateMonitor() {
+            return stateMonitor;
+        }
+
+        @Override
+        public void save(Instance instance) throws IOException {
+            synchronized (stateMonitor) {
+                Objects.requireNonNull(instance, "instance");
+                Path target = metadataPath(instance.id());
+                Path temporary = directory.resolve(instance.id() + ".properties.tmp");
+                Properties properties = instance.toProperties();
+                try (OutputStream output = Files.newOutputStream(temporary)) {
+                    properties.store(output, "Orchestella Instance metadata");
+                }
+                try {
+                    Files.move(
+                            temporary,
+                            target,
+                            StandardCopyOption.ATOMIC_MOVE,
+                            StandardCopyOption.REPLACE_EXISTING);
+                } catch (AtomicMoveNotSupportedException unsupported) {
+                    Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
+                }
             }
         }
 
         @Override
-        public synchronized Instance load(String id) throws IOException {
-            Path target = metadataPath(id);
-            if (!Files.isRegularFile(target)) {
-                throw new IOException("instance metadata not found");
+        public Instance load(String id) throws IOException {
+            synchronized (stateMonitor) {
+                Path target = metadataPath(id);
+                if (!Files.isRegularFile(target)) {
+                    throw new IOException("instance metadata not found");
+                }
+                return read(target);
             }
-            return read(target);
         }
 
         @Override
-        public synchronized List<Instance> list() throws IOException {
-            List<Instance> instances = new ArrayList<>();
-            try (var entries = Files.list(directory)) {
-                entries.filter(path -> path.getFileName().toString().endsWith(".properties"))
-                        .sorted()
-                        .forEach(
-                                path -> {
-                                    try {
-                                        instances.add(read(path));
-                                    } catch (IOException exception) {
-                                        throw new ReadFailure(exception);
-                                    }
-                                });
-            } catch (ReadFailure failure) {
-                throw failure.cause;
+        public List<Instance> list() throws IOException {
+            synchronized (stateMonitor) {
+                List<Instance> instances = new ArrayList<>();
+                try (var entries = Files.list(directory)) {
+                    entries.filter(path -> path.getFileName().toString().endsWith(".properties"))
+                            .sorted()
+                            .forEach(
+                                    path -> {
+                                        try {
+                                            instances.add(read(path));
+                                        } catch (IOException exception) {
+                                            throw new ReadFailure(exception);
+                                        }
+                                    });
+                } catch (ReadFailure failure) {
+                    throw failure.cause;
+                }
+                instances.sort(Comparator.comparing(Instance::id));
+                return Collections.unmodifiableList(instances);
             }
-            instances.sort(Comparator.comparing(Instance::id));
-            return Collections.unmodifiableList(instances);
         }
 
         @Override
-        public synchronized void delete(String id) throws IOException {
+        public void delete(String id) throws IOException {
+            synchronized (stateMonitor) {
+                deleteLocked(id);
+            }
+        }
+
+        private void deleteLocked(String id) throws IOException {
             requireInstanceId(id);
             Path target = metadataPath(id);
             if (!Files.isRegularFile(target)) {
@@ -827,6 +857,12 @@ public final class InstanceLifecycle {
         }
 
         public synchronized Instance updateHardwareConfig(String id, VmHardwareConfig newConfig) throws IOException {
+            synchronized (store.stateMonitor()) {
+                return updateHardwareConfigLocked(id, newConfig);
+            }
+        }
+
+        private Instance updateHardwareConfigLocked(String id, VmHardwareConfig newConfig) throws IOException {
             Objects.requireNonNull(newConfig, "newConfig");
             Instance current = store.load(id);
             if (current.state() != State.STOPPED && current.state() != State.CREATED) {
@@ -838,6 +874,12 @@ public final class InstanceLifecycle {
         }
 
         public synchronized Instance updateGuestPassword(String id, String newPassword) throws IOException {
+            synchronized (store.stateMonitor()) {
+                return updateGuestPasswordLocked(id, newPassword);
+            }
+        }
+
+        private Instance updateGuestPasswordLocked(String id, String newPassword) throws IOException {
             Objects.requireNonNull(newPassword, "newPassword");
             String trimmed = newPassword.trim();
             if (trimmed.length() < 8) {
@@ -861,6 +903,12 @@ public final class InstanceLifecycle {
         }
 
         public synchronized Instance start(String id) throws IOException {
+            synchronized (store.stateMonitor()) {
+                return startLocked(id);
+            }
+        }
+
+        private Instance startLocked(String id) throws IOException {
             Instance current = store.load(id);
             if (current.state() != State.STOPPED) {
                 throw new InvalidTransitionException(
@@ -878,6 +926,12 @@ public final class InstanceLifecycle {
          * Suspends a currently RUNNING instance, freezing CPU scheduling.
          */
         public synchronized Instance suspend(String id) throws IOException {
+            synchronized (store.stateMonitor()) {
+                return suspendLocked(id);
+            }
+        }
+
+        private Instance suspendLocked(String id) throws IOException {
             Instance current = store.load(id);
             if (current.state() != State.RUNNING) {
                 throw new InvalidTransitionException(
@@ -890,6 +944,12 @@ public final class InstanceLifecycle {
          * Resumes a SUSPENDED instance, unfreezing CPU scheduling and returning to RUNNING.
          */
         public synchronized Instance resume(String id) throws IOException {
+            synchronized (store.stateMonitor()) {
+                return resumeLocked(id);
+            }
+        }
+
+        private Instance resumeLocked(String id) throws IOException {
             Instance current = store.load(id);
             if (current.state() != State.SUSPENDED) {
                 throw new InvalidTransitionException(
@@ -907,6 +967,12 @@ public final class InstanceLifecycle {
          * Force stops an instance, transitioning RUNNING or SUSPENDED states directly to STOPPED.
          */
         public synchronized Instance forceStop(String id) throws IOException {
+            synchronized (store.stateMonitor()) {
+                return forceStopLocked(id);
+            }
+        }
+
+        private Instance forceStopLocked(String id) throws IOException {
             Instance current = store.load(id);
             if (current.state() == State.STOPPED) {
                 return current;
@@ -916,12 +982,16 @@ public final class InstanceLifecycle {
 
         /** Records an observed normal guest-initiated stop; it is not a host power command. */
         public synchronized Instance recordNormalGuestStop(String id) throws IOException {
-            return transition(id, State.STOPPED);
+            synchronized (store.stateMonitor()) {
+                return transition(id, State.STOPPED);
+            }
         }
 
         /** Records an intentional graceful stop initiated by the host or guest. */
         public synchronized Instance recordGracefulStop(String id) throws IOException {
-            return transition(id, State.STOPPED);
+            synchronized (store.stateMonitor()) {
+                return transition(id, State.STOPPED);
+            }
         }
 
         public synchronized Instance recordCrash(String id, int exitCode, Path logPath) throws IOException {
@@ -934,6 +1004,12 @@ public final class InstanceLifecycle {
         }
 
         public synchronized Instance recordCrash(String id, CrashDiagnostic diagnostic) throws IOException {
+            synchronized (store.stateMonitor()) {
+                return recordCrashLocked(id, diagnostic);
+            }
+        }
+
+        private Instance recordCrashLocked(String id, CrashDiagnostic diagnostic) throws IOException {
             Objects.requireNonNull(diagnostic, "diagnostic");
             Instance current = store.load(id);
             Instance transitioned = current.transitioned(State.CRASHED, clock, diagnostic);
@@ -963,6 +1039,12 @@ public final class InstanceLifecycle {
          * Reconciles all stale RUNNING or SUSPENDED instances to the specified target state (INTERRUPTED or STOPPED).
          */
         public synchronized List<Instance> reconcileAfterHostDeath(State targetState) throws IOException {
+            synchronized (store.stateMonitor()) {
+                return reconcileAfterHostDeathLocked(targetState);
+            }
+        }
+
+        private List<Instance> reconcileAfterHostDeathLocked(State targetState) throws IOException {
             if (targetState != State.INTERRUPTED && targetState != State.STOPPED) {
                 throw new IllegalArgumentException(
                         "targetState must be INTERRUPTED or STOPPED, got: " + targetState);
@@ -989,6 +1071,12 @@ public final class InstanceLifecycle {
          * Reconciles a single instance by id to the specified target state (INTERRUPTED or STOPPED).
          */
         public synchronized Instance reconcileAfterHostDeath(String id, State targetState) throws IOException {
+            synchronized (store.stateMonitor()) {
+                return reconcileAfterHostDeathLocked(id, targetState);
+            }
+        }
+
+        private Instance reconcileAfterHostDeathLocked(String id, State targetState) throws IOException {
             if (targetState != State.INTERRUPTED && targetState != State.STOPPED) {
                 throw new IllegalArgumentException(
                         "targetState must be INTERRUPTED or STOPPED, got: " + targetState);
@@ -1007,6 +1095,12 @@ public final class InstanceLifecycle {
          * Enforces the single-running-instance constraint and clears prior crash diagnostics.
          */
         public synchronized Instance coldRestore(String id) throws IOException {
+            synchronized (store.stateMonitor()) {
+                return coldRestoreLocked(id);
+            }
+        }
+
+        private Instance coldRestoreLocked(String id) throws IOException {
             for (Instance instance : store.list()) {
                 if (!instance.id().equals(id) && instance.state() == State.RUNNING) {
                     throw new SingleRunningInstanceException("another Instance is already RUNNING");
@@ -1030,6 +1124,12 @@ public final class InstanceLifecycle {
          * Resets an interrupted or crashed instance back to STOPPED without starting it.
          */
         public synchronized Instance resetToStopped(String id) throws IOException {
+            synchronized (store.stateMonitor()) {
+                return resetToStoppedLocked(id);
+            }
+        }
+
+        private Instance resetToStoppedLocked(String id) throws IOException {
             Instance current = store.load(id);
             if (current.state() != State.INTERRUPTED && current.state() != State.CRASHED) {
                 throw new InvalidTransitionException(
@@ -1115,9 +1215,11 @@ public final class InstanceLifecycle {
         }
 
         private Instance transition(String id, State next) throws IOException {
-            Instance transitioned = store.load(id).transitioned(next, clock);
-            store.save(transitioned);
-            return transitioned;
+            synchronized (store.stateMonitor()) {
+                Instance transitioned = store.load(id).transitioned(next, clock);
+                store.save(transitioned);
+                return transitioned;
+            }
         }
     }
 

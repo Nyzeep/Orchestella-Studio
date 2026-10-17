@@ -140,8 +140,8 @@
   "reviewStatus": "APPROVE_BOTH_AXES",
   "pushStatus": "RECORDED_IN_FINAL_DELIVERY",
   "reviews": {
-    "qualityProtocol": "docs/reports/reviews/quality-phase5-integration/standards-review.zh-CN.md",
-    "phase5DataArtifacts": "docs/reports/reviews/quality-phase5-integration/spec-review.zh-CN.md",
+    "qualityProtocol": "docs/reports/archive/2026-10-phase5-quality/reviews/quality-phase5-integration/standards-review.zh-CN.md",
+    "phase5DataArtifacts": "docs/reports/archive/2026-10-phase5-quality/reviews/quality-phase5-integration/spec-review.zh-CN.md",
     "reviewedSourceCommit": "6bbc31c29e97c0eba64122d22d9ea301d658d097",
     "openBlockingFindings": 0
   },
