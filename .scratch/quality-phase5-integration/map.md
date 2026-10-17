@@ -5,7 +5,7 @@ Base: 8d0e8c75d769ecc645ea102b90a304c8657344a1
 Branch: integration/quality-phase5
 Foundation: 3b637e48f51fb4b78282d468d9c78b37d582de87
 
-Scope and acceptance: [complete execution prompt](../../docs/agent-handoff/QUALITY_PHASE5_MERGE_PROMPT.zh-CN.md). Existing product decisions remain authoritative. Seven-distribution long acceptance stays cancelled; reference upstreams are read-only.
+Scope and acceptance: [complete execution prompt](../../docs/agent-handoff/archive/2026-10-phase5/QUALITY_PHASE5_MERGE_PROMPT.zh-CN.md). Existing product decisions remain authoritative. Seven-distribution long acceptance stays cancelled; reference upstreams are read-only.
 
 | Ticket | Status | Dependency | Owner |
 | --- | --- | --- | --- |
