@@ -1,0 +1,23 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="io.github.nyzeep.orchestella.researchauth">
+    <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="36" />
+    <uses-permission android:name="android.permission.MANAGE_VIRTUAL_MACHINE" />
+    <uses-permission android:name="android.permission.USE_CUSTOM_VIRTUAL_MACHINE" />
+    <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
+    <queries><package android:name="moe.shizuku.privileged.api" /></queries>
+    <application android:label="Orchestella Identity QA" android:allowBackup="false"
+        android:debuggable="true" android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <meta-data android:name="moe.shizuku.client.V3_SUPPORT" android:value="true" />
+        <provider android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="io.github.nyzeep.orchestella.researchauth.shizuku"
+            android:exported="true" android:multiprocess="false"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+        <activity android:name=".ProbeActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <uses-library android:name="android.system.virtualmachine" android:required="false" />
+    </application>
+</manifest>

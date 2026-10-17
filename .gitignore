@@ -17,14 +17,16 @@ captures/
 .agents/
 skills-lock.json
 /app/src/main/jniLibs/
-/app/src/main/assets/
+/app/src/main/assets/*
+!/app/src/main/assets/third-party-notices.txt
 /app/src/main/resources/
 temp/
 /doc/
 探讨文档*.md
 .scratch/
 
-# Developer-local assets (kept out of the public repo by owner decision)
+# Developer-local assets remain ignored. Reviewed task documents may be
+# explicitly tracked; do not force-add these directories as a whole.
 /docs/
 /temp/
 

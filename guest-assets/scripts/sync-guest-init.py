@@ -1,11 +1,21 @@
 #!/usr/bin/env python3
 """Embed canonical guest runtime modules and synchronize the APK's guest-init template.
 
-Use --check in tests. This only reads/writes production source templates, never artifacts.
+Use --prepare-resource before --check in a clean checkout. Preparation validates
+canonical bytes and only writes the generated APK template. With no arguments,
+explicit source maintenance still updates canonical init and the APK template.
 """
 from pathlib import Path
+import argparse
 import hashlib
-import sys
+import os
+import tempfile
+
+parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
+modes = parser.add_mutually_exclusive_group()
+modes.add_argument("--check", action="store_true", help="validate canonical and APK template bytes without writing")
+modes.add_argument("--prepare-resource", action="store_true", help="validate canonical before generating only the APK template")
+options = parser.parse_args()
 
 assets = Path(__file__).resolve().parent.parent
 source = assets / "initramfs/init"
@@ -98,9 +108,27 @@ else:
 entry_start = updated.index(entry_marker)
 entry = (assets / "initramfs/runtime-entry.sh").read_text(encoding="utf-8")
 updated = updated[:entry_start] + entry_marker + entry + "# ORCHESTELLA_RUNTIME_ENTRY_END\n"
-if "--check" in sys.argv:
-    if text != updated or resource.read_text(encoding="utf-8") != updated:
-        raise SystemExit("guest-init runtime modules or APK template are out of sync")
+if options.prepare_resource:
+    if source.read_bytes() != updated.encode("utf-8"):
+        raise SystemExit("guest-init canonical runtime modules are out of sync")
+    resource.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=resource.parent, prefix=".guest_init-", delete=False) as output:
+            temporary = Path(output.name)
+            output.write(updated.encode("utf-8"))
+        os.replace(temporary, resource)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+    print("GUEST_INIT_RESOURCE_PREPARED")
+elif options.check:
+    if source.read_bytes() != updated.encode("utf-8"):
+        raise SystemExit("guest-init canonical runtime modules are out of sync")
+    if not resource.is_file():
+        raise SystemExit("guest-init APK template is missing; run --prepare-resource first")
+    if resource.read_bytes() != updated.encode("utf-8"):
+        raise SystemExit("guest-init APK template bytes are out of sync")
     print("GUEST_INIT_TEMPLATE_SYNC_OK")
 else:
     source.write_text(updated, encoding="utf-8", newline="\n")

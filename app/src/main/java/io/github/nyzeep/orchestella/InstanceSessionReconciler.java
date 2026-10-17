@@ -123,8 +123,11 @@ public final class InstanceSessionReconciler {
         } catch (Exception ignored) {
         }
 
-        if (liveHolder != null && liveHolder.isAlive()) {
-            return ReconcileResult.attached(instance, liveHolder, "Active session found in pool");
+        if (liveHolder != null && liveHolder.hasOwner()) {
+            // Terminal EOF is a transport event. Only the owner's exit supervisor may
+            // retire this session or persist a VM exit; never replace it with a socket probe.
+            return ReconcileResult.attached(instance, liveHolder,
+                    liveHolder.isAlive() ? "Active session found in pool" : "Terminal ended; VM exit is not confirmed");
         }
 
         if (instance == null) {
@@ -138,37 +141,12 @@ public final class InstanceSessionReconciler {
             if (InstanceLaunchGuard.isInFlight(instanceId)) {
                 return ReconcileResult.offline(instance, "Instance launch in progress");
             }
-            // Attempt auto re-attach probe
-            if (sessionRecoverer != null) {
-                try {
-                    ExecutionSession recovered = sessionRecoverer.recoverSession(instance);
-                    if (recovered != null) {
-                        PersistentTerminalSessionPool.SessionHolder newHolder =
-                                sessionPool.register(instanceId, recovered);
-                        return ReconcileResult.attached(instance, newHolder, "Session recovered and attached");
-                    }
-                } catch (Exception ignored) {
-                }
-            }
-
-            // Recovery failed / process dead -> record crash / abnormal termination
-            InstanceLifecycle.CrashDiagnostic diagnostic = new InstanceLifecycle.CrashDiagnostic(
-                    clock.millis(),
-                    -1,
-                    null,
-                    "PTY session disconnected or process died unexpectedly");
-
-            InstanceLifecycle.Instance crashedInstance = null;
-            if (controller != null) {
-                try {
-                    crashedInstance = controller.recordCrash(instanceId, diagnostic);
-                } catch (Exception e) {
-                    crashedInstance = instance;
-                }
-            } else {
-                crashedInstance = instance;
-            }
-            return ReconcileResult.crashed(crashedInstance, "Instance was marked RUNNING but session is unrecoverable");
+            // ADR-0011: this process has no supervised VM owner. A reachable socket
+            // cannot reconstruct its wait/stop identity, so do not create a transport
+            // stand-in with a synthetic successful wait. Preserve the instance for cold restore.
+            InstanceLifecycle.Instance interrupted = controller != null
+                    ? controller.reconcileAfterHostDeath(instanceId) : instance;
+            return ReconcileResult.crashed(interrupted, "VM owner is absent; cold restore is required");
         }
 
         if (instance.state() == InstanceLifecycle.State.STOPPED
