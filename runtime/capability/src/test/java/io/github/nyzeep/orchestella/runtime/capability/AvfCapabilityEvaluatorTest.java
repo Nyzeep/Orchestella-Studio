@@ -8,6 +8,8 @@ import java.util.List;
  */
 public final class AvfCapabilityEvaluatorTest {
     public static void main(String[] arguments) {
+        manageGrantAloneDoesNotCompletePreflight();
+        bothPermissionReadsMustBeConfirmedBeforeReady();
         readyDevicePassesWithTheHardwareBadge();
         sdkBelowAndroid13IsRefusedWithoutWizard();
         nonArm64DeviceIsRefusedWithoutWizard();
@@ -21,11 +23,42 @@ public final class AvfCapabilityEvaluatorTest {
         numericOnePropertyIsRecognizedAsTruthy();
     }
 
+    private static void manageGrantAloneDoesNotCompletePreflight() {
+        AvfCapabilityEvaluator.AvfReadiness readiness =
+                AvfCapabilityEvaluator.evaluate(new AvfCapabilityEvaluator.AvfHostFacts.Builder(
+                        35, List.of("arm64-v8a"), "true", true, true).build());
+        assertTrue(readiness.status() == AvfCapabilityEvaluator.AvfStatus.NEEDS_AUTHORIZATION,
+                "legacy MANAGE-only facts must leave CUSTOM unknown and require authorization");
+    }
+
+    private static void bothPermissionReadsMustBeConfirmedBeforeReady() {
+        for (AvfCapabilityEvaluator.PermissionState manage : AvfCapabilityEvaluator.PermissionState.values()) {
+            for (AvfCapabilityEvaluator.PermissionState custom : AvfCapabilityEvaluator.PermissionState.values()) {
+                AvfCapabilityEvaluator.AvfReadiness readiness = AvfCapabilityEvaluator.evaluate(
+                        new AvfCapabilityEvaluator.AvfHostFacts.Builder(
+                                35, List.of("arm64-v8a"), "true", true, manage, custom).build());
+                boolean bothGranted = manage == AvfCapabilityEvaluator.PermissionState.GRANTED
+                        && custom == AvfCapabilityEvaluator.PermissionState.GRANTED;
+                assertEquals(bothGranted ? AvfCapabilityEvaluator.AvfStatus.READY
+                                : AvfCapabilityEvaluator.AvfStatus.NEEDS_AUTHORIZATION,
+                        readiness.status(), "permission pair must be independently checked");
+                if (custom != AvfCapabilityEvaluator.PermissionState.GRANTED) {
+                    assertTrue(readiness.reasons().stream().anyMatch(reason -> reason.contains("USE_CUSTOM_VIRTUAL_MACHINE")),
+                            "CUSTOM denial or unknown is named in the reason");
+                }
+                if (manage != AvfCapabilityEvaluator.PermissionState.GRANTED) {
+                    assertTrue(readiness.reasons().stream().anyMatch(reason -> reason.contains("MANAGE_VIRTUAL_MACHINE")),
+                            "MANAGE denial or unknown is named in the reason");
+                }
+            }
+        }
+    }
+
     private static void numericOnePropertyIsRecognizedAsTruthy() {
         AvfCapabilityEvaluator.AvfReadiness readiness =
                 AvfCapabilityEvaluator.evaluate(
                         new AvfCapabilityEvaluator.AvfHostFacts.Builder(
-                                        35, List.of("arm64-v8a"), "1", false, true)
+                                        35, List.of("arm64-v8a"), "1", false, true, true)
                                 .socModel("MT6991")
                                 .deviceModel("Test Device")
                                 .build());
@@ -35,7 +68,7 @@ public final class AvfCapabilityEvaluatorTest {
 
     private static AvfCapabilityEvaluator.AvfHostFacts.Builder readyDevice() {
         return new AvfCapabilityEvaluator.AvfHostFacts.Builder(
-                        35, List.of("arm64-v8a"), "true", true, true)
+                        35, List.of("arm64-v8a"), "true", true, true, true)
                 .socModel("MT6991")
                 .deviceModel("Test Device");
     }
@@ -46,7 +79,8 @@ public final class AvfCapabilityEvaluatorTest {
 
         assertTrue(readiness.status() == AvfCapabilityEvaluator.AvfStatus.READY, "ready device is READY");
         assertTrue(readiness.wizardEligible(), "ready device needs no wizard but is eligible");
-        assertEquals("完整 Linux · 硬件加速", readiness.performanceBadge(), "hardware badge on READY");
+        assertEquals("完整 Linux · 权限预检满足（启动待验证）", readiness.performanceBadge(),
+                "preflight badge must not claim hardware execution");
     }
 
     private static void sdkBelowAndroid13IsRefusedWithoutWizard() {
@@ -91,7 +125,7 @@ public final class AvfCapabilityEvaluatorTest {
         AvfCapabilityEvaluator.AvfReadiness readiness =
                 AvfCapabilityEvaluator.evaluate(
                         new AvfCapabilityEvaluator.AvfHostFacts.Builder(
-                                        35, List.of("arm64-v8a"), null, true, true)
+                                        35, List.of("arm64-v8a"), null, true, true, true)
                                 .build());
 
         assertTrue(

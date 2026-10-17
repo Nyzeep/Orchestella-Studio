@@ -14,6 +14,12 @@ command -v python3 >/dev/null 2>&1 || {
   exit 69
 }
 
+# A clean checkout has no ignored APK template. Validate canonical init before
+# preparing that generated resource; never run the source-update mode in CI.
+python3 "$GUEST_ASSETS_DIR/scripts/sync-guest-init.py" --prepare-resource
+python3 "$GUEST_ASSETS_DIR/scripts/sync-guest-init.py" --check
+GUEST_RUNTIME_TEST_ROOT="$TICKET26_WORK_ROOT" python3 "$GUEST_ASSETS_DIR/scripts/test-sync-guest-init.py"
+
 bash "$GUEST_ASSETS_DIR/scripts/test-builder-python.sh"
 
 if [[ "${1:-}" == "--init-fallback-only" ]]; then

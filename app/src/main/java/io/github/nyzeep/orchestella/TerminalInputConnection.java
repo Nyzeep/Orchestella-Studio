@@ -42,6 +42,8 @@ public class TerminalInputConnection implements InputConnection {
     private java.util.function.BooleanSupplier bracketedPaste = () -> false;
     private java.util.function.IntPredicate contextMenuHandler = id -> false;
     private boolean closed;
+    private int pendingDeadAccent;
+    private final java.util.function.IntBinaryOperator deadCharacterResolver;
 
     public void setTerminalModes(java.util.function.BooleanSupplier applicationCursorKeys,
             java.util.function.BooleanSupplier bracketedPaste) {
@@ -67,8 +69,15 @@ public class TerminalInputConnection implements InputConnection {
     }
 
     public TerminalInputConnection(TerminalInputSink sink, StickyModifierStateMachine stickyStateMachine) {
+        this(sink, stickyStateMachine, android.view.KeyCharacterMap::getDeadChar);
+    }
+
+    /** The resolver is the Android layout boundary; it returns zero for an uncombinable pair. */
+    public TerminalInputConnection(TerminalInputSink sink, StickyModifierStateMachine stickyStateMachine,
+            java.util.function.IntBinaryOperator deadCharacterResolver) {
         this.sink = sink;
         this.stickyStateMachine = stickyStateMachine;
+        this.deadCharacterResolver = java.util.Objects.requireNonNull(deadCharacterResolver);
     }
 
     public boolean isClosed() { return closed; }
@@ -180,13 +189,25 @@ public class TerminalInputConnection implements InputConnection {
             int keyCode = event.getKeyCode();
             // Android's modified unicode can be zero for Ctrl keys, and Alt may compose
             // a layout character. Encode the terminal modifiers ourselves from the base key.
-            int meta = event.getMetaState() & ~(KeyEvent.META_CTRL_MASK | KeyEvent.META_ALT_MASK);
-            int unicode = event.getUnicodeChar(meta);
-            return handleKeyEvent(action, keyCode, unicode, event.isCtrlPressed(),
-                    event.isAltPressed(), event.isShiftPressed());
+            return sendKeyEvent(action, keyCode, event.getMetaState(), event::getUnicodeChar);
         } catch (Exception e) {
             return false;
         }
+    }
+
+    /** Layout lookup boundary; production uses KeyEvent.getUnicodeChar, tests supply a fixed map. */
+    public boolean sendKeyEvent(int action, int keyCode, int meta,
+            java.util.function.IntUnaryOperator unicodeResolver) {
+        if (closed || sink == null || unicodeResolver == null) return false;
+        boolean ctrl = (meta & KeyEvent.META_CTRL_MASK) != 0;
+        boolean altGr = (meta & KeyEvent.META_ALT_RIGHT_ON) != 0
+                && (meta & KeyEvent.META_ALT_LEFT_ON) == 0 && !ctrl;
+        int layoutMeta = meta & ~KeyEvent.META_CTRL_MASK;
+        if (!altGr) layoutMeta &= ~KeyEvent.META_ALT_MASK;
+        int unicode = unicodeResolver.applyAsInt(layoutMeta);
+        return handleKeyEvent(action, keyCode, unicode, ctrl,
+                !altGr && (meta & KeyEvent.META_ALT_MASK) != 0,
+                (meta & KeyEvent.META_SHIFT_MASK) != 0);
     }
 
     public boolean handleKeyEvent(int action, int keyCode, int unicode, boolean isCtrl, boolean isAlt) {
@@ -235,6 +256,7 @@ public class TerminalInputConnection implements InputConnection {
             }
         }
         if (sequence != null) {
+            pendingDeadAccent = 0;
             finishComposingText();
             sink.sendBytes(sequence.getBytes(StandardCharsets.UTF_8));
             consumeModifiers();
@@ -242,10 +264,37 @@ public class TerminalInputConnection implements InputConnection {
         }
         if (unicode == 0 && keyCode >= KeyEvent.KEYCODE_A && keyCode <= KeyEvent.KEYCODE_Z)
             unicode = 'a' + keyCode - KeyEvent.KEYCODE_A;
-        if (unicode == 0 || !Character.isValidCodePoint(unicode)) return false;
+        if ((unicode & android.view.KeyCharacterMap.COMBINING_ACCENT) != 0) {
+            int accent = unicode & android.view.KeyCharacterMap.COMBINING_ACCENT_MASK;
+            if (!isUnicodeScalar(accent)) return false;
+            finishComposingText();
+            if (pendingDeadAccent == accent) {
+                pendingDeadAccent = 0;
+                writeCodePoint(accent, ctrl, alt);
+            } else {
+                if (pendingDeadAccent != 0) writeCodePoint(pendingDeadAccent, false, false);
+                pendingDeadAccent = accent;
+            }
+            return true;
+        }
+        if (unicode == 0 || !isUnicodeScalar(unicode)) return false;
         finishComposingText();
+        if (pendingDeadAccent != 0) {
+            int accent = pendingDeadAccent;
+            pendingDeadAccent = 0;
+            if (!ctrl && !alt) {
+                int combined = deadCharacterResolver.applyAsInt(accent, unicode);
+                if (combined != 0 && isUnicodeScalar(combined)) unicode = combined;
+                else writeCodePoint(accent, false, false);
+            }
+        }
         writeCodePoint(unicode, ctrl, alt);
         return true;
+    }
+
+    private static boolean isUnicodeScalar(int value) {
+        return Character.isValidCodePoint(value)
+                && (value < Character.MIN_SURROGATE || value > Character.MAX_SURROGATE);
     }
 
     @Override
@@ -359,6 +408,7 @@ public class TerminalInputConnection implements InputConnection {
     @Override
     public void closeConnection() {
         composition.clear();
+        pendingDeadAccent = 0;
         closed = true;
     }
 

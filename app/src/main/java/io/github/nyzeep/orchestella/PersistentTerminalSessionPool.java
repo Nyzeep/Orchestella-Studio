@@ -23,6 +23,8 @@ import java.util.function.Consumer;
  */
 public final class PersistentTerminalSessionPool {
 
+    public enum StopIntent { NONE, GRACEFUL, FORCE }
+
     private static final PersistentTerminalSessionPool INSTANCE = new PersistentTerminalSessionPool();
 
     public static PersistentTerminalSessionPool getInstance() {
@@ -32,6 +34,8 @@ public final class PersistentTerminalSessionPool {
     public static final class SessionHolder {
         private final String instanceId;
         private final ExecutionSession session;
+        private final String generation;
+        private StopIntent stopIntent = StopIntent.NONE;
         private final TerminalRingBuffer ringBuffer;
         private final io.github.nyzeep.orchestella.terminal.TerminalScreenModel screenModel =
                 new io.github.nyzeep.orchestella.terminal.TerminalScreenModel(80, 24);
@@ -43,8 +47,10 @@ public final class PersistentTerminalSessionPool {
         private final AtomicBoolean pumpFinished = new AtomicBoolean(false);
         private final ReentrantReadWriteLock rwLock = new ReentrantReadWriteLock();
         private final Thread pumpThread;
-        private final java.util.concurrent.atomic.AtomicReference<Consumer<String>> sessionEndListener =
-                new java.util.concurrent.atomic.AtomicReference<>();
+        private final Object endListenerLock = new Object();
+        private Consumer<String> sessionEndListener;
+        private boolean streamEndDelivered;
+        private boolean ownerEndDelivered;
 
         public SessionHolder(String instanceId, ExecutionSession session) {
             this(instanceId, session, TerminalRingBuffer.DEFAULT_MAX_CAPACITY);
@@ -53,6 +59,8 @@ public final class PersistentTerminalSessionPool {
         public SessionHolder(String instanceId, ExecutionSession session, int ringBufferCapacity) {
             this.instanceId = Objects.requireNonNull(instanceId, "instanceId");
             this.session = Objects.requireNonNull(session, "session");
+            String launching = InstanceLaunchGuard.generation(instanceId);
+            this.generation = launching != null ? launching : java.util.UUID.randomUUID().toString();
             this.ringBuffer = new TerminalRingBuffer(ringBufferCapacity);
             screenModel.setResponseSink(response -> {
                 try { sendBytes(response.getBytes(StandardCharsets.UTF_8)); } catch (IOException ignored) { }
@@ -64,18 +72,36 @@ public final class PersistentTerminalSessionPool {
         }
 
         /**
-         * Registers a one-shot callback fired when the underlying stream pump ends
-         * (guest exit or stream failure). Invoked once, on the pump thread; callers
-         * must hop to their own UI thread.
+         * Reports terminal completion and later owner retirement once each per binding.
+         * EOF alone is not a VM exit. Callers must hop to their UI thread and recheck
+         * the holder/generation before reconciling either event.
          */
         public void setSessionEndListener(java.util.function.Consumer<String> listener) {
-            sessionEndListener.set(listener);
-            if (pumpFinished.get()) notifySessionEnded();
+            synchronized (endListenerLock) {
+                sessionEndListener = listener;
+                streamEndDelivered = false;
+                ownerEndDelivered = false;
+            }
+            notifySessionEnded();
         }
 
         private void notifySessionEnded() {
-            Consumer<String> listener = sessionEndListener.getAndSet(null);
-            if (listener != null) {
+            Consumer<String> listener;
+            int events = 0;
+            synchronized (endListenerLock) {
+                listener = sessionEndListener;
+                if (listener == null) return;
+                if (pumpFinished.get() && !streamEndDelivered) {
+                    streamEndDelivered = true;
+                    events++;
+                }
+                if (closed.get() && !ownerEndDelivered) {
+                    ownerEndDelivered = true;
+                    events++;
+                }
+                if (closed.get()) sessionEndListener = null;
+            }
+            for (int i = 0; i < events; i++) {
                 try { listener.accept(instanceId); } catch (Exception ignored) { }
             }
         }
@@ -167,9 +193,16 @@ public final class PersistentTerminalSessionPool {
             return !closed.get() && !pumpFinished.get();
         }
 
+        /** The registered VM owner remains authoritative even after terminal EOF. */
+        public boolean hasOwner() {
+            return !closed.get();
+        }
+
         public ExecutionSession rawSession() {
             return session;
         }
+
+        public String generation() { return generation; }
 
         public String instanceId() {
             return instanceId;
@@ -191,6 +224,7 @@ public final class PersistentTerminalSessionPool {
                     session.close();
                 } catch (Exception ignored) {
                 }
+                notifySessionEnded();
             }
         }
     }
@@ -199,16 +233,60 @@ public final class PersistentTerminalSessionPool {
 
     public PersistentTerminalSessionPool() {}
 
-    public SessionHolder register(String instanceId, ExecutionSession session) {
+    public synchronized SessionHolder register(String instanceId, ExecutionSession session) {
         Objects.requireNonNull(instanceId, "instanceId");
         Objects.requireNonNull(session, "session");
         SessionHolder existing = holders.get(instanceId);
-        if (existing != null) {
-            existing.close();
-        }
+        if (existing != null && existing.rawSession() == session) return existing;
         SessionHolder holder = new SessionHolder(instanceId, session);
         holders.put(instanceId, holder);
+        if (existing != null) existing.close();
         return holder;
+    }
+
+    @FunctionalInterface
+    public interface ExitAction {
+        void run() throws IOException;
+    }
+
+    /** Serializes confirmed exit side effects with replacement registration. */
+    public synchronized boolean completeExit(String instanceId, ExecutionSession expected,
+            ExitAction action) throws IOException {
+        SessionHolder current = holders.get(instanceId);
+        if (current == null || current.rawSession() != expected
+                || InstanceLaunchGuard.isSuperseded(instanceId, current.generation())) return false;
+        action.run();
+        holders.remove(instanceId, current);
+        current.close();
+        return true;
+    }
+
+    /** Executes a fixed caller-supplied power action only for the expected owner. */
+    public synchronized boolean requestStop(String instanceId, ExecutionSession expected,
+            StopIntent intent, ExitAction action) throws IOException {
+        SessionHolder current = holders.get(instanceId);
+        if (current == null || current.rawSession() != expected) return false;
+        if (intent == null || intent == StopIntent.NONE) throw new IllegalArgumentException("stop intent required");
+        if (current.stopIntent == StopIntent.FORCE || current.stopIntent == intent) return true;
+        // The monitor also gates confirmed completion, so a synchronous exit cannot
+        // overtake the accepted action. Failed/rejected actions leave no new intent.
+        action.run();
+        current.stopIntent = intent;
+        return true;
+    }
+
+    public synchronized StopIntent stopIntent(String instanceId, ExecutionSession expected) {
+        SessionHolder current = holders.get(instanceId);
+        return current != null && current.rawSession() == expected ? current.stopIntent : StopIntent.NONE;
+    }
+
+    /** Retires only this owner. A delayed caller cannot close a replacement. */
+    public synchronized boolean unregister(String instanceId, ExecutionSession expected) {
+        SessionHolder current = holders.get(instanceId);
+        if (current == null || current.rawSession() != expected) return false;
+        holders.remove(instanceId, current);
+        current.close();
+        return true;
     }
 
     public SessionHolder getHolder(String instanceId) {

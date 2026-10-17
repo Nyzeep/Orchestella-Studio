@@ -42,6 +42,46 @@ class InstanceCreationWizardModel(
         const val RESERVED_HOST_BYTES: Long = 2L * 1024L * 1024L * 1024L // 2 GB host safety reserve
         const val DEFAULT_DISK_BYTES: Long = 8L * 1024L * 1024L * 1024L // 8 GB default
         val DISK_PRESET_GBS = listOf(4, 8, 16, 32)
+        const val DRAFT_SCHEMA = "1"
+        private val DRAFT_KEYS = setOf("schema", "step", "distro", "version", "diskGb", "cpu", "ram",
+            "mirror", "autoUpdate", "username", "hostname", "sudo", "desktop", "podman", "editor", "creating")
+
+        /** Restores safe choices only, against today's catalog and host budgets. Never starts work. */
+        @JvmStatic
+        fun restoreDraft(draft: Map<String, String>, profile: HostHardwareProfile,
+            distroVersions: Map<String, String>, minimumRamMb: (String) -> Int): InstanceCreationWizardModel {
+            require(draft.keys == DRAFT_KEYS && draft["schema"] == DRAFT_SCHEMA) { "草稿版本或字段无效，请重新确认创建配置。" }
+            fun text(key: String) = requireNotNull(draft[key])
+            fun number(key: String) = text(key).toIntOrNull()
+                ?: throw IllegalArgumentException("草稿数值无效，请重新确认创建配置。")
+            fun flag(key: String): Boolean = when (text(key)) {
+                "true" -> true
+                "false" -> false
+                else -> throw IllegalArgumentException("草稿选项无效，请重新确认创建配置。")
+            }
+            val distro = text("distro")
+            require(distroVersions[distro] == text("version")) { "发行版清单已变化，请重新选择发行版。" }
+            val disk = number("diskGb")
+            val cpu = number("cpu")
+            val ram = number("ram")
+            require(disk in 2..64) { "草稿磁盘容量无效，请重新选择。" }
+            require(profile.evaluateOverallZone(cpu, ram) != HostHardwareProfile.SafetyZone.RED
+                && ram >= minimumRamMb(distro)) { "设备或镜像资源要求已变化，请重新确认硬件分配。" }
+            val username = text("username")
+            val hostname = text("hostname")
+            require(username.length <= 64 && hostname.length <= 253) { "草稿身份字段过长，请重新填写。" }
+            val model = InstanceCreationWizardModel(distro, text("version"), profile,
+                CreationStep.valueOf(text("step")))
+            model.setCustomDiskSizeGb(disk)
+            model.updateCpuCores(cpu)
+            model.updateRamMegabytes(ram)
+            model.selectMirror(DistroMirrorProvisioner.MirrorSource.valueOf(text("mirror")))
+            model.setAutoUpdateOnFirstBoot(flag("autoUpdate"))
+            model.updateGuestIdentityDraft(username, hostname, flag("sudo"))
+            model.setOptionalProfiles(flag("desktop"), flag("podman"), flag("editor"))
+            model.setCreating(flag("creating"))
+            return model
+        }
     }
 
     var currentStep: CreationStep = initialStep
@@ -86,9 +126,53 @@ class InstanceCreationWizardModel(
         io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig.defaultRoot()
         private set
 
+    var guestUsernameDraft: String = userConfig.username()
+        private set
+    var guestHostnameDraft: String = userConfig.hostname()
+        private set
+    var guestSudoDraft: Boolean = userConfig.hasSudo()
+        private set
+    var desktopSelected: Boolean = false
+        private set
+    var podmanSelected: Boolean = false
+        private set
+    var editorSelected: Boolean = false
+        private set
+
     fun setUserConfig(config: io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig) {
         this.userConfig = config
+        updateGuestIdentityDraft(config.username(), config.hostname(), config.hasSudo())
     }
+
+    /** Keeps editable, possibly incomplete identity text without persisting a credential. */
+    fun updateGuestIdentityDraft(username: String, hostname: String, sudo: Boolean) {
+        guestUsernameDraft = username
+        guestHostnameDraft = hostname
+        guestSudoDraft = sudo
+        if (io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig.isValidUsername(username)
+            && io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig.isValidHostname(hostname)) {
+            userConfig = io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig(
+                username, userConfig.password(), sudo, hostname)
+        }
+    }
+
+    fun setOptionalProfiles(desktop: Boolean, podman: Boolean, editor: Boolean) {
+        desktopSelected = desktop && distroId == "debian"
+        val supported = distroId in setOf("debian", "ubuntu")
+        podmanSelected = podman && supported
+        editorSelected = editor && supported
+    }
+
+    /** Versioned whitelist. Never serialize userConfig, which contains the generated password. */
+    fun saveDraft(): Map<String, String> = linkedMapOf(
+        "schema" to DRAFT_SCHEMA, "step" to currentStep.name,
+        "distro" to distroId, "version" to distroVersion, "diskGb" to diskSizeGb.toString(),
+        "cpu" to hardwareConfig.cpuCores().toString(), "ram" to hardwareConfig.ramMegabytes().toString(),
+        "mirror" to selectedMirror.name, "autoUpdate" to autoUpdateOnFirstBoot.toString(),
+        "username" to guestUsernameDraft, "hostname" to guestHostnameDraft, "sudo" to guestSudoDraft.toString(),
+        "desktop" to desktopSelected.toString(), "podman" to podmanSelected.toString(),
+        "editor" to editorSelected.toString(), "creating" to isCreating.toString()
+    )
 
     var isCreating: Boolean = false
         private set
@@ -192,6 +276,12 @@ class InstanceCreationWizardModel(
 
     fun setCreating(creating: Boolean) {
         isCreating = creating
+    }
+
+    fun tryBeginCreation(): Boolean {
+        if (isCreating) return false
+        isCreating = true
+        return true
     }
 
     fun safetyZone(): HostHardwareProfile.SafetyZone {

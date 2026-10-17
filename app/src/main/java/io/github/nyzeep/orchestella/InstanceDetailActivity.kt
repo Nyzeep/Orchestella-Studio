@@ -800,10 +800,11 @@ class InstanceDetailActivity : AppCompatActivity() {
                 if (requestedSession == null || ExecutionSessionRegistry.get(instanceId) !== requestedSession) {
                     throw IOException("运行会话已变化")
                 }
-                if (force) {
-                    requestedSession.terminate()
-                } else {
-                    InstanceDetailActionRules.requestShutdown(requestedSession)
+                val intent = if (force) PersistentTerminalSessionPool.StopIntent.FORCE
+                    else PersistentTerminalSessionPool.StopIntent.GRACEFUL
+                ExecutionSessionRegistry.requestStop(instanceId, requestedSession, intent) {
+                    if (force) requestedSession.terminate()
+                    else InstanceDetailActionRules.requestShutdown(requestedSession)
                 }
                 waitForActualExit(instanceId, requestedSession, restart, force)
                 runOnUiThread {

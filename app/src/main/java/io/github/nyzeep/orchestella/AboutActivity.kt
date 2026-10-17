@@ -114,6 +114,26 @@ class AboutActivity : AppCompatActivity() {
             copyToClipboard(PROJECT_REPO_URL, getString(R.string.about_link_copied))
         }
 
+        findViewById<MaterialButton>(R.id.btn_third_party_notices).setOnClickListener {
+            val notice = try {
+                assets.open("third-party-notices.txt").bufferedReader(Charsets.UTF_8).use { it.readText() }
+            } catch (_: java.io.IOException) {
+                getString(R.string.third_party_notices_unavailable)
+            }
+            val text = TextView(this).apply {
+                this.text = notice
+                setTextIsSelectable(true)
+                val pad = (20 * resources.displayMetrics.density).toInt()
+                setPadding(pad, pad, pad, pad)
+            }
+            val scroll = android.widget.ScrollView(this).apply { addView(text) }
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle(R.string.third_party_notices_title)
+                .setView(scroll)
+                .setPositiveButton(R.string.credentials_close, null)
+                .show().also(ThemeApplier::apply)
+        }
+
         val btnCheckUpdates = findViewById<MaterialButton>(R.id.btn_check_updates)
         val updateChannel = GitHubUpdateChecker.channelForVersion(BuildConfig.VERSION_NAME).label()
         btnCheckUpdates?.text = "立即检测更新 · $updateChannel"

@@ -37,7 +37,8 @@ public final class AvfHostFactsProbe {
                                 new java.util.ArrayList<>(Arrays.asList(supportedAbis))),
                         readVirtualizationProperty(virtualizationPropertyReader),
                         isFeatureDeclared(featureChecker),
-                        isPermissionGranted(permissionChecker))
+                        readPermission(permissionChecker, AvfCapabilityEvaluator.MANAGE_VIRTUAL_MACHINE_PERMISSION),
+                        readPermission(permissionChecker, AvfCapabilityEvaluator.USE_CUSTOM_VIRTUAL_MACHINE_PERMISSION))
                 .socModel(socModel)
                 .deviceModel(deviceModel)
                 .build();
@@ -73,14 +74,7 @@ public final class AvfHostFactsProbe {
                         return false;
                     }
                 },
-                permission -> {
-                    try {
-                        return context.checkSelfPermission(permission)
-                                == PackageManager.PERMISSION_GRANTED;
-                    } catch (RuntimeException failure) {
-                        return false;
-                    }
-                });
+                permission -> context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED);
     }
 
     /**
@@ -125,12 +119,22 @@ public final class AvfHostFactsProbe {
         }
     }
 
-    private static boolean isPermissionGranted(Predicate<String> permissionChecker) {
+    private static AvfCapabilityEvaluator.PermissionState readPermission(
+            Predicate<String> permissionChecker, String permission) {
         try {
-            return permissionChecker.test(
-                    AvfCapabilityEvaluator.MANAGE_VIRTUAL_MACHINE_PERMISSION);
-        } catch (RuntimeException failure) {
-            return false;
+            return permissionChecker.test(permission)
+                    ? AvfCapabilityEvaluator.PermissionState.GRANTED
+                    : AvfCapabilityEvaluator.PermissionState.DENIED;
+        } catch (RuntimeException | LinkageError failure) {
+            return AvfCapabilityEvaluator.PermissionState.UNKNOWN;
         }
+    }
+
+    public static String permissionLabel(AvfCapabilityEvaluator.PermissionState permission) {
+        return switch (permission) {
+            case GRANTED -> "已授权";
+            case DENIED -> "未授权";
+            case UNKNOWN -> "读取失败或尚未确认";
+        };
     }
 }

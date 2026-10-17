@@ -108,7 +108,10 @@ class SettingsActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (::themeStore.isInitialized) refreshAppearance()
+        if (::themeStore.isInitialized) {
+            refreshAppearance()
+            setupAvfSection()
+        }
     }
 
     override fun onDestroy() {
@@ -127,6 +130,9 @@ class SettingsActivity : AppCompatActivity() {
         txtDockerMirrors = findViewById(R.id.txt_settings_docker_mirrors)
         txtAvfBadge = findViewById(R.id.txt_settings_avf_badge)
         txtAvfDetails = findViewById(R.id.txt_settings_avf_details)
+        findViewById<MaterialButton>(R.id.btn_settings_shizuku).setOnClickListener {
+            ShizukuClientDialog().show(supportFragmentManager, "shizuku-client")
+        }
         switchCursorBlink = findViewById(R.id.switch_settings_cursor_blink)
 
         findViewById<TextView>(R.id.txt_settings_version)?.text = "版本：v${BuildConfig.VERSION_NAME}"
@@ -200,25 +206,28 @@ class SettingsActivity : AppCompatActivity() {
     private fun setupAvfSection() {
         val facts = AvfHostFactsProbe.probe(this)
         val readiness = AvfCapabilityEvaluator.evaluate(facts)
+        findViewById<MaterialButton>(R.id.btn_settings_shizuku).visibility =
+            if (readiness.wizardEligible()) View.VISIBLE else View.GONE
         val factsSummary = """
             • 硬件平台：${facts.socModel() ?: facts.deviceModel() ?: "ARM64 设备"}
             • Android 版本：API ${facts.sdkInt()}
             • AVF feature：${if (facts.virtualizationFrameworkFeature()) "已声明" else "未声明"}
             • 虚拟化属性：${facts.virtualizationProperty()?.takeIf { it.isNotBlank() } ?: "无法读取或未提供"}
-            • MANAGE_VIRTUAL_MACHINE：${if (facts.manageVirtualMachinePermission()) "已授权" else "未授权"}
+            • MANAGE_VIRTUAL_MACHINE：${AvfHostFactsProbe.permissionLabel(facts.manageVirtualMachinePermissionState())}
+            • USE_CUSTOM_VIRTUAL_MACHINE：${AvfHostFactsProbe.permissionLabel(facts.useCustomVirtualMachinePermissionState())}
         """.trimIndent()
-        val launchNotice = "当前仅检查平台声明与权限。custom VM 的创建和运行将在实例启动时验证，启动失败会自动回退至 QEMU。"
+        val launchNotice = getString(R.string.avf_preflight_boundary)
 
         when (readiness.status()) {
             AvfCapabilityEvaluator.AvfStatus.READY -> {
-                txtAvfBadge.text = "AVF 声明/授权可用"
+                txtAvfBadge.text = "硬件虚拟化权限预检满足"
                 txtAvfBadge.setTextColor(getColor(R.color.zone_green))
                 txtAvfDetails.text = "$factsSummary\n• 预检：声明与权限条件满足\n$launchNotice"
             }
             AvfCapabilityEvaluator.AvfStatus.NEEDS_AUTHORIZATION -> {
                 txtAvfBadge.text = "AVF 尚未授权"
                 txtAvfBadge.setTextColor(getColor(R.color.zone_yellow))
-                txtAvfDetails.text = "$factsSummary\n• 预检：平台声明满足，应用尚未获得 MANAGE_VIRTUAL_MACHINE 权限\n$launchNotice"
+                txtAvfDetails.text = "$factsSummary\n• 预检：${readiness.reasons().joinToString("；")}\n$launchNotice"
             }
             AvfCapabilityEvaluator.AvfStatus.UNSUPPORTED -> {
                 txtAvfBadge.text = "AVF 预检未满足"

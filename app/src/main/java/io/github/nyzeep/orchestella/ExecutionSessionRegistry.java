@@ -80,4 +80,31 @@ public final class ExecutionSessionRegistry {
     public static void unregister(String instanceId) {
         PersistentTerminalSessionPool.getInstance().unregister(instanceId);
     }
+
+    public static boolean unregister(String instanceId, ExecutionSession expected) {
+        return PersistentTerminalSessionPool.getInstance().unregister(instanceId, expected);
+    }
+
+    public static boolean completeExit(String instanceId, ExecutionSession expected,
+            PersistentTerminalSessionPool.ExitAction action) throws IOException {
+        return PersistentTerminalSessionPool.getInstance().completeExit(instanceId, expected, action);
+    }
+
+    public static void requestStop(String instanceId, ExecutionSession expected,
+            PersistentTerminalSessionPool.StopIntent intent,
+            PersistentTerminalSessionPool.ExitAction action) throws IOException {
+        if (!PersistentTerminalSessionPool.getInstance().requestStop(instanceId, expected, intent, action)) {
+            throw new IOException("运行会话已变化");
+        }
+    }
+
+    public static PersistentTerminalSessionPool.StopIntent stopIntent(String instanceId, ExecutionSession expected) {
+        return PersistentTerminalSessionPool.getInstance().stopIntent(instanceId, expected);
+    }
+
+    public static String generation(String instanceId, ExecutionSession expected) {
+        PersistentTerminalSessionPool.SessionHolder holder =
+                PersistentTerminalSessionPool.getInstance().getHolder(instanceId);
+        return holder != null && holder.rawSession() == expected ? holder.generation() : null;
+    }
 }
