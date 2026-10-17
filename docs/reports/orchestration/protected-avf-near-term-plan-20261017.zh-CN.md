@@ -1,5 +1,7 @@
 # Orchestella 近期优化方案：Protected 优先验证、双模式兼容与可靠交付
 
+> **优先级说明（2026-10-18）**：本文的 Protected 专项门、证据要求和停止条件仍然有效，但“Protected 优先”的总体排序已被[下一阶段优化方案](next-optimization-plan-20261018.zh-CN.md)重排为 **QEMU 主线、AVF 时间盒研究**。两份文档冲突时，以 2026-10-18 方案为准；本文保留作 protected 专项依据。
+
 - 日期：2026-10-17。Owner：Codex主协调。类型：研发优先级、分阶段执行与验收方案，非生产实现报告。
 - 用户已确认的方向：protected VM优先研发，non-protected持续兼容，QEMU保证当前完整Linux可用；本轮要求据现况与大量资料调整近期方案并允许文档。
 - 事实基线：唯一主仓Orchestella_dev，main@428860ad9a1cb335f8be78c157b2ff57faf2a6da，dirty0.5.3/code503、minSdk26/targetSdk36；未提交实现必须保留。单main/单worktree，规划前git diff --check通过。

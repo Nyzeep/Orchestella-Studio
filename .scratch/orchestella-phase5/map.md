@@ -12,7 +12,7 @@ Owner: phase5-coordinator
 
 用户授权研究后继续实现。本轮ask-matt/wayfinder/research/spec/tickets/implement-spec/tdd/独立review已实际推进到本地交付。分支 `phase5/graphics-productivity-storage`，HEAD `8d0e8c75d769ecc645ea102b90a304c8657344a1`。活动主仓只读、设备第一会话独占、无commit/remote写。
 
-[调度记录](../../docs/reports/orchestration/phase5-dispatch.zh-CN.md)、[整合交付报告](../../docs/reports/tickets/phase5-08/implementation-report.zh-CN.md)、[验证矩阵](../../docs/reports/orchestration/phase5-verification-matrix.zh-CN.md)、[恢复集成指南](../../docs/reports/orchestration/phase5-integration-guide.zh-CN.md) 是当前canonical交付入口；raw/patch/APK在外部delivery，worker工作区保留。
+[调度记录](../../docs/reports/archive/2026-10-phase5-quality/orchestration/phase5-dispatch.zh-CN.md)、[整合交付报告](../../docs/reports/archive/2026-10-phase5-quality/tickets/phase5-08/implementation-report.zh-CN.md)、[验证矩阵](../../docs/reports/archive/2026-10-phase5-quality/orchestration/phase5-verification-matrix.zh-CN.md)、[恢复集成指南](../../docs/reports/archive/2026-10-phase5-quality/orchestration/phase5-integration-guide.zh-CN.md) 是当前canonical交付入口；raw/patch/APK在外部delivery，worker工作区保留。
 
 ## Decisions so far
 

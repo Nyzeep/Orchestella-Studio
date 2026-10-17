@@ -35,11 +35,19 @@ def main():
     added = git(["ls-files", "--others", "--exclude-standard"]).stdout.decode("utf-8").splitlines()
     allowed = ("app/src/main/", "app/src/test/", "runtime/", "guest-assets/", "tools/phase5/", "prototypes/phase5-")
     files = set(path for path in tracked + added if path.startswith(allowed) or path == "app/build.gradle.kts")
-    for folder in (root / "docs/reports/orchestration", root / "docs/research"):
+    for folder in (
+        root / "docs/reports/orchestration",
+        root / "docs/research",
+        root / "docs/reports/archive/2026-10-phase5-quality/orchestration",
+        root / "docs/research/archive/2026-10-phase5",
+    ):
         files.update(file.relative_to(root).as_posix() for file in folder.glob("*phase5*.md"))
     for family in ("tickets", "reviews"):
         for folder in (root / ("docs/reports/" + family)).glob("phase5*"):
             files.update(file.relative_to(root).as_posix() for file in folder.rglob("*.md"))
+        archived = root / "docs/reports/archive/2026-10-phase5-quality" / family
+        if archived.is_dir():
+            files.update(file.relative_to(root).as_posix() for file in archived.rglob("*.md"))
     files.update(file.relative_to(root).as_posix() for file in (root / ".scratch/orchestella-phase5").rglob("*.md"))
     patch = []
     manifest = []

@@ -106,7 +106,7 @@ flowchart TD
 ## 历史引用
 
 - 2026-10-15研究、16编号+ACR原17票、01–04/13本地500与16来源研究：旧外部 `Orchestella/artifacts/avf-shizuku-next-stage/20261015/closeout/`、原13报告及研究§1–13；旧715/96、lint0/747仅属500。
-- 20261016两份 `docs/agent-handoff/AVF_SHIZUKU_REMAINING_{HANDOFF,PROMPT}_20261016.zh-CN.md` 是授权/事实交接；其中36份dirty500、初查无包、nonprotected未知、W/V未映射是当时快照，不能覆盖后续签名/其他user数据发现和QA3真实查询。恢复dispatch记主协调已恢复W/V。
+- 20261016两份 `docs/agent-handoff/archive/2026-10-avf/AVF_SHIZUKU_REMAINING_{HANDOFF,PROMPT}_20261016.zh-CN.md` 是授权/事实交接；其中36份dirty500、初查无包、nonprotected未知、W/V未映射是当时快照，不能覆盖后续签名/其他user数据发现和QA3真实查询。恢复dispatch记主协调已恢复W/V。
 - QA1/QA2失败、QA1三份源码缺口、502中间集成和各首审request-changes全部保留。首审不被后来的approve覆盖；当前判断按最新seal、复审及实际503/QA4原件。
 - 固定Shizuku/API/AOSP来源和三份缺文档的历史来源沿研究与16，不重新clone/研究或恢复policy。
 
