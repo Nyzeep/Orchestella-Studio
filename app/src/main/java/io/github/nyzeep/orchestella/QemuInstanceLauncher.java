@@ -7,14 +7,18 @@ import io.github.nyzeep.orchestella.RuntimeProcessSupervisor.StopResult;
 import io.github.nyzeep.orchestella.runtime.contract.BridgeClient;
 import io.github.nyzeep.orchestella.runtime.contract.BridgeControl;
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig;
+import io.github.nyzeep.orchestella.runtime.distro.DistroCatalogRegistry;
+import io.github.nyzeep.orchestella.runtime.distro.DistroManifest;
 import io.github.nyzeep.orchestella.runtime.engineqemu.QemuLaunchSpec;
 import io.github.nyzeep.orchestella.runtime.engineqemu.QemuProcessLauncher;
 import io.github.nyzeep.orchestella.runtime.engineqemu.RuntimeArtifactManifest;
 import io.github.nyzeep.orchestella.runtime.engineqemu.VirglJniBridge;
+import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Paths;
+import java.time.Clock;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -34,6 +38,7 @@ public final class QemuInstanceLauncher {
         private final String instanceId;
         private final QemuProcessLauncher.ProcessHandle handle;
         private final RuntimeProcessSupervisor supervisor;
+        private final LaunchTimeline timeline;
         private final BridgeConnector connector = new BridgeConnector();
         private final Object controlLock = new Object();
         private final Object terminalLock = new Object();
@@ -47,7 +52,52 @@ public final class QemuInstanceLauncher {
         private io.github.nyzeep.orchestella.runtime.network.BridgeProxyGateway proxyGateway;
         private final QemuWaylandChannel waylandChannel;
         private final AtomicBoolean isBridgeServing = new AtomicBoolean(false);
-        private final java.util.Set<ExecutionSession.ServiceForward> serviceForwards = new java.util.concurrent.CopyOnWriteArraySet<>();
+        private final java.util.Set<SessionServiceForward> serviceForwards =
+                new java.util.concurrent.CopyOnWriteArraySet<>();
+
+        /**
+         * One live forward. {@link #close()} keeps the API contract for a single
+         * user-visible forward (it must unexpose); {@link #releaseForStop()} is the
+         * stop fast path, where the gateway process exit closes the listener and a
+         * remote round-trip per forward would only burn the stop deadline.
+         */
+        private final class SessionServiceForward implements ExecutionSession.ServiceForward {
+            private final io.github.nyzeep.orchestella.runtime.contract.PortForwardingRule rule;
+            private final int hostPort;
+            private final PortForwardingPresenter.LiveEngine engine;
+            private final AtomicBoolean active = new AtomicBoolean(true);
+
+            SessionServiceForward(io.github.nyzeep.orchestella.runtime.contract.PortForwardingRule rule,
+                    int hostPort, PortForwardingPresenter.LiveEngine engine) {
+                this.rule = rule;
+                this.hostPort = hostPort;
+                this.engine = engine;
+            }
+
+            @Override public int hostPort() { return hostPort; }
+
+            @Override public boolean isActive() {
+                return active.get() && engine.isRunning() && engine.isApplied(rule);
+            }
+
+            @Override public void close() throws IOException {
+                if (!active.get()) return;
+                if (engine.isRunning()) engine.removeRule(rule);
+                active.set(false);
+                serviceForwards.remove(this);
+            }
+
+            /**
+             * Stops tracking the forward without pretending it is released: the
+             * listener remains owned by gvproxy until the gateway process exits.
+             * {@link #isActive()} already checks gateway liveness, so an
+             * UNCONFIRMED stop keeps reporting the truth instead of a false
+             * "inactive" state.
+             */
+            void releaseForStop() {
+                serviceForwards.remove(this);
+            }
+        }
 
         Session(String controlSocketName, String terminalSocketName,
                 QemuProcessLauncher.ProcessHandle handle) {
@@ -80,17 +130,32 @@ public final class QemuInstanceLauncher {
                 String displaySocketPath, String token, QemuProcessLauncher.ProcessHandle handle,
                 String instanceId, NetworkGatewayDaemon.Running gateway) {
             this(controlSocketName, terminalSocketName, proxySocketName, displaySocketPath, token,
-                    handle, instanceId, (RuntimeGateway) gateway);
+                    handle, instanceId, (RuntimeGateway) gateway, null);
+        }
+
+        Session(String controlSocketName, String terminalSocketName, String proxySocketName,
+                String displaySocketPath, String token, QemuProcessLauncher.ProcessHandle handle,
+                String instanceId, NetworkGatewayDaemon.Running gateway, LaunchTimeline timeline) {
+            this(controlSocketName, terminalSocketName, proxySocketName, displaySocketPath, token,
+                    handle, instanceId, (RuntimeGateway) gateway, timeline);
         }
 
         private Session(String controlSocketName, String terminalSocketName, String proxySocketName,
                 String displaySocketPath, String token, QemuProcessLauncher.ProcessHandle handle,
                 String instanceId, RuntimeGateway gateway) {
+            this(controlSocketName, terminalSocketName, proxySocketName, displaySocketPath, token,
+                    handle, instanceId, gateway, null);
+        }
+
+        private Session(String controlSocketName, String terminalSocketName, String proxySocketName,
+                String displaySocketPath, String token, QemuProcessLauncher.ProcessHandle handle,
+                String instanceId, RuntimeGateway gateway, LaunchTimeline timeline) {
             this.controlSocketName = controlSocketName;
             this.terminalSocketName = terminalSocketName;
             this.instanceId = instanceId;
             this.proxySocketName = proxySocketName;
             this.handle = handle;
+            this.timeline = timeline;
             this.supervisor = new RuntimeProcessSupervisor(handle, gateway, this::closeChannels);
             this.waylandChannel = displaySocketPath == null ? null : new QemuWaylandChannel(() ->
                     openDisplayStreams(displaySocketPath), token, this::bridgeClient);
@@ -169,18 +234,7 @@ public final class QemuInstanceLauncher {
                     io.github.nyzeep.orchestella.runtime.contract.PortForwardingRule.defaultRule(
                             java.util.UUID.randomUUID().toString(),
                             io.github.nyzeep.orchestella.runtime.contract.Protocol.TCP, port, guestPort);
-            ServiceForward forward = new ServiceForward() {
-                private final AtomicBoolean active = new AtomicBoolean(true);
-                @Override public int hostPort() { return port; }
-                @Override public boolean isActive() { return active.get() && engine.isRunning() && engine.isApplied(rule); }
-                @Override public void close() throws IOException {
-                    if (active.get()) {
-                        if (engine.isRunning()) engine.removeRule(rule);
-                        active.set(false);
-                        serviceForwards.remove(this);
-                    }
-                }
-            };
+            SessionServiceForward forward = new SessionServiceForward(rule, port, engine);
             serviceForwards.add(forward);
             try {
                 engine.addRule(rule);
@@ -193,6 +247,11 @@ public final class QemuInstanceLauncher {
                 }
                 throw failure;
             }
+        }
+
+        /** Package-visible for stop-path tests: forwards still tracked by this session. */
+        int trackedServiceForwardCount() {
+            return serviceForwards.size();
         }
 
         private void startProxyGateway() {
@@ -234,7 +293,18 @@ public final class QemuInstanceLauncher {
         @Override
         public StopResult stopRuntime(long graceMs) {
             synchronized (this) { closing = true; }
-            StopResult stop = supervisor.stop(graceMs);
+            if (timeline != null) timeline.mark(LaunchTimeline.Stage.STOP_REQUESTED);
+            StopResult stop;
+            try {
+                stop = supervisor.stop(graceMs);
+            } catch (RuntimeException | Error failure) {
+                if (timeline != null) timeline.finish();
+                throw failure;
+            }
+            if (timeline != null) {
+                timeline.markStopConfirmed(stop);
+                timeline.finish();
+            }
             if (stop == StopResult.UNCONFIRMED) {
                 RuntimeProcessSupervisor.Diagnostics diagnostics = supervisor.diagnostics();
                 Log.w(TAG, "runtime-stop-unconfirmed stage=" + diagnostics.stage()
@@ -287,9 +357,13 @@ public final class QemuInstanceLauncher {
         /** Closes host channels exactly once; the supervisor owns when this runs. */
         private void closeChannels() {
             closing = true;
-            for (ServiceForward forward : serviceForwards) {
-                try { forward.close(); } catch (IOException ignored) { }
+            // Stop fast path: release forwards locally. The gvproxy process is stopped
+            // immediately afterwards and its exit closes every listener; issuing
+            // refresh/unexpose/refresh per forward here would cost up to 4.5 s each.
+            for (SessionServiceForward forward : serviceForwards) {
+                forward.releaseForStop();
             }
+            serviceForwards.clear();
             if (waylandChannel != null) {
                 waylandChannel.close();
             }
@@ -454,10 +528,24 @@ public final class QemuInstanceLauncher {
     /** Blocking bootstrap+launch; call on a worker thread. */
     public ExecutionSession launch(InstanceStrategyLauncher.LaunchParameters parameters)
             throws IOException, InterruptedException {
+        VmHardwareConfig config = parameters.hardwareConfig != null
+                ? parameters.hardwareConfig
+                : VmHardwareConfig.defaultConfig();
+        LaunchTimeline timeline = LaunchTimeline.open(Paths.get(parameters.runtimeDirectory),
+                parameters.instanceId, resolveDistroId(parameters.rootfsFileName),
+                config.ramMegabytes(), config.cpuCores());
+        timeline.mark(LaunchTimeline.Stage.LAUNCH_START);
+
         RuntimeArtifactManifest manifest;
         try (InputStream in = PackagedAssetStreams.openAsset(context, RuntimeArtifactManifest.SCHEMA_FILE_NAME)) {
             manifest = RuntimeArtifactManifest.parse(in);
+        } catch (IOException | RuntimeException | Error failure) {
+            // A launch attempt that cannot even read its manifest must still leave
+            // one honest record; it never reaches asset verification.
+            timeline.finish();
+            throw failure;
         }
+
         QemuRuntimeBootstrapper bootstrapper = new QemuRuntimeBootstrapper(manifest,
                 name -> {
                     try {
@@ -475,30 +563,44 @@ public final class QemuInstanceLauncher {
                 },
                 Paths.get(parameters.runtimeDirectory),
                 Paths.get(parameters.distroInputsDirectory));
-        QemuRuntimeBootstrapper.RuntimePaths paths =
-                bootstrapper.bootstrap(parameters.rootfsFileName, parameters.bridgeToken,
-                        parameters.guestPassword,
-                        Paths.get(parameters.instanceRootVolume),
-                        parameters.mirrorConfigFileName,
-                        parameters.mirrorConfigFileContent,
-                        parameters.firstBootScript,
-                        parameters.hostname, parameters.guestUser, parameters.hasSudo);
+        // Consume persisted guest evidence, not an in-memory instance: the caller may
+        // hold a stale snapshot, and only the store's current record may unlock the
+        // credentials-only path. Missing/ambiguous evidence stays on the full path.
+        boolean credentialsOnly = credentialsOnlyLaunch(
+                context.getFilesDir().toPath().resolve("instances"),
+                parameters.instanceId, parameters.rootfsFileName);
+        QemuRuntimeBootstrapper.RuntimePaths paths;
+        try {
+            paths = bootstrapper.bootstrap(parameters.rootfsFileName, parameters.bridgeToken,
+                    parameters.guestPassword,
+                    Paths.get(parameters.instanceRootVolume),
+                    parameters.mirrorConfigFileName,
+                    parameters.mirrorConfigFileContent,
+                    parameters.firstBootScript,
+                    parameters.hostname, parameters.guestUser, parameters.hasSudo, timeline,
+                    credentialsOnly);
+        } catch (IOException | RuntimeException | Error failure) {
+            timeline.finish();
+            throw failure;
+        }
 
         String nativeLibraryDir = context.getApplicationInfo().nativeLibraryDir;
         String controlSocket = "droidlayer-control-" + parameters.instanceId;
         String terminalSocket = "droidlayer-terminal-" + parameters.instanceId;
 
-        VmHardwareConfig config = parameters.hardwareConfig != null
-                ? parameters.hardwareConfig
-                : VmHardwareConfig.defaultConfig();
-
         // Rootless network plane: gvproxy bridges the guest onto the host stack (the
         // packaged QEMU has no slirp; passt is blocked by Android SELinux). Guest
         // addressing rides the kernel command line so distros without a DHCP client
         // still come up deterministically.
-        NetworkGatewayDaemon.Running gateway =
-                NetworkGatewayDaemon.start(context, parameters.instanceId,
-                        Paths.get(parameters.runtimeDirectory).toFile());
+        NetworkGatewayDaemon.Running gateway;
+        try {
+            gateway = NetworkGatewayDaemon.start(context, parameters.instanceId,
+                    Paths.get(parameters.runtimeDirectory).toFile());
+        } catch (IOException | RuntimeException | Error failure) {
+            timeline.finish();
+            throw failure;
+        }
+        timeline.mark(LaunchTimeline.Stage.GATEWAY_READY);
         java.util.concurrent.atomic.AtomicReference<QemuProcessLauncher.ProcessHandle> startingHandle =
                 new java.util.concurrent.atomic.AtomicReference<>();
         java.util.concurrent.atomic.AtomicReference<Session> startingSession =
@@ -582,11 +684,12 @@ public final class QemuInstanceLauncher {
 
         QemuProcessLauncher launcher = new QemuProcessLauncher(factory);
         QemuProcessLauncher.Launched launched = launcher.launch(sanitizedSpec);
+        timeline.mark(LaunchTimeline.Stage.QEMU_STARTED);
         QemuProcessLauncher.ProcessHandle handle = launched.handle();
         startingHandle.set(handle);
         Session session = new Session(controlSocket, terminalSocket,
                 QemuLaunchSpec.defaultProxySocketName(controlSocket), displaySocketPath,
-                parameters.bridgeToken, handle, parameters.instanceId, gateway);
+                parameters.bridgeToken, handle, parameters.instanceId, gateway, timeline);
         startingSession.set(session);
         Thread watcher = new Thread(() -> {
             try {
@@ -600,9 +703,26 @@ public final class QemuInstanceLauncher {
         }, "qemu-exit-" + parameters.instanceId);
         watcher.setDaemon(true);
         watcher.start();
-        ExecutionSessionRegistry.register(parameters.instanceId, session);
+        ExecutionSessionRegistry.register(parameters.instanceId, session,
+                createProvisioningRecorder(parameters.instanceId, parameters.rootfsFileName));
+        timeline.mark(LaunchTimeline.Stage.SESSION_REGISTERED);
         return session;
-        }, () -> cleanupFailedLaunch(startingSession.get(), startingHandle.get(), gateway));
+        }, () -> {
+            cleanupFailedLaunch(startingSession.get(), startingHandle.get(), gateway);
+            timeline.finish();
+        });
+    }
+
+    /** Non-secret distro id for telemetry; unknown or ambiguous filenames stay honest. */
+    static String resolveDistroId(String rootfsFileName) {
+        if (rootfsFileName == null || rootfsFileName.isEmpty()) return "unknown";
+        String matched = null;
+        for (DistroManifest manifest : DistroCatalogRegistry.createDefault().listAll()) {
+            if (!rootfsFileName.equals(manifest.rootfsFileName())) continue;
+            if (matched != null && !matched.equals(manifest.id())) return "unknown";
+            matched = manifest.id();
+        }
+        return matched == null ? "unknown" : matched;
     }
 
     /** Failure cleanup shared by launch bootstrap, Session construction and registration. */
@@ -637,6 +757,101 @@ public final class QemuInstanceLauncher {
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             return !handle.isAlive();
+        }
+    }
+
+    /**
+     * Resolves the pinned distro rootfs digest from the catalog by exact file name.
+     *
+     * <p>Unknown or ambiguous names resolve to {@code null}; the caller must then skip recording
+     * rather than guess a digest.
+     */
+    static String resolveRootfsSha256(String rootfsFileName) {
+        if (rootfsFileName == null || rootfsFileName.isEmpty()) {
+            return null;
+        }
+        String resolved = null;
+        for (DistroManifest manifest : DistroCatalogRegistry.createDefault().listAll()) {
+            if (rootfsFileName.equals(manifest.rootfsFileName())) {
+                if (resolved != null && !resolved.equals(manifest.sha256())) {
+                    return null;
+                }
+                resolved = manifest.sha256();
+            }
+        }
+        return resolved;
+    }
+
+    /**
+     * Whether the freshly loaded instance record proves provisioning from exactly the
+     * catalog's current digest. Any load/parse failure is a conservative false.
+     */
+    static boolean isProvisionedForInstance(
+            java.nio.file.Path instancesDirectory, String instanceId, String rootfsSha256) {
+        if (instancesDirectory == null || instanceId == null || instanceId.isEmpty()
+                || rootfsSha256 == null) {
+            return false;
+        }
+        try {
+            InstanceLifecycle.Instance instance =
+                    new InstanceLifecycle.FileStore(instancesDirectory).load(instanceId);
+            return instance.isProvisionedFor(rootfsSha256);
+        } catch (IOException | RuntimeException unavailable) {
+            return false;
+        }
+    }
+
+    /** Resolves the catalog digest for the launch filename, then checks persisted evidence. */
+    static boolean credentialsOnlyLaunch(
+            java.nio.file.Path instancesDirectory, String instanceId, String rootfsFileName) {
+        String rootfsSha256 = resolveRootfsSha256(rootfsFileName);
+        return rootfsSha256 != null
+                && isProvisionedForInstance(instancesDirectory, instanceId, rootfsSha256);
+    }
+
+    /**
+     * Builds the best-effort evidence recorder for one instance.
+     *
+     * <p>Returns {@code null} when the digest or controller is unavailable, which keeps the
+     * instance on the conservative "not provisioned" reading.
+     */
+    static PersistentTerminalSessionPool.ProvisioningListener provisioningRecorder(
+            InstanceLifecycle.Controller controller, String instanceId, String rootfsSha256) {
+        if (controller == null || instanceId == null || rootfsSha256 == null) {
+            return null;
+        }
+        return (reportedInstanceId, markerVersion) -> {
+            if (!instanceId.equals(reportedInstanceId)) {
+                return;
+            }
+            try {
+                controller.recordProvisioning(
+                        reportedInstanceId,
+                        new InstanceLifecycle.ProvisioningEvidence(
+                                markerVersion, rootfsSha256, System.currentTimeMillis()));
+            } catch (IOException | RuntimeException failed) {
+                // Evidence is advisory: never let metadata persistence break the pump thread.
+                Log.w(TAG, "provisioning-record-failed");
+            }
+        };
+    }
+
+    private PersistentTerminalSessionPool.ProvisioningListener createProvisioningRecorder(
+            String instanceId, String rootfsFileName) {
+        String rootfsSha256 = resolveRootfsSha256(rootfsFileName);
+        if (rootfsSha256 == null) {
+            Log.w(TAG, "provisioning-evidence-skipped reason=unresolved-rootfs");
+            return null;
+        }
+        try {
+            InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(
+                    context.getFilesDir().toPath().resolve("instances"));
+            return provisioningRecorder(
+                    new InstanceLifecycle.Controller(store, Clock.systemUTC()),
+                    instanceId, rootfsSha256);
+        } catch (IOException unavailable) {
+            Log.w(TAG, "provisioning-evidence-skipped reason=store-unavailable");
+            return null;
         }
     }
 
