@@ -29,3 +29,35 @@ Blocked by: 无
 
 - 新增 `ProvisioningSignalTest` 与元数据 round-trip 用例。
 - `./gradlew :app:testDebugUnitTest --tests '*ProvisioningSignalTest' --tests '*InstanceLifecycle*' --tests '*PersistentTerminalSessionPoolTest'`
+
+## Comments
+
+- 提交：`5901321`（`perf/t2-provisioned-signal`，基于 `893fb72`）。
+- 元数据字段：`provisioning.markerVersion`、`provisioning.rootfsSha256`（sha 无法解析时不写入）、`provisioning.recordedAtMillis`。
+- 只读查询：`Instance.isProvisioned()`、`Instance.provisioningEvidence()`、`Instance.isProvisionedFor(String currentRootfsSha256)`。旧元数据缺字段、marker 版本不为 1、sha 缺失或不一致时均返回未装配。
+- 记录路径：`InstanceLifecycle.Controller.recordProvisioning(id, evidence)`，在 `store.stateMonitor()` 内 load-modify-save，不改变状态、崩溃诊断或凭据。
+- 接线：`PersistentTerminalSessionPool` 新增 `ProvisioningListener` 及 register / `SessionHolder` 重载，旧构造与 register 方法保持可用；`QemuInstanceLauncher` 在注册会话时注入基于 `context.getFilesDir()/instances` 的 `FileStore` sink，按 `DistroCatalogRegistry.createDefault().listAll()` 精确匹配 `parameters.rootfsFileName`。匹配不到 sha 时不注入 sink（保守，不落任何证据）。
+- T3 使用方式：以当前发行版 sha 调用 `instance.isProvisionedFor(sha)`；仅当返回 true 时走“只嵌入凭据”的重复启动路径，否则（含旧元数据、版本不符、sha 不一致或缺失）走完整装配路径。
+
+测试结果（全部通过，使用 `-Porchestella.repositories.useAliyunMirror=true`）：
+
+- `./gradlew :app:testDebugUnitTest --tests '*ProvisioningSignalTest' --tests '*ProvisioningEvidenceRecorderTest' --tests '*PersistentTerminalSessionPoolTest'` — 16 + 4 + 19 个用例，0 失败。
+- `./gradlew :runtime:instance:test` — 14 个 JUnit 用例，0 失败（含 `InstanceProvisioningEvidenceTest` 8 个）。
+- `./gradlew :runtime:instance:check` — 既有 normal/recovery/storage/clone/delete/power/snapshot 契约测试全部通过。
+- `./gradlew :app:testDebugUnitTest` — 796 个用例，0 失败。
+- `git diff --check` — 通过。
+
+not-tested：
+
+- 未在真机或真实 QEMU guest 上验证 marker 能沿 terminal 通道到达宿主；当前结论仅来自 JVM 字节流 fake 与单元测试。
+- 未运行 `:app:lintDebug`、`:runtime:engine-qemu:check` 与设备 smoke。
+- AVF 路径未接入 sink（工单标记为可选，未扩大范围）。
+- 未做多实例同时首次装配的并发设备验证；每实例独立元数据文件，风险较低。
+
+风险 / 说明：
+
+- sink 在 pump 线程同步写一次元数据，不持有 terminal 写锁；元数据写失败仅记录无敏感内容的 warning，不会中断终端流。
+- 只有真实 EOF（read 返回 -1）才把输入结束当作 marker 分隔符；宿主主动 close 不写入证据。
+- 克隆实例继承源实例的 provisioning 证据（根盘为字节复制）；从归档导入不继承，按未装配处理。
+- 若目录中同一 `rootfsFileName` 对应不同 sha，解析为 null 并按保守策略跳过记录。
+
