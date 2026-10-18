@@ -21,6 +21,12 @@ import java.util.Objects;
  * launch paths. Nothing here executes QEMU.
  */
 public final class QemuRuntimeBootstrapper {
+    /** Opener seam so tests can prove the credentials-only path never touches the tarball. */
+    @FunctionalInterface
+    interface RootfsStreamOpener {
+        InputStream open(Path path) throws IOException;
+    }
+
     /** Launch paths for one instance. */
     public static final class RuntimePaths {
         public final Path kernel;
@@ -40,6 +46,7 @@ public final class QemuRuntimeBootstrapper {
     private final Path runtimeDir;
     private final Path distroInputsDir;
     private final java.util.List<DistroManifest> distroManifests;
+    private final RootfsStreamOpener rootfsStreams;
 
     public QemuRuntimeBootstrapper(RuntimeArtifactManifest manifest,
             java.util.function.Function<String, InputStream> assetStreams,
@@ -54,12 +61,23 @@ public final class QemuRuntimeBootstrapper {
             java.util.function.Function<String, InputStream> assetStreams,
             java.util.function.Function<String, InputStream> resourceStreams,
             Path runtimeDir, Path distroInputsDir, java.util.List<DistroManifest> distroManifests) {
+        this(manifest, assetStreams, resourceStreams, runtimeDir, distroInputsDir, distroManifests,
+                Files::newInputStream);
+    }
+
+    /** Test seam: an opener that must never be called on the credentials-only path. */
+    QemuRuntimeBootstrapper(RuntimeArtifactManifest manifest,
+            java.util.function.Function<String, InputStream> assetStreams,
+            java.util.function.Function<String, InputStream> resourceStreams,
+            Path runtimeDir, Path distroInputsDir, java.util.List<DistroManifest> distroManifests,
+            RootfsStreamOpener rootfsStreams) {
         this.manifest = Objects.requireNonNull(manifest, "manifest");
         this.assetStreams = Objects.requireNonNull(assetStreams, "assetStreams");
         this.resourceStreams = Objects.requireNonNull(resourceStreams, "resourceStreams");
         this.runtimeDir = Objects.requireNonNull(runtimeDir, "runtimeDir");
         this.distroInputsDir = Objects.requireNonNull(distroInputsDir, "distroInputsDir");
         this.distroManifests = java.util.List.copyOf(distroManifests);
+        this.rootfsStreams = Objects.requireNonNull(rootfsStreams, "rootfsStreams");
     }
 
     public RuntimePaths bootstrap(String rootfsFileName, String bridgeToken, Path instanceRootVolume)
@@ -117,6 +135,30 @@ public final class QemuRuntimeBootstrapper {
             boolean hasSudo,
             LaunchTimeline timeline)
             throws IOException {
+        return bootstrap(rootfsFileName, bridgeToken, guestPassword, instanceRootVolume,
+                mirrorConfigFileName, mirrorConfigFileContent, firstBootScript,
+                hostname, guestUser, hasSudo, timeline, false);
+    }
+
+    /**
+     * Bootstraps launch inputs, optionally for an instance whose guest root volume already
+     * reports {@code provisioning_version=1}. The credentials-only path must not open the
+     * distribution tarball; callers remain responsible for producing trustworthy evidence.
+     */
+    public RuntimePaths bootstrap(
+            String rootfsFileName,
+            String bridgeToken,
+            String guestPassword,
+            Path instanceRootVolume,
+            String mirrorConfigFileName,
+            byte[] mirrorConfigFileContent,
+            byte[] firstBootScript,
+            String hostname,
+            String guestUser,
+            boolean hasSudo,
+            LaunchTimeline timeline,
+            boolean credentialsOnly)
+            throws IOException {
         String validatedHostname = hostname == null ? null
                 : io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig.normalizeHostname(hostname);
         if (guestUser != null && !io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig.isValidUsername(guestUser)) {
@@ -128,10 +170,14 @@ public final class QemuRuntimeBootstrapper {
         }
         DistroManifest distroManifest = requireDistroManifest(rootfsFileName);
         Path rootfsPath = distroInputsDir.resolve(rootfsFileName);
-        if (!Files.isRegularFile(rootfsPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
-            throw new IOException("rootfs-file-missing");
+        if (!credentialsOnly) {
+            // Stat and size checks are part of the full path. An already provisioned
+            // instance must neither open nor depend on the downloaded tarball being present.
+            if (!Files.isRegularFile(rootfsPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                throw new IOException("rootfs-file-missing");
+            }
+            distroManifest.requireExpectedSize(Files.size(rootfsPath));
         }
-        distroManifest.requireExpectedSize(Files.size(rootfsPath));
         RuntimeAssetInstaller installer = new RuntimeAssetInstaller();
         Path kernel = installer.install(manifest, "Image",
                 () -> assetStreams.apply("Image"), runtimeDir);
@@ -164,25 +210,46 @@ public final class QemuRuntimeBootstrapper {
             try (InputStream base = Files.newInputStream(baseInitramfs)) {
                 Files.copy(base, partial);
             }
-            try (InputStream rootfsIn = Files.newInputStream(rootfsPath);
-                 java.io.OutputStream out = Files.newOutputStream(partial,
-                         java.nio.file.StandardOpenOption.APPEND)) {
-                EmbeddedProvisionInput.writeSegment(
-                        rootfsIn,
-                        rootfsSize,
-                        rootfsFileName,
-                        bridgeToken,
-                        guestPassword,
-                        guestInit,
-                        proxyRelay,
-                        validatedHostname,
-                        guestUser,
-                        hasSudo,
-                        mirrorConfigFileName,
-                        mirrorConfigFileContent,
-                        firstBootScript,
-                        distroManifest.sha256(),
-                        out);
+            if (credentialsOnly) {
+                try (java.io.OutputStream out = Files.newOutputStream(partial,
+                        java.nio.file.StandardOpenOption.APPEND)) {
+                    EmbeddedProvisionInput.writeCredentialsOnlySegment(
+                            rootfsSize,
+                            rootfsFileName,
+                            bridgeToken,
+                            guestPassword,
+                            guestInit,
+                            proxyRelay,
+                            validatedHostname,
+                            guestUser,
+                            hasSudo,
+                            mirrorConfigFileName,
+                            mirrorConfigFileContent,
+                            firstBootScript,
+                            distroManifest.sha256(),
+                            out);
+                }
+            } else {
+                try (InputStream rootfsIn = rootfsStreams.open(rootfsPath);
+                     java.io.OutputStream out = Files.newOutputStream(partial,
+                             java.nio.file.StandardOpenOption.APPEND)) {
+                    EmbeddedProvisionInput.writeSegment(
+                            rootfsIn,
+                            rootfsSize,
+                            rootfsFileName,
+                            bridgeToken,
+                            guestPassword,
+                            guestInit,
+                            proxyRelay,
+                            validatedHostname,
+                            guestUser,
+                            hasSudo,
+                            mirrorConfigFileName,
+                            mirrorConfigFileContent,
+                            firstBootScript,
+                            distroManifest.sha256(),
+                            out);
+                }
             }
             Files.move(partial, initramfs, java.nio.file.StandardCopyOption.REPLACE_EXISTING,
                     java.nio.file.StandardCopyOption.ATOMIC_MOVE);
@@ -194,7 +261,18 @@ public final class QemuRuntimeBootstrapper {
             }
             throw failure;
         }
-        if (timeline != null) timeline.markInitramfsBuilt(rootfsSize);
+        if (credentialsOnly) {
+            long segmentBytes = Files.size(initramfs) - Files.size(baseInitramfs);
+            if (segmentBytes > EmbeddedProvisionInput.CREDENTIALS_ONLY_MAX_BYTES) {
+                try {
+                    Files.deleteIfExists(initramfs);
+                } catch (IOException cleanupFailure) {
+                    // The size violation is the primary failure.
+                }
+                throw new IOException("credentials-only-initramfs-too-large");
+            }
+        }
+        if (timeline != null) timeline.markInitramfsBuilt(credentialsOnly ? 0L : rootfsSize);
         return new RuntimePaths(kernel, initramfs, instanceRootVolume);
     }
 
