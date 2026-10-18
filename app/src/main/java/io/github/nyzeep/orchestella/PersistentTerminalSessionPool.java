@@ -5,6 +5,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import io.github.nyzeep.orchestella.RuntimeProcessSupervisor.StopResult;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -26,6 +27,7 @@ public final class PersistentTerminalSessionPool {
     public enum StopIntent { NONE, GRACEFUL, FORCE }
 
     private static final PersistentTerminalSessionPool INSTANCE = new PersistentTerminalSessionPool();
+    private static final long RUNTIME_STOP_GRACE_MS = 2000L;
 
     public static PersistentTerminalSessionPool getInstance() {
         return INSTANCE;
@@ -233,14 +235,22 @@ public final class PersistentTerminalSessionPool {
 
     public PersistentTerminalSessionPool() {}
 
-    public synchronized SessionHolder register(String instanceId, ExecutionSession session) {
+    public synchronized SessionHolder register(String instanceId, ExecutionSession session) throws IOException {
         Objects.requireNonNull(instanceId, "instanceId");
         Objects.requireNonNull(session, "session");
         SessionHolder existing = holders.get(instanceId);
         if (existing != null && existing.rawSession() == session) return existing;
+        if (existing != null) {
+            // Never publish a second owner while the previous runtime may still be
+            // alive: a fixed gvproxy port and the root disk belong to the old owner.
+            if (!stopOwnedRuntime(existing)) {
+                throw new IOException("previous runtime session did not confirm stop");
+            }
+            existing.close();
+            holders.remove(instanceId, existing);
+        }
         SessionHolder holder = new SessionHolder(instanceId, session);
         holders.put(instanceId, holder);
-        if (existing != null) existing.close();
         return holder;
     }
 
@@ -284,6 +294,7 @@ public final class PersistentTerminalSessionPool {
     public synchronized boolean unregister(String instanceId, ExecutionSession expected) {
         SessionHolder current = holders.get(instanceId);
         if (current == null || current.rawSession() != expected) return false;
+        if (!stopOwnedRuntime(current)) return false;
         holders.remove(instanceId, current);
         current.close();
         return true;
@@ -331,18 +342,30 @@ public final class PersistentTerminalSessionPool {
     }
 
     public void unregister(String instanceId) {
-        if (instanceId != null) {
-            SessionHolder removed = holders.remove(instanceId);
-            if (removed != null) {
-                removed.close();
+        if (instanceId == null) return;
+        SessionHolder removed = holders.get(instanceId);
+        if (removed == null || !stopOwnedRuntime(removed)) return;
+        holders.remove(instanceId, removed);
+        removed.close();
+    }
+
+    public void clear() {
+        for (java.util.Map.Entry<String, SessionHolder> entry : holders.entrySet()) {
+            SessionHolder holder = entry.getValue();
+            if (stopOwnedRuntime(holder)) {
+                holders.remove(entry.getKey(), holder);
+                holder.close();
             }
         }
     }
 
-    public void clear() {
-        for (SessionHolder holder : holders.values()) {
-            holder.close();
+    /** Stops a runtime owner with a bounded wait; legacy sessions keep close-only. */
+    private static boolean stopOwnedRuntime(SessionHolder holder) {
+        ExecutionSession owned = holder.rawSession();
+        if (owned instanceof RuntimeOwnedSession) {
+            return ((RuntimeOwnedSession) owned).stopRuntime(RUNTIME_STOP_GRACE_MS)
+                    != StopResult.UNCONFIRMED;
         }
-        holders.clear();
+        return true;
     }
 }
