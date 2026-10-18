@@ -23,6 +23,7 @@
 | [0017](0017-wayland-graphics-channel.md) | Wayland 原生移动图形通道 | accepted |
 | [0018](0018-audio-and-clipboard-bridge.md) | 系统级音频、剪贴板与外设指针 | accepted |
 | [0019](0019-gpu-hardware-acceleration.md) | GPU 硬件加速渲染与驱动隔离 | accepted |
+| [0020](0020-runtime-process-ownership.md) | 运行时进程所有权与有界停止 | accepted |
 
 ## 已知缺口
 
