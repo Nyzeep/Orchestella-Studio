@@ -35,7 +35,8 @@ Blocked by: T1、T2
 - 入口：`QemuInstanceLauncher.credentialsOnlyLaunch(...)` 每次 launch 从 `InstanceLifecycle.FileStore(context.getFilesDir()/instances)` 重新加载实例，按 `rootfsFileName` 解析 catalog sha，仅 `isProvisionedFor(sha)==true` 时传入 `credentialsOnly=true`。
 - 回退：metadata 缺失/损坏、marker 版本不符、sha 不匹配、rootfs 文件名未知/歧义、读取异常，全部走全量路径。
 - 测试：新增 `QemuRuntimeBootstrapperProvisionedTest` 8 tests / 0 failures；`:runtime:engine-qemu:check` 通过；`:app:testDebugUnitTest` 104 suites / 820 tests / 0 failures / 0 skipped。
-- 证据：注入 opener 断言 credentials-only 打开 rootfs 0 次、读取 0 B；timeline `rootfsBytes=0`；全量分支与 `EmbeddedProvisionInput.writeSegment` 重建结果逐字节相同；凭据-only segment 523 B（合成 4 KiB rootfs），硬上限 64 KiB。
+- 证据：注入 opener 断言 credentials-only 打开 rootfs 0 次、读取 0 B；timeline `rootfsBytes=0` / `credentialsOnly=true` / `initramfsBytes` 非空；全量分支与 `EmbeddedProvisionInput.writeSegment` 重建结果逐字节相同，并有全量 initramfs 黄金 SHA-256 `4cbca127...b75c7c`；凭据-only segment 523 B（合成 4 KiB rootfs），硬上限 256 KiB（发布前检查）。
 - 设备：Ubuntu/Arch 重复启动、真实 initrd 内存与耗时 `not-tested`（本会话无 adb/设备）。
 - 风险：宿主 evidence 与根盘实际状态不一致时 guest 会 fail closed（不写根盘）；旧实例无 evidence 仍走全量路径。
 - T8 可复用：`RootfsStreamOpener`（package-private）、`CREDENTIALS_ONLY_MAX_BYTES`、`rootfsBytes=0` 契约。
+- 审查修复（`e5876ba`）：上限从 64 KiB 调整为 256 KiB（真实 segment 约 59 KB，64 KiB 只剩约 6 KB 余量）；上限检查移到 `Files.move` 发布前；timeline 增加 `initramfsBytes` 与派生 `credentialsOnly`，原 `markInitramfsBuilt(long)` 签名保留。

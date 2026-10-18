@@ -4,6 +4,12 @@
 - 执行 session / 模型 / thinking：续跑 T7 ticket session / DeepSeek-V4.1-Flash / 未记录
 - 分支：`perf/t7-qemu-tuning`　基线 commit：`bd24d24`（集成分支，含 T1/T2/T4）
 
+## 0. 背景 / scope / 边界检查
+
+- 背景 / scope：P2 实验票；把 QEMU 性能参数变成 opt-in tuning，默认值不变，交付可重复的矩阵脚本与结论报告。
+- 越界检查：只改 `QemuLaunchSpec` 参数消费点、新增 `QemuTuning`/测试/矩阵脚本/报告；未改 bootstrapper、supervisor、gateway、guest init 或默认启动参数。
+- Architecture Change Policy：未触发；默认 argv 与契约不变。
+
 ## 1. 任务目标
 
 把 QEMU 性能相关参数变成可注入的 tuning 值对象，默认值与今天逐项相同；提供可重复执行的设备矩阵脚本与结论报告。默认值不变，没有统计显著收益就保留现状。
@@ -15,7 +21,7 @@
 - ✅ `QemuLaunchSpec.buildWithPasst(...)` 新增显式 tuning 重载；旧签名委托到 `QemuTuning.DEFAULTS`，测试断言两种调用参数数组逐项相同。
 - ✅ 单变量变体均有参数构造测试；默认输出不出现 `tb-size`、`aio`、`discard`、`detect-zeroes`，root 盘保持 `cache=writeback`。
 - ✅ 拒绝非法 tuning：CPU model 注入字符、负 `tb-size`、未知 `aio`、相对/含逗号的 UNIX socket path。
-- ✅ 新增 `tools/qemu-tuning/matrix.py`：11 个变体 × 6 个 workload，`--dry-run` 生成 66 行 TSV，记录设备字段与 `status=not-tested`；`--json` 输出摘要；`--device` 可采集 adb 型号/Android 版本/电池/热状态。
+- ✅ 新增 `tools/qemu-tuning/matrix.py`：11 个变体 × 6 个 workload，`--dry-run --image <id>` 生成 66 行 TSV，记录 image、设备型号/Android 版本、电池温度、热状态、`samples_target=10` 与 `status=not-tested`；`--json` 输出摘要；`--device` 只采集上述有界字段，不保存 serial、原始 dumpsys 或完整 fingerprint。
 - ✅ dry-run 证据：`docs/reports/tickets/runtime-performance-07/matrix-dry-run.tsv`。
 - ⚠️ 设备实测：本会话无 `adb`/设备，全部 workload 与统计口径 `not-tested`；没有编造 benchmark 数字。
 
@@ -23,7 +29,7 @@
 
 - 真实设备 boot-to-prompt、`apt update`、`tar -xzf`、`gcc` 编译、`dd`、`iperf3` 未运行；n≥10、中位数 + IQR、控温均未执行。
 - `io_uring` 在 Android 内核上的可用性、`neoverse-n1` / `max,sve=off` 在当前 QEMU 11.1.1 构建上的可启动性、`-netdev stream` unix socket 的真实连通性均未验证。
-- 矩阵脚本目前是“生成 + 记录 + not-tested”驱动；真正计时需要带 tuning 注入点的实验构建。它不会伪造测量结果。
+- 矩阵脚本目前是“生成 + 记录 + not-tested”驱动；真正计时需要带 tuning 注入点的实验构建。脚本强制 `--dry-run` 或 `--device` 二选一，不会在无设备时伪造样本，也不会保存原始 dumpsys/序列号/完整 fingerprint。
 
 ## 4. 修改的模块
 
