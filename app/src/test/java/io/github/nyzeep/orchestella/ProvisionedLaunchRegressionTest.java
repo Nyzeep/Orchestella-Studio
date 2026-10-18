@@ -4,9 +4,13 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig;
+import io.github.nyzeep.orchestella.runtime.distro.DistroCatalogRegistry;
 import io.github.nyzeep.orchestella.runtime.distro.DistroManifest;
 import io.github.nyzeep.orchestella.runtime.engineqemu.EmbeddedProvisionInput;
 import io.github.nyzeep.orchestella.runtime.engineqemu.RuntimeArtifactManifest;
+import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle;
+import io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -73,6 +77,43 @@ public final class ProvisionedLaunchRegressionTest {
         assertTrue(timeline.finish());
         assertTrue("timeline must expose the zero-rootfs contract",
                 lines.get(0).contains("\"rootfsBytes\":0"));
+    }
+
+    @Test
+    public void launcherDecisionRequiresPersistedEvidenceForTheCurrentCatalogDigest() throws Exception {
+        Fixture fixture = new Fixture();
+        DistroManifest catalog = DistroCatalogRegistry.createDefault().listAll().get(0);
+        Path instances = temporaryFolder.newFolder("instances-decision").toPath();
+        InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(instances);
+        InstanceLifecycle.Controller controller = new InstanceLifecycle.Controller(store, Clock.systemUTC());
+        InstanceLifecycle.Instance created = controller.create(
+                new InstanceLifecycle.DistroReference(catalog.id(), catalog.version()),
+                fixture.rootVolume, VmHardwareConfig.defaultConfig(),
+                new InstanceUserConfig("developer", PASSWORD, false, "Dev-Box"));
+
+        assertFalse("no evidence must keep the launcher on the full path",
+                QemuInstanceLauncher.credentialsOnlyLaunch(
+                        instances, created.id(), catalog.rootfsFileName()));
+
+        controller.recordProvisioning(created.id(), new InstanceLifecycle.ProvisioningEvidence(
+                1, catalog.sha256(), 1_700_000_000_000L));
+        assertTrue("matching evidence must unlock the production decision",
+                QemuInstanceLauncher.credentialsOnlyLaunch(
+                        instances, created.id(), catalog.rootfsFileName()));
+        assertFalse("an unknown file name must not unlock the production decision",
+                QemuInstanceLauncher.credentialsOnlyLaunch(
+                        instances, created.id(), "unknown.tar.gz"));
+
+        QemuRuntimeBootstrapper bootstrapper = new QemuRuntimeBootstrapper(manifest(fixture.kernel),
+                name -> new ByteArrayInputStream(fixture.kernel), fixture::resource,
+                fixture.runtimeDir, fixture.distroInputs, List.of(catalog), path -> {
+                    throw new AssertionError("launcher-approved fast path opened the rootfs");
+                });
+        QemuRuntimeBootstrapper.RuntimePaths paths = bootstrapper.bootstrap(
+                catalog.rootfsFileName(), TOKEN, PASSWORD, fixture.rootVolume,
+                null, null, null, null, null, false, null, true);
+        assertFalse(fixture.entries(paths.initramfs).containsKey(
+                EmbeddedProvisionInput.EMBEDDED_DIR + "/" + catalog.rootfsFileName()));
     }
 
     @Test
