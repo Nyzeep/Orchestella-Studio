@@ -7,6 +7,8 @@ import io.github.nyzeep.orchestella.RuntimeProcessSupervisor.StopResult;
 import io.github.nyzeep.orchestella.runtime.contract.BridgeClient;
 import io.github.nyzeep.orchestella.runtime.contract.BridgeControl;
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig;
+import io.github.nyzeep.orchestella.runtime.distro.DistroCatalogRegistry;
+import io.github.nyzeep.orchestella.runtime.distro.DistroManifest;
 import io.github.nyzeep.orchestella.runtime.engineqemu.QemuLaunchSpec;
 import io.github.nyzeep.orchestella.runtime.engineqemu.QemuProcessLauncher;
 import io.github.nyzeep.orchestella.runtime.engineqemu.RuntimeArtifactManifest;
@@ -34,6 +36,7 @@ public final class QemuInstanceLauncher {
         private final String instanceId;
         private final QemuProcessLauncher.ProcessHandle handle;
         private final RuntimeProcessSupervisor supervisor;
+        private final LaunchTimeline timeline;
         private final BridgeConnector connector = new BridgeConnector();
         private final Object controlLock = new Object();
         private final Object terminalLock = new Object();
@@ -80,17 +83,32 @@ public final class QemuInstanceLauncher {
                 String displaySocketPath, String token, QemuProcessLauncher.ProcessHandle handle,
                 String instanceId, NetworkGatewayDaemon.Running gateway) {
             this(controlSocketName, terminalSocketName, proxySocketName, displaySocketPath, token,
-                    handle, instanceId, (RuntimeGateway) gateway);
+                    handle, instanceId, (RuntimeGateway) gateway, null);
+        }
+
+        Session(String controlSocketName, String terminalSocketName, String proxySocketName,
+                String displaySocketPath, String token, QemuProcessLauncher.ProcessHandle handle,
+                String instanceId, NetworkGatewayDaemon.Running gateway, LaunchTimeline timeline) {
+            this(controlSocketName, terminalSocketName, proxySocketName, displaySocketPath, token,
+                    handle, instanceId, (RuntimeGateway) gateway, timeline);
         }
 
         private Session(String controlSocketName, String terminalSocketName, String proxySocketName,
                 String displaySocketPath, String token, QemuProcessLauncher.ProcessHandle handle,
                 String instanceId, RuntimeGateway gateway) {
+            this(controlSocketName, terminalSocketName, proxySocketName, displaySocketPath, token,
+                    handle, instanceId, gateway, null);
+        }
+
+        private Session(String controlSocketName, String terminalSocketName, String proxySocketName,
+                String displaySocketPath, String token, QemuProcessLauncher.ProcessHandle handle,
+                String instanceId, RuntimeGateway gateway, LaunchTimeline timeline) {
             this.controlSocketName = controlSocketName;
             this.terminalSocketName = terminalSocketName;
             this.instanceId = instanceId;
             this.proxySocketName = proxySocketName;
             this.handle = handle;
+            this.timeline = timeline;
             this.supervisor = new RuntimeProcessSupervisor(handle, gateway, this::closeChannels);
             this.waylandChannel = displaySocketPath == null ? null : new QemuWaylandChannel(() ->
                     openDisplayStreams(displaySocketPath), token, this::bridgeClient);
@@ -234,7 +252,18 @@ public final class QemuInstanceLauncher {
         @Override
         public StopResult stopRuntime(long graceMs) {
             synchronized (this) { closing = true; }
-            StopResult stop = supervisor.stop(graceMs);
+            if (timeline != null) timeline.mark(LaunchTimeline.Stage.STOP_REQUESTED);
+            StopResult stop;
+            try {
+                stop = supervisor.stop(graceMs);
+            } catch (RuntimeException | Error failure) {
+                if (timeline != null) timeline.finish();
+                throw failure;
+            }
+            if (timeline != null) {
+                timeline.markStopConfirmed(stop);
+                timeline.finish();
+            }
             if (stop == StopResult.UNCONFIRMED) {
                 RuntimeProcessSupervisor.Diagnostics diagnostics = supervisor.diagnostics();
                 Log.w(TAG, "runtime-stop-unconfirmed stage=" + diagnostics.stage()
@@ -458,6 +487,15 @@ public final class QemuInstanceLauncher {
         try (InputStream in = PackagedAssetStreams.openAsset(context, RuntimeArtifactManifest.SCHEMA_FILE_NAME)) {
             manifest = RuntimeArtifactManifest.parse(in);
         }
+
+        VmHardwareConfig config = parameters.hardwareConfig != null
+                ? parameters.hardwareConfig
+                : VmHardwareConfig.defaultConfig();
+        LaunchTimeline timeline = LaunchTimeline.open(Paths.get(parameters.runtimeDirectory),
+                parameters.instanceId, resolveDistroId(parameters.rootfsFileName),
+                config.ramMegabytes(), config.cpuCores());
+        timeline.mark(LaunchTimeline.Stage.LAUNCH_START);
+
         QemuRuntimeBootstrapper bootstrapper = new QemuRuntimeBootstrapper(manifest,
                 name -> {
                     try {
@@ -475,30 +513,37 @@ public final class QemuInstanceLauncher {
                 },
                 Paths.get(parameters.runtimeDirectory),
                 Paths.get(parameters.distroInputsDirectory));
-        QemuRuntimeBootstrapper.RuntimePaths paths =
-                bootstrapper.bootstrap(parameters.rootfsFileName, parameters.bridgeToken,
-                        parameters.guestPassword,
-                        Paths.get(parameters.instanceRootVolume),
-                        parameters.mirrorConfigFileName,
-                        parameters.mirrorConfigFileContent,
-                        parameters.firstBootScript,
-                        parameters.hostname, parameters.guestUser, parameters.hasSudo);
+        QemuRuntimeBootstrapper.RuntimePaths paths;
+        try {
+            paths = bootstrapper.bootstrap(parameters.rootfsFileName, parameters.bridgeToken,
+                    parameters.guestPassword,
+                    Paths.get(parameters.instanceRootVolume),
+                    parameters.mirrorConfigFileName,
+                    parameters.mirrorConfigFileContent,
+                    parameters.firstBootScript,
+                    parameters.hostname, parameters.guestUser, parameters.hasSudo, timeline);
+        } catch (IOException | RuntimeException | Error failure) {
+            timeline.finish();
+            throw failure;
+        }
 
         String nativeLibraryDir = context.getApplicationInfo().nativeLibraryDir;
         String controlSocket = "droidlayer-control-" + parameters.instanceId;
         String terminalSocket = "droidlayer-terminal-" + parameters.instanceId;
 
-        VmHardwareConfig config = parameters.hardwareConfig != null
-                ? parameters.hardwareConfig
-                : VmHardwareConfig.defaultConfig();
-
         // Rootless network plane: gvproxy bridges the guest onto the host stack (the
         // packaged QEMU has no slirp; passt is blocked by Android SELinux). Guest
         // addressing rides the kernel command line so distros without a DHCP client
         // still come up deterministically.
-        NetworkGatewayDaemon.Running gateway =
-                NetworkGatewayDaemon.start(context, parameters.instanceId,
-                        Paths.get(parameters.runtimeDirectory).toFile());
+        NetworkGatewayDaemon.Running gateway;
+        try {
+            gateway = NetworkGatewayDaemon.start(context, parameters.instanceId,
+                    Paths.get(parameters.runtimeDirectory).toFile());
+        } catch (IOException | RuntimeException | Error failure) {
+            timeline.finish();
+            throw failure;
+        }
+        timeline.mark(LaunchTimeline.Stage.GATEWAY_READY);
         java.util.concurrent.atomic.AtomicReference<QemuProcessLauncher.ProcessHandle> startingHandle =
                 new java.util.concurrent.atomic.AtomicReference<>();
         java.util.concurrent.atomic.AtomicReference<Session> startingSession =
@@ -582,11 +627,12 @@ public final class QemuInstanceLauncher {
 
         QemuProcessLauncher launcher = new QemuProcessLauncher(factory);
         QemuProcessLauncher.Launched launched = launcher.launch(sanitizedSpec);
+        timeline.mark(LaunchTimeline.Stage.QEMU_STARTED);
         QemuProcessLauncher.ProcessHandle handle = launched.handle();
         startingHandle.set(handle);
         Session session = new Session(controlSocket, terminalSocket,
                 QemuLaunchSpec.defaultProxySocketName(controlSocket), displaySocketPath,
-                parameters.bridgeToken, handle, parameters.instanceId, gateway);
+                parameters.bridgeToken, handle, parameters.instanceId, gateway, timeline);
         startingSession.set(session);
         Thread watcher = new Thread(() -> {
             try {
@@ -601,8 +647,24 @@ public final class QemuInstanceLauncher {
         watcher.setDaemon(true);
         watcher.start();
         ExecutionSessionRegistry.register(parameters.instanceId, session);
+        timeline.mark(LaunchTimeline.Stage.SESSION_REGISTERED);
         return session;
-        }, () -> cleanupFailedLaunch(startingSession.get(), startingHandle.get(), gateway));
+        }, () -> {
+            cleanupFailedLaunch(startingSession.get(), startingHandle.get(), gateway);
+            timeline.finish();
+        });
+    }
+
+    /** Non-secret distro id for telemetry; unknown or ambiguous filenames stay honest. */
+    static String resolveDistroId(String rootfsFileName) {
+        if (rootfsFileName == null || rootfsFileName.isEmpty()) return "unknown";
+        String matched = null;
+        for (DistroManifest manifest : DistroCatalogRegistry.createDefault().listAll()) {
+            if (!rootfsFileName.equals(manifest.rootfsFileName())) continue;
+            if (matched != null && !matched.equals(manifest.id())) return "unknown";
+            matched = manifest.id();
+        }
+        return matched == null ? "unknown" : matched;
     }
 
     /** Failure cleanup shared by launch bootstrap, Session construction and registration. */
