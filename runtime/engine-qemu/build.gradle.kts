@@ -4,6 +4,7 @@ plugins {
 
 dependencies {
     api(project(":runtime:contract"))
+    testImplementation(libs.junit)
 }
 
 java {
@@ -16,6 +17,11 @@ tasks.withType<JavaCompile>().configureEach {
     options.encoding = "UTF-8"
     options.release.set(17)
     options.compilerArgs.addAll(listOf("-Xlint:all", "-Werror"))
+}
+
+tasks.register<JavaExec>("qemuProcessLauncherTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.engineqemu.QemuProcessLauncherTest")
 }
 
 tasks.register<JavaExec>("qemuBridgeAdapterTest") {
@@ -68,6 +74,7 @@ tasks.register<JavaExec>("qemuHostfwdContractTest") {
 
 tasks.named("check") {
     dependsOn(
+        "qemuProcessLauncherTest",
         "qemuBridgeAdapterTest",
         "runtimeArtifactManifestTest",
         "runtimeArtifactManifestSchemaTest",
