@@ -154,7 +154,7 @@ public final class QemuInstanceLauncher {
             return waylandChannel == null ? "显示数据面未配置" : waylandChannel.message();
         }
 
-        private boolean closing;
+        private volatile boolean closing;
 
         @Override public synchronized ServiceForward openServiceForward(int guestPort) throws IOException {
             if (closing) throw new IOException("session is closing");
@@ -239,7 +239,8 @@ public final class QemuInstanceLauncher {
                 RuntimeProcessSupervisor.Diagnostics diagnostics = supervisor.diagnostics();
                 Log.w(TAG, "runtime-stop-unconfirmed stage=" + diagnostics.stage()
                         + " pid=" + diagnostics.pid() + " forced=" + diagnostics.forced()
-                        + " graceMs=" + diagnostics.graceMs());
+                        + " graceMs=" + diagnostics.graceMs()
+                        + " exitCode=" + diagnostics.exitCode());
             }
             return stop;
         }
@@ -608,28 +609,34 @@ public final class QemuInstanceLauncher {
     static void cleanupFailedLaunch(RuntimeOwnedSession session,
             QemuProcessLauncher.ProcessHandle handle, RuntimeGateway gateway) {
         if (session != null) {
-            session.stopRuntime(2000L);
+            if (session.stopRuntime(2000L) == StopResult.UNCONFIRMED) {
+                Log.w(TAG, "launch-cleanup-stop-unconfirmed");
+            }
             return;
         }
-        try {
-            stopProcessBounded(handle);
-        } finally {
-            if (gateway != null) gateway.stop(2000L);
+        boolean processStopped = stopProcessBounded(handle);
+        boolean gatewayStopped = gateway == null || gateway.stop(2000L);
+        if (!processStopped || !gatewayStopped) {
+            Log.w(TAG, "launch-cleanup-unconfirmed process=" + processStopped
+                    + " gateway=" + gatewayStopped);
         }
     }
 
     /** Bounded fallback for a launch that failed before a Session existed. */
-    private static void stopProcessBounded(QemuProcessLauncher.ProcessHandle handle) {
-        if (handle == null) return;
+    private static boolean stopProcessBounded(QemuProcessLauncher.ProcessHandle handle) {
+        if (handle == null) return true;
         try {
-            if (!handle.isAlive()) return;
+            if (!handle.isAlive()) return true;
             handle.destroy();
             if (!handle.waitFor(1000L, java.util.concurrent.TimeUnit.MILLISECONDS)) {
                 handle.destroyForcibly();
-                handle.waitFor(2000L, java.util.concurrent.TimeUnit.MILLISECONDS);
+                return handle.waitFor(2000L, java.util.concurrent.TimeUnit.MILLISECONDS)
+                        || !handle.isAlive();
             }
+            return true;
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
+            return !handle.isAlive();
         }
     }
 

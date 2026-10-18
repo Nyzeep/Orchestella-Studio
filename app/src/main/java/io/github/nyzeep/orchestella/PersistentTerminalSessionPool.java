@@ -341,7 +341,7 @@ public final class PersistentTerminalSessionPool {
         }
     }
 
-    public void unregister(String instanceId) {
+    public synchronized void unregister(String instanceId) {
         if (instanceId == null) return;
         SessionHolder removed = holders.get(instanceId);
         if (removed == null || !stopOwnedRuntime(removed)) return;
@@ -349,7 +349,7 @@ public final class PersistentTerminalSessionPool {
         removed.close();
     }
 
-    public void clear() {
+    public synchronized void clear() {
         for (java.util.Map.Entry<String, SessionHolder> entry : holders.entrySet()) {
             SessionHolder holder = entry.getValue();
             if (stopOwnedRuntime(holder)) {

@@ -104,11 +104,11 @@ destroy → waitFor(grace) → destroyForcibly → waitFor(forceWait) → close 
 
 ### 锁顺序
 
-1. 实例级 supervisor 锁（`RuntimeProcessSupervisor` 内部）
-2. gateway 启动锁（`NetworkGatewayDaemon.START_LOCK`）
-3. session 池锁（`PersistentTerminalSessionPool` 方法级 synchronized）
+1. session 池锁（`PersistentTerminalSessionPool` 方法级 synchronized）
+2. 实例级 supervisor 锁（`RuntimeProcessSupervisor` 内部）
+3. gateway stopLock（`NetworkGatewayDaemon.Running` 内部）
 
-禁止在持有 supervisor 锁时反过来获取 session 池锁。session 池在持有自身锁时调用 supervisor stop 是允许的单向顺序。
+gateway 启动锁（`START_LOCK`）只包住 start，不与 supervisor 锁嵌套。禁止在持有 supervisor 锁时反过来获取 session 池锁。
 
 ### 盘 lease
 
@@ -126,7 +126,7 @@ destroy → waitFor(grace) → destroyForcibly → waitFor(forceWait) → close 
 - `PersistentTerminalSessionPool`：fake `RuntimeOwnedSession`。
 - `InstanceLaunchSequence.awaitGuestExit`：fake session + 真实 `InstanceLifecycle.FileStore`。
 
-测试矩阵见第 6.6 节；新增测试必须接入 `:runtime:engine-qemu:check`、`:runtime:instance:check` 或 `:app:testDebugUnitTest`。
+测试矩阵见实现报告；新增测试必须接入 `:runtime:engine-qemu:check`、`:runtime:instance:check` 或 `:app:testDebugUnitTest`。
 
 ## Out of Scope
 

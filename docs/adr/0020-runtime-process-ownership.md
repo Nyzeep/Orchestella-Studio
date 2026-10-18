@@ -17,9 +17,9 @@ P0-2 要求在不改变产品契约、不新增常驻进程、不引入新 VM ow
 2. **有界停止**：`stop(graceMs)` 的顺序固定为 `destroy → waitFor(grace) → destroyForcibly → waitFor(forceWait) → close channels → stop gateway`；每一步都有 deadline，不允许无限 `waitFor()`。
 3. **停止确认**：返回 `CONFIRMED` / `UNCONFIRMED` / `ALREADY_STOPPED`。只有 `CONFIRMED` 或 `ALREADY_STOPPED` 才允许把实例元数据写成 STOPPED、释放根盘占用、允许同一固定端口立即重启。
 4. **Session 语义**：`Session.close()` 是“退休并停止全部资源”，不只是释放通道；`Session.terminate()` 走同一 supervisor。两者幂等，允许 watcher、UI、session 池重复调用。
-5. **网关**：`NetworkGatewayDaemon.Running` 暴露 `isAlive()` 与有界 `stop(graceMs)`；只有确认退出后才从 `LIVE` 移除并删除 API socket。`start()` 遇到同实例存活网关快速失败，遇到已死条目先清理；固定端口被占用时不得当作 readiness。
+5. **网关**：`NetworkGatewayDaemon.Running` 实现 `RuntimeGateway`，暴露 `isAlive()` 与有界 `stop(graceMs)`；只有确认退出后才从 `LIVE` 移除并删除 API socket。`start()` 遇到同实例存活网关快速失败，遇到已死条目先清理；固定端口被占用时不得当作 readiness。
 6. **未确认停止**：不新增产品实例状态。元数据保持 RUNNING，保留 session owner、guard 与根盘占用，记录 stage / pid / grace / forced / exit code 诊断；UI 明示“停止未确认”，禁止重启。后续只有在证明必须新增状态时，才另写 ADR 引入 `STOP_UNCONFIRMED` 状态。
-7. **锁顺序**：supervisor 锁 → gateway 启动锁 → session 池锁；禁止反向获取。
+7. **锁顺序**：session 池锁 → supervisor 锁 → gateway stopLock；gateway 启动锁（START_LOCK）只包住 start，不与 supervisor 锁嵌套。禁止在 supervisor 锁内反向获取 session 池锁。
 
 ## Consequences
 

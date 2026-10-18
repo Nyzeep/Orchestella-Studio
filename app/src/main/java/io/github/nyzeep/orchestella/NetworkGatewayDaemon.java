@@ -70,14 +70,25 @@ public final class NetworkGatewayDaemon {
         @Override
         public boolean stop(long graceMs) {
             synchronized (stopLock) {
-                if (stopStarted) return stopConfirmed;
+                if (stopConfirmed) return true;
+                // A previous UNCONFIRMED attempt is retryable. If the process has
+                // exited in the meantime, finish the LIVE/socket cleanup now.
+                if (stopStarted && !process.isAlive()) {
+                    stopConfirmed = true;
+                    cleanupLiveEntry();
+                    return true;
+                }
                 stopStarted = true;
                 stopConfirmed = terminateProcess(process, graceMs, FORCE_WAIT_MS);
-                if (stopConfirmed) {
-                    LIVE.remove(instanceId, this);
-                    try { Files.deleteIfExists(apiSocket.toPath()); } catch (IOException ignored) { }
-                }
+                if (stopConfirmed) cleanupLiveEntry();
                 return stopConfirmed;
+            }
+        }
+
+        /** Removes only this owner's LIVE entry and socket; never a replacement's. */
+        private void cleanupLiveEntry() {
+            if (LIVE.remove(instanceId, this)) {
+                try { Files.deleteIfExists(apiSocket.toPath()); } catch (IOException ignored) { }
             }
         }
     }
@@ -282,9 +293,16 @@ public final class NetworkGatewayDaemon {
         if (existing.isAlive()) throw new IOException("previous gateway did not stop");
     }
 
-    private static boolean portAssignedToAnotherInstance(String instanceId, int port) {
+    static boolean portAssignedToAnotherInstance(String instanceId, int port) {
         for (Map.Entry<String, Running> entry : LIVE.entrySet()) {
-            if (!entry.getKey().equals(instanceId) && entry.getValue().tcpPort == port) return true;
+            if (entry.getKey().equals(instanceId)) continue;
+            Running other = entry.getValue();
+            if (!other.isAlive()) {
+                // A dead entry must not reserve a port for an instance that is gone.
+                other.stop(0);
+                continue;
+            }
+            if (other.tcpPort == port) return true;
         }
         return false;
     }
