@@ -20,6 +20,21 @@ public final class QemuProcessLauncherTest {
                 public void destroy() {
                     // no-op
                 }
+
+                @Override
+                public boolean waitFor(long timeout, java.util.concurrent.TimeUnit unit) {
+                    return true;
+                }
+
+                @Override
+                public void destroyForcibly() {
+                    // no-op
+                }
+
+                @Override
+                public boolean isAlive() {
+                    return false;
+                }
             };
             handles.add(handle);
             return handle;
