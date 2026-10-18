@@ -1,0 +1,67 @@
+image	variant	variable	cpu_model	tb_size_kb	block_aio	discard_unmap	detect_zeroes_unmap	vcpu_count	passt_unix_socket	workload	samples_target	samples	status	device_model	android	battery_temp_c	thermal_status	fingerprint_sha256
+ubuntu-24.04	baseline	none	cortex-a57	0		False	False	0		boot-to-prompt	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	baseline	none	cortex-a57	0		False	False	0		apt-update	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	baseline	none	cortex-a57	0		False	False	0		tar-xzf	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	baseline	none	cortex-a57	0		False	False	0		gcc-compile	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	baseline	none	cortex-a57	0		False	False	0		dd	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	baseline	none	cortex-a57	0		False	False	0		iperf3	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	cpu-neoverse-n1	cpu_model	neoverse-n1	0		False	False	0		boot-to-prompt	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	cpu-neoverse-n1	cpu_model	neoverse-n1	0		False	False	0		apt-update	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	cpu-neoverse-n1	cpu_model	neoverse-n1	0		False	False	0		tar-xzf	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	cpu-neoverse-n1	cpu_model	neoverse-n1	0		False	False	0		gcc-compile	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	cpu-neoverse-n1	cpu_model	neoverse-n1	0		False	False	0		dd	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	cpu-neoverse-n1	cpu_model	neoverse-n1	0		False	False	0		iperf3	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	cpu-max-sve-off	cpu_model	max,sve=off	0		False	False	0		boot-to-prompt	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	cpu-max-sve-off	cpu_model	max,sve=off	0		False	False	0		apt-update	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	cpu-max-sve-off	cpu_model	max,sve=off	0		False	False	0		tar-xzf	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	cpu-max-sve-off	cpu_model	max,sve=off	0		False	False	0		gcc-compile	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	cpu-max-sve-off	cpu_model	max,sve=off	0		False	False	0		dd	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	cpu-max-sve-off	cpu_model	max,sve=off	0		False	False	0		iperf3	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	tb-size-32	tb_size_kb	cortex-a57	32		False	False	0		boot-to-prompt	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	tb-size-32	tb_size_kb	cortex-a57	32		False	False	0		apt-update	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	tb-size-32	tb_size_kb	cortex-a57	32		False	False	0		tar-xzf	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	tb-size-32	tb_size_kb	cortex-a57	32		False	False	0		gcc-compile	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	tb-size-32	tb_size_kb	cortex-a57	32		False	False	0		dd	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	tb-size-32	tb_size_kb	cortex-a57	32		False	False	0		iperf3	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	tb-size-64	tb_size_kb	cortex-a57	64		False	False	0		boot-to-prompt	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	tb-size-64	tb_size_kb	cortex-a57	64		False	False	0		apt-update	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	tb-size-64	tb_size_kb	cortex-a57	64		False	False	0		tar-xzf	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	tb-size-64	tb_size_kb	cortex-a57	64		False	False	0		gcc-compile	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	tb-size-64	tb_size_kb	cortex-a57	64		False	False	0		dd	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	tb-size-64	tb_size_kb	cortex-a57	64		False	False	0		iperf3	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	tb-size-128	tb_size_kb	cortex-a57	128		False	False	0		boot-to-prompt	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	tb-size-128	tb_size_kb	cortex-a57	128		False	False	0		apt-update	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	tb-size-128	tb_size_kb	cortex-a57	128		False	False	0		tar-xzf	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	tb-size-128	tb_size_kb	cortex-a57	128		False	False	0		gcc-compile	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	tb-size-128	tb_size_kb	cortex-a57	128		False	False	0		dd	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	tb-size-128	tb_size_kb	cortex-a57	128		False	False	0		iperf3	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	aio-io-uring	block_aio	cortex-a57	0	io_uring	False	False	0		boot-to-prompt	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	aio-io-uring	block_aio	cortex-a57	0	io_uring	False	False	0		apt-update	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	aio-io-uring	block_aio	cortex-a57	0	io_uring	False	False	0		tar-xzf	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	aio-io-uring	block_aio	cortex-a57	0	io_uring	False	False	0		gcc-compile	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	aio-io-uring	block_aio	cortex-a57	0	io_uring	False	False	0		dd	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	aio-io-uring	block_aio	cortex-a57	0	io_uring	False	False	0		iperf3	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	discard-unmap	discard_unmap	cortex-a57	0		True	False	0		boot-to-prompt	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	discard-unmap	discard_unmap	cortex-a57	0		True	False	0		apt-update	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	discard-unmap	discard_unmap	cortex-a57	0		True	False	0		tar-xzf	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	discard-unmap	discard_unmap	cortex-a57	0		True	False	0		gcc-compile	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	discard-unmap	discard_unmap	cortex-a57	0		True	False	0		dd	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	discard-unmap	discard_unmap	cortex-a57	0		True	False	0		iperf3	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	detect-zeroes-unmap	detect_zeroes_unmap	cortex-a57	0		False	True	0		boot-to-prompt	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	detect-zeroes-unmap	detect_zeroes_unmap	cortex-a57	0		False	True	0		apt-update	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	detect-zeroes-unmap	detect_zeroes_unmap	cortex-a57	0		False	True	0		tar-xzf	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	detect-zeroes-unmap	detect_zeroes_unmap	cortex-a57	0		False	True	0		gcc-compile	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	detect-zeroes-unmap	detect_zeroes_unmap	cortex-a57	0		False	True	0		dd	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	detect-zeroes-unmap	detect_zeroes_unmap	cortex-a57	0		False	True	0		iperf3	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	vcpu-4	vcpu_count	cortex-a57	0		False	False	4		boot-to-prompt	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	vcpu-4	vcpu_count	cortex-a57	0		False	False	4		apt-update	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	vcpu-4	vcpu_count	cortex-a57	0		False	False	4		tar-xzf	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	vcpu-4	vcpu_count	cortex-a57	0		False	False	4		gcc-compile	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	vcpu-4	vcpu_count	cortex-a57	0		False	False	4		dd	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	vcpu-4	vcpu_count	cortex-a57	0		False	False	4		iperf3	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	net-unix-stream	passt_unix_socket	cortex-a57	0		False	False	0	/data/local/tmp/orchestella-passt.sock	boot-to-prompt	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	net-unix-stream	passt_unix_socket	cortex-a57	0		False	False	0	/data/local/tmp/orchestella-passt.sock	apt-update	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	net-unix-stream	passt_unix_socket	cortex-a57	0		False	False	0	/data/local/tmp/orchestella-passt.sock	tar-xzf	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	net-unix-stream	passt_unix_socket	cortex-a57	0		False	False	0	/data/local/tmp/orchestella-passt.sock	gcc-compile	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	net-unix-stream	passt_unix_socket	cortex-a57	0		False	False	0	/data/local/tmp/orchestella-passt.sock	dd	10	0	not-tested	-	-	-	-	-
+ubuntu-24.04	net-unix-stream	passt_unix_socket	cortex-a57	0		False	False	0	/data/local/tmp/orchestella-passt.sock	iperf3	10	0	not-tested	-	-	-	-	-

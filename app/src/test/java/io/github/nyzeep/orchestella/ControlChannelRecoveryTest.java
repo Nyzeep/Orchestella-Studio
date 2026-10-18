@@ -186,13 +186,21 @@ public final class ControlChannelRecoveryTest {
         QemuInstanceLauncher.Session session = session(id, new FakeHandle());
         BridgeClient failed = failedClient();
         setField(session, "bridgeClient", failed);
-        withLiveHolder(id, session, holder -> {
-            session.close();
+        PersistentTerminalSessionPool pool = PersistentTerminalSessionPool.getInstance();
+        synchronized (getField(session, "terminalLock")) {
+            assertTrue(pool.register(id, session).isAlive());
+        }
+        // Retirement runs bounded channel cleanup off-thread; calling it while the
+        // caller holds the terminal monitor would only exercise the deadline.
+        session.close();
+        try {
             assertFalse(session.recoverControlChannel());
             assertFalse(session.markBridgeServing());
             assertNull(session.bridgeClient());
             assertSame(failed, getField(session, "bridgeClient"));
-        });
+        } finally {
+            pool.unregister(id);
+        }
     }
 
     @Test(timeout = 4000L)
@@ -302,15 +310,17 @@ public final class ControlChannelRecoveryTest {
             throws Exception {
         // Hold the terminal's existing lock so its pump remains live without
         // entering Android socket code. Recovery must not need this lock.
-        synchronized (getField(session, "terminalLock")) {
-            PersistentTerminalSessionPool pool = PersistentTerminalSessionPool.getInstance();
-            PersistentTerminalSessionPool.SessionHolder holder = pool.register(id, session);
-            try {
+        PersistentTerminalSessionPool pool = PersistentTerminalSessionPool.getInstance();
+        try {
+            synchronized (getField(session, "terminalLock")) {
+                PersistentTerminalSessionPool.SessionHolder holder = pool.register(id, session);
                 assertTrue(holder.isAlive());
                 check.run(holder);
-            } finally {
-                pool.unregister(id);
             }
+        } finally {
+            // Channel cleanup runs on the supervisor's bounded daemon worker, so a
+            // caller-held session monitor must not span the retirement call.
+            pool.unregister(id);
         }
     }
 

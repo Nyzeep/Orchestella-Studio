@@ -31,6 +31,12 @@ import java.util.regex.Pattern;
  */
 public final class InstanceLifecycle {
     private static final Pattern DISTRO_ID = Pattern.compile("[a-z][a-z0-9-]{0,31}");
+    private static final Pattern SHA256 = Pattern.compile("[0-9a-f]{64}");
+    private static final String KEY_PROVISIONING_MARKER_VERSION = "provisioning.markerVersion";
+    private static final String KEY_PROVISIONING_ROOTFS_SHA256 = "provisioning.rootfsSha256";
+    private static final String KEY_PROVISIONING_RECORDED_AT = "provisioning.recordedAtMillis";
+    /** Guest marker version whose observation the host is allowed to persist. */
+    public static final int PROVISIONING_MARKER_VERSION = 1;
     private static final int BRIDGE_TOKEN_BYTE_COUNT = BridgeHandshake.TOKEN_HEX_LENGTH / 2;
     private static final char[] LOWERCASE_HEX = "0123456789abcdef".toCharArray();
     private static final SecureRandom BRIDGE_TOKEN_RANDOM = new SecureRandom();
@@ -126,6 +132,73 @@ public final class InstanceLifecycle {
         }
     }
 
+    /**
+     * Evidence that a guest observed the one-time Provisioning marker.
+     *
+     * <p>It deliberately carries no token, password, key, or terminal content: only the marker
+     * contract version, the distro rootfs SHA-256 the instance was created from (nullable when
+     * the host could not resolve it), and when the host recorded the fact.
+     */
+    public static final class ProvisioningEvidence {
+        private final int markerVersion;
+        private final String rootfsSha256;
+        private final long recordedAtMillis;
+
+        public ProvisioningEvidence(int markerVersion, String rootfsSha256, long recordedAtMillis) {
+            if (markerVersion <= 0) {
+                throw new IllegalArgumentException("markerVersion must be positive");
+            }
+            if (rootfsSha256 != null && !SHA256.matcher(rootfsSha256).matches()) {
+                throw new IllegalArgumentException("invalid rootfs sha256");
+            }
+            if (recordedAtMillis < 0) {
+                throw new IllegalArgumentException("recordedAtMillis must not be negative");
+            }
+            this.markerVersion = markerVersion;
+            this.rootfsSha256 = rootfsSha256;
+            this.recordedAtMillis = recordedAtMillis;
+        }
+
+        public int markerVersion() {
+            return markerVersion;
+        }
+
+        /** Expected distro rootfs digest, or {@code null} when it could not be resolved. */
+        public String rootfsSha256() {
+            return rootfsSha256;
+        }
+
+        public long recordedAtMillis() {
+            return recordedAtMillis;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
+            ProvisioningEvidence that = (ProvisioningEvidence) o;
+            return markerVersion == that.markerVersion
+                    && recordedAtMillis == that.recordedAtMillis
+                    && Objects.equals(rootfsSha256, that.rootfsSha256);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(markerVersion, rootfsSha256, recordedAtMillis);
+        }
+
+        @Override
+        public String toString() {
+            return "ProvisioningEvidence{markerVersion=" + markerVersion
+                    + ", rootfsSha256=" + rootfsSha256
+                    + ", recordedAtMillis=" + recordedAtMillis + '}';
+        }
+    }
+
     /** Persistent Instance metadata; a Session is intentionally not represented here. */
     public static final class Instance {
         private final String id;
@@ -142,6 +215,7 @@ public final class InstanceLifecycle {
         private final String hostname;
         private final String defaultUser;
         private final boolean hasSudo;
+        private final ProvisioningEvidence provisioningEvidence;
 
         private Instance(
                 String id,
@@ -188,7 +262,7 @@ public final class InstanceLifecycle {
                 String defaultUser) {
             this(id, distro, rootVolume, bridgeToken, guestPassword, runtimeClass, state,
                     createdAtMillis, updatedAtMillis, crashDiagnostic, hardwareConfig,
-                    hostname, defaultUser, false);
+                    hostname, defaultUser, false, null);
         }
 
         private Instance(
@@ -205,7 +279,8 @@ public final class InstanceLifecycle {
                 VmHardwareConfig hardwareConfig,
                 String hostname,
                 String defaultUser,
-                boolean hasSudo) {
+                boolean hasSudo,
+                ProvisioningEvidence provisioningEvidence) {
             requireInstanceId(id);
             this.id = id;
             this.distro = Objects.requireNonNull(distro, "distro");
@@ -225,6 +300,7 @@ public final class InstanceLifecycle {
                 throw new IllegalArgumentException("invalid guest username");
             }
             this.hasSudo = hasSudo;
+            this.provisioningEvidence = provisioningEvidence;
         }
 
         public String id() {
@@ -268,6 +344,33 @@ public final class InstanceLifecycle {
         /** Persisted explicit sudo choice; absent legacy metadata never grants sudo. */
         public boolean hasSudo() {
             return hasSudo;
+        }
+
+        /**
+         * Whether guest Provisioning completion was observed and recorded for the supported marker
+         * version. Legacy or imported metadata without evidence reads as not provisioned.
+         */
+        public boolean isProvisioned() {
+            return provisioningEvidence != null
+                    && provisioningEvidence.markerVersion() == PROVISIONING_MARKER_VERSION;
+        }
+
+        /** Recorded evidence, or {@code null} when no supported marker was ever observed. */
+        public ProvisioningEvidence provisioningEvidence() {
+            return provisioningEvidence;
+        }
+
+        /**
+         * Whether this instance is provisioned from exactly the supplied rootfs digest.
+         *
+         * <p>False when evidence is missing, the marker version is unsupported, or the recorded
+         * digest is absent or differs. Callers must treat false as "use the full provisioning
+         * path".
+         */
+        public boolean isProvisionedFor(String currentRootfsSha256) {
+            return isProvisioned()
+                    && currentRootfsSha256 != null
+                    && currentRootfsSha256.equals(provisioningEvidence.rootfsSha256());
         }
 
         public FullLinuxContract.RuntimeClass runtimeClass() {
@@ -320,7 +423,8 @@ public final class InstanceLifecycle {
                     hardwareConfig,
                     hostname,
                     defaultUser,
-                    hasSudo);
+                    hasSudo,
+                    provisioningEvidence);
         }
 
         private Instance withUpdatedAt(Clock clock) {
@@ -338,7 +442,8 @@ public final class InstanceLifecycle {
                     hardwareConfig,
                     hostname,
                     defaultUser,
-                    hasSudo);
+                    hasSudo,
+                    provisioningEvidence);
         }
 
         private Instance withGuestPassword(String newPassword, Clock clock) {
@@ -356,7 +461,8 @@ public final class InstanceLifecycle {
                     hardwareConfig,
                     hostname,
                     defaultUser,
-                    hasSudo);
+                    hasSudo,
+                    provisioningEvidence);
         }
 
         Instance withHardwareConfig(VmHardwareConfig newConfig, Clock clock) {
@@ -374,7 +480,27 @@ public final class InstanceLifecycle {
                     Objects.requireNonNull(newConfig, "newConfig"),
                     hostname,
                     defaultUser,
-                    hasSudo);
+                    hasSudo,
+                    provisioningEvidence);
+        }
+
+        private Instance withProvisioningEvidence(ProvisioningEvidence evidence, Clock clock) {
+            return new Instance(
+                    id,
+                    distro,
+                    rootVolume,
+                    bridgeToken,
+                    guestPassword,
+                    runtimeClass,
+                    state,
+                    createdAtMillis,
+                    Objects.requireNonNull(clock, "clock").millis(),
+                    crashDiagnostic,
+                    hardwareConfig,
+                    hostname,
+                    defaultUser,
+                    hasSudo,
+                    Objects.requireNonNull(evidence, "evidence"));
         }
 
         static Instance restore(
@@ -414,7 +540,8 @@ public final class InstanceLifecycle {
                     hardwareConfig != null ? hardwareConfig : VmHardwareConfig.defaultConfig(),
                     hostname,
                     defaultUser,
-                    false);
+                    false,
+                    null);
         }
 
         private Properties toProperties() {
@@ -452,6 +579,18 @@ public final class InstanceLifecycle {
                 if (hardwareConfig.extraKernelArguments() != null) {
                     properties.setProperty("hardware.extraKernelArguments", hardwareConfig.extraKernelArguments());
                 }
+            }
+            if (provisioningEvidence != null) {
+                properties.setProperty(
+                        KEY_PROVISIONING_MARKER_VERSION,
+                        Integer.toString(provisioningEvidence.markerVersion()));
+                if (provisioningEvidence.rootfsSha256() != null) {
+                    properties.setProperty(
+                            KEY_PROVISIONING_ROOTFS_SHA256, provisioningEvidence.rootfsSha256());
+                }
+                properties.setProperty(
+                        KEY_PROVISIONING_RECORDED_AT,
+                        Long.toString(provisioningEvidence.recordedAtMillis()));
             }
             return properties;
         }
@@ -497,6 +636,21 @@ public final class InstanceLifecycle {
                     String extraArgs = properties.getProperty("hardware.extraKernelArguments");
                     hardwareConfig = new VmHardwareConfig(cpuCores, ramMb, diskBytes, gpuEnabled, extraArgs);
                 }
+                ProvisioningEvidence provisioningEvidence = null;
+                String markerVersionText = properties.getProperty(KEY_PROVISIONING_MARKER_VERSION);
+                String recordedAtText = properties.getProperty(KEY_PROVISIONING_RECORDED_AT);
+                if (markerVersionText != null) {
+                    // Parse the version first so malformed metadata still fails closed;
+                    // a valid version without its recording time is incomplete evidence
+                    // and keeps the conservative full-provisioning path.
+                    int markerVersion = Integer.parseInt(markerVersionText);
+                    if (recordedAtText != null) {
+                        provisioningEvidence = new ProvisioningEvidence(
+                                markerVersion,
+                                properties.getProperty(KEY_PROVISIONING_ROOTFS_SHA256),
+                                Long.parseLong(recordedAtText));
+                    }
+                }
                 return new Instance(
                         required(properties, "id"),
                         new DistroReference(
@@ -512,7 +666,8 @@ public final class InstanceLifecycle {
                         hardwareConfig,
                         hostname,
                         defaultUser,
-                        hasSudo);
+                        hasSudo,
+                        provisioningEvidence);
             } catch (IllegalArgumentException malformed) {
                 throw new InvalidMetadataException(malformed);
             }
@@ -743,7 +898,8 @@ public final class InstanceLifecycle {
                             hardwareConfig,
                             effectiveConfig.hostname(),
                             effectiveConfig.username(),
-                            effectiveConfig.hasSudo());
+                            effectiveConfig.hasSudo(),
+                            null);
             store.save(instance);
             return instance;
         }
@@ -789,7 +945,8 @@ public final class InstanceLifecycle {
                             source.hardwareConfig(),
                             source.hostname(),
                             source.defaultUser(),
-                            source.hasSudo());
+                            source.hasSudo(),
+                            source.provisioningEvidence());
             store.save(cloned);
             return cloned;
         }
@@ -838,7 +995,8 @@ public final class InstanceLifecycle {
                             source.hardwareConfig(),
                             source.hostname(),
                             source.defaultUser(),
-                            source.hasSudo());
+                            source.hasSudo(),
+                            source.provisioningEvidence());
             store.save(cloned);
             return cloned;
         }
@@ -900,6 +1058,23 @@ public final class InstanceLifecycle {
 
         public synchronized Instance completeProvisioning(String id) throws IOException {
             return transition(id, State.STOPPED);
+        }
+
+        /**
+         * Persists observed guest Provisioning evidence without changing the lifecycle state.
+         *
+         * <p>Recording is idempotent metadata replacement: transitions, crash diagnostics, and
+         * credentials are preserved. Callers must only pass evidence backed by a real guest marker.
+         */
+        public synchronized Instance recordProvisioning(String id, ProvisioningEvidence evidence)
+                throws IOException {
+            synchronized (store.stateMonitor()) {
+                Objects.requireNonNull(evidence, "evidence");
+                Instance current = store.load(id);
+                Instance updated = current.withProvisioningEvidence(evidence, clock);
+                store.save(updated);
+                return updated;
+            }
         }
 
         public synchronized Instance start(String id) throws IOException {

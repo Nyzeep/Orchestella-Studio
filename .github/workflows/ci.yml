@@ -38,5 +38,8 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
+      - name: Run provisioned launch regression gate
+        run: ./gradlew :app:testDebugUnitTest --tests '*ProvisionedLaunchRegressionTest' --no-daemon --stacktrace
+
       - name: Run contract checks and unit tests
-        run: ./gradlew :runtime:contract:check :app:testDebugUnitTest --no-daemon --stacktrace
+        run: ./gradlew :runtime:contract:check :runtime:instance:check :runtime:engine-qemu:check :app:testDebugUnitTest --no-daemon --stacktrace
