@@ -160,6 +160,29 @@ public final class InstanceProvisioningEvidenceTest {
     }
 
     @Test
+    public void markerVersionWithoutRecordingTimeReadsAsNotProvisioned() throws Exception {
+        FileStore store = newStore("partial");
+        Controller controller = new Controller(store, CLOCK);
+        Instance created = controller.create(new DistroReference("ubuntu", "24.04"), rootVolume("partial"));
+        Path metadata = metadataFile("partial", created.id());
+        Properties properties = new Properties();
+        try (InputStream input = Files.newInputStream(metadata)) {
+            properties.load(input);
+        }
+        properties.setProperty("provisioning.markerVersion", "1");
+        properties.setProperty("provisioning.rootfsSha256", ROOTFS_SHA256);
+        properties.remove("provisioning.recordedAtMillis");
+        try (java.io.OutputStream output = Files.newOutputStream(metadata)) {
+            properties.store(output, "partial evidence");
+        }
+
+        Instance reloaded = store.load(created.id());
+        assertFalse("incomplete evidence must keep the conservative full path", reloaded.isProvisioned());
+        assertNull(reloaded.provisioningEvidence());
+        assertFalse(reloaded.isProvisionedFor(ROOTFS_SHA256));
+    }
+
+    @Test
     public void malformedProvisioningVersionIsRejectedAsInvalidMetadata() throws Exception {
         FileStore store = newStore("malformed");
         Controller controller = new Controller(store, CLOCK);
