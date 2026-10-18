@@ -63,4 +63,3 @@ not-tested：
 - 本票上线前已完成装配的实例不会补写证据：guest 重启只输出 `DROIDLAYER_ROOT_VOLUME_RESTART`，不再输出 provisioning marker。T3 必须把它们当未装配、走完整输入路径。
 - 若首次装配期间 terminal pump 未接上或进程提前退出，也不会留下证据；后续启动同样保持保守路径（正确性不受影响，只损失优化收益）。
 - 集成会话（2026-10-18）：已合入 `perf/runtime-performance`（`8367739`）；`904aa2f` 将“markerVersion 存在但 recordedAtMillis 缺失”的元数据改为未装配（malformed 值仍 fail-closed）。全量验收集通过（app 812 / contract 24 / instance 15 / engine-qemu 2，lint 0 Error）。T3 必须使用 `isProvisionedFor(currentSha)`；既有 `bridgeToken`/`guestPassword` 字段保留，新增 provisioning 字段不含 secret。
-
