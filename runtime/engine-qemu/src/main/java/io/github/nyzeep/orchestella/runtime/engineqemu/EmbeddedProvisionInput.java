@@ -23,6 +23,13 @@ public final class EmbeddedProvisionInput {
     public static final String EMBEDDED_DIR = "opt/droidlayer/embedded-input";
     public static final String ACTIVE_SENTINEL = EMBEDDED_DIR + "/.active";
 
+    /**
+     * Hard ceiling for a credentials-only segment. The segment carries only small
+     * metadata and credential files; exceeding this means a rootfs payload (or
+     * another bulk artifact) leaked back into the fast path.
+     */
+    public static final long CREDENTIALS_ONLY_MAX_BYTES = 64 * 1024;
+
     private EmbeddedProvisionInput() {
     }
 
@@ -169,6 +176,63 @@ public final class EmbeddedProvisionInput {
             OutputStream targetOut) throws IOException {
         Objects.requireNonNull(rootfsStream, "rootfsStream");
         Objects.requireNonNull(targetOut, "targetOut");
+        validateInputs(rootfsSize, rootfsFileName, bridgeToken, mirrorConfigFileName, rootfsSha256);
+
+        GZIPOutputStream gzip = new GZIPOutputStream(targetOut);
+        Counting out = new Counting(gzip);
+        writeHeaderEntries(out, rootfsSize, rootfsFileName, bridgeToken, guestPassword,
+                hostname, guestUser, guestSudo, rootfsSha256);
+        appendStream(out, EMBEDDED_DIR + "/" + rootfsFileName, rootfsStream, rootfsSize, rootfsSha256);
+        writeTailEntries(out, initScript, proxyRelayBinary, mirrorConfigFileName,
+                mirrorConfigFileContent, firstBootScript, rootfsFileName, rootfsSha256, rootfsSize);
+        appendTrailer(out);
+        gzip.finish();
+        gzip.flush();
+    }
+
+    /**
+     * Builds a credentials-only segment for an already provisioned instance.
+     *
+     * <p>It intentionally contains no rootfs tarball entry: the guest's
+     * {@code provisioned-v1} path only refreshes credentials, identity, package
+     * repositories and first-boot automation. The full segment remains the only
+     * path that carries the distribution payload.
+     */
+    public static void writeCredentialsOnlySegment(
+            long rootfsSize,
+            String rootfsFileName,
+            String bridgeToken,
+            String guestPassword,
+            byte[] initScript,
+            byte[] proxyRelayBinary,
+            String hostname,
+            String guestUser,
+            boolean guestSudo,
+            String mirrorConfigFileName,
+            byte[] mirrorConfigFileContent,
+            byte[] firstBootScript,
+            String rootfsSha256,
+            OutputStream targetOut) throws IOException {
+        Objects.requireNonNull(targetOut, "targetOut");
+        validateInputs(rootfsSize, rootfsFileName, bridgeToken, mirrorConfigFileName, rootfsSha256);
+
+        GZIPOutputStream gzip = new GZIPOutputStream(targetOut);
+        Counting out = new Counting(gzip);
+        writeHeaderEntries(out, rootfsSize, rootfsFileName, bridgeToken, guestPassword,
+                hostname, guestUser, guestSudo, rootfsSha256);
+        writeTailEntries(out, initScript, proxyRelayBinary, mirrorConfigFileName,
+                mirrorConfigFileContent, firstBootScript, rootfsFileName, rootfsSha256, rootfsSize);
+        appendTrailer(out);
+        gzip.finish();
+        gzip.flush();
+    }
+
+    private static void validateInputs(
+            long rootfsSize,
+            String rootfsFileName,
+            String bridgeToken,
+            String mirrorConfigFileName,
+            String rootfsSha256) {
         validateToken(bridgeToken);
         validateInputFileName(rootfsFileName);
         if (rootfsSize <= 0 || rootfsSize > 0xffff_ffffL) {
@@ -183,9 +247,18 @@ public final class EmbeddedProvisionInput {
                 throw new IllegalArgumentException("mirror config must not replace rootfs");
             }
         }
+    }
 
-        GZIPOutputStream gzip = new GZIPOutputStream(targetOut);
-        Counting out = new Counting(gzip);
+    private static void writeHeaderEntries(
+            Counting out,
+            long rootfsSize,
+            String rootfsFileName,
+            String bridgeToken,
+            String guestPassword,
+            String hostname,
+            String guestUser,
+            boolean guestSudo,
+            String rootfsSha256) throws IOException {
         appendDirectory(out, "opt");
         appendDirectory(out, "opt/droidlayer");
         appendDirectory(out, EMBEDDED_DIR);
@@ -209,30 +282,34 @@ public final class EmbeddedProvisionInput {
             appendFile(out, EMBEDDED_DIR + "/guest.sudo",
                     "1\n".getBytes(StandardCharsets.US_ASCII));
         }
-        appendStream(out, EMBEDDED_DIR + "/" + rootfsFileName, rootfsStream, rootfsSize, rootfsSha256);
+    }
 
+    private static void writeTailEntries(
+            Counting out,
+            byte[] initScript,
+            byte[] proxyRelayBinary,
+            String mirrorConfigFileName,
+            byte[] mirrorConfigFileContent,
+            byte[] firstBootScript,
+            String rootfsFileName,
+            String rootfsSha256,
+            long rootfsSize) throws IOException {
         if (mirrorConfigFileContent != null && mirrorConfigFileContent.length > 0 && mirrorConfigFileName != null) {
             appendFile(out, EMBEDDED_DIR + "/" + mirrorConfigFileName, mirrorConfigFileContent);
         }
         if (firstBootScript != null && firstBootScript.length > 0) {
             appendFile(out, EMBEDDED_DIR + "/firstboot.sh", 0100755, firstBootScript);
         }
-
         if (initScript != null && initScript.length > 0) {
             appendFile(out, "init", 0100755, initScript);
             appendDirectory(out, "etc");
             appendDirectory(out, "etc/droidlayer");
             appendRootfsTrust(out, "etc/droidlayer", rootfsFileName, rootfsSha256, rootfsSize);
         }
-
         if (proxyRelayBinary != null && proxyRelayBinary.length > 0) {
             appendDirectory(out, "opt/orchestella");
             appendFile(out, "opt/orchestella/proxy-relay", 0100755, proxyRelayBinary);
         }
-
-        appendTrailer(out);
-        gzip.finish();
-        gzip.flush();
     }
 
     private static void validateInputFileName(String name) {
