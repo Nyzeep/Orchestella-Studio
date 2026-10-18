@@ -1573,6 +1573,8 @@ class MainActivity : AppCompatActivity() {
                             createStatus.text = when (exit.status()) {
                                 InstanceLaunchSequence.ExitStatus.NORMAL -> getString(R.string.launch_guest_exited)
                                 InstanceLaunchSequence.ExitStatus.CRASHED -> "实例异常退出（退出码 ${exit.exitCode()}），可查看诊断并冷恢复"
+                                InstanceLaunchSequence.ExitStatus.STOP_UNCONFIRMED ->
+                                    "停止未确认：虚拟机未在时限内退出，实例仍保留，请检查运行日志"
                                 else -> "无法确认虚拟机退出，已保留运行会话，请检查运行状态"
                             }
                             setCreateButtonsEnabled(DeviceCapabilityEvaluator.evaluate(deviceProfile()).canCreateFullLinuxInstance())

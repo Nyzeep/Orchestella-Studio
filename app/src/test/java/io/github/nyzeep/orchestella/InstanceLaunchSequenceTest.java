@@ -33,6 +33,45 @@ public final class InstanceLaunchSequenceTest {
         assertEquals(InstanceLifecycle.State.RUNNING, store.load(created.id()).state());
     }
 
+    private static final class UnconfirmedExitSession extends ExitSession implements RuntimeOwnedSession {
+        int stopCalls;
+        UnconfirmedExitSession() { super(0); }
+        @Override public RuntimeProcessSupervisor.StopResult stopRuntime(long graceMs) {
+            stopCalls++;
+            return RuntimeProcessSupervisor.StopResult.UNCONFIRMED;
+        }
+        @Override public boolean isRuntimeAlive() { return true; }
+    }
+
+    @Test
+    public void unconfirmedStopKeepsRunningMetadataOwnerAndGuard() throws Exception {
+        Path dir = temporaryFolder.newFolder("stop-unconfirmed").toPath();
+        InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(dir);
+        InstanceLifecycle.Controller controller = new InstanceLifecycle.Controller(store, Clock.systemUTC());
+        InstanceLifecycle.Instance instance = controller.create(
+                new InstanceLifecycle.DistroReference("debian", "13"), dir.resolve("never-opened.raw"));
+        InstanceLaunchGuard.begin(instance.id());
+        InstanceLaunchSequence.beforeLaunch(controller, instance);
+        UnconfirmedExitSession session = new UnconfirmedExitSession();
+        ExecutionSessionRegistry.register(instance.id(), session);
+        java.util.concurrent.atomic.AtomicInteger feedback = new java.util.concurrent.atomic.AtomicInteger();
+        try {
+            InstanceLaunchSequence.ExitResult result = InstanceLaunchSequence.awaitGuestExit(
+                    controller, instance.id(), session, feedback::incrementAndGet);
+            assertEquals(InstanceLaunchSequence.ExitStatus.STOP_UNCONFIRMED, result.status());
+            assertEquals(InstanceLifecycle.State.RUNNING, store.load(instance.id()).state());
+            org.junit.Assert.assertSame("unconfirmed stop must keep the owner",
+                    session, ExecutionSessionRegistry.get(instance.id()));
+            org.junit.Assert.assertTrue(InstanceLaunchGuard.isInFlight(instance.id()));
+            assertEquals("no confirmed-exit feedback may run", 0, feedback.get());
+            assertEquals("channels stay with the retained owner", 0, session.closes);
+            assertEquals(1, session.stopCalls);
+        } finally {
+            ExecutionSessionRegistry.unregister(instance.id());
+            InstanceLaunchGuard.end(instance.id());
+        }
+    }
+
     private static class ExitSession implements ExecutionSession {
         private final int code;
         int closes;

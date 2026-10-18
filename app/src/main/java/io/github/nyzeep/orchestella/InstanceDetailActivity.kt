@@ -840,7 +840,7 @@ class InstanceDetailActivity : AppCompatActivity() {
                         InstanceDetailActionRules.ExitDecision.REPLACED -> finishPowerChange(instanceId, false,
                             "运行会话已变化，已取消本次操作")
                         InstanceDetailActionRules.ExitDecision.TIMED_OUT -> finishPowerChange(instanceId, false,
-                            "等待虚拟机退出超时；未执行重启，请查看运行日志")
+                            "停止未确认：虚拟机在 60 秒内未退出；实例仍保留，请查看运行日志")
                         InstanceDetailActionRules.ExitDecision.WAITING -> Unit
                     }
                 } catch (_: Exception) {
