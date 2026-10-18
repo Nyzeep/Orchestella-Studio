@@ -60,4 +60,6 @@ not-tested：
 - 只有真实 EOF（read 返回 -1）才把输入结束当作 marker 分隔符；宿主主动 close 不写入证据。
 - 克隆实例继承源实例的 provisioning 证据（根盘为字节复制）；从归档导入不继承，按未装配处理。
 - 若目录中同一 `rootfsFileName` 对应不同 sha，解析为 null 并按保守策略跳过记录。
+- 本票上线前已完成装配的实例不会补写证据：guest 重启只输出 `DROIDLAYER_ROOT_VOLUME_RESTART`，不再输出 provisioning marker。T3 必须把它们当未装配、走完整输入路径。
+- 若首次装配期间 terminal pump 未接上或进程提前退出，也不会留下证据；后续启动同样保持保守路径（正确性不受影响，只损失优化收益）。
 
