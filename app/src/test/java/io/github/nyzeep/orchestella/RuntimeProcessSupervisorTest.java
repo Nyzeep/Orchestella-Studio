@@ -342,6 +342,13 @@ public final class RuntimeProcessSupervisorTest {
                 mappings.put(local, remote);
             } else {
                 unexposes.incrementAndGet();
+                // Simulates the real gvproxy round-trip budget: a reintroduced
+                // per-forward unexpose must also fail the bounded-window assertion.
+                try {
+                    Thread.sleep(100L);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                }
                 mappings.remove(local);
             }
             return "";
