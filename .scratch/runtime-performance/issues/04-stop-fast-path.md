@@ -34,6 +34,7 @@ Blocked by: 无
 
 - `c0f206b` perf(runtime): 停止路径跳过逐转发 unexpose 并移出池锁（实现与主体测试）
 - `d13fafb` test(runtime): 让 64 forward 停止窗口测试模拟真实 API 往返（测试加固）
+- `53a384e` fix(runtime): 零 deadline 时不打断仍在运行的通道清理 worker
 - 分支：`perf/t4-stop-fast-path`（基线 `893fb72`），未合入 main。
 
 ### 关闭顺序与 deadline
