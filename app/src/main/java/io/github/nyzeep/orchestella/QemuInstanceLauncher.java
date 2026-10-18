@@ -563,6 +563,12 @@ public final class QemuInstanceLauncher {
                 },
                 Paths.get(parameters.runtimeDirectory),
                 Paths.get(parameters.distroInputsDirectory));
+        // Consume persisted guest evidence, not an in-memory instance: the caller may
+        // hold a stale snapshot, and only the store's current record may unlock the
+        // credentials-only path. Missing/ambiguous evidence stays on the full path.
+        boolean credentialsOnly = credentialsOnlyLaunch(
+                context.getFilesDir().toPath().resolve("instances"),
+                parameters.instanceId, parameters.rootfsFileName);
         QemuRuntimeBootstrapper.RuntimePaths paths;
         try {
             paths = bootstrapper.bootstrap(parameters.rootfsFileName, parameters.bridgeToken,
@@ -571,7 +577,8 @@ public final class QemuInstanceLauncher {
                     parameters.mirrorConfigFileName,
                     parameters.mirrorConfigFileContent,
                     parameters.firstBootScript,
-                    parameters.hostname, parameters.guestUser, parameters.hasSudo, timeline);
+                    parameters.hostname, parameters.guestUser, parameters.hasSudo, timeline,
+                    credentialsOnly);
         } catch (IOException | RuntimeException | Error failure) {
             timeline.finish();
             throw failure;
@@ -773,6 +780,33 @@ public final class QemuInstanceLauncher {
             }
         }
         return resolved;
+    }
+
+    /**
+     * Whether the freshly loaded instance record proves provisioning from exactly the
+     * catalog's current digest. Any load/parse failure is a conservative false.
+     */
+    static boolean isProvisionedForInstance(
+            java.nio.file.Path instancesDirectory, String instanceId, String rootfsSha256) {
+        if (instancesDirectory == null || instanceId == null || instanceId.isEmpty()
+                || rootfsSha256 == null) {
+            return false;
+        }
+        try {
+            InstanceLifecycle.Instance instance =
+                    new InstanceLifecycle.FileStore(instancesDirectory).load(instanceId);
+            return instance.isProvisionedFor(rootfsSha256);
+        } catch (IOException | RuntimeException unavailable) {
+            return false;
+        }
+    }
+
+    /** Resolves the catalog digest for the launch filename, then checks persisted evidence. */
+    static boolean credentialsOnlyLaunch(
+            java.nio.file.Path instancesDirectory, String instanceId, String rootfsFileName) {
+        String rootfsSha256 = resolveRootfsSha256(rootfsFileName);
+        return rootfsSha256 != null
+                && isProvisionedForInstance(instancesDirectory, instanceId, rootfsSha256);
     }
 
     /**
