@@ -92,6 +92,7 @@ public final class QemuRuntimeBootstrapperProvisionedTest {
         long segmentBytes = Files.size(paths.initramfs) - fixture.baseInitramfs.length;
         assertTrue("credentials-only segment must stay bounded, was " + segmentBytes,
                 segmentBytes <= EmbeddedProvisionInput.CREDENTIALS_ONLY_MAX_BYTES);
+        System.out.println("T3_CREDENTIALS_ONLY_SEGMENT_BYTES=" + segmentBytes);
     }
 
     @Test
@@ -126,6 +127,7 @@ public final class QemuRuntimeBootstrapperProvisionedTest {
         assertEquals(1, opens.get());
         assertEquals(fixture.tarball.length, bytesRead.get());
         byte[] expectedSegment = fullSegment(fixture);
+        System.out.println("T3_FULL_SEGMENT_BYTES=" + expectedSegment.length);
         byte[] expected = new byte[fixture.baseInitramfs.length + expectedSegment.length];
         System.arraycopy(fixture.baseInitramfs, 0, expected, 0, fixture.baseInitramfs.length);
         System.arraycopy(expectedSegment, 0, expected, fixture.baseInitramfs.length, expectedSegment.length);
