@@ -1,7 +1,7 @@
 # 编排报告：runtime-performance 剩余工单收尾（T3/T5/T6/T7/T8，2026-10-18）
 
 - 背景 / scope：按 `.scratch/runtime-performance/` 的 task graph 与 `/implement-spec` 续跑模式，完成 T1/T2/T4 之后的剩余票：T3（P0 实现）、T8（P1 回归门）、T7（P2 实验脚手架）、T5/T6（条件票）。人工复核统一留到本轮结束。
-- branch / 基线 / commit：基线 `perf/runtime-performance` HEAD `bd24d24`（代码 HEAD `904aa2f`，含 T1/T2/T4）；集成分支 `perf/runtime-performance`；本报告提交前集成 HEAD `e82bc44`。未 push、未合并 `main`、未开 PR。
+- branch / 基线 / commit：基线 `perf/runtime-performance` HEAD `bd24d24`（代码 HEAD `904aa2f`，含 T1/T2/T4）；集成分支 `perf/runtime-performance`；审查修复代码 HEAD `e5876ba`，文档 HEAD `2cab4fc`，最终 HEAD 见交付回复。未 push、未合并 `main`、未开 PR。
 - 工作区：T3 `/tmp/orch-perf-t3`（`perf/t3-credentials-only`）、T7 `/tmp/orch-perf-t7`（`perf/t7-qemu-tuning`）、T8 `/tmp/orch-perf-t8`（`perf/t8-regression-gate`）、集成分支 `/tmp/orch-perf-integration`。T5/T6 未创建分支。
 
 ## 实际完成
@@ -80,7 +80,7 @@ git diff --check
 
 专项证据：
 
-- T3 新增 8 tests：opener 0 次 / 0 B、timeline 0 / `credentialsOnly=true` / `initramfsBytes`、全量逐字节等价、缺失/不匹配回退、256 KiB 上限。
+- T3 新增 8 tests：opener 0 次 / 0 B、timeline 0 / `credentialsOnly=true` / `initramfsBytes`、全量逐字节等价 + 黄金 SHA-256、缺失/不匹配回退、256 KiB 上限。
 - T8 红/绿：bootstrapper 回退红 3 tests / 2 failed；launcher 回退红 3 tests / 1 failed；绿 3 tests / 0 failures。
 - T7 `QEMU_TUNING_TEST_OK`：默认等价、单变量覆盖、无 `cache=unsafe`、UNIX stream 显式、非法值拒绝。
 - T7 dry-run：66 行 / 11 变体 / 6 workload，全部 `not-tested`。
