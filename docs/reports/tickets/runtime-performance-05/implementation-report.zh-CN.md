@@ -4,6 +4,12 @@
 - 执行 session / 模型 / thinking：续跑 T5 决策门 / DeepSeek-V4.1-Flash / 未记录
 - 分支：未创建　基线 commit：`91510b2`（集成分支，含 T3/T7/T8）
 
+## 0. 背景 / scope / 边界检查
+
+- 背景 / scope：条件票决策门；只在设备度量证明首次启动宿主准备或 initrd 内存是主要成本时，才实现只读 virtio-blk 输入盘。
+- 越界检查：未实现、未创建分支、未改生产代码；这是 spec 明确允许的 `deferred`。
+- Architecture Change Policy：未触发（无架构变更）。
+
 ## 1. 任务目标
 
 仅当 T3 的度量仍显示首次启动宿主准备或 initrd 内存占用是主要成本时，把 distro tarball 作为独立只读 virtio-blk 设备暴露给 QEMU；否则按 spec 保持 `deferred`。
