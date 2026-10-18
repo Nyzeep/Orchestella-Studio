@@ -364,7 +364,8 @@ public final class QemuLaunchSpec {
                 VmHardwareConfig.DEFAULT_GPU_ACCELERATION_ENABLED,
                 networkSpec,
                 portForwardingRules,
-                sharedDirectorySpec);
+                sharedDirectorySpec,
+                QemuTuning.DEFAULTS);
     }
 
     /**
@@ -398,7 +399,8 @@ public final class QemuLaunchSpec {
                 gpuAccelerationEnabled,
                 networkSpec,
                 portForwardingRules,
-                sharedDirectorySpec);
+                sharedDirectorySpec,
+                QemuTuning.DEFAULTS);
     }
 
     /**
@@ -432,7 +434,8 @@ public final class QemuLaunchSpec {
                 hardwareConfig.gpuAccelerationEnabled(),
                 networkSpec,
                 portForwardingRules,
-                sharedDirectorySpec);
+                sharedDirectorySpec,
+                QemuTuning.DEFAULTS);
     }
 
     /**
@@ -453,7 +456,28 @@ public final class QemuLaunchSpec {
             VmHardwareConfig hardwareConfig,
             String passtTcpPort,
             String extraKernelArgs) {
+        return buildWithPasst(qemuExecutable, kernel, initramfs, rootVolume,
+                controlSocketName, terminalSocketName, hardwareConfig, passtTcpPort,
+                extraKernelArgs, QemuTuning.DEFAULTS);
+    }
+
+    /**
+     * Builds the passt-backed launch array with an explicit T7 tuning value object.
+     * {@link QemuTuning#DEFAULTS} is byte-for-byte identical to the legacy overload.
+     */
+    public static String[] buildWithPasst(
+            String qemuExecutable,
+            String kernel,
+            String initramfs,
+            String rootVolume,
+            String controlSocketName,
+            String terminalSocketName,
+            VmHardwareConfig hardwareConfig,
+            String passtTcpPort,
+            String extraKernelArgs,
+            QemuTuning tuning) {
         Objects.requireNonNull(passtTcpPort, "passtTcpPort");
+        Objects.requireNonNull(tuning, "tuning");
         String cmdline = GUEST_CMDLINE;
         if (extraKernelArgs != null && !extraKernelArgs.trim().isEmpty()) {
             cmdline = cmdline + " " + extraKernelArgs.trim();
@@ -463,9 +487,9 @@ public final class QemuLaunchSpec {
                 args,
                 qemuExecutable,
                 "-machine", "virt,gic-version=3",
-                "-accel", "tcg,thread=multi",
-                "-cpu", "cortex-a57",
-                "-smp", Integer.toString(hardwareConfig.cpuCores()),
+                "-accel", accelArg(tuning),
+                "-cpu", tuning.cpuModel(),
+                "-smp", Integer.toString(tuning.vcpuCount() > 0 ? tuning.vcpuCount() : hardwareConfig.cpuCores()),
                 "-m", hardwareConfig.ramMegabytes() + "M",
                 "-nodefaults",
                 "-display", "none",
@@ -476,10 +500,10 @@ public final class QemuLaunchSpec {
                 "-kernel", kernel,
                 "-initrd", initramfs,
                 "-append", cmdline,
-                "-drive", "if=none,id=root,file=" + rootVolume + ",format=raw,cache=writeback",
+                "-drive", rootDriveArg(rootVolume, tuning),
                 "-device", "virtio-blk-device,drive=root",
                 "-device", hardwareConfig.gpuAccelerationEnabled() ? "virtio-gpu-gl-device" : "virtio-gpu-device",
-                "-netdev", "socket,id=orchestella-net,connect=127.0.0.1:" + passtTcpPort,
+                "-netdev", passtNetdevArg(passtTcpPort, tuning),
                 "-device", "virtio-net-device,netdev=orchestella-net",
                 "-device", "virtio-serial-device",
                 "-chardev", "socket,id=control,path=" + controlSocketName + ",abstract=on,server=on,wait=off",
@@ -487,6 +511,36 @@ public final class QemuLaunchSpec {
                 "-chardev", "socket,id=netproxy,path=" + defaultProxySocketName(controlSocketName) + ",abstract=on,server=on,wait=off",
                 "-device", "virtserialport,chardev=netproxy,name=orchestella.proxy");
         return args.toArray(new String[0]);
+    }
+
+    private static String accelArg(QemuTuning tuning) {
+        return tuning.tbSizeKb() > 0
+                ? "tcg,thread=multi,tb-size=" + tuning.tbSizeKb()
+                : "tcg,thread=multi";
+    }
+
+    private static String rootDriveArg(String rootVolume, QemuTuning tuning) {
+        StringBuilder drive = new StringBuilder("if=none,id=root,file=")
+                .append(rootVolume)
+                .append(",format=raw,cache=writeback");
+        if (tuning.blockAio() != null) {
+            drive.append(",aio=").append(tuning.blockAio());
+        }
+        if (tuning.discardUnmap()) {
+            drive.append(",discard=unmap");
+        }
+        if (tuning.detectZeroesUnmap()) {
+            drive.append(",detect-zeroes=unmap");
+        }
+        return drive.toString();
+    }
+
+    private static String passtNetdevArg(String passtTcpPort, QemuTuning tuning) {
+        if (tuning.passtUnixSocketPath() != null) {
+            return "stream,id=orchestella-net,addr.type=unix,addr.path="
+                    + tuning.passtUnixSocketPath();
+        }
+        return "socket,id=orchestella-net,connect=127.0.0.1:" + passtTcpPort;
     }
 
     /** Adds an independent authenticated display data plane to an existing virtio-serial controller. */
@@ -519,7 +573,8 @@ public final class QemuLaunchSpec {
             boolean gpuAccelerationEnabled,
             NetworkContract.OutboundNetworkSpec networkSpec,
             List<PortForwardingRule> portForwardingRules,
-            SharedDirectoryContract.SharedDirectorySpec sharedDirectorySpec) {
+            SharedDirectoryContract.SharedDirectorySpec sharedDirectorySpec,
+            QemuTuning tuning) {
         Objects.requireNonNull(qemuExecutable, "qemuExecutable");
         Objects.requireNonNull(kernel, "kernel");
         Objects.requireNonNull(initramfs, "initramfs");
@@ -527,6 +582,7 @@ public final class QemuLaunchSpec {
         Objects.requireNonNull(controlSocketName, "controlSocketName");
         Objects.requireNonNull(terminalSocketName, "terminalSocketName");
         Objects.requireNonNull(networkSpec, "networkSpec");
+        Objects.requireNonNull(tuning, "tuning");
 
         String cmdline = GUEST_CMDLINE;
         if (networkSpec.cmdlineDns() != null && !networkSpec.cmdlineDns().isEmpty()) {
@@ -541,9 +597,9 @@ public final class QemuLaunchSpec {
                 args,
                 qemuExecutable,
                 "-machine", "virt,gic-version=3",
-                "-accel", "tcg,thread=multi",
-                "-cpu", "cortex-a57",
-                "-smp", Integer.toString(cpuCores),
+                "-accel", accelArg(tuning),
+                "-cpu", tuning.cpuModel(),
+                "-smp", Integer.toString(tuning.vcpuCount() > 0 ? tuning.vcpuCount() : cpuCores),
                 "-m", memoryArg,
                 "-nodefaults",
                 "-display", "none",
@@ -554,7 +610,7 @@ public final class QemuLaunchSpec {
                 "-kernel", kernel,
                 "-initrd", initramfs,
                 "-append", cmdline,
-                "-drive", "if=none,id=root,file=" + rootVolume + ",format=raw,cache=writeback",
+                "-drive", rootDriveArg(rootVolume, tuning),
                 "-device", "virtio-blk-device,drive=root",
                 "-device", gpuAccelerationEnabled ? "virtio-gpu-gl-device" : "virtio-gpu-device",
                 "-netdev", formatNetdevArg(networkSpec, portForwardingRules),

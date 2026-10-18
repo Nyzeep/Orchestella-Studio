@@ -12,6 +12,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
 
@@ -26,6 +27,18 @@ public final class PersistentTerminalSessionPool {
 
     public enum StopIntent { NONE, GRACEFUL, FORCE }
 
+    /** Receives the one-time guest Provisioning marker observed on a session's output stream. */
+    @FunctionalInterface
+    public interface ProvisioningListener {
+        /**
+         * Called once on the pump thread after the guest marker was fully observed.
+         *
+         * @param instanceId the owning instance
+         * @param markerVersion the accepted marker version
+         */
+        void onProvisioningComplete(String instanceId, int markerVersion);
+    }
+
     private static final PersistentTerminalSessionPool INSTANCE = new PersistentTerminalSessionPool();
     private static final long RUNTIME_STOP_GRACE_MS = 2000L;
 
@@ -37,7 +50,7 @@ public final class PersistentTerminalSessionPool {
         private final String instanceId;
         private final ExecutionSession session;
         private final String generation;
-        private StopIntent stopIntent = StopIntent.NONE;
+        private volatile StopIntent stopIntent = StopIntent.NONE;
         private final TerminalRingBuffer ringBuffer;
         private final io.github.nyzeep.orchestella.terminal.TerminalScreenModel screenModel =
                 new io.github.nyzeep.orchestella.terminal.TerminalScreenModel(80, 24);
@@ -50,6 +63,8 @@ public final class PersistentTerminalSessionPool {
         private final ReentrantReadWriteLock rwLock = new ReentrantReadWriteLock();
         private final Thread pumpThread;
         private final Object endListenerLock = new Object();
+        private final ProvisioningListener provisioningListener;
+        private final AtomicBoolean provisioningNotified = new AtomicBoolean(false);
         private Consumer<String> sessionEndListener;
         private boolean streamEndDelivered;
         private boolean ownerEndDelivered;
@@ -59,8 +74,17 @@ public final class PersistentTerminalSessionPool {
         }
 
         public SessionHolder(String instanceId, ExecutionSession session, int ringBufferCapacity) {
+            this(instanceId, session, ringBufferCapacity, null);
+        }
+
+        public SessionHolder(
+                String instanceId,
+                ExecutionSession session,
+                int ringBufferCapacity,
+                ProvisioningListener provisioningListener) {
             this.instanceId = Objects.requireNonNull(instanceId, "instanceId");
             this.session = Objects.requireNonNull(session, "session");
+            this.provisioningListener = provisioningListener;
             String launching = InstanceLaunchGuard.generation(instanceId);
             this.generation = launching != null ? launching : java.util.UUID.randomUUID().toString();
             this.ringBuffer = new TerminalRingBuffer(ringBufferCapacity);
@@ -109,15 +133,22 @@ public final class PersistentTerminalSessionPool {
         }
 
         private void pumpLoop() {
+            ProvisioningSignal provisioningSignal = new ProvisioningSignal();
+            boolean reachedEof = false;
             try {
                 // One decoder owns the whole stream: read boundaries may split a UTF-8
                 // character (including CJK and supplementary emoji) at any byte.
                 InputStreamReader in = new InputStreamReader(session.terminalOutput(), StandardCharsets.UTF_8);
                 char[] buffer = new char[4096];
-                int count;
-                while (!closed.get() && (count = in.read(buffer)) >= 0) {
+                while (!closed.get()) {
+                    int count = in.read(buffer);
+                    if (count < 0) {
+                        reachedEof = true;
+                        break;
+                    }
                     if (count == 0) continue;
                     String chunk = new String(buffer, 0, count);
+                    boolean provisioned = provisioningSignal.accept(chunk);
                     // Append and deliver under one write lock so attach() snapshots can
                     // never overlap delivery: a chunk is either in the snapshot or handed
                     // to the listener, never both and never neither.
@@ -134,11 +165,33 @@ public final class PersistentTerminalSessionPool {
                     } finally {
                         rwLock.writeLock().unlock();
                     }
+                    // Persisting evidence touches the filesystem; never do that while the
+                    // terminal write lock is held.
+                    if (provisioned) notifyProvisioning(ProvisioningSignal.MARKER_VERSION);
                 }
             } catch (Exception ignored) {
             } finally {
+                // Only a real end of stream can serve as the marker's trailing delimiter;
+                // a host-side close is not evidence that the guest finished Provisioning.
+                if (reachedEof && provisioningSignal.finish()) {
+                    notifyProvisioning(ProvisioningSignal.MARKER_VERSION);
+                }
                 pumpFinished.set(true);
                 notifySessionEnded();
+            }
+        }
+
+        private void notifyProvisioning(int markerVersion) {
+            if (!provisioningNotified.compareAndSet(false, true)) {
+                return;
+            }
+            ProvisioningListener listener = provisioningListener;
+            if (listener == null) {
+                return;
+            }
+            try {
+                listener.onProvisioningComplete(instanceId, markerVersion);
+            } catch (Exception ignored) {
             }
         }
 
@@ -232,26 +285,54 @@ public final class PersistentTerminalSessionPool {
     }
 
     private final ConcurrentMap<String, SessionHolder> holders = new ConcurrentHashMap<>();
+    /**
+     * Per-instance transition locks, never held while mutating another instance.
+     * Stops run under this lock and outside any pool-wide monitor, so a slow stop
+     * cannot block operations on other instances while it still serializes
+     * registration, retirement and ownership changes for its own instance. Entries
+     * are retained for the process lifetime; there is one small lock per instance id.
+     */
+    private final ConcurrentMap<String, ReentrantLock> transitions = new ConcurrentHashMap<>();
 
     public PersistentTerminalSessionPool() {}
 
-    public synchronized SessionHolder register(String instanceId, ExecutionSession session) throws IOException {
+    private ReentrantLock transition(String instanceId) {
+        return transitions.computeIfAbsent(instanceId, id -> new ReentrantLock());
+    }
+
+    public SessionHolder register(String instanceId, ExecutionSession session) throws IOException {
+        return register(instanceId, session, null);
+    }
+
+    public SessionHolder register(
+            String instanceId,
+            ExecutionSession session,
+            ProvisioningListener provisioningListener) throws IOException {
         Objects.requireNonNull(instanceId, "instanceId");
         Objects.requireNonNull(session, "session");
-        SessionHolder existing = holders.get(instanceId);
-        if (existing != null && existing.rawSession() == session) return existing;
-        if (existing != null) {
-            // Never publish a second owner while the previous runtime may still be
-            // alive: a fixed gvproxy port and the root disk belong to the old owner.
-            if (!stopOwnedRuntime(existing)) {
-                throw new IOException("previous runtime session did not confirm stop");
+        ReentrantLock transition = transition(instanceId);
+        transition.lock();
+        try {
+            SessionHolder existing = holders.get(instanceId);
+            if (existing != null && existing.rawSession() == session) return existing;
+            if (existing != null) {
+                // Never publish a second owner while the previous runtime may still be
+                // alive: a fixed gvproxy port and the root disk belong to the old owner.
+                // The bounded stop happens here, outside any pool-wide monitor, so
+                // other instances keep progressing.
+                if (!stopOwnedRuntime(existing)) {
+                    throw new IOException("previous runtime session did not confirm stop");
+                }
+                existing.close();
+                holders.remove(instanceId, existing);
             }
-            existing.close();
-            holders.remove(instanceId, existing);
+            SessionHolder holder = new SessionHolder(instanceId, session,
+                    TerminalRingBuffer.DEFAULT_MAX_CAPACITY, provisioningListener);
+            holders.put(instanceId, holder);
+            return holder;
+        } finally {
+            transition.unlock();
         }
-        SessionHolder holder = new SessionHolder(instanceId, session);
-        holders.put(instanceId, holder);
-        return holder;
     }
 
     @FunctionalInterface
@@ -260,44 +341,63 @@ public final class PersistentTerminalSessionPool {
     }
 
     /** Serializes confirmed exit side effects with replacement registration. */
-    public synchronized boolean completeExit(String instanceId, ExecutionSession expected,
+    public boolean completeExit(String instanceId, ExecutionSession expected,
             ExitAction action) throws IOException {
-        SessionHolder current = holders.get(instanceId);
-        if (current == null || current.rawSession() != expected
-                || InstanceLaunchGuard.isSuperseded(instanceId, current.generation())) return false;
-        action.run();
-        holders.remove(instanceId, current);
-        current.close();
-        return true;
+        ReentrantLock transition = transition(instanceId);
+        transition.lock();
+        try {
+            SessionHolder current = holders.get(instanceId);
+            if (current == null || current.rawSession() != expected
+                    || InstanceLaunchGuard.isSuperseded(instanceId, current.generation())) return false;
+            action.run();
+            holders.remove(instanceId, current);
+            current.close();
+            return true;
+        } finally {
+            transition.unlock();
+        }
     }
 
     /** Executes a fixed caller-supplied power action only for the expected owner. */
-    public synchronized boolean requestStop(String instanceId, ExecutionSession expected,
+    public boolean requestStop(String instanceId, ExecutionSession expected,
             StopIntent intent, ExitAction action) throws IOException {
-        SessionHolder current = holders.get(instanceId);
-        if (current == null || current.rawSession() != expected) return false;
-        if (intent == null || intent == StopIntent.NONE) throw new IllegalArgumentException("stop intent required");
-        if (current.stopIntent == StopIntent.FORCE || current.stopIntent == intent) return true;
-        // The monitor also gates confirmed completion, so a synchronous exit cannot
-        // overtake the accepted action. Failed/rejected actions leave no new intent.
-        action.run();
-        current.stopIntent = intent;
-        return true;
+        ReentrantLock transition = transition(instanceId);
+        transition.lock();
+        try {
+            SessionHolder current = holders.get(instanceId);
+            if (current == null || current.rawSession() != expected) return false;
+            if (intent == null || intent == StopIntent.NONE) throw new IllegalArgumentException("stop intent required");
+            if (current.stopIntent == StopIntent.FORCE || current.stopIntent == intent) return true;
+            // The transition lock also gates confirmed completion, so a synchronous
+            // exit cannot overtake the accepted action. Failed/rejected actions leave
+            // no new intent.
+            action.run();
+            current.stopIntent = intent;
+            return true;
+        } finally {
+            transition.unlock();
+        }
     }
 
-    public synchronized StopIntent stopIntent(String instanceId, ExecutionSession expected) {
+    public StopIntent stopIntent(String instanceId, ExecutionSession expected) {
         SessionHolder current = holders.get(instanceId);
         return current != null && current.rawSession() == expected ? current.stopIntent : StopIntent.NONE;
     }
 
     /** Retires only this owner. A delayed caller cannot close a replacement. */
-    public synchronized boolean unregister(String instanceId, ExecutionSession expected) {
-        SessionHolder current = holders.get(instanceId);
-        if (current == null || current.rawSession() != expected) return false;
-        if (!stopOwnedRuntime(current)) return false;
-        holders.remove(instanceId, current);
-        current.close();
-        return true;
+    public boolean unregister(String instanceId, ExecutionSession expected) {
+        ReentrantLock transition = transition(instanceId);
+        transition.lock();
+        try {
+            SessionHolder current = holders.get(instanceId);
+            if (current == null || current.rawSession() != expected) return false;
+            if (!stopOwnedRuntime(current)) return false;
+            holders.remove(instanceId, current);
+            current.close();
+            return true;
+        } finally {
+            transition.unlock();
+        }
     }
 
     public SessionHolder getHolder(String instanceId) {
@@ -341,20 +441,34 @@ public final class PersistentTerminalSessionPool {
         }
     }
 
-    public synchronized void unregister(String instanceId) {
+    public void unregister(String instanceId) {
         if (instanceId == null) return;
-        SessionHolder removed = holders.get(instanceId);
-        if (removed == null || !stopOwnedRuntime(removed)) return;
-        holders.remove(instanceId, removed);
-        removed.close();
+        ReentrantLock transition = transition(instanceId);
+        transition.lock();
+        try {
+            SessionHolder removed = holders.get(instanceId);
+            if (removed == null || !stopOwnedRuntime(removed)) return;
+            holders.remove(instanceId, removed);
+            removed.close();
+        } finally {
+            transition.unlock();
+        }
     }
 
-    public synchronized void clear() {
-        for (java.util.Map.Entry<String, SessionHolder> entry : holders.entrySet()) {
-            SessionHolder holder = entry.getValue();
-            if (stopOwnedRuntime(holder)) {
-                holders.remove(entry.getKey(), holder);
+    public void clear() {
+        // Snapshot first: a stop may be slow, and holding a pool-wide monitor for it
+        // would block registers on unrelated instances. Holders registered after the
+        // snapshot keep their own transition lock and stay owned.
+        for (String instanceId : new java.util.ArrayList<>(holders.keySet())) {
+            ReentrantLock transition = transition(instanceId);
+            transition.lock();
+            try {
+                SessionHolder holder = holders.get(instanceId);
+                if (holder == null || !stopOwnedRuntime(holder)) continue;
+                holders.remove(instanceId, holder);
                 holder.close();
+            } finally {
+                transition.unlock();
             }
         }
     }

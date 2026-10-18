@@ -33,6 +33,28 @@ public final class QemuRuntimeBootstrapperTest {
     @Rule public final TemporaryFolder temporaryFolder = new TemporaryFolder();
 
     @Test
+    public void bootstrapRecordsVerifiedAssetsAndInitramfsInputSizeOnTheTimeline() throws Exception {
+        Fixture fixture = new Fixture();
+        java.util.List<String> lines = new java.util.ArrayList<>();
+        LaunchTimeline timeline = new LaunchTimeline("instance-timeline", "synthetic", 512, 1,
+                java.time.Clock.fixed(java.time.Instant.parse("2026-10-18T08:00:00Z"), java.time.ZoneOffset.UTC),
+                lines::add);
+        timeline.mark(LaunchTimeline.Stage.LAUNCH_START);
+
+        fixture.bootstrapper.bootstrap(ROOTFS_NAME, TOKEN, null, fixture.rootVolume,
+                null, null, null, null, null, false, timeline);
+
+        assertEquals(java.util.List.of(
+                LaunchTimeline.Stage.LAUNCH_START,
+                LaunchTimeline.Stage.ASSETS_VERIFIED,
+                LaunchTimeline.Stage.INITRAMFS_BUILT), timeline.stages());
+        assertTrue(timeline.finish());
+        assertEquals(1, lines.size());
+        assertTrue(lines.get(0).contains("\"rootfsBytes\":" + fixture.tarball.length));
+        assertFalse(lines.get(0).contains(TOKEN));
+    }
+
+    @Test
     public void bootstrapMustReturnTheInstanceRootVolumeThatExistsBeforeQemuExec() throws Exception {
         Fixture fixture = new Fixture();
         QemuRuntimeBootstrapper.RuntimePaths paths = fixture.bootstrapper.bootstrap(ROOTFS_NAME, TOKEN, fixture.rootVolume);
