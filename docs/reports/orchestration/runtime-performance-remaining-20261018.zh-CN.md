@@ -78,6 +78,8 @@ git diff --check
 | `git diff --check` | 通过 |
 | 新增 `.log` 证据文件 | 无 |
 
+一次全量运行中 `:runtime:contract:bridgeClientResponsePumpTest`（既有 main-based 时序测试）首次失败；单跑与随后全量重跑均通过（`BRIDGE_RESPONSE_PUMP_OK tests=25`）。该测试不在本 effort 的修改范围内，按既有 flake 记录，未改测试。
+
 专项证据：
 
 - T3 新增 8 tests：opener 0 次 / 0 B、timeline 0 / `credentialsOnly=true` / `initramfsBytes`、全量逐字节等价 + 黄金 SHA-256、缺失/不匹配回退、256 KiB 上限。
@@ -92,7 +94,8 @@ git diff --check
 3. **T7**：`-netdev stream` 仅参数构造通过；`io_uring`/CPU model 可能被设备内核或 QEMU 拒绝。设备实验必须记录失败样本，不能当作性能结果。
 4. **T5/T6**：deferred 会延后首次启动/initrd 内存优化；需要设备测量后再决定是否继续。
 5. **继承风险**：T4 严格锁外停止与 force-wait 网关存活、T1 stop retry、T2 AVF sink 未接。
-6. 下一步人工复核通过后，才考虑 push `perf/runtime-performance`、开 PR 并让 CI 实际运行。
+6. 既有 `:runtime:contract:bridgeClientResponsePumpTest` 出现一次时序 flake（单跑/重跑通过）；若后续 CI 复现，应单独诊断，不要用放宽断言掩盖。
+7. 下一步人工复核通过后，才考虑 push `perf/runtime-performance`、开 PR 并让 CI 实际运行。
 
 ## 人工复核清单
 
