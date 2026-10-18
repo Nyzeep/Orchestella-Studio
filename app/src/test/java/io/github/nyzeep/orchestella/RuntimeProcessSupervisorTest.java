@@ -65,8 +65,11 @@ public final class RuntimeProcessSupervisorTest {
         assertEquals("an unconfirmed process must not release the gateway", 0, gateway.stops.get());
         assertEquals("channels are still released to avoid socket leaks", 1, channels.get());
 
-        assertEquals("repeated stop keeps the first result", StopResult.UNCONFIRMED, supervisor.stop(20));
-        assertEquals(1, process.forces.get());
+        assertEquals("an unconfirmed stop is retryable and keeps returning UNCONFIRMED",
+                StopResult.UNCONFIRMED, supervisor.stop(20));
+        assertEquals("the retry attempts another bounded force", 2, process.forces.get());
+        assertEquals("the gateway stays reserved while QEMU may be alive", 0, gateway.stops.get());
+        assertEquals("channels are closed once", 1, channels.get());
         assertTrue(supervisor.isRuntimeAlive());
     }
 
@@ -82,7 +85,7 @@ public final class RuntimeProcessSupervisorTest {
 
         assertEquals(StopResult.ALREADY_STOPPED, supervisor.stop(20));
         assertEquals(0, process.destroys.get());
-        assertEquals(0, gateway.stops.get());
+        assertEquals("a dead gateway is still asked to clean its LIVE entry", 1, gateway.stops.get());
         assertEquals(1, channels.get());
         assertFalse(supervisor.isRuntimeAlive());
     }
@@ -126,6 +129,48 @@ public final class RuntimeProcessSupervisorTest {
         assertEquals(StopResult.UNCONFIRMED, supervisor.stop(100));
         assertEquals("gateway", supervisor.diagnostics().stage());
         assertEquals(1, gateway.stops.get());
+    }
+
+    @Test(timeout = 5_000)
+    public void unconfirmedStopIsRetryableAfterTheProcessDies() {
+        FakeProcess process = new FakeProcess(true, true);
+        FakeGateway gateway = new FakeGateway(true, true);
+        AtomicInteger channels = new AtomicInteger();
+        RuntimeProcessSupervisor supervisor = new RuntimeProcessSupervisor(
+                process, gateway, channels::incrementAndGet);
+
+        assertEquals(StopResult.UNCONFIRMED, supervisor.stop(20));
+        process.die();
+
+        assertEquals("a retry must confirm a process that died after the timeout",
+                StopResult.CONFIRMED, supervisor.stop(20));
+        assertEquals(1, gateway.stops.get());
+        assertEquals(1, channels.get());
+    }
+
+    @Test(timeout = 5_000)
+    public void alreadyStoppedProcessStillCleansALiveGateway() {
+        FakeProcess process = new FakeProcess(false, false);
+        process.alive = false;
+        process.exited.countDown();
+        FakeGateway gateway = new FakeGateway(true, true);
+        RuntimeProcessSupervisor supervisor = new RuntimeProcessSupervisor(
+                process, gateway, () -> { });
+
+        assertEquals("a dead process with a live gateway is a real stop, not ALREADY_STOPPED",
+                StopResult.CONFIRMED, supervisor.stop(20));
+        assertEquals("a dead process must not leave a live gateway behind", 1, gateway.stops.get());
+    }
+
+    @Test(timeout = 5_000)
+    public void channelCloseFailureIsUnconfirmed() {
+        FakeProcess process = new FakeProcess(false, false);
+        FakeGateway gateway = new FakeGateway(false, true);
+        RuntimeProcessSupervisor supervisor = new RuntimeProcessSupervisor(
+                process, gateway, () -> { throw new IllegalStateException("synthetic channel failure"); });
+
+        assertEquals(StopResult.UNCONFIRMED, supervisor.stop(20));
+        assertEquals("channels", supervisor.diagnostics().stage());
     }
 
     @Test(timeout = 5_000)

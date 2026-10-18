@@ -3,8 +3,10 @@ package io.github.nyzeep.orchestella;
 import static org.junit.Assert.*;
 import io.github.nyzeep.orchestella.runtime.contract.PortForwardingRule;
 import io.github.nyzeep.orchestella.runtime.contract.Protocol;
+import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.File;
+import java.io.InputStreamReader;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
@@ -62,6 +64,74 @@ public final class NetworkGatewayDaemonTest {
             NetworkGatewayDaemon.ensureGatewaySlotAvailable(id);
         } finally {
             process.destroyForcibly();
+            NetworkGatewayDaemon.LIVE.remove(id);
+        }
+    }
+
+    @Test(timeout = 20000)
+    public void confirmedStopReleasesTheFixedPortForImmediateReuse() throws Exception {
+        String id = "gw-port";
+        int port = NetworkGatewayDaemon.listenPortFor(id);
+        Process owner = new ProcessBuilder(
+                java.nio.file.Paths.get(System.getProperty("java.home"), "bin", "java").toString(),
+                "-cp", System.getProperty("java.class.path"), PortHolder.class.getName(),
+                String.valueOf(port)).redirectErrorStream(true).start();
+        try {
+            BufferedReader output = new BufferedReader(new InputStreamReader(owner.getInputStream()));
+            assertEquals("the fixture must bind before the stop", "BOUND", output.readLine());
+            NetworkGatewayDaemon.Running running = new NetworkGatewayDaemon.Running(
+                    "/tmp/net.yaml", port, owner, id, temporaryFolder.newFile("port.sock"),
+                    new NetworkGatewayDaemon.ForwardingEngine((method, endpoint, body) -> "[]",
+                            owner::isAlive));
+            NetworkGatewayDaemon.LIVE.put(id, running);
+            try {
+                assertTrue(running.stop(500));
+                try (java.net.ServerSocket rebind = new java.net.ServerSocket()) {
+                    rebind.bind(new java.net.InetSocketAddress("127.0.0.1", port));
+                    assertTrue("a confirmed stop must release the fixed port", rebind.isBound());
+                }
+            } finally {
+                NetworkGatewayDaemon.LIVE.remove(id);
+            }
+        } finally {
+            owner.destroyForcibly();
+        }
+    }
+
+    @Test(timeout = 10000)
+    public void deadLiveEntryDoesNotReserveAnotherInstancePort() throws Exception {
+        String deadId = "gw-dead-entry";
+        int port = NetworkGatewayDaemon.listenPortFor(deadId);
+        Process dead = new ProcessBuilder("/bin/sh", "-c", "exit 0").start();
+        assertTrue(dead.waitFor(2, java.util.concurrent.TimeUnit.SECONDS));
+        NetworkGatewayDaemon.Running running = new NetworkGatewayDaemon.Running(
+                "/tmp/net.yaml", port, dead, deadId, temporaryFolder.newFile("dead.sock"),
+                new NetworkGatewayDaemon.ForwardingEngine((method, endpoint, body) -> "[]",
+                        dead::isAlive));
+        NetworkGatewayDaemon.LIVE.put(deadId, running);
+        try {
+            assertFalse("a dead entry must not reserve a port for another instance",
+                    NetworkGatewayDaemon.portAssignedToAnotherInstance("other", port));
+            assertFalse("the dead entry must be cleaned", NetworkGatewayDaemon.LIVE.containsKey(deadId));
+        } finally {
+            NetworkGatewayDaemon.LIVE.remove(deadId);
+        }
+    }
+
+    @Test(timeout = 10000)
+    public void livePortOfAnotherInstanceIsReserved() throws Exception {
+        String id = "gw-live-port";
+        int port = NetworkGatewayDaemon.listenPortFor(id);
+        Process live = ignoreTermProcess();
+        NetworkGatewayDaemon.Running running = new NetworkGatewayDaemon.Running(
+                "/tmp/net.yaml", port, live, id, temporaryFolder.newFile("live.sock"),
+                new NetworkGatewayDaemon.ForwardingEngine((method, endpoint, body) -> "[]",
+                        live::isAlive));
+        NetworkGatewayDaemon.LIVE.put(id, running);
+        try {
+            assertTrue(NetworkGatewayDaemon.portAssignedToAnotherInstance("other", port));
+        } finally {
+            running.stop(200);
             NetworkGatewayDaemon.LIVE.remove(id);
         }
     }

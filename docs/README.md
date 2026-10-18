@@ -8,7 +8,7 @@
 | --- | --- |
 | 源码 / 公开包 | 源码 0.5.3 / code503；公开 release 仍为 v0.4.5 开发预览版 |
 | 发布签名 | v0.4.5 与 0.5.3 验证包均为 Android Debug 证书；生产签名与数据迁移是下一公开版本的门 |
-| 测试 | 764 项 App 测试 / 100 suites；lint 0 Error / 753 Warning；65 项 Guest 检查；8 项 Android 框架场景 |
+| 测试 | 773 项 App 测试 / 100 suites；lint 0 Error / 753 Warning；65 项 Guest 检查；8 项 Android 框架场景 |
 | 运行时 | QEMU 是当前唯一有真实设备证据的完整 Linux 路径；QEMU / gvproxy 停止已收敛到单一 RuntimeProcessSupervisor（纯 JVM 验证；真机 20 次启停未测）；跨 Controller 单实例互斥已修复 |
 | AVF | 真实 AVF Guest 成功样本为 **0**；当前测试 ROM 只声明 protected，non-protected 不适用；pKVM 未证实，存在 Gunyah 节点 |
 | 16 KB | ELF / APK 对齐已验证（`zipalign -c -P 16 4` 通过）；16 KB 真机运行未测 |
