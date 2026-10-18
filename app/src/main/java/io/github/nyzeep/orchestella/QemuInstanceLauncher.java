@@ -3,6 +3,7 @@ package io.github.nyzeep.orchestella;
 import android.content.Context;
 import android.net.LocalSocket;
 import android.util.Log;
+import io.github.nyzeep.orchestella.RuntimeProcessSupervisor.StopResult;
 import io.github.nyzeep.orchestella.runtime.contract.BridgeClient;
 import io.github.nyzeep.orchestella.runtime.contract.BridgeControl;
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig;
@@ -27,11 +28,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public final class QemuInstanceLauncher {
     /** Live QEMU session exposing only the strategy-neutral surface. */
-    public static final class Session implements ExecutionSession {
+    public static final class Session implements ExecutionSession, RuntimeOwnedSession {
         private final String controlSocketName;
         private final String terminalSocketName;
         private final String instanceId;
         private final QemuProcessLauncher.ProcessHandle handle;
+        private final RuntimeProcessSupervisor supervisor;
         private final BridgeConnector connector = new BridgeConnector();
         private final Object controlLock = new Object();
         private final Object terminalLock = new Object();
@@ -74,7 +76,31 @@ public final class QemuInstanceLauncher {
             this(controlSocketName, terminalSocketName, proxySocketName, displaySocketPath, token, handle, null);
         }
 
+        Session(String controlSocketName, String terminalSocketName, String proxySocketName,
+                String displaySocketPath, String token, QemuProcessLauncher.ProcessHandle handle,
+                String instanceId, NetworkGatewayDaemon.Running gateway) {
+            this(controlSocketName, terminalSocketName, proxySocketName, displaySocketPath, token,
+                    handle, instanceId, (RuntimeGateway) gateway);
+        }
+
+        private Session(String controlSocketName, String terminalSocketName, String proxySocketName,
+                String displaySocketPath, String token, QemuProcessLauncher.ProcessHandle handle,
+                String instanceId, RuntimeGateway gateway) {
+            this.controlSocketName = controlSocketName;
+            this.terminalSocketName = terminalSocketName;
+            this.instanceId = instanceId;
+            this.proxySocketName = proxySocketName;
+            this.handle = handle;
+            this.supervisor = new RuntimeProcessSupervisor(handle, gateway, this::closeChannels);
+            this.waylandChannel = displaySocketPath == null ? null : new QemuWaylandChannel(() ->
+                    openDisplayStreams(displaySocketPath), token, this::bridgeClient);
+            startProxyGateway();
+        }
+
         private static final long DISPLAY_CONNECT_TIMEOUT_MS = 15_000L;
+        private static final long CLOSE_GRACE_MS = 1000L;
+        private static final long TERMINATE_GRACE_MS = 3000L;
+        private static final long EXIT_GRACE_MS = 3000L;
         private static final java.util.concurrent.ExecutorService DISPLAY_CONNECT_EXECUTOR =
                 new java.util.concurrent.ThreadPoolExecutor(0, 2, 30L, java.util.concurrent.TimeUnit.SECONDS,
                         new java.util.concurrent.SynchronousQueue<>(), runnable -> {
@@ -85,14 +111,8 @@ public final class QemuInstanceLauncher {
 
         Session(String controlSocketName, String terminalSocketName, String proxySocketName,
                 String displaySocketPath, String token, QemuProcessLauncher.ProcessHandle handle, String instanceId) {
-            this.controlSocketName = controlSocketName;
-            this.terminalSocketName = terminalSocketName;
-            this.instanceId = instanceId;
-            this.proxySocketName = proxySocketName;
-            this.handle = handle;
-            this.waylandChannel = displaySocketPath == null ? null : new QemuWaylandChannel(() ->
-                    openDisplayStreams(displaySocketPath), token, this::bridgeClient);
-            startProxyGateway();
+            this(controlSocketName, terminalSocketName, proxySocketName, displaySocketPath, token,
+                    handle, instanceId, (RuntimeGateway) null);
         }
 
         private static io.github.nyzeep.orchestella.runtime.contract.display.RfbDisplayChannel.Streams
@@ -205,8 +225,33 @@ public final class QemuInstanceLauncher {
         }
 
         @Override
-        public void terminate() {
-            handle.destroy();
+        public void terminate() throws IOException {
+            if (stopRuntime(TERMINATE_GRACE_MS) == StopResult.UNCONFIRMED) {
+                throw new IOException("virtual machine stop was not confirmed");
+            }
+        }
+
+        @Override
+        public StopResult stopRuntime(long graceMs) {
+            synchronized (this) { closing = true; }
+            StopResult stop = supervisor.stop(graceMs);
+            if (stop == StopResult.UNCONFIRMED) {
+                RuntimeProcessSupervisor.Diagnostics diagnostics = supervisor.diagnostics();
+                Log.w(TAG, "runtime-stop-unconfirmed stage=" + diagnostics.stage()
+                        + " pid=" + diagnostics.pid() + " forced=" + diagnostics.forced()
+                        + " graceMs=" + diagnostics.graceMs());
+            }
+            return stop;
+        }
+
+        @Override
+        public boolean isRuntimeAlive() {
+            return supervisor.isRuntimeAlive();
+        }
+
+        /** The watcher and every pool path use the same idempotent supervisor stop. */
+        StopResult confirmRuntimeStopped() {
+            return stopRuntime(EXIT_GRACE_MS);
         }
 
         @Override
@@ -234,7 +279,12 @@ public final class QemuInstanceLauncher {
         }
 
         @Override
-        public synchronized void close() {
+        public void close() {
+            stopRuntime(CLOSE_GRACE_MS);
+        }
+
+        /** Closes host channels exactly once; the supervisor owns when this runs. */
+        private void closeChannels() {
             closing = true;
             for (ServiceForward forward : serviceForwards) {
                 try { forward.close(); } catch (IOException ignored) { }
@@ -448,10 +498,6 @@ public final class QemuInstanceLauncher {
         NetworkGatewayDaemon.Running gateway =
                 NetworkGatewayDaemon.start(context, parameters.instanceId,
                         Paths.get(parameters.runtimeDirectory).toFile());
-        AtomicBoolean gatewayStopped = new AtomicBoolean();
-        Runnable stopGateway = () -> {
-            if (gatewayStopped.compareAndSet(false, true)) NetworkGatewayDaemon.stop(gateway);
-        };
         java.util.concurrent.atomic.AtomicReference<QemuProcessLauncher.ProcessHandle> startingHandle =
                 new java.util.concurrent.atomic.AtomicReference<>();
         java.util.concurrent.atomic.AtomicReference<Session> startingSession =
@@ -537,6 +583,10 @@ public final class QemuInstanceLauncher {
         QemuProcessLauncher.Launched launched = launcher.launch(sanitizedSpec);
         QemuProcessLauncher.ProcessHandle handle = launched.handle();
         startingHandle.set(handle);
+        Session session = new Session(controlSocket, terminalSocket,
+                QemuLaunchSpec.defaultProxySocketName(controlSocket), displaySocketPath,
+                parameters.bridgeToken, handle, parameters.instanceId, gateway);
+        startingSession.set(session);
         Thread watcher = new Thread(() -> {
             try {
                 handle.waitFor();
@@ -544,30 +594,40 @@ public final class QemuInstanceLauncher {
                 Thread.currentThread().interrupt();
             } finally {
                 VirglJniBridge.cleanup();
-                stopGateway.run();
+                session.confirmRuntimeStopped();
             }
         }, "qemu-exit-" + parameters.instanceId);
         watcher.setDaemon(true);
         watcher.start();
-        Session session = new Session(controlSocket, terminalSocket,
-                QemuLaunchSpec.defaultProxySocketName(controlSocket), displaySocketPath,
-                parameters.bridgeToken, handle, parameters.instanceId);
-        startingSession.set(session);
         ExecutionSessionRegistry.register(parameters.instanceId, session);
         return session;
         }, () -> {
+            Session unpublished = startingSession.get();
+            if (unpublished != null) {
+                unpublished.close();
+                return;
+            }
             try {
-                Session unpublished = startingSession.get();
-                if (unpublished != null) unpublished.close();
+                stopProcessBounded(startingHandle.get());
             } finally {
-                try {
-                    QemuProcessLauncher.ProcessHandle handle = startingHandle.get();
-                    if (handle != null) handle.destroy();
-                } finally {
-                    stopGateway.run();
-                }
+                gateway.stop(2000L);
             }
         });
+    }
+
+    /** Bounded fallback for a launch that failed before a Session existed. */
+    private static void stopProcessBounded(QemuProcessLauncher.ProcessHandle handle) {
+        if (handle == null) return;
+        try {
+            if (!handle.isAlive()) return;
+            handle.destroy();
+            if (!handle.waitFor(1000L, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                handle.destroyForcibly();
+                handle.waitFor(2000L, java.util.concurrent.TimeUnit.MILLISECONDS);
+            }
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     interface DisplaySocket extends AutoCloseable {
