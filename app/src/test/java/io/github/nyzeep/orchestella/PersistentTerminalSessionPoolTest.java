@@ -446,6 +446,95 @@ public final class PersistentTerminalSessionPoolTest {
                 unconfirmed, pool.getSession("clear-unconfirmed"));
     }
 
+    @Test
+    public void provisioningMarkerSplitAcrossOneByteChunksInvokesSinkOnceOnThePumpThread() throws Exception {
+        byte[] stream = ("boot log\n"
+                + "DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=ubuntu phase=rootfs runtime=pending\n")
+                .getBytes(StandardCharsets.UTF_8);
+        CountDownLatch ended = new CountDownLatch(1);
+        AtomicInteger calls = new AtomicInteger();
+        List<String> callbackThreads = Collections.synchronizedList(new ArrayList<>());
+        PersistentTerminalSessionPool.SessionHolder holder = pool.register(
+                "provisioning-vm",
+                new FakeExecutionSession(new ChunkedInputStream(stream, 1), new ByteArrayOutputStream()),
+                (instanceId, markerVersion) -> {
+                    assertEquals("provisioning-vm", instanceId);
+                    assertEquals(1, markerVersion);
+                    calls.incrementAndGet();
+                    callbackThreads.add(Thread.currentThread().getName());
+                });
+        holder.setSessionEndListener(id -> ended.countDown());
+
+        assertTrue(ended.await(5, TimeUnit.SECONDS));
+        assertEquals("the sink must fire exactly once", 1, calls.get());
+        assertEquals(1, callbackThreads.size());
+        assertTrue("the sink must run on the pump thread: " + callbackThreads.get(0),
+                callbackThreads.get(0).startsWith("pty-term-pump-"));
+    }
+
+    @Test
+    public void streamEndingBeforeTheMarkerInvokesNoSink() throws Exception {
+        AtomicInteger calls = new AtomicInteger();
+        PersistentTerminalSessionPool.SessionHolder holder = pool.register(
+                "unprovisioned-vm",
+                new FakeExecutionSession(
+                        new ByteArrayInputStream("boot log\nDROIDLAYER_PROVISIONING_COMPLETE version=10\n"
+                                .getBytes(StandardCharsets.UTF_8)),
+                        new ByteArrayOutputStream()),
+                (instanceId, markerVersion) -> calls.incrementAndGet());
+        CountDownLatch ended = new CountDownLatch(1);
+        holder.setSessionEndListener(id -> ended.countDown());
+
+        assertTrue(ended.await(4, TimeUnit.SECONDS));
+        assertEquals(0, calls.get());
+    }
+
+    @Test
+    public void markerEndingTheStreamWithoutANewlineStillInvokesTheSinkOnce() throws Exception {
+        CountDownLatch provisioned = new CountDownLatch(1);
+        AtomicInteger calls = new AtomicInteger();
+        PersistentTerminalSessionPool.SessionHolder holder = pool.register(
+                "truncated-vm",
+                new FakeExecutionSession(
+                        new ByteArrayInputStream(("boot\nDROIDLAYER_PROVISIONING_COMPLETE version=1")
+                                .getBytes(StandardCharsets.UTF_8)),
+                        new ByteArrayOutputStream()),
+                (instanceId, markerVersion) -> {
+                    calls.incrementAndGet();
+                    provisioned.countDown();
+                });
+
+        assertTrue(provisioned.await(4, TimeUnit.SECONDS));
+        assertEquals(1, calls.get());
+    }
+
+    private static final class ChunkedInputStream extends InputStream {
+        private final byte[] bytes;
+        private final int chunkSize;
+        private int offset;
+
+        ChunkedInputStream(byte[] bytes, int chunkSize) {
+            this.bytes = bytes;
+            this.chunkSize = chunkSize;
+        }
+
+        @Override
+        public synchronized int read(byte[] target, int targetOffset, int length) {
+            if (offset >= bytes.length) {
+                return -1;
+            }
+            int count = Math.min(Math.min(chunkSize, length), bytes.length - offset);
+            System.arraycopy(bytes, offset, target, targetOffset, count);
+            offset += count;
+            return count;
+        }
+
+        @Override
+        public int read() {
+            return offset >= bytes.length ? -1 : bytes[offset++] & 0xff;
+        }
+    }
+
     private static final class FakeOwnedSession implements RuntimeOwnedSession {
         volatile RuntimeProcessSupervisor.StopResult stopResult =
                 RuntimeProcessSupervisor.StopResult.CONFIRMED;
