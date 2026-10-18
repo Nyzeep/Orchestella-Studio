@@ -132,6 +132,10 @@ public final class QemuRuntimeBootstrapperProvisionedTest {
         System.arraycopy(fixture.baseInitramfs, 0, expected, 0, fixture.baseInitramfs.length);
         System.arraycopy(expectedSegment, 0, expected, fixture.baseInitramfs.length, expectedSegment.length);
         assertArrayEquals(expected, Files.readAllBytes(paths.initramfs));
+        // Golden snapshot of the full-path output for this fixture. It catches future
+        // refactors of the shared segment writer that the same-writer comparison cannot.
+        assertEquals("4cbca127067763b0afb93ca2aa96f43f29e59830be15c2d4064f313687b75c7c",
+                sha256(Files.readAllBytes(paths.initramfs)));
     }
 
     @Test
