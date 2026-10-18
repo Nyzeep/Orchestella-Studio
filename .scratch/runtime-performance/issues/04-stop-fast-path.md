@@ -1,6 +1,6 @@
 # T4 停止路径快速收尾
 
-Status: ready-for-agent
+Status: ready-for-human
 Type: task
 Priority: P0
 Blocked by: 无
@@ -103,5 +103,6 @@ git diff --check
 3. 若 cleanup 永久阻塞，会留下一个 daemon worker 线程直到 JVM 退出；同一 supervisor 的重试只 join 该 worker，不会叠加。线程为 daemon，不阻止进程退出。
 4. `clear()` 的语义从“全局阻塞快照”变为“快照后逐个实例停止”：并发新注册的实例可能存活到下一次 clear。这是锁外停止的直接代价，已在代码注释中写明。
 5. `InstanceLaunchSequence.afterLaunchFailure` 仍在 `synchronized (PersistentTerminalSessionPool.getInstance())` 内做“检查无 holder → 结束 generation”的复合动作；池写入已不再使用该 monitor，因此在“空 holder 窗口内并发首次 register”时不再互斥。`InstanceLaunchGuard` 的 generation 校验仍提供主要保护，但建议后续把该路径迁移到同一 per-instance transition API。
-6. forward 在网关退出前被本地标记为 inactive；若网关 stop 返回 `UNCONFIRMED`，原监听可能短暂仍存在，但 `ServiceForward.isActive()` 与 UI 都按网关存活状态判断，且实例保持 RUNNING/禁止重启，不会误用。
+6. forward 在 stop 开始后从 session 集合摘除，但不再提前把 `active` 置 false；`isActive()` 以网关存活为准。若网关 stop 返回 `UNCONFIRMED`，监听可能仍存在且 `isActive()` 仍为 true，实例保持 RUNNING/禁止重启。
 7. 每个 instance id 的 transition lock 在进程生命周期内保留（数量与实例数同阶），未做回收以避免“删锁后第三个线程重新创建锁”绕过互斥的竞态。
+8. 集成会话（2026-10-18）：已合入 `perf/runtime-performance`（`c116294`）；`904aa2f` 调整 `releaseForStop` 不再提前标记 inactive。全量验收集通过（app 812 / contract 24 / instance 15 / engine-qemu 2，lint 0 Error）。64 forward JVM 窗口 119 ms；严格“锁外停止”未完成（per-instance transition lock 内停止为已知偏差），真机/真实 listener 仍 `not-tested`。

@@ -1,6 +1,6 @@
 # T1 启动阶段时间线与度量旁路
 
-Status: ready-for-agent
+Status: ready-for-human
 Type: task
 Priority: P0
 Blocked by: 无
@@ -22,10 +22,10 @@ Blocked by: 无
 
 ## 验收
 
-- [ ] 纯 JVM 测试注入 fake 时钟，断言阶段顺序、耗时计算与缺失阶段的处理。
-- [ ] 记录内容有测试证明不含 secret；写入异常被吞掉且 launch 继续。
-- [ ] 现有 app / engine-qemu 测试保持通过。
-- [ ] 阶段 API 可被后续票直接调用，不需要改签名。
+- [x] 纯 JVM 测试注入 fake 时钟，断言阶段顺序、耗时计算与缺失阶段的处理。
+- [x] 记录内容有测试证明不含 secret；写入异常被吞掉且 launch 继续。
+- [x] 现有 app / engine-qemu 测试保持通过。
+- [x] 阶段 API 可被后续票直接调用，不需要改签名。
 
 ## 测试
 
@@ -70,3 +70,4 @@ Blocked by: 无
 - stop 首次 `UNCONFIRMED` 后重试为 `CONFIRMED` 时，JSONL 保留第一次结果；若 T4/T8 需要严格“最终”结果，需要明确是否允许重写或追加补偿记录。
 - `STOP_REQUESTED` / `STOP_CONFIRMED` 也会在 launch 失败清理（Session 已构造）时记录；无 Session 的早期失败只记录已发生阶段，`stopResult` 为 null。
 - 写入失败仅在内存 `diagnostics()` 中可见，未接入宿主日志或指标；现场排障如需可见性，后续可把诊断接到日志。
+- 集成会话（2026-10-18）：已合入 `perf/runtime-performance`（`c9af6bf`），`904aa2f` 补齐 manifest 读取失败也写 `LAUNCH_START` 记录，并新增 schema allowlist 测试。全量验收集通过（app 812 / contract 24 / instance 15 / engine-qemu 2，lint 0 Error）；真机与 stop retry 最终值仍 `not-tested`。
