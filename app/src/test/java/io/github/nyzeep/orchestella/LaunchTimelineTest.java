@@ -202,7 +202,7 @@ public final class LaunchTimelineTest {
         String line = timeline.toJsonLine();
 
         assertEquals(Set.of("schema", "instanceId", "distroId", "guestMemoryMb", "vcpuCount",
-                "stages", "rootfsBytes", "stopResult", "diagnostics"), topLevelKeys(line));
+                "stages", "rootfsBytes", "initramfsBytes", "credentialsOnly", "stopResult", "diagnostics"), topLevelKeys(line));
     }
 
     private static Set<String> topLevelKeys(String line) {

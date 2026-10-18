@@ -69,10 +69,6 @@ public final class QemuTuning {
         this.passtUnixSocketPath = passtUnixSocketPath;
     }
 
-    public static QemuTuning defaults() {
-        return DEFAULTS;
-    }
-
     public String cpuModel() {
         return cpuModel;
     }

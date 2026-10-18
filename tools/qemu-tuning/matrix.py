@@ -1,17 +1,23 @@
 #!/usr/bin/env python3
 """T7 QEMU single-variable tuning matrix helper.
 
-This tool only generates the experiment matrix and records device metadata. It
-does not fabricate measurements: a device run is reported as ``not-tested``
-until an instrumented build actually executes the workloads. Every variant
-changes exactly one knob relative to the baseline, and ``cache=unsafe`` is rejected.
+This tool generates the experiment matrix and records bounded device metadata.
+It does not fabricate measurements: every timed row is ``not-tested`` until an
+instrumented build actually executes the workloads. Every variant changes
+exactly one knob relative to the baseline, and ``cache=unsafe`` is rejected.
+
+The matrix never records raw ``dumpsys`` output, device serials, or build
+fingerprints; only model/Android version, a fingerprint hash, battery
+temperature and thermal status are retained.
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -43,6 +49,7 @@ VARIANTS = [
 ]
 
 WORKLOADS = ["boot-to-prompt", "apt-update", "tar-xzf", "gcc-compile", "dd", "iperf3"]
+SAMPLES_TARGET = 10
 
 
 def validate_variants() -> None:
@@ -75,35 +82,56 @@ def adb(serial: str | None, *args: str) -> str:
     return subprocess.check_output(command, text=True, stderr=subprocess.STDOUT).strip()
 
 
+def parse_battery_temp_c(dumpsys: str) -> float | None:
+    match = re.search(r"^\s*temperature:\s*(-?\d+)\s*$", dumpsys, re.MULTILINE)
+    if not match:
+        return None
+    return round(int(match.group(1)) / 10.0, 1)
+
+
+def parse_thermal_status(dumpsys: str) -> str | None:
+    match = re.search(r"Thermal Status:\s*(\d+)", dumpsys)
+    if match:
+        return match.group(1)
+    match = re.search(r"mStatus=(\d+)", dumpsys)
+    return match.group(1) if match else None
+
+
 def device_metadata(serial: str | None) -> dict:
     if shutil.which("adb") is None:
         return {"available": False, "reason": "adb-not-installed"}
     try:
+        fingerprint = adb(serial, "shell", "getprop", "ro.build.fingerprint")
+        battery = adb(serial, "shell", "dumpsys", "battery")
+        thermal = adb(serial, "shell", "dumpsys", "thermalservice")
         return {
             "available": True,
-            "serial": serial or "default",
             "model": adb(serial, "shell", "getprop", "ro.product.model"),
             "android": adb(serial, "shell", "getprop", "ro.build.version.release"),
-            "fingerprint": adb(serial, "shell", "getprop", "ro.build.fingerprint"),
-            "battery": adb(serial, "shell", "dumpsys", "battery"),
-            "thermal": adb(serial, "shell", "dumpsys", "thermalservice"),
+            "fingerprint_sha256": hashlib.sha256(fingerprint.encode("utf-8")).hexdigest(),
+            "battery_temp_c": parse_battery_temp_c(battery),
+            "thermal_status": parse_thermal_status(thermal),
         }
     except (subprocess.CalledProcessError, OSError) as failure:
         return {"available": False, "reason": "adb-failed", "detail": str(failure)}
 
 
-def write_tsv(path: Path, metadata: dict) -> None:
+def write_tsv(path: Path, metadata: dict, image: str, status: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fields = [
+        "image",
         "variant",
         "variable",
         *BASELINE.keys(),
         "workload",
+        "samples_target",
         "samples",
         "status",
         "device_model",
         "android",
         "battery_temp_c",
+        "thermal_status",
+        "fingerprint_sha256",
     ]
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields, delimiter="\t", lineterminator="\n")
@@ -112,48 +140,61 @@ def write_tsv(path: Path, metadata: dict) -> None:
             tuning = tuning_row(overrides)
             for workload in WORKLOADS:
                 writer.writerow({
+                    "image": image,
                     "variant": variant_id,
                     "variable": variable,
                     **tuning,
                     "workload": workload,
+                    "samples_target": SAMPLES_TARGET,
                     "samples": 0,
-                    "status": "not-tested",
-                    "device_model": metadata.get("model", ""),
-                    "android": metadata.get("android", ""),
-                    "battery_temp_c": "",
+                    "status": status,
+                    "device_model": metadata.get("model") or "-",
+                    "android": metadata.get("android") or "-",
+                    "battery_temp_c": metadata.get("battery_temp_c", "-"),
+                    "thermal_status": metadata.get("thermal_status") or "-",
+                    "fingerprint_sha256": metadata.get("fingerprint_sha256") or "-",
                 })
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dry-run", action="store_true", help="validate and emit the matrix without measurement")
-    parser.add_argument("--device", metavar="SERIAL", help="record adb device metadata for this serial")
+    parser.add_argument("--device", metavar="SERIAL", help="record bounded adb metadata for this serial")
+    parser.add_argument("--image", default="not-recorded", help="distro image identifier (name/version)")
     parser.add_argument("--output", type=Path, default=Path("docs/reports/tickets/runtime-performance-07/matrix.tsv"))
     parser.add_argument("--json", action="store_true", help="emit a JSON summary instead of TSV")
     args = parser.parse_args()
 
     validate_variants()
-    metadata = device_metadata(args.device) if args.device else {"available": False, "reason": "no-device-requested"}
+    if not args.dry_run and not args.device:
+        raise SystemExit("choose --dry-run or --device; this tool never invents measurements")
+
+    metadata = device_metadata(args.device) if args.device else {
+        "available": False, "reason": "dry-run"
+    }
+    status = "not-tested" if args.dry_run or not metadata.get("available") else "metadata-only"
 
     if args.json:
         payload = {
             "generated_at": datetime.now(timezone.utc).isoformat(),
+            "image": args.image,
             "device": metadata,
             "workloads": WORKLOADS,
+            "samples_target": SAMPLES_TARGET,
             "variants": [
                 {"id": variant_id, "variable": variable, "tuning": tuning_row(overrides)}
                 for variant_id, variable, overrides in VARIANTS
             ],
-            "status": "not-tested" if not metadata.get("available") else "metadata-only",
+            "status": status,
             "note": "No measurements are fabricated; run an instrumented build for timed samples.",
         }
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     else:
-        write_tsv(args.output, metadata)
+        write_tsv(args.output, metadata, args.image, status)
 
     print(f"variants={len(VARIANTS)} workloads={len(WORKLOADS)} rows={len(VARIANTS) * len(WORKLOADS)}")
-    print(f"device={metadata.get('model', 'not-tested')} status=not-tested")
+    print(f"image={args.image} device={metadata.get('model', 'not-tested')} status={status}")
     print(f"output={args.output}")
     return 0
 

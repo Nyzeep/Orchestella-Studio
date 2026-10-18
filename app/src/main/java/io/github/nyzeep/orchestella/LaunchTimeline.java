@@ -60,6 +60,7 @@ public final class LaunchTimeline {
 
     private Instant startedAt;
     private Long rootfsBytes;
+    private Long initramfsBytes;
     private StopResult stopResult;
     private boolean finished;
 
@@ -109,9 +110,20 @@ public final class LaunchTimeline {
 
     /** Records the embedded-initramfs stage with the rootfs input size in bytes. */
     public synchronized void markInitramfsBuilt(long rootfsSizeBytes) {
+        markInitramfsBuilt(rootfsSizeBytes, -1L);
+    }
+
+    /**
+     * Records the embedded-initramfs stage with both the rootfs input size and the
+     * produced initramfs size. A negative initramfs size keeps the field unknown.
+     */
+    public synchronized void markInitramfsBuilt(long rootfsSizeBytes, long initramfsSizeBytes) {
         mark(Stage.INITRAMFS_BUILT);
         if (elapsedMillis.containsKey(Stage.INITRAMFS_BUILT) && rootfsBytes == null) {
             rootfsBytes = Math.max(0L, rootfsSizeBytes);
+            if (initramfsSizeBytes >= 0L) {
+                initramfsBytes = initramfsSizeBytes;
+            }
         }
     }
 
@@ -184,6 +196,10 @@ public final class LaunchTimeline {
         }
         json.append("],\"rootfsBytes\":")
                 .append(rootfsBytes == null ? "null" : rootfsBytes.toString())
+                .append(",\"initramfsBytes\":")
+                .append(initramfsBytes == null ? "null" : initramfsBytes.toString())
+                .append(",\"credentialsOnly\":")
+                .append(rootfsBytes == null ? "null" : Boolean.toString(rootfsBytes == 0L))
                 .append(",\"stopResult\":")
                 .append(stopResult == null ? "null" : "\"" + stopResult.name() + "\"")
                 .append(",\"diagnostics\":[");
