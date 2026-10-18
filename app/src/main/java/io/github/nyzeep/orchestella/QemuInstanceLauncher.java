@@ -601,18 +601,21 @@ public final class QemuInstanceLauncher {
         watcher.start();
         ExecutionSessionRegistry.register(parameters.instanceId, session);
         return session;
-        }, () -> {
-            Session unpublished = startingSession.get();
-            if (unpublished != null) {
-                unpublished.close();
-                return;
-            }
-            try {
-                stopProcessBounded(startingHandle.get());
-            } finally {
-                gateway.stop(2000L);
-            }
-        });
+        }, () -> cleanupFailedLaunch(startingSession.get(), startingHandle.get(), gateway));
+    }
+
+    /** Failure cleanup shared by launch bootstrap, Session construction and registration. */
+    static void cleanupFailedLaunch(RuntimeOwnedSession session,
+            QemuProcessLauncher.ProcessHandle handle, RuntimeGateway gateway) {
+        if (session != null) {
+            session.stopRuntime(2000L);
+            return;
+        }
+        try {
+            stopProcessBounded(handle);
+        } finally {
+            if (gateway != null) gateway.stop(2000L);
+        }
     }
 
     /** Bounded fallback for a launch that failed before a Session existed. */
