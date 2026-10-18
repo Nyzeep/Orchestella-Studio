@@ -27,7 +27,7 @@ public final class QemuTuningTest {
                 QEMU, KERNEL, INITRD, ROOT, CONTROL, TERMINAL, HARDWARE, "12345", null);
         String[] explicit = QemuLaunchSpec.buildWithPasst(
                 QEMU, KERNEL, INITRD, ROOT, CONTROL, TERMINAL, HARDWARE, "12345", null,
-                QemuTuning.defaults());
+                QemuTuning.DEFAULTS);
         if (!Arrays.equals(legacy, explicit)) {
             fail("default tuning changed the launch array");
         }
@@ -58,7 +58,7 @@ public final class QemuTuningTest {
     }
 
     private static void testDefaultSpecHasNoTuningOptionsAndNoUnsafeCache() {
-        String[] spec = build(QemuTuning.defaults());
+        String[] spec = build(QemuTuning.DEFAULTS);
         String joined = String.join("\u0000", spec);
         for (String forbidden : new String[] {"tb-size=", "aio=", "discard=unmap", "detect-zeroes=unmap"}) {
             if (joined.contains(forbidden)) {

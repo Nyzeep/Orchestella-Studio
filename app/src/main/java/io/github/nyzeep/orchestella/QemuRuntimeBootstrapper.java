@@ -251,6 +251,11 @@ public final class QemuRuntimeBootstrapper {
                             out);
                 }
             }
+            if (credentialsOnly
+                    && Files.size(partial) - Files.size(baseInitramfs)
+                            > EmbeddedProvisionInput.CREDENTIALS_ONLY_MAX_BYTES) {
+                throw new IOException("credentials-only-initramfs-too-large");
+            }
             Files.move(partial, initramfs, java.nio.file.StandardCopyOption.REPLACE_EXISTING,
                     java.nio.file.StandardCopyOption.ATOMIC_MOVE);
         } catch (IOException | RuntimeException failure) {
@@ -261,18 +266,9 @@ public final class QemuRuntimeBootstrapper {
             }
             throw failure;
         }
-        if (credentialsOnly) {
-            long segmentBytes = Files.size(initramfs) - Files.size(baseInitramfs);
-            if (segmentBytes > EmbeddedProvisionInput.CREDENTIALS_ONLY_MAX_BYTES) {
-                try {
-                    Files.deleteIfExists(initramfs);
-                } catch (IOException cleanupFailure) {
-                    // The size violation is the primary failure.
-                }
-                throw new IOException("credentials-only-initramfs-too-large");
-            }
+        if (timeline != null) {
+            timeline.markInitramfsBuilt(credentialsOnly ? 0L : rootfsSize, Files.size(initramfs));
         }
-        if (timeline != null) timeline.markInitramfsBuilt(credentialsOnly ? 0L : rootfsSize);
         return new RuntimePaths(kernel, initramfs, instanceRootVolume);
     }
 

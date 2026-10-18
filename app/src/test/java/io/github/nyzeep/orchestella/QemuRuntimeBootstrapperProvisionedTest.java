@@ -150,7 +150,7 @@ public final class QemuRuntimeBootstrapperProvisionedTest {
     @Test
     public void oversizedCredentialsOnlySegmentIsRejectedBeforePublication() throws Exception {
         Fixture fixture = new Fixture();
-        byte[] bulk = new byte[128 * 1024];
+        byte[] bulk = new byte[512 * 1024];
         new Random(7).nextBytes(bulk);
         try {
             fixture.bootstrapper.bootstrap(ROOTFS_NAME, TOKEN, PASSWORD, fixture.rootVolume,

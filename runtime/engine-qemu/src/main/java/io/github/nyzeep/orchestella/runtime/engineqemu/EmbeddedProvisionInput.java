@@ -28,7 +28,7 @@ public final class EmbeddedProvisionInput {
      * metadata and credential files; exceeding this means a rootfs payload (or
      * another bulk artifact) leaked back into the fast path.
      */
-    public static final long CREDENTIALS_ONLY_MAX_BYTES = 64 * 1024;
+    public static final long CREDENTIALS_ONLY_MAX_BYTES = 256 * 1024;
 
     private EmbeddedProvisionInput() {
     }
