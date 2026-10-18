@@ -1,6 +1,6 @@
 # T6 只读输入盘（guest 侧）
 
-Status: ready-for-agent
+Status: ready-for-human
 Type: task
 Priority: P2（条件票）
 Blocked by: T5
@@ -26,3 +26,11 @@ guest init 优先从第二个 virtio-blk 设备读取并校验 rootfs，embedded
 
 - guest smoke：`qemu-official-alpine-embedded-input-smoke.sh` 同类场景 + 只读设备变体。
 - guest 回归脚本与 `guest-assets/build.sh` 产物校验。
+
+## Comments
+
+- 状态：`deferred`（未启动，未创建 `perf/t6-input-disk-guest` 分支）。
+- 理由：阻塞于 T5；T5 因缺少设备数据按 spec `deferred`，因此本票不启动。
+- 未修改 `guest-assets/initramfs/*`、未改宿主 Java/QEMU 参数、未跑 guest 65 项回归。
+- 后续：只有 T5 实现并合入后才按 prompt 启动；届时覆盖只读设备正常装配、篡改/截断 fail-before-write、embedded-input 兜底与 65 项回归。
+- 报告：`docs/reports/tickets/runtime-performance-06/implementation-report.zh-CN.md`。
