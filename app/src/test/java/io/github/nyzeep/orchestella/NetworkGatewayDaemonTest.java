@@ -4,14 +4,80 @@ import static org.junit.Assert.*;
 import io.github.nyzeep.orchestella.runtime.contract.PortForwardingRule;
 import io.github.nyzeep.orchestella.runtime.contract.Protocol;
 import java.io.ByteArrayInputStream;
+import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 
 public final class NetworkGatewayDaemonTest {
+    @Rule public final TemporaryFolder temporaryFolder = new TemporaryFolder();
+
+    @Test(timeout = 15000)
+    public void gatewayStopWaitsForExitThenRemovesLiveEntry() throws Exception {
+        String id = "gw-stop";
+        Process process = ignoreTermProcess();
+        File apiSocket = temporaryFolder.newFile("api.sock");
+        NetworkGatewayDaemon.ForwardingEngine engine = new NetworkGatewayDaemon.ForwardingEngine(
+                (method, endpoint, body) -> "[]", process::isAlive);
+        NetworkGatewayDaemon.Running running = new NetworkGatewayDaemon.Running(
+                "/tmp/net.yaml", 24199, process, id, apiSocket, engine);
+        NetworkGatewayDaemon.LIVE.put(id, running);
+        try {
+            assertTrue(running.isAlive());
+            assertTrue("stop must force a process that ignores SIGTERM", running.stop(200));
+            assertFalse(process.isAlive());
+            assertNull("confirmed stop must release the live entry",
+                    NetworkGatewayDaemon.forwardingEngine(id));
+            assertFalse("confirmed stop must delete the API socket", apiSocket.exists());
+            assertTrue("repeated stop must keep the confirmed result", running.stop(0));
+        } finally {
+            process.destroyForcibly();
+            NetworkGatewayDaemon.LIVE.remove(id);
+        }
+    }
+
+    @Test(timeout = 10000)
+    public void liveGatewayBlocksSlotAndDeadGatewayIsCleaned() throws Exception {
+        String id = "gw-slot";
+        Process process = ignoreTermProcess();
+        NetworkGatewayDaemon.Running running = new NetworkGatewayDaemon.Running(
+                "/tmp/net.yaml", 24198, process, id,
+                temporaryFolder.newFile("slot.sock"),
+                new NetworkGatewayDaemon.ForwardingEngine((method, endpoint, body) -> "[]",
+                        process::isAlive));
+        NetworkGatewayDaemon.LIVE.put(id, running);
+        try {
+            try {
+                NetworkGatewayDaemon.ensureGatewaySlotAvailable(id);
+                fail("a live gateway must block a second start");
+            } catch (IOException expected) {
+                assertTrue(expected.getMessage().contains("already running"));
+            }
+            assertTrue(running.stop(200));
+            NetworkGatewayDaemon.ensureGatewaySlotAvailable(id);
+        } finally {
+            process.destroyForcibly();
+            NetworkGatewayDaemon.LIVE.remove(id);
+        }
+    }
+
+    @Test(timeout = 10000)
+    public void boundedTerminationForcesAndIsIdempotent() throws Exception {
+        Process process = ignoreTermProcess();
+        assertTrue(NetworkGatewayDaemon.terminateProcess(process, 100, 2000));
+        assertFalse(process.isAlive());
+        assertTrue(NetworkGatewayDaemon.terminateProcess(process, 0, 0));
+    }
+
+    private static Process ignoreTermProcess() throws IOException {
+        return new ProcessBuilder("/bin/sh", "-c", "trap '' TERM; read x").start();
+    }
+
     @Test public void guestDnsPrefersFirstActiveVpnIpv4OverPublicFallback() {
         assertEquals("172.19.0.2", NetworkGatewayDaemon.chooseGuestDns(
                 List.of("172.19.0.2", "202.96.128.86", "223.5.5.5")));

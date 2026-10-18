@@ -506,8 +506,29 @@ public final class QemuInstanceLauncher {
                 }
 
                 @Override
+                public boolean waitFor(long timeout, java.util.concurrent.TimeUnit unit) throws InterruptedException {
+                    return process.waitFor(timeout, unit);
+                }
+
+                @Override
                 public void destroy() {
                     process.destroy();
+                }
+
+                @Override
+                public void destroyForcibly() {
+                    process.destroyForcibly();
+                }
+
+                @Override
+                public boolean isAlive() {
+                    return process.isAlive();
+                }
+
+                @Override
+                public long pid() {
+                    // android.jar's java.lang.Process does not expose pid(); diagnostics stay optional.
+                    return -1L;
                 }
             };
         };
