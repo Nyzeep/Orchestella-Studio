@@ -25,18 +25,22 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /** Owns the packaged gvproxy gateway and its private forwarding API for one QEMU instance. */
 public final class NetworkGatewayDaemon {
-    public static final class Running {
+    public static final class Running implements RuntimeGateway {
         public final String unixSocketPath;
         public final int tcpPort;
         public final Process process;
         private final String instanceId;
         private final File apiSocket;
         private final ForwardingEngine forwarding;
+        private final Object stopLock = new Object();
+        private boolean stopStarted;
+        private boolean stopConfirmed;
 
         Running(String configPath, int tcpPort, Process process, String instanceId,
                 File apiSocket, ForwardingEngine forwarding) {
@@ -46,6 +50,46 @@ public final class NetworkGatewayDaemon {
             this.instanceId = instanceId;
             this.apiSocket = apiSocket;
             this.forwarding = forwarding;
+        }
+
+        @Override
+        public boolean isAlive() {
+            return process.isAlive();
+        }
+
+        /** Default-grace stop used by callers that do not tune the shutdown window. */
+        public boolean stop() {
+            return stop(DEFAULT_STOP_GRACE_MS);
+        }
+
+        /**
+         * Idempotent bounded stop. The LIVE entry and API socket are only removed
+         * after the process has actually exited; an unconfirmed stop keeps both so
+         * the next start fails instead of reusing a port owned by an old gateway.
+         */
+        @Override
+        public boolean stop(long graceMs) {
+            synchronized (stopLock) {
+                if (stopConfirmed) return true;
+                // A previous UNCONFIRMED attempt is retryable. If the process has
+                // exited in the meantime, finish the LIVE/socket cleanup now.
+                if (stopStarted && !process.isAlive()) {
+                    stopConfirmed = true;
+                    cleanupLiveEntry();
+                    return true;
+                }
+                stopStarted = true;
+                stopConfirmed = terminateProcess(process, graceMs, FORCE_WAIT_MS);
+                if (stopConfirmed) cleanupLiveEntry();
+                return stopConfirmed;
+            }
+        }
+
+        /** Removes only this owner's LIVE entry and socket; never a replacement's. */
+        private void cleanupLiveEntry() {
+            if (LIVE.remove(instanceId, this)) {
+                try { Files.deleteIfExists(apiSocket.toPath()); } catch (IOException ignored) { }
+            }
         }
     }
 
@@ -58,7 +102,10 @@ public final class NetworkGatewayDaemon {
     private static final long SOCKET_WAIT_MILLIS = 8000L;
     private static final int API_TIMEOUT_MS = 1500;
     private static final int MAX_RESPONSE_BYTES = 32 * 1024;
-    private static final Map<String, ForwardingEngine> LIVE = new ConcurrentHashMap<>();
+    static final Map<String, Running> LIVE = new ConcurrentHashMap<>();
+    private static final Object START_LOCK = new Object();
+    private static final long DEFAULT_STOP_GRACE_MS = 2000L;
+    private static final long FORCE_WAIT_MS = 2000L;
 
     private NetworkGatewayDaemon() {}
 
@@ -116,12 +163,18 @@ public final class NetworkGatewayDaemon {
     }
 
     public static PortForwardingPresenter.LiveEngine forwardingEngine(String instanceId) {
-        ForwardingEngine engine = LIVE.get(instanceId);
-        return engine != null && engine.isRunning() ? engine : null;
+        Running running = LIVE.get(instanceId);
+        return running != null && running.isAlive() ? running.forwarding : null;
     }
 
     /** Loads only explicit user rules; an empty store never creates an SSH listener. */
     public static Running start(Context context, String instanceId, File runtimeDirectory) throws IOException {
+        synchronized (START_LOCK) {
+            return startLocked(context, instanceId, runtimeDirectory);
+        }
+    }
+
+    private static Running startLocked(Context context, String instanceId, File runtimeDirectory) throws IOException {
         if (instanceId == null || !instanceId.matches("[A-Za-z0-9_-]{1,64}")) {
             throw new IOException("invalid gateway instance id");
         }
@@ -144,11 +197,17 @@ public final class NetworkGatewayDaemon {
         if (apiSocket.getAbsolutePath().getBytes(StandardCharsets.UTF_8).length > 100) {
             throw new IOException("gateway API socket path is too long");
         }
-        if (LIVE.containsKey(instanceId)) throw new IOException("gateway already registered");
+        int port = listenPortFor(instanceId);
+        ensureGatewaySlotAvailable(instanceId);
+        if (portAssignedToAnotherInstance(instanceId, port)) {
+            throw new IOException("gateway port is shared by another instance");
+        }
+        if (portBound(port)) {
+            throw new IOException("gateway port is already in use; old gateway may still be running");
+        }
         try { Os.chmod(apiRoot.toString(), 0700); Os.chmod(apiDirectory.toString(), 0700); }
         catch (Exception failure) { throw new IOException("cannot secure gateway API directory", failure); }
         Files.deleteIfExists(apiSocket.toPath());
-        int port = listenPortFor(instanceId);
         File configFile = new File(runtimeDirectory, "net-" + instanceId + ".yaml");
         List<PortForwardingRule> stored = new FilePortForwardingStore(privateRoot.resolve("network")).loadRules(instanceId);
         Files.write(configFile.toPath(), configuration(port, apiSocket.getAbsolutePath(), stored).getBytes(StandardCharsets.UTF_8));
@@ -189,9 +248,11 @@ public final class NetworkGatewayDaemon {
                                     throw new IOException("configured forward was not installed");
                                 }
                             }
-                            LIVE.put(instanceId, engine);
+                            Running running = new Running(configFile.getAbsolutePath(), port,
+                                    process, instanceId, apiSocket, engine);
+                            LIVE.put(instanceId, running);
                             Log.i(TAG, "gateway-ready api=200 forwards=" + engine.appliedCount() + " probes=" + probes);
-                            return new Running(configFile.getAbsolutePath(), port, process, instanceId, apiSocket, engine);
+                            return running;
                         }
                     } catch (ApiTransportFailure transientFailure) {
                         lastProbeFailure = transientFailure;
@@ -212,7 +273,7 @@ public final class NetworkGatewayDaemon {
         } catch (IOException failure) {
             Log.w(TAG, "gateway-start-failed stage=" + stage + " probes=" + probes
                     + " reason=" + diagnosticReason(failure));
-            process.destroy();
+            terminateProcess(process, 0, FORCE_WAIT_MS);
             try { Files.deleteIfExists(apiSocket.toPath()); }
             catch (IOException cleanupFailure) { failure.addSuppressed(cleanupFailure); }
             throw failure;
@@ -220,10 +281,49 @@ public final class NetworkGatewayDaemon {
     }
 
     public static void stop(Running running) {
-        if (running == null) return;
-        LIVE.remove(running.instanceId, running.forwarding);
-        running.process.destroy();
-        try { Files.deleteIfExists(running.apiSocket.toPath()); } catch (IOException ignored) { }
+        if (running != null) running.stop(DEFAULT_STOP_GRACE_MS);
+    }
+
+    /** Fails fast when an instance already owns a live gateway; cleans a dead entry first. */
+    static void ensureGatewaySlotAvailable(String instanceId) throws IOException {
+        Running existing = LIVE.get(instanceId);
+        if (existing == null) return;
+        if (existing.isAlive()) throw new IOException("gateway is already running for this instance");
+        existing.stop(0);
+        if (existing.isAlive()) throw new IOException("previous gateway did not stop");
+    }
+
+    static boolean portAssignedToAnotherInstance(String instanceId, int port) {
+        for (Map.Entry<String, Running> entry : LIVE.entrySet()) {
+            if (entry.getKey().equals(instanceId)) continue;
+            Running other = entry.getValue();
+            if (!other.isAlive()) {
+                // A dead entry must not reserve a port for an instance that is gone.
+                other.stop(0);
+                continue;
+            }
+            if (other.tcpPort == port) return true;
+        }
+        return false;
+    }
+
+    /** Bounded destroy/force sequence shared by running handles and start-failure cleanup. */
+    static boolean terminateProcess(Process process, long graceMs, long forceWaitMs) {
+        if (process == null) return true;
+        if (!process.isAlive()) return true;
+        process.destroy();
+        if (waitQuietly(process, graceMs)) return true;
+        process.destroyForcibly();
+        return waitQuietly(process, forceWaitMs);
+    }
+
+    private static boolean waitQuietly(Process process, long timeoutMs) {
+        try {
+            return process.waitFor(Math.max(0L, timeoutMs), TimeUnit.MILLISECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
     }
 
     static boolean isSupported(PortForwardingRule rule) {
