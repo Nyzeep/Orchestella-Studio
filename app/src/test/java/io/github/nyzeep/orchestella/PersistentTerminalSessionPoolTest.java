@@ -19,8 +19,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -535,11 +537,103 @@ public final class PersistentTerminalSessionPoolTest {
         }
     }
 
+    @Test(timeout = 10_000)
+    public void slowStopOnOneInstanceDoesNotBlockRegisterOnAnother() throws Exception {
+        FakeOwnedSession previous = new FakeOwnedSession();
+        previous.stopEntered = new CountDownLatch(1);
+        previous.stopGate = new CountDownLatch(1);
+        pool.register("owned-slow", previous);
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<PersistentTerminalSessionPool.SessionHolder> replacing = executor.submit(
+                    () -> pool.register("owned-slow", new FakeOwnedSession()));
+            assertTrue("the slow runtime stop must have started",
+                    previous.stopEntered.await(2, TimeUnit.SECONDS));
+
+            Future<PersistentTerminalSessionPool.SessionHolder> other = executor.submit(
+                    () -> pool.register("owned-fast", new FakeOwnedSession()));
+            assertEquals("register on another instance must not wait for a slow stop",
+                    "owned-fast", other.get(1, TimeUnit.SECONDS).instanceId());
+
+            previous.stopGate.countDown();
+            assertSame("the replacement is published only after the stop confirms",
+                    replacing.get(2, TimeUnit.SECONDS).rawSession(), pool.getSession("owned-slow"));
+        } finally {
+            previous.stopGate.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test(timeout = 10_000)
+    public void concurrentStopNeverPublishesASecondOwnerAndDelayedUnregisterCannotRemoveTheReplacement()
+            throws Exception {
+        FakeOwnedSession old = new FakeOwnedSession();
+        old.stopEntered = new CountDownLatch(1);
+        old.stopGate = new CountDownLatch(1);
+        pool.register("owned-race", old);
+        FakeOwnedSession replacement = new FakeOwnedSession();
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<PersistentTerminalSessionPool.SessionHolder> replacing = executor.submit(
+                    () -> pool.register("owned-race", replacement));
+            assertTrue("the old owner stop must have started",
+                    old.stopEntered.await(2, TimeUnit.SECONDS));
+            assertSame("the old holder stays the only published owner while stopping",
+                    old, pool.getSession("owned-race"));
+
+            Future<Boolean> delayed = executor.submit(() -> pool.unregister("owned-race", old));
+            old.stopGate.countDown();
+
+            assertSame("the replacement must be published after the confirmed stop",
+                    replacement, replacing.get(2, TimeUnit.SECONDS).rawSession());
+            assertFalse("a delayed unregister must not remove the replacement",
+                    delayed.get(2, TimeUnit.SECONDS));
+            assertSame(replacement, pool.getSession("owned-race"));
+            assertEquals("the replacement must not be stopped by the delayed owner",
+                    0, replacement.stops.get());
+        } finally {
+            old.stopGate.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test(timeout = 10_000)
+    public void unconfirmedStopDuringReplacementKeepsTheExistingHolder() throws Exception {
+        FakeOwnedSession old = new FakeOwnedSession();
+        old.stopResult = RuntimeProcessSupervisor.StopResult.UNCONFIRMED;
+        old.stopEntered = new CountDownLatch(1);
+        old.stopGate = new CountDownLatch(1);
+        pool.register("owned-unconfirmed-race", old);
+
+        ExecutorService executor = Executors.newFixedThreadPool(1);
+        try {
+            Future<PersistentTerminalSessionPool.SessionHolder> replacing = executor.submit(
+                    () -> pool.register("owned-unconfirmed-race", new FakeOwnedSession()));
+            assertTrue(old.stopEntered.await(2, TimeUnit.SECONDS));
+            old.stopGate.countDown();
+            try {
+                replacing.get(2, TimeUnit.SECONDS);
+                org.junit.Assert.fail("an unconfirmed owner must block the replacement");
+            } catch (ExecutionException expected) {
+                assertTrue(expected.getCause() instanceof IOException);
+            }
+            assertSame("an unconfirmed stop must keep the existing holder",
+                    old, pool.getSession("owned-unconfirmed-race"));
+        } finally {
+            old.stopGate.countDown();
+            executor.shutdownNow();
+        }
+    }
+
     private static final class FakeOwnedSession implements RuntimeOwnedSession {
         volatile RuntimeProcessSupervisor.StopResult stopResult =
                 RuntimeProcessSupervisor.StopResult.CONFIRMED;
         final AtomicInteger stops = new AtomicInteger();
         volatile boolean alive = true;
+        volatile CountDownLatch stopEntered;
+        volatile CountDownLatch stopGate;
 
         @Override public int waitFor() { return 0; }
         @Override public OutputStream terminalInput() { return new ByteArrayOutputStream(); }
@@ -550,6 +644,21 @@ public final class PersistentTerminalSessionPoolTest {
 
         @Override public RuntimeProcessSupervisor.StopResult stopRuntime(long graceMs) {
             stops.incrementAndGet();
+            CountDownLatch entered = stopEntered;
+            if (entered != null) entered.countDown();
+            CountDownLatch gate = stopGate;
+            if (gate != null) {
+                boolean interrupted = false;
+                while (true) {
+                    try {
+                        gate.await();
+                        break;
+                    } catch (InterruptedException ignored) {
+                        interrupted = true;
+                    }
+                }
+                if (interrupted) Thread.currentThread().interrupt();
+            }
             if (stopResult != RuntimeProcessSupervisor.StopResult.UNCONFIRMED) alive = false;
             return stopResult;
         }
