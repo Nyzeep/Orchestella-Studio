@@ -1,6 +1,6 @@
 # T2 已装配信号与实例元数据
 
-Status: ready-for-agent
+Status: ready-for-human
 Type: task
 Priority: P0
 Blocked by: 无
@@ -19,11 +19,11 @@ Blocked by: 无
 
 ## 验收
 
-- [ ] 模拟 terminal 流：marker 跨 1..N 个 chunk 分割都能命中；拼写/版本不符不命中。
-- [ ] 无 marker 或异常结束时元数据保持未装配。
-- [ ] 元数据 round-trip；缺失字段按未装配读取。
-- [ ] 日志与元数据不含 token、口令或按键内容。
-- [ ] `PersistentTerminalSessionPool` 的既有重绑/关闭测试不回退。
+- [x] 模拟 terminal 流：marker 跨 1..N 个 chunk 分割都能命中；拼写/版本不符不命中。
+- [x] 无 marker 或异常结束时元数据保持未装配。
+- [x] 元数据 round-trip；缺失字段按未装配读取。
+- [x] 日志与元数据不含 token、口令或按键内容。（新增 provisioning 字段不含 secret；既有 bridgeToken/guestPassword 字段按 P0-2 设计保留，见 Comments）
+- [x] `PersistentTerminalSessionPool` 的既有重绑/关闭测试不回退。
 
 ## 测试
 
@@ -62,4 +62,5 @@ not-tested：
 - 若目录中同一 `rootfsFileName` 对应不同 sha，解析为 null 并按保守策略跳过记录。
 - 本票上线前已完成装配的实例不会补写证据：guest 重启只输出 `DROIDLAYER_ROOT_VOLUME_RESTART`，不再输出 provisioning marker。T3 必须把它们当未装配、走完整输入路径。
 - 若首次装配期间 terminal pump 未接上或进程提前退出，也不会留下证据；后续启动同样保持保守路径（正确性不受影响，只损失优化收益）。
+- 集成会话（2026-10-18）：已合入 `perf/runtime-performance`（`8367739`）；`904aa2f` 将“markerVersion 存在但 recordedAtMillis 缺失”的元数据改为未装配（malformed 值仍 fail-closed）。全量验收集通过（app 812 / contract 24 / instance 15 / engine-qemu 2，lint 0 Error）。T3 必须使用 `isProvisionedFor(currentSha)`；既有 `bridgeToken`/`guestPassword` 字段保留，新增 provisioning 字段不含 secret。
 
