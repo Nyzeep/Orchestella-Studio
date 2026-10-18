@@ -13,10 +13,12 @@ import io.github.nyzeep.orchestella.runtime.engineqemu.QemuLaunchSpec;
 import io.github.nyzeep.orchestella.runtime.engineqemu.QemuProcessLauncher;
 import io.github.nyzeep.orchestella.runtime.engineqemu.RuntimeArtifactManifest;
 import io.github.nyzeep.orchestella.runtime.engineqemu.VirglJniBridge;
+import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Paths;
+import java.time.Clock;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -646,7 +648,8 @@ public final class QemuInstanceLauncher {
         }, "qemu-exit-" + parameters.instanceId);
         watcher.setDaemon(true);
         watcher.start();
-        ExecutionSessionRegistry.register(parameters.instanceId, session);
+        ExecutionSessionRegistry.register(parameters.instanceId, session,
+                createProvisioningRecorder(parameters.instanceId, parameters.rootfsFileName));
         timeline.mark(LaunchTimeline.Stage.SESSION_REGISTERED);
         return session;
         }, () -> {
@@ -699,6 +702,74 @@ public final class QemuInstanceLauncher {
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             return !handle.isAlive();
+        }
+    }
+
+    /**
+     * Resolves the pinned distro rootfs digest from the catalog by exact file name.
+     *
+     * <p>Unknown or ambiguous names resolve to {@code null}; the caller must then skip recording
+     * rather than guess a digest.
+     */
+    static String resolveRootfsSha256(String rootfsFileName) {
+        if (rootfsFileName == null || rootfsFileName.isEmpty()) {
+            return null;
+        }
+        String resolved = null;
+        for (DistroManifest manifest : DistroCatalogRegistry.createDefault().listAll()) {
+            if (rootfsFileName.equals(manifest.rootfsFileName())) {
+                if (resolved != null && !resolved.equals(manifest.sha256())) {
+                    return null;
+                }
+                resolved = manifest.sha256();
+            }
+        }
+        return resolved;
+    }
+
+    /**
+     * Builds the best-effort evidence recorder for one instance.
+     *
+     * <p>Returns {@code null} when the digest or controller is unavailable, which keeps the
+     * instance on the conservative "not provisioned" reading.
+     */
+    static PersistentTerminalSessionPool.ProvisioningListener provisioningRecorder(
+            InstanceLifecycle.Controller controller, String instanceId, String rootfsSha256) {
+        if (controller == null || instanceId == null || rootfsSha256 == null) {
+            return null;
+        }
+        return (reportedInstanceId, markerVersion) -> {
+            if (!instanceId.equals(reportedInstanceId)) {
+                return;
+            }
+            try {
+                controller.recordProvisioning(
+                        reportedInstanceId,
+                        new InstanceLifecycle.ProvisioningEvidence(
+                                markerVersion, rootfsSha256, System.currentTimeMillis()));
+            } catch (IOException | RuntimeException failed) {
+                // Evidence is advisory: never let metadata persistence break the pump thread.
+                Log.w(TAG, "provisioning-record-failed");
+            }
+        };
+    }
+
+    private PersistentTerminalSessionPool.ProvisioningListener createProvisioningRecorder(
+            String instanceId, String rootfsFileName) {
+        String rootfsSha256 = resolveRootfsSha256(rootfsFileName);
+        if (rootfsSha256 == null) {
+            Log.w(TAG, "provisioning-evidence-skipped reason=unresolved-rootfs");
+            return null;
+        }
+        try {
+            InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(
+                    context.getFilesDir().toPath().resolve("instances"));
+            return provisioningRecorder(
+                    new InstanceLifecycle.Controller(store, Clock.systemUTC()),
+                    instanceId, rootfsSha256);
+        } catch (IOException unavailable) {
+            Log.w(TAG, "provisioning-evidence-skipped reason=store-unavailable");
+            return null;
         }
     }
 
