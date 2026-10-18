@@ -98,6 +98,25 @@ public final class QemuRuntimeBootstrapper {
             String guestUser,
             boolean hasSudo)
             throws IOException {
+        return bootstrap(rootfsFileName, bridgeToken, guestPassword, instanceRootVolume,
+                mirrorConfigFileName, mirrorConfigFileContent, firstBootScript,
+                hostname, guestUser, hasSudo, null);
+    }
+
+    /** Optional launch timeline; {@code null} keeps stage recording disabled. */
+    public RuntimePaths bootstrap(
+            String rootfsFileName,
+            String bridgeToken,
+            String guestPassword,
+            Path instanceRootVolume,
+            String mirrorConfigFileName,
+            byte[] mirrorConfigFileContent,
+            byte[] firstBootScript,
+            String hostname,
+            String guestUser,
+            boolean hasSudo,
+            LaunchTimeline timeline)
+            throws IOException {
         String validatedHostname = hostname == null ? null
                 : io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig.normalizeHostname(hostname);
         if (guestUser != null && !io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig.isValidUsername(guestUser)) {
@@ -118,6 +137,7 @@ public final class QemuRuntimeBootstrapper {
                 () -> assetStreams.apply("Image"), runtimeDir);
         Path baseInitramfs = installer.install(manifest, "initramfs.cpio.gz",
                 () -> resourceStreams.apply("initramfs.cpio.gz"), runtimeDir);
+        if (timeline != null) timeline.mark(LaunchTimeline.Stage.ASSETS_VERIFIED);
 
         byte[] guestInit = null;
         try (InputStream in = resourceStreams.apply("guest_init")) {
@@ -174,6 +194,7 @@ public final class QemuRuntimeBootstrapper {
             }
             throw failure;
         }
+        if (timeline != null) timeline.markInitramfsBuilt(rootfsSize);
         return new RuntimePaths(kernel, initramfs, instanceRootVolume);
     }
 
