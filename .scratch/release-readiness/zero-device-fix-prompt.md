@@ -8,8 +8,8 @@
 
 ## 0. 仓库、基线与边界
 
-- 仓库：Orchestella-Studio。基线：`main 20a3507`（运行时性能合并 `881e37a`，版本标准 `a32b477`）。
-- 分支：从 `main 20a3507` 切 `fix/release-readiness`；只提交到该分支，不 push `main`，不 merge `main`。
+- 仓库：Orchestella-Studio。基线：`main 4357608`（已包含本交接与 prompt；运行时性能合并 `881e37a`，版本标准 `a32b477`，发布说明草稿 `20a3507`）。
+- 分支：从 `main 4357608` 切 `fix/release-readiness`；只提交到该分支，不 push `main`，不 merge `main`。
 - 必须从 ASCII 路径执行 Gradle（中文/括号路径会导致测试 worker `ClassNotFoundException`）；通常加 `--offline`。
 - 先读：
   1. `AGENTS.md`
