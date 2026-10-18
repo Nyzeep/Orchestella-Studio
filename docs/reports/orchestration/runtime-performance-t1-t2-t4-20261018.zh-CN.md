@@ -1,7 +1,7 @@
 # 编排报告：runtime-performance T1/T2/T4 并行实施（2026-10-18）
 
 - 背景 / scope：按 `.scratch/runtime-performance/` 的并行协议，先完成第 1 波 T1（启动阶段时间线）、T2（已装配信号与实例元数据）、T4（停止路径快速收尾）；不启动 T3/T5/T6/T7/T8。
-- branch / 基线 / commit：基线 `893fb72`；集成分支 `perf/runtime-performance`；HEAD `904aa2f`（报告提交后更新）；三张票分支分别为 `perf/t1-launch-timeline`、`perf/t2-provisioned-signal`、`perf/t4-stop-fast-path`。
+- branch / 基线 / commit：基线 `893fb72`；集成分支 `perf/runtime-performance`；代码 HEAD `904aa2f`，报告随后续 `docs(reports)` 提交；三张票分支分别为 `perf/t1-launch-timeline`、`perf/t2-provisioned-signal`、`perf/t4-stop-fast-path`。
 - 工作区：主工作树 `/workspace` 保持 `main`；三张票分别在 `/tmp/orch-perf-t1`、`/tmp/orch-perf-t2`、`/tmp/orch-perf-t4` 的独立 worktree 实施；集成分支在 `/tmp/orch-perf-integration` 合并验证。未 push，未合并到 `main`。
 
 ## 实际完成
