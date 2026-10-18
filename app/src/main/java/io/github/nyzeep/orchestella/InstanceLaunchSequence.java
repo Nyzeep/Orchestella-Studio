@@ -1,5 +1,6 @@
 package io.github.nyzeep.orchestella;
 
+import io.github.nyzeep.orchestella.RuntimeProcessSupervisor.StopResult;
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle;
 import java.io.IOException;
 
@@ -31,7 +32,10 @@ public final class InstanceLaunchSequence {
         }
     }
 
-    public enum ExitStatus { NORMAL, CRASHED, WAIT_FAILED, STALE }
+    public enum ExitStatus { NORMAL, CRASHED, WAIT_FAILED, STOP_UNCONFIRMED, STALE }
+
+    /** Bounded window granted to the supervisor after the guest process exited. */
+    private static final long EXIT_STOP_GRACE_MS = 3000L;
 
     /** Result of the registered owner's wait, consumed by the existing foreground/UI adapter. */
     public static final class ExitResult {
@@ -61,6 +65,11 @@ public final class InstanceLaunchSequence {
             // foreground binding and metadata, and report only the typed failure.
             return new ExitResult(ExitStatus.WAIT_FAILED, -1);
         }
+        // Gateway release must be confirmed before metadata can become STOPPED or a
+        // restart can reuse the fixed port. UNCONFIRMED keeps the owner and state.
+        if (stopAfterExit(session) == StopResult.UNCONFIRMED) {
+            return new ExitResult(ExitStatus.STOP_UNCONFIRMED, exitCode);
+        }
         final boolean[] normal = {exitCode == 0};
         boolean completed = ExecutionSessionRegistry.completeExit(instanceId, session, () -> {
             normal[0] |= ExecutionSessionRegistry.stopIntent(instanceId, session)
@@ -74,6 +83,13 @@ public final class InstanceLaunchSequence {
         if (completed) onConfirmedExit.run();
         return new ExitResult(!completed ? ExitStatus.STALE
                 : normal[0] ? ExitStatus.NORMAL : ExitStatus.CRASHED, exitCode);
+    }
+
+    private static StopResult stopAfterExit(ExecutionSession session) {
+        if (session instanceof RuntimeOwnedSession) {
+            return ((RuntimeOwnedSession) session).stopRuntime(EXIT_STOP_GRACE_MS);
+        }
+        return StopResult.CONFIRMED;
     }
 
     /** Only an unregistered failed launch may release its own running slot. */
