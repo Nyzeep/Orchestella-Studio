@@ -1,6 +1,6 @@
 # runtime-performance 发布交接：阻塞、优化方案与零设备修复任务
 
-> **基线**: `main 4357608`（已包含本交接与修复 prompt；运行时性能合并 `881e37a`，版本标准 `a32b477`，发布说明草稿 `20a3507`）  
+> **基线**: 从包含本交接文件的最新 `main` 切出；代码基线为运行时性能合并 `881e37a`（版本标准 `a32b477`，发布说明草稿 `20a3507`）  
 > **当前版本**: 0.5.3 / code503（未递增；公开最新 v0.4.5 预发布）  
 > **性质**: 发布准备交接，不是发布报告；本文不授权合并、打 tag 或上传 APK。
 
@@ -123,7 +123,7 @@ keyPassword = (properties["orchestella.signing.keyPassword"] as String?) ?: "orc
 
 ## 7. 交接产物
 
-- 分支：`fix/release-readiness`（从 `main 4357608` 切出；该提交已包含本交接与 prompt）。
+- 分支：`fix/release-readiness`（从包含本交接文件的最新 `main` 切出）。
 - 提交：按 A–H 分组，中文 commit；不合并 main。
 - 报告：`docs/reports/orchestration/release-readiness-fix-<date>.zh-CN.md`，含提交、测试、未测项、待决策项。
 - 回传：在本文件追加 `## Fix Report`，列出 commit、测试命令/结果、`not-tested`、需要发布负责人决定的事项。
