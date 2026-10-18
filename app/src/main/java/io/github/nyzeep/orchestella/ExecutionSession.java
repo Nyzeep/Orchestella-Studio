@@ -47,8 +47,9 @@ public interface ExecutionSession {
     InputStream controlOutput() throws IOException;
 
     /**
-     * Best-effort teardown of the session-owned transports; never throws.
-     * The guest VM lifecycle is not affected — only the host-side channels.
+     * Best-effort teardown of session-owned resources; never throws. A session
+     * that owns a runtime process also stops it with a bounded wait; channel-only
+     * implementations keep their previous behavior.
      */
     void close();
 
