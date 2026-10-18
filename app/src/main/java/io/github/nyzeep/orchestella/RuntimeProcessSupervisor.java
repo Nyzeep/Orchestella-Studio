@@ -218,7 +218,8 @@ public final class RuntimeProcessSupervisor {
         }
         if (worker.isAlive()) {
             // A truly stuck local close must not hold the stop; interrupt is best-effort.
-            worker.interrupt();
+            // With a zero deadline the caller asked not to wait, so leave the worker alone.
+            if (channelsCloseTimeoutMs > 0L) worker.interrupt();
             return false;
         }
         return channelsClosed.get();
