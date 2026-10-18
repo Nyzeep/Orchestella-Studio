@@ -62,7 +62,7 @@ public final class ExecutionSessionRegistry {
 
     private ExecutionSessionRegistry() {}
 
-    public static void register(String instanceId, ExecutionSession session) {
+    public static void register(String instanceId, ExecutionSession session) throws IOException {
         PersistentTerminalSessionPool.getInstance().register(instanceId, session);
     }
 

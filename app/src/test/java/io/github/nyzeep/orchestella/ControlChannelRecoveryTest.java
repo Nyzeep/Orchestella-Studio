@@ -348,7 +348,10 @@ public final class ControlChannelRecoveryTest {
     private static final class FakeHandle implements QemuProcessLauncher.ProcessHandle {
         int destroyed;
         @Override public int waitFor() { return 0; }
+        @Override public boolean waitFor(long timeout, java.util.concurrent.TimeUnit unit) { return true; }
         @Override public void destroy() { destroyed++; }
+        @Override public void destroyForcibly() { destroyed++; }
+        @Override public boolean isAlive() { return false; }
     }
 
     private static final class CountingSession implements ExecutionSession {

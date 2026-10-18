@@ -815,7 +815,7 @@ class InstanceDetailActivity : AppCompatActivity() {
                 }
             } catch (_: Exception) {
                 finishPowerChange(instanceId, false,
-                    if (force) "强制断电请求失败，实例状态未更改，请检查运行日志"
+                    if (force) "强制断电请求失败或停止未确认；实例状态未更改，请检查运行日志"
                     else "关机请求未被接受或连接失败，实例状态未更改，请检查运行日志")
             }
         }
@@ -840,7 +840,7 @@ class InstanceDetailActivity : AppCompatActivity() {
                         InstanceDetailActionRules.ExitDecision.REPLACED -> finishPowerChange(instanceId, false,
                             "运行会话已变化，已取消本次操作")
                         InstanceDetailActionRules.ExitDecision.TIMED_OUT -> finishPowerChange(instanceId, false,
-                            "等待虚拟机退出超时；未执行重启，请查看运行日志")
+                            "停止未确认：运行时在 60 秒内未停止；实例仍保留，请查看运行日志")
                         InstanceDetailActionRules.ExitDecision.WAITING -> Unit
                     }
                 } catch (_: Exception) {

@@ -7,6 +7,7 @@
 ### 主线与验收
 
 - [下一阶段优化方案（2026-10-18）](orchestration/next-optimization-plan-20261018.zh-CN.md)：当前优先级；QEMU 主线、发布签名 P0、运行时收敛、AVF 时间盒研究。
+- [P0-2 QEMU / gvproxy 运行时生命周期收敛（2026-10-18）](orchestration/p0-2-runtime-supervisor-20261018.zh-CN.md)：单一 RuntimeProcessSupervisor、有界停止、gvproxy handle 与未确认停止保留 RUNNING；纯 JVM/宿主进程验证，真机未测。
 - [维护与优化 Prompt（2026-10-18）](orchestration/optimization-prompt-20261018.zh-CN.md)：本回合清理、文档归档、P0-3 单实例竞态修复与验证记录，含可直接交接的中文 Prompt。
 - [0.5.3 限定实现、构建与真机验收](orchestration/avf-shizuku-device-20261016.zh-CN.md)：747 项 App 测试、lint 0 Error / 748 Warning、8 项 Android 框架场景与 Debian QA 结果。
 - [源码与中文成果同步（2026-10-17）](orchestration/github-source-sync-20261017.zh-CN.md)：0.5.3 可靠性改进与 Protected AVF 规划的公开同步记录。

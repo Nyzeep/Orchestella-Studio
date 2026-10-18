@@ -3,6 +3,7 @@ package io.github.nyzeep.orchestella;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
@@ -22,6 +23,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import org.junit.After;
 import org.junit.Before;
@@ -357,5 +359,112 @@ public final class PersistentTerminalSessionPoolTest {
         }
         assertTrue("Attach/deliver overlap detected: " + inconsistencies, inconsistencies.isEmpty());
         holder.close();
+    }
+
+    @Test
+    public void registerReplacementStopsPreviousRuntimeBeforePublishingNewOwner() throws Exception {
+        FakeOwnedSession old = new FakeOwnedSession();
+        FakeOwnedSession replacement = new FakeOwnedSession();
+        pool.register("owned-replace", old);
+
+        PersistentTerminalSessionPool.SessionHolder holder =
+                pool.register("owned-replace", replacement);
+
+        assertEquals("the old owner must be stopped before the new holder is published",
+                1, old.stops.get());
+        assertSame(replacement, pool.getSession("owned-replace"));
+        assertSame(replacement, holder.rawSession());
+    }
+
+    @Test
+    public void registerRefusesReplacementWhenPreviousStopIsUnconfirmed() throws Exception {
+        FakeOwnedSession old = new FakeOwnedSession();
+        old.stopResult = RuntimeProcessSupervisor.StopResult.UNCONFIRMED;
+        FakeOwnedSession replacement = new FakeOwnedSession();
+        pool.register("owned-blocked", old);
+
+        try {
+            pool.register("owned-blocked", replacement);
+            org.junit.Assert.fail("an unconfirmed owner must block a second owner");
+        } catch (IOException expected) {
+            assertTrue(expected.getMessage().contains("did not confirm"));
+        }
+        assertSame(old, pool.getSession("owned-blocked"));
+        assertEquals(1, old.stops.get());
+        assertEquals("the replacement must not have been started", 0, replacement.stops.get());
+    }
+
+    @Test
+    public void unregisterStopsOwnedRuntimeAndKeepsUnconfirmedOwner() throws Exception {
+        FakeOwnedSession confirmed = new FakeOwnedSession();
+        pool.register("owned-unregister", confirmed);
+        assertTrue(pool.unregister("owned-unregister", confirmed));
+        assertEquals(1, confirmed.stops.get());
+        assertNull(pool.getSession("owned-unregister"));
+
+        FakeOwnedSession unconfirmed = new FakeOwnedSession();
+        unconfirmed.stopResult = RuntimeProcessSupervisor.StopResult.UNCONFIRMED;
+        pool.register("owned-unconfirmed", unconfirmed);
+        assertFalse(pool.unregister("owned-unconfirmed", unconfirmed));
+        assertSame("an unconfirmed owner must stay registered",
+                unconfirmed, pool.getSession("owned-unconfirmed"));
+    }
+
+    @Test
+    public void clearStopsEveryConfirmedRuntimeOwner() throws Exception {
+        FakeOwnedSession first = new FakeOwnedSession();
+        FakeOwnedSession second = new FakeOwnedSession();
+        pool.register("clear-a", first);
+        pool.register("clear-b", second);
+
+        pool.clear();
+
+        assertEquals(1, first.stops.get());
+        assertEquals(1, second.stops.get());
+        assertNull(pool.getSession("clear-a"));
+        assertNull(pool.getSession("clear-b"));
+    }
+
+    @Test
+    public void unregisterByIdStopsOwnedRuntime() throws Exception {
+        FakeOwnedSession session = new FakeOwnedSession();
+        pool.register("owned-by-id", session);
+        pool.unregister("owned-by-id");
+        assertEquals(1, session.stops.get());
+        assertNull(pool.getSession("owned-by-id"));
+    }
+
+    @Test
+    public void clearKeepsUnconfirmedOwner() throws Exception {
+        FakeOwnedSession unconfirmed = new FakeOwnedSession();
+        unconfirmed.stopResult = RuntimeProcessSupervisor.StopResult.UNCONFIRMED;
+        pool.register("clear-unconfirmed", unconfirmed);
+
+        pool.clear();
+
+        assertSame("an unconfirmed owner must survive clear()",
+                unconfirmed, pool.getSession("clear-unconfirmed"));
+    }
+
+    private static final class FakeOwnedSession implements RuntimeOwnedSession {
+        volatile RuntimeProcessSupervisor.StopResult stopResult =
+                RuntimeProcessSupervisor.StopResult.CONFIRMED;
+        final AtomicInteger stops = new AtomicInteger();
+        volatile boolean alive = true;
+
+        @Override public int waitFor() { return 0; }
+        @Override public OutputStream terminalInput() { return new ByteArrayOutputStream(); }
+        @Override public InputStream terminalOutput() { return new ByteArrayInputStream(new byte[0]); }
+        @Override public OutputStream controlInput() { return new ByteArrayOutputStream(); }
+        @Override public InputStream controlOutput() { return new ByteArrayInputStream(new byte[0]); }
+        @Override public void close() { }
+
+        @Override public RuntimeProcessSupervisor.StopResult stopRuntime(long graceMs) {
+            stops.incrementAndGet();
+            if (stopResult != RuntimeProcessSupervisor.StopResult.UNCONFIRMED) alive = false;
+            return stopResult;
+        }
+
+        @Override public boolean isRuntimeAlive() { return alive; }
     }
 }

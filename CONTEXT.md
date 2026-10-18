@@ -160,6 +160,18 @@ _Avoid_: 过期的 source offer、只含清单的源码包、把参考项目当�
 实例元数据中的生命周期字段（运行中 / 已停止 / 异常终止…），跨 App 进程死亡持久存在；冷恢复与异常诊断的依据。
 _Avoid_: 进程状态（两回事）、会话
 
+**运行时进程监督者 (Runtime Process Supervisor)**:
+一个采用 QEMU 执行策略的运行实例内唯一拥有 QEMU 进程、gvproxy 网关与 control / terminal / display / proxy socket 的宿主组件。所有停止请求都经过它的有界 stop；watcher、UI 与 session 池不是第二个 stop owner。
+_Avoid_: 进程管理器（过泛）、看门狗、第二个 watcher
+
+**停止确认 (Stop Confirmation)**:
+运行时停止的结果分类：CONFIRMED（进程、通道与网关均已退出）、UNCONFIRMED（任一阶段超时或失败）、ALREADY_STOPPED（进入停止前已无存活资源）。只有确认停止才允许写实例状态 STOPPED 或允许同端口重启。
+_Avoid_: 已停止（未确认时禁用的绝对表述）、强制成功
+
+**停止未确认 (STOP_UNCONFIRMED)**:
+停止未确认时的诊断结论，不是新的实例状态：元数据保持 RUNNING、保留 session owner 与根盘占用、记录 stage / pid / grace / exit code，UI 明示且禁止重启。
+_Avoid_: 新增产品状态、把 UNCONFIRMED 映射成 STOPPED、静默降级
+
 **冷恢复 (Cold Restore)**:
 App 重启后从持久化实例状态一键重建实例运行环境的恢复方式（非内存态热恢复）。
 _Avoid_: 热恢复（未做）、快照恢复（无快照）
