@@ -223,3 +223,11 @@ Standards / Spec 两轴审查发现的阻塞项已修复：
 - 分支 HEAD `fix(runtime)`: 修复审查发现的停止重试与清理边界
 
 本地分支已提交；当前环境没有 GitHub 凭据（`gh` 未安装，credential store 无 github.com），因此未推送、未创建 PR。未创建 tag、Release，未上传 APK，未修改签名材料；未自行合并。
+
+## 远端整合（2026-10-18）
+
+- 远端 `fix/p0-2-runtime-supervisor` 与 `integration/p0-2-runtime-supervisor` 的内容树完全一致（`git diff` 为空）；后者包含 CNB 原始 8 个提交（作者 `Kiepei <...noreply.cnb.cool>`，提交者 `cnb <cnb@cnb.local>`），GitHub 无法把它们归属到任何账户。
+- 整合采用已重写作者邮箱的 `fix/p0-2-runtime-supervisor` 历史（`2950605702@qq.com` 已连接 `Nyzeep` 账户），不把 CNB 原始提交带入 main；因此贡献图仍只记入 `Nyzeep`，不会新增两个未关联身份。
+- 合并后在 integration 分支上补充跨平台测试夹具：POSIX 继续用忽略 SIGTERM 的 `/bin/sh` 验证强制停止，Windows 用真实 JVM 子进程验证有界停止；固定端口重绑在 Windows 允许 2 秒有界重试，仍会在端口真正未释放时失败。
+- 验证：`./gradlew :runtime:contract:check :runtime:instance:check :runtime:engine-qemu:check :app:testDebugUnitTest --offline`，Windows/JDK 17 下 773 项 app 测试全部通过。
+- 上一节“未推送、未创建 PR”描述的是作者当时的执行环境；本节记录的整合与推送由后续会话完成。
