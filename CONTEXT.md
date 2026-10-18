@@ -161,7 +161,7 @@ _Avoid_: 过期的 source offer、只含清单的源码包、把参考项目当�
 _Avoid_: 进程状态（两回事）、会话
 
 **运行时进程监督者 (Runtime Process Supervisor)**:
-一个 QEMU 实例内唯一拥有 QEMU 进程、gvproxy 网关与 control / terminal / display / proxy socket 的宿主组件。所有停止请求都经过它的有界 stop；watcher、UI 与 session 池不是第二个 stop owner。
+一个采用 QEMU 执行策略的运行实例内唯一拥有 QEMU 进程、gvproxy 网关与 control / terminal / display / proxy socket 的宿主组件。所有停止请求都经过它的有界 stop；watcher、UI 与 session 池不是第二个 stop owner。
 _Avoid_: 进程管理器（过泛）、看门狗、第二个 watcher
 
 **停止确认 (Stop Confirmation)**:

@@ -72,48 +72,66 @@ public final class RuntimeProcessSupervisor {
     public StopResult stop(long graceMs) {
         long grace = Math.max(0L, graceMs);
         synchronized (lock) {
-            if (result != null) return result;
+            // Confirmed outcomes are final. UNCONFIRMED is retryable: a later call
+            // re-probes liveness so a process that died after the timeout can be
+            // confirmed and release its gateway instead of blocking restart forever.
+            if (result == StopResult.CONFIRMED || result == StopResult.ALREADY_STOPPED) return result;
 
             boolean processAlive = process.isAlive();
             boolean gatewayAlive = gateway != null && gateway.isAlive();
             if (!processAlive && !gatewayAlive) {
-                closeChannelsOnce();
-                result = StopResult.ALREADY_STOPPED;
-                diagnostics = new Diagnostics("already-stopped", process.pid(), grace, false, exitCode());
+                boolean channels = closeChannelsOnce();
+                boolean gatewayStopped = gateway == null || stopGateway(grace);
+                result = channels && gatewayStopped ? StopResult.ALREADY_STOPPED : StopResult.UNCONFIRMED;
+                diagnostics = new Diagnostics(channels && gatewayStopped ? "already-stopped" : "channels",
+                        process.pid(), grace, false, channels && gatewayStopped ? exitCode() : -1);
                 return result;
             }
 
-            boolean confirmed = true;
             boolean forced = false;
-            String stage = "destroy-wait";
             if (processAlive) {
-                process.destroy();
+                try {
+                    process.destroy();
+                } catch (RuntimeException failure) {
+                    return unconfirmed("destroy", grace, false);
+                }
                 if (!awaitExit(grace)) {
                     forced = true;
-                    stage = "force-wait";
-                    process.destroyForcibly();
+                    try {
+                        process.destroyForcibly();
+                    } catch (RuntimeException failure) {
+                        return unconfirmed("force", grace, true);
+                    }
                     if (!awaitExit(forceWaitMs)) {
                         closeChannelsOnce();
-                        result = StopResult.UNCONFIRMED;
-                        diagnostics = new Diagnostics(stage, process.pid(), grace, true, -1);
-                        return result;
+                        return unconfirmed("force-wait", grace, true);
                     }
                 }
             }
 
-            if (!closeChannelsOnce()) {
-                confirmed = false;
-                stage = "channels";
-            }
-            if (gatewayAlive && !gateway.stop(grace)) {
-                confirmed = false;
-                stage = "gateway";
-            }
-
-            result = confirmed ? StopResult.CONFIRMED : StopResult.UNCONFIRMED;
-            diagnostics = new Diagnostics(confirmed ? "confirmed" : stage,
-                    process.pid(), grace, forced, confirmed ? exitCode() : -1);
+            boolean channels = closeChannelsOnce();
+            boolean gatewayStopped = gateway == null || stopGateway(grace);
+            result = channels && gatewayStopped ? StopResult.CONFIRMED : StopResult.UNCONFIRMED;
+            int code = process.isAlive() ? -1 : exitCode();
+            diagnostics = new Diagnostics(channels && gatewayStopped ? "confirmed"
+                    : !channels ? "channels" : "gateway",
+                    process.pid(), grace, forced, code);
             return result;
+        }
+    }
+
+    private StopResult unconfirmed(String stage, long grace, boolean forced) {
+        result = StopResult.UNCONFIRMED;
+        diagnostics = new Diagnostics(stage, process.pid(), grace, forced, -1);
+        return result;
+    }
+
+    private boolean stopGateway(long grace) {
+        if (gateway == null) return true;
+        try {
+            return gateway.stop(grace);
+        } catch (RuntimeException failure) {
+            return false;
         }
     }
 
@@ -128,17 +146,11 @@ public final class RuntimeProcessSupervisor {
         }
     }
 
-    public StopResult stopResult() {
-        synchronized (lock) {
-            return result;
-        }
-    }
-
     private boolean closeChannelsOnce() {
         if (channelsClosed) return true;
-        channelsClosed = true;
         try {
             closeChannels.run();
+            channelsClosed = true;
             return true;
         } catch (RuntimeException failure) {
             return false;

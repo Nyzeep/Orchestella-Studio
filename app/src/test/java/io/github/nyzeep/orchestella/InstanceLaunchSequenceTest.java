@@ -35,12 +35,14 @@ public final class InstanceLaunchSequenceTest {
 
     private static final class UnconfirmedExitSession extends ExitSession implements RuntimeOwnedSession {
         int stopCalls;
+        volatile boolean confirmed;
         UnconfirmedExitSession() { super(0); }
         @Override public RuntimeProcessSupervisor.StopResult stopRuntime(long graceMs) {
             stopCalls++;
-            return RuntimeProcessSupervisor.StopResult.UNCONFIRMED;
+            return confirmed ? RuntimeProcessSupervisor.StopResult.CONFIRMED
+                    : RuntimeProcessSupervisor.StopResult.UNCONFIRMED;
         }
-        @Override public boolean isRuntimeAlive() { return true; }
+        @Override public boolean isRuntimeAlive() { return !confirmed; }
     }
 
     @Test
@@ -67,6 +69,7 @@ public final class InstanceLaunchSequenceTest {
             assertEquals("channels stay with the retained owner", 0, session.closes);
             assertEquals(1, session.stopCalls);
         } finally {
+            session.confirmed = true;
             ExecutionSessionRegistry.unregister(instance.id());
             InstanceLaunchGuard.end(instance.id());
         }

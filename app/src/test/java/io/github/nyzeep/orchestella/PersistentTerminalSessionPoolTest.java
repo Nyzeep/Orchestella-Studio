@@ -425,6 +425,27 @@ public final class PersistentTerminalSessionPoolTest {
         assertNull(pool.getSession("clear-b"));
     }
 
+    @Test
+    public void unregisterByIdStopsOwnedRuntime() throws Exception {
+        FakeOwnedSession session = new FakeOwnedSession();
+        pool.register("owned-by-id", session);
+        pool.unregister("owned-by-id");
+        assertEquals(1, session.stops.get());
+        assertNull(pool.getSession("owned-by-id"));
+    }
+
+    @Test
+    public void clearKeepsUnconfirmedOwner() throws Exception {
+        FakeOwnedSession unconfirmed = new FakeOwnedSession();
+        unconfirmed.stopResult = RuntimeProcessSupervisor.StopResult.UNCONFIRMED;
+        pool.register("clear-unconfirmed", unconfirmed);
+
+        pool.clear();
+
+        assertSame("an unconfirmed owner must survive clear()",
+                unconfirmed, pool.getSession("clear-unconfirmed"));
+    }
+
     private static final class FakeOwnedSession implements RuntimeOwnedSession {
         volatile RuntimeProcessSupervisor.StopResult stopResult =
                 RuntimeProcessSupervisor.StopResult.CONFIRMED;

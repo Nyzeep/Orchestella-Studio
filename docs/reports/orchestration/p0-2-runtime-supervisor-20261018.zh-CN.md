@@ -8,7 +8,7 @@ P0-2 的运行时所有权已收敛到单一 `RuntimeProcessSupervisor`：
 - `stop(graceMs)` 有界、幂等、线程安全，返回 `CONFIRMED` / `UNCONFIRMED` / `ALREADY_STOPPED`；
 - 只有确认停止后才写 STOPPED、才允许同端口重启；
 - 未确认停止时保持 RUNNING、保留 session owner 与根盘占用，并记录结构化诊断；
-- session 池替换/注销、启动失败清理、详情页 60 秒超时都不再绕过 supervisor。
+- session 池替换/注销、启动失败清理都走 supervisor；详情页 60 秒超时只显示“停止未确认”，不写 STOPPED、不重启。
 
 **验证范围**：纯 JVM fake、真实宿主 OS 子进程、项目单测。**真机未测**（当前环境无设备），20 次连续启停、真实 QEMU/gvproxy 固定端口重启标记为 `not-tested`。
 
@@ -46,7 +46,7 @@ P0-2 的运行时所有权已收敛到单一 `RuntimeProcessSupervisor`：
 
 - 在 `START_LOCK` 内串行
 - 同实例已有 LIVE：存活快速失败；已死先清理
-- 启动前检查固定端口；已被占用则报“旧网关未退出/端口被占用”，不再把 `portBound` 当作 readiness
+- 启动前预检固定端口；已被占用则快速失败；就绪循环仍要求 API 就绪且端口已绑定，但旧网关占用不会进入新网关的 readiness
 - 不同 live 实例不得共享同一 gvproxy 端口
 - 启动失败用同一有界 terminate helper 清理进程、API socket 与 LIVE
 
@@ -154,11 +154,12 @@ git diff --check
 | `:runtime:contract:check` | 通过，3 suites / 24 tests |
 | `:runtime:instance:check` | 通过，3 suites / 6 tests |
 | `:runtime:engine-qemu:check` | 通过，1 suite / 2 tests（新增 JUnit）+ 既有 main-based 任务 |
-| `:app:testDebugUnitTest` | 通过，100 suites / 764 tests / 0 failures / 0 errors / 0 skipped |
+| `:app:testDebugUnitTest` | 通过，100 suites / 773 tests / 0 failures / 0 errors / 0 skipped |
 | `:app:lintDebug` | 通过，0 Error/Fatal，753 Warning |
 | `git diff --check` | 通过 |
+| 新增 `.log` 证据文件检查 | 通过：本 diff 无新增 `.log` |
 
-基线 98 suites / 747 tests → 最终 100 suites / 764 tests（+17）。新增用例全部为纯 JVM/宿主进程测试。
+基线 98 suites / 747 tests → 最终 100 suites / 773 tests（+26）。新增用例全部为纯 JVM/宿主进程测试。
 
 ### 测试矩阵
 
@@ -167,9 +168,11 @@ git diff --check
 | fake 忽略 destroy，grace 后强制收敛 | `RuntimeProcessSupervisorTest.processThatIgnoresDestroyIsForcedAfterGrace` |
 | `waitFor(timeout)` 不无限阻塞 | `QemuProcessHandleSeamTest.realProcessExposesBoundedWaitForcibleStopAndPid`、`processThatIgnoresDestroyIsForcedAfterGrace` |
 | gateway stop 等待退出且幂等 | `NetworkGatewayDaemonTest.gatewayStopWaitsForExitThenRemovesLiveEntry` |
-| 旧网关存活阻止新 start；退出后可复用 | `NetworkGatewayDaemonTest.liveGatewayBlocksSlotAndDeadGatewayIsCleaned` |
-| 启动失败清理 | `QemuLaunchCleanupTest.failedLaunchWithoutSessionStopsProcessAndGateway`、`failedLaunchWithSessionUsesTheSupervisor`、`NetworkGatewayDaemonTest.boundedTerminationForcesAndIsIdempotent` |
+| 旧网关存活阻止新 start；退出后可复用 | `NetworkGatewayDaemonTest.liveGatewayBlocksSlotAndDeadGatewayIsCleaned`、`deadLiveEntryDoesNotReserveAnotherInstancePort`、`livePortOfAnotherInstanceIsReserved` |
+| 固定端口释放后可立即重绑 | `NetworkGatewayDaemonTest.confirmedStopReleasesTheFixedPortForImmediateReuse`（子 JVM 真实绑定） |
+| 启动失败清理 | `QemuLaunchCleanupTest.failedLaunchWithoutSessionStopsProcessAndGatewaySocket`、`failedLaunchForcesAProcessThatIgnoresDestroy`、`failedLaunchWithSessionUsesTheSupervisor`、`NetworkGatewayDaemonTest.boundedTerminationForcesAndIsIdempotent` |
 | 并发 stop 只执行一次 | `RuntimeProcessSupervisorTest.concurrentStopRunsOnceAndBothCallersSeeTheSameResult` |
+| 未确认 stop 可重试 | `RuntimeProcessSupervisorTest.unconfirmedStopIsRetryableAfterTheProcessDies`、`alreadyStoppedProcessStillCleansALiveGateway` |
 | 池替换/注销/clear 停止旧资源 | `PersistentTerminalSessionPoolTest.registerReplacementStopsPreviousRuntimeBeforePublishingNewOwner`、`registerRefusesReplacementWhenPreviousStopIsUnconfirmed`、`unregisterStopsOwnedRuntimeAndKeepsUnconfirmedOwner`、`clearStopsEveryConfirmedRuntimeOwner` |
 | 未确认 stop 不写 STOPPED | `InstanceLaunchSequenceTest.unconfirmedStopKeepsRunningMetadataOwnerAndGuard` |
 | 既有回归 | 全量 app / contract / instance / engine-qemu 套件 |
@@ -177,24 +180,34 @@ git diff --check
 ## 证据边界
 
 - **fake 进程**：supervisor 的停止顺序、超时、幂等、并发、gateway 失败、通道关闭。
-- **真实宿主进程**：engine-qemu seam 用 `/bin/sh sleep` 验证 `waitFor(timeout)`、`destroyForcibly`、`pid`；gateway handle 用忽略 SIGTERM 的 `/bin/sh` 验证强制收敛与 LIVE 释放。它们证明 Java 进程语义，不等同于 Android 上的 QEMU/gvproxy。
-- **未验证**：真实 QEMU + gvproxy 在设备上的停止时序、固定端口真实绑定/释放、Android `Process.destroyForcibly`/OEM 后台限制、20 次连续启停、真实 UI 超时路径。
+- **真实宿主进程**：engine-qemu seam 用 `/bin/sh sleep` 验证 `waitFor(timeout)`、`destroyForcibly`、`pid`；gateway handle 用忽略 SIGTERM 的 `/bin/sh` 验证强制收敛与 LIVE 释放；fixed-port 用例用子 JVM `PortHolder` 真实绑定 127.0.0.1 端口，stop 后立即重绑。它们证明 Java/OS 进程与端口语义，不等同于 Android 上的 QEMU/gvproxy。
+- **未验证**：真实 QEMU + gvproxy 在设备上的停止时序、真实 gvproxy 固定端口绑定/释放、Android `Process.destroyForcibly`/OEM 后台限制、20 次连续启停、真实 UI 超时路径。
 
 ## 未运行 / 需真机
 
 - 同一 QA 实例连续启停 20 次、孤儿进程计数：`not-tested`（无设备）。
-- 强制停止后真实固定端口立即重启：`not-tested`（无设备；JVM 只验证了槽位与进程退出）。
+- 真实 gvproxy 强制停止后固定端口立即重启：`not-tested`（无设备）；JVM 已用子 JVM `PortHolder` 验证进程退出后同一端口可立即重绑。
 - 详情页真实 60 秒等待与 UI 明示：`not-tested`（无设备/无 ActivityScenario）。
 - `ProcessHandle.pid()` 在 Android 上返回 -1（android.jar 的 `java.lang.Process` 不暴露 `pid()`）；真机诊断只有 stage/forced/grace。
 
 ## 剩余风险
 
 1. **端口误判**：启动前的 `portBound` 探测会把任何占用固定端口的进程都视为旧网关；会快速失败，但不会自动重试。
-2. **中断保守性**：gateway stop 在等待阶段被中断时可能返回未确认，即使进程随后已死；LIVE 条目会保留到下一次 start 清理。
+2. **中断保守性**：gateway stop 在等待阶段被中断时首次可能返回未确认；后续 retry 会在进程已死时确认并清理 LIVE/socket。
 3. **通道关闭耗时**：`closeChannels` 会为每个 service forward 调用 gvproxy API（单次 1.5s 超时）；大量转发时可能超出 grace，但仍有界。
 4. **两个观察者**：watcher 与 `awaitGuestExit` 仍都等待进程，但都通过幂等 supervisor stop，不再是两个 stop owner。后续可合并为一个观察者。
 5. **UI 超时策略**：当前按用户确认的方案只显示“停止未确认”并保留实例，不自动升级强杀。
 6. **未确认时的 owner 保留**：`clear()` 遇到未确认 holder 会保留；这是有意的盘/端口保护，但会阻止同一进程内再次注册该实例。
+
+## 两轴审查
+
+Standards / Spec 两轴审查发现的阻塞项已修复：
+
+- `UNCONFIRMED` stop 改为可重试：进程在超时后死亡时，下一次 stop 会确认并清理 LIVE/socket。
+- `ALREADY_STOPPED` 也会调用 gateway.stop，确保死网关不留下 LIVE 条目与 API socket。
+- 已死 LIVE 条目不再占用其他实例的固定端口。
+- 固定端口用例改为真实子 JVM `PortHolder` 绑定 127.0.0.1，stop 后立即重绑。
+- ADR/spec 的锁顺序改为实际顺序（session 池 → supervisor → gateway stopLock）；UI 文案改用“实例/运行时”，不再使用产品语言禁用的“虚拟机”。
 
 ## 提交
 
@@ -206,6 +219,7 @@ git diff --check
 - `e4dd536` feat(runtime): 引入 RuntimeProcessSupervisor 统一运行时所有权
 - `99020e6` feat(lifecycle): 停止确认后才写 STOPPED，未确认保留运行态
 - `5661049` feat(session): 池替换与注销先停止旧运行时
-- 本轮报告与 T6 清理提交见分支最新 HEAD
+- `82dc275` test(runtime): 覆盖启动失败清理并补充 P0-2 报告
+- 分支 HEAD `fix(runtime)`: 修复审查发现的停止重试与清理边界
 
-未创建 tag、Release，未上传 APK，未修改签名材料；未自行合并。
+本地分支已提交；当前环境没有 GitHub 凭据（`gh` 未安装，credential store 无 github.com），因此未推送、未创建 PR。未创建 tag、Release，未上传 APK，未修改签名材料；未自行合并。
