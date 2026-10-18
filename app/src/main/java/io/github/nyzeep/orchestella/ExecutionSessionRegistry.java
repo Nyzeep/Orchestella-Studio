@@ -66,6 +66,13 @@ public final class ExecutionSessionRegistry {
         PersistentTerminalSessionPool.getInstance().register(instanceId, session);
     }
 
+    public static void register(
+            String instanceId,
+            ExecutionSession session,
+            PersistentTerminalSessionPool.ProvisioningListener provisioningListener) throws IOException {
+        PersistentTerminalSessionPool.getInstance().register(instanceId, session, provisioningListener);
+    }
+
     /** Null when no live session exists for the id. */
     public static ExecutionSession get(String instanceId) {
         return PersistentTerminalSessionPool.getInstance().getSession(instanceId);
