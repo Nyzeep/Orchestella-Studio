@@ -8,6 +8,8 @@ Orchestella Studio（曾用工作名 DroidLayer）：无需 Root 的 Android 原
 
 **文档跟踪**：`/docs/` 仍默认被 `.gitignore` 忽略；经审查的文档必须显式 `git add -f`，不要整体强制添加。2026-10-18 优化方案与两份 2026-10-15 支撑研究已显式纳入版本控制；历史阶段报告已移入 `docs/reports/archive/`，旧交接已移入 `docs/agent-handoff/archive/`。
 
+**版本与构建通道**：发布版 / 内部开发版 / 隔离 QA 版的版本号、applicationId、签名与分发边界以 `docs/standards/VERSIONING.md` 第 5 节为硬约束；合并到 `main` 不等于发布，不自动递增版本号。
+
 **历史阶段记录**：v0.1.5-preview 的“全链路测试通过”只说明当时所列范围，不能作为当前版本或后续硬件能力的证明。下列旧 platform map/default tracker 指针保留历史用途，本轮任务以明确指定的 avf-shizuku effort 为准。
 
 - 治理规范与防御性硬约束：`docs/agent-handoff/DEFENSIVE_CONSTRAINTS/README.md` 及其目录内全部 policy；该目录规则是所有 Agent 的硬约束。
