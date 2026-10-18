@@ -26,6 +26,18 @@ public final class PersistentTerminalSessionPool {
 
     public enum StopIntent { NONE, GRACEFUL, FORCE }
 
+    /** Receives the one-time guest Provisioning marker observed on a session's output stream. */
+    @FunctionalInterface
+    public interface ProvisioningListener {
+        /**
+         * Called once on the pump thread after the guest marker was fully observed.
+         *
+         * @param instanceId the owning instance
+         * @param markerVersion the accepted marker version
+         */
+        void onProvisioningComplete(String instanceId, int markerVersion);
+    }
+
     private static final PersistentTerminalSessionPool INSTANCE = new PersistentTerminalSessionPool();
     private static final long RUNTIME_STOP_GRACE_MS = 2000L;
 
@@ -50,6 +62,8 @@ public final class PersistentTerminalSessionPool {
         private final ReentrantReadWriteLock rwLock = new ReentrantReadWriteLock();
         private final Thread pumpThread;
         private final Object endListenerLock = new Object();
+        private final ProvisioningListener provisioningListener;
+        private final AtomicBoolean provisioningNotified = new AtomicBoolean(false);
         private Consumer<String> sessionEndListener;
         private boolean streamEndDelivered;
         private boolean ownerEndDelivered;
@@ -59,8 +73,17 @@ public final class PersistentTerminalSessionPool {
         }
 
         public SessionHolder(String instanceId, ExecutionSession session, int ringBufferCapacity) {
+            this(instanceId, session, ringBufferCapacity, null);
+        }
+
+        public SessionHolder(
+                String instanceId,
+                ExecutionSession session,
+                int ringBufferCapacity,
+                ProvisioningListener provisioningListener) {
             this.instanceId = Objects.requireNonNull(instanceId, "instanceId");
             this.session = Objects.requireNonNull(session, "session");
+            this.provisioningListener = provisioningListener;
             String launching = InstanceLaunchGuard.generation(instanceId);
             this.generation = launching != null ? launching : java.util.UUID.randomUUID().toString();
             this.ringBuffer = new TerminalRingBuffer(ringBufferCapacity);
@@ -109,15 +132,22 @@ public final class PersistentTerminalSessionPool {
         }
 
         private void pumpLoop() {
+            ProvisioningSignal provisioningSignal = new ProvisioningSignal();
+            boolean reachedEof = false;
             try {
                 // One decoder owns the whole stream: read boundaries may split a UTF-8
                 // character (including CJK and supplementary emoji) at any byte.
                 InputStreamReader in = new InputStreamReader(session.terminalOutput(), StandardCharsets.UTF_8);
                 char[] buffer = new char[4096];
-                int count;
-                while (!closed.get() && (count = in.read(buffer)) >= 0) {
+                while (!closed.get()) {
+                    int count = in.read(buffer);
+                    if (count < 0) {
+                        reachedEof = true;
+                        break;
+                    }
                     if (count == 0) continue;
                     String chunk = new String(buffer, 0, count);
+                    boolean provisioned = provisioningSignal.accept(chunk);
                     // Append and deliver under one write lock so attach() snapshots can
                     // never overlap delivery: a chunk is either in the snapshot or handed
                     // to the listener, never both and never neither.
@@ -134,11 +164,33 @@ public final class PersistentTerminalSessionPool {
                     } finally {
                         rwLock.writeLock().unlock();
                     }
+                    // Persisting evidence touches the filesystem; never do that while the
+                    // terminal write lock is held.
+                    if (provisioned) notifyProvisioning(ProvisioningSignal.MARKER_VERSION);
                 }
             } catch (Exception ignored) {
             } finally {
+                // Only a real end of stream can serve as the marker's trailing delimiter;
+                // a host-side close is not evidence that the guest finished Provisioning.
+                if (reachedEof && provisioningSignal.finish()) {
+                    notifyProvisioning(ProvisioningSignal.MARKER_VERSION);
+                }
                 pumpFinished.set(true);
                 notifySessionEnded();
+            }
+        }
+
+        private void notifyProvisioning(int markerVersion) {
+            if (!provisioningNotified.compareAndSet(false, true)) {
+                return;
+            }
+            ProvisioningListener listener = provisioningListener;
+            if (listener == null) {
+                return;
+            }
+            try {
+                listener.onProvisioningComplete(instanceId, markerVersion);
+            } catch (Exception ignored) {
             }
         }
 
@@ -236,6 +288,13 @@ public final class PersistentTerminalSessionPool {
     public PersistentTerminalSessionPool() {}
 
     public synchronized SessionHolder register(String instanceId, ExecutionSession session) throws IOException {
+        return register(instanceId, session, null);
+    }
+
+    public synchronized SessionHolder register(
+            String instanceId,
+            ExecutionSession session,
+            ProvisioningListener provisioningListener) throws IOException {
         Objects.requireNonNull(instanceId, "instanceId");
         Objects.requireNonNull(session, "session");
         SessionHolder existing = holders.get(instanceId);
@@ -249,7 +308,8 @@ public final class PersistentTerminalSessionPool {
             existing.close();
             holders.remove(instanceId, existing);
         }
-        SessionHolder holder = new SessionHolder(instanceId, session);
+        SessionHolder holder = new SessionHolder(instanceId, session,
+                TerminalRingBuffer.DEFAULT_MAX_CAPACITY, provisioningListener);
         holders.put(instanceId, holder);
         return holder;
     }
