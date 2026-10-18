@@ -47,7 +47,47 @@ public final class QemuInstanceLauncher {
         private io.github.nyzeep.orchestella.runtime.network.BridgeProxyGateway proxyGateway;
         private final QemuWaylandChannel waylandChannel;
         private final AtomicBoolean isBridgeServing = new AtomicBoolean(false);
-        private final java.util.Set<ExecutionSession.ServiceForward> serviceForwards = new java.util.concurrent.CopyOnWriteArraySet<>();
+        private final java.util.Set<SessionServiceForward> serviceForwards =
+                new java.util.concurrent.CopyOnWriteArraySet<>();
+
+        /**
+         * One live forward. {@link #close()} keeps the API contract for a single
+         * user-visible forward (it must unexpose); {@link #releaseForStop()} is the
+         * stop fast path, where the gateway process exit closes the listener and a
+         * remote round-trip per forward would only burn the stop deadline.
+         */
+        private final class SessionServiceForward implements ExecutionSession.ServiceForward {
+            private final io.github.nyzeep.orchestella.runtime.contract.PortForwardingRule rule;
+            private final int hostPort;
+            private final PortForwardingPresenter.LiveEngine engine;
+            private final AtomicBoolean active = new AtomicBoolean(true);
+
+            SessionServiceForward(io.github.nyzeep.orchestella.runtime.contract.PortForwardingRule rule,
+                    int hostPort, PortForwardingPresenter.LiveEngine engine) {
+                this.rule = rule;
+                this.hostPort = hostPort;
+                this.engine = engine;
+            }
+
+            @Override public int hostPort() { return hostPort; }
+
+            @Override public boolean isActive() {
+                return active.get() && engine.isRunning() && engine.isApplied(rule);
+            }
+
+            @Override public void close() throws IOException {
+                if (!active.get()) return;
+                if (engine.isRunning()) engine.removeRule(rule);
+                active.set(false);
+                serviceForwards.remove(this);
+            }
+
+            /** Local release only: the supervisor stops the gateway right after this. */
+            void releaseForStop() {
+                active.set(false);
+                serviceForwards.remove(this);
+            }
+        }
 
         Session(String controlSocketName, String terminalSocketName,
                 QemuProcessLauncher.ProcessHandle handle) {
@@ -169,18 +209,7 @@ public final class QemuInstanceLauncher {
                     io.github.nyzeep.orchestella.runtime.contract.PortForwardingRule.defaultRule(
                             java.util.UUID.randomUUID().toString(),
                             io.github.nyzeep.orchestella.runtime.contract.Protocol.TCP, port, guestPort);
-            ServiceForward forward = new ServiceForward() {
-                private final AtomicBoolean active = new AtomicBoolean(true);
-                @Override public int hostPort() { return port; }
-                @Override public boolean isActive() { return active.get() && engine.isRunning() && engine.isApplied(rule); }
-                @Override public void close() throws IOException {
-                    if (active.get()) {
-                        if (engine.isRunning()) engine.removeRule(rule);
-                        active.set(false);
-                        serviceForwards.remove(this);
-                    }
-                }
-            };
+            SessionServiceForward forward = new SessionServiceForward(rule, port, engine);
             serviceForwards.add(forward);
             try {
                 engine.addRule(rule);
@@ -193,6 +222,11 @@ public final class QemuInstanceLauncher {
                 }
                 throw failure;
             }
+        }
+
+        /** Package-visible for stop-path tests: forwards still tracked by this session. */
+        int trackedServiceForwardCount() {
+            return serviceForwards.size();
         }
 
         private void startProxyGateway() {
@@ -287,9 +321,13 @@ public final class QemuInstanceLauncher {
         /** Closes host channels exactly once; the supervisor owns when this runs. */
         private void closeChannels() {
             closing = true;
-            for (ServiceForward forward : serviceForwards) {
-                try { forward.close(); } catch (IOException ignored) { }
+            // Stop fast path: release forwards locally. The gvproxy process is stopped
+            // immediately afterwards and its exit closes every listener; issuing
+            // refresh/unexpose/refresh per forward here would cost up to 4.5 s each.
+            for (SessionServiceForward forward : serviceForwards) {
+                forward.releaseForStop();
             }
+            serviceForwards.clear();
             if (waylandChannel != null) {
                 waylandChannel.close();
             }

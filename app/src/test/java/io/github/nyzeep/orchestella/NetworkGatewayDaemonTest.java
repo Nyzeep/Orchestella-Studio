@@ -44,6 +44,35 @@ public final class NetworkGatewayDaemonTest {
     }
 
     @Test(timeout = 10000)
+    public void confirmedStopMakesForwardingUnavailableAndStaysIdempotent() throws Exception {
+        String id = "gw-forward-off";
+        Process process = TestProcesses.longRunning();
+        FakeApi api = new FakeApi();
+        NetworkGatewayDaemon.ForwardingEngine engine =
+                new NetworkGatewayDaemon.ForwardingEngine(api, process::isAlive);
+        NetworkGatewayDaemon.Running running = new NetworkGatewayDaemon.Running(
+                "/tmp/net.yaml", 24197, process, id,
+                temporaryFolder.newFile("forward-off.sock"), engine);
+        NetworkGatewayDaemon.LIVE.put(id, running);
+        try {
+            PortForwardingRule rule = rule("svc", Protocol.TCP, 2222, 18080, false);
+            engine.addRule(rule);
+            assertTrue(engine.isApplied(rule));
+
+            assertTrue(running.stop(200));
+            assertFalse("a confirmed stop must make the forwarding engine unavailable",
+                    engine.isRunning());
+            assertNull("no forwarding engine may remain reachable after a confirmed stop",
+                    NetworkGatewayDaemon.forwardingEngine(id));
+            assertTrue("a repeated stop keeps the confirmed result", running.stop(0));
+            assertTrue(running.stop(200));
+        } finally {
+            process.destroyForcibly();
+            NetworkGatewayDaemon.LIVE.remove(id);
+        }
+    }
+
+    @Test(timeout = 10000)
     public void liveGatewayBlocksSlotAndDeadGatewayIsCleaned() throws Exception {
         String id = "gw-slot";
         Process process = TestProcesses.longRunning();
