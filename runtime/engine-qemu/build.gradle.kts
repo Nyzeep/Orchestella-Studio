@@ -57,6 +57,11 @@ tasks.register<JavaExec>("qemuGpuLaunchSpecTest") {
     mainClass.set("io.github.nyzeep.orchestella.runtime.engineqemu.QemuGpuLaunchSpecTest")
 }
 
+tasks.register<JavaExec>("qemuTuningTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.engineqemu.QemuTuningTest")
+}
+
 tasks.register<JavaExec>("virglMemoryQuotaTest") {
     classpath = sourceSets["test"].runtimeClasspath
     mainClass.set("io.github.nyzeep.orchestella.runtime.engineqemu.VirglMemoryQuotaTest")
@@ -82,6 +87,7 @@ tasks.named("check") {
         "embeddedProvisionInputTest",
         "qemuLaunchSpecTest",
         "qemuGpuLaunchSpecTest",
+        "qemuTuningTest",
         "virglMemoryQuotaTest",
         "qemuHostfwdContractTest",
     )
