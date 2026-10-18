@@ -4,6 +4,12 @@
 - 执行 session / 模型 / thinking：续跑 T6 决策门 / DeepSeek-V4.1-Flash / 未记录
 - 分支：未创建　基线 commit：`91510b2`
 
+## 0. 背景 / scope / 边界检查
+
+- 背景 / scope：条件票；只有在 T5 实现并合入后才启动 guest 侧只读输入盘消费。
+- 越界检查：未启动、未创建分支、未改 guest 或宿主代码；属于依赖阻塞的 `deferred`。
+- Architecture Change Policy：未触发。
+
 ## 1. 任务目标
 
 guest init 优先从第二个 virtio-blk 只读设备读取并校验 rootfs，embedded-input 保留兜底；仅在 T5 未 `deferred` 时启动。

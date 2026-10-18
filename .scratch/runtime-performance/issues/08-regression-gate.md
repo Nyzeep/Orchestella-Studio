@@ -30,10 +30,11 @@ Blocked by: T3
 ## Comments
 
 - 实施 commit：`32784cc`（`perf/t8-regression-gate`，基线 `7e081a8`，含 T3）。
-- 回归门：新增 `ProvisionedLaunchRegressionTest`（2 tests）。已装配路径断言 opener 0 次、读取 0 B、无 rootfs entry、segment ≤ 64 KiB、timeline `rootfsBytes:0`；同一 256 KiB 不可压缩 fixture 的全量路径断言打开 1 次、含 rootfs entry、segment > 64 KiB。
-- 红/绿：临时把 `credentialsOnly` 强制为 false 后测试红（`expected:<0> but was:<1>`）；恢复后 2 tests / 0 failures。证据：`docs/reports/tickets/runtime-performance-08/red-green-evidence.md`。
+- 回归门：新增 `ProvisionedLaunchRegressionTest`（3 tests）。已装配路径断言 opener 0 次、读取 0 B、无 rootfs entry、segment ≤ 256 KiB、timeline `rootfsBytes:0`；同一 256 KiB 不可压缩 fixture 的全量路径断言打开 1 次、含 rootfs entry、segment > 256 KiB；另用真实 catalog manifest + `recordProvisioning` 覆盖 `QemuInstanceLauncher.credentialsOnlyLaunch` 的 evidence 决策。
+- 红/绿：临时把 bootstrapper 的 `credentialsOnly` 强制为 false 后红（3 tests / 2 failed，含 `expected:<0> but was:<1>`）；临时把 launcher 决策强制为 false 后红（3 tests / 1 failed）；恢复后 3 tests / 0 failures。证据：`docs/reports/tickets/runtime-performance-08/red-green-evidence.md`。
 - CI：`.github/workflows/ci.yml` 新增 `Run provisioned launch regression gate`；全量步骤扩展为 `:runtime:contract:check :runtime:instance:check :runtime:engine-qemu:check :app:testDebugUnitTest`。PR 失败会阻塞合并。
-- 测试：`./gradlew :app:testDebugUnitTest` 105 suites / 822 tests / 0 failures / 0 skipped；`git diff --check` 通过。
+- 测试：`./gradlew :app:testDebugUnitTest` 105 suites / 823 tests / 0 failures / 0 skipped；`git diff --check` 通过。
 - 未测：GitHub Actions 实际运行（未 push / 未开 PR）、真实 QEMU/gvproxy、guest marker 端到端、真实设备。
-- 覆盖边界：只覆盖 launch 的零 rootfs 契约与 initrd 上限，不覆盖停止路径或 guest 消费。
+- 覆盖边界：覆盖 launch 的零 rootfs 契约、initrd 上限与 launcher evidence 决策，不覆盖停止路径或 guest 消费。
+- 审查修复（`e5876ba`）：新增 launcher decision 用例，防止只回退 launcher 时测试仍绿；上限同步为 256 KiB。
 - 生产代码：未修改；红跑临时改动已恢复。
