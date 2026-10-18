@@ -638,11 +638,18 @@ public final class InstanceLifecycle {
                 }
                 ProvisioningEvidence provisioningEvidence = null;
                 String markerVersionText = properties.getProperty(KEY_PROVISIONING_MARKER_VERSION);
+                String recordedAtText = properties.getProperty(KEY_PROVISIONING_RECORDED_AT);
                 if (markerVersionText != null) {
-                    provisioningEvidence = new ProvisioningEvidence(
-                            Integer.parseInt(markerVersionText),
-                            properties.getProperty(KEY_PROVISIONING_ROOTFS_SHA256),
-                            Long.parseLong(properties.getProperty(KEY_PROVISIONING_RECORDED_AT, "0")));
+                    // Parse the version first so malformed metadata still fails closed;
+                    // a valid version without its recording time is incomplete evidence
+                    // and keeps the conservative full-provisioning path.
+                    int markerVersion = Integer.parseInt(markerVersionText);
+                    if (recordedAtText != null) {
+                        provisioningEvidence = new ProvisioningEvidence(
+                                markerVersion,
+                                properties.getProperty(KEY_PROVISIONING_ROOTFS_SHA256),
+                                Long.parseLong(recordedAtText));
+                    }
                 }
                 return new Instance(
                         required(properties, "id"),

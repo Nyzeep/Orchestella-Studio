@@ -15,7 +15,9 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.Rule;
 import org.junit.Test;
@@ -186,6 +188,51 @@ public final class LaunchTimelineTest {
         assertFalse(line.toLowerCase(java.util.Locale.ROOT).contains("token"));
         assertFalse(line.contains("qemu-system"));
         assertFalse(line.contains("-netdev"));
+    }
+
+    @Test
+    public void recordSchemaIsAnAllowlistWithNoCredentialFields() {
+        FakeClock clock = new FakeClock(Instant.parse("2026-10-18T08:00:00Z"));
+        RecordingSink sink = new RecordingSink();
+        LaunchTimeline timeline = new LaunchTimeline(INSTANCE_ID, DISTRO_ID, 2048, 2, clock, sink);
+
+        timeline.mark(LaunchTimeline.Stage.LAUNCH_START);
+        timeline.markInitramfsBuilt(4096L);
+        timeline.markStopConfirmed(StopResult.CONFIRMED);
+        String line = timeline.toJsonLine();
+
+        assertEquals(Set.of("schema", "instanceId", "distroId", "guestMemoryMb", "vcpuCount",
+                "stages", "rootfsBytes", "stopResult", "diagnostics"), topLevelKeys(line));
+    }
+
+    private static Set<String> topLevelKeys(String line) {
+        Set<String> keys = new HashSet<>();
+        int depth = 0;
+        boolean inString = false;
+        boolean escaped = false;
+        for (int i = 0; i < line.length(); i++) {
+            char character = line.charAt(i);
+            if (inString) {
+                if (escaped) {
+                    escaped = false;
+                } else if (character == '\\') {
+                    escaped = true;
+                } else if (character == '"') {
+                    inString = false;
+                    if (depth == 1 && i + 1 < line.length() && line.charAt(i + 1) == ':') {
+                        int start = line.lastIndexOf('"', i - 1);
+                        if (start >= 0) keys.add(line.substring(start + 1, i));
+                    }
+                }
+            } else if (character == '"') {
+                inString = true;
+            } else if (character == '{') {
+                depth++;
+            } else if (character == '}') {
+                depth--;
+            }
+        }
+        return keys;
     }
 
     @Test

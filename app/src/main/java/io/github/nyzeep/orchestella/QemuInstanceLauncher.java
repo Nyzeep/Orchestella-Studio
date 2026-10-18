@@ -87,9 +87,14 @@ public final class QemuInstanceLauncher {
                 serviceForwards.remove(this);
             }
 
-            /** Local release only: the supervisor stops the gateway right after this. */
+            /**
+             * Stops tracking the forward without pretending it is released: the
+             * listener remains owned by gvproxy until the gateway process exits.
+             * {@link #isActive()} already checks gateway liveness, so an
+             * UNCONFIRMED stop keeps reporting the truth instead of a false
+             * "inactive" state.
+             */
             void releaseForStop() {
-                active.set(false);
                 serviceForwards.remove(this);
             }
         }
@@ -523,11 +528,6 @@ public final class QemuInstanceLauncher {
     /** Blocking bootstrap+launch; call on a worker thread. */
     public ExecutionSession launch(InstanceStrategyLauncher.LaunchParameters parameters)
             throws IOException, InterruptedException {
-        RuntimeArtifactManifest manifest;
-        try (InputStream in = PackagedAssetStreams.openAsset(context, RuntimeArtifactManifest.SCHEMA_FILE_NAME)) {
-            manifest = RuntimeArtifactManifest.parse(in);
-        }
-
         VmHardwareConfig config = parameters.hardwareConfig != null
                 ? parameters.hardwareConfig
                 : VmHardwareConfig.defaultConfig();
@@ -535,6 +535,16 @@ public final class QemuInstanceLauncher {
                 parameters.instanceId, resolveDistroId(parameters.rootfsFileName),
                 config.ramMegabytes(), config.cpuCores());
         timeline.mark(LaunchTimeline.Stage.LAUNCH_START);
+
+        RuntimeArtifactManifest manifest;
+        try (InputStream in = PackagedAssetStreams.openAsset(context, RuntimeArtifactManifest.SCHEMA_FILE_NAME)) {
+            manifest = RuntimeArtifactManifest.parse(in);
+        } catch (IOException | RuntimeException | Error failure) {
+            // A launch attempt that cannot even read its manifest must still leave
+            // one honest record; it never reaches asset verification.
+            timeline.finish();
+            throw failure;
+        }
 
         QemuRuntimeBootstrapper bootstrapper = new QemuRuntimeBootstrapper(manifest,
                 name -> {
