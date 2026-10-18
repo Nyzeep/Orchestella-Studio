@@ -22,7 +22,7 @@ public final class NetworkGatewayDaemonTest {
     @Test(timeout = 15000)
     public void gatewayStopWaitsForExitThenRemovesLiveEntry() throws Exception {
         String id = "gw-stop";
-        Process process = ignoreTermProcess();
+        Process process = TestProcesses.longRunning();
         File apiSocket = temporaryFolder.newFile("api.sock");
         NetworkGatewayDaemon.ForwardingEngine engine = new NetworkGatewayDaemon.ForwardingEngine(
                 (method, endpoint, body) -> "[]", process::isAlive);
@@ -31,7 +31,7 @@ public final class NetworkGatewayDaemonTest {
         NetworkGatewayDaemon.LIVE.put(id, running);
         try {
             assertTrue(running.isAlive());
-            assertTrue("stop must force a process that ignores SIGTERM", running.stop(200));
+            assertTrue("stop must confirm the gateway process exited", running.stop(200));
             assertFalse(process.isAlive());
             assertNull("confirmed stop must release the live entry",
                     NetworkGatewayDaemon.forwardingEngine(id));
@@ -46,7 +46,7 @@ public final class NetworkGatewayDaemonTest {
     @Test(timeout = 10000)
     public void liveGatewayBlocksSlotAndDeadGatewayIsCleaned() throws Exception {
         String id = "gw-slot";
-        Process process = ignoreTermProcess();
+        Process process = TestProcesses.longRunning();
         NetworkGatewayDaemon.Running running = new NetworkGatewayDaemon.Running(
                 "/tmp/net.yaml", 24198, process, id,
                 temporaryFolder.newFile("slot.sock"),
@@ -73,7 +73,7 @@ public final class NetworkGatewayDaemonTest {
         String id = "gw-port";
         int port = NetworkGatewayDaemon.listenPortFor(id);
         Process owner = new ProcessBuilder(
-                java.nio.file.Paths.get(System.getProperty("java.home"), "bin", "java").toString(),
+                TestProcesses.javaExecutable(),
                 "-cp", System.getProperty("java.class.path"), PortHolder.class.getName(),
                 String.valueOf(port)).redirectErrorStream(true).start();
         try {
@@ -86,10 +86,24 @@ public final class NetworkGatewayDaemonTest {
             NetworkGatewayDaemon.LIVE.put(id, running);
             try {
                 assertTrue(running.stop(500));
-                try (java.net.ServerSocket rebind = new java.net.ServerSocket()) {
-                    rebind.bind(new java.net.InetSocketAddress("127.0.0.1", port));
-                    assertTrue("a confirmed stop must release the fixed port", rebind.isBound());
+                // Windows can take a few milliseconds to reap the dead listener; a
+                // bounded retry still fails if the port is genuinely still owned.
+                long deadline = System.nanoTime()
+                        + java.util.concurrent.TimeUnit.SECONDS.toNanos(2);
+                java.net.BindException lastBindFailure = null;
+                while (System.nanoTime() < deadline) {
+                    try (java.net.ServerSocket rebind = new java.net.ServerSocket()) {
+                        rebind.setReuseAddress(true);
+                        rebind.bind(new java.net.InetSocketAddress("127.0.0.1", port));
+                        assertTrue("a confirmed stop must release the fixed port", rebind.isBound());
+                        return;
+                    } catch (java.net.BindException busy) {
+                        lastBindFailure = busy;
+                        Thread.sleep(25L);
+                    }
                 }
+                throw new AssertionError("fixed port was not reusable after confirmed stop",
+                        lastBindFailure);
             } finally {
                 NetworkGatewayDaemon.LIVE.remove(id);
             }
@@ -102,7 +116,7 @@ public final class NetworkGatewayDaemonTest {
     public void deadLiveEntryDoesNotReserveAnotherInstancePort() throws Exception {
         String deadId = "gw-dead-entry";
         int port = NetworkGatewayDaemon.listenPortFor(deadId);
-        Process dead = new ProcessBuilder("/bin/sh", "-c", "exit 0").start();
+        Process dead = TestProcesses.exitImmediately();
         assertTrue(dead.waitFor(2, java.util.concurrent.TimeUnit.SECONDS));
         NetworkGatewayDaemon.Running running = new NetworkGatewayDaemon.Running(
                 "/tmp/net.yaml", port, dead, deadId, temporaryFolder.newFile("dead.sock"),
@@ -122,7 +136,7 @@ public final class NetworkGatewayDaemonTest {
     public void livePortOfAnotherInstanceIsReserved() throws Exception {
         String id = "gw-live-port";
         int port = NetworkGatewayDaemon.listenPortFor(id);
-        Process live = ignoreTermProcess();
+        Process live = TestProcesses.longRunning();
         NetworkGatewayDaemon.Running running = new NetworkGatewayDaemon.Running(
                 "/tmp/net.yaml", port, live, id, temporaryFolder.newFile("live.sock"),
                 new NetworkGatewayDaemon.ForwardingEngine((method, endpoint, body) -> "[]",
@@ -138,14 +152,10 @@ public final class NetworkGatewayDaemonTest {
 
     @Test(timeout = 10000)
     public void boundedTerminationForcesAndIsIdempotent() throws Exception {
-        Process process = ignoreTermProcess();
+        Process process = TestProcesses.longRunning();
         assertTrue(NetworkGatewayDaemon.terminateProcess(process, 100, 2000));
         assertFalse(process.isAlive());
         assertTrue(NetworkGatewayDaemon.terminateProcess(process, 0, 0));
-    }
-
-    private static Process ignoreTermProcess() throws IOException {
-        return new ProcessBuilder("/bin/sh", "-c", "trap '' TERM; read x").start();
     }
 
     @Test public void guestDnsPrefersFirstActiveVpnIpv4OverPublicFallback() {

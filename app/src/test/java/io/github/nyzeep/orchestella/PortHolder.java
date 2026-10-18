@@ -7,6 +7,7 @@ import java.net.ServerSocket;
 public final class PortHolder {
     public static void main(String[] args) throws Exception {
         try (ServerSocket socket = new ServerSocket()) {
+            socket.setReuseAddress(true);
             socket.bind(new InetSocketAddress("127.0.0.1", Integer.parseInt(args[0])));
             System.out.println("BOUND");
             System.out.flush();

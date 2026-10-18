@@ -3,6 +3,8 @@ package io.github.nyzeep.orchestella.runtime.engineqemu;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import java.nio.file.Paths;
+import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 import org.junit.Test;
 
@@ -12,8 +14,7 @@ public final class QemuProcessHandleSeamTest {
     @Test(timeout = 15_000)
     public void realProcessExposesBoundedWaitForcibleStopAndPid() throws Exception {
         QemuProcessLauncher launcher = new QemuProcessLauncher();
-        QemuProcessLauncher.ProcessHandle handle = launcher.launch(
-                new String[]{"/bin/sh", "-c", "sleep 30"}).handle();
+        QemuProcessLauncher.ProcessHandle handle = launcher.launch(sleeperSpec()).handle();
         try {
             assertTrue("fresh process must be alive", handle.isAlive());
             assertTrue("real processes must expose a pid", handle.pid() > 0);
@@ -30,10 +31,24 @@ public final class QemuProcessHandleSeamTest {
     @Test(timeout = 15_000)
     public void normalDestroyReachesWaitForWithoutTheUnboundedOverload() throws Exception {
         QemuProcessLauncher launcher = new QemuProcessLauncher();
-        QemuProcessLauncher.ProcessHandle handle = launcher.launch(
-                new String[]{"/bin/sh", "-c", "sleep 30"}).handle();
+        QemuProcessLauncher.ProcessHandle handle = launcher.launch(sleeperSpec()).handle();
         handle.destroy();
         assertTrue("destroy must be observable through the bounded wait",
                 handle.waitFor(5, TimeUnit.SECONDS));
+    }
+
+    /** A real JVM child keeps the seam test portable; only the process API is under test. */
+    private static String[] sleeperSpec() {
+        boolean windows = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
+        String java = Paths.get(System.getProperty("java.home"), "bin",
+                windows ? "java.exe" : "java").toString();
+        return new String[]{java, "-cp", System.getProperty("java.class.path"),
+                Sleeper.class.getName()};
+    }
+
+    public static final class Sleeper {
+        public static void main(String[] args) throws Exception {
+            Thread.sleep(30_000L);
+        }
     }
 }
