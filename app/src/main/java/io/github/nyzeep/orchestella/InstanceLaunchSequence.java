@@ -92,17 +92,27 @@ public final class InstanceLaunchSequence {
         return StopResult.CONFIRMED;
     }
 
-    /** Only an unregistered failed launch may release its own running slot. */
+    /**
+     * Only an unregistered failed launch may release its own running slot.
+     *
+     * <p>Freshness is decided by the launch guard's latest generation and the
+     * session registry, not by a pool-wide monitor: the pool's per-instance
+     * transition lock is the only lock that serializes ownership changes, and
+     * taking the singleton monitor here would not exclude it. When cleanup
+     * reported {@link StopResult#UNCONFIRMED}, the runtime may still be alive;
+     * keep the RUNNING metadata, launch guard, foreground binding and any
+     * port/disk reservation (ADR-0020) instead of recording a crash.
+     */
     public static boolean afterLaunchFailure(InstanceLifecycle.Controller controller, String instanceId,
-            String generation, boolean enteredRunning, Runnable stopForeground) throws IOException {
-        synchronized (PersistentTerminalSessionPool.getInstance()) {
-            if (!InstanceLaunchGuard.isLatest(instanceId, generation)
-                    || ExecutionSessionRegistry.get(instanceId) != null) return false;
-            if (enteredRunning) controller.recordCrash(instanceId, -1, null, "Launch failed before VM owner registration");
-            InstanceLaunchGuard.end(instanceId, generation);
-            stopForeground.run();
-            return true;
-        }
+            String generation, boolean enteredRunning, StopResult cleanupResult,
+            Runnable stopForeground) throws IOException {
+        if (!InstanceLaunchGuard.isLatest(instanceId, generation)
+                || ExecutionSessionRegistry.get(instanceId) != null) return false;
+        if (enteredRunning && cleanupResult == StopResult.UNCONFIRMED) return false;
+        if (enteredRunning) controller.recordCrash(instanceId, -1, null, "Launch failed before VM owner registration");
+        InstanceLaunchGuard.end(instanceId, generation);
+        stopForeground.run();
+        return true;
     }
 
     /** Records an observed normal guest-initiated stop: RUNNING -> STOPPED. */

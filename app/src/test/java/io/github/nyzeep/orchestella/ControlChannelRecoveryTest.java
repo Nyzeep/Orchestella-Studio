@@ -189,18 +189,17 @@ public final class ControlChannelRecoveryTest {
         PersistentTerminalSessionPool pool = PersistentTerminalSessionPool.getInstance();
         synchronized (getField(session, "terminalLock")) {
             assertTrue(pool.register(id, session).isAlive());
-        }
-        // Retirement runs bounded channel cleanup off-thread; calling it while the
-        // caller holds the terminal monitor would only exercise the deadline.
-        session.close();
-        try {
+            // Retirement must be safe while the caller still owns the terminal
+            // monitor: the actual stop runs outside the pool transition lock, and
+            // recovery must fail on the closed control channel, not on a lock
+            // that the caller happens to hold.
+            session.close();
             assertFalse(session.recoverControlChannel());
             assertFalse(session.markBridgeServing());
             assertNull(session.bridgeClient());
             assertSame(failed, getField(session, "bridgeClient"));
-        } finally {
-            pool.unregister(id);
         }
+        pool.unregister(id);
     }
 
     @Test(timeout = 4000L)
