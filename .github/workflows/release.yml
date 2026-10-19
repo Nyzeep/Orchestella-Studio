@@ -93,6 +93,9 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
+      - name: Run candidate tests
+        run: ./gradlew :runtime:contract:check :runtime:instance:check :runtime:engine-qemu:check :app:testDebugUnitTest --no-daemon --stacktrace
+
       - name: Build release APK
         run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
 

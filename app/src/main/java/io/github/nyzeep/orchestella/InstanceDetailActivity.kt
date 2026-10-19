@@ -208,7 +208,13 @@ class InstanceDetailActivity : AppCompatActivity() {
         viewModel = InstanceDetailViewModel(
             instanceStore = instanceStore,
             hostProfile = hostProfile,
-            supportsDesktop = supportsDesktop
+            supportsDesktop = supportsDesktop,
+            runningGuestIpProvider = { id ->
+                when (ExecutionSessionRegistry.get(id)) {
+                    is QemuInstanceLauncher.Session -> NetworkGatewayDaemon.GUEST_IP
+                    else -> null
+                }
+            }
         )
 
         viewModel.onStateChanged = { state ->

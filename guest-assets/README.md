@@ -93,10 +93,14 @@ files.
 
 Provisioning installs the static guest agent and an Alpine OpenRC service
 template but leaves the service disabled. Ticket 26 owns the actual transport
-adapter and byte stream. The QEMU smoke waits for the exact console marker
-`DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=alpine-3.24.1`, powers down,
-then uses `debugfs` to verify Alpine, ext4 features, token equality and mode,
-the installed agent, and the completion marker. The secret-bearing temporary
+adapter and byte stream. The QEMU smoke passes `droidlayer.poweroff=1`, so init
+powers down immediately after Provisioning instead of continuing to boot. It
+then waits for the console marker `DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=alpine phase=rootfs runtime=pending`
+and uses `debugfs` to verify Alpine, ext4 features, token equality and mode,
+the installed agent, and the completion marker. The `distro` field is the `ID`
+value from the guest `/etc/os-release` (`alpine`), not the versioned archive
+name; host-side completion detection only requires the
+`DROIDLAYER_PROVISIONING_COMPLETE version=1` prefix. The secret-bearing temporary
 tree and root volume are removed by a trap on success or failure.
 
 The pinned Alpine minirootfs was checksum-verified and inspected: it has no
