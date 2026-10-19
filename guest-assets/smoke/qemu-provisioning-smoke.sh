@@ -4,7 +4,7 @@ set -euo pipefail
 # shellcheck source=../scripts/common.sh
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)/scripts/common.sh"
 
-for command in cmp dd debugfs grep od qemu-system-aarch64 sha256sum timeout tr truncate; do
+for command in cmp dd debugfs grep od qemu-system-aarch64 sha256sum timeout tr truncate wc; do
   command -v "$command" >/dev/null 2>&1 || {
     printf 'required smoke command is unavailable: %s\n' "$command" >&2
     exit 69
@@ -52,6 +52,13 @@ TOKEN="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
   exit 1
 }
 printf '%s\n' "$TOKEN" > "$SMOKE_WORK/input/bridge.token"
+
+# init reads these three trust files from the same 9p input directory. Production
+# EmbeddedProvisionInput writes them alongside the archive; the smoke must match.
+ROOTFS_SIZE="$(wc -c < "$ROOTFS_ARCHIVE" | tr -d ' ')"
+printf '%s\n' "$ALPINE_ROOTFS_FILE" > "$SMOKE_WORK/input/rootfs.file"
+printf '%s\n' "$ALPINE_ROOTFS_SHA256" > "$SMOKE_WORK/input/rootfs.sha256"
+printf '%s\n' "$ROOTFS_SIZE" > "$SMOKE_WORK/input/rootfs.size"
 
 ROOT_VOLUME="$SMOKE_WORK/root-volume.raw"
 CONSOLE_LOG="$SMOKE_WORK/console.log"
