@@ -20,13 +20,13 @@
 
 | 任务 | 提交 | 说明 |
 | :--- | :--- | :--- |
-| A + B | `6df71da` | 构建通道与 release 签名硬门 |
-| D | `2b60f0b` | GPL/NOTICE/SOURCE-OFFER 一致性 |
-| C | `6726c4d` | release workflow、APK 校验与 PR 门 |
-| E | `0451254` | SAF 导出/导入迁移与 fail-closed |
-| F | `248bf28` | T4/T1 运行时债务 |
-| G | `3f1d0ca` | T7 矩阵样本统计 |
-| F 测试支撑 | `a59554b` | JVM 单测 no-op Log stub |
+| A + B | `5a56e3a` | 构建通道与 release 签名硬门 |
+| D | `313c508` | GPL/NOTICE/SOURCE-OFFER 一致性 |
+| C | `6dfa671` | release workflow、APK 校验与 PR 门 |
+| E | `a5821cc` | SAF 导出/导入迁移与 fail-closed |
+| F | `594f89e` | T4/T1 运行时债务 |
+| G | `d37b1cd` | T7 矩阵样本统计 |
+| F 测试支撑 | `960921d` | JVM 单测 no-op Log stub |
 | 报告 | 本提交 | 修复报告与交接追加 |
 
 作者均为 `Nyzeep <2950605702@qq.com>`。分支未合并 `main`，未 push `main`。
@@ -35,7 +35,7 @@
 
 ## 2. Wave 1
 
-### A. 构建通道（`6df71da`）
+### A. 构建通道（`5a56e3a`）
 
 `app/build.gradle.kts`：
 
@@ -49,26 +49,26 @@
 - 内部版强制使用 debug keystore；APK 额外输出到 `app/build/outputs/apk/channel/`。
 - 未修改 `defaultConfig` 的 release `applicationId` / `versionName` / `versionCode`。
 
-实测（干净 tracked 工作树，HEAD `a59554b`）：
+实测（干净 tracked 工作树，HEAD `db31302`）：
 
 ```text
 默认：package: name='io.github.nyzeep.orchestella' versionCode='503' versionName='0.5.3'
-dev ：package: name='io.github.nyzeep.orchestella.dev' versionCode='503' versionName='0.5.3-dev.a59554b'
-qa  ：package: name='io.github.nyzeep.orchestella.qa.runtimeperf' versionCode='503' versionName='0.5.3-qa.runtimeperf.a59554b'
+dev ：package: name='io.github.nyzeep.orchestella.dev' versionCode='503' versionName='0.5.3-dev.db31302'
+qa  ：package: name='io.github.nyzeep.orchestella.qa.runtimeperf' versionCode='503' versionName='0.5.3-qa.runtimeperf.db31302'
 ```
 
 APK 名：
 
 ```text
-Orchestella-Studio-v0.5.3-dev.a59554b.apk
-Orchestella-Studio-v0.5.3-qa.runtimeperf.a59554b.apk
+Orchestella-Studio-v0.5.3-dev.db31302.apk
+Orchestella-Studio-v0.5.3-qa.runtimeperf.db31302.apk
 ```
 
 脏工作树构建已验证会追加 `.dirty`；干净树不追加。`qa` 缺 purpose、非法 channel、release 携带 purpose 均会在配置阶段失败。
 
 **风险（未解决）**：`purpose` 允许短横线，但 Android package segment 通常不允许 `-`；本次只验证了 `runtimeperf`。若产品要使用 `runtime-perf` 这类 purpose，需要先决定“appId 中的 `-` 转 `_`”还是“限制 purpose 字符集”。
 
-### B. Release 签名硬化（`6df71da`）
+### B. Release 签名硬化（`5a56e3a`）
 
 - 删除 `orchestella2026` 默认口令。
 - `release` signingConfig 只在四个属性齐全时创建：
@@ -96,7 +96,7 @@ Alias: null
 
 `:app:assembleDebug` 不受影响；`app/build.gradle.kts` 中已无 `orchestella2026`。
 
-### C. Release workflow 与发布门（`6726c4d`）
+### C. Release workflow 与发布门（`6dfa671`）
 
 新增 `.github/workflows/release.yml`：
 
@@ -130,7 +130,7 @@ Alias: null
 
 ## 3. Wave 2
 
-### D. GPL / NOTICE / SOURCE-OFFER（`2b60f0b`）
+### D. GPL / NOTICE / SOURCE-OFFER（`313c508`）
 
 核对后修正：
 
@@ -158,7 +158,7 @@ Alias: null
 - `SOURCE-OFFER.txt` 的履约主体、三年有效期起算与请求渠道。
 - guest-assets 构建产物（`LICENSE.musl`、`NOTICE.e2fsprogs`、`ATTRIBUTION.e2fsprogs-libcom_err`、`BUILD-INPUTS`、`SHA256SUMS`）不在仓库，必须从已验证 build out 补入发布包。
 
-### E. SAF 导出/导入迁移（`0451254`）
+### E. SAF 导出/导入迁移（`a5821cc`）
 
 审计结论：
 
@@ -182,7 +182,7 @@ Alias: null
 - 新包迁移：推荐新 applicationId + 导入向导；旧包先导出，新包导入。设备上需验证根盘、hostname/user、硬件配置与装配证据保留，以及实例可启动。
 - 是否需要在备份中保留 guest password：当前明确不保留；若产品要求“导入后 App 仍能显示/使用密码”，需要单独的加密凭据迁移决策。
 
-### F. T4 / T1 运行时债务（`248bf28`）
+### F. T4 / T1 运行时债务（`594f89e`）
 
 **T4 锁外停止**：
 
@@ -213,7 +213,7 @@ Alias: null
 
 **范围说明**：有界 retirement stop 已移出 transition lock；`requestStop` 的电源动作（bridge SHUTDOWN / terminate）仍在 transition lock 内串行执行，这是为了与 `completeExit` 的退出分类保持原子性，不是第二个 stop owner。若后续要求该动作也完全锁外，需要单独设计“动作进行中”状态。
 
-### G. T7 / 64-forward（`3f1d0ca`）
+### G. T7 / 64-forward（`d37b1cd`）
 
 - `tools/qemu-tuning/matrix.py` 新增 `--samples` 设备样本入口：JSON 为 `{variant: {workload: [ms...]}}`。
 - 每个单元 n≥10 才输出 `measured`，并输出 median / IQR / min / max；不足 10 标 `insufficient-samples`，无样本标 `not-tested`。
@@ -327,7 +327,7 @@ Alias: null
 5. **release workflow 首次真实运行**：secrets 名称、keystore base64、runner SDK 版本均未在 GitHub 上实测。
 ## 9. 交付状态
 
-- 本地分支 `fix/release-readiness` 已包含上述提交，作者均为 `Nyzeep <2950605702@qq.com>`。
+- 本地分支 `fix/release-readiness` 已包含上述提交；所有提交的 author 与 committer 均为 `Nyzeep <2950605702@qq.com>`。
 - **GitHub push 已完成**：SSH key 经 `ssh.github.com:443` 认证为 Nyzeep；由于远端已存在旧的同任务分支 `023ed0f`，经确认使用 `--force-with-lease` 覆盖为本地提交。
 - 远端：`git@github.com:Nyzeep/Orchestella-Studio.git` 的 `fix/release-readiness`。
 - 本分支未合并 `main`，未打 tag，未创建 GitHub Release。
