@@ -113,7 +113,7 @@ cleanup() {
   trap - EXIT INT TERM
   if [[ "$status" -ne 0 && -n "$WORK_DIR" && -d "$WORK_DIR" ]]; then
     if [[ -f "$TERMINAL_TRANSCRIPT" ]] && contains_normalized_line "$TERMINAL_TRANSCRIPT" \
-      'DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=alpine-3.24.1'; then
+      'DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=alpine phase=rootfs runtime=pending'; then
       provisioning=1
     fi
     if [[ -f "$TERMINAL_TRANSCRIPT" ]]; then
@@ -353,7 +353,7 @@ if [[ "$OFFICIAL_ALPINE_EXPECTATION" = checksum-rejection ]]; then
     exit 1
   }
   if contains_normalized_line "$TERMINAL_TRANSCRIPT" \
-    'DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=alpine-3.24.1'; then
+    'DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=alpine phase=rootfs runtime=pending'; then
     printf 'official Alpine checksum-rejection unexpectedly completed Provisioning\n' >&2
     exit 1
   fi
@@ -382,7 +382,7 @@ if [[ "$OFFICIAL_ALPINE_EXPECTATION" = unauthorized ]]; then
     exit 1
   fi
   wait_for_line "$TERMINAL_TRANSCRIPT" \
-    'DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=alpine-3.24.1' || {
+    'DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=alpine phase=rootfs runtime=pending' || {
     printf 'official Alpine unauthorized-token boot did not complete Provisioning\n' >&2
     exit 1
   }
@@ -424,7 +424,7 @@ if [[ "$OFFICIAL_ALPINE_EXPECTATION" = unsupported-version ]]; then
     exit 1
   fi
   wait_for_line "$TERMINAL_TRANSCRIPT" \
-    'DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=alpine-3.24.1' || {
+    'DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=alpine phase=rootfs runtime=pending' || {
     printf 'official Alpine unsupported-version boot did not complete Provisioning\n' >&2
     exit 1
   }
@@ -472,7 +472,7 @@ wait_for_line "$CONTROL_TRANSCRIPT" 'DROIDLAYER/OK resize' || {
   exit 1
 }
 wait_for_line "$TERMINAL_TRANSCRIPT" \
-  'DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=alpine-3.24.1' || {
+  'DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=alpine phase=rootfs runtime=pending' || {
   printf 'official Alpine Provisioning did not complete\n' >&2
   exit 1
 }
@@ -499,7 +499,7 @@ RESIZE=0
 TERMINAL_SIZE=0
 SENTINEL=0
 if contains_normalized_line "$TERMINAL_TRANSCRIPT" \
-  'DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=alpine-3.24.1'; then PROVISIONING=1; fi
+  'DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=alpine phase=rootfs runtime=pending'; then PROVISIONING=1; fi
 if contains_normalized_line "$CONTROL_TRANSCRIPT" 'DROIDLAYER/READY 1'; then READY=1; fi
 if contains_normalized_line "$CONTROL_TRANSCRIPT" 'DROIDLAYER/PONG 1'; then PONG=1; fi
 if contains_normalized_line "$CONTROL_TRANSCRIPT" 'DROIDLAYER/OK resize'; then RESIZE=1; fi

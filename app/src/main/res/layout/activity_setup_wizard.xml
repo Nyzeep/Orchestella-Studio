@@ -535,7 +535,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="4dp"
-                            android:text="默认网关：10.0.2.2"
+                            android:text="默认网关：192.168.127.1"
                             android:textSize="13sp"
                             android:textColor="?attr/colorOnSurface" />
 

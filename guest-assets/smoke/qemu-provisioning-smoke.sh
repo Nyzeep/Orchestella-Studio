@@ -4,7 +4,7 @@ set -euo pipefail
 # shellcheck source=../scripts/common.sh
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)/scripts/common.sh"
 
-for command in cmp dd debugfs grep od qemu-system-aarch64 sha256sum timeout tr truncate; do
+for command in cmp dd debugfs grep od qemu-system-aarch64 sha256sum timeout tr truncate wc; do
   command -v "$command" >/dev/null 2>&1 || {
     printf 'required smoke command is unavailable: %s\n' "$command" >&2
     exit 69
@@ -53,6 +53,13 @@ TOKEN="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
 }
 printf '%s\n' "$TOKEN" > "$SMOKE_WORK/input/bridge.token"
 
+# init reads these three trust files from the same 9p input directory. Production
+# EmbeddedProvisionInput writes them alongside the archive; the smoke must match.
+ROOTFS_SIZE="$(wc -c < "$ROOTFS_ARCHIVE" | tr -d ' ')"
+printf '%s\n' "$ALPINE_ROOTFS_FILE" > "$SMOKE_WORK/input/rootfs.file"
+printf '%s\n' "$ALPINE_ROOTFS_SHA256" > "$SMOKE_WORK/input/rootfs.sha256"
+printf '%s\n' "$ROOTFS_SIZE" > "$SMOKE_WORK/input/rootfs.size"
+
 ROOT_VOLUME="$SMOKE_WORK/root-volume.raw"
 CONSOLE_LOG="$SMOKE_WORK/console.log"
 truncate --size 2G "$ROOT_VOLUME"
@@ -75,7 +82,7 @@ timeout --signal=TERM --kill-after=10s "$SMOKE_TIMEOUT" \
     -no-reboot \
     -kernel "$OUT_DIR/Image" \
     -initrd "$OUT_DIR/initramfs.cpio.gz" \
-    -append 'console=ttyAMA0 rdinit=/init panic=-1 droidlayer.root_device=/dev/vda droidlayer.input_tag=droidlayer-input' \
+    -append 'console=ttyAMA0 rdinit=/init panic=-1 droidlayer.root_device=/dev/vda droidlayer.input_tag=droidlayer-input droidlayer.poweroff=1' \
     -drive "if=none,id=root,file=$ROOT_VOLUME,format=raw,cache=unsafe" \
     -device virtio-blk-device,drive=root \
     -fsdev "local,id=provision,path=$SMOKE_WORK/input,security_model=none,readonly=on,multidevs=remap" \
@@ -89,8 +96,8 @@ if [[ "$QEMU_EXIT" -ne 0 ]]; then
   exit "$QEMU_EXIT"
 fi
 tr -d '\r' < "$CONSOLE_LOG" \
-  | grep --fixed-strings --line-regexp \
-      'DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=alpine-3.24.1' \
+  | grep --extended-regexp \
+      '^DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=alpine([[:space:]]|$)' \
       >/dev/null
 
 debugfs_dump() {
@@ -108,7 +115,7 @@ debugfs_dump /usr/sbin/droidlayer-guest-agent "$SMOKE_WORK/installed-agent"
 debugfs_dump /var/lib/droidlayer/provisioned-v1 "$SMOKE_WORK/provisioned-v1"
 grep --fixed-strings --line-regexp 'provisioning_version=1' \
   "$SMOKE_WORK/provisioned-v1" >/dev/null
-grep --fixed-strings --line-regexp 'distro=alpine-3.24.1' \
+grep --fixed-strings --line-regexp 'distro=alpine' \
   "$SMOKE_WORK/provisioned-v1" >/dev/null
 
 TOKEN_MODE="$(debugfs -R 'stat /etc/droidlayer/bridge.token' "$ROOT_VOLUME" 2>/dev/null \

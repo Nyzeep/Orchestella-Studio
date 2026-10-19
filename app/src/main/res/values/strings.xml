@@ -340,7 +340,7 @@
     <string name="console_storage_expand_disk">扩容虚拟磁盘</string>
     <string name="console_storage_export_backup">📦 导出整机 SAF 备份</string>
     <string name="console_section_network">网络与端口转发 (Networking)</string>
-    <string name="console_network_mode">网络模式：NAT 虚拟网络 (10.0.2.x)</string>
+    <string name="console_network_mode">网络模式：NAT 虚拟网络 (192.168.127.x)</string>
     <string name="console_network_ip">虚拟 IP 地址：%1$s</string>
     <string name="console_network_port_forwarding">端口映射规则管理</string>
     <string name="console_section_danger">危险管理区 (Danger Zone)</string>

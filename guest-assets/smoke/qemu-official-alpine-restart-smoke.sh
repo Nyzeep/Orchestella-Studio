@@ -327,7 +327,7 @@ wait_for_line "$FIRST_CONTROL_TRANSCRIPT" 'DROIDLAYER/OK resize' || {
   exit 1
 }
 wait_for_line "$FIRST_TERMINAL_TRANSCRIPT" \
-  'DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=alpine-3.24.1' || {
+  'DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=alpine phase=rootfs runtime=pending' || {
   printf 'official Alpine first boot Provisioning did not complete\n' >&2
   exit 1
 }
@@ -363,7 +363,7 @@ wait_for_line "$SECOND_CONTROL_TRANSCRIPT" 'DROIDLAYER/OK resize' || {
   exit 1
 }
 wait_for_line "$SECOND_TERMINAL_TRANSCRIPT" \
-  'DROIDLAYER_ROOT_VOLUME_RESTART version=1 distro=alpine-3.24.1' || {
+  'DROIDLAYER_ROOT_VOLUME_RESTART version=1 runtime=unverified' || {
   printf 'official Alpine second boot did not reuse the Root Volume\n' >&2
   exit 1
 }
@@ -383,7 +383,7 @@ wait_for_qemu_exit
 close_boot_channels
 
 if contains_normalized_line "$SECOND_TERMINAL_TRANSCRIPT" \
-  'DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=alpine-3.24.1'; then
+  'DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=alpine phase=rootfs runtime=pending'; then
   printf 'official Alpine second boot unexpectedly reprovisioned the Root Volume\n' >&2
   exit 1
 fi

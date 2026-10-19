@@ -76,7 +76,7 @@ $$\text{versionCode} = \text{MAJOR} \times 10000 + \text{MINOR} \times 100 + \te
 | **内部开发版 Dev** | `io.github.nyzeep.orchestella.dev`（并行会话可加 `.<owner>`） | `X.Y.Z-dev.<gitShortSha>`（脏工作树加 `.dirty`） | 与当前 release base 相同 | debug keystore | 仅本地 / ADB |
 | **隔离 QA 版** | `io.github.nyzeep.orchestella.qa.<purpose>` | `X.Y.Z-qa.<purpose>.<gitShortSha>` | 与当前 release base 相同 | debug keystore | 仅本地 / ADB；独立数据 |
 
-- `<purpose>` 只允许小写字母、数字和短横线，例如 `runtimeperf`、`input`、`avf`。
+- `<purpose>` 只允许小写字母和数字，例如 `runtimeperf`、`input`、`avf`。原因是 `<purpose>` 直接构成 applicationId 的一个 segment，而 Android applicationId 语法不允许连字符。
 - 内部版可以带 `.dirty`；发布版禁止 `.dirty`。
 - 内部版**不得修改** `app/build.gradle.kts` 中 release 的 `versionName` / `versionCode`；后缀通过 Gradle 属性或构建类型注入。
 - 同一 `<purpose>` 的 QA 包可以并存于设备；不得用发布版 applicationId 覆盖用户数据。
