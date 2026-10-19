@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "description": "Repository-side license, NOTICE and corresponding-source files that must be present in a public release bundle. Build-generated files (LICENSE.musl, NOTICE.e2fsprogs, ATTRIBUTION.e2fsprogs-libcom_err, BUILD-INPUTS, SHA256SUMS) come from the verified guest-assets build output and must be added from that output.",
+  "files": [
+    "LICENSE",
+    "app/src/main/assets/NOTICE.QEMU",
+    "app/src/main/assets/NOTICE.GUEST-RUNTIME",
+    "app/src/main/assets/QEMU-GPL-SOURCES.md",
+    "app/src/main/assets/QEMU-BUILD-INPUTS",
+    "app/src/main/assets/LICENSE.GPL-2.0",
+    "guest-assets/GPL-SOURCES.md",
+    "guest-assets/SOURCE-OFFER.txt",
+    "guest-assets/inputs/inputs.lock",
+    "tools/qemu-android/gpl/QEMU-GPL-SOURCES.md",
+    "tools/qemu-android/gpl/QEMU-BUILD-INPUTS",
+    "tools/qemu-android/gpl/LICENSE.GPL-2.0",
+    "tools/qemu-android/gpl/NOTICE.QEMU",
+    "app/src/main/assets/NOTICE.PHASE5",
+    "app/src/main/assets/third-party-notices.txt",
+    "app/src/main/assets/LICENSE.DESUGAR-JDK-LIBS",
+    "app/src/main/assets/ASSEMBLY_EXCEPTION.DESUGAR-JDK-LIBS"
+  ]
+}
