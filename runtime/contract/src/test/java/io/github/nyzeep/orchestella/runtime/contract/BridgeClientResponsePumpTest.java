@@ -676,9 +676,16 @@ public final class BridgeClientResponsePumpTest {
 
     /** Each ordinary command must prove auth to this server context before it can act. */
     private static String readAuthenticatedCommand(Pair pair) throws Exception {
-        require(("ORCHESTELLA/HELLO 1 1 " + TOKEN).equals(pair.requests.readLine()), "command omitted fresh HELLO");
-        pair.reply("ORCHESTELLA/READY 1\n");
-        require("ORCHESTELLA/PING".equals(pair.requests.readLine()), "reauthentication proof missing");
+        String line = pair.requests.readLine();
+        // A handshake retry that races the guest's READY is a legal duplicate
+        // HELLO (the real agent answers every one). Accept those retransmissions,
+        // but still require the PING/PONG proof before releasing the command.
+        while (line != null && line.startsWith("ORCHESTELLA/HELLO")) {
+            require(line.equals("ORCHESTELLA/HELLO 1 1 " + TOKEN), "command omitted fresh HELLO");
+            pair.reply("ORCHESTELLA/READY 1\n");
+            line = pair.requests.readLine();
+        }
+        require("ORCHESTELLA/PING".equals(line), "reauthentication proof missing");
         pair.reply("ORCHESTELLA/PONG 1\n");
         return pair.requests.readLine();
     }

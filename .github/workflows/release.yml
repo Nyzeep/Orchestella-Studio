@@ -1,0 +1,156 @@
+name: Release Build Gate
+
+# Manual only. This workflow builds and verifies a signed release candidate and
+# uploads the artifacts; it never creates a tag or a GitHub Release.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Select yes to build and verify a release candidate
+        required: true
+        type: choice
+        options:
+          - "no"
+          - "yes"
+        default: "no"
+      version_name:
+        description: Expected release versionName (for example 0.5.3)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build-release:
+    name: Build and verify release APK
+    if: inputs.confirm == 'yes'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      VERSION_NAME: ${{ inputs.version_name }}
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Require a clean tracked worktree
+        run: |
+          if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+            echo "::error::Release builds require a clean tracked worktree."
+            git status --short --untracked-files=no
+            exit 1
+          fi
+
+      - name: Accept Android SDK licenses and install components
+        run: |
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f 2>/dev/null | head -1)
+          if [ -n "$SDKMANAGER" ]; then
+            yes | "$SDKMANAGER" --licenses || true
+            "$SDKMANAGER" "platforms;android-36" "build-tools;36.1.0" || true
+          fi
+
+      - name: Materialize release keystore
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${RELEASE_KEYSTORE_BASE64:-}" ]; then
+            echo "::error::RELEASE_KEYSTORE_BASE64 is not configured; refusing to build an unsigned release."
+            exit 1
+          fi
+          printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.keystore"
+          chmod 600 "$RUNNER_TEMP/release.keystore"
+
+      - name: Write signing properties without echoing secrets
+        env:
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in RELEASE_STORE_PASSWORD RELEASE_KEY_ALIAS RELEASE_KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::$name is not configured; refusing to build an unsigned release."
+              exit 1
+            fi
+          done
+          mkdir -p "$HOME/.gradle"
+          {
+            printf 'orchestella.signing.storeFile=%s\n' "$RUNNER_TEMP/release.keystore"
+            printf 'orchestella.signing.storePassword=%s\n' "$RELEASE_STORE_PASSWORD"
+            printf 'orchestella.signing.keyAlias=%s\n' "$RELEASE_KEY_ALIAS"
+            printf 'orchestella.signing.keyPassword=%s\n' "$RELEASE_KEY_PASSWORD"
+          } > "$HOME/.gradle/gradle.properties"
+          chmod 600 "$HOME/.gradle/gradle.properties"
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Build release APK
+        run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
+
+      - name: Locate release APK
+        run: |
+          APK=$(find app/build/outputs/apk/release -maxdepth 1 -name '*.apk' -type f | head -1)
+          if [ -z "$APK" ]; then
+            echo "::error::No release APK was produced."
+            exit 1
+          fi
+          echo "APK_PATH=$APK" >> "$GITHUB_ENV"
+
+      - name: Verify release identity, certificate and checksum
+        run: |
+          python3 tools/release/verify_apk.py \
+            --apk "$APK_PATH" \
+            --expected-application-id io.github.nyzeep.orchestella \
+            --expected-version-name "$VERSION_NAME" \
+            --json release-verification.json
+
+      - name: Verify license, NOTICE and source-offer bundle
+        run: python3 tools/release/check_licenses.py
+
+      - name: Assemble release bundle
+        run: |
+          set -euo pipefail
+          mkdir -p release-bundle
+          cp "$APK_PATH" "release-bundle/Orchestella-Studio-v${VERSION_NAME}-release.apk"
+          python3 - <<'PY'
+          import json
+          import pathlib
+          import shutil
+
+          root = pathlib.Path(".")
+          output = pathlib.Path("release-bundle")
+          manifest = json.loads((root / "tools/release/release_bundle_manifest.json").read_text(encoding="utf-8"))
+          for relative in manifest["files"]:
+              source = root / relative
+              if not source.is_file():
+                  raise SystemExit("missing release bundle file: " + relative)
+              target = output / relative
+              target.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copy2(source, target)
+          PY
+          (cd release-bundle && sha256sum *.apk > SHA256SUMS)
+          cat release-bundle/SHA256SUMS
+
+      - name: Upload release candidate artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: orchestella-release-candidate
+          path: |
+            release-bundle/
+            release-verification.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Remove signing material
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/release.keystore" "$HOME/.gradle/gradle.properties"

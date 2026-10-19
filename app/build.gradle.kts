@@ -13,6 +13,81 @@ val qemuNativeLibDir: String? = (properties["orchestella.qemu.nativeLibDir"] ?: 
 val qemuAssetsDir: String? = (properties["orchestella.qemu.assetsDir"] ?: properties["droidlayer.qemu.assetsDir"]) as String?
 val qemuInitramfsDir: String? = (properties["orchestella.qemu.initramfsDir"] ?: properties["droidlayer.qemu.initramfsDir"]) as String?
 
+// Build channels separate public releases from internal development and isolated QA
+// builds (docs/standards/VERSIONING.md section 5). The default stays "release":
+// a plain :app:assembleDebug keeps the historical applicationId and versionName.
+val buildChannel: String = providers.gradleProperty("orchestella.buildChannel")
+    .orNull
+    ?.trim()
+    ?.lowercase()
+    ?.ifEmpty { null }
+    ?: "release"
+require(buildChannel in setOf("release", "dev", "qa")) {
+    "orchestella.buildChannel must be one of release, dev, qa; got '$buildChannel'"
+}
+val buildPurpose: String? = providers.gradleProperty("orchestella.buildPurpose")
+    .orNull
+    ?.trim()
+    ?.lowercase()
+    ?.ifEmpty { null }
+if (buildChannel == "qa") {
+    require(buildPurpose != null) {
+        "orchestella.buildChannel=qa requires -Porchestella.buildPurpose=<purpose>"
+    }
+    require(buildPurpose.matches(Regex("[a-z0-9-]{1,32}"))) {
+        "orchestella.buildPurpose must use only lowercase letters, digits and hyphens: '$buildPurpose'"
+    }
+} else if (buildPurpose != null) {
+    require(false) {
+        "orchestella.buildPurpose is only valid with orchestella.buildChannel=qa"
+    }
+}
+
+fun gitValue(vararg arguments: String): String? = try {
+    val process = ProcessBuilder(listOf("git") + arguments)
+        .directory(rootProject.projectDir)
+        .redirectErrorStream(true)
+        .start()
+    val output = process.inputStream.bufferedReader().use { it.readText() }.trim()
+    process.waitFor()
+    output.ifEmpty { null }
+} catch (failure: Exception) {
+    null
+}
+
+val gitShortSha: String? = gitValue("rev-parse", "--short=7", "HEAD")
+    ?.takeIf { it.matches(Regex("[0-9a-f]{7,40}")) }
+val gitTrackedDirty: Boolean = !gitValue("status", "--porcelain", "--untracked-files=no").isNullOrEmpty()
+if (buildChannel != "release") {
+    require(gitShortSha != null) {
+        "orchestella.buildChannel=$buildChannel requires a git checkout to resolve the short commit SHA"
+    }
+}
+val internalVersionSuffix: String? = when (buildChannel) {
+    "dev" -> "-dev.$gitShortSha" + if (gitTrackedDirty) ".dirty" else ""
+    "qa" -> "-qa.$buildPurpose.$gitShortSha" + if (gitTrackedDirty) ".dirty" else ""
+    else -> null
+}
+val internalApplicationIdSuffix: String? = when (buildChannel) {
+    "dev" -> ".dev"
+    "qa" -> ".qa.$buildPurpose"
+    else -> null
+}
+// Release signing is explicit. There is deliberately no fallback password or
+// implicit keystore: a release build without all four properties fails before
+// packaging (see validateReleaseSigning below).
+val signingStoreFileProperty: String? = providers.gradleProperty("orchestella.signing.storeFile").orNull?.trim()?.ifEmpty { null }
+val signingStorePasswordProperty: String? = providers.gradleProperty("orchestella.signing.storePassword").orNull?.ifEmpty { null }
+val signingKeyAliasProperty: String? = providers.gradleProperty("orchestella.signing.keyAlias").orNull?.trim()?.ifEmpty { null }
+val signingKeyPasswordProperty: String? = providers.gradleProperty("orchestella.signing.keyPassword").orNull?.ifEmpty { null }
+val missingSigningProperties: List<String> = buildList {
+    if (signingStoreFileProperty == null) add("orchestella.signing.storeFile")
+    if (signingStorePasswordProperty == null) add("orchestella.signing.storePassword")
+    if (signingKeyAliasProperty == null) add("orchestella.signing.keyAlias")
+    if (signingKeyPasswordProperty == null) add("orchestella.signing.keyPassword")
+}
+val releaseSigningConfigured: Boolean = missingSigningProperties.isEmpty()
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -69,6 +144,8 @@ android {
     }
 
     signingConfigs {
+        // Legacy isolated-QA channel. This is a debug key with historical fixed
+        // credentials; it is never selected for a release build.
         val phase5Keystore = providers.gradleProperty("orchestella.phase5.debugKeystore").orNull
         if (phase5Keystore != null) {
             create("phase5Debug") {
@@ -78,31 +155,37 @@ android {
                 keyPassword = "android"
             }
         }
-        create("release") {
-            val keystorePath = (properties["orchestella.signing.storeFile"] as String?)
-            val keystoreFile = if (keystorePath != null) {
-                file(keystorePath)
-            } else {
-                rootProject.file(".toolchains/release.keystore")
-            }
-            if (keystoreFile.exists()) {
-                storeFile = keystoreFile
-                storePassword = (properties["orchestella.signing.storePassword"] as String?) ?: "orchestella2026"
-                keyAlias = (properties["orchestella.signing.keyAlias"] as String?) ?: "orchestella"
-                keyPassword = (properties["orchestella.signing.keyPassword"] as String?) ?: "orchestella2026"
+        // Only create the release config when every explicit property is present.
+        // Missing properties are reported by validateReleaseSigning before packaging.
+        if (releaseSigningConfigured) {
+            create("release") {
+                storeFile = file(signingStoreFileProperty!!)
+                storePassword = signingStorePasswordProperty
+                keyAlias = signingKeyAliasProperty
+                keyPassword = signingKeyPasswordProperty
             }
         }
     }
 
     buildTypes {
         debug {
-            val releaseSigning = signingConfigs.getByName("release")
-            if (signingConfigs.findByName("phase5Debug") != null) {
-                applicationIdSuffix = ".phase5"
-                versionNameSuffix = "-phase5-local"
-                signingConfig = signingConfigs.getByName("phase5Debug")
-            } else if (releaseSigning.storeFile != null && releaseSigning.storeFile!!.exists()) {
-                signingConfig = releaseSigning
+            if (buildChannel != "release") {
+                // Internal channels always use the debug key, even when a release
+                // keystore is configured for this machine.
+                applicationIdSuffix = internalApplicationIdSuffix
+                versionNameSuffix = internalVersionSuffix
+                signingConfig = signingConfigs.getByName("debug")
+            } else {
+                // Historical default behavior: phase5 QA wins, otherwise a fully
+                // configured release key may sign debug builds on developer machines.
+                val releaseSigning = signingConfigs.findByName("release")
+                if (signingConfigs.findByName("phase5Debug") != null) {
+                    applicationIdSuffix = ".phase5"
+                    versionNameSuffix = "-phase5-local"
+                    signingConfig = signingConfigs.getByName("phase5Debug")
+                } else if (releaseSigning?.storeFile?.exists() == true) {
+                    signingConfig = releaseSigning
+                }
             }
         }
         release {
@@ -111,10 +194,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            val releaseSigning = signingConfigs.getByName("release")
-            if (releaseSigning.storeFile != null && releaseSigning.storeFile!!.exists()) {
-                signingConfig = releaseSigning
-            }
+            signingConfigs.findByName("release")?.let { signingConfig = it }
         }
     }
 
@@ -144,6 +224,53 @@ android {
         abortOnError = true
         checkReleaseBuilds = true
         disable += "PropertyEscape"
+    }
+}
+
+val channelApkName: String? = internalVersionSuffix?.let {
+    "Orchestella-Studio-v${android.defaultConfig.versionName}$it.apk"
+}
+
+// Fail only release packaging when the explicit signing material is incomplete;
+// debug builds on the same machine keep working.
+val validateReleaseSigning = tasks.register("validateReleaseSigning") {
+    group = "verification"
+    description = "Fails unless the four explicit release signing properties are present and readable."
+    doLast {
+        if (missingSigningProperties.isNotEmpty()) {
+            throw GradleException(
+                "Release signing is not configured. Missing Gradle properties: " +
+                    missingSigningProperties.joinToString(", ") +
+                    ". Provide all of orchestella.signing.storeFile, " +
+                    "orchestella.signing.storePassword, orchestella.signing.keyAlias and " +
+                    "orchestella.signing.keyPassword."
+            )
+        }
+        val keystore = file(signingStoreFileProperty!!)
+        if (!keystore.isFile) {
+            throw GradleException(
+                "Release signing storeFile does not exist or is not a regular file: " + keystore
+            )
+        }
+    }
+}
+tasks.matching {
+    it.name in setOf("assembleRelease", "bundleRelease", "installRelease", "packageRelease", "preReleaseBuild")
+}.configureEach {
+    dependsOn(validateReleaseSigning)
+}
+
+// Internal builds keep both the stable app-debug.apk path used by tooling and a
+// channel-identifying copy required by VERSIONING.md section 5.3.
+if (buildChannel != "release") {
+    val renameChannelApk = tasks.register<Copy>("renameChannelApk") {
+        description = "Copies the internal debug APK to its channel-qualified name."
+        from(layout.buildDirectory.file("outputs/apk/debug/app-debug.apk"))
+        into(layout.buildDirectory.dir("outputs/apk/channel"))
+        rename { channelApkName!! }
+    }
+    tasks.matching { it.name == "assembleDebug" }.configureEach {
+        finalizedBy(renameChannelApk)
     }
 }
 
@@ -213,7 +340,7 @@ tasks.register<Copy>("packageOrchestellaRelease") {
     from(layout.buildDirectory.dir("outputs/apk/release"))
     into(rootProject.layout.buildDirectory.dir("release"))
     include("*.apk")
-    rename { "Orchestella-Studio-v${android.defaultConfig.versionName}.apk" }
+    rename { "Orchestella-Studio-v${android.defaultConfig.versionName}-release.apk" }
 }
 
 val syncGuestShellAssets by tasks.registering(Sync::class) {

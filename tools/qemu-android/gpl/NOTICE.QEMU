@@ -4,7 +4,10 @@ NOTICE — QEMU and bundled components in DroidLayer (Ticket 26, 2026-09-25)
 This application ships QEMU and statically linked libraries inside
 lib/arm64-v8a/libdroidlayer_qemu.so, plus the Ticket 25 guest assets
 (Image, initramfs.cpio.gz). The complete license/source record is in
-QEMU-GPL-SOURCES.md and QEMU-BUILD-INPUTS packaged alongside this notice.
+QEMU-GPL-SOURCES.md and QEMU-BUILD-INPUTS packaged alongside this notice; the
+canonical repository copies are tools/qemu-android/gpl/QEMU-GPL-SOURCES.md and
+tools/qemu-android/gpl/QEMU-BUILD-INPUTS. The written offer for the guest
+assets is guest-assets/SOURCE-OFFER.txt.
 
 QEMU
 ----
@@ -25,9 +28,10 @@ libiconv 1.19 — LGPL-2.1 (library), GPL-3 (tools)
 proxy-libintl (commit c03e1a74) — LGPL-2.1-or-later (licensee election
   exercised from the original LGPL-2.0-or-later terms; election record kept
   in the build evidence)
-DroidLayer shm stub (self-owned) — Apache-2.0; link-level ENOSYS shim for
-  the POSIX shm symbols that Android/bionic does not provide, per the
-  recorded 2026-09-25 user ruling.
+DroidLayer shm stub (self-owned project code) — GPL-3.0-or-later (root
+  LICENSE; docs/adr/0014-licensing.md); link-level ENOSYS shim for the POSIX
+  shm symbols that Android/bionic does not provide. The 2026-09-25 user
+  ruling selected this ENOSYS link-shim option (option 1).
 
 Android bionic (libc.so, libm.so, libdl.so) is provided by the Android OS at
 runtime and is not redistributed by this application.
@@ -42,6 +46,8 @@ SOURCE-OFFER.txt, ATTRIBUTION/LICENSE files).
 Corresponding source
 --------------------
 Complete corresponding source for every GPL work listed here is offered as
-described in QEMU-GPL-SOURCES.md. A public, immutable release-tag source
-delivery is established by the Release Maintainer before any public binary
-release, per docs/agent-handoff/GPL_RELEASE_DELIVERY_POLICY.md.
+described in QEMU-GPL-SOURCES.md and guest-assets/SOURCE-OFFER.txt, under the
+process obligations recorded in docs/adr/0014-licensing.md section 3. A
+public, immutable release-tag source delivery is established by the Release
+Maintainer before any public binary release; this notice does not authorize a
+release.
