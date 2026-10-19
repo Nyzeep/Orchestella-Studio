@@ -57,6 +57,10 @@ canonical home。不要为某个 session 临时创建它们；确有新职责时
 报告是解释层，artifact 是证据层。不要把同一份 raw output 复制到报告、research 和
 ticket 三处；报告应链接或引用 canonical artifact。
 
+真机唯一标识、真机截图/录屏、完整设备日志、设备指纹/序列号哈希、真实网络标识和个人路径
+按 `DEFENSIVE_CONSTRAINTS/SENSITIVE_DEVELOPER_DATA_POLICY.md` 永不入库；设备别名映射
+只保存在本地，不进入仓库。
+
 ### 3.2 不进入 Git 的内容
 
 以下内容必须放在 approved external resource root 或工具要求的明确 user-level 位置，
@@ -102,6 +106,7 @@ disclosure 和最小范围规则。
 - Orchestration：`docs/reports/orchestration/<topic>.zh-CN.md`。
 - Benchmark evidence：`artifacts/<ticket-id>/evidence/YYYY-MM-DD-<device>-<benchmark>.json`
   或同 basename 的 `.md` 摘要；device 使用可公开的稳定别名，不写入不必要的序列号。
+  别名映射不得入库；不得用序列号或其哈希作为文件名或标识。
 - Manifest / checksum：使用产生它的 tool、ticket 或发布流程规定的固定文件名；不要创建
   `final`、`new`、`copy`、`v2` 等无法表达来源的并行副本。
 
