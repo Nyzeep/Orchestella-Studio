@@ -17,8 +17,10 @@ import argparse
 import csv
 import hashlib
 import json
+import math
 import re
 import shutil
+import statistics
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -116,7 +118,58 @@ def device_metadata(serial: str | None) -> dict:
         return {"available": False, "reason": "adb-failed", "detail": str(failure)}
 
 
-def write_tsv(path: Path, metadata: dict, image: str, status: str) -> None:
+def load_samples(path: Path | None) -> dict:
+    """Load device-produced timings: {variant: {workload: [milliseconds, ...]}}.
+
+    The file is the device execution entry point: a device harness records the
+    samples and this tool only summarizes them. It never invents values.
+    """
+    if path is None:
+        return {}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise SystemExit("samples file must be a JSON object keyed by variant")
+    known_variants = {variant_id for variant_id, _, _ in VARIANTS}
+    for variant_id, workloads in data.items():
+        if variant_id not in known_variants:
+            raise SystemExit(f"samples file has unknown variant: {variant_id}")
+        if not isinstance(workloads, dict):
+            raise SystemExit(f"samples for {variant_id} must be an object keyed by workload")
+        for workload, values in workloads.items():
+            if workload not in WORKLOADS:
+                raise SystemExit(f"samples file has unknown workload: {workload}")
+            if not isinstance(values, list):
+                raise SystemExit(f"samples for {variant_id}/{workload} must be a list")
+            for value in values:
+                if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+                    raise SystemExit(f"invalid sample for {variant_id}/{workload}: {value!r}")
+    return data
+
+
+def summarize(values: list) -> dict:
+    samples = len(values)
+    if samples < SAMPLES_TARGET:
+        return {
+            "samples": samples,
+            "median_ms": "",
+            "iqr_ms": "",
+            "min_ms": "",
+            "max_ms": "",
+            "status": "insufficient-samples" if samples else "not-tested",
+        }
+    ordered = sorted(float(value) for value in values)
+    q1, _, q3 = statistics.quantiles(ordered, n=4, method="inclusive")
+    return {
+        "samples": samples,
+        "median_ms": round(statistics.median(ordered), 3),
+        "iqr_ms": round(q3 - q1, 3),
+        "min_ms": round(ordered[0], 3),
+        "max_ms": round(ordered[-1], 3),
+        "status": "measured",
+    }
+
+
+def write_tsv(path: Path, metadata: dict, image: str, samples: dict, dry_run: bool) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fields = [
         "image",
@@ -126,6 +179,10 @@ def write_tsv(path: Path, metadata: dict, image: str, status: str) -> None:
         "workload",
         "samples_target",
         "samples",
+        "median_ms",
+        "iqr_ms",
+        "min_ms",
+        "max_ms",
         "status",
         "device_model",
         "android",
@@ -139,6 +196,10 @@ def write_tsv(path: Path, metadata: dict, image: str, status: str) -> None:
         for variant_id, variable, overrides in VARIANTS:
             tuning = tuning_row(overrides)
             for workload in WORKLOADS:
+                values = samples.get(variant_id, {}).get(workload, [])
+                summary = summarize(values)
+                if dry_run and not values:
+                    summary["status"] = "not-tested"
                 writer.writerow({
                     "image": image,
                     "variant": variant_id,
@@ -146,8 +207,7 @@ def write_tsv(path: Path, metadata: dict, image: str, status: str) -> None:
                     **tuning,
                     "workload": workload,
                     "samples_target": SAMPLES_TARGET,
-                    "samples": 0,
-                    "status": status,
+                    **summary,
                     "device_model": metadata.get("model") or "-",
                     "android": metadata.get("android") or "-",
                     "battery_temp_c": metadata.get("battery_temp_c", "-"),
@@ -160,19 +220,30 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dry-run", action="store_true", help="validate and emit the matrix without measurement")
     parser.add_argument("--device", metavar="SERIAL", help="record bounded adb metadata for this serial")
+    parser.add_argument("--samples", type=Path, help="device-produced JSON timings (variant -> workload -> [ms])")
     parser.add_argument("--image", default="not-recorded", help="distro image identifier (name/version)")
     parser.add_argument("--output", type=Path, default=Path("docs/reports/tickets/runtime-performance-07/matrix.tsv"))
     parser.add_argument("--json", action="store_true", help="emit a JSON summary instead of TSV")
     args = parser.parse_args()
 
     validate_variants()
-    if not args.dry_run and not args.device:
-        raise SystemExit("choose --dry-run or --device; this tool never invents measurements")
+    if not args.dry_run and not args.device and args.samples is None:
+        raise SystemExit("choose --dry-run, --device or --samples; this tool never invents measurements")
 
     metadata = device_metadata(args.device) if args.device else {
-        "available": False, "reason": "dry-run"
+        "available": False, "reason": "dry-run" if args.dry_run else "no-device"
     }
-    status = "not-tested" if args.dry_run or not metadata.get("available") else "metadata-only"
+    samples = load_samples(args.samples)
+    measured_rows = sum(
+        1
+        for variant_id, workloads in samples.items()
+        for values in workloads.values()
+        if len(values) >= SAMPLES_TARGET
+    )
+    total_rows = len(VARIANTS) * len(WORKLOADS)
+    status = "measured" if measured_rows == total_rows else (
+        "partial" if measured_rows else "not-tested"
+    )
 
     if args.json:
         payload = {
@@ -181,6 +252,9 @@ def main() -> int:
             "device": metadata,
             "workloads": WORKLOADS,
             "samples_target": SAMPLES_TARGET,
+            "measured_rows": measured_rows,
+            "total_rows": total_rows,
+            "statistics": ["median_ms", "iqr_ms", "min_ms", "max_ms"],
             "variants": [
                 {"id": variant_id, "variable": variable, "tuning": tuning_row(overrides)}
                 for variant_id, variable, overrides in VARIANTS
@@ -191,11 +265,11 @@ def main() -> int:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     else:
-        write_tsv(args.output, metadata, args.image, status)
+        write_tsv(args.output, metadata, args.image, samples, args.dry_run)
 
-    print(f"variants={len(VARIANTS)} workloads={len(WORKLOADS)} rows={len(VARIANTS) * len(WORKLOADS)}")
+    print(f"variants={len(VARIANTS)} workloads={len(WORKLOADS)} rows={total_rows}")
     print(f"image={args.image} device={metadata.get('model', 'not-tested')} status={status}")
-    print(f"output={args.output}")
+    print(f"measured_rows={measured_rows}/{total_rows} output={args.output}")
     return 0
 
 
