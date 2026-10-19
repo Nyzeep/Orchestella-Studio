@@ -395,7 +395,7 @@ if contains_normalized_line "$CONTROL_TRANSCRIPT" 'DROIDLAYER/READY 1'; then REA
 if contains_normalized_line "$CONTROL_TRANSCRIPT" 'DROIDLAYER/PONG 1'; then PONG=1; fi
 if contains_normalized_line "$CONTROL_TRANSCRIPT" 'DROIDLAYER/OK resize'; then RESIZE=1; fi
 if contains_normalized_line "$TERMINAL_TRANSCRIPT" \
-  'DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=alpine-3.24.1'; then PROVISIONED=1; fi
+  'DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=linux phase=rootfs runtime=pending'; then PROVISIONED=1; fi
 if contains_normalized_line "$TERMINAL_TRANSCRIPT" "$PROVISIONED_CONFIG_OK"; then CONFIGURED=1; fi
 if contains_normalized_line "$TERMINAL_TRANSCRIPT" "$PROVISIONED_GUEST_STARTED"; then TERMINAL_STARTED=1; fi
 if contains_normalized_line "$TERMINAL_TRANSCRIPT" '24 80'; then TERMINAL_SIZE=1; fi
