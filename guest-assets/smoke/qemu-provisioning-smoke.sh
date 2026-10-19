@@ -82,7 +82,7 @@ timeout --signal=TERM --kill-after=10s "$SMOKE_TIMEOUT" \
     -no-reboot \
     -kernel "$OUT_DIR/Image" \
     -initrd "$OUT_DIR/initramfs.cpio.gz" \
-    -append 'console=ttyAMA0 rdinit=/init panic=-1 droidlayer.root_device=/dev/vda droidlayer.input_tag=droidlayer-input' \
+    -append 'console=ttyAMA0 rdinit=/init panic=-1 droidlayer.root_device=/dev/vda droidlayer.input_tag=droidlayer-input droidlayer.poweroff=1' \
     -drive "if=none,id=root,file=$ROOT_VOLUME,format=raw,cache=unsafe" \
     -device virtio-blk-device,drive=root \
     -fsdev "local,id=provision,path=$SMOKE_WORK/input,security_model=none,readonly=on,multidevs=remap" \
