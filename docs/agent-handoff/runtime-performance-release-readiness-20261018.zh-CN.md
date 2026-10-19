@@ -153,4 +153,4 @@ keyPassword = (properties["orchestella.signing.keyPassword"] as String?) ?: "orc
 - `not-tested`：AVF 真机、QEMU 真机、64-forward 真实 gvproxy、T7 设备矩阵、Arch/T5/T6、主包/新包迁移、release-signed APK 安装升级、GitHub Actions `release.yml` 实际运行、真实生产 keystore、16 KB 真机运行。
 - 待发布负责人决定：生产 keystore/secrets；版本 0.5.4/504 vs 0.6.0/600；同包 vs 新包迁移；是否保留 guest password；GPL 细节（shm stub、QEMU 两份记录、SOURCE-OFFER 履约）；release workflow 是否直接发布。
 - 本分支未递增版本、未打 tag、未创建 GitHub Release、未合并 main。
-- GitHub push 未完成：环境缺少 GitHub 凭据（仅有 CNB），需发布负责人执行 `git push github fix/release-readiness`；不要把 token 写入仓库或日志。
+- GitHub push 已完成：SSH key 经 `ssh.github.com:443` 认证为 Nyzeep；远端旧分支 `023ed0f` 经确认用 `--force-with-lease` 覆盖为本地提交。
