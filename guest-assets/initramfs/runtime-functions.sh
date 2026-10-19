@@ -17,7 +17,7 @@ stage_guest_package_repositories() {
     repo_sections="$(sed -n 's/^\[\([^]]*\)\]$/\1/p' "$repo_input/$repo_file" | tr '\n' ' ' | sed 's/ $//')"
     [ "$repo_sections" = "$repo_ids" ] || fail package-repository-ids-invalid
     repo_count=0
-    for repo_id in $repo_ids; do repo_count=$((repo_count + 1)); done
+    for repo_id in $repo_ids; do repo_count=$((repo_count + 1)); : "$repo_id"; done
     [ "$(grep -c '^gpgcheck=1$' "$repo_input/$repo_file")" = "$repo_count" ] || fail package-repository-signatures-required
     [ "$(grep -c '^gpgkey=.' "$repo_input/$repo_file")" = "$repo_count" ] || fail package-repository-key-missing
     if grep -Eiq '^[[:space:]]*(gpgcheck|sslverify)[[:space:]]*=[[:space:]]*(0|false|no)([[:space:]]|$)' "$repo_input/$repo_file"; then
@@ -55,7 +55,7 @@ configure_fstab_mounts() {
         for tag_file in "$virtio_devices"/*/mount_tag; do
             if [ -f "$tag_file" ] && [ "$(cat "$tag_file")" = "$share_tag" ]; then share_present=1; break; fi
         done
-        if [ "$share_present" -eq 1 ] && ! grep -Eq "^$share_tag[[:space:]]+/mnt/$share_tag[[:space:]]" "$fstab.tmp"; then
+        if [ "$share_present" -eq 1 ] && ! grep -Eq "^${share_tag}[[:space:]]+/mnt/${share_tag}[[:space:]]" "$fstab.tmp"; then
             printf '%s\t/mnt/%s\t9p\ttrans=virtio,version=9p2000.L,ro,nofail\t0\t0\n' "$share_tag" "$share_tag" >> "$fstab.tmp"
         fi
     done

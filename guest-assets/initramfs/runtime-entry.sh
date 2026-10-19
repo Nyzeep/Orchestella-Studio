@@ -118,6 +118,8 @@ else
 fi
 log 'ORCHESTELLA_GUEST_ASSEMBLY phase=unpack status=running'
 unpack_rootfs_archive() {
+    # init runs under BusyBox ash, which supports local.
+    # shellcheck disable=SC3043
     local magic=""
     if [ -r "$ROOTFS_PATH" ]; then
         magic="$(head -c 6 "$ROOTFS_PATH" 2>/dev/null | od -A n -t x1 2>/dev/null | tr -d ' \n\r' || true)"

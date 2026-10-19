@@ -89,6 +89,8 @@ __orchestella_build_prompt() {
     fi
 
     _prompt_user="${USER:-${LOGNAME:-$(id -un 2>/dev/null)}}"
+    # BusyBox ash sets HOSTNAME; the hostname fallback covers stricter POSIX shells.
+    # shellcheck disable=SC3028
     _prompt_host="${HOSTNAME:-$(hostname 2>/dev/null)}"
     _dir_str="$(__orchestella_dir)"
     if [ -n "$_prompt_user" ] && [ -n "$_prompt_host" ]; then
