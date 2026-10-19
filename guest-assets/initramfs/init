@@ -3028,7 +3028,7 @@ if __name__ == "__main__":
 ORCHESTELLA_FEATURE_3B766B91CAA9F153
     chmod 0755 "$1/usr/local/lib/orchestella/rootless-probe.py.next" || return 1
     mv "$1/usr/local/lib/orchestella/rootless-probe.py.next" "$1/usr/local/lib/orchestella/rootless-probe.py" || return 1
-    cat > "$1/usr/local/lib/orchestella/display-relay.py.next" <<'ORCHESTELLA_FEATURE_8900B8633AACF8BD' || return 1
+    cat > "$1/usr/local/lib/orchestella/display-relay.py.next" <<'ORCHESTELLA_FEATURE_9E061BF98253DF43' || return 1
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Original authenticated private display relay (Python >= 3.9, Linux).
@@ -3451,7 +3451,7 @@ if __name__ == "__main__":
         sys.exit(1)
     except KeyboardInterrupt:
         sys.exit(0)
-ORCHESTELLA_FEATURE_8900B8633AACF8BD
+ORCHESTELLA_FEATURE_9E061BF98253DF43
     chmod 0755 "$1/usr/local/lib/orchestella/display-relay.py.next" || return 1
     mv "$1/usr/local/lib/orchestella/display-relay.py.next" "$1/usr/local/lib/orchestella/display-relay.py" || return 1
 }
