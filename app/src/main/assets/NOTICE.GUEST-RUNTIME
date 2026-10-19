@@ -1,8 +1,17 @@
 Orchestella guest control agent
 
-The agent is original project code, statically linked with musl 1.2.6
-and LLVM compiler runtime arithmetic builtins supplied by Android NDK r27.
-It targets Linux AArch64 and does not use Android Bionic.
+The agent is original Orchestella project code under GPL-3.0-or-later (root
+LICENSE; docs/adr/0014-licensing.md). It is statically linked with musl
+1.2.6-r2 (upstream musl 1.2.6, Alpine aarch64 package) and LLVM compiler
+runtime arithmetic builtins supplied by Android NDK r27. It targets Linux
+AArch64 and does not use Android Bionic.
+
+Musl pin for this agent: tools/phase5/guest-agent-inputs.lock.json records the
+Alpine musl package 1.2.6-r2 (musl-dev 1.2.6-r2) and linux-headers 7.0.0-r1.
+This is the APK guest agent only. The initramfs produced by
+guest-assets/build.sh is a separate artifact pinned by
+guest-assets/inputs/inputs.lock with MUSL_VERSION=1.2.5; do not merge the two
+versions.
 
 Integrated source: guest-assets/agent/guest-agent.c
 Source SHA-256: f1250967916612da9680526a51fa99973c711b21ed6b4044cbd2468dff1c5fb5

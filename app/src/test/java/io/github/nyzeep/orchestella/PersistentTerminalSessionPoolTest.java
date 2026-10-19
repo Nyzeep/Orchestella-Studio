@@ -600,6 +600,70 @@ public final class PersistentTerminalSessionPoolTest {
     }
 
     @Test(timeout = 10_000)
+    public void requestStopFailsFastWhileAnotherThreadStopsTheSameInstance() throws Exception {
+        FakeOwnedSession old = new FakeOwnedSession();
+        old.stopEntered = new CountDownLatch(1);
+        old.stopGate = new CountDownLatch(1);
+        pool.register("owned-in-flight", old);
+        FakeOwnedSession replacement = new FakeOwnedSession();
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<PersistentTerminalSessionPool.SessionHolder> replacing = executor.submit(
+                    () -> pool.register("owned-in-flight", replacement));
+            assertTrue("the old owner stop must have started", old.stopEntered.await(2, TimeUnit.SECONDS));
+
+            AtomicBoolean actionRan = new AtomicBoolean();
+            long started = System.nanoTime();
+            assertFalse("a stop already in flight must reject a second power action",
+                    pool.requestStop("owned-in-flight", old,
+                            PersistentTerminalSessionPool.StopIntent.FORCE, () -> actionRan.set(true)));
+            long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+            // The old implementation held the transition lock across the bounded
+            // stop, so this call blocked until the gate below was released.
+            assertTrue("requestStop must not wait for the transition owner: " + elapsedMs + " ms",
+                    elapsedMs < 1000L);
+            assertFalse("the rejected request must not run its action", actionRan.get());
+            assertSame("the old holder stays published while its stop is in flight",
+                    old, pool.getSession("owned-in-flight"));
+
+            old.stopGate.countDown();
+            assertSame("the replacement is published after the stop confirms",
+                    replacement, replacing.get(2, TimeUnit.SECONDS).rawSession());
+            assertSame(replacement, pool.getSession("owned-in-flight"));
+        } finally {
+            old.stopGate.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test(timeout = 10_000)
+    public void exitSideEffectsDoNotRunWhileTheOwnerIsStopping() throws Exception {
+        FakeOwnedSession old = new FakeOwnedSession();
+        old.stopEntered = new CountDownLatch(1);
+        old.stopGate = new CountDownLatch(1);
+        pool.register("owned-exit-race", old);
+
+        ExecutorService executor = Executors.newFixedThreadPool(1);
+        try {
+            Future<Boolean> retiring = executor.submit(() -> pool.unregister("owned-exit-race", old));
+            assertTrue(old.stopEntered.await(2, TimeUnit.SECONDS));
+
+            AtomicBoolean actionRan = new AtomicBoolean();
+            assertFalse("exit side effects must wait for the retirement owner",
+                    pool.completeExit("owned-exit-race", old, () -> actionRan.set(true)));
+            assertFalse(actionRan.get());
+            assertSame(old, pool.getSession("owned-exit-race"));
+
+            old.stopGate.countDown();
+            assertTrue(retiring.get(2, TimeUnit.SECONDS));
+        } finally {
+            old.stopGate.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test(timeout = 10_000)
     public void unconfirmedStopDuringReplacementKeepsTheExistingHolder() throws Exception {
         FakeOwnedSession old = new FakeOwnedSession();
         old.stopResult = RuntimeProcessSupervisor.StopResult.UNCONFIRMED;

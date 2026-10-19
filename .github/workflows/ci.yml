@@ -43,3 +43,18 @@ jobs:
 
       - name: Run contract checks and unit tests
         run: ./gradlew :runtime:contract:check :runtime:instance:check :runtime:engine-qemu:check :app:testDebugUnitTest --no-daemon --stacktrace
+
+  release-metadata:
+    name: Release Metadata Gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Reject internal suffixes in release fields
+        run: python3 tools/release/check_release_fields.py
+
+      - name: Test the release gate parser
+        run: python3 tools/release/test_verify_apk.py

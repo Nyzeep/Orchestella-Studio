@@ -517,6 +517,14 @@ public final class QemuInstanceLauncher {
 
     private static final long INSTANCE_MEMORY_MB = 512;
     private static final String TAG = "OrchestellaQemu";
+    /**
+     * Cleanup outcome of the most recent failed launch for an instance. The
+     * caller needs it to separate "definitely gone" from "stop unconfirmed"
+     * before releasing RUNNING metadata (ADR-0020). Consumed once by
+     * {@link #takeLastCleanupResult(String)} and cleared at the next launch.
+     */
+    private static final java.util.concurrent.ConcurrentMap<String, StopResult> LAST_FAILED_CLEANUP =
+            new java.util.concurrent.ConcurrentHashMap<>();
 
     private final Context context;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -525,9 +533,18 @@ public final class QemuInstanceLauncher {
         this.context = context.getApplicationContext();
     }
 
+    /**
+     * Consumes the cleanup outcome of the last failed launch for this instance,
+     * or null when this launch did not fail after starting QEMU.
+     */
+    public static StopResult takeLastCleanupResult(String instanceId) {
+        return instanceId == null ? null : LAST_FAILED_CLEANUP.remove(instanceId);
+    }
+
     /** Blocking bootstrap+launch; call on a worker thread. */
     public ExecutionSession launch(InstanceStrategyLauncher.LaunchParameters parameters)
             throws IOException, InterruptedException {
+        LAST_FAILED_CLEANUP.remove(parameters.instanceId);
         VmHardwareConfig config = parameters.hardwareConfig != null
                 ? parameters.hardwareConfig
                 : VmHardwareConfig.defaultConfig();
@@ -708,7 +725,9 @@ public final class QemuInstanceLauncher {
         timeline.mark(LaunchTimeline.Stage.SESSION_REGISTERED);
         return session;
         }, () -> {
-            cleanupFailedLaunch(startingSession.get(), startingHandle.get(), gateway);
+            StopResult cleanupResult = cleanupFailedLaunch(
+                    startingSession.get(), startingHandle.get(), gateway);
+            LAST_FAILED_CLEANUP.put(parameters.instanceId, cleanupResult);
             timeline.finish();
         });
     }
@@ -725,21 +744,44 @@ public final class QemuInstanceLauncher {
         return matched == null ? "unknown" : matched;
     }
 
-    /** Failure cleanup shared by launch bootstrap, Session construction and registration. */
-    static void cleanupFailedLaunch(RuntimeOwnedSession session,
+    /**
+     * Failure cleanup shared by launch bootstrap, Session construction and
+     * registration. Returns the bounded outcome so the caller can keep RUNNING
+     * metadata when the runtime could not be confirmed stopped.
+     */
+    static StopResult cleanupFailedLaunch(RuntimeOwnedSession session,
             QemuProcessLauncher.ProcessHandle handle, RuntimeGateway gateway) {
         if (session != null) {
-            if (session.stopRuntime(2000L) == StopResult.UNCONFIRMED) {
-                Log.w(TAG, "launch-cleanup-stop-unconfirmed");
+            try {
+                StopResult result = session.stopRuntime(2000L);
+                if (result == StopResult.UNCONFIRMED) {
+                    Log.w(TAG, "launch-cleanup-stop-unconfirmed");
+                }
+                return result;
+            } catch (RuntimeException failure) {
+                // A throwing stop is not evidence that the process exited.
+                Log.w(TAG, "launch-cleanup-stop-failed");
+                return StopResult.UNCONFIRMED;
             }
-            return;
         }
-        boolean processStopped = stopProcessBounded(handle);
-        boolean gatewayStopped = gateway == null || gateway.stop(2000L);
+        boolean processStopped;
+        try {
+            processStopped = stopProcessBounded(handle);
+        } catch (RuntimeException failure) {
+            processStopped = false;
+        }
+        boolean gatewayStopped;
+        try {
+            gatewayStopped = gateway == null || gateway.stop(2000L);
+        } catch (RuntimeException failure) {
+            gatewayStopped = false;
+        }
         if (!processStopped || !gatewayStopped) {
             Log.w(TAG, "launch-cleanup-unconfirmed process=" + processStopped
                     + " gateway=" + gatewayStopped);
+            return StopResult.UNCONFIRMED;
         }
+        return StopResult.CONFIRMED;
     }
 
     /** Bounded fallback for a launch that failed before a Session existed. */
