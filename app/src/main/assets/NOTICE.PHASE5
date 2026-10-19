@@ -1,7 +1,8 @@
 Orchestella quality / Phase 5 integrated local review build (2026-10-14)
 
 Original host display codec, bounded service/sharing modules, guest display relay,
-and optional profile controllers are Orchestella source under Apache License 2.0.
+and optional profile controllers are Orchestella source under GNU GPL version 3
+or later (GPL-3.0-or-later; root LICENSE and docs/adr/0014-licensing.md).
 Public GPL reference source was inspected for architecture and permissions;
 no reference implementation was copied into these host modules.
 

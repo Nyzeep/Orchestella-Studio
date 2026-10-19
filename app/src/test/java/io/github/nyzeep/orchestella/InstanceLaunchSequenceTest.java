@@ -401,7 +401,9 @@ public final class InstanceLaunchSequenceTest {
         String generation = InstanceLaunchGuard.begin(instance.id());
         InstanceLaunchSequence.beforeLaunch(controller, instance);
         java.util.concurrent.atomic.AtomicInteger stops = new java.util.concurrent.atomic.AtomicInteger();
-        org.junit.Assert.assertTrue(InstanceLaunchSequence.afterLaunchFailure(controller, instance.id(), generation, true, stops::incrementAndGet));
+        org.junit.Assert.assertTrue(InstanceLaunchSequence.afterLaunchFailure(
+                controller, instance.id(), generation, true,
+                RuntimeProcessSupervisor.StopResult.CONFIRMED, stops::incrementAndGet));
         assertEquals(InstanceLifecycle.State.CRASHED, store.load(instance.id()).state());
         assertEquals(-1, store.load(instance.id()).crashDiagnostic().exitCode());
         String replacementGeneration = InstanceLaunchGuard.begin(instance.id());
@@ -409,12 +411,97 @@ public final class InstanceLaunchSequenceTest {
         ExitSession replacement = new ExitSession(0);
         ExecutionSessionRegistry.register(instance.id(), replacement);
         try {
-            org.junit.Assert.assertFalse(InstanceLaunchSequence.afterLaunchFailure(controller, instance.id(), generation, true, stops::incrementAndGet));
-            org.junit.Assert.assertFalse(InstanceLaunchSequence.afterLaunchFailure(controller, instance.id(), replacementGeneration, true, stops::incrementAndGet));
+            org.junit.Assert.assertFalse(InstanceLaunchSequence.afterLaunchFailure(
+                    controller, instance.id(), generation, true,
+                    RuntimeProcessSupervisor.StopResult.CONFIRMED, stops::incrementAndGet));
+            org.junit.Assert.assertFalse(InstanceLaunchSequence.afterLaunchFailure(
+                    controller, instance.id(), replacementGeneration, true,
+                    RuntimeProcessSupervisor.StopResult.CONFIRMED, stops::incrementAndGet));
             assertEquals(1, stops.get());
             assertEquals(InstanceLifecycle.State.RUNNING, store.load(instance.id()).state());
             assertEquals(0, replacement.closes);
         } finally { ExecutionSessionRegistry.unregister(instance.id()); InstanceLaunchGuard.end(instance.id()); }
+    }
+
+    @Test
+    public void unconfirmedLaunchCleanupKeepsRunningMetadataGuardAndForeground() throws Exception {
+        Path dir = temporaryFolder.newFolder("unconfirmed-launch-cleanup").toPath();
+        InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(dir);
+        InstanceLifecycle.Controller controller = new InstanceLifecycle.Controller(store, Clock.systemUTC());
+        InstanceLifecycle.Instance instance = controller.create(
+                new InstanceLifecycle.DistroReference("debian", "13"), dir.resolve("never-opened.raw"));
+        String generation = InstanceLaunchGuard.begin(instance.id());
+        InstanceLaunchSequence.beforeLaunch(controller, instance);
+        java.util.concurrent.atomic.AtomicInteger stops = new java.util.concurrent.atomic.AtomicInteger();
+        try {
+            org.junit.Assert.assertFalse(InstanceLaunchSequence.afterLaunchFailure(
+                    controller, instance.id(), generation, true,
+                    RuntimeProcessSupervisor.StopResult.UNCONFIRMED, stops::incrementAndGet));
+            assertEquals("an unconfirmed runtime must stay RUNNING",
+                    InstanceLifecycle.State.RUNNING, store.load(instance.id()).state());
+            org.junit.Assert.assertNull(store.load(instance.id()).crashDiagnostic());
+            org.junit.Assert.assertTrue(InstanceLaunchGuard.isInFlight(instance.id()));
+            org.junit.Assert.assertTrue(InstanceLaunchGuard.isLatest(instance.id(), generation));
+            assertEquals("the foreground binding must stay owned", 0, stops.get());
+            org.junit.Assert.assertNull(ExecutionSessionRegistry.get(instance.id()));
+        } finally {
+            ExecutionSessionRegistry.unregister(instance.id());
+            InstanceLaunchGuard.end(instance.id());
+        }
+    }
+
+    @Test
+    public void confirmedLaunchCleanupRecordsCrashAndReleasesForeground() throws Exception {
+        Path dir = temporaryFolder.newFolder("confirmed-launch-cleanup").toPath();
+        InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(dir);
+        InstanceLifecycle.Controller controller = new InstanceLifecycle.Controller(store, Clock.systemUTC());
+        InstanceLifecycle.Instance instance = controller.create(
+                new InstanceLifecycle.DistroReference("debian", "13"), dir.resolve("never-opened.raw"));
+        String generation = InstanceLaunchGuard.begin(instance.id());
+        InstanceLaunchSequence.beforeLaunch(controller, instance);
+        java.util.concurrent.atomic.AtomicInteger stops = new java.util.concurrent.atomic.AtomicInteger();
+        try {
+            org.junit.Assert.assertTrue(InstanceLaunchSequence.afterLaunchFailure(
+                    controller, instance.id(), generation, true,
+                    RuntimeProcessSupervisor.StopResult.CONFIRMED, stops::incrementAndGet));
+            assertEquals(InstanceLifecycle.State.CRASHED, store.load(instance.id()).state());
+            assertEquals(-1, store.load(instance.id()).crashDiagnostic().exitCode());
+            org.junit.Assert.assertFalse(InstanceLaunchGuard.isInFlight(instance.id()));
+            assertEquals(1, stops.get());
+        } finally {
+            ExecutionSessionRegistry.unregister(instance.id());
+            InstanceLaunchGuard.end(instance.id());
+        }
+    }
+
+    @Test
+    public void unconfirmedCleanupForAnOlderGenerationCannotAffectItsReplacement() throws Exception {
+        Path dir = temporaryFolder.newFolder("stale-unconfirmed-cleanup").toPath();
+        InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(dir);
+        InstanceLifecycle.Controller controller = new InstanceLifecycle.Controller(store, Clock.systemUTC());
+        InstanceLifecycle.Instance instance = controller.create(
+                new InstanceLifecycle.DistroReference("debian", "13"), dir.resolve("never-opened.raw"));
+        String oldGeneration = InstanceLaunchGuard.begin(instance.id());
+        InstanceLaunchSequence.beforeLaunch(controller, instance);
+        controller.recordGracefulStop(instance.id());
+        org.junit.Assert.assertTrue(InstanceLaunchGuard.end(instance.id(), oldGeneration));
+        String replacementGeneration = InstanceLaunchGuard.begin(instance.id());
+        InstanceLaunchSequence.beforeLaunch(controller, store.load(instance.id()));
+        ExitSession replacement = new ExitSession(0);
+        ExecutionSessionRegistry.register(instance.id(), replacement);
+        java.util.concurrent.atomic.AtomicInteger stops = new java.util.concurrent.atomic.AtomicInteger();
+        try {
+            org.junit.Assert.assertFalse(InstanceLaunchSequence.afterLaunchFailure(
+                    controller, instance.id(), oldGeneration, true,
+                    RuntimeProcessSupervisor.StopResult.UNCONFIRMED, stops::incrementAndGet));
+            assertEquals(InstanceLifecycle.State.RUNNING, store.load(instance.id()).state());
+            org.junit.Assert.assertTrue(InstanceLaunchGuard.isLatest(instance.id(), replacementGeneration));
+            assertEquals(0, stops.get());
+            assertEquals(0, replacement.closes);
+        } finally {
+            ExecutionSessionRegistry.unregister(instance.id());
+            InstanceLaunchGuard.end(instance.id());
+        }
     }
 
     @Test
@@ -457,7 +544,8 @@ public final class InstanceLaunchSequenceTest {
             String rejectedGeneration = InstanceLaunchGuard.begin(instance.id());
             org.junit.Assert.assertNull("B must be refused while A owns launch admission", rejectedGeneration);
             org.junit.Assert.assertFalse(InstanceLaunchSequence.afterLaunchFailure(
-                    controller, instance.id(), rejectedGeneration, false, feedback::incrementAndGet));
+                    controller, instance.id(), rejectedGeneration, false,
+                    RuntimeProcessSupervisor.StopResult.CONFIRMED, feedback::incrementAndGet));
             org.junit.Assert.assertFalse(InstanceLaunchGuard.end(instance.id(), rejectedGeneration));
             org.junit.Assert.assertFalse(InstanceLaunchGuard.end(instance.id(), "old-generation"));
             org.junit.Assert.assertTrue(InstanceLaunchGuard.isLatest(instance.id(), generationA));

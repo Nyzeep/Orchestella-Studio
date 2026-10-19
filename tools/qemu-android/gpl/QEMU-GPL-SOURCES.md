@@ -3,12 +3,11 @@
 This record describes the GPL object code shipped inside the DroidLayer APK
 (`lib/arm64-v8a/libdroidlayer_qemu.so`, the QEMU 11.1.1 `qemu-system-aarch64`
 main ELF packaged with a `.so` name) and every statically linked bundled
-dependency, together with the complete corresponding-source path. It satisfies
-the engineering delivery floor of `docs/agent-handoff/QEMU_JNI_SUPPLY_CHAIN_POLICY.md`
-§6 and anticipates the public-release obligations of
-`docs/agent-handoff/GPL_RELEASE_DELIVERY_POLICY.md` (no public release is
-authorized yet; the public tag + source-bundle delivery happens at release time
-by the named Release Maintainer).
+dependency, together with the complete corresponding-source path. It records
+the delivery obligations of `docs/adr/0014-licensing.md` §3 and the written
+offer in `guest-assets/SOURCE-OFFER.txt` (no public release is authorized yet;
+the public tag + source-bundle delivery happens at release time by the named
+Release Maintainer).
 
 ## 1. QEMU (GPLv2)
 
@@ -60,7 +59,7 @@ by the named Release Maintainer).
 | libfdt (dtc) | rev `b6910bec11614980a21e46fbccc35934b671bd81` | GPL-2+ OR BSD-2-Clause (dual) | `https://gitlab.com/qemu-project/dtc.git` frozen archive SHA-256 `1df504e7…1a29a`, cross-built static PIC into the build prefix |
 | libiconv | 1.19 | LGPL-2.1 (library) + GPL-3 (tools) | `https://ftp.gnu.org/gnu/libiconv/libiconv-1.19.tar.gz`, SHA-256 `88dd96a8…19aa6` (no official checksum published; `official_checksum=absent` exception recorded, `.sig` archived unverified) |
 | proxy-libintl | tag `0.4` = commit `c03e1a74b17fa7ec467e110130775409e4828a4c` | LGPL-2.1-or-later (licensee election exercised from LGPL-2.0-or-later; election record `R/evidence/proxy-libintl-license-election-20260924.md`) | `https://github.com/frida/proxy-libintl.git`, git archive SHA-256 `55b5d8f9…264a` |
-| DroidLayer shm stub | self-owned | Apache-2.0 (project LICENSE) | `tools/qemu-android/android-shim/shm_stub.c` SHA-256 `5db52032…50d75` + `shm_stub.h` `37854061…de15f`; ENOSYS link shim per the 2026-09-25 user ruling (option 1) |
+| DroidLayer shm stub | self-owned | GPL-3.0-or-later (root `LICENSE`; `docs/adr/0014-licensing.md`) | `tools/qemu-android/android-shim/shm_stub.c` SHA-256 `5db52032…50d75` + `shm_stub.h` `37854061…de15f`; ENOSYS link shim per the 2026-09-25 user ruling (option 1) |
 
 All frozen upstream source archives above are retained under
 `R/downloads/…` with per-file SHA-256 fetch logs; license ledgers and
@@ -104,7 +103,7 @@ the pinned upstream archives (§1–§2), the DroidLayer build entrypoint and
 cross-build scripts (§1), the lock `tools/qemu-android/qemu-jni.lock`, and this
 record; all are retained and verifiable by SHA-256. At the time of a public
 binary release, the public corresponding-source channel (immutable release tag
-plus matching source bundle, per `GPL_RELEASE_DELIVERY_POLICY.md` §2–§4) is
+plus matching source bundle, per `docs/adr/0014-licensing.md` §3) is
 created by the named Release Maintainer before the release gate opens; this
 record does not substitute for that public delivery.
 

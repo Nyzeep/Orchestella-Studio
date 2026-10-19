@@ -41,7 +41,6 @@ valid_character_device_path() {
 install_strategy_neutral_bridge_devices() {
     BRIDGE_DEVICE="$(kernel_argument droidlayer.bridge_device || true)"
     TERMINAL_DEVICE="$(kernel_argument droidlayer.terminal_device || true)"
-    BRIDGE_DEVICE_MAPPED=0
 
     if [ -z "$BRIDGE_DEVICE" ] && [ -z "$TERMINAL_DEVICE" ]; then
         return 0
@@ -64,7 +63,6 @@ install_strategy_neutral_bridge_devices() {
     if [ -c /dev/vport0p2 ]; then
         ln -sf /dev/vport0p2 /dev/orchestella-proxy || true
     fi
-    BRIDGE_DEVICE_MAPPED=1
 }
 
 is_official_alpine_busybox_init() {
@@ -437,7 +435,7 @@ stage_guest_package_repositories() {
     repo_sections="$(sed -n 's/^\[\([^]]*\)\]$/\1/p' "$repo_input/$repo_file" | tr '\n' ' ' | sed 's/ $//')"
     [ "$repo_sections" = "$repo_ids" ] || fail package-repository-ids-invalid
     repo_count=0
-    for repo_id in $repo_ids; do repo_count=$((repo_count + 1)); done
+    for repo_id in $repo_ids; do repo_count=$((repo_count + 1)); : "$repo_id"; done
     [ "$(grep -c '^gpgcheck=1$' "$repo_input/$repo_file")" = "$repo_count" ] || fail package-repository-signatures-required
     [ "$(grep -c '^gpgkey=.' "$repo_input/$repo_file")" = "$repo_count" ] || fail package-repository-key-missing
     if grep -Eiq '^[[:space:]]*(gpgcheck|sslverify)[[:space:]]*=[[:space:]]*(0|false|no)([[:space:]]|$)' "$repo_input/$repo_file"; then
@@ -475,7 +473,7 @@ configure_fstab_mounts() {
         for tag_file in "$virtio_devices"/*/mount_tag; do
             if [ -f "$tag_file" ] && [ "$(cat "$tag_file")" = "$share_tag" ]; then share_present=1; break; fi
         done
-        if [ "$share_present" -eq 1 ] && ! grep -Eq "^$share_tag[[:space:]]+/mnt/$share_tag[[:space:]]" "$fstab.tmp"; then
+        if [ "$share_present" -eq 1 ] && ! grep -Eq "^${share_tag}[[:space:]]+/mnt/${share_tag}[[:space:]]" "$fstab.tmp"; then
             printf '%s\t/mnt/%s\t9p\ttrans=virtio,version=9p2000.L,ro,nofail\t0\t0\n' "$share_tag" "$share_tag" >> "$fstab.tmp"
         fi
     done
@@ -3028,9 +3026,9 @@ if __name__ == "__main__":
 ORCHESTELLA_FEATURE_3B766B91CAA9F153
     chmod 0755 "$1/usr/local/lib/orchestella/rootless-probe.py.next" || return 1
     mv "$1/usr/local/lib/orchestella/rootless-probe.py.next" "$1/usr/local/lib/orchestella/rootless-probe.py" || return 1
-    cat > "$1/usr/local/lib/orchestella/display-relay.py.next" <<'ORCHESTELLA_FEATURE_8900B8633AACF8BD' || return 1
+    cat > "$1/usr/local/lib/orchestella/display-relay.py.next" <<'ORCHESTELLA_FEATURE_9E061BF98253DF43' || return 1
 #!/usr/bin/env python3
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Original authenticated private display relay (Python >= 3.9, Linux).
 
 Public CLI: --user orchestella --transport virtio|vsock. No path overrides, TCP listeners,
@@ -3451,7 +3449,7 @@ if __name__ == "__main__":
         sys.exit(1)
     except KeyboardInterrupt:
         sys.exit(0)
-ORCHESTELLA_FEATURE_8900B8633AACF8BD
+ORCHESTELLA_FEATURE_9E061BF98253DF43
     chmod 0755 "$1/usr/local/lib/orchestella/display-relay.py.next" || return 1
     mv "$1/usr/local/lib/orchestella/display-relay.py.next" "$1/usr/local/lib/orchestella/display-relay.py" || return 1
 }
@@ -4306,6 +4304,8 @@ __orchestella_build_prompt() {
     fi
 
     _prompt_user="${USER:-${LOGNAME:-$(id -un 2>/dev/null)}}"
+    # BusyBox ash sets HOSTNAME; the hostname fallback covers stricter POSIX shells.
+    # shellcheck disable=SC3028
     _prompt_host="${HOSTNAME:-$(hostname 2>/dev/null)}"
     _dir_str="$(__orchestella_dir)"
     if [ -n "$_prompt_user" ] && [ -n "$_prompt_host" ]; then
@@ -4612,6 +4612,8 @@ else
 fi
 log 'ORCHESTELLA_GUEST_ASSEMBLY phase=unpack status=running'
 unpack_rootfs_archive() {
+    # init runs under BusyBox ash, which supports local.
+    # shellcheck disable=SC3043
     local magic=""
     if [ -r "$ROOTFS_PATH" ]; then
         magic="$(head -c 6 "$ROOTFS_PATH" 2>/dev/null | od -A n -t x1 2>/dev/null | tr -d ' \n\r' || true)"

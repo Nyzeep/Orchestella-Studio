@@ -19,6 +19,8 @@ public final class StorageContractTest {
         preflightBlocksWhenUsableSpaceIsInsufficient();
         preflightPassesWhenUsableSpaceIsSufficient();
         instanceExportMetadataJsonRoundtripAndEscaping();
+        instanceExportMetadataExtendedFieldsRoundtrip();
+        instanceExportMetadataLegacyJsonUsesSafeDefaults();
         checksumManifestFormattingAndParsing();
         sha256HexComputesAccurateDigests();
         System.out.println("STORAGE_CONTRACT_TEST_OK");
@@ -152,6 +154,85 @@ public final class StorageContractTest {
                 IllegalArgumentException.class,
                 () -> StorageContract.InstanceExportMetadata.fromJson("{\"distroId\":\"alpine\"}"),
                 "JSON with missing fields must be rejected");
+    }
+
+    private static void instanceExportMetadataExtendedFieldsRoundtrip() {
+        String sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        VmHardwareConfig hardwareConfig =
+                new VmHardwareConfig(4, 4096, 16L * 1024L * 1024L * 1024L, false, "console=ttyS0");
+        StorageContract.ProvisioningEvidenceMetadata evidence =
+                new StorageContract.ProvisioningEvidenceMetadata(1, sha256, 1789000150000L);
+
+        StorageContract.InstanceExportMetadata metadata = new StorageContract.InstanceExportMetadata(
+                "inst-uuid-5678",
+                "debian",
+                "12.7",
+                "FULL_LINUX",
+                "STOPPED",
+                4294967296L,
+                sha256,
+                1789000000000L,
+                1789000100000L,
+                1789000200000L,
+                "lab-host",
+                "alice",
+                true,
+                hardwareConfig,
+                evidence);
+
+        String json = metadata.toJson();
+        assertTrue(json.contains("\"hostname\": \"lab-host\""), "contains hostname");
+        assertTrue(json.contains("\"defaultUser\": \"alice\""), "contains defaultUser");
+        assertTrue(json.contains("\"hasSudo\": true"), "contains hasSudo");
+        assertTrue(json.contains("\"hardwareCpuCores\": 4"), "contains cpu cores");
+        assertTrue(json.contains("\"hardwareRamMegabytes\": 4096"), "contains ram");
+        assertTrue(json.contains("\"hardwareExtraKernelArguments\": \"console=ttyS0\""),
+                "contains extra kernel arguments");
+        assertTrue(json.contains("\"provisioningMarkerVersion\": 1"), "contains marker version");
+        assertTrue(json.contains("\"provisioningRootfsSha256\": \"" + sha256 + "\""),
+                "contains provisioning rootfs hash");
+
+        StorageContract.InstanceExportMetadata parsed =
+                StorageContract.InstanceExportMetadata.fromJson(json);
+        assertEquals(metadata, parsed, "extended roundtrip equals");
+        assertEquals(metadata.hashCode(), parsed.hashCode(), "extended hashcode equals");
+        assertEquals("lab-host", parsed.hostname(), "hostname preserved");
+        assertEquals("alice", parsed.defaultUser(), "default user preserved");
+        assertTrue(parsed.hasSudo(), "sudo choice preserved");
+        assertEquals(hardwareConfig, parsed.hardwareConfig(), "hardware preserved");
+        assertEquals(evidence, parsed.provisioningEvidence(), "provisioning evidence preserved");
+    }
+
+    private static void instanceExportMetadataLegacyJsonUsesSafeDefaults() {
+        String sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        String legacyJson = "{\n"
+                + "  \"instanceId\": \"legacy-id\",\n"
+                + "  \"distroId\": \"alpine\",\n"
+                + "  \"distroVersion\": \"3.24.1\",\n"
+                + "  \"runtimeClass\": \"FULL_LINUX\",\n"
+                + "  \"state\": \"STOPPED\",\n"
+                + "  \"diskSizeBytes\": 2147483648,\n"
+                + "  \"sha256RootVolume\": \"" + sha256 + "\",\n"
+                + "  \"createdAtMillis\": 1,\n"
+                + "  \"updatedAtMillis\": 2,\n"
+                + "  \"exportedAtMillis\": 3\n"
+                + "}\n";
+
+        StorageContract.InstanceExportMetadata parsed =
+                StorageContract.InstanceExportMetadata.fromJson(legacyJson);
+        assertEquals(StorageContract.InstanceExportMetadata.DEFAULT_HOSTNAME, parsed.hostname(),
+                "legacy hostname default");
+        assertEquals(StorageContract.InstanceExportMetadata.DEFAULT_USER, parsed.defaultUser(),
+                "legacy user default");
+        assertTrue(!parsed.hasSudo(), "legacy metadata must not grant sudo");
+        assertEquals(VmHardwareConfig.defaultConfig(), parsed.hardwareConfig(),
+                "legacy hardware defaults");
+        assertEquals(null, parsed.provisioningEvidence(), "legacy metadata has no provisioning evidence");
+
+        StorageContract.InstanceExportMetadata expected = new StorageContract.InstanceExportMetadata(
+                "legacy-id", "alpine", "3.24.1", "FULL_LINUX", "STOPPED",
+                2147483648L, sha256, 1L, 2L, 3L);
+        assertEquals(expected, parsed, "legacy JSON equals default-extension metadata");
     }
 
     private static void checksumManifestFormattingAndParsing() {

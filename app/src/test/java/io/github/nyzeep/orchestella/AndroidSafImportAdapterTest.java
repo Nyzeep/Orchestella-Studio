@@ -8,7 +8,9 @@ import static org.junit.Assert.fail;
 
 import android.net.Uri;
 import io.github.nyzeep.orchestella.runtime.contract.StorageContract;
+import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig;
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle;
+import io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -113,6 +115,48 @@ public class AndroidSafImportAdapterTest {
         InstanceLifecycle.Instance loaded = store.load(restored.id());
         assertNotNull(loaded);
         assertEquals(restored.id(), loaded.id());
+    }
+
+    @Test
+    public void preservesUserConfigHardwareAndProvisioningEvidenceAcrossSafRoundTrip() throws Exception {
+        Path origVolume = workDir.resolve("configured-vol.raw");
+        createSparseFile(origVolume, 512L * 1024L, "CONFIGURED_PAYLOAD".getBytes(StandardCharsets.UTF_8));
+
+        VmHardwareConfig hardwareConfig =
+                new VmHardwareConfig(4, 4096, 16L * 1024L * 1024L * 1024L, false, "console=ttyS0");
+        InstanceUserConfig userConfig =
+                new InstanceUserConfig("alice", "SecurePass123", true, "lab-host");
+        InstanceLifecycle.Instance original = controller.create(
+                new InstanceLifecycle.DistroReference("debian", "12.7"),
+                origVolume,
+                hardwareConfig,
+                userConfig);
+        controller.beginProvisioning(original.id());
+        controller.completeProvisioning(original.id());
+        String rootfsSha256 = "c".repeat(64);
+        original = controller.recordProvisioning(
+                original.id(),
+                new InstanceLifecycle.ProvisioningEvidence(1, rootfsSha256, 1_789_000_050_000L));
+
+        ByteArrayOutputStream captured = new ByteArrayOutputStream();
+        new AndroidSafExportAdapter(uri -> captured, CLOCK)
+                .exportToDocumentUri(original, dummyUri());
+
+        Path targetVolume = workDir.resolve("configured-restore").resolve("rootfs.raw");
+        AndroidSafImportAdapter importAdapter = new AndroidSafImportAdapter(
+                uri -> new ByteArrayInputStream(captured.toByteArray()), CLOCK);
+
+        InstanceLifecycle.Instance restored =
+                importAdapter.importFromDocumentUri(dummyUri(), targetVolume, controller);
+
+        assertEquals("lab-host", restored.hostname());
+        assertEquals("alice", restored.defaultUser());
+        assertTrue(restored.hasSudo());
+        assertEquals(hardwareConfig, restored.hardwareConfig());
+        assertTrue(restored.isProvisionedFor(rootfsSha256));
+        assertEquals("", restored.guestPassword());
+        assertFalse(restored.bridgeToken().equals(original.bridgeToken()));
+        assertEquals(512L * 1024L, Files.size(targetVolume));
     }
 
     @Test

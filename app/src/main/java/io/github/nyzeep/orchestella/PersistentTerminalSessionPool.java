@@ -41,6 +41,13 @@ public final class PersistentTerminalSessionPool {
 
     private static final PersistentTerminalSessionPool INSTANCE = new PersistentTerminalSessionPool();
     private static final long RUNTIME_STOP_GRACE_MS = 2000L;
+    /**
+     * How long a caller waits for another thread's in-flight stop before
+     * treating the runtime as unconfirmed. A supervisor stop is bounded
+     * (grace + force wait + channel close + gateway), so this only protects
+     * against a misbehaving stop implementation.
+     */
+    private static final long STOP_COMPLETION_WAIT_MS = 30_000L;
 
     public static PersistentTerminalSessionPool getInstance() {
         return INSTANCE;
@@ -60,6 +67,16 @@ public final class PersistentTerminalSessionPool {
         private final Set<Consumer<String>> outputListeners = new CopyOnWriteArraySet<>();
         private final AtomicBoolean closed = new AtomicBoolean(false);
         private final AtomicBoolean pumpFinished = new AtomicBoolean(false);
+        /**
+         * Retirement handshake. {@code stopping} means one thread is inside a
+         * bounded runtime stop for this holder; {@code stopMonitor} lets other
+         * callers wait for that stop to settle without holding the per-instance
+         * transition lock. Both fields are only mutated while the instance
+         * transition lock is held (the monitor makes the transition visible to
+         * waiters that deliberately do not hold it).
+         */
+        private final Object stopMonitor = new Object();
+        private boolean stopping;
         private final ReentrantReadWriteLock rwLock = new ReentrantReadWriteLock();
         private final Thread pumpThread;
         private final Object endListenerLock = new Object();
@@ -267,6 +284,56 @@ public final class PersistentTerminalSessionPool {
             return outputListeners.size();
         }
 
+        /** Marks one bounded stop as owned by the caller; false when one is already in flight. */
+        private boolean tryBeginStop() {
+            synchronized (stopMonitor) {
+                if (stopping) return false;
+                stopping = true;
+                return true;
+            }
+        }
+
+        /** Publishes the stop outcome and wakes every transition waiter. */
+        private void finishStop() {
+            synchronized (stopMonitor) {
+                stopping = false;
+                stopMonitor.notifyAll();
+            }
+        }
+
+        private boolean isStopping() {
+            synchronized (stopMonitor) {
+                return stopping;
+            }
+        }
+
+        /**
+         * Waits for the in-flight stop to settle. Must be called without the
+         * instance transition lock so the stop owner can reacquire it to publish
+         * the outcome. Returns false on timeout or interruption.
+         */
+        private boolean awaitStopFinished(long timeoutMs) {
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(timeoutMs);
+            boolean interrupted = false;
+            synchronized (stopMonitor) {
+                while (stopping) {
+                    long remaining = deadline - System.nanoTime();
+                    if (remaining <= 0L) {
+                        if (interrupted) Thread.currentThread().interrupt();
+                        return false;
+                    }
+                    try {
+                        stopMonitor.wait(
+                                Math.max(1L, java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(remaining)));
+                    } catch (InterruptedException ignored) {
+                        interrupted = true;
+                    }
+                }
+            }
+            if (interrupted) Thread.currentThread().interrupt();
+            return true;
+        }
+
         public void close() {
             if (closed.compareAndSet(false, true)) {
                 rwLock.writeLock().lock();
@@ -287,10 +354,13 @@ public final class PersistentTerminalSessionPool {
     private final ConcurrentMap<String, SessionHolder> holders = new ConcurrentHashMap<>();
     /**
      * Per-instance transition locks, never held while mutating another instance.
-     * Stops run under this lock and outside any pool-wide monitor, so a slow stop
-     * cannot block operations on other instances while it still serializes
-     * registration, retirement and ownership changes for its own instance. Entries
-     * are retained for the process lifetime; there is one small lock per instance id.
+     * They serialize ownership transitions for one instance, but the bounded
+     * runtime stop itself runs outside them: a {@link SessionHolder} STOPPING
+     * marker keeps the old owner published until the stop settles, and waiters
+     * block on the holder's stop monitor instead of the transition lock. A slow
+     * stop therefore cannot block another instance, and it cannot block a fast
+     * request-stop probe for its own instance. Entries are retained for the
+     * process lifetime; there is one small lock per instance id.
      */
     private final ConcurrentMap<String, ReentrantLock> transitions = new ConcurrentHashMap<>();
 
@@ -311,25 +381,83 @@ public final class PersistentTerminalSessionPool {
         Objects.requireNonNull(instanceId, "instanceId");
         Objects.requireNonNull(session, "session");
         ReentrantLock transition = transition(instanceId);
-        transition.lock();
-        try {
-            SessionHolder existing = holders.get(instanceId);
-            if (existing != null && existing.rawSession() == session) return existing;
-            if (existing != null) {
-                // Never publish a second owner while the previous runtime may still be
-                // alive: a fixed gvproxy port and the root disk belong to the old owner.
-                // The bounded stop happens here, outside any pool-wide monitor, so
-                // other instances keep progressing.
-                if (!stopOwnedRuntime(existing)) {
+        while (true) {
+            SessionHolder existing;
+            boolean ownsStop = false;
+            transition.lock();
+            try {
+                existing = holders.get(instanceId);
+                if (existing == null) {
+                    return publish(instanceId, session, provisioningListener);
+                }
+                if (existing.rawSession() == session) return existing;
+                // Never publish a second owner while the previous runtime may still
+                // be alive: a fixed gvproxy port and the root disk belong to the old
+                // owner. Only one thread may run that bounded stop.
+                ownsStop = existing.tryBeginStop();
+            } finally {
+                transition.unlock();
+            }
+
+            if (!ownsStop) {
+                // Another thread owns the stop. Wait outside the transition lock so
+                // its bounded stop can reacquire the lock and publish the outcome.
+                if (!existing.awaitStopFinished(STOP_COMPLETION_WAIT_MS)) {
                     throw new IOException("previous runtime session did not confirm stop");
                 }
-                existing.close();
-                holders.remove(instanceId, existing);
+                continue;
             }
-            SessionHolder holder = new SessionHolder(instanceId, session,
-                    TerminalRingBuffer.DEFAULT_MAX_CAPACITY, provisioningListener);
-            holders.put(instanceId, holder);
-            return holder;
+
+            boolean confirmed;
+            try {
+                confirmed = stopOwnedRuntime(existing);
+            } catch (RuntimeException | Error failure) {
+                completeStop(transition, instanceId, existing, false, null, null);
+                throw failure;
+            }
+            if (!confirmed) {
+                completeStop(transition, instanceId, existing, false, null, null);
+                throw new IOException("previous runtime session did not confirm stop");
+            }
+            // Remove the old owner, close it, wake waiters and publish the replacement
+            // under one lock section: a waiter must never observe a gap in which a
+            // third owner could be published between retirement and replacement.
+            return completeStop(transition, instanceId, existing, true, session, provisioningListener);
+        }
+    }
+
+    /** Publishes a new holder; called with the instance transition lock held. */
+    private SessionHolder publish(String instanceId, ExecutionSession session,
+            ProvisioningListener provisioningListener) {
+        SessionHolder holder = new SessionHolder(instanceId, session,
+                TerminalRingBuffer.DEFAULT_MAX_CAPACITY, provisioningListener);
+        holders.put(instanceId, holder);
+        return holder;
+    }
+
+    /**
+     * Publishes a stop outcome under the instance transition lock. A confirmed
+     * stop retires the old holder (optionally publishing a replacement in the
+     * same critical section); an unconfirmed stop keeps it registered and only
+     * clears the STOPPING marker so a later caller may retry.
+     */
+    private SessionHolder completeStop(ReentrantLock transition, String instanceId,
+            SessionHolder holder, boolean confirmed, ExecutionSession replacement,
+            ProvisioningListener provisioningListener) {
+        transition.lock();
+        try {
+            if (!confirmed) {
+                holder.finishStop();
+                return null;
+            }
+            holders.remove(instanceId, holder);
+            try {
+                holder.close();
+            } finally {
+                holder.finishStop();
+            }
+            return replacement == null ? null
+                    : publish(instanceId, replacement, provisioningListener);
         } finally {
             transition.unlock();
         }
@@ -348,6 +476,7 @@ public final class PersistentTerminalSessionPool {
         try {
             SessionHolder current = holders.get(instanceId);
             if (current == null || current.rawSession() != expected
+                    || current.isStopping()
                     || InstanceLaunchGuard.isSuperseded(instanceId, current.generation())) return false;
             action.run();
             holders.remove(instanceId, current);
@@ -366,6 +495,10 @@ public final class PersistentTerminalSessionPool {
         try {
             SessionHolder current = holders.get(instanceId);
             if (current == null || current.rawSession() != expected) return false;
+            // Retirement is already in flight and owns the shutdown. Do not wait for
+            // it (the caller may be the one that must release its gate) and do not
+            // run a second power action against a runtime that is being stopped.
+            if (current.isStopping()) return false;
             if (intent == null || intent == StopIntent.NONE) throw new IllegalArgumentException("stop intent required");
             if (current.stopIntent == StopIntent.FORCE || current.stopIntent == intent) return true;
             // The transition lock also gates confirmed completion, so a synchronous
@@ -387,17 +520,34 @@ public final class PersistentTerminalSessionPool {
     /** Retires only this owner. A delayed caller cannot close a replacement. */
     public boolean unregister(String instanceId, ExecutionSession expected) {
         ReentrantLock transition = transition(instanceId);
+        SessionHolder current;
+        boolean ownsStop;
         transition.lock();
         try {
-            SessionHolder current = holders.get(instanceId);
+            current = holders.get(instanceId);
             if (current == null || current.rawSession() != expected) return false;
-            if (!stopOwnedRuntime(current)) return false;
-            holders.remove(instanceId, current);
-            current.close();
-            return true;
+            ownsStop = current.tryBeginStop();
         } finally {
             transition.unlock();
         }
+
+        if (!ownsStop) {
+            // The in-flight stop may retire this owner and publish a replacement.
+            // Waiting is required, but this delayed caller must never delete or
+            // stop that replacement.
+            current.awaitStopFinished(STOP_COMPLETION_WAIT_MS);
+            return false;
+        }
+
+        boolean confirmed;
+        try {
+            confirmed = stopOwnedRuntime(current);
+        } catch (RuntimeException | Error failure) {
+            completeStop(transition, instanceId, current, false, null, null);
+            throw failure;
+        }
+        completeStop(transition, instanceId, current, confirmed, null, null);
+        return confirmed;
     }
 
     public SessionHolder getHolder(String instanceId) {
@@ -443,33 +593,54 @@ public final class PersistentTerminalSessionPool {
 
     public void unregister(String instanceId) {
         if (instanceId == null) return;
-        ReentrantLock transition = transition(instanceId);
-        transition.lock();
-        try {
-            SessionHolder removed = holders.get(instanceId);
-            if (removed == null || !stopOwnedRuntime(removed)) return;
-            holders.remove(instanceId, removed);
-            removed.close();
-        } finally {
-            transition.unlock();
-        }
+        retire(instanceId, null);
     }
 
     public void clear() {
         // Snapshot first: a stop may be slow, and holding a pool-wide monitor for it
         // would block registers on unrelated instances. Holders registered after the
         // snapshot keep their own transition lock and stay owned.
-        for (String instanceId : new java.util.ArrayList<>(holders.keySet())) {
-            ReentrantLock transition = transition(instanceId);
+        for (SessionHolder holder : new java.util.ArrayList<>(holders.values())) {
+            retire(holder.instanceId(), holder);
+        }
+    }
+
+    /**
+     * Retires one holder with the actual bounded stop outside the transition
+     * lock. A concurrent stop is awaited and then re-inspected: a confirmed
+     * stop has already removed the holder, while an unconfirmed stop leaves it
+     * registered for this caller to retry. Passing a null expected holder means
+     * "the owner current when the lock is acquired"; clear() passes a snapshot
+     * so a holder published after the snapshot is not touched.
+     */
+    private boolean retire(String instanceId, SessionHolder expected) {
+        ReentrantLock transition = transition(instanceId);
+        while (true) {
+            SessionHolder current;
+            boolean ownsStop;
             transition.lock();
             try {
-                SessionHolder holder = holders.get(instanceId);
-                if (holder == null || !stopOwnedRuntime(holder)) continue;
-                holders.remove(instanceId, holder);
-                holder.close();
+                current = holders.get(instanceId);
+                if (current == null || (expected != null && current != expected)) return false;
+                ownsStop = current.tryBeginStop();
             } finally {
                 transition.unlock();
             }
+
+            if (!ownsStop) {
+                if (!current.awaitStopFinished(STOP_COMPLETION_WAIT_MS)) return false;
+                continue;
+            }
+
+            boolean confirmed;
+            try {
+                confirmed = stopOwnedRuntime(current);
+            } catch (RuntimeException | Error failure) {
+                completeStop(transition, instanceId, current, false, null, null);
+                throw failure;
+            }
+            completeStop(transition, instanceId, current, confirmed, null, null);
+            return confirmed;
         }
     }
 

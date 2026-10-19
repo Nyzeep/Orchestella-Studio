@@ -110,8 +110,67 @@ public final class LaunchTimelineTest {
         assertEquals(3, timeline.stages().size());
         assertTrue(timeline.finish());
         assertTrue(sink.lines.get(0).contains("\"stopResult\":\"CONFIRMED\""));
+        assertTrue(sink.lines.get(0).contains("\"stopAttempt\":2"));
+        assertTrue(sink.lines.get(0).contains("\"stopFinal\":true"));
         assertEquals(1, countOccurrences(sink.lines.get(0), "\"stage\":\"QEMU_STARTED\""));
         assertEquals(1, countOccurrences(sink.lines.get(0), "\"stage\":\"STOP_CONFIRMED\""));
+    }
+
+    @Test
+    public void unconfirmedStopKeepsItsDiagnosticAndAppendsOneCompensatingFinalRecord() {
+        FakeClock clock = new FakeClock(Instant.parse("2026-10-18T08:00:00Z"));
+        RecordingSink sink = new RecordingSink();
+        LaunchTimeline timeline = new LaunchTimeline(INSTANCE_ID, DISTRO_ID, 2048, 2, clock, sink);
+
+        timeline.mark(LaunchTimeline.Stage.LAUNCH_START);
+        clock.advanceMillis(100);
+        timeline.markStopConfirmed(StopResult.UNCONFIRMED);
+        assertTrue(timeline.finish());
+
+        assertEquals(1, sink.lines.size());
+        String diagnostic = sink.lines.get(0);
+        assertTrue(diagnostic.contains("\"schema\":2"));
+        assertTrue(diagnostic.contains("\"stopResult\":\"UNCONFIRMED\""));
+        assertTrue(diagnostic.contains("\"stopAttempt\":1"));
+        assertTrue(diagnostic.contains("\"stopFinal\":false"));
+
+        assertFalse("duplicate finish must not append", timeline.finish());
+        assertEquals(1, sink.lines.size());
+
+        timeline.markStopConfirmed(StopResult.CONFIRMED);
+        assertTrue("a settled retry must append its compensation", timeline.finish());
+        assertEquals(2, sink.lines.size());
+        String finalRecord = sink.lines.get(1);
+        assertTrue(finalRecord.contains("\"stopResult\":\"CONFIRMED\""));
+        assertTrue(finalRecord.contains("\"stopAttempt\":2"));
+        assertTrue(finalRecord.contains("\"stopFinal\":true"));
+        assertTrue("the first UNCONFIRMED record must stay for diagnosis",
+                sink.lines.get(0).contains("\"stopResult\":\"UNCONFIRMED\""));
+
+        assertFalse(timeline.finish());
+        assertEquals(2, sink.lines.size());
+
+        timeline.markStopConfirmed(StopResult.ALREADY_STOPPED);
+        assertFalse("a third observation after a final record must not append", timeline.finish());
+        assertEquals(2, sink.lines.size());
+    }
+
+    @Test
+    public void alreadyStoppedRetryAlsoAppendsAFinalRecord() {
+        FakeClock clock = new FakeClock(Instant.parse("2026-10-18T08:00:00Z"));
+        RecordingSink sink = new RecordingSink();
+        LaunchTimeline timeline = new LaunchTimeline(INSTANCE_ID, DISTRO_ID, 2048, 2, clock, sink);
+
+        timeline.mark(LaunchTimeline.Stage.LAUNCH_START);
+        timeline.markStopConfirmed(StopResult.UNCONFIRMED);
+        assertTrue(timeline.finish());
+        timeline.markStopConfirmed(StopResult.ALREADY_STOPPED);
+        assertTrue(timeline.finish());
+
+        assertEquals(2, sink.lines.size());
+        assertTrue(sink.lines.get(1).contains("\"stopResult\":\"ALREADY_STOPPED\""));
+        assertTrue(sink.lines.get(1).contains("\"stopAttempt\":2"));
+        assertTrue(sink.lines.get(1).contains("\"stopFinal\":true"));
     }
 
     @Test
@@ -202,7 +261,11 @@ public final class LaunchTimelineTest {
         String line = timeline.toJsonLine();
 
         assertEquals(Set.of("schema", "instanceId", "distroId", "guestMemoryMb", "vcpuCount",
-                "stages", "rootfsBytes", "initramfsBytes", "credentialsOnly", "stopResult", "diagnostics"), topLevelKeys(line));
+                "stages", "rootfsBytes", "initramfsBytes", "credentialsOnly", "stopResult",
+                "stopAttempt", "stopFinal", "diagnostics"), topLevelKeys(line));
+        assertTrue(line.contains("\"schema\":2"));
+        assertTrue(line.contains("\"stopAttempt\":1"));
+        assertTrue(line.contains("\"stopFinal\":true"));
     }
 
     private static Set<String> topLevelKeys(String line) {

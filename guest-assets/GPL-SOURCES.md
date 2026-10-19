@@ -69,7 +69,34 @@ packaging must preserve those files. The written offer remains valid for at
 least three years after the last applicable object-code distribution. No
 Podroid, Termux, or other GPL reference-project code or binaries are used.
 
-The guest agent and DroidLayer provisioning scripts are original project code
-under the repository's Apache-2.0 license. The official Alpine rootfs remains a
-separately verified Provisioning input; it is not embedded in or redistributed
-as part of the reproducible initramfs delivery.
+## License scope and build-input pinning
+
+The Linux kernel, BusyBox, e2fsprogs and musl records above describe the
+reproducible initramfs delivery produced by `guest-assets/build.sh`; the
+authoritative versions are in `guest-assets/inputs/inputs.lock`. Those
+third-party programs keep their own upstream licenses (GPL-2.0-only WITH
+Linux-syscall-note for the kernel, GPL-2.0-only for BusyBox and `mke2fs`, MIT
+for musl) and are not relicensed by this project.
+
+The guest agent (`guest-assets/agent/guest-agent.c`), the DroidLayer
+provisioning, initramfs and repack scripts, and the rest of this repository's
+original code are licensed under GNU GPL version 3 or later
+(GPL-3.0-or-later), per the root `LICENSE` and
+`docs/adr/0014-licensing.md`. They are not Apache-2.0.
+
+The guest agent integrated into the APK's repacked initramfs is built by
+`tools/phase5/build-guest-agent.py`; the canonical `guest-assets/build.sh`
+also compiles the same source with the initramfs toolchain. The two agent
+binaries are different build outputs. The APK agent's musl package version
+(1.2.6-r2) and LLVM compiler-rt builtins (Android NDK r27) are pinned in
+`tools/phase5/guest-agent-inputs.lock.json`. That agent musl pin is distinct
+from the initramfs `MUSL_VERSION=1.2.5` in
+`guest-assets/inputs/inputs.lock`. The agent's notices and upstream links are
+in `app/src/main/assets/NOTICE.GUEST-RUNTIME`. QEMU and its statically linked
+libraries are recorded separately in
+`tools/qemu-android/gpl/QEMU-GPL-SOURCES.md` and
+`app/src/main/assets/NOTICE.QEMU`; they are not part of the initramfs build.
+
+The official Alpine rootfs remains a separately verified provisioning input; it
+is not embedded in or redistributed as part of the reproducible initramfs
+delivery.

@@ -4,7 +4,7 @@ set -euo pipefail
 # shellcheck source=../scripts/common.sh
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)/scripts/common.sh"
 
-for command in cmp debugfs grep od qemu-system-aarch64 sha256sum timeout tr truncate; do
+for command in cmp dd debugfs grep od qemu-system-aarch64 sha256sum timeout tr truncate; do
   command -v "$command" >/dev/null 2>&1 || {
     printf 'required smoke command is unavailable: %s\n' "$command" >&2
     exit 69
@@ -56,6 +56,9 @@ printf '%s\n' "$TOKEN" > "$SMOKE_WORK/input/bridge.token"
 ROOT_VOLUME="$SMOKE_WORK/root-volume.raw"
 CONSOLE_LOG="$SMOKE_WORK/console.log"
 truncate --size 2G "$ROOT_VOLUME"
+# Production marks a fresh volume with this 32-byte signature before it becomes
+# eligible for provisioning; the smoke must create the same initial state.
+printf 'ORCHESTELLA_EMPTY_ROOT_VOLUME_V2' | dd of="$ROOT_VOLUME" bs=1 conv=notrunc status=none
 
 set +e
 timeout --signal=TERM --kill-after=10s "$SMOKE_TIMEOUT" \
