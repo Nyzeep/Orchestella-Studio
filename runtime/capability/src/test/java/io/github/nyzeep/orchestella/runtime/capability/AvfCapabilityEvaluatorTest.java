@@ -19,6 +19,9 @@ public final class AvfCapabilityEvaluatorTest {
         blockedSnapdragon8EliteSocSilentlyClosesTheWizard();
         extraBlockedHintCatchesUnknownSocNames();
         supportedButUnauthorizedDeviceNeedsTheWizardAndKeepsTheSoftwareBadge();
+        protectedOnlyModeCannotEnterAuthorizationWizard();
+        unknownModeIsDistinctFromAuthorization();
+        nonProtectedModeStillUsesThePermissionGate();
         reasonsNeverNameExecutionEngines();
         numericOnePropertyIsRecognizedAsTruthy();
     }
@@ -189,6 +192,72 @@ public final class AvfCapabilityEvaluatorTest {
                 "完整 Linux · 软件模拟（较慢）",
                 readiness.performanceBadge(),
                 "badge stays honest until authorization completes");
+    }
+
+    private static AvfCapabilityEvaluator.AvfModeFacts mode(
+            AvfCapabilityEvaluator.VmSupport protectedVm,
+            AvfCapabilityEvaluator.VmSupport nonProtectedVm) {
+        return new AvfCapabilityEvaluator.AvfModeFacts(
+                protectedVm, nonProtectedVm,
+                "VirtualMachineManager.getCapabilities", "app", 1234L, "test-rom");
+    }
+
+    private static void protectedOnlyModeCannotEnterAuthorizationWizard() {
+        AvfCapabilityEvaluator.AvfReadiness readiness = AvfCapabilityEvaluator.evaluate(
+                readyDevice()
+                        .modeFacts(mode(
+                                AvfCapabilityEvaluator.VmSupport.SUPPORTED,
+                                AvfCapabilityEvaluator.VmSupport.UNSUPPORTED))
+                        .build());
+
+        assertTrue(
+                readiness.status() == AvfCapabilityEvaluator.AvfStatus.MODE_UNSUPPORTED,
+                "a protected-only platform cannot satisfy the non-protected adapter");
+        assertFalse(readiness.wizardEligible(), "granting permissions cannot change the VM mode");
+        assertTrue(
+                readiness.reasons().stream().anyMatch(reason -> reason.contains("非保护型")),
+                "the reason names the missing non-protected mode");
+        assertTrue(
+                readiness.reasons().stream().anyMatch(reason -> reason.contains("protected=支持")),
+                "the protected mode remains visible as a separate fact");
+    }
+
+    private static void unknownModeIsDistinctFromAuthorization() {
+        AvfCapabilityEvaluator.AvfReadiness readiness = AvfCapabilityEvaluator.evaluate(
+                readyDevice()
+                        .modeFacts(AvfCapabilityEvaluator.AvfModeFacts.unknown(
+                                "VirtualMachineManager.getCapabilities", "app", 1234L, "test-rom"))
+                        .build());
+
+        assertTrue(
+                readiness.status() == AvfCapabilityEvaluator.AvfStatus.MODE_UNKNOWN,
+                "an unreadable mode is MODE_UNKNOWN, not an authorization request");
+        assertFalse(readiness.wizardEligible(), "authorization cannot resolve an unreadable mode");
+    }
+
+    private static void nonProtectedModeStillUsesThePermissionGate() {
+        AvfCapabilityEvaluator.AvfModeFacts both = mode(
+                AvfCapabilityEvaluator.VmSupport.SUPPORTED,
+                AvfCapabilityEvaluator.VmSupport.SUPPORTED);
+        AvfCapabilityEvaluator.AvfReadiness unauthorized = AvfCapabilityEvaluator.evaluate(
+                new AvfCapabilityEvaluator.AvfHostFacts.Builder(
+                                35, List.of("arm64-v8a"), "true", true, false, false)
+                        .modeFacts(both)
+                        .build());
+        AvfCapabilityEvaluator.AvfReadiness ready = AvfCapabilityEvaluator.evaluate(
+                new AvfCapabilityEvaluator.AvfHostFacts.Builder(
+                                35, List.of("arm64-v8a"), "true", true, true, true)
+                        .modeFacts(both)
+                        .build());
+
+        assertTrue(
+                unauthorized.status() == AvfCapabilityEvaluator.AvfStatus.NEEDS_AUTHORIZATION,
+                "a supported non-protected mode still needs both grants");
+        assertTrue(readinessIsReady(ready), "both grants on a supported mode are READY");
+    }
+
+    private static boolean readinessIsReady(AvfCapabilityEvaluator.AvfReadiness readiness) {
+        return readiness.status() == AvfCapabilityEvaluator.AvfStatus.READY;
     }
 
     private static void reasonsNeverNameExecutionEngines() {

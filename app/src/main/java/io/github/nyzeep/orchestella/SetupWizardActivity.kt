@@ -597,6 +597,7 @@ class SetupWizardActivity : AppCompatActivity() {
         val factsSummary = """
             AVF feature：${if (facts.virtualizationFrameworkFeature()) "已声明" else "未声明"}
             虚拟化属性：${facts.virtualizationProperty()?.takeIf { it.isNotBlank() } ?: "无法读取或未提供"}
+            VM 模式：${AvfHostFactsProbe.modeSummary(facts.modeFacts())}
             MANAGE_VIRTUAL_MACHINE：${AvfHostFactsProbe.permissionLabel(facts.manageVirtualMachinePermissionState())}
             USE_CUSTOM_VIRTUAL_MACHINE：${AvfHostFactsProbe.permissionLabel(facts.useCustomVirtualMachinePermissionState())}
         """.trimIndent()
@@ -613,6 +614,18 @@ class SetupWizardActivity : AppCompatActivity() {
                 txtWizardAvfBadge.text = "AVF 尚未授权"
                 txtWizardAvfBadge.setTextColor(getColor(R.color.zone_yellow))
                 txtWizardAvfDetails.text = "$factsSummary\n${readiness.reasons().joinToString("；")}\n$launchNotice"
+                layoutWizardAvfFallback.visibility = View.VISIBLE
+            }
+            AvfCapabilityEvaluator.AvfStatus.MODE_UNSUPPORTED -> {
+                txtWizardAvfBadge.text = "AVF 模式不支持"
+                txtWizardAvfBadge.setTextColor(getColor(R.color.zone_red))
+                txtWizardAvfDetails.text = "$factsSummary\n${readiness.reasons().joinToString("；")}\n授权不会改变 VM 模式；当前使用 QEMU。\n$launchNotice"
+                layoutWizardAvfFallback.visibility = View.VISIBLE
+            }
+            AvfCapabilityEvaluator.AvfStatus.MODE_UNKNOWN -> {
+                txtWizardAvfBadge.text = "AVF 模式未验证"
+                txtWizardAvfBadge.setTextColor(getColor(R.color.zone_yellow))
+                txtWizardAvfDetails.text = "$factsSummary\n${readiness.reasons().joinToString("；")}\n授权不会改变 VM 模式；当前使用 QEMU。\n$launchNotice"
                 layoutWizardAvfFallback.visibility = View.VISIBLE
             }
             AvfCapabilityEvaluator.AvfStatus.UNSUPPORTED -> {

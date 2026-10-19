@@ -27,6 +27,9 @@ public final class AvfCapabilityEvaluator {
     /** A failed permission read is distinct from a confirmed denial. */
     public enum PermissionState { GRANTED, DENIED, UNKNOWN }
 
+    /** Whether the platform declares one VM protection mode. */
+    public enum VmSupport { SUPPORTED, UNSUPPORTED, UNKNOWN }
+
     /**
      * SoCs whose firmware blocks non-protected (custom) VMs even when the
      * platform declares virtualization support. Snapdragon 8 Elite (SM8750,
@@ -66,6 +69,19 @@ public final class AvfCapabilityEvaluator {
         }
         if (!declared) {
             return AvfReadiness.unsupported(List.of("设备未声明虚拟化框架支持"));
+        }
+        AvfModeFacts modeFacts = facts.modeFacts();
+        if (modeFacts != null) {
+            if (modeFacts.nonProtectedVm() == VmSupport.UNSUPPORTED) {
+                return AvfReadiness.modeUnsupported(List.of(
+                        "当前系统未声明本应用所需的非保护型虚拟机模式",
+                        "VM 模式：" + modeFacts.summary()));
+            }
+            if (modeFacts.nonProtectedVm() == VmSupport.UNKNOWN) {
+                return AvfReadiness.modeUnknown(List.of(
+                        "无法读取当前系统支持的虚拟机模式",
+                        "VM 模式：" + modeFacts.summary()));
+            }
         }
         List<String> authorizationReasons = new ArrayList<>();
         permissionReason(authorizationReasons, MANAGE_VIRTUAL_MACHINE_PERMISSION,
@@ -130,6 +146,7 @@ public final class AvfCapabilityEvaluator {
         private final String socModel;
         private final String deviceModel;
         private final List<String> extraBlockedHints;
+        private final AvfModeFacts modeFacts;
 
         private AvfHostFacts(Builder builder) {
             if (builder.sdkInt < 0) {
@@ -154,6 +171,7 @@ public final class AvfCapabilityEvaluator {
             this.socModel = builder.socModel;
             this.deviceModel = builder.deviceModel;
             this.extraBlockedHints = Collections.unmodifiableList(copiedHints);
+            this.modeFacts = builder.modeFacts;
         }
 
         public int sdkInt() {
@@ -205,6 +223,11 @@ public final class AvfCapabilityEvaluator {
             return extraBlockedHints;
         }
 
+        /** Null for legacy callers that have not read VM mode capabilities yet. */
+        public AvfModeFacts modeFacts() {
+            return modeFacts;
+        }
+
         public static final class Builder {
             private final int sdkInt;
             private final List<String> supportedAbis;
@@ -215,6 +238,7 @@ public final class AvfCapabilityEvaluator {
             private String socModel;
             private String deviceModel;
             private List<String> extraBlockedHints = Collections.emptyList();
+            private AvfModeFacts modeFacts;
 
             /** Compatibility input: a MANAGE-only caller has not established CUSTOM. */
             public Builder(int sdkInt, List<String> supportedAbis, String virtualizationProperty,
@@ -257,9 +281,102 @@ public final class AvfCapabilityEvaluator {
                 return this;
             }
 
+            public Builder modeFacts(AvfModeFacts modeFacts) {
+                this.modeFacts = modeFacts;
+                return this;
+            }
+
             public AvfHostFacts build() {
                 return new AvfHostFacts(this);
             }
+        }
+    }
+
+    /**
+     * One immutable observation of the platform's declared VM modes. The
+     * source/actor/time/ROM fields keep a later UI from presenting a stale or
+     * actor-mismatched capability as the current app's own capability.
+     */
+    public static final class AvfModeFacts {
+        private final VmSupport protectedVm;
+        private final VmSupport nonProtectedVm;
+        private final String source;
+        private final String actor;
+        private final long sampledAtMillis;
+        private final String romBinding;
+
+        public AvfModeFacts(
+                VmSupport protectedVm,
+                VmSupport nonProtectedVm,
+                String source,
+                String actor,
+                long sampledAtMillis,
+                String romBinding) {
+            this.protectedVm = Objects.requireNonNull(protectedVm, "protectedVm");
+            this.nonProtectedVm = Objects.requireNonNull(nonProtectedVm, "nonProtectedVm");
+            this.source = requireNonBlank(source, "source");
+            this.actor = requireNonBlank(actor, "actor");
+            if (sampledAtMillis < 0) {
+                throw new IllegalArgumentException("sampledAtMillis must not be negative");
+            }
+            this.sampledAtMillis = sampledAtMillis;
+            this.romBinding = requireNonBlank(romBinding, "romBinding");
+        }
+
+        public static AvfModeFacts unknown(
+                String source, String actor, long sampledAtMillis, String romBinding) {
+            return new AvfModeFacts(
+                    VmSupport.UNKNOWN, VmSupport.UNKNOWN, source, actor, sampledAtMillis, romBinding);
+        }
+
+        public VmSupport protectedVm() {
+            return protectedVm;
+        }
+
+        public VmSupport nonProtectedVm() {
+            return nonProtectedVm;
+        }
+
+        public String source() {
+            return source;
+        }
+
+        public String actor() {
+            return actor;
+        }
+
+        public long sampledAtMillis() {
+            return sampledAtMillis;
+        }
+
+        public String romBinding() {
+            return romBinding;
+        }
+
+        /** Human-readable, backend-invisible summary for the honest status page. */
+        public String summary() {
+            return "protected=" + supportLabel(protectedVm)
+                    + "；non-protected=" + supportLabel(nonProtectedVm)
+                    + "；来源=" + source
+                    + "；actor=" + actor
+                    + "；采样=" + sampledAtMillis
+                    + "；ROM=已绑定（本地，不展示原始值）";
+        }
+
+        private static String supportLabel(VmSupport support) {
+            return switch (support) {
+                case SUPPORTED -> "支持";
+                case UNSUPPORTED -> "不支持";
+                case UNKNOWN -> "未知";
+            };
+        }
+
+        private static String requireNonBlank(String value, String field) {
+            Objects.requireNonNull(value, field);
+            if (value.isBlank()) {
+                throw new IllegalArgumentException(field + " must not be blank");
+            }
+            return value;
         }
     }
 
@@ -267,6 +384,8 @@ public final class AvfCapabilityEvaluator {
     public enum AvfStatus {
         READY,
         NEEDS_AUTHORIZATION,
+        MODE_UNSUPPORTED,
+        MODE_UNKNOWN,
         UNSUPPORTED
     }
 
@@ -297,6 +416,18 @@ public final class AvfCapabilityEvaluator {
                     FullLinuxContract.CapabilityMatrix.softwareVirtualizationBaseline());
         }
 
+        static AvfReadiness modeUnsupported(List<String> reasons) {
+            return new AvfReadiness(
+                    AvfStatus.MODE_UNSUPPORTED, reasons,
+                    FullLinuxContract.CapabilityMatrix.softwareVirtualizationBaseline());
+        }
+
+        static AvfReadiness modeUnknown(List<String> reasons) {
+            return new AvfReadiness(
+                    AvfStatus.MODE_UNKNOWN, reasons,
+                    FullLinuxContract.CapabilityMatrix.softwareVirtualizationBaseline());
+        }
+
         static AvfReadiness unsupported(List<String> reasons) {
             return new AvfReadiness(
                     AvfStatus.UNSUPPORTED, reasons,
@@ -318,7 +449,7 @@ public final class AvfCapabilityEvaluator {
          * (ADR-0003): only they report {@code false}.
          */
         public boolean wizardEligible() {
-            return status != AvfStatus.UNSUPPORTED;
+            return status == AvfStatus.READY || status == AvfStatus.NEEDS_AUTHORIZATION;
         }
 
         public FullLinuxContract.CapabilityMatrix capabilityMatrix() {

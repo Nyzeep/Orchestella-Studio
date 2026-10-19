@@ -213,6 +213,7 @@ class SettingsActivity : AppCompatActivity() {
             • Android 版本：API ${facts.sdkInt()}
             • AVF feature：${if (facts.virtualizationFrameworkFeature()) "已声明" else "未声明"}
             • 虚拟化属性：${facts.virtualizationProperty()?.takeIf { it.isNotBlank() } ?: "无法读取或未提供"}
+            • VM 模式：${AvfHostFactsProbe.modeSummary(facts.modeFacts())}
             • MANAGE_VIRTUAL_MACHINE：${AvfHostFactsProbe.permissionLabel(facts.manageVirtualMachinePermissionState())}
             • USE_CUSTOM_VIRTUAL_MACHINE：${AvfHostFactsProbe.permissionLabel(facts.useCustomVirtualMachinePermissionState())}
         """.trimIndent()
@@ -228,6 +229,16 @@ class SettingsActivity : AppCompatActivity() {
                 txtAvfBadge.text = "AVF 尚未授权"
                 txtAvfBadge.setTextColor(getColor(R.color.zone_yellow))
                 txtAvfDetails.text = "$factsSummary\n• 预检：${readiness.reasons().joinToString("；")}\n$launchNotice"
+            }
+            AvfCapabilityEvaluator.AvfStatus.MODE_UNSUPPORTED -> {
+                txtAvfBadge.text = "AVF 模式不支持"
+                txtAvfBadge.setTextColor(getColor(R.color.zone_red))
+                txtAvfDetails.text = "$factsSummary\n• 预检原因：${readiness.reasons().joinToString("；")}\n• 授权不会改变 VM 模式；当前使用 QEMU\n$launchNotice"
+            }
+            AvfCapabilityEvaluator.AvfStatus.MODE_UNKNOWN -> {
+                txtAvfBadge.text = "AVF 模式未验证"
+                txtAvfBadge.setTextColor(getColor(R.color.zone_yellow))
+                txtAvfDetails.text = "$factsSummary\n• 预检原因：${readiness.reasons().joinToString("；")}\n• 授权不会改变 VM 模式；当前使用 QEMU\n$launchNotice"
             }
             AvfCapabilityEvaluator.AvfStatus.UNSUPPORTED -> {
                 txtAvfBadge.text = "AVF 预检未满足"

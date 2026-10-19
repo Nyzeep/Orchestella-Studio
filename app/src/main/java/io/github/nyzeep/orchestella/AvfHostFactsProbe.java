@@ -15,6 +15,10 @@ import java.util.function.Supplier;
  * the honest "unsupported" default instead of guessing a capability.
  */
 public final class AvfHostFactsProbe {
+    /** AOSP VirtualMachineManager capability bits. */
+    public static final int CAPABILITY_PROTECTED_VM = 1;
+    public static final int CAPABILITY_NON_PROTECTED_VM = 2;
+
     private AvfHostFactsProbe() {}
 
     /**
@@ -30,6 +34,23 @@ public final class AvfHostFactsProbe {
             Supplier<String> virtualizationPropertyReader,
             Predicate<String> featureChecker,
             Predicate<String> permissionChecker) {
+        return probe(sdkInt, supportedAbis, socModel, deviceModel,
+                virtualizationPropertyReader, featureChecker, permissionChecker, null);
+    }
+
+    /**
+     * Same assembly with an explicit VM-mode observation. A null observation
+     * is the legacy path; production always passes one (possibly UNKNOWN).
+     */
+    public static AvfCapabilityEvaluator.AvfHostFacts probe(
+            int sdkInt,
+            String[] supportedAbis,
+            String socModel,
+            String deviceModel,
+            Supplier<String> virtualizationPropertyReader,
+            Predicate<String> featureChecker,
+            Predicate<String> permissionChecker,
+            AvfCapabilityEvaluator.AvfModeFacts modeFacts) {
         Objects.requireNonNull(supportedAbis, "supportedAbis");
         return new AvfCapabilityEvaluator.AvfHostFacts.Builder(
                         sdkInt,
@@ -41,6 +62,7 @@ public final class AvfHostFactsProbe {
                         readPermission(permissionChecker, AvfCapabilityEvaluator.USE_CUSTOM_VIRTUAL_MACHINE_PERMISSION))
                 .socModel(socModel)
                 .deviceModel(deviceModel)
+                .modeFacts(modeFacts)
                 .build();
     }
 
@@ -74,7 +96,70 @@ public final class AvfHostFactsProbe {
                         return false;
                     }
                 },
-                permission -> context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED);
+                permission -> context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED,
+                readModeFacts(context));
+    }
+
+    /**
+     * Reads the platform's declared VM modes once. The capability call is
+     * read-only; a missing manager, hidden field, permission failure, or
+     * unexpected shape degrades to UNKNOWN rather than a guessed false.
+     */
+    static AvfCapabilityEvaluator.AvfModeFacts readModeFacts(Context context) {
+        String source = "VirtualMachineManager.getCapabilities";
+        String actor = "app";
+        long sampledAt = System.currentTimeMillis();
+        String romBinding = romBinding();
+        try {
+            Class<?> vmmClass = Class.forName("android.system.virtualmachine.VirtualMachineManager");
+            Object manager = context.getSystemService(vmmClass);
+            if (manager == null) {
+                return AvfCapabilityEvaluator.AvfModeFacts.unknown(source, actor, sampledAt, romBinding);
+            }
+            Object capabilities = vmmClass.getMethod("getCapabilities").invoke(manager);
+            if (!(capabilities instanceof Number)) {
+                return AvfCapabilityEvaluator.AvfModeFacts.unknown(source, actor, sampledAt, romBinding);
+            }
+            int bits = ((Number) capabilities).intValue();
+            int protectedBit = vmmClass.getField("CAPABILITY_PROTECTED_VM").getInt(null);
+            int nonProtectedBit = vmmClass.getField("CAPABILITY_NON_PROTECTED_VM").getInt(null);
+            return new AvfCapabilityEvaluator.AvfModeFacts(
+                    (bits & protectedBit) != 0
+                            ? AvfCapabilityEvaluator.VmSupport.SUPPORTED
+                            : AvfCapabilityEvaluator.VmSupport.UNSUPPORTED,
+                    (bits & nonProtectedBit) != 0
+                            ? AvfCapabilityEvaluator.VmSupport.SUPPORTED
+                            : AvfCapabilityEvaluator.VmSupport.UNSUPPORTED,
+                    source, actor, sampledAt, romBinding);
+        } catch (Throwable failure) {
+            return AvfCapabilityEvaluator.AvfModeFacts.unknown(source, actor, sampledAt, romBinding);
+        }
+    }
+
+    /** Maps capability bits without touching Android; used by the JVM tests. */
+    public static AvfCapabilityEvaluator.AvfModeFacts modeFactsFromCapabilities(
+            int capabilities, String source, String actor, long sampledAtMillis, String romBinding) {
+        return new AvfCapabilityEvaluator.AvfModeFacts(
+                (capabilities & CAPABILITY_PROTECTED_VM) != 0
+                        ? AvfCapabilityEvaluator.VmSupport.SUPPORTED
+                        : AvfCapabilityEvaluator.VmSupport.UNSUPPORTED,
+                (capabilities & CAPABILITY_NON_PROTECTED_VM) != 0
+                        ? AvfCapabilityEvaluator.VmSupport.SUPPORTED
+                        : AvfCapabilityEvaluator.VmSupport.UNSUPPORTED,
+                source, actor, sampledAtMillis, romBinding);
+    }
+
+    /** Coarse, non-fingerprint ROM binding for the mode observation. */
+    private static String romBinding() {
+        String id = Build.ID == null || Build.ID.isBlank() ? "unknown-id" : Build.ID;
+        String incremental = Build.VERSION.INCREMENTAL == null || Build.VERSION.INCREMENTAL.isBlank()
+                ? "unknown-incremental"
+                : Build.VERSION.INCREMENTAL;
+        return id + "/" + incremental;
+    }
+
+    public static String modeSummary(AvfCapabilityEvaluator.AvfModeFacts modeFacts) {
+        return modeFacts == null ? "未读取（旧调用方）" : modeFacts.summary();
     }
 
     /**

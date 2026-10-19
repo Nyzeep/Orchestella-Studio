@@ -363,6 +363,15 @@ class MainActivity : AppCompatActivity() {
                 AvfCapabilityEvaluator.AvfStatus.NEEDS_AUTHORIZATION -> {
                     showAvfAuthorizationWizard()
                 }
+                AvfCapabilityEvaluator.AvfStatus.MODE_UNSUPPORTED,
+                AvfCapabilityEvaluator.AvfStatus.MODE_UNKNOWN -> {
+                    val reasons = avfReadiness?.reasons()?.joinToString("\n") ?: "无法读取当前系统的虚拟机模式"
+                    androidx.appcompat.app.AlertDialog.Builder(this)
+                        .setTitle("AVF 模式检测")
+                        .setMessage("当前设备状态：\n$reasons\n\n授权不会改变 VM 模式；应用继续使用 QEMU 完整 Linux 路径。")
+                        .setPositiveButton("了解", null)
+                        .show()
+                }
                 AvfCapabilityEvaluator.AvfStatus.UNSUPPORTED -> {
                     val reasons = avfReadiness?.reasons()?.joinToString("\n") ?: "设备未声明虚拟化框架支持"
                     androidx.appcompat.app.AlertDialog.Builder(this)
@@ -609,6 +618,8 @@ class MainActivity : AppCompatActivity() {
             } else when (avfReadiness?.status()) {
                 AvfCapabilityEvaluator.AvfStatus.READY -> "AVF · 预检通过"
                 AvfCapabilityEvaluator.AvfStatus.NEEDS_AUTHORIZATION -> "AVF · 待授权"
+                AvfCapabilityEvaluator.AvfStatus.MODE_UNSUPPORTED -> "AVF · 模式不支持"
+                AvfCapabilityEvaluator.AvfStatus.MODE_UNKNOWN -> "AVF · 模式未验证"
                 else -> "AVF · 未就绪"
             }
         findViewById<com.google.android.material.button.MaterialButton>(R.id.seg_qemu)?.text =

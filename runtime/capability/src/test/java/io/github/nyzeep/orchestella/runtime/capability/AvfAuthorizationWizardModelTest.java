@@ -13,6 +13,7 @@ public final class AvfAuthorizationWizardModelTest {
     public static void main(String[] arguments) {
         manageOnlyConfirmationDoesNotCompleteTheWizard();
         unsupportedReadinessNeverOpensTheWizard();
+        modeGateNeverOpensTheWizard();
         readyReadinessNeedsNoWizardSteps();
         needsAuthorizationStartsWithShizukuGuidance();
         adbFallbackRoundTrip();
@@ -37,6 +38,10 @@ public final class AvfAuthorizationWizardModelTest {
                             .softwareVirtualizationBaseline());
             case NEEDS_AUTHORIZATION -> AvfCapabilityEvaluator.AvfReadiness.needsAuthorization(
                     List.of("需要虚拟机管理授权"));
+            case MODE_UNSUPPORTED -> AvfCapabilityEvaluator.AvfReadiness.modeUnsupported(
+                    List.of("当前系统未声明非保护型虚拟机模式"));
+            case MODE_UNKNOWN -> AvfCapabilityEvaluator.AvfReadiness.modeUnknown(
+                    List.of("无法读取当前系统支持的虚拟机模式"));
             case UNSUPPORTED -> AvfCapabilityEvaluator.AvfReadiness.unsupported(List.of("不受支持"));
         };
     }
@@ -52,6 +57,17 @@ public final class AvfAuthorizationWizardModelTest {
             fail("start() must be forbidden while unsupported");
         } catch (IllegalStateException expected) {
             // required
+        }
+    }
+
+    private static void modeGateNeverOpensTheWizard() {
+        for (AvfCapabilityEvaluator.AvfStatus status : List.of(
+                AvfCapabilityEvaluator.AvfStatus.MODE_UNSUPPORTED,
+                AvfCapabilityEvaluator.AvfStatus.MODE_UNKNOWN)) {
+            AvfAuthorizationWizardModel model = AvfAuthorizationWizardModel.fromAssessment(readiness(status));
+            assertTrue(model.step() == AvfAuthorizationWizardModel.Step.NOT_SHOWN,
+                    "mode gates never open authorization guidance: " + status);
+            assertTrue(!model.canStart(), "mode gates cannot start the wizard: " + status);
         }
     }
 
