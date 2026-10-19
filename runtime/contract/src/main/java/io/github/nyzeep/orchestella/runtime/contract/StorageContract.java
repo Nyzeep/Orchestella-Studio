@@ -173,9 +173,80 @@ public final class StorageContract {
     }
 
     /**
+     * Optional export-time snapshot of observed guest provisioning evidence.
+     *
+     * <p>Mirrors the lifecycle evidence without coupling this strategy-neutral contract to the
+     * instance implementation. Missing evidence (marker version 0, no rootfs digest, recorded 0)
+     * is represented by {@code null} at the DTO level and means "never observed as provisioned".
+     */
+    public static final class ProvisioningEvidenceMetadata {
+        private final int markerVersion;
+        private final String rootfsSha256;
+        private final long recordedAtMillis;
+
+        public ProvisioningEvidenceMetadata(int markerVersion, String rootfsSha256, long recordedAtMillis) {
+            if (markerVersion <= 0) {
+                throw new IllegalArgumentException("markerVersion must be positive: " + markerVersion);
+            }
+            if (rootfsSha256 != null && !HEX_64_PATTERN.matcher(rootfsSha256).matches()) {
+                throw new IllegalArgumentException("invalid provisioning rootfs sha256: " + rootfsSha256);
+            }
+            if (recordedAtMillis < 0) {
+                throw new IllegalArgumentException("recordedAtMillis must not be negative: " + recordedAtMillis);
+            }
+            this.markerVersion = markerVersion;
+            this.rootfsSha256 = rootfsSha256;
+            this.recordedAtMillis = recordedAtMillis;
+        }
+
+        public int markerVersion() {
+            return markerVersion;
+        }
+
+        public String rootfsSha256() {
+            return rootfsSha256;
+        }
+
+        public long recordedAtMillis() {
+            return recordedAtMillis;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            ProvisioningEvidenceMetadata that = (ProvisioningEvidenceMetadata) o;
+            return markerVersion == that.markerVersion
+                    && recordedAtMillis == that.recordedAtMillis
+                    && Objects.equals(rootfsSha256, that.rootfsSha256);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(markerVersion, rootfsSha256, recordedAtMillis);
+        }
+
+        @Override
+        public String toString() {
+            return "ProvisioningEvidenceMetadata{markerVersion=" + markerVersion
+                    + ", rootfsSha256=" + rootfsSha256
+                    + ", recordedAtMillis=" + recordedAtMillis
+                    + '}';
+        }
+    }
+
+    /**
      * Immutable metadata DTO included in instance export bundles.
+     *
+     * <p>Fields added after the original ten-field format are optional on read. Legacy JSON
+     * without hostname/user/sudo/hardware/provisioning fields parses with safe defaults
+     * ({@value #DEFAULT_HOSTNAME}, {@value #DEFAULT_USER}, no sudo, default hardware, no
+     * provisioning evidence).
      */
     public static final class InstanceExportMetadata {
+        public static final String DEFAULT_HOSTNAME = "orchestella";
+        public static final String DEFAULT_USER = "root";
+
         private final String instanceId;
         private final String distroId;
         private final String distroVersion;
@@ -186,7 +257,13 @@ public final class StorageContract {
         private final long createdAtMillis;
         private final long updatedAtMillis;
         private final long exportedAtMillis;
+        private final String hostname;
+        private final String defaultUser;
+        private final boolean hasSudo;
+        private final VmHardwareConfig hardwareConfig;
+        private final ProvisioningEvidenceMetadata provisioningEvidence;
 
+        /** Legacy ten-field constructor; extension fields receive safe defaults. */
         public InstanceExportMetadata(
                 String instanceId,
                 String distroId,
@@ -198,6 +275,27 @@ public final class StorageContract {
                 long createdAtMillis,
                 long updatedAtMillis,
                 long exportedAtMillis) {
+            this(instanceId, distroId, distroVersion, runtimeClass, state, diskSizeBytes,
+                    sha256RootVolume, createdAtMillis, updatedAtMillis, exportedAtMillis,
+                    DEFAULT_HOSTNAME, DEFAULT_USER, false, VmHardwareConfig.defaultConfig(), null);
+        }
+
+        public InstanceExportMetadata(
+                String instanceId,
+                String distroId,
+                String distroVersion,
+                String runtimeClass,
+                String state,
+                long diskSizeBytes,
+                String sha256RootVolume,
+                long createdAtMillis,
+                long updatedAtMillis,
+                long exportedAtMillis,
+                String hostname,
+                String defaultUser,
+                boolean hasSudo,
+                VmHardwareConfig hardwareConfig,
+                ProvisioningEvidenceMetadata provisioningEvidence) {
             this.instanceId = Objects.requireNonNull(instanceId, "instanceId");
             this.distroId = Objects.requireNonNull(distroId, "distroId");
             this.distroVersion = Objects.requireNonNull(distroVersion, "distroVersion");
@@ -214,6 +312,13 @@ public final class StorageContract {
             this.createdAtMillis = createdAtMillis;
             this.updatedAtMillis = updatedAtMillis;
             this.exportedAtMillis = exportedAtMillis;
+            this.hostname = hostname == null || hostname.trim().isEmpty()
+                    ? DEFAULT_HOSTNAME : hostname.trim();
+            this.defaultUser = defaultUser == null || defaultUser.trim().isEmpty()
+                    ? DEFAULT_USER : defaultUser.trim();
+            this.hasSudo = hasSudo;
+            this.hardwareConfig = hardwareConfig != null ? hardwareConfig : VmHardwareConfig.defaultConfig();
+            this.provisioningEvidence = provisioningEvidence;
         }
 
         public String instanceId() {
@@ -256,7 +361,30 @@ public final class StorageContract {
             return exportedAtMillis;
         }
 
+        public String hostname() {
+            return hostname;
+        }
+
+        public String defaultUser() {
+            return defaultUser;
+        }
+
+        public boolean hasSudo() {
+            return hasSudo;
+        }
+
+        public VmHardwareConfig hardwareConfig() {
+            return hardwareConfig;
+        }
+
+        /** Recorded provisioning evidence, or {@code null} when the export had none. */
+        public ProvisioningEvidenceMetadata provisioningEvidence() {
+            return provisioningEvidence;
+        }
+
         public String toJson() {
+            String extraArgs = hardwareConfig.extraKernelArguments();
+            String evidenceRootfs = provisioningEvidence != null ? provisioningEvidence.rootfsSha256() : null;
             return "{\n"
                     + "  \"instanceId\": \"" + escapeJson(instanceId) + "\",\n"
                     + "  \"distroId\": \"" + escapeJson(distroId) + "\",\n"
@@ -267,7 +395,22 @@ public final class StorageContract {
                     + "  \"sha256RootVolume\": \"" + sha256RootVolume + "\",\n"
                     + "  \"createdAtMillis\": " + createdAtMillis + ",\n"
                     + "  \"updatedAtMillis\": " + updatedAtMillis + ",\n"
-                    + "  \"exportedAtMillis\": " + exportedAtMillis + "\n"
+                    + "  \"exportedAtMillis\": " + exportedAtMillis + ",\n"
+                    + "  \"hostname\": \"" + escapeJson(hostname) + "\",\n"
+                    + "  \"defaultUser\": \"" + escapeJson(defaultUser) + "\",\n"
+                    + "  \"hasSudo\": " + hasSudo + ",\n"
+                    + "  \"hardwareCpuCores\": " + hardwareConfig.cpuCores() + ",\n"
+                    + "  \"hardwareRamMegabytes\": " + hardwareConfig.ramMegabytes() + ",\n"
+                    + "  \"hardwareDiskCapacityBytes\": " + hardwareConfig.diskCapacityBytes() + ",\n"
+                    + "  \"hardwareGpuAccelerationEnabled\": " + hardwareConfig.gpuAccelerationEnabled() + ",\n"
+                    + "  \"hardwareExtraKernelArguments\": "
+                    + (extraArgs == null ? "null" : "\"" + escapeJson(extraArgs) + "\"") + ",\n"
+                    + "  \"provisioningMarkerVersion\": "
+                    + (provisioningEvidence != null ? provisioningEvidence.markerVersion() : 0) + ",\n"
+                    + "  \"provisioningRootfsSha256\": "
+                    + (evidenceRootfs == null ? "null" : "\"" + evidenceRootfs + "\"") + ",\n"
+                    + "  \"provisioningRecordedAtMillis\": "
+                    + (provisioningEvidence != null ? provisioningEvidence.recordedAtMillis() : 0) + "\n"
                     + "}\n";
         }
 
@@ -283,6 +426,19 @@ public final class StorageContract {
             long createdAtMillis = extractLongField(json, "createdAtMillis");
             long updatedAtMillis = extractLongField(json, "updatedAtMillis");
             long exportedAtMillis = extractLongField(json, "exportedAtMillis");
+
+            String hostname = extractOptionalStringField(json, "hostname");
+            if (hostname == null) {
+                hostname = DEFAULT_HOSTNAME;
+            }
+            String defaultUser = extractOptionalStringField(json, "defaultUser");
+            if (defaultUser == null) {
+                defaultUser = DEFAULT_USER;
+            }
+            boolean hasSudo = extractOptionalBooleanField(json, "hasSudo", false);
+            VmHardwareConfig hardwareConfig = extractHardwareConfig(json);
+            ProvisioningEvidenceMetadata provisioningEvidence = extractProvisioningEvidence(json);
+
             return new InstanceExportMetadata(
                     instanceId,
                     distroId,
@@ -293,7 +449,50 @@ public final class StorageContract {
                     sha256RootVolume,
                     createdAtMillis,
                     updatedAtMillis,
-                    exportedAtMillis);
+                    exportedAtMillis,
+                    hostname,
+                    defaultUser,
+                    hasSudo,
+                    hardwareConfig,
+                    provisioningEvidence);
+        }
+
+        private static VmHardwareConfig extractHardwareConfig(String json) {
+            Long cpuCores = extractOptionalLongField(json, "hardwareCpuCores");
+            Long ramMegabytes = extractOptionalLongField(json, "hardwareRamMegabytes");
+            Long diskCapacityBytes = extractOptionalLongField(json, "hardwareDiskCapacityBytes");
+            if (cpuCores == null || ramMegabytes == null || diskCapacityBytes == null) {
+                return VmHardwareConfig.defaultConfig();
+            }
+            boolean gpuEnabled = extractOptionalBooleanField(
+                    json, "hardwareGpuAccelerationEnabled", VmHardwareConfig.DEFAULT_GPU_ACCELERATION_ENABLED);
+            String extraKernelArguments = extractOptionalStringField(json, "hardwareExtraKernelArguments");
+            try {
+                return new VmHardwareConfig(
+                        Math.toIntExact(cpuCores),
+                        Math.toIntExact(ramMegabytes),
+                        diskCapacityBytes,
+                        gpuEnabled,
+                        extraKernelArguments);
+            } catch (ArithmeticException | IllegalArgumentException invalid) {
+                throw new IllegalArgumentException(
+                        "invalid hardware config in export metadata: " + invalid.getMessage(), invalid);
+            }
+        }
+
+        private static ProvisioningEvidenceMetadata extractProvisioningEvidence(String json) {
+            Long markerVersion = extractOptionalLongField(json, "provisioningMarkerVersion");
+            if (markerVersion == null || markerVersion <= 0) {
+                return null;
+            }
+            if (markerVersion > Integer.MAX_VALUE) {
+                throw new IllegalArgumentException("invalid provisioning marker version: " + markerVersion);
+            }
+            Long recordedAtMillis = extractOptionalLongField(json, "provisioningRecordedAtMillis");
+            return new ProvisioningEvidenceMetadata(
+                    markerVersion.intValue(),
+                    extractOptionalStringField(json, "provisioningRootfsSha256"),
+                    recordedAtMillis != null ? recordedAtMillis : 0L);
         }
 
         private static String escapeJson(String input) {
@@ -318,6 +517,32 @@ public final class StorageContract {
             return Long.parseLong(matcher.group(1));
         }
 
+        private static String extractOptionalStringField(String json, String key) {
+            Pattern nullPattern = Pattern.compile("\"" + Pattern.quote(key) + "\"\\s*:\\s*null\\b");
+            if (nullPattern.matcher(json).find()) {
+                return null;
+            }
+            Pattern pattern = Pattern.compile(
+                    "\"" + Pattern.quote(key) + "\"\\s*:\\s*\"([^\"\\\\]*(?:\\\\.[^\"\\\\]*)*)\"");
+            Matcher matcher = pattern.matcher(json);
+            if (!matcher.find()) {
+                return null;
+            }
+            return matcher.group(1).replace("\\\"", "\"").replace("\\\\", "\\");
+        }
+
+        private static Long extractOptionalLongField(String json, String key) {
+            Pattern pattern = Pattern.compile("\"" + Pattern.quote(key) + "\"\\s*:\\s*(-?\\d+)");
+            Matcher matcher = pattern.matcher(json);
+            return matcher.find() ? Long.valueOf(matcher.group(1)) : null;
+        }
+
+        private static boolean extractOptionalBooleanField(String json, String key, boolean defaultValue) {
+            Pattern pattern = Pattern.compile("\"" + Pattern.quote(key) + "\"\\s*:\\s*(true|false)");
+            Matcher matcher = pattern.matcher(json);
+            return matcher.find() ? Boolean.parseBoolean(matcher.group(1)) : defaultValue;
+        }
+
         @Override
         public boolean equals(Object o) {
             if (this == o) return true;
@@ -327,12 +552,17 @@ public final class StorageContract {
                     && createdAtMillis == that.createdAtMillis
                     && updatedAtMillis == that.updatedAtMillis
                     && exportedAtMillis == that.exportedAtMillis
+                    && hasSudo == that.hasSudo
                     && Objects.equals(instanceId, that.instanceId)
                     && Objects.equals(distroId, that.distroId)
                     && Objects.equals(distroVersion, that.distroVersion)
                     && Objects.equals(runtimeClass, that.runtimeClass)
                     && Objects.equals(state, that.state)
-                    && Objects.equals(sha256RootVolume, that.sha256RootVolume);
+                    && Objects.equals(sha256RootVolume, that.sha256RootVolume)
+                    && Objects.equals(hostname, that.hostname)
+                    && Objects.equals(defaultUser, that.defaultUser)
+                    && Objects.equals(hardwareConfig, that.hardwareConfig)
+                    && Objects.equals(provisioningEvidence, that.provisioningEvidence);
         }
 
         @Override
@@ -347,7 +577,12 @@ public final class StorageContract {
                     sha256RootVolume,
                     createdAtMillis,
                     updatedAtMillis,
-                    exportedAtMillis);
+                    exportedAtMillis,
+                    hostname,
+                    defaultUser,
+                    hasSudo,
+                    hardwareConfig,
+                    provisioningEvidence);
         }
     }
 

@@ -525,6 +525,31 @@ public final class InstanceLifecycle {
                 String hostname,
                 String defaultUser,
                 Clock clock) {
+            return restore(id, distro, rootVolume, runtimeClass, state, hardwareConfig,
+                    hostname, defaultUser, false, null, clock);
+        }
+
+        /**
+         * Restores an imported instance while preserving the user-facing configuration and
+         * observed provisioning evidence carried by the export.
+         *
+         * <p>The guest password deliberately stays empty: the imported root volume keeps whatever
+         * credential the guest already has, and metadata cannot prove it. A fresh bridge token is
+         * always generated. Preserving provisioning evidence is required so an imported,
+         * already-provisioned root volume is not provisioned again (which could overwrite it).
+         */
+        static Instance restore(
+                String id,
+                DistroReference distro,
+                Path rootVolume,
+                FullLinuxContract.RuntimeClass runtimeClass,
+                State state,
+                VmHardwareConfig hardwareConfig,
+                String hostname,
+                String defaultUser,
+                boolean hasSudo,
+                ProvisioningEvidence provisioningEvidence,
+                Clock clock) {
             long now = Objects.requireNonNull(clock, "clock").millis();
             return new Instance(
                     id,
@@ -540,8 +565,8 @@ public final class InstanceLifecycle {
                     hardwareConfig != null ? hardwareConfig : VmHardwareConfig.defaultConfig(),
                     hostname,
                     defaultUser,
-                    false,
-                    null);
+                    hasSudo,
+                    provisioningEvidence);
         }
 
         private Properties toProperties() {
