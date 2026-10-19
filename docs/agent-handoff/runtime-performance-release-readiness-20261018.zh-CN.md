@@ -134,13 +134,13 @@ keyPassword = (properties["orchestella.signing.keyPassword"] as String?) ?: "orc
 
 - 详细报告：[release-readiness-fix-20261019.zh-CN.md](../reports/orchestration/release-readiness-fix-20261019.zh-CN.md)
 - 提交：
-  - `6df71da` A+B 构建通道 / release 签名硬门
-  - `2b60f0b` D GPL/NOTICE/SOURCE-OFFER
-  - `6726c4d` C release workflow / APK 门
-  - `0451254` E SAF 导出/导入迁移
-  - `248bf28` F T4/T1 运行时债务
-  - `3f1d0ca` G T7 矩阵样本统计
-  - `a59554b` F JVM Log stub
+  - `5a56e3a` A+B 构建通道 / release 签名硬门
+  - `313c508` D GPL/NOTICE/SOURCE-OFFER
+  - `6dfa671` C release workflow / APK 门
+  - `a5821cc` E SAF 导出/导入迁移
+  - `594f89e` F T4/T1 运行时债务
+  - `d37b1cd` G T7 矩阵样本统计
+  - `960921d` F JVM Log stub
 - 测试：
   - `:runtime:contract:check :runtime:instance:check :runtime:engine-qemu:check :app:testDebugUnitTest` 通过；app 105 suites / 836 tests，contract 24，instance 15，engine-qemu 2，0 failures。
   - `:app:lintDebug` 通过（0 Error / 753 Warning）。
@@ -152,5 +152,5 @@ keyPassword = (properties["orchestella.signing.keyPassword"] as String?) ?: "orc
   - `bridgeClientResponsePumpTest` 连续 20 次通过。
 - `not-tested`：AVF 真机、QEMU 真机、64-forward 真实 gvproxy、T7 设备矩阵、Arch/T5/T6、主包/新包迁移、release-signed APK 安装升级、GitHub Actions `release.yml` 实际运行、真实生产 keystore、16 KB 真机运行。
 - 待发布负责人决定：生产 keystore/secrets；版本 0.5.4/504 vs 0.6.0/600；同包 vs 新包迁移；是否保留 guest password；GPL 细节（shm stub、QEMU 两份记录、SOURCE-OFFER 履约）；release workflow 是否直接发布。
-- 本分支未递增版本、未打 tag、未创建 GitHub Release、未合并 main。
+- 所有提交的 author 与 committer 均为 `Nyzeep <2950605702@qq.com>`；本分支未递增版本、未打 tag、未创建 GitHub Release、未合并 main。
 - GitHub push 已完成：SSH key 经 `ssh.github.com:443` 认证为 Nyzeep；远端旧分支 `023ed0f` 经确认用 `--force-with-lease` 覆盖为本地提交。
