@@ -34,8 +34,8 @@ if (buildChannel == "qa") {
     require(buildPurpose != null) {
         "orchestella.buildChannel=qa requires -Porchestella.buildPurpose=<purpose>"
     }
-    require(buildPurpose.matches(Regex("[a-z0-9-]{1,32}"))) {
-        "orchestella.buildPurpose must use only lowercase letters, digits and hyphens: '$buildPurpose'"
+    require(buildPurpose.matches(Regex("[a-z0-9]{1,32}"))) {
+        "orchestella.buildPurpose must use only lowercase letters and digits (applicationId segments cannot contain hyphens): '$buildPurpose'"
     }
 } else if (buildPurpose != null) {
     require(false) {
