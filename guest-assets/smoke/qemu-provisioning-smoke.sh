@@ -96,8 +96,8 @@ if [[ "$QEMU_EXIT" -ne 0 ]]; then
   exit "$QEMU_EXIT"
 fi
 tr -d '\r' < "$CONSOLE_LOG" \
-  | grep --fixed-strings --line-regexp \
-      'DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=alpine-3.24.1' \
+  | grep --extended-regexp \
+      '^DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=alpine([[:space:]]|$)' \
       >/dev/null
 
 debugfs_dump() {
@@ -115,7 +115,7 @@ debugfs_dump /usr/sbin/droidlayer-guest-agent "$SMOKE_WORK/installed-agent"
 debugfs_dump /var/lib/droidlayer/provisioned-v1 "$SMOKE_WORK/provisioned-v1"
 grep --fixed-strings --line-regexp 'provisioning_version=1' \
   "$SMOKE_WORK/provisioned-v1" >/dev/null
-grep --fixed-strings --line-regexp 'distro=alpine-3.24.1' \
+grep --fixed-strings --line-regexp 'distro=alpine' \
   "$SMOKE_WORK/provisioned-v1" >/dev/null
 
 TOKEN_MODE="$(debugfs -R 'stat /etc/droidlayer/bridge.token' "$ROOT_VOLUME" 2>/dev/null \

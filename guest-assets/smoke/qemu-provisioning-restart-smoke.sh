@@ -198,7 +198,7 @@ if [[ "$PROVISIONING_EXPECTATION" = checksum-rejection ]]; then
   contains_normalized_line "$FIRST_CONSOLE_LOG" \
     'DROIDLAYER_PROVISIONING_ERROR stage=rootfs-checksum'
   if contains_normalized_line "$FIRST_CONSOLE_LOG" \
-    'DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=alpine-3.24.1'; then
+    'DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=linux phase=rootfs runtime=pending'; then
     printf 'checksum-rejected input unexpectedly completed Provisioning\n' >&2
     exit 1
   fi
@@ -211,7 +211,7 @@ if [[ "$PROVISIONING_EXPECTATION" = checksum-rejection ]]; then
   exit 0
 fi
 contains_normalized_line "$FIRST_CONSOLE_LOG" \
-  'DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=alpine-3.24.1'
+  'DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=linux phase=rootfs runtime=pending'
 contains_normalized_line "$FIRST_CONSOLE_LOG" 'DROIDLAYER_SYNTHETIC_FIRST_BOOT'
 debugfs -R "dump -p /var/lib/droidlayer/ticket26-restart-sentinel $PERSISTED_SENTINEL" \
   "$ROOT_VOLUME" >/dev/null 2>&1
@@ -226,7 +226,7 @@ TOKEN_MODE="$(debugfs -R 'stat /etc/droidlayer/bridge.token' "$ROOT_VOLUME" 2>/d
 run_qemu "$SECOND_CONSOLE_LOG" "$SECOND_QEMU_LOG"
 contains_normalized_line "$SECOND_CONSOLE_LOG" 'DROIDLAYER_SYNTHETIC_SECOND_BOOT_PERSISTED'
 if contains_normalized_line "$SECOND_CONSOLE_LOG" \
-  'DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=alpine-3.24.1'; then
+  'DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=linux phase=rootfs runtime=pending'; then
   printf 'second boot unexpectedly reprovisioned the Root Volume\n' >&2
   exit 1
 fi
