@@ -64,6 +64,8 @@
 
 文档中的 `PROJECT_ROOT` 指开发根，`SOURCE_ROOT` 指活动源码检出，`LOCAL_EVIDENCE` / E / R / H / P 等为报告定义的本地证据别名。公开文本已去除具体开发者路径和设备标识。原始设备 receipt、截图/完整日志、ROM 指纹、签名材料、用户实例/根盘、embedded initrd、构建缓存及 APK 不在本次源码提交中；本地证据引用可能没有公开文件链接，这不代表已上传或可以推导新的通过结果。
 
+真机序列号、IMEI/Android ID、设备指纹及其哈希、真机截图/录屏/完整设备日志、真实局域网/公网 IP、MAC/Wi-Fi 标识、个人邮箱与本机绝对路径属于禁止入仓数据。提交前必须按 [敏感开发者数据与真机证据硬约束](agent-handoff/DEFENSIVE_CONSTRAINTS/SENSITIVE_DEVELOPER_DATA_POLICY.md) 执行检查门；删除当前文件不等于从历史删除，发现泄漏按 [事件响应硬约束](agent-handoff/DEFENSIVE_CONSTRAINTS/INCIDENT_RESPONSE_AND_CREDENTIAL_ROTATION.md) 处置。
+
 部分历史治理/交接仍记录旧工作名、旧阶段或当时决策；本次公开用于解释约束与来源，不把历史建议自动改为新 accepted 架构。尤其 ADR-0010 关于 pVM 双向通信的旧绝对表述已发现与官方 vsock 证据冲突，见 [ACR-02](../.scratch/orchestella-avf-shizuku/issues/ACR-02-protection-semantics.md)；本次保留 accepted 正文和待裁定状态，不以公开同步代替架构批准。ADR 中旧镜像规格不代替当前固定清单与实际输入哈希。已知缺失文档的来源保全见[治理调查](../.scratch/orchestella-avf-shizuku/issues/16-governance-source-recovery.md)，不根据引用标题编造正文。
 
 公开发布新的二进制需要另行执行版本、签名、完整对应源码、许可证/NOTICE 与验收门；本次提交和普通 push 不授权创建 Release 或上传安装包。
