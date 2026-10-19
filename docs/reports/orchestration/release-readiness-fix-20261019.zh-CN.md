@@ -328,5 +328,6 @@ Alias: null
 ## 9. 交付状态
 
 - 本地分支 `fix/release-readiness` 已包含上述提交，作者均为 `Nyzeep <2950605702@qq.com>`。
-- **GitHub push 未完成**：当前环境只有 CNB 凭据，没有 GitHub HTTPS token 或可用的 GitHub SSH 通道；`git push github fix/release-readiness` 在凭据提示处阻塞。需要有权限的发布负责人执行该命令，或提供环境侧凭据（不要把 token 写入仓库、日志或对话）。
+- **GitHub push 已完成**：SSH key 经 `ssh.github.com:443` 认证为 Nyzeep；由于远端已存在旧的同任务分支 `023ed0f`，经确认使用 `--force-with-lease` 覆盖为本地提交。
+- 远端：`git@github.com:Nyzeep/Orchestella-Studio.git` 的 `fix/release-readiness`。
 - 本分支未合并 `main`，未打 tag，未创建 GitHub Release。
