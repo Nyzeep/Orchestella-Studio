@@ -4524,6 +4524,11 @@ boot_guest_root() {
         log 'ORCHESTELLA_OPTIONAL_FEATURES phase=payload-install status=failed base-linux=preserved'
     fi
     log 'ORCHESTELLA_GUEST_ASSEMBLY phase=runtime-services status=complete'
+    if [ "$(kernel_argument droidlayer.poweroff || true)" = 1 ]; then
+        umount /newroot || fail unmount-provisioned-root
+        poweroff -f || true
+        while :; do sleep 3600; done
+    fi
     # Flavor service setup may replace resolv.conf. Reapply the proven host-supplied DNS
     # and BusyBox eth0/route configuration immediately before the native-init handoff.
     configure_guest_network /newroot
@@ -4717,11 +4722,6 @@ mv /newroot/var/lib/droidlayer/provisioned-v1.tmp /newroot/var/lib/droidlayer/pr
 rm -f /newroot/var/lib/droidlayer/assembly-in-progress
 sync
 log "DROIDLAYER_PROVISIONING_COMPLETE version=1 distro=$DISTRO_TAG phase=rootfs runtime=pending"
-if [ "$(kernel_argument droidlayer.poweroff || true)" = 1 ]; then
-    umount /newroot || fail unmount-provisioned-root
-    poweroff -f || true
-    while :; do sleep 3600; done
-fi
 boot_guest_root
 fail switch-root
 # ORCHESTELLA_RUNTIME_ENTRY_END
