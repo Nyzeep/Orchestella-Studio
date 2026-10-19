@@ -1609,8 +1609,14 @@ class MainActivity : AppCompatActivity() {
                 }
             } catch (failure: Throwable) {
                 val failedGeneration = launchGeneration
+                // A failed launch may have left a runtime whose stop was not
+                // confirmed; keep RUNNING metadata and the foreground binding in
+                // that case instead of pretending the instance crashed.
+                val cleanupResult = QemuInstanceLauncher.takeLastCleanupResult(instance.id())
                 try {
-                    InstanceLaunchSequence.afterLaunchFailure(controller, instance.id(), failedGeneration, running) {
+                    InstanceLaunchSequence.afterLaunchFailure(
+                        controller, instance.id(), failedGeneration, running, cleanupResult
+                    ) {
                         OrchestellaForegroundService.stop(this, instance.id(), failedGeneration)
                     }
                 } catch (_: Exception) {

@@ -17,9 +17,10 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Records the ordered stages of one QEMU launch and appends exactly one
- * structured JSONL record to {@code <runtimeDirectory>/launch-timeline.jsonl}
- * when the launch is finished (normally at stop confirmation).
+ * Records the ordered stages of one QEMU launch and appends one structured
+ * JSONL record to {@code <runtimeDirectory>/launch-timeline.jsonl} when the
+ * launch is finished (normally at stop confirmation). If that record carried an
+ * UNCONFIRMED stop, one compensating record is appended when a retry settles.
  *
  * <p>The recorder is pure JVM: the clock and the line sink are injected, so the
  * ordering, elapsed-time and failure contracts are testable without Android.
@@ -29,7 +30,12 @@ import java.util.Objects;
  */
 public final class LaunchTimeline {
     public static final String FILE_NAME = "launch-timeline.jsonl";
-    private static final int SCHEMA_VERSION = 1;
+    /**
+     * Schema 2 adds {@code stopAttempt}/{@code stopFinal}: an UNCONFIRMED stop
+     * is written as a diagnostic record, and a later confirmed retry appends a
+     * compensating record the consumer can identify as the final one.
+     */
+    private static final int SCHEMA_VERSION = 2;
 
     /** Ordered launch stages; JSON renders them in this declaration order. */
     public enum Stage {
@@ -62,7 +68,12 @@ public final class LaunchTimeline {
     private Long rootfsBytes;
     private Long initramfsBytes;
     private StopResult stopResult;
+    private int stopAttempt;
     private boolean finished;
+    /** Result carried by the last successfully written line, if any. */
+    private StopResult lastWrittenStopResult;
+    /** A failed append is never retried; diagnostics keep the reason. */
+    private boolean writeFailed;
 
     public LaunchTimeline(String instanceId, String distroId, int guestMemoryMb, int vcpuCount,
             Clock clock, LineSink sink) {
@@ -128,32 +139,56 @@ public final class LaunchTimeline {
     }
 
     /**
-     * Records stop confirmation at most once. Duplicate stop attempts keep the
-     * single stage entry but retain the most recent observed result.
+     * Records one stop attempt. The stage keeps its first elapsed time while
+     * {@code stopAttempt} counts every observed result, so a retry can be
+     * distinguished from a duplicate observation.
      */
     public synchronized void markStopConfirmed(StopResult result) {
         mark(Stage.STOP_CONFIRMED);
         if (result != null && elapsedMillis.containsKey(Stage.STOP_CONFIRMED)) {
+            stopAttempt++;
             stopResult = result;
         }
     }
 
     /**
-     * Writes the single launch record exactly once. Returns false when the sink
-     * failed; the failure is kept as a diagnostic and never propagated.
+     * Writes the launch record once. When the first record ended in
+     * {@link StopResult#UNCONFIRMED} and a later attempt settled as CONFIRMED or
+     * ALREADY_STOPPED, exactly one compensating record is appended with the
+     * final result. Duplicate finishes never append. Returns false when nothing
+     * was written or the sink failed; failures are diagnostic only and are
+     * never retried.
      */
     public synchronized boolean finish() {
-        if (finished) return false;
+        boolean compensating = finished
+                && lastWrittenStopResult == StopResult.UNCONFIRMED
+                && (stopResult == StopResult.CONFIRMED || stopResult == StopResult.ALREADY_STOPPED);
+        if (finished && !compensating) return false;
+        if (writeFailed) return false;
         finished = true;
+        final String line;
         try {
-            sink.writeLine(toJsonLine());
-            return true;
-        } catch (IOException | RuntimeException failure) {
-            String message = failure.getMessage();
-            diagnostics.add("timeline-write-failed: " + failure.getClass().getSimpleName()
-                    + (message == null || message.isEmpty() ? "" : ": " + message));
+            line = toJsonLine();
+        } catch (RuntimeException failure) {
+            writeFailed = true;
+            addWriteFailure(failure);
             return false;
         }
+        try {
+            sink.writeLine(line);
+            lastWrittenStopResult = stopResult;
+            return true;
+        } catch (IOException | RuntimeException failure) {
+            writeFailed = true;
+            addWriteFailure(failure);
+            return false;
+        }
+    }
+
+    private void addWriteFailure(Exception failure) {
+        String message = failure.getMessage();
+        diagnostics.add("timeline-write-failed: " + failure.getClass().getSimpleName()
+                + (message == null || message.isEmpty() ? "" : ": " + message));
     }
 
     /** Canonical stage order; absent stages are simply omitted. */
@@ -202,6 +237,9 @@ public final class LaunchTimeline {
                 .append(rootfsBytes == null ? "null" : Boolean.toString(rootfsBytes == 0L))
                 .append(",\"stopResult\":")
                 .append(stopResult == null ? "null" : "\"" + stopResult.name() + "\"")
+                .append(",\"stopAttempt\":").append(stopAttempt)
+                .append(",\"stopFinal\":")
+                .append(stopResult == StopResult.CONFIRMED || stopResult == StopResult.ALREADY_STOPPED)
                 .append(",\"diagnostics\":[");
         for (int i = 0; i < diagnostics.size(); i++) {
             if (i > 0) json.append(',');
