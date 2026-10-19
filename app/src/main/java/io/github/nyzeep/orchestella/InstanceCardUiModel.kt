@@ -36,10 +36,12 @@ data class InstanceCardUiModel(
     val crashDiagnostic: InstanceLifecycle.CrashDiagnostic?
 ) {
     companion object {
+        @JvmOverloads
         fun from(
             instance: InstanceLifecycle.Instance,
             strategyBadge: String = "QEMU 软模拟",
-            supportsDesktop: Boolean = false
+            supportsDesktop: Boolean = false,
+            guestIp: String? = null
         ): InstanceCardUiModel {
             val distroId = instance.distro().id()
             val distroDisplayName = distroId.replaceFirstChar { it.uppercase() }
@@ -85,7 +87,11 @@ data class InstanceCardUiModel(
                 }
             }
 
-            val ipAddress = if (isRunning) "10.0.2.15" else "离线"
+            val ipAddress = when {
+                !isRunning -> "离线"
+                guestIp != null -> guestIp
+                else -> "运行中"
+            }
 
             return InstanceCardUiModel(
                 instanceId = instance.id(),

@@ -1118,12 +1118,14 @@ class MainActivity : AppCompatActivity() {
         val inflater = LayoutInflater.from(this)
         for (instance in instances) {
             val cardView = inflater.inflate(R.layout.layout_instance_card, instanceList, false)
-            val runningStrategy = when (ExecutionSessionRegistry.get(instance.id())) {
+            val session = ExecutionSessionRegistry.get(instance.id())
+            val runningStrategy = when (session) {
                 is QemuInstanceLauncher.Session -> "QEMU 软件虚拟化"
                 is AvfInstanceLauncher.AvfSession -> "AVF 硬件虚拟化"
                 else -> strategyBadge
             }
-            val uiModel = InstanceCardUiModel.from(instance, runningStrategy, supportsDesktop)
+            val guestIp = (session as? QemuInstanceLauncher.Session)?.let { NetworkGatewayDaemon.GUEST_IP }
+            val uiModel = InstanceCardUiModel.from(instance, runningStrategy, supportsDesktop, guestIp)
 
             val distroIcon = cardView.findViewById<ImageView>(R.id.card_distro_icon)
             val distroTitle = cardView.findViewById<TextView>(R.id.card_distro_title)

@@ -96,6 +96,11 @@ public final class InstanceCardUiModelTest {
         assertEquals(16, model.getDiskGb());
         assertTrue(model.getGpuEnabled());
         assertEquals("4 vCPU · 3072 MB · 16 GB · GPU加速", model.getHardwareSpecsText());
+
+        assertEquals("运行中", model.getIpAddress());
+        InstanceCardUiModel qemuModel = InstanceCardUiModel.Companion.from(
+                instance, "QEMU 软件虚拟化", true, NetworkGatewayDaemon.GUEST_IP);
+        assertEquals(NetworkGatewayDaemon.GUEST_IP, qemuModel.getIpAddress());
     }
 
     @Test

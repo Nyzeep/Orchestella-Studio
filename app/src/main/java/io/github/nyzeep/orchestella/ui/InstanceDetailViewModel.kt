@@ -20,7 +20,8 @@ class InstanceDetailViewModel(
     val instanceStore: InstanceLifecycle.FileStore,
     val controller: InstanceLifecycle.Controller = InstanceLifecycle.Controller(instanceStore, Clock.systemUTC()),
     val hostProfile: HostHardwareProfile? = null,
-    val supportsDesktop: Boolean = false
+    val supportsDesktop: Boolean = false,
+    val runningGuestIpProvider: (String) -> String? = { null }
 ) {
 
     sealed class UpdateHardwareResult {
@@ -193,7 +194,10 @@ class InstanceDetailViewModel(
             InstanceLifecycle.State.PROVISIONING -> Pair("⏳ 装配中", R.color.status_provisioning)
         }
 
-        val ipAddress = if (isRunning) "10.0.2.15" else "离线"
+        val ipAddress = when {
+            !isRunning -> "离线"
+            else -> runningGuestIpProvider(instance.id()) ?: "运行中"
+        }
 
         return InstanceDetailUiState(
             instance = instance,
