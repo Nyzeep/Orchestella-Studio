@@ -127,3 +127,30 @@ keyPassword = (properties["orchestella.signing.keyPassword"] as String?) ?: "orc
 - 提交：按 A–H 分组，中文 commit；不合并 main。
 - 报告：`docs/reports/orchestration/release-readiness-fix-<date>.zh-CN.md`，含提交、测试、未测项、待决策项。
 - 回传：在本文件追加 `## Fix Report`，列出 commit、测试命令/结果、`not-tested`、需要发布负责人决定的事项。
+
+## Fix Report
+
+**2026-10-19 / 分支 `fix/release-readiness`**
+
+- 详细报告：[release-readiness-fix-20261019.zh-CN.md](../reports/orchestration/release-readiness-fix-20261019.zh-CN.md)
+- 提交：
+  - `6df71da` A+B 构建通道 / release 签名硬门
+  - `2b60f0b` D GPL/NOTICE/SOURCE-OFFER
+  - `6726c4d` C release workflow / APK 门
+  - `0451254` E SAF 导出/导入迁移
+  - `248bf28` F T4/T1 运行时债务
+  - `3f1d0ca` G T7 矩阵样本统计
+  - `a59554b` F JVM Log stub
+- 测试：
+  - `:runtime:contract:check :runtime:instance:check :runtime:engine-qemu:check :app:testDebugUnitTest` 通过；app 105 suites / 836 tests，contract 24，instance 15，engine-qemu 2，0 failures。
+  - `:app:lintDebug` 通过（0 Error / 753 Warning）。
+  - `check_licenses.py` 33 passed；`test_check_licenses.py` 9 passed；`test_verify_apk.py` 11 passed；`test_matrix.py` 7 passed。
+  - `actionlint 1.7.12` 通过；`git diff --check` 通过。
+  - 构建通道实测：默认 `io.github.nyzeep.orchestella / 0.5.3`；dev `...dev / 0.5.3-dev.<sha>`；qa `...qa.runtimeperf / 0.5.3-qa.runtimeperf.<sha>`。
+  - 无签名属性 `:app:assembleRelease` 按设计失败；`signingReport` release 无证书。
+  - `verify_apk.py` 对当前 Debug APK 按设计拒绝，对 metadata fixture 通过。
+  - `bridgeClientResponsePumpTest` 连续 20 次通过。
+- `not-tested`：AVF 真机、QEMU 真机、64-forward 真实 gvproxy、T7 设备矩阵、Arch/T5/T6、主包/新包迁移、release-signed APK 安装升级、GitHub Actions `release.yml` 实际运行、真实生产 keystore、16 KB 真机运行。
+- 待发布负责人决定：生产 keystore/secrets；版本 0.5.4/504 vs 0.6.0/600；同包 vs 新包迁移；是否保留 guest password；GPL 细节（shm stub、QEMU 两份记录、SOURCE-OFFER 履约）；release workflow 是否直接发布。
+- 本分支未递增版本、未打 tag、未创建 GitHub Release、未合并 main。
+- GitHub push 未完成：环境缺少 GitHub 凭据（仅有 CNB），需发布负责人执行 `git push github fix/release-readiness`；不要把 token 写入仓库或日志。
