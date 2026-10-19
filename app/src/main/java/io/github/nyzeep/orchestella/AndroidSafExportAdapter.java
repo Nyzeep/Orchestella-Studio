@@ -89,6 +89,10 @@ public final class AndroidSafExportAdapter {
         Objects.requireNonNull(instance, "instance");
         Objects.requireNonNull(documentUri, "documentUri");
 
+        // Validate before opening the SAF stream: opening/truncating a document and then
+        // failing would destroy the user's previous backup.
+        InstanceStorageManager.requireExportable(instance);
+
         try (OutputStream outputStream = streamOpener.openOutputStream(documentUri)) {
             if (outputStream == null) {
                 throw new IOException("Cannot open output stream for SAF URI: " + documentUri);
@@ -109,12 +113,7 @@ public final class AndroidSafExportAdapter {
             throw new UnsupportedOperationException("TreeDirectoryWriter is not configured");
         }
 
-        if (instance.state() == InstanceLifecycle.State.RUNNING) {
-            throw new IllegalStateException("cannot export a RUNNING instance");
-        }
-        if (instance.state() == InstanceLifecycle.State.PROVISIONING) {
-            throw new IllegalStateException("cannot export a PROVISIONING instance");
-        }
+        InstanceStorageManager.requireExportable(instance);
 
         Path volumePath = instance.rootVolume();
         if (!Files.isRegularFile(volumePath)) {
@@ -147,18 +146,8 @@ public final class AndroidSafExportAdapter {
         String volumeSha256 = StorageContract.bytesToHex(volumeDigest.digest());
 
         // 2. Write instance-metadata.json
-        long now = clock.millis();
-        StorageContract.InstanceExportMetadata metadata = new StorageContract.InstanceExportMetadata(
-                instance.id(),
-                instance.distro().id(),
-                instance.distro().version(),
-                instance.runtimeClass().name(),
-                instance.state().name(),
-                volumeSize,
-                volumeSha256,
-                instance.createdAtMillis(),
-                instance.updatedAtMillis(),
-                now);
+        StorageContract.InstanceExportMetadata metadata =
+                InstanceStorageManager.createExportMetadata(instance, volumeSize, volumeSha256, clock);
 
         byte[] metadataBytes = metadata.toJson().getBytes(StandardCharsets.UTF_8);
         String metadataSha256 = StorageContract.sha256Hex(metadataBytes);
