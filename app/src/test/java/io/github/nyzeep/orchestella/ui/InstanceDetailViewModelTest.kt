@@ -1,6 +1,7 @@
 package io.github.nyzeep.orchestella.ui
 
 import io.github.nyzeep.orchestella.HostHardwareProfile
+import io.github.nyzeep.orchestella.NetworkGatewayDaemon
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -175,7 +176,7 @@ class InstanceDetailViewModelTest {
         state = viewModel.uiState!!
         assertEquals(InstanceLifecycle.State.RUNNING, state.state)
         assertEquals("● 运行中", state.stateBadgeText)
-        assertEquals("10.0.2.15", state.ipAddress)
+        assertEquals("运行中", state.ipAddress)
         assertTrue(state.canOpenTerminal)
         assertTrue(state.canLaunchDesktop)
         assertFalse(state.canPowerOn)
@@ -231,5 +232,38 @@ class InstanceDetailViewModelTest {
         assertNotNull(reset)
         assertEquals(InstanceLifecycle.State.STOPPED, reset!!.state())
         assertEquals(InstanceLifecycle.State.STOPPED, viewModel.uiState!!.state)
+    }
+
+    @Test
+    fun runningGuestIpComesFromTheActiveSessionProvider() {
+        val rootVol = tempDir.resolve("ubuntu-ip.raw")
+        Files.createFile(rootVol)
+
+        val instance = controller.create(
+            InstanceLifecycle.DistroReference("ubuntu", "24.04"),
+            rootVol
+        )
+        controller.beginProvisioning(instance.id())
+        controller.completeProvisioning(instance.id())
+        controller.start(instance.id())
+
+        val qemuViewModel = InstanceDetailViewModel(
+            instanceStore = store,
+            controller = controller,
+            hostProfile = hostProfile,
+            supportsDesktop = true,
+            runningGuestIpProvider = { NetworkGatewayDaemon.GUEST_IP }
+        )
+        qemuViewModel.loadInstance(instance.id())
+        assertEquals(NetworkGatewayDaemon.GUEST_IP, qemuViewModel.uiState!!.ipAddress)
+
+        val unknownIpViewModel = InstanceDetailViewModel(
+            instanceStore = store,
+            controller = controller,
+            hostProfile = hostProfile,
+            supportsDesktop = true
+        )
+        unknownIpViewModel.loadInstance(instance.id())
+        assertEquals("运行中", unknownIpViewModel.uiState!!.ipAddress)
     }
 }
