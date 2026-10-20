@@ -8,9 +8,21 @@ APK="${1:-app/build/outputs/apk/debug/app-debug.apk}"
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 cd "$ROOT"
 
-if [ ! -f "$APK" ]; then
-  echo "FAIL APK missing: $APK"
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
+fail() {
+  echo "FAIL $*"
+  # Surface the first failure as a check annotation so the cause is visible
+  # without downloading the full job log.
+  if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+    echo "::error::16KB APK gate: $*"
+  fi
   exit 1
+}
+
+if [ ! -f "$APK" ]; then
+  fail "APK missing: $APK"
 fi
 
 SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
@@ -30,10 +42,14 @@ if [ -z "$ZIPALIGN" ] || [ ! -x "$ZIPALIGN" ]; then
   ZIPALIGN="$(command -v zipalign || true)"
 fi
 if [ -z "$ZIPALIGN" ] || [ ! -x "$ZIPALIGN" ]; then
-  echo "FAIL zipalign not found (set ANDROID_HOME or ZIPALIGN)"
-  exit 1
+  fail "zipalign not found (set ANDROID_HOME or ZIPALIGN)"
 fi
-"$ZIPALIGN" -c -P 16 -v 4 "$APK" >/dev/null || { echo "FAIL zipalign -P 16"; exit 1; }
+ZIPALIGN_LOG="$TMP/zipalign.log"
+if ! "$ZIPALIGN" -c -P 16 -v 4 "$APK" >"$ZIPALIGN_LOG" 2>&1; then
+  echo "zipalign=$ZIPALIGN"
+  tail -5 "$ZIPALIGN_LOG" >&2
+  fail "zipalign -P 16 failed ($ZIPALIGN)"
+fi
 
 if [ -z "${READELF:-}" ] && [ -n "$SDK" ] && [ -d "$SDK/ndk" ]; then
   READELF="$(find "$SDK/ndk" -path '*/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf' \( -type f -o -type l \) 2>/dev/null | sort -V | tail -1 || true)"
@@ -42,19 +58,21 @@ if [ -z "${READELF:-}" ]; then
   READELF="$(command -v llvm-readelf || command -v readelf || true)"
 fi
 if [ -z "${READELF:-}" ] || ! command -v "$READELF" >/dev/null 2>&1; then
-  echo "FAIL readelf not found (set READELF)"
-  exit 1
+  fail "readelf not found (set READELF)"
 fi
 
-TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+echo "16KB_APK_GATE_TOOLS apk=$APK zipalign=$ZIPALIGN readelf=$READELF"
 unzip -qq "$APK" 'lib/arm64-v8a/*.so' -d "$TMP" \
-  || { echo "FAIL cannot extract arm64-v8a native libraries"; exit 1; }
+  || fail "cannot extract arm64-v8a native libraries"
 mapfile -t LIBS < <(find "$TMP/lib/arm64-v8a" -type f -name '*.so' | sort)
 if [ "${#LIBS[@]}" -eq 0 ]; then
-  echo "FAIL no arm64-v8a native libraries in $APK"
-  exit 1
+  fail "no arm64-v8a native libraries in $APK"
 fi
 
-READELF="$READELF" REQUIRE_BUNDLED_CLOSURE=1 bash tools/ci/check-elf-16kb.sh "${LIBS[@]}"
+ELF_LOG="$TMP/elf.log"
+if ! READELF="$READELF" REQUIRE_BUNDLED_CLOSURE=1 \
+  bash tools/ci/check-elf-16kb.sh "${LIBS[@]}" 2>&1 | tee "$ELF_LOG"; then
+  reason="$(grep -m1 '^FAIL' "$ELF_LOG" || true)"
+  fail "${reason:-ELF 16KB check failed}"
+fi
 echo "APK_16KB_GATE_OK apk=$APK libs=${#LIBS[@]}"
