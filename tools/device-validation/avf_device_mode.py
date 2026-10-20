@@ -191,6 +191,10 @@ class AdbRunner:
                 cleaned.append("<adb>")
             elif argument == self.serial:
                 cleaned.append("<device>")
+            elif index > 0 and argv[index - 1] == "qaRunToken":
+                cleaned.append("<token>")
+            elif isinstance(argument, str) and argument.startswith("files/avf-qa/probe-"):
+                cleaned.append("files/avf-qa/probe-<token>.json")
             elif isinstance(argument, str) and argument.lower().endswith(".apk"):
                 cleaned.append("<apk>")
             else:
