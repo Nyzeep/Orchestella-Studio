@@ -33,6 +33,14 @@ Date: 2026-10-19
 - **设备门**：当前 HONOR MEY-AN00（SM8735/API 36）protected-only，`setProtectedVm(false)` 直接抛异常；不能作为 AVF custom Linux 交付路径。设备资格（Pixel 6 Pro/Pixel Tablet/Pixel 10/11 或 MT6991/GenieZone，必须实测 `getCapabilities` bit2）是下一个 effort 的入口，不属于本 map。
 - **QEMU 边界**：QEMU 冻结功能，继续作为默认交付；本 map 不改 QEMU 引擎功能，只允许必要的 capability matrix 修正（04）和 CI（01）。发布 keystore/迁移/真机 20 次启停/T7 性能不在本 map。
 - **范围**：本 map 只做零设备代码硬化，不做真机、prototype、protected、shell-owner、H5 rig、QEMU 新功能。
+- **零设备收口（2026-10-20，Agent D / 10）**：01–10 的代码/测试/报告已完成，集成分支 `avf/zero-device-integration` 由 09→10 链构成；全量 runtime checks + app 875 tests + lint/assemble + APK 16KB gate 本地通过。真实 AVF 样本仍为 0，GitHub Actions 远端未执行。
+- **平台事实补强**：`AvfPlatformFacts.managerPresent` 让“OEM 无 feature 字符串但 manager 存在 + 权限未授予”进入 `NEEDS_AUTHORIZATION`，不是“设备未声明”；`HIDDEN_API_BLOCKED`/`PERMISSION_DENIED` 的 shape 失败也算 manager 存在。权限未授予仍不等于 READY。
+- **能力边界**：AVF 的 audio/clipboard/pointer/GPU/9p 状态按实际接线；QEMU 的 audio/clipboard/pointer 由 DesktopActivity/UI 驱动，**不是** session capability，已写入 ADR 索引差异说明与 `QemuSessionCapabilityTest`。没有为了对齐而虚报。
+- **RFB 输入**：`AvfRfbOverVsockTest` 增加 keyboard/pointer=true 的 fake vsock 输入契约（keysym/坐标/统计），补上删除的输入测试缺口。
+- **元数据保留**：`InstanceLifecycle` 现在保留未知元数据键（含 `hardware.*` 未知键），并有 `instance-metadata-v1-golden.properties` golden fixture；未知键不参与硬件解析。
+- **16KB 闭包**：`check-apk-16kb.sh` 启用 `REQUIRE_BUNDLED_CLOSURE=1`，对 APK 内 DT_NEEDED 的 bundled 依赖做集合闭合断言（本地结果 resolved=0、external=13）；QEMU 产品 ELF 未在本环境构建，其闭包仍是 release 风险，不写成“闭包已验证”。
+- **默认 2 vCPU**：未改产品默认值；UI 只在 AVF READY 且 `cpuSupport != SUPPORTED` 时显示 1 vCPU 约束。是否把 AVF 默认设为 1 vCPU 仍待用户决策。
+
 
 ## Tickets
 
@@ -51,6 +59,14 @@ Date: 2026-10-19
 
 **初始 frontier**：01、02、03、04、05、09（6 个并行；02/03 共享文件但无逻辑依赖，集成时按方法边界合并）。03 完成后启动 08；04 完成后启动 06；03+04+06 完成后启动 07；全部完成后做 10。
 
+## Ticket status（2026-10-20）
+
+- 01–09：resolved（零设备）；分支均已推送 GitHub；10 在 `ticket/10-integration-and-report` 收口。
+- 10：resolved（零设备）；集成分支 `avf/zero-device-integration` 从 09→10 链创建并推送；不合并 `main`、不发布、不打 tag。
+- 票 23：completed（零设备代码就绪）；报告/双轴评审在 `docs/reports/tickets/avf-shizuku-23/`；真机项留设备门。
+- 真实 AVF 样本：0；GitHub Actions 远端未执行，本 map 只声明本地等价通过。
+
+
 ## Not yet specified
 
 - 设备资格与真机验收：属于下一个 effort；本 map 只交付工具（09）和代码就绪。入口清单见 research 文档 §3.3。
@@ -65,3 +81,5 @@ Date: 2026-10-19
 - H5 QEMU aarch64 rig（可选 spike，不进关键路径）。
 - hidden exact-count CPU hack、MATCH_HOST+nr_cpus 高级拓扑（v1 固定 1 vCPU）。
 - 性能优化/基准、release 发布、合并 main（票 23 的 main 合并由工单 10 产出报告后由用户/集成 owner 决定）。
+- **把 AVF 默认改为 1 vCPU 的产品决策**：10 只保留诚实提示与守卫，不改默认值；待用户拍板。
+- **QEMU 产品 ELF 的 16KB DT_NEEDED 闭包验证**：本环境未构建 QEMU 产品二进制，只断言了 APK bundled 闭包；release 前仍需在 QEMU 构建产物上执行。

@@ -1,7 +1,7 @@
 # 10: 集成守卫、票 23 收尾与交接报告
 
 Type: implementation
-Status: blocked
+Status: resolved
 Priority: P0
 Owner: integration owner
 Blocked by: 01, 02, 03, 04, 05, 06, 07, 08, 09
@@ -46,13 +46,13 @@ Parent: `.scratch/orchestella-hw-virt/map.md`
 
 ## 行为验收（零设备）
 
-- [ ] 集成分支所有零设备 check/lint/assemble 绿；没有跳测试/关 lint/`-x test`。
-- [ ] 守卫测试能在故意回归时红（例如把 `useNetwork(true)` 改回无条件、把非 owner 当 CONFIRMED、把 audio 加回矩阵）。
-- [ ] 票 23 报告/双轴 review/状态/验收完成；与代码一致。
-- [ ] 交接报告与 map 一致；`not-tested` 清单完整；没有“AVF 已支持/已通过”字样。
-- [ ] 09 的 dry-run 在集成分支可运行，输出 `not-tested`。
-- [ ] 合并冲突已在集成分支解决；共享文件行为有回归测试。
-- [ ] 分支/提交/远端推送信息写入报告，下一环境可直接接手。
+- [x] 集成分支所有零设备 check/lint/assemble 绿；没有跳测试/关 lint/`-x test`。
+- [x] 守卫测试能在故意回归时红（例如把 `useNetwork(true)` 改回无条件、把非 owner 当 CONFIRMED、把 audio 加回矩阵）。
+- [x] 票 23 报告/双轴 review/状态/验收完成；与代码一致。
+- [x] 交接报告与 map 一致；`not-tested` 清单完整；没有“AVF 已支持/已通过”字样。
+- [x] 09 的 dry-run 在集成分支可运行，输出 `not-tested`。
+- [x] 合并冲突已在集成分支解决；共享文件行为有回归测试。
+- [x] 分支/提交/远端推送信息写入报告，下一环境可直接接手。
 
 ## 测试 seam 与 red 命令
 
@@ -82,3 +82,16 @@ Parent: `.scratch/orchestella-hw-virt/map.md`
 ## 不做
 
 - 不做真机验收/性能/发布/合并 main；不做 protected/shell-owner/H5 rig；不修 QEMU 功能。
+
+Claimed by: Agent D / 2026-10-20T03:36:35Z
+
+
+## Answer
+
+- 集成分支：`ticket/10-integration-and-report` 从 `ticket/09-device-validation-harness` 叠加；基线 `82009093` 已含 A/B/C 全部提交，没有重新 merge，也没有共享文件冲突。
+- 全量零设备门：`run-gradle-gate.sh` 8 个任务 `BUILD SUCCESSFUL`；app 875 tests / 0 failures / 0 errors / 0 skipped；lint 0 errors；assembleDebug 成功；APK 16KB `BUNDLED_NEEDED_CLOSURE_OK resolved=0 external_not_asserted=13`；CI coverage 6/6 fixture + 44 checks；09 工具 139 tests + dry-run 12/12 `not-tested`。
+- 守卫 red→green：临时把 `engineqemu` import 加回 AVF engine → `IntegrationGuardsTest` 红；临时把 `.audioOutput(true)` 加回 QEMU matrix → `QemuSessionCapabilityTest` 红；撤回后均 green。
+- 缺口收口：managerPresent fixed；RFB keyboard/pointer fake vsock fixed；QEMU audio/clipboard/pointer 记录为 UI-driven/not session capability；03 未知元数据键 fixed + golden；ADR-0017/WaylandChannel 实现差异说明 done；APK bundled 16KB 闭包 asserted（QEMU 产品 ELF 仍是 release 风险）；默认 2 vCPU 不改，只加 UI 约束守卫，是否改默认待用户决策。
+- 票 23：报告/双轴评审完成，状态 completed；hidden API 受限不再只能 UNKNOWN（typed state + 05 早安装豁免），真实 ROM 行为留设备门。
+- 未验：所有真机 create/run/vsock/stop/network/9p/display/audio/clipboard/App death/性能；真实 AVF 样本 0；GitHub Actions 远端未执行。
+- 报告：`docs/reports/tickets/avf-zero-device-10/implementation-report.zh-CN.md`、`docs/reports/tickets/avf-shizuku-23/implementation-report.zh-CN.md`、`docs/reports/tickets/avf-shizuku-23/review.zh-CN.md`。
