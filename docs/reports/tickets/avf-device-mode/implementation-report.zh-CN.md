@@ -205,3 +205,101 @@ Android 侧本会话还执行了：
 - 是否触碰用户数据：否。没有安装生产包、grant 生产包、读取/修改用户实例、根盘、凭据或屏幕内容。
 - 是否允许声明 AVF 已支持：否。真实 AVF 样本为 0；protected Microdroid 即使未来通过也不是 Orchestella custom Linux 的产品 AVF 成功。
 - 是否需要 non-protected 设备进行下一轮：是。custom Linux 的产品门只能由 bit2 真机闭环证明。
+
+## 11. Session G：protected-only 设备门与 custom 工件 staging（2026-10-20）
+
+- Base：`ticket/avf-device-mode @ 8f85a429`
+- Branch：`lane/nonprotected-validation`
+- 代码提交：`8018887`
+- 设备：只连接到一台设备，公开 alias `qa-device-01`；报告不记录 serial。
+- 结论：设备是 **protected-only**，`getCapabilities` raw bits=1，non-protected bit2 缺失；按停止条件记录 `NO_NON_PROTECTED_VM`，没有创建 custom VM，也没有用 protected Microdroid 替代。
+
+### 11.1 设备资格（真实执行）
+
+用 QA channel 构建并安装 `io.github.nyzeep.orchestella.qa.devicemode` 与 instrumentation 包，显式 `--grant` 后重读探针。结果是 4 个资格阶段 pass：
+
+| 检查 | 结果 | 证据 |
+| --- | --- | --- |
+| adb devices 恰好一台目标设备 | pass | 仅一台 `device`，serial 只用于比较 |
+| API >= 33 | pass | API 36 |
+| ABI 含 arm64-v8a | pass | `arm64-v8a` |
+| `android.software.virtualization_framework` | pass | feature=true |
+| App `getCapabilities()` | protected=true；non-protected=false | raw bits=1 |
+| 两权限 + 显式 grant | pass | manage=GRANTED，custom=GRANTED；grant 后 force-stop 并重读 |
+| hidden API exemption | INSTALLED | `AvfPlatformFacts` |
+| `setProtectedVm(false)` | REJECTED | `UnsupportedOperationException` |
+| App readiness | MODE_UNSUPPORTED | protected-only，产品路径仍是 QEMU |
+| protected-only? | **yes** | bit2 缺失 |
+
+设备报告（脱敏）写到外部 `--out`：
+
+```text
+<APPROVED_AVF_OUTPUT_ROOT>/avf-session-g-20261020/qualification/（外部输出根，未入库）
+```
+
+报告内容：`platform_declaration` / `capabilities` / `permissions` / `protected_mode` 四个阶段 pass，其余 8 个 not-tested；`platform_qualification_samples=1`，`custom_linux_samples=0`，`protected_microdroid_samples=0`，`real_avf_samples=0`。首个阻断阶段若请求 custom-linux 则是 `capabilities` / `NO_NON_PROTECTED_VM`；本轮没有启动 custom 阶段。
+
+### 11.2 custom 工件 staging（零设备实现）
+
+- 新增 `tools/device-validation/avf_qa_staging.py`：从已验证 QA batch `plan.json` 读取 kernel/initramfs 的 size/SHA-256；可选 `--apk` 用 APK 的 `assets/runtime-artifacts-v1.sha256` 与 `assets/Image` 复核 kernel 信任锚。
+- 设备侧只写 QA app 私有 `files/avf-qa/custom/{kernel,initrd,root.img}`；主机不推送 8 GiB 整盘，只推 4096 字节 provisioning marker，设备用 `toybox truncate` 新建 sparse raw，root 大小默认取 plan `rawBytes`。
+- 传输暂存为 `/data/local/tmp/avf-qa-stage-<token>`；一个 `run-as` 脚本用 `set -C`（noclobber）复制三个文件，设备上复核 kernel/initrd SHA-256、root 大小和 `ORCHESTELLA_EMPTY_ROOT_VOLUME_V2` marker。
+- 目标已存在时拒绝覆盖；失败时 tarball trap 只删除本次创建的三个文件，随后只清理本次临时目录；不删除 app 私有磁盘、其他文件或用户数据。
+- 独立 CLI：`python3 -B tools/device-validation/avf_qa_staging.py --adb ... --device ... --qa-package ... --plan ... --distro debian --apk ... --out ...`。
+- 设备模式新增 `--stage-custom` / `--custom-plan` / `--custom-distro` / `--custom-apk` / `--custom-root-bytes` / `--custom-memory-mb` / `--vsock-terminal-port` / `--vsock-timeout-ms`；staging 成功 receipt 单独写入 `avf-qa-staging-<stamp>.json`。
+- `AdbRunner` 命令日志新增对 `qaBridgeToken`、staging 目录和 push 本地路径的脱敏。
+
+### 11.3 custom 启动链修正（编译通过，真机未验）
+
+Session F 的 custom 配置缺少真实启动所需的接线，本轮修正：
+
+1. `VirtualMachineCustomImageConfig.Builder.addParam(...)` 写入生产 `AvfLaunchSpec` 同款 cmdline：`console=hvc0 rdinit=/init panic=-1 droidlayer.root_device=/dev/vda droidlayer.input_tag=droidlayer-input droidlayer.vsock_control_port=9100 droidlayer.vsock_terminal_port=9101`。没有这些参数，guest initramfs 走 virtio-serial 分支，不会监听 vsock。
+2. 探针改用官方 `VirtualMachine.connectVsock(long)`（生产 shape 验证的是该方法；旧的 `connectToVsockServer(int)` 不在生产 shape 中），并有界重试。
+3. custom 模式要求 QA 64-hex bridge token，发送 `DROIDLAYER/HELLO 1 1 <token>`，等待 `DROIDLAYER/READY 1`；随后连接 terminal vsock，只记录首个字节是否存在，不保存终端正文。token 只通过 `am instrument -e qaBridgeToken` 传入，命令日志为 `<token>`。
+4. custom 内存默认 1024 MiB（512 MiB 低于 Debian embedded initramfs 的 provisioning 下限）；CLI 范围 512..4096。
+5. `vsock_timeout_ms` 默认 120000，host 的 instrumentation timeout 随之上调，避免 180s 固定超时先杀掉探针。
+
+### 11.4 零设备回归
+
+在 WSL Ubuntu-24.04 / Python 3.12.3 执行：
+
+```bash
+AVF_VALIDATION_TEST_ROOT=/tmp/avf-session-g/all \
+  PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest discover \
+  -s tools/device-validation -p 'test_*.py'
+```
+
+结果：**182 tests / 0 failures / 0 errors**。其中新增 `test_avf_qa_staging.py` 14 项，覆盖：
+
+- 工件缺失、kernel hash 不匹配、plan 路径逃逸、symlink/junction；
+- 目标文件已存在且不覆盖；
+- `run-as` 不可用、设备侧 hash 不匹配、root marker 失败；
+- 精确清理边界（只删三个本次文件 + 临时目录，保留其他 app 文件）；
+- root size 覆盖、APK trust anchor、token 缺失、root seed marker。
+
+另外 `test_avf_device_mode.py` 新增 1 项，断言 custom 探针默认传 9100/9101、1024 MiB，并把 `qaBridgeToken` 脱敏为 `<token>`；该文件共 29 项通过。QA channel 的 `:app:assembleDebugAndroidTest` / instrumentation Java 编译通过。
+
+这些是 host/fake runner 证据，**不是真机 custom 样本**。
+
+### 11.5 计数
+
+| 计数 | 值 | 说明 |
+| --- | --- | --- |
+| platform_qualification_samples | 1 | 设备声明与 capabilities 两阶段真实 pass |
+| custom_linux_samples | 0 | 设备 protected-only；custom 在创建前被 `NO_NON_PROTECTED_VM` 阻断 |
+| protected_microdroid_samples | 0 | 未使用 protected Microdroid 替代 |
+| real_avf_samples | 0 | 没有真实 create/run/stop 生命周期 |
+
+### 11.6 未测试项
+
+- 真实 non-protected 设备的 custom create/run/vsock/stop；
+- 真实 `DROIDLAYER/HELLO` 与 terminal 首字节；
+- 20 次启停、网络（无网络/静态/DHCP/Android 17 GpuConfig）、只读 9p、RFB 显示/输入、App death；
+- 同资源 QEMU 对照与性能；
+- custom 内存 1024 MiB 与 stub/真实 initramfs 的兼容性（仅结构性检查）。
+
+### 11.7 边界
+
+- 是否触碰用户数据：否。只安装/授权/运行 QA 包；只新建 QA 工件；没有读取或修改用户实例、根盘、导出、备份、凭据或屏幕内容；没有卸载/清数据/root/解锁/改系统策略。
+- 是否允许声明 AVF 已支持：否。设备 protected-only，custom_linux_samples=0，real_avf_samples=0；staging 与 host 测试只表示代码就绪。
+- 下一必需步骤：换一台实测 `getCapabilities() & 2 != 0` 的 non-protected 设备，重复 §11.1 资格，然后执行 §11.2 的 `--stage-custom` custom 最小闭环；任何失败停在该阶段。
