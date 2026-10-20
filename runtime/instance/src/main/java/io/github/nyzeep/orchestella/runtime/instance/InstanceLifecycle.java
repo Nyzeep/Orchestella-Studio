@@ -35,6 +35,10 @@ public final class InstanceLifecycle {
     private static final String KEY_PROVISIONING_MARKER_VERSION = "provisioning.markerVersion";
     private static final String KEY_PROVISIONING_ROOTFS_SHA256 = "provisioning.rootfsSha256";
     private static final String KEY_PROVISIONING_RECORDED_AT = "provisioning.recordedAtMillis";
+    /** Metadata schema. Absent means legacy metadata written before schemaVersion existed. */
+    private static final String KEY_METADATA_SCHEMA_VERSION = "metadata.schemaVersion";
+    private static final String KEY_HARDWARE_LEGACY_DEFAULTS = "hardware.legacyDefaults";
+    private static final int CURRENT_METADATA_SCHEMA_VERSION = 1;
     /** Guest marker version whose observation the host is allowed to persist. */
     public static final int PROVISIONING_MARKER_VERSION = 1;
     private static final int BRIDGE_TOKEN_BYTE_COUNT = BridgeHandshake.TOKEN_HEX_LENGTH / 2;
@@ -571,6 +575,8 @@ public final class InstanceLifecycle {
 
         private Properties toProperties() {
             Properties properties = new Properties();
+            properties.setProperty(KEY_METADATA_SCHEMA_VERSION,
+                    Integer.toString(CURRENT_METADATA_SCHEMA_VERSION));
             properties.setProperty("id", id);
             properties.setProperty("distroId", distro.id());
             properties.setProperty("distroVersion", distro.version());
@@ -601,6 +607,8 @@ public final class InstanceLifecycle {
                 properties.setProperty("hardware.ramMegabytes", Integer.toString(hardwareConfig.ramMegabytes()));
                 properties.setProperty("hardware.diskCapacityBytes", Long.toString(hardwareConfig.diskCapacityBytes()));
                 properties.setProperty("hardware.gpuAccelerationEnabled", Boolean.toString(hardwareConfig.gpuAccelerationEnabled()));
+                properties.setProperty(KEY_HARDWARE_LEGACY_DEFAULTS,
+                        Boolean.toString(hardwareConfig.isLegacyDefaults()));
                 if (hardwareConfig.extraKernelArguments() != null) {
                     properties.setProperty("hardware.extraKernelArguments", hardwareConfig.extraKernelArguments());
                 }
@@ -651,15 +659,47 @@ public final class InstanceLifecycle {
                     throw new IllegalArgumentException("invalid stored sudo choice");
                 }
                 boolean hasSudo = Boolean.parseBoolean(storedSudo);
-                VmHardwareConfig hardwareConfig = VmHardwareConfig.defaultConfig();
+                String schemaText = properties.getProperty(KEY_METADATA_SCHEMA_VERSION);
+                int schemaVersion = schemaText == null || schemaText.isEmpty()
+                        ? 0 : Integer.parseInt(schemaText);
+                if (schemaVersion < 0 || schemaVersion > CURRENT_METADATA_SCHEMA_VERSION) {
+                    throw new IllegalArgumentException("unsupported metadata schema version");
+                }
                 String cpuCoresStr = properties.getProperty("hardware.cpuCores");
+                boolean hasAnyHardwareKey = properties.stringPropertyNames().stream()
+                        .anyMatch(key -> key.startsWith("hardware."));
+                VmHardwareConfig hardwareConfig;
                 if (cpuCoresStr != null) {
+                    String ramText = properties.getProperty("hardware.ramMegabytes");
+                    String diskText = properties.getProperty("hardware.diskCapacityBytes");
+                    if (ramText == null || ramText.isEmpty() || diskText == null || diskText.isEmpty()) {
+                        // A partial block is corrupt: never fill the gaps with silent defaults.
+                        throw new IllegalArgumentException("incomplete hardware metadata");
+                    }
                     int cpuCores = Integer.parseInt(cpuCoresStr);
-                    int ramMb = Integer.parseInt(required(properties, "hardware.ramMegabytes"));
-                    long diskBytes = Long.parseLong(required(properties, "hardware.diskCapacityBytes"));
-                    boolean gpuEnabled = Boolean.parseBoolean(properties.getProperty("hardware.gpuAccelerationEnabled", "true"));
+                    int ramMb = Integer.parseInt(ramText);
+                    long diskBytes = Long.parseLong(diskText);
+                    boolean gpuEnabled = Boolean.parseBoolean(
+                            properties.getProperty("hardware.gpuAccelerationEnabled", "true"));
+                    boolean legacyDefaults = Boolean.parseBoolean(
+                            properties.getProperty(KEY_HARDWARE_LEGACY_DEFAULTS, "false"));
                     String extraArgs = properties.getProperty("hardware.extraKernelArguments");
-                    hardwareConfig = new VmHardwareConfig(cpuCores, ramMb, diskBytes, gpuEnabled, extraArgs);
+                    hardwareConfig = new VmHardwareConfig(
+                            cpuCores, ramMb, diskBytes, gpuEnabled, extraArgs, legacyDefaults);
+                } else if (hasAnyHardwareKey) {
+                    throw new IllegalArgumentException("incomplete hardware metadata");
+                } else if (schemaVersion == 0) {
+                    // Explicit legacy migration: keep the historical effective hardware
+                    // and carry provenance instead of presenting it as a user choice.
+                    hardwareConfig = new VmHardwareConfig(
+                            VmHardwareConfig.DEFAULT_CPU_CORES,
+                            VmHardwareConfig.DEFAULT_RAM_MEGABYTES,
+                            VmHardwareConfig.DEFAULT_DISK_CAPACITY_BYTES,
+                            VmHardwareConfig.DEFAULT_GPU_ACCELERATION_ENABLED,
+                            null,
+                            true);
+                } else {
+                    throw new IllegalArgumentException("hardware metadata missing");
                 }
                 ProvisioningEvidence provisioningEvidence = null;
                 String markerVersionText = properties.getProperty(KEY_PROVISIONING_MARKER_VERSION);

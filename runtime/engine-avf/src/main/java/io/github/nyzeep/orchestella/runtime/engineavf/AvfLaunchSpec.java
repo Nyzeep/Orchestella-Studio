@@ -2,6 +2,7 @@ package io.github.nyzeep.orchestella.runtime.engineavf;
 
 import io.github.nyzeep.orchestella.runtime.contract.NetworkContract;
 import io.github.nyzeep.orchestella.runtime.contract.SharedDirectoryContract;
+import java.util.List;
 import java.util.Objects;
 import java.util.regex.Pattern;
 
@@ -70,6 +71,7 @@ public final class AvfLaunchSpec {
     private final SharedDirectoryContract.SharedDirectorySpec sharedDirectory;
     private final int graphicsVsockPort;
     private final int audioVsockPort;
+    private final List<String> extraKernelArguments;
     private final String guestCmdline;
 
     private AvfLaunchSpec(Builder builder) {
@@ -86,12 +88,16 @@ public final class AvfLaunchSpec {
         this.sharedDirectory = builder.sharedDirectory;
         this.graphicsVsockPort = builder.graphicsVsockPort;
         this.audioVsockPort = builder.audioVsockPort;
+        this.extraKernelArguments = List.copyOf(builder.extraKernelArguments);
 
         StringBuilder cmdline = new StringBuilder(String.format(
                 GUEST_CMDLINE_TEMPLATE, builder.controlVsockPort, builder.terminalVsockPort));
         if (builder.sharedDirectory != null) {
             cmdline.append(" droidlayer.vsock_9p_port=")
                     .append(builder.sharedDirectoryVsockPort);
+        }
+        for (String argument : builder.extraKernelArguments) {
+            cmdline.append(' ').append(argument);
         }
         this.guestCmdline = appendDnsKey(cmdline.toString(), builder.networkSpec);
     }
@@ -161,6 +167,11 @@ public final class AvfLaunchSpec {
         return audioVsockPort;
     }
 
+    /** Additional guest cmdline arguments admitted from the hardware config. */
+    public List<String> extraKernelArguments() {
+        return extraKernelArguments;
+    }
+
     public String guestCmdline() {
         return guestCmdline;
     }
@@ -185,6 +196,7 @@ public final class AvfLaunchSpec {
         private SharedDirectoryContract.SharedDirectorySpec sharedDirectory;
         private int graphicsVsockPort = DEFAULT_GRAPHICS_VSOCK_PORT;
         private int audioVsockPort = DEFAULT_AUDIO_VSOCK_PORT;
+        private List<String> extraKernelArguments = List.of();
 
         private Builder(
                 String instanceId, String kernelPath, String initramfsPath, String rootVolumePath) {
@@ -253,6 +265,35 @@ public final class AvfLaunchSpec {
 
         public Builder audioVsockPort(int port) {
             this.audioVsockPort = requirePort(port);
+            return this;
+        }
+
+        /**
+         * Appends admitted guest cmdline arguments. Each entry must be one
+         * token: whitespace and control characters would silently change the
+         * kernel command line, so they are rejected here as well as in
+         * {@link AvfLaunchAdmission}.
+         */
+        public Builder extraKernelArguments(List<String> arguments) {
+            if (arguments == null) {
+                this.extraKernelArguments = List.of();
+                return this;
+            }
+            List<String> checked = new java.util.ArrayList<>(arguments.size());
+            for (String argument : arguments) {
+                if (argument == null || argument.isBlank()) {
+                    throw new IllegalArgumentException("extra kernel argument must not be blank");
+                }
+                for (int index = 0; index < argument.length(); index++) {
+                    char character = argument.charAt(index);
+                    if (Character.isWhitespace(character) || Character.isISOControl(character)) {
+                        throw new IllegalArgumentException(
+                                "extra kernel argument must be one token without control characters");
+                    }
+                }
+                checked.add(argument);
+            }
+            this.extraKernelArguments = List.copyOf(checked);
             return this;
         }
 
