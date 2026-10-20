@@ -125,3 +125,23 @@ AVF_VALIDATION_TEST_ROOT='<本批专属外部绝对根>/test-runs/独立新标�
 - [ ] 保持原认证和唯一control reader，取消/迟到回调/FD释放由对应生命周期验收；无无限轮询。
 - [ ] fallback/QEMU/未知/失败保留并排除，独立审查recorder及设备动作后才能签收真机通过。
 - [ ] 用同owner正常stop，确认STOPPED和资源释放；恢复此前明确改动，保留用户实例引用。失败回滚不清app数据、不卸载、不覆盖历史APK/tag、不擅自删除QA盘。
+
+## 2026-10-20：09 AVF 设备验收 dry-run
+
+`run_avf_device_validation.py` 是一条命令的 AVF 设备验收入口，阶段严格对应 research §3.3 的 12 步：platform_declaration、capabilities、permissions、protected_mode、create、run_returned、vsock_handshake、stop_cycles、network、share_display、app_death、qemu_comparison。它不是新的证据认证器：JSON schema 固定为 `schema_version=1`，每阶段只有 `pass` / `fail` / `blocked` / `not-tested` 四种状态。
+
+```bash
+# 零设备 dry-run：不连 adb，所有阶段 not-tested，退出码 0
+python3 -B tools/device-validation/run_avf_device_validation.py \
+  --dry-run --out "$APPROVED_AVF_OUTPUT_ROOT/dry-run"
+
+# 未来真机模式的本票行为：不调用 adb，所有阶段 blocked，退出码 2
+python3 -B tools/device-validation/run_avf_device_validation.py \
+  --device "$QA_SERIAL" --device-alias qa-device-01 --out "$APPROVED_AVF_OUTPUT_ROOT"
+
+# 校验已有报告 schema；坏 fixture 以 REPORT_SCHEMA_REJECTED 拒绝
+python3 -B tools/device-validation/run_avf_device_validation.py \
+  --validate report.json --out "$APPROVED_AVF_OUTPUT_ROOT"
+```
+
+输出为 JSON + Markdown，写入显式绝对根下的新文件名（带 UTC 微秒），并复用 `EvidenceStore` 的 preservation 副本。`--dry-run` 的每步 `evidence`/`rom_binding` 都是 `not-collected`，`real_avf_samples=0`，`verdict=NOT_TESTED`；`--device` 的 `device_mode.implemented=false`、`adb_invoked=false`，不记录 serial/IMEI/MAC/账号/token/屏幕内容。工具不安装 APK、不 grant、不 root/解锁、不启停 VM。dry-run 通过只表示“工具与 schema 就绪”，不表示 AVF 已在设备上成功。
