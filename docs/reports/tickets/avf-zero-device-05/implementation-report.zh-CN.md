@@ -2,7 +2,7 @@
 
 - 票号/状态：avf-zero-device-05；**resolved**（零设备代码就绪）。
 - 执行：Agent C / 2026-10-20。
-- 基线：`ticket/07-ninep-and-port-forwarding` @ `40bb2177`；分支 `ticket/05-platform-access-hidden-api`（从 `lane/agent-c` 分出）。
+- 基线：`ticket/07-ninep-and-port-forwarding` @ `face91f`；分支 `ticket/05-platform-access-hidden-api`（从 `lane/agent-c` 分出）。
 - 证据边界：全部验收在 JVM / fake classloader / fake host 上完成。真实 AVF 样本仍为 **0**；`pm grant`、目标 ROM 的 hidden API 行为、真实 `getCapabilities` actor 均未验证。
 
 ## 1. 问题与范围

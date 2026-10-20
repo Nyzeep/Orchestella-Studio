@@ -2,12 +2,12 @@
 
 - 日期：2026-10-20
 - Agent：Agent D（工具 + 集成 owner）
-- 基线：`ticket/01-ci-full-gate` @ `82009093`
-- 票 09：`ticket/09-device-validation-harness` @ `d4c3f586`（已推送 GitHub）
-- 票 10 代码提交：`3c57f281`（`feat(avf): 收口平台事实、RFB 输入与元数据保留`）
+- 基线：`ticket/01-ci-full-gate` @ `b9f2be7`
+- 票 09：`ticket/09-device-validation-harness` @ `496f8c3`（已推送 GitHub）
+- 票 10 代码提交：`55003e2`（`feat(avf): 收口平台事实、RFB 输入与元数据保留`）
 - 分支：`ticket/10-integration-and-report`（从 09 叠加）；集成分支 `avf/zero-device-integration` 从 10 head 创建
 - 远端：`github` = `git@github.com:Nyzeep/Orchestella-Studio.git`
-- Ancestry：`82009093` 已核实包含 02 `a59dcb25`、03 `1b51de47`、08 `78fc531c`、04 `a4e2e7a8`、06 `bd1ecd05`、07 `40bb2177`、05 `50c971b4`；09 从该基线分出，10 从 09 分出。没有重新 merge A/B/C。
+- Ancestry：`b9f2be7` 已核实包含 02 `dbfd8b9`、03 `f0708f3`、08 `8918488`、04 `2269300`、06 `be6de2d`、07 `face91f`、05 `a9fd9b9`；09 从该基线分出，10 从 09 分出。没有重新 merge A/B/C。
 
 ## 1. 代码就绪项（fake / JVM 通过）
 

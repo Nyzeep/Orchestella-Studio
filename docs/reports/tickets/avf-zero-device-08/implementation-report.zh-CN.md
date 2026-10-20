@@ -2,7 +2,7 @@
 
 - 工单：`.scratch/orchestella-hw-virt/issues/08-android17-network-contract.md`
 - Owner：Agent A（生命周期 lane）
-- 分支：`ticket/08-android17-network-contract`，叠加于 `ticket/03-avf-launch-admission` @ `1b51de47`
+- 分支：`ticket/08-android17-network-contract`，叠加于 `ticket/03-avf-launch-admission` @ `f0708f3`
 - 日期：2026-10-20
 - 结论：**代码就绪（fake/JVM 通过）；真实 AVF TAP/DHCP/DNS/apt 与 Android 17 `crosvm_minimal` 未验。**
 

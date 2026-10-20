@@ -2,7 +2,7 @@
 
 - 工单：`.scratch/orchestella-hw-virt/issues/03-avf-launch-admission.md`
 - Owner：Agent A（生命周期 lane）
-- 分支：`ticket/03-avf-launch-admission`，叠加于 `ticket/02-avf-runtime-ownership` @ `a59dcb25`
+- 分支：`ticket/03-avf-launch-admission`，叠加于 `ticket/02-avf-runtime-ownership` @ `dbfd8b9`
 - 日期：2026-10-20
 - 结论：**代码就绪（fake/JVM 通过）；真实 AVF create/rebuild 未验，真实 AVF 成功样本仍为 0。**
 

@@ -2,7 +2,7 @@
 
 - 工单：`.scratch/orchestella-hw-virt/issues/02-avf-runtime-ownership.md`
 - Owner：Agent A（生命周期 lane）
-- 分支：`ticket/02-avf-runtime-ownership`，基线 `avf/zero-device-hardening` @ `76a7514`
+- 分支：`ticket/02-avf-runtime-ownership`，基线 `avf/zero-device-hardening` @ `45720ad`
 - 日期：2026-10-20
 - 结论：**代码就绪（fake/JVM 通过）；真实 AVF 未验，真实 AVF 成功样本仍为 0。**
 
