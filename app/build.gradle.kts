@@ -326,7 +326,7 @@ tasks.register<JavaExec>("runPhase5JvmAppTests") {
     args(
         "io.github.nyzeep.orchestella.DesktopPresentationGateTest",
         "io.github.nyzeep.orchestella.DesktopKeyMapperTest",
-        "io.github.nyzeep.orchestella.QemuWaylandChannelTest",
+        "io.github.nyzeep.orchestella.RfbDisplaySessionTest",
         "io.github.nyzeep.orchestella.DoubleBufferedRendererTest",
         "io.github.nyzeep.orchestella.FirstBootProvisionPipelineTest",
         "io.github.nyzeep.orchestella.QemuRuntimeBootstrapperTest",

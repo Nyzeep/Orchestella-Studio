@@ -15,8 +15,12 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
-/** Receives guest Wayland frames through the authenticated CPU-copy display transport. */
-public final class QemuWaylandChannel implements WaylandChannel, DisplayControl {
+/**
+ * The neutral RFB display session shared by QEMU and AVF: authenticated
+ * CPU-copy frames plus keyboard/pointer input over an engine-supplied stream.
+ * The name carries the real protocol; RFB is never presented as Wayland.
+ */
+public final class RfbDisplaySession implements WaylandChannel, DisplayControl {
     private final RfbDisplayChannel.StreamConnector connector;
     private final String token;
     private final Supplier<BridgeClient> control;
@@ -36,7 +40,7 @@ public final class QemuWaylandChannel implements WaylandChannel, DisplayControl 
     private volatile int width = 1280, height = 720;
     private volatile double scale = 1.0;
 
-    public QemuWaylandChannel(RfbDisplayChannel.StreamConnector connector, String token,
+    public RfbDisplaySession(RfbDisplayChannel.StreamConnector connector, String token,
             Supplier<BridgeClient> control) {
         this.connector = connector;
         this.token = token;

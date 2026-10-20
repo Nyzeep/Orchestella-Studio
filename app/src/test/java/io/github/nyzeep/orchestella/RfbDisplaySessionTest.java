@@ -9,9 +9,9 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import org.junit.Test;
 
-public class QemuWaylandChannelTest {
+public class RfbDisplaySessionTest {
     @Test public void unopenedChannelNeverProducesTemplateFramesOrAcceptsInput() throws Exception {
-        try (QemuWaylandChannel channel = new QemuWaylandChannel(() -> { throw new IOException("no display endpoint"); },
+        try (RfbDisplaySession channel = new RfbDisplaySession(() -> { throw new IOException("no display endpoint"); },
                 "a".repeat(64), () -> null)) {
             CountDownLatch frame = new CountDownLatch(1);
             channel.registerFrameListener(ignored -> frame.countDown());
@@ -37,7 +37,7 @@ public class QemuWaylandChannelTest {
         wire.writeByte(0); wire.writeByte(0); wire.writeShort(1);
         wire.writeShort(0); wire.writeShort(0); wire.writeShort(1); wire.writeShort(1); wire.writeInt(0);
         wire.write(new byte[] {0, 0, (byte) 255, 0});
-        try (QemuWaylandChannel channel = new QemuWaylandChannel(() -> new RfbDisplayChannel.Streams(
+        try (RfbDisplaySession channel = new RfbDisplaySession(() -> new RfbDisplayChannel.Streams(
                 new java.io.ByteArrayInputStream(bytes.toByteArray()), new java.io.ByteArrayOutputStream()),
                 "a".repeat(64), () -> null)) {
             CountDownLatch first = new CountDownLatch(1);
@@ -53,7 +53,7 @@ public class QemuWaylandChannelTest {
     }
 
     @Test public void transportFailureCannotAdvertiseAConnectedDesktop() throws Exception {
-        try (QemuWaylandChannel channel = new QemuWaylandChannel(() -> { throw new IOException("unavailable"); },
+        try (RfbDisplaySession channel = new RfbDisplaySession(() -> { throw new IOException("unavailable"); },
                 "a".repeat(64), () -> null)) {
             CountDownLatch error = new CountDownLatch(1);
             channel.addStateListener((state, message) -> { if (state == WaylandChannel.ConnectionState.ERROR) error.countDown(); });

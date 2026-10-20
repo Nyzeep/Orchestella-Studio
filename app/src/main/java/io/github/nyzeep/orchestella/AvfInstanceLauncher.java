@@ -101,7 +101,7 @@ public final class AvfInstanceLauncher {
         private BridgeClient bridgeClient;
         private volatile BridgeControl.Clipboard clipboardBridge;
         private final AtomicBoolean isBridgeServing = new AtomicBoolean(false);
-        private final QemuWaylandChannel display;
+        private final RfbDisplaySession display;
         private final LaunchTimeline timeline;
         private final AtomicBoolean closed = new AtomicBoolean(false);
         private volatile SessionCapabilities capabilities;
@@ -115,9 +115,9 @@ public final class AvfInstanceLauncher {
         AvfSession(AvfVirtualMachineEngine.AvfVmSession session, String token, LaunchTimeline timeline) {
             this.session = session;
             this.timeline = timeline;
-            this.display = token == null ? null : new QemuWaylandChannel(() -> {
+            this.display = token == null ? null : new RfbDisplaySession(() -> {
                 try {
-                    AvfVirtualMachineApi.AvfVsockChannel channel = session.openChannel(9103);
+                    AvfVirtualMachineApi.AvfVsockChannel channel = session.graphicsChannel();
                     return new io.github.nyzeep.orchestella.runtime.contract.display.RfbDisplayChannel.Streams(
                             channel.inputStream(), channel.outputStream(), channel);
                 } catch (AvfEngineException failure) { throw new IOException("AVF display transport unavailable", failure); }

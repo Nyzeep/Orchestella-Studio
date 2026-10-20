@@ -47,4 +47,19 @@ public final class AvfCapabilityTruthTest {
         assertFalse(matrix.supports(FullLinuxContract.Capability.GRAPHICS_WAYLAND));
         assertTrue("the session still has its terminal", matrix.supports(FullLinuxContract.Capability.TERMINAL));
     }
+
+    @Test
+    public void registeringAClipboardBridgeDoesNotClaimClipboardSupport() {
+        AvfInstanceLauncher.AvfSession session =
+                new AvfInstanceLauncher.AvfSession(null, "a".repeat(64), null);
+        session.registerClipboardBridge(new io.github.nyzeep.orchestella.runtime.contract.BridgeControl.Clipboard() {
+            @Override public boolean onClipboardPut(String text) { return true; }
+            @Override public String onClipboardGet() { return ""; }
+        });
+
+        assertFalse("Bridge v1 + a host callback alone is not an end-to-end clipboard agent proof",
+                session.capabilityMatrix().supportsClipboard());
+        assertFalse("the descriptor keeps clipboard absent until the guest agent contract is proven",
+                session.capabilities().clipboardSync());
+    }
 }
