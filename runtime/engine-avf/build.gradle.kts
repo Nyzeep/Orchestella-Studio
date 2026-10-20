@@ -4,6 +4,9 @@ plugins {
 
 dependencies {
     api(project(":runtime:contract"))
+    // The shared platform-access facts/contract live in the capability module;
+    // the engine and the App probe consume the same observation.
+    api(project(":runtime:capability"))
     // Test-only collaborators: the lifecycle contract test drives the normal
     // Instance state machine over the AVF adapter, the interop test
     // asserts root-volume/kernel/initramfs identity against the QEMU spec, and
@@ -135,8 +138,14 @@ tasks.register<JavaExec>("avfNetworkPlanTest") {
     mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.AvfNetworkPlanTest")
 }
 
+tasks.register<JavaExec>("avfPlatformAccessTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.AvfPlatformAccessTest")
+}
+
 val avfAllTestTasks = listOf(
     "reflectiveAvfVirtualMachineApiTest",
+    "avfPlatformAccessTest",
     "avfRuntimeOwnershipTest",
     "avfLaunchAdmissionTest",
     "avfPersistentConfigTest",

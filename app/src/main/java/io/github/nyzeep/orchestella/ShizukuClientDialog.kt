@@ -117,6 +117,7 @@ class ShizukuClientDialog : DialogFragment() {
             }
             append("\n\nMANAGE: ${AvfHostFactsProbe.permissionLabel(facts.manageVirtualMachinePermissionState())}")
             append("\nCUSTOM: ${AvfHostFactsProbe.permissionLabel(facts.useCustomVirtualMachinePermissionState())}")
+            append("\n平台访问: ${AvfHostFactsProbe.platformSummary(facts.platformFacts())}")
         }
         (dialog as? AlertDialog)?.apply {
             getButton(AlertDialog.BUTTON_POSITIVE)?.isEnabled = state.canRequestPermission()

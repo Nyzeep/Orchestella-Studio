@@ -33,3 +33,16 @@ SOFTWARE.
 
 This application distributes the client libraries only. The Shizuku manager,
 server, application identity, and launcher artwork are not bundled.
+
+Third-party notices: LSPosed AndroidHiddenApiBypass
+
+Component distributed with this application:
+  org.lsposed.hiddenapibypass:hiddenapibypass:6.1
+
+Upstream: https://github.com/LSPosed/AndroidHiddenApiBypass
+License: Apache License, Version 2.0 (app/src/main/assets/LICENSE.APACHE-2.0)
+Copyright (c) 2020-2024 LSPosed
+
+Used only for an in-process hidden-API exemption on builds that expose the
+system virtualization APIs. It grants no Android permission, starts no
+service, and is installed once before any AVF platform class is loaded.

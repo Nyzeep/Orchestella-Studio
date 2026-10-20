@@ -1,7 +1,7 @@
 # 05: 平台访问与 hidden API 接缝
 
 Type: implementation
-Status: ready-for-agent
+Status: resolved
 Priority: P0
 Owner: platform access owner
 Blocked by: None
@@ -74,3 +74,17 @@ Parent: `.scratch/orchestella-hw-virt/map.md`
 
 - 不做真机 `pm grant`/hidden API 行为验收（设备 effort）。
 - 不实现 shell-owner/UserService/ACR-01；不做 protected；不改 targetSdk；不改全局 hidden_api_policy。
+
+---
+
+Claimed by: Agent C / 2026-10-20T02:14:13Z
+
+## Answer
+
+- 新增 `AvfPlatformFacts` / `AccessState` / `AvfPlatformAccess`（runtime:capability），以及唯一反射 adapter `ReflectiveAvfPlatformAccess`（runtime:engine-avf），拥有 `android.system.virtualmachine.*` 平台 shape、两个 capability bit、`getCapabilities()`、`checkSelfPermission()` 与失败分类。
+- `AvfHostFactsProbe` 删除重复的 `Class.forName` / bit 常量 / `readModeFacts` 失败分支；平台事实、权限与 mode 通过同一个 adapter 获取。旧 `probe(...)` 重载保留。
+- 新增 `OrchestellaApplication`（manifest `android:name`），在 `attachBaseContext` 一次性安装 HiddenApiBypass 6.1 豁免；`AvfInstanceLauncher` 与探针也调用同一幂等入口。失败只记录，不重试。
+- `AvfCapabilityEvaluator` 新增 `HIDDEN_API_BLOCKED` / `REFLECTION_UNAVAILABLE`，区分 hidden API、权限、仅 protected、接口缺失与未知；UI 显示平台访问摘要与具体原因。
+- 许可：pin `org.lsposed.hiddenapibypass:hiddenapibypass:6.1`（Apache-2.0），新增 `LICENSE.APACHE-2.0`、third-party notice 与 release bundle manifest 条目。
+- Red→green：实现前三个模块均因新类型缺失编译失败；实现后 `:runtime:capability:check :runtime:engine-avf:check`、目标 app 测试、全部 app JVM 单元测试、`:app:lintDebug :app:assembleDebug` 均通过。`avfPlatformAccessTest` 输出 `AVF_PLATFORM_ACCESS_TEST_OK states=6 exemption=2 engine_mapping=3`。
+- 未验：真实 ROM 的 hidden API 豁免、`pm grant`、真实 `getCapabilities` bits/actor、Application 真实启动时机、真实 AVF create/run/stop。真实 AVF 样本仍为 0。

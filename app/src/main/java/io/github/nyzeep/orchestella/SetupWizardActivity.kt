@@ -599,6 +599,7 @@ class SetupWizardActivity : AppCompatActivity() {
             AVF feature：${if (facts.virtualizationFrameworkFeature()) "已声明" else "未声明"}
             虚拟化属性：${facts.virtualizationProperty()?.takeIf { it.isNotBlank() } ?: "无法读取或未提供"}
             VM 模式：${AvfHostFactsProbe.modeSummary(facts.modeFacts())}
+            平台访问：${AvfHostFactsProbe.platformSummary(facts.platformFacts())}
             MANAGE_VIRTUAL_MACHINE：${AvfHostFactsProbe.permissionLabel(facts.manageVirtualMachinePermissionState())}
             USE_CUSTOM_VIRTUAL_MACHINE：${AvfHostFactsProbe.permissionLabel(facts.useCustomVirtualMachinePermissionState())}
         """.trimIndent()
@@ -627,6 +628,18 @@ class SetupWizardActivity : AppCompatActivity() {
                 txtWizardAvfBadge.text = "AVF 模式未验证"
                 txtWizardAvfBadge.setTextColor(getColor(R.color.zone_yellow))
                 txtWizardAvfDetails.text = "$factsSummary\n${readiness.reasons().joinToString("；")}\n授权不会改变 VM 模式；当前使用 QEMU。\n$launchNotice"
+                layoutWizardAvfFallback.visibility = View.VISIBLE
+            }
+            AvfCapabilityEvaluator.AvfStatus.HIDDEN_API_BLOCKED -> {
+                txtWizardAvfBadge.text = "AVF 平台接口受限"
+                txtWizardAvfBadge.setTextColor(getColor(R.color.zone_red))
+                txtWizardAvfDetails.text = "$factsSummary\n${readiness.reasons().joinToString("；")}\n这是系统隐藏 API 限制，不是权限问题；当前使用 QEMU。\n$launchNotice"
+                layoutWizardAvfFallback.visibility = View.VISIBLE
+            }
+            AvfCapabilityEvaluator.AvfStatus.REFLECTION_UNAVAILABLE -> {
+                txtWizardAvfBadge.text = "AVF 平台接口缺失"
+                txtWizardAvfBadge.setTextColor(getColor(R.color.zone_red))
+                txtWizardAvfDetails.text = "$factsSummary\n${readiness.reasons().joinToString("；")}\n当前系统未提供该平台接口；当前使用 QEMU。\n$launchNotice"
                 layoutWizardAvfFallback.visibility = View.VISIBLE
             }
             AvfCapabilityEvaluator.AvfStatus.UNSUPPORTED -> {

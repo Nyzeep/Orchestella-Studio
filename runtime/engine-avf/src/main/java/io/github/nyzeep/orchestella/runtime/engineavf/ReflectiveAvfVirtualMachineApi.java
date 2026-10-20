@@ -1,5 +1,7 @@
 package io.github.nyzeep.orchestella.runtime.engineavf;
 
+import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator;
+import io.github.nyzeep.orchestella.runtime.capability.AvfPlatformFacts;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -16,13 +18,14 @@ import java.util.Objects;
  */
 public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineApi {
     private static final String PACKAGE = "android.system.virtualmachine.";
-    private static final String MANAGE_PERMISSION = "android.permission.MANAGE_VIRTUAL_MACHINE";
-    private static final String CUSTOM_PERMISSION = "android.permission.USE_CUSTOM_VIRTUAL_MACHINE";
+    private static final String MANAGE_PERMISSION =
+            ReflectiveAvfPlatformAccess.MANAGE_PERMISSION;
+    private static final String CUSTOM_PERMISSION =
+            ReflectiveAvfPlatformAccess.CUSTOM_PERMISSION;
     private final Object context;
     private final ClassLoader classLoader;
-    private final Runnable hiddenApiExemption;
+    private final ReflectiveAvfPlatformAccess platformAccess;
     private final DescriptorAdapter descriptorAdapter;
-    private boolean exemptionApplied;
 
     public ReflectiveAvfVirtualMachineApi(Object context, ClassLoader classLoader) {
         this(context, classLoader, null);
@@ -37,9 +40,18 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
     /** Inject a typed App FD adapter, or use the exact PFD AutoCloseStreams reflection boundary. */
     public ReflectiveAvfVirtualMachineApi(Object context, ClassLoader classLoader,
             Runnable hiddenApiExemption, DescriptorAdapter descriptorAdapter) {
+        this(context, classLoader, hiddenApiExemption, descriptorAdapter, null);
+    }
+
+    /** Test seam: drive the engine with an already-constructed platform adapter. */
+    ReflectiveAvfVirtualMachineApi(Object context, ClassLoader classLoader,
+            Runnable hiddenApiExemption, DescriptorAdapter descriptorAdapter,
+            ReflectiveAvfPlatformAccess platformAccess) {
         this.context = Objects.requireNonNull(context, "context");
         this.classLoader = Objects.requireNonNull(classLoader, "classLoader");
-        this.hiddenApiExemption = hiddenApiExemption;
+        this.platformAccess = platformAccess != null
+                ? platformAccess
+                : new ReflectiveAvfPlatformAccess(context, classLoader, hiddenApiExemption);
         this.descriptorAdapter = descriptorAdapter == null ? this::adoptParcelFileDescriptor : descriptorAdapter;
     }
 
@@ -64,7 +76,6 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
         Objects.requireNonNull(spec, "spec");
         AvfLaunchTrace stages = trace == null ? AvfLaunchTrace.NONE : trace;
         List<String> notes = new ArrayList<>();
-        applyAccessHook(notes);
         Shape shape;
         try {
             shape = loadShape();
@@ -76,18 +87,43 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
         if (!shape.context.isInstance(context)) {
             throw error(AvfEngineException.REFLECTION_UNAVAILABLE, "Android Context is required", null);
         }
-        requirePermission(shape, MANAGE_PERMISSION, notes);
-        requirePermission(shape, CUSTOM_PERMISSION, notes);
+        // The probe and the engine share one platform observation; this adapter
+        // never keeps a second set of capability bits or failure branches.
+        AvfPlatformFacts platformFacts = platformAccess.observe();
+        notes.add("access-exemption: "
+                + platformAccess.exemptionState().name().toLowerCase(java.util.Locale.ROOT));
+        notes.add("platform-access: "
+                + platformFacts.accessState().name().toLowerCase(java.util.Locale.ROOT));
+        switch (platformFacts.accessState()) {
+            case PERMISSION_DENIED -> {
+                if (platformFacts.managePermission()
+                        != AvfCapabilityEvaluator.PermissionState.GRANTED) {
+                    throw error(AvfEngineException.PERMISSION_DENIED,
+                            "required permission missing: " + MANAGE_PERMISSION, null);
+                }
+                if (platformFacts.customPermission()
+                        != AvfCapabilityEvaluator.PermissionState.GRANTED) {
+                    throw error(AvfEngineException.PERMISSION_DENIED,
+                            "required permission missing: " + CUSTOM_PERMISSION, null);
+                }
+                throw error(AvfEngineException.PERMISSION_DENIED,
+                        "platform denied the AVF capability read", null);
+            }
+            case HIDDEN_API_BLOCKED, REFLECTION_UNAVAILABLE -> throw error(
+                    AvfEngineException.REFLECTION_UNAVAILABLE,
+                    "AVF SystemApi access is unavailable", null);
+            case MODE_UNSUPPORTED -> throw error(AvfEngineException.HARDWARE_UNSUPPORTED,
+                    "non-protected custom VMs are unavailable", null);
+            case MODE_UNKNOWN -> throw error(AvfEngineException.VM_MANAGER_UNAVAILABLE,
+                    "AVF manager is unavailable", null);
+            case AVAILABLE -> {
+                // The typed facts already cover permissions and non-protected mode.
+            }
+        }
         Object manager = invoke(shape.context, context, "getSystemService", new Class<?>[] {Class.class},
                 new Object[] {shape.manager}, AvfEngineException.VM_MANAGER_UNAVAILABLE, notes);
         if (!shape.manager.isInstance(manager)) {
             throw error(AvfEngineException.VM_MANAGER_UNAVAILABLE, "AVF manager is unavailable", null);
-        }
-        Object capabilities = invoke(shape.manager, manager, "getCapabilities", new Class<?>[0],
-                new Object[0], AvfEngineException.VM_MANAGER_UNAVAILABLE, notes);
-        int nonProtected = intField(shape.manager, "CAPABILITY_NON_PROTECTED_VM");
-        if (!(capabilities instanceof Integer value) || (value & nonProtected) == 0) {
-            throw error(AvfEngineException.HARDWARE_UNSUPPORTED, "non-protected custom VMs are unavailable", null);
         }
         // The pinned public SystemApi has ONE_CPU/MATCH_HOST topology, not an exact-count setter.
         // MATCH_HOST is not a faithful substitute for the launch spec's requested count.
@@ -491,8 +527,9 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
     }
 
     private Shape loadShape() throws ReflectiveOperationException {
-        Class<?> ctx = classLoader.loadClass("android.content.Context");
-        Class<?> manager = classLoader.loadClass(PACKAGE + "VirtualMachineManager");
+        ReflectiveAvfPlatformAccess.PlatformShape platform = platformAccess.loadPlatformShape();
+        Class<?> ctx = platform.context();
+        Class<?> manager = platform.manager();
         Class<?> config = classLoader.loadClass(PACKAGE + "VirtualMachineConfig");
         Class<?> configBuilder = classLoader.loadClass(PACKAGE + "VirtualMachineConfig$Builder");
         Class<?> image = classLoader.loadClass(PACKAGE + "VirtualMachineCustomImageConfig");
@@ -521,7 +558,6 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
         manager.getMethod("get", String.class);
         manager.getMethod("delete", String.class);
         vm.getMethod("getConfig");
-        manager.getField("CAPABILITY_NON_PROTECTED_VM");
         config.getField("CPU_TOPOLOGY_ONE_CPU");
         vm.getMethod("run");
         vm.getMethod("getStatus");
@@ -548,26 +584,6 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
 
     private record Shape(Class<?> context, Class<?> manager, Class<?> config, Class<?> configBuilder,
             Class<?> image, Class<?> imageBuilder, Class<?> disk, Class<?> vm) {}
-
-    private synchronized void applyAccessHook(List<String> notes) {
-        if (!exemptionApplied && hiddenApiExemption != null) {
-            try {
-                hiddenApiExemption.run();
-                exemptionApplied = true;
-            } catch (RuntimeException | LinkageError failure) {
-                throw error(AvfEngineException.REFLECTION_UNAVAILABLE, "supplied access hook failed", failure);
-            }
-        }
-        notes.add(hiddenApiExemption == null ? "access-hook: none supplied" : "access-hook: supplied");
-    }
-
-    private void requirePermission(Shape shape, String name, List<String> notes) {
-        Object result = invoke(shape.context, context, "checkSelfPermission", new Class<?>[] {String.class},
-                new Object[] {name}, AvfEngineException.PERMISSION_DENIED, notes);
-        if (!(result instanceof Integer value) || value != 0) {
-            throw error(AvfEngineException.PERMISSION_DENIED, "required permission missing: " + name, null);
-        }
-    }
 
     private static Object construct(Class<?> type, Class<?>[] params, Object[] args) {
         try {

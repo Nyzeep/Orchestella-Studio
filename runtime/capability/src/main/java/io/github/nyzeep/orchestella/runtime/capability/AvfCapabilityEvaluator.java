@@ -48,6 +48,7 @@ public final class AvfCapabilityEvaluator {
                     "该机型芯片在硬件层面不开放非保护虚拟机，已自动保持在软件模拟模式"));
         }
         boolean declared = false;
+        boolean explicitlyDisabled = false;
         String property = facts.virtualizationProperty();
         if (property != null && !property.isBlank()) {
             String p = property.trim().toLowerCase(Locale.ROOT);
@@ -55,33 +56,96 @@ public final class AvfCapabilityEvaluator {
                 declared = true;
             } else if ("false".equals(p) || "0".equals(p) || "no".equals(p) || "off".equals(p)) {
                 declared = false;
+                explicitlyDisabled = true;
             } else {
                 declared = facts.virtualizationFrameworkFeature();
             }
         } else {
             declared = facts.virtualizationFrameworkFeature();
         }
+        // A platform that answered the capability read is stronger evidence than
+        // an omitted OEM feature string. A permission/reflection failure proves
+        // nothing about the platform, and an explicit false property is honored.
+        if (!declared && !explicitlyDisabled && facts.platformFacts() != null) {
+            AvfPlatformFacts.AccessState access = facts.platformFacts().accessState();
+            declared = access == AvfPlatformFacts.AccessState.AVAILABLE
+                    || access == AvfPlatformFacts.AccessState.MODE_UNSUPPORTED;
+        }
         if (!declared) {
             return AvfReadiness.unsupported(List.of("设备未声明虚拟化框架支持"));
         }
-        AvfModeFacts modeFacts = facts.modeFacts();
-        if (modeFacts != null) {
-            if (modeFacts.nonProtectedVm() == VmSupport.UNSUPPORTED) {
-                return AvfReadiness.modeUnsupported(List.of(
-                        "当前系统未声明本应用所需的非保护型虚拟机模式",
-                        "VM 模式：" + modeFacts.summary()));
+        AvfPlatformFacts platformFacts = facts.platformFacts();
+        AvfCapabilityEvaluator.PermissionState manageState = platformFacts != null
+                ? platformFacts.managePermission()
+                : facts.manageVirtualMachinePermissionState();
+        AvfCapabilityEvaluator.PermissionState customState = platformFacts != null
+                ? platformFacts.customPermission()
+                : facts.useCustomVirtualMachinePermissionState();
+        if (platformFacts != null) {
+            switch (platformFacts.accessState()) {
+                case HIDDEN_API_BLOCKED -> {
+                    return AvfReadiness.hiddenApiBlocked(List.of(
+                            "系统隐藏 API 限制了平台能力读取；本进程豁免未生效或不可用",
+                            "这不是权限问题，授权不会改变该状态",
+                            "平台访问：" + platformFacts.summary()));
+                }
+                case REFLECTION_UNAVAILABLE -> {
+                    return AvfReadiness.reflectionUnavailable(List.of(
+                            "当前系统未提供应用可访问的虚拟化平台接口",
+                            "平台访问：" + platformFacts.summary()));
+                }
+                case MODE_UNSUPPORTED -> {
+                    return AvfReadiness.modeUnsupported(List.of(
+                            "当前系统未声明本应用所需的非保护型虚拟机模式",
+                            "VM 模式：" + platformFacts.modeFacts().summary()));
+                }
+                case MODE_UNKNOWN -> {
+                    return AvfReadiness.modeUnknown(List.of(
+                            "无法读取当前系统支持的虚拟机模式",
+                            "VM 模式：" + platformFacts.modeFacts().summary()));
+                }
+                case PERMISSION_DENIED -> {
+                    List<String> reasons = new ArrayList<>();
+                    permissionReason(reasons, MANAGE_VIRTUAL_MACHINE_PERMISSION, manageState);
+                    permissionReason(reasons, USE_CUSTOM_VIRTUAL_MACHINE_PERMISSION, customState);
+                    if (reasons.isEmpty()) {
+                        reasons.add("两项权限已授予，但系统策略仍拒绝读取虚拟化能力");
+                    }
+                    return AvfReadiness.needsAuthorization(reasons);
+                }
+                case AVAILABLE -> {
+                    // The typed facts already cover permissions; a contradictory
+                    // mode observation is still refused rather than read as READY.
+                    if (platformFacts.modeFacts().nonProtectedVm() == VmSupport.UNSUPPORTED) {
+                        return AvfReadiness.modeUnsupported(List.of(
+                                "当前系统未声明本应用所需的非保护型虚拟机模式",
+                                "VM 模式：" + platformFacts.modeFacts().summary()));
+                    }
+                    if (platformFacts.modeFacts().nonProtectedVm() == VmSupport.UNKNOWN) {
+                        return AvfReadiness.modeUnknown(List.of(
+                                "无法读取当前系统支持的虚拟机模式",
+                                "VM 模式：" + platformFacts.modeFacts().summary()));
+                    }
+                }
             }
-            if (modeFacts.nonProtectedVm() == VmSupport.UNKNOWN) {
-                return AvfReadiness.modeUnknown(List.of(
-                        "无法读取当前系统支持的虚拟机模式",
-                        "VM 模式：" + modeFacts.summary()));
+        } else {
+            AvfModeFacts modeFacts = facts.modeFacts();
+            if (modeFacts != null) {
+                if (modeFacts.nonProtectedVm() == VmSupport.UNSUPPORTED) {
+                    return AvfReadiness.modeUnsupported(List.of(
+                            "当前系统未声明本应用所需的非保护型虚拟机模式",
+                            "VM 模式：" + modeFacts.summary()));
+                }
+                if (modeFacts.nonProtectedVm() == VmSupport.UNKNOWN) {
+                    return AvfReadiness.modeUnknown(List.of(
+                            "无法读取当前系统支持的虚拟机模式",
+                            "VM 模式：" + modeFacts.summary()));
+                }
             }
         }
         List<String> authorizationReasons = new ArrayList<>();
-        permissionReason(authorizationReasons, MANAGE_VIRTUAL_MACHINE_PERMISSION,
-                facts.manageVirtualMachinePermissionState());
-        permissionReason(authorizationReasons, USE_CUSTOM_VIRTUAL_MACHINE_PERMISSION,
-                facts.useCustomVirtualMachinePermissionState());
+        permissionReason(authorizationReasons, MANAGE_VIRTUAL_MACHINE_PERMISSION, manageState);
+        permissionReason(authorizationReasons, USE_CUSTOM_VIRTUAL_MACHINE_PERMISSION, customState);
         if (!authorizationReasons.isEmpty()) {
             return AvfReadiness.needsAuthorization(authorizationReasons);
         }
@@ -158,6 +222,7 @@ public final class AvfCapabilityEvaluator {
         private final String deviceModel;
         private final List<String> extraBlockedHints;
         private final AvfModeFacts modeFacts;
+        private final AvfPlatformFacts platformFacts;
 
         private AvfHostFacts(Builder builder) {
             if (builder.sdkInt < 0) {
@@ -183,6 +248,7 @@ public final class AvfCapabilityEvaluator {
             this.deviceModel = builder.deviceModel;
             this.extraBlockedHints = Collections.unmodifiableList(copiedHints);
             this.modeFacts = builder.modeFacts;
+            this.platformFacts = builder.platformFacts;
         }
 
         public int sdkInt() {
@@ -239,6 +305,11 @@ public final class AvfCapabilityEvaluator {
             return modeFacts;
         }
 
+        /** Null for legacy callers that do not supply the shared platform access observation. */
+        public AvfPlatformFacts platformFacts() {
+            return platformFacts;
+        }
+
         public static final class Builder {
             private final int sdkInt;
             private final List<String> supportedAbis;
@@ -250,6 +321,7 @@ public final class AvfCapabilityEvaluator {
             private String deviceModel;
             private List<String> extraBlockedHints = Collections.emptyList();
             private AvfModeFacts modeFacts;
+            private AvfPlatformFacts platformFacts;
 
             /** Compatibility input: a MANAGE-only caller has not established CUSTOM. */
             public Builder(int sdkInt, List<String> supportedAbis, String virtualizationProperty,
@@ -294,6 +366,11 @@ public final class AvfCapabilityEvaluator {
 
             public Builder modeFacts(AvfModeFacts modeFacts) {
                 this.modeFacts = modeFacts;
+                return this;
+            }
+
+            public Builder platformFacts(AvfPlatformFacts platformFacts) {
+                this.platformFacts = platformFacts;
                 return this;
             }
 
@@ -395,6 +472,8 @@ public final class AvfCapabilityEvaluator {
     public enum AvfStatus {
         READY,
         NEEDS_AUTHORIZATION,
+        HIDDEN_API_BLOCKED,
+        REFLECTION_UNAVAILABLE,
         MODE_UNSUPPORTED,
         MODE_UNKNOWN,
         UNSUPPORTED
@@ -424,6 +503,16 @@ public final class AvfCapabilityEvaluator {
         static AvfReadiness needsAuthorization(List<String> reasons) {
             return new AvfReadiness(
                     AvfStatus.NEEDS_AUTHORIZATION, reasons, softwareFallbackMatrix());
+        }
+
+        static AvfReadiness hiddenApiBlocked(List<String> reasons) {
+            return new AvfReadiness(
+                    AvfStatus.HIDDEN_API_BLOCKED, reasons, softwareFallbackMatrix());
+        }
+
+        static AvfReadiness reflectionUnavailable(List<String> reasons) {
+            return new AvfReadiness(
+                    AvfStatus.REFLECTION_UNAVAILABLE, reasons, softwareFallbackMatrix());
         }
 
         static AvfReadiness modeUnsupported(List<String> reasons) {

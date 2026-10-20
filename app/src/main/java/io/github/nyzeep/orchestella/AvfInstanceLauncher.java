@@ -376,7 +376,7 @@ public final class AvfInstanceLauncher {
         AvfLaunchSpec spec = specBuilder.build();
 
         ReflectiveAvfVirtualMachineApi api = new ReflectiveAvfVirtualMachineApi(
-                context, context.getClass().getClassLoader());
+                context, context.getClass().getClassLoader(), AvfHiddenApiExemption::installOnce);
         AvfVirtualMachineEngine engine = new AvfVirtualMachineEngine(api);
         AvfSession session = new AvfSession(engine.launch(spec, trace), parameters.bridgeToken, timeline);
         startShareIfConfigured(session, parameters.sharedDirectory);
