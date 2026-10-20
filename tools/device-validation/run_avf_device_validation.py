@@ -499,7 +499,7 @@ def _enrich_stages(report):
     return report
 
 
-def write_report(out_dir, report, evidence_payloads=None):
+def write_report(out_dir, report, evidence_payloads=None, staging_receipt=None):
     """Writes evidence, JSON and Markdown under an explicit absolute root."""
     root = Path(str(out_dir))
     if not root.is_absolute():
@@ -519,14 +519,22 @@ def write_report(out_dir, report, evidence_payloads=None):
                     }
                     stage["rom_binding"] = {"state": "collected", "digest": None}
                     break
+    staging_path = None
+    if staging_receipt is not None:
+        staging_saved = store.save_json(
+            "avf-qa-staging-" + stamp + ".json", staging_receipt)
+        staging_path = str(store.output_path(staging_saved["path"]))
     base = "avf-device-validation-" + stamp
     json_receipt = store.save_json(base + ".json", report)
     markdown_receipt = store.save(base + ".md", render_markdown(report).encode("utf-8"))
-    return {
+    result = {
         "report_json": str(store.output_path(json_receipt["path"])),
         "report_markdown": str(store.output_path(markdown_receipt["path"])),
         "report_schema_version": SCHEMA_VERSION,
     }
+    if staging_path is not None:
+        result["staging_receipt_json"] = staging_path
+    return result
 
 
 def redact(text):
@@ -599,6 +607,20 @@ def main(argv=None):
     parser.add_argument("--custom-kernel", help="QA-private custom kernel path")
     parser.add_argument("--custom-initrd", help="QA-private custom initrd path")
     parser.add_argument("--custom-root", help="QA-private custom root image path")
+    parser.add_argument("--stage-custom", action="store_true",
+                        help="stage kernel/initrd/root from a verified QA plan before launch")
+    parser.add_argument("--custom-plan", help="verified QA batch plan.json")
+    parser.add_argument("--custom-distro", help="distro row inside the QA plan")
+    parser.add_argument("--custom-apk", help="QA APK used as the kernel trust anchor")
+    parser.add_argument("--custom-root-bytes", type=int,
+                        help="fresh sparse root size; defaults to the QA plan rawBytes")
+    parser.add_argument("--custom-memory-mb", type=int,
+                        default=device.DEFAULT_CUSTOM_MEMORY_MB,
+                        help="custom VM memory, 512..4096 MiB")
+    parser.add_argument("--vsock-terminal-port", type=int,
+                        default=device.DEFAULT_VSOCK_TERMINAL_PORT)
+    parser.add_argument("--vsock-timeout-ms", type=int,
+                        default=device.DEFAULT_VSOCK_TIMEOUT_MS)
     parser.add_argument("--cycles", type=int, default=1, help="stop cycles, 1..20")
     parser.add_argument("--adb-timeout", type=float, default=device.ADB_TIMEOUT_SECONDS,
                         help="per-command adb timeout in seconds")
@@ -620,7 +642,9 @@ def main(argv=None):
             if args.grant or args.apk or args.test_apk or args.device \
                     or args.qa_mode != "qualification" or args.microdroid_payload \
                     or args.vsock_port or args.custom_kernel or args.custom_initrd \
-                    or args.custom_root:
+                    or args.custom_root or args.stage_custom or args.custom_plan \
+                    or args.custom_distro or args.custom_apk \
+                    or args.custom_root_bytes is not None:
                 raise Rejected("DEVICE_OPTION_WITH_DRY_RUN")
             report = build_report("dry-run", args.device_alias)
             validate_report(report)
@@ -641,7 +665,15 @@ def main(argv=None):
         if not device.is_qa_package(qa_test_package):
             raise Rejected("QA_TEST_PACKAGE_REQUIRED")
         stages = _parse_stages(args.stage)
-        report, evidence = device.run_device(
+        if args.stage_custom and args.qa_mode != "custom-linux":
+            raise Rejected("CUSTOM_STAGING_WITHOUT_CUSTOM_MODE")
+        if args.stage_custom and (args.custom_plan is None or args.custom_distro is None):
+            raise Rejected("CUSTOM_STAGING_ARGUMENTS_REQUIRED")
+        if not args.stage_custom and (args.custom_plan or args.custom_distro
+                                      or args.custom_apk
+                                      or args.custom_root_bytes is not None):
+            raise Rejected("CUSTOM_STAGING_NOT_REQUESTED")
+        report, evidence, staging_receipt = device.run_device(
             adb_path=args.adb,
             serial=args.device,
             alias=args.device_alias,
@@ -659,14 +691,23 @@ def main(argv=None):
             custom_kernel=args.custom_kernel,
             custom_initrd=args.custom_initrd,
             custom_root=args.custom_root,
+            stage_custom=args.stage_custom,
+            custom_plan=args.custom_plan,
+            custom_distro=args.custom_distro,
+            custom_apk=args.custom_apk,
+            custom_root_bytes=args.custom_root_bytes,
+            custom_memory_mb=args.custom_memory_mb,
+            vsock_terminal_port=args.vsock_terminal_port,
+            vsock_timeout_ms=args.vsock_timeout_ms,
             now=_now_utc(),
             timeout_seconds=args.adb_timeout,
             deadline_seconds=args.deadline_seconds,
         )
         _enrich_stages(report)
-        paths = write_report(args.out, report, evidence)
+        paths = write_report(args.out, report, evidence,
+                             staging_receipt=staging_receipt)
         validate_report(report)
-        print(json.dumps({
+        summary = {
             "status": report["verdict"],
             "mode": report["mode"],
             "schema_version": SCHEMA_VERSION,
@@ -674,7 +715,8 @@ def main(argv=None):
             "real_avf_samples": report["real_avf_samples"],
             "device_mode": report["device_mode"],
             **paths,
-        }, sort_keys=True))
+        }
+        print(json.dumps(summary, sort_keys=True))
         return 0 if report["verdict"] == "PASS" else 2
     except (Rejected, OSError) as error:
         print(json.dumps({"error": str(error) if isinstance(error, Rejected) else "IO_ERROR"}))

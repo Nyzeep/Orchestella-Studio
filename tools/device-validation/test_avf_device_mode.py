@@ -22,6 +22,8 @@ sys.dont_write_bytecode = True
 MODULE_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(MODULE_DIR))
 
+import avf_device_mode as device
+
 SERIAL = "FIXTURESERIAL123"
 ALIAS = "qa-device-01"
 QA_PACKAGE = "io.github.nyzeep.orchestella.qa.unittest"
@@ -708,6 +710,81 @@ class DeviceCliTests(unittest.TestCase):
         self.assertEqual(report["platform_qualification_samples"], 0)
         self.assertEqual(report["protected_microdroid_samples"], 0)
         self.assertEqual(report["custom_linux_samples"], 0)
+
+
+class ProbeArgumentTests(unittest.TestCase):
+    """Direct host-side checks that do not need a device or a subprocess."""
+
+    def test_custom_probe_passes_default_vsock_and_redacts_token(self):
+        token = "b" * 64
+        seen = []
+
+        class Runner:
+            def __init__(self):
+                self.commands = []
+
+            def _redacted_argv(self, argv):
+                return ["<device>" if value == SERIAL else
+                        "<token>" if value == token else value for value in argv]
+
+            def run(self, argv, *, timeout_seconds=None, allow_failure=False):
+                seen.append(argv)
+                if argv[3:6] == ["exec-out", "run-as", QA_PACKAGE]:
+                    return device.CommandResult(0, json.dumps(self.probe()), "")
+                return device.CommandResult(0, "INSTRUMENTATION_CODE: -1", "")
+
+            @staticmethod
+            def probe():
+                stages = {
+                    stage: {"status": "pass", "reason_code": stage.upper() + "_OK"}
+                    for stage in PROBE_STAGES
+                }
+                stages["stop_cycles"]["reason_code"] = "STOP_CONFIRMED"
+                stages["stop_cycles"]["stop_confirmed"] = True
+                return {
+                    "schema_version": 1,
+                    "kind": "avf_qa_probe",
+                    "qa_package": QA_PACKAGE,
+                    "mode": "custom-linux",
+                    "device_facts": {
+                        "sdk_int": 36,
+                        "abis": ["arm64-v8a"],
+                        "feature": True,
+                        "build_id": "FIXTURE_BUILD",
+                        "release": "16",
+                        "fingerprint_sha256": hashlib.sha256(b"fixture").hexdigest(),
+                    },
+                    "qualification": {
+                        "access_state": "AVAILABLE",
+                        "exemption_state": "INSTALLED",
+                        "manager_present": True,
+                        "non_protected": True,
+                        "protected": True,
+                        "capabilities_raw": 3,
+                        "manage_permission": "GRANTED",
+                        "custom_permission": "GRANTED",
+                        "protected_mode": "ACCEPTED",
+                        "protected_mode_exception": None,
+                    },
+                    "stage_results": stages,
+                }
+
+        runner = Runner()
+        result = device._probe(runner, "adb", SERIAL, QA_PACKAGE, QA_TEST_PACKAGE,
+                               "a" * 32, ("create", "run_returned", "vsock_handshake",
+                                          "stop_cycles"), 1,
+                               qa_mode="custom-linux", bridge_token=token)
+        self.assertEqual(result["mode"], "custom-linux")
+        instrument = seen[0]
+        self.assertIn("qaBridgeToken", instrument)
+        self.assertIn(token, instrument)
+        self.assertEqual(instrument[instrument.index("qaVsockPort") + 1], "9100")
+        self.assertEqual(instrument[instrument.index("qaVsockTerminalPort") + 1], "9101")
+        self.assertEqual(instrument[instrument.index("qaCustomMemoryMb") + 1], "1024")
+        redacted = runner._redacted_argv(instrument)
+        self.assertIn("<token>", redacted)
+        self.assertNotIn(token, redacted)
+        self.assertNotIn(SERIAL, redacted)
 
 
 if __name__ == "__main__":
