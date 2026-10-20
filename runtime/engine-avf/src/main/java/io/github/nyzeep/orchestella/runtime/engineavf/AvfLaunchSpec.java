@@ -67,6 +67,7 @@ public final class AvfLaunchSpec {
     private final int controlVsockPort;
     private final int terminalVsockPort;
     private final NetworkContract.OutboundNetworkSpec networkSpec;
+    private final AvfNetworkPlan networkPlan;
     private final int sharedDirectoryVsockPort;
     private final SharedDirectoryContract.SharedDirectorySpec sharedDirectory;
     private final int graphicsVsockPort;
@@ -84,6 +85,7 @@ public final class AvfLaunchSpec {
         this.controlVsockPort = builder.controlVsockPort;
         this.terminalVsockPort = builder.terminalVsockPort;
         this.networkSpec = builder.networkSpec;
+        this.networkPlan = builder.networkPlan;
         this.sharedDirectoryVsockPort = builder.sharedDirectoryVsockPort;
         this.sharedDirectory = builder.sharedDirectory;
         this.graphicsVsockPort = builder.graphicsVsockPort;
@@ -99,15 +101,21 @@ public final class AvfLaunchSpec {
         for (String argument : builder.extraKernelArguments) {
             cmdline.append(' ').append(argument);
         }
-        this.guestCmdline = appendDnsKey(cmdline.toString(), builder.networkSpec);
+        appendNetworkKeys(cmdline, builder.networkPlan);
+        this.guestCmdline = cmdline.toString();
     }
 
-    private static String appendDnsKey(String cmdline, NetworkContract.OutboundNetworkSpec spec) {
-        String dns = spec.cmdlineDns();
-        if (dns == null || dns.isEmpty()) {
-            return cmdline;
+    /**
+     * Guest network contract: DNS is always present. Static addressing adds
+     * the guest ip/gateway/netmask keys; DHCP never fakes them.
+     */
+    private static void appendNetworkKeys(StringBuilder cmdline, AvfNetworkPlan plan) {
+        cmdline.append(" droidlayer.dns=").append(plan.dnsServer());
+        if (plan.staticAddressing()) {
+            cmdline.append(" orchestella.guest_ip=").append(plan.guestIp())
+                    .append(" orchestella.guest_gw=").append(plan.gateway())
+                    .append(" orchestella.guest_mask=").append(plan.netmask());
         }
-        return cmdline + " droidlayer.dns=" + dns;
     }
 
     public String instanceId() {
@@ -145,6 +153,11 @@ public final class AvfLaunchSpec {
     /** The strategy-neutral outbound network assembly shared with the QEMU engine. */
     public NetworkContract.OutboundNetworkSpec networkSpec() {
         return networkSpec;
+    }
+
+    /** The AVF network decision; drives useNetwork and the guest addressing keys. */
+    public AvfNetworkPlan networkPlan() {
+        return networkPlan;
     }
 
     /** The 9p data-plane vsock port; meaningful only with a share configured. */
@@ -192,6 +205,7 @@ public final class AvfLaunchSpec {
         private int terminalVsockPort = DEFAULT_TERMINAL_VSOCK_PORT;
         private NetworkContract.OutboundNetworkSpec networkSpec =
                 NetworkContract.OutboundNetworkSpec.defaultSpec();
+        private AvfNetworkPlan networkPlan;
         private int sharedDirectoryVsockPort = DEFAULT_9P_VSOCK_PORT;
         private SharedDirectoryContract.SharedDirectorySpec sharedDirectory;
         private int graphicsVsockPort = DEFAULT_GRAPHICS_VSOCK_PORT;
@@ -247,6 +261,12 @@ public final class AvfLaunchSpec {
             return this;
         }
 
+        /** Replaces the network decision. Null keeps the legacy TAP+DHCP default. */
+        public Builder networkPlan(AvfNetworkPlan networkPlan) {
+            this.networkPlan = networkPlan;
+            return this;
+        }
+
         public Builder sharedDirectoryVsockPort(int port) {
             this.sharedDirectoryVsockPort = requirePort(port);
             return this;
@@ -298,6 +318,11 @@ public final class AvfLaunchSpec {
         }
 
         public AvfLaunchSpec build() {
+            if (networkPlan == null) {
+                String dns = networkSpec.cmdlineDns() == null
+                        ? NetworkContract.DEFAULT_FALLBACK_DNS : networkSpec.cmdlineDns();
+                networkPlan = AvfNetworkPlan.nativeTapDhcp(dns, true);
+            }
             if (controlVsockPort == terminalVsockPort) {
                 throw new IllegalArgumentException("control and terminal vsock ports must differ");
             }

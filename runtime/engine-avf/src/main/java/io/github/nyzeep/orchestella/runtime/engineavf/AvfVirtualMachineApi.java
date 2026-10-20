@@ -71,6 +71,15 @@ public interface AvfVirtualMachineApi {
             return -1;
         }
 
+        /**
+         * Optional platform exit status. The pinned SystemApi does not expose
+         * one; implementations that can observe it return a non-negative code,
+         * otherwise -1. Never a substitute for {@link #status()}.
+         */
+        default int exitStatus() {
+            return -1;
+        }
+
         /** Best-effort host-side stop of the VM. */
         void stop();
 

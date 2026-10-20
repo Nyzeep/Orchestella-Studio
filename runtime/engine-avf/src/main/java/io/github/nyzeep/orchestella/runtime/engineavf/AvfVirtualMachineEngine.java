@@ -236,6 +236,15 @@ public final class AvfVirtualMachineEngine {
          */
         public AvfExitInfo waitForExit() throws InterruptedException {
             AvfExitInfo info = handle.waitForExit();
+            if (info.kind() == AvfExitInfo.Kind.CRASHED
+                    && info.exitCode() == AvfNetworkFailure.NETWORK_BACKEND_EXIT_STATUS
+                    && spec.networkPlan().enabled()
+                    && info.elapsedMs() >= 0L
+                    && info.elapsedMs() < AvfNetworkFailure.EARLY_STOP_WINDOW_MS) {
+                // crosvm_minimal has no net feature: a network-enabled VM that
+                // exits 35 immediately is a backend failure, never a normal exit.
+                info = AvfExitInfo.networkBackendUnavailable(info.exitCode(), info.elapsedMs());
+            }
             if (info.kind() == AvfExitInfo.Kind.STOP_REQUESTED && stopResult == AvfStopResult.UNCONFIRMED) {
                 throw new AvfEngineException(AvfEngineException.VM_STOP_UNCONFIRMED,
                         "VM stop was not confirmed by the platform");

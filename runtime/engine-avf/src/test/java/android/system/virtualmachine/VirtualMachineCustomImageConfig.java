@@ -12,6 +12,7 @@ public final class VirtualMachineCustomImageConfig {
     private final List<Disk> disks;
     private final boolean network;
     private final String bootloaderPath;
+    private final GpuConfig gpuConfig;
 
     private VirtualMachineCustomImageConfig(Builder builder) {
         name = builder.name;
@@ -21,6 +22,7 @@ public final class VirtualMachineCustomImageConfig {
         disks = List.copyOf(builder.disks);
         network = builder.network;
         bootloaderPath = builder.bootloaderPath;
+        gpuConfig = builder.gpuConfig;
     }
 
     public String getName() { return name; }
@@ -33,7 +35,7 @@ public final class VirtualMachineCustomImageConfig {
     public SharedPath[] getSharedPaths() { return new SharedPath[0]; }
     public AudioConfig getAudioConfig() { return null; }
     public DisplayConfig getDisplayConfig() { return null; }
-    public GpuConfig getGpuConfig() { return null; }
+    public GpuConfig getGpuConfig() { return gpuConfig; }
     public UsbConfig getUsbConfig() { return null; }
     public boolean useTouch() { return false; }
     public boolean useKeyboard() { return false; }
@@ -45,7 +47,61 @@ public final class VirtualMachineCustomImageConfig {
     public static final class SharedPath { }
     public static final class AudioConfig { }
     public static final class DisplayConfig { }
-    public static final class GpuConfig { }
+    /** Headless 2D GPU config used by the Android 17 network workaround. */
+    public static final class GpuConfig {
+        private final String backend;
+        private final boolean surfaceless;
+
+        private GpuConfig(Builder builder) {
+            backend = builder.backend;
+            surfaceless = builder.surfaceless;
+        }
+
+        public String getBackend() { return backend; }
+        public boolean isSurfaceless() { return surfaceless; }
+
+        @Override public boolean equals(Object other) {
+            return other instanceof GpuConfig value
+                    && java.util.Objects.equals(backend, value.backend)
+                    && surfaceless == value.surfaceless;
+        }
+
+        @Override public int hashCode() {
+            return java.util.Objects.hash(backend, surfaceless);
+        }
+
+        public static final class Builder {
+            /** Test control: makes the API present but the build fail. */
+            public static volatile boolean failForTest;
+            /** Test control: makes the API present but unsupported. */
+            public static volatile boolean unsupportedForTest;
+            private String backend;
+            private boolean surfaceless;
+
+            public Builder() {
+                if (unsupportedForTest) {
+                    throw new UnsupportedOperationException("synthetic GPU config unsupported");
+                }
+            }
+
+            public Builder setBackend(String value) {
+                backend = value;
+                return this;
+            }
+
+            public Builder setSurfaceless(boolean value) {
+                surfaceless = value;
+                return this;
+            }
+
+            public GpuConfig build() {
+                if (failForTest) {
+                    throw new IllegalStateException("synthetic GPU config failure");
+                }
+                return new GpuConfig(this);
+            }
+        }
+    }
     public static final class UsbConfig { }
 
     // Fixture observation helpers; none is called by the production adapter.
@@ -55,6 +111,7 @@ public final class VirtualMachineCustomImageConfig {
     public String kernelCmdline() { return cmdline(); }
     public List<Disk> disks() { return disks; }
     public boolean isNetworkSupported() { return network; }
+    public GpuConfig gpuConfig() { return gpuConfig; }
 
     public static final class Disk {
         private final String imagePath;
@@ -95,6 +152,7 @@ public final class VirtualMachineCustomImageConfig {
         private final List<String> params = new ArrayList<>();
         private final List<Disk> disks = new ArrayList<>();
         private boolean network;
+        private GpuConfig gpuConfig;
         public Builder setName(String value) { name = value; return this; }
         public Builder setBootloaderPath(String value) { bootloaderPath = value; return this; }
         public Builder setKernelPath(String value) { kernelPath = value; return this; }
@@ -102,6 +160,7 @@ public final class VirtualMachineCustomImageConfig {
         public Builder addParam(String value) { params.add(value); return this; }
         public Builder addDisk(Disk disk) { disks.add(disk); return this; }
         public Builder useNetwork(boolean value) { network = value; return this; }
+        public Builder setGpuConfig(GpuConfig value) { gpuConfig = value; return this; }
         public VirtualMachineCustomImageConfig build() {
             return new VirtualMachineCustomImageConfig(this);
         }

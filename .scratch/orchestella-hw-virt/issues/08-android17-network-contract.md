@@ -1,7 +1,7 @@
 # 08: Android 17 网络契约
 
 Type: implementation
-Status: blocked
+Status: resolved
 Priority: P1
 Owner: AVF network owner
 Blocked by: 03
@@ -73,3 +73,19 @@ Parent: `.scratch/orchestella-hw-virt/map.md`
 ## 不做
 
 - 不做真机 TAP/DHCP/DNS/apt/端口转发验收；不做 protected 网络（平台拒绝）；不做 LAN 暴露；不做 QEMU gvproxy 改动。
+
+Claimed by: Agent A / 2026-10-20T01:20:19Z
+
+## Answer
+
+Status: resolved（代码就绪；真实 TAP/DHCP/DNS/apt 与 Android 17 crosvm 未验）
+
+- 网络是 plan：新增 `AvfNetworkPlan`（NONE / NATIVE_TAP + DHCP/STATIC + DNS + allowDegrade），`ReflectiveAvfVirtualMachineApi` 只在 plan 启用时调用 `useNetwork(true)`，NONE 记录 `useNetwork: skipped`。
+- GpuConfig：懒加载 headless 2D（backend `"2d"`、`setSurfaceless(true)`）；`APPLIED` / `UNSUPPORTED`（benign，仍尝试网络）/ `FAILED`（按 plan 降级为无网络或抛 `NETWORK_BACKEND_UNAVAILABLE`）；不静默。
+- status 35：可选的 `getExitStatus()` 观测 + 早停窗口；`AvfVmSession` 归类为 `NETWORK_BACKEND_UNAVAILABLE`，`waitFor()` 返回 35，不是 0。
+- cmdline：始终 `droidlayer.dns=`；静态 plan 追加 `orchestella.guest_ip/gw/mask`；DHCP 不伪造静态键；IPv6 仍关闭。
+- 降级：GpuConfig FAILED + allowDegrade → VM 继续启动、无网络；notes 有 `gpu-config: failed` 与 `network: degraded`。
+- 重试策略：本票选择“直接失败”，没有自动重试/热循环（工单允许）。
+- 测试：`AvfNetworkPlanTest` + 扩展 `AvfNetworkAssemblyContractTest`（7 场景）；全量 `:runtime:engine-avf:check`、`*Network*` app 测试、848 条 app 测试全绿。
+
+未验：GpuConfig 真实反射 shape、Android 17 status 35 观测面、真实 TAP/DHCP/DNS/apt、网络失败时 terminal/display 真机可用性。详见 `docs/reports/tickets/avf-zero-device-08/implementation-report.zh-CN.md`。
