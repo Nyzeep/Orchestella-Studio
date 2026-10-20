@@ -1,0 +1,493 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Zero-device tests for the real adb device path.
+
+Every test runs a generated fake adb executable in an external scratch root.
+No real device, adb server, APK or VM is touched.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import time
+import unittest
+import uuid
+
+sys.dont_write_bytecode = True
+MODULE_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(MODULE_DIR))
+
+SERIAL = "FIXTURESERIAL123"
+ALIAS = "qa-device-01"
+QA_PACKAGE = "io.github.nyzeep.orchestella.qa.unittest"
+QA_TEST_PACKAGE = QA_PACKAGE + ".test"
+PROBE_STAGES = (
+    "create", "run_returned", "vsock_handshake", "stop_cycles",
+    "network", "share_display", "app_death", "qemu_comparison",
+)
+
+FAKE_ADB = r'''#!/usr/bin/env python3
+import json
+import os
+import sys
+import time
+
+args = sys.argv[1:]
+scenario = os.environ.get("FAKE_ADB_SCENARIO", "ok")
+serial = os.environ["FAKE_SERIAL"]
+qa_package = os.environ["FAKE_QA_PACKAGE"]
+qa_test_package = os.environ["FAKE_QA_TEST_PACKAGE"]
+log_path = os.environ.get("FAKE_ARGV_LOG")
+marker = os.environ.get("FAKE_GRANT_MARKER")
+
+if log_path:
+    with open(log_path, "a", encoding="utf-8") as stream:
+        stream.write(json.dumps(args) + "\n")
+
+def finish(code=0):
+    sys.exit(code)
+
+def probe_file():
+    if marker and os.path.exists(marker):
+        return os.environ.get("FAKE_PROBE_JSON_AFTER")
+    return os.environ.get("FAKE_PROBE_JSON_BEFORE")
+
+if args == ["devices", "-l"]:
+    if scenario == "timeout":
+        time.sleep(5)
+    print("List of devices attached")
+    if scenario == "two-devices":
+        print(serial + "\tdevice product:fixture model:fixture device:fixture")
+        print("OTHERSERIAL\tdevice product:fixture model:fixture device:fixture")
+    elif scenario == "no-device":
+        pass
+    elif scenario == "unauthorized":
+        print(serial + "\tunauthorized")
+    else:
+        print(serial + "\tdevice product:fixture model:fixture device:fixture")
+    finish()
+
+rest = args
+if args[:1] == ["-s"]:
+    if args[1] != serial:
+        finish(2)
+    rest = args[2:]
+
+if rest[:1] == ["install"]:
+    if scenario == "install-fail":
+        finish(1)
+    print("Success")
+    finish()
+
+if rest[:1] == ["exec-out"]:
+    if scenario == "probe-missing":
+        finish(1)
+    path = probe_file()
+    if not path or not os.path.exists(path):
+        finish(1)
+    sys.stdout.write(open(path, encoding="utf-8").read())
+    finish()
+
+if rest[:1] != ["shell"]:
+    finish(3)
+command = rest[1:]
+
+if command[:1] == ["getprop"]:
+    values = {
+        "ro.build.id": "FIXTURE_BUILD",
+        "ro.build.version.release": "16",
+        "ro.build.version.sdk": "36",
+        "ro.build.fingerprint": "fixture/fingerprint",
+        "ro.product.cpu.abilist": "arm64-v8a,armeabi-v7a",
+        "ro.boot.hypervisor.vm.supported": "1",
+        "ro.boot.hypervisor.protected_vm.supported": "1",
+    }
+    print(values.get(command[1], ""))
+    finish()
+
+if command[:1] == ["getconf"] and command[1:2] == ["PAGE_SIZE"]:
+    print("16384")
+    finish()
+
+if command[:3] == ["cmd", "package", "has-feature"]:
+    print("true")
+    finish()
+
+if command[:4] == ["cmd", "package", "list", "packages"]:
+    if command[-1] == "com.android.virt":
+        print("package:com.android.virt versionCode:360000000")
+    finish()
+
+if command[:2] == ["pm", "path"]:
+    if scenario == "package-missing":
+        finish()
+    print("package:/data/app/fixture/base.apk")
+    finish()
+
+if command[:2] == ["pm", "grant"]:
+    if scenario == "grant-fail":
+        finish(1)
+    if marker:
+        open(marker, "w", encoding="utf-8").write("granted")
+    finish()
+
+if command[:2] == ["am", "force-stop"]:
+    finish()
+
+if command[:2] == ["am", "instrument"]:
+    if scenario == "instrument-fail":
+        print("INSTRUMENTATION_FAILED: fixture")
+        finish(1)
+    print("INSTRUMENTATION_RESULT: qa_probe_path=fixture")
+    print("INSTRUMENTATION_CODE: -1")
+    finish()
+
+finish(4)
+'''
+
+
+def require_root():
+    configured = os.environ.get("AVF_VALIDATION_TEST_ROOT")
+    if not configured or not Path(configured).is_absolute():
+        raise AssertionError("AVF_VALIDATION_TEST_ROOT must be an explicit absolute external directory")
+    return Path(configured) / uuid.uuid4().hex
+
+
+class DeviceCliTests(unittest.TestCase):
+    def setUp(self):
+        self.root = require_root()
+        self.root.mkdir(parents=True, exist_ok=True)
+        self.fake_adb = self.root / "adb"
+        self.fake_adb.write_text(FAKE_ADB, encoding="utf-8")
+        self.fake_adb.chmod(0o755)
+        self.out = self.root / "out"
+        self.argv_log = self.root / "argv.jsonl"
+        self.marker = self.root / "granted"
+        self.probe_before = self.root / "probe-before.json"
+        self.probe_after = self.root / "probe-after.json"
+        self.probe_before.write_text(json.dumps(self.probe()), encoding="utf-8")
+        self.probe_after.write_text(json.dumps(self.probe()), encoding="utf-8")
+
+    def probe(self, *, access="AVAILABLE", non_protected=True, protected=True,
+              manage="GRANTED", custom="GRANTED", protected_mode="ACCEPTED",
+              stop_confirmed=True, overrides=None, omit=None):
+        bits = (1 if protected else 0) | (2 if non_protected else 0)
+        stages = {}
+        for stage in PROBE_STAGES:
+            stages[stage] = {"status": "pass", "reason_code": stage.upper() + "_OK"}
+        stages["stop_cycles"]["reason_code"] = "STOP_CONFIRMED"
+        stages["stop_cycles"]["stop_confirmed"] = stop_confirmed
+        for stage, value in (overrides or {}).items():
+            stages[stage] = value
+        if omit:
+            stages.pop(omit, None)
+        return {
+            "schema_version": 1,
+            "kind": "avf_qa_probe",
+            "qa_package": QA_PACKAGE,
+            "device_facts": {
+                "sdk_int": 36,
+                "abis": ["arm64-v8a", "armeabi-v7a"],
+                "feature": True,
+                "build_id": "FIXTURE_BUILD",
+                "release": "16",
+                "fingerprint_sha256": hashlib.sha256(b"fixture").hexdigest(),
+            },
+            "qualification": {
+                "access_state": access,
+                "exemption_state": "INSTALLED",
+                "manager_present": True,
+                "non_protected": non_protected,
+                "protected": protected,
+                "capabilities_raw": bits,
+                "manage_permission": manage,
+                "custom_permission": custom,
+                "protected_mode": protected_mode,
+                "protected_mode_exception": (
+                    "UnsupportedOperationException" if protected_mode == "REJECTED" else None),
+            },
+            "stage_results": stages,
+        }
+
+    def run_cli(self, *extra, scenario="ok", before=None, after=None, timeout="2"):
+        env = os.environ.copy()
+        env.update({
+            "FAKE_ADB_SCENARIO": scenario,
+            "FAKE_SERIAL": SERIAL,
+            "FAKE_QA_PACKAGE": QA_PACKAGE,
+            "FAKE_QA_TEST_PACKAGE": QA_TEST_PACKAGE,
+            "FAKE_ARGV_LOG": str(self.argv_log),
+            "FAKE_GRANT_MARKER": str(self.marker),
+            "FAKE_PROBE_JSON_BEFORE": str(self.probe_before),
+            "FAKE_PROBE_JSON_AFTER": str(self.probe_after),
+        })
+        if before is not None:
+            self.probe_before.write_text(json.dumps(before), encoding="utf-8")
+        if after is not None:
+            self.probe_after.write_text(json.dumps(after), encoding="utf-8")
+        arguments = [
+            sys.executable, "-B", str(MODULE_DIR / "run_avf_device_validation.py"),
+            "--device", SERIAL, "--device-alias", ALIAS,
+            "--qa-package", QA_PACKAGE, "--qa-test-package", QA_TEST_PACKAGE,
+            "--adb", str(self.fake_adb), "--adb-timeout", timeout,
+            "--out", str(self.out),
+        ]
+        arguments.extend(extra)
+        return subprocess.run(arguments, stdin=subprocess.DEVNULL,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              timeout=40, shell=False, env=env)
+
+    def report_from(self, process):
+        self.assertEqual(process.returncode in (0, 2), True,
+                         process.stderr.decode("utf-8", "replace"))
+        summary = json.loads(process.stdout)
+        self.assertIn("report_json", summary, summary)
+        return json.loads(Path(summary["report_json"]).read_bytes())
+
+    def stage(self, report, stage_id):
+        return next(stage for stage in report["stages"] if stage["id"] == stage_id)
+
+    def commands(self):
+        if not self.argv_log.exists():
+            return []
+        return [json.loads(line) for line in self.argv_log.read_text(encoding="utf-8").splitlines()]
+
+    def test_qualified_device_minimal_loop_passes_but_is_not_a_product_claim(self):
+        process = self.run_cli()
+        self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+        report = self.report_from(process)
+        self.assertEqual(report["verdict"], "PASS")
+        self.assertEqual(report["summary"], {"pass": 8, "fail": 0, "blocked": 0, "not-tested": 4})
+        self.assertEqual(report["real_avf_samples"], 1)
+        self.assertFalse(report["device_independent"])
+        self.assertTrue(report["device_mode"]["implemented"])
+        self.assertTrue(report["device_mode"]["adb_invoked"])
+        self.assertFalse(report["device_mode"]["serial_recorded"])
+        for stage_id in ("platform_declaration", "capabilities", "permissions",
+                         "protected_mode", "create", "run_returned", "vsock_handshake",
+                         "stop_cycles"):
+            self.assertEqual(self.stage(report, stage_id)["status"], "pass", stage_id)
+            self.assertEqual(self.stage(report, stage_id)["evidence"]["state"], "collected")
+        self.assertEqual(self.stage(report, "network")["status"], "not-tested")
+        self.assertEqual(self.stage(report, "network")["reason_code"], "STAGE_NOT_REQUESTED")
+        self.assertEqual(report["device_facts"]["capabilities"]["raw"], 3)
+
+    def test_protected_only_stops_before_create(self):
+        process = self.run_cli(before=self.probe(non_protected=False, protected=True))
+        self.assertEqual(process.returncode, 2)
+        report = self.report_from(process)
+        self.assertEqual(self.stage(report, "capabilities")["status"], "fail")
+        self.assertEqual(self.stage(report, "capabilities")["reason_code"], "PROTECTED_ONLY")
+        self.assertEqual(self.stage(report, "create")["status"], "blocked")
+        self.assertEqual(self.stage(report, "create")["reason_code"], "PRIOR_STAGE_FAILED")
+        self.assertEqual(report["real_avf_samples"], 0)
+
+    def test_permission_denied_without_grant_never_calls_pm_grant(self):
+        process = self.run_cli(before=self.probe(access="PERMISSION_DENIED",
+                                                 manage="DENIED", custom="DENIED"))
+        self.assertEqual(process.returncode, 2)
+        report = self.report_from(process)
+        self.assertEqual(self.stage(report, "capabilities")["status"], "blocked")
+        self.assertEqual(self.stage(report, "permissions")["status"], "blocked")
+        self.assertEqual(self.stage(report, "permissions")["reason_code"], "GRANT_NOT_AUTHORIZED")
+        self.assertEqual(report["real_avf_samples"], 0)
+        self.assertFalse(any(command[:2] == ["-s", SERIAL] and command[2:5] == ["shell", "pm", "grant"]
+                             for command in self.commands()))
+
+    def test_explicit_grant_targets_only_the_qa_package_and_rechecks(self):
+        after = self.probe()
+        process = self.run_cli("--grant", before=self.probe(access="PERMISSION_DENIED",
+                                                              manage="DENIED", custom="DENIED"),
+                               after=after)
+        self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+        report = self.report_from(process)
+        self.assertEqual(self.stage(report, "permissions")["status"], "pass")
+        self.assertEqual(report["real_avf_samples"], 1)
+        grants = [command for command in self.commands()
+                  if command[2:5] == ["shell", "pm", "grant"]]
+        self.assertEqual(len(grants), 2)
+        for command in grants:
+            self.assertEqual(command[5], QA_PACKAGE)
+            self.assertNotEqual(command[5], "io.github.nyzeep.orchestella")
+        self.assertTrue(any(command[2:5] == ["shell", "am", "force-stop"]
+                            for command in self.commands()))
+        self.assertIn(b"pm grant", process.stderr)
+        self.assertNotIn(SERIAL.encode(), process.stderr)
+
+    def test_grant_failure_is_reported_and_stops(self):
+        process = self.run_cli("--grant", scenario="grant-fail",
+                               before=self.probe(access="PERMISSION_DENIED",
+                                                 manage="DENIED", custom="DENIED"))
+        self.assertEqual(process.returncode, 2)
+        report = self.report_from(process)
+        self.assertEqual(self.stage(report, "permissions")["status"], "blocked")
+        self.assertEqual(self.stage(report, "permissions")["reason_code"],
+                         "PERMISSIONS_GRANT_FAILED")
+        self.assertEqual(report["real_avf_samples"], 0)
+
+    def test_create_failure_stops_run_and_vsock(self):
+        process = self.run_cli(before=self.probe(overrides={
+            "create": {"status": "fail", "reason_code": "CREATE_FAILED"}}))
+        self.assertEqual(process.returncode, 2)
+        report = self.report_from(process)
+        self.assertEqual(self.stage(report, "create")["status"], "fail")
+        self.assertEqual(self.stage(report, "create")["reason_code"], "CREATE_FAILED")
+        self.assertEqual(self.stage(report, "run_returned")["status"], "blocked")
+        self.assertEqual(self.stage(report, "vsock_handshake")["status"], "blocked")
+        self.assertEqual(report["real_avf_samples"], 0)
+
+    def test_run_returned_without_vsock_is_not_guest_ready(self):
+        process = self.run_cli(before=self.probe(overrides={
+            "vsock_handshake": {"status": "fail", "reason_code": "VSOCK_TIMEOUT"}}))
+        self.assertEqual(process.returncode, 2)
+        report = self.report_from(process)
+        self.assertEqual(self.stage(report, "run_returned")["status"], "pass")
+        self.assertEqual(self.stage(report, "vsock_handshake")["status"], "fail")
+        self.assertEqual(self.stage(report, "vsock_handshake")["reason_code"], "VSOCK_TIMEOUT")
+        self.assertEqual(report["real_avf_samples"], 0)
+
+    def test_stop_unconfirmed_is_not_a_pass(self):
+        process = self.run_cli(before=self.probe(stop_confirmed=False))
+        self.assertEqual(process.returncode, 2)
+        report = self.report_from(process)
+        self.assertEqual(self.stage(report, "stop_cycles")["status"], "fail")
+        self.assertEqual(self.stage(report, "stop_cycles")["reason_code"], "STOP_UNCONFIRMED")
+        self.assertEqual(report["real_avf_samples"], 0)
+
+    def test_missing_qa_package_is_blocked_before_instrumentation(self):
+        process = self.run_cli(scenario="package-missing")
+        self.assertEqual(process.returncode, 2)
+        report = self.report_from(process)
+        self.assertEqual(report["summary"]["blocked"], 8)
+        self.assertEqual(report["real_avf_samples"], 0)
+        self.assertFalse(any(command[2:5] == ["shell", "am", "instrument"]
+                             for command in self.commands()))
+
+    def test_no_device_is_recorded_without_grant_or_instrument(self):
+        process = self.run_cli(scenario="no-device")
+        self.assertEqual(process.returncode, 2)
+        report = self.report_from(process)
+        self.assertEqual(self.stage(report, "platform_declaration")["reason_code"], "NO_DEVICE")
+        self.assertEqual(report["summary"]["blocked"], 8)
+        self.assertEqual(report["real_avf_samples"], 0)
+        self.assertIsNone(report["probe"])
+        self.assertIsNone(report["device_facts"])
+        self.assertFalse(any(command[2:5] == ["shell", "pm", "grant"]
+                             for command in self.commands()))
+
+    def test_multiple_devices_is_blocked(self):
+        process = self.run_cli(scenario="two-devices")
+        self.assertEqual(process.returncode, 2)
+        report = self.report_from(process)
+        self.assertEqual(self.stage(report, "platform_declaration")["reason_code"],
+                         "DEVICE_COUNT_NOT_ONE")
+        self.assertEqual(report["summary"]["pass"], 0)
+        self.assertEqual(report["real_avf_samples"], 0)
+
+    def test_adb_timeout_is_bounded_and_not_retried(self):
+        started = time.monotonic()
+        process = self.run_cli(scenario="timeout", timeout="1")
+        elapsed = time.monotonic() - started
+        self.assertEqual(process.returncode, 2)
+        report = self.report_from(process)
+        self.assertEqual(self.stage(report, "platform_declaration")["reason_code"], "ADB_TIMEOUT")
+        self.assertEqual(len(report["commands"]), 1)
+        self.assertLess(elapsed, 15)
+
+    def test_report_and_stdout_do_not_contain_the_serial(self):
+        process = self.run_cli()
+        self.assertEqual(process.returncode, 0)
+        report_bytes = Path(json.loads(process.stdout)["report_json"]).read_bytes()
+        combined = process.stdout + process.stderr + report_bytes
+        self.assertNotIn(SERIAL.encode(), combined)
+        self.assertIn(b"<device>", report_bytes)
+
+    def test_stage_selection_marks_unrequested_stages_not_tested(self):
+        process = self.run_cli("--stage", "create,run_returned")
+        self.assertEqual(process.returncode, 0)
+        report = self.report_from(process)
+        self.assertEqual(self.stage(report, "create")["status"], "pass")
+        self.assertEqual(self.stage(report, "run_returned")["status"], "pass")
+        self.assertEqual(self.stage(report, "vsock_handshake")["status"], "not-tested")
+        self.assertEqual(self.stage(report, "stop_cycles")["status"], "not-tested")
+        self.assertEqual(report["real_avf_samples"], 0)
+
+    def test_all_stages_keep_missing_probe_results_blocked(self):
+        process = self.run_cli("--stage", "all", before=self.probe(omit="network"))
+        self.assertEqual(process.returncode, 2)
+        report = self.report_from(process)
+        self.assertEqual(self.stage(report, "network")["status"], "blocked")
+        self.assertEqual(self.stage(report, "network")["reason_code"], "QA_STAGE_RESULT_MISSING")
+        self.assertEqual(report["real_avf_samples"], 1)
+
+    def test_cycles_are_passed_to_the_qa_probe(self):
+        process = self.run_cli("--cycles", "20")
+        self.assertEqual(process.returncode, 0)
+        instrument = [command for command in self.commands()
+                      if command[2:5] == ["shell", "am", "instrument"]]
+        self.assertEqual(len(instrument), 1)
+        self.assertIn("20", instrument[0])
+        self.assertIn("qaCycles", instrument[0])
+
+    def test_production_package_is_rejected_before_adb(self):
+        arguments = [
+            sys.executable, "-B", str(MODULE_DIR / "run_avf_device_validation.py"),
+            "--device", SERIAL, "--device-alias", ALIAS,
+            "--qa-package", "io.github.nyzeep.orchestella",
+            "--adb", str(self.fake_adb), "--out", str(self.out),
+        ]
+        process = subprocess.run(arguments, stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 timeout=20, shell=False)
+        self.assertEqual(process.returncode, 2)
+        self.assertEqual(json.loads(process.stdout), {"error": "QA_PACKAGE_REQUIRED"})
+        self.assertFalse(self.argv_log.exists())
+
+    def test_apk_path_is_redacted_in_command_log(self):
+        apk = self.root / "qa.apk"
+        apk.write_bytes(b"fixture apk bytes")
+        test_apk = self.root / "qa-test.apk"
+        test_apk.write_bytes(b"fixture test bytes")
+        process = self.run_cli("--apk", str(apk), "--test-apk", str(test_apk))
+        self.assertEqual(process.returncode, 0)
+        report = self.report_from(process)
+        installs = [command for command in report["commands"] if command["id"] == "install"]
+        self.assertEqual(len(installs), 2)
+        for command in installs:
+            self.assertIn("<apk>", command["argv"])
+            self.assertNotIn(str(apk), command["argv"])
+            self.assertNotIn(str(test_apk), command["argv"])
+
+    def test_device_report_can_be_validated(self):
+        process = self.run_cli()
+        self.assertEqual(process.returncode, 0)
+        report_path = json.loads(process.stdout)["report_json"]
+        validate = subprocess.run(
+            [sys.executable, "-B", str(MODULE_DIR / "run_avf_device_validation.py"),
+             "--validate", report_path, "--out", str(self.out / "validate")],
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            timeout=20, shell=False)
+        self.assertEqual(validate.returncode, 0, validate.stdout + validate.stderr)
+        self.assertEqual(json.loads(validate.stdout), {"status": "VALID", "schema_version": 1})
+
+    def test_validate_rejects_fabricated_device_pass(self):
+        process = self.run_cli()
+        report_path = Path(json.loads(process.stdout)["report_json"])
+        report = json.loads(report_path.read_bytes())
+        report["stages"][4]["evidence"] = {"state": "not-collected", "path": None, "sha256": None}
+        tampered = self.root / "tampered.json"
+        tampered.write_bytes((json.dumps(report) + "\n").encode("utf-8"))
+        validate = subprocess.run(
+            [sys.executable, "-B", str(MODULE_DIR / "run_avf_device_validation.py"),
+             "--validate", str(tampered), "--out", str(self.out / "validate2")],
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            timeout=20, shell=False)
+        self.assertEqual(validate.returncode, 2)
+        self.assertEqual(json.loads(validate.stdout), {"error": "REPORT_SCHEMA_REJECTED"})
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

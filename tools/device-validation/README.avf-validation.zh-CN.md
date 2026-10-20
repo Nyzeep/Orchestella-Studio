@@ -135,13 +135,55 @@ AVF_VALIDATION_TEST_ROOT='<本批专属外部绝对根>/test-runs/独立新标�
 python3 -B tools/device-validation/run_avf_device_validation.py \
   --dry-run --out "$APPROVED_AVF_OUTPUT_ROOT/dry-run"
 
-# 未来真机模式的本票行为：不调用 adb，所有阶段 blocked，退出码 2
-python3 -B tools/device-validation/run_avf_device_validation.py \
-  --device "$QA_SERIAL" --device-alias qa-device-01 --out "$APPROVED_AVF_OUTPUT_ROOT"
+# 09 历史 stub（2026-10-20 已被下一节的设备模式取代）：不调用 adb，所有阶段 blocked
+# python3 -B tools/device-validation/run_avf_device_validation.py \
+#   --device "$QA_SERIAL" --device-alias qa-device-01 --out "$APPROVED_AVF_OUTPUT_ROOT"
 
 # 校验已有报告 schema；坏 fixture 以 REPORT_SCHEMA_REJECTED 拒绝
 python3 -B tools/device-validation/run_avf_device_validation.py \
   --validate report.json --out "$APPROVED_AVF_OUTPUT_ROOT"
 ```
 
-输出为 JSON + Markdown，写入显式绝对根下的新文件名（带 UTC 微秒），并复用 `EvidenceStore` 的 preservation 副本。`--dry-run` 的每步 `evidence`/`rom_binding` 都是 `not-collected`，`real_avf_samples=0`，`verdict=NOT_TESTED`；`--device` 的 `device_mode.implemented=false`、`adb_invoked=false`，不记录 serial/IMEI/MAC/账号/token/屏幕内容。工具不安装 APK、不 grant、不 root/解锁、不启停 VM。dry-run 通过只表示“工具与 schema 就绪”，不表示 AVF 已在设备上成功。
+输出为 JSON + Markdown，写入显式绝对根下的新文件名（带 UTC 微秒），并复用 `EvidenceStore` 的 preservation 副本。`--dry-run` 的每步 `evidence`/`rom_binding` 都是 `not-collected`，`real_avf_samples=0`，`verdict=NOT_TESTED`。工具本身不 root/解锁、不启停 VM；09 时 `--device` 只是 stub，2026-10-20 的设备模式见下一节。dry-run 通过只表示“工具与 schema 就绪”，不表示 AVF 已在设备上成功。
+
+
+## 2026-10-20：设备模式（Session E）
+
+`--device` 已从 stub 变成 host 侧真实执行路径；`--dry-run` 的输出保持不变（12 个 `not-tested`、0 pass、`real_avf_samples=0`）。
+
+### Host 执行
+
+- `avf_device_mode.py` 的 `AdbRunner` 是唯一生产命令执行器：固定 argv、`shell=False`、每命令 timeout、整轮 deadline、失败不重试；命令日志只保留 id/argv/timeout/exit/duration，并把 adb 路径、serial、APK 路径替换为 `<adb>` / `<device>` / `<apk>`，不保存 stdout/stderr。
+- 设备发现要求 `adb devices -l` 恰好一台 `device`，且 serial 与 `--device` 一致；serial 只用于比较，不写入报告。多设备、unauthorized、offline、无设备分别以固定 reason code 停止。
+- 复用 `avf_preflight.collect` 的只读命令读取 API/ABI/feature/hypervisor 声明；不再维护第二套设备命令。
+- QA 包必须包含 `.qa.`。可用 `--apk` / `--test-apk` 安装 QA 包与 instrumentation 包；否则用 `pm path` 检查已安装。只安装 QA 包，不安装生产包。
+- `--grant` 必须显式传入。host 会对 QA 包执行两条 `pm grant`，随后 `am force-stop` QA 包并重新启动探针复核；没有 `--grant` 时一条 grant 都不会执行。grant 失败、权限仍为 denied 都以 blocked/fail 停止。
+- `--stage` 支持 `minimal`（默认，资格→grant→create→run→vsock→stop 的 8 个阶段）、`all` 或逗号分隔的阶段名；未请求的阶段为 `not-tested` / `STAGE_NOT_REQUESTED`。`--cycles 1..20` 传给 QA 探针。
+
+### QA-only 设备探针
+
+- `app/src/androidTest/java/io/github/nyzeep/orchestella/AvfQaProbeInstrumentation.java` 是 androidTest 专用 `Instrumentation`，不进入 release APK，也没有 launcher 入口。它拒绝在包名不含 `.qa.` 的 target 上运行。
+- 探针调用现有 `ReflectiveAvfPlatformAccess` 读取 access/exemption/permission/mode facts，反射读取 capability raw bits，并用 `VirtualMachineConfig.Builder.setProtectedVm(false)` 记录 protected-mode 结果；ROM fingerprint 只保存 SHA-256。它不 root、不改 hidden API 全局策略、不启动 VM。
+- 探针把 JSON 写到 QA app 私有目录 `files/avf-qa/probe-<token>.json`；host 用 `adb exec-out run-as <qa> cat ...` 拉取。令牌每次随机，报告只保存令牌的 SHA-256。
+- 本票的探针只完成资格观察；`create`/`run_returned`/`vsock_handshake`/`stop_cycles` 明确返回 `blocked` / `QA_LAUNCH_ENTRY_NOT_IMPLEMENTED`。host 不会把缺失的探针结果补成 pass；将来接入 QA 启动 harness 后，host 的 stage 协议可直接接收其结果。
+- `real_avf_samples` 只有在 create、run_returned、vsock_handshake、stop_cycles 四个阶段都真实 pass 时才为 1；其余为 0。
+
+### 命令示例
+
+```bash
+# dry-run 不变
+python3 -B tools/device-validation/run_avf_device_validation.py \
+  --dry-run --out "$APPROVED_AVF_OUTPUT_ROOT/dry-run"
+
+# 设备资格 + 显式 grant + 最小阶段
+python3 -B tools/device-validation/run_avf_device_validation.py \
+  --device "$QA_SERIAL" --device-alias qa-device-01 \
+  --qa-package io.github.nyzeep.orchestella.qa.devicemode \
+  --qa-test-package io.github.nyzeep.orchestella.qa.devicemode.test \
+  --adb "$ADB" --grant \
+  --out "$APPROVED_AVF_OUTPUT_ROOT/device"
+```
+
+### 本回合结果
+
+本环境 `adb devices -l` 没有连接设备；用真实 adb 执行设备模式的报告为 `NO_DEVICE`、8 个请求阶段 blocked、4 个 not-tested、`real_avf_samples=0`。没有安装 APK、没有 grant、没有创建/启动 VM，也没有任何真机 AVF 结论。fake adb 只证明 host 编排、超时/停止/脱敏和报告 schema；不是设备证据。

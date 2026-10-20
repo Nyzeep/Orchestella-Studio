@@ -40,6 +40,7 @@ Date: 2026-10-19
 - **元数据保留**：`InstanceLifecycle` 现在保留未知元数据键（含 `hardware.*` 未知键），并有 `instance-metadata-v1-golden.properties` golden fixture；未知键不参与硬件解析。
 - **16KB 闭包**：`check-apk-16kb.sh` 启用 `REQUIRE_BUNDLED_CLOSURE=1`，对 APK 内 DT_NEEDED 的 bundled 依赖做集合闭合断言（本地结果 resolved=0、external=13）；QEMU 产品 ELF 未在本环境构建，其闭包仍是 release 风险，不写成“闭包已验证”。
 - **默认 2 vCPU**：未改产品默认值；UI 只在 AVF READY 且 `cpuSupport != SUPPORTED` 时显示 1 vCPU 约束。是否把 AVF 默认设为 1 vCPU 仍待用户决策。
+- **设备模式（2026-10-20，Session E）**：`--device` 已实现 host 侧真实 adb 编排（AdbRunner + 每命令 timeout/整轮 deadline/命令脱敏 + QA-only instrumentation 资格探针）；本环境无设备，真实设备模式报告 `NO_DEVICE`、8 blocked / 4 not-tested、`real_avf_samples=0`。create/run/vsock/stop 在本票探针中仍 blocked（`QA_LAUNCH_ENTRY_NOT_IMPLEMENTED`），未产生 AVF 成功声明；未触碰用户数据。
 
 
 ## Tickets
