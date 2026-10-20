@@ -24,6 +24,19 @@ public interface AvfVirtualMachineApi {
     AvfVirtualMachineHandle startCustomVm(AvfLaunchSpec spec) throws AvfEngineException;
 
     /**
+     * Launch variant that records the create/run boundaries. Implementations
+     * that cannot observe them keep the coarse behaviour; the engine still
+     * records the stages around this call.
+     */
+    default AvfVirtualMachineHandle startCustomVm(AvfLaunchSpec spec, AvfLaunchTrace trace)
+            throws AvfEngineException {
+        AvfVirtualMachineHandle handle = startCustomVm(spec);
+        trace.mark(AvfLaunchTrace.Stage.VM_CREATED);
+        trace.mark(AvfLaunchTrace.Stage.RUN_RETURNED);
+        return handle;
+    }
+
+    /**
      * Connects one vsock channel to the guest. Guests serve the control and
      * terminal ports only after boot, so implementations may need retries.
      */
@@ -43,8 +56,47 @@ public interface AvfVirtualMachineApi {
          */
         int waitFor() throws InterruptedException;
 
+        /**
+         * Typed exit observation. The compatibility {@link #waitFor()} delegates
+         * here and returns {@link AvfExitInfo#exitCode()}, so a crash or a
+         * DELETED VM can never surface as a clean zero exit.
+         */
+        default AvfExitInfo waitForExit() throws InterruptedException {
+            int code = waitFor();
+            return code == 0 ? AvfExitInfo.normal(0L) : AvfExitInfo.crashed(code, "compat waitFor");
+        }
+
+        /** Platform status: 0 stopped, 1 running, 2 deleted, -1 unknown. */
+        default int status() {
+            return -1;
+        }
+
+        /**
+         * Optional platform exit status. The pinned SystemApi does not expose
+         * one; implementations that can observe it return a non-negative code,
+         * otherwise -1. Never a substitute for {@link #status()}.
+         */
+        default int exitStatus() {
+            return -1;
+        }
+
         /** Best-effort host-side stop of the VM. */
         void stop();
+
+        /**
+         * Bounded stop protocol: request, probe status within the grace window,
+         * force-release the platform handle when needed, then probe again.
+         * Implementations that cannot observe status must return
+         * {@link AvfStopResult#UNCONFIRMED} rather than assume success.
+         */
+        default AvfStopResult stopRuntime(long graceMs) {
+            try {
+                stop();
+            } catch (RuntimeException failure) {
+                return AvfStopResult.UNCONFIRMED;
+            }
+            return AvfStopResult.UNCONFIRMED;
+        }
     }
 
     /**

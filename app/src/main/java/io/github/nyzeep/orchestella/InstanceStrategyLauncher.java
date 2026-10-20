@@ -33,6 +33,8 @@ public final class InstanceStrategyLauncher {
         public final String hostname;
         public final String guestUser;
         public final boolean hasSudo;
+        /** Optional read-only 9p share; null when this launch shares nothing. */
+        public final io.github.nyzeep.orchestella.runtime.contract.SharedDirectoryContract.SharedDirectorySpec sharedDirectory;
 
         public LaunchParameters(
                 String instanceId,
@@ -100,6 +102,28 @@ public final class InstanceStrategyLauncher {
                 String hostname,
                 String guestUser,
                 boolean hasSudo) {
+            this(instanceId, bridgeToken, rootfsFileName, instanceRootVolume, runtimeDirectory,
+                    distroInputsDirectory, guestPassword, hardwareConfig, mirrorConfigFileName,
+                    mirrorConfigFileContent, firstBootScript, hostname, guestUser, hasSudo, null);
+        }
+
+        /** Full shape including the optional read-only share (Ticket 07). */
+        public LaunchParameters(
+                String instanceId,
+                String bridgeToken,
+                String rootfsFileName,
+                String instanceRootVolume,
+                String runtimeDirectory,
+                String distroInputsDirectory,
+                String guestPassword,
+                io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig hardwareConfig,
+                String mirrorConfigFileName,
+                byte[] mirrorConfigFileContent,
+                byte[] firstBootScript,
+                String hostname,
+                String guestUser,
+                boolean hasSudo,
+                io.github.nyzeep.orchestella.runtime.contract.SharedDirectoryContract.SharedDirectorySpec sharedDirectory) {
             this.instanceId = Objects.requireNonNull(instanceId, "instanceId");
             this.bridgeToken = Objects.requireNonNull(bridgeToken, "bridgeToken");
             this.rootfsFileName = Objects.requireNonNull(rootfsFileName, "rootfsFileName");
@@ -120,6 +144,7 @@ public final class InstanceStrategyLauncher {
                 throw new IllegalArgumentException("invalid guest username");
             }
             this.hasSudo = hasSudo;
+            this.sharedDirectory = sharedDirectory;
         }
 
         public LaunchParameters(

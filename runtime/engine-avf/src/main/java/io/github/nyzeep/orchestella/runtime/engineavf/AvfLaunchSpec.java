@@ -2,6 +2,7 @@ package io.github.nyzeep.orchestella.runtime.engineavf;
 
 import io.github.nyzeep.orchestella.runtime.contract.NetworkContract;
 import io.github.nyzeep.orchestella.runtime.contract.SharedDirectoryContract;
+import java.util.List;
 import java.util.Objects;
 import java.util.regex.Pattern;
 
@@ -46,8 +47,6 @@ public final class AvfLaunchSpec {
     public static final int DEFAULT_9P_VSOCK_PORT = 9102;
     public static final int DEFAULT_GRAPHICS_VSOCK_PORT = 9103;
     public static final int AVF_GRAPHICS_VSOCK_PORT = 9103;
-    public static final int DEFAULT_AUDIO_VSOCK_PORT = 9104;
-    public static final int AVF_AUDIO_VSOCK_PORT = 9104;
     public static final int DEFAULT_CPU_COUNT = 1;
 
     private static final Pattern INSTANCE_ID = Pattern.compile("[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}");
@@ -66,10 +65,11 @@ public final class AvfLaunchSpec {
     private final int controlVsockPort;
     private final int terminalVsockPort;
     private final NetworkContract.OutboundNetworkSpec networkSpec;
+    private final AvfNetworkPlan networkPlan;
     private final int sharedDirectoryVsockPort;
     private final SharedDirectoryContract.SharedDirectorySpec sharedDirectory;
     private final int graphicsVsockPort;
-    private final int audioVsockPort;
+    private final List<String> extraKernelArguments;
     private final String guestCmdline;
 
     private AvfLaunchSpec(Builder builder) {
@@ -82,10 +82,11 @@ public final class AvfLaunchSpec {
         this.controlVsockPort = builder.controlVsockPort;
         this.terminalVsockPort = builder.terminalVsockPort;
         this.networkSpec = builder.networkSpec;
+        this.networkPlan = builder.networkPlan;
         this.sharedDirectoryVsockPort = builder.sharedDirectoryVsockPort;
         this.sharedDirectory = builder.sharedDirectory;
         this.graphicsVsockPort = builder.graphicsVsockPort;
-        this.audioVsockPort = builder.audioVsockPort;
+        this.extraKernelArguments = List.copyOf(builder.extraKernelArguments);
 
         StringBuilder cmdline = new StringBuilder(String.format(
                 GUEST_CMDLINE_TEMPLATE, builder.controlVsockPort, builder.terminalVsockPort));
@@ -93,15 +94,24 @@ public final class AvfLaunchSpec {
             cmdline.append(" droidlayer.vsock_9p_port=")
                     .append(builder.sharedDirectoryVsockPort);
         }
-        this.guestCmdline = appendDnsKey(cmdline.toString(), builder.networkSpec);
+        for (String argument : builder.extraKernelArguments) {
+            cmdline.append(' ').append(argument);
+        }
+        appendNetworkKeys(cmdline, builder.networkPlan);
+        this.guestCmdline = cmdline.toString();
     }
 
-    private static String appendDnsKey(String cmdline, NetworkContract.OutboundNetworkSpec spec) {
-        String dns = spec.cmdlineDns();
-        if (dns == null || dns.isEmpty()) {
-            return cmdline;
+    /**
+     * Guest network contract: DNS is always present. Static addressing adds
+     * the guest ip/gateway/netmask keys; DHCP never fakes them.
+     */
+    private static void appendNetworkKeys(StringBuilder cmdline, AvfNetworkPlan plan) {
+        cmdline.append(" droidlayer.dns=").append(plan.dnsServer());
+        if (plan.staticAddressing()) {
+            cmdline.append(" orchestella.guest_ip=").append(plan.guestIp())
+                    .append(" orchestella.guest_gw=").append(plan.gateway())
+                    .append(" orchestella.guest_mask=").append(plan.netmask());
         }
-        return cmdline + " droidlayer.dns=" + dns;
     }
 
     public String instanceId() {
@@ -141,6 +151,11 @@ public final class AvfLaunchSpec {
         return networkSpec;
     }
 
+    /** The AVF network decision; drives useNetwork and the guest addressing keys. */
+    public AvfNetworkPlan networkPlan() {
+        return networkPlan;
+    }
+
     /** The 9p data-plane vsock port; meaningful only with a share configured. */
     public int sharedDirectoryVsockPort() {
         return sharedDirectoryVsockPort;
@@ -156,9 +171,9 @@ public final class AvfLaunchSpec {
         return graphicsVsockPort;
     }
 
-    /** Dedicated vsock audio port (defaults to 9104). */
-    public int audioVsockPort() {
-        return audioVsockPort;
+    /** Additional guest cmdline arguments admitted from the hardware config. */
+    public List<String> extraKernelArguments() {
+        return extraKernelArguments;
     }
 
     public String guestCmdline() {
@@ -181,10 +196,11 @@ public final class AvfLaunchSpec {
         private int terminalVsockPort = DEFAULT_TERMINAL_VSOCK_PORT;
         private NetworkContract.OutboundNetworkSpec networkSpec =
                 NetworkContract.OutboundNetworkSpec.defaultSpec();
+        private AvfNetworkPlan networkPlan;
         private int sharedDirectoryVsockPort = DEFAULT_9P_VSOCK_PORT;
         private SharedDirectoryContract.SharedDirectorySpec sharedDirectory;
         private int graphicsVsockPort = DEFAULT_GRAPHICS_VSOCK_PORT;
-        private int audioVsockPort = DEFAULT_AUDIO_VSOCK_PORT;
+        private List<String> extraKernelArguments = List.of();
 
         private Builder(
                 String instanceId, String kernelPath, String initramfsPath, String rootVolumePath) {
@@ -235,6 +251,12 @@ public final class AvfLaunchSpec {
             return this;
         }
 
+        /** Replaces the network decision. Null keeps the legacy TAP+DHCP default. */
+        public Builder networkPlan(AvfNetworkPlan networkPlan) {
+            this.networkPlan = networkPlan;
+            return this;
+        }
+
         public Builder sharedDirectoryVsockPort(int port) {
             this.sharedDirectoryVsockPort = requirePort(port);
             return this;
@@ -251,12 +273,41 @@ public final class AvfLaunchSpec {
             return this;
         }
 
-        public Builder audioVsockPort(int port) {
-            this.audioVsockPort = requirePort(port);
+        /**
+         * Appends admitted guest cmdline arguments. Each entry must be one
+         * token: whitespace and control characters would silently change the
+         * kernel command line, so they are rejected here as well as in
+         * {@link AvfLaunchAdmission}.
+         */
+        public Builder extraKernelArguments(List<String> arguments) {
+            if (arguments == null) {
+                this.extraKernelArguments = List.of();
+                return this;
+            }
+            List<String> checked = new java.util.ArrayList<>(arguments.size());
+            for (String argument : arguments) {
+                if (argument == null || argument.isBlank()) {
+                    throw new IllegalArgumentException("extra kernel argument must not be blank");
+                }
+                for (int index = 0; index < argument.length(); index++) {
+                    char character = argument.charAt(index);
+                    if (Character.isWhitespace(character) || Character.isISOControl(character)) {
+                        throw new IllegalArgumentException(
+                                "extra kernel argument must be one token without control characters");
+                    }
+                }
+                checked.add(argument);
+            }
+            this.extraKernelArguments = List.copyOf(checked);
             return this;
         }
 
         public AvfLaunchSpec build() {
+            if (networkPlan == null) {
+                String dns = networkSpec.cmdlineDns() == null
+                        ? NetworkContract.DEFAULT_FALLBACK_DNS : networkSpec.cmdlineDns();
+                networkPlan = AvfNetworkPlan.nativeTapDhcp(dns, true);
+            }
             if (controlVsockPort == terminalVsockPort) {
                 throw new IllegalArgumentException("control and terminal vsock ports must differ");
             }
@@ -272,14 +323,6 @@ public final class AvfLaunchSpec {
                 throw new IllegalArgumentException(
                         "the graphics vsock port must differ from the control, terminal,"
                                 + " and 9p ports");
-            }
-            if (audioVsockPort == controlVsockPort
-                    || audioVsockPort == terminalVsockPort
-                    || audioVsockPort == sharedDirectoryVsockPort
-                    || audioVsockPort == graphicsVsockPort) {
-                throw new IllegalArgumentException(
-                        "the audio vsock port must differ from the control, terminal, 9p,"
-                                + " and graphics ports");
             }
             return new AvfLaunchSpec(this);
         }

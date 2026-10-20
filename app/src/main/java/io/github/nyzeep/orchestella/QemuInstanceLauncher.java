@@ -6,6 +6,8 @@ import android.util.Log;
 import io.github.nyzeep.orchestella.RuntimeProcessSupervisor.StopResult;
 import io.github.nyzeep.orchestella.runtime.contract.BridgeClient;
 import io.github.nyzeep.orchestella.runtime.contract.BridgeControl;
+import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract;
+import io.github.nyzeep.orchestella.runtime.contract.SessionCapabilities;
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig;
 import io.github.nyzeep.orchestella.runtime.distro.DistroCatalogRegistry;
 import io.github.nyzeep.orchestella.runtime.distro.DistroManifest;
@@ -50,7 +52,7 @@ public final class QemuInstanceLauncher {
         private final String proxySocketName;
         private LocalSocket proxySocket;
         private io.github.nyzeep.orchestella.runtime.network.BridgeProxyGateway proxyGateway;
-        private final QemuWaylandChannel waylandChannel;
+        private final RfbDisplaySession displayChannel;
         private final AtomicBoolean isBridgeServing = new AtomicBoolean(false);
         private final java.util.Set<SessionServiceForward> serviceForwards =
                 new java.util.concurrent.CopyOnWriteArraySet<>();
@@ -157,7 +159,7 @@ public final class QemuInstanceLauncher {
             this.handle = handle;
             this.timeline = timeline;
             this.supervisor = new RuntimeProcessSupervisor(handle, gateway, this::closeChannels);
-            this.waylandChannel = displaySocketPath == null ? null : new QemuWaylandChannel(() ->
+            this.displayChannel = displaySocketPath == null ? null : new RfbDisplaySession(() ->
                     openDisplayStreams(displaySocketPath), token, this::bridgeClient);
             startProxyGateway();
         }
@@ -204,19 +206,19 @@ public final class QemuInstanceLauncher {
         }
 
         @Override public boolean connectDisplay(boolean keyboard, boolean unicodeText, boolean pointer) {
-            return waylandChannel != null && waylandChannel.connect(
+            return displayChannel != null && displayChannel.connect(
                     new io.github.nyzeep.orchestella.runtime.contract.display.RfbDisplayChannel.InputCapabilities(
                             keyboard, unicodeText, pointer));
         }
 
         @Override public boolean reconnectDisplay(boolean keyboard, boolean unicodeText, boolean pointer) {
-            return waylandChannel != null && waylandChannel.connect(
+            return displayChannel != null && displayChannel.connect(
                     new io.github.nyzeep.orchestella.runtime.contract.display.RfbDisplayChannel.InputCapabilities(
                             keyboard, unicodeText, pointer), true);
         }
 
         @Override public String displayStatus() {
-            return waylandChannel == null ? "显示数据面未配置" : waylandChannel.message();
+            return displayChannel == null ? "显示数据面未配置" : displayChannel.message();
         }
 
         private volatile boolean closing;
@@ -364,8 +366,8 @@ public final class QemuInstanceLauncher {
                 forward.releaseForStop();
             }
             serviceForwards.clear();
-            if (waylandChannel != null) {
-                waylandChannel.close();
+            if (displayChannel != null) {
+                displayChannel.close();
             }
             if (proxyGateway != null) {
                 proxyGateway.close();
@@ -392,12 +394,36 @@ public final class QemuInstanceLauncher {
 
         @Override
         public io.github.nyzeep.orchestella.runtime.contract.DisplayControl displayControl() {
-            return waylandChannel;
+            return displayChannel;
         }
 
         @Override
         public io.github.nyzeep.orchestella.runtime.contract.WaylandChannel waylandChannel() {
-            return waylandChannel;
+            return displayChannel;
+        }
+
+        /**
+         * Ticket 04: the QEMU matrix is projected from the display and forwards
+         * this session actually constructed. It is never the software baseline
+         * (which would read a live RFB desktop as having no graphics).
+         *
+         * <p>Ticket 10 boundary: audio playback, clipboard bridging and Android
+         * pointer capture are driven by {@code DesktopActivity}/UI, not by this
+         * session, so they stay absent here until a session-owned adapter exists.
+         */
+        @Override
+        public FullLinuxContract.CapabilityMatrix capabilityMatrix() {
+            return FullLinuxContract.CapabilityMatrix.from(
+                    SessionCapabilities.builder(
+                                    FullLinuxContract.ExecutionStrategy.SOFTWARE_VIRTUALIZATION)
+                            .ownership(SessionCapabilities.Ownership.RUNTIME_OWNED)
+                            .terminal(true)
+                            .bridge(true)
+                            .display(displayChannel == null
+                                    ? SessionCapabilities.DisplayTransport.NONE
+                                    : SessionCapabilities.DisplayTransport.RFB)
+                            .serviceForward(!serviceForwards.isEmpty())
+                            .build());
         }
 
         @Override

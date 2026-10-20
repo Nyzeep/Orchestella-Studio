@@ -26,7 +26,7 @@ public final class FullLinuxContractAudioCapabilityTest {
         assertTrue(matrix.supportsAudio(), "supportsAudio helper");
         assertTrue(matrix.supportsClipboard(), "supportsClipboard helper");
         assertTrue(matrix.supportsPointerCapture(), "supportsPointerCapture helper");
-        assertTrue(matrix.supports(FullLinuxContract.Capability.GRAPHICS_WAYLAND), "supports wayland graphics");
+        assertTrue(matrix.supports(FullLinuxContract.Capability.GRAPHICS_RFB), "supports RFB graphics");
         assertTrue(matrix.supports(FullLinuxContract.Capability.TERMINAL), "supports terminal");
         assertTrue(matrix.supports(FullLinuxContract.Capability.BRIDGE_HANDSHAKE), "supports bridge handshake");
     }
@@ -38,7 +38,7 @@ public final class FullLinuxContractAudioCapabilityTest {
         assertEquals("低延迟 PCM 音频（本地套接字 48kHz）", matrix.audioBadge(), "software audio badge");
         assertEquals("剪贴板双向同步（本地通道）", matrix.clipboardBadge(), "software clipboard badge");
         assertEquals("相对指针捕获（无边界）", matrix.pointerCaptureBadge(), "pointer capture badge");
-        assertEquals("Wayland 原生通道（共享内存）", matrix.graphicsBadge(), "software graphics badge");
+        assertEquals("RFB 显示（本地套接字）", matrix.graphicsBadge(), "software graphics badge");
         assertEquals("完整 Linux · 软件模拟（较慢）", matrix.performanceBadge(), "software performance badge");
     }
 
@@ -50,7 +50,7 @@ public final class FullLinuxContractAudioCapabilityTest {
         assertEquals("低延迟 PCM 音频（vsock 硬件加速 48kHz）", matrix.audioBadge(), "hardware audio badge");
         assertEquals("剪贴板双向同步（vsock 硬件通道）", matrix.clipboardBadge(), "hardware clipboard badge");
         assertEquals("相对指针捕获（无边界）", matrix.pointerCaptureBadge(), "pointer capture badge");
-        assertEquals("Wayland 原生通道（vsock 硬件加速）", matrix.graphicsBadge(), "hardware graphics badge");
+        assertEquals("RFB 显示（vsock CPU 拷贝）", matrix.graphicsBadge(), "hardware graphics badge");
         assertEquals("完整 Linux · 硬件加速", matrix.performanceBadge(), "hardware performance badge");
     }
 

@@ -86,10 +86,12 @@ public final class InstanceLaunchSequence {
     }
 
     private static StopResult stopAfterExit(ExecutionSession session) {
-        if (session instanceof RuntimeOwnedSession) {
-            return ((RuntimeOwnedSession) session).stopRuntime(EXIT_STOP_GRACE_MS);
+        if (session instanceof RuntimeOwnedSession owned) {
+            return owned.stopRuntime(EXIT_STOP_GRACE_MS);
         }
-        return StopResult.CONFIRMED;
+        // A session that cannot be stopped or observed is not evidence of a
+        // confirmed stop. Keep its owner and RUNNING metadata (ADR-0021).
+        return StopResult.UNCONFIRMED;
     }
 
     /**

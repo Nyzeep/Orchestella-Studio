@@ -4,6 +4,9 @@ plugins {
 
 dependencies {
     api(project(":runtime:contract"))
+    // The shared platform-access facts/contract live in the capability module;
+    // the engine and the App probe consume the same observation.
+    api(project(":runtime:capability"))
     // Test-only collaborators: the lifecycle contract test drives the normal
     // Instance state machine over the AVF adapter, the interop test
     // asserts root-volume/kernel/initramfs identity against the QEMU spec, and
@@ -85,44 +88,9 @@ tasks.register<JavaExec>("avfNetworkAssemblyContractTest") {
     mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.AvfNetworkAssemblyContractTest")
 }
 
-tasks.register<JavaExec>("avfVsockPortForwarderTest") {
-    classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.AvfVsockPortForwarderTest")
-}
-
-tasks.register<JavaExec>("avfNetworkForwardingParityContractTest") {
-    classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.AvfNetworkForwardingParityContractTest")
-}
-
-tasks.register<JavaExec>("avfWaylandChannelContractTest") {
-    classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.AvfWaylandChannelContractTest")
-}
-
-tasks.register<JavaExec>("avfGraphicsVsockProtocolTest") {
-    classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.AvfGraphicsVsockProtocolTest")
-}
-
-tasks.register<JavaExec>("avfInputEventForwardingTest") {
-    classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.AvfInputEventForwardingTest")
-}
-
-tasks.register<JavaExec>("avfAudioVsockProtocolTest") {
-    classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.AvfAudioVsockProtocolTest")
-}
-
 tasks.register<JavaExec>("avfClipboardOverVsockTest") {
     classpath = sourceSets["test"].runtimeClasspath
     mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.AvfClipboardOverVsockTest")
-}
-
-tasks.register<JavaExec>("avfInputEventForwardingParityTest") {
-    classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.AvfInputEventForwardingParityTest")
 }
 
 tasks.register<JavaExec>("avfCapabilityMatrixAudioTest") {
@@ -135,32 +103,67 @@ tasks.register<JavaExec>("reflectiveAvfVirtualMachineApiTest") {
     mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.ReflectiveAvfVirtualMachineApiTest")
 }
 
+tasks.register<JavaExec>("avf9pShareLifecycleTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.Avf9pShareLifecycleTest")
+}
+
+tasks.register<JavaExec>("avfRfbOverVsockTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.AvfRfbOverVsockTest")
+}
+
 tasks.register<JavaExec>("avfVirtualMachineEngineResourceTest") {
     classpath = sourceSets["test"].runtimeClasspath
     mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.AvfVirtualMachineEngineResourceTest")
 }
 
+tasks.register<JavaExec>("avfRuntimeOwnershipTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.AvfRuntimeOwnershipTest")
+}
+
+tasks.register<JavaExec>("avfLaunchAdmissionTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.AvfLaunchAdmissionTest")
+}
+
+tasks.register<JavaExec>("avfPersistentConfigTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.AvfPersistentConfigTest")
+}
+
+tasks.register<JavaExec>("avfNetworkPlanTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.AvfNetworkPlanTest")
+}
+
+tasks.register<JavaExec>("avfPlatformAccessTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.AvfPlatformAccessTest")
+}
+
 val avfAllTestTasks = listOf(
     "reflectiveAvfVirtualMachineApiTest",
+    "avfPlatformAccessTest",
+    "avfRuntimeOwnershipTest",
+    "avfLaunchAdmissionTest",
+    "avfPersistentConfigTest",
+    "avfNetworkPlanTest",
     "avfVirtualMachineEngineResourceTest",
     "avfLaunchSpecTest",
     "avfVirtualMachineEngineTest",
     "avfBridgeOverVsockContractTest",
     "avf9pShareContractTest",
+    "avf9pShareLifecycleTest",
     "avfTerminalStreamContractTest",
     "avfInstanceLifecycleContractTest",
     "avfReconciliationLifecycleContractTest",
     "avfQemuInteropTest",
     "avfNetworkAssemblyContractTest",
-    "avfVsockPortForwarderTest",
-    "avfNetworkForwardingParityContractTest",
-    "avfWaylandChannelContractTest",
-    "avfGraphicsVsockProtocolTest",
-    "avfInputEventForwardingTest",
-    "avfAudioVsockProtocolTest",
     "avfClipboardOverVsockTest",
-    "avfInputEventForwardingParityTest",
     "avfCapabilityMatrixAudioTest",
+    "avfRfbOverVsockTest",
 )
 
 tasks.named("test") {

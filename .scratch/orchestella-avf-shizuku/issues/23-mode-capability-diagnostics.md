@@ -1,7 +1,7 @@
 # 23: 模式事实、调用身份与诚实的硬件准备入口
 
 Type: implementation
-Status: ready-for-agent
+Status: completed
 Priority: P1
 Owner: capability/App授权owner
 Blocked by: None
@@ -19,12 +19,12 @@ Parent: protected研发近期计划；复用02/03/05既有事实，不重做clie
 
 ## 行为验收
 
-- [ ] protected-only/nonprotected-only/both/neither/读取失败/仅部分actor可取分别明确，异常不写false或通过。
-- [ ] App权限、Shizuku server/US身份权限与VM模式能力不得混填；API/属性同源不计两个独立实测。
-- [ ] 当前平台模式不满足现adapter时说明“当前系统不支持本应用所需模式/尚未验证”，保留QEMU路径，不称芯片没EL2。
-- [ ] 页面onResume/显式复查使用同一代facts更新，旧异步回调不覆新状态；不改用户CPU/RAM/根盘。
-- [ ] 全有权限但接口不可达/模式unknown时仍不声称Guest或性能成功；不发隐式create/run/授权请求。
-- [ ] 已存在的client拒绝/death、双权限/两命令和1CPU说明不退化。
+- [x] protected-only/nonprotected-only/both/neither/读取失败/仅部分actor可取分别明确，异常不写false或通过。
+- [x] App权限、Shizuku server/US身份权限与VM模式能力不得混填；API/属性同源不计两个独立实测。
+- [x] 当前平台模式不满足现adapter时说明“当前系统不支持本应用所需模式/尚未验证”，保留QEMU路径，不称芯片没EL2。
+- [x] 页面onResume/显式复查使用同一代facts更新，旧异步回调不覆新状态；不改用户CPU/RAM/根盘。
+- [x] 全有权限但接口不可达/模式unknown时仍不声称Guest或性能成功；不发隐式create/run/授权请求。
+- [x] 已存在的client拒绝/death、双权限/两命令和1CPU说明不退化。
 
 ## 测试seam与red命令
 
@@ -41,3 +41,9 @@ Parent: protected研发近期计划；复用02/03/05既有事实，不重做clie
 ## 证据与完成门
 
 报告 `docs/reports/tickets/avf-shizuku-23/implementation-report.zh-CN.md`；独立规范/Spec review同id；外部 `Orchestella/artifacts/protected-avf-execution/<批次>/23/`，即时preservation、不.log。完成=模型/探针red→green+实际接线构建/lint+页面可验或准确设备限制+双轴审查。当前仅工单建立，尚未实现/设备验收。
+
+
+Completed by: Agent D / 2026-10-20T03:36:35Z（票 10 收尾）
+Report: `docs/reports/tickets/avf-shizuku-23/implementation-report.zh-CN.md`
+Review: `docs/reports/tickets/avf-shizuku-23/review.zh-CN.md`
+Scope: zero-device code-ready only. Real hidden-API exemption, App/shell actor capability bits, protected-only exception timing and ROM observation remain device-gate items; no device artifacts were produced.

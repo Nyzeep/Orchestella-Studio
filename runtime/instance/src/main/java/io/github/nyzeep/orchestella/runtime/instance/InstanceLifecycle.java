@@ -17,8 +17,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
@@ -35,6 +38,43 @@ public final class InstanceLifecycle {
     private static final String KEY_PROVISIONING_MARKER_VERSION = "provisioning.markerVersion";
     private static final String KEY_PROVISIONING_ROOTFS_SHA256 = "provisioning.rootfsSha256";
     private static final String KEY_PROVISIONING_RECORDED_AT = "provisioning.recordedAtMillis";
+    /** Metadata schema. Absent means legacy metadata written before schemaVersion existed. */
+    private static final String KEY_METADATA_SCHEMA_VERSION = "metadata.schemaVersion";
+    private static final String KEY_HARDWARE_LEGACY_DEFAULTS = "hardware.legacyDefaults";
+    private static final int CURRENT_METADATA_SCHEMA_VERSION = 1;
+    /**
+     * Keys this codec understands. Everything else is preserved verbatim on
+     * rewrite so a newer writer's metadata is not silently dropped by an
+     * older reader; unknown keys never participate in hardware parsing.
+     */
+    private static final Set<String> KNOWN_METADATA_KEYS = Set.of(
+            "id",
+            "distroId",
+            "distroVersion",
+            "rootVolume",
+            "bridgeToken",
+            "guestPassword",
+            "runtimeClass",
+            "state",
+            "createdAtMillis",
+            "updatedAtMillis",
+            "hostname",
+            "defaultUser",
+            "hasSudo",
+            "crash.timestampMillis",
+            "crash.exitCode",
+            "crash.logPath",
+            "crash.message",
+            KEY_METADATA_SCHEMA_VERSION,
+            "hardware.cpuCores",
+            "hardware.ramMegabytes",
+            "hardware.diskCapacityBytes",
+            "hardware.gpuAccelerationEnabled",
+            "hardware.extraKernelArguments",
+            KEY_HARDWARE_LEGACY_DEFAULTS,
+            KEY_PROVISIONING_MARKER_VERSION,
+            KEY_PROVISIONING_ROOTFS_SHA256,
+            KEY_PROVISIONING_RECORDED_AT);
     /** Guest marker version whose observation the host is allowed to persist. */
     public static final int PROVISIONING_MARKER_VERSION = 1;
     private static final int BRIDGE_TOKEN_BYTE_COUNT = BridgeHandshake.TOKEN_HEX_LENGTH / 2;
@@ -216,6 +256,7 @@ public final class InstanceLifecycle {
         private final String defaultUser;
         private final boolean hasSudo;
         private final ProvisioningEvidence provisioningEvidence;
+        private final Map<String, String> unknownMetadata;
 
         private Instance(
                 String id,
@@ -281,6 +322,28 @@ public final class InstanceLifecycle {
                 String defaultUser,
                 boolean hasSudo,
                 ProvisioningEvidence provisioningEvidence) {
+            this(id, distro, rootVolume, bridgeToken, guestPassword, runtimeClass, state,
+                    createdAtMillis, updatedAtMillis, crashDiagnostic, hardwareConfig,
+                    hostname, defaultUser, hasSudo, provisioningEvidence, Collections.emptyMap());
+        }
+
+        private Instance(
+                String id,
+                DistroReference distro,
+                Path rootVolume,
+                String bridgeToken,
+                String guestPassword,
+                FullLinuxContract.RuntimeClass runtimeClass,
+                State state,
+                long createdAtMillis,
+                long updatedAtMillis,
+                CrashDiagnostic crashDiagnostic,
+                VmHardwareConfig hardwareConfig,
+                String hostname,
+                String defaultUser,
+                boolean hasSudo,
+                ProvisioningEvidence provisioningEvidence,
+                Map<String, String> unknownMetadata) {
             requireInstanceId(id);
             this.id = id;
             this.distro = Objects.requireNonNull(distro, "distro");
@@ -301,6 +364,8 @@ public final class InstanceLifecycle {
             }
             this.hasSudo = hasSudo;
             this.provisioningEvidence = provisioningEvidence;
+            this.unknownMetadata = Collections.unmodifiableMap(
+                    new TreeMap<>(Objects.requireNonNull(unknownMetadata, "unknownMetadata")));
         }
 
         public String id() {
@@ -424,7 +489,8 @@ public final class InstanceLifecycle {
                     hostname,
                     defaultUser,
                     hasSudo,
-                    provisioningEvidence);
+                    provisioningEvidence,
+                    unknownMetadata);
         }
 
         private Instance withUpdatedAt(Clock clock) {
@@ -443,7 +509,8 @@ public final class InstanceLifecycle {
                     hostname,
                     defaultUser,
                     hasSudo,
-                    provisioningEvidence);
+                    provisioningEvidence,
+                    unknownMetadata);
         }
 
         private Instance withGuestPassword(String newPassword, Clock clock) {
@@ -462,7 +529,8 @@ public final class InstanceLifecycle {
                     hostname,
                     defaultUser,
                     hasSudo,
-                    provisioningEvidence);
+                    provisioningEvidence,
+                    unknownMetadata);
         }
 
         Instance withHardwareConfig(VmHardwareConfig newConfig, Clock clock) {
@@ -481,7 +549,8 @@ public final class InstanceLifecycle {
                     hostname,
                     defaultUser,
                     hasSudo,
-                    provisioningEvidence);
+                    provisioningEvidence,
+                    unknownMetadata);
         }
 
         private Instance withProvisioningEvidence(ProvisioningEvidence evidence, Clock clock) {
@@ -500,7 +569,8 @@ public final class InstanceLifecycle {
                     hostname,
                     defaultUser,
                     hasSudo,
-                    Objects.requireNonNull(evidence, "evidence"));
+                    Objects.requireNonNull(evidence, "evidence"),
+                    unknownMetadata);
         }
 
         static Instance restore(
@@ -571,6 +641,8 @@ public final class InstanceLifecycle {
 
         private Properties toProperties() {
             Properties properties = new Properties();
+            properties.setProperty(KEY_METADATA_SCHEMA_VERSION,
+                    Integer.toString(CURRENT_METADATA_SCHEMA_VERSION));
             properties.setProperty("id", id);
             properties.setProperty("distroId", distro.id());
             properties.setProperty("distroVersion", distro.version());
@@ -601,6 +673,8 @@ public final class InstanceLifecycle {
                 properties.setProperty("hardware.ramMegabytes", Integer.toString(hardwareConfig.ramMegabytes()));
                 properties.setProperty("hardware.diskCapacityBytes", Long.toString(hardwareConfig.diskCapacityBytes()));
                 properties.setProperty("hardware.gpuAccelerationEnabled", Boolean.toString(hardwareConfig.gpuAccelerationEnabled()));
+                properties.setProperty(KEY_HARDWARE_LEGACY_DEFAULTS,
+                        Boolean.toString(hardwareConfig.isLegacyDefaults()));
                 if (hardwareConfig.extraKernelArguments() != null) {
                     properties.setProperty("hardware.extraKernelArguments", hardwareConfig.extraKernelArguments());
                 }
@@ -616,6 +690,11 @@ public final class InstanceLifecycle {
                 properties.setProperty(
                         KEY_PROVISIONING_RECORDED_AT,
                         Long.toString(provisioningEvidence.recordedAtMillis()));
+            }
+            for (Map.Entry<String, String> entry : unknownMetadata.entrySet()) {
+                if (!KNOWN_METADATA_KEYS.contains(entry.getKey())) {
+                    properties.setProperty(entry.getKey(), entry.getValue());
+                }
             }
             return properties;
         }
@@ -651,15 +730,47 @@ public final class InstanceLifecycle {
                     throw new IllegalArgumentException("invalid stored sudo choice");
                 }
                 boolean hasSudo = Boolean.parseBoolean(storedSudo);
-                VmHardwareConfig hardwareConfig = VmHardwareConfig.defaultConfig();
+                String schemaText = properties.getProperty(KEY_METADATA_SCHEMA_VERSION);
+                int schemaVersion = schemaText == null || schemaText.isEmpty()
+                        ? 0 : Integer.parseInt(schemaText);
+                if (schemaVersion < 0 || schemaVersion > CURRENT_METADATA_SCHEMA_VERSION) {
+                    throw new IllegalArgumentException("unsupported metadata schema version");
+                }
                 String cpuCoresStr = properties.getProperty("hardware.cpuCores");
+                boolean hasAnyHardwareKey = properties.stringPropertyNames().stream()
+                        .anyMatch(key -> key.startsWith("hardware."));
+                VmHardwareConfig hardwareConfig;
                 if (cpuCoresStr != null) {
+                    String ramText = properties.getProperty("hardware.ramMegabytes");
+                    String diskText = properties.getProperty("hardware.diskCapacityBytes");
+                    if (ramText == null || ramText.isEmpty() || diskText == null || diskText.isEmpty()) {
+                        // A partial block is corrupt: never fill the gaps with silent defaults.
+                        throw new IllegalArgumentException("incomplete hardware metadata");
+                    }
                     int cpuCores = Integer.parseInt(cpuCoresStr);
-                    int ramMb = Integer.parseInt(required(properties, "hardware.ramMegabytes"));
-                    long diskBytes = Long.parseLong(required(properties, "hardware.diskCapacityBytes"));
-                    boolean gpuEnabled = Boolean.parseBoolean(properties.getProperty("hardware.gpuAccelerationEnabled", "true"));
+                    int ramMb = Integer.parseInt(ramText);
+                    long diskBytes = Long.parseLong(diskText);
+                    boolean gpuEnabled = Boolean.parseBoolean(
+                            properties.getProperty("hardware.gpuAccelerationEnabled", "true"));
+                    boolean legacyDefaults = Boolean.parseBoolean(
+                            properties.getProperty(KEY_HARDWARE_LEGACY_DEFAULTS, "false"));
                     String extraArgs = properties.getProperty("hardware.extraKernelArguments");
-                    hardwareConfig = new VmHardwareConfig(cpuCores, ramMb, diskBytes, gpuEnabled, extraArgs);
+                    hardwareConfig = new VmHardwareConfig(
+                            cpuCores, ramMb, diskBytes, gpuEnabled, extraArgs, legacyDefaults);
+                } else if (hasAnyHardwareKey) {
+                    throw new IllegalArgumentException("incomplete hardware metadata");
+                } else if (schemaVersion == 0) {
+                    // Explicit legacy migration: keep the historical effective hardware
+                    // and carry provenance instead of presenting it as a user choice.
+                    hardwareConfig = new VmHardwareConfig(
+                            VmHardwareConfig.DEFAULT_CPU_CORES,
+                            VmHardwareConfig.DEFAULT_RAM_MEGABYTES,
+                            VmHardwareConfig.DEFAULT_DISK_CAPACITY_BYTES,
+                            VmHardwareConfig.DEFAULT_GPU_ACCELERATION_ENABLED,
+                            null,
+                            true);
+                } else {
+                    throw new IllegalArgumentException("hardware metadata missing");
                 }
                 ProvisioningEvidence provisioningEvidence = null;
                 String markerVersionText = properties.getProperty(KEY_PROVISIONING_MARKER_VERSION);
@@ -674,6 +785,12 @@ public final class InstanceLifecycle {
                                 markerVersion,
                                 properties.getProperty(KEY_PROVISIONING_ROOTFS_SHA256),
                                 Long.parseLong(recordedAtText));
+                    }
+                }
+                Map<String, String> unknownMetadata = new TreeMap<>();
+                for (String name : properties.stringPropertyNames()) {
+                    if (!KNOWN_METADATA_KEYS.contains(name)) {
+                        unknownMetadata.put(name, properties.getProperty(name));
                     }
                 }
                 return new Instance(
@@ -692,7 +809,8 @@ public final class InstanceLifecycle {
                         hostname,
                         defaultUser,
                         hasSudo,
-                        provisioningEvidence);
+                        provisioningEvidence,
+                        unknownMetadata);
             } catch (IllegalArgumentException malformed) {
                 throw new InvalidMetadataException(malformed);
             }

@@ -16,11 +16,172 @@ public final class AvfCapabilityEvaluatorTest {
         explicitFalsePropertyRefusesEvenWhenFeatureFlagExists();
         featureFlagAloneSufficesWhenPropertyIsUnknown();
         neitherPropertyNorFeatureRefuses();
-        blockedSnapdragon8EliteSocSilentlyClosesTheWizard();
+        socNameAloneIsNeverABlocklist();
         extraBlockedHintCatchesUnknownSocNames();
         supportedButUnauthorizedDeviceNeedsTheWizardAndKeepsTheSoftwareBadge();
+        protectedOnlyModeCannotEnterAuthorizationWizard();
+        unknownModeIsDistinctFromAuthorization();
+        nonProtectedModeStillUsesThePermissionGate();
+        platformAccessStatesAreTypedAndActionable();
+        platformAccessNeverBypassesThePermissionGate();
+        managerPresenceWithoutFeatureNeedsAuthorizationNotUndeclared();
+        managerAbsenceWithoutFeatureStaysUndeclared();
         reasonsNeverNameExecutionEngines();
         numericOnePropertyIsRecognizedAsTruthy();
+    }
+
+    private static AvfPlatformFacts platformFacts(
+            AvfPlatformFacts.AccessState state,
+            AvfCapabilityEvaluator.PermissionState manage,
+            AvfCapabilityEvaluator.PermissionState custom) {
+        return platformFacts(state, manage, custom, false);
+    }
+
+    private static AvfPlatformFacts platformFacts(
+            AvfPlatformFacts.AccessState state,
+            AvfCapabilityEvaluator.PermissionState manage,
+            AvfCapabilityEvaluator.PermissionState custom,
+            boolean managerPresent) {
+        return new AvfPlatformFacts(
+                state,
+                AvfPlatformFacts.ExemptionState.INSTALLED,
+                manage,
+                custom,
+                mode(AvfCapabilityEvaluator.VmSupport.SUPPORTED,
+                        state == AvfPlatformFacts.AccessState.AVAILABLE
+                                || state == AvfPlatformFacts.AccessState.PERMISSION_DENIED
+                                ? AvfCapabilityEvaluator.VmSupport.SUPPORTED
+                                : AvfCapabilityEvaluator.VmSupport.UNSUPPORTED),
+                managerPresent);
+    }
+
+    private static void platformAccessStatesAreTypedAndActionable() {
+        AvfCapabilityEvaluator.AvfReadiness hidden = AvfCapabilityEvaluator.evaluate(
+                readyDevice()
+                        .platformFacts(platformFacts(
+                                AvfPlatformFacts.AccessState.HIDDEN_API_BLOCKED,
+                                AvfCapabilityEvaluator.PermissionState.GRANTED,
+                                AvfCapabilityEvaluator.PermissionState.GRANTED))
+                        .build());
+        assertTrue(hidden.status() == AvfCapabilityEvaluator.AvfStatus.HIDDEN_API_BLOCKED,
+                "hidden API blocked has its own status, not MODE_UNKNOWN");
+        assertFalse(hidden.wizardEligible(), "authorization cannot fix a hidden API block");
+        assertTrue(hidden.reasons().stream().anyMatch(reason -> reason.contains("隐藏 API")),
+                "the hidden API reason is actionable");
+
+        AvfCapabilityEvaluator.AvfReadiness reflection = AvfCapabilityEvaluator.evaluate(
+                readyDevice()
+                        .platformFacts(platformFacts(
+                                AvfPlatformFacts.AccessState.REFLECTION_UNAVAILABLE,
+                                AvfCapabilityEvaluator.PermissionState.GRANTED,
+                                AvfCapabilityEvaluator.PermissionState.GRANTED))
+                        .build());
+        assertTrue(reflection.status() == AvfCapabilityEvaluator.AvfStatus.REFLECTION_UNAVAILABLE,
+                "a missing platform surface is its own status");
+        assertFalse(reflection.wizardEligible(), "authorization cannot add platform classes");
+
+        AvfCapabilityEvaluator.AvfReadiness modeUnknown = AvfCapabilityEvaluator.evaluate(
+                readyDevice()
+                        .platformFacts(platformFacts(
+                                AvfPlatformFacts.AccessState.MODE_UNKNOWN,
+                                AvfCapabilityEvaluator.PermissionState.GRANTED,
+                                AvfCapabilityEvaluator.PermissionState.GRANTED))
+                        .build());
+        assertTrue(modeUnknown.status() == AvfCapabilityEvaluator.AvfStatus.MODE_UNKNOWN,
+                "an unreadable platform stays MODE_UNKNOWN");
+
+        AvfCapabilityEvaluator.AvfReadiness available = AvfCapabilityEvaluator.evaluate(
+                readyDevice()
+                        .platformFacts(platformFacts(
+                                AvfPlatformFacts.AccessState.AVAILABLE,
+                                AvfCapabilityEvaluator.PermissionState.GRANTED,
+                                AvfCapabilityEvaluator.PermissionState.GRANTED))
+                        .build());
+        assertTrue(available.status() == AvfCapabilityEvaluator.AvfStatus.READY,
+                "available with both grants is READY");
+    }
+
+    private static void platformAccessNeverBypassesThePermissionGate() {
+        AvfCapabilityEvaluator.AvfReadiness denied = AvfCapabilityEvaluator.evaluate(
+                readyDevice()
+                        .platformFacts(platformFacts(
+                                AvfPlatformFacts.AccessState.PERMISSION_DENIED,
+                                AvfCapabilityEvaluator.PermissionState.DENIED,
+                                AvfCapabilityEvaluator.PermissionState.GRANTED))
+                        .build());
+        assertTrue(denied.status() == AvfCapabilityEvaluator.AvfStatus.NEEDS_AUTHORIZATION,
+                "a denied permission is an authorization request");
+        assertTrue(denied.reasons().stream().anyMatch(reason -> reason.contains("MANAGE_VIRTUAL_MACHINE")),
+                "the missing permission is named");
+
+        AvfCapabilityEvaluator.AvfReadiness granted = AvfCapabilityEvaluator.evaluate(
+                readyDevice()
+                        .platformFacts(platformFacts(
+                                AvfPlatformFacts.AccessState.PERMISSION_DENIED,
+                                AvfCapabilityEvaluator.PermissionState.GRANTED,
+                                AvfCapabilityEvaluator.PermissionState.GRANTED))
+                        .build());
+        assertTrue(granted.status() == AvfCapabilityEvaluator.AvfStatus.NEEDS_AUTHORIZATION,
+                "a platform denial after grants is still not a silent READY");
+        assertTrue(granted.reasons().stream().anyMatch(reason -> reason.contains("系统策略")),
+                "a post-grant denial explains the platform policy");
+    }
+
+    private static void managerPresenceWithoutFeatureNeedsAuthorizationNotUndeclared() {
+        AvfCapabilityEvaluator.AvfHostFacts.Builder facts =
+                new AvfCapabilityEvaluator.AvfHostFacts.Builder(
+                        35, List.of("arm64-v8a"), null, false,
+                        AvfCapabilityEvaluator.PermissionState.DENIED,
+                        AvfCapabilityEvaluator.PermissionState.DENIED);
+        AvfCapabilityEvaluator.AvfReadiness readiness = AvfCapabilityEvaluator.evaluate(
+                facts.platformFacts(platformFacts(
+                        AvfPlatformFacts.AccessState.PERMISSION_DENIED,
+                        AvfCapabilityEvaluator.PermissionState.DENIED,
+                        AvfCapabilityEvaluator.PermissionState.DENIED,
+                        true))
+                        .build());
+
+        assertTrue(readiness.status() == AvfCapabilityEvaluator.AvfStatus.NEEDS_AUTHORIZATION,
+                "a present manager service on an OEM ROM without the feature string needs authorization");
+        assertTrue(readiness.wizardEligible(), "authorization can resolve the permission gate");
+        assertTrue(readiness.reasons().stream().anyMatch(reason -> reason.contains("MANAGE_VIRTUAL_MACHINE")),
+                "the missing permission is named");
+        assertFalse(readiness.reasons().stream().anyMatch(reason -> reason.contains("设备未声明")),
+                "a present manager must not be reported as an undeclared platform");
+
+        AvfCapabilityEvaluator.AvfReadiness unreadable = AvfCapabilityEvaluator.evaluate(
+                new AvfCapabilityEvaluator.AvfHostFacts.Builder(
+                        35, List.of("arm64-v8a"), null, false,
+                        AvfCapabilityEvaluator.PermissionState.GRANTED,
+                        AvfCapabilityEvaluator.PermissionState.GRANTED)
+                        .platformFacts(platformFacts(
+                                AvfPlatformFacts.AccessState.MODE_UNKNOWN,
+                                AvfCapabilityEvaluator.PermissionState.GRANTED,
+                                AvfCapabilityEvaluator.PermissionState.GRANTED,
+                                true))
+                        .build());
+        assertTrue(unreadable.status() == AvfCapabilityEvaluator.AvfStatus.MODE_UNKNOWN,
+                "a present manager with an unreadable mode stays MODE_UNKNOWN");
+    }
+
+    private static void managerAbsenceWithoutFeatureStaysUndeclared() {
+        AvfCapabilityEvaluator.AvfReadiness readiness = AvfCapabilityEvaluator.evaluate(
+                new AvfCapabilityEvaluator.AvfHostFacts.Builder(
+                        35, List.of("arm64-v8a"), null, false,
+                        AvfCapabilityEvaluator.PermissionState.DENIED,
+                        AvfCapabilityEvaluator.PermissionState.DENIED)
+                        .platformFacts(platformFacts(
+                                AvfPlatformFacts.AccessState.PERMISSION_DENIED,
+                                AvfCapabilityEvaluator.PermissionState.DENIED,
+                                AvfCapabilityEvaluator.PermissionState.DENIED,
+                                false))
+                        .build());
+
+        assertTrue(readiness.status() == AvfCapabilityEvaluator.AvfStatus.UNSUPPORTED,
+                "without a feature, property, or manager service the platform is undeclared");
+        assertFalse(readiness.wizardEligible(), "there is nothing to authorize");
+        assertTrue(readiness.reasons().stream().anyMatch(reason -> reason.contains("设备未声明")),
+                "the absence is named");
     }
 
     private static void manageGrantAloneDoesNotCompletePreflight() {
@@ -144,20 +305,19 @@ public final class AvfCapabilityEvaluatorTest {
         assertFalse(readiness.wizardEligible(), "unsupported device must never see the wizard");
     }
 
-    private static void blockedSnapdragon8EliteSocSilentlyClosesTheWizard() {
-        // Snapdragon 8 Elite (SM8750, Gunyah) firmware-blocks non-protected custom VMs; the
-        // platform may still declare ro.virtualization.supported=true, so the SoC hint wins.
+    private static void socNameAloneIsNeverABlocklist() {
+        // A hardcoded SoC list was a fifth truth source. Only platform facts and
+        // caller-supplied device facts may refuse; the model string alone may not.
         AvfCapabilityEvaluator.AvfReadiness readiness =
                 AvfCapabilityEvaluator.evaluate(readyDevice().socModel("SM8750").build());
 
         assertTrue(
-                readiness.status() == AvfCapabilityEvaluator.AvfStatus.UNSUPPORTED,
-                "blocked SoC must be reported unsupported");
-        assertFalse(readiness.wizardEligible(), "blocked SoC silently closes the authorization wizard");
-        assertTrue(
-                readiness.capabilityMatrix().executionStrategy()
-                        == io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract.ExecutionStrategy.SOFTWARE_VIRTUALIZATION,
-                "blocked SoC stays on the software baseline");
+                readiness.status() == AvfCapabilityEvaluator.AvfStatus.READY,
+                "a SoC model must not be refused by a hardcoded name list");
+        assertTrue(readiness.wizardEligible(), "the platform facts keep the wizard eligible");
+        assertFalse(
+                readiness.reasons().stream().anyMatch(reason -> reason.toLowerCase().contains("sm8750")),
+                "no hardcoded SoC reason may surface");
     }
 
     private static void extraBlockedHintCatchesUnknownSocNames() {
@@ -191,6 +351,72 @@ public final class AvfCapabilityEvaluatorTest {
                 "badge stays honest until authorization completes");
     }
 
+    private static AvfCapabilityEvaluator.AvfModeFacts mode(
+            AvfCapabilityEvaluator.VmSupport protectedVm,
+            AvfCapabilityEvaluator.VmSupport nonProtectedVm) {
+        return new AvfCapabilityEvaluator.AvfModeFacts(
+                protectedVm, nonProtectedVm,
+                "VirtualMachineManager.getCapabilities", "app", 1234L, "test-rom");
+    }
+
+    private static void protectedOnlyModeCannotEnterAuthorizationWizard() {
+        AvfCapabilityEvaluator.AvfReadiness readiness = AvfCapabilityEvaluator.evaluate(
+                readyDevice()
+                        .modeFacts(mode(
+                                AvfCapabilityEvaluator.VmSupport.SUPPORTED,
+                                AvfCapabilityEvaluator.VmSupport.UNSUPPORTED))
+                        .build());
+
+        assertTrue(
+                readiness.status() == AvfCapabilityEvaluator.AvfStatus.MODE_UNSUPPORTED,
+                "a protected-only platform cannot satisfy the non-protected adapter");
+        assertFalse(readiness.wizardEligible(), "granting permissions cannot change the VM mode");
+        assertTrue(
+                readiness.reasons().stream().anyMatch(reason -> reason.contains("非保护型")),
+                "the reason names the missing non-protected mode");
+        assertTrue(
+                readiness.reasons().stream().anyMatch(reason -> reason.contains("protected=支持")),
+                "the protected mode remains visible as a separate fact");
+    }
+
+    private static void unknownModeIsDistinctFromAuthorization() {
+        AvfCapabilityEvaluator.AvfReadiness readiness = AvfCapabilityEvaluator.evaluate(
+                readyDevice()
+                        .modeFacts(AvfCapabilityEvaluator.AvfModeFacts.unknown(
+                                "VirtualMachineManager.getCapabilities", "app", 1234L, "test-rom"))
+                        .build());
+
+        assertTrue(
+                readiness.status() == AvfCapabilityEvaluator.AvfStatus.MODE_UNKNOWN,
+                "an unreadable mode is MODE_UNKNOWN, not an authorization request");
+        assertFalse(readiness.wizardEligible(), "authorization cannot resolve an unreadable mode");
+    }
+
+    private static void nonProtectedModeStillUsesThePermissionGate() {
+        AvfCapabilityEvaluator.AvfModeFacts both = mode(
+                AvfCapabilityEvaluator.VmSupport.SUPPORTED,
+                AvfCapabilityEvaluator.VmSupport.SUPPORTED);
+        AvfCapabilityEvaluator.AvfReadiness unauthorized = AvfCapabilityEvaluator.evaluate(
+                new AvfCapabilityEvaluator.AvfHostFacts.Builder(
+                                35, List.of("arm64-v8a"), "true", true, false, false)
+                        .modeFacts(both)
+                        .build());
+        AvfCapabilityEvaluator.AvfReadiness ready = AvfCapabilityEvaluator.evaluate(
+                new AvfCapabilityEvaluator.AvfHostFacts.Builder(
+                                35, List.of("arm64-v8a"), "true", true, true, true)
+                        .modeFacts(both)
+                        .build());
+
+        assertTrue(
+                unauthorized.status() == AvfCapabilityEvaluator.AvfStatus.NEEDS_AUTHORIZATION,
+                "a supported non-protected mode still needs both grants");
+        assertTrue(readinessIsReady(ready), "both grants on a supported mode are READY");
+    }
+
+    private static boolean readinessIsReady(AvfCapabilityEvaluator.AvfReadiness readiness) {
+        return readiness.status() == AvfCapabilityEvaluator.AvfStatus.READY;
+    }
+
     private static void reasonsNeverNameExecutionEngines() {
         for (AvfCapabilityEvaluator.AvfHostFacts facts : List.of(
                 new AvfCapabilityEvaluator.AvfHostFacts.Builder(
@@ -199,7 +425,8 @@ public final class AvfCapabilityEvaluatorTest {
                 new AvfCapabilityEvaluator.AvfHostFacts.Builder(
                                 35, List.of("arm64-v8a"), "false", false, false)
                         .build(),
-                readyDevice().socModel("SM8750").build())) {
+                readyDevice().socModel("SM8750")
+                        .extraBlockedHints(List.of("SM8750")).build())) {
             AvfCapabilityEvaluator.AvfReadiness readiness = AvfCapabilityEvaluator.evaluate(facts);
             for (String reason : readiness.reasons()) {
                 assertFalse(

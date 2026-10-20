@@ -29,6 +29,12 @@ public final class VmHardwareConfig {
     private final long diskCapacityBytes;
     private final boolean gpuAccelerationEnabled;
     private final String extraKernelArguments;
+    /**
+     * True when this config is the explicit migration of legacy metadata that
+     * carried no hardware block. Provenance only; it does not change the
+     * effective hardware and is intentionally excluded from equality.
+     */
+    private final boolean legacyDefaults;
 
     public VmHardwareConfig(
             int cpuCores,
@@ -36,6 +42,17 @@ public final class VmHardwareConfig {
             long diskCapacityBytes,
             boolean gpuAccelerationEnabled,
             String extraKernelArguments) {
+        this(cpuCores, ramMegabytes, diskCapacityBytes, gpuAccelerationEnabled,
+                extraKernelArguments, false);
+    }
+
+    public VmHardwareConfig(
+            int cpuCores,
+            int ramMegabytes,
+            long diskCapacityBytes,
+            boolean gpuAccelerationEnabled,
+            String extraKernelArguments,
+            boolean legacyDefaults) {
         if (cpuCores < MIN_CPU_CORES || cpuCores > MAX_CPU_CORES) {
             throw new IllegalArgumentException(
                     "cpuCores must be between " + MIN_CPU_CORES + " and " + MAX_CPU_CORES + ", got: " + cpuCores);
@@ -55,6 +72,7 @@ public final class VmHardwareConfig {
         this.extraKernelArguments = extraKernelArguments != null && !extraKernelArguments.trim().isEmpty()
                 ? extraKernelArguments.trim()
                 : null;
+        this.legacyDefaults = legacyDefaults;
     }
 
     public static VmHardwareConfig defaultConfig() {
@@ -97,6 +115,11 @@ public final class VmHardwareConfig {
 
     public String extraKernelArguments() {
         return extraKernelArguments;
+    }
+
+    /** True only for the explicit legacy-metadata migration; never a user edit. */
+    public boolean isLegacyDefaults() {
+        return legacyDefaults;
     }
 
     public VmHardwareConfig withCpuCores(int cpuCores) {

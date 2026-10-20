@@ -1,10 +1,19 @@
 package io.github.nyzeep.orchestella;
 
 import android.content.Context;
+import io.github.nyzeep.orchestella.RuntimeProcessSupervisor.StopResult;
+import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator;
 import io.github.nyzeep.orchestella.runtime.contract.BridgeClient;
 import io.github.nyzeep.orchestella.runtime.contract.BridgeControl;
+import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract;
+import io.github.nyzeep.orchestella.runtime.contract.SessionCapabilities;
 import io.github.nyzeep.orchestella.runtime.engineavf.AvfEngineException;
+import io.github.nyzeep.orchestella.runtime.engineavf.AvfHostFacts;
+import io.github.nyzeep.orchestella.runtime.engineavf.AvfLaunchAdmission;
 import io.github.nyzeep.orchestella.runtime.engineavf.AvfLaunchSpec;
+import io.github.nyzeep.orchestella.runtime.engineavf.AvfLaunchTrace;
+import io.github.nyzeep.orchestella.runtime.engineavf.AvfNetworkPlan;
+import io.github.nyzeep.orchestella.runtime.engineavf.AvfStopResult;
 import io.github.nyzeep.orchestella.runtime.engineavf.AvfVirtualMachineApi;
 import io.github.nyzeep.orchestella.runtime.engineavf.AvfVirtualMachineEngine;
 import io.github.nyzeep.orchestella.runtime.engineavf.ReflectiveAvfVirtualMachineApi;
@@ -24,25 +33,146 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * session handed to the UX layer is the neutral {@link ExecutionSession}.
  */
 public final class AvfInstanceLauncher {
+    /** Bounded stop window for close/terminate and failed-registration cleanup. */
+    private static final long CLOSE_GRACE_MS = 3000L;
+    /** Stable user-facing reason: AVF v1 has no guest vsock-to-TCP relay. */
+    static final String SERVICE_FORWARD_UNSUPPORTED =
+            "AVF v1 不提供 guest vsock→TCP relay，本地服务转发不可用";
+    private static final long TERMINATE_GRACE_MS = 3000L;
+    static final long REGISTRATION_CLEANUP_GRACE_MS = 2000L;
+
+    /** One bootstrap invocation, injected so the pre-bootstrap ordering is testable. */
+    @FunctionalInterface
+    interface BootstrapStep {
+        QemuRuntimeBootstrapper.RuntimePaths run() throws IOException;
+    }
+
+    /** The admitted plan plus the shared asset paths it was allowed to assemble. */
+    static final class PreparedSettings {
+        final AvfLaunchAdmission.Plan plan;
+        final QemuRuntimeBootstrapper.RuntimePaths paths;
+
+        PreparedSettings(AvfLaunchAdmission.Plan plan, QemuRuntimeBootstrapper.RuntimePaths paths) {
+            this.plan = plan;
+            this.paths = paths;
+        }
+    }
+
+    /**
+     * Runs admission, then the one shared bootstrap. A rejection throws before
+     * the bootstrap lambda is invoked, so the strategy chain can fall back to
+     * QEMU without a second assembly and without an AVF side effect.
+     */
+    static PreparedSettings prepare(InstanceStrategyLauncher.LaunchParameters parameters,
+            AvfHostFacts facts, BootstrapStep bootstrap) throws IOException {
+        long rootVolumeBytes = -1L;
+        try {
+            rootVolumeBytes = java.nio.file.Files.size(Paths.get(parameters.instanceRootVolume));
+        } catch (IOException | RuntimeException absentOnFirstBoot) {
+            // First boot creates the raw volume during bootstrap; admission must
+            // not require it to exist yet.
+        }
+        AvfLaunchAdmission.Result admission =
+                AvfLaunchAdmission.evaluate(parameters.hardwareConfig, facts, rootVolumeBytes);
+        if (!admission.accepted()) {
+            AvfLaunchAdmission.Rejection rejection = admission.rejection();
+            throw new AvfEngineException(rejection.reason(),
+                    "AVF launch admission rejected field=" + rejection.field()
+                            + " detail=" + rejection.detail());
+        }
+        return new PreparedSettings(admission.plan(), bootstrap.run());
+    }
+
+    /** Host facts with an unread mode passed through as UNKNOWN, never as a guess. */
+    private static AvfHostFacts hostFacts(Context context) {
+        try {
+            AvfCapabilityEvaluator.AvfModeFacts modeFacts = AvfHostFactsProbe.probe(context).modeFacts();
+            if (modeFacts == null) return AvfHostFacts.unknown();
+            return switch (modeFacts.nonProtectedVm()) {
+                case SUPPORTED -> AvfHostFacts.supported();
+                case UNSUPPORTED -> AvfHostFacts.unsupported();
+                case UNKNOWN -> AvfHostFacts.unknown();
+            };
+        } catch (RuntimeException | LinkageError unreadable) {
+            return AvfHostFacts.unknown();
+        }
+    }
+
     /** Live AVF session exposing only the strategy-neutral surface. */
-    public static final class AvfSession implements ExecutionSession {
+    public static class AvfSession implements ExecutionSession, RuntimeOwnedSession {
         private final AvfVirtualMachineEngine.AvfVmSession session;
         private BridgeClient bridgeClient;
         private volatile BridgeControl.Clipboard clipboardBridge;
         private final AtomicBoolean isBridgeServing = new AtomicBoolean(false);
-        private final QemuWaylandChannel display;
+        private final RfbDisplaySession display;
+        private final LaunchTimeline timeline;
+        private final AtomicBoolean closed = new AtomicBoolean(false);
+        private volatile SessionCapabilities capabilities;
+        private volatile String shareFailureReason;
 
-        AvfSession(AvfVirtualMachineEngine.AvfVmSession session) { this(session, null); }
+        AvfSession(AvfVirtualMachineEngine.AvfVmSession session) { this(session, null, null); }
 
         AvfSession(AvfVirtualMachineEngine.AvfVmSession session, String token) {
+            this(session, token, null);
+        }
+
+        AvfSession(AvfVirtualMachineEngine.AvfVmSession session, String token, LaunchTimeline timeline) {
             this.session = session;
-            this.display = token == null ? null : new QemuWaylandChannel(() -> {
+            this.timeline = timeline;
+            this.display = token == null ? null : new RfbDisplaySession(() -> {
                 try {
-                    AvfVirtualMachineApi.AvfVsockChannel channel = session.openChannel(9103);
+                    AvfVirtualMachineApi.AvfVsockChannel channel = session.graphicsChannel();
                     return new io.github.nyzeep.orchestella.runtime.contract.display.RfbDisplayChannel.Streams(
                             channel.inputStream(), channel.outputStream(), channel);
                 } catch (AvfEngineException failure) { throw new IOException("AVF display transport unavailable", failure); }
             }, token, this::bridgeClient);
+            this.capabilities = SessionCapabilities.builder(
+                            FullLinuxContract.ExecutionStrategy.HARDWARE_VIRTUALIZATION)
+                    .ownership(SessionCapabilities.Ownership.RUNTIME_OWNED)
+                    .terminal(true)
+                    .bridge(true)
+                    .display(this.display == null
+                            ? SessionCapabilities.DisplayTransport.NONE
+                            : SessionCapabilities.DisplayTransport.RFB)
+                    .hardwareAcceleration(true)
+                    .build();
+        }
+
+        /** What this launch actually assembled; the only input to its matrix. */
+        SessionCapabilities capabilities() {
+            return capabilities;
+        }
+
+        /** Records a 9p server that is actually serving, or withdraws the claim. */
+        void declareSharedDirectory(boolean serving) {
+            this.capabilities = capabilities.withSharedDirectory(serving);
+        }
+
+        /**
+         * Starts the one read-only 9p server for this session. The engine
+         * serializes the call, so a retry after an UNCONFIRMED stop cannot
+         * create a second server.
+         */
+        void startShareServer() throws AvfEngineException {
+            session.startShareServer();
+        }
+
+        boolean isShareServing() {
+            return session != null && session.isShareServing();
+        }
+
+        /** Typed engine reason when the share could not start; null when it did or was absent. */
+        String shareFailureReason() {
+            return shareFailureReason;
+        }
+
+        void recordShareFailure(String reason) {
+            this.shareFailureReason = reason;
+        }
+
+        @Override
+        public ServiceForward openServiceForward(int guestPort) throws IOException {
+            throw new IOException(SERVICE_FORWARD_UNSUPPORTED);
         }
 
         @Override public io.github.nyzeep.orchestella.runtime.contract.DisplayControl displayControl() { return display; }
@@ -56,8 +186,8 @@ public final class AvfInstanceLauncher {
                     keyboard, unicodeText, pointer), true);
         }
         @Override public String displayStatus() { return display == null ? "AVF 显示未配置" : display.message(); }
-        @Override public io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract.CapabilityMatrix capabilityMatrix() {
-            return io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract.CapabilityMatrix.hardwareVirtualizationBaseline();
+        @Override public FullLinuxContract.CapabilityMatrix capabilityMatrix() {
+            return FullLinuxContract.CapabilityMatrix.from(capabilities);
         }
 
         @Override
@@ -66,8 +196,36 @@ public final class AvfInstanceLauncher {
         }
 
         @Override
-        public void terminate() {
-            session.stop();
+        public void terminate() throws IOException {
+            if (stopRuntime(TERMINATE_GRACE_MS) == StopResult.UNCONFIRMED) {
+                throw new IOException("AVF VM stop was not confirmed");
+            }
+        }
+
+        /**
+         * The single owner stop for close, terminate and the session pool.
+         * The engine session serializes the platform request, so a repeated
+         * call cannot create a second stop owner.
+         */
+        @Override
+        public StopResult stopRuntime(long graceMs) {
+            AvfStopResult result = session.stopRuntime(graceMs);
+            StopResult mapped = switch (result) {
+                case CONFIRMED -> StopResult.CONFIRMED;
+                case ALREADY_STOPPED -> StopResult.ALREADY_STOPPED;
+                case UNCONFIRMED -> StopResult.UNCONFIRMED;
+            };
+            if (timeline != null) {
+                if (mapped == StopResult.UNCONFIRMED) timeline.markStopUnconfirmed();
+                else timeline.markStopConfirmed(mapped);
+                timeline.finish();
+            }
+            return mapped;
+        }
+
+        @Override
+        public boolean isRuntimeAlive() {
+            return session.isRuntimeAlive();
         }
 
         @Override
@@ -92,12 +250,10 @@ public final class AvfInstanceLauncher {
 
         @Override
         public void close() {
+            if (!closed.compareAndSet(false, true)) return;
+            // close() is an owner stop, not a channel-only teardown (ADR-0021).
+            stopRuntime(CLOSE_GRACE_MS);
             if (display != null) display.close();
-            try {
-                session.closeChannels();
-            } catch (IOException ignored) {
-                // channel cleanup is best-effort at teardown
-            }
         }
 
         @Override
@@ -154,8 +310,6 @@ public final class AvfInstanceLauncher {
         }
     }
 
-    private static final long INSTANCE_MEMORY_MB = 512;
-
     private final Context context;
 
     public AvfInstanceLauncher(Context context) {
@@ -186,35 +340,115 @@ public final class AvfInstanceLauncher {
                 },
                 Paths.get(parameters.runtimeDirectory),
                 Paths.get(parameters.distroInputsDirectory));
-        QemuRuntimeBootstrapper.RuntimePaths paths =
-                bootstrapper.bootstrap(parameters.rootfsFileName, parameters.bridgeToken,
+        PreparedSettings prepared = prepare(parameters, hostFacts(context),
+                () -> bootstrapper.bootstrap(parameters.rootfsFileName, parameters.bridgeToken,
                         parameters.guestPassword,
                         Paths.get(parameters.instanceRootVolume),
                         parameters.mirrorConfigFileName,
                         parameters.mirrorConfigFileContent,
                         parameters.firstBootScript,
-                        parameters.hostname, parameters.guestUser, parameters.hasSudo);
+                        parameters.hostname, parameters.guestUser, parameters.hasSudo));
+        QemuRuntimeBootstrapper.RuntimePaths paths = prepared.paths;
+
+        LaunchTimeline timeline = LaunchTimeline.open(Paths.get(parameters.runtimeDirectory),
+                parameters.instanceId, "unknown", (int) prepared.plan.memoryMb(),
+                prepared.plan.cpuCount());
+        timeline.mark(LaunchTimeline.Stage.LAUNCH_START);
+        AvfLaunchTrace trace = stage -> markStage(timeline, stage);
 
         AvfLaunchSpec.Builder specBuilder = AvfLaunchSpec.builder(
                         parameters.instanceId,
                         paths.kernel.toString(),
                         paths.initramfs.toString(),
                         parameters.instanceRootVolume);
-        if (parameters.hardwareConfig != null) {
-            specBuilder.memoryMb(parameters.hardwareConfig.ramMegabytes());
-            specBuilder.cpuCount(parameters.hardwareConfig.cpuCores());
-        } else {
-            specBuilder.memoryMb(INSTANCE_MEMORY_MB);
-        }
+        specBuilder.memoryMb(prepared.plan.memoryMb());
+        specBuilder.cpuCount(prepared.plan.cpuCount());
+        specBuilder.extraKernelArguments(prepared.plan.extraKernelArguments());
+        String dns = NetworkGatewayDaemon.guestDnsFor(context);
+        AvfNetworkPlan networkPlan = prepared.plan.networkIntent()
+                == AvfLaunchAdmission.NetworkIntent.NONE
+                ? AvfNetworkPlan.none(dns)
+                : AvfNetworkPlan.nativeTapDhcp(dns, true);
+        specBuilder.networkPlan(networkPlan);
         specBuilder.networkSpec(io.github.nyzeep.orchestella.runtime.contract.NetworkContract.OutboundNetworkSpec
-                .withDns(NetworkGatewayDaemon.guestDnsFor(context)));
+                .withDns(dns));
+        specBuilder.sharedDirectory(parameters.sharedDirectory);
         AvfLaunchSpec spec = specBuilder.build();
 
         ReflectiveAvfVirtualMachineApi api = new ReflectiveAvfVirtualMachineApi(
-                context, context.getClass().getClassLoader());
+                context, context.getClass().getClassLoader(), AvfHiddenApiExemption::installOnce);
         AvfVirtualMachineEngine engine = new AvfVirtualMachineEngine(api);
-        AvfSession session = new AvfSession(engine.launch(spec), parameters.bridgeToken);
-        ExecutionSessionRegistry.register(parameters.instanceId, session);
+        AvfSession session = new AvfSession(engine.launch(spec, trace), parameters.bridgeToken, timeline);
+        startShareIfConfigured(session, parameters.sharedDirectory);
+        try {
+            ExecutionSessionRegistry.register(parameters.instanceId, session);
+        } catch (IOException registrationFailure) {
+            cleanupFailedRegistration(session, registrationFailure);
+        } catch (RuntimeException registrationFailure) {
+            cleanupFailedRegistration(session,
+                    new IOException("session registration failed", registrationFailure));
+        }
+        timeline.mark(LaunchTimeline.Stage.SESSION_REGISTERED);
         return session;
+    }
+
+    /**
+     * Starts the 9p data plane only when a share is configured, and never fails
+     * the launch because of it: terminal/display stay usable and the user sees
+     * "共享不可用" with a typed reason instead of a dead VM.
+     */
+    static void startShareIfConfigured(AvfSession session,
+            io.github.nyzeep.orchestella.runtime.contract.SharedDirectoryContract.SharedDirectorySpec share) {
+        if (share == null) {
+            return;
+        }
+        try {
+            session.startShareServer();
+            session.declareSharedDirectory(true);
+        } catch (AvfEngineException failure) {
+            session.declareSharedDirectory(false);
+            session.recordShareFailure(failure.reason());
+        } catch (RuntimeException failure) {
+            // A malformed export path or a local filesystem failure is still a
+            // share-only degradation, never a dead terminal/display launch.
+            session.declareSharedDirectory(false);
+            session.recordShareFailure(AvfEngineException.INVALID_LAUNCH_CONFIG);
+        }
+    }
+
+    /**
+     * Stops a VM whose session could not be registered and fails the launch.
+     * A confirmed stop is reported as a clean launch failure; an UNCONFIRMED
+     * stop keeps its own diagnostic so callers never mistake a possibly-live
+     * VM for an orphan-free failure.
+     */
+    static void cleanupFailedRegistration(RuntimeOwnedSession session, IOException failure)
+            throws IOException {
+        StopResult result;
+        try {
+            result = session.stopRuntime(REGISTRATION_CLEANUP_GRACE_MS);
+        } catch (RuntimeException stopFailure) {
+            failure.addSuppressed(stopFailure);
+            result = StopResult.UNCONFIRMED;
+        }
+        if (result == StopResult.UNCONFIRMED) {
+            throw new IOException(
+                    "session registration failed; AVF VM stop unconfirmed", failure);
+        }
+        throw new IOException(
+                "session registration failed; AVF VM stop confirmed", failure);
+    }
+
+    /** Maps engine lifecycle stages onto the App's append-only launch record. */
+    private static void markStage(LaunchTimeline timeline, AvfLaunchTrace.Stage stage) {
+        switch (stage) {
+            case LAUNCH_REQUESTED -> timeline.mark(LaunchTimeline.Stage.LAUNCH_START);
+            case VM_CREATED -> timeline.mark(LaunchTimeline.Stage.VM_CREATED);
+            case RUN_RETURNED -> timeline.mark(LaunchTimeline.Stage.RUN_RETURNED);
+            case STOP_REQUESTED -> timeline.mark(LaunchTimeline.Stage.STOP_REQUESTED);
+            case STOP_CONFIRMED -> { /* recorded with its typed result by stopRuntime */ }
+            case STOP_UNCONFIRMED -> { /* recorded with its typed result by stopRuntime */ }
+            case EXIT_OBSERVED -> timeline.mark(LaunchTimeline.Stage.EXIT_OBSERVED);
+        }
     }
 }
