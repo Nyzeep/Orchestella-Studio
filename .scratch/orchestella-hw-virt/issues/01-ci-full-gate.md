@@ -1,7 +1,7 @@
 # 01: CI 全量门禁
 
 Type: implementation
-Status: ready-for-agent
+Status: resolved
 Priority: P0
 Owner: build/CI owner
 Blocked by: None
@@ -63,3 +63,16 @@ AVF 最脆弱的代码（hidden API 反射、持久 VM 配置、1 vCPU 约束、
 ## 不做
 
 - 不写设备测试、不做真机验收、不改 QEMU/AVF 产品行为、不修各模块已有的功能失败（只负责让它们可见）。
+
+---
+
+Claimed by: Agent C / 2026-10-20T02:33:55Z
+
+## Answer
+
+- `ci.yml` / `release.yml` 的 Gradle 门补齐 `contract`、`instance`、`engine-qemu`、`engine-avf`、`capability`、`distro`、`network` 与 `:app:testDebugUnitTest`；同一组命令由 `tools/ci/run-gradle-gate.sh` 执行，保留完整日志和 `FAILED_TASKS` 摘要，两个 job 用 artifact 上传（`if: always()`）。
+- 新增轻量 `android-package-gate`：`:app:lintDebug :app:assembleDebug` + `tools/ci/check-apk-16kb.sh`；release job 也执行同一组，并对 release APK 再跑一次。完整 QEMU payload 仍在 `qemu-android.yml`，其 ELF 步骤改为复用 `tools/ci/check-elf-16kb.sh`。
+- 新增 `tools/ci/check_ci_module_coverage.py` 与 6 个 fixture 测试：从 `settings.gradle.kts` 枚举 `runtime:*`，检查两个 workflow 的 `:runtime:<module>:check` 覆盖、app 测试、AVF `avfAllTestTasks` 布线与已删除任务引用。实现前 8 项失败；实现后 44 passed / 0 failed，测试 6/6 通过。
+- 故意失败已记录：临时 app 失败测试使 `:app:testDebugUnitTest` FAILED；临时 AVF harness 异常使 `:runtime:engine-avf:avfPlatformAccessTest` FAILED 并出现在摘要；两处临时改动均已删除/恢复，未提交。
+- 全量门本地通过：`run-gradle-gate.sh` 的 8 个任务 BUILD SUCCESSFUL / exit 0；`:app:lintDebug :app:assembleDebug` BUILD SUCCESSFUL；`check-apk-16kb.sh` 输出 `APK_16KB_GATE_OK ... libs=2`。YAML 4 个文件解析通过。
+- 未验：GitHub Actions 远端、`workflow_dispatch`、完整 `qemu-android` payload job、release 签名步骤；本机无 `act`/`actionlint`，未做远端 runner 模拟。
