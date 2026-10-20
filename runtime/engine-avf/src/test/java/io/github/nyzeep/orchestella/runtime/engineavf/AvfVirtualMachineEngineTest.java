@@ -147,7 +147,8 @@ public final class AvfVirtualMachineEngineTest {
             ExitWatcher watcher = new ExitWatcher(session);
             watcher.join(2000);
             assertTrue(!watcher.isAlive(), "numeric DELETED(2) must end the wait");
-            assertEquals(0, watcher.exit(), "deleted guest reported as exited");
+            assertTrue(watcher.exit() != 0,
+                    "a DELETED VM must never be reported as a clean zero exit");
         }
     }
 

@@ -55,7 +55,14 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
 
     @Override
     public AvfVirtualMachineHandle startCustomVm(AvfLaunchSpec spec) throws AvfEngineException {
+        return startCustomVm(spec, AvfLaunchTrace.NONE);
+    }
+
+    @Override
+    public AvfVirtualMachineHandle startCustomVm(AvfLaunchSpec spec, AvfLaunchTrace trace)
+            throws AvfEngineException {
         Objects.requireNonNull(spec, "spec");
+        AvfLaunchTrace stages = trace == null ? AvfLaunchTrace.NONE : trace;
         List<String> notes = new ArrayList<>();
         applyAccessHook(notes);
         Shape shape;
@@ -141,6 +148,7 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
             }
             notes.add("persistent-vm: reused");
         }
+        stages.mark(AvfLaunchTrace.Stage.VM_CREATED);
         try {
             invoke(shape.vm, vm, "run", new Class<?>[0], new Object[0],
                     AvfEngineException.VM_CREATE_FAILED, notes);
@@ -148,6 +156,7 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
             closeAfterFailure(shape.vm, vm, failure);
             throw failure;
         }
+        stages.mark(AvfLaunchTrace.Stage.RUN_RETURNED);
         return new ReflectiveHandle(this, spec.instanceId(), shape.vm, vm, notes);
     }
 
@@ -529,6 +538,11 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
     }
 
     private static final class ReflectiveHandle implements AvfVirtualMachineHandle {
+        /** Status polling interval while waiting for a bounded stop. */
+        private static final long STOP_POLL_MS = 25L;
+        /** Extra probe window after the platform handle is force-released. */
+        private static final long STOP_FORCE_PROBE_MS = 500L;
+
         private final ReflectiveAvfVirtualMachineApi owner;
         private final String instanceId;
         private final Class<?> vmClass;
@@ -537,6 +551,8 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
         private final java.util.Set<HandleChannel> channels =
                 java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         private volatile boolean hostStopped;
+        private volatile boolean stopRequested;
+        private volatile AvfStopResult lastStopResult;
 
         ReflectiveHandle(ReflectiveAvfVirtualMachineApi owner, String id, Class<?> vmClass,
                 Object vm, List<String> notes) {
@@ -548,49 +564,159 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
         }
         public String instanceId() { return instanceId; }
         public synchronized List<String> reflectionNotes() { return List.copyOf(notes); }
-        public int waitFor() throws InterruptedException {
-            while (!hostStopped) {
-                Object status = invoke(vmClass, vm, "getStatus", new Class<?>[0], new Object[0],
-                        AvfEngineException.VM_CREATE_FAILED, new ArrayList<>());
-                if (!(status instanceof Integer value) || value < 0 || value > 2) {
-                    throw error(AvfEngineException.REFLECTION_UNAVAILABLE, "invalid AVF numeric status", null);
-                }
-                if (value == 0 || value == 2) return 0;
-                synchronized (this) { if (!hostStopped) wait(100); }
+
+        /** Numeric platform status without diagnostics or throwing on a closed VM. */
+        public int status() {
+            try {
+                Object value = vmClass.getMethod("getStatus").invoke(vm);
+                if (!(value instanceof Integer number)) return -1;
+                int status = number;
+                return status >= 0 && status <= 2 ? status : -1;
+            } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
+                return -1;
             }
-            return 0;
         }
+
+        public int waitFor() throws InterruptedException {
+            return waitForExit().exitCode();
+        }
+
+        /**
+         * Blocks until STOPPED or DELETED. A requested stop is distinguished
+         * from a guest-initiated stop; a DELETED VM never returns a zero exit;
+         * an unconfirmable stop is a typed failure, not a normal exit.
+         */
+        public AvfExitInfo waitForExit() throws InterruptedException {
+            long started = System.nanoTime();
+            while (true) {
+                int status = status();
+                long elapsedMs = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
+                        System.nanoTime() - started);
+                if (status == 0) {
+                    return stopRequested
+                            ? AvfExitInfo.stopRequested(elapsedMs)
+                            : AvfExitInfo.normal(elapsedMs);
+                }
+                if (status == 2) return AvfExitInfo.deleted();
+                if (status < 0) {
+                    if (lastStopResult == AvfStopResult.UNCONFIRMED) throw unconfirmedStop();
+                    return AvfExitInfo.observeFailed("platform status unavailable");
+                }
+                synchronized (this) {
+                    if (lastStopResult == AvfStopResult.UNCONFIRMED) throw unconfirmedStop();
+                    wait(100L);
+                }
+            }
+        }
+
         private void ensureOpen() {
             if (hostStopped) throw closedFailure();
         }
         private AvfEngineException closedFailure() {
             return error(AvfEngineException.VSOCK_CONNECT_FAILED, "VM handle is closed", null);
         }
+        private static AvfEngineException unconfirmedStop() {
+            return error(AvfEngineException.VM_STOP_UNCONFIRMED,
+                    "platform never reported STOPPED or DELETED", null);
+        }
+
+        /** Compatibility stop: bounded, but with no grace window. */
         public void stop() {
-            List<HandleChannel> closing;
-            synchronized (this) {
-                if (hostStopped) return;
-                hostStopped = true;
-                closing = new ArrayList<>(channels);
-                channels.clear();
-                notifyAll();
+            stopRuntime(0L);
+        }
+
+        /**
+         * Single-owner bounded stop: request, probe, force-release, re-probe.
+         * The platform stop/close calls happen outside the wait loop; a
+         * confirmed or already-stopped result is never requested twice.
+         */
+        public synchronized AvfStopResult stopRuntime(long graceMs) {
+            if (lastStopResult == AvfStopResult.CONFIRMED
+                    || lastStopResult == AvfStopResult.ALREADY_STOPPED) {
+                return lastStopResult;
             }
+            int initial = status();
+            if (initial == 0 || initial == 2) {
+                stopRequested = true;
+                hostStopped = true;
+                notifyAll();
+                List<HandleChannel> closing = detachChannels();
+                closeChannels(closing, new ArrayList<>());
+                lastStopResult = AvfStopResult.ALREADY_STOPPED;
+                return lastStopResult;
+            }
+
+            stopRequested = true;
+            hostStopped = true;
+            notifyAll();
+            List<HandleChannel> closing = detachChannels();
             List<String> stoppedNotes = new ArrayList<>();
             try {
-                // Platform I/O is outside this handle's monitor, including stop and close.
                 invoke(vmClass, vm, "stop", new Class<?>[0], new Object[0],
                         AvfEngineException.VM_CREATE_FAILED, stoppedNotes);
-            } catch (AvfEngineException failure) { stoppedNotes.add("stop: failed (" + failure.reason() + ")"); }
-            finally {
+            } catch (AvfEngineException failure) {
+                // A throwing platform call is not evidence that the VM exited.
+                stoppedNotes.add("stop: failed (" + failure.reason() + ")");
+            }
+            boolean stopped = awaitStatus(graceMs);
+            if (!stopped) {
+                // Force-release the platform handle, then probe once more.
                 try {
                     invoke(vmClass, vm, "close", new Class<?>[0], new Object[0],
                             AvfEngineException.VM_CREATE_FAILED, stoppedNotes);
-                } catch (AvfEngineException failure) { stoppedNotes.add("close: failed (" + failure.reason() + ")"); }
-                for (HandleChannel channel : closing) {
-                    try { channel.close(); }
-                    catch (IOException | RuntimeException failure) { stoppedNotes.add("channel-close: failed"); }
+                } catch (AvfEngineException failure) {
+                    stoppedNotes.add("close: failed (" + failure.reason() + ")");
                 }
-                synchronized (this) { notes.addAll(stoppedNotes); }
+                stopped = awaitStatus(STOP_FORCE_PROBE_MS);
+            } else {
+                try {
+                    invoke(vmClass, vm, "close", new Class<?>[0], new Object[0],
+                            AvfEngineException.VM_CREATE_FAILED, stoppedNotes);
+                } catch (AvfEngineException failure) {
+                    stoppedNotes.add("close: failed (" + failure.reason() + ")");
+                }
+            }
+            closeChannels(closing, stoppedNotes);
+            lastStopResult = stopped ? AvfStopResult.CONFIRMED : AvfStopResult.UNCONFIRMED;
+            stoppedNotes.add("stop-result: " + lastStopResult.name());
+            synchronized (this) { notes.addAll(stoppedNotes); }
+            return lastStopResult;
+        }
+
+        /** Must be called while holding this handle's monitor. */
+        private List<HandleChannel> detachChannels() {
+            List<HandleChannel> closing = new ArrayList<>(channels);
+            channels.clear();
+            return closing;
+        }
+
+        private static void closeChannels(List<HandleChannel> closing, List<String> stoppedNotes) {
+            for (HandleChannel channel : closing) {
+                try {
+                    channel.close();
+                } catch (IOException | RuntimeException failure) {
+                    stoppedNotes.add("channel-close: failed");
+                }
+            }
+        }
+
+        private boolean awaitStatus(long graceMs) {
+            long deadline = System.nanoTime()
+                    + Math.max(0L, graceMs) * 1_000_000L;
+            while (true) {
+                int status = status();
+                if (status == 0 || status == 2) return true;
+                long remaining = deadline - System.nanoTime();
+                if (remaining <= 0L) return false;
+                synchronized (this) {
+                    try {
+                        wait(Math.max(1L, Math.min(STOP_POLL_MS,
+                                java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(remaining))));
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        return false;
+                    }
+                }
             }
         }
     }

@@ -24,6 +24,8 @@ public final class AvfEngineException extends RuntimeException {
     public static final String PERMISSION_DENIED = "PERMISSION_DENIED";
     /** The vsock control/terminal channel could not be established. */
     public static final String VSOCK_CONNECT_FAILED = "VSOCK_CONNECT_FAILED";
+    /** A stop was requested but the platform never confirmed STOPPED/DELETED. */
+    public static final String VM_STOP_UNCONFIRMED = "VM_STOP_UNCONFIRMED";
 
     private final String reason;
 

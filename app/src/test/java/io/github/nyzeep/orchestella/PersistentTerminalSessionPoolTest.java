@@ -214,22 +214,22 @@ public final class PersistentTerminalSessionPoolTest {
 
     @Test
     public void conditionalUnregisterKeepsReplacementAndClosesOnlyTheExpectedOwnerOnce() throws Exception {
-        FakeExecutionSession old = new FakeExecutionSession(new ByteArrayInputStream(new byte[0]), new ByteArrayOutputStream());
-        FakeExecutionSession replacement = new FakeExecutionSession(new ByteArrayInputStream(new byte[0]), new ByteArrayOutputStream());
+        FakeOwnedSession old = new FakeOwnedSession();
+        FakeOwnedSession replacement = new FakeOwnedSession();
         pool.register("generation-vm", old);
         pool.register("generation-vm", replacement);
         assertFalse(pool.unregister("generation-vm", old));
         org.junit.Assert.assertSame(replacement, pool.getSession("generation-vm"));
-        assertFalse(replacement.closed.get());
+        assertFalse(replacement.closed);
         assertTrue(pool.unregister("generation-vm", replacement));
         assertFalse(pool.unregister("generation-vm", replacement));
-        assertTrue(replacement.closed.get());
+        assertTrue(replacement.closed);
         assertNull(pool.getSession("generation-vm"));
     }
 
     @Test
     public void ownerRetirementNotifiesAfterTerminalEofSoUiCanReconcileConfirmedExit() throws Exception {
-        FakeExecutionSession session = new FakeExecutionSession(new ByteArrayInputStream(new byte[0]), new ByteArrayOutputStream());
+        FakeOwnedSession session = new FakeOwnedSession();
         PersistentTerminalSessionPool.SessionHolder holder = pool.register("eof-then-owner-exit", session);
         CountDownLatch terminalEnded = new CountDownLatch(1);
         CountDownLatch ownerRetired = new CountDownLatch(1);
@@ -410,6 +410,17 @@ public final class PersistentTerminalSessionPoolTest {
         assertFalse(pool.unregister("owned-unconfirmed", unconfirmed));
         assertSame("an unconfirmed owner must stay registered",
                 unconfirmed, pool.getSession("owned-unconfirmed"));
+    }
+
+    @Test
+    public void plainSessionCannotBeReportedAsStopped() throws Exception {
+        FakeExecutionSession session = new FakeExecutionSession(
+                new ByteArrayInputStream(new byte[0]), new ByteArrayOutputStream());
+        pool.register("plain-session", session);
+        assertFalse("a non-owner must never be reported as confirmed stopped",
+                pool.unregister("plain-session", session));
+        assertSame("the unconfirmable session stays published",
+                session, pool.getSession("plain-session"));
     }
 
     @Test
@@ -698,13 +709,14 @@ public final class PersistentTerminalSessionPoolTest {
         volatile boolean alive = true;
         volatile CountDownLatch stopEntered;
         volatile CountDownLatch stopGate;
+        volatile boolean closed;
 
         @Override public int waitFor() { return 0; }
         @Override public OutputStream terminalInput() { return new ByteArrayOutputStream(); }
         @Override public InputStream terminalOutput() { return new ByteArrayInputStream(new byte[0]); }
         @Override public OutputStream controlInput() { return new ByteArrayOutputStream(); }
         @Override public InputStream controlOutput() { return new ByteArrayInputStream(new byte[0]); }
-        @Override public void close() { }
+        @Override public void close() { closed = true; }
 
         @Override public RuntimeProcessSupervisor.StopResult stopRuntime(long graceMs) {
             stops.incrementAndGet();

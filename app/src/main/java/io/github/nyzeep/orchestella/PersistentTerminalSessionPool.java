@@ -644,13 +644,17 @@ public final class PersistentTerminalSessionPool {
         }
     }
 
-    /** Stops a runtime owner with a bounded wait; legacy sessions keep close-only. */
+    /**
+     * Stops a runtime owner with a bounded wait. A session that cannot be
+     * confirmed as stopped (including one that does not expose the owner seam)
+     * keeps its holder; "legacy" is not evidence of a stop (ADR-0021).
+     */
     private static boolean stopOwnedRuntime(SessionHolder holder) {
         ExecutionSession owned = holder.rawSession();
         if (owned instanceof RuntimeOwnedSession) {
             return ((RuntimeOwnedSession) owned).stopRuntime(RUNTIME_STOP_GRACE_MS)
                     != StopResult.UNCONFIRMED;
         }
-        return true;
+        return false;
     }
 }
