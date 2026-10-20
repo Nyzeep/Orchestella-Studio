@@ -1,7 +1,7 @@
 # 07: 9p 与端口转发接线
 
 Type: implementation
-Status: blocked
+Status: resolved
 Priority: P1
 Owner: AVF data-plane owner
 Blocked by: 03, 04, 06
@@ -67,3 +67,14 @@ Parent: `.scratch/orchestella-hw-virt/map.md`
 ## 不做
 
 - 不做真机 vsock 时序/端口复用/共享读写验收；不做 LAN 暴露；不做网络 NAT（08）；不改 guest 认证协议。
+
+Claimed by: Agent B / 2026-10-20T01:50:00Z
+
+## Answer
+
+- 9p 接线：`InstanceStrategyLauncher.LaunchParameters` 新增可选 `sharedDirectory`；`AvfInstanceLauncher` 把它写入 `AvfLaunchSpec.sharedDirectory(...)`，并在 launch 后调用 `startShareIfConfigured()`。配置了共享才 `startShareServer()`，成功后 `declareSharedDirectory(true)`；失败只撤回 9p 能力并记录 typed `AvfEngineException` reason，不影响终端/显示启动。
+- 生命周期：`AvfVmSession.startShareServer()` 在 `shareLock` 内单 owner；重复调用返回同一个 server；session closed 后再调用抛 typed `VSOCK_CONNECT_FAILED`，不会开第二条 vsock 连接或第二个线程。stop/close 走既有 `closeChannels()`，share 通道关闭后 serve 线程退出；`isShareServing()` 暴露真实线程状态。
+- 端口统一：9p 使用 `spec.sharedDirectoryVsockPort()`，显示使用 `spec.graphicsVsockPort()`（06 已移除 9103 硬编码）；`AvfLaunchSpec` 删除未接线的 audio 端口字段/常量/校验；Builder 继续拒绝 1024–65535 之外和 control/terminal/9p/graphics 冲突。
+- 端口转发：判定 guest 没有 vsock→TCP relay（现有 `orchestella-proxy-relay` 走 virtio-serial），AVF v1 **UNSUPPORTED**。`AvfSession.openServiceForward()` 返回 typed `IOException`（稳定原因串），`AvfVsockPortForwarder` 及其测试/JavaExec 任务删除；能力矩阵无 forward；PortForwarding UI 在无 QEMU live engine 时已显示“需切换 QEMU”。
+- 红→绿：`AvfShareWiringTest`、`Avf9pShareLifecycleTest`、`AvfLaunchSpecTest` 的端口用例先红（API/行为缺失），实现后 engine `check` 与 app `testDebugUnitTest` 全绿。
+- 未验：真机 vsock 9102 的 9p mount、真实共享目录读写、stop UNCONFIRMED 下的平台行为；forward 按 UNSUPPORTED 交付。

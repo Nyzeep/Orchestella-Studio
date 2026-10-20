@@ -18,13 +18,18 @@ public final class AvfVirtualMachineApiFixture {
                 AvfVirtualMachineApiFixture.class.getClassLoader());
     }
 
+    /** Opens one guest-bound vsock channel over the fake network. */
+    @FunctionalInterface
+    public interface VsockChannelFactory {
+        AvfVirtualMachineApi.AvfVsockChannel connect(int port) throws IOException;
+    }
+
     /**
-     * A {@link AvfVsockPortForwarder.VsockChannelFactory} over the fake vsock
-     * network using a JVM-only socket helper. This helper is not the real SDK
-     * return value; the production API path separately exercises ParcelFileDescriptor.
+     * A {@link VsockChannelFactory} over the fake vsock network using a
+     * JVM-only socket helper. This helper is not the real SDK return value; the
+     * production API path separately exercises ParcelFileDescriptor.
      */
-    public static AvfVsockPortForwarder.VsockChannelFactory channelFactoryOver(
-            FakeVsockNetwork network) {
+    public static VsockChannelFactory channelFactoryOver(FakeVsockNetwork network) {
         return port -> {
             android.system.virtualmachine.VsockConnection raw = network.connect(port);
             return new AvfVirtualMachineApi.AvfVsockChannel() {

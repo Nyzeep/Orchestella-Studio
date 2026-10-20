@@ -47,8 +47,6 @@ public final class AvfLaunchSpec {
     public static final int DEFAULT_9P_VSOCK_PORT = 9102;
     public static final int DEFAULT_GRAPHICS_VSOCK_PORT = 9103;
     public static final int AVF_GRAPHICS_VSOCK_PORT = 9103;
-    public static final int DEFAULT_AUDIO_VSOCK_PORT = 9104;
-    public static final int AVF_AUDIO_VSOCK_PORT = 9104;
     public static final int DEFAULT_CPU_COUNT = 1;
 
     private static final Pattern INSTANCE_ID = Pattern.compile("[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}");
@@ -71,7 +69,6 @@ public final class AvfLaunchSpec {
     private final int sharedDirectoryVsockPort;
     private final SharedDirectoryContract.SharedDirectorySpec sharedDirectory;
     private final int graphicsVsockPort;
-    private final int audioVsockPort;
     private final List<String> extraKernelArguments;
     private final String guestCmdline;
 
@@ -89,7 +86,6 @@ public final class AvfLaunchSpec {
         this.sharedDirectoryVsockPort = builder.sharedDirectoryVsockPort;
         this.sharedDirectory = builder.sharedDirectory;
         this.graphicsVsockPort = builder.graphicsVsockPort;
-        this.audioVsockPort = builder.audioVsockPort;
         this.extraKernelArguments = List.copyOf(builder.extraKernelArguments);
 
         StringBuilder cmdline = new StringBuilder(String.format(
@@ -175,11 +171,6 @@ public final class AvfLaunchSpec {
         return graphicsVsockPort;
     }
 
-    /** Dedicated vsock audio port (defaults to 9104). */
-    public int audioVsockPort() {
-        return audioVsockPort;
-    }
-
     /** Additional guest cmdline arguments admitted from the hardware config. */
     public List<String> extraKernelArguments() {
         return extraKernelArguments;
@@ -209,7 +200,6 @@ public final class AvfLaunchSpec {
         private int sharedDirectoryVsockPort = DEFAULT_9P_VSOCK_PORT;
         private SharedDirectoryContract.SharedDirectorySpec sharedDirectory;
         private int graphicsVsockPort = DEFAULT_GRAPHICS_VSOCK_PORT;
-        private int audioVsockPort = DEFAULT_AUDIO_VSOCK_PORT;
         private List<String> extraKernelArguments = List.of();
 
         private Builder(
@@ -283,11 +273,6 @@ public final class AvfLaunchSpec {
             return this;
         }
 
-        public Builder audioVsockPort(int port) {
-            this.audioVsockPort = requirePort(port);
-            return this;
-        }
-
         /**
          * Appends admitted guest cmdline arguments. Each entry must be one
          * token: whitespace and control characters would silently change the
@@ -338,14 +323,6 @@ public final class AvfLaunchSpec {
                 throw new IllegalArgumentException(
                         "the graphics vsock port must differ from the control, terminal,"
                                 + " and 9p ports");
-            }
-            if (audioVsockPort == controlVsockPort
-                    || audioVsockPort == terminalVsockPort
-                    || audioVsockPort == sharedDirectoryVsockPort
-                    || audioVsockPort == graphicsVsockPort) {
-                throw new IllegalArgumentException(
-                        "the audio vsock port must differ from the control, terminal, 9p,"
-                                + " and graphics ports");
             }
             return new AvfLaunchSpec(this);
         }
