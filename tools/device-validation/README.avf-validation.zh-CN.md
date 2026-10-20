@@ -164,7 +164,7 @@ python3 -B tools/device-validation/run_avf_device_validation.py \
 
 - `app/src/androidTest/java/io/github/nyzeep/orchestella/AvfQaProbeInstrumentation.java` 是 androidTest 专用 `Instrumentation`，不进入 release APK，也没有 launcher 入口。它拒绝在包名不含 `.qa.` 的 target 上运行。
 - 探针调用现有 `ReflectiveAvfPlatformAccess` 读取 access/exemption/permission/mode facts，反射读取 capability raw bits，并用 `VirtualMachineConfig.Builder.setProtectedVm(false)` 记录 protected-mode 结果；ROM fingerprint 只保存 SHA-256。它不 root、不改 hidden API 全局策略、不启动 VM。
-- 探针把 JSON 写到 QA app 私有目录 `files/avf-qa/probe-<token>.json`；host 用 `adb exec-out run-as <qa> cat ...` 拉取。令牌每次随机，报告只保存令牌的 SHA-256。
+- 探针把 JSON 写到 QA app 私有目录 `files/avf-qa/probe-<token>.json`；host 用 `adb exec-out run-as <qa> cat ...` 拉取。令牌每次随机，报告只保存令牌的 SHA-256，命令日志把 `qaRunToken` 值和探针文件路径替换为 `<token>`。
 - 本票的探针只完成资格观察；`create`/`run_returned`/`vsock_handshake`/`stop_cycles` 明确返回 `blocked` / `QA_LAUNCH_ENTRY_NOT_IMPLEMENTED`。host 不会把缺失的探针结果补成 pass；将来接入 QA 启动 harness 后，host 的 stage 协议可直接接收其结果。
 - `real_avf_samples` 只有在 create、run_returned、vsock_handshake、stop_cycles 四个阶段都真实 pass 时才为 1；其余为 0。
 

@@ -48,7 +48,7 @@
 - AvfQaProbeInstrumentation 是 androidTest 专用 Instrumentation，由 test APK manifest 声明，没有 launcher 入口，不进入 application APK。
 - 目标包名不含 .qa. 时直接拒绝；它调用现有 ReflectiveAvfPlatformAccess 读取 access/exemption/permission/mode facts，反射读取 capability raw bits，并用 VirtualMachineConfig.Builder.setProtectedVm(false) 记录 protected-mode 结果。
 - ROM fingerprint 只写 SHA-256；不写 serial/IMEI/MAC/账号/token/用户路径/屏幕内容。
-- 探针把 JSON 写到 QA app 私有目录 files/avf-qa/probe-<token>.json；host 通过 adb exec-out run-as <qa> cat 拉取；报告只保存 token 的 SHA-256。
+- 探针把 JSON 写到 QA app 私有目录 files/avf-qa/probe-<token>.json；host 通过 adb exec-out run-as <qa> cat 拉取；报告只保存 token 的 SHA-256，命令日志把 qaRunToken 值和探针文件路径替换为 <token>。
 - 探针不 root、不解锁 bootloader、不改 SELinux/hidden API 全局策略、不安装 APK、不 grant、不创建/运行 VM。
 - 本票探针对 create/run_returned/vsock_handshake/stop_cycles 固定返回 blocked / QA_LAUNCH_ENTRY_NOT_IMPLEMENTED；这是有意的 fail-closed，不把资格观察当成 launch 证据。
 

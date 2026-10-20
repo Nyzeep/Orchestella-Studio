@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import time
@@ -274,6 +275,14 @@ class DeviceCliTests(unittest.TestCase):
         self.assertEqual(self.stage(report, "network")["status"], "not-tested")
         self.assertEqual(self.stage(report, "network")["reason_code"], "STAGE_NOT_REQUESTED")
         self.assertEqual(report["device_facts"]["capabilities"]["raw"], 3)
+        instrument = next(command for command in report["commands"]
+                          if command["id"] == "instrument")
+        self.assertIn("<token>", instrument["argv"])
+        self.assertFalse(any(re.fullmatch(r"[0-9a-f]{32}", argument)
+                             for argument in instrument["argv"]))
+        pull = next(command for command in report["commands"]
+                    if command["id"] == "pull_probe")
+        self.assertIn("files/avf-qa/probe-<token>.json", pull["argv"])
 
     def test_protected_only_stops_before_create(self):
         process = self.run_cli(before=self.probe(non_protected=False, protected=True))
