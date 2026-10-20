@@ -26,6 +26,8 @@ public final class AvfEngineException extends RuntimeException {
     public static final String VSOCK_CONNECT_FAILED = "VSOCK_CONNECT_FAILED";
     /** A stop was requested but the platform never confirmed STOPPED/DELETED. */
     public static final String VM_STOP_UNCONFIRMED = "VM_STOP_UNCONFIRMED";
+    /** The launch configuration itself is malformed (e.g. a control character). */
+    public static final String INVALID_LAUNCH_CONFIG = "INVALID_LAUNCH_CONFIG";
 
     private final String reason;
 

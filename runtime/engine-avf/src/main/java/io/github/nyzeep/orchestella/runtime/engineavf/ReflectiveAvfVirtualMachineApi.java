@@ -139,14 +139,33 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
             if (!shape.vm.isInstance(vm)) throw configMismatch("VM type");
             Object stored = invoke(shape.vm, vm, "getConfig", new Class<?>[0], new Object[0],
                     AvfEngineException.CONFIG_MISMATCH, notes);
-            verifyStoredConfig(shape, stored, config);
-            Object status = invoke(shape.vm, vm, "getStatus", new Class<?>[0], new Object[0],
-                    AvfEngineException.VM_CREATE_FAILED, notes);
-            if (!(status instanceof Integer state) || state != 0) {
-                throw error(AvfEngineException.VM_CREATE_FAILED,
-                        "persistent VM must be stopped before cold restore", null);
+            if (storedConfigMatches(shape, stored, config)) {
+                Object status = invoke(shape.vm, vm, "getStatus", new Class<?>[0], new Object[0],
+                        AvfEngineException.VM_CREATE_FAILED, notes);
+                if (!(status instanceof Integer state) || state != 0) {
+                    throw error(AvfEngineException.VM_CREATE_FAILED,
+                            "persistent VM must be stopped before cold restore", null);
+                }
+                notes.add("persistent-vm: reused");
+            } else {
+                Object status = invoke(shape.vm, vm, "getStatus", new Class<?>[0], new Object[0],
+                        AvfEngineException.VM_STOP_UNCONFIRMED, notes);
+                if (!(status instanceof Integer state) || state != 0) {
+                    // A rebuild must never delete config/state of a VM that may be alive.
+                    throw error(AvfEngineException.VM_STOP_UNCONFIRMED,
+                            "persistent VM cannot be rebuilt until it is confirmed stopped", null);
+                }
+                // delete() removes the VM config/state, never the user's raw root volume.
+                invoke(shape.manager, manager, "delete", new Class<?>[] {String.class},
+                        new Object[] {spec.instanceId()}, AvfEngineException.VM_CREATE_FAILED, notes);
+                notes.add("persistent-vm: deleted for rebuild");
+                vm = invoke(shape.manager, manager, "create", new Class<?>[] {String.class, shape.config},
+                        new Object[] {spec.instanceId(), config}, AvfEngineException.VM_CREATE_FAILED, notes);
+                if (!shape.vm.isInstance(vm)) {
+                    throw error(AvfEngineException.VM_CREATE_FAILED, "manager returned no VM", null);
+                }
+                notes.add("persistent-vm: recreated");
             }
-            notes.add("persistent-vm: reused");
         }
         stages.mark(AvfLaunchTrace.Stage.VM_CREATED);
         try {
@@ -160,16 +179,21 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
         return new ReflectiveHandle(this, spec.instanceId(), shape.vm, vm, notes);
     }
 
-    private static void verifyStoredConfig(Shape shape, Object stored, Object expected) {
+    /**
+     * Identity compatibility plus the full stored-vs-requested field set.
+     * A mismatch is a rebuild signal, not an error: the caller must only
+     * rebuild after observing a stopped VM.
+     */
+    private static boolean storedConfigMatches(Shape shape, Object stored, Object expected) {
         if (!shape.config.isInstance(stored)) throw configMismatch("VM config type");
         try {
             // Official isCompatibleWith tests identity compatibility, not full custom config equality.
             Object compatible = invoke(shape.config, stored, "isCompatibleWith", new Class<?>[] {shape.config},
                     new Object[] {expected}, AvfEngineException.CONFIG_MISMATCH, new ArrayList<>());
-            if (!Boolean.TRUE.equals(compatible)) throw configMismatch("VM identity");
+            if (!Boolean.TRUE.equals(compatible)) return false;
             for (String getter : new String[] {"isProtectedVm", "getMemoryBytes", "getCpuTopology",
                     "getEncryptedStorageBytes", "shouldUseHugepages"}) {
-                requireSameField(shape.config, stored, expected, getter);
+                if (!sameField(shape.config, stored, expected, getter)) return false;
             }
             Object actualImage = configValue(shape.config, stored, "getCustomImageConfig");
             Object expectedImage = configValue(shape.config, expected, "getCustomImageConfig");
@@ -180,18 +204,21 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
                     "getParams", "useNetwork", "getSharedPaths", "getAudioConfig", "getDisplayConfig",
                     "getGpuConfig", "getUsbConfig", "useTouch", "useKeyboard", "useMouse", "useSwitches",
                     "useTrackpad", "useAutoMemoryBalloon"}) {
-                requireSameField(shape.image, actualImage, expectedImage, getter);
+                if (!sameField(shape.image, actualImage, expectedImage, getter)) return false;
             }
             Object actualDisks = configValue(shape.image, actualImage, "getDisks");
             Object wantedDisks = configValue(shape.image, expectedImage, "getDisks");
-            if (!(actualDisks instanceof Object[] disks) || !(wantedDisks instanceof Object[] wanted)
-                    || disks.length != 1 || wanted.length != 1
-                    || !shape.disk.isInstance(disks[0]) || !shape.disk.isInstance(wanted[0])) {
-                throw configMismatch("root disk count/type");
+            if (!(actualDisks instanceof Object[] disks) || !(wantedDisks instanceof Object[] wanted)) {
+                throw configMismatch("root disk type");
             }
-            requireSameField(shape.disk, disks[0], wanted[0], "getImagePath");
-            requireSameField(shape.disk, disks[0], wanted[0], "isWritable");
-            requireSameField(shape.disk, disks[0], wanted[0], "getPartitions");
+            if (disks.length != 1 || wanted.length != 1
+                    || !shape.disk.isInstance(disks[0]) || !shape.disk.isInstance(wanted[0])) {
+                // A different disk set is a rebuild signal, not an unreadable config.
+                return false;
+            }
+            if (!sameField(shape.disk, disks[0], wanted[0], "getImagePath")) return false;
+            if (!sameField(shape.disk, disks[0], wanted[0], "isWritable")) return false;
+            return sameField(shape.disk, disks[0], wanted[0], "getPartitions");
         } catch (AvfEngineException failure) {
             if (AvfEngineException.PERMISSION_DENIED.equals(failure.reason())
                     || AvfEngineException.CONFIG_MISMATCH.equals(failure.reason())) throw failure;
@@ -205,11 +232,9 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
                 AvfEngineException.CONFIG_MISMATCH, new ArrayList<>());
     }
 
-    private static void requireSameField(Class<?> type, Object actual, Object expected, String getter) {
-        if (!Objects.deepEquals(configValue(type, actual, getter), configValue(type, expected, getter))) {
-            // No stored/requested paths or user values are embedded in fallback diagnostics.
-            throw configMismatch(getter);
-        }
+    private static boolean sameField(Class<?> type, Object actual, Object expected, String getter) {
+        // No stored/requested paths or user values are embedded in diagnostics.
+        return Objects.deepEquals(configValue(type, actual, getter), configValue(type, expected, getter));
     }
 
     private static AvfEngineException configMismatch(String field) {
@@ -423,6 +448,7 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
         manager.getMethod("getCapabilities");
         manager.getMethod("create", String.class, config);
         manager.getMethod("get", String.class);
+        manager.getMethod("delete", String.class);
         vm.getMethod("getConfig");
         manager.getField("CAPABILITY_NON_PROTECTED_VM");
         config.getField("CPU_TOPOLOGY_ONE_CPU");

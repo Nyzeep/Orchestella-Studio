@@ -2,9 +2,12 @@ package io.github.nyzeep.orchestella;
 
 import android.content.Context;
 import io.github.nyzeep.orchestella.RuntimeProcessSupervisor.StopResult;
+import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator;
 import io.github.nyzeep.orchestella.runtime.contract.BridgeClient;
 import io.github.nyzeep.orchestella.runtime.contract.BridgeControl;
 import io.github.nyzeep.orchestella.runtime.engineavf.AvfEngineException;
+import io.github.nyzeep.orchestella.runtime.engineavf.AvfHostFacts;
+import io.github.nyzeep.orchestella.runtime.engineavf.AvfLaunchAdmission;
 import io.github.nyzeep.orchestella.runtime.engineavf.AvfLaunchSpec;
 import io.github.nyzeep.orchestella.runtime.engineavf.AvfLaunchTrace;
 import io.github.nyzeep.orchestella.runtime.engineavf.AvfStopResult;
@@ -31,6 +34,63 @@ public final class AvfInstanceLauncher {
     private static final long CLOSE_GRACE_MS = 3000L;
     private static final long TERMINATE_GRACE_MS = 3000L;
     static final long REGISTRATION_CLEANUP_GRACE_MS = 2000L;
+
+    /** One bootstrap invocation, injected so the pre-bootstrap ordering is testable. */
+    @FunctionalInterface
+    interface BootstrapStep {
+        QemuRuntimeBootstrapper.RuntimePaths run() throws IOException;
+    }
+
+    /** The admitted plan plus the shared asset paths it was allowed to assemble. */
+    static final class PreparedSettings {
+        final AvfLaunchAdmission.Plan plan;
+        final QemuRuntimeBootstrapper.RuntimePaths paths;
+
+        PreparedSettings(AvfLaunchAdmission.Plan plan, QemuRuntimeBootstrapper.RuntimePaths paths) {
+            this.plan = plan;
+            this.paths = paths;
+        }
+    }
+
+    /**
+     * Runs admission, then the one shared bootstrap. A rejection throws before
+     * the bootstrap lambda is invoked, so the strategy chain can fall back to
+     * QEMU without a second assembly and without an AVF side effect.
+     */
+    static PreparedSettings prepare(InstanceStrategyLauncher.LaunchParameters parameters,
+            AvfHostFacts facts, BootstrapStep bootstrap) throws IOException {
+        long rootVolumeBytes = -1L;
+        try {
+            rootVolumeBytes = java.nio.file.Files.size(Paths.get(parameters.instanceRootVolume));
+        } catch (IOException | RuntimeException absentOnFirstBoot) {
+            // First boot creates the raw volume during bootstrap; admission must
+            // not require it to exist yet.
+        }
+        AvfLaunchAdmission.Result admission =
+                AvfLaunchAdmission.evaluate(parameters.hardwareConfig, facts, rootVolumeBytes);
+        if (!admission.accepted()) {
+            AvfLaunchAdmission.Rejection rejection = admission.rejection();
+            throw new AvfEngineException(rejection.reason(),
+                    "AVF launch admission rejected field=" + rejection.field()
+                            + " detail=" + rejection.detail());
+        }
+        return new PreparedSettings(admission.plan(), bootstrap.run());
+    }
+
+    /** Host facts with an unread mode passed through as UNKNOWN, never as a guess. */
+    private static AvfHostFacts hostFacts(Context context) {
+        try {
+            AvfCapabilityEvaluator.AvfModeFacts modeFacts = AvfHostFactsProbe.probe(context).modeFacts();
+            if (modeFacts == null) return AvfHostFacts.unknown();
+            return switch (modeFacts.nonProtectedVm()) {
+                case SUPPORTED -> AvfHostFacts.supported();
+                case UNSUPPORTED -> AvfHostFacts.unsupported();
+                case UNKNOWN -> AvfHostFacts.unknown();
+            };
+        } catch (RuntimeException | LinkageError unreadable) {
+            return AvfHostFacts.unknown();
+        }
+    }
 
     /** Live AVF session exposing only the strategy-neutral surface. */
     public static class AvfSession implements ExecutionSession, RuntimeOwnedSession {
@@ -195,8 +255,6 @@ public final class AvfInstanceLauncher {
         }
     }
 
-    private static final long INSTANCE_MEMORY_MB = 512;
-
     private final Context context;
 
     public AvfInstanceLauncher(Context context) {
@@ -206,14 +264,6 @@ public final class AvfInstanceLauncher {
     /** Blocking bootstrap+launch; call on a worker thread. */
     public ExecutionSession launch(InstanceStrategyLauncher.LaunchParameters parameters)
             throws IOException {
-        int ramMb = parameters.hardwareConfig != null
-                ? parameters.hardwareConfig.ramMegabytes() : (int) INSTANCE_MEMORY_MB;
-        int vcpuCount = parameters.hardwareConfig != null
-                ? parameters.hardwareConfig.cpuCores() : 1;
-        LaunchTimeline timeline = LaunchTimeline.open(Paths.get(parameters.runtimeDirectory),
-                parameters.instanceId, "unknown", ramMb, vcpuCount);
-        timeline.mark(LaunchTimeline.Stage.LAUNCH_START);
-        AvfLaunchTrace trace = stage -> markStage(timeline, stage);
         RuntimeArtifactManifest manifest;
         try (InputStream in = PackagedAssetStreams.openAsset(context, RuntimeArtifactManifest.SCHEMA_FILE_NAME)) {
             manifest = RuntimeArtifactManifest.parse(in);
@@ -235,26 +285,30 @@ public final class AvfInstanceLauncher {
                 },
                 Paths.get(parameters.runtimeDirectory),
                 Paths.get(parameters.distroInputsDirectory));
-        QemuRuntimeBootstrapper.RuntimePaths paths =
-                bootstrapper.bootstrap(parameters.rootfsFileName, parameters.bridgeToken,
+        PreparedSettings prepared = prepare(parameters, hostFacts(context),
+                () -> bootstrapper.bootstrap(parameters.rootfsFileName, parameters.bridgeToken,
                         parameters.guestPassword,
                         Paths.get(parameters.instanceRootVolume),
                         parameters.mirrorConfigFileName,
                         parameters.mirrorConfigFileContent,
                         parameters.firstBootScript,
-                        parameters.hostname, parameters.guestUser, parameters.hasSudo);
+                        parameters.hostname, parameters.guestUser, parameters.hasSudo));
+        QemuRuntimeBootstrapper.RuntimePaths paths = prepared.paths;
+
+        LaunchTimeline timeline = LaunchTimeline.open(Paths.get(parameters.runtimeDirectory),
+                parameters.instanceId, "unknown", (int) prepared.plan.memoryMb(),
+                prepared.plan.cpuCount());
+        timeline.mark(LaunchTimeline.Stage.LAUNCH_START);
+        AvfLaunchTrace trace = stage -> markStage(timeline, stage);
 
         AvfLaunchSpec.Builder specBuilder = AvfLaunchSpec.builder(
                         parameters.instanceId,
                         paths.kernel.toString(),
                         paths.initramfs.toString(),
                         parameters.instanceRootVolume);
-        if (parameters.hardwareConfig != null) {
-            specBuilder.memoryMb(parameters.hardwareConfig.ramMegabytes());
-            specBuilder.cpuCount(parameters.hardwareConfig.cpuCores());
-        } else {
-            specBuilder.memoryMb(INSTANCE_MEMORY_MB);
-        }
+        specBuilder.memoryMb(prepared.plan.memoryMb());
+        specBuilder.cpuCount(prepared.plan.cpuCount());
+        specBuilder.extraKernelArguments(prepared.plan.extraKernelArguments());
         specBuilder.networkSpec(io.github.nyzeep.orchestella.runtime.contract.NetworkContract.OutboundNetworkSpec
                 .withDns(NetworkGatewayDaemon.guestDnsFor(context)));
         AvfLaunchSpec spec = specBuilder.build();

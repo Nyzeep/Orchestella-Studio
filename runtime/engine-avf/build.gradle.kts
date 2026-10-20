@@ -145,9 +145,21 @@ tasks.register<JavaExec>("avfRuntimeOwnershipTest") {
     mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.AvfRuntimeOwnershipTest")
 }
 
+tasks.register<JavaExec>("avfLaunchAdmissionTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.AvfLaunchAdmissionTest")
+}
+
+tasks.register<JavaExec>("avfPersistentConfigTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.AvfPersistentConfigTest")
+}
+
 val avfAllTestTasks = listOf(
     "reflectiveAvfVirtualMachineApiTest",
     "avfRuntimeOwnershipTest",
+    "avfLaunchAdmissionTest",
+    "avfPersistentConfigTest",
     "avfVirtualMachineEngineResourceTest",
     "avfLaunchSpecTest",
     "avfVirtualMachineEngineTest",

@@ -1,7 +1,7 @@
 # 03: AVF 启动准入与持久配置迁移
 
 Type: implementation
-Status: ready-for-agent
+Status: resolved
 Priority: P0
 Owner: AVF launch/config owner
 Blocked by: None
@@ -78,3 +78,19 @@ Parent: `.scratch/orchestella-hw-virt/map.md`
 ## 不做
 
 - 不做真实 create/run/stop（设备 effort）；不做 protected/GPU/音频/网络数据面；不做 hidden CPU count；不改 QEMU 硬件语义。
+
+Claimed by: Agent A / 2026-10-20T01:10:53Z
+
+## Answer
+
+Status: resolved（代码就绪；真实 AVF create/rebuild 未验）
+
+- 准入：新增 `AvfLaunchAdmission.evaluate`，在唯一一次 bootstrap 前运行；默认 2 vCPU 明确 `HARDWARE_UNSUPPORTED`（field=cpuCores），1 vCPU 返回完整 plan；不支持的 host facts 提前拒绝，UNKNOWN 交给平台 adapter。
+- 字段：memory → plan；disk 记录 `NOT_EXPRESSIBLE` + 观察到的 raw 大小；GPU 记录 `NOT_EXPRESSIBLE`（不拒绝默认 GPU=true）；extra args 追加 guest cmdline，拒绝换行/控制字符；无静默丢弃。
+- 持久配置：`isCompatibleWith` + 全字段比较；不匹配时先确认 status==0，再 `manager.delete(name)` → create → run；RUNNING/无法确认时拒绝（`VM_STOP_UNCONFIRMED`），fake 断言 delete=0 且 root raw 保留。
+- 元数据：写 `metadata.schemaVersion=1` 与 `hardware.legacyDefaults`；旧元数据无 hardware 块 → 显式 legacy 迁移（保留 2 vCPU/2048 MB 有效值）；部分块/未知 schema 拒绝；未知键不改变硬件。
+- 测试：`AvfLaunchAdmissionTest`、`AvfPersistentConfigTest`、`AvfLaunchBootstrapOrderTest`、`InstanceMetadataMigrationTest`；`ReflectiveAvfVirtualMachineApiTest` 的 11 类字段差异改为 rebuild 断言。
+
+Red→green：先出现 3 处编译 red（admission/host facts/prepare/isLegacyDefaults 缺失）；实现后 `:runtime:engine-avf:check :runtime:instance:check` 与 `:app:testDebugUnitTest` 全绿。行为 red：旧实现内存差异抛 `CONFIG_MISMATCH`，旧元数据静默默认 2 vCPU/2 GB。
+
+未验：真机 `isCompatibleWith` 身份语义、`manager.delete` 是否触碰用户 raw、RUNNING 拒绝时序、旧实例目录迁移、root raw 大小一致性。详见 `docs/reports/tickets/avf-zero-device-03/implementation-report.zh-CN.md`。

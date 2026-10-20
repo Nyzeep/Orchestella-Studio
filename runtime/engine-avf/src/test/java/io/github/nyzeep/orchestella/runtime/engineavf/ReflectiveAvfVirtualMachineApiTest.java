@@ -25,13 +25,14 @@ public final class ReflectiveAvfVirtualMachineApiTest {
         handleStopOwnsPublishedPfdExactlyOnce();
         coldRestoresMatchingPersistentVmWithoutCreatingAgain();
         failedRunRetriesTheSamePersistentVmWithoutDeletingIt();
-        mismatchedStoredConfigsNeverRunOrDelete();
+        mismatchedStoredConfigsRebuildThroughDeleteCreate();
         runningPersistentVmIsNotStoppedByAnotherLaunch();
         unreadablePersistentConfigIsRejectedWithoutRunningOrDeleting();
         System.out.println("REFLECTIVE_AVF_API_TEST_OK official_config_run=1 long_pfd_streams=1 stream_close=1"
                 + " permissions=2 platform_guards=3 create_run_failures=4 fd_cleanup=4 injection=2 handles=3"
                 + " official_blocked_stop=1 adoption_race=1 published_fd_stop=1"
-                + " persistent_restore=1 failed_run_retry=1 config_mismatch=12 running_vm_refusal=1 config_read_refusal=2");
+                + " persistent_restore=1 failed_run_retry=1 config_rebuild=11 config_mismatch=1"
+                + " running_vm_refusal=1 config_read_refusal=2");
     }
 
     private static AvfLaunchSpec spec() {
@@ -411,13 +412,17 @@ public final class ReflectiveAvfVirtualMachineApiTest {
                 "retry must not delete or ignore config");
     }
 
-    private static void mismatchedStoredConfigsNeverRunOrDelete() throws Exception {
+    private static void mismatchedStoredConfigsRebuildThroughDeleteCreate() throws Exception {
+        // Non-identity differences (kernel, initrd, disk, memory, CPU topology,
+        // protected identity, network, params, bootloader, extra disk and
+        // partitions) all rebuild through delete/create. Only an unreadable
+        // config type refuses, because it cannot be classified.
         String[] fields = {"getKernelPath", "getInitrdPath", "getImagePath", "getMemoryBytes",
                 "getCpuTopology", "VM identity", "useNetwork", "getParams", "getBootloaderPath",
-                "root disk count/type", "getPartitions", "VM config type"};
+                "root disk count/type", "getPartitions"};
         for (int variant = 0; variant < fields.length; variant++) {
             VirtualMachine vm = VirtualMachine.withBehavior(() -> {}, port -> {
-                throw new AssertionError("mismatch cannot open a descriptor");
+                throw new AssertionError("a rebuild must not open a descriptor before run");
             });
             var manager = new VirtualMachineManager((name, config) -> vm);
             var context = new FakeVirtualizationContext(manager);
@@ -441,18 +446,46 @@ public final class ReflectiveAvfVirtualMachineApiTest {
                     .setCpuTopology(variant == 4 ? VirtualMachineConfig.CPU_TOPOLOGY_MATCH_HOST
                             : VirtualMachineConfig.CPU_TOPOLOGY_ONE_CPU).build();
             manager.create(spec().instanceId(), stored);
-            if (variant == 11) vm.recordConfigForTest(null);
             var api = new ReflectiveAvfVirtualMachineApi(context, getLoader());
-            var failure = expect(AvfEngineException.CONFIG_MISMATCH, () -> api.startCustomVm(spec()));
-            check(failure.getMessage().contains(fields[variant]), "mismatch field must be explicit: " + fields[variant]);
-            check(!failure.getMessage().contains("/wrong") && !failure.getMessage().contains("/other"),
-                    "mismatch diagnostics do not expose disk/kernel values");
-            check(vm.runCountForTest() == 0 && vm.stopCountForTest() == 0 && vm.closeCountForTest() == 0,
-                    "mismatch cannot run, stop or close another persistent VM");
-            check(manager.createCallsForTest() == 1 && manager.deleteCallsForTest() == 0
-                    && manager.getOrCreateCallsForTest() == 0, "mismatch preserves same-name persistent state");
-            check(vm.getConfig() == (variant == 11 ? null : stored), "stored config object not rewritten");
+            var handle = api.startCustomVm(spec());
+            check(manager.deleteCallsForTest() == 1,
+                    "variant " + variant + " deletes the stored VM before recreate");
+            check(manager.createCallsForTest() == 2,
+                    "variant " + variant + " creates exactly one replacement");
+            check(vm.runCountForTest() == 1, "variant " + variant + " runs the replacement");
+            check(vm.getConfig() != stored, "variant " + variant + " stores the requested config");
+            handle.stop();
         }
+
+        // An unreadable config type is not a rebuild signal.
+        VirtualMachine vm = VirtualMachine.withBehavior(() -> {}, port -> {
+            throw new AssertionError("unreadable config cannot open a descriptor");
+        });
+        var manager = new VirtualMachineManager((name, config) -> vm);
+        var context = new FakeVirtualizationContext(manager);
+        manager.create(spec().instanceId(), storedConfig(context, false));
+        vm.recordConfigForTest(null);
+        var api = new ReflectiveAvfVirtualMachineApi(context, getLoader());
+        var failure = expect(AvfEngineException.CONFIG_MISMATCH, () -> api.startCustomVm(spec()));
+        check(failure.getMessage().contains("VM config type"), "unreadable type is explicit");
+        check(manager.deleteCallsForTest() == 0 && vm.runCountForTest() == 0,
+                "an unreadable config is never deleted or run");
+    }
+
+    private static VirtualMachineConfig storedConfig(
+            android.content.Context context, boolean protectedVm) {
+        var image = new android.system.virtualmachine.VirtualMachineCustomImageConfig.Builder()
+                .setName("official-shape")
+                .setKernelPath("/kernel")
+                .setInitrdPath("/initrd");
+        for (String param : spec().guestCmdline().split("\\s+")) image.addParam(param);
+        image.addDisk(android.system.virtualmachine.VirtualMachineCustomImageConfig.Disk
+                .RWDisk("/root.raw"));
+        return new VirtualMachineConfig.Builder(context)
+                .setCustomImageConfig(image.build())
+                .setProtectedVm(protectedVm)
+                .setMemoryBytes(384L << 20)
+                .build();
     }
 
     private static void runningPersistentVmIsNotStoppedByAnotherLaunch() {
