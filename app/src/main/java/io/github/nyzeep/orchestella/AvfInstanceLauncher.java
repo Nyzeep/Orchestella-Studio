@@ -35,6 +35,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class AvfInstanceLauncher {
     /** Bounded stop window for close/terminate and failed-registration cleanup. */
     private static final long CLOSE_GRACE_MS = 3000L;
+    /** Stable user-facing reason: AVF v1 has no guest vsock-to-TCP relay. */
+    static final String SERVICE_FORWARD_UNSUPPORTED =
+            "AVF v1 不提供 guest vsock→TCP relay，本地服务转发不可用";
     private static final long TERMINATE_GRACE_MS = 3000L;
     static final long REGISTRATION_CLEANUP_GRACE_MS = 2000L;
 
@@ -105,6 +108,7 @@ public final class AvfInstanceLauncher {
         private final LaunchTimeline timeline;
         private final AtomicBoolean closed = new AtomicBoolean(false);
         private volatile SessionCapabilities capabilities;
+        private volatile String shareFailureReason;
 
         AvfSession(AvfVirtualMachineEngine.AvfVmSession session) { this(session, null, null); }
 
@@ -142,6 +146,33 @@ public final class AvfInstanceLauncher {
         /** Records a 9p server that is actually serving, or withdraws the claim. */
         void declareSharedDirectory(boolean serving) {
             this.capabilities = capabilities.withSharedDirectory(serving);
+        }
+
+        /**
+         * Starts the one read-only 9p server for this session. The engine
+         * serializes the call, so a retry after an UNCONFIRMED stop cannot
+         * create a second server.
+         */
+        void startShareServer() throws AvfEngineException {
+            session.startShareServer();
+        }
+
+        boolean isShareServing() {
+            return session != null && session.isShareServing();
+        }
+
+        /** Typed engine reason when the share could not start; null when it did or was absent. */
+        String shareFailureReason() {
+            return shareFailureReason;
+        }
+
+        void recordShareFailure(String reason) {
+            this.shareFailureReason = reason;
+        }
+
+        @Override
+        public ServiceForward openServiceForward(int guestPort) throws IOException {
+            throw new IOException(SERVICE_FORWARD_UNSUPPORTED);
         }
 
         @Override public io.github.nyzeep.orchestella.runtime.contract.DisplayControl displayControl() { return display; }
@@ -341,12 +372,14 @@ public final class AvfInstanceLauncher {
         specBuilder.networkPlan(networkPlan);
         specBuilder.networkSpec(io.github.nyzeep.orchestella.runtime.contract.NetworkContract.OutboundNetworkSpec
                 .withDns(dns));
+        specBuilder.sharedDirectory(parameters.sharedDirectory);
         AvfLaunchSpec spec = specBuilder.build();
 
         ReflectiveAvfVirtualMachineApi api = new ReflectiveAvfVirtualMachineApi(
                 context, context.getClass().getClassLoader());
         AvfVirtualMachineEngine engine = new AvfVirtualMachineEngine(api);
         AvfSession session = new AvfSession(engine.launch(spec, trace), parameters.bridgeToken, timeline);
+        startShareIfConfigured(session, parameters.sharedDirectory);
         try {
             ExecutionSessionRegistry.register(parameters.instanceId, session);
         } catch (IOException registrationFailure) {
@@ -357,6 +390,25 @@ public final class AvfInstanceLauncher {
         }
         timeline.mark(LaunchTimeline.Stage.SESSION_REGISTERED);
         return session;
+    }
+
+    /**
+     * Starts the 9p data plane only when a share is configured, and never fails
+     * the launch because of it: terminal/display stay usable and the user sees
+     * "共享不可用" with a typed reason instead of a dead VM.
+     */
+    static void startShareIfConfigured(AvfSession session,
+            io.github.nyzeep.orchestella.runtime.contract.SharedDirectoryContract.SharedDirectorySpec share) {
+        if (share == null) {
+            return;
+        }
+        try {
+            session.startShareServer();
+            session.declareSharedDirectory(true);
+        } catch (AvfEngineException failure) {
+            session.declareSharedDirectory(false);
+            session.recordShareFailure(failure.reason());
+        }
     }
 
     /**

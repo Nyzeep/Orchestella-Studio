@@ -86,6 +86,9 @@ public final class AvfVirtualMachineEngine {
                 java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         private final java.util.concurrent.CountDownLatch closedSignal = new java.util.concurrent.CountDownLatch(1);
         private final Object stopLock = new Object();
+        private final Object shareLock = new Object();
+        private Avf9pShareServer shareServer;
+        private volatile Thread shareThread;
         private volatile boolean channelsClosed;
         private volatile boolean stopRequested;
         private boolean stopping;
@@ -129,10 +132,10 @@ public final class AvfVirtualMachineEngine {
         }
 
         /**
-         * Opens one additional guest-bound vsock channel (retry-connected),
-         * e.g. for the {@link AvfVsockPortForwarder} to reach the in-guest
-         * forward proxy on a forwarded service port. Distinct from the two
-         * dedicated bridge channels, which stay single-open.
+         * Opens one additional guest-bound vsock channel (retry-connected).
+         * Distinct from the two dedicated bridge channels, which stay
+         * single-open. AVF v1 has no production consumer for non-bridge
+         * channels; forwarding stays UNSUPPORTED until a guest relay exists.
          */
         public AvfVirtualMachineApi.AvfVsockChannel openChannel(int port)
                 throws AvfEngineException {
@@ -164,18 +167,33 @@ public final class AvfVirtualMachineEngine {
          * @return the started server (for lifecycle observation and tests)
          */
         public Avf9pShareServer startShareServer() throws AvfEngineException {
-            Avf9pShareServer server = new Avf9pShareServer(spec.sharedDirectory());
-            AvfVirtualMachineApi.AvfVsockChannel channel = shareChannel();
-            Thread thread = new Thread(() -> {
-                try {
-                    server.serve(channel.inputStream(), channel.outputStream());
-                } catch (IOException ignored) {
-                    // the share channel ended: the guest went away or closed
-                }
-            }, "avf-9p-share-" + handle.instanceId());
-            thread.setDaemon(true);
-            thread.start();
-            return server;
+            synchronized (shareLock) {
+                // One owner per session: a retry after an UNCONFIRMED stop must
+                // never start a second 9p server (it would double-serve the
+                // share and leak a thread/channel).
+                if (channelsClosed) throw closedFailure();
+                if (shareServer != null) return shareServer;
+                Avf9pShareServer server = new Avf9pShareServer(spec.sharedDirectory());
+                AvfVirtualMachineApi.AvfVsockChannel channel = shareChannel();
+                Thread thread = new Thread(() -> {
+                    try {
+                        server.serve(channel.inputStream(), channel.outputStream());
+                    } catch (IOException ignored) {
+                        // the share channel ended: the guest went away or closed
+                    }
+                }, "avf-9p-share-" + handle.instanceId());
+                thread.setDaemon(true);
+                shareThread = thread;
+                thread.start();
+                shareServer = server;
+                return server;
+            }
+        }
+
+        /** True while the one 9p server thread is still serving this session. */
+        public boolean isShareServing() {
+            Thread thread = shareThread;
+            return thread != null && thread.isAlive();
         }
 
         /** Launch specification that started this session. */
