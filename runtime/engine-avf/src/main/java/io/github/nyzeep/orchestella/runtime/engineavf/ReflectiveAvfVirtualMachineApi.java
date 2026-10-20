@@ -105,7 +105,26 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
         Object disk = invoke(shape.disk, null, "RWDisk", new Class<?>[] {String.class},
                 new Object[] {spec.rootVolumePath()}, AvfEngineException.VM_CREATE_FAILED, notes);
         set(shape.imageBuilder, imageBuilder, "addDisk", shape.disk, disk, notes);
-        set(shape.imageBuilder, imageBuilder, "useNetwork", boolean.class, true, notes);
+        AvfNetworkPlan networkPlan = spec.networkPlan();
+        if (networkPlan.enabled()) {
+            GpuConfigOutcome gpu = applyHeadlessGpu(shape, imageBuilder);
+            notes.add("gpu-config: " + gpu.name().toLowerCase(java.util.Locale.ROOT));
+            if (gpu == GpuConfigOutcome.FAILED) {
+                if (!networkPlan.allowDegradeToNone()) {
+                    throw error(AvfEngineException.NETWORK_BACKEND_UNAVAILABLE,
+                            "network requested but the headless GPU workaround failed", null);
+                }
+                // Keep the VM bootable without a network instead of failing the
+                // whole instance; the degradation is visible in the notes.
+                notes.add("network: degraded");
+            } else {
+                // UNSUPPORTED is benign: older platforms has no GPU API and the
+                // legacy useNetwork path still works there.
+                set(shape.imageBuilder, imageBuilder, "useNetwork", boolean.class, true, notes);
+            }
+        } else {
+            notes.add("useNetwork: skipped");
+        }
         Object image = invoke(shape.imageBuilder, imageBuilder, "build", new Class<?>[0],
                 new Object[0], AvfEngineException.VM_CREATE_FAILED, notes);
         if (!shape.image.isInstance(image)) {
@@ -177,6 +196,58 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
         }
         stages.mark(AvfLaunchTrace.Stage.RUN_RETURNED);
         return new ReflectiveHandle(this, spec.instanceId(), shape.vm, vm, notes);
+    }
+
+    /** Typed result of the Android 17 headless-2D GPU workaround. */
+    private enum GpuConfigOutcome {
+        APPLIED,
+        /** The platform has no GPU config API; benign, the legacy attempt remains. */
+        UNSUPPORTED,
+        /** The API exists but failed; the caller degrades or refuses by policy. */
+        FAILED
+    }
+
+    /**
+     * Declares a surfaceless 2D GPU so virtmgr routes a network-enabled VM to
+     * the full crosvm instead of {@code crosvm_minimal} (which has no net
+     * feature). Resolved lazily: requiring these classes in {@link #loadShape()}
+     * would make every older device fail reflection entirely.
+     */
+    private GpuConfigOutcome applyHeadlessGpu(Shape shape, Object imageBuilder) {
+        Class<?> gpuClass;
+        Class<?> gpuBuilderClass;
+        try {
+            gpuClass = classLoader.loadClass(PACKAGE + "VirtualMachineCustomImageConfig$GpuConfig");
+            gpuBuilderClass = classLoader.loadClass(
+                    PACKAGE + "VirtualMachineCustomImageConfig$GpuConfig$Builder");
+        } catch (ClassNotFoundException | LinkageError unavailable) {
+            return GpuConfigOutcome.UNSUPPORTED;
+        }
+        try {
+            List<String> ignored = new ArrayList<>();
+            Object gpuBuilder = construct(gpuBuilderClass, new Class<?>[0], new Object[0]);
+            set(gpuBuilderClass, gpuBuilder, "setBackend", String.class, "2d", ignored);
+            try {
+                // Surfaceless is the workaround's second half; an older API that
+                // only exposes the backend keeps APPLIED but records the gap.
+                set(gpuBuilderClass, gpuBuilder, "setSurfaceless", boolean.class, true, ignored);
+            } catch (AvfEngineException missingSetter) {
+                if (!AvfEngineException.REFLECTION_UNAVAILABLE.equals(missingSetter.reason())) {
+                    return GpuConfigOutcome.FAILED;
+                }
+            }
+            Object gpu = invoke(gpuBuilderClass, gpuBuilder, "build", new Class<?>[0], new Object[0],
+                    AvfEngineException.VM_CREATE_FAILED, ignored);
+            if (!gpuClass.isInstance(gpu)) return GpuConfigOutcome.FAILED;
+            set(shape.imageBuilder, imageBuilder, "setGpuConfig", gpuClass, gpu, ignored);
+            return GpuConfigOutcome.APPLIED;
+        } catch (AvfEngineException failure) {
+            if (AvfEngineException.REFLECTION_UNAVAILABLE.equals(failure.reason())
+                    || AvfEngineException.HARDWARE_UNSUPPORTED.equals(failure.reason())) {
+                return GpuConfigOutcome.UNSUPPORTED;
+            }
+            return GpuConfigOutcome.FAILED;
+        }
     }
 
     /**
@@ -603,6 +674,17 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
             }
         }
 
+        /** Optional platform exit status; -1 when the platform does not expose one. */
+        public int exitStatus() {
+            try {
+                Object value = vmClass.getMethod("getExitStatus").invoke(vm);
+                if (value instanceof Integer number && number >= 0) return number;
+            } catch (ReflectiveOperationException | RuntimeException | LinkageError unobservable) {
+                // Older platforms have no exit-status surface.
+            }
+            return -1;
+        }
+
         public int waitFor() throws InterruptedException {
             return waitForExit().exitCode();
         }
@@ -619,6 +701,11 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
                 long elapsedMs = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
                         System.nanoTime() - started);
                 if (status == 0) {
+                    int observedExit = exitStatus();
+                    if (observedExit > 0) {
+                        return AvfExitInfo.crashed(observedExit, elapsedMs,
+                                "platform exit status=" + observedExit);
+                    }
                     return stopRequested
                             ? AvfExitInfo.stopRequested(elapsedMs)
                             : AvfExitInfo.normal(elapsedMs);

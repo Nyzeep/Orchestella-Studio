@@ -40,17 +40,25 @@ public final class AvfLaunchAdmission {
         }
     }
 
+    /** The network decision derived from host facts; DNS/addresses are added later. */
+    public enum NetworkIntent {
+        NONE,
+        NATIVE_TAP
+    }
+
     /** A fully admitted launch, before any asset assembly. */
     public record Plan(
             long memoryMb,
             int cpuCount,
             List<String> extraKernelArguments,
             List<FieldDecision> fields,
-            List<String> diagnostics) {
+            List<String> diagnostics,
+            NetworkIntent networkIntent) {
         public Plan {
             extraKernelArguments = List.copyOf(extraKernelArguments);
             fields = List.copyOf(fields);
             diagnostics = List.copyOf(diagnostics);
+            Objects.requireNonNull(networkIntent, "networkIntent");
         }
 
         /** The decision for one field, or null when the field is not part of the config. */
@@ -112,7 +120,8 @@ public final class AvfLaunchAdmission {
             fields.add(new FieldDecision("gpuAccelerationEnabled", Disposition.NOT_EXPRESSIBLE,
                     "AVF v1 has no guest GPU acceleration"));
             return new Result(new Plan(FALLBACK_MEMORY_MB, 1, List.of(), fields,
-                    List.of("hardware-config: absent, using the conservative fallback")), null);
+                    List.of("hardware-config: absent, using the conservative fallback"),
+                    networkIntent(host)), null);
         }
         if (config.cpuCores() != 1) {
             return reject(AvfEngineException.HARDWARE_UNSUPPORTED, "cpuCores",
@@ -143,7 +152,13 @@ public final class AvfLaunchAdmission {
                     extraArguments.size() + " argument(s) appended to the guest cmdline"));
         }
 
-        return new Result(new Plan(config.ramMegabytes(), 1, extraArguments, fields, diagnostics), null);
+        return new Result(new Plan(config.ramMegabytes(), 1, extraArguments, fields, diagnostics,
+                networkIntent(host)), null);
+    }
+
+    private static NetworkIntent networkIntent(AvfHostFacts host) {
+        return host.nativeTap() == AvfHostFacts.Support.UNSUPPORTED
+                ? NetworkIntent.NONE : NetworkIntent.NATIVE_TAP;
     }
 
     private static FieldDecision diskDecision(long rootVolumeBytes) {

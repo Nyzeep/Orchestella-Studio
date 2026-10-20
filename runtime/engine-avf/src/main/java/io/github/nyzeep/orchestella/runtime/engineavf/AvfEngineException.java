@@ -28,6 +28,8 @@ public final class AvfEngineException extends RuntimeException {
     public static final String VM_STOP_UNCONFIRMED = "VM_STOP_UNCONFIRMED";
     /** The launch configuration itself is malformed (e.g. a control character). */
     public static final String INVALID_LAUNCH_CONFIG = "INVALID_LAUNCH_CONFIG";
+    /** The platform cannot provide the network backend this launch requested. */
+    public static final String NETWORK_BACKEND_UNAVAILABLE = "NETWORK_BACKEND_UNAVAILABLE";
 
     private final String reason;
 

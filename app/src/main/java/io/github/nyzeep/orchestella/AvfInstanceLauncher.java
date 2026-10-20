@@ -10,6 +10,7 @@ import io.github.nyzeep.orchestella.runtime.engineavf.AvfHostFacts;
 import io.github.nyzeep.orchestella.runtime.engineavf.AvfLaunchAdmission;
 import io.github.nyzeep.orchestella.runtime.engineavf.AvfLaunchSpec;
 import io.github.nyzeep.orchestella.runtime.engineavf.AvfLaunchTrace;
+import io.github.nyzeep.orchestella.runtime.engineavf.AvfNetworkPlan;
 import io.github.nyzeep.orchestella.runtime.engineavf.AvfStopResult;
 import io.github.nyzeep.orchestella.runtime.engineavf.AvfVirtualMachineApi;
 import io.github.nyzeep.orchestella.runtime.engineavf.AvfVirtualMachineEngine;
@@ -309,8 +310,14 @@ public final class AvfInstanceLauncher {
         specBuilder.memoryMb(prepared.plan.memoryMb());
         specBuilder.cpuCount(prepared.plan.cpuCount());
         specBuilder.extraKernelArguments(prepared.plan.extraKernelArguments());
+        String dns = NetworkGatewayDaemon.guestDnsFor(context);
+        AvfNetworkPlan networkPlan = prepared.plan.networkIntent()
+                == AvfLaunchAdmission.NetworkIntent.NONE
+                ? AvfNetworkPlan.none(dns)
+                : AvfNetworkPlan.nativeTapDhcp(dns, true);
+        specBuilder.networkPlan(networkPlan);
         specBuilder.networkSpec(io.github.nyzeep.orchestella.runtime.contract.NetworkContract.OutboundNetworkSpec
-                .withDns(NetworkGatewayDaemon.guestDnsFor(context)));
+                .withDns(dns));
         AvfLaunchSpec spec = specBuilder.build();
 
         ReflectiveAvfVirtualMachineApi api = new ReflectiveAvfVirtualMachineApi(

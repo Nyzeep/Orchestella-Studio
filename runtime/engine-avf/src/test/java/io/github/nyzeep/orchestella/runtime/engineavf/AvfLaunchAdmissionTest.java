@@ -16,6 +16,7 @@ public final class AvfLaunchAdmissionTest {
         rejectsControlCharactersInExtraArguments();
         rejectsKnownUnsupportedHostFactsButAdmitsUnknownFacts();
         acceptsNullConfigurationWithConservativeDefaults();
+        networkIntentFollowsHostFacts();
         specAppendsPlanArgumentsAfterTheBaseCmdline();
         System.out.println("AVF_LAUNCH_ADMISSION_TEST_OK cpu=1 default_reject=1"
                 + " memory=1 disk=not_expressible gpu=not_expressible extras=1"
@@ -87,6 +88,18 @@ public final class AvfLaunchAdmissionTest {
         assertTrue(result.accepted(), "a caller without hardware config keeps a viable path");
         assertEquals(1, result.plan().cpuCount(), "the fallback is one vCPU");
         assertEquals(512L, result.plan().memoryMb(), "the authenticated default memory is kept");
+    }
+
+    private static void networkIntentFollowsHostFacts() {
+        AvfLaunchAdmission.Result tap = AvfLaunchAdmission.evaluate(
+                oneCpuConfig(), AvfHostFacts.supported(), -1L);
+        assertEquals(AvfLaunchAdmission.NetworkIntent.NATIVE_TAP, tap.plan().networkIntent(),
+                "a supported/unknown host attempts native TAP");
+        AvfLaunchAdmission.Result none = AvfLaunchAdmission.evaluate(
+                oneCpuConfig(),
+                AvfHostFacts.supported().withNativeTap(AvfHostFacts.Support.UNSUPPORTED), -1L);
+        assertEquals(AvfLaunchAdmission.NetworkIntent.NONE, none.plan().networkIntent(),
+                "a host without TAP support gets an explicit NONE plan");
     }
 
     private static void specAppendsPlanArgumentsAfterTheBaseCmdline() {
