@@ -4,20 +4,20 @@ import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract;
 import java.util.Objects;
 
 /**
- * Validates the AVF capability matrix and transparent badge declarations
- * conforming to ADR-0002, ADR-0018, and Ticket 48.
+ * Ticket 04: the AVF engine's no-session matrix is an upper bound derived from
+ * actual wiring, not a promise list. RFB is the display; audio, clipboard,
+ * pointer capture and GPU acceleration are absent in AVF v1.
  */
 public final class AvfCapabilityMatrixAudioTest {
 
     public static void main(String[] arguments) {
-        avfVirtualMachineEngineDeclaresCompletePeripheralCapabilities();
-        avfBadgeStringsMatchContractSpecifications();
-        avfAudioChannelReflectsHardwareVirtualizationParity();
+        avfEngineDeclaresOnlyWiredCapabilities();
+        avfBadgesStayHonest();
         System.out.println(
-                "AVF_CAPABILITY_MATRIX_AUDIO_TEST_OK matrix_support=1 badges=1 audio_channel_parity=1");
+                "AVF_CAPABILITY_MATRIX_AUDIO_TEST_OK matrix=1 rfb=1 audio_absent=1 clipboard_absent=1");
     }
 
-    private static void avfVirtualMachineEngineDeclaresCompletePeripheralCapabilities() {
+    private static void avfEngineDeclaresOnlyWiredCapabilities() {
         FullLinuxContract.CapabilityMatrix matrix = AvfVirtualMachineEngine.capabilityMatrix();
         assertTrue(matrix != null, "matrix must not be null");
         assertEquals(
@@ -28,59 +28,45 @@ public final class AvfCapabilityMatrixAudioTest {
         assertTrue(matrix.supports(FullLinuxContract.Capability.TERMINAL), "supports TERMINAL");
         assertTrue(matrix.supports(FullLinuxContract.Capability.BRIDGE_HANDSHAKE), "supports BRIDGE_HANDSHAKE");
         assertTrue(matrix.supports(FullLinuxContract.Capability.HARDWARE_ACCELERATION), "supports HARDWARE_ACCELERATION");
-        assertTrue(matrix.supports(FullLinuxContract.Capability.GRAPHICS_WAYLAND), "supports GRAPHICS_WAYLAND");
-        assertTrue(matrix.supports(FullLinuxContract.Capability.AUDIO_OUTPUT), "supports AUDIO_OUTPUT");
-        assertTrue(matrix.supports(FullLinuxContract.Capability.CLIPBOARD_SYNC), "supports CLIPBOARD_SYNC");
-        assertTrue(matrix.supports(FullLinuxContract.Capability.POINTER_CAPTURE), "supports POINTER_CAPTURE");
+        assertTrue(matrix.supports(FullLinuxContract.Capability.GRAPHICS_RFB), "supports GRAPHICS_RFB");
 
-        assertTrue(matrix.supportsAudio(), "supportsAudio helper must be true");
-        assertTrue(matrix.supportsClipboard(), "supportsClipboard helper must be true");
-        assertTrue(matrix.supportsPointerCapture(), "supportsPointerCapture helper must be true");
+        assertFalse(matrix.supports(FullLinuxContract.Capability.GRAPHICS_WAYLAND),
+                "RFB must not be declared as Wayland");
+        assertFalse(matrix.supports(FullLinuxContract.Capability.AUDIO_OUTPUT),
+                "AVF v1 has no audio relay, so AUDIO_OUTPUT must be absent");
+        assertFalse(matrix.supports(FullLinuxContract.Capability.CLIPBOARD_SYNC),
+                "AVF v1 has no wired clipboard agent, so CLIPBOARD_SYNC must be absent");
+        assertFalse(matrix.supports(FullLinuxContract.Capability.POINTER_CAPTURE),
+                "RFB pointer events are not Android pointer capture");
+        assertFalse(matrix.supports(FullLinuxContract.Capability.GPU_HARDWARE_ACCELERATION),
+                "AVF v1 has no guest GPU acceleration");
+        assertFalse(matrix.supports(FullLinuxContract.Capability.SHARED_DIRECTORY),
+                "the static upper bound does not start a 9p server");
+
+        assertFalse(matrix.supportsAudio(), "supportsAudio helper must be false");
+        assertFalse(matrix.supportsClipboard(), "supportsClipboard helper must be false");
+        assertFalse(matrix.supportsPointerCapture(), "supportsPointerCapture helper must be false");
     }
 
-    private static void avfBadgeStringsMatchContractSpecifications() {
+    private static void avfBadgesStayHonest() {
         FullLinuxContract.CapabilityMatrix matrix = AvfVirtualMachineEngine.capabilityMatrix();
 
-        assertEquals(
-                "低延迟 PCM 音频（vsock 硬件加速 48kHz）",
-                matrix.audioBadge(),
-                "audio badge reflects vsock hardware accelerated 48kHz PCM");
-
-        assertEquals(
-                "剪贴板双向同步（vsock 硬件通道）",
-                matrix.clipboardBadge(),
-                "clipboard badge reflects vsock hardware channel sync");
-
-        assertEquals(
-                "相对指针捕获（无边界）",
-                matrix.pointerCaptureBadge(),
-                "pointer capture badge reflects borderless relative capture");
-
-        assertEquals(
-                "Wayland 原生通道（vsock 硬件加速）",
-                matrix.graphicsBadge(),
-                "graphics badge reflects vsock Wayland hardware channel");
-
-        assertEquals(
-                "完整 Linux · 硬件加速",
-                matrix.performanceBadge(),
-                "performance badge reflects hardware acceleration");
-    }
-
-    private static void avfAudioChannelReflectsHardwareVirtualizationParity() {
-        FullLinuxContract.CapabilityMatrix matrix = AvfAudioChannel.capabilityMatrix();
-        assertTrue(matrix != null, "AvfAudioChannel capability matrix must not be null");
-        assertTrue(matrix.supports(FullLinuxContract.Capability.AUDIO_OUTPUT), "AvfAudioChannel supports AUDIO_OUTPUT");
-        assertEquals(
-                FullLinuxContract.ExecutionStrategy.HARDWARE_VIRTUALIZATION,
-                matrix.executionStrategy(),
-                "AvfAudioChannel execution strategy is HARDWARE_VIRTUALIZATION");
+        assertEquals("无音频输出", matrix.audioBadge(), "audio badge must say there is no audio");
+        assertEquals("无剪贴板同步", matrix.clipboardBadge(), "clipboard badge must say there is no clipboard");
+        assertEquals("无指针捕获", matrix.pointerCaptureBadge(), "pointer badge must say there is no capture");
+        assertEquals("RFB 显示（vsock CPU 拷贝）", matrix.graphicsBadge(), "graphics badge must name RFB");
+        assertEquals("无 GPU 加速（软件光栅）", matrix.gpuBadge(), "GPU badge must stay absent");
+        assertEquals("完整 Linux · 硬件加速", matrix.performanceBadge(), "performance badge reflects hardware acceleration");
     }
 
     private static void assertTrue(boolean condition, String message) {
         if (!condition) {
             throw new AssertionError(message);
         }
+    }
+
+    private static void assertFalse(boolean condition, String message) {
+        assertTrue(!condition, message);
     }
 
     private static void assertEquals(Object expected, Object actual, String message) {

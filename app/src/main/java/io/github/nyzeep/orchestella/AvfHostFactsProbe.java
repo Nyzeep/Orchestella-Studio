@@ -1,26 +1,30 @@
 package io.github.nyzeep.orchestella;
 
 import android.content.Context;
-import android.content.pm.PackageManager;
 import android.os.Build;
 import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator;
+import io.github.nyzeep.orchestella.runtime.capability.AvfPlatformFacts;
+import io.github.nyzeep.orchestella.runtime.engineavf.ReflectiveAvfPlatformAccess;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Objects;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 /**
  * Gathers the pre-read host facts {@link AvfCapabilityEvaluator} consumes.
- * Every Android-side read is tolerantly guarded: a failed read degrades to
- * the honest "unsupported" default instead of guessing a capability.
+ * This class owns only Android-visible facts (SDK, ABI, Build, package
+ * feature, system property). Platform facts — VM modes, permissions, hidden
+ * API/reflection failures — come from the one shared
+ * {@link ReflectiveAvfPlatformAccess} adapter, so the probe and the AVF engine
+ * can never disagree about class shape, capability bits or failure state.
  */
 public final class AvfHostFactsProbe {
     private AvfHostFactsProbe() {}
 
     /**
-     * Builds the evaluator input from raw facts. The three suppliers isolate
-     * the Android-boundary reads (system property, system feature, runtime
-     * permission) so the pure evaluation stays JVM-testable.
+     * Legacy assembly from raw facts with independently supplied permission
+     * reads. Kept for callers/tests that do not have a platform adapter.
      */
     public static AvfCapabilityEvaluator.AvfHostFacts probe(
             int sdkInt,
@@ -30,27 +34,63 @@ public final class AvfHostFactsProbe {
             Supplier<String> virtualizationPropertyReader,
             Predicate<String> featureChecker,
             Predicate<String> permissionChecker) {
-        Objects.requireNonNull(supportedAbis, "supportedAbis");
-        return new AvfCapabilityEvaluator.AvfHostFacts.Builder(
-                        sdkInt,
-                        java.util.Collections.unmodifiableList(
-                                new java.util.ArrayList<>(Arrays.asList(supportedAbis))),
-                        readVirtualizationProperty(virtualizationPropertyReader),
-                        isFeatureDeclared(featureChecker),
-                        readPermission(permissionChecker, AvfCapabilityEvaluator.MANAGE_VIRTUAL_MACHINE_PERMISSION),
-                        readPermission(permissionChecker, AvfCapabilityEvaluator.USE_CUSTOM_VIRTUAL_MACHINE_PERMISSION))
-                .socModel(socModel)
-                .deviceModel(deviceModel)
-                .build();
+        return probe(sdkInt, supportedAbis, socModel, deviceModel,
+                virtualizationPropertyReader, featureChecker, permissionChecker, null);
+    }
+
+    /**
+     * Legacy assembly with an explicit VM-mode observation. A null observation
+     * is the legacy path; production passes a platform observation instead.
+     */
+    public static AvfCapabilityEvaluator.AvfHostFacts probe(
+            int sdkInt,
+            String[] supportedAbis,
+            String socModel,
+            String deviceModel,
+            Supplier<String> virtualizationPropertyReader,
+            Predicate<String> featureChecker,
+            Predicate<String> permissionChecker,
+            AvfCapabilityEvaluator.AvfModeFacts modeFacts) {
+        Objects.requireNonNull(permissionChecker, "permissionChecker");
+        return assemble(sdkInt, supportedAbis, socModel, deviceModel,
+                virtualizationPropertyReader, featureChecker,
+                readPermission(permissionChecker, AvfCapabilityEvaluator.MANAGE_VIRTUAL_MACHINE_PERMISSION),
+                readPermission(permissionChecker, AvfCapabilityEvaluator.USE_CUSTOM_VIRTUAL_MACHINE_PERMISSION),
+                modeFacts, null);
+    }
+
+    /**
+     * Production-shaped assembly: permissions and VM modes are taken from the
+     * one platform observation, never read a second time here.
+     */
+    public static AvfCapabilityEvaluator.AvfHostFacts probe(
+            int sdkInt,
+            String[] supportedAbis,
+            String socModel,
+            String deviceModel,
+            Supplier<String> virtualizationPropertyReader,
+            Predicate<String> featureChecker,
+            AvfPlatformFacts platformFacts) {
+        Objects.requireNonNull(platformFacts, "platformFacts");
+        return assemble(sdkInt, supportedAbis, socModel, deviceModel,
+                virtualizationPropertyReader, featureChecker,
+                platformFacts.managePermission(), platformFacts.customPermission(),
+                platformFacts.modeFacts(), platformFacts);
     }
 
     /** Assembles the probe from one live Android context (production wiring). */
     public static AvfCapabilityEvaluator.AvfHostFacts probe(Context context) {
-        String socModel = readSocModel();
+        Objects.requireNonNull(context, "context");
+        AvfPlatformFacts platformFacts = new ReflectiveAvfPlatformAccess(
+                context,
+                context.getClassLoader(),
+                AvfHiddenApiExemption::installOnce,
+                romBinding())
+                .observe();
         return probe(
                 Build.VERSION.SDK_INT,
                 Build.SUPPORTED_ABIS,
-                socModel,
+                readSocModel(),
                 Build.MODEL,
                 () -> {
                     String prop = readSystemProperty("ro.virtualization.supported");
@@ -62,19 +102,65 @@ public final class AvfHostFactsProbe {
                     }
                     return prop;
                 },
-                feature -> {
-                    try {
-                        if (context.getPackageManager().hasSystemFeature(feature)) {
-                            return true;
-                        }
-                        // Some OEM ROMs omit declaring the feature string while VirtualMachineManager is functional
-                        Class<?> vmmClass = Class.forName("android.system.virtualmachine.VirtualMachineManager");
-                        return context.getSystemService(vmmClass) != null;
-                    } catch (Throwable failure) {
-                        return false;
-                    }
-                },
-                permission -> context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED);
+                feature -> hasFeature(context, feature),
+                platformFacts);
+    }
+
+    private static AvfCapabilityEvaluator.AvfHostFacts assemble(
+            int sdkInt,
+            String[] supportedAbis,
+            String socModel,
+            String deviceModel,
+            Supplier<String> virtualizationPropertyReader,
+            Predicate<String> featureChecker,
+            AvfCapabilityEvaluator.PermissionState managePermission,
+            AvfCapabilityEvaluator.PermissionState customPermission,
+            AvfCapabilityEvaluator.AvfModeFacts modeFacts,
+            AvfPlatformFacts platformFacts) {
+        Objects.requireNonNull(supportedAbis, "supportedAbis");
+        return new AvfCapabilityEvaluator.AvfHostFacts.Builder(
+                        sdkInt,
+                        Collections.unmodifiableList(new java.util.ArrayList<>(Arrays.asList(supportedAbis))),
+                        readVirtualizationProperty(virtualizationPropertyReader),
+                        isFeatureDeclared(featureChecker),
+                        managePermission,
+                        customPermission)
+                .socModel(socModel)
+                .deviceModel(deviceModel)
+                .modeFacts(modeFacts)
+                .platformFacts(platformFacts)
+                .build();
+    }
+
+    private static boolean hasFeature(Context context, String feature) {
+        try {
+            return context.getPackageManager().hasSystemFeature(feature);
+        } catch (RuntimeException failure) {
+            return false;
+        }
+    }
+
+    /** Coarse, non-fingerprint ROM binding for the mode observation. */
+    private static String romBinding() {
+        String id = Build.ID == null || Build.ID.isBlank() ? "unknown-id" : Build.ID;
+        String incremental = Build.VERSION.INCREMENTAL == null || Build.VERSION.INCREMENTAL.isBlank()
+                ? "unknown-incremental"
+                : Build.VERSION.INCREMENTAL;
+        return id + "/" + incremental;
+    }
+
+    public static String modeSummary(AvfCapabilityEvaluator.AvfModeFacts modeFacts) {
+        return modeFacts == null ? "未读取（旧调用方）" : modeFacts.summary();
+    }
+
+    /** Null-safe platform summary for the status surfaces. */
+    public static String platformSummary(AvfPlatformFacts platformFacts) {
+        return platformFacts == null ? "未读取（旧调用方）" : platformFacts.summary();
+    }
+
+    /** Stable, actionable label for one typed platform access state. */
+    public static String platformAccessLabel(AvfPlatformFacts.AccessState accessState) {
+        return "平台访问：" + AvfPlatformFacts.accessLabel(accessState);
     }
 
     /**

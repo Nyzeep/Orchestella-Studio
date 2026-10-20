@@ -14,6 +14,7 @@ public final class VirtualMachineManager {
     private int gets;
     private int deletes;
     private int getOrCreates;
+    private VirtualMachineConfig lastConfig;
     public VirtualMachineManager(VmStarter starter) {
         this(starter, CAPABILITY_PROTECTED_VM | CAPABILITY_NON_PROTECTED_VM);
     }
@@ -24,6 +25,7 @@ public final class VirtualMachineManager {
     public int getCapabilities() { return capabilities; }
     public synchronized VirtualMachine create(String name, VirtualMachineConfig config) throws Exception {
         creates++;
+        lastConfig = config;
         if (persisted.containsKey(name)) throw new java.io.IOException("same-name persistent VM exists");
         VirtualMachine vm = starter.start(name, config);
         if (vm != null) {
@@ -49,4 +51,7 @@ public final class VirtualMachineManager {
     public int getCallsForTest() { return gets; }
     public int deleteCallsForTest() { return deletes; }
     public int getOrCreateCallsForTest() { return getOrCreates; }
+    public synchronized VirtualMachineConfig lastConfigForTest() { return lastConfig; }
+    /** Seeds a persistent VM without going through create(), for rebuild tests. */
+    public synchronized void persistForTest(String name, VirtualMachine vm) { persisted.put(name, vm); }
 }

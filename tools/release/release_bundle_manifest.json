@@ -17,6 +17,7 @@
     "tools/qemu-android/gpl/NOTICE.QEMU",
     "app/src/main/assets/NOTICE.PHASE5",
     "app/src/main/assets/third-party-notices.txt",
+    "app/src/main/assets/LICENSE.APACHE-2.0",
     "app/src/main/assets/LICENSE.DESUGAR-JDK-LIBS",
     "app/src/main/assets/ASSEMBLY_EXCEPTION.DESUGAR-JDK-LIBS"
   ]

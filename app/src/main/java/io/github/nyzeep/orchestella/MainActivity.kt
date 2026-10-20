@@ -40,7 +40,6 @@ import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
 import io.github.nyzeep.orchestella.runtime.capability.AvfAuthorizationWizardModel
 import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator
 import io.github.nyzeep.orchestella.runtime.capability.DeviceCapabilityEvaluator
-import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig
 import io.github.nyzeep.orchestella.runtime.distro.DistroCatalogRegistry
 import io.github.nyzeep.orchestella.runtime.distro.DistroManifest
@@ -363,6 +362,17 @@ class MainActivity : AppCompatActivity() {
                 AvfCapabilityEvaluator.AvfStatus.NEEDS_AUTHORIZATION -> {
                     showAvfAuthorizationWizard()
                 }
+                AvfCapabilityEvaluator.AvfStatus.MODE_UNSUPPORTED,
+                AvfCapabilityEvaluator.AvfStatus.MODE_UNKNOWN,
+                AvfCapabilityEvaluator.AvfStatus.HIDDEN_API_BLOCKED,
+                AvfCapabilityEvaluator.AvfStatus.REFLECTION_UNAVAILABLE -> {
+                    val reasons = avfReadiness?.reasons()?.joinToString("\n") ?: "无法读取当前系统的虚拟机模式"
+                    androidx.appcompat.app.AlertDialog.Builder(this)
+                        .setTitle("AVF 模式检测")
+                        .setMessage("当前设备状态：\n$reasons\n\n授权不会改变 VM 模式或平台接口；应用继续使用 QEMU 完整 Linux 路径。")
+                        .setPositiveButton("了解", null)
+                        .show()
+                }
                 AvfCapabilityEvaluator.AvfStatus.UNSUPPORTED -> {
                     val reasons = avfReadiness?.reasons()?.joinToString("\n") ?: "设备未声明虚拟化框架支持"
                     androidx.appcompat.app.AlertDialog.Builder(this)
@@ -526,6 +536,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.hw_detail_avf_permission)?.text =
             "MANAGE：${AvfHostFactsProbe.permissionLabel(facts.manageVirtualMachinePermissionState())}\n" +
                 "CUSTOM：${AvfHostFactsProbe.permissionLabel(facts.useCustomVirtualMachinePermissionState())}\n" +
+                "平台访问：${AvfHostFactsProbe.platformSummary(facts.platformFacts())}\n" +
                 getString(R.string.avf_preflight_boundary)
 
         val kvmFile = java.io.File("/dev/kvm")
@@ -609,6 +620,10 @@ class MainActivity : AppCompatActivity() {
             } else when (avfReadiness?.status()) {
                 AvfCapabilityEvaluator.AvfStatus.READY -> "AVF · 预检通过"
                 AvfCapabilityEvaluator.AvfStatus.NEEDS_AUTHORIZATION -> "AVF · 待授权"
+                AvfCapabilityEvaluator.AvfStatus.MODE_UNSUPPORTED -> "AVF · 模式不支持"
+                AvfCapabilityEvaluator.AvfStatus.MODE_UNKNOWN -> "AVF · 模式未验证"
+                AvfCapabilityEvaluator.AvfStatus.HIDDEN_API_BLOCKED -> "AVF · 接口受限"
+                AvfCapabilityEvaluator.AvfStatus.REFLECTION_UNAVAILABLE -> "AVF · 接口缺失"
                 else -> "AVF · 未就绪"
             }
         findViewById<com.google.android.material.button.MaterialButton>(R.id.seg_qemu)?.text =
@@ -728,17 +743,6 @@ class MainActivity : AppCompatActivity() {
             return readiness.performanceBadge()
         }
         return assessment.performanceBadge()
-    }
-
-    private fun currentCapabilityMatrix(): FullLinuxContract.CapabilityMatrix {
-        val assessment = DeviceCapabilityEvaluator.evaluate(deviceProfile())
-        val readiness = avfReadiness
-        if (assessment.canCreateFullLinuxInstance() && readiness != null &&
-            readiness.status() == AvfCapabilityEvaluator.AvfStatus.READY
-        ) {
-            return FullLinuxContract.CapabilityMatrix.hardwareVirtualizationWithGraphics()
-        }
-        return FullLinuxContract.CapabilityMatrix.softwareVirtualizationWithGraphics()
     }
 
     private fun refreshWizardEntry() {

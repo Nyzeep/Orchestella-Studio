@@ -125,3 +125,210 @@ AVF_VALIDATION_TEST_ROOT='<本批专属外部绝对根>/test-runs/独立新标�
 - [ ] 保持原认证和唯一control reader，取消/迟到回调/FD释放由对应生命周期验收；无无限轮询。
 - [ ] fallback/QEMU/未知/失败保留并排除，独立审查recorder及设备动作后才能签收真机通过。
 - [ ] 用同owner正常stop，确认STOPPED和资源释放；恢复此前明确改动，保留用户实例引用。失败回滚不清app数据、不卸载、不覆盖历史APK/tag、不擅自删除QA盘。
+
+## 2026-10-20：09 AVF 设备验收 dry-run
+
+`run_avf_device_validation.py` 是一条命令的 AVF 设备验收入口，阶段严格对应 research §3.3 的 12 步：platform_declaration、capabilities、permissions、protected_mode、create、run_returned、vsock_handshake、stop_cycles、network、share_display、app_death、qemu_comparison。它不是新的证据认证器：JSON schema 固定为 `schema_version=1`，每阶段只有 `pass` / `fail` / `blocked` / `not-tested` 四种状态。
+
+```bash
+# 零设备 dry-run：不连 adb，所有阶段 not-tested，退出码 0
+python3 -B tools/device-validation/run_avf_device_validation.py \
+  --dry-run --out "$APPROVED_AVF_OUTPUT_ROOT/dry-run"
+
+# 09 历史 stub（2026-10-20 已被下一节的设备模式取代）：不调用 adb，所有阶段 blocked
+# python3 -B tools/device-validation/run_avf_device_validation.py \
+#   --device "$QA_SERIAL" --device-alias qa-device-01 --out "$APPROVED_AVF_OUTPUT_ROOT"
+
+# 校验已有报告 schema；坏 fixture 以 REPORT_SCHEMA_REJECTED 拒绝
+python3 -B tools/device-validation/run_avf_device_validation.py \
+  --validate report.json --out "$APPROVED_AVF_OUTPUT_ROOT"
+```
+
+输出为 JSON + Markdown，写入显式绝对根下的新文件名（带 UTC 微秒），并复用 `EvidenceStore` 的 preservation 副本。`--dry-run` 的每步 `evidence`/`rom_binding` 都是 `not-collected`，`real_avf_samples=0`，`verdict=NOT_TESTED`。工具本身不 root/解锁、不启停 VM；09 时 `--device` 只是 stub，2026-10-20 的设备模式见下一节。dry-run 通过只表示“工具与 schema 就绪”，不表示 AVF 已在设备上成功。
+
+
+## 2026-10-20：设备模式（Session E）
+
+`--device` 已从 stub 变成 host 侧真实执行路径；`--dry-run` 的输出保持不变（12 个 `not-tested`、0 pass、`real_avf_samples=0`）。
+
+### Host 执行
+
+- `avf_device_mode.py` 的 `AdbRunner` 是唯一生产命令执行器：固定 argv、`shell=False`、每命令 timeout、整轮 deadline、失败不重试；命令日志只保留 id/argv/timeout/exit/duration，并把 adb 路径、serial、APK 路径替换为 `<adb>` / `<device>` / `<apk>`，不保存 stdout/stderr。
+- 设备发现要求 `adb devices -l` 恰好一台 `device`，且 serial 与 `--device` 一致；serial 只用于比较，不写入报告。多设备、unauthorized、offline、无设备分别以固定 reason code 停止。
+- 复用 `avf_preflight.collect` 的只读命令读取 API/ABI/feature/hypervisor 声明；不再维护第二套设备命令。
+- QA 包必须包含 `.qa.`。可用 `--apk` / `--test-apk` 安装 QA 包与 instrumentation 包；否则用 `pm path` 检查已安装。只安装 QA 包，不安装生产包。
+- `--grant` 必须显式传入。host 会对 QA 包执行两条 `pm grant`，随后 `am force-stop` QA 包并重新启动探针复核；没有 `--grant` 时一条 grant 都不会执行。grant 失败、权限仍为 denied 都以 blocked/fail 停止。
+- `--stage` 支持 `minimal`（默认，资格→grant→create→run→vsock→stop 的 8 个阶段）、`all` 或逗号分隔的阶段名；未请求的阶段为 `not-tested` / `STAGE_NOT_REQUESTED`。`--cycles 1..20` 传给 QA 探针。
+
+### QA-only 设备探针
+
+- `app/src/androidTest/java/io/github/nyzeep/orchestella/AvfQaProbeInstrumentation.java` 是 androidTest 专用 `Instrumentation`，不进入 release APK，也没有 launcher 入口。它拒绝在包名不含 `.qa.` 的 target 上运行。
+- 探针调用现有 `ReflectiveAvfPlatformAccess` 读取 access/exemption/permission/mode facts，反射读取 capability raw bits，并用 `VirtualMachineConfig.Builder.setProtectedVm(false)` 记录 protected-mode 结果；ROM fingerprint 只保存 SHA-256。它不 root、不改 hidden API 全局策略、不启动 VM。
+- 探针把 JSON 写到 QA app 私有目录 `files/avf-qa/probe-<token>.json`；host 用 `adb exec-out run-as <qa> cat ...` 拉取。令牌每次随机，报告只保存令牌的 SHA-256，命令日志把 `qaRunToken` 值和探针文件路径替换为 `<token>`。
+- **（Session E 历史状态，已被 Session F 取代）** 本票的探针只完成资格观察；`create`/`run_returned`/`vsock_handshake`/`stop_cycles` 明确返回 `blocked` / `QA_LAUNCH_ENTRY_NOT_IMPLEMENTED`。host 不会把缺失的探针结果补成 pass；`qualification` 仍保持这一行为，其余模式见下方“QA 启动链路（Session F）”。
+- `real_avf_samples` 只有在 create、run_returned、vsock_handshake、stop_cycles 四个阶段都真实 pass 时才为 1；其余为 0。
+
+### 命令示例
+
+```bash
+# dry-run 不变
+python3 -B tools/device-validation/run_avf_device_validation.py \
+  --dry-run --out "$APPROVED_AVF_OUTPUT_ROOT/dry-run"
+
+# 设备资格 + 显式 grant + 最小阶段
+python3 -B tools/device-validation/run_avf_device_validation.py \
+  --device "$QA_SERIAL" --device-alias qa-device-01 \
+  --qa-package io.github.nyzeep.orchestella.qa.devicemode \
+  --qa-test-package io.github.nyzeep.orchestella.qa.devicemode.test \
+  --adb "$ADB" --grant \
+  --out "$APPROVED_AVF_OUTPUT_ROOT/device"
+```
+
+### 本回合结果
+
+本环境 `adb devices -l` 没有连接设备；用真实 adb 执行设备模式的报告为 `NO_DEVICE`、8 个请求阶段 blocked、4 个 not-tested、`real_avf_samples=0`。没有安装 APK、没有 grant、没有创建/启动 VM，也没有任何真机 AVF 结论。fake adb 只证明 host 编排、超时/停止/脱敏和报告 schema；不是设备证据。
+
+## 2026-10-20：QA 启动链路（Session F）
+
+Session E 只做资格观察；本节把 QA 启动入口补成三种显式模式，仍然只在 QA 包内运行，且不改变 `--dry-run` 的 12 个 `not-tested`。
+
+### 模式与门控
+
+- `--qa-mode qualification`（默认）：只读资格；不创建 VM。`create`/`run_returned`/`vsock_handshake`/`stop_cycles` 固定为 `blocked` / `QA_LAUNCH_NOT_REQUESTED`。
+- `--qa-mode protected-microdroid`：仅当 `getCapabilities` 的 protected bit（bit1）可读且两权限已授予时进入。使用 `setProtectedVm(true)`、`setPayloadBinaryName(...)` 和系统 Microdroid OS（优先 `setOsName("microdroid")`，兼容 `setOs`；两者都不存在时使用平台默认 Microdroid）。不加载 custom kernel/rootfs，不启用网络。
+- `--qa-mode custom-linux`：仅当 non-protected bit（bit2）存在时进入；否则 host 在启动探针前以 `NO_NON_PROTECTED_VM` 阻断，不创建 VM。custom 镜像只允许 QA app 私有目录下的 `files/avf-qa/custom/{kernel,initrd,root.img}`，不接受任意绝对路径。
+- protected-only 设备上的 `setProtectedVm(false)` 仍由探针记录；`REJECTED` 被视为预期结果（`NON_PROTECTED_CONFIG_REFUSED`），不再把设备资格判为失败。App 产品路径仍显示 `MODE_UNSUPPORTED` 并保持 QEMU，QA 探针不会改变产品 readiness。
+- `--microdroid-payload` 必须显式给出 QA APK 内的 payload `.so` 名称；没有 payload 时探针返回 `QA_MICRODROID_PAYLOAD_MISSING`，不创建 VM。仓库当前没有内置 Microdroid payload，因此该模式默认 blocked，而不是伪造 payload。
+- stop：`--stop-deadline-ms`（1000..60000，默认 15000）传给探针；探针调用 stop 后轮询 `getStatus()`，只有到达 `STATUS_STOPPED` 才记 `stop_confirmed=true`，超时为 `STOP_UNCONFIRMED`，不再继续。确认停止后才删除本次随机命名的 QA 实例；未确认时保留实例，避免删除可能仍在运行的 VM。
+- 所有 VM 名称均为 `qa-pvm-<token前12位>` / `qa-custom-<token前12位>`；不复用、不读取用户实例或用户根盘。
+
+### 样本计数
+
+报告新增四个独立计数，均为 0/1：
+
+- `platform_qualification_samples`：平台声明与 capabilities 阶段都 pass 时为 1；资格检查不算真实 VM 生命周期。
+- `protected_microdroid_samples`：`protected-microdroid` 模式下 create/run_returned/stop_cycles 都 pass 时为 1；vsock 可选。
+- `custom_linux_samples`：`custom-linux` 模式下 create/run_returned/stop_cycles 都 pass 时为 1。
+- `real_avf_samples`：仅等于 `protected_microdroid_samples + custom_linux_samples`；资格检查不递增。
+
+`run_returned` 仍只表示 `run()` 返回，不表示 guest ready；report 的 Markdown 保留该边界。
+
+### 命令示例
+
+```bash
+# 只读资格（protected-only 设备也适用）
+python3 -B tools/device-validation/run_avf_device_validation.py \
+  --device "$QA_SERIAL" --device-alias qa-device-01 \
+  --qa-package io.github.nyzeep.orchestella.qa.devicemode \
+  --qa-test-package io.github.nyzeep.orchestella.qa.devicemode.test \
+  --adb "$ADB" --grant --qa-mode qualification \
+  --out "$APPROVED_AVF_OUTPUT_ROOT/qualification"
+
+# 可选 protected Microdroid 最小生命周期；必须提供 QA APK 内 payload
+python3 -B tools/device-validation/run_avf_device_validation.py \
+  --device "$QA_SERIAL" --device-alias qa-device-01 \
+  --qa-package io.github.nyzeep.orchestella.qa.devicemode \
+  --qa-test-package io.github.nyzeep.orchestella.qa.devicemode.test \
+  --adb "$ADB" --grant --qa-mode protected-microdroid \
+  --microdroid-payload libqa_payload.so --stop-deadline-ms 15000 \
+  --out "$APPROVED_AVF_OUTPUT_ROOT/protected-microdroid"
+
+# protected-only 设备上该命令必须在创建前阻断
+python3 -B tools/device-validation/run_avf_device_validation.py \
+  --device "$QA_SERIAL" --device-alias qa-device-01 \
+  --qa-package io.github.nyzeep.orchestella.qa.devicemode \
+  --qa-test-package io.github.nyzeep.orchestella.qa.devicemode.test \
+  --adb "$ADB" --qa-mode custom-linux \
+  --out "$APPROVED_AVF_OUTPUT_ROOT/custom-linux"
+```
+
+### Session F 结果
+
+本环境仍然没有连接设备（`adb devices` 无 device 行），因此没有 protected-only 或 non-protected 真机事实：
+
+- `NO_DEVICE`，8 blocked / 4 not-tested，`verdict=BLOCKED`；
+- `platform_qualification_samples=0`、`protected_microdroid_samples=0`、`custom_linux_samples=0`、`real_avf_samples=0`；
+- `custom_linux` 在无 non-protected 设备时为 `blocked`（`NO_NON_PROTECTED_VM`）；本环境连设备都没有，故报告首阶段为 `NO_DEVICE`；
+- 没有安装 APK、grant、instrumentation 或 VM 操作；没有 AVF 产品支持声明。
+
+fake adb 回归覆盖 qualification、protected-only、bit2 缺失、权限拒绝、hidden API blocked、`setProtectedVm(false)` 拒绝、protected Microdroid 成功/失败、custom-linux 阻断、stop UNCONFIRMED、payload 缺失与脱敏；这些是 host 编排证据，不是真机样本。
+
+## 2026-10-20：non-protected 设备资格与 custom 工件 staging（Session G）
+
+Session G 把 Session F 的 QA 启动链路接到真实设备，并补齐 custom-Linux 的三个 app 私有工件如何准备。**本轮设备资格是 protected-only，custom 最小闭环没有执行**；staging 与启动代码仍可在零设备/ fake adb 上验证。
+
+### 设备资格结果（脱敏）
+
+- 设备 alias：`qa-device-01`（报告不写 serial）。
+- API 36；ABI `arm64-v8a`；`android.software.virtualization_framework=true`。
+- App actor `getCapabilities` raw bits = `1`：protected=true，non-protected=false。
+- 两权限在显式 `--grant` 后均为 `GRANTED`；`hidden API` exemption 为 `INSTALLED`。
+- `setProtectedVm(false)` 返回 `REJECTED` / `UnsupportedOperationException`；`protected_only=true`。
+- 停止原因：`NO_NON_PROTECTED_VM`。没有创建 custom VM，没有使用 protected Microdroid 替代，没有 20 次启停、网络、9p、RFB 或 App death。
+- 计数：`platform_qualification_samples=1`、`custom_linux_samples=0`、`protected_microdroid_samples=0`、`real_avf_samples=0`。
+
+### custom 工件 staging
+
+设备探针只接受 QA app 私有目录中的三个文件：
+
+```text
+files/avf-qa/custom/kernel
+files/avf-qa/custom/initrd
+files/avf-qa/custom/root.img
+```
+
+`avf_qa_staging.py` 从**已验证的 QA batch plan** 读取 kernel/initramfs 的 size 与 SHA-256，并可选地用 QA APK 的 `assets/runtime-artifacts-v1.sha256` 复核 kernel 与 APK `assets/Image` 一致。root 不从主机推送整盘：主机只推 4096 字节的 provisioning marker，设备侧用 `toybox truncate` 新建 sparse raw（`root.img`，默认取 plan 的 `rawBytes`），首次启动由 initramfs 格式化为 ext4。三个文件都用 `set -C`（noclobber）创建；目标已存在时拒绝覆盖。
+
+独立 staging CLI：
+
+```bash
+python3 -B tools/device-validation/avf_qa_staging.py \
+  --adb "$ADB" --device "$QA_SERIAL" \
+  --qa-package io.github.nyzeep.orchestella.qa.devicemode \
+  --plan "$QA_BATCH/plan.json" --distro debian \
+  --apk "$QA_APK" \
+  --out "$APPROVED_AVF_OUTPUT_ROOT/staging"
+```
+
+一条命令跑 custom 最小闭环（host 在创建 VM 前先做 bit2 门控和 staging）：
+
+```bash
+python3 -B tools/device-validation/run_avf_device_validation.py \
+  --device "$QA_SERIAL" --device-alias qa-device-01 \
+  --qa-package io.github.nyzeep.orchestella.qa.devicemode \
+  --qa-test-package io.github.nyzeep.orchestella.qa.devicemode.test \
+  --adb "$ADB" --grant --qa-mode custom-linux \
+  --stage-custom \
+  --custom-plan "$QA_BATCH/plan.json" --custom-distro debian \
+  --custom-apk "$QA_APK" \
+  --custom-memory-mb 1024 --vsock-port 9100 \
+  --out "$APPROVED_AVF_OUTPUT_ROOT/custom-linux"
+```
+
+- 传输暂存目录是新的 `/data/local/tmp/avf-qa-stage-<token>`；`run-as` 只复制本次三个命名文件，并在设备上复核 kernel/initrd SHA-256、root 大小与 marker。
+- 失败只清理本次创建的 app 私有文件（脚本 trap 记录 `created`），并清理本次临时目录；不删除 app 私有磁盘、其他文件或用户数据。
+- staging 失败原因写入 `create` 阶段的 blocked reason；成功的 size/SHA-256 写入独立的 `avf-qa-staging-<stamp>.json` receipt。
+- `run-as` 只对 debuggable QA 包使用；生产包仍被 `QA_PACKAGE_REQUIRED` 拒绝。
+
+### custom 启动链修正
+
+Session F 的 custom 配置缺少三处会让真实启动失败的关键接线，本轮已修：
+
+- `VirtualMachineCustomImageConfig.Builder.addParam(...)` 现在写入 `console=hvc0 rdinit=/init panic=-1 droidlayer.root_device=/dev/vda droidlayer.input_tag=droidlayer-input droidlayer.vsock_control_port=9100 droidlayer.vsock_terminal_port=9101`；没有这些参数时 guest 会走 virtio-serial 路径而不会监听 vsock。
+- 探针改用官方 `VirtualMachine.connectVsock(long)`（旧的 `connectToVsockServer(int)` 不在生产 shape 中），并在有界窗口内重试。
+- custom 模式要求 QA 64-hex bridge token，发送 `DROIDLAYER/HELLO 1 1 <token>` 并等待 `DROIDLAYER/READY 1`；随后连接 terminal vsock 并只记录首个字节是否存在，不保存终端正文。token 只作为 `am instrument -e qaBridgeToken` 传入，命令日志脱敏为 `<token>`。
+- custom 内存默认 1024 MiB（Session F 的 512 MiB 低于 Debian embedded initramfs 的 provisioning 下限），CLI 可设 512..4096。
+
+### 零设备回归
+
+在 WSL Ubuntu-24.04 / Python 3.12.3 下执行：
+
+```bash
+AVF_VALIDATION_TEST_ROOT=/tmp/avf-session-g/all \
+  PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest discover \
+  -s tools/device-validation -p 'test_*.py'
+```
+
+结果：182 tests / 0 failures / 0 errors。新增 `test_avf_qa_staging.py` 14 项，覆盖工件缺失、hash 不匹配、路径逃逸、symlink/junction、目标已存在、run-as 不可用、设备侧 hash/marker 失败、精确清理边界、root size 覆盖、APK trust anchor 与 token 缺失。QA channel 的 instrumentation APK 已重新编译通过。
+
+这些是 host 编排与 fake runner 证据，不是真机 custom 样本；本轮 `custom_linux_samples` 仍为 0。

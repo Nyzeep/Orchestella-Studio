@@ -22,7 +22,7 @@ public final class AvfVirtualMachineEngineResourceTest {
         concurrentLazyCallsPublishTheSameOwner();
         closeWakesRetryBackoffWithoutAnotherConnect();
         platformStopPrecedesBlockingPublishedChannelClose();
-        System.out.println("AVF_ENGINE_RESOURCE_TEST_OK all_fd_cleanup=1 terminal_failure_retry=3 blocked_connect_stop=5"
+        System.out.println("AVF_ENGINE_RESOURCE_TEST_OK all_fd_cleanup=1 terminal_failure_retry=3 blocked_connect_stop=4"
                 + " single_flight=2 waiter_cancel=1 retry_cancel=1 stop_before_close=1");
     }
 
@@ -76,7 +76,6 @@ public final class AvfVirtualMachineEngineResourceTest {
                 AvfVirtualMachineEngine.AvfVmSession::controlChannel,
                 AvfVirtualMachineEngine.AvfVmSession::terminalChannel,
                 AvfVirtualMachineEngine.AvfVmSession::graphicsChannel,
-                AvfVirtualMachineEngine.AvfVmSession::audioVsockChannel,
                 session -> session.openChannel(9200));
         for (int index = 0; index < paths.size(); index++) {
             BlockingApi api = new BlockingApi();

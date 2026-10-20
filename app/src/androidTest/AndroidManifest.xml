@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- QA-only probe. The test APK installs beside the QA channel APK; the
+         runner has no launcher entry and is never part of a release build. -->
+    <instrumentation
+        android:name="io.github.nyzeep.orchestella.AvfQaProbeInstrumentation"
+        android:targetPackage="${applicationId}"
+        android:label="Orchestella AVF QA probe" />
+</manifest>

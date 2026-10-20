@@ -14,10 +14,10 @@ public final class AvfLaunchSpecTest {
         announcesTheVsock9pDataPortOnlyWhenAShareIsConfigured();
         rejectsAShareDataPortCollidingWithTheControlOrTerminalPorts();
         rejectsAGraphicsVsockPortCollidingWithOtherPorts();
-        rejectsAnAudioVsockPortCollidingWithOtherPorts();
+        everyDataPlanePortComesFromTheSpec();
         System.out.println(
                 "AVF_LAUNCH_SPEC_TEST_OK defaults=1 outbound_net=1 cpu_count=1 validation=14"
-                        + " share_announce=1 no_share_leak=1 graphics_port=1 audio_port=1");
+                        + " share_announce=1 no_share_leak=1 graphics_port=1 spec_ports=1");
     }
 
     private static void buildsTheDefaultSpecWithHvcConsoleAndDefaultPorts() {
@@ -31,7 +31,6 @@ public final class AvfLaunchSpecTest {
         assertEquals(9100, spec.controlVsockPort(), "default control vsock port");
         assertEquals(9101, spec.terminalVsockPort(), "default terminal vsock port");
         assertEquals(9103, spec.graphicsVsockPort(), "default graphics vsock port");
-        assertEquals(9104, spec.audioVsockPort(), "default audio vsock port");
         assertTrue(
                 spec.guestCmdline().contains("console=hvc0"),
                 "crosvm/pKVM boots through virtio-console hvc0");
@@ -180,21 +179,22 @@ public final class AvfLaunchSpecTest {
                 valid.graphicsVsockPort(9101).build());
         rejects(IllegalArgumentException.class, () ->
                 valid.graphicsVsockPort(9102).build());
-        rejects(IllegalArgumentException.class, () ->
-                valid.graphicsVsockPort(9104).build());
     }
 
-    private static void rejectsAnAudioVsockPortCollidingWithOtherPorts() {
+    private static void everyDataPlanePortComesFromTheSpec() {
+        AvfLaunchSpec custom = AvfLaunchSpec.builder(
+                        "instance-ports", "/kernel", "/initramfs", "/root.raw")
+                .sharedDirectoryVsockPort(19102)
+                .graphicsVsockPort(19103)
+                .build();
+        assertEquals(19102, custom.sharedDirectoryVsockPort(), "the 9p port is spec-owned");
+        assertEquals(19103, custom.graphicsVsockPort(), "the graphics port is spec-owned");
+
         AvfLaunchSpec.Builder valid =
                 AvfLaunchSpec.builder("instance-1", "/kernel", "/initramfs", "/root.raw");
-        rejects(IllegalArgumentException.class, () ->
-                valid.audioVsockPort(9100).build());
-        rejects(IllegalArgumentException.class, () ->
-                valid.audioVsockPort(9101).build());
-        rejects(IllegalArgumentException.class, () ->
-                valid.audioVsockPort(9102).build());
-        rejects(IllegalArgumentException.class, () ->
-                valid.audioVsockPort(9103).build());
+        rejects(IllegalArgumentException.class, () -> valid.graphicsVsockPort(80).build());
+        rejects(IllegalArgumentException.class, () -> valid.graphicsVsockPort(65536).build());
+        rejects(IllegalArgumentException.class, () -> valid.sharedDirectoryVsockPort(9100).build());
     }
 
     private static void rejects(Class<? extends Exception> expected, Runnable action) {

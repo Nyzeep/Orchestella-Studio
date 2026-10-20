@@ -24,9 +24,19 @@
 | [0018](0018-audio-and-clipboard-bridge.md) | 系统级音频、剪贴板与外设指针 | accepted |
 | [0019](0019-gpu-hardware-acceleration.md) | GPU 硬件加速渲染与驱动隔离 | accepted |
 | [0020](0020-runtime-process-ownership.md) | 运行时进程所有权与有界停止 | accepted |
+| [0021](0021-avf-runtime-ownership.md) | AVF 运行时所有权、停止与退出分类（扩展 ADR-0020 范围） | accepted |
 
 ## 已知缺口
 
 - ADR-0015 文件不存在；旧交接与研究中的引用只能视为“计划中的编号”，不是已接受决策。
 - ADR-0010 关于 protected VM 双向通信的绝对表述与后续官方 vsock 证据冲突，当前由 [ACR-02](../../.scratch/orchestella-avf-shizuku/issues/ACR-02-protection-semantics.md) 保留未决状态；不得直接改写 accepted 正文。
 - ADR-0017 / 0018 / 0019 引用的部分研究文档未纳入公开仓库；引用标题不等于正文存在。
+
+## 实现差异说明（2026-10-20，非正文修订）
+
+ADR 正文不因实现版本变化而改写；以下只记录当前代码与已接受目标的差异，供后续实现/评审对照。
+
+- **ADR-0017（Wayland）**：当前生产路径是 RFB over LocalSocket（QEMU）/ vsock（AVF），能力枚举为 `GRAPHICS_RFB`；`WaylandChannel` 是历史接口名，不等于 Wayland/DLFR 已接线。`GRAPHICS_WAYLAND` 仍只在真实 Wayland 适配器端到端接线后声明。
+- **ADR-0018（音频/剪贴板/指针）**：AVF v1 的 `AUDIO_OUTPUT`、`CLIPBOARD_SYNC`、`POINTER_CAPTURE` 均为 `UNSUPPORTED`（没有 guest 适配器）。QEMU 的音频播放、剪贴板桥接和 Android 指针捕获由 `DesktopActivity`/UI 驱动，**不是** session capability；在出现 session-owned 适配器前不得写进能力矩阵。
+- **ADR-0019（GPU）**：AVF v1 不声明 `GPU_HARDWARE_ACCELERATION`；只有 RFB 的 CPU 拷贝显示。QEMU 的 VirGL 状态仍按其实际接线声明。
+- **ADR-0021（AVF 所有权）**：`AvfSession` 的 `close()`/`terminate()`/池退休共用 `stopRuntime(graceMs)`；`AvfSession` 非 `final` 只是 02 的测试 seam，不是新的扩展点。

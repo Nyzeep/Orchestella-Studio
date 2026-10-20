@@ -16,6 +16,9 @@ public class VirtualMachine implements AutoCloseable {
     private int closeCount;
     private VirtualMachineConfig config;
     public RuntimeException configReadFailureForTest;
+    public RuntimeException stopFailureForTest;
+    /** Optional observed platform exit status; null keeps it unobservable. */
+    public Integer exitStatusForTest;
 
     private VirtualMachine(FakeVsockNetwork network) { this.network = network; }
     public static VirtualMachine over(FakeVsockNetwork network) {
@@ -27,6 +30,10 @@ public class VirtualMachine implements AutoCloseable {
         running = true;
     }
     public int getStatus() { return running ? STATUS_RUNNING : STATUS_STOPPED; }
+    /** Optional exit-status surface; production AOSP may not have this method. */
+    public int getExitStatus() {
+        return exitStatusForTest == null ? -1 : exitStatusForTest;
+    }
     public VirtualMachineConfig getConfig() {
         if (configReadFailureForTest != null) throw configReadFailureForTest;
         return config;
@@ -39,6 +46,7 @@ public class VirtualMachine implements AutoCloseable {
     }
     public void stop() {
         stopCount++;
+        if (stopFailureForTest != null) throw stopFailureForTest;
         running = false;
         if (network != null) network.closeGuestSide();
     }

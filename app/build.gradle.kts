@@ -292,6 +292,9 @@ dependencies {
     implementation(libs.appcompat)
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
+    // Pin the in-process hidden-API exemption (Apache-2.0, LSPosed). It grants
+    // no permission and is installed once before any AVF class load.
+    implementation("org.lsposed.hiddenapibypass:hiddenapibypass:6.1")
     testImplementation(libs.junit)
 }
 
@@ -326,7 +329,7 @@ tasks.register<JavaExec>("runPhase5JvmAppTests") {
     args(
         "io.github.nyzeep.orchestella.DesktopPresentationGateTest",
         "io.github.nyzeep.orchestella.DesktopKeyMapperTest",
-        "io.github.nyzeep.orchestella.QemuWaylandChannelTest",
+        "io.github.nyzeep.orchestella.RfbDisplaySessionTest",
         "io.github.nyzeep.orchestella.DoubleBufferedRendererTest",
         "io.github.nyzeep.orchestella.FirstBootProvisionPipelineTest",
         "io.github.nyzeep.orchestella.QemuRuntimeBootstrapperTest",

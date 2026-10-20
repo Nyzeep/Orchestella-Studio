@@ -26,7 +26,7 @@ jobs:
     name: Build and verify release APK
     if: inputs.confirm == 'yes'
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       VERSION_NAME: ${{ inputs.version_name }}
     steps:
@@ -53,7 +53,7 @@ jobs:
           SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f 2>/dev/null | head -1)
           if [ -n "$SDKMANAGER" ]; then
             yes | "$SDKMANAGER" --licenses || true
-            "$SDKMANAGER" "platforms;android-36" "build-tools;36.1.0" || true
+            "$SDKMANAGER" "platforms;android-36" "build-tools;36.1.0" "ndk;27.0.12077973" || true
           fi
 
       - name: Materialize release keystore
@@ -93,8 +93,38 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
-      - name: Run candidate tests
-        run: ./gradlew :runtime:contract:check :runtime:instance:check :runtime:engine-qemu:check :app:testDebugUnitTest --no-daemon --stacktrace
+      - name: Verify CI/release module coverage and AVF harness wiring
+        run: |
+          python3 tools/ci/test_check_ci_module_coverage.py
+          python3 tools/ci/check_ci_module_coverage.py
+
+      - name: Run all runtime checks and app unit tests
+        run: |
+          bash tools/ci/run-gradle-gate.sh \
+            :runtime:contract:check \
+            :runtime:instance:check \
+            :runtime:engine-qemu:check \
+            :runtime:engine-avf:check \
+            :runtime:capability:check \
+            :runtime:distro:check \
+            :runtime:network:check \
+            :app:testDebugUnitTest
+
+      - name: Upload Gradle gate log and failed-task summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-gradle-gate-${{ github.run_id }}
+          path: |
+            build/ci/gradle-gate.log
+            build/ci/gradle-gate-summary.txt
+          if-no-files-found: warn
+
+      - name: Run lint and assemble debug for the packaging gate
+        run: ./gradlew :app:lintDebug :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Verify debug APK 16 KB ELF segments and zipalign
+        run: bash tools/ci/check-apk-16kb.sh app/build/outputs/apk/debug/app-debug.apk
 
       - name: Build release APK
         run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
@@ -107,6 +137,9 @@ jobs:
             exit 1
           fi
           echo "APK_PATH=$APK" >> "$GITHUB_ENV"
+
+      - name: Verify release APK 16 KB ELF segments and zipalign
+        run: bash tools/ci/check-apk-16kb.sh "$APK_PATH"
 
       - name: Verify release identity, certificate and checksum
         run: |

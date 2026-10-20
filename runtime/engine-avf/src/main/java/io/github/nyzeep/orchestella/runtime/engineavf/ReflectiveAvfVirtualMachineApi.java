@@ -1,5 +1,7 @@
 package io.github.nyzeep.orchestella.runtime.engineavf;
 
+import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator;
+import io.github.nyzeep.orchestella.runtime.capability.AvfPlatformFacts;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -16,13 +18,14 @@ import java.util.Objects;
  */
 public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineApi {
     private static final String PACKAGE = "android.system.virtualmachine.";
-    private static final String MANAGE_PERMISSION = "android.permission.MANAGE_VIRTUAL_MACHINE";
-    private static final String CUSTOM_PERMISSION = "android.permission.USE_CUSTOM_VIRTUAL_MACHINE";
+    private static final String MANAGE_PERMISSION =
+            ReflectiveAvfPlatformAccess.MANAGE_PERMISSION;
+    private static final String CUSTOM_PERMISSION =
+            ReflectiveAvfPlatformAccess.CUSTOM_PERMISSION;
     private final Object context;
     private final ClassLoader classLoader;
-    private final Runnable hiddenApiExemption;
+    private final ReflectiveAvfPlatformAccess platformAccess;
     private final DescriptorAdapter descriptorAdapter;
-    private boolean exemptionApplied;
 
     public ReflectiveAvfVirtualMachineApi(Object context, ClassLoader classLoader) {
         this(context, classLoader, null);
@@ -37,9 +40,18 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
     /** Inject a typed App FD adapter, or use the exact PFD AutoCloseStreams reflection boundary. */
     public ReflectiveAvfVirtualMachineApi(Object context, ClassLoader classLoader,
             Runnable hiddenApiExemption, DescriptorAdapter descriptorAdapter) {
+        this(context, classLoader, hiddenApiExemption, descriptorAdapter, null);
+    }
+
+    /** Test seam: drive the engine with an already-constructed platform adapter. */
+    ReflectiveAvfVirtualMachineApi(Object context, ClassLoader classLoader,
+            Runnable hiddenApiExemption, DescriptorAdapter descriptorAdapter,
+            ReflectiveAvfPlatformAccess platformAccess) {
         this.context = Objects.requireNonNull(context, "context");
         this.classLoader = Objects.requireNonNull(classLoader, "classLoader");
-        this.hiddenApiExemption = hiddenApiExemption;
+        this.platformAccess = platformAccess != null
+                ? platformAccess
+                : new ReflectiveAvfPlatformAccess(context, classLoader, hiddenApiExemption);
         this.descriptorAdapter = descriptorAdapter == null ? this::adoptParcelFileDescriptor : descriptorAdapter;
     }
 
@@ -55,9 +67,15 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
 
     @Override
     public AvfVirtualMachineHandle startCustomVm(AvfLaunchSpec spec) throws AvfEngineException {
+        return startCustomVm(spec, AvfLaunchTrace.NONE);
+    }
+
+    @Override
+    public AvfVirtualMachineHandle startCustomVm(AvfLaunchSpec spec, AvfLaunchTrace trace)
+            throws AvfEngineException {
         Objects.requireNonNull(spec, "spec");
+        AvfLaunchTrace stages = trace == null ? AvfLaunchTrace.NONE : trace;
         List<String> notes = new ArrayList<>();
-        applyAccessHook(notes);
         Shape shape;
         try {
             shape = loadShape();
@@ -69,18 +87,43 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
         if (!shape.context.isInstance(context)) {
             throw error(AvfEngineException.REFLECTION_UNAVAILABLE, "Android Context is required", null);
         }
-        requirePermission(shape, MANAGE_PERMISSION, notes);
-        requirePermission(shape, CUSTOM_PERMISSION, notes);
+        // The probe and the engine share one platform observation; this adapter
+        // never keeps a second set of capability bits or failure branches.
+        AvfPlatformFacts platformFacts = platformAccess.observe();
+        notes.add("access-exemption: "
+                + platformAccess.exemptionState().name().toLowerCase(java.util.Locale.ROOT));
+        notes.add("platform-access: "
+                + platformFacts.accessState().name().toLowerCase(java.util.Locale.ROOT));
+        switch (platformFacts.accessState()) {
+            case PERMISSION_DENIED -> {
+                if (platformFacts.managePermission()
+                        != AvfCapabilityEvaluator.PermissionState.GRANTED) {
+                    throw error(AvfEngineException.PERMISSION_DENIED,
+                            "required permission missing: " + MANAGE_PERMISSION, null);
+                }
+                if (platformFacts.customPermission()
+                        != AvfCapabilityEvaluator.PermissionState.GRANTED) {
+                    throw error(AvfEngineException.PERMISSION_DENIED,
+                            "required permission missing: " + CUSTOM_PERMISSION, null);
+                }
+                throw error(AvfEngineException.PERMISSION_DENIED,
+                        "platform denied the AVF capability read", null);
+            }
+            case HIDDEN_API_BLOCKED, REFLECTION_UNAVAILABLE -> throw error(
+                    AvfEngineException.REFLECTION_UNAVAILABLE,
+                    "AVF SystemApi access is unavailable", null);
+            case MODE_UNSUPPORTED -> throw error(AvfEngineException.HARDWARE_UNSUPPORTED,
+                    "non-protected custom VMs are unavailable", null);
+            case MODE_UNKNOWN -> throw error(AvfEngineException.VM_MANAGER_UNAVAILABLE,
+                    "AVF manager is unavailable", null);
+            case AVAILABLE -> {
+                // The typed facts already cover permissions and non-protected mode.
+            }
+        }
         Object manager = invoke(shape.context, context, "getSystemService", new Class<?>[] {Class.class},
                 new Object[] {shape.manager}, AvfEngineException.VM_MANAGER_UNAVAILABLE, notes);
         if (!shape.manager.isInstance(manager)) {
             throw error(AvfEngineException.VM_MANAGER_UNAVAILABLE, "AVF manager is unavailable", null);
-        }
-        Object capabilities = invoke(shape.manager, manager, "getCapabilities", new Class<?>[0],
-                new Object[0], AvfEngineException.VM_MANAGER_UNAVAILABLE, notes);
-        int nonProtected = intField(shape.manager, "CAPABILITY_NON_PROTECTED_VM");
-        if (!(capabilities instanceof Integer value) || (value & nonProtected) == 0) {
-            throw error(AvfEngineException.HARDWARE_UNSUPPORTED, "non-protected custom VMs are unavailable", null);
         }
         // The pinned public SystemApi has ONE_CPU/MATCH_HOST topology, not an exact-count setter.
         // MATCH_HOST is not a faithful substitute for the launch spec's requested count.
@@ -98,7 +141,26 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
         Object disk = invoke(shape.disk, null, "RWDisk", new Class<?>[] {String.class},
                 new Object[] {spec.rootVolumePath()}, AvfEngineException.VM_CREATE_FAILED, notes);
         set(shape.imageBuilder, imageBuilder, "addDisk", shape.disk, disk, notes);
-        set(shape.imageBuilder, imageBuilder, "useNetwork", boolean.class, true, notes);
+        AvfNetworkPlan networkPlan = spec.networkPlan();
+        if (networkPlan.enabled()) {
+            GpuConfigOutcome gpu = applyHeadlessGpu(shape, imageBuilder);
+            notes.add("gpu-config: " + gpu.name().toLowerCase(java.util.Locale.ROOT));
+            if (gpu == GpuConfigOutcome.FAILED) {
+                if (!networkPlan.allowDegradeToNone()) {
+                    throw error(AvfEngineException.NETWORK_BACKEND_UNAVAILABLE,
+                            "network requested but the headless GPU workaround failed", null);
+                }
+                // Keep the VM bootable without a network instead of failing the
+                // whole instance; the degradation is visible in the notes.
+                notes.add("network: degraded");
+            } else {
+                // UNSUPPORTED is benign: older platforms has no GPU API and the
+                // legacy useNetwork path still works there.
+                set(shape.imageBuilder, imageBuilder, "useNetwork", boolean.class, true, notes);
+            }
+        } else {
+            notes.add("useNetwork: skipped");
+        }
         Object image = invoke(shape.imageBuilder, imageBuilder, "build", new Class<?>[0],
                 new Object[0], AvfEngineException.VM_CREATE_FAILED, notes);
         if (!shape.image.isInstance(image)) {
@@ -132,15 +194,35 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
             if (!shape.vm.isInstance(vm)) throw configMismatch("VM type");
             Object stored = invoke(shape.vm, vm, "getConfig", new Class<?>[0], new Object[0],
                     AvfEngineException.CONFIG_MISMATCH, notes);
-            verifyStoredConfig(shape, stored, config);
-            Object status = invoke(shape.vm, vm, "getStatus", new Class<?>[0], new Object[0],
-                    AvfEngineException.VM_CREATE_FAILED, notes);
-            if (!(status instanceof Integer state) || state != 0) {
-                throw error(AvfEngineException.VM_CREATE_FAILED,
-                        "persistent VM must be stopped before cold restore", null);
+            if (storedConfigMatches(shape, stored, config)) {
+                Object status = invoke(shape.vm, vm, "getStatus", new Class<?>[0], new Object[0],
+                        AvfEngineException.VM_CREATE_FAILED, notes);
+                if (!(status instanceof Integer state) || state != 0) {
+                    throw error(AvfEngineException.VM_CREATE_FAILED,
+                            "persistent VM must be stopped before cold restore", null);
+                }
+                notes.add("persistent-vm: reused");
+            } else {
+                Object status = invoke(shape.vm, vm, "getStatus", new Class<?>[0], new Object[0],
+                        AvfEngineException.VM_STOP_UNCONFIRMED, notes);
+                if (!(status instanceof Integer state) || state != 0) {
+                    // A rebuild must never delete config/state of a VM that may be alive.
+                    throw error(AvfEngineException.VM_STOP_UNCONFIRMED,
+                            "persistent VM cannot be rebuilt until it is confirmed stopped", null);
+                }
+                // delete() removes the VM config/state, never the user's raw root volume.
+                invoke(shape.manager, manager, "delete", new Class<?>[] {String.class},
+                        new Object[] {spec.instanceId()}, AvfEngineException.VM_CREATE_FAILED, notes);
+                notes.add("persistent-vm: deleted for rebuild");
+                vm = invoke(shape.manager, manager, "create", new Class<?>[] {String.class, shape.config},
+                        new Object[] {spec.instanceId(), config}, AvfEngineException.VM_CREATE_FAILED, notes);
+                if (!shape.vm.isInstance(vm)) {
+                    throw error(AvfEngineException.VM_CREATE_FAILED, "manager returned no VM", null);
+                }
+                notes.add("persistent-vm: recreated");
             }
-            notes.add("persistent-vm: reused");
         }
+        stages.mark(AvfLaunchTrace.Stage.VM_CREATED);
         try {
             invoke(shape.vm, vm, "run", new Class<?>[0], new Object[0],
                     AvfEngineException.VM_CREATE_FAILED, notes);
@@ -148,19 +230,77 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
             closeAfterFailure(shape.vm, vm, failure);
             throw failure;
         }
+        stages.mark(AvfLaunchTrace.Stage.RUN_RETURNED);
         return new ReflectiveHandle(this, spec.instanceId(), shape.vm, vm, notes);
     }
 
-    private static void verifyStoredConfig(Shape shape, Object stored, Object expected) {
+    /** Typed result of the Android 17 headless-2D GPU workaround. */
+    private enum GpuConfigOutcome {
+        APPLIED,
+        /** The platform has no GPU config API; benign, the legacy attempt remains. */
+        UNSUPPORTED,
+        /** The API exists but failed; the caller degrades or refuses by policy. */
+        FAILED
+    }
+
+    /**
+     * Declares a surfaceless 2D GPU so virtmgr routes a network-enabled VM to
+     * the full crosvm instead of {@code crosvm_minimal} (which has no net
+     * feature). Resolved lazily: requiring these classes in {@link #loadShape()}
+     * would make every older device fail reflection entirely.
+     */
+    private GpuConfigOutcome applyHeadlessGpu(Shape shape, Object imageBuilder) {
+        Class<?> gpuClass;
+        Class<?> gpuBuilderClass;
+        try {
+            gpuClass = classLoader.loadClass(PACKAGE + "VirtualMachineCustomImageConfig$GpuConfig");
+            gpuBuilderClass = classLoader.loadClass(
+                    PACKAGE + "VirtualMachineCustomImageConfig$GpuConfig$Builder");
+        } catch (ClassNotFoundException | LinkageError unavailable) {
+            return GpuConfigOutcome.UNSUPPORTED;
+        }
+        try {
+            List<String> ignored = new ArrayList<>();
+            Object gpuBuilder = construct(gpuBuilderClass, new Class<?>[0], new Object[0]);
+            set(gpuBuilderClass, gpuBuilder, "setBackend", String.class, "2d", ignored);
+            try {
+                // Surfaceless is the workaround's second half; an older API that
+                // only exposes the backend keeps APPLIED but records the gap.
+                set(gpuBuilderClass, gpuBuilder, "setSurfaceless", boolean.class, true, ignored);
+            } catch (AvfEngineException missingSetter) {
+                if (!AvfEngineException.REFLECTION_UNAVAILABLE.equals(missingSetter.reason())) {
+                    return GpuConfigOutcome.FAILED;
+                }
+            }
+            Object gpu = invoke(gpuBuilderClass, gpuBuilder, "build", new Class<?>[0], new Object[0],
+                    AvfEngineException.VM_CREATE_FAILED, ignored);
+            if (!gpuClass.isInstance(gpu)) return GpuConfigOutcome.FAILED;
+            set(shape.imageBuilder, imageBuilder, "setGpuConfig", gpuClass, gpu, ignored);
+            return GpuConfigOutcome.APPLIED;
+        } catch (AvfEngineException failure) {
+            if (AvfEngineException.REFLECTION_UNAVAILABLE.equals(failure.reason())
+                    || AvfEngineException.HARDWARE_UNSUPPORTED.equals(failure.reason())) {
+                return GpuConfigOutcome.UNSUPPORTED;
+            }
+            return GpuConfigOutcome.FAILED;
+        }
+    }
+
+    /**
+     * Identity compatibility plus the full stored-vs-requested field set.
+     * A mismatch is a rebuild signal, not an error: the caller must only
+     * rebuild after observing a stopped VM.
+     */
+    private static boolean storedConfigMatches(Shape shape, Object stored, Object expected) {
         if (!shape.config.isInstance(stored)) throw configMismatch("VM config type");
         try {
             // Official isCompatibleWith tests identity compatibility, not full custom config equality.
             Object compatible = invoke(shape.config, stored, "isCompatibleWith", new Class<?>[] {shape.config},
                     new Object[] {expected}, AvfEngineException.CONFIG_MISMATCH, new ArrayList<>());
-            if (!Boolean.TRUE.equals(compatible)) throw configMismatch("VM identity");
+            if (!Boolean.TRUE.equals(compatible)) return false;
             for (String getter : new String[] {"isProtectedVm", "getMemoryBytes", "getCpuTopology",
                     "getEncryptedStorageBytes", "shouldUseHugepages"}) {
-                requireSameField(shape.config, stored, expected, getter);
+                if (!sameField(shape.config, stored, expected, getter)) return false;
             }
             Object actualImage = configValue(shape.config, stored, "getCustomImageConfig");
             Object expectedImage = configValue(shape.config, expected, "getCustomImageConfig");
@@ -171,18 +311,21 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
                     "getParams", "useNetwork", "getSharedPaths", "getAudioConfig", "getDisplayConfig",
                     "getGpuConfig", "getUsbConfig", "useTouch", "useKeyboard", "useMouse", "useSwitches",
                     "useTrackpad", "useAutoMemoryBalloon"}) {
-                requireSameField(shape.image, actualImage, expectedImage, getter);
+                if (!sameField(shape.image, actualImage, expectedImage, getter)) return false;
             }
             Object actualDisks = configValue(shape.image, actualImage, "getDisks");
             Object wantedDisks = configValue(shape.image, expectedImage, "getDisks");
-            if (!(actualDisks instanceof Object[] disks) || !(wantedDisks instanceof Object[] wanted)
-                    || disks.length != 1 || wanted.length != 1
-                    || !shape.disk.isInstance(disks[0]) || !shape.disk.isInstance(wanted[0])) {
-                throw configMismatch("root disk count/type");
+            if (!(actualDisks instanceof Object[] disks) || !(wantedDisks instanceof Object[] wanted)) {
+                throw configMismatch("root disk type");
             }
-            requireSameField(shape.disk, disks[0], wanted[0], "getImagePath");
-            requireSameField(shape.disk, disks[0], wanted[0], "isWritable");
-            requireSameField(shape.disk, disks[0], wanted[0], "getPartitions");
+            if (disks.length != 1 || wanted.length != 1
+                    || !shape.disk.isInstance(disks[0]) || !shape.disk.isInstance(wanted[0])) {
+                // A different disk set is a rebuild signal, not an unreadable config.
+                return false;
+            }
+            if (!sameField(shape.disk, disks[0], wanted[0], "getImagePath")) return false;
+            if (!sameField(shape.disk, disks[0], wanted[0], "isWritable")) return false;
+            return sameField(shape.disk, disks[0], wanted[0], "getPartitions");
         } catch (AvfEngineException failure) {
             if (AvfEngineException.PERMISSION_DENIED.equals(failure.reason())
                     || AvfEngineException.CONFIG_MISMATCH.equals(failure.reason())) throw failure;
@@ -196,11 +339,9 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
                 AvfEngineException.CONFIG_MISMATCH, new ArrayList<>());
     }
 
-    private static void requireSameField(Class<?> type, Object actual, Object expected, String getter) {
-        if (!Objects.deepEquals(configValue(type, actual, getter), configValue(type, expected, getter))) {
-            // No stored/requested paths or user values are embedded in fallback diagnostics.
-            throw configMismatch(getter);
-        }
+    private static boolean sameField(Class<?> type, Object actual, Object expected, String getter) {
+        // No stored/requested paths or user values are embedded in diagnostics.
+        return Objects.deepEquals(configValue(type, actual, getter), configValue(type, expected, getter));
     }
 
     private static AvfEngineException configMismatch(String field) {
@@ -386,8 +527,9 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
     }
 
     private Shape loadShape() throws ReflectiveOperationException {
-        Class<?> ctx = classLoader.loadClass("android.content.Context");
-        Class<?> manager = classLoader.loadClass(PACKAGE + "VirtualMachineManager");
+        ReflectiveAvfPlatformAccess.PlatformShape platform = platformAccess.loadPlatformShape();
+        Class<?> ctx = platform.context();
+        Class<?> manager = platform.manager();
         Class<?> config = classLoader.loadClass(PACKAGE + "VirtualMachineConfig");
         Class<?> configBuilder = classLoader.loadClass(PACKAGE + "VirtualMachineConfig$Builder");
         Class<?> image = classLoader.loadClass(PACKAGE + "VirtualMachineCustomImageConfig");
@@ -414,8 +556,8 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
         manager.getMethod("getCapabilities");
         manager.getMethod("create", String.class, config);
         manager.getMethod("get", String.class);
+        manager.getMethod("delete", String.class);
         vm.getMethod("getConfig");
-        manager.getField("CAPABILITY_NON_PROTECTED_VM");
         config.getField("CPU_TOPOLOGY_ONE_CPU");
         vm.getMethod("run");
         vm.getMethod("getStatus");
@@ -442,26 +584,6 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
 
     private record Shape(Class<?> context, Class<?> manager, Class<?> config, Class<?> configBuilder,
             Class<?> image, Class<?> imageBuilder, Class<?> disk, Class<?> vm) {}
-
-    private synchronized void applyAccessHook(List<String> notes) {
-        if (!exemptionApplied && hiddenApiExemption != null) {
-            try {
-                hiddenApiExemption.run();
-                exemptionApplied = true;
-            } catch (RuntimeException | LinkageError failure) {
-                throw error(AvfEngineException.REFLECTION_UNAVAILABLE, "supplied access hook failed", failure);
-            }
-        }
-        notes.add(hiddenApiExemption == null ? "access-hook: none supplied" : "access-hook: supplied");
-    }
-
-    private void requirePermission(Shape shape, String name, List<String> notes) {
-        Object result = invoke(shape.context, context, "checkSelfPermission", new Class<?>[] {String.class},
-                new Object[] {name}, AvfEngineException.PERMISSION_DENIED, notes);
-        if (!(result instanceof Integer value) || value != 0) {
-            throw error(AvfEngineException.PERMISSION_DENIED, "required permission missing: " + name, null);
-        }
-    }
 
     private static Object construct(Class<?> type, Class<?>[] params, Object[] args) {
         try {
@@ -529,6 +651,11 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
     }
 
     private static final class ReflectiveHandle implements AvfVirtualMachineHandle {
+        /** Status polling interval while waiting for a bounded stop. */
+        private static final long STOP_POLL_MS = 25L;
+        /** Extra probe window after the platform handle is force-released. */
+        private static final long STOP_FORCE_PROBE_MS = 500L;
+
         private final ReflectiveAvfVirtualMachineApi owner;
         private final String instanceId;
         private final Class<?> vmClass;
@@ -537,6 +664,8 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
         private final java.util.Set<HandleChannel> channels =
                 java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         private volatile boolean hostStopped;
+        private volatile boolean stopRequested;
+        private volatile AvfStopResult lastStopResult;
 
         ReflectiveHandle(ReflectiveAvfVirtualMachineApi owner, String id, Class<?> vmClass,
                 Object vm, List<String> notes) {
@@ -548,49 +677,175 @@ public final class ReflectiveAvfVirtualMachineApi implements AvfVirtualMachineAp
         }
         public String instanceId() { return instanceId; }
         public synchronized List<String> reflectionNotes() { return List.copyOf(notes); }
-        public int waitFor() throws InterruptedException {
-            while (!hostStopped) {
-                Object status = invoke(vmClass, vm, "getStatus", new Class<?>[0], new Object[0],
-                        AvfEngineException.VM_CREATE_FAILED, new ArrayList<>());
-                if (!(status instanceof Integer value) || value < 0 || value > 2) {
-                    throw error(AvfEngineException.REFLECTION_UNAVAILABLE, "invalid AVF numeric status", null);
-                }
-                if (value == 0 || value == 2) return 0;
-                synchronized (this) { if (!hostStopped) wait(100); }
+
+        /** Numeric platform status without diagnostics or throwing on a closed VM. */
+        public int status() {
+            try {
+                Object value = vmClass.getMethod("getStatus").invoke(vm);
+                if (!(value instanceof Integer number)) return -1;
+                int status = number;
+                return status >= 0 && status <= 2 ? status : -1;
+            } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
+                return -1;
             }
-            return 0;
         }
+
+        /** Optional platform exit status; -1 when the platform does not expose one. */
+        public int exitStatus() {
+            try {
+                Object value = vmClass.getMethod("getExitStatus").invoke(vm);
+                if (value instanceof Integer number && number >= 0) return number;
+            } catch (ReflectiveOperationException | RuntimeException | LinkageError unobservable) {
+                // Older platforms have no exit-status surface.
+            }
+            return -1;
+        }
+
+        public int waitFor() throws InterruptedException {
+            return waitForExit().exitCode();
+        }
+
+        /**
+         * Blocks until STOPPED or DELETED. A requested stop is distinguished
+         * from a guest-initiated stop; a DELETED VM never returns a zero exit;
+         * an unconfirmable stop is a typed failure, not a normal exit.
+         */
+        public AvfExitInfo waitForExit() throws InterruptedException {
+            long started = System.nanoTime();
+            while (true) {
+                int status = status();
+                long elapsedMs = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
+                        System.nanoTime() - started);
+                if (status == 0) {
+                    int observedExit = exitStatus();
+                    if (observedExit > 0) {
+                        return AvfExitInfo.crashed(observedExit, elapsedMs,
+                                "platform exit status=" + observedExit);
+                    }
+                    return stopRequested
+                            ? AvfExitInfo.stopRequested(elapsedMs)
+                            : AvfExitInfo.normal(elapsedMs);
+                }
+                if (status == 2) return AvfExitInfo.deleted();
+                if (status < 0) {
+                    if (lastStopResult == AvfStopResult.UNCONFIRMED) throw unconfirmedStop();
+                    return AvfExitInfo.observeFailed("platform status unavailable");
+                }
+                synchronized (this) {
+                    if (lastStopResult == AvfStopResult.UNCONFIRMED) throw unconfirmedStop();
+                    wait(100L);
+                }
+            }
+        }
+
         private void ensureOpen() {
             if (hostStopped) throw closedFailure();
         }
         private AvfEngineException closedFailure() {
             return error(AvfEngineException.VSOCK_CONNECT_FAILED, "VM handle is closed", null);
         }
+        private static AvfEngineException unconfirmedStop() {
+            return error(AvfEngineException.VM_STOP_UNCONFIRMED,
+                    "platform never reported STOPPED or DELETED", null);
+        }
+
+        /** Compatibility stop: bounded, but with no grace window. */
         public void stop() {
-            List<HandleChannel> closing;
-            synchronized (this) {
-                if (hostStopped) return;
-                hostStopped = true;
-                closing = new ArrayList<>(channels);
-                channels.clear();
-                notifyAll();
+            stopRuntime(0L);
+        }
+
+        /**
+         * Single-owner bounded stop: request, probe, force-release, re-probe.
+         * The platform stop/close calls happen outside the wait loop; a
+         * confirmed or already-stopped result is never requested twice.
+         */
+        public synchronized AvfStopResult stopRuntime(long graceMs) {
+            if (lastStopResult == AvfStopResult.CONFIRMED
+                    || lastStopResult == AvfStopResult.ALREADY_STOPPED) {
+                return lastStopResult;
             }
+            int initial = status();
+            if (initial == 0 || initial == 2) {
+                stopRequested = true;
+                hostStopped = true;
+                notifyAll();
+                List<HandleChannel> closing = detachChannels();
+                closeChannels(closing, new ArrayList<>());
+                lastStopResult = AvfStopResult.ALREADY_STOPPED;
+                return lastStopResult;
+            }
+
+            stopRequested = true;
+            hostStopped = true;
+            notifyAll();
+            List<HandleChannel> closing = detachChannels();
             List<String> stoppedNotes = new ArrayList<>();
             try {
-                // Platform I/O is outside this handle's monitor, including stop and close.
                 invoke(vmClass, vm, "stop", new Class<?>[0], new Object[0],
                         AvfEngineException.VM_CREATE_FAILED, stoppedNotes);
-            } catch (AvfEngineException failure) { stoppedNotes.add("stop: failed (" + failure.reason() + ")"); }
-            finally {
+            } catch (AvfEngineException failure) {
+                // A throwing platform call is not evidence that the VM exited.
+                stoppedNotes.add("stop: failed (" + failure.reason() + ")");
+            }
+            boolean stopped = awaitStatus(graceMs);
+            if (!stopped) {
+                // Force-release the platform handle, then probe once more.
                 try {
                     invoke(vmClass, vm, "close", new Class<?>[0], new Object[0],
                             AvfEngineException.VM_CREATE_FAILED, stoppedNotes);
-                } catch (AvfEngineException failure) { stoppedNotes.add("close: failed (" + failure.reason() + ")"); }
-                for (HandleChannel channel : closing) {
-                    try { channel.close(); }
-                    catch (IOException | RuntimeException failure) { stoppedNotes.add("channel-close: failed"); }
+                } catch (AvfEngineException failure) {
+                    stoppedNotes.add("close: failed (" + failure.reason() + ")");
                 }
-                synchronized (this) { notes.addAll(stoppedNotes); }
+                stopped = awaitStatus(STOP_FORCE_PROBE_MS);
+            } else {
+                try {
+                    invoke(vmClass, vm, "close", new Class<?>[0], new Object[0],
+                            AvfEngineException.VM_CREATE_FAILED, stoppedNotes);
+                } catch (AvfEngineException failure) {
+                    stoppedNotes.add("close: failed (" + failure.reason() + ")");
+                }
+            }
+            closeChannels(closing, stoppedNotes);
+            lastStopResult = stopped ? AvfStopResult.CONFIRMED : AvfStopResult.UNCONFIRMED;
+            stoppedNotes.add("stop-result: " + lastStopResult.name());
+            synchronized (this) { notes.addAll(stoppedNotes); }
+            return lastStopResult;
+        }
+
+        /** Must be called while holding this handle's monitor. */
+        private List<HandleChannel> detachChannels() {
+            List<HandleChannel> closing = new ArrayList<>(channels);
+            channels.clear();
+            return closing;
+        }
+
+        private static void closeChannels(List<HandleChannel> closing, List<String> stoppedNotes) {
+            for (HandleChannel channel : closing) {
+                try {
+                    channel.close();
+                } catch (IOException | RuntimeException failure) {
+                    stoppedNotes.add("channel-close: failed");
+                }
+            }
+        }
+
+        private boolean awaitStatus(long graceMs) {
+            long deadline = System.nanoTime()
+                    + Math.max(0L, graceMs) * 1_000_000L;
+            while (true) {
+                int status = status();
+                if (status == 0 || status == 2) return true;
+                long remaining = deadline - System.nanoTime();
+                if (remaining <= 0L) return false;
+                synchronized (this) {
+                    try {
+                        wait(Math.max(1L, Math.min(STOP_POLL_MS,
+                                java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(remaining))));
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        return false;
+                    }
+                }
             }
         }
     }
