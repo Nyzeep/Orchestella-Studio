@@ -1,6 +1,6 @@
 # 04 能力真相单一来源 — 实施报告
 
-- 分支：`ticket/04-capability-truth`（基线 `ticket/08-android17-network-contract` @ `78fc531c`）
+- 分支：`ticket/04-capability-truth`（基线 `ticket/08-android17-network-contract` @ `8918488`）
 - 执行者：Agent B
 - 日期：2026-10-20
 - 状态：代码就绪（JVM/fake），真机未验

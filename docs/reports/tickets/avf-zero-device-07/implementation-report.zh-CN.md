@@ -1,6 +1,6 @@
 # 07 9p 与端口转发接线 — 实施报告
 
-- 分支：`ticket/07-ninep-and-port-forwarding`（叠加在 `ticket/06-display-audio-clipboard-truth` @ `bd1ecd05`）
+- 分支：`ticket/07-ninep-and-port-forwarding`（叠加在 `ticket/06-display-audio-clipboard-truth` @ `be6de2d`）
 - 执行者：Agent B
 - 日期：2026-10-20
 - 状态：9p 代码就绪（JVM/fake）；forward 明确 UNSUPPORTED；真机 vsock/9p 未验

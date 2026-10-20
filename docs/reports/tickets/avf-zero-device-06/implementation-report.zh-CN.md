@@ -1,6 +1,6 @@
 # 06 显示/音频/剪贴板真相 — 实施报告
 
-- 分支：`ticket/06-display-audio-clipboard-truth`（叠加在 `ticket/04-capability-truth` @ `a4e2e7a8`）
+- 分支：`ticket/06-display-audio-clipboard-truth`（叠加在 `ticket/04-capability-truth` @ `2269300`）
 - 执行者：Agent B
 - 日期：2026-10-20
 - 状态：代码就绪（JVM/fake），真机显示未验

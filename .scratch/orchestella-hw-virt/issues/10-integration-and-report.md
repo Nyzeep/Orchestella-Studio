@@ -88,7 +88,7 @@ Claimed by: Agent D / 2026-10-20T03:36:35Z
 
 ## Answer
 
-- 集成分支：`ticket/10-integration-and-report` 从 `ticket/09-device-validation-harness` 叠加；基线 `82009093` 已含 A/B/C 全部提交，没有重新 merge，也没有共享文件冲突。
+- 集成分支：`ticket/10-integration-and-report` 从 `ticket/09-device-validation-harness` 叠加；基线 `b9f2be7` 已含 A/B/C 全部提交，没有重新 merge，也没有共享文件冲突。
 - 全量零设备门：`run-gradle-gate.sh` 8 个任务 `BUILD SUCCESSFUL`；app 875 tests / 0 failures / 0 errors / 0 skipped；lint 0 errors；assembleDebug 成功；APK 16KB `BUNDLED_NEEDED_CLOSURE_OK resolved=0 external_not_asserted=13`；CI coverage 6/6 fixture + 44 checks；09 工具 139 tests + dry-run 12/12 `not-tested`。
 - 守卫 red→green：临时把 `engineqemu` import 加回 AVF engine → `IntegrationGuardsTest` 红；临时把 `.audioOutput(true)` 加回 QEMU matrix → `QemuSessionCapabilityTest` 红；撤回后均 green。
 - 缺口收口：managerPresent fixed；RFB keyboard/pointer fake vsock fixed；QEMU audio/clipboard/pointer 记录为 UI-driven/not session capability；03 未知元数据键 fixed + golden；ADR-0017/WaylandChannel 实现差异说明 done；APK bundled 16KB 闭包 asserted（QEMU 产品 ELF 仍是 release 风险）；默认 2 vCPU 不改，只加 UI 约束守卫，是否改默认待用户决策。

@@ -2,7 +2,7 @@
 
 - 日期：2026-10-20
 - 收尾 Agent：Agent D（票 10 范围）
-- 原始实现：`avf/mode-facts` @ `9f7790ef`（已包含在 `ticket/01-ci-full-gate` @ `82009093`）
+- 原始实现：`avf/mode-facts` @ `9f7790ef`（已包含在 `ticket/01-ci-full-gate` @ `b9f2be7`）
 - 工单：`.scratch/orchestella-avf-shizuku/issues/23-mode-capability-diagnostics.md`
 - 状态：completed（零设备代码就绪）；真机行为未验
 

@@ -2,7 +2,7 @@
 
 - 票号/状态：avf-zero-device-01；**resolved**（本地等价门禁就绪）。
 - 执行：Agent C / 2026-10-20。
-- 基线：`ticket/05-platform-access-hidden-api` @ `50c971b4`；分支 `ticket/01-ci-full-gate`。
+- 基线：`ticket/05-platform-access-hidden-api` @ `a9fd9b9`；分支 `ticket/01-ci-full-gate`。
 - 证据边界：全部命令在本机 Linux + JDK 17 + Android SDK 36 上执行。GitHub Actions 远端未运行；`workflow_dispatch` 和完整 `qemu-android` payload job 未运行。
 
 ## 1. 问题与范围

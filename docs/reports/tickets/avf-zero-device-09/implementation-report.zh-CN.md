@@ -3,7 +3,7 @@
 - 日期：2026-10-20
 - Agent：Agent D
 - 分支：`ticket/09-device-validation-harness`
-- 基线：`ticket/01-ci-full-gate` @ `82009093`（已核实包含 02/03/08/04/06/07/05）
+- 基线：`ticket/01-ci-full-gate` @ `b9f2be7`（已核实包含 02/03/08/04/06/07/05）
 - 工单：`.scratch/orchestella-hw-virt/issues/09-device-validation-harness.md`
 - 状态：resolved（零设备范围）；真机阶段全部 not-tested
 
