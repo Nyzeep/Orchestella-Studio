@@ -1,7 +1,7 @@
 # 09: 设备验收工具 dry-run
 
 Type: implementation
-Status: ready-for-agent
+Status: resolved
 Priority: P1
 Owner: device-validation tooling owner
 Blocked by: None
@@ -28,13 +28,13 @@ Parent: `.scratch/orchestella-hw-virt/map.md`
 
 ## 行为验收（零设备）
 
-- [ ] `--dry-run` 无设备可运行，退出码 0，报告所有设备步骤 `not-tested`，不含伪造 `pass`。
-- [ ] 报告包含 12 个阶段与每步的 evidence 字段；schema 可被测试解析。
-- [ ] 缺设备/ADB 不可用/权限未授予在 dry-run 中不崩溃；真机模式给出明确 `blocked`。
-- [ ] 现有 preflight/recorder 测试不退化；新增工具测试通过。
-- [ ] 输出不含 serial/IMEI/MAC/账号/token/用户根盘/屏幕内容；有 redaction 测试。
-- [ ] 一条命令能产出 Markdown 摘要，供用户归档/交接。
-- [ ] 不把 QEMU/AVF 的 fake 结果写成真机通过；dry-run 明确标注“设备无关”。
+- [x] `--dry-run` 无设备可运行，退出码 0，报告所有设备步骤 `not-tested`，不含伪造 `pass`。
+- [x] 报告包含 12 个阶段与每步的 evidence 字段；schema 可被测试解析。
+- [x] 缺设备/ADB 不可用/权限未授予在 dry-run 中不崩溃；真机模式给出明确 `blocked`。
+- [x] 现有 preflight/recorder 测试不退化；新增工具测试通过。
+- [x] 输出不含 serial/IMEI/MAC/账号/token/用户根盘/屏幕内容；有 redaction 测试。
+- [x] 一条命令能产出 Markdown 摘要，供用户归档/交接。
+- [x] 不把 QEMU/AVF 的 fake 结果写成真机通过；dry-run 明确标注“设备无关”。
 
 ## 测试 seam 与 red 命令
 
@@ -67,3 +67,18 @@ Parent: `.scratch/orchestella-hw-virt/map.md`
 ## 不做
 
 - 不执行真机验收；不安装 APK/不 grant/不 root/不解锁；不做性能基准；不替代 10 的设备清单。
+
+Claimed by: Agent D / 2026-10-20T03:33:41Z
+
+## Answer
+
+- 新增 `tools/device-validation/run_avf_device_validation.py` 与 `test_avf_device_validation.py`；12 阶段严格对应 research §3.3，schema_version=1，状态仅 `pass/fail/blocked/not-tested`。
+- `--dry-run`：不连 adb，12/12 `not-tested`，`pass=0`，退出 0；输出 JSON + Markdown + preservation 副本。
+- `--device`：本票只定义参数/阶段，不执行；12/12 `blocked`，`adb_invoked=false`，退出 2，不记录 serial。
+- `--validate` + 严格 schema：坏 fixture、缺阶段、额外字段、非法状态、伪造 dry-run `pass` 均以 `REPORT_SCHEMA_REJECTED` 拒绝。
+- redaction 测试覆盖 serial/IMEI/MAC/64-hex token/Bearer；报告与 Markdown 明确“设备无关”“真实 AVF 样本：0”。
+- 复用 `avf_evidence_io`、`avf_preflight`、`avf_test_fixtures`，未重写 preflight/recorder。
+- red→green：实现前 12 项测试因缺少模块报错；实现后 12/12 通过；全量 device-validation 139 tests / 0 failures。
+- CI：`.github/workflows/ci.yml` 增加工具测试 + dry-run step；GitHub Actions 远端未执行。
+- 未验：所有真机阶段（create/run/vsock/stop/network/9p/display/App death/QEMU 对照）。真实 AVF 样本仍为 0，本票不构成 AVF 设备验收通过。
+- 报告：`docs/reports/tickets/avf-zero-device-09/implementation-report.zh-CN.md`。
