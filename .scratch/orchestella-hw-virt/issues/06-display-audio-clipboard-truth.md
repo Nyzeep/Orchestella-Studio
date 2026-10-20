@@ -1,7 +1,7 @@
 # 06: 显示/音频/剪贴板真相
 
 Type: implementation
-Status: blocked
+Status: resolved
 Priority: P1
 Owner: AVF data-plane owner
 Blocked by: 04
@@ -66,3 +66,16 @@ AVF 生产显示用的是 `QemuWaylandChannel` + RFB over vsock 9103；`engine-a
 ## 不做
 
 - 不做真机显示/输入/音频/剪贴板验收；不接 Wayland/DLFR 全套；不做 GPU 加速；不做 9p/forward（07）。
+
+Claimed by: Agent B / 2026-10-20T01:45:00Z
+
+## Answer
+
+- 显示：`QemuWaylandChannel` 重命名为中性 `RfbDisplaySession`，QEMU 与 AVF 共用；AVF 通过 `session.graphicsChannel()`（spec 端口）取流，不再 import QEMU 显示类型，也不再硬编码 9103。`AvfDisplayWiringTest` 源码扫描守住这条边界（engineqemu 仅允许 `RuntimeArtifactManifest`）。
+- 死路径：删除 `AvfWaylandChannel`、`AvfGraphicsVsockProtocol`、`AvfPingPongBuffer`、`AvfAudioChannel`、`AvfAudioVsockProtocol` 及其专属测试/JavaExec 任务；`AvfVmSession` 不再暴露 `waylandChannel()`/`audioChannel()`/`audioVsockChannel()`/`vsockAudioPort()`。
+- 音频：AVF v1 UNSUPPORTED。原因：guest 的 pulseaudio 只开 `127.0.0.1:9104`（`module-simple-protocol-tcp listen=127.0.0.1`），没有 vsock relay；能力矩阵与描述符均无 `AUDIO_OUTPUT`。
+- 剪贴板：UNSUPPORTED。`registerClipboardBridge` 只证明宿主回调存在，不能证明 Bridge v1 + guest clipboard agent 的 GET/PUT 端到端契约；`AvfCapabilityTruthTest` 明确“注册 bridge 也不声明支持”。
+- 指针：RFB 指针事件只作为显示输入，不声明 `POINTER_CAPTURE`（Android 捕获是另一能力）。
+- RFB 契约：新增 `AvfRfbOverVsockTest`（fake vsock：connect / frame / close / reconnect）并保留 `RfbDisplaySessionTest`（失败状态、无伪帧、回调关闭）。
+- 红→绿：`RfbDisplaySessionTest` + `AvfDisplayWiringTest` 先以“RfbDisplaySession 不存在 / 死文件仍在”红，重命名与删除后转绿；engine 的 `avfRfbOverVsockTest` 新绿。
+- 未验：真机 RFB 帧、输入、guest 显示 relay 连通；音频/剪贴板按 UNSUPPORTED 交付，不做真机声明。

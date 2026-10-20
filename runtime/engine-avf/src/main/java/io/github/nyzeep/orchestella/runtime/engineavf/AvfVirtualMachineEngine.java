@@ -82,7 +82,6 @@ public final class AvfVirtualMachineEngine {
         private final AvfLaunchTrace trace;
         private final java.util.Map<Integer, java.util.concurrent.CompletableFuture<AvfVirtualMachineApi.AvfVsockChannel>>
                 lazyChannels = new java.util.HashMap<>();
-        private AvfAudioChannel avfAudioChannel;
         private final java.util.Set<AvfVirtualMachineApi.AvfVsockChannel> ownedChannels =
                 java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         private final java.util.concurrent.CountDownLatch closedSignal = new java.util.concurrent.CountDownLatch(1);
@@ -189,47 +188,6 @@ public final class AvfVirtualMachineEngine {
          */
         public AvfVirtualMachineApi.AvfVsockChannel graphicsChannel() throws AvfEngineException {
             return lazyChannel(spec.graphicsVsockPort());
-        }
-
-        /**
-         * Creates an authenticated Wayland graphics and control channel over vsock.
-         */
-        public AvfWaylandChannel waylandChannel(String instanceToken) {
-            return new AvfWaylandChannel(this, instanceToken);
-        }
-
-        /** Dedicated vsock audio port announced by this session's spec. */
-        public int vsockAudioPort() {
-            return spec.audioVsockPort();
-        }
-
-        /**
-         * The raw audio data-plane vsock channel (port 9104, retry-connected).
-         */
-        public AvfVirtualMachineApi.AvfVsockChannel audioVsockChannel() throws AvfEngineException {
-            return lazyChannel(spec.audioVsockPort());
-        }
-
-        /**
-         * Returns the high-performance PCM audio stream channel over vsock (port 9104).
-         */
-        public AvfAudioChannel audioChannel() throws AvfEngineException {
-            synchronized (this) {
-                ensureOpen();
-                if (avfAudioChannel != null) return avfAudioChannel;
-            }
-            AvfAudioChannel created = new AvfAudioChannel(this);
-            AvfAudioChannel published;
-            synchronized (this) {
-                if (channelsClosed) published = null;
-                else {
-                    if (avfAudioChannel == null) avfAudioChannel = created;
-                    published = avfAudioChannel;
-                }
-            }
-            if (published != created) created.close();
-            if (published == null) throw closedFailure();
-            return published;
         }
 
         /** Blocks until the guest exits; exit observation is best-effort. */
@@ -463,12 +421,10 @@ public final class AvfVirtualMachineEngine {
             channelsClosed = true;
             closedSignal.countDown();
             java.util.List<AutoCloseable> closing = new java.util.ArrayList<>(ownedChannels);
-            if (avfAudioChannel != null) closing.add(avfAudioChannel);
             java.util.List<java.util.concurrent.CompletableFuture<AvfVirtualMachineApi.AvfVsockChannel>>
                     pending = new java.util.ArrayList<>(lazyChannels.values());
             ownedChannels.clear();
             lazyChannels.clear();
-            avfAudioChannel = null;
             return new CloseBatch(closing, pending);
         }
 

@@ -52,7 +52,7 @@ public final class QemuInstanceLauncher {
         private final String proxySocketName;
         private LocalSocket proxySocket;
         private io.github.nyzeep.orchestella.runtime.network.BridgeProxyGateway proxyGateway;
-        private final QemuWaylandChannel waylandChannel;
+        private final RfbDisplaySession displayChannel;
         private final AtomicBoolean isBridgeServing = new AtomicBoolean(false);
         private final java.util.Set<SessionServiceForward> serviceForwards =
                 new java.util.concurrent.CopyOnWriteArraySet<>();
@@ -159,7 +159,7 @@ public final class QemuInstanceLauncher {
             this.handle = handle;
             this.timeline = timeline;
             this.supervisor = new RuntimeProcessSupervisor(handle, gateway, this::closeChannels);
-            this.waylandChannel = displaySocketPath == null ? null : new QemuWaylandChannel(() ->
+            this.displayChannel = displaySocketPath == null ? null : new RfbDisplaySession(() ->
                     openDisplayStreams(displaySocketPath), token, this::bridgeClient);
             startProxyGateway();
         }
@@ -206,19 +206,19 @@ public final class QemuInstanceLauncher {
         }
 
         @Override public boolean connectDisplay(boolean keyboard, boolean unicodeText, boolean pointer) {
-            return waylandChannel != null && waylandChannel.connect(
+            return displayChannel != null && displayChannel.connect(
                     new io.github.nyzeep.orchestella.runtime.contract.display.RfbDisplayChannel.InputCapabilities(
                             keyboard, unicodeText, pointer));
         }
 
         @Override public boolean reconnectDisplay(boolean keyboard, boolean unicodeText, boolean pointer) {
-            return waylandChannel != null && waylandChannel.connect(
+            return displayChannel != null && displayChannel.connect(
                     new io.github.nyzeep.orchestella.runtime.contract.display.RfbDisplayChannel.InputCapabilities(
                             keyboard, unicodeText, pointer), true);
         }
 
         @Override public String displayStatus() {
-            return waylandChannel == null ? "显示数据面未配置" : waylandChannel.message();
+            return displayChannel == null ? "显示数据面未配置" : displayChannel.message();
         }
 
         private volatile boolean closing;
@@ -366,8 +366,8 @@ public final class QemuInstanceLauncher {
                 forward.releaseForStop();
             }
             serviceForwards.clear();
-            if (waylandChannel != null) {
-                waylandChannel.close();
+            if (displayChannel != null) {
+                displayChannel.close();
             }
             if (proxyGateway != null) {
                 proxyGateway.close();
@@ -394,12 +394,12 @@ public final class QemuInstanceLauncher {
 
         @Override
         public io.github.nyzeep.orchestella.runtime.contract.DisplayControl displayControl() {
-            return waylandChannel;
+            return displayChannel;
         }
 
         @Override
         public io.github.nyzeep.orchestella.runtime.contract.WaylandChannel waylandChannel() {
-            return waylandChannel;
+            return displayChannel;
         }
 
         /**
@@ -415,7 +415,7 @@ public final class QemuInstanceLauncher {
                             .ownership(SessionCapabilities.Ownership.RUNTIME_OWNED)
                             .terminal(true)
                             .bridge(true)
-                            .display(waylandChannel == null
+                            .display(displayChannel == null
                                     ? SessionCapabilities.DisplayTransport.NONE
                                     : SessionCapabilities.DisplayTransport.RFB)
                             .serviceForward(!serviceForwards.isEmpty())

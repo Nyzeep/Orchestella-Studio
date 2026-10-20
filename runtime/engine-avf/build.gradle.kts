@@ -95,34 +95,9 @@ tasks.register<JavaExec>("avfNetworkForwardingParityContractTest") {
     mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.AvfNetworkForwardingParityContractTest")
 }
 
-tasks.register<JavaExec>("avfWaylandChannelContractTest") {
-    classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.AvfWaylandChannelContractTest")
-}
-
-tasks.register<JavaExec>("avfGraphicsVsockProtocolTest") {
-    classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.AvfGraphicsVsockProtocolTest")
-}
-
-tasks.register<JavaExec>("avfInputEventForwardingTest") {
-    classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.AvfInputEventForwardingTest")
-}
-
-tasks.register<JavaExec>("avfAudioVsockProtocolTest") {
-    classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.AvfAudioVsockProtocolTest")
-}
-
 tasks.register<JavaExec>("avfClipboardOverVsockTest") {
     classpath = sourceSets["test"].runtimeClasspath
     mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.AvfClipboardOverVsockTest")
-}
-
-tasks.register<JavaExec>("avfInputEventForwardingParityTest") {
-    classpath = sourceSets["test"].runtimeClasspath
-    mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.AvfInputEventForwardingParityTest")
 }
 
 tasks.register<JavaExec>("avfCapabilityMatrixAudioTest") {
@@ -133,6 +108,11 @@ tasks.register<JavaExec>("avfCapabilityMatrixAudioTest") {
 tasks.register<JavaExec>("reflectiveAvfVirtualMachineApiTest") {
     classpath = sourceSets["test"].runtimeClasspath
     mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.ReflectiveAvfVirtualMachineApiTest")
+}
+
+tasks.register<JavaExec>("avfRfbOverVsockTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.AvfRfbOverVsockTest")
 }
 
 tasks.register<JavaExec>("avfVirtualMachineEngineResourceTest") {
@@ -178,13 +158,9 @@ val avfAllTestTasks = listOf(
     "avfNetworkAssemblyContractTest",
     "avfVsockPortForwarderTest",
     "avfNetworkForwardingParityContractTest",
-    "avfWaylandChannelContractTest",
-    "avfGraphicsVsockProtocolTest",
-    "avfInputEventForwardingTest",
-    "avfAudioVsockProtocolTest",
     "avfClipboardOverVsockTest",
-    "avfInputEventForwardingParityTest",
     "avfCapabilityMatrixAudioTest",
+    "avfRfbOverVsockTest",
 )
 
 tasks.named("test") {

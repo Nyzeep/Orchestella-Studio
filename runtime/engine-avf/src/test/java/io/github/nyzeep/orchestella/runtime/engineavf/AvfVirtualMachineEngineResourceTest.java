@@ -76,7 +76,6 @@ public final class AvfVirtualMachineEngineResourceTest {
                 AvfVirtualMachineEngine.AvfVmSession::controlChannel,
                 AvfVirtualMachineEngine.AvfVmSession::terminalChannel,
                 AvfVirtualMachineEngine.AvfVmSession::graphicsChannel,
-                AvfVirtualMachineEngine.AvfVmSession::audioVsockChannel,
                 session -> session.openChannel(9200));
         for (int index = 0; index < paths.size(); index++) {
             BlockingApi api = new BlockingApi();
