@@ -40,12 +40,16 @@ REPORT_KEYS = {
     "schema_version",
     "kind",
     "mode",
+    "qa_mode",
     "device_independent",
     "generated_at_utc",
     "device_alias",
     "stages",
     "summary",
     "redaction",
+    "platform_qualification_samples",
+    "protected_microdroid_samples",
+    "custom_linux_samples",
     "real_avf_samples",
     "verdict",
     "device_mode",
@@ -84,6 +88,7 @@ REPORT_DEVICE_FACT_KEYS = {
     "access_state",
     "exemption_state",
     "manager_present",
+    "protected_only",
     "permissions",
     "protected_mode",
     "protected_mode_exception",
@@ -92,7 +97,7 @@ REPORT_ROM_KEYS = {"build_id", "release", "fingerprint_sha256"}
 REPORT_CAPABILITY_KEYS = {"raw", "protected", "non_protected", "source", "actor"}
 REPORT_PERMISSION_KEYS = {"manage", "custom"}
 REPORT_PROBE_KEYS = {"qa_package", "qa_test_package", "runner", "run_token_sha256",
-                     "schema_version"}
+                     "schema_version", "mode"}
 DRY_RUN_REASON = "DRY_RUN_NO_DEVICE"
 TIMESTAMP_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z")
 ALIAS_RE = re.compile(r"[a-z][a-z0-9-]{2,39}")
@@ -204,12 +209,16 @@ def build_report(mode, device_alias=None, now=None):
         "schema_version": SCHEMA_VERSION,
         "kind": KIND,
         "mode": "dry-run",
+        "qa_mode": "qualification",
         "device_independent": True,
         "generated_at_utc": _now_utc(now),
         "device_alias": device_alias,
         "stages": stages,
         "summary": _summary(stages),
         "redaction": {key: False for key in sorted(REDACTION_KEYS)},
+        "platform_qualification_samples": 0,
+        "protected_microdroid_samples": 0,
+        "custom_linux_samples": 0,
         "real_avf_samples": 0,
         "verdict": "NOT_TESTED",
         "device_mode": {"implemented": False, "adb_invoked": False,
@@ -263,7 +272,8 @@ def _check_device_facts(facts):
     if (not isinstance(facts["abis"], list) or not facts["abis"]
             or any(abi not in device.ABI_ALLOWLIST for abi in facts["abis"])):
         _reject_schema()
-    if type(facts["feature"]) is not bool or type(facts["manager_present"]) is not bool:
+    if type(facts["feature"]) is not bool or type(facts["manager_present"]) is not bool \
+            or type(facts["protected_only"]) is not bool:
         _reject_schema()
     _check_exact_keys(facts["rom"], REPORT_ROM_KEYS)
     if not isinstance(facts["rom"]["build_id"], str) \
@@ -297,6 +307,8 @@ def _check_probe(probe):
         _reject_schema()
     if probe["qa_test_package"] != probe["qa_package"] + ".test":
         _reject_schema()
+    if probe["mode"] not in device.QA_MODES:
+        _reject_schema()
     if probe["runner"] != device.QA_RUNNER:
         _reject_schema()
     if not isinstance(probe["run_token_sha256"], str) \
@@ -311,6 +323,8 @@ def validate_report(report):
         _reject_schema()
     mode = report["mode"]
     if mode not in ("dry-run", "device"):
+        _reject_schema()
+    if report["qa_mode"] not in device.QA_MODES:
         _reject_schema()
     if not isinstance(report["generated_at_utc"], str) \
             or not TIMESTAMP_RE.fullmatch(report["generated_at_utc"]):
@@ -371,15 +385,25 @@ def validate_report(report):
                 _reject_schema()
     if report["summary"] != _summary(stages):
         _reject_schema()
-    if type(report["real_avf_samples"]) is not int or report["real_avf_samples"] not in (0, 1):
-        _reject_schema()
-    required = ("create", "run_returned", "vsock_handshake", "stop_cycles")
+    for counter in device.SAMPLE_COUNTERS:
+        if type(report[counter]) is not int or report[counter] not in (0, 1):
+            _reject_schema()
+    required = ("create", "run_returned", "stop_cycles")
     status_by_id = {stage["id"]: stage["status"] for stage in stages}
-    if report["real_avf_samples"] == 1 and not all(
-            status_by_id[stage] == "pass" for stage in required):
+    lifecycle = all(status_by_id[stage] == "pass" for stage in required)
+    if report["real_avf_samples"] == 1 and not lifecycle:
+        _reject_schema()
+    if report["real_avf_samples"] != (
+            report["protected_microdroid_samples"] + report["custom_linux_samples"]):
+        _reject_schema()
+    if report["protected_microdroid_samples"] == 1 and report["qa_mode"] != "protected-microdroid":
+        _reject_schema()
+    if report["custom_linux_samples"] == 1 and report["qa_mode"] != "custom-linux":
         _reject_schema()
     if mode == "dry-run":
         if report["device_independent"] is not True or report["real_avf_samples"] != 0:
+            _reject_schema()
+        if any(report[counter] for counter in device.SAMPLE_COUNTERS):
             _reject_schema()
         if report["device_mode"] != {"implemented": False, "adb_invoked": False,
                                      "serial_recorded": False}:
@@ -399,7 +423,8 @@ def validate_report(report):
         if report["probe"] is not None and not report["device_mode"]["adb_invoked"]:
             _reject_schema()
         if report["probe"] is None or report["device_facts"] is None:
-            if report["summary"]["pass"] or report["real_avf_samples"]:
+            if report["summary"]["pass"] or any(
+                    report[counter] for counter in device.SAMPLE_COUNTERS):
                 _reject_schema()
         counts = report["summary"]
         expected = ("FAILED" if counts["fail"] else
@@ -416,9 +441,13 @@ def render_markdown(report):
         "# AVF 设备验收报告（" + report["mode"] + "）",
         "",
         "- 模式：" + report["mode"],
+        "- QA 模式：" + report["qa_mode"],
         "- 设备无关：" + ("是" if report["device_independent"] else "否"),
         "- 生成时间（UTC）：" + report["generated_at_utc"],
         "- 设备别名：" + (report["device_alias"] or "未记录"),
+        "- 平台资格样本：" + str(report["platform_qualification_samples"]),
+        "- protected Microdroid 样本：" + str(report["protected_microdroid_samples"]),
+        "- custom Linux 样本：" + str(report["custom_linux_samples"]),
         "- 真实 AVF 样本：" + str(report["real_avf_samples"]),
         "- 判定：" + report["verdict"],
         "",
@@ -444,6 +473,7 @@ def render_markdown(report):
             "- ABI：" + ", ".join(facts["abis"]),
             "- AVF feature：" + str(facts["feature"]).lower(),
             "- capability bits：" + str(facts["capabilities"]["raw"]),
+            "- protected-only：" + str(facts["protected_only"]).lower(),
             "- non-protected：" + str(facts["capabilities"]["non_protected"]).lower(),
             "- 权限：manage=" + facts["permissions"]["manage"]
             + ", custom=" + facts["permissions"]["custom"],
@@ -557,6 +587,18 @@ def main(argv=None):
     parser.add_argument("--grant", action="store_true",
                         help="explicitly grant both AVF permissions to the QA package")
     parser.add_argument("--stage", help="minimal, all, or comma-separated stage ids")
+    parser.add_argument("--qa-mode", choices=device.QA_MODES, default="qualification",
+                        help="qualification, protected-microdroid, or custom-linux")
+    parser.add_argument("--microdroid-payload",
+                        help="payload .so name inside the QA APK")
+    parser.add_argument("--vsock-port", type=int, default=0,
+                        help="optional vsock port; 0 leaves the handshake not requested")
+    parser.add_argument("--stop-deadline-ms", type=int,
+                        default=device.DEFAULT_STOP_DEADLINE_MS,
+                        help="bounded stop deadline, 1000..60000 ms")
+    parser.add_argument("--custom-kernel", help="QA-private custom kernel path")
+    parser.add_argument("--custom-initrd", help="QA-private custom initrd path")
+    parser.add_argument("--custom-root", help="QA-private custom root image path")
     parser.add_argument("--cycles", type=int, default=1, help="stop cycles, 1..20")
     parser.add_argument("--adb-timeout", type=float, default=device.ADB_TIMEOUT_SECONDS,
                         help="per-command adb timeout in seconds")
@@ -575,7 +617,10 @@ def main(argv=None):
                              sort_keys=True))
             return 0
         if args.dry_run:
-            if args.grant or args.apk or args.test_apk or args.device:
+            if args.grant or args.apk or args.test_apk or args.device \
+                    or args.qa_mode != "qualification" or args.microdroid_payload \
+                    or args.vsock_port or args.custom_kernel or args.custom_initrd \
+                    or args.custom_root:
                 raise Rejected("DEVICE_OPTION_WITH_DRY_RUN")
             report = build_report("dry-run", args.device_alias)
             validate_report(report)
@@ -607,6 +652,13 @@ def main(argv=None):
             grant=args.grant,
             cycles=args.cycles,
             stages=stages,
+            qa_mode=args.qa_mode,
+            microdroid_payload=args.microdroid_payload,
+            vsock_port=args.vsock_port,
+            stop_deadline_ms=args.stop_deadline_ms,
+            custom_kernel=args.custom_kernel,
+            custom_initrd=args.custom_initrd,
+            custom_root=args.custom_root,
             now=_now_utc(),
             timeout_seconds=args.adb_timeout,
             deadline_seconds=args.deadline_seconds,

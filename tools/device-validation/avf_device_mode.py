@@ -9,10 +9,11 @@ never reach the report.
 
 The device-side half is a QA-only instrumentation probe
 (AvfQaProbeInstrumentation). The probe writes one JSON document to the QA
-app's private files directory; the host pulls it with run-as. The probe
-that ships with this ticket performs qualification only and returns
-'blocked' for the VM launch stages. A future probe may return those stages;
-the host never invents a result when it is absent.
+app's private files directory; the host pulls it with run-as. It supports
+three explicit QA modes: qualification (read-only), protected-microdroid
+(system payload, protected VM), and custom-linux (non-protected QA image).
+The host never invents a result when the probe is absent, and qualification
+samples are counted separately from real VM lifecycle samples.
 """
 from __future__ import annotations
 
@@ -42,6 +43,18 @@ PERMISSIONS = (
     "android.permission.MANAGE_VIRTUAL_MACHINE",
     "android.permission.USE_CUSTOM_VIRTUAL_MACHINE",
 )
+QA_MODES = ("qualification", "protected-microdroid", "custom-linux")
+SAMPLE_COUNTERS = (
+    "platform_qualification_samples",
+    "protected_microdroid_samples",
+    "custom_linux_samples",
+    "real_avf_samples",
+)
+PAYLOAD_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\.so")
+DEFAULT_STOP_DEADLINE_MS = 15000
+DEFAULT_CUSTOM_KERNEL = "files/avf-qa/custom/kernel"
+DEFAULT_CUSTOM_INITRD = "files/avf-qa/custom/initrd"
+DEFAULT_CUSTOM_ROOT = "files/avf-qa/custom/root.img"
 STAGE_IDS = (
     "platform_declaration",
     "capabilities",
@@ -113,6 +126,7 @@ PROBE_KEYS = {
     "schema_version",
     "kind",
     "qa_package",
+    "mode",
     "device_facts",
     "qualification",
     "stage_results",
@@ -308,6 +322,8 @@ def validate_probe(probe, expected_package):
     _check_keys(probe, PROBE_KEYS)
     if probe["schema_version"] != 1 or probe["kind"] != "avf_qa_probe":
         raise Rejected("QA_PROBE_SCHEMA_REJECTED")
+    if probe["mode"] not in QA_MODES:
+        raise Rejected("QA_PROBE_SCHEMA_REJECTED")
     if probe["qa_package"] != expected_package:
         raise Rejected("QA_PROBE_PACKAGE_MISMATCH")
     facts = probe["device_facts"]
@@ -393,6 +409,10 @@ def _set_stage(report, stage_id, status, reason_code, evidence_payload, observed
 def _prior_status(report, stage_id):
     prior = STAGE_IDS[:STAGE_IDS.index(stage_id)]
     for candidate in prior:
+        # vsock is optional for a protected Microdroid lifecycle; it must not
+        # prevent the bounded stop from being attempted or recorded.
+        if stage_id == "stop_cycles" and candidate == "vsock_handshake":
+            continue
         status = _stage_result(report, candidate)["status"]
         if status == "fail":
             return "fail"
@@ -433,7 +453,7 @@ def _apply_probe_stage(report, stage_id, evidence_payload, probe):
         _set_stage(report, stage_id, "fail", fixed, evidence_payload,
                    {"probe_reason": result["reason_code"]})
     else:
-        _set_stage(report, stage_id, "blocked", "QA_STAGE_BLOCKED", evidence_payload,
+        _set_stage(report, stage_id, "blocked", result["reason_code"], evidence_payload,
                    {"probe_reason": result["reason_code"]})
 
 
@@ -444,11 +464,12 @@ def _preflight_value(preflight, field):
     return entry.get("value")
 
 
-def _report_stub(mode, device_alias, now, stages):
+def _report_stub(mode, device_alias, now, stages, qa_mode="qualification"):
     return {
         "schema_version": 1,
         "kind": "avf_device_validation",
         "mode": mode,
+        "qa_mode": qa_mode,
         "device_independent": mode == "dry-run",
         "generated_at_utc": now,
         "device_alias": device_alias,
@@ -464,6 +485,9 @@ def _report_stub(mode, device_alias, now, stages):
                 "screen_content_recorded",
             )
         },
+        "platform_qualification_samples": 0,
+        "protected_microdroid_samples": 0,
+        "custom_linux_samples": 0,
         "real_avf_samples": 0,
         "verdict": "NOT_TESTED",
         "device_mode": {
@@ -492,14 +516,31 @@ def _refresh_summary(report):
         report["verdict"] = "NOT_TESTED"
 
 
-def _real_samples(report):
-    required = ("create", "run_returned", "vsock_handshake", "stop_cycles")
-    return 1 if all(_stage_result(report, stage)["status"] == "pass"
-                    for stage in required) else 0
+def _lifecycle_passed(report):
+    required = ("create", "run_returned", "stop_cycles")
+    return all(_stage_result(report, stage)["status"] == "pass"
+               for stage in required)
 
 
-def _blocked_report(mode, alias, now, stages, reason_code, commands):
-    report = _report_stub(mode, alias, now, stages)
+def _sample_counts(report, qa_mode):
+    qualification = 1 if (
+        _stage_result(report, "platform_declaration")["status"] == "pass"
+        and _stage_result(report, "capabilities")["status"] == "pass"
+    ) else 0
+    lifecycle = _lifecycle_passed(report)
+    protected = 1 if qa_mode == "protected-microdroid" and lifecycle else 0
+    custom = 1 if qa_mode == "custom-linux" and lifecycle else 0
+    return {
+        "platform_qualification_samples": qualification,
+        "protected_microdroid_samples": protected,
+        "custom_linux_samples": custom,
+        "real_avf_samples": protected + custom,
+    }
+
+
+def _blocked_report(mode, alias, now, stages, reason_code, commands,
+                    qa_mode="qualification"):
+    report = _report_stub(mode, alias, now, stages, qa_mode)
     report["device_mode"]["adb_invoked"] = bool(commands)
     report["commands"] = commands
     for stage in report["stages"]:
@@ -538,14 +579,29 @@ def _install_package(runner, adb, serial, package, apk, test_only):
     return digest
 
 
-def _probe(runner, adb, serial, qa_package, test_package, token, stages, cycles):
+def _probe(runner, adb, serial, qa_package, test_package, token, stages, cycles,
+           *, qa_mode="qualification", payload=None, vsock_port=0,
+           stop_deadline_ms=DEFAULT_STOP_DEADLINE_MS, custom_kernel=None,
+           custom_initrd=None, custom_root=None):
     argv = [
         adb, "-s", serial, "shell", "am", "instrument", "-w", "-r",
         "-e", "qaRunToken", token,
+        "-e", "qaMode", qa_mode,
         "-e", "qaStages", ",".join(stages),
         "-e", "qaCycles", str(cycles),
-        test_package + "/" + QA_RUNNER,
+        "-e", "qaStopDeadlineMs", str(stop_deadline_ms),
     ]
+    if qa_mode == "protected-microdroid" and payload:
+        argv += ["-e", "qaMicrodroidPayload", payload]
+    if vsock_port:
+        argv += ["-e", "qaVsockPort", str(vsock_port)]
+    if qa_mode == "custom-linux":
+        argv += [
+            "-e", "qaCustomKernel", custom_kernel or DEFAULT_CUSTOM_KERNEL,
+            "-e", "qaCustomInitrd", custom_initrd or DEFAULT_CUSTOM_INITRD,
+            "-e", "qaCustomRoot", custom_root or DEFAULT_CUSTOM_ROOT,
+        ]
+    argv.append(test_package + "/" + QA_RUNNER)
     _announce(runner, argv)
     result = runner.run(argv, timeout_seconds=INSTRUMENT_TIMEOUT_SECONDS,
                         allow_failure=True)
@@ -569,8 +625,11 @@ def _probe(runner, adb, serial, qa_package, test_package, token, stages, cycles)
 
 
 def run_device(*, adb_path, serial, alias, qa_package, qa_test_package, apk, test_apk,
-               grant, cycles, stages, now, timeout_seconds=ADB_TIMEOUT_SECONDS,
-               deadline_seconds=600):
+               grant, cycles, stages, now, qa_mode="qualification",
+               microdroid_payload=None, vsock_port=0,
+               stop_deadline_ms=DEFAULT_STOP_DEADLINE_MS,
+               custom_kernel=None, custom_initrd=None, custom_root=None,
+               timeout_seconds=ADB_TIMEOUT_SECONDS, deadline_seconds=600):
     """Runs the device sequence and returns (report, evidence payloads)."""
     if not is_qa_package(qa_package):
         raise Rejected("QA_PACKAGE_REQUIRED")
@@ -578,8 +637,21 @@ def run_device(*, adb_path, serial, alias, qa_package, qa_test_package, apk, tes
         raise Rejected("QA_TEST_PACKAGE_REQUIRED")
     if qa_test_package != qa_package + ".test":
         raise Rejected("QA_TEST_PACKAGE_REQUIRED")
+    if qa_mode not in QA_MODES:
+        raise Rejected("QA_MODE_REJECTED")
     if type(cycles) is not int or not 1 <= cycles <= 20:
         raise Rejected("CYCLES_REJECTED")
+    if type(vsock_port) is not int or not 0 <= vsock_port <= 65535:
+        raise Rejected("VSOCK_PORT_REJECTED")
+    if type(stop_deadline_ms) is not int or not 1000 <= stop_deadline_ms <= 60000:
+        raise Rejected("STOP_DEADLINE_REJECTED")
+    if microdroid_payload is not None and not PAYLOAD_RE.fullmatch(microdroid_payload):
+        raise Rejected("MICRODROID_PAYLOAD_REJECTED")
+    for value in (custom_kernel, custom_initrd, custom_root):
+        if value is not None and (not isinstance(value, str)
+                                  or not re.fullmatch(r"[A-Za-z0-9_./-]{1,200}", value)
+                                  or ".." in value or value.startswith("/")):
+            raise Rejected("CUSTOM_ARTIFACT_REJECTED")
     if not 0 < float(timeout_seconds) <= 600 or not 0 < float(deadline_seconds) <= 7200:
         raise Rejected("TIMEOUT_REJECTED")
     unknown = [stage for stage in stages if stage not in STAGE_IDS]
@@ -603,7 +675,7 @@ def run_device(*, adb_path, serial, alias, qa_package, qa_test_package, apk, tes
         for stage_id in STAGE_IDS
     ]
     # The caller replaces titles/actors/checks with the canonical STAGES table.
-    report = _report_stub("device", alias, now, base_stages)
+    report = _report_stub("device", alias, now, base_stages, qa_mode)
     report["device_mode"]["adb_invoked"] = False
     evidence = {}
 
@@ -616,7 +688,7 @@ def run_device(*, adb_path, serial, alias, qa_package, qa_test_package, apk, tes
         report["commands"] = list(runner.commands)
     except Rejected as error:
         report = _blocked_report("device", alias, now, base_stages, str(error),
-                                 list(runner.commands))
+                                 list(runner.commands), qa_mode)
         return report, {}
 
     try:
@@ -626,7 +698,7 @@ def run_device(*, adb_path, serial, alias, qa_package, qa_test_package, apk, tes
 
     def blocked(reason_code):
         report = _blocked_report("device", alias, now, base_stages, reason_code,
-                                 list(runner.commands))
+                                 list(runner.commands), qa_mode)
         report["commands"] = list(runner.commands)
         return report, {}
 
@@ -639,7 +711,8 @@ def run_device(*, adb_path, serial, alias, qa_package, qa_test_package, apk, tes
     token = uuid.uuid4().hex
     try:
         probe = _probe(runner, adb, serial, qa_package, qa_test_package, token,
-                       stages, cycles)
+                       stages, cycles, qa_mode="qualification",
+                       stop_deadline_ms=stop_deadline_ms)
     except (DeviceStop, Rejected) as stop:
         return blocked(getattr(stop, "reason_code", str(stop)))
 
@@ -660,7 +733,8 @@ def run_device(*, adb_path, serial, alias, qa_package, qa_test_package, apk, tes
                 runner.run(force_argv, allow_failure=True)
                 token = uuid.uuid4().hex
                 probe = _probe(runner, adb, serial, qa_package, qa_test_package, token,
-                               stages, cycles)
+                               stages, cycles, qa_mode="qualification",
+                               stop_deadline_ms=stop_deadline_ms)
             except (DeviceStop, Rejected) as stop:
                 return blocked(getattr(stop, "reason_code", str(stop)))
 
@@ -685,6 +759,7 @@ def run_device(*, adb_path, serial, alias, qa_package, qa_test_package, apk, tes
         "access_state": qual["access_state"],
         "exemption_state": qual["exemption_state"],
         "manager_present": qual["manager_present"],
+        "protected_only": bool(qual["protected"] and not qual["non_protected"]),
         "permissions": {
             "manage": qual["manage_permission"],
             "custom": qual["custom_permission"],
@@ -698,6 +773,7 @@ def run_device(*, adb_path, serial, alias, qa_package, qa_test_package, apk, tes
         "runner": QA_RUNNER,
         "run_token_sha256": hashlib.sha256(token.encode("ascii")).hexdigest(),
         "schema_version": 1,
+        "mode": probe["mode"],
     }
     report["commands"] = list(runner.commands)
     report["device_mode"]["adb_invoked"] = True
@@ -745,11 +821,18 @@ def run_device(*, adb_path, serial, alias, qa_package, qa_test_package, apk, tes
         "protected": qual["protected"],
         "non_protected": qual["non_protected"],
     }
-    if qual["access_state"] == "AVAILABLE" and qual["non_protected"]:
-        _set_stage(report, "capabilities", "pass", "NON_PROTECTED_AVAILABLE", evidence,
-                   qual_observed)
-    elif qual["access_state"] in ("AVAILABLE", "MODE_UNSUPPORTED") and not qual["non_protected"]:
-        _set_stage(report, "capabilities", "fail", "PROTECTED_ONLY", evidence,
+    if qual["access_state"] in ("AVAILABLE", "MODE_UNSUPPORTED") \
+            and (qual["protected"] or qual["non_protected"]):
+        if qual["non_protected"] and qual["protected"]:
+            reason = "PLATFORM_QUALIFIED_DUAL"
+        elif qual["non_protected"]:
+            reason = "PLATFORM_QUALIFIED_NON_PROTECTED"
+        else:
+            reason = "PLATFORM_QUALIFIED_PROTECTED_ONLY"
+        _set_stage(report, "capabilities", "pass", reason, evidence, qual_observed)
+    elif qual["access_state"] in ("AVAILABLE", "MODE_UNSUPPORTED") \
+            and not qual["protected"] and not qual["non_protected"]:
+        _set_stage(report, "capabilities", "fail", "NO_VM_CAPABILITY", evidence,
                    qual_observed)
     elif qual["access_state"] == "HIDDEN_API_BLOCKED":
         _set_stage(report, "capabilities", "blocked", "HIDDEN_API_BLOCKED", evidence,
@@ -790,19 +873,56 @@ def run_device(*, adb_path, serial, alias, qa_package, qa_test_package, apk, tes
         _set_stage(report, "protected_mode", "pass", "NON_PROTECTED_CONFIG_ACCEPTED",
                    evidence, protected_observed)
     elif qual["protected_mode"] == "REJECTED":
-        _set_stage(report, "protected_mode", "fail", "PROTECTED_MODE_REJECTED", evidence,
-                   protected_observed)
+        _set_stage(report, "protected_mode", "pass", "NON_PROTECTED_CONFIG_REFUSED",
+                   evidence, protected_observed)
     else:
         _set_stage(report, "protected_mode", "blocked", "PROTECTED_MODE_UNREADABLE",
                    evidence, protected_observed)
+
+    launch_probe = None
+    launch_block_reason = None
+    if qa_mode == "qualification":
+        launch_block_reason = "QA_LAUNCH_NOT_REQUESTED"
+    elif qa_mode == "protected-microdroid" and not qual["protected"]:
+        launch_block_reason = "PROTECTED_VM_UNAVAILABLE"
+    elif qa_mode == "custom-linux" and not qual["non_protected"]:
+        launch_block_reason = "NO_NON_PROTECTED_VM"
+    elif _prior_status(report, "create") != "pass":
+        launch_block_reason = "PRIOR_STAGE_BLOCKED"
+
+    if launch_block_reason is None:
+        launch_payload = microdroid_payload
+        try:
+            launch_token = uuid.uuid4().hex
+            launch_probe = _probe(
+                runner, adb, serial, qa_package, qa_test_package, launch_token,
+                stages, cycles, qa_mode=qa_mode, payload=launch_payload,
+                vsock_port=vsock_port, stop_deadline_ms=stop_deadline_ms,
+                custom_kernel=custom_kernel, custom_initrd=custom_initrd,
+                custom_root=custom_root)
+            report["probe"]["run_token_sha256"] = hashlib.sha256(
+                launch_token.encode("ascii")).hexdigest()
+            report["probe"]["mode"] = qa_mode
+        except (DeviceStop, Rejected) as stop:
+            launch_block_reason = getattr(stop, "reason_code", str(stop))
 
     for stage_id in PROBE_STAGE_IDS:
         if stage_id not in stages:
             _set_stage(report, stage_id, "not-tested", "STAGE_NOT_REQUESTED", evidence)
             continue
-        _apply_probe_stage(report, stage_id, evidence, probe)
+        if launch_probe is not None:
+            _apply_probe_stage(report, stage_id, evidence, launch_probe)
+        else:
+            reason = launch_block_reason or "QA_LAUNCH_NOT_REQUESTED"
+            if stage_id == "stop_cycles":
+                _set_stage(report, stage_id, "blocked", reason, evidence,
+                           {"stop_confirmed": False})
+            else:
+                _set_stage(report, stage_id, "blocked", reason, evidence, {})
 
+    counters = _sample_counts(report, qa_mode)
+    for key, value in counters.items():
+        report[key] = value
     report["commands"] = list(runner.commands)
-    report["real_avf_samples"] = _real_samples(report)
     _refresh_summary(report)
     return report, evidence

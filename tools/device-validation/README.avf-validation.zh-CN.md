@@ -187,3 +187,68 @@ python3 -B tools/device-validation/run_avf_device_validation.py \
 ### 本回合结果
 
 本环境 `adb devices -l` 没有连接设备；用真实 adb 执行设备模式的报告为 `NO_DEVICE`、8 个请求阶段 blocked、4 个 not-tested、`real_avf_samples=0`。没有安装 APK、没有 grant、没有创建/启动 VM，也没有任何真机 AVF 结论。fake adb 只证明 host 编排、超时/停止/脱敏和报告 schema；不是设备证据。
+
+## 2026-10-20：QA 启动链路（Session F）
+
+Session E 只做资格观察；本节把 QA 启动入口补成三种显式模式，仍然只在 QA 包内运行，且不改变 `--dry-run` 的 12 个 `not-tested`。
+
+### 模式与门控
+
+- `--qa-mode qualification`（默认）：只读资格；不创建 VM。`create`/`run_returned`/`vsock_handshake`/`stop_cycles` 固定为 `blocked` / `QA_LAUNCH_NOT_REQUESTED`。
+- `--qa-mode protected-microdroid`：仅当 `getCapabilities` 的 protected bit（bit1）可读且两权限已授予时进入。使用 `setProtectedVm(true)`、`setPayloadBinaryName(...)` 和系统 Microdroid OS（优先 `setOsName("microdroid")`，兼容 `setOs`；两者都不存在时使用平台默认 Microdroid）。不加载 custom kernel/rootfs，不启用网络。
+- `--qa-mode custom-linux`：仅当 non-protected bit（bit2）存在时进入；否则 host 在启动探针前以 `NO_NON_PROTECTED_VM` 阻断，不创建 VM。custom 镜像只允许 QA app 私有目录下的 `files/avf-qa/custom/{kernel,initrd,root.img}`，不接受任意绝对路径。
+- protected-only 设备上的 `setProtectedVm(false)` 仍由探针记录；`REJECTED` 被视为预期结果（`NON_PROTECTED_CONFIG_REFUSED`），不再把设备资格判为失败。App 产品路径仍显示 `MODE_UNSUPPORTED` 并保持 QEMU，QA 探针不会改变产品 readiness。
+- `--microdroid-payload` 必须显式给出 QA APK 内的 payload `.so` 名称；没有 payload 时探针返回 `QA_MICRODROID_PAYLOAD_MISSING`，不创建 VM。仓库当前没有内置 Microdroid payload，因此该模式默认 blocked，而不是伪造 payload。
+- stop：`--stop-deadline-ms`（1000..60000，默认 15000）传给探针；探针调用 stop 后轮询 `getStatus()`，只有到达 `STATUS_STOPPED` 才记 `stop_confirmed=true`，超时为 `STOP_UNCONFIRMED`，不再继续。确认停止后才删除本次随机命名的 QA 实例；未确认时保留实例，避免删除可能仍在运行的 VM。
+- 所有 VM 名称均为 `qa-pvm-<token前12位>` / `qa-custom-<token前12位>`；不复用、不读取用户实例或用户根盘。
+
+### 样本计数
+
+报告新增四个独立计数，均为 0/1：
+
+- `platform_qualification_samples`：平台声明与 capabilities 阶段都 pass 时为 1；资格检查不算真实 VM 生命周期。
+- `protected_microdroid_samples`：`protected-microdroid` 模式下 create/run_returned/stop_cycles 都 pass 时为 1；vsock 可选。
+- `custom_linux_samples`：`custom-linux` 模式下 create/run_returned/stop_cycles 都 pass 时为 1。
+- `real_avf_samples`：仅等于 `protected_microdroid_samples + custom_linux_samples`；资格检查不递增。
+
+`run_returned` 仍只表示 `run()` 返回，不表示 guest ready；report 的 Markdown 保留该边界。
+
+### 命令示例
+
+```bash
+# 只读资格（protected-only 设备也适用）
+python3 -B tools/device-validation/run_avf_device_validation.py \
+  --device "$QA_SERIAL" --device-alias qa-device-01 \
+  --qa-package io.github.nyzeep.orchestella.qa.devicemode \
+  --qa-test-package io.github.nyzeep.orchestella.qa.devicemode.test \
+  --adb "$ADB" --grant --qa-mode qualification \
+  --out "$APPROVED_AVF_OUTPUT_ROOT/qualification"
+
+# 可选 protected Microdroid 最小生命周期；必须提供 QA APK 内 payload
+python3 -B tools/device-validation/run_avf_device_validation.py \
+  --device "$QA_SERIAL" --device-alias qa-device-01 \
+  --qa-package io.github.nyzeep.orchestella.qa.devicemode \
+  --qa-test-package io.github.nyzeep.orchestella.qa.devicemode.test \
+  --adb "$ADB" --grant --qa-mode protected-microdroid \
+  --microdroid-payload libqa_payload.so --stop-deadline-ms 15000 \
+  --out "$APPROVED_AVF_OUTPUT_ROOT/protected-microdroid"
+
+# protected-only 设备上该命令必须在创建前阻断
+python3 -B tools/device-validation/run_avf_device_validation.py \
+  --device "$QA_SERIAL" --device-alias qa-device-01 \
+  --qa-package io.github.nyzeep.orchestella.qa.devicemode \
+  --qa-test-package io.github.nyzeep.orchestella.qa.devicemode.test \
+  --adb "$ADB" --qa-mode custom-linux \
+  --out "$APPROVED_AVF_OUTPUT_ROOT/custom-linux"
+```
+
+### Session F 结果
+
+本环境仍然没有连接设备（`adb devices` 无 device 行），因此没有 protected-only 或 non-protected 真机事实：
+
+- `NO_DEVICE`，8 blocked / 4 not-tested，`verdict=BLOCKED`；
+- `platform_qualification_samples=0`、`protected_microdroid_samples=0`、`custom_linux_samples=0`、`real_avf_samples=0`；
+- `custom_linux` 在无 non-protected 设备时为 `blocked`（`NO_NON_PROTECTED_VM`）；本环境连设备都没有，故报告首阶段为 `NO_DEVICE`；
+- 没有安装 APK、grant、instrumentation 或 VM 操作；没有 AVF 产品支持声明。
+
+fake adb 回归覆盖 qualification、protected-only、bit2 缺失、权限拒绝、hidden API blocked、`setProtectedVm(false)` 拒绝、protected Microdroid 成功/失败、custom-linux 阻断、stop UNCONFIRMED、payload 缺失与脱敏；这些是 host 编排证据，不是真机样本。
