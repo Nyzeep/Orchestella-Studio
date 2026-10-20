@@ -408,6 +408,11 @@ public final class AvfInstanceLauncher {
         } catch (AvfEngineException failure) {
             session.declareSharedDirectory(false);
             session.recordShareFailure(failure.reason());
+        } catch (RuntimeException failure) {
+            // A malformed export path or a local filesystem failure is still a
+            // share-only degradation, never a dead terminal/display launch.
+            session.declareSharedDirectory(false);
+            session.recordShareFailure(AvfEngineException.INVALID_LAUNCH_CONFIG);
         }
     }
 

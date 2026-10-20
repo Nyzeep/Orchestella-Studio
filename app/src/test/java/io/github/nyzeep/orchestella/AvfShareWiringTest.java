@@ -54,6 +54,15 @@ public final class AvfShareWiringTest {
     }
 
     @Test
+    public void localShareFailureIsStillShareOnly() throws Exception {
+        FakeSession session = new FakeSession(false);
+        session.runtimeFailure = true;
+        AvfInstanceLauncher.startShareIfConfigured(session, share());
+        assertFalse(session.capabilities().sharedDirectory());
+        assertEquals(AvfEngineException.INVALID_LAUNCH_CONFIG, session.shareFailureReason());
+    }
+
+    @Test
     public void serviceForwardIsTypedUnsupported() throws Exception {
         AvfInstanceLauncher.AvfSession session =
                 new AvfInstanceLauncher.AvfSession(null, null, null);
@@ -91,6 +100,7 @@ public final class AvfShareWiringTest {
     private static final class FakeSession extends AvfInstanceLauncher.AvfSession {
         int starts;
         boolean serving;
+        boolean runtimeFailure;
         private final boolean fail;
 
         FakeSession(boolean fail) {
@@ -101,6 +111,9 @@ public final class AvfShareWiringTest {
         @Override
         void startShareServer() throws AvfEngineException {
             starts++;
+            if (runtimeFailure) {
+                throw new IllegalStateException("malformed export path");
+            }
             if (fail) {
                 throw new AvfEngineException(AvfEngineException.VSOCK_CONNECT_FAILED,
                         "share port unreachable");

@@ -10,7 +10,7 @@
 1. **9p 参数与装配**：`InstanceStrategyLauncher.LaunchParameters` 新增可选 `SharedDirectorySpec sharedDirectory`（旧构造器保持兼容，默认 null）。`AvfInstanceLauncher` 将它写入 `AvfLaunchSpec`，并在 engine launch 后调用 `startShareIfConfigured()`：
    - `sharedDirectory == null` → 不启动、不公告端口；
    - 启动成功 → `declareSharedDirectory(true)`，能力描述符/矩阵出现 `SHARED_DIRECTORY`；
-   - 启动失败 → `declareSharedDirectory(false)` + 记录 typed `AvfEngineException` reason，launch 继续（终端/显示不受影响）。
+   - 启动失败（引擎 `AvfEngineException` 或本地路径/文件系统 `RuntimeException`）→ `declareSharedDirectory(false)` + 记录 typed reason（`VSOCK_CONNECT_FAILED` / `INVALID_LAUNCH_CONFIG`），launch 继续（终端/显示不受影响）。
 2. **单 owner 生命周期**：`AvfVmSession.startShareServer()` 在 `shareLock` 内只允许一个 server；重复调用返回同一实例；`channelsClosed` 后调用抛 `VSOCK_CONNECT_FAILED`，不会创建第二个 server/线程/连接。stop/close 走既有 `closeChannels()`，share 通道 EOF 后 serve 线程退出；新增 `isShareServing()` 供测试/诊断。
 3. **端口统一**：9p 用 `spec.sharedDirectoryVsockPort()`，显示用 `spec.graphicsVsockPort()`；`AvfLaunchSpec` 删除未接线的 `audioVsockPort` 字段/常量/Builder/冲突校验。Builder 继续拒绝越界端口和 control/terminal/9p/graphics 冲突。
 4. **端口转发 UNSUPPORTED**：guest 的 `orchestella-proxy-relay` 走 virtio-serial，没有 vsock→TCP relay，因此 AVF v1 不提供转发：
@@ -40,7 +40,7 @@
 ./gradlew :runtime:contract:check :runtime:capability:check :runtime:engine-avf:check --no-daemon
 # BUILD SUCCESSFUL
 ./gradlew :app:testDebugUnitTest --no-daemon
-# 865 tests, 0 failures, 0 errors, 0 skipped
+# 866 tests, 0 failures, 0 errors, 0 skipped
 ./gradlew :app:lintDebug --no-daemon
 # BUILD SUCCESSFUL
 ```
