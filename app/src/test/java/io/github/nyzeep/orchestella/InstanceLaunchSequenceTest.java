@@ -75,7 +75,7 @@ public final class InstanceLaunchSequenceTest {
         }
     }
 
-    private static class ExitSession implements ExecutionSession {
+    private static class ExitSession implements ExecutionSession, RuntimeOwnedSession {
         private final int code;
         int closes;
         int terminations;
@@ -87,6 +87,21 @@ public final class InstanceLaunchSequenceTest {
         public java.io.OutputStream controlInput() { return new java.io.ByteArrayOutputStream(); }
         public void close() { closes++; }
         public void terminate() { terminations++; }
+        public RuntimeProcessSupervisor.StopResult stopRuntime(long graceMs) {
+            return RuntimeProcessSupervisor.StopResult.CONFIRMED;
+        }
+        public boolean isRuntimeAlive() { return false; }
+    }
+
+    /** A session with no owner seam: it cannot confirm a stop. */
+    private static final class PlainSession implements ExecutionSession {
+        int closes;
+        public int waitFor() { return 0; }
+        public java.io.InputStream terminalOutput() { return new java.io.ByteArrayInputStream(new byte[0]); }
+        public java.io.OutputStream terminalInput() { return new java.io.ByteArrayOutputStream(); }
+        public java.io.InputStream controlOutput() { return new java.io.ByteArrayInputStream(new byte[0]); }
+        public java.io.OutputStream controlInput() { return new java.io.ByteArrayOutputStream(); }
+        public void close() { closes++; }
     }
 
     @Test
@@ -144,6 +159,34 @@ public final class InstanceLaunchSequenceTest {
             assertEquals(1, stopped.get());
         } finally {
             ExecutionSessionRegistry.unregister(instance.id());
+        }
+    }
+
+    @Test
+    public void plainSessionIsNeverTreatedAsAConfirmedStop() throws Exception {
+        Path dir = temporaryFolder.newFolder("non-owner-exit").toPath();
+        InstanceLifecycle.FileStore store = new InstanceLifecycle.FileStore(dir);
+        InstanceLifecycle.Controller controller = new InstanceLifecycle.Controller(store, Clock.systemUTC());
+        InstanceLifecycle.Instance instance = controller.create(
+                new InstanceLifecycle.DistroReference("debian", "13"), dir.resolve("never-opened.raw"));
+        InstanceLaunchSequence.beforeLaunch(controller, instance);
+        PlainSession session = new PlainSession();
+        InstanceLaunchGuard.begin(instance.id());
+        ExecutionSessionRegistry.register(instance.id(), session);
+        try {
+            InstanceLaunchSequence.ExitResult result = InstanceLaunchSequence.awaitGuestExit(
+                    controller, instance.id(), session, () -> {});
+            assertEquals("a non-owner cannot be confirmed stopped",
+                    InstanceLaunchSequence.ExitStatus.STOP_UNCONFIRMED, result.status());
+            assertEquals("RUNNING metadata must be preserved",
+                    InstanceLifecycle.State.RUNNING, store.load(instance.id()).state());
+            org.junit.Assert.assertSame("the unconfirmable owner must stay registered",
+                    session, ExecutionSessionRegistry.get(instance.id()));
+            org.junit.Assert.assertTrue(InstanceLaunchGuard.isInFlight(instance.id()));
+            assertEquals("a non-owner must not be closed as if stopped", 0, session.closes);
+        } finally {
+            ExecutionSessionRegistry.unregister(instance.id());
+            InstanceLaunchGuard.end(instance.id());
         }
     }
 

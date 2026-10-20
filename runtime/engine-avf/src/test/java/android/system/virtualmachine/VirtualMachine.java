@@ -16,6 +16,7 @@ public class VirtualMachine implements AutoCloseable {
     private int closeCount;
     private VirtualMachineConfig config;
     public RuntimeException configReadFailureForTest;
+    public RuntimeException stopFailureForTest;
 
     private VirtualMachine(FakeVsockNetwork network) { this.network = network; }
     public static VirtualMachine over(FakeVsockNetwork network) {
@@ -39,6 +40,7 @@ public class VirtualMachine implements AutoCloseable {
     }
     public void stop() {
         stopCount++;
+        if (stopFailureForTest != null) throw stopFailureForTest;
         running = false;
         if (network != null) network.closeGuestSide();
     }

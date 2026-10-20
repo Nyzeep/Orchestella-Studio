@@ -47,9 +47,21 @@ public final class AvfVirtualMachineEngine {
 
     /** Blocking launch; call on a worker thread. Channels are opened lazily. */
     public AvfVmSession launch(AvfLaunchSpec spec) throws AvfEngineException {
+        return launch(spec, AvfLaunchTrace.NONE);
+    }
+
+    /**
+     * Blocking launch with ordered lifecycle diagnostics. The trace receives
+     * launch/create/run boundaries here; stop and exit stages are appended by
+     * the returned session. The trace never carries credentials or user data.
+     */
+    public AvfVmSession launch(AvfLaunchSpec spec, AvfLaunchTrace trace)
+            throws AvfEngineException {
         Objects.requireNonNull(spec, "spec");
-        AvfVirtualMachineApi.AvfVirtualMachineHandle handle = api.startCustomVm(spec);
-        return new AvfVmSession(api, handle, spec, connectAttempts, connectBackoffMs);
+        AvfLaunchTrace stages = trace == null ? AvfLaunchTrace.NONE : trace;
+        stages.mark(AvfLaunchTrace.Stage.LAUNCH_REQUESTED);
+        AvfVirtualMachineApi.AvfVirtualMachineHandle handle = api.startCustomVm(spec, stages);
+        return new AvfVmSession(api, handle, spec, connectAttempts, connectBackoffMs, stages);
     }
 
     /** One live AVF-backed instance session. */
@@ -59,26 +71,33 @@ public final class AvfVirtualMachineEngine {
         private final AvfLaunchSpec spec;
         private final int connectAttempts;
         private final long connectBackoffMs;
+        private final AvfLaunchTrace trace;
         private final java.util.Map<Integer, java.util.concurrent.CompletableFuture<AvfVirtualMachineApi.AvfVsockChannel>>
                 lazyChannels = new java.util.HashMap<>();
         private AvfAudioChannel avfAudioChannel;
         private final java.util.Set<AvfVirtualMachineApi.AvfVsockChannel> ownedChannels =
                 java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         private final java.util.concurrent.CountDownLatch closedSignal = new java.util.concurrent.CountDownLatch(1);
+        private final Object stopLock = new Object();
         private volatile boolean channelsClosed;
-        private boolean stopClaimed;
+        private volatile boolean stopRequested;
+        private boolean stopping;
+        private boolean stopSettled;
+        private volatile AvfStopResult stopResult;
 
         private AvfVmSession(
                 AvfVirtualMachineApi api,
                 AvfVirtualMachineApi.AvfVirtualMachineHandle handle,
                 AvfLaunchSpec spec,
                 int connectAttempts,
-                long connectBackoffMs) {
+                long connectBackoffMs,
+                AvfLaunchTrace trace) {
             this.api = api;
             this.handle = handle;
             this.spec = spec;
             this.connectAttempts = connectAttempts;
             this.connectBackoffMs = connectBackoffMs;
+            this.trace = trace;
         }
 
         public String instanceId() {
@@ -207,26 +226,96 @@ public final class AvfVirtualMachineEngine {
 
         /** Blocks until the guest exits; exit observation is best-effort. */
         public int waitFor() throws InterruptedException {
-            return handle.waitFor();
+            return waitForExit().exitCode();
         }
 
-        /** Best-effort host-side stop; guests own their lifecycle otherwise. */
-        public void stop() {
-            synchronized (this) {
-                if (stopClaimed) return;
-                stopClaimed = true;
+        /**
+         * Typed exit observation. A host-requested stop is its own kind; a
+         * crash and a DELETED VM are non-zero; a stop that was never confirmed
+         * is a typed failure, not a normal exit.
+         */
+        public AvfExitInfo waitForExit() throws InterruptedException {
+            AvfExitInfo info = handle.waitForExit();
+            if (info.kind() == AvfExitInfo.Kind.STOP_REQUESTED && stopResult == AvfStopResult.UNCONFIRMED) {
+                throw new AvfEngineException(AvfEngineException.VM_STOP_UNCONFIRMED,
+                        "VM stop was not confirmed by the platform");
             }
+            trace.mark(AvfLaunchTrace.Stage.EXIT_OBSERVED);
+            return info;
+        }
+
+        /** True while the platform still reports RUNNING or status is unknown. */
+        public boolean isRuntimeAlive() {
+            int status = handle.status();
+            if (status == 1) return true;
+            if (status == 0 || status == 2) return false;
+            return stopResult != AvfStopResult.CONFIRMED && stopResult != AvfStopResult.ALREADY_STOPPED;
+        }
+
+        /**
+         * Bounded, idempotent owner stop. The first call owns the platform
+         * request; later calls return the settled result without a second
+         * platform stop, while an UNCONFIRMED result may be retried by the same
+         * owner. Channels are closed before the platform call so a blocked
+         * vsock read cannot delay it.
+         */
+        public AvfStopResult stopRuntime(long graceMs) {
+            synchronized (stopLock) {
+                if (stopSettled) return stopResult;
+                if (stopping) {
+                    // A second caller joins the in-flight owner instead of issuing
+                    // a parallel platform stop.
+                    long deadline = System.nanoTime()
+                            + (Math.max(0L, graceMs) + 1_000L) * 1_000_000L;
+                    while (stopping) {
+                        long remaining = deadline - System.nanoTime();
+                        if (remaining <= 0L) break;
+                        try {
+                            stopLock.wait(Math.max(1L,
+                                    java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(remaining)));
+                        } catch (InterruptedException interrupted) {
+                            Thread.currentThread().interrupt();
+                            break;
+                        }
+                    }
+                    return stopResult == null ? AvfStopResult.UNCONFIRMED : stopResult;
+                }
+                if (!stopRequested) {
+                    stopRequested = true;
+                    trace.mark(AvfLaunchTrace.Stage.STOP_REQUESTED);
+                }
+                stopping = true;
+            }
+
             CloseBatch closing = claimClose();
             rejectPending(closing);
+            AvfStopResult result;
             try {
-                // A blocked connect or channel close must not delay the platform stop call.
-                handle.stop();
-            } finally {
-                try { closeAll(closing.resources()); }
-                catch (IOException ignored) {
-                    // Best-effort stop; closeAll has attempted every detached owner.
-                }
+                result = handle.stopRuntime(Math.max(0L, graceMs));
+            } catch (RuntimeException failure) {
+                // A throwing platform call is not evidence that the VM exited.
+                result = AvfStopResult.UNCONFIRMED;
             }
+            try {
+                closeAll(closing.resources());
+            } catch (IOException ignored) {
+                // Best-effort channel teardown; the platform stop already ran.
+            }
+            synchronized (stopLock) {
+                stopResult = result;
+                stopSettled = result != AvfStopResult.UNCONFIRMED;
+                stopping = false;
+                stopLock.notifyAll();
+            }
+            trace.mark(result == AvfStopResult.UNCONFIRMED
+                    ? AvfLaunchTrace.Stage.STOP_UNCONFIRMED
+                    : AvfLaunchTrace.Stage.STOP_CONFIRMED);
+            return result;
+        }
+
+        /** Best-effort compatibility stop: bounded but with no grace window. */
+        public void stop() {
+            stopRuntime(0L);
         }
 
         private AvfVirtualMachineApi.AvfVsockChannel lazyChannel(int port) {

@@ -24,6 +24,7 @@
 | [0018](0018-audio-and-clipboard-bridge.md) | 系统级音频、剪贴板与外设指针 | accepted |
 | [0019](0019-gpu-hardware-acceleration.md) | GPU 硬件加速渲染与驱动隔离 | accepted |
 | [0020](0020-runtime-process-ownership.md) | 运行时进程所有权与有界停止 | accepted |
+| [0021](0021-avf-runtime-ownership.md) | AVF 运行时所有权、停止与退出分类（扩展 ADR-0020 范围） | accepted |
 
 ## 已知缺口
 

@@ -40,13 +40,17 @@ public final class LaunchTimeline {
     /** Ordered launch stages; JSON renders them in this declaration order. */
     public enum Stage {
         LAUNCH_START,
+        VM_CREATED,
+        RUN_RETURNED,
         ASSETS_VERIFIED,
         INITRAMFS_BUILT,
         GATEWAY_READY,
         QEMU_STARTED,
         SESSION_REGISTERED,
         STOP_REQUESTED,
-        STOP_CONFIRMED
+        STOP_CONFIRMED,
+        STOP_UNCONFIRMED,
+        EXIT_OBSERVED
     }
 
     /** Testable one-record destination. Implementations must append one complete line. */
@@ -148,6 +152,19 @@ public final class LaunchTimeline {
         if (result != null && elapsedMillis.containsKey(Stage.STOP_CONFIRMED)) {
             stopAttempt++;
             stopResult = result;
+        }
+    }
+
+    /**
+     * Records a stop that the owner could not confirm. A later confirmed retry
+     * appends one compensating record, exactly like an UNCONFIRMED
+     * {@link #markStopConfirmed(StopResult)}.
+     */
+    public synchronized void markStopUnconfirmed() {
+        mark(Stage.STOP_UNCONFIRMED);
+        if (elapsedMillis.containsKey(Stage.STOP_UNCONFIRMED)) {
+            stopAttempt++;
+            stopResult = StopResult.UNCONFIRMED;
         }
     }
 

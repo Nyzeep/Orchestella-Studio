@@ -1,7 +1,7 @@
 # 02: AVF 运行时所有权、停止与退出
 
 Type: implementation
-Status: ready-for-agent
+Status: resolved
 Priority: P0
 Owner: runtime lifecycle owner
 Blocked by: None
@@ -70,3 +70,21 @@ Parent: `.scratch/orchestella-hw-virt/map.md`
 
 - 不做真机 stop/崩溃/App 死亡验收（设备 effort）。
 - 不实现 protected/shell-owner；不改 QEMU 生命周期；不把 UNCONFIRMED 新造成产品状态。
+
+Claimed by: Agent A / 2026-10-20T00:58:17Z
+
+## Answer
+
+Status: resolved（代码就绪；真实 AVF 未验，成功样本仍为 0）
+
+- 所有权：`AvfSession` 实现 `RuntimeOwnedSession`；`close()`/`terminate()`/池退休共用 `stopRuntime(graceMs)`，重复调用复用同一结果，不产生第二个 stop owner。
+- 有界停止：`stop → 状态轮询 → close → 二次轮询`；只有观测到 `STOPPED(0)`/`DELETED(2)` 才确认；stop 抛异常或平台不收敛 = UNCONFIRMED。
+- 退出分类：`AvfExitInfo` 区分 NORMAL/CRASHED/DELETED/STOP_REQUESTED/OBSERVE_FAILED；`waitFor()` 对 DELETED 返回非 0。
+- 非 owner：`InstanceLaunchSequence` 返回 UNCONFIRMED；`PersistentTerminalSessionPool` 返回 false 并保留 holder。
+- register 失败：`AvfInstanceLauncher.cleanupFailedRegistration` 做 2000 ms 有界 stop；未确认时错误中显式标注 `unconfirmed`。
+- 诊断：LaunchTimeline 增加 VM_CREATED/RUN_RETURNED/STOP_UNCONFIRMED/EXIT_OBSERVED；不记录 token/口令/正文。
+- 决策：新增 ADR-0021，明确扩展 ADR-0020 的 AVF 范围；ADR-0020 未改。
+
+Red→green：引擎测试先编译失败（缺 3 个新类型），app 测试先缺 `cleanupFailedRegistration`；实现后 `:runtime:engine-avf:check` 与 `:app:testDebugUnitTest`（845 tests）全绿。行为 red 包括非 owner 被当 CONFIRMED、DELETED 被当 0。
+
+未验：真机 stop 收敛/异常形态、DELETED/崩溃实际 status、App 死亡、register 失败真机注入、timeline 落盘。完整证据见 `docs/reports/tickets/avf-zero-device-02/implementation-report.zh-CN.md`。
