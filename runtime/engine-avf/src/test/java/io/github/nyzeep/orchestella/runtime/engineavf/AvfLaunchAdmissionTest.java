@@ -12,6 +12,7 @@ import java.util.List;
 public final class AvfLaunchAdmissionTest {
     public static void main(String[] arguments) {
         rejectsDefaultTwoVcpuBeforeAnyPlan();
+        cpuSupportExposesTheSingleVcpuConstraint();
         acceptsOneVcpuAndMapsEveryField();
         rejectsControlCharactersInExtraArguments();
         rejectsKnownUnsupportedHostFactsButAdmitsUnknownFacts();
@@ -20,7 +21,7 @@ public final class AvfLaunchAdmissionTest {
         specAppendsPlanArgumentsAfterTheBaseCmdline();
         System.out.println("AVF_LAUNCH_ADMISSION_TEST_OK cpu=1 default_reject=1"
                 + " memory=1 disk=not_expressible gpu=not_expressible extras=1"
-                + " facts=3 null_config=1 cmdline=1");
+                + " facts=3 null_config=1 cmdline=1 cpu_support=1");
     }
 
     private static void rejectsDefaultTwoVcpuBeforeAnyPlan() {
@@ -31,6 +32,18 @@ public final class AvfLaunchAdmissionTest {
                 "the rejection is a hardware limitation");
         assertEquals("cpuCores", result.rejection().field(), "the rejected field is named");
         assertTrue(result.plan() == null, "a rejected admission must not produce a launch plan");
+    }
+
+    private static void cpuSupportExposesTheSingleVcpuConstraint() {
+        assertEquals(AvfLaunchAdmission.CpuSupport.SUPPORTED,
+                AvfLaunchAdmission.cpuSupport(1),
+                "one vCPU is the admitted AVF v1 shape");
+        assertEquals(AvfLaunchAdmission.CpuSupport.NEEDS_SINGLE_VCPU,
+                AvfLaunchAdmission.cpuSupport(2),
+                "two vCPUs are a visible constraint, not a silent fallback");
+        assertEquals(AvfLaunchAdmission.CpuSupport.NEEDS_SINGLE_VCPU,
+                AvfLaunchAdmission.cpuSupport(4),
+                "every multi-vCPU request reports the same constraint");
     }
 
     private static void acceptsOneVcpuAndMapsEveryField() {

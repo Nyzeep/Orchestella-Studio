@@ -28,11 +28,19 @@ public final class FullLinuxContract {
         TERMINAL,
         BRIDGE_HANDSHAKE,
         HARDWARE_ACCELERATION,
+        /** RFB frames and input over the engine transport; never labelled Wayland. */
+        GRAPHICS_RFB,
+        /** Only a real Wayland/DLFR adapter may declare this. */
         GRAPHICS_WAYLAND,
         AUDIO_OUTPUT,
         CLIPBOARD_SYNC,
         POINTER_CAPTURE,
-        GPU_HARDWARE_ACCELERATION
+        /** A read-only 9p share server actually serving this session. */
+        SHARED_DIRECTORY,
+        GPU_HARDWARE_ACCELERATION;
+
+        /** Compatibility alias for callers that use a transport-neutral name. */
+        public static final Capability GRAPHICS_DISPLAY = GRAPHICS_RFB;
     }
 
     /** Immutable strategy declaration consumed by callers instead of strategy-specific branches. */
@@ -64,25 +72,69 @@ public final class FullLinuxContract {
                     ExecutionStrategy.SOFTWARE_VIRTUALIZATION, SOFTWARE_VIRTUALIZATION_BASELINE);
         }
 
-        public static CapabilityMatrix softwareVirtualizationWithGraphics() {
-            return new CapabilityMatrix(
-                    ExecutionStrategy.SOFTWARE_VIRTUALIZATION,
-                    EnumSet.of(
-                            Capability.TERMINAL,
-                            Capability.BRIDGE_HANDSHAKE,
-                            Capability.GRAPHICS_WAYLAND));
+        /** The one projection from what a launch assembled to what callers may show. */
+        public static CapabilityMatrix from(SessionCapabilities descriptor) {
+            Objects.requireNonNull(descriptor, "descriptor");
+            EnumSet<Capability> declared = EnumSet.noneOf(Capability.class);
+            if (descriptor.terminal()) {
+                declared.add(Capability.TERMINAL);
+            }
+            if (descriptor.bridge()) {
+                declared.add(Capability.BRIDGE_HANDSHAKE);
+            }
+            if (descriptor.hardwareAcceleration()) {
+                declared.add(Capability.HARDWARE_ACCELERATION);
+            }
+            switch (descriptor.display()) {
+                case RFB -> declared.add(Capability.GRAPHICS_RFB);
+                case WAYLAND -> declared.add(Capability.GRAPHICS_WAYLAND);
+                case NONE -> { }
+            }
+            if (descriptor.audioOutput()) {
+                declared.add(Capability.AUDIO_OUTPUT);
+            }
+            if (descriptor.clipboardSync()) {
+                declared.add(Capability.CLIPBOARD_SYNC);
+            }
+            if (descriptor.pointerCapture()) {
+                declared.add(Capability.POINTER_CAPTURE);
+            }
+            if (descriptor.sharedDirectory()) {
+                declared.add(Capability.SHARED_DIRECTORY);
+            }
+            if (descriptor.gpuAcceleration()) {
+                declared.add(Capability.GPU_HARDWARE_ACCELERATION);
+            }
+            return new CapabilityMatrix(descriptor.executionStrategy(), declared);
         }
 
+        /**
+         * Legacy data preset. Production derives its matrix with
+         * {@link #from(SessionCapabilities)}; this factory remains for old
+         * fixtures and must not be used to declare a live session.
+         */
+        public static CapabilityMatrix softwareVirtualizationWithGraphics() {
+            return from(SessionCapabilities.builder(ExecutionStrategy.SOFTWARE_VIRTUALIZATION)
+                    .terminal(true)
+                    .bridge(true)
+                    .display(SessionCapabilities.DisplayTransport.RFB)
+                    .build());
+        }
+
+        /**
+         * Legacy data preset. Production derives its matrix with
+         * {@link #from(SessionCapabilities)}; this factory remains for old
+         * fixtures and must not be used to declare a live session.
+         */
         public static CapabilityMatrix softwareVirtualizationWithPeripherals() {
-            return new CapabilityMatrix(
-                    ExecutionStrategy.SOFTWARE_VIRTUALIZATION,
-                    EnumSet.of(
-                            Capability.TERMINAL,
-                            Capability.BRIDGE_HANDSHAKE,
-                            Capability.GRAPHICS_WAYLAND,
-                            Capability.AUDIO_OUTPUT,
-                            Capability.CLIPBOARD_SYNC,
-                            Capability.POINTER_CAPTURE));
+            return from(SessionCapabilities.builder(ExecutionStrategy.SOFTWARE_VIRTUALIZATION)
+                    .terminal(true)
+                    .bridge(true)
+                    .display(SessionCapabilities.DisplayTransport.RFB)
+                    .audioOutput(true)
+                    .clipboardSync(true)
+                    .pointerCapture(true)
+                    .build());
         }
 
         public static CapabilityMatrix hardwareVirtualizationBaseline() {
@@ -94,27 +146,35 @@ public final class FullLinuxContract {
                             Capability.HARDWARE_ACCELERATION));
         }
 
+        /**
+         * Legacy data preset. Production derives its matrix with
+         * {@link #from(SessionCapabilities)}; this factory remains for old
+         * fixtures and must not be used to declare a live session.
+         */
         public static CapabilityMatrix hardwareVirtualizationWithGraphics() {
-            return new CapabilityMatrix(
-                    ExecutionStrategy.HARDWARE_VIRTUALIZATION,
-                    EnumSet.of(
-                            Capability.TERMINAL,
-                            Capability.BRIDGE_HANDSHAKE,
-                            Capability.HARDWARE_ACCELERATION,
-                            Capability.GRAPHICS_WAYLAND));
+            return from(SessionCapabilities.builder(ExecutionStrategy.HARDWARE_VIRTUALIZATION)
+                    .terminal(true)
+                    .bridge(true)
+                    .hardwareAcceleration(true)
+                    .display(SessionCapabilities.DisplayTransport.RFB)
+                    .build());
         }
 
+        /**
+         * Legacy data preset. Production derives its matrix with
+         * {@link #from(SessionCapabilities)}; this factory remains for old
+         * fixtures and must not be used to declare a live session.
+         */
         public static CapabilityMatrix hardwareVirtualizationWithPeripherals() {
-            return new CapabilityMatrix(
-                    ExecutionStrategy.HARDWARE_VIRTUALIZATION,
-                    EnumSet.of(
-                            Capability.TERMINAL,
-                            Capability.BRIDGE_HANDSHAKE,
-                            Capability.HARDWARE_ACCELERATION,
-                            Capability.GRAPHICS_WAYLAND,
-                            Capability.AUDIO_OUTPUT,
-                            Capability.CLIPBOARD_SYNC,
-                            Capability.POINTER_CAPTURE));
+            return from(SessionCapabilities.builder(ExecutionStrategy.HARDWARE_VIRTUALIZATION)
+                    .terminal(true)
+                    .bridge(true)
+                    .hardwareAcceleration(true)
+                    .display(SessionCapabilities.DisplayTransport.RFB)
+                    .audioOutput(true)
+                    .clipboardSync(true)
+                    .pointerCapture(true)
+                    .build());
         }
 
         public ExecutionStrategy executionStrategy() {
@@ -148,12 +208,25 @@ public final class FullLinuxContract {
         }
 
         public String graphicsBadge() {
+            if (supports(Capability.GRAPHICS_RFB)) {
+                return executionStrategy == ExecutionStrategy.SOFTWARE_VIRTUALIZATION
+                        ? "RFB 显示（本地套接字）"
+                        : "RFB 显示（vsock CPU 拷贝）";
+            }
             if (!supports(Capability.GRAPHICS_WAYLAND)) {
                 return "无图形通道";
             }
             return executionStrategy == ExecutionStrategy.SOFTWARE_VIRTUALIZATION
                     ? "Wayland 原生通道（共享内存）"
                     : "Wayland 原生通道（vsock 硬件加速）";
+        }
+
+        public boolean supportsRfbDisplay() {
+            return supports(Capability.GRAPHICS_RFB);
+        }
+
+        public boolean supportsSharedDirectory() {
+            return supports(Capability.SHARED_DIRECTORY);
         }
 
         public String audioBadge() {

@@ -259,6 +259,7 @@
     <string name="wizard_step3_card_title">安全配置推荐与初始化</string>
     <string name="wizard_step3_card_desc">已自动计算符合手机硬件的安全配额，杜绝 LMK 杀后台</string>
     <string name="wizard_config_vcpu_info">虚拟 CPU：%1$d 核（宿主保留 1 核用于 UI 调度）</string>
+    <string name="wizard_config_vcpu_avf_notice">AVF 硬件虚拟化当前仅支持 1 vCPU；此配置将回退到软件模拟。将 vCPU 设为 1 才能使用硬件虚拟化。</string>
     <string name="wizard_config_ram_info">运存配额：%1$d MB（宿主保留 ≥2GB 防闪退线）</string>
     <string name="wizard_config_disk_info">稀疏磁盘：%1$d GB（按需占用宿主空间）</string>
     <string name="wizard_config_gpu_info">3D 图形加速：已启用（Mesa VirGL 硬件直通）</string>

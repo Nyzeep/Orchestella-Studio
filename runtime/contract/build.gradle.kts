@@ -93,6 +93,16 @@ tasks.register<JavaExec>("fullLinuxContractAudioCapabilityTest") {
     mainClass.set("io.github.nyzeep.orchestella.runtime.contract.FullLinuxContractAudioCapabilityTest")
 }
 
+tasks.register<JavaExec>("sessionCapabilitiesTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.contract.SessionCapabilitiesTest")
+}
+
+tasks.register<JavaExec>("capabilityProjectionTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.contract.CapabilityProjectionTest")
+}
+
 tasks.register<JavaExec>("vmHardwareConfigTest") {
     classpath = sourceSets["test"].runtimeClasspath
     mainClass.set("io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfigTest")
@@ -127,7 +137,9 @@ tasks.named("check") {
         "fullLinuxContractAudioCapabilityTest",
         "vmHardwareConfigTest",
         "gestureStateEngineTest",
-        "bridgeClientResponsePumpTest"
+        "bridgeClientResponsePumpTest",
+        "sessionCapabilitiesTest",
+        "capabilityProjectionTest"
     )
 }
 

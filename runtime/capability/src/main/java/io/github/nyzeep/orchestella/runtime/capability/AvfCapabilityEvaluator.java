@@ -1,19 +1,21 @@
 package io.github.nyzeep.orchestella.runtime.capability;
 
 import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract;
+import io.github.nyzeep.orchestella.runtime.contract.SessionCapabilities;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
-import java.util.Set;
 
 /**
  * AVF hardware-virtualization readiness evaluation for the L2 upgrade path
  * (ADR-0003). Combines the platform virtualization declaration, the SDK
  * floor, the ABI, the {@code MANAGE_VIRTUAL_MACHINE} authorization state and
- * a hardware blocklist into one honest product-level verdict. Detection
- * itself remains an adapter concern; callers only pass pre-read host facts.
+ * caller-supplied device facts into one honest product-level verdict.
+ * Detection itself remains an adapter concern; callers only pass pre-read
+ * host facts. There is no built-in SoC blocklist: a model name alone is not
+ * evidence, and every capability comes from the platform or the caller.
  */
 public final class AvfCapabilityEvaluator {
     /** Android 13+ is the AVF era floor for the authorization wizard. */
@@ -29,14 +31,6 @@ public final class AvfCapabilityEvaluator {
 
     /** Whether the platform declares one VM protection mode. */
     public enum VmSupport { SUPPORTED, UNSUPPORTED, UNKNOWN }
-
-    /**
-     * SoCs whose firmware blocks non-protected (custom) VMs even when the
-     * platform declares virtualization support. Snapdragon 8 Elite (SM8750,
-     * Gunyah) is the confirmed case; custom VM creation fails at the
-     * hardware/firmware level there, so the hint must win over the property.
-     */
-    static final List<String> BLOCKED_SOC_HINTS = List.of("sm8750");
 
     private AvfCapabilityEvaluator() {}
 
@@ -100,15 +94,17 @@ public final class AvfCapabilityEvaluator {
         }
     }
 
+    /**
+     * Matches only caller-supplied device facts. The evaluator owns no SoC
+     * list, so a marketing/model string can never silently disqualify a
+     * device that the platform reports as supported.
+     */
     private static String blockedHintMatch(AvfHostFacts facts) {
         String soc = normalize(facts.socModel());
         String device = normalize(facts.deviceModel());
-        List<String> hints = new ArrayList<>(BLOCKED_SOC_HINTS);
         for (String extra : facts.extraBlockedHints()) {
-            hints.add(normalize(extra));
-        }
-        for (String hint : hints) {
-            if (hint.isBlank()) {
+            String hint = normalize(extra);
+            if (hint == null) {
                 continue;
             }
             if ((soc != null && soc.contains(hint)) || (device != null && device.contains(hint))) {
@@ -126,13 +122,28 @@ public final class AvfCapabilityEvaluator {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
+    /**
+     * The pre-launch AVF upper bound. It mirrors the engine's wired data plane
+     * (terminal, bridge, RFB display) and never advertises audio, clipboard,
+     * pointer capture or GPU acceleration.
+     */
     private static FullLinuxContract.CapabilityMatrix hardwareMatrix() {
-        return new FullLinuxContract.CapabilityMatrix(
-                FullLinuxContract.ExecutionStrategy.HARDWARE_VIRTUALIZATION,
-                Set.of(
-                        FullLinuxContract.Capability.TERMINAL,
-                        FullLinuxContract.Capability.BRIDGE_HANDSHAKE,
-                        FullLinuxContract.Capability.HARDWARE_ACCELERATION));
+        return FullLinuxContract.CapabilityMatrix.from(
+                SessionCapabilities.builder(FullLinuxContract.ExecutionStrategy.HARDWARE_VIRTUALIZATION)
+                        .terminal(true)
+                        .bridge(true)
+                        .hardwareAcceleration(true)
+                        .display(SessionCapabilities.DisplayTransport.RFB)
+                        .build());
+    }
+
+    /** The honest fallback matrix: a software session with terminal and bridge only. */
+    private static FullLinuxContract.CapabilityMatrix softwareFallbackMatrix() {
+        return FullLinuxContract.CapabilityMatrix.from(
+                SessionCapabilities.builder(FullLinuxContract.ExecutionStrategy.SOFTWARE_VIRTUALIZATION)
+                        .terminal(true)
+                        .bridge(true)
+                        .build());
     }
 
     /** Immutable host-fact input for one AVF readiness check. */
@@ -412,26 +423,22 @@ public final class AvfCapabilityEvaluator {
 
         static AvfReadiness needsAuthorization(List<String> reasons) {
             return new AvfReadiness(
-                    AvfStatus.NEEDS_AUTHORIZATION, reasons,
-                    FullLinuxContract.CapabilityMatrix.softwareVirtualizationBaseline());
+                    AvfStatus.NEEDS_AUTHORIZATION, reasons, softwareFallbackMatrix());
         }
 
         static AvfReadiness modeUnsupported(List<String> reasons) {
             return new AvfReadiness(
-                    AvfStatus.MODE_UNSUPPORTED, reasons,
-                    FullLinuxContract.CapabilityMatrix.softwareVirtualizationBaseline());
+                    AvfStatus.MODE_UNSUPPORTED, reasons, softwareFallbackMatrix());
         }
 
         static AvfReadiness modeUnknown(List<String> reasons) {
             return new AvfReadiness(
-                    AvfStatus.MODE_UNKNOWN, reasons,
-                    FullLinuxContract.CapabilityMatrix.softwareVirtualizationBaseline());
+                    AvfStatus.MODE_UNKNOWN, reasons, softwareFallbackMatrix());
         }
 
         static AvfReadiness unsupported(List<String> reasons) {
             return new AvfReadiness(
-                    AvfStatus.UNSUPPORTED, reasons,
-                    FullLinuxContract.CapabilityMatrix.softwareVirtualizationBaseline());
+                    AvfStatus.UNSUPPORTED, reasons, softwareFallbackMatrix());
         }
 
         public AvfStatus status() {

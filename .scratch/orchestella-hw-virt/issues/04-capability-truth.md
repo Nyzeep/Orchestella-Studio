@@ -1,7 +1,7 @@
 # 04: 能力真相单一来源
 
 Type: implementation
-Status: ready-for-agent
+Status: resolved
 Priority: P0
 Owner: capability/UI contract owner
 Blocked by: None
@@ -71,3 +71,16 @@ Parent: `.scratch/orchestella-hw-virt/map.md`
 ## 不做
 
 - 不实际接线 display/audio/9p/forward（06/07）；不改 AVF launch/stop（02/03）；不做真机能力对照；不改 QEMU 功能。
+
+Claimed by: Agent B / 2026-10-20T01:34:41Z
+
+## Answer
+
+- 新增 `SessionCapabilities`（executionStrategy / ownership / terminal / bridge / display / audio / clipboard / pointerCapture / sharedDirectory / serviceForward / hardwareAcceleration / gpuAcceleration），构造时拒绝“software 声称 hardware acceleration”和“hardware 不声明 acceleration”。
+- `FullLinuxContract.CapabilityMatrix.from(SessionCapabilities)` 成为唯一投影；新增 `GRAPHICS_RFB`、`SHARED_DIRECTORY` 和兼容别名 `GRAPHICS_DISPLAY = GRAPHICS_RFB`。`GRAPHICS_WAYLAND` 只由真实 Wayland adapter 声明。旧的 `*WithGraphics/*WithPeripherals` 工厂保留为 legacy fixture，但注明不得用于 live session。
+- AVF `AvfSession` 从实际构造的 display/token 生成描述符；QEMU `Session` 覆写 `capabilityMatrix()`，按实际构造的 display/forward 投影。`AvfVirtualMachineEngine.capabilityMatrix()` 改为“无 session 上限”：terminal/bridge/HA/RFB，无 audio/clipboard/pointer/9p/GPU。
+- 删除 `MainActivity.currentCapabilityMatrix()` 及其 import；桌面 HUD 只读 `session.capabilityMatrix()`。
+- 删除 `AvfCapabilityEvaluator.BLOCKED_SOC_HINTS`；SoC/设备名只有调用方显式传入 `extraBlockedHints` 才参与拒绝，模型名本身不再 disqualify。
+- 1 vCPU：`AvfLaunchAdmission.cpuSupport(int)` 暴露 `SUPPORTED` / `NEEDS_SINGLE_VCPU`；wizard 硬件步骤在 AVF READY 且 vCPU != 1 时显示 `wizard_config_vcpu_avf_notice`，不改变默认值、不改 03 的 admission。
+- 红→绿：先加 `SessionCapabilitiesTest`/`CapabilityProjectionTest` 和 app 层 `AvfCapabilityTruthTest`/`QemuCapabilityMatrixTest`/`CapabilitySourceOfTruthTest`，contract 编译以 46 个“符号不存在”错误红；实现后 `:runtime:contract:check`、`:runtime:capability:check`、`:runtime:engine-avf:check`、`:app:testDebugUnitTest` 全绿。
+- 未验：没有真机能力对照；RFB/显示/输入仍是 fake/JVM seam。hud 文案只从矩阵派生，未做截图验收。

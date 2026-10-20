@@ -44,11 +44,11 @@ public final class DesktopHudFormatterTest {
     public void testFormatGraphicsBadge() {
         FullLinuxContract.CapabilityMatrix softwareWithGfx =
                 FullLinuxContract.CapabilityMatrix.softwareVirtualizationWithGraphics();
-        assertEquals("Wayland 原生通道（共享内存）", DesktopHudFormatter.formatBadge(softwareWithGfx));
+        assertEquals("RFB 显示（本地套接字）", DesktopHudFormatter.formatBadge(softwareWithGfx));
 
         FullLinuxContract.CapabilityMatrix hardwareWithGfx =
                 FullLinuxContract.CapabilityMatrix.hardwareVirtualizationWithGraphics();
-        assertEquals("Wayland 原生通道（vsock 硬件加速）", DesktopHudFormatter.formatBadge(hardwareWithGfx));
+        assertEquals("RFB 显示（vsock CPU 拷贝）", DesktopHudFormatter.formatBadge(hardwareWithGfx));
 
         FullLinuxContract.CapabilityMatrix softwareNoGfx =
                 FullLinuxContract.CapabilityMatrix.softwareVirtualizationBaseline();
@@ -100,7 +100,7 @@ public final class DesktopHudFormatterTest {
         assertTrue(expanded.contains("60 FPS"));
         assertTrue(expanded.contains("1920x1080 @ 1.0x"));
         assertTrue(expanded.contains("CONNECTED"));
-        assertTrue(expanded.contains("vsock 硬件加速"));
+        assertTrue(expanded.contains("RFB"));
 
         WaylandSurfaceController.HudBadgeInfo scaledInfo = new WaylandSurfaceController.HudBadgeInfo(
                 60,
