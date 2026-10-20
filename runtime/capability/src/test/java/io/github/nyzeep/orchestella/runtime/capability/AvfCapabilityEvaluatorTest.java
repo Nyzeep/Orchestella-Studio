@@ -22,8 +22,98 @@ public final class AvfCapabilityEvaluatorTest {
         protectedOnlyModeCannotEnterAuthorizationWizard();
         unknownModeIsDistinctFromAuthorization();
         nonProtectedModeStillUsesThePermissionGate();
+        platformAccessStatesAreTypedAndActionable();
+        platformAccessNeverBypassesThePermissionGate();
         reasonsNeverNameExecutionEngines();
         numericOnePropertyIsRecognizedAsTruthy();
+    }
+
+    private static AvfPlatformFacts platformFacts(
+            AvfPlatformFacts.AccessState state,
+            AvfCapabilityEvaluator.PermissionState manage,
+            AvfCapabilityEvaluator.PermissionState custom) {
+        return new AvfPlatformFacts(
+                state,
+                AvfPlatformFacts.ExemptionState.INSTALLED,
+                manage,
+                custom,
+                mode(AvfCapabilityEvaluator.VmSupport.SUPPORTED,
+                        state == AvfPlatformFacts.AccessState.AVAILABLE
+                                || state == AvfPlatformFacts.AccessState.PERMISSION_DENIED
+                                ? AvfCapabilityEvaluator.VmSupport.SUPPORTED
+                                : AvfCapabilityEvaluator.VmSupport.UNSUPPORTED));
+    }
+
+    private static void platformAccessStatesAreTypedAndActionable() {
+        AvfCapabilityEvaluator.AvfReadiness hidden = AvfCapabilityEvaluator.evaluate(
+                readyDevice()
+                        .platformFacts(platformFacts(
+                                AvfPlatformFacts.AccessState.HIDDEN_API_BLOCKED,
+                                AvfCapabilityEvaluator.PermissionState.GRANTED,
+                                AvfCapabilityEvaluator.PermissionState.GRANTED))
+                        .build());
+        assertTrue(hidden.status() == AvfCapabilityEvaluator.AvfStatus.HIDDEN_API_BLOCKED,
+                "hidden API blocked has its own status, not MODE_UNKNOWN");
+        assertFalse(hidden.wizardEligible(), "authorization cannot fix a hidden API block");
+        assertTrue(hidden.reasons().stream().anyMatch(reason -> reason.contains("隐藏 API")),
+                "the hidden API reason is actionable");
+
+        AvfCapabilityEvaluator.AvfReadiness reflection = AvfCapabilityEvaluator.evaluate(
+                readyDevice()
+                        .platformFacts(platformFacts(
+                                AvfPlatformFacts.AccessState.REFLECTION_UNAVAILABLE,
+                                AvfCapabilityEvaluator.PermissionState.GRANTED,
+                                AvfCapabilityEvaluator.PermissionState.GRANTED))
+                        .build());
+        assertTrue(reflection.status() == AvfCapabilityEvaluator.AvfStatus.REFLECTION_UNAVAILABLE,
+                "a missing platform surface is its own status");
+        assertFalse(reflection.wizardEligible(), "authorization cannot add platform classes");
+
+        AvfCapabilityEvaluator.AvfReadiness modeUnknown = AvfCapabilityEvaluator.evaluate(
+                readyDevice()
+                        .platformFacts(platformFacts(
+                                AvfPlatformFacts.AccessState.MODE_UNKNOWN,
+                                AvfCapabilityEvaluator.PermissionState.GRANTED,
+                                AvfCapabilityEvaluator.PermissionState.GRANTED))
+                        .build());
+        assertTrue(modeUnknown.status() == AvfCapabilityEvaluator.AvfStatus.MODE_UNKNOWN,
+                "an unreadable platform stays MODE_UNKNOWN");
+
+        AvfCapabilityEvaluator.AvfReadiness available = AvfCapabilityEvaluator.evaluate(
+                readyDevice()
+                        .platformFacts(platformFacts(
+                                AvfPlatformFacts.AccessState.AVAILABLE,
+                                AvfCapabilityEvaluator.PermissionState.GRANTED,
+                                AvfCapabilityEvaluator.PermissionState.GRANTED))
+                        .build());
+        assertTrue(available.status() == AvfCapabilityEvaluator.AvfStatus.READY,
+                "available with both grants is READY");
+    }
+
+    private static void platformAccessNeverBypassesThePermissionGate() {
+        AvfCapabilityEvaluator.AvfReadiness denied = AvfCapabilityEvaluator.evaluate(
+                readyDevice()
+                        .platformFacts(platformFacts(
+                                AvfPlatformFacts.AccessState.PERMISSION_DENIED,
+                                AvfCapabilityEvaluator.PermissionState.DENIED,
+                                AvfCapabilityEvaluator.PermissionState.GRANTED))
+                        .build());
+        assertTrue(denied.status() == AvfCapabilityEvaluator.AvfStatus.NEEDS_AUTHORIZATION,
+                "a denied permission is an authorization request");
+        assertTrue(denied.reasons().stream().anyMatch(reason -> reason.contains("MANAGE_VIRTUAL_MACHINE")),
+                "the missing permission is named");
+
+        AvfCapabilityEvaluator.AvfReadiness granted = AvfCapabilityEvaluator.evaluate(
+                readyDevice()
+                        .platformFacts(platformFacts(
+                                AvfPlatformFacts.AccessState.PERMISSION_DENIED,
+                                AvfCapabilityEvaluator.PermissionState.GRANTED,
+                                AvfCapabilityEvaluator.PermissionState.GRANTED))
+                        .build());
+        assertTrue(granted.status() == AvfCapabilityEvaluator.AvfStatus.NEEDS_AUTHORIZATION,
+                "a platform denial after grants is still not a silent READY");
+        assertTrue(granted.reasons().stream().anyMatch(reason -> reason.contains("系统策略")),
+                "a post-grant denial explains the platform policy");
     }
 
     private static void manageGrantAloneDoesNotCompletePreflight() {

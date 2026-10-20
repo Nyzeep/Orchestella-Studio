@@ -14,6 +14,7 @@ public final class AvfAuthorizationWizardModelTest {
         manageOnlyConfirmationDoesNotCompleteTheWizard();
         unsupportedReadinessNeverOpensTheWizard();
         modeGateNeverOpensTheWizard();
+        platformAccessGatesNeverOpenTheWizard();
         readyReadinessNeedsNoWizardSteps();
         needsAuthorizationStartsWithShizukuGuidance();
         adbFallbackRoundTrip();
@@ -42,6 +43,10 @@ public final class AvfAuthorizationWizardModelTest {
                     List.of("当前系统未声明非保护型虚拟机模式"));
             case MODE_UNKNOWN -> AvfCapabilityEvaluator.AvfReadiness.modeUnknown(
                     List.of("无法读取当前系统支持的虚拟机模式"));
+            case HIDDEN_API_BLOCKED -> AvfCapabilityEvaluator.AvfReadiness.hiddenApiBlocked(
+                    List.of("系统隐藏 API 受限"));
+            case REFLECTION_UNAVAILABLE -> AvfCapabilityEvaluator.AvfReadiness.reflectionUnavailable(
+                    List.of("系统未提供平台接口"));
             case UNSUPPORTED -> AvfCapabilityEvaluator.AvfReadiness.unsupported(List.of("不受支持"));
         };
     }
@@ -68,6 +73,17 @@ public final class AvfAuthorizationWizardModelTest {
             assertTrue(model.step() == AvfAuthorizationWizardModel.Step.NOT_SHOWN,
                     "mode gates never open authorization guidance: " + status);
             assertTrue(!model.canStart(), "mode gates cannot start the wizard: " + status);
+        }
+    }
+
+    private static void platformAccessGatesNeverOpenTheWizard() {
+        for (AvfCapabilityEvaluator.AvfStatus status : List.of(
+                AvfCapabilityEvaluator.AvfStatus.HIDDEN_API_BLOCKED,
+                AvfCapabilityEvaluator.AvfStatus.REFLECTION_UNAVAILABLE)) {
+            AvfAuthorizationWizardModel model = AvfAuthorizationWizardModel.fromAssessment(readiness(status));
+            assertTrue(model.step() == AvfAuthorizationWizardModel.Step.NOT_SHOWN,
+                    "platform-access gates never open authorization guidance: " + status);
+            assertTrue(!model.canStart(), "platform-access gates cannot start the wizard: " + status);
         }
     }
 

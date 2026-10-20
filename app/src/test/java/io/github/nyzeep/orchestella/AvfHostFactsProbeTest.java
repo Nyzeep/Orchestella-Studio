@@ -3,9 +3,11 @@ package io.github.nyzeep.orchestella;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator;
+import io.github.nyzeep.orchestella.runtime.capability.AvfPlatformFacts;
 import java.util.List;
 import org.junit.Test;
 
@@ -129,28 +131,38 @@ public final class AvfHostFactsProbeTest {
     }
 
     @Test
-    public void capabilityBitsMapToVmModeFacts() {
-        AvfCapabilityEvaluator.AvfModeFacts protectedOnly =
-                AvfHostFactsProbe.modeFactsFromCapabilities(
-                        AvfHostFactsProbe.CAPABILITY_PROTECTED_VM,
-                        "VirtualMachineManager.getCapabilities", "app", 1234L, "test-rom");
-        assertEquals(AvfCapabilityEvaluator.VmSupport.SUPPORTED, protectedOnly.protectedVm());
-        assertEquals(AvfCapabilityEvaluator.VmSupport.UNSUPPORTED, protectedOnly.nonProtectedVm());
+    public void platformFactsCarryTheSinglePermissionAndModeTruth() {
+        AvfPlatformFacts platform = platformFacts(
+                AvfPlatformFacts.AccessState.AVAILABLE,
+                AvfCapabilityEvaluator.PermissionState.GRANTED,
+                AvfCapabilityEvaluator.PermissionState.GRANTED,
+                AvfCapabilityEvaluator.VmSupport.SUPPORTED);
 
-        AvfCapabilityEvaluator.AvfModeFacts both =
-                AvfHostFactsProbe.modeFactsFromCapabilities(
-                        AvfHostFactsProbe.CAPABILITY_PROTECTED_VM
-                                | AvfHostFactsProbe.CAPABILITY_NON_PROTECTED_VM,
-                        "VirtualMachineManager.getCapabilities", "app", 1234L, "test-rom");
-        assertEquals(AvfCapabilityEvaluator.VmSupport.SUPPORTED, both.nonProtectedVm());
+        AvfCapabilityEvaluator.AvfHostFacts facts = AvfHostFactsProbe.probe(
+                35,
+                new String[] {"arm64-v8a"},
+                "MT6991",
+                "Test Device",
+                () -> "true",
+                feature -> true,
+                platform);
+
+        assertSame(platform, facts.platformFacts());
+        assertEquals(AvfCapabilityEvaluator.PermissionState.GRANTED, facts.manageVirtualMachinePermissionState());
+        assertEquals(AvfCapabilityEvaluator.PermissionState.GRANTED, facts.useCustomVirtualMachinePermissionState());
+        assertEquals(AvfCapabilityEvaluator.VmSupport.SUPPORTED, facts.modeFacts().nonProtectedVm());
+        assertEquals(AvfCapabilityEvaluator.AvfStatus.READY,
+                AvfCapabilityEvaluator.evaluate(facts).status());
     }
 
     @Test
-    public void protectedOnlyModeFactsReachTheEvaluatorAsModeUnsupported() {
-        AvfCapabilityEvaluator.AvfModeFacts protectedOnly =
-                AvfHostFactsProbe.modeFactsFromCapabilities(
-                        AvfHostFactsProbe.CAPABILITY_PROTECTED_VM,
-                        "VirtualMachineManager.getCapabilities", "app", 1234L, "test-rom");
+    public void permissionDeniedPlatformFactsAreNotReportedAsModeUnknown() {
+        AvfPlatformFacts platform = platformFacts(
+                AvfPlatformFacts.AccessState.PERMISSION_DENIED,
+                AvfCapabilityEvaluator.PermissionState.DENIED,
+                AvfCapabilityEvaluator.PermissionState.GRANTED,
+                AvfCapabilityEvaluator.VmSupport.UNKNOWN);
+
         AvfCapabilityEvaluator.AvfReadiness readiness = AvfCapabilityEvaluator.evaluate(
                 AvfHostFactsProbe.probe(
                         35,
@@ -159,17 +171,86 @@ public final class AvfHostFactsProbeTest {
                         "Test Device",
                         () -> "true",
                         feature -> true,
-                        permission -> true,
-                        protectedOnly));
+                        platform));
+
+        assertEquals(AvfCapabilityEvaluator.AvfStatus.NEEDS_AUTHORIZATION, readiness.status());
+        assertTrue(readiness.reasons().stream()
+                .anyMatch(reason -> reason.contains("MANAGE_VIRTUAL_MACHINE")));
+    }
+
+    @Test
+    public void hiddenApiBlockedPlatformFactsAreActionable() {
+        AvfPlatformFacts platform = platformFacts(
+                AvfPlatformFacts.AccessState.HIDDEN_API_BLOCKED,
+                AvfCapabilityEvaluator.PermissionState.GRANTED,
+                AvfCapabilityEvaluator.PermissionState.GRANTED,
+                AvfCapabilityEvaluator.VmSupport.UNKNOWN);
+
+        AvfCapabilityEvaluator.AvfReadiness readiness = AvfCapabilityEvaluator.evaluate(
+                AvfHostFactsProbe.probe(
+                        35,
+                        new String[] {"arm64-v8a"},
+                        "MT6991",
+                        "Test Device",
+                        () -> "true",
+                        feature -> true,
+                        platform));
+
+        assertEquals(AvfCapabilityEvaluator.AvfStatus.HIDDEN_API_BLOCKED, readiness.status());
+        assertTrue(readiness.reasons().stream().anyMatch(reason -> reason.contains("隐藏 API")));
+        assertEquals("平台访问：hidden API 受限",
+                AvfHostFactsProbe.platformAccessLabel(platform.accessState()));
+    }
+
+    private static AvfPlatformFacts platformFacts(
+            AvfPlatformFacts.AccessState accessState,
+            AvfCapabilityEvaluator.PermissionState manage,
+            AvfCapabilityEvaluator.PermissionState custom,
+            AvfCapabilityEvaluator.VmSupport nonProtected) {
+        return new AvfPlatformFacts(
+                accessState,
+                AvfPlatformFacts.ExemptionState.INSTALLED,
+                manage,
+                custom,
+                new AvfCapabilityEvaluator.AvfModeFacts(
+                        AvfCapabilityEvaluator.VmSupport.SUPPORTED,
+                        nonProtected,
+                        "VirtualMachineManager.getCapabilities",
+                        "app",
+                        1234L,
+                        "test-rom"));
+    }
+
+    @Test
+    public void protectedOnlyPlatformFactsReachTheEvaluatorAsModeUnsupported() {
+        AvfPlatformFacts platform = platformFacts(
+                AvfPlatformFacts.AccessState.MODE_UNSUPPORTED,
+                AvfCapabilityEvaluator.PermissionState.GRANTED,
+                AvfCapabilityEvaluator.PermissionState.GRANTED,
+                AvfCapabilityEvaluator.VmSupport.UNSUPPORTED);
+
+        AvfCapabilityEvaluator.AvfReadiness readiness = AvfCapabilityEvaluator.evaluate(
+                AvfHostFactsProbe.probe(
+                        35,
+                        new String[] {"arm64-v8a"},
+                        "MT6991",
+                        "Test Device",
+                        () -> "true",
+                        feature -> true,
+                        platform));
 
         assertEquals(AvfCapabilityEvaluator.AvfStatus.MODE_UNSUPPORTED, readiness.status());
         assertFalse(readiness.wizardEligible());
     }
 
     @Test
-    public void unreadableModeFactsAreUnknownNotAuthorization() {
-        AvfCapabilityEvaluator.AvfModeFacts unknown = AvfCapabilityEvaluator.AvfModeFacts.unknown(
-                "VirtualMachineManager.getCapabilities", "app", 1234L, "test-rom");
+    public void unreadablePlatformFactsAreModeUnknownNotAuthorization() {
+        AvfPlatformFacts platform = platformFacts(
+                AvfPlatformFacts.AccessState.MODE_UNKNOWN,
+                AvfCapabilityEvaluator.PermissionState.GRANTED,
+                AvfCapabilityEvaluator.PermissionState.GRANTED,
+                AvfCapabilityEvaluator.VmSupport.UNKNOWN);
+
         AvfCapabilityEvaluator.AvfReadiness readiness = AvfCapabilityEvaluator.evaluate(
                 AvfHostFactsProbe.probe(
                         35,
@@ -178,8 +259,7 @@ public final class AvfHostFactsProbeTest {
                         "Test Device",
                         () -> "true",
                         feature -> true,
-                        permission -> true,
-                        unknown));
+                        platform));
 
         assertEquals(AvfCapabilityEvaluator.AvfStatus.MODE_UNKNOWN, readiness.status());
         assertFalse(readiness.wizardEligible());
