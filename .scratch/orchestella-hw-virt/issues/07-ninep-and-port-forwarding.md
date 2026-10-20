@@ -76,5 +76,5 @@ Claimed by: Agent B / 2026-10-20T01:50:00Z
 - 生命周期：`AvfVmSession.startShareServer()` 在 `shareLock` 内单 owner；重复调用返回同一个 server；session closed 后再调用抛 typed `VSOCK_CONNECT_FAILED`，不会开第二条 vsock 连接或第二个线程。stop/close 走既有 `closeChannels()`，share 通道关闭后 serve 线程退出；`isShareServing()` 暴露真实线程状态。
 - 端口统一：9p 使用 `spec.sharedDirectoryVsockPort()`，显示使用 `spec.graphicsVsockPort()`（06 已移除 9103 硬编码）；`AvfLaunchSpec` 删除未接线的 audio 端口字段/常量/校验；Builder 继续拒绝 1024–65535 之外和 control/terminal/9p/graphics 冲突。
 - 端口转发：判定 guest 没有 vsock→TCP relay（现有 `orchestella-proxy-relay` 走 virtio-serial），AVF v1 **UNSUPPORTED**。`AvfSession.openServiceForward()` 返回 typed `IOException`（稳定原因串），`AvfVsockPortForwarder` 及其测试/JavaExec 任务删除；能力矩阵无 forward；PortForwarding UI 在无 QEMU live engine 时已显示“需切换 QEMU”。
-- 红→绿：`AvfShareWiringTest`、`Avf9pShareLifecycleTest`、`AvfLaunchSpecTest` 的端口用例先红（API/行为缺失），实现后 engine `check` 与 app `testDebugUnitTest` 全绿。
+- 红→绿：删除 forwarder/audio 端口后，旧 fixture 与 resource test 先以编译错误红；`AvfShareWiringTest`、`Avf9pShareLifecycleTest`、`AvfLaunchSpecTest` 的端口用例转绿。9p 新用例未保留独立 failure-first 记录（流程偏差，见报告）。
 - 未验：真机 vsock 9102 的 9p mount、真实共享目录读写、stop UNCONFIRMED 下的平台行为；forward 按 UNSUPPORTED 交付。

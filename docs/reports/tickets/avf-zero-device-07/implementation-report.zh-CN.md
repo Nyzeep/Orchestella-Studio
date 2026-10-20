@@ -21,14 +21,15 @@
 
 ## 测试（red → green）
 
-红（实现前/实现中）：
+红（过程中真实出现）：
 
 ```bash
-./gradlew :runtime:engine-avf:avf9pShareLifecycleTest --no-daemon
-# 初期编译失败：startShareServer 无幂等/isShareServing；AvfVsockPortForwarder 仍被 fixture 引用
-./gradlew :app:testDebugUnitTest --tests '*Share*' --no-daemon
-# 初期编译失败：AvfInstanceLauncher.startShareIfConfigured / SERVICE_FORWARD_UNSUPPORTED 不存在
+./gradlew :runtime:engine-avf:check --no-daemon
+# 删除 AvfVsockPortForwarder 后 fixture 仍引用其 VsockChannelFactory → compileTestJava 红
+# 删除 audio 端口后 AvfVirtualMachineEngineResourceTest 仍引用 audioVsockChannel → compileTestJava 红
 ```
+
+说明：9p 幂等/共享接线的 `AvfShareWiringTest`、`Avf9pShareLifecycleTest` 是在 seam 建立后新增的，未保留独立的 failure-first 运行记录；这是本票的流程偏离，已在“偏差与风险”记录。
 
 绿（实际执行）：
 
@@ -61,3 +62,4 @@
 - `stop UNCONFIRMED` 场景没有独立的平台 fake；但 `stopRuntime` 无论确认与否都会关闭 session 通道，`startShareServer()` 在 `channelsClosed` 后直接 typed 拒绝，因此不会出现第二个 server（`Avf9pShareLifecycleTest` 覆盖 closed 路径）。
 - `openChannel(int)` 作为通用 vsock seam 保留（`AvfVirtualMachineEngineResourceTest` 的 blocked-connect 生命周期用例仍使用它），但它不再有生产转发消费者。
 - 9p 失败的用户可见文案目前只有 `shareFailureReason()` reason code，UI 未新增专门提示；这属于后续 UI 接线，不影响“共享不可用”的诚实状态。
+- 流程偏离：07 的 9p 幂等与共享接线测试没有像 04/06 那样先跑一次纯 red；当时的编译级 red 来自删除 forwarder/audio 端口后的旧引用。测试有效且全绿，但 red→green 证据不完整。
