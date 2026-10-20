@@ -37,6 +37,44 @@ for f in "$@"; do
   "$RE" -d "$f" | grep NEEDED || true
 done
 
+# Optional bundled-DT_NEEDED closure. External/system libraries are outside the
+# product payload and cannot be resolved from the build output; the assertion
+# is that every NEEDED entry present beside a checked ELF was itself passed to
+# this gate. APK packaging enables it; QEMU product binaries keep the legacy
+# behaviour until their build output is enumerated.
+if [ "${REQUIRE_BUNDLED_CLOSURE:-0}" = "1" ]; then
+  declare -A checked=()
+  for f in "$@"; do
+    checked["$(basename "$f")"]=1
+  done
+  bundled=0
+  external=0
+  closure_fail=0
+  for f in "$@"; do
+    dir="$(dirname "$f")"
+    while IFS= read -r needed; do
+      [ -z "$needed" ] && continue
+      if [ -f "$dir/$needed" ]; then
+        if [ -n "${checked[$needed]:-}" ]; then
+          bundled=$((bundled + 1))
+        else
+          echo "FAIL bundled dependency is present but was not checked: $f -> $needed"
+          closure_fail=1
+        fi
+      else
+        external=$((external + 1))
+      fi
+    done < <("$RE" -d "$f" | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p')
+  done
+  if [ "$closure_fail" -ne 0 ]; then
+    fail=1
+  else
+    echo "BUNDLED_NEEDED_CLOSURE_OK resolved=$bundled external_not_asserted=$external"
+  fi
+else
+  echo "BUNDLED_NEEDED_CLOSURE=NOT_ASSERTED"
+fi
+
 if [ "$fail" -eq 0 ]; then
   echo "ELF_CLOSURE_16KB_OK"
   exit 0

@@ -32,6 +32,7 @@ public final class AvfPlatformFacts {
     private final AvfCapabilityEvaluator.PermissionState managePermission;
     private final AvfCapabilityEvaluator.PermissionState customPermission;
     private final AvfCapabilityEvaluator.AvfModeFacts modeFacts;
+    private final boolean managerPresent;
 
     public AvfPlatformFacts(
             AccessState accessState,
@@ -39,11 +40,22 @@ public final class AvfPlatformFacts {
             AvfCapabilityEvaluator.PermissionState managePermission,
             AvfCapabilityEvaluator.PermissionState customPermission,
             AvfCapabilityEvaluator.AvfModeFacts modeFacts) {
+        this(accessState, exemptionState, managePermission, customPermission, modeFacts, false);
+    }
+
+    public AvfPlatformFacts(
+            AccessState accessState,
+            ExemptionState exemptionState,
+            AvfCapabilityEvaluator.PermissionState managePermission,
+            AvfCapabilityEvaluator.PermissionState customPermission,
+            AvfCapabilityEvaluator.AvfModeFacts modeFacts,
+            boolean managerPresent) {
         this.accessState = Objects.requireNonNull(accessState, "accessState");
         this.exemptionState = Objects.requireNonNull(exemptionState, "exemptionState");
         this.managePermission = Objects.requireNonNull(managePermission, "managePermission");
         this.customPermission = Objects.requireNonNull(customPermission, "customPermission");
         this.modeFacts = Objects.requireNonNull(modeFacts, "modeFacts");
+        this.managerPresent = managerPresent;
     }
 
     public AccessState accessState() {
@@ -66,6 +78,16 @@ public final class AvfPlatformFacts {
         return modeFacts;
     }
 
+    /**
+     * Whether the platform's VM manager service was actually present. A
+     * permission denial prevents reading capabilities, not the service lookup
+     * itself; this fact keeps an OEM ROM without the feature string from being
+     * reported as "no virtualization platform" instead of "needs permission".
+     */
+    public boolean managerPresent() {
+        return managerPresent;
+    }
+
     /** True only when the platform answered the capability read itself. */
     public boolean readable() {
         return accessState == AccessState.AVAILABLE;
@@ -75,6 +97,7 @@ public final class AvfPlatformFacts {
     public String summary() {
         return "访问=" + accessLabel(accessState)
                 + "；豁免=" + exemptionLabel(exemptionState)
+                + "；平台服务=" + (managerPresent ? "存在" : "未探测到")
                 + "；" + modeFacts.summary();
     }
 

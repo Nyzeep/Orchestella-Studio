@@ -24,6 +24,8 @@ public final class AvfCapabilityEvaluatorTest {
         nonProtectedModeStillUsesThePermissionGate();
         platformAccessStatesAreTypedAndActionable();
         platformAccessNeverBypassesThePermissionGate();
+        managerPresenceWithoutFeatureNeedsAuthorizationNotUndeclared();
+        managerAbsenceWithoutFeatureStaysUndeclared();
         reasonsNeverNameExecutionEngines();
         numericOnePropertyIsRecognizedAsTruthy();
     }
@@ -32,6 +34,14 @@ public final class AvfCapabilityEvaluatorTest {
             AvfPlatformFacts.AccessState state,
             AvfCapabilityEvaluator.PermissionState manage,
             AvfCapabilityEvaluator.PermissionState custom) {
+        return platformFacts(state, manage, custom, false);
+    }
+
+    private static AvfPlatformFacts platformFacts(
+            AvfPlatformFacts.AccessState state,
+            AvfCapabilityEvaluator.PermissionState manage,
+            AvfCapabilityEvaluator.PermissionState custom,
+            boolean managerPresent) {
         return new AvfPlatformFacts(
                 state,
                 AvfPlatformFacts.ExemptionState.INSTALLED,
@@ -41,7 +51,8 @@ public final class AvfCapabilityEvaluatorTest {
                         state == AvfPlatformFacts.AccessState.AVAILABLE
                                 || state == AvfPlatformFacts.AccessState.PERMISSION_DENIED
                                 ? AvfCapabilityEvaluator.VmSupport.SUPPORTED
-                                : AvfCapabilityEvaluator.VmSupport.UNSUPPORTED));
+                                : AvfCapabilityEvaluator.VmSupport.UNSUPPORTED),
+                managerPresent);
     }
 
     private static void platformAccessStatesAreTypedAndActionable() {
@@ -114,6 +125,63 @@ public final class AvfCapabilityEvaluatorTest {
                 "a platform denial after grants is still not a silent READY");
         assertTrue(granted.reasons().stream().anyMatch(reason -> reason.contains("系统策略")),
                 "a post-grant denial explains the platform policy");
+    }
+
+    private static void managerPresenceWithoutFeatureNeedsAuthorizationNotUndeclared() {
+        AvfCapabilityEvaluator.AvfHostFacts.Builder facts =
+                new AvfCapabilityEvaluator.AvfHostFacts.Builder(
+                        35, List.of("arm64-v8a"), null, false,
+                        AvfCapabilityEvaluator.PermissionState.DENIED,
+                        AvfCapabilityEvaluator.PermissionState.DENIED);
+        AvfCapabilityEvaluator.AvfReadiness readiness = AvfCapabilityEvaluator.evaluate(
+                facts.platformFacts(platformFacts(
+                        AvfPlatformFacts.AccessState.PERMISSION_DENIED,
+                        AvfCapabilityEvaluator.PermissionState.DENIED,
+                        AvfCapabilityEvaluator.PermissionState.DENIED,
+                        true))
+                        .build());
+
+        assertTrue(readiness.status() == AvfCapabilityEvaluator.AvfStatus.NEEDS_AUTHORIZATION,
+                "a present manager service on an OEM ROM without the feature string needs authorization");
+        assertTrue(readiness.wizardEligible(), "authorization can resolve the permission gate");
+        assertTrue(readiness.reasons().stream().anyMatch(reason -> reason.contains("MANAGE_VIRTUAL_MACHINE")),
+                "the missing permission is named");
+        assertFalse(readiness.reasons().stream().anyMatch(reason -> reason.contains("设备未声明")),
+                "a present manager must not be reported as an undeclared platform");
+
+        AvfCapabilityEvaluator.AvfReadiness unreadable = AvfCapabilityEvaluator.evaluate(
+                new AvfCapabilityEvaluator.AvfHostFacts.Builder(
+                        35, List.of("arm64-v8a"), null, false,
+                        AvfCapabilityEvaluator.PermissionState.GRANTED,
+                        AvfCapabilityEvaluator.PermissionState.GRANTED)
+                        .platformFacts(platformFacts(
+                                AvfPlatformFacts.AccessState.MODE_UNKNOWN,
+                                AvfCapabilityEvaluator.PermissionState.GRANTED,
+                                AvfCapabilityEvaluator.PermissionState.GRANTED,
+                                true))
+                        .build());
+        assertTrue(unreadable.status() == AvfCapabilityEvaluator.AvfStatus.MODE_UNKNOWN,
+                "a present manager with an unreadable mode stays MODE_UNKNOWN");
+    }
+
+    private static void managerAbsenceWithoutFeatureStaysUndeclared() {
+        AvfCapabilityEvaluator.AvfReadiness readiness = AvfCapabilityEvaluator.evaluate(
+                new AvfCapabilityEvaluator.AvfHostFacts.Builder(
+                        35, List.of("arm64-v8a"), null, false,
+                        AvfCapabilityEvaluator.PermissionState.DENIED,
+                        AvfCapabilityEvaluator.PermissionState.DENIED)
+                        .platformFacts(platformFacts(
+                                AvfPlatformFacts.AccessState.PERMISSION_DENIED,
+                                AvfCapabilityEvaluator.PermissionState.DENIED,
+                                AvfCapabilityEvaluator.PermissionState.DENIED,
+                                false))
+                        .build());
+
+        assertTrue(readiness.status() == AvfCapabilityEvaluator.AvfStatus.UNSUPPORTED,
+                "without a feature, property, or manager service the platform is undeclared");
+        assertFalse(readiness.wizardEligible(), "there is nothing to authorize");
+        assertTrue(readiness.reasons().stream().anyMatch(reason -> reason.contains("设备未声明")),
+                "the absence is named");
     }
 
     private static void manageGrantAloneDoesNotCompletePreflight() {

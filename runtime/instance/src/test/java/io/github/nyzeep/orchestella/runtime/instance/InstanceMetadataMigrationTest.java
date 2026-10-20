@@ -111,6 +111,38 @@ public final class InstanceMetadataMigrationTest {
         assertFalse("a fully specified block is not legacy", loaded.hardwareConfig().isLegacyDefaults());
     }
 
+    @Test
+    public void goldenMetadataRoundTripPreservesUnknownKeysAndProvenance() throws Exception {
+        Path dir = temporaryFolder.newFolder("golden").toPath();
+        FileStore store = new FileStore(dir);
+        String id = "00000000-0000-4000-8000-000000000001";
+        try (InputStream fixture =
+                getClass().getResourceAsStream("/instance-metadata-v1-golden.properties")) {
+            assertTrue("the golden fixture is on the test classpath", fixture != null);
+            Files.copy(fixture, propertiesFile(dir, id));
+        }
+
+        Instance loaded = store.load(id);
+        assertEquals("known hardware is parsed", 1, loaded.hardwareConfig().cpuCores());
+        assertTrue("legacy provenance is parsed, not inferred from equality",
+                loaded.hardwareConfig().isLegacyDefaults());
+        assertEquals("known hostname is parsed", "fixture-host", loaded.hostname());
+
+        store.save(loaded);
+        Instance reloaded = store.load(id);
+        assertTrue("legacy provenance survives the rewrite",
+                reloaded.hardwareConfig().isLegacyDefaults());
+        Properties rewritten = read(propertiesFile(dir, id));
+        assertEquals("unknown top-level key survives", "draft",
+                rewritten.getProperty("future.retentionHint"));
+        assertEquals("unknown comma value survives", "alpha,beta",
+                rewritten.getProperty("future.tags"));
+        assertEquals("unknown hardware.* key survives without changing hardware", "true",
+                rewritten.getProperty("hardware.futureFlag"));
+        assertEquals("the schema version is still the current one", "1",
+                rewritten.getProperty("metadata.schemaVersion"));
+    }
+
     private static Path propertiesFile(Path dir, String id) {
         return dir.resolve(id + ".properties");
     }
