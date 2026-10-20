@@ -84,16 +84,9 @@ class DryRunTests(unittest.TestCase):
         with self.assertRaisesRegex(Rejected, "REPORT_SCHEMA_REJECTED"):
             self.harness.validate_report(wrong)
 
-    def test_device_mode_is_blocked_without_invoking_adb(self):
-        report = self.harness.build_report("device", device_alias="fixture-device")
-        self.harness.validate_report(report)
-        self.assertEqual(report["mode"], "device")
-        self.assertFalse(report["device_mode"]["implemented"])
-        self.assertFalse(report["device_mode"]["adb_invoked"])
-        self.assertEqual(report["summary"], {"pass": 0, "fail": 0, "blocked": 12, "not-tested": 0})
-        for stage in report["stages"]:
-            self.assertEqual(stage["status"], "blocked", stage["id"])
-            self.assertEqual(stage["reason_code"], "DEVICE_MODE_NOT_IMPLEMENTED", stage["id"])
+    def test_build_report_is_dry_run_only(self):
+        with self.assertRaisesRegex(Rejected, "MODE_REJECTED"):
+            self.harness.build_report("device", device_alias="fixture-device")
 
     def test_redaction_removes_device_identifiers_and_tokens(self):
         text = ("serial=" + fixtures.SENTINEL
@@ -146,16 +139,14 @@ class CliTests(unittest.TestCase):
         self.assertIn("not-tested", markdown_path.read_text(encoding="utf-8"))
         self.assertNotIn(fixtures.SENTINEL, process.stdout.decode("utf-8", "replace"))
 
-    def test_cli_device_mode_is_blocked_and_does_not_echo_serial(self):
+    def test_cli_device_mode_requires_qa_arguments_and_does_not_echo_serial(self):
         out = self.root / "out"
         serial_like = "R58M" + fixtures.SENTINEL
         process = self.run_cli("--device", serial_like, "--out", str(out))
         self.assertEqual(process.returncode, 2)
         self.assertNotIn(serial_like.encode(), process.stdout + process.stderr)
-        summary = json.loads(process.stdout)
-        report = json.loads(Path(summary["report_json"]).read_bytes())
-        self.assertEqual(report["summary"]["blocked"], 12)
-        self.assertEqual(report["device_mode"]["implemented"], False)
+        self.assertEqual(json.loads(process.stdout), {"error": "DEVICE_ARGUMENTS_REQUIRED"})
+        self.assertFalse(out.exists())
 
     def test_cli_requires_a_mode_and_an_absolute_out(self):
         missing_mode = self.run_cli("--out", str(self.root / "out"))
