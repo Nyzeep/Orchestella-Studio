@@ -32,6 +32,7 @@ import uuid
 sys.dont_write_bytecode = True
 
 import avf_preflight
+import avf_qa_staging
 from avf_evidence_io import Rejected, parse_json
 
 ADB_TIMEOUT_SECONDS = 20.0
@@ -52,6 +53,11 @@ SAMPLE_COUNTERS = (
 )
 PAYLOAD_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\.so")
 DEFAULT_STOP_DEADLINE_MS = 15000
+DEFAULT_CUSTOM_MEMORY_MB = 1024
+DEFAULT_VSOCK_CONTROL_PORT = 9100
+DEFAULT_VSOCK_TERMINAL_PORT = 9101
+DEFAULT_VSOCK_TIMEOUT_MS = 120000
+MAX_VSOCK_TIMEOUT_MS = 300000
 DEFAULT_CUSTOM_KERNEL = "files/avf-qa/custom/kernel"
 DEFAULT_CUSTOM_INITRD = "files/avf-qa/custom/initrd"
 DEFAULT_CUSTOM_ROOT = "files/avf-qa/custom/root.img"
@@ -205,12 +211,17 @@ class AdbRunner:
                 cleaned.append("<adb>")
             elif argument == self.serial:
                 cleaned.append("<device>")
-            elif index > 0 and argv[index - 1] == "qaRunToken":
+            elif index > 0 and argv[index - 1] in ("qaRunToken", "qaBridgeToken"):
                 cleaned.append("<token>")
             elif isinstance(argument, str) and argument.startswith("files/avf-qa/probe-"):
                 cleaned.append("files/avf-qa/probe-<token>.json")
             elif isinstance(argument, str) and argument.lower().endswith(".apk"):
                 cleaned.append("<apk>")
+            elif index > 0 and argv[index - 1] == "push":
+                cleaned.append("<artifact>")
+            elif isinstance(argument, str):
+                cleaned.append(re.sub(r"/data/local/tmp/avf-qa-stage-[0-9a-f]+",
+                                      "<staging>", argument))
             else:
                 cleaned.append(argument)
         return cleaned
@@ -582,7 +593,10 @@ def _install_package(runner, adb, serial, package, apk, test_only):
 def _probe(runner, adb, serial, qa_package, test_package, token, stages, cycles,
            *, qa_mode="qualification", payload=None, vsock_port=0,
            stop_deadline_ms=DEFAULT_STOP_DEADLINE_MS, custom_kernel=None,
-           custom_initrd=None, custom_root=None):
+           custom_initrd=None, custom_root=None, bridge_token=None,
+           vsock_terminal_port=DEFAULT_VSOCK_TERMINAL_PORT,
+           custom_memory_mb=DEFAULT_CUSTOM_MEMORY_MB,
+           vsock_timeout_ms=DEFAULT_VSOCK_TIMEOUT_MS):
     argv = [
         adb, "-s", serial, "shell", "am", "instrument", "-w", "-r",
         "-e", "qaRunToken", token,
@@ -593,17 +607,28 @@ def _probe(runner, adb, serial, qa_package, test_package, token, stages, cycles,
     ]
     if qa_mode == "protected-microdroid" and payload:
         argv += ["-e", "qaMicrodroidPayload", payload]
-    if vsock_port:
-        argv += ["-e", "qaVsockPort", str(vsock_port)]
     if qa_mode == "custom-linux":
+        control_port = vsock_port or DEFAULT_VSOCK_CONTROL_PORT
+        argv += [
+            "-e", "qaVsockPort", str(control_port),
+            "-e", "qaVsockTerminalPort", str(vsock_terminal_port),
+            "-e", "qaVsockTimeoutMs", str(vsock_timeout_ms),
+            "-e", "qaCustomMemoryMb", str(custom_memory_mb),
+        ]
+        if bridge_token:
+            argv += ["-e", "qaBridgeToken", bridge_token]
         argv += [
             "-e", "qaCustomKernel", custom_kernel or DEFAULT_CUSTOM_KERNEL,
             "-e", "qaCustomInitrd", custom_initrd or DEFAULT_CUSTOM_INITRD,
             "-e", "qaCustomRoot", custom_root or DEFAULT_CUSTOM_ROOT,
         ]
+    elif vsock_port:
+        argv += ["-e", "qaVsockPort", str(vsock_port)]
     argv.append(test_package + "/" + QA_RUNNER)
     _announce(runner, argv)
-    result = runner.run(argv, timeout_seconds=INSTRUMENT_TIMEOUT_SECONDS,
+    instrument_timeout = max(
+        INSTRUMENT_TIMEOUT_SECONDS, (vsock_timeout_ms / 1000.0) + 60.0)
+    result = runner.run(argv, timeout_seconds=instrument_timeout,
                         allow_failure=True)
     if ("INSTRUMENTATION_FAILED" in result.stdout
             or "INSTRUMENTATION_ABORTED" in result.stdout
@@ -629,8 +654,13 @@ def run_device(*, adb_path, serial, alias, qa_package, qa_test_package, apk, tes
                microdroid_payload=None, vsock_port=0,
                stop_deadline_ms=DEFAULT_STOP_DEADLINE_MS,
                custom_kernel=None, custom_initrd=None, custom_root=None,
+               stage_custom=False, custom_plan=None, custom_distro=None,
+               custom_apk=None, custom_root_bytes=None,
+               custom_memory_mb=DEFAULT_CUSTOM_MEMORY_MB,
+               vsock_terminal_port=DEFAULT_VSOCK_TERMINAL_PORT,
+               vsock_timeout_ms=DEFAULT_VSOCK_TIMEOUT_MS,
                timeout_seconds=ADB_TIMEOUT_SECONDS, deadline_seconds=600):
-    """Runs the device sequence and returns (report, evidence payloads)."""
+    """Runs the device sequence and returns (report, evidence, staging receipt)."""
     if not is_qa_package(qa_package):
         raise Rejected("QA_PACKAGE_REQUIRED")
     if not is_qa_package(qa_test_package):
@@ -639,6 +669,16 @@ def run_device(*, adb_path, serial, alias, qa_package, qa_test_package, apk, tes
         raise Rejected("QA_TEST_PACKAGE_REQUIRED")
     if qa_mode not in QA_MODES:
         raise Rejected("QA_MODE_REJECTED")
+    if stage_custom and qa_mode != "custom-linux":
+        raise Rejected("CUSTOM_STAGING_WITHOUT_CUSTOM_MODE")
+    if stage_custom and (custom_plan is None or custom_distro is None):
+        raise Rejected("CUSTOM_STAGING_ARGUMENTS_REQUIRED")
+    if type(custom_memory_mb) is not int or not 512 <= custom_memory_mb <= 4096:
+        raise Rejected("CUSTOM_MEMORY_REJECTED")
+    if type(vsock_terminal_port) is not int or not 0 <= vsock_terminal_port <= 65535:
+        raise Rejected("VSOCK_PORT_REJECTED")
+    if type(vsock_timeout_ms) is not int or not 1000 <= vsock_timeout_ms <= MAX_VSOCK_TIMEOUT_MS:
+        raise Rejected("VSOCK_TIMEOUT_REJECTED")
     if type(cycles) is not int or not 1 <= cycles <= 20:
         raise Rejected("CYCLES_REJECTED")
     if type(vsock_port) is not int or not 0 <= vsock_port <= 65535:
@@ -678,6 +718,7 @@ def run_device(*, adb_path, serial, alias, qa_package, qa_test_package, apk, tes
     report = _report_stub("device", alias, now, base_stages, qa_mode)
     report["device_mode"]["adb_invoked"] = False
     evidence = {}
+    staging_receipt = None
 
     try:
         discovery = runner.run([adb, "devices", "-l"], allow_failure=True)
@@ -689,7 +730,7 @@ def run_device(*, adb_path, serial, alias, qa_package, qa_test_package, apk, tes
     except Rejected as error:
         report = _blocked_report("device", alias, now, base_stages, str(error),
                                  list(runner.commands), qa_mode)
-        return report, {}
+        return report, {}, staging_receipt
 
     try:
         preflight = avf_preflight.collect(adb, serial, alias, runner=runner)
@@ -700,7 +741,7 @@ def run_device(*, adb_path, serial, alias, qa_package, qa_test_package, apk, tes
         report = _blocked_report("device", alias, now, base_stages, reason_code,
                                  list(runner.commands), qa_mode)
         report["commands"] = list(runner.commands)
-        return report, {}
+        return report, {}, staging_receipt
 
     try:
         _install_package(runner, adb, serial, qa_package, apk, test_only=False)
@@ -881,12 +922,27 @@ def run_device(*, adb_path, serial, alias, qa_package, qa_test_package, apk, tes
 
     launch_probe = None
     launch_block_reason = None
+    staging_failure = None
+    bridge_token = None
+    if qa_mode == "custom-linux" and qual["non_protected"] and stage_custom:
+        try:
+            staging_plan = avf_qa_staging.load_plan(
+                custom_plan, custom_distro, apk_path=custom_apk,
+                root_bytes=custom_root_bytes)
+            staging_receipt = avf_qa_staging.stage(
+                runner, adb, serial, qa_package, staging_plan)
+            bridge_token = staging_plan.bridge_token
+        except (Rejected, OSError) as error:
+            staging_failure = (str(error) if isinstance(error, Rejected)
+                               else "CUSTOM_STAGING_FAILED")
     if qa_mode == "qualification":
         launch_block_reason = "QA_LAUNCH_NOT_REQUESTED"
     elif qa_mode == "protected-microdroid" and not qual["protected"]:
         launch_block_reason = "PROTECTED_VM_UNAVAILABLE"
     elif qa_mode == "custom-linux" and not qual["non_protected"]:
         launch_block_reason = "NO_NON_PROTECTED_VM"
+    elif staging_failure is not None:
+        launch_block_reason = staging_failure
     elif _prior_status(report, "create") != "pass":
         launch_block_reason = "PRIOR_STAGE_BLOCKED"
 
@@ -899,7 +955,10 @@ def run_device(*, adb_path, serial, alias, qa_package, qa_test_package, apk, tes
                 stages, cycles, qa_mode=qa_mode, payload=launch_payload,
                 vsock_port=vsock_port, stop_deadline_ms=stop_deadline_ms,
                 custom_kernel=custom_kernel, custom_initrd=custom_initrd,
-                custom_root=custom_root)
+                custom_root=custom_root, bridge_token=bridge_token,
+                vsock_terminal_port=vsock_terminal_port,
+                custom_memory_mb=custom_memory_mb,
+                vsock_timeout_ms=vsock_timeout_ms)
             report["probe"]["run_token_sha256"] = hashlib.sha256(
                 launch_token.encode("ascii")).hexdigest()
             report["probe"]["mode"] = qa_mode
@@ -925,4 +984,4 @@ def run_device(*, adb_path, serial, alias, qa_package, qa_test_package, apk, tes
         report[key] = value
     report["commands"] = list(runner.commands)
     _refresh_summary(report)
-    return report, evidence
+    return report, evidence, staging_receipt

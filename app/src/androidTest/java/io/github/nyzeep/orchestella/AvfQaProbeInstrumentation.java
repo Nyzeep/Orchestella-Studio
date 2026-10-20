@@ -5,18 +5,24 @@ import android.app.Instrumentation;
 import android.content.Context;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
 import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator;
 import io.github.nyzeep.orchestella.runtime.capability.AvfPlatformFacts;
 import io.github.nyzeep.orchestella.runtime.engineavf.ReflectiveAvfPlatformAccess;
+import java.io.BufferedReader;
 import java.io.Closeable;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -64,6 +70,11 @@ public final class AvfQaProbeInstrumentation extends Instrumentation {
     private static final long MICRODROID_MEMORY_BYTES = 256L * 1024L * 1024L;
     private static final int DEFAULT_STOP_DEADLINE_MS = 15000;
     private static final int MAX_STOP_DEADLINE_MS = 60000;
+    private static final int DEFAULT_CUSTOM_MEMORY_MB = 1024;
+    private static final int DEFAULT_CONTROL_VSOCK_PORT = 9100;
+    private static final int DEFAULT_TERMINAL_VSOCK_PORT = 9101;
+    private static final int DEFAULT_VSOCK_TIMEOUT_MS = 120000;
+    private static final int MAX_VSOCK_TIMEOUT_MS = 300000;
     private static final int STOPPED_STATUS = 0;
     private static final String DEFAULT_CUSTOM_KERNEL = "files/avf-qa/custom/kernel";
     private static final String DEFAULT_CUSTOM_INITRD = "files/avf-qa/custom/initrd";
@@ -291,7 +302,8 @@ public final class AvfQaProbeInstrumentation extends Instrumentation {
             Object config = microdroidConfig(target, payload);
             String name = qaInstanceName("qa-pvm-", args.getString("qaRunToken"));
             return executeLifecycle(results, manager, shape.manager(), vmClass, config, name,
-                    vsockPort, stopDeadlineMs, "QA_MICRODROID_CONFIG_FAILED");
+                    vsockPort, 0, null, stopDeadlineMs, stopDeadlineMs,
+                    "QA_MICRODROID_CONFIG_FAILED");
         } catch (Throwable failure) {
             return failStages(results, "QA_MICRODROID_CONFIG_FAILED");
         }
@@ -307,7 +319,25 @@ public final class AvfQaProbeInstrumentation extends Instrumentation {
         if (!permissionsGranted(facts)) {
             return failStages(results, "QA_PERMISSION_DENIED");
         }
-        int vsockPort = optionalPort(args.getString("qaVsockPort"));
+        int controlPort = optionalPort(args.getString("qaVsockPort"));
+        if (controlPort <= 0) {
+            controlPort = DEFAULT_CONTROL_VSOCK_PORT;
+        }
+        int terminalPort = optionalPort(args.getString("qaVsockTerminalPort"));
+        if (terminalPort <= 0) {
+            terminalPort = DEFAULT_TERMINAL_VSOCK_PORT;
+        }
+        int memoryMb;
+        int vsockTimeoutMs;
+        try {
+            memoryMb = boundedInt(args.getString("qaCustomMemoryMb"),
+                    DEFAULT_CUSTOM_MEMORY_MB, 512, 4096);
+            vsockTimeoutMs = boundedInt(args.getString("qaVsockTimeoutMs"),
+                    DEFAULT_VSOCK_TIMEOUT_MS, 1000, MAX_VSOCK_TIMEOUT_MS);
+        } catch (NumberFormatException rejected) {
+            return failStages(results, "QA_CUSTOM_ARGUMENTS_REJECTED");
+        }
+        String bridgeToken = args.getString("qaBridgeToken");
         File kernel;
         File initrd;
         File root;
@@ -328,10 +358,12 @@ public final class AvfQaProbeInstrumentation extends Instrumentation {
                 return failStages(results, "QA_VM_MANAGER_UNAVAILABLE");
             }
             Class<?> vmClass = Class.forName("android.system.virtualmachine.VirtualMachine");
-            Object config = customConfig(target, kernel, initrd, root);
+            Object config = customConfig(target, kernel, initrd, root,
+                    controlPort, terminalPort, memoryMb);
             String name = qaInstanceName("qa-custom-", args.getString("qaRunToken"));
             return executeLifecycle(results, manager, shape.manager(), vmClass, config, name,
-                    vsockPort, stopDeadlineMs, "QA_CUSTOM_CONFIG_FAILED");
+                    controlPort, terminalPort, bridgeToken, vsockTimeoutMs, stopDeadlineMs,
+                    "QA_CUSTOM_CONFIG_FAILED");
         } catch (Throwable failure) {
             return failStages(results, "QA_CUSTOM_CONFIG_FAILED");
         }
@@ -339,7 +371,8 @@ public final class AvfQaProbeInstrumentation extends Instrumentation {
 
     private static JSONObject executeLifecycle(JSONObject results, Object manager,
             Class<?> managerClass, Class<?> vmClass, Object config, String name, int vsockPort,
-            int stopDeadlineMs, String createFailure) throws JSONException {
+            int terminalPort, String bridgeToken, int vsockTimeoutMs, int stopDeadlineMs,
+            String createFailure) throws JSONException {
         Object vm;
         try {
             Class<?> configClass = Class.forName(
@@ -377,8 +410,10 @@ public final class AvfQaProbeInstrumentation extends Instrumentation {
         if (vsockPort <= 0) {
             results.put("vsock_handshake", blocked("VSOCK_NOT_REQUESTED"));
         } else {
-            String failure = attemptVsock(vmClass, vm, vsockPort, stopDeadlineMs);
-            results.put("vsock_handshake", failure == null ? passed("VSOCK_CONNECTED")
+            String failure = attemptVsock(vmClass, vm, vsockPort, terminalPort,
+                    bridgeToken, vsockTimeoutMs);
+            results.put("vsock_handshake", failure == null
+                    ? passed(terminalPort > 0 ? "VSOCK_AUTHENTICATED" : "VSOCK_CONNECTED")
                     : failed(failure));
         }
 
@@ -410,7 +445,8 @@ public final class AvfQaProbeInstrumentation extends Instrumentation {
         return builderClass.getMethod("build").invoke(builder);
     }
 
-    private static Object customConfig(Context target, File kernel, File initrd, File root)
+    private static Object customConfig(Context target, File kernel, File initrd, File root,
+            int controlPort, int terminalPort, int memoryMb)
             throws ReflectiveOperationException {
         Class<?> imageBuilderClass = Class.forName(
                 "android.system.virtualmachine.VirtualMachineCustomImageConfig$Builder");
@@ -425,6 +461,24 @@ public final class AvfQaProbeInstrumentation extends Instrumentation {
                 .invoke(imageBuilder, kernel.getAbsolutePath());
         imageBuilderClass.getMethod("setInitrdPath", String.class)
                 .invoke(imageBuilder, initrd.getAbsolutePath());
+        // The guest initramfs selects the vsock data plane only when the port
+        // announcements are present in /proc/cmdline. Without them it expects
+        // virtio-serial devices that an AVF custom VM does not provide.
+        addParam(imageBuilderClass, imageBuilder, "console=hvc0");
+        addParam(imageBuilderClass, imageBuilder, "rdinit=/init");
+        addParam(imageBuilderClass, imageBuilder, "panic=-1");
+        addParam(imageBuilderClass, imageBuilder, "droidlayer.root_device=/dev/vda");
+        addParam(imageBuilderClass, imageBuilder, "droidlayer.input_tag=droidlayer-input");
+        addParam(imageBuilderClass, imageBuilder,
+                "droidlayer.vsock_control_port=" + controlPort);
+        addParam(imageBuilderClass, imageBuilder,
+                "droidlayer.vsock_terminal_port=" + terminalPort);
+        try {
+            imageBuilderClass.getMethod("useNetwork", boolean.class)
+                    .invoke(imageBuilder, false);
+        } catch (NoSuchMethodException ignored) {
+            // The default is no network; the explicit switch is optional.
+        }
         Class<?> diskClass = Class.forName(
                 "android.system.virtualmachine.VirtualMachineCustomImageConfig$Disk");
         Object disk = diskClass.getMethod("RWDisk", String.class)
@@ -440,7 +494,7 @@ public final class AvfQaProbeInstrumentation extends Instrumentation {
                 .invoke(builder, image);
         builderClass.getMethod("setProtectedVm", boolean.class).invoke(builder, false);
         builderClass.getMethod("setMemoryBytes", long.class)
-                .invoke(builder, 512L * 1024L * 1024L);
+                .invoke(builder, memoryMb * 1024L * 1024L);
         try {
             builderClass.getMethod("setCpuTopology", int.class)
                     .invoke(builder, cpuTopologyOne());
@@ -448,6 +502,11 @@ public final class AvfQaProbeInstrumentation extends Instrumentation {
             // Optional on older revisions.
         }
         return builderClass.getMethod("build").invoke(builder);
+    }
+
+    private static void addParam(Class<?> imageBuilderClass, Object imageBuilder, String value)
+            throws ReflectiveOperationException {
+        imageBuilderClass.getMethod("addParam", String.class).invoke(imageBuilder, value);
     }
 
     private static void selectMicrodroidOs(Class<?> builderClass, Object builder)
@@ -496,42 +555,135 @@ public final class AvfQaProbeInstrumentation extends Instrumentation {
         requestStopAndWait(vmClass, vm, deadlineMs);
     }
 
-    private static String attemptVsock(Class<?> vmClass, Object vm, int port, int deadlineMs) {
-        ExecutorService executor = Executors.newSingleThreadExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "avf-qa-vsock");
-            thread.setDaemon(true);
-            return thread;
-        });
-        Future<Object> future = null;
+    private static String attemptVsock(Class<?> vmClass, Object vm, int controlPort,
+            int terminalPort, String bridgeToken, int timeoutMs) {
+        boolean authenticated = terminalPort > 0;
+        if (authenticated && !validBridgeToken(bridgeToken)) {
+            return "VSOCK_TOKEN_MISSING";
+        }
+        long deadline = SystemClock.uptimeMillis() + timeoutMs;
+        while (SystemClock.uptimeMillis() < deadline) {
+            String failure = attemptVsockOnce(vmClass, vm, controlPort, terminalPort,
+                    authenticated ? bridgeToken : null, timeoutMs);
+            if (failure == null) {
+                return null;
+            }
+            if ("VSOCK_AUTH_FAILED".equals(failure) || "VSOCK_TOKEN_MISSING".equals(failure)) {
+                return failure;
+            }
+            if (!"VSOCK_CONNECT_FAILED".equals(failure)
+                    && !"VSOCK_TIMEOUT".equals(failure)
+                    && !"VSOCK_TERMINAL_NO_BYTES".equals(failure)) {
+                return failure;
+            }
+            SystemClock.sleep(500);
+        }
+        return "VSOCK_TIMEOUT";
+    }
+
+    private static String attemptVsockOnce(Class<?> vmClass, Object vm, int controlPort,
+            int terminalPort, String bridgeToken, int timeoutMs) {
+        ParcelFileDescriptor control = null;
+        ParcelFileDescriptor terminal = null;
+        ExecutorService executor = newDaemonExecutor();
         try {
-            future = executor.submit(() -> vmClass.getMethod("connectToVsockServer", int.class)
-                    .invoke(vm, port));
-            Object descriptor = future.get(
-                    Math.max(1000, Math.min(5000, deadlineMs)), TimeUnit.MILLISECONDS);
-            if (descriptor == null) {
+            Object raw = connectVsock(executor, vmClass, vm, controlPort, timeoutMs);
+            if (!(raw instanceof ParcelFileDescriptor)) {
                 return "VSOCK_CONNECT_FAILED";
             }
-            if (descriptor instanceof Closeable) {
-                try {
-                    ((Closeable) descriptor).close();
-                } catch (IOException ignored) {
-                    // The handshake result is already decided by the descriptor.
+            control = (ParcelFileDescriptor) raw;
+            if (bridgeToken != null) {
+                InputStream input = new ParcelFileDescriptor.AutoCloseInputStream(control);
+                OutputStream output = new FileOutputStream(control.getFileDescriptor());
+                output.write(("DROIDLAYER/HELLO 1 1 " + bridgeToken + "\n")
+                        .getBytes(StandardCharsets.US_ASCII));
+                output.flush();
+                Future<String> reply = executor.submit(() -> {
+                    BufferedReader reader = new BufferedReader(
+                            new InputStreamReader(input, StandardCharsets.US_ASCII));
+                    return reader.readLine();
+                });
+                String line = reply.get(
+                        Math.max(1000, Math.min(10000, timeoutMs)), TimeUnit.MILLISECONDS);
+                if (!"DROIDLAYER/READY 1".equals(line)) {
+                    return "VSOCK_AUTH_FAILED";
+                }
+            }
+            if (terminalPort > 0) {
+                Object terminalRaw = connectVsock(
+                        executor, vmClass, vm, terminalPort, timeoutMs);
+                if (!(terminalRaw instanceof ParcelFileDescriptor)) {
+                    return "VSOCK_TERMINAL_NO_BYTES";
+                }
+                terminal = (ParcelFileDescriptor) terminalRaw;
+                InputStream terminalInput = new ParcelFileDescriptor.AutoCloseInputStream(terminal);
+                Future<Integer> firstByte = executor.submit(
+                        (Callable<Integer>) terminalInput::read);
+                int value = firstByte.get(
+                        Math.max(1000, Math.min(10000, timeoutMs)), TimeUnit.MILLISECONDS);
+                if (value < 0) {
+                    return "VSOCK_TERMINAL_NO_BYTES";
                 }
             }
             return null;
         } catch (TimeoutException timeout) {
-            if (future != null) {
-                future.cancel(true);
-            }
             return "VSOCK_TIMEOUT";
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             return "VSOCK_INTERRUPTED";
         } catch (ExecutionException failure) {
             return "VSOCK_CONNECT_FAILED";
+        } catch (IOException failure) {
+            return "VSOCK_CONNECT_FAILED";
         } finally {
+            closeQuietly(terminal);
+            closeQuietly(control);
             executor.shutdownNow();
         }
+    }
+
+    private static Object connectVsock(ExecutorService executor, Class<?> vmClass, Object vm,
+            int port, int timeoutMs) throws InterruptedException, TimeoutException,
+            ExecutionException {
+        Future<Object> future = executor.submit(() -> {
+            try {
+                return vmClass.getMethod("connectVsock", long.class)
+                        .invoke(vm, (long) port);
+            } catch (NoSuchMethodException absent) {
+                return vmClass.getMethod("connectToVsockServer", int.class)
+                        .invoke(vm, port);
+            }
+        });
+        try {
+            return future.get(
+                    Math.max(1000, Math.min(10000, timeoutMs)), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException timeout) {
+            future.cancel(true);
+            throw timeout;
+        }
+    }
+
+    private static ExecutorService newDaemonExecutor() {
+        return Executors.newSingleThreadExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "avf-qa-vsock");
+            thread.setDaemon(true);
+            return thread;
+        });
+    }
+
+    private static void closeQuietly(Closeable closeable) {
+        if (closeable == null) {
+            return;
+        }
+        try {
+            closeable.close();
+        } catch (IOException ignored) {
+            // The handshake result is already decided.
+        }
+    }
+
+    private static boolean validBridgeToken(String value) {
+        return value != null && value.matches("[0-9a-f]{64}");
     }
 
     private static void deleteQuietly(Class<?> managerClass, Object manager, String name) {
