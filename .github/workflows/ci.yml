@@ -14,7 +14,7 @@ jobs:
   test:
     name: Contract & Unit Tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Checkout source
@@ -38,11 +38,71 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
+      - name: Verify CI/release module coverage and AVF harness wiring
+        run: |
+          python3 tools/ci/test_check_ci_module_coverage.py
+          python3 tools/ci/check_ci_module_coverage.py
+
       - name: Run provisioned launch regression gate
         run: ./gradlew :app:testDebugUnitTest --tests '*ProvisionedLaunchRegressionTest' --no-daemon --stacktrace
 
-      - name: Run contract checks and unit tests
-        run: ./gradlew :runtime:contract:check :runtime:instance:check :runtime:engine-qemu:check :app:testDebugUnitTest --no-daemon --stacktrace
+      - name: Run all runtime checks and app unit tests
+        run: |
+          bash tools/ci/run-gradle-gate.sh \
+            :runtime:contract:check \
+            :runtime:instance:check \
+            :runtime:engine-qemu:check \
+            :runtime:engine-avf:check \
+            :runtime:capability:check \
+            :runtime:distro:check \
+            :runtime:network:check \
+            :app:testDebugUnitTest
+
+      - name: Upload Gradle gate log and failed-task summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-gate-${{ github.run_id }}
+          path: |
+            build/ci/gradle-gate.log
+            build/ci/gradle-gate-summary.txt
+          if-no-files-found: warn
+
+  # Lightweight PR/release packaging gate. The full QEMU payload build and its
+  # supply-chain checks stay in qemu-android.yml; this job only re-runs the
+  # lint/assemble/16 KB checks that used to be workflow_dispatch-only.
+  android-package-gate:
+    name: Android lint, assemble and 16 KB packaging
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Accept Android SDK licenses & install components
+        run: |
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f 2>/dev/null | head -1)
+          if [ -n "$SDKMANAGER" ]; then
+            yes | "$SDKMANAGER" --licenses || true
+            "$SDKMANAGER" "platforms;android-36" "build-tools;36.1.0" "ndk;27.0.12077973" || true
+          fi
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Run lint and assemble debug
+        run: ./gradlew :app:lintDebug :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Verify 16 KB ELF segments and zipalign
+        run: bash tools/ci/check-apk-16kb.sh app/build/outputs/apk/debug/app-debug.apk
 
   release-metadata:
     name: Release Metadata Gate
