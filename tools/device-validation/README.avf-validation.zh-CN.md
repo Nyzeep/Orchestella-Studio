@@ -165,7 +165,7 @@ python3 -B tools/device-validation/run_avf_device_validation.py \
 - `app/src/androidTest/java/io/github/nyzeep/orchestella/AvfQaProbeInstrumentation.java` 是 androidTest 专用 `Instrumentation`，不进入 release APK，也没有 launcher 入口。它拒绝在包名不含 `.qa.` 的 target 上运行。
 - 探针调用现有 `ReflectiveAvfPlatformAccess` 读取 access/exemption/permission/mode facts，反射读取 capability raw bits，并用 `VirtualMachineConfig.Builder.setProtectedVm(false)` 记录 protected-mode 结果；ROM fingerprint 只保存 SHA-256。它不 root、不改 hidden API 全局策略、不启动 VM。
 - 探针把 JSON 写到 QA app 私有目录 `files/avf-qa/probe-<token>.json`；host 用 `adb exec-out run-as <qa> cat ...` 拉取。令牌每次随机，报告只保存令牌的 SHA-256，命令日志把 `qaRunToken` 值和探针文件路径替换为 `<token>`。
-- 本票的探针只完成资格观察；`create`/`run_returned`/`vsock_handshake`/`stop_cycles` 明确返回 `blocked` / `QA_LAUNCH_ENTRY_NOT_IMPLEMENTED`。host 不会把缺失的探针结果补成 pass；将来接入 QA 启动 harness 后，host 的 stage 协议可直接接收其结果。
+- **（Session E 历史状态，已被 Session F 取代）** 本票的探针只完成资格观察；`create`/`run_returned`/`vsock_handshake`/`stop_cycles` 明确返回 `blocked` / `QA_LAUNCH_ENTRY_NOT_IMPLEMENTED`。host 不会把缺失的探针结果补成 pass；`qualification` 仍保持这一行为，其余模式见下方“QA 启动链路（Session F）”。
 - `real_avf_samples` 只有在 create、run_returned、vsock_handshake、stop_cycles 四个阶段都真实 pass 时才为 1；其余为 0。
 
 ### 命令示例
@@ -252,3 +252,83 @@ python3 -B tools/device-validation/run_avf_device_validation.py \
 - 没有安装 APK、grant、instrumentation 或 VM 操作；没有 AVF 产品支持声明。
 
 fake adb 回归覆盖 qualification、protected-only、bit2 缺失、权限拒绝、hidden API blocked、`setProtectedVm(false)` 拒绝、protected Microdroid 成功/失败、custom-linux 阻断、stop UNCONFIRMED、payload 缺失与脱敏；这些是 host 编排证据，不是真机样本。
+
+## 2026-10-20：non-protected 设备资格与 custom 工件 staging（Session G）
+
+Session G 把 Session F 的 QA 启动链路接到真实设备，并补齐 custom-Linux 的三个 app 私有工件如何准备。**本轮设备资格是 protected-only，custom 最小闭环没有执行**；staging 与启动代码仍可在零设备/ fake adb 上验证。
+
+### 设备资格结果（脱敏）
+
+- 设备 alias：`qa-device-01`（报告不写 serial）。
+- API 36；ABI `arm64-v8a`；`android.software.virtualization_framework=true`。
+- App actor `getCapabilities` raw bits = `1`：protected=true，non-protected=false。
+- 两权限在显式 `--grant` 后均为 `GRANTED`；`hidden API` exemption 为 `INSTALLED`。
+- `setProtectedVm(false)` 返回 `REJECTED` / `UnsupportedOperationException`；`protected_only=true`。
+- 停止原因：`NO_NON_PROTECTED_VM`。没有创建 custom VM，没有使用 protected Microdroid 替代，没有 20 次启停、网络、9p、RFB 或 App death。
+- 计数：`platform_qualification_samples=1`、`custom_linux_samples=0`、`protected_microdroid_samples=0`、`real_avf_samples=0`。
+
+### custom 工件 staging
+
+设备探针只接受 QA app 私有目录中的三个文件：
+
+```text
+files/avf-qa/custom/kernel
+files/avf-qa/custom/initrd
+files/avf-qa/custom/root.img
+```
+
+`avf_qa_staging.py` 从**已验证的 QA batch plan** 读取 kernel/initramfs 的 size 与 SHA-256，并可选地用 QA APK 的 `assets/runtime-artifacts-v1.sha256` 复核 kernel 与 APK `assets/Image` 一致。root 不从主机推送整盘：主机只推 4096 字节的 provisioning marker，设备侧用 `toybox truncate` 新建 sparse raw（`root.img`，默认取 plan 的 `rawBytes`），首次启动由 initramfs 格式化为 ext4。三个文件都用 `set -C`（noclobber）创建；目标已存在时拒绝覆盖。
+
+独立 staging CLI：
+
+```bash
+python3 -B tools/device-validation/avf_qa_staging.py \
+  --adb "$ADB" --device "$QA_SERIAL" \
+  --qa-package io.github.nyzeep.orchestella.qa.devicemode \
+  --plan "$QA_BATCH/plan.json" --distro debian \
+  --apk "$QA_APK" \
+  --out "$APPROVED_AVF_OUTPUT_ROOT/staging"
+```
+
+一条命令跑 custom 最小闭环（host 在创建 VM 前先做 bit2 门控和 staging）：
+
+```bash
+python3 -B tools/device-validation/run_avf_device_validation.py \
+  --device "$QA_SERIAL" --device-alias qa-device-01 \
+  --qa-package io.github.nyzeep.orchestella.qa.devicemode \
+  --qa-test-package io.github.nyzeep.orchestella.qa.devicemode.test \
+  --adb "$ADB" --grant --qa-mode custom-linux \
+  --stage-custom \
+  --custom-plan "$QA_BATCH/plan.json" --custom-distro debian \
+  --custom-apk "$QA_APK" \
+  --custom-memory-mb 1024 --vsock-port 9100 \
+  --out "$APPROVED_AVF_OUTPUT_ROOT/custom-linux"
+```
+
+- 传输暂存目录是新的 `/data/local/tmp/avf-qa-stage-<token>`；`run-as` 只复制本次三个命名文件，并在设备上复核 kernel/initrd SHA-256、root 大小与 marker。
+- 失败只清理本次创建的 app 私有文件（脚本 trap 记录 `created`），并清理本次临时目录；不删除 app 私有磁盘、其他文件或用户数据。
+- staging 失败原因写入 `create` 阶段的 blocked reason；成功的 size/SHA-256 写入独立的 `avf-qa-staging-<stamp>.json` receipt。
+- `run-as` 只对 debuggable QA 包使用；生产包仍被 `QA_PACKAGE_REQUIRED` 拒绝。
+
+### custom 启动链修正
+
+Session F 的 custom 配置缺少三处会让真实启动失败的关键接线，本轮已修：
+
+- `VirtualMachineCustomImageConfig.Builder.addParam(...)` 现在写入 `console=hvc0 rdinit=/init panic=-1 droidlayer.root_device=/dev/vda droidlayer.input_tag=droidlayer-input droidlayer.vsock_control_port=9100 droidlayer.vsock_terminal_port=9101`；没有这些参数时 guest 会走 virtio-serial 路径而不会监听 vsock。
+- 探针改用官方 `VirtualMachine.connectVsock(long)`（旧的 `connectToVsockServer(int)` 不在生产 shape 中），并在有界窗口内重试。
+- custom 模式要求 QA 64-hex bridge token，发送 `DROIDLAYER/HELLO 1 1 <token>` 并等待 `DROIDLAYER/READY 1`；随后连接 terminal vsock 并只记录首个字节是否存在，不保存终端正文。token 只作为 `am instrument -e qaBridgeToken` 传入，命令日志脱敏为 `<token>`。
+- custom 内存默认 1024 MiB（Session F 的 512 MiB 低于 Debian embedded initramfs 的 provisioning 下限），CLI 可设 512..4096。
+
+### 零设备回归
+
+在 WSL Ubuntu-24.04 / Python 3.12.3 下执行：
+
+```bash
+AVF_VALIDATION_TEST_ROOT=/tmp/avf-session-g/all \
+  PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest discover \
+  -s tools/device-validation -p 'test_*.py'
+```
+
+结果：182 tests / 0 failures / 0 errors。新增 `test_avf_qa_staging.py` 14 项，覆盖工件缺失、hash 不匹配、路径逃逸、symlink/junction、目标已存在、run-as 不可用、设备侧 hash/marker 失败、精确清理边界、root size 覆盖、APK trust anchor 与 token 缺失。QA channel 的 instrumentation APK 已重新编译通过。
+
+这些是 host 编排与 fake runner 证据，不是真机 custom 样本；本轮 `custom_linux_samples` 仍为 0。
