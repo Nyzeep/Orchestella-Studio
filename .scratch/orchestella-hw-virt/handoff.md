@@ -2,6 +2,8 @@
 
 给新开发环境/并行 agent 的入口。先读 `map.md`，再读 `docs/research/2026-10-19-avf-reachability-corrections.zh-CN.md`。
 
+> **2026-10-20 合并完成**：本文中的开发分支已合并到 `main` `6d14087` 并删除；远端/本地只保留 `main`。新工作从 `main` 开始，下面的 branch/frontier 内容仅作历史追溯，不要再去 fetch 已删除分支。
+
 ## Branch / remote
 
 - 远端：`git@github.com:Nyzeep/Orchestella-Studio.git`

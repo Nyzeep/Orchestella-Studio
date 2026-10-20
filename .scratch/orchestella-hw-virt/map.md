@@ -67,10 +67,9 @@ Date: 2026-10-19
 
 ## Ticket status（2026-10-20）
 
-- 01–09：resolved（零设备）；分支均已推送 GitHub；10 在 `ticket/10-integration-and-report` 收口。
-- 10：resolved（零设备）；集成分支 `avf/zero-device-integration` 从 09→10 链创建并推送；不合并 `main`、不发布、不打 tag。
-- 票 23：completed（零设备代码就绪）；报告/双轴评审在 `docs/reports/tickets/avf-shizuku-23/`；真机项留设备门。
-- 真实 AVF 样本：0；GitHub Actions 远端未执行，本 map 只声明本地等价通过。
+- **2026-10-20 合并完成**：所有开发分支已合并到 `main` `6d14087`，随后删除 `ticket/01–10`、`avf/zero-device-integration`、`avf/zero-device-hardening`、`avf/mode-facts`、`ticket/avf-device-mode`、`lane/nonprotected-validation`；远端与本地只保留 `main`。后续工作从 `main` 开始，不再 fetch 已删除分支。
+- 01–09：resolved（零设备）；10：resolved（零设备）；票 23：completed；真实 AVF 样本仍为 0。
+- 16KB 门禁在合并时修正：APK 只断言 PT_LOAD 对齐与 bundled closure，GNU_RELRO 作为独立硬化检查；QEMU 产品 ELF 仍以 `REQUIRE_RELRO=1` 严格检查。
 
 
 ## Not yet specified
