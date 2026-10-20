@@ -39,7 +39,7 @@ public final class AvfInputEventForwardingTest {
         forwardsKeyEventOverVsock();
         forwardsTextCommitEventWithBase64OverVsock();
         displayControlResizeModeAndFpsForwarding();
-        avfCapabilityMatrixReflectsWaylandGraphicsParity();
+        avfCapabilityMatrixReflectsRfbDisplay();
         System.out.println(
                 "AVF_INPUT_EVENT_FORWARDING_TEST_OK pointer=1 touch=1 key=1 text_commit=1"
                         + " display_control=1 capability_matrix=1");
@@ -319,17 +319,19 @@ public final class AvfInputEventForwardingTest {
         }
     }
 
-    private static void avfCapabilityMatrixReflectsWaylandGraphicsParity() {
-        FullLinuxContract.CapabilityMatrix matrix = AvfWaylandChannel.capabilityMatrix();
+    private static void avfCapabilityMatrixReflectsRfbDisplay() {
+        FullLinuxContract.CapabilityMatrix matrix = AvfVirtualMachineEngine.capabilityMatrix();
         assertTrue(matrix != null, "capability matrix must not be null");
         assertEquals(
                 FullLinuxContract.ExecutionStrategy.HARDWARE_VIRTUALIZATION,
                 matrix.executionStrategy(),
                 "execution strategy is HARDWARE_VIRTUALIZATION");
-        assertTrue(matrix.supports(FullLinuxContract.Capability.GRAPHICS_WAYLAND),
-                "GRAPHICS_WAYLAND capability must be supported");
-        assertEquals("Wayland 原生通道（vsock 硬件加速）", matrix.graphicsBadge(),
-                "transparent capability badge matches specification");
+        assertTrue(matrix.supports(FullLinuxContract.Capability.GRAPHICS_RFB),
+                "the AVF display path is RFB");
+        assertTrue(!matrix.supports(FullLinuxContract.Capability.GRAPHICS_WAYLAND),
+                "RFB must not be reported as Wayland");
+        assertEquals("RFB 显示（vsock CPU 拷贝）", matrix.graphicsBadge(),
+                "transparent capability badge names the real transport");
         assertEquals("完整 Linux · 硬件加速", matrix.performanceBadge(),
                 "performance badge matches specification");
     }

@@ -38,6 +38,7 @@ import com.google.android.material.slider.Slider
 import com.google.android.material.textfield.TextInputEditText
 import io.github.nyzeep.orchestella.runtime.capability.AvfAuthorizationWizardModel
 import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator
+import io.github.nyzeep.orchestella.runtime.engineavf.AvfLaunchAdmission
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig
 import io.github.nyzeep.orchestella.runtime.distro.DistroCatalogRegistry
 import io.github.nyzeep.orchestella.runtime.distro.DistroManifest
@@ -1034,7 +1035,16 @@ class SetupWizardActivity : AppCompatActivity() {
 
     private fun updateHardwareLabels() {
         if (::txtCreationSummary.isInitialized) updateCreationSummary()
-        txtCfgVcpu.text = getString(R.string.wizard_config_vcpu_info, wizardModel.hardwareConfig.cpuCores())
+        val vcpuInfo = getString(R.string.wizard_config_vcpu_info, wizardModel.hardwareConfig.cpuCores())
+        txtCfgVcpu.text =
+            if (avfReadiness?.status() == AvfCapabilityEvaluator.AvfStatus.READY &&
+                AvfLaunchAdmission.cpuSupport(wizardModel.hardwareConfig.cpuCores()) ==
+                AvfLaunchAdmission.CpuSupport.NEEDS_SINGLE_VCPU
+            ) {
+                vcpuInfo + "\n" + getString(R.string.wizard_config_vcpu_avf_notice)
+            } else {
+                vcpuInfo
+            }
         txtCfgRam.text = getString(R.string.wizard_config_ram_info, wizardModel.hardwareConfig.ramMegabytes())
 
         val hardwareError = hardwareValidationMessage()

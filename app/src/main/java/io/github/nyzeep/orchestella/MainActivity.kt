@@ -40,7 +40,6 @@ import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
 import io.github.nyzeep.orchestella.runtime.capability.AvfAuthorizationWizardModel
 import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator
 import io.github.nyzeep.orchestella.runtime.capability.DeviceCapabilityEvaluator
-import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig
 import io.github.nyzeep.orchestella.runtime.distro.DistroCatalogRegistry
 import io.github.nyzeep.orchestella.runtime.distro.DistroManifest
@@ -739,17 +738,6 @@ class MainActivity : AppCompatActivity() {
             return readiness.performanceBadge()
         }
         return assessment.performanceBadge()
-    }
-
-    private fun currentCapabilityMatrix(): FullLinuxContract.CapabilityMatrix {
-        val assessment = DeviceCapabilityEvaluator.evaluate(deviceProfile())
-        val readiness = avfReadiness
-        if (assessment.canCreateFullLinuxInstance() && readiness != null &&
-            readiness.status() == AvfCapabilityEvaluator.AvfStatus.READY
-        ) {
-            return FullLinuxContract.CapabilityMatrix.hardwareVirtualizationWithGraphics()
-        }
-        return FullLinuxContract.CapabilityMatrix.softwareVirtualizationWithGraphics()
     }
 
     private fun refreshWizardEntry() {

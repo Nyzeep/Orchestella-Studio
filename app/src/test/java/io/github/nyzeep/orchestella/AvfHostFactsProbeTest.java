@@ -115,15 +115,17 @@ public final class AvfHostFactsProbeTest {
                         35,
                         new String[] {"arm64-v8a"},
                         "SM8750",
-                        "Blocked Device",
+                        "Reference Device",
                         () -> "true",
                         feature -> true,
                         permission -> true));
 
+        // A model name alone is not evidence: the evaluator has no hardcoded
+        // SoC blocklist, so these facts reach it unchanged and stay READY.
         assertEquals(
-                AvfCapabilityEvaluator.AvfStatus.UNSUPPORTED,
+                AvfCapabilityEvaluator.AvfStatus.READY,
                 readiness.status());
-        assertFalse(readiness.wizardEligible());
+        assertTrue(readiness.wizardEligible());
     }
 
     @Test

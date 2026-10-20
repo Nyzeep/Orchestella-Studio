@@ -7,7 +7,7 @@ public final class FullLinuxContractTest {
     public static void main(String[] arguments) {
         exposesSoftwareVirtualizationBadgeAsData();
         refusesAnIncompleteBaselineMatrix();
-        exposesWaylandGraphicsCapabilityAndBadges();
+        exposesRfbGraphicsCapabilityAndBadges();
     }
 
     private static void exposesSoftwareVirtualizationBadgeAsData() {
@@ -22,21 +22,23 @@ public final class FullLinuxContractTest {
         assertTrue(matrix.supports(FullLinuxContract.Capability.TERMINAL), "terminal capability");
         assertTrue(matrix.supports(FullLinuxContract.Capability.BRIDGE_HANDSHAKE), "bridge capability");
         assertFalse(matrix.supports(FullLinuxContract.Capability.HARDWARE_ACCELERATION), "no false hardware claim");
-        assertFalse(matrix.supports(FullLinuxContract.Capability.GRAPHICS_WAYLAND), "no default graphics in baseline");
+        assertFalse(matrix.supports(FullLinuxContract.Capability.GRAPHICS_RFB), "no default graphics in baseline");
         assertEquals("无图形通道", matrix.graphicsBadge(), "no graphics badge");
     }
 
-    private static void exposesWaylandGraphicsCapabilityAndBadges() {
+    private static void exposesRfbGraphicsCapabilityAndBadges() {
         FullLinuxContract.CapabilityMatrix softwareGraphics =
                 FullLinuxContract.CapabilityMatrix.softwareVirtualizationWithGraphics();
-        assertTrue(softwareGraphics.supports(FullLinuxContract.Capability.GRAPHICS_WAYLAND), "software wayland support");
-        assertEquals("Wayland 原生通道（共享内存）", softwareGraphics.graphicsBadge(), "software graphics badge");
+        assertTrue(softwareGraphics.supports(FullLinuxContract.Capability.GRAPHICS_RFB), "software RFB support");
+        assertFalse(softwareGraphics.supports(FullLinuxContract.Capability.GRAPHICS_WAYLAND),
+                "the QEMU display path is RFB, not Wayland");
+        assertEquals("RFB 显示（本地套接字）", softwareGraphics.graphicsBadge(), "software graphics badge");
 
         FullLinuxContract.CapabilityMatrix hardwareGraphics =
                 FullLinuxContract.CapabilityMatrix.hardwareVirtualizationWithGraphics();
-        assertTrue(hardwareGraphics.supports(FullLinuxContract.Capability.GRAPHICS_WAYLAND), "hardware wayland support");
+        assertTrue(hardwareGraphics.supports(FullLinuxContract.Capability.GRAPHICS_RFB), "hardware RFB support");
         assertTrue(hardwareGraphics.supports(FullLinuxContract.Capability.HARDWARE_ACCELERATION), "hardware acceleration");
-        assertEquals("Wayland 原生通道（vsock 硬件加速）", hardwareGraphics.graphicsBadge(), "hardware graphics badge");
+        assertEquals("RFB 显示（vsock CPU 拷贝）", hardwareGraphics.graphicsBadge(), "hardware graphics badge");
     }
 
     private static void refusesAnIncompleteBaselineMatrix() {

@@ -1,6 +1,7 @@
 package io.github.nyzeep.orchestella.runtime.engineavf;
 
 import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract;
+import io.github.nyzeep.orchestella.runtime.contract.SessionCapabilities;
 import java.io.IOException;
 import java.util.Objects;
 
@@ -16,12 +17,19 @@ public final class AvfVirtualMachineEngine {
     private static final long CONNECT_BACKOFF_MS = 200;
 
     /**
-     * Returns the strategy-neutral capability matrix reflecting AVF hardware
-     * virtualization with full Wayland graphics, audio output, clipboard sync,
-     * and pointer capture peripheral parity.
+     * The no-session upper bound for AVF: terminal, bridge, hardware
+     * acceleration and the RFB display are the only wired data plane. Audio,
+     * clipboard, pointer capture, 9p and forwarding appear only when a live
+     * session actually assembles them.
      */
     public static FullLinuxContract.CapabilityMatrix capabilityMatrix() {
-        return FullLinuxContract.CapabilityMatrix.hardwareVirtualizationWithPeripherals();
+        return FullLinuxContract.CapabilityMatrix.from(
+                SessionCapabilities.builder(FullLinuxContract.ExecutionStrategy.HARDWARE_VIRTUALIZATION)
+                        .terminal(true)
+                        .bridge(true)
+                        .hardwareAcceleration(true)
+                        .display(SessionCapabilities.DisplayTransport.RFB)
+                        .build());
     }
 
     private final AvfVirtualMachineApi api;

@@ -46,6 +46,21 @@ public final class AvfLaunchAdmission {
         NATIVE_TAP
     }
 
+    /**
+     * Whether a vCPU request fits the AVF v1 profile. Exposed so the wizard and
+     * the capability surfaces can show the constraint before a launch is
+     * attempted, instead of only reporting a degradation afterwards.
+     */
+    public enum CpuSupport {
+        SUPPORTED,
+        NEEDS_SINGLE_VCPU
+    }
+
+    /** The one AVF v1 CPU rule: exactly one vCPU. */
+    public static CpuSupport cpuSupport(int cpuCores) {
+        return cpuCores == 1 ? CpuSupport.SUPPORTED : CpuSupport.NEEDS_SINGLE_VCPU;
+    }
+
     /** A fully admitted launch, before any asset assembly. */
     public record Plan(
             long memoryMb,
@@ -123,7 +138,7 @@ public final class AvfLaunchAdmission {
                     List.of("hardware-config: absent, using the conservative fallback"),
                     networkIntent(host)), null);
         }
-        if (config.cpuCores() != 1) {
+        if (cpuSupport(config.cpuCores()) != CpuSupport.SUPPORTED) {
             return reject(AvfEngineException.HARDWARE_UNSUPPORTED, "cpuCores",
                     "AVF v1 cannot express " + config.cpuCores() + " vCPUs");
         }

@@ -6,6 +6,8 @@ import android.util.Log;
 import io.github.nyzeep.orchestella.RuntimeProcessSupervisor.StopResult;
 import io.github.nyzeep.orchestella.runtime.contract.BridgeClient;
 import io.github.nyzeep.orchestella.runtime.contract.BridgeControl;
+import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract;
+import io.github.nyzeep.orchestella.runtime.contract.SessionCapabilities;
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig;
 import io.github.nyzeep.orchestella.runtime.distro.DistroCatalogRegistry;
 import io.github.nyzeep.orchestella.runtime.distro.DistroManifest;
@@ -398,6 +400,26 @@ public final class QemuInstanceLauncher {
         @Override
         public io.github.nyzeep.orchestella.runtime.contract.WaylandChannel waylandChannel() {
             return waylandChannel;
+        }
+
+        /**
+         * Ticket 04: the QEMU matrix is projected from the display and forwards
+         * this session actually constructed. It is never the software baseline
+         * (which would read a live RFB desktop as having no graphics).
+         */
+        @Override
+        public FullLinuxContract.CapabilityMatrix capabilityMatrix() {
+            return FullLinuxContract.CapabilityMatrix.from(
+                    SessionCapabilities.builder(
+                                    FullLinuxContract.ExecutionStrategy.SOFTWARE_VIRTUALIZATION)
+                            .ownership(SessionCapabilities.Ownership.RUNTIME_OWNED)
+                            .terminal(true)
+                            .bridge(true)
+                            .display(waylandChannel == null
+                                    ? SessionCapabilities.DisplayTransport.NONE
+                                    : SessionCapabilities.DisplayTransport.RFB)
+                            .serviceForward(!serviceForwards.isEmpty())
+                            .build());
         }
 
         @Override

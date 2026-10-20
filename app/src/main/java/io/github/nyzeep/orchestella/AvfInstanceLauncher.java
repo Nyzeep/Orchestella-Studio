@@ -5,6 +5,8 @@ import io.github.nyzeep.orchestella.RuntimeProcessSupervisor.StopResult;
 import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator;
 import io.github.nyzeep.orchestella.runtime.contract.BridgeClient;
 import io.github.nyzeep.orchestella.runtime.contract.BridgeControl;
+import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract;
+import io.github.nyzeep.orchestella.runtime.contract.SessionCapabilities;
 import io.github.nyzeep.orchestella.runtime.engineavf.AvfEngineException;
 import io.github.nyzeep.orchestella.runtime.engineavf.AvfHostFacts;
 import io.github.nyzeep.orchestella.runtime.engineavf.AvfLaunchAdmission;
@@ -102,6 +104,7 @@ public final class AvfInstanceLauncher {
         private final QemuWaylandChannel display;
         private final LaunchTimeline timeline;
         private final AtomicBoolean closed = new AtomicBoolean(false);
+        private volatile SessionCapabilities capabilities;
 
         AvfSession(AvfVirtualMachineEngine.AvfVmSession session) { this(session, null, null); }
 
@@ -119,6 +122,26 @@ public final class AvfInstanceLauncher {
                             channel.inputStream(), channel.outputStream(), channel);
                 } catch (AvfEngineException failure) { throw new IOException("AVF display transport unavailable", failure); }
             }, token, this::bridgeClient);
+            this.capabilities = SessionCapabilities.builder(
+                            FullLinuxContract.ExecutionStrategy.HARDWARE_VIRTUALIZATION)
+                    .ownership(SessionCapabilities.Ownership.RUNTIME_OWNED)
+                    .terminal(true)
+                    .bridge(true)
+                    .display(this.display == null
+                            ? SessionCapabilities.DisplayTransport.NONE
+                            : SessionCapabilities.DisplayTransport.RFB)
+                    .hardwareAcceleration(true)
+                    .build();
+        }
+
+        /** What this launch actually assembled; the only input to its matrix. */
+        SessionCapabilities capabilities() {
+            return capabilities;
+        }
+
+        /** Records a 9p server that is actually serving, or withdraws the claim. */
+        void declareSharedDirectory(boolean serving) {
+            this.capabilities = capabilities.withSharedDirectory(serving);
         }
 
         @Override public io.github.nyzeep.orchestella.runtime.contract.DisplayControl displayControl() { return display; }
@@ -132,8 +155,8 @@ public final class AvfInstanceLauncher {
                     keyboard, unicodeText, pointer), true);
         }
         @Override public String displayStatus() { return display == null ? "AVF 显示未配置" : display.message(); }
-        @Override public io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract.CapabilityMatrix capabilityMatrix() {
-            return io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract.CapabilityMatrix.hardwareVirtualizationBaseline();
+        @Override public FullLinuxContract.CapabilityMatrix capabilityMatrix() {
+            return FullLinuxContract.CapabilityMatrix.from(capabilities);
         }
 
         @Override

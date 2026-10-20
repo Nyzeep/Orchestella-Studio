@@ -16,7 +16,7 @@ public final class AvfCapabilityEvaluatorTest {
         explicitFalsePropertyRefusesEvenWhenFeatureFlagExists();
         featureFlagAloneSufficesWhenPropertyIsUnknown();
         neitherPropertyNorFeatureRefuses();
-        blockedSnapdragon8EliteSocSilentlyClosesTheWizard();
+        socNameAloneIsNeverABlocklist();
         extraBlockedHintCatchesUnknownSocNames();
         supportedButUnauthorizedDeviceNeedsTheWizardAndKeepsTheSoftwareBadge();
         protectedOnlyModeCannotEnterAuthorizationWizard();
@@ -147,20 +147,19 @@ public final class AvfCapabilityEvaluatorTest {
         assertFalse(readiness.wizardEligible(), "unsupported device must never see the wizard");
     }
 
-    private static void blockedSnapdragon8EliteSocSilentlyClosesTheWizard() {
-        // Snapdragon 8 Elite (SM8750, Gunyah) firmware-blocks non-protected custom VMs; the
-        // platform may still declare ro.virtualization.supported=true, so the SoC hint wins.
+    private static void socNameAloneIsNeverABlocklist() {
+        // A hardcoded SoC list was a fifth truth source. Only platform facts and
+        // caller-supplied device facts may refuse; the model string alone may not.
         AvfCapabilityEvaluator.AvfReadiness readiness =
                 AvfCapabilityEvaluator.evaluate(readyDevice().socModel("SM8750").build());
 
         assertTrue(
-                readiness.status() == AvfCapabilityEvaluator.AvfStatus.UNSUPPORTED,
-                "blocked SoC must be reported unsupported");
-        assertFalse(readiness.wizardEligible(), "blocked SoC silently closes the authorization wizard");
-        assertTrue(
-                readiness.capabilityMatrix().executionStrategy()
-                        == io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract.ExecutionStrategy.SOFTWARE_VIRTUALIZATION,
-                "blocked SoC stays on the software baseline");
+                readiness.status() == AvfCapabilityEvaluator.AvfStatus.READY,
+                "a SoC model must not be refused by a hardcoded name list");
+        assertTrue(readiness.wizardEligible(), "the platform facts keep the wizard eligible");
+        assertFalse(
+                readiness.reasons().stream().anyMatch(reason -> reason.toLowerCase().contains("sm8750")),
+                "no hardcoded SoC reason may surface");
     }
 
     private static void extraBlockedHintCatchesUnknownSocNames() {
@@ -268,7 +267,8 @@ public final class AvfCapabilityEvaluatorTest {
                 new AvfCapabilityEvaluator.AvfHostFacts.Builder(
                                 35, List.of("arm64-v8a"), "false", false, false)
                         .build(),
-                readyDevice().socModel("SM8750").build())) {
+                readyDevice().socModel("SM8750")
+                        .extraBlockedHints(List.of("SM8750")).build())) {
             AvfCapabilityEvaluator.AvfReadiness readiness = AvfCapabilityEvaluator.evaluate(facts);
             for (String reason : readiness.reasons()) {
                 assertFalse(
