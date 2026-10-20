@@ -7,7 +7,7 @@
 
 ## 1. 问题与范围
 
-`ci.yml` / `release.yml` 只跑 `contract`、`instance`、`engine-qemu` 和 app 测试；AVF 最脆弱的 `engine-avf`、`capability`、`distro`、`network` 不在 PR/release 门禁里。`qemu-android.yml` 里已有的 lint/assemble/16KB/zipalign 只在 `workflow_dispatch` 的完整 payload 构建中执行。AVF 仍是 19 个 `JavaExec main()` harness，失败只在 Gradle 控制台，PR 页面没有稳定的任务名/日志摘要。
+`ci.yml` / `release.yml` 只跑 `contract`、`instance`、`engine-qemu` 和 app 测试；AVF 最脆弱的 `engine-avf`、`capability`、`distro`、`network` 不在 PR/release 门禁里。`qemu-android.yml` 里已有的 lint/assemble/16KB/zipalign 只在 `workflow_dispatch` 的完整 payload 构建中执行。AVF 仍是 20 个 `JavaExec main()` harness，失败只在 Gradle 控制台，PR 页面没有稳定的任务名/日志摘要。
 
 本票只改 CI/构建配置与守卫脚本，不改产品行为、不写设备测试、不添加 secret、不 `-x test`、不关闭 lint、不把失败标成 skipped-success。
 
