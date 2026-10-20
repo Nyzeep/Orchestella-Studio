@@ -28,8 +28,14 @@ for f in "$@"; do
     fail=1
     continue
   fi
-  "$RE" -h "$f" | grep -Eq 'Class:[[:space:]]*ELF64' || { echo "FAIL class $f"; fail=1; }
-  "$RE" -h "$f" | grep -Eq 'Machine:[[:space:]]*AArch64' || { echo "FAIL machine $f"; fail=1; }
+  header="$("$RE" -h "$f" 2>&1 || true)"
+  if ! printf '%s\n' "$header" | grep -Eq 'Class:[[:space:]]*ELF64'; then
+    magic="$(od -An -tx1 -N4 "$f" 2>/dev/null | tr -d ' \n' || true)"
+    detail="$(printf '%s\n' "$header" | head -1)"
+    echo "FAIL class $f (readelf=$RE magic=${magic:-unreadable} first_line=${detail:-none})"
+    fail=1
+  fi
+  printf '%s\n' "$header" | grep -Eq 'Machine:[[:space:]]*AArch64' || { echo "FAIL machine $f"; fail=1; }
   if [ "$REQUIRE_RELRO" = "1" ]; then
     "$RE" -l "$f" | grep -q 'GNU_RELRO' || { echo "FAIL relro $f"; fail=1; }
   fi
