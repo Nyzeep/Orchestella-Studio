@@ -74,10 +74,27 @@ public final class ReflectiveAvfPlatformAccess implements AvfPlatformAccess {
         try {
             platform = loadPlatformShape();
         } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
-            return facts(classify(failure),
+            AvfPlatformFacts.AccessState state = classify(failure);
+            // Shape validation starts by loading both classes. A hidden method
+            // or policy denial therefore proves the manager class exists; only
+            // an absent class/linkage failure is evidence of no platform.
+            boolean managerPresent = state == AvfPlatformFacts.AccessState.HIDDEN_API_BLOCKED
+                    || state == AvfPlatformFacts.AccessState.PERMISSION_DENIED;
+            return facts(state,
                     AvfCapabilityEvaluator.PermissionState.UNKNOWN,
                     AvfCapabilityEvaluator.PermissionState.UNKNOWN,
-                    unknownMode());
+                    unknownMode(), managerPresent);
+        }
+        // The manager class exists at this point. Probe the service before the
+        // permission gate so an OEM ROM without the feature string can still be
+        // recognized as a platform that needs authorization, not as "no
+        // virtualization". A failed probe is not evidence of absence.
+        boolean managerPresent = true;
+        try {
+            Object manager = bridge.getSystemService(context, platform.context(), platform.manager());
+            managerPresent = platform.manager().isInstance(manager);
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
+            managerPresent = true;
         }
         AvfCapabilityEvaluator.PermissionState manage;
         AvfCapabilityEvaluator.PermissionState custom;
@@ -88,18 +105,18 @@ public final class ReflectiveAvfPlatformAccess implements AvfPlatformAccess {
             return facts(classify(failure),
                     AvfCapabilityEvaluator.PermissionState.UNKNOWN,
                     AvfCapabilityEvaluator.PermissionState.UNKNOWN,
-                    unknownMode());
+                    unknownMode(), managerPresent);
         }
         if (manage != AvfCapabilityEvaluator.PermissionState.GRANTED
                 || custom != AvfCapabilityEvaluator.PermissionState.GRANTED) {
             return facts(AvfPlatformFacts.AccessState.PERMISSION_DENIED,
-                    manage, custom, unknownMode());
+                    manage, custom, unknownMode(), managerPresent);
         }
         try {
             Object manager = bridge.getSystemService(context, platform.context(), platform.manager());
             if (!platform.manager().isInstance(manager)) {
                 return facts(AvfPlatformFacts.AccessState.MODE_UNKNOWN,
-                        manage, custom, unknownMode());
+                        manage, custom, unknownMode(), false);
             }
             int capabilities = bridge.getCapabilities(manager, platform.manager());
             AvfCapabilityEvaluator.AvfModeFacts modeFacts = modeFacts(capabilities);
@@ -107,9 +124,9 @@ public final class ReflectiveAvfPlatformAccess implements AvfPlatformAccess {
                     (capabilities & CAPABILITY_NON_PROTECTED_VM) != 0
                             ? AvfPlatformFacts.AccessState.AVAILABLE
                             : AvfPlatformFacts.AccessState.MODE_UNSUPPORTED;
-            return facts(access, manage, custom, modeFacts);
+            return facts(access, manage, custom, modeFacts, managerPresent);
         } catch (ReflectiveOperationException | RuntimeException | LinkageError failure) {
-            return facts(classify(failure), manage, custom, unknownMode());
+            return facts(classify(failure), manage, custom, unknownMode(), managerPresent);
         }
     }
 
@@ -196,8 +213,9 @@ public final class ReflectiveAvfPlatformAccess implements AvfPlatformAccess {
     private AvfPlatformFacts facts(AvfPlatformFacts.AccessState access,
             AvfCapabilityEvaluator.PermissionState manage,
             AvfCapabilityEvaluator.PermissionState custom,
-            AvfCapabilityEvaluator.AvfModeFacts modeFacts) {
-        return new AvfPlatformFacts(access, exemptionState, manage, custom, modeFacts);
+            AvfCapabilityEvaluator.AvfModeFacts modeFacts,
+            boolean managerPresent) {
+        return new AvfPlatformFacts(access, exemptionState, manage, custom, modeFacts, managerPresent);
     }
 
     /**

@@ -56,5 +56,5 @@ if [ "${#LIBS[@]}" -eq 0 ]; then
   exit 1
 fi
 
-READELF="$READELF" bash tools/ci/check-elf-16kb.sh "${LIBS[@]}"
+READELF="$READELF" REQUIRE_BUNDLED_CLOSURE=1 bash tools/ci/check-elf-16kb.sh "${LIBS[@]}"
 echo "APK_16KB_GATE_OK apk=$APK libs=${#LIBS[@]}"

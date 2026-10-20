@@ -17,8 +17,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
@@ -39,6 +42,39 @@ public final class InstanceLifecycle {
     private static final String KEY_METADATA_SCHEMA_VERSION = "metadata.schemaVersion";
     private static final String KEY_HARDWARE_LEGACY_DEFAULTS = "hardware.legacyDefaults";
     private static final int CURRENT_METADATA_SCHEMA_VERSION = 1;
+    /**
+     * Keys this codec understands. Everything else is preserved verbatim on
+     * rewrite so a newer writer's metadata is not silently dropped by an
+     * older reader; unknown keys never participate in hardware parsing.
+     */
+    private static final Set<String> KNOWN_METADATA_KEYS = Set.of(
+            "id",
+            "distroId",
+            "distroVersion",
+            "rootVolume",
+            "bridgeToken",
+            "guestPassword",
+            "runtimeClass",
+            "state",
+            "createdAtMillis",
+            "updatedAtMillis",
+            "hostname",
+            "defaultUser",
+            "hasSudo",
+            "crash.timestampMillis",
+            "crash.exitCode",
+            "crash.logPath",
+            "crash.message",
+            KEY_METADATA_SCHEMA_VERSION,
+            "hardware.cpuCores",
+            "hardware.ramMegabytes",
+            "hardware.diskCapacityBytes",
+            "hardware.gpuAccelerationEnabled",
+            "hardware.extraKernelArguments",
+            KEY_HARDWARE_LEGACY_DEFAULTS,
+            KEY_PROVISIONING_MARKER_VERSION,
+            KEY_PROVISIONING_ROOTFS_SHA256,
+            KEY_PROVISIONING_RECORDED_AT);
     /** Guest marker version whose observation the host is allowed to persist. */
     public static final int PROVISIONING_MARKER_VERSION = 1;
     private static final int BRIDGE_TOKEN_BYTE_COUNT = BridgeHandshake.TOKEN_HEX_LENGTH / 2;
@@ -220,6 +256,7 @@ public final class InstanceLifecycle {
         private final String defaultUser;
         private final boolean hasSudo;
         private final ProvisioningEvidence provisioningEvidence;
+        private final Map<String, String> unknownMetadata;
 
         private Instance(
                 String id,
@@ -285,6 +322,28 @@ public final class InstanceLifecycle {
                 String defaultUser,
                 boolean hasSudo,
                 ProvisioningEvidence provisioningEvidence) {
+            this(id, distro, rootVolume, bridgeToken, guestPassword, runtimeClass, state,
+                    createdAtMillis, updatedAtMillis, crashDiagnostic, hardwareConfig,
+                    hostname, defaultUser, hasSudo, provisioningEvidence, Collections.emptyMap());
+        }
+
+        private Instance(
+                String id,
+                DistroReference distro,
+                Path rootVolume,
+                String bridgeToken,
+                String guestPassword,
+                FullLinuxContract.RuntimeClass runtimeClass,
+                State state,
+                long createdAtMillis,
+                long updatedAtMillis,
+                CrashDiagnostic crashDiagnostic,
+                VmHardwareConfig hardwareConfig,
+                String hostname,
+                String defaultUser,
+                boolean hasSudo,
+                ProvisioningEvidence provisioningEvidence,
+                Map<String, String> unknownMetadata) {
             requireInstanceId(id);
             this.id = id;
             this.distro = Objects.requireNonNull(distro, "distro");
@@ -305,6 +364,8 @@ public final class InstanceLifecycle {
             }
             this.hasSudo = hasSudo;
             this.provisioningEvidence = provisioningEvidence;
+            this.unknownMetadata = Collections.unmodifiableMap(
+                    new TreeMap<>(Objects.requireNonNull(unknownMetadata, "unknownMetadata")));
         }
 
         public String id() {
@@ -428,7 +489,8 @@ public final class InstanceLifecycle {
                     hostname,
                     defaultUser,
                     hasSudo,
-                    provisioningEvidence);
+                    provisioningEvidence,
+                    unknownMetadata);
         }
 
         private Instance withUpdatedAt(Clock clock) {
@@ -447,7 +509,8 @@ public final class InstanceLifecycle {
                     hostname,
                     defaultUser,
                     hasSudo,
-                    provisioningEvidence);
+                    provisioningEvidence,
+                    unknownMetadata);
         }
 
         private Instance withGuestPassword(String newPassword, Clock clock) {
@@ -466,7 +529,8 @@ public final class InstanceLifecycle {
                     hostname,
                     defaultUser,
                     hasSudo,
-                    provisioningEvidence);
+                    provisioningEvidence,
+                    unknownMetadata);
         }
 
         Instance withHardwareConfig(VmHardwareConfig newConfig, Clock clock) {
@@ -485,7 +549,8 @@ public final class InstanceLifecycle {
                     hostname,
                     defaultUser,
                     hasSudo,
-                    provisioningEvidence);
+                    provisioningEvidence,
+                    unknownMetadata);
         }
 
         private Instance withProvisioningEvidence(ProvisioningEvidence evidence, Clock clock) {
@@ -504,7 +569,8 @@ public final class InstanceLifecycle {
                     hostname,
                     defaultUser,
                     hasSudo,
-                    Objects.requireNonNull(evidence, "evidence"));
+                    Objects.requireNonNull(evidence, "evidence"),
+                    unknownMetadata);
         }
 
         static Instance restore(
@@ -625,6 +691,11 @@ public final class InstanceLifecycle {
                         KEY_PROVISIONING_RECORDED_AT,
                         Long.toString(provisioningEvidence.recordedAtMillis()));
             }
+            for (Map.Entry<String, String> entry : unknownMetadata.entrySet()) {
+                if (!KNOWN_METADATA_KEYS.contains(entry.getKey())) {
+                    properties.setProperty(entry.getKey(), entry.getValue());
+                }
+            }
             return properties;
         }
 
@@ -716,6 +787,12 @@ public final class InstanceLifecycle {
                                 Long.parseLong(recordedAtText));
                     }
                 }
+                Map<String, String> unknownMetadata = new TreeMap<>();
+                for (String name : properties.stringPropertyNames()) {
+                    if (!KNOWN_METADATA_KEYS.contains(name)) {
+                        unknownMetadata.put(name, properties.getProperty(name));
+                    }
+                }
                 return new Instance(
                         required(properties, "id"),
                         new DistroReference(
@@ -732,7 +809,8 @@ public final class InstanceLifecycle {
                         hostname,
                         defaultUser,
                         hasSudo,
-                        provisioningEvidence);
+                        provisioningEvidence,
+                        unknownMetadata);
             } catch (IllegalArgumentException malformed) {
                 throw new InvalidMetadataException(malformed);
             }

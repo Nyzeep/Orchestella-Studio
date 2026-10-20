@@ -406,6 +406,10 @@ public final class QemuInstanceLauncher {
          * Ticket 04: the QEMU matrix is projected from the display and forwards
          * this session actually constructed. It is never the software baseline
          * (which would read a live RFB desktop as having no graphics).
+         *
+         * <p>Ticket 10 boundary: audio playback, clipboard bridging and Android
+         * pointer capture are driven by {@code DesktopActivity}/UI, not by this
+         * session, so they stay absent here until a session-owned adapter exists.
          */
         @Override
         public FullLinuxContract.CapabilityMatrix capabilityMatrix() {

@@ -5,6 +5,12 @@ date: 2026-10-05
 
 # ADR-0017: Wayland 原生移动图形通道、零拷贝双缓冲与深度输入集成架构
 
+> **实现状态（2026-10-20，非正文修订）**：本 ADR 仍是已接受的目标架构，但当前生产路径是
+> RFB over LocalSocket/vsock，能力枚举为 `GRAPHICS_RFB`；`WaylandChannel` 是历史接口名，
+> 只表示“传输无关的字节流与帧缓冲区抽象”，不代表正在运行 Wayland/DLFR。真正的
+> `GRAPHICS_WAYLAND` 只有在 Wayland 适配器端到端接线后才能声明。差异说明与索引见
+> [`docs/adr/README.md`](README.md) 的“实现差异说明”。
+
 ## Context
 
 在 Phase 1（M1 里程碑）中，Orchestella Studio 交付了基于 QEMU TCG 软模拟与 AVF pKVM 硬件虚拟化的双引擎免 Root 终端环境（Ticket 25–37）。根据 ADR-0012 早期规划，原定 M2 阶段采用传统 VNC（RFB 协议）软渲染方案。

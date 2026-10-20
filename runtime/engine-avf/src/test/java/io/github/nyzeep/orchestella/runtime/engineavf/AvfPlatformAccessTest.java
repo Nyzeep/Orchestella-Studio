@@ -17,6 +17,8 @@ public final class AvfPlatformAccessTest {
         availableReadsBothModesAndPermissions();
         hiddenApiBlockedIsItsOwnState();
         permissionDeniedSkipsTheCapabilityRead();
+        permissionDeniedStillReportsManagerPresence();
+        missingManagerServiceIsNotPresence();
         protectedOnlyIsModeUnsupported();
         missingPlatformClassIsReflectionUnavailable();
         unexpectedReadFailureIsModeUnknown();
@@ -24,7 +26,7 @@ public final class AvfPlatformAccessTest {
         exemptionRunsOnceBeforeEveryPlatformClassLoad();
         exemptionFailureIsRecordedWithoutGuessing();
         engineMapsTheSameTypedState();
-        System.out.println("AVF_PLATFORM_ACCESS_TEST_OK states=6 exemption=2 engine_mapping=3");
+        System.out.println("AVF_PLATFORM_ACCESS_TEST_OK states=6 manager=2 exemption=2 engine_mapping=3");
     }
 
     private static void availableReadsBothModesAndPermissions() {
@@ -47,6 +49,7 @@ public final class AvfPlatformAccessTest {
 
         check(facts.accessState() == AvfPlatformFacts.AccessState.HIDDEN_API_BLOCKED,
                 "a hidden method is not reported as an unknown mode");
+        check(facts.managerPresent(), "a hidden capability method still proves the manager exists");
         check(facts.exemptionState() == AvfPlatformFacts.ExemptionState.NOT_ATTEMPTED,
                 "no exemption hook was supplied");
     }
@@ -60,6 +63,28 @@ public final class AvfPlatformAccessTest {
         check(bridge.capabilityReads == 0, "unreadable permissions never call getCapabilities");
         check(facts.managePermission() == AvfCapabilityEvaluator.PermissionState.DENIED, "MANAGE denial is kept");
         check(facts.customPermission() == AvfCapabilityEvaluator.PermissionState.DENIED, "CUSTOM denial is kept");
+    }
+
+    private static void permissionDeniedStillReportsManagerPresence() {
+        RecordingBridge bridge = new RecordingBridge(getLoader(), manager(), new ArrayList<>());
+        bridge.permissionResult = -1;
+        AvfPlatformFacts facts = access(bridge, null).observe();
+
+        check(facts.managerPresent(), "the manager service is evidence even before permissions");
+        check(facts.accessState() == AvfPlatformFacts.AccessState.PERMISSION_DENIED,
+                "manager presence never turns a permission denial into READY");
+        check(bridge.capabilityReads == 0, "capability bits stay unread without permissions");
+    }
+
+    private static void missingManagerServiceIsNotPresence() {
+        RecordingBridge bridge = new RecordingBridge(getLoader(), manager(), new ArrayList<>());
+        bridge.serviceResult = null;
+        bridge.permissionResult = -1;
+        AvfPlatformFacts facts = access(bridge, null).observe();
+
+        check(!facts.managerPresent(), "an absent service is not platform presence");
+        check(facts.accessState() == AvfPlatformFacts.AccessState.PERMISSION_DENIED,
+                "the permission gate is still reported first");
     }
 
     private static void protectedOnlyIsModeUnsupported() {
@@ -218,13 +243,13 @@ public final class AvfPlatformAccessTest {
      */
     private static final class RecordingBridge implements ReflectiveAvfPlatformAccess.PlatformBridge {
         private final ClassLoader loader;
-        private final Object manager;
         private final List<String> events;
         private int capabilityBits =
                 ReflectiveAvfPlatformAccess.CAPABILITY_PROTECTED_VM
                         | ReflectiveAvfPlatformAccess.CAPABILITY_NON_PROTECTED_VM;
         private int permissionResult;
         private int capabilityReads;
+        private Object serviceResult;
         private Throwable classFailure;
         private Throwable capabilityFailure;
         private Throwable permissionFailure;
@@ -232,7 +257,7 @@ public final class AvfPlatformAccessTest {
 
         private RecordingBridge(ClassLoader loader, Object manager, List<String> events) {
             this.loader = loader;
-            this.manager = manager;
+            this.serviceResult = manager;
             this.events = events;
         }
 
@@ -249,7 +274,7 @@ public final class AvfPlatformAccessTest {
                 throws ReflectiveOperationException {
             events.add("service");
             rethrow(serviceFailure);
-            return manager;
+            return serviceResult;
         }
 
         @Override

@@ -66,10 +66,16 @@ public final class AvfCapabilityEvaluator {
         // A platform that answered the capability read is stronger evidence than
         // an omitted OEM feature string. A permission/reflection failure proves
         // nothing about the platform, and an explicit false property is honored.
-        if (!declared && !explicitlyDisabled && facts.platformFacts() != null) {
-            AvfPlatformFacts.AccessState access = facts.platformFacts().accessState();
-            declared = access == AvfPlatformFacts.AccessState.AVAILABLE
-                    || access == AvfPlatformFacts.AccessState.MODE_UNSUPPORTED;
+        // A present manager service is also platform evidence: some OEM ROMs
+        // omit the feature string while shipping the service, and a permission
+        // denial must lead to authorization, not to "no platform declared".
+        if (!declared && !explicitlyDisabled) {
+            if (facts.platformFacts() != null) {
+                AvfPlatformFacts.AccessState access = facts.platformFacts().accessState();
+                declared = access == AvfPlatformFacts.AccessState.AVAILABLE
+                        || access == AvfPlatformFacts.AccessState.MODE_UNSUPPORTED
+                        || facts.platformFacts().managerPresent();
+            }
         }
         if (!declared) {
             return AvfReadiness.unsupported(List.of("设备未声明虚拟化框架支持"));
