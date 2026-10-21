@@ -161,7 +161,7 @@ java -cp <out/test>:<out/main>:<junit-4.13.2.jar>:<hamcrest-core-1.3.jar> \
 ### 12.2 adapter 关键映射
 
 - **session id**：FLN1 由 payload 在 `PTY_OPENED` 分配。host 用 wire session 0 发 `OPEN_PTY`，codec 以 FIFO 把返回 id 绑定到 host session；host 不再假设自己分配的 id 在线上有效。
-- **credit**：只有 guest→host 有窗口；host 的 `sendData` 不再等待 input credit，按 32 KiB 帧上限切分。`WINDOW` 增量按 `2 * initial_window` 截断。
+- **credit**：只有 guest→host 有窗口；host 的 `sendData` 不检查任何 credit，按 32 KiB 帧上限切分；guest 接收 host DATA 也不扣 `receiveCredit`。`WINDOW` 增量按 `2 * initial_window` 截断。
 - **EOF/EXIT**：codec 在 `read()` 中把 `EOF` 延迟到 `EXIT`，mux 只收到一次带真实退出码的结束；没有 EXIT 时以 -1 收口。
 - **ERROR**：payload 不接受 host ERROR；host 侧违规改为抛 typed 异常并由 channel 关闭连接。
 - **METRICS**：FLN1 的 `METRICS_OK` 字段与 OSFL 的 64 字节计数不同，terminal mux 不再实现 METRICS 帧；payload 遥测归 P10。
@@ -169,7 +169,7 @@ java -cp <out/test>:<out/main>:<junit-4.13.2.jar>:<hamcrest-core-1.3.jar> \
 ### 12.3 测试与 fixture
 
 - `protocol/fln1-golden.json`：唯一跨语言 fixture，覆盖 HELLO/HELLO_OK/OPEN_PTY/PTY_OPENED/PTY_DATA/RESIZE/RESIZED/SIGNAL/CLOSE/CLOSED/EOF/EXIT/WINDOW/ERROR/PING/PONG。Java `Fln1GoldenFixtureTest` 与 C++ `test_golden_fixture.cpp` 读取同一文件并逐字节比对。
-- 宿主 JVM：**59 tests OK**（codec 20 + fixture 4 + mux 22 + channel 9 + stress 4；数量与旧 56 的差异见 §12.4）。命令：`javac --release 17 -Xlint:all -Werror` + JUnit 4.13.2。
+- 宿主 JVM：**59 tests OK**（codec 20 + fixture 4 + mux 22 + channel 9 + stress 4；数量与旧 56 的差异见 §12.4）。2026-10-21 加固后为 **64 tests**（codec 21 + fixture 4 + mux 26 + channel 9 + stress 4，见 §12.6）。命令：`javac --release 17 -Xlint:all -Werror` + JUnit 4.13.2。
 - 进程级 E2E：`Fln1PayloadE2ETest` 启动真实 `fastlane_payload_host`，经 Unix socket 完成 HELLO(token)→HELLO_OK→OPEN_PTY→PTY_DATA→EOF/EXIT，断言输出 `e2e-ok` 与退出码 3；**通过**（本机，非 vsock）。
 - Gradle `:runtime:fastlane-terminal:test`：本环境仍 **not-run**（无 Android SDK/JDK 17 toolchain）；CI 的 `jvm-distcc` job 已改为运行全部模块。
 
@@ -182,3 +182,11 @@ java -cp <out/test>:<out/main>:<junit-4.13.2.jar>:<hamcrest-core-1.3.jar> \
 - 真实 `AF_VSOCK`、Android SELinux、devpts、Android 终端 UI 接线（DV-02）。
 - payload 5 秒发送超时下的持续读取、真实 PTY 退出时序。
 - 与现有 App `PtyMultiplexerProtocol`（string session id）的 UI 适配层。
+
+### 12.6 2026-10-21 加固（failed-open / credit / session limit）
+
+- **failed OPEN_PTY 污染 FIFO（P0）**：payload 的 `send_error` 固定 `session 0`（`runtime.cpp:186-195`），open 失败也走同一路径（`:603-611` → `:704`）。旧 adapter 在 `OPEN_PTY` 时把 local id 压入 `pendingOpens`，`handleError` 只在 `sessionId>0` 时关闭 session，于是下一次 `PTY_OPENED` 会绑定到已经失败的会话。修复：`Fln1TerminalCodec.translate(OP_ERROR)` 在 `wireSession==0` 时清空 `pendingOpens`；`TerminalMux.handleError` 在 `sessionId==0` 时仅关闭所有 `OPENING` session（`PROTOCOL_ERROR`），`OPEN` session 交给 transport EOF/`abortAll`。未改 payload，未给 ERROR 增加 session 语义。
+- **默认 session 上限**：新增 `TerminalMux.DEFAULT_MAX_SESSIONS=8`，默认构造器使用 8；`MAX_SESSIONS=128` 仅为显式硬上限。需要 128 的测试显式传参。第 9 个 PTY 在宿主侧直接 `SESSION_LIMIT`，不再等到 payload 报错落进上一条。`FastLaneLaunchSpec` 未增加 `maxTerminalSessions`，标记 `not-wired`；未来可配置时必须同时配置 payload 与宿主。
+- **host→guest credit**：`FLN1` 只有 guest→host 的 `initial_window`/`WINDOW`。旧实现让 host 也扣 `sendCredit`（4 MiB），guest 也扣 `receiveCredit`，累计 4 MiB 后 `sendData` 返回 0 / guest 报 `CREDIT_EXCEEDED`。修复：HOST 的 `sendData` 只受 `peerMaxFrameBytes`/`MAX_PTY_DATA` 限制，不扣 `sendCredit`；GUEST 的 `handleData` 不检查/不扣 `receiveCredit`；GUEST 发送与 HOST 接收仍保留窗口。host→guest 的背压来自同步 sink 与 payload 的 PTY 写入，不是窗口。
+- **回归**：codec 1 项 + mux 4 项（failed-open 关闭与 FIFO 重置、ERROR 0 不影响 OPEN、默认 8、5 MiB host→guest）。模块测试 59→64（另 1 个 E2E 在未设置 `-Dfln1.payload` 时跳过）；`javac --release 17 -Xlint:all -Werror` 通过。
+- **未验证**：真实 payload 的 `SESSION_LIMIT` 与 failed-open 时序仍只在宿主侧/普通进程 E2E 验证，DV-02 需在真实 vsock/PTY 上重跑。

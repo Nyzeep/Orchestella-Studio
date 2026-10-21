@@ -1,6 +1,7 @@
 #include "test_support.h"
 
 #include <dirent.h>
+#include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
 #include <sys/ioctl.h>
@@ -82,11 +83,23 @@ size_t count_open_fds() {
     if (directory == nullptr) {
         return 0;
     }
+    const int probe_fd = ::dirfd(directory);
     size_t count = 0;
     while (dirent* entry = ::readdir(directory)) {
-        if (entry->d_name[0] != '.') {
-            ++count;
+        if (entry->d_name[0] < '0' || entry->d_name[0] > '9') {
+            continue;
         }
+        char* end = nullptr;
+        const long fd = std::strtol(entry->d_name, &end, 10);
+        if (end == nullptr || *end != '\0') {
+            continue;
+        }
+        // The listing includes the descriptor that backs this directory scan;
+        // it is not an open fd owned by the code under test.
+        if (fd == probe_fd) {
+            continue;
+        }
+        ++count;
     }
     ::closedir(directory);
     return count;
@@ -256,6 +269,19 @@ FL_TEST(pty_exec_failure_closes_descriptors) {
         FL_CHECK_THROWS_CODE(fl::spawn_pty(spec, 80, 24), fl::Code::kExecFailed);
     }
     FL_CHECK_EQ(count_open_fds(), before);
+}
+
+FL_TEST(open_fd_count_excludes_the_probe_directory) {
+    const size_t counted = count_open_fds();
+    // Independent reference: a plain fcntl probe never opens a descriptor, so
+    // it cannot observe the /proc/self/fd directory itself.
+    size_t probed = 0;
+    for (int fd = 0; fd < 1024; ++fd) {
+        if (::fcntl(fd, F_GETFD) != -1) {
+            ++probed;
+        }
+    }
+    FL_CHECK_EQ(counted, probed);
 }
 
 FL_TEST(spawn_piped_rolls_back_partial_pipe_allocation) {
