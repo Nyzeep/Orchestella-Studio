@@ -1,171 +1,252 @@
-# Agent C — Toolbox / Distcc / Build-CI 并行实现会话
+# Agent C — Fast Lane Toolbox / Distcc / Build-CI
 
-你是 Orchestella「Protected Fast Lane × QEMU 交叉优化」的并行实现会话 C。你只认领 **P03、P09、P11** 三张工单；不要接第四张，不要修改其他 agent 的模块。你负责 sealed toolbox、distcc 宿主桥与构建/CI/许可证，是唯一拥有构建文件的会话。
+> 直接复制本文件全部内容到新会话。你是并行实现会话 C，只认领 P03、P09、P11。
 
-## 0. 工作区、分支与身份
+## 0. 会话边界与当前状态
 
-- 已准备好的 worktree：`/tmp/orch-fastlane-c`
-- 分支：`fastlane/agent-c-toolbox`
-- 基线：`fastlane/baseline` @ `aae4e582`
-- 先执行：
+- 仓库：`https://github.com/Nyzeep/Orchestella-Studio`
+- 本地 worktree：`/tmp/orch-fastlane-c`（已存在，工作树干净）
+- 当前本地分支：`fastlane/agent-c-toolbox` @ `d0f4cedd`
+- 目标模块分支：`feature/fastlane-toolbox`（GitHub 已推送到 `d0f4cedd`）
+- 基线：`fastlane/baseline` @ `018855bc`
+- 已有交付（不要重做，在其上优化/加固）：
+  - `fastlane-toolbox/**`：静态 BusyBox 方案、manifest/SBOM/README
+  - `runtime/fastlane-distcc/**`：宿主 TCP↔vsock 桥、distcc 测试
+  - `tools/fastlane-build/**`：构建/校验/负向门禁脚本
+  - `.github/workflows/fastlane-zero-device.yml`、`app/build.gradle.kts` 的零设备任务
+  - 报告在 `docs/reports/tickets/fastlane-P03|P09|P11/`
+- 你是**唯一**拥有 `app/build.gradle.kts`、`.github/**`、`NOTICE*`、`tools/fastlane-build/**`、`settings.gradle.kts` 的会话。
+- 你只做**零设备**构建与宿主测试：不跑 adb、不连真机、不发布 APK。
+
+先执行：
 
 ```bash
 cd /tmp/orch-fastlane-c
 git status --short
 git log -1 --format='%h %an <%ae> %s'
+git remote -v
 ```
 
-- 只在这个 worktree 工作。不要切回 `/workspace` 改文件，不要动其他 worktree。
-- 提交身份必须是 **Nyzeep**：
+如果 `github` remote 不存在：
 
 ```bash
-git config user.name "Nyzeep"
-git config user.email "$(git -C /workspace log -1 --format='%ae')"
+git remote add github git@github.com:Nyzeep/Orchestella-Studio.git
 ```
 
-- 本仓 CNB 签名服务可能因“提交作者与当前令牌用户不一致”拒绝 Nyzeep。遇到该错误时，保持作者 Nyzeep，使用：
+如果 worktree 不存在：从 GitHub 取 `feature/fastlane-toolbox` 即可恢复。
 
-```bash
-git -c commit.gpgsign=false commit -F /tmp/fastlane-c-commit.txt
-```
+## 1. 本会话工作流：可复现构建 + 供应链/许可证门 + 字节级协议夹具
 
-不要把作者改成 token 用户。提交前验证 `git log -1 --format='%h %an <%ae> %s'`。
-- 只 push 自己的分支：`git push -u origin fastlane/agent-c-toolbox`。不要 push main、不要 force-push、不要 merge/rebase 其他 agent 分支。
+选择理由：本会话的产物是“别人要信任的构建结果”——toolbox 二进制、APK 注入、CI 门禁、distcc 桥。功能跑通不等于可交付；必须证明**同样输入产生同样字节**、**门禁真的会红**、**许可证/来源可追溯**。执行顺序：
 
-## 1. 必读材料
+1. **依赖/许可证清单先行**：每个第三方二进制/包记录版本、URL、SHA256、许可证、对应源码义务；许可证不清就不进入产物。
+2. **可复现性**：同一输入构建两次，比较产物 SHA256；固定下载 URL/校验和/时间戳；记录 `SOURCE_DATE_EPOCH`。
+3. **Red→Green**：先写会失败的 zip/manifest/门禁测试，再修脚本。
+4. **负向证明**：故意破坏 SHA、路径、体积、许可证字段，确认门禁非零退出；不是只看“成功路径”。
+5. **字节级协议夹具**：distcc 用固定字节序列验证桥的透明性；不解析协议。
+6. **双轴 review**：Spec 逐条 + Standards（签名前注入、无版本递增、无死代码、许可证完整）。
+7. **子智能体**：见第 5 节；主会话统一写。
 
-1. `/workspace/AGENTS.md`、`/workspace/CONTEXT.md`
+如果环境提供 `/tdd`、`/code-review`，优先按其纪律执行。
+
+## 2. 必读与事实基线
+
+1. `AGENTS.md`、`CONTEXT.md`
 2. `docs/reports/orchestration/fastlane-cross-lane-spec-20261021.zh-CN.md`
 3. `docs/research/2026-10-21-cross-lane-reference-survey.md`
 4. `.scratch/orchestella-fastlane/map.md`
-5. 你的三张票：
-   - `.scratch/orchestella-fastlane/issues/P03-sealed-toolbox.md`
-   - `.scratch/orchestella-fastlane/issues/P09-distcc-cross-lane.md`
-   - `.scratch/orchestella-fastlane/issues/P11-build-ci-licensing.md`
-6. 现有代码/构建：
-   - `runtime/fastlane-distcc/**`（已有 4 tests 的宿主桥）
-   - `runtime/engine-fastlane/**`（`FastLaneChannel`）
-   - `app/build.gradle.kts`、`.github/workflows/**`、`NOTICE*`
+5. 三张票：`P03-sealed-toolbox.md`、`P09-distcc-cross-lane.md`、`P11-build-ci-licensing.md`
+6. 现有实现/报告：`fastlane-toolbox/**`、`runtime/fastlane-distcc/**`、`tools/fastlane-build/**`、`.github/workflows/fastlane-zero-device.yml`、`docs/reports/tickets/fastlane-P03|P09|P11/**`
+7. 一手资料：
+   - AOSP `guest/zipfuse/src/inode.rs`（`bin/` 默认执行位）
+   - Android `zipalign`（签名前、`-P 16`）、16 KB 页面指南
+   - BusyBox GPL-2.0、Alpine aports、LLVM license、distcc GPL-2.0
+   - distcc `--inetd` 与协议字节（`DIST/ARGC/ARGV/DOTI` → `DONE/STAT/SERR/SOUT/DOTO`）
+8. 跨会话契约（只读，不修改）：
+   ```bash
+   git fetch github feature/fastlane-dataplane
+   git show github/feature/fastlane-dataplane:fastlane-payload/src/distcc_bridge.cpp
+   git show github/feature/fastlane-dataplane:fastlane-payload/docs/protocol.md
+   ```
+   对比 P09 guest contract，产出差异表；不要改 B 的代码。
 
-## 2. 高质量工作流（每张票都执行）
+## 3. 工单与交付
 
-1. **联网调研**：Termux bootstrap/termux-packages、zipfuse `bin/` 的 `EXECUTABLE_FILE_MODE`、AGP 签名前注入、16KB ELF/APK、distcc 协议/`--inetd`、Termux distcc/clang、GPL/LGPL/Apache 许可证。记录 URL/commit/结论。
-2. **设计 seam**：先写 10–20 行设计说明：产物布局、签名阶段、manifest、失败分类、测试接缝。
-3. **TDD**：先写失败测试（zip 检查/argv/fixture/协议），再实现；不要先做“大而全”的打包脚本。
-4. **双轴 review**：Spec 验收逐条 + Standards（签名前注入、可复现、无死代码、`-Xlint:all -Werror`、许可证完整）。
-5. **零设备验证**：宿主脚本/zip 检查/CMake/JUnit；不跑 adb/设备；不伪造 Gradle/设备结果。
-6. **提交前**：`git diff --check`；跑测试；写中文报告；只 add 自己拥有的文件。
+### P03 — Sealed Toolbox（加固与可复现）
 
-环境缺 Android SDK/JDK 17 时，用 JDK 21 + `javac --release 17 -Xlint:all -Werror` + JUnit 4.13.2 或宿主脚本验证；报告写清限制。若 Gradle 可用，跑 `:runtime:fastlane-distcc:check` 与构建任务。
+- 复核 v1 选型（静态 BusyBox）与 `fastlane-toolbox/manifest.json`：name/version/SHA256/license/source/target/deps/entries 与实际文件一致；
+- 构建两次，比较产物 SHA256；固定下载 URL/校验和；记录 `SOURCE_DATE_EPOCH`；
+- 验证 APK 根 `bin/` 注入：条目存在、mode 可执行、无 symlink 依赖、`zipalign -P 16`（无 zipalign 则 `SKIP` 并记录）；
+- 负向测试：错 SHA、缺失条目、路径穿越、超大文件、许可证字段缺失都必须失败；
+- 许可证：BusyBox GPL-2.0 对应源码交付方式写入 `NOTICE-fastlane.md`/报告；不整体搬 GPL 仓库；
+- 体积报告：当前约 2.13 MiB，保持 ≤80 MiB 起步预算；新增工具必须单独决策。
 
-## 3. 认领工单与交付
+### P09 — Distcc 跨车道（加固与契约）
 
-### P03 — Sealed Toolbox
+- 现有宿主桥：补连接上限/空闲超时/半关闭/取消/关闭收敛测试；
+- 定义并验证 guest `distccd --inetd` 契约：每连接一个 child，vsock ↔ stdin/stdout，stderr 不混入；
+- 字节级夹具：固定 `DIST/ARGC/ARGV/DOTI` 输入，断言桥输出逐字节不变（透明桥，不解析）；
+- 若宿主有 `distccd`/`distcc`，跑一次真实 C 编译/对象链接（host-only）；没有则 `not-tested`；
+- 编译器一致性：v1 只 C + clang；同版本/target/flags；C++ `not-tested`；
+- 与 B 的 `distcc_bridge.cpp` 对比，产出 `docs/reports/tickets/fastlane-P09/guest-contract-alignment.zh-CN.md`。
 
-- 选择候选 A（Termux bootstrap，Bionic/`$PREFIX`）或候选 B（静态 busybox/git/python/clang），按证据二选一；
-- 产物放 **APK 根 `bin/`**（zipfuse 对 `bin/` 给 execute 位；`lib/` 不假设可执行）；
-- `manifest.json`：name/version/SHA256/license/source/target/deps；
-- 构建/打包脚本：签名前注入 `bin/`；验证 APK zip 条目、`zipalign -P 16`、安装包结构；
-- 工具集尽量小；v1 体积预算建议 ≤80MB 起步，完整 bootstrap 另做体积决策；
-- 许可证/NOTICE/SBOM 草稿；不整体搬 GPL 仓库。
+### P11 — 构建、CI 与许可证（加固）
 
-**文件所有权**：`fastlane-toolbox/**`、P03 票/报告。
+- 校验 `.github/workflows/fastlane-zero-device.yml`：YAML 合法、job 只跑零设备、失败会阻塞；
+- 若可用，跑 `actionlint`；没有则在本地用 Python/YAML 解析 + 负向脚本证明；
+- `tools/fastlane-build`：跑全部单元测试；补“门禁失败”测试（错 SHA/缺许可证/超大体积）；
+- payload 构建任务：B 的 `fastlane-payload/` 在本 worktree 不存在时，用最小 fixture 证明流程，并标注“待集成”；
+- 不改版本号、不 tag、不发布、不改签名材料；CI 不引入明文密钥。
 
-### P09 — Distcc 跨车道
+## 4. 代码优化授权（允许改现有代码，但有边界）
 
-在现有 `runtime/fastlane-distcc` 上补齐：
+你可以：
 
-- 宿主桥已完成 loopback TCP ↔ `FastLaneChannel` 双向泵；补连接上限/空闲超时/半关闭/取消测试；
-- 定义 **guest 侧 `distccd --inetd` 契约**：payload 接受 vsock，每连接 fork/exec `distccd --inetd`，桥接 stdin/stdout；
-- 假 distcc 客户端/服务器 fixture：`DIST/ARGC/ARGV/DOTI` → `DONE/STAT/SERR/SOUT/DOTO` 字节级测试；
-- 若宿主有 distcc 二进制，做一次真实 C 编译/对象链接（host-only，不是设备）；
-- 编译器一致性文档：v1 只 C + clang；同版本/target/flags；C++ 标 `not-tested`；
-- 不解析 distcc 协议；宿主/payload 只做字节桥；
-- 不编辑 `fastlane-payload/`（Agent B 拥有）；把契约写入 P09 报告/`docs/reports/tickets/fastlane-P09/guest-contract.md`。
+- 在 `fastlane-toolbox/**`、`runtime/fastlane-distcc/**`、`tools/fastlane-build/**`、`.github/workflows/**`、`app/build.gradle.kts`、`NOTICE*`、`settings.gradle.kts` 内重构、删死代码、合并重复脚本；
+- 修复构建竞态、校验遗漏、路径/权限问题；
+- 为优化补测试，先红后绿。
 
-**文件所有权**：`runtime/fastlane-distcc/**`、P09 票/报告。
+你不可以：
 
-### P11 — 构建、CI 与许可证
+- 为“风格统一”大范围重写已工作脚本；每次重构必须有行为理由或测试保护；
+- 改 `runtime/engine-fastlane/**`、`runtime/fastlane-terminal/**`、`runtime/fastlane-capability/**`、`fastlane-payload/**`、`runtime/fastlane-proxy/**`、`runtime/fastlane-storage/**`、`runtime/engine-qemu/**`、`runtime/fastlane-telemetry/**`、共享索引/map；
+- 在签名后修改 APK；不自动递增版本、不发布、不 tag。
 
-- 唯一拥有 `app/build.gradle.kts`、`.github/workflows/**`、`NOTICE*`、`tools/fastlane-build/**`、`settings.gradle.kts` 的会话；
-- 为 payload/ toolbox 增加零设备构建任务：NDK/CMake（引用 `fastlane-payload/`，不修改其源码）、`bin/` 注入、zip 检查、16KB、license；
-- CI 只跑零设备任务；不跑 adb/设备；故意失败能阻塞（至少本地脚本验证）；
-- NOTICE/SBOM 覆盖 Termux/clang/distcc/gvproxy（若使用）；GPL 对应源码义务；
-- 不自动递增版本、不 tag、不发布、不改签名材料。
+## 5. 子智能体并行（最多 3 个，只读）
 
-**文件所有权**：`app/build.gradle.kts`、`.github/**`、`NOTICE*`、`tools/fastlane-build/**`、`settings.gradle.kts`、P11 票/报告。
+建议拆分：
 
-## 4. 文件所有权与禁止事项
+1. **许可证/来源审计**：逐项核对 manifest/SBOM/NOTICE 与上游许可证、对应源码义务；输出缺口。
+2. **AGP/zipfuse 构建审计**：核对 `bin/` 注入阶段、执行位、`zipalign -P 16`、16 KB 对齐；输出证据。
+3. **distcc 协议夹具审计**：只读现有桥与测试，列未覆盖的字节/关闭/超时路径。
 
-你拥有：
+规则：子智能体只读、不改文件；主会话统一写；结论带文件行号/URL；不要并行改同一目录。
 
-- `fastlane-toolbox/**`
-- `runtime/fastlane-distcc/**`
-- `app/build.gradle.kts`、`.github/workflows/**`、`NOTICE*`、`tools/fastlane-build/**`、`settings.gradle.kts`
-- P03/P09/P11 票与对应 `docs/reports/tickets/fastlane-P03|P09|P11/**`
+## 6. 收尾清理门（提交前必须执行）
 
-你**不得**修改：
+1. `git status --short`；确认没有下载的 tarball、解包目录、构建产物、临时 APK。
+2. 删除生成物（只在你拥有的目录内）：
+   ```bash
+   find fastlane-toolbox runtime/fastlane-distcc tools/fastlane-build \
+     \( -name '__pycache__' -o -name '*.pyc' -o -name '*.class' -o -name '*.o' \
+        -o -name '*.a' -o -name '*.log' -o -name '*.tmp' -o -name '*.rej' -o -name '*.orig' \) -print
+   ```
+   `build/`、`.gradle/`、`dist/`、`out/` 如由你产生也删除；**不要删除** `fastlane-toolbox/manifest.json`、`SBOM.spdx.json`、`NOTICE*`、测试 fixture。
+3. `git clean -ndX -- fastlane-toolbox runtime/fastlane-distcc tools/fastlane-build` 预览；只删确认的生成物，不要 `git clean -fdx`。
+4. 删除死代码/临时下载脚本/无断言测试；合并重复 helper。
+5. `git diff --check` 无输出。
+6. 文档检查：报告无 `TODO`/`待补`/过期数字；体积/SHA/测试数量与实际一致。
+7. 敏感扫描：
+   ```bash
+   grep -RInE "BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|/root/|/home/|/Users/|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}" \
+     docs/reports/tickets/fastlane-P03 docs/reports/tickets/fastlane-P09 docs/reports/tickets/fastlane-P11 || true
+   ```
+8. 最终 `git status --short` 只应包含你有意提交的文件。
 
-- `runtime/engine-fastlane/**`、`runtime/fastlane-terminal/**`、`runtime/fastlane-capability/**`（Agent A）
-- `fastlane-payload/**`、`runtime/fastlane-proxy/**`、`runtime/fastlane-storage/**`（Agent B）
-- `runtime/engine-qemu/**`、`runtime/fastlane-telemetry/**`（Agent D）
-- `docs/README.md`、`docs/reports/README.md`、`.scratch/orchestella-fastlane/map.md`（主协调）
-- 其他 agent 的票/报告
+## 7. 文档与脱敏
 
-跨所有权改动：停止并报告，不要自行修改。
-
-## 5. 跨 agent 契约
-
-- P03 的 `manifest.json`/toolbox 布局供 Agent B 的 P02 payload 读取；把路径/环境变量/SHA 写进 P03 报告，不要改 P02。
-- P09 的 guest `distccd --inetd` 契约供 P02 实现；把契约写入 `docs/reports/tickets/fastlane-P09/guest-contract.md`，不要改 payload。
-- P11 的构建任务可以引用 Agent B 的 `fastlane-payload/` 路径，但不要改其源码；如果路径/目标缺失，报告并等待。
-
-## 6. 文档规则
-
-- 每张票写 `docs/reports/tickets/fastlane-Pxx/implementation-report.zh-CN.md`：目标、设计、改动、测试命令/结果、未验证项、研究来源、许可证/体积/风险。
-- 更新自己票的 `## Comments`/状态；不改 map/共享索引。
-- `docs/` 被忽略；只对具体文件 `git add -f`，不要整体强加。
+- 每张票更新 `docs/reports/tickets/fastlane-Pxx/implementation-report.zh-CN.md`：本轮改动、构建/测试命令、复现 SHA、许可证、未验证、风险。
+- P03 更新 `fastlane-toolbox/README.md`/`manifest.json` 说明；P09 更新 guest contract 与差异表。
+- 更新自己票的 `## Comments`/状态；不改共享索引/map。
+- `docs/` 默认被忽略；只对具体文件 `git add -f`。
 - 禁止写入真机序列号/IMEI/Android ID/设备指纹哈希/账号/真实 IP/MAC/个人邮箱/本机绝对路径/截图/完整日志/token/按键正文。
-- 提交前做敏感数据扫描（同 Agent A 的 grep 模式）。
 
-## 7. 测试与验收
+## 8. 提交、身份与推送
 
-- P03：APK `bin/` 条目存在、SHA/权限、签名前注入、16KB、许可证清单、体积报告。
-- P09：现有 4 tests 继续绿；新增假 distcc 字节级测试；真实 distcc host-only 编译（若可用）。
-- P11：零设备 CI/构建脚本可执行；故意失败能阻塞；NOTICE/SBOM 完整。
-- 不把 zip 检查成功当设备执行成功；不把参数构造成功当性能结果。
-
-## 8. 提交与推送
-
-1. 只 add 自己的文件：
+### 8.1 分支
 
 ```bash
-git add fastlane-toolbox runtime/fastlane-distcc app/build.gradle.kts .github/workflows NOTICE* tools/fastlane-build settings.gradle.kts
+git branch -m fastlane/agent-c-toolbox feature/fastlane-toolbox
+git fetch github
+git merge-base --is-ancestor github/feature/fastlane-toolbox HEAD && echo OK
+```
+
+不满足就停止，不要 force-push。
+
+### 8.2 只暂存自己的文件
+
+```bash
+git add fastlane-toolbox runtime/fastlane-distcc tools/fastlane-build
+git add app/build.gradle.kts .github/workflows NOTICE*
+git add settings.gradle.kts
 git add -f .scratch/orchestella-fastlane/issues/P03-sealed-toolbox.md
 git add -f .scratch/orchestella-fastlane/issues/P09-distcc-cross-lane.md
 git add -f .scratch/orchestella-fastlane/issues/P11-build-ci-licensing.md
 git add -f docs/reports/tickets/fastlane-P03 docs/reports/tickets/fastlane-P09 docs/reports/tickets/fastlane-P11
 ```
 
-2. 写详细中文 commit message 到 `/tmp/fastlane-c-commit.txt`，包含三张票、产物布局、测试命令/结果、许可证、未验证项、研究来源。
-3. 提交（正常签名优先；CNB 因 Nyzeep 作者拒绝时用 `-c commit.gpgsign=false`，保持作者 Nyzeep）：
+### 8.3 身份
+
+```bash
+git config user.name "Nyzeep"
+git config user.email "$(git log -1 --format='%ae')"
+export GIT_AUTHOR_NAME="Nyzeep"
+export GIT_AUTHOR_EMAIL="$(git log -1 --format='%ae')"
+export GIT_COMMITTER_NAME="Nyzeep"
+export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+```
+
+作者和提交者都必须是 Nyzeep。签名服务因作者不一致拒绝时，保持作者不变：
 
 ```bash
 git -c commit.gpgsign=false commit -F /tmp/fastlane-c-commit.txt
-git log -1 --format='%h %an <%ae> %s'
-git push -u origin fastlane/agent-c-toolbox
 ```
 
-4. push 失败保留 commit，报告精确错误；不改作者、不 force-push、不 push main。
+### 8.4 中文提交信息
 
-## 9. 完成报告
+写入 `/tmp/fastlane-c-commit.txt`，至少包含：
 
-- 认领票与状态
-- 分支 + commit hash + push 结果
-- toolbox 选型/体积/许可证
-- distcc 契约/测试
-- 构建/CI 任务与故意失败证据
+```text
+feat(fastlane-toolbox): 加固 P03/P09/P11 可复现构建、distcc 契约与许可证门
+
+背景：
+- 已有零设备 toolbox/distcc/CI 骨架，本轮补可复现性、负向门禁与字节级契约；
+- 不发布 APK、不改版本号、不声称设备执行通过。
+
+主要改动：
+- P03：...
+- P09：...
+- P11：...
+
+产物与许可证：
+- ...
+
+验证：
+- python unittest/pytest：N tests OK
+- 构建两次 SHA256：一致/不一致（原因）
+- 负向门禁：非零退出
+- distcc fixture：...
+- Gradle/真机：not-run/not-tested（原因）
+
+未验证：
+- ...
+
+清理：
+- 删除 ...；最终 git status 仅包含 ...
+
+风险/下一步：
+- ...
+```
+
+### 8.5 推送
+
+```bash
+git log -1 --format='%H%n%an <%ae>%n%cn <%ce>%n%s'
+git push github HEAD:refs/heads/feature/fastlane-toolbox
+git ls-remote --heads github feature/fastlane-toolbox
+```
+
+只推自己的分支；不 push main、不 force-push、不 tag、不发布。push 失败保留 commit 并报告错误。
+
+## 9. 完成报告（会话最后输出）
+
+- 三张票状态
+- 分支 + commit + push 结果
+- toolbox 体积/许可证/复现 SHA
+- distcc 契约/夹具结果
+- CI/门禁负向证据
 - 未验证/`not-tested`
+- 清理证据
 - 研究来源
 - 与 P02 的契约对齐情况
 - 风险与下一步
@@ -175,5 +256,5 @@ git push -u origin fastlane/agent-c-toolbox
 - 需要真机/adb → 停止，标 `not-tested`。
 - 需要改其他 agent 文件 → 停止并报告。
 - 需要 Root/unlock/pvmfw/SELinux 修改 → 立即停止。
-- 许可证不清 → 不合并/不发布该工具，报告。
+- 许可证不清 → 该工具不进入产物，报告。
 - 无法签名前注入 → 改用合法替代；不得签名后改包。
