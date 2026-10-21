@@ -1,0 +1,76 @@
+package io.github.nyzeep.orchestella.runtime.fastlane;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertThrows;
+
+import org.junit.Test;
+
+public final class FastLaneLaunchSpecTest {
+    private static final String SHA = "a".repeat(64);
+
+    private static FastLaneLaunchSpec spec(
+            String instanceId,
+            String payload,
+            int memoryMb,
+            long storage,
+            int control,
+            int terminal,
+            int proxy,
+            int distcc) {
+        return new FastLaneLaunchSpec(
+                instanceId,
+                payload,
+                memoryMb,
+                FastLaneLaunchSpec.CpuTopology.ONE_CPU,
+                storage,
+                FastLaneLaunchSpec.DebugLevel.NONE,
+                control,
+                terminal,
+                proxy,
+                distcc,
+                SHA);
+    }
+
+    @Test
+    public void validSpecExposesEveryField() {
+        FastLaneLaunchSpec spec = spec("fastlane-01", "libfastlane_payload.so", 1024, 268435456L,
+                5000, 5001, 5002, 5003);
+        assertEquals("fastlane-01", spec.instanceId());
+        assertEquals("libfastlane_payload.so", spec.payloadBinaryName());
+        assertEquals(1024, spec.memoryMb());
+        assertEquals(268435456L, spec.encryptedStorageBytes());
+        assertEquals(5000, spec.controlPort());
+        assertEquals(5001, spec.terminalPort());
+        assertEquals(5002, spec.proxyPort());
+        assertEquals(5003, spec.distccPort());
+    }
+
+    @Test
+    public void rejectsPathInPayloadName() {
+        assertThrows(IllegalArgumentException.class,
+                () -> spec("fastlane-01", "lib/evil.so", 1024, 1L, 5000, 5001, 5002, 5003));
+    }
+
+    @Test
+    public void rejectsNonPositiveMemoryOrStorage() {
+        assertThrows(IllegalArgumentException.class,
+                () -> spec("fastlane-01", "payload.so", 0, 1L, 5000, 5001, 5002, 5003));
+        assertThrows(IllegalArgumentException.class,
+                () -> spec("fastlane-01", "payload.so", 1024, 0L, 5000, 5001, 5002, 5003));
+    }
+
+    @Test
+    public void rejectsDuplicateOrPrivilegedPorts() {
+        assertThrows(IllegalArgumentException.class,
+                () -> spec("fastlane-01", "payload.so", 1024, 1L, 5000, 5000, 5002, 5003));
+        assertThrows(IllegalArgumentException.class,
+                () -> spec("fastlane-01", "payload.so", 1024, 1L, 80, 5001, 5002, 5003));
+    }
+
+    @Test
+    public void rejectsInvalidToolboxHash() {
+        assertThrows(IllegalArgumentException.class, () -> new FastLaneLaunchSpec(
+                "fastlane-01", "payload.so", 1024, FastLaneLaunchSpec.CpuTopology.ONE_CPU,
+                1L, FastLaneLaunchSpec.DebugLevel.NONE, 5000, 5001, 5002, 5003, "not-a-hash"));
+    }
+}
