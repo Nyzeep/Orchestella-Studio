@@ -3,6 +3,7 @@
   "name": "orchestella-sealed-toolbox",
   "version": "0.1.0",
   "profile": "minimal",
+  "sourceDateEpoch": 1792540800,
   "description": "Sealed, read-only Fast Lane userland installed at /mnt/apk/bin. Candidate B: static BusyBox; no Bionic prefix relocation and no symlinks.",
   "target": {
     "abi": "arm64-v8a",

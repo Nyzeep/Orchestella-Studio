@@ -7,6 +7,7 @@ APK and asserts that the verifier and the injector refuse to proceed.
 
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
 import zipfile
@@ -16,6 +17,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 sys.path.insert(0, str(HERE))
 
+import check_licenses  # noqa: E402
 import fastlane_build  # noqa: E402
 
 
@@ -45,6 +47,22 @@ def expect_block(label: str, action) -> None:
         print(f"BLOCKED {label}: {failure}")
         return
     raise SystemExit(f"FAIL gate did not block: {label}")
+
+
+def expect_problem(label: str, action) -> None:
+    problems = action()
+    if not problems:
+        raise SystemExit(f"FAIL gate did not report a problem: {label}")
+    print(f"BLOCKED {label}: {problems[0]}")
+
+
+def remove_entry(source: Path, target: Path, name: str) -> None:
+    with zipfile.ZipFile(source) as archive, zipfile.ZipFile(
+        target, "w", zipfile.ZIP_DEFLATED
+    ) as output:
+        for info in archive.infolist():
+            if info.filename != name:
+                output.writestr(info, archive.read(info.filename))
 
 
 def main() -> int:
@@ -87,6 +105,71 @@ def main() -> int:
                 toolbox / "bin" / "manifest.json",
                 budget_mb=0.000001,
                 allow_fixture=True,
+            ),
+        )
+
+        missing = root / "missing.apk"
+        remove_entry(injected, missing, "bin/ls")
+        expect_block(
+            "missing-bin-entry",
+            lambda: fastlane_build.verify_apk(
+                missing, toolbox / "bin" / "manifest.json", allow_fixture=True
+            ),
+        )
+
+        traversal = root / "traversal.apk"
+        traversal.write_bytes(injected.read_bytes())
+        with zipfile.ZipFile(traversal, "a") as archive:
+            archive.writestr("bin/../escape", b"x")
+        expect_block(
+            "apk-path-traversal",
+            lambda: fastlane_build.verify_apk(
+                traversal, toolbox / "bin" / "manifest.json", allow_fixture=True
+            ),
+        )
+
+        tampered_toolbox = root / "tampered-toolbox"
+        fastlane_build.build_toolbox(
+            REPO / "fastlane-toolbox" / "manifest.json", tampered_toolbox, fixture=True
+        )
+        with open(tampered_toolbox / "bin" / "sh", "ab") as handle:
+            handle.write(b"tamper")
+        expect_block("toolbox-sha", lambda: fastlane_build.verify_toolbox(tampered_toolbox))
+        budget_toolbox = root / "budget-toolbox"
+        fastlane_build.build_toolbox(
+            REPO / "fastlane-toolbox" / "manifest.json", budget_toolbox, fixture=True
+        )
+        expect_block(
+            "toolbox-size-budget",
+            lambda: fastlane_build.verify_toolbox(budget_toolbox, budget_mb=0.000001),
+        )
+
+        source_manifest = json.loads(
+            (REPO / "fastlane-toolbox" / "manifest.json").read_text(encoding="utf-8")
+        )
+        no_license = json.loads(json.dumps(source_manifest))
+        del no_license["artifacts"][0]["license"]
+        no_license_path = root / "no-license.json"
+        no_license_path.write_text(json.dumps(no_license), encoding="utf-8")
+        expect_problem(
+            "license-missing",
+            lambda: check_licenses.check(
+                no_license_path,
+                REPO / "NOTICE-fastlane.md",
+                REPO / "fastlane-toolbox" / "SBOM.spdx.json",
+            ),
+        )
+
+        unsafe = json.loads(json.dumps(source_manifest))
+        unsafe["entries"].append(
+            {"path": "bin/../escape", "type": "applet", "applet": "ls", "mode": "0755"}
+        )
+        unsafe_path = root / "unsafe.json"
+        unsafe_path.write_text(json.dumps(unsafe), encoding="utf-8")
+        expect_block(
+            "manifest-path-traversal",
+            lambda: fastlane_build.build_toolbox(
+                unsafe_path, root / "unsafe-toolbox", fixture=True
             ),
         )
     print("GATE_BLOCK_OK")

@@ -2,7 +2,9 @@
 
 Status: zero-device contract for P02. No payload code is changed by P09; this
 document is the hand-off. Everything below is host-tested only where stated;
-the protected-payload path is `not-tested` until DV-03.
+the protected-payload path is `not-tested` until DV-03. The field-by-field
+comparison with P02's `distcc_bridge.cpp` is in
+[`guest-contract-alignment.zh-CN.md`](guest-contract-alignment.zh-CN.md).
 
 ## 1. Data path
 
@@ -35,7 +37,10 @@ logs the distcc protocol. The distcc client and `distccd` own the protocol.
 - At most `maxConnections` jobs are active. Excess connections are closed
   before a channel is opened and reported as `LIMIT_REJECTED`.
 - `idleTimeoutMs > 0` closes a connection with no bytes in either direction as
-  `IDLE_TIMEOUT`; `0` disables the watchdog.
+  `IDLE_TIMEOUT`; `0` disables the watchdog. **Production callers pass 0**: the
+  payload owns the compiler idle limit (P02 uses 120 s on the child stdout
+  poll). A host watchdog shorter than that can kill a legitimate compile; if a
+  host timeout is required for diagnostics, set it above 180 s.
 - A client half-close closes the channel output so `distccd` sees stdin EOF,
   but the response is still drained back to the client.
 - `close()` finishes active connections as `BRIDGE_CLOSED` and stops the
@@ -67,28 +72,34 @@ For each accepted vsock connection on the distcc port:
 3. Connect the child's stdin and stdout to the vsock stream. `dup2` of the
    accepted vsock fd onto fd 0 and fd 1 is preferred; an explicit two-way pump
    is equivalent. The child must see EOF on stdin when the host half-closes.
-4. Keep stderr out of the protocol: send it to the payload log or `/dev/null`,
-   never to fd 1. `distccd` protocol bytes are binary.
-5. `waitpid` the child with a bounded timeout (recommended 120 s), reap it, and
-   close the vsock connection. On payload shutdown, terminate children and
-   reap them; no orphans.
+4. Keep stderr out of the protocol: `dup2` it to `/dev/null` (or a payload log
+   that is never fd 1). `distccd` protocol bytes are binary. The host bridge
+   never receives child stderr; the P02 implementation already does this.
+5. `waitpid` the child after its stdout reaches EOF with a bounded grace
+   (P02 uses 5 s), then terminate and reap. The overall compile deadline belongs
+   to the distcc client, not to an unbounded payload wait. On payload shutdown,
+   terminate children and reap them; no orphans.
 6. Do not parse the distcc protocol, do not rewrite argv, and do not cache or
    log source/object bytes.
 
-Child environment:
+Child environment (aligned with P02 `child_environment`; no `DISTCCD_PATH`):
 
 ```
-PATH=/mnt/apk/bin
-DISTCCD_PATH=/mnt/apk/bin
+PATH=/mnt/apk/bin:/mnt/apk/bin/usr/bin
 HOME=/mnt/encryptedstore/home
 TMPDIR=/mnt/encryptedstore/tmp
+XDG_CACHE_HOME=/mnt/encryptedstore/cache
+SHELL=/mnt/apk/bin/sh
+TERM=xterm-256color
+LANG=C.UTF-8
 ```
 
-`TMPDIR` must be writable and must not be the read-only APK mount. Do not set
-`DISTCC_CMDLIST` unless a compiler allowlist is added with a separate security
-review; the v1 threat model trusts the host bridge endpoint. The bridge has no
-authentication of its own, so the host must bind it only for an active session,
-use an ephemeral port, and tear it down with the VM.
+`TMPDIR` and the child working directory must be writable and must not be the
+read-only APK mount. P02 uses `storage_root/tmp` as the working directory. Do
+not set `DISTCC_CMDLIST` unless a compiler allowlist is added with a separate
+security review; the v1 threat model trusts the host bridge endpoint. The
+bridge has no authentication of its own, so the host must bind it only for an
+active session, use an ephemeral port, and tear it down with the VM.
 
 ## 4. Guest-side configuration
 
@@ -135,7 +146,7 @@ and APK size.
 | no bytes before idle deadline | `IDLE_TIMEOUT` | fallback |
 | job cap reached | `LIMIT_REJECTED` | fallback |
 | bridge/VM stopped | `BRIDGE_CLOSED` | fallback |
-| distccd missing/spawn fails | connection closes | `DISTCC_COMPILER_MISMATCH` in payload log; fallback |
+| distccd missing/spawn fails | connection closes; payload log records the spawn error | fallback; `DISTCC_COMPILER_MISMATCH` is the product-level target, not a P02-current guarantee |
 | compiler/version mismatch | distccd non-zero/`STAT` | local fallback; no silent alternate compiler |
 | distcc protocol error | client/server sees EOF or bad token | local fallback; do not retry forever |
 

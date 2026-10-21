@@ -40,6 +40,8 @@ import java.util.concurrent.atomic.AtomicReference;
  *       so the payload's {@code distccd --inetd} sees stdin EOF; the response
  *       is still drained back to the client. The bridge never parses or
  *       rewrites distcc bytes.</li>
+ *   <li>{@link #close()} is idempotent; after it {@link #port()} throws
+ *       {@link IllegalStateException} until {@link #start()} binds again.</li>
  * </ul>
  *
  * <p>Security: this is not a LAN port-forward and has no authentication of its
@@ -240,6 +242,7 @@ public final class DistccTcpVsockBridge implements Closeable {
             running = false;
             socket = server;
             server = null;
+            boundPort = -1;
             accept = acceptThread;
             acceptThread = null;
             watchdog = watchdogThread;
@@ -339,8 +342,8 @@ public final class DistccTcpVsockBridge implements Closeable {
         private final AtomicLong bytesToClient = new AtomicLong();
         private final AtomicReference<Outcome> outcome = new AtomicReference<>();
         private final CountDownLatch bothDirectionsClosed = new CountDownLatch(2);
-        private FastLaneChannel channel;
-        private Thread worker;
+        private volatile FastLaneChannel channel;
+        private volatile Thread worker;
 
         private Connection(Socket client) {
             this.client = client;

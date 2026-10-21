@@ -21,6 +21,7 @@ import struct
 import subprocess
 import sys
 import tarfile
+import time
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -31,6 +32,15 @@ SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 SAFE_PATH_RE = re.compile(r"^bin/[A-Za-z0-9._+@-]+$")
 SAFE_APPLET_RE = re.compile(r"^[A-Za-z0-9._+-]+$")
 ELF_PAGE_16K = 16 * 1024
+ELF_MACHINE_AARCH64 = 183
+PT_LOAD = 1
+PT_INTERP = 3
+PT_DYNAMIC = 2
+# 2026-10-21T00:00:00Z. A fixed default keeps the runtime manifest and the
+# injected zip timestamps reproducible when SOURCE_DATE_EPOCH is not set.
+DEFAULT_SOURCE_DATE_EPOCH = 1792540800
+MIN_ZIP_EPOCH = 315532800  # 1980-01-01T00:00:00Z, the ZIP epoch floor.
+MAX_ZIP_EPOCH = 4354819198  # 2107-12-31T23:59:58Z, the DOS date ceiling.
 
 FIXTURE_BUSYBOX = b"""#!/bin/sh
 # Test fixture for the sealed toolbox. Never shipped in an APK.
@@ -71,30 +81,165 @@ def _require(condition: bool, message: str) -> None:
         raise BuildError(message)
 
 
+def resolve_source_date_epoch(
+    manifest_value: int | None = None, explicit: int | None = None
+) -> int:
+    """Return the build epoch: CLI, then env, then manifest, then the default."""
+    raw: object = explicit
+    if raw is None:
+        raw = os.environ.get("SOURCE_DATE_EPOCH")
+    if raw is None or raw == "":
+        raw = manifest_value
+    if raw is None or raw == "":
+        raw = DEFAULT_SOURCE_DATE_EPOCH
+    try:
+        value = int(raw)
+    except (TypeError, ValueError) as failure:
+        raise BuildError(f"SOURCE_DATE_EPOCH must be an integer, got {raw!r}") from failure
+    if value < 0:
+        raise BuildError(f"SOURCE_DATE_EPOCH must not be negative, got {value}")
+    return value
+
+
+def source_date_iso(epoch: int) -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(epoch))
+
+
+def zip_date_time(epoch: int) -> tuple[int, int, int, int, int, int]:
+    """Convert an epoch to a deterministic DOS timestamp accepted by zipfile."""
+    clamped = max(MIN_ZIP_EPOCH, min(int(epoch), MAX_ZIP_EPOCH))
+    stamp = time.gmtime(clamped)
+    return (
+        max(1980, stamp.tm_year),
+        max(1, stamp.tm_mon),
+        max(1, stamp.tm_mday),
+        stamp.tm_hour,
+        stamp.tm_min,
+        stamp.tm_sec - (stamp.tm_sec % 2),
+    )
+
+
+def _require_https(value: object, label: str) -> None:
+    text = str(value or "")
+    _require(text.startswith("https://"), f"{label} must be an https URL")
+    _require(not any(character.isspace() for character in text), f"{label} contains whitespace")
+    _require(".." not in Path(text).parts, f"{label} contains a traversal segment")
+
+
+def tree_digest(root: Path) -> str:
+    """Canonical SHA256 over path, type, mode and content hash of a tree."""
+    root = Path(root)
+    _require(root.is_dir(), f"tree root is not a directory: {root}")
+    digest = hashlib.sha256()
+    for path in sorted(root.rglob("*"), key=lambda item: item.as_posix()):
+        relative = path.relative_to(root).as_posix()
+        if path.is_symlink():
+            digest.update(f"L {relative} -> {os.readlink(path)}\n".encode("utf-8"))
+        elif path.is_dir():
+            digest.update(f"D {relative}\n".encode("utf-8"))
+        elif path.is_file():
+            mode = stat.S_IMODE(path.stat().st_mode)
+            digest.update(f"F {relative} {mode:04o} {path.stat().st_size} ".encode("utf-8"))
+            digest.update(sha256_file(path).encode("ascii"))
+            digest.update(b"\n")
+        else:
+            digest.update(f"? {relative}\n".encode("utf-8"))
+    return digest.hexdigest()
+
+
 def validate_source_manifest(document: dict) -> None:
     _require(document.get("schemaVersion") == SCHEMA_VERSION, "unsupported manifest schemaVersion")
     for field in ("name", "version", "profile", "target", "install", "artifacts", "entries"):
         _require(field in document, f"manifest is missing {field}")
+    _require(bool(str(document["name"]).strip()), "manifest name is empty")
+    _require(bool(str(document["version"]).strip()), "manifest version is empty")
+
+    install = document["install"]
+    _require(isinstance(install, dict), "install must be an object")
+    _require(install.get("apkPrefix") == "bin/", "install.apkPrefix must be bin/")
+    _require(install.get("guestPath") == "/mnt/apk/bin", "install.guestPath must be /mnt/apk/bin")
+    _require(install.get("prefix") == "/mnt/apk/bin", "install.prefix must be /mnt/apk/bin")
+    _require(
+        isinstance(install.get("path"), list) and "/mnt/apk/bin" in install["path"],
+        "install.path must include /mnt/apk/bin",
+    )
+
+    target = document["target"]
+    _require(isinstance(target, dict), "target must be an object")
+    _require(target.get("abi") == "arm64-v8a", "target.abi must be arm64-v8a")
+    _require(target.get("arch") == "aarch64", "target.arch must be aarch64")
+    page_size = target.get("pageSizeBytes")
+    _require(
+        isinstance(page_size, int) and page_size >= ELF_PAGE_16K,
+        "target.pageSizeBytes must be at least 16384",
+    )
+
+    manifest_epoch = document.get("sourceDateEpoch")
+    if manifest_epoch is not None:
+        _require(
+            isinstance(manifest_epoch, int) and manifest_epoch >= 0,
+            "sourceDateEpoch must be a non-negative integer",
+        )
 
     artifacts = document["artifacts"]
     _require(isinstance(artifacts, list) and artifacts, "manifest has no artifacts")
-    artifact_ids = set()
+    artifact_ids: set[str] = set()
     for artifact in artifacts:
+        _require(isinstance(artifact, dict), "artifact must be an object")
         for field in ("id", "name", "version", "license", "source", "sha256", "target", "deps"):
             _require(field in artifact, f"artifact is missing {field}: {artifact}")
-        _require(artifact["id"] not in artifact_ids, f"duplicate artifact id {artifact['id']}")
-        artifact_ids.add(artifact["id"])
-        _require(bool(SHA256_RE.match(str(artifact["sha256"]))), f"bad sha256 for {artifact['id']}")
+        artifact_id = str(artifact["id"])
+        _require(bool(artifact_id), "artifact id is empty")
+        _require(artifact_id not in artifact_ids, f"duplicate artifact id {artifact_id}")
+        artifact_ids.add(artifact_id)
+        _require(bool(str(artifact["name"]).strip()), f"artifact {artifact_id} has an empty name")
+        _require(bool(str(artifact["version"]).strip()), f"artifact {artifact_id} has an empty version")
+        _require(bool(str(artifact["license"]).strip()), f"artifact {artifact_id} has no license")
+        _require(bool(str(artifact["target"]).strip()), f"artifact {artifact_id} has no target")
+        _require_https(artifact["source"], f"artifact {artifact_id} source")
+        _require(
+            bool(SHA256_RE.match(str(artifact["sha256"]))),
+            f"bad sha256 for {artifact_id}",
+        )
+        deps = artifact["deps"]
+        _require(isinstance(deps, list), f"artifact {artifact_id} deps must be a list")
         if artifact.get("member"):
             _require(
                 bool(SHA256_RE.match(str(artifact.get("binarySha256", "")))),
-                f"artifact {artifact['id']} has a member but no binarySha256",
+                f"artifact {artifact_id} has a member but no binarySha256",
+            )
+            member = str(artifact["member"])
+            _require(
+                not member.startswith("/") and ".." not in Path(member).parts,
+                f"artifact {artifact_id} member is unsafe: {member}",
+            )
+        if str(artifact["license"]).startswith(("GPL", "LGPL")):
+            source = artifact.get("correspondingSource")
+            _require(
+                isinstance(source, dict),
+                f"GPL-family artifact {artifact_id} has no correspondingSource",
+            )
+            _require_https(source.get("upstream"), f"artifact {artifact_id} correspondingSource")
+            _require(
+                bool(SHA256_RE.match(str(source.get("upstreamSha256", "")))),
+                f"artifact {artifact_id} correspondingSource has no upstreamSha256",
+            )
+            if source.get("packaging"):
+                _require_https(source["packaging"], f"artifact {artifact_id} packaging source")
+
+    for artifact in artifacts:
+        for dependency in artifact["deps"]:
+            _require(
+                dependency in artifact_ids,
+                f"artifact {artifact['id']} depends on unknown artifact {dependency}",
             )
 
     entries = document["entries"]
     _require(isinstance(entries, list) and entries, "manifest has no entries")
-    seen = set()
+    by_id = {artifact["id"]: artifact for artifact in artifacts}
+    seen: set[str] = set()
     for entry in entries:
+        _require(isinstance(entry, dict), "entry must be an object")
         path = entry.get("path", "")
         _require(bool(SAFE_PATH_RE.match(path)), f"unsafe entry path: {path!r}")
         _require(path != "bin/manifest.json", "bin/manifest.json is reserved")
@@ -103,14 +248,51 @@ def validate_source_manifest(document: dict) -> None:
         _require(entry.get("mode") == "0755", f"entry {path} must be mode 0755")
         kind = entry.get("type")
         if kind in {"artifact", "copy"}:
-            _require(entry.get("artifact") in artifact_ids, f"entry {path} references an unknown artifact")
+            reference = entry.get("artifact")
+            _require(reference in artifact_ids, f"entry {path} references an unknown artifact")
+            _require(
+                bool(by_id[reference].get("member")),
+                f"entry {path} references an artifact without a member",
+            )
+            if kind == "artifact":
+                _require(
+                    path == f"bin/{by_id[reference]['name']}",
+                    f"artifact entry {path} must match bin/{by_id[reference]['name']}",
+                )
         elif kind == "applet":
-            _require(bool(SAFE_APPLET_RE.match(str(entry.get("applet", "")))), f"bad applet for {path}")
+            applet = str(entry.get("applet", ""))
+            _require(bool(SAFE_APPLET_RE.match(applet)), f"bad applet for {path}")
+            _require(path == f"bin/{applet}", f"applet entry {path} must match its applet name")
         else:
             raise BuildError(f"unsupported entry type for {path}: {kind!r}")
 
     if "bin/sh" not in seen:
         raise BuildError("manifest must provide bin/sh")
+
+    pending = document.get("pendingProfiles", {})
+    _require(isinstance(pending, dict), "pendingProfiles must be an object")
+    shipped_names = set(artifact_ids) | {str(artifact["name"]) for artifact in artifacts}
+    for name, profile in pending.items():
+        _require(isinstance(profile, dict), f"pending profile {name} must be an object")
+        status = profile.get("status")
+        _require(
+            status in {"not-tested", "blocked"},
+            f"pending profile {name} must be not-tested or blocked, got {status!r}",
+        )
+        _require(
+            isinstance(profile.get("requiredArtifacts"), list)
+            and profile["requiredArtifacts"],
+            f"pending profile {name} has no requiredArtifacts",
+        )
+        for required in profile["requiredArtifacts"]:
+            _require(
+                required.get("name") not in shipped_names,
+                f"pending profile {name} lists a shipped artifact: {required.get('name')}",
+            )
+            _require(
+                required.get("sha256") is None,
+                f"pending profile {name} must not claim a pinned artifact",
+            )
 
 
 def _cache_name(artifact: dict) -> str:
@@ -186,36 +368,74 @@ def _applet_script(applet: str) -> bytes:
     ).encode("utf-8")
 
 
+def _elf64_header(data: bytes) -> tuple[int, int, int, int] | None:
+    if len(data) < 64 or data[:4] != b"\x7fELF" or data[4] != 2 or data[5] != 1:
+        return None
+    try:
+        machine = struct.unpack_from("<H", data, 18)[0]
+        phoff = struct.unpack_from("<Q", data, 32)[0]
+        phentsize, phnum = struct.unpack_from("<HH", data, 54)
+    except struct.error:
+        return None
+    if phentsize < 56 or phoff + phentsize * phnum > len(data):
+        return None
+    return machine, phoff, phentsize, phnum
+
+
 def elf_load_alignments(data: bytes) -> list[int]:
     """Return p_align for every PT_LOAD in a little-endian ELF64 image.
 
     Returns an empty list for short, non-ELF or non-ELF64 input. This is enough
     for the arm64 toolbox; it deliberately does not try to be readelf.
     """
-    if len(data) < 64 or data[:4] != b"\x7fELF" or data[4] != 2 or data[5] != 1:
+    header = _elf64_header(data)
+    if header is None:
         return []
-    try:
-        phoff = struct.unpack_from("<Q", data, 32)[0]
-        phentsize, phnum = struct.unpack_from("<HH", data, 54)
-    except struct.error:
-        return []
-    if phentsize < 56 or phoff + phentsize * phnum > len(data):
-        return []
+    _, phoff, phentsize, phnum = header
     alignments = []
     for index in range(phnum):
         offset = phoff + index * phentsize
         p_type = struct.unpack_from("<I", data, offset)[0]
-        if p_type != 1:
+        if p_type != PT_LOAD:
             continue
         p_align = struct.unpack_from("<Q", data, offset + 48)[0]
         alignments.append(p_align)
     return alignments
 
 
-def _elf_check(data: bytes, label: str) -> int | None:
-    alignments = elf_load_alignments(data)
-    if not alignments:
+def elf_machine(data: bytes) -> int | None:
+    header = _elf64_header(data)
+    return header[0] if header is not None else None
+
+
+def elf_is_static(data: bytes) -> bool | None:
+    """True when the ELF64 image has neither PT_INTERP nor PT_DYNAMIC."""
+    header = _elf64_header(data)
+    if header is None:
         return None
+    _, phoff, phentsize, phnum = header
+    for index in range(phnum):
+        offset = phoff + index * phentsize
+        p_type = struct.unpack_from("<I", data, offset)[0]
+        if p_type in {PT_INTERP, PT_DYNAMIC}:
+            return False
+    return True
+
+
+def _elf_check(data: bytes, label: str) -> int | None:
+    if _elf64_header(data) is None:
+        return None
+    machine = elf_machine(data)
+    _require(
+        machine == ELF_MACHINE_AARCH64,
+        f"{label} is not AArch64 (ELF e_machine={machine})",
+    )
+    _require(
+        elf_is_static(data) is True,
+        f"{label} is dynamically linked; the v1 toolbox targets musl-static",
+    )
+    alignments = elf_load_alignments(data)
+    _require(bool(alignments), f"{label} has no PT_LOAD segment")
     smallest = min(alignments)
     _require(
         smallest >= ELF_PAGE_16K,
@@ -230,12 +450,14 @@ def build_toolbox(
     cache_dir: Path | None = None,
     fixture: bool = False,
     offline: bool = False,
+    source_date_epoch: int | None = None,
 ) -> dict:
     manifest_path = Path(manifest_path).resolve()
     out_dir = Path(out_dir).resolve()
     cache_dir = Path(cache_dir).resolve() if cache_dir else out_dir.parent / "cache"
     document = load_json(manifest_path)
     validate_source_manifest(document)
+    epoch = resolve_source_date_epoch(document.get("sourceDateEpoch"), source_date_epoch)
     if out_dir == Path("/"):
         raise BuildError("refusing to use / as the toolbox output")
     if out_dir.exists():
@@ -261,6 +483,7 @@ def build_toolbox(
             data = artifact_bytes[artifact_id]
         target.write_bytes(data)
         os.chmod(target, 0o755)
+        os.utime(target, (epoch, epoch))
         _elf_check(data, path)
         entries.append(
             {
@@ -302,6 +525,8 @@ def build_toolbox(
         "target": document["target"],
         "install": document["install"],
         "fixture": fixture,
+        "sourceDateEpoch": epoch,
+        "sourceDate": source_date_iso(epoch),
         "tools": tools,
         "entries": entries,
         "totalSize": sum(entry["size"] for entry in entries),
@@ -309,32 +534,56 @@ def build_toolbox(
     (out_dir / "bin" / "manifest.json").write_text(
         json.dumps(runtime, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
+    os.utime(out_dir / "bin" / "manifest.json", (epoch, epoch))
     return runtime
 
 
 def verify_toolbox(toolbox_dir: Path, budget_mb: float = 80.0) -> dict:
     toolbox_dir = Path(toolbox_dir).resolve()
-    manifest_path = toolbox_dir / "bin" / "manifest.json"
+    _require(toolbox_dir.is_dir() and not toolbox_dir.is_symlink(), f"toolbox is not an ordinary directory: {toolbox_dir}")
+    bin_dir = toolbox_dir / "bin"
+    _require(bin_dir.is_dir() and not bin_dir.is_symlink(), f"toolbox bin/ is not an ordinary directory: {bin_dir}")
+    manifest_path = bin_dir / "manifest.json"
     _require(manifest_path.is_file(), f"toolbox manifest missing: {manifest_path}")
+    _require(not manifest_path.is_symlink(), f"toolbox manifest is a symlink: {manifest_path}")
     manifest = load_json(manifest_path)
+    _require(manifest.get("schemaVersion") == SCHEMA_VERSION, "toolbox manifest schemaVersion is unsupported")
+    _require(isinstance(manifest.get("fixture"), bool), "toolbox manifest fixture flag is missing")
+    _require(
+        isinstance(manifest.get("sourceDateEpoch"), int) and manifest["sourceDateEpoch"] >= 0,
+        "toolbox manifest sourceDateEpoch is missing",
+    )
+    tools = manifest.get("tools") or []
+    _require(isinstance(tools, list) and tools, "toolbox manifest has no tools")
+    for tool in tools:
+        for field in ("name", "version", "sha256", "license", "source", "target", "deps"):
+            _require(field in tool, f"toolbox tool is missing {field}: {tool}")
+        _require_https(tool["source"], f"toolbox tool {tool['name']} source")
+        _require(bool(str(tool["license"]).strip()), f"toolbox tool {tool['name']} has no license")
+
     entries = manifest.get("entries") or []
     _require(bool(entries), "toolbox manifest has no entries")
     listed = {entry["path"] for entry in entries}
+    _require(len(listed) == len(entries), "toolbox manifest has duplicate entry paths")
     _require("bin/sh" in listed, "toolbox does not provide bin/sh")
     total = 0
     elf_checked = 0
     for entry in entries:
-        path = toolbox_dir / entry["path"]
-        _require(path.exists(), f"toolbox entry missing: {entry['path']}")
-        _require(not path.is_symlink(), f"toolbox entry is a symlink: {entry['path']}")
-        _require(path.is_file(), f"toolbox entry is not a regular file: {entry['path']}")
+        path_name = entry.get("path", "")
+        _require(bool(SAFE_PATH_RE.match(path_name)), f"unsafe toolbox entry path: {path_name!r}")
+        _require(path_name != "bin/manifest.json", "toolbox manifest lists itself as an entry")
+        _require(entry.get("mode") == "0755", f"toolbox manifest mode is not 0755: {path_name}")
+        path = toolbox_dir / path_name
+        _require(path.exists(), f"toolbox entry missing: {path_name}")
+        _require(not path.is_symlink(), f"toolbox entry is a symlink: {path_name}")
+        _require(path.is_file(), f"toolbox entry is not a regular file: {path_name}")
         mode = stat.S_IMODE(path.stat().st_mode)
-        _require(mode & 0o111 != 0, f"toolbox entry is not executable: {entry['path']} ({mode:o})")
-        _require(path.stat().st_size == entry["size"], f"size mismatch: {entry['path']}")
-        _require(sha256_file(path) == entry["sha256"], f"SHA256 mismatch: {entry['path']}")
+        _require(mode == 0o755, f"toolbox entry mode is not 0755: {path_name} ({mode:o})")
+        _require(path.stat().st_size == entry["size"], f"size mismatch: {path_name}")
+        _require(sha256_file(path) == entry["sha256"], f"SHA256 mismatch: {path_name}")
         data = path.read_bytes()
         if elf_load_alignments(data):
-            _elf_check(data, entry["path"])
+            _elf_check(data, path_name)
             elf_checked += 1
         total += entry["size"]
 
@@ -345,15 +594,25 @@ def verify_toolbox(toolbox_dir: Path, budget_mb: float = 80.0) -> dict:
         _require(relative == "bin/manifest.json" or relative in listed, f"unlisted toolbox file: {relative}")
         _require(not path.is_symlink(), f"toolbox contains a symlink: {relative}")
 
+    for path in toolbox_dir.iterdir():
+        if path.name != "bin":
+            raise BuildError(f"toolbox contains an unexpected top-level entry: {path.name}")
+
     _require(total == manifest["totalSize"], "toolbox totalSize does not match the files")
-    _require(total <= budget_mb * 1024 * 1024, f"toolbox exceeds {budget_mb} MiB: {total} bytes")
+    manifest_size = manifest_path.stat().st_size
+    total_bytes = total + manifest_size
+    _require(total_bytes <= budget_mb * 1024 * 1024, f"toolbox exceeds {budget_mb} MiB: {total_bytes} bytes")
     return {
         "ok": True,
         "entries": len(entries),
         "totalSize": total,
+        "manifestSize": manifest_size,
+        "totalBytes": total_bytes,
         "elf16k": "ok" if elf_checked else "none",
         "elfChecked": elf_checked,
         "symlinks": 0,
+        "sourceDateEpoch": manifest["sourceDateEpoch"],
+        "treeDigest": tree_digest(toolbox_dir),
         "manifest": str(manifest_path),
     }
 
@@ -375,7 +634,12 @@ def is_apk_signed(apk_path: Path) -> bool:
     return False
 
 
-def inject_apk(apk_in: Path, toolbox_dir: Path, apk_out: Path) -> int:
+def inject_apk(
+    apk_in: Path,
+    toolbox_dir: Path,
+    apk_out: Path,
+    source_date_epoch: int | None = None,
+) -> int:
     """Inject bin/ into an unsigned APK for tests and fallback packaging.
 
     Production builds use the Gradle resource source set so AGP packages bin/
@@ -389,6 +653,7 @@ def inject_apk(apk_in: Path, toolbox_dir: Path, apk_out: Path) -> int:
     if is_apk_signed(apk_in):
         raise BuildError("refusing to inject bin/ into an already signed APK")
     manifest = load_json(toolbox_dir / "bin" / "manifest.json")
+    epoch = resolve_source_date_epoch(manifest.get("sourceDateEpoch"), source_date_epoch)
     toolbox_files = []
     for entry in manifest["entries"]:
         path = toolbox_dir / entry["path"]
@@ -398,23 +663,42 @@ def inject_apk(apk_in: Path, toolbox_dir: Path, apk_out: Path) -> int:
     toolbox_files.sort(key=lambda item: item.relative_to(toolbox_dir).as_posix())
 
     temporary = apk_out.with_suffix(apk_out.suffix + ".tmp")
-    with zipfile.ZipFile(apk_in) as source, zipfile.ZipFile(
-        temporary, "w", zipfile.ZIP_DEFLATED
-    ) as target:
-        for info in source.infolist():
-            name = info.filename
-            _require(not name.startswith("bin/"), f"APK already contains bin/: {name}")
-            _require(not name.startswith("/") and ".." not in Path(name).parts, f"unsafe APK path: {name}")
-            target.writestr(info, source.read(name))
-        for path in toolbox_files:
-            relative = path.relative_to(toolbox_dir).as_posix()
-            _require(relative.startswith("bin/"), f"toolbox file outside bin/: {relative}")
-            info = zipfile.ZipInfo(relative, date_time=(1980, 1, 1, 0, 0, 0))
-            info.create_system = 3
-            info.external_attr = (stat.S_IFREG | 0o755) << 16
-            info.compress_type = zipfile.ZIP_DEFLATED
-            target.writestr(info, path.read_bytes())
-    os.replace(temporary, apk_out)
+    try:
+        with zipfile.ZipFile(apk_in) as source:
+            infos = source.infolist()
+            seen: set[str] = set()
+            for info in infos:
+                name = info.filename
+                _require(name not in seen, f"APK contains a duplicate entry: {name}")
+                seen.add(name)
+                _require(
+                    not name.startswith("/")
+                    and "\\" not in name
+                    and ".." not in Path(name).parts,
+                    f"unsafe APK path: {name}",
+                )
+                _require(
+                    not stat.S_ISLNK(info.external_attr >> 16),
+                    f"APK contains a symlink entry: {name}",
+                )
+                _require(not name.startswith("bin/"), f"APK already contains bin/: {name}")
+            with zipfile.ZipFile(temporary, "w", zipfile.ZIP_DEFLATED) as target:
+                for info in infos:
+                    target.writestr(info, source.read(info.filename))
+                for path in toolbox_files:
+                    relative = path.relative_to(toolbox_dir).as_posix()
+                    _require(relative.startswith("bin/"), f"toolbox file outside bin/: {relative}")
+                    _require(bool(SAFE_PATH_RE.match(relative)) or relative == "bin/manifest.json",
+                             f"unsafe injected path: {relative}")
+                    info = zipfile.ZipInfo(relative, date_time=zip_date_time(epoch))
+                    info.create_system = 3
+                    info.external_attr = (stat.S_IFREG | 0o755) << 16
+                    info.compress_type = zipfile.ZIP_DEFLATED
+                    target.writestr(info, path.read_bytes())
+        os.replace(temporary, apk_out)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
     return len(toolbox_files)
 
 
@@ -432,6 +716,10 @@ def verify_apk(
         allow_fixture or not expected.get("fixture"),
         "APK was built from the fixture toolbox; a real toolbox is required for this gate",
     )
+    _require(
+        isinstance(expected.get("sourceDateEpoch"), int) and expected["sourceDateEpoch"] >= 0,
+        "runtime manifest sourceDateEpoch is missing",
+    )
     entries = expected.get("entries") or []
     _require(bool(entries), "runtime manifest has no entries")
     _require(expected.get("totalSize") == sum(entry["size"] for entry in entries), "runtime manifest totalSize is inconsistent")
@@ -440,8 +728,28 @@ def verify_apk(
     except (OSError, zipfile.BadZipFile) as failure:
         raise BuildError(f"cannot open APK {apk_path}: {failure}") from failure
     with archive:
-        names = set(archive.namelist())
+        names_list = archive.namelist()
+        duplicates = {name for name in names_list if names_list.count(name) > 1}
+        _require(not duplicates, f"APK contains duplicate entries: {sorted(duplicates)}")
+        for name in names_list:
+            _require(
+                not name.startswith("/") and "\\" not in name and ".." not in Path(name).parts,
+                f"unsafe APK path: {name}",
+            )
+            info = archive.getinfo(name)
+            if name.startswith("bin/"):
+                _require(
+                    not stat.S_ISLNK(info.external_attr >> 16),
+                    f"APK bin/ contains a symlink: {name}",
+                )
+        names = set(names_list)
         _require("bin/manifest.json" in names, "APK has no bin/manifest.json")
+        manifest_info = archive.getinfo("bin/manifest.json")
+        _require(not manifest_info.is_dir(), "APK bin/manifest.json is a directory")
+        _require(
+            not stat.S_ISLNK(manifest_info.external_attr >> 16),
+            "APK bin/manifest.json is a symlink",
+        )
         expected_bin = {entry["path"] for entry in entries} | {"bin/manifest.json"}
         unexpected = {
             name
@@ -458,6 +766,11 @@ def verify_apk(
             path = entry["path"]
             _require(path in names, f"APK is missing {path}")
             info = archive.getinfo(path)
+            _require(not info.is_dir(), f"APK entry is a directory: {path}")
+            _require(
+                not stat.S_ISLNK(info.external_attr >> 16),
+                f"APK entry is a symlink: {path}",
+            )
             data = archive.read(path)
             _require(len(data) == entry["size"], f"APK size mismatch: {path}")
             _require(sha256_bytes(data) == entry["sha256"], f"APK SHA256 mismatch: {path}")
@@ -468,13 +781,12 @@ def verify_apk(
                 _require(mode & 0o111 != 0, f"APK entry is not executable: {path} ({mode:o})")
             alignments = elf_load_alignments(data)
             if alignments:
-                _require(
-                    min(alignments) >= ELF_PAGE_16K,
-                    f"APK ELF is not 16 KB aligned: {path} p_align=0x{min(alignments):x}",
-                )
+                _elf_check(data, f"APK {path}")
                 elf_checked += 1
             total += len(data)
-        _require(total <= budget_mb * 1024 * 1024, f"APK bin/ exceeds {budget_mb} MiB: {total} bytes")
+        manifest_size = len(archive.read("bin/manifest.json"))
+        total_bytes = total + manifest_size
+        _require(total_bytes <= budget_mb * 1024 * 1024, f"APK bin/ exceeds {budget_mb} MiB: {total_bytes} bytes")
 
     if zipalign:
         executable = Path(zipalign)
@@ -495,10 +807,13 @@ def verify_apk(
         "ok": True,
         "entries": len(entries),
         "totalSize": total,
+        "manifestSize": manifest_size,
+        "totalBytes": total_bytes,
         "elf16k": "ok" if elf_checked else "none",
         "elfChecked": elf_checked,
         "zipfuseDefaultMode": zipfuse_default_mode,
         "zipalign": zipalign_status,
+        "sourceDateEpoch": expected["sourceDateEpoch"],
         "signed": is_apk_signed(apk_path),
     }
 
@@ -510,6 +825,7 @@ def _command_build(args: argparse.Namespace) -> int:
         cache_dir=Path(args.cache) if args.cache else None,
         fixture=args.fixture,
         offline=args.offline,
+        source_date_epoch=args.source_date_epoch,
     )
     print(json.dumps(runtime, indent=2, sort_keys=True))
     return 0
@@ -521,7 +837,12 @@ def _command_verify_toolbox(args: argparse.Namespace) -> int:
 
 
 def _command_inject(args: argparse.Namespace) -> int:
-    count = inject_apk(Path(args.apk_in), Path(args.toolbox), Path(args.apk_out))
+    count = inject_apk(
+        Path(args.apk_in),
+        Path(args.toolbox),
+        Path(args.apk_out),
+        source_date_epoch=args.source_date_epoch,
+    )
     print(f"INJECTED {count} files into {args.apk_out}")
     return 0
 
@@ -562,6 +883,7 @@ def build_parser() -> argparse.ArgumentParser:
     build.add_argument("--cache")
     build.add_argument("--fixture", action="store_true", help="use a local shell fixture (tests only)")
     build.add_argument("--offline", action="store_true")
+    build.add_argument("--source-date-epoch", type=int, help="override SOURCE_DATE_EPOCH")
     build.set_defaults(handler=_command_build)
 
     verify_toolbox_parser = subparsers.add_parser("verify-toolbox")
@@ -573,6 +895,7 @@ def build_parser() -> argparse.ArgumentParser:
     inject.add_argument("--apk-in", required=True)
     inject.add_argument("--toolbox", required=True)
     inject.add_argument("--apk-out", required=True)
+    inject.add_argument("--source-date-epoch", type=int)
     inject.set_defaults(handler=_command_inject)
 
     verify_apk_parser = subparsers.add_parser("verify-apk")
