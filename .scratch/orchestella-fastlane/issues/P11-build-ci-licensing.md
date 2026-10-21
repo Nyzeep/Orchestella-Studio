@@ -55,3 +55,18 @@ External gates: 许可证/法务审查
 - 无法签名前注入：改用合法替代；不得签名后改包。
 - 许可证不清：不合并/不发布该工具。
 - CI 无法在无设备环境跑：拆分 host-only 门，设备门留给 DV。
+
+## 实施进展（2026-10-21，Agent C，零设备）
+
+- `app/build.gradle.kts`：可选 `orchestella.fastlane.toolboxDir` 作为资源源集；
+  `checkFastlaneLicenses`、`verifyFastlaneToolboxApk`、
+  `fastlaneZeroDeviceCheck`。
+- CI：`.github/workflows/fastlane-zero-device.yml`，仅主机任务；payload job
+  在 `fastlane-payload/CMakeLists.txt` 存在时才运行。
+- 工具：`tools/fastlane-build/`；29 个 Python 测试通过；故意失败自测输出
+  `GATE_BLOCK_OK`；许可证门 `LICENSE_OK`。
+- 许可证：`NOTICE-fastlane.md` + `fastlane-toolbox/SBOM.spdx.json`，覆盖
+  BusyBox GPL-2.0-only 的对应源码义务；distcc/clang 标 `not-tested`。
+- 未验证：本机无 Android SDK，Gradle/APK/真实 zipalign 未跑；payload 构建
+  等待 P02。版本/通道未改。
+- 报告：`docs/reports/tickets/fastlane-P11/implementation-report.zh-CN.md`

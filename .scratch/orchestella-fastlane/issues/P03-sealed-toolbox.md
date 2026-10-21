@@ -56,3 +56,18 @@ External gates: 许可证审查；APK 体积预算
 ## 设备交接
 
 DV-02：从 `/mnt/apk/bin` 执行 shell/编译器；数据写 encrypted storage。
+
+## 实施进展（2026-10-21，Agent C，零设备）
+
+- 选型：候选 B（Alpine 3.20 `busybox-static` 1.36.1-r31，aarch64，静态
+  musl，64 KiB PT_LOAD 对齐）。候选 A 的 Termux bootstrap 依赖绝对
+  `/data/data/com.termux/files/usr` 路径与 `SYMLINKS.txt`，零设备无法证明
+  可重定位，v1 不采用。
+- 产物：APK 根 `bin/`，`busybox` + `sh` 副本 + 48 个 applet wrapper；运行
+  时 manifest 位于 `/mnt/apk/bin/manifest.json`。
+- 实测：2,234,863 字节 / 50 条目；`verify-toolbox` 通过；2 个 ELF 均
+  16 KB 对齐；合成 APK 注入/校验通过（51 个 `bin/` 文件）。
+- 构建/门禁：`tools/fastlane-build/fastlane_build.py`；Python 29 tests OK。
+- 未验证：DV-02 设备执行、AGP 真实 APK、真实 `zipalign`；编译器未随 v1
+  分发（`distcc-clang` profile 为 `not-tested`）。
+- 报告：`docs/reports/tickets/fastlane-P03/implementation-report.zh-CN.md`
