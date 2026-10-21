@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""T7 QEMU single-variable tuning matrix helper.
+"""P08 QEMU single-variable tuning matrix helper.
 
 This tool generates the experiment matrix and records bounded device metadata.
 It does not fabricate measurements: every timed row is ``not-tested`` until an
 instrumented build actually executes the workloads. Every variant changes
 exactly one knob relative to the baseline, and ``cache=unsafe`` is rejected.
 
+``tb-size`` is expressed in MiB, matching QEMU's ``-accel tcg,tb-size=N``.
 The matrix never records raw ``dumpsys`` output, device serials, or build
 fingerprints; only model/Android version, a fingerprint hash, battery
 temperature and thermal status are retained.
@@ -28,10 +29,14 @@ from pathlib import Path
 
 BASELINE = {
     "cpu_model": "cortex-a57",
-    "tb_size_kb": 0,
+    "tb_size_mib": 0,
     "block_aio": "",
     "discard_unmap": False,
     "detect_zeroes_unmap": False,
+    "iothread_per_disk": False,
+    "multi_queue_vcpu": False,
+    "rng_random": False,
+    "overcommit_mem_lock_off": False,
     "vcpu_count": 0,
     "passt_unix_socket": "",
 }
@@ -40,12 +45,21 @@ VARIANTS = [
     ("baseline", "none", {}),
     ("cpu-neoverse-n1", "cpu_model", {"cpu_model": "neoverse-n1"}),
     ("cpu-max-sve-off", "cpu_model", {"cpu_model": "max,sve=off"}),
-    ("tb-size-32", "tb_size_kb", {"tb_size_kb": 32}),
-    ("tb-size-64", "tb_size_kb", {"tb_size_kb": 64}),
-    ("tb-size-128", "tb_size_kb", {"tb_size_kb": 128}),
+    ("cpu-max-sve-off-pauth-impdef", "cpu_model",
+     {"cpu_model": "max,sve=off,pauth-impdef=on"}),
+    ("tb-size-32", "tb_size_mib", {"tb_size_mib": 32}),
+    ("tb-size-64", "tb_size_mib", {"tb_size_mib": 64}),
+    ("tb-size-128", "tb_size_mib", {"tb_size_mib": 128}),
+    ("tb-size-256", "tb_size_mib", {"tb_size_mib": 256}),
+    ("iothread-root", "iothread_per_disk", {"iothread_per_disk": True}),
+    ("num-queues-vcpu", "multi_queue_vcpu", {"multi_queue_vcpu": True}),
+    ("aio-threads", "block_aio", {"block_aio": "threads"}),
     ("aio-io-uring", "block_aio", {"block_aio": "io_uring"}),
     ("discard-unmap", "discard_unmap", {"discard_unmap": True}),
     ("detect-zeroes-unmap", "detect_zeroes_unmap", {"detect_zeroes_unmap": True}),
+    ("rng-random", "rng_random", {"rng_random": True}),
+    ("overcommit-memlock-off", "overcommit_mem_lock_off",
+     {"overcommit_mem_lock_off": True}),
     ("vcpu-4", "vcpu_count", {"vcpu_count": 4}),
     ("net-unix-stream", "passt_unix_socket", {"passt_unix_socket": "/data/local/tmp/orchestella-passt.sock"}),
 ]
