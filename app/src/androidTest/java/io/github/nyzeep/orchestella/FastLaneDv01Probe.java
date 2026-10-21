@@ -37,6 +37,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
@@ -117,6 +118,8 @@ final class FastLaneDv01Probe {
     private boolean corePass;
     private boolean cyclesPass;
     private boolean payloadReadyObserved = true;
+    private String controlDiagnostic = "none";
+    private String terminalDiagnostic = "none";
     private int controlPort;
     private int terminalPort;
     private int proxyPort;
@@ -409,7 +412,7 @@ final class FastLaneDv01Probe {
                         + (control.hello == null ? "unknown" : control.hello.caps())
                         + " elapsed_ms=" + control.elapsedMs)
                 : failed(control.failureCode, control.errorCode >= 0
-                        ? "fln1_error" : control.layer));
+                        ? "fln1_error" : control.layer + " " + controlDiagnostic));
         if (!control.ok) {
             observeFailure("VSOCK_FAILED", "control_hello", control.layer);
         }
@@ -417,7 +420,7 @@ final class FastLaneDv01Probe {
                 vsockTimeoutMs);
         stages.put("terminal_pty", terminal.ok
                 ? passed("TERMINAL_EXIT_0", "output_bytes=" + terminal.outputBytes)
-                : failed(terminal.failureCode));
+                : failed(terminal.failureCode, terminalDiagnostic));
         terminalStatus = terminal.ok ? "pass" : "fail";
         if (terminal.ok) {
             stages.put("storage_marker", passed("MARKER_WRITTEN_AND_READ"));
@@ -603,8 +606,8 @@ final class FastLaneDv01Probe {
             }
             return new SessionRun(session, handle);
         } catch (FastLaneException failure) {
-            stages.put(prefix + "_create", failed("CREATE_FAILED",
-                    FastLaneDv01Contract.classifyFailure(failure.reason())));
+            String diagnostic = diagnostic(failure);
+            stages.put(prefix + "_create", failed("CREATE_FAILED", diagnostic));
             stages.put(prefix + "_run", blocked("CREATE_BLOCKED"));
             stages.put("payload_ready", blocked("CREATE_BLOCKED"));
             if ("first".equals(prefix)) {
@@ -655,7 +658,7 @@ final class FastLaneDv01Probe {
             ExecutorService executor = newDaemonExecutor();
             Future<ControlRead> future = null;
             try {
-                channel = session.openChannel(spec.controlPort());
+                channel = openChannelBounded(session, spec.controlPort(), 5000);
                 final InputStream input = channel.inputStream();
                 OutputStream output = channel.outputStream();
                 Fln1TerminalCodec codec = new Fln1TerminalCodec(TerminalMux.Role.HOST);
@@ -700,6 +703,7 @@ final class FastLaneDv01Probe {
             } catch (FastLaneException failure) {
                 lastFailure = failure.reason();
                 lastLayer = "connect";
+                controlDiagnostic = diagnostic(failure);
                 if (FastLaneException.PERMISSION_DENIED.equals(failure.reason())
                         || FastLaneException.PROTECTED_UNAVAILABLE.equals(failure.reason())) {
                     return new ControlResult(false, lastFailure, -1, null,
@@ -721,15 +725,45 @@ final class FastLaneDv01Probe {
                 SystemClock.uptimeMillis() - started, lastLayer);
     }
 
+    /**
+     * Bounds the platform connect call. The binder call has no timeout of its
+     * own; a stale VM can otherwise block the whole probe indefinitely.
+     */
+    private FastLaneChannel openChannelBounded(FastLaneSession session, int port, int timeoutMs)
+            throws FastLaneException {
+        ExecutorService executor = newDaemonExecutor();
+        Future<FastLaneChannel> future = executor.submit(() -> session.openChannel(port));
+        try {
+            return future.get(Math.max(1000L, timeoutMs), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException timeout) {
+            future.cancel(true);
+            throw new FastLaneException(FastLaneException.VSOCK_FAILED,
+                    "vsock connect timed out");
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new FastLaneException(FastLaneException.VSOCK_FAILED,
+                    "vsock connect interrupted");
+        } catch (ExecutionException failure) {
+            Throwable cause = failure.getCause();
+            if (cause instanceof FastLaneException) {
+                throw (FastLaneException) cause;
+            }
+            throw new FastLaneException(FastLaneException.VSOCK_FAILED,
+                    "vsock connect failed", cause);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
     private TerminalResult runTerminal(FastLaneSession session, FastLaneLaunchSpec spec,
-            String script, int timeoutMs) {
-        long started = SystemClock.uptimeMillis();
+            String script, int timeoutMs) {        long started = SystemClock.uptimeMillis();
         FastLaneChannel channel = null;
         TerminalMuxChannel muxChannel = null;
         TerminalCollector collector = new TerminalCollector();
         Thread pump = null;
         try {
-            channel = session.openChannel(spec.terminalPort());
+            channel = openChannelBounded(session, spec.terminalPort(),
+                    Math.min(timeoutMs, 10000));
             muxChannel = TerminalMuxChannel.open(TerminalMux.Role.HOST, 1, collector,
                     channel.inputStream(), channel.outputStream());
             final TerminalMuxChannel pumping = muxChannel;
@@ -748,6 +782,19 @@ final class FastLaneDv01Probe {
             boolean closed = opened
                     && collector.closed.await(timeoutMs, TimeUnit.MILLISECONDS);
             if (!opened) {
+                if (collector.fln1Code != null) {
+                    int fln1 = collector.fln1Code;
+                    terminalDiagnostic = "fln1=" + fln1;
+                    observeTerminalFailure(fln1);
+                    return new TerminalResult(false, "TERMINAL_ERROR_FLN1_" + fln1, -1,
+                            collector.outputSize(), false, false);
+                }
+                if (collector.errorCode != null) {
+                    terminalDiagnostic = "host_code=" + collector.errorCode.name();
+                    return new TerminalResult(false,
+                            "TERMINAL_ERROR_" + collector.errorCode.name(), -1,
+                            collector.outputSize(), false, false);
+                }
                 return new TerminalResult(false, "TERMINAL_OPEN_TIMEOUT", -1,
                         collector.outputSize(), false, false);
             }
@@ -779,6 +826,7 @@ final class FastLaneDv01Probe {
             return new TerminalResult(true, "TERMINAL_EXIT_0", 0,
                     collector.outputSize(), true, true);
         } catch (FastLaneException failure) {
+            terminalDiagnostic = diagnostic(failure);
             observeFailure(FastLaneDv01Contract.classifyFailure(failure.reason()),
                     "terminal_pty", "connect");
             return new TerminalResult(false, "TERMINAL_CONNECT_FAILED", -1, 0, false, false);
@@ -789,10 +837,20 @@ final class FastLaneDv01Probe {
             return new TerminalResult(false, "TERMINAL_INTERRUPTED", -1, 0, false, false);
         } finally {
             if (muxChannel != null) {
+                final TerminalMuxChannel closing = muxChannel;
+                Thread closer = new Thread(() -> {
+                    try {
+                        closing.close();
+                    } catch (IOException ignored) {
+                        // The channel is already gone.
+                    }
+                }, "dv01-terminal-close");
+                closer.setDaemon(true);
+                closer.start();
                 try {
-                    muxChannel.close();
-                } catch (IOException ignored) {
-                    // The channel is already gone.
+                    closer.join(2000L);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
                 }
             }
             closeQuietly(channel);
@@ -807,8 +865,7 @@ final class FastLaneDv01Probe {
     }
 
     private StopOutcome stop(FastLaneSession session, String stage, int cycle)
-            throws JSONException {
-        long started = SystemClock.uptimeMillis();
+            throws JSONException {        long started = SystemClock.uptimeMillis();
         FastLaneStopResult result;
         try {
             result = session.stopRuntime(stopDeadlineMs);
@@ -923,15 +980,19 @@ final class FastLaneDv01Probe {
                 outcome = "FAILED";
             } else {
                 String reason = waitForExitReason(handle, NEGATIVE_VSOCK_TIMEOUT_MS);
-                entry.put("result", "no_payload_ready");
+                entry.put("result", "unconfirmed");
                 entry.put("failure_code", reason);
                 if ("PAYLOAD_VERIFY_FAILED".equals(reason)
                         || "VM_CREATE_FAILED".equals(reason)) {
+                    entry.put("result", "rejected");
                     entry.put("platform_reason", reason);
                     observeFailure("PAYLOAD_VERIFY_FAILED", "wrong_payload", "platform_start");
                 } else {
-                    observeFailure(reason, "wrong_payload", "payload_verify");
-                    outcome = "FAILED";
+                    // A missing payload that neither becomes ready nor yields a
+                    // typed rejection is an unconfirmed negative, not proof of
+                    // a pass. Keep the lifecycle outcome visible.
+                    observeFailure("NEGATIVE_CASE_UNCONFIRMED", "wrong_payload", "payload_verify");
+                    notTested.put("wrong_payload_rejection");
                 }
             }
         } catch (FastLaneException failure) {
@@ -1082,6 +1143,8 @@ final class FastLaneDv01Probe {
             report.put("payload_ready", payloadReadyStatus);
             report.put("terminal", terminalStatus);
             report.put("storage_persistence", persistenceStatus);
+            report.put("vsock_control", controlDiagnostic);
+            report.put("vsock_terminal", terminalDiagnostic);
             report.put("core_pass", corePass);
             report.put("cycles_pass", cyclesPass);
 
@@ -1150,6 +1213,15 @@ final class FastLaneDv01Probe {
         } catch (JSONException ignored) {
             // A failed diagnostic write must not hide the lifecycle result.
         }
+    }
+
+    private void observeTerminalFailure(int fln1Code) {
+        String code = switch (fln1Code) {
+            case 7 -> "TOOLBOX_EXEC_FAILED";
+            case 8, 9 -> "STORAGE_FAILED";
+            default -> "TERMINAL_PROTOCOL_FAILED";
+        };
+        observeFailure(code, "terminal_pty", "fln1_" + fln1Code);
     }
 
     private String optionalSha(String key) throws JSONException {
@@ -1311,6 +1383,85 @@ final class FastLaneDv01Probe {
         }
     }
 
+    /**
+     * Stable, non-sensitive create failure detail: exception class and the
+     * platform's integer error code, never the platform message or a path.
+     */
+    private static String diagnostic(Throwable failure) {
+        Throwable cause = failure;
+        for (int depth = 0; depth < 4 && cause != null; depth++) {
+            if (cause instanceof InvocationTargetException && cause.getCause() != null) {
+                cause = cause.getCause();
+                continue;
+            }
+            if (cause instanceof FastLaneException && cause.getCause() != null) {
+                cause = cause.getCause();
+                continue;
+            }
+            break;
+        }
+        String className = cause == null ? "none" : cause.getClass().getSimpleName();
+        String messageClass = messageClass(cause);
+        int code = -1;
+        if (cause != null) {
+            try {
+                Object value = cause.getClass().getMethod("getErrorCode").invoke(cause);
+                if (value instanceof Integer) {
+                    code = (Integer) value;
+                }
+            } catch (ReflectiveOperationException | RuntimeException ignored) {
+                // Not every OEM VirtualMachineException exposes getErrorCode().
+            }
+        }
+        return "cause=" + className + " code=" + code + " message_class=" + messageClass;
+    }
+
+    /** Classifies a platform message without storing the message itself. */
+    private static String messageClass(Throwable cause) {
+        if (cause == null || cause.getMessage() == null) {
+            return "none";
+        }
+        String message = cause.getMessage().toLowerCase(Locale.ROOT);
+        if (message.contains("verif") || message.contains("payload changed")) {
+            return "payload_verification";
+        }
+        if (message.contains("vsock")) {
+            return "vsock";
+        }
+        if (message.contains("connect")) {
+            return "connect";
+        }
+        if (message.contains("payload")) {
+            return "payload";
+        }
+        if (message.contains("signature") || message.contains("signing")) {
+            return "signature";
+        }
+        if (message.contains("permission") || message.contains("denied")) {
+            return "permission";
+        }
+        if (message.contains("config") || message.contains("invalid")) {
+            return "config";
+        }
+        if (message.contains("hypervisor") || message.contains("kvm")
+                || message.contains("pkvm") || message.contains("gunyah")) {
+            return "hypervisor";
+        }
+        if (message.contains("secretkeeper")) {
+            return "secretkeeper";
+        }
+        if (message.contains("memory") || message.contains("allocation")) {
+            return "memory";
+        }
+        if (message.contains("unsupported") || message.contains("not supported")) {
+            return "unsupported";
+        }
+        if (message.contains("timeout") || message.contains("timed out")) {
+            return "timeout";
+        }
+        return "other";
+    }
+
     private static JSONObject passed(String code) throws JSONException {
         return new JSONObject().put("status", "pass").put("reason_code", code);
     }
@@ -1435,6 +1586,7 @@ final class FastLaneDv01Probe {
         private final ByteArrayOutputStream output = new ByteArrayOutputStream();
         private volatile Integer exitCode;
         private volatile TerminalErrorCode errorCode;
+        private volatile Integer fln1Code;
         private volatile TerminalCloseReason closeReason;
         private volatile String pumpFailure;
         private volatile int bytes;
@@ -1469,6 +1621,17 @@ final class FastLaneDv01Probe {
         @Override
         public void onError(int sessionId, TerminalErrorCode code, String message) {
             errorCode = code;
+            if (message != null) {
+                java.util.regex.Matcher matcher =
+                        Pattern.compile("fln1=(\\d+)").matcher(message);
+                if (matcher.find()) {
+                    try {
+                        fln1Code = Integer.parseInt(matcher.group(1));
+                    } catch (NumberFormatException ignored) {
+                        // The host code above remains the fallback.
+                    }
+                }
+            }
         }
 
         String output() {
