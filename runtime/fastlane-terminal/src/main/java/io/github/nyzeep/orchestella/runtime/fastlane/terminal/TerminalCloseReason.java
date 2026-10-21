@@ -5,7 +5,6 @@ public enum TerminalCloseReason {
     LOCAL_CLOSE,
     REMOTE_CLOSE,
     EOF,
-    REJECTED,
     PROTOCOL_ERROR,
     VM_STOPPED,
     TRANSPORT_CLOSED

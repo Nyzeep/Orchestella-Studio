@@ -268,12 +268,18 @@ FL_TEST(spawn_piped_rolls_back_partial_pipe_allocation) {
     if (limited.rlim_cur >= original.rlim_cur) {
         return;  // The process already has a tighter limit; nothing to prove.
     }
+    // Restore even when an assertion throws: leaving a 9-fd limit in place
+    // makes every later test fail with EMFILE instead of reporting its own
+    // result.
+    struct RlimitGuard {
+        rlimit original;
+        ~RlimitGuard() { ::setrlimit(RLIMIT_NOFILE, &original); }
+    } guard{original};
     FL_CHECK_EQ(::setrlimit(RLIMIT_NOFILE, &limited), 0);
     const size_t before = count_open_fds();
     fl::SpawnSpec spec;
     spec.argv = {"/bin/true"};
     FL_CHECK_THROWS_CODE(fl::spawn_piped(spec), fl::Code::kIo);
-    FL_CHECK_EQ(::setrlimit(RLIMIT_NOFILE, &original), 0);
     FL_CHECK_EQ(count_open_fds(), before);
 }
 

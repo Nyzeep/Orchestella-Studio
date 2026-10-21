@@ -7,26 +7,30 @@ import java.io.OutputStream;
 import java.util.Objects;
 
 /**
- * Stream adapter for one vsock connection.
+ * Stream adapter for one framed {@code FLN1} connection.
  *
  * <p>It creates no threads: the caller owns the reader thread (or drives
  * {@link #pumpOnce()} from a test). Closing is idempotent and closes both
- * streams after a best-effort CLOSE for every session.
+ * streams after a best-effort CLOSE for every session. A malformed frame is
+ * connection-fatal, as FLN1 §7 requires: the stream is never resynchronised.
  */
 public final class TerminalMuxChannel implements Closeable {
     private final TerminalMux mux;
+    private final TerminalCodec codec;
     private final InputStream input;
     private final OutputStream output;
     private boolean closed;
 
-    public TerminalMuxChannel(TerminalMux mux, InputStream input, OutputStream output) {
+    private TerminalMuxChannel(
+            TerminalMux mux, TerminalCodec codec, InputStream input, OutputStream output) {
         this.mux = Objects.requireNonNull(mux, "mux");
+        this.codec = Objects.requireNonNull(codec, "codec");
         this.input = Objects.requireNonNull(input, "input");
         this.output = Objects.requireNonNull(output, "output");
     }
 
     /**
-     * Creates a mux and its stream adapter. The sink captures the output
+     * Creates a mux and its FLN1 stream adapter. The sink captures the output
      * stream directly, so no {@code this} reference escapes construction.
      */
     public static TerminalMuxChannel open(
@@ -36,9 +40,20 @@ public final class TerminalMuxChannel implements Closeable {
             InputStream input,
             OutputStream output) {
         Objects.requireNonNull(output, "output");
-        TerminalMux.FrameSink sink = frame -> writeTo(output, frame);
+        Fln1TerminalCodec codec = new Fln1TerminalCodec(role);
+        TerminalMux.FrameSink sink = new TerminalMux.FrameSink() {
+            @Override
+            public void write(TerminalFrame frame) throws IOException {
+                writeTo(output, codec, frame);
+            }
+
+            @Override
+            public void releaseSession(int sessionId) {
+                codec.releaseSession(sessionId);
+            }
+        };
         TerminalMux mux = new TerminalMux(role, maxSessions, sink, listener);
-        return new TerminalMuxChannel(mux, input, output);
+        return new TerminalMuxChannel(mux, codec, input, output);
     }
 
     public TerminalMux mux() {
@@ -47,7 +62,7 @@ public final class TerminalMuxChannel implements Closeable {
 
     /** Reads one frame; returns null at a clean EOF. */
     public TerminalFrame readFrame() throws IOException {
-        return TerminalProtocol.read(input);
+        return codec.read(input);
     }
 
     /**
@@ -56,9 +71,14 @@ public final class TerminalMuxChannel implements Closeable {
      * cannot deliver the peer's remaining CLOSE/EOF frames.
      */
     public boolean pumpOnce() throws IOException {
-        TerminalFrame frame;
         try {
-            frame = readFrame();
+            TerminalFrame frame = codec.read(input);
+            if (frame == null) {
+                mux.abortAll(TerminalCloseReason.TRANSPORT_CLOSED);
+                return false;
+            }
+            mux.onFrame(frame);
+            return true;
         } catch (TerminalProtocolException failure) {
             mux.abortAll(TerminalCloseReason.PROTOCOL_ERROR);
             throw failure;
@@ -66,12 +86,6 @@ public final class TerminalMuxChannel implements Closeable {
             mux.abortAll(TerminalCloseReason.TRANSPORT_CLOSED);
             throw failure;
         }
-        if (frame == null) {
-            mux.abortAll(TerminalCloseReason.TRANSPORT_CLOSED);
-            return false;
-        }
-        mux.onFrame(frame);
-        return true;
     }
 
     /** Drains the stream synchronously; returns the number of frames handled. */
@@ -122,9 +136,10 @@ public final class TerminalMuxChannel implements Closeable {
         closeQuietly(input);
     }
 
-    private static void writeTo(OutputStream output, TerminalFrame frame) throws IOException {
+    private static void writeTo(OutputStream output, TerminalCodec codec, TerminalFrame frame)
+            throws IOException {
         synchronized (output) {
-            TerminalProtocol.write(output, frame);
+            codec.write(output, frame);
             output.flush();
         }
     }

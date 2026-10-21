@@ -16,25 +16,26 @@ import java.util.Map;
 import org.junit.Test;
 
 public final class TerminalMuxTest {
-    private static final int MAX = TerminalProtocol.MAX_SESSIONS;
+    private static final int MAX = TerminalMux.MAX_SESSIONS;
 
     @Test
     public void hostOpenGuestAcceptThenDataFlowsBothWays() throws Exception {
-        Wire wire = Wire.create(MAX);
-        int id = wire.host.openSession(80, 24, "main", 1024);
+        Fln1Wire wire = Fln1Wire.create(MAX);
+        int id = wire.open("main");
 
         assertEquals(1, wire.guestRecorder.openRequests);
         assertEquals(80, wire.guestRecorder.openRequest.columns());
+        assertEquals("/mnt/apk/bin/sh", wire.guestRecorder.openRequest.argv()[0]);
         assertEquals(TerminalSessionState.OPENING, wire.guest.state(id));
         assertEquals(TerminalSessionState.OPENING, wire.host.state(id));
 
-        wire.guest.acceptSession(id, 2048);
+        wire.accept(id, 2048);
         assertEquals(TerminalSessionState.OPEN, wire.host.state(id));
         assertEquals(TerminalSessionState.OPEN, wire.guest.state(id));
-        assertEquals(2048, wire.host.sendCredit(id));
-        assertEquals(1024, wire.host.receiveCredit(id));
-        assertEquals(1024, wire.guest.sendCredit(id));
-        assertEquals(2048, wire.guest.receiveCredit(id));
+        assertEquals(TerminalMux.MAX_CREDIT_BYTES, wire.host.sendCredit(id));
+        assertEquals(2048, wire.host.receiveCredit(id));
+        assertEquals(2048, wire.guest.sendCredit(id));
+        assertEquals(TerminalMux.MAX_CREDIT_BYTES, wire.guest.receiveCredit(id));
 
         assertEquals(3, wire.host.sendData(id, "ls\n".getBytes(StandardCharsets.UTF_8)));
         assertEquals("ls\n", wire.guestRecorder.text(id));
@@ -53,85 +54,101 @@ public final class TerminalMuxTest {
     }
 
     @Test
-    public void creditExhaustionIsObservableAndRecovers() throws Exception {
-        Wire wire = Wire.create(MAX);
-        int id = wire.host.openSession(80, 24, "main", 4);
-        wire.guest.acceptSession(id, 4);
+    public void guestOutputCreditIsWindowedAndRecovers() throws Exception {
+        Fln1Wire wire = Fln1Wire.create(MAX);
+        int id = wire.open("main");
+        wire.accept(id, 1024);
 
-        byte[] first = "abcd".getBytes(StandardCharsets.UTF_8);
-        byte[] rest = "efghij".getBytes(StandardCharsets.UTF_8);
-        assertEquals(4, wire.host.sendData(id, first));
-        assertEquals(0, wire.host.sendData(id, rest));
-        assertEquals(0, wire.host.sendCredit(id));
+        byte[] first = new byte[1024];
+        assertEquals(1024, wire.guest.sendData(id, first));
+        assertEquals(0, wire.guest.sendCredit(id));
+        assertEquals(0, wire.guest.sendData(id, new byte[] {1}));
+        assertEquals(1, wire.guest.metrics().creditStalls());
+        assertEquals(0, wire.host.receiveCredit(id));
+
+        wire.host.grantCredit(id, 1024);
+        assertEquals(1024, wire.guest.sendCredit(id));
+        assertEquals(1024, wire.host.receiveCredit(id));
+        assertEquals(4, wire.guest.sendData(id, "tail".getBytes(StandardCharsets.UTF_8)));
+        assertEquals(1024 + 4, wire.hostRecorder.bytes(id));
+    }
+
+    @Test
+    public void hostDataIsFrameLimitedButNotWindowed() throws Exception {
+        Fln1Wire wire = Fln1Wire.create(MAX);
+        int id = wire.open("main");
+        wire.accept(id, 1024);
+
+        assertEquals(32_768, wire.host.sendData(id, new byte[40_000]));
         assertEquals(1, wire.host.metrics().creditStalls());
-
-        wire.guest.grantCredit(id, 6);
-        assertEquals(6, wire.host.sendCredit(id));
-        assertEquals(6, wire.host.sendData(id, rest));
-        assertEquals("abcdefghij", wire.guestRecorder.text(id));
-        assertEquals(0, wire.guest.receiveCredit(id));
+        assertEquals(7_232, wire.host.sendData(id, new byte[40_000 - 32_768]));
+        assertEquals(40_000, wire.guestRecorder.bytes(id));
     }
 
     @Test
-    public void receiveCreditExceededResetsBothEnds() throws Exception {
-        Wire wire = Wire.create(MAX);
-        int id = wire.host.openSession(80, 24, "main", 4);
-        wire.guest.acceptSession(id, 4);
+    public void hostRejectsInboundDataBeyondWindow() throws Exception {
+        Fln1Wire wire = Fln1Wire.create(MAX);
+        int id = wire.open("main");
+        wire.accept(id, 1024);
 
-        byte[] tooMuch = new byte[8];
-        wire.host.onFrame(new TerminalFrame(TerminalFrameType.DATA, id, tooMuch));
-
-        assertEquals(TerminalSessionState.CLOSED, wire.host.state(id));
-        assertEquals(TerminalSessionState.CLOSED, wire.guest.state(id));
+        TerminalProtocolException failure = assertThrows(
+                TerminalProtocolException.class,
+                () -> wire.host.onFrame(new TerminalFrame(
+                        TerminalFrameType.DATA, id, new byte[1025])));
+        assertEquals(TerminalErrorCode.CREDIT_EXCEEDED, failure.code());
         assertTrue(wire.hostRecorder.hasError(id, TerminalErrorCode.CREDIT_EXCEEDED));
-        assertTrue(wire.host.metrics().protocolErrors() >= 1);
+        assertEquals(TerminalSessionState.CLOSED, wire.host.state(id));
     }
 
     @Test
-    public void hostCloseThenGuestEofConverges() throws Exception {
-        Wire wire = Wire.create(MAX);
-        int id = wire.host.openSession(80, 24, "main", 1024);
-        wire.guest.acceptSession(id, 1024);
+    public void hostCloseThenGuestClosedConverges() throws Exception {
+        Fln1Wire wire = Fln1Wire.create(MAX);
+        int id = wire.open("main");
+        wire.accept(id);
 
         wire.host.sendClose(id);
         assertEquals(TerminalSessionState.HALF_CLOSED_LOCAL, wire.host.state(id));
         assertEquals(TerminalSessionState.HALF_CLOSED_REMOTE, wire.guest.state(id));
         assertEquals(1, wire.guestRecorder.closeRequests);
 
-        wire.guest.sendEof(id, 0);
-        assertEquals(TerminalSessionState.CLOSED, wire.guest.state(id));
+        wire.guest.sendClosed(id);
         assertEquals(TerminalSessionState.CLOSED, wire.host.state(id));
-        assertEquals(0, wire.hostRecorder.lastExitCode);
+        assertTrue(wire.hostRecorder.closedWith(id, TerminalCloseReason.REMOTE_CLOSE));
+    }
+
+    @Test
+    public void guestExitClosesTheSessionWithItsStatusCode() throws Exception {
+        Fln1Wire wire = Fln1Wire.create(MAX);
+        int id = wire.open("main");
+        wire.accept(id);
+
+        wire.guest.sendEof(id, 3);
+        assertEquals(3, wire.hostRecorder.lastExitCode);
+        assertEquals(TerminalSessionState.CLOSED, wire.host.state(id));
+        assertEquals(TerminalSessionState.CLOSED, wire.guest.state(id));
         assertTrue(wire.hostRecorder.closedWith(id, TerminalCloseReason.EOF));
     }
 
     @Test
-    public void guestEofThenHostCloseConverges() throws Exception {
-        Wire wire = Wire.create(MAX);
-        int id = wire.host.openSession(80, 24, "main", 1024);
-        wire.guest.acceptSession(id, 1024);
-
-        wire.guest.sendEof(id, 3);
-        assertEquals(TerminalSessionState.HALF_CLOSED_REMOTE, wire.host.state(id));
-        assertEquals(3, wire.hostRecorder.lastExitCode);
+    public void hostCloseThenGuestExitConverges() throws Exception {
+        Fln1Wire wire = Fln1Wire.create(MAX);
+        int id = wire.open("main");
+        wire.accept(id);
 
         wire.host.sendClose(id);
+        wire.guest.sendEof(id, 0);
         assertEquals(TerminalSessionState.CLOSED, wire.host.state(id));
         assertEquals(TerminalSessionState.CLOSED, wire.guest.state(id));
-        assertTrue(wire.hostRecorder.closedWith(id, TerminalCloseReason.LOCAL_CLOSE));
-        assertTrue(wire.guestRecorder.closedWith(id, TerminalCloseReason.REMOTE_CLOSE));
+        assertEquals(0, wire.hostRecorder.lastExitCode);
     }
 
     @Test
     public void writesAfterLocalHalfCloseAreRejectedButRemoteDataStillArrives() throws Exception {
-        Wire wire = Wire.create(MAX);
-        int id = wire.host.openSession(80, 24, "main", 1024);
-        wire.guest.acceptSession(id, 1024);
+        Fln1Wire wire = Fln1Wire.create(MAX);
+        int id = wire.open("main");
+        wire.accept(id);
 
         wire.host.sendClose(id);
-        assertEquals(TerminalSessionState.HALF_CLOSED_LOCAL, wire.host.state(id));
-        assertEquals(TerminalSessionState.HALF_CLOSED_REMOTE, wire.guest.state(id));
-
         TerminalProtocolException write = assertThrows(
                 TerminalProtocolException.class,
                 () -> wire.host.sendData(id, new byte[] {1}));
@@ -139,85 +156,37 @@ public final class TerminalMuxTest {
 
         assertEquals(5, wire.guest.sendData(id, "later".getBytes(StandardCharsets.UTF_8)));
         assertEquals("later", wire.hostRecorder.text(id));
-
-        wire.guest.sendEof(id, 0);
-        assertEquals(TerminalSessionState.CLOSED, wire.host.state(id));
-        assertEquals(TerminalSessionState.CLOSED, wire.guest.state(id));
     }
 
     @Test
-    public void creditOverflowResetsBothEnds() throws Exception {
-        Wire wire = Wire.create(MAX);
-        int id = wire.host.openSession(80, 24, "main", 1024);
-        wire.guest.acceptSession(id, 1024);
-
-        wire.host.onFrame(new TerminalFrame(
-                TerminalFrameType.CREDIT,
-                id,
-                TerminalProtocol.encodeCredit(TerminalProtocol.MAX_CREDIT_BYTES)));
-
-        assertEquals(TerminalSessionState.CLOSED, wire.host.state(id));
-        assertEquals(TerminalSessionState.CLOSED, wire.guest.state(id));
-        assertTrue(wire.hostRecorder.hasError(id, TerminalErrorCode.CREDIT_OVERFLOW));
-    }
-
-    @Test
-    public void sessionIdsIncreaseAndAreNotReused() throws Exception {
-        Wire wire = Wire.create(MAX);
-        int first = wire.host.openSession(80, 24, "one", 1024);
-        wire.guest.acceptSession(first, 1024);
-        wire.host.sendClose(first);
-        wire.guest.sendEof(first, 0);
-        assertEquals(TerminalSessionState.CLOSED, wire.host.state(first));
-
-        int second = wire.host.openSession(80, 24, "two", 1024);
-        assertTrue(second > first);
-        wire.guest.acceptSession(second, 1024);
-        assertEquals(TerminalSessionState.OPEN, wire.host.state(second));
-    }
-
-    @Test
-    public void duplicateAndRetiredSessionIdsAreRejected() throws Exception {
-        Wire wire = Wire.create(MAX);
-        int id = wire.host.openSession(80, 24, "main", 1024);
-        wire.guest.acceptSession(id, 1024);
+    public void duplicateOpenPtyForAnActiveSessionIsRejected() throws Exception {
+        Fln1Wire wire = Fln1Wire.create(MAX);
+        int id = wire.open("main");
+        wire.accept(id);
 
         wire.guest.onFrame(new TerminalFrame(
                 TerminalFrameType.OPEN_PTY, id, openPtyPayload()));
         assertTrue(wire.guestRecorder.hasError(id, TerminalErrorCode.SESSION_EXISTS));
-
-        Wire second = Wire.create(MAX);
-        int retired = second.host.openSession(80, 24, "main", 1024);
-        second.guest.acceptSession(retired, 1024);
-        second.host.sendClose(retired);
-        second.guest.sendEof(retired, 0);
-        assertEquals(TerminalSessionState.CLOSED, second.guest.state(retired));
-
-        second.guest.onFrame(new TerminalFrame(
-                TerminalFrameType.OPEN_PTY, retired, openPtyPayload()));
-        assertTrue(second.guestRecorder.hasError(
-                retired, TerminalErrorCode.SESSION_RETIRED));
     }
 
     @Test
     public void sessionLimitIsEnforced() throws Exception {
-        Wire wire = Wire.create(2);
-        wire.host.openSession(80, 24, "one", 1024);
-        wire.host.openSession(80, 24, "two", 1024);
+        Fln1Wire wire = Fln1Wire.create(2);
+        wire.open("one");
+        wire.open("two");
         TerminalProtocolException failure = assertThrows(
-                TerminalProtocolException.class,
-                () -> wire.host.openSession(80, 24, "three", 1024));
+                TerminalProtocolException.class, () -> wire.open("three"));
         assertEquals(TerminalErrorCode.SESSION_LIMIT, failure.code());
         assertEquals(2, wire.host.activeSessions());
     }
 
     @Test
     public void vmStopClosesEverySessionAndRejectsFurtherWork() throws Exception {
-        Wire wire = Wire.create(MAX);
-        int first = wire.host.openSession(80, 24, "one", 1024);
-        int second = wire.host.openSession(80, 24, "two", 1024);
-        wire.guest.acceptSession(first, 1024);
-        wire.guest.acceptSession(second, 1024);
+        Fln1Wire wire = Fln1Wire.create(MAX);
+        int first = wire.open("one");
+        int second = wire.open("two");
+        wire.accept(first);
+        wire.accept(second);
 
         wire.host.vmStopped();
         wire.guest.vmStopped();
@@ -235,168 +204,164 @@ public final class TerminalMuxTest {
         TerminalProtocolException receive = assertThrows(
                 TerminalProtocolException.class,
                 () -> wire.guest.onFrame(new TerminalFrame(
-                        TerminalFrameType.PING, 0, TerminalProtocol.encodePing(1L))));
+                        TerminalFrameType.PING, 0, nonce(1))));
         assertEquals(TerminalErrorCode.VM_STOPPED, receive.code());
     }
 
     @Test
     public void multiSessionTrafficNeverCrosses() throws Exception {
-        Wire wire = Wire.create(MAX);
+        Fln1Wire wire = Fln1Wire.create(MAX);
         List<Integer> ids = new ArrayList<>();
-        for (int i = 0; i < 3; i++) {
-            int id = wire.host.openSession(80, 24, "term-" + i, 4096);
-            wire.guest.acceptSession(id, 4096);
+        for (int index = 0; index < 3; index++) {
+            int id = wire.open("term-" + index);
+            wire.accept(id);
             ids.add(id);
         }
-        for (int i = 0; i < ids.size(); i++) {
-            byte[] output = ("out-" + i).getBytes(StandardCharsets.UTF_8);
-            assertEquals(output.length, wire.guest.sendData(ids.get(i), output));
-            byte[] input = ("in-" + i).getBytes(StandardCharsets.UTF_8);
-            assertEquals(input.length, wire.host.sendData(ids.get(i), input));
+        for (int index = 0; index < ids.size(); index++) {
+            byte[] output = ("out-" + index).getBytes(StandardCharsets.UTF_8);
+            assertEquals(output.length, wire.guest.sendData(ids.get(index), output));
+            byte[] input = ("in-" + index).getBytes(StandardCharsets.UTF_8);
+            assertEquals(input.length, wire.host.sendData(ids.get(index), input));
         }
-        for (int i = 0; i < ids.size(); i++) {
-            assertEquals("out-" + i, wire.hostRecorder.text(ids.get(i)));
-            assertEquals("in-" + i, wire.guestRecorder.text(ids.get(i)));
+        for (int index = 0; index < ids.size(); index++) {
+            assertEquals("out-" + index, wire.hostRecorder.text(ids.get(index)));
+            assertEquals("in-" + index, wire.guestRecorder.text(ids.get(index)));
         }
     }
 
     @Test
-    public void pingMetricsAndHelloAreConnectionLevel() throws Exception {
-        Wire wire = Wire.create(MAX);
+    public void helloHandshakeAndPingAreConnectionLevel() throws Exception {
+        Fln1Wire wire = Fln1Wire.create(MAX);
+        assertTrue(wire.host.helloReceived());
+        assertEquals(Fln1Payloads.CAP_TERMINAL, wire.host.peerFeatures());
+        assertNotNull(wire.hostRecorder.hello);
+
         wire.host.sendPing(42L);
         assertEquals(42L, wire.hostRecorder.pong);
-        assertEquals(1, wire.guest.metrics().framesIn());
-
-        wire.host.sendMetrics();
-        assertNotNull(wire.hostRecorder.metrics);
-        assertEquals(0, wire.hostRecorder.metrics.sessionsOpened());
-
-        assertFalse(wire.host.helloReceived());
-        wire.guest.sendHello(new TerminalProtocol.Hello(4096, 4096,
-                TerminalProtocol.FEATURE_RESIZE | TerminalProtocol.FEATURE_EXIT_CODE));
-        assertTrue(wire.host.helloReceived());
-        assertEquals(4096, wire.hostRecorder.hello.maxFrameBytes());
     }
 
     @Test
-    public void openSessionWorksBeforeOptionalHello() throws Exception {
-        Wire wire = Wire.create(MAX);
-        int id = wire.host.openSession(80, 24, "main", 1024);
-        wire.guest.acceptSession(id, 1024);
-        assertEquals(TerminalSessionState.OPEN, wire.host.state(id));
-        assertFalse(wire.host.helloReceived());
+    public void openSessionRequiresHello() throws Exception {
+        Fln1Wire wire = Fln1Wire.create(MAX, null, null, false);
+        assertFalse(wire.host.helloSent());
+        TerminalProtocolException failure = assertThrows(
+                TerminalProtocolException.class, () -> wire.open("main"));
+        assertEquals(TerminalErrorCode.PROTOCOL_VERSION, failure.code());
     }
 
     @Test
     public void reentrantAcceptDuringOpenRequestIsNotLost() throws Exception {
+        Fln1Wire wire = Fln1Wire.create(MAX, null, null, true);
+        int id = wire.open("main");
+        wire.accept(id);
+        assertEquals(TerminalSessionState.OPEN, wire.host.state(id));
+        assertEquals(TerminalSessionState.OPEN, wire.guest.state(id));
+    }
+
+    @Test
+    public void reentrantAcceptInsideTheCallbackIsNotLost() throws Exception {
         TerminalMux[] hostRef = new TerminalMux[1];
         TerminalMux[] guestRef = new TerminalMux[1];
+        Fln1TerminalCodec hostCodec = new Fln1TerminalCodec(TerminalMux.Role.HOST);
+        Fln1TerminalCodec guestCodec = new Fln1TerminalCodec(TerminalMux.Role.GUEST);
         TerminalMux guest = new TerminalMux(
                 TerminalMux.Role.GUEST,
                 MAX,
-                frame -> hostRef[0].onFrame(frame),
+                frame -> hostRef[0].onFrame(hostCodec.decode(guestCodec.encode(frame))),
                 new TerminalMux.Listener() {
                     @Override
-                    public void onOpenRequest(
-                            int sessionId, TerminalProtocol.OpenPty request) {
+                    public void onOpenRequest(int sessionId, Fln1Payloads.OpenPty request) {
                         try {
-                            guestRef[0].acceptSession(sessionId, 1024);
+                            guestRef[0].acceptSession(sessionId, 1, 1024);
                         } catch (IOException failure) {
                             throw new IllegalStateException(failure);
                         }
                     }
                 });
         TerminalMux host = new TerminalMux(
-                TerminalMux.Role.HOST, MAX, frame -> guestRef[0].onFrame(frame), null);
+                TerminalMux.Role.HOST,
+                MAX,
+                frame -> guestRef[0].onFrame(guestCodec.decode(hostCodec.encode(frame))),
+                null);
         hostRef[0] = host;
         guestRef[0] = guest;
 
-        int id = host.openSession(80, 24, "main", 1024);
+        host.sendHello(new Fln1Payloads.Hello(1, 1, ""));
+        int id = host.openSession(80, 24, "sh");
         assertEquals(TerminalSessionState.OPEN, host.state(id));
         assertEquals(TerminalSessionState.OPEN, guest.state(id));
     }
 
     @Test
-    public void partialDataSendIsBackpressureAndHonorsPeerMaxFrame() throws Exception {
-        Wire wire = Wire.create(MAX);
-        int id = wire.host.openSession(80, 24, "main", 1024);
-        wire.guest.acceptSession(id, 1024);
-        wire.guest.sendHello(new TerminalProtocol.Hello(4, 1024, 0));
-
-        assertEquals(4, wire.host.sendData(id, new byte[8]));
-        assertEquals(1, wire.host.metrics().creditStalls());
-        assertEquals(4, wire.host.sendData(id, new byte[8]));
-        assertEquals(2, wire.host.metrics().creditStalls());
-        assertEquals(8, wire.guest.metrics().bytesIn());
-    }
-
-    @Test
-    public void writesAfterLocalEofAreRejected() throws Exception {
-        Wire wire = Wire.create(MAX);
-        int id = wire.host.openSession(80, 24, "main", 1024);
-        wire.guest.acceptSession(id, 1024);
-
-        wire.host.sendEof(id, 0);
-        assertEquals(TerminalSessionState.HALF_CLOSED_LOCAL, wire.host.state(id));
-        assertEquals(TerminalSessionState.HALF_CLOSED_REMOTE, wire.guest.state(id));
-        TerminalProtocolException failure = assertThrows(
-                TerminalProtocolException.class,
-                () -> wire.host.sendData(id, new byte[] {1}));
-        assertEquals(TerminalErrorCode.SESSION_CLOSED, failure.code());
-
-        wire.guest.sendClose(id);
-        assertEquals(TerminalSessionState.CLOSED, wire.host.state(id));
-        assertEquals(TerminalSessionState.CLOSED, wire.guest.state(id));
-    }
-
-    @Test
-    public void unknownSessionProducesTypedErrorFrame() throws Exception {
-        RecordingSink sink = new RecordingSink();
-        TerminalMux host = new TerminalMux(TerminalMux.Role.HOST, sink);
+    public void peerMaxFrameFromHelloOkLimitsData() throws Exception {
+        TerminalMux host = new TerminalMux(TerminalMux.Role.HOST, frame -> {});
+        host.sendHello(new Fln1Payloads.Hello(1, 1, ""));
         host.onFrame(new TerminalFrame(
-                TerminalFrameType.DATA, 99, new byte[] {1, 2, 3}));
-        assertEquals(1, sink.frames.size());
-        TerminalFrame error = sink.frames.get(0);
-        assertEquals(TerminalFrameType.ERROR, error.type());
-        assertEquals(99, error.sessionId());
-        assertEquals(TerminalErrorCode.UNKNOWN_SESSION,
-                TerminalProtocol.parseError(error.payload()).code());
+                TerminalFrameType.HELLO, 0,
+                Fln1Payloads.encodeHelloOk(new Fln1Payloads.HelloOk(
+                        1, Fln1Payloads.CAP_TERMINAL, 4, 1024))));
+        int id = host.openSession(80, 24, "sh");
+        host.onFrame(new TerminalFrame(
+                TerminalFrameType.OPEN_PTY, id,
+                Fln1Payloads.encodePtyOpened(4242, 1024)));
+
+        assertEquals(4, host.sendData(id, new byte[8]));
+        assertEquals(1, host.metrics().creditStalls());
+        assertEquals(4, host.sendData(id, new byte[8]));
+        assertEquals(2, host.metrics().creditStalls());
     }
 
     @Test
-    public void wrongRoleIsRejected() {
-        Wire wire = Wire.create(MAX);
+    public void duplicateHelloOkIsRejected() throws Exception {
+        TerminalMux host = new TerminalMux(TerminalMux.Role.HOST, frame -> {});
+        host.sendHello(new Fln1Payloads.Hello(1, 1, ""));
+        TerminalFrame helloOk = new TerminalFrame(
+                TerminalFrameType.HELLO, 0,
+                Fln1Payloads.encodeHelloOk(new Fln1Payloads.HelloOk(
+                        1, Fln1Payloads.CAP_TERMINAL, 65_536, 262_144)));
+        host.onFrame(helloOk);
+        TerminalProtocolException failure = assertThrows(
+                TerminalProtocolException.class, () -> host.onFrame(helloOk));
+        assertEquals(TerminalErrorCode.UNKNOWN_TYPE, failure.code());
+    }
+
+    @Test
+    public void wrongRoleIsRejected() throws Exception {
+        Fln1Wire wire = Fln1Wire.create(MAX);
         TerminalProtocolException open = assertThrows(
-                TerminalProtocolException.class,
-                () -> wire.guest.openSession(80, 24, "x", 1024));
+                TerminalProtocolException.class, () -> wire.guest.openSession(80, 24, "sh"));
         assertEquals(TerminalErrorCode.WRONG_ROLE, open.code());
         TerminalProtocolException accept = assertThrows(
-                TerminalProtocolException.class,
-                () -> wire.host.acceptSession(1, 1024));
+                TerminalProtocolException.class, () -> wire.host.acceptSession(1, 1, 1024));
         assertEquals(TerminalErrorCode.WRONG_ROLE, accept.code());
+        TerminalProtocolException credit = assertThrows(
+                TerminalProtocolException.class, () -> wire.guest.grantCredit(1, 1024));
+        assertEquals(TerminalErrorCode.WRONG_ROLE, credit.code());
+        TerminalProtocolException eof = assertThrows(
+                TerminalProtocolException.class, () -> wire.host.sendEof(1, 0));
+        assertEquals(TerminalErrorCode.WRONG_ROLE, eof.code());
     }
 
     @Test
     public void emptyDataAndInvalidCreditAreRejected() throws Exception {
-        Wire wire = Wire.create(MAX);
-        int id = wire.host.openSession(80, 24, "main", 1024);
-        wire.guest.acceptSession(id, 1024);
+        Fln1Wire wire = Fln1Wire.create(MAX);
+        int id = wire.open("main");
+        wire.accept(id);
         assertThrows(IllegalArgumentException.class,
                 () -> wire.host.sendData(id, new byte[0]));
         TerminalProtocolException credit = assertThrows(
-                TerminalProtocolException.class,
-                () -> wire.guest.grantCredit(id, 0));
+                TerminalProtocolException.class, () -> wire.host.grantCredit(id, 0));
         assertEquals(TerminalErrorCode.INVALID_PAYLOAD, credit.code());
     }
 
     @Test
     public void sendAfterCloseIsTypedAndIdempotent() throws Exception {
-        Wire wire = Wire.create(MAX);
-        int id = wire.host.openSession(80, 24, "main", 1024);
-        wire.guest.acceptSession(id, 1024);
+        Fln1Wire wire = Fln1Wire.create(MAX);
+        int id = wire.open("main");
+        wire.accept(id);
         wire.host.sendClose(id);
         wire.host.sendClose(id);
-        wire.guest.sendEof(id, 0);
+        wire.guest.sendClosed(id);
         assertEquals(TerminalSessionState.CLOSED, wire.host.state(id));
         wire.host.sendClose(id);
         assertEquals(TerminalSessionState.CLOSED, wire.host.state(id));
@@ -409,9 +374,9 @@ public final class TerminalMuxTest {
 
     @Test
     public void closeAllWritesCloseAndDropsActiveSessions() throws Exception {
-        Wire wire = Wire.create(MAX);
-        int id = wire.host.openSession(80, 24, "main", 1024);
-        wire.guest.acceptSession(id, 1024);
+        Fln1Wire wire = Fln1Wire.create(MAX);
+        int id = wire.open("main");
+        wire.accept(id);
         wire.host.closeAll(TerminalCloseReason.TRANSPORT_CLOSED);
         assertEquals(0, wire.host.activeSessions());
         assertEquals(TerminalSessionState.CLOSED, wire.host.state(id));
@@ -421,74 +386,35 @@ public final class TerminalMuxTest {
     }
 
     private static byte[] openPtyPayload() {
-        return TerminalProtocol.encodeOpenPty(new TerminalProtocol.OpenPty(
-                80, 24, 1024, "dup"));
+        return Fln1Payloads.encodeOpenPty(
+                new Fln1Payloads.OpenPty(80, 24, new String[] {"sh"}));
     }
 
-    private static final class Wire {
-        private final TerminalMux host;
-        private final TerminalMux guest;
-        private final Recorder hostRecorder;
-        private final Recorder guestRecorder;
-
-        private Wire(TerminalMux host, TerminalMux guest,
-                Recorder hostRecorder, Recorder guestRecorder) {
-            this.host = host;
-            this.guest = guest;
-            this.hostRecorder = hostRecorder;
-            this.guestRecorder = guestRecorder;
-        }
-
-        private static Wire create(int maxSessions) {
-            Recorder hostRecorder = new Recorder();
-            Recorder guestRecorder = new Recorder();
-            Wire[] holder = new Wire[1];
-            TerminalMux host = new TerminalMux(
-                    TerminalMux.Role.HOST,
-                    maxSessions,
-                    frame -> holder[0].guest.onFrame(frame),
-                    hostRecorder);
-            TerminalMux guest = new TerminalMux(
-                    TerminalMux.Role.GUEST,
-                    maxSessions,
-                    frame -> holder[0].host.onFrame(frame),
-                    guestRecorder);
-            Wire wire = new Wire(host, guest, hostRecorder, guestRecorder);
-            holder[0] = wire;
-            return wire;
-        }
+    private static byte[] nonce(long value) {
+        return java.nio.ByteBuffer.allocate(8)
+                .order(java.nio.ByteOrder.BIG_ENDIAN).putLong(value).array();
     }
 
-    private static final class RecordingSink implements TerminalMux.FrameSink {
-        private final List<TerminalFrame> frames = new ArrayList<>();
-
-        @Override
-        public void write(TerminalFrame frame) {
-            frames.add(frame);
-        }
-    }
-
-    private static final class Recorder implements TerminalMux.Listener {
+    static final class Recorder implements TerminalMux.Listener {
         private final Map<Integer, ByteArrayOutputStream> output = new HashMap<>();
         private final Map<Integer, TerminalErrorCode> errors = new HashMap<>();
         private final Map<Integer, TerminalCloseReason> closed = new HashMap<>();
         private int openRequests;
-        private TerminalProtocol.OpenPty openRequest;
-        private TerminalProtocol.Resize resize;
+        private Fln1Payloads.OpenPty openRequest;
+        private Fln1Payloads.Resize resize;
         private int signal;
         private int closeRequests;
         private int lastExitCode = Integer.MIN_VALUE;
         private long pong = Long.MIN_VALUE;
-        private TerminalMuxMetrics metrics;
-        private TerminalProtocol.Hello hello;
+        private Fln1Payloads.HelloOk hello;
 
         @Override
-        public void onHello(TerminalProtocol.Hello hello) {
+        public void onHello(Fln1Payloads.HelloOk hello) {
             this.hello = hello;
         }
 
         @Override
-        public void onOpenRequest(int sessionId, TerminalProtocol.OpenPty request) {
+        public void onOpenRequest(int sessionId, Fln1Payloads.OpenPty request) {
             openRequests++;
             openRequest = request;
         }
@@ -500,7 +426,7 @@ public final class TerminalMuxTest {
         }
 
         @Override
-        public void onResize(int sessionId, TerminalProtocol.Resize resize) {
+        public void onResize(int sessionId, Fln1Payloads.Resize resize) {
             this.resize = resize;
         }
 
@@ -534,21 +460,26 @@ public final class TerminalMuxTest {
             pong = nonce;
         }
 
-        @Override
-        public void onMetrics(TerminalMuxMetrics metrics) {
-            this.metrics = metrics;
-        }
-
-        private String text(int sessionId) {
+        String text(int sessionId) {
             ByteArrayOutputStream bytes = output.get(sessionId);
             return bytes == null ? "" : bytes.toString(StandardCharsets.UTF_8);
         }
 
-        private boolean hasError(int sessionId, TerminalErrorCode code) {
+        int bytes(int sessionId) {
+            ByteArrayOutputStream bytes = output.get(sessionId);
+            return bytes == null ? 0 : bytes.size();
+        }
+
+        byte[] bytesCopy(int sessionId) {
+            ByteArrayOutputStream bytes = output.get(sessionId);
+            return bytes == null ? new byte[0] : bytes.toByteArray();
+        }
+
+        boolean hasError(int sessionId, TerminalErrorCode code) {
             return errors.get(sessionId) == code;
         }
 
-        private boolean closedWith(int sessionId, TerminalCloseReason reason) {
+        boolean closedWith(int sessionId, TerminalCloseReason reason) {
             return closed.get(sessionId) == reason;
         }
     }
