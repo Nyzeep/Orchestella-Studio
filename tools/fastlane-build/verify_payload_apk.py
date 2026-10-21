@@ -11,10 +11,11 @@ Checks:
   * the packaged bytes match the staged .so (SHA256);
   * llvm-nm reports T AVmPayload_main;
   * no lib/**/libvm_payload.so is packaged (the AVF APEX provides it);
-  * the toolbox entry bin/sh exists with an executable mode.
+  * the toolbox entry bin/sh exists with an executable mode;
+  * apksigner reports both v2 and v3 signature schemes (AVF idsig needs v3).
 
 `zipinfo -v` is mirrored by the Python zipfile facts printed below; the
-zipalign binary is executed when the SDK provides it.
+zipalign and apksigner binaries are executed when the SDK provides them.
 """
 
 from __future__ import annotations
@@ -22,7 +23,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -76,6 +79,59 @@ def find_zipalign(sdk: Path | None) -> Path:
     raise VerificationError(f"zipalign is missing under {base}")
 
 
+def find_java() -> Path:
+    home = os.environ.get("JAVA_HOME")
+    if home:
+        for name in ("java.exe", "java"):
+            candidate = Path(home) / "bin" / name
+            if candidate.is_file():
+                return candidate
+    found = shutil.which("java")
+    if found:
+        return Path(found)
+    raise VerificationError("java is required for apksigner (set JAVA_HOME)")
+
+
+def find_apksigner_jar(sdk: Path | None) -> Path:
+    if sdk is None:
+        raise VerificationError("--sdk is required to locate apksigner")
+    candidate = sdk / "build-tools" / BUILD_TOOLS / "lib" / "apksigner.jar"
+    if candidate.is_file():
+        return candidate
+    raise VerificationError(f"apksigner.jar is missing under {candidate.parent}")
+
+
+def verify_signature_schemes(apk: Path, sdk: Path | None) -> dict[str, bool]:
+    """Requires v2+v3; AVF's idsig path rejects a v2-only APK at create."""
+    result = run([
+        str(find_java()),
+        "-jar",
+        str(find_apksigner_jar(sdk)),
+        "verify",
+        "--verbose",
+        str(apk),
+    ])
+    output = (result.stdout + result.stderr).strip()
+    if result.returncode != 0:
+        raise VerificationError(
+            "apksigner verify failed: " + (output[-500:] or "no output")
+        )
+    schemes = {
+        int(match.group(1)): match.group(2) == "true"
+        for match in re.finditer(
+            r"Verified using v(\d) scheme[^:]*:\s*(true|false)", output
+        )
+    }
+    missing = [version for version in (2, 3) if not schemes.get(version)]
+    if missing:
+        raise VerificationError(
+            "APK must be signed with v2 and v3; missing "
+            + ", ".join(f"v{version}" for version in missing)
+            + f" (reported: {schemes})"
+        )
+    return {f"v{version}": enabled for version, enabled in sorted(schemes.items())}
+
+
 def local_data_offset(apk: Path, info: zipfile.ZipInfo) -> int:
     with apk.open("rb") as stream:
         stream.seek(info.header_offset)
@@ -105,6 +161,8 @@ def run(command: list[str]) -> subprocess.CompletedProcess[str]:
         check=False,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=120,
     )
 
@@ -197,6 +255,8 @@ def verify_apk(
         if not re.search(r"\bT\s+AVmPayload_main\b", symbols.stdout):
             raise VerificationError("packaged payload does not export T AVmPayload_main")
 
+    signatures = verify_signature_schemes(apk, sdk)
+
     return {
         "apk": str(apk),
         "apk_sha256": sha256_file(apk),
@@ -208,6 +268,7 @@ def verify_apk(
         "payload_compress_type": info.compress_type,
         "payload_data_offset": data_offset,
         "bin_sh_mode": sh_mode,
+        "signature_schemes": signatures,
         "zipalign": str(zipalign),
         "nm": str(nm),
     }

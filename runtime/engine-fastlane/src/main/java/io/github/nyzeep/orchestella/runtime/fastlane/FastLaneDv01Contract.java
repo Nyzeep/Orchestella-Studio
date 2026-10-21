@@ -17,10 +17,11 @@ import java.util.regex.Pattern;
 public final class FastLaneDv01Contract {
     public static final String SCHEMA = "orchestella.fastlane.dv01.v1";
     public static final String PAYLOAD_NAME = "libfastlane_payload.so";
-    public static final int DEFAULT_CONTROL_PORT = 9100;
-    public static final int DEFAULT_TERMINAL_PORT = 9101;
-    public static final int DEFAULT_PROXY_PORT = 9102;
-    public static final int DEFAULT_DISTCC_PORT = 9103;
+    // Must match PayloadConfig in fastlane-payload/include/fastlane/runtime.h.
+    public static final int DEFAULT_CONTROL_PORT = 5100;
+    public static final int DEFAULT_TERMINAL_PORT = 5101;
+    public static final int DEFAULT_PROXY_PORT = 5102;
+    public static final int DEFAULT_DISTCC_PORT = 5103;
     public static final int MEMORY_MB = 1024;
     public static final long ENCRYPTED_STORAGE_BYTES = 256L * 1024L * 1024L;
     public static final int DEFAULT_CYCLE_COUNT = 20;
@@ -145,5 +146,35 @@ public final class FastLaneDv01Contract {
             case FastLaneException.VM_CREATE_FAILED -> "VM_CREATE_FAILED";
             default -> "FASTLANE_UNKNOWN";
         };
+    }
+
+    /**
+     * Reduces the payload's fixed exec diagnostics to a stable class and a
+     * numeric errno. The raw message and any path never reach the report.
+     */
+    public static String terminalDetail(String message) {
+        if (message == null) {
+            return "unclassified";
+        }
+        String lower = message.toLowerCase(java.util.Locale.ROOT);
+        String stage;
+        if (lower.contains("realpath")) {
+            stage = "realpath";
+        } else if (lower.contains("execve")) {
+            stage = "execve";
+        } else if (lower.contains("access")) {
+            stage = "access";
+        } else if (lower.contains("stat")) {
+            stage = "stat";
+        } else if (lower.contains("outside")) {
+            stage = "outside";
+        } else if (lower.contains("regular file")) {
+            stage = "not_regular";
+        } else {
+            return "unclassified";
+        }
+        java.util.regex.Matcher errno =
+                java.util.regex.Pattern.compile("errno=(\\d+)").matcher(lower);
+        return errno.find() ? stage + "_errno_" + errno.group(1) : stage;
     }
 }

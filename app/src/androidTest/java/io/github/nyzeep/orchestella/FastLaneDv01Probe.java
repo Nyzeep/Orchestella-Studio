@@ -784,7 +784,7 @@ final class FastLaneDv01Probe {
             if (!opened) {
                 if (collector.fln1Code != null) {
                     int fln1 = collector.fln1Code;
-                    terminalDiagnostic = "fln1=" + fln1;
+                    terminalDiagnostic = "fln1=" + fln1 + " " + collector.fln1Detail;
                     observeTerminalFailure(fln1);
                     return new TerminalResult(false, "TERMINAL_ERROR_FLN1_" + fln1, -1,
                             collector.outputSize(), false, false);
@@ -1587,6 +1587,7 @@ final class FastLaneDv01Probe {
         private volatile Integer exitCode;
         private volatile TerminalErrorCode errorCode;
         private volatile Integer fln1Code;
+        private volatile String fln1Detail = "unclassified";
         private volatile TerminalCloseReason closeReason;
         private volatile String pumpFailure;
         private volatile int bytes;
@@ -1631,6 +1632,7 @@ final class FastLaneDv01Probe {
                         // The host code above remains the fallback.
                     }
                 }
+                fln1Detail = FastLaneDv01Contract.terminalDetail(message);
             }
         }
 
