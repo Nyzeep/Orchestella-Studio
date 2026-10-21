@@ -1,7 +1,7 @@
 # P02: Fast Lane payload runtime（零设备）
 
 Type: implementation
-Status: ready-for-agent（zero-device）
+Status: implemented（zero-device 验收通过；DV-01/DV-02 真机待验）
 Priority: P0（Fast Lane 基础）
 Owner: payload owner
 Blocked by: None（零设备）；真机由 DV-01/DV-02 验证
@@ -59,3 +59,7 @@ External gates: 无
 ## 设备交接
 
 DV-01：payload 启动、vsock 握手、encrypted storage、stop；DV-02：PTY/工具/代理/导出。
+
+## Comments
+
+- 2026-10-21（Agent B，`fastlane/agent-b-dataplane`）：零设备实现完成。新增 `fastlane-payload/`（C++17/CMake）：`AVmPayload_main`、四 listener、帧协议、PTY、storage/tar 导出导入、proxy/distcc 桥。宿主 49/49 CTest 通过；`AVmPayload_main` 在宿主二进制中可检查。NDK arm64 构建未运行（环境无 NDK），真机 vsock/SELinux/Termux/distccd 标 `not-tested`。详见 `docs/reports/tickets/fastlane-P02/implementation-report.zh-CN.md`。P04 fixture 尚未出现，`WINDOW` 扩展与帧编号待对齐。
