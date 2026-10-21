@@ -702,7 +702,8 @@ void serve_framed(const std::shared_ptr<RuntimeContext>& context, int fd) {
         }
     } catch (const Error& error) {
         if (hello_done || error.code() != Code::kIo) {
-            send_error(sink.get(), error.code(), code_name(error.code()));
+            const bool detail = error.code() == Code::kExecFailed;
+            send_error(sink.get(), error.code(), detail ? error.what() : code_name(error.code()));
         }
     } catch (const std::exception&) {
         send_error(sink.get(), Code::kInternal, "internal error");
