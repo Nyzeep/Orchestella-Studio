@@ -1,7 +1,7 @@
 # DV-01: Protected Microdroid payload 真机门（串行 1）
 
 Type: device-verification
-Status: dv01_core_pass_terminal_blocked
+Status: dv01_core_pass_terminal_blocked（blocked_external: DV-01A SELinux `execute_no_trans`）
 Priority: P0（第一个真机门）
 Owner: 设备唯一操作者/主协调
 Blocked by: P01, P02, P03, P04, P05, P06, P07, P08, P09, P10, P11, P12
@@ -76,10 +76,44 @@ External gates: 当前 HONOR 设备、QA APK、MANAGE_VIRTUAL_MACHINE（必要�
 - protected bit 可用；`setProtectedVm(true)` 接受，`setProtectedVm(false)` 抛 `UnsupportedOperationException`。
 - create/run/payloadReady 成功（801–1202 ms）；control HELLO/HELLO_OK 成功（caps=45，3–8 ms，`auth_token=empty`）。
 - stop first/second 均 `CONFIRMED`；20/20 次 create/run/stop/delete 全部 pass，stop 382–527 ms，每轮 residual=false。
-- terminal PTY 返回 FLN1 7（`EXEC_FAILED`，`TOOLBOX_EXEC_FAILED`）；`/mnt/apk/bin/sh` 未产生输出，storage marker/持久化未测试。
+- terminal PTY 返回 FLN1 7（`EXEC_FAILED`，`TOOLBOX_EXEC_FAILED`）；DV-01A 进一步定位为 `execve` EACCES(13)，guest audit 为 SELinux `execute_no_trans` 拒绝；`/mnt/apk/bin/sh` 未产生输出，storage marker/持久化未测试。
 - 负例：错误端口被 `FastLaneLaunchSpec` 拒绝；custom image 在 config builder 被接受（create 层未测试）；错误 payload 未获得 typed rejection，标记 `unconfirmed`。
 - 判定：`DV01_CORE_PASS_TERMINAL_BLOCKED`；不得进入 DV-02，不得宣称完整 DV-01。
-- 证据：`protected-fastlane/20261021/dv01/`（`fastlane-dv01-4d9a1e7c3b5f8026.json`、`cycles-20.tsv`、`terminal-failure.txt`）。
+- 证据：`protected-fastlane/20261021/dv01/`（`fastlane-dv01-20261021-final.json`、`cycles-20.tsv`、`terminal-failure.txt`、`selinux-exec-denial.txt`）。
 - 报告：`docs/reports/orchestration/fastlane-dv01-20261021.zh-CN.md`。
 
-下一步：修 toolbox `bin/sh` 的 guest 可执行性/挂载（不改 FLN1 wire、不改 pvmfw/SELinux），让 terminal 执行 `/mnt/apk/bin/sh`；再跑 storage marker/持久化、负例和完整 20 轮。terminal 通过前不勾选完整 DV-01 验收项，不进入 DV-02。未尝试 root/unlock 或绕过安装限制。
+下一步（更新）：terminal 的根因已定位为平台 SELinux 策略（见下）；在平台授予 `execute_no_trans` 或提供支持的可执行挂载前，不重复修 toolbox 打包/挂载。terminal 通过前不勾选完整 DV-01 验收项，不进入 DV-02。未尝试 root/unlock 或绕过安装限制。
+
+## 2026-10-21 DV-01A — terminal 定位为外部 SELinux 阻塞
+
+**Status: blocked_external**；focused ticket：`DV-01A-toolbox-exec-selinux.md`。
+
+### 证据链
+
+- 默认端口 5100/5101 下 control HELLO/HELLO_OK 成功（6 ms），terminal 的 vsock connect 也成功；不是端口/vsock 问题。
+- OPEN_PTY 错误消息的 stage/errno 诊断：`fln1=7 execve_errno_13`。`realpath`、`stat`、`access(X_OK)` 都成功，失败只在 `execve`。
+- APK 中 `bin/sh` 存在（1,115,944 bytes），ZIP `external_attr` mode 0（zipfuse `bin/` 默认执行位）；`access(X_OK)` 成功证明实际 mode 可执行。不是 ENOENT，也不是缺少执行位。
+- 把 OPEN_PTY 指向 `/mnt/apk/bin/manifest.json`（`bin/` 下的普通非 ELF 文件）仍返回 EACCES(13) 而不是 ENOEXEC(8)；`access()` 在 noexec 挂载上也会失败，因此排除 noexec。
+- DEBUG_FULL 诊断运行的 guest audit 直接证据：
+
+```text
+avc: denied { execute_no_trans } for path="/mnt/apk/bin/sh" dev="fuse"
+scontext=u:r:microdroid_app:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=0
+```
+
+- 解释：`/mnt/apk` 是 zipfuse 挂载，文件标签为 `system_file`；A16 policy 有 `allow coredomain system_file:file execute`（access 通过），但没有给 `microdroid_app` 对 `system_file` 的 `execute_no_trans`。execve 无 domain transition 需要该权限，因此 EACCES。
+- 结论：这不是 APK 打包/toolbox 文件可直接修复的问题；需要平台侧策略变更（或平台支持的可执行挂载）。按停止条件记录 `blocked_external`，未修改 root/SELinux/pvmfw，未用 `/system/bin/sh`、encrypted storage 执行、memfd、chmod 等绕过。
+
+### 本轮变更与门禁
+
+- `FastLaneDv01Contract` 默认端口改为 5100–5103；新增 JVM parity 测试读取 `runtime.h`；最终 20 轮不传 `qa*Port`，证明默认命令可用。
+- `verify_payload_apk.py` 新增 v2+v3 签名检查；v2-only 负例被拒绝（`missing v3`）。
+- payload 的 OPEN_PTY 失败消息加入 stage/errno（仅 ERROR message 文本，FLN1 格式/字节不变）；probe 只记录 sanitized class（如 `execve_errno_13`）。
+- 零设备门禁：315 tests / 8 skipped / 0 failures；`verifyFastlanePayloadApk` / `verifyFastlaneToolboxApk` 通过。
+- 最终真机运行：`outcome=DV01_CORE_PASS_TERMINAL_BLOCKED`；20/20 cycles pass，stop 264–391 ms，residual=false；APK `5eb462d0…`、payload `5a6566b6…`、toolbox manifest `e0352292…`；terminal/storage 未通过。
+
+### 决策
+
+- 保持 `dv01_core_pass_terminal_blocked`，不进入 DV-02，不宣称完整 DV-01。
+- 下一步需要平台/系统侧决定：为 `microdroid_app` 授予 `execute_no_trans`（`system_file`），或提供平台支持的可执行挂载；之后重跑 terminal + storage marker/持久化 + 负例 + 20 轮。
+- 本结论不改变 FLN1 wire、accepted ADR、版本号、release channel 或签名身份。
