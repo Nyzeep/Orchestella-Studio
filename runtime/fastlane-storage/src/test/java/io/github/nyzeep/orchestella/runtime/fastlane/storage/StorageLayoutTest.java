@@ -3,6 +3,7 @@ package io.github.nyzeep.orchestella.runtime.fastlane.storage;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assume.assumeFalse;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -49,6 +50,7 @@ public final class StorageLayoutTest {
 
     @Test
     public void rejectsSymlinkedMarker() throws Exception {
+        requireSymlinks();
         final Path root = temporary.newFolder("store").toPath();
         final Path real = temporary.newFile("marker").toPath();
         Files.writeString(real, "version=1\n");
@@ -58,6 +60,7 @@ public final class StorageLayoutTest {
 
     @Test
     public void rejectsSymlinkedSubdirectory() throws Exception {
+        requireSymlinks();
         final Path root = temporary.newFolder("store").toPath();
         final Path elsewhere = temporary.newFolder("elsewhere").toPath();
         Files.createSymbolicLink(root.resolve("home"), elsewhere);
@@ -82,8 +85,17 @@ public final class StorageLayoutTest {
         final StorageLayout layout = StorageLayout.initialize(root);
         Files.writeString(layout.home().resolve("a.txt"), "a");
         assertEquals(layout.home().resolve("a.txt"), layout.resolveNoSymlink("home/a.txt"));
+        requireSymlinks();
         Files.createSymbolicLink(layout.home().resolve("link"), Path.of("/tmp"));
         assertThrows(StorageException.class,
                 () -> layout.resolveNoSymlink("home/link/a.txt"));
+    }
+
+    private static void requireSymlinks() {
+        // Windows denies symlink creation without Developer Mode; the product
+        // and the authoritative gate run on POSIX hosts.
+        assumeFalse(
+                "symbolic-link fixture requires a POSIX host",
+                System.getProperty("os.name", "").toLowerCase().contains("windows"));
     }
 }

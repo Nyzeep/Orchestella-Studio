@@ -5,6 +5,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assume.assumeFalse;
 
 import io.github.nyzeep.orchestella.runtime.fastlane.FastLaneChannel;
 import io.github.nyzeep.orchestella.runtime.fastlane.FastLaneException;
@@ -328,6 +329,9 @@ public final class DistccTcpVsockBridgeTest {
 
     @Test(timeout = 15000)
     public void processStderrDoesNotEnterTheProtocolStream() throws Exception {
+        assumeFalse(
+                "POSIX /bin/sh fixture is not executable by a Windows JVM",
+                System.getProperty("os.name", "").toLowerCase().contains("windows"));
         byte[] response = DistccFixture.response();
         Path root = java.nio.file.Files.createTempDirectory("fastlane-distcc-stderr");
         Path responseFile = root.resolve("response.bin");
