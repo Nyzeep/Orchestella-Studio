@@ -6,6 +6,7 @@
   "documentNamespace": "https://cnb.cool/kiepei/Orchestella-Studio-cnbdev/spdx/fastlane-toolbox-0.1.0",
   "creationInfo": {
     "created": "2026-10-21T00:00:00Z",
+    "comment": "Reproducible toolbox build uses SOURCE_DATE_EPOCH=1792540800.",
     "creators": [
       "Tool: tools/fastlane-build/fastlane_build.py"
     ]
@@ -21,6 +22,10 @@
       "licenseDeclared": "GPL-2.0-only",
       "copyrightText": "NOASSERTION",
       "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "1d8e7a7fc2ed69bdb8eb7be9d962489c21a0f75b72d8a325437c8a09d4cfac70"
+        },
         {
           "algorithm": "SHA256",
           "checksumValue": "ebd2865edcab0b590c7d0edb70d3e782cbfb541e518a390ced3a3e186509bc7f"

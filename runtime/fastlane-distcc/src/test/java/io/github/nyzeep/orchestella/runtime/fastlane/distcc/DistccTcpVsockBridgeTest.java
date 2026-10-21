@@ -2,12 +2,12 @@ package io.github.nyzeep.orchestella.runtime.fastlane.distcc;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import io.github.nyzeep.orchestella.runtime.fastlane.FastLaneChannel;
 import io.github.nyzeep.orchestella.runtime.fastlane.FastLaneException;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -16,6 +16,7 @@ import java.io.PipedOutputStream;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -207,6 +208,180 @@ public final class DistccTcpVsockBridgeTest {
                 LOOPBACK, 0, EchoChannel::new, 1, 0, -1, stats -> {}));
     }
 
+    @Test(timeout = 10000)
+    public void fixedHexFixtureCarriesTheExpectedProtocolTokens() {
+        byte[] request = DistccFixture.request();
+        byte[] response = DistccFixture.response();
+        assertEquals("DIST", new String(request, 0, 4, StandardCharsets.US_ASCII));
+        assertEquals("00000001", new String(request, 4, 8, StandardCharsets.US_ASCII));
+        assertEquals("DONE", new String(response, 0, 4, StandardCharsets.US_ASCII));
+        assertTrue(indexOf(request, "DOTI".getBytes(StandardCharsets.US_ASCII)) > 0);
+        assertTrue(indexOf(response, "DOTO".getBytes(StandardCharsets.US_ASCII)) > 0);
+        assertTrue(indexOf(response, "SERR".getBytes(StandardCharsets.US_ASCII)) > 0);
+    }
+
+    @Test(timeout = 20000)
+    public void largeBinaryPayloadIsForwardedByteForByte() throws Exception {
+        byte[] payload = new byte[256 * 1024];
+        for (int index = 0; index < payload.length; index++) {
+            payload[index] = (byte) ((index * 31 + 7) & 0xff);
+        }
+        try (DistccTcpVsockBridge bridge = new DistccTcpVsockBridge(
+                LOOPBACK, 0, EchoChannel::new, 1, 0, 5000)) {
+            bridge.start();
+            try (Socket client = new Socket(LOOPBACK, bridge.port())) {
+                client.setSoTimeout(10000);
+                ExecutorService pool = Executors.newSingleThreadExecutor();
+                try {
+                    Future<byte[]> reader = pool.submit(
+                            () -> client.getInputStream().readNBytes(payload.length));
+                    OutputStream output = client.getOutputStream();
+                    for (int offset = 0; offset < payload.length; offset += 4096) {
+                        int length = Math.min(4096, payload.length - offset);
+                        output.write(payload, offset, length);
+                        output.flush();
+                    }
+                    assertArrayEquals(payload, reader.get(15, TimeUnit.SECONDS));
+                } finally {
+                    pool.shutdownNow();
+                }
+            }
+        }
+    }
+
+    @Test(timeout = 10000)
+    public void clientResetReleasesTheConnectionSlot() throws Exception {
+        AtomicInteger opened = new AtomicInteger();
+        List<DistccTcpVsockBridge.ConnectionStats> stats = new CopyOnWriteArrayList<>();
+        try (DistccTcpVsockBridge bridge = new DistccTcpVsockBridge(
+                LOOPBACK,
+                0,
+                () -> opened.getAndIncrement() == 0 ? new BlockingChannel() : new EchoChannel(),
+                1,
+                0,
+                5000,
+                stats::add)) {
+            bridge.start();
+            Socket first = new Socket(LOOPBACK, bridge.port());
+            first.setSoTimeout(3000);
+            waitFor(() -> opened.get() == 1, 3000);
+            waitFor(() -> bridge.activeConnections() == 1, 3000);
+            first.setSoLinger(true, 0);
+            first.close();
+            waitFor(() -> bridge.activeConnections() == 0, 3000);
+            waitFor(() -> stats.stream().anyMatch(
+                    item -> item.outcome() == DistccTcpVsockBridge.Outcome.CHANNEL_FAILED), 3000);
+
+            try (Socket second = new Socket(LOOPBACK, bridge.port())) {
+                second.setSoTimeout(3000);
+                second.getOutputStream().write("after-reset".getBytes(StandardCharsets.UTF_8));
+                second.getOutputStream().flush();
+                assertEquals(
+                        "after-reset",
+                        new String(
+                                second.getInputStream().readNBytes("after-reset".length()),
+                                StandardCharsets.UTF_8));
+            }
+        }
+    }
+
+    @Test(timeout = 5000)
+    public void closeIsIdempotentAndInvalidatesPort() throws Exception {
+        List<DistccTcpVsockBridge.ConnectionStats> stats = new CopyOnWriteArrayList<>();
+        DistccTcpVsockBridge bridge = new DistccTcpVsockBridge(
+                LOOPBACK, 0, EchoChannel::new, 4, 0, 0, stats::add);
+        bridge.start();
+        bridge.close();
+        bridge.close();
+        assertThrows(IllegalStateException.class, bridge::port);
+        assertEquals(0, bridge.activeConnections());
+        assertEquals(0, stats.size());
+    }
+
+    @Test(timeout = 10000)
+    public void statsSinkFailureDoesNotStopTheListener() throws Exception {
+        try (DistccTcpVsockBridge bridge = new DistccTcpVsockBridge(
+                LOOPBACK,
+                0,
+                EchoChannel::new,
+                2,
+                0,
+                5000,
+                stats -> {
+                    throw new IllegalStateException("observer failed");
+                })) {
+            bridge.start();
+            for (int index = 0; index < 2; index++) {
+                try (Socket client = new Socket(LOOPBACK, bridge.port())) {
+                    client.setSoTimeout(3000);
+                    client.getOutputStream().write("ok".getBytes(StandardCharsets.UTF_8));
+                    client.getOutputStream().flush();
+                    assertEquals(
+                            "ok",
+                            new String(
+                                    client.getInputStream().readNBytes(2),
+                                    StandardCharsets.UTF_8));
+                }
+            }
+        }
+    }
+
+    @Test(timeout = 15000)
+    public void processStderrDoesNotEnterTheProtocolStream() throws Exception {
+        byte[] response = DistccFixture.response();
+        Path root = java.nio.file.Files.createTempDirectory("fastlane-distcc-stderr");
+        Path responseFile = root.resolve("response.bin");
+        Path stderrFile = root.resolve("stderr.txt");
+        Path script = root.resolve("server.sh");
+        java.nio.file.Files.write(responseFile, response);
+        java.nio.file.Files.writeString(
+                script,
+                "#!/bin/sh\n"
+                        + "printf 'STDERR_NOISE\\n' >&2\n"
+                        + "cat >/dev/null\n"
+                        + "cat \"$1\"\n");
+        script.toFile().setExecutable(true);
+        try {
+            try (DistccTcpVsockBridge bridge = new DistccTcpVsockBridge(
+                    LOOPBACK,
+                    0,
+                    () -> new ProcessChannel(script, responseFile, stderrFile),
+                    1,
+                    0,
+                    5000)) {
+                bridge.start();
+                try (Socket client = new Socket(LOOPBACK, bridge.port())) {
+                    client.setSoTimeout(10000);
+                    client.getOutputStream().write(DistccFixture.request());
+                    client.getOutputStream().flush();
+                    client.shutdownOutput();
+                    assertArrayEquals(response, client.getInputStream().readAllBytes());
+                }
+            }
+            String stderr = java.nio.file.Files.readString(stderrFile);
+            assertTrue(stderr.contains("STDERR_NOISE"));
+            assertFalse(stderr.contains("DONE"));
+        } finally {
+            java.nio.file.Files.deleteIfExists(script);
+            java.nio.file.Files.deleteIfExists(responseFile);
+            java.nio.file.Files.deleteIfExists(stderrFile);
+            java.nio.file.Files.deleteIfExists(root);
+        }
+    }
+
+    private static int indexOf(byte[] haystack, byte[] needle) {
+        outer:
+        for (int index = 0; index + needle.length <= haystack.length; index++) {
+            for (int offset = 0; offset < needle.length; offset++) {
+                if (haystack[index + offset] != needle[offset]) {
+                    continue outer;
+                }
+            }
+            return index;
+        }
+        return -1;
+    }
+
     private static void assertClosed(Socket client) throws IOException {
         try {
             assertEquals(-1, client.getInputStream().read());
@@ -226,53 +401,30 @@ public final class DistccTcpVsockBridgeTest {
         assertTrue("condition not met within " + timeoutMs + "ms", condition.getAsBoolean());
     }
 
-    /** Minimal byte fixture for the distcc v1 request/response framing. */
+    /** Fixed byte fixture for the distcc v1 request/response framing. */
     static final class DistccFixture {
-        private static final byte[] PREPROCESSED =
-                "int answer(void) { return 42; }\n".getBytes(StandardCharsets.UTF_8);
-
         private DistccFixture() {}
 
         static byte[] request() {
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            writeHeader(out, "DIST", 1);
-            writeHeader(out, "ARGC", 3);
-            writeArg(out, "cc");
-            writeArg(out, "-c");
-            writeArg(out, "fixture.c");
-            writeBody(out, "DOTI", PREPROCESSED);
-            return out.toByteArray();
+            return resource("request-v1.hex");
         }
 
         static byte[] response() {
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            writeHeader(out, "DONE", 1);
-            writeHeader(out, "STAT", 0);
-            writeHeader(out, "SERR", 0);
-            writeHeader(out, "SOUT", 0);
-            byte[] object = {0x7f, 'E', 'L', 'F', 0x00, 0x01, 0x02};
-            writeBody(out, "DOTO", object);
-            return out.toByteArray();
+            return resource("response-v1.hex");
         }
+    }
 
-        static void writeHeader(ByteArrayOutputStream out, String token, int value) {
-            writeAscii(out, token);
-            writeAscii(out, String.format("%08x", value));
-        }
-
-        static void writeArg(ByteArrayOutputStream out, String argument) {
-            writeBody(out, "ARGV", argument.getBytes(StandardCharsets.UTF_8));
-        }
-
-        static void writeBody(ByteArrayOutputStream out, String token, byte[] body) {
-            writeAscii(out, token);
-            writeAscii(out, String.format("%08x", body.length));
-            out.write(body, 0, body.length);
-        }
-
-        private static void writeAscii(ByteArrayOutputStream out, String value) {
-            byte[] bytes = value.getBytes(StandardCharsets.US_ASCII);
-            out.write(bytes, 0, bytes.length);
+    static byte[] resource(String name) {
+        try (InputStream input =
+                DistccTcpVsockBridgeTest.class.getResourceAsStream("/distcc/" + name)) {
+            if (input == null) {
+                throw new IllegalStateException("missing test resource: " + name);
+            }
+            String hex = new String(input.readAllBytes(), StandardCharsets.US_ASCII)
+                    .replaceAll("\\s+", "");
+            return java.util.HexFormat.of().parseHex(hex);
+        } catch (IOException failure) {
+            throw new IllegalStateException("cannot read test resource: " + name, failure);
         }
     }
 
@@ -346,6 +498,41 @@ public final class DistccTcpVsockBridgeTest {
                 closeable.close();
             } catch (Exception ignored) {
                 // Fixture teardown.
+            }
+        }
+    }
+
+    /** Runs a real child process and exposes only its stdin/stdout as the channel. */
+    static final class ProcessChannel implements FastLaneChannel {
+        private final Process process;
+
+        ProcessChannel(java.nio.file.Path script, java.nio.file.Path response, java.nio.file.Path stderr)
+                throws IOException {
+            process = new ProcessBuilder(script.toString(), response.toString())
+                    .redirectError(stderr.toFile())
+                    .start();
+        }
+
+        @Override
+        public InputStream inputStream() {
+            return process.getInputStream();
+        }
+
+        @Override
+        public OutputStream outputStream() {
+            return process.getOutputStream();
+        }
+
+        @Override
+        public void close() throws IOException {
+            process.destroy();
+            try {
+                if (!process.waitFor(2, TimeUnit.SECONDS)) {
+                    process.destroyForcibly();
+                }
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                process.destroyForcibly();
             }
         }
     }

@@ -81,12 +81,16 @@ DV-03：真实 QEMU guest `make -j` + Fast Lane `distccd`；n≥10；端到端�
 ## 实施进展（2026-10-21，Agent C，零设备）
 
 - 宿主桥补齐：连接上限、空闲 watchdog、半关闭 drain、取消收敛、并发隔离、
-  typed `Outcome` 与只含计数的 `StatsSink`。
-- 假 distcc 字节 fixture：`DIST/ARGC/ARGV/DOTI` → `DONE/STAT/SERR/SOUT/DOTO`
-  字节级一致；客户端 half-close 后完整响应。
+  RST 释放槽位、`close()` 幂等/`port()` 失效、typed `Outcome` 与只含计数的
+  `StatsSink`。
+- 固定字节夹具：`request-v1.hex`（162 B）/`response-v1.hex`（112 B），
+  `DIST/ARGC/ARGV/DOTI` → `DONE/STAT/SERR/SOUT/DOTO` 字节级一致；
+  half-close 后完整响应；256 KiB 二进制透传；child stderr 不进入协议。
 - 真实 distcc 3.4 宿主测试：`distcc` → 桥 → `distccd --inetd` → `.o` 可链接
   并运行输出 42（host-only）。
-- 测试：10 个桥单测 + 1 个宿主真实集成测试，共 11 OK；原 4 个测试保留。
-- guest 契约：`docs/reports/tickets/fastlane-P09/guest-contract.md`。
+- 测试：16 个桥单测 + 1 个真实集成测试，共 17 OK；原 10 个测试保留。
+- guest 契约：`docs/reports/tickets/fastlane-P09/guest-contract.md`；与 P02
+  `distcc_bridge.cpp` @ `a5eaa82c` 的差异表：
+  `docs/reports/tickets/fastlane-P09/guest-contract-alignment.zh-CN.md`。
 - 未验证：protected payload、Bionic/Termux distccd、QEMU 转发地址、C++、
   端到端性能；`fastlane-payload/` 未改（P02 所有）。

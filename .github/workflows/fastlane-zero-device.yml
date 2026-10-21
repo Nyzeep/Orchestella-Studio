@@ -10,7 +10,12 @@ on:
       - "runtime/engine-fastlane/**"
       - "runtime/fastlane-distcc/**"
       - "tools/fastlane-build/**"
+      - "tools/ci/**"
+      - "fastlane-payload/**"
       - "app/build.gradle.kts"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - "gradle/**"
       - "NOTICE-fastlane.md"
       - ".github/workflows/fastlane-zero-device.yml"
   push:
@@ -20,7 +25,12 @@ on:
       - "runtime/engine-fastlane/**"
       - "runtime/fastlane-distcc/**"
       - "tools/fastlane-build/**"
+      - "tools/ci/**"
+      - "fastlane-payload/**"
       - "app/build.gradle.kts"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - "gradle/**"
       - "NOTICE-fastlane.md"
       - ".github/workflows/fastlane-zero-device.yml"
   workflow_dispatch:
@@ -37,6 +47,12 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
+      - name: Install workflow validator
+        run: python3 -m pip install --user pyyaml==6.0.2
+
+      - name: Validate the zero-device workflow
+        run: python3 tools/fastlane-build/check_zero_device_workflow.py
+
       - name: Run Python gate unit tests
         run: python3 -m unittest discover -s tools/fastlane-build -p 'test_*.py' -v
 
@@ -49,6 +65,13 @@ jobs:
 
       - name: Verify toolbox layout and 16 KB ELF alignment
         run: python3 tools/fastlane-build/fastlane_build.py verify-toolbox --toolbox build/fastlane-toolbox
+
+      - name: Prove the toolbox builds twice to the same tree
+        run: |
+          python3 tools/fastlane-build/reproduce.py \
+            --manifest fastlane-toolbox/manifest.json \
+            --cache build/fastlane-cache \
+            --runs 2
 
       - name: Prove the gates fail closed
         run: python3 tools/fastlane-build/prove_gate_blocks.py
@@ -140,8 +163,11 @@ jobs:
             echo "present=true" >> "$GITHUB_OUTPUT"
           else
             echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "BLOCKED fastlane-payload/CMakeLists.txt is absent; P11 payload build waits for P02"
+            echo "::notice::PENDING_INTEGRATION fastlane-payload/CMakeLists.txt is absent; the real NDK payload build waits for P02"
           fi
+
+      - name: Prove the payload build flow with a host fixture
+        run: python3 tools/fastlane-build/prove_payload_fixture.py
 
       - name: Set up JDK 17
         if: steps.payload.outputs.present == 'true'

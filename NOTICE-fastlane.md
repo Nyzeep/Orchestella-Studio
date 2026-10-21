@@ -26,6 +26,37 @@ does not replace legal review. The project's own license is the root `LICENSE`
   provide a written offer valid for at least three years. Do not publish the
   APK alone. Legal review is required before the first public release.
 
+#### Corresponding-source delivery for BusyBox
+
+The v1 repository stores only the pinned package and binary SHA256 values; it
+does not vendor the BusyBox source tree. Before a public APK is published, the
+release owner must do one of the following and record the choice in the release
+ticket:
+
+1. Attach `busybox-1.36.1.tar.bz2` (SHA256
+   `b8cc24c9574d809e7279c3be349795c5d5ceb6fdf19ca709f80cde50e47de314`) and
+   the Alpine 3.20-stable `main/busybox` APKBUILD plus patches next to the APK;
+   or
+2. Publish a written offer, valid for at least three years, to provide the same
+   archive and packaging metadata to any third party at no more than the cost of
+   distribution.
+
+The source bundle must include the exact Alpine revision used to build the
+package, the compiler/build instructions, and any patches applied by Alpine.
+Linking to `busybox.net` alone is not a substitute for delivering the source
+that corresponds to the shipped binary.
+
+## Build inputs and reproducibility
+
+- The toolbox build is deterministic: no timestamps are written into
+  `bin/manifest.json`, file modes are fixed at `0755`, and injected zip entries
+  use the fixed `SOURCE_DATE_EPOCH` recorded in the runtime manifest.
+- `tools/fastlane-build/reproduce.py` builds the toolbox twice and compares a
+  canonical tree digest. A release must record the digest and both SHA256
+  values in the P03 report; a mismatch blocks packaging.
+- The toolbox must not exceed the 80 MiB starting budget. The v1 minimal
+  profile is roughly 2.13 MiB of entries plus the generated manifest.
+
 ## Pending profiles (NOT shipped in v1; do not treat as verified)
 
 ### distcc 3.4-4 (Termux package)

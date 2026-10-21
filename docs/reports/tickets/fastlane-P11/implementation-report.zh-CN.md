@@ -1,6 +1,6 @@
 # P11 构建、CI 与许可证实现报告（零设备）
 
-日期：2026-10-21 ｜ 分支：`fastlane/agent-c-toolbox` ｜ 状态：宿主门禁可执行；真实 Gradle/APK 构建 `not-tested`；payload 构建等待 P02
+日期：2026-10-21 ｜ 分支：`feature/fastlane-toolbox` ｜ 状态：宿主门禁可执行；真实 Gradle/APK 构建 `not-tested`；payload 构建等待 P02
 
 ## 1. 目标
 
@@ -9,7 +9,7 @@ PR 门里运行设备任务；不改版本号、不 tag、不发布、不碰签�
 
 ## 2. 改动
 
-### Gradle（`app/build.gradle.kts`）
+### Gradle（`app/build.gradle.kts` / `settings.gradle.kts`）
 
 - 新增可选属性 `orchestella.fastlane.toolboxDir`。仅当显式提供时，校验目录
   存在、不是 symlink、含 `bin/manifest.json`，然后
@@ -24,61 +24,99 @@ PR 门里运行设备任务；不改版本号、不 tag、不发布、不碰签�
     `zipalign -c -P 16 -v 4`。
   - `fastlaneZeroDeviceCheck`：聚合 `:runtime:engine-fastlane:test`、
     `:runtime:fastlane-distcc:test`、许可证门和可选的 APK 门。
+- `settings.gradle.kts` 的 `pluginManagement` 增加 `gradlePluginPortal()`：
+  Kotlin 插件 marker（`org.jetbrains.kotlin.android`）只在 Plugin Portal
+  稳定发布；Maven Central 对 marker 返回 429 时离线/受限网络无法配置构建。
+  项目依赖仍走 Google/Maven，不改变现有镜像策略。
 - 未修改版本号、签名配置、发布任务或渠道逻辑。
 
 ### CI（`.github/workflows/fastlane-zero-device.yml`）
 
-- `toolbox-and-licenses`：Python 单测、真实 pinned toolbox 构建、layout/16 KB
-  校验、故意失败自测、许可证门。
+- `toolbox-and-licenses`：安装 PyYAML 后校验 workflow 自身、Python 单测、
+  真实 pinned toolbox 构建、layout/16 KB 校验、两次构建复现、故意失败自测、
+  许可证门。
 - `jvm-distcc`：`:runtime:engine-fastlane:test` 与
   `:runtime:fastlane-distcc:test`。
 - `apk-bin-gate`：构建 toolbox → `:app:assembleDebug` + APK 门 →
   `tools/ci/check-apk-16kb.sh`。
-- `payload-build`：检出后检测 `fastlane-payload/CMakeLists.txt`；存在时才执行
-  NDK/CMake 构建、16 KB、`AVmPayload_main` 符号检查，缺失时打印 `BLOCKED`
-  且不伪装为成功。
-- 无 adb、无设备、无 release 发布步骤。
+- `payload-build`：检出后检测 `fastlane-payload/CMakeLists.txt`；**始终**先用
+  host fixture 证明 CMake/符号/`BLOCKED` 流程，存在时才执行 NDK/CMake 构建、
+  16 KB、`AVmPayload_main` 符号检查；缺失时输出 `PENDING_INTEGRATION`，
+  不伪装成真实 payload 成功。
+- 无 adb、无设备、无 release 发布步骤；workflow 校验器会对 `adb`、
+  `assembleRelease`、`signingConfig`、`secrets.`、`continue-on-error: true`、
+  self-hosted runner 等直接失败。
 
 ### 工具（`tools/fastlane-build/`）
 
-- `fastlane_build.py`：toolbox 构建/校验、合成 APK 注入/校验、许可证 CLI。
+- `fastlane_build.py`：toolbox 构建/校验、合成 APK 注入/校验、许可证 CLI；
+  新增 `SOURCE_DATE_EPOCH`、AArch64/static ELF 检查、路径/重复/symlink 拒绝、
+  canonical tree digest。
+- `reproduce.py`：同一输入构建两次并比较 tree digest；不一致列出差异文件并
+  非零退出。
 - `check_licenses.py`：许可证 allowlist、SHA256、GPL 对应源码、NOTICE/SBOM
-  覆盖。
+  覆盖，并交叉校验 SBOM 的版本/license/checksum/downloadLocation/
+  corresponding-source、DESCRIBES 关系和 pending profile 状态。
+- `check_zero_device_workflow.py`：用 PyYAML 解析 workflow，检查触发条件、
+  read-only 权限、必需 job/step、runner、超时和禁用命令；负向测试覆盖
+  `continue-on-error`、adb、release、secret、缺失 gate。
 - `build-payload.sh`：P02 源码存在时用 NDK/CMake 构建并检查 16 KB/符号；
   源码缺失时 `exit 2` + `BLOCKED`。
-- `prove_gate_blocks.py`：故意篡改/签名/超预算，证明门禁失败关闭。
+- `prove_payload_fixture.py`：用 host CMake 构建最小 `.so`、检查导出
+  `AVmPayload_main`，并证明缺失 P02 源码时 `build-payload.sh` 返回 2 和
+  `BLOCKED`；明确标注不是 Android 产物。
+- `prove_gate_blocks.py`：故意篡改/签名/超预算/缺失条目/路径穿越/缺许可证，
+  证明门禁失败关闭。
 
 ### 许可证
 
 - 新增 `NOTICE-fastlane.md`：BusyBox GPL-2.0-only 的二进制、包 SHA、上游
-  源码 SHA、Alpine 打包树、发布义务；distcc/clang 为 pending/not-tested；
-  gvproxy/zipfuse/JUnit 说明。
-- 新增 `fastlane-toolbox/SBOM.spdx.json`：BusyBox 包、SHA256、许可证、对应
-  源码引用。
+  源码 SHA、Alpine 打包树、发布义务；新增 BusyBox 对应源码交付步骤（随 APK
+  发布源码包，或三年有效书面 offer，二者择一并记录到 release ticket）；
+  distcc/clang 为 pending/not-tested；gvproxy/zipfuse/JUnit 说明。
+- 新增 `fastlane-toolbox/SBOM.spdx.json`：BusyBox 包、package SHA256 与
+  binary SHA256、版本、许可证、对应源码引用；许可证门会核对两个 checksum。
 - 未把 GPL 代码/补丁复制进仓库；只固定上游包与源码指针。
 
 ## 3. 验证证据
 
 ```bash
-python3 -m unittest discover -s tools/fastlane-build -p 'test_*.py' -v
-# Ran 29 tests ... OK
+PYTHONPATH=<pyyaml> python3 -m unittest discover -s tools/fastlane-build -p 'test_*.py' -v
+# Ran 76 tests ... OK
+# 无 PyYAML 时 test_check_workflow 的 12 项 skip，其余 64 项 OK
+
+PYTHONPATH=<pyyaml> python3 tools/fastlane-build/check_zero_device_workflow.py
+# WORKFLOW_OK
+# actionlint 在本环境不可用；用 PyYAML 解析 + 负向变异测试替代
+
+python3 tools/fastlane-build/prove_payload_fixture.py
+# PAYLOAD_FIXTURE_SYMBOL_OK library=libfastlane_payload_fixture.so symbol=AVmPayload_main
+# PAYLOAD_FIXTURE_BLOCKED_OK
+# PAYLOAD_FIXTURE_OK
 
 python3 tools/fastlane-build/prove_gate_blocks.py
-# BLOCKED tampered-bin-sha: APK size mismatch: bin/sh
-# BLOCKED signed-apk-injection: refusing to inject bin/ into an already signed APK
-# BLOCKED size-budget: APK bin/ exceeds 1e-06 MiB: 3167 bytes
+# BLOCKED tampered-bin-sha
+# BLOCKED signed-apk-injection
+# BLOCKED size-budget
+# BLOCKED missing-bin-entry
+# BLOCKED apk-path-traversal
+# BLOCKED toolbox-sha
+# BLOCKED toolbox-size-budget
+# BLOCKED license-missing
+# BLOCKED manifest-path-traversal
 # GATE_BLOCK_OK
 
 python3 tools/fastlane-build/fastlane_build.py check-licenses
 # LICENSE_OK
 
-python3 tools/fastlane-build/fastlane_build.py build ... --out <tmp>/fastlane-toolbox-real
-python3 tools/fastlane-build/fastlane_build.py verify-toolbox --toolbox <tmp>/fastlane-toolbox-real
-# ok=true, entries=50, totalSize=2234863, elf16k=ok, elfChecked=2
+python3 tools/fastlane-build/reproduce.py \
+  --manifest fastlane-toolbox/manifest.json --cache <tmp>/fastlane-toolbox-cache --runs 2
+# ok=true, runs=2, treeDigest=763ac97b..., totalBytes=2245502
 ```
 
-故意失败覆盖：篡改 `bin/sh`、向已签名 APK 注入、超过体积预算；三者都返回
-非零/抛出 `BuildError`，`prove_gate_blocks.py` 仅在全部被阻塞时成功。
+故意失败覆盖：篡改 `bin/sh`、向已签名 APK 注入、超过体积预算、删除 APK
+条目、APK 路径穿越、toolbox SHA、toolbox 体积、manifest 缺 license、manifest
+路径穿越；全部被阻断后 `prove_gate_blocks.py` 才成功。
 
 ## 4. 签名前注入的边界
 
@@ -93,14 +131,19 @@ python3 tools/fastlane-build/fastlane_build.py verify-toolbox --toolbox <tmp>/fa
 
 ## 5. 未验证 / not-tested
 
-- 本环境无 Android SDK/Gradle 可用结果：`./gradlew ...` 尝试在配置阶段无输出
-  并被终止，未获得 Gradle 结论；因此 Gradle Kotlin DSL 语法、AGP 资源打包、
-  `assembleDebug` 均 `not-tested`。
+- Gradle 未能在本机完成：`settings.gradle.kts` 的 Plugin Portal 修复后，
+  `--configure-on-demand` 可以跳过 `:app` 配置，但本机只有 JDK 21，项目
+  toolchain 要求 JDK 17，报 `Cannot find a Java installation ... 17`；
+  不使用 `--configure-on-demand` 时 `:app` 因无 Android SDK 失败。Maven
+  Central 在本环境返回 429，本地解析改用仓库已有的 Aliyun 镜像属性。
+  因此 Gradle Kotlin DSL 全量配置、AGP 资源打包、`assembleDebug` 均
+  `not-tested`；distcc JVM 测试改用 `javac --release 17` + JUnit 直接运行，
+  17 tests OK（见 P09 报告）。
 - 真实 `zipalign -P 16`：本机无 zipalign，APK 门 `SKIP`；CI 有 build-tools
-  时会执行。
+  时会执行，`check-apk-16kb.sh` 在 zipalign 缺失时直接失败。
 - 真实 APK 的 `bin/` 执行位/zipfuse 行为：`not-tested`（DV-02）。
 - `fastlane-payload/` 在本 worktree 不存在（P02 所有），payload NDK/CMake
-  构建被 `BLOCKED`；未修改 P02 源码。
+  构建被 `BLOCKED`；host fixture 只证明流程和符号，不证明 Android 产物。
 - 未运行 adb/设备；未发布 APK/Release；未 tag；未递增版本。
 
 ## 6. 版本与发布
@@ -115,10 +158,12 @@ python3 tools/fastlane-build/fastlane_build.py verify-toolbox --toolbox <tmp>/fa
   `:app:assembleDebug :app:verifyFastlaneToolboxApk -Porchestella.fastlane.toolboxDir=...`
   并确认 AGP 是否保留 `bin/` 执行位；若 AGP 写入 0644，需改用可验证的
   artifact transform，而不是签名后改包。
+- `toolbox-and-licenses` 在 CI 中安装 `pyyaml==6.0.2` 仅用于 workflow 校验；
+  它不是 APK 依赖，不进入 NOTICE/SBOM 的“已分发”列表。
 - P02 交付 `fastlane-payload/CMakeLists.txt` 后，启用 `payload-build` job 的
-  构建步骤；确认导出 `AVmPayload_main`。
-- 80 MiB 是 v1 起步预算；当前 2.13 MiB。启用 clang 前必须另做体积/许可证
-  决策。
+  真实 NDK 构建步骤；host fixture 不能替代 16 KB/Bionic 验证。
+- 80 MiB 是 v1 起步预算；当前条目 2.13 MiB、含 manifest 2.14 MiB。启用
+  clang 前必须另做体积/许可证决策。
 
 ## 8. 研究来源
 

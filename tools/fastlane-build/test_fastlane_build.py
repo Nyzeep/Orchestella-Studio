@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import warnings
 import zipfile
 from pathlib import Path
 
@@ -331,6 +332,186 @@ class CleanupTest(ToolboxTestBase):
         bad.write_text(json.dumps(data), encoding="utf-8")
         with self.assertRaises(fastlane_build.BuildError):
             fastlane_build.build_toolbox(bad, self.out, fixture=True)
+
+
+def make_elf(*, machine=183, segments=((1, 0x10000),)):
+    """Build a minimal little-endian ELF64 header with PT_* program headers."""
+    import struct
+
+    header = bytearray(64)
+    header[0:4] = b"\x7fELF"
+    header[4] = 2
+    header[5] = 1
+    struct.pack_into("<H", header, 18, machine)
+    struct.pack_into("<Q", header, 32, 64)
+    struct.pack_into("<H", header, 54, 56)
+    struct.pack_into("<H", header, 56, len(segments))
+    programs = bytearray(56 * len(segments))
+    for index, (p_type, p_align) in enumerate(segments):
+        offset = index * 56
+        struct.pack_into("<I", programs, offset, p_type)
+        struct.pack_into("<Q", programs, offset + 48, p_align)
+    return bytes(header + programs)
+
+
+class HardeningTest(ToolboxTestBase):
+    def test_build_records_epoch_and_fixed_mtime(self):
+        manifest = self.build(source_date_epoch=1792540800)
+        self.assertEqual(1792540800, manifest["sourceDateEpoch"])
+        self.assertEqual("2026-10-21T00:00:00Z", manifest["sourceDate"])
+        for entry in manifest["entries"]:
+            self.assertEqual(1792540800, int((self.out / entry["path"]).stat().st_mtime))
+
+    def test_manifest_rejects_missing_license(self):
+        data = json.loads(MANIFEST.read_text(encoding="utf-8"))
+        del data["artifacts"][0]["license"]
+        bad = self.root / "bad.json"
+        bad.write_text(json.dumps(data), encoding="utf-8")
+        with self.assertRaises(fastlane_build.BuildError):
+            fastlane_build.build_toolbox(bad, self.out, fixture=True)
+
+    def test_manifest_rejects_non_https_source(self):
+        data = json.loads(MANIFEST.read_text(encoding="utf-8"))
+        data["artifacts"][0]["source"] = "http://example.invalid/busybox.apk"
+        bad = self.root / "bad.json"
+        bad.write_text(json.dumps(data), encoding="utf-8")
+        with self.assertRaises(fastlane_build.BuildError):
+            fastlane_build.build_toolbox(bad, self.out, fixture=True)
+
+    def test_manifest_rejects_unknown_dependency(self):
+        data = json.loads(MANIFEST.read_text(encoding="utf-8"))
+        data["artifacts"][0]["deps"] = ["missing-artifact"]
+        bad = self.root / "bad.json"
+        bad.write_text(json.dumps(data), encoding="utf-8")
+        with self.assertRaises(fastlane_build.BuildError):
+            fastlane_build.build_toolbox(bad, self.out, fixture=True)
+
+    def test_manifest_rejects_pending_profile_marked_tested(self):
+        data = json.loads(MANIFEST.read_text(encoding="utf-8"))
+        data["pendingProfiles"]["distcc-clang"]["status"] = "tested"
+        bad = self.root / "bad.json"
+        bad.write_text(json.dumps(data), encoding="utf-8")
+        with self.assertRaises(fastlane_build.BuildError):
+            fastlane_build.build_toolbox(bad, self.out, fixture=True)
+
+    def test_manifest_rejects_applet_path_mismatch(self):
+        data = json.loads(MANIFEST.read_text(encoding="utf-8"))
+        for entry in data["entries"]:
+            if entry.get("type") == "applet":
+                entry["path"] = "bin/not-the-applet"
+                break
+        bad = self.root / "bad.json"
+        bad.write_text(json.dumps(data), encoding="utf-8")
+        with self.assertRaises(fastlane_build.BuildError):
+            fastlane_build.build_toolbox(bad, self.out, fixture=True)
+
+    def test_verify_toolbox_rejects_extra_top_level_file(self):
+        self.build()
+        (self.out / "README").write_text("not part of the toolbox\n", encoding="utf-8")
+        with self.assertRaises(fastlane_build.BuildError):
+            fastlane_build.verify_toolbox(self.out)
+
+    def test_verify_toolbox_rejects_non_0755_mode(self):
+        self.build()
+        os.chmod(self.out / "bin" / "ls", 0o700)
+        with self.assertRaises(fastlane_build.BuildError):
+            fastlane_build.verify_toolbox(self.out)
+
+    def test_elf_rejects_dynamic_image(self):
+        dynamic = make_elf(segments=((1, 0x10000), (3, 0x10000)))
+        with self.assertRaises(fastlane_build.BuildError):
+            fastlane_build._elf_check(dynamic, "dynamic")
+
+    def test_elf_rejects_non_aarch64_machine(self):
+        wrong = make_elf(machine=62)
+        with self.assertRaises(fastlane_build.BuildError):
+            fastlane_build._elf_check(wrong, "x86_64")
+
+    def test_elf_rejects_4k_load_alignment(self):
+        wrong = make_elf(segments=((1, 0x1000),))
+        with self.assertRaises(fastlane_build.BuildError):
+            fastlane_build._elf_check(wrong, "4k")
+
+    def test_inject_rejects_symlink_in_base_apk(self):
+        self.build()
+        apk = self.root / "symlink.apk"
+        with zipfile.ZipFile(apk, "w") as archive:
+            archive.writestr("AndroidManifest.xml", b"\x03\x00\x08\x00")
+            info = zipfile.ZipInfo("assets/link")
+            info.external_attr = (stat.S_IFLNK | 0o777) << 16
+            archive.writestr(info, b"busybox")
+        with self.assertRaises(fastlane_build.BuildError):
+            fastlane_build.inject_apk(apk, self.out, self.root / "out.apk")
+
+    def test_inject_rejects_duplicate_base_apk_entry(self):
+        self.build()
+        apk = self.root / "duplicate-base.apk"
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            with zipfile.ZipFile(apk, "w") as archive:
+                archive.writestr("AndroidManifest.xml", b"\x03\x00\x08\x00")
+                archive.writestr("AndroidManifest.xml", b"\x03\x00\x08\x00")
+        with self.assertRaises(fastlane_build.BuildError):
+            fastlane_build.inject_apk(apk, self.out, self.root / "out.apk")
+
+    def test_verify_apk_rejects_missing_entry(self):
+        self.build()
+        apk = self.root / "injected.apk"
+        fastlane_build.inject_apk(self.make_apk(self.root / "base.apk"), self.out, apk)
+        rewritten = self.root / "missing.apk"
+        with zipfile.ZipFile(apk) as source, zipfile.ZipFile(rewritten, "w") as target:
+            for info in source.infolist():
+                if info.filename != "bin/ls":
+                    target.writestr(info, source.read(info.filename))
+        with self.assertRaises(fastlane_build.BuildError):
+            fastlane_build.verify_apk(
+                rewritten, self.out / "bin" / "manifest.json", allow_fixture=True
+            )
+
+    def test_verify_apk_rejects_traversal_entry(self):
+        self.build()
+        apk = self.root / "injected.apk"
+        fastlane_build.inject_apk(self.make_apk(self.root / "base.apk"), self.out, apk)
+        with zipfile.ZipFile(apk, "a") as archive:
+            archive.writestr("bin/../escape", b"x")
+        with self.assertRaises(fastlane_build.BuildError):
+            fastlane_build.verify_apk(
+                apk, self.out / "bin" / "manifest.json", allow_fixture=True
+            )
+
+    def test_verify_apk_rejects_symlink_entry(self):
+        self.build()
+        apk = self.root / "injected.apk"
+        fastlane_build.inject_apk(self.make_apk(self.root / "base.apk"), self.out, apk)
+        rewritten = self.root / "symlink-entry.apk"
+        with zipfile.ZipFile(apk) as source, zipfile.ZipFile(rewritten, "w") as target:
+            for info in source.infolist():
+                if info.filename == "bin/ls":
+                    info.external_attr = (stat.S_IFLNK | 0o777) << 16
+                target.writestr(info, source.read(info.filename))
+        with self.assertRaises(fastlane_build.BuildError):
+            fastlane_build.verify_apk(
+                rewritten, self.out / "bin" / "manifest.json", allow_fixture=True
+            )
+
+    def test_verify_apk_accepts_zipfuse_default_mode(self):
+        self.build()
+        apk = self.root / "injected.apk"
+        fastlane_build.inject_apk(self.make_apk(self.root / "base.apk"), self.out, apk)
+        rewritten = self.root / "mode-zero.apk"
+        with zipfile.ZipFile(apk) as source, zipfile.ZipFile(rewritten, "w") as target:
+            for info in source.infolist():
+                if info.filename.startswith("bin/"):
+                    info.external_attr = stat.S_IFREG << 16
+                target.writestr(info, source.read(info.filename))
+        report = fastlane_build.verify_apk(
+            rewritten, self.out / "bin" / "manifest.json", allow_fixture=True
+        )
+        self.assertEqual(report["entries"], report["zipfuseDefaultMode"])
+
+    def test_negative_source_date_epoch_is_rejected(self):
+        with self.assertRaises(fastlane_build.BuildError):
+            fastlane_build.resolve_source_date_epoch(None, -1)
 
 
 if __name__ == "__main__":
