@@ -427,9 +427,18 @@ public final class Fln1TerminalCodec implements TerminalCodec {
                     throw new TerminalProtocolException(
                             TerminalErrorCode.UNKNOWN_TYPE, "guest received ERROR");
                 }
-                Fln1Payloads.Error error = Fln1Payloads.parseError(payload);
-                int session = wireSession == 0 ? 0 : localId(wireSession);
-                return new TerminalFrame(TerminalFrameType.ERROR, session, payload);
+                Fln1Payloads.parseError(payload);
+                if (wireSession == 0) {
+                    // FLN1 reports connection-scoped failures (including a
+                    // failed OPEN_PTY) with session 0. There is no request
+                    // correlation in v1, so no pending open can be matched to
+                    // the payload's answer; dropping the FIFO is the only
+                    // safe mapping. The mux closes the OPENING sessions.
+                    pendingOpens.clear();
+                    return new TerminalFrame(TerminalFrameType.ERROR, 0, payload);
+                }
+                return new TerminalFrame(
+                        TerminalFrameType.ERROR, localId(wireSession), payload);
             }
             default -> throw new TerminalProtocolException(
                     TerminalErrorCode.UNKNOWN_TYPE,
