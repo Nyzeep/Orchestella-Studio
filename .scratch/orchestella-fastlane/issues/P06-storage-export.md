@@ -1,7 +1,7 @@
 # P06: Fast Lane 存储与导出/导入（零设备）
 
 Type: implementation
-Status: ready-for-agent（zero-device）
+Status: implemented（zero-device 验收通过；DV-01/DV-02 真机待验）
 Priority: P1
 Owner: storage owner
 Blocked by: None（零设备）；真机由 DV-01/DV-02 验证
@@ -51,3 +51,7 @@ External gates: 无
 
 - 无法保证 host 不落明文：停止产品化。
 - 导入无法保持数据一致性：只做导出，导入另开决策。
+
+## Comments
+
+- 2026-10-21（Agent B，`fastlane/agent-b-dataplane`）：零设备实现完成。`runtime/fastlane-storage` 提供 `StorageLayout`、manifest JSON、ustar/PAX tar 读写、`FastLaneExporter`/`FastLaneImporter`、SAF `ExportSink`/`GuestImportSink` seam；JVM 26/26 测试通过（8 MiB/空文件/深目录/UTF-8/gzip/取消/失败回滚/不覆盖）。导入以 `home/workspace` 整树替换；真实 SAF 原子性与设备 staging 未验证。详见 `docs/reports/tickets/fastlane-P06/implementation-report.zh-CN.md`。
