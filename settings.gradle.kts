@@ -21,6 +21,11 @@ pluginManagement {
         }
         google()
         mavenCentral()
+        // Plugin markers (for example org.jetbrains.kotlin.android) are
+        // published to the Gradle Plugin Portal. Maven Central mirrors them
+        // inconsistently and rate-limits CI, so plugins resolve from the
+        // canonical portal while project dependencies stay on Google/Maven.
+        gradlePluginPortal()
     }
 }
 

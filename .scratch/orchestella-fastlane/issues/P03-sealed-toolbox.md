@@ -56,3 +56,25 @@ External gates: 许可证审查；APK 体积预算
 ## 设备交接
 
 DV-02：从 `/mnt/apk/bin` 执行 shell/编译器；数据写 encrypted storage。
+
+## 实施进展（2026-10-21，Agent C，零设备）
+
+- 选型：候选 B（Alpine 3.20 `busybox-static` 1.36.1-r31，aarch64，静态
+  musl，64 KiB PT_LOAD 对齐）。候选 A 的 Termux bootstrap 依赖绝对
+  `/data/data/com.termux/files/usr` 路径与 `SYMLINKS.txt`，零设备无法证明
+  可重定位，v1 不采用。
+- 产物：APK 根 `bin/`，`busybox` + `sh` 副本 + 48 个 applet wrapper；运行
+  时 manifest 位于 `/mnt/apk/bin/manifest.json`。
+- 实测：条目 2,234,863 字节 / 50 个；manifest 10,639 字节；`bin/` 合计
+  2,245,502 字节；`verify-toolbox` 通过；2 个 ELF 均为 AArch64/static/
+  16 KB 对齐；合成 APK 注入/校验通过（51 个 `bin/` 文件）。
+- 复现：两次真实构建 tree digest 一致
+  `763ac97bc6bb0fcf1b3bec91e6fa0d10d64a14285ef71067ab4ecc9905d25e5e`；
+  `SOURCE_DATE_EPOCH=1792540800`，mtime/ZIP 时间戳固定。
+- 负向门禁：错 SHA、缺条目、路径穿越、超大体积、缺许可证、已签名注入均
+  非零退出；`GATE_BLOCK_OK`。
+- 构建/门禁：`tools/fastlane-build/fastlane_build.py` + `reproduce.py`；
+  Python 全量 76 tests OK（无 PyYAML 时 12 项 workflow 测试 skip）。
+- 未验证：DV-02 设备执行、AGP 真实 APK、真实 `zipalign`；编译器未随 v1
+  分发（`distcc-clang` profile 为 `not-tested`）。
+- 报告：`docs/reports/tickets/fastlane-P03/implementation-report.zh-CN.md`
