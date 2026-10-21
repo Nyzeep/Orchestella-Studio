@@ -1,7 +1,7 @@
 # P01: engine-fastlane 宿主适配器（零设备）
 
 Type: implementation
-Status: ready-for-agent（zero-device）
+Status: implemented（zero-device；Gradle not-run；DV-01 pending）
 Priority: P0（Fast Lane 基础）
 Owner: engine owner
 Blocked by: None（零设备）；真机集成由 DV-01 验证
@@ -73,17 +73,16 @@ interface FastLaneHandle {
 
 DV-01 需要：真实 create/run/stop、vsock 握手、encrypted storage、20 次启停、失败分类证据。
 
-## 实施进展（2026-10-21，零设备）
+## Comments
 
-已落地 `runtime/engine-fastlane` 最小骨架：
+### 2026-10-21 零设备实现
 
-- `FastLaneException`/`FastLaneChannel`/`FastLaneHandle`/`FastLaneLaunchSpec`/`FastLaneSession`/`FastLaneStopResult`/`FastLaneExitInfo`；
-- `FastLaneSession` 的单通道复用、关闭、有界 stop、UNCONFIRMED 可重试、关闭后拒绝新通道；
-- `FastLaneLaunchSpec` 的 instanceId/payload/port/storage/hash 校验；
-- 10 个 JUnit 4 测试通过（standalone `javac` + `JUnitCore`）。
+状态：zero-device 范围完成；DV-01 真机待验。
 
-未完成（本票剩余）：
-
-- `ReflectiveFastLaneApi` 的真实反射适配器与 fake `android.system.virtualmachine` 测试；
-- Gradle `:runtime:engine-fastlane:check` 在带 Android SDK 的环境跑通；本环境缺 Android SDK/JDK 17，只用 JDK 21 + standalone JUnit 验证；
-- 与 App/Instance 的接线（故意留到后续票，不在 P01 提前耦合）。
+- `ReflectiveFastLaneApi` 反射适配器、fake `android.system.virtualmachine`、config 六字段、`getOrCreate`、callback、PFD 采用、有界 stop 与失败/退出分类已落地。
+- `FastLaneSession` 新增 `openChannel(port)` 每连接工厂；`channel(port)` 与四个命名便捷方法保留为缓存单通道，proxy/distcc 并发必须用 `openChannel`。
+- `FastLaneHandle.payloadReady()` 暴露 `onPayloadReady`；`run()` 只代表启动，不代表 payload 就绪。
+- 65 个 JUnit 4 测试通过（standalone `javac --release 17 -Xlint:all -Werror` + JUnitCore）。
+- Gradle `:runtime:engine-fastlane:check` **not-run**：本环境无 Android SDK，根配置包含 `:app`；未把 standalone 结果冒充 Gradle。
+- `not-tested`：真实 ROM 的权限/APEX/`create`/`run`/`connectVsock`/encrypted storage/stop/20 次启停；留给 DV-01。
+- 实现报告：`docs/reports/tickets/fastlane-P01/implementation-report.zh-CN.md`。
