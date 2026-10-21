@@ -11,7 +11,7 @@
 
 1. **protected 自定义 Full Linux 在当前无 Root 约束下不可行，且不是“再写一个 adapter”能解决的。** pvmfw 只启动经 Google/OEM 签名的 boot image；App 无法用自己的 key 签一个通用 Linux 内核。即使签名问题被绕过，AOSP protected 分支还会拒绝 `app_data_file` 根盘，protected crosvm 也不提供原生 virtio-net。当前 HONOR 设备只声明 protected，因此这条线应停止产品化投入。
 2. **protected 下唯一真实的硬件加速路径是 Google 签名的 Microdroid + 应用 payload。** 它不是“完整 Linux VM”，但可以提供一个**硬件 CPU 加速的 Linux 用户空间**：payload 是 App APK 内的 `.so`，可使用 persistent encrypted storage、通过 vsock 与宿主通信。它足以支撑一个“Fast Lane”，但不足以兑现 Full Linux 契约。
-3. **Fast Lane 的上限由 SELinux 决定，而不是由性能决定。** 已核实：payload 只能从 APK 挂载点 `/mnt/apk` 执行；encrypted storage 是 `MS_NOEXEC`，且 `neverallow` 禁止从 `encryptedstore_file` 执行；payload 无 capabilities，不能 chroot/mount；`neverallow` 只允许 `crash_dump` ptrace，因此 PRoot 也不可行。Fast Lane 只能是**密封在 APK 内的 Linux 工具链/用户空间**，不是可 `apt install` 的发行版。
+3. **Fast Lane 的上限由 SELinux 决定，而不是由性能决定。** 已核实：payload 只能从 APK 挂载点 `/mnt/apk` 执行；encrypted storage 是 `MS_NOEXEC`，且 `neverallow` 禁止从 `encryptedstore_file` 执行；payload 无 capabilities，不能 chroot/mount；`microdroid_payload.te` 没有 ptrace allow（SELinux 默认拒绝，也没有显式 neverallow），因此 PRoot 大概率不可用，需真机探针闭合。Fast Lane 只能是**密封在 APK 内的 Linux 工具链/用户空间**，不是可 `apt install` 的发行版。
 4. **新主线应是“双车道 + 交叉优化”，而不是“让 protected 跑 Full Linux”。**
    - **Full Lane**：QEMU，完整发行版、systemd、Docker、原生网络、GPU；CPU 慢，但能力完整，继续作为 Full Linux 的唯一交付路径。
    - **Fast Lane**：protected Microdroid，硬件 CPU、持久加密存储、密封工具链、终端/构建；能力窄，但 CPU 接近原生。
@@ -166,7 +166,7 @@ AOSP `VirtualMachineConfig` 提供了与 custom image 并列的 **app payload** 
 | 从 encrypted storage 执行 | **禁止** | `encryptedstore` 以 `MS_NOSUID|MS_NODEV|MS_NOEXEC` 挂载；`neverallow domain encryptedstore_file:file { execute execute_no_trans }` |
 | chroot | **禁止** | payload 的 inheritable/bounding caps 被清空；策略没有 `capability sys_chroot` |
 | mount tmpfs/overlay/loop | **禁止** | 没有 `capability sys_admin`；没有 mount allow |
-| PRoot | **禁止** | `neverallow { domain -crash_dump } domain:process ptrace`；只有 crash_dump 能 ptrace |
+| PRoot | **大概率不可用（需真机探针）** | `microdroid_payload.te` 无 ptrace allow；SELinux 默认拒绝；无显式 neverallow |
 | memfd + fexecve | **很可能禁止** | `microdroid_app` 没有 `tmpfs:file execute`；需真机确认 |
 | 从 encrypted storage mmap 动态库 | **很可能禁止** | `encryptedstore_file` 只给 create/read/write 类权限，没有 `map`；需真机确认 |
 | vsock 入站（guest listen/accept） | **允许** | `allow microdroid_payload self:vsock_socket { create listen accept ... }` |
@@ -184,7 +184,7 @@ AOSP `VirtualMachineConfig` 提供了与 custom image 并列的 **app payload** 
 **可行：密封 Linux 工具链/用户空间（Sealed Linux Toolbox）**
 
 - 把工具/用户空间作为 **APK 根 `bin/` 条目**打进 APK；payload 仍在 `lib/<ABI>`。zipfuse 对 `bin/` 下的文件默认给 execute 位（`EXECUTABLE_FILE_MODE`），`lib/` 则依赖 zip 的 unix mode，不能假设可执行。
-- 候选实现 A：**Termux bootstrap**（Bionic + `$PREFIX`，已有 bash/git/python/clang 生态）；候选实现 B：自建静态工具集。两者都从 `/mnt/apk/bin` 运行，数据在 encrypted storage。Termux 的 proot 仍不可用（SELinux ptrace），但 Termux 本体不依赖 proot。
+- 候选实现 A：**Termux bootstrap**（Bionic + `$PREFIX`，已有 bash/git/python/clang 生态）；候选实现 B：自建静态工具集。两者都从 `/mnt/apk/bin` 运行，数据在 encrypted storage。Termux 的 proot 在 protected 内大概率不可用（无 ptrace allow，SELinux 默认拒绝，需真机探针），但 Termux 本体不依赖 proot。
 - 二进制/库全部在 APK 挂载点（`system_file`，可执行/可 map）；可写数据、源码、构建产物放 encrypted storage。
 - 终端：payload 在 devpts 上开 PTY，通过 vsock 提供多路复用；宿主复用现有终端 UI。
 - 网络：payload 监听 vsock 端口，宿主侧做 TCP/SOCKS5/HTTP CONNECT 代理；guest 侧工具用 `http_proxy`/`ALL_PROXY`/`git http.proxy`。没有原生 `eth0`、没有 ICMP、没有 raw socket。

@@ -8,6 +8,7 @@
 
 - [Fast Lane × QEMU 交叉优化 Spec（2026-10-21）](orchestration/fastlane-cross-lane-spec-20261021.zh-CN.md)：当前实现规格；P01–P12 并行零设备模块、DV-01–DV-04 串行真机门、distcc 跨车道与能力矩阵。
 - [Protected Fast Lane + QEMU Full Lane（2026-10-21）](orchestration/protected-fast-lane-plan-20261021.zh-CN.md)：方向与硬边界；protected Microdroid 密封 Linux toolbox、QEMU Full Lane、构建 offload。
+- [Fast Lane 集成分支（2026-10-21）](orchestration/fastlane-integration-20261021.zh-CN.md)：四条模块分支合并、FLN1 adapter、CI 全模块门禁与证据分级；真实 Android 构建 `BUILD_BLOCKED`。
 - [下一阶段优化方案（2026-10-18）](orchestration/next-optimization-plan-20261018.zh-CN.md)：QEMU 主线、发布签名 P0、运行时收敛；其 AVF 排序已由 2026-10-21 方案重排，P0/P1 仍有效。
 - [P0-2 QEMU / gvproxy 运行时生命周期收敛（2026-10-18）](orchestration/p0-2-runtime-supervisor-20261018.zh-CN.md)：单一 RuntimeProcessSupervisor、有界停止、gvproxy handle 与未确认停止保留 RUNNING；纯 JVM/宿主进程验证，真机未测。
 - [维护与优化 Prompt（2026-10-18）](orchestration/optimization-prompt-20261018.zh-CN.md)：本回合清理、文档归档、P0-3 单实例竞态修复与验证记录，含可直接交接的中文 Prompt。

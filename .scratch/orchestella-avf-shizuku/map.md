@@ -202,7 +202,7 @@ flowchart TD
 关键新事实（AOSP 源码核对）：
 
 - `VirtualMachineConfig` 支持 `setPayloadBinaryName` + `setProtectedVm(true)` + `setEncryptedStorageBytes` + `setCpuTopology` + `setMemoryBytes`；`VirtualMachine.connectVsock` 可用。
-- payload 从 `/mnt/apk` 执行；encrypted storage 以 `MS_NOSUID|MS_NODEV|MS_NOEXEC` 挂载；SELinux `neverallow` 禁止从 `encryptedstore_file` 执行；payload caps 被清空，不能 chroot/mount；只有 `crash_dump` 能 ptrace，因此 PRoot 不可行。
+- payload 从 `/mnt/apk` 执行；encrypted storage 以 `MS_NOSUID|MS_NODEV|MS_NOEXEC` 挂载；SELinux `neverallow` 禁止从 `encryptedstore_file` 执行；payload caps 被清空，不能 chroot/mount；`microdroid_payload.te` 没有 ptrace allow（SELinux 默认拒绝，没有显式 neverallow），PRoot 大概率不可用，需真机探针。
 - 可行形态是 **密封 Linux toolbox**：静态工具打进 APK，从 `/mnt/apk` 执行；数据写 encrypted storage；终端/vsock；宿主代理 TCP。不能 apt install native 包、不能 Docker/systemd/原生网络/GPU。
 
 当前设备事实不变：HONOR MEY-AN00 / SM8735 / API36，`getCapabilities=1`，`vm info` 仅 protected；真实 AVF Guest 成功样本仍为 0。但 protected Microdroid payload 可在当前设备验证，不需要购买 non-protected 设备。

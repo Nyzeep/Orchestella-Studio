@@ -1,6 +1,6 @@
 # P02 Fast Lane payload runtime — 实现报告（零设备）
 
-状态：零设备实现与宿主强化完成；真机（DV-01/DV-02）未验证。
+状态：零设备实现与宿主强化完成；真机（DV-01/DV-02）未验证。P04 已按 FLN1 对齐（2026-10-21 集成，见 §8）。
 分支：`feature/fastlane-dataplane`。日期：2026-10-21（第二轮加固）。
 
 ## 1. 目标与范围
@@ -129,7 +129,8 @@ NDK/arm64 `.so`：本环境没有 `ANDROID_NDK_HOME`，**未运行** `scripts/bu
 
 ## 8. 跨 agent 契约
 
-- **P04**：A 已推送 `feature/fastlane-runtime`。其 `PROTOCOL.md` 明确 `OSFL` v1 **不是** `FLN1` 的 wire-compatible 实现；其对齐报告建议保留 `FLN1` 为 vsock 契约、在 P04 `TerminalCodec` 后加 `Fln1TerminalCodec` adapter。本轮**不修改** `FLN1` 字节，也不实现双协议；DV-02 前必须完成 adapter，否则终端不能联调。
+- **P04**：A 已推送 `feature/fastlane-runtime`。其 `PROTOCOL.md` 明确 `OSFL` v1 **不是** `FLN1` 的 wire-compatible 实现；其对齐报告建议保留 `FLN1` 为 vsock 契约、在 P04 `TerminalCodec` 后加 `Fln1TerminalCodec` adapter。本轮**不修改** `FLN1` 字节，也不实现双协议。
+  - **2026-10-21 集成更新**：adapter 已在 `integration/fastlane-20261021` 落地（`Fln1TerminalCodec`），`OSFL` 退役，`FLN1` 字节未改。跨语言 fixture 为 `protocol/fln1-golden.json`；宿主对真实 `fastlane_payload_host` 的 Unix socket E2E 通过。真实 vsock/PTY 仍归 DV-02，不能据此宣称设备通过。
 - **P09**：payload 只实现 `distccd --inetd` stdio 桥，宿主 `DistccTcpVsockBridge` 仍归 Agent C；本会话未修改 `runtime/fastlane-distcc`。每连接一个 child、不解析协议，与 P09 票一致。
 - **P05**：payload 的 proxy bridge 不解析 SOCKS5；宿主 `FastLaneProxyServer.serveChannel()` 是配对接口。宿主需为每个并发 tunnel 预开一条 vsock channel；`FastLaneSession` 的单 channel 缓存不能直接用于 proxy 并发。
 - **P06**：导出 tar 的字节由 P06 `FastLaneExporter` 消费；导入由 P06 `FastLaneImporter` 产生 canonical tar，`IMPORT_BEGIN.total=0` 已同步到协议文档；单 entry/总量上限已与 P06 对齐（8 GiB−1 / 16 GiB）。

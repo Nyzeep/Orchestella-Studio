@@ -70,3 +70,13 @@ P04 行号相对 `runtime/fastlane-terminal/src/main/java/io/github/nyzeep/orche
 - 与 C（distcc）的对齐点：B 的 distcc 端口是 raw byte stream，P04 不涉及；P04 只负责 terminal/control 的 framed 端口。
 - 未验证：真实 vsock、真实 PTY、Android 终端 UI 接线、B payload 的实际 C 行为（本报告只读文档/头文件）、P04 codec 与 B 的跨语言 fixture（不存在）。
 - 风险：在 A 完成前，任何“终端已联通”的结论都不成立；P04 的 56 个测试只证明宿主侧状态机与 OSFL codec。
+
+## 6. 2026-10-21 集成结果（本报告之后）
+
+建议 A 已在 `integration/fastlane-20261021` 执行，本文档的对照表保留为历史证据：
+
+- 宿主新增 `TerminalCodec` seam 与 `Fln1TerminalCodec`；`OSFL`/`TerminalProtocol` 已从生产源码删除（ACR-04）。
+- `FLN1` 字节未修改；payload 仍是 normative。session id 由 payload 分配，宿主用 FIFO 绑定；credit 只保留 guest→host 窗口；EOF/EXIT 由 codec 合并。
+- 唯一跨语言 fixture：`protocol/fln1-golden.json`（Java + C++ 同读）。
+- 进程级 E2E：`Fln1PayloadE2ETest` 对真实 `fastlane_payload_host` 的 Unix socket transport 通过；真实 vsock 仍为 `not-tested`（DV-02）。
+- 因此本文 §1 的“不能直接联调”在 adapter 之前成立；adapter 之后，宿主单测 + 进程 E2E 可联调，但设备结论仍待 DV-02。

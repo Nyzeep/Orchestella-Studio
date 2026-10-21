@@ -1,6 +1,6 @@
 # P04 实现报告：Fast Lane 终端多路复用（零设备）
 
-日期：2026-10-21 ｜ 票：[P04-terminal-multiplexer.md](../../../../.scratch/orchestella-fastlane/issues/P04-terminal-multiplexer.md) ｜ 分支：`feature/fastlane-runtime`
+状态：**部分完成，FLN1 adapter 已落地；DV-02 待真机**（2026-10-21 集成更新，见 §12）｜ 日期：2026-10-21 ｜ 票：[P04-terminal-multiplexer.md](../../../../.scratch/orchestella-fastlane/issues/P04-terminal-multiplexer.md) ｜ 分支：`feature/fastlane-runtime`（模块）→ `integration/fastlane-20261021`（adapter）
 
 ## 1. 目标与边界
 
@@ -145,3 +145,40 @@ java -cp <out/test>:<out/main>:<junit-4.13.2.jar>:<hamcrest-core-1.3.jar> \
 2. **背压实现**：sink 持锁写是已知 liveness 风险；若 DV-02 出现“输出大时终端卡住”，优先加独立 writer/有界队列，而不是调大 credit。
 3. **UI 适配**：现有 App 的 string session id 与 P04 的 int id 不同；需要明确的 `TerminalSession` 适配层，不在本票偷改 UI。
 4. **协议演进**：若选择 B 的 FLN1，P04 的 `OSFL` fixture 只能作为宿主回归，不得再标“P02 契约”；本报告已修正 `PROTOCOL.md` 的状态行。
+
+
+## 12. 2026-10-21 集成更新（取代前文的 OSFL 状态）
+
+本节记录 `integration/fastlane-20261021` 上的 P0 收口；前文 §1–§11 是模块会话当天的历史记录，凡与本節冲突处以本節为准。
+
+### 12.1 决策与实现
+
+- **FLN1 是 canonical wire**（ACR-04：`.scratch/orchestella-fastlane/issues/ACR-04-fln1-canonical-wire.md`）。`OSFL` 退役，`TerminalProtocol.java` 已从生产源码删除；`src/test/resources/terminal-frames-v1.txt` 同步删除。
+- 新增 `TerminalCodec` seam 与唯一生产实现 `Fln1TerminalCodec`；`TerminalMux` 的状态机、公开 API、半关闭与 VM stop 语义保留，wire 细节移入 adapter。
+- `Fln1Payloads` 承载 FLN1 payload 布局；`TerminalMuxChannel` 只负责把流接到 codec，畸形帧仍是连接致命。
+- payload wire **未修改**；B 的实现仍是 normative。
+
+### 12.2 adapter 关键映射
+
+- **session id**：FLN1 由 payload 在 `PTY_OPENED` 分配。host 用 wire session 0 发 `OPEN_PTY`，codec 以 FIFO 把返回 id 绑定到 host session；host 不再假设自己分配的 id 在线上有效。
+- **credit**：只有 guest→host 有窗口；host 的 `sendData` 不再等待 input credit，按 32 KiB 帧上限切分。`WINDOW` 增量按 `2 * initial_window` 截断。
+- **EOF/EXIT**：codec 在 `read()` 中把 `EOF` 延迟到 `EXIT`，mux 只收到一次带真实退出码的结束；没有 EXIT 时以 -1 收口。
+- **ERROR**：payload 不接受 host ERROR；host 侧违规改为抛 typed 异常并由 channel 关闭连接。
+- **METRICS**：FLN1 的 `METRICS_OK` 字段与 OSFL 的 64 字节计数不同，terminal mux 不再实现 METRICS 帧；payload 遥测归 P10。
+
+### 12.3 测试与 fixture
+
+- `protocol/fln1-golden.json`：唯一跨语言 fixture，覆盖 HELLO/HELLO_OK/OPEN_PTY/PTY_OPENED/PTY_DATA/RESIZE/RESIZED/SIGNAL/CLOSE/CLOSED/EOF/EXIT/WINDOW/ERROR/PING/PONG。Java `Fln1GoldenFixtureTest` 与 C++ `test_golden_fixture.cpp` 读取同一文件并逐字节比对。
+- 宿主 JVM：**59 tests OK**（codec 20 + fixture 4 + mux 22 + channel 9 + stress 4；数量与旧 56 的差异见 §12.4）。命令：`javac --release 17 -Xlint:all -Werror` + JUnit 4.13.2。
+- 进程级 E2E：`Fln1PayloadE2ETest` 启动真实 `fastlane_payload_host`，经 Unix socket 完成 HELLO(token)→HELLO_OK→OPEN_PTY→PTY_DATA→EOF/EXIT，断言输出 `e2e-ok` 与退出码 3；**通过**（本机，非 vsock）。
+- Gradle `:runtime:fastlane-terminal:test`：本环境仍 **not-run**（无 Android SDK/JDK 17 toolchain）；CI 的 `jvm-distcc` job 已改为运行全部模块。
+
+### 12.4 数量变化说明
+
+旧 56 = Protocol 19 + Mux 22 + Channel 11 + Stress 4。新 59 = Fln1Codec 20 + GoldenFixture 4 + Mux 22 + Channel 9 + Stress 4。Protocol 的 OSFL 字节断言被 FLN1 golden fixture 取代；Channel 的 2 项 OSFL 专用编码断言合并进 fixture；Mux 删除 1 项 FLN1 不存在的对称 credit 断言，新增 duplicate HELLO 与 frame-limit 用例。净增 3 项，覆盖未减少。另有 1 个 E2E 测试在未设置 `-Dfln1.payload` 时跳过（设置后 60 项）。
+
+### 12.5 仍然未验证
+
+- 真实 `AF_VSOCK`、Android SELinux、devpts、Android 终端 UI 接线（DV-02）。
+- payload 5 秒发送超时下的持续读取、真实 PTY 退出时序。
+- 与现有 App `PtyMultiplexerProtocol`（string session id）的 UI 适配层。

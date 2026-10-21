@@ -175,6 +175,8 @@ interface FastLaneHandle {
 - 流控：窗口/credit；避免终端输出淹没 vsock。
 - 关闭语义：host close → 发送 `CLOSE`；guest 关闭 PTY → `EOF`；VM stop → 所有 session 终止。
 
+> **2026-10-21 集成修正（ACR-04）**：wire 以 `fastlane-payload/docs/protocol.md` 的 `FLN1` v1 为准，采用 control/terminal/proxy/distcc 四端口，terminal/control 各一条 framed 连接。"单连接多路复用"不再是实现目标；`OSFL` 退役，宿主 `TerminalMux` 经 `Fln1TerminalCodec` 适配。FLN1 的 `METRICS`/`METRICS_OK` 字段与本节早期 64 字节计数不同，payload 遥测归 P10。
+
 ### 4.5 网络代理
 
 - 宿主：SOCKS5（RFC 1928）+ HTTP CONNECT；只绑 `127.0.0.1`；每连接超时/上限。
