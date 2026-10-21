@@ -32,6 +32,15 @@ public final class ExportManifestTest {
     }
 
     @Test
+    public void rejectsTotalSizeOverflow() throws Exception {
+        final ExportManifest manifest = new ExportManifest();
+        manifest.add(new ExportManifest.Entry("home/a", Long.MAX_VALUE, HASH, 0));
+        final StorageException failure = assertThrows(StorageException.class,
+                () -> manifest.add(new ExportManifest.Entry("home/b", 1, HASH, 0)));
+        assertEquals(StorageFailure.LIMIT_EXCEEDED, failure.failure());
+    }
+
+    @Test
     public void rejectsMalformedJson() {
         assertThrows(StorageException.class, () -> ExportManifest.fromJson("{}"));
         assertThrows(StorageException.class, () -> ExportManifest.fromJson("not json"));

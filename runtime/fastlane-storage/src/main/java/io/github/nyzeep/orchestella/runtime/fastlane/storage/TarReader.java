@@ -4,7 +4,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Streaming ustar/PAX reader. Rejects absolute/traversal paths, symlinks,
@@ -13,12 +15,15 @@ import java.util.Map;
  */
 public final class TarReader {
     private static final int BLOCK = 512;
-    private static final long MAX_ENTRY_BYTES = 16L * 1024 * 1024 * 1024;
-    private static final long MAX_TOTAL_BYTES = 32L * 1024 * 1024 * 1024;
+    /** 11 octal digits, the largest ustar size this writer/reader can encode. */
+    private static final long MAX_ENTRY_BYTES = (1L << 33) - 1;
+    private static final long MAX_TOTAL_BYTES = 16L * 1024 * 1024 * 1024;
     private static final int MAX_ENTRIES = 100_000;
     private static final int MAX_METADATA_BYTES = 1024 * 1024;
 
     private final InputStream input;
+    private final Set<String> filesSeen = new HashSet<>();
+    private final Set<String> directoriesSeen = new HashSet<>();
     private long remaining;
     private long entrySize;
     private long totalBytes;
@@ -124,6 +129,18 @@ public final class TarReader {
                 throw new StorageException(
                         StorageFailure.UNSUPPORTED_FORMAT, "unsupported tar entry type");
             }
+            if (directory) {
+                if (filesSeen.contains(path)) {
+                    throw new StorageException(
+                            StorageFailure.PATH_REJECTED, "path is both a file and a directory");
+                }
+                directoriesSeen.add(path);
+            } else {
+                if (!filesSeen.add(path) || directoriesSeen.contains(path)) {
+                    throw new StorageException(
+                            StorageFailure.PATH_REJECTED, "duplicate tar path");
+                }
+            }
             if (directory && effectiveSize != 0) {
                 skip(effectiveSize + padding(effectiveSize));
                 effectiveSize = 0;
@@ -194,6 +211,10 @@ public final class TarReader {
             final int read = readSome(buffer, position, offset + length - position);
             if (read < 0) {
                 return false;
+            }
+            if (read == 0) {
+                throw new StorageException(
+                        StorageFailure.IO_FAILED, "tar stream made no progress");
             }
             position += read;
         }
@@ -279,19 +300,23 @@ public final class TarReader {
             if (space == offset || space >= data.length) {
                 throw new StorageException(StorageFailure.MANIFEST_INVALID, "malformed pax header");
             }
-            int length = 0;
+            long length = 0;
             for (int index = offset; index < space; index++) {
                 final byte digit = data[index];
                 if (digit < '0' || digit > '9') {
                     throw new StorageException(
                             StorageFailure.MANIFEST_INVALID, "malformed pax length");
                 }
+                if (length > (Long.MAX_VALUE - (digit - '0')) / 10) {
+                    throw new StorageException(
+                            StorageFailure.MANIFEST_INVALID, "pax length overflow");
+                }
                 length = length * 10 + (digit - '0');
             }
-            if (length <= 0 || offset + length > data.length) {
+            if (length <= 0 || length > data.length - offset) {
                 throw new StorageException(StorageFailure.MANIFEST_INVALID, "malformed pax record");
             }
-            int end = offset + length;
+            int end = offset + (int) length;
             if (end > space + 1 && data[end - 1] == '\n') {
                 end--;
             }
@@ -301,7 +326,7 @@ public final class TarReader {
             if (equals > 0) {
                 values.put(record.substring(0, equals), record.substring(equals + 1));
             }
-            offset += length;
+            offset += (int) length;
         }
         return values;
     }

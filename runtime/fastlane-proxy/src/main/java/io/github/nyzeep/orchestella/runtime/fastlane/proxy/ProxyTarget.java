@@ -19,7 +19,7 @@ public final class ProxyTarget {
         for (int index = 0; index < host.length(); index++) {
             final char character = host.charAt(index);
             if (character <= 0x20 || character == 0x7F || character == '/' || character == '@'
-                    || character == '\\') {
+                    || character == '\\' || character == ':') {
                 throw new IllegalArgumentException("host contains an invalid character");
             }
         }

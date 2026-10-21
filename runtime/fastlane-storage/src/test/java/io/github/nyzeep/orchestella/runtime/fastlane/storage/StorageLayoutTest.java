@@ -39,6 +39,15 @@ public final class StorageLayoutTest {
     }
 
     @Test
+    public void rejectsOversizedMarker() throws Exception {
+        final Path root = temporary.newFolder("store").toPath();
+        Files.writeString(root.resolve(StorageLayout.MARKER_NAME), "x".repeat(1000));
+        final StorageException failure = assertThrows(StorageException.class,
+                () -> StorageLayout.initialize(root));
+        assertEquals(StorageFailure.LAYOUT_INVALID, failure.failure());
+    }
+
+    @Test
     public void rejectsSymlinkedMarker() throws Exception {
         final Path root = temporary.newFolder("store").toPath();
         final Path real = temporary.newFile("marker").toPath();

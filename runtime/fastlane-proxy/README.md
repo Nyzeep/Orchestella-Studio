@@ -21,8 +21,18 @@ codes. HTTP: `CONNECT host:port HTTP/1.x` with bounded headers, 200 on success,
 resolved in the guest.
 
 **Limits.** Bind address must be loopback (constructor rejects anything else).
-`maxConnections`, connect timeout, idle timeout, and a fixed 16 KiB buffer. Over-limit
-connections are closed before a handshake, never queued unboundedly.
+`maxConnections` slots are reserved with a semaphore immediately after `accept()`, so
+the limit covers the handshake as well as the tunnel; over-limit connections are
+closed before a handshake, never queued unboundedly. On the loopback socket path,
+connect, idle, and handshake timeouts are bounded; a guest channel's blocking read
+has no socket timeout and is bounded only by the caller closing/cancelling it.
+`bufferBytes` configures each pump. DNS runs on a fixed four-thread daemon pool with
+a 16-entry queue and is bounded by the connect timeout because
+`InetAddress.getAllByName` has no timeout of its own.
+
+**Shutdown.** `close()` closes the listener, sockets/channels still in handshake, every
+tunnel, and the watchdog. A slot is released exactly once, by the early-return path or
+by the tunnel's `onClose`.
 
 **Failure taxonomy.** `PROXY_CONNECT_FAILED`, `PROXY_DNS_FAILED`, `PROXY_TIMEOUT`,
 `PROXY_PROTOCOL_FAILED`, `PROXY_LIMIT_EXCEEDED`, `PROXY_CANCELLED`. Reply codes are

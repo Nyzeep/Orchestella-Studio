@@ -29,6 +29,12 @@ public:
             }
             const int client = ::accept4(listening, nullptr, nullptr, SOCK_CLOEXEC);
             if (client >= 0) {
+                if (fd_.load() < 0) {
+                    // close() raced the accept; never hand out a connection
+                    // from a listener this object no longer owns.
+                    ::close(client);
+                    return -1;
+                }
                 return client;
             }
             if (errno == EINTR) {

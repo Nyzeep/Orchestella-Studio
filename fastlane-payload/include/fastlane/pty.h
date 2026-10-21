@@ -40,6 +40,13 @@ public:
     /** Master fd for poll(); -1 when the session is gone. */
     int master_fd(uint32_t id) const;
 
+    /**
+     * Duplicates the master under the session lock so a poll() cannot race a
+     * close() and accidentally observe a reused descriptor number. The caller
+     * owns the returned fd and must close it.
+     */
+    int duplicate_master_fd(uint32_t id) const;
+
     /** Returns bytes, 0 for no data/credit, -1 for EOF. */
     ssize_t read_output(uint32_t id, void* buffer, size_t capacity);
 

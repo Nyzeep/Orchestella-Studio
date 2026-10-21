@@ -84,6 +84,26 @@ public final class Socks5ProtocolTest {
     }
 
     @Test
+    public void rejectsStreamThatMakesNoProgress() {
+        final byte[] prefix = bytes(5, 1, 0, 5, 1, 0, 3, 4);
+        final java.io.InputStream input = new java.io.InputStream() {
+            private int index;
+
+            @Override
+            public int read() {
+                return index < prefix.length ? prefix[index++] & 0xFF : -1;
+            }
+
+            @Override
+            public int read(byte[] buffer, int offset, int length) {
+                return 0;
+            }
+        };
+        assertThrows(ProxyException.class,
+                () -> Socks5Protocol.readRequest(input, new ByteArrayOutputStream()));
+    }
+
+    @Test
     public void writesFailureReply() throws Exception {
         final ByteArrayOutputStream output = new ByteArrayOutputStream();
         Socks5Protocol.writeFailure(output, ProxyFailure.PROXY_TIMEOUT);

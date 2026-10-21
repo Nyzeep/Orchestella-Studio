@@ -1,5 +1,7 @@
 #include "fastlane/sha256.h"
 
+#include <sys/stat.h>
+
 #include <cerrno>
 #include <cstring>
 #include <fcntl.h>
@@ -185,6 +187,11 @@ Sha256Digest sha256_file(const std::string& path, uint64_t* size_out) {
     const int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
     if (fd < 0) {
         throw Error(Code::kIo, std::string("open failed: ") + std::strerror(errno));
+    }
+    struct stat info {};
+    if (::fstat(fd, &info) != 0 || !S_ISREG(info.st_mode)) {
+        ::close(fd);
+        throw Error(Code::kIo, "not a regular file");
     }
     Sha256 hasher;
     uint64_t total = 0;

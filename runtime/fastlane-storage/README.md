@@ -22,6 +22,18 @@ describes exactly the bytes that were committed. Entries are sorted by path.
 `IO_FAILED`, `CANCELLED`. Every failure maps to `STORAGE_FAILED` at the Fast Lane
 boundary; cancellation is not an error the UI reports as corruption.
 
+**Limits and import semantics.** One entry is capped at 8 GiB−1 (the ustar octal
+field), a whole archive at 16 GiB and 100000 entries; larger values are typed
+`LIMIT_EXCEEDED`, never silently truncated. Duplicate file paths and file/directory
+path collisions are rejected. The guest swaps only the top-level roots present in the
+archive (`home` and/or `workspace`); a root absent from the tar is left untouched.
+An import that has reached `guest.end()` is never aborted by a later stream-close
+failure.
+
+**Overwrite.** `FileExportSink` refuses existing targets unless constructed with
+`overwrite=true`. Overwrite first moves the old archive/manifest aside, publishes the
+new pair, and restores the old files if either publish move fails.
+
 **Test seam.** `ExportSink` / `ImportSource` are interfaces; tests use a local
 filesystem sink with temp-file + atomic move and an in-memory source. SAF adapters
 live in `:app` and implement these interfaces. No Android type enters this module.

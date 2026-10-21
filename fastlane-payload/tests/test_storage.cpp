@@ -134,8 +134,9 @@ void write_raw_header(uint8_t block[512], const RawEntry& entry) {
     std::memcpy(block + 148, checksum, 8);
 }
 
-std::string write_raw_tar(const std::string& directory, const std::vector<RawEntry>& entries) {
-    const std::string path = directory + "/raw.tar";
+std::string write_raw_tar_at(const std::string& directory, const std::string& name,
+                             const std::vector<RawEntry>& entries) {
+    const std::string path = directory + "/" + name;
     const int fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
     if (fd < 0) {
         throw std::runtime_error("cannot create raw tar");
@@ -163,6 +164,22 @@ std::string write_raw_tar(const std::string& directory, const std::vector<RawEnt
     }
     ::close(fd);
     return path;
+}
+
+std::string write_raw_tar(const std::string& directory, const std::vector<RawEntry>& entries) {
+    return write_raw_tar_at(directory, "raw.tar", entries);
+}
+
+std::string pax_record(const std::string& key, const std::string& value) {
+    size_t length = key.size() + value.size() + 4;
+    for (;;) {
+        const std::string digits = std::to_string(length);
+        const size_t computed = digits.size() + key.size() + value.size() + 3;
+        if (computed == length) {
+            return digits + " " + key + "=" + value + "\n";
+        }
+        length = computed;
+    }
 }
 
 struct ParsedTar {
@@ -396,6 +413,117 @@ FL_TEST(import_truncated_tar_preserves_data) {
     const auto digest = file_hash(tar_path, &size);
     FL_CHECK_THROWS_CODE(fl::import_tar(layout, tar_path, size, digest), fl::Code::kExportIo);
     FL_CHECK_EQ(read_file(layout.home() + "/a.txt"), std::string("old"));
+}
+
+FL_TEST(export_reports_short_write) {
+    if (::access("/dev/full", W_OK) != 0) {
+        return;
+    }
+    TempDir temp;
+    const auto layout = fl::StorageLayout::initialize(temp.path);
+    write_file(layout.home() + "/a.txt", "hello");
+    const int full = ::open("/dev/full", O_WRONLY | O_CLOEXEC);
+    FL_CHECK(full >= 0);
+    FL_CHECK_THROWS_CODE(fl::export_tar(layout, {"home"}, full), fl::Code::kIo);
+    ::close(full);
+}
+
+FL_TEST(tar_writer_rejects_unencodable_size) {
+    const int output = ::open("/dev/null", O_WRONLY | O_CLOEXEC);
+    FL_CHECK(output >= 0);
+    const int data = ::open("/dev/null", O_RDONLY | O_CLOEXEC);
+    FL_CHECK(data >= 0);
+    fl::TarWriter writer(output);
+    // 8 GiB does not fit ustar's 11 octal digits; it must not be truncated.
+    FL_CHECK_THROWS_CODE(writer.add_file("home/huge", data, 8ULL * 1024 * 1024 * 1024, 0644, 0),
+                         fl::Code::kLimitExceeded);
+    ::close(data);
+    ::close(output);
+}
+
+FL_TEST(export_denylist_is_case_insensitive) {
+    TempDir temp;
+    const auto layout = fl::StorageLayout::initialize(temp.path);
+    write_file(layout.home() + "/ID_RSA", "secret");
+    write_file(layout.home() + "/.NETRC", "secret");
+    write_file(layout.home() + "/keep.txt", "keep");
+    const std::string tar_path = temp.path + "/export.tar";
+    const int out = ::open(tar_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+    FL_CHECK(out >= 0);
+    const auto result = fl::export_tar(layout, {"home"}, out);
+    ::close(out);
+    FL_CHECK_EQ(result.files, 1u);
+    FL_CHECK_EQ(result.skipped, 2u);
+    const auto parsed = parse_tar(tar_path);
+    FL_CHECK(parsed.files.count("home/ID_RSA") == 0);
+    FL_CHECK(parsed.files.count("home/.NETRC") == 0);
+}
+
+FL_TEST(import_rejects_pax_size_overflow) {
+    TempDir temp;
+    const auto layout = fl::StorageLayout::initialize(temp.path);
+    write_file(layout.home() + "/a.txt", "old");
+    make_dir(temp.path + "/pax-overflow");
+    // 2^64 + 1 wraps to 1 if the parser uses unchecked uint64 arithmetic.
+    const std::string record = "29 size=18446744073709551617\n";
+    const std::string tar_path = write_raw_tar_at(
+            temp.path + "/pax-overflow", "overflow.tar",
+            {{"PaxHeaders/x", 'x', record, ""}, {"home/a.txt", '0', "AB", ""}});
+    uint64_t size = 0;
+    const auto digest = file_hash(tar_path, &size);
+    FL_CHECK_THROWS_CODE(fl::import_tar(layout, tar_path, size, digest), fl::Code::kExportIo);
+    FL_CHECK_EQ(read_file(layout.home() + "/a.txt"), std::string("old"));
+}
+
+FL_TEST(import_rejects_pax_size_above_limit) {
+    TempDir temp;
+    const auto layout = fl::StorageLayout::initialize(temp.path);
+    make_dir(temp.path + "/pax-limit");
+    const std::string record = pax_record("size", "17179869184");  // 16 GiB
+    const std::string tar_path = write_raw_tar_at(
+            temp.path + "/pax-limit", "limit.tar",
+            {{"PaxHeaders/x", 'x', record, ""}, {"home/a.txt", '0', "x", ""}});
+    uint64_t size = 0;
+    const auto digest = file_hash(tar_path, &size);
+    FL_CHECK_THROWS_CODE(fl::import_tar(layout, tar_path, size, digest),
+                         fl::Code::kLimitExceeded);
+}
+
+FL_TEST(import_rejects_duplicate_paths_and_preserves_data) {
+    TempDir temp;
+    const auto layout = fl::StorageLayout::initialize(temp.path);
+    write_file(layout.home() + "/a.txt", "old");
+    make_dir(temp.path + "/duplicate");
+    const std::string tar_path = write_raw_tar_at(
+            temp.path + "/duplicate", "duplicate.tar",
+            {{"home/a.txt", '0', "one", ""}, {"home/a.txt", '0', "two", ""}});
+    uint64_t size = 0;
+    const auto digest = file_hash(tar_path, &size);
+    FL_CHECK_THROWS_CODE(fl::import_tar(layout, tar_path, size, digest),
+                         fl::Code::kPathRejected);
+    FL_CHECK_EQ(read_file(layout.home() + "/a.txt"), std::string("old"));
+}
+
+FL_TEST(import_leaves_no_staging_directories) {
+    TempDir temp;
+    const auto layout = fl::StorageLayout::initialize(temp.path);
+    make_dir(temp.path + "/bad");
+    const std::string tar_path = write_raw_tar_at(
+            temp.path + "/bad", "bad.tar", {{"../../evil", '0', "x", ""}});
+    uint64_t size = 0;
+    const auto digest = file_hash(tar_path, &size);
+    FL_CHECK_THROWS_CODE(fl::import_tar(layout, tar_path, size, digest),
+                         fl::Code::kPathRejected);
+    for (const auto& entry : std::filesystem::directory_iterator(layout.tmp())) {
+        FL_CHECK_EQ(entry.path().filename().string().rfind(".import-", 0), std::string::npos);
+        FL_CHECK_EQ(entry.path().filename().string().rfind(".backup-", 0), std::string::npos);
+    }
+}
+
+FL_TEST(sha256_rejects_non_regular_file) {
+    TempDir temp;
+    uint64_t size = 0;
+    FL_CHECK_THROWS_CODE(fl::sha256_file(temp.path, &size), fl::Code::kIo);
 }
 
 FL_TEST(tar_round_trips_long_and_utf8_names) {

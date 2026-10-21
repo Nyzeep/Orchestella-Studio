@@ -14,6 +14,9 @@ public final class ExportOptions {
         if (!StoragePaths.isSafeRelative(archiveName) || !StoragePaths.isSafeRelative(manifestName)) {
             throw new IllegalArgumentException("export names must be safe relative names");
         }
+        if (archiveName.equals(manifestName)) {
+            throw new IllegalArgumentException("archive and manifest names must differ");
+        }
         this.archiveName = archiveName;
         this.manifestName = manifestName;
         this.gzip = gzip;

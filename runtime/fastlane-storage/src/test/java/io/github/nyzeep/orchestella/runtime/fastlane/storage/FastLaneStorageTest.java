@@ -8,18 +8,21 @@ import static org.junit.Assert.assertTrue;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
@@ -193,6 +196,76 @@ public final class FastLaneStorageTest {
                         CancellationToken.none()));
         assertEquals(StorageFailure.IO_FAILED, failure.failure());
         assertArrayEquals(before, Files.readAllBytes(directory.resolve("backup.tar")));
+    }
+
+    @Test
+    public void importerDoesNotAbortAfterSuccessfulEnd() throws Exception {
+        final byte[] input = buildTar(
+                Map.of("home/a.txt", "closed".getBytes(StandardCharsets.UTF_8)), Set.of("home"));
+        final AtomicBoolean closeAttempted = new AtomicBoolean();
+        final InputStream failingClose = new FilterInputStream(
+                new ByteArrayInputStream(gzip(input))) {
+            @Override
+            public void close() throws IOException {
+                closeAttempted.set(true);
+                throw new IOException("injected close failure");
+            }
+        };
+        final MemoryGuest guest = new MemoryGuest();
+        final ImportResult result = new FastLaneImporter().importArchive(
+                failingClose, true, guest, CancellationToken.none());
+        assertTrue(closeAttempted.get());
+        assertTrue(guest.ended);
+        assertFalse(guest.aborted);
+        assertEquals(1, result.manifest().entries().size());
+    }
+
+    @Test
+    public void fileSinkRestoresPreviousExportWhenCommitFails() throws Exception {
+        final Path directory = temporary.newFolder("rollback").toPath();
+        Files.writeString(directory.resolve("backup.tar"), "old-archive");
+        Files.writeString(directory.resolve("backup.manifest.json"), "old-manifest");
+        final byte[] input = buildTar(
+                Map.of("home/a.txt", "new".getBytes(StandardCharsets.UTF_8)), Set.of("home"));
+        final AtomicInteger moves = new AtomicInteger();
+        final FileExportSink.Mover failingMover = (source, destination, replace) -> {
+            if (moves.incrementAndGet() == 2) {
+                throw new IOException("injected move failure");
+            }
+            if (replace) {
+                Files.move(source, destination,
+                        StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } else {
+                Files.move(source, destination, StandardCopyOption.ATOMIC_MOVE);
+            }
+        };
+        final FileExportSink sink = new FileExportSink(directory, true, failingMover);
+        final StorageException failure = assertThrows(StorageException.class,
+                () -> new FastLaneExporter(ExportPolicy.standard()).export(
+                        new ByteArrayInputStream(input), sink, ExportOptions.tar("backup"),
+                        CancellationToken.none()));
+        assertEquals(StorageFailure.IO_FAILED, failure.failure());
+        assertEquals("old-archive", Files.readString(directory.resolve("backup.tar")));
+        assertEquals("old-manifest", Files.readString(directory.resolve("backup.manifest.json")));
+        try (var listing = Files.list(directory)) {
+            assertFalse(listing.anyMatch(path -> path.getFileName().toString().endsWith(".part")));
+        }
+    }
+
+    @Test
+    public void fileSinkOverwritesPreviousExport() throws Exception {
+        final Path directory = temporary.newFolder("overwrite").toPath();
+        Files.writeString(directory.resolve("backup.tar"), "old-archive");
+        Files.writeString(directory.resolve("backup.manifest.json"), "old-manifest");
+        final byte[] input = buildTar(
+                Map.of("home/a.txt", "new".getBytes(StandardCharsets.UTF_8)), Set.of("home"));
+        final FileExportSink sink = new FileExportSink(directory, true);
+        new FastLaneExporter(ExportPolicy.standard()).export(
+                new ByteArrayInputStream(input), sink, ExportOptions.tar("backup"),
+                CancellationToken.none());
+        assertTrue(Files.size(directory.resolve("backup.tar")) > "old-archive".length());
+        assertTrue(Files.readString(directory.resolve("backup.manifest.json"))
+                .contains("home/a.txt"));
     }
 
     @Test

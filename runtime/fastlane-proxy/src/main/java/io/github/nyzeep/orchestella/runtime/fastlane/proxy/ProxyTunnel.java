@@ -25,6 +25,7 @@ final class ProxyTunnel implements Closeable {
     private final Runnable onClose;
     private final LongAdder upstreamBytes;
     private final LongAdder downstreamBytes;
+    private final int bufferBytes;
     private final AtomicBoolean closed = new AtomicBoolean();
     private final AtomicInteger activePumps = new AtomicInteger(2);
     private final AtomicLong lastActivityNanos = new AtomicLong(System.nanoTime());
@@ -39,7 +40,8 @@ final class ProxyTunnel implements Closeable {
             Socket target,
             Runnable onClose,
             LongAdder upstreamBytes,
-            LongAdder downstreamBytes) {
+            LongAdder downstreamBytes,
+            int bufferBytes) {
         this.clientInput = clientInput;
         this.clientOutput = clientOutput;
         this.clientCloseable = clientCloseable;
@@ -48,6 +50,7 @@ final class ProxyTunnel implements Closeable {
         this.onClose = onClose;
         this.upstreamBytes = upstreamBytes;
         this.downstreamBytes = downstreamBytes;
+        this.bufferBytes = bufferBytes;
     }
 
     static ProxyTunnel forSocket(
@@ -56,7 +59,8 @@ final class ProxyTunnel implements Closeable {
             int idleTimeoutMs,
             Runnable onClose,
             LongAdder upstreamBytes,
-            LongAdder downstreamBytes) throws IOException {
+            LongAdder downstreamBytes,
+            int bufferBytes) throws IOException {
         client.setSoTimeout(idleTimeoutMs);
         target.setSoTimeout(idleTimeoutMs);
         return new ProxyTunnel(
@@ -67,7 +71,8 @@ final class ProxyTunnel implements Closeable {
                 target,
                 onClose,
                 upstreamBytes,
-                downstreamBytes);
+                downstreamBytes,
+                bufferBytes);
     }
 
     static ProxyTunnel forChannel(
@@ -76,7 +81,8 @@ final class ProxyTunnel implements Closeable {
             int idleTimeoutMs,
             Runnable onClose,
             LongAdder upstreamBytes,
-            LongAdder downstreamBytes) throws IOException {
+            LongAdder downstreamBytes,
+            int bufferBytes) throws IOException {
         target.setSoTimeout(idleTimeoutMs);
         return new ProxyTunnel(
                 channel.inputStream(),
@@ -86,7 +92,8 @@ final class ProxyTunnel implements Closeable {
                 target,
                 onClose,
                 upstreamBytes,
-                downstreamBytes);
+                downstreamBytes,
+                bufferBytes);
     }
 
     void start() {
@@ -96,8 +103,12 @@ final class ProxyTunnel implements Closeable {
                 () -> pump(targetInputStream(), clientOutput, false), "fastlane-proxy-down");
         upstreamThread.setDaemon(true);
         downstreamThread.setDaemon(true);
-        upstreamThread.start();
-        downstreamThread.start();
+        try {
+            upstreamThread.start();
+            downstreamThread.start();
+        } catch (RuntimeException failure) {
+            close();
+        }
     }
 
     void await() throws InterruptedException {
@@ -138,7 +149,7 @@ final class ProxyTunnel implements Closeable {
     }
 
     private void pump(InputStream input, OutputStream output, boolean clientToTarget) {
-        final byte[] buffer = new byte[16 * 1024];
+        final byte[] buffer = new byte[bufferBytes];
         try {
             for (;;) {
                 if (closed.get()) {

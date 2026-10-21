@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstring>
 #include <filesystem>
@@ -328,6 +329,76 @@ FL_TEST(proxy_bridge_idle_timeout_closes_tunnel) {
     ::close(channel[0]);
     ::close(client);
     bridge.stop();
+}
+
+FL_TEST(distcc_bridge_keeps_stderr_out_of_the_stream) {
+    TempDir temp;
+    const auto layout = fl::StorageLayout::initialize(temp.path);
+    fl::DistccConfig config;
+    config.apk_root = "/";
+    config.storage_root = layout.root();
+    config.distccd_path = "/bin/sh";
+    config.arguments = {"-c", "cat; printf leaked >&2"};
+    fl::DistccBridge bridge(config);
+
+    int pair[2] = {-1, -1};
+    FL_CHECK_EQ(::socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, pair), 0);
+    std::thread worker([&bridge, &pair] { bridge.handle(pair[1]); });
+    write_all_fd(pair[0], "payload");
+    ::shutdown(pair[0], SHUT_WR);
+    FL_CHECK_EQ(read_to_eof(pair[0]), std::string("payload"));
+    worker.join();
+    ::close(pair[0]);
+}
+
+FL_TEST(distcc_bridge_returns_when_client_keeps_input_open) {
+    TempDir temp;
+    const auto layout = fl::StorageLayout::initialize(temp.path);
+    fl::DistccConfig config;
+    config.apk_root = "/";
+    config.storage_root = layout.root();
+    config.distccd_path = "/bin/sh";
+    config.arguments = {"-c", "printf done"};
+    fl::DistccBridge bridge(config);
+
+    int pair[2] = {-1, -1};
+    FL_CHECK_EQ(::socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, pair), 0);
+    std::atomic<bool> finished{false};
+    std::thread worker([&bridge, &pair, &finished] {
+        bridge.handle(pair[1]);
+        finished.store(true);
+    });
+    bool returned = false;
+    for (int attempt = 0; attempt < 300 && !returned; ++attempt) {
+        returned = finished.load();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    if (!returned) {
+        ::close(pair[0]);
+    }
+    worker.join();
+    FL_CHECK(returned);
+    if (returned) {
+        FL_CHECK_EQ(read_to_eof(pair[0]), std::string("done"));
+        ::close(pair[0]);
+    }
+}
+
+FL_TEST(proxy_bridge_stop_closes_queued_channels) {
+    TempDir temp;
+    const auto layout = fl::StorageLayout::initialize(temp.path);
+    fl::ProxyBridgeConfig config;
+    config.socket_directory = layout.tmp();
+    config.enable_tcp = false;
+    fl::ProxyBridge bridge(config);
+    bridge.start();
+    int channel[2] = {-1, -1};
+    FL_CHECK_EQ(::socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, channel), 0);
+    bridge.add_channel(channel[1]);
+    bridge.stop();
+    set_timeout(channel[0], 1);
+    FL_CHECK_EQ(read_to_eof(channel[0]), "");
+    ::close(channel[0]);
 }
 
 FL_TEST(proxy_bridge_stop_closes_tunnels) {
