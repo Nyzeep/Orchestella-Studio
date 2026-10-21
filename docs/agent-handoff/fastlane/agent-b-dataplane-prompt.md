@@ -6,7 +6,7 @@
 
 - 已准备好的 worktree：`/tmp/orch-fastlane-b`
 - 分支：`fastlane/agent-b-dataplane`
-- 基线：`fastlane/baseline` @ `32dec0e5`
+- 基线：`fastlane/baseline` @ `aae4e582`
 - 先执行：
 
 ```bash

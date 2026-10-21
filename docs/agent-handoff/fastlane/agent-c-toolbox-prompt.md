@@ -6,7 +6,7 @@
 
 - 已准备好的 worktree：`/tmp/orch-fastlane-c`
 - 分支：`fastlane/agent-c-toolbox`
-- 基线：`fastlane/baseline` @ `32dec0e5`
+- 基线：`fastlane/baseline` @ `aae4e582`
 - 先执行：
 
 ```bash
