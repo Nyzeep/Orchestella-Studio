@@ -15,6 +15,8 @@
 | 3 | `b288264b` | P08/P10/P12 调优、遥测与宿主研究（`5054c7da`） |
 | 4 | `16a5bd19` | P01/P04/P07 运行时、终端与选道（`6b8bdf33`） |
 
+本会话新增提交：`f655b0b3`（FLN1 adapter）、`b2fa98b2`（CI 全模块门禁）、`2415fb9b`（文档与 ACR-04）。
+
 - 未使用 `-X ours`/`-X theirs`；没有为合并丢弃任一模块行为。
 - 冲突：提交历史不保留索引层冲突记录。对四个分支与 `main` 重跑 `git merge-tree` 均无 CONFLICT 输出；合并树中 payload、toolbox、qemu-tuning、runtime 四组文件同时存在。无法从历史还原“当时是否手动解过冲突”，本报告不把它写成“从未冲突”。
 - 合并后 `git status --short` 仅剩本会话的预期修改；未把 `main` 合回集成分支。
@@ -151,6 +153,11 @@ zipinfo -l app/build/outputs/apk/debug/app-debug.apk | grep ' bin/'
 - ACR-03：Fast Lane 运行时类别仍未裁定；本分支不改变产品声明。
 - 真实构建门（`apk-bin-gate`）与 GitHub Actions 仍需在有 SDK/CI 权限的环境执行。
 
-## 10. 清理证据
+## 10. 清理与推送证据
 
-见提交前的 `git status --short`、`git diff --check`、生成物清理与敏感扫描记录；不提交 APK/二进制/证书/tarball。
+- `git status --short`：提交前为空（除已提交内容）；`git diff --check HEAD~3..HEAD` 无输出。
+- 删除：`build/`（门禁输出与 venv）、`.gradle/`、`__pycache__/`、`*.pyc`、`*.class`；CMake/CTest 构建在 `/tmp`，不入库。
+- 未提交 APK、二进制、测试证书、下载的 tarball。
+- 敏感扫描：`docs/reports/tickets`、`docs/research`、`.scratch/orchestella-fastlane` 仅命中既有报告中的 GitHub SSH URL、公开 Alpine 公钥名与 “root/解锁” 文本，无新增凭据/设备标识/个人路径。
+- 推送：`git push github HEAD:refs/heads/integration/fastlane-20261021` 成功；只推集成分支，未 push main、未 force-push 模块分支、未 tag。
+- PR：环境无 `gh`，未创建；手动 URL 见会话完成报告。
