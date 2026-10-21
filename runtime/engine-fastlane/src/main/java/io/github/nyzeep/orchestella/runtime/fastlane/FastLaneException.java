@@ -7,7 +7,6 @@ public final class FastLaneException extends Exception {
     private static final long serialVersionUID = 1L;
 
     public static final String CONFIG_INVALID = "CONFIG_INVALID";
-    public static final String REFLECTION_UNAVAILABLE = "REFLECTION_UNAVAILABLE";
     public static final String HIDDEN_API_BLOCKED = "HIDDEN_API_BLOCKED";
     public static final String PERMISSION_DENIED = "PERMISSION_DENIED";
     public static final String PROTECTED_UNAVAILABLE = "PROTECTED_UNAVAILABLE";

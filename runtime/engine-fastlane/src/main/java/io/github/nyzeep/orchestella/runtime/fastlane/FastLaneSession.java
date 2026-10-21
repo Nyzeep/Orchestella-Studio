@@ -1,26 +1,40 @@
 package io.github.nyzeep.orchestella.runtime.fastlane;
 
 import java.io.Closeable;
+import java.io.FilterInputStream;
+import java.io.FilterOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
- * Host-side owner of one Fast Lane VM and its four vsock channels.
+ * Host-side owner of one Fast Lane VM and every vsock channel opened for it.
  *
  * <p>One session owns the platform handle. Stop is bounded and idempotent;
  * channels are closed before the platform stop so a blocked read cannot delay
  * it. An UNCONFIRMED stop stays visible and never becomes a normal exit.
+ *
+ * <p>vsock provides one independent stream per {@code connectVsock} call.
+ * {@link #openChannel(int)} is the general factory and must be used for proxy
+ * and distcc connections, where each client needs its own stream. The cached
+ * {@link #channel(int)} and the four named convenience methods share one
+ * channel per port; they fit a single control or terminal mux connection but
+ * must not be used to serve concurrent proxy or distcc clients.
  */
 public final class FastLaneSession implements Closeable {
     private final FastLaneVirtualMachineApi api;
     private final FastLaneHandle handle;
     private final FastLaneLaunchSpec spec;
     private final Object stopLock = new Object();
-    private final Map<Integer, OwnedChannel> channels = new HashMap<>();
+    private final Map<Integer, OwnedChannel> sharedChannels = new HashMap<>();
+    private final Set<OwnedChannel> ownedChannels = new HashSet<>();
 
     private boolean channelsClosed;
     private volatile FastLaneStopResult stopResult;
@@ -40,34 +54,85 @@ public final class FastLaneSession implements Closeable {
         return spec;
     }
 
+    /** True once the payload reported readiness; see {@link FastLaneHandle#payloadReady()}. */
+    public boolean payloadReady() {
+        return handle.payloadReady();
+    }
+
+    /** Cached control channel; one control mux per VM. */
     public FastLaneChannel controlChannel() throws FastLaneException {
         return channel(spec.controlPort());
     }
 
+    /** Cached terminal channel; one terminal mux per VM. */
     public FastLaneChannel terminalChannel() throws FastLaneException {
         return channel(spec.terminalPort());
     }
 
+    /**
+     * Cached proxy channel. Concurrent proxy clients must use
+     * {@link #openChannel(int)} instead; one shared stream cannot carry
+     * independent SOCKS5/HTTP tunnels without another multiplexing layer.
+     */
     public FastLaneChannel proxyChannel() throws FastLaneException {
         return channel(spec.proxyPort());
     }
 
+    /**
+     * Cached distcc channel. Concurrent distcc jobs must use
+     * {@link #openChannel(int)}; each job owns one vsock stream.
+     */
     public FastLaneChannel distccChannel() throws FastLaneException {
         return channel(spec.distccPort());
     }
 
-    /** Opens (or returns) one channel; a closed session never opens a new one. */
+    /**
+     * Opens a new, independently owned connection on {@code port}.
+     *
+     * <p>Every call returns a distinct stream. The session tracks all of them
+     * and closes the remainder during {@link #stopRuntime(long)} or
+     * {@link #close()}. A closed session never opens another channel.
+     */
+    public FastLaneChannel openChannel(int port) throws FastLaneException {
+        return openOwnedChannel(port);
+    }
+
+    /**
+     * Returns the cached channel for {@code port}, opening it when absent.
+     *
+     * <p>This is a convenience for a single consumer per port. Use
+     * {@link #openChannel(int)} when several clients share a port.
+     */
     public FastLaneChannel channel(int port) throws FastLaneException {
-        if (!isKnownPort(port)) {
-            throw new FastLaneException(
-                    FastLaneException.CONFIG_INVALID, "vsock port is outside this launch spec");
-        }
+        requireKnownPort(port);
         synchronized (this) {
             ensureOpen();
-            OwnedChannel existing = channels.get(port);
-            if (existing != null) {
+            OwnedChannel existing = sharedChannels.get(port);
+            if (existing != null && !existing.closed) {
                 return existing;
             }
+        }
+
+        OwnedChannel opened = openOwnedChannel(port);
+        synchronized (this) {
+            if (channelsClosed) {
+                closeQuietly(opened);
+                throw new FastLaneException(FastLaneException.VSOCK_FAILED, "session is closed");
+            }
+            OwnedChannel raced = sharedChannels.get(port);
+            if (raced != null && !raced.closed) {
+                closeQuietly(opened);
+                return raced;
+            }
+            sharedChannels.put(port, opened);
+            return opened;
+        }
+    }
+
+    private OwnedChannel openOwnedChannel(int port) throws FastLaneException {
+        requireKnownPort(port);
+        synchronized (this) {
+            ensureOpen();
         }
 
         FastLaneChannel raw = api.connect(handle, port);
@@ -77,12 +142,7 @@ public final class FastLaneSession implements Closeable {
         OwnedChannel owned = new OwnedChannel(raw, port);
         synchronized (this) {
             if (!channelsClosed) {
-                OwnedChannel raced = channels.get(port);
-                if (raced != null) {
-                    closeQuietly(owned);
-                    return raced;
-                }
-                channels.put(port, owned);
+                ownedChannels.add(owned);
                 return owned;
             }
         }
@@ -152,11 +212,14 @@ public final class FastLaneSession implements Closeable {
         }
     }
 
-    private boolean isKnownPort(int port) {
-        return port == spec.controlPort()
-                || port == spec.terminalPort()
-                || port == spec.proxyPort()
-                || port == spec.distccPort();
+    private void requireKnownPort(int port) throws FastLaneException {
+        if (port != spec.controlPort()
+                && port != spec.terminalPort()
+                && port != spec.proxyPort()
+                && port != spec.distccPort()) {
+            throw new FastLaneException(
+                    FastLaneException.CONFIG_INVALID, "vsock port is outside this launch spec");
+        }
     }
 
     private synchronized void ensureOpen() throws FastLaneException {
@@ -172,8 +235,9 @@ public final class FastLaneSession implements Closeable {
                 return;
             }
             channelsClosed = true;
-            closing = new ArrayList<>(channels.values());
-            channels.clear();
+            closing = new ArrayList<>(ownedChannels);
+            ownedChannels.clear();
+            sharedChannels.clear();
         }
         for (OwnedChannel channel : closing) {
             closeQuietly(channel);
@@ -183,7 +247,7 @@ public final class FastLaneSession implements Closeable {
     private static void closeQuietly(Closeable closeable) {
         try {
             closeable.close();
-        } catch (IOException ignored) {
+        } catch (IOException | RuntimeException ignored) {
             // Best-effort teardown; the platform stop is the authority.
         }
     }
@@ -199,13 +263,28 @@ public final class FastLaneSession implements Closeable {
         }
 
         @Override
-        public java.io.InputStream inputStream() {
-            return raw.inputStream();
+        public InputStream inputStream() {
+            return new FilterInputStream(raw.inputStream()) {
+                @Override
+                public void close() throws IOException {
+                    OwnedChannel.this.close();
+                }
+            };
         }
 
         @Override
-        public java.io.OutputStream outputStream() {
-            return raw.outputStream();
+        public OutputStream outputStream() {
+            return new FilterOutputStream(raw.outputStream()) {
+                @Override
+                public void write(byte[] bytes, int offset, int length) throws IOException {
+                    out.write(bytes, offset, length);
+                }
+
+                @Override
+                public void close() throws IOException {
+                    OwnedChannel.this.close();
+                }
+            };
         }
 
         @Override
@@ -215,7 +294,8 @@ public final class FastLaneSession implements Closeable {
                     return;
                 }
                 closed = true;
-                channels.remove(port, this);
+                ownedChannels.remove(this);
+                sharedChannels.remove(port, this);
             }
             raw.close();
         }
