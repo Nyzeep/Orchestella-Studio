@@ -1,6 +1,6 @@
 # Orchestella Fast Lane × QEMU 交叉优化决策地图
 
-活动 effort：`.scratch/orchestella-fastlane/`。Owner：主协调。基线：`main 4b075c93`（2026-10-21 只读核对）。性质：**产品路线优先级重排 + 并行零设备实现 + 串行真机验证**；不改 Full Linux 承诺，不把 Fast Lane 叫 Full Linux。
+活动 effort：`.scratch/orchestella-fastlane/`。Owner：主协调。基线：`main 3213b06e`（2026-10-21 只读核对；旧记录 `4b075c93` 已作废）。性质：**产品路线优先级重排 + 并行零设备实现 + 串行真机验证**；不改 Full Linux 承诺，不把 Fast Lane 叫 Full Linux。
 
 Canonical 文档：
 
@@ -21,18 +21,18 @@ Canonical 文档：
 
 | 票 | 模块 | 交付 | 状态 |
 | --- | --- | --- | --- |
-| [P01](issues/P01-engine-fastlane-adapter.md) | engine-fastlane | 反射适配器/launch/session/stop 分类 | ready-for-agent（zero-device） |
+| [P01](issues/P01-engine-fastlane-adapter.md) | engine-fastlane | 反射适配器/launch/session/stop 分类 | implemented（zero-device；65 JVM tests；DV-01 待验） |
 | [P02](issues/P02-payload-runtime.md) | payload | `AVmPayload_main`、vsock/PTY/storage/bridge | implemented（zero-device；DV-01/02 待验） |
-| [P03](issues/P03-sealed-toolbox.md) | toolbox | Termux/静态工具、`bin/` 注入、manifest | ready-for-agent（zero-device） |
-| [P04](issues/P04-terminal-multiplexer.md) | terminal | 多 PTY 帧协议/流控 | partial（FLN1 adapter 落地；DV-02 待验） |
-| [P05](issues/P05-network-proxy.md) | network | SOCKS5/HTTP CONNECT + vsock 桥 | ready-for-agent（zero-device） |
-| [P06](issues/P06-storage-export.md) | storage | encrypted home、tar 导出/导入 | ready-for-agent（zero-device） |
-| [P07](issues/P07-capability-router.md) | router | 能力矩阵、Full/Fast/Auto | ready-for-agent（zero-device） |
-| [P08](issues/P08-qemu-tuning.md) | QEMU | CPU/tb-size/iothread/aio/discard 参数 | ready-for-agent（zero-device） |
-| [P09](issues/P09-distcc-cross-lane.md) | distcc | TCP↔vsock↔`distccd --inetd` | ready-for-agent（zero-device） |
-| [P10](issues/P10-telemetry-security.md) | observability | 事件/指标/脱敏/删除 | ready-for-agent（zero-device） |
-| [P11](issues/P11-build-ci-licensing.md) | build | payload/toolbox 构建、CI、NOTICE/SBOM | ready-for-agent（zero-device） |
-| [P12](issues/P12-host-native-research.md) | research | Termux/glibc/PRoot 兜底评估 | ready-for-agent（zero-device） |
+| [P03](issues/P03-sealed-toolbox.md) | toolbox | Termux/静态工具、`bin/` 注入、manifest | partial（manifest/SBOM 已落地；APK `bin/` 执行位未验证） |
+| [P04](issues/P04-terminal-multiplexer.md) | terminal | 多 PTY 帧协议/流控 | partial（FLN1 adapter + failed-open/credit 加固；DV-02 待验） |
+| [P05](issues/P05-network-proxy.md) | network | SOCKS5/HTTP CONNECT + vsock 桥 | implemented（zero-device；42 JVM tests；DV-02 待验） |
+| [P06](issues/P06-storage-export.md) | storage | encrypted home、tar 导出/导入 | implemented（zero-device；35 JVM tests；DV-01/02 待验） |
+| [P07](issues/P07-capability-router.md) | router | 能力矩阵、Full/Fast/Auto | implemented（zero-device；32 JVM tests；ACR-03/DV-04 待定） |
+| [P08](issues/P08-qemu-tuning.md) | QEMU | CPU/tb-size/iothread/aio/discard 参数 | implemented-zero-device（11 Python tests；真机 A/B 待 DV-03） |
+| [P09](issues/P09-distcc-cross-lane.md) | distcc | TCP↔vsock↔`distccd --inetd` | partial（loopback TCP↔vsock 桥 17 tests；真实 distccd/DV-03 待验） |
+| [P10](issues/P10-telemetry-security.md) | observability | 事件/指标/脱敏/删除 | implemented-zero-device（46 JVM tests；Android/UI 集成待 DV-01/04） |
+| [P11](issues/P11-build-ci-licensing.md) | build | payload/toolbox 构建、CI、NOTICE/SBOM | partial（构建脚本/CI/SBOM 落地；APK 与 16 KB 门 BUILD_BLOCKED） |
+| [P12](issues/P12-host-native-research.md) | research | Termux/glibc/PRoot 兜底评估 | completed（研究结论：本阶段不产品化，需更多证据） |
 
 ## 首批零设备落地（2026-10-21）
 

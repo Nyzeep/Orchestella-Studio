@@ -134,7 +134,7 @@ NDK/arm64 `.so`：本环境没有 `ANDROID_NDK_HOME`，**未运行** `scripts/bu
 - **P09**：payload 只实现 `distccd --inetd` stdio 桥，宿主 `DistccTcpVsockBridge` 仍归 Agent C；本会话未修改 `runtime/fastlane-distcc`。每连接一个 child、不解析协议，与 P09 票一致。
 - **P05**：payload 的 proxy bridge 不解析 SOCKS5；宿主 `FastLaneProxyServer.serveChannel()` 是配对接口。宿主需为每个并发 tunnel 预开一条 vsock channel；`FastLaneSession` 的单 channel 缓存不能直接用于 proxy 并发。
 - **P06**：导出 tar 的字节由 P06 `FastLaneExporter` 消费；导入由 P06 `FastLaneImporter` 产生 canonical tar，`IMPORT_BEGIN.total=0` 已同步到协议文档；单 entry/总量上限已与 P06 对齐（8 GiB−1 / 16 GiB）。
-- **P01**：默认端口 5100–5103 必须与 launch spec 一致；token 来源待 P01/DV-01 明确（当前为可选 `FASTLANE_AUTH_TOKEN`，长度 ≤255）。
+- **P01**：默认端口 5100–5103 必须与 launch spec 一致。**token = not-wired（2026-10-21 结论）**：payload 只读 `FASTLANE_AUTH_TOKEN`（长度 ≤255，空则不校验）；AOSP app-payload 的 `VirtualMachineConfig.Builder` 没有 token/secret/env/argv setter，`setPayloadConfigPath` 只接受 APK 内路径且与 `setPayloadBinaryName` 互斥，`AVmPayload_getVmInstanceSecret` 不提供给宿主。因此真实 Microdroid 链路的 token 必然为空，token 校验实际关闭；E2E 的 token 是 test-only。不得用 E2E 通过证明生产已认证。
 
 ## 9. 风险与下一步
 
