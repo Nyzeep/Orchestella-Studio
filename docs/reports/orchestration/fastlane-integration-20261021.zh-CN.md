@@ -234,6 +234,12 @@ AOSP app-payload 路径没有宿主向 payload 传任意 secret 的受支持通�
 
 未验证：真实 `AF_VSOCK`/SELinux/devpts/PTY 时序/Android UI（DV-02）；真实 payload 的 failed-open 与 `SESSION_LIMIT`；host→guest 5 MiB 只在内存流与普通进程 E2E；token 生产链路为空；GitHub Actions `not-run`；APK `bin/` 与 16 KB 门 `BUILD_BLOCKED`。
 
-<!-- COMMIT_EVIDENCE -->
+### 11.7 提交与推送证据
+
+- 修复提交：`6041cfa5` `fix(fastlane-terminal): 修复失败 OPEN_PTY 映射并收口 host/guest credit`；author 与 committer 均为 `Nyzeep <2950605702@qq.com>`。
+- RLIMIT + 文档提交：`52a43c23` `test(fastlane): 稳定 RLIMIT 回归并更新 ACR-04/集成报告`；author 与 committer 同上。
+- 推送：`git push github HEAD:refs/heads/integration/fastlane-20261021` 成功（`3e59cbaf..52a43c23`）；`git ls-remote --heads github integration/fastlane-20261021` 返回 `52a43c23`。之后仅追加本条证据提交。
+- 未 push `main`、未 force-push 四条模块分支、未 tag、未发布、未改版本号。
+- PR：环境没有 `gh`，未创建；手动 URL：`https://github.com/Nyzeep/Orchestella-Studio/compare/main...integration/fastlane-20261021?expand=1`。未声称 PR 已创建。
 
 下一步：DV-01（protected payload create/run/vsock/storage/stop），不是继续加功能；DV-02 前必须用真实 vsock 重跑终端与 token 探针。
