@@ -1,6 +1,6 @@
 # AVF / Shizuku 升级决策地图
 
-活动 effort：`.scratch/orchestella-avf-shizuku/`。Owner：Codex 主协调。最新更新：2026-10-17 protected优先近期规划（本文末节，28票）；2026-10-16 batch-01 / resume-01交付矩阵保留历史范围。唯一源码 `Orchestella_dev`，基线 `main@428860ad9a1cb335f8be78c157b2ff57faf2a6da`；dirty0.5.3保留未提交。本回合仅文档，不执行新增票。
+活动 effort：`.scratch/orchestella-avf-shizuku/`。Owner：Codex 主协调。最新更新：**2026-10-21 Fast Lane 双轨转向 + 并行零设备工单拆分**（执行 effort 已迁至 `.scratch/orchestella-fastlane/`；本文末节保留 AVF 决策背景）；2026-10-17 protected优先近期规划（28票）保留历史范围；2026-10-16 batch-01 / resume-01交付矩阵保留历史范围。唯一源码 `Orchestella_dev`，当前基线 `main@4b075c93`（2026-10-21 只读核对）；dirty0.5.3保留未提交。本回合仅文档，不执行新增票、不改产品代码。
 
 ## 当前事实与证据口径
 
@@ -187,3 +187,88 @@ flowchart TD
 进入07产品集成前，必须补具体mode/spec/验收并保留QEMU和non-protected旧用户配置；原型与声明绿不能毕业成FullLinux。promotion/新版本/源码交付按近期方案；未提交实现不从HEAD重建worktree，无自动commit/push/发布。
 
 文档计划审计与before/after保全：`Orchestella/artifacts/protected-avf-plan/20261017/`；本回合无联网/设备/构建/新测试或性能样本，accepted ADR保持。
+
+## 2026-10-21：Protected Fast Lane 双轨转向（当前 frontier）
+
+### 方向与事实修正
+
+用户已确认：**non-protected Full Linux 保留为未来备选，不再作为当前唯一重心；当前重心是 protected 硬件加速与 QEMU 的交叉体验优化。** 经 AOSP Virtualization / system/sepolicy、Podroid 1.3.0 与本仓代码复核，原“protected 自定义 Full Linux”路线关闭产品化投入：
+
+- protected 自定义 kernel/initrd 必须经 pvmfw 的 AVB 签名；App 无法签通用内核。
+- protected 分支拒绝 `app_data_file` 的 kernel/initrd/整盘；即使签名通过，App 私有 raw 根盘也过不了。
+- protected 不提供原生 virtio-net；通用通道是 vsock。
+- 因此 protected 只能作为 **Microdroid 应用 payload** 的硬件加速环境，不是 Full Linux。
+
+关键新事实（AOSP 源码核对）：
+
+- `VirtualMachineConfig` 支持 `setPayloadBinaryName` + `setProtectedVm(true)` + `setEncryptedStorageBytes` + `setCpuTopology` + `setMemoryBytes`；`VirtualMachine.connectVsock` 可用。
+- payload 从 `/mnt/apk` 执行；encrypted storage 以 `MS_NOSUID|MS_NODEV|MS_NOEXEC` 挂载；SELinux `neverallow` 禁止从 `encryptedstore_file` 执行；payload caps 被清空，不能 chroot/mount；只有 `crash_dump` 能 ptrace，因此 PRoot 不可行。
+- 可行形态是 **密封 Linux toolbox**：静态工具打进 APK，从 `/mnt/apk` 执行；数据写 encrypted storage；终端/vsock；宿主代理 TCP。不能 apt install native 包、不能 Docker/systemd/原生网络/GPU。
+
+当前设备事实不变：HONOR MEY-AN00 / SM8735 / API36，`getCapabilities=1`，`vm info` 仅 protected；真实 AVF Guest 成功样本仍为 0。但 protected Microdroid payload 可在当前设备验证，不需要购买 non-protected 设备。
+
+### 新增垂直切片
+
+| 票 | 类型/状态 | 真依赖与交付 |
+| --- | --- | --- |
+| [28 受控 protected Microdroid payload](issues/28-protected-microdroid-payload-probe.md) | prototype / ready-for-prototype | 无；当前设备 + QA APK + `MANAGE_VIRTUAL_MACHINE`；验证 create/run/vsock/encrypted storage/stop；四类结果 |
+| [29 密封 Linux toolbox](issues/29-sealed-linux-toolbox.md) | prototype / blocked-by-28 | 28 通过；APK 内静态工具、`/mnt/apk` 执行、encrypted home、终端；边界测试（chroot/proot/mount/memfd/JIT） |
+| [30 Fast Lane 数据面与性能基线](issues/30-fast-lane-data-network-and-baseline.md) | prototype+experiment / blocked-by-28,29 | 28/29；vsock TCP 代理、导出/导入、QEMU A/B、n≥10；≥2x 才产品化 |
+| [ACR-03 Fast Lane runtime 类别](issues/ACR-03-protected-fast-lane-runtime-class.md) | decision / needs-architecture-decision | 用户裁定第三类/能力矩阵/存储/网络/回退；不阻塞 28/29/30 原型 |
+
+### 旧票处置
+
+- **24 受控 protected 平台 payload**：由 28 取代其产品意图；24 的离线控制 seam/证据仍可复用。24 不再单独推进。
+- **25/26 protected custom boot/私有盘**：**parked / resolved-negative for product**。AOSP 证据已足够；保留历史原型票，不再占当前 frontier。不要把它们改绿。
+- **07/08 non-protected 真实 Guest/stop**：保留，作为未来 Full Linux AVF 线；当前无兼容设备，维持 blocked/not-tested。不删除 adapter/测试。
+- **09/10 AVF 性能**：仍需要真实 AVF 全链；Fast Lane 的性能样本由 30 独立采集，不等于 non-protected Full Linux 性能。
+- **17/18/19/20/06**：可靠性剩余门继续按可用资源推进，与 Fast Lane 无冲突。
+- **23 模式诊断、27 生产事件**：继续；23 的 mode facts 要能区分 protected/non-protected/unknown，27 的 recorder 可复用到 Fast Lane。
+
+### 依赖图（规划门）
+
+```mermaid
+flowchart TD
+    F0[F0 文档/ACR-03/QA payload] --> F1[28 protected Microdroid payload]
+    F1 -->|pass| F2[29 密封 toolbox]
+    F1 -->|rejected/blocked/stop_unconfirmed| StopFast[Fast Lane 停止；QEMU 继续]
+    F2 --> F3[30 数据/网络/性能]
+    F3 -->|≥2x 且可用| F4[Lane Router + Turbo Build 后续票]
+    F3 -->|无优势| StopFast
+    ACR03[ACR-03 runtime 类别] --> F4
+    F4 --> Product[产品化/实验开关]
+    P0[P0 签名/停止/CI/输入] --> Release[公开预览]
+    QEMU[QEMU Full Lane 现有能力] --> Release
+    NP[non-protected 未来线 07/08] -.未来.-> FullAVF[Full Linux AVF]
+```
+
+### 当前可并行 frontier
+
+1. **28**：protected Microdroid payload 的最小真实门；当前设备即可做，优先级最高。
+2. **ACR-03**：与 28 并行准备；用户裁定前不对外声明 ALW。
+3. **23/27 + 06/17/18/19/20**：能力诚实、生产事件、可靠性与输入；不被 Fast Lane 阻塞。
+4. **29/30**：必须等 28 真实通过；不要提前写 sealed toolbox/网络/性能代码。
+5. **P0-1/P0-2/P0-4/P0-5/P0-6**：发布线不变，优先于 Fast Lane 产品化。
+
+### 停止/毕业条件
+
+- 28 `rejected_at_stage`/`blocked_external`/`stop_unconfirmed`：Fast Lane 停止或先修生命周期；不改系统信任、不 Root。
+- 29 无法从 `/mnt/apk` 执行任何静态工具，或 APK 体积不可接受：降级为 native payload 或停止。
+- 30 无 ≥2x 优势、代理不可用、导出不能保证 host 不落明文：停止产品化。
+- ACR-03 裁定 Fast Lane 必须满足 Full Linux 契约：Fast Lane 停止，protected-only 继续 QEMU-only；non-protected 未来线保留。
+- 任何门需要 Root/unlock/pvmfw/SELinux 修改：立即停止该设备产品化，保留证据。
+
+### 文档与证据
+
+- Canonical 方案：[Protected Fast Lane + QEMU Full Lane（2026-10-21）](../../docs/reports/orchestration/protected-fast-lane-plan-20261021.zh-CN.md)。
+- 参考项目：本地 `references/Podroid`（1.3.0，`332138a`，浅克隆，已本地 exclude）；`references/aosp-virtualization`、`references/aosp-sepolicy`（AOSP 源码核对）。
+- 本回合未改产品代码、未运行 Gradle/设备、未改 accepted ADR；28/29/30 均为规划/原型票，真实结果待设备窗口。
+
+### 2026-10-21 执行拆分
+
+- 并行零设备实现与串行真机验证已迁至 [`.scratch/orchestella-fastlane/map.md`](../orchestella-fastlane/map.md)：
+  - P01–P12：engine/payload/toolbox/terminal/proxy/storage/router/QEMU tuning/distcc/telemetry/build-CI/host-native research；
+  - DV-01–DV-04：所有 P 票完成后的串行真机门。
+- 本文 28/29/30 保留历史定义，状态改为 **superseded-by fastlane DV-01/02/03**；不再单独推进。
+- ACR-03 仍在本 effort，作为 fastlane DV-04 的产品裁定前置；不重复建票。
+- Canonical spec：[`docs/reports/orchestration/fastlane-cross-lane-spec-20261021.zh-CN.md`](../../docs/reports/orchestration/fastlane-cross-lane-spec-20261021.zh-CN.md)。

@@ -1,6 +1,6 @@
 # 中文成果与开发文档
 
-主分支源码配置为 **0.5.3 / code503**（`main b0a167c`，2026-10-18）。公开安装包仍为 [v0.4.5 开发预览版](https://github.com/Nyzeep/Orchestella-Studio/releases/tag/v0.4.5)；源码同步不代表新安装包已发布，也不代表全部工单已完成。
+主分支源码配置为 **0.5.3 / code503**（`main 4b075c93`，2026-10-21 只读核对）。公开安装包仍为 [v0.4.5 开发预览版](https://github.com/Nyzeep/Orchestella-Studio/releases/tag/v0.4.5)；源码同步不代表新安装包已发布，也不代表全部工单已完成。
 
 ## 当前状态
 
@@ -16,21 +16,27 @@
 | CI | 当前只门禁 `:runtime:contract:check` 与 `:app:testDebugUnitTest`；runtime 其余模块、lint、assemble 与 16 KB 检查尚未全部进入门禁 |
 
 > 本次维护（2026-10-18）：已加入跨 Controller 状态串行化与并发契约测试，修复同一目录多个 `FileStore` 下的单实例竞态；详见[维护与优化 Prompt](reports/orchestration/optimization-prompt-20261018.zh-CN.md)。P0-1 生产签名、P0-4 输入与 P0-5 CI 门禁仍未完成；P0-2 已完成代码与 JVM 回归，真机启停待验证，详见[P0-2 报告](reports/orchestration/p0-2-runtime-supervisor-20261018.zh-CN.md)。
+>
+> 方向更新（2026-10-21）：protected 自定义 Full Linux 经 AOSP/SELinux 复核不可行；AVF 研究线改为 protected Microdroid 密封 Linux toolbox（Fast Lane）+ QEMU Full Lane，non-protected 保留未来备选。详见[Protected Fast Lane 方案](reports/orchestration/protected-fast-lane-plan-20261021.zh-CN.md)。
 
 ## 当前交付与路线
 
-1. [Orchestella 下一阶段优化方案（2026-10-18）](reports/orchestration/next-optimization-plan-20261018.zh-CN.md)：当前优先级。主线是 QEMU 全设备可靠可用；发布签名、运行时收敛、单实例锁、输入与 CI 门为 P0；AVF protected 是时间盒研究线，不阻塞发布。
-2. [0.5.3 限定实现、构建与真机验收报告](reports/orchestration/avf-shizuku-device-20261016.zh-CN.md)：747 项 App 测试、lint 0 Error / 748 Warning、8 项 Android 框架验收，以及独立 Debian QA 的 QEMU / systemd / 日志与停止结果。
-3. [源码与中文成果同步（2026-10-17）](reports/orchestration/github-source-sync-20261017.zh-CN.md)：0.5.3 可靠性改进与 Protected AVF 规划的公开同步记录。
-4. [Protected 优先近期方案（2026-10-17）](reports/orchestration/protected-avf-near-term-plan-20261017.zh-CN.md)：Protected 专项门、阶段门与停止条件；其总体优先级已被 2026-10-18 方案重排，保留作 protected 证据要求。
-5. [工单地图与依赖图](../.scratch/orchestella-avf-shizuku/map.md)、[规格](../.scratch/orchestella-avf-shizuku/spec.md)、[任务范围](../.scratch/orchestella-avf-shizuku/scope.md)。**建立工单不等于实现完成。**
-6. [VM 所有权与 FD 边界 ACR-01](../.scratch/orchestella-avf-shizuku/issues/ACR-01-vm-ownership.md)、[保护意图与隔离语义 ACR-02](../.scratch/orchestella-avf-shizuku/issues/ACR-02-protection-semantics.md)：仍未决；本次没有新增生产 VM owner 或自动授予权限入口。
+1. [Protected Fast Lane + QEMU Full Lane（2026-10-21）](reports/orchestration/protected-fast-lane-plan-20261021.zh-CN.md)：当前 AVF 研究方向。protected Microdroid 密封 Linux toolbox 作为硬件加速 Fast Lane；QEMU 继续作为完整 Linux Full Lane；non-protected Full Linux 保留为未来备选。ACR-03 未决前不对外声明新 Runtime 类别。
+2. [Orchestella 下一阶段优化方案（2026-10-18）](reports/orchestration/next-optimization-plan-20261018.zh-CN.md)：QEMU 全设备可靠可用与发布 P0；生产签名、运行时收敛、单实例锁、输入与 CI 门仍是发布前阻塞。AVF 排序已由 2026-10-21 方案重排。
+3. [0.5.3 限定实现、构建与真机验收报告](reports/orchestration/avf-shizuku-device-20261016.zh-CN.md)：747 项 App 测试、lint 0 Error / 748 Warning、8 项 Android 框架验收，以及独立 Debian QA 的 QEMU / systemd / 日志与停止结果。
+4. [源码与中文成果同步（2026-10-17）](reports/orchestration/github-source-sync-20261017.zh-CN.md)：0.5.3 可靠性改进与 Protected AVF 规划的公开同步记录。
+5. [Protected 优先近期方案（2026-10-17）](reports/orchestration/protected-avf-near-term-plan-20261017.zh-CN.md)：Protected 专项门、阶段门与停止条件；其 protected custom 产品化排序已被 2026-10-21 Fast Lane 方案取代，保留作历史证据要求。
+6. [工单地图与依赖图](../.scratch/orchestella-avf-shizuku/map.md)、[规格](../.scratch/orchestella-avf-shizuku/spec.md)、[任务范围](../.scratch/orchestella-avf-shizuku/scope.md)。**建立工单不等于实现完成。**
+7. [VM 所有权与 FD 边界 ACR-01](../.scratch/orchestella-avf-shizuku/issues/ACR-01-vm-ownership.md)、[保护意图与隔离语义 ACR-02](../.scratch/orchestella-avf-shizuku/issues/ACR-02-protection-semantics.md)、[Fast Lane Runtime 类别 ACR-03](../.scratch/orchestella-avf-shizuku/issues/ACR-03-protected-fast-lane-runtime-class.md)：仍未决；本次没有新增生产 VM owner 或自动授予权限入口。
+
+Fast Lane 的实现规格见 [fastlane-cross-lane-spec-20261021](reports/orchestration/fastlane-cross-lane-spec-20261021.zh-CN.md)；并行零设备票与串行真机票见 [fastlane map](../.scratch/orchestella-fastlane/map.md)。并行票完成前不启动真机窗口。
 
 ## 研究依据
 
 - [Shizuku / AVF 综合研究](research/2026-10-15-avf-shizuku-upgrade.md)。
 - [当前测试设备的 AVF / Gunyah 能力重检](research/2026-10-17-avf-device-recheck.md)：系统仅声明 protected，不能推导芯片完全没有硬件虚拟化；AVF 框架不等于 pKVM 后端。
 - [Custom Linux、AOSP、ADB/vsock 与参考项目路线调研](research/2026-10-17-avf-custom-linux-route-study.md)：固定源码、教程与作者经验分层；protected 引导与 App 私有根盘仍需独立验证。
+- [Protected Fast Lane × QEMU 交叉优化参考调研](research/2026-10-21-cross-lane-reference-survey.md)：Termux/PRoot/glibc/gvproxy/DroidVM/Podroid/AOSP 的借鉴与边界；distcc 跨车道设计。
 - [构建、CI 与开发预览发布可靠性](research/2026-10-15-build-release-reliability.md)。
 - [v0.4.2 终端与运行时下一阶段的有限优化](research/2026-10-15-terminal-runtime-next-phase.md)。
 - 各票的 [实施报告](reports/tickets/) 与 [独立审查](reports/reviews/)。历史报告中的版本、未提交和设备状态按当时快照理解。
@@ -43,7 +49,7 @@
 | --- | --- | --- |
 | [`adr/`](adr/) | 18 份已接受架构决策 | 索引见 [`adr/README.md`](adr/README.md)；ADR-0015 缺失，禁止按标题补造 |
 | [`research/`](research/) | 当前有效研究 | 旧 Phase 5 专项已移入 [`research/archive/`](research/archive/README.md) |
-| [`reports/orchestration/`](reports/orchestration/) | 当前主线方案与阶段报告 | 以 2026-10-18 方案为第一入口 |
+| [`reports/orchestration/`](reports/orchestration/) | 当前主线方案与阶段报告 | 以 2026-10-21 Fast Lane 方案与 2026-10-18 P0 方案为入口 |
 | [`reports/tickets/`](reports/tickets/)、[`reviews/`](reports/reviews/)、[`prototypes/`](reports/prototypes/) | 当前 AVF / Shizuku 工单、最终轮审查与原型 | 首审与前轮复审已移入归档 |
 | [`reports/archive/`](reports/archive/README.md) | Phase 5 / 质量合流 / v0.4.5 / 被取代的 AVF 审查 | 历史快照，不代表当前版本 |
 | [`standards/`](standards/) | 版本命名等标准 | `VERSIONING.md` 为唯一现行版本标准 |
