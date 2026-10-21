@@ -1,7 +1,7 @@
 # P04: Fast Lane 终端多路复用（零设备）
 
 Type: implementation
-Status: partially implemented（host-side；wire alignment blocked；Gradle not-run；DV-02 pending）
+Status: partially implemented（FLN1 adapter landed 2026-10-21；Gradle not-run locally；DV-02 pending）
 Priority: P1
 Owner: terminal/protocol owner
 Blocked by: None（零设备）；真机由 DV-02 验证
@@ -54,10 +54,11 @@ External gates: 无
 
 ### 2026-10-21 零设备实现
 
-状态：宿主侧实现完成；与 payload 的 wire 对齐阻塞，DV-02 待验。
+状态：**部分完成，FLN1 adapter 已落地；DV-02 待真机**。
 
-- `TerminalProtocol`/`TerminalMux`/`TerminalMuxChannel` 已落地：14 B 头、短读、多 PTY、credit 流控、半关闭、VM stop/EOF/协议错误收敛。
-- 56 个 JUnit 4 测试通过（standalone `javac --release 17 -Xlint:all -Werror` + JUnitCore），含 10k 帧、credit 耗尽/溢出、关闭中写入、reentrant open、transport EOF。
-- Gradle `:runtime:fastlane-terminal:test` **not-run**：本环境无 Android SDK；未冒充 Gradle。
-- **阻塞**：P04 的 `OSFL` v1 与 `fastlane-payload/docs/protocol.md` 的 `FLN1` v1 不兼容；HELLO/OPEN_PTY/CLOSE/EOF/credit/端口模型均有语义差异。对照与建议见 `docs/reports/tickets/fastlane-P04/protocol-alignment.zh-CN.md`。DV-02 前必须先裁定 codec。
-- 实现报告：`docs/reports/tickets/fastlane-P04/implementation-report.zh-CN.md`。
+- `TerminalMux`/`TerminalMuxChannel`/FLN1 codec 已落地：14 B 头、短读、多 PTY、guest→host credit、半关闭、VM stop/EOF/协议错误收敛。
+- 58 个 JUnit 4 测试通过（standalone `javac --release 17 -Xlint:all -Werror` + JUnitCore），含 golden fixture、10k 帧、credit 耗尽、关闭中写入、reentrant open、transport EOF；1 个进程级 E2E 在设置 `-Dfln1.payload` 时通过。
+- Gradle `:runtime:fastlane-terminal:test` **not-run**（本环境无 Android SDK/JDK 17）；CI 已覆盖全部 JVM 模块。
+- **已裁定**：`FLN1` 是 canonical wire，`OSFL` 退役（ACR-04）。宿主 codec 适配 payload 分配的 session id、单向 credit 与 EOF/EXIT 分离；payload 字节未改。
+- 跨语言 fixture：`protocol/fln1-golden.json`；进程 E2E 走 payload 的 Unix socket transport。
+- 实现报告：`docs/reports/tickets/fastlane-P04/implementation-report.zh-CN.md`（§12 为集成更新）。

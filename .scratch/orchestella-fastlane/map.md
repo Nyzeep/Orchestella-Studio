@@ -22,9 +22,9 @@ Canonical 文档：
 | 票 | 模块 | 交付 | 状态 |
 | --- | --- | --- | --- |
 | [P01](issues/P01-engine-fastlane-adapter.md) | engine-fastlane | 反射适配器/launch/session/stop 分类 | ready-for-agent（zero-device） |
-| [P02](issues/P02-payload-runtime.md) | payload | `AVmPayload_main`、vsock/PTY/storage/bridge | ready-for-agent（zero-device） |
+| [P02](issues/P02-payload-runtime.md) | payload | `AVmPayload_main`、vsock/PTY/storage/bridge | implemented（zero-device；DV-01/02 待验） |
 | [P03](issues/P03-sealed-toolbox.md) | toolbox | Termux/静态工具、`bin/` 注入、manifest | ready-for-agent（zero-device） |
-| [P04](issues/P04-terminal-multiplexer.md) | terminal | 多 PTY 帧协议/流控 | ready-for-agent（zero-device） |
+| [P04](issues/P04-terminal-multiplexer.md) | terminal | 多 PTY 帧协议/流控 | partial（FLN1 adapter 落地；DV-02 待验） |
 | [P05](issues/P05-network-proxy.md) | network | SOCKS5/HTTP CONNECT + vsock 桥 | ready-for-agent（zero-device） |
 | [P06](issues/P06-storage-export.md) | storage | encrypted home、tar 导出/导入 | ready-for-agent（zero-device） |
 | [P07](issues/P07-capability-router.md) | router | 能力矩阵、Full/Fast/Auto | ready-for-agent（zero-device） |
@@ -40,6 +40,16 @@ Canonical 文档：
 - `runtime/fastlane-distcc`：`DistccTcpVsockBridge`（loopback TCP ↔ FastLaneChannel 双向字节桥）；4 个 JUnit 测试通过。
 - 验证方式：本环境无 Android SDK/JDK 17，Gradle 全仓配置失败；用 JDK 21 + standalone `javac --release 17 -Xlint:all -Werror` + JUnit 4.13.2 跑 14 tests（OK）。有 Android SDK 的环境应改跑 `:runtime:engine-fastlane:test` 与 `:runtime:fastlane-distcc:test`。
 - P01/P09 仍为进行中：反射适配器、payload `distccd --inetd` 桥、Gradle check 待补。
+
+## 集成分支（2026-10-21）
+
+- 分支：`integration/fastlane-20261021`，基线 `main 3213b06e`。四个模块分支按 B→C→D→A 合并，保留双方行为。
+- **FLN1 裁定（ACR-04）**：`FLN1` 是 control/terminal canonical wire；`OSFL` 退役；`TerminalMux` 通过 `Fln1TerminalCodec` 适配 payload 分配的 session id、单向 credit、EOF/EXIT。payload 字节未改。
+- 跨语言契约：`protocol/fln1-golden.json`（Java + C++ 同读）；宿主对真实 payload 的 Unix socket E2E 通过。
+- CI：`.github/workflows/fastlane-zero-device.yml` 覆盖 7 个 JVM 模块、payload CTest（ASan/UBSan）、Python 76+11、E2E；`tools/ci/run-fastlane-zero-device.sh` 本地/CI 共用。
+- 文档：ptrace 结论统一为“无 allow、默认拒绝、需真机探针”；不再写“官方 neverallow”。
+- 当前阻塞：真实 Android 构建/APK `bin/` 执行位与 `zipalign -P 16` 未验证（本环境无 Android SDK/JDK 17 → `BUILD_BLOCKED`）；真实 vsock/PTY 仍是 DV-02。
+- **下一步：DV-01**（protected payload create/run/vsock/storage/stop），不是继续加功能。
 
 ## 串行真机 frontier（DV-01–DV-04）
 

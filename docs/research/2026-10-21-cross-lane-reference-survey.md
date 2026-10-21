@@ -10,7 +10,7 @@
 ## 0. 结论摘要
 
 1. **Termux 是 protected Microdroid 内最匹配的用户空间候选**：它本来就是 Android/Bionic 用户空间，不依赖 glibc、不需要 chroot/proot；`$PREFIX` + `termux-exec` 的路径重写可以在只读 APK `bin/` 前缀上工作。它不能提供 guest kernel、systemd、Docker、原生网络或 GPU，但能提供 bash/git/python/clang 等真实工具链。
-2. **PRoot 不是硬件虚拟化，也不是 protected 内的可行路径**：它用 ptrace 拦截 syscall，guest 指令本身是硬件执行，但 syscall 密集负载有明显开销；Microdroid 的 SELinux `neverallow ... ptrace` 直接禁止它。PRoot 只能作为宿主侧 Userspace Compatibility 的参考/兜底，不能作为 Fast Lane 的核心。
+2. **PRoot 不是硬件虚拟化，也不是 protected 内的可行路径**：它用 ptrace 拦截 syscall，guest 指令本身是硬件执行，但 syscall 密集负载有明显开销；protected 内 `microdroid_payload.te` 没有 ptrace allow（SELinux 默认拒绝，也没有显式 neverallow），PRoot 大概率不可用，但结论需要真机探针闭合。PRoot 只能作为宿主侧 Userspace Compatibility 的参考/兜底，不能作为 Fast Lane 的核心。
 3. **QEMU 与 protected Fast Lane 的最强交叉点是分布式编译**：QEMU guest 保持完整 Linux，使用 `distcc` 在本地预处理；Fast Lane 通过 vsock 接收字节流，用 `distccd --inetd`（stdin/stdout，无需 TCP socket）在硬件 CPU 上编译，返回目标文件。它不破坏 POSIX 语义，不需要在 protected 里跑完整发行版，也不需要 guest 有原生网络。
 4. **protected Fast Lane 不能提供原生网络/GPU/TCP**：唯一通用通道是 vsock；`microdroid_app` 没有 TCP socket 的通用 allow，也没有 graphics HAL。网络必须由宿主代理；distcc 必须用 `--inetd` + vsock 桥；显示 v1 只做终端。
 5. **DroidVM 证明 Gunyah/crosvm/VirGL 路线在 root 下可行，但不是本项目的路径**：它要求 root、直接打开 `/dev/gunyah`，其 `pseudo-unprotected` 也不是官方 AVF non-protected 能力。可借鉴其后端抽象/GPU/VNC/磁盘 UI，不可作为无 Root 承诺。
@@ -26,7 +26,7 @@
 | Termux app | `8629e63`（2026-09-26） | GPLv3 only | bootstrap 安装、`$PREFIX`、终端、`TermuxService` | prefix 布局、bootstrap 解包、终端/会话生命周期、FGS 保活 | 直接复制 GPL 代码需对应源码；它的 Android UI/权限模型与本项目不同 |
 | Termux packages | `f1b5f46`（2026-10-21） | 脚本/补丁随包许可证 | `distcc`、`clang`、`gcc`、`qemu`、`virglrenderer-android`、`proot` | 交叉编译配方、版本、`bin/` 工具集、distcc/clang 组合 | 逐包许可证审计；GPL 工具分发义务；不能整体搬仓库 |
 | Termux:X11 | `5986cfc`（2026-10-20） | GPLv3 | `lorie` X server、shell loader、显示传输 | X11 显示通道、输入注入、无 GPU 的软件渲染 UX | v1 不做 GUI；不能假设 protected 有 graphics HAL |
-| Termux PRoot fork | `e2d843e`（2026-10-18） | GPLv2（PRoot/CARE） | ptrace、seccomp、fork/clone 修复 | 宿主侧 Userspace Compatibility 的稳定性经验 | protected 内被 SELinux ptrace neverallow 禁止；不能作为 Fast Lane 核心 |
+| Termux PRoot fork | `e2d843e`（2026-10-18） | GPLv2（PRoot/CARE） | ptrace、seccomp、fork/clone 修复 | 宿主侧 Userspace Compatibility 的稳定性经验 | protected 内无 ptrace allow、SELinux 默认拒绝，需真机探针；不能作为 Fast Lane 核心 |
 | upstream PRoot | `25dc6a3`（2026-10-02） | GPLv2 | 同上 | syscall 拦截/路径重写/`-0` 语义 | 同上；性能开销随 syscall 密度上升 |
 | termux-exec | `2cd0ba6`（2026-07-02） | Debian copyright（需逐项核） | `LD_PRELOAD` 路径重写 | 让 `$PREFIX` 程序在只读前缀上找到 libs/工具 | 只适用于 Bionic/Android；不能替代内核 namespace |
 | Termux glibc packages | `75fa9e0`（2026-10-20） | MIT（仓库元数据） | `glibc-runner` / glibc 包 | 原生 glibc 前缀的可行性、loader/sysroot 参考 | 镜像仓库，实际包许可证逐项核；不能假设与 Microdroid Bionic 兼容 |
@@ -80,11 +80,11 @@
 - 每个 syscall 都要陷入 ptrace、参数转换、结果回写；文件/进程/网络密集负载有明显开销。
 - 公开数据差异很大：有文章称 20–50%，也有称 <5%；取决于 syscall 密度和测量方法。不能引用单一数字当结论。
 
-### 3.2 在 protected Microdroid 内不可行
+### 3.2 在 protected Microdroid 内大概率不可行（需真机探针）
 
-- AOSP Microdroid 策略：`neverallow { domain -crash_dump } domain:process ptrace;`
-- 只有 `crash_dump` 能 ptrace；`microdroid_app` 不能。
-- 因此 PRoot 不能作为 Fast Lane 的核心；不要为它设计“绕过 ptrace”的方案。
+- AOSP `microdroid_payload.te`（commit `7836cbb29`）中**没有**任何 ptrace allow，也**没有**显式 neverallow ptrace。
+- SELinux 默认拒绝：没有 allow 的权限不会成立，因此 PRoot 的 `PTRACE_TRACEME`/`PTRACE_SYSCALL` 在 payload 域内大概率不可用。
+- 这是“无 allow、默认拒绝”，不是“官方 neverallow”；在 protected pVM 内做一次最小 ptrace 探针之前，不应写成“官方明确禁止 PRoot”，也不应为它设计“绕过 ptrace”的方案。
 
 ### 3.3 宿主侧的价值
 
@@ -121,7 +121,7 @@
 | 从 APK `bin/` 执行 | 允许 | zipfuse `bin/` 默认 `EXECUTABLE_FILE_MODE`；`allow coredomain system_file:file execute` |
 | 从 encrypted storage 执行 | 禁止 | `MS_NOSUID|MS_NODEV|MS_NOEXEC`；neverallow execute |
 | chroot/mount | 禁止 | payload caps 清空；无 `sys_admin` |
-| PRoot | 禁止 | 只有 `crash_dump` 能 ptrace |
+| PRoot | 大概率不可用（需真机探针） | `microdroid_payload.te` 无 ptrace allow，SELinux 默认拒绝；无显式 neverallow |
 | TCP socket | 不应假设可用 | `microdroid_app` 没有通用 tcp_socket allow；distcc 用 `--inetd` 绕过 |
 | vsock 入站 | 允许 | `microdroid_payload self:vsock_socket { create listen accept ... }` |
 | vsock 出站 | 禁止 | `neverallow ... connect` |
@@ -245,7 +245,7 @@ distccd --inetd (stdio) + clang from /mnt/apk/bin
 ## 11. 明确不建议的路线
 
 1. 在 protected 内跑自定义内核/完整发行版：pvmfw 签名 + label + 网络硬门，不可行。
-2. 在 protected 内用 chroot/proot/mount/overlayfs/FUSE 绕过 noexec：SELinux neverallow + caps 清空；不要浪费。
+2. 在 protected 内用 chroot/proot/mount/overlayfs/FUSE 绕过 noexec：没有对应的 SELinux allow（默认拒绝）+ caps 清空；不要浪费。
 3. 把 `distccd` 直接监听 TCP 放进 payload：`microdroid_app` 没有通用 TCP allow；用 `--inetd`。
 4. 把 gvforwarder/TAP 放进 payload：需要 CAP_NET_ADMIN/TUN；不可行。
 5. 把 QEMU 放进 protected pVM 以“用硬件加速”：pVM 内没有 KVM，QEMU 仍 TCG，且多一层，必更慢。
