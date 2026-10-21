@@ -22,7 +22,7 @@ public final class TerminalFrame {
         }
         this.sessionId = sessionId;
         this.payload = payload == null ? new byte[0] : payload.clone();
-        if (this.payload.length > TerminalProtocol.MAX_PAYLOAD_BYTES) {
+        if (this.payload.length > Fln1Payloads.MAX_FRAME_PAYLOAD) {
             throw new IllegalArgumentException("payload exceeds the frame limit");
         }
     }

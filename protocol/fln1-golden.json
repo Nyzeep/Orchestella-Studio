@@ -1,0 +1,136 @@
+{
+  "protocol": "FLN1",
+  "version": 1,
+  "header_bytes": 14,
+  "note": "Canonical cross-language fixture. The C payload is normative; Java and C++ tests decode frame_hex, re-encode, and compare bytes.",
+  "frames": [
+    {
+      "name": "HELLO",
+      "direction": "host->guest",
+      "type": 1,
+      "session_id": 0,
+      "payload_hex": "000100010474657374",
+      "frame_hex": "464c4e3101010000000000000009000100010474657374"
+    },
+    {
+      "name": "HELLO_OK",
+      "direction": "guest->host",
+      "type": 129,
+      "session_id": 0,
+      "payload_hex": "00010000003f0001000000040000",
+      "frame_hex": "464c4e310181000000000000000e00010000003f0001000000040000"
+    },
+    {
+      "name": "PING",
+      "direction": "both",
+      "type": 2,
+      "session_id": 0,
+      "payload_hex": "000000000000002a",
+      "frame_hex": "464c4e3101020000000000000008000000000000002a"
+    },
+    {
+      "name": "PONG",
+      "direction": "both",
+      "type": 130,
+      "session_id": 0,
+      "payload_hex": "000000000000002a",
+      "frame_hex": "464c4e3101820000000000000008000000000000002a"
+    },
+    {
+      "name": "OPEN_PTY",
+      "direction": "host->guest",
+      "type": 3,
+      "session_id": 0,
+      "payload_hex": "00780028030002736800022d6300076563686f206869",
+      "frame_hex": "464c4e310103000000000000001600780028030002736800022d6300076563686f206869"
+    },
+    {
+      "name": "PTY_OPENED",
+      "direction": "guest->host",
+      "type": 131,
+      "session_id": 1,
+      "payload_hex": "0000109200040000",
+      "frame_hex": "464c4e31018300000001000000080000109200040000"
+    },
+    {
+      "name": "PTY_DATA",
+      "direction": "both",
+      "type": 4,
+      "session_id": 1,
+      "payload_hex": "68656c6c6f0a",
+      "frame_hex": "464c4e310104000000010000000668656c6c6f0a"
+    },
+    {
+      "name": "RESIZE",
+      "direction": "host->guest",
+      "type": 5,
+      "session_id": 1,
+      "payload_hex": "00840032",
+      "frame_hex": "464c4e310105000000010000000400840032"
+    },
+    {
+      "name": "RESIZED",
+      "direction": "guest->host",
+      "type": 133,
+      "session_id": 1,
+      "payload_hex": "",
+      "frame_hex": "464c4e3101850000000100000000"
+    },
+    {
+      "name": "SIGNAL",
+      "direction": "host->guest",
+      "type": 6,
+      "session_id": 1,
+      "payload_hex": "0f",
+      "frame_hex": "464c4e31010600000001000000010f"
+    },
+    {
+      "name": "CLOSE",
+      "direction": "host->guest",
+      "type": 7,
+      "session_id": 1,
+      "payload_hex": "00",
+      "frame_hex": "464c4e310107000000010000000100"
+    },
+    {
+      "name": "CLOSED",
+      "direction": "guest->host",
+      "type": 135,
+      "session_id": 1,
+      "payload_hex": "00",
+      "frame_hex": "464c4e310187000000010000000100"
+    },
+    {
+      "name": "EOF",
+      "direction": "guest->host",
+      "type": 8,
+      "session_id": 1,
+      "payload_hex": "",
+      "frame_hex": "464c4e3101080000000100000000"
+    },
+    {
+      "name": "EXIT",
+      "direction": "guest->host",
+      "type": 9,
+      "session_id": 1,
+      "payload_hex": "0000000000",
+      "frame_hex": "464c4e31010900000001000000050000000000"
+    },
+    {
+      "name": "WINDOW",
+      "direction": "host->guest",
+      "type": 10,
+      "session_id": 1,
+      "payload_hex": "00010000",
+      "frame_hex": "464c4e31010a000000010000000400010000"
+    },
+    {
+      "name": "ERROR",
+      "direction": "guest->host",
+      "type": 255,
+      "session_id": 0,
+      "payload_hex": "0003000962616420746f6b656e",
+      "frame_hex": "464c4e3101ff000000000000000d0003000962616420746f6b656e"
+    }
+  ]
+}

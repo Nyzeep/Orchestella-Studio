@@ -74,10 +74,13 @@ if(FL_BUILD_TESTS AND NOT ANDROID)
         tests/test_process.cpp
         tests/test_bridges.cpp
         tests/test_runtime.cpp
+        tests/test_golden_fixture.cpp
         src/vm_payload_stub.cpp
     )
     target_link_libraries(fastlane_payload_tests PRIVATE fastlane_payload_core)
     target_include_directories(fastlane_payload_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_compile_definitions(fastlane_payload_tests PRIVATE
+        FLN1_GOLDEN_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../protocol/fln1-golden.json")
     target_compile_options(fastlane_payload_tests PRIVATE -Wall -Wextra -Werror -Wpedantic)
     add_test(NAME fastlane_payload_tests COMMAND fastlane_payload_tests)
 endif()
