@@ -482,14 +482,17 @@ public final class QemuLaunchSpec {
         if (extraKernelArgs != null && !extraKernelArgs.trim().isEmpty()) {
             cmdline = cmdline + " " + extraKernelArgs.trim();
         }
-        List<String> args = new ArrayList<>(48);
+        int vcpus = effectiveVcpuCount(tuning, hardwareConfig.cpuCores());
+        List<String> args = new ArrayList<>(56);
+        Collections.addAll(args, qemuExecutable, "-machine", "virt,gic-version=3");
+        if (tuning.overcommitMemLockOff()) {
+            Collections.addAll(args, "-overcommit", "mem-lock=off");
+        }
         Collections.addAll(
                 args,
-                qemuExecutable,
-                "-machine", "virt,gic-version=3",
                 "-accel", accelArg(tuning),
                 "-cpu", tuning.cpuModel(),
-                "-smp", Integer.toString(tuning.vcpuCount() > 0 ? tuning.vcpuCount() : hardwareConfig.cpuCores()),
+                "-smp", Integer.toString(vcpus),
                 "-m", hardwareConfig.ramMegabytes() + "M",
                 "-nodefaults",
                 "-display", "none",
@@ -499,10 +502,23 @@ public final class QemuLaunchSpec {
                 "-serial", "chardev:terminal",
                 "-kernel", kernel,
                 "-initrd", initramfs,
-                "-append", cmdline,
+                "-append", cmdline);
+        if (tuning.iothreadPerDisk()) {
+            Collections.addAll(args, "-object", "iothread,id=iothread-root");
+        }
+        Collections.addAll(
+                args,
                 "-drive", rootDriveArg(rootVolume, tuning),
-                "-device", "virtio-blk-device,drive=root",
-                "-device", hardwareConfig.gpuAccelerationEnabled() ? "virtio-gpu-gl-device" : "virtio-gpu-device",
+                "-device", rootDeviceArg(tuning, vcpus),
+                "-device", hardwareConfig.gpuAccelerationEnabled() ? "virtio-gpu-gl-device" : "virtio-gpu-device");
+        if (tuning.rngRandom()) {
+            Collections.addAll(
+                    args,
+                    "-object", "rng-random,id=rng0,filename=/dev/urandom",
+                    "-device", "virtio-rng-device,rng=rng0");
+        }
+        Collections.addAll(
+                args,
                 "-netdev", passtNetdevArg(passtTcpPort, tuning),
                 "-device", "virtio-net-device,netdev=orchestella-net",
                 "-device", "virtio-serial-device",
@@ -514,9 +530,24 @@ public final class QemuLaunchSpec {
     }
 
     private static String accelArg(QemuTuning tuning) {
-        return tuning.tbSizeKb() > 0
-                ? "tcg,thread=multi,tb-size=" + tuning.tbSizeKb()
+        return tuning.tbSizeMib() > 0
+                ? "tcg,thread=multi,tb-size=" + tuning.tbSizeMib()
                 : "tcg,thread=multi";
+    }
+
+    private static int effectiveVcpuCount(QemuTuning tuning, int configuredCores) {
+        return tuning.vcpuCount() > 0 ? tuning.vcpuCount() : configuredCores;
+    }
+
+    private static String rootDeviceArg(QemuTuning tuning, int vcpus) {
+        StringBuilder device = new StringBuilder("virtio-blk-device,drive=root");
+        if (tuning.iothreadPerDisk()) {
+            device.append(",iothread=iothread-root");
+        }
+        if (tuning.multiQueueVcpu()) {
+            device.append(",num-queues=").append(Math.max(1, vcpus));
+        }
+        return device.toString();
     }
 
     private static String rootDriveArg(String rootVolume, QemuTuning tuning) {
@@ -592,14 +623,17 @@ public final class QemuLaunchSpec {
             cmdline = cmdline + " " + extraKernelArgs.trim();
         }
 
-        List<String> args = new ArrayList<>(48);
+        int vcpus = effectiveVcpuCount(tuning, cpuCores);
+        List<String> args = new ArrayList<>(56);
+        Collections.addAll(args, qemuExecutable, "-machine", "virt,gic-version=3");
+        if (tuning.overcommitMemLockOff()) {
+            Collections.addAll(args, "-overcommit", "mem-lock=off");
+        }
         Collections.addAll(
                 args,
-                qemuExecutable,
-                "-machine", "virt,gic-version=3",
                 "-accel", accelArg(tuning),
                 "-cpu", tuning.cpuModel(),
-                "-smp", Integer.toString(tuning.vcpuCount() > 0 ? tuning.vcpuCount() : cpuCores),
+                "-smp", Integer.toString(vcpus),
                 "-m", memoryArg,
                 "-nodefaults",
                 "-display", "none",
@@ -609,10 +643,23 @@ public final class QemuLaunchSpec {
                 "-serial", "chardev:terminal",
                 "-kernel", kernel,
                 "-initrd", initramfs,
-                "-append", cmdline,
+                "-append", cmdline);
+        if (tuning.iothreadPerDisk()) {
+            Collections.addAll(args, "-object", "iothread,id=iothread-root");
+        }
+        Collections.addAll(
+                args,
                 "-drive", rootDriveArg(rootVolume, tuning),
-                "-device", "virtio-blk-device,drive=root",
-                "-device", gpuAccelerationEnabled ? "virtio-gpu-gl-device" : "virtio-gpu-device",
+                "-device", rootDeviceArg(tuning, vcpus),
+                "-device", gpuAccelerationEnabled ? "virtio-gpu-gl-device" : "virtio-gpu-device");
+        if (tuning.rngRandom()) {
+            Collections.addAll(
+                    args,
+                    "-object", "rng-random,id=rng0,filename=/dev/urandom",
+                    "-device", "virtio-rng-device,rng=rng0");
+        }
+        Collections.addAll(
+                args,
                 "-netdev", formatNetdevArg(networkSpec, portForwardingRules),
                 "-device", formatDeviceArg(networkSpec),
                 "-device", "virtio-serial-device",

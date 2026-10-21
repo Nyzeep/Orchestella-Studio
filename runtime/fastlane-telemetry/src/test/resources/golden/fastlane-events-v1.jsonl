@@ -1,0 +1,2 @@
+{"schema":1,"event":"VM_CREATED","instanceId":"i-abc123","elapsedMs":12,"status":"OK","debugLevel":"NONE","protectionWeakened":false,"metrics":{"startupMs":1234,"payloadReadyMs":900,"terminalBytes":10,"proxyBytes":20,"distccJobs":2,"distccFailures":1,"distccTotalMs":450,"cpuPercent":42,"rssBytes":1048576}}
+{"schema":1,"event":"STOP_UNCONFIRMED","instanceId":"i-abc123","elapsedMs":5000,"status":"FAILED","debugLevel":"NONE","protectionWeakened":false,"stop":{"stage":"PROCESS_EXIT_WAIT","pid":4242,"graceMs":5000,"exitCode":null}}
