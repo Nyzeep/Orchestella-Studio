@@ -1,5 +1,7 @@
 # Orchestella 下一阶段优化方案（2026-10-18）
 
+> **2026-10-21 方向更新（AVF 线）**：经 AOSP 源码与 SELinux 策略复核，protected 自定义 Full Linux 在当前无 Root 约束下不可行（pvmfw 签名、`app_data_file` label、protected 无原生网络）。AVF 研究线改为 **Protected Fast Lane（Microdroid 应用 payload）+ QEMU Full Lane** 双轨；non-protected Full Linux 保留为未来备选。本文的 P0 发布线、QEMU 主线与可靠性工作仍然有效；P2/25/26 及原 protected 产品化排序以 [Protected Fast Lane 方案](protected-fast-lane-plan-20261021.zh-CN.md) 为准。
+
 > **实施状态（2026-10-18 维护）**：P0-3 跨 Controller 单实例竞态已在 `runtime/instance` 中修复，并新增 4 项并发契约测试；`:runtime:instance:check` 与 `:app:testDebugUnitTest`（747 tests / 98 suites）通过。P0-1 生产签名、P0-2 QEMU/gvproxy 收敛、P0-4 输入、P0-5 CI 门禁与 P0-6 GPL/NOTICE 仍未完成。详见[维护与优化 Prompt](optimization-prompt-20261018.zh-CN.md)。
 
 - 基线：`Orchestella_dev` main `b0a167c`（2026-10-18），源码 0.5.3 / code503，工作树干净；公开安装包仍为 v0.4.5。
