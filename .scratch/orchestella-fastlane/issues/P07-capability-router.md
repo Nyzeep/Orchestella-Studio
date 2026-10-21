@@ -1,7 +1,7 @@
 # P07: Fast Lane 能力矩阵与 Lane Router（零设备）
 
 Type: implementation
-Status: ready-for-agent（zero-device）
+Status: implemented（zero-device；Gradle not-run；ACR-03/DV-04 pending）
 Priority: P0（产品真相）
 Owner: capability/router owner
 Blocked by: None（零设备）；产品集成由 DV-04 验证
@@ -50,3 +50,15 @@ External gates: ACR-03 未决前不对外声明
 
 - ACR-03 拒绝第三类：Router 只保留内部实验，不产品化。
 - 能力矩阵与真机不符：以 DV-01/02 结果修正；不把声明当通过。
+
+## Comments
+
+### 2026-10-21 零设备实现
+
+状态：zero-device 范围完成；ACR-03/DV-04 待定。
+
+- `FastLaneCapabilities`/`DeviceFacts`/`RequirementProfile`/`FastLaneRouter`/`FastLaneDecision`/`FastLaneCopy` 已落地；32 个 JUnit 4 测试通过。
+- truth table 覆盖 protected-only、no AVF、hidden API、permission denied、protected 不支持、no storage、no proxy、no toolbox、no distcc、unknown device/workload、no full lane。
+- 修正 `exportImport` 在 encrypted storage 不可用时仍为 true 的虚报；显式 Full Linux 需求优先于 UNKNOWN workload；`UNSUPPORTED` 保留触发原因（删除未使用的 `NO_LANE_AVAILABLE`）。
+- Gradle `:runtime:fastlane-capability:test` **not-run**：本环境无 Android SDK；未冒充 Gradle。
+- 实现报告：`docs/reports/tickets/fastlane-P07/implementation-report.zh-CN.md`。
