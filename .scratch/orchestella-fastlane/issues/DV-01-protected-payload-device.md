@@ -1,7 +1,7 @@
 # DV-01: Protected Microdroid payload 真机门（串行 1）
 
 Type: device-verification
-Status: blocked_external
+Status: dv01_core_pass_terminal_blocked
 Priority: P0（第一个真机门）
 Owner: 设备唯一操作者/主协调
 Blocked by: P01, P02, P03, P04, P05, P06, P07, P08, P09, P10, P11, P12
@@ -61,15 +61,25 @@ External gates: 当前 HONOR 设备、QA APK、MANAGE_VIRTUAL_MACHINE（必要�
 
 ## 2026-10-21 执行记录
 
-**Phase 0A/0B/0C 完成；DV-01 未执行，状态 `blocked_external`。**
+**Phase 0A/0B/0C 完成；DV-01 真机结果 `DV01_CORE_PASS_TERMINAL_BLOCKED`。**
 
+### 前置与构建
+
+- 操作者指定替代 QA 设备（别名 `qa-alt-01`，API 36；不是 HONOR MEY-AN00，按要求只写别名）。APK 安装成功，`MANAGE_VIRTUAL_MACHINE`/`USE_CUSTOM_VIRTUAL_MACHINE` 均 granted。
 - payload：NDK 27.0.12077973 构建成功，`T AVmPayload_main`，三个 `PT_LOAD p_align=0x4000`；staged SHA256 `7f5c4d72…`，APK 内 stripped SHA256 `0d40e13f…`；`libvm_payload.so` 未打包。
-- APK：`io.github.nyzeep.orchestella.qa.dv01`；payload entry 为 stored，data offset `0x4DC000`，`zipalign -c -P 16` 通过；APK SHA256 `1b6f7b7a…`；test APK SHA256 `8a47e739…`。
-- harness：`AvfQaProbeInstrumentation` 新增 `fastlane-dv01`；新增 `FastLaneDv01Contract` + 11 个 JVM 测试；payload/toolbox APK 门通过。
-- 零设备门禁：313 tests / 8 skipped / 0 failures（4 个既有条件 skip + 4 个 Windows 主机夹具 skip）。
-- 真机：当前连接设备不是文档中的 HONOR MEY-AN00；两个 APK 均被 OEM 安装限制拒绝，返回 `INSTALL_FAILED_USER_RESTRICTED`。包未安装、权限未授予、VM 未创建、instrumentation 未执行。
-- 判定：`BLOCKED_EXTERNAL`（`DEVICE_MISMATCH` + `INSTALL_FAILED_USER_RESTRICTED`）；未尝试 root/unlock/SELinux/pvmfw 修改或安装限制绕过。
-- 证据：`protected-fastlane/20261021/dv01/`（含 `fastlane-dv01-not-run.json`，这是 host blocked record，不是设备通过证据）。
+- 首次真机 create 因 v2-only APK 无法生成 idsig 而失败；在现有 debug signing config 启用 v3 后通过。最终 APK SHA256 `40b9b211…`，test APK `0e26c4dd…`；证书/渠道未变。
+- payload 默认端口为 5100–5103，与 harness 默认 9100–9103 不一致；最终运行使用显式覆盖 5100–5103。后续需收敛默认值。
+- 零设备门禁：313 tests / 8 skipped / 0 failures。
+
+### 真机结果
+
+- protected bit 可用；`setProtectedVm(true)` 接受，`setProtectedVm(false)` 抛 `UnsupportedOperationException`。
+- create/run/payloadReady 成功（801–1202 ms）；control HELLO/HELLO_OK 成功（caps=45，3–8 ms，`auth_token=empty`）。
+- stop first/second 均 `CONFIRMED`；20/20 次 create/run/stop/delete 全部 pass，stop 382–527 ms，每轮 residual=false。
+- terminal PTY 返回 FLN1 7（`EXEC_FAILED`，`TOOLBOX_EXEC_FAILED`）；`/mnt/apk/bin/sh` 未产生输出，storage marker/持久化未测试。
+- 负例：错误端口被 `FastLaneLaunchSpec` 拒绝；custom image 在 config builder 被接受（create 层未测试）；错误 payload 未获得 typed rejection，标记 `unconfirmed`。
+- 判定：`DV01_CORE_PASS_TERMINAL_BLOCKED`；不得进入 DV-02，不得宣称完整 DV-01。
+- 证据：`protected-fastlane/20261021/dv01/`（`fastlane-dv01-4d9a1e7c3b5f8026.json`、`cycles-20.tsv`、`terminal-failure.txt`）。
 - 报告：`docs/reports/orchestration/fastlane-dv01-20261021.zh-CN.md`。
 
-下一步：连接/授权 HONOR MEY-AN00，允许 USB 安装，安装 APK 并授予 `MANAGE_VIRTUAL_MACHINE`，重跑 `qaMode=fastlane-dv01`。在设备侧 JSON `outcome=PASS` 且 20 次表完整前，不勾选本票验收项，不进入 DV-02。
+下一步：修 toolbox `bin/sh` 的 guest 可执行性/挂载（不改 FLN1 wire、不改 pvmfw/SELinux），让 terminal 执行 `/mnt/apk/bin/sh`；再跑 storage marker/持久化、负例和完整 20 轮。terminal 通过前不勾选完整 DV-01 验收项，不进入 DV-02。未尝试 root/unlock 或绕过安装限制。
