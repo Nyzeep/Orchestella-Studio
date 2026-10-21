@@ -115,7 +115,7 @@ CI 任务会传入真实 `zipalign`。Gradle/AGP 真实 APK 未在本环境构�
 
 ## 6. 未验证 / not-tested
 
-- 设备上从 `/mnt/apk/bin` 执行 BusyBox：`not-tested`（DV-02）。
+- 设备上从 `/mnt/apk/bin` 执行 BusyBox：**已执行到 `execve`，但被平台 SELinux 拒绝**（见 6.1）；terminal/storage 仍 `not-tested`。
 - AGP 资源源集把 `bin/` 放到 APK 根并保留 zipfuse 执行语义：未本机构建
   （无 Android SDK）；CI 任务已接线。
 - `zipalign -P 16` 真实检查：本机无 build-tools，`SKIP`；CI 的
@@ -123,6 +123,14 @@ CI 任务会传入真实 `zipalign`。Gradle/AGP 真实 APK 未在本环境构�
 - 编译器/git/python：v1 不含；`distcc-clang` profile 为 `not-tested`。
 - 16 KB 内核真机运行：未测；只验证了 ELF 对齐与 APK 结构。
 - Gradle/AGP 真实 APK：未在本机构建；本轮用合成未签名 APK 验证注入/校验。
+
+### 6.1 2026-10-21 DV-01A 设备结论
+
+- APK 中 `bin/sh` 为 1,115,944 bytes，ZIP `external_attr` mode 0（zipfuse `bin/` 默认执行位）。
+- 设备上 payload 的 `realpath`、`stat`、`access(X_OK)` 对 `/mnt/apk/bin/sh` 都成功，说明文件存在、路径正确且 zipfuse 的执行位生效；P03 的打包假设成立。
+- `execve` 仍返回 EACCES(13)；guest audit 为 `execute_no_trans` 拒绝（`scontext=u:r:microdroid_app:s0`、`tcontext=u:object_r:system_file:s0`、`dev="fuse"`、`permissive=0`）。A16 policy 有 `execute` 但没有给 `microdroid_app` 对 `system_file` 的 `execute_no_trans`。
+- 因此阻塞在平台 SELinux 策略，不在 toolbox 内容、APK 打包或 ZIP 执行位；需要平台侧变更/支持的可执行挂载。DV-01 terminal/storage 仍 `not-tested`，不进入 DV-02。
+- 本轮未改 toolbox 内容、manifest、签名身份或 QA channel。
 
 ## 7. 许可证、体积与风险
 

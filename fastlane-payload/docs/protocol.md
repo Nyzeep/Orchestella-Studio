@@ -82,6 +82,13 @@ Requests use `0x0n`; successful replies use `0x8n`; `0xFF` is an error reply.
 `/mnt/apk/bin`; an absolute path must resolve under `/mnt/apk`. Encrypted storage is
 never executable.
 
+Platform note (DV-01A, 2026-10-21): `/mnt/apk` is a zipfuse mount. On Android 16 the
+`microdroid_app` SELinux domain is allowed `execute` but not `execute_no_trans` on
+`system_file`, so `access(X_OK)` succeeds while `execve` returns EACCES. This is a
+platform policy blocker, not a wire or toolbox-resolution rule; do not substitute
+`/system/bin/sh`, encrypted-storage execution or an in-process shell. See
+`.scratch/orchestella-fastlane/issues/DV-01A-toolbox-exec-selinux.md`.
+
 `EXPORT` roots are relative to the storage root and must be one of the policy-allowed
 exports (`home`, `workspace`). `IMPORT_BEGIN` writes only to a staging directory; the
 staging tree is swapped in on a verified `IMPORT_END`.
