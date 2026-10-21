@@ -1,7 +1,7 @@
 # P08: QEMU TCG 调优矩阵扩展（零设备）
 
 Type: implementation
-Status: ready-for-agent（zero-device）
+Status: implemented-zero-device（默认 argv 不变；真机 A/B 待 DV-03）
 Priority: P1
 Owner: QEMU/performance owner
 Blocked by: None（零设备）；真机 A/B 由 DV-03 执行
@@ -30,13 +30,13 @@ External gates: 无
 
 ## 行为验收
 
-- [ ] `QemuTuning.DEFAULTS` 输出与当前默认逐字节一致。
-- [ ] 每个候选是独立开关；非法值拒绝；不出现重复 `-cpu`/`-accel`。
-- [ ] `cache=unsafe` 被测试禁止。
-- [ ] `tb-size` 单位/上限明确（MiB）；文档不再写 Kb。
-- [ ] 矩阵脚本能生成 n≥10 样本表（设备列 `not-tested`）。
-- [ ] 与 passt/gvproxy/VirGL 现有参数兼容；不改变网络/GPU 默认。
-- [ ] 回归测试：旧调用签名委托到默认值。
+- [x] `QemuTuning.DEFAULTS` 输出与当前默认逐字节一致。
+- [x] 每个候选是独立开关；非法值拒绝；不出现重复 `-cpu`/`-accel`。
+- [x] `cache=unsafe` 被测试禁止。
+- [x] `tb-size` 单位/上限明确（MiB）；文档不再写 Kb。
+- [x] 矩阵脚本能生成 n≥10 样本表（设备列 `not-tested`）。
+- [x] 与 passt/gvproxy/VirGL 现有参数兼容；不改变网络/GPU 默认。
+- [x] 回归测试：旧调用签名委托到默认值。
 
 ## 联网调研
 
@@ -56,3 +56,10 @@ External gates: 无
 
 - 参数在 QEMU 11.1.1 不可用：移除候选，记录失败。
 - 没有设备数据：保留 `not-tested`，不改默认。
+
+## Comments
+
+- 2026-10-21 / Agent D：零设备实现完成于 `feature/fastlane-qemu-observability`。`QemuTuning` 新增 builder 与 iothread/num-queues/rng/overcommit 开关；`tbSizeKb` 更正为 `tbSizeMib`；`aio=native` 因 QEMU 要求 `cache.direct=on` 而拒绝；RNG 用 MMIO `virtio-rng-device` 而非票面 PCI，理由已写入报告。默认 argv 用旧/新两次编译 + `diff -u` 验证 47 项逐字节一致；`QemuTuningTest` 16 场景 OK；矩阵 11 Python tests OK，dry-run 18 变体 × 6 workload = 108 行全部 `not-tested`。
+- 未验证：无真机、无 QEMU smoke boot、无 n≥10 样本；iothread/num-queues/RNG/CPU max 的行为只到源码/文档级。DV-03 必跑。
+- 明确未实现：guest `mitigations=off`/`elevator=mq-deadline`（本会话 brief 未列；`mitigations=off` 是安全削弱项，需单独安全评审，不混入性能矩阵）；RNG 票面 `virtio-rng-pci` 改为 MMIO `virtio-rng-device`（与现有设备模型一致）。
+- 报告：`docs/reports/tickets/fastlane-P08/implementation-report.zh-CN.md`；矩阵模板：`docs/reports/tickets/fastlane-P08/matrix-dry-run.tsv`。

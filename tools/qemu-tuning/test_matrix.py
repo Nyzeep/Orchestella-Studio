@@ -35,6 +35,38 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual("not-tested", matrix.summarize([])["status"])
 
 
+class VariantTests(unittest.TestCase):
+    def test_every_variant_changes_exactly_one_key(self) -> None:
+        matrix.validate_variants()
+
+    def test_tb_size_is_mib_not_kb(self) -> None:
+        self.assertIn("tb_size_mib", matrix.BASELINE)
+        self.assertNotIn("tb_size_kb", matrix.BASELINE)
+        sizes = [
+            overrides["tb_size_mib"]
+            for _, variable, overrides in matrix.VARIANTS
+            if variable == "tb_size_mib"
+        ]
+        self.assertEqual([32, 64, 128, 256], sizes)
+
+    def test_p08_candidates_are_present(self) -> None:
+        ids = {variant_id for variant_id, _, _ in matrix.VARIANTS}
+        for expected in (
+            "cpu-max-sve-off-pauth-impdef",
+            "iothread-root",
+            "num-queues-vcpu",
+            "aio-threads",
+            "rng-random",
+            "overcommit-memlock-off",
+        ):
+            self.assertIn(expected, ids)
+
+    def test_no_variant_enables_unsafe_cache(self) -> None:
+        for _, _, overrides in matrix.VARIANTS:
+            for value in overrides.values():
+                self.assertNotIn("cache=unsafe", str(value))
+
+
 class SampleFileTests(unittest.TestCase):
     def test_unknown_variant_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

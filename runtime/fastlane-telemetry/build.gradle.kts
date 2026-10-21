@@ -17,3 +17,7 @@ tasks.withType<JavaCompile>().configureEach {
     options.release.set(17)
     options.compilerArgs.addAll(listOf("-Xlint:all", "-Werror"))
 }
+
+tasks.named("check") {
+    dependsOn("test")
+}
