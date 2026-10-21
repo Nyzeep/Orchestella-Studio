@@ -178,6 +178,24 @@ public final class Fln1TerminalCodecTest {
     }
 
     @Test
+    public void connectionScopedErrorClearsThePendingOpenFifo() throws Exception {
+        Fln1TerminalCodec host = new Fln1TerminalCodec(TerminalMux.Role.HOST);
+        host.encode(new TerminalFrame(
+                TerminalFrameType.OPEN_PTY, 11,
+                Fln1Payloads.encodeOpenPty(new Fln1Payloads.OpenPty(
+                        80, 24, new String[] {"sh"}))));
+
+        // The payload reports every OPEN_PTY failure as ERROR with session 0.
+        host.decode(frame(Fln1TerminalCodec.OP_ERROR, 0,
+                Fln1Payloads.encodeError(new Fln1Payloads.Error(6, "session limit"))));
+
+        // The failed open must not consume the next payload-assigned wire id.
+        assertCode(TerminalErrorCode.INVALID_PAYLOAD, () -> host.decode(
+                frame(Fln1TerminalCodec.OP_PTY_OPENED, 9,
+                        Fln1Payloads.encodePtyOpened(123, 262_144))));
+    }
+
+    @Test
     public void toleratesShortReadsForHeaderAndPayload() throws Exception {
         Fln1TerminalCodec host = new Fln1TerminalCodec(TerminalMux.Role.HOST);
         host.encode(new TerminalFrame(

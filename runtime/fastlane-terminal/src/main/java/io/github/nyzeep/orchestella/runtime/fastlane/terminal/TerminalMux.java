@@ -16,11 +16,18 @@ import java.util.Set;
  * wire contract.
  *
  * <p>The mux owns no threads and stores no terminal bytes beyond the frame
- * currently being delivered. The guest direction is windowed: the payload
- * announces {@code initial_window} in {@code PTY_OPENED} and the host returns
- * credit with {@code WINDOW}; {@code FLN1} has no host-to-guest window, so a
- * host may send up to one {@code PTY_DATA} frame at a time without waiting for
- * credit. That asymmetry is part of the contract, not a local choice.
+ * currently being delivered. Flow control is one-directional in {@code FLN1}:
+ * guest-to-host output is windowed (the payload announces
+ * {@code initial_window} in {@code PTY_OPENED} and the host returns credit with
+ * {@code WINDOW}), while host-to-guest input has no window at all. Host input
+ * is bounded only by the 32 KiB {@code PTY_DATA} frame limit and by the
+ * synchronous sink / payload PTY write, which is where backpressure lives.
+ * {@code sendCredit} and {@code receiveCredit} therefore track one direction
+ * each; they are not two halves of a bidirectional window.
+ *
+ * <p>The default session limit ({@value #DEFAULT_MAX_SESSIONS}) matches the
+ * payload's default {@code FASTLANE_MAX_SESSIONS}; {@link #MAX_SESSIONS} is a
+ * hard ceiling for explicit configuration, not a production default.
  *
  * <p>Callbacks run while the mux lock is held; listeners must be short and
  * must not block on another thread that calls back into the mux.
@@ -31,7 +38,16 @@ public final class TerminalMux {
         GUEST
     }
 
+    /**
+     * Host default, matching the payload's {@code FASTLANE_MAX_SESSIONS}
+     * default. A host that opens more than this would be rejected by the
+     * payload as {@code SESSION_LIMIT} at the ninth PTY.
+     */
+    public static final int DEFAULT_MAX_SESSIONS = 8;
+
+    /** Hard ceiling accepted by the constructor; not the production default. */
     public static final int MAX_SESSIONS = 128;
+
     public static final int MAX_CREDIT_BYTES = 4_194_304;
 
     @FunctionalInterface
@@ -103,7 +119,7 @@ public final class TerminalMux {
     private long protocolErrors;
 
     public TerminalMux(Role role, FrameSink sink) {
-        this(role, MAX_SESSIONS, sink, NO_LISTENER);
+        this(role, DEFAULT_MAX_SESSIONS, sink, NO_LISTENER);
     }
 
     public TerminalMux(Role role, int maxSessions, FrameSink sink, Listener listener) {
@@ -214,15 +230,20 @@ public final class TerminalMux {
                     TerminalErrorCode.SESSION_CLOSED, "session cannot send data");
         }
         int allowed = Math.min(
-                data.length,
-                Math.min(peerMaxFrameBytes, Math.min(Fln1Payloads.MAX_PTY_DATA,
-                        session.sendCredit)));
+                data.length, Math.min(peerMaxFrameBytes, Fln1Payloads.MAX_PTY_DATA));
+        if (role == Role.GUEST) {
+            // FLN1 windows only guest->host output. Host input has no WINDOW
+            // frame; the payload's synchronous PTY write is the backpressure.
+            allowed = Math.min(allowed, session.sendCredit);
+        }
         if (allowed == 0) {
             creditStalls++;
             return 0;
         }
         byte[] chunk = Arrays.copyOf(data, allowed);
-        session.sendCredit -= allowed;
+        if (role == Role.GUEST) {
+            session.sendCredit -= allowed;
+        }
         try {
             writeFrame(new TerminalFrame(TerminalFrameType.DATA, sessionId, chunk));
         } catch (IOException failure) {
@@ -577,12 +598,16 @@ public final class TerminalMux {
             sendError(frame.sessionId(), TerminalErrorCode.INVALID_PAYLOAD, "empty data frame");
             return;
         }
-        if (length > session.receiveCredit) {
-            forceClose(frame.sessionId(), TerminalCloseReason.PROTOCOL_ERROR);
-            sendError(frame.sessionId(), TerminalErrorCode.CREDIT_EXCEEDED, "credit exceeded");
-            return;
+        if (role == Role.HOST) {
+            // The host consumes the payload's output window; the guest sees
+            // host input through a synchronous sink and never debits credit.
+            if (length > session.receiveCredit) {
+                forceClose(frame.sessionId(), TerminalCloseReason.PROTOCOL_ERROR);
+                sendError(frame.sessionId(), TerminalErrorCode.CREDIT_EXCEEDED, "credit exceeded");
+                return;
+            }
+            session.receiveCredit -= length;
         }
-        session.receiveCredit -= length;
         bytesIn += length;
         listener.onData(frame.sessionId(), frame.payload());
     }
@@ -643,6 +668,17 @@ public final class TerminalMux {
                         + ": " + error.message());
         if (frame.sessionId() > 0) {
             forceClose(frame.sessionId(), TerminalCloseReason.PROTOCOL_ERROR);
+            return;
+        }
+        // FLN1 errors are connection-scoped: the payload reports a failed
+        // OPEN_PTY (and every other connection-level failure) with session 0.
+        // The codec already dropped the unmatchable FIFO entry, so an OPENING
+        // session can never receive its PTY_OPENED. OPEN sessions are left to
+        // the transport EOF / abortAll, which owns that decision.
+        for (Session session : new ArrayList<>(sessions.values())) {
+            if (session.state == TerminalSessionState.OPENING) {
+                finish(session, TerminalCloseReason.PROTOCOL_ERROR);
+            }
         }
     }
 

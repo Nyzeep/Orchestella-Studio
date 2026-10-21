@@ -385,6 +385,107 @@ public final class TerminalMuxTest {
         assertEquals(0, wire.guest.activeSessions());
     }
 
+    @Test
+    public void failedOpenWithConnectionScopedErrorIsClosedAndFifoIsReset() throws Exception {
+        Fln1TerminalCodec codec = new Fln1TerminalCodec(TerminalMux.Role.HOST);
+        TerminalMux host = new TerminalMux(TerminalMux.Role.HOST, MAX, codec::encode, null);
+        host.sendHello(new Fln1Payloads.Hello(1, 1, ""));
+
+        int failed = host.openSession(80, 24, "sh");
+        assertEquals(1, failed);
+        assertEquals(TerminalSessionState.OPENING, host.state(failed));
+
+        host.onFrame(codec.decode(fln1Frame(
+                Fln1TerminalCodec.OP_ERROR, 0,
+                Fln1Payloads.encodeError(new Fln1Payloads.Error(6, "session limit")))));
+        assertEquals(TerminalSessionState.CLOSED, host.state(failed));
+        assertEquals(0, host.activeSessions());
+
+        int next = host.openSession(80, 24, "sh");
+        assertEquals(2, next);
+        TerminalFrame ack = codec.decode(fln1Frame(
+                Fln1TerminalCodec.OP_PTY_OPENED, 9,
+                Fln1Payloads.encodePtyOpened(123, 262_144)));
+        assertEquals(2, ack.sessionId());
+        host.onFrame(ack);
+        assertEquals(TerminalSessionState.OPEN, host.state(next));
+        assertEquals(1, host.activeSessions());
+    }
+
+    @Test
+    public void connectionScopedErrorClosesOpeningSessionsButNotOpenOnes() throws Exception {
+        Fln1TerminalCodec codec = new Fln1TerminalCodec(TerminalMux.Role.HOST);
+        TerminalMux host = new TerminalMux(TerminalMux.Role.HOST, MAX, codec::encode, null);
+        host.sendHello(new Fln1Payloads.Hello(1, 1, ""));
+
+        int open = host.openSession(80, 24, "sh");
+        host.onFrame(codec.decode(fln1Frame(
+                Fln1TerminalCodec.OP_PTY_OPENED, 3,
+                Fln1Payloads.encodePtyOpened(11, 1024))));
+        int opening = host.openSession(80, 24, "sh");
+
+        host.onFrame(codec.decode(fln1Frame(
+                Fln1TerminalCodec.OP_ERROR, 0,
+                Fln1Payloads.encodeError(new Fln1Payloads.Error(6, "session limit")))));
+
+        // OPEN sessions belong to the transport; ERROR 0 only fails pending opens.
+        assertEquals(TerminalSessionState.OPEN, host.state(open));
+        assertEquals(TerminalSessionState.CLOSED, host.state(opening));
+        assertEquals(1, host.activeSessions());
+    }
+
+    @Test
+    public void defaultSessionLimitMatchesThePayloadDefault() throws Exception {
+        assertEquals(8, TerminalMux.DEFAULT_MAX_SESSIONS);
+        TerminalMux host = new TerminalMux(TerminalMux.Role.HOST, frame -> {});
+        host.sendHello(new Fln1Payloads.Hello(1, 1, ""));
+        for (int index = 0; index < TerminalMux.DEFAULT_MAX_SESSIONS; index++) {
+            host.openSession(80, 24, "sh");
+        }
+        assertEquals(TerminalMux.DEFAULT_MAX_SESSIONS, host.activeSessions());
+
+        TerminalProtocolException failure = assertThrows(
+                TerminalProtocolException.class, () -> host.openSession(80, 24, "sh"));
+        assertEquals(TerminalErrorCode.SESSION_LIMIT, failure.code());
+    }
+
+    @Test
+    public void hostToGuestDataIsFrameLimitedButNeverWindowed() throws Exception {
+        Fln1Wire wire = Fln1Wire.create(MAX);
+        int id = wire.open("main");
+        wire.accept(id, 1024);
+
+        byte[] chunk = new byte[Fln1Payloads.MAX_PTY_DATA];
+        int total = 0;
+        for (int index = 0; index < 160; index++) {
+            assertEquals(chunk.length, wire.host.sendData(id, chunk));
+            total += chunk.length;
+        }
+        assertEquals(5 * 1024 * 1024, total);
+        assertEquals(total, wire.guestRecorder.bytes(id));
+        // Host input consumes neither counter; the guest's output window is
+        // still the 1024 bytes advertised in PTY_OPENED.
+        assertEquals(TerminalMux.MAX_CREDIT_BYTES, wire.guest.receiveCredit(id));
+        assertEquals(1024, wire.guest.sendCredit(id));
+
+        // guest -> host keeps the advertised window and still stalls.
+        assertEquals(1024, wire.guest.sendData(id, chunk));
+        assertEquals(0, wire.guest.sendData(id, chunk));
+        assertEquals(2, wire.guest.metrics().creditStalls());
+    }
+
+    private static byte[] fln1Frame(int opcode, int session, byte[] payload) {
+        return java.nio.ByteBuffer.allocate(Fln1TerminalCodec.HEADER_BYTES + payload.length)
+                .order(java.nio.ByteOrder.BIG_ENDIAN)
+                .put(Fln1TerminalCodec.MAGIC)
+                .put((byte) Fln1TerminalCodec.VERSION)
+                .put((byte) opcode)
+                .putInt(session)
+                .putInt(payload.length)
+                .put(payload)
+                .array();
+    }
+
     private static byte[] openPtyPayload() {
         return Fln1Payloads.encodeOpenPty(
                 new Fln1Payloads.OpenPty(80, 24, new String[] {"sh"}));
