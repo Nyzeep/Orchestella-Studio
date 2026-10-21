@@ -74,16 +74,16 @@ the AVF APEX, so the stub must not be packaged into the APK. The payload links
 
 ## Verification status
 
-Host tests (70 cases) cover framing (including unknown types, overlong transport
+Host tests (73 cases) cover framing (including unknown types, overlong transport
 reads, length wrap, and deterministic random input), SHA-256 vectors, path safety,
 tar export/import rollback and PAX overflow, PTY lifecycle/resize/signal/credit/fd
 leaks, distcc stdio bridging and half-close convergence, proxy
 pairing/half-close/timeouts, runtime config validation, and a full control-server
-round trip over Unix sockets. The same 70 pass under ASan+UBSan. **Not tested:**
+round trip over Unix sockets. The same 73 pass under ASan+UBSan. **Not tested:**
 real vsock, Microdroid SELinux, real `distccd`, `/mnt/apk` Termux binaries, and the
-NDK build. Those belong to DV-01/DV-02/DV-03. P04's host codec currently uses a
-different `OSFL` framing; `docs/protocol.md` §8 records the FLN1-wire decision and
-the still-missing adapter.
+NDK build. Those belong to DV-01/DV-02/DV-03. P04's host `TerminalMux` now speaks
+`FLN1` through `Fln1TerminalCodec`; `OSFL` is retired by ACR-04, and
+`docs/protocol.md` §8 records the cross-language fixture/E2E boundary.
 
 ## Attribution
 

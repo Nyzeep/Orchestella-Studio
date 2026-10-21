@@ -1,9 +1,8 @@
 # Fast Lane payload protocol v1
 
 Status: v1 zero-device contract, unchanged bytes as of 2026-10-21. The C payload is
-the normative implementation. P04's host codec landed with a different `OSFL`
-framing; its `protocol-alignment.zh-CN.md` recommends this `FLN1` document as the
-vsock wire contract and an adapter on the host side (see §8).
+the normative implementation. P04's host `TerminalMux` now speaks this `FLN1`
+contract through `Fln1TerminalCodec`; `OSFL` is retired by ACR-04 (see §8).
 
 ## 1. Seam
 
@@ -152,10 +151,9 @@ document do not change in this revision. The 2026-10-21 hardening pass changed o
 implementation-side validation and resource lifetime; it did not add or renumber a
 frame.
 
-P04 (`runtime/fastlane-terminal`) implements a host-side `OSFL` codec whose magic,
-frame types, HELLO gate, PTY parameters, close semantics, and credit frames are not
-wire-compatible with `FLN1`. P04's alignment report recommends keeping `FLN1` as the
-vsock wire contract and putting an adapter behind the host `TerminalCodec` seam; this
-payload does not implement a second wire protocol. Until that adapter lands, a real
-P04-to-payload terminal connection is **not** verified; passing both projects' unit
-tests is not a cross-language integration result.
+P04 (`runtime/fastlane-terminal`) now speaks this `FLN1` contract through
+`Fln1TerminalCodec`; `OSFL` is retired by ACR-04. The host and C++ tests share
+`protocol/fln1-golden.json`, and a host process E2E over a Unix socket passes.
+This payload still implements only one wire protocol. A real protected-VM
+vsock/PTY connection is **not** verified by that E2E; DV-02 owns the device
+result.
