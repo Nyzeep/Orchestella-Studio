@@ -198,6 +198,13 @@ android {
     }
 
     signingConfigs {
+        // The device AVF idsig path requires a v3 APK Signature Scheme block
+        // (v2-only APKs fail at VirtualMachineManager.create). Enabling v3/v4
+        // keeps the existing debug certificate and QA channel unchanged.
+        getByName("debug") {
+            enableV3Signing = true
+            enableV4Signing = true
+        }
         // Legacy isolated-QA channel. This is a debug key with historical fixed
         // credentials; it is never selected for a release build.
         val phase5Keystore = providers.gradleProperty("orchestella.phase5.debugKeystore").orNull
