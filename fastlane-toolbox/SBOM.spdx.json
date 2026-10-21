@@ -1,0 +1,50 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "orchestella-sealed-toolbox-0.1.0",
+  "documentNamespace": "https://cnb.cool/kiepei/Orchestella-Studio-cnbdev/spdx/fastlane-toolbox-0.1.0",
+  "creationInfo": {
+    "created": "2026-10-21T00:00:00Z",
+    "creators": [
+      "Tool: tools/fastlane-build/fastlane_build.py"
+    ]
+  },
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-Package-busybox",
+      "name": "busybox",
+      "versionInfo": "1.36.1-r31",
+      "downloadLocation": "https://dl-cdn.alpinelinux.org/alpine/v3.20/main/aarch64/busybox-static-1.36.1-r31.apk",
+      "filesAnalyzed": false,
+      "licenseConcluded": "GPL-2.0-only",
+      "licenseDeclared": "GPL-2.0-only",
+      "copyrightText": "NOASSERTION",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "ebd2865edcab0b590c7d0edb70d3e782cbfb541e518a390ced3a3e186509bc7f"
+        }
+      ],
+      "externalRefs": [
+        {
+          "referenceCategory": "OTHER",
+          "referenceType": "corresponding-source",
+          "referenceLocator": "https://busybox.net/downloads/busybox-1.36.1.tar.bz2"
+        },
+        {
+          "referenceCategory": "OTHER",
+          "referenceType": "packaging-source",
+          "referenceLocator": "https://gitlab.alpinelinux.org/alpine/aports/-/tree/3.20-stable/main/busybox"
+        }
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-busybox"
+    }
+  ]
+}
