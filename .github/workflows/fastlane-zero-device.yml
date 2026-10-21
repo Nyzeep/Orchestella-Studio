@@ -1,15 +1,23 @@
 name: Fast Lane zero-device
 
-# Host-only gates for the sealed toolbox, the distcc byte bridge and the
-# license/SBOM surface. This workflow never runs adb, never starts a device,
-# never signs or publishes a release artifact.
+# Host-only gates for every Fast Lane module: the sealed toolbox, the payload,
+# the shared FLN1 wire fixture, all JVM lanes and the license/SBOM surface.
+# This workflow never runs adb, never starts a device, never signs or publishes
+# a release artifact.
 on:
   pull_request:
     paths:
+      - "protocol/**"
       - "fastlane-toolbox/**"
       - "runtime/engine-fastlane/**"
+      - "runtime/fastlane-terminal/**"
+      - "runtime/fastlane-capability/**"
+      - "runtime/fastlane-proxy/**"
+      - "runtime/fastlane-storage/**"
+      - "runtime/fastlane-telemetry/**"
       - "runtime/fastlane-distcc/**"
       - "tools/fastlane-build/**"
+      - "tools/qemu-tuning/**"
       - "tools/ci/**"
       - "fastlane-payload/**"
       - "app/build.gradle.kts"
@@ -21,10 +29,17 @@ on:
   push:
     branches: [main]
     paths:
+      - "protocol/**"
       - "fastlane-toolbox/**"
       - "runtime/engine-fastlane/**"
+      - "runtime/fastlane-terminal/**"
+      - "runtime/fastlane-capability/**"
+      - "runtime/fastlane-proxy/**"
+      - "runtime/fastlane-storage/**"
+      - "runtime/fastlane-telemetry/**"
       - "runtime/fastlane-distcc/**"
       - "tools/fastlane-build/**"
+      - "tools/qemu-tuning/**"
       - "tools/ci/**"
       - "fastlane-payload/**"
       - "app/build.gradle.kts"
@@ -40,47 +55,68 @@ permissions:
 
 jobs:
   toolbox-and-licenses:
-    name: Toolbox, zip gates and licenses
+    name: Toolbox, zip gates, Python lanes and licenses
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Install workflow validator
-        run: python3 -m pip install --user pyyaml==6.0.2
+      - name: Create an isolated Python environment
+        run: |
+          python3 -m venv .venv
+          . .venv/bin/activate
+          python3 -m pip install --upgrade pip
+          python3 -m pip install pyyaml==6.0.2
 
       - name: Validate the zero-device workflow
-        run: python3 tools/fastlane-build/check_zero_device_workflow.py
+        run: |
+          . .venv/bin/activate
+          python3 tools/fastlane-build/check_zero_device_workflow.py
 
       - name: Run Python gate unit tests
-        run: python3 -m unittest discover -s tools/fastlane-build -p 'test_*.py' -v
+        run: |
+          . .venv/bin/activate
+          python3 -m unittest discover -s tools/fastlane-build -p 'test_*.py' -v
+
+      - name: Run QEMU tuning matrix unit tests
+        run: |
+          . .venv/bin/activate
+          python3 -m unittest discover -s tools/qemu-tuning -p 'test_*.py' -v
 
       - name: Build pinned toolbox
         run: |
+          . .venv/bin/activate
           python3 tools/fastlane-build/fastlane_build.py build \
             --manifest fastlane-toolbox/manifest.json \
             --out build/fastlane-toolbox \
             --cache build/fastlane-cache
 
       - name: Verify toolbox layout and 16 KB ELF alignment
-        run: python3 tools/fastlane-build/fastlane_build.py verify-toolbox --toolbox build/fastlane-toolbox
+        run: |
+          . .venv/bin/activate
+          python3 tools/fastlane-build/fastlane_build.py verify-toolbox --toolbox build/fastlane-toolbox
 
       - name: Prove the toolbox builds twice to the same tree
         run: |
+          . .venv/bin/activate
           python3 tools/fastlane-build/reproduce.py \
             --manifest fastlane-toolbox/manifest.json \
             --cache build/fastlane-cache \
             --runs 2
 
       - name: Prove the gates fail closed
-        run: python3 tools/fastlane-build/prove_gate_blocks.py
+        run: |
+          . .venv/bin/activate
+          python3 tools/fastlane-build/prove_gate_blocks.py
 
       - name: Check licenses, NOTICE and SBOM
-        run: python3 tools/fastlane-build/fastlane_build.py check-licenses
+        run: |
+          . .venv/bin/activate
+          python3 tools/fastlane-build/fastlane_build.py check-licenses
 
   jvm-distcc:
-    name: Engine and distcc JVM tests
+    name: Every Fast Lane JVM module
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -105,8 +141,44 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
-      - name: Run engine-fastlane and fastlane-distcc tests
-        run: bash tools/ci/run-gradle-gate.sh :runtime:engine-fastlane:test :runtime:fastlane-distcc:test
+      # engine-fastlane, fastlane-terminal, fastlane-capability, fastlane-proxy,
+      # fastlane-storage, fastlane-telemetry and fastlane-distcc.
+      - name: Run every Fast Lane JVM test
+        run: bash tools/ci/run-fastlane-zero-device.sh jvm
+
+  payload-host:
+    name: Payload host build, CTest and FLN1 E2E
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17 for the E2E harness
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Fetch pinned JUnit for the E2E harness
+        run: |
+          mkdir -p /tmp/fl-junit
+          curl -fsSLo /tmp/fl-junit/junit-4.13.2.jar \
+            https://repo1.maven.org/maven2/junit/junit/4.13.2/junit-4.13.2.jar
+          curl -fsSLo /tmp/fl-junit/hamcrest-core-1.3.jar \
+            https://repo1.maven.org/maven2/org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar
+          echo "8e495b634469d64fb8acfa3495a065cbacc8a0fff55ce1e31007be4c16dc57d3  /tmp/fl-junit/junit-4.13.2.jar" | sha256sum -c -
+          echo "66fdef91e9739348df7a096aa384a5685f4e875584cce89386a7a47251c4d8e9  /tmp/fl-junit/hamcrest-core-1.3.jar" | sha256sum -c -
+
+      - name: Build the payload with ASan/UBSan and run CTest
+        run: tools/ci/run-fastlane-zero-device.sh cpp
+
+      - name: Run the host mux against the real payload process
+        env:
+          JUNIT_JAR: /tmp/fl-junit/junit-4.13.2.jar
+          HAMCREST_JAR: /tmp/fl-junit/hamcrest-core-1.3.jar
+          FASTLANE_PAYLOAD_BIN: ${{ github.workspace }}/build/fastlane-payload/fastlane_payload_host
+        run: tools/ci/run-fastlane-zero-device.sh e2e
 
   apk-bin-gate:
     name: APK bin/ injection and 16 KB packaging

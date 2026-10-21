@@ -405,7 +405,16 @@ val verifyFastlaneToolboxApk = fastlaneToolboxDir?.let { toolboxProperty ->
 tasks.register("fastlaneZeroDeviceCheck") {
     group = "verification"
     description = "Runs the host-only Fast Lane JVM tests, license gate and, when configured, the APK toolbox gate."
-    dependsOn(":runtime:engine-fastlane:test", ":runtime:fastlane-distcc:test", checkFastlaneLicenses)
+    dependsOn(
+        ":runtime:engine-fastlane:test",
+        ":runtime:fastlane-terminal:test",
+        ":runtime:fastlane-capability:test",
+        ":runtime:fastlane-proxy:test",
+        ":runtime:fastlane-storage:test",
+        ":runtime:fastlane-telemetry:test",
+        ":runtime:fastlane-distcc:test",
+        checkFastlaneLicenses,
+    )
     verifyFastlaneToolboxApk?.let { dependsOn(it) }
 }
 
