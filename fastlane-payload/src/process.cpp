@@ -47,6 +47,10 @@ void prepare_child(const SpawnSpec& spec, int error_fd) {
     }
 }
 
+std::string diagnostic(const char* stage, int error_number) {
+    return std::string(stage) + " errno=" + std::to_string(error_number);
+}
+
 void close_pair(int fds[2]) {
     for (int index = 0; index < 2; ++index) {
         if (fds[index] >= 0) {
@@ -77,17 +81,24 @@ std::string resolve_executable(const std::string& apk_root, const std::string& c
 
     char resolved[4097];
     if (::realpath(candidate.c_str(), resolved) == nullptr) {
-        throw Error(Code::kExecFailed, "executable not found in the sealed toolbox");
+        throw Error(Code::kExecFailed,
+                    "executable not found in the sealed toolbox (" +
+                            diagnostic("realpath", errno) + ")");
     }
     if (!is_within(apk_root, resolved)) {
         throw Error(Code::kExecFailed, "executable resolves outside the sealed toolbox");
     }
     struct stat info {};
-    if (::stat(resolved, &info) != 0 || !S_ISREG(info.st_mode)) {
+    if (::stat(resolved, &info) != 0) {
+        throw Error(Code::kExecFailed,
+                    "tool is not a regular file (" + diagnostic("stat", errno) + ")");
+    }
+    if (!S_ISREG(info.st_mode)) {
         throw Error(Code::kExecFailed, "tool is not a regular file");
     }
     if (::access(resolved, X_OK) != 0) {
-        throw Error(Code::kExecFailed, "tool is not executable");
+        throw Error(Code::kExecFailed,
+                    "tool is not executable (" + diagnostic("access", errno) + ")");
     }
     return resolved;
 }
@@ -183,7 +194,8 @@ PipedChild spawn_piped(const SpawnSpec& spec) {
         ::close(output[0]);
         if (read > 0) {
             ::waitpid(pid, nullptr, 0);
-            throw Error(Code::kExecFailed, "child exec failed");
+            throw Error(Code::kExecFailed,
+                        "child exec failed (" + diagnostic("execve", child_error) + ")");
         }
         ::kill(pid, SIGKILL);
         ::waitpid(pid, nullptr, 0);
@@ -270,7 +282,8 @@ PtyChild spawn_pty(const SpawnSpec& spec, uint16_t columns, uint16_t rows) {
         ::close(master);
         if (read > 0) {
             ::waitpid(pid, nullptr, 0);
-            throw Error(Code::kExecFailed, "child exec failed");
+            throw Error(Code::kExecFailed,
+                        "child exec failed (" + diagnostic("execve", child_error) + ")");
         }
         ::kill(pid, SIGKILL);
         ::waitpid(pid, nullptr, 0);
