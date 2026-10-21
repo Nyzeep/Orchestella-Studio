@@ -24,16 +24,28 @@ REQUIRED_JOBS = {
     "jvm-distcc",
     "apk-bin-gate",
     "payload-build",
+    "payload-host",
 }
 REQUIRED_PATH_FILTERS = {
+    "protocol/**",
     "fastlane-toolbox/**",
+    "runtime/fastlane-terminal/**",
+    "runtime/fastlane-capability/**",
+    "runtime/fastlane-proxy/**",
+    "runtime/fastlane-storage/**",
+    "runtime/fastlane-telemetry/**",
     "runtime/fastlane-distcc/**",
     "tools/fastlane-build/**",
+    "tools/qemu-tuning/**",
     "app/build.gradle.kts",
     "settings.gradle.kts",
     "NOTICE-fastlane.md",
     ".github/workflows/fastlane-zero-device.yml",
 }
+GATE_SCRIPT = "tools/ci/run-fastlane-zero-device.sh"
+FLN1_FIXTURE = "protocol/fln1-golden.json"
+FASTLANE_MODULE_RE = re.compile(r'include\(":runtime:((?:fastlane-[^"]+|engine-fastlane))"\)')
+MODULES_BLOCK_RE = re.compile(r"MODULES=\(([^)]*)\)", re.DOTALL)
 FORBIDDEN_RUN_PATTERNS = {
     r"(?<![\w-])adb(?![\w-])": "adb/device command",
     r"connected(?:AndroidTest|Check)": "device test",
@@ -89,7 +101,27 @@ def _steps_text(job: dict) -> str:
     return "\n".join(chunks)
 
 
-def check_workflow(document: dict) -> list[str]:
+def gate_modules(root: Path) -> list[str]:
+    """Modules the shared gate script promises to run."""
+    path = root / GATE_SCRIPT
+    if not path.is_file():
+        return []
+    match = MODULES_BLOCK_RE.search(path.read_text(encoding="utf-8", errors="replace"))
+    if not match:
+        return []
+    return [line.strip() for line in match.group(1).splitlines() if line.strip()]
+
+
+def fastlane_modules(root: Path) -> list[str]:
+    settings = root / "settings.gradle.kts"
+    if not settings.is_file():
+        return []
+    return sorted(set(FASTLANE_MODULE_RE.findall(
+        settings.read_text(encoding="utf-8", errors="replace"))))
+
+
+def check_workflow(document: dict, root: Path | None = None) -> list[str]:
+    root = Path(".") if root is None else root
     problems: list[str] = []
     if not str(document.get("name", "")).strip():
         problems.append("workflow has no name")
@@ -163,6 +195,7 @@ def check_workflow(document: dict) -> list[str]:
     toolbox = all_run_text.get("toolbox-and-licenses", "")
     for required in (
         "unittest discover",
+        "tools/qemu-tuning",
         "fastlane_build.py build",
         "verify-toolbox",
         "prove_gate_blocks.py",
@@ -174,8 +207,19 @@ def check_workflow(document: dict) -> list[str]:
             problems.append(f"toolbox-and-licenses is missing: {required}")
 
     jvm = all_run_text.get("jvm-distcc", "")
-    if ":runtime:fastlane-distcc:test" not in jvm:
-        problems.append("jvm-distcc is missing :runtime:fastlane-distcc:test")
+    if f"{GATE_SCRIPT} jvm" not in jvm:
+        problems.append(f"jvm-distcc must run {GATE_SCRIPT} jvm")
+    scripted = set(gate_modules(root))
+    for module in fastlane_modules(root):
+        if module not in scripted:
+            problems.append(f"{GATE_SCRIPT} MODULES is missing {module}")
+
+    host_payload = all_run_text.get("payload-host", "")
+    for required in (f"{GATE_SCRIPT} cpp", f"{GATE_SCRIPT} e2e", "junit-4.13.2.jar"):
+        if required not in host_payload:
+            problems.append(f"payload-host is missing: {required}")
+    if not (root / FLN1_FIXTURE).is_file():
+        problems.append(f"missing shared fixture: {FLN1_FIXTURE}")
 
     apk = all_run_text.get("apk-bin-gate", "")
     for required in (
@@ -202,13 +246,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--workflow", default=".github/workflows/fastlane-zero-device.yml"
     )
+    parser.add_argument("--root", default=".", help="repository root for script/module checks")
     args = parser.parse_args(argv)
     try:
         document = load_workflow(Path(args.workflow))
     except ValueError as failure:
         print(f"FAIL {failure}", file=sys.stderr)
         return 1
-    problems = check_workflow(document)
+    problems = check_workflow(document, Path(args.root))
     if problems:
         for problem in problems:
             print(f"FAIL {problem}", file=sys.stderr)
