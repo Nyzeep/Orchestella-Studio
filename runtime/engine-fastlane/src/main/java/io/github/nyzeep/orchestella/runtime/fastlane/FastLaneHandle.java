@@ -11,6 +11,15 @@ public interface FastLaneHandle {
 
     FastLaneExitInfo waitForExit() throws InterruptedException, FastLaneException;
 
+    /**
+     * True after the payload reported readiness. {@code run()} only starts the
+     * VM; a caller should wait for readiness or retry {@code connectVsock}
+     * with a bounded backoff.
+     */
+    default boolean payloadReady() {
+        return false;
+    }
+
     /** Bounded, idempotent host-requested stop. */
     FastLaneStopResult stopRuntime(long graceMs);
 

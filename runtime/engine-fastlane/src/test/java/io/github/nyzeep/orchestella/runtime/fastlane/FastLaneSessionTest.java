@@ -2,6 +2,7 @@ package io.github.nyzeep.orchestella.runtime.fastlane;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
@@ -72,6 +73,87 @@ public final class FastLaneSessionTest {
     }
 
     @Test
+    public void openChannelCreatesIndependentStreamsOnTheSamePort() throws Exception {
+        FakeHandle handle = new FakeHandle();
+        FakeApi api = new FakeApi(handle);
+        FastLaneSession session = new FastLaneSession(api, handle, spec());
+
+        FastLaneChannel first = session.openChannel(5002);
+        FastLaneChannel second = session.openChannel(5002);
+        assertNotSame(first, second);
+        assertEquals(2, api.connectCount);
+        assertEquals(2, api.channels.size());
+
+        first.close();
+        assertTrue(api.channels.get(0).closed);
+        assertFalse(api.channels.get(1).closed);
+
+        second.outputStream().write("tunnel".getBytes(StandardCharsets.UTF_8));
+        session.close();
+        assertTrue(api.channels.get(1).closed);
+    }
+
+    @Test
+    public void cachedChannelIsDistinctFromDedicatedChannels() throws Exception {
+        FakeHandle handle = new FakeHandle();
+        FakeApi api = new FakeApi(handle);
+        FastLaneSession session = new FastLaneSession(api, handle, spec());
+
+        FastLaneChannel shared = session.proxyChannel();
+        assertSame(shared, session.proxyChannel());
+        assertEquals(1, api.connectCount);
+
+        FastLaneChannel dedicated = session.openChannel(5002);
+        assertNotSame(shared, dedicated);
+        assertEquals(2, api.connectCount);
+        assertEquals(FastLaneStopResult.CONFIRMED, session.stopRuntime(100L));
+        assertTrue(api.channels.get(0).closed);
+        assertTrue(api.channels.get(1).closed);
+    }
+
+    @Test
+    public void closingACachedStreamEvictsTheChannel() throws Exception {
+        FakeHandle handle = new FakeHandle();
+        FakeApi api = new FakeApi(handle);
+        FastLaneSession session = new FastLaneSession(api, handle, spec());
+
+        FastLaneChannel first = session.controlChannel();
+        first.inputStream().close();
+        assertTrue(api.channels.get(0).closed);
+
+        FastLaneChannel second = session.controlChannel();
+        assertNotSame(first, second);
+        assertEquals(2, api.connectCount);
+        session.close();
+    }
+
+    @Test
+    public void channelCloseIsIdempotent() throws Exception {
+        FakeHandle handle = new FakeHandle();
+        FakeApi api = new FakeApi(handle);
+        FastLaneSession session = new FastLaneSession(api, handle, spec());
+
+        FastLaneChannel channel = session.openChannel(5002);
+        channel.close();
+        channel.close();
+        assertEquals(1, api.channels.get(0).closeCount);
+        session.close();
+    }
+
+    @Test
+    public void openChannelAfterStopFailsClosed() throws Exception {
+        FakeHandle handle = new FakeHandle();
+        FakeApi api = new FakeApi(handle);
+        FastLaneSession session = new FastLaneSession(api, handle, spec());
+
+        assertEquals(FastLaneStopResult.CONFIRMED, session.stopRuntime(100L));
+        FastLaneException failure = assertThrows(
+                FastLaneException.class, () -> session.openChannel(5002));
+        assertEquals(FastLaneException.VSOCK_FAILED, failure.reason());
+        assertEquals(0, api.connectCount);
+    }
+
+    @Test
     public void connectFailureIsPropagatedAndRetryable() throws Exception {
         FakeHandle handle = new FakeHandle();
         FakeApi api = new FakeApi(handle);
@@ -115,6 +197,7 @@ public final class FastLaneSessionTest {
 
     private static final class FakeApi implements FastLaneVirtualMachineApi {
         private final FakeHandle handle;
+        private final List<FakeChannel> channels = new ArrayList<>();
         private int connectCount;
         private boolean failConnect;
         private FakeChannel lastChannel;
@@ -135,6 +218,7 @@ public final class FastLaneSessionTest {
                 throw new FastLaneException(FastLaneException.VSOCK_FAILED, "fake connect failure");
             }
             lastChannel = new FakeChannel();
+            channels.add(lastChannel);
             return lastChannel;
         }
     }
@@ -183,6 +267,7 @@ public final class FastLaneSessionTest {
         private final ByteArrayOutputStream output = new ByteArrayOutputStream();
         private final ByteArrayInputStream input = new ByteArrayInputStream(new byte[0]);
         private boolean closed;
+        private int closeCount;
 
         @Override
         public InputStream inputStream() {
@@ -197,6 +282,7 @@ public final class FastLaneSessionTest {
         @Override
         public void close() {
             closed = true;
+            closeCount++;
         }
     }
 }
