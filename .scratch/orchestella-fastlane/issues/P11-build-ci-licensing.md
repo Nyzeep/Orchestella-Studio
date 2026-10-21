@@ -55,3 +55,25 @@ External gates: 许可证/法务审查
 - 无法签名前注入：改用合法替代；不得签名后改包。
 - 许可证不清：不合并/不发布该工具。
 - CI 无法在无设备环境跑：拆分 host-only 门，设备门留给 DV。
+
+## 实施进展（2026-10-21，Agent C，零设备）
+
+- `app/build.gradle.kts`：可选 `orchestella.fastlane.toolboxDir` 作为资源源集；
+  `checkFastlaneLicenses`、`verifyFastlaneToolboxApk`、
+  `fastlaneZeroDeviceCheck`。
+- `settings.gradle.kts`：`pluginManagement` 增加 `gradlePluginPortal()`，修复
+  Kotlin 插件 marker 在受限网络/Maven Central 429 时无法解析的问题；项目
+  依赖仓库未改。
+- CI：`.github/workflows/fastlane-zero-device.yml`，仅主机任务；新增
+  workflow 自校验、两次构建复现、payload host fixture；payload real build
+  仅在 `fastlane-payload/CMakeLists.txt` 存在时运行。
+- 工具：`tools/fastlane-build/`；Python 全量 76 tests OK（12 项 workflow
+  测试需要 CI 安装 `pyyaml==6.0.2`）；`WORKFLOW_OK`；故意失败自测输出
+  `GATE_BLOCK_OK`；许可证门 `LICENSE_OK`；payload fixture
+  `PAYLOAD_FIXTURE_OK`。
+- 许可证：`NOTICE-fastlane.md` + `fastlane-toolbox/SBOM.spdx.json`，覆盖
+  BusyBox GPL-2.0-only 的对应源码义务与交付步骤；SBOM 同时固定 package
+  SHA256 与 binary SHA256；distcc/clang 标 `not-tested`。
+- 未验证：本机无 Android SDK/JDK 17，Gradle/APK/真实 zipalign 未跑；payload
+  真实 NDK 构建等待 P02。版本/通道未改。
+- 报告：`docs/reports/tickets/fastlane-P11/implementation-report.zh-CN.md`

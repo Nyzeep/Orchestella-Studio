@@ -13,6 +13,14 @@ val qemuNativeLibDir: String? = (properties["orchestella.qemu.nativeLibDir"] ?: 
 val qemuAssetsDir: String? = (properties["orchestella.qemu.assetsDir"] ?: properties["droidlayer.qemu.assetsDir"]) as String?
 val qemuInitramfsDir: String? = (properties["orchestella.qemu.initramfsDir"] ?: properties["droidlayer.qemu.initramfsDir"]) as String?
 
+// Fast Lane sealed toolbox. The directory contains bin/ at its root and is
+// added as a Java resource source set, so AGP packages bin/ into the APK root
+// before zipalign and signing. No post-signing APK rewriting is used.
+val fastlaneToolboxDir: String? = providers.gradleProperty("orchestella.fastlane.toolboxDir")
+    .orNull
+    ?.trim()
+    ?.ifEmpty { null }
+
 // Build channels separate public releases from internal development and isolated QA
 // builds (docs/standards/VERSIONING.md section 5). The default stays "release":
 // a plain :app:assembleDebug keeps the historical applicationId and versionName.
@@ -141,6 +149,17 @@ android {
             assets.srcDir(assetsRoot)
             resources.srcDir(initramfsRoot)
         }
+    }
+
+    if (fastlaneToolboxDir != null) {
+        val toolboxRoot = rootProject.file(fastlaneToolboxDir)
+        require(toolboxRoot.isDirectory && !Files.isSymbolicLink(toolboxRoot.toPath())) {
+            "orchestella.fastlane.toolboxDir must be an existing ordinary directory: $toolboxRoot"
+        }
+        require(File(toolboxRoot, "bin/manifest.json").isFile) {
+            "Fast Lane toolbox is missing bin/manifest.json: $toolboxRoot (run tools/fastlane-build/fastlane_build.py build first)"
+        }
+        sourceSets.getByName("main").resources.srcDir(toolboxRoot)
     }
 
     signingConfigs {
@@ -344,6 +363,50 @@ tasks.register<Copy>("packageOrchestellaRelease") {
     into(rootProject.layout.buildDirectory.dir("release"))
     include("*.apk")
     rename { "Orchestella-Studio-v${android.defaultConfig.versionName}-release.apk" }
+}
+
+// Zero-device Fast Lane gates. None of these tasks touch adb, a device, or a
+// release channel. The APK check reads the debug APK produced by AGP, which
+// has already packaged bin/ as a resource before zipalign/signing.
+val checkFastlaneLicenses = tasks.register<Exec>("checkFastlaneLicenses") {
+    group = "verification"
+    description = "Checks Fast Lane toolbox licenses, pinned SHA256 values and NOTICE/SBOM coverage."
+    workingDir(rootProject.projectDir)
+    commandLine("python3", "tools/fastlane-build/fastlane_build.py", "check-licenses")
+}
+
+val verifyFastlaneToolboxApk = fastlaneToolboxDir?.let { toolboxProperty ->
+    tasks.register<Exec>("verifyFastlaneToolboxApk") {
+        group = "verification"
+        description = "Verifies APK-root bin/ entries, SHA256 values, exec bits and 16 KB ELF alignment."
+        dependsOn("assembleDebug")
+        workingDir(rootProject.projectDir)
+        val apk = layout.buildDirectory.file("outputs/apk/debug/app-debug.apk").get().asFile
+        val runtimeManifest = rootProject.file(toolboxProperty).resolve("bin/manifest.json")
+        val command = mutableListOf(
+            "python3",
+            "tools/fastlane-build/fastlane_build.py",
+            "verify-apk",
+            "--apk",
+            apk.absolutePath,
+            "--runtime-manifest",
+            runtimeManifest.absolutePath
+        )
+        val sdk = providers.environmentVariable("ANDROID_HOME").orNull
+            ?: providers.environmentVariable("ANDROID_SDK_ROOT").orNull
+        val zipalign = sdk?.let { File(it, "build-tools/36.1.0/zipalign") }
+        if (zipalign?.isFile == true) {
+            command += listOf("--zipalign", zipalign.absolutePath)
+        }
+        commandLine(command)
+    }
+}
+
+tasks.register("fastlaneZeroDeviceCheck") {
+    group = "verification"
+    description = "Runs the host-only Fast Lane JVM tests, license gate and, when configured, the APK toolbox gate."
+    dependsOn(":runtime:engine-fastlane:test", ":runtime:fastlane-distcc:test", checkFastlaneLicenses)
+    verifyFastlaneToolboxApk?.let { dependsOn(it) }
 }
 
 val syncGuestShellAssets by tasks.registering(Sync::class) {

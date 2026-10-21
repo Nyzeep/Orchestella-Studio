@@ -1,0 +1,369 @@
+{
+  "schemaVersion": 1,
+  "name": "orchestella-sealed-toolbox",
+  "version": "0.1.0",
+  "profile": "minimal",
+  "sourceDateEpoch": 1792540800,
+  "description": "Sealed, read-only Fast Lane userland installed at /mnt/apk/bin. Candidate B: static BusyBox; no Bionic prefix relocation and no symlinks.",
+  "target": {
+    "abi": "arm64-v8a",
+    "arch": "aarch64",
+    "kernel": "linux",
+    "libc": "musl-static",
+    "minSdk": 26,
+    "pageSizeBytes": 16384
+  },
+  "install": {
+    "apkPrefix": "bin/",
+    "guestPath": "/mnt/apk/bin",
+    "path": [
+      "/mnt/apk/bin"
+    ],
+    "prefix": "/mnt/apk/bin"
+  },
+  "artifacts": [
+    {
+      "id": "busybox-static",
+      "name": "busybox",
+      "version": "1.36.1-r31",
+      "license": "GPL-2.0-only",
+      "source": "https://dl-cdn.alpinelinux.org/alpine/v3.20/main/aarch64/busybox-static-1.36.1-r31.apk",
+      "sha256": "1d8e7a7fc2ed69bdb8eb7be9d962489c21a0f75b72d8a325437c8a09d4cfac70",
+      "member": "bin/busybox.static",
+      "binarySha256": "ebd2865edcab0b590c7d0edb70d3e782cbfb541e518a390ced3a3e186509bc7f",
+      "target": "aarch64-alpine-linux-musl",
+      "deps": [],
+      "correspondingSource": {
+        "upstream": "https://busybox.net/downloads/busybox-1.36.1.tar.bz2",
+        "upstreamSha256": "b8cc24c9574d809e7279c3be349795c5d5ceb6fdf19ca709f80cde50e47de314",
+        "packaging": "https://gitlab.alpinelinux.org/alpine/aports/-/tree/3.20-stable/main/busybox"
+      }
+    }
+  ],
+  "entries": [
+    {
+      "path": "bin/busybox",
+      "type": "artifact",
+      "artifact": "busybox-static",
+      "mode": "0755",
+      "description": "BusyBox multicall binary."
+    },
+    {
+      "path": "bin/sh",
+      "type": "copy",
+      "artifact": "busybox-static",
+      "mode": "0755",
+      "description": "Copy so the kernel can exec /mnt/apk/bin/sh directly; no zip symlink is required."
+    },
+    {
+      "path": "bin/awk",
+      "type": "applet",
+      "applet": "awk",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/basename",
+      "type": "applet",
+      "applet": "basename",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/cat",
+      "type": "applet",
+      "applet": "cat",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/chmod",
+      "type": "applet",
+      "applet": "chmod",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/cp",
+      "type": "applet",
+      "applet": "cp",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/cut",
+      "type": "applet",
+      "applet": "cut",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/date",
+      "type": "applet",
+      "applet": "date",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/dd",
+      "type": "applet",
+      "applet": "dd",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/df",
+      "type": "applet",
+      "applet": "df",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/dirname",
+      "type": "applet",
+      "applet": "dirname",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/env",
+      "type": "applet",
+      "applet": "env",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/expr",
+      "type": "applet",
+      "applet": "expr",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/false",
+      "type": "applet",
+      "applet": "false",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/find",
+      "type": "applet",
+      "applet": "find",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/grep",
+      "type": "applet",
+      "applet": "grep",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/gunzip",
+      "type": "applet",
+      "applet": "gunzip",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/gzip",
+      "type": "applet",
+      "applet": "gzip",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/head",
+      "type": "applet",
+      "applet": "head",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/id",
+      "type": "applet",
+      "applet": "id",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/ln",
+      "type": "applet",
+      "applet": "ln",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/ls",
+      "type": "applet",
+      "applet": "ls",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/mkdir",
+      "type": "applet",
+      "applet": "mkdir",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/mktemp",
+      "type": "applet",
+      "applet": "mktemp",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/mv",
+      "type": "applet",
+      "applet": "mv",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/od",
+      "type": "applet",
+      "applet": "od",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/printf",
+      "type": "applet",
+      "applet": "printf",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/pwd",
+      "type": "applet",
+      "applet": "pwd",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/readlink",
+      "type": "applet",
+      "applet": "readlink",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/realpath",
+      "type": "applet",
+      "applet": "realpath",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/rm",
+      "type": "applet",
+      "applet": "rm",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/rmdir",
+      "type": "applet",
+      "applet": "rmdir",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/sed",
+      "type": "applet",
+      "applet": "sed",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/seq",
+      "type": "applet",
+      "applet": "seq",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/sleep",
+      "type": "applet",
+      "applet": "sleep",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/sort",
+      "type": "applet",
+      "applet": "sort",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/stat",
+      "type": "applet",
+      "applet": "stat",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/tail",
+      "type": "applet",
+      "applet": "tail",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/tar",
+      "type": "applet",
+      "applet": "tar",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/tee",
+      "type": "applet",
+      "applet": "tee",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/test",
+      "type": "applet",
+      "applet": "test",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/touch",
+      "type": "applet",
+      "applet": "touch",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/tr",
+      "type": "applet",
+      "applet": "tr",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/true",
+      "type": "applet",
+      "applet": "true",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/uname",
+      "type": "applet",
+      "applet": "uname",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/uniq",
+      "type": "applet",
+      "applet": "uniq",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/wc",
+      "type": "applet",
+      "applet": "wc",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/which",
+      "type": "applet",
+      "applet": "which",
+      "mode": "0755"
+    },
+    {
+      "path": "bin/xargs",
+      "type": "applet",
+      "applet": "xargs",
+      "mode": "0755"
+    }
+  ],
+  "pendingProfiles": {
+    "distcc-clang": {
+      "status": "not-tested",
+      "reason": "Compiler packaging requires a separate APK size decision and DV-03 on-device compiler/ABI validation. v1 ships the shell/base profile only.",
+      "requiredArtifacts": [
+        {
+          "name": "distcc",
+          "version": "3.4-4",
+          "license": "GPL-2.0-or-later",
+          "source": "https://github.com/termux/termux-packages/tree/master/packages/distcc",
+          "sha256": null
+        },
+        {
+          "name": "clang",
+          "version": "unpinned",
+          "license": "Apache-2.0 WITH LLVM-exception",
+          "source": "https://github.com/termux/termux-packages/tree/master/packages/libllvm",
+          "sha256": null
+        }
+      ]
+    }
+  }
+}
