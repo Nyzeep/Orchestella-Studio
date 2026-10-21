@@ -137,6 +137,56 @@ public final class FastLaneProxyServerTest {
     }
 
     @Test
+    public void limitsPreTunnelHandshakes() throws Exception {
+        proxy = new FastLaneProxyServer(config(1, 5000));
+        proxy.start();
+        final Socket first = connect(proxy.port());
+        // The first connection holds the only slot before any tunnel exists.
+        final Socket second = connect(proxy.port());
+        second.setSoTimeout(2000);
+        assertEquals(-1, second.getInputStream().read());
+        second.close();
+        first.close();
+        assertTrue(proxy.rejectedConnections() >= 1);
+    }
+
+    @Test
+    public void closeClosesPendingHandshake() throws Exception {
+        proxy = new FastLaneProxyServer(config(4, 5000));
+        proxy.start();
+        final Socket idle = connect(proxy.port());
+        idle.setSoTimeout(2000);
+        proxy.close();
+        assertEquals(-1, idle.getInputStream().read());
+        idle.close();
+    }
+
+    @Test
+    public void oversizedHttpHeadersAreRejected() throws Exception {
+        proxy = new FastLaneProxyServer(config(4, 2000));
+        proxy.start();
+        final Socket client = connect(proxy.port());
+        final String hugeHeader = "X-Pad: " + "a".repeat(20000) + "\r\n";
+        client.getOutputStream().write(("CONNECT example.com:443 HTTP/1.1\r\n"
+                + hugeHeader + "\r\n").getBytes(StandardCharsets.US_ASCII));
+        final String response = readHeaders(client);
+        assertTrue(response.startsWith("HTTP/1.1 400"));
+        client.close();
+    }
+
+    @Test
+    public void httpHostWithColonIsRejected() throws Exception {
+        proxy = new FastLaneProxyServer(config(4, 2000));
+        proxy.start();
+        final Socket client = connect(proxy.port());
+        client.getOutputStream().write("CONNECT a:b:443 HTTP/1.1\r\n\r\n"
+                .getBytes(StandardCharsets.US_ASCII));
+        final String response = readHeaders(client);
+        assertTrue(response.startsWith("HTTP/1.1 400"));
+        client.close();
+    }
+
+    @Test
     public void rejectsConnectionsAboveLimit() throws Exception {
         try (EchoServer target = new EchoServer()) {
             proxy = new FastLaneProxyServer(config(1, 2000));
@@ -173,9 +223,10 @@ public final class FastLaneProxyServerTest {
             proxy.start();
             final Socket client = socksConnect(proxy.port(), "127.0.0.1", target.port());
             waitFor(() -> proxy.activeConnections() == 1, 2000);
-            Thread.sleep(900);
-            assertTrue(proxy.activeConnections() == 0);
-            client.setSoTimeout(1000);
+            // The watchdog runs once per second; wait for the effect instead of
+            // racing a fixed sleep against scheduler jitter.
+            waitFor(() -> proxy.activeConnections() == 0, 3000);
+            client.setSoTimeout(2000);
             assertEquals(-1, client.getInputStream().read());
             client.close();
         }

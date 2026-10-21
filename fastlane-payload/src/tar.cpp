@@ -14,9 +14,12 @@ namespace fl {
 namespace {
 
 constexpr size_t kBlockSize = 512;
-constexpr uint64_t kMaxEntryBytes = 16ULL * 1024 * 1024 * 1024;
 
 void put_octal(char* field, size_t width, uint64_t value) {
+    const uint64_t limit = (1ULL << (3 * (width - 1))) - 1;
+    if (value > limit) {
+        throw Error(Code::kLimitExceeded, "tar numeric field does not fit");
+    }
     std::snprintf(field, width, "%0*llo", static_cast<int>(width - 1),
                   static_cast<unsigned long long>(value));
 }
@@ -127,7 +130,8 @@ void write_header_block(int fd, const std::string& path, char type, uint64_t siz
     put_octal(reinterpret_cast<char*>(block + 108), 8, 0);
     put_octal(reinterpret_cast<char*>(block + 116), 8, 0);
     put_octal(reinterpret_cast<char*>(block + 124), 12, size);
-    put_octal(reinterpret_cast<char*>(block + 136), 12, static_cast<uint64_t>(mtime));
+    put_octal(reinterpret_cast<char*>(block + 136), 12,
+              mtime < 0 ? 0ULL : static_cast<uint64_t>(mtime));
     std::memset(block + 148, ' ', 8);
     block[156] = static_cast<uint8_t>(type);
     std::memcpy(block + 257, "ustar", 5);
@@ -197,10 +201,17 @@ void parse_pax_records(const std::string& data, std::string* path, uint64_t* siz
             if (character < '0' || character > '9') {
                 throw Error(Code::kExportIo, "malformed pax length");
             }
-            length = length * 10 + static_cast<uint64_t>(character - '0');
+            const uint64_t digit = static_cast<uint64_t>(character - '0');
+            if (length > (UINT64_MAX - digit) / 10) {
+                throw Error(Code::kExportIo, "pax record length overflow");
+            }
+            length = length * 10 + digit;
         }
-        if (length == 0 || offset + length > data.size()) {
+        if (length == 0 || length > data.size() - offset) {
             throw Error(Code::kExportIo, "malformed pax record");
+        }
+        if (length <= space - offset + 1) {
+            throw Error(Code::kExportIo, "empty pax record");
         }
         std::string record = data.substr(space + 1, offset + length - space - 1);
         if (!record.empty() && record.back() == '\n') {
@@ -214,11 +225,18 @@ void parse_pax_records(const std::string& data, std::string* path, uint64_t* siz
                 *path = value;
             } else if (key == "size") {
                 uint64_t parsed = 0;
+                if (value.empty()) {
+                    throw Error(Code::kExportIo, "malformed pax size");
+                }
                 for (const char character : value) {
                     if (character < '0' || character > '9') {
                         throw Error(Code::kExportIo, "malformed pax size");
                     }
-                    parsed = parsed * 10 + static_cast<uint64_t>(character - '0');
+                    const uint64_t digit = static_cast<uint64_t>(character - '0');
+                    if (parsed > (UINT64_MAX - digit) / 10) {
+                        throw Error(Code::kExportIo, "pax size overflow");
+                    }
+                    parsed = parsed * 10 + digit;
                 }
                 *size = parsed;
                 *has_size = true;
@@ -342,7 +360,7 @@ bool TarReader::next(TarEntry* entry) {
         if (!parse_octal(reinterpret_cast<const char*>(block + 124), 12, &size)) {
             throw Error(Code::kExportIo, "malformed tar size");
         }
-        if (size > kMaxEntryBytes) {
+        if (size > kMaxTarEntryBytes) {
             throw Error(Code::kLimitExceeded, "tar entry too large");
         }
 
@@ -374,6 +392,9 @@ bool TarReader::next(TarEntry* entry) {
         }
         if (has_pax_size) {
             size = pax_size;
+            if (size > kMaxTarEntryBytes) {
+                throw Error(Code::kLimitExceeded, "tar entry too large");
+            }
         }
         const bool is_directory = type == '5';
         if (is_directory) {

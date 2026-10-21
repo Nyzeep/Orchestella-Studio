@@ -72,41 +72,60 @@ void DistccBridge::handle(int fd) {
         std::lock_guard<std::mutex> lock(mutex_);
         children_.insert(child.pid);
     }
+    if (stopping_.load()) {
+        // stop() may have run between the entry check and the spawn.
+        terminate_child(child.pid, SIGKILL);
+    }
 
-    std::thread uplink([fd, &child]() {
-        uint8_t buffer[16384];
-        for (;;) {
-            const ssize_t read = ::read(fd, buffer, sizeof(buffer));
-            if (read > 0) {
-                size_t offset = 0;
-                while (offset < static_cast<size_t>(read)) {
-                    const ssize_t written =
-                            ::write(child.input_fd, buffer + offset,
-                                    static_cast<size_t>(read) - offset);
-                    if (written > 0) {
-                        offset += static_cast<size_t>(written);
-                        continue;
+    std::thread uplink;
+    try {
+        uplink = std::thread([fd, &child]() {
+            uint8_t buffer[16384];
+            for (;;) {
+                const ssize_t read = ::read(fd, buffer, sizeof(buffer));
+                if (read > 0) {
+                    size_t offset = 0;
+                    while (offset < static_cast<size_t>(read)) {
+                        const ssize_t written =
+                                ::write(child.input_fd, buffer + offset,
+                                        static_cast<size_t>(read) - offset);
+                        if (written > 0) {
+                            offset += static_cast<size_t>(written);
+                            continue;
+                        }
+                        if (written < 0 && errno == EINTR) {
+                            continue;
+                        }
+                        ::shutdown(fd, SHUT_RDWR);
+                        ::close(child.input_fd);
+                        return;
                     }
-                    if (written < 0 && errno == EINTR) {
-                        continue;
-                    }
-                    ::shutdown(fd, SHUT_RDWR);
-                    ::close(child.input_fd);
-                    return;
+                    continue;
                 }
-                continue;
-            }
-            if (read == 0) {
+                if (read == 0) {
+                    break;
+                }
+                if (errno == EINTR) {
+                    continue;
+                }
                 break;
             }
-            if (errno == EINTR) {
-                continue;
-            }
-            break;
+            ::shutdown(child.input_fd, SHUT_WR);
+            ::close(child.input_fd);
+        });
+    } catch (...) {
+        terminate_child(child.pid, SIGKILL);
+        wait_for_child(child.pid, 1000, nullptr);
+        close_quietly(child.input_fd);
+        close_quietly(child.output_fd);
+        close_quietly(fd);
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            children_.erase(child.pid);
         }
-        ::shutdown(child.input_fd, SHUT_WR);
-        ::close(child.input_fd);
-    });
+        active_.fetch_sub(1);
+        return;
+    }
 
     uint8_t buffer[16384];
     for (;;) {
@@ -144,6 +163,9 @@ void DistccBridge::handle(int fd) {
 
 done:
     ::shutdown(fd, SHUT_WR);
+    // The output side is finished. Unblock a reader that is still waiting for
+    // client bytes so shutdown does not depend on the client closing first.
+    ::shutdown(fd, SHUT_RD);
     uplink.join();
     int status = 0;
     if (!wait_for_child(child.pid, 5000, &status)) {
@@ -161,9 +183,14 @@ done:
 
 void DistccBridge::stop() {
     stopping_.store(true);
-    std::lock_guard<std::mutex> lock(mutex_);
-    for (const pid_t pid : children_) {
-        terminate_child(pid, SIGKILL);
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (const pid_t pid : children_) {
+            terminate_child(pid, SIGKILL);
+        }
+    }
+    for (int attempt = 0; attempt < 200 && active_.load() > 0; ++attempt) {
+        ::usleep(10000);
     }
 }
 

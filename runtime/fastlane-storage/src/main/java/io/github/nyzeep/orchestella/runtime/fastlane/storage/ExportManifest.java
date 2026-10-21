@@ -75,12 +75,18 @@ public final class ExportManifest {
     }
 
     private final Map<String, Entry> entries = new TreeMap<>();
+    private long totalBytes;
 
     public void add(Entry entry) throws StorageException {
         Objects.requireNonNull(entry, "entry");
-        if (entries.putIfAbsent(entry.path(), entry) != null) {
+        if (entries.containsKey(entry.path())) {
             throw new StorageException(StorageFailure.MANIFEST_INVALID, "duplicate manifest path");
         }
+        if (entry.size() > Long.MAX_VALUE - totalBytes) {
+            throw new StorageException(StorageFailure.LIMIT_EXCEEDED, "manifest size overflow");
+        }
+        entries.put(entry.path(), entry);
+        totalBytes += entry.size();
     }
 
     public List<Entry> entries() {
@@ -88,11 +94,7 @@ public final class ExportManifest {
     }
 
     public long totalBytes() {
-        long total = 0;
-        for (Entry entry : entries.values()) {
-            total += entry.size();
-        }
-        return total;
+        return totalBytes;
     }
 
     public String toJson() {

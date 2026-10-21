@@ -1,5 +1,6 @@
 #include "fastlane/pty.h"
 
+#include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
 #include <sys/ioctl.h>
@@ -11,6 +12,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cerrno>
+#include <cstdint>
 #include <cstring>
 
 #include "fastlane/error.h"
@@ -72,10 +74,14 @@ PtyOpenResult PtyManager::open(const std::vector<std::string>& argv, uint16_t co
 
     const PtyChild child = spawn_pty(spec, columns, rows);
     auto session = std::make_shared<Session>();
+    while (next_id_ == 0 || sessions_.count(next_id_) != 0) {
+        ++next_id_;
+    }
     session->id = next_id_++;
     session->pid = child.pid;
     session->master_fd = child.master_fd;
-    session->max_credit = initial_window * 2;
+    const uint64_t doubled = static_cast<uint64_t>(initial_window) * 2;
+    session->max_credit = static_cast<uint32_t>(std::min<uint64_t>(doubled, UINT32_MAX));
     session->credit.store(initial_window);
     sessions_.emplace(session->id, session);
 
@@ -146,9 +152,16 @@ uint32_t PtyManager::credit(uint32_t id) const {
     return session ? session->credit.load() : 0;
 }
 
-bool PtyManager::grant(uint32_t id, uint32_t bytes) {    const auto session = find(id);
+bool PtyManager::grant(uint32_t id, uint32_t bytes) {
+    const auto session = find(id);
     if (!session || bytes == 0) {
         return false;
+    }
+    {
+        std::lock_guard<std::mutex> lock(session->mutex);
+        if (session->closed) {
+            return false;
+        }
     }
     uint32_t current = session->credit.load();
     for (;;) {
@@ -178,6 +191,18 @@ int PtyManager::master_fd(uint32_t id) const {
     }
     std::lock_guard<std::mutex> lock(session->mutex);
     return session->closed ? -1 : session->master_fd;
+}
+
+int PtyManager::duplicate_master_fd(uint32_t id) const {
+    const auto session = find(id);
+    if (!session) {
+        return -1;
+    }
+    std::lock_guard<std::mutex> lock(session->mutex);
+    if (session->closed || session->master_fd < 0) {
+        return -1;
+    }
+    return ::fcntl(session->master_fd, F_DUPFD_CLOEXEC, 0);
 }
 
 ssize_t PtyManager::read_output(uint32_t id, void* buffer, size_t capacity) {    const auto session = find(id);
@@ -225,6 +250,7 @@ bool PtyManager::reap(uint32_t id, int* status) {
         session->closed = true;
         ::close(session->master_fd);
         session->master_fd = -1;
+        session->credit_ready.notify_all();
     }
     return true;
 }

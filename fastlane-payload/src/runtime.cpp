@@ -120,11 +120,30 @@ uint32_t parse_u32(const char* name, uint32_t fallback) {
         return fallback;
     }
     char* end = nullptr;
+    errno = 0;
     const unsigned long parsed = std::strtoul(value.c_str(), &end, 10);
-    if (end == nullptr || *end != '\0') {
+    if (errno == ERANGE || end == nullptr || *end != '\0' || parsed > UINT32_MAX) {
         throw Error(Code::kInternal, std::string("invalid value in ") + name);
     }
     return static_cast<uint32_t>(parsed);
+}
+
+void validate_config(const PayloadConfig& config) {
+    if (config.initial_window < 1024 || config.initial_window > 1024 * 1024) {
+        throw Error(Code::kInternal, "initial window must be in [1024, 1048576]");
+    }
+    if (config.max_sessions == 0 || config.max_sessions > 64) {
+        throw Error(Code::kInternal, "max_sessions must be in [1, 64]");
+    }
+    if (config.max_connections == 0 || config.max_connections > 64) {
+        throw Error(Code::kInternal, "max_connections must be in [1, 64]");
+    }
+    if (config.auth_token.size() > 255) {
+        throw Error(Code::kInternal, "auth token exceeds the wire limit");
+    }
+    if (config.proxy_pair_timeout_ms <= 0) {
+        throw Error(Code::kInternal, "proxy pair timeout must be positive");
+    }
 }
 
 class FrameSink {
@@ -247,9 +266,20 @@ void pty_reader(const std::shared_ptr<RuntimeContext>& context,
             if (context->pty->master_fd(id) < 0) {
                 break;
             }
-            const int master = context->pty->master_fd(id);
-            pollfd descriptor{master, POLLIN, 0};
-            const int ready = ::poll(&descriptor, 1, 200);
+            // Poll a duplicate: close_session() may close the master while we
+            // block, and the raw descriptor number could be reused.
+            int ready = 0;
+            {
+                const int master = context->pty->duplicate_master_fd(id);
+                if (master < 0) {
+                    break;
+                }
+                pollfd descriptor{master, POLLIN, 0};
+                ready = ::poll(&descriptor, 1, 200);
+                const int saved = errno;
+                ::close(master);
+                errno = saved;
+            }
             if (ready < 0) {
                 if (errno == EINTR) {
                     continue;
@@ -285,8 +315,12 @@ void pty_reader(const std::shared_ptr<RuntimeContext>& context,
                 writer.u32(static_cast<uint32_t>(exit_code));
                 writer.u8(static_cast<uint8_t>(term_signal));
                 sink->send(Frame{FrameType::kExit, id, writer.take()});
+                context->pty->erase(id);
+            } else {
+                // EOF without a reap: kill and reap rather than dropping the map
+                // entry and leaking the child.
+                context->pty->close_session(id, true);
             }
-            context->pty->erase(id);
             break;
         }
     } catch (const std::exception&) {
@@ -335,14 +369,22 @@ void handle_export(const std::shared_ptr<RuntimeContext>& context, FrameSink* si
         return;
     }
     std::atomic<bool> failed{false};
-    std::thread writer([context, roots, &pipe_fds, &failed] {
-        try {
-            export_tar(context->layout, roots, pipe_fds[1]);
-        } catch (const std::exception&) {
-            failed.store(true);
-        }
+    std::thread writer;
+    try {
+        writer = std::thread([context, roots, &pipe_fds, &failed] {
+            try {
+                export_tar(context->layout, roots, pipe_fds[1]);
+            } catch (const std::exception&) {
+                failed.store(true);
+            }
+            ::close(pipe_fds[1]);
+        });
+    } catch (...) {
+        ::close(pipe_fds[0]);
         ::close(pipe_fds[1]);
-    });
+        send_error(sink, Code::kExportIo, "cannot start export worker");
+        return;
+    }
 
     PayloadWriter begin;
     begin.u8(0);
@@ -432,7 +474,8 @@ void handle_import(const std::shared_ptr<RuntimeContext>& context, FrameSink* si
             return;
         }
         if (state->expected > 0 &&
-            state->received + frame.payload.size() > state->expected) {
+            (state->received > state->expected ||
+             frame.payload.size() > state->expected - state->received)) {
             state->reset();
             send_error(sink, Code::kLimitExceeded, "import exceeds declared size");
             return;
@@ -462,7 +505,11 @@ void handle_import(const std::shared_ptr<RuntimeContext>& context, FrameSink* si
         send_error(sink, Code::kExportIo, "import size mismatch");
         return;
     }
-    ::fsync(state->fd);
+    if (::fsync(state->fd) != 0) {
+        state->reset();
+        send_error(sink, Code::kExportIo, "import staging fsync failed");
+        return;
+    }
     ::close(state->fd);
     state->fd = -1;
     try {
@@ -486,14 +533,11 @@ void handle_import(const std::shared_ptr<RuntimeContext>& context, FrameSink* si
 }
 
 void serve_framed(const std::shared_ptr<RuntimeContext>& context, int fd) {
-    timeval timeout{5, 0};
-    ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
-
-    context->state->connections.fetch_add(1);
-    {
-        std::lock_guard<std::mutex> lock(context->state->mutex);
-        context->state->connection_fds.insert(fd);
-    }
+    timeval send_timeout{5, 0};
+    ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &send_timeout, sizeof(send_timeout));
+    // A peer that connects and never sends HELLO must not hold a slot forever.
+    timeval handshake_timeout{10, 0};
+    ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &handshake_timeout, sizeof(handshake_timeout));
 
     auto sink = std::make_shared<FrameSink>(fd);
     FdSource source(fd);
@@ -535,6 +579,9 @@ void serve_framed(const std::shared_ptr<RuntimeContext>& context, int fd) {
         ok.u32(context->config.initial_window);
         sink->send(Frame{FrameType::kHelloOk, 0, ok.take()});
         hello_done = true;
+        timeval no_receive_timeout{0, 0};
+        ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &no_receive_timeout,
+                     sizeof(no_receive_timeout));
 
         for (;;) {
             Frame frame;
@@ -665,11 +712,13 @@ void serve_framed(const std::shared_ptr<RuntimeContext>& context, int fd) {
         context->pty->close_session(id, true);
     }
     import.reset();
-    sink->close();
+    // Remove the fd from the stop() shutdown set before closing it: otherwise
+    // stop() could shutdown a closed and already-reused descriptor number.
     {
         std::lock_guard<std::mutex> lock(context->state->mutex);
         context->state->connection_fds.erase(fd);
     }
+    sink->close();
     context->state->connections.fetch_sub(1);
     context->state->idle.notify_all();
 }
@@ -769,43 +818,57 @@ void Runtime::start() {
     if (started_) {
         return;
     }
-    context_ = std::make_shared<RuntimeContext>(config_);
-    control_listener_ = make_listener(config_, config_.control_port,
-                                      socket_path(config_.control_port));
-    terminal_listener_ = make_listener(config_, config_.terminal_port,
-                                       socket_path(config_.terminal_port));
-    if (context_->proxy) {
-        proxy_listener_ = make_listener(config_, config_.proxy_port,
-                                        socket_path(config_.proxy_port));
-    }
-    if (context_->distcc) {
-        distcc_listener_ = make_listener(config_, config_.distcc_port,
-                                         socket_path(config_.distcc_port));
-    }
-    started_ = true;
-    control_thread_ = std::thread(&Runtime::accept_framed, this, control_listener_.get());
-    terminal_thread_ = std::thread(&Runtime::accept_framed, this, terminal_listener_.get());
-    if (proxy_listener_) {
-        proxy_thread_ = std::thread([context = context_, listener = proxy_listener_.get()] {
-            while (!context->state->stopping.load()) {
-                const int fd = listener->accept();
-                if (fd < 0) {
-                    return;
+    stopped_ = false;
+    validate_config(config_);
+    try {
+        context_ = std::make_shared<RuntimeContext>(config_);
+        control_listener_ = make_listener(config_, config_.control_port,
+                                          socket_path(config_.control_port));
+        terminal_listener_ = make_listener(config_, config_.terminal_port,
+                                           socket_path(config_.terminal_port));
+        if (context_->proxy) {
+            proxy_listener_ = make_listener(config_, config_.proxy_port,
+                                            socket_path(config_.proxy_port));
+        }
+        if (context_->distcc) {
+            distcc_listener_ = make_listener(config_, config_.distcc_port,
+                                             socket_path(config_.distcc_port));
+        }
+        started_ = true;
+        control_thread_ = std::thread(&Runtime::accept_framed, this, control_listener_.get());
+        terminal_thread_ = std::thread(&Runtime::accept_framed, this, terminal_listener_.get());
+        if (proxy_listener_) {
+            proxy_thread_ = std::thread([context = context_, listener = proxy_listener_.get()] {
+                while (!context->state->stopping.load()) {
+                    const int fd = listener->accept();
+                    if (fd < 0) {
+                        return;
+                    }
+                    context->proxy->add_channel(fd);
                 }
-                context->proxy->add_channel(fd);
-            }
-        });
-    }
-    if (distcc_listener_) {
-        distcc_thread_ = std::thread([context = context_, listener = distcc_listener_.get()] {
-            while (!context->state->stopping.load()) {
-                const int fd = listener->accept();
-                if (fd < 0) {
-                    return;
+            });
+        }
+        if (distcc_listener_) {
+            distcc_thread_ = std::thread([context = context_, listener = distcc_listener_.get()] {
+                while (!context->state->stopping.load()) {
+                    const int fd = listener->accept();
+                    if (fd < 0) {
+                        return;
+                    }
+                    try {
+                        std::thread([context, fd] { context->distcc->handle(fd); }).detach();
+                    } catch (...) {
+                        ::shutdown(fd, SHUT_RDWR);
+                        ::close(fd);
+                    }
                 }
-                std::thread([context, fd] { context->distcc->handle(fd); }).detach();
-            }
-        });
+            });
+        }
+    } catch (...) {
+        stop();
+        context_.reset();
+        started_ = false;
+        throw;
     }
 }
 
@@ -815,25 +878,63 @@ void Runtime::accept_framed(Listener* listener) {
         if (fd < 0) {
             return;
         }
-        if (context_->state->connections.load() >= config_.max_connections) {
+        // Reserve the slot before spawning so concurrent accepts cannot all
+        // pass a check-then-increment race.
+        size_t current = context_->state->connections.load();
+        bool reserved = false;
+        while (current < config_.max_connections) {
+            if (context_->state->connections.compare_exchange_weak(current, current + 1)) {
+                reserved = true;
+                break;
+            }
+        }
+        if (!reserved) {
             ::close(fd);
             continue;
         }
-        std::thread(serve_framed, context_, fd).detach();
+        {
+            // Register before the worker starts so stop() can always wake it.
+            std::lock_guard<std::mutex> lock(context_->state->mutex);
+            if (context_->state->stopping.load()) {
+                ::close(fd);
+                context_->state->connections.fetch_sub(1);
+                return;
+            }
+            context_->state->connection_fds.insert(fd);
+        }
+        try {
+            std::thread(serve_framed, context_, fd).detach();
+        } catch (...) {
+            {
+                std::lock_guard<std::mutex> lock(context_->state->mutex);
+                context_->state->connection_fds.erase(fd);
+            }
+            ::close(fd);
+            context_->state->connections.fetch_sub(1);
+        }
     }
 }
 
 void Runtime::stop() {
-    if (!started_ || stopped_) {
+    if (stopped_) {
         return;
     }
     stopped_ = true;
+    if (!context_) {
+        // A never-started (or config-rejected) runtime must not poison the
+        // process-global signal flag for a later attempt.
+        return;
+    }
     g_stop_requested.store(true);
     context_->state->stopping.store(true);
     context_->state->idle.notify_all();
 
-    control_listener_->close();
-    terminal_listener_->close();
+    if (control_listener_) {
+        control_listener_->close();
+    }
+    if (terminal_listener_) {
+        terminal_listener_->close();
+    }
     if (proxy_listener_) {
         proxy_listener_->close();
     }
@@ -853,13 +954,11 @@ void Runtime::stop() {
         distcc_thread_.join();
     }
 
-    std::set<int> connections;
     {
         std::lock_guard<std::mutex> lock(context_->state->mutex);
-        connections = context_->state->connection_fds;
-    }
-    for (const int fd : connections) {
-        ::shutdown(fd, SHUT_RDWR);
+        for (const int fd : context_->state->connection_fds) {
+            ::shutdown(fd, SHUT_RDWR);
+        }
     }
 
     if (context_->proxy) {

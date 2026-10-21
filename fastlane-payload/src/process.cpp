@@ -1,6 +1,7 @@
 #include "fastlane/process.h"
 
 #include <fcntl.h>
+#include <signal.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -46,6 +47,15 @@ void prepare_child(const SpawnSpec& spec, int error_fd) {
     }
 }
 
+void close_pair(int fds[2]) {
+    for (int index = 0; index < 2; ++index) {
+        if (fds[index] >= 0) {
+            ::close(fds[index]);
+            fds[index] = -1;
+        }
+    }
+}
+
 }  // namespace
 
 std::string resolve_executable(const std::string& apk_root, const std::string& command) {
@@ -71,6 +81,10 @@ std::string resolve_executable(const std::string& apk_root, const std::string& c
     }
     if (!is_within(apk_root, resolved)) {
         throw Error(Code::kExecFailed, "executable resolves outside the sealed toolbox");
+    }
+    struct stat info {};
+    if (::stat(resolved, &info) != 0 || !S_ISREG(info.st_mode)) {
+        throw Error(Code::kExecFailed, "tool is not a regular file");
     }
     if (::access(resolved, X_OK) != 0) {
         throw Error(Code::kExecFailed, "tool is not executable");
@@ -99,9 +113,19 @@ PipedChild spawn_piped(const SpawnSpec& spec) {
     int input[2] = {-1, -1};
     int output[2] = {-1, -1};
     int errors[2] = {-1, -1};
-    if (::pipe2(input, O_CLOEXEC) != 0 || ::pipe2(output, O_CLOEXEC) != 0 ||
-        ::pipe2(errors, O_CLOEXEC) != 0) {
+    if (::pipe2(input, O_CLOEXEC) != 0) {
         throw Error(Code::kIo, std::string("pipe failed: ") + std::strerror(errno));
+    }
+    if (::pipe2(output, O_CLOEXEC) != 0) {
+        const int saved = errno;
+        close_pair(input);
+        throw Error(Code::kIo, std::string("pipe failed: ") + std::strerror(saved));
+    }
+    if (::pipe2(errors, O_CLOEXEC) != 0) {
+        const int saved = errno;
+        close_pair(input);
+        close_pair(output);
+        throw Error(Code::kIo, std::string("pipe failed: ") + std::strerror(saved));
     }
 
     std::vector<std::string> argv = spec.argv;
@@ -111,7 +135,11 @@ PipedChild spawn_piped(const SpawnSpec& spec) {
 
     const pid_t pid = ::fork();
     if (pid < 0) {
-        throw Error(Code::kIo, std::string("fork failed: ") + std::strerror(errno));
+        const int saved = errno;
+        close_pair(input);
+        close_pair(output);
+        close_pair(errors);
+        throw Error(Code::kIo, std::string("fork failed: ") + std::strerror(saved));
     }
     if (pid == 0) {
         ::close(input[1]);
@@ -138,16 +166,28 @@ PipedChild spawn_piped(const SpawnSpec& spec) {
     }
 
     ::close(input[0]);
+    input[0] = -1;
     ::close(output[1]);
+    output[1] = -1;
     ::close(errors[1]);
+    errors[1] = -1;
     int child_error = 0;
-    const ssize_t read = ::read(errors[0], &child_error, sizeof(child_error));
+    ssize_t read = 0;
+    do {
+        read = ::read(errors[0], &child_error, sizeof(child_error));
+    } while (read < 0 && errno == EINTR);
     ::close(errors[0]);
-    if (read > 0) {
+    errors[0] = -1;
+    if (read != 0) {
         ::close(input[1]);
         ::close(output[0]);
+        if (read > 0) {
+            ::waitpid(pid, nullptr, 0);
+            throw Error(Code::kExecFailed, "child exec failed");
+        }
+        ::kill(pid, SIGKILL);
         ::waitpid(pid, nullptr, 0);
-        throw Error(Code::kExecFailed, "child exec failed");
+        throw Error(Code::kIo, "child status pipe failed");
     }
     ::fcntl(input[1], F_SETFD, FD_CLOEXEC);
     ::fcntl(output[0], F_SETFD, FD_CLOEXEC);
@@ -203,8 +243,9 @@ PtyChild spawn_pty(const SpawnSpec& spec, uint16_t columns, uint16_t rows) {
     if (pid == 0) {
         ::close(master);
         ::close(errors[0]);
-        ::setsid();
-        ::ioctl(slave, TIOCSCTTY, 0);
+        if (::setsid() < 0 || ::ioctl(slave, TIOCSCTTY, 0) != 0) {
+            child_fail(errors[1], errno);
+        }
         if (::dup2(slave, STDIN_FILENO) < 0 || ::dup2(slave, STDOUT_FILENO) < 0 ||
             ::dup2(slave, STDERR_FILENO) < 0) {
             child_fail(errors[1], errno);
@@ -220,12 +261,20 @@ PtyChild spawn_pty(const SpawnSpec& spec, uint16_t columns, uint16_t rows) {
     ::close(slave);
     ::close(errors[1]);
     int child_error = 0;
-    const ssize_t read = ::read(errors[0], &child_error, sizeof(child_error));
+    ssize_t read = 0;
+    do {
+        read = ::read(errors[0], &child_error, sizeof(child_error));
+    } while (read < 0 && errno == EINTR);
     ::close(errors[0]);
-    if (read > 0) {
+    if (read != 0) {
         ::close(master);
+        if (read > 0) {
+            ::waitpid(pid, nullptr, 0);
+            throw Error(Code::kExecFailed, "child exec failed");
+        }
+        ::kill(pid, SIGKILL);
         ::waitpid(pid, nullptr, 0);
-        throw Error(Code::kExecFailed, "child exec failed");
+        throw Error(Code::kIo, "child status pipe failed");
     }
     const int flags = ::fcntl(master, F_GETFL, 0);
     if (flags >= 0) {

@@ -148,6 +148,73 @@ public final class TarRoundTripTest {
                 "/abs", 0755, 0));
     }
 
+    @Test
+    public void writerRejectsUnencodableSize() {
+        final TarWriter writer = new TarWriter(new ByteArrayOutputStream());
+        final StorageException failure = assertThrows(StorageException.class,
+                () -> writer.addFile("home/huge", new ByteArrayInputStream(new byte[0]),
+                        8L * 1024 * 1024 * 1024, 0644, 0));
+        assertEquals(StorageFailure.LIMIT_EXCEEDED, failure.failure());
+    }
+
+    @Test
+    public void readerRejectsPaxSizeAboveTheUstarLimit() throws Exception {
+        final String record = paxRecord("size", "17179869184");  // 16 GiB
+        final byte[] tar = rawTar(
+                new RawEntry("PaxHeaders/x", 'x', record.getBytes(StandardCharsets.UTF_8)),
+                new RawEntry("home/a", '0', new byte[] {'x'}));
+        final StorageException failure = assertThrows(StorageException.class,
+                () -> new TarReader(new ByteArrayInputStream(tar)).next());
+        assertEquals(StorageFailure.LIMIT_EXCEEDED, failure.failure());
+    }
+
+    @Test
+    public void readerRejectsDuplicatePaths() throws Exception {
+        final byte[] tar = rawTar(
+                new RawEntry("home/a", '0', new byte[] {'1'}),
+                new RawEntry("home/a", '0', new byte[] {'2'}));
+        final StorageException failure = assertThrows(StorageException.class, () -> {
+            final TarReader reader = new TarReader(new ByteArrayInputStream(tar));
+            final byte[] buffer = new byte[8];
+            while (reader.next() != null) {
+                while (reader.read(buffer, 0, buffer.length) >= 0) {
+                    // Drain the first entry so the duplicate is reached.
+                }
+            }
+        });
+        assertEquals(StorageFailure.PATH_REJECTED, failure.failure());
+    }
+
+    @Test
+    public void readerRejectsStreamsThatMakeNoProgress() {
+        final java.io.InputStream stalled = new java.io.InputStream() {
+            @Override
+            public int read() {
+                return 0;
+            }
+
+            @Override
+            public int read(byte[] buffer, int offset, int length) {
+                return 0;
+            }
+        };
+        final StorageException failure = assertThrows(StorageException.class,
+                () -> new TarReader(stalled).next());
+        assertEquals(StorageFailure.IO_FAILED, failure.failure());
+    }
+
+    private static String paxRecord(String key, String value) {
+        int length = key.length() + value.length() + 4;
+        for (;;) {
+            final int digits = Integer.toString(length).length();
+            final int computed = digits + key.length() + value.length() + 3;
+            if (computed == length) {
+                return length + " " + key + "=" + value + "\n";
+            }
+            length = computed;
+        }
+    }
+
     private record RawEntry(String name, char type, byte[] content) {}
 
     private static byte[] rawTar(RawEntry... entries) throws IOException {

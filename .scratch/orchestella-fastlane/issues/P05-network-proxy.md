@@ -54,3 +54,4 @@ External gates: 无
 ## Comments
 
 - 2026-10-21（Agent B，`fastlane/agent-b-dataplane`）：零设备实现完成。`runtime/fastlane-proxy` 提供 SOCKS5（RFC 1928）+ HTTP CONNECT、loopback-only 绑定、连接/空闲上限、半关闭、typed failure、`serveChannel(FastLaneChannel)` guest 接口；JVM 32/32 测试通过（含 DNS/TLS/并发/超时/取消）。未验证真实 vsock 配对、Android SELinux、guest curl/git/pip；宿主需为每 tunnel 预开 channel。详见 `docs/reports/tickets/fastlane-P05/implementation-report.zh-CN.md`。
+- 2026-10-21（Agent B，第二轮加固）：连接槽改为 accept 后信号量预占（覆盖握手阶段），修复 accept/注册竞争；握手超时；DNS 用 4 线程 daemon pool + 超时，新增 `PROXY_TIMEOUT` 注入测试；`close()` 关闭 pending 握手/tunnel；host 含 `:` 拒绝；缓冲配置真正生效。JVM **42/42** 通过（含 TLS、并发上限、DNS 超时、关闭收敛）。`serveChannel` 的 vsock 读仍无超时，依赖宿主取消；真实 vsock/SELinux/真实 DNS 为 `not-tested`。详见报告 §3/§6。

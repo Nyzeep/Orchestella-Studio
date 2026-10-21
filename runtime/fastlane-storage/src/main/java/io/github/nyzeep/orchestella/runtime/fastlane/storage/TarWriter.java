@@ -38,6 +38,9 @@ public final class TarWriter implements Closeable {
         if (!StoragePaths.isSafeRelative(path)) {
             throw new StorageException(StorageFailure.PATH_REJECTED, "unsafe tar path");
         }
+        if (size < 0) {
+            throw new StorageException(StorageFailure.LIMIT_EXCEEDED, "negative file size");
+        }
         emitHeader(path, '0', size, mode, modifiedTime);
         final byte[] buffer = new byte[16 * 1024];
         long remaining = size;
@@ -195,7 +198,13 @@ public final class TarWriter implements Closeable {
         write(header, 0, header.length);
     }
 
-    private static void putOctal(byte[] destination, int offset, int length, long value) {
+    private static void putOctal(byte[] destination, int offset, int length, long value)
+            throws StorageException {
+        final long limit = (1L << (3 * (length - 1))) - 1;
+        if (value < 0 || value > limit) {
+            throw new StorageException(
+                    StorageFailure.LIMIT_EXCEEDED, "tar numeric field does not fit");
+        }
         for (int index = offset + length - 2; index >= offset; index--) {
             destination[index] = (byte) ('0' + (value & 07));
             value >>= 3;

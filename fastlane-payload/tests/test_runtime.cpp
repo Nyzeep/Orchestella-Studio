@@ -141,6 +141,61 @@ FL_TEST(runtime_requires_hello_first) {
     runtime.stop();
 }
 
+FL_TEST(runtime_rejects_invalid_limits) {
+    TempDir temp;
+    auto config = make_config(temp, temp.path + "/sockets");
+    config.auth_token = std::string(300, 'a');
+    fl::Runtime runtime(config);
+    bool threw = false;
+    try {
+        runtime.start();
+    } catch (const fl::Error& error) {
+        threw = error.code() == fl::Code::kInternal;
+    }
+    runtime.stop();
+    FL_CHECK(threw);
+
+    TempDir second;
+    auto second_config = make_config(second, second.path + "/sockets");
+    second_config.initial_window = 0;
+    fl::Runtime second_runtime(second_config);
+    bool second_threw = false;
+    try {
+        second_runtime.start();
+    } catch (const fl::Error& error) {
+        second_threw = error.code() == fl::Code::kInternal;
+    }
+    second_runtime.stop();
+    FL_CHECK(second_threw);
+}
+
+FL_TEST(runtime_rejects_unknown_frame_type) {
+    TempDir temp;
+    const auto config = make_config(temp, temp.path + "/sockets");
+    fl::Runtime runtime(config);
+    runtime.start();
+    const int fd = connect_unix(runtime.socket_path(config.control_port));
+    fl::FdSource source(fd);
+    fl::FrameReader reader(source);
+    fl::PayloadWriter hello;
+    hello.u16(1);
+    hello.u16(1);
+    hello.u8(0);
+    send_frame(fd, fl::FrameType::kHello, 0, hello.take());
+    expect(reader, fl::FrameType::kHelloOk);
+
+    const auto raw = fl::encode_frame(
+            fl::Frame{static_cast<fl::FrameType>(0x42), 0, {}});
+    fl::write_all(fd, raw.data(), raw.size());
+    const fl::Frame error = expect(reader, fl::FrameType::kError);
+    fl::PayloadReader parsed(error.payload.data(), error.payload.size());
+    uint16_t code = 0;
+    FL_CHECK(parsed.u16(&code));
+    FL_CHECK_EQ(code, static_cast<uint16_t>(fl::Code::kUnknownCommand));
+    ::close(fd);
+    runtime.stop();
+}
+
 FL_TEST(runtime_controls_pty_exports_and_imports) {
     TempDir temp;
     const auto config = make_config(temp, temp.path + "/sockets");

@@ -157,6 +157,9 @@ public final class Socks5Protocol {
             if (read < 0) {
                 throw protocol("truncated socks request");
             }
+            if (read == 0) {
+                throw protocol("socks stream made no progress");
+            }
             offset += read;
         }
     }

@@ -50,6 +50,7 @@ struct Frame {
 };
 
 bool is_reply(FrameType type);
+bool is_known_frame_type(FrameType type);
 const char* frame_type_name(FrameType type);
 
 /** Serialises one complete frame including the 14-byte header. */

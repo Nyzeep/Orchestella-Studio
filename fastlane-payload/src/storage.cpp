@@ -6,6 +6,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cerrno>
 #include <cstring>
 #include <filesystem>
@@ -174,7 +175,11 @@ void export_file(const std::string& absolute, const std::string& relative, const
         ++state->result.skipped;
         return;
     }
-    if (state->total + static_cast<uint64_t>(info.st_size) > kMaxExportBytes) {
+    const uint64_t file_size = static_cast<uint64_t>(info.st_size);
+    if (file_size > kMaxTarEntryBytes) {
+        throw Error(Code::kLimitExceeded, "file is too large for a ustar entry");
+    }
+    if (file_size > kMaxExportBytes - state->total) {
         throw Error(Code::kLimitExceeded, "export exceeds the size limit");
     }
     const int fd = ::open(absolute.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
@@ -272,20 +277,24 @@ void rollback(std::vector<Imported>* imported, const std::string& root) {
 }  // namespace
 
 bool is_denied_export_name(const std::string& name) {
+    std::string lowered = name;
+    std::transform(lowered.begin(), lowered.end(), lowered.begin(), [](unsigned char character) {
+        return static_cast<char>(std::tolower(character));
+    });
     static const char* kExact[] = {"id_rsa",   "id_ed25519", "id_ecdsa",       "id_dsa",
                                    "token",    ".fastlane-token", ".netrc",   ".git-credentials"};
     for (const char* denied : kExact) {
-        if (name == denied) {
+        if (lowered == denied) {
             return true;
         }
     }
-    if (starts_with(name, "id_rsa") || starts_with(name, "id_ed25519")) {
+    if (starts_with(lowered, "id_rsa") || starts_with(lowered, "id_ed25519")) {
         return true;
     }
     static const char* kSuffixes[] = {".sock", ".pid",  ".pem",     ".key",      ".p12",
                                       ".jks",  ".keystore", ".token"};
     for (const char* suffix : kSuffixes) {
-        if (ends_with(name, suffix)) {
+        if (ends_with(lowered, suffix)) {
             return true;
         }
     }
@@ -410,7 +419,13 @@ ImportResult import_tar(const StorageLayout& layout, const std::string& tar_path
     }
 
     const std::string staging = make_staging(layout.tmp(), ".import-");
-    const std::string backup_root = make_staging(layout.tmp(), ".backup-");
+    std::string backup_root;
+    try {
+        backup_root = make_staging(layout.tmp(), ".backup-");
+    } catch (...) {
+        remove_tree(staging);
+        throw;
+    }
     ImportResult result;
     std::vector<Imported> imported;
     bool success = false;

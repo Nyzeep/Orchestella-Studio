@@ -55,3 +55,4 @@ External gates: 无
 ## Comments
 
 - 2026-10-21（Agent B，`fastlane/agent-b-dataplane`）：零设备实现完成。`runtime/fastlane-storage` 提供 `StorageLayout`、manifest JSON、ustar/PAX tar 读写、`FastLaneExporter`/`FastLaneImporter`、SAF `ExportSink`/`GuestImportSink` seam；JVM 26/26 测试通过（8 MiB/空文件/深目录/UTF-8/gzip/取消/失败回滚/不覆盖）。导入以 `home/workspace` 整树替换；真实 SAF 原子性与设备 staging 未验证。详见 `docs/reports/tickets/fastlane-P06/implementation-report.zh-CN.md`。
+- 2026-10-21（Agent B，第二轮加固）：单 entry 上限改为 8 GiB−1（ustar 八进制硬限制），总量 16 GiB；八进制字段溢出不再静默截断。PAX 长度/大小溢出、零进度流、重复路径拒绝；`end()` 成功后 close 失败不再 abort 已提交导入；`FileExportSink` overwrite 采用备份→发布→失败恢复，测试注入第二次 move 失败验证旧文件保留；manifest 总量溢出与超大 marker 拒绝。JVM **35/35** 通过。导入语义修正为“只替换 tar 中出现的顶层根”，真实 SAF/ENOSPC 仍 `not-tested`。详见报告 §3/§6。

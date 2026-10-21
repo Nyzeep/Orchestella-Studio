@@ -19,8 +19,14 @@ public final class FileExportSink implements ExportSink, Closeable {
     private static final Set<PosixFilePermission> FILE_PERMISSIONS =
             EnumSet.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE);
 
+    @FunctionalInterface
+    interface Mover {
+        void move(Path source, Path destination, boolean replace) throws IOException;
+    }
+
     private final Path directory;
     private final boolean overwrite;
+    private final Mover mover;
     private Path archiveFinal;
     private Path manifestFinal;
     private Path archiveTemp;
@@ -32,8 +38,13 @@ public final class FileExportSink implements ExportSink, Closeable {
     private boolean committed;
 
     public FileExportSink(Path directory, boolean overwrite) {
+        this(directory, overwrite, FileExportSink::moveFile);
+    }
+
+    FileExportSink(Path directory, boolean overwrite, Mover mover) {
         this.directory = directory;
         this.overwrite = overwrite;
+        this.mover = mover;
     }
 
     @Override
@@ -72,21 +83,57 @@ public final class FileExportSink implements ExportSink, Closeable {
             abort();
             throw new IOException("refusing to overwrite an existing export");
         }
+        Path archiveBackup = null;
+        Path manifestBackup = null;
         try {
-            move(manifestTemp, manifestFinal);
-            publishedManifest = true;
-            move(archiveTemp, archiveFinal);
+            if (overwrite && Files.exists(archiveFinal)) {
+                archiveBackup = backup(archiveFinal);
+            }
+            if (overwrite && Files.exists(manifestFinal)) {
+                manifestBackup = backup(manifestFinal);
+            }
+            mover.move(archiveTemp, archiveFinal, overwrite);
             publishedArchive = true;
+            mover.move(manifestTemp, manifestFinal, overwrite);
+            publishedManifest = true;
             committed = true;
         } catch (IOException failure) {
             if (publishedArchive) {
-                Files.deleteIfExists(archiveFinal);
+                deleteQuietly(archiveFinal);
             }
             if (publishedManifest) {
-                Files.deleteIfExists(manifestFinal);
+                deleteQuietly(manifestFinal);
+            }
+            // The exporter calls abort() after a failed commit(); clear these so
+            // abort cannot delete the files restored below.
+            publishedArchive = false;
+            publishedManifest = false;
+            IOException rollbackFailure = null;
+            try {
+                restore(archiveBackup, archiveFinal);
+            } catch (IOException restoreFailure) {
+                rollbackFailure = restoreFailure;
+            }
+            try {
+                restore(manifestBackup, manifestFinal);
+            } catch (IOException restoreFailure) {
+                if (rollbackFailure == null) {
+                    rollbackFailure = restoreFailure;
+                } else {
+                    rollbackFailure.addSuppressed(restoreFailure);
+                }
+            }
+            if (rollbackFailure != null) {
+                final IOException combined = new IOException(
+                        "commit failed and the previous export could not be restored");
+                combined.addSuppressed(failure);
+                combined.addSuppressed(rollbackFailure);
+                throw combined;
             }
             throw failure;
         }
+        deleteQuietly(archiveBackup);
+        deleteQuietly(manifestBackup);
     }
 
     @Override
@@ -120,8 +167,35 @@ public final class FileExportSink implements ExportSink, Closeable {
         return directory.resolve(name);
     }
 
-    private void move(Path source, Path destination) throws IOException {
-        if (overwrite) {
+    private Path backup(Path target) throws IOException {
+        final Path backup = Files.createTempFile(directory, ".fastlane-backup-", ".part");
+        try {
+            Files.move(target, backup,
+                    StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException failure) {
+            deleteQuietly(backup);
+            throw failure;
+        }
+        return backup;
+    }
+
+    private static void restore(Path backup, Path target) throws IOException {
+        if (backup == null) {
+            return;
+        }
+        try {
+            Files.move(backup, target,
+                    StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException failure) {
+            // The old file is still at the .fastlane-backup-*.part path; the
+            // caller must be told that rollback failed, not just that commit did.
+            throw new IOException("could not restore the previous export", failure);
+        }
+    }
+
+    private static void moveFile(Path source, Path destination, boolean replace)
+            throws IOException {
+        if (replace) {
             Files.move(source, destination,
                     StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
         } else {

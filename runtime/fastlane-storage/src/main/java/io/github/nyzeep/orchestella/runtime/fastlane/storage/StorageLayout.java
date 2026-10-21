@@ -68,6 +68,10 @@ public final class StorageLayout {
                     throw new StorageException(
                             StorageFailure.LAYOUT_INVALID, "layout marker is not a file");
                 }
+                if (Files.size(marker) > 64) {
+                    throw new StorageException(
+                            StorageFailure.LAYOUT_INVALID, "layout marker is too large");
+                }
                 final String content = Files.readString(marker, StandardCharsets.UTF_8);
                 if (!"version=1\n".equals(content)) {
                     throw new StorageException(

@@ -1,8 +1,9 @@
 # Fast Lane payload protocol v1
 
-Status: zero-device contract. The C implementation and the host-side terminal mux
-(P04) must use these bytes verbatim. Where P04 has not landed yet, this document is
-the fixture.
+Status: v1 zero-device contract, unchanged bytes as of 2026-10-21. The C payload is
+the normative implementation. P04's host codec landed with a different `OSFL`
+framing; its `protocol-alignment.zh-CN.md` recommends this `FLN1` document as the
+vsock wire contract and an adapter on the host side (see §8).
 
 ## 1. Seam
 
@@ -86,6 +87,12 @@ never executable.
 exports (`home`, `workspace`). `IMPORT_BEGIN` writes only to a staging directory; the
 staging tree is swapped in on a verified `IMPORT_END`.
 
+Storage limits are enforced, never truncated: one tar entry may be at most
+`8 GiB - 1` bytes (11 octal digits, the ustar field limit), an export or import may
+carry at most 16 GiB and 100000 entries, and ustar metadata is capped at 1 MiB per
+PAX/LongName record. Import swaps only the top-level roots present in the archive
+(`home` and/or `workspace`); a root absent from the tar is left untouched.
+
 ## 4. Flow control
 
 Each PTY starts with `initial_window` bytes (default 262144) of output credit. The
@@ -126,8 +133,29 @@ must not infer support from the protocol version alone.
 
 - A reader must tolerate short reads: read exactly 14 bytes, then exactly `length`.
 - Zero-length frames are valid for control types that define no payload.
-- Unknown request types are rejected with `UNKNOWN_COMMAND`; unknown *reply* types are
-  ignored (forward compatibility).
-- Frame boundaries are never implied by TCP/vsock packet boundaries.
+- A frame type that is not in §3 is rejected with `UNKNOWN_COMMAND` before dispatch,
+  whether it looks like a request or a reply. There is no forward-compatible reply
+  namespace in v1; adding a type requires a protocol revision.
 - The payload closes a connection after a malformed frame; it does not resynchronise
   on the next magic, so a desynchronised stream cannot inject commands.
+- A transport must not return more bytes than requested. A short read (including a
+  one-byte read) is normal; a read of zero before the header is clean EOF, and a
+  zero-length read in the middle of a frame is `PROTOCOL_MALFORMED`.
+- The first frame on a framed port must be `HELLO`; the payload applies a 10-second
+  receive timeout until `HELLO` succeeds, then removes it. A client that connects and
+  sends nothing is closed without consuming a connection slot indefinitely.
+
+## 8. Version and cross-lane compatibility (2026-10-21)
+
+`FLN1` v1 is frozen: magic, header, frame types, limits, and error codes in this
+document do not change in this revision. The 2026-10-21 hardening pass changed only
+implementation-side validation and resource lifetime; it did not add or renumber a
+frame.
+
+P04 (`runtime/fastlane-terminal`) implements a host-side `OSFL` codec whose magic,
+frame types, HELLO gate, PTY parameters, close semantics, and credit frames are not
+wire-compatible with `FLN1`. P04's alignment report recommends keeping `FLN1` as the
+vsock wire contract and putting an adapter behind the host `TerminalCodec` seam; this
+payload does not implement a second wire protocol. Until that adapter lands, a real
+P04-to-payload terminal connection is **not** verified; passing both projects' unit
+tests is not a cross-language integration result.

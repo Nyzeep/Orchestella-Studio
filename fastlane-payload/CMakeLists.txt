@@ -9,6 +9,18 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 option(FL_BUILD_TESTS "Build the host-side unit and integration tests" ON)
 option(FL_ENABLE_WERROR "Treat compiler warnings as errors" ON)
+option(FL_SANITIZE "Build host targets with AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
+
+if(FL_SANITIZE)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        message(FATAL_ERROR "FL_SANITIZE requires GCC or Clang")
+    endif()
+    add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer
+                        -fno-sanitize-recover=all)
+    add_link_options(-fsanitize=address,undefined)
+endif()
+
+find_package(Threads REQUIRED)
 
 add_library(fastlane_payload_core STATIC
     src/distcc_bridge.cpp
@@ -26,6 +38,7 @@ add_library(fastlane_payload_core STATIC
 )
 
 target_include_directories(fastlane_payload_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(fastlane_payload_core PUBLIC Threads::Threads)
 
 if(FL_ENABLE_WERROR)
     target_compile_options(fastlane_payload_core PRIVATE -Wall -Wextra -Werror -Wpedantic)

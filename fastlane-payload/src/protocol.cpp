@@ -35,13 +35,17 @@ void read_exactly(ByteSource& source, uint8_t* destination, size_t length, bool 
                   bool* clean_eof) {
     size_t offset = 0;
     while (offset < length) {
-        const size_t read = source.read(destination + offset, length - offset);
+        const size_t remaining = length - offset;
+        const size_t read = source.read(destination + offset, remaining);
         if (read == 0) {
             if (offset == 0 && allow_clean_eof) {
                 *clean_eof = true;
                 return;
             }
             throw Error(Code::kProtocolMalformed, "truncated frame");
+        }
+        if (read > remaining) {
+            throw Error(Code::kProtocolMalformed, "transport returned an invalid read size");
         }
         offset += read;
     }
@@ -52,6 +56,39 @@ void read_exactly(ByteSource& source, uint8_t* destination, size_t length, bool 
 bool is_reply(FrameType type) {
     const auto value = static_cast<uint8_t>(type);
     return value == 0xFF || (value > 0x80);
+}
+
+bool is_known_frame_type(FrameType type) {
+    switch (type) {
+        case FrameType::kHello:
+        case FrameType::kHelloOk:
+        case FrameType::kPing:
+        case FrameType::kPong:
+        case FrameType::kOpenPty:
+        case FrameType::kPtyOpened:
+        case FrameType::kPtyData:
+        case FrameType::kResize:
+        case FrameType::kResized:
+        case FrameType::kSignal:
+        case FrameType::kClose:
+        case FrameType::kClosed:
+        case FrameType::kEof:
+        case FrameType::kExit:
+        case FrameType::kWindow:
+        case FrameType::kExport:
+        case FrameType::kExportBegin:
+        case FrameType::kExportData:
+        case FrameType::kExportEnd:
+        case FrameType::kImportBegin:
+        case FrameType::kImportData:
+        case FrameType::kImportEnd:
+        case FrameType::kImportDone:
+        case FrameType::kMetrics:
+        case FrameType::kMetricsOk:
+        case FrameType::kError:
+            return true;
+    }
+    return false;
 }
 
 const char* frame_type_name(FrameType type) {
@@ -178,7 +215,11 @@ bool FrameReader::next(Frame& frame) {
     if (length > kMaxFramePayload) {
         throw Error(Code::kProtocolMalformed, "frame payload exceeds limit");
     }
-    frame.type = static_cast<FrameType>(header[5]);
+    const FrameType type = static_cast<FrameType>(header[5]);
+    if (!is_known_frame_type(type)) {
+        throw Error(Code::kUnknownCommand, "unknown frame type");
+    }
+    frame.type = type;
     frame.session_id = load_u32(header + 6);
     frame.payload.assign(length, 0);
     if (length > 0) {
@@ -248,10 +289,8 @@ std::vector<uint8_t> PayloadWriter::take() {
 }
 
 bool PayloadReader::require(size_t length) {
-    if (offset_ + length > length_) {
-        return false;
-    }
-    return true;
+    // Written as a subtraction so a hostile length cannot wrap offset_ + length.
+    return offset_ <= length_ && length <= length_ - offset_;
 }
 
 bool PayloadReader::u8(uint8_t* value) {

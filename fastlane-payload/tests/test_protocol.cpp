@@ -1,6 +1,8 @@
 #include "test_support.h"
 
+#include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -180,6 +182,96 @@ FL_TEST(payload_reader_reports_truncation) {
     uint32_t value = 0;
     FL_CHECK(!reader.u32(&value));
     FL_CHECK(!reader.done());
+}
+
+namespace {
+
+class OverlongSource : public fl::ByteSource {
+public:
+    OverlongSource() {
+        frame_.type = fl::FrameType::kPing;
+        frame_.session_id = 0;
+        bytes_ = fl::encode_frame(frame_);
+    }
+
+    size_t read(void* destination, size_t length) override {
+        const size_t available = bytes_.size() - offset_;
+        const size_t copied = std::min(available, length);
+        if (copied > 0) {
+            std::memcpy(destination, bytes_.data() + offset_, copied);
+            offset_ += copied;
+        }
+        // Claims one more byte than requested; a correct reader must reject it.
+        return length + 1;
+    }
+
+private:
+    fl::Frame frame_;
+    std::vector<uint8_t> bytes_;
+    size_t offset_ = 0;
+};
+
+}  // namespace
+
+FL_TEST(reader_rejects_unknown_frame_type) {
+    auto bytes = fl::encode_frame(frame(fl::FrameType::kPing, 0, {}));
+    bytes[5] = 0x42;
+    fl::MemorySource source(bytes);
+    fl::FrameReader reader(source);
+    fl::Frame decoded;
+    FL_CHECK_THROWS_CODE(reader.next(decoded), fl::Code::kUnknownCommand);
+}
+
+FL_TEST(reader_rejects_source_that_reads_too_much) {
+    OverlongSource source;
+    fl::FrameReader reader(source);
+    fl::Frame decoded;
+    FL_CHECK_THROWS_CODE(reader.next(decoded), fl::Code::kProtocolMalformed);
+}
+
+FL_TEST(payload_reader_rejects_overflowing_length) {
+    const uint8_t data[] = {0x00};
+    fl::PayloadReader reader(data, sizeof(data));
+    uint8_t value = 0;
+    FL_CHECK(reader.u8(&value));
+    // offset_ + length must not wrap; the request is impossible, not satisfied.
+    FL_CHECK(!reader.skip(static_cast<size_t>(-1)));
+    FL_CHECK(!reader.skip(static_cast<size_t>(-2)));
+}
+
+FL_TEST(frame_reader_survives_random_input) {
+    uint32_t state = 0x12345678u;
+    auto next = [&state] {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        return state;
+    };
+    for (int iteration = 0; iteration < 2000; ++iteration) {
+        const size_t length = next() % 160;
+        std::vector<uint8_t> bytes(length);
+        for (uint8_t& byte : bytes) {
+            byte = static_cast<uint8_t>(next());
+        }
+        if (iteration % 2 == 0 && bytes.size() >= fl::kFrameHeaderSize) {
+            // Keep a valid magic to reach length/type validation more often.
+            bytes[0] = 0x46;
+            bytes[1] = 0x4C;
+            bytes[2] = 0x4E;
+            bytes[3] = 0x31;
+            bytes[4] = 1;
+        }
+        fl::MemorySource source(bytes);
+        fl::FrameReader reader(source);
+        fl::Frame decoded;
+        try {
+            while (reader.next(decoded)) {
+                FL_CHECK(decoded.payload.size() <= fl::kMaxFramePayload);
+            }
+        } catch (const fl::Error&) {
+            // Rejection is the expected outcome for adversarial input.
+        }
+    }
 }
 
 FL_TEST(helpers_classify_replies) {

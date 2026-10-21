@@ -25,7 +25,10 @@ public final class FastLaneImporter {
         Objects.requireNonNull(source, "source");
         Objects.requireNonNull(guest, "guest");
         Objects.requireNonNull(token, "token");
-        try (InputStream decoded = gzip ? new GZIPInputStream(source) : source) {
+        InputStream decoded = null;
+        boolean ended = false;
+        try {
+            decoded = gzip ? new GZIPInputStream(source) : source;
             guest.begin();
             final GuestOutputStream guestOutput = new GuestOutputStream(guest);
             final MessageDigest archiveDigest = sha256();
@@ -65,19 +68,36 @@ public final class FastLaneImporter {
             guestOutput.flush();
             final byte[] archiveHash = archiveDigest.digest();
             guest.end(guestOutput.count(), archiveHash);
+            ended = true;
             return new ImportResult(
                     manifest,
                     guestOutput.count(),
                     HexFormat.of().formatHex(archiveHash));
         } catch (StorageIOException failure) {
-            guest.abort();
+            abortIfNeeded(guest, ended);
             throw failure.storage();
         } catch (StorageException failure) {
-            guest.abort();
+            abortIfNeeded(guest, ended);
             throw failure;
         } catch (IOException failure) {
-            guest.abort();
+            abortIfNeeded(guest, ended);
             throw StorageException.io(failure);
+        } finally {
+            // A close failure after a successful end() must not abort a committed
+            // guest import. The caller owns a non-gzip source stream.
+            if (gzip && decoded != null) {
+                try {
+                    decoded.close();
+                } catch (IOException ignored) {
+                    // The import already succeeded or failed with a typed reason.
+                }
+            }
+        }
+    }
+
+    private static void abortIfNeeded(GuestImportSink guest, boolean ended) {
+        if (!ended) {
+            guest.abort();
         }
     }
 

@@ -14,7 +14,9 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.LongAdder;
 
@@ -28,6 +30,10 @@ public final class FastLaneProxyServer implements Closeable {
     private final ProxyConfig config;
     private final TargetConnector connector;
     private final Set<ProxyTunnel> tunnels = ConcurrentHashMap.newKeySet();
+    private final Set<Socket> pendingHandshakes = ConcurrentHashMap.newKeySet();
+    private final Set<FastLaneChannel> pendingChannels = ConcurrentHashMap.newKeySet();
+    /** Reserved before a worker starts, so concurrent accepts cannot oversubscribe. */
+    private final Semaphore slots;
     private final LongAdder upstreamBytes = new LongAdder();
     private final LongAdder downstreamBytes = new LongAdder();
     private final AtomicInteger acceptedConnections = new AtomicInteger();
@@ -35,7 +41,7 @@ public final class FastLaneProxyServer implements Closeable {
     private final AtomicInteger failures = new AtomicInteger();
 
     private volatile boolean running;
-    private ServerSocket server;
+    private volatile ServerSocket server;
     private Thread acceptThread;
     private ScheduledExecutorService watchdog;
 
@@ -46,6 +52,7 @@ public final class FastLaneProxyServer implements Closeable {
     public FastLaneProxyServer(ProxyConfig config, TargetConnector connector) {
         this.config = Objects.requireNonNull(config, "config");
         this.connector = Objects.requireNonNull(connector, "connector");
+        this.slots = new Semaphore(config.maxConnections());
     }
 
     public synchronized void start() throws IOException {
@@ -59,7 +66,14 @@ public final class FastLaneProxyServer implements Closeable {
         running = true;
         acceptThread = new Thread(this::acceptLoop, "fastlane-proxy-accept");
         acceptThread.setDaemon(true);
-        acceptThread.start();
+        try {
+            acceptThread.start();
+        } catch (RuntimeException failure) {
+            running = false;
+            server = null;
+            closeQuietly(socket);
+            throw failure;
+        }
         watchdog = Executors.newSingleThreadScheduledExecutor(runnable -> {
             final Thread thread = new Thread(runnable, "fastlane-proxy-idle");
             thread.setDaemon(true);
@@ -104,23 +118,43 @@ public final class FastLaneProxyServer implements Closeable {
             try {
                 client = socket.accept();
             } catch (IOException failure) {
-                return;
+                if (!running || socket.isClosed()) {
+                    return;
+                }
+                // Transient accept failures (for example EMFILE) must not kill
+                // the listener silently; back off instead of spinning.
+                try {
+                    Thread.sleep(50);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+                continue;
             }
             acceptedConnections.incrementAndGet();
-            if (tunnels.size() >= config.maxConnections()) {
+            final Slot slot = new Slot();
+            if (!slot.acquire()) {
                 rejectedConnections.incrementAndGet();
                 closeQuietly(client);
                 continue;
             }
-            final Thread worker = new Thread(() -> handleSocket(client), "fastlane-proxy-conn");
-            worker.setDaemon(true);
-            worker.start();
+            final Thread worker;
+            try {
+                worker = new Thread(() -> handleSocket(client, slot), "fastlane-proxy-conn");
+                worker.setDaemon(true);
+                worker.start();
+            } catch (RuntimeException failure) {
+                slot.release();
+                closeQuietly(client);
+            }
         }
     }
 
-    private void handleSocket(Socket client) {
+    private void handleSocket(Socket client, Slot slot) {
+        boolean transferred = false;
+        pendingHandshakes.add(client);
         try {
-            client.setSoTimeout(config.idleTimeoutMs());
+            client.setSoTimeout(handshakeTimeoutMs());
             client.setTcpNoDelay(true);
             final PushbackInputStream input =
                     new PushbackInputStream(client.getInputStream(), 1);
@@ -173,16 +207,30 @@ public final class FastLaneProxyServer implements Closeable {
                     client,
                     targetSocket,
                     config.idleTimeoutMs(),
-                    () -> tunnels.removeIf(ProxyTunnel::isClosed),
+                    () -> {
+                        tunnels.removeIf(ProxyTunnel::isClosed);
+                        slot.release();
+                    },
                     upstreamBytes,
-                    downstreamBytes);
+                    downstreamBytes,
+                    config.bufferBytes());
             if (!registerTunnel(tunnel)) {
                 return;
             }
+            transferred = true;
             tunnel.start();
         } catch (IOException failure) {
             closeQuietly(client);
+        } finally {
+            pendingHandshakes.remove(client);
+            if (!transferred) {
+                slot.release();
+            }
         }
+    }
+
+    private int handshakeTimeoutMs() {
+        return Math.max(1, Math.min(config.connectTimeoutMs(), config.idleTimeoutMs()));
     }
 
     /**
@@ -191,10 +239,19 @@ public final class FastLaneProxyServer implements Closeable {
      */
     public void serveChannel(FastLaneChannel channel) {
         Objects.requireNonNull(channel, "channel");
-        if (!running || tunnels.size() >= config.maxConnections()) {
+        if (!running) {
             closeQuietly(channel);
             return;
         }
+        final Slot slot = new Slot();
+        if (!slot.acquire()) {
+            rejectedConnections.incrementAndGet();
+            closeQuietly(channel);
+            return;
+        }
+        boolean transferred = false;
+        ProxyTunnel tunnel = null;
+        pendingChannels.add(channel);
         try {
             final PushbackInputStream input =
                     new PushbackInputStream(channel.inputStream(), 1);
@@ -242,23 +299,37 @@ public final class FastLaneProxyServer implements Closeable {
                 HttpConnectProtocol.writeEstablished(output);
             }
 
-            final ProxyTunnel tunnel = ProxyTunnel.forChannel(
+            tunnel = ProxyTunnel.forChannel(
                     channel,
                     targetSocket,
                     config.idleTimeoutMs(),
-                    () -> tunnels.removeIf(ProxyTunnel::isClosed),
+                    () -> {
+                        tunnels.removeIf(ProxyTunnel::isClosed);
+                        slot.release();
+                    },
                     upstreamBytes,
-                    downstreamBytes);
+                    downstreamBytes,
+                    config.bufferBytes());
             if (!registerTunnel(tunnel)) {
                 return;
             }
+            transferred = true;
+            pendingChannels.remove(channel);
             tunnel.start();
             tunnel.await();
         } catch (IOException failure) {
             closeQuietly(channel);
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
+            if (tunnel != null) {
+                tunnel.close();
+            }
             closeQuietly(channel);
+        } finally {
+            pendingChannels.remove(channel);
+            if (!transferred) {
+                slot.release();
+            }
         }
     }
 
@@ -293,6 +364,14 @@ public final class FastLaneProxyServer implements Closeable {
             watchdog.shutdownNow();
             watchdog = null;
         }
+        for (Socket client : pendingHandshakes) {
+            closeQuietly(client);
+        }
+        pendingHandshakes.clear();
+        for (FastLaneChannel channel : pendingChannels) {
+            closeQuietly(channel);
+        }
+        pendingChannels.clear();
         for (ProxyTunnel tunnel : tunnels) {
             tunnel.close();
         }
@@ -330,6 +409,21 @@ public final class FastLaneProxyServer implements Closeable {
             closeable.close();
         } catch (IOException ignored) {
             // Best-effort teardown.
+        }
+    }
+
+    /** One reserved connection slot; releasing twice is harmless. */
+    private final class Slot {
+        private final AtomicBoolean released = new AtomicBoolean();
+
+        boolean acquire() {
+            return slots.tryAcquire();
+        }
+
+        void release() {
+            if (released.compareAndSet(false, true)) {
+                slots.release();
+            }
         }
     }
 }

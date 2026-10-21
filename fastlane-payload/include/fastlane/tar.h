@@ -5,6 +5,13 @@
 
 namespace fl {
 
+/**
+ * ustar's size field is 11 octal digits plus a NUL. Larger values need GNU
+ * base-256, which this reader/writer deliberately does not implement, so the
+ * limit is enforced rather than silently truncated.
+ */
+constexpr uint64_t kMaxTarEntryBytes = (1ULL << 33) - 1;
+
 struct TarEntry {
     std::string path;
     char type = '0';  // '0' regular file, '5' directory

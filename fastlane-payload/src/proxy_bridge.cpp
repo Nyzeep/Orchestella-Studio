@@ -285,9 +285,17 @@ void ProxyBridge::accept_loop(int listen_fd) {
             close_quietly(client);
             continue;
         }
-        std::thread(ProxyBridge::tunnel_main, shared_, client, channel,
-                    config_.idle_timeout_ms)
-                .detach();
+        try {
+            std::thread(ProxyBridge::tunnel_main, shared_, client, channel,
+                        config_.idle_timeout_ms)
+                    .detach();
+        } catch (...) {
+            shared_->active.fetch_sub(1);
+            ::shutdown(client, SHUT_RDWR);
+            ::shutdown(channel, SHUT_RDWR);
+            close_quietly(client);
+            close_quietly(channel);
+        }
     }
 }
 
@@ -338,17 +346,18 @@ void ProxyBridge::stop() {
         unix_thread_.join();
     }
 
-    std::set<int> live;
     {
         std::lock_guard<std::mutex> lock(shared_->mutex);
         for (const int fd : shared_->channels) {
             close_quietly(fd);
         }
         shared_->channels.clear();
-        live = shared_->live_fds;
-    }
-    for (const int fd : live) {
-        ::shutdown(fd, SHUT_RDWR);
+        // Shut down while still holding the registry lock: the tunnel thread
+        // removes a descriptor before closing it, so this cannot touch a
+        // recycled descriptor number.
+        for (const int fd : shared_->live_fds) {
+            ::shutdown(fd, SHUT_RDWR);
+        }
     }
     for (int attempt = 0; attempt < 50 && shared_->active.load() > 0; ++attempt) {
         ::usleep(10000);

@@ -63,3 +63,4 @@ DV-01：payload 启动、vsock 握手、encrypted storage、stop；DV-02：PTY/�
 ## Comments
 
 - 2026-10-21（Agent B，`fastlane/agent-b-dataplane`）：零设备实现完成。新增 `fastlane-payload/`（C++17/CMake）：`AVmPayload_main`、四 listener、帧协议、PTY、storage/tar 导出导入、proxy/distcc 桥。宿主 49/49 CTest 通过；`AVmPayload_main` 在宿主二进制中可检查。NDK arm64 构建未运行（环境无 NDK），真机 vsock/SELinux/Termux/distccd 标 `not-tested`。详见 `docs/reports/tickets/fastlane-P02/implementation-report.zh-CN.md`。P04 fixture 尚未出现，`WINDOW` 扩展与帧编号待对齐。
+- 2026-10-21（Agent B，第二轮加固）：协议/资源/导入边界加固，`FLN1` 字节不变。宿主 **70/70** CTest 通过（ASan+UBSan 同样 70/70，`FL_SANITIZE=ON`）；新增未知 type/超读/长度回绕/随机输入、pipe 回滚、PTY fd 复用、PAX 溢出、distcc 半关闭收敛、握手超时与连接槽预占测试。P04 已推送并确认 `OSFL` 与 `FLN1` 不兼容，其对齐报告建议以 `FLN1` 为 wire 契约并在 P04 侧加 codec adapter；本轮不改 wire，也未完成 adapter，故真实终端仍未联调。NDK/真机仍为 `not-tested`。详见报告 §3/§5/§8。

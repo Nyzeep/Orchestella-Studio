@@ -4,6 +4,8 @@
 #include <poll.h>
 #include <signal.h>
 #include <sys/ioctl.h>
+#include <sys/resource.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
@@ -67,6 +69,12 @@ std::string read_until_eof(fl::PtyManager& manager, uint32_t id, int timeout_ms,
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     throw std::runtime_error("PTY child did not exit");
+}
+
+void make_dir(const std::string& path) {
+    if (::mkdir(path.c_str(), 0700) != 0 && errno != EEXIST) {
+        throw std::runtime_error("mkdir failed: " + path);
+    }
 }
 
 size_t count_open_fds() {
@@ -227,4 +235,57 @@ FL_TEST(pty_session_limit_is_typed) {
     FL_CHECK_THROWS_CODE(manager.open({"sleep", "3"}, 80, 24, 1 << 20), fl::Code::kSessionLimit);
     manager.close_session(first.id, true);
     manager.close_session(second.id, true);
+}
+
+FL_TEST(resolve_executable_rejects_directory) {
+    TempDir temp;
+    make_dir(temp.path + "/bin");
+    make_dir(temp.path + "/bin/tool");
+    // A directory has X_OK but must never be accepted as an executable.
+    FL_CHECK_THROWS_CODE(fl::resolve_executable(temp.path, "tool"), fl::Code::kExecFailed);
+}
+
+FL_TEST(pty_exec_failure_closes_descriptors) {
+    TempDir temp;
+    const auto layout = fl::StorageLayout::initialize(temp.path);
+    fl::PtyManager manager("/usr", layout.root(), 2);
+    const size_t before = count_open_fds();
+    for (int iteration = 0; iteration < 5; ++iteration) {
+        fl::SpawnSpec spec;
+        spec.argv = {"/definitely-not-a-real-executable"};
+        FL_CHECK_THROWS_CODE(fl::spawn_pty(spec, 80, 24), fl::Code::kExecFailed);
+    }
+    FL_CHECK_EQ(count_open_fds(), before);
+}
+
+FL_TEST(spawn_piped_rolls_back_partial_pipe_allocation) {
+    struct rlimit original {};
+    FL_CHECK_EQ(::getrlimit(RLIMIT_NOFILE, &original), 0);
+    const size_t open_fds = count_open_fds();
+    struct rlimit limited = original;
+    // Two spare descriptors: the first pipe succeeds, the second must fail.
+    limited.rlim_cur = static_cast<rlim_t>(open_fds + 2);
+    if (limited.rlim_cur >= original.rlim_cur) {
+        return;  // The process already has a tighter limit; nothing to prove.
+    }
+    FL_CHECK_EQ(::setrlimit(RLIMIT_NOFILE, &limited), 0);
+    const size_t before = count_open_fds();
+    fl::SpawnSpec spec;
+    spec.argv = {"/bin/true"};
+    FL_CHECK_THROWS_CODE(fl::spawn_piped(spec), fl::Code::kIo);
+    FL_CHECK_EQ(::setrlimit(RLIMIT_NOFILE, &original), 0);
+    FL_CHECK_EQ(count_open_fds(), before);
+}
+
+FL_TEST(pty_session_ids_are_monotonic) {
+    TempDir temp;
+    const auto layout = fl::StorageLayout::initialize(temp.path);
+    fl::PtyManager manager("/usr", layout.root(), 2);
+    uint32_t previous = 0;
+    for (int iteration = 0; iteration < 3; ++iteration) {
+        const auto opened = manager.open({"sh", "-c", "true"}, 80, 24, 1 << 20);
+        FL_CHECK(opened.id > previous);
+        previous = opened.id;
+        manager.close_session(opened.id, true);
+    }
 }
