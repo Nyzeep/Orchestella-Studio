@@ -4,6 +4,10 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.HashSet;
 import java.util.Set;
 import org.junit.Test;
@@ -54,13 +58,49 @@ public final class FastLaneDv01ContractTest {
 
     @Test
     public void acceptsDefaultPortsAndRejectsCollisions() {
-        FastLaneDv01Contract.requirePorts(9100, 9101, 9102, 9103);
+        FastLaneDv01Contract.requirePorts(
+                FastLaneDv01Contract.DEFAULT_CONTROL_PORT,
+                FastLaneDv01Contract.DEFAULT_TERMINAL_PORT,
+                FastLaneDv01Contract.DEFAULT_PROXY_PORT,
+                FastLaneDv01Contract.DEFAULT_DISTCC_PORT);
         assertThrows(IllegalArgumentException.class,
-                () -> FastLaneDv01Contract.requirePorts(9100, 9100, 9102, 9103));
+                () -> FastLaneDv01Contract.requirePorts(5100, 5100, 5102, 5103));
         assertThrows(IllegalArgumentException.class,
-                () -> FastLaneDv01Contract.requirePorts(1023, 9101, 9102, 9103));
+                () -> FastLaneDv01Contract.requirePorts(1023, 5101, 5102, 5103));
         assertThrows(IllegalArgumentException.class,
-                () -> FastLaneDv01Contract.requirePorts(9100, 65536, 9102, 9103));
+                () -> FastLaneDv01Contract.requirePorts(5100, 65536, 5102, 5103));
+    }
+
+    @Test
+    public void defaultPortsMatchThePayloadConfiguration() throws IOException {
+        // The payload header is the normative default. A host default that
+        // drifts from it produces "Connection reset by peer" at connect time.
+        String header = Files.readString(findPayloadHeader());
+        assertEquals(FastLaneDv01Contract.DEFAULT_CONTROL_PORT, port(header, "control_port"));
+        assertEquals(FastLaneDv01Contract.DEFAULT_TERMINAL_PORT, port(header, "terminal_port"));
+        assertEquals(FastLaneDv01Contract.DEFAULT_PROXY_PORT, port(header, "proxy_port"));
+        assertEquals(FastLaneDv01Contract.DEFAULT_DISTCC_PORT, port(header, "distcc_port"));
+    }
+
+    private static int port(String header, String field) {
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("uint16_t\\s+" + field + "\\s*=\\s*(\\d+)\\s*;")
+                .matcher(header);
+        assertTrue("payload header has no " + field, matcher.find());
+        return Integer.parseInt(matcher.group(1));
+    }
+
+    private static Path findPayloadHeader() {
+        Path directory = Paths.get(System.getProperty("user.dir")).toAbsolutePath();
+        for (int depth = 0; depth < 8 && directory != null; depth++) {
+            Path candidate = directory.resolve("fastlane-payload/include/fastlane/runtime.h");
+            if (Files.isRegularFile(candidate)) {
+                return candidate;
+            }
+            directory = directory.getParent();
+        }
+        throw new AssertionError("fastlane-payload runtime.h not found from "
+                + System.getProperty("user.dir"));
     }
 
     @Test
@@ -119,6 +159,21 @@ public final class FastLaneDv01ContractTest {
         assertTrue(keys.contains("failure_codes"));
         assertTrue(keys.contains("negative_cases"));
         assertTrue(keys.contains("not_tested"));
+    }
+
+    @Test
+    public void terminalDetailKeepsOnlyTheStageAndErrno() {
+        assertEquals("execve_errno_13", FastLaneDv01Contract.terminalDetail(
+                "fln1=7 EXEC_FAILED: child exec failed (execve errno=13)"));
+        assertEquals("access_errno_13", FastLaneDv01Contract.terminalDetail(
+                "fln1=7 EXEC_FAILED: tool is not executable (access errno=13)"));
+        assertEquals("realpath_errno_2", FastLaneDv01Contract.terminalDetail(
+                "fln1=7 EXEC_FAILED: executable not found (realpath errno=2)"));
+        assertEquals("not_regular", FastLaneDv01Contract.terminalDetail(
+                "fln1=7 EXEC_FAILED: tool is not a regular file"));
+        assertEquals("unclassified", FastLaneDv01Contract.terminalDetail(
+                "fln1=7 EXEC_FAILED: EXEC_FAILED"));
+        assertEquals("unclassified", FastLaneDv01Contract.terminalDetail(null));
     }
 
     @Test
