@@ -97,6 +97,7 @@ def test_valid_preflight_fixtures_name_the_three_not_tested_areas() -> None:
         ("bad-outcome.json", "E_SCHEMA_ENUM", "/outcome"),
         ("not-tested-missing.json", "E_SCHEMA_MIN_ITEMS", "/not_tested"),
         ("not-tested-missing.json", "E_SCHEMA_CONTAINS", "/not_tested"),
+        ("extra-stage.json", "E_SCHEMA_ADDITIONAL_PROPERTY", "/stage_results"),
     ],
 )
 def test_invalid_preflight_fixtures(name: str, code: str, path: str) -> None:
@@ -114,6 +115,28 @@ def test_valid_summary_fixture() -> None:
 
 def test_valid_blocked_summary_fixture() -> None:
     result = cli("--summary", SUMMARY / "terminal-blocked.json")
+    assert result.returncode == 0, output(result)
+
+
+def test_valid_blocked_summary_without_report_fixture() -> None:
+    result = cli("--summary", SUMMARY / "blocked-no-report.json")
+    assert result.returncode == 0, output(result)
+    result = cli("--summary", SUMMARY / "blocked-no-report.json", "--strict")
+    assert result.returncode == 0, output(result)
+
+
+def test_summary_accepts_full_mode(tmp_path: Path) -> None:
+    summary = copy_summary(
+        tmp_path,
+        mode="full",
+        qa_mode="fastlane-dv01",
+        outcome="FULL_BLOCKED",
+        reason_code="HOST_FAILURE",
+        report_path=None,
+        report_sha256=None,
+        report_present=False,
+    )
+    result = cli("--summary", summary)
     assert result.returncode == 0, output(result)
 
 

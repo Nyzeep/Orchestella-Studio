@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:orchestella:fastlane:dv01:run:v1",
   "title": "Orchestella Fast Lane DV-01B run summary",
-  "description": "Sanitized host-runner summary for one DV-01B preflight run. Never contains a serial, model, account, token, raw logcat or absolute path.",
+  "description": "Sanitized host-runner summary for one DV-01B run. Never contains a serial, model, account, token, raw logcat or absolute path.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -25,8 +25,13 @@
       "const": "orchestella.fastlane.dv01.run.v1"
     },
     "mode": {
-      "const": "preflight",
-      "description": "DV-01B preflight only; other CLI modes require a schema revision."
+      "type": "string",
+      "enum": ["qualification", "preflight", "full"],
+      "description": "CLI mode. Report validation is only defined for preflight; qualification and full summaries stay at the host runner level."
+    },
+    "qa_mode": {
+      "type": "string",
+      "enum": ["qualification", "fastlane-dv01-preflight", "fastlane-dv01"]
     },
     "alias": {
       "type": "string",
@@ -38,7 +43,15 @@
       "enum": [
         "PREFLIGHT_TERMINAL_OK",
         "PREFLIGHT_TERMINAL_BLOCKED",
-        "PREFLIGHT_BLOCKED_EXTERNAL"
+        "PREFLIGHT_BLOCKED_EXTERNAL",
+        "QUALIFICATION_OBSERVED",
+        "QUALIFICATION_BLOCKED",
+        "PASS",
+        "FAILED",
+        "REJECTED",
+        "BLOCKED_EXTERNAL",
+        "DV01_CORE_PASS_TERMINAL_BLOCKED",
+        "FULL_BLOCKED"
       ]
     },
     "reason_code": {
@@ -47,12 +60,14 @@
       "pattern": "^[A-Z][A-Z0-9_]{1,63}$"
     },
     "report_path": {
-      "type": "string",
-      "description": "Relative path to the canonical report.json; never absolute, never a token filename.",
+      "type": ["string", "null"],
+      "description": "Relative path to the canonical report.json; null only when the run blocked before a report existed. Never absolute, never a token filename.",
       "pattern": "^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.?(?:/|$))[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$"
     },
     "report_sha256": {
-      "$ref": "#/$defs/sha256"
+      "type": ["string", "null"],
+      "description": "SHA-256 of report.json; null exactly when report_path is null.",
+      "pattern": "^[0-9a-f]{64}$"
     },
     "apk_sha256": {
       "$ref": "#/$defs/sha256"
@@ -74,6 +89,35 @@
     "serial_recorded": {
       "const": false,
       "description": "Contract invariant: the runner never persists a serial."
+    },
+    "toolbox_sha256": {
+      "type": "string",
+      "description": "Toolbox manifest SHA-256, or not-tested when the mode does not bind one.",
+      "pattern": "^(?:[0-9a-f]{64}|not-tested)$"
+    },
+    "report_present": {
+      "type": "boolean",
+      "description": "True only when report.json was archived; paired with report_path/report_sha256."
+    },
+    "schema_validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["validator", "full_schema_validation", "status"],
+      "properties": {
+        "validator": {
+          "type": "string"
+        },
+        "full_schema_validation": {
+          "type": "boolean"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["PASS", "FAIL", "NOT_RUN", "LOCAL_ONLY"]
+        },
+        "note": {
+          "type": "string"
+        }
+      }
     }
   },
   "allOf": [
@@ -111,6 +155,80 @@
           "reason_code": {
             "type": "string",
             "pattern": "^[A-Z][A-Z0-9_]{1,63}$"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "report_path": {
+            "const": null
+          }
+        },
+        "required": ["report_path"]
+      },
+      "then": {
+        "properties": {
+          "report_sha256": {
+            "const": null
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "report_path": {
+            "type": "string"
+          }
+        },
+        "required": ["report_path"]
+      },
+      "then": {
+        "properties": {
+          "report_sha256": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "report_present": {
+            "const": false
+          }
+        },
+        "required": ["report_present"]
+      },
+      "then": {
+        "properties": {
+          "report_path": {
+            "const": null
+          },
+          "report_sha256": {
+            "const": null
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "report_present": {
+            "const": true
+          }
+        },
+        "required": ["report_present"]
+      },
+      "then": {
+        "properties": {
+          "report_path": {
+            "type": "string"
+          },
+          "report_sha256": {
+            "type": "string"
           }
         }
       }
