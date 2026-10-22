@@ -1,0 +1,90 @@
+name: Fast Lane DV-01B zero-device
+
+# Host-only gate for the DV-01B preflight contract. It validates the
+# sanitized report/run-summary schemas, runs the engine-fastlane JVM tests
+# and compiles the app androidTest sources. It never runs a device bridge
+# command, never starts a device, and never signs or publishes an artifact.
+on:
+  pull_request:
+    paths:
+      - "tools/fastlane-schema/**"
+      - "tools/fastlane-build/preflight-report.schema.json"
+      - "runtime/engine-fastlane/**"
+      - "app/src/androidTest/**"
+      - "app/src/main/**"
+      - "app/build.gradle.kts"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - "gradle/**"
+      - ".github/workflows/fastlane-dv01b-zero-device.yml"
+  push:
+    branches: [main]
+    paths:
+      - "tools/fastlane-schema/**"
+      - "tools/fastlane-build/preflight-report.schema.json"
+      - "runtime/engine-fastlane/**"
+      - "app/src/androidTest/**"
+      - "app/src/main/**"
+      - "app/build.gradle.kts"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - "gradle/**"
+      - ".github/workflows/fastlane-dv01b-zero-device.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  schema:
+    name: Schema validation and sanitization tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pinned test dependency
+        run: python3 -m pip install -r tools/fastlane-schema/requirements-test.txt
+
+      - name: Run schema and sanitization tests
+        run: python3 -m pytest tools/fastlane-schema -q
+
+  jvm-androidtest:
+    name: engine-fastlane JVM and androidTest compilation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Install Android SDK components
+        run: |
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f 2>/dev/null | head -1)
+          if [ -z "$SDKMANAGER" ]; then
+            echo "::error::sdkmanager not found under ANDROID_HOME"
+            exit 1
+          fi
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-36" "build-tools;36.1.0"
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Run engine-fastlane tests and compile androidTest sources
+        run: >
+          ./gradlew :runtime:engine-fastlane:test
+          :app:compileDebugAndroidTestJavaWithJavac
+          --no-daemon --stacktrace

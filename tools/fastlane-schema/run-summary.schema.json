@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:orchestella:fastlane:dv01:run:v1",
+  "title": "Orchestella Fast Lane DV-01B run summary",
+  "description": "Sanitized host-runner summary for one DV-01B preflight run. Never contains a serial, model, account, token, raw logcat or absolute path.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "mode",
+    "alias",
+    "outcome",
+    "reason_code",
+    "report_path",
+    "report_sha256",
+    "apk_sha256",
+    "test_apk_sha256",
+    "started_at_utc",
+    "finished_at_utc",
+    "adb_invoked",
+    "serial_recorded"
+  ],
+  "properties": {
+    "schema": {
+      "const": "orchestella.fastlane.dv01.run.v1"
+    },
+    "mode": {
+      "const": "preflight",
+      "description": "DV-01B preflight only; other CLI modes require a schema revision."
+    },
+    "alias": {
+      "type": "string",
+      "description": "Operator-provided stable alias; never a serial or model.",
+      "pattern": "^[A-Za-z0-9._-]{1,32}$"
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "PREFLIGHT_TERMINAL_OK",
+        "PREFLIGHT_TERMINAL_BLOCKED",
+        "PREFLIGHT_BLOCKED_EXTERNAL"
+      ]
+    },
+    "reason_code": {
+      "type": ["string", "null"],
+      "description": "Fixed code only; null exactly when the outcome is PREFLIGHT_TERMINAL_OK.",
+      "pattern": "^[A-Z][A-Z0-9_]{1,63}$"
+    },
+    "report_path": {
+      "type": "string",
+      "description": "Relative path to the canonical report.json; never absolute, never a token filename.",
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.?(?:/|$))[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$"
+    },
+    "report_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "apk_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "test_apk_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "started_at_utc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "finished_at_utc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "adb_invoked": {
+      "type": "boolean"
+    },
+    "serial_recorded": {
+      "const": false,
+      "description": "Contract invariant: the runner never persists a serial."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "PREFLIGHT_TERMINAL_OK"
+          }
+        },
+        "required": ["outcome"]
+      },
+      "then": {
+        "properties": {
+          "reason_code": {
+            "const": null
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "enum": [
+              "PREFLIGHT_TERMINAL_BLOCKED",
+              "PREFLIGHT_BLOCKED_EXTERNAL"
+            ]
+          }
+        },
+        "required": ["outcome"]
+      },
+      "then": {
+        "properties": {
+          "reason_code": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]{1,63}$"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

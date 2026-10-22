@@ -1,0 +1,68 @@
+{
+  "schema": "orchestella.fastlane.dv01.preflight.v1",
+  "mode": "fastlane-dv01-preflight",
+  "device_alias": "qa-device",
+  "sdk_int": 36,
+  "abi": "arm64-v8a",
+  "virtualization_framework": true,
+  "protected_bit": true,
+  "permission": "GRANTED",
+  "apk_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "payload_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "toolbox_manifest_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "stage_results": {
+    "parameter_validation": {
+      "status": "pass",
+      "reason_code": "QA_ARGUMENTS_VALID"
+    },
+    "platform_facts": {
+      "status": "pass",
+      "reason_code": "PLATFORM_OBSERVED"
+    },
+    "create": {
+      "status": "pass",
+      "reason_code": "VM_CREATED"
+    },
+    "run": {
+      "status": "pass",
+      "reason_code": "RUN_RETURNED"
+    },
+    "payload_ready": {
+      "status": "pass",
+      "reason_code": "PAYLOAD_READY_OBSERVED"
+    },
+    "control_hello": {
+      "status": "pass",
+      "reason_code": "HELLO_HELLO_OK"
+    },
+    "terminal_pty": {
+      "status": "blocked",
+      "reason_code": "TOOLBOX_EXEC_BLOCKED_BY_PLATFORM",
+      "detail": "fln1=7 errno=13"
+    },
+    "stop": {
+      "status": "pass",
+      "reason_code": "STOP_CONFIRMED"
+    },
+    "delete": {
+      "status": "pass",
+      "reason_code": "VM_DELETED"
+    }
+  },
+  "terminal": {
+    "status": "blocked",
+    "reason_code": "TOOLBOX_EXEC_BLOCKED_BY_PLATFORM",
+    "fln1_code": 7,
+    "exec_stage": "execve",
+    "errno": 13
+  },
+  "stop": "CONFIRMED",
+  "outcome": "PREFLIGHT_TERMINAL_BLOCKED",
+  "started_at_utc": "2026-10-22T10:00:00Z",
+  "finished_at_utc": "2026-10-22T10:01:00Z",
+  "not_tested": [
+    "encrypted_storage_persistence",
+    "20_cycles",
+    "negative_cases"
+  ]
+}

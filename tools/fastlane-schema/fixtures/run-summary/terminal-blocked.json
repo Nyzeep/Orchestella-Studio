@@ -1,0 +1,15 @@
+{
+  "schema": "orchestella.fastlane.dv01.run.v1",
+  "mode": "preflight",
+  "alias": "qa-device",
+  "outcome": "PREFLIGHT_TERMINAL_BLOCKED",
+  "reason_code": "TOOLBOX_EXEC_BLOCKED_BY_PLATFORM",
+  "report_path": "report.json",
+  "report_sha256": "3f0c96873756efaceb48cbdb9dcfd5d81442f677ae43948950a5d4c7d20d7639",
+  "apk_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "test_apk_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "started_at_utc": "2026-10-22T09:59:00Z",
+  "finished_at_utc": "2026-10-22T10:02:00Z",
+  "adb_invoked": true,
+  "serial_recorded": false
+}
