@@ -49,7 +49,7 @@ Canonical 文档：
 - CI：`.github/workflows/fastlane-zero-device.yml` 覆盖 7 个 JVM 模块、payload CTest（ASan/UBSan）、Python 76+11、E2E；`tools/ci/run-fastlane-zero-device.sh` 本地/CI 共用。
 - 文档：ptrace 结论统一为“无 allow、默认拒绝、需真机探针”；不再写“官方 neverallow”。
 - 当前阻塞：真实 Android 构建/APK `bin/` 执行位与 `zipalign -P 16` 未验证（本环境无 Android SDK/JDK 17 → `BUILD_BLOCKED`）；真实 vsock/PTY 仍是 DV-02。
-- **下一步：DV-01**（protected payload create/run/vsock/storage/stop），不是继续加功能。
+- **下一步：DV-01 blocked_external**（A16 `execute_no_trans` 平台阻塞）；当前零设备收口为 [DV-01B P2 hardening](issues/DV-01B-p2-runner-hardening.md)。
 
 ## 串行真机 frontier（DV-01–DV-04）
 
