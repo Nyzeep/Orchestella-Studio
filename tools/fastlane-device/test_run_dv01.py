@@ -1120,6 +1120,19 @@ class RunnerTests(unittest.TestCase):
         report_file = self.run_dir() / "report.json"
         self.assertTrue(report_file.is_file())
         self.assertTrue(report_file.read_bytes().endswith(b" "))
+        sums = {}
+        for line in (self.run_dir() / "SHA256SUMS").read_text(
+            encoding="utf-8"
+        ).splitlines():
+            digest, relative = line.split("  ", 1)
+            sums[relative] = digest
+        self.assertEqual(
+            sums["run-summary.json"],
+            run_dv01.sha256_file(self.run_dir() / "run-summary.json"),
+        )
+        self.assertEqual(
+            sums["report.json"], run_dv01.sha256_file(report_file)
+        )
 
     def test_qualification_report_is_not_bound_to_preflight_schema(self) -> None:
         validator = self.real_validator()
