@@ -641,7 +641,7 @@ final class FastLaneDv01Probe {
 
     private boolean hasVirtualizationFramework() {
         return target.getPackageManager().hasSystemFeature(
-                "android.software.virtualization.framework");
+                AvfCapabilityEvaluator.VIRTUALIZATION_FEATURE);
     }
 
     private boolean parseArguments() {
@@ -1670,7 +1670,7 @@ final class FastLaneDv01Probe {
         }
         facts.put("abis", abis);
         facts.put("virtualization_framework", target.getPackageManager().hasSystemFeature(
-                "android.software.virtualization_framework"));
+                AvfCapabilityEvaluator.VIRTUALIZATION_FEATURE));
         facts.put("build_id", safeToken(Build.ID));
         facts.put("release", safeToken(Build.VERSION.RELEASE));
         facts.put("fingerprint_sha256",
