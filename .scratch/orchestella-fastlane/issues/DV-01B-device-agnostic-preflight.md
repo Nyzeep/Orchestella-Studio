@@ -1,7 +1,7 @@
 # DV-01B: 设备无关 preflight 实现与零设备门禁
 
 Type: implementation / host-only verification
-Status: code-complete-zero-device-passed；device preflight pending（不改变 DV-01 结论）
+Status: code-complete-zero-device-passed；device preflight blocked by platform（不改变 DV-01 结论）
 Priority: P1（full DV-01 之前的准入检查）
 Owner: Fast Lane integrator
 Blocked by: DV-01A 平台 SELinux `execute_no_trans`（真机 preflight 前不绕过）
@@ -35,11 +35,22 @@ External gates: 真实设备 preflight；操作者显式触发 full；不得进�
 - `:runtime:engine-fastlane:test` 与 `:app:compileDebugAndroidTestJavaWithJavac`：通过。
 - 本机为 JDK 17 / Android SDK 36 / build-tools 36.1.0 / NDK 27.0.12077973 / CMake 3.22.1；未接 adb、模拟器或真机。
 
+## 真机 preflight（2026-10-22）
+
+- 构建来源：`integration/fastlane-dv01b` @ `152dff9`（合并候选；`main` 尚未合并）。
+- 设备：操作者别名 `qa-device`；API 36 / arm64-v8a / `virtualization_framework=true` / `protected_bit=true` / 两项权限 `GRANTED`（不记录型号或序列号）。
+- P1 直连一次：`outcome=PREFLIGHT_TERMINAL_BLOCKED`，`terminal.reason_code=TOOLBOX_EXEC_BLOCKED_BY_PLATFORM`，`fln1_code=7`，`exec_stage=execve`，`errno=13`；stop `CONFIRMED`，delete `VM_DELETED`。
+- `not_tested`：`encrypted_storage_persistence`、`20_cycles`、`negative_cases`。
+- 报告通过 `validate.py --report --strict`；report/summary binding 通过。
+- 外部 artifact：`protected-fastlane/20261022/preflight/<token>/`（token 不记录在仓库）。
+- 未跑 full：平台阻塞按契约停止，未重试、未绕过。
+- 构建中发现并修复 P1 报告的 `virtualization_framework` 特性名笔误（点号 → 下划线，改用 `AvfCapabilityEvaluator.VIRTUALIZATION_FEATURE`），附源码级回归测试；修复前的一次运行作废，不作为证据。
+
 ## 未完成 / 待执行
 
-- [ ] 真实设备 preflight：操作者提供 alias、APK、payload、toolbox SHA 后运行一次；当前没有真机样本。
-- [ ] 设备侧报告通过 `tools/fastlane-build/preflight-report.schema.json` 校验。
-- [ ] 只有 `PREFLIGHT_TERMINAL_OK` 才允许操作者显式触发 full；blocked 结果停止，不重试、不绕过。
+- [x] 真实设备 preflight：已完成一次；结果为平台阻塞，见上节。
+- [x] 设备侧报告通过 `tools/fastlane-build/preflight-report.schema.json` 校验。
+- [ ] 只有 `PREFLIGHT_TERMINAL_OK` 才允许操作者显式触发 full；本次 blocked，未触发。
 - [ ] P2 的 `qualification` / `full` 模式仍只有 fake-adb 测试，不构成真机证据。
 - [ ] P2 当前分别调用 validator 的 `--report` 和 `--summary`，未使用 `--strict` 的 report/summary binding；设备侧 APK/toolbox SHA 的输入绑定仍由操作者检查。
 
@@ -47,7 +58,7 @@ External gates: 真实设备 preflight；操作者显式触发 full；不得进�
 
 - 不把本票的零设备结果当成 DV-01 或 DV-01B 真机 PASS；DV-01 仍为 `DV01_CORE_PASS_TERMINAL_BLOCKED`，不改历史结论。
 - 不进入 DV-02（terminal UI、proxy、distcc、export/import）。
-- 设备矩阵不追加真实设备行；真实 alias 映射、serial、原始 logcat 和报告只放 approved external artifact root。
+- 设备矩阵只追加一列真实别名行；真实 alias 映射、serial、原始 logcat 和报告只放 approved external artifact root。
 - 不修改 FLN1 wire、payload 字节、accepted ADR、版本号、签名身份或 release channel。
 
 ## 证据
