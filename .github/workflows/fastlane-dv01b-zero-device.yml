@@ -1,13 +1,15 @@
 name: Fast Lane DV-01B zero-device
 
 # Host-only gate for the DV-01B preflight contract. It validates the
-# sanitized report/run-summary schemas, runs the engine-fastlane JVM tests
-# and compiles the app androidTest sources. It never runs a device bridge
-# command, never starts a device, and never signs or publishes an artifact.
+# sanitized report/run-summary schemas, runs the host runner tests, runs the
+# engine-fastlane JVM tests and compiles the app androidTest sources. It never
+# runs a device bridge command, never starts a device, and never signs or
+# publishes an artifact.
 on:
   pull_request:
     paths:
       - "tools/fastlane-schema/**"
+      - "tools/fastlane-device/**"
       - "tools/fastlane-build/preflight-report.schema.json"
       - "runtime/engine-fastlane/**"
       - "app/src/androidTest/**"
@@ -21,6 +23,7 @@ on:
     branches: [main]
     paths:
       - "tools/fastlane-schema/**"
+      - "tools/fastlane-device/**"
       - "tools/fastlane-build/preflight-report.schema.json"
       - "runtime/engine-fastlane/**"
       - "app/src/androidTest/**"
@@ -54,6 +57,9 @@ jobs:
 
       - name: Run schema and sanitization tests
         run: python3 -m pytest tools/fastlane-schema -q
+
+      - name: Run device-independent runner tests
+        run: python3 -m pytest tools/fastlane-device -q
 
   jvm-androidtest:
     name: engine-fastlane JVM and androidTest compilation

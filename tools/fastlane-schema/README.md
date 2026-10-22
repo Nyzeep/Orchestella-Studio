@@ -17,7 +17,8 @@ no network, no third-party runtime dependency.
 The preflight report schema is the existing
 `tools/fastlane-build/preflight-report.schema.json`
 (`orchestella.fastlane.dv01.preflight.v1`); this directory does not duplicate
-or modify it.
+it. The DV-01B integration tightened its `stage_results` to exactly the nine
+contract stages.
 
 ## Usage
 
@@ -46,11 +47,14 @@ diagnostic cannot echo a serial, model, token or path.
 
 ## Run summary invariants
 
-`run-summary.json` must be `orchestella.fastlane.dv01.run.v1`, `mode` must be
-`preflight` (other modes need a schema revision), `serial_recorded` is always
-`false`, `report_path` is a relative path with no `.`/`..` segment, and there
-is no `token` property. A token value in `alias`, `report_path` or another
-checked field is rejected with `E_TOKEN_PRESENT`.
+`run-summary.json` must be `orchestella.fastlane.dv01.run.v1`. `mode` is one
+of `qualification`, `preflight` or `full`; report validation is defined for
+preflight only, while qualification and full summaries stay at the host-runner
+level. `serial_recorded` is always `false`. `report_path` and `report_sha256`
+are both `null` exactly when `report_present` is `false` (a run blocked before
+a report existed); otherwise `report_path` is a relative path with no `.`/`..`
+segment, and there is no `token` property. A token value in `alias`,
+`report_path` or another checked field is rejected with `E_TOKEN_PRESENT`.
 
 ## Tests
 

@@ -413,8 +413,11 @@ final class FastLaneDv01Probe {
                         vsockTimeoutMs, true);
                 preflightTerminal = FastLaneDv01Contract.classifyPreflightTerminal(
                         terminal.ok, terminal.fln1Code, terminal.detail, terminal.failureCode);
-                stages.put("terminal_pty", stageFor(preflightTerminal,
-                        "output_bytes=" + terminal.outputBytes));
+                stages.put("terminal_pty", terminal.ok
+                        ? passed("TERMINAL_EXIT_0",
+                                "output_bytes=" + terminal.outputBytes)
+                        : stageFor(preflightTerminal,
+                                "output_bytes=" + terminal.outputBytes));
             } else {
                 preflightTerminal = FastLaneDv01Contract.classifyPreflightTerminal(
                         false, -1, null, "VSOCK_FAILED");
@@ -428,7 +431,13 @@ final class FastLaneDv01Probe {
             } catch (Throwable failure) {
                 stopResult = FastLaneStopResult.UNCONFIRMED;
             }
-            session.close();
+            // stopRuntime already closes the channels. Re-entering close()
+            // after UNCONFIRMED would issue a second platform stop, so only
+            // close a settled session (where close() is a no-op stop).
+            if (stopResult == FastLaneStopResult.CONFIRMED
+                    || stopResult == FastLaneStopResult.ALREADY_STOPPED) {
+                session.close();
+            }
             switch (stopResult) {
                 case CONFIRMED -> {
                     preflightStop = "CONFIRMED";
@@ -1299,7 +1308,7 @@ final class FastLaneDv01Probe {
                         collector.outputSize(), false, false);
             }
             return new TerminalResult(true, "TERMINAL_EXIT_0", 0,
-                    collector.outputSize(), true, true);
+                    collector.outputSize(), true, !markerOnly);
         } catch (FastLaneException failure) {
             terminalDiagnostic = diagnostic(failure);
             observeFailure(FastLaneDv01Contract.classifyFailure(failure.reason()),
