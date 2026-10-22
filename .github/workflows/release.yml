@@ -159,6 +159,11 @@ jobs:
       - name: Verify license, NOTICE and source-offer bundle
         run: python3 tools/release/check_licenses.py
 
+      - name: Guard against sensitive developer data
+        run: |
+          python3 tools/ci/check_sensitive_data.py --self-test
+          python3 tools/ci/check_sensitive_data.py
+
       - name: Assemble release bundle
         run: |
           set -euo pipefail

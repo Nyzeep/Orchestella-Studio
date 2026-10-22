@@ -1,0 +1,56 @@
+name: Sensitive data guard
+
+# Policy gate for docs/agent-handoff/DEFENSIVE_CONSTRAINTS/
+# SENSITIVE_DEVELOPER_DATA_POLICY.md section 3.2. It scans tracked media,
+# signing material and environment files, forbidden fields in added diff
+# lines and commit messages, and annotated tag messages. It never runs device
+# commands and never uploads artifacts.
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sensitive-data-guard:
+    name: Sensitive data guard
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run scanner self-test
+        run: python tools/ci/check_sensitive_data.py --self-test
+
+      - name: Scan changed data and messages
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git fetch --no-tags origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
+            python tools/ci/check_sensitive_data.py --range "origin/$BASE_REF...HEAD"
+          elif [ "$EVENT_NAME" = "push" ] && [ "$REF_TYPE" = "branch" ]; then
+            python tools/ci/check_sensitive_data.py --range "$BEFORE_SHA..$HEAD_SHA"
+          elif [ "$EVENT_NAME" = "push" ] && [ "$REF_TYPE" = "tag" ]; then
+            python tools/ci/check_sensitive_data.py --tag "$REF_NAME"
+          else
+            python tools/ci/check_sensitive_data.py
+          fi
