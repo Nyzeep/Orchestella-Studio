@@ -40,7 +40,7 @@ import org.json.JSONObject;
  * never ships in the application APK. It writes one small JSON document to the
  * QA app's private files directory; the host pulls it with run-as.
  *
- * <p>Three QA modes exist:
+ * <p>Four QA modes exist:
  *
  * <ul>
  *   <li>{@code qualification} only observes platform facts and never creates
@@ -49,7 +49,10 @@ import org.json.JSONObject;
  *       protected VM; it does not load a custom kernel or root filesystem and
  *       never enables networking;</li>
  *   <li>{@code custom-linux} runs a QA-private custom image on a device that
- *       advertises the non-protected capability bit; it refuses otherwise.</li>
+ *       advertises the non-protected capability bit; it refuses otherwise;</li>
+ *   <li>{@code fastlane-dv01} runs the protected Fast Lane payload lifecycle,
+ *       terminal PTY, encrypted-storage persistence and 20-cycle stop gate. It
+ *       requires a package id containing '.qa.dv01'.</li>
  * </ul>
  *
  * <p>The probe refuses to run unless the target package is a QA channel
@@ -61,6 +64,7 @@ public final class AvfQaProbeInstrumentation extends Instrumentation {
     private static final String MODE_QUALIFICATION = "qualification";
     private static final String MODE_PROTECTED_MICRODROID = "protected-microdroid";
     private static final String MODE_CUSTOM_LINUX = "custom-linux";
+    private static final String MODE_FASTLANE_DV01 = "fastlane-dv01";
     private static final String[] LAUNCH_STAGES = {
             "create", "run_returned", "vsock_handshake", "stop_cycles"
     };
@@ -111,7 +115,8 @@ public final class AvfQaProbeInstrumentation extends Instrumentation {
             String mode = arguments.getString("qaMode", MODE_QUALIFICATION);
             if (!MODE_QUALIFICATION.equals(mode)
                     && !MODE_PROTECTED_MICRODROID.equals(mode)
-                    && !MODE_CUSTOM_LINUX.equals(mode)) {
+                    && !MODE_CUSTOM_LINUX.equals(mode)
+                    && !MODE_FASTLANE_DV01.equals(mode)) {
                 fail(result, "QA_MODE_REJECTED");
                 return;
             }
@@ -128,6 +133,15 @@ public final class AvfQaProbeInstrumentation extends Instrumentation {
             // it is idempotent and keeps the probe correct if it is launched
             // before the Application hook on an unusual ROM.
             AvfHiddenApiExemption.installOnce();
+
+            if (MODE_FASTLANE_DV01.equals(mode)) {
+                if (!packageName.contains(".qa.dv01")) {
+                    fail(result, "QA_DV01_PACKAGE_REQUIRED");
+                    return;
+                }
+                runFastlaneDv01(target, arguments, token, stopDeadlineMs, result);
+                return;
+            }
 
             ReflectiveAvfPlatformAccess access = new ReflectiveAvfPlatformAccess(
                     target, target.getClassLoader(), AvfHiddenApiExemption::installOnce,
@@ -157,6 +171,27 @@ public final class AvfQaProbeInstrumentation extends Instrumentation {
         } catch (Throwable failure) {
             // No exception text: it can contain a path or a platform message.
             fail(result, "QA_PROBE_FAILED");
+        }
+    }
+
+    private void runFastlaneDv01(Context target, Bundle args, String token,
+            int stopDeadlineMs, Bundle result) {
+        try {
+            JSONObject report = new FastLaneDv01Probe(target, args, stopDeadlineMs).run();
+            File directory = new File(target.getFilesDir(), QA_DIRECTORY);
+            if (!directory.isDirectory() && !directory.mkdirs()) {
+                fail(result, "QA_DIRECTORY_UNAVAILABLE");
+                return;
+            }
+            String name = "fastlane-dv01-" + token + ".json";
+            File destination = new File(directory, name);
+            writeAtomically(destination, report.toString(2).getBytes(StandardCharsets.UTF_8));
+            result.putString("qa_probe_path", "files/" + QA_DIRECTORY + "/" + name);
+            result.putString("qa_outcome", report.optString("outcome", "unknown"));
+            finish(Activity.RESULT_OK, result);
+        } catch (Throwable failure) {
+            // No exception text: it can contain a path or a platform message.
+            fail(result, "QA_FASTLANE_PROBE_FAILED");
         }
     }
 

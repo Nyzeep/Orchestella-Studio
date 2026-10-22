@@ -21,6 +21,22 @@ val fastlaneToolboxDir: String? = providers.gradleProperty("orchestella.fastlane
     ?.trim()
     ?.ifEmpty { null }
 
+// Fast Lane protected-payload native library. The directory must contain
+// arm64-v8a/libfastlane_payload.so and must never contain the link-time
+// libvm_payload.so stub (the AVF APEX provides that library on device).
+val fastlanePayloadLibDir: String? = providers.gradleProperty("orchestella.fastlane.payloadLibDir")
+    .orNull
+    ?.trim()
+    ?.ifEmpty { null }
+
+// Windows has no python3 shim by default (python3 may be the Microsoft Store
+// alias). CI and Linux keep python3; local Windows runs can set PYTHON.
+val pythonExecutable: String = providers.environmentVariable("PYTHON")
+    .orNull
+    ?.trim()
+    ?.ifEmpty { null }
+    ?: if (System.getProperty("os.name").lowercase().contains("windows")) "python" else "python3"
+
 // Build channels separate public releases from internal development and isolated QA
 // builds (docs/standards/VERSIONING.md section 5). The default stays "release":
 // a plain :app:assembleDebug keeps the historical applicationId and versionName.
@@ -114,6 +130,10 @@ android {
         versionCode = 503
         versionName = "0.5.3"
         buildConfigField("boolean", "DEVELOPMENT_PREVIEW", "true")
+        // Payload builds store native libraries uncompressed and 16 KB aligned
+        // for the AVF loader; all other channels keep the extracted layout.
+        manifestPlaceholders["orcExtractNativeLibs"] =
+            if (fastlanePayloadLibDir == null) "true" else "false"
 
         ndk {
             abiFilters += "arm64-v8a"
@@ -162,7 +182,29 @@ android {
         sourceSets.getByName("main").resources.srcDir(toolboxRoot)
     }
 
+    if (fastlanePayloadLibDir != null) {
+        val payloadRoot = rootProject.file(fastlanePayloadLibDir)
+        require(payloadRoot.isDirectory && !Files.isSymbolicLink(payloadRoot.toPath())) {
+            "orchestella.fastlane.payloadLibDir must be an existing ordinary directory: $payloadRoot"
+        }
+        val payloadSo = File(payloadRoot, "arm64-v8a/libfastlane_payload.so")
+        require(payloadSo.isFile && !Files.isSymbolicLink(payloadSo.toPath())) {
+            "Fast Lane payload is missing arm64-v8a/libfastlane_payload.so: $payloadRoot"
+        }
+        require(!File(payloadRoot, "arm64-v8a/libvm_payload.so").exists()) {
+            "libvm_payload.so is an AVF APEX library and must not be packaged from $payloadRoot"
+        }
+        sourceSets.getByName("main").jniLibs.srcDir(payloadRoot)
+    }
+
     signingConfigs {
+        // The device AVF idsig path requires a v3 APK Signature Scheme block
+        // (v2-only APKs fail at VirtualMachineManager.create). Enabling v3/v4
+        // keeps the existing debug certificate and QA channel unchanged.
+        getByName("debug") {
+            enableV3Signing = true
+            enableV4Signing = true
+        }
         // Legacy isolated-QA channel. This is a debug key with historical fixed
         // credentials; it is never selected for a release build.
         val phase5Keystore = providers.gradleProperty("orchestella.phase5.debugKeystore").orNull
@@ -229,7 +271,11 @@ android {
 
     packaging {
         jniLibs {
-            useLegacyPackaging = true
+            // AVF loads the app payload from the APK and requires an
+            // uncompressed, 16 KB-aligned .so entry. Payload builds therefore
+            // use direct (non-legacy) native-library packaging; every other
+            // build keeps the historical extracted layout.
+            useLegacyPackaging = fastlanePayloadLibDir == null
             keepDebugSymbols += "**/liborchestella_qemu.so"
             keepDebugSymbols += "**/libdroidlayer_qemu.so"
         }
@@ -314,6 +360,8 @@ dependencies {
     // Pin the in-process hidden-API exemption (Apache-2.0, LSPosed). It grants
     // no permission and is installed once before any AVF class load.
     implementation("org.lsposed.hiddenapibypass:hiddenapibypass:6.1")
+    androidTestImplementation(project(":runtime:engine-fastlane"))
+    androidTestImplementation(project(":runtime:fastlane-terminal"))
     testImplementation(libs.junit)
 }
 
@@ -372,7 +420,7 @@ val checkFastlaneLicenses = tasks.register<Exec>("checkFastlaneLicenses") {
     group = "verification"
     description = "Checks Fast Lane toolbox licenses, pinned SHA256 values and NOTICE/SBOM coverage."
     workingDir(rootProject.projectDir)
-    commandLine("python3", "tools/fastlane-build/fastlane_build.py", "check-licenses")
+    commandLine(pythonExecutable, "tools/fastlane-build/fastlane_build.py", "check-licenses")
 }
 
 val verifyFastlaneToolboxApk = fastlaneToolboxDir?.let { toolboxProperty ->
@@ -384,7 +432,7 @@ val verifyFastlaneToolboxApk = fastlaneToolboxDir?.let { toolboxProperty ->
         val apk = layout.buildDirectory.file("outputs/apk/debug/app-debug.apk").get().asFile
         val runtimeManifest = rootProject.file(toolboxProperty).resolve("bin/manifest.json")
         val command = mutableListOf(
-            "python3",
+            pythonExecutable,
             "tools/fastlane-build/fastlane_build.py",
             "verify-apk",
             "--apk",
@@ -395,8 +443,47 @@ val verifyFastlaneToolboxApk = fastlaneToolboxDir?.let { toolboxProperty ->
         val sdk = providers.environmentVariable("ANDROID_HOME").orNull
             ?: providers.environmentVariable("ANDROID_SDK_ROOT").orNull
         val zipalign = sdk?.let { File(it, "build-tools/36.1.0/zipalign") }
-        if (zipalign?.isFile == true) {
-            command += listOf("--zipalign", zipalign.absolutePath)
+        val zipalignExe = sdk?.let { File(it, "build-tools/36.1.0/zipalign.exe") }
+        val zipalignPath = when {
+            zipalign?.isFile == true -> zipalign
+            zipalignExe?.isFile == true -> zipalignExe
+            else -> null
+        }
+        if (zipalignPath != null) {
+            command += listOf("--zipalign", zipalignPath.absolutePath)
+        }
+        commandLine(command)
+    }
+}
+
+// The payload gate is deliberately separate from the toolbox gate: it proves
+// the APK entry itself is stored, aligned and exported for the AVF loader.
+val verifyFastlanePayloadApk = fastlanePayloadLibDir?.let { payloadProperty ->
+    tasks.register<Exec>("verifyFastlanePayloadApk") {
+        group = "verification"
+        description = "Verifies the packaged arm64 Fast Lane payload, its symbol, zipalign and the absence of libvm_payload.so."
+        dependsOn("assembleDebug")
+        workingDir(rootProject.projectDir)
+        val apk = layout.buildDirectory.file("outputs/apk/debug/app-debug.apk").get().asFile
+        val sourceSo = rootProject.file(payloadProperty)
+            .resolve("arm64-v8a/libfastlane_payload.so")
+        val packagedSo = layout.buildDirectory.file(
+            "intermediates/stripped_native_libs/debug/stripDebugDebugSymbols/out/lib/arm64-v8a/libfastlane_payload.so"
+        ).get().asFile
+        val command = mutableListOf(
+            pythonExecutable,
+            "tools/fastlane-build/verify_payload_apk.py",
+            "--apk",
+            apk.absolutePath,
+            "--source-so",
+            sourceSo.absolutePath,
+            "--packaged-so",
+            packagedSo.absolutePath
+        )
+        val sdk = providers.environmentVariable("ANDROID_HOME").orNull
+            ?: providers.environmentVariable("ANDROID_SDK_ROOT").orNull
+        if (sdk != null) {
+            command += listOf("--sdk", sdk)
         }
         commandLine(command)
     }
@@ -416,6 +503,7 @@ tasks.register("fastlaneZeroDeviceCheck") {
         checkFastlaneLicenses,
     )
     verifyFastlaneToolboxApk?.let { dependsOn(it) }
+    verifyFastlanePayloadApk?.let { dependsOn(it) }
 }
 
 val syncGuestShellAssets by tasks.registering(Sync::class) {

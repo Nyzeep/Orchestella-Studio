@@ -102,6 +102,7 @@ NDK/arm64 `.so`：本环境没有 `ANDROID_NDK_HOME`，**未运行** `scripts/bu
 ## 6. 未验证 / not-tested
 
 - 真实 `AF_VSOCK` bind/accept、Microdroid `microdroid_app` SELinux、`/mnt/apk` 执行、`devpts`、`/mnt/encryptedstore` 挂载；
+- 2026-10-21 设备结论：control vsock 与 PTY OPEN 已到达 payload；`/mnt/apk/bin/sh` 的 `realpath`/`stat`/`access(X_OK)` 成功，但 `execve` 返回 EACCES，guest AVC 为 `execute_no_trans`（`microdroid_app` → `system_file`）。这是平台 SELinux 策略阻塞，不是 PTY/storage 实现问题；storage marker 持久化仍 `not-tested`。见 DV-01A。
 - 真实 `distccd --inetd`（zero-device 用 `/bin/sh -c cat` 代替）；`distccd` 是否需要 `--allow` 的 inetd 行为待 P09/DV-03 确认；
 - Termux bootstrap 的 `$PREFIX`/RUNPATH/symlink 在只读 APK 前缀中的可用性；
 - NDK arm64 构建与 16 KB 对齐；

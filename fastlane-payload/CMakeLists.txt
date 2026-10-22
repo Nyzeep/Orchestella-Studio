@@ -48,9 +48,13 @@ if(ANDROID)
     # Link-time stub only. The device resolves libvm_payload.so from the AVF
     # APEX; this stub must never be packaged into the APK.
     add_library(vm_payload_stub SHARED src/vm_payload_stub.cpp)
+    target_include_directories(vm_payload_stub PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
     set_target_properties(vm_payload_stub PROPERTIES OUTPUT_NAME vm_payload)
     add_library(fastlane_payload SHARED src/main.cpp)
     target_link_libraries(fastlane_payload PRIVATE fastlane_payload_core vm_payload_stub log)
+    # Android 16 KB page compatibility: every PT_LOAD must be 16 KB aligned.
+    target_link_options(vm_payload_stub PRIVATE -Wl,-z,max-page-size=16384)
+    target_link_options(fastlane_payload PRIVATE -Wl,-z,max-page-size=16384)
     target_compile_options(fastlane_payload PRIVATE -Wall -Wextra -Werror)
     set_target_properties(fastlane_payload PROPERTIES
         OUTPUT_NAME "fastlane_payload"
