@@ -1,6 +1,7 @@
 package io.github.nyzeep.orchestella.runtime.fastlane;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
@@ -409,6 +410,29 @@ public final class FastLaneDv01ContractTest {
             assertTrue("schema has no not_tested value " + value,
                     schema.contains("\"" + value + "\""));
         }
+    }
+
+    @Test
+    public void preflightReaderUsesThePlatformVirtualizationFeature() throws IOException {
+        String source = Files.readString(findRepoFile(
+                "app/src/androidTest/java/io/github/nyzeep/orchestella/FastLaneDv01Probe.java"));
+        // PackageManager exposes "...virtualization_framework" with an
+        // underscore; a dot form silently reports false on every device.
+        assertFalse(source.contains("\"android.software.virtualization.framework\""));
+        assertTrue(source.contains("AvfCapabilityEvaluator.VIRTUALIZATION_FEATURE"));
+    }
+
+    private static Path findRepoFile(String relative) {
+        Path directory = Paths.get(System.getProperty("user.dir")).toAbsolutePath();
+        for (int depth = 0; depth < 8 && directory != null; depth++) {
+            Path candidate = directory.resolve(relative);
+            if (Files.isRegularFile(candidate)) {
+                return candidate;
+            }
+            directory = directory.getParent();
+        }
+        throw new AssertionError(relative + " not found from "
+                + System.getProperty("user.dir"));
     }
 
     private static Path findPreflightSchema() {

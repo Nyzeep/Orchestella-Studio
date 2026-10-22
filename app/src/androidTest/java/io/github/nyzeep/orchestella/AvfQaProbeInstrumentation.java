@@ -233,7 +233,7 @@ public final class AvfQaProbeInstrumentation extends Instrumentation {
         }
         facts.put("abis", abis);
         facts.put("feature", target.getPackageManager().hasSystemFeature(
-                "android.software.virtualization_framework"));
+                AvfCapabilityEvaluator.VIRTUALIZATION_FEATURE));
         facts.put("build_id", safeToken(Build.ID, 96));
         facts.put("release", safeToken(Build.VERSION.RELEASE, 32));
         facts.put("fingerprint_sha256",
