@@ -10,6 +10,7 @@ import android.os.SystemClock;
 import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator;
 import io.github.nyzeep.orchestella.runtime.capability.AvfPlatformFacts;
 import io.github.nyzeep.orchestella.runtime.engineavf.ReflectiveAvfPlatformAccess;
+import io.github.nyzeep.orchestella.runtime.fastlane.FastLaneDv01Contract;
 import java.io.BufferedReader;
 import java.io.Closeable;
 import java.io.File;
@@ -40,7 +41,7 @@ import org.json.JSONObject;
  * never ships in the application APK. It writes one small JSON document to the
  * QA app's private files directory; the host pulls it with run-as.
  *
- * <p>Four QA modes exist:
+ * <p>Five QA modes exist:
  *
  * <ul>
  *   <li>{@code qualification} only observes platform facts and never creates
@@ -53,6 +54,10 @@ import org.json.JSONObject;
  *   <li>{@code fastlane-dv01} runs the protected Fast Lane payload lifecycle,
  *       terminal PTY, encrypted-storage persistence and 20-cycle stop gate. It
  *       requires a package id containing '.qa.dv01'.</li>
+ *   <li>{@code fastlane-dv01-preflight} runs one bounded protected lifecycle
+ *       with one fixed terminal command and a stop/delete gate. It requires a
+ *       package id containing '.qa.dv01' and never runs cycles, persistence or
+ *       negative cases.</li>
  * </ul>
  *
  * <p>The probe refuses to run unless the target package is a QA channel
@@ -65,6 +70,8 @@ public final class AvfQaProbeInstrumentation extends Instrumentation {
     private static final String MODE_PROTECTED_MICRODROID = "protected-microdroid";
     private static final String MODE_CUSTOM_LINUX = "custom-linux";
     private static final String MODE_FASTLANE_DV01 = "fastlane-dv01";
+    private static final String MODE_FASTLANE_DV01_PREFLIGHT =
+            FastLaneDv01Contract.PREFLIGHT_MODE;
     private static final String[] LAUNCH_STAGES = {
             "create", "run_returned", "vsock_handshake", "stop_cycles"
     };
@@ -116,7 +123,8 @@ public final class AvfQaProbeInstrumentation extends Instrumentation {
             if (!MODE_QUALIFICATION.equals(mode)
                     && !MODE_PROTECTED_MICRODROID.equals(mode)
                     && !MODE_CUSTOM_LINUX.equals(mode)
-                    && !MODE_FASTLANE_DV01.equals(mode)) {
+                    && !MODE_FASTLANE_DV01.equals(mode)
+                    && !MODE_FASTLANE_DV01_PREFLIGHT.equals(mode)) {
                 fail(result, "QA_MODE_REJECTED");
                 return;
             }
@@ -134,12 +142,13 @@ public final class AvfQaProbeInstrumentation extends Instrumentation {
             // before the Application hook on an unusual ROM.
             AvfHiddenApiExemption.installOnce();
 
-            if (MODE_FASTLANE_DV01.equals(mode)) {
+            if (MODE_FASTLANE_DV01.equals(mode)
+                    || MODE_FASTLANE_DV01_PREFLIGHT.equals(mode)) {
                 if (!packageName.contains(".qa.dv01")) {
                     fail(result, "QA_DV01_PACKAGE_REQUIRED");
                     return;
                 }
-                runFastlaneDv01(target, arguments, token, stopDeadlineMs, result);
+                runFastlaneDv01(target, arguments, token, stopDeadlineMs, mode, result);
                 return;
             }
 
@@ -175,15 +184,19 @@ public final class AvfQaProbeInstrumentation extends Instrumentation {
     }
 
     private void runFastlaneDv01(Context target, Bundle args, String token,
-            int stopDeadlineMs, Bundle result) {
+            int stopDeadlineMs, String mode, Bundle result) {
         try {
-            JSONObject report = new FastLaneDv01Probe(target, args, stopDeadlineMs).run();
+            FastLaneDv01Probe probe = new FastLaneDv01Probe(target, args, stopDeadlineMs);
+            boolean preflight = MODE_FASTLANE_DV01_PREFLIGHT.equals(mode);
+            JSONObject report = preflight ? probe.runPreflight() : probe.run();
             File directory = new File(target.getFilesDir(), QA_DIRECTORY);
             if (!directory.isDirectory() && !directory.mkdirs()) {
                 fail(result, "QA_DIRECTORY_UNAVAILABLE");
                 return;
             }
-            String name = "fastlane-dv01-" + token + ".json";
+            String prefix = preflight
+                    ? FastLaneDv01Contract.PREFLIGHT_REPORT_PREFIX : "fastlane-dv01-";
+            String name = prefix + token + ".json";
             File destination = new File(directory, name);
             writeAtomically(destination, report.toString(2).getBytes(StandardCharsets.UTF_8));
             result.putString("qa_probe_path", "files/" + QA_DIRECTORY + "/" + name);
@@ -220,7 +233,7 @@ public final class AvfQaProbeInstrumentation extends Instrumentation {
         }
         facts.put("abis", abis);
         facts.put("feature", target.getPackageManager().hasSystemFeature(
-                "android.software.virtualization_framework"));
+                AvfCapabilityEvaluator.VIRTUALIZATION_FEATURE));
         facts.put("build_id", safeToken(Build.ID, 96));
         facts.put("release", safeToken(Build.VERSION.RELEASE, 32));
         facts.put("fingerprint_sha256",

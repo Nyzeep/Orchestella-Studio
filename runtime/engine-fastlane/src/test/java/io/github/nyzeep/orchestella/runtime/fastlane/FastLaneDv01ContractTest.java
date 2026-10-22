@@ -1,6 +1,7 @@
 package io.github.nyzeep.orchestella.runtime.fastlane;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
@@ -9,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import org.junit.Test;
 
@@ -115,7 +117,7 @@ public final class FastLaneDv01ContractTest {
 
     @Test
     public void deviceAliasIsShortAndSafe() {
-        FastLaneDv01Contract.requireDeviceAlias("HONOR-MEY-AN00");
+        FastLaneDv01Contract.requireDeviceAlias("qa-device-01");
         assertThrows(IllegalArgumentException.class,
                 () -> FastLaneDv01Contract.requireDeviceAlias("device with spaces"));
         assertThrows(IllegalArgumentException.class,
@@ -196,5 +198,254 @@ public final class FastLaneDv01ContractTest {
                 FastLaneException.VM_CREATE_FAILED));
         assertEquals("FASTLANE_UNKNOWN", FastLaneDv01Contract.classifyFailure("OTHER"));
         assertEquals("FASTLANE_UNKNOWN", FastLaneDv01Contract.classifyFailure(null));
+    }
+
+    @Test
+    public void preflightStagesAreExactlyTheNineContractStages() {
+        assertEquals(9, FastLaneDv01Contract.PREFLIGHT_STAGES.size());
+        assertEquals(List.of(
+                "parameter_validation",
+                "platform_facts",
+                "create",
+                "run",
+                "payload_ready",
+                "control_hello",
+                "terminal_pty",
+                "stop",
+                "delete"), FastLaneDv01Contract.PREFLIGHT_STAGES);
+        Set<String> stages = new HashSet<>(FastLaneDv01Contract.PREFLIGHT_STAGES);
+        FastLaneDv01Contract.requirePreflightStages(stages);
+        stages.add("cycles");
+        assertThrows(IllegalArgumentException.class,
+                () -> FastLaneDv01Contract.requirePreflightStages(stages));
+    }
+
+    @Test
+    public void preflightStageResultsRequireStatusAndReasonCode() {
+        FastLaneDv01Contract.requirePreflightStageResultKeys(
+                Set.of("status", "reason_code"));
+        FastLaneDv01Contract.requirePreflightStageResultKeys(
+                Set.of("status", "reason_code", "detail"));
+        assertThrows(IllegalArgumentException.class,
+                () -> FastLaneDv01Contract.requirePreflightStageResultKeys(Set.of("status")));
+        assertThrows(IllegalArgumentException.class,
+                () -> FastLaneDv01Contract.requirePreflightStageResultKeys(
+                        Set.of("status", "reason_code", "message")));
+    }
+
+    @Test
+    public void preflightNotTestedKeepsTheThreeExactValues() {
+        assertEquals(List.of(
+                "encrypted_storage_persistence",
+                "20_cycles",
+                "negative_cases"), FastLaneDv01Contract.PREFLIGHT_NOT_TESTED);
+        FastLaneDv01Contract.requirePreflightNotTested(
+                FastLaneDv01Contract.PREFLIGHT_NOT_TESTED);
+        assertThrows(IllegalArgumentException.class,
+                () -> FastLaneDv01Contract.requirePreflightNotTested(
+                        List.of("encrypted_storage_persistence", "20_cycles")));
+    }
+
+    @Test
+    public void preflightAliasDefaultsToQaDevice() {
+        assertEquals("qa-device", FastLaneDv01Contract.preflightDeviceAlias(null));
+        assertEquals("qa-device", FastLaneDv01Contract.preflightDeviceAlias(""));
+        assertEquals("device-A.1", FastLaneDv01Contract.preflightDeviceAlias("device-A.1"));
+        assertThrows(IllegalArgumentException.class,
+                () -> FastLaneDv01Contract.preflightDeviceAlias("device with spaces"));
+        assertThrows(IllegalArgumentException.class,
+                () -> FastLaneDv01Contract.preflightDeviceAlias("x".repeat(33)));
+    }
+
+    @Test
+    public void preflightReportPathIsDeviceRelativeAndTokenScoped() {
+        assertEquals("files/avf-qa/fastlane-dv01-preflight-" + TOKEN + ".json",
+                FastLaneDv01Contract.preflightReportPath(TOKEN));
+        assertThrows(IllegalArgumentException.class,
+                () -> FastLaneDv01Contract.preflightReportPath("../escape"));
+        assertThrows(IllegalArgumentException.class,
+                () -> FastLaneDv01Contract.preflightReportPath("0123456789ABCDEF"));
+    }
+
+    @Test
+    public void preflightCycleCountIsExactlyOne() {
+        FastLaneDv01Contract.requirePreflightCycleCount(
+                FastLaneDv01Contract.PREFLIGHT_CYCLE_COUNT);
+        assertThrows(IllegalArgumentException.class,
+                () -> FastLaneDv01Contract.requirePreflightCycleCount(0));
+        assertThrows(IllegalArgumentException.class,
+                () -> FastLaneDv01Contract.requirePreflightCycleCount(20));
+    }
+
+    @Test
+    public void preflightInstanceIdIsSingleAndTokenScoped() {
+        String instance = FastLaneDv01Contract.preflightInstanceId(TOKEN);
+        assertEquals("dv01-0123456789ab-preflight", instance);
+        assertTrue(instance.length() <= 64);
+        assertThrows(IllegalArgumentException.class,
+                () -> FastLaneDv01Contract.preflightInstanceId("short"));
+    }
+
+    @Test
+    public void preflightReusesTheFullParameterGuards() {
+        assertThrows(IllegalArgumentException.class,
+                () -> FastLaneDv01Contract.requireRunToken("0123456789ABCDEF"));
+        assertThrows(IllegalArgumentException.class,
+                () -> FastLaneDv01Contract.requirePayloadName("libpayload.so"));
+        assertThrows(IllegalArgumentException.class,
+                () -> FastLaneDv01Contract.requireSha256("a".repeat(63), "toolbox"));
+        assertThrows(IllegalArgumentException.class,
+                () -> FastLaneDv01Contract.requirePorts(5100, 5100, 5102, 5103));
+    }
+
+    @Test
+    public void preflightFln1SevenExecveEaccesIsAPlatformBlock() {
+        FastLaneDv01Contract.TerminalClassification terminal =
+                FastLaneDv01Contract.classifyPreflightTerminal(
+                        false, 7, "execve_errno_13", "TERMINAL_ERROR_FLN1_7");
+        assertEquals("blocked", terminal.status);
+        assertEquals(FastLaneDv01Contract.TOOLBOX_EXEC_BLOCKED_BY_PLATFORM,
+                terminal.reasonCode);
+        assertEquals(7, terminal.fln1Code);
+        assertEquals("execve", terminal.execStage);
+        assertEquals(13, terminal.errno);
+    }
+
+    @Test
+    public void preflightTerminalKeepsSuccessAndOtherFailuresSanitized() {
+        FastLaneDv01Contract.TerminalClassification ok =
+                FastLaneDv01Contract.classifyPreflightTerminal(
+                        true, -1, null, "PREFLIGHT_TERMINAL_OK");
+        assertEquals("pass", ok.status);
+        assertEquals(FastLaneDv01Contract.PREFLIGHT_OUTCOME_OK, ok.reasonCode);
+        assertEquals("not-tested", ok.execStage);
+        assertEquals(-1, ok.fln1Code);
+        assertEquals(-1, ok.errno);
+
+        FastLaneDv01Contract.TerminalClassification access =
+                FastLaneDv01Contract.classifyPreflightTerminal(
+                        false, 7, "access_errno_13", "TERMINAL_ERROR_FLN1_7");
+        assertEquals("fail", access.status);
+        assertEquals("TERMINAL_ERROR_FLN1_7", access.reasonCode);
+        assertEquals(7, access.fln1Code);
+        assertEquals("unknown", access.execStage);
+        assertEquals(13, access.errno);
+
+        FastLaneDv01Contract.TerminalClassification vsock =
+                FastLaneDv01Contract.classifyPreflightTerminal(
+                        false, -1, null, "VSOCK_FAILED");
+        assertEquals("blocked", vsock.status);
+        assertEquals("VSOCK_FAILED", vsock.reasonCode);
+        assertEquals(-1, vsock.fln1Code);
+        assertEquals(-1, vsock.errno);
+    }
+
+    @Test
+    public void preflightOutcomeNormalizesImplementationValues() {
+        assertEquals(FastLaneDv01Contract.PREFLIGHT_OUTCOME_OK,
+                FastLaneDv01Contract.normalizePreflightOutcome("PREFLIGHT_PASS", true));
+        assertEquals(FastLaneDv01Contract.PREFLIGHT_OUTCOME_TERMINAL_BLOCKED,
+                FastLaneDv01Contract.normalizePreflightOutcome(
+                        FastLaneDv01Contract.TOOLBOX_EXEC_BLOCKED_BY_PLATFORM, true));
+        assertEquals(FastLaneDv01Contract.PREFLIGHT_OUTCOME_TERMINAL_BLOCKED,
+                FastLaneDv01Contract.normalizePreflightOutcome("VSOCK_FAILED", true));
+        assertEquals(FastLaneDv01Contract.PREFLIGHT_OUTCOME_TERMINAL_BLOCKED,
+                FastLaneDv01Contract.normalizePreflightOutcome("PREFLIGHT_FAILED", true));
+        assertEquals(FastLaneDv01Contract.PREFLIGHT_OUTCOME_BLOCKED_EXTERNAL,
+                FastLaneDv01Contract.normalizePreflightOutcome("PREFLIGHT_FAILED", false));
+        assertEquals(FastLaneDv01Contract.PREFLIGHT_OUTCOME_BLOCKED_EXTERNAL,
+                FastLaneDv01Contract.normalizePreflightOutcome("BLOCKED_EXTERNAL", true));
+        assertEquals(FastLaneDv01Contract.PREFLIGHT_OUTCOME_TERMINAL_BLOCKED,
+                FastLaneDv01Contract.normalizePreflightOutcome("FAILED", true));
+        assertEquals(FastLaneDv01Contract.PREFLIGHT_OUTCOME_BLOCKED_EXTERNAL,
+                FastLaneDv01Contract.normalizePreflightOutcome("FAILED", false));
+    }
+
+    @Test
+    public void preflightOutcomeGateRequiresTerminalStopAndDelete() {
+        assertEquals(FastLaneDv01Contract.PREFLIGHT_OUTCOME_OK,
+                FastLaneDv01Contract.preflightOutcome(true, "pass",
+                        FastLaneDv01Contract.PREFLIGHT_OUTCOME_OK, "CONFIRMED", "pass"));
+        assertEquals(FastLaneDv01Contract.PREFLIGHT_OUTCOME_TERMINAL_BLOCKED,
+                FastLaneDv01Contract.preflightOutcome(true, "pass",
+                        FastLaneDv01Contract.PREFLIGHT_OUTCOME_OK, "UNCONFIRMED", "pass"));
+        assertEquals(FastLaneDv01Contract.PREFLIGHT_OUTCOME_TERMINAL_BLOCKED,
+                FastLaneDv01Contract.preflightOutcome(true, "blocked",
+                        FastLaneDv01Contract.TOOLBOX_EXEC_BLOCKED_BY_PLATFORM,
+                        "CONFIRMED", "pass"));
+        assertEquals(FastLaneDv01Contract.PREFLIGHT_OUTCOME_TERMINAL_BLOCKED,
+                FastLaneDv01Contract.preflightOutcome(true, "pass",
+                        FastLaneDv01Contract.PREFLIGHT_OUTCOME_OK, "CONFIRMED", "fail"));
+        assertEquals(FastLaneDv01Contract.PREFLIGHT_OUTCOME_BLOCKED_EXTERNAL,
+                FastLaneDv01Contract.preflightOutcome(false, "blocked",
+                        "PERMISSION_DENIED", "NOT_TESTED", "blocked"));
+    }
+
+    @Test
+    public void preflightReportRequiresTheSchemaKeys() {
+        Set<String> keys = new HashSet<>(
+                FastLaneDv01Contract.PREFLIGHT_REQUIRED_REPORT_KEYS);
+        FastLaneDv01Contract.requirePreflightReportKeys(keys);
+        keys.remove("mode");
+        assertThrows(IllegalArgumentException.class,
+                () -> FastLaneDv01Contract.requirePreflightReportKeys(keys));
+    }
+
+    @Test
+    public void preflightConstantsMatchTheCheckedInSchema() throws IOException {
+        String schema = Files.readString(findPreflightSchema());
+        assertTrue(schema.contains("\"" + FastLaneDv01Contract.PREFLIGHT_SCHEMA + "\""));
+        assertTrue(schema.contains("\"" + FastLaneDv01Contract.PREFLIGHT_MODE + "\""));
+        assertTrue(schema.contains("\"" + FastLaneDv01Contract.PREFLIGHT_OUTCOME_OK + "\""));
+        assertTrue(schema.contains(
+                "\"" + FastLaneDv01Contract.PREFLIGHT_OUTCOME_TERMINAL_BLOCKED + "\""));
+        assertTrue(schema.contains(
+                "\"" + FastLaneDv01Contract.PREFLIGHT_OUTCOME_BLOCKED_EXTERNAL + "\""));
+        assertTrue(schema.contains(
+                "\"" + FastLaneDv01Contract.TOOLBOX_EXEC_BLOCKED_BY_PLATFORM + "\""));
+        for (String stage : FastLaneDv01Contract.PREFLIGHT_STAGES) {
+            assertTrue("schema has no stage " + stage, schema.contains("\"" + stage + "\""));
+        }
+        for (String value : FastLaneDv01Contract.PREFLIGHT_NOT_TESTED) {
+            assertTrue("schema has no not_tested value " + value,
+                    schema.contains("\"" + value + "\""));
+        }
+    }
+
+    @Test
+    public void preflightReaderUsesThePlatformVirtualizationFeature() throws IOException {
+        String source = Files.readString(findRepoFile(
+                "app/src/androidTest/java/io/github/nyzeep/orchestella/FastLaneDv01Probe.java"));
+        // PackageManager exposes "...virtualization_framework" with an
+        // underscore; a dot form silently reports false on every device.
+        assertFalse(source.contains("\"android.software.virtualization.framework\""));
+        assertTrue(source.contains("AvfCapabilityEvaluator.VIRTUALIZATION_FEATURE"));
+    }
+
+    private static Path findRepoFile(String relative) {
+        Path directory = Paths.get(System.getProperty("user.dir")).toAbsolutePath();
+        for (int depth = 0; depth < 8 && directory != null; depth++) {
+            Path candidate = directory.resolve(relative);
+            if (Files.isRegularFile(candidate)) {
+                return candidate;
+            }
+            directory = directory.getParent();
+        }
+        throw new AssertionError(relative + " not found from "
+                + System.getProperty("user.dir"));
+    }
+
+    private static Path findPreflightSchema() {
+        Path directory = Paths.get(System.getProperty("user.dir")).toAbsolutePath();
+        for (int depth = 0; depth < 8 && directory != null; depth++) {
+            Path candidate = directory.resolve(
+                    "tools/fastlane-build/preflight-report.schema.json");
+            if (Files.isRegularFile(candidate)) {
+                return candidate;
+            }
+            directory = directory.getParent();
+        }
+        throw new AssertionError("preflight-report.schema.json not found from "
+                + System.getProperty("user.dir"));
     }
 }
