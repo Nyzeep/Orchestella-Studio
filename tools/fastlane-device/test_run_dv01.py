@@ -8,6 +8,7 @@ executable that impersonates adb.
 """
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import os
@@ -29,6 +30,11 @@ OTHER_TOKEN = "feedfacefeedface"
 TOOLBOX_SHA = "a" * 64
 QA_PACKAGE = "io.github.nyzeep.orchestella.qa.dv01"
 RUNNER = run_dv01.QA_RUNNER
+
+# The report fixtures must bind to the exact APK bytes the runner hashes.
+FIXTURE_APK_BYTES = b"fake app apk\n"
+FIXTURE_TEST_APK_BYTES = b"fake test apk\n"
+FIXTURE_APK_SHA = hashlib.sha256(FIXTURE_APK_BYTES).hexdigest()
 
 FAKE_ADB = """#!/usr/bin/env python3
 import json
@@ -96,7 +102,7 @@ def preflight_report(alias: str = "qa-device", **overrides) -> dict:
         "virtualization_framework": True,
         "protected_bit": True,
         "permission": "GRANTED",
-        "apk_sha256": "b" * 64,
+        "apk_sha256": FIXTURE_APK_SHA,
         "payload_sha256": "c" * 64,
         "toolbox_manifest_sha256": TOOLBOX_SHA,
         "stage_results": stages,
@@ -137,7 +143,7 @@ def full_report(alias: str = "qa-device", **overrides) -> dict:
         "device_alias": alias,
         "sdk_int": 36,
         "build_id": "test-build",
-        "apk_sha256": "b" * 64,
+        "apk_sha256": FIXTURE_APK_SHA,
         "payload_sha256": "c" * 64,
         "toolbox_manifest_sha256": TOOLBOX_SHA,
         "auth_token": "empty",
@@ -171,9 +177,9 @@ class RunnerTests(unittest.TestCase):
         self.fake_adb.chmod(0o755)
         self.log = self.root / "adb-calls.jsonl"
         self.apk = self.root / "app.apk"
-        self.apk.write_bytes(b"fake app apk\n")
+        self.apk.write_bytes(FIXTURE_APK_BYTES)
         self.test_apk = self.root / "test-apk.apk"
-        self.test_apk.write_bytes(b"fake test apk\n")
+        self.test_apk.write_bytes(FIXTURE_TEST_APK_BYTES)
         self.report_file = self.root / "device-report.json"
         # Keep the runner unit tests independent of whether the P3 validator
         # happens to be checked out next to the runner.  The two integration
@@ -285,6 +291,60 @@ class RunnerTests(unittest.TestCase):
             self.assertNotIn(SERIAL.encode("utf-8"), data, path.name)
             self.assertNotIn(token.encode("ascii"), data, path.name)
             self.assertNotIn(str(self.root).encode("utf-8"), data, path.name)
+
+    def _assert_value_absent(self, run_dir: Path, value: str) -> None:
+        needle = value.encode("utf-8")
+        for path in run_dir.rglob("*"):
+            if path.is_file():
+                self.assertNotIn(needle, path.read_bytes(), path.name)
+
+    def args_no_adb(
+        self,
+        mode: str = "preflight",
+        token: str = TOKEN,
+        serial: str | None = SERIAL,
+    ) -> list[str]:
+        args = self.args(mode=mode, token=token, serial=serial)
+        index = args.index("--adb")
+        del args[index : index + 2]
+        return args
+
+    def make_sdk_adb(self, name: str) -> Path:
+        platform_tools = self.root / name / "platform-tools"
+        platform_tools.mkdir(parents=True)
+        target = platform_tools / "adb"
+        target.write_bytes(self.fake_adb.read_bytes())
+        target.chmod(0o755)
+        return self.root / name
+
+    def record_validator_calls(self, validator: Path) -> list[list[str]]:
+        calls: list[list[str]] = []
+        original = run_dv01._run_external_validator
+
+        def recording(path: Path, arguments: list[str]) -> bool:
+            calls.append(list(arguments))
+            return original(path, arguments)
+
+        runner_patch = mock.patch(
+            "run_dv01._run_external_validator", side_effect=recording
+        )
+        runner_patch.start()
+        self.addCleanup(runner_patch.stop)
+        validator_patch = mock.patch(
+            "run_dv01._external_validator", return_value=validator
+        )
+        validator_patch.start()
+        self.addCleanup(validator_patch.stop)
+        return calls
+
+    @staticmethod
+    def real_validator() -> Path:
+        return (
+            Path(__file__).resolve().parents[2]
+            / "tools"
+            / "fastlane-schema"
+            / "validate.py"
+        )
 
     def test_qualification_command_sequence_and_artifacts(self) -> None:
         code, stdout, stderr = self.invoke(
@@ -797,10 +857,14 @@ class RunnerTests(unittest.TestCase):
                 self.args(), report=preflight_report()
             )
         self.assertEqual(code, 1, stderr)
+        summary = self.summary()
+        self.assertEqual(summary["outcome"], "PREFLIGHT_BLOCKED_EXTERNAL")
         self.assertEqual(
-            self.summary()["reason_code"], "SCHEMA_VALIDATION_FAILED"
+            summary["reason_code"], "SCHEMA_VALIDATION_FAILED"
         )
-        self.assertFalse((self.run_dir() / "report.json").exists())
+        self.assertEqual(summary["schema_validation"]["status"], "FAIL")
+        # A binding failure keeps the report for audit.
+        self.assertTrue((self.run_dir() / "report.json").is_file())
 
     def test_validator_present_but_blocked_before_validation(self) -> None:
         validator = self.root / "validate.py"
@@ -964,6 +1028,270 @@ class RunnerTests(unittest.TestCase):
         code, _stdout, stderr = self.invoke(args, report=preflight_report())
         self.assertEqual(code, 2)
         self.assertIn("ERROR=TOOLBOX_SHA_REJECTED", stderr)
+
+    # --- DV-01B P2 runner hardening: input binding -------------------------
+
+    def test_preflight_rejects_report_apk_sha_mismatch(self) -> None:
+        report = preflight_report(apk_sha256="d" * 64)
+        code, _stdout, stderr = self.invoke(self.args(), report=report)
+        self.assertEqual(code, 1, stderr)
+        summary = self.summary()
+        self.assertEqual(summary["outcome"], "PREFLIGHT_BLOCKED_EXTERNAL")
+        self.assertEqual(summary["reason_code"], "SCHEMA_VALIDATION_FAILED")
+        self.assertEqual(summary["schema_validation"]["status"], "FAIL")
+        self.assertFalse((self.run_dir() / "report.json").exists())
+        self.assert_clean_run_dir()
+
+    def test_preflight_rejects_report_toolbox_sha_mismatch(self) -> None:
+        report = preflight_report(toolbox_manifest_sha256="e" * 64)
+        code, _stdout, stderr = self.invoke(self.args(), report=report)
+        self.assertEqual(code, 1, stderr)
+        summary = self.summary()
+        self.assertEqual(summary["outcome"], "PREFLIGHT_BLOCKED_EXTERNAL")
+        self.assertEqual(summary["reason_code"], "SCHEMA_VALIDATION_FAILED")
+        self.assertFalse((self.run_dir() / "report.json").exists())
+
+    def test_full_rejects_report_apk_sha_mismatch(self) -> None:
+        report = full_report(apk_sha256="d" * 64)
+        code, _stdout, stderr = self.invoke(self.args(mode="full"), report=report)
+        self.assertEqual(code, 1, stderr)
+        summary = self.summary()
+        self.assertEqual(summary["outcome"], "FULL_BLOCKED")
+        self.assertEqual(summary["reason_code"], "SCHEMA_VALIDATION_FAILED")
+        self.assertFalse((self.run_dir() / "report.json").exists())
+
+    def test_validator_absent_preflight_is_local_only(self) -> None:
+        code, _stdout, stderr = self.invoke(self.args(), report=preflight_report())
+        self.assertEqual(code, 0, stderr)
+        summary = self.summary()
+        self.assertFalse(summary["schema_validation"]["full_schema_validation"])
+        self.assertEqual(summary["schema_validation"]["status"], "LOCAL_ONLY")
+
+    def test_strict_binding_uses_canonical_run_paths(self) -> None:
+        validator = self.real_validator()
+        if not validator.is_file():
+            self.skipTest("P3 validator is not checked out")
+        calls = self.record_validator_calls(validator)
+        code, _stdout, stderr = self.invoke(self.args(), report=preflight_report())
+        self.assertEqual(code, 0, stderr)
+        summary = self.summary()
+        self.assertEqual(summary["schema_validation"]["status"], "PASS")
+        self.assertEqual(len(calls), 1)
+        run_dir = self.run_dir()
+        self.assertEqual(
+            calls[0],
+            [
+                "--report",
+                str(run_dir / "report.json"),
+                "--summary",
+                str(run_dir / "run-summary.json"),
+                "--strict",
+            ],
+        )
+        self.assertFalse(
+            any(".validate-" in argument for argument in calls[0]), calls[0]
+        )
+
+    def test_strict_binding_detects_report_hash_mismatch(self) -> None:
+        validator = self.real_validator()
+        if not validator.is_file():
+            self.skipTest("P3 validator is not checked out")
+        original_write = run_dv01._atomic_write
+
+        def tampering_write(path: Path, data: bytes) -> None:
+            original_write(path, data)
+            if path.name == "report.json":
+                # Simulate on-disk corruption between the report write and
+                # the canonical binding check.
+                path.write_bytes(data + b" ")
+
+        with (
+            mock.patch("run_dv01._external_validator", return_value=validator),
+            mock.patch("run_dv01._atomic_write", side_effect=tampering_write),
+        ):
+            code, _stdout, stderr = self.invoke(
+                self.args(), report=preflight_report()
+            )
+        self.assertEqual(code, 1, stderr)
+        summary = self.summary()
+        self.assertEqual(summary["outcome"], "PREFLIGHT_BLOCKED_EXTERNAL")
+        self.assertEqual(summary["reason_code"], "SCHEMA_VALIDATION_FAILED")
+        self.assertEqual(summary["schema_validation"]["status"], "FAIL")
+        report_file = self.run_dir() / "report.json"
+        self.assertTrue(report_file.is_file())
+        self.assertTrue(report_file.read_bytes().endswith(b" "))
+
+    def test_qualification_report_is_not_bound_to_preflight_schema(self) -> None:
+        validator = self.real_validator()
+        if not validator.is_file():
+            self.skipTest("P3 validator is not checked out")
+        calls = self.record_validator_calls(validator)
+        code, _stdout, stderr = self.invoke(
+            self.args(mode="qualification"), report=qualification_report()
+        )
+        self.assertEqual(code, 0, stderr)
+        summary = self.summary()
+        self.assertEqual(summary["schema_validation"]["status"], "PASS")
+        self.assertEqual(len(calls), 1)
+        self.assertNotIn("--report", calls[0])
+        self.assertEqual(
+            calls[0],
+            ["--summary", str(self.run_dir() / "run-summary.json")],
+        )
+
+    # --- DV-01B P2 runner hardening: auth_token ---------------------------
+
+    def test_full_auth_token_empty_and_not_run_are_accepted(self) -> None:
+        for token, value in (
+            (TOKEN, "empty"),
+            (OTHER_TOKEN, "not-run"),
+        ):
+            with self.subTest(value=value):
+                code, _stdout, stderr = self.invoke(
+                    self.args(mode="full", token=token),
+                    report=full_report(auth_token=value),
+                )
+                self.assertEqual(code, 0, stderr)
+                archived = json.loads(
+                    (self.run_dir(token) / "report.json").read_text(
+                        encoding="utf-8"
+                    )
+                )
+                self.assertEqual(archived["auth_token"], value)
+
+    def test_full_auth_token_rejected_and_not_archived(self) -> None:
+        for token, value in (
+            (TOKEN, "Bearer AUTH-CANARY-7f3a"),
+            (OTHER_TOKEN, "9f3a" * 6),
+        ):
+            with self.subTest(value=value):
+                code, _stdout, stderr = self.invoke(
+                    self.args(mode="full", token=token),
+                    report=full_report(auth_token=value),
+                )
+                self.assertEqual(code, 1, stderr)
+                run_dir = self.run_dir(token)
+                summary = self.summary(token)
+                self.assertEqual(summary["outcome"], "FULL_BLOCKED")
+                self.assertEqual(
+                    summary["reason_code"], "REPORT_AUTH_TOKEN_REJECTED"
+                )
+                self.assertFalse((run_dir / "report.json").exists())
+                self._assert_value_absent(run_dir, value)
+
+    # --- DV-01B P2 runner hardening: adb resolution -----------------------
+
+    def test_adb_explicit_path_wins_over_path_lookup(self) -> None:
+        decoy = self.root / "decoy-adb"
+        decoy.write_text("#!/bin/sh\nexit 99\n", encoding="utf-8")
+        decoy.chmod(0o755)
+        with mock.patch("run_dv01.shutil.which", return_value=str(decoy)):
+            code, _stdout, stderr = self.invoke(self.args(), report=preflight_report())
+        self.assertEqual(code, 0, stderr)
+        self.assertTrue(self.calls())
+
+    def test_adb_resolves_from_path(self) -> None:
+        with mock.patch(
+            "run_dv01.shutil.which", return_value=str(self.fake_adb)
+        ):
+            code, _stdout, stderr = self.invoke(
+                self.args_no_adb(), report=preflight_report()
+            )
+        self.assertEqual(code, 0, stderr)
+        self.assertTrue(self.calls())
+
+    def test_adb_resolves_from_android_home(self) -> None:
+        sdk = self.make_sdk_adb("sdk-home")
+        with mock.patch("run_dv01.shutil.which", return_value=None):
+            code, _stdout, stderr = self.invoke(
+                self.args_no_adb(),
+                env={"ANDROID_HOME": str(sdk), "ANDROID_SDK_ROOT": ""},
+                report=preflight_report(),
+            )
+        self.assertEqual(code, 0, stderr)
+        self.assertTrue(self.calls())
+
+    def test_adb_resolves_from_android_sdk_root(self) -> None:
+        sdk = self.make_sdk_adb("sdk-root")
+        with mock.patch("run_dv01.shutil.which", return_value=None):
+            code, _stdout, stderr = self.invoke(
+                self.args_no_adb(),
+                env={"ANDROID_HOME": "", "ANDROID_SDK_ROOT": str(sdk)},
+                report=preflight_report(),
+            )
+        self.assertEqual(code, 0, stderr)
+        self.assertTrue(self.calls())
+
+    def test_adb_missing_fails_without_creating_run_dir(self) -> None:
+        with mock.patch("run_dv01.shutil.which", return_value=None):
+            code, _stdout, stderr = self.invoke(
+                self.args_no_adb(),
+                env={"ANDROID_HOME": "", "ANDROID_SDK_ROOT": ""},
+                report=preflight_report(),
+            )
+        self.assertEqual(code, 1)
+        self.assertIn("ERROR=ADB_UNAVAILABLE", stderr)
+        self.assertFalse(
+            (self.artifact_root / "protected-fastlane").exists()
+        )
+        self.assertFalse(self.log.exists())
+
+    def test_invalid_explicit_adb_does_not_fall_back(self) -> None:
+        args = self.args()
+        index = args.index("--adb") + 1
+        args[index] = str(self.root / "missing-adb")
+        with mock.patch(
+            "run_dv01.shutil.which", return_value=str(self.fake_adb)
+        ):
+            code, _stdout, stderr = self.invoke(args, report=preflight_report())
+        self.assertEqual(code, 1)
+        self.assertIn("ERROR=ADB_UNAVAILABLE", stderr)
+        self.assertEqual(self.run_dirs(), [])
+
+    # --- DV-01B P2 runner hardening: full reason_code ---------------------
+
+    def test_full_pass_has_null_reason_code(self) -> None:
+        code, _stdout, stderr = self.invoke(
+            self.args(mode="full"), report=full_report()
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assertIsNone(self.summary()["reason_code"])
+
+    def test_full_blocked_without_reason_code_uses_full_blocked(self) -> None:
+        code, _stdout, stderr = self.invoke(
+            self.args(mode="full"), report=full_report(outcome="FAILED")
+        )
+        self.assertEqual(code, 0, stderr)
+        summary = self.summary()
+        self.assertEqual(summary["outcome"], "FAILED")
+        self.assertEqual(summary["reason_code"], "FULL_BLOCKED")
+        self.assertTrue((self.run_dir() / "report.json").is_file())
+
+    def test_full_blocked_keeps_reported_reason_code(self) -> None:
+        code, _stdout, stderr = self.invoke(
+            self.args(mode="full"),
+            report=full_report(
+                outcome="REJECTED", reason_code="QA_ARGUMENTS_REJECTED"
+            ),
+        )
+        self.assertEqual(code, 0, stderr)
+        summary = self.summary()
+        self.assertEqual(summary["outcome"], "REJECTED")
+        self.assertEqual(summary["reason_code"], "QA_ARGUMENTS_REJECTED")
+
+    def test_real_p3_validator_accepts_full_blocked_summary(self) -> None:
+        validator = self.real_validator()
+        if not validator.is_file():
+            self.skipTest("P3 validator is not checked out")
+        with mock.patch("run_dv01._external_validator", return_value=validator):
+            code, _stdout, stderr = self.invoke(
+                self.args(mode="full"), report=full_report(outcome="FAILED")
+            )
+        self.assertEqual(code, 0, stderr)
+        summary = self.summary()
+        self.assertEqual(summary["reason_code"], "FULL_BLOCKED")
+        self.assertTrue(summary["schema_validation"]["full_schema_validation"])
+        self.assertEqual(summary["schema_validation"]["status"], "PASS")
 
 
 if __name__ == "__main__":
