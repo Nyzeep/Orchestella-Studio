@@ -29,9 +29,13 @@ python3 tools/fastlane-device/run_dv01.py \
 otherwise adb chooses its default device. The serial is only passed to adb in
 process memory.
 
-`--adb` accepts an alternate adb executable (used by the fake-adb tests).
-`--dry-run` prints the sanitized command plan and does not call adb or create
-an artifact directory.
+`--adb` accepts an alternate adb executable (used by the fake-adb tests). When
+it is omitted, the runner resolves adb from `PATH`, then
+`$ANDROID_HOME/platform-tools/adb`, then `$ANDROID_SDK_ROOT/platform-tools/adb`.
+If none exists, the run stops with `ADB_UNAVAILABLE` before an artifact
+directory is created. An explicit `--adb` that is not a file is an error; it
+never silently falls back to another path. `--dry-run` prints the sanitized
+command plan and does not call adb or create an artifact directory.
 
 ### Modes
 
@@ -48,6 +52,13 @@ the probe.
 `run-summary.json.outcome` is `QUALIFICATION_OBSERVED` or
 `QUALIFICATION_BLOCKED` for qualification, the contract outcome for preflight,
 and the full report outcome (or `FULL_BLOCKED` on a host failure) for full.
+A full report outcome other than `PASS` always carries a fixed `reason_code`:
+the report's code is kept when it has a valid one, otherwise the summary
+records `FULL_BLOCKED`. Only `PASS` may leave `reason_code` null.
+
+A full report's `auth_token` may only be `empty` or `not-run`. Any other value
+is rejected as `REPORT_AUTH_TOKEN_REJECTED` before `report.json` is written;
+the value is never archived, and it is not redacted in place.
 
 ## Artifact layout
 
@@ -105,14 +116,42 @@ There is no root fallback and no `--force` path. A failed grant is recorded as
 
 ## Report validation
 
-If `tools/fastlane-schema/validate.py` is present, the runner invokes it as:
+The runner archives `report.json` first, then `run-summary.json`, then
+validates the archived pair at its canonical paths. For preflight it invokes:
 
 ```text
-python3 tools/fastlane-schema/validate.py --report <report-path>
-python3 tools/fastlane-schema/validate.py --summary <summary-path>
+python3 tools/fastlane-schema/validate.py \
+  --report <run-dir>/report.json \
+  --summary <run-dir>/run-summary.json --strict
 ```
 
-A non-zero exit blocks the run with `SCHEMA_VALIDATION_FAILED`.
+`--strict` binds the summary to the archived bytes: canonical `report_path`,
+`report_sha256`, alias, outcome, and `apk_sha256` must all agree. A second
+validation copy is never used, because binding requires the canonical
+`report.json` name.
+
+Before any report is archived, the runner binds the report to its inputs:
+
+- `report.apk_sha256` must equal the SHA-256 of `--apk`;
+- `report.toolbox_manifest_sha256` must equal `--toolbox-sha`.
+
+A mismatch is rejected before `report.json` is written. The summary then
+records the mode's blocked outcome with `reason_code=SCHEMA_VALIDATION_FAILED`,
+`schema_validation.status=FAIL`, and exits non-zero. `status=FAIL` also covers
+this local input-binding rejection, before the validator could run.
+
+A validator failure after archiving (including a report/summary binding
+mismatch) rewrites the summary to the mode's blocked outcome with
+`reason_code=SCHEMA_VALIDATION_FAILED` and `schema_validation.status=FAIL`,
+keeps `report.json` for audit, and exits non-zero. The rewritten summary is
+not re-bound; its outcome intentionally no longer matches the report.
+
+`mode=full` has no v1 report schema in this repository, so a full report
+cannot be bound with `--strict`. Full runs still enforce the APK/toolbox input
+binding locally and schema-validate `run-summary.json`; only preflight reports
+get canonical `--strict` report/summary binding. `mode=qualification` reports
+are never sent to the preflight validator; only the qualification summary is
+validated.
 
 When the validator is absent, the runner performs local required-key and
 fixed-value checks only. `run-summary.json.schema_validation` then records
@@ -156,7 +195,9 @@ non-overwrite of existing runs.
   Override the app package with `--qa-package` if needed.
 - The runner does not inspect the APK manifest; it cannot prove that the APK
   applicationId matches `--qa-package` before install.
-- The report's `apk_sha256` and `toolbox_manifest_sha256` are archived as
-  reported. The runner does not cross-check them against `--apk` /
-  `--toolbox-sha`; the preflight contract's input-binding gate remains a
-  separate operator check.
+- `mode=full` reports have no v1 JSON schema here, so the runner cannot bind a
+  full report to its summary with `--strict`. It enforces the APK/toolbox
+  input binding locally and validates the summary; preflight is the mode with
+  canonical `--strict` report/summary binding.
+- The runner does not scan a full report for arbitrary secrets beyond the
+  `auth_token` allowlist and the token/serial substring checks.
