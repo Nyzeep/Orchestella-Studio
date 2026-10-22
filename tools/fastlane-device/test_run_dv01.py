@@ -818,6 +818,28 @@ class RunnerTests(unittest.TestCase):
         self.assertTrue((self.run_dir() / "report.json").is_file())
         self.assertEqual(len(self.commands()), 6)
 
+    def test_preflight_external_blocked_report_is_archived_with_exit_three(
+        self,
+    ) -> None:
+        report = preflight_report(
+            outcome="PREFLIGHT_BLOCKED_EXTERNAL",
+            permission="DENIED",
+            terminal={
+                "status": "blocked",
+                "reason_code": "PERMISSION_DENIED",
+                "fln1_code": -1,
+                "exec_stage": "not-tested",
+                "errno": -1,
+            },
+            stop="NOT_TESTED",
+        )
+        code, _stdout, stderr = self.invoke(self.args(), report=report)
+        self.assertEqual(code, 3, stderr)
+        summary = self.summary()
+        self.assertEqual(summary["outcome"], "PREFLIGHT_BLOCKED_EXTERNAL")
+        self.assertEqual(summary["reason_code"], "PERMISSION_DENIED")
+        self.assertTrue((self.run_dir() / "report.json").is_file())
+
     def test_instrumentation_failure_blocks_before_pull(self) -> None:
         code, _stdout, stderr = self.invoke(
             self.args(), env={"FAKE_ADB_FAIL": "instrument"}, report=preflight_report()
