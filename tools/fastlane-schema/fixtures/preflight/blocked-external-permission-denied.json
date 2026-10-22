@@ -25,7 +25,7 @@
     },
     "run": {
       "status": "blocked",
-      "reason_code": "CREATE_BLOCKED"
+      "reason_code": "PREFLIGHT_BLOCKED"
     },
     "payload_ready": {
       "status": "not-tested",
@@ -40,12 +40,12 @@
       "reason_code": "TERMINAL_NOT_REACHED"
     },
     "stop": {
-      "status": "not-tested",
-      "reason_code": "STOP_NOT_TESTED"
+      "status": "blocked",
+      "reason_code": "PREFLIGHT_BLOCKED"
     },
     "delete": {
-      "status": "not-tested",
-      "reason_code": "DELETE_SKIPPED"
+      "status": "blocked",
+      "reason_code": "PREFLIGHT_BLOCKED"
     }
   },
   "terminal": {
