@@ -57,9 +57,25 @@ if [ "${#SOFILES[@]}" -eq 0 ]; then
   exit 1
 fi
 
+# The NDK ships some LLVM host tools as symlinks, so match regular files and
+# symlinks alike. tools/ci/check-apk-16kb.sh resolves llvm-readelf the same way.
+# Only llvm-readelf is acceptable here: it prints one program header per line,
+# which is what tools/ci/check-elf-16kb.sh parses. GNU readelf wraps them onto
+# two lines and would make the 16 KB alignment check read the wrong column.
+find_ndk_tool() {
+  find "$NDK/toolchains/llvm/prebuilt" -path "*/bin/$1" \( -type f -o -type l \) 2>/dev/null \
+    | sort -V | tail -1 || true
+}
+
 READELF="${READELF:-}"
 if [ -z "$READELF" ]; then
-  READELF="$(find "$NDK/toolchains/llvm/prebuilt" \( -path '*/bin/llvm-readelf' -o -path '*/bin/llvm-readelf.exe' \) -type f | head -1)"
+  READELF="$(find_ndk_tool llvm-readelf)"
+fi
+if [ -z "$READELF" ]; then
+  READELF="$(find_ndk_tool llvm-readelf.exe)"
+fi
+if [ -z "$READELF" ]; then
+  READELF="$(command -v llvm-readelf || true)"
 fi
 if [ -z "$READELF" ] || [ ! -x "$READELF" ]; then
   echo "FAIL llvm-readelf not found under the NDK" >&2
@@ -68,12 +84,18 @@ fi
 
 READELF="$READELF" REQUIRE_BUNDLED_CLOSURE=0 bash "$ROOT/tools/ci/check-elf-16kb.sh" "${SOFILES[@]}"
 
-NM="$(dirname "$READELF")/llvm-nm"
-if [ ! -x "$NM" ] && [ -x "$NM.exe" ]; then
-  NM="$NM.exe"
+NM="${NM:-}"
+if [ -z "$NM" ]; then
+  NM="$(find_ndk_tool llvm-nm)"
 fi
-if [ ! -x "$NM" ]; then
-  echo "FAIL llvm-nm not found beside $READELF" >&2
+if [ -z "$NM" ]; then
+  NM="$(find_ndk_tool llvm-nm.exe)"
+fi
+if [ -z "$NM" ]; then
+  NM="$(command -v llvm-nm || true)"
+fi
+if [ -z "$NM" ] || [ ! -x "$NM" ]; then
+  echo "FAIL llvm-nm not found under the NDK" >&2
   exit 1
 fi
 NM_OUTPUT="$(mktemp)"
