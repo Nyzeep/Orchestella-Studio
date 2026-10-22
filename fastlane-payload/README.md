@@ -55,6 +55,12 @@ the AVF APEX, so the stub must not be packaged into the APK. The payload links
 - PTY children are started with an explicit environment (`PATH`, `HOME`, `TMPDIR`,
   `XDG_CACHE_HOME`, `TERM`, `LANG`) and `chdir` into `home`. Executables must
   resolve inside the APK toolbox; encrypted storage is never executable.
+- **Platform note (2026-10-21, DV-01A)**: on Android 16 the `microdroid_app` SELinux
+  domain is allowed `execute` but not `execute_no_trans` on `system_file`.
+  `access(X_OK)` on `/mnt/apk/bin/sh` succeeds, while `execve` returns EACCES. This is
+  an external platform policy blocker, not a ZIP/toolbox packaging defect; see
+  `.scratch/orchestella-fastlane/issues/DV-01A-toolbox-exec-selinux.md`. Do not
+  substitute `/system/bin/sh`, encrypted-storage execution or an in-process shell.
 - Export writes a ustar/PAX tar stream of `home` and `workspace`; symlinks,
   sockets, devices, denied credential names (case-insensitive), and `..` paths are
   rejected. A single file is limited to 8 GiB−1 (ustar's 11 octal digits) and the

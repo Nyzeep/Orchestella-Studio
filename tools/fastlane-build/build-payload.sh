@@ -59,7 +59,7 @@ fi
 
 READELF="${READELF:-}"
 if [ -z "$READELF" ]; then
-  READELF="$(find "$NDK/toolchains/llvm/prebuilt" -path '*/bin/llvm-readelf' -type f | head -1)"
+  READELF="$(find "$NDK/toolchains/llvm/prebuilt" \( -path '*/bin/llvm-readelf' -o -path '*/bin/llvm-readelf.exe' \) -type f | head -1)"
 fi
 if [ -z "$READELF" ] || [ ! -x "$READELF" ]; then
   echo "FAIL llvm-readelf not found under the NDK" >&2
@@ -69,6 +69,9 @@ fi
 READELF="$READELF" REQUIRE_BUNDLED_CLOSURE=0 bash "$ROOT/tools/ci/check-elf-16kb.sh" "${SOFILES[@]}"
 
 NM="$(dirname "$READELF")/llvm-nm"
+if [ ! -x "$NM" ] && [ -x "$NM.exe" ]; then
+  NM="$NM.exe"
+fi
 if [ ! -x "$NM" ]; then
   echo "FAIL llvm-nm not found beside $READELF" >&2
   exit 1

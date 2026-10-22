@@ -1,0 +1,420 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:orchestella:fastlane:dv01:preflight:v1",
+  "title": "Orchestella Fast Lane DV-01 preflight report",
+  "description": "Sanitized, device-independent preflight report for one bounded DV-01B lifecycle. Raw messages, paths, serials, models, account IDs, tokens and logcat are not part of this schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "mode",
+    "device_alias",
+    "sdk_int",
+    "abi",
+    "virtualization_framework",
+    "protected_bit",
+    "permission",
+    "apk_sha256",
+    "payload_sha256",
+    "toolbox_manifest_sha256",
+    "stage_results",
+    "terminal",
+    "stop",
+    "outcome",
+    "started_at_utc",
+    "finished_at_utc",
+    "not_tested"
+  ],
+  "properties": {
+    "schema": {
+      "const": "orchestella.fastlane.dv01.preflight.v1"
+    },
+    "mode": {
+      "const": "fastlane-dv01-preflight"
+    },
+    "device_alias": {
+      "type": "string",
+      "description": "Operator-provided stable alias; never a serial, model or account.",
+      "pattern": "^[A-Za-z0-9._-]{1,32}$"
+    },
+    "sdk_int": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+    },
+    "abi": {
+      "type": "string",
+      "description": "Primary ABI only; no full ABI list or device fingerprint.",
+      "pattern": "^[a-z0-9_-]{1,32}$"
+    },
+    "virtualization_framework": {
+      "type": "boolean"
+    },
+    "protected_bit": {
+      "type": "boolean"
+    },
+    "permission": {
+      "type": "string",
+      "enum": ["GRANTED", "DENIED", "UNKNOWN", "NOT_APPLICABLE"]
+    },
+    "apk_sha256": {
+      "$ref": "#/$defs/sha256OrNotTested"
+    },
+    "payload_sha256": {
+      "$ref": "#/$defs/sha256OrNotTested"
+    },
+    "toolbox_manifest_sha256": {
+      "$ref": "#/$defs/sha256OrNotTested"
+    },
+    "stage_results": {
+      "type": "object",
+      "description": "All nine preflight stages are required even when a stage was not reached.",
+      "required": [
+        "parameter_validation",
+        "platform_facts",
+        "create",
+        "run",
+        "payload_ready",
+        "control_hello",
+        "terminal_pty",
+        "stop",
+        "delete"
+      ],
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_]{0,63}$"
+      },
+      "properties": {
+        "parameter_validation": { "$ref": "#/$defs/stageResult" },
+        "platform_facts": { "$ref": "#/$defs/stageResult" },
+        "create": { "$ref": "#/$defs/stageResult" },
+        "run": { "$ref": "#/$defs/stageResult" },
+        "payload_ready": { "$ref": "#/$defs/stageResult" },
+        "control_hello": { "$ref": "#/$defs/stageResult" },
+        "terminal_pty": { "$ref": "#/$defs/stageResult" },
+        "stop": { "$ref": "#/$defs/stageResult" },
+        "delete": { "$ref": "#/$defs/stageResult" }
+      },
+      "additionalProperties": { "$ref": "#/$defs/stageResult" }
+    },
+    "terminal": {
+      "$ref": "#/$defs/terminal"
+    },
+    "stop": {
+      "type": "string",
+      "enum": ["CONFIRMED", "UNCONFIRMED", "ALREADY_STOPPED", "NOT_TESTED"]
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "PREFLIGHT_TERMINAL_OK",
+        "PREFLIGHT_TERMINAL_BLOCKED",
+        "PREFLIGHT_BLOCKED_EXTERNAL"
+      ]
+    },
+    "started_at_utc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "finished_at_utc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "not_tested": {
+      "type": "array",
+      "description": "Must name the three out-of-scope areas; extra safe reason values are allowed.",
+      "minItems": 3,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9_]{1,64}$"
+      },
+      "allOf": [
+        { "contains": { "const": "encrypted_storage_persistence" } },
+        { "contains": { "const": "20_cycles" } },
+        { "contains": { "const": "negative_cases" } }
+      ]
+    },
+    "failure_codes": {
+      "type": "object",
+      "description": "Optional fixed failure taxonomy; never raw messages.",
+      "propertyNames": {
+        "pattern": "^[A-Z][A-Z0-9_]{1,63}$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["observed", "not-tested"]
+          },
+          "stage": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          },
+          "layer": {
+            "$ref": "#/$defs/diagnosticToken"
+          }
+        }
+      }
+    },
+    "qualification": {
+      "type": "object",
+      "description": "Optional platform-qualification snapshot; fixed enum/bool/int values only.",
+      "additionalProperties": false,
+      "properties": {
+        "access_state": {
+          "type": "string",
+          "enum": [
+            "AVAILABLE",
+            "HIDDEN_API_BLOCKED",
+            "PERMISSION_DENIED",
+            "REFLECTION_UNAVAILABLE",
+            "MODE_UNSUPPORTED",
+            "MODE_UNKNOWN"
+          ]
+        },
+        "exemption_state": {
+          "type": "string",
+          "enum": ["NOT_ATTEMPTED", "INSTALLED", "FAILED"]
+        },
+        "manager_present": {
+          "type": "boolean"
+        },
+        "manage_permission": {
+          "type": "string",
+          "enum": ["GRANTED", "DENIED", "UNKNOWN"]
+        },
+        "custom_permission": {
+          "type": "string",
+          "enum": ["GRANTED", "DENIED", "UNKNOWN"]
+        },
+        "protected_support": {
+          "type": "string",
+          "enum": ["SUPPORTED", "UNSUPPORTED", "UNKNOWN"]
+        },
+        "non_protected_support": {
+          "type": "string",
+          "enum": ["SUPPORTED", "UNSUPPORTED", "UNKNOWN"]
+        },
+        "capabilities_raw": {
+          "type": "integer",
+          "minimum": -1
+        },
+        "protected_bit": {
+          "type": "boolean"
+        }
+      }
+    },
+    "payload_ready": {
+      "type": "string",
+      "enum": ["pass", "not-observed", "not-tested"]
+    },
+    "vsock_control": {
+      "$ref": "#/$defs/diagnosticToken"
+    },
+    "vsock_terminal": {
+      "$ref": "#/$defs/diagnosticToken"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "outcome": { "const": "PREFLIGHT_TERMINAL_OK" } },
+        "required": ["outcome"]
+      },
+      "then": {
+        "properties": {
+          "terminal": {
+            "properties": {
+              "status": { "const": "pass" },
+              "reason_code": { "const": "PREFLIGHT_TERMINAL_OK" }
+            },
+            "required": ["status", "reason_code"]
+          },
+          "stop": { "const": "CONFIRMED" },
+          "stage_results": {
+            "properties": {
+              "terminal_pty": {
+                "properties": { "status": { "const": "pass" } },
+                "required": ["status"]
+              },
+              "stop": {
+                "properties": { "status": { "const": "pass" } },
+                "required": ["status"]
+              },
+              "delete": {
+                "properties": { "status": { "const": "pass" } },
+                "required": ["status"]
+              }
+            },
+            "required": ["terminal_pty", "stop", "delete"]
+          }
+        },
+        "required": ["terminal", "stop", "stage_results"]
+      }
+    },
+    {
+      "if": {
+        "properties": { "outcome": { "const": "PREFLIGHT_BLOCKED_EXTERNAL" } },
+        "required": ["outcome"]
+      },
+      "then": {
+        "properties": {
+          "terminal": {
+            "properties": {
+              "status": {
+                "enum": ["blocked", "fail"]
+              },
+              "reason_code": {
+                "enum": [
+                  "PREFLIGHT_BLOCKED_EXTERNAL",
+                  "HIDDEN_API_BLOCKED",
+                  "PERMISSION_DENIED",
+                  "PROTECTED_UNAVAILABLE",
+                  "PAYLOAD_VERIFY_FAILED",
+                  "QA_ARGUMENTS_REJECTED",
+                  "PREFLIGHT_FAILED"
+                ]
+              }
+            },
+            "required": ["reason_code"]
+          }
+        },
+        "required": ["terminal"]
+      }
+    },
+    {
+      "if": {
+        "properties": { "stop": { "const": "UNCONFIRMED" } },
+        "required": ["stop"]
+      },
+      "then": {
+        "properties": {
+          "stage_results": {
+            "properties": {
+              "delete": {
+                "properties": { "status": { "const": "blocked" } },
+                "required": ["status"]
+              }
+            },
+            "required": ["delete"]
+          }
+        },
+        "required": ["stage_results"]
+      }
+    }
+  ],
+  "$defs": {
+    "sha256OrNotTested": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{64}|not-tested)$"
+    },
+    "diagnosticToken": {
+      "type": "string",
+      "description": "Fixed token or counter; no path, message or device identifier.",
+      "maxLength": 96,
+      "pattern": "^[A-Za-z0-9_=.,:;+ -]*$"
+    },
+    "stageResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reason_code"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["pass", "fail", "blocked", "not-tested"]
+        },
+        "reason_code": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{1,63}$"
+        },
+        "detail": {
+          "type": "string",
+          "description": "Optional fixed token/counter, e.g. elapsed_ms=1401; never a raw message or path.",
+          "maxLength": 96,
+          "pattern": "^[A-Za-z0-9_=.,:;+ -]*$"
+        }
+      }
+    },
+    "terminal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reason_code", "fln1_code", "exec_stage", "errno"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["pass", "fail", "blocked"]
+        },
+        "reason_code": {
+          "type": "string",
+          "pattern": "^(PREFLIGHT_TERMINAL_OK|TOOLBOX_EXEC_BLOCKED_BY_PLATFORM|VSOCK_FAILED|PREFLIGHT_BLOCKED_EXTERNAL|PREFLIGHT_FAILED|HIDDEN_API_BLOCKED|PERMISSION_DENIED|PROTECTED_UNAVAILABLE|PAYLOAD_VERIFY_FAILED|QA_ARGUMENTS_REJECTED|STOP_UNCONFIRMED|STOP_ALREADY_STOPPED|TERMINAL_[A-Z0-9_]+)$"
+        },
+        "fln1_code": {
+          "type": ["integer", "null"],
+          "minimum": -1,
+          "maximum": 255
+        },
+        "exec_stage": {
+          "type": "string",
+          "enum": [
+            "not-tested",
+            "open_pty",
+            "fork",
+            "execve",
+            "connect",
+            "hello",
+            "read",
+            "write",
+            "stop",
+            "unknown"
+          ]
+        },
+        "errno": {
+          "type": ["integer", "null"],
+          "minimum": -1,
+          "maximum": 4095
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "reason_code": { "const": "TOOLBOX_EXEC_BLOCKED_BY_PLATFORM" } },
+            "required": ["reason_code"]
+          },
+          "then": {
+            "properties": {
+              "status": { "const": "blocked" },
+              "fln1_code": { "const": 7 },
+              "exec_stage": { "const": "execve" },
+              "errno": { "const": 13 }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "reason_code": { "const": "PREFLIGHT_TERMINAL_OK" } },
+            "required": ["reason_code"]
+          },
+          "then": {
+            "properties": {
+              "status": { "const": "pass" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "reason_code": { "const": "VSOCK_FAILED" } },
+            "required": ["reason_code"]
+          },
+          "then": {
+            "properties": {
+              "status": { "const": "blocked" }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
