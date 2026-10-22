@@ -107,11 +107,23 @@ fixture 的 `apk_sha256` 已改为 fixture APK 字节的真实 SHA-256；不匹�
 ## 5. CI
 
 - PR：https://github.com/Nyzeep/Orchestella-Studio/pull/7
-- Sensitive data guard：run 39807630680（success）
-- Fast Lane DV-01B zero-device：run 39807630318
-- Fast Lane zero-device：run 39807630486
-- CI：run 39807630347
-- 最终状态以 PR checks 为准；若 CI 失败，本报告不得声称通过。
+- 代码提交（`e8c1390`）：
+  - Sensitive data guard：run 39807630680（success）
+  - Fast Lane DV-01B zero-device：run 39807630318（success）
+  - Fast Lane zero-device：run 39807630486（success）
+  - CI：run 39807630347（`Contract & Unit Tests` failure）
+- 文档/解析修复提交（`2dd0b75`）：
+  - Sensitive data guard：run 39807858201（success）
+  - Fast Lane DV-01B zero-device：run 39807858091（success）
+  - Fast Lane zero-device：run 39807858120（success）
+  - CI：run 39807858109（`Contract & Unit Tests` 在无关的 AVF 模拟 socket 用例上挂起，未完成）
+
+CI 失败/挂起的具体位置是 `:runtime:engine-avf:avfTerminalStreamContractTest` 的
+`closingTheGuestSideEndsTheHostStream`（先出现 `Connection reset`，后一次直接阻塞）。
+该任务与本次改动无交集；同一任务在本机从 ASCII 路径执行通过
+（`AVF_TERMINAL_STREAM_CONTRACT_TEST_OK ...`，17s）。历史上同一 job 在 `integration/fastlane-dv01b`
+与 `main` 上也有过通过记录，属间歇性环境 flake。最终门禁状态以 PR checks 为准；
+在 `Contract & Unit Tests` 未绿之前不合并，也不声称 CI 通过。
 
 ## 6. 边界与残余风险
 

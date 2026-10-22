@@ -124,11 +124,10 @@ python -m pytest tools/fastlane-schema -q
 ### CI
 
 - PR #7：https://github.com/Nyzeep/Orchestella-Studio/pull/7
-- Sensitive data guard：run 39807630680（success）
-- Fast Lane DV-01B zero-device：run 39807630318
-- Fast Lane zero-device：run 39807630486
-- CI：run 39807630347
-- 最终门禁状态以 PR checks 为准；若后续 CI 失败，本票状态保持 implemented 但不得声称 CI 通过。
+- 代码提交：Sensitive data guard run 39807630680（success）；Fast Lane DV-01B zero-device run 39807630318（success）；Fast Lane zero-device run 39807630486（success）；CI run 39807630347（`Contract & Unit Tests` failure）。
+- 文档/解析修复提交：Sensitive data guard run 39807858201（success）；Fast Lane DV-01B zero-device run 39807858091（success）；Fast Lane zero-device run 39807858120（success）；CI run 39807858109（`Contract & Unit Tests` 在无关的 AVF 模拟 socket 用例上挂起）。
+- 失败/挂起位置为 `:runtime:engine-avf:avfTerminalStreamContractTest`，与本次改动无交集；同一任务本机执行通过（17s），历史 main/integration 上也有通过记录，属间歇性环境 flake。
+- 最终门禁状态以 PR checks 为准；`Contract & Unit Tests` 未绿前不合并，也不声称 CI 通过。
 
 ### 剩余 not-tested（仅真机项）
 
