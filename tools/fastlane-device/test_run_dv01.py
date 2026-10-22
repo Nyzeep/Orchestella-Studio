@@ -752,6 +752,22 @@ class RunnerTests(unittest.TestCase):
         )
         self.assertFalse((self.run_dir() / "report.json").exists())
 
+    def test_validator_present_but_blocked_before_validation(self) -> None:
+        validator = self.root / "validate.py"
+        validator.write_text("import sys\nsys.exit(0)\n", encoding="utf-8")
+        with mock.patch("run_dv01._external_validator", return_value=validator):
+            code, _stdout, stderr = self.invoke(
+                self.args(),
+                env={"FAKE_ADB_FAIL": "app_install"},
+                report=preflight_report(),
+            )
+        self.assertEqual(code, 1, stderr)
+        summary = self.summary()
+        self.assertTrue(summary["schema_validation"]["full_schema_validation"])
+        self.assertEqual(summary["schema_validation"]["status"], "NOT_RUN")
+        readme = (self.run_dir() / "README.txt").read_text(encoding="utf-8")
+        self.assertIn("not executed (run blocked before validation)", readme)
+
     def test_sha256sums_include_artifacts(self) -> None:
         run_dir = self.root / "run"
         for name, data in (
