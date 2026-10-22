@@ -29,9 +29,10 @@ python3 tools/fastlane-schema/validate.py --report report.json --summary run-sum
 
 - `--report <path>` validates a device preflight report.
 - `--summary <path>` validates a host run summary.
-- `--schema-dir <dir>` reads both schema files from that directory. The default
-  locations are `tools/fastlane-build/preflight-report.schema.json` and this
-  directory's `run-summary.schema.json`.
+- `--schema-dir <dir>` reads the schema file(s) for the requested inputs from
+  that directory. The default locations are
+  `tools/fastlane-build/preflight-report.schema.json` and this directory's
+  `run-summary.schema.json`.
 - `--strict` enforces ISO-8601 date-times and, when both inputs are present,
   the report/summary binding: canonical `report.json`, matching SHA-256,
   alias, outcome and APK digest. With only `--summary --strict`, the validator
