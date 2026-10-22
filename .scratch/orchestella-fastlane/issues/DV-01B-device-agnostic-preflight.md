@@ -53,6 +53,7 @@ External gates: 真实设备 preflight；操作者显式触发 full；不得进�
 - [ ] 只有 `PREFLIGHT_TERMINAL_OK` 才允许操作者显式触发 full；本次 blocked，未触发。
 - [ ] P2 的 `qualification` / `full` 模式仍只有 fake-adb 测试，不构成真机证据。
 - [ ] P2 当前分别调用 validator 的 `--report` 和 `--summary`，未使用 `--strict` 的 report/summary binding；设备侧 APK/toolbox SHA 的输入绑定仍由操作者检查。
+- [ ] P2 hardening 跟踪票：[DV-01B-p2-runner-hardening](DV-01B-p2-runner-hardening.md)（本轮未实现、未测试）。
 
 ## 边界
 
