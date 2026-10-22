@@ -468,12 +468,12 @@ def _mkdir_private(path: Path) -> None:
         pass
 
 
-def _prepare_run_dir(plan: Plan) -> Path:
+def _prepare_run_dir(plan: Plan, date_name: str) -> Path:
     root = plan.artifact_root
     _mkdir_private(root)
     base = root / "protected-fastlane"
     _mkdir_private(base)
-    date_dir = base / utc_date()
+    date_dir = base / date_name
     _mkdir_private(date_dir)
     mode_dir = date_dir / plan.mode
     _mkdir_private(mode_dir)
@@ -878,7 +878,7 @@ def _report_reason(plan: Plan, report: dict) -> str | None:
 
 def execute(plan: Plan) -> int:
     started_at = utc_now()
-    run_dir = _prepare_run_dir(plan)
+    run_dir = _prepare_run_dir(plan, started_at[:10].replace("-", ""))
     adb = Adb(plan)
     report_bytes: bytes | None = None
     report_sha: str | None = None
