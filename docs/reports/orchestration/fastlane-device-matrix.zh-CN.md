@@ -88,3 +88,13 @@ Markdown 形式：
 - 不在矩阵里写 token；token 只出现在外部 artifact 路径和报告文件名。
 - 不把 alias 映射、序列号台账或真实型号写进本文件。
 - 新增列属于契约变更：先改 [Preflight 契约](fastlane-preflight-contract.zh-CN.md) 和 schema 版本，再改矩阵模板；不要在单次运行中临时加列。
+
+---
+
+## 7. 真实运行记录
+
+下列为实际 preflight 运行追加的记录；表头与 §2 一致，不含 token、序列号、型号或本机路径。
+
+| `run_date` | `device_alias` | `sdk_int` | `abi` | `virtualization_framework` | `protected_bit` | `manage_permission` | `preflight_outcome` | `terminal_reason` | `full_20_cycles` | `notes` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2026-10-22 | `qa-device` | 36 | arm64-v8a | true | true | GRANTED | `PREFLIGHT_TERMINAL_BLOCKED` | `TOOLBOX_EXEC_BLOCKED_BY_PLATFORM (fln1=7, execve errno=13)` | not-run | 平台 SELinux `execute_no_trans`；stop/delete 已确认；artifact 在外部根 |
