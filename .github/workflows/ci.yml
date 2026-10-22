@@ -63,6 +63,13 @@ jobs:
             :runtime:capability:check \
             :runtime:distro:check \
             :runtime:network:check \
+            :runtime:engine-fastlane:check \
+            :runtime:fastlane-distcc:check \
+            :runtime:fastlane-telemetry:check \
+            :runtime:fastlane-capability:check \
+            :runtime:fastlane-storage:check \
+            :runtime:fastlane-proxy:check \
+            :runtime:fastlane-terminal:check \
             :app:testDebugUnitTest
 
       - name: Upload Gradle gate log and failed-task summary
