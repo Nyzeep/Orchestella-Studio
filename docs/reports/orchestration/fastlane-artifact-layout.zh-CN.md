@@ -54,6 +54,8 @@ protected-fastlane/
 
 如果 runner 为 provenance 保留设备原始报告文件名（例如 `fastlane-dv01-preflight-<token>.json`），必须同时写 `report.json` 作为规范副本，并在 `run-summary.json.report_path` 中记录规范副本名；原始文件名副本只能作为附加文件，不得替代 `report.json`。两种情况下都不得覆盖同目录已有文件。
 
+`report.json` 是完成设备阶段后的必需产物。若 runner 在安装、授权、拉取或 schema 校验之前就阻塞，设备侧没有报告可归档：此时 `run-summary.json` 必须写 `report_present=false`、`report_path=null`、`report_sha256=null`，并在 `README.txt` 记录阻塞原因；不得伪造 `report.json`，也不得把阻塞写成完整 run。
+
 `report.json` 和 `run-summary.json` 都不包含：serial、model、Android ID、账号、token、原始 logcat、完整错误消息、本机绝对路径、真实 IP/MAC/SSID。
 
 ---

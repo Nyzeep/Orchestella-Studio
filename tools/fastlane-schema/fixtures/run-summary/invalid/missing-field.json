@@ -1,0 +1,14 @@
+{
+  "schema": "orchestella.fastlane.dv01.run.v1",
+  "mode": "preflight",
+  "alias": "qa-device",
+  "outcome": "PREFLIGHT_TERMINAL_OK",
+  "reason_code": null,
+  "report_path": "report.json",
+  "apk_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "test_apk_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "started_at_utc": "2026-10-22T09:59:00Z",
+  "finished_at_utc": "2026-10-22T10:02:00Z",
+  "adb_invoked": true,
+  "serial_recorded": false
+}

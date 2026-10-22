@@ -94,7 +94,7 @@
         "stop": { "$ref": "#/$defs/stageResult" },
         "delete": { "$ref": "#/$defs/stageResult" }
       },
-      "additionalProperties": { "$ref": "#/$defs/stageResult" }
+      "additionalProperties": false
     },
     "terminal": {
       "$ref": "#/$defs/terminal"

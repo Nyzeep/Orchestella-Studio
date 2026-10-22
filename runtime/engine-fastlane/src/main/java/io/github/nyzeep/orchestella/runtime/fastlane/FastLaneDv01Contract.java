@@ -1,9 +1,12 @@
 package io.github.nyzeep.orchestella.runtime.fastlane;
 
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -17,6 +20,57 @@ import java.util.regex.Pattern;
 public final class FastLaneDv01Contract {
     public static final String SCHEMA = "orchestella.fastlane.dv01.v1";
     public static final String PAYLOAD_NAME = "libfastlane_payload.so";
+
+    // DV-01B bounded preflight. The mode is a separate QA run, not a variant
+    // of the full report: it has its own schema, outcome values and stages.
+    public static final String PREFLIGHT_MODE = "fastlane-dv01-preflight";
+    public static final String PREFLIGHT_SCHEMA = "orchestella.fastlane.dv01.preflight.v1";
+    public static final String PREFLIGHT_REPORT_PREFIX = "fastlane-dv01-preflight-";
+    public static final String PREFLIGHT_DEFAULT_ALIAS = "qa-device";
+    public static final String PREFLIGHT_TERMINAL_MARKER = "DV01_TERMINAL_OK";
+    public static final String PREFLIGHT_TERMINAL_SCRIPT = "printf DV01_TERMINAL_OK";
+    public static final String PREFLIGHT_OUTCOME_OK = "PREFLIGHT_TERMINAL_OK";
+    public static final String PREFLIGHT_OUTCOME_TERMINAL_BLOCKED = "PREFLIGHT_TERMINAL_BLOCKED";
+    public static final String PREFLIGHT_OUTCOME_BLOCKED_EXTERNAL = "PREFLIGHT_BLOCKED_EXTERNAL";
+    public static final String TOOLBOX_EXEC_BLOCKED_BY_PLATFORM =
+            "TOOLBOX_EXEC_BLOCKED_BY_PLATFORM";
+    public static final String PREFLIGHT_EXEC_STAGE_NOT_TESTED = "not-tested";
+    public static final int PREFLIGHT_CYCLE_COUNT = 1;
+    public static final List<String> PREFLIGHT_STAGES = List.of(
+            "parameter_validation",
+            "platform_facts",
+            "create",
+            "run",
+            "payload_ready",
+            "control_hello",
+            "terminal_pty",
+            "stop",
+            "delete");
+    public static final List<String> PREFLIGHT_STAGE_RESULT_KEYS =
+            List.of("status", "reason_code");
+    public static final List<String> PREFLIGHT_NOT_TESTED = List.of(
+            "encrypted_storage_persistence",
+            "20_cycles",
+            "negative_cases");
+    public static final List<String> PREFLIGHT_REQUIRED_REPORT_KEYS = List.of(
+            "schema",
+            "mode",
+            "device_alias",
+            "sdk_int",
+            "abi",
+            "virtualization_framework",
+            "protected_bit",
+            "permission",
+            "apk_sha256",
+            "payload_sha256",
+            "toolbox_manifest_sha256",
+            "stage_results",
+            "terminal",
+            "stop",
+            "outcome",
+            "started_at_utc",
+            "finished_at_utc",
+            "not_tested");
     // Must match PayloadConfig in fastlane-payload/include/fastlane/runtime.h.
     public static final int DEFAULT_CONTROL_PORT = 5100;
     public static final int DEFAULT_TERMINAL_PORT = 5101;
@@ -127,6 +181,189 @@ public final class FastLaneDv01Contract {
             if (!keys.contains(required)) {
                 throw new IllegalArgumentException("report is missing key: " + required);
             }
+        }
+    }
+
+    /** Applies the preflight alias default, then the same safe-alias rules. */
+    public static String preflightDeviceAlias(String alias) {
+        if (alias == null || alias.isEmpty()) {
+            return PREFLIGHT_DEFAULT_ALIAS;
+        }
+        requireDeviceAlias(alias);
+        return alias;
+    }
+
+    /** Preflight creates exactly one VM; a cycle count is never a run option. */
+    public static void requirePreflightCycleCount(int cycleCount) {
+        if (cycleCount != PREFLIGHT_CYCLE_COUNT) {
+            throw new IllegalArgumentException("preflight cycle count must be 1");
+        }
+    }
+
+    /** The single protected VM instance owned by one preflight run. */
+    public static String preflightInstanceId(String token) {
+        return instanceId(token, "preflight");
+    }
+
+    /** Device-side report path from the preflight contract, never absolute. */
+    public static String preflightReportPath(String token) {
+        requireRunToken(token);
+        return "files/avf-qa/" + PREFLIGHT_REPORT_PREFIX + token + ".json";
+    }
+
+    /**
+     * The preflight report has exactly nine stages; an extra stage (for
+     * example a full-mode cycle table) is a contract violation.
+     */
+    public static void requirePreflightStages(Set<String> stages) {
+        Objects.requireNonNull(stages, "stages");
+        if (!stages.equals(new HashSet<>(PREFLIGHT_STAGES))) {
+            throw new IllegalArgumentException(
+                    "preflight must report exactly: " + PREFLIGHT_STAGES);
+        }
+    }
+
+    /**
+     * Every stage entry carries status and reason_code; detail is the only
+     * optional key, and no raw message or path may be added.
+     */
+    public static void requirePreflightStageResultKeys(Set<String> keys) {
+        Objects.requireNonNull(keys, "keys");
+        for (String required : PREFLIGHT_STAGE_RESULT_KEYS) {
+            if (!keys.contains(required)) {
+                throw new IllegalArgumentException("stage is missing key: " + required);
+            }
+        }
+        for (String key : keys) {
+            if (!PREFLIGHT_STAGE_RESULT_KEYS.contains(key) && !"detail".equals(key)) {
+                throw new IllegalArgumentException("stage has unsupported key: " + key);
+            }
+        }
+    }
+
+    /**
+     * The three out-of-scope areas are mandatory and may not be replaced by a
+     * generic "not run" marker.
+     */
+    public static void requirePreflightNotTested(Collection<String> values) {
+        Objects.requireNonNull(values, "values");
+        if (!values.containsAll(PREFLIGHT_NOT_TESTED)) {
+            throw new IllegalArgumentException(
+                    "preflight not_tested is missing one of: " + PREFLIGHT_NOT_TESTED);
+        }
+    }
+
+    /** The preflight report's required top-level keys, mirroring the schema. */
+    public static void requirePreflightReportKeys(Set<String> keys) {
+        Objects.requireNonNull(keys, "keys");
+        for (String required : PREFLIGHT_REQUIRED_REPORT_KEYS) {
+            if (!keys.contains(required)) {
+                throw new IllegalArgumentException("preflight report is missing key: " + required);
+            }
+        }
+    }
+
+    /**
+     * Classifies one terminal attempt. FLN1 7 with an execve EACCES is the
+     * Android 16 microdroid_app platform block and keeps only the fixed
+     * reason code plus fln1/exec stage/errno; its raw message and path never
+     * enter the classification.
+     */
+    public static TerminalClassification classifyPreflightTerminal(
+            boolean ok, int fln1Code, String detail, String failureReason) {
+        if (ok) {
+            return new TerminalClassification("pass", PREFLIGHT_OUTCOME_OK, -1,
+                    PREFLIGHT_EXEC_STAGE_NOT_TESTED, -1);
+        }
+        String normalizedDetail = detail == null ? "unclassified" : detail;
+        if (fln1Code == 7 && "execve_errno_13".equals(normalizedDetail)) {
+            return new TerminalClassification("blocked", TOOLBOX_EXEC_BLOCKED_BY_PLATFORM,
+                    7, "execve", 13);
+        }
+        if (fln1Code >= 0) {
+            return new TerminalClassification("fail", "TERMINAL_ERROR_FLN1_" + fln1Code,
+                    fln1Code, execStage(normalizedDetail), parseErrno(normalizedDetail));
+        }
+        String reason = failureReason == null || failureReason.isEmpty()
+                ? "TERMINAL_FAILED" : failureReason;
+        // The schema pins VSOCK_FAILED to a blocked terminal; every other
+        // non-FLN failure keeps the fail status of the failed attempt.
+        String status = "VSOCK_FAILED".equals(reason) ? "blocked" : "fail";
+        return new TerminalClassification(status, reason, -1, "unknown", -1);
+    }
+
+    /** Normalizes implementation-side values to the three contract outcomes. */
+    public static String normalizePreflightOutcome(String implementationValue,
+            boolean lifecycleStarted) {
+        if (implementationValue == null) {
+            return lifecycleStarted
+                    ? PREFLIGHT_OUTCOME_TERMINAL_BLOCKED : PREFLIGHT_OUTCOME_BLOCKED_EXTERNAL;
+        }
+        return switch (implementationValue) {
+            case PREFLIGHT_OUTCOME_OK, "PREFLIGHT_PASS" -> PREFLIGHT_OUTCOME_OK;
+            case PREFLIGHT_OUTCOME_TERMINAL_BLOCKED,
+                    TOOLBOX_EXEC_BLOCKED_BY_PLATFORM,
+                    "VSOCK_FAILED" -> PREFLIGHT_OUTCOME_TERMINAL_BLOCKED;
+            case PREFLIGHT_OUTCOME_BLOCKED_EXTERNAL,
+                    "BLOCKED_EXTERNAL" -> PREFLIGHT_OUTCOME_BLOCKED_EXTERNAL;
+            case "PREFLIGHT_FAILED", "FAILED" -> lifecycleStarted
+                    ? PREFLIGHT_OUTCOME_TERMINAL_BLOCKED : PREFLIGHT_OUTCOME_BLOCKED_EXTERNAL;
+            default -> lifecycleStarted
+                    ? PREFLIGHT_OUTCOME_TERMINAL_BLOCKED : PREFLIGHT_OUTCOME_BLOCKED_EXTERNAL;
+        };
+    }
+
+    /**
+     * Final outcome gate. A terminal pass is not enough: stop must be
+     * CONFIRMED and delete must have passed; otherwise the run is blocked.
+     */
+    public static String preflightOutcome(boolean lifecycleStarted, String terminalStatus,
+            String terminalReason, String stop, String deleteStatus) {
+        if (!lifecycleStarted) {
+            return PREFLIGHT_OUTCOME_BLOCKED_EXTERNAL;
+        }
+        if ("pass".equals(terminalStatus)
+                && PREFLIGHT_OUTCOME_OK.equals(terminalReason)
+                && "CONFIRMED".equals(stop)
+                && "pass".equals(deleteStatus)) {
+            return PREFLIGHT_OUTCOME_OK;
+        }
+        return PREFLIGHT_OUTCOME_TERMINAL_BLOCKED;
+    }
+
+    private static String execStage(String detail) {
+        for (String stage : new String[] {
+                "open_pty", "execve", "fork", "connect", "hello", "read", "write", "stop"}) {
+            if (detail.startsWith(stage)) {
+                return stage;
+            }
+        }
+        return "unknown";
+    }
+
+    private static int parseErrno(String detail) {
+        Matcher matcher = Pattern.compile("errno[=_-](\\d+)").matcher(detail);
+        return matcher.find() ? Integer.parseInt(matcher.group(1)) : -1;
+    }
+
+    /**
+     * Sanitized terminal classification. Only the five fields the preflight
+     * schema allows are exposed; there is deliberately no message or path.
+     */
+    public static final class TerminalClassification {
+        public final String status;
+        public final String reasonCode;
+        public final int fln1Code;
+        public final String execStage;
+        public final int errno;
+
+        private TerminalClassification(String status, String reasonCode, int fln1Code,
+                String execStage, int errno) {
+            this.status = status;
+            this.reasonCode = reasonCode;
+            this.fln1Code = fln1Code;
+            this.execStage = execStage;
+            this.errno = errno;
         }
     }
 

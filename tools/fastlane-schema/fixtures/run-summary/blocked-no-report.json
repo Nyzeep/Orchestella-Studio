@@ -1,0 +1,23 @@
+{
+  "schema": "orchestella.fastlane.dv01.run.v1",
+  "mode": "preflight",
+  "qa_mode": "fastlane-dv01-preflight",
+  "alias": "qa-device",
+  "outcome": "PREFLIGHT_BLOCKED_EXTERNAL",
+  "reason_code": "APK_INSTALL_FAILED",
+  "report_path": null,
+  "report_sha256": null,
+  "apk_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "test_apk_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "toolbox_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "started_at_utc": "2026-10-22T09:59:00Z",
+  "finished_at_utc": "2026-10-22T10:02:00Z",
+  "adb_invoked": true,
+  "serial_recorded": false,
+  "report_present": false,
+  "schema_validation": {
+    "validator": "tools/fastlane-schema/validate.py",
+    "full_schema_validation": true,
+    "status": "NOT_RUN"
+  }
+}
