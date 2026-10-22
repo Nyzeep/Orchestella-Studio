@@ -1,7 +1,7 @@
 # DV-01B: 设备无关 preflight 实现与零设备门禁
 
 Type: implementation / host-only verification
-Status: code-complete-zero-device-passed；device preflight blocked by platform（不改变 DV-01 结论）
+Status: merged-to-main；device preflight blocked by platform（合并后已按 main 重建重跑，结果一致；不改变 DV-01 结论）
 Priority: P1（full DV-01 之前的准入检查）
 Owner: Fast Lane integrator
 Blocked by: DV-01A 平台 SELinux `execute_no_trans`（真机 preflight 前不绕过）
@@ -46,13 +46,23 @@ External gates: 真实设备 preflight；操作者显式触发 full；不得进�
 - 未跑 full：平台阻塞按契约停止，未重试、未绕过。
 - 构建中发现并修复 P1 报告的 `virtualization_framework` 特性名笔误（点号 → 下划线，改用 `AvfCapabilityEvaluator.VIRTUALIZATION_FEATURE`），附源码级回归测试；修复前的一次运行作废，不作为证据。
 
+## 合并后重建与真机 preflight（2026-10-22，main @ e599610）
+
+- PR #6 已合并进 `main`（merge commit `e599610`，父提交 `47837f7` + `359f118`）；合并前修掉两处 CI 失败：CI/release 门禁补齐七个 `:runtime:fastlane-*:check`，payload 构建固定 NDK 27.0.12077973 与 CMake 3.22.1 并修正 NDK 内 llvm 工具定位。
+- 契约 §5.5「变更即失效」：合并后 QA 版本后缀带 merge commit SHA，APK 字节改变，因此从 `main` 全新重建 toolbox、payload 与两个 APK，未复用合并前的任何结论。
+- 重建产物：`orchestella.fastlane.dv01.qa.dv01` 通道（`versionName` 含 `e599610`），APK `f28d0749…`，androidTest APK `a72b44e2…`，payload `2a3ae6b4…`，toolbox manifest `e0352292…`。
+- P1 直连一次：`outcome=PREFLIGHT_TERMINAL_BLOCKED`，`terminal.reason_code=TOOLBOX_EXEC_BLOCKED_BY_PLATFORM`，`fln1_code=7`，`exec_stage=execve`，`errno=13`；stop `CONFIRMED`，delete `VM_DELETED`；九个阶段齐全，`not_tested` 仍为 `encrypted_storage_persistence`、`20_cycles`、`negative_cases`。
+- 归档：外部 artifact 根下 `protected-fastlane/20261022/preflight/<token>/`，含 `report.json`、`run-summary.json`、`commands.txt`、`artifacts/`、`SHA256SUMS`；未覆盖历史 run。
+- 校验：`validate.py --report --summary --strict` 三项全过（`OK preflight` / `OK summary` / `OK binding`），`SHA256SUMS` 逐项复算一致。
+- 未跑 full：结果为平台阻塞，按契约停止，未重试、未绕过；设备矩阵追加一行真实别名记录。
+
 ## 未完成 / 待执行
 
 - [x] 真实设备 preflight：已完成一次；结果为平台阻塞，见上节。
 - [x] 设备侧报告通过 `tools/fastlane-build/preflight-report.schema.json` 校验。
 - [ ] 只有 `PREFLIGHT_TERMINAL_OK` 才允许操作者显式触发 full；本次 blocked，未触发。
 - [ ] P2 的 `qualification` / `full` 模式仍只有 fake-adb 测试，不构成真机证据。
-- [ ] P2 当前分别调用 validator 的 `--report` 和 `--summary`，未使用 `--strict` 的 report/summary binding；设备侧 APK/toolbox SHA 的输入绑定仍由操作者检查。
+- [ ] P2 当前分别调用 validator 的 `--report` 和 `--summary`，未使用 `--strict` 的 report/summary binding；设备侧 APK/toolbox SHA 的输入绑定仍由操作者检查。（本轮归档校验已用 `--strict` 完成 report/summary binding，但 P2 runner 本身仍未切换）
 - [ ] P2 hardening 跟踪票：[DV-01B-p2-runner-hardening](DV-01B-p2-runner-hardening.md)（本轮未实现、未测试）。
 
 ## 边界
@@ -64,6 +74,6 @@ External gates: 真实设备 preflight；操作者显式触发 full；不得进�
 
 ## 证据
 
-- 分支：`integration/fastlane-dv01b`（基于 GitHub `main`）。
-- 合并节点：schema → preflight-mode → device-runner；worker 分支保留。
+- 分支：`integration/fastlane-dv01b` 已通过 PR #6 合并进 `main`（merge commit `e599610`，父提交 `47837f7` + `359f118`）。
+- 合并节点：schema → preflight-mode → device-runner；PR #6 以 merge commit 合入，未 squash、未 force、未打 tag。
 - 零设备日志与 pytest 输出在本会话 artifact；仓库只保留契约、schema、fixtures、runner 和本票。
