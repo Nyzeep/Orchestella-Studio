@@ -79,7 +79,6 @@ from __future__ import annotations
 import argparse
 import re
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
 from typing import Callable, Iterable
@@ -385,6 +384,8 @@ def run_self_test() -> bool:
             "Serial" + ": " + "device-b",
             "Serial" + ": " + "device-01",
             "Serial" + ": " + "redacted-serial-hash",
+            "adb" + " -s " + "device-a",
+            "adb" + " -s " + "redacted-serial-hash",
             "SerializableThing",
             "serializeSomething",
             "adb" + " -s " + "emulator" + "-5554",
@@ -738,4 +739,9 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        raise SystemExit(main())
+    except Exception:
+        print(FOUND_LINE)
+        print("category=scanner_error count=1")
+        raise SystemExit(1)
