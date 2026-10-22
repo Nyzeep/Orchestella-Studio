@@ -133,6 +133,14 @@ final class FastLaneDv01Probe {
     private FastLaneVirtualMachineApi api;
     private JSONObject qualification;
 
+    // Preflight-only state. A preflight probe instance never runs the full
+    // lifecycle, so these fields cannot leak into a full-mode report.
+    private String preflightStop = "NOT_TESTED";
+    private String preflightPermission = "UNKNOWN";
+    private String preflightToolboxSha = "not-tested";
+    private boolean preflightLifecycleStarted;
+    private FastLaneDv01Contract.TerminalClassification preflightTerminal;
+
     FastLaneDv01Probe(Context target, Bundle arguments, int stopDeadlineMs) {
         this.target = target;
         this.arguments = arguments == null ? Bundle.EMPTY : arguments;
@@ -166,6 +174,465 @@ final class FastLaneDv01Probe {
             }
         }
         return finishReport();
+    }
+
+    /**
+     * Bounded DV-01B preflight: one VM, one run, one fixed terminal command,
+     * one stop and one delete. It never starts a second VM, never writes a
+     * storage marker, never runs cycles or the negative-case matrix.
+     */
+    JSONObject runPreflight() {
+        preparePreflightNotTested();
+        try {
+            if (!parsePreflightArguments()) {
+                return finishPreflightReport();
+            }
+            if (!preflightIntegrityCheck()) {
+                return finishPreflightReport();
+            }
+            stages.put("parameter_validation", passed("QA_ARGUMENTS_VALID"));
+            if (!preflightPlatformFacts()) {
+                return finishPreflightReport();
+            }
+            preflightLifecycle();
+        } catch (Throwable failure) {
+            // No exception text: it can contain a path or a platform message.
+            try {
+                if (!stages.has("parameter_validation")) {
+                    stages.put("parameter_validation", blocked("PREFLIGHT_FAILED"));
+                }
+                preflightFillBlocked("PREFLIGHT_BLOCKED");
+                if (preflightTerminal == null) {
+                    preflightTerminal = FastLaneDv01Contract.classifyPreflightTerminal(
+                            false, -1, null, "PREFLIGHT_FAILED");
+                }
+                outcome = FastLaneDv01Contract.preflightOutcome(
+                        preflightLifecycleStarted, preflightTerminal.status,
+                        preflightTerminal.reasonCode, preflightStop,
+                        stages.has("delete")
+                                ? stages.getJSONObject("delete").optString("status", "fail")
+                                : "fail");
+            } catch (JSONException ignored) {
+                outcome = FastLaneDv01Contract.PREFLIGHT_OUTCOME_BLOCKED_EXTERNAL;
+            }
+        }
+        return finishPreflightReport();
+    }
+
+    private void preparePreflightNotTested() {
+        if (notTested.length() > 0) {
+            return;
+        }
+        for (String value : FastLaneDv01Contract.PREFLIGHT_NOT_TESTED) {
+            notTested.put(value);
+        }
+    }
+
+    private boolean parsePreflightArguments() {
+        try {
+            token = arguments.getString("qaRunToken");
+            FastLaneDv01Contract.requireRunToken(token);
+            String payload = arguments.getString("qaPayload", FastLaneDv01Contract.PAYLOAD_NAME);
+            FastLaneDv01Contract.requirePayloadName(payload);
+            toolboxSha = arguments.getString("qaToolboxSha");
+            FastLaneDv01Contract.requireSha256(toolboxSha, "qaToolboxSha");
+            deviceAlias = FastLaneDv01Contract.preflightDeviceAlias(
+                    arguments.getString("qaDeviceAlias"));
+            controlPort = boundedInt(arguments.getString("qaControlPort"),
+                    FastLaneDv01Contract.DEFAULT_CONTROL_PORT, 1024, 65535);
+            terminalPort = boundedInt(arguments.getString("qaTerminalPort"),
+                    FastLaneDv01Contract.DEFAULT_TERMINAL_PORT, 1024, 65535);
+            proxyPort = boundedInt(arguments.getString("qaProxyPort"),
+                    FastLaneDv01Contract.DEFAULT_PROXY_PORT, 1024, 65535);
+            distccPort = boundedInt(arguments.getString("qaDistccPort"),
+                    FastLaneDv01Contract.DEFAULT_DISTCC_PORT, 1024, 65535);
+            FastLaneDv01Contract.requirePorts(controlPort, terminalPort, proxyPort, distccPort);
+            payloadReadyDeadlineMs = boundedInt(arguments.getString("qaPayloadReadyDeadlineMs"),
+                    DEFAULT_PAYLOAD_READY_MS, 1000, MAX_PAYLOAD_READY_MS);
+            vsockTimeoutMs = boundedInt(arguments.getString("qaVsockTimeoutMs"),
+                    DEFAULT_VSOCK_TIMEOUT_MS, 1000, MAX_VSOCK_TIMEOUT_MS);
+            cycleCount = boundedInt(arguments.getString("qaCycleCount"),
+                    FastLaneDv01Contract.PREFLIGHT_CYCLE_COUNT, 1,
+                    FastLaneDv01Contract.MAX_CYCLE_COUNT);
+            FastLaneDv01Contract.requirePreflightCycleCount(cycleCount);
+            expectedPayloadSha = optionalSha("qaExpectedPayloadSha");
+            expectedApkSha = optionalSha("qaExpectedApkSha");
+            instanceMain = FastLaneDv01Contract.preflightInstanceId(token);
+            return true;
+        } catch (IllegalArgumentException | JSONException rejected) {
+            try {
+                // Never echo the rejected value; it may be a token or a path.
+                stages.put("parameter_validation", blocked("QA_ARGUMENTS_REJECTED"));
+                preflightFillBlocked("PREFLIGHT_BLOCKED");
+                preflightTerminal = FastLaneDv01Contract.classifyPreflightTerminal(
+                        false, -1, null, "QA_ARGUMENTS_REJECTED");
+                preflightStop = "NOT_TESTED";
+                outcome = FastLaneDv01Contract.PREFLIGHT_OUTCOME_BLOCKED_EXTERNAL;
+            } catch (JSONException ignored) {
+                outcome = FastLaneDv01Contract.PREFLIGHT_OUTCOME_BLOCKED_EXTERNAL;
+            }
+            return false;
+        }
+    }
+
+    private boolean preflightIntegrityCheck() throws JSONException {
+        File apk = apkFile();
+        if (apk == null || !apk.isFile()) {
+            return failPreflightIntegrity("APK_NOT_READABLE");
+        }
+        apkSha = sha256File(apk);
+        if (!apkSha.matches("[0-9a-f]{64}")) {
+            return failPreflightIntegrity("APK_NOT_READABLE");
+        }
+        payloadSha = sha256ZipEntry(apk, PAYLOAD_ENTRY);
+        String actualToolboxSha = sha256ZipEntry(apk, TOOLBOX_ENTRY);
+        if (payloadSha == null) {
+            return failPreflightIntegrity("PAYLOAD_ENTRY_MISSING");
+        }
+        if (actualToolboxSha == null || !actualToolboxSha.equals(toolboxSha)) {
+            return failPreflightIntegrity("TOOLBOX_SHA_MISMATCH");
+        }
+        preflightToolboxSha = actualToolboxSha;
+        if (!zipEntryExists(apk, SHELL_ENTRY)) {
+            return failPreflightIntegrity("TOOLBOX_SHELL_MISSING");
+        }
+        if (expectedPayloadSha != null && !expectedPayloadSha.equals(payloadSha)) {
+            return failPreflightIntegrity("PAYLOAD_SHA_MISMATCH");
+        }
+        if (expectedApkSha != null && !expectedApkSha.equals(apkSha)) {
+            return failPreflightIntegrity("APK_SHA_MISMATCH");
+        }
+        return true;
+    }
+
+    private boolean failPreflightIntegrity(String reason) throws JSONException {
+        stages.put("parameter_validation", failed(reason));
+        preflightFillBlocked("PREFLIGHT_BLOCKED");
+        // The preflight schema allows PAYLOAD_VERIFY_FAILED as the sanitized
+        // terminal reason; the stage keeps the finer fixed reason code.
+        preflightTerminal = FastLaneDv01Contract.classifyPreflightTerminal(
+                false, -1, null, "PAYLOAD_VERIFY_FAILED");
+        preflightStop = "NOT_TESTED";
+        outcome = FastLaneDv01Contract.PREFLIGHT_OUTCOME_BLOCKED_EXTERNAL;
+        return false;
+    }
+
+    private boolean preflightPlatformFacts() throws JSONException {
+        AvfHiddenApiExemption.State exemption = AvfHiddenApiExemption.installOnce();
+        openManager();
+        ReflectiveAvfPlatformAccess access = new ReflectiveAvfPlatformAccess(
+                target, target.getClassLoader(), AvfHiddenApiExemption::installOnce,
+                romBinding());
+        AvfPlatformFacts facts = access.observe();
+        preflightPermission = facts.managePermission().name();
+        qualification = new JSONObject();
+        qualification.put("access_state", facts.accessState().name());
+        qualification.put("exemption_state", facts.exemptionState().name());
+        qualification.put("manager_present", facts.managerPresent());
+        qualification.put("manage_permission", facts.managePermission().name());
+        qualification.put("custom_permission", facts.customPermission().name());
+        qualification.put("protected_support", facts.modeFacts().protectedVm().name());
+        qualification.put("non_protected_support", facts.modeFacts().nonProtectedVm().name());
+        qualification.put("capabilities_raw", readCapabilities());
+        qualification.put("protected_bit", hasProtectedBit());
+        stages.put("platform_facts", passed("PLATFORM_OBSERVED"));
+
+        String blockCode = null;
+        if (facts.accessState() == AvfPlatformFacts.AccessState.HIDDEN_API_BLOCKED) {
+            blockCode = "HIDDEN_API_BLOCKED";
+        } else if (facts.accessState() == AvfPlatformFacts.AccessState.PERMISSION_DENIED
+                || facts.managePermission() != AvfCapabilityEvaluator.PermissionState.GRANTED) {
+            blockCode = "PERMISSION_DENIED";
+        } else if (exemption != AvfHiddenApiExemption.State.INSTALLED) {
+            blockCode = "HIDDEN_API_BLOCKED";
+        } else if (manager == null || readCapabilities() < 0
+                || facts.modeFacts().protectedVm()
+                        != AvfCapabilityEvaluator.VmSupport.SUPPORTED
+                || !hasProtectedBit()) {
+            blockCode = "PROTECTED_UNAVAILABLE";
+        }
+        if (blockCode == null) {
+            return true;
+        }
+        stages.put("platform_facts", blocked(blockCode));
+        preflightFillBlocked("PREFLIGHT_BLOCKED");
+        preflightTerminal = FastLaneDv01Contract.classifyPreflightTerminal(
+                false, -1, null, blockCode);
+        preflightStop = "NOT_TESTED";
+        outcome = FastLaneDv01Contract.PREFLIGHT_OUTCOME_BLOCKED_EXTERNAL;
+        return false;
+    }
+
+    private void preflightLifecycle() throws JSONException {
+        api = new ReflectiveFastLaneApi(target, target.getClassLoader());
+        openManager();
+        FastLaneLaunchSpec mainSpec = spec(instanceMain);
+        FastLaneSession session = null;
+        try {
+            FastLaneHandle handle = api.start(mainSpec);
+            session = new FastLaneSession(api, handle, mainSpec);
+            preflightLifecycleStarted = true;
+            stages.put("create", passed("VM_CREATED"));
+            stages.put("run", passed("RUN_RETURNED"));
+        } catch (FastLaneException failure) {
+            String reason = FastLaneDv01Contract.classifyFailure(failure.reason());
+            stages.put("create", failed("CREATE_FAILED", diagnostic(failure)));
+            stages.put("run", blocked("CREATE_BLOCKED"));
+            preflightFillBlocked("CREATE_BLOCKED");
+            preflightTerminal = FastLaneDv01Contract.classifyPreflightTerminal(
+                    false, -1, null, preflightStartReason(reason));
+            preflightStop = "NOT_TESTED";
+            outcome = FastLaneDv01Contract.PREFLIGHT_OUTCOME_BLOCKED_EXTERNAL;
+            return;
+        } catch (Throwable failure) {
+            stages.put("create", failed("CREATE_FAILED", exceptionName(failure)));
+            stages.put("run", blocked("CREATE_BLOCKED"));
+            preflightFillBlocked("CREATE_BLOCKED");
+            preflightTerminal = FastLaneDv01Contract.classifyPreflightTerminal(
+                    false, -1, null, "PREFLIGHT_FAILED");
+            preflightStop = "NOT_TESTED";
+            outcome = FastLaneDv01Contract.PREFLIGHT_OUTCOME_BLOCKED_EXTERNAL;
+            return;
+        }
+
+        try {
+            Wait ready = waitForPayloadReady(session, payloadReadyDeadlineMs);
+            stages.put("payload_ready", ready.observed
+                    ? passed("PAYLOAD_READY_OBSERVED", "elapsed_ms=" + ready.elapsedMs)
+                    : blocked("PAYLOAD_READY_NOT_OBSERVED", "elapsed_ms=" + ready.elapsedMs));
+            payloadReadyStatus = ready.observed ? "pass" : "not-observed";
+
+            ControlResult control = controlHandshake(session, mainSpec, vsockTimeoutMs);
+            stages.put("control_hello", control.ok
+                    ? passed("HELLO_HELLO_OK", "elapsed_ms=" + control.elapsedMs)
+                    : failed("VSOCK_FAILED", control.layer));
+
+            if (control.ok) {
+                TerminalResult terminal = runTerminal(
+                        session, mainSpec, FastLaneDv01Contract.PREFLIGHT_TERMINAL_SCRIPT,
+                        vsockTimeoutMs, true);
+                preflightTerminal = FastLaneDv01Contract.classifyPreflightTerminal(
+                        terminal.ok, terminal.fln1Code, terminal.detail, terminal.failureCode);
+                stages.put("terminal_pty", stageFor(preflightTerminal,
+                        "output_bytes=" + terminal.outputBytes));
+            } else {
+                preflightTerminal = FastLaneDv01Contract.classifyPreflightTerminal(
+                        false, -1, null, "VSOCK_FAILED");
+                stages.put("terminal_pty", blocked("VSOCK_FAILED"));
+            }
+        } finally {
+            // Stop once, bounded. Only a CONFIRMED stop permits delete.
+            FastLaneStopResult stopResult;
+            try {
+                stopResult = session.stopRuntime(stopDeadlineMs);
+            } catch (Throwable failure) {
+                stopResult = FastLaneStopResult.UNCONFIRMED;
+            }
+            session.close();
+            switch (stopResult) {
+                case CONFIRMED -> {
+                    preflightStop = "CONFIRMED";
+                    stages.put("stop", passed("STOP_CONFIRMED"));
+                }
+                case ALREADY_STOPPED -> {
+                    preflightStop = "ALREADY_STOPPED";
+                    stages.put("stop", blocked("STOP_ALREADY_STOPPED"));
+                }
+                default -> {
+                    preflightStop = "UNCONFIRMED";
+                    stages.put("stop", failed("STOP_UNCONFIRMED"));
+                }
+            }
+        }
+
+        if ("CONFIRMED".equals(preflightStop)) {
+            if (preflightDelete()) {
+                stages.put("delete", passed("VM_DELETED"));
+            } else {
+                stages.put("delete", failed("VM_DELETE_UNCONFIRMED"));
+            }
+        } else {
+            stages.put("delete", blocked("DELETE_SKIPPED_STOP_UNCONFIRMED"));
+            notTested.put("vm_delete_skipped_after_unconfirmed_stop");
+        }
+
+        outcome = FastLaneDv01Contract.preflightOutcome(
+                preflightLifecycleStarted,
+                preflightTerminal == null ? "fail" : preflightTerminal.status,
+                preflightTerminal == null ? "PREFLIGHT_FAILED" : preflightTerminal.reasonCode,
+                preflightStop,
+                stages.getJSONObject("delete").optString("status", "fail"));
+    }
+
+    private String preflightStartReason(String reason) {
+        return switch (reason) {
+            case FastLaneException.HIDDEN_API_BLOCKED,
+                    FastLaneException.PERMISSION_DENIED,
+                    FastLaneException.PROTECTED_UNAVAILABLE,
+                    FastLaneException.PAYLOAD_VERIFY_FAILED -> reason;
+            default -> "PREFLIGHT_FAILED";
+        };
+    }
+
+    private boolean preflightDelete() {
+        if (manager == null || managerClass == null) {
+            return false;
+        }
+        try {
+            managerClass.getMethod("delete", String.class).invoke(manager, instanceMain);
+        } catch (Throwable failure) {
+            return false;
+        }
+        try {
+            Object residual = managerClass.getMethod("get", String.class)
+                    .invoke(manager, instanceMain);
+            return residual == null;
+        } catch (InvocationTargetException wrapped) {
+            // A not-found VirtualMachineException is the expected absence.
+            return true;
+        } catch (Throwable failure) {
+            return false;
+        }
+    }
+
+    private void preflightFillBlocked(String reason) throws JSONException {
+        for (String stage : FastLaneDv01Contract.PREFLIGHT_STAGES) {
+            if (!stages.has(stage)) {
+                stages.put(stage, blocked(reason));
+            }
+        }
+    }
+
+    private JSONObject stageFor(
+            FastLaneDv01Contract.TerminalClassification classification, String detail)
+            throws JSONException {
+        JSONObject entry = new JSONObject();
+        entry.put("status", classification.status);
+        entry.put("reason_code", classification.reasonCode);
+        if (detail != null) {
+            entry.put("detail", detail);
+        }
+        return entry;
+    }
+
+    private JSONObject finishPreflightReport() {
+        try {
+            preflightFillBlocked("PREFLIGHT_BLOCKED");
+            if (preflightTerminal == null) {
+                preflightTerminal = FastLaneDv01Contract.classifyPreflightTerminal(
+                        false, -1, null, "PREFLIGHT_FAILED");
+            }
+            if (outcome == null || !isPreflightOutcome(outcome)) {
+                outcome = FastLaneDv01Contract.preflightOutcome(
+                        preflightLifecycleStarted, preflightTerminal.status,
+                        preflightTerminal.reasonCode, preflightStop,
+                        stages.has("delete")
+                                ? stages.getJSONObject("delete").optString("status", "fail")
+                                : "fail");
+            }
+            JSONObject report = new JSONObject();
+            report.put("schema", FastLaneDv01Contract.PREFLIGHT_SCHEMA);
+            report.put("mode", FastLaneDv01Contract.PREFLIGHT_MODE);
+            report.put("device_alias", deviceAlias);
+            report.put("sdk_int", Build.VERSION.SDK_INT);
+            report.put("abi", primaryAbi());
+            report.put("virtualization_framework", hasVirtualizationFramework());
+            report.put("protected_bit", hasProtectedBit());
+            report.put("permission", preflightPermission);
+            report.put("apk_sha256", apkSha);
+            report.put("payload_sha256", payloadSha);
+            report.put("toolbox_manifest_sha256", preflightToolboxSha);
+            report.put("stage_results", stages);
+            report.put("terminal", preflightTerminalJson());
+            report.put("stop", preflightStop);
+            report.put("outcome", outcome);
+            report.put("started_at_utc", instant(startedAtMs));
+            report.put("finished_at_utc", instant(System.currentTimeMillis()));
+            report.put("not_tested", notTested);
+            report.put("qualification", qualification == null ? new JSONObject() : qualification);
+            report.put("payload_ready", payloadReadyStatus);
+            report.put("vsock_control", controlDiagnostic);
+            report.put("vsock_terminal", terminalDiagnostic);
+
+            if (!preflightContractSatisfied(report)) {
+                outcome = FastLaneDv01Contract.PREFLIGHT_OUTCOME_BLOCKED_EXTERNAL;
+                preflightTerminal = FastLaneDv01Contract.classifyPreflightTerminal(
+                        false, -1, null, "PREFLIGHT_FAILED");
+                report.put("terminal", preflightTerminalJson());
+                report.put("outcome", outcome);
+            }
+            return report;
+        } catch (JSONException failure) {
+            JSONObject fallback = new JSONObject();
+            try {
+                fallback.put("schema", FastLaneDv01Contract.PREFLIGHT_SCHEMA);
+                fallback.put("mode", FastLaneDv01Contract.PREFLIGHT_MODE);
+                fallback.put("device_alias", FastLaneDv01Contract.PREFLIGHT_DEFAULT_ALIAS);
+                fallback.put("outcome", FastLaneDv01Contract.PREFLIGHT_OUTCOME_BLOCKED_EXTERNAL);
+                fallback.put("not_tested", notTested);
+            } catch (JSONException ignored) {
+                // The report cannot be constructed at all.
+            }
+            return fallback;
+        }
+    }
+
+    private JSONObject preflightTerminalJson() throws JSONException {
+        JSONObject terminal = new JSONObject();
+        terminal.put("status", preflightTerminal.status);
+        terminal.put("reason_code", preflightTerminal.reasonCode);
+        terminal.put("fln1_code", preflightTerminal.fln1Code);
+        terminal.put("exec_stage", preflightTerminal.execStage);
+        terminal.put("errno", preflightTerminal.errno);
+        return terminal;
+    }
+
+    private boolean preflightContractSatisfied(JSONObject report) throws JSONException {
+        Set<String> reportKeys = new HashSet<>();
+        java.util.Iterator<String> reportIterator = report.keys();
+        while (reportIterator.hasNext()) {
+            reportKeys.add(reportIterator.next());
+        }
+        Set<String> stageKeys = new HashSet<>();
+        java.util.Iterator<String> stageIterator = stages.keys();
+        while (stageIterator.hasNext()) {
+            stageKeys.add(stageIterator.next());
+        }
+        java.util.List<String> notTestedValues = new java.util.ArrayList<>();
+        for (int index = 0; index < notTested.length(); index++) {
+            notTestedValues.add(notTested.getString(index));
+        }
+        try {
+            FastLaneDv01Contract.requirePreflightReportKeys(reportKeys);
+            FastLaneDv01Contract.requirePreflightStages(stageKeys);
+            FastLaneDv01Contract.requirePreflightNotTested(notTestedValues);
+            for (String stage : FastLaneDv01Contract.PREFLIGHT_STAGES) {
+                Set<String> keys = new HashSet<>();
+                java.util.Iterator<String> iterator = stages.getJSONObject(stage).keys();
+                while (iterator.hasNext()) {
+                    keys.add(iterator.next());
+                }
+                FastLaneDv01Contract.requirePreflightStageResultKeys(keys);
+            }
+            return true;
+        } catch (IllegalArgumentException invalid) {
+            return false;
+        }
+    }
+
+    private boolean isPreflightOutcome(String value) {
+        return FastLaneDv01Contract.PREFLIGHT_OUTCOME_OK.equals(value)
+                || FastLaneDv01Contract.PREFLIGHT_OUTCOME_TERMINAL_BLOCKED.equals(value)
+                || FastLaneDv01Contract.PREFLIGHT_OUTCOME_BLOCKED_EXTERNAL.equals(value);
+    }
+
+    private String primaryAbi() {
+        return Build.SUPPORTED_ABIS.length == 0 ? "unknown" : Build.SUPPORTED_ABIS[0];
+    }
+
+    private boolean hasVirtualizationFramework() {
+        return target.getPackageManager().hasSystemFeature(
+                "android.software.virtualization.framework");
     }
 
     private boolean parseArguments() {
@@ -756,7 +1223,13 @@ final class FastLaneDv01Probe {
     }
 
     private TerminalResult runTerminal(FastLaneSession session, FastLaneLaunchSpec spec,
-            String script, int timeoutMs) {        long started = SystemClock.uptimeMillis();
+            String script, int timeoutMs) {
+        return runTerminal(session, spec, script, timeoutMs, false);
+    }
+
+    private TerminalResult runTerminal(FastLaneSession session, FastLaneLaunchSpec spec,
+            String script, int timeoutMs, boolean markerOnly) {
+        long started = SystemClock.uptimeMillis();
         FastLaneChannel channel = null;
         TerminalMuxChannel muxChannel = null;
         TerminalCollector collector = new TerminalCollector();
@@ -787,7 +1260,7 @@ final class FastLaneDv01Probe {
                     terminalDiagnostic = "fln1=" + fln1 + " " + collector.fln1Detail;
                     observeTerminalFailure(fln1);
                     return new TerminalResult(false, "TERMINAL_ERROR_FLN1_" + fln1, -1,
-                            collector.outputSize(), false, false);
+                            collector.outputSize(), false, false, fln1, collector.fln1Detail);
                 }
                 if (collector.errorCode != null) {
                     terminalDiagnostic = "host_code=" + collector.errorCode.name();
@@ -816,9 +1289,11 @@ final class FastLaneDv01Probe {
                         collector.outputSize(), false, false);
             }
             String output = collector.output();
-            boolean expected = script.startsWith("printf DV01_TERMINAL_OK")
-                    ? output.contains(TERMINAL_OK) && output.contains(MARKER_VALUE)
-                    : output.contains(PERSIST_OK) && output.contains(MARKER_VALUE);
+            boolean expected = markerOnly
+                    ? output.contains(FastLaneDv01Contract.PREFLIGHT_TERMINAL_MARKER)
+                    : script.startsWith("printf DV01_TERMINAL_OK")
+                            ? output.contains(TERMINAL_OK) && output.contains(MARKER_VALUE)
+                            : output.contains(PERSIST_OK) && output.contains(MARKER_VALUE);
             if (!expected) {
                 return new TerminalResult(false, "TERMINAL_OUTPUT_MISMATCH", 0,
                         collector.outputSize(), false, false);
@@ -1568,15 +2043,24 @@ final class FastLaneDv01Probe {
         final int outputBytes;
         final boolean terminalMarker;
         final boolean storageMarker;
+        final int fln1Code;
+        final String detail;
 
         TerminalResult(boolean ok, String failureCode, int exitCode, int outputBytes,
                 boolean terminalMarker, boolean storageMarker) {
+            this(ok, failureCode, exitCode, outputBytes, terminalMarker, storageMarker, -1, null);
+        }
+
+        TerminalResult(boolean ok, String failureCode, int exitCode, int outputBytes,
+                boolean terminalMarker, boolean storageMarker, int fln1Code, String detail) {
             this.ok = ok;
             this.failureCode = failureCode;
             this.exitCode = exitCode;
             this.outputBytes = outputBytes;
             this.terminalMarker = terminalMarker;
             this.storageMarker = storageMarker;
+            this.fln1Code = fln1Code;
+            this.detail = detail;
         }
     }
 
