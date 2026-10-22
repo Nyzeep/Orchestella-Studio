@@ -44,6 +44,7 @@ EXIT_CONFIG = 2
 
 # Fixed diagnostic codes. Keep these stable; tests and operators key off them.
 E_USAGE = "E_USAGE"
+E_INTERNAL = "E_INTERNAL"
 E_INPUT_NOT_FOUND = "E_INPUT_NOT_FOUND"
 E_INPUT_NOT_READABLE = "E_INPUT_NOT_READABLE"
 E_INPUT_NOT_UTF8 = "E_INPUT_NOT_UTF8"
@@ -593,8 +594,9 @@ def run(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--schema-dir",
         help=(
-            "directory containing both preflight-report.schema.json and "
-            "run-summary.schema.json (default: the repository locations)"
+            "directory holding preflight-report.schema.json and/or "
+            "run-summary.schema.json; each requested target loads its own "
+            "schema (default: the repository locations)"
         ),
     )
     parser.add_argument(
@@ -716,7 +718,14 @@ def run(argv: list[str] | None = None) -> int:
 
 
 def main() -> int:
-    return run()
+    try:
+        return run()
+    except SystemExit:
+        raise
+    except Exception:
+        # Never let a traceback echo an input path or value.
+        print(f"FAIL internal reason={E_INTERNAL}", file=sys.stderr)
+        return EXIT_CONFIG
 
 
 if __name__ == "__main__":
