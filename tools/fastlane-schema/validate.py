@@ -79,6 +79,7 @@ E_TIME_ORDER = "E_TIME_ORDER"
 E_REASON_CODE_OUTCOME = "E_REASON_CODE_OUTCOME"
 E_PREFLIGHT_OK_GATE = "E_PREFLIGHT_OK_GATE"
 E_SUMMARY_REPORT_MISSING = "E_SUMMARY_REPORT_MISSING"
+E_SUMMARY_REPORT_STATE = "E_SUMMARY_REPORT_STATE"
 E_SUMMARY_REPORT_HASH_MISMATCH = "E_SUMMARY_REPORT_HASH_MISMATCH"
 E_SUMMARY_REPORT_PATH_MISMATCH = "E_SUMMARY_REPORT_PATH_MISMATCH"
 E_SUMMARY_ALIAS_MISMATCH = "E_SUMMARY_ALIAS_MISMATCH"
@@ -473,6 +474,24 @@ def check_summary_semantics(
         )
 
     report_path = document.get("report_path")
+    report_sha256 = document.get("report_sha256")
+    report_present = document.get("report_present")
+    if report_present is False and (
+        report_path is not None or report_sha256 is not None
+    ):
+        diagnostics.append(
+            Diagnostic("summary", E_SUMMARY_REPORT_STATE, "/report_present")
+        )
+    if report_present is True and (
+        not isinstance(report_path, str) or not isinstance(report_sha256, str)
+    ):
+        diagnostics.append(
+            Diagnostic("summary", E_SUMMARY_REPORT_STATE, "/report_present")
+        )
+    if (report_path is None) != (report_sha256 is None):
+        diagnostics.append(
+            Diagnostic("summary", E_SUMMARY_REPORT_STATE, "/report_path")
+        )
     if isinstance(report_path, str):
         if ABSOLUTE_PATH_RE.match(report_path):
             diagnostics.append(
@@ -665,7 +684,11 @@ def run(argv: list[str] | None = None) -> int:
         if report is None:
             assert summary_path is not None
             declared = summary.get("report_path")
-            if isinstance(declared, str) and not ABSOLUTE_PATH_RE.match(declared):
+            if summary.get("report_present") is False and declared is None:
+                # A run blocked before a report existed is a complete summary;
+                # there is nothing to bind and no fake report to load.
+                pass
+            elif isinstance(declared, str) and not ABSOLUTE_PATH_RE.match(declared):
                 candidate = summary_path.parent / declared
                 try:
                     report, report_bytes = load_json(candidate, "preflight")

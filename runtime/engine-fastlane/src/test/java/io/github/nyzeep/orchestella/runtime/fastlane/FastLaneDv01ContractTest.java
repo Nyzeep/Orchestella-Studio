@@ -116,7 +116,7 @@ public final class FastLaneDv01ContractTest {
 
     @Test
     public void deviceAliasIsShortAndSafe() {
-        FastLaneDv01Contract.requireDeviceAlias("HONOR-MEY-AN00");
+        FastLaneDv01Contract.requireDeviceAlias("qa-device-01");
         assertThrows(IllegalArgumentException.class,
                 () -> FastLaneDv01Contract.requireDeviceAlias("device with spaces"));
         assertThrows(IllegalArgumentException.class,

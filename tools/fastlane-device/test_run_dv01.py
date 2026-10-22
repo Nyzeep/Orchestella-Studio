@@ -175,6 +175,14 @@ class RunnerTests(unittest.TestCase):
         self.test_apk = self.root / "test-apk.apk"
         self.test_apk.write_bytes(b"fake test apk\n")
         self.report_file = self.root / "device-report.json"
+        # Keep the runner unit tests independent of whether the P3 validator
+        # happens to be checked out next to the runner.  The two integration
+        # tests below opt back into the real validator explicitly.
+        self._validator_patch = mock.patch(
+            "run_dv01._external_validator", return_value=None
+        )
+        self._validator_patch.start()
+        self.addCleanup(self._validator_patch.stop)
 
     def tearDown(self) -> None:
         run_dv01.TEMP_ROOTS = self._original_temp_roots
@@ -738,6 +746,48 @@ class RunnerTests(unittest.TestCase):
         summary = self.summary()
         self.assertTrue(summary["schema_validation"]["full_schema_validation"])
         self.assertEqual(summary["schema_validation"]["status"], "PASS")
+
+    def test_real_p3_validator_accepts_preflight_artifacts(self) -> None:
+        validator = (
+            Path(__file__).resolve().parents[2]
+            / "tools"
+            / "fastlane-schema"
+            / "validate.py"
+        )
+        if not validator.is_file():
+            self.skipTest("P3 validator is not checked out")
+        with mock.patch("run_dv01._external_validator", return_value=validator):
+            code, _stdout, stderr = self.invoke(
+                self.args(), report=preflight_report()
+            )
+        self.assertEqual(code, 0, stderr)
+        summary = self.summary()
+        self.assertTrue(summary["schema_validation"]["full_schema_validation"])
+        self.assertEqual(summary["schema_validation"]["status"], "PASS")
+
+    def test_real_p3_validator_accepts_blocked_summary_without_report(self) -> None:
+        validator = (
+            Path(__file__).resolve().parents[2]
+            / "tools"
+            / "fastlane-schema"
+            / "validate.py"
+        )
+        if not validator.is_file():
+            self.skipTest("P3 validator is not checked out")
+        with mock.patch("run_dv01._external_validator", return_value=validator):
+            code, _stdout, stderr = self.invoke(
+                self.args(),
+                env={"FAKE_ADB_FAIL": "app_install"},
+                report=preflight_report(),
+            )
+        self.assertEqual(code, 1, stderr)
+        summary = self.summary()
+        self.assertEqual(summary["reason_code"], "APK_INSTALL_FAILED")
+        self.assertIsNone(summary["report_path"])
+        self.assertIsNone(summary["report_sha256"])
+        self.assertFalse(summary["report_present"])
+        self.assertTrue(summary["schema_validation"]["full_schema_validation"])
+        self.assertEqual(summary["schema_validation"]["status"], "NOT_RUN")
 
     def test_external_validator_failure_blocks(self) -> None:
         validator = self.root / "validate.py"

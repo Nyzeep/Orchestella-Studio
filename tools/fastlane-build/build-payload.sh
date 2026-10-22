@@ -76,7 +76,13 @@ if [ ! -x "$NM" ]; then
   echo "FAIL llvm-nm not found beside $READELF" >&2
   exit 1
 fi
-if ! "$NM" -D --defined-only "${SOFILES[@]}" | grep -qw "$SYMBOL"; then
+NM_OUTPUT="$(mktemp)"
+trap 'rm -f "$NM_OUTPUT"' EXIT
+if ! "$NM" -D --defined-only "${SOFILES[@]}" > "$NM_OUTPUT"; then
+  echo "FAIL llvm-nm could not read ${SOFILES[*]}" >&2
+  exit 1
+fi
+if ! grep -qw "$SYMBOL" "$NM_OUTPUT"; then
   echo "FAIL payload symbol $SYMBOL is not exported by ${SOFILES[*]}" >&2
   exit 1
 fi
