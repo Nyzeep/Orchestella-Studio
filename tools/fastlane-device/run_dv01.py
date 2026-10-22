@@ -808,9 +808,13 @@ def _readme_text(
 ) -> bytes:
     reason_line = reason if reason is not None else "none"
     report_line = "report.json (canonical copy)" if report_present else "absent"
-    if validation["full_schema_validation"]:
+    if validation["full_schema_validation"] and validation["status"] != "NOT_RUN":
         schema_line = (
             "full schema validation executed with tools/fastlane-schema/validate.py"
+        )
+    elif validation["full_schema_validation"]:
+        schema_line = (
+            "full schema validation not executed (run blocked before validation)"
         )
     else:
         schema_line = (
