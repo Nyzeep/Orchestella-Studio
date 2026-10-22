@@ -98,3 +98,4 @@ Markdown 形式：
 | `run_date` | `device_alias` | `sdk_int` | `abi` | `virtualization_framework` | `protected_bit` | `manage_permission` | `preflight_outcome` | `terminal_reason` | `full_20_cycles` | `notes` |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 2026-10-22 | `qa-device` | 36 | arm64-v8a | true | true | GRANTED | `PREFLIGHT_TERMINAL_BLOCKED` | `TOOLBOX_EXEC_BLOCKED_BY_PLATFORM (fln1=7, execve errno=13)` | not-run | 平台 SELinux `execute_no_trans`；stop/delete 已确认；artifact 在外部根 |
+| 2026-10-22 | `qa-device` | 36 | arm64-v8a | true | true | GRANTED | `PREFLIGHT_TERMINAL_BLOCKED` | `TOOLBOX_EXEC_BLOCKED_BY_PLATFORM (fln1=7, execve errno=13)` | not-run | 合并后按 main 重建重跑（契约 §5.5 变更即失效）；平台 SELinux `execute_no_trans`；stop/delete 已确认；artifact 在外部根 |
