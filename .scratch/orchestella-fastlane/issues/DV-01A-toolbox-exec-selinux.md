@@ -53,8 +53,42 @@ scontext=u:r:microdroid_app:s0 tcontext=u:object_r:system_file:s0 tclass=file pe
 - [ ] 20/20 cycles pass，stop CONFIRMED，无 residual；
 - [ ] 证据仍只使用设备别名，不含 serial/IMEI/Android ID/账号/token/按键正文/截图/完整 logcat。
 
+## 2026-10-22 合规路径研究：无 host 侧解法，转平台/ROM 变更请求
+
+**Status 保持 `blocked_external`。决策门 B：Android 16 当前平台不存在合规路径。**
+
+研究全文：`docs/research/microdroid-exec-selinux-20261022.zh-CN.md`
+平台变更请求：`docs/reports/orchestration/fastlane-dv01a-platform-change-request-20261022.zh-CN.md`
+
+### 结论
+
+- `/mnt/apk` 的 context 由 `microdroid_manager` 硬编码为 `system_file`；`VirtualMachineConfig`、payload config、extra APK 均无修改挂载 context 或 exec 语义的开关。
+- A16 policy 对 `coredomain` 只授予 `system_file:file { execute read open getattr map }`（`microdroid/system/private/domain.te:92`），没有 `execute_no_trans`；也没有 `system_file` 的 `type_transition`。`access(X_OK)` 只检查 `execute`，`execve` 无域转换则需要 `execute_no_trans`，所以 EACCES 是必然结果。
+- `microdroid_app.te` 没有 `system_file` 执行规则；唯一的执行转换是 `domain_auto_trans(microdroid_manager, microdroid_app_exec, microdroid_app)`（`microdroid_manager.te:57`），仅适用于 `/system/bin/microdroid_launcher`。
+- `TaskType::Executable` 由 `microdroid_manager` 执行，受 `neverallow microdroid_manager { file_type fs_type }:file execute_no_trans`（`microdroid_manager.te:151-152`）限制；且是 `@TestApi` + `USE_CUSTOM_VIRTUAL_MACHINE`。
+- extra APK 在 A16 非 multi-tenant 构建中 `--noexec`，`extra_apk_file` 只有读权限；`DEBUG_FULL` 明确可能绕过 protected VM 保护；custom image 是独立 OS 镜像且受 pvmfw 签名约束；A17 `tenant_apk_file` 不适用于 A16 主 payload。
+- guest policy 编译进 `microdroid_precompiled_sepolicy`，打包进 AVB 签名的 microdroid system image / `com.android.virt` APEX；A16 该 APEX `updatable:false`，host vendor sepolicy 不进入 guest。
+
+### 2026-10-22 最小复现
+
+新的 16-hex token、`qaCycleCount=1`、默认端口、未改 APK/payload/平台：control HELLO/HELLO_OK 与 stop `CONFIRMED` 通过；`terminal_pty` 仍为 `TERMINAL_ERROR_FLN1_7` / `fln1=7 execve_errno_13`。1-cycle 运行的 `outcome=FAILED` 是 harness 对完整 20 轮 + terminal 的要求所致；20/20 权威结果仍为 2026-10-21 运行。
+
+### 请求的平台变更（精确）
+
+- 最小：`allow microdroid_app system_file:file execute_no_trans;`
+- 推荐：新增 `microdroid_payload_file`（`file_type`），主 APK 以 `context=u:object_r:microdroid_payload_file:s0` 挂载，`zipfuse` 关联该 fs，`microdroid_app` 获得 `{ getattr open read map execute execute_no_trans }`；保留 manager 的 neverallow。
+- 发布路径：平台 OTA / OEM 重建 microdroid 镜像；不能通过 Play/APEX 热更新。
+
+### 本轮未做
+
+- 未修改 FLN1 wire、accepted ADR、版本号、签名身份、release channel；
+- 未改 root/SELinux/pvmfw，未使用 `/system/bin/sh`、encrypted storage 执行、chmod、memfd、execveat、伪 shell；
+- 未进入 DV-02。
+
 ## 关联
 
 - DV-01：`.scratch/orchestella-fastlane/issues/DV-01-protected-payload-device.md`
 - 报告：`docs/reports/orchestration/fastlane-dv01-20261021.zh-CN.md` §7
 - P03 toolbox 报告：`docs/reports/tickets/fastlane-P03/implementation-report.zh-CN.md`
+- 研究：`docs/research/microdroid-exec-selinux-20261022.zh-CN.md`
+- 平台变更请求：`docs/reports/orchestration/fastlane-dv01a-platform-change-request-20261022.zh-CN.md`
