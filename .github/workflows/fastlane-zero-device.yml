@@ -248,14 +248,41 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Install NDK
+      - name: Install NDK and CMake
         if: steps.payload.outputs.present == 'true'
         run: |
+          set -euo pipefail
           SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f 2>/dev/null | head -1)
-          if [ -n "$SDKMANAGER" ]; then
-            yes | "$SDKMANAGER" --licenses || true
-            "$SDKMANAGER" "ndk;27.0.12077973" "cmake;3.22.1" || true
+          if [ -z "$SDKMANAGER" ]; then
+            echo "::error::sdkmanager was not found under $ANDROID_HOME/cmdline-tools"
+            exit 1
           fi
+          yes | "$SDKMANAGER" --licenses || true
+          "$SDKMANAGER" "ndk;27.0.12077973" "cmake;3.22.1"
+
+      - name: Pin the NDK and CMake toolchain
+        if: steps.payload.outputs.present == 'true'
+        run: |
+          set -euo pipefail
+          NDK_DIR="$ANDROID_HOME/ndk/27.0.12077973"
+          if [ ! -d "$NDK_DIR" ]; then
+            echo "::error::the pinned NDK is missing: $NDK_DIR"
+            exit 1
+          fi
+          NDK_REVISION="$(sed -nE 's/^Pkg\.Revision[[:space:]]*=[[:space:]]*//p' "$NDK_DIR/source.properties" | head -1)"
+          if [ "$NDK_REVISION" != "27.0.12077973" ]; then
+            echo "::error::the pinned NDK revision is '$NDK_REVISION', expected 27.0.12077973"
+            exit 1
+          fi
+          CMAKE_DIR="$ANDROID_HOME/cmake/3.22.1"
+          if [ ! -x "$CMAKE_DIR/bin/cmake" ]; then
+            echo "::error::the pinned CMake is missing: $CMAKE_DIR/bin/cmake"
+            exit 1
+          fi
+          echo "ANDROID_NDK_HOME=$NDK_DIR" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$NDK_DIR" >> "$GITHUB_ENV"
+          echo "CMAKE=$CMAKE_DIR/bin/cmake" >> "$GITHUB_ENV"
+          echo "$CMAKE_DIR/bin" >> "$GITHUB_PATH"
 
       - name: Build payload and check symbol/16 KB
         if: steps.payload.outputs.present == 'true'
