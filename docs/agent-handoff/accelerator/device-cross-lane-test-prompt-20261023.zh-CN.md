@@ -40,17 +40,17 @@
 ## 2. 仓库与分支预检
 
 1. 工作目录假设为仓库根；`/workspace/Orchestella-Studio` 之类的未跟踪副本不要修改、不要 add、不要 clean。
-2. 目标 ref：`feat/accelerator-device-handoff`（如果存在），它 stacked 在 `feat/accelerator-batch3 @ f8380bd` 上。
-3. 如果 `main` 仍是 `4765d4b`，说明批次一至三尚未合并；**不要只 checkout main**，否则你会看到没有交火代码的旧状态。
-4. 检查：
+2. 目标 ref：**直接用 `main`**。四级 accelerator 堆叠（`feat/accelerator-batch1` → `batch2` → `batch3` → `device-handoff`，PR #8–#11）已按 merge commit 全部合入 `main`，**无需 checkout 任何 accelerator feature 分支**。
+3. 检查基线（不硬编码 SHA，避免文档再次漂移）：
    ```bash
-   git log --oneline -8
-   git branch -a --contains f8380bd
+   git log --oneline -6
+   git log --oneline --merges -4   # 应能看到四级堆叠的四个 merge commit
    git status --porcelain=v1
    ```
-5. 工作树有意外改动时停止并报告，不要覆盖。
-6. 提交身份按仓库既有配置；feature 分支推 GitHub，不 push `main`。
-7. CI 历史：当前 `main` 绿色；2026-10-21/22 的失败 run 都在旧 SHA 上，已由新 run 取代。清理历史失败 run 需要 `actions:write` token，可执行 `python tools/ci/cleanup_failed_runs.py`（默认 dry-run）确认后再 `--apply`；不要删除 workflow 定义。
+   如果看不到四级合并提交，说明基线不是预期状态：**停止并报告**，不要自行修复历史。
+4. 工作树有意外改动时停止并报告，不要覆盖。
+5. 提交身份按仓库既有配置（从 `git config user.name` / `user.email` 读取，不要写进文档或提交信息）；feature 分支推 GitHub，不 push `main`。
+6. CI 历史：当前 `main` 绿色；2026-10-21/22 的失败 run 都在旧 SHA 上，已由新 run 取代。清理历史失败 run 需要 `actions:write` token，可执行 `python tools/ci/cleanup_failed_runs.py`（默认 dry-run）确认后再 `--apply`；不要删除 workflow 定义。
 
 ## 3. 强制前置门：AX-08 与 AX-07
 
