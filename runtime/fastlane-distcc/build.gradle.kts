@@ -19,3 +19,11 @@ tasks.withType<JavaCompile>().configureEach {
     options.release.set(17)
     options.compilerArgs.addAll(listOf("-Xlint:all", "-Werror"))
 }
+
+// AX-06 host e2e report: opt-in, fixed evidence fields only (no paths/env).
+val distccE2eReport = providers.gradleProperty("fastlane.distcc.report")
+tasks.named<Test>("test") {
+    if (distccE2eReport.isPresent) {
+        systemProperty("fastlane.distcc.report", distccE2eReport.get())
+    }
+}
