@@ -2,7 +2,7 @@
 
 > 这份文档是给**另一个开发环境中的执行 Agent**的完整任务书。它假定你已经能拉取 GitHub 仓库、能操作一台真实 Android 设备，并且可以用子智能体与联网调研。
 >
-> **先读这一句**：仓库当前分支只完成了零设备的 PL-01/PL-02/AX-01–AX-06；**AX-07（性能协议）与 AX-08（生产装配）尚未完成**。如果拉取后确认如此，你不能直接声称“交叉加速真机测试开始”，必须先完成 AX-07/AX-08，或者只做 QEMU/AVF 基线并明确标注“交火未装配”。
+> **先读这一句**：零设备工单 **PL-01/PL-02/AX-01–AX-08 已全部交付**，四道前置门（Android 事实提供者、协调器装配点、QEMU 就绪探针、性能协议）在 `main` 上都有生产实现与证据。你**可以**直接开始真机流程，但仍要先按 §4 核对设备资格、按 §3 复核四道门；任何一门回落成 fake，就只能做 QEMU/AVF 基线并写明"交火未装配"。
 
 ---
 
@@ -54,18 +54,37 @@
 
 ## 3. 强制前置门：AX-08 与 AX-07
 
-在拉取后的代码里检查：
+四道门已在 2026-10-23 的第五批闭合。**上设备前请复核它们没有回落**：
 
-- `AcceleratorFactProvider` 是否有 Android 实现（不是 fake）；
-- `DualLaneCoordinator` 是否在 `app/src/main` 有装配点；
-- `QemuLaneRuntime` 是否有真实 readiness 探针；
-- `tools/accelerator-perf/` 是否存在采集器与 schema。
+```bash
+git grep -l "implements AcceleratorFactProvider" main -- '*.java'
+# 期望：app/src/main/java/io/github/nyzeep/orchestella/AndroidAcceleratorFactProvider.java
+
+git grep -n "new DualLaneCoordinator" main -- 'app/src/main/*'
+# 期望：AcceleratorLaneAssembly 内的唯一 new 点
+
+git show main:app/src/main/java/io/github/nyzeep/orchestella/QemuLaneRuntime.java | grep -n "QemuReadinessProbe"
+# 期望：有接收 QemuReadinessProbe 的构造器
+
+python tools/accelerator-perf/validate.py --self-test
+# 期望：ACCELERATOR_PERF_OK
+```
 
 **如果任一项缺失：**
 
-- 选项 A（推荐）：先完成 AX-08 + AX-07，零设备验收通过后再上真机；
-- 选项 B：只做 QEMU/AVF 基线测试，报告中明确写“交火未装配，未验证协调器”；
-- 禁止：把 fake 装配当生产装配，或声称“交叉加速已验证”。
+- 选项 A（推荐）：先补齐再上真机，零设备验收通过后再接设备；
+- 选项 B：只做 QEMU/AVF 基线测试，报告中明确写"交火未装配，未验证协调器"；
+- 禁止：把 fake 装配当生产装配，或声称"交叉加速已验证"。
+
+### 3.1 你还需要自己接上的一段
+
+装配根 `AcceleratorLaneAssembly` 需要两个 `LaneStarter`：QEMU 车道与加速车道。QEMU 侧用现成会话即可；**加速车道的 starter 要创建 non-protected 自定义 VM，这段属真机工作，零设备阶段无法实现**。也就是说：
+
+- 装配入口、决策、预算、停止顺序都已就绪；
+- 但"每实例启动都经过装配根"的调用链要由你在设备上接上，然后 flag 打开（`-Porchestella.acceleratorLane=true`）；
+- 打开 flag 后先看 `Result.decision()`：不是 `QEMU_PLUS_ACCEL` 就按 reason code 排查（见 `docs/reports/tickets/ax-08/implementation-report.zh-CN.md` §5），不要"调到能跑"。
+
+性能采集与停止条件见 `tools/accelerator-perf/README.md`；`requiredCompilerTriple` 用 guest 侧 `gcc -dumpmachine` 的输出。
 
 ## 4. 设备资格（先于任何性能测试）
 
