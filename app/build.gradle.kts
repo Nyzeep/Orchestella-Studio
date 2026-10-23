@@ -353,6 +353,9 @@ dependencies {
     implementation(project(":runtime:engine-qemu"))
     implementation(project(":runtime:instance"))
     implementation(project(":runtime:network"))
+    // Protected-lane warm pool: pure-JVM Fast Lane session/control codec. It
+    // adds no Android dependency and is only exercised when the pool switch is on.
+    implementation(project(":runtime:fastlane-terminal"))
     implementation(libs.material)
     implementation(libs.appcompat)
     implementation("dev.rikka.shizuku:api:13.1.5")
