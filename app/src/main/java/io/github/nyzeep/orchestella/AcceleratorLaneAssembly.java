@@ -162,7 +162,7 @@ public final class AcceleratorLaneAssembly {
     /** QEMU lane adapter with an explicit readiness probe. */
     public static LaneRuntime qemuLane(RuntimeOwnedSession session, QemuReadinessProbe probe) {
         Objects.requireNonNull(probe, "probe");
-        return new QemuLaneRuntime(session, probe::isReady);
+        return new QemuLaneRuntime(session, probe);
     }
 
     /** Accelerator lane adapter over the Fast Lane session that owns its stop. */
