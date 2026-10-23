@@ -948,6 +948,21 @@ class RunnerTests(unittest.TestCase):
         self.assertTrue((self.run_dir() / "report.json").is_file())
         self.assertEqual(len(self.commands()), 6)
 
+    def test_preflight_legacy_platform_alias_is_rejected(self) -> None:
+        report = preflight_report(
+            outcome="PREFLIGHT_TERMINAL_BLOCKED",
+            terminal={
+                "status": "blocked",
+                "reason_code": "TERMINAL_ERROR_FLN1_7",
+                "fln1_code": 7,
+                "exec_stage": "execve",
+                "errno": 13,
+            },
+        )
+        code, _stdout, stderr = self.invoke(self.args(), report=report)
+        self.assertEqual(code, 1, stderr)
+        self.assertEqual(self.summary()["reason_code"], "REPORT_TERMINAL_INVALID")
+
     def test_preflight_external_blocked_report_is_archived_with_exit_three(
         self,
     ) -> None:

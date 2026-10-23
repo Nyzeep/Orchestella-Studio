@@ -1,0 +1,2 @@
+type system_file, file_type, system_file_type;
+type tenant_apk_file, file_type;

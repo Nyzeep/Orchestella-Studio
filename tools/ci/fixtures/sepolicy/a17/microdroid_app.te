@@ -1,0 +1,5 @@
+# Minimal AOSP excerpt; source and license in ../../SOURCES.md.
+type microdroid_app, domain, coredomain, microdroid_payload;
+type microdroid_app_exec, exec_type, file_type, system_file_type;
+# Android 17 tenant APK mechanism; the main payload type is still system_file.
+allow microdroid_app tenant_apk_file:file x_file_perms;
