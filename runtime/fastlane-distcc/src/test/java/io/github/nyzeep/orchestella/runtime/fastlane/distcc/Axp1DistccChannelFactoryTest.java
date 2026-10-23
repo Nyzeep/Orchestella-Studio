@@ -8,7 +8,6 @@ import io.github.nyzeep.orchestella.runtime.fastlane.FastLaneChannel;
 import io.github.nyzeep.orchestella.runtime.fastlane.FastLaneException;
 import io.github.nyzeep.orchestella.runtime.fastlane.distcc.axp1.Axp1Capabilities;
 import io.github.nyzeep.orchestella.runtime.fastlane.distcc.axp1.Axp1Connection;
-import io.github.nyzeep.orchestella.runtime.fastlane.distcc.axp1.Axp1Exception;
 import io.github.nyzeep.orchestella.runtime.fastlane.distcc.axp1.Axp1Limits;
 import io.github.nyzeep.orchestella.runtime.fastlane.distcc.axp1.Axp1Role;
 import io.github.nyzeep.orchestella.runtime.fastlane.distcc.axp1.Axp1Transport;
