@@ -323,6 +323,14 @@ jobs:
           "$SDKMANAGER" "ndk;27.0.12077973"
           test -f "$ANDROID_HOME/ndk/27.0.12077973/source.properties"
 
+      # The hosted runner presets ANDROID_NDK_HOME to a newer NDK and
+      # build-distccd.sh resolves that variable before the pinned revision
+      # path, so pin both variables for the rest of the job.
+      - name: Point the build at the pinned NDK
+        run: |
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
+
       - name: Build twice and compare byte for byte
         run: |
           set -euo pipefail
