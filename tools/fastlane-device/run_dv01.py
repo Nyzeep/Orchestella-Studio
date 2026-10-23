@@ -25,6 +25,8 @@ import json
 import os
 import re
 import secrets
+
+import protected_failure
 import shutil
 import subprocess
 import sys
@@ -712,6 +714,16 @@ def _validate_report(report: object, plan: Plan) -> None:
         terminal_reason = terminal.get("reason_code")
         if not isinstance(terminal_reason, str) or not REASON_CODE_RE.fullmatch(
             terminal_reason
+        ):
+            raise RunnerError("REPORT_TERMINAL_INVALID")
+        # PL-02: one fact, one spelling. Historical aliases are accepted only
+        # by the offline normalizer, never in a newly archived report.
+        if terminal_reason in ("execve_errno_13", "PREFLIGHT_TERMINAL_BLOCKED"):
+            raise RunnerError("REPORT_TERMINAL_INVALID")
+        if (
+            terminal_reason == "TERMINAL_ERROR_FLN1_7"
+            and terminal.get("exec_stage") == "execve"
+            and terminal.get("errno") == 13
         ):
             raise RunnerError("REPORT_TERMINAL_INVALID")
         not_tested = report.get("not_tested")

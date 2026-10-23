@@ -1,0 +1,2 @@
+# coredomain receives execute, but not execute_no_trans, on system_file.
+allow coredomain system_file:file { execute read open getattr map };

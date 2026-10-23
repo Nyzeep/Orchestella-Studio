@@ -1,0 +1,3 @@
+# Minimal AOSP excerpt; source and license in ../../SOURCES.md.
+type microdroid_app, domain, coredomain, microdroid_payload;
+type microdroid_app_exec, exec_type, file_type, system_file_type;

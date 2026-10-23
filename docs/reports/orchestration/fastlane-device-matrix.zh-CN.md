@@ -38,14 +38,16 @@ Markdown 形式：
 | `protected_bit` | `true` / `false` | `getCapabilities` 的 protected bit |
 | `manage_permission` | `GRANTED` / `DENIED` / `UNKNOWN` | 只写权限状态，不写授权命令或账号 |
 | `preflight_outcome` | `PREFLIGHT_TERMINAL_OK` / `PREFLIGHT_TERMINAL_BLOCKED` / `PREFLIGHT_BLOCKED_EXTERNAL` | 只能是契约的三个 outcome |
-| `terminal_reason` | 固定 reason code | OK 写 `PREFLIGHT_TERMINAL_OK`；平台阻塞写 `TOOLBOX_EXEC_BLOCKED_BY_PLATFORM (fln1=7, execve errno=13)`；外部阻塞写 `PERMISSION_DENIED` 等 |
+| `terminal_reason` | 固定 code + stage + errno（可空） | OK 写 `PREFLIGHT_TERMINAL_OK`；平台阻塞写 `TOOLBOX_EXEC_BLOCKED_BY_PLATFORM stage=execve errno=13`；外部阻塞写 `PERMISSION_DENIED` 等 |
 | `full_20_cycles` | `yes` / `no` / `not-run` | 只有 preflight OK 且实际 20/20 通过才写 `yes`；`not-run` 表示门禁未放行；`no` 表示跑了但未 20/20 |
 | `notes` | 短句，固定代码/计数 | 只写原因、门禁和外部 artifact 根类别；不写原始日志、路径、token、账号 |
 
 ### 3.1 `terminal_reason` 的写法
 
 - `PREFLIGHT_TERMINAL_OK`：terminal 固定命令退出码 0，输出匹配固定 marker。
-- `TOOLBOX_EXEC_BLOCKED_BY_PLATFORM (fln1=7, execve errno=13)`：Android 16 `microdroid_app` 的 `execute_no_trans` 平台阻塞；不要附原始 AVC/logcat。
+- `TOOLBOX_EXEC_BLOCKED_BY_PLATFORM stage=execve errno=13`：Android 16 `microdroid_app` 的 `execute_no_trans` 平台阻塞；不要附原始 AVC/logcat。
+- 新行统一写 `CODE stage=<stage> errno=<n>`，没有 stage/errno 时只写 `CODE`；不要再写 `(fln1=7, execve errno=13)`。
+- §7 的 2026-10-22 历史行保留当时的 `(fln1=7, execve errno=13)` 写法，只追加、不改写；它们与上面是同一事实的不同时期记录。
 - `VSOCK_FAILED`：control 或 terminal 的 vsock connect/HELLO 失败。
 - `TERMINAL_ERROR_FLN1_<n>`：其他 FLN1 terminal 错误。
 - `HIDDEN_API_BLOCKED` / `PERMISSION_DENIED` / `PROTECTED_UNAVAILABLE` / `PAYLOAD_VERIFY_FAILED`：pre-lifecycle 外部或安装门禁。
@@ -73,7 +75,7 @@ Markdown 形式：
 | `run_date` | `device_alias` | `sdk_int` | `abi` | `virtualization_framework` | `protected_bit` | `manage_permission` | `preflight_outcome` | `terminal_reason` | `full_20_cycles` | `notes` |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 2026-10-22 | `<alias-a>` | 36 | arm64-v8a | true | true | GRANTED | `PREFLIGHT_TERMINAL_OK` | `PREFLIGHT_TERMINAL_OK` | yes | 20/20；artifact 在外部根 |
-| 2026-10-22 | `<alias-b>` | 36 | arm64-v8a | true | true | GRANTED | `PREFLIGHT_TERMINAL_BLOCKED` | `TOOLBOX_EXEC_BLOCKED_BY_PLATFORM (fln1=7, execve errno=13)` | not-run | 平台 SELinux 阻塞；未绕过，未跑 full |
+| 2026-10-22 | `<alias-b>` | 36 | arm64-v8a | true | true | GRANTED | `PREFLIGHT_TERMINAL_BLOCKED` | `TOOLBOX_EXEC_BLOCKED_BY_PLATFORM stage=execve errno=13` | not-run | 平台 SELinux 阻塞；未绕过，未跑 full |
 | 2026-10-22 | `<alias-c>` | 35 | arm64-v8a | true | false | DENIED | `PREFLIGHT_BLOCKED_EXTERNAL` | `PERMISSION_DENIED` | not-run | 权限/protected 门禁；修复后需重新 preflight |
 | 2026-10-23 | `<alias-d>` | 34 | x86_64 | false | false | UNKNOWN | `PREFLIGHT_BLOCKED_EXTERNAL` | `PROTECTED_UNAVAILABLE` | not-run | 设备不满足 protected 前置；不进入 full |
 | 2026-10-23 | `<alias-e>` | 36 | arm64-v8a | true | true | GRANTED | `PREFLIGHT_TERMINAL_OK` | `PREFLIGHT_TERMINAL_OK` | no | full 已跑但未 20/20；保留失败样本 |

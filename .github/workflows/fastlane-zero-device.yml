@@ -79,6 +79,16 @@ jobs:
           . .venv/bin/activate
           python3 -m unittest discover -s tools/fastlane-build -p 'test_*.py' -v
 
+      - name: Run tools/ci unit tests
+        run: |
+          . .venv/bin/activate
+          python3 -m unittest discover -s tools/ci -p 'test_*.py' -v
+
+      - name: Check Microdroid exec gate fixtures
+        run: |
+          . .venv/bin/activate
+          python3 tools/ci/check_microdroid_exec_gate.py --policy-fixtures tools/ci/fixtures/sepolicy
+
       - name: Run QEMU tuning matrix unit tests
         run: |
           . .venv/bin/activate
