@@ -18,3 +18,7 @@ guest-assets/** text eol=lf
 # Runtime manifests validate the exact packaged bytes, including license text.
 app/src/main/assets/** -text whitespace=cr-at-eol
 app/src/main/assets/NOTICE.GUEST-RUNTIME whitespace=-blank-at-eof,cr-at-eol
+
+# Unified diff files represent blank context lines as a single space; that is
+# wire format, not trailing whitespace in the change itself.
+tools/fastlane-build/*.patch whitespace=-trailing-space

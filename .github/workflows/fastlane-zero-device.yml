@@ -297,3 +297,51 @@ jobs:
       - name: Build payload and check symbol/16 KB
         if: steps.payload.outputs.present == 'true'
         run: bash tools/fastlane-build/build-payload.sh
+
+  distccd-android-arm64:
+    name: distccd arm64 build, reproducibility, ELF and license gates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Install qemu-user and host build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static build-essential patch
+
+      - name: Install the pinned NDK
+        run: |
+          set -euo pipefail
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f 2>/dev/null | head -1)
+          if [ -z "$SDKMANAGER" ]; then
+            echo "::error::sdkmanager was not found under $ANDROID_HOME/cmdline-tools"
+            exit 1
+          fi
+          yes | "$SDKMANAGER" --licenses || true
+          "$SDKMANAGER" "ndk;27.0.12077973"
+          test -f "$ANDROID_HOME/ndk/27.0.12077973/source.properties"
+
+      # The hosted runner presets ANDROID_NDK_HOME to a newer NDK and
+      # build-distccd.sh resolves that variable before the pinned revision
+      # path, so pin both variables for the rest of the job.
+      - name: Point the build at the pinned NDK
+        run: |
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
+
+      - name: Build twice and compare byte for byte
+        run: |
+          set -euo pipefail
+          bash tools/fastlane-build/build-distccd.sh
+          FASTLANE_DISTCCD_OUT="$RUNNER_TEMP/distccd-second" \
+            bash tools/fastlane-build/build-distccd.sh
+          cmp build/fastlane-distccd/bin/distccd "$RUNNER_TEMP/distccd-second/bin/distccd"
+          echo "DISTCCD_REPRODUCIBLE"
+
+      - name: Verify ELF, TLS, static closure and --version
+        run: bash tools/ci/check-distccd-artifact.sh build/fastlane-distccd
+
+      - name: Scan licenses, NOTICE and SBOM
+        run: python3 tools/ci/check-distccd-license.py --artifact build/fastlane-distccd
