@@ -1,0 +1,18 @@
+[
+  {"case":"all-facts-satisfied","decision":{"mode":"QEMU_PLUS_ACCEL","reasonCode":"ACCEL_AVAILABLE","degradedCapabilities":[]}},
+  {"case":"charging-battery-allowed","decision":{"mode":"QEMU_PLUS_ACCEL","reasonCode":"ACCEL_AVAILABLE","degradedCapabilities":[]}},
+  {"case":"light-thermal-allowed","decision":{"mode":"QEMU_PLUS_ACCEL","reasonCode":"ACCEL_AVAILABLE","degradedCapabilities":[]}},
+  {"case":"no-avf","decision":{"mode":"QEMU_ONLY","reasonCode":"ACCEL_UNAVAILABLE_NO_NON_PROTECTED","degradedCapabilities":["accelerator","distcc"]}},
+  {"case":"protected-only","decision":{"mode":"QEMU_ONLY","reasonCode":"ACCEL_UNAVAILABLE_NO_NON_PROTECTED","degradedCapabilities":["accelerator","distcc"]}},
+  {"case":"non-protected-unsupported","decision":{"mode":"QEMU_ONLY","reasonCode":"ACCEL_UNAVAILABLE_NO_NON_PROTECTED","degradedCapabilities":["accelerator","distcc"]}},
+  {"case":"image-missing","decision":{"mode":"QEMU_ONLY","reasonCode":"ACCEL_IMAGE_MISSING","degradedCapabilities":["accelerator","distcc"]}},
+  {"case":"vsock-missing","decision":{"mode":"QEMU_ONLY","reasonCode":"ACCEL_VSOCK_UNAVAILABLE","degradedCapabilities":["accelerator","distcc"]}},
+  {"case":"compiler-triple-mismatch","decision":{"mode":"QEMU_ONLY","reasonCode":"COMPILER_MISMATCH","degradedCapabilities":["accelerator","distcc"]}},
+  {"case":"compiler-triple-empty","decision":{"mode":"QEMU_ONLY","reasonCode":"COMPILER_MISMATCH","degradedCapabilities":["accelerator","distcc"]}},
+  {"case":"required-triple-empty","decision":{"mode":"QEMU_ONLY","reasonCode":"COMPILER_MISMATCH","degradedCapabilities":["accelerator","distcc"]}},
+  {"case":"thermal-moderate","decision":{"mode":"QEMU_ONLY","reasonCode":"THERMAL_BUDGET","degradedCapabilities":["accelerator","distcc"]}},
+  {"case":"thermal-severe","decision":{"mode":"QEMU_ONLY","reasonCode":"THERMAL_BUDGET","degradedCapabilities":["accelerator","distcc"]}},
+  {"case":"thermal-unknown","decision":{"mode":"QEMU_ONLY","reasonCode":"THERMAL_BUDGET","degradedCapabilities":["accelerator","distcc"]}},
+  {"case":"battery-low","decision":{"mode":"QEMU_ONLY","reasonCode":"THERMAL_BUDGET","degradedCapabilities":["accelerator","distcc"]}},
+  {"case":"battery-unknown","decision":{"mode":"QEMU_ONLY","reasonCode":"THERMAL_BUDGET","degradedCapabilities":["accelerator","distcc"]}}
+]

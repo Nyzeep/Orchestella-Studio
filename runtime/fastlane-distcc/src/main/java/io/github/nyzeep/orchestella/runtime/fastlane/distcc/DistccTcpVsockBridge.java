@@ -2,6 +2,7 @@ package io.github.nyzeep.orchestella.runtime.fastlane.distcc;
 
 import io.github.nyzeep.orchestella.runtime.fastlane.FastLaneChannel;
 import io.github.nyzeep.orchestella.runtime.fastlane.FastLaneException;
+import io.github.nyzeep.orchestella.runtime.fastlane.distcc.axp1.Axp1Exception;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
@@ -72,17 +73,32 @@ public final class DistccTcpVsockBridge implements Closeable {
 
     /** Counters for one finished connection. Never carries payload bytes. */
     public static final class ConnectionStats {
+        /** No failure code for a completed or non-channel outcome. */
+        public static final String NO_FAILURE = "NONE";
+        public static final String CHANNEL_FAILED = "CHANNEL_FAILED";
+
         private final Outcome outcome;
         private final long bytesFromClient;
         private final long bytesToClient;
         private final long durationMillis;
+        private final String failureCode;
 
         public ConnectionStats(
                 Outcome outcome, long bytesFromClient, long bytesToClient, long durationMillis) {
+            this(outcome, bytesFromClient, bytesToClient, durationMillis, NO_FAILURE);
+        }
+
+        public ConnectionStats(
+                Outcome outcome,
+                long bytesFromClient,
+                long bytesToClient,
+                long durationMillis,
+                String failureCode) {
             this.outcome = Objects.requireNonNull(outcome, "outcome");
             this.bytesFromClient = bytesFromClient;
             this.bytesToClient = bytesToClient;
             this.durationMillis = durationMillis;
+            this.failureCode = normalizeFailureCode(failureCode);
         }
 
         public Outcome outcome() {
@@ -99,6 +115,18 @@ public final class DistccTcpVsockBridge implements Closeable {
 
         public long durationMillis() {
             return durationMillis;
+        }
+
+        /** Fixed AX-06 reason such as COMPILER_MISMATCH, or NONE. */
+        public String failureCode() {
+            return failureCode;
+        }
+
+        private static String normalizeFailureCode(String value) {
+            if (value != null && value.matches("[A-Z0-9_]{1,64}")) {
+                return value;
+            }
+            return CHANNEL_FAILED;
         }
     }
 
@@ -359,7 +387,9 @@ public final class DistccTcpVsockBridge implements Closeable {
                 upstream.setDaemon(true);
                 upstream.start();
                 pumpToChannel();
-            } catch (FastLaneException | IOException | RuntimeException failure) {
+            } catch (FastLaneException failure) {
+                finish(Outcome.CHANNEL_FAILED, failure.reason());
+            } catch (IOException | RuntimeException failure) {
                 finish(Outcome.CHANNEL_FAILED);
             }
         }
@@ -369,6 +399,8 @@ public final class DistccTcpVsockBridge implements Closeable {
                 OutputStream channelOutput = channel.outputStream();
                 copy(client.getInputStream(), channelOutput, bytesFromClient);
                 closeQuietly(channelOutput);
+            } catch (Axp1Exception failure) {
+                finish(Outcome.CHANNEL_FAILED, Axp1DistccChannelFactory.reasonCode(failure.code()));
             } catch (IOException failure) {
                 finish(Outcome.CHANNEL_FAILED);
             } finally {
@@ -380,6 +412,8 @@ public final class DistccTcpVsockBridge implements Closeable {
             try {
                 copy(channel.inputStream(), client.getOutputStream(), bytesToClient);
                 shutdownClientOutput();
+            } catch (Axp1Exception failure) {
+                finish(Outcome.CHANNEL_FAILED, Axp1DistccChannelFactory.reasonCode(failure.code()));
             } catch (IOException failure) {
                 finish(Outcome.CHANNEL_FAILED);
             } finally {
@@ -419,6 +453,10 @@ public final class DistccTcpVsockBridge implements Closeable {
 
         /** Idempotent terminal transition; closes both sides and reports once. */
         private void finish(Outcome terminal) {
+            finish(terminal, ConnectionStats.NO_FAILURE);
+        }
+
+        private void finish(Outcome terminal, String failureCode) {
             if (!outcome.compareAndSet(null, terminal)) {
                 return;
             }
@@ -444,7 +482,8 @@ public final class DistccTcpVsockBridge implements Closeable {
                     terminal,
                     bytesFromClient.get(),
                     bytesToClient.get(),
-                    TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos)));
+                    TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos),
+                    failureCode));
         }
     }
 

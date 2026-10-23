@@ -16,6 +16,7 @@ import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneState;
 import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneStopOutcome;
 import java.io.Closeable;
 import java.util.Objects;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * AX-01: the single admission and stop owner for the QEMU and accelerator
@@ -27,6 +28,11 @@ import java.util.Objects;
  * QEMU. Stops always try QEMU first and then the accelerator, even when the
  * QEMU stop is unconfirmed or throws. An {@code UNCONFIRMED} stop keeps its
  * lease and its budget reservation.
+ *
+ * <p>Readiness waits never hold the coordinator lock across a sleep. A
+ * concurrent {@link #cancel()} sets the volatile stop flag before it acquires
+ * the lock, so a start blocked on readiness can be stopped promptly instead of
+ * waiting for the start timeout.
  *
  * <p>This class adds no process stop of its own. Adapters delegate to
  * {@link RuntimeOwnedSession#stopRuntime(long)} or {@code
@@ -70,6 +76,7 @@ public final class DualLaneCoordinator implements Closeable {
     private final LaneClock clock;
     private final LaneEventSink events;
     private final LaneBudgetLedger ledger;
+    private final ReentrantLock lock = new ReentrantLock();
 
     private LaneRuntime qemuRuntime;
     private LaneRuntime accelRuntime;
@@ -80,7 +87,7 @@ public final class DualLaneCoordinator implements Closeable {
     private boolean qemuLease;
     private boolean accelLease;
     private boolean started;
-    private boolean cancelRequested;
+    private volatile boolean stopRequested;
 
     public DualLaneCoordinator(
             LaneBudget budget,
@@ -105,136 +112,177 @@ public final class DualLaneCoordinator implements Closeable {
     }
 
     /** Issues both starts, then waits only for QEMU readiness. */
-    public synchronized StartReport startAll() {
-        if (started) {
-            return new StartReport(qemuState, accelState, LaneRejectCode.NONE);
-        }
-        if (cancelRequested) {
-            return new StartReport(LaneState.STOPPED, LaneState.STOPPED, LaneRejectCode.NONE);
-        }
-        started = true;
-
-        try {
-            qemuReservation = ledger.reserve(qemuRequest);
-        } catch (LaneRejectedException rejected) {
-            started = false;
-            qemuState = LaneState.STOPPED;
-            emit(LaneEvent.BUDGET_REJECTED, LaneId.QEMU, rejected.code().name(), 0L);
-            return new StartReport(qemuState, LaneState.STOPPED, rejected.code());
-        }
-
+    public StartReport startAll() {
         LaneRejectCode accelReject = LaneRejectCode.NONE;
+        lock.lock();
         try {
-            accelReservation = ledger.reserve(accelRequest);
-        } catch (LaneRejectedException rejected) {
-            accelReject = rejected.code();
-            accelState = LaneState.DISABLED;
-            emit(LaneEvent.BUDGET_REJECTED, LaneId.ACCEL, rejected.code().name(), 0L);
-        }
-
-        long qemuStartedAt = clock.nanoTime();
-        try {
-            qemuRuntime = qemuStarter.start();
-            if (qemuRuntime == null) {
-                throw new LaneStartException("QEMU_START_NULL");
+            if (started || stopRequested) {
+                return report(accelReject);
             }
-        } catch (LaneStartException | RuntimeException failure) {
-            release(qemuReservation);
-            qemuReservation = null;
-            release(accelReservation);
-            accelReservation = null;
-            qemuState = LaneState.FAILED;
-            accelState = LaneState.DISABLED;
-            started = false;
-            emit(LaneEvent.LANE_LOST, LaneId.QEMU, "QEMU_START_FAILED",
-                    elapsed(qemuStartedAt));
-            return new StartReport(qemuState, accelState, accelReject);
-        }
-        qemuLease = true;
-        qemuState = LaneState.STARTING;
-        emit(LaneEvent.LANE_STARTED, LaneId.QEMU, "STARTED", elapsed(qemuStartedAt));
+            started = true;
 
-        if (cancelRequested) {
-            stopAll(config.stopGraceMs());
-            return new StartReport(qemuState, accelState, accelReject);
-        }
-
-        if (accelReservation != null) {
-            long accelStartedAt = clock.nanoTime();
             try {
-                accelRuntime = accelStarter.start();
-                if (accelRuntime == null) {
-                    throw new LaneStartException("ACCEL_START_NULL");
+                qemuReservation = ledger.reserve(qemuRequest);
+            } catch (LaneRejectedException rejected) {
+                started = false;
+                qemuState = LaneState.STOPPED;
+                emit(LaneEvent.BUDGET_REJECTED, LaneId.QEMU, rejected.code().name(), 0L);
+                return report(rejected.code());
+            }
+
+            try {
+                accelReservation = ledger.reserve(accelRequest);
+            } catch (LaneRejectedException rejected) {
+                accelReject = rejected.code();
+                accelState = LaneState.DISABLED;
+                emit(LaneEvent.BUDGET_REJECTED, LaneId.ACCEL, rejected.code().name(), 0L);
+            }
+
+            long qemuStartedAt = clock.nanoTime();
+            try {
+                qemuRuntime = qemuStarter.start();
+                if (qemuRuntime == null) {
+                    throw new LaneStartException("QEMU_START_NULL");
                 }
-                accelLease = true;
-                accelState = LaneState.STARTING;
-                emit(LaneEvent.LANE_STARTED, LaneId.ACCEL, "STARTED", elapsed(accelStartedAt));
             } catch (LaneStartException | RuntimeException failure) {
+                release(qemuReservation);
+                qemuReservation = null;
                 release(accelReservation);
                 accelReservation = null;
-                accelLease = false;
-                accelState = LaneState.LOST;
-                emit(LaneEvent.LANE_LOST, LaneId.ACCEL, "ACCEL_START_FAILED",
-                        elapsed(accelStartedAt));
+                qemuState = LaneState.FAILED;
+                accelState = LaneState.DISABLED;
+                started = false;
+                emit(LaneEvent.LANE_LOST, LaneId.QEMU, "QEMU_START_FAILED",
+                        elapsed(qemuStartedAt));
+                return report(accelReject);
             }
+            qemuLease = true;
+            qemuState = LaneState.STARTING;
+            emit(LaneEvent.LANE_STARTED, LaneId.QEMU, "STARTED", elapsed(qemuStartedAt));
+
+            if (stopRequested) {
+                stopAllLocked(config.stopGraceMs());
+                return report(accelReject);
+            }
+
+            if (accelReservation != null) {
+                long accelStartedAt = clock.nanoTime();
+                try {
+                    accelRuntime = accelStarter.start();
+                    if (accelRuntime == null) {
+                        throw new LaneStartException("ACCEL_START_NULL");
+                    }
+                    accelLease = true;
+                    accelState = LaneState.STARTING;
+                    emit(LaneEvent.LANE_STARTED, LaneId.ACCEL, "STARTED",
+                            elapsed(accelStartedAt));
+                } catch (LaneStartException | RuntimeException failure) {
+                    release(accelReservation);
+                    accelReservation = null;
+                    accelLease = false;
+                    accelState = LaneState.LOST;
+                    emit(LaneEvent.LANE_LOST, LaneId.ACCEL, "ACCEL_START_FAILED",
+                            elapsed(accelStartedAt));
+                }
+            }
+
+            if (stopRequested) {
+                stopAllLocked(config.stopGraceMs());
+                return report(accelReject);
+            }
+        } finally {
+            lock.unlock();
         }
 
         awaitQemuReady();
-        return new StartReport(qemuState, accelState, accelReject);
+
+        lock.lock();
+        try {
+            if (stopRequested) {
+                stopAllLocked(config.stopGraceMs());
+            }
+            return report(accelReject);
+        } finally {
+            lock.unlock();
+        }
     }
 
     /** Compile work calls this; a timeout means "build locally". */
-    public synchronized boolean awaitAcceleratorReady(long timeoutMs) {
-        if (!accelLease || accelRuntime == null || accelState == LaneState.DISABLED
-                || accelState == LaneState.LOST || accelState == LaneState.UNCONFIRMED
-                || accelState == LaneState.STOPPED || accelState == LaneState.FAILED) {
-            return false;
-        }
+    public boolean awaitAcceleratorReady(long timeoutMs) {
         long startedAt = clock.nanoTime();
         long deadline = startedAt + Math.max(0L, timeoutMs) * 1_000_000L;
-        while (clock.nanoTime() <= deadline) {
-            if (!accelRuntime.isAlive()) {
-                accelState = LaneState.LOST;
-                emit(LaneEvent.LANE_LOST, LaneId.ACCEL, "ACCEL_LOST", elapsed(startedAt));
-                return false;
+        while (true) {
+            long remainingNanos;
+            lock.lock();
+            try {
+                if (stopRequested || !accelLease || accelRuntime == null
+                        || terminal(accelState)) {
+                    return false;
+                }
+                if (!accelRuntime.isAlive()) {
+                    accelState = LaneState.LOST;
+                    emit(LaneEvent.LANE_LOST, LaneId.ACCEL, "ACCEL_LOST",
+                            elapsed(startedAt));
+                    return false;
+                }
+                if (accelRuntime.isReady()) {
+                    if (stopRequested) {
+                        return false;
+                    }
+                    accelState = LaneState.READY;
+                    emit(LaneEvent.LANE_READY, LaneId.ACCEL, "READY", elapsed(startedAt));
+                    return true;
+                }
+                remainingNanos = deadline - clock.nanoTime();
+                if (remainingNanos <= 0L) {
+                    return false;
+                }
+            } finally {
+                lock.unlock();
             }
-            if (accelRuntime.isReady()) {
-                accelState = LaneState.READY;
-                emit(LaneEvent.LANE_READY, LaneId.ACCEL, "READY", elapsed(startedAt));
-                return true;
-            }
-            long remainingNanos = deadline - clock.nanoTime();
-            if (remainingNanos <= 0L) {
-                break;
-            }
-            sleep(Math.max(1L, Math.min(READY_POLL_MS,
-                    remainingNanos / 1_000_000L)));
+            sleep(Math.max(1L, Math.min(READY_POLL_MS, remainingNanos / 1_000_000L)));
         }
-        return false;
     }
 
     /** QEMU first, accelerator second; never the reverse. */
-    public synchronized StopReport stopAll(long graceMs) {
-        LaneStopOutcome qemu = stopLane(LaneId.QEMU, graceMs);
-        LaneStopOutcome accel = stopLane(LaneId.ACCEL, graceMs);
-        started = qemuLease || accelLease;
-        return new StopReport(qemu, accel);
-    }
-
-    /** Cancels a start in progress or a running pair; idempotent. */
-    public synchronized void cancel() {
-        cancelRequested = true;
-        if (started) {
-            stopAll(config.stopGraceMs());
+    public StopReport stopAll(long graceMs) {
+        lock.lock();
+        try {
+            return stopAllLocked(graceMs);
+        } finally {
+            lock.unlock();
         }
     }
 
-    public synchronized LaneState state(LaneId lane) {
-        return lane == LaneId.QEMU ? qemuState : accelState;
+    /** Cancels a start in progress or a running pair; idempotent. */
+    public void cancel() {
+        stopRequested = true;
+        lock.lock();
+        try {
+            if (started || qemuLease || accelLease) {
+                stopAllLocked(config.stopGraceMs());
+            }
+        } finally {
+            lock.unlock();
+        }
     }
 
-    public synchronized boolean hasLease(LaneId lane) {
-        return lane == LaneId.QEMU ? qemuLease : accelLease;
+    public LaneState state(LaneId lane) {
+        lock.lock();
+        try {
+            return lane == LaneId.QEMU ? qemuState : accelState;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public boolean hasLease(LaneId lane) {
+        lock.lock();
+        try {
+            return lane == LaneId.QEMU ? qemuLease : accelLease;
+        } finally {
+            lock.unlock();
+        }
     }
 
     public LaneBudgetLedger ledger() {
@@ -248,32 +296,47 @@ public final class DualLaneCoordinator implements Closeable {
 
     @Override
     public void close() {
+        stopRequested = true;
         stopAll(config.stopGraceMs());
     }
 
     private void awaitQemuReady() {
         long startedAt = clock.nanoTime();
-        long deadline = startedAt
-                + config.qemuReadyTimeoutMs() * 1_000_000L;
-        while (clock.nanoTime() <= deadline) {
-            if (!qemuRuntime.isAlive()) {
-                qemuState = LaneState.LOST;
-                emit(LaneEvent.LANE_LOST, LaneId.QEMU, "QEMU_LOST", elapsed(startedAt));
-                stopLane(LaneId.ACCEL, config.stopGraceMs());
-                return;
+        long deadline = startedAt + config.qemuReadyTimeoutMs() * 1_000_000L;
+        while (true) {
+            long remainingNanos;
+            lock.lock();
+            try {
+                if (stopRequested || !qemuLease || qemuRuntime == null) {
+                    return;
+                }
+                if (!qemuRuntime.isAlive()) {
+                    qemuState = LaneState.LOST;
+                    emit(LaneEvent.LANE_LOST, LaneId.QEMU, "QEMU_LOST", elapsed(startedAt));
+                    stopLane(LaneId.ACCEL, config.stopGraceMs());
+                    return;
+                }
+                if (qemuRuntime.isReady()) {
+                    qemuState = LaneState.READY;
+                    emit(LaneEvent.LANE_READY, LaneId.QEMU, "READY", elapsed(startedAt));
+                    return;
+                }
+                remainingNanos = deadline - clock.nanoTime();
+                if (remainingNanos <= 0L) {
+                    return;
+                }
+            } finally {
+                lock.unlock();
             }
-            if (qemuRuntime.isReady()) {
-                qemuState = LaneState.READY;
-                emit(LaneEvent.LANE_READY, LaneId.QEMU, "READY", elapsed(startedAt));
-                return;
-            }
-            long remainingNanos = deadline - clock.nanoTime();
-            if (remainingNanos <= 0L) {
-                break;
-            }
-            sleep(Math.max(1L, Math.min(READY_POLL_MS,
-                    remainingNanos / 1_000_000L)));
+            sleep(Math.max(1L, Math.min(READY_POLL_MS, remainingNanos / 1_000_000L)));
         }
+    }
+
+    private StopReport stopAllLocked(long graceMs) {
+        LaneStopOutcome qemu = stopLane(LaneId.QEMU, graceMs);
+        LaneStopOutcome accel = stopLane(LaneId.ACCEL, graceMs);
+        started = qemuLease || accelLease;
+        return new StopReport(qemu, accel);
     }
 
     private LaneStopOutcome stopLane(LaneId lane, long graceMs) {
@@ -333,6 +396,18 @@ public final class DualLaneCoordinator implements Closeable {
         } else {
             accelLease = leased;
         }
+    }
+
+    private StartReport report(LaneRejectCode accelReject) {
+        return new StartReport(qemuState, accelState, accelReject);
+    }
+
+    private static boolean terminal(LaneState state) {
+        return state == LaneState.DISABLED
+                || state == LaneState.LOST
+                || state == LaneState.UNCONFIRMED
+                || state == LaneState.STOPPED
+                || state == LaneState.FAILED;
     }
 
     private void emit(String name, LaneId lane, String code, long durationMs) {
