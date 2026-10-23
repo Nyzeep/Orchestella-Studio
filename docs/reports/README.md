@@ -6,6 +6,7 @@
 
 ### 主线与验收
 
+- [交叉加速零设备进度与真机前置评估（2026-10-23）](orchestration/accelerator-zero-device-progress-20261023.zh-CN.md)：PL/AX 票状态、关键设计、测试证据、CI 历史失败与真机缺口；明确 AX-07/AX-08 未完成。
 - [Fast Lane × QEMU 交叉优化 Spec（2026-10-21）](orchestration/fastlane-cross-lane-spec-20261021.zh-CN.md)：当前实现规格；P01–P12 并行零设备模块、DV-01–DV-04 串行真机门、distcc 跨车道与能力矩阵。
 - [Protected Fast Lane + QEMU Full Lane（2026-10-21）](orchestration/protected-fast-lane-plan-20261021.zh-CN.md)：方向与硬边界；protected Microdroid 密封 Linux toolbox、QEMU Full Lane、构建 offload。
 - [Fast Lane 集成分支（2026-10-21）](orchestration/fastlane-integration-20261021.zh-CN.md)：四条模块分支合并、FLN1 adapter、CI 全模块门禁与证据分级；真实 Android 构建 `BUILD_BLOCKED`。
@@ -20,6 +21,7 @@
 
 - [工单实施报告](tickets/)：当前 AVF / Shizuku 工单的实施记录。
 - 批次三（2026-10-23）：[批次二修复](tickets/batch2-fixes/implementation-report.zh-CN.md)、[AX-02 选道](tickets/ax-02/implementation-report.zh-CN.md)、[AX-06 distcc 宿主 e2e](tickets/ax-06/implementation-report.zh-CN.md)。
+- 真机交接：[真机交叉加速测试 Prompt](../agent-handoff/accelerator/device-cross-lane-test-prompt-20261023.zh-CN.md)：设备资格、AX-07/AX-08 前置门、分阶段测试与证据规则。
 - [独立审查](reviews/)：最终轮 spec / standards 审查与设备证据复审。
 - [原型报告](prototypes/)：隔离 QA 与研究原型的报告，不代表原产品升级或 Full Linux 硬件验收。
 
