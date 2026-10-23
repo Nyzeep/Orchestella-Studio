@@ -1,8 +1,8 @@
 # 交叉加速零设备进度与真机前置评估（2026-10-23）
 
-> **结论先行**：零设备工单已完成 8 / 10。PL-01、PL-02、AX-01–AX-06 已交付；**AX-07（性能协议）与 AX-08（设备前生产装配）未完成**。
+> **结论先行**：零设备工单已完成 10 / 10。PL-01、PL-02、AX-01–AX-08 已全部交付。**2026-10-23 第五批补齐了 AX-08（设备前生产装配）与 AX-07（性能协议）**。
 >
-> 因此当前分支**还不是“真机交叉加速可测”状态**：`DualLaneCoordinator`、`AcceleratorPolicy`、`ProtectedWarmPool` 都只有测试装配，没有 Android 生产事实提供者、没有 QEMU readiness 探针、没有 app 装配根。现在上真机，只能验证 QEMU 基线、AVF 非保护启停和既有数据面，**不能验证交火协调器**。
+> 但"零设备通过"不等于"真机可测完整体验"：装配根已就绪，**加速车道的 `LaneStarter`（创建 non-protected 自定义 VM）仍需在设备上接上**，详见 `docs/reports/tickets/ax-08/implementation-report.zh-CN.md` §8.1。现在上真机可以验证 QEMU 基线、AVF 非保护启停、数据面，以及协调器/预算/停止顺序的装配链路，但交火编译链路的最后一跳要在设备侧接线后才能跑。
 >
 > 当前 `main` 的 CI 全绿；历史 21 条失败 run 全部位于已被取代的旧 SHA，删除需要 `actions:write` token，本环境只有 SSH 推送权限，未执行删除。
 
@@ -33,8 +33,8 @@
 | AX-04 | guest→host 上行 | 完成（零设备） | `192.168.127.254` 主路径、`10.0.2.2` 回退，15 个测试 |
 | AX-05 | distccd arm64 构建 | 完成（零设备） | 720,992 B 静态产物，`DISTCCD_ARTIFACT_OK` / `DISTCCD_LICENSE_OK` |
 | AX-06 | distcc 宿主 e2e | 完成（宿主回环） | 真实 distcc 5 case，`DISTCC_E2E_OK cases=5` |
-| AX-07 | 性能测量协议 | **未完成** | 仅有工单，无采集器/schema/runbook |
-| AX-08 | 设备前生产装配 | **未完成** | 工单已建；无 Android fact provider、无 QEMU readiness、无 app 装配根 |
+| AX-07 | 性能测量协议 | 完成（零设备，第五批） | `tools/accelerator-perf/`：采集器 + schema + 统计 + 对比 + runbook，CI 已接入 |
+| AX-08 | 设备前生产装配 | 完成（零设备，第五批） | `AndroidAcceleratorFactProvider`、`QemuReadinessProbe`、`AcceleratorLaneAssembly`（flag 默认关） |
 
 ## 3. 关键设计
 
@@ -85,26 +85,30 @@ QEMU guest (distcc client)
 - `docs/reports/tickets/ax-04/`
 - `docs/reports/tickets/ax-05/`
 - `docs/reports/tickets/ax-06/`
+- `docs/reports/tickets/ax-07/`
+- `docs/reports/tickets/ax-08/`
 - `docs/reports/tickets/batch2-fixes/`
 
-## 5. 未完成项与真机缺口
+## 5. 第五批补齐项与剩余真机缺口
 
-### 5.1 AX-08：生产装配缺失（P0）
+### 5.1 AX-08：生产装配（已补齐，零设备）
 
-现状：
+此前四条缺口，现已逐条闭合：
 
-- `AcceleratorFactProvider` 只有 fake，没有 Android 实现；
-- `QemuLaneRuntime` 的 readiness 默认恒 false，没有生产探针；
-- `new DualLaneCoordinator` 在 `app/src/main` 没有调用点；
-- `ProtectedWarmPool` 没有生产实例。
+| 改前 | 改后 |
+| --- | --- |
+| `AcceleratorFactProvider` 只有 fake | `AndroidAcceleratorFactProvider` 复用 `AvfHostFactsProbe` + `AvfCapabilityEvaluator` |
+| `QemuLaneRuntime` readiness 默认恒 false | `QemuReadinessProbe` 接 Bridge 认证信号，缺失即 `UNKNOWN` |
+| `app/src/main` 没有 `new DualLaneCoordinator` | `AcceleratorLaneAssembly` 内唯一装配点 |
+| `ProtectedWarmPool` 没有生产实例 | `protectedPool(...)` 共享协调器预算账本，容量仍默认 0 |
 
-后果：真机上无法触发 `QEMU_PLUS_ACCEL`，协调器、预算、停止顺序、选道都不会被执行。必须先完成 AX-08。
+**仍然缺的一段**：装配根需要两个 `LaneStarter`，其中加速车道的 starter 要创建 non-protected 自定义 VM，属真机工作。因此"每实例启动都经过装配根"的调用链要在设备侧接上。详见 `docs/reports/tickets/ax-08/implementation-report.zh-CN.md` §8.1。
 
-### 5.2 AX-07：性能协议缺失（P1）
+### 5.2 AX-07：性能协议（已补齐，零设备）
 
-没有采集器、schema、n≥10 统计与设备 runbook，无法把“比 Podroid 快”变成可复核结论。
+`tools/accelerator-perf/` 提供采集器、`accelerator-perf-v1` schema、n≥10 统计（median/IQR，线性插值口径写进报告）、对比与预注册停止条件、设备 runbook；`--self-test` 与单测已接入 CI。真机采样与 ≥1.5× 结论仍待 DV-ACC。
 
-### 5.3 其他未验证项
+### 5.3 其他未验证项（全部 `not-tested`）
 
 - 真实 vsock 上的 AXP1；
 - 真实 non-protected AVF VM 启停与 vsock；
@@ -162,8 +166,8 @@ GitHub Actions 中仍有 **21 条失败 run**，全部位于已被取代的旧 S
 
 仍待完成：
 
-3. AX-08（设备前生产装配与探针）与 AX-07（跨车道性能测量与验收协议）—— 这两项是本轮仅剩的零设备阻塞。
-4. 上述两项合入后再进入 DV-ACC 真机测试。
+3. ~~AX-08（设备前生产装配与探针）与 AX-07（跨车道性能测量与验收协议）~~ —— 已在第五批交付。
+4. 设备侧接上加速车道的 `LaneStarter`，打开 flag，按 `tools/accelerator-perf/README.md` 采集并套用停止条件。
 5. 若要清理历史失败 run，提供具备 `actions:write` 的 token，再批量删除；不要删除 workflow 定义。
 
 ## 9. 附录：快速核对命令

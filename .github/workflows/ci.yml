@@ -50,6 +50,21 @@ jobs:
           python3 -B tools/device-validation/run_avf_device_validation.py \
             --dry-run --out "$RUNNER_TEMP/avf-device-validation-dry-run"
 
+      # AX-07: the accelerator performance protocol must be executable, not just
+      # documented. This runs its unit tests, the fixed-input dry-run gate, and a
+      # real collect+validate round trip into a temp directory.
+      - name: AX-07 accelerator performance protocol tests and dry-run
+        run: |
+          python3 -B -m unittest discover -s tools/accelerator-perf -p 'test_*.py'
+          python3 -B tools/accelerator-perf/validate.py --self-test
+          python3 -B tools/accelerator-perf/collect.py \
+            --samples tools/accelerator-perf/fixtures/samples-dryrun.tsv \
+            --build-id ci-dryrun --device-alias bench-sim \
+            --generated-at 2026-10-23T00:00:00Z \
+            --out "$RUNNER_TEMP/accelerator-perf-dryrun.json"
+          python3 -B tools/accelerator-perf/validate.py \
+            --report "$RUNNER_TEMP/accelerator-perf-dryrun.json"
+
       - name: Run provisioned launch regression gate
         run: ./gradlew :app:testDebugUnitTest --tests '*ProvisionedLaunchRegressionTest' --no-daemon --stacktrace
 
