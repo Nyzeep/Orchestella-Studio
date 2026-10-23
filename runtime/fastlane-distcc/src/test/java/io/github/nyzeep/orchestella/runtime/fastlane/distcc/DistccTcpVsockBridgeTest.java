@@ -90,6 +90,19 @@ public final class DistccTcpVsockBridgeTest {
         }
     }
 
+    @Test
+    public void statsFailureCodeNeverCarriesFreeFormText() {
+        DistccTcpVsockBridge.ConnectionStats stats =
+                new DistccTcpVsockBridge.ConnectionStats(
+                        DistccTcpVsockBridge.Outcome.CHANNEL_FAILED,
+                        1,
+                        2,
+                        3,
+                        "/tmp/source.c token=secret");
+        assertEquals(DistccTcpVsockBridge.ConnectionStats.CHANNEL_FAILED,
+                stats.failureCode());
+    }
+
     @Test(timeout = 5000)
     public void closeStopsTheListener() throws Exception {
         DistccTcpVsockBridge bridge = new DistccTcpVsockBridge(
