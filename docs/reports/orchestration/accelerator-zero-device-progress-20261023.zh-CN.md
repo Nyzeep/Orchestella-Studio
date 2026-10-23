@@ -12,14 +12,14 @@
 
 | 项 | 值 |
 | --- | --- |
-| `main` | `4765d4b`（2026-10-23 GitHub 最新） |
-| 批次一 | `feat/accelerator-batch1 @ 5fa22c8` |
-| 批次二 | `feat/accelerator-batch2 @ a596d73`（stacked 在批次一） |
-| 批次三 | `feat/accelerator-batch3 @ f8380bd`（stacked 在批次二） |
-| 本报告分支 | `feat/accelerator-device-handoff`（从批次三切出，仅文档与工单） |
+| `main` | `fef4e3c`（四级 accelerator 堆叠已全部合入） |
+| 批次一至四 | 已合并：`feat/accelerator-batch1` → `batch2` → `batch3` → `device-handoff`，PR #8–#11，均用 merge commit |
+| 本报告分支 | 已合并（`feat/accelerator-device-handoff` → `main`） |
 | 未跟踪副本 | `/workspace/Orchestella-Studio`，全程未修改、未 add、未 clean |
 
-批次一至三均未合并 `main`。任何“拉取最新状态”的会话必须显式 checkout 上述分支，不能只看 `main`。
+四级堆叠已全部合入 `main`。任何"拉取最新状态"的会话直接用 `main` 即可，不需要 checkout accelerator feature 分支。
+
+> **已作废的历史 SHA**：提交身份经 `filter-branch` 统一为 `Nyzeep <2950605702@qq.com>` 后原 SHA 已被重写，旧值（`main 4765d4b`、批次一/二/三 `5fa22c8` / `a596d73` / `f8380bd` 等）**不得再作为基线引用**，也不要在任何文档里照抄。当前基线的唯一权威来源是 `git log main`。
 
 ## 2. 工单状态
 
@@ -118,11 +118,13 @@ QEMU guest (distcc client)
 
 ### 6.1 当前 main
 
-2026-10-23 的最新 run 均为 success：
+合并前的零设备基线 run（历史记录，保留原编号）：
 
 - CI `39897089127`
 - Fast Lane zero-device `39896616998`
 - Sensitive data guard `39897089154`
+
+**四个合并提交合入后，`main` 上的 CI 全绿**（`CI` / `Fast Lane zero-device` / `Fast Lane DV-01B zero-device` / `Sensitive data guard` 在批次一至四的每个 merge commit 上均为 `success`）。
 
 ### 6.2 历史失败
 
@@ -153,10 +155,15 @@ GitHub Actions 中仍有 **21 条失败 run**，全部位于已被取代的旧 S
 
 ## 8. 建议下一步
 
-1. 完成 AX-08 与 AX-07（第四批）。
-2. 为 `feat/accelerator-batch1`、`batch2`、`batch3` 开 PR，按顺序合并；每级合并后改基下一级。
-3. 合并后跑全量 CI，确认 5 模块 + policy + e2e 全绿。
-4. 再进入 DV-ACC 真机测试。
+已完成（无需重复）：
+
+1. ~~为 `feat/accelerator-batch1`、`batch2`、`batch3`、`device-handoff` 开 PR 并按顺序合并~~ —— 已完成，PR #8–#11，全部 merge commit。
+2. ~~合并后跑全量 CI，确认 5 模块 + policy + e2e 全绿~~ —— 已完成，四个 merge commit 上 CI 全绿。
+
+仍待完成：
+
+3. AX-08（设备前生产装配与探针）与 AX-07（跨车道性能测量与验收协议）—— 这两项是本轮仅剩的零设备阻塞。
+4. 上述两项合入后再进入 DV-ACC 真机测试。
 5. 若要清理历史失败 run，提供具备 `actions:write` 的 token，再批量删除；不要删除 workflow 定义。
 
 ## 9. 附录：快速核对命令
