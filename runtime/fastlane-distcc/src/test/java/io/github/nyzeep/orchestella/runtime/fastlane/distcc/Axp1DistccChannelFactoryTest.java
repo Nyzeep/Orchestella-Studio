@@ -15,11 +15,12 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.io.PipedInputStream;
-import java.io.PipedOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.Test;
 
 /** AX-06: deterministic AXP1 wrapping around the transparent byte bridge. */
@@ -46,6 +47,7 @@ public final class Axp1DistccChannelFactoryTest {
         byte[] request = "distcc-request-bytes".getBytes(StandardCharsets.UTF_8);
         byte[] response = "distcc-response-bytes".getBytes(StandardCharsets.UTF_8);
         CountDownLatch served = new CountDownLatch(1);
+        AtomicReference<Throwable> guestFailure = new AtomicReference<>();
         Thread server = guest(pipe, TOKEN, capabilities(true, TRIPLE), connection -> {
             try {
                 assertArrayEquals(request, connection.dataInput().readNBytes(request.length));
@@ -55,7 +57,7 @@ public final class Axp1DistccChannelFactoryTest {
             } finally {
                 served.countDown();
             }
-        });
+        }, guestFailure);
         Axp1DistccChannelFactory factory = new Axp1DistccChannelFactory(
                 pipe::clientChannel, TOKEN, capabilities(true, TRIPLE), TRIPLE, LIMITS);
 
@@ -67,6 +69,11 @@ public final class Axp1DistccChannelFactoryTest {
         assertEquals(true, served.await(2, TimeUnit.SECONDS));
         server.join(2_000L);
         pipe.close();
+        // The guest half must not have failed silently: a swallowed transport
+        // error used to surface later as an unexplained host-side write failure.
+        if (guestFailure.get() != null) {
+            throw new AssertionError("guest half failed", guestFailure.get());
+        }
     }
 
     @Test(timeout = 5_000)
@@ -168,14 +175,27 @@ public final class Axp1DistccChannelFactoryTest {
             String token,
             Axp1Capabilities capabilities,
             GuestAction action) {
+        return guest(pipe, token, capabilities, action, new AtomicReference<>());
+    }
+
+    private static Thread guest(
+            Pipe pipe,
+            String token,
+            Axp1Capabilities capabilities,
+            GuestAction action,
+            AtomicReference<Throwable> failure) {
         Thread thread = new Thread(() -> {
             Axp1Connection connection = null;
             try {
                 connection = Axp1Connection.accept(
                         pipe.serverTransport(), Axp1Role.GUEST, token, capabilities, LIMITS);
                 action.run(connection);
-            } catch (IOException ignored) {
-                // Expected auth/close paths are asserted on the host side.
+            } catch (IOException expectedOnRejectPaths) {
+                // Auth/capability rejections are asserted on the host side; the
+                // caller decides whether this guest was supposed to succeed.
+                failure.set(expectedOnRejectPaths);
+            } catch (Throwable unexpected) {
+                failure.set(unexpected);
             }
             // Do not close the transport from the guest side: closing the
             // shared pipe would discard a response the host has not read yet.
@@ -208,33 +228,35 @@ public final class Axp1DistccChannelFactoryTest {
         void run(Axp1Connection connection) throws IOException;
     }
 
+    /**
+     * Deterministic in-memory duplex link.
+     *
+     * <p>Both directions are unbounded {@link BlockingQueue} chunk queues rather
+     * than {@code PipedInputStream}/{@code PipedOutputStream}. The piped streams
+     * are only valid while the writing thread that created them is still alive —
+     * a dead reader turns every later write into {@code IOException("Pipe
+     * broken")}, which made this test fail intermittently. A queue keeps the
+     * bytes, so teardown order and thread death can no longer corrupt a
+     * successful run.
+     */
     private static final class Pipe implements Closeable {
-        private final PipedInputStream clientInput;
-        private final PipedOutputStream clientOutput;
-        private final PipedInputStream serverInput;
-        private final PipedOutputStream serverOutput;
-
-        Pipe() throws IOException {
-            clientInput = new PipedInputStream(64 * 1024);
-            serverOutput = new PipedOutputStream(clientInput);
-            serverInput = new PipedInputStream(64 * 1024);
-            clientOutput = new PipedOutputStream(serverInput);
-        }
+        private final OneWayPipe clientToServer = new OneWayPipe();
+        private final OneWayPipe serverToClient = new OneWayPipe();
 
         FastLaneChannel clientChannel() {
             return new FastLaneChannel() {
                 @Override
                 public InputStream inputStream() {
-                    return clientInput;
+                    return serverToClient.input();
                 }
 
                 @Override
                 public OutputStream outputStream() {
-                    return clientOutput;
+                    return clientToServer.output();
                 }
 
                 @Override
-                public void close() throws IOException {
+                public void close() {
                     Pipe.this.close();
                 }
             };
@@ -244,51 +266,157 @@ public final class Axp1DistccChannelFactoryTest {
             return new Axp1Transport() {
                 @Override
                 public InputStream input() {
-                    return serverInput;
+                    return clientToServer.input();
                 }
 
                 @Override
                 public OutputStream output() {
-                    return serverOutput;
+                    return serverToClient.output();
                 }
 
                 @Override
-                public void close() throws IOException {
-                    // Close only the guest directions; closing the shared pipe
-                    // would discard an RST the host has not read yet.
-                    IOException first = null;
-                    for (Closeable closeable : new Closeable[] {serverInput, serverOutput}) {
-                        try {
-                            closeable.close();
-                        } catch (IOException failure) {
-                            if (first == null) {
-                                first = failure;
-                            }
-                        }
-                    }
-                    if (first != null) {
-                        throw first;
-                    }
+                public void close() {
+                    // Close only the guest directions; the host still owns its
+                    // side and may have a response left to read.
+                    serverToClient.closeWriter();
+                    clientToServer.closeReader();
                 }
             };
         }
 
         @Override
-        public void close() throws IOException {
-            IOException first = null;
-            for (Closeable closeable : new Closeable[] {
-                    clientOutput, serverInput, serverOutput, clientInput
-            }) {
-                try {
-                    closeable.close();
-                } catch (IOException failure) {
-                    if (first == null) {
-                        first = failure;
-                    }
-                }
+        public void close() {
+            clientToServer.close();
+            serverToClient.close();
+        }
+    }
+
+    /** One direction: a writer, a reader and the chunks between them. */
+    private static final class OneWayPipe {
+        /** End-of-stream marker; a zero-length chunk can never be real data. */
+        private static final byte[] EOF = new byte[0];
+
+        private final BlockingQueue<byte[]> chunks = new LinkedBlockingQueue<>();
+        private final QueueInput input = new QueueInput();
+        private final QueueOutput output = new QueueOutput();
+
+        InputStream input() {
+            return input;
+        }
+
+        OutputStream output() {
+            return output;
+        }
+
+        void closeWriter() {
+            output.close();
+        }
+
+        void closeReader() {
+            input.close();
+        }
+
+        void close() {
+            output.close();
+            input.close();
+        }
+
+        private final class QueueInput extends InputStream {
+            private byte[] current = EOF;
+            private int offset;
+            private boolean endOfStream;
+            private boolean closed;
+
+            @Override
+            public int read() throws IOException {
+                return fill() ? current[offset++] & 0xFF : -1;
             }
-            if (first != null) {
-                throw first;
+
+            @Override
+            public int read(byte[] target, int targetOffset, int length) throws IOException {
+                if (length == 0) {
+                    return 0;
+                }
+                if (!fill()) {
+                    return -1;
+                }
+                int copied = Math.min(length, current.length - offset);
+                System.arraycopy(current, offset, target, targetOffset, copied);
+                offset += copied;
+                return copied;
+            }
+
+            @Override
+            public int available() {
+                return current.length - offset;
+            }
+
+            @Override
+            public void close() {
+                closed = true;
+                // Unblock a reader parked in fill(); queued bytes stay readable.
+                chunks.offer(EOF);
+            }
+
+            /** Ensures the current chunk has bytes, or reports end of stream. */
+            private boolean fill() throws IOException {
+                while (offset >= current.length) {
+                    if (endOfStream) {
+                        return false;
+                    }
+                    if (closed && chunks.isEmpty()) {
+                        throw new IOException("stream closed");
+                    }
+                    byte[] next;
+                    try {
+                        next = chunks.take();
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        throw new IOException("interrupted", interrupted);
+                    }
+                    if (next == EOF) {
+                        endOfStream = true;
+                        return false;
+                    }
+                    current = next;
+                    offset = 0;
+                }
+                return true;
+            }
+        }
+
+        private final class QueueOutput extends OutputStream {
+            private boolean closed;
+
+            @Override
+            public void write(int value) throws IOException {
+                write(new byte[] {(byte) value}, 0, 1);
+            }
+
+            @Override
+            public void write(byte[] source, int sourceOffset, int length) throws IOException {
+                if (closed) {
+                    throw new IOException("stream closed");
+                }
+                if (length == 0) {
+                    return;
+                }
+                byte[] copy = new byte[length];
+                System.arraycopy(source, sourceOffset, copy, 0, length);
+                chunks.add(copy);
+            }
+
+            @Override
+            public void flush() {
+                // Chunks are handed over immediately; there is nothing to flush.
+            }
+
+            @Override
+            public void close() {
+                if (!closed) {
+                    closed = true;
+                    chunks.add(EOF);
+                }
             }
         }
     }
