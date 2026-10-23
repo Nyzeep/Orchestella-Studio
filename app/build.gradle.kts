@@ -112,6 +112,16 @@ val missingSigningProperties: List<String> = buildList {
 }
 val releaseSigningConfigured: Boolean = missingSigningProperties.isEmpty()
 
+// AX-08: the accelerator lane is a build-time opt-in and defaults to off, so a
+// plain build keeps the historical QEMU-only behaviour. Enabling it only makes
+// the assembly ask AcceleratorPolicy; a QEMU_ONLY verdict still refuses the lane.
+val acceleratorLaneEnabled: Boolean = providers.gradleProperty("orchestella.acceleratorLane")
+    .orNull
+    ?.trim()
+    ?.lowercase()
+    ?.let { it == "true" || it == "1" }
+    ?: false
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -130,6 +140,7 @@ android {
         versionCode = 503
         versionName = "0.5.3"
         buildConfigField("boolean", "DEVELOPMENT_PREVIEW", "true")
+        buildConfigField("boolean", "ACCELERATOR_LANE_ENABLED", acceleratorLaneEnabled.toString())
         // Payload builds store native libraries uncompressed and 16 KB aligned
         // for the AVF loader; all other channels keep the extracted layout.
         manifestPlaceholders["orcExtractNativeLibs"] =
@@ -352,6 +363,9 @@ dependencies {
     implementation(project(":runtime:engine-avf"))
     implementation(project(":runtime:engine-qemu"))
     implementation(project(":runtime:instance"))
+    // AX-08: pure-JVM accelerator fact/decision policy consumed by the assembly
+    // root. It adds no Android dependency.
+    implementation(project(":runtime:fastlane-capability"))
     implementation(project(":runtime:network"))
     // Protected-lane warm pool: pure-JVM Fast Lane session/control codec. It
     // adds no Android dependency and is only exercised when the pool switch is on.
