@@ -24,6 +24,14 @@ public final class QemuLaneRuntime implements LaneRuntime {
         this(session, () -> false);
     }
 
+    /**
+     * AX-08 production wiring: readiness comes from the guest signal observed by
+     * {@link QemuReadinessProbe}. The adapter never substitutes liveness for it.
+     */
+    public QemuLaneRuntime(RuntimeOwnedSession session, QemuReadinessProbe probe) {
+        this(session, Objects.requireNonNull(probe, "probe")::isReady);
+    }
+
     public QemuLaneRuntime(RuntimeOwnedSession session, BooleanSupplier readySignal) {
         this.session = Objects.requireNonNull(session, "session");
         this.readySignal = Objects.requireNonNull(readySignal, "readySignal");
