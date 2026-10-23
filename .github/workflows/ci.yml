@@ -65,6 +65,11 @@ jobs:
           python3 -B tools/accelerator-perf/validate.py \
             --report "$RUNNER_TEMP/accelerator-perf-dryrun.json"
 
+      # AX-06 evidence checks used to be a pytest file that no workflow installed
+      # or ran, so they never executed. They are stdlib unittest now.
+      - name: AX-06 distcc evidence tests
+        run: python3 -B -m unittest discover -s tools/fastlane-distcc -p 'test_*.py'
+
       - name: Run provisioned launch regression gate
         run: ./gradlew :app:testDebugUnitTest --tests '*ProvisionedLaunchRegressionTest' --no-daemon --stacktrace
 
