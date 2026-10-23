@@ -5,6 +5,9 @@ Thumbs.db
 .gradle/
 .kotlin/
 .toolchains/
+__pycache__/
+*.py[cod]
+.pytest_cache/
 /guest-assets/.work/
 /guest-assets/out/
 .externalNativeBuild/
