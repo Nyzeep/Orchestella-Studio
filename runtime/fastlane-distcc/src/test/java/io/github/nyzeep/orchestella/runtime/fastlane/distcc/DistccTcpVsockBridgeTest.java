@@ -71,6 +71,26 @@ public final class DistccTcpVsockBridgeTest {
     }
 
     @Test(timeout = 5000)
+    public void factoryFailureCarriesAFixedReasonCode() throws Exception {
+        List<DistccTcpVsockBridge.ConnectionStats> stats = new CopyOnWriteArrayList<>();
+        try (DistccTcpVsockBridge bridge = new DistccTcpVsockBridge(
+                LOOPBACK, 0, () -> {
+                    throw new FastLaneException(
+                            Axp1DistccChannelFactory.COMPILER_MISMATCH, "mismatch");
+                }, 4, 1000, 0, stats::add)) {
+            bridge.start();
+            try (Socket client = new Socket(LOOPBACK, bridge.port())) {
+                client.setSoTimeout(1000);
+                assertClosed(client);
+            }
+            waitFor(() -> stats.size() == 1, 3000);
+            assertEquals(DistccTcpVsockBridge.Outcome.CHANNEL_FAILED, stats.get(0).outcome());
+            assertEquals(Axp1DistccChannelFactory.COMPILER_MISMATCH,
+                    stats.get(0).failureCode());
+        }
+    }
+
+    @Test(timeout = 5000)
     public void closeStopsTheListener() throws Exception {
         DistccTcpVsockBridge bridge = new DistccTcpVsockBridge(
                 LOOPBACK, 0, EchoChannel::new, 4, 1000);
