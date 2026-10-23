@@ -1,0 +1,110 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "orchestella-fastlane-distccd-3.4",
+  "documentNamespace": "https://github.com/Nyzeep/Orchestella-Studio/spdx/fastlane-distccd-3.4",
+  "creationInfo": {
+    "created": "2026-10-20T00:00:00Z",
+    "creators": [
+      "Tool: tools/fastlane-build/build-distccd.sh"
+    ]
+  },
+  "packages": [
+    {
+      "name": "distcc-source",
+      "SPDXID": "SPDXRef-Package-distcc-source",
+      "versionInfo": "3.4",
+      "downloadLocation": "https://github.com/distcc/distcc/releases/download/v3.4/distcc-3.4.tar.gz",
+      "filesAnalyzed": false,
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "@SOURCE_SHA256@"
+        }
+      ],
+      "licenseConcluded": "GPL-2.0-or-later",
+      "licenseDeclared": "GPL-2.0-or-later",
+      "copyrightText": "Copyright (C) 2002-2021 Martin Pool and distcc contributors",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:github/distcc/distcc@3.4"
+        }
+      ]
+    },
+    {
+      "name": "distccd-android-arm64",
+      "SPDXID": "SPDXRef-Package-distccd-binary",
+      "versionInfo": "3.4",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "@BINARY_SHA256@"
+        }
+      ],
+      "licenseConcluded": "GPL-2.0-or-later",
+      "licenseDeclared": "GPL-2.0-or-later",
+      "copyrightText": "Copyright (C) 2002-2021 Martin Pool and distcc contributors",
+      "comment": "Statically linked aarch64 Android binary built by tools/fastlane-build/build-distccd.sh. Not committed to git and not linked into the app process."
+    },
+    {
+      "name": "popt",
+      "SPDXID": "SPDXRef-Package-popt",
+      "versionInfo": "bundled-with-distcc-3.4",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
+      "copyrightText": "Copyright (C) 1998-2000 Red Hat, Inc.",
+      "comment": "Bundled source in distcc-3.4/popt and linked into distccd when building with --with-included-popt."
+    },
+    {
+      "name": "miniLZO",
+      "SPDXID": "SPDXRef-Package-minilzo",
+      "versionInfo": "2.10",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "GPL-2.0-or-later",
+      "licenseDeclared": "GPL-2.0-or-later",
+      "copyrightText": "Copyright (C) 1996-2017 Markus Franz Xaver Johannes Oberhumer",
+      "comment": "Bundled source in distcc-3.4/lzo and linked into distccd."
+    },
+    {
+      "name": "Android NDK sysroot",
+      "SPDXID": "SPDXRef-Package-android-ndk-sysroot",
+      "versionInfo": "27.0.12077973",
+      "downloadLocation": "https://dl.google.com/android/repository/android-ndk-r27-linux.zip",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "comment": "Static Bionic libc objects from NDK r27. The NDK NOTICE.txt must ship with the corresponding-source bundle; this document does not replace it."
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-Package-distccd-binary",
+      "relationshipType": "GENERATED_FROM",
+      "relatedSpdxElement": "SPDXRef-Package-distcc-source"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-distccd-binary",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-popt"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-distccd-binary",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-minilzo"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-distccd-binary",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-android-ndk-sysroot"
+    }
+  ]
+}
