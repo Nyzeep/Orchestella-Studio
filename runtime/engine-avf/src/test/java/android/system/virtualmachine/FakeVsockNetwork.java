@@ -8,6 +8,8 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 /**
@@ -40,6 +42,10 @@ public final class FakeVsockNetwork {
             throw new IOException("no vsock server on port " + vsockPort);
         }
         Socket socket = new Socket(InetAddress.getLoopbackAddress(), listener.localPort());
+        if (!listener.awaitAccepted()) {
+            socket.close();
+            throw new IOException("vsock server did not accept the connection");
+        }
         return new VsockConnection(socket);
     }
 
@@ -56,6 +62,7 @@ public final class FakeVsockNetwork {
         private final Thread acceptor;
         private final java.util.Set<Socket> accepted =
                 java.util.Collections.synchronizedSet(new java.util.HashSet<>());
+        private final Semaphore acceptedSignal = new Semaphore(0);
 
         Listener(int vsockPort, Consumer<Socket> guestHandler) throws IOException {
             this.serverSocket =
@@ -67,6 +74,7 @@ public final class FakeVsockNetwork {
                             try {
                                 Socket socket = serverSocket.accept();
                                 accepted.add(socket);
+                                acceptedSignal.release();
                                 handlerPool.submit(
                                         () -> {
                                             try {
@@ -90,6 +98,15 @@ public final class FakeVsockNetwork {
 
         int localPort() {
             return serverSocket.getLocalPort();
+        }
+
+        boolean awaitAccepted() throws IOException {
+            try {
+                return acceptedSignal.tryAcquire(5, TimeUnit.SECONDS);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new IOException("interrupted while waiting for vsock accept", interrupted);
+            }
         }
 
         @Override

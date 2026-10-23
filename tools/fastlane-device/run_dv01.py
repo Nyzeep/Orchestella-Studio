@@ -309,6 +309,12 @@ def _parse_json(data: bytes) -> object:
 
 
 def _resolve_adb(explicit: str | None) -> str:
+    """Resolve adb only from trusted, operator-visible locations.
+
+    An explicit ``--adb`` is authoritative: a bad explicit path is an error,
+    never a silent fallback. Otherwise PATH, then the Android SDK environment
+    roots. No hard-coded distribution paths.
+    """
     if explicit:
         candidate = Path(explicit).expanduser()
         if not candidate.is_file():
@@ -317,9 +323,13 @@ def _resolve_adb(explicit: str | None) -> str:
     found = shutil.which("adb")
     if found:
         return found
-    for candidate in ("/opt/android-sdk/platform-tools/adb", "/usr/bin/adb"):
-        if Path(candidate).is_file():
-            return candidate
+    for variable in ("ANDROID_HOME", "ANDROID_SDK_ROOT"):
+        root = os.environ.get(variable)
+        if not root:
+            continue
+        candidate = Path(root).expanduser() / "platform-tools" / "adb"
+        if candidate.is_file():
+            return str(candidate)
     raise RunnerError("ADB_UNAVAILABLE")
 
 
@@ -500,6 +510,30 @@ def _atomic_write(path: Path, data: bytes) -> None:
             os.fsync(stream.fileno())
         os.link(pending, path)
     except FileExistsError:
+        raise RunnerError("ARTIFACT_WRITE_FAILED") from None
+    finally:
+        try:
+            pending.unlink()
+        except FileNotFoundError:
+            pass
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
+
+def _atomic_replace(path: Path, data: bytes) -> None:
+    """Atomically replace an existing archive file (used for summary rewrites)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pending = path.parent / f".{path.name}.tmp-{uuid.uuid4().hex}"
+    descriptor = os.open(pending, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(pending, path)
+    except OSError:
         raise RunnerError("ARTIFACT_WRITE_FAILED") from None
     finally:
         try:
@@ -724,9 +758,28 @@ def _validate_report(report: object, plan: Plan) -> None:
             raise RunnerError("REPORT_SCHEMA_MISMATCH")
         if report.get("outcome") not in FULL_OUTCOMES:
             raise RunnerError("REPORT_OUTCOME_INVALID")
+        # A full report may only state that no auth token was used. Any other
+        # value is rejected before archiving; it is never redacted in place.
+        if report.get("auth_token") not in ("empty", "not-run"):
+            raise RunnerError("REPORT_AUTH_TOKEN_REJECTED")
 
     if report.get("device_alias") != plan.alias:
         raise RunnerError("REPORT_ALIAS_MISMATCH")
+
+
+def _bind_report_inputs(report: dict, plan: Plan) -> None:
+    """Bind the archived report to the exact inputs this run installed.
+
+    The device is the only source of the report, so the host must prove that
+    the APK and toolbox it handed to the device are the ones the report
+    describes. A mismatch blocks before report.json is written.
+    """
+    if plan.mode not in ("preflight", "full"):
+        return
+    if report.get("apk_sha256") != plan.apk_sha256:
+        raise RunnerError("SCHEMA_VALIDATION_FAILED")
+    if report.get("toolbox_manifest_sha256") != plan.toolbox_sha:
+        raise RunnerError("SCHEMA_VALIDATION_FAILED")
 
 
 def _validate_summary_local(summary: dict) -> None:
@@ -753,33 +806,52 @@ def _external_validator() -> Path | None:
     return candidate if candidate.is_file() else None
 
 
-def _run_external_validator(
-    validator: Path, flag: str, data: bytes, run_dir: Path
-) -> bool:
-    pending = run_dir / f".validate-{uuid.uuid4().hex}.json"
-    descriptor = os.open(pending, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+def _run_external_validator(validator: Path, arguments: list[str]) -> bool:
+    """Run the repository validator on canonical archive paths.
+
+    Validation always reads the files that will be archived. The validator's
+    ``--strict`` binding mode requires ``report_path`` to be ``report.json``,
+    so a temporary validation copy cannot be used for preflight binding.
+    """
     try:
-        with os.fdopen(descriptor, "wb") as stream:
-            stream.write(data)
-            stream.flush()
-            os.fsync(stream.fileno())
-        try:
-            result = subprocess.run(
-                [sys.executable, str(validator), flag, str(pending)],
-                capture_output=True,
-                check=False,
-                timeout=60,
-            )
-        except (OSError, subprocess.TimeoutExpired):
-            return False
-        if len(result.stdout or b"") + len(result.stderr or b"") > MAX_SCHEMA_OUTPUT:
-            return False
-        return result.returncode == 0
-    finally:
-        try:
-            pending.unlink()
-        except FileNotFoundError:
-            pass
+        result = subprocess.run(
+            [sys.executable, str(validator), *arguments],
+            capture_output=True,
+            check=False,
+            timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    if len(result.stdout or b"") + len(result.stderr or b"") > MAX_SCHEMA_OUTPUT:
+        return False
+    return result.returncode == 0
+
+
+def _validator_arguments(
+    plan: Plan, run_dir: Path, report_present: bool
+) -> list[str]:
+    """Choose the validator invocation for this mode.
+
+    Preflight has a v1 report schema, so a report and its summary are bound
+    with ``--strict``. Full reports have no v1 report schema; their
+    report/summary binding is enforced by construction plus the local input
+    binding above, and only the summary is schema-validated. Qualification
+    reports are deliberately not sent to the preflight validator.
+    """
+    summary = str(run_dir / "run-summary.json")
+    if plan.mode == "preflight":
+        if report_present:
+            return [
+                "--report",
+                str(run_dir / "report.json"),
+                "--summary",
+                summary,
+                "--strict",
+            ]
+        return ["--summary", summary, "--strict"]
+    if not report_present:
+        return ["--summary", summary, "--strict"]
+    return ["--summary", summary]
 
 
 def _validation_state(
@@ -877,6 +949,14 @@ def _report_reason(plan: Plan, report: dict) -> str | None:
         if stop == "ALREADY_STOPPED":
             return "STOP_ALREADY_STOPPED"
         return "PREFLIGHT_TERMINAL_BLOCKED"
+    if plan.mode == "full" and report.get("outcome") != "PASS":
+        # Only a full PASS may have a null reason. A blocked full outcome
+        # keeps a reported fixed code when it has one, otherwise it is
+        # FULL_BLOCKED; a null reason would erase the block from the summary.
+        code = report.get("reason_code")
+        if isinstance(code, str) and REASON_CODE_RE.fullmatch(code):
+            return code
+        return "FULL_BLOCKED"
     return None
 
 
@@ -938,14 +1018,8 @@ def execute(plan: Plan) -> int:
 
         report = _parse_json(report_bytes)
         _validate_report(report, plan)
+        _bind_report_inputs(report, plan)
         validation_status = "PASS"
-
-        validator = _external_validator()
-        if validator is not None and not _run_external_validator(
-            validator, "--report", report_bytes, run_dir
-        ):
-            validation_status = "FAIL"
-            raise RunnerError("SCHEMA_VALIDATION_FAILED")
 
         report_sha = sha256_bytes(report_bytes)
         _atomic_write(run_dir / "report.json", report_bytes)
@@ -963,6 +1037,8 @@ def execute(plan: Plan) -> int:
         exit_code = EXIT_RUN_FAILED
         report_bytes = None
         report_sha = None
+        if failure.reason_code == "SCHEMA_VALIDATION_FAILED":
+            validation_status = "FAIL"
 
     commands_text = ("\n".join(adb.executed) + "\n") if adb.executed else ""
     _atomic_write(run_dir / "commands.txt", commands_text.encode("utf-8"))
@@ -994,19 +1070,24 @@ def execute(plan: Plan) -> int:
         summary["outcome"] = BLOCKED_OUTCOMES[plan.mode]
         summary["reason_code"] = failure.reason_code
         summary["schema_validation"] = _validation_state(validator, "FAIL")
+        validation_status = "FAIL"
         exit_code = EXIT_RUN_FAILED
     summary_bytes = _json_bytes(summary)
-
-    if validator is not None and not _run_external_validator(
-        validator, "--summary", summary_bytes, run_dir
-    ):
-        summary["outcome"] = BLOCKED_OUTCOMES[plan.mode]
-        summary["reason_code"] = "SCHEMA_VALIDATION_FAILED"
-        summary["schema_validation"] = _validation_state(validator, "FAIL")
-        summary_bytes = _json_bytes(summary)
-        exit_code = EXIT_RUN_FAILED
-
     _atomic_write(run_dir / "run-summary.json", summary_bytes)
+
+    if validator is not None and validation_status != "FAIL":
+        if not _run_external_validator(
+            validator, _validator_arguments(plan, run_dir, report_sha is not None)
+        ):
+            # The archived report stays for audit; only the summary records
+            # the failed binding. The rewritten summary is not re-validated:
+            # its outcome intentionally no longer matches the report.
+            summary["outcome"] = BLOCKED_OUTCOMES[plan.mode]
+            summary["reason_code"] = "SCHEMA_VALIDATION_FAILED"
+            summary["schema_validation"] = _validation_state(validator, "FAIL")
+            summary_bytes = _json_bytes(summary)
+            exit_code = EXIT_RUN_FAILED
+            _atomic_replace(run_dir / "run-summary.json", summary_bytes)
     _atomic_write(
         run_dir / "README.txt",
         _readme_text(
