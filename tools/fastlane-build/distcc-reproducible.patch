@@ -1,0 +1,30 @@
+--- a/src/help.c
++++ b/src/help.c
+@@ -43,7 +43,7 @@
+ {
+     rs_trace("%s %s %s; built %s %s",
+              rs_program_name, PACKAGE_VERSION, GNU_HOST,
+-             __DATE__, __TIME__);
++             "2026-10-20", "00:00:00");
+     return 0;
+ }
+ 
+@@ -76,6 +76,6 @@
+ "\n"
+            ,
+            prog, PACKAGE_VERSION, GNU_HOST, DISTCC_DEFAULT_PORT,
+-           __DATE__, __TIME__, PACKAGE_BUGREPORT);
++           "2026-10-20", "00:00:00", PACKAGE_BUGREPORT);
+     return 0;
+ }
+--- a/src/daemon.c
++++ b/src/daemon.c
+@@ -323,7 +323,7 @@
+                 role,
+                 PACKAGE_VERSION,
+                 GNU_HOST,
+-                __DATE__, __TIME__);
++                "2026-10-20", "00:00:00");
+ 
+     return 0;
+ }

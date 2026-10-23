@@ -57,15 +57,40 @@ that corresponds to the shipped binary.
 - The toolbox must not exceed the 80 MiB starting budget. The v1 minimal
   profile is roughly 2.13 MiB of entries plus the generated manifest.
 
+## Built for the cross-lane distcc path (not shipped in the APK)
+
+### distcc 3.4 (Android arm64 distccd)
+
+- License: GPL-2.0-or-later. distccd is executed as a separate process and is
+  never linked into the app process; this keeps the GPL boundary at the process
+  boundary.
+- Source: upstream tarball
+  <https://github.com/distcc/distcc/releases/download/v3.4/distcc-3.4.tar.gz>,
+  SHA256 `2b99edda9dad9dbf283933a02eace6de7423fe5650daa4a728c950e5cd37bd7d`.
+- Local patch: `tools/fastlane-build/distcc-reproducible.patch` replaces the
+  `__DATE__` / `__TIME__` build stamp so two builds are byte-identical. It changes
+  no behaviour.
+- Build: `tools/fastlane-build/build-distccd.sh` with Android NDK
+  27.0.12077973, static Bionic, 16 KB `PT_LOAD` and 64-byte `PT_TLS`. The TLS
+  alignment shim is `tools/fastlane-build/distcc-tls-align.c`.
+- Artifact: `build/fastlane-distccd/bin/distccd` (generated, never committed),
+  SBOM `build/fastlane-distccd/SBOM.spdx.json`, checksum
+  `build/fastlane-distccd/SHA256SUMS`.
+- Bundled components inside the same source tarball: popt (MIT) and miniLZO
+  2.10 (GPL-2.0-or-later). The binary also contains static Bionic objects from
+  the Android NDK; the NDK `NOTICE.txt` must ship with the source bundle.
+- Corresponding source: a release artifact that contains distccd must publish,
+  next to the artifact, the upstream tarball above, the local patch, both build
+  scripts, and the NDK `NOTICE.txt`. If that bundle is not attached, the
+  release owner must instead publish a written offer valid for at least three
+  years to provide the same corresponding source at no more than the cost of
+  distribution. The release ticket must record which option was used. Linking
+  to distcc.org alone does not satisfy this obligation.
+- Status: build, ELF, SBOM and `--version` under qemu-user are verified in
+  zero-device CI; execution on a real Android device and the DV-03 compiler/ABI
+  matrix remain not-tested.
+
 ## Pending profiles (NOT shipped in v1; do not treat as verified)
-
-### distcc 3.4-4 (Termux package)
-
-- License: GPL-2.0-or-later.
-- Source: <https://github.com/termux/termux-packages/tree/master/packages/distcc>.
-- Status: not-tested. No binary is pinned or shipped. If enabled later, the
-  corresponding source and Termux patches must ship with the APK, and the
-  compiler/ABI matrix must pass DV-03.
 
 ### clang / LLVM
 
