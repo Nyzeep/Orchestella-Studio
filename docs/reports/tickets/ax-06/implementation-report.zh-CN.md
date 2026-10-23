@@ -92,12 +92,14 @@ distccd --inetd -> cc
 
 | 命令 | 结果 |
 | --- | --- |
-| `./gradlew :runtime:fastlane-distcc:test` | BUILD SUCCESSFUL；61 tests、0 failure、0 skipped |
+| `./gradlew :runtime:fastlane-distcc:test` | BUILD SUCCESSFUL；62 tests、0 failure、0 skipped |
 | `python -m pytest tools/fastlane-distcc -q` | 11 passed |
 | `bash tools/fastlane-build/test-distcc-e2e.sh` | BUILD SUCCESSFUL；5 个 case 全部通过，`DISTCC_E2E_OK cases=5` |
 | `python -m pytest tools/ci tools/fastlane-device tools/fastlane-distcc -q` | 111 passed, 7 subtests passed |
 
-测试分布：`DistccTcpVsockBridgeTest` 17（其中原 16 例全部保留）、`Axp1DistccChannelFactoryTest` 6、`Axp1DistccHostIntegrationTest` 5、`Axp1ConnectionTest` 17、`AcceleratorUplinkTest` 15、既有 `DistccHostIntegrationTest` 1。
+测试分布：`DistccTcpVsockBridgeTest` 18（原 16 例全部保留，另加 failureCode 与自由文本收敛 2 例）、`Axp1DistccChannelFactoryTest` 6、`Axp1DistccHostIntegrationTest` 5、`Axp1ConnectionTest` 17、`AcceleratorUplinkTest` 15、既有 `DistccHostIntegrationTest` 1。
+
+`ConnectionStats` 的 `failureCode` 在构造器做固定 token 校验；路径、token 形状或自由文本一律归一为 `CHANNEL_FAILED`，观测面不会成为泄露通道。
 
 ## 8. 偏差与已知限制
 
