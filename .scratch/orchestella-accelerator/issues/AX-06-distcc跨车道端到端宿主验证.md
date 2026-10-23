@@ -46,4 +46,4 @@ bash tools/fastlane-build/test-distcc-e2e.sh
 ## 证据
 
 - 编译/链接/运行输出摘要、`.o` 哈希、失败样本写入 `docs/reports/tickets/ax-06/implementation-report.zh-CN.md`。
-- 实现提交：`4622c6a`（批次三分支）；failureCode 观测面收敛：`3f06082`。宿主回环模拟，不是 vsock/设备证据。
+- 实现提交：`4622c6a`（批次三分支）；failureCode 观测面收敛：`3f06082`；严格对端编译能力校验：`35970a8`。宿主回环模拟，不是 vsock/设备证据。

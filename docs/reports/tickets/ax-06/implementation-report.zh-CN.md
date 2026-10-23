@@ -41,7 +41,7 @@ distccd --inetd -> cc
 
 - 角色：宿主侧 `Axp1Role.HOST`，加速侧 `Axp1Role.GUEST`。
 - token：`AcceleratorUplink.newToken()`（每次运行 32 位 CSPRNG hex），只进 AXP1 HELLO；不写日志。
-- 能力：`distcc=true`、`compiler_triple`、`arch`；host 侧校验协商后的 `distcc` 与 triple。
+- 能力：`distcc=true`、`compiler_triple`、`arch`；host 侧校验 peer **原始声明**的 `distcc` 与 triple。peer 未声明 triple 也按 `COMPILER_MISMATCH` 拒绝，不采用协商回退值。
 - 绑定：桥和测试加速器都只绑 `127.0.0.1`；不接受 LAN/公网地址。
 - stderr：`distccd --inetd` 的 stderr 重定向到 DISCARD，永不进入 AXP1 DATA。
 - 日志：`ConnectionStats` 只含 outcome、双向字节数、耗时、固定 `failureCode`；e2e 报告只含 case、outcome、code、SHA-256、计数、耗时。
@@ -80,6 +80,7 @@ distccd --inetd -> cc
 | `runtime/fastlane-distcc/.../Axp1DistccChannelFactory.java` | 新增 | AXP1 HOST 包装、token/triple/distcc 校验、固定 reason |
 | `runtime/fastlane-distcc/.../DistccdInetdChannel.java` | 新增 | `distccd --inetd` stdio 泵，stderr DISCARD |
 | `runtime/fastlane-distcc/.../Axp1DistccAccelerator.java` | 新增 | AXP1 GUEST ↔ distccd 双向泵、半关闭 |
+| `runtime/fastlane-distcc/.../axp1/Axp1Connection.java` | 修改 | 保留并暴露 peerCapabilities 原始视图，供严格能力校验 |
 | `runtime/fastlane-distcc/.../DistccTcpVsockBridge.java` | 修改 | `ConnectionStats.failureCode`；AXP1 异常映射固定 code |
 | `runtime/fastlane-distcc/build.gradle.kts` | 修改 | 可选 e2e 报告系统属性 |
 | `Axp1DistccChannelFactoryTest.java` | 新增 | 6 例：token、成功透明字节、auth、triple、distcc、超时 |
@@ -92,12 +93,12 @@ distccd --inetd -> cc
 
 | 命令 | 结果 |
 | --- | --- |
-| `./gradlew :runtime:fastlane-distcc:test` | BUILD SUCCESSFUL；62 tests、0 failure、0 skipped |
+| `./gradlew :runtime:fastlane-distcc:test` | BUILD SUCCESSFUL；63 tests、0 failure、0 skipped |
 | `python -m pytest tools/fastlane-distcc -q` | 11 passed |
 | `bash tools/fastlane-build/test-distcc-e2e.sh` | BUILD SUCCESSFUL；5 个 case 全部通过，`DISTCC_E2E_OK cases=5` |
 | `python -m pytest tools/ci tools/fastlane-device tools/fastlane-distcc -q` | 111 passed, 7 subtests passed |
 
-测试分布：`DistccTcpVsockBridgeTest` 18（原 16 例全部保留，另加 failureCode 与自由文本收敛 2 例）、`Axp1DistccChannelFactoryTest` 6、`Axp1DistccHostIntegrationTest` 5、`Axp1ConnectionTest` 17、`AcceleratorUplinkTest` 15、既有 `DistccHostIntegrationTest` 1。
+测试分布：`DistccTcpVsockBridgeTest` 18（原 16 例全部保留，另加 failureCode 与自由文本收敛 2 例）、`Axp1DistccChannelFactoryTest` 7、`Axp1DistccHostIntegrationTest` 5、`Axp1ConnectionTest` 17、`AcceleratorUplinkTest` 15、既有 `DistccHostIntegrationTest` 1。
 
 `ConnectionStats` 的 `failureCode` 在构造器做固定 token 校验；路径、token 形状或自由文本一律归一为 `CHANNEL_FAILED`，观测面不会成为泄露通道。
 
