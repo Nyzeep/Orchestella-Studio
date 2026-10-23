@@ -258,7 +258,17 @@ jobs:
             exit 1
           fi
           yes | "$SDKMANAGER" --licenses || true
-          "$SDKMANAGER" "ndk;27.0.12077973" "cmake;3.22.1"
+          for attempt in 1 2 3; do
+            if "$SDKMANAGER" "ndk;27.0.12077973" "cmake;3.22.1"; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "::error::NDK/CMake installation failed after 3 attempts"
+              exit 1
+            fi
+            echo "sdkmanager failed (attempt $attempt); retrying in $((attempt * 15))s"
+            sleep $((attempt * 15))
+          done
 
       - name: Pin the NDK and CMake toolchain
         if: steps.payload.outputs.present == 'true'
