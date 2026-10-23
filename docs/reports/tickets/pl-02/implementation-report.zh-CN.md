@@ -119,7 +119,11 @@ Gradle 首次运行遇到 Maven Central 429；使用仓库已有的 `-Porchestel
 - CI 未运行；新增 workflow 步骤只做本地 YAML/脚本检查。
 - `GATE_CLOSED` 只代表 fixture 当前状态，不是永久产品结论。
 
-## 8. 待维护者决策
+## 8. 批次三修复（2026-10-23）
+
+`ProtectedFailure.fromLegacy` 的纯 code 输入曾因空 `stage` 调用 `stage.equals` 抛 NPE；批次三改为 `STAGE_EXECVE.equals(stage)` 并补 5 例回归（`ProtectedFailureTest` 16/16）。详见 `docs/reports/tickets/batch2-fixes/implementation-report.zh-CN.md`。
+
+## 9. 待维护者决策
 
 1. 是否接受继续以 `TOOLBOX_EXEC_BLOCKED_BY_PLATFORM` 作为 canonical 平台 code（而不是改名）。
 2. 是否要求设备端 probe 在下一版直接输出 `ProtectedFailure.render()` 的 stage= 格式。

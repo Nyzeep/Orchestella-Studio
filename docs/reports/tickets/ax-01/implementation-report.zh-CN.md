@@ -147,7 +147,11 @@ Gradle 首次运行遇到 Maven Central 429；使用仓库已有的 `-Porchestel
 - 协调器在 `awaitQemuReady` / `awaitAcceleratorReady` 期间持有自身 monitor；生产调用方不应在 UI 线程调用长超时版本。
 - CI 未运行。
 
-## 11. 待维护者决策
+## 11. 批次三修复（2026-10-23）
+
+批次三以独立 fix commit 修复了本报告第 10 节记录的“等待期间持有自身 monitor”风险：协调器改为 `ReentrantLock` + `volatile stopRequested`，readiness 轮询释放锁睡眠，`cancel()` 可及时停止已启动车道。`QemuLaneRuntime` 的 readiness 也与进程存活分离。回归后 `DualLaneCoordinatorTest` 28 例、`QemuLaneRuntimeDualLaneTest` 4 例。详见 `docs/reports/tickets/batch2-fixes/implementation-report.zh-CN.md`。
+
+## 12. 待维护者决策
 
 1. 是否接受“start 请求顺序发出、readiness 并行等待”作为并行启动口径。
 2. 是否要求 ACCEL 预算拒绝时也发 `lane_lost`（当前只发 `budget_rejected`，状态 `DISABLED`）。
