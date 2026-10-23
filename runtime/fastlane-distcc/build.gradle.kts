@@ -4,6 +4,7 @@ plugins {
 
 dependencies {
     api(project(":runtime:engine-fastlane"))
+    api(project(":runtime:contract"))
     testImplementation(libs.junit)
 }
 
