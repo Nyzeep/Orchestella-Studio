@@ -129,6 +129,86 @@ public final class DualLaneCoordinatorTest {
     }
 
     @Test
+    public void acceleratorStartIsIssuedBeforeQemuReadyIsObserved() {
+        Fixture fixture = new Fixture();
+        fixture.qemu.ready = false;
+
+        fixture.start();
+
+        int accelStart = fixture.calls.indexOf("start_ACCEL");
+        int firstQemuReadinessProbe = fixture.calls.indexOf("ready_QEMU");
+        assertTrue(accelStart >= 0);
+        assertTrue(firstQemuReadinessProbe >= 0);
+        assertTrue(accelStart < firstQemuReadinessProbe);
+    }
+
+    @Test(timeout = 5_000)
+    public void cancelReturnsPromptlyWhileStartWaitsForQemuReadiness() throws Exception {
+        Fixture fixture = new Fixture(
+                LaneClock.system(), new DualLaneCoordinator.Config(30_000L, 100L));
+        fixture.qemu.ready = false;
+        fixture.accel.ready = true;
+        CountDownLatch bothStarted = new CountDownLatch(2);
+        fixture.qemuStarter = () -> {
+            fixture.qemuStarts++;
+            fixture.calls.add("start_QEMU");
+            bothStarted.countDown();
+            return fixture.qemu;
+        };
+        fixture.accelStarter = () -> {
+            fixture.accelStarts++;
+            fixture.calls.add("start_ACCEL");
+            bothStarted.countDown();
+            return fixture.accel;
+        };
+        Thread worker = new Thread(fixture.coordinator::startAll, "startAll-worker");
+        worker.setDaemon(true);
+        worker.start();
+        assertTrue(bothStarted.await(2, TimeUnit.SECONDS));
+
+        long startedAt = System.nanoTime();
+        fixture.coordinator.cancel();
+        long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
+
+        assertTrue("cancel blocked for " + elapsedMs + " ms", elapsedMs < 200L);
+        worker.join(2_000L);
+        assertFalse(worker.isAlive());
+        assertEquals(1, fixture.qemu.stopCalls);
+        assertEquals(1, fixture.accel.stopCalls);
+        assertEquals(0L, fixture.coordinator.ledger().snapshot().ramMiB());
+    }
+
+    @Test(timeout = 5_000)
+    public void cancelReturnsPromptlyWhileWaitingForAcceleratorReadiness() throws Exception {
+        Fixture fixture = new Fixture(
+                LaneClock.system(), new DualLaneCoordinator.Config(30_000L, 100L));
+        fixture.accel.ready = false;
+        fixture.startInBackground();
+        assertTrue(fixture.accelStarted.await(2, TimeUnit.SECONDS));
+
+        java.util.concurrent.atomic.AtomicBoolean ready =
+                new java.util.concurrent.atomic.AtomicBoolean(true);
+        fixture.accel.readyProbe = fixture.awaitProbe::countDown;
+        Thread worker = new Thread(() -> ready.set(
+                fixture.coordinator.awaitAcceleratorReady(30_000L)), "await-accel-worker");
+        worker.setDaemon(true);
+        worker.start();
+        assertTrue(fixture.awaitProbe.await(2, TimeUnit.SECONDS));
+
+        long startedAt = System.nanoTime();
+        fixture.coordinator.cancel();
+        long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
+
+        assertTrue("cancel blocked for " + elapsedMs + " ms", elapsedMs < 200L);
+        worker.join(2_000L);
+        assertFalse(worker.isAlive());
+        assertFalse(ready.get());
+        assertEquals(1, fixture.qemu.stopCalls);
+        assertEquals(1, fixture.accel.stopCalls);
+        assertEquals(0L, fixture.coordinator.ledger().snapshot().ramMiB());
+    }
+
+    @Test
     public void repeatedStartIsIdempotent() {
         Fixture fixture = new Fixture();
         fixture.start();
@@ -364,7 +444,9 @@ public final class DualLaneCoordinatorTest {
     }
 
     private static final class Fixture {
-        final FakeClock clock = new FakeClock();
+        final LaneClock clock;
+        final CountDownLatch accelStarted = new CountDownLatch(1);
+        final CountDownLatch awaitProbe = new CountDownLatch(1);
         final List<LaneEvent> events = new ArrayList<>();
         final List<LaneId> stopOrder = new ArrayList<>();
         final List<String> calls = new ArrayList<>();
@@ -385,13 +467,26 @@ public final class DualLaneCoordinatorTest {
         }
 
         Fixture(LaneBudget budget, LaneRequest qemuRequest) {
+            this(budget, qemuRequest, new FakeClock(), new DualLaneCoordinator.Config(100L, 100L));
+        }
+
+        Fixture(LaneClock clock, DualLaneCoordinator.Config config) {
+            this(BUDGET, QEMU_REQUEST, clock, config);
+        }
+
+        Fixture(
+                LaneBudget budget,
+                LaneRequest qemuRequest,
+                LaneClock clock,
+                DualLaneCoordinator.Config config) {
+            this.clock = clock;
             this.coordinator = new DualLaneCoordinator(
                     budget,
                     qemuRequest,
                     ACCEL_REQUEST,
                     () -> qemuStarter.start(),
                     () -> accelStarter.start(),
-                    new DualLaneCoordinator.Config(100L, 100L),
+                    config,
                     clock,
                     events::add);
             this.qemuStarter = this::startQemu;
@@ -407,11 +502,18 @@ public final class DualLaneCoordinatorTest {
         FakeLane startAccel() {
             accelStarts++;
             calls.add("start_ACCEL");
+            accelStarted.countDown();
             return accel;
         }
 
         DualLaneCoordinator.StartReport start() {
             return coordinator.startAll();
+        }
+
+        void startInBackground() {
+            Thread worker = new Thread(coordinator::startAll, "startAll-background");
+            worker.setDaemon(true);
+            worker.start();
         }
 
         DualLaneCoordinator.StopReport stop() {
@@ -451,6 +553,7 @@ public final class DualLaneCoordinatorTest {
         int stopCalls;
         LaneStopOutcome stopOutcome = LaneStopOutcome.CONFIRMED;
         boolean stopThrows;
+        volatile Runnable readyProbe = () -> {};
 
         FakeLane(LaneId laneId, List<LaneId> stopOrder, List<String> calls) {
             this.laneId = laneId;
@@ -471,6 +574,7 @@ public final class DualLaneCoordinatorTest {
         @Override
         public boolean isReady() {
             calls.add("ready_" + laneId.name());
+            readyProbe.run();
             return ready;
         }
 

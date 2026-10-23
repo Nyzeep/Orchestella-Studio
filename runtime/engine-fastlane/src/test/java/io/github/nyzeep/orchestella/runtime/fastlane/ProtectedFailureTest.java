@@ -128,6 +128,57 @@ public final class ProtectedFailureTest {
     }
 
     @Test
+    public void barePlatformCodeHasNoStageAndNoErrno() {
+        ProtectedFailure failure = ProtectedFailure.fromLegacy("TOOLBOX_EXEC_BLOCKED_BY_PLATFORM");
+
+        assertEquals(ProtectedFailureCode.TOOLBOX_EXEC_BLOCKED_BY_PLATFORM, failure.code());
+        assertNull(failure.stage());
+        assertNull(failure.errno());
+        assertEquals("TOOLBOX_EXEC_BLOCKED_BY_PLATFORM", failure.render());
+    }
+
+    @Test
+    public void platformCodeWithExecveStageDefaultsToEacces() {
+        ProtectedFailure failure = ProtectedFailure.fromLegacy(
+                "TOOLBOX_EXEC_BLOCKED_BY_PLATFORM stage=execve");
+
+        assertEquals(ProtectedFailureCode.TOOLBOX_EXEC_BLOCKED_BY_PLATFORM, failure.code());
+        assertEquals("execve", failure.stage());
+        assertEquals(Integer.valueOf(13), failure.errno());
+        assertEquals("TOOLBOX_EXEC_BLOCKED_BY_PLATFORM stage=execve errno=13", failure.render());
+    }
+
+    @Test
+    public void matrixCellKeepsFln1AndExecveErrnoEvidence() {
+        ProtectedFailure failure = ProtectedFailure.fromLegacy(
+                "TOOLBOX_EXEC_BLOCKED_BY_PLATFORM (fln1=7, execve errno=13)");
+
+        assertEquals(ProtectedFailureCode.TOOLBOX_EXEC_BLOCKED_BY_PLATFORM, failure.code());
+        assertEquals("execve", failure.stage());
+        assertEquals(Integer.valueOf(13), failure.errno());
+    }
+
+    @Test
+    public void legacyExecveAliasStaysCanonical() {
+        ProtectedFailure failure = ProtectedFailure.fromLegacy("execve_errno_13");
+
+        assertEquals(ProtectedFailureCode.TOOLBOX_EXEC_BLOCKED_BY_PLATFORM, failure.code());
+        assertEquals("TOOLBOX_EXEC_BLOCKED_BY_PLATFORM stage=execve errno=13", failure.render());
+    }
+
+    @Test
+    public void blankUnknownAndPathBearingInputsStayUnknown() {
+        assertEquals(ProtectedFailureCode.FASTLANE_UNKNOWN,
+                ProtectedFailure.fromLegacy(null).code());
+        assertEquals(ProtectedFailureCode.FASTLANE_UNKNOWN,
+                ProtectedFailure.fromLegacy("   ").code());
+        assertEquals(ProtectedFailureCode.FASTLANE_UNKNOWN,
+                ProtectedFailure.fromLegacy("not-a-known-code").code());
+        assertEquals(ProtectedFailureCode.FASTLANE_UNKNOWN,
+                ProtectedFailure.fromLegacy("TOOLBOX_EXEC_BLOCKED_BY_PLATFORM /data/app/base.apk").code());
+    }
+
+    @Test
     public void everyCodeHasExactlyOneClass() {
         for (ProtectedFailureCode code : ProtectedFailureCode.values()) {
             assertNotNull(code.failureClass());

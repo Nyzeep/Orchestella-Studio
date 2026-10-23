@@ -19,6 +19,7 @@
 ### AVF / Shizuku 工单与审查
 
 - [工单实施报告](tickets/)：当前 AVF / Shizuku 工单的实施记录。
+- 批次三（2026-10-23）：[批次二修复](tickets/batch2-fixes/implementation-report.zh-CN.md)、[AX-02 选道](tickets/ax-02/implementation-report.zh-CN.md)、[AX-06 distcc 宿主 e2e](tickets/ax-06/implementation-report.zh-CN.md)。
 - [独立审查](reviews/)：最终轮 spec / standards 审查与设备证据复审。
 - [原型报告](prototypes/)：隔离 QA 与研究原型的报告，不代表原产品升级或 Full Linux 硬件验收。
 

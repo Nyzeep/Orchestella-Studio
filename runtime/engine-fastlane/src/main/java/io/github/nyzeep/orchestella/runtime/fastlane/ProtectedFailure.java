@@ -147,7 +147,7 @@ public final class ProtectedFailure {
             String stage = trimmed.toLowerCase(Locale.ROOT).contains("execve")
                     ? STAGE_EXECVE : null;
             Integer parsed = errnoHint != null ? errnoHint : parseMatrixErrno(trimmed);
-            if (parsed == null && stage.equals(STAGE_EXECVE)) {
+            if (parsed == null && STAGE_EXECVE.equals(stage)) {
                 parsed = 13;
             }
             return new ProtectedFailure(
