@@ -106,6 +106,27 @@ public final class Axp1DistccChannelFactoryTest {
     }
 
     @Test(timeout = 5_000)
+    public void peerWithoutACompilerTripleIsRejected() throws Exception {
+        Pipe pipe = new Pipe();
+        Thread server = guest(pipe, TOKEN, capabilitiesWithoutTriple(),
+                connection -> {
+                    try {
+                        connection.dataInput().read();
+                    } catch (IOException ignored) {
+                        // The host closes after the triple check.
+                    }
+                });
+        Axp1DistccChannelFactory factory = new Axp1DistccChannelFactory(
+                pipe::clientChannel, TOKEN, capabilities(true, TRIPLE), TRIPLE, LIMITS);
+
+        FastLaneException failure = assertThrows(
+                FastLaneException.class, factory::open);
+        assertEquals(Axp1DistccChannelFactory.COMPILER_MISMATCH, failure.reason());
+        server.join(2_000L);
+        pipe.close();
+    }
+
+    @Test(timeout = 5_000)
     public void distccUnsupportedMapsToTheFixedCode() throws Exception {
         Pipe pipe = new Pipe();
         Thread server = guest(pipe, TOKEN, capabilities(false, TRIPLE),
@@ -163,6 +184,14 @@ public final class Axp1DistccChannelFactoryTest {
         thread.setDaemon(true);
         thread.start();
         return thread;
+    }
+
+    private static Axp1Capabilities capabilitiesWithoutTriple() {
+        return Axp1Capabilities.builder()
+                .distcc(true)
+                .arch("x86_64")
+                .maxFrame(1_048_576)
+                .build();
     }
 
     private static Axp1Capabilities capabilities(boolean distcc, String triple) {
@@ -225,7 +254,21 @@ public final class Axp1DistccChannelFactoryTest {
 
                 @Override
                 public void close() throws IOException {
-                    Pipe.this.close();
+                    // Close only the guest directions; closing the shared pipe
+                    // would discard an RST the host has not read yet.
+                    IOException first = null;
+                    for (Closeable closeable : new Closeable[] {serverInput, serverOutput}) {
+                        try {
+                            closeable.close();
+                        } catch (IOException failure) {
+                            if (first == null) {
+                                first = failure;
+                            }
+                        }
+                    }
+                    if (first != null) {
+                        throw first;
+                    }
                 }
             };
         }

@@ -52,6 +52,7 @@ public final class Axp1Connection implements Closeable {
     private final Axp1Transport transport;
     private final Axp1Role localRole;
     private final Axp1Capabilities negotiated;
+    private final Axp1Capabilities peerCapabilities;
     private final int maxFrame;
     private final Axp1Window inbound;
     private final ReentrantLock writeLock = new ReentrantLock();
@@ -71,10 +72,12 @@ public final class Axp1Connection implements Closeable {
             Axp1Transport transport,
             Axp1Role localRole,
             Axp1Capabilities negotiated,
+            Axp1Capabilities peerCapabilities,
             Axp1Limits limits) {
         this.transport = transport;
         this.localRole = localRole;
         this.negotiated = negotiated;
+        this.peerCapabilities = peerCapabilities;
         this.maxFrame = negotiated.maxFrame();
         this.inbound = new Axp1Window(limits.windowBytes());
         this.reader = new Thread(this::readLoop, "axp1-reader");
@@ -115,7 +118,9 @@ public final class Axp1Connection implements Closeable {
                 throw new Axp1Exception(Axp1Error.PROTOCOL_ERROR, "peer role matches local role");
             }
             return new Axp1Connection(transport, role,
-                    Axp1Capabilities.negotiate(localCapabilities, ack.capabilities), limits);
+                    Axp1Capabilities.negotiate(localCapabilities, ack.capabilities),
+                    ack.capabilities,
+                    limits);
         } catch (Axp1Exception failure) {
             closeQuietly(transport);
             throw failure;
@@ -157,7 +162,9 @@ public final class Axp1Connection implements Closeable {
             writeRaw(transport.output(), Axp1Frame.Type.HELLO_ACK, ack, limits.maxFrame());
             transport.output().flush();
             return new Axp1Connection(transport, role,
-                    Axp1Capabilities.negotiate(localCapabilities, request.capabilities), limits);
+                    Axp1Capabilities.negotiate(localCapabilities, request.capabilities),
+                    request.capabilities,
+                    limits);
         } catch (Axp1Exception failure) {
             if (failure.code() == Axp1Error.VERSION_MISMATCH
                     || failure.code() == Axp1Error.FRAME_TOO_LARGE
@@ -178,6 +185,11 @@ public final class Axp1Connection implements Closeable {
 
     public Axp1Capabilities negotiated() {
         return negotiated;
+    }
+
+    /** Capabilities exactly as advertised by the peer, before negotiation. */
+    public Axp1Capabilities peerCapabilities() {
+        return peerCapabilities;
     }
 
     public InputStream dataInput() {

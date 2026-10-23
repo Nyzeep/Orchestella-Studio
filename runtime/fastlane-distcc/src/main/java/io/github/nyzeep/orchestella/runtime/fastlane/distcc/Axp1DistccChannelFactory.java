@@ -72,13 +72,14 @@ public final class Axp1DistccChannelFactory
             throw new FastLaneException(
                     reasonCode(failure.code()), "AXP1 handshake failed", failure);
         }
-        if (!connection.negotiated().distcc()) {
+        Axp1Capabilities peer = connection.peerCapabilities();
+        if (!peer.distcc()) {
             connection.close();
             throw new FastLaneException(
                     DISTCC_UNSUPPORTED, "accelerator does not advertise distcc");
         }
-        String negotiatedTriple = connection.negotiated().compilerTriple();
-        if (!requiredCompilerTriple.equals(negotiatedTriple)) {
+        String peerTriple = peer.compilerTriple();
+        if (peerTriple.isBlank() || !requiredCompilerTriple.equals(peerTriple)) {
             connection.close();
             throw new FastLaneException(
                     COMPILER_MISMATCH, "accelerator compiler triple does not match");
