@@ -86,12 +86,17 @@ public record AcceleratorDecision(
     }
 
     public static AcceleratorDecision available(CompileBackend backend) {
+        return available(backend, List.of());
+    }
+
+    public static AcceleratorDecision available(
+            CompileBackend backend, List<BackendDecision> rejections) {
         return new AcceleratorDecision(
                 AcceleratorMode.QEMU_PLUS_ACCEL,
                 AcceleratorReasonCode.ACCEL_AVAILABLE,
                 List.of(),
                 backend,
-                List.of());
+                rejections);
     }
 
     public static AcceleratorDecision qemuOnly(AcceleratorReasonCode reasonCode) {

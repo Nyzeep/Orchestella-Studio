@@ -97,7 +97,7 @@ public record AcceleratorFacts(
         }
 
         public Builder batteryState(BatteryState value) {
-            batteryState = Objects.requireNonNull(batteryState, "batteryState");
+            batteryState = Objects.requireNonNull(value, "batteryState");
             return this;
         }
 
