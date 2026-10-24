@@ -51,6 +51,14 @@ rm -rf "$BUILD"
   -DANDROID_PLATFORM=android-26
 "$CMAKE" --build "$BUILD" --parallel
 
+# PVM-02: the in-process compiler prototype must also compile for the payload
+# ABI. It is not linked into libfastlane_payload.so (PVM-03 wires it in), so
+# this only proves the arm64 build output exists.
+test -f "$BUILD/libpvm_compiler.a" || {
+  echo "FAIL libpvm_compiler.a (PVM-02 in-process compiler prototype) missing from $BUILD" >&2
+  exit 1
+}
+
 mapfile -t SOFILES < <(find "$BUILD" -type f -name '*.so' | sort)
 if [ "${#SOFILES[@]}" -eq 0 ]; then
   echo "FAIL payload build produced no .so under $BUILD" >&2
