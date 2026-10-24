@@ -96,7 +96,10 @@ public final class AcceleratorLaneAssemblyTest {
 
         fixture.assertHealth();
         assertEquals(0, fixture.accelStarts.get());
-        assertEquals(AcceleratorReasonCode.ACCEL_UNAVAILABLE_NO_NON_PROTECTED,
+        // PVM-01: with no backend candidate at all the verdict is the honest
+        // terminal state; the CUSTOM_VM branch's NO_NON_PROTECTED refusal is
+        // kept in the decision's rejection list.
+        assertEquals(AcceleratorReasonCode.ACCEL_UNAVAILABLE_NO_BACKEND,
                 result.decision().orElseThrow().reasonCode());
         assertFalse(result.acceleratorArmed());
         assertTrue(result.decisionJson().contains("\"mode\":\"QEMU_ONLY\""));
@@ -113,7 +116,9 @@ public final class AcceleratorLaneAssemblyTest {
 
         fixture.assertHealth();
         assertEquals(0, fixture.accelStarts.get());
-        assertEquals(AcceleratorReasonCode.ACCEL_UNAVAILABLE_NO_NON_PROTECTED,
+        // PVM-01: these facts claim no usable protected VM either, so no
+        // backend is a candidate.
+        assertEquals(AcceleratorReasonCode.ACCEL_UNAVAILABLE_NO_BACKEND,
                 result.decision().orElseThrow().reasonCode());
     }
 
@@ -214,7 +219,8 @@ public final class AcceleratorLaneAssemblyTest {
 
         fixture.assertHealth();
         assertEquals(0, fixture.accelStarts.get());
-        assertEquals(AcceleratorReasonCode.ACCEL_UNAVAILABLE_NO_NON_PROTECTED,
+        // Unknown facts claim nothing, so no backend can even be a candidate.
+        assertEquals(AcceleratorReasonCode.ACCEL_UNAVAILABLE_NO_BACKEND,
                 result.decision().orElseThrow().reasonCode());
     }
 
