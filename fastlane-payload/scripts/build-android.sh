@@ -24,6 +24,12 @@ cmake --build "${BUILD}" --target fastlane_payload -j"$(nproc 2>/dev/null || ech
 SO="${BUILD}/libfastlane_payload.so"
 test -f "${SO}"
 
+# PVM-02: also produce the in-process compiler prototype for the payload ABI.
+# It is not linked into libfastlane_payload.so (PVM-03 wires it in); this only
+# proves the arm64 build output exists.
+cmake --build "${BUILD}" --target pvm_compiler -j"$(nproc 2>/dev/null || echo 4)"
+test -f "${BUILD}/libpvm_compiler.a"
+
 NM="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
 if [ -x "${NM}" ]; then
     "${NM}" -D --defined-only "${SO}" | grep -E " T AVmPayload_main$"
