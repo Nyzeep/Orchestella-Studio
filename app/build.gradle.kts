@@ -208,6 +208,40 @@ android {
         sourceSets.getByName("main").jniLibs.srcDir(payloadRoot)
     }
 
+    // PVM-08: optional compiler-side shared libraries (libLLVM.so and
+    // libclang-cpp.so) that must land in the same APK lib/arm64-v8a/ directory
+    // as libfastlane_payload.so, so the Microdroid linker resolves them by
+    // soname next to the payload instead of via absolute paths. They are only
+    // meaningful next to the payload: extractNativeLibs/useLegacyPackaging key
+    // off the payload property, and a payload-less APK has no consumer for
+    // them, so requiring the payload property keeps the two in lockstep.
+    val pvmCompilerLibDir: String? = providers.gradleProperty("orchestella.pvmCompiler.libDir")
+        .orNull
+        ?.trim()
+        ?.ifEmpty { null }
+    if (pvmCompilerLibDir != null) {
+        require(fastlanePayloadLibDir != null) {
+            "orchestella.pvmCompiler.libDir requires orchestella.fastlane.payloadLibDir: " +
+                "the compiler libraries are resolved next to the payload"
+        }
+        val compilerRoot = rootProject.file(pvmCompilerLibDir)
+        require(compilerRoot.isDirectory && !Files.isSymbolicLink(compilerRoot.toPath())) {
+            "orchestella.pvmCompiler.libDir must be an existing ordinary directory: $compilerRoot"
+        }
+        for (requiredSo in listOf("libLLVM.so", "libclang-cpp.so")) {
+            require(File(compilerRoot, "arm64-v8a/$requiredSo").isFile) {
+                "PVM compiler lib dir is missing arm64-v8a/$requiredSo: $compilerRoot"
+            }
+        }
+        require(!File(compilerRoot, "arm64-v8a/libfastlane_payload.so").exists()) {
+            "libfastlane_payload.so comes from orchestella.fastlane.payloadLibDir and must not be duplicated in $compilerRoot"
+        }
+        require(!File(compilerRoot, "arm64-v8a/libvm_payload.so").exists()) {
+            "libvm_payload.so is an AVF APEX library and must not be packaged from $compilerRoot"
+        }
+        sourceSets.getByName("main").jniLibs.srcDir(compilerRoot)
+    }
+
     signingConfigs {
         // The device AVF idsig path requires a v3 APK Signature Scheme block
         // (v2-only APKs fail at VirtualMachineManager.create). Enabling v3/v4
