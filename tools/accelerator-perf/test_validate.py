@@ -12,11 +12,18 @@ import validate
 
 HERE = Path(__file__).resolve().parent
 GOLDEN = HERE / "fixtures" / "expected-report.json"
+V2_GOLDEN = HERE / "fixtures" / "expected-report-v2.json"
+V2_MINIMAL = HERE / "fixtures" / "v2-minimal.json"
 SCHEMA_FILE = HERE / "schema" / "accelerator-perf-v1.json"
+SCHEMA_FILE_V2 = HERE / "schema" / "accelerator-perf-v2.json"
 
 
 def golden():
     return json.loads(GOLDEN.read_text(encoding="utf-8"))
+
+
+def v2_golden():
+    return json.loads(V2_GOLDEN.read_text(encoding="utf-8"))
 
 
 def defect_text(report):
@@ -42,10 +49,10 @@ class SchemaTest(unittest.TestCase):
 
     def test_wrong_schema_is_rejected(self):
         report = golden()
-        report["schema"] = "accelerator-perf-v2"
+        report["schema"] = "accelerator-perf-v0"
 
         self.assertIn(
-            "schema must be accelerator-perf-v1", defect_text(report))
+            "schema must be accelerator-perf-v1 or accelerator-perf-v2", defect_text(report))
 
     def test_alias_must_be_safe(self):
         report = golden()
@@ -137,6 +144,47 @@ class ScenarioTest(unittest.TestCase):
             "offload_permille must be within [0, 1000]", defect_text(report))
 
 
+class V2SchemaTest(unittest.TestCase):
+    """PVM-07: v2 accepts the optional segment fields and never fakes 0."""
+
+    def test_v2_golden_report_is_valid(self):
+        self.assertEqual([], validate.validate_report(v2_golden()))
+
+    def test_committed_minimal_v2_report_is_valid(self):
+        report = json.loads(V2_MINIMAL.read_text(encoding="utf-8"))
+
+        self.assertEqual([], validate.validate_report(report))
+
+    def test_negative_segment_is_rejected(self):
+        report = v2_golden()
+        report["scenarios"][1]["transport_ms"] = -1
+
+        self.assertIn(
+            "transport_ms must be null or a non-negative number", defect_text(report))
+
+    def test_segment_string_is_rejected(self):
+        report = v2_golden()
+        report["scenarios"][1]["payload_load_ms"] = "4200"
+
+        self.assertIn(
+            "payload_load_ms must be null or a non-negative number", defect_text(report))
+
+    def test_segment_must_be_null_when_n_is_zero(self):
+        report = json.loads(V2_MINIMAL.read_text(encoding="utf-8"))
+        report["scenarios"][0]["compile_ms"] = 5
+
+        self.assertIn(
+            "compile_ms must be null when n is 0", defect_text(report))
+
+    def test_v1_report_gains_no_segment_requirements(self):
+        # A v1 report stays valid without any v2 knowledge; the fields are
+        # simply not looked at.
+        report = golden()
+        report["scenarios"][0]["compile_ms"] = -5
+
+        self.assertEqual([], validate.validate_report(report))
+
+
 class SchemaFileTest(unittest.TestCase):
     """The published schema is load-bearing: it must agree with the code."""
 
@@ -171,6 +219,56 @@ class SchemaFileTest(unittest.TestCase):
 
         self.assertEqual(
             set(self.published["$defs"]["scenario"]["required"]), set(entry))
+
+
+class SchemaFileV2Test(unittest.TestCase):
+    """The published v2 schema is load-bearing: it must agree with the code."""
+
+    def setUp(self):
+        self.published = json.loads(SCHEMA_FILE_V2.read_text(encoding="utf-8"))
+
+    def test_required_properties_match_the_validator(self):
+        self.assertEqual(validate.REQUIRED_KEYS, set(self.published["required"]))
+
+    def test_vocabularies_match_the_collector(self):
+        scenario = self.published["$defs"]["scenario"]["properties"]
+
+        self.assertEqual(list(collect.SCENARIOS), scenario["scenario"]["enum"])
+        self.assertEqual(list(collect.MODES), scenario["mode"]["enum"])
+        self.assertEqual(
+            sorted(collect.ALLOWED_CODES),
+            sorted(scenario["failure_codes"]["propertyNames"]["enum"]),
+        )
+
+    def test_segment_fields_match_the_collector(self):
+        properties = self.published["$defs"]["scenario"]["properties"]
+
+        self.assertEqual(
+            set(collect.SEGMENT_COLUMNS),
+            {name for name in collect.SEGMENT_COLUMNS if name in properties},
+        )
+        for name in collect.SEGMENT_COLUMNS:
+            self.assertEqual(["number", "null"], properties[name]["type"])
+            self.assertNotIn(name, self.published["$defs"]["scenario"]["required"])
+
+    def test_protocol_constants_match(self):
+        protocol = self.published["properties"]["protocol"]["properties"]
+
+        self.assertEqual(perfstats.MIN_SAMPLES, protocol["min_samples"]["const"])
+        self.assertEqual(perfstats.IQR_METHOD, protocol["iqr_method"]["const"])
+        self.assertEqual(
+            collect.SPEEDUP_THRESHOLD, protocol["speedup_threshold"]["const"])
+        self.assertEqual(
+            collect.REGRESSION_PERMILLE, protocol["regression_permille"]["const"])
+
+    def test_golden_report_uses_only_declared_fields(self):
+        entry = v2_golden()["scenarios"][0]
+
+        self.assertEqual(
+            set(self.published["$defs"]["scenario"]["required"])
+            | set(collect.SEGMENT_COLUMNS),
+            set(entry),
+        )
 
 
 if __name__ == "__main__":

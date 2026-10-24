@@ -1,8 +1,12 @@
 """Unit tests for the pre-registered AX-07 stop conditions."""
 
+import json
 import unittest
+from pathlib import Path
 
 import compare
+
+HERE = Path(__file__).resolve().parent
 
 
 def report(build_id, device_alias, entries):
@@ -108,6 +112,59 @@ class GuardTest(unittest.TestCase):
                 report("b", "bench-a", [("cold_start", "QEMU_ONLY", 1000.0)]),
                 report("c", "bench-a", [("small_project", "QEMU_ONLY", 1000.0)]),
             )
+
+
+class AttributionTest(unittest.TestCase):
+    """PVM-07: attribution explains a verdict, it never changes one."""
+
+    def test_attribution_block_when_segments_are_complete(self):
+        baseline = report("b", "bench-a", [("small_project", "QEMU_PLUS_ACCEL", 2000.0)])
+        candidate = report("c", "bench-a", [("small_project", "QEMU_PLUS_ACCEL", 1500.0)])
+        candidate["scenarios"][0].update(
+            {"transport_ms": 100.0, "compile_ms": 850.0, "link_ms": 50.0})
+
+        verdict = compare.compare(baseline, candidate)
+
+        self.assertEqual(
+            {"transport_share": 0.07, "compile_share": 0.57, "link_share": 0.03},
+            verdict["scenarios"][0]["attribution"])
+        self.assertEqual("BELOW_THRESHOLD", verdict["overall"],
+                         "attribution must not move the verdict")
+
+    def test_attribution_is_null_without_segments(self):
+        verdict = compare.compare(
+            report("b", "bench-a", [("cold_start", "QEMU_ONLY", 2000.0)]),
+            report("c", "bench-a", [("cold_start", "QEMU_ONLY", 1000.0)]),
+        )
+
+        self.assertIsNone(verdict["scenarios"][0]["attribution"])
+
+    def test_attribution_is_null_when_the_candidate_has_no_data(self):
+        baseline = report("b", "bench-a", [("cold_start", "QEMU_ONLY", 2000.0)])
+        candidate = report("c", "bench-a", [("cold_start", "QEMU_ONLY", 1000.0)])
+        candidate["scenarios"][0].update(
+            {"n": 0, "median_ms": None, "transport_ms": 100.0,
+             "compile_ms": 850.0, "link_ms": 50.0})
+
+        verdict = compare.compare(baseline, candidate)
+
+        self.assertIsNone(verdict["scenarios"][0]["attribution"])
+        self.assertEqual("NO_DATA", verdict["scenarios"][0]["verdict"])
+
+    def test_committed_demo_pair_compares_and_attributes(self):
+        baseline = json.loads(
+            (HERE / "fixtures" / "v1.json").read_text(encoding="utf-8"))
+        candidate = json.loads(
+            (HERE / "fixtures" / "v2.json").read_text(encoding="utf-8"))
+
+        verdict = compare.compare(baseline, candidate)
+
+        self.assertEqual("BELOW_THRESHOLD", verdict["overall"])
+        by_key = {(entry["scenario"], entry["mode"]): entry for entry in verdict["scenarios"]}
+        self.assertIsNone(by_key[("small_project", "QEMU_ONLY")]["attribution"])
+        self.assertEqual(
+            {"transport_share": 0.09, "compile_share": 0.74, "link_share": 0.05},
+            by_key[("small_project", "QEMU_PLUS_ACCEL")]["attribution"])
 
 
 if __name__ == "__main__":

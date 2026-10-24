@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""AX-07 validator: check an accelerator-perf-v1 report and run the dry-run.
+"""AX-07 validator: check an accelerator-perf v1/v2 report and run the dry-run.
 
 Two modes:
 
 * ``--report path`` validates an existing report and prints every defect.
-* ``--self-test`` re-collects the committed fixtures and compares them with the
-  golden report byte for byte, then validates it and proves that tampered
-  reports are rejected. This is the zero-device gate the CI runs.
+  v1 and v2 reports are both accepted; v1 reports are validated exactly as
+  before, v2 additionally checks the optional segment fields (null or a
+  non-negative number, never a faked 0).
+* ``--self-test`` re-collects the committed fixtures (v1 and v2) and compares
+  them with the golden reports byte for byte, then validates both and proves
+  that tampered reports are rejected. This is the zero-device gate the CI runs.
 
 The validator is stdlib-only on purpose: the CI image cannot install packages,
 and a protocol nobody can run is not a protocol.
@@ -26,6 +29,8 @@ import perfstats
 HERE = Path(__file__).resolve().parent
 FIXTURE_SAMPLES = HERE / "fixtures" / "samples-dryrun.tsv"
 GOLDEN_REPORT = HERE / "fixtures" / "expected-report.json"
+V2_FIXTURE_SAMPLES = HERE / "fixtures" / "samples-v2.tsv"
+V2_GOLDEN_REPORT = HERE / "fixtures" / "expected-report-v2.json"
 
 _TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 _ALIAS = re.compile(r"^[A-Za-z0-9._-]{1,48}$")
@@ -37,6 +42,7 @@ REQUIRED_KEYS = {
     "protocol",
     "scenarios",
 }
+SCHEMAS = (collect.SCHEMA, collect.SCHEMA_V2)
 
 
 def validate_report(report: dict) -> list:
@@ -47,8 +53,10 @@ def validate_report(report: dict) -> list:
     missing = REQUIRED_KEYS - set(report)
     if missing:
         return [f"missing keys: {','.join(sorted(missing))}"]
-    if report["schema"] != collect.SCHEMA:
-        errors.append("schema must be accelerator-perf-v1")
+    if report["schema"] not in SCHEMAS:
+        errors.append(
+            "schema must be accelerator-perf-v1 or accelerator-perf-v2")
+    segments = report["schema"] == collect.SCHEMA_V2
     for field in ("build_id", "device_alias"):
         if not isinstance(report[field], str) or not _ALIAS.match(report[field]):
             errors.append(f"{field} must be a safe alias")
@@ -78,11 +86,11 @@ def validate_report(report: dict) -> list:
 
     seen = set()
     for entry in scenarios:
-        errors.extend(_validate_scenario(entry, seen, protocol))
+        errors.extend(_validate_scenario(entry, seen, protocol, segments))
     return errors
 
 
-def _validate_scenario(entry: dict, seen: set, protocol: dict) -> list:
+def _validate_scenario(entry: dict, seen: set, protocol: dict, segments: bool) -> list:
     errors = []
     if not isinstance(entry, dict):
         return ["each scenario must be an object"]
@@ -126,6 +134,18 @@ def _validate_scenario(entry: dict, seen: set, protocol: dict) -> list:
         value = entry.get(field)
         if not isinstance(value, int) or value < 0:
             errors.append(f"{scenario}/{mode}: {field} must be a non-negative integer")
+
+    if segments:
+        for field in collect.SEGMENT_COLUMNS:
+            value = entry.get(field)
+            if n == 0:
+                if value is not None:
+                    errors.append(f"{scenario}/{mode}: {field} must be null when n is 0")
+            elif value is not None and (
+                not isinstance(value, (int, float)) or value < 0
+            ):
+                errors.append(
+                    f"{scenario}/{mode}: {field} must be null or a non-negative number")
 
     if n == 0:
         for field in ("median_ms", "iqr_ms", "min_ms", "max_ms", "phases_ms"):
@@ -185,16 +205,38 @@ def self_test() -> int:
     errors = validate_report(json.loads(rendered))
     failures.extend(errors)
 
+    # The v2 segment gate must round-trip byte for byte as well.
+    v2_rows = collect.parse_samples(V2_FIXTURE_SAMPLES.read_text(encoding="utf-8"))
+    v2_report = collect.build_report(v2_rows, "pvm-sample", "bench-sim", fixed_time)
+    v2_rendered = collect.render(v2_report)
+    v2_golden = V2_GOLDEN_REPORT.read_text(encoding="utf-8")
+    if v2_rendered != v2_golden:
+        failures.append(
+            "collected v2 report does not match fixtures/expected-report-v2.json")
+
+    failures.extend(validate_report(json.loads(v2_rendered)))
+
     # A protocol that accepts everything proves nothing: prove refusal works.
-    for mutation, expected in (
-        (lambda value: value["scenarios"][0].update({"median_ms": 10 ** 9}),
+    minimal_v2 = json.loads(
+        (HERE / "fixtures" / "v2-minimal.json").read_text(encoding="utf-8"))
+    sources = {
+        "v1": rendered,
+        "v2": v2_rendered,
+        "minimal": collect.render(minimal_v2),
+    }
+    for source, mutation, expected in (
+        ("v1", lambda value: value["scenarios"][0].update({"median_ms": 10 ** 9}),
          "min <= median <= max is violated"),
-        (lambda value: value.update({"schema": "accelerator-perf-v0"}),
-         "schema must be accelerator-perf-v1"),
-        (lambda value: value["scenarios"][0].update({"failure_codes": {"RAW_LOG": 1}}),
+        ("v1", lambda value: value.update({"schema": "accelerator-perf-v0"}),
+         "schema must be accelerator-perf-v1 or accelerator-perf-v2"),
+        ("v1", lambda value: value["scenarios"][0].update({"failure_codes": {"RAW_LOG": 1}}),
          "unknown failure code"),
+        ("v2", lambda value: value["scenarios"][1].update({"transport_ms": -1}),
+         "transport_ms must be null or a non-negative number"),
+        ("minimal", lambda value: value["scenarios"][0].update({"compile_ms": 1}),
+         "compile_ms must be null when n is 0"),
     ):
-        tampered = json.loads(rendered)
+        tampered = json.loads(sources[source])
         mutation(tampered)
         defects = " | ".join(validate_report(tampered))
         if expected not in defects:
@@ -205,7 +247,8 @@ def self_test() -> int:
             print(f"FAIL {failure}", file=sys.stderr)
         print(f"ACCELERATOR_PERF_SELFTEST_FAILED defects={len(failures)}")
         return 1
-    print(f"ACCELERATOR_PERF_OK scenarios={len(report['scenarios'])}")
+    print(f"ACCELERATOR_PERF_OK scenarios={len(report['scenarios'])} "
+          f"v2_scenarios={len(v2_report['scenarios'])}")
     return 0
 
 

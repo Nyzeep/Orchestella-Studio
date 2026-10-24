@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""AX-07 collector: turn fixed-format samples into one accelerator-perf-v1 report.
+"""AX-07 collector: turn fixed-format samples into one accelerator-perf report.
 
 The collector is deliberately dumb and total: it never invents a metric, never
 drops a failure sample, and never writes free-form text into the output. Every
@@ -7,7 +7,11 @@ field it emits is either a fixed enum, a count, an integer duration or a hash,
 so a report can be archived and diffed without leaking paths, tokens or device
 identifiers.
 
-Input: one TSV with a mandatory header line, one sample per row.
+Input: one TSV with a mandatory header line, one sample per row. The header is
+the 13 v1 columns, optionally followed by an ordered subset of the PVM-07
+segment columns; a segment cell may be blank, which means "not measured" and
+stays null in the report - it is never faked to 0. A header without segment
+columns produces a byte-identical v1 report; any segment column produces v2.
 Output: JSON on stdout or to --out, byte-identical for identical input when
 --generated-at is fixed.
 """
@@ -23,6 +27,7 @@ from pathlib import Path
 import perfstats
 
 SCHEMA = "accelerator-perf-v1"
+SCHEMA_V2 = "accelerator-perf-v2"
 
 COLUMNS = (
     "scenario",
@@ -38,6 +43,17 @@ COLUMNS = (
     "fallbacks",
     "peak_kb",
     "code",
+)
+
+# PVM-07 segment columns. Optional, always in this order after COLUMNS; the
+# report field names are the column names.
+SEGMENT_COLUMNS = (
+    "preprocess_ms",
+    "transport_ms",
+    "transport_bytes",
+    "payload_load_ms",
+    "compile_ms",
+    "link_ms",
 )
 
 # Fixed scenario and mode vocabularies. Adding one is a protocol revision.
@@ -87,19 +103,17 @@ def parse_samples(text: str) -> list:
     lines = text.replace("\r\n", "\n").split("\n")
     rows = []
     header_seen = False
+    segment_columns: tuple = ()
     for index, raw in enumerate(lines, start=1):
         line = raw.strip("\n").strip("\r")
         if not line.strip():
             continue
         fields = line.split("\t")
         if not header_seen:
-            if tuple(fields) != COLUMNS:
-                raise SampleError(
-                    f"line {index}: header must be exactly {','.join(COLUMNS)}"
-                )
+            segment_columns = _match_header(index, fields)
             header_seen = True
             continue
-        rows.append(_parse_row(index, fields))
+        rows.append(_parse_row(index, fields, segment_columns))
     if not header_seen:
         raise SampleError("line 1: header is missing")
     if not rows:
@@ -107,13 +121,37 @@ def parse_samples(text: str) -> list:
     return rows
 
 
-def _parse_row(index: int, fields: list) -> dict:
-    if len(fields) != len(COLUMNS):
+def _match_header(index: int, fields: list) -> tuple:
+    """Returns the segment columns present in the header, in canonical order."""
+    if tuple(fields) == COLUMNS:
+        return ()
+    if len(fields) < len(COLUMNS) or tuple(fields[: len(COLUMNS)]) != COLUMNS:
         raise SampleError(
-            f"line {index}: expected {len(COLUMNS)} tab-separated fields, "
-            f"got {len(fields)}"
+            f"line {index}: header must be exactly {','.join(COLUMNS)} "
+            f"optionally followed by an ordered subset of {','.join(SEGMENT_COLUMNS)}"
         )
-    row = dict(zip(COLUMNS, (field.strip() for field in fields)))
+    remaining = list(SEGMENT_COLUMNS)
+    chosen = []
+    for name in fields[len(COLUMNS):]:
+        name = name.strip()
+        if name not in remaining:
+            raise SampleError(
+                f"line {index}: segment columns must be an ordered subset of "
+                f"{','.join(SEGMENT_COLUMNS)}"
+            )
+        chosen.append(name)
+        remaining = remaining[remaining.index(name) + 1:]
+    return tuple(chosen)
+
+
+def _parse_row(index: int, fields: list, segment_columns: tuple) -> dict:
+    if len(fields) != len(COLUMNS) + len(segment_columns):
+        raise SampleError(
+            f"line {index}: expected {len(COLUMNS) + len(segment_columns)} "
+            f"tab-separated fields, got {len(fields)}"
+        )
+    names = list(COLUMNS) + list(segment_columns)
+    row = dict(zip(names, (field.strip() for field in fields)))
     if row["scenario"] not in SCENARIOS:
         raise SampleError(f"line {index}: scenario is not in the fixed vocabulary")
     if row["mode"] not in MODES:
@@ -138,6 +176,12 @@ def _parse_row(index: int, fields: list) -> dict:
         row[column] = _non_negative_int(index, column, row[column])
     if row["offload_permille"] > 1000:
         raise SampleError(f"line {index}: offload_permille must be within [0, 1000]")
+    if segment_columns:
+        for column in segment_columns:
+            raw = row[column]
+            row[column] = None if raw == "" else _non_negative_int(index, column, raw)
+        for column in SEGMENT_COLUMNS:
+            row.setdefault(column, None)
     return row
 
 
@@ -159,14 +203,15 @@ def build_report(
 ) -> dict:
     _require_alias("build_id", build_id)
     _require_alias("device_alias", device_alias)
+    segments = any(column in row for row in rows for column in SEGMENT_COLUMNS)
     scenarios = [
-        _summarise(rows, scenario, mode)
+        _summarise(rows, scenario, mode, segments)
         for scenario in SCENARIOS
         for mode in MODES
         if any(row["scenario"] == scenario and row["mode"] == mode for row in rows)
     ]
     return {
-        "schema": SCHEMA,
+        "schema": SCHEMA_V2 if segments else SCHEMA,
         "build_id": build_id,
         "device_alias": device_alias,
         "generated_at_utc": generated_at,
@@ -180,7 +225,7 @@ def build_report(
     }
 
 
-def _summarise(rows: list, scenario: str, mode: str) -> dict:
+def _summarise(rows: list, scenario: str, mode: str, segments: bool) -> dict:
     selected = [
         row for row in rows if row["scenario"] == scenario and row["mode"] == mode
     ]
@@ -207,6 +252,12 @@ def _summarise(rows: list, scenario: str, mode: str) -> dict:
                     "compile": _phase_median(ok, "cc_ms"),
                     "link": _phase_median(ok, "ld_ms"),
                 },
+            }
+        )
+        if segments:
+            summary.update(_segment_medians(ok))
+        summary.update(
+            {
                 "offload_permille": _median_int(ok, "offload_permille"),
                 "retries": sum(row["retries"] for row in selected),
                 "fallbacks": sum(row["fallbacks"] for row in selected),
@@ -221,6 +272,12 @@ def _summarise(rows: list, scenario: str, mode: str) -> dict:
                 "min_ms": None,
                 "max_ms": None,
                 "phases_ms": None,
+            }
+        )
+        if segments:
+            summary.update({column: None for column in SEGMENT_COLUMNS})
+        summary.update(
+            {
                 "offload_permille": None,
                 "retries": sum(row["retries"] for row in selected),
                 "fallbacks": sum(row["fallbacks"] for row in selected),
@@ -228,6 +285,15 @@ def _summarise(rows: list, scenario: str, mode: str) -> dict:
             }
         )
     return summary
+
+
+def _segment_medians(ok_rows: list) -> dict:
+    """Median over the samples that measured the segment; blank means null."""
+    medians = {}
+    for column in SEGMENT_COLUMNS:
+        values = [row[column] for row in ok_rows if row[column] is not None]
+        medians[column] = perfstats.median(values) if values else None
+    return medians
 
 
 def _phase_median(rows: list, column: str) -> float:

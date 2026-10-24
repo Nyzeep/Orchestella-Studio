@@ -29,6 +29,12 @@ QEMU 单车道 vs QEMU+ACCEL 交火的端到端测量协议。**协议先注册�
 scenario	mode	status	wall_ms	pre_ms	tx_ms	cc_ms	ld_ms	offload_permille	retries	fallbacks	peak_kb	code
 ```
 
+PVM-07 起允许在表头尾部按以下**固定顺序的子序列**追加可选分段列：
+
+```text
+preprocess_ms	transport_ms	transport_bytes	payload_load_ms	compile_ms	link_ms
+```
+
 | 字段 | 约束 |
 | --- | --- |
 | `scenario` / `mode` / `status` | 固定词表；`status` 为 `ok` 或 `fail` |
@@ -37,6 +43,12 @@ scenario	mode	status	wall_ms	pre_ms	tx_ms	cc_ms	ld_ms	offload_permille	retries	f
 | `retries` / `fallbacks` | 非负整数 |
 | `peak_kb` | 非负整数，峰值内存 |
 | `code` | 固定 reason code；`ok` 样本必须是 `NONE` |
+| `preprocess_ms` … `link_ms`（可选） | 非负整数或**空单元格**；空 = 没测到，报告里是 `null`，**绝不允许填 0** |
+
+- 表头**不含**任何分段列 → 产出 `accelerator-perf-v1` 报告（与历史字节级一致）；
+- 含**任意**分段列（按上面顺序）→ 产出 `accelerator-perf-v2` 报告，缺列/空单元格对应字段为 `null`；
+- 报告值 = 成功样本中**非空**值的 median（`payload_load_ms` 只在首样本记录一次，单值 median 即原值）；
+- 分段值的采样方法见 §7.1：**无法测量就留空**，不得猜测。
 
 允许的 `code`：`ACCEL_*`（AX-02 选道码）、`THERMAL_BUDGET`、`ACCELERATOR_UNAVAILABLE`、`LANE_LOST`、`STOP_UNCONFIRMED`、`DISTCC_FALLBACK`、`TIMEOUT`、`NONE`。**不接受自由文本**：写不了"因为感觉慢"。
 
@@ -61,8 +73,20 @@ python tools/accelerator-perf/validate.py --self-test
 # 单测
 python -B -m unittest discover -s tools/accelerator-perf -p 'test_*.py'
 
-# 对比两份报告，套用预注册停止条件
+# 对比两份报告，套用预注册停止条件（v1↔v2 可互比，同 device_alias + protocol）
 python tools/accelerator-perf/compare.py --baseline base.json --candidate cand.json
+
+# v2 采集（带分段列的 TSV）与最小 v2 报告校验
+python tools/accelerator-perf/collect.py \
+  --samples tools/accelerator-perf/fixtures/samples-v2.tsv \
+  --build-id pvm-sample --device-alias bench-sim \
+  --generated-at 2026-10-23T00:00:00Z --out /tmp/report-v2.json
+python tools/accelerator-perf/validate.py --report tools/accelerator-perf/fixtures/v2-minimal.json
+
+# compare 演示对（v1 golden 基线 + v2 分段候选）
+python tools/accelerator-perf/compare.py \
+  --baseline tools/accelerator-perf/fixtures/v1.json \
+  --candidate tools/accelerator-perf/fixtures/v2.json
 ```
 
 退出码：`0` 通过，`1` 结论为回归或校验失败，`2` 输入/协议错误。
@@ -93,6 +117,26 @@ python tools/accelerator-perf/compare.py --baseline base.json --candidate cand.j
 4. **同资源**：CPU 核数、RAM、磁盘、`-j` 值完全一致；后台进程状态一致。
 5. **重跑规则**：单个样本失败按原样记录，不重试；整轮作废最多重来 1 次，且两次都要进证据目录。
 6. **证据**：报告 JSON、采样 TSV、两份报告的 SHA-256 存外部 artifact 根；仓库只写别名、构建号、固定 code 与哈希。
+
+### 7.1 分段采样方法（accelerator-perf-v2）
+
+分段字段回答一个问题：**收益不达标时，时间花在哪里？** 采集纪律：
+
+| 字段 | 怎么测 | 归因口径 |
+| --- | --- | --- |
+| `preprocess_ms` | guest 内 `clang -E` 的墙钟（distcc 客户端计时输出） | **可从日志推导**；必须覆盖每样本 |
+| `transport_ms` | 宿主 DistccTcpVsockBridge 对 AXP1 帧的收发间隔（宿主测量） | **必须宿主测量**，不从两端时间戳相减倒推 |
+| `transport_bytes` | 同上：每 job 出网字节（压缩后口径） | **必须宿主测量**；deflate 前后差值留在宿主侧证据里，不进报告 |
+| `payload_load_ms` | payload 首次加载 `.so` 到首次 DONE（仅该场景首样本记录） | **可从 payload 日志推导**；每场景只记一次，之后留空 |
+| `compile_ms` | payload 内 `InProcessCompiler` 从收到 DOTI 到 DOTO 完成 | **可从 payload 日志推导**（payload 侧计时） |
+| `link_ms` | guest 内本地链接的墙钟 | **可从日志推导**；必须覆盖每样本 |
+
+规则：
+
+1. **宿主测量优先级最高**的是 `transport_ms` / `transport_bytes`——它们是本轮最可能吃掉收益的开销，必须来自桥接计数，不允许"总时长减去其余分段"倒推。
+2. **无法测量就留空**：报告里是 `null`，`compare.py` 的归因块只在字段齐全时输出。`null` 表示"没测到"，**绝不允许填 0**——0 会把"没测"伪装成"测了且为零"，污染归因。
+3. 失败样本的分段值不采集也不补：失败只进 `failure_codes`。
+4. 分段值与 `wall_ms` 不要求严格相加（计时点不同会有重叠/间隙），归因时按占比读，不做闭合校验。
 
 ## 8. 为什么这样设计
 
