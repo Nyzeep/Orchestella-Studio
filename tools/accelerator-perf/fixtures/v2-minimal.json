@@ -1,0 +1,37 @@
+{
+  "schema": "accelerator-perf-v2",
+  "build_id": "v2-minimal",
+  "device_alias": "bench-sim",
+  "generated_at_utc": "2026-10-23T00:00:00Z",
+  "protocol": {
+    "min_samples": 10,
+    "iqr_method": "linear-interpolation-on-sorted-values",
+    "speedup_threshold": 1.5,
+    "regression_permille": 50
+  },
+  "scenarios": [
+    {
+      "scenario": "cold_start",
+      "mode": "QEMU_ONLY",
+      "n": 0,
+      "failures": 1,
+      "failure_codes": { "TIMEOUT": 1 },
+      "insufficient_samples": true,
+      "median_ms": null,
+      "iqr_ms": null,
+      "min_ms": null,
+      "max_ms": null,
+      "phases_ms": null,
+      "preprocess_ms": null,
+      "transport_ms": null,
+      "transport_bytes": null,
+      "payload_load_ms": null,
+      "compile_ms": null,
+      "link_ms": null,
+      "offload_permille": null,
+      "retries": 0,
+      "fallbacks": 0,
+      "peak_kb": 0
+    }
+  ]
+}
