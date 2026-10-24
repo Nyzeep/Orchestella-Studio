@@ -4,9 +4,11 @@ import unittest
 from pathlib import Path
 
 import collect
+import validate
 
 HERE = Path(__file__).resolve().parent
 FIXTURE = HERE / "fixtures" / "samples-dryrun.tsv"
+V2_FIXTURE = HERE / "fixtures" / "samples-v2.tsv"
 HEADER = "\t".join(collect.COLUMNS)
 
 
@@ -170,6 +172,132 @@ class DeterminismTest(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(first, (HERE / "fixtures" / "expected-report.json").read_text(
             encoding="utf-8"))
+
+
+def v2_header(optional_columns):
+    return "\t".join(list(collect.COLUMNS) + list(optional_columns))
+
+
+def v2_row(optional_values=None, **overrides):
+    """One v2 sample; optional_values maps segment column -> cell ('' = blank)."""
+    row = {
+        "scenario": "small_project",
+        "mode": "QEMU_PLUS_ACCEL",
+        "status": "ok",
+        "wall_ms": "1000",
+        "pre_ms": "10",
+        "tx_ms": "100",
+        "cc_ms": "900",
+        "ld_ms": "90",
+        "offload_permille": "860",
+        "retries": "0",
+        "fallbacks": "0",
+        "peak_kb": "1024",
+        "code": "NONE",
+    }
+    row.update(overrides)
+    cells = [row[column] for column in collect.COLUMNS]
+    for column in collect.SEGMENT_COLUMNS:
+        if column in optional_values:
+            cells.append(optional_values[column])
+    return "\t".join(cells)
+
+
+class V2SegmentColumnsTest(unittest.TestCase):
+    FULL = {
+        "preprocess_ms": "70",
+        "transport_ms": "100",
+        "transport_bytes": "204800",
+        "payload_load_ms": "4200",
+        "compile_ms": "900",
+        "link_ms": "60",
+    }
+
+    def build(self, header, text):
+        rows = collect.parse_samples(header + "\n" + text)
+        report = collect.build_report(rows, "build-1", "bench-a", "2026-10-23T00:00:00Z")
+        return report, report["scenarios"][0]
+
+    def test_full_columns_produce_a_valid_v2_report(self):
+        report, entry = self.build(
+            v2_header(collect.SEGMENT_COLUMNS), v2_row(self.FULL) + "\n")
+
+        self.assertEqual("accelerator-perf-v2", report["schema"])
+        self.assertEqual(70.0, entry["preprocess_ms"])
+        self.assertEqual(100.0, entry["transport_ms"])
+        self.assertEqual(204800.0, entry["transport_bytes"])
+        self.assertEqual(4200.0, entry["payload_load_ms"])
+        self.assertEqual(900.0, entry["compile_ms"])
+        self.assertEqual(60.0, entry["link_ms"])
+        self.assertEqual([], validate.validate_report(report))
+
+    def test_missing_optional_columns_keep_the_v1_report(self):
+        report, entry = self.build(HEADER, sample() + "\n")
+
+        self.assertEqual("accelerator-perf-v1", report["schema"])
+        for column in collect.SEGMENT_COLUMNS:
+            self.assertNotIn(column, entry)
+
+    def test_partial_columns_fill_unmeasured_segments_with_null(self):
+        header = v2_header(["preprocess_ms", "transport_ms"])
+        report, entry = self.build(
+            header, v2_row({"preprocess_ms": "70", "transport_ms": "100"}) + "\n")
+
+        self.assertEqual("accelerator-perf-v2", report["schema"])
+        self.assertEqual(70.0, entry["preprocess_ms"])
+        self.assertEqual(100.0, entry["transport_ms"])
+        self.assertIsNone(entry["transport_bytes"])
+        self.assertIsNone(entry["payload_load_ms"])
+        self.assertIsNone(entry["compile_ms"])
+        self.assertIsNone(entry["link_ms"])
+
+    def test_blank_cells_are_null_not_zero(self):
+        text = (
+            v2_row(dict(self.FULL, payload_load_ms="4200")) + "\n"
+            + v2_row(dict(self.FULL, payload_load_ms="")) + "\n"
+        )
+        report, entry = self.build(v2_header(collect.SEGMENT_COLUMNS), text)
+
+        self.assertEqual(4200.0, entry["payload_load_ms"],
+                         "the median must skip blank cells, not count them as 0")
+
+        text = (v2_row(dict(self.FULL, payload_load_ms="")) + "\n") * 2
+        report, entry = self.build(v2_header(collect.SEGMENT_COLUMNS), text)
+
+        self.assertIsNone(entry["payload_load_ms"])
+
+    def test_segments_are_median_over_successful_samples(self):
+        rows = "\n".join(
+            v2_row(dict(self.FULL, preprocess_ms=str(70 + index)))
+            for index in range(10)
+        )
+        report, entry = self.build(v2_header(collect.SEGMENT_COLUMNS), rows + "\n")
+
+        self.assertEqual(74.5, entry["preprocess_ms"])
+
+    def test_optional_header_must_be_base_plus_ordered_subset(self):
+        for bad_header in (
+            v2_header(["transport_ms", "preprocess_ms"]),
+            v2_header(["invented_ms"]),
+            "\t".join(["preprocess_ms"] + list(collect.COLUMNS)),
+        ):
+            with self.assertRaises(collect.SampleError):
+                collect.parse_samples(bad_header + "\n" + v2_row(self.FULL) + "\n")
+
+    def test_segment_cells_must_be_non_negative_integers(self):
+        for bad in (dict(self.FULL, compile_ms="-5"), dict(self.FULL, compile_ms="1.5")):
+            with self.assertRaises(collect.SampleError):
+                collect.parse_samples(
+                    v2_header(collect.SEGMENT_COLUMNS) + "\n" + v2_row(bad) + "\n")
+
+    def test_committed_v2_fixture_round_trips_to_its_golden(self):
+        rows = collect.parse_samples(V2_FIXTURE.read_text(encoding="utf-8"))
+        report = collect.build_report(rows, "pvm-sample", "bench-sim", "2026-10-23T00:00:00Z")
+
+        self.assertEqual(
+            collect.render(report),
+            (HERE / "fixtures" / "expected-report-v2.json").read_text(encoding="utf-8"))
+        self.assertEqual([], validate.validate_report(report))
 
 
 if __name__ == "__main__":

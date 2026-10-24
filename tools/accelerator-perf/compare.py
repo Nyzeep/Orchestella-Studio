@@ -55,6 +55,7 @@ def compare(baseline: dict, candidate: dict) -> dict:
                     "candidate_median_ms": candidate_entry["median_ms"],
                     "speedup": None,
                     "verdict": "NO_DATA",
+                    "attribution": None,
                 }
             )
             continue
@@ -69,6 +70,7 @@ def compare(baseline: dict, candidate: dict) -> dict:
                 "candidate_median_ms": candidate_entry["median_ms"],
                 "speedup": float(f"{ratio:.2f}"),
                 "verdict": _verdict(ratio, threshold, regression),
+                "attribution": _attribution(candidate_entry),
             }
         )
 
@@ -89,6 +91,29 @@ def _verdict(ratio: float, threshold: float, regression: float) -> str:
     if ratio >= threshold:
         return "PRODUCTIZE"
     return "BELOW_THRESHOLD"
+
+
+def _attribution(entry: dict) -> dict | None:
+    """Where the candidate's time went, when the PVM-07 segments were measured.
+
+    Shares are fractions of the candidate median, rounded to two decimals.
+    The block is only produced when every share can be computed from measured
+    values; anything missing yields null instead of a guessed attribution.
+    """
+    median = entry.get("median_ms")
+    if not isinstance(median, (int, float)) or median <= 0:
+        return None
+    shares = {}
+    for name, field in (
+        ("transport_share", "transport_ms"),
+        ("compile_share", "compile_ms"),
+        ("link_share", "link_ms"),
+    ):
+        value = entry.get(field)
+        if not isinstance(value, (int, float)) or value < 0:
+            return None
+        shares[name] = float(f"{value / median:.2f}")
+    return shares
 
 
 def _overall(entries: list) -> str:

@@ -1,0 +1,70 @@
+{
+  "schema": "accelerator-perf-v2",
+  "build_id": "pvm-sample",
+  "device_alias": "bench-sim",
+  "generated_at_utc": "2026-10-23T00:00:00Z",
+  "protocol": {
+    "min_samples": 10,
+    "iqr_method": "linear-interpolation-on-sorted-values",
+    "speedup_threshold": 1.5,
+    "regression_permille": 50
+  },
+  "scenarios": [
+    {
+      "scenario": "small_project",
+      "mode": "QEMU_ONLY",
+      "n": 10,
+      "failures": 0,
+      "failure_codes": {},
+      "insufficient_samples": false,
+      "median_ms": 2125.0,
+      "iqr_ms": 45.0,
+      "min_ms": 2080,
+      "max_ms": 2170,
+      "phases_ms": {
+        "preprocess": 124.5,
+        "transfer": 0.0,
+        "compile": 1859.0,
+        "link": 104.5
+      },
+      "preprocess_ms": 124.5,
+      "transport_ms": null,
+      "transport_bytes": null,
+      "payload_load_ms": null,
+      "compile_ms": 1859.0,
+      "link_ms": 104.5,
+      "offload_permille": 0,
+      "retries": 0,
+      "fallbacks": 0,
+      "peak_kb": 524288
+    },
+    {
+      "scenario": "small_project",
+      "mode": "QEMU_PLUS_ACCEL",
+      "n": 10,
+      "failures": 0,
+      "failure_codes": {},
+      "insufficient_samples": false,
+      "median_ms": 1225.0,
+      "iqr_ms": 45.0,
+      "min_ms": 1180,
+      "max_ms": 1270,
+      "phases_ms": {
+        "preprocess": 74.5,
+        "transfer": 104.5,
+        "compile": 904.5,
+        "link": 64.5
+      },
+      "preprocess_ms": 74.5,
+      "transport_ms": 104.5,
+      "transport_bytes": 204500.0,
+      "payload_load_ms": 4200.0,
+      "compile_ms": 904.5,
+      "link_ms": 64.5,
+      "offload_permille": 860,
+      "retries": 0,
+      "fallbacks": 0,
+      "peak_kb": 524288
+    }
+  ]
+}
