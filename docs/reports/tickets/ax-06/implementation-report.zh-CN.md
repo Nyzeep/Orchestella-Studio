@@ -110,3 +110,7 @@ distccd --inetd -> cc
 4. **distcc 自身重试/并发**：`-j` 与多 job 未做压力测试；桥的连接上限、idle timeout 只由既有单测覆盖。
 5. **脚本依赖宿主 distcc**：缺失时返回 `DISTCC_E2E_BLOCKED`（exit 2）；设置 `ALLOW_DISTCC_E2E_SKIP=1` 可在明确无 distcc 的环境跳过。本机已安装 distcc 3.4 完成真实运行。
 6. **未接设备**：不运行 adb、不启动 QEMU guest、不使用真实 vsock/Fast Lane；CI 未运行。
+
+## 9. 追记（2026-10-24，PVM-05）：SHA 判据的适用范围
+
+本报告第 4 节以 `.o` SHA-256 与本地编译一致作为证据。该判据只在「同一编译器、同一路径、同一参数」的构建间成立；一旦编译实例或构建路径可能不同（例如 PVM 路线的 guest 预处理 + payload 内同源编译），路径、时间戳与随机种子都会使 SHA 不等，产生假阴性。自 PVM-05 起，跨实例的产物一致性以 `tools/compiler-equivalence/compare_objects.py` 的四级判据（链接 → 行为 → 符号/重定位 → 差异白名单）为准；SHA-256 保留为同源同参数构建的廉价辅助信号，不再是判据。本节为追记，上文证据与结论维持原样。

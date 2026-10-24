@@ -132,6 +132,7 @@ run_python() {
   fi
   "$python" -m unittest discover -s tools/fastlane-build -p 'test_*.py' || return 1
   "$python" -m unittest discover -s tools/qemu-tuning -p 'test_*.py' || return 1
+  "$python" -m unittest discover -s tools/compiler-equivalence -p 'test_*.py' || return 1
 }
 
 run_e2e() {
