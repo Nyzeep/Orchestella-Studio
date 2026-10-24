@@ -73,8 +73,9 @@ class AcceleratorLaunchDispatcherTest {
         assertEquals(LaneState.STARTING, dispatch.coordinator!!.state(LaneId.QEMU))
         assertEquals(LaneState.STARTING, dispatch.coordinator!!.state(LaneId.ACCEL))
         assertTrue(dispatch.coordinator!!.hasLease(LaneId.ACCEL))
-        // The envelope is exactly what the two lanes request; nothing is left over.
-        assertEquals(0, dispatch.coordinator!!.ledger().snapshot().cpuCores())
+        // The envelope is exactly what the two lanes request; both reserves used it.
+        assertEquals(3, dispatch.coordinator!!.ledger().budget().cpuCores())
+        assertEquals(3, dispatch.coordinator!!.ledger().snapshot().cpuCores())
         dispatch.coordinator!!.close()
     }
 
@@ -134,7 +135,8 @@ class AcceleratorLaunchDispatcherTest {
         assertTrue(dispatch.decisionJson.contains("\"mode\":\"QEMU_PLUS_ACCEL\""))
         assertSame(fixture.qemuSession, dispatch.outcome.session)
         assertEquals(1, fixture.qemuStarts.get())
-        assertEquals(1, fixture.accelStarts.get())
+        // The launcher refuses before any engine lookup: no platform call, no VM.
+        assertEquals(0, fixture.engineLookups.get())
         assertEquals(LaneState.LOST, dispatch.coordinator!!.state(LaneId.ACCEL))
         assertEquals(LaneState.STARTING, dispatch.coordinator!!.state(LaneId.QEMU))
         dispatch.coordinator!!.close()
