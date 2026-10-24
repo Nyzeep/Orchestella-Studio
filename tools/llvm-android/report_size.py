@@ -118,9 +118,10 @@ def collect_so(dist: Path) -> list[Path]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     here = Path(__file__).resolve().parent
-    ap.add_argument("--dist", default=str(here / "out" / "lib" / "arm64-v8a"))
-    ap.add_argument("--unstripped", default=str(here / "out" / "unstripped" / "arm64-v8a"))
-    ap.add_argument("--meta", default=str(here / "out" / "build-meta.json"))
+    build_out = here.parent.parent / "build" / "llvm-android"
+    ap.add_argument("--dist", default=str(build_out / "lib" / "arm64-v8a"))
+    ap.add_argument("--unstripped", default=str(build_out / "unstripped" / "arm64-v8a"))
+    ap.add_argument("--meta", default=str(build_out / "build-meta.json"))
     ap.add_argument("--readelf", default=None)
     ap.add_argument("--nm", default=None)
     ap.add_argument("--out", default=str(here / "SIZE_REPORT.md"))
