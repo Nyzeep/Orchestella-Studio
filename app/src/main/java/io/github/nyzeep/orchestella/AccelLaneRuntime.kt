@@ -7,12 +7,17 @@ import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneStopOutcome
 
 /**
  * Narrow seam over one running accelerator VM; the production adapter wraps
- * the engine-avf session.
+ * the engine-avf session. The production control-channel probe is bounded by
+ * the engine's internal connect-retry window (hundreds of ms to tens of
+ * seconds when the guest is absent), not a single fast poll — before this
+ * readiness signal is ever wired into {@code awaitAcceleratorReady}, the
+ * probe must become non-blocking or the readiness wait must move off the
+ * coordinator lock.
  */
 interface AccelVmHandle {
     fun isRuntimeAlive(): Boolean
 
-    /** One bounded control-channel connect attempt; true only when the guest answered. */
+    /** Attempts the control-channel connect; true only when the guest answered. */
     fun tryOpenControlChannel(): Boolean
 
     fun stopRuntime(graceMs: Long): AvfStopResult

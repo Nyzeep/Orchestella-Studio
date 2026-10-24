@@ -123,6 +123,20 @@ class AcceleratorLaunchDispatcherTest {
     }
 
     @Test
+    fun qemuUncheckedFailureKeepsTodayExceptionFace() {
+        val fixture = Fixture()
+        val failure = IllegalStateException("test-injected")
+        fixture.qemuLaunch = AcceleratorLaunchDispatcher.QemuLaunch { throw failure }
+
+        try {
+            fixture.dispatch()
+            fail("unchecked launch failures must reach the failure handler unchanged")
+        } catch (expected: IllegalStateException) {
+            assertSame(failure, expected)
+        }
+    }
+
+    @Test
     fun missingImageOnAnArmedDeviceDegradesToQemuOnlyWithoutTouchingQemu() {
         val fixture = Fixture().apply {
             armedFacts()
