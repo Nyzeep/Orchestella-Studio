@@ -1,20 +1,23 @@
 #!/usr/bin/env python3
-"""PVM-08: assemble the payload + compiler shared-library staging directory.
+"""PVM-08: assemble the compiler-side shared-library staging directory.
 
-The Gradle payload property (orchestella.fastlane.payloadLibDir) and the
-compiler property (orchestella.pvmCompiler.libDir) point at two directories
-whose arm64-v8a/*.so contents AGP merges into the APK's lib/arm64-v8a/. This
-script stages the compiler side:
+Gradle consumes two directories whose arm64-v8a/*.so contents are merged into
+the APK's lib/arm64-v8a/: orchestella.fastlane.payloadLibDir (payload side,
+built by tools/fastlane-build/build-payload.sh) and
+orchestella.pvmCompiler.libDir (compiler side, staged by this script). The
+two must not overlap: the compiler staging directory therefore contains only
 
-  * real mode: copy libLLVM.so / libclang-cpp.so (PVM-04 build output) plus
-    libc++_shared.so when present into the staging arm64-v8a/;
-  * placeholder mode (--placeholder): build a few-KB same-ABI stub pair with
+  * real mode: libLLVM.so / libclang-cpp.so copied from the PVM-04 build
+    output, plus libc++_shared.so when present;
+  * placeholder mode (--placeholder): a few-KB same-ABI stub pair built with
     the NDK so the packaging/alignment/size pipeline can be rehearsed before
     the real PVM-04 artifacts exist. Stubs carry a PVM04_PLACEHOLDER symbol
     and must never be mistaken for libclang.
 
 Every staged .so is checked for EM_AARCH64 and >= 16 KB PT_LOAD alignment
-(pure-Python ELF parse, no readelf dependency).
+(pure-Python ELF parse, no readelf dependency). --payload-dir is validation
+only: the payload must already exist before the APK build makes sense, but it
+is never copied or modified.
 
 Exit codes: 0 ok; 1 usage/validation failure; 2 ELF/alignment failure.
 """
@@ -161,8 +164,8 @@ def build_placeholders(out_dir: Path, ndk: Path | None, api: int) -> list[Path]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     here = Path(__file__).resolve().parent
-    parser.add_argument("--payload-dir", required=True, type=Path,
-                        help="directory containing arm64-v8a/libfastlane_payload.so (build/fastlane-payload)")
+    parser.add_argument("--payload-dir", type=Path, default=None,
+                        help="directory containing arm64-v8a/libfastlane_payload.so (validated, not copied)")
     parser.add_argument("--compiler-dir", type=Path, default=None,
                         help="directory containing arm64-v8a/libLLVM.so and libclang-cpp.so (tools/llvm-android out); "
                              "mutually exclusive with --placeholder")
@@ -179,9 +182,11 @@ def main() -> int:
     if not arguments.compiler_dir and not arguments.placeholder:
         raise fail("one of --compiler-dir or --placeholder is required")
 
-    payload_so = arguments.payload_dir / "arm64-v8a" / "libfastlane_payload.so"
-    if not payload_so.is_file():
-        raise fail(f"payload dir is missing arm64-v8a/libfastlane_payload.so: {arguments.payload_dir}")
+    payload_so = None
+    if arguments.payload_dir is not None:
+        payload_so = arguments.payload_dir / "arm64-v8a" / "libfastlane_payload.so"
+        if not payload_so.is_file():
+            raise fail(f"payload dir is missing arm64-v8a/libfastlane_payload.so: {arguments.payload_dir}")
 
     out = arguments.out
     abi_dir = out / "arm64-v8a"
@@ -190,9 +195,6 @@ def main() -> int:
     abi_dir.mkdir(parents=True)
 
     staged: list[Path] = []
-    payload_copy = abi_dir / "libfastlane_payload.so"
-    shutil.copy2(payload_so, payload_copy)
-    staged.append(payload_copy)
 
     placeholder = arguments.placeholder
     if placeholder:
