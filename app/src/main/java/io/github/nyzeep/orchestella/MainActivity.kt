@@ -48,8 +48,11 @@ import io.github.nyzeep.orchestella.ui.theme.AppTheme
 import io.github.nyzeep.orchestella.ui.theme.ThemeStore
 import io.github.nyzeep.orchestella.ui.theme.ThemeColors
 import io.github.nyzeep.orchestella.runtime.engineavf.AvfEngineException
+import io.github.nyzeep.orchestella.runtime.engineavf.AvfVirtualMachineEngine
+import io.github.nyzeep.orchestella.runtime.engineavf.ReflectiveAvfVirtualMachineApi
 import io.github.nyzeep.orchestella.runtime.engineqemu.RuntimeArtifactManifest
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
+import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneClock
 import io.github.nyzeep.orchestella.runtime.instance.SparseDiskResizer
 import io.github.nyzeep.orchestella.runtime.network.FilePortForwardingStore
 import io.github.nyzeep.orchestella.runtime.network.PortConflictDetector
@@ -1506,6 +1509,7 @@ class MainActivity : AppCompatActivity() {
             val controller = InstanceLifecycle.Controller(instanceStore, Clock.systemUTC())
             var running = false
             var launchGeneration: String? = null
+            var acceleratorCoordinator: DualLaneCoordinator? = null
             try {
                 DistroResourceRequirements.requireBootRam(instance.distro().id(), instance.hardwareConfig().ramMegabytes())
                 launchGeneration = InstanceLaunchGuard.begin(instance.id())
@@ -1565,7 +1569,43 @@ class MainActivity : AppCompatActivity() {
                             filesDir.resolve("avf-degradations.txt").toPath(),
                         ).record(failure)
                     })
-                val outcome = strategyLauncher.launch(parameters, preferAvf)
+                val dispatchResult = AcceleratorLaunchDispatcher.dispatch(
+                    BuildConfig.ACCELERATOR_LANE_ENABLED,
+                    parameters,
+                    { params -> QemuInstanceLauncher(this).launch(params) },
+                    {
+                        AcceleratorVmLauncher(
+                            "accel-" + instance.id(),
+                            filesDir.resolve("accelerator-image").resolve("kernel").toPath(),
+                            filesDir.resolve("accelerator-image").resolve("initrd").toPath(),
+                            filesDir.resolve("accelerator-image").resolve("rootfs.ext4").toPath(),
+                            2048L,
+                        ) {
+                            AcceleratorVmLauncher.engine(
+                                AvfVirtualMachineEngine(
+                                    ReflectiveAvfVirtualMachineApi(
+                                        this, classLoader, AvfHiddenApiExemption::installOnce,
+                                    ),
+                                ),
+                            )
+                        }
+                    },
+                    AndroidAcceleratorFactProvider.create(this),
+                    { ExecutionSessionRegistry.get(instance.id()) },
+                    "",
+                    LaneClock.system(),
+                    { event ->
+                        android.util.Log.i(
+                            "OrchestellaAccelerator",
+                            "${event.name()} ${event.lane()} ${event.code()} ${event.durationMs()}ms",
+                        )
+                    },
+                ) { strategyLauncher.launch(parameters, preferAvf) }
+                acceleratorCoordinator = dispatchResult.coordinator
+                if (dispatchResult.coordinator != null) {
+                    android.util.Log.i("OrchestellaAccelerator", dispatchResult.decisionJson)
+                }
+                val outcome = dispatchResult.outcome
                 val session = outcome.session
                 val sessionGeneration = ExecutionSessionRegistry.generation(instance.id(), session)
                     ?: throw IOException("运行会话已变化")
@@ -1573,6 +1613,12 @@ class MainActivity : AppCompatActivity() {
                     try {
                         val exit = InstanceLaunchSequence.awaitGuestExit(controller, instance.id(), session) {
                             OrchestellaForegroundService.stop(this, instance.id(), sessionGeneration)
+                        }
+                        // The guest session is over (or no longer ours): the
+                        // accelerator lane must not outlive the launch that
+                        // armed it. A WAIT_FAILED keeps both lanes untouched.
+                        if (exit.status() != InstanceLaunchSequence.ExitStatus.WAIT_FAILED) {
+                            acceleratorCoordinator?.close()
                         }
                         if (exit.status() != InstanceLaunchSequence.ExitStatus.STALE) runOnUiThread {
                             if (!InstanceLaunchGuard.isLatest(instance.id(), sessionGeneration)) return@runOnUiThread
@@ -1618,6 +1664,7 @@ class MainActivity : AppCompatActivity() {
                 // A failed launch may have left a runtime whose stop was not
                 // confirmed; keep RUNNING metadata and the foreground binding in
                 // that case instead of pretending the instance crashed.
+                acceleratorCoordinator?.close()
                 val cleanupResult = QemuInstanceLauncher.takeLastCleanupResult(instance.id())
                 try {
                     InstanceLaunchSequence.afterLaunchFailure(
