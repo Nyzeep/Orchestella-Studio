@@ -54,7 +54,7 @@
   - `./gradlew :runtime:fastlane-capability:compileTestJava` → BUILD SUCCESSFUL（含 `-Xlint:all -Werror`）；
   - `./gradlew :app:compileDebugKotlin :app:compileDebugJavaWithJavac` → BUILD SUCCESSFUL；
   - `./gradlew :app:compileDebugUnitTestJavaWithJavac :app:compileDebugUnitTestKotlin` → BUILD SUCCESSFUL。
-- **单测本机执行（通过 ASCII 路径 clone 打通）**：把仓库 clone 到 `D:/t/orch`（纯 ASCII 路径）并复制 `local.properties` 后，Gradle test worker 的 `ClassNotFoundException` 消失——
+- **单测本机执行（通过 ASCII 路径 clone 打通）**：把仓库 clone 到仓库外的**纯 ASCII 路径**（无中文）并复制 `local.properties` 后，Gradle test worker 的 `ClassNotFoundException` 消失——
   - `:runtime:fastlane-capability:test` → **300/300 绿**（truth table v2 全 26 组 + 全部专项断言）；
   - `:app:testDebugUnitTest` → **全绿**（含 `AcceleratorLaneAssemblyTest`、`AcceleratorLaunchDispatcherTest`、`AndroidAcceleratorFactProviderTest`）。
 - **CI 首跑曾红（run 40078807600）并已修复**：`AcceleratorFacts.Builder.batteryState` 被误写为 `requireNonNull(batteryState, ...)`（校验字段自身、丢弃入参），battery 恒为 UNKNOWN，所有 available 路径被 `THERMAL_BUDGET` 拒绝；且 `AcceleratorPolicy` 在 CUSTOM_VM 选中时丢弃已收集的 rejections。修复 commit `05363ee` 后本机两套单测全绿，CI 重跑结论见 PR #21 checks。
