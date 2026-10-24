@@ -1579,7 +1579,7 @@ class MainActivity : AppCompatActivity() {
                             filesDir.resolve("accelerator-image").resolve("kernel").toPath(),
                             filesDir.resolve("accelerator-image").resolve("initrd").toPath(),
                             filesDir.resolve("accelerator-image").resolve("rootfs.ext4").toPath(),
-                            2048L,
+                            AcceleratorLaunchDispatcher.ACCEL_REQUEST.ramMiB,
                         ) {
                             AcceleratorVmLauncher.engine(
                                 AvfVirtualMachineEngine(
@@ -1633,6 +1633,10 @@ class MainActivity : AppCompatActivity() {
                             showInstances()
                         }
                     } catch (failure: Exception) {
+                        // The watcher only throws after the guest was observed
+                        // exiting, so the QEMU runtime is already gone; the
+                        // accelerator lane must not survive it unattended.
+                        acceleratorCoordinator?.close()
                         runOnUiThread {
                             if (!InstanceLaunchGuard.isLatest(instance.id(), sessionGeneration)) return@runOnUiThread
                             createStatus.text = getString(R.string.launch_failed, failure.javaClass.simpleName)

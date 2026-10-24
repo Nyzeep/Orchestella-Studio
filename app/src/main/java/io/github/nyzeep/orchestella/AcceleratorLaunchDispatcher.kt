@@ -36,8 +36,12 @@ import java.util.function.Supplier
  */
 object AcceleratorLaunchDispatcher {
     /**
-     * Fixed accelerator lane request: one vCPU (the pinned AVF SystemApi can
-     * only express ONE_CPU), fixed memory and disk. Not caller-tunable.
+     * Fixed accelerator lane request. One vCPU: the pinned AVF SystemApi can
+     * only express ONE_CPU topology (ReflectiveAvfVirtualMachineApi rejects
+     * any other count), so the VM and the budget must agree. 2048 MiB memory
+     * and a 16 GiB root volume are the declared accelerator-image envelope
+     * until the image ticket provisions real sizes — both live here and are
+     * derived, never re-stated at call sites.
      */
     val ACCEL_REQUEST: LaneRequest = LaneRequest(LaneId.ACCEL, 1, 2048L, 16L)
 
@@ -121,6 +125,12 @@ object AcceleratorLaunchDispatcher {
             } catch (failure: InterruptedException) {
                 qemuFailure.set(failure)
                 throw LaneStartException("QEMU_START_FAILED")
+            } catch (failure: RuntimeException) {
+                // Today's path lets unchecked launch failures reach the launch
+                // failure handler unchanged; keep that exception face under the
+                // flag by rethrowing the original object after the coordinator.
+                qemuFailure.set(failure)
+                throw LaneStartException("QEMU_START_FAILED")
             }
         }
         val accelStarter = LaneStarter { accelLauncher().start() }
@@ -150,6 +160,7 @@ object AcceleratorLaunchDispatcher {
             throw when (failure) {
                 is IOException -> failure
                 is InterruptedException -> failure
+                is RuntimeException -> failure
                 else -> IOException("QEMU_START_FAILED")
             }
         }
