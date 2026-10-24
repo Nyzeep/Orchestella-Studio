@@ -170,6 +170,11 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      # PVM-02's inprocess_noexec ctest traces the payload host driver and
+      # asserts no exec/fork/vfork during in-process compilation.
+      - name: Install strace for the no-exec assertion
+        run: sudo apt-get update -q && sudo apt-get install -y -q strace
+
       - name: Fetch pinned JUnit for the E2E harness
         run: |
           mkdir -p /tmp/fl-junit
