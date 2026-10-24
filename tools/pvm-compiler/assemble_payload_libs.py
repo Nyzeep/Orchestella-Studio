@@ -113,6 +113,14 @@ def find_ndk_clang(ndk: Path | None) -> Path:
     raise fail(f"clang not found under {ndk}")
 
 
+def run_clang(cmd: list[str]) -> None:
+    proc = subprocess.run(cmd, check=False, capture_output=True, text=True,
+                          encoding="utf-8", errors="replace")
+    if proc.returncode != 0:
+        raise fail(f"stub compile failed (rc={proc.returncode}): {' '.join(cmd)}\n"
+                   f"{proc.stderr.strip()[-800:]}")
+
+
 def build_placeholders(out_dir: Path, ndk: Path | None, api: int) -> list[Path]:
     clang = find_ndk_clang(ndk)
     produced: list[Path] = []
@@ -122,13 +130,12 @@ def build_placeholders(out_dir: Path, ndk: Path | None, api: int) -> list[Path]:
         llvm_c = work / "llvm_stub.c"
         llvm_c.write_text(STUB_C.format(entry="pvm_llvm_stub_entry"), encoding="ascii")
         llvm_so = out_dir / "libLLVM.so"
-        cmd = [
+        run_clang([
             str(clang), f"--target=aarch64-linux-android{api}",
             "-shared", "-fPIC", "-Oz", "-nostdlib",
             "-Wl,-soname,libLLVM.so", "-Wl,-z,max-page-size=16384",
             "-o", str(llvm_so), str(llvm_c),
-        ]
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        ])
         produced.append(llvm_so)
         # libclang-cpp.so: stub that references the libLLVM stub so the link
         # records a NEEDED libLLVM.so dependency (soname resolution rehearsal).
@@ -140,14 +147,13 @@ def build_placeholders(out_dir: Path, ndk: Path | None, api: int) -> list[Path]:
             encoding="ascii",
         )
         cpp_so = out_dir / "libclang-cpp.so"
-        cmd = [
+        run_clang([
             str(clang), f"--target=aarch64-linux-android{api}",
             "-shared", "-fPIC", "-Oz", "-nostdlib",
             "-Wl,-soname,libclang-cpp.so", "-Wl,-z,max-page-size=16384",
             "-Wl,--no-as-needed", str(llvm_so),
             "-o", str(cpp_so), str(cpp_c),
-        ]
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        ])
         produced.append(cpp_so)
     return produced
 
