@@ -54,5 +54,9 @@
   - `./gradlew :runtime:fastlane-capability:compileTestJava` → BUILD SUCCESSFUL（含 `-Xlint:all -Werror`）；
   - `./gradlew :app:compileDebugKotlin :app:compileDebugJavaWithJavac` → BUILD SUCCESSFUL；
   - `./gradlew :app:compileDebugUnitTestJavaWithJavac :app:compileDebugUnitTestKotlin` → BUILD SUCCESSFUL。
-- **单测未在本机执行**：`:runtime:fastlane-capability:test` 在本机复现既有环境问题（每个测试类 `initializationError: ClassNotFoundException`，中文路径下 Gradle test worker 类加载问题，与本轮改动无关）。单测与 truth table 断言以 PR 上 CI 的 Contract & Unit Tests 为准。
+- **单测本机执行（通过 ASCII 路径 clone 打通）**：把仓库 clone 到 `D:/t/orch`（纯 ASCII 路径）并复制 `local.properties` 后，Gradle test worker 的 `ClassNotFoundException` 消失——
+  - `:runtime:fastlane-capability:test` → **300/300 绿**（truth table v2 全 26 组 + 全部专项断言）；
+  - `:app:testDebugUnitTest` → **全绿**（含 `AcceleratorLaneAssemblyTest`、`AcceleratorLaunchDispatcherTest`、`AndroidAcceleratorFactProviderTest`）。
+- **CI 首跑曾红（run 40078807600）并已修复**：`AcceleratorFacts.Builder.batteryState` 被误写为 `requireNonNull(batteryState, ...)`（校验字段自身、丢弃入参），battery 恒为 UNKNOWN，所有 available 路径被 `THERMAL_BUDGET` 拒绝；且 `AcceleratorPolicy` 在 CUSTOM_VM 选中时丢弃已收集的 rejections。修复 commit `05363ee` 后本机两套单测全绿，CI 重跑结论见 PR #21 checks。
 - flag 关闭零副作用：`AcceleratorLaneAssemblyTest.flagOffNeverReadsPlatformFacts` 等既有测试原样保留（断言 facts 不得被读），装配根代码路径未动。
+- 经验教训（给后续会话）：中文路径下 Gradle 单测跑不了的 workaround 是 clone 到 ASCII 路径再跑；写 builder/record 这类模板代码后，必须至少跑一次真实单测，编译绿不能发现「setter 吞参数」这类笔误。
