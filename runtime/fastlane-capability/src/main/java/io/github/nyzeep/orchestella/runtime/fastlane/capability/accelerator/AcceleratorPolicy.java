@@ -61,7 +61,8 @@ public final class AcceleratorPolicy {
 
         BackendDecision customVm = evaluateCustomVm(facts, requiredCompilerTriple);
         if (customVm.selected()) {
-            return AcceleratorDecision.available(CompileBackend.CUSTOM_VM);
+            // The refusals collected before the selection stay observable.
+            return AcceleratorDecision.available(CompileBackend.CUSTOM_VM, rejections);
         }
         rejections.add(customVm);
         if (customVmCandidate(facts)) {
