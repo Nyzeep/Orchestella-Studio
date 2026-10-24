@@ -43,6 +43,20 @@ public final class AndroidAcceleratorFactProviderTest {
         assertTrue(facts.avfPresent());
         assertTrue(facts.protectedOnly());
         assertFalse(facts.nonProtectedSupported());
+        // PVM-01: the protected-only verdict is positive evidence for the
+        // payload backend's candidacy.
+        assertTrue(facts.protectedVmSupported());
+    }
+
+    @Test
+    public void payloadCompilerFactsStayConservativeUntilAManifestReaderExists() {
+        for (AvfStatus status : AvfStatus.values()) {
+            AcceleratorFacts facts = facts(status);
+
+            assertFalse(status.name(), facts.payloadCompilerPresent());
+            assertEquals(status.name(), "", facts.payloadCompilerVersion());
+            assertEquals(status.name(), "", facts.payloadTargetTriple());
+        }
     }
 
     @Test
@@ -157,9 +171,13 @@ public final class AndroidAcceleratorFactProviderTest {
         assertFalse(facts.avfPresent());
         assertFalse(facts.nonProtectedSupported());
         assertFalse(facts.protectedOnly());
+        assertFalse(facts.protectedVmSupported());
         assertFalse(facts.acceleratorImagePresent());
         assertFalse(facts.vsockSupported());
+        assertFalse(facts.payloadCompilerPresent());
         assertEquals("", facts.compilerTriple());
+        assertEquals("", facts.payloadCompilerVersion());
+        assertEquals("", facts.payloadTargetTriple());
         assertEquals(ThermalState.UNKNOWN, facts.thermalState());
         assertEquals(BatteryState.UNKNOWN, facts.batteryState());
     }

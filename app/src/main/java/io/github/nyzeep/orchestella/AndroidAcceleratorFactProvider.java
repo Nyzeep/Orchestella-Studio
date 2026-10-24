@@ -160,6 +160,7 @@ public final class AndroidAcceleratorFactProvider implements AcceleratorFactProv
         boolean avfPresent = false;
         boolean nonProtectedSupported = false;
         boolean protectedOnly = false;
+        boolean protectedVmSupported = false;
         if (status != null) {
             switch (status) {
                 case READY -> {
@@ -168,9 +169,14 @@ public final class AndroidAcceleratorFactProvider implements AcceleratorFactProv
                 }
                 case MODE_UNSUPPORTED -> {
                     // The platform answered: a VM exists, but only a protected
-                    // one. That is a pool/control-plane device, never an accelerator.
+                    // one. For the custom-VM backend that is a pool/control-plane
+                    // device, never an accelerator; for the payload backend it is
+                    // the compute plane. The payload compiler facts stay unset
+                    // until a payload manifest reader exists, so the payload
+                    // backend still refuses on missing compiler, not on the VM.
                     avfPresent = true;
                     protectedOnly = true;
+                    protectedVmSupported = true;
                 }
                 case NEEDS_AUTHORIZATION, HIDDEN_API_BLOCKED -> {
                     // The platform is demonstrably present but non-protected use
@@ -195,6 +201,7 @@ public final class AndroidAcceleratorFactProvider implements AcceleratorFactProv
                 .compilerTriple(present.map(AcceleratorImageManifest::compilerTriple).orElse(""))
                 .thermalState(thermalState == null ? ThermalState.UNKNOWN : thermalState)
                 .batteryState(batteryState == null ? BatteryState.UNKNOWN : batteryState)
+                .protectedVmSupported(protectedVmSupported)
                 .build();
     }
 
