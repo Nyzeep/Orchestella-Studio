@@ -19,6 +19,7 @@ on:
       - "tools/fastlane-build/**"
       - "tools/qemu-tuning/**"
       - "tools/ci/**"
+      - "tools/compiler-equivalence/**"
       - "fastlane-payload/**"
       - "app/build.gradle.kts"
       - "build.gradle.kts"
@@ -41,6 +42,7 @@ on:
       - "tools/fastlane-build/**"
       - "tools/qemu-tuning/**"
       - "tools/ci/**"
+      - "tools/compiler-equivalence/**"
       - "fastlane-payload/**"
       - "app/build.gradle.kts"
       - "build.gradle.kts"
@@ -83,6 +85,11 @@ jobs:
         run: |
           . .venv/bin/activate
           python3 -m unittest discover -s tools/ci -p 'test_*.py' -v
+
+      - name: Run compiler-equivalence unit tests (PVM-05)
+        run: |
+          . .venv/bin/activate
+          python3 -m unittest discover -s tools/compiler-equivalence -p 'test_*.py' -v
 
       - name: Check Microdroid exec gate fixtures
         run: |
