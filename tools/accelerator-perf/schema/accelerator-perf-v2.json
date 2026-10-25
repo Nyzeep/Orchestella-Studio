@@ -96,7 +96,11 @@
               "LANE_LOST",
               "STOP_UNCONFIRMED",
               "DISTCC_FALLBACK",
-              "TIMEOUT"
+              "TIMEOUT",
+              "PAYLOAD_LOAD_FAILED",
+              "ARGV_REJECTED",
+              "JOB_TOO_LARGE",
+              "JOB_TIMEOUT"
             ]
           },
           "additionalProperties": { "type": "integer", "minimum": 1 }
