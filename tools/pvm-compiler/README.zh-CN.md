@@ -86,3 +86,39 @@ READELF=<ndk>/.../llvm-readelf bash tools/ci/check-apk-16kb.sh app/build/outputs
   二选一，别混用。
 - `verify_payload_apk.py` 的字节比对要传 `--packaged-so`（AGP strip 后的中间产物），
   传未 strip 的源文件会误报不匹配（CI 也是这么传的）。
+
+## 编译服务（PVM-03）的构建与零设备验证
+
+编译服务是独立 .so（`pvm_compiler_payload`），**不链进** `fastlane_payload`，
+自己带一层薄 socket（payload 侧 vsock / 宿主侧回环 TCP），因此不依赖 FLN1 的
+`transport.cpp`（那份代码写死了 `<linux/vm_sockets.h>`，只能在 Linux/Android 编译）。
+
+```bash
+# 1) 可移植验证构建（任意宿主；库 + host 孪生 + 单测）
+cmake -S fastlane-payload/pvm-service -B build/pvm-service
+cmake --build build/pvm-service
+ctest --test-dir build/pvm-service --output-on-failure
+
+# 2) 产品构建里的 Android payload（FakeEngine 口径，默认不构建）
+cmake -S fastlane-payload -B build/payload-svc \
+  -DCMAKE_TOOLCHAIN_FILE=<ndk>/build/cmake/android.toolchain.cmake \
+  -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-34 \
+  -DFL_BUILD_PVM_COMPILER_PAYLOAD=ON
+cmake --build build/payload-svc --target pvm_compiler_payload
+
+# 3) 宿主 e2e：golden 字节 → 真实 TCP → 服务 → .o（独立 Python 客户端，非 C++ 自证）
+bash tools/pvm-compiler/test-distcc-inprocess.sh
+#    期望：PVM_DISTCC_E2E_OK cases=2 + PVM_EQUIVALENCE verdict=EQUIVALENT
+
+# 4) 宿主 Java 桥互操作：真实 DistccTcpVsockBridge + Axp1DistccChannelFactory
+bash tools/pvm-compiler/test-java-bridge-interop.sh
+#    期望：PVM_JAVA_BRIDGE_OK
+```
+
+| 项 | 说明 |
+| --- | --- |
+| `pvm_compiler_payload_host` | 与 .so 同一个 `main.cpp`，`--tcp <port>` 监听回环；启动后打印 `PVM_CSDL_PORT <port>` 供脚本读取 |
+| 环境变量 | `ORCHESTELLA_ACCEL_TOKEN`（必需，32 位小写 hex）、`ORCHESTELLA_PVM_COMPILER_TRIPLE`、`ORCHESTELLA_PVM_COMPILER_JOBS`（1..2）、`ORCHESTELLA_PVM_JOB_WALL_MS`、`ORCHESTELLA_PVM_INPUT_MAX`、`ORCHESTELLA_PVM_OUTPUT_MAX` |
+| 单测分组 | `FL_TEST_FILTER=argv_policy` / `distcc_server` / `axp1` / `pvm_e2e` |
+| 失败码 | STAT 用 distcc `src/exitcode.h` 的码：`ARGV_REJECTED→0x6500`、`JOB_TOO_LARGE→0x6900`、`JOB_TIMEOUT→0x7600`、`PAYLOAD_LOAD_FAILED→0x6e00`、`COMPILE_ERROR→(编译器退出码<<8)` |
+| 非 ASCII 路径 | 真实 `cc`/`ld` 打不开中文路径（会误判 DIFFERENT），`test-distcc-inprocess.sh` 因此把夹具复制到 ASCII 临时目录再判等价 |

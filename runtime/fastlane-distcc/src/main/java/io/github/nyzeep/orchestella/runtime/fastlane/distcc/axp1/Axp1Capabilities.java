@@ -26,6 +26,13 @@ public final class Axp1Capabilities {
     public static final int ID_COMPILER_TRIPLE = 3;
     public static final int ID_ARCH = 4;
     public static final int ID_FEATURES = 5;
+    /**
+     * Compiler version string (UTF-8). Not part of the original 1..5 set: it was
+     * added for PVM-03 so the host can decide {@code payloadCompilerVersion}
+     * without a second round trip. Older decoders ignore it as an unknown id,
+     * which is exactly the compatibility rule this class already implements.
+     */
+    public static final int ID_COMPILER_VERSION = 6;
     private static final int MAX_FEATURES = 32;
     private static final int MAX_STRING_BYTES = 128;
     private static final int MAX_ENTRIES = 64;
@@ -33,6 +40,7 @@ public final class Axp1Capabilities {
     private final boolean distcc;
     private final int maxFrame;
     private final String compilerTriple;
+    private final String compilerVersion;
     private final String arch;
     private final List<String> features;
     private final Map<Integer, byte[]> unknown;
@@ -41,6 +49,7 @@ public final class Axp1Capabilities {
         this.distcc = builder.distcc;
         this.maxFrame = builder.maxFrame;
         this.compilerTriple = builder.compilerTriple;
+        this.compilerVersion = builder.compilerVersion;
         this.arch = builder.arch;
         this.features = List.copyOf(builder.features);
         Map<Integer, byte[]> copy = new LinkedHashMap<>();
@@ -68,6 +77,11 @@ public final class Axp1Capabilities {
         return arch;
     }
 
+    /** Compiler version reported by the payload; empty when it omits id 6. */
+    public String compilerVersion() {
+        return compilerVersion;
+    }
+
     public List<String> features() {
         return features;
     }
@@ -84,6 +98,7 @@ public final class Axp1Capabilities {
             DataOutputStream out = new DataOutputStream(bytes);
             int count = 2;
             if (!compilerTriple.isEmpty()) count++;
+            if (!compilerVersion.isEmpty()) count++;
             if (!arch.isEmpty()) count++;
             if (!features.isEmpty()) count++;
             out.writeShort(count);
@@ -91,6 +106,9 @@ public final class Axp1Capabilities {
             writeTlv(out, ID_MAX_FRAME, intBytes(maxFrame));
             if (!compilerTriple.isEmpty()) {
                 writeTlv(out, ID_COMPILER_TRIPLE, utf8(compilerTriple));
+            }
+            if (!compilerVersion.isEmpty()) {
+                writeTlv(out, ID_COMPILER_VERSION, utf8(compilerVersion));
             }
             if (!arch.isEmpty()) {
                 writeTlv(out, ID_ARCH, utf8(arch));
@@ -144,6 +162,7 @@ public final class Axp1Capabilities {
                         builder.maxFrame(frame);
                     }
                     case ID_COMPILER_TRIPLE -> builder.compilerTriple(decodeString(value));
+                    case ID_COMPILER_VERSION -> builder.compilerVersion(decodeString(value));
                     case ID_ARCH -> builder.arch(decodeString(value));
                     case ID_FEATURES -> builder.features(decodeFeatures(value));
                     default -> builder.unknown(id, value);
@@ -165,6 +184,8 @@ public final class Axp1Capabilities {
                 .maxFrame(Math.min(local.maxFrame, peer.maxFrame))
                 .compilerTriple(peer.compilerTriple.isEmpty()
                         ? local.compilerTriple : peer.compilerTriple)
+                .compilerVersion(peer.compilerVersion.isEmpty()
+                        ? local.compilerVersion : peer.compilerVersion)
                 .arch(peer.arch.isEmpty() ? local.arch : peer.arch);
         for (String feature : local.features) {
             if (peer.features.contains(feature)) {
@@ -230,6 +251,7 @@ public final class Axp1Capabilities {
         private boolean distcc;
         private int maxFrame = Axp1Codec.DEFAULT_MAX_FRAME;
         private String compilerTriple = "";
+        private String compilerVersion = "";
         private String arch = "";
         private final List<String> features = new ArrayList<>();
         private final Map<Integer, byte[]> unknown = new LinkedHashMap<>();
@@ -249,6 +271,11 @@ public final class Axp1Capabilities {
 
         public Builder compilerTriple(String value) {
             this.compilerTriple = Objects.requireNonNull(value, "compilerTriple");
+            return this;
+        }
+
+        public Builder compilerVersion(String value) {
+            this.compilerVersion = Objects.requireNonNull(value, "compilerVersion");
             return this;
         }
 

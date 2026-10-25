@@ -114,6 +114,20 @@ class ScenarioTest(unittest.TestCase):
 
         self.assertIn("unknown failure code", defects)
 
+    def test_pvm_failure_codes_are_accepted(self):
+        for code in (
+            "PAYLOAD_LOAD_FAILED",
+            "ARGV_REJECTED",
+            "JOB_TOO_LARGE",
+            "JOB_TIMEOUT",
+        ):
+            with self.subTest(code=code):
+                self.assertIn(code, collect.ALLOWED_CODES)
+                report = golden()
+                report["scenarios"][1]["failures"] = 1
+                report["scenarios"][1]["failure_codes"] = {code: 1}
+                self.assertEqual([], validate.validate_report(report))
+
     def test_insufficient_samples_must_agree_with_n(self):
         report = golden()
         report["scenarios"][0]["insufficient_samples"] = True

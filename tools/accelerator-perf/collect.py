@@ -83,6 +83,12 @@ ALLOWED_CODES = frozenset(
         "STOP_UNCONFIRMED",
         "DISTCC_FALLBACK",
         "TIMEOUT",
+        # PVM-03 compile service (spec §5.3). Without these a device run that
+        # fails inside the payload cannot be written into the report at all.
+        "PAYLOAD_LOAD_FAILED",
+        "ARGV_REJECTED",
+        "JOB_TOO_LARGE",
+        "JOB_TIMEOUT",
     }
 )
 

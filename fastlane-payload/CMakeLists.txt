@@ -45,6 +45,16 @@ if(FL_ENABLE_WERROR)
     target_compile_options(fastlane_payload_core PRIVATE -Wall -Wextra -Werror -Wpedantic)
 endif()
 
+# --- PVM-03: compile service core -------------------------------------------
+# Defined before the ANDROID/host split on purpose: the payload .so and the host
+# twin link the same library. It depends only on libstdc++ and its own socket
+# layer, never on fastlane_payload_core (the compiler payload must not carry the
+# FLN1 transport, and the FLN1 core is Linux-only).
+set(FL_PVM_PAYLOAD_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
+set(FL_PVM_PAYLOAD_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/pvm-compile-service.cmake)
+fl_pvm_add_compile_service_library(pvm_compile_service)
+
 # --- PVM-02: in-process compiler kernel (prototype) --------------------------
 # TinyCC (LGPL-2.1) backs the prototype only: sources are fetched at configure
 # time from a hash-pinned tarball and never enter the repository, and the
@@ -162,9 +172,10 @@ elseif(FL_BUILD_HOST)
         src/compiler/host_main.cpp
     )
     target_link_libraries(pvm_compiler_host PRIVATE pvm_compiler)
-    if(FL_ENABLE_WERROR)
-        target_compile_options(pvm_compiler_host PRIVATE -Wall -Wextra -Werror)
-    endif()
+if(FL_ENABLE_WERROR)
+    target_compile_options(pvm_compiler_host PRIVATE -Wall -Wextra -Werror)
+endif()
+
 endif()
 
 if(FL_BUILD_TESTS AND FL_BUILD_HOST AND NOT ANDROID)
@@ -179,15 +190,22 @@ if(FL_BUILD_TESTS AND FL_BUILD_HOST AND NOT ANDROID)
         tests/test_runtime.cpp
         tests/test_golden_fixture.cpp
         tests/test_inprocess_compiler.cpp
+        tests/test_argv_policy.cpp
+        tests/test_distcc_server.cpp
+        tests/test_axp1_server.cpp
+        tests/test_compile_service_e2e.cpp
         src/vm_payload_stub.cpp
     )
-    target_link_libraries(fastlane_payload_tests PRIVATE fastlane_payload_core pvm_compiler)
+    target_link_libraries(fastlane_payload_tests PRIVATE fastlane_payload_core pvm_compiler pvm_compile_service)
     target_include_directories(fastlane_payload_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_SOURCE_DIR}/src/compiler
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/compile_service
     )
     target_compile_definitions(fastlane_payload_tests PRIVATE
-        FLN1_GOLDEN_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../protocol/fln1-golden.json")
+        FLN1_GOLDEN_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../protocol/fln1-golden.json"
+        FL_PVM_DISTCC_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../runtime/fastlane-distcc/src/test/resources/distcc"
+        FL_PVM_AXP1_GOLDEN_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../runtime/fastlane-distcc/src/test/resources/axp1/golden-v1.hex")
     target_compile_options(fastlane_payload_tests PRIVATE -Wall -Wextra -Werror -Wpedantic)
     if(WIN32)
         target_link_libraries(fastlane_payload_tests PRIVATE psapi)
@@ -196,6 +214,18 @@ if(FL_BUILD_TESTS AND FL_BUILD_HOST AND NOT ANDROID)
     add_test(NAME inprocess_compiler_tests COMMAND fastlane_payload_tests)
     set_tests_properties(inprocess_compiler_tests PROPERTIES
         ENVIRONMENT "FL_TEST_FILTER=inprocess")
+    add_test(NAME compile_service_argv_policy COMMAND fastlane_payload_tests)
+    add_test(NAME compile_service_distcc_server COMMAND fastlane_payload_tests)
+    add_test(NAME compile_service_axp1_server COMMAND fastlane_payload_tests)
+    add_test(NAME compile_service_e2e COMMAND fastlane_payload_tests)
+    set_tests_properties(compile_service_argv_policy PROPERTIES
+        ENVIRONMENT "FL_TEST_FILTER=argv_policy")
+    set_tests_properties(compile_service_distcc_server PROPERTIES
+        ENVIRONMENT "FL_TEST_FILTER=distcc_server")
+    set_tests_properties(compile_service_axp1_server PROPERTIES
+        ENVIRONMENT "FL_TEST_FILTER=axp1")
+    set_tests_properties(compile_service_e2e PROPERTIES
+        ENVIRONMENT "FL_TEST_FILTER=pvm_e2e")
     if(UNIX)
         # Run through bash so the test does not depend on the script's exec bit.
         add_test(NAME inprocess_noexec
@@ -294,5 +324,76 @@ if(FL_BUILD_PVM_PROBE)
         if(WIN32)
             target_link_libraries(pvm_probe_host PRIVATE psapi)
         endif()
+    endif()
+endif()
+
+# --- PVM-03: compiler-service payload ----------------------------------------
+# Opt-in like FL_BUILD_PVM_PROBE: default builds (CI, release payload path)
+# never compile this block. The engine is a second gate: CI has no Android
+# libclang, so FL_PVM_COMPILER_ENGINE defaults to FAKE and the CLANG variant
+# additionally requires the staged LLVM paths.
+option(FL_BUILD_PVM_COMPILER_PAYLOAD "Build the PVM-03 compile-service payload" OFF)
+set(FL_PVM_COMPILER_ENGINE "FAKE" CACHE STRING "Compile engine: FAKE or CLANG")
+
+if(FL_BUILD_PVM_COMPILER_PAYLOAD)
+    if(NOT FL_PVM_COMPILER_ENGINE MATCHES "^(FAKE|CLANG)$")
+        message(FATAL_ERROR "FL_PVM_COMPILER_PAYLOAD engine must be FAKE or CLANG")
+    endif()
+    set(FL_PVM_COMPILER_SOURCES src/pvm_compiler_payload_main.cpp)
+    if(FL_PVM_COMPILER_ENGINE STREQUAL "CLANG")
+        set(FL_PVM_COMPILER_LLVM_LIBS "" CACHE PATH "Dir with staged libLLVM.so/libclang-cpp.so")
+        set(FL_PVM_COMPILER_LLVM_SRC "" CACHE PATH "llvm-project source root")
+        set(FL_PVM_COMPILER_LLVM_BUILD "" CACHE PATH "arm64 cross-build tree with generated headers")
+        if(NOT (FL_PVM_COMPILER_LLVM_LIBS AND FL_PVM_COMPILER_LLVM_SRC AND FL_PVM_COMPILER_LLVM_BUILD))
+            message(FATAL_ERROR "CLANG engine needs FL_PVM_COMPILER_LLVM_LIBS/SRC/BUILD")
+        endif()
+        add_library(pvm_compile_service_clang STATIC src/compile_service/clang_engine.cpp)
+        target_include_directories(pvm_compile_service_clang SYSTEM PRIVATE
+            "${FL_PVM_COMPILER_LLVM_SRC}/llvm/include"
+            "${FL_PVM_COMPILER_LLVM_BUILD}/include"
+            "${FL_PVM_COMPILER_LLVM_SRC}/clang/include"
+            "${FL_PVM_COMPILER_LLVM_BUILD}/tools/clang/include")
+        target_include_directories(pvm_compile_service_clang PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/compile_service)
+        # Staged libclang is RTTI=ON / EH=OFF: this TU must not unwind into it.
+        target_compile_options(pvm_compile_service_clang PRIVATE -fno-exceptions -Wall -Wextra)
+    endif()
+
+    if(ANDROID)
+        add_library(pvm_compiler_payload SHARED ${FL_PVM_COMPILER_SOURCES})
+        target_include_directories(pvm_compiler_payload PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/compile_service)
+        if(FL_PVM_COMPILER_ENGINE STREQUAL "CLANG")
+            target_compile_definitions(pvm_compiler_payload PRIVATE FL_PVM_COMPILER_ENGINE_CLANG=1)
+            target_link_libraries(pvm_compiler_payload PRIVATE pvm_compile_service
+                pvm_compile_service_clang vm_payload_stub log
+                "${FL_PVM_COMPILER_LLVM_LIBS}/libclang-cpp.so"
+                "${FL_PVM_COMPILER_LLVM_LIBS}/libLLVM.so")
+        else()
+            target_link_libraries(pvm_compiler_payload PRIVATE pvm_compile_service
+                vm_payload_stub log)
+        endif()
+        # EH=OFF ABI: nothing in the payload may rely on unwinding.
+        target_compile_options(pvm_compiler_payload PRIVATE -Wall -Wextra -Werror
+            -fno-exceptions)
+        target_link_options(pvm_compiler_payload PRIVATE -Wl,-z,max-page-size=16384)
+        set_target_properties(pvm_compiler_payload PROPERTIES
+            OUTPUT_NAME "pvm_compiler_payload"
+            CXX_VISIBILITY_PRESET hidden
+            VISIBILITY_INLINES_HIDDEN ON)
+    else()
+        # Host twin: same session over loopback TCP / Unix socket for the
+        # zero-device e2e chain (real distcc client -> Java bridge -> here).
+        add_executable(pvm_compiler_payload_host ${FL_PVM_COMPILER_SOURCES})
+        target_include_directories(pvm_compiler_payload_host PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/compile_service)
+        # No fastlane_payload_core: the twin carries its own portable listener.
+        target_link_libraries(pvm_compiler_payload_host PRIVATE pvm_compile_service)
+        # Same flags as the device target: the twin is the proof this TU needs
+        # no exceptions, not a different program.
+        target_compile_options(pvm_compiler_payload_host PRIVATE -Wall -Wextra -Werror
+            -fno-exceptions)
     endif()
 endif()
