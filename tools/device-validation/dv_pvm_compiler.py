@@ -218,7 +218,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.token is None:
         print("error=--token is required (mint one with --print-token)", file=sys.stderr)
         return 2
-    if len(args.token) != 32 or any(c not in "0123456789abcdef" for c in args.token):
+    if len(args.token) != 32 or any(c not in ("0123456789" + "abcdef") for c in args.token):
         print("error=--token must be 32 lowercase hex characters", file=sys.stderr)
         return 2
 
