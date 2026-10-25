@@ -4,8 +4,10 @@ import android.app.Instrumentation;
 import android.content.Context;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -13,28 +15,45 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import io.github.nyzeep.orchestella.runtime.engineavf.ReflectiveAvfPlatformAccess;
+import io.github.nyzeep.orchestella.runtime.fastlane.FastLaneChannel;
+import io.github.nyzeep.orchestella.runtime.fastlane.distcc.DistccTcpVsockBridge;
 
 /**
- * QA-only DV-PVM-01 probe: run one protected Microdroid payload VM and hand
+ * QA-only DV-PVM-01/02 probe: run one protected Microdroid payload VM and hand
  * timings and failure codes to the host driver through an evidence file.
  *
- * The payload (libpvm_probe*.so) prints PVM_PROBE observations into the VM
- * logcat; this instrumentation owns only the VM lifecycle: build a protected
- * config with full debug level and captured output, run the named payload,
- * wait for its exit code, stop, delete, and record fixed-code evidence. No
- * device identifiers are recorded; the run token is reduced to its SHA-256.
+ * <p>Two modes share the VM lifecycle, the callback plumbing and the evidence
+ * writer, because AGP keeps only one {@code <instrumentation>} declaration in
+ * the androidTest manifest:
+ *
+ * <ul>
+ *   <li>{@code qaMode=probe} (default) — the DV-PVM-01 payloads: the guest
+ *       streams {@code PVM_PROBE} observations over vsock and the instrumentation
+ *       only owns create/run/stop/delete.</li>
+ *   <li>{@code qaMode=compiler} — DV-PVM-02: the payload is the PVM-03 compile
+ *       service. It is a server, so the instrumentation waits for
+ *       {@code payloadReady}, bridges its vsock port onto a loopback TCP port
+ *       with the production {@link DistccTcpVsockBridge} (the host reaches it
+ *       through {@code adb forward}), serves N jobs, then stops the VM.</li>
+ * </ul>
+ *
+ * <p>No device identifiers are recorded; the run token is reduced to its SHA-256.
  */
 public final class PvmProbeInstrumentation extends Instrumentation {
 
@@ -51,6 +70,10 @@ public final class PvmProbeInstrumentation extends Instrumentation {
     private static final int RESULT_PROBE_PASSED = 0;
     private static final int RESULT_PROBE_FAILED = 1;
     private static final String HEX = "0123456789" + "abcdef";
+    private static final String MODE_COMPILER = "compiler";
+    // Matches FastLaneDv01Contract.DEFAULT_DISTCC_PORT and the payload default.
+    private static final int DEFAULT_PAYLOAD_VSOC_PORT = 5103;
+    private static final long DEFAULT_JOB_DEADLINE_MS = 300_000L;
 
     private Bundle arguments = Bundle.EMPTY;
 
@@ -67,7 +90,9 @@ public final class PvmProbeInstrumentation extends Instrumentation {
         JSONObject evidence;
         int outcome = RESULT_PROBE_FAILED;
         try {
-            evidence = runProbe(results);
+            evidence = MODE_COMPILER.equals(arguments.getString("qaMode"))
+                    ? runCompiler(results)
+                    : runProbe(results);
             outcome = evidence.optBoolean("status_passed", false)
                     ? RESULT_PROBE_PASSED
                     : RESULT_PROBE_FAILED;
@@ -87,6 +112,280 @@ public final class PvmProbeInstrumentation extends Instrumentation {
             evidence = fallback;
         }
         finish(outcome, results);
+    }
+
+    // ------------------------------------------------------------------
+    // DV-PVM-02: the compile-service payload is a server, not a probe. The VM
+    // is only useful while its vsock port is bridged, so this mode publishes
+    // the bridge port in the evidence file, serves the requested job count and
+    // then owns stop/delete exactly like probe mode.
+    // ------------------------------------------------------------------
+
+    private JSONObject runCompiler(Bundle results) throws Exception {
+        final Context target = getTargetContext();
+        final String token = arguments.getString("qaRunToken");
+        if (token == null || !token.matches("[0-9a-f]{32}")) {
+            // The payload accepts only a 32-char lowercase hex token; anything
+            // else makes it exit before payloadReady.
+            return failureEvidence(results, "QA_RUN_TOKEN_REJECTED");
+        }
+        final String payloadName = arguments.getString("qaPayloadName");
+        if (payloadName == null || !payloadName.matches("[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
+                || !payloadName.endsWith(".so")) {
+            return failureEvidence(results, "QA_PAYLOAD_NAME_REJECTED");
+        }
+        final int memoryMb = boundedInt(arguments.getString("qaMemoryMb"),
+                DEFAULT_MEMORY_MB, MIN_MEMORY_MB, MAX_MEMORY_MB);
+        final long readyDeadlineMs = boundedLong(arguments.getString("qaReadyDeadlineMs"),
+                DEFAULT_READY_DEADLINE_MS, 10_000L, MAX_READY_DEADLINE_MS);
+        final long jobDeadlineMs = boundedLong(arguments.getString("qaJobDeadlineMs"),
+                DEFAULT_JOB_DEADLINE_MS, 10_000L, MAX_FINISH_DEADLINE_MS);
+        final int vsockPort = boundedInt(arguments.getString("qaVsockPort"),
+                DEFAULT_PAYLOAD_VSOC_PORT, 1, 65535);
+        final int jobs = boundedInt(arguments.getString("qaJobs"), 1, 1, 2);
+        if (memoryMb < 0 || readyDeadlineMs < 0 || jobDeadlineMs < 0 || vsockPort < 0
+                || jobs < 0) {
+            return failureEvidence(results, "QA_ARGUMENTS_REJECTED");
+        }
+
+        AvfHiddenApiExemption.installOnce();
+
+        final JSONObject evidence = new JSONObject();
+        evidence.put("kind", "pvm_compiler");
+        evidence.put("stage", "started");
+        evidence.put("payload_name", payloadName);
+        evidence.put("memory_mb", memoryMb);
+        evidence.put("vsock_port", vsockPort);
+        evidence.put("jobs_requested", jobs);
+        evidence.put("run_token_sha256", sha256(token));
+        final JSONObject device = new JSONObject();
+        device.put("sdk_int", Build.VERSION.SDK_INT);
+        device.put("abi", Build.SUPPORTED_ABIS.length > 0 ? Build.SUPPORTED_ABIS[0] : "unknown");
+        evidence.put("device", device);
+        final List<String> notes = new ArrayList<>();
+
+        if (target.checkSelfPermission(ReflectiveAvfPlatformAccess.MANAGE_PERMISSION) != 0
+                || target.checkSelfPermission(
+                        ReflectiveAvfPlatformAccess.CUSTOM_PERMISSION) != 0) {
+            return finishEvidence(evidence, results, "QA_PERMISSION_DENIED", notes, false);
+        }
+
+        final ReflectiveAvfPlatformAccess access =
+                new ReflectiveAvfPlatformAccess(target, target.getClassLoader());
+        final ReflectiveAvfPlatformAccess.PlatformShape shape = access.loadPlatformShape();
+        final Object manager = target.getSystemService(shape.manager());
+        if (manager == null || !shape.manager().isInstance(manager)) {
+            return finishEvidence(evidence, results, "QA_VM_MANAGER_UNAVAILABLE", notes, false);
+        }
+        final int capabilities = readRawCapabilities(manager, shape.manager());
+        device.put("capabilities_raw", capabilities);
+        if (capabilities >= 0
+                && (capabilities & ReflectiveAvfPlatformAccess.CAPABILITY_PROTECTED_VM) == 0) {
+            return finishEvidence(evidence, results, "QA_PROTECTED_VM_UNAVAILABLE", notes, false);
+        }
+
+        final Object config = buildConfig(target, payloadName, memoryMb, notes);
+        if (config == null) {
+            return finishEvidence(evidence, results, "QA_CONFIG_FAILED", notes, false);
+        }
+
+        final Class<?> configClass = Class.forName(
+                "android.system.virtualmachine.VirtualMachineConfig");
+        final String name = "qa-csdl-" + token.substring(0, Math.min(12, token.length()));
+        final long createStarted = SystemClock.uptimeMillis();
+        final Object vm;
+        try {
+            vm = shape.manager().getMethod("create", String.class, configClass)
+                    .invoke(manager, name, config);
+        } catch (InvocationTargetException wrapped) {
+            // The AVF error code (e.g. payload-signature or image failures)
+            // survives in the cause; the driver maps it to a fixed code.
+            notes.add("create: " + describe(wrapped.getCause()));
+            return finishEvidence(evidence, results, "QA_CREATE_FAILED", notes, false);
+        }
+        evidence.put("create_ms", SystemClock.uptimeMillis() - createStarted);
+
+        final CallbackState state = new CallbackState();
+        installCallback(vm, state, notes);
+
+        final long runStarted = SystemClock.uptimeMillis();
+        try {
+            Class.forName("android.system.virtualmachine.VirtualMachine")
+                    .getMethod("run").invoke(vm);
+        } catch (InvocationTargetException wrapped) {
+            notes.add("run: " + describe(wrapped.getCause()));
+            evidence.put("run_ms", SystemClock.uptimeMillis() - runStarted);
+            final boolean stopped = requestStop(evidence, manager, shape.manager(), vm,
+                    name, notes);
+            return finishEvidence(evidence, results, "QA_RUN_FAILED", notes, stopped);
+        }
+
+        awaitPayloadReady(state, readyDeadlineMs);
+        evidence.put("payload_ready_ms", state.payloadReady
+                ? SystemClock.uptimeMillis() - runStarted
+                : JSONObject.NULL);
+        if (!state.payloadReady) {
+            // A payload that exits before ready is a different defect from one
+            // that silently never announces: keep them apart.
+            String failureCode = state.errored ? "VM_ERROR"
+                    : (state.payloadFinished ? "PAYLOAD_EXIT_BEFORE_READY"
+                                             : "PAYLOAD_READY_TIMEOUT");
+            if (state.payloadFinished) {
+                evidence.put("exit_code", state.exitCode);
+            }
+            evidence.put("vm_error_code", state.errored ? state.errorCode : JSONObject.NULL);
+            final boolean stopped = requestStop(evidence, manager, shape.manager(), vm,
+                    name, notes);
+            return finishEvidence(evidence, results, failureCode, notes, stopped);
+        }
+
+        final AtomicInteger completed = new AtomicInteger();
+        final JSONArray connections = new JSONArray();
+        DistccTcpVsockBridge bridge = null;
+        try {
+            bridge = new DistccTcpVsockBridge(
+                    InetAddress.getByName("127.0.0.1"),
+                    0,
+                    () -> openVsockChannel(vm, vsockPort),
+                    1,
+                    0,
+                    (int) Math.min(jobDeadlineMs, 120_000L),
+                    stats -> {
+                        synchronized (connections) {
+                            try {
+                                connections.put(connectionRecord(stats));
+                            } catch (JSONException ignored) {
+                                // A record we cannot serialise must not abort the run.
+                            }
+                        }
+                        completed.incrementAndGet();
+                    });
+            bridge.start();
+        } catch (IOException | RuntimeException bridgeFailure) {
+            notes.add("bridge: " + exceptionName(bridgeFailure)
+                    + "(" + safeMessage(bridgeFailure) + ")");
+            final boolean stopped = requestStop(evidence, manager, shape.manager(), vm,
+                    name, notes);
+            return finishEvidence(evidence, results, "QA_BRIDGE_FAILED", notes, stopped);
+        }
+
+        // Publish the port before the host can need it: the driver polls this
+        // file, sets up `adb forward` and only then starts the client.
+        evidence.put("bridge_port", bridge.port());
+        evidence.put("stage", "bridge_ready");
+        writeEvidence(evidence, results);
+
+        final long bridgeStarted = SystemClock.uptimeMillis();
+        while (completed.get() < jobs
+                && SystemClock.uptimeMillis() - bridgeStarted < jobDeadlineMs
+                && !state.errored && !state.stopped && !state.payloadFinished) {
+            SystemClock.sleep(200);
+        }
+        final long bridgeElapsedMs = SystemClock.uptimeMillis() - bridgeStarted;
+        try {
+            bridge.close();
+        } catch (IOException closeFailure) {
+            notes.add("bridge close: " + exceptionName(closeFailure));
+        }
+        evidence.put("bridge_elapsed_ms", bridgeElapsedMs);
+        synchronized (connections) {
+            evidence.put("connections", connections);
+        }
+        evidence.put("connections_completed", completed.get());
+
+        // The payload is a server: it only finishes because we stop it, so its
+        // exit code is recorded for completeness and never used as the verdict.
+        final boolean stopped = requestStop(evidence, manager, shape.manager(), vm, name, notes);
+        if (state.payloadFinished) {
+            evidence.put("exit_code_after_stop", state.exitCode);
+        }
+        evidence.put("vm_error_code", state.errored ? state.errorCode : JSONObject.NULL);
+
+        String failureCode = null;
+        if (state.errored) {
+            failureCode = "VM_ERROR";
+        } else if (completed.get() < jobs) {
+            failureCode = "BRIDGE_JOBS_INCOMPLETE";
+        } else if (!stopped) {
+            failureCode = "QA_STOP_UNCONFIRMED";
+        }
+        evidence.put("stage", "done");
+        return finishEvidence(evidence, results, failureCode, notes, stopped);
+    }
+
+    /** One vsock connection as a byte channel for the production distcc bridge. */
+    private static FastLaneChannel openVsockChannel(Object vm, int port) throws IOException {
+        final Object descriptor;
+        try {
+            descriptor = Class.forName("android.system.virtualmachine.VirtualMachine")
+                    .getMethod("connectVsock", long.class).invoke(vm, (long) port);
+        } catch (InvocationTargetException wrapped) {
+            throw new IOException("connectVsock: " + exceptionName(wrapped.getCause()));
+        } catch (ReflectiveOperationException failure) {
+            throw new IOException("connectVsock: " + exceptionName(failure));
+        }
+        if (!(descriptor instanceof ParcelFileDescriptor)) {
+            throw new IOException("connectVsock returned no descriptor");
+        }
+        return new VsockChannel((ParcelFileDescriptor) descriptor);
+    }
+
+    /**
+     * Read and write halves are separate dup'd descriptors on purpose: the
+     * bridge closes the output half when the TCP client stops sending, and that
+     * must not tear down the read half while the response is still arriving.
+     */
+    private static final class VsockChannel implements FastLaneChannel {
+        private final ParcelFileDescriptor writeEnd;
+        private final InputStream input;
+        private final OutputStream output;
+
+        VsockChannel(ParcelFileDescriptor descriptor) throws IOException {
+            this.writeEnd = descriptor.dup();
+            this.input = new ParcelFileDescriptor.AutoCloseInputStream(descriptor);
+            this.output = new ParcelFileDescriptor.AutoCloseOutputStream(writeEnd);
+        }
+
+        @Override
+        public InputStream inputStream() {
+            return input;
+        }
+
+        @Override
+        public OutputStream outputStream() {
+            return output;
+        }
+
+        @Override
+        public void close() {
+            try {
+                input.close();
+            } catch (IOException ignored) {
+                // Already closed by the bridge.
+            }
+            try {
+                output.close();
+            } catch (IOException ignored) {
+                // Already closed by the bridge.
+            }
+        }
+    }
+
+    /** Counters only; the bridge never hands payload bytes to a stats sink. */
+    private static JSONObject connectionRecord(
+            DistccTcpVsockBridge.ConnectionStats stats) throws JSONException {
+        final JSONObject record = new JSONObject();
+        record.put("outcome", stats.outcome().name());
+        record.put("failure_code", stats.failureCode());
+        record.put("bytes_in", stats.bytesFromClient());
+        record.put("bytes_out", stats.bytesToClient());
+        record.put("duration_ms", stats.durationMillis());
+        return record;
+    }
+
+    private static String safeMessage(Throwable failure) {
+        final String message = failure.getMessage();
+        return message == null ? "" : message.replaceAll("/data/[^\\s\"')]+", "<path>");
     }
 
     private JSONObject runProbe(Bundle results) throws Exception {
@@ -402,7 +701,8 @@ public final class PvmProbeInstrumentation extends Instrumentation {
     private JSONObject failureEvidence(Bundle results, String failureCode)
             throws JSONException {
         final JSONObject evidence = new JSONObject();
-        evidence.put("kind", "pvm_probe");
+        evidence.put("kind", evidencePrefix().replace('-', '_'));
+        evidence.put("stage", "rejected");
         return finishEvidence(evidence, results, failureCode, new ArrayList<>(), false);
     }
 
@@ -417,6 +717,11 @@ public final class PvmProbeInstrumentation extends Instrumentation {
         return evidence;
     }
 
+    /** File stem per mode: the driver polls a name it knows before the run. */
+    private String evidencePrefix() {
+        return MODE_COMPILER.equals(arguments.getString("qaMode")) ? "pvm-compiler" : "pvm-probe";
+    }
+
     private void writeEvidence(JSONObject evidence, Bundle results) {
         final String token = arguments.getString("qaRunToken");
         if (token == null) {
@@ -426,8 +731,9 @@ public final class PvmProbeInstrumentation extends Instrumentation {
         if (!dir.isDirectory() && !dir.mkdirs()) {
             return;
         }
-        final File partial = new File(dir, "pvm-probe-" + token + ".json.partial");
-        final File target = new File(dir, "pvm-probe-" + token + ".json");
+        final String stem = evidencePrefix() + "-" + token;
+        final File partial = new File(dir, stem + ".json.partial");
+        final File target = new File(dir, stem + ".json");
         try (FileOutputStream stream = new FileOutputStream(partial)) {
             stream.write(evidence.toString().getBytes(StandardCharsets.UTF_8));
         } catch (IOException writeFailure) {
