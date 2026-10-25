@@ -19,7 +19,11 @@ PVM-03 的验收命令中，`test-distcc-inprocess.sh` 原本不存在，本轮�
 - 分支 `feat/pvm-03-compile-service`，中文 commit，未合并、未 push `main`。
 - 5 个已跟踪的规划文档改动（accelerator/fastlane 那批）**原样保留**，未提交、未还原、未 stash；提交按显式文件清单 `git add`，未用 `-A/-u`。
 - 撤销了上一轮遗留的 `fastlane-payload/{include/fastlane/transport.h, src/transport.cpp}` 改动：本设计自带 socket 层后不再需要，回到 `main` 可减少对 FLN1 传输面的侵入。
-- CI：见 §5「未验证项」——本轮所有 C++ 证据在 **Windows + MinGW 14.2** 上真跑，Linux CI 尚未跑到这份提交。
+- CI（PR #26）：**10/10 全绿**。其中 `Payload host build, CTest and FLN1 E2E` 在
+  **ASan/UBSan** 下跑完 7 组 ctest，含新增的 `compile_service_argv_policy` /
+  `compile_service_distcc_server` / `compile_service_axp1_server` / `compile_service_e2e`；
+  `Payload NDK/CMake build` 与 `Every Fast Lane JVM module` 也通过（CMake 接线与 Java 改动的
+  独立验证）。本地证据跑在 Windows + MinGW 14.2，CI 补上了 Linux/GCC 与 clang 的口径。
 
 ## 3. PVM-03
 
@@ -140,8 +144,8 @@ JOB_TOO_LARGE / JOB_TIMEOUT`，两版 schema 的 `propertyNames.enum` 同步，
 | --- | --- | --- |
 | 真实 `distcc 3.4` 客户端 | 本机无 distcc，`wsl.exe` 被宿主安全策略禁用（Program Blacklist），无法造 Linux 环境 | Linux CI / DV-PVM-02 |
 | 真实 libclang 编译 | 宿主无 Android 版 libclang；CLANG 目标未编译，仅对照 22.1.8 头文件核对 API | DV-PVM-02 |
-| 产品构建里的 Linux 宿主单测 | FLN1 `transport.cpp` 写死 `<linux/vm_sockets.h>`，Windows 无法编译，故改用 `pvm-service` 可移植入口跑同一批源码 | CI |
-| Gradle 单测 | 中文路径下 Gradle 单测的已知问题；Java 侧改用 `javac + JUnitCore` 直跑（7 个新用例 + 17 个既有用例全绿） | CI |
+| ~~产品构建里的 Linux 宿主单测~~ | **已由 CI 补上**：`Payload host build, CTest and FLN1 E2E` 在 ASan/UBSan 下 7/7 通过（本地因 FLN1 `transport.cpp` 写死 `<linux/vm_sockets.h>` 无法编译，才改用 `pvm-service` 入口跑同一批源码） | 已闭环 |
+| ~~Gradle 单测~~ | 本机中文路径跑不了 Gradle；本地改用 `javac + JUnitCore` 直跑（7 个新用例 + 17 个既有用例全绿），CI 的 `Every Fast Lane JVM module` 与 `Contract & Unit Tests` 再独立跑一遍 | 已闭环 |
 
 ### 5.2 偏差（都在代码注释里写明，需维护者认可）
 
