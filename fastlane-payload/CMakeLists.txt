@@ -203,3 +203,96 @@ if(FL_BUILD_TESTS AND FL_BUILD_HOST AND NOT ANDROID)
                          $<TARGET_FILE:pvm_compiler_host>)
     endif()
 endif()
+
+# --- DV-PVM-01: QA-only probe payloads ---------------------------------------
+# Opt-in: default builds (CI, release payload path) never compile this block.
+# See tools/pvm-compiler/build_probe.sh for the QA build invocation.
+option(FL_BUILD_PVM_PROBE "Build QA-only DV-PVM-01 probe payloads" OFF)
+# QA-only tcc fd sentinel (::fd::N): only the patched tcc copy produced by
+# tools/pvm-compiler/build_probe.sh understands it. Default builds keep the
+# unpatched /proc/self/fd/<fd> sink of PVM-02, so this must stay OFF
+# everywhere outside build_probe.sh.
+option(FL_TCC_FD_SENTINEL "QA-only: hand tcc an ::fd::N fd sentinel" OFF)
+
+if(FL_BUILD_PVM_PROBE)
+    if(FL_TCC_FD_SENTINEL)
+        target_compile_definitions(pvm_compiler PRIVATE FL_TCC_FD_SENTINEL=1)
+    endif()
+    # TinyCC's builtin predefs are baked in as string literals
+    # (CONFIG_TCC_PREDEFS) so the payload never consults a filesystem include
+    # path; FL_TINYCC_INCLUDE above is a build-host path that cannot exist on
+    # the device. tccdefs_.h is generated from the hash-pinned TinyCC tarball
+    # by tools/pvm-compiler/build_probe.sh before configure.
+    set(FL_PVM_PROBE_TCCDEFS_DIR "" CACHE PATH "Dir holding generated tccdefs_.h")
+    if(FL_PVM_PROBE_TCCDEFS_DIR)
+        target_compile_definitions(pvm_compiler_tcc PRIVATE CONFIG_TCC_PREDEFS=1)
+        target_include_directories(pvm_compiler_tcc PRIVATE "${FL_PVM_PROBE_TCCDEFS_DIR}")
+    endif()
+    set(FL_PVM_PROBE_CLANG_LIBS "" CACHE PATH "Dir with staged libLLVM.so/libclang-cpp.so")
+    set(FL_PVM_PROBE_LLVM_SRC "" CACHE PATH "llvm-project source root")
+    set(FL_PVM_PROBE_LLVM_BUILD "" CACHE PATH "arm64 cross-build tree with generated headers")
+
+    if(ANDROID)
+        add_library(pvm_probe SHARED src/probe/pvm_probe_main.cpp)
+        target_include_directories(pvm_probe PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/compiler
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/probe)
+        # Link-time stub only; the device resolves libvm_payload.so from
+        # the AVF APEX, and the stub must never be packaged into the APK.
+        target_link_libraries(pvm_probe PRIVATE pvm_compiler vm_payload_stub log)
+        target_compile_options(pvm_probe PRIVATE -Wall -Wextra -Werror)
+        target_link_options(pvm_probe PRIVATE -Wl,-z,max-page-size=16384)
+        set_target_properties(pvm_probe PROPERTIES
+            OUTPUT_NAME "pvm_probe"
+            CXX_VISIBILITY_PRESET hidden
+            VISIBILITY_INLINES_HIDDEN ON)
+
+        # Load diagnostic: no DT_NEEDED on the compiler sonames, so it always
+        # starts even when the linked probe cannot; its dlopen evidence is
+        # what the ticket asks for on PAYLOAD_LOAD_FAILED.
+        add_library(pvm_probe_clangload SHARED src/probe/pvm_probe_clangload_main.cpp)
+        target_include_directories(pvm_probe_clangload PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/probe)
+        # Link-time stub only; the device resolves libvm_payload.so from the
+        # AVF APEX, and the stub must never be packaged into the APK.
+        target_link_libraries(pvm_probe_clangload PRIVATE vm_payload_stub log)
+        target_compile_options(pvm_probe_clangload PRIVATE -Wall -Wextra -Werror)
+        target_link_options(pvm_probe_clangload PRIVATE -Wl,-z,max-page-size=16384)
+
+        if(FL_PVM_PROBE_CLANG_LIBS AND FL_PVM_PROBE_LLVM_SRC AND FL_PVM_PROBE_LLVM_BUILD)
+            add_library(pvm_probe_clang SHARED src/probe/pvm_probe_clang_main.cpp)
+            target_include_directories(pvm_probe_clang SYSTEM PRIVATE
+                "${FL_PVM_PROBE_LLVM_SRC}/llvm/include"
+                "${FL_PVM_PROBE_LLVM_BUILD}/include"
+                "${FL_PVM_PROBE_LLVM_SRC}/clang/include"
+                "${FL_PVM_PROBE_LLVM_BUILD}/tools/clang/include")
+            target_include_directories(pvm_probe_clang PRIVATE
+                ${CMAKE_CURRENT_SOURCE_DIR}/include
+                ${CMAKE_CURRENT_SOURCE_DIR}/src/probe)
+            target_compile_definitions(pvm_probe_clang PRIVATE NDEBUG)
+            # The staged libclang is RTTI=ON / EH=OFF: this TU must not unwind
+            # into it, hence -fno-exceptions.
+            target_compile_options(pvm_probe_clang PRIVATE -fno-exceptions -Wall -Wextra)
+            target_link_libraries(pvm_probe_clang PRIVATE vm_payload_stub log
+                "${FL_PVM_PROBE_CLANG_LIBS}/libclang-cpp.so"
+                "${FL_PVM_PROBE_CLANG_LIBS}/libLLVM.so")
+            target_link_options(pvm_probe_clang PRIVATE -Wl,-z,max-page-size=16384)
+        endif()
+    else()
+        # Host smoke: same source as the payload probe, proves the PREDEFS
+        # path and the fixture compile on the build machine before any device
+        # run.
+        add_executable(pvm_probe_host src/probe/pvm_probe_main.cpp src/vm_payload_stub.cpp)
+        target_include_directories(pvm_probe_host PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/compiler
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/probe)
+        target_link_libraries(pvm_probe_host PRIVATE pvm_compiler)
+        target_compile_options(pvm_probe_host PRIVATE -Wall -Wextra -Werror)
+        if(WIN32)
+            target_link_libraries(pvm_probe_host PRIVATE psapi)
+        endif()
+    endif()
+endif()
