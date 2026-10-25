@@ -102,7 +102,10 @@ public:
         storage.emplace_back("-emit-obj");
         storage.emplace_back("-x");
         storage.push_back(request.language == "c++" ? "c++-cpp-output" : "cpp-output");
-        storage.emplace_back("-fno-crash-diagnostics");
+        // No "-fno-crash-diagnostics" here: it is a driver option, and -cc1
+        // rejects it as an unknown argument, which made CreateFromArgs fail for
+        // every single job (DV-PVM-02). The payload has no writable directory
+        // for crash diagnostics anyway.
         for (const std::string& flag : request.flags) {
             if (flag == "-c") {
                 continue;
