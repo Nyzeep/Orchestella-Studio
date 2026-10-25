@@ -10,9 +10,9 @@
 路径上崩），因此：
 
 ```
-D:/t/dvpvm02/src/fastlane-payload     ← ASCII 拷贝（仓库是唯一事实源，改动先在仓库做）
-D:/t/dvpvm02/llvm/lib/arm64-v8a       ← PVM-04 产物三库
-D:/t/dvpvm02/out/payload-clang        ← 构建树
+<ascii-sandbox>/src/fastlane-payload     ← ASCII 拷贝（仓库是唯一事实源，改动先在仓库做）
+<ascii-sandbox>/llvm/lib/arm64-v8a       ← PVM-04 产物三库
+<ascii-sandbox>/out/payload-clang        ← 构建树
 ```
 
 配置（NDK 27.0.12077973，API 34）：
