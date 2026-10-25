@@ -32,7 +32,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import io.github.nyzeep.orchestella.runtime.engineavf.ReflectiveAvfPlatformAccess;
 import io.github.nyzeep.orchestella.runtime.fastlane.FastLaneChannel;
+import io.github.nyzeep.orchestella.runtime.fastlane.distcc.Axp1DistccChannelFactory;
 import io.github.nyzeep.orchestella.runtime.fastlane.distcc.DistccTcpVsockBridge;
+import io.github.nyzeep.orchestella.runtime.fastlane.distcc.axp1.Axp1Capabilities;
+import io.github.nyzeep.orchestella.runtime.fastlane.distcc.axp1.Axp1Limits;
 
 /**
  * QA-only DV-PVM-01/02 probe: run one protected Microdroid payload VM and hand
@@ -71,9 +74,21 @@ public final class PvmProbeInstrumentation extends Instrumentation {
     private static final int RESULT_PROBE_FAILED = 1;
     private static final String HEX = "0123456789" + "abcdef";
     private static final String MODE_COMPILER = "compiler";
+    // File channel: the request and the response travel as app-private files
+    // (adb push / run-as cat) instead of a forwarded TCP port. Same production
+    // AXP1 client, same payload; only the host->device byte carrier changes.
+    private static final String MODE_COMPILER_FILE = "compiler-file";
     // Matches FastLaneDv01Contract.DEFAULT_DISTCC_PORT and the payload default.
     private static final int DEFAULT_PAYLOAD_VSOC_PORT = 5103;
     private static final long DEFAULT_JOB_DEADLINE_MS = 300_000L;
+    private static final int AXP1_MAX_FRAME = 1 << 20;
+    // Must match the payload's compiled-in triple: the AXP1 handshake refuses a
+    // mismatched compiler identity with COMPILER_MISMATCH.
+    private static final String REQUIRED_TRIPLE = "aarch64-unknown-linux-android";
+    private static final String REQUEST_FILE = "csdl-request.bin";
+    private static final String RESPONSE_FILE = "csdl-response.bin";
+    private static final int MAX_REQUEST_BYTES = 32 * 1024 * 1024;
+    private static final int MAX_RESPONSE_BYTES = 96 * 1024 * 1024;
 
     private Bundle arguments = Bundle.EMPTY;
 
@@ -90,9 +105,14 @@ public final class PvmProbeInstrumentation extends Instrumentation {
         JSONObject evidence;
         int outcome = RESULT_PROBE_FAILED;
         try {
-            evidence = MODE_COMPILER.equals(arguments.getString("qaMode"))
-                    ? runCompiler(results)
-                    : runProbe(results);
+            final String mode = arguments.getString("qaMode");
+            if (MODE_COMPILER.equals(mode)) {
+                evidence = runCompiler(results);
+            } else if (MODE_COMPILER_FILE.equals(mode)) {
+                evidence = runCompileFile(results);
+            } else {
+                evidence = runProbe(results);
+            }
             outcome = evidence.optBoolean("status_passed", false)
                     ? RESULT_PROBE_PASSED
                     : RESULT_PROBE_FAILED;
@@ -120,6 +140,217 @@ public final class PvmProbeInstrumentation extends Instrumentation {
     // the bridge port in the evidence file, serves the requested job count and
     // then owns stop/delete exactly like probe mode.
     // ------------------------------------------------------------------
+
+    // ------------------------------------------------------------------
+    // DV-PVM-02 file channel: identical VM lifecycle, but the distcc request
+    // and the response travel as app-private files instead of a forwarded TCP
+    // port. The AXP1 client is the production one (Axp1DistccChannelFactory);
+    // only the carrier between host and app changes.
+    // ------------------------------------------------------------------
+
+    private JSONObject runCompileFile(Bundle results) throws Exception {
+        final Context target = getTargetContext();
+        final String token = arguments.getString("qaRunToken");
+        if (token == null || !token.matches("[0-9a-f]{32}")) {
+            return failureEvidence(results, "QA_RUN_TOKEN_REJECTED");
+        }
+        final String payloadName = arguments.getString("qaPayloadName");
+        if (payloadName == null || !payloadName.matches("[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
+                || !payloadName.endsWith(".so")) {
+            return failureEvidence(results, "QA_PAYLOAD_NAME_REJECTED");
+        }
+        final int memoryMb = boundedInt(arguments.getString("qaMemoryMb"),
+                DEFAULT_MEMORY_MB, MIN_MEMORY_MB, MAX_MEMORY_MB);
+        final long readyDeadlineMs = boundedLong(arguments.getString("qaReadyDeadlineMs"),
+                DEFAULT_READY_DEADLINE_MS, 10_000L, MAX_READY_DEADLINE_MS);
+        final int vsockPort = boundedInt(arguments.getString("qaVsockPort"),
+                DEFAULT_PAYLOAD_VSOC_PORT, 1, 65535);
+        if (memoryMb < 0 || readyDeadlineMs < 0 || vsockPort < 0) {
+            return failureEvidence(results, "QA_ARGUMENTS_REJECTED");
+        }
+
+        AvfHiddenApiExemption.installOnce();
+
+        final JSONObject evidence = new JSONObject();
+        evidence.put("kind", "pvm_compiler");
+        evidence.put("stage", "started");
+        evidence.put("channel", "file");
+        evidence.put("payload_name", payloadName);
+        evidence.put("memory_mb", memoryMb);
+        evidence.put("vsock_port", vsockPort);
+        evidence.put("run_token_sha256", sha256(token));
+        final JSONObject device = new JSONObject();
+        device.put("sdk_int", Build.VERSION.SDK_INT);
+        device.put("abi", Build.SUPPORTED_ABIS.length > 0 ? Build.SUPPORTED_ABIS[0] : "unknown");
+        evidence.put("device", device);
+        final List<String> notes = new ArrayList<>();
+        trace("runCompileFile start");
+
+        final File requestFile = new File(target.getFilesDir(), REQUEST_FILE);
+        if (!requestFile.isFile()) {
+            notes.add("request file missing: " + REQUEST_FILE);
+            return finishEvidence(evidence, results, "QA_REQUEST_MISSING", notes, false);
+        }
+        final byte[] request = readBounded(requestFile, MAX_REQUEST_BYTES);
+        evidence.put("request_bytes", request.length);
+
+        if (target.checkSelfPermission(ReflectiveAvfPlatformAccess.MANAGE_PERMISSION) != 0
+                || target.checkSelfPermission(
+                        ReflectiveAvfPlatformAccess.CUSTOM_PERMISSION) != 0) {
+            return finishEvidence(evidence, results, "QA_PERMISSION_DENIED", notes, false);
+        }
+        final ReflectiveAvfPlatformAccess access =
+                new ReflectiveAvfPlatformAccess(target, target.getClassLoader());
+        final ReflectiveAvfPlatformAccess.PlatformShape shape = access.loadPlatformShape();
+        final Object manager = target.getSystemService(shape.manager());
+        if (manager == null || !shape.manager().isInstance(manager)) {
+            return finishEvidence(evidence, results, "QA_VM_MANAGER_UNAVAILABLE", notes, false);
+        }
+        final int capabilities = readRawCapabilities(manager, shape.manager());
+        device.put("capabilities_raw", capabilities);
+        if (capabilities >= 0
+                && (capabilities & ReflectiveAvfPlatformAccess.CAPABILITY_PROTECTED_VM) == 0) {
+            return finishEvidence(evidence, results, "QA_PROTECTED_VM_UNAVAILABLE", notes, false);
+        }
+
+        final Object config = buildConfig(target, payloadName, memoryMb, notes);
+        if (config == null) {
+            return finishEvidence(evidence, results, "QA_CONFIG_FAILED", notes, false);
+        }
+        final Class<?> configClass = Class.forName(
+                "android.system.virtualmachine.VirtualMachineConfig");
+        final String name = "qa-csdlf-" + token.substring(0, Math.min(12, token.length()));
+        final long createStarted = SystemClock.uptimeMillis();
+        Object createdVm;
+        try {
+            createdVm = shape.manager().getMethod("create", String.class, configClass)
+                    .invoke(manager, name, config);
+        } catch (InvocationTargetException wrapped) {
+            notes.add("create retry after: " + describe(wrapped.getCause()));
+            try {
+                shape.manager().getMethod("delete", String.class).invoke(manager, name);
+                createdVm = shape.manager().getMethod("create", String.class, configClass)
+                        .invoke(manager, name, config);
+            } catch (InvocationTargetException secondFailure) {
+                notes.add("create: " + describe(secondFailure.getCause()));
+                return finishEvidence(evidence, results, "QA_CREATE_FAILED", notes, false);
+            } catch (ReflectiveOperationException unavailable) {
+                notes.add("create retry unavailable: " + exceptionName(unavailable));
+                return finishEvidence(evidence, results, "QA_CREATE_FAILED", notes, false);
+            }
+        }
+        final Object vm = createdVm;
+        evidence.put("create_ms", SystemClock.uptimeMillis() - createStarted);
+
+        final CallbackState state = new CallbackState();
+        installCallback(vm, state, notes);
+        final long runStarted = SystemClock.uptimeMillis();
+        try {
+            Class.forName("android.system.virtualmachine.VirtualMachine")
+                    .getMethod("run").invoke(vm);
+        } catch (InvocationTargetException wrapped) {
+            notes.add("run: " + describe(wrapped.getCause()));
+            final boolean stopped = requestStop(evidence, manager, shape.manager(), vm, name, notes);
+            return finishEvidence(evidence, results, "QA_RUN_FAILED", notes, stopped);
+        }
+
+        awaitPayloadReady(state, readyDeadlineMs);
+        evidence.put("payload_ready_ms", state.payloadReady
+                ? SystemClock.uptimeMillis() - runStarted : JSONObject.NULL);
+        trace("payload_ready=" + state.payloadReady);
+        if (!state.payloadReady) {
+            String failureCode = state.errored ? "VM_ERROR"
+                    : (state.payloadFinished ? "PAYLOAD_EXIT_BEFORE_READY"
+                                             : "PAYLOAD_READY_TIMEOUT");
+            if (state.payloadFinished) {
+                evidence.put("exit_code", state.exitCode);
+            }
+            final boolean stopped = requestStop(evidence, manager, shape.manager(), vm, name, notes);
+            return finishEvidence(evidence, results, failureCode, notes, stopped);
+        }
+
+        String failureCode = null;
+        try {
+            final Axp1DistccChannelFactory factory = new Axp1DistccChannelFactory(
+                    () -> openVsockChannel(vm, vsockPort),
+                    token,
+                    Axp1Capabilities.builder()
+                            .distcc(true)
+                            .compilerTriple(REQUIRED_TRIPLE)
+                            .maxFrame(AXP1_MAX_FRAME)
+                            .build(),
+                    REQUIRED_TRIPLE,
+                    new Axp1Limits(3_000L, 4 * AXP1_MAX_FRAME, AXP1_MAX_FRAME));
+            final long handshakeStarted = SystemClock.uptimeMillis();
+            final FastLaneChannel channel = factory.open();
+            evidence.put("axp1_handshake_ms", SystemClock.uptimeMillis() - handshakeStarted);
+            trace("axp1 handshake ok");
+
+            final long transferStarted = SystemClock.uptimeMillis();
+            final OutputStream outgoing = channel.outputStream();
+            outgoing.write(request);
+            outgoing.flush();
+            // close() on the AXP1 data stream sends the EOF frame and leaves the
+            // read half open — the distcc v1 request has no length prefix.
+            outgoing.close();
+            final ByteArrayOutputStream response = new ByteArrayOutputStream();
+            final InputStream incoming = channel.inputStream();
+            final byte[] buffer = new byte[16 * 1024];
+            int read;
+            while ((read = incoming.read(buffer)) >= 0) {
+                if (read == 0) {
+                    continue;
+                }
+                if (response.size() + read > MAX_RESPONSE_BYTES) {
+                    throw new IOException("response exceeds " + MAX_RESPONSE_BYTES + " bytes");
+                }
+                response.write(buffer, 0, read);
+            }
+            evidence.put("transfer_ms", SystemClock.uptimeMillis() - transferStarted);
+            final byte[] responseBytes = response.toByteArray();
+            evidence.put("response_bytes", responseBytes.length);
+            final File responseFile = new File(target.getFilesDir(), RESPONSE_FILE);
+            try (FileOutputStream stream = new FileOutputStream(responseFile)) {
+                stream.write(responseBytes);
+            }
+            trace("response bytes=" + responseBytes.length);
+            channel.close();
+        } catch (Throwable exchangeFailure) {
+            notes.add("exchange: " + exceptionName(exchangeFailure)
+                    + "(" + safeMessage(exchangeFailure) + ")");
+            failureCode = "QA_EXCHANGE_FAILED";
+        }
+
+        final boolean stopped = requestStop(evidence, manager, shape.manager(), vm, name, notes);
+        if (state.payloadFinished) {
+            evidence.put("exit_code_after_stop", state.exitCode);
+        }
+        evidence.put("vm_error_code", state.errored ? state.errorCode : JSONObject.NULL);
+        if (failureCode == null && !stopped) {
+            failureCode = "QA_STOP_UNCONFIRMED";
+        }
+        evidence.put("stage", "done");
+        return finishEvidence(evidence, results, failureCode, notes, stopped);
+    }
+
+    /** Reads at most {@code limit} bytes; the payload's own limits are tighter. */
+    private static byte[] readBounded(File file, int limit) throws IOException {
+        final ByteArrayOutputStream sink = new ByteArrayOutputStream();
+        try (java.io.FileInputStream stream = new java.io.FileInputStream(file)) {
+            final byte[] buffer = new byte[16 * 1024];
+            int read;
+            while ((read = stream.read(buffer)) >= 0) {
+                if (read == 0) {
+                    continue;
+                }
+                if (sink.size() + read > limit) {
+                    throw new IOException("request exceeds " + limit + " bytes");
+                }
+                sink.write(buffer, 0, read);
+            }
+        }
+        return sink.toByteArray();
+    }
 
     private JSONObject runCompiler(Bundle results) throws Exception {
         final Context target = getTargetContext();
@@ -163,6 +394,7 @@ public final class PvmProbeInstrumentation extends Instrumentation {
         device.put("abi", Build.SUPPORTED_ABIS.length > 0 ? Build.SUPPORTED_ABIS[0] : "unknown");
         evidence.put("device", device);
         final List<String> notes = new ArrayList<>();
+        trace("runCompiler start");
 
         if (target.checkSelfPermission(ReflectiveAvfPlatformAccess.MANAGE_PERMISSION) != 0
                 || target.checkSelfPermission(
@@ -193,16 +425,30 @@ public final class PvmProbeInstrumentation extends Instrumentation {
                 "android.system.virtualmachine.VirtualMachineConfig");
         final String name = "qa-csdl-" + token.substring(0, Math.min(12, token.length()));
         final long createStarted = SystemClock.uptimeMillis();
-        final Object vm;
+        Object createdVm;
         try {
-            vm = shape.manager().getMethod("create", String.class, configClass)
+            createdVm = shape.manager().getMethod("create", String.class, configClass)
                     .invoke(manager, name, config);
         } catch (InvocationTargetException wrapped) {
-            // The AVF error code (e.g. payload-signature or image failures)
-            // survives in the cause; the driver maps it to a fixed code.
-            notes.add("create: " + describe(wrapped.getCause()));
-            return finishEvidence(evidence, results, "QA_CREATE_FAILED", notes, false);
+            // A previous run that was killed leaves the instance directory
+            // behind, and create() then refuses the name. Delete and retry once:
+            // the name is derived from the run token, so the leftover is always
+            // this same test's debris.
+            notes.add("create retry after: " + describe(wrapped.getCause()));
+            try {
+                shape.manager().getMethod("delete", String.class).invoke(manager, name);
+                createdVm = shape.manager().getMethod("create", String.class, configClass)
+                        .invoke(manager, name, config);
+            } catch (InvocationTargetException secondFailure) {
+                notes.add("create: " + describe(secondFailure.getCause()));
+                return finishEvidence(evidence, results, "QA_CREATE_FAILED", notes, false);
+            } catch (ReflectiveOperationException unavailable) {
+                notes.add("create retry unavailable: " + exceptionName(unavailable));
+                return finishEvidence(evidence, results, "QA_CREATE_FAILED", notes, false);
+            }
         }
+        // The vsock connector and the bridge factory capture this reference.
+        final Object vm = createdVm;
         evidence.put("create_ms", SystemClock.uptimeMillis() - createStarted);
 
         final CallbackState state = new CallbackState();
@@ -224,6 +470,7 @@ public final class PvmProbeInstrumentation extends Instrumentation {
         evidence.put("payload_ready_ms", state.payloadReady
                 ? SystemClock.uptimeMillis() - runStarted
                 : JSONObject.NULL);
+        trace("payload_ready=" + state.payloadReady + " ms=" + (SystemClock.uptimeMillis() - runStarted));
         if (!state.payloadReady) {
             // A payload that exits before ready is a different defect from one
             // that silently never announces: keep them apart.
@@ -241,12 +488,33 @@ public final class PvmProbeInstrumentation extends Instrumentation {
 
         final AtomicInteger completed = new AtomicInteger();
         final JSONArray connections = new JSONArray();
+        // Live wiring state. Without it a stalled job is indistinguishable from
+        // a stalled bridge: the host only sees an idle socket. Every number
+        // here is a counter, never payload bytes.
+        final long[] lastConnectMs = new long[] {-1L};
+        final String[] lastConnectError = new String[] {null};
+        final VsockChannel[] currentChannel = new VsockChannel[1];
+
         DistccTcpVsockBridge bridge = null;
         try {
             bridge = new DistccTcpVsockBridge(
                     InetAddress.getByName("127.0.0.1"),
                     0,
-                    () -> openVsockChannel(vm, vsockPort),
+                    () -> {
+                        final long openedAt = SystemClock.uptimeMillis();
+                        try {
+                            final FastLaneChannel channel = openVsockChannel(vm, vsockPort);
+                            lastConnectMs[0] = SystemClock.uptimeMillis() - openedAt;
+                            if (channel instanceof VsockChannel) {
+                                currentChannel[0] = (VsockChannel) channel;
+                            }
+                            return channel;
+                        } catch (IOException | RuntimeException failure) {
+                            lastConnectError[0] =
+                                    exceptionName(failure) + ":" + safeMessage(failure);
+                            throw failure;
+                        }
+                    },
                     1,
                     0,
                     (int) Math.min(jobDeadlineMs, 120_000L),
@@ -261,6 +529,7 @@ public final class PvmProbeInstrumentation extends Instrumentation {
                         completed.incrementAndGet();
                     });
             bridge.start();
+            trace("bridge started");
         } catch (IOException | RuntimeException bridgeFailure) {
             notes.add("bridge: " + exceptionName(bridgeFailure)
                     + "(" + safeMessage(bridgeFailure) + ")");
@@ -274,17 +543,79 @@ public final class PvmProbeInstrumentation extends Instrumentation {
         evidence.put("bridge_port", bridge.port());
         evidence.put("stage", "bridge_ready");
         writeEvidence(evidence, results);
+        trace("bridge_ready port=" + bridge.port());
 
         final long bridgeStarted = SystemClock.uptimeMillis();
+        long lastPublish = 0L;
+        int ticks = 0;
+        // Stage markers, written before anything that could block: a stalled
+        // run then says exactly which call it stopped on. bridge_active is
+        // deliberately absent — it takes the bridge's connection lock, and a
+        // diagnostic must never be the thing that hangs.
+        evidence.put("stage", "waiting_jobs");
+        writeEvidence(evidence, results);
+        trace("waiting_jobs entered");
+        // Independent beater. If these lines keep landing while the loop above
+        // does not, the process is alive and only the instrumentation thread is
+        // stuck; if they stop too, the whole process is being suspended. The
+        // byte counters say which leg of the path the data stops on.
+        final java.util.concurrent.atomic.AtomicBoolean beating =
+                new java.util.concurrent.atomic.AtomicBoolean(true);
+        final Thread beater = new Thread(() -> {
+            int beat = 0;
+            while (beating.get() && beat < 900) {
+                final VsockChannel open = currentChannel[0];
+                trace("beat " + beat
+                        + " completed=" + completed.get()
+                        + " to_guest=" + (open == null ? -1L : open.bytesToGuest())
+                        + " from_guest=" + (open == null ? -1L : open.bytesFromGuest())
+                        + " finished=" + state.payloadFinished
+                        + " connect_ms=" + lastConnectMs[0]);
+                beat++;
+                SystemClock.sleep(2_000L);
+            }
+        }, "pvm-csdl-beat");
+        beater.setDaemon(true);
+        beater.start();
         while (completed.get() < jobs
                 && SystemClock.uptimeMillis() - bridgeStarted < jobDeadlineMs
                 && !state.errored && !state.stopped && !state.payloadFinished) {
+            ticks++;
+            final long elapsed = SystemClock.uptimeMillis() - bridgeStarted;
+            if (elapsed - lastPublish >= 5_000L) {
+                lastPublish = elapsed;
+                final VsockChannel open = currentChannel[0];
+                final JSONObject live = new JSONObject();
+                live.put("elapsed_ms", elapsed);
+                live.put("ticks", ticks);
+                live.put("connections_completed", completed.get());
+                live.put("vsock_connect_ms", lastConnectMs[0] < 0
+                        ? JSONObject.NULL : lastConnectMs[0]);
+                live.put("vsock_connect_error", lastConnectError[0] == null
+                        ? JSONObject.NULL : lastConnectError[0]);
+                // Counter-only progress: where the bytes stop tells whether the
+                // stall is host->bridge, bridge->guest, or guest->bridge.
+                live.put("to_guest_bytes", open == null ? 0L : open.bytesToGuest());
+                live.put("from_guest_bytes", open == null ? 0L : open.bytesFromGuest());
+                live.put("payload_finished", state.payloadFinished);
+                // Trace only. The JSON evidence file is written at stage
+                // boundaries; re-serialising it every tick proved to be the one
+                // thing that could stall the wait loop, and a diagnostic must
+                // never be able to hang the job it is watching.
+                trace("heartbeat " + live.toString());
+            }
             SystemClock.sleep(200);
         }
+        beating.set(false);
+        evidence.put("stage", "jobs_done");
+        writeEvidence(evidence, results);
+        trace("jobs_done completed=" + completed.get());
         final long bridgeElapsedMs = SystemClock.uptimeMillis() - bridgeStarted;
+        // DistccTcpVsockBridge.close() narrows Closeable and throws nothing
+        // checked; a runtime failure here must not skip the VM teardown below.
         try {
             bridge.close();
-        } catch (IOException closeFailure) {
+        } catch (RuntimeException closeFailure) {
             notes.add("bridge close: " + exceptionName(closeFailure));
         }
         evidence.put("bridge_elapsed_ms", bridgeElapsedMs);
@@ -295,7 +626,9 @@ public final class PvmProbeInstrumentation extends Instrumentation {
 
         // The payload is a server: it only finishes because we stop it, so its
         // exit code is recorded for completeness and never used as the verdict.
+        trace("stopping vm");
         final boolean stopped = requestStop(evidence, manager, shape.manager(), vm, name, notes);
+        trace("vm stopped=" + stopped);
         if (state.payloadFinished) {
             evidence.put("exit_code_after_stop", state.exitCode);
         }
@@ -339,11 +672,59 @@ public final class PvmProbeInstrumentation extends Instrumentation {
         private final ParcelFileDescriptor writeEnd;
         private final InputStream input;
         private final OutputStream output;
+        private final java.util.concurrent.atomic.AtomicLong toGuest =
+                new java.util.concurrent.atomic.AtomicLong();
+        private final java.util.concurrent.atomic.AtomicLong fromGuest =
+                new java.util.concurrent.atomic.AtomicLong();
 
         VsockChannel(ParcelFileDescriptor descriptor) throws IOException {
             this.writeEnd = descriptor.dup();
-            this.input = new ParcelFileDescriptor.AutoCloseInputStream(descriptor);
-            this.output = new ParcelFileDescriptor.AutoCloseOutputStream(writeEnd);
+            final InputStream rawInput =
+                    new ParcelFileDescriptor.AutoCloseInputStream(descriptor);
+            this.input = new java.io.FilterInputStream(rawInput) {
+                @Override
+                public int read() throws IOException {
+                    final int value = super.read();
+                    if (value >= 0) {
+                        fromGuest.incrementAndGet();
+                    }
+                    return value;
+                }
+
+                @Override
+                public int read(byte[] buffer, int offset, int length) throws IOException {
+                    final int read = super.read(buffer, offset, length);
+                    if (read > 0) {
+                        fromGuest.addAndGet(read);
+                    }
+                    return read;
+                }
+            };
+            this.output = new java.io.FilterOutputStream(
+                    new ParcelFileDescriptor.AutoCloseOutputStream(writeEnd)) {
+                // Write straight to the underlying stream: FilterOutputStream's
+                // bulk write fans out through write(int), which would count every
+                // byte twice.
+                @Override
+                public void write(int value) throws IOException {
+                    out.write(value);
+                    toGuest.incrementAndGet();
+                }
+
+                @Override
+                public void write(byte[] buffer, int offset, int length) throws IOException {
+                    out.write(buffer, offset, length);
+                    toGuest.addAndGet(length);
+                }
+            };
+        }
+
+        long bytesToGuest() {
+            return toGuest.get();
+        }
+
+        long bytesFromGuest() {
+            return fromGuest.get();
         }
 
         @Override
@@ -719,7 +1100,32 @@ public final class PvmProbeInstrumentation extends Instrumentation {
 
     /** File stem per mode: the driver polls a name it knows before the run. */
     private String evidencePrefix() {
-        return MODE_COMPILER.equals(arguments.getString("qaMode")) ? "pvm-compiler" : "pvm-probe";
+        final String mode = arguments.getString("qaMode");
+        final boolean compiler = MODE_COMPILER.equals(mode) || MODE_COMPILER_FILE.equals(mode);
+        return compiler ? "pvm-compiler" : "pvm-probe";
+    }
+
+    /**
+     * Append-only plain-text progress log, independent of the evidence JSON.
+     * If a run stalls where nothing else lands, these lines still say which
+     * call it stopped on.
+     */
+    private void trace(String message) {
+        final String token = arguments.getString("qaRunToken");
+        if (token == null) {
+            return;
+        }
+        final File dir = new File(getTargetContext().getFilesDir(), "avf-qa");
+        if (!dir.isDirectory() && !dir.mkdirs()) {
+            return;
+        }
+        final File trace = new File(dir, evidencePrefix() + "-" + token + ".trace.txt");
+        try (FileOutputStream stream = new FileOutputStream(trace, true)) {
+            final String line = (SystemClock.uptimeMillis() / 1000L) + "s " + message + "\n";
+            stream.write(line.getBytes(StandardCharsets.UTF_8));
+        } catch (IOException ignored) {
+            // Diagnostics must never fail the run.
+        }
     }
 
     private void writeEvidence(JSONObject evidence, Bundle results) {
