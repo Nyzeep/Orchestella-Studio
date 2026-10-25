@@ -356,7 +356,13 @@ if(FL_BUILD_PVM_COMPILER_PAYLOAD)
         target_include_directories(pvm_compile_service_clang PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/src/compile_service)
         # Staged libclang is RTTI=ON / EH=OFF: this TU must not unwind into it.
-        target_compile_options(pvm_compile_service_clang PRIVATE -fno-exceptions -Wall -Wextra)
+        # Same visibility contract as fl_pvm_add_compile_service_library: a
+        # static library keeps default visibility otherwise and leaks
+        # make_clang_engine/ClangEngine into the .so's dynamic symbol table,
+        # where AVmPayload_main must be the only project symbol.
+        target_compile_options(pvm_compile_service_clang PRIVATE
+            -fno-exceptions -fvisibility=hidden -fvisibility-inlines-hidden
+            -Wall -Wextra)
     endif()
 
     if(ANDROID)

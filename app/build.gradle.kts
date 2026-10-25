@@ -412,6 +412,9 @@ dependencies {
     // no permission and is installed once before any AVF class load.
     implementation("org.lsposed.hiddenapibypass:hiddenapibypass:6.1")
     androidTestImplementation(project(":runtime:engine-fastlane"))
+    // DV-PVM-02: the QA instrumentation bridges the payload's vsock port with
+    // the production DistccTcpVsockBridge instead of a second byte pump.
+    androidTestImplementation(project(":runtime:fastlane-distcc"))
     androidTestImplementation(project(":runtime:fastlane-terminal"))
     testImplementation(libs.junit)
 }

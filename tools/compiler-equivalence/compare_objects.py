@@ -284,6 +284,7 @@ def compare_objects(
     cxx: str | None = None,
     nm: str | None = None,
     readelf: str | None = None,
+    run_behavior: bool = True,
 ) -> tuple[str, str]:
     """Run the four levels; returns (verdict, first-difference detail)."""
     for label, path in (("a", a_path), ("b", b_path)):
@@ -316,18 +317,25 @@ def compare_objects(
             return DIFFERENT, f"b fails to link while a succeeds: {error_b}"
 
         # Level 2: behavior.
-        code_a, out_a = run_program(exe_a)
-        code_b, out_b = run_program(exe_b)
-        if code_a == "TIMEOUT" and code_b == "TIMEOUT":
-            return INCONCLUSIVE, "both executables hang; behavior unobservable"
-        if code_a != code_b:
-            return DIFFERENT, f"exit code differs: a={code_a} b={code_b}"
-        if out_a != out_b:
-            return DIFFERENT, "stdout differs: first mismatch at byte " + str(
-                next((i for i, (x, y) in enumerate(zip(out_a, out_b)) if x != y),
-                     min(len(out_a), len(out_b))))
-        if code_a == "TIMEOUT":
-            return DIFFERENT, "one executable hangs while the other exits"
+        # Cross-target objects (the DV-PVM-02 device payload is aarch64 ELF)
+        # cannot be executed on the analysis host, so the caller may skip this
+        # level explicitly. Skipping is recorded, never silently absorbed: the
+        # verdict then rests on link, structure and whitelist only, and the
+        # detail line says so.
+        behavior_skipped = not run_behavior
+        if run_behavior:
+            code_a, out_a = run_program(exe_a)
+            code_b, out_b = run_program(exe_b)
+            if code_a == "TIMEOUT" and code_b == "TIMEOUT":
+                return INCONCLUSIVE, "both executables hang; behavior unobservable"
+            if code_a != code_b:
+                return DIFFERENT, f"exit code differs: a={code_a} b={code_b}"
+            if out_a != out_b:
+                return DIFFERENT, "stdout differs: first mismatch at byte " + str(
+                    next((i for i, (x, y) in enumerate(zip(out_a, out_b)) if x != y),
+                         min(len(out_a), len(out_b))))
+            if code_a == "TIMEOUT":
+                return DIFFERENT, "one executable hangs while the other exits"
 
         # Level 3: structure.
         nm = nm or find_tool("nm")
@@ -357,6 +365,9 @@ def compare_objects(
         if not ok:
             return DIFFERENT, detail
 
+    if behavior_skipped:
+        return EQUIVALENT, ("levels 1, 3, 4 agree; behavior skipped (--no-run), "
+                            "run both executables on the target to close level 2")
     return EQUIVALENT, "all four levels agree"
 
 
@@ -371,11 +382,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cxx", default=None, help="override the C++ linker driver")
     parser.add_argument("--nm", default=None, help="override nm")
     parser.add_argument("--readelf", default=None, help="override readelf")
+    parser.add_argument("--no-run", action="store_true",
+                        help="skip level 2 (behavior). Required when the objects "
+                             "target another machine (the DV-PVM-02 payload emits "
+                             "aarch64 ELF): the host cannot execute them. The "
+                             "verdict then rests on levels 1, 3 and 4 and says so.")
     args = parser.parse_args(argv)
 
     verdict, detail = compare_objects(
         Path(args.a), Path(args.b), Path(args.fixtures),
         cc=args.cc, cxx=args.cxx, nm=args.nm, readelf=args.readelf,
+        run_behavior=not args.no_run,
     )
     print(verdict)
     if detail:
