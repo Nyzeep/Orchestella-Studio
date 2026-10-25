@@ -139,7 +139,7 @@ public:
         // in memory (CompilerInstance::createDependencyFileGen).
         frontend.Inputs.clear();
         const clang::Language language =
-            request.language == "c++" ? clang::Language::Cxx : clang::Language::C;
+            request.language == "c++" ? clang::Language::CXX : clang::Language::C;
         frontend.Inputs.push_back(clang::FrontendInputFile(
             llvm::MemoryBufferRef(request.source, "job.i"),
             clang::InputKind(language, clang::InputKind::Source,
