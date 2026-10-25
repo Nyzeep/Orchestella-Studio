@@ -19,6 +19,9 @@
 #include <windows.h>
 #else
 #include <fcntl.h>
+#if defined(FL_TCC_FD_SENTINEL)
+#include <sys/mman.h>
+#endif
 #include <sys/syscall.h>
 #include <unistd.h>
 #ifndef MFD_CLOEXEC
@@ -47,8 +50,44 @@ public:
             return;
         }
         path_ = temp_file;
+#if defined(FL_TCC_FD_SENTINEL)
+        kind_ = "win-tempfile";
+#endif
         is_temp_file_ = true;
 #else
+#if defined(FL_TCC_FD_SENTINEL)
+        // QA probe build only (tools/pvm-compiler/build_probe.sh defines
+        // FL_TCC_FD_SENTINEL together with its patched tcc). The guest
+        // kernel refuses fopen("wb") (O_CREAT) through the /proc/self/fd
+        // magic link of a memfd, so verify the chosen sink by opening it
+        // exactly the way tcc will, and fall back to real files in the
+        // directories the guest actually exposes for writing.
+        if (try_memfd()) {
+            return;
+        }
+        static const char* const kDirs[] = {"/data", "/data/local",
+                                            "/data/local/tmp", "/dev", "/tmp"};
+        for (const char* dir : kDirs) {
+            if (::access(dir, W_OK) != 0) {
+                probe_ += std::string(dir) + ":W-denied ";
+                continue;
+            }
+            const std::string candidate = std::string(dir) + "/pvm-compiler-object";
+            FILE* verify = std::fopen(candidate.c_str(), "wb");
+            if (verify == nullptr) {
+                probe_ += std::string(dir) + ":fopen-errno" +
+                          std::to_string(errno) + " ";
+                continue;
+            }
+            std::fclose(verify);
+            path_ = candidate;
+            kind_ = std::string("tmpfile:") + dir;
+            return;
+        }
+        kind_ = "none";
+#else
+        // Default build keeps the PVM-02 sink unchanged: a memfd handed to
+        // tcc through its /proc/self/fd/<fd> path, with no probe syscalls.
         const int fd = static_cast<int>(
             ::syscall(SYS_memfd_create, "pvm-compiler-object", static_cast<unsigned>(MFD_CLOEXEC)));
         if (fd < 0) {
@@ -57,8 +96,63 @@ public:
         fd_ = fd;
         path_ = "/proc/self/fd/" + std::to_string(fd);
 #endif
+#endif
     }
 
+#if defined(FL_TCC_FD_SENTINEL)
+    const std::string& kind() const { return kind_; }
+    const std::string& probe() const { return probe_; }
+
+private:
+#endif
+#if !defined(_WIN32) && defined(FL_TCC_FD_SENTINEL)
+    bool try_memfd() {
+        const int fd = static_cast<int>(
+            ::syscall(SYS_memfd_create, "pvm-compiler-object", static_cast<unsigned>(MFD_CLOEXEC)));
+        if (fd < 0) {
+            probe_ += "memfd:errno" + std::to_string(errno) + " ";
+            return false;
+        }
+        fd_ = fd;
+        // Capability map of the guest for the report: what the payload may
+        // do to its own memfd. fflush("write(2)") and fstat are known
+        // denied; mmap/ftruncate decide whether an mmap-based sink exists.
+        {
+            const ssize_t wrote = ::write(fd, "PVM", 3);
+            probe_ += wrote == 3 ? "memfd-write:OK " : std::string("memfd-write:errno") +
+                                                              std::to_string(errno) + " ";
+            const int trunc = ::ftruncate(fd, 0);
+            probe_ += trunc == 0 ? "ftruncate:OK "
+                                 : std::string("ftruncate:errno") + std::to_string(errno) + " ";
+            void* mapped = ::mmap(nullptr, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+            if (mapped == MAP_FAILED) {
+                probe_ += "mmap:errno" + std::to_string(errno) + " ";
+            } else {
+                static_cast<char*>(mapped)[0] = 'P';
+                ::munmap(mapped, 4096);
+                probe_ += "mmap:OK ";
+            }
+        }
+        // The guest denies every path-based write (EACCES on both O_CREAT
+        // and plain O_WRONLY through the /proc/self/fd magic link), so tcc
+        // gets the fd sentinel understood by the QA-only tccelf patch
+        // (tools/pvm-compiler/patch_tccelf_fd_sentinel.py): it dups this fd
+        // and writes there.
+        path_ = "::fd::" + std::to_string(fd);
+        // The path-based reopen outcome is recorded as platform evidence.
+        FILE* verify = std::fopen(("/proc/self/fd/" + std::to_string(fd)).c_str(), "wb");
+        if (verify == nullptr) {
+            probe_ += "path-reopen:errno" + std::to_string(errno) + " ";
+        } else {
+            probe_ += "path-reopen:OK ";
+            std::fclose(verify);
+        }
+        kind_ = "memfd-fd-sentinel";
+        return true;
+    }
+#endif
+
+public:
     ~ObjectSink() {
 #if defined(_WIN32)
         if (is_temp_file_) {
@@ -81,6 +175,24 @@ public:
         if (fd_ < 0) {
             return read_temp_file(max_object_bytes, out);
         }
+#if defined(FL_TCC_FD_SENTINEL)
+        if (::lseek(fd_, 0, SEEK_SET) < 0) {
+            probe_ += "readback:lseek-errno" + std::to_string(errno) + " ";
+            return false;
+        }
+        // The guest denies fstat on the memfd fd (seccomp), but lseek is
+        // allowed: derive the object size from the end offset.
+        const off_t end_offset = ::lseek(fd_, 0, SEEK_END);
+        if (end_offset < 0) {
+            probe_ += "readback:lseek-end-errno" + std::to_string(errno) + " ";
+            return false;
+        }
+        if (::lseek(fd_, 0, SEEK_SET) < 0) {
+            probe_ += "readback:lseek-rewind-errno" + std::to_string(errno) + " ";
+            return false;
+        }
+        const size_t size = static_cast<size_t>(end_offset);
+#else
         if (::lseek(fd_, 0, SEEK_SET) < 0) {
             return false;
         }
@@ -89,7 +201,11 @@ public:
             return false;
         }
         const size_t size = static_cast<size_t>(info.st_size);
+#endif
         if (size > max_object_bytes) {
+#if defined(FL_TCC_FD_SENTINEL)
+            probe_ += "readback:too-large-" + std::to_string(size) + " ";
+#endif
             return false;
         }
         out->resize(size);
@@ -97,6 +213,10 @@ public:
         while (read_total < size) {
             const ssize_t chunk = ::read(fd_, out->data() + read_total, size - read_total);
             if (chunk <= 0) {
+#if defined(FL_TCC_FD_SENTINEL)
+                probe_ += "readback:short-at-" + std::to_string(read_total) +
+                          " errno" + std::to_string(errno) + " ";
+#endif
                 return false;
             }
             read_total += static_cast<size_t>(chunk);
@@ -132,6 +252,10 @@ private:
 
     int fd_ = -1;
     std::string path_;
+#if defined(FL_TCC_FD_SENTINEL)
+    std::string kind_ = "unset";
+    mutable std::string probe_;
+#endif
 #if defined(_WIN32)
     bool is_temp_file_ = false;
 #endif
@@ -186,7 +310,12 @@ void run_job(std::string source, std::vector<std::string> argv, CompileLimits li
     ObjectSink sink;
     if (!sink.ok()) {
         result->status = CompileStatus::kInternal;
+#if defined(FL_TCC_FD_SENTINEL)
+        result->diag.text = "object sink unavailable kind=" + sink.kind() +
+                            " probe:" + sink.probe() + "\n";
+#else
         result->diag.text = "object sink unavailable\n";
+#endif
         return;
     }
 
@@ -218,6 +347,9 @@ void run_job(std::string source, std::vector<std::string> argv, CompileLimits li
         return;
     }
     if (tcc_output_file(state, sink.path().c_str()) < 0) {
+#if defined(FL_TCC_FD_SENTINEL)
+        result->diag.text += "sink=" + sink.kind() + " probe:" + sink.probe() + "\n";
+#endif
         tcc_delete(state);
         result->status = CompileStatus::kCompileError;
         return;
@@ -227,7 +359,11 @@ void run_job(std::string source, std::vector<std::string> argv, CompileLimits li
     if (!sink.read_into(limits.max_object_bytes, &result->object)) {
         result->object.clear();
         result->status = CompileStatus::kJobTooLarge;
+#if defined(FL_TCC_FD_SENTINEL)
+        result->diag.text += "object output missing or beyond max_object_bytes sink=" + sink.kind() + " probe:" + sink.probe() + "\n";
+#else
         result->diag.text += "object output missing or beyond max_object_bytes\n";
+#endif
         return;
     }
     result->status = CompileStatus::kOk;
