@@ -141,6 +141,10 @@ def main(argv: list[str]) -> int:
                         help="one argv element for a synthesised request (repeatable; "
                              "keeps flags such as -Xclang out of argparse)")
     parser.add_argument("--doti-text", default="int probe(void) { return 0; }\n")
+    parser.add_argument("--doti-file", type=Path, default=None,
+                        help="preprocessed source (.i) to send as DOTI; wins over "
+                             "--doti-text. Windows cannot carry an 85 KB argv, so "
+                             "any realistic job needs this.")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--timeout", type=float, default=20.0)
     args = parser.parse_args(argv)
@@ -155,7 +159,11 @@ def main(argv: list[str]) -> int:
         if not args.arg:
             print("error=--arg needs at least one element")
             return 2
-        request = build_request(args.arg, args.doti_text.encode("utf-8"))
+        if args.doti_file is not None:
+            doti = args.doti_file.read_bytes()
+        else:
+            doti = args.doti_text.encode("utf-8")
+        request = build_request(args.arg, doti)
     try:
         with socket.create_connection((args.host, args.port), timeout=args.timeout) as sock:
             sock.sendall(encode_frame(TYPE_HELLO, hello_payload(args.token)))

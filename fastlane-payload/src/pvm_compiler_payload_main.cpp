@@ -41,6 +41,9 @@
 #endif
 
 #if defined(__ANDROID__)
+#include <fcntl.h>
+#include <unistd.h>
+
 #include "fastlane/vm_payload_api.h"
 #endif
 
@@ -84,13 +87,58 @@ uint32_t env_u32(const char* name, uint32_t fallback) {
 
 const char* env_string(const char* name) { return ::getenv(name); }
 
+// The token is the AXP1 credential: the payload must know it before the
+// handshake, and the host must hold the same value. Environment first, because
+// that is the channel the host twin and any shell-driven launch use.
+//
+// A protected Microdroid payload has no environment channel: there is no
+// setEnv on VirtualMachineConfig, and setPayloadConfigPath — the only
+// runtime-config surface — is exclusive with setPayloadBinaryName. The APK
+// contents are therefore the only host->payload channel that exists before the
+// handshake, so device/QA builds drop the token at assets/accel_token (DV-PVM-02).
+// Neither source is ever logged; only the size is reported on failure.
+std::string read_token_from_apk_contents() {
+#if defined(__ANDROID__)
+    const char* root = AVmPayload_getApkContentsPath();
+    if (root == nullptr || root[0] == '\0') {
+        return std::string();
+    }
+    const std::string path = std::string(root) + "/assets/accel_token";
+    const int descriptor = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
+    if (descriptor < 0) {
+        return std::string();
+    }
+    char buffer[64] = {};
+    const ssize_t read_bytes = ::read(descriptor, buffer, sizeof(buffer) - 1);
+    ::close(descriptor);
+    if (read_bytes <= 0) {
+        return std::string();
+    }
+    std::string token(buffer, static_cast<size_t>(read_bytes));
+    // A trailing newline written by an editor is not part of the token.
+    while (!token.empty() && (token.back() == '\n' || token.back() == '\r' ||
+                              token.back() == ' ' || token.back() == '\t')) {
+        token.pop_back();
+    }
+    return token;
+#else
+    return std::string();
+#endif
+}
+
+std::string read_token() {
+    const char* from_environment = env_string("ORCHESTELLA_ACCEL_TOKEN");
+    if (from_environment != nullptr && from_environment[0] != '\0') {
+        return std::string(from_environment);
+    }
+    return read_token_from_apk_contents();
+}
+
 class CompileServiceServer {
 public:
     CompileServiceServer(std::unique_ptr<Listener> listener, uint16_t port)
         : listener_(std::move(listener)), port_(port) {
-        config_.token = env_string("ORCHESTELLA_ACCEL_TOKEN") != nullptr
-                            ? env_string("ORCHESTELLA_ACCEL_TOKEN")
-                            : "";
+        config_.token = read_token();
         config_.caps.compiler_triple = read_triple();
         config_.handshake_timeout_ms = env_u32("ORCHESTELLA_PVM_HANDSHAKE_MS", 3000);
 #if defined(FL_PVM_COMPILER_ENGINE_CLANG)

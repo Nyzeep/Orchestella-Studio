@@ -102,7 +102,10 @@ public:
         storage.emplace_back("-emit-obj");
         storage.emplace_back("-x");
         storage.push_back(request.language == "c++" ? "c++-cpp-output" : "cpp-output");
-        storage.emplace_back("-fno-crash-diagnostics");
+        // No "-fno-crash-diagnostics" here: it is a driver option, and -cc1
+        // rejects it as an unknown argument, which made CreateFromArgs fail for
+        // every single job (DV-PVM-02). The payload has no writable directory
+        // for crash diagnostics anyway.
         for (const std::string& flag : request.flags) {
             if (flag == "-c") {
                 continue;
@@ -139,7 +142,7 @@ public:
         // in memory (CompilerInstance::createDependencyFileGen).
         frontend.Inputs.clear();
         const clang::Language language =
-            request.language == "c++" ? clang::Language::Cxx : clang::Language::C;
+            request.language == "c++" ? clang::Language::CXX : clang::Language::C;
         frontend.Inputs.push_back(clang::FrontendInputFile(
             llvm::MemoryBufferRef(request.source, "job.i"),
             clang::InputKind(language, clang::InputKind::Source,
