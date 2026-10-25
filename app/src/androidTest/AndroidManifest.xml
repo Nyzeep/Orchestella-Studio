@@ -1,9 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- QA-only probe. The test APK installs beside the QA channel APK; the
-         runner has no launcher entry and is never part of a release build. -->
+    <!-- QA-only DV-PVM-01 device gate: one protected payload VM per run.
+         AGP's androidTest merger keeps only the LAST <instrumentation>
+         declaration (normalized) and drops earlier ones, so this branch's QA
+         androidTest carries exactly this probe. AvfQaProbeInstrumentation
+         (device-mode flows, other tickets) must be re-declared here if a
+         branch needs both probes in one androidTest APK. -->
     <instrumentation
-        android:name="io.github.nyzeep.orchestella.AvfQaProbeInstrumentation"
+        android:name="io.github.nyzeep.orchestella.PvmProbeInstrumentation"
         android:targetPackage="${applicationId}"
-        android:label="Orchestella AVF QA probe" />
+        android:label="Orchestella PVM probe" />
 </manifest>
