@@ -30,6 +30,13 @@ public final class Axp1DistccChannelFactory
         implements DistccTcpVsockBridge.ChannelFactory {
     public static final String AXP1_AUTH_FAILED = "AXP1_AUTH_FAILED";
     public static final String AXP1_HANDSHAKE_TIMEOUT = "AXP1_HANDSHAKE_TIMEOUT";
+    /**
+     * The peer reset the data plane with {@code RST(TIMEOUT)}: its own frame
+     * deadline expired. Distinct from a handshake timeout, because the two have
+     * completely different causes and fixes -- conflating them is what made the
+     * DV-PVM-03 attribution read a data-plane stall as a handshake problem.
+     */
+    public static final String AXP1_DATA_TIMEOUT = "AXP1_DATA_TIMEOUT";
     public static final String AXP1_VERSION_MISMATCH = "AXP1_VERSION_MISMATCH";
     public static final String AXP1_PROTOCOL_ERROR = "AXP1_PROTOCOL_ERROR";
     public static final String AXP1_FRAME_TOO_LARGE = "AXP1_FRAME_TOO_LARGE";
@@ -87,6 +94,10 @@ public final class Axp1DistccChannelFactory
         return new Axp1Channel(connection);
     }
 
+    /**
+     * Handshake-phase mapping. Only {@link #open()} may use this: there,
+     * {@code TIMEOUT} really is a handshake timeout.
+     */
     public static String reasonCode(Axp1Error error) {
         return switch (error) {
             case AUTH_FAILED -> AXP1_AUTH_FAILED;
@@ -96,6 +107,16 @@ public final class Axp1DistccChannelFactory
             case PROTOCOL_ERROR -> AXP1_PROTOCOL_ERROR;
             case CLOSED -> AXP1_CLOSED;
         };
+    }
+
+    /**
+     * Data-plane mapping: the same enum means something else once the handshake
+     * is done. A {@code TIMEOUT} here was decoded from the peer's
+     * {@code RST(TIMEOUT)}, i.e. the payload's own frame deadline expired --
+     * never a handshake problem.
+     */
+    public static String dataPlaneReasonCode(Axp1Error error) {
+        return error == Axp1Error.TIMEOUT ? AXP1_DATA_TIMEOUT : reasonCode(error);
     }
 
     private static void closeQuietly(FastLaneChannel channel) {

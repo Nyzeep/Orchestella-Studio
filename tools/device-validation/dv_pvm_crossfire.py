@@ -99,6 +99,25 @@ B64_CHUNK_BYTES = 1024  # tty canonical mode drops input past ~4 KiB per line
 # the bottleneck. The ledger subtracts this and reports the remainder as
 # unexplained instead of attributing it to something nobody measured.
 PAYLOAD_COMPILE_BASELINE_MS = 1050
+# A distcc v1 response is five token headers (DONE, STAT, SERR, SOUT, DOTO)
+# before any body, so a response shorter than this cannot contain a DOTO. It is
+# a protocol floor, not a tuned threshold: below it the payload answered
+# something, but not a distcc response.
+MIN_DISTCC_RESPONSE_BYTES = 5 * 12
+# What distcc prints when the response stops early: the client recompiled
+# locally and still exited 0, which is exactly how a stalled payload used to
+# look like a successful remote compile.
+TRUNCATION_MARKERS = ("EXIT_TRUNCATED",)
+# What distcc prints when the peer answered but the job was refused -- a payload
+# ARGV rejection lands here, and so does any distcc-level failure code. It is a
+# local fallback too, but it is not a truncation, and the two need different
+# fixes.
+LOCAL_FALLBACK_MARKERS = ("failed, retrying locally", "running locally instead")
+# The fixed codes a payload can answer with. Captured so `crossfire.json` names
+# the rejection instead of leaving it in the guest's scrollback.
+PAYLOAD_CODE_PATTERN = re.compile(
+    r"\b(ARGV_REJECTED:[A-Z_]{2,32}|JOB_TOO_LARGE|JOB_TIMEOUT|COMPILE_ERROR"
+    r"|PAYLOAD_LOAD_FAILED)\b")
 # Probe ports: 5103 is the production bridge contract, 19999 is the object
 # return in this same round, 5037 is the adb server. Anything else is free.
 PERF_PORT_UP_DEFAULT = 19901
@@ -885,6 +904,9 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
     round_result["terminal_socket"] = terminal_socket
     console = None
     index = 0
+    # The distcc client's own output, kept for the remote-compile verdict below:
+    # its absence must read as "no evidence", not as an empty success.
+    distcc_text = ""
 
     def next_index() -> str:
         nonlocal index
@@ -1008,7 +1030,13 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
         round_result["distcc_rc"] = rc
         round_result["distcc_ms"] = elapsed
         round_result["distcc_argv"] = distcc_command
-        round_result["distcc_remote_seen"] = "remote" in text.lower()
+        distcc_text = text
+        # The client's full words, next to instrument.log. `connections[]` says
+        # whether bytes crossed; this says what distcc made of them -- the only
+        # place a payload-side rejection (ARGV_REJECTED:*) becomes visible.
+        (round_work / "distcc.log").write_text(text or "", encoding="utf-8",
+                                              errors="replace")
+        round_result["distcc_tail"] = (text or "").strip().splitlines()[-12:]
         if rc != 0:
             round_result["failure_code"] = "GUEST_DISTCC_COMPILE_FAILED"
             return round_result
@@ -1123,7 +1151,14 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
             "coordinator_stop": final.get("coordinator_stop"),
             "connections_completed": final.get("connections_completed"),
             "vm_error_code": final.get("vm_error_code"),
+            # The array used to be dropped here while its length survived as
+            # `connections_completed`. That array is the only place the bridge
+            # says whether a response actually came back, so the next round of
+            # attribution starts from it instead of from a device pull.
+            "connections": final.get("connections"),
         }
+        round_result["remote_compile"] = remote_compile_verdict(
+            final, distcc_text, round_result.get("distcc_rc"))
         if round_result.get("failure_code") is None and final.get("failure_code"):
             round_result["failure_code"] = final.get("failure_code")
         if round_result.get("failure_code") is None and not final.get("stop_confirmed"):
@@ -1135,6 +1170,80 @@ def _number(value):
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     return value
+
+
+def remote_compile_verdict(evidence: dict, distcc_text, distcc_rc) -> dict:
+    """Did this round really compile on the payload?
+
+    Two independent checks, neither of them a substring of the guest's log:
+    the bridge's own connection record must show a whole distcc response coming
+    back, and the client must not have fallen back to a local compile.
+
+    `distcc_remote_seen` used to answer this with `"remote" in text.lower()`,
+    which the fallback warning `remote compilation of '...' failed, retrying
+    locally` matches -- the false positive that kept the 60 s floor looking
+    like a working accelerator.
+
+    Every field is a fixed code or a number; `None` means "no evidence", never
+    0.
+    """
+    verdict = {
+        "verdict": None,
+        "reason": "NO_CONNECTION",
+        "bytes_in": None,
+        "bytes_out": None,
+        "outcome": None,
+        "failure_code": None,
+        "truncated": None,
+        "local_fallback": None,
+        "payload_code": None,
+    }
+    connections = evidence.get("connections")
+    if not isinstance(connections, list) or not connections:
+        return verdict
+    record = connections[-1] if isinstance(connections[-1], dict) else {}
+    bytes_in = _number(record.get("bytes_in"))
+    bytes_out = _number(record.get("bytes_out"))
+    outcome = record.get("outcome")
+    failure = record.get("failure_code")
+    text = distcc_text or ""
+    lowered = text.lower()
+    truncated = any(marker.lower() in lowered for marker in TRUNCATION_MARKERS)
+    local_fallback = any(marker.lower() in lowered for marker in LOCAL_FALLBACK_MARKERS)
+    found = PAYLOAD_CODE_PATTERN.search(text)
+    payload_code = found.group(1) if found else None
+    verdict.update({
+        "bytes_in": bytes_in,
+        "bytes_out": bytes_out,
+        "outcome": outcome,
+        "failure_code": failure,
+        "truncated": truncated,
+        "local_fallback": local_fallback,
+        "payload_code": payload_code,
+    })
+    if truncated:
+        verdict.update({"verdict": False, "reason": "TRUNCATED"})
+    elif payload_code == "COMPILE_ERROR":
+        # The payload compiled and the source was wrong: the remote path did
+        # work, the compile did not.
+        verdict.update({"verdict": False, "reason": "COMPILE_ERROR"})
+    elif payload_code is not None:
+        verdict.update({"verdict": False, "reason": "PAYLOAD_REJECTED"})
+    elif local_fallback:
+        verdict.update({"verdict": False, "reason": "LOCAL_FALLBACK"})
+    elif _number(distcc_rc) is None:
+        # The client never reported an exit status: the round died before the
+        # verdict could be read. Unknown is not the same as failed.
+        verdict["reason"] = "NO_DISTCC_RC"
+    elif _number(distcc_rc) != 0:
+        verdict.update({"verdict": False, "reason": "DISTCC_FAILED"})
+    elif bytes_out is None or bytes_out < MIN_DISTCC_RESPONSE_BYTES:
+        verdict.update({"verdict": False, "reason": "NO_RESPONSE"})
+    elif outcome != "COMPLETED" or failure not in (None, "NONE"):
+        verdict.update({"verdict": False, "reason": "CHANNEL_FAILED"})
+    else:
+        verdict.update({"verdict": True, "reason": "REMOTE"})
+    return verdict
 
 
 def compute_ledger(distcc_ms, preprocess_ms, transport_ms,
@@ -1387,6 +1496,8 @@ def main(argv: list[str] | None = None) -> int:
             r.get("await_accelerator_ready") for r in summary.get("rounds", [])],
         "gate_ms_p50": summary.get("gate_ms_p50"),
         "distcc_ms_p50": summary.get("distcc_ms_p50"),
+        # The one line that says whether the remote path was actually taken.
+        "remote_compile": [r.get("remote_compile") for r in summary.get("rounds", [])],
         "equivalence": [r.get("equivalence") for r in summary.get("rounds", [])],
     }
     if args.profile_segments:

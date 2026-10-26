@@ -1,5 +1,14 @@
 # 会话 8 报告：DV-PVM-02b
 
+> **已被推翻（2026-10-26，会话 10/11）**：本报告把 `.o` 回传与
+> `distcc_remote_seen=True` 当作「远端编译成功」的证据，两者都不成立——
+> 60 秒地板是载荷帧超时，`.o` 是 distcc **本地补编**的产物，而
+> `distcc_remote_seen` 只是 `"remote" in text.lower()`，会被补编告警
+> `remote compilation of '…' failed, retrying locally` 命中。
+> 归因见 `docs/reports/orchestration/session10-floor-attribution-2026-10-26.zh-CN.md`，
+> 机制修复见 `docs/reports/tickets/pvm-10/implementation-report.zh-CN.md`。
+> 本文件按「只移不删」保留原文，不要据此判断远端路径是否可用。
+
 ## 1. 结论（交火：done；分段：partial）
 
 **交火本体：done。** QEMU guest（Alpine 3.24.1 chroot，clang 22.1.3）内的 distcc 客户端
