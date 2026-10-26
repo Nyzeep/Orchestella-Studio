@@ -178,9 +178,10 @@ public final class NetworkGatewayDaemon {
         if (instanceId == null || !instanceId.matches("[A-Za-z0-9_-]{1,64}")) {
             throw new IOException("invalid gateway instance id");
         }
-        String nativeDir = context.getApplicationInfo().nativeLibraryDir;
-        String gvproxyPath = new File(nativeDir, "libgvproxy.so").getAbsolutePath();
-        if (!new File(gvproxyPath).isFile()) throw new IOException("gvproxy payload missing from jniLibs");
+        // Payload builds keep native libraries inside the APK (no legacy
+        // extraction), so the gateway binary may need to be materialized
+        // from the APK before ProcessBuilder can exec it.
+        String gvproxyPath = NativeExecutableStore.ensure(context, "libgvproxy.so");
         Path privateRoot = context.getFilesDir().getCanonicalFile().toPath();
         Path runtimePath = runtimeDirectory.getCanonicalFile().toPath();
         if (!runtimePath.startsWith(privateRoot) || runtimePath.equals(privateRoot)) {
