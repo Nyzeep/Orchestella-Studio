@@ -26,6 +26,7 @@ import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -41,6 +42,8 @@ import io.github.nyzeep.orchestella.runtime.distro.DistroManifest;
 import io.github.nyzeep.orchestella.runtime.engineavf.ReflectiveAvfPlatformAccess;
 import io.github.nyzeep.orchestella.runtime.fastlane.FastLaneChannel;
 import io.github.nyzeep.orchestella.runtime.fastlane.distcc.Axp1DistccChannelFactory;
+import io.github.nyzeep.orchestella.runtime.engineqemu.QemuLaunchSpec;
+import io.github.nyzeep.orchestella.runtime.engineqemu.RuntimeArtifactManifest;
 import io.github.nyzeep.orchestella.runtime.fastlane.distcc.DistccTcpVsockBridge;
 import io.github.nyzeep.orchestella.runtime.fastlane.distcc.axp1.Axp1Capabilities;
 import io.github.nyzeep.orchestella.runtime.fastlane.distcc.axp1.Axp1Limits;
@@ -412,6 +415,11 @@ public final class PvmProbeInstrumentation extends Instrumentation {
                 DEFAULT_PAYLOAD_VSOC_PORT, 1, 65535);
         final int bridgePort = boundedInt(arguments.getString("bridge_port"),
                 DEFAULT_BRIDGE_PORT, 1024, 65535);
+        // qaDirectQemu=1: boot the guest with the product runtime pieces but
+        // WITHOUT the product Session, whose terminal-socket ownership lasts
+        // for the session lifetime and would starve the driver's console
+        // automation (the driver then owns ttyAMA0 exclusively).
+        final boolean directQemu = "1".equals(arguments.getString("qaDirectQemu"));
         final int jobs = boundedInt(arguments.getString("qaJobs"), 1, 1, 8);
         final String requestedInstanceId = arguments.getString("qaInstanceId");
         if (memoryMb < 0 || payloadReadyDeadlineMs < 0 || jobDeadlineMs < 0 || gateDeadlineMs < 0
@@ -472,7 +480,10 @@ public final class PvmProbeInstrumentation extends Instrumentation {
         evidence.put("guest_distro", instance.distro().id());
         // Same socket naming the product launcher derives (QemuInstanceLauncher);
         // the driver forwards it with `adb forward tcp:0 localabstract:<name>`.
-        evidence.put("terminal_socket", "droidlayer-terminal-" + instance.id());
+        evidence.put("terminal_socket", directQemu
+                ? "qa-cxcf-term-" + token.substring(0, Math.min(12, token.length()))
+                : "droidlayer-terminal-" + instance.id());
+        evidence.put("direct_qemu", directQemu);
 
         // Mirror of MainActivity's launch parameter assembly (1531-1562): the
         // QEMU lane must boot through the same shapes a product launch uses.
@@ -562,6 +573,124 @@ public final class PvmProbeInstrumentation extends Instrumentation {
 
         final RuntimeOwnedSession[] qemuSession = new RuntimeOwnedSession[1];
         final LaneStarter qemuStarter = () -> {
+            if (directQemu) {
+                // Direct-QEMU path: the same product runtime pieces (asset
+                // bootstrap, provisioned-volume bootstrapping, gvproxy, the
+                // packaged QEMU binary, the same guest kernel command line),
+                // minus the Session that would own the terminal socket.
+                // Readiness is harness-level (process alive); the driver
+                // verifies the guest shell through the console itself.
+                final RuntimeArtifactManifest runtimeArtifactManifest;
+                try (InputStream in = PackagedAssetStreams.openAsset(target,
+                        RuntimeArtifactManifest.SCHEMA_FILE_NAME)) {
+                    runtimeArtifactManifest = RuntimeArtifactManifest.parse(in);
+                } catch (IOException | RuntimeException | Error failure) {
+                    notes.add("direct manifest: " + exceptionName(failure));
+                    throw new LaneStartException("QEMU_START_FAILED");
+                }
+                final QemuRuntimeBootstrapper bootstrapper =
+                        new QemuRuntimeBootstrapper(runtimeArtifactManifest,
+                                name -> {
+                                    try {
+                                        return PackagedAssetStreams.openAsset(target, name);
+                                    } catch (IOException e) {
+                                        throw new RuntimeException(e);
+                                    }
+                                },
+                                name -> {
+                                    try {
+                                        return PackagedAssetStreams.openResource(target, name);
+                                    } catch (IOException e) {
+                                        throw new RuntimeException(e);
+                                    }
+                                },
+                                Paths.get(target.getFilesDir().toString(),
+                                        "runtime", instance.id()),
+                                Paths.get(target.getFilesDir().toString(),
+                                        "distro-inputs"));
+                final QemuRuntimeBootstrapper.RuntimePaths paths;
+                try {
+                    paths = bootstrapper.bootstrap(
+                            rootfsFileName, instance.bridgeToken(),
+                            instance.guestPassword(),
+                            Paths.get(instance.rootVolume().toString()),
+                            parameters.mirrorConfigFileName,
+                            parameters.mirrorConfigFileContent,
+                            parameters.firstBootScript,
+                            instance.hostname(), instance.defaultUser(),
+                            instance.hasSudo(), null, false);
+                } catch (IOException | RuntimeException | Error failure) {
+                    notes.add("direct bootstrap: " + exceptionName(failure));
+                    throw new LaneStartException("QEMU_START_FAILED");
+                }
+                final NetworkGatewayDaemon.Running gateway;
+                try {
+                    gateway = NetworkGatewayDaemon.start(target, instance.id(),
+                            Paths.get(target.getFilesDir().toString(), "runtime",
+                                    instance.id()).toFile());
+                } catch (IOException | RuntimeException | Error failure) {
+                    notes.add("direct gateway: " + exceptionName(failure));
+                    throw new LaneStartException("QEMU_START_FAILED");
+                }
+                try {
+                    final String guestKernelArgs =
+                            "orchestella.guest_ip=" + NetworkGatewayDaemon.GUEST_IP
+                                    + " orchestella.guest_gw=" + NetworkGatewayDaemon.GUEST_GATEWAY
+                                    + " orchestella.guest_mask=" + NetworkGatewayDaemon.GUEST_NETMASK
+                                    + " orchestella.guest_dns=" + NetworkGatewayDaemon.guestDnsFor(target)
+                                    + " orchestella.proxy_enabled=0";
+                    final String qemuBinary =
+                            NativeExecutableStore.ensure(target, "libdroidlayer_qemu.so");
+                    final String[] rawSpec = QemuLaunchSpec.buildWithPasst(
+                            qemuBinary,
+                            paths.kernel.toString(),
+                            paths.initramfs.toString(),
+                            instance.rootVolume().toString(),
+                            "qa-cxcf-control-" + token.substring(0, Math.min(12, token.length())),
+                            "qa-cxcf-term-" + token.substring(0, Math.min(12, token.length())),
+                            hardware,
+                            String.valueOf(gateway.tcpPort),
+                            guestKernelArgs);
+                    // Same two-step the product launcher applies: the packaged
+                    // arm64 binary rejects virtio-gpu-gl-device, and the display
+                    // rides a socket instead of a host window.
+                    String[] spec = QemuInstanceLauncher
+                            .sanitizeSpecForTargetBinary(rawSpec);
+                    java.nio.file.Path displayDirectory = target.getFilesDir()
+                            .toPath().resolve("display");
+                    java.nio.file.Files.createDirectories(displayDirectory);
+                    String displaySocketPath = displayDirectory.resolve(
+                            java.util.UUID.nameUUIDFromBytes(
+                                    instance.id().getBytes(StandardCharsets.UTF_8))
+                                    .toString().substring(0, 16) + ".sock").toString();
+                    spec = QemuLaunchSpec.withDisplayChannel(spec, displaySocketPath);
+                    final Process process = new ProcessBuilder(spec)
+                            .redirectErrorStream(true).start();
+                    final Thread qemuLogger = new Thread(() -> {
+                        try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                                new java.io.InputStreamReader(process.getInputStream()))) {
+                            String line;
+                            while ((line = reader.readLine()) != null) {
+                                Log.d("OrchestellaQaQemu", line);
+                            }
+                        } catch (IOException ignored) {
+                            // The VM is dead or the stream closed; nothing to log.
+                        }
+                    }, "qa-cxf-qemu-log");
+                    qemuLogger.setDaemon(true);
+                    qemuLogger.start();
+                    trace("direct qemu started");
+                    return new QaDirectQemuRuntime(process, gateway);
+                } catch (IOException | RuntimeException | Error failure) {
+                    notes.add("direct spawn: " + exceptionName(failure));
+                    try {
+                        gateway.stop(STOP_DEADLINE_MS);
+                    } catch (RuntimeException ignored) {
+                        // The QEMU stop is the confirmed part of the cleanup.
+                    }
+                    throw new LaneStartException("QEMU_START_FAILED");
+                }
+            }
             // Mirror of the dispatch qemuStarter (AcceleratorLaunchDispatcher):
             // the product launcher keeps asset bootstrap, gateway startup and
             // session registration, and the readiness probe observes the same
@@ -714,24 +843,39 @@ public final class PvmProbeInstrumentation extends Instrumentation {
 
         DistccTcpVsockBridge bridge = null;
         try {
+            // The bridge's channel factory MUST be the AXP1 layer: the payload
+            // expects the AXP1 HOST handshake (token + compiler identity) on
+            // connect. A raw vsock factory makes the payload reject the first
+            // bytes (CHANNEL_FAILED within milliseconds), and distcc then
+            // silently falls back to local compilation.
             bridge = new DistccTcpVsockBridge(
                     InetAddress.getByName("127.0.0.1"),
                     bridgePort,
-                    () -> {
-                        final long openedAt = SystemClock.uptimeMillis();
-                        try {
-                            final FastLaneChannel channel = openVsockChannel(payloadVm[0], vsockPort);
-                            lastConnectMs[0] = SystemClock.uptimeMillis() - openedAt;
-                            if (channel instanceof VsockChannel) {
-                                currentChannel[0] = (VsockChannel) channel;
-                            }
-                            return channel;
-                        } catch (IOException | RuntimeException failure) {
-                            lastConnectError[0] =
-                                    exceptionName(failure) + ":" + safeMessage(failure);
-                            throw failure;
-                        }
-                    },
+                    new Axp1DistccChannelFactory(
+                            () -> {
+                                final long openedAt = SystemClock.uptimeMillis();
+                                try {
+                                    final FastLaneChannel channel =
+                                            openVsockChannel(payloadVm[0], vsockPort);
+                                    lastConnectMs[0] = SystemClock.uptimeMillis() - openedAt;
+                                    if (channel instanceof VsockChannel) {
+                                        currentChannel[0] = (VsockChannel) channel;
+                                    }
+                                    return channel;
+                                } catch (IOException | RuntimeException failure) {
+                                    lastConnectError[0] =
+                                            exceptionName(failure) + ":" + safeMessage(failure);
+                                    throw failure;
+                                }
+                            },
+                            token,
+                            Axp1Capabilities.builder()
+                                    .distcc(true)
+                                    .compilerTriple(REQUIRED_TRIPLE)
+                                    .maxFrame(AXP1_MAX_FRAME)
+                                    .build(),
+                            REQUIRED_TRIPLE,
+                            new Axp1Limits(3_000L, 4 * AXP1_MAX_FRAME, AXP1_MAX_FRAME)),
                     1,
                     0,
                     (int) Math.min(jobDeadlineMs, 120_000L),
@@ -971,6 +1115,55 @@ public final class PvmProbeInstrumentation extends Instrumentation {
      * delegates to the shared memoized stop — the adapter adds no second stop
      * implementation, mirroring ProtectedLaneRuntime's discipline.
      */
+    /** Lane runtime over a directly spawned QEMU process (qaDirectQemu=1). */
+    private static final class QaDirectQemuRuntime implements LaneRuntime {
+        private final Process process;
+        private final NetworkGatewayDaemon.Running gateway;
+
+        QaDirectQemuRuntime(Process process, NetworkGatewayDaemon.Running gateway) {
+            this.process = process;
+            this.gateway = gateway;
+        }
+
+        @Override
+        public LaneId laneId() {
+            return LaneId.QEMU;
+        }
+
+        @Override
+        public boolean isAlive() {
+            return process.isAlive();
+        }
+
+        @Override
+        public boolean isReady() {
+            // Harness-level readiness: the driver verifies the guest shell
+            // through the console probes; the lane is usable while QEMU runs.
+            return process.isAlive();
+        }
+
+        @Override
+        public LaneStopOutcome stop(long graceMs) {
+            process.destroy();
+            try {
+                process.waitFor(graceMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+            boolean stopped = !process.isAlive();
+            if (!stopped) {
+                process.destroyForcibly();
+                stopped = !process.isAlive();
+            }
+            try {
+                gateway.stop(graceMs);
+            } catch (RuntimeException ignored) {
+                // The QEMU stop is the confirmed part of the cleanup.
+            }
+            return stopped ? LaneStopOutcome.CONFIRMED : LaneStopOutcome.UNCONFIRMED;
+        }
+    }
+
     private static final class QaPayloadLaneRuntime implements LaneRuntime {
         private final CallbackState state;
         private final BooleanSupplier stop;
