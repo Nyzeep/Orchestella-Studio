@@ -627,7 +627,6 @@ public final class QemuInstanceLauncher {
             throw failure;
         }
 
-        String nativeLibraryDir = context.getApplicationInfo().nativeLibraryDir;
         String controlSocket = "droidlayer-control-" + parameters.instanceId;
         String terminalSocket = "droidlayer-terminal-" + parameters.instanceId;
 
@@ -663,7 +662,9 @@ public final class QemuInstanceLauncher {
                         .toString().substring(0, 16) + ".sock").toString();
 
         String[] spec = QemuLaunchSpec.buildWithPasst(
-                Paths.get(nativeLibraryDir, "libdroidlayer_qemu.so").toString(),
+                // Same payload-build gap as the gateway: the QEMU binary may
+                // live only inside the APK and must be materialized first.
+                NativeExecutableStore.ensure(context, "libdroidlayer_qemu.so").toString(),
                 paths.kernel.toString(),
                 paths.initramfs.toString(),
                 parameters.instanceRootVolume,
