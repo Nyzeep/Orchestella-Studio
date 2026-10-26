@@ -267,6 +267,92 @@ FL_TEST(axp1_server_carries_a_full_distcc_exchange_in_memory) {
     FL_CHECK_EQ(frames.back().type, fl::pvm::kAxp1TypeEof);
 }
 
+// --- PVM-10: end-of-request is the DOTI body, not a client half-close --------
+//
+// The real distcc client writes DIST/ARGC/ARGV*/DOTI<len><bytes> and then reads
+// the response on the same socket; it never calls shutdown(SHUT_WR) and never
+// sends an AXP1 EOF frame. Upstream doc/protocol-1.txt is explicit: "Closing
+// the channel has no meaning and does not indicate the end of a packet". So the
+// accumulator must stop at the moment the DOTI body is complete.
+
+FL_TEST(axp1_server_answers_a_complete_doti_without_a_client_half_close) {
+    MemoryTransport transport;
+    transport.append_frame(fl::pvm::kAxp1TypeHello,
+                           fl::pvm::test::build_hello(kToken, 1024 * 1024,
+                                                      "aarch64-unknown-linux-android"));
+    const std::vector<uint8_t> request = fl::pvm::test::build_distcc_request(
+        {"clang", "-c", "unit.c", "-o", "unit.o"}, "int answer(void) { return 42; }\n");
+    // Three DATA frames, so two proper prefixes reach the parser before the
+    // request is whole. The stream then goes quiet: no EOF frame, ever.
+    const size_t third = request.size() / 3;
+    transport.append_frame(fl::pvm::kAxp1TypeData,
+                           std::vector<uint8_t>(request.begin(), request.begin() + third));
+    transport.append_frame(
+        fl::pvm::kAxp1TypeData,
+        std::vector<uint8_t>(request.begin() + third, request.begin() + 2 * third));
+    transport.append_frame(fl::pvm::kAxp1TypeData,
+                           std::vector<uint8_t>(request.begin() + 2 * third, request.end()));
+    transport.quiet_instead_of_eof = true;
+    transport.quiet_ms = 200;
+
+    // An independent limits struct: the production default stays 60000 ms.
+    ServerLimits limits;
+    limits.frame_timeout_ms = 200;
+
+    FixedEngine engine;
+    const WireError outcome = fl::pvm::axp1_serve_connection(
+        &transport, config(), policy(), limits, &engine);
+    if (outcome != WireError::kOk) {
+        // Make the red run self-describing: kTimeout is the old wait-for-EOF
+        // path, kProtocolError would mean the incremental parse fell over.
+        ::fl::test::fail(__FILE__, __LINE__,
+                         "no answer without a client half-close: outcome=" +
+                             std::to_string(static_cast<int>(outcome)) +
+                             " (5=kTimeout 4=kProtocolError) engine_calls=" +
+                             std::to_string(engine.calls));
+    }
+    FL_CHECK(outcome == WireError::kOk);
+    FL_CHECK_EQ(engine.calls, 1);
+    FL_CHECK(engine.last_source.find("answer") != std::string::npos);
+    FL_CHECK(transport.shutdown_called);
+    FL_CHECK(!has_frame(transport.outbound(), fl::pvm::kAxp1TypeRst));
+
+    std::vector<Axp1FrameView> frames;
+    FL_CHECK(fl::pvm::test::decode_frames(transport.outbound(), &frames));
+    const std::vector<uint8_t> response = fl::pvm::test::response_bytes(frames);
+    const std::string text(reinterpret_cast<const char*>(response.data()),
+                           response.size());
+    FL_CHECK(text.rfind("DONE00000001", 0) == 0);
+    FL_CHECK(text.find("STAT00000000") != std::string::npos);
+    FL_CHECK(text.find("DOTO00000008") != std::string::npos);
+    FL_CHECK_EQ(frames.back().type, fl::pvm::kAxp1TypeEof);
+}
+
+FL_TEST(axp1_server_still_times_out_when_the_doti_body_never_completes) {
+    MemoryTransport transport;
+    transport.append_frame(fl::pvm::kAxp1TypeHello,
+                           fl::pvm::test::build_hello(kToken, 1024 * 1024));
+    std::vector<uint8_t> request = fl::pvm::test::build_distcc_request(
+        {"clang", "-c", "unit.c", "-o", "unit.o"}, "int answer(void) { return 42; }\n");
+    // Drop the last 24 bytes of the DOTI body: the length prefix still promises
+    // them, so the request is incomplete rather than defective.
+    request.resize(request.size() - 24);
+    transport.append_frame(fl::pvm::kAxp1TypeData, request);
+    transport.quiet_instead_of_eof = true;
+    transport.quiet_ms = 100;
+
+    ServerLimits limits;
+    limits.frame_timeout_ms = 100;
+
+    FixedEngine engine;
+    const WireError outcome = fl::pvm::axp1_serve_connection(
+        &transport, config(), policy(), limits, &engine);
+    // The frame deadline is still the safety net for a peer that stops talking.
+    FL_CHECK(outcome == WireError::kTimeout);
+    FL_CHECK(rst_code_is(transport.outbound(), 5));
+    FL_CHECK_EQ(engine.calls, 0);
+}
+
 FL_TEST(axp1_server_rejects_a_bad_token_with_rst_auth_failed) {
     MemoryTransport transport;
     transport.append_frame(fl::pvm::kAxp1TypeHello,

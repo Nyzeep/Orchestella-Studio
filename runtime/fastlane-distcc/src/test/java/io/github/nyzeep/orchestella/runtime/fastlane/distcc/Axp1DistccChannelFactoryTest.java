@@ -8,6 +8,7 @@ import io.github.nyzeep.orchestella.runtime.fastlane.FastLaneChannel;
 import io.github.nyzeep.orchestella.runtime.fastlane.FastLaneException;
 import io.github.nyzeep.orchestella.runtime.fastlane.distcc.axp1.Axp1Capabilities;
 import io.github.nyzeep.orchestella.runtime.fastlane.distcc.axp1.Axp1Connection;
+import io.github.nyzeep.orchestella.runtime.fastlane.distcc.axp1.Axp1Error;
 import io.github.nyzeep.orchestella.runtime.fastlane.distcc.axp1.Axp1Limits;
 import io.github.nyzeep.orchestella.runtime.fastlane.distcc.axp1.Axp1Role;
 import io.github.nyzeep.orchestella.runtime.fastlane.distcc.axp1.Axp1Transport;
@@ -168,6 +169,24 @@ public final class Axp1DistccChannelFactoryTest {
                 FastLaneException.class, factory::open);
         assertEquals(Axp1DistccChannelFactory.AXP1_HANDSHAKE_TIMEOUT, failure.reason());
         pipe.close();
+    }
+
+    @Test(timeout = 5_000)
+    public void dataPlaneTimeoutIsNotReportedAsAHandshakeTimeout() {
+        // Same enum value, two different phases, two different causes: the
+        // payload's own frame deadline is not a handshake problem.
+        assertEquals(Axp1DistccChannelFactory.AXP1_HANDSHAKE_TIMEOUT,
+                Axp1DistccChannelFactory.reasonCode(Axp1Error.TIMEOUT));
+        assertEquals(Axp1DistccChannelFactory.AXP1_DATA_TIMEOUT,
+                Axp1DistccChannelFactory.dataPlaneReasonCode(Axp1Error.TIMEOUT));
+        // Every other code keeps its meaning in both phases.
+        for (Axp1Error error : Axp1Error.values()) {
+            if (error != Axp1Error.TIMEOUT) {
+                assertEquals("phase-independent code drifted: " + error,
+                        Axp1DistccChannelFactory.reasonCode(error),
+                        Axp1DistccChannelFactory.dataPlaneReasonCode(error));
+            }
+        }
     }
 
     private static Thread guest(

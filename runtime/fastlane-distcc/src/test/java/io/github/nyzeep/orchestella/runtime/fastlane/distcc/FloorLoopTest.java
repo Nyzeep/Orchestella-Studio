@@ -34,7 +34,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.After;
 import org.junit.BeforeClass;
-import org.junit.Ignore;
 import org.junit.Test;
 
 /**
@@ -76,6 +75,10 @@ public final class FloorLoopTest {
     /** Payload-side per-frame blocking read, mirroring {@code frame_timeout_ms}. */
     private static final int PAYLOAD_FRAME_TIMEOUT_MS = 800;
 
+    /** The bytes the stub payload answers with; length is part of the contract. */
+    private static final byte[] STUB_RESPONSE =
+            "DOTO00000010".getBytes(StandardCharsets.US_ASCII);
+
     private static final List<String> LINES = new ArrayList<>();
     private static final Path REPORT_DIR = Path.of("build", "floor-loop");
     private static final String REPORT_FILE = "floor-loop-report.txt";
@@ -108,7 +111,7 @@ public final class FloorLoopTest {
         byte[] request = distccRequest(2048);
         byte[] response = "DOTO00000010".getBytes(StandardCharsets.US_ASCII);
 
-        try (Harness harness = harness(true, true, 0L, 5_000)) {
+        try (Harness harness = harness(true, true, 0L, 5_000, false)) {
             ClientRun run = harness.client.exchange(request, true, 8_000L);
             assertArrayEquals("the response bytes must arrive unchanged", response, run.response);
             assertTrue("d0a: client never saw EOF", run.eofNanos > 0);
@@ -128,7 +131,7 @@ public final class FloorLoopTest {
     public void d0bPeerWithoutEofCostsTheBridgeIdleTimeout() throws Exception {
         byte[] request = distccRequest(2048);
 
-        try (Harness harness = harness(true, false, 0L, IDLE_TIMEOUT_MS)) {
+        try (Harness harness = harness(true, false, 0L, IDLE_TIMEOUT_MS, false)) {
             ClientRun run = harness.client.exchange(request, true, 12_000L);
             assertTrue("d0b: the response bytes never reached the client", run.response.length > 0);
             assertTrue("d0b: client never observed the bridge closing", run.eofNanos > 0);
@@ -148,7 +151,7 @@ public final class FloorLoopTest {
     public void d0cSilentPeerCostsOnlyTheBridgeIdleTimeout() throws Exception {
         byte[] request = distccRequest(2048);
 
-        try (Harness harness = harness(false, false, 0L, IDLE_TIMEOUT_MS)) {
+        try (Harness harness = harness(false, false, 0L, IDLE_TIMEOUT_MS, false)) {
             ClientRun run = harness.client.exchange(request, true, 12_000L);
             long waitedMs = millis(run.eofNanos - run.requestSentNanos);
             harness.awaitStats(2_000L);
@@ -167,9 +170,9 @@ public final class FloorLoopTest {
     /**
      * The shape the real client actually has. distcc ends a request with the
      * {@code DOTI} length prefix and then reads the response on the same socket;
-     * it never calls {@code shutdown(SHUT_WR)}. This case records what the bridge
-     * does with that shape today — every request byte is forwarded, but the
-     * payload never learns the request ended.
+     * it never calls {@code shutdown(SHUT_WR)}. After PVM-10 the payload decides
+     * the request is over from that length prefix alone, so the answer arrives
+     * without any end-of-stream signal ever crossing the bridge.
      */
     @Test(timeout = 20_000)
     public void d0dRequestWithoutHalfCloseNeverReachesThePayload() throws Exception {
@@ -177,57 +180,70 @@ public final class FloorLoopTest {
 
         assertEquals("d0d: the bridge must forward every request byte",
                 shape.requestBytes, shape.payloadBytesReceived);
-        assertTrue("d0d: the payload must not see an end-of-request it was never sent",
+        assertTrue("d0d: the request must self-delimit at the DOTI body",
+                shape.payloadRequestComplete);
+        assertTrue("d0d: no end-of-stream signal exists on this shape",
                 !shape.payloadSawEof);
-        assertTrue("d0d: the payload must fall through to its frame timeout",
-                shape.payloadTimedOut);
-        assertEquals("d0d: a timed-out request must produce no distcc bytes at all",
-                0, shape.clientBytes);
+        assertTrue("d0d: the payload must not fall through to its frame timeout",
+                !shape.payloadTimedOut);
+        assertTrue("d0d: the payload's answer must reach the client",
+                shape.clientBytes > 0);
+        assertEquals("d0d: the bridge must not record an answered job as a failure",
+                DistccTcpVsockBridge.Outcome.COMPLETED.name(), shape.bridgeOutcome);
     }
 
     /**
-     * The same shape, asserted the way it must behave after PVM-10. Kept
-     * disabled on purpose: this branch is a diagnosis, and a red suite would
-     * block every other ticket. Enable it once end-of-request no longer depends
-     * on a client half-close; it is the DV-PVM-03 regression test.
+     * DV-PVM-03's regression test, enabled by PVM-10. The payload now answers
+     * from the {@code DOTI} length prefix, so a client that never half-closes
+     * still gets the whole response, and the bridge still finishes the
+     * connection normally instead of blaming the channel.
      */
     @Test(timeout = 20_000)
-    @Ignore("PVM-10: enable when AXP1 end-of-request no longer depends on TCP half-close")
     public void pvm10RegressionRequestWithoutHalfCloseMustReachThePayload() throws Exception {
         Shape shape = runDistccShapedClient();
-        assertTrue("the payload never saw the end of the request without a client half-close",
-                shape.payloadSawEof);
+        assertTrue("the payload never decided the request ended without a client half-close",
+                shape.payloadRequestComplete);
         assertTrue("the payload must answer without waiting for its frame timeout",
-                shape.clientBytes > 0);
+                !shape.payloadTimedOut);
+        assertEquals("the client must receive the payload's response byte for byte",
+                STUB_RESPONSE.length, shape.clientBytes);
+        assertEquals("the bridge must not record an answered job as a failure",
+                DistccTcpVsockBridge.Outcome.COMPLETED.name(), shape.bridgeOutcome);
     }
 
     private Shape runDistccShapedClient() throws Exception {
         byte[] request = distccRequest(2048);
-        try (Harness harness = harness(true, true, 0L, 8_000)) {
+        try (Harness harness = harness(true, true, 0L, 8_000, true)) {
             ClientRun run = harness.client.exchange(request, false, 6_000L);
             harness.awaitPayload(4_000L);
             harness.awaitStats(2_000L);
-            record("d0d", "half_close=no payload_saw_eof=" + harness.payload.sawEof.get()
+            record("d0d", "half_close=no payload_request_complete="
+                    + harness.payload.requestComplete.get()
+                    + " payload_saw_eof=" + harness.payload.sawEof.get()
                     + " payload_bytes=" + harness.payload.bytesIn.get()
                     + " payload_timed_out=" + harness.payload.timedOut.get()
                     + " client_bytes=" + run.response.length
                     + " outcome=" + harness.statsOutcome());
             return new Shape(request.length, harness.payload.bytesIn.get(),
-                    harness.payload.sawEof.get(), harness.payload.timedOut.get(),
-                    run.response.length);
+                    harness.payload.requestComplete.get(), harness.payload.sawEof.get(),
+                    harness.payload.timedOut.get(), run.response.length,
+                    harness.outcomeName());
         }
     }
 
-    private record Shape(int requestBytes, int payloadBytesReceived, boolean payloadSawEof,
-            boolean payloadTimedOut, int clientBytes) {}
+    private record Shape(int requestBytes, int payloadBytesReceived,
+            boolean payloadRequestComplete, boolean payloadSawEof, boolean payloadTimedOut,
+            int clientBytes, String bridgeOutcome) {}
 
     // ---------------------------------------------------------------- harness
 
     private Harness harness(boolean answer, boolean sendEof, long delayBeforeAnswerMs,
-            int idleTimeoutMs) throws Exception {
+            int idleTimeoutMs, boolean closeTransportAfterAnswer) throws Exception {
         Duplex duplex = new Duplex();
         open.add(duplex);
-        StubPayload payload = new StubPayload(duplex, answer, sendEof, delayBeforeAnswerMs);
+        StubPayload payload =
+                new StubPayload(duplex, answer, sendEof, delayBeforeAnswerMs,
+                        closeTransportAfterAnswer);
         payload.start();
         open.add(payload);
 
@@ -260,13 +276,16 @@ public final class FloorLoopTest {
 
     /** A v1 distcc request: DIST + ARGC + ARGV + DOTI with a length prefix. */
     private static byte[] distccRequest(int sourceBytes) {
+        // Every ARGV length must equal its body: the payload self-delimits by
+        // these numbers, so a fixture that lies (this one said 7 for "out.o")
+        // is a malformed request, not a shortcut.
         String header = "DIST00000001"
                 + "ARGC00000005"
                 + "ARGV00000005clang"
                 + "ARGV00000002-c"
                 + "ARGV00000004test"
                 + "ARGV00000002-o"
-                + "ARGV00000007out.o";
+                + "ARGV00000005out.o";
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         byte[] head = header.getBytes(StandardCharsets.US_ASCII);
         out.writeBytes(head);
@@ -308,7 +327,13 @@ public final class FloorLoopTest {
             AtomicReference<DistccTcpVsockBridge.ConnectionStats> stats) implements Closeable {
         String statsOutcome() {
             DistccTcpVsockBridge.ConnectionStats value = stats.get();
-            return value == null ? "none" : value.outcome().name() + "/" + value.durationMillis();
+            return value == null ? "none" : outcomeName() + "/" + value.durationMillis();
+        }
+
+        /** The terminal outcome alone, or "none" if the bridge never reported. */
+        String outcomeName() {
+            DistccTcpVsockBridge.ConnectionStats value = stats.get();
+            return value == null ? "none" : value.outcome().name();
         }
 
         void awaitPayload(long millis) throws InterruptedException {
@@ -382,6 +407,9 @@ public final class FloorLoopTest {
                 }
                 response.write(buffer, 0, read);
             }
+            // distcc closes the socket once it has the object; nothing in the
+            // protocol keeps it open, and the bridge must not need it to.
+            client.close();
             return new ClientRun(response.toByteArray(), connectAt, sentAt, firstByte, eof);
         }
 
@@ -395,8 +423,12 @@ public final class FloorLoopTest {
     }
 
     /**
-     * Stands in for the payload's AXP1 server: accumulate DATA until the EOF
-     * frame, answer, optionally send its own EOF. When no EOF arrives within
+     * Stands in for the payload's AXP1 server. It mirrors the PVM-10 contract
+     * rather than the pre-fix one: the request ends where its {@code DOTI} body
+     * ends, so the answer goes out without waiting for any end-of-stream
+     * signal. An AXP1 EOF frame is not required; when the stub is told to close
+     * its transport after answering, it reproduces the payload's
+     * "answer, then hang up" shape. When no complete request arrives within
      * {@link #PAYLOAD_FRAME_TIMEOUT_MS} it resets with the same code the C++
      * {@code frame_timeout_ms} path uses.
      */
@@ -405,18 +437,21 @@ public final class FloorLoopTest {
         private final boolean answer;
         private final boolean sendEof;
         private final long delayBeforeAnswerMs;
+        private final boolean closeTransportAfterAnswer;
+        private final AtomicBoolean requestComplete = new AtomicBoolean();
         private final AtomicBoolean sawEof = new AtomicBoolean();
         private final AtomicBoolean timedOut = new AtomicBoolean();
         private final AtomicInteger bytesIn = new AtomicInteger();
         private final CountDownLatch finished = new CountDownLatch(1);
 
         private StubPayload(Duplex duplex, boolean answer, boolean sendEof,
-                long delayBeforeAnswerMs) {
+                long delayBeforeAnswerMs, boolean closeTransportAfterAnswer) {
             super("floor-loop-stub-payload");
             this.duplex = duplex;
             this.answer = answer;
             this.sendEof = sendEof;
             this.delayBeforeAnswerMs = delayBeforeAnswerMs;
+            this.closeTransportAfterAnswer = closeTransportAfterAnswer;
             setDaemon(true);
         }
 
@@ -434,7 +469,7 @@ public final class FloorLoopTest {
                         Thread.currentThread().interrupt();
                         return;
                     }
-                    if (!sawEof.get() && !accepted.isClosed()) {
+                    if (!requestComplete.get() && !sawEof.get() && !accepted.isClosed()) {
                         timedOut.set(true);
                         accepted.reset(Axp1Error.TIMEOUT);
                     }
@@ -444,6 +479,7 @@ public final class FloorLoopTest {
 
                 InputStream in = connection.dataInput();
                 byte[] buffer = new byte[8192];
+                ByteArrayOutputStream accumulated = new ByteArrayOutputStream();
                 while (true) {
                     int read = in.read(buffer);
                     if (read < 0) {
@@ -451,6 +487,11 @@ public final class FloorLoopTest {
                         break;
                     }
                     bytesIn.addAndGet(read);
+                    accumulated.write(buffer, 0, read);
+                    if (requestIsWhole(accumulated.toByteArray())) {
+                        requestComplete.set(true);
+                        break;
+                    }
                 }
                 watchdog.interrupt();
                 if (!answer) {
@@ -463,12 +504,17 @@ public final class FloorLoopTest {
                         Thread.currentThread().interrupt();
                     }
                 }
-                byte[] response = "DOTO00000010".getBytes(StandardCharsets.US_ASCII);
                 OutputStream out = connection.dataOutput();
-                out.write(response);
+                out.write(STUB_RESPONSE);
                 out.flush();
                 if (sendEof) {
                     connection.closeWrite();
+                }
+                if (closeTransportAfterAnswer) {
+                    // The payload shuts the transport down as soon as the
+                    // response is written: nothing in the protocol keeps it
+                    // open, and the client must already have its answer.
+                    connection.close();
                 }
             } catch (IOException | RuntimeException expected) {
                 // A reset path or a test teardown: the assertions are on the
@@ -476,6 +522,72 @@ public final class FloorLoopTest {
             } finally {
                 finished.countDown();
             }
+        }
+
+        /**
+         * True when {@code wire} holds a whole {@code DIST / ARGC / ARGV* /
+         * DOTI<len><bytes>} request. This is the same rule the payload now
+         * uses; it is the end-of-request signal, not an end-of-stream one.
+         */
+        private static boolean requestIsWhole(byte[] wire) {
+            int offset = 12;
+            if (wire.length < offset || !tokenIs(wire, 0, "DIST")) {
+                return false;
+            }
+            if (!tokenIs(wire, offset, "ARGC")) {
+                return false;
+            }
+            int argc = hexParameter(wire, offset);
+            if (argc < 0) {
+                return false;
+            }
+            offset += 12;
+            for (int index = 0; index < argc; index++) {
+                if (!tokenIs(wire, offset, "ARGV")) {
+                    return false;
+                }
+                int length = hexParameter(wire, offset);
+                if (length < 0) {
+                    return false;
+                }
+                offset += 12 + length;
+                if (wire.length < offset) {
+                    return false;
+                }
+            }
+            if (!tokenIs(wire, offset, "DOTI")) {
+                return false;
+            }
+            int doti = hexParameter(wire, offset);
+            return doti >= 0 && wire.length >= offset + 12 + doti;
+        }
+
+        private static boolean tokenIs(byte[] wire, int offset, String token) {
+            if (wire.length < offset + 12) {
+                return false;
+            }
+            for (int index = 0; index < 4; index++) {
+                if (wire[offset + index] != (byte) token.charAt(index)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        /** The 4-byte length as an int, or -1 when it is not hex. */
+        private static int hexParameter(byte[] wire, int offset) {
+            long value = 0L;
+            for (int index = offset + 4; index < offset + 12; index++) {
+                int digit = Character.digit(wire[index], 16);
+                if (digit < 0) {
+                    return -1;
+                }
+                value = (value << 4) | digit;
+                if (value > Integer.MAX_VALUE) {
+                    return -1;
+                }
+            }
+            return (int) value;
         }
 
         @Override
