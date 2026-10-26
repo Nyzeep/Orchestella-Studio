@@ -22,8 +22,8 @@ import java.util.concurrent.TimeUnit;
  * <p>The launch is the Fast Lane shape, not the AVF custom-image shape: the
  * payload binary, memory size and compiler identity all come from the
  * manifest, the topology is pinned to {@code ONE_CPU} (the manifest's
- * {@code vcpu_topology} is {@code one_cpu} by contract) and debug is off for
- * production.
+ * {@code vcpu_topology} is {@code one_cpu} by contract) and debug is always
+ * off.
  *
  * <p><strong>Readiness, stated explicitly.</strong> {@code LaneStarter}
  * requires {@code start()} to return without waiting for readiness, and the
@@ -170,7 +170,9 @@ public final class PvmPayloadLaneStarter {
      * class comment). Returns {@link Readiness#READY}
      * only when the lane reports ready while still alive; a dead VM, an
      * exhausted budget or an interrupt is {@link Readiness#LOAD_FAILED}.
-     * Never sleeps longer than the remaining budget.
+     * Never sleeps longer than the remaining budget. Uses the system clock
+     * rather than an injected {@code LaneClock}: this helper serves tools and
+     * drivers, not the coordinator's injectable-clock world.
      */
     public Readiness awaitReady(LaneRuntime lane, long timeoutMs) {
         Objects.requireNonNull(lane, "lane");

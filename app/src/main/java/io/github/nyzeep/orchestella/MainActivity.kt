@@ -1625,6 +1625,25 @@ class MainActivity : AppCompatActivity() {
                         "OrchestellaAccelerator",
                         "backend=${dispatchResult.backend} ${dispatchResult.decisionJson}",
                     )
+                    // PVM-09: the declared compiler identity next to the
+                    // decision. The decision JSON stays a stable contract, so
+                    // this observability lives in the log; the handshake-
+                    // measured version joins when compile work lands in
+                    // DV-PVM-02b. Flag-on only: this read must not happen
+                    // while the lane is off.
+                    val payload = AndroidAcceleratorFactProvider
+                        .readPayloadManifest(applicationContext)
+                    android.util.Log.i(
+                        "OrchestellaAccelerator",
+                        if (payload.isPresent) {
+                            val manifest = payload.get()
+                            "payload-compiler present=true" +
+                                " version=${manifest.compilerVersion()}" +
+                                " triple=${manifest.targetTriple()}"
+                        } else {
+                            "payload-compiler present=false"
+                        },
+                    )
                 }
                 val outcome = dispatchResult.outcome
                 val session = outcome.session
