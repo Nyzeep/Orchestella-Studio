@@ -6,11 +6,14 @@ import static org.junit.Assert.assertTrue;
 
 import android.os.PowerManager;
 import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator;
+import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator.AvfModeFacts;
 import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator.AvfStatus;
 import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator.PermissionState;
+import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator.VmSupport;
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorFacts;
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorImageManifest;
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.BatteryState;
+import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.PvmCompilerManifest;
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.ThermalState;
 import java.util.List;
 import java.util.Optional;
@@ -20,6 +23,22 @@ import org.junit.Test;
 public final class AndroidAcceleratorFactProviderTest {
     private static final Optional<AcceleratorImageManifest> IMAGE =
             Optional.of(AcceleratorImageManifest.of("aarch64-linux-gnu"));
+
+    /** A schema-1 payload manifest, assembled without any hex literal. */
+    private static final String PAYLOAD_JSON = "{"
+            + "\"schema\":1,"
+            + "\"compiler_version\":\"22.1.8\","
+            + "\"target_triple\":\"aarch64-unknown-linux-android\","
+            + "\"vcpu_topology\":\"one_cpu\","
+            + "\"memory_mib\":2048,"
+            + "\"payload_binary\":\"libpvm_compiler_payload.so\","
+            + "\"libs\":[{\"name\":\"libLLVM.so\",\"size\":64700000,\"sha256\":\""
+            + "a".repeat(64)
+            + "\"}]"
+            + "}";
+
+    private static final Optional<PvmCompilerManifest> PAYLOAD =
+            PvmCompilerManifest.parse(PAYLOAD_JSON);
 
     @Test
     public void onlyReadyClaimsNonProtectedSupport() {
@@ -227,6 +246,121 @@ public final class AndroidAcceleratorFactProviderTest {
 
         assertTrue(facts.avfPresent());
         assertFalse(facts.nonProtectedSupported());
+    }
+
+    // PVM-09: the payload compiler facts come from the payload manifest only.
+
+    @Test
+    public void payloadFixtureParses() {
+        assertTrue(PAYLOAD.isPresent());
+        assertEquals("22.1.8", PAYLOAD.orElseThrow().compilerVersion());
+    }
+
+    @Test
+    public void payloadManifestSuppliesPresenceVersionAndTriple() {
+        AcceleratorFacts facts = AndroidAcceleratorFactProvider.fromStatus(
+                AvfStatus.MODE_UNSUPPORTED, IMAGE, true,
+                ThermalState.NOMINAL, BatteryState.OK, PAYLOAD);
+
+        assertTrue(facts.payloadCompilerPresent());
+        assertEquals("22.1.8", facts.payloadCompilerVersion());
+        assertEquals("aarch64-unknown-linux-android", facts.payloadTargetTriple());
+    }
+
+    @Test
+    public void absentPayloadManifestClaimsNoCompiler() {
+        AcceleratorFacts missing = AndroidAcceleratorFactProvider.fromStatus(
+                AvfStatus.MODE_UNSUPPORTED, IMAGE, true,
+                ThermalState.NOMINAL, BatteryState.OK, Optional.empty());
+        AcceleratorFacts nullManifest = AndroidAcceleratorFactProvider.fromStatus(
+                AvfStatus.MODE_UNSUPPORTED, IMAGE, true,
+                ThermalState.NOMINAL, BatteryState.OK, null);
+
+        assertFalse(missing.payloadCompilerPresent());
+        assertEquals("", missing.payloadCompilerVersion());
+        assertEquals("", missing.payloadTargetTriple());
+        assertFalse(nullManifest.payloadCompilerPresent());
+        assertEquals("", nullManifest.payloadCompilerVersion());
+        assertEquals("", nullManifest.payloadTargetTriple());
+    }
+
+    @Test
+    public void malformedOrIncompletePayloadManifestClaimsNoCompiler() {
+        for (String broken : List.of(
+                "{",
+                "not json",
+                "[]",
+                PAYLOAD_JSON.replace("\"compiler_version\":\"22.1.8\",", ""),
+                PAYLOAD_JSON.replace("\"22.1.8\"", "\"   \""),
+                PAYLOAD_JSON.replace("\"aarch64-unknown-linux-android\"", "\" \""))) {
+            AcceleratorFacts facts = AndroidAcceleratorFactProvider.fromStatus(
+                    AvfStatus.MODE_UNSUPPORTED, IMAGE, true,
+                    ThermalState.NOMINAL, BatteryState.OK, PvmCompilerManifest.parse(broken));
+
+            assertFalse(broken, facts.payloadCompilerPresent());
+            assertEquals(broken, "", facts.payloadCompilerVersion());
+            assertEquals(broken, "", facts.payloadTargetTriple());
+        }
+    }
+
+    @Test
+    public void payloadFactsDoNotDecideProtectedVmSupport() {
+        AcceleratorFacts ready = AndroidAcceleratorFactProvider.fromStatus(
+                AvfStatus.READY, IMAGE, true, ThermalState.NOMINAL, BatteryState.OK, PAYLOAD);
+        AcceleratorFacts protectedOnly = AndroidAcceleratorFactProvider.fromStatus(
+                AvfStatus.MODE_UNSUPPORTED, IMAGE, true,
+                ThermalState.NOMINAL, BatteryState.OK, PAYLOAD);
+
+        assertFalse(ready.protectedVmSupported());
+        assertTrue(protectedOnly.protectedVmSupported());
+    }
+
+    @Test
+    public void providerReadsThePayloadManifestSeam() {
+        AndroidAcceleratorFactProvider provider = new AndroidAcceleratorFactProvider(
+                AndroidAcceleratorFactProviderTest::protectedOnlyHostFacts,
+                Optional::empty,
+                () -> true,
+                () -> ThermalState.NOMINAL,
+                () -> BatteryState.OK,
+                () -> PAYLOAD);
+
+        AcceleratorFacts facts = provider.read();
+
+        assertTrue(facts.payloadCompilerPresent());
+        assertEquals("22.1.8", facts.payloadCompilerVersion());
+        assertEquals("aarch64-unknown-linux-android", facts.payloadTargetTriple());
+        assertTrue(facts.protectedVmSupported());
+    }
+
+    @Test
+    public void failingPayloadSourceCollapsesToConservativeFacts() {
+        AndroidAcceleratorFactProvider provider = new AndroidAcceleratorFactProvider(
+                AndroidAcceleratorFactProviderTest::protectedOnlyHostFacts,
+                Optional::empty,
+                () -> true,
+                () -> ThermalState.NOMINAL,
+                () -> BatteryState.OK,
+                () -> {
+                    throw new IllegalStateException("payload manifest read failed");
+                });
+
+        AcceleratorFacts facts = provider.read();
+
+        assertFalse(facts.payloadCompilerPresent());
+        assertEquals("", facts.payloadCompilerVersion());
+        assertEquals("", facts.payloadTargetTriple());
+    }
+
+    /** A platform that answers "protected VMs only", as the payload lane needs. */
+    private static AvfCapabilityEvaluator.AvfHostFacts protectedOnlyHostFacts() {
+        return new AvfCapabilityEvaluator.AvfHostFacts.Builder(
+                33, List.of("arm64-v8a"), "true", true,
+                PermissionState.GRANTED, PermissionState.GRANTED)
+                .modeFacts(new AvfModeFacts(
+                        VmSupport.SUPPORTED, VmSupport.UNSUPPORTED,
+                        "unit-test", "unit-test", 0L, "unit-test"))
+                .build();
     }
 
     private static AcceleratorFacts facts(AvfStatus status) {

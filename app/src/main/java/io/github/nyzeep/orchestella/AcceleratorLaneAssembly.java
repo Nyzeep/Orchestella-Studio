@@ -7,6 +7,7 @@ import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.Acce
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorFacts;
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorMode;
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorPolicy;
+import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.CompileBackend;
 import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneBudget;
 import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneClock;
 import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneEventSink;
@@ -122,6 +123,16 @@ public final class AcceleratorLaneAssembly {
             return decision
                     .map(verdict -> verdict.mode() == AcceleratorMode.QEMU_PLUS_ACCEL)
                     .orElse(false);
+        }
+
+        /**
+         * The backend the verdict selected, or {@link CompileBackend#NONE}
+         * when the lane is off or the decision refused every backend. The
+         * dispatcher reads this to choose which starter to run; it never
+         * re-derives the verdict from the raw facts.
+         */
+        public CompileBackend decisionBackend() {
+            return decision.map(AcceleratorDecision::backend).orElse(CompileBackend.NONE);
         }
 
         /** Empty string while the flag is off; the decision JSON otherwise. */
