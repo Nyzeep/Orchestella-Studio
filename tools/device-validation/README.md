@@ -1,5 +1,25 @@
 # Host preparation for distro smoke
 
+## DV-PVM-02b crossfire driver (`dv_pvm_crossfire.py`)
+
+`dv_pvm_crossfire.py` drives the DV-PVM-02b crossfire path end to end: a real QEMU Alpine guest (the distcc client) reaches the production `DistccTcpVsockBridge` through gvproxy's hostIP mapping (guest `192.168.127.254:5103` → host `127.0.0.1:5103`), and the bridge forwards onto the protected Microdroid compiler payload over vsock. Both lanes live under the production `DualLaneCoordinator`; the `compiler-crossfire` instrumentation launches them and publishes an evidence file (`files/avf-qa/pvm-compiler-<token>.json`) with `await_accelerator_ready`, `gate_ms`, `bridge_port`, `fallback_count`, `terminal_socket` and `instance_id`.
+
+Phases (`--phase`, default `all`):
+
+- `smoke` — `logcat -c`, `am start` the QA app's main activity, then capture the `OrchestellaAccelerator` lines (decision JSON, `payload-compiler present=`, `LANE_*` events). Mode/backend/reasonCode land in the summary; no decision line within `--smoke-deadline-s` records `DECISION_LINE_TIMEOUT`.
+- `crossfire` — run the instrumentation (`qaMode compiler-crossfire`), foreground the QA app once the payload is ready, then open a guest console session on `localabstract:droidlayer-terminal-<instance_id>` via `adb forward tcp:0`: read `/etc/alpine-release`, `apk add distcc clang` (a clang major other than 22 aborts with `GUEST_CLANG_MAJOR_MISMATCH`), inject the fixture (9p downloads share first, console base64 chunks as fallback, path recorded), guest-local reference compile with the same `-O1` as the payload path, distcc compile through the bridge, link+run both objects in the guest, and return both `.o` files by console base64. Equivalence is judged on the host with `tools/compiler-equivalence/compare_objects.py --no-run`. `--repeat N` runs N rounds (fresh token each) and reports P50/min/max of the distcc and gate timings. A guest clang or distcc failure, a missing evidence field or an unconfirmed stop records a fixed failure code.
+- `cleanup` — print the stayon restore, forward removal and guest fixture cleanup command list. The coordinating session owns the actual device operations.
+
+Relationship to `dv_pvm_compiler.py`: the `Adb` wrapper, `build_fixture` (2000 functions, ~92 KB, the 1 MB AXP1 frame budget is refused before a run) and `foreground_qa_app` are imported from it, so there is exactly one definition of each. This driver adds the guest console client and the crossfire orchestration only.
+
+Prerequisites: the QA app and test APK are installed and the payload compiler is baked in (as in DV-PVM-02a); the QA app holds one provisioned, stopped Alpine instance (created via the app UI or coordinator prep) — the instrumentation never creates instances and refuses with `QA_QEMU_INSTANCE_MISSING` otherwise. A gate timeout is the production fallback shape: the evidence carries `fallback_count=1` and `ACCEL_GATE_TIMEOUT_FALLBACK`, and the driver treats it as a failed round.
+
+```powershell
+python tools/device-validation/dv_pvm_crossfire.py --adb '<adb-path>' --serial '<serial>' --qa-package io.github.nyzeep.orchestella.qa.dvpvm --work-dir '<ascii-scratch>' --output '<evidence>/crossfire.json' --log-dir '<evidence>/logs' --phase all --repeat 3
+```
+
+Evidence hygiene matches DV-PVM-02: device serials never reach stdout or the summary; tokens are reduced to SHA-256 and the instance id recorded is the app-local UUID.
+
 ## Terminal keyboard tap regression
 
 With an existing connected terminal in the foreground, `test_terminal_keyboard.py` dismisses the soft keyboard and taps two alternating points in the terminal viewport. It checks the Android IME visibility and verifies that `ModernTerminalView` owns the served input connection. It sends no guest text, changes no keyboard settings and never creates or deletes an instance.
