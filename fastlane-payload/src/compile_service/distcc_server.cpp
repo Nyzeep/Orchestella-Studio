@@ -1,6 +1,7 @@
 #include "distcc_server.h"
 
 #include <chrono>
+#include <cstdio>
 #include <cstring>
 #include <thread>
 
@@ -323,6 +324,17 @@ DistccResponse run_distcc_job(const DistccRequest& request,
         response.stat = stat_for_status(JobStatus::kArgvRejected);
         response.serr = decision.failure_code + "\n";
         return response;
+    }
+
+    if (!decision.declared_target.empty()) {
+        // The client asked for a triple this payload did not compile for, and
+        // the job is going ahead anyway on the configured one. Nothing on the
+        // distcc wire can carry that (DONE/STAT/SERR/SOUT/DOTO are the whole
+        // vocabulary and SERR is the client's warning channel), so it goes to
+        // the payload log. Word-shaped by construction in argv_policy, so it
+        // cannot forge a second line.
+        std::fprintf(stderr, "PVM_CSDL target_advisory declared=%s configured=%s\n",
+                     decision.declared_target.c_str(), policy.target_triple.c_str());
     }
 
     if (request.doti.size() > limits.max_input_bytes) {

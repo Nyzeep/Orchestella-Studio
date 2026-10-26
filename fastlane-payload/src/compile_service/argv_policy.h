@@ -53,7 +53,12 @@ enum class ArgvClass : int {
 const char* argv_class_name(ArgvClass rejection);
 
 struct ArgvPolicyConfig {
-    /** Exact triple the payload was built for; `--target` must match it. */
+    /**
+     * Triple the payload was built for. The engine always emits for this
+     * value; a client's declaration is checked against its *architecture*
+     * only, because distcc injects the guest's native triple, which cannot
+     * be the Android one. Empty means no declaration is accepted at all.
+     */
     std::string target_triple;
 };
 
@@ -65,6 +70,15 @@ struct ArgvDecision {
     std::vector<std::string> flags;
     /** "c" or "c++"; the engine compiles the .i as already preprocessed. */
     std::string language = "c";
+    /**
+     * A triple the client declared that is not the configured one. Advisory
+     * only: the engine still emits for ArgvPolicyConfig::target_triple, so
+     * this is the record that the two disagreed (a request built for
+     * aarch64-alpine-linux-musl is answered with Android code). Empty when
+     * the client declared nothing or agreed exactly. Word-shaped by
+     * construction, so it is safe to log.
+     */
+    std::string declared_target;
 };
 
 /**
