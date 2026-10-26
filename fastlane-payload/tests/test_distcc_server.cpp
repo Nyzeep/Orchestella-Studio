@@ -187,12 +187,14 @@ FL_TEST(distcc_server_rejects_protocol_defects) {
         FL_CHECK(parse_distcc_request(wire, limits).status ==
                  DistccParseStatus::kProtocol);
     }
-    // Truncated header.
+    // Truncated header: before PVM-10 this was classified as a protocol
+    // defect, which is exactly the conflation that made the payload wait for a
+    // client half-close. "Not enough bytes yet" is not "wrong bytes".
     {
         std::vector<uint8_t> wire = golden_request();
         wire.resize(10);
         FL_CHECK(parse_distcc_request(wire, limits).status ==
-                 DistccParseStatus::kProtocol);
+                 DistccParseStatus::kIncomplete);
     }
     // Trailing byte after DOTI: the request ends with the DOTI body.
     {
@@ -232,6 +234,62 @@ FL_TEST(distcc_server_rejects_oversized_requests) {
         FL_CHECK(parse_distcc_request(golden_request(), limits).status ==
                  DistccParseStatus::kTooLarge);
         limits.max_input_bytes = 32u * 1024u * 1024u;
+    }
+}
+
+FL_TEST(distcc_server_reports_every_proper_prefix_as_incomplete) {
+    // PVM-10: the request stream is fed to this codec one DATA frame at a
+    // time, so every proper prefix must read as "not yet". Walking the cut one
+    // byte at a time is what catches a length-difference heuristic: the header,
+    // the ARGV bodies and the DOTI body all fail at different offsets.
+    const std::vector<uint8_t> wire = golden_request();
+    const ServerLimits limits;
+    for (size_t cut = 0; cut < wire.size(); ++cut) {
+        const std::vector<uint8_t> prefix(wire.begin(), wire.begin() + cut);
+        const fl::pvm::DistccParseResult parsed = parse_distcc_request(prefix, limits);
+        if (parsed.status != DistccParseStatus::kIncomplete) {
+            ::fl::test::fail(__FILE__, __LINE__,
+                             "prefix length " + std::to_string(cut) +
+                                 " is not kIncomplete (status=" +
+                                 std::to_string(static_cast<int>(parsed.status)) + ")");
+        }
+    }
+    FL_CHECK(parse_distcc_request(wire, limits).status == DistccParseStatus::kOk);
+}
+
+FL_TEST(distcc_server_keeps_trailing_bytes_and_bad_tokens_as_protocol_errors) {
+    const ServerLimits limits;
+    // One byte past the DOTI body can never become a valid request.
+    {
+        std::vector<uint8_t> wire = golden_request();
+        wire.push_back(0x00);
+        FL_CHECK(parse_distcc_request(wire, limits).status == DistccParseStatus::kProtocol);
+    }
+    // DIST is whole but its version is not 1: no later byte repairs that, so
+    // the caller is allowed to answer with a reset immediately.
+    {
+        std::vector<uint8_t> wire = golden_request();
+        wire[11] = '2';
+        const fl::pvm::DistccParseResult parsed = parse_distcc_request(wire, limits);
+        FL_CHECK(parsed.status == DistccParseStatus::kProtocol);
+        FL_CHECK(parsed.prefix_recognised);
+    }
+    // A token order defect after ARGC was read is equally final.
+    {
+        std::vector<uint8_t> wire = golden_request();
+        std::memcpy(wire.data() + 12 + 12, "ARGX00000003", 12);
+        const fl::pvm::DistccParseResult parsed = parse_distcc_request(wire, limits);
+        FL_CHECK(parsed.status == DistccParseStatus::kProtocol);
+        FL_CHECK(parsed.prefix_recognised);
+    }
+    // Junk before any token: still a protocol error, but not committed -- the
+    // AXP1 layer keeps draining so an oversized request still earns
+    // JOB_TOO_LARGE instead of a reset.
+    {
+        const std::vector<uint8_t> wire(24, 'x');
+        const fl::pvm::DistccParseResult parsed = parse_distcc_request(wire, limits);
+        FL_CHECK(parsed.status == DistccParseStatus::kProtocol);
+        FL_CHECK(!parsed.prefix_recognised);
     }
 }
 

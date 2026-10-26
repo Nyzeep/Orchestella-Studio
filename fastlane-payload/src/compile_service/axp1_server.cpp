@@ -375,18 +375,34 @@ WireError axp1_serve_connection(Axp1Transport* transport,
         return WireError::kClosed;
     }
 
-    // --- Data plane: accumulate the distcc request until EOF. ---
+    // --- Data plane: the request self-delimits at its DOTI body. ---
+    //
+    // PVM-10: end-of-request used to mean "the peer sent an EOF frame", which
+    // meant "the TCP client half-closed". Real distcc never half-closes: it
+    // writes DIST/ARGC/ARGV*/DOTI<len><bytes> and then reads the answer on the
+    // same socket (upstream doc/protocol-1.txt: "Closing the channel has no
+    // meaning and does not indicate the end of a packet"). So the EOF frame
+    // never came and the payload burned frame_timeout_ms for nothing. The
+    // accumulator now re-parses after every DATA frame and stops as soon as a
+    // whole request is present. An EOF frame is still accepted -- the QA
+    // compile mode sends one -- but it is no longer required.
     transport->set_read_timeout_ms(limits.frame_timeout_ms);
     std::vector<uint8_t> request_wire;
     const size_t ceiling = distcc_request_ceiling(limits);
     bool overflow = false;
     size_t discarded = 0;
     size_t pings = 0;
+    bool saw_eof_frame = false;
+    bool request_ready = false;
+    DistccParseResult parsed_request;
+
     for (;;) {
         const Axp1ReadStatus status =
             axp1_read_frame(transport, frame_ceiling, &frame);
         if (status == Axp1ReadStatus::kEof || status == Axp1ReadStatus::kClosed) {
-            return WireError::kClosed;  // request never completed
+            // The transport is gone. What is buffered decides the outcome: a
+            // complete request still earns an answer, a partial one does not.
+            break;
         }
         if (status == Axp1ReadStatus::kTimeout) {
             send_rst(transport, WireError::kTimeout);
@@ -399,6 +415,7 @@ WireError axp1_serve_connection(Axp1Transport* transport,
             return error;
         }
         if (frame.type == kAxp1TypeEof) {
+            saw_eof_frame = true;
             break;
         }
         if (frame.type == kAxp1TypeData) {
@@ -423,6 +440,30 @@ WireError axp1_serve_connection(Axp1Transport* transport,
             }
             request_wire.insert(request_wire.end(), frame.payload.begin(),
                                 frame.payload.end());
+
+            parsed_request = parse_distcc_request(request_wire, limits);
+            if (parsed_request.status == DistccParseStatus::kOk) {
+                request_ready = true;
+                break;  // compile now; no EOF frame is coming
+            }
+            if (parsed_request.status == DistccParseStatus::kTooLarge) {
+                // A declared length already breaks a ceiling. Answer only
+                // after the peer finishes writing, exactly like the overflow
+                // path above, or the client sees a reset mid-request.
+                overflow = true;
+                request_wire.clear();
+                request_wire.shrink_to_fit();
+                continue;
+            }
+            if (parsed_request.status == DistccParseStatus::kProtocol &&
+                parsed_request.prefix_recognised) {
+                // Recognised tokens followed by a defect no later byte can
+                // repair. distccd drops the connection with no bytes at all.
+                send_rst(transport, WireError::kProtocolError);
+                return WireError::kProtocolError;
+            }
+            // kIncomplete, or junk before the first token: the ceiling and the
+            // frame deadline are what bound this, exactly as before.
             continue;
         }
         if (frame.type == kAxp1TypePing) {
@@ -444,26 +485,32 @@ WireError axp1_serve_connection(Axp1Transport* transport,
         return WireError::kProtocolError;
     }
 
-    // --- Compile and answer. ---
+    // --- Decide what the buffered bytes say, then compile and answer. ---
+    if (!overflow && !request_ready) {
+        parsed_request = parse_distcc_request(request_wire, limits);
+        if (parsed_request.status == DistccParseStatus::kIncomplete) {
+            if (!saw_eof_frame) {
+                return WireError::kClosed;  // the peer vanished mid-request
+            }
+            // An EOF frame promises the request is over, so a short body is a
+            // defect rather than a stream still in flight.
+            parsed_request.status = DistccParseStatus::kProtocol;
+        }
+    }
+
     DistccResponse response;
-    if (overflow) {
+    if (overflow || (!request_ready &&
+                     parsed_request.status == DistccParseStatus::kTooLarge)) {
         response.stat = stat_for_status(JobStatus::kJobTooLarge);
         response.serr = "JOB_TOO_LARGE\n";
+    } else if (!request_ready &&
+               parsed_request.status == DistccParseStatus::kProtocol) {
+        // distccd drops the connection with no bytes at all; the client
+        // then reports a protocol error and falls back locally.
+        send_rst(transport, WireError::kProtocolError);
+        return WireError::kProtocolError;
     } else {
-        const DistccParseResult parsed_request =
-            parse_distcc_request(request_wire, limits);
-        if (parsed_request.status == DistccParseStatus::kProtocol) {
-            // distccd drops the connection with no bytes at all; the client
-            // then reports a protocol error and falls back locally.
-            send_rst(transport, WireError::kProtocolError);
-            return WireError::kProtocolError;
-        }
-        if (parsed_request.status == DistccParseStatus::kTooLarge) {
-            response.stat = stat_for_status(JobStatus::kJobTooLarge);
-            response.serr = "JOB_TOO_LARGE\n";
-        } else {
-            response = run_distcc_job(parsed_request.request, policy, limits, engine);
-        }
+        response = run_distcc_job(parsed_request.request, policy, limits, engine);
     }
 
     const std::vector<uint8_t> response_wire = encode_distcc_response(response);

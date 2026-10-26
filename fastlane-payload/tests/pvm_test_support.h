@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -15,6 +16,7 @@
 #include <map>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "axp1_server.h"
@@ -113,10 +115,24 @@ public:
     /** Number of reads that report a deadline instead of EOF. */
     int timeouts_remaining = 0;
 
+    /**
+     * When true, an exhausted queue behaves like a live socket whose peer has
+     * gone quiet: it blocks for `quiet_ms` and then reports the read deadline
+     * (-2) instead of end-of-stream. The real distcc client does exactly this
+     * -- it writes the request, never calls shutdown(SHUT_WR), and waits for
+     * the response on the same socket.
+     */
+    bool quiet_instead_of_eof = false;
+    uint32_t quiet_ms = 0;
+
     long read(uint8_t* buffer, size_t size) override {
         if (position_ >= inbound_.size()) {
             if (timeouts_remaining > 0) {
                 --timeouts_remaining;
+                return -2;
+            }
+            if (quiet_instead_of_eof) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(quiet_ms));
                 return -2;
             }
             return 0;

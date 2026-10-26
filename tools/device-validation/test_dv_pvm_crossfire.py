@@ -172,5 +172,115 @@ class SummarizeSegmentsTest(unittest.TestCase):
         self.assertEqual(1_000, summary["ledger"]["1"]["local_gap_ms"])
 
 
+class RemoteCompileVerdictTest(unittest.TestCase):
+    """The verdict that replaced `distcc_remote_seen`.
+
+    The old metric was `"remote" in text.lower()`, and the local-fallback
+    warning contains that word, so every round looked remote. These cases pin
+    the replacement to the bridge's own record.
+    """
+
+    @staticmethod
+    def evidence(outcome="COMPLETED", failure="NONE", bytes_in=2672,
+                 bytes_out=1024):
+        return {"connections": [{
+            "outcome": outcome,
+            "failure_code": failure,
+            "bytes_in": bytes_in,
+            "bytes_out": bytes_out,
+            "duration_ms": 1050,
+        }]}
+
+    def test_a_completed_connection_with_a_response_is_remote(self):
+        verdict = dv_pvm_crossfire.remote_compile_verdict(
+            self.evidence(), "distcc[1] (dcc_scan_args) ...", 0)
+        self.assertTrue(verdict["verdict"])
+        self.assertEqual("REMOTE", verdict["reason"])
+        self.assertEqual(2672, verdict["bytes_in"])
+        self.assertEqual(1024, verdict["bytes_out"])
+        self.assertFalse(verdict["truncated"])
+
+    def test_local_fallback_is_not_remote_even_though_the_log_says_remote(self):
+        # Verbatim shape of distcc's fallback warning: it contains "remote",
+        # which is why the old substring test could never fail.
+        text = ("distcc[4242] (dcc_note_state) ERROR: remote compilation of "
+                "'/root/fixture.c' failed, retrying locally")
+        verdict = dv_pvm_crossfire.remote_compile_verdict(
+            self.evidence(bytes_out=0), text, 0)
+        self.assertFalse(verdict["verdict"])
+        self.assertEqual("LOCAL_FALLBACK", verdict["reason"])
+        self.assertTrue(verdict["local_fallback"])
+        # A refused job is not a truncated response; the two need different fixes.
+        self.assertFalse(verdict["truncated"])
+
+    def test_a_payload_rejection_names_its_code(self):
+        # distcc echoes the server's SERR, so the fixed code is recoverable
+        # without pulling the raw device JSON.
+        text = ("distcc[7] (dcc_r_bulk) ERROR: remote compilation of "
+                "'/root/fixture.c' failed, retrying locally\n"
+                "ARGV_REJECTED:UNKNOWN_FLAG")
+        verdict = dv_pvm_crossfire.remote_compile_verdict(
+            self.evidence(bytes_out=87, failure="NONE"), text, 0)
+        self.assertFalse(verdict["verdict"])
+        self.assertEqual("PAYLOAD_REJECTED", verdict["reason"])
+        self.assertEqual("ARGV_REJECTED:UNKNOWN_FLAG", verdict["payload_code"])
+
+    def test_a_real_truncation_is_reported_as_one(self):
+        verdict = dv_pvm_crossfire.remote_compile_verdict(
+            self.evidence(bytes_out=0), "ERROR: exit code 108 (EXIT_TRUNCATED)", 0)
+        self.assertFalse(verdict["verdict"])
+        self.assertEqual("TRUNCATED", verdict["reason"])
+        self.assertTrue(verdict["truncated"])
+
+    def test_a_remote_compile_error_is_not_a_channel_problem(self):
+        verdict = dv_pvm_crossfire.remote_compile_verdict(
+            self.evidence(), "COMPILE_ERROR", 1)
+        self.assertFalse(verdict["verdict"])
+        self.assertEqual("COMPILE_ERROR", verdict["reason"])
+
+    def test_an_answered_connection_that_did_not_complete_is_a_failure(self):
+        verdict = dv_pvm_crossfire.remote_compile_verdict(
+            self.evidence(outcome="CHANNEL_FAILED",
+                          failure="AXP1_DATA_TIMEOUT"), "", 0)
+        self.assertFalse(verdict["verdict"])
+        self.assertEqual("CHANNEL_FAILED", verdict["reason"])
+        self.assertEqual("AXP1_DATA_TIMEOUT", verdict["failure_code"])
+
+    def test_a_response_too_short_to_hold_a_doto_is_not_a_response(self):
+        verdict = dv_pvm_crossfire.remote_compile_verdict(
+            self.evidence(bytes_out=dv_pvm_crossfire.MIN_DISTCC_RESPONSE_BYTES - 1),
+            "", 0)
+        self.assertFalse(verdict["verdict"])
+        self.assertEqual("NO_RESPONSE", verdict["reason"])
+
+    def test_missing_evidence_is_unknown_not_failed(self):
+        # No array at all: the driver must not claim it proved anything.
+        verdict = dv_pvm_crossfire.remote_compile_verdict({}, "", 0)
+        self.assertIsNone(verdict["verdict"])
+        self.assertEqual("NO_CONNECTION", verdict["reason"])
+        self.assertIsNone(verdict["bytes_out"])
+
+    def test_a_round_without_a_distcc_exit_status_is_unknown(self):
+        verdict = dv_pvm_crossfire.remote_compile_verdict(self.evidence(), "", None)
+        self.assertIsNone(verdict["verdict"])
+        self.assertEqual("NO_DISTCC_RC", verdict["reason"])
+
+    def test_a_nonzero_distcc_exit_is_a_failure(self):
+        verdict = dv_pvm_crossfire.remote_compile_verdict(self.evidence(), "", 1)
+        self.assertFalse(verdict["verdict"])
+        self.assertEqual("DISTCC_FAILED", verdict["reason"])
+
+    def test_the_last_connection_is_the_one_that_counts(self):
+        evidence = {"connections": [
+            {"outcome": "LIMIT_REJECTED", "failure_code": "NONE",
+             "bytes_in": 0, "bytes_out": 0, "duration_ms": 1},
+            {"outcome": "COMPLETED", "failure_code": "NONE",
+             "bytes_in": 2672, "bytes_out": 1024, "duration_ms": 1050},
+        ]}
+        verdict = dv_pvm_crossfire.remote_compile_verdict(evidence, "", 0)
+        self.assertTrue(verdict["verdict"])
+        self.assertEqual(1024, verdict["bytes_out"])
+
+
 if __name__ == "__main__":
     unittest.main()
