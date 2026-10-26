@@ -10,43 +10,79 @@ namespace {
 
 constexpr size_t kPacketHeaderBytes = 12;  // token(4) + hex(8)
 
-bool read_header(const std::vector<uint8_t>& wire, size_t offset,
-                 const char* expect_token, uint32_t* parameter, size_t* next) {
-    if (offset + kPacketHeaderBytes > wire.size()) {
-        return false;
+/** Outcome of reading one token header. */
+enum class HeaderStatus : int {
+    kOk = 0,
+    kIncomplete,  // a valid prefix; more bytes could still finish it
+    kProtocol,    // already contradicted by the bytes that are present
+};
+
+bool is_hex_digit(uint8_t digit) {
+    return (digit >= '0' && digit <= '9') || (digit >= 'a' && digit <= 'f') ||
+           (digit >= 'A' && digit <= 'F');
+}
+
+uint32_t hex_nibble(uint8_t digit) {
+    if (digit >= '0' && digit <= '9') {
+        return static_cast<uint32_t>(digit - '0');
     }
-    if (std::memcmp(wire.data() + offset, expect_token, 4) != 0) {
-        return false;
+    if (digit >= 'a' && digit <= 'f') {
+        return static_cast<uint32_t>(digit - 'a' + 10);
+    }
+    return static_cast<uint32_t>(digit - 'A' + 10);
+}
+
+/**
+ * Reads the 12-byte token header at `offset`.
+ *
+ * The caller feeds this a growing buffer, so "not enough bytes" and "wrong
+ * bytes" must be different answers (PVM-10): only the second one may end a
+ * connection. Validity is checked over the bytes actually present, so garbage
+ * still fails on the first frame instead of waiting for a deadline.
+ */
+HeaderStatus read_header(const std::vector<uint8_t>& wire, size_t offset,
+                         const char* expect_token, uint32_t* parameter, size_t* next) {
+    const size_t available = offset >= wire.size() ? 0 : wire.size() - offset;
+    const size_t token_bytes = available < 4 ? available : 4;
+    if (token_bytes != 0 &&
+        std::memcmp(wire.data() + offset, expect_token, token_bytes) != 0) {
+        return HeaderStatus::kProtocol;
+    }
+    for (size_t index = 4; index < kPacketHeaderBytes && index < available; ++index) {
+        if (!is_hex_digit(wire[offset + index])) {
+            return HeaderStatus::kProtocol;
+        }
+    }
+    if (available < kPacketHeaderBytes) {
+        return HeaderStatus::kIncomplete;
     }
     uint32_t value = 0;
     for (size_t index = 4; index < kPacketHeaderBytes; ++index) {
-        const uint8_t digit = wire[offset + index];
-        uint32_t nibble;
-        if (digit >= '0' && digit <= '9') {
-            nibble = static_cast<uint32_t>(digit - '0');
-        } else if (digit >= 'a' && digit <= 'f') {
-            nibble = static_cast<uint32_t>(digit - 'a' + 10);
-        } else if (digit >= 'A' && digit <= 'F') {
-            nibble = static_cast<uint32_t>(digit - 'A' + 10);
-        } else {
-            return false;
-        }
-        value = (value << 4) | nibble;
+        value = (value << 4) | hex_nibble(wire[offset + index]);
     }
     *parameter = value;
     *next = offset + kPacketHeaderBytes;
-    return true;
+    return HeaderStatus::kOk;
 }
 
-DistccParseResult protocol_error() {
+DistccParseResult protocol_error(bool prefix_recognised) {
     DistccParseResult result;
     result.status = DistccParseStatus::kProtocol;
+    result.prefix_recognised = prefix_recognised;
     return result;
 }
 
-DistccParseResult too_large() {
+DistccParseResult too_large(bool prefix_recognised) {
     DistccParseResult result;
     result.status = DistccParseStatus::kTooLarge;
+    result.prefix_recognised = prefix_recognised;
+    return result;
+}
+
+DistccParseResult incomplete(bool prefix_recognised) {
+    DistccParseResult result;
+    result.status = DistccParseStatus::kIncomplete;
+    result.prefix_recognised = prefix_recognised;
     return result;
 }
 
@@ -134,56 +170,92 @@ std::vector<uint8_t> encode_token(const char token[5], uint32_t parameter) {
 DistccParseResult parse_distcc_request(const std::vector<uint8_t>& wire,
                                        const ServerLimits& limits) {
     if (wire.size() > distcc_request_ceiling(limits)) {
-        return too_large();
+        return too_large(false);
     }
 
     size_t offset = 0;
     uint32_t parameter = 0;
+    bool recognised = false;
 
-    if (!read_header(wire, offset, "DIST", &parameter, &offset) || parameter != 1) {
+    switch (read_header(wire, offset, "DIST", &parameter, &offset)) {
+        case HeaderStatus::kIncomplete:
+            return incomplete(recognised);
+        case HeaderStatus::kProtocol:
+            return protocol_error(recognised);
+        case HeaderStatus::kOk:
+            break;
+    }
+    // A whole DIST token was read: this is a distcc stream, so every later
+    // defect is final. Deciding that before the version check matters, because
+    // a v2 client must be refused on the first frame, not after a deadline.
+    recognised = true;
+    if (parameter != 1) {
         // v2/v3 add LZO and server-side cpp; this service speaks v1 only and
         // says so by refusing the stream rather than half-parsing it.
-        return protocol_error();
+        return protocol_error(recognised);
     }
-    if (!read_header(wire, offset, "ARGC", &parameter, &offset)) {
-        return protocol_error();
+
+    switch (read_header(wire, offset, "ARGC", &parameter, &offset)) {
+        case HeaderStatus::kIncomplete:
+            return incomplete(recognised);
+        case HeaderStatus::kProtocol:
+            return protocol_error(recognised);
+        case HeaderStatus::kOk:
+            break;
     }
     if (parameter == 0) {
-        return protocol_error();
+        return protocol_error(recognised);
     }
     if (parameter > limits.max_argv_count) {
-        return too_large();
+        return too_large(recognised);
     }
 
     const uint32_t argc = parameter;
     DistccParseResult result;
     result.status = DistccParseStatus::kOk;
+    result.prefix_recognised = recognised;
     result.request.argv.reserve(argc);
     for (uint32_t index = 0; index < argc; ++index) {
         uint32_t length = 0;
-        if (!read_header(wire, offset, "ARGV", &length, &offset)) {
-            return protocol_error();
+        switch (read_header(wire, offset, "ARGV", &length, &offset)) {
+            case HeaderStatus::kIncomplete:
+                return incomplete(recognised);
+            case HeaderStatus::kProtocol:
+                return protocol_error(recognised);
+            case HeaderStatus::kOk:
+                break;
         }
         if (length > limits.max_argv_bytes) {
-            return too_large();
+            return too_large(recognised);
         }
-        if (offset + length > wire.size()) {
-            return protocol_error();
+        // Compare against the remainder rather than offset + length: a hostile
+        // length near 2^32 would wrap a 32-bit size_t and pass the check.
+        if (length > wire.size() - offset) {
+            return incomplete(recognised);  // body still arriving
         }
         result.request.argv.emplace_back(
             reinterpret_cast<const char*>(wire.data() + offset), length);
         offset += length;
     }
 
-    if (!read_header(wire, offset, "DOTI", &parameter, &offset)) {
-        return protocol_error();
+    switch (read_header(wire, offset, "DOTI", &parameter, &offset)) {
+        case HeaderStatus::kIncomplete:
+            return incomplete(recognised);
+        case HeaderStatus::kProtocol:
+            return protocol_error(recognised);
+        case HeaderStatus::kOk:
+            break;
     }
     if (parameter > limits.max_input_bytes) {
-        return too_large();
+        return too_large(recognised);
     }
-    if (offset + parameter != wire.size()) {
-        // Trailing bytes or truncation: the request stream ends with DOTI.
-        return protocol_error();
+    const size_t remaining = wire.size() - offset;
+    if (parameter > remaining) {
+        return incomplete(recognised);  // .i body still arriving
+    }
+    if (parameter != remaining) {
+        // Trailing bytes: the request stream ends with the DOTI body.
+        return protocol_error(recognised);
     }
     result.request.doti.assign(reinterpret_cast<const char*>(wire.data() + offset),
                                parameter);

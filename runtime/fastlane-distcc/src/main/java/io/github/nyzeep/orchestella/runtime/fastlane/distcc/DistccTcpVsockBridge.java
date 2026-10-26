@@ -2,6 +2,7 @@ package io.github.nyzeep.orchestella.runtime.fastlane.distcc;
 
 import io.github.nyzeep.orchestella.runtime.fastlane.FastLaneChannel;
 import io.github.nyzeep.orchestella.runtime.fastlane.FastLaneException;
+import io.github.nyzeep.orchestella.runtime.fastlane.distcc.axp1.Axp1Error;
 import io.github.nyzeep.orchestella.runtime.fastlane.distcc.axp1.Axp1Exception;
 import java.io.Closeable;
 import java.io.IOException;
@@ -37,10 +38,12 @@ import java.util.concurrent.atomic.AtomicReference;
  *   <li>A connection with no bytes in either direction for
  *       {@code idleTimeoutMs} is closed as {@link Outcome#IDLE_TIMEOUT}.
  *       Zero disables the watchdog.</li>
- *   <li>When the client half-closes its request, the channel output is closed
- *       so the payload's {@code distccd --inetd} sees stdin EOF; the response
- *       is still drained back to the client. The bridge never parses or
- *       rewrites distcc bytes.</li>
+ *   <li>A client that never half-closes is the normal shape, not an error:
+ *       distcc ends a request with the {@code DOTI} length prefix and then
+ *       reads the response on the same socket. When the client does half-close,
+ *       the channel output is closed too; either way the bridge never parses or
+ *       rewrites distcc bytes, and {@link Outcome#COMPLETED} only needs both
+ *       directions to reach their end.</li>
  *   <li>{@link #close()} is idempotent; after it {@link #port()} throws
  *       {@link IllegalStateException} until {@link #start()} binds again.</li>
  * </ul>
@@ -370,6 +373,13 @@ public final class DistccTcpVsockBridge implements Closeable {
         private final AtomicLong bytesToClient = new AtomicLong();
         private final AtomicReference<Outcome> outcome = new AtomicReference<>();
         private final CountDownLatch bothDirectionsClosed = new CountDownLatch(2);
+        /**
+         * Set once the peer finished its response stream. After that, a write
+         * failure on the client->peer direction is the peer hanging up on a
+         * job it already answered, not a broken channel: the payload shuts the
+         * transport down as soon as the response is written.
+         */
+        private volatile boolean peerResponseComplete;
         private volatile FastLaneChannel channel;
         private volatile Thread worker;
 
@@ -400,9 +410,14 @@ public final class DistccTcpVsockBridge implements Closeable {
                 copy(client.getInputStream(), channelOutput, bytesFromClient);
                 closeQuietly(channelOutput);
             } catch (Axp1Exception failure) {
-                finish(Outcome.CHANNEL_FAILED, Axp1DistccChannelFactory.reasonCode(failure.code()));
+                if (!peerAnsweredAndHungUp(failure.code())) {
+                    finish(Outcome.CHANNEL_FAILED,
+                            Axp1DistccChannelFactory.dataPlaneReasonCode(failure.code()));
+                }
             } catch (IOException failure) {
-                finish(Outcome.CHANNEL_FAILED);
+                if (!peerResponseComplete) {
+                    finish(Outcome.CHANNEL_FAILED);
+                }
             } finally {
                 directionClosed();
             }
@@ -411,14 +426,26 @@ public final class DistccTcpVsockBridge implements Closeable {
         private void pumpToClient() {
             try {
                 copy(channel.inputStream(), client.getOutputStream(), bytesToClient);
+                peerResponseComplete = true;
                 shutdownClientOutput();
             } catch (Axp1Exception failure) {
-                finish(Outcome.CHANNEL_FAILED, Axp1DistccChannelFactory.reasonCode(failure.code()));
+                finish(Outcome.CHANNEL_FAILED,
+                        Axp1DistccChannelFactory.dataPlaneReasonCode(failure.code()));
             } catch (IOException failure) {
                 finish(Outcome.CHANNEL_FAILED);
             } finally {
                 directionClosed();
             }
+        }
+
+        /**
+         * A write that fails after the peer already delivered its whole
+         * response is a normal hang-up, not a channel failure. The payload
+         * closes the transport as soon as it has answered, and the client may
+         * still be flushing its last bytes.
+         */
+        private boolean peerAnsweredAndHungUp(Axp1Error code) {
+            return peerResponseComplete && code == Axp1Error.CLOSED;
         }
 
         private void directionClosed() {
