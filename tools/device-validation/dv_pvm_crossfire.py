@@ -90,7 +90,7 @@ DEVICE_FIXTURE_PUSH = "/sdcard/Download/fixture.c"
 MAX_FIXTURE_BYTES = 1_000_000
 GUEST_TRIPLE = "aarch64-unknown-linux-android"
 RC_MARKER_PATTERN = r"QA_CF_RC_{index}=(\d+)"
-B64_CHUNK_BYTES = 32 * 1024
+B64_CHUNK_BYTES = 1024  # tty canonical mode drops input past ~4 KiB per line
 
 
 class GuestConsole:
@@ -138,14 +138,37 @@ class GuestConsole:
             return len(self.text)
 
     def wait_prompt(self, deadline_s):
-        """Wait for an OSC133 B prompt; the provisioned guests emit it."""
+        """Wait for an OSC133 B prompt; fall back to RC-marker probing.
+
+        The baseline provision's package stage can fail (offline mirror),
+        which leaves the guest without the prompt marker while the shell
+        itself is fine. A returned exit-code marker proves the shell, so
+        probe for that on a short cycle alongside the marker watch.
+        """
         started = time.monotonic()
+        next_probe = 0.0
         while time.monotonic() - started < deadline_s:
             if self.error:
                 return False
             if self.PROMPT.search(self.snapshot()):
                 return True
-            time.sleep(0.2)
+            now = time.monotonic()
+            if now >= next_probe:
+                next_probe = now + 10.0
+                offset = self.raw_length()
+                try:
+                    self.connection.sendall(
+                        b'true; printf "\\nQA_CF_PROBE=%s\\n" "$?"\r')
+                except OSError:
+                    return False
+                probe_deadline = time.monotonic() + 8.0
+                while time.monotonic() < probe_deadline:
+                    if self.error:
+                        return False
+                    if re.search(r"QA_CF_PROBE=\d+", self.snapshot(since=offset)):
+                        return True
+                    time.sleep(0.2)
+            time.sleep(0.5)
         return False
 
     def run(self, command, index, timeout_s):
@@ -200,23 +223,31 @@ def parse_clang_major(version_text: str):
 
 
 def push_fixture_via_console(console: GuestConsole, fixture_bytes: bytes,
-                             command_timeout_s: int, next_index) -> dict:
-    """Console base64 fallback: chunked appends, one decode, size check."""
+                             command_timeout_s: int, next_index,
+                             chroot_prefix: str = "") -> dict:
+    """Console base64 fallback: chunked appends, one decode, size check.
+
+    Chunk lines stay far below the tty canonical-mode line limit; the file
+    paths are outer-shell (chroot prefix applied by the caller).
+    """
     encoded = base64.b64encode(fixture_bytes).decode("ascii")
-    console.run(f"rm -f /root/fixture.b64 {GUEST_FIXTURE}", next_index(),
+    b64_path = f"{chroot_prefix}/root/fixture.b64"
+    out_path = f"{chroot_prefix}{GUEST_FIXTURE}"
+    console.run(f"rm -f {b64_path} {out_path}", next_index(),
                 command_timeout_s)
     sent = 0
     for offset in range(0, len(encoded), B64_CHUNK_BYTES):
         chunk = encoded[offset:offset + B64_CHUNK_BYTES]
         rc, _, _ = console.run(
-            f"printf '%s' '{chunk}' >> /root/fixture.b64", next_index(),
+            f"printf '%s' '{chunk}' >> {b64_path}", next_index(),
             command_timeout_s)
         if rc != 0:
-            return {"path": "console-base64", "injected": False, "rc": rc}
+            return {"path": "console-base64", "injected": False, "rc": rc,
+                    "sent": sent}
         sent += len(chunk)
     rc, text, _ = console.run(
-        f"base64 -d /root/fixture.b64 > {GUEST_FIXTURE} && "
-        f"wc -c < {GUEST_FIXTURE}", next_index(), command_timeout_s)
+        f"base64 -d {b64_path} > {out_path} && wc -c < {out_path}",
+        next_index(), command_timeout_s)
     size_ok = rc == 0 and text.strip().splitlines()[-1:] == [str(len(fixture_bytes))]
     return {"path": "console-base64", "injected": size_ok, "rc": rc,
             "chunks": (len(encoded) + B64_CHUNK_BYTES - 1) // B64_CHUNK_BYTES}
@@ -232,6 +263,13 @@ def inject_fixture(adb: Adb, console: GuestConsole, fixture_bytes: bytes,
     the share may appear in later launches.
     """
     outer_fixture = f"{chroot_prefix}{GUEST_FIXTURE}"
+    # A previous round's fixture may already sit in the persistent rootfs at
+    # the exact size: skip the transfer entirely in that case.
+    rc, text, _ = console.run(f"wc -c < {outer_fixture}", next_index(),
+                              command_timeout_s)
+    lines = [line.strip() for line in text.strip().splitlines()]
+    if rc == 0 and lines and lines[-1] == str(len(fixture_bytes)):
+        return {"path": "already-present", "injected": True, "rc": 0}
     console.run(
         "mkdir -p /mnt/downloads && mount -t 9p -o trans=virtio,version=9p2000.L,ro "
         "downloads /mnt/downloads 2>/dev/null || true; cp /mnt/downloads/fixture.c "
@@ -242,7 +280,7 @@ def inject_fixture(adb: Adb, console: GuestConsole, fixture_bytes: bytes,
     if rc == 0 and lines and lines[-1] == str(len(fixture_bytes)):
         return {"path": "9p-downloads", "injected": True, "rc": 0}
     result = push_fixture_via_console(console, fixture_bytes, command_timeout_s,
-                                      next_index)
+                                      next_index, chroot_prefix)
     result["primary_path"] = "9p-downloads"
     return result
 
@@ -368,7 +406,14 @@ def run_smoke(adb: Adb, args, summary: dict) -> int:
 def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
                     fixture_bytes: bytes) -> dict:
     """One full crossfire round: instrument, guest session, equivalence."""
-    token = secrets.token_hex(16)
+    # The AXP1 handshake token MUST equal the accel_token asset baked into
+    # the QA APK: a random token makes the payload reject the bridge's
+    # handshake in milliseconds (CHANNEL_FAILED) and distcc silently falls
+    # back to local compilation, which looks like success but is not.
+    token = (args.token or "").strip()
+    if len(token) != 32 or any(c not in "0123456789abcdef" for c in token):
+        raise RuntimeError("--token must be 32 lowercase hex characters "
+                           "(the accel_token asset baked into --apk build)")
     evidence_name = f"pvm-compiler-{token}.json"
     round_work = work / f"round-{round_index}"
     round_work.mkdir(parents=True, exist_ok=True)
@@ -405,6 +450,10 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
         "-e", "qaReadyDeadlineMs", str(args.payload_ready_deadline_ms),
         "-e", "qaJobDeadlineMs", str(args.job_deadline_ms),
         "-e", "qaJobs", str(instrument_jobs),
+        # Direct-QEMU: the product Session owns the terminal socket for its
+        # lifetime, which starves this driver's console; the direct path
+        # boots the same volume without a console client on the QEMU side.
+        "-e", "qaDirectQemu", "1",
     ]
     if args.instance_id:
         instrument += ["-e", "qaInstanceId", args.instance_id]
@@ -551,11 +600,11 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
             tool(f"printf 'int fixture_entry(void);\\nint main(void) "
                  f"{{ return fixture_entry(); }}\\n' > {GUEST_MAIN_C}"),
             next_index(), args.guest_command_timeout_s)
-        rc, _, _ = console.run(
+        rc, link_text, _ = console.run(
             tool(f"clang -O1 {GUEST_MAIN_C} {GUEST_CROSS_O} -o /root/cross.bin"),
             next_index(), args.guest_command_timeout_s)
         cross_link_rc = rc
-        rc_ref, _, _ = console.run(
+        rc_ref, ref_link_text, _ = console.run(
             tool(f"clang -O1 {GUEST_MAIN_C} {GUEST_REF_O} -o /root/ref.bin"),
             next_index(), args.guest_command_timeout_s)
         _, cross_out, _ = console.run(
@@ -568,6 +617,8 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
         ref_exit = re.search(r"exit=(\d+)", ref_out)
         round_result["link_run"] = {
             "cross_link_rc": cross_link_rc, "ref_link_rc": rc_ref,
+            "cross_link_tail": link_text.strip().splitlines()[-3:],
+            "ref_link_tail": ref_link_text.strip().splitlines()[-3:],
             "cross_exit": cross_exit.group(1) if cross_exit else None,
             "ref_exit": ref_exit.group(1) if ref_exit else None,
             "exit_codes_match": bool(cross_exit and ref_exit
@@ -716,6 +767,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--smoke-deadline-s", type=int, default=180)
     parser.add_argument("--repeat", type=int, default=1,
                         help="crossfire rounds; each round gets a fresh token")
+    parser.add_argument("--token", default=None,
+                        help="32 lowercase hex; must equal the accel_token "
+                             "asset baked into the QA APK (AXP1 handshake)")
     parser.add_argument("--keep-going", action="store_true",
                         help="run every round even after a failure code")
     parser.add_argument("--instance-id", default=None,
