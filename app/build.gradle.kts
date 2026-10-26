@@ -136,7 +136,16 @@ android {
     defaultConfig {
         applicationId = "io.github.nyzeep.orchestella"
         minSdk = 26
-        targetSdk = 36
+        // QA-only escape hatch for the SELinux W^X exec policy: targetSdk >= 29
+        // lands in the untrusted_app_34 domain, which may not execve app-owned
+        // binaries (the QEMU lane's gvproxy/qemu spawns), while the legacy
+        // untrusted_app domain keeps that permission (the Termux approach).
+        // Release/dev/QA-default stay on 36; a QA build may opt down explicitly.
+        targetSdk = if (buildChannel == "qa") {
+            providers.gradleProperty("orchestella.qaTargetSdk").orNull?.trim()?.toIntOrNull() ?: 36
+        } else {
+            36
+        }
         versionCode = 503
         versionName = "0.5.3"
         buildConfigField("boolean", "DEVELOPMENT_PREVIEW", "true")

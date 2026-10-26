@@ -467,6 +467,9 @@ public final class PvmProbeInstrumentation extends Instrumentation {
         }
         // The instance id is an app-local UUID, never a device identifier.
         evidence.put("instance_id", instance.id());
+        // The driver picks the guest package manager from this (no Alpine in
+        // the product catalog; Arch/Debian/etc. land here instead).
+        evidence.put("guest_distro", instance.distro().id());
         // Same socket naming the product launcher derives (QemuInstanceLauncher);
         // the driver forwards it with `adb forward tcp:0 localabstract:<name>`.
         evidence.put("terminal_socket", "droidlayer-terminal-" + instance.id());
@@ -854,9 +857,15 @@ public final class PvmProbeInstrumentation extends Instrumentation {
     }
 
     /**
-     * Finds the provisioned Alpine guest the crossfire run drives. The QA
+     * Finds the provisioned Linux guest the crossfire run drives. The QA
      * environment provisions it before the run (app UI or coordinator prep);
      * the instrumentation never creates instances. An explicit id wins.
+     *
+     * <p>Alpine is preferred (the distro the 02a plan pinned), but the product
+     * catalog (DistroCatalogRegistry) ships no Alpine entry, so any stopped
+     * provisioned guest is accepted and its distro id is published — the
+     * driver installs distcc/clang with the matching package manager and
+     * still hard-checks the clang major against the payload.
      */
     private static InstanceLifecycle.Instance pickQemuInstance(
             Context target, String requestedInstanceId, List<String> notes) {
@@ -875,11 +884,15 @@ public final class PvmProbeInstrumentation extends Instrumentation {
             }
             InstanceLifecycle.Instance recoverable = null;
             for (InstanceLifecycle.Instance candidate : instances) {
-                if (!"alpine".equals(candidate.distro().id())) {
-                    continue;
-                }
+                final boolean alpine = "alpine".equals(candidate.distro().id());
                 if (candidate.state() == InstanceLifecycle.State.STOPPED) {
-                    return candidate;
+                    if (alpine) {
+                        return candidate;
+                    }
+                    if (recoverable == null) {
+                        recoverable = candidate;
+                    }
+                    continue;
                 }
                 // Interrupted/crashed guests are cold-restorable in production;
                 // a CREATED instance is not provisioned and stays out.
@@ -889,7 +902,8 @@ public final class PvmProbeInstrumentation extends Instrumentation {
                 }
             }
             if (recoverable != null) {
-                notes.add("alpine instance state " + recoverable.state().name());
+                notes.add("guest instance distro=" + recoverable.distro().id()
+                        + " state=" + recoverable.state().name());
             }
             return recoverable;
         } catch (Exception storeFailure) {
