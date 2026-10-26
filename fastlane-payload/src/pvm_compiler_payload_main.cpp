@@ -97,6 +97,18 @@ const char* env_string(const char* name) { return ::getenv(name); }
 // contents are therefore the only host->payload channel that exists before the
 // handshake, so device/QA builds drop the token at assets/accel_token (DV-PVM-02).
 // Neither source is ever logged; only the size is reported on failure.
+//
+// PVM-09 decision — what this token is and is not:
+//   * It is a build-time constant shipped inside the APK, so it is NOT a
+//     per-run secret and MUST NOT be treated as a security boundary.
+//   * Access control comes from the platform: only a host process that owns
+//     the VM handle can call connectVsock, and only this app's sandbox can own
+//     that handle. The token adds nothing to that boundary.
+//   * Its remaining job is build-time mis-connection prevention: two builds of
+//     the same package cannot silently bridge into each other's payload.
+//   * Per-run authentication would need a host->payload configuration or
+//     environment channel from the platform (the same class of ask as
+//     execute_no_trans). That is out of scope and deliberately not faked here.
 std::string read_token_from_apk_contents() {
 #if defined(__ANDROID__)
     const char* root = AVmPayload_getApkContentsPath();

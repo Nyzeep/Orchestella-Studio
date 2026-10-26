@@ -53,6 +53,7 @@ import io.github.nyzeep.orchestella.runtime.engineavf.ReflectiveAvfVirtualMachin
 import io.github.nyzeep.orchestella.runtime.engineqemu.RuntimeArtifactManifest
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
 import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneClock
+import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneStartException
 import io.github.nyzeep.orchestella.runtime.instance.SparseDiskResizer
 import io.github.nyzeep.orchestella.runtime.network.FilePortForwardingStore
 import io.github.nyzeep.orchestella.runtime.network.PortConflictDetector
@@ -1573,26 +1574,43 @@ class MainActivity : AppCompatActivity() {
                     BuildConfig.ACCELERATOR_LANE_ENABLED,
                     parameters,
                     { params -> QemuInstanceLauncher(this).launch(params) },
-                    {
-                        AcceleratorVmLauncher(
-                            "accel-" + instance.id(),
-                            filesDir.resolve("accelerator-image").resolve("kernel").toPath(),
-                            filesDir.resolve("accelerator-image").resolve("initrd").toPath(),
-                            filesDir.resolve("accelerator-image").resolve("rootfs.ext4").toPath(),
-                            AcceleratorLaunchDispatcher.ACCEL_REQUEST.ramMiB,
-                        ) {
-                            AcceleratorVmLauncher.engine(
-                                AvfVirtualMachineEngine(
-                                    ReflectiveAvfVirtualMachineApi(
-                                        this, classLoader, AvfHiddenApiExemption::installOnce,
+                    AcceleratorLaunchDispatcher.AccelBackends(
+                        customVm = {
+                            AcceleratorVmLauncher(
+                                "accel-" + instance.id(),
+                                filesDir.resolve("accelerator-image").resolve("kernel").toPath(),
+                                filesDir.resolve("accelerator-image").resolve("initrd").toPath(),
+                                filesDir.resolve("accelerator-image").resolve("rootfs.ext4").toPath(),
+                                AcceleratorLaunchDispatcher.ACCEL_REQUEST.ramMiB,
+                            ) {
+                                AcceleratorVmLauncher.engine(
+                                    AvfVirtualMachineEngine(
+                                        ReflectiveAvfVirtualMachineApi(
+                                            this, classLoader, AvfHiddenApiExemption::installOnce,
+                                        ),
                                     ),
-                                ),
-                            )
-                        }
-                    },
+                                )
+                            }
+                        },
+                        pvmPayload = {
+                            // Built only when the verdict selected PVM_PAYLOAD,
+                            // which already implies the manifest parsed. An
+                            // absent payload at that point is a load failure,
+                            // never a silent QEMU-only run.
+                            PvmPayloadLaneStarter.createIfInstalled(
+                                this,
+                                "accel-pvm-" + instance.id(),
+                                AcceleratorLaunchDispatcher.GUEST_COMPILER_TRIPLE,
+                                AcceleratorLaunchDispatcher.PAYLOAD_READY_TIMEOUT_MS,
+                                AcceleratorLaunchDispatcher.STOP_GRACE_MS,
+                            ).orElseThrow {
+                                LaneStartException(PvmPayloadLaneStarter.PAYLOAD_LOAD_FAILED)
+                            }
+                        },
+                    ),
                     AndroidAcceleratorFactProvider.create(this),
                     { ExecutionSessionRegistry.get(instance.id()) },
-                    "",
+                    AcceleratorLaunchDispatcher.GUEST_COMPILER_TRIPLE,
                     LaneClock.system(),
                     { event ->
                         android.util.Log.i(
@@ -1603,7 +1621,29 @@ class MainActivity : AppCompatActivity() {
                 ) { strategyLauncher.launch(parameters, preferAvf) }
                 acceleratorCoordinator = dispatchResult.coordinator
                 if (dispatchResult.coordinator != null) {
-                    android.util.Log.i("OrchestellaAccelerator", dispatchResult.decisionJson)
+                    android.util.Log.i(
+                        "OrchestellaAccelerator",
+                        "backend=${dispatchResult.backend} ${dispatchResult.decisionJson}",
+                    )
+                    // PVM-09: the declared compiler identity next to the
+                    // decision. The decision JSON stays a stable contract, so
+                    // this observability lives in the log; the handshake-
+                    // measured version joins when compile work lands in
+                    // DV-PVM-02b. Flag-on only: this read must not happen
+                    // while the lane is off.
+                    val payload = AndroidAcceleratorFactProvider
+                        .readPayloadManifest(applicationContext)
+                    android.util.Log.i(
+                        "OrchestellaAccelerator",
+                        if (payload.isPresent) {
+                            val manifest = payload.get()
+                            "payload-compiler present=true" +
+                                " version=${manifest.compilerVersion()}" +
+                                " triple=${manifest.targetTriple()}"
+                        } else {
+                            "payload-compiler present=false"
+                        },
+                    )
                 }
                 val outcome = dispatchResult.outcome
                 val session = outcome.session
