@@ -73,4 +73,26 @@ public final class FastLaneLaunchSpecTest {
                 "fastlane-01", "payload.so", 1024, FastLaneLaunchSpec.CpuTopology.ONE_CPU,
                 1L, FastLaneLaunchSpec.DebugLevel.NONE, 5000, 5001, 5002, 5003, "not-a-hash"));
     }
+
+    /** A payload without an FLN1 toolbox states the absence instead of faking a digest. */
+    @Test
+    public void acceptsEmptyToolboxHash() {
+        FastLaneLaunchSpec spec = new FastLaneLaunchSpec(
+                "fastlane-01", "libpvm_compiler_payload.so", 2048,
+                FastLaneLaunchSpec.CpuTopology.ONE_CPU, 1048576L,
+                FastLaneLaunchSpec.DebugLevel.NONE, 5100, 5101, 5102, 5103, "");
+        assertEquals("", spec.toolboxManifestSha256());
+    }
+
+    @Test
+    public void rejectsToolboxHashOfWrongLengthOrCase() {
+        assertThrows(IllegalArgumentException.class, () -> new FastLaneLaunchSpec(
+                "fastlane-01", "payload.so", 1024, FastLaneLaunchSpec.CpuTopology.ONE_CPU,
+                1L, FastLaneLaunchSpec.DebugLevel.NONE, 5000, 5001, 5002, 5003,
+                "a".repeat(63)));
+        assertThrows(IllegalArgumentException.class, () -> new FastLaneLaunchSpec(
+                "fastlane-01", "payload.so", 1024, FastLaneLaunchSpec.CpuTopology.ONE_CPU,
+                1L, FastLaneLaunchSpec.DebugLevel.NONE, 5000, 5001, 5002, 5003,
+                "A".repeat(64)));
+    }
 }

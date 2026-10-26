@@ -9,7 +9,9 @@ import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.Acce
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorFacts;
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorImageManifest;
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.BatteryState;
+import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.PvmCompilerManifest;
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.ThermalState;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -23,15 +25,17 @@ import java.util.function.Supplier;
  *
  * <p>This class only <em>maps</em>; it owns no capability detection of its own.
  * The AVF verdict comes from {@link AvfHostFactsProbe} plus
- * {@link AvfCapabilityEvaluator}, the compiler identity comes from the
- * accelerator image manifest, and thermal/battery come from the platform
+ * {@link AvfCapabilityEvaluator}, the custom-VM compiler identity comes from
+ * the accelerator image manifest, the protected payload's identity comes from
+ * the payload compiler manifest, and thermal/battery come from the platform
  * services. Every source is a narrow seam so the mapping is unit-testable
  * without Android.
  *
  * <p>Unknown never enables. A source that throws, returns null, or that the
  * platform cannot answer collapses to the conservative value: no AVF, no image,
- * no vsock, {@link ThermalState#UNKNOWN}, {@link BatteryState#UNKNOWN}. The
- * policy then refuses the lane with a fixed reason code.
+ * no payload compiler, no vsock, {@link ThermalState#UNKNOWN},
+ * {@link BatteryState#UNKNOWN}. The policy then refuses the lane with a fixed
+ * reason code.
  */
 public final class AndroidAcceleratorFactProvider implements AcceleratorFactProvider {
     /**
@@ -40,6 +44,13 @@ public final class AndroidAcceleratorFactProvider implements AcceleratorFactProv
      * a location appears and it never enters the facts.
      */
     public static final String MANIFEST_ASSET = "ACCELERATOR-IMAGE-MANIFEST";
+
+    /**
+     * Asset name of the protected compiler payload's manifest (PVM-09). It is
+     * a build-time declaration, not a handshake result; reading the file is the
+     * only place a location appears and it never enters the facts.
+     */
+    public static final String PVM_MANIFEST_ASSET = "PVM-COMPILER-MANIFEST";
 
     /** Channel under which the Linux kernel exposes its vsock transport. */
     public static final String VSOCK_DEVICE = "/dev/vsock";
@@ -53,10 +64,19 @@ public final class AndroidAcceleratorFactProvider implements AcceleratorFactProv
     /** A manifest larger than this is not a manifest; it is refused unread. */
     public static final int MANIFEST_MAX_BYTES = 16 * 1024;
 
+    /** A payload manifest larger than this is refused unread. */
+    public static final int PVM_MANIFEST_MAX_BYTES = 16 * 1024;
+
     /** Source of the accelerator image manifest; empty means "not installed". */
     @FunctionalInterface
     public interface ManifestSource {
         Optional<AcceleratorImageManifest> read();
+    }
+
+    /** Source of the payload compiler manifest; empty means "not installed". */
+    @FunctionalInterface
+    public interface PayloadManifestSource {
+        Optional<PvmCompilerManifest> read();
     }
 
     /** Kernel-level vsock evidence. No evidence means false. */
@@ -82,18 +102,31 @@ public final class AndroidAcceleratorFactProvider implements AcceleratorFactProv
     private final VsockSource vsock;
     private final ThermalSource thermal;
     private final BatterySource battery;
+    private final PayloadManifestSource payloadManifest;
 
+    /** Five-source wiring: no payload manifest, so the payload lane refuses. */
     public AndroidAcceleratorFactProvider(
             Supplier<AvfCapabilityEvaluator.AvfHostFacts> avfHostFacts,
             ManifestSource manifest,
             VsockSource vsock,
             ThermalSource thermal,
             BatterySource battery) {
+        this(avfHostFacts, manifest, vsock, thermal, battery, Optional::empty);
+    }
+
+    public AndroidAcceleratorFactProvider(
+            Supplier<AvfCapabilityEvaluator.AvfHostFacts> avfHostFacts,
+            ManifestSource manifest,
+            VsockSource vsock,
+            ThermalSource thermal,
+            BatterySource battery,
+            PayloadManifestSource payloadManifest) {
         this.avfHostFacts = Objects.requireNonNull(avfHostFacts, "avfHostFacts");
         this.manifest = Objects.requireNonNull(manifest, "manifest");
         this.vsock = Objects.requireNonNull(vsock, "vsock");
         this.thermal = Objects.requireNonNull(thermal, "thermal");
         this.battery = Objects.requireNonNull(battery, "battery");
+        this.payloadManifest = Objects.requireNonNull(payloadManifest, "payloadManifest");
     }
 
     /** Production wiring: every source is an existing platform seam. */
@@ -105,7 +138,8 @@ public final class AndroidAcceleratorFactProvider implements AcceleratorFactProv
                 () -> readManifest(application),
                 AndroidAcceleratorFactProvider::kernelExposesVsock,
                 () -> readThermal(application),
-                () -> readBattery(application));
+                () -> readBattery(application),
+                () -> readPayloadManifest(application));
     }
 
     @Override
@@ -124,13 +158,14 @@ public final class AndroidAcceleratorFactProvider implements AcceleratorFactProv
                 safeManifest(),
                 safeVsock(),
                 safeThermal(),
-                safeBattery());
+                safeBattery(),
+                safePayloadManifest());
     }
 
     /**
      * Maps one evaluated AVF verdict plus the remaining observations to facts.
      * A null readiness (the read itself failed) is treated like an unsupported
-     * platform: nothing is claimed.
+     * platform: nothing is claimed. No payload manifest is observed.
      */
     static AcceleratorFacts fromReadiness(
             AvfCapabilityEvaluator.AvfReadiness readiness,
@@ -138,18 +173,32 @@ public final class AndroidAcceleratorFactProvider implements AcceleratorFactProv
             boolean vsockExposed,
             ThermalState thermalState,
             BatteryState batteryState) {
+        return fromReadiness(
+                readiness, manifest, vsockExposed, thermalState, batteryState, Optional.empty());
+    }
+
+    /** Same mapping, with the payload compiler manifest observed or absent. */
+    static AcceleratorFacts fromReadiness(
+            AvfCapabilityEvaluator.AvfReadiness readiness,
+            Optional<AcceleratorImageManifest> manifest,
+            boolean vsockExposed,
+            ThermalState thermalState,
+            BatteryState batteryState,
+            Optional<PvmCompilerManifest> payloadManifest) {
         return fromStatus(
                 readiness == null ? null : readiness.status(),
                 manifest,
                 vsockExposed,
                 thermalState,
-                batteryState);
+                batteryState,
+                payloadManifest);
     }
 
     /**
      * The whole verdict mapping, kept pure so tests cover every status without
      * Android. Only {@code READY} claims a non-protected VM; every other status
-     * either reports a protected-only platform or claims nothing at all.
+     * either reports a protected-only platform or claims nothing at all. No
+     * payload manifest is observed.
      */
     static AcceleratorFacts fromStatus(
             AvfCapabilityEvaluator.AvfStatus status,
@@ -157,6 +206,22 @@ public final class AndroidAcceleratorFactProvider implements AcceleratorFactProv
             boolean vsockExposed,
             ThermalState thermalState,
             BatteryState batteryState) {
+        return fromStatus(
+                status, manifest, vsockExposed, thermalState, batteryState, Optional.empty());
+    }
+
+    /**
+     * Same mapping, with the payload compiler manifest. The payload compiler is
+     * "present" only when its manifest parsed; no manifest never guesses a
+     * version or a triple.
+     */
+    static AcceleratorFacts fromStatus(
+            AvfCapabilityEvaluator.AvfStatus status,
+            Optional<AcceleratorImageManifest> manifest,
+            boolean vsockExposed,
+            ThermalState thermalState,
+            BatteryState batteryState,
+            Optional<PvmCompilerManifest> payloadManifest) {
         boolean avfPresent = false;
         boolean nonProtectedSupported = false;
         boolean protectedOnly = false;
@@ -171,9 +236,8 @@ public final class AndroidAcceleratorFactProvider implements AcceleratorFactProv
                     // The platform answered: a VM exists, but only a protected
                     // one. For the custom-VM backend that is a pool/control-plane
                     // device, never an accelerator; for the payload backend it is
-                    // the compute plane. The payload compiler facts stay unset
-                    // until a payload manifest reader exists, so the payload
-                    // backend still refuses on missing compiler, not on the VM.
+                    // the compute plane. Whether the payload compiler is really
+                    // there is decided by its own manifest, not by this verdict.
                     avfPresent = true;
                     protectedOnly = true;
                     protectedVmSupported = true;
@@ -192,6 +256,9 @@ public final class AndroidAcceleratorFactProvider implements AcceleratorFactProv
         Optional<AcceleratorImageManifest> present = manifest == null
                 ? Optional.empty()
                 : manifest;
+        Optional<PvmCompilerManifest> payload = payloadManifest == null
+                ? Optional.empty()
+                : payloadManifest;
         return AcceleratorFacts.builder()
                 .avfPresent(avfPresent)
                 .nonProtectedSupported(nonProtectedSupported)
@@ -202,6 +269,11 @@ public final class AndroidAcceleratorFactProvider implements AcceleratorFactProv
                 .thermalState(thermalState == null ? ThermalState.UNKNOWN : thermalState)
                 .batteryState(batteryState == null ? BatteryState.UNKNOWN : batteryState)
                 .protectedVmSupported(protectedVmSupported)
+                .payloadCompilerPresent(payload.isPresent())
+                .payloadCompilerVersion(
+                        payload.map(PvmCompilerManifest::compilerVersion).orElse(""))
+                .payloadTargetTriple(
+                        payload.map(PvmCompilerManifest::targetTriple).orElse(""))
                 .build();
     }
 
@@ -243,6 +315,15 @@ public final class AndroidAcceleratorFactProvider implements AcceleratorFactProv
         }
     }
 
+    private Optional<PvmCompilerManifest> safePayloadManifest() {
+        try {
+            Optional<PvmCompilerManifest> read = payloadManifest.read();
+            return read == null ? Optional.empty() : read;
+        } catch (RuntimeException failure) {
+            return Optional.empty();
+        }
+    }
+
     private boolean safeVsock() {
         try {
             return vsock.exposed();
@@ -269,22 +350,50 @@ public final class AndroidAcceleratorFactProvider implements AcceleratorFactProv
         }
     }
 
-    private static Optional<AcceleratorImageManifest> readManifest(Context context) {
-        try (InputStream stream = context.getAssets().open(MANIFEST_ASSET)) {
-            // Bounded, allocation-light read: the manifest is a few key=value lines.
-            java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream(256);
+    /**
+     * Reads one asset with a fixed ceiling. Oversized, absent or unreadable
+     * assets collapse to empty: the ceiling exists so a corrupt or hostile
+     * asset is refused unread instead of pulled into memory.
+     */
+    private static Optional<String> readBoundedAsset(Context context, String asset, int maxBytes)
+            throws IOException {
+        try (InputStream stream = context.getAssets().open(asset)) {
+            // Bounded, allocation-light read: both manifests are small documents.
+            ByteArrayOutputStream buffer = new ByteArrayOutputStream(256);
             byte[] chunk = new byte[256];
             int read;
             while ((read = stream.read(chunk)) != -1) {
-                if (buffer.size() + read > MANIFEST_MAX_BYTES) {
+                if (buffer.size() + read > maxBytes) {
                     return Optional.empty();
                 }
                 buffer.write(chunk, 0, read);
             }
-            String text = new String(buffer.toByteArray(), StandardCharsets.UTF_8);
-            return AcceleratorImageManifest.parse(text);
+            return Optional.of(new String(buffer.toByteArray(), StandardCharsets.UTF_8));
+        }
+    }
+
+    private static Optional<AcceleratorImageManifest> readManifest(Context context) {
+        try {
+            return readBoundedAsset(context, MANIFEST_ASSET, MANIFEST_MAX_BYTES)
+                    .flatMap(AcceleratorImageManifest::parse);
         } catch (IOException | RuntimeException absentOrUnreadable) {
             // Not shipped, unreadable or malformed: the image is not installed.
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Reads the payload compiler manifest from the APK assets. The only place
+     * the asset name appears; the same reader feeds the facts and the
+     * production lane starter, so the two can never disagree about what is
+     * installed. Empty on a missing, oversized or malformed document.
+     */
+    public static Optional<PvmCompilerManifest> readPayloadManifest(Context context) {
+        try {
+            return readBoundedAsset(context, PVM_MANIFEST_ASSET, PVM_MANIFEST_MAX_BYTES)
+                    .flatMap(PvmCompilerManifest::parse);
+        } catch (IOException | RuntimeException absentOrUnreadable) {
+            // Not shipped, unreadable or malformed: there is no payload compiler.
             return Optional.empty();
         }
     }
