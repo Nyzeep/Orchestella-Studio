@@ -188,10 +188,10 @@ class GuestConsole:
             match = pattern.search(text)
             if match:
                 body = text[:match.start()]
-                return int(match.group(1)), body[-16000:], int(
+                return int(match.group(1)), body[-400000:], int(
                     (time.monotonic() - started) * 1000)
             time.sleep(0.2)
-        return None, self.snapshot(since=offset)[-16000:], -1
+        return None, self.snapshot(since=offset)[-400000:], -1
 
     def close(self):
         self.stopped.set()
@@ -285,23 +285,67 @@ def inject_fixture(adb: Adb, console: GuestConsole, fixture_bytes: bytes,
     return result
 
 
-def return_object_via_console(console: GuestConsole, guest_path: Path,
+def return_object_via_netcat(adb: Adb, console: GuestConsole,
+                             guest_path_inner: str, local_path: Path,
+                             port: int, tool, next_index,
+                             timeout_s: float) -> dict:
+    """Primary object return: guest nc -> gvproxy NAT -> device nc -> adb pull.
+
+    The console path is tty-bound (canonical limits, echo noise); the guest's
+    outbound network through gvproxy's hostIP mapping is a plain pipe.
+    """
+    device_tmp = f"/data/local/tmp/qa-cxcf-{port}.o"
+    listener = subprocess.Popen(
+        [adb.adb_path] + (["-s", adb.serial] if adb.serial else []) +
+        ["shell", f"nc -l -p {port} > {device_tmp}"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(1.5)
+    try:
+        console.run(tool(f"nc {GUEST_HOST_IP} {port} < {guest_path_inner}"),
+                    next_index(), timeout_s)
+        try:
+            listener.wait(timeout=timeout_s)
+        except subprocess.TimeoutExpired:
+            listener.kill()
+            return {"ok": False, "path": "netcat", "reason": "listener-timeout"}
+        adb.run("pull", device_tmp, str(local_path))
+        adb.run("shell", "rm", "-f", device_tmp)
+        data = local_path.read_bytes()
+        return {"ok": len(data) > 0, "path": "netcat", "bytes": len(data),
+                "guest_path": guest_path_inner}
+    finally:
+        if listener.poll() is None:
+            listener.kill()
+
+
+def return_object_via_console(console: GuestConsole, guest_path: str,
                               local_path: Path, command_timeout_s: int,
                               next_index) -> dict:
-    """Pull one object back by console base64; simple and reliable."""
+    """Pull one object back by console base64; simple and reliable.
+
+    `guest_path` must be a plain POSIX string: a Python Path on Windows
+    renders backslashes that the guest shell silently eats.
+    """
     started = time.monotonic()
-    rc, text, _ = console.run(f"base64 {guest_path}", next_index(),
-                              command_timeout_s)
+    rc, text, _ = console.run(
+        f"echo QA_B64_BEGIN; base64 {guest_path}; echo QA_B64_END",
+        next_index(), command_timeout_s)
     if rc != 0:
-        return {"ok": False, "rc": rc, "guest_path": str(guest_path)}
-    payload = "".join(re.findall(r"[A-Za-z0-9+/=]", text))
+        return {"ok": False, "rc": rc, "guest_path": guest_path,
+                "stderr_tail": text.strip().splitlines()[-2:]}
+    # Keep only the sentinel-delimited segment: the console stream mixes in
+    # prompt echoes and markers whose characters are all valid base64.
+    segment = text[text.rfind("QA_B64_BEGIN"):]
+    end = segment.find("QA_B64_END")
+    segment = segment[:end] if end >= 0 else segment
+    payload = "".join(re.findall(r"[A-Za-z0-9+/=]", segment))
     try:
         data = base64.b64decode(payload, validate=False)
     except Exception:  # noqa: BLE001 - a truncated stream is a failure code, not a crash
-        return {"ok": False, "rc": rc, "guest_path": str(guest_path),
+        return {"ok": False, "rc": rc, "guest_path": guest_path,
                 "reason": "base64-decode-failed"}
     local_path.write_bytes(data)
-    return {"ok": True, "guest_path": str(guest_path),
+    return {"ok": True, "guest_path": guest_path,
             "local_path": str(local_path), "bytes": len(data),
             "elapsed_ms": int((time.monotonic() - started) * 1000)}
 
@@ -525,6 +569,16 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
         chroot_active = "CHROOT_CLANG=yes" in text
         chroot_prefix = "/alpine" if chroot_active else ""
         round_result["guest_chroot"] = chroot_active
+        if chroot_active:
+            # The minirootfs chroot ships an empty /dev: clang's driver
+            # spawns its subcommands through posix_spawn, which needs
+            # /dev/null, and fails with "No such file or directory" without.
+            console.run(
+                "mount --bind /dev /alpine/dev 2>/dev/null; "
+                "[ -e /alpine/dev/null ] || (mknod /alpine/dev/null c 1 3 "
+                "&& chmod 666 /alpine/dev/null); "
+                "mount -t proc proc /alpine/proc 2>/dev/null; true",
+                next_index(), 30)
 
         def tool(command: str) -> str:
             """Run a toolchain command inside the chroot when one exists.
@@ -538,22 +592,32 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
             return f"chroot /alpine /bin/sh -c \"$(echo {encoded} | base64 -d)\""
 
         if chroot_active:
-            install = "/sbin/apk add --no-cache distcc clang"
+            # binutils is required for linking (clang execs ld through
+            # posix_spawn; the minirootfs chroot does not carry it).
+            install = "/sbin/apk add --no-cache distcc clang binutils"
         else:
             install = GUEST_INSTALL.get(
                 str(evidence.get("guest_distro") or "").strip(),
                 GUEST_INSTALL_DEFAULT)
-        round_result["guest_install_cmd"] = install
-        rc, text, elapsed = console.run(tool(install), next_index(),
-                                        args.apk_timeout_s)
-        round_result["apk_add_rc"] = rc
-        round_result["apk_add_ms"] = elapsed
-        if rc != 0:
-            round_result["failure_code"] = "GUEST_APK_ADD_FAILED"
-            return round_result
+        # Version check first: a prepared rootfs already carries the pinned
+        # toolchain, and the package-manager round-trip is the flakiest leg
+        # (cellular mirrors); only a missing/wrong toolchain needs it.
         rc, text, _ = console.run(tool("clang --version"), next_index(), 60)
         major = parse_clang_major(text)
         round_result["clang_major"] = major
+        round_result["clang_version_line"] = text.strip().splitlines()[-2:-1]
+        if major != REQUIRED_CLANG_MAJOR:
+            round_result["guest_install_cmd"] = install
+            rc, text, elapsed = console.run(tool(install), next_index(),
+                                            args.apk_timeout_s)
+            round_result["apk_add_rc"] = rc
+            round_result["apk_add_ms"] = elapsed
+            if rc != 0:
+                round_result["failure_code"] = "GUEST_APK_ADD_FAILED"
+                return round_result
+            rc, text, _ = console.run(tool("clang --version"), next_index(), 60)
+            major = parse_clang_major(text)
+            round_result["clang_major"] = major
         if major != REQUIRED_CLANG_MAJOR:
             round_result["failure_code"] = "GUEST_CLANG_MAJOR_MISMATCH"
             return round_result
@@ -600,12 +664,18 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
             tool(f"printf 'int fixture_entry(void);\\nint main(void) "
                  f"{{ return fixture_entry(); }}\\n' > {GUEST_MAIN_C}"),
             next_index(), args.guest_command_timeout_s)
+        # The link runs OUTSIDE the chroot with the native toolchain: the
+        # chroot lacks binutils and its apk mirror leg is the flakiest path,
+        # while the link step is tool-version-agnostic for the crossfire
+        # evidence (the .o equivalence is compare_objects' job).
         rc, link_text, _ = console.run(
-            tool(f"clang -O1 {GUEST_MAIN_C} {GUEST_CROSS_O} -o /root/cross.bin"),
+            f"clang -O1 {chroot_prefix}{GUEST_MAIN_C} "
+            f"{chroot_prefix}{GUEST_CROSS_O} -o {chroot_prefix}/root/cross.bin",
             next_index(), args.guest_command_timeout_s)
         cross_link_rc = rc
         rc_ref, ref_link_text, _ = console.run(
-            tool(f"clang -O1 {GUEST_MAIN_C} {GUEST_REF_O} -o /root/ref.bin"),
+            f"clang -O1 {chroot_prefix}{GUEST_MAIN_C} "
+            f"{chroot_prefix}{GUEST_REF_O} -o {chroot_prefix}/root/ref.bin",
             next_index(), args.guest_command_timeout_s)
         _, cross_out, _ = console.run(
             tool('/root/cross.bin; printf "exit=%d\\n" "$?"'),
@@ -625,15 +695,23 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
                                      and cross_exit.group(1) == ref_exit.group(1)),
         }
 
-        pulled_cross = return_object_via_console(
-            console, Path(f"{chroot_prefix}{GUEST_CROSS_O}"),
-            round_work / "cross.o",
-            args.guest_command_timeout_s, next_index)
+        pulled_cross = return_object_via_netcat(
+            adb, console, GUEST_CROSS_O, round_work / "cross.o",
+            19999, tool, next_index, args.guest_command_timeout_s)
+        if not pulled_cross.get("ok"):
+            pulled_cross = return_object_via_console(
+                console, f"{chroot_prefix}{GUEST_CROSS_O}",
+                round_work / "cross.o",
+                args.guest_command_timeout_s, next_index)
         round_result["cross_object"] = pulled_cross
-        pulled_ref = return_object_via_console(
-            console, Path(f"{chroot_prefix}{GUEST_REF_O}"),
-            round_work / "ref.o",
-            args.guest_command_timeout_s, next_index)
+        pulled_ref = return_object_via_netcat(
+            adb, console, GUEST_REF_O, round_work / "ref.o",
+            19999, tool, next_index, args.guest_command_timeout_s)
+        if not pulled_ref.get("ok"):
+            pulled_ref = return_object_via_console(
+                console, f"{chroot_prefix}{GUEST_REF_O}",
+                round_work / "ref.o",
+                args.guest_command_timeout_s, next_index)
         round_result["ref_object"] = pulled_ref
         if not (pulled_cross.get("ok") and pulled_ref.get("ok")):
             round_result["failure_code"] = "OBJECT_RETURN_FAILED"
@@ -649,17 +727,26 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
             next_index(), args.guest_command_timeout_s)
 
         if args.compare_script:
-            compared = subprocess.run(
-                [sys.executable, args.compare_script,
-                 "--a", str(round_work / "cross.o"),
-                 "--b", str(round_work / "ref.o"),
-                 "--fixtures", args.fixtures, "--no-run"],
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                encoding="utf-8", errors="replace", timeout=300)
-            lines = compared.stdout.strip().splitlines()
+            compared_tail = ""
+            try:
+                compared = subprocess.run(
+                    [sys.executable, args.compare_script,
+                     "--a", str(round_work / "cross.o"),
+                     "--b", str(round_work / "ref.o"),
+                     "--fixtures", args.fixtures, "--no-run"],
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                    encoding="utf-8", errors="replace", timeout=300)
+                lines = (compared.stdout or "").strip().splitlines()
+            except subprocess.TimeoutExpired as compare_timeout:
+                # A hung host linker (non-ASCII fixture paths are known to
+                # stall mingw ld) must not lose the round evidence.
+                tail = (compare_timeout.stdout or "")
+                compared_tail = tail.strip().splitlines()[-2:] if tail else []
+                lines = ["INCONCLUSIVE", "compare script timed out"]
             round_result["equivalence"] = {
                 "verdict": lines[0] if lines else "INCONCLUSIVE",
                 "detail": lines[1] if len(lines) > 1 else "",
+                "tail": compared_tail,
             }
         return round_result
     except (OSError, RuntimeError) as session_failure:
