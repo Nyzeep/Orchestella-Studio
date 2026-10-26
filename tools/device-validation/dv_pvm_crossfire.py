@@ -63,6 +63,27 @@ GUEST_MAIN_C = "/root/main.c"
 GUEST_MAIN_O = "/root/main.o"
 GUEST_SLACK_C = "/root/slack.c"
 GUEST_SLACK_O = "/root/slack.o"
+# The product catalog (DistroCatalogRegistry) has no Alpine entry, so the
+# guest is whatever distro the QA instance provisioned. The instrumentation
+# publishes its distro id; each family gets its package-manager line. The
+# clang major hard-check below stays the real gate either way.
+GUEST_INSTALL = {
+    "alpine": "apk add distcc clang",
+    "arch": "pacman -Sy --noconfirm --needed distcc clang",
+    "debian": "apt-get update -qq && apt-get install -y -qq distcc clang",
+    "ubuntu": "apt-get update -qq && apt-get install -y -qq distcc clang",
+    "fedora": "dnf install -y distcc clang",
+    "almalinux": "dnf install -y distcc clang",
+    "rocky": "dnf install -y distcc clang",
+    "rockylinux": "dnf install -y distcc clang",
+    "opensuse": "zypper -n in distcc clang",
+}
+GUEST_INSTALL_DEFAULT = (
+    "command -v apk >/dev/null && apk add distcc clang ; "
+    "command -v pacman >/dev/null && pacman -Sy --noconfirm --needed distcc clang ; "
+    "command -v apt-get >/dev/null && apt-get update -qq && apt-get install -y -qq distcc clang ; "
+    "command -v dnf >/dev/null && dnf install -y distcc clang"
+)
 DEVICE_FIXTURE_PUSH = "/sdcard/Download/fixture.c"
 # The instrumentation is sized for a ~92 KB fixture; a 1 MB input would blow
 # past the AXP1 frame budget and the console round-trips alike.
@@ -202,18 +223,20 @@ def push_fixture_via_console(console: GuestConsole, fixture_bytes: bytes,
 
 
 def inject_fixture(adb: Adb, console: GuestConsole, fixture_bytes: bytes,
-                   command_timeout_s: int, next_index) -> dict:
+                   command_timeout_s: int, next_index,
+                   chroot_prefix: str = "") -> dict:
     """Primary path: 9p downloads share; fallback: console base64 chunks.
 
     The product launch only attaches the share when the instance declares
     it, so the fallback is the expected path; both are implemented because
     the share may appear in later launches.
     """
+    outer_fixture = f"{chroot_prefix}{GUEST_FIXTURE}"
     console.run(
         "mkdir -p /mnt/downloads && mount -t 9p -o trans=virtio,version=9p2000.L,ro "
-        f"downloads /mnt/downloads 2>/dev/null || true; cp /mnt/downloads/fixture.c "
-        f"{GUEST_FIXTURE} 2>/dev/null || true", next_index(), command_timeout_s)
-    rc, text, _ = console.run(f"wc -c < {GUEST_FIXTURE}", next_index(),
+        "downloads /mnt/downloads 2>/dev/null || true; cp /mnt/downloads/fixture.c "
+        f"{outer_fixture} 2>/dev/null || true", next_index(), command_timeout_s)
+    rc, text, _ = console.run(f"wc -c < {outer_fixture}", next_index(),
                               command_timeout_s)
     lines = [line.strip() for line in text.strip().splitlines()]
     if rc == 0 and lines and lines[-1] == str(len(fixture_bytes)):
@@ -291,7 +314,13 @@ def run_smoke(adb: Adb, args, summary: dict) -> int:
     if "/" not in component:
         summary["failure_code"] = "MAIN_ACTIVITY_NOT_RESOLVED"
         return 1
-    adb.run("shell", "am", "start", "-n", component)
+    # dispatch lives in launchInstance, not onCreate: the product launch is
+    # driven through the instance-launch extra MainActivity handles in both
+    # onCreate and onNewIntent (action_launch_instance_id).
+    start_cmd = ["shell", "am", "start", "-n", component]
+    if args.instance_id:
+        start_cmd += ["--es", "action_launch_instance_id", args.instance_id]
+    adb.run(*start_cmd)
     started = time.monotonic()
     decision, payload_line, events = None, None, []
     # Logcat lines carry the standard header prefix, so the event text is
@@ -433,18 +462,47 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
         if not console.wait_prompt(args.guest_boot_timeout_s):
             round_result["failure_code"] = "GUEST_CONSOLE_TIMEOUT"
             return round_result
-        rc, text, elapsed = console.run("cat /etc/alpine-release", next_index(),
-                                        30)
-        round_result["alpine_release"] = text.strip().splitlines()[-1:] \
+        rc, text, elapsed = console.run(
+            "cat /etc/os-release 2>/dev/null | head -2", next_index(), 30)
+        round_result["os_release"] = text.strip().splitlines()[-1:] \
             if rc == 0 else None
-        rc, text, elapsed = console.run("apk add distcc clang", next_index(),
+        # A prepared Alpine chroot (/alpine) pins the guest clang to the
+        # payload's major (22.x): the Arch native toolchain rolled to 23 and
+        # would trip the hard check below. When the chroot exists, tool
+        # invocations run inside it and file paths shift by the prefix.
+        rc, text, _ = console.run(
+            "test -x /alpine/usr/bin/clang && echo CHROOT_CLANG=yes "
+            "|| echo CHROOT_CLANG=no", next_index(), 30)
+        chroot_active = "CHROOT_CLANG=yes" in text
+        chroot_prefix = "/alpine" if chroot_active else ""
+        round_result["guest_chroot"] = chroot_active
+
+        def tool(command: str) -> str:
+            """Run a toolchain command inside the chroot when one exists.
+
+            The command travels base64-encoded so its own quoting (printf
+            format strings, DISTCC_HOSTS) cannot collide with the wrapper.
+            """
+            if not chroot_active:
+                return command
+            encoded = base64.b64encode(command.encode()).decode()
+            return f"chroot /alpine /bin/sh -c \"$(echo {encoded} | base64 -d)\""
+
+        if chroot_active:
+            install = "/sbin/apk add --no-cache distcc clang"
+        else:
+            install = GUEST_INSTALL.get(
+                str(evidence.get("guest_distro") or "").strip(),
+                GUEST_INSTALL_DEFAULT)
+        round_result["guest_install_cmd"] = install
+        rc, text, elapsed = console.run(tool(install), next_index(),
                                         args.apk_timeout_s)
         round_result["apk_add_rc"] = rc
         round_result["apk_add_ms"] = elapsed
         if rc != 0:
             round_result["failure_code"] = "GUEST_APK_ADD_FAILED"
             return round_result
-        rc, text, _ = console.run("clang --version", next_index(), 60)
+        rc, text, _ = console.run(tool("clang --version"), next_index(), 60)
         major = parse_clang_major(text)
         round_result["clang_major"] = major
         if major != REQUIRED_CLANG_MAJOR:
@@ -452,7 +510,8 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
             return round_result
 
         inject = inject_fixture(adb, console, fixture_bytes,
-                                args.guest_command_timeout_s, next_index)
+                                args.guest_command_timeout_s, next_index,
+                                chroot_prefix)
         round_result["fixture_injection"] = inject
         if not inject.get("injected"):
             round_result["failure_code"] = "FIXTURE_INJECTION_FAILED"
@@ -461,7 +520,8 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
         # The guest-local reference uses the same -O1 as the payload path so
         # the equivalence compare sees one optimization level.
         rc, text, elapsed = console.run(
-            f"clang -c --target={GUEST_TRIPLE} -O1 {GUEST_FIXTURE} -o {GUEST_REF_O}",
+            tool(f"clang -c --target={GUEST_TRIPLE} -O1 {GUEST_FIXTURE} "
+                 f"-o {GUEST_REF_O}"),
             next_index(), args.guest_command_timeout_s)
         round_result["local_compile_rc"] = rc
         round_result["local_compile_ms"] = elapsed
@@ -475,7 +535,7 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
             f'DISTCC_HOSTS="{GUEST_HOST_IP}:{args.bridge_port}" DISTCC_CMD_PREFIX="" '
             f"DISTCC_VERBOSE=1 distcc clang -c --target={GUEST_TRIPLE} -O1 "
             f"{GUEST_FIXTURE} -o {GUEST_CROSS_O}")
-        rc, text, elapsed = console.run(distcc_command, next_index(),
+        rc, text, elapsed = console.run(tool(distcc_command), next_index(),
                                         args.guest_command_timeout_s)
         round_result["distcc_rc"] = rc
         round_result["distcc_ms"] = elapsed
@@ -488,20 +548,22 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
             return round_result
 
         console.run(
-            f"printf 'int fixture_entry(void);\\nint main(void) "
-            f"{{ return fixture_entry(); }}\\n' > {GUEST_MAIN_C}",
+            tool(f"printf 'int fixture_entry(void);\\nint main(void) "
+                 f"{{ return fixture_entry(); }}\\n' > {GUEST_MAIN_C}"),
             next_index(), args.guest_command_timeout_s)
         rc, _, _ = console.run(
-            f"clang -O1 {GUEST_MAIN_C} {GUEST_CROSS_O} -o /root/cross.bin",
+            tool(f"clang -O1 {GUEST_MAIN_C} {GUEST_CROSS_O} -o /root/cross.bin"),
             next_index(), args.guest_command_timeout_s)
         cross_link_rc = rc
         rc_ref, _, _ = console.run(
-            f"clang -O1 {GUEST_MAIN_C} {GUEST_REF_O} -o /root/ref.bin",
+            tool(f"clang -O1 {GUEST_MAIN_C} {GUEST_REF_O} -o /root/ref.bin"),
             next_index(), args.guest_command_timeout_s)
-        _, cross_out, _ = console.run("/root/cross.bin; printf \"exit=%d\\n\" \"$?\"",
-                                      next_index(), 60)
-        _, ref_out, _ = console.run("/root/ref.bin; printf \"exit=%d\\n\" \"$?\"",
-                                    next_index(), 60)
+        _, cross_out, _ = console.run(
+            tool('/root/cross.bin; printf "exit=%d\\n" "$?"'),
+            next_index(), 60)
+        _, ref_out, _ = console.run(
+            tool('/root/ref.bin; printf "exit=%d\\n" "$?"'),
+            next_index(), 60)
         cross_exit = re.search(r"exit=(\d+)", cross_out)
         ref_exit = re.search(r"exit=(\d+)", ref_out)
         round_result["link_run"] = {
@@ -513,11 +575,13 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
         }
 
         pulled_cross = return_object_via_console(
-            console, Path(GUEST_CROSS_O), round_work / "cross.o",
+            console, Path(f"{chroot_prefix}{GUEST_CROSS_O}"),
+            round_work / "cross.o",
             args.guest_command_timeout_s, next_index)
         round_result["cross_object"] = pulled_cross
         pulled_ref = return_object_via_console(
-            console, Path(GUEST_REF_O), round_work / "ref.o",
+            console, Path(f"{chroot_prefix}{GUEST_REF_O}"),
+            round_work / "ref.o",
             args.guest_command_timeout_s, next_index)
         round_result["ref_object"] = pulled_ref
         if not (pulled_cross.get("ok") and pulled_ref.get("ok")):
@@ -527,9 +591,10 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
         # Slack job: closes the instrumentation's second connection, which
         # releases the coordinator teardown we are now blocking.
         console.run(
-            f"printf 'int slack_fn(int x) {{ return x + 1; }}\\n' > {GUEST_SLACK_C} && "
-            f'DISTCC_HOSTS="{GUEST_HOST_IP}:{args.bridge_port}" distcc clang -c '
-            f"--target={GUEST_TRIPLE} -O1 {GUEST_SLACK_C} -o {GUEST_SLACK_O}",
+            tool("printf 'int slack_fn(int x) { return x + 1; }\\n' "
+                 f"> {GUEST_SLACK_C} ; DISTCC_HOSTS=\"{GUEST_HOST_IP}:"
+                 f"{args.bridge_port}\" distcc clang -c "
+                 f"--target={GUEST_TRIPLE} -O1 {GUEST_SLACK_C} -o {GUEST_SLACK_O}"),
             next_index(), args.guest_command_timeout_s)
 
         if args.compare_script:
