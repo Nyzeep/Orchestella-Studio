@@ -24,8 +24,8 @@
 | 分支 | `feat/pvm-09-product-wiring` |
 | 基线 | `main = 6f1b420`（`fix(pvm): DV-PVM-02a 真机跑通产品版 clang 引擎（02b not-attempted）（#27）`） |
 | commit | `7704203`（实现，21 文件 +2898/−61）+ `c034f35`（评审修补：声明态编译器身份入日志、注释收尾、测试清理） |
-| PR | （待回填：PR 号） |
-| CI 结果 | （待回填：CI run 链接与结论） |
+| PR | [#28](https://github.com/Nyzeep/Orchestella-Studio/pull/28) |
+| CI 结果 | **12/12 checks 通过**（head `a5edb4d` 全绿：runs 40248985727/30/36/61）；本回填提交在 PR 内复跑一轮后合并 |
 | `./gradlew :app:testDebugUnitTest :runtime:fastlane-capability:test :runtime:instance:test` | **1346 tests / 0 failures / 0 errors / 0 skipped**（136 个测试类，commit `7704203`，ASCII worktree 实测；`.c034f35` 仅动 app 模块，复跑 `:app:testDebugUnitTest` 结果见下） |
 | `./gradlew :app:testDebugUnitTest`（`c034f35` 复跑） | **996 tests / 0 failures / 0 errors / 0 skipped**（125 个测试类） |
 
