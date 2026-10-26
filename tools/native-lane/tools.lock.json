@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "pinned_utc": "2026-10-27",
+  "policy": "Third-party binaries are never committed. This file is the trust anchor: the fetch stage re-downloads each artifact and compares it against these sha256 digests. Re-pin deliberately, never silently.",
+  "artifacts": {
+    "proot-static": {
+      "kind": "alpine-apk",
+      "url": "https://dl-cdn.alpinelinux.org/alpine/v3.24/community/aarch64/proot-static-5.4.0-r2.apk",
+      "sha256": "31d0e21ee87435ed819112cef84b8ce7d004c2835d8f61eeabe422e122b4b6cf",
+      "bytes": 124909,
+      "member": "usr/bin/proot.static",
+      "install_as": "bin/proot-static",
+      "provenance": "Alpine v3.24 community, proot-static 5.4.0-r2, aarch64 static-pie, stripped"
+    },
+    "alpine-minirootfs": {
+      "kind": "tar.gz",
+      "url": "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/aarch64/alpine-minirootfs-3.24.3-aarch64.tar.gz",
+      "sha256": "4d3f80afaebd447c5591a63a73bde380a149fe8b2d85488cafabb2ff97551f50",
+      "bytes": 4029999,
+      "upstream_digest_url": "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/aarch64/alpine-minirootfs-3.24.3-aarch64.tar.gz.sha256",
+      "provenance": "Alpine v3.24.3 aarch64 minirootfs"
+    }
+  },
+  "profiles": {
+    "match22": {
+      "why": "clang 22.x, the same major as the PVM payload (22.1.8). Required for a like-for-like native column.",
+      "repositories": [
+        "https://dl-cdn.alpinelinux.org/alpine/v3.24/main",
+        "https://dl-cdn.alpinelinux.org/alpine/v3.24/community",
+        "https://dl-cdn.alpinelinux.org/alpine/edge/main"
+      ],
+      "packages": ["clang22", "binutils"],
+      "clang_binary": "/usr/bin/clang-22",
+      "known_drift": "clang22 comes from edge/main while the base rootfs is v3.24 stable; musl and llvm22 are pulled from edge as a unit. Record the versions the device reports, not the versions assumed here."
+    },
+    "stable": {
+      "why": "Fallback when edge/main is unreachable or its musl drifts: clang 18.x, repo-consistent with v3.24.",
+      "repositories": [
+        "https://dl-cdn.alpinelinux.org/alpine/v3.24/main",
+        "https://dl-cdn.alpinelinux.org/alpine/v3.24/community"
+      ],
+      "packages": ["clang18", "binutils"],
+      "clang_binary": "/usr/bin/clang-18",
+      "known_drift": "clang 18 is four majors behind the payload. Any proot/bare number produced with it is not comparable to the qemu/pvm columns; the run JSON records the version so the mismatch stays visible."
+    }
+  },
+  "device_layout": {
+    "root": "/data/local/tmp/native-lane",
+    "cache": "cache",
+    "rootfs": "rootfs",
+    "work": "work",
+    "proot": "bin/proot-static",
+    "note": "App-private or shell-writable locations only. Nothing here needs root."
+  }
+}
