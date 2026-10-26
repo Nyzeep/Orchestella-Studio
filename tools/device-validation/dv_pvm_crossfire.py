@@ -111,12 +111,12 @@ DEVICE_PERF_UP = "/data/local/tmp/qa-perf-up.bin"
 DEVICE_PERF_DOWN = "/data/local/tmp/qa-perf-down.bin"
 # A stalled `nc` on either side must not eat the whole guest command budget;
 # the probes are diagnostics, the crossfire evidence is the deliverable.
-PERF_NC_TIMEOUT_S = 40.0
+PERF_NC_TIMEOUT_S = 180.0
 # Guest-side `timeout` wrapper for the transfer probes. The console session is
 # strictly serial, so a hanging `nc` does not just cost the probe: it starves
 # the distcc run behind it and the whole round is lost. Bound the damage at the
 # shell instead of relying on the console deadline.
-PERF_GUEST_NC_GUARD_S = 20
+PERF_GUEST_NC_GUARD_S = 150
 # Round-level segment fields. Every one of them is present on every round and
 # `None` means "not measured" — never 0, which would read as "measured zero".
 SEGMENT_ROUND_FIELDS = (
@@ -126,6 +126,7 @@ SEGMENT_ROUND_FIELDS = (
     "transport_up_ms", "transport_up_bytes",
     "transport_down_ms", "transport_down_bytes",
     "transport_ms", "transport_bytes",
+    "transport_down_small_ms", "transport_down_small_bytes",
     "guest_has_nc", "perf_probe_errors",
 )
 # Summary-level aggregation keys (perf v2 vocabulary, README §7.1).
@@ -514,13 +515,20 @@ def _probe_transport_up(adb: Adb, console: GuestConsole, tool, next_index,
 
 
 def _probe_transport_down(adb: Adb, console: GuestConsole, tool, next_index,
-                          port: int, chroot_prefix: str,
-                          round_result: dict) -> dict:
-    """Device -> gvproxy -> guest download: the return leg of a real job."""
+                          port: int, chroot_prefix: str, round_result: dict,
+                          size_kib: int = 180, label: str = "download") -> dict:
+    """Device -> gvproxy -> guest download: the return leg of a real job.
+
+    `label` scopes the failure codes so the 180 KiB and 8 KiB runs cannot
+    overwrite each other's verdict. The size pair exists to separate
+    "bandwidth" from "stall": if a 180 KiB transfer is slow but 8 KiB is
+    quick, the cost scales with bytes; if both are slow, the leg stalls
+    before it moves anything.
+    """
     result: dict = {"elapsed_ms": None, "bytes": None}
-    device_tmp = DEVICE_PERF_DOWN
+    device_tmp = f"{DEVICE_PERF_DOWN}.{size_kib}"
     adb.run("shell", "dd", "if=/dev/zero", f"of={device_tmp}", "bs=1024",
-            "count=180", check=False)
+            "count=%d" % size_kib, check=False)
     listener = subprocess.Popen(
         [adb.adb_path] + (["-s", adb.serial] if adb.serial else []) +
         # Redirect, not a pipe: toybox `nc -l` fed by `cat |` accepted the
@@ -529,7 +537,10 @@ def _probe_transport_down(adb: Adb, console: GuestConsole, tool, next_index,
         # fd and stream it.
         ["shell", f"nc -l -p {port} < {device_tmp}"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    time.sleep(1.5)
+    # 3 s, not 1.5: the `dd` above plus process start can exceed the old
+    # window, and a listener that is not up yet makes the guest's `nc` fail
+    # instantly, which reads as a broken link instead of a late one.
+    time.sleep(3.0)
     try:
         # /dev/null exists in both worlds: the chroot gets one mknod'ed by
         # the console setup, so the same path works either way.
@@ -539,13 +550,13 @@ def _probe_transport_down(adb: Adb, console: GuestConsole, tool, next_index,
                                          command, PERF_NC_TIMEOUT_S,
                                          bool(chroot_prefix))
         if elapsed < 0:
-            _record_probe_error(round_result, "download_timeout")
+            _record_probe_error(round_result, f"{label}_timeout")
         elif rc != 0:
-            _record_probe_error(round_result, "download_nc_failed")
+            _record_probe_error(round_result, f"{label}_nc_failed")
         else:
             result["elapsed_ms"] = elapsed
-            result["bytes"] = PERF_DOWN_BYTES
-        _wait_perf_listener(listener, round_result, "download_listener_timeout")
+            result["bytes"] = size_kib * 1024
+        _wait_perf_listener(listener, round_result, f"{label}_listener_timeout")
     finally:
         if listener.poll() is None:
             listener.kill()
@@ -659,6 +670,14 @@ def probe_segments(adb: Adb, console: GuestConsole, args, tool, next_index,
                                  round_result)
     round_result["transport_down_ms"] = down["elapsed_ms"]
     round_result["transport_down_bytes"] = down["bytes"]
+    # Size pair: 8 KiB on the next port discriminates a stall (both slow) from
+    # bandwidth (only the big one slow). Cheap — a healthy link moves it in ms.
+    down_small = _probe_transport_down(adb, console, tool, next_index,
+                                       args.perf_port_down + 1, chroot_prefix,
+                                       round_result, size_kib=8,
+                                       label="download_small")
+    round_result["transport_down_small_ms"] = down_small["elapsed_ms"]
+    round_result["transport_down_small_bytes"] = down_small["bytes"]
 
     # A half-measured transport is not a transport figure: leave it `None`.
     if round_result["transport_up_ms"] is not None \
