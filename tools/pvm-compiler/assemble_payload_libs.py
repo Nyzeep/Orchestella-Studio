@@ -19,6 +19,12 @@ Every staged .so is checked for EM_AARCH64 and >= 16 KB PT_LOAD alignment
 only: the payload must already exist before the APK build makes sense, but it
 is never copied or modified.
 
+PVM-09 adds the compiler-service manifest: generation writes
+<out>/assets/PVM-COMPILER-MANIFEST (schema 1) describing the staged libraries so
+the app can report what it actually ships, and --verify-manifest re-checks a
+staging directory against that file as a build-time gate. The manifest is a
+build product and is never committed.
+
 Exit codes: 0 ok; 1 usage/validation failure; 2 ELF/alignment failure.
 """
 
@@ -27,6 +33,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import shutil
 import struct
 import subprocess
@@ -38,6 +45,22 @@ PAGE_ALIGN = 16 * 1024
 EM_AARCH64 = 183
 REQUIRED_COMPILER_SOS = ("libLLVM.so", "libclang-cpp.so")
 PLACEHOLDER_SYMBOL = "PVM04_PLACEHOLDER"
+
+# PVM-09 manifest contract (schema 1). Field names are on-disk compatibility:
+# the Java reader in runtime/fastlane-capability parses exactly these keys.
+MANIFEST_RELATIVE = Path("assets") / "PVM-COMPILER-MANIFEST"
+MANIFEST_SCHEMA = 1
+VCPU_TOPOLOGY_ONE_CPU = "one_cpu"
+DEFAULT_PAYLOAD_BINARY = "libpvm_compiler_payload.so"
+DEFAULT_MEMORY_MIB = 2048
+MEMORY_MIB_MIN = 1
+MEMORY_MIB_MAX = 16384
+PAYLOAD_BINARY_PATTERN = re.compile(r"[A-Za-z0-9._-]+\.so")
+SHA256_HEX_PATTERN = re.compile(r"[0-9a-f]{64}")
+# The Fast Lane payload is the APK-side entry point the compiler libraries sit
+# next to, so a payload directory must always carry it, whatever payload binary
+# the manifest names for the compiler lane.
+REQUIRED_PAYLOAD_SO = "libfastlane_payload.so"
 
 STUB_C = """\
 // PVM-08 placeholder shared object: exercises APK packaging, 16 KB alignment
@@ -58,6 +81,151 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def manifest_fail(detail: str) -> "SystemExit":
+    print("FAIL manifest: " + detail, file=sys.stderr)
+    return SystemExit(1)
+
+
+def is_payload_binary_name(name: str) -> bool:
+    return PAYLOAD_BINARY_PATTERN.fullmatch(name) is not None
+
+
+def staged_shared_objects(abi_dir: Path) -> list[Path]:
+    """Every .so in the ABI directory, ordered by name (manifest order is fixed)."""
+    return sorted(
+        (path for path in abi_dir.iterdir() if path.is_file() and path.name.endswith(".so")),
+        key=lambda path: path.name,
+    )
+
+
+def build_manifest(
+    abi_dir: Path,
+    compiler_version: str,
+    target_triple: str,
+    payload_binary: str = DEFAULT_PAYLOAD_BINARY,
+    memory_mib: int = DEFAULT_MEMORY_MIB,
+    vcpu_topology: str = VCPU_TOPOLOGY_ONE_CPU,
+) -> dict:
+    """Build the schema-1 manifest for the .so files currently in <abi_dir>.
+
+    Split out from the CLI so the structure can be checked without staging a
+    whole APK; the caller validates the scalar arguments before calling this.
+    """
+    libs = [
+        {"name": path.name, "size": path.stat().st_size, "sha256": sha256_file(path)}
+        for path in staged_shared_objects(abi_dir)
+    ]
+    return {
+        "schema": MANIFEST_SCHEMA,
+        "compiler_version": compiler_version,
+        "target_triple": target_triple,
+        "vcpu_topology": vcpu_topology,
+        "memory_mib": memory_mib,
+        "payload_binary": payload_binary,
+        "libs": libs,
+    }
+
+
+def write_manifest(manifest: dict, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+
+def manifest_label(path: Path, staging: Path) -> str:
+    """Staging-relative label for logs: build output must not print machine paths."""
+    try:
+        return path.resolve().relative_to(staging.resolve()).as_posix()
+    except ValueError:
+        return path.name
+
+
+def manifest_text(manifest: dict, key: str) -> str:
+    value = manifest.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise manifest_fail(f"field '{key}' is missing or empty")
+    return value.strip()
+
+
+def verify_manifest(staging: Path) -> dict:
+    """Check a staging directory against its manifest; raise SystemExit(1) on any defect."""
+    manifest_path = staging / MANIFEST_RELATIVE
+    if not manifest_path.is_file():
+        raise manifest_fail("assets/PVM-COMPILER-MANIFEST is missing (run the generator first)")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise manifest_fail("assets/PVM-COMPILER-MANIFEST is not valid UTF-8 JSON")
+    if not isinstance(manifest, dict):
+        raise manifest_fail("assets/PVM-COMPILER-MANIFEST must be a JSON object")
+
+    schema = manifest.get("schema")
+    if isinstance(schema, bool) or not isinstance(schema, int) or schema != MANIFEST_SCHEMA:
+        raise manifest_fail(f"schema must be the integer {MANIFEST_SCHEMA}")
+
+    compiler_version = manifest_text(manifest, "compiler_version")
+    target_triple = manifest_text(manifest, "target_triple")
+    payload_binary = manifest_text(manifest, "payload_binary")
+    topology = manifest_text(manifest, "vcpu_topology")
+
+    if not is_payload_binary_name(payload_binary):
+        raise manifest_fail("payload_binary must be a bare file name matching [A-Za-z0-9._-]+.so")
+    if topology != VCPU_TOPOLOGY_ONE_CPU:
+        raise manifest_fail(f"vcpu_topology must be {VCPU_TOPOLOGY_ONE_CPU}")
+
+    memory_mib = manifest.get("memory_mib")
+    if isinstance(memory_mib, bool) or not isinstance(memory_mib, int):
+        raise manifest_fail("memory_mib must be an integer")
+    if not MEMORY_MIB_MIN <= memory_mib <= MEMORY_MIB_MAX:
+        raise manifest_fail(f"memory_mib must be in {MEMORY_MIB_MIN}..{MEMORY_MIB_MAX}")
+
+    abi_dir = staging / "arm64-v8a"
+    if not abi_dir.is_dir():
+        raise manifest_fail("arm64-v8a/ is missing next to the manifest")
+
+    declared = manifest.get("libs")
+    if not isinstance(declared, list) or not declared:
+        raise manifest_fail("field 'libs' must be a non-empty array")
+
+    seen: list[str] = []
+    for entry in declared:
+        if not isinstance(entry, dict):
+            raise manifest_fail("every libs entry must be a JSON object")
+        name = entry.get("name")
+        if not isinstance(name, str) or not name.endswith(".so") or Path(name).name != name:
+            raise manifest_fail("libs entry 'name' must be a bare .so file name")
+        if name in seen:
+            raise manifest_fail(f"{name}: duplicate libs entry")
+        size = entry.get("size")
+        if isinstance(size, bool) or not isinstance(size, int) or size <= 0:
+            raise manifest_fail(f"{name}: 'size' must be a positive integer")
+        digest = entry.get("sha256")
+        if not isinstance(digest, str) or SHA256_HEX_PATTERN.fullmatch(digest) is None:
+            raise manifest_fail(f"{name}: 'sha256' must be 64 lowercase hex characters")
+        staged = abi_dir / name
+        if not staged.is_file():
+            raise manifest_fail(f"{name}: declared in manifest but missing from arm64-v8a/")
+        actual_size = staged.stat().st_size
+        if actual_size != size:
+            raise manifest_fail(f"{name}: size mismatch (manifest {size}, file {actual_size})")
+        if sha256_file(staged) != digest:
+            raise manifest_fail(f"{name}: sha256 mismatch against the staged file")
+        seen.append(name)
+
+    undeclared = [path.name for path in staged_shared_objects(abi_dir) if path.name not in seen]
+    if undeclared:
+        raise manifest_fail("arm64-v8a/ contains .so files the manifest does not declare: " + ", ".join(undeclared))
+
+    return {
+        "schema": MANIFEST_SCHEMA,
+        "compiler_version": compiler_version,
+        "target_triple": target_triple,
+        "payload_binary": payload_binary,
+        "vcpu_topology": topology,
+        "memory_mib": memory_mib,
+        "libs": len(seen),
+    }
 
 
 def elf_machine_and_load_aligns(path: Path) -> tuple[int, list[int]]:
@@ -161,6 +329,23 @@ def build_placeholders(out_dir: Path, ndk: Path | None, api: int) -> list[Path]:
     return produced
 
 
+def verify_only(arguments: argparse.Namespace) -> int:
+    """--verify-manifest branch: a pure gate, nothing is staged or written."""
+    conflicts = [
+        flag for flag, enabled in (
+            ("--compiler-dir", arguments.compiler_dir is not None),
+            ("--placeholder", arguments.placeholder),
+            ("--payload-dir", arguments.payload_dir is not None),
+            ("--manifest-out", arguments.manifest_out is not None),
+        ) if enabled
+    ]
+    if conflicts:
+        raise fail("--verify-manifest is mutually exclusive with generation arguments: " + ", ".join(conflicts))
+    summary = verify_manifest(arguments.verify_manifest)
+    print("PVM_COMPILER_MANIFEST_OK " + json.dumps(summary, sort_keys=True))
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     here = Path(__file__).resolve().parent
@@ -175,18 +360,50 @@ def main() -> int:
                         help="NDK root for --placeholder stub compilation and the real libc++_shared.so copy")
     parser.add_argument("--api", type=int, default=26, help="Android API level for placeholder stubs (default 26)")
     parser.add_argument("--out", type=Path, default=here.parent.parent / "build" / "pvm-compiler" / "staging")
+    parser.add_argument("--compiler-version", default=None,
+                        help="compiler version written into the manifest (required when generating)")
+    parser.add_argument("--target-triple", default=None,
+                        help="target triple the payload was built for, e.g. aarch64-unknown-linux-android "
+                             "(required when generating; never guessed)")
+    parser.add_argument("--payload-binary", default=DEFAULT_PAYLOAD_BINARY,
+                        help=f"payload .so name written into the manifest (default {DEFAULT_PAYLOAD_BINARY})")
+    parser.add_argument("--memory-mib", type=int, default=DEFAULT_MEMORY_MIB,
+                        help=f"VM memory in MiB, {MEMORY_MIB_MIN}..{MEMORY_MIB_MAX} (default {DEFAULT_MEMORY_MIB})")
+    parser.add_argument("--manifest-out", type=Path, default=None,
+                        help=f"manifest path override (default <out>/{MANIFEST_RELATIVE.as_posix()})")
+    parser.add_argument("--verify-manifest", type=Path, default=None, metavar="DIR",
+                        help="verify <DIR>/assets/PVM-COMPILER-MANIFEST against <DIR>/arm64-v8a/*.so and exit; "
+                             "mutually exclusive with the generation arguments")
     arguments = parser.parse_args()
+
+    if arguments.verify_manifest is not None:
+        return verify_only(arguments)
+
+    for flag, value in (("--compiler-version", arguments.compiler_version),
+                        ("--target-triple", arguments.target_triple)):
+        if value is None or not value.strip():
+            raise fail(f"{flag} is required to write {MANIFEST_RELATIVE.as_posix()}")
+
+    compiler_version = arguments.compiler_version.strip()
+    target_triple = arguments.target_triple.strip()
+    payload_binary = arguments.payload_binary.strip()
+    if not is_payload_binary_name(payload_binary):
+        raise fail("--payload-binary must be a bare file name matching [A-Za-z0-9._-]+.so")
+    if not MEMORY_MIB_MIN <= arguments.memory_mib <= MEMORY_MIB_MAX:
+        raise fail(f"--memory-mib must be in {MEMORY_MIB_MIN}..{MEMORY_MIB_MAX}")
 
     if arguments.compiler_dir and arguments.placeholder:
         raise fail("--compiler-dir and --placeholder are mutually exclusive")
     if not arguments.compiler_dir and not arguments.placeholder:
         raise fail("one of --compiler-dir or --placeholder is required")
 
-    payload_so = None
     if arguments.payload_dir is not None:
-        payload_so = arguments.payload_dir / "arm64-v8a" / "libfastlane_payload.so"
-        if not payload_so.is_file():
-            raise fail(f"payload dir is missing arm64-v8a/libfastlane_payload.so: {arguments.payload_dir}")
+        # The payload directory is validated, never copied. It must carry the
+        # Fast Lane payload the compiler libraries are resolved next to, plus
+        # whichever payload binary the manifest names for the compiler lane.
+        for name in dict.fromkeys((REQUIRED_PAYLOAD_SO, payload_binary)):
+            if not (arguments.payload_dir / "arm64-v8a" / name).is_file():
+                raise fail(f"--payload-dir is missing arm64-v8a/{name}")
 
     out = arguments.out
     abi_dir = out / "arm64-v8a"
@@ -228,10 +445,20 @@ def main() -> int:
             staged.append(destination)
 
     facts = [verify_so(path) for path in staged]
+    manifest = build_manifest(
+        abi_dir,
+        compiler_version=compiler_version,
+        target_triple=target_triple,
+        payload_binary=payload_binary,
+        memory_mib=arguments.memory_mib,
+    )
+    manifest_path = arguments.manifest_out or (out / MANIFEST_RELATIVE)
+    write_manifest(manifest, manifest_path)
     summary = {
         "staging": out.as_posix(),
         "placeholder": placeholder,
         "files": facts,
+        "manifest": {"path": manifest_label(manifest_path, out), "libs": len(manifest["libs"])},
     }
     print("PVM_COMPILER_STAGE_OK " + json.dumps(summary, sort_keys=True))
     if placeholder:

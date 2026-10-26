@@ -38,6 +38,15 @@ public final class FastLaneLaunchSpec {
     private final int distccPort;
     private final String toolboxManifestSha256;
 
+    /**
+     * Builds a launch spec.
+     *
+     * <p>{@code toolboxManifestSha256} describes the FLN1 toolbox manifest that
+     * ships inside the payload: an empty string means this payload carries no
+     * FLN1 toolbox at all (for example a compiler-only payload); a non-empty
+     * value must be 64 lowercase hex characters. An empty value is never
+     * replaced by a placeholder digest — the absence is stated, not faked.
+     */
     public FastLaneLaunchSpec(
             String instanceId,
             String payloadBinaryName,
@@ -80,9 +89,11 @@ public final class FastLaneLaunchSpec {
                 || proxyPort == distccPort) {
             throw new IllegalArgumentException("vsock ports must be distinct");
         }
-        this.toolboxManifestSha256 = require(toolboxManifestSha256, "toolboxManifestSha256");
-        if (!SHA256.matcher(toolboxManifestSha256).matches()) {
-            throw new IllegalArgumentException("toolboxManifestSha256 must be 64 lowercase hex characters");
+        this.toolboxManifestSha256 =
+                Objects.requireNonNull(toolboxManifestSha256, "toolboxManifestSha256");
+        if (!toolboxManifestSha256.isEmpty() && !SHA256.matcher(toolboxManifestSha256).matches()) {
+            throw new IllegalArgumentException(
+                    "toolboxManifestSha256 must be empty or 64 lowercase hex characters");
         }
     }
 
@@ -141,6 +152,10 @@ public final class FastLaneLaunchSpec {
         return distccPort;
     }
 
+    /**
+     * The FLN1 toolbox manifest digest, or an empty string when this payload
+     * carries no FLN1 toolbox.
+     */
     public String toolboxManifestSha256() {
         return toolboxManifestSha256;
     }

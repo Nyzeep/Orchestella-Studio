@@ -152,7 +152,8 @@ public final class DualLaneCoordinator implements Closeable {
                 qemuState = LaneState.FAILED;
                 accelState = LaneState.DISABLED;
                 started = false;
-                emit(LaneEvent.LANE_LOST, LaneId.QEMU, "QEMU_START_FAILED",
+                emit(LaneEvent.LANE_LOST, LaneId.QEMU,
+                        startFailureCode(failure, "QEMU_START_FAILED"),
                         elapsed(qemuStartedAt));
                 return report(accelReject);
             }
@@ -181,7 +182,8 @@ public final class DualLaneCoordinator implements Closeable {
                     accelReservation = null;
                     accelLease = false;
                     accelState = LaneState.LOST;
-                    emit(LaneEvent.LANE_LOST, LaneId.ACCEL, "ACCEL_START_FAILED",
+                    emit(LaneEvent.LANE_LOST, LaneId.ACCEL,
+                            startFailureCode(failure, "ACCEL_START_FAILED"),
                             elapsed(accelStartedAt));
                 }
             }
@@ -416,6 +418,23 @@ public final class DualLaneCoordinator implements Closeable {
 
     private long elapsed(long startedAtNanos) {
         return Math.max(0L, (clock.nanoTime() - startedAtNanos) / 1_000_000L);
+    }
+
+    /**
+     * The starter's own fixed code when it has one, the lane-level fallback
+     * otherwise. A transport failure and a refused capability must not look
+     * the same in the event log: the accelerator lane now has distinct codes
+     * ({@code PAYLOAD_LOAD_FAILED}, {@code PAYLOAD_UNAVAILABLE_NO_PROTECTED},
+     * {@code PAYLOAD_COMPILER_MISMATCH}, ...) that used to collapse into one.
+     */
+    private static String startFailureCode(Exception failure, String fallback) {
+        if (failure instanceof LaneStartException typed) {
+            String code = typed.code();
+            if (code != null && !code.isBlank()) {
+                return code;
+            }
+        }
+        return fallback;
     }
 
     private void sleep(long millis) {

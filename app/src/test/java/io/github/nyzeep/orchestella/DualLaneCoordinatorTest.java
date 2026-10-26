@@ -355,6 +355,36 @@ public final class DualLaneCoordinatorTest {
     }
 
     @Test
+    public void accelStartFailureWithBlankCodeFallsBackToFixedCode() {
+        Fixture fixture = new Fixture();
+        fixture.accelStarter = () -> {
+            fixture.accelStarts++;
+            throw new LaneStartException("   ");
+        };
+
+        fixture.start();
+
+        assertEquals(LaneState.READY, fixture.coordinator.state(LaneId.QEMU));
+        assertEquals(LaneState.LOST, fixture.coordinator.state(LaneId.ACCEL));
+        assertEquals("ACCEL_START_FAILED", fixture.eventCode(LaneEvent.LANE_LOST, LaneId.ACCEL));
+    }
+
+    @Test
+    public void accelStartFailureWithUnexpectedRuntimeExceptionFallsBackToFixedCode() {
+        Fixture fixture = new Fixture();
+        fixture.accelStarter = () -> {
+            fixture.accelStarts++;
+            throw new IllegalStateException("host detail");
+        };
+
+        fixture.start();
+
+        assertEquals(LaneState.READY, fixture.coordinator.state(LaneId.QEMU));
+        assertEquals(LaneState.LOST, fixture.coordinator.state(LaneId.ACCEL));
+        assertEquals("ACCEL_START_FAILED", fixture.eventCode(LaneEvent.LANE_LOST, LaneId.ACCEL));
+    }
+
+    @Test
     public void eventsContainOnlyFixedNamesCodesAndDurations() {
         Fixture fixture = new Fixture();
         fixture.start();
@@ -527,6 +557,15 @@ public final class DualLaneCoordinatorTest {
                 }
             }
             return false;
+        }
+
+        String eventCode(String name, LaneId lane) {
+            for (LaneEvent event : events) {
+                if (event.name().equals(name) && event.lane() == lane) {
+                    return event.code();
+                }
+            }
+            throw new AssertionError("no event " + name + " for " + lane);
         }
     }
 
