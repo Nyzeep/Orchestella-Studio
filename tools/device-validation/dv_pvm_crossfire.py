@@ -89,8 +89,46 @@ DEVICE_FIXTURE_PUSH = "/sdcard/Download/fixture.c"
 # past the AXP1 frame budget and the console round-trips alike.
 MAX_FIXTURE_BYTES = 1_000_000
 GUEST_TRIPLE = "aarch64-unknown-linux-android"
+GUEST_DOT_I = "/root/fixture.i"
+GUEST_DOT_I_O = "/root/fromdoti.o"
 RC_MARKER_PATTERN = r"QA_CF_RC_{index}=(\d+)"
 B64_CHUNK_BYTES = 1024  # tty canonical mode drops input past ~4 KiB per line
+# Perf attribution (`--profile-segments`). PROVEN constant, not a measurement:
+# DV-PVM-02a's file-channel run clocked the payload side — request in, compile,
+# answer out — at 1.05-1.08 s for a 92 KB `.i`, so payload and vsock are not
+# the bottleneck. The ledger subtracts this and reports the remainder as
+# unexplained instead of attributing it to something nobody measured.
+PAYLOAD_COMPILE_BASELINE_MS = 1050
+# Probe ports: 5103 is the production bridge contract, 19999 is the object
+# return in this same round, 5037 is the adb server. Anything else is free.
+PERF_PORT_UP_DEFAULT = 19901
+PERF_PORT_DOWN_DEFAULT = 19902
+PERF_RESERVED_PORTS = (CONTRACT_DISTCC_PORT, 19999, 5037)
+# Matches the 02b round trip for the `.o` (179,912 B with the symbol table):
+# the segment probe only needs the same order of magnitude of bytes.
+PERF_DOWN_BYTES = 180 * 1024
+DEVICE_PERF_UP = "/data/local/tmp/qa-perf-up.bin"
+DEVICE_PERF_DOWN = "/data/local/tmp/qa-perf-down.bin"
+# A stalled `nc` on either side must not eat the whole guest command budget;
+# the probes are diagnostics, the crossfire evidence is the deliverable.
+PERF_NC_TIMEOUT_S = 120.0
+# Round-level segment fields. Every one of them is present on every round and
+# `None` means "not measured" — never 0, which would read as "measured zero".
+SEGMENT_ROUND_FIELDS = (
+    "preprocess_ms_cold", "preprocess_ms_warm", "preprocess_ms",
+    "preprocess_ms_samples", "dot_i_bytes",
+    "assemble_ms", "assemble_ms_samples",
+    "transport_up_ms", "transport_up_bytes",
+    "transport_down_ms", "transport_down_bytes",
+    "transport_ms", "transport_bytes",
+    "perf_probe_errors",
+)
+# Summary-level aggregation keys (perf v2 vocabulary, README §7.1).
+SEGMENT_SUMMARY_FIELDS = (
+    "preprocess_ms_cold", "preprocess_ms_warm", "preprocess_ms_p50",
+    "assemble_ms_p50", "transport_up_ms_p50", "transport_down_ms_p50",
+    "transport_ms_p50", "transport_bytes", "segment_samples", "ledger",
+)
 
 
 class GuestConsole:
@@ -350,6 +388,253 @@ def return_object_via_console(console: GuestConsole, guest_path: str,
             "elapsed_ms": int((time.monotonic() - started) * 1000)}
 
 
+def blank_segment_fields() -> dict:
+    """The segment fields a round starts with: all `None` ("not measured").
+
+    Present even when `--profile-segments` is off so the 02b JSON shape stays
+    one shape; the values just stay `None` instead of turning into 0.
+    """
+    return {name: None for name in SEGMENT_ROUND_FIELDS}
+
+
+def median_sample(values) -> float | int | None:
+    """Median over the usable samples; `None` is dropped, never read as 0.
+
+    Negative values are the console client's "no answer" sentinel (-1), so
+    they are dropped for the same reason: a timed-out probe is not a fast
+    probe. An empty list has no median, and says so.
+    """
+    clean = [value for value in (values or [])
+             if isinstance(value, (int, float)) and not isinstance(value, bool)
+             and value >= 0]
+    if not clean:
+        return None
+    return statistics.median(clean)
+
+
+def _record_probe_error(round_result: dict, code: str) -> None:
+    """One short code per distinct probe failure; never raises, never repeats."""
+    errors = round_result.get("perf_probe_errors")
+    if not isinstance(errors, list):
+        errors = []
+        round_result["perf_probe_errors"] = errors
+    if code not in errors:
+        errors.append(code)
+
+
+def run_guest_transfer(console: GuestConsole, tool, next_index,
+                       inner_command: str, outer_command: str,
+                       timeout_s: float, chroot_active: bool) -> tuple:
+    """Run a guest-side `nc` transfer; return (rc, elapsed_ms).
+
+    `inner_command` goes through `tool()` exactly like the real distcc and
+    object-return legs, i.e. inside `/alpine` when the prepared chroot is
+    active. A minirootfs may ship no netcat, so a "command not found" (127)
+    retries once on the outer shell: `outer_command` is the same transfer with
+    the chroot-prefixed path, or the identical text when the transfer touches
+    no guest file (the download leg only writes `/dev/null`). A timeout stays
+    a timeout — retrying a hung `nc` would just burn another budget.
+    """
+    rc, _text, elapsed = console.run(tool(inner_command), next_index(), timeout_s)
+    if rc == 127 and chroot_active:
+        rc, _text, elapsed = console.run(outer_command, next_index(), timeout_s)
+    return rc, elapsed
+
+
+def _wait_perf_listener(listener: subprocess.Popen, round_result: dict,
+                        timeout_code: str) -> bool:
+    """Wait for the device-side `nc -l` to exit; kill and flag it otherwise."""
+    try:
+        listener.wait(timeout=PERF_NC_TIMEOUT_S)
+        return True
+    except subprocess.TimeoutExpired:
+        listener.kill()
+        _record_probe_error(round_result, timeout_code)
+        return False
+
+
+def _probe_transport_up(adb: Adb, console: GuestConsole, tool, next_index,
+                        chroot_prefix: str, port: int, expected_bytes,
+                        round_work: Path, round_result: dict) -> dict:
+    """Guest -> gvproxy -> device loopback upload over the distcc topology.
+
+    Device side listens on its own loopback (gvproxy maps the guest's
+    192.168.127.254:<port> there 1:1, which is why the bridge contract port is
+    fixed); the guest side is a plain `nc` pipe, same shape as
+    `return_object_via_netcat`.
+    """
+    result: dict = {"elapsed_ms": None, "bytes": None}
+    local_path = round_work / "perf-up.bin"
+    device_tmp = DEVICE_PERF_UP
+    listener = subprocess.Popen(
+        [adb.adb_path] + (["-s", adb.serial] if adb.serial else []) +
+        ["shell", f"nc -l -p {port} > {device_tmp}"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(1.5)
+    try:
+        inner = f"nc {GUEST_HOST_IP} {port} < {GUEST_DOT_I}"
+        outer = f"nc {GUEST_HOST_IP} {port} < {chroot_prefix}{GUEST_DOT_I}"
+        rc, elapsed = run_guest_transfer(console, tool, next_index, inner, outer,
+                                         PERF_NC_TIMEOUT_S,
+                                         bool(chroot_prefix))
+        transferred = rc == 0 and elapsed >= 0
+        if elapsed < 0:
+            _record_probe_error(round_result, "upload_timeout")
+        elif rc != 0:
+            _record_probe_error(round_result, "upload_nc_failed")
+        else:
+            result["elapsed_ms"] = elapsed
+        _wait_perf_listener(listener, round_result, "upload_listener_timeout")
+        if transferred:
+            local_path.unlink(missing_ok=True)
+            adb.run("pull", device_tmp, str(local_path), check=False)
+            if local_path.exists():
+                result["bytes"] = len(local_path.read_bytes())
+                if expected_bytes is not None and result["bytes"] != expected_bytes:
+                    _record_probe_error(round_result, "upload_size_mismatch")
+            else:
+                _record_probe_error(round_result, "upload_pull_failed")
+    finally:
+        if listener.poll() is None:
+            listener.kill()
+        adb.run("shell", "rm", "-f", device_tmp, check=False)
+    return result
+
+
+def _probe_transport_down(adb: Adb, console: GuestConsole, tool, next_index,
+                          port: int, chroot_prefix: str,
+                          round_result: dict) -> dict:
+    """Device -> gvproxy -> guest download: the return leg of a real job."""
+    result: dict = {"elapsed_ms": None, "bytes": None}
+    device_tmp = DEVICE_PERF_DOWN
+    adb.run("shell", "dd", "if=/dev/zero", f"of={device_tmp}", "bs=1024",
+            "count=180", check=False)
+    listener = subprocess.Popen(
+        [adb.adb_path] + (["-s", adb.serial] if adb.serial else []) +
+        ["shell", f"cat {device_tmp} | nc -l -p {port}"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(1.5)
+    try:
+        # /dev/null exists in both worlds: the chroot gets one mknod'ed by
+        # the console setup, so the same path works either way.
+        command = f"nc {GUEST_HOST_IP} {port} > /dev/null"
+        rc, elapsed = run_guest_transfer(console, tool, next_index, command,
+                                         command, PERF_NC_TIMEOUT_S,
+                                         bool(chroot_prefix))
+        if elapsed < 0:
+            _record_probe_error(round_result, "download_timeout")
+        elif rc != 0:
+            _record_probe_error(round_result, "download_nc_failed")
+        else:
+            result["elapsed_ms"] = elapsed
+            result["bytes"] = PERF_DOWN_BYTES
+        _wait_perf_listener(listener, round_result, "download_listener_timeout")
+    finally:
+        if listener.poll() is None:
+            listener.kill()
+        adb.run("shell", "rm", "-f", device_tmp, check=False)
+    return result
+
+
+def _read_dot_i_bytes(console: GuestConsole, tool, next_index) -> int | None:
+    """Size of the retained `.i`; the byte check every transport probe needs."""
+    rc, text, _ = console.run(tool(f"wc -c < {GUEST_DOT_I}"), next_index(), 60)
+    if rc != 0:
+        return None
+    lines = [line.strip() for line in text.strip().splitlines() if line.strip()]
+    return int(lines[-1]) if lines and lines[-1].isdigit() else None
+
+
+def probe_segments(adb: Adb, console: GuestConsole, args, tool, next_index,
+                   chroot_prefix: str, round_work: Path,
+                   round_result: dict) -> None:
+    """Measure P (guest preprocess) and T (gvproxy transport) in this session.
+
+    Runs after fixture injection and after the guest reference compile, before
+    the full distcc run, so one guest boot yields the whole split: the
+    reference compile stays byte-comparable with the 02b baseline, and P is
+    measured in the warm-cache state distcc itself will see. `preprocess_ms_
+    cold` is therefore the first probe invocation in the round, not a cold
+    page cache.
+
+    Every failure writes `None` plus a short code and falls through: a broken
+    probe must never cost the crossfire evidence.
+    """
+    probe_timeout = args.guest_command_timeout_s
+    # An empty list means "profiled and clean"; `None` means "never profiled".
+    round_result["perf_probe_errors"] = []
+
+    # --- P: guest preprocess, three invocations, `/root/fixture.i` kept ----
+    preprocess_samples: list = []
+    for _ in range(3):
+        rc, _text, elapsed = console.run(
+            tool(f"clang -E --target={GUEST_TRIPLE} -O1 {GUEST_FIXTURE} "
+                 f"-o {GUEST_DOT_I}"),
+            next_index(), probe_timeout)
+        if rc == 0 and elapsed >= 0:
+            preprocess_samples.append(elapsed)
+        elif elapsed < 0:
+            _record_probe_error(round_result, "preprocess_timeout")
+        else:
+            _record_probe_error(round_result, "preprocess_failed")
+    if preprocess_samples:
+        round_result["preprocess_ms_samples"] = preprocess_samples
+        round_result["preprocess_ms_cold"] = preprocess_samples[0]
+        # Warm = the repeats. With a single usable sample there is no warm
+        # state to report, and inventing one would poison the ledger.
+        round_result["preprocess_ms_warm"] = median_sample(preprocess_samples[1:])
+        round_result["preprocess_ms"] = round_result["preprocess_ms_warm"]
+
+    dot_i_bytes = _read_dot_i_bytes(console, tool, next_index) \
+        if preprocess_samples else None
+    round_result["dot_i_bytes"] = dot_i_bytes
+    if dot_i_bytes is None:
+        _record_probe_error(round_result, "dot_i_bytes_unknown")
+    if not preprocess_samples:
+        # Without a `.i` neither the assemble control nor the transport
+        # probes have a payload to move; the full distcc run still happens.
+        return
+
+    # --- A: same work, preprocessed input (P + A vs local_compile_ms) ------
+    assemble_samples: list = []
+    for _ in range(2):
+        rc, _text, elapsed = console.run(
+            tool(f"clang -c --target={GUEST_TRIPLE} -O1 {GUEST_DOT_I} "
+                 f"-o {GUEST_DOT_I_O}"),
+            next_index(), probe_timeout)
+        if rc == 0 and elapsed >= 0:
+            assemble_samples.append(elapsed)
+        elif elapsed < 0:
+            _record_probe_error(round_result, "assemble_timeout")
+        else:
+            _record_probe_error(round_result, "assemble_failed")
+    if assemble_samples:
+        round_result["assemble_ms_samples"] = assemble_samples
+        round_result["assemble_ms"] = median_sample(assemble_samples)
+
+    # --- T up / T down: the distcc topology, both directions ---------------
+    up = _probe_transport_up(adb, console, tool, next_index, chroot_prefix,
+                             args.perf_port_up, dot_i_bytes, round_work,
+                             round_result)
+    round_result["transport_up_ms"] = up["elapsed_ms"]
+    round_result["transport_up_bytes"] = up["bytes"]
+    down = _probe_transport_down(adb, console, tool, next_index,
+                                 args.perf_port_down, chroot_prefix,
+                                 round_result)
+    round_result["transport_down_ms"] = down["elapsed_ms"]
+    round_result["transport_down_bytes"] = down["bytes"]
+
+    # A half-measured transport is not a transport figure: leave it `None`.
+    if round_result["transport_up_ms"] is not None \
+            and round_result["transport_down_ms"] is not None:
+        round_result["transport_ms"] = round_result["transport_up_ms"] \
+            + round_result["transport_down_ms"]
+    if round_result["transport_up_bytes"] is not None \
+            and round_result["transport_down_bytes"] is not None:
+        round_result["transport_bytes"] = round_result["transport_up_bytes"] \
+            + round_result["transport_down_bytes"]
+
+
 def read_evidence(adb: Adb, package: str, name: str) -> dict | None:
     return adb.read_evidence(package, name)
 
@@ -462,7 +747,8 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
     round_work = work / f"round-{round_index}"
     round_work.mkdir(parents=True, exist_ok=True)
     round_result: dict = {"round": round_index, "token_sha256": __import__(
-        "hashlib").sha256(token.encode("utf-8")).hexdigest()}
+        "hashlib").sha256(token.encode("utf-8")).hexdigest(),
+        **blank_segment_fields()}
 
     adb.run("shell", "am", "force-stop", args.qa_package, check=False)
     adb.run("shell", "run-as", args.qa_package, "rm", "-f",
@@ -642,8 +928,22 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
             round_result["failure_code"] = "GUEST_LOCAL_COMPILE_FAILED"
             return round_result
 
+        # Perf attribution: P (guest preprocess) and T (gvproxy transport) in
+        # this same console session, before the full distcc run. Opt-in, so
+        # the 02b regression round keeps its exact behaviour and output. The
+        # guard is deliberate: a probe that throws (adb vanished, port busy,
+        # an unforeseen bug) is a missing measurement, never a failed round.
+        if args.profile_segments:
+            try:
+                probe_segments(adb, console, args, tool, next_index,
+                               chroot_prefix, round_work, round_result)
+            except Exception as probe_failure:  # noqa: BLE001 - see above
+                _record_probe_error(
+                    round_result,
+                    "probe_" + type(probe_failure).__name__.lower())
+
         # distcc must be the driver (a CC= prefix alone never wraps clang);
-        # preprocess/transport splits are not measurable inside the guest.
+        # the segment split above is the only in-guest decomposition.
         distcc_command = (
             f'DISTCC_HOSTS="{GUEST_HOST_IP}:{args.bridge_port}" DISTCC_CMD_PREFIX="" '
             f"DISTCC_VERBOSE=1 distcc clang -c --target={GUEST_TRIPLE} -O1 "
@@ -654,8 +954,6 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
         round_result["distcc_ms"] = elapsed
         round_result["distcc_argv"] = distcc_command
         round_result["distcc_remote_seen"] = "remote" in text.lower()
-        round_result["preprocess_ms"] = None
-        round_result["transport_ms"] = None
         if rc != 0:
             round_result["failure_code"] = "GUEST_DISTCC_COMPILE_FAILED"
             return round_result
@@ -777,6 +1075,94 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
             round_result["failure_code"] = "QA_STOP_UNCONFIRMED"
 
 
+def _number(value):
+    """A measured number, or None. `None` stays "not measured", never 0."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return value
+
+
+def compute_ledger(distcc_ms, preprocess_ms, transport_ms,
+                   local_compile_ms=None, assemble_ms=None) -> dict:
+    """Close the 85 s gap as far as the measured segments allow.
+
+    `unexplained_ms = distcc_ms - (preprocess_ms + transport_ms + 1.05 s)`:
+    the payload constant is the 02a measurement, so whatever is left is distcc
+    client overhead plus everything the probes cannot see from the host.
+    `local_gap_ms = local_compile_ms - (preprocess_ms + assemble_ms)` is the
+    calibration check: a full local compile should be about preprocess plus
+    codegen, and a large gap means the split is not describing one workload.
+
+    Any missing input yields `None`: an unmeasured ledger is not a zero one.
+    """
+    distcc, preprocess = _number(distcc_ms), _number(preprocess_ms)
+    transport = _number(transport_ms)
+    unexplained = None
+    if None not in (distcc, preprocess, transport):
+        unexplained = distcc - (preprocess + transport
+                                + PAYLOAD_COMPILE_BASELINE_MS)
+    local, assemble = _number(local_compile_ms), _number(assemble_ms)
+    local_gap = None
+    if None not in (preprocess, local, assemble):
+        local_gap = local - (preprocess + assemble)
+    return {"unexplained_ms": unexplained, "local_gap_ms": local_gap}
+
+
+def summarize_segments(rounds, enabled: bool = True) -> dict:
+    """Per-round segment lists plus medians; all `None` when profiling is off.
+
+    The declared key set never changes, so a reader (and a test) can assert on
+    the shape without special-casing the disabled run.
+    """
+    result = {name: None for name in SEGMENT_SUMMARY_FIELDS}
+    if not enabled:
+        return result
+
+    def column(name: str) -> list:
+        return [r.get(name) for r in rounds]
+
+    result["preprocess_ms_cold"] = median_sample(column("preprocess_ms_cold"))
+    result["preprocess_ms_warm"] = median_sample(column("preprocess_ms_warm"))
+    result["preprocess_ms_p50"] = median_sample(column("preprocess_ms"))
+    result["assemble_ms_p50"] = median_sample(column("assemble_ms"))
+    result["transport_up_ms_p50"] = median_sample(column("transport_up_ms"))
+    result["transport_down_ms_p50"] = median_sample(column("transport_down_ms"))
+    result["transport_ms_p50"] = median_sample(column("transport_ms"))
+    result["transport_bytes"] = median_sample(column("transport_bytes"))
+    # Round-aligned raw values, `None` included: a missing round must stay
+    # visible in the list rather than silently shortening it.
+    result["segment_samples"] = {
+        "preprocess_ms_cold": column("preprocess_ms_cold"),
+        "preprocess_ms": column("preprocess_ms"),
+        "assemble_ms": column("assemble_ms"),
+        "transport_up_ms": column("transport_up_ms"),
+        "transport_down_ms": column("transport_down_ms"),
+        "transport_ms": column("transport_ms"),
+    }
+    result["ledger"] = {
+        str(round_result.get("round", index)): compute_ledger(
+            round_result.get("distcc_ms"),
+            round_result.get("preprocess_ms"),
+            round_result.get("transport_ms"),
+            round_result.get("local_compile_ms"),
+            round_result.get("assemble_ms"))
+        for index, round_result in enumerate(rounds)
+    }
+    return result
+
+
+def apply_segment_summary(summary: dict, rounds, enabled: bool) -> dict:
+    """Merge the aggregation only when the probes actually ran.
+
+    Disabled profiling must leave the summary key-for-key identical to the
+    02b baseline, so the merge is conditional, not an all-`None` spray.
+    """
+    if not enabled:
+        return summary
+    summary.update(summarize_segments(rounds, True))
+    return summary
+
+
 def run_crossfire(adb: Adb, args, root: Path, work: Path, summary: dict) -> int:
     fixture_text = build_fixture(args.fixture_functions)
     if len(fixture_text.encode("utf-8")) >= MAX_FIXTURE_BYTES:
@@ -804,6 +1190,8 @@ def run_crossfire(adb: Adb, args, root: Path, work: Path, summary: dict) -> int:
         summary["distcc_ms_max"] = max(distcc_times)
     if gate_times:
         summary["gate_ms_p50"] = statistics.median(gate_times)
+    apply_segment_summary(summary, rounds,
+                          bool(getattr(args, "profile_segments", False)))
     failures = [r["failure_code"] for r in rounds if r.get("failure_code")]
     if failures:
         summary["failure_code"] = failures[0]
@@ -812,15 +1200,20 @@ def run_crossfire(adb: Adb, args, root: Path, work: Path, summary: dict) -> int:
 
 def run_cleanup(_adb: Adb, args, summary: dict) -> int:
     """Phase cleanup: command list only; the coordinator runs them."""
+    guest_files = [
+        f"rm -f {GUEST_FIXTURE} {GUEST_REF_O} {GUEST_CROSS_O} {GUEST_MAIN_C} "
+        f"{GUEST_MAIN_O} {GUEST_SLACK_C} {GUEST_SLACK_O} /root/cross.bin "
+        f"/root/ref.bin /root/fixture.b64",
+    ]
+    if getattr(args, "profile_segments", False):
+        # The probes keep `/root/fixture.i` on purpose (the transport leg
+        # reads it); only the attribution round leaves these behind.
+        guest_files.append(f"rm -f {GUEST_DOT_I} {GUEST_DOT_I_O}")
     summary["cleanup_commands"] = {
         "device_power": ["adb shell svc power stayon true  # or restore the prior setting"],
         "host_forwards": ["adb forward --remove-all  # or remove each tcp:N this driver created"],
         "sdcard_fixture": [f"adb shell rm -f {DEVICE_FIXTURE_PUSH}"],
-        "guest_files": [
-            f"rm -f {GUEST_FIXTURE} {GUEST_REF_O} {GUEST_CROSS_O} {GUEST_MAIN_C} "
-            f"{GUEST_MAIN_O} {GUEST_SLACK_C} {GUEST_SLACK_O} /root/cross.bin "
-            f"/root/ref.bin /root/fixture.b64",
-        ],
+        "guest_files": guest_files,
     }
     return 0
 
@@ -859,6 +1252,17 @@ def main(argv: list[str] | None = None) -> int:
                              "asset baked into the QA APK (AXP1 handshake)")
     parser.add_argument("--keep-going", action="store_true",
                         help="run every round even after a failure code")
+    parser.add_argument("--profile-segments", action="store_true",
+                        help="also measure guest preprocessing (P) and gvproxy "
+                             "transport (T) in the same guest session, before "
+                             "the full distcc run; off keeps the 02b round "
+                             "byte-for-byte identical")
+    parser.add_argument("--perf-port-up", type=int, default=PERF_PORT_UP_DEFAULT,
+                        help="device-side loopback port for the upload probe "
+                             "(guest -> device); 5103/19999/5037 are reserved")
+    parser.add_argument("--perf-port-down", type=int, default=PERF_PORT_DOWN_DEFAULT,
+                        help="device-side loopback port for the download probe "
+                             "(device -> guest); 5103/19999/5037 are reserved")
     parser.add_argument("--instance-id", default=None,
                         help="QA Alpine instance id; default picks the first "
                              "stopped one in the app's instance store")
@@ -880,6 +1284,20 @@ def main(argv: list[str] | None = None) -> int:
               "dials the contract port through gvproxy's hostIP mapping",
               file=sys.stderr)
         return 2
+    if args.profile_segments:
+        if args.perf_port_up == args.perf_port_down:
+            print("error=--perf-port-up and --perf-port-down must differ: "
+                  "both probes would bind the same device loopback port",
+                  file=sys.stderr)
+            return 2
+        for flag, port in (("--perf-port-up", args.perf_port_up),
+                           ("--perf-port-down", args.perf_port_down)):
+            if not 1024 <= port <= 65535 or port in PERF_RESERVED_PORTS:
+                reserved = ", ".join(str(p) for p in PERF_RESERVED_PORTS)
+                print(f"error={flag} must be a free unprivileged port; "
+                      f"{reserved} are already in use by this run",
+                      file=sys.stderr)
+                return 2
 
     work = Path(args.work_dir)
     work.mkdir(parents=True, exist_ok=True)
@@ -916,6 +1334,12 @@ def main(argv: list[str] | None = None) -> int:
         "distcc_ms_p50": summary.get("distcc_ms_p50"),
         "equivalence": [r.get("equivalence") for r in summary.get("rounds", [])],
     }
+    if args.profile_segments:
+        headline["segments"] = {
+            "preprocess_ms_p50": summary.get("preprocess_ms_p50"),
+            "transport_ms_p50": summary.get("transport_ms_p50"),
+            "ledger": summary.get("ledger"),
+        }
     print(json.dumps(headline, indent=2))
     return exit_code
 
