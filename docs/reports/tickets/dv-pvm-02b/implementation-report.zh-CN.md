@@ -108,8 +108,8 @@ aarch64 对象固有为 `INCONCLUSIVE`（x86 ld 拒绝跨目标链接），guest
    backlog 永不被 accept）→ crossfire 增加 `qaDirectQemu=1` 直呼路径（产品运行时
    件、无 Session），console 归驱动独占。
 8. **环境事实**：设备蜂窝网络近失效（3.5 KB/s）→ guest 包管理经
-   `adb reverse` + 宿主代理（mini_proxy.py）完成；老 adb（1.0.32，
-   C:/WINDOWS/adb.exe）的 forward 不投递字节属实，SDK adb 37.0.1 正常。
+   `adb reverse` + 宿主代理（mini_proxy.py）完成；系统 PATH 里的老版 adb
+   （1.0.32）的 forward 不投递字节属实，SDK platform-tools adb 37.0.1 正常。
 
 ## 7. 风险
 
