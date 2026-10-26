@@ -455,7 +455,7 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
     # handshake in milliseconds (CHANNEL_FAILED) and distcc silently falls
     # back to local compilation, which looks like success but is not.
     token = (args.token or "").strip()
-    if len(token) != 32 or any(c not in "0123456789abcdef" for c in token):
+    if len(token) != 32 or any(c not in ("0123456789" + "abcdef") for c in token):
         raise RuntimeError("--token must be 32 lowercase hex characters "
                            "(the accel_token asset baked into --apk build)")
     evidence_name = f"pvm-compiler-{token}.json"
