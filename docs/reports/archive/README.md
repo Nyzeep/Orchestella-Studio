@@ -7,6 +7,8 @@
 - `2026-10-phase5-quality/`：Phase 5 与质量合流阶段的编排、工单与审查报告。
 - `2026-10-v045/`：v0.4.5 发布、设备验证与 UX 修复阶段的报告。
 - `2026-10-avf-history/`：AVF / Shizuku 工单中被最终轮复审取代的首审与复审记录。
+- `2026-10-zero-device/`：零设备批次的工单报告（`runtime-performance-01..08`、`fastlane-P01..P12`、`avf-zero-device-01..10`）。
+  这三批全部是「没有连接真机」的产物，报告内的实测章节为 `not-tested`；真机口径已由 `dv-pvm-*`、`fastlane-DV-01*` 与 `avf-shizuku-1x` 系列接管，那几批留在 `tickets/` 未归档。
 
 当前有效入口：
 
