@@ -6,6 +6,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
+import android.util.Log;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -23,19 +24,37 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BooleanSupplier;
 
+import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig;
+import io.github.nyzeep.orchestella.runtime.distro.DistroCatalogRegistry;
+import io.github.nyzeep.orchestella.runtime.distro.DistroManifest;
 import io.github.nyzeep.orchestella.runtime.engineavf.ReflectiveAvfPlatformAccess;
 import io.github.nyzeep.orchestella.runtime.fastlane.FastLaneChannel;
 import io.github.nyzeep.orchestella.runtime.fastlane.distcc.Axp1DistccChannelFactory;
 import io.github.nyzeep.orchestella.runtime.fastlane.distcc.DistccTcpVsockBridge;
 import io.github.nyzeep.orchestella.runtime.fastlane.distcc.axp1.Axp1Capabilities;
 import io.github.nyzeep.orchestella.runtime.fastlane.distcc.axp1.Axp1Limits;
+import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle;
+import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneBudget;
+import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneClock;
+import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneEvent;
+import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneEventSink;
+import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneId;
+import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneRequest;
+import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneRuntime;
+import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneStartException;
+import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneStarter;
+import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneStopOutcome;
 
 /**
  * QA-only DV-PVM-01/02 probe: run one protected Microdroid payload VM and hand
@@ -54,6 +73,14 @@ import io.github.nyzeep.orchestella.runtime.fastlane.distcc.axp1.Axp1Limits;
  *       {@code payloadReady}, bridges its vsock port onto a loopback TCP port
  *       with the production {@link DistccTcpVsockBridge} (the host reaches it
  *       through {@code adb forward}), serves N jobs, then stops the VM.</li>
+ *   <li>{@code qaMode=compiler-crossfire} — DV-PVM-02b: the same payload VM,
+ *       but the loopback bridge binds the contract port 5103 and both lanes
+ *       live under a production {@link DualLaneCoordinator}: the QEMU lane is
+ *       a real distro guest launched through {@link QemuInstanceLauncher}, and
+ *       {@code awaitAcceleratorReady} is exercised exactly as compile work
+ *       calls it in the product. The guest dials the bridge through gvproxy's
+ *       hostIP mapping, so the console socket of the QEMU guest is published
+ *       in the evidence for the host driver.</li>
  * </ul>
  *
  * <p>No device identifiers are recorded; the run token is reduced to its SHA-256.
@@ -78,8 +105,21 @@ public final class PvmProbeInstrumentation extends Instrumentation {
     // (adb push / run-as cat) instead of a forwarded TCP port. Same production
     // AXP1 client, same payload; only the host->device byte carrier changes.
     private static final String MODE_COMPILER_FILE = "compiler-file";
+    // DV-PVM-02b: the production gate and bridge meet a real QEMU guest. The
+    // mode keeps the compiler VM shape but binds the contract port, because
+    // the guest dials it through gvproxy's hostIP mapping (guest
+    // 192.168.127.254:5103 -> host 127.0.0.1:5103).
+    private static final String MODE_COMPILER_CROSSFIRE = "compiler-crossfire";
     // Matches FastLaneDv01Contract.DEFAULT_DISTCC_PORT and the payload default.
     private static final int DEFAULT_PAYLOAD_VSOC_PORT = 5103;
+    // The bridge must bind the port the guest dials; gvproxy's hostIP mapping
+    // is 1:1 on the host port, so the ephemeral port 0 the compiler mode uses
+    // would never be reachable from the guest.
+    private static final int DEFAULT_BRIDGE_PORT = 5103;
+    // Default ceiling for the production gate. DV-PVM-02a measured ~2.5 s from
+    // create to payloadReady, but the crossfire gate also covers the VM create
+    // inside the accel starter, so 120 s stays generous without hiding a stall.
+    private static final long DEFAULT_GATE_DEADLINE_MS = 120_000L;
     private static final long DEFAULT_JOB_DEADLINE_MS = 300_000L;
     private static final int AXP1_MAX_FRAME = 1 << 20;
     // Must match the payload's compiled-in triple: the AXP1 handshake refuses a
@@ -110,6 +150,8 @@ public final class PvmProbeInstrumentation extends Instrumentation {
                 evidence = runCompiler(results);
             } else if (MODE_COMPILER_FILE.equals(mode)) {
                 evidence = runCompileFile(results);
+            } else if (MODE_COMPILER_CROSSFIRE.equals(mode)) {
+                evidence = runCompilerCrossfire(results);
             } else {
                 evidence = runProbe(results);
             }
@@ -331,6 +373,622 @@ public final class PvmProbeInstrumentation extends Instrumentation {
         }
         evidence.put("stage", "done");
         return finishEvidence(evidence, results, failureCode, notes, stopped);
+    }
+
+    // ------------------------------------------------------------------
+    // DV-PVM-02b crossfire: the same payload VM shape as compiler mode, but
+    // both lanes live under a production DualLaneCoordinator. The QEMU lane
+    // launches a real distro guest through the product launcher, so the
+    // compile path under test is guest -> gvproxy -> bridge -> vsock, and the
+    // gate (`awaitAcceleratorReady`) is called exactly as compile work calls
+    // it in the product: once, before any connection, timeout = fallback.
+    // ------------------------------------------------------------------
+
+    private JSONObject runCompilerCrossfire(Bundle results) throws Exception {
+        final Context target = getTargetContext();
+        final String token = arguments.getString("qaRunToken");
+        if (token == null || !token.matches("[0-9a-f]{32}")) {
+            // The payload accepts only a 32-char lowercase hex token; anything
+            // else makes it exit before payloadReady.
+            return failureEvidence(results, "QA_RUN_TOKEN_REJECTED");
+        }
+        final String payloadName = arguments.getString("qaPayloadName");
+        if (payloadName == null || !payloadName.matches("[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
+                || !payloadName.endsWith(".so")) {
+            return failureEvidence(results, "QA_PAYLOAD_NAME_REJECTED");
+        }
+        final int memoryMb = boundedInt(arguments.getString("qaMemoryMb"),
+                DEFAULT_MEMORY_MB, MIN_MEMORY_MB, MAX_MEMORY_MB);
+        final long payloadReadyDeadlineMs = boundedLong(arguments.getString("qaReadyDeadlineMs"),
+                DEFAULT_READY_DEADLINE_MS, 10_000L, MAX_READY_DEADLINE_MS);
+        final long jobDeadlineMs = boundedLong(arguments.getString("qaJobDeadlineMs"),
+                DEFAULT_JOB_DEADLINE_MS, 10_000L, MAX_FINISH_DEADLINE_MS);
+        // `readyDeadlineMs` is the driver-facing gate deadline: it bounds
+        // awaitAcceleratorReady, not the payload's own readiness callback
+        // (that stays qaReadyDeadlineMs, shared with the compiler modes).
+        final long gateDeadlineMs = boundedLong(arguments.getString("readyDeadlineMs"),
+                DEFAULT_GATE_DEADLINE_MS, 10_000L, MAX_READY_DEADLINE_MS);
+        final int vsockPort = boundedInt(arguments.getString("qaVsockPort"),
+                DEFAULT_PAYLOAD_VSOC_PORT, 1, 65535);
+        final int bridgePort = boundedInt(arguments.getString("bridge_port"),
+                DEFAULT_BRIDGE_PORT, 1024, 65535);
+        final int jobs = boundedInt(arguments.getString("qaJobs"), 1, 1, 8);
+        final String requestedInstanceId = arguments.getString("qaInstanceId");
+        if (memoryMb < 0 || payloadReadyDeadlineMs < 0 || jobDeadlineMs < 0 || gateDeadlineMs < 0
+                || vsockPort < 0 || bridgePort < 0 || jobs < 0) {
+            return failureEvidence(results, "QA_ARGUMENTS_REJECTED");
+        }
+
+        AvfHiddenApiExemption.installOnce();
+
+        final JSONObject evidence = new JSONObject();
+        evidence.put("kind", "pvm_compiler");
+        evidence.put("stage", "started");
+        evidence.put("mode", MODE_COMPILER_CROSSFIRE);
+        evidence.put("payload_name", payloadName);
+        evidence.put("memory_mb", memoryMb);
+        evidence.put("vsock_port", vsockPort);
+        evidence.put("bridge_port", bridgePort);
+        evidence.put("jobs_requested", jobs);
+        evidence.put("run_token_sha256", sha256(token));
+        final JSONObject device = new JSONObject();
+        device.put("sdk_int", Build.VERSION.SDK_INT);
+        device.put("abi", Build.SUPPORTED_ABIS.length > 0 ? Build.SUPPORTED_ABIS[0] : "unknown");
+        evidence.put("device", device);
+        final List<String> notes = new ArrayList<>();
+        trace("runCompilerCrossfire start");
+
+        if (target.checkSelfPermission(ReflectiveAvfPlatformAccess.MANAGE_PERMISSION) != 0
+                || target.checkSelfPermission(
+                        ReflectiveAvfPlatformAccess.CUSTOM_PERMISSION) != 0) {
+            return finishEvidence(evidence, results, "QA_PERMISSION_DENIED", notes, false);
+        }
+
+        final ReflectiveAvfPlatformAccess access =
+                new ReflectiveAvfPlatformAccess(target, target.getClassLoader());
+        final ReflectiveAvfPlatformAccess.PlatformShape shape = access.loadPlatformShape();
+        final Object manager = target.getSystemService(shape.manager());
+        if (manager == null || !shape.manager().isInstance(manager)) {
+            return finishEvidence(evidence, results, "QA_VM_MANAGER_UNAVAILABLE", notes, false);
+        }
+        final int capabilities = readRawCapabilities(manager, shape.manager());
+        device.put("capabilities_raw", capabilities);
+        if (capabilities >= 0
+                && (capabilities & ReflectiveAvfPlatformAccess.CAPABILITY_PROTECTED_VM) == 0) {
+            return finishEvidence(evidence, results, "QA_PROTECTED_VM_UNAVAILABLE", notes, false);
+        }
+
+        // The QEMU guest is the only consumer of the bridge, so the run
+        // refuses early (before any VM exists) when no guest is available.
+        final InstanceLifecycle.Instance instance =
+                pickQemuInstance(target, requestedInstanceId, notes);
+        if (instance == null) {
+            return finishEvidence(evidence, results, "QA_QEMU_INSTANCE_MISSING", notes, false);
+        }
+        // The instance id is an app-local UUID, never a device identifier.
+        evidence.put("instance_id", instance.id());
+        // Same socket naming the product launcher derives (QemuInstanceLauncher);
+        // the driver forwards it with `adb forward tcp:0 localabstract:<name>`.
+        evidence.put("terminal_socket", "droidlayer-terminal-" + instance.id());
+
+        // Mirror of MainActivity's launch parameter assembly (1531-1562): the
+        // QEMU lane must boot through the same shapes a product launch uses.
+        final String distroId = instance.distro().id();
+        final DistroManifest manifest = DistroCatalogRegistry.getInstance().get(distroId);
+        String rootfsFileName;
+        if (manifest != null) {
+            rootfsFileName = manifest.rootfsFileName();
+        } else if ("alpine".equals(distroId)) {
+            rootfsFileName = "alpine-minirootfs-3.24.1-aarch64.tar.gz";
+        } else {
+            rootfsFileName = distroId + "-rootfs.tar.xz";
+        }
+        final Path mirrorFile = target.getFilesDir().toPath()
+                .resolve("instances").resolve(instance.id() + ".mirror");
+        final Path firstbootFile = target.getFilesDir().toPath()
+                .resolve("instances").resolve(instance.id() + ".firstboot");
+        byte[] mirrorBytes = null;
+        try {
+            if (Files.isRegularFile(mirrorFile)) {
+                mirrorBytes = Files.readAllBytes(mirrorFile);
+            }
+        } catch (IOException mirrorFailure) {
+            notes.add("mirror read: " + exceptionName(mirrorFailure));
+        }
+        byte[] firstbootBytes;
+        try {
+            firstbootBytes = Files.isRegularFile(firstbootFile)
+                    ? Files.readAllBytes(firstbootFile)
+                    : FirstBootProvisionPipeline.generateScriptForDistro(distroId)
+                            .getBytes(StandardCharsets.UTF_8);
+        } catch (IOException firstbootFailure) {
+            notes.add("firstboot read: " + exceptionName(firstbootFailure));
+            return finishEvidence(evidence, results, "QA_QEMU_PARAMS_FAILED", notes, false);
+        }
+        final FirstBootProvisionPipeline.ProvisionPayload provisionPayload =
+                new FirstBootProvisionPipeline.ProvisionPayload(
+                        DistroMirrorProvisioner.getConfigFileName(distroId),
+                        mirrorBytes, firstbootBytes);
+        final InstanceStrategyLauncher.LaunchParameters parameters =
+                new InstanceStrategyLauncher.LaunchParameters(
+                        instance.id(),
+                        instance.bridgeToken(),
+                        rootfsFileName,
+                        instance.rootVolume().toString(),
+                        new File(target.getFilesDir(), "runtime/" + instance.id()).getAbsolutePath(),
+                        new File(target.getFilesDir(), "distro-inputs").getAbsolutePath(),
+                        instance.guestPassword(),
+                        instance.hardwareConfig(),
+                        provisionPayload,
+                        instance.hostname(),
+                        instance.defaultUser(),
+                        instance.hasSudo());
+
+        // Same envelope rule as AcceleratorLaunchDispatcher: the budget is
+        // exactly what the two lanes request, so only the gate can refuse.
+        final VmHardwareConfig hardware = instance.hardwareConfig();
+        final LaneRequest qemuRequest = new LaneRequest(LaneId.QEMU, hardware.cpuCores(),
+                hardware.ramMegabytes(), gibibytes(hardware.diskCapacityBytes()));
+        // Kotlin object property: from Java the field is private and the
+        // getter is the access path; the declared request stays the source.
+        final LaneRequest accelRequest =
+                AcceleratorLaunchDispatcher.INSTANCE.getACCEL_REQUEST();
+        final LaneBudget budget = new LaneBudget(
+                qemuRequest.cpuCores() + accelRequest.cpuCores(),
+                qemuRequest.ramMiB() + accelRequest.ramMiB(),
+                qemuRequest.diskGiB() + accelRequest.diskGiB(),
+                true);
+
+        final JSONArray laneEvents = new JSONArray();
+        // Same log face as the product sink (MainActivity 1615-1620): one
+        // line per event on the same tag, plus a counter-only evidence copy
+        // so the driver does not have to parse logcat.
+        final LaneEventSink eventSink = event -> {
+            Log.i("OrchestellaAccelerator",
+                    event.name() + " " + event.lane() + " " + event.code()
+                            + " " + event.durationMs() + "ms");
+            try {
+                synchronized (laneEvents) {
+                    laneEvents.put(eventRecord(event));
+                }
+            } catch (JSONException ignored) {
+                // An unserialisable event must not break the lane it reports.
+            }
+            trace("lane_event " + event.name() + " " + event.lane() + " " + event.code());
+        };
+
+        final RuntimeOwnedSession[] qemuSession = new RuntimeOwnedSession[1];
+        final LaneStarter qemuStarter = () -> {
+            // Mirror of the dispatch qemuStarter (AcceleratorLaunchDispatcher):
+            // the product launcher keeps asset bootstrap, gateway startup and
+            // session registration, and the readiness probe observes the same
+            // registered session's bridge control channel. Deliberately absent:
+            // the UI-side launch guard and lifecycle transitions — a QA run owns
+            // the whole device, and the store metadata must stay untouched.
+            try {
+                final ExecutionSession session =
+                        new QemuInstanceLauncher(target).launch(parameters);
+                if (!(session instanceof RuntimeOwnedSession)) {
+                    throw new LaneStartException("QEMU_START_FAILED");
+                }
+                qemuSession[0] = (RuntimeOwnedSession) session;
+                return AcceleratorLaneAssembly.qemuLane(qemuSession[0],
+                        QemuReadinessProbe.ofSession(
+                                () -> ExecutionSessionRegistry.get(instance.id())));
+            } catch (IOException | InterruptedException failure) {
+                notes.add("qemu launch: " + exceptionName(failure));
+                throw new LaneStartException("QEMU_START_FAILED");
+            }
+        };
+
+        final Class<?> configClass = Class.forName(
+                "android.system.virtualmachine.VirtualMachineConfig");
+        final String payloadVmName = "qa-cxcf-" + token.substring(0, Math.min(12, token.length()));
+        final Object[] payloadVm = new Object[1];
+        final CallbackState payloadState = new CallbackState();
+        // Memoized so the coordinator's lane stop and the final teardown share
+        // one stop/delete; a second call only reads back the recorded result.
+        final AtomicBoolean payloadStopStarted = new AtomicBoolean();
+        final boolean[] payloadStopConfirmed = new boolean[] {false};
+        final BooleanSupplier stopPayloadVm = () -> {
+            if (payloadStopStarted.compareAndSet(false, true) && payloadVm[0] != null) {
+                try {
+                    payloadStopConfirmed[0] = requestStop(evidence, manager, shape.manager(),
+                            payloadVm[0], payloadVmName, notes);
+                } catch (JSONException recordFailure) {
+                    // The stop itself is untouched; only the evidence write
+                    // failed, and the run must not report a false confirm.
+                    notes.add("stop record: " + exceptionName(recordFailure));
+                    payloadStopConfirmed[0] = false;
+                }
+            }
+            return payloadStopConfirmed[0];
+        };
+
+        final LaneStarter accelStarter = () -> {
+            // Accel-side selection, recorded for the reviewer: the product
+            // PvmPayloadLaneStarter builds a ProtectedLaneRuntime whose
+            // FastLaneSession stays private, so the product path exposes no VM
+            // handle and no vsock factory — exactly what the bridge's channel
+            // factory needs. This mode therefore reuses the compiler mode's QA
+            // VM (same payload, memory and port spec) wrapped in a LaneRuntime
+            // adapter; readiness semantics match ProtectedLaneRuntime
+            // (isReady = payloadReady), only the handle visibility differs.
+            final Object config = buildConfig(target, payloadName, memoryMb, notes);
+            if (config == null) {
+                throw new LaneStartException("ACCEL_START_FAILED");
+            }
+            final Object vm = createPayloadVm(manager, shape.manager(), configClass, config,
+                    payloadVmName, notes);
+            if (vm == null) {
+                throw new LaneStartException("ACCEL_START_FAILED");
+            }
+            payloadVm[0] = vm;
+            installCallback(vm, payloadState, notes);
+            try {
+                Class.forName("android.system.virtualmachine.VirtualMachine")
+                        .getMethod("run").invoke(vm);
+            } catch (InvocationTargetException wrapped) {
+                notes.add("accel run: " + describe(wrapped.getCause()));
+                throw new LaneStartException("ACCEL_START_FAILED");
+            } catch (ReflectiveOperationException failure) {
+                notes.add("accel run: " + exceptionName(failure));
+                throw new LaneStartException("ACCEL_START_FAILED");
+            }
+            trace("accel vm started");
+            return new QaPayloadLaneRuntime(payloadState, stopPayloadVm);
+        };
+
+        // The coordinator is built directly instead of through
+        // AcceleratorLaneAssembly: this run wants the ACCEL lane armed
+        // deterministically, and the policy verdict is not the gate under
+        // test. Every adapter is still the production one.
+        final DualLaneCoordinator coordinator = new DualLaneCoordinator(
+                budget,
+                qemuRequest,
+                accelRequest,
+                qemuStarter,
+                accelStarter,
+                new DualLaneCoordinator.Config(
+                        AcceleratorLaunchDispatcher.QEMU_READY_TIMEOUT_MS,
+                        AcceleratorLaunchDispatcher.STOP_GRACE_MS),
+                LaneClock.system(),
+                eventSink);
+        // Mirror of MainActivity's decision line (1624-1627): a direct build
+        // produces no AcceleratorDecision JSON, so the line names the factory
+        // that served the lane instead.
+        Log.i("OrchestellaAccelerator", "backend=qa-pvm-payload decision=coordinator-direct");
+        evidence.put("backend", "qa-pvm-payload");
+        trace("coordinator assembled; startAll");
+
+        final DualLaneCoordinator.StartReport startReport;
+        try {
+            startReport = coordinator.startAll();
+        } catch (RuntimeException startFailure) {
+            notes.add("startAll: " + exceptionName(startFailure));
+            stopPayloadVm.getAsBoolean();
+            return finishEvidence(evidence, results, "QA_START_ALL_FAILED", notes,
+                    payloadStopConfirmed[0]);
+        }
+        final JSONObject startStates = new JSONObject();
+        startStates.put("qemu", startReport.qemu().name());
+        startStates.put("accel", startReport.accel().name());
+        startStates.put("reject_code", startReport.rejectCode().name());
+        evidence.put("start_report", startStates);
+        trace("startAll done qemu=" + startReport.qemu().name()
+                + " accel=" + startReport.accel().name());
+
+        // The production gate under test (AX-01): compile work calls this
+        // before any connection; a timeout means "build locally".
+        final long gateStarted = SystemClock.uptimeMillis();
+        final boolean gateReady = coordinator.awaitAcceleratorReady(gateDeadlineMs);
+        final long gateMs = SystemClock.uptimeMillis() - gateStarted;
+        evidence.put("await_accelerator_ready", gateReady);
+        evidence.put("gate_ms", gateMs);
+        evidence.put("fallback_count", gateReady ? 0 : 1);
+        trace("gate ready=" + gateReady + " ms=" + gateMs);
+        if (!gateReady) {
+            // Mirror of the production consumer: a gate timeout is the local
+            // compile fallback, recorded as exactly that, then a clean stop in
+            // the coordinator's own order (QEMU first, accelerator second).
+            evidence.put("stage", "gate_fallback");
+            writeEvidence(evidence, results);
+            final DualLaneCoordinator.StopReport stopReport = coordinator.stopAll(
+                    AcceleratorLaunchDispatcher.STOP_GRACE_MS);
+            recordStopReport(evidence, stopReport);
+            final boolean payloadStopped = stopPayloadVm.getAsBoolean();
+            return finishEvidence(evidence, results, "ACCEL_GATE_TIMEOUT_FALLBACK", notes,
+                    payloadStopped);
+        }
+
+        final AtomicInteger completed = new AtomicInteger();
+        final JSONArray connections = new JSONArray();
+        // Live wiring state, identical to compiler mode: without it a stalled
+        // job is indistinguishable from a stalled bridge. Counters only.
+        final long[] lastConnectMs = new long[] {-1L};
+        final String[] lastConnectError = new String[] {null};
+        final VsockChannel[] currentChannel = new VsockChannel[1];
+
+        DistccTcpVsockBridge bridge = null;
+        try {
+            bridge = new DistccTcpVsockBridge(
+                    InetAddress.getByName("127.0.0.1"),
+                    bridgePort,
+                    () -> {
+                        final long openedAt = SystemClock.uptimeMillis();
+                        try {
+                            final FastLaneChannel channel = openVsockChannel(payloadVm[0], vsockPort);
+                            lastConnectMs[0] = SystemClock.uptimeMillis() - openedAt;
+                            if (channel instanceof VsockChannel) {
+                                currentChannel[0] = (VsockChannel) channel;
+                            }
+                            return channel;
+                        } catch (IOException | RuntimeException failure) {
+                            lastConnectError[0] =
+                                    exceptionName(failure) + ":" + safeMessage(failure);
+                            throw failure;
+                        }
+                    },
+                    1,
+                    0,
+                    (int) Math.min(jobDeadlineMs, 120_000L),
+                    stats -> {
+                        synchronized (connections) {
+                            try {
+                                connections.put(connectionRecord(stats));
+                            } catch (JSONException ignored) {
+                                // A record we cannot serialise must not abort the run.
+                            }
+                        }
+                        completed.incrementAndGet();
+                    });
+            bridge.start();
+            trace("bridge started port=" + bridgePort);
+        } catch (IOException | RuntimeException bridgeFailure) {
+            notes.add("bridge: " + exceptionName(bridgeFailure)
+                    + "(" + safeMessage(bridgeFailure) + ")");
+            final DualLaneCoordinator.StopReport stopReport = coordinator.stopAll(
+                    AcceleratorLaunchDispatcher.STOP_GRACE_MS);
+            recordStopReport(evidence, stopReport);
+            final boolean payloadStopped = stopPayloadVm.getAsBoolean();
+            return finishEvidence(evidence, results, "QA_BRIDGE_FAILED", notes, payloadStopped);
+        }
+
+        // Published before the guest needs it: the driver polls this file,
+        // confirms the contract port and only then drives the guest console.
+        evidence.put("stage", "bridge_ready");
+        writeEvidence(evidence, results);
+        trace("bridge_ready port=" + bridgePort);
+
+        final long bridgeStarted = SystemClock.uptimeMillis();
+        long lastPublish = 0L;
+        int ticks = 0;
+        evidence.put("stage", "waiting_jobs");
+        writeEvidence(evidence, results);
+        trace("waiting_jobs entered");
+        // Same independent beater as compiler mode: lines that keep landing
+        // while the wait loop does not mean only the instrumentation thread
+        // is stuck; counters say which leg the bytes stop on.
+        final AtomicBoolean beating = new AtomicBoolean(true);
+        final Thread beater = new Thread(() -> {
+            int beat = 0;
+            while (beating.get() && beat < 900) {
+                final VsockChannel open = currentChannel[0];
+                trace("beat " + beat
+                        + " completed=" + completed.get()
+                        + " to_guest=" + (open == null ? -1L : open.bytesToGuest())
+                        + " from_guest=" + (open == null ? -1L : open.bytesFromGuest())
+                        + " finished=" + payloadState.payloadFinished
+                        + " connect_ms=" + lastConnectMs[0]);
+                beat++;
+                SystemClock.sleep(2_000L);
+            }
+        }, "pvm-cxcf-beat");
+        beater.setDaemon(true);
+        beater.start();
+        while (completed.get() < jobs
+                && SystemClock.uptimeMillis() - bridgeStarted < jobDeadlineMs
+                && !payloadState.errored && !payloadState.stopped
+                && !payloadState.payloadFinished) {
+            ticks++;
+            final long elapsed = SystemClock.uptimeMillis() - bridgeStarted;
+            if (elapsed - lastPublish >= 5_000L) {
+                lastPublish = elapsed;
+                final VsockChannel open = currentChannel[0];
+                final JSONObject live = new JSONObject();
+                live.put("elapsed_ms", elapsed);
+                live.put("ticks", ticks);
+                live.put("connections_completed", completed.get());
+                live.put("vsock_connect_ms", lastConnectMs[0] < 0
+                        ? JSONObject.NULL : lastConnectMs[0]);
+                live.put("vsock_connect_error", lastConnectError[0] == null
+                        ? JSONObject.NULL : lastConnectError[0]);
+                live.put("to_guest_bytes", open == null ? 0L : open.bytesToGuest());
+                live.put("from_guest_bytes", open == null ? 0L : open.bytesFromGuest());
+                live.put("payload_finished", payloadState.payloadFinished);
+                // Trace only; the JSON file is written at stage boundaries
+                // (same reason as compiler mode).
+                trace("heartbeat " + live.toString());
+            }
+            SystemClock.sleep(200);
+        }
+        beating.set(false);
+        evidence.put("stage", "jobs_done");
+        writeEvidence(evidence, results);
+        trace("jobs_done completed=" + completed.get());
+        final long bridgeElapsedMs = SystemClock.uptimeMillis() - bridgeStarted;
+        try {
+            bridge.close();
+        } catch (RuntimeException closeFailure) {
+            notes.add("bridge close: " + exceptionName(closeFailure));
+        }
+        evidence.put("bridge_elapsed_ms", bridgeElapsedMs);
+        synchronized (connections) {
+            evidence.put("connections", connections);
+        }
+        evidence.put("connections_completed", completed.get());
+
+        // Coordinator stop is QEMU first, then ACCEL — the QA payload VM is
+        // stopped through the lane adapter inside that order, and the
+        // memoized backstop only fills the gap when the lane never held it.
+        final DualLaneCoordinator.StopReport stopReport =
+                coordinator.stopAll(AcceleratorLaunchDispatcher.STOP_GRACE_MS);
+        recordStopReport(evidence, stopReport);
+        trace("coordinator stopped");
+        final boolean payloadStopped = stopPayloadVm.getAsBoolean();
+        if (payloadState.payloadFinished) {
+            evidence.put("exit_code_after_stop", payloadState.exitCode);
+        }
+        evidence.put("vm_error_code", payloadState.errored ? payloadState.errorCode : JSONObject.NULL);
+
+        String failureCode = null;
+        if (payloadState.errored) {
+            failureCode = "VM_ERROR";
+        } else if (completed.get() < jobs) {
+            failureCode = "BRIDGE_JOBS_INCOMPLETE";
+        } else if (!payloadStopped) {
+            failureCode = "QA_STOP_UNCONFIRMED";
+        }
+        evidence.put("stage", "done");
+        return finishEvidence(evidence, results, failureCode, notes, payloadStopped);
+    }
+
+    /**
+     * Finds the provisioned Alpine guest the crossfire run drives. The QA
+     * environment provisions it before the run (app UI or coordinator prep);
+     * the instrumentation never creates instances. An explicit id wins.
+     */
+    private static InstanceLifecycle.Instance pickQemuInstance(
+            Context target, String requestedInstanceId, List<String> notes) {
+        try {
+            final InstanceLifecycle.Store store = new InstanceLifecycle.FileStore(
+                    target.getFilesDir().toPath().resolve("instances"));
+            final List<InstanceLifecycle.Instance> instances = store.list();
+            if (requestedInstanceId != null && !requestedInstanceId.isEmpty()) {
+                for (InstanceLifecycle.Instance candidate : instances) {
+                    if (candidate.id().equals(requestedInstanceId)) {
+                        return candidate;
+                    }
+                }
+                notes.add("requested instance not found");
+                return null;
+            }
+            InstanceLifecycle.Instance recoverable = null;
+            for (InstanceLifecycle.Instance candidate : instances) {
+                if (!"alpine".equals(candidate.distro().id())) {
+                    continue;
+                }
+                if (candidate.state() == InstanceLifecycle.State.STOPPED) {
+                    return candidate;
+                }
+                // Interrupted/crashed guests are cold-restorable in production;
+                // a CREATED instance is not provisioned and stays out.
+                if (recoverable == null && (candidate.state() == InstanceLifecycle.State.INTERRUPTED
+                        || candidate.state() == InstanceLifecycle.State.CRASHED)) {
+                    recoverable = candidate;
+                }
+            }
+            if (recoverable != null) {
+                notes.add("alpine instance state " + recoverable.state().name());
+            }
+            return recoverable;
+        } catch (Exception storeFailure) {
+            notes.add("instance store: " + exceptionName(storeFailure));
+            return null;
+        }
+    }
+
+    /**
+     * Create + delete/retry, extracted from the shape the compiler modes use
+     * verbatim: a leftover instance directory from a killed run is always
+     * this same test's debris, because the name derives from the run token.
+     */
+    private static Object createPayloadVm(Object manager, Class<?> managerClass,
+            Class<?> configClass, Object config, String name, List<String> notes) {
+        try {
+            return managerClass.getMethod("create", String.class, configClass)
+                    .invoke(manager, name, config);
+        } catch (InvocationTargetException wrapped) {
+            notes.add("create retry after: " + describe(wrapped.getCause()));
+            try {
+                managerClass.getMethod("delete", String.class).invoke(manager, name);
+                return managerClass.getMethod("create", String.class, configClass)
+                        .invoke(manager, name, config);
+            } catch (InvocationTargetException secondFailure) {
+                notes.add("create: " + describe(secondFailure.getCause()));
+                return null;
+            } catch (ReflectiveOperationException unavailable) {
+                notes.add("create retry unavailable: " + exceptionName(unavailable));
+                return null;
+            }
+        } catch (ReflectiveOperationException failure) {
+            notes.add("create: " + exceptionName(failure));
+            return null;
+        }
+    }
+
+    /** Stop outcomes per lane, in execution order; codes only, no session data. */
+    private static void recordStopReport(JSONObject evidence,
+            DualLaneCoordinator.StopReport report) throws JSONException {
+        final JSONObject recorded = new JSONObject();
+        recorded.put("qemu", report.qemu().name());
+        recorded.put("accel", report.accel().name());
+        evidence.put("coordinator_stop", recorded);
+    }
+
+    /** Same disk envelope rule as AcceleratorLaunchDispatcher.gibibytes. */
+    private static long gibibytes(long bytes) {
+        return bytes <= 0L ? 1L : Math.max(1L, (bytes + (1L << 30) - 1L) >> 30);
+    }
+
+    /** One lane event as name/code/duration only — the sink adds no payloads. */
+    private static JSONObject eventRecord(LaneEvent event) throws JSONException {
+        final JSONObject record = new JSONObject();
+        record.put("name", event.name());
+        record.put("lane", event.lane().name());
+        record.put("code", event.code());
+        record.put("duration_ms", event.durationMs());
+        return record;
+    }
+
+    /**
+     * ACCEL lane adapter over this mode's QA payload VM. Readiness and
+     * liveness read the same callback state the compiler modes use, and stop
+     * delegates to the shared memoized stop — the adapter adds no second stop
+     * implementation, mirroring ProtectedLaneRuntime's discipline.
+     */
+    private static final class QaPayloadLaneRuntime implements LaneRuntime {
+        private final CallbackState state;
+        private final BooleanSupplier stop;
+
+        QaPayloadLaneRuntime(CallbackState state, BooleanSupplier stop) {
+            this.state = state;
+            this.stop = stop;
+        }
+
+        @Override
+        public LaneId laneId() {
+            return LaneId.ACCEL;
+        }
+
+        @Override
+        public boolean isAlive() {
+            // The payload is a server: an exit before the gate closes is
+            // death, exactly like an error or a stop.
+            return !state.errored && !state.stopped && !state.payloadFinished;
+        }
+
+        @Override
+        public boolean isReady() {
+            return state.payloadReady;
+        }
+
+        @Override
+        public LaneStopOutcome stop(long graceMs) {
+            // graceMs is accepted for the LaneRuntime face; the platform stop
+            // inside requestStop is already bounded by STOP_DEADLINE_MS.
+            return stop.getAsBoolean() ? LaneStopOutcome.CONFIRMED : LaneStopOutcome.UNCONFIRMED;
+        }
     }
 
     /** Reads at most {@code limit} bytes; the payload's own limits are tighter. */
@@ -1101,7 +1759,8 @@ public final class PvmProbeInstrumentation extends Instrumentation {
     /** File stem per mode: the driver polls a name it knows before the run. */
     private String evidencePrefix() {
         final String mode = arguments.getString("qaMode");
-        final boolean compiler = MODE_COMPILER.equals(mode) || MODE_COMPILER_FILE.equals(mode);
+        final boolean compiler = MODE_COMPILER.equals(mode) || MODE_COMPILER_FILE.equals(mode)
+                || MODE_COMPILER_CROSSFIRE.equals(mode);
         return compiler ? "pvm-compiler" : "pvm-probe";
     }
 
