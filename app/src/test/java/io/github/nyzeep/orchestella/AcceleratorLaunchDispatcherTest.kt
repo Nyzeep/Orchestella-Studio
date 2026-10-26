@@ -180,7 +180,8 @@ class AcceleratorLaunchDispatcherTest {
     }
 
     @Test
-    fun qemuLaunchFailurePropagatesTheOriginalCause() {        val fixture = Fixture()
+    fun qemuLaunchFailurePropagatesTheOriginalCause() {
+        val fixture = Fixture()
         val failure = IOException("test-injected")
         fixture.qemuLaunch = AcceleratorLaunchDispatcher.QemuLaunch { throw failure }
 
@@ -413,7 +414,6 @@ class AcceleratorLaunchDispatcherTest {
         override fun notes(): List<String> = emptyList()
     }
 
-    /** Wait-failing handle: the lane was created and then died. */
     private companion object {
         const val TRIPLE = "aarch64-linux-gnu"
 
