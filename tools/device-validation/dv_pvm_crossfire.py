@@ -111,7 +111,12 @@ DEVICE_PERF_UP = "/data/local/tmp/qa-perf-up.bin"
 DEVICE_PERF_DOWN = "/data/local/tmp/qa-perf-down.bin"
 # A stalled `nc` on either side must not eat the whole guest command budget;
 # the probes are diagnostics, the crossfire evidence is the deliverable.
-PERF_NC_TIMEOUT_S = 120.0
+PERF_NC_TIMEOUT_S = 40.0
+# Guest-side `timeout` wrapper for the transfer probes. The console session is
+# strictly serial, so a hanging `nc` does not just cost the probe: it starves
+# the distcc run behind it and the whole round is lost. Bound the damage at the
+# shell instead of relying on the console deadline.
+PERF_GUEST_NC_GUARD_S = 20
 # Round-level segment fields. Every one of them is present on every round and
 # `None` means "not measured" — never 0, which would read as "measured zero".
 SEGMENT_ROUND_FIELDS = (
@@ -472,8 +477,15 @@ def _probe_transport_up(adb: Adb, console: GuestConsole, tool, next_index,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(1.5)
     try:
-        inner = f"nc {GUEST_HOST_IP} {port} < {GUEST_DOT_I}"
-        outer = f"nc {GUEST_HOST_IP} {port} < {chroot_prefix}{GUEST_DOT_I}"
+        # `timeout` is the seatbelt: a wedged guest `nc` must not hold the
+        # console session, because the very next thing on that session is the
+        # distcc run we came to measure. Alpine busybox and Arch coreutils
+        # both ship it; if it is missing the command 127s and is reported as a
+        # probe failure, which is the right outcome either way.
+        inner = f"timeout {PERF_GUEST_NC_GUARD_S} nc {GUEST_HOST_IP} {port} " \
+                f"< {GUEST_DOT_I}"
+        outer = f"timeout {PERF_GUEST_NC_GUARD_S} nc {GUEST_HOST_IP} {port} " \
+                f"< {chroot_prefix}{GUEST_DOT_I}"
         rc, elapsed = run_guest_transfer(console, tool, next_index, inner, outer,
                                          PERF_NC_TIMEOUT_S,
                                          bool(chroot_prefix))
@@ -511,13 +523,18 @@ def _probe_transport_down(adb: Adb, console: GuestConsole, tool, next_index,
             "count=180", check=False)
     listener = subprocess.Popen(
         [adb.adb_path] + (["-s", adb.serial] if adb.serial else []) +
-        ["shell", f"cat {device_tmp} | nc -l -p {port}"],
+        # Redirect, not a pipe: toybox `nc -l` fed by `cat |` accepted the
+        # connection but never flushed the file, so the guest side waited for
+        # data that never came and both ends hung. A plain `<` lets nc own the
+        # fd and stream it.
+        ["shell", f"nc -l -p {port} < {device_tmp}"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(1.5)
     try:
         # /dev/null exists in both worlds: the chroot gets one mknod'ed by
         # the console setup, so the same path works either way.
-        command = f"nc {GUEST_HOST_IP} {port} > /dev/null"
+        command = f"timeout {PERF_GUEST_NC_GUARD_S} nc {GUEST_HOST_IP} " \
+                  f"{port} > /dev/null"
         rc, elapsed = run_guest_transfer(console, tool, next_index, command,
                                          command, PERF_NC_TIMEOUT_S,
                                          bool(chroot_prefix))
