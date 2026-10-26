@@ -121,7 +121,7 @@ SEGMENT_ROUND_FIELDS = (
     "transport_up_ms", "transport_up_bytes",
     "transport_down_ms", "transport_down_bytes",
     "transport_ms", "transport_bytes",
-    "perf_probe_errors",
+    "guest_has_nc", "perf_probe_errors",
 )
 # Summary-level aggregation keys (perf v2 vocabulary, README §7.1).
 SEGMENT_SUMMARY_FIELDS = (
@@ -611,6 +611,25 @@ def probe_segments(adb: Adb, console: GuestConsole, args, tool, next_index,
     if assemble_samples:
         round_result["assemble_ms_samples"] = assemble_samples
         round_result["assemble_ms"] = median_sample(assemble_samples)
+
+    # --- nc availability: ask before measuring ----------------------------
+    # A guest without netcat would not fail fast: each direction would sit
+    # out the full listener timeout (120 s apiece) and only then report. The
+    # probe runs in the same two shells the transfer would use, because the
+    # chroot and the outer guest are separate installs.
+    rc, text, _ = console.run(
+        tool("command -v nc >/dev/null 2>&1 && echo QA_NC=yes "
+             "|| echo QA_NC=no"), next_index(), 30)
+    guest_has_nc = rc == 0 and "QA_NC=yes" in (text or "")
+    if not guest_has_nc and chroot_prefix:
+        rc, text, _ = console.run(
+            "command -v nc >/dev/null 2>&1 && echo QA_NC=yes "
+            "|| echo QA_NC=no", next_index(), 30)
+        guest_has_nc = rc == 0 and "QA_NC=yes" in (text or "")
+    round_result["guest_has_nc"] = guest_has_nc
+    if not guest_has_nc:
+        _record_probe_error(round_result, "guest_nc_missing")
+        return
 
     # --- T up / T down: the distcc topology, both directions ---------------
     up = _probe_transport_up(adb, console, tool, next_index, chroot_prefix,
