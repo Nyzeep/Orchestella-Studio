@@ -175,4 +175,63 @@ class ThemeCustomizationTest {
         ThemeStore(prefs).setCornerRadiusDp(16)
         assertEquals(16, ThemeStore(prefs).cornerRadiusDp())
     }
+
+    // --- E2: terminal background image keys ---
+
+    @Test fun terminalBackgroundUriRejectsNonContentUris() {
+        val store = ThemeStore(FakeSharedPreferences())
+        for (uri in listOf("https://example.test/image", "file:///private/image", "/storage/bg.png")) {
+            try {
+                store.setTerminalBackgroundUri(uri)
+                fail("Non-picked terminal background URI must be rejected")
+            } catch (_: IllegalArgumentException) {
+            }
+        }
+        assertNull(store.terminalBackgroundUri())
+    }
+
+    @Test fun terminalBackgroundUriAcceptsPickedUriAndClearsToNull() {
+        val prefs = FakeSharedPreferences()
+        val store = ThemeStore(prefs)
+        store.setTerminalBackgroundUri("content://test/images/7")
+        assertEquals("content://test/images/7", ThemeStore(prefs).terminalBackgroundUri())
+        store.setTerminalBackgroundUri(null)
+        assertNull(ThemeStore(prefs).terminalBackgroundUri())
+    }
+
+    @Test fun terminalScrimAlphaDefaultsToOpaqueScrimAndClampsToByteRange() {
+        val store = ThemeStore(FakeSharedPreferences())
+        assertEquals(0xB0, store.terminalScrimAlpha())
+        store.setTerminalScrimAlpha(300)
+        assertEquals(255, store.terminalScrimAlpha())
+        store.setTerminalScrimAlpha(-5)
+        assertEquals(0, store.terminalScrimAlpha())
+        store.setTerminalScrimAlpha(230)
+        assertEquals(230, store.terminalScrimAlpha())
+    }
+
+    @Test fun terminalScrimArgbCombinesThemeTerminalBackgroundWithAlpha() {
+        val store = ThemeStore(FakeSharedPreferences())
+        store.setTerminalScrimAlpha(0xB0)
+        val argb = store.terminalScrimArgb(ThemeCatalog.constructivistWorkstation)
+        assertEquals(0xB0, (argb ushr 24) and 0xFF)
+        assertEquals(ThemeCatalog.constructivistWorkstation.terminalBackground and 0x00FFFFFF, argb and 0x00FFFFFF)
+    }
+
+    @Test fun terminalBackgroundKeysSurviveThemeSwitchesAndStoreRecreation() {
+        val prefs = FakeSharedPreferences()
+        val store = ThemeStore(prefs)
+        store.setCustomSlot(0, darkSlot())
+        store.setTerminalBackgroundUri("content://test/images/9")
+        store.setTerminalScrimAlpha(120)
+        store.setCornerRadiusDp(8)
+        store.setThemeId(ThemeCatalog.claudeDark.id)
+        val restored = ThemeStore(prefs)
+        assertEquals("content://test/images/9", restored.terminalBackgroundUri())
+        assertEquals(120, restored.terminalScrimAlpha())
+        assertEquals(8, restored.cornerRadiusDp())
+        assertEquals(darkSlot(), restored.customSlots()[0])
+        restored.setThemeId("custom:1")
+        assertEquals("content://test/images/9", restored.terminalBackgroundUri())
+    }
 }

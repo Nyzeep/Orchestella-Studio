@@ -91,6 +91,14 @@ public class TerminalActivity extends Activity {
                 t.setDaemon(true);
                 return t;
             });
+    private final java.util.concurrent.ExecutorService terminalBgExecutor =
+            java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "terminal-bg-decode");
+                t.setDaemon(true);
+                return t;
+            });
+    private String terminalBgUri;
+    private int terminalBgGeneration;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -334,12 +342,84 @@ public class TerminalActivity extends Activity {
                         store.terminalLetterSpacingEm(),
                         store.terminalLineSpacingPx());
                 terminalView.setCursorBlinkEnabled(settingsManager == null || settingsManager.isTerminalCursorBlinkEnabled());
+                applyTerminalBackground(store, theme);
             }
             if (offlineCardView != null) {
                 offlineCardView.setBackgroundColor(theme.getBackground());
             }
         } catch (Exception e) {
             android.util.Log.w("TerminalActivity", "appearance apply failed", e);
+        }
+    }
+
+    /** Terminal-only background image: decode off-thread with the scrim, never touching the global wallpaper. */
+    private void applyTerminalBackground(ThemeStore store, AppTheme theme) {
+        if (terminalView == null) return;
+        int scrim = store.terminalScrimArgb(theme);
+        terminalView.setTerminalScrimColor(scrim);
+        String uri = store.terminalBackgroundUri();
+        if (uri == null) {
+            terminalBgUri = null;
+            terminalBgGeneration++;
+            terminalView.clearTerminalBackgroundImage(theme.getTerminalBackground());
+            return;
+        }
+        if (uri.equals(terminalBgUri)) return; // One decode per selection; revoked access does not retry in a loop.
+        terminalBgUri = uri;
+        int generation = ++terminalBgGeneration;
+        android.graphics.Point target = terminalBackgroundTargetSize();
+        terminalBgExecutor.execute(() -> {
+            android.graphics.Bitmap bitmap = decodeTerminalBackground(uri, target.x, target.y);
+            if (ui != null) ui.post(() -> {
+                if (generation != terminalBgGeneration || isDestroyed() || terminalView == null) return;
+                if (bitmap != null) {
+                    terminalView.setTerminalBackgroundImage(bitmap, scrim);
+                } else {
+                    // Keep the saved choice; fall back to the solid terminal color until it works again.
+                    terminalView.clearTerminalBackgroundImage(theme.getTerminalBackground());
+                }
+            });
+        });
+    }
+
+    /** Downsample target: twice the terminal view size (screen estimate before first layout), capped at 2048px. */
+    private android.graphics.Point terminalBackgroundTargetSize() {
+        android.util.DisplayMetrics metrics = getResources().getDisplayMetrics();
+        int width = terminalView != null && terminalView.getWidth() > 0
+                ? terminalView.getWidth() * 2 : (int) (metrics.widthPixels * 1.5f);
+        int height = terminalView != null && terminalView.getHeight() > 0
+                ? terminalView.getHeight() * 2 : (int) (metrics.heightPixels * 1.5f);
+        return new android.graphics.Point(Math.min(width, 2048), Math.min(height, 2048));
+    }
+
+    private android.graphics.Bitmap decodeTerminalBackground(String uriText, int targetWidth, int targetHeight) {
+        try {
+            android.net.Uri uri = android.net.Uri.parse(uriText);
+            android.graphics.BitmapFactory.Options bounds = new android.graphics.BitmapFactory.Options();
+            bounds.inJustDecodeBounds = true;
+            try (java.io.InputStream in = getContentResolver().openInputStream(uri)) {
+                android.graphics.BitmapFactory.decodeStream(in, null, bounds);
+            }
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null;
+            int sample = 1;
+            while (bounds.outWidth / sample > targetWidth || bounds.outHeight / sample > targetHeight) sample *= 2;
+            android.graphics.BitmapFactory.Options options = new android.graphics.BitmapFactory.Options();
+            options.inSampleSize = sample;
+            android.graphics.Bitmap decoded;
+            try (java.io.InputStream in = getContentResolver().openInputStream(uri)) {
+                decoded = android.graphics.BitmapFactory.decodeStream(in, null, options);
+            }
+            if (decoded != null) {
+                android.util.Log.i("TerminalBg", "decoded sampled=" + sample
+                        + " src=" + bounds.outWidth + "x" + bounds.outHeight
+                        + " dst=" + decoded.getWidth() + "x" + decoded.getHeight()
+                        + " bytes=~" + decoded.getAllocationByteCount());
+            }
+            return decoded;
+        } catch (SecurityException | java.io.FileNotFoundException e) {
+            return null; // Revoked access falls back to the solid color without deleting the saved choice.
+        } catch (Exception e) {
+            return null;
         }
     }
 
@@ -485,6 +565,7 @@ public class TerminalActivity extends Activity {
         terminalConnected = false;
         if (ui != null) ui.removeCallbacksAndMessages(null);
         sendExecutor.shutdownNow();
+        terminalBgExecutor.shutdownNow();
         // The client belongs to the persistent session. Rotation must not interrupt an
         // in-flight request and thereby close that session's authenticated control stream.
         resizeExecutor.shutdown();
