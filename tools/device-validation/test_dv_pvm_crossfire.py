@@ -551,40 +551,77 @@ class DownloadProbeInnerTest(unittest.TestCase):
 
 
 class HealChrootAppletsTest(unittest.TestCase):
-    """The chroot is writable (the distcc state dir proved it), and the OUTER
-    shell carries `cp` (the 9p fixture path uses it) but not `ln` (round 4
-    cxx-v4: every `ln -sf` died). The outer shell copies the chroot's
-    busybox multi-call binary under each applet name — busybox dispatches on
-    argv[0], so a copy is as good as a symlink."""
+    """The chroot's own busybox multi-call binary is the only cop that exists
+    (round 4 cxx-v4/v5: the outer guest shell lacks `ln` AND `cp`), so the
+    heal runs through `tool()` and copies busybox under each applet name —
+    busybox dispatches on argv[0], a copy is as good as a symlink."""
 
-    def test_copies_busybox_under_the_applet_names(self):
+    @staticmethod
+    def _run():
         console = FakeConsole([
             (0, "QA_BB=yes\n", 1.0),
             (0, "", 1.0), (0, "", 1.0), (0, "", 1.0), (0, "", 1.0),
         ])
         result = dv_pvm_crossfire.heal_chroot_applets(
-            console, "/alpine/", itertools.count().__next__)
+            console, lambda command: command, itertools.count().__next__)
+        return console, result
+
+    def test_copies_busybox_under_the_applet_names(self):
+        console, result = self._run()
         self.assertTrue(result["applied"])
         self.assertEqual(["sleep", "rm", "timeout", "dd"], result["applets"])
-        self.assertEqual("cp /alpine/bin/busybox /alpine/bin/sleep",
+        self.assertEqual("/bin/busybox cp /bin/busybox /bin/sleep",
                          console.commands[1])
-        self.assertEqual("cp /alpine/bin/busybox /alpine/bin/dd",
+        self.assertEqual("/bin/busybox cp /bin/busybox /bin/dd",
                          console.commands[4])
 
     def test_without_busybox_it_reports_and_does_not_copy(self):
         console = FakeConsole([(0, "QA_BB=no\n", 1.0)])
         result = dv_pvm_crossfire.heal_chroot_applets(
-            console, "/alpine/", itertools.count().__next__)
+            console, lambda command: command, itertools.count().__next__)
         self.assertFalse(result["applied"])
         self.assertEqual("no-busybox", result["reason"])
         self.assertEqual(1, len(console.commands))
 
-    def test_without_a_chroot_it_is_a_no_op(self):
-        console = FakeConsole([])
-        result = dv_pvm_crossfire.heal_chroot_applets(
-            console, "", itertools.count().__next__)
-        self.assertEqual({"applied": False, "reason": "no-chroot"}, result)
-        self.assertEqual(0, len(console.commands))
+
+class DeviceSha256FallbackTest(unittest.TestCase):
+    """The outer guest shell lacks sha256sum (round 4 cxx-v5: every round
+    repushed 118 chunks for nothing); the chroot's busybox multi-call does
+    not. The hash must be found in the chroot before the inject fails
+    closed into a repush."""
+
+    FIXTURE = b"int probe_fn_0(int x) { return x; }\n"
+    DIGEST = hashlib.sha256(
+        b"int probe_fn_0(int x) { return x; }\n").hexdigest()
+
+    def test_the_chroot_busybox_hash_matches_without_a_repush(self):
+        console = FakeConsole([
+            (127, "", 1.0),                       # outer sha256sum: absent
+            (0, f"{self.DIGEST}  /root/fixture.c\n", 1.0),  # chroot busybox
+        ])
+        digest = dv_pvm_crossfire.device_sha256(
+            console, "/ch/root/fixture.c", itertools.count().__next__, 30,
+            tool=lambda command: f"CHROOT({command})",
+            chroot_path="/root/fixture.c")
+        self.assertEqual(self.DIGEST, digest)
+        self.assertEqual("CHROOT(/bin/busybox sha256sum /root/fixture.c"
+                         " 2>/dev/null)", console.commands[1])
+
+    def test_malformed_outer_output_falls_through_to_the_chroot(self):
+        console = FakeConsole([
+            (0, "not-a-hash\n", 1.0),
+            (0, f"{self.DIGEST}  /root/fixture.c\n", 1.0),
+        ])
+        digest = dv_pvm_crossfire.device_sha256(
+            console, "/ch/root/fixture.c", itertools.count().__next__, 30,
+            tool=lambda command: command, chroot_path="/root/fixture.c")
+        self.assertEqual(self.DIGEST, digest)
+
+    def test_without_a_tool_it_stays_none(self):
+        console = FakeConsole([(127, "", 1.0)])
+        digest = dv_pvm_crossfire.device_sha256(
+            console, "/x", itertools.count().__next__, 30)
+        self.assertIsNone(digest)
 
 
 if __name__ == "__main__":
