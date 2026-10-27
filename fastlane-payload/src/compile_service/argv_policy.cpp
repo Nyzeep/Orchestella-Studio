@@ -135,6 +135,33 @@ bool is_debug_flag(const std::string& argument) {
     return equals_any(suffix, kDialects);
 }
 
+// The language a source (or preprocessed) file name declares, "" when the
+// payload accepts none. Real distcc never sends -x across the wire: the
+// client-side driver preprocessed the job and the server is expected to pick
+// the language from the input name (the device's round-2 log shows the argv
+// carrying "/root/fixture.cpp" verbatim). The payload compiles a memory
+// buffer, so this name is the only evidence left. Case-sensitive like the
+// driver: ".C" is C++, ".c" is C. ObjC (.m/.mm) and everything unrecognized
+// answer "" and the caller refuses the job -- never silently default to C.
+std::string language_from_input_name(const std::string& name) {
+    const size_t slash = name.find_last_of("/\\");
+    const std::string base =
+        slash == std::string::npos ? name : name.substr(slash + 1);
+    const size_t dot = base.find_last_of('.');
+    if (dot == std::string::npos) {
+        return "";
+    }
+    const std::string suffix = base.substr(dot);  // includes the dot
+    if (suffix == ".c" || suffix == ".i") {
+        return "c";
+    }
+    if (suffix == ".C" || suffix == ".cpp" || suffix == ".cc" ||
+        suffix == ".cxx" || suffix == ".c++" || suffix == ".ii") {
+        return "c++";
+    }
+    return "";
+}
+
 }  // namespace
 
 const char* argv_class_name(ArgvClass rejection) {
@@ -170,6 +197,8 @@ ArgvDecision filter_argv(const std::vector<std::string>& argv,
     decision.accepted = true;
     decision.language = "c";
 
+    bool explicit_language = false;  // a -x the job itself spelled out
+    std::string input_name;          // the one positional (path or not)
     bool seen_output = false;      // one "-o <file>" pair is absorbed
     bool seen_positional = false;  // one input file name is absorbed
     bool await_output_value = false;
@@ -265,13 +294,18 @@ ArgvDecision filter_argv(const std::vector<std::string>& argv,
             } else {
                 language = argument.substr(2);
             }
-            if (language == "cpp-output") {
+            // The job's own -x outranks anything the input name could say.
+            // "c"/"c++" mean the client drove a raw source; by the time the
+            // content reaches the payload it is preprocessed either way, and
+            // the c-vs-c++ split is the part the engine still needs.
+            if (language == "c" || language == "cpp-output") {
                 decision.language = "c";
-            } else if (language == "c++-cpp-output") {
+            } else if (language == "c++" || language == "c++-cpp-output") {
                 decision.language = "c++";
             } else {
                 return reject(ArgvClass::kBadLang);
             }
+            explicit_language = true;
             continue;
         }
         if (starts_with(argument, "-O")) {
@@ -393,12 +427,23 @@ ArgvDecision filter_argv(const std::vector<std::string>& argv,
             return reject(ArgvClass::kPositional);
         }
         seen_positional = true;  // input file name, absorbed (path or not)
+        input_name = argument;
     }
 
     if (!seen_output && !seen_positional) {
         // Neither an explicit output nor an input name: the real client always
         // sends both, so this is a hand-rolled or broken request.
         return reject(ArgvClass::kPositional);
+    }
+    if (!explicit_language) {
+        // No -x on the wire: the language must come from the input name, and
+        // an uninferrable name is refused rather than silently compiled as C
+        // (the round-2 C++ failure was exactly that silent default).
+        const std::string inferred = language_from_input_name(input_name);
+        if (inferred.empty()) {
+            return reject(ArgvClass::kBadLang);
+        }
+        decision.language = inferred;
     }
     return decision;
 }
