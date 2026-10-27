@@ -9,14 +9,19 @@ import android.util.AttributeSet;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import io.github.nyzeep.orchestella.StickyModifierStateMachine.Modifier;
 import io.github.nyzeep.orchestella.StickyModifierStateMachine.State;
+import io.github.nyzeep.orchestella.ui.theme.AppTheme;
+import io.github.nyzeep.orchestella.ui.theme.ThemeColors;
 import io.github.nyzeep.orchestella.ui.theme.ThemeStore;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Horizontal scrolling auxiliary key bar attached above the soft keyboard.
@@ -31,6 +36,7 @@ public class MobileAuxiliaryKeyBar extends LinearLayout {
     private InteractiveTerminalEngine terminalEngine;
     private ModernTerminalView terminalView;
     private Runnable commandEntryAction;
+    private AppTheme theme;
     public void setCommandEntryAction(Runnable action) { commandEntryAction = action; }
     private final StickyModifierStateMachine.Listener modifierListener = (modifier, state) -> {
         if (Looper.myLooper() == Looper.getMainLooper()) updateModifierVisual(modifier, state);
@@ -114,8 +120,9 @@ public class MobileAuxiliaryKeyBar extends LinearLayout {
     }
 
     private void init(Context context) {
+        theme = new ThemeStore(context).resolve();
         setOrientation(VERTICAL);
-        setBackgroundColor(0xFF21222C);
+        setBackgroundColor(theme.getSurface());
         // Only the secondary tools scroll horizontally. An outer HorizontalScrollView
         // measures its child with unbounded width and defeats the primary-row weights.
         LinearLayout rows = new LinearLayout(context);
@@ -136,7 +143,9 @@ public class MobileAuxiliaryKeyBar extends LinearLayout {
         addNavigationKey(lower, "↑", v -> pressUp());
         addNavigationKey(lower, "→", v -> pressRight());
         HorizontalScrollView secondary = new HorizontalScrollView(context);
-        secondary.setHorizontalScrollBarEnabled(false);
+        secondary.setHorizontalScrollBarEnabled(true);
+        secondary.setHorizontalFadingEdgeEnabled(true);
+        secondary.setFadingEdgeLength(dpToPx(context, 24));
         LinearLayout row = new LinearLayout(context);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
@@ -189,6 +198,44 @@ public class MobileAuxiliaryKeyBar extends LinearLayout {
         lower.addView(secondary, new LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
         rows.addView(lower, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
         addView(rows, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        applyTheme(theme);
+    }
+
+    /**
+     * Repaints the bar and every key cap from the active theme tokens. Called at
+     * build time and again whenever the app theme changes, so the bar no longer
+     * stays on a hardcoded Dracula palette.
+     */
+    public void applyTheme(AppTheme theme) {
+        if (theme == null) return;
+        this.theme = theme;
+        setBackgroundColor(theme.getSurface());
+        for (Button key : collectKeys()) {
+            styleKeyCap(key);
+        }
+        if (stateMachine != null) {
+            updateModifierVisual(Modifier.CTRL, stateMachine.getState(Modifier.CTRL));
+            updateModifierVisual(Modifier.ALT, stateMachine.getState(Modifier.ALT));
+        }
+    }
+
+    private void styleKeyCap(Button key) {
+        key.setTextColor(theme.getText());
+        key.setBackground(createKeyBackground(theme.getSurface(), theme.getGlow()));
+    }
+
+    private List<Button> collectKeys() {
+        List<Button> keys = new ArrayList<>();
+        collectKeys(this, keys);
+        return keys;
+    }
+
+    private static void collectKeys(ViewGroup group, List<Button> out) {
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View child = group.getChildAt(i);
+            if (child instanceof Button) out.add((Button) child);
+            else if (child instanceof ViewGroup) collectKeys((ViewGroup) child, out);
+        }
     }
 
     private boolean sendKey(int keyCode) {
@@ -261,7 +308,13 @@ public class MobileAuxiliaryKeyBar extends LinearLayout {
     private void addNavigationKey(LinearLayout row, String label, OnClickListener listener) {
         Button button = addKeyButton(row, label, listener);
         button.setPadding(0, 0, 0, 0);
-        button.setLayoutParams(new LinearLayout.LayoutParams(dpToPx(getContext(), 48), dpToPx(getContext(), 48)));
+        // Keep the same 3dp horizontal margin as addKeyButton so arrow keys
+        // align with the rest of the row instead of sticking together.
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                dpToPx(getContext(), 48), dpToPx(getContext(), 48));
+        int margin = dpToPx(getContext(), 3);
+        params.setMargins(margin, 0, margin, 0);
+        button.setLayoutParams(params);
     }
 
     private Button addPrimaryKey(LinearLayout row, String label, OnClickListener listener) {
@@ -281,8 +334,8 @@ public class MobileAuxiliaryKeyBar extends LinearLayout {
         btn.setText(label);
         btn.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         btn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
-        btn.setTextColor(DraculaPalette.FOREGROUND);
-        btn.setBackground(createKeyBackground(0xFF343746, 0xFF44475A));
+        btn.setTextColor(theme.getText());
+        btn.setBackground(createKeyBackground(theme.getSurface(), theme.getGlow()));
         btn.setAllCaps(false);
         btn.setFocusable(false);
         btn.setFocusableInTouchMode(false);
@@ -315,25 +368,40 @@ public class MobileAuxiliaryKeyBar extends LinearLayout {
                 : state == State.LOCKED ? "，已锁定" : "，未启用"));
         switch (state) {
             case LATCHED:
-                // Highlighting active latched modifier: Dracula Purple background with dark text
-                targetBtn.setBackground(createKeyBackground(0xFFBD93F9, 0xFFBD93F9));
-                targetBtn.setTextColor(0xFF282A36);
+                // Highlighting active latched modifier: primary background with contrast ink
+                targetBtn.setBackground(createKeyBackground(theme.getPrimary(), theme.getPrimary()));
+                targetBtn.setTextColor(ThemeColors.INSTANCE.onColor(theme.getPrimary()));
                 break;
             case LOCKED:
-                // Locked modifier: Dracula Green background with dark text
-                targetBtn.setBackground(createKeyBackground(0xFF50FA7B, 0xFF50FA7B));
-                targetBtn.setTextColor(0xFF282A36);
+                // Locked modifier: primary background with contrast ink
+                targetBtn.setBackground(createKeyBackground(theme.getPrimary(), theme.getPrimary()));
+                targetBtn.setTextColor(ThemeColors.INSTANCE.onColor(theme.getPrimary()));
                 break;
             case OFF:
             default:
                 // Normal released modifier
-                targetBtn.setBackground(createKeyBackground(0xFF343746, 0xFF44475A));
-                targetBtn.setTextColor(DraculaPalette.FOREGROUND);
+                targetBtn.setBackground(createKeyBackground(theme.getSurface(), theme.getGlow()));
+                targetBtn.setTextColor(theme.getText());
                 break;
         }
     }
 
-    private GradientDrawable createKeyBackground(int fillColor, int strokeColor) {
+    /**
+     * Press-feedback key background: pressed state lightens the fill toward the
+     * theme foreground while keeping the same stroke; default state keeps the
+     * original colors. Pure code StateListDrawable — no theme attribute ripple.
+     */
+    private android.graphics.drawable.StateListDrawable createKeyBackground(int fillColor, int strokeColor) {
+        android.graphics.drawable.StateListDrawable states = new android.graphics.drawable.StateListDrawable();
+        int pressedFill = theme != null
+                ? ThemeColors.INSTANCE.blend(fillColor, theme.getText(), 0.18f)
+                : fillColor;
+        states.addState(new int[]{android.R.attr.state_pressed}, keyShape(pressedFill, strokeColor));
+        states.addState(new int[]{}, keyShape(fillColor, strokeColor));
+        return states;
+    }
+
+    private GradientDrawable keyShape(int fillColor, int strokeColor) {
         GradientDrawable gd = new GradientDrawable();
         gd.setShape(GradientDrawable.RECTANGLE);
         gd.setColor(fillColor);

@@ -44,12 +44,11 @@ public class LogViewerActivity extends Activity {
     public static final String KIND_GUEST = "guest";
     public static final String KIND_APP = "app";
 
-    private static final long MAX_CONSOLE_LOG_BYTES = 4L * 1024L * 1024L;
-
     private String kind;
     private String instanceId;
     private TextView logText;
     private File consoleLogFile;
+    private io.github.nyzeep.orchestella.ui.theme.AppTheme theme;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -76,7 +75,8 @@ public class LogViewerActivity extends Activity {
 
         android.widget.LinearLayout root = new android.widget.LinearLayout(this);
         root.setOrientation(android.widget.LinearLayout.VERTICAL);
-        root.setBackgroundColor(0xFF21222C);
+        theme = new io.github.nyzeep.orchestella.ui.theme.ThemeStore(this).resolve();
+        root.setBackgroundColor(theme.getBackground());
         root.setPadding(dp(8), 0, dp(8), 0);
         ViewCompat.setOnApplyWindowInsetsListener(root, (v, insets) -> {
             v.setPadding(dp(8), insets.getInsets(WindowInsetsCompat.Type.statusBars()).top + dp(8),
@@ -88,14 +88,14 @@ public class LogViewerActivity extends Activity {
         titleView.setText(title);
         titleView.setTextSize(17f);
         titleView.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-        titleView.setTextColor(DraculaPalette.FOREGROUND);
+        titleView.setTextColor(theme.getText());
         titleView.setPadding(dp(8), dp(8), dp(8), dp(8));
         root.addView(titleView);
 
         logText = new TextView(this);
         logText.setTypeface(Typeface.MONOSPACE);
         logText.setTextSize(11f);
-        logText.setTextColor(DraculaPalette.FOREGROUND);
+        logText.setTextColor(theme.getText());
         logText.setTextIsSelectable(true);
         logText.setPadding(dp(8), dp(4), dp(8), dp(16));
 
@@ -132,7 +132,7 @@ public class LogViewerActivity extends Activity {
         button.setText(label);
         button.setTextSize(12f);
         button.setTypeface(Typeface.MONOSPACE);
-        button.setTextColor(DraculaPalette.COLOR_CYAN);
+        button.setTextColor(theme.getAccent());
         button.setPadding(dp(14), dp(6), dp(14), dp(6));
         button.setOnClickListener(listener);
         android.widget.LinearLayout.LayoutParams lp = new android.widget.LinearLayout.LayoutParams(
@@ -220,26 +220,31 @@ public class LogViewerActivity extends Activity {
         Toast.makeText(this, "已清空", Toast.LENGTH_SHORT).show();
     }
 
-    /** Appends one console chunk to the guest log, rotating at {@link #MAX_CONSOLE_LOG_BYTES}. */
+    /**
+     * Single-thread executor for guest console writes. Every PTY output chunk used to be
+     * written to disk synchronously on the UI thread (a direct terminal-input jank source);
+     * a single worker keeps chunks ordered while the UI thread only enqueues.
+     */
+    private static final java.util.concurrent.ExecutorService CONSOLE_LOG_EXECUTOR =
+            java.util.concurrent.Executors.newSingleThreadExecutor(runnable -> {
+                Thread worker = new Thread(runnable, "guest-console-log");
+                worker.setDaemon(true);
+                return worker;
+            });
+
+    /** Appends one console chunk to the guest log off the UI thread, rotating at {@link GuestConsoleLogWriter#MAX_BYTES}. */
     public static void appendGuestConsole(Context context, String instanceId, String chunk) {
-        if (instanceId == null || chunk == null || chunk.isEmpty()) {
+        if (instanceId == null || instanceId.isEmpty() || chunk == null || chunk.isEmpty()) {
             return;
         }
-        try {
-            File logsDir = new File(context.getFilesDir(), "logs");
-            if (!logsDir.exists()) {
-                logsDir.mkdirs();
+        File logsDir = new File(context.getFilesDir(), "logs");
+        CONSOLE_LOG_EXECUTOR.execute(() -> {
+            try {
+                GuestConsoleLogWriter.append(logsDir, instanceId, chunk);
+            } catch (Exception ignored) {
+                // Logging must never break the terminal output path.
             }
-            File target = new File(logsDir, "console-" + instanceId + ".log");
-            if (target.length() > MAX_CONSOLE_LOG_BYTES) {
-                target.delete();
-                java.nio.file.Files.write(target.toPath(),
-                        "…（日志超过 4MB，已从此处继续）\n".getBytes(StandardCharsets.UTF_8));
-            }
-            java.nio.file.Files.write(target.toPath(), chunk.getBytes(StandardCharsets.UTF_8),
-                    java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
-        } catch (Exception ignored) {
-        }
+        });
     }
 
     private int dp(int value) {
