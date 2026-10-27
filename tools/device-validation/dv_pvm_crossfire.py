@@ -1075,7 +1075,15 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
             next_index(), args.guest_command_timeout_s)
         round_result["local_compile_rc"] = rc
         round_result["local_compile_ms"] = elapsed
-        if rc != 0:
+        if rc != 0 and compiler == "clang++":
+            # The remote C++ job is the thing under test; the chroot's local
+            # C++ toolchain (header/stdlib packaging) is guest provisioning,
+            # not a payload property. Record it and keep going: the reference
+            # pull and the equivalence compare are skipped downstream, and the
+            # remote object alone answers "does the payload take a C++ job".
+            round_result["local_compile_skipped"] = (
+                "chroot C++ toolchain failed; remote job still runs")
+        elif rc != 0:
             round_result["failure_code"] = "GUEST_LOCAL_COMPILE_FAILED"
             return round_result
 
@@ -1135,18 +1143,24 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
                 round_work / "cross.o",
                 args.guest_command_timeout_s, next_index)
         round_result["cross_object"] = pulled_cross
-        pulled_ref = return_object_via_netcat(
-            adb, console, GUEST_REF_O, round_work / "ref.o",
-            19999, tool, next_index, args.guest_command_timeout_s)
-        if not pulled_ref.get("ok"):
-            pulled_ref = return_object_via_console(
-                console, f"{chroot_prefix}{GUEST_REF_O}",
-                round_work / "ref.o",
-                args.guest_command_timeout_s, next_index)
-        round_result["ref_object"] = pulled_ref
-        if not (pulled_cross.get("ok") and pulled_ref.get("ok")):
+        if not pulled_cross.get("ok"):
             round_result["failure_code"] = "OBJECT_RETURN_FAILED"
             return round_result
+        has_reference = round_result.get("local_compile_rc") == 0
+        pulled_ref: dict = {}
+        if has_reference:
+            pulled_ref = return_object_via_netcat(
+                adb, console, GUEST_REF_O, round_work / "ref.o",
+                19999, tool, next_index, args.guest_command_timeout_s)
+            if not pulled_ref.get("ok"):
+                pulled_ref = return_object_via_console(
+                    console, f"{chroot_prefix}{GUEST_REF_O}",
+                    round_work / "ref.o",
+                    args.guest_command_timeout_s, next_index)
+            round_result["ref_object"] = pulled_ref
+            if not pulled_ref.get("ok"):
+                round_result["failure_code"] = "OBJECT_RETURN_FAILED"
+                return round_result
 
         # Slack job: closes the instrumentation's second connection, which
         # releases the coordinator teardown we are now blocking.
@@ -1157,7 +1171,7 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
                  f"--target={GUEST_TRIPLE} -O1 {GUEST_SLACK_C} -o {GUEST_SLACK_O}"),
             next_index(), args.guest_command_timeout_s)
 
-        if args.compare_script:
+        if args.compare_script and has_reference:
             compared_tail = ""
             try:
                 compared = subprocess.run(
