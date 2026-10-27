@@ -68,7 +68,16 @@ struct ArgvDecision {
     std::string failure_code;
     /** Allow-listed flags in their original order. */
     std::vector<std::string> flags;
-    /** "c" or "c++"; the engine compiles the .i as already preprocessed. */
+    /**
+     * "c" or "c++"; the engine compiles the content as already preprocessed
+     * (job.i / job.ii). Decided by the job's own -x when it carries one --
+     * the driver's word outranks the file name -- otherwise inferred from
+     * the input file name's suffix (real distcc never sends -x across the
+     * wire; the device's round-2 log shows "/root/fixture.cpp" verbatim).
+     * An input name with no accepted suffix (.c/.i => c,
+     * .C/.cpp/.cc/.cxx/.c++/.ii => c++, .m/.mm and the rest => nothing)
+     * rejects the job instead of defaulting to C.
+     */
     std::string language = "c";
     /**
      * A triple the client declared that is not the configured one. Advisory

@@ -121,6 +121,83 @@ FL_TEST(argv_policy_reads_the_language_from_x) {
     FL_CHECK_EQ(joined.language, std::string("c++"));
 }
 
+// --- language from the input file name ---------------------------------------
+//
+// Real distcc never sends -x (the client-side preprocessor runs with the
+// original driver, and the server is supposed to pick the language from the
+// input name it typed; DV-PVM round 2 recorded the wire argv carrying
+// "/root/fixture.cpp" verbatim). The payload's input is a memory buffer, so
+// the input NAME in the argv is the only language evidence left -- unless the
+// job says -x explicitly, which always wins.
+
+FL_TEST(argv_policy_infers_language_from_input_suffix) {
+    struct Row {
+        const char* input;
+        const char* language;
+    };
+    // Sources and preprocessed products, both spellings of C++.
+    const Row rows[] = {
+        {"a.c", "c"},      {"a.i", "c"},
+        {"a.cpp", "c++"},  {"a.cc", "c++"},  {"a.cxx", "c++"},
+        {"a.C", "c++"},    {"a.c++", "c++"}, {"a.ii", "c++"},
+    };
+    for (const Row& row : rows) {
+        const ArgvDecision decision = filter_argv(
+            {"clang++", "-c", row.input, "-o", "a.o"}, config());
+        if (!decision.accepted || decision.language != row.language) {
+            ::fl::test::fail(__FILE__, __LINE__,
+                             std::string(row.input) + ": expected language " +
+                                 row.language + " got " +
+                                 (decision.accepted ? decision.language
+                                                    : decision.failure_code));
+        }
+    }
+    // The shape the real client sent on the device (round 2 distcc.log).
+    const ArgvDecision wired = filter_argv(
+        {"clang++", "-c", "--target=aarch64-unknown-linux-android", "-O1",
+         "/root/fixture.cpp", "-o", "/root/cross.o",
+         "-target", "aarch64-alpine-linux-musl"},
+        config());
+    FL_CHECK(wired.accepted);
+    FL_CHECK_EQ(wired.language, std::string("c++"));
+}
+
+FL_TEST(argv_policy_rejects_uninferrable_input_names) {
+    // ObjC is out of scope on purpose.
+    expect_rejected({"clang", "-c", "a.m", "-o", "a.o"}, "BAD_LANG", "objc .m");
+    expect_rejected({"clang", "-c", "a.mm", "-o", "a.o"}, "BAD_LANG", "objc .mm");
+    // No suffix at all: the real client always names its input, so this is
+    // not something to guess at.
+    expect_rejected({"clang", "-c", "fixture", "-o", "a.o"}, "BAD_LANG",
+                    "no suffix");
+    expect_rejected({"clang", "-c", "/root/fixture", "-o", "a.o"}, "BAD_LANG",
+                    "path without suffix");
+    // Unrecognized suffixes are refused, never defaulted to C.
+    expect_rejected({"clang", "-c", "a.java", "-o", "a.o"}, "BAD_LANG",
+                    "unknown suffix");
+    expect_rejected({"clang", "-c", "a", "-o", "a.o"}, "BAD_LANG",
+                    "bare dotless name");
+}
+
+FL_TEST(argv_policy_explicit_x_beats_input_suffix) {
+    // The driver's own words outrank the file name in both directions.
+    const ArgvDecision cxx_on_c_file = filter_argv(
+        {"cc", "-c", "-x", "c++", "a.c", "-o", "a.o"}, config());
+    FL_CHECK(cxx_on_c_file.accepted);
+    FL_CHECK_EQ(cxx_on_c_file.language, std::string("c++"));
+
+    const ArgvDecision c_on_cpp_file = filter_argv(
+        {"cc", "-c", "-x", "c", "a.cpp", "-o", "a.o"}, config());
+    FL_CHECK(c_on_cpp_file.accepted);
+    FL_CHECK_EQ(c_on_cpp_file.language, std::string("c"));
+
+    // Joined spellings count as explicit too.
+    const ArgvDecision joined = filter_argv(
+        {"cc", "-c", "-xc++-cpp-output", "a.c", "-o", "a.o"}, config());
+    FL_CHECK(joined.accepted);
+    FL_CHECK_EQ(joined.language, std::string("c++"));
+}
+
 FL_TEST(argv_policy_accepted_std_values) {
     for (const char* std_value : {"c99", "c11", "c17", "c23", "c++11", "c++14",
                                   "c++17", "c++20", "c++23"}) {
@@ -276,7 +353,10 @@ FL_TEST(argv_policy_rejects_one_case_per_class) {
         {{"cc", "-fprofile-instr-generate", "a.c"}, "FILE_OUTPUT"},
         {{"cc", "-std=c11/../../etc/passwd", "a.c"}, "PATH_LIKE"},
         {{"cc", "-Wl,--gc-sections", "a.c"}, "CLANG_INTERNAL"},
-        {{"cc", "-x", "c", "a.c"}, "BAD_LANG"},
+        // -x c/-x c++ are accepted language declarations now (they outrank
+        // the input suffix); the class representative is a language the
+        // payload genuinely does not take.
+        {{"cc", "-x", "fortran", "a.c"}, "BAD_LANG"},
         {{"cc", "-std=c++03", "a.c"}, "BAD_STD"},
         {{"cc", "--target=", "a.c"}, "BAD_TARGET"},
         {{"cc", "-ofoo.o", "a.c"}, "OUTPUT_REDIRECT"},
