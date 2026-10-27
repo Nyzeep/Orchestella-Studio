@@ -111,21 +111,32 @@ class Adb:
             argv += ["-s", self.serial]
         return argv + args
 
-    def run(self, args: list[str], timeout: int = PROBE_TIMEOUT_S,
-            check: bool = True) -> str:
+    def capture(self, args: list[str], timeout: int = PROBE_TIMEOUT_S) -> tuple[int, str, str]:
+        """Run and return (rc, stdout, stderr).
+
+        stderr matters: a dead lane and a slow lane look identical if only stdout
+        is kept, which is how "0 objects" turns into an unexplainable number.
+        """
         argv = self._argv(args)
         self.commands.append(" ".join(shlex.quote(part) for part in argv[1:]))
         completed = subprocess.run(argv, capture_output=True, text=True,
                                    encoding="utf-8", errors="replace", timeout=timeout)
-        if check and completed.returncode != 0:
+        return completed.returncode, completed.stdout, completed.stderr
+
+    def run(self, args: list[str], timeout: int = PROBE_TIMEOUT_S,
+            check: bool = True) -> str:
+        rc, out, err = self.capture(args, timeout)
+        if check and rc != 0:
             raise KitError("ADB_FAILED",
-                           f"{' '.join(args[:2])} rc={completed.returncode}: "
-                           f"{(completed.stderr or completed.stdout).strip()[:400]}")
-        return completed.stdout
+                           f"{' '.join(args[:2])} rc={rc}: {(err or out).strip()[:400]}")
+        return out
 
     def shell(self, script: str, timeout: int = PROBE_TIMEOUT_S,
               check: bool = True) -> str:
         return self.run(["shell", script], timeout=timeout, check=check)
+
+    def shell_capture(self, script: str, timeout: int = PROBE_TIMEOUT_S) -> tuple[int, str, str]:
+        return self.capture(["shell", script], timeout=timeout)
 
     def pull(self, remote: str, local: Path) -> None:
         self.run(["pull", remote, str(local)], timeout=300)
@@ -228,7 +239,7 @@ def probe_screen(adb: Adb, missing: list[str]) -> str | None:
     return match.group(1)
 
 
-def probe_rootfs(adb: Adb, rootfs: str) -> dict:
+def probe_rootfs(adb: Adb, rootfs: str, clang: str) -> dict:
     """Confirm the rootfs was unpacked and report the clang it actually carries."""
     facts: dict = {"rootfs": rootfs, "marker": None, "clang": None, "loader": None}
     try:
@@ -239,13 +250,40 @@ def probe_rootfs(adb: Adb, rootfs: str) -> dict:
     if facts["marker"] is None:
         raise KitError(
             "ROOTFS_NOT_PREPARED",
-            f"{rootfs}/.native-lane-rootfs.json is missing; run "
-            f"tools/native-lane/prepare_rootfs.sh plan and follow it on the device")
+            f"{rootfs}/.native-lane-rootfs.json is missing. Run "
+            f"'bash tools/native-lane/prepare_rootfs.sh plan' and execute the device "
+            f"sequence, or 'bash tools/native-lane/prepare_rootfs.sh all --where device "
+            f"--adb <path>'.")
     try:
         facts["loader"] = adb.shell(
             f"ls {rootfs}/{DEVICE_LOADER} 2>/dev/null").strip() or None
     except (KitError, subprocess.TimeoutExpired):
         facts["loader"] = None
+    # The bare column runs clang as a plain program under the device root, so it
+    # addresses the interpreter explicitly; a missing loader there is fatal, not
+    # a warning, because the failure mode is otherwise a silently empty column.
+    if facts["loader"] is None:
+        raise KitError("LOADER_MISSING",
+                       f"{rootfs}/{DEVICE_LOADER} not found; the bare column cannot start")
+    # A path that merely exists is not the fact the bare column depends on: the
+    # program is resolved against the device root and started by the musl
+    # interpreter, so the libLLVM/libc++ it links against must resolve too.
+    # Ask it for its version through exactly the interpreter and library path the
+    # bare column will use -- that also reports the clang the rootfs carries
+    # instead of the one the profile assumes.
+    libpath = f"{rootfs}/usr/lib/llvm22/lib:{rootfs}/usr/lib:{rootfs}/lib"
+    program = rootfs.rstrip("/") + "/" + clang.lstrip("/")
+    bare_gate = (f"{_quote(rootfs.rstrip('/') + '/' + DEVICE_LOADER)} "
+                 f"--library-path {_quote(libpath)} {_quote(program)} --version")
+    rc, out, err = adb.shell_capture(bare_gate)
+    version_line = (out.strip().splitlines() or [""])[0].strip()
+    if rc != 0 or not version_line:
+        raise KitError(
+            "CLANG_MISSING",
+            f"{program} does not start under {rootfs}/{DEVICE_LOADER} (rc={rc}): "
+            f"{(err or out).strip()[:200] or 'no output'}. Run the populate step of "
+            f"prepare_rootfs.sh (profile pins the package name).")
+    facts["clang"] = clang
     return facts
 
 
@@ -266,32 +304,45 @@ def _quote(path: str) -> str:
 
 
 def build_compile_entry(column: str, clang: str, rootfs: str, proot: str,
-                        workdir: str) -> str:
+                        workdir: str, cflags: list[str] | None = None) -> str:
     """One compile command; ``$1`` is the input file, supplied by xargs.
 
     The work directory is bind-mounted at ``/work`` for the proot column, so a
     relative ``$1`` resolves inside the guest and the object lands back in the
     device directory -- no host path may ever appear in a device command.
+
+    The two columns address clang in different path spaces, which is the single
+    easiest thing to get wrong here:
+    * proot  -> ``clang`` is a *guest* path, resolved inside ``-r <rootfs>``.
+    * bare   -> there is no ``-r``; the loader and the program are both resolved
+      against the *device* root, so the program must carry the rootfs prefix.
     """
+    flags = " ".join(cflags or [])
+    tail = f"{flags} -c \"$1\" -o \"${{1%.i}}.o\"".strip()
     if column == "proot":
         return (f"{_quote(proot)} -r {_quote(rootfs)} -b /dev -b /proc -b /sys "
-                f"-b {_quote(workdir)}:/work -w /work {_quote(clang)} "
-                f"-c \"$1\" -o \"${{1%.i}}.o\"")
+                f"-b {_quote(workdir)}:/work -w /work {_quote(clang)} {tail}")
     if column == "bare":
         libpath = f"{rootfs}/usr/lib/llvm22/lib:{rootfs}/usr/lib:{rootfs}/lib"
+        program = rootfs.rstrip("/") + "/" + clang.lstrip("/")
         return (f"{_quote(rootfs + '/' + DEVICE_LOADER)} --library-path {_quote(libpath)} "
-                f"{_quote(clang)} -fintegrated-cc1 -c \"$1\" -o \"${{1%.i}}.o\"")
+                f"{_quote(program)} -fintegrated-cc1 {tail}")
     raise KitError("UNKNOWN_COLUMN", column)
 
 
 def build_batch_script(column: str, clang: str, rootfs: str, proot: str,
-                       workdir: str, device_dot_i: str, jobs: int, files: int) -> str:
+                       workdir: str, device_dot_i: str, jobs: int, files: int,
+                       cflags: list[str] | None = None) -> str:
     """The whole measured region, timed with /proc/uptime on the device.
 
     /proc/uptime gives centiseconds without needing a clock tool or an extra
     process; the alternative (``date +%s%N``) is not portable to toybox.
+
+    The object count avoids ``find -size``: toybox's ``find`` support for
+    ``-size`` is not guaranteed, and a silent 0 there would report a perfectly
+    good batch as MISSING_OBJECTS.
     """
-    entry = build_compile_entry(column, clang, rootfs, proot, workdir)
+    entry = build_compile_entry(column, clang, rootfs, proot, workdir, cflags)
     tmpdir = (f"mkdir -p {_quote(workdir)}/tmp; export TMPDIR={_quote(workdir)}/tmp; "
               if column == "bare" else "")
     parts = [
@@ -302,7 +353,7 @@ def build_batch_script(column: str, clang: str, rootfs: str, proot: str,
         "T0=$(cut -d' ' -f1 /proc/uptime); ",
         f"ls f*.i | xargs -P {jobs} -n 1 sh -c '{entry}' _; RC=$?; ",
         "T1=$(cut -d' ' -f1 /proc/uptime); ",
-        "OBJS=$(find . -name '*.o' -size +0 2>/dev/null | wc -l | tr -d ' '); ",
+        "OBJS=0; for f in *.o; do [ -s \"$f\" ] && OBJS=$((OBJS+1)); done; ",
         "printf 'NL_T0=%s\\nNL_T1=%s\\nNL_RC=%s\\nNL_OBJS=%s\\n' \"$T0\" \"$T1\" \"$RC\" \"$OBJS\"",
     ]
     return "".join(parts)
@@ -321,24 +372,29 @@ def parse_markers(text: str) -> dict[str, str]:
 
 
 def run_batch(adb: Adb, column: str, jobs: int, files: int, clang: str,
-              rootfs: str, proot: str, workdir: str, device_dot_i: str) -> dict:
+              rootfs: str, proot: str, workdir: str, device_dot_i: str,
+              cflags: list[str] | None = None) -> dict:
     script = build_batch_script(column, clang, rootfs, proot, workdir,
-                                device_dot_i, jobs, files)
+                                device_dot_i, jobs, files, cflags)
     row: dict = {"column": column, "jobs": jobs, "files": files, "command": script}
     try:
-        raw = adb.shell(script, timeout=BATCH_TIMEOUT_S, check=False)
+        adb_rc, raw, err = adb.shell_capture(script, timeout=BATCH_TIMEOUT_S)
     except subprocess.TimeoutExpired:
         row.update(status="TIMEOUT", wall_ms=None, files_per_min=None,
                    objects_ok=None, markers={})
         return row
     markers = parse_markers(raw)
     row["markers"] = markers
+    if err.strip():
+        row["stderr_tail"] = redact(err.strip()[-400:])
     try:
         t0 = Decimal(markers["NL_T0"])
         t1 = Decimal(markers["NL_T1"])
     except (KeyError, InvalidOperation):
         row.update(status="NO_TIMING", wall_ms=None, files_per_min=None,
-                   objects_ok=None, stderr_tail=redact(raw.strip()[-400:]))
+                   objects_ok=None)
+        if "stderr_tail" not in row:
+            row["stderr_tail"] = redact((err or raw).strip()[-400:])
         return row
 
     wall_ms = int((t1 - t0) * 1000)
@@ -346,13 +402,15 @@ def run_batch(adb: Adb, column: str, jobs: int, files: int, clang: str,
     rc = int(markers.get("NL_RC", "1") or 1)
     row.update(wall_ms=wall_ms, objects_ok=objects_ok, rc=rc)
     if objects_ok < files:
+        # No objects means no work happened; a throughput figure here would be
+        # a fabricated number.
         row["status"] = "MISSING_OBJECTS"
         row["files_per_min"] = None
-    elif rc != 0:
-        # xargs returns 123 when any invocation failed, but every object exists:
-        # report the number and the marker instead of guessing.
+    elif rc != 0 or adb_rc != 0:
+        # Every object exists, but at least one invocation returned non-zero.
+        # Record the timing as raw data and withhold the throughput.
         row["status"] = "PARTIAL_FAILURE"
-        row["files_per_min"] = round(files * 60000 / wall_ms, 2) if wall_ms else None
+        row["files_per_min"] = None
     else:
         row["status"] = "OK"
         row["files_per_min"] = round(files * 60000 / wall_ms, 2) if wall_ms else None
@@ -632,7 +690,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         env_start, missing = probe_environment(adb)
-        rootfs_facts = probe_rootfs(adb, args.rootfs)
+        rootfs_facts = probe_rootfs(adb, args.rootfs, args.clang)
         clang_version = probe_clang_version(adb, args.proot, args.rootfs, args.clang)
         if clang_version is None:
             missing.append("clang_version")
