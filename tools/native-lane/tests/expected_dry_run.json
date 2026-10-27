@@ -1,0 +1,45 @@
+{
+  "_comment": "Handwritten expectation for `measure.py --dry-run`. The values come from fake_adb.py's DURATIONS_MS table, not from hardware. If the pipeline changes shape, this file must change with it -- that is the test.",
+  "synthetic": true,
+  "fixture": {
+    "bytes": 90114,
+    "sha256": "28a7edcf6201c3fa81e669620d0c5e8219da1797d8e5103dbad57e2e5b4b24f1"
+  },
+  "parameters": {
+    "jobs": [1, 7],
+    "files_per_batch": 7,
+    "clock": "proc_uptime_cs"
+  },
+  "rows": [
+    {"column": "proot", "jobs": 1, "status": "OK", "wall_ms": 3120, "files": 7, "files_per_min": 134.62, "objects_ok": 7},
+    {"column": "proot", "jobs": 7, "status": "OK", "wall_ms": 1410, "files": 7, "files_per_min": 297.87, "objects_ok": 7},
+    {"column": "bare", "jobs": 1, "status": "OK", "wall_ms": 2680, "files": 7, "files_per_min": 156.72, "objects_ok": 7},
+    {"column": "bare", "jobs": 7, "status": "OK", "wall_ms": 1180, "files": 7, "files_per_min": 355.93, "objects_ok": 7}
+  ],
+  "reused": {
+    "qemu": {"status": "NOT_MEASURED", "value_ms": null},
+    "pvm": {"status": "NOT_MEASURED", "value_ms": null}
+  },
+  "env": {
+    "nproc": 8,
+    "cpuinfo_max_freq_khz": 3148800,
+    "scaling_governor": "schedutil",
+    "battery_temp_dc": 312,
+    "screen": "Awake",
+    "thermal_start": {
+      "thermal_zone0:cpu": 38000,
+      "thermal_zone1:gpu": 36500,
+      "thermal_zone2:battery": 31200
+    },
+    "thermal_end": {
+      "thermal_zone0:cpu": 38200,
+      "thermal_zone1:gpu": 36700,
+      "thermal_zone2:battery": 31400
+    },
+    "incomplete": []
+  },
+  "preflight": {
+    "clang_version": "clang version 22.1.8 (Alpine 22.1.8-r1)"
+  },
+  "warnings": []
+}

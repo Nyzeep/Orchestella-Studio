@@ -1,0 +1,4 @@
+# The fixture bytes are a contract: MANIFEST.json records their sha256 and
+# gen_fixture.py --verify recomputes it. Any end-of-line conversion on checkout
+# would break that digest, so these two files must be transported verbatim.
+fixtures/* -text

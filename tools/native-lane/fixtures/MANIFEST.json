@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "generated_utc": "2026-10-26T17:22:46Z",
+  "functions": 2000,
+  "files": {
+    "fixture.c": {
+      "bytes": 90045,
+      "sha256": "4e5dafccdabcc9b198659c37f4e828d927508786ba454ef7247094627e1cf2fc"
+    },
+    "fixture.i": {
+      "bytes": 90114,
+      "sha256": "28a7edcf6201c3fa81e669620d0c5e8219da1797d8e5103dbad57e2e5b4b24f1"
+    }
+  },
+  "dot_i_producer": {
+    "tool": "clang",
+    "version": "Android (12027248, based on r522817) clang version 18.0.1 (https://android.googlesource.com/toolchain/llvm-project d8003a456d14a3deb8054cdaa529ffbf02d9b262)",
+    "triple": "aarch64-linux-android28",
+    "argv": [
+      "clang",
+      "-E",
+      "--target=aarch64-linux-android28",
+      "-x",
+      "c",
+      "fixture.c",
+      "-o",
+      "fixture.i"
+    ]
+  },
+  "note": "fixture.c is generated; fixture.i is clang -E output. A device run may regenerate fixture.i with the device clang (measure.py --regen-dot-i) and must record the new sha256 in the run JSON."
+}
