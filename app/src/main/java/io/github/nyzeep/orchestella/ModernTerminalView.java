@@ -5,6 +5,7 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.os.Handler;
 import android.os.Looper;
@@ -44,6 +45,11 @@ public class ModernTerminalView extends ScrollView {
             new java.util.concurrent.atomic.AtomicBoolean(false);
     private final Runnable flushTask = this::flushPendingOutput;
     private TranscriptView transcriptView;
+    // Cursor blink repaints at 2 Hz for the whole session; a full-view invalidate here forces
+    // the TextView stack to redraw thousands of transcript lines twice a second. Track the
+    // on-screen cursor bar instead and invalidate only its damage rect (old ∪ new position).
+    private final Rect lastCursorRect = new Rect();
+    private final Rect cursorScratchRect = new Rect();
     private TerminalInputSink inputSink;
     private StickyModifierStateMachine stickyStateMachine;
     private TerminalInputConnection currentInputConnection;
@@ -409,6 +415,9 @@ public class ModernTerminalView extends ScrollView {
         lastEvictedHistoryRows = snapshot.evictedHistoryRows;
         viewportRestorePending = true;
         transcriptView.setText(display, TextView.BufferType.SPANNABLE);
+        // The layout was rebuilt, so the previously tracked cursor damage rect is meaningless;
+        // setText already invalidated the whole view for this frame.
+        lastCursorRect.setEmpty();
         cursorVisible = true;
         mainHandler.removeCallbacks(restoreViewportTask);
         mainHandler.post(restoreViewportTask);
@@ -473,10 +482,45 @@ public class ModernTerminalView extends ScrollView {
     private final Runnable cursorBlinkTask = new Runnable() {
         @Override public void run() {
             cursorVisible = !cursorVisible;
-            transcriptView.invalidate();
+            invalidateCursorDamage();
             if (cursorEnabled && cursorBlinkEnabled) mainHandler.postDelayed(this, 500L);
         }
     };
+
+    /**
+     * Repaints only the cursor bar region: the union of the previously drawn bar (to erase it)
+     * and the current bar position. Falls back to a full invalidate whenever the geometry
+     * cannot be computed yet, which is rare (layout not created or terminal not cursor-visible).
+     */
+    private void invalidateCursorDamage() {
+        boolean hasCurrent = computeCursorRect(cursorScratchRect);
+        if (!hasCurrent && lastCursorRect.isEmpty()) {
+            transcriptView.invalidate();
+            return;
+        }
+        if (hasCurrent) {
+            if (!lastCursorRect.isEmpty()) cursorScratchRect.union(lastCursorRect);
+            transcriptView.invalidate(cursorScratchRect);
+            lastCursorRect.set(cursorScratchRect);
+        } else {
+            transcriptView.invalidate(lastCursorRect);
+            lastCursorRect.setEmpty();
+        }
+    }
+
+    /** Computes the cursor bar bounds in transcript-view coordinates; false when there is nothing to draw. */
+    private boolean computeCursorRect(Rect out) {
+        Layout layout = transcriptView.getLayout();
+        if (layout == null || !cursorEnabled || !cursorVisible || !screen.isCursorVisible() || selecting) return false;
+        int offset = Math.max(0, Math.min(cursorOffset, transcriptView.getText().length()));
+        int line = layout.getLineForOffset(offset);
+        float barWidth = Math.max(2f, transcriptView.getTextSize() / 10f);
+        int x = (int) (transcriptView.getTotalPaddingLeft() + layout.getPrimaryHorizontal(offset));
+        int top = transcriptView.getTotalPaddingTop() + layout.getLineTop(line);
+        int bottom = transcriptView.getTotalPaddingTop() + layout.getLineBottom(line);
+        out.set(x - 2, top, (int) (x + barWidth) + 2, bottom);
+        return true;
+    }
 
     public void setCursorEnabled(boolean enabled) {
         cursorEnabled = enabled;
