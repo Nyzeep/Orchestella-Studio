@@ -821,9 +821,14 @@ def _probe_transport_down(adb: Adb, console: GuestConsole, tool, next_index,
     attempts = []
     if chroot_prefix:
         attempts.append(("chroot", tool(inner)))
+        # One retry: round 4 cxx-v6 showed the second probe's chroot dial
+        # failing seconds after the first probe's chroot dial succeeded,
+        # with no evidence to tell a late listener from a gvproxy NAT gap.
+        attempts.append(("chroot-retry", tool(inner)))
     attempts.append(("outer", inner))
     try:
         outcome = None  # (code, detail) — recorded only if nothing succeeds
+        trial_log = []
         for flavor, command in attempts:
             listener = spawn_listener()
             # 3 s: the framing above plus process start can exceed a shorter
@@ -835,9 +840,11 @@ def _probe_transport_down(adb: Adb, console: GuestConsole, tool, next_index,
                 rc, text, elapsed = console.run(command, next_index(),
                                                 PERF_NC_TIMEOUT_S)
                 if elapsed < 0:
+                    trial_log.append({"shell": flavor, "code": "timeout"})
                     outcome = (f"{label}_timeout", {"shell": flavor})
                     continue
                 if rc != 0:
+                    trial_log.append({"shell": flavor, "rc": rc})
                     outcome = (f"{label}_nc_failed", {
                         "shell": flavor, "rc": rc,
                         "tail": (text or "").strip().splitlines()[-3:],
@@ -850,6 +857,8 @@ def _probe_transport_down(adb: Adb, console: GuestConsole, tool, next_index,
                 if body_lines and body_lines[-1].isdigit():
                     received = int(body_lines[-1])
                 if received is None or received < expected_total:
+                    trial_log.append({"shell": flavor, "received": received,
+                                      "nc_tail": body_lines[-2:]})
                     outcome = (f"{label}_short_read", {
                         "shell": flavor, "rc": rc, "received": received,
                         "expected": expected_total,
@@ -865,6 +874,7 @@ def _probe_transport_down(adb: Adb, console: GuestConsole, tool, next_index,
                     listener.kill()
         if outcome is not None:
             code, detail = outcome
+            detail["attempts"] = trial_log
             _record_probe_error(round_result, code)
             round_result.setdefault("perf_probe_details", {})[label] = detail
     finally:
