@@ -51,7 +51,6 @@ endif()
 # layer, never on fastlane_payload_core (the compiler payload must not carry the
 # FLN1 transport, and the FLN1 core is Linux-only).
 set(FL_PVM_PAYLOAD_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
-set(FL_PVM_PAYLOAD_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/pvm-compile-service.cmake)
 fl_pvm_add_compile_service_library(pvm_compile_service)
 
@@ -172,10 +171,9 @@ elseif(FL_BUILD_HOST)
         src/compiler/host_main.cpp
     )
     target_link_libraries(pvm_compiler_host PRIVATE pvm_compiler)
-if(FL_ENABLE_WERROR)
-    target_compile_options(pvm_compiler_host PRIVATE -Wall -Wextra -Werror)
-endif()
-
+    if(FL_ENABLE_WERROR)
+        target_compile_options(pvm_compiler_host PRIVATE -Wall -Wextra -Werror)
+    endif()
 endif()
 
 if(FL_BUILD_TESTS AND FL_BUILD_HOST AND NOT ANDROID)
@@ -205,8 +203,8 @@ if(FL_BUILD_TESTS AND FL_BUILD_HOST AND NOT ANDROID)
     )
     target_compile_definitions(fastlane_payload_tests PRIVATE
         FLN1_GOLDEN_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../protocol/fln1-golden.json"
-        FL_PVM_DISTCC_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../runtime/fastlane-distcc/src/test/resources/distcc"
-        FL_PVM_AXP1_GOLDEN_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../runtime/fastlane-distcc/src/test/resources/axp1/golden-v1.hex")
+        FL_PVM_DISTCC_GOLDEN_DIR="${FL_PVM_DISTCC_GOLDEN_DIR}"
+        FL_PVM_AXP1_GOLDEN_PATH="${FL_PVM_AXP1_GOLDEN_PATH}")
     target_compile_options(fastlane_payload_tests PRIVATE -Wall -Wextra -Werror -Wpedantic)
     if(WIN32)
         target_link_libraries(fastlane_payload_tests PRIVATE psapi)
