@@ -13,7 +13,11 @@ constexpr const char* kNoAsyncUnwind = "-fno-asynchronous-unwind-tables";
 constexpr const char* kCxxExceptions = "-fcxx-exceptions";
 constexpr const char* kExceptions = "-fexceptions";
 constexpr const char* kNoExceptions = "-fno-exceptions";
-constexpr const char* kNoOmitFramePointer = "-fno-omit-frame-pointer";
+// cc1-form, not the driver's -fno-omit-frame-pointer: -cc1 rejects driver
+// spellings outright (PVM-02 burned on -fno-crash-diagnostics; round-3 cxx-v2
+// burned on this one), and CreateFromArgs answering "rejected" turns every
+// job into an engine-level ARGV_REJECTED.
+constexpr const char* kFramePointerAll = "-mframe-pointer=all";
 
 }  // namespace
 
@@ -45,7 +49,7 @@ std::vector<std::string> cc1_codegen_defaults(
         // it on purpose: the on-device C reference matches the omitted form
         // byte for byte (round 3 c regression, 9fd1d91e...), and flipping C
         // would move that anchored hash.
-        defaults.emplace_back(kNoOmitFramePointer);
+        defaults.emplace_back(kFramePointerAll);
     }
     return defaults;
 }
