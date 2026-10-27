@@ -194,6 +194,7 @@ if(FL_BUILD_TESTS AND FL_BUILD_HOST AND NOT ANDROID)
         tests/test_distcc_server.cpp
         tests/test_axp1_server.cpp
         tests/test_compile_service_e2e.cpp
+        tests/test_worker_pool.cpp
         src/vm_payload_stub.cpp
     )
     target_link_libraries(fastlane_payload_tests PRIVATE fastlane_payload_core pvm_compiler pvm_compile_service)
@@ -218,6 +219,7 @@ if(FL_BUILD_TESTS AND FL_BUILD_HOST AND NOT ANDROID)
     add_test(NAME compile_service_distcc_server COMMAND fastlane_payload_tests)
     add_test(NAME compile_service_axp1_server COMMAND fastlane_payload_tests)
     add_test(NAME compile_service_e2e COMMAND fastlane_payload_tests)
+    add_test(NAME compile_service_worker_pool COMMAND fastlane_payload_tests)
     set_tests_properties(compile_service_argv_policy PROPERTIES
         ENVIRONMENT "FL_TEST_FILTER=argv_policy")
     set_tests_properties(compile_service_distcc_server PROPERTIES
@@ -226,6 +228,8 @@ if(FL_BUILD_TESTS AND FL_BUILD_HOST AND NOT ANDROID)
         ENVIRONMENT "FL_TEST_FILTER=axp1")
     set_tests_properties(compile_service_e2e PROPERTIES
         ENVIRONMENT "FL_TEST_FILTER=pvm_e2e")
+    set_tests_properties(compile_service_worker_pool PROPERTIES
+        ENVIRONMENT "FL_TEST_FILTER=worker_pool")
     if(UNIX)
         # Run through bash so the test does not depend on the script's exec bit.
         add_test(NAME inprocess_noexec
