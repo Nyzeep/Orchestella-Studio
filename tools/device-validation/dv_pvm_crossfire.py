@@ -603,9 +603,11 @@ def _probe_transport_down(adb: Adb, console: GuestConsole, tool, next_index,
     # The guest buffers the stream into /root (both the chroot and the outer
     # shell have it), parses the 8-byte header, then polls the file until it
     # holds the declared total. Polling at 150 ms bounds the measurement
-    # noise; `usleep` falls back to `sleep 1` where busybox lacks it. The
-    # backgrounded `nc` is killed explicitly -- it would otherwise sit in
-    # read() forever, because the FIN it waits for never arrives.
+    # noise. No 127-retry here: run_guest_transfer's fallback exists for
+    # "the chroot ships no netcat", but this script is compound -- a single
+    # missing applet (usleep) would 127 the whole thing and send the probe to
+    # the outer shell, which lacks sleep/rm and fails differently. The inner
+    # text is kept either way so a missing applet names itself.
     inner = (
         f"D=/root/dn.$$.tmp; rm -f $D; trap 'rm -f $D' EXIT; "
         f"timeout {PERF_GUEST_NC_GUARD_S} nc {GUEST_HOST_IP} {port} > $D & NC=$!; "
@@ -613,7 +615,7 @@ def _probe_transport_down(adb: Adb, console: GuestConsole, tool, next_index,
         f"while :; do SZ=$(wc -c < $D 2>/dev/null || echo 0); "
         f'[ "$SZ" -ge 8 ] && break; '
         f"i=$((i+1)); [ $i -ge 40 ] && break; "
-        f"usleep 150000 2>/dev/null || sleep 1; done; "
+        f"sleep 0.15 2>/dev/null || usleep 150000 2>/dev/null || sleep 1; done; "
         f"N=$(dd if=$D bs=1 count=8 2>/dev/null); "
         f'N=$(echo $N); case "$N" in ""|*[!0-9]*) N=0;; esac; '
         f"N=$((N + 0)); T=$((8 + N)); "
@@ -622,15 +624,14 @@ def _probe_transport_down(adb: Adb, console: GuestConsole, tool, next_index,
         f"while :; do SZ=$(wc -c < $D 2>/dev/null || echo 0); "
         f'[ "$SZ" -ge "$T" ] && break; '
         f"i=$((i+1)); [ $i -ge 200 ] && break; "
-        f"usleep 150000 2>/dev/null || sleep 1; done; "
+        f"sleep 0.15 2>/dev/null || usleep 150000 2>/dev/null || sleep 1; done; "
         f"fi; "
         f"kill $NC 2>/dev/null; "
         f"wc -c < $D"
     )
     try:
-        rc, text, elapsed = run_guest_transfer(
-            console, tool, next_index, inner, inner, PERF_NC_TIMEOUT_S,
-            bool(chroot_prefix))
+        rc, text, elapsed = console.run(tool(inner), next_index(),
+                                        PERF_NC_TIMEOUT_S)
         if elapsed < 0:
             _record_probe_error(round_result, f"{label}_timeout")
         elif rc != 0:

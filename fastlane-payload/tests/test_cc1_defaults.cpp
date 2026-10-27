@@ -43,13 +43,17 @@ FL_TEST(cc1_defaults_c_restores_unwind_tables) {
 }
 
 // A C++ job needs the same unwind tables plus the two flags that make `throw`
-// legal; the driver passes all three.
+// legal, plus the frame pointer the aarch64-android driver keeps: the driver
+// compiles with it, bare -cc1 drops it, and the round-3 cxx round showed the
+// remote object's guarded function losing `mov x29, sp` against both the
+// chroot reference and the NDK driver path.
 FL_TEST(cc1_defaults_cxx_restores_exceptions) {
     const std::vector<std::string> defaults = defaults_for("c++");
-    FL_CHECK_EQ(defaults.size(), std::size_t{3});
+    FL_CHECK_EQ(defaults.size(), std::size_t{4});
     FL_CHECK_EQ(defaults[0], std::string("-funwind-tables=2"));
     FL_CHECK_EQ(defaults[1], std::string("-fcxx-exceptions"));
     FL_CHECK_EQ(defaults[2], std::string("-fexceptions"));
+    FL_CHECK_EQ(defaults[3], std::string("-fno-omit-frame-pointer"));
 }
 
 // The job's own opt-outs are on the argv allow list and must survive: the
@@ -73,8 +77,9 @@ FL_TEST(cc1_defaults_other_flags_are_ignored) {
     const std::vector<std::string> defaults =
         defaults_for("c++", {"-O1", "-fPIC", "-ffunction-sections", "-std=c++17",
                              "-fno-rtti", "-Werror"});
-    FL_CHECK_EQ(defaults.size(), std::size_t{3});
+    FL_CHECK_EQ(defaults.size(), std::size_t{4});
     FL_CHECK(contains(defaults, "-fcxx-exceptions"));
+    FL_CHECK(contains(defaults, "-fno-omit-frame-pointer"));
 }
 
 FL_TEST(cc1_defaults_every_default_precedes_the_job_flags) {

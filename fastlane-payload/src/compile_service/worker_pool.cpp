@@ -30,6 +30,10 @@ void* worker_entry(void* raw) {
 
 }  // namespace
 
+size_t worker_stack_bytes() {
+    return size_t(16) << 20;
+}
+
 int spawn_worker_thread(WorkerFn worker, void* owner, SocketHandle handle) {
     if (worker == nullptr) {
         return EINVAL;
@@ -39,8 +43,21 @@ int spawn_worker_thread(WorkerFn worker, void* owner, SocketHandle handle) {
     if (ticket == nullptr) {
         return ENOMEM;
     }
+    pthread_attr_t attr;
+    int code = ::pthread_attr_init(&attr);
+    if (code != 0) {
+        delete ticket;
+        return code;
+    }
+    code = ::pthread_attr_setstacksize(&attr, worker_stack_bytes());
+    if (code != 0) {
+        ::pthread_attr_destroy(&attr);
+        delete ticket;
+        return code;
+    }
     pthread_t thread;
-    const int started = ::pthread_create(&thread, nullptr, &worker_entry, ticket);
+    const int started = ::pthread_create(&thread, &attr, &worker_entry, ticket);
+    ::pthread_attr_destroy(&attr);
     if (started != 0) {
         // pthread_create reports the refusal (EAGAIN and friends) instead of
         // throwing, which is the only reason this build can survive it at all.

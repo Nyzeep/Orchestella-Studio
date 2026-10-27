@@ -13,6 +13,7 @@ constexpr const char* kNoAsyncUnwind = "-fno-asynchronous-unwind-tables";
 constexpr const char* kCxxExceptions = "-fcxx-exceptions";
 constexpr const char* kExceptions = "-fexceptions";
 constexpr const char* kNoExceptions = "-fno-exceptions";
+constexpr const char* kNoOmitFramePointer = "-fno-omit-frame-pointer";
 
 }  // namespace
 
@@ -36,6 +37,15 @@ std::vector<std::string> cc1_codegen_defaults(
     if (language == "c++" && !job_requests(job_flags, kNoExceptions)) {
         defaults.emplace_back(kCxxExceptions);
         defaults.emplace_back(kExceptions);
+        // The aarch64-android driver keeps the frame pointer (verified with
+        // the NDK 18 driver path: a non-leaf function carries
+        // `stp x29, x30` + `mov x29, sp`, which bare -cc1 drops), and the
+        // round-3 cxx round showed the difference against the chroot
+        // reference in the guarded function's frame layout. C stays without
+        // it on purpose: the on-device C reference matches the omitted form
+        // byte for byte (round 3 c regression, 9fd1d91e...), and flipping C
+        // would move that anchored hash.
+        defaults.emplace_back(kNoOmitFramePointer);
     }
     return defaults;
 }
