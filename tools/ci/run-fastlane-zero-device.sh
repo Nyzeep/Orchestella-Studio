@@ -133,6 +133,8 @@ run_python() {
   "$python" -m unittest discover -s tools/fastlane-build -p 'test_*.py' || return 1
   "$python" -m unittest discover -s tools/qemu-tuning -p 'test_*.py' || return 1
   "$python" -m unittest discover -s tools/compiler-equivalence -p 'test_*.py' || return 1
+  # Native-lane kit: fixture contract, dry run and provenance gating. No device.
+  "$python" -m unittest discover -s tools/native-lane -p 'test_*.py' || return 1
 }
 
 run_e2e() {
