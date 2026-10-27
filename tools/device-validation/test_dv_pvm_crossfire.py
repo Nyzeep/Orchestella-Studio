@@ -5,9 +5,25 @@ do not — and that is exactly where a mis-signed segment or a `None` read as 0
 would hide. Every value here is a plain number: `None` is "not measured".
 """
 
+import hashlib
+import itertools
 import unittest
 
 import dv_pvm_crossfire
+
+
+class FakeConsole:
+    """Scripted GuestConsole double: pops (rc, text) per run(), keeps the
+    commands so tests can assert which shell work did (or did not) happen."""
+
+    def __init__(self, script):
+        self._script = list(script)
+        self.commands = []
+
+    def run(self, command, index, timeout_s):
+        self.commands.append(command)
+        rc, text, elapsed = self._script.pop(0)
+        return rc, text, elapsed
 
 
 def segment_round(index=0, preprocess=20_000, assemble=9_000,
@@ -327,6 +343,231 @@ class StaticCompareCommandTest(unittest.TestCase):
         command = dv_pvm_crossfire.static_compare_command(
             "cmp.py", "cross.o", "ref.o", expect_producer="22.1.8")
         self.assertEqual("22.1.8", command[command.index("--expect-producer") + 1])
+
+
+class ReferenceCompileCommandTest(unittest.TestCase):
+    """The reference must mirror the payload's cc1 codegen defaults or .text
+    can never match: the payload injects -mframe-pointer=all for C++ only
+    (fastlane-payload cc1_defaults.cpp), and C deliberately stays without it
+    so the anchored hash 9fd1d91e... survives. Round 3 cxx-v3 compiled a
+    genuine C++ reference without frame pointers (.text 16,088 B) against a
+    remote 40,100 B and misread the gap as fixture pollution."""
+
+    def test_the_c_reference_keeps_the_plain_command(self):
+        self.assertEqual(
+            "clang -c --target=aarch64-unknown-linux-android -O1 "
+            "/root/fixture.c -o /root/ref.o",
+            dv_pvm_crossfire.reference_compile_command("clang", "/root/fixture.c"))
+
+    def test_the_cxx_reference_carries_the_payloads_frame_pointer_default(self):
+        command = dv_pvm_crossfire.reference_compile_command(
+            "clang++", "/root/fixture.cpp")
+        self.assertTrue(command.startswith(
+            "clang++ -c --target=aarch64-unknown-linux-android -O1 "
+            "/root/fixture.cpp -o /root/ref.o"), command)
+        self.assertIn(" -mframe-pointer=all", command)
+
+
+class AssembleProbeCommandTest(unittest.TestCase):
+    """The assemble probe feeds the preprocessed unit back to the compiler.
+    For C++ that content is preprocessed C++, but the `.i` name says C —
+    without pinning the type, clang parses it as C and fails
+    (round 3 cxx-v3: assemble_failed, assemble_ms=None)."""
+
+    def test_the_c_probe_relies_on_the_i_suffix(self):
+        args = type("Args", (), {"language": "c"})()
+        self.assertEqual(
+            "clang -c --target=aarch64-unknown-linux-android -O1 "
+            "/root/fixture.i -o /root/fromdoti.o",
+            dv_pvm_crossfire.assemble_probe_command(args))
+
+    def test_the_cxx_probe_pins_the_preprocessed_cxx_type(self):
+        args = type("Args", (), {"language": "cxx"})()
+        self.assertEqual(
+            "clang++ -c --target=aarch64-unknown-linux-android -O1 "
+            "-x c++-cpp-output /root/fixture.i -o /root/fromdoti.o",
+            dv_pvm_crossfire.assemble_probe_command(args))
+
+
+class InjectFixtureHashGateTest(unittest.TestCase):
+    """`already-present` trusted the byte COUNT only; a same-size stale
+    fixture passed silently. The gate must be content (sha256), and an
+    unverifiable hash must fail closed into a re-push."""
+
+    FIXTURE = b"int probe_fn_0(int x) { return x; }\n"
+
+    @staticmethod
+    def _sha_reply(digest):
+        return (0, f"{digest}  /data/only/path-needed\n", 1.0)
+
+    def _local_digest(self):
+        return hashlib.sha256(self.FIXTURE).hexdigest()
+
+    def test_a_hash_verified_copy_is_hash_match_and_never_repushed(self):
+        console = FakeConsole([
+            (0, f"{len(self.FIXTURE)}\n", 1.0),
+            self._sha_reply(self._local_digest()),
+        ])
+        result = dv_pvm_crossfire.inject_fixture(
+            None, console, self.FIXTURE, 30, itertools.count().__next__)
+        self.assertTrue(result["injected"])
+        self.assertEqual("hash-match", result["path"])
+        self.assertEqual(2, len(console.commands))  # wc + sha256sum only
+
+    def test_same_size_stale_content_is_detected_and_overwritten(self):
+        console = FakeConsole([
+            (0, f"{len(self.FIXTURE)}\n", 1.0),   # wc: size matches
+            self._sha_reply("0" * 64),            # sha256sum: wrong content
+            (0, "", 1.0),                         # 9p mount+cp attempt
+            (0, f"{len(self.FIXTURE)}\n", 1.0),   # wc again: still same size
+            self._sha_reply("0" * 64),            # sha256sum: still stale
+            (0, "", 1.0),                         # push: rm -f
+            (0, "", 1.0),                         # push: printf chunk
+            (0, f"{len(self.FIXTURE)}\n", 1.0),   # push: base64 -d && wc
+        ])
+        result = dv_pvm_crossfire.inject_fixture(
+            None, console, self.FIXTURE, 30, itertools.count().__next__)
+        self.assertTrue(result["injected"])
+        self.assertEqual("console-base64", result["path"])
+        # The overwrite is the console push (rm -f first), not a pass-through.
+        self.assertIn("rm -f", console.commands[-3])
+
+    def test_an_unverifiable_hash_fails_closed_into_a_repush(self):
+        console = FakeConsole([
+            (0, f"{len(self.FIXTURE)}\n", 1.0),   # wc: size matches
+            (127, "", 1.0),                       # sha256sum: not found
+            (0, "", 1.0),                         # 9p mount+cp attempt
+            (0, f"{len(self.FIXTURE)}\n", 1.0),   # wc again
+            (127, "", 1.0),                       # sha256sum: still absent
+            (0, "", 1.0),                         # push: rm -f
+            (0, "", 1.0),                         # push: printf chunk
+            (0, f"{len(self.FIXTURE)}\n", 1.0),   # push: base64 -d && wc
+        ])
+        result = dv_pvm_crossfire.inject_fixture(
+            None, console, self.FIXTURE, 30, itertools.count().__next__)
+        self.assertTrue(result["injected"])
+        self.assertEqual("console-base64", result["path"])
+
+    def test_size_mismatch_never_bothers_hashing(self):
+        console = FakeConsole([
+            (0, "1\n", 1.0),                      # wc: wrong size
+            (0, "", 1.0),                         # 9p mount+cp
+            (0, f"{len(self.FIXTURE)}\n", 1.0),   # wc: right size now
+            self._sha_reply(self._local_digest()),
+        ])
+        result = dv_pvm_crossfire.inject_fixture(
+            None, console, self.FIXTURE, 30, itertools.count().__next__)
+        self.assertTrue(result["injected"])
+        self.assertEqual("9p-downloads", result["path"])
+        # No sha256sum before the 9p attempt: size said no, hashing is moot.
+        self.assertNotIn("sha256sum", console.commands[0])
+        self.assertIn("sha256sum", console.commands[3])
+
+
+class ReferenceFreshnessTest(unittest.TestCase):
+    """A stale /root/ref.o must never pose as this round's reference: the
+    chroot has no `rm` applet, so the driver zeroes it with a sh builtin
+    before the compile and refuses an empty product afterwards."""
+
+    def test_prepare_zeroes_the_stale_object_and_reports_trust(self):
+        console = FakeConsole([(0, "", 1.0)])
+        self.assertTrue(dv_pvm_crossfire.prepare_reference_object(
+            console, "", itertools.count().__next__))
+        self.assertEqual([": > /root/ref.o"], console.commands)
+
+    def test_prepare_applies_the_chroot_prefix(self):
+        console = FakeConsole([(0, "", 1.0)])
+        dv_pvm_crossfire.prepare_reference_object(console, "/ch", itertools.count().__next__)
+        self.assertEqual([": > /ch/root/ref.o"], console.commands)
+
+    def test_a_failed_truncate_is_reported_untrusted(self):
+        console = FakeConsole([(1, "read-only\n", 1.0)])
+        self.assertFalse(dv_pvm_crossfire.prepare_reference_object(
+            console, "", itertools.count().__next__))
+
+    def test_reference_size_gate_accepts_a_real_object_only(self):
+        ok = FakeConsole([(0, "245424\n", 1.0)])
+        self.assertTrue(dv_pvm_crossfire.reference_object_present(
+            ok, "", itertools.count().__next__))
+        empty = FakeConsole([(0, "0\n", 1.0)])
+        self.assertFalse(dv_pvm_crossfire.reference_object_present(
+            empty, "", itertools.count().__next__))
+        junk = FakeConsole([(0, "wc: bad\n", 1.0)])
+        self.assertFalse(dv_pvm_crossfire.reference_object_present(
+            junk, "", itertools.count().__next__))
+        failed = FakeConsole([(1, "", 1.0)])
+        self.assertFalse(dv_pvm_crossfire.reference_object_present(
+            failed, "", itertools.count().__next__))
+
+
+class DownloadProbeInnerTest(unittest.TestCase):
+    """Round 3 cxx-v3 burned on receiver self-harm: the chroot's `sh` ships
+    without `sleep`/`rm`, the polling loop spun with no delay, and the trap's
+    `rm: not found` became the LAST output line — so `received` parsed as
+    None even though rc was 0. The rebuilt script may degrade (busybox
+    fallback chain, bounded spins) but its last stdout line must always be
+    the measured byte count."""
+
+    def test_the_last_output_is_always_the_measured_count(self):
+        script = dv_pvm_crossfire.download_probe_inner(19990)
+        self.assertTrue(script.rstrip().endswith("echo $SZ"), script[-120:])
+
+    def test_no_trap_and_no_timeout_dependency(self):
+        script = dv_pvm_crossfire.download_probe_inner(19990)
+        self.assertNotIn("trap", script)
+        self.assertNotIn("timeout ", script)
+
+    def test_the_delay_chain_falls_back_to_busybox(self):
+        script = dv_pvm_crossfire.download_probe_inner(19990)
+        self.assertIn("/bin/busybox sleep 0.15", script)
+        # Both polling loops carry the chain; neither may rely on plain sleep.
+        self.assertEqual(2, script.count("usleep 150000"))
+
+    def test_cleanup_runs_before_the_final_measurement(self):
+        script = dv_pvm_crossfire.download_probe_inner(19990)
+        self.assertLess(script.index("rm -f $D 2>/dev/null; "),
+                        script.index("echo $SZ"))
+
+    def test_the_background_nc_is_killed_by_pid_not_by_timeout(self):
+        script = dv_pvm_crossfire.download_probe_inner(19990)
+        self.assertIn("nc 192.168.127.254 19990 > $D & NC=$!;", script)
+        self.assertIn("kill $NC 2>/dev/null;", script)
+
+
+class HealChrootAppletsTest(unittest.TestCase):
+    """The chroot is writable (the distcc state dir proved it), so the outer
+    shell can link the busybox multi-call binary for every applet the probe
+    scripts need — `sleep` and `rm` at minimum, plus the ones the receiver
+    would silently degrade without."""
+
+    def test_links_the_applets_the_probe_scripts_need(self):
+        console = FakeConsole([
+            (0, "QA_BB=yes\n", 1.0),
+            (0, "", 1.0), (0, "", 1.0), (0, "", 1.0), (0, "", 1.0),
+        ])
+        result = dv_pvm_crossfire.heal_chroot_applets(
+            console, "/alpine/", itertools.count().__next__)
+        self.assertTrue(result["applied"])
+        self.assertEqual(["sleep", "rm", "timeout", "dd"], result["applets"])
+        self.assertEqual("ln -sf /bin/busybox /alpine/bin/sleep",
+                         console.commands[1])
+        self.assertEqual("ln -sf /bin/busybox /alpine/bin/dd",
+                         console.commands[4])
+
+    def test_without_busybox_it_reports_and_does_not_link(self):
+        console = FakeConsole([(0, "QA_BB=no\n", 1.0)])
+        result = dv_pvm_crossfire.heal_chroot_applets(
+            console, "/alpine/", itertools.count().__next__)
+        self.assertFalse(result["applied"])
+        self.assertEqual("no-busybox", result["reason"])
+        self.assertEqual(1, len(console.commands))
+
+    def test_without_a_chroot_it_is_a_no_op(self):
+        console = FakeConsole([])
+        result = dv_pvm_crossfire.heal_chroot_applets(
+            console, "", itertools.count().__next__)
+        self.assertEqual({"applied": False, "reason": "no-chroot"}, result)
+        self.assertEqual(0, len(console.commands))
 
 
 if __name__ == "__main__":
