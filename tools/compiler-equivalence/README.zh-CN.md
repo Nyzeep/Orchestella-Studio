@@ -71,6 +71,27 @@ mapping symbol（`$x`/`$d`/`$c`）按 section 种类生成，缺 `.eh_frame` 的
 **`DIFFERENT`**（不是「不可比」）——608 B 的 x86-64 假引擎桩就是这样被抓到的。
 不声明时它只是「不可比」，**永远不会**是 `EQUIVALENT`。
 
+### 生产者指纹（PVM-13，`--expect-producer`）
+
+`.text` + 符号判据对「谁编的」免疫：cxx-3 轮两个**本地补编**的对象也能判出
+`EQUIVALENT`。`.comment` 节记录了实际生产者的版本串，`--expect-producer`
+把「字节等价」收紧为「**出自预期编译器的**字节等价」：
+
+```bash
+python tools/compiler-equivalence/compare_objects.py \
+    --a cross.o --b ref.o --no-link --expect-arch aarch64 --expect-producer 22.1.8
+```
+
+- **只约束 `--a`**（被测对象，即 payload 产物）：本地参考 `--b` 由 chroot 的
+  另一套工具链编出（Alpine clang 22.1.3），不该被 payload 的指纹约束。
+- `.comment` 不含目标子串 → `DIFFERENT`「object a was not produced by the
+  expected compiler」，detail 里给出 `.comment` 实际内容。
+- **缺 `.comment` 一律 `DIFFERENT`**（fail-closed）：无法证明出自预期编译器
+  就不允许 EQUIVALENT——本地补编的对象正是靠它现形。
+- 需要 `--no-link`；与 `--fixtures` 的链接路径互斥（usage error）。
+- 子串匹配是有意的：`22.1.8` 命中「clang version 22.1.8」任意变体，代价是
+  理论上可被 `22.1.80` 误命中——版本号升位时换用更长的子串。
+
 ## 确定性编译开关（减少噪声，建议双方统一启用）
 
 ```bash
