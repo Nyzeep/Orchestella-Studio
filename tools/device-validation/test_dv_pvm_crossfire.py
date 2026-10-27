@@ -624,5 +624,16 @@ class DeviceSha256FallbackTest(unittest.TestCase):
         self.assertIsNone(digest)
 
 
+class BrokenFixtureTest(unittest.TestCase):
+    """W-C: the stderr capture chain is only proven by a REAL diagnostic.
+    The corruption must be a syntax error both compilers reject."""
+
+    def test_the_suffix_is_a_rejected_syntax_error(self):
+        suffix = dv_pvm_crossfire.broken_fixture_suffix()
+        self.assertIn("int broken( {", suffix)
+        # Unbalanced braces survive even a lenient parse: not valid C or C++.
+        self.assertNotEqual(suffix.count("{"), suffix.count("}"))
+
+
 if __name__ == "__main__":
     unittest.main()

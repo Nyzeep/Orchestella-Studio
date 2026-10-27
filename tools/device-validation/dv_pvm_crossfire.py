@@ -1730,8 +1730,22 @@ def apply_segment_summary(summary: dict, rounds, enabled: bool) -> dict:
     return summary
 
 
+def broken_fixture_suffix() -> str:
+    """The W-C corruption: one unterminated function head.
+
+    Appended to an otherwise valid fixture, it makes BOTH compile paths
+    fail with a real `error:` diagnostic — which is the point: the
+    server_stderr grep chain must carry the payload's own words, not
+    console echo, and the round must go red honestly.
+    """
+    return "\nint broken( {\n"
+
+
 def run_crossfire(adb: Adb, args, root: Path, work: Path, summary: dict) -> int:
     fixture_text = build_fixture(args.fixture_functions, args.language)
+    if getattr(args, "break_fixture", False):
+        fixture_text += broken_fixture_suffix()
+        summary["break_fixture"] = True
     if len(fixture_text.encode("utf-8")) >= MAX_FIXTURE_BYTES:
         summary["failure_code"] = "FIXTURE_TOO_LARGE"
         return 1
@@ -1826,6 +1840,11 @@ def main(argv: list[str] | None = None) -> int:
                              "asset baked into the QA APK (AXP1 handshake)")
     parser.add_argument("--keep-going", action="store_true",
                         help="run every round even after a failure code")
+    parser.add_argument("--break-fixture", action="store_true",
+                        help="W-C drill: append a syntax error to the fixture "
+                             "and expect the remote compile to FAIL with a "
+                             "real error: diagnostic in server_stderr_tail — "
+                             "proves the capture chain works on real words")
     parser.add_argument("--profile-segments", action="store_true",
                         help="also measure guest preprocessing (P) and gvproxy "
                              "transport (T) in the same guest session, before "
