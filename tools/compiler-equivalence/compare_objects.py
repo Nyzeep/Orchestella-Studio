@@ -321,6 +321,20 @@ def section_bytes(path: Path, name: str) -> bytes:
     return dict(read_elf_sections(path)).get(name, b"")
 
 
+def comment_section(path: Path) -> bytes | None:
+    """Raw .comment bytes, or None when the object has no such section.
+
+    The .comment section names the compiler that produced the object
+    ("Alpine clang version 22.1.3", "clang version 22.1.8", ...). Its whole
+    value is that it survives byte-identical machine code: it answers WHO
+    compiled, which the .text and symbol criteria cannot.
+    """
+    for name, content in read_elf_sections(path):
+        if name == ".comment":
+            return content
+    return None
+
+
 def external_symbol_names(nm: str, obj: Path) -> list[str]:
     """Sorted names of defined global symbols (`nm -g --defined-only`).
 
@@ -347,6 +361,7 @@ def compare_objects_static(
     b_path: Path,
     nm: str | None = None,
     expect_arch: str | None = None,
+    expect_producer: str | None = None,
 ) -> tuple[str, str]:
     """Linker-free judgement: same architecture, same .text bytes, same symbols.
 
@@ -379,6 +394,24 @@ def compare_objects_static(
             f"not comparable: architecture differs (a={arch_a}, b={arch_b}); "
             "these objects address different machines, so byte equality is meaningless "
             "(pass --expect-arch to turn an off-target object into a verdict)")
+
+    if expect_producer is not None:
+        # The fingerprint guards against the cxx-3 failure mode: identical
+        # bytes judged EQUIVALENT while BOTH objects came from a local
+        # recompile (distcc's silent fallback). Only object a is held to the
+        # fingerprint -- it is the object the payload produced; the local
+        # reference legitimately carries another toolchain's .comment.
+        comment = comment_section(a_path)
+        if comment is None:
+            return DIFFERENT, (
+                f"object a carries no .comment section: the producing compiler "
+                f"cannot be verified, and a locally re-compiled object is the "
+                f"usual cause (expected producer substring: {expect_producer!r})")
+        if expect_producer.encode("utf-8") not in comment:
+            found = comment.decode("utf-8", "replace").replace("\0", " ").strip()
+            return DIFFERENT, (
+                f"object a was not produced by the expected compiler: .comment "
+                f"does not contain {expect_producer!r} (it reads: {found!r})")
 
     try:
         text_a = section_bytes(a_path, ".text")
@@ -538,6 +571,12 @@ def main(argv: list[str] | None = None) -> int:
                         help="architecture the job targets (e.g. aarch64); an object "
                              "for another machine is then DIFFERENT instead of "
                              "'not comparable'. Only meaningful with --no-link.")
+    parser.add_argument("--expect-producer", default=None, metavar="SUBSTRING",
+                        help="fail object a unless its .comment section contains this "
+                             "compiler version substring (e.g. 22.1.8). Object a is the "
+                             "one under test -- the local reference may carry another "
+                             "toolchain's fingerprint. Needs --no-link; a missing "
+                             ".comment rejects, it never passes.")
     args = parser.parse_args(argv)
 
     if args.expect_arch is not None:
@@ -549,12 +588,17 @@ def main(argv: list[str] | None = None) -> int:
             print("usage error: --expect-arch only applies to --no-link", file=sys.stderr)
             return 3
 
+    if args.expect_producer is not None and not args.no_link:
+        print("usage error: --expect-producer only applies to --no-link", file=sys.stderr)
+        return 3
+
     if args.no_link:
         if args.fixtures is not None:
             print("usage error: --fixtures has no meaning with --no-link", file=sys.stderr)
             return 3
         verdict, detail = compare_objects_static(
-            Path(args.a), Path(args.b), nm=args.nm, expect_arch=args.expect_arch)
+            Path(args.a), Path(args.b), nm=args.nm, expect_arch=args.expect_arch,
+            expect_producer=args.expect_producer)
     else:
         if args.fixtures is None:
             print("usage error: --fixtures is required unless --no-link is given",
