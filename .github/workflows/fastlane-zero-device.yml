@@ -16,6 +16,7 @@ on:
       - "runtime/fastlane-storage/**"
       - "runtime/fastlane-telemetry/**"
       - "runtime/fastlane-distcc/**"
+      - "runtime/contract/**"
       - "tools/fastlane-build/**"
       - "tools/qemu-tuning/**"
       - "tools/ci/**"
@@ -25,6 +26,7 @@ on:
       - "build.gradle.kts"
       - "settings.gradle.kts"
       - "gradle/**"
+      - "gradle.properties"
       - "NOTICE-fastlane.md"
       - ".github/workflows/fastlane-zero-device.yml"
   push:
@@ -39,6 +41,7 @@ on:
       - "runtime/fastlane-storage/**"
       - "runtime/fastlane-telemetry/**"
       - "runtime/fastlane-distcc/**"
+      - "runtime/contract/**"
       - "tools/fastlane-build/**"
       - "tools/qemu-tuning/**"
       - "tools/ci/**"
@@ -48,12 +51,17 @@ on:
       - "build.gradle.kts"
       - "settings.gradle.kts"
       - "gradle/**"
+      - "gradle.properties"
       - "NOTICE-fastlane.md"
       - ".github/workflows/fastlane-zero-device.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
 
 jobs:
   toolbox-and-licenses:
@@ -152,7 +160,10 @@ jobs:
           SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f 2>/dev/null | head -1)
           if [ -n "$SDKMANAGER" ]; then
             yes | "$SDKMANAGER" --licenses || true
-            "$SDKMANAGER" "platforms;android-36" "build-tools;36.1.0" || true
+            if ! "$SDKMANAGER" "platforms;android-36" "build-tools;36.1.0"; then
+              echo "::error::sdkmanager could not install platforms;android-36 and build-tools;36.1.0"
+              exit 1
+            fi
           fi
 
       - name: Make gradlew executable
@@ -222,7 +233,10 @@ jobs:
           SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f 2>/dev/null | head -1)
           if [ -n "$SDKMANAGER" ]; then
             yes | "$SDKMANAGER" --licenses || true
-            "$SDKMANAGER" "platforms;android-36" "build-tools;36.1.0" "ndk;27.0.12077973" || true
+            if ! "$SDKMANAGER" "platforms;android-36" "build-tools;36.1.0" "ndk;27.0.12077973"; then
+              echo "::error::sdkmanager could not install platforms;android-36, build-tools;36.1.0 and ndk;27.0.12077973"
+              exit 1
+            fi
           fi
 
       - name: Build toolbox
