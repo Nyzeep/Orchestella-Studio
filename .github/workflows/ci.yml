@@ -10,6 +10,12 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same branch/PR supersedes the run in flight: the previous
+# result can no longer gate anything.
+concurrency:
+  group: "${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
 jobs:
   test:
     name: Contract & Unit Tests
@@ -32,7 +38,10 @@ jobs:
           SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f 2>/dev/null | head -1)
           if [ -n "$SDKMANAGER" ]; then
             yes | "$SDKMANAGER" --licenses || true
-            "$SDKMANAGER" "platforms;android-36" "build-tools;36.1.0" || true
+            if ! "$SDKMANAGER" "platforms;android-36" "build-tools;36.1.0"; then
+              echo "::error::sdkmanager could not install platforms;android-36 and build-tools;36.1.0"
+              exit 1
+            fi
           fi
 
       - name: Make gradlew executable
@@ -43,10 +52,15 @@ jobs:
           python3 tools/ci/test_check_ci_module_coverage.py
           python3 tools/ci/check_ci_module_coverage.py
 
+      # The harness has two test families: the avf_* unit tests and the dv_*
+      # PVM/probe tests. A single 'test_avf*.py' pattern silently skipped the
+      # latter. test_terminal_keyboard.py is a device-only script, not a unit
+      # test, and stays out of CI on purpose.
       - name: AVF device-validation tool tests and dry-run
         run: |
-          AVF_VALIDATION_TEST_ROOT="$RUNNER_TEMP/avf-validation-tests" \
-            python3 -B -m unittest discover -s tools/device-validation -p 'test_avf*.py'
+          export AVF_VALIDATION_TEST_ROOT="$RUNNER_TEMP/avf-validation-tests"
+          python3 -B -m unittest discover -s tools/device-validation -p 'test_avf*.py'
+          python3 -B -m unittest discover -s tools/device-validation -p 'test_dv_*.py'
           python3 -B tools/device-validation/run_avf_device_validation.py \
             --dry-run --out "$RUNNER_TEMP/avf-device-validation-dry-run"
 
@@ -76,9 +90,17 @@ jobs:
       - name: PVM compiler manifest unit tests
         run: python3 -B -m unittest discover -s tools/pvm-compiler -p 'test_*.py'
 
-      - name: Run provisioned launch regression gate
-        run: ./gradlew :app:testDebugUnitTest --tests '*ProvisionedLaunchRegressionTest' --no-daemon --stacktrace
+      # These two stdlib suites existed but no workflow ever ran them: the
+      # release license gate was only reachable from a local shell.
+      - name: Release gate tests
+        run: python3 -B -m unittest discover -s tools/release -p 'test_*.py'
 
+      - name: Native lane zero-device tests
+        run: python3 -B -m unittest discover -s tools/native-lane -p 'test_*.py'
+
+      # The provisioned-launch regression test used to get a dedicated step
+      # here. It is a subset of :app:testDebugUnitTest in the gate below and
+      # needs no extra arguments or environment, so the full run covers it.
       - name: Run all runtime checks and app unit tests
         run: |
           bash tools/ci/run-gradle-gate.sh \
@@ -132,7 +154,10 @@ jobs:
           SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f 2>/dev/null | head -1)
           if [ -n "$SDKMANAGER" ]; then
             yes | "$SDKMANAGER" --licenses || true
-            "$SDKMANAGER" "platforms;android-36" "build-tools;36.1.0" "ndk;27.0.12077973" || true
+            if ! "$SDKMANAGER" "platforms;android-36" "build-tools;36.1.0" "ndk;27.0.12077973"; then
+              echo "::error::sdkmanager could not install platforms;android-36, build-tools;36.1.0 and ndk;27.0.12077973"
+              exit 1
+            fi
           fi
 
       - name: Make gradlew executable

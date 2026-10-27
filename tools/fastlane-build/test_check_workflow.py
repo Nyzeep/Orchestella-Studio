@@ -47,6 +47,11 @@ class WorkflowCheckTest(unittest.TestCase):
         del document["jobs"]["apk-bin-gate"]
         self.assert_problem(document, "missing jobs")
 
+    def test_dropped_path_filter_is_rejected(self):
+        document = self.mutate()
+        workflow._triggers(document)["pull_request"]["paths"].remove("runtime/contract/**")
+        self.assert_problem(document, "pull_request.paths is missing")
+
     def test_write_permission_is_rejected(self):
         document = self.mutate()
         document["permissions"]["contents"] = "write"
