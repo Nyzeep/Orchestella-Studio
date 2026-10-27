@@ -25,6 +25,15 @@ the app can report what it actually ships, and --verify-manifest re-checks a
 staging directory against that file as a build-time gate. The manifest is a
 build product and is never committed.
 
+PVM-12 adds the engine attestation to that manifest. The payload's compile
+engine is a CMake cache variable that defaults to FAKE, and a FAKE build answers
+every distcc request with a fixed 608-byte x86-64 stub object while STAT, DOTO,
+the exit code and the object landing on disk all look successful. --engine
+records the engine in the manifest, and when --payload-dir is given the
+declaration is cross-checked against the payload's DT_NEEDED list: only the
+CLANG payload links libclang-cpp.so, so a mislabelled build fails here instead
+of on a device three hours later.
+
 Exit codes: 0 ok; 1 usage/validation failure; 2 ELF/alignment failure.
 """
 
@@ -45,6 +54,14 @@ PAGE_ALIGN = 16 * 1024
 EM_AARCH64 = 183
 REQUIRED_COMPILER_SOS = ("libLLVM.so", "libclang-cpp.so")
 PLACEHOLDER_SYMBOL = "PVM04_PLACEHOLDER"
+
+# PVM-12 engine attestation. The names match the CMake values
+# (FL_PVM_COMPILER_ENGINE=FAKE|CLANG), lower-cased for on-disk use.
+ENGINE_FAKE = "fake"
+ENGINE_CLANG = "clang"
+ENGINES = (ENGINE_FAKE, ENGINE_CLANG)
+# The CLANG payload links this; the FAKE payload links neither it nor LLVM.
+ENGINE_LINKED_LIBRARY = "libclang-cpp.so"
 
 # PVM-09 manifest contract (schema 1). Field names are on-disk compatibility:
 # the Java reader in runtime/fastlane-capability parses exactly these keys.
@@ -104,6 +121,7 @@ def build_manifest(
     abi_dir: Path,
     compiler_version: str,
     target_triple: str,
+    engine: str,
     payload_binary: str = DEFAULT_PAYLOAD_BINARY,
     memory_mib: int = DEFAULT_MEMORY_MIB,
     vcpu_topology: str = VCPU_TOPOLOGY_ONE_CPU,
@@ -119,6 +137,7 @@ def build_manifest(
     ]
     return {
         "schema": MANIFEST_SCHEMA,
+        "engine": engine,
         "compiler_version": compiler_version,
         "target_triple": target_triple,
         "vcpu_topology": vcpu_topology,
@@ -168,7 +187,10 @@ def verify_manifest(staging: Path) -> dict:
     target_triple = manifest_text(manifest, "target_triple")
     payload_binary = manifest_text(manifest, "payload_binary")
     topology = manifest_text(manifest, "vcpu_topology")
+    engine = manifest_text(manifest, "engine")
 
+    if engine not in ENGINES:
+        raise manifest_fail("engine must be one of " + ", ".join(ENGINES))
     if not is_payload_binary_name(payload_binary):
         raise manifest_fail("payload_binary must be a bare file name matching [A-Za-z0-9._-]+.so")
     if topology != VCPU_TOPOLOGY_ONE_CPU:
@@ -219,6 +241,7 @@ def verify_manifest(staging: Path) -> dict:
 
     return {
         "schema": MANIFEST_SCHEMA,
+        "engine": engine,
         "compiler_version": compiler_version,
         "target_triple": target_triple,
         "payload_binary": payload_binary,
@@ -251,6 +274,115 @@ def elf_machine_and_load_aligns(path: Path) -> tuple[int, list[int]]:
             p_align = struct.unpack_from("<Q", data, base + 48)[0]
             aligns.append(p_align)
     return e_machine, aligns
+
+
+def elf_load_segments(data: bytes) -> list[tuple[int, int, int]]:
+    """(p_offset, p_vaddr, p_filesz) for every PT_LOAD of a 64-bit LE ELF."""
+    e_phoff = struct.unpack_from("<Q", data, 32)[0]
+    e_phentsize = struct.unpack_from("<H", data, 54)[0]
+    e_phnum = struct.unpack_from("<H", data, 56)[0]
+    segments: list[tuple[int, int, int]] = []
+    for index in range(e_phnum):
+        base = e_phoff + index * e_phentsize
+        if base + 56 > len(data):
+            break
+        p_type = struct.unpack_from("<I", data, base)[0]
+        if p_type != 1:  # PT_LOAD
+            continue
+        p_offset = struct.unpack_from("<Q", data, base + 8)[0]
+        p_vaddr = struct.unpack_from("<Q", data, base + 16)[0]
+        p_filesz = struct.unpack_from("<Q", data, base + 32)[0]
+        segments.append((p_offset, p_vaddr, p_filesz))
+    return segments
+
+
+def file_offset_of_vaddr(segments: list[tuple[int, int, int]], vaddr: int) -> int | None:
+    for p_offset, p_vaddr, p_filesz in segments:
+        if p_vaddr <= vaddr < p_vaddr + p_filesz:
+            return p_offset + (vaddr - p_vaddr)
+    return None
+
+
+def elf_needed_libraries(path: Path) -> list[str]:
+    """DT_NEEDED sonames recorded in PT_DYNAMIC ([] when there is no such segment).
+
+    Raises ValueError for anything that is not a 64-bit little-endian ELF, so a
+    caller can tell "links nothing" apart from "not a shared object at all".
+    """
+    data = path.read_bytes()
+    if len(data) < 64 or data[:4] != b"\x7fELF":
+        raise ValueError("not an ELF file")
+    if data[4] != 2 or data[5] != 1:
+        raise ValueError("not a 64-bit little-endian ELF")
+    e_phoff = struct.unpack_from("<Q", data, 32)[0]
+    e_phentsize = struct.unpack_from("<H", data, 54)[0]
+    e_phnum = struct.unpack_from("<H", data, 56)[0]
+    dynamic: tuple[int, int] | None = None
+    for index in range(e_phnum):
+        base = e_phoff + index * e_phentsize
+        if base + 56 > len(data):
+            break
+        p_type = struct.unpack_from("<I", data, base)[0]
+        if p_type == 2:  # PT_DYNAMIC
+            dynamic = struct.unpack_from("<QQ", data, base + 8)
+    if dynamic is None:
+        return []
+    offset, size = dynamic
+    tags: list[tuple[int, int]] = []
+    for index in range(size // 16):
+        entry = offset + index * 16
+        if entry + 16 > len(data):
+            break
+        tag, value = struct.unpack_from("<QQ", data, entry)
+        if tag == 0:  # DT_NULL
+            break
+        tags.append((tag, value))
+    if not any(tag == 1 for tag, _value in tags):  # no DT_NEEDED at all
+        return []
+    string_table = next((value for tag, value in tags if tag == 5), None)  # DT_STRTAB
+    if string_table is None:
+        return []
+    strtab_offset = file_offset_of_vaddr(elf_load_segments(data), string_table)
+    if strtab_offset is None:
+        raise ValueError("DT_STRTAB is outside every PT_LOAD segment")
+    names: list[str] = []
+    for tag, value in tags:
+        if tag != 1:  # DT_NEEDED
+            continue
+        start = strtab_offset + value
+        if start >= len(data):
+            raise ValueError("DT_NEEDED string offset is outside the file")
+        end = data.find(b"\0", start)
+        if end < 0:
+            raise ValueError("unterminated DT_NEEDED string")
+        names.append(data[start:end].decode("utf-8", "replace"))
+    return names
+
+
+def check_payload_engine(payload: Path, engine: str) -> None:
+    """Cross-check a declared engine against the payload's DT_NEEDED list.
+
+    The flag alone is a claim; this is the only host-side evidence with teeth.
+    A payload that cannot be read as an ELF is accepted for engine=fake (there
+    is nothing to contradict) but refused for engine=clang, because "clang" is
+    a claim that must be provable.
+    """
+    try:
+        needed = elf_needed_libraries(payload)
+    except ValueError as failure:
+        if engine == ENGINE_CLANG:
+            raise fail(f"{payload.name}: engine=clang declared but the payload is not a readable ELF ({failure})")
+        return
+    links_clang = ENGINE_LINKED_LIBRARY in needed
+    if engine == ENGINE_CLANG and not links_clang:
+        raise fail(
+            f"{payload.name}: engine=clang declared but the payload does not link "
+            f"{ENGINE_LINKED_LIBRARY} (a FAKE build does not; rebuild with "
+            "-DFL_PVM_COMPILER_ENGINE=CLANG)")
+    if engine == ENGINE_FAKE and links_clang:
+        raise fail(
+            f"{payload.name}: engine=fake declared but the payload links "
+            f"{ENGINE_LINKED_LIBRARY} (it was built with -DFL_PVM_COMPILER_ENGINE=CLANG)")
 
 
 def verify_so(path: Path) -> dict:
@@ -337,6 +469,7 @@ def verify_only(arguments: argparse.Namespace) -> int:
             ("--placeholder", arguments.placeholder),
             ("--payload-dir", arguments.payload_dir is not None),
             ("--manifest-out", arguments.manifest_out is not None),
+            ("--engine", arguments.engine is not None),
         ) if enabled
     ]
     if conflicts:
@@ -365,6 +498,9 @@ def main() -> int:
     parser.add_argument("--target-triple", default=None,
                         help="target triple the payload was built for, e.g. aarch64-unknown-linux-android "
                              "(required when generating; never guessed)")
+    parser.add_argument("--engine", default=None,
+                        help="compile engine the payload was built with (required when generating): "
+                             f"{ENGINE_FAKE} for the CI stub, {ENGINE_CLANG} for the real libclang engine")
     parser.add_argument("--payload-binary", default=DEFAULT_PAYLOAD_BINARY,
                         help=f"payload .so name written into the manifest (default {DEFAULT_PAYLOAD_BINARY})")
     parser.add_argument("--memory-mib", type=int, default=DEFAULT_MEMORY_MIB,
@@ -380,12 +516,16 @@ def main() -> int:
         return verify_only(arguments)
 
     for flag, value in (("--compiler-version", arguments.compiler_version),
-                        ("--target-triple", arguments.target_triple)):
+                        ("--target-triple", arguments.target_triple),
+                        ("--engine", arguments.engine)):
         if value is None or not value.strip():
             raise fail(f"{flag} is required to write {MANIFEST_RELATIVE.as_posix()}")
 
     compiler_version = arguments.compiler_version.strip()
     target_triple = arguments.target_triple.strip()
+    engine = arguments.engine.strip()
+    if engine not in ENGINES:
+        raise fail("--engine must be one of " + ", ".join(ENGINES))
     payload_binary = arguments.payload_binary.strip()
     if not is_payload_binary_name(payload_binary):
         raise fail("--payload-binary must be a bare file name matching [A-Za-z0-9._-]+.so")
@@ -404,6 +544,9 @@ def main() -> int:
         for name in dict.fromkeys((REQUIRED_PAYLOAD_SO, payload_binary)):
             if not (arguments.payload_dir / "arm64-v8a" / name).is_file():
                 raise fail(f"--payload-dir is missing arm64-v8a/{name}")
+        # PVM-12: the declared engine must match the payload's own DT_NEEDED
+        # list, otherwise a FAKE build can be shipped under engine=clang.
+        check_payload_engine(arguments.payload_dir / "arm64-v8a" / payload_binary, engine)
 
     out = arguments.out
     abi_dir = out / "arm64-v8a"
@@ -449,6 +592,7 @@ def main() -> int:
         abi_dir,
         compiler_version=compiler_version,
         target_triple=target_triple,
+        engine=engine,
         payload_binary=payload_binary,
         memory_mib=arguments.memory_mib,
     )
@@ -457,6 +601,7 @@ def main() -> int:
     summary = {
         "staging": out.as_posix(),
         "placeholder": placeholder,
+        "engine": engine,
         "files": facts,
         "manifest": {"path": manifest_label(manifest_path, out), "libs": len(manifest["libs"])},
     }
