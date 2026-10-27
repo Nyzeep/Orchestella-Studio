@@ -1123,6 +1123,12 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
         (round_work / "distcc.log").write_text(text or "", encoding="utf-8",
                                               errors="replace")
         round_result["distcc_tail"] = (text or "").strip().splitlines()[-12:]
+        # The payload's own words live in distcc's server-stderr file; STAT
+        # alone (0x0100 vs 0x6500) says which layer failed, the stderr says why.
+        rc_err, err_text, _ = console.run(
+            tool("cat /tmp/distcc_server_stderr_*.txt 2>/dev/null | head -5"),
+            next_index(), 30)
+        round_result["server_stderr_tail"] = (err_text or "").strip().splitlines()[-5:]
         if rc != 0:
             round_result["failure_code"] = "GUEST_DISTCC_COMPILE_FAILED"
             return round_result
