@@ -476,10 +476,12 @@ def run_guest_transfer(console: GuestConsole, tool, next_index,
     no guest file (the download leg only writes `/dev/null`). A timeout stays
     a timeout — retrying a hung `nc` would just burn another budget.
     """
-    rc, _text, elapsed = console.run(tool(inner_command), next_index(), timeout_s)
+    rc, text, elapsed = console.run(tool(inner_command), next_index(), timeout_s)
     if rc == 127 and chroot_active:
-        rc, _text, elapsed = console.run(outer_command, next_index(), timeout_s)
-    return rc, elapsed
+        rc, text, elapsed = console.run(outer_command, next_index(), timeout_s)
+    # The console text rides along: a failed probe with only a code is a
+    # dead end, the guest's own words are the diagnosis.
+    return rc, text, elapsed
 
 
 def _wait_perf_listener(listener: subprocess.Popen, round_result: dict,
@@ -522,14 +524,18 @@ def _probe_transport_up(adb: Adb, console: GuestConsole, tool, next_index,
                 f"< {GUEST_DOT_I}"
         outer = f"timeout {PERF_GUEST_NC_GUARD_S} nc {GUEST_HOST_IP} {port} " \
                 f"< {chroot_prefix}{GUEST_DOT_I}"
-        rc, elapsed = run_guest_transfer(console, tool, next_index, inner, outer,
-                                         PERF_NC_TIMEOUT_S,
-                                         bool(chroot_prefix))
+        rc, transfer_text, elapsed = run_guest_transfer(
+            console, tool, next_index, inner, outer,
+            PERF_NC_TIMEOUT_S, bool(chroot_prefix))
         transferred = rc == 0 and elapsed >= 0
         if elapsed < 0:
             _record_probe_error(round_result, "upload_timeout")
         elif rc != 0:
             _record_probe_error(round_result, "upload_nc_failed")
+            round_result.setdefault("perf_probe_details", {})["upload"] = {
+                "rc": rc,
+                "tail": (transfer_text or "").strip().splitlines()[-3:],
+            }
         else:
             result["elapsed_ms"] = elapsed
         _wait_perf_listener(listener, round_result, "upload_listener_timeout")
@@ -581,13 +587,20 @@ def _probe_transport_down(adb: Adb, console: GuestConsole, tool, next_index,
         # the console setup, so the same path works either way.
         command = f"timeout {PERF_GUEST_NC_GUARD_S} nc {GUEST_HOST_IP} " \
                   f"{port} > /dev/null"
-        rc, elapsed = run_guest_transfer(console, tool, next_index, command,
-                                         command, PERF_NC_TIMEOUT_S,
-                                         bool(chroot_prefix))
+        rc, text, elapsed = run_guest_transfer(console, tool, next_index, command,
+                                               command, PERF_NC_TIMEOUT_S,
+                                               bool(chroot_prefix))
         if elapsed < 0:
             _record_probe_error(round_result, f"{label}_timeout")
         elif rc != 0:
+            # A bare code names the symptom, not the cause; the console's own
+            # words (sh: not found, Permission denied, timeout killed...) are
+            # what turns a red probe into a fixable one.
             _record_probe_error(round_result, f"{label}_nc_failed")
+            round_result.setdefault("perf_probe_details", {})[label] = {
+                "rc": rc,
+                "tail": (text or "").strip().splitlines()[-3:],
+            }
         else:
             result["elapsed_ms"] = elapsed
             result["bytes"] = size_kib * 1024
