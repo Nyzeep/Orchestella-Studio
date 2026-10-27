@@ -520,6 +520,9 @@ public class TerminalActivity extends Activity {
                 case CRASHED:
                     showOfflinePlaceholder(result.instance(), true);
                     break;
+                case STORE_ERROR:
+                    showStoreErrorPlaceholder(result.message());
+                    break;
                 case NOT_FOUND:
                 default:
                     showMissingPlaceholder(instanceId);
@@ -639,6 +642,22 @@ public class TerminalActivity extends Activity {
     }
 
     private void showMissingPlaceholder(String id) {
+        showTerminalPlaceholder("实例不存在", "在本地数据库中未找到 ID 为 " + id + " 的实例。");
+    }
+
+    /**
+     * Metadata was found but could not be read. Showing the "instance does not
+     * exist" copy here would invite the user to recreate a healthy instance and
+     * destroy the very data we failed to decode.
+     */
+    private void showStoreErrorPlaceholder(String detail) {
+        String message = (detail == null || detail.isEmpty())
+                ? "实例元数据存在，但读取失败。请检查存储空间后重试。"
+                : detail;
+        showTerminalPlaceholder("实例状态读取失败", message);
+    }
+
+    private void showTerminalPlaceholder(String title, String message) {
         detachTerminalListener();
         terminalConnected = false;
         session = null;
@@ -655,8 +674,8 @@ public class TerminalActivity extends Activity {
         if (sessionHeader != null) {
             sessionHeader.setVisibility(View.GONE);
         }
-        tvOfflineTitle.setText("实例不存在");
-        tvOfflineMessage.setText("在本地数据库中未找到 ID 为 " + id + " 的实例。");
+        tvOfflineTitle.setText(title);
+        tvOfflineMessage.setText(message);
         btnOfflineAction.setVisibility(View.GONE);
         btnOfflineBack.setOnClickListener(v -> finish());
     }
@@ -728,15 +747,18 @@ public class TerminalActivity extends Activity {
         String controlSocket = "orchestella-" + socketSuffix + "-ctrl";
         String terminalSocket = "orchestella-" + socketSuffix + "-term";
 
-        android.net.LocalSocket termSock = new android.net.LocalSocket();
-        termSock.connect(new android.net.LocalSocketAddress(
-                terminalSocket, android.net.LocalSocketAddress.Namespace.ABSTRACT));
-        termSock.close();
+        // The probe's only job is the connect. try-with-resources closes on
+        // failure too, or a refused/absent endpoint leaks one abstract-socket
+        // fd per retry (and preserves the original exception as suppressed).
+        try (android.net.LocalSocket termSock = new android.net.LocalSocket()) {
+            termSock.connect(new android.net.LocalSocketAddress(
+                    terminalSocket, android.net.LocalSocketAddress.Namespace.ABSTRACT));
+        }
 
-        android.net.LocalSocket ctrlSock = new android.net.LocalSocket();
-        ctrlSock.connect(new android.net.LocalSocketAddress(
-                controlSocket, android.net.LocalSocketAddress.Namespace.ABSTRACT));
-        ctrlSock.close();
+        try (android.net.LocalSocket ctrlSock = new android.net.LocalSocket()) {
+            ctrlSock.connect(new android.net.LocalSocketAddress(
+                    controlSocket, android.net.LocalSocketAddress.Namespace.ABSTRACT));
+        }
 
         return new QemuInstanceLauncher.Session(controlSocket, terminalSocket, new QemuProcessLauncher.ProcessHandle() {
             @Override
