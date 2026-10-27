@@ -57,6 +57,10 @@ TERMINAL_SOCKET_PREFIX = "droidlayer-terminal-"
 # before the compile so a distro update cannot silently change the verdict.
 REQUIRED_CLANG_MAJOR = 22
 GUEST_FIXTURE = "/root/fixture.c"
+# The C++ fixture keeps the .cpp extension: the guest compiles it with clang++,
+# which is what makes distcc send `-x c++-cpp-output` and the payload take its
+# C++ path.
+GUEST_FIXTURE_CXX = "/root/fixture.cpp"
 GUEST_REF_O = "/root/ref.o"
 GUEST_CROSS_O = "/root/cross.o"
 GUEST_MAIN_C = "/root/main.c"
@@ -285,9 +289,20 @@ def parse_clang_major(version_text: str):
     return int(match.group(1)) if match else None
 
 
+def guest_fixture_path(args) -> str:
+    """Where the fixture lives in the guest; the extension picks the language."""
+    return GUEST_FIXTURE_CXX if getattr(args, "language", "c") == "cxx" else GUEST_FIXTURE
+
+
+def guest_compiler(args) -> str:
+    """The guest driver binary: clang++ for a C++ job, clang otherwise."""
+    return "clang++" if getattr(args, "language", "c") == "cxx" else "clang"
+
+
 def push_fixture_via_console(console: GuestConsole, fixture_bytes: bytes,
                              command_timeout_s: int, next_index,
-                             chroot_prefix: str = "") -> dict:
+                             chroot_prefix: str = "",
+                             fixture_path: str = GUEST_FIXTURE) -> dict:
     """Console base64 fallback: chunked appends, one decode, size check.
 
     Chunk lines stay far below the tty canonical-mode line limit; the file
@@ -295,7 +310,7 @@ def push_fixture_via_console(console: GuestConsole, fixture_bytes: bytes,
     """
     encoded = base64.b64encode(fixture_bytes).decode("ascii")
     b64_path = f"{chroot_prefix}/root/fixture.b64"
-    out_path = f"{chroot_prefix}{GUEST_FIXTURE}"
+    out_path = f"{chroot_prefix}{fixture_path}"
     console.run(f"rm -f {b64_path} {out_path}", next_index(),
                 command_timeout_s)
     sent = 0
@@ -318,14 +333,15 @@ def push_fixture_via_console(console: GuestConsole, fixture_bytes: bytes,
 
 def inject_fixture(adb: Adb, console: GuestConsole, fixture_bytes: bytes,
                    command_timeout_s: int, next_index,
-                   chroot_prefix: str = "") -> dict:
+                   chroot_prefix: str = "",
+                   fixture_path: str = GUEST_FIXTURE) -> dict:
     """Primary path: 9p downloads share; fallback: console base64 chunks.
 
     The product launch only attaches the share when the instance declares
     it, so the fallback is the expected path; both are implemented because
     the share may appear in later launches.
     """
-    outer_fixture = f"{chroot_prefix}{GUEST_FIXTURE}"
+    outer_fixture = f"{chroot_prefix}{fixture_path}"
     # A previous round's fixture may already sit in the persistent rootfs at
     # the exact size: skip the transfer entirely in that case.
     rc, text, _ = console.run(f"wc -c < {outer_fixture}", next_index(),
@@ -615,8 +631,8 @@ def probe_segments(adb: Adb, console: GuestConsole, args, tool, next_index,
     preprocess_samples: list = []
     for _ in range(3):
         rc, _text, elapsed = console.run(
-            tool(f"clang -E --target={GUEST_TRIPLE} -O1 {GUEST_FIXTURE} "
-                 f"-o {GUEST_DOT_I}"),
+            tool(f"{guest_compiler(args)} -E --target={GUEST_TRIPLE} -O1 "
+                 f"{guest_fixture_path(args)} -o {GUEST_DOT_I}"),
             next_index(), probe_timeout)
         if rc == 0 and elapsed >= 0:
             preprocess_samples.append(elapsed)
@@ -806,6 +822,49 @@ def run_smoke(adb: Adb, args, summary: dict) -> int:
     return 1
 
 
+def link_and_run(console: GuestConsole, args, chroot_prefix: str, next_index,
+                 tool) -> dict:
+    """Link both objects against a C main and run both binaries.
+
+    C-only: keeping it in one function is what lets the C++ mode skip it
+    without threading a flag through the round body.
+    """
+    console.run(
+        tool(f"printf 'int fixture_entry(void);\\nint main(void) "
+             f"{{ return fixture_entry(); }}\\n' > {GUEST_MAIN_C}"),
+        next_index(), args.guest_command_timeout_s)
+    # The link runs OUTSIDE the chroot with the native toolchain: the chroot
+    # lacks binutils and its apk mirror leg is the flakiest path, while the
+    # link step is tool-version-agnostic for the crossfire evidence (the .o
+    # equivalence is compare_objects' job).
+    rc, link_text, _ = console.run(
+        f"clang -O1 {chroot_prefix}{GUEST_MAIN_C} "
+        f"{chroot_prefix}{GUEST_CROSS_O} -o {chroot_prefix}/root/cross.bin",
+        next_index(), args.guest_command_timeout_s)
+    cross_link_rc = rc
+    rc_ref, ref_link_text, _ = console.run(
+        f"clang -O1 {chroot_prefix}{GUEST_MAIN_C} "
+        f"{chroot_prefix}{GUEST_REF_O} -o {chroot_prefix}/root/ref.bin",
+        next_index(), args.guest_command_timeout_s)
+    _, cross_out, _ = console.run(
+        tool('/root/cross.bin; printf "exit=%d\\n" "$?"'),
+        next_index(), 60)
+    _, ref_out, _ = console.run(
+        tool('/root/ref.bin; printf "exit=%d\\n" "$?"'),
+        next_index(), 60)
+    cross_exit = re.search(r"exit=(\d+)", cross_out)
+    ref_exit = re.search(r"exit=(\d+)", ref_out)
+    return {
+        "cross_link_rc": cross_link_rc, "ref_link_rc": rc_ref,
+        "cross_link_tail": link_text.strip().splitlines()[-3:],
+        "ref_link_tail": ref_link_text.strip().splitlines()[-3:],
+        "cross_exit": cross_exit.group(1) if cross_exit else None,
+        "ref_exit": ref_exit.group(1) if ref_exit else None,
+        "exit_codes_match": bool(cross_exit and ref_exit
+                                 and cross_exit.group(1) == ref_exit.group(1)),
+    }
+
+
 def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
                     fixture_bytes: bytes) -> dict:
     """One full crossfire round: instrument, guest session, equivalence."""
@@ -985,9 +1044,11 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
             round_result["failure_code"] = "GUEST_CLANG_MAJOR_MISMATCH"
             return round_result
 
+        fixture_path = guest_fixture_path(args)
+        compiler = guest_compiler(args)
         inject = inject_fixture(adb, console, fixture_bytes,
                                 args.guest_command_timeout_s, next_index,
-                                chroot_prefix)
+                                chroot_prefix, fixture_path)
         round_result["fixture_injection"] = inject
         if not inject.get("injected"):
             round_result["failure_code"] = "FIXTURE_INJECTION_FAILED"
@@ -996,7 +1057,7 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
         # The guest-local reference uses the same -O1 as the payload path so
         # the equivalence compare sees one optimization level.
         rc, text, elapsed = console.run(
-            tool(f"clang -c --target={GUEST_TRIPLE} -O1 {GUEST_FIXTURE} "
+            tool(f"{compiler} -c --target={GUEST_TRIPLE} -O1 {fixture_path} "
                  f"-o {GUEST_REF_O}"),
             next_index(), args.guest_command_timeout_s)
         round_result["local_compile_rc"] = rc
@@ -1023,8 +1084,8 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
         # the segment split above is the only in-guest decomposition.
         distcc_command = (
             f'DISTCC_HOSTS="{GUEST_HOST_IP}:{args.bridge_port}" DISTCC_CMD_PREFIX="" '
-            f"DISTCC_VERBOSE=1 distcc clang -c --target={GUEST_TRIPLE} -O1 "
-            f"{GUEST_FIXTURE} -o {GUEST_CROSS_O}")
+            f"DISTCC_VERBOSE=1 distcc {compiler} -c --target={GUEST_TRIPLE} -O1 "
+            f"{fixture_path} -o {GUEST_CROSS_O}")
         rc, text, elapsed = console.run(tool(distcc_command), next_index(),
                                         args.guest_command_timeout_s)
         round_result["distcc_rc"] = rc
@@ -1041,40 +1102,16 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
             round_result["failure_code"] = "GUEST_DISTCC_COMPILE_FAILED"
             return round_result
 
-        console.run(
-            tool(f"printf 'int fixture_entry(void);\\nint main(void) "
-                 f"{{ return fixture_entry(); }}\\n' > {GUEST_MAIN_C}"),
-            next_index(), args.guest_command_timeout_s)
-        # The link runs OUTSIDE the chroot with the native toolchain: the
-        # chroot lacks binutils and its apk mirror leg is the flakiest path,
-        # while the link step is tool-version-agnostic for the crossfire
-        # evidence (the .o equivalence is compare_objects' job).
-        rc, link_text, _ = console.run(
-            f"clang -O1 {chroot_prefix}{GUEST_MAIN_C} "
-            f"{chroot_prefix}{GUEST_CROSS_O} -o {chroot_prefix}/root/cross.bin",
-            next_index(), args.guest_command_timeout_s)
-        cross_link_rc = rc
-        rc_ref, ref_link_text, _ = console.run(
-            f"clang -O1 {chroot_prefix}{GUEST_MAIN_C} "
-            f"{chroot_prefix}{GUEST_REF_O} -o {chroot_prefix}/root/ref.bin",
-            next_index(), args.guest_command_timeout_s)
-        _, cross_out, _ = console.run(
-            tool('/root/cross.bin; printf "exit=%d\\n" "$?"'),
-            next_index(), 60)
-        _, ref_out, _ = console.run(
-            tool('/root/ref.bin; printf "exit=%d\\n" "$?"'),
-            next_index(), 60)
-        cross_exit = re.search(r"exit=(\d+)", cross_out)
-        ref_exit = re.search(r"exit=(\d+)", ref_out)
-        round_result["link_run"] = {
-            "cross_link_rc": cross_link_rc, "ref_link_rc": rc_ref,
-            "cross_link_tail": link_text.strip().splitlines()[-3:],
-            "ref_link_tail": ref_link_text.strip().splitlines()[-3:],
-            "cross_exit": cross_exit.group(1) if cross_exit else None,
-            "ref_exit": ref_exit.group(1) if ref_exit else None,
-            "exit_codes_match": bool(cross_exit and ref_exit
-                                     and cross_exit.group(1) == ref_exit.group(1)),
-        }
+        # Link + run is a C-only sub-criterion. A C++ binary would exercise the
+        # guest's C++ runtime (libstdc++/libc++ packaging), not the payload;
+        # what the payload owns is the object, and the object is pulled and
+        # judged below either way.
+        if compiler == "clang":
+            round_result["link_run"] = link_and_run(
+                console, args, chroot_prefix, next_index)
+        else:
+            round_result["link_run"] = {
+                "skipped": "cxx fixture: object-level judgement only"}
 
         pulled_cross = return_object_via_netcat(
             adb, console, GUEST_CROSS_O, round_work / "cross.o",
@@ -1328,12 +1365,14 @@ def apply_segment_summary(summary: dict, rounds, enabled: bool) -> dict:
 
 
 def run_crossfire(adb: Adb, args, root: Path, work: Path, summary: dict) -> int:
-    fixture_text = build_fixture(args.fixture_functions)
+    fixture_text = build_fixture(args.fixture_functions, args.language)
     if len(fixture_text.encode("utf-8")) >= MAX_FIXTURE_BYTES:
         summary["failure_code"] = "FIXTURE_TOO_LARGE"
         return 1
-    (work / "fixture.c").write_text(fixture_text, encoding="utf-8")
+    (work / Path(guest_fixture_path(args)).name).write_text(
+        fixture_text, encoding="utf-8")
     summary["fixture_functions"] = args.fixture_functions
+    summary["fixture_language"] = args.language
     summary["fixture_bytes"] = len(fixture_text.encode("utf-8"))
     fixture_bytes = fixture_text.encode("utf-8")
 
@@ -1394,6 +1433,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--phase", choices=("smoke", "crossfire", "cleanup", "all"),
                         default="all")
     parser.add_argument("--fixture-functions", type=int, default=2000)
+    parser.add_argument("--language", choices=("c", "cxx"), default="c",
+                        help="fixture language: c (default, the 02b baseline) or "
+                             "cxx (same probes in extern \"C\" plus a try/catch; "
+                             "link/run is skipped because a C++ binary would test "
+                             "the guest runtime, not the payload)")
     parser.add_argument("--memory-mb", type=int, default=2048)
     parser.add_argument("--vsock-port", type=int, default=CONTRACT_DISTCC_PORT)
     parser.add_argument("--bridge-port", type=int, default=CONTRACT_DISTCC_PORT)

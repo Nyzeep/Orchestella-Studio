@@ -282,5 +282,36 @@ class RemoteCompileVerdictTest(unittest.TestCase):
         self.assertEqual(1024, verdict["bytes_out"])
 
 
+class FixtureLanguageTest(unittest.TestCase):
+    """The C fixture is the 02b baseline and must not drift; the C++ one adds
+    exactly what makes the payload's C++ path observable (a try/catch and C
+    linkage so the symbol names stay comparable)."""
+
+    def test_the_default_fixture_is_the_unchanged_c_unit(self):
+        text = dv_pvm_crossfire.build_fixture(2000)
+        self.assertNotIn('extern "C"', text)
+        self.assertNotIn("try {", text)
+        self.assertIn("int puts(const char*);", text)
+        self.assertIn("int fixture_entry(void) {", text)
+        self.assertIn("int probe_fn_1999(int x) { return x + 1999; }", text)
+
+    def test_the_cxx_fixture_keeps_the_probes_and_adds_an_exception(self):
+        text = dv_pvm_crossfire.build_fixture(2000, "cxx")
+        self.assertIn('extern "C" {', text)
+        self.assertIn("try {", text)
+        self.assertIn("catch (int value)", text)
+        self.assertIn("throw x;", text)
+        self.assertIn("int probe_fn_1999(int x) { return x + 1999; }", text)
+        self.assertIn("int fixture_entry(void) {", text)
+
+    def test_the_language_decides_where_the_fixture_lands_and_who_compiles_it(self):
+        c_args = type("Args", (), {"language": "c"})()
+        cxx_args = type("Args", (), {"language": "cxx"})()
+        self.assertEqual("/root/fixture.c", dv_pvm_crossfire.guest_fixture_path(c_args))
+        self.assertEqual("/root/fixture.cpp", dv_pvm_crossfire.guest_fixture_path(cxx_args))
+        self.assertEqual("clang", dv_pvm_crossfire.guest_compiler(c_args))
+        self.assertEqual("clang++", dv_pvm_crossfire.guest_compiler(cxx_args))
+
+
 if __name__ == "__main__":
     unittest.main()
