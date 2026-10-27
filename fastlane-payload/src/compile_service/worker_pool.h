@@ -30,6 +30,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
+#include <cstddef>
 #include <mutex>
 
 #include "net.h"
@@ -45,6 +46,16 @@ using WorkerSpawner = int (*)(WorkerFn worker, void* owner, SocketHandle handle)
 
 /** Real spawner: starts `worker(owner, handle)` on a detached thread. */
 int spawn_worker_thread(WorkerFn worker, void* owner, SocketHandle handle);
+
+/**
+ * The stack a worker thread gets, in bytes. musl's pthread default is
+ * 128 KiB and the worker runs the clang frontend on it: the C++ Sema and
+ * CodeGen recursion over a real job's functions overflowed that default and
+ * the worker died with SIGSEGV, which the guest only saw as an AXP1
+ * connection closed without a response (round 3 cxx). Virtual reservation,
+ * committed page by page, so the number is cheap on a 64-bit guest.
+ */
+size_t worker_stack_bytes();
 
 class WorkerPool {
 public:
