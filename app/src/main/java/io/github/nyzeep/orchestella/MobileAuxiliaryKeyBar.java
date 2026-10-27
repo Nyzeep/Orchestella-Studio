@@ -143,7 +143,9 @@ public class MobileAuxiliaryKeyBar extends LinearLayout {
         addNavigationKey(lower, "↑", v -> pressUp());
         addNavigationKey(lower, "→", v -> pressRight());
         HorizontalScrollView secondary = new HorizontalScrollView(context);
-        secondary.setHorizontalScrollBarEnabled(false);
+        secondary.setHorizontalScrollBarEnabled(true);
+        secondary.setHorizontalFadingEdgeEnabled(true);
+        secondary.setFadingEdgeLength(dpToPx(context, 24));
         LinearLayout row = new LinearLayout(context);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
@@ -306,7 +308,13 @@ public class MobileAuxiliaryKeyBar extends LinearLayout {
     private void addNavigationKey(LinearLayout row, String label, OnClickListener listener) {
         Button button = addKeyButton(row, label, listener);
         button.setPadding(0, 0, 0, 0);
-        button.setLayoutParams(new LinearLayout.LayoutParams(dpToPx(getContext(), 48), dpToPx(getContext(), 48)));
+        // Keep the same 3dp horizontal margin as addKeyButton so arrow keys
+        // align with the rest of the row instead of sticking together.
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                dpToPx(getContext(), 48), dpToPx(getContext(), 48));
+        int margin = dpToPx(getContext(), 3);
+        params.setMargins(margin, 0, margin, 0);
+        button.setLayoutParams(params);
     }
 
     private Button addPrimaryKey(LinearLayout row, String label, OnClickListener listener) {
@@ -378,7 +386,22 @@ public class MobileAuxiliaryKeyBar extends LinearLayout {
         }
     }
 
-    private static GradientDrawable createKeyBackground(int fillColor, int strokeColor) {
+    /**
+     * Press-feedback key background: pressed state lightens the fill toward the
+     * theme foreground while keeping the same stroke; default state keeps the
+     * original colors. Pure code StateListDrawable — no theme attribute ripple.
+     */
+    private android.graphics.drawable.StateListDrawable createKeyBackground(int fillColor, int strokeColor) {
+        android.graphics.drawable.StateListDrawable states = new android.graphics.drawable.StateListDrawable();
+        int pressedFill = theme != null
+                ? ThemeColors.INSTANCE.blend(fillColor, theme.getText(), 0.18f)
+                : fillColor;
+        states.addState(new int[]{android.R.attr.state_pressed}, keyShape(pressedFill, strokeColor));
+        states.addState(new int[]{}, keyShape(fillColor, strokeColor));
+        return states;
+    }
+
+    private static GradientDrawable keyShape(int fillColor, int strokeColor) {
         GradientDrawable gd = new GradientDrawable();
         gd.setShape(GradientDrawable.RECTANGLE);
         gd.setColor(fillColor);
