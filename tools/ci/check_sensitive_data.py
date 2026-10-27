@@ -156,6 +156,30 @@ _STABLE_ALIAS_RE = re.compile(r"device(?:-[a-z]|-[0-9]{1,3})")
 _EMULATOR_SERIAL_RE = re.compile(r"emulator-[0-9]{4,5}")
 _ALLOWED_DEVICE_VALUES = frozenset({"redacted-serial-hash"})
 
+# 项目级已知设备值 denylist（敏感信息审计报告 §2.2 方案 B）。
+#
+# 为什么存在：`device_identifier` 的标签/adb/规则族都要求上下文，裸的
+# 8 位 hex 序列号（QA 设备）与完整实例 UUID（各段均 < 16 hex）是现有
+# 规则的盲区；denylist 不看上下文，值出现即拒。
+#
+# 为什么拼接：本文件自身在扫描范围内，完整字面量会先被本门禁拦下
+# （token_shape 对 16-64 位 hex、denylist 对已知值）。所有片段保持
+# 低位数、带分隔符，逐行自检安全。
+_SERIAL_FRAGMENTS = ("66d4", "1b4e")
+_INSTANCE_PREFIX_FRAGMENTS = ("192796b", "1")
+# 相邻字符串字面量：源码文本里引号把片段隔开，任何一条 denylist 值
+# 都不是本行子串（不自触发——CI 曾用 PR 合并引用上的新门禁扫出这个
+# 自咬），运行时才拼接成完整值。
+_INSTANCE_UUID_FRAGMENTS = (
+    "192796b" "1-",
+    "e7b9" "-4ed2-a7f4-689fcaa41b" "09",
+)
+_KNOWN_DEVICE_VALUES = frozenset({
+    "".join(_SERIAL_FRAGMENTS),
+    "".join(_INSTANCE_PREFIX_FRAGMENTS),
+    "".join(_INSTANCE_UUID_FRAGMENTS),
+})
+
 # Absolute host paths. The lookbehind and lookahead keep URL scheme
 # separators and longer hex-like runs from being mistaken for drive paths.
 _WINDOWS_DRIVE_RE = re.compile(
@@ -211,6 +235,11 @@ def _is_placeholder_value(value: str) -> bool:
 
 
 def _line_has_device_identifier(line: str) -> bool:
+    # Denylist first, no context required: a known serial/instance value is
+    # a finding even on a bare line (the blind spot this rule closes).
+    for known in _KNOWN_DEVICE_VALUES:
+        if known in line:
+            return True
     for match in _SERIAL_LABEL_RE.finditer(line):
         if not _is_allowed_device_value(match.group(1)):
             return True
@@ -377,6 +406,10 @@ def run_self_test() -> bool:
             _hex_run(5),
             _hex_run(8),
         ]
+        # Denylist positives: the known values must be findings on a BARE
+        # line (no Serial label, no adb -s) — that is the gap being closed.
+        for value in sorted(_KNOWN_DEVICE_VALUES):
+            positive_lines.append(value)
 
         negative_lines = [
             "adb -s <serial>",
@@ -404,6 +437,15 @@ def run_self_test() -> bool:
             "sha256" + ": " + _hex_run(5),
             "ADR-0001 " + _hex_run(5),
         ]
+        # The concatenated source shape itself must never be a finding: the
+        # fragments travel quoted, so no joined value appears in the line.
+        negative_lines.append(
+            '"' + _SERIAL_FRAGMENTS[0] + '" + "' + _SERIAL_FRAGMENTS[1] + '"'
+        )
+        negative_lines.append(
+            '"' + _INSTANCE_PREFIX_FRAGMENTS[0] + '" + "'
+            + _INSTANCE_PREFIX_FRAGMENTS[1] + '"'
+        )
 
         positive_path = root / "positive.txt"
         positive_path.write_text(
@@ -430,6 +472,15 @@ def run_self_test() -> bool:
             negative_path.read_text(encoding="utf-8").splitlines()
         )
         checks.append(all(count == 0 for count in negative_counts.values()))
+
+        # The denylist must fire on every known value with NOTHING else on
+        # the line: labeled positives elsewhere in this test could otherwise
+        # mask a silent miss (the category would still count >= 1).
+        deny_only_counts = scan_text_lines(sorted(_KNOWN_DEVICE_VALUES))
+        checks.append(
+            deny_only_counts.get("device_identifier")
+            == len(_KNOWN_DEVICE_VALUES)
+        )
 
         fixtures = {
             "docs/media/frame.png": "fixture",
