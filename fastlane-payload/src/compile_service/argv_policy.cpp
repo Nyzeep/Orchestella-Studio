@@ -53,6 +53,27 @@ bool contains_path_separator(const std::string& value) {
            value.find('\\') != std::string::npos;
 }
 
+// distcc's dcc_add_clang_target() appends the guest's *native* triple
+// (aarch64-alpine-linux-musl on an Alpine chroot) and does so even when a
+// --target= is already on the command line, so an exact comparison against
+// the configured Android triple can never hold for real traffic. Only the
+// architecture has to agree: it decides the instruction set the engine emits.
+// The libc/ABI suffix does not, because the payload never links anything.
+bool is_aarch64_triple(const std::string& value) {
+    return value == "aarch64" || starts_with(value, "aarch64-");
+}
+
+// `native` is word-shaped, so the -m family below would forward it; the
+// driver would then probe the CPU it happens to run on and emit for that,
+// silently and differently from the configured triple. Refused as
+// UNKNOWN_FLAG rather than a new class: the class list is wire-visible and
+// part of the protocol contract, and the client's action (fail the job) is
+// the same as for any other unaccepted spelling.
+bool is_native_machine_flag(const std::string& argument) {
+    return argument == "-march=native" || argument == "-mtune=native" ||
+           argument == "-mcpu=native";
+}
+
 // Word-shaped: everything a compiler flag value can be without being a path
 // or a shell fragment. Rejects '%', '$', '@', ':', whitespace, quotes.
 bool is_word_shaped(const std::string& value) {
@@ -208,6 +229,11 @@ ArgvDecision filter_argv(const std::vector<std::string>& argv,
         if (is_file_output(argument)) {
             return reject(ArgvClass::kFileOutput);
         }
+        // Refusals come before every allowance, so a later allow-list entry
+        // cannot quietly re-open `native`.
+        if (is_native_machine_flag(argument)) {
+            return reject(ArgvClass::kUnknownFlag);
+        }
 
         if (argument == "-o") {
             if (seen_output || index + 1 >= argv.size()) {
@@ -285,15 +311,22 @@ ArgvDecision filter_argv(const std::vector<std::string>& argv,
             }
             continue;
         }
-        if (argument == "--target" || starts_with(argument, "--target=")) {
+        // Target declarations. dcc_add_clang_target() in distcc 3.4 appends
+        // the two-token `-target <triple>` spelling, and it does so even when
+        // the build file already carries a --target=, so a real job delivers
+        // both. Accepting only the long form is what made every real job
+        // answer ARGV_REJECTED:UNKNOWN_FLAG (PVM-11). All four spellings are
+        // one declaration to the driver, so all four are accepted here.
+        if (argument == "--target" || argument == "-target" ||
+            starts_with(argument, "--target=") || starts_with(argument, "-target=")) {
             std::string value;
-            if (argument == "--target") {
+            if (argument == "--target" || argument == "-target") {
                 if (index + 1 >= argv.size()) {
                     return reject(ArgvClass::kBadTarget);
                 }
                 value = argv[++index];
             } else {
-                value = argument.substr(9);
+                value = argument.substr(argument.find('=') + 1);
             }
             if (value.empty()) {
                 return reject(ArgvClass::kBadTarget);
@@ -301,8 +334,21 @@ ArgvDecision filter_argv(const std::vector<std::string>& argv,
             if (contains_path_separator(value)) {
                 return reject(ArgvClass::kPathLike);
             }
-            if (config.target_triple.empty() || value != config.target_triple) {
+            if (!is_word_shaped(value)) {
+                return reject(ArgvClass::kBadTarget);
+            }
+            if (config.target_triple.empty()) {
+                // No triple configured: the payload cannot honour any claim.
                 return reject(ArgvClass::kTargetMismatch);
+            }
+            if (!is_aarch64_triple(value)) {
+                return reject(ArgvClass::kTargetMismatch);
+            }
+            if (value != config.target_triple) {
+                // Accepted, but never silently: the engine emits for the
+                // configured triple either way, so the disagreement has to
+                // survive as data instead of vanishing here.
+                decision.declared_target = value;
             }
             continue;  // the engine applies the configured triple itself
         }

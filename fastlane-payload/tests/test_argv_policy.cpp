@@ -107,7 +107,7 @@ FL_TEST(argv_policy_accepted_std_values) {
     FL_CHECK_EQ(separated.flags.back(), std::string("-std=c17"));
 }
 
-FL_TEST(argv_policy_target_must_match_the_configured_triple) {
+FL_TEST(argv_policy_target_accepts_the_configured_triple_and_refuses_x86) {
     FL_CHECK(filter_argv({"cc",
                           "-c",
                           "a.c",
@@ -123,6 +123,106 @@ FL_TEST(argv_policy_target_must_match_the_configured_triple) {
     ArgvPolicyConfig unset;
     FL_CHECK(!filter_argv({"cc", "-c", "a.c", "-o", "a.o", "--target=whatever"}, unset)
                   .accepted);
+}
+
+FL_TEST(argv_policy_accepts_all_four_target_spellings) {
+    // PVM-11. distcc's dcc_add_clang_target() appends the two-token short
+    // form; a build file may carry either short or long. To the driver these
+    // are one declaration, so they must not be four different answers.
+    const std::vector<std::vector<std::string>> spellings = {
+        {"cc", "-c", "a.c", "-o", "a.o", "--target=aarch64-unknown-linux-android"},
+        {"cc", "-c", "a.c", "-o", "a.o", "--target", "aarch64-unknown-linux-android"},
+        {"cc", "-c", "a.c", "-o", "a.o", "-target", "aarch64-unknown-linux-android"},
+        {"cc", "-c", "a.c", "-o", "a.o", "-target=aarch64-unknown-linux-android"},
+    };
+    size_t index = 0;
+    for (const std::vector<std::string>& argv : spellings) {
+        const ArgvDecision decision = filter_argv(argv, config());
+        if (!decision.accepted) {
+            ::fl::test::fail(__FILE__, __LINE__,
+                             "spelling " + std::to_string(index) + " rejected as " +
+                                 decision.failure_code);
+        }
+        // Consumed, never forwarded: the engine emits for the configured
+        // triple, so -c is the only flag left.
+        FL_CHECK_EQ(decision.flags.size(), static_cast<size_t>(1));
+        FL_CHECK_EQ(decision.flags[0], std::string("-c"));
+        FL_CHECK(decision.declared_target.empty());
+        ++index;
+    }
+}
+
+FL_TEST(argv_policy_records_a_declared_triple_it_did_not_use) {
+    // The guest's own triple arrives on every real job. It is accepted but
+    // never adopted -- this is a compile service, not a cross compiler -- so
+    // the disagreement is recorded rather than dropped, or "compiled for
+    // musl" would be indistinguishable from "compiled for Android".
+    const ArgvDecision decision = filter_argv(
+        {"cc", "-c", "a.c", "-o", "a.o", "-target", "aarch64-alpine-linux-musl"},
+        config());
+    FL_CHECK(decision.accepted);
+    FL_CHECK_EQ(decision.declared_target, std::string("aarch64-alpine-linux-musl"));
+
+    const ArgvDecision agreeing = filter_argv(
+        {"cc", "-c", "a.c", "-o", "a.o", "-target", "aarch64-unknown-linux-android"},
+        config());
+    FL_CHECK(agreeing.accepted);
+    FL_CHECK(agreeing.declared_target.empty());
+}
+
+FL_TEST(argv_policy_target_architecture_must_be_aarch64) {
+    for (const char* triple : {"x86_64-unknown-linux-gnu", "armv7a-linux-androideabi21",
+                               "riscv64-linux-android", "aarch64x-linux"}) {
+        if (!rejected_with({"cc", "-c", "a.c", "-o", "a.o", "-target", triple},
+                           "TARGET_MISMATCH")) {
+            const ArgvDecision decision =
+                filter_argv({"cc", "-c", "a.c", "-o", "a.o", "-target", triple}, config());
+            ::fl::test::fail(__FILE__, __LINE__,
+                             std::string(triple) + " was not refused: " +
+                                 (decision.accepted ? std::string("accepted")
+                                                    : decision.failure_code));
+        }
+    }
+    // Any libc/ABI dressing is fine as long as the architecture matches.
+    for (const char* triple : {"aarch64", "aarch64-alpine-linux-musl",
+                               "aarch64-linux-android21", "aarch64-unknown-linux-gnu"}) {
+        FL_CHECK(filter_argv({"cc", "-c", "a.c", "-o", "a.o", "-target", triple}, config())
+                     .accepted);
+    }
+}
+
+FL_TEST(argv_policy_target_guards_survive_the_new_spellings) {
+    // The new spellings must not become a way around the old guards.
+    FL_CHECK(rejected_with(
+        {"cc", "-c", "a.c", "-o", "a.o", "-target", "aarch64-../../etc/passwd"},
+        "PATH_LIKE"));
+    FL_CHECK(rejected_with({"cc", "-c", "a.c", "-o", "a.o", "-target"}, "BAD_TARGET"));
+    FL_CHECK(rejected_with({"cc", "-c", "a.c", "-o", "a.o", "-target="}, "BAD_TARGET"));
+    // Word-shaped only: whitespace would both confuse the driver and forge a
+    // log line.
+    FL_CHECK(rejected_with({"cc", "-c", "a.c", "-o", "a.o", "-target", "aarch64 x"},
+                           "BAD_TARGET"));
+}
+
+FL_TEST(argv_policy_refuses_native_machine_tuning) {
+    // PVM-11 T3. `native` is word-shaped, so the -m family forwards it; the
+    // driver would then emit for whatever CPU it happens to probe instead of
+    // the configured triple. That is a silent codegen change, so it is
+    // refused. Concrete values stay allowed.
+    for (const char* flag : {"-march=native", "-mtune=native", "-mcpu=native"}) {
+        if (!rejected_with({"cc", "-c", flag, "a.c", "-o", "a.o"}, "UNKNOWN_FLAG")) {
+            const ArgvDecision decision =
+                filter_argv({"cc", "-c", flag, "a.c", "-o", "a.o"}, config());
+            ::fl::test::fail(__FILE__, __LINE__,
+                             std::string(flag) + " was not refused: " +
+                                 (decision.accepted ? std::string("accepted")
+                                                    : decision.failure_code));
+        }
+    }
+    for (const char* flag : {"-march=armv8-a", "-march=armv8-a+crypto",
+                             "-mtune=cortex-a76", "-mcpu=cortex-a76"}) {
+        FL_CHECK(filter_argv({"cc", "-c", flag, "a.c", "-o", "a.o"}, config()).accepted);
+    }
 }
 
 FL_TEST(argv_policy_rejects_one_case_per_class) {
