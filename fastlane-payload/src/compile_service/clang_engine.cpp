@@ -155,8 +155,12 @@ public:
         frontend.Inputs.clear();
         const clang::Language language =
             request.language == "c++" ? clang::Language::CXX : clang::Language::C;
+        // The buffer name is what shows up in diagnostics ("job.ii:1:8: ...").
+        // Naming a C++ job "job.i" would make the rendered file name lie
+        // about the language the invocation actually used.
         frontend.Inputs.push_back(clang::FrontendInputFile(
-            llvm::MemoryBufferRef(request.source, "job.i"),
+            llvm::MemoryBufferRef(request.source,
+                                  request.language == "c++" ? "job.ii" : "job.i"),
             clang::InputKind(language, clang::InputKind::Source,
                              /*PP=*/true)));
 
