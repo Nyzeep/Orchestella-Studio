@@ -31,5 +31,6 @@
 - `archive/2026-10-phase5-quality/`：Phase 5 与质量合流阶段。
 - `archive/2026-10-v045/`：v0.4.5 发布与设备验证阶段。
 - `archive/2026-10-avf-history/`：被最终轮取代的 AVF 审查轮次。
+- `archive/2026-10-zero-device/`：零设备批次的工单报告（`runtime-performance-01..08`、`fastlane-P01..P12`、`avf-zero-device-01..10`）。
 
 历史报告按当时快照理解；最新事实以 [docs/README.md](../README.md)、2026-10-21 Fast Lane 方案/Spec 为准；QEMU 发布线仍以 2026-10-18 方案的 P0 为准。
