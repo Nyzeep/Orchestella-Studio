@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import base64
 import codecs
+import hashlib
 import json
 import re
 import secrets
@@ -300,6 +301,157 @@ def guest_compiler(args) -> str:
     return "clang++" if getattr(args, "language", "c") == "cxx" else "clang"
 
 
+def reference_compile_command(compiler: str, fixture_path: str) -> str:
+    """The guest-local reference compile.
+
+    The payload injects cc1 codegen defaults per language
+    (fastlane-payload/src/compile_service/cc1_defaults.cpp): C++ gets
+    -mframe-pointer=all, C deliberately does not (the C reference hash
+    9fd1d91e... is the anchored regression). The local reference must
+    mirror that or the .text compare can never pass: round 3 cxx-v3
+    produced a genuine C++ reference without frame pointers (.text
+    16,088 B) against a remote 40,100 B and misread the gap as fixture
+    pollution.
+    """
+    command = (f"{compiler} -c --target={GUEST_TRIPLE} -O1 {fixture_path} "
+               f"-o {GUEST_REF_O}")
+    if compiler == "clang++":
+        command += " -mframe-pointer=all"
+    return command
+
+
+def assemble_probe_command(args) -> str:
+    """The A-segment probe: compile the preprocessed unit like the distcc
+    split would. The preprocessed text stays in the `.i` file for both
+    languages, so C++ must pin `-x c++-cpp-output` — by extension clang
+    would parse it as C and fail (round 3 cxx-v3: assemble_failed with
+    assemble_ms=None)."""
+    compiler = guest_compiler(args)
+    pinned = " -x c++-cpp-output" if compiler == "clang++" else ""
+    return (f"{compiler} -c --target={GUEST_TRIPLE} -O1{pinned} "
+            f"{GUEST_DOT_I} -o {GUEST_DOT_I_O}")
+
+
+def prepare_reference_object(console: GuestConsole, chroot_prefix: str,
+                             next_index) -> bool:
+    """Zero any stale reference object before the reference compile.
+
+    The chroot has no `rm` applet, but `: >` needs nothing beyond the
+    shell. With the file zeroed, a later pull can only return this
+    round's product: a failed or skipped reference compile leaves an
+    empty file that the size gate rejects, so a stale object can never
+    pose as fresh again.
+    """
+    rc, _text, _ = console.run(f": > {chroot_prefix}{GUEST_REF_O}",
+                               next_index(), 30)
+    return rc == 0
+
+
+def reference_object_present(console: GuestConsole, chroot_prefix: str,
+                             next_index) -> bool:
+    """Fail-closed size gate: an empty or unreadable ref.o is not a product."""
+    rc, text, _ = console.run(f"wc -c < {chroot_prefix}{GUEST_REF_O}",
+                              next_index(), 30)
+    if rc != 0:
+        return False
+    try:
+        return int((text or "").strip().splitlines()[-1]) > 0
+    except (ValueError, IndexError):
+        return False
+
+
+def device_sha256(console: GuestConsole, device_path: str, next_index,
+                  command_timeout_s: int):
+    """Device-side sha256 via the outer shell; None means unverifiable.
+
+    The outer guest shell carries toybox/busybox sha256sum (the chroot
+    does not, but the path here is outer-shell). Any absence, nonzero
+    exit, or malformed output returns None — the caller must fail closed.
+    """
+    rc, text, _ = console.run(f"sha256sum {device_path} 2>/dev/null",
+                              next_index(), command_timeout_s)
+    if rc != 0:
+        return None
+    token = (text or "").strip().split()
+    if token and re.fullmatch(r"[0-9a-f]{64}", token[0]):
+        return token[0]
+    return None
+
+
+CHROOT_APPLET_HEALS = ("sleep", "rm", "timeout", "dd")
+
+
+def heal_chroot_applets(console: GuestConsole, chroot_prefix: str,
+                        next_index) -> dict:
+    """Best-effort applet heal for the minimal chroot.
+
+    The chroot's /bin ships its shell without every applet symlink (round 3
+    cxx-v3: `sleep: not found` and `rm: not found` broke the download
+    probe's polling loop and its cleanup). The chroot is writable — the
+    distcc state directory proved it — so the OUTER shell links the chroot's
+    busybox multi-call binary for each applet the probe scripts need. A
+    missing busybox is reported instead of guessed at; the probe's delay
+    chain degrades rather than dying either way.
+    """
+    if not chroot_prefix:
+        return {"applied": False, "reason": "no-chroot"}
+    rc, text, _ = console.run(
+        f"[ -e {chroot_prefix}bin/busybox ] && echo QA_BB=yes "
+        f"|| echo QA_BB=no", next_index(), 30)
+    if "QA_BB=yes" not in (text or ""):
+        return {"applied": False, "reason": "no-busybox"}
+    linked = []
+    for applet in CHROOT_APPLET_HEALS:
+        rc, _text, _ = console.run(
+            f"ln -sf /bin/busybox {chroot_prefix}bin/{applet}",
+            next_index(), 30)
+        if rc == 0:
+            linked.append(applet)
+    return {"applied": bool(linked), "reason": "" if linked else "ln-failed",
+            "applets": linked}
+
+
+def download_probe_inner(port: int) -> str:
+    """The download receiver: length-prefix aware, applet-frugal.
+
+    Protocol (PVM-13): an 8-byte ASCII decimal length, then the payload;
+    the receiver polls the file to the declared total and reports the byte
+    count. Discipline learned in round 3 cxx-v3: every external call
+    carries 2>/dev/null, cleanup runs BEFORE the final measurement, and
+    the last stdout line is always the byte count — a missing applet may
+    degrade the wait (bounded spins, busybox fallback chain) but can never
+    poison the parse again. `nc` is guarded by the loop bounds plus a PID
+    kill instead of `timeout`, which the chroot may not carry either.
+    """
+    return (
+        f"D=/root/dn.$$.tmp; rm -f $D 2>/dev/null; "
+        f"nc {GUEST_HOST_IP} {port} > $D & NC=$!; "
+        f"i=0; "
+        f"while :; do SZ=$(wc -c < $D 2>/dev/null || echo 0); "
+        f'[ "$SZ" -ge 8 ] && break; '
+        f"i=$((i+1)); [ $i -ge 40 ] && break; "
+        f"sleep 0.15 2>/dev/null || usleep 150000 2>/dev/null || "
+        f"/bin/busybox sleep 0.15 2>/dev/null || busybox sleep 0.15 "
+        f"2>/dev/null || :; done; "
+        f"N=$(dd if=$D bs=1 count=8 2>/dev/null); "
+        f'N=$(echo $N); case "$N" in ""|*[!0-9]*) N=0;; esac; '
+        f"N=$((N + 0)); T=$((8 + N)); "
+        f"i=0; "
+        f"if [ \"$N\" -ge 1 ]; then "
+        f"while :; do SZ=$(wc -c < $D 2>/dev/null || echo 0); "
+        f'[ "$SZ" -ge "$T" ] && break; '
+        f"i=$((i+1)); [ $i -ge 200 ] && break; "
+        f"sleep 0.15 2>/dev/null || usleep 150000 2>/dev/null || "
+        f"/bin/busybox sleep 0.15 2>/dev/null || busybox sleep 0.15 "
+        f"2>/dev/null || :; done; "
+        f"fi; "
+        f"kill $NC 2>/dev/null; "
+        f"SZ=$(wc -c < $D 2>/dev/null || echo 0); "
+        f"rm -f $D 2>/dev/null; "
+        f"echo $SZ"
+    )
+
+
 def push_fixture_via_console(console: GuestConsole, fixture_bytes: bytes,
                              command_timeout_s: int, next_index,
                              chroot_prefix: str = "",
@@ -341,23 +493,35 @@ def inject_fixture(adb: Adb, console: GuestConsole, fixture_bytes: bytes,
     The product launch only attaches the share when the instance declares
     it, so the fallback is the expected path; both are implemented because
     the share may appear in later launches.
+
+    A matching size alone is never trusted: a same-size stale fixture from
+    an earlier round used to pass silently (`already-present`). Both fast
+    paths verify the device-side sha256 against the local bytes before
+    skipping the transfer; a mismatch — or an unverifiable hash — fails
+    closed into an overwrite.
     """
     outer_fixture = f"{chroot_prefix}{fixture_path}"
-    # A previous round's fixture may already sit in the persistent rootfs at
-    # the exact size: skip the transfer entirely in that case.
-    rc, text, _ = console.run(f"wc -c < {outer_fixture}", next_index(),
-                              command_timeout_s)
-    lines = [line.strip() for line in text.strip().splitlines()]
-    if rc == 0 and lines and lines[-1] == str(len(fixture_bytes)):
-        return {"path": "already-present", "injected": True, "rc": 0}
+    local_hash = hashlib.sha256(fixture_bytes).hexdigest()
+
+    def content_matches() -> bool:
+        rc, text, _ = console.run(f"wc -c < {outer_fixture}", next_index(),
+                                  command_timeout_s)
+        lines = [line.strip() for line in text.strip().splitlines()]
+        if not (rc == 0 and lines and lines[-1] == str(len(fixture_bytes))):
+            return False
+        device_hash = device_sha256(console, outer_fixture, next_index,
+                                    command_timeout_s)
+        return device_hash == local_hash
+
+    # A previous round's fixture may already sit in the persistent rootfs:
+    # skip the transfer only when the CONTENT matches, not just the size.
+    if content_matches():
+        return {"path": "hash-match", "injected": True, "rc": 0}
     console.run(
         "mkdir -p /mnt/downloads && mount -t 9p -o trans=virtio,version=9p2000.L,ro "
         "downloads /mnt/downloads 2>/dev/null || true; cp /mnt/downloads/fixture.c "
         f"{outer_fixture} 2>/dev/null || true", next_index(), command_timeout_s)
-    rc, text, _ = console.run(f"wc -c < {outer_fixture}", next_index(),
-                              command_timeout_s)
-    lines = [line.strip() for line in text.strip().splitlines()]
-    if rc == 0 and lines and lines[-1] == str(len(fixture_bytes)):
+    if content_matches():
         return {"path": "9p-downloads", "injected": True, "rc": 0}
     # fixture_path must travel with the fallback: the console push writes and
     # verifies THE SAME path the compile will read, otherwise a C++ round can
@@ -604,31 +768,12 @@ def _probe_transport_down(adb: Adb, console: GuestConsole, tool, next_index,
     # shell have it), parses the 8-byte header, then polls the file until it
     # holds the declared total. Polling at 150 ms bounds the measurement
     # noise. No 127-retry here: run_guest_transfer's fallback exists for
-    # "the chroot ships no netcat", but this script is compound -- a single
-    # missing applet (usleep) would 127 the whole thing and send the probe to
-    # the outer shell, which lacks sleep/rm and fails differently. The inner
-    # text is kept either way so a missing applet names itself.
-    inner = (
-        f"D=/root/dn.$$.tmp; rm -f $D; trap 'rm -f $D' EXIT; "
-        f"timeout {PERF_GUEST_NC_GUARD_S} nc {GUEST_HOST_IP} {port} > $D & NC=$!; "
-        f"i=0; "
-        f"while :; do SZ=$(wc -c < $D 2>/dev/null || echo 0); "
-        f'[ "$SZ" -ge 8 ] && break; '
-        f"i=$((i+1)); [ $i -ge 40 ] && break; "
-        f"sleep 0.15 2>/dev/null || usleep 150000 2>/dev/null || sleep 1; done; "
-        f"N=$(dd if=$D bs=1 count=8 2>/dev/null); "
-        f'N=$(echo $N); case "$N" in ""|*[!0-9]*) N=0;; esac; '
-        f"N=$((N + 0)); T=$((8 + N)); "
-        f"i=0; "
-        f"if [ \"$N\" -ge 1 ]; then "
-        f"while :; do SZ=$(wc -c < $D 2>/dev/null || echo 0); "
-        f'[ "$SZ" -ge "$T" ] && break; '
-        f"i=$((i+1)); [ $i -ge 200 ] && break; "
-        f"sleep 0.15 2>/dev/null || usleep 150000 2>/dev/null || sleep 1; done; "
-        f"fi; "
-        f"kill $NC 2>/dev/null; "
-        f"wc -c < $D"
-    )
+    # "the chroot ships no netcat", but this script is compound -- one
+    # missing applet would degrade it differently in either shell, and the
+    # receiver itself is built to degrade (bounded loops, fallback chain)
+    # rather than 127. The inner text is kept either way so a failure names
+    # itself.
+    inner = download_probe_inner(port)
     try:
         rc, text, elapsed = console.run(tool(inner), next_index(),
                                         PERF_NC_TIMEOUT_S)
@@ -730,8 +875,7 @@ def probe_segments(adb: Adb, console: GuestConsole, args, tool, next_index,
     assemble_samples: list = []
     for _ in range(2):
         rc, _text, elapsed = console.run(
-            tool(f"clang -c --target={GUEST_TRIPLE} -O1 {GUEST_DOT_I} "
-                 f"-o {GUEST_DOT_I_O}"),
+            tool(assemble_probe_command(args)),
             next_index(), probe_timeout)
         if rc == 0 and elapsed >= 0:
             assemble_samples.append(elapsed)
@@ -761,6 +905,11 @@ def probe_segments(adb: Adb, console: GuestConsole, args, tool, next_index,
     if not guest_has_nc:
         _record_probe_error(round_result, "guest_nc_missing")
         return
+
+    # Heal the chroot's missing applet symlinks before any probe script runs
+    # (round 3 cxx-v3: sleep/rm not-found broke the download receiver).
+    round_result["chroot_applet_heal"] = heal_chroot_applets(
+        console, chroot_prefix, next_index)
 
     # --- T up / T down: the distcc topology, both directions ---------------
     up = _probe_transport_up(adb, console, tool, next_index, chroot_prefix,
@@ -1126,11 +1275,20 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
             round_result["failure_code"] = "FIXTURE_INJECTION_FAILED"
             return round_result
 
+        # Fail-closed freshness: zero any stale /root/ref.o BEFORE the
+        # reference compile, so a pulled ref.o can only be this round's
+        # product (the chroot has no `rm`, but `: >` needs only sh).
+        reference_trusted = prepare_reference_object(console, chroot_prefix,
+                                                     next_index)
+        round_result["reference_trusted"] = reference_trusted
+
         # The guest-local reference uses the same -O1 as the payload path so
-        # the equivalence compare sees one optimization level.
+        # the equivalence compare sees one optimization level; for C++ it
+        # also mirrors the payload's cc1 default -mframe-pointer=all (see
+        # reference_compile_command — without it the .text compare can never
+        # match the remote side).
         rc, text, elapsed = console.run(
-            tool(f"{compiler} -c --target={GUEST_TRIPLE} -O1 {fixture_path} "
-                 f"-o {GUEST_REF_O}"),
+            tool(reference_compile_command(compiler, fixture_path)),
             next_index(), args.guest_command_timeout_s)
         round_result["local_compile_rc"] = rc
         round_result["local_compile_ms"] = elapsed
@@ -1214,9 +1372,16 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
         if not pulled_cross.get("ok"):
             round_result["failure_code"] = "OBJECT_RETURN_FAILED"
             return round_result
-        has_reference = round_result.get("local_compile_rc") == 0
+        has_reference = (round_result.get("local_compile_rc") == 0
+                         and reference_trusted)
         pulled_ref: dict = {}
         if has_reference:
+            if not reference_object_present(console, chroot_prefix,
+                                            next_index):
+                # The compile claimed success but left nothing: refuse to
+                # let anything stale stand in for the reference.
+                round_result["failure_code"] = "GUEST_REF_OBJECT_INVALID"
+                return round_result
             pulled_ref = return_object_via_netcat(
                 adb, console, GUEST_REF_O, round_work / "ref.o",
                 19999, tool, next_index, args.guest_command_timeout_s)
