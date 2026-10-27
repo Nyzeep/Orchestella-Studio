@@ -160,6 +160,7 @@ object ThemeApplier {
         val root = WeakReference(root)
         var wallpaper: String? = null
         var applied = false
+        var cornerRadius = -1
         var listener: ViewTreeObserver.OnGlobalLayoutListener? = null
     }
 
@@ -201,7 +202,10 @@ object ThemeApplier {
             }
             val changed = binding.theme != theme
             binding.theme = theme
-            walk(content, theme, force = changed)
+            val radius = store.cornerRadiusDp()
+            val radiusChanged = binding.cornerRadius != radius
+            binding.cornerRadius = radius
+            walk(content, theme, force = changed || radiusChanged)
             val terminal = activity.javaClass.simpleName == "TerminalActivity"
             val background = if (terminal) theme.terminalBackground else theme.background
             activity.window.setBackgroundDrawable(ColorDrawable(background))
@@ -344,7 +348,12 @@ object ThemeApplier {
             is MaterialCardView -> {
                 view.setCardBackgroundColor(theme.surface)
                 view.strokeColor = outline
-                // Preserve cardCornerRadius, stroke width, elevation and press behavior.
+                // Corner radius is the one deliberate geometry override: 0 keeps the XML look.
+                val radiusPx = cornerRadiusPx(view)
+                if (radiusPx > 0f) {
+                    view.shapeAppearanceModel = view.shapeAppearanceModel.toBuilder()
+                        .setAllCornerSizes(radiusPx).build()
+                }
             }
             is MaterialButton -> {
                 val secondary = binding.buttonRole == Role.SECONDARY_ACTION
@@ -355,6 +364,8 @@ object ThemeApplier {
                 view.iconTint = states(disabled, primaryInk, ink)
                 view.strokeColor = states(outline, actionColor, if (secondary) outline else fill)
                 view.rippleColor = ColorStateList.valueOf((theme.text and 0x00FFFFFF) or 0x24000000)
+                val radiusPx = cornerRadiusPx(view)
+                if (radiusPx > 0f) view.cornerRadius = radiusPx.toInt()
             }
             is MaterialToolbar -> {
                 view.setBackgroundColor(theme.background)
@@ -472,6 +483,8 @@ object ThemeApplier {
                         background.colors = colors.map { ThemeColors.color(theme, inferBackgroundRole(it, theme)) }.toIntArray()
                     }
                     background.setStroke((view.resources.displayMetrics.density * 1.5f).toInt().coerceAtLeast(1), outline)
+                    val radiusPx = cornerRadiusPx(view)
+                    if (radiusPx > 0f) background.cornerRadius = radiusPx
                 }
                 is MaterialShapeDrawable -> {
                     background.fillColor = ColorStateList.valueOf(ThemeColors.color(theme, role))
@@ -487,8 +500,11 @@ object ThemeApplier {
         view.backgroundTintList?.let { view.backgroundTintList = ColorStateList.valueOf(ThemeColors.color(theme, role)) }
     }
 
-    private fun backgroundColor(view: View): Int? = view.backgroundTintList?.defaultColor ?: when (val drawable = view.background) {
-        is ColorDrawable -> drawable.color
+    /** Corner-radius token in pixels; zero means "keep the current geometry untouched". */
+    private fun cornerRadiusPx(view: View): Float =
+        ThemeStore(view.context).cornerRadiusDp() * view.resources.displayMetrics.density
+
+    private fun backgroundColor(view: View): Int? = view.backgroundTintList?.defaultColor ?: when (val drawable = view.background) {        is ColorDrawable -> drawable.color
         is GradientDrawable -> drawable.color?.defaultColor
         is MaterialShapeDrawable -> drawable.fillColor?.defaultColor
         else -> null
