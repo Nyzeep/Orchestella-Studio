@@ -365,7 +365,12 @@ class ReferenceCompileCommandTest(unittest.TestCase):
         self.assertTrue(command.startswith(
             "clang++ -c --target=aarch64-unknown-linux-android -O1 "
             "/root/fixture.cpp -o /root/ref.o"), command)
-        self.assertIn(" -mframe-pointer=all", command)
+        # The DRIVER rejects the cc1 spelling outright (round 4 cxx-v4:
+        # "unknown argument '-mframe-pointer=all'" in 1.4 s), and
+        # -fno-omit-frame-pointer lowers to non-leaf, not all. Only the
+        # -Xclang forward matches the payload's cc1 default exactly.
+        self.assertIn(" -Xclang -mframe-pointer=all", command)
+        self.assertNotIn(" -mframe-pointer=all -Xclang", command)
 
 
 class AssembleProbeCommandTest(unittest.TestCase):
@@ -533,14 +538,26 @@ class DownloadProbeInnerTest(unittest.TestCase):
         self.assertIn("nc 192.168.127.254 19990 > $D & NC=$!;", script)
         self.assertIn("kill $NC 2>/dev/null;", script)
 
+    def test_the_nc_exit_code_travels_as_evidence_before_the_count(self):
+        # The count must stay the LAST line (the parser takes the final
+        # digits); the nc verdict rides one line above it. Round 4 cxx-v4
+        # burned on a zero-byte leg with no way to tell "refused" from
+        # "connected but silent".
+        script = dv_pvm_crossfire.download_probe_inner(19990)
+        self.assertIn("NCR=$?;", script)
+        self.assertIn("echo QA_NC_RC $NCR;", script)
+        self.assertLess(script.index("echo QA_NC_RC $NCR;"),
+                        script.rindex("echo $SZ"))
+
 
 class HealChrootAppletsTest(unittest.TestCase):
-    """The chroot is writable (the distcc state dir proved it), so the outer
-    shell can link the busybox multi-call binary for every applet the probe
-    scripts need — `sleep` and `rm` at minimum, plus the ones the receiver
-    would silently degrade without."""
+    """The chroot is writable (the distcc state dir proved it), and the OUTER
+    shell carries `cp` (the 9p fixture path uses it) but not `ln` (round 4
+    cxx-v4: every `ln -sf` died). The outer shell copies the chroot's
+    busybox multi-call binary under each applet name — busybox dispatches on
+    argv[0], so a copy is as good as a symlink."""
 
-    def test_links_the_applets_the_probe_scripts_need(self):
+    def test_copies_busybox_under_the_applet_names(self):
         console = FakeConsole([
             (0, "QA_BB=yes\n", 1.0),
             (0, "", 1.0), (0, "", 1.0), (0, "", 1.0), (0, "", 1.0),
@@ -549,12 +566,12 @@ class HealChrootAppletsTest(unittest.TestCase):
             console, "/alpine/", itertools.count().__next__)
         self.assertTrue(result["applied"])
         self.assertEqual(["sleep", "rm", "timeout", "dd"], result["applets"])
-        self.assertEqual("ln -sf /bin/busybox /alpine/bin/sleep",
+        self.assertEqual("cp /alpine/bin/busybox /alpine/bin/sleep",
                          console.commands[1])
-        self.assertEqual("ln -sf /bin/busybox /alpine/bin/dd",
+        self.assertEqual("cp /alpine/bin/busybox /alpine/bin/dd",
                          console.commands[4])
 
-    def test_without_busybox_it_reports_and_does_not_link(self):
+    def test_without_busybox_it_reports_and_does_not_copy(self):
         console = FakeConsole([(0, "QA_BB=no\n", 1.0)])
         result = dv_pvm_crossfire.heal_chroot_applets(
             console, "/alpine/", itertools.count().__next__)

@@ -316,7 +316,12 @@ def reference_compile_command(compiler: str, fixture_path: str) -> str:
     command = (f"{compiler} -c --target={GUEST_TRIPLE} -O1 {fixture_path} "
                f"-o {GUEST_REF_O}")
     if compiler == "clang++":
-        command += " -mframe-pointer=all"
+        # -Xclang forward, NOT the bare flag: the driver rejects the cc1
+        # spelling outright ("unknown argument '-mframe-pointer=all'",
+        # round 4 cxx-v4, rc=1 in 1.4 s) and -fno-omit-frame-pointer
+        # lowers to non-leaf, not all. Only the -Xclang form matches the
+        # payload's cc1 default bit for bit.
+        command += " -Xclang -mframe-pointer=all"
     return command
 
 
@@ -368,8 +373,10 @@ def device_sha256(console: GuestConsole, device_path: str, next_index,
     does not, but the path here is outer-shell). Any absence, nonzero
     exit, or malformed output returns None — the caller must fail closed.
     """
-    rc, text, _ = console.run(f"sha256sum {device_path} 2>/dev/null",
-                              next_index(), command_timeout_s)
+    rc, text, _ = console.run(
+        f"sha256sum {device_path} 2>/dev/null || "
+        f"busybox sha256sum {device_path} 2>/dev/null",
+        next_index(), command_timeout_s)
     if rc != 0:
         return None
     token = (text or "").strip().split()
@@ -402,8 +409,11 @@ def heal_chroot_applets(console: GuestConsole, chroot_prefix: str,
         return {"applied": False, "reason": "no-busybox"}
     linked = []
     for applet in CHROOT_APPLET_HEALS:
+        # cp, not ln: the outer shell carries cp (the 9p fixture path uses
+        # it) but not ln (round 4 cxx-v4: every `ln -sf` died). busybox
+        # dispatches on argv[0], so a copy is as good as a symlink.
         rc, _text, _ = console.run(
-            f"ln -sf /bin/busybox {chroot_prefix}bin/{applet}",
+            f"cp {chroot_prefix}bin/busybox {chroot_prefix}bin/{applet}",
             next_index(), 30)
         if rc == 0:
             linked.append(applet)
@@ -446,6 +456,8 @@ def download_probe_inner(port: int) -> str:
         f"2>/dev/null || :; done; "
         f"fi; "
         f"kill $NC 2>/dev/null; "
+        f"wait $NC 2>/dev/null; NCR=$?; "
+        f"echo QA_NC_RC $NCR; "
         f"SZ=$(wc -c < $D 2>/dev/null || echo 0); "
         f"rm -f $D 2>/dev/null; "
         f"echo $SZ"
@@ -742,6 +754,18 @@ def _probe_transport_down(adb: Adb, console: GuestConsole, tool, next_index,
     "bandwidth" from "stall": if a 180 KiB transfer is slow but 8 KiB is
     quick, the cost scales with bytes; if both are slow, the leg stalls
     before it moves anything.
+
+    Two receivers, best effort wins: the chroot shell is the distcc-faithful
+    path, but round 4 cxx-v4 showed its dial moving zero bytes while the
+    outer guest shell carried the upload leg fine. Each attempt gets a fresh
+    listener (`nc -l` serves exactly one connection); a valid byte count
+    stops the walk, and only a final failure records a probe error — a
+    chroot miss with an outer hit is a data point, not a red code. The
+    device-side frame is VERIFIED before any attempt: `nc -l < missing-file`
+    fails silently and looks exactly like a served transfer from the host
+    side, and the old listener-wait could not tell the two apart (the
+    listener exits in both cases; the wait is gone because QA_NC_RC plus the
+    frame check name the failing side directly).
     """
     result: dict = {"elapsed_ms": None, "bytes": None}
     device_tmp = f"{DEVICE_PERF_DOWN}.{size_kib}"
@@ -752,62 +776,80 @@ def _probe_transport_down(adb: Adb, console: GuestConsole, tool, next_index,
     # Frame in its own call; the listener keeps the plain `< file` redirect,
     # which is the form toybox nc actually flushes (a `cat |` pipe fed it
     # once and nc accepted the connection but never flushed).
-    adb.run("shell", "sh", "-c",
-            f"printf '%8d' \"$(wc -c < {device_tmp})\" > {device_len} "
-            f"&& cat {device_tmp} >> {device_len}",
-            check=False)
-    listener = subprocess.Popen(
-        [adb.adb_path] + (["-s", adb.serial] if adb.serial else []) +
-        ["shell", f"nc -l -p {port} < {device_len}"],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    # 3 s, not 1.5: the framing above plus process start can exceed the old
-    # window, and a listener that is not up yet makes the guest's `nc` fail
-    # instantly, which reads as a broken link instead of a late one.
-    time.sleep(3.0)
-    # The guest buffers the stream into /root (both the chroot and the outer
-    # shell have it), parses the 8-byte header, then polls the file until it
-    # holds the declared total. Polling at 150 ms bounds the measurement
-    # noise. No 127-retry here: run_guest_transfer's fallback exists for
-    # "the chroot ships no netcat", but this script is compound -- one
-    # missing applet would degrade it differently in either shell, and the
-    # receiver itself is built to degrade (bounded loops, fallback chain)
-    # rather than 127. The inner text is kept either way so a failure names
-    # itself.
+    framed = adb.run("shell", "sh", "-c",
+                     f"printf '%8d' \"$(wc -c < {device_tmp})\" > {device_len} "
+                     f"&& cat {device_tmp} >> {device_len} "
+                     f"&& wc -c < {device_len}", check=False)
+    framed_bytes = None
+    for line in reversed((framed or "").strip().splitlines()):
+        if line.strip().isdigit():
+            framed_bytes = int(line.strip())
+            break
+    if framed_bytes != expected_total:
+        _record_probe_error(round_result, f"{label}_frame_failed")
+        round_result.setdefault("perf_probe_details", {})[label] = {
+            "expected": expected_total, "framed": framed_bytes,
+        }
+        adb.run("shell", "rm", "-f", device_tmp, device_len, check=False)
+        return result
+
+    def spawn_listener():
+        return subprocess.Popen(
+            [adb.adb_path] + (["-s", adb.serial] if adb.serial else []) +
+            ["shell", f"nc -l -p {port} < {device_len}"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
     inner = download_probe_inner(port)
+    attempts = []
+    if chroot_prefix:
+        attempts.append(("chroot", tool(inner)))
+    attempts.append(("outer", inner))
     try:
-        rc, text, elapsed = console.run(tool(inner), next_index(),
-                                        PERF_NC_TIMEOUT_S)
-        if elapsed < 0:
-            _record_probe_error(round_result, f"{label}_timeout")
-        elif rc != 0:
-            # A bare code names the symptom, not the cause; the console's own
-            # words (sh: not found, Permission denied, timeout killed...) are
-            # what turns a red probe into a fixable one.
-            _record_probe_error(round_result, f"{label}_nc_failed")
-            round_result.setdefault("perf_probe_details", {})[label] = {
-                "rc": rc,
-                "tail": (text or "").strip().splitlines()[-3:],
-            }
-        else:
-            received = None
-            body_lines = [line.strip() for line in (text or "").strip().splitlines()
-                          if line.strip()]
-            if body_lines and body_lines[-1].isdigit():
-                received = int(body_lines[-1])
-            if received is None or received < expected_total:
-                _record_probe_error(round_result, f"{label}_short_read")
-                round_result.setdefault("perf_probe_details", {})[label] = {
-                    "rc": rc, "received": received,
-                    "expected": expected_total,
-                    "tail": body_lines[-3:],
-                }
-            else:
+        outcome = None  # (code, detail) — recorded only if nothing succeeds
+        for flavor, command in attempts:
+            listener = spawn_listener()
+            # 3 s: the framing above plus process start can exceed a shorter
+            # window, and a listener that is not up yet makes the guest's
+            # `nc` fail instantly, which reads as a broken link instead of a
+            # late one.
+            time.sleep(3.0)
+            try:
+                rc, text, elapsed = console.run(command, next_index(),
+                                                PERF_NC_TIMEOUT_S)
+                if elapsed < 0:
+                    outcome = (f"{label}_timeout", {"shell": flavor})
+                    continue
+                if rc != 0:
+                    outcome = (f"{label}_nc_failed", {
+                        "shell": flavor, "rc": rc,
+                        "tail": (text or "").strip().splitlines()[-3:],
+                    })
+                    continue
+                received = None
+                body_lines = [line.strip()
+                              for line in (text or "").strip().splitlines()
+                              if line.strip()]
+                if body_lines and body_lines[-1].isdigit():
+                    received = int(body_lines[-1])
+                if received is None or received < expected_total:
+                    outcome = (f"{label}_short_read", {
+                        "shell": flavor, "rc": rc, "received": received,
+                        "expected": expected_total,
+                        "tail": body_lines[-3:],
+                    })
+                    continue
                 result["elapsed_ms"] = elapsed
                 result["bytes"] = received
-        _wait_perf_listener(listener, round_result, f"{label}_listener_timeout")
+                outcome = None
+                break
+            finally:
+                if listener.poll() is None:
+                    listener.kill()
+        if outcome is not None:
+            code, detail = outcome
+            _record_probe_error(round_result, code)
+            round_result.setdefault("perf_probe_details", {})[label] = detail
     finally:
-        if listener.poll() is None:
-            listener.kill()
         adb.run("shell", "rm", "-f", device_tmp, device_len, check=False)
     return result
 
