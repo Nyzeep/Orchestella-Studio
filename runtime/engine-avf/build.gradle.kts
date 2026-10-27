@@ -108,6 +108,40 @@ tasks.register<JavaExec>("avf9pShareLifecycleTest") {
     mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.Avf9pShareLifecycleTest")
 }
 
+// The independent 9p2000.L wire oracle: literal standard opcodes only, no client helpers from
+// the AVF suite. It builds its own fixtures under the task output dir, so the task stays
+// side-effect free for Gradle's up-to-date checks.
+val standardReadonlyNinePOutput = layout.buildDirectory.dir("standard-readonly-9p/root")
+tasks.register<JavaExec>("standardReadonlyNinePTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.StandardReadonlyNinePTest")
+    args(standardReadonlyNinePOutput.get().asFile.absolutePath)
+    doFirst { standardReadonlyNinePOutput.get().asFile.mkdirs() }
+}
+
+// The same oracle driven over a real child JVM plus a synthetic symlink race. It requires
+// SecureDirectoryStream, so the harness itself fails closed on providers that lack it.
+val standardReadonlyNinePProcessOutput = layout.buildDirectory.dir("standard-readonly-9p-process/root")
+tasks.register<JavaExec>("standardReadonlyNinePProcessTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.StandardReadonlyNinePProcessTest")
+    args(standardReadonlyNinePProcessOutput.get().asFile.absolutePath)
+    doFirst { standardReadonlyNinePProcessOutput.get().asFile.mkdirs() }
+    // The harness asserts on real SecureDirectoryStream behaviour and /proc/self/fd.
+    // It is a Linux oracle: on a Windows workstation the assertion fails by design,
+    // which would make the whole `check` gate unusable there. Skip it explicitly
+    // instead of weakening the assertion, so CI (ubuntu) still runs it for real.
+    onlyIf {
+        val linux = System.getProperty("os.name").startsWith("Linux", ignoreCase = true)
+        if (!linux) {
+            logger.lifecycle(
+                "standardReadonlyNinePProcessTest skipped: requires Linux SecureDirectoryStream"
+            )
+        }
+        linux
+    }
+}
+
 tasks.register<JavaExec>("avfRfbOverVsockTest") {
     classpath = sourceSets["test"].runtimeClasspath
     mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.AvfRfbOverVsockTest")
@@ -156,6 +190,8 @@ val avfAllTestTasks = listOf(
     "avfBridgeOverVsockContractTest",
     "avf9pShareContractTest",
     "avf9pShareLifecycleTest",
+    "standardReadonlyNinePTest",
+    "standardReadonlyNinePProcessTest",
     "avfTerminalStreamContractTest",
     "avfInstanceLifecycleContractTest",
     "avfReconciliationLifecycleContractTest",
