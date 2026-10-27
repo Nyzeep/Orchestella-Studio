@@ -1058,11 +1058,17 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
             f"clang -O1 {chroot_prefix}{GUEST_MAIN_C} "
             f"{chroot_prefix}{GUEST_REF_O} -o {chroot_prefix}/root/ref.bin",
             next_index(), args.guest_command_timeout_s)
+        # The run must stay in the layer that produced the binary. The link
+        # above uses the native toolchain (the chroot carries no binutils), so
+        # the executable's ELF interpreter is the native /lib/ld-linux-aarch64.so.1;
+        # executing it under `chroot /alpine` finds no such interpreter and the
+        # shell answers 127 for both sides -- a symmetric lie that says nothing
+        # about the objects. Run it where it was linked.
         _, cross_out, _ = console.run(
-            tool('/root/cross.bin; printf "exit=%d\\n" "$?"'),
+            f'{chroot_prefix}/root/cross.bin; printf "exit=%d\\n" "$?"',
             next_index(), 60)
         _, ref_out, _ = console.run(
-            tool('/root/ref.bin; printf "exit=%d\\n" "$?"'),
+            f'{chroot_prefix}/root/ref.bin; printf "exit=%d\\n" "$?"',
             next_index(), 60)
         cross_exit = re.search(r"exit=(\d+)", cross_out)
         ref_exit = re.search(r"exit=(\d+)", ref_out)
