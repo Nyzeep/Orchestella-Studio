@@ -117,7 +117,7 @@ public class TerminalActivity extends Activity {
 
         rootLayout = new LinearLayout(this);
         rootLayout.setOrientation(LinearLayout.VERTICAL);
-        rootLayout.setBackgroundColor(DraculaPalette.BACKGROUND);
+        rootLayout.setBackgroundColor(themeStore.resolve().getTerminalBackground());
 
         // 1. Content area with modern terminal view and offline/crashed recovery card
         contentArea = new FrameLayout(this);
@@ -145,11 +145,11 @@ public class TerminalActivity extends Activity {
         sessionHeader.setOrientation(LinearLayout.HORIZONTAL);
         sessionHeader.setGravity(Gravity.CENTER_VERTICAL);
         sessionHeader.setPadding(dpToPx(10), 0, dpToPx(8), 0);
-        sessionHeader.setBackgroundColor(0xFF21222C);
+        sessionHeader.setBackgroundColor(themeStore.resolve().getSurface());
         tvSessionTitle = new TextView(this);
         tvSessionTitle.setText("终端 1");
         tvSessionTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
-        tvSessionTitle.setTextColor(DraculaPalette.FOREGROUND);
+        tvSessionTitle.setTextColor(themeStore.resolve().getTerminalForeground());
         tvSessionTitle.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         tvSessionTitle.setSingleLine(true);
         tvSessionTitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -160,7 +160,7 @@ public class TerminalActivity extends Activity {
         btnDrawerHandle = new Button(this, null, android.R.attr.buttonStyleSmall);
         btnDrawerHandle.setText("1个输出视图");
         btnDrawerHandle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
-        btnDrawerHandle.setTextColor(DraculaPalette.COLOR_CYAN);
+        btnDrawerHandle.setTextColor(themeStore.resolve().getAccent());
         btnDrawerHandle.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         btnDrawerHandle.setAllCaps(false);
         btnDrawerHandle.setSingleLine(true);
@@ -169,7 +169,8 @@ public class TerminalActivity extends Activity {
         btnDrawerHandle.setMinimumWidth(0);
         btnDrawerHandle.setMinHeight(0);
         btnDrawerHandle.setMinimumHeight(0);
-        btnDrawerHandle.setBackground(createPillBackground(0xFF282A36, 0xFF6272A4, 8f));
+        btnDrawerHandle.setBackground(createPillBackground(
+                themeStore.resolve().getSurface(), themeStore.resolve().getGlow(), 8f));
         btnDrawerHandle.setPadding(dpToPx(10), 0, dpToPx(10), 0);
         btnDrawerHandle.setOnClickListener(v -> {
             if (drawerLayout != null) {
@@ -333,9 +334,6 @@ public class TerminalActivity extends Activity {
                     ansi, theme.getTerminalForeground(), theme.getTerminalBackground());
             rootLayout.setBackgroundColor(theme.getTerminalBackground());
             io.github.nyzeep.orchestella.ui.theme.ThemeApplier.bind(this);
-            if (btnDrawerHandle != null) {
-                btnDrawerHandle.setBackground(createPillBackground(0xFF282A36, 0xFF6272A4, 8f));
-            }
             if (terminalView != null) {
                 terminalView.applyTheme(theme,
                         store.terminalFontSizeSp(),
@@ -347,8 +345,35 @@ public class TerminalActivity extends Activity {
             if (offlineCardView != null) {
                 offlineCardView.setBackgroundColor(theme.getBackground());
             }
+            applyChromeColors(theme);
+            if (auxiliaryKeyBar != null) auxiliaryKeyBar.applyTheme(theme);
+            if (drawerPanel != null) drawerPanel.applyTheme(theme);
         } catch (Exception e) {
             android.util.Log.w("TerminalActivity", "appearance apply failed", e);
+        }
+    }
+
+    /** Repaints the session header, drawer handle and offline card with the active theme. */
+    private void applyChromeColors(AppTheme theme) {
+        if (sessionHeader != null) {
+            sessionHeader.setBackgroundColor(theme.getSurface());
+        }
+        if (tvSessionTitle != null) {
+            tvSessionTitle.setTextColor(theme.getTerminalForeground());
+        }
+        if (btnDrawerHandle != null) {
+            btnDrawerHandle.setTextColor(theme.getAccent());
+            btnDrawerHandle.setBackground(createPillBackground(theme.getSurface(), theme.getGlow(), 8f));
+        }
+        if (tvOfflineTitle != null) tvOfflineTitle.setTextColor(theme.getPrimary());
+        if (tvOfflineMessage != null) tvOfflineMessage.setTextColor(theme.getText());
+        if (btnOfflineAction != null) {
+            btnOfflineAction.setTextColor(theme.getText());
+            btnOfflineAction.setBackground(createPillBackground(theme.getPrimary(), theme.getPrimary(), 12f));
+        }
+        if (btnOfflineBack != null) {
+            btnOfflineBack.setTextColor(theme.getTextDim());
+            btnOfflineBack.setBackground(createPillBackground(theme.getSurface(), theme.getGlow(), 10f));
         }
     }
 
@@ -765,28 +790,29 @@ public class TerminalActivity extends Activity {
     }
 
     private View buildOfflineCardView() {
+        AppTheme theme = themeStore.resolve();
         LinearLayout container = new LinearLayout(this);
         container.setOrientation(LinearLayout.VERTICAL);
         container.setGravity(Gravity.CENTER);
         container.setPadding(dpToPx(24), dpToPx(24), dpToPx(24), dpToPx(24));
-        container.setBackgroundColor(DraculaPalette.BACKGROUND);
+        container.setBackgroundColor(theme.getBackground());
 
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setGravity(Gravity.CENTER);
         card.setPadding(dpToPx(24), dpToPx(24), dpToPx(24), dpToPx(24));
-        card.setBackground(createPillBackground(0xFF282A36, 0xFF44475A, 16f));
+        card.setBackground(createPillBackground(theme.getSurface(), theme.getGlow(), 16f));
 
         tvOfflineTitle = new TextView(this);
         tvOfflineTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
-        tvOfflineTitle.setTextColor(0xFFFF79C6);
+        tvOfflineTitle.setTextColor(theme.getPrimary());
         tvOfflineTitle.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         tvOfflineTitle.setGravity(Gravity.CENTER);
         card.addView(tvOfflineTitle);
 
         tvOfflineMessage = new TextView(this);
         tvOfflineMessage.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
-        tvOfflineMessage.setTextColor(0xFFF8F8F2);
+        tvOfflineMessage.setTextColor(theme.getText());
         tvOfflineMessage.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams msgLp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -795,18 +821,18 @@ public class TerminalActivity extends Activity {
 
         btnOfflineAction = new Button(this, null, android.R.attr.buttonStyleSmall);
         btnOfflineAction.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
-        btnOfflineAction.setTextColor(DraculaPalette.FOREGROUND);
+        btnOfflineAction.setTextColor(theme.getText());
         btnOfflineAction.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-        btnOfflineAction.setBackground(createPillBackground(0xFF6272A4, 0xFFBD93F9, 12f));
+        btnOfflineAction.setBackground(createPillBackground(theme.getPrimary(), theme.getPrimary(), 12f));
         btnOfflineAction.setPadding(dpToPx(20), dpToPx(10), dpToPx(20), dpToPx(10));
         card.addView(btnOfflineAction);
 
         btnOfflineBack = new Button(this, null, android.R.attr.buttonStyleSmall);
         btnOfflineBack.setText("返回实例列表");
         btnOfflineBack.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
-        btnOfflineBack.setTextColor(DraculaPalette.COMMENT);
+        btnOfflineBack.setTextColor(theme.getTextDim());
         btnOfflineBack.setTypeface(Typeface.MONOSPACE);
-        btnOfflineBack.setBackground(createPillBackground(0xFF21222C, 0xFF44475A, 10f));
+        btnOfflineBack.setBackground(createPillBackground(theme.getSurface(), theme.getGlow(), 10f));
         btnOfflineBack.setPadding(dpToPx(16), dpToPx(8), dpToPx(16), dpToPx(8));
         LinearLayout.LayoutParams backLp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);

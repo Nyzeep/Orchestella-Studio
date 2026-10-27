@@ -57,7 +57,7 @@ object ThemeColors {
             0xD62828, 0x0047AB, 0xBD93F9, 0x007CFF, 0x00A1FF, 0xCBA6F7 -> Role.PRIMARY
             0xFDBB24, 0x8BE9FD, 0x00F6FF, 0xFFFF79, 0xFF79C6 -> Role.ACCENT
             0x8E929B, 0x9399B2, 0x6272A4, 0x8B949E, 0xA19E9A, 0x6B7280,
-            0x9CA3AF, 0xAAAAAA, 0x888888 -> Role.MUTED
+            0x9CA3AF, 0xAAAAAA, 0x888888, 0xCCCCCC -> Role.MUTED
             else -> if (isNeutral(rgb) && luminance(source) in 0.08..0.65) Role.MUTED else Role.TEXT
         }
     }
@@ -66,6 +66,9 @@ object ThemeColors {
         val rgb = source and 0x00FFFFFF
         return when (rgb) {
             0x0D0E11, 0x0C1017, 0x282A36, 0x07080A -> Role.BACKGROUND
+            // Audit S3 blind spots: legacy card/surface tints pinned to SURFACE so
+            // they no longer ride on the neutral-luminance heuristic band.
+            0x121318, 0x0B0C0F, 0x0C0D10, 0x0D0E12, 0x0E0F14, 0x1F2026, 0x1E2028 -> Role.SURFACE
             0xF5F4F0, 0xF8F8F2, 0xFFFFFF -> Role.TEXT
             0x2E323B, 0x333333 -> Role.OUTLINE
             else -> when (val role = textRole(source)) {
