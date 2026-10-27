@@ -28,6 +28,8 @@
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include "cc1_defaults.h"
+
 namespace fl {
 namespace pvm {
 namespace {
@@ -102,6 +104,16 @@ public:
         storage.emplace_back("-emit-obj");
         storage.emplace_back("-x");
         storage.push_back(request.language == "c++" ? "c++-cpp-output" : "cpp-output");
+
+        // The driver injects its codegen defaults *before* -cc1; a direct -cc1
+        // call inherits only cc1's own defaults, which are not the same. The
+        // two families that change the object live in cc1_codegen_defaults()
+        // (unwind tables -> .eh_frame, and C++ exceptions), and they come
+        // first so any allow-listed job flag still wins.
+        for (const std::string& flag :
+             cc1_codegen_defaults(request.language, request.flags)) {
+            storage.push_back(flag);
+        }
         // No "-fno-crash-diagnostics" here: it is a driver option, and -cc1
         // rejects it as an unknown argument, which made CreateFromArgs fail for
         // every single job (DV-PVM-02). The payload has no writable directory
