@@ -1110,11 +1110,17 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
         if args.compare_script:
             compared_tail = ""
             try:
+                # --no-link: the objects are aarch64 and the analysis host
+                # is Windows/mingw, where both candidates fail to link and the
+                # four-level path can only answer INCONCLUSIVE. The static path
+                # judges the same two objects on .text bytes plus external
+                # symbol names, and --expect-arch turns a foreign-machine
+                # object (the 608 B x86-64 fake-engine stub) into DIFFERENT.
                 compared = subprocess.run(
                     [sys.executable, args.compare_script,
                      "--a", str(round_work / "cross.o"),
                      "--b", str(round_work / "ref.o"),
-                     "--fixtures", args.fixtures, "--no-run"],
+                     "--no-link", "--expect-arch", "aarch64"],
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                     encoding="utf-8", errors="replace", timeout=300)
                 lines = (compared.stdout or "").strip().splitlines()

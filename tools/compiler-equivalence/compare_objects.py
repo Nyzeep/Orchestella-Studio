@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Object-file equivalence judgement (PVM-05).
+"""Object-file equivalence judgement (PVM-05, PVM-12).
 
 Replaces the AX-06 SHA-256 criterion. Two object files count as equivalent
 when they are indistinguishable in every way that matters for the linked
@@ -12,11 +12,25 @@ program:
 4. WHITELIST remaining section bytes agree, except .comment/.debug_* and
              path-like strings (build directories, __FILE__ remnants).
 
+PVM-12 adds a linker-free path (--no-link) for cross-target objects, where
+levels 1-2 can never run on the analysis host:
+
+    A. ARCHITECTURE  both objects must name the same e_machine; a mismatch is
+                     "not comparable" (INCONCLUSIVE), never "not equivalent";
+    B. TEXT          the .text section bytes must hash to the same SHA-256;
+    C. SYMBOLS       `nm -g --defined-only` name sets must be equal.
+
+Only .text and external symbol names are compared on purpose: the remote
+object can legitimately lack .eh_frame/.rela.eh_frame (that is the open C++
+question, not a code difference), so comparing the section set would report
+DIFFERENT for objects whose machine code is byte-identical.
+
 Verdicts, printed on the first line of stdout:
 
-    EQUIVALENT     all four levels passed
+    EQUIVALENT     every applied level passed
     DIFFERENT      a real difference; the detail line names the first one
-    INCONCLUSIVE   a required host tool or fixture is missing; never guess
+    INCONCLUSIVE   a required host tool or fixture is missing, or the two
+                   objects address different machines; never guess
 
 Exit codes: 0 EQUIVALENT, 1 DIFFERENT, 2 INCONCLUSIVE, 3 usage error.
 
@@ -29,6 +43,7 @@ parse them.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import re
 import shutil
 import struct
@@ -52,6 +67,19 @@ WHITELIST_SECTION_PREFIXES = (".comment", ".debug")
 _PATH_RE = re.compile(r"^[\w\-. +@()（）\\/:]+$", re.UNICODE)
 
 RUN_TIMEOUT_SECONDS = 30
+
+# e_machine values worth naming in a verdict line; anything else prints the raw
+# number so an unexpected target is still visible.
+MACHINE_NAMES = {
+    3: "i386",
+    8: "mips",
+    20: "ppc",
+    21: "ppc64",
+    40: "arm",
+    62: "x86-64",
+    183: "aarch64",
+    243: "riscv",
+}
 
 
 class ToolMissing(Exception):
@@ -273,6 +301,119 @@ def sections_equivalent(a_sections: list[tuple[str, bytes]],
 
 
 # ---------------------------------------------------------------------------
+# The linker-free judgement (PVM-12): architecture, .text bytes, symbol names
+
+
+def elf_architecture(path: Path) -> tuple[int, str]:
+    """(e_machine, printable name) from the ELF header alone; no readelf."""
+    data = path.read_bytes()
+    if len(data) < 0x40 or data[:4] != b"\x7fELF":
+        raise ToolError(f"{path.name} is not an ELF file")
+    if data[4] not in (1, 2):
+        raise ToolError(f"{path.name}: unknown ELF class")
+    endian = "<" if data[5] == 1 else ">"
+    machine = struct.unpack_from(endian + "H", data, 0x12)[0]
+    return machine, MACHINE_NAMES.get(machine, f"e_machine={machine}")
+
+
+def section_bytes(path: Path, name: str) -> bytes:
+    """Raw bytes of one section; missing sections read as empty."""
+    return dict(read_elf_sections(path)).get(name, b"")
+
+
+def external_symbol_names(nm: str, obj: Path) -> list[str]:
+    """Sorted names of defined global symbols (`nm -g --defined-only`).
+
+    Global-only is the reproducible criterion the DV-PVM-02 round used
+    (2001/2001). It also drops AArch64 mapping symbols ($x/$d/$c), which are
+    toolchain artifacts emitted per section kind: a remote object without
+    .eh_frame legitimately carries one $d fewer, and that is not a symbol
+    difference.
+    """
+    result = _run([nm, "-g", "--defined-only", str(obj)])
+    if result.returncode != 0:
+        detail = result.stderr.decode("utf-8", "replace").strip()
+        raise ToolError(f"nm failed on {obj.name}: {detail[:200]}")
+    names = []
+    for line in result.stdout.decode("utf-8", "replace").splitlines():
+        match = re.match(r"^\s*[0-9A-Fa-f]+\s+(\S)\s+(.+?)\s*$", line)
+        if match:
+            names.append(match.group(2))
+    return sorted(names)
+
+
+def compare_objects_static(
+    a_path: Path,
+    b_path: Path,
+    nm: str | None = None,
+    expect_arch: str | None = None,
+) -> tuple[str, str]:
+    """Linker-free judgement: same architecture, same .text bytes, same symbols.
+
+    Returns (verdict, detail). The detail always carries both SHA-256 digests
+    and both symbol counts so the verdict can be recomputed by hand.
+
+    Two objects for different machines are "not comparable" (INCONCLUSIVE):
+    byte equality across architectures says nothing about code quality, and
+    calling it DIFFERENT would be a false alarm. Pass expect_arch when the job
+    target is known — then an object for another machine is DIFFERENT, which is
+    how a 608-byte x86-64 fake-engine stub gets caught.
+    """
+    for label, path in (("a", a_path), ("b", b_path)):
+        if not path.is_file():
+            return INCONCLUSIVE, f"object {label} does not exist: {path}"
+
+    try:
+        machine_a, arch_a = elf_architecture(a_path)
+        machine_b, arch_b = elf_architecture(b_path)
+    except ToolError as error:
+        return INCONCLUSIVE, str(error)
+    if expect_arch is not None:
+        for label, arch in (("a", arch_a), ("b", arch_b)):
+            if arch != expect_arch:
+                return DIFFERENT, (
+                    f"object {label} is {arch}, expected {expect_arch}: the compile "
+                    "service returned an object for another machine")
+    if machine_a != machine_b:
+        return INCONCLUSIVE, (
+            f"not comparable: architecture differs (a={arch_a}, b={arch_b}); "
+            "these objects address different machines, so byte equality is meaningless "
+            "(pass --expect-arch to turn an off-target object into a verdict)")
+
+    try:
+        text_a = section_bytes(a_path, ".text")
+        text_b = section_bytes(b_path, ".text")
+    except ToolError as error:
+        return INCONCLUSIVE, str(error)
+    digest_a = hashlib.sha256(text_a).hexdigest()
+    digest_b = hashlib.sha256(text_b).hexdigest()
+    if digest_a != digest_b:
+        return DIFFERENT, (
+            f".text differs: a sha256={digest_a} ({len(text_a)} B), "
+            f"b sha256={digest_b} ({len(text_b)} B); other sections are not compared")
+
+    nm = nm or find_tool("nm")
+    if nm is None:
+        return INCONCLUSIVE, "nm is missing; the symbol set cannot be compared"
+    try:
+        symbols_a = external_symbol_names(nm, a_path)
+        symbols_b = external_symbol_names(nm, b_path)
+    except ToolError as error:
+        return INCONCLUSIVE, str(error)
+    if symbols_a != symbols_b:
+        only_a = sorted(set(symbols_a) - set(symbols_b))[:3]
+        only_b = sorted(set(symbols_b) - set(symbols_a))[:3]
+        return DIFFERENT, (
+            f"external symbol sets differ (a={len(symbols_a)}, b={len(symbols_b)}): "
+            f"only in a {only_a}, only in b {only_b}")
+
+    return EQUIVALENT, (
+        f".text sha256={digest_a} on both ({len(text_a)} B); "
+        f"external symbols {len(symbols_a)}/{len(symbols_b)} identical; "
+        f"architecture {arch_a}; linker levels not used (--no-link)")
+
+
+# ---------------------------------------------------------------------------
 # The four-level judgement
 
 
@@ -373,11 +514,12 @@ def compare_objects(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Four-level object-file equivalence judgement (PVM-05)")
+        description="Object-file equivalence judgement (PVM-05 / PVM-12)")
     parser.add_argument("--a", required=True, help="first candidate .o")
     parser.add_argument("--b", required=True, help="second candidate .o")
-    parser.add_argument("--fixtures", required=True,
-                        help="fixture directory with main.c (or main.cpp)")
+    parser.add_argument("--fixtures", default=None,
+                        help="fixture directory with main.c (or main.cpp); required "
+                             "unless --no-link is given")
     parser.add_argument("--cc", default=None, help="override the C linker driver")
     parser.add_argument("--cxx", default=None, help="override the C++ linker driver")
     parser.add_argument("--nm", default=None, help="override nm")
@@ -387,13 +529,42 @@ def main(argv: list[str] | None = None) -> int:
                              "target another machine (the DV-PVM-02 payload emits "
                              "aarch64 ELF): the host cannot execute them. The "
                              "verdict then rests on levels 1, 3 and 4 and says so.")
+    parser.add_argument("--no-link", action="store_true",
+                        help="linker-free path (PVM-12): same architecture, equal "
+                             ".text SHA-256, equal external symbol names. Use this "
+                             "for cross-target objects, where the host linker can "
+                             "never produce an executable.")
+    parser.add_argument("--expect-arch", default=None, metavar="ARCH",
+                        help="architecture the job targets (e.g. aarch64); an object "
+                             "for another machine is then DIFFERENT instead of "
+                             "'not comparable'. Only meaningful with --no-link.")
     args = parser.parse_args(argv)
 
-    verdict, detail = compare_objects(
-        Path(args.a), Path(args.b), Path(args.fixtures),
-        cc=args.cc, cxx=args.cxx, nm=args.nm, readelf=args.readelf,
-        run_behavior=not args.no_run,
-    )
+    if args.expect_arch is not None:
+        if args.expect_arch not in MACHINE_NAMES.values():
+            print("usage error: --expect-arch must be one of "
+                  + ", ".join(sorted(MACHINE_NAMES.values())), file=sys.stderr)
+            return 3
+        if not args.no_link:
+            print("usage error: --expect-arch only applies to --no-link", file=sys.stderr)
+            return 3
+
+    if args.no_link:
+        if args.fixtures is not None:
+            print("usage error: --fixtures has no meaning with --no-link", file=sys.stderr)
+            return 3
+        verdict, detail = compare_objects_static(
+            Path(args.a), Path(args.b), nm=args.nm, expect_arch=args.expect_arch)
+    else:
+        if args.fixtures is None:
+            print("usage error: --fixtures is required unless --no-link is given",
+                  file=sys.stderr)
+            return 3
+        verdict, detail = compare_objects(
+            Path(args.a), Path(args.b), Path(args.fixtures),
+            cc=args.cc, cxx=args.cxx, nm=args.nm, readelf=args.readelf,
+            run_behavior=not args.no_run,
+        )
     print(verdict)
     if detail:
         print(detail)
