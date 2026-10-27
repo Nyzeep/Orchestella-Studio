@@ -50,6 +50,7 @@ public class LogViewerActivity extends Activity {
     private String instanceId;
     private TextView logText;
     private File consoleLogFile;
+    private io.github.nyzeep.orchestella.ui.theme.AppTheme theme;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -76,7 +77,8 @@ public class LogViewerActivity extends Activity {
 
         android.widget.LinearLayout root = new android.widget.LinearLayout(this);
         root.setOrientation(android.widget.LinearLayout.VERTICAL);
-        root.setBackgroundColor(0xFF21222C);
+        theme = new io.github.nyzeep.orchestella.ui.theme.ThemeStore(this).resolve();
+        root.setBackgroundColor(theme.getBackground());
         root.setPadding(dp(8), 0, dp(8), 0);
         ViewCompat.setOnApplyWindowInsetsListener(root, (v, insets) -> {
             v.setPadding(dp(8), insets.getInsets(WindowInsetsCompat.Type.statusBars()).top + dp(8),
@@ -88,14 +90,14 @@ public class LogViewerActivity extends Activity {
         titleView.setText(title);
         titleView.setTextSize(17f);
         titleView.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-        titleView.setTextColor(DraculaPalette.FOREGROUND);
+        titleView.setTextColor(theme.getText());
         titleView.setPadding(dp(8), dp(8), dp(8), dp(8));
         root.addView(titleView);
 
         logText = new TextView(this);
         logText.setTypeface(Typeface.MONOSPACE);
         logText.setTextSize(11f);
-        logText.setTextColor(DraculaPalette.FOREGROUND);
+        logText.setTextColor(theme.getText());
         logText.setTextIsSelectable(true);
         logText.setPadding(dp(8), dp(4), dp(8), dp(16));
 
@@ -132,7 +134,7 @@ public class LogViewerActivity extends Activity {
         button.setText(label);
         button.setTextSize(12f);
         button.setTypeface(Typeface.MONOSPACE);
-        button.setTextColor(DraculaPalette.COLOR_CYAN);
+        button.setTextColor(theme.getAccent());
         button.setPadding(dp(14), dp(6), dp(14), dp(6));
         button.setOnClickListener(listener);
         android.widget.LinearLayout.LayoutParams lp = new android.widget.LinearLayout.LayoutParams(
