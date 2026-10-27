@@ -401,13 +401,19 @@ public class MobileAuxiliaryKeyBar extends LinearLayout {
         return states;
     }
 
-    private static GradientDrawable keyShape(int fillColor, int strokeColor) {
+    private GradientDrawable keyShape(int fillColor, int strokeColor) {
         GradientDrawable gd = new GradientDrawable();
         gd.setShape(GradientDrawable.RECTANGLE);
         gd.setColor(fillColor);
-        gd.setCornerRadius(10f);
+        gd.setCornerRadius(keyCornerPx());
         gd.setStroke(2, strokeColor);
         return gd;
+    }
+
+    /** Global corner-radius token (dp) scaled to pixels; zero keeps square keys. */
+    private float keyCornerPx() {
+        float dp = new ThemeStore(getContext()).cornerRadiusDp();
+        return dp * getResources().getDisplayMetrics().density;
     }
 
     private static int dpToPx(Context context, int dp) {

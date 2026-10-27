@@ -348,12 +348,14 @@ public final class TerminalDrawerPanel extends LinearLayout {
                 TypedValue.COMPLEX_UNIT_DIP, dp, getResources().getDisplayMetrics());
     }
 
-    private static GradientDrawable createPillBackground(
+    private GradientDrawable createPillBackground(
             int fillColor, int strokeColor, float cornerRadiusDp) {
         GradientDrawable gd = new GradientDrawable();
         gd.setShape(GradientDrawable.RECTANGLE);
         gd.setColor(fillColor);
-        gd.setCornerRadius(cornerRadiusDp * 2.5f);
+        // The cornerRadiusDp parameter is legacy: the global token now decides the rounding.
+        float radiusDp = new ThemeStore(getContext()).cornerRadiusDp();
+        gd.setCornerRadius(radiusDp * getResources().getDisplayMetrics().density);
         gd.setStroke(2, strokeColor);
         return gd;
     }
