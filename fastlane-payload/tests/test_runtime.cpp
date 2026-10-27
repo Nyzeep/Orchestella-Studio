@@ -7,6 +7,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstring>
 #include <filesystem>
@@ -16,6 +17,7 @@
 
 #include "fastlane/protocol.h"
 #include "fastlane/runtime.h"
+#include "fastlane/stop_flag.h"
 #include "fastlane/storage.h"
 #include "fastlane/tar.h"
 
@@ -385,4 +387,77 @@ FL_TEST(runtime_controls_pty_exports_and_imports) {
 
     ::close(fd);
     runtime.stop();
+}
+
+// --- process reuse --------------------------------------------------------
+//
+// Runtime::run() used to latch the process-wide stop flag and `stopped_`, so a
+// second run() in the same process exited before its first loop iteration and
+// its stop() was short-circuited. Both tests below fail on that code.
+
+FL_TEST(runtime_stop_state_does_not_outlive_one_run) {
+    fl::StopFlag flag;
+    flag.begin_run();
+    FL_CHECK(!flag.requested());
+
+    // A finished run's stop() is spent: run #2 must start un-stopped.
+    flag.request();
+    flag.end_run();
+    flag.begin_run();
+    FL_CHECK(!flag.requested());
+    FL_CHECK(!flag.signal_pending());
+
+    // A signal that arrived before run() is *not* spent: it still stops it...
+    flag.request_from_signal();
+    FL_CHECK(flag.requested());
+    flag.begin_run();
+    FL_CHECK(flag.requested());
+    // ...and that run consumes it, so one signal does not stop every later run.
+    flag.end_run();
+    flag.begin_run();
+    FL_CHECK(!flag.requested());
+}
+
+FL_TEST(runtime_run_after_stop_does_not_return_immediately) {
+    TempDir temp;
+    const auto config = make_config(temp, temp.path + "/sockets");
+    fl::Runtime runtime(config);
+    const std::string control = runtime.socket_path(config.control_port);
+
+    std::atomic<bool> returned{false};
+    std::thread first([&runtime, &returned]() {
+        runtime.run();
+        returned.store(true);
+    });
+    // The control socket is bound inside start(), i.e. after begin_run(): a
+    // stop() after this point cannot race the top of run().
+    for (int tick = 0; tick < 500 && ::access(control.c_str(), F_OK) != 0; ++tick) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    FL_CHECK(::access(control.c_str(), F_OK) == 0);
+    runtime.stop();
+    first.join();
+    FL_CHECK(returned.load());
+
+    // Run #2 in the same process: the first run's stop must not be inherited.
+    // What this pins is the latch, not full service reuse: a reused runtime
+    // keeps `started_`, so run #2 does not re-bind its listeners. Proving that
+    // it *serves* again would need start()/stop() re-entrancy, which is a
+    // different change.
+    returned.store(false);
+    std::thread second([&runtime, &returned]() {
+        runtime.run();
+        returned.store(true);
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(400));
+    const bool returned_early = returned.load();
+    FL_CHECK(!returned_early);
+    // stop() only acts once run #2 cleared `stopped_`; retry so a schedule
+    // that delayed run #2 past the window above cannot hang the join.
+    for (int tick = 0; tick < 500 && !returned.load(); ++tick) {
+        runtime.stop();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    second.join();
+    FL_CHECK(returned.load());
 }
