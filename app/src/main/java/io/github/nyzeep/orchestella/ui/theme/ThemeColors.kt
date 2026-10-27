@@ -69,6 +69,10 @@ object ThemeColors {
             // Audit S3 blind spots: legacy card/surface tints pinned to SURFACE so
             // they no longer ride on the neutral-luminance heuristic band.
             0x121318, 0x0B0C0F, 0x0C0D10, 0x0D0E12, 0x0E0F14, 0x1F2026, 0x1E2028 -> Role.SURFACE
+            // Session 17: theConstructivist dashboard XML fill family. #16171D doubles as
+            // the light theme's text ink, so these must resolve to SURFACE explicitly
+            // (see isLegacySurfaceHex for the inference-order guard).
+            0x16171D, 0x1A1C22, 0x0C0D11 -> Role.SURFACE
             0xF5F4F0, 0xF8F8F2, 0xFFFFFF -> Role.TEXT
             0x2E323B, 0x333333 -> Role.OUTLINE
             else -> when (val role = textRole(source)) {
@@ -77,6 +81,19 @@ object ThemeColors {
             }
         }
     }
+
+    /**
+     * True for the legacy dark-surface hex family used across dashboard XML drawables.
+     * [0x16171D][0x16171D] collides with light themes' text ink, so background-role
+     * inference must consult this set before any exact "bg == theme.text" match.
+     */
+    fun isLegacySurfaceHex(argb: Int): Boolean =
+        (argb and 0x00FFFFFF) in legacySurfaceHexes
+
+    private val legacySurfaceHexes = setOf(
+        0x16171D, 0x1A1C22, 0x0C0D11, 0x121318, 0x0B0C0F,
+        0x0C0D10, 0x0D0E12, 0x0E0F14, 0x1F2026, 0x1E2028,
+    )
 
     /** Only this dashboard wrapper inherits its outer page's wallpaper; cards still paint surfaces. */
     fun isWallpaperContentWrapper(viewName: String, ancestorName: String): Boolean =

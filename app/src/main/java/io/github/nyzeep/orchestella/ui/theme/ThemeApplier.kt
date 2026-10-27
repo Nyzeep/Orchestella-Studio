@@ -510,13 +510,17 @@ object ThemeApplier {
         else -> null
     }
 
-    private fun inferBackgroundRole(color: Int, theme: AppTheme): ColorRole = when (color) {
-        Color.TRANSPARENT -> ColorRole.SURFACE
-        theme.background -> ColorRole.BACKGROUND
-        theme.surface, theme.surfaceTranslucent -> ColorRole.SURFACE
-        theme.primary -> ColorRole.PRIMARY
-        theme.accent -> ColorRole.ACCENT
-        theme.text -> ColorRole.TEXT
+    private fun inferBackgroundRole(color: Int, theme: AppTheme): ColorRole = when {
+        color == Color.TRANSPARENT -> ColorRole.SURFACE
+        color == theme.background -> ColorRole.BACKGROUND
+        color == theme.surface || color == theme.surfaceTranslucent -> ColorRole.SURFACE
+        color == theme.primary -> ColorRole.PRIMARY
+        color == theme.accent -> ColorRole.ACCENT
+        // Legacy XML surface hexes (e.g. #16171D) collide with light themes' text ink;
+        // the explicit surface table must win over the text-ink exact match below or
+        // light-mode cold starts paint dashboard cards with dark ink (session 17).
+        ThemeColors.isLegacySurfaceHex(color) -> ColorRole.SURFACE
+        color == theme.text -> ColorRole.TEXT
         else -> ThemeColors.backgroundRole(color)
     }
 
