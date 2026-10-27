@@ -88,6 +88,19 @@ public final class DraculaPalette {
     }
 
     /**
+     * Softens a foreground color 25% toward the current terminal background. Used for
+     * bold default-color runs (boot/system logs) so their heavier font weight does not
+     * read as a glaring light block on dark themes.
+     */
+    public static int softenForeground(int color) {
+        int bg = themedBackground();
+        int r = (int) Math.round(((color >> 16) & 0xFF) * 0.75 + ((bg >> 16) & 0xFF) * 0.25);
+        int g = (int) Math.round(((color >> 8) & 0xFF) * 0.75 + ((bg >> 8) & 0xFF) * 0.25);
+        int b = (int) Math.round((color & 0xFF) * 0.75 + (bg & 0xFF) * 0.25);
+        return 0xFF000000 | (r << 16) | (g << 8) | b;
+    }
+
+    /**
      * Resolves ANSI 16 color index (0-15).
      */
     public static int getAnsi16(int index) {

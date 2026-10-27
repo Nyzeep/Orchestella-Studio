@@ -34,6 +34,20 @@ class ThemeColorsTest {
         }
     }
 
+    @Test fun legacyDarkSurfaceHexesResolveToSurfaceEvenWhenTheyMatchLightTextInk() {
+        // Session 17 root cause: #16171D is both every dashboard XML card fill and the
+        // light Constructivist text ink. Role inference must pin these to SURFACE so
+        // light themes repaint them light instead of "text ink" dark blocks.
+        for (hex in intArrayOf(0x16171D, 0x1A1C22, 0x0C0D11)) {
+            assertEquals("0x" + hex.toString(16), ThemeColors.Role.SURFACE,
+                ThemeColors.backgroundRole(0xFF000000.toInt() or hex))
+            assertTrue("isLegacySurfaceHex 0x" + hex.toString(16),
+                ThemeColors.isLegacySurfaceHex(0xFF000000.toInt() or hex))
+        }
+        assertFalse(ThemeColors.isLegacySurfaceHex(0xFFFFFFFF.toInt()))
+        assertFalse(ThemeColors.isLegacySurfaceHex(0xFFD62828.toInt()))
+    }
+
     @Test fun onlyNestedDashboardContentIsTransparentToThePageWallpaper() {
         assertTrue(ThemeColors.isWallpaperContentWrapper("root_container", "root_coordinator"))
         assertFalse(ThemeColors.isWallpaperContentWrapper("root_coordinator", "content"))

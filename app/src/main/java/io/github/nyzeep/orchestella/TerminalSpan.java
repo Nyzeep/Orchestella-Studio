@@ -72,12 +72,21 @@ public final class TerminalSpan {
 
     /**
      * Resolves the effective foreground color, taking Dracula theme defaults and inverse into account.
+     *
+     * <p>Bold runs with no explicit color (typical of systemd/boot logs) are softened 25%
+     * toward the terminal background: the bold font weight already emphasizes them, and the
+     * raw near-white foreground made such logs read as glaring light blocks on dark themes
+     * (user-reported, session 17). Explicit colors and plain text keep the exact palette.
      */
     public int getEffectiveForegroundColor() {
         if (inverse) {
             return backgroundColor != null ? backgroundColor : DraculaPalette.themedBackground();
         }
-        return foregroundColor != null ? foregroundColor : DraculaPalette.themedForeground();
+        if (foregroundColor != null) {
+            return foregroundColor;
+        }
+        int themed = DraculaPalette.themedForeground();
+        return bold ? DraculaPalette.softenForeground(themed) : themed;
     }
 
     /**

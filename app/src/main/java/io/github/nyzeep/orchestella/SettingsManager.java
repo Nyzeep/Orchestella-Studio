@@ -25,6 +25,7 @@ public final class SettingsManager {
     public static final String KEY_LAST_ACTIVE_INSTANCE_ID = "last_active_instance_id";
     public static final String KEY_ONBOARDING_COMPLETED = "onboarding_completed";
     public static final String KEY_TERMINAL_CURSOR_BLINK = "terminal_cursor_blink";
+    public static final String KEY_ACCELERATOR_LANE = "accelerator_lane_enabled";
 
     private final SharedPreferences preferences;
 
@@ -121,6 +122,18 @@ public final class SettingsManager {
 
     public void setLastActiveInstanceId(String instanceId) {
         preferences.edit().putString(KEY_LAST_ACTIVE_INSTANCE_ID, instanceId).apply();
+    }
+
+    /**
+     * Accelerator lane runtime switch: defaults to the build-time flag, and an
+     * explicit user toggle wins over the default once stored (orchestella_settings).
+     */
+    public boolean isAcceleratorLaneEnabled() {
+        return preferences.getBoolean(KEY_ACCELERATOR_LANE, BuildConfig.ACCELERATOR_LANE_ENABLED);
+    }
+
+    public void setAcceleratorLaneEnabled(boolean enabled) {
+        preferences.edit().putBoolean(KEY_ACCELERATOR_LANE, enabled).apply();
     }
 
     /** Affects the terminal renderer; defaults to the existing blinking behavior. */
