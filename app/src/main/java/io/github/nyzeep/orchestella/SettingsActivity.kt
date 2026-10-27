@@ -22,6 +22,8 @@ import io.github.nyzeep.orchestella.ui.theme.ThemeColors
 import io.github.nyzeep.orchestella.ui.theme.ThemeStore
 import androidx.activity.result.contract.ActivityResultContracts
 import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator
+import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorMode
+import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorPolicy
 import java.util.concurrent.Executors
 
 /**
@@ -50,6 +52,8 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var txtAvfBadge: TextView
     private lateinit var txtAvfDetails: TextView
     private lateinit var switchCursorBlink: MaterialSwitch
+    private lateinit var switchAccelLane: MaterialSwitch
+    private lateinit var txtAccelStatus: TextView
     private lateinit var themeStore: ThemeStore
     private val backgroundPicker = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -106,6 +110,7 @@ class SettingsActivity : AppCompatActivity() {
         setupAvfSection()
         setupTerminalSection()
         setupThemeSection()
+        setupAcceleratorSection()
         refreshAppearance()
     }
 
@@ -133,6 +138,7 @@ class SettingsActivity : AppCompatActivity() {
         if (::themeStore.isInitialized) {
             refreshAppearance()
             setupAvfSection()
+            setupAcceleratorSection()
         }
     }
 
@@ -287,6 +293,69 @@ class SettingsActivity : AppCompatActivity() {
         switchCursorBlink.isChecked = settingsManager.isTerminalCursorBlinkEnabled
         switchCursorBlink.setOnCheckedChangeListener { _, isChecked ->
             settingsManager.isTerminalCursorBlinkEnabled = isChecked
+        }
+    }
+
+    /**
+     * Accelerator lane status + runtime switch. Status mirrors the launch-time
+     * decision: the build flag is a hard gate, the stored user value decides
+     * otherwise, and an enabled lane is probed with the same facts + policy the
+     * dispatcher consults (no separate source of truth).
+     */
+    private fun setupAcceleratorSection() {
+        val switch = findViewById<MaterialSwitch>(R.id.switch_settings_accel_lane) ?: return
+        val status = findViewById<TextView>(R.id.txt_settings_accel_status) ?: return
+        switchAccelLane = switch
+        txtAccelStatus = status
+
+        val buildEnabled = BuildConfig.ACCELERATOR_LANE_ENABLED
+        val userEnabled = settingsManager.isAcceleratorLaneEnabled()
+        // Assign state before the listener so a re-run never re-persists.
+        switch.isChecked = userEnabled && buildEnabled
+        switch.isEnabled = buildEnabled
+        when {
+            !buildEnabled -> {
+                txtAccelStatus.text = "pVM 编译加速：不可用（构建未含加速组件）"
+                txtAccelStatus.setTextColor(getColor(R.color.zone_yellow))
+            }
+            !userEnabled -> {
+                txtAccelStatus.text = "pVM 编译加速：已停用（你在设置中关闭）"
+                txtAccelStatus.setTextColor(getColor(R.color.zone_red))
+            }
+            else -> probeAcceleratorLane()
+        }
+        switch.setOnCheckedChangeListener { _, isChecked ->
+            settingsManager.setAcceleratorLaneEnabled(isChecked)
+            if (isChecked) probeAcceleratorLane() else {
+                txtAccelStatus.text = "pVM 编译加速：已停用（你在设置中关闭）"
+                txtAccelStatus.setTextColor(getColor(R.color.zone_red))
+            }
+        }
+    }
+
+    /** Best-effort lane availability probe; identical source to the dispatch verdict. */
+    private fun probeAcceleratorLane() {
+        txtAccelStatus.text = "pVM 编译加速：已启用（检测车道…）"
+        txtAccelStatus.setTextColor(getColor(R.color.zone_yellow))
+        backgroundExecutor.execute {
+            val laneUsable = try {
+                val facts = AndroidAcceleratorFactProvider.create(this).read()
+                AcceleratorPolicy.decide(
+                    facts, AcceleratorLaunchDispatcher.GUEST_COMPILER_TRIPLE
+                ).mode() == AcceleratorMode.QEMU_PLUS_ACCEL
+            } catch (_: RuntimeException) {
+                false
+            }
+            runOnUiThread {
+                if (!::txtAccelStatus.isInitialized) return@runOnUiThread
+                if (laneUsable) {
+                    txtAccelStatus.text = "pVM 编译加速：已启用（车道可用，实例启动时生效）"
+                    txtAccelStatus.setTextColor(getColor(R.color.zone_green))
+                } else {
+                    txtAccelStatus.text = "pVM 编译加速：已启用（车道暂不可用，实例启动时回退普通编译）"
+                    txtAccelStatus.setTextColor(getColor(R.color.zone_yellow))
+                }
+            }
         }
     }
 
