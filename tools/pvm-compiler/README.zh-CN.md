@@ -105,11 +105,29 @@ cmake -S fastlane-payload/pvm-service -B build/pvm-service
 cmake --build build/pvm-service
 ctest --test-dir build/pvm-service --output-on-failure
 
-# 2) 产品构建里的 Android payload（FakeEngine 口径，默认不构建）
+# 2) 产品构建里的 Android payload（QA / 真机口径 = CLANG 引擎）
+#    ⚠️ 引擎是二值开关，默认值是 FAKE。不写 -DFL_PVM_COMPILER_ENGINE=CLANG，
+#       构建出的 payload 会回一个固定 608 B 的 x86-64 桩对象
+#       （fake_engine.cpp 的 kFixedObject，ELF e_machine=0x3e），而整条链路
+#       STAT=0、DOTO 回包长度自洽、rc=0、对象落盘「全部成功」。
+#       历史上「以为远端通了」正是这个默认值造成的，真机一轮白跑。
+cmake -S fastlane-payload -B build/payload-svc-clang \
+  -DCMAKE_TOOLCHAIN_FILE=<ndk>/build/cmake/android.toolchain.cmake \
+  -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-34 \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DFL_BUILD_PVM_COMPILER_PAYLOAD=ON \
+  -DFL_PVM_COMPILER_ENGINE=CLANG \
+  -DFL_PVM_COMPILER_LLVM_LIBS=<llvm-out>/lib/arm64-v8a \
+  -DFL_PVM_COMPILER_LLVM_SRC=<llvm-project-src-root> \
+  -DFL_PVM_COMPILER_LLVM_BUILD=<arm64-cross-build-tree>
+cmake --build build/payload-svc-clang --target pvm_compiler_payload
+
+# 2b) 只演练协议链路时才显式用 FAKE（CI 口径）：FAKE 产物不得进加速车道
 cmake -S fastlane-payload -B build/payload-svc \
   -DCMAKE_TOOLCHAIN_FILE=<ndk>/build/cmake/android.toolchain.cmake \
   -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-34 \
-  -DFL_BUILD_PVM_COMPILER_PAYLOAD=ON
+  -DFL_BUILD_PVM_COMPILER_PAYLOAD=ON \
+  -DFL_PVM_COMPILER_ENGINE=FAKE
 cmake --build build/payload-svc --target pvm_compiler_payload
 
 # 3) 宿主 e2e：golden 字节 → 真实 TCP → 服务 → .o（独立 Python 客户端，非 C++ 自证）
@@ -137,6 +155,7 @@ bash tools/pvm-compiler/test-java-bridge-interop.sh
 | 字段 | 含义 |
 | --- | --- |
 | `schema` | 固定整数 `1`（字符串 `"1"` 不接受） |
+| `engine` | payload 的编译引擎，`clang` 或 `fake`（PVM-12 起必填，见下节） |
 | `compiler_version` | 编译器版本，如 `22.1.8`（构建期声明，不是运行时握手结果） |
 | `target_triple` | payload 编译期固化的 triple，当前取 `aarch64-unknown-linux-android`；生成器**不猜**，必须显式传 |
 | `vcpu_topology` | 恒为 `one_cpu` |
@@ -150,6 +169,7 @@ bash tools/pvm-compiler/test-java-bridge-interop.sh
 
 | 参数 | 默认 | 说明 |
 | --- | --- | --- |
+| `--engine` | 无（必填） | 声明 payload 的编译引擎：`fake`（CI 桩）或 `clang`（真 libclang 引擎） |
 | `--compiler-version` | 无（必填） | 写进 manifest |
 | `--target-triple` | 无（必填） | 写进 manifest |
 | `--payload-binary` | `libpvm_compiler_payload.so` | 须匹配 `[A-Za-z0-9._-]+\.so` |
@@ -175,15 +195,38 @@ python tools/pvm-compiler/assemble_payload_libs.py --verify-manifest build/pvm-c
 
 1. `assets/PVM-COMPILER-MANIFEST` 缺失；
 2. JSON 解析失败、非对象、`schema != 1`；
-3. 必填字段缺失或空串（`compiler_version` / `target_triple` / `payload_binary` /
-   `vcpu_topology` / `memory_mib` / `libs`）；`memory_mib` 越界、`payload_binary` 不合规；
+3. 必填字段缺失或空串（`engine` / `compiler_version` / `target_triple` / `payload_binary` /
+   `vcpu_topology` / `memory_mib` / `libs`）；`engine` 不在 `fake|clang` 里；`memory_mib` 越界、
+   `payload_binary` 不合规；
 4. `vcpu_topology != "one_cpu"`；
 5. 缺库（manifest 声明了但 `arm64-v8a/` 没有）、size 不符、sha256 不符；
 6. 多库（`arm64-v8a/` 里有 manifest 未声明的 `.so`）；
 7. `libs` 为空、条目重复、`sha256` 不是 64 位小写 hex。
 
 `--verify-manifest` 与生成参数（`--compiler-dir` / `--placeholder` / `--payload-dir` /
-`--manifest-out`）互斥，同时给会 exit 1。
+`--manifest-out` / `--engine`）互斥，同时给会 exit 1。
+
+### 引擎取证边界（PVM-12）
+
+**为什么 manifest 是宿主侧唯一能验证引擎的地方**：payload 自己那行
+`PVM_CSDL listening … engine=%s` 是 stderr，protected VM 里取不到
+（`Debug policy adb:false`，guest 日志不可达）。构建期能留下的、与 APK 同源的证据只有
+manifest。因此：
+
+1. `engine` 是**必填**参数，没有默认值——不写就 exit 1，不给「忘了写」留静默通道；
+2. `PVM_COMPILER_MANIFEST_OK` 那行 JSON 会带出 `engine`，**每轮真机前先看这一行**；
+3. 声明本身可以被写错，所以给了 `--payload-dir` 时生成器会拿 payload 的 `DT_NEEDED`
+   交叉核对：CLANG payload 链 `libclang-cpp.so`/`libLLVM.so`，FAKE 两个都不链。
+
+```bash
+# 声明 fake 但 payload 是 CLANG 构建的 → exit 1（反之亦然）
+FAIL libpvm_compiler_payload.so: engine=fake declared but the payload links libclang-cpp.so
+     (it was built with -DFL_PVM_COMPILER_ENGINE=CLANG)
+```
+
+边界（不要读成「已验证」）：没给 `--payload-dir` 时无法交叉核对，`engine` 只是声明；
+app 侧 `PvmCompilerManifest` 按设计忽略未知字段，**不会**因为 `engine=fake` 而拒绝该 payload
+——它是构建期证据，不是运行时门禁。
 
 Gradle 侧（`app/build.gradle.kts` 里 `orchestella.pvmCompiler.libDir` 的块内）：
 属性打开时强制 `<compilerRoot>/assets/PVM-COMPILER-MANIFEST` 存在，把
