@@ -25,20 +25,32 @@ REQUIRED_JOBS = {
     "apk-bin-gate",
     "payload-build",
     "payload-host",
+    "distccd-android-arm64",
 }
+# Mirror of the workflow's paths filters. Every entry here must appear under
+# both triggers; adding a path to the workflow without adding it here is fine,
+# dropping one from the workflow fails the gate.
 REQUIRED_PATH_FILTERS = {
     "protocol/**",
     "fastlane-toolbox/**",
+    "runtime/engine-fastlane/**",
     "runtime/fastlane-terminal/**",
     "runtime/fastlane-capability/**",
     "runtime/fastlane-proxy/**",
     "runtime/fastlane-storage/**",
     "runtime/fastlane-telemetry/**",
     "runtime/fastlane-distcc/**",
+    "runtime/contract/**",
     "tools/fastlane-build/**",
     "tools/qemu-tuning/**",
+    "tools/ci/**",
+    "tools/compiler-equivalence/**",
+    "fastlane-payload/**",
     "app/build.gradle.kts",
+    "build.gradle.kts",
     "settings.gradle.kts",
+    "gradle/**",
+    "gradle.properties",
     "NOTICE-fastlane.md",
     ".github/workflows/fastlane-zero-device.yml",
 }
@@ -235,6 +247,11 @@ def check_workflow(document: dict, root: Path | None = None) -> list[str]:
         problems.append("payload-build is missing the host fixture proof")
     if "build-payload.sh" not in payload:
         problems.append("payload-build is missing the real payload build hook")
+
+    distccd = all_run_text.get("distccd-android-arm64", "")
+    for required in ("build-distccd.sh", "check-distccd-artifact.sh"):
+        if required not in distccd:
+            problems.append(f"distccd-android-arm64 is missing: {required}")
 
     if re.search(r"\bmain\b", str(triggers.get("push", {})), flags=re.IGNORECASE) is None:
         problems.append("push trigger must target main")
