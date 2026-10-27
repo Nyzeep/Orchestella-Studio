@@ -452,6 +452,89 @@ class StaticComparisonTest(unittest.TestCase):
 
         self.assertEqual(3, code)
 
+    # --- producer fingerprint (PVM-13) -------------------------------------
+    #
+    # The static criteria (.text + symbols) cannot tell WHO produced an
+    # object: the cxx-3 round judged two locally re-compiled objects
+    # EQUIVALENT while the real remote job had failed. The .comment section
+    # names the producing compiler, so an expected-producer substring turns
+    # "equivalent bytes" into "equivalent bytes from the expected compiler".
+
+    def test_expect_producer_accepts_the_matching_comment(self):
+        a = self.write("cross.o", synthetic_object(extra_sections=(
+            (".comment", b"Android (7495987, based on r56) clang version 22.1.8\x00"),)))
+        b = self.write("ref.o", synthetic_object(extra_sections=(
+            (".comment", b"Alpine clang version 22.1.3\x00"),
+            (".eh_frame", b"\0" * 24))))
+
+        verdict, detail = compare_objects.compare_objects_static(
+            a, b, expect_producer="22.1.8")
+
+        self.assertEqual(verdict, compare_objects.EQUIVALENT, detail)
+
+    def test_expect_producer_rejects_a_foreign_producer(self):
+        # The exact shape that fooled the cxx round: both objects carry the
+        # chroot toolchain's fingerprint because distcc recompiled locally.
+        a = self.write("cross.o", synthetic_object(extra_sections=(
+            (".comment", b"Alpine clang version 22.1.3\x00"),)))
+        b = self.write("ref.o", synthetic_object(extra_sections=(
+            (".comment", b"Alpine clang version 22.1.3\x00"),)))
+
+        verdict, detail = compare_objects.compare_objects_static(
+            a, b, expect_producer="22.1.8")
+
+        self.assertEqual(verdict, compare_objects.DIFFERENT)
+        self.assertIn("not produced by the expected compiler", detail)
+        self.assertIn("22.1.8", detail)
+
+    def test_expect_producer_fails_closed_without_a_comment(self):
+        # A missing .comment must not pass silently: "cannot verify" is
+        # a rejection, never a pass.
+        a = self.write("cross.o", synthetic_object())
+        b = self.write("ref.o", synthetic_object(extra_sections=(
+            (".comment", b"clang version 22.1.8\x00"),)))
+
+        verdict, detail = compare_objects.compare_objects_static(
+            a, b, expect_producer="22.1.8")
+
+        self.assertEqual(verdict, compare_objects.DIFFERENT)
+        self.assertIn(".comment", detail)
+
+    def test_expect_producer_checks_only_the_object_under_test(self):
+        # --a is the object the payload produced; the local reference may
+        # carry another toolchain's .comment and must not be held to the
+        # payload's fingerprint (that is the real cross.o/ref.o shape).
+        a = self.write("cross.o", synthetic_object(extra_sections=(
+            (".comment", b"clang version 22.1.8\x00"),)))
+        b = self.write("ref.o", synthetic_object(extra_sections=(
+            (".comment", b"Alpine clang version 22.1.3\x00"),)))
+
+        verdict, detail = compare_objects.compare_objects_static(
+            a, b, expect_producer="22.1.8")
+
+        self.assertEqual(verdict, compare_objects.EQUIVALENT, detail)
+
+    def test_cli_rejects_expect_producer_without_no_link(self):
+        a = self.write("a.o", synthetic_object())
+        b = self.write("b.o", synthetic_object())
+
+        code = compare_objects.main(
+            ["--a", str(a), "--b", str(b), "--expect-producer", "22.1.8"])
+
+        self.assertEqual(3, code)
+
+    def test_cli_expect_producer_rejects_a_foreign_object(self):
+        a = self.write("cross.o", synthetic_object(extra_sections=(
+            (".comment", b"Alpine clang version 22.1.3\x00"),)))
+        b = self.write("ref.o", synthetic_object(extra_sections=(
+            (".comment", b"Alpine clang version 22.1.3\x00"),)))
+
+        code = compare_objects.main(
+            ["--a", str(a), "--b", str(b), "--no-link",
+             "--expect-producer", "22.1.8"])
+
+        self.assertEqual(1, code)
+
     def test_non_elf_is_inconclusive(self):
         a = self.write("a.o", synthetic_object())
         notes = self.write("notes.txt", b"not an object")

@@ -116,7 +116,8 @@ TRUNCATION_MARKERS = ("EXIT_TRUNCATED",)
 # ARGV rejection lands here, and so does any distcc-level failure code. It is a
 # local fallback too, but it is not a truncation, and the two need different
 # fixes.
-LOCAL_FALLBACK_MARKERS = ("failed, retrying locally", "running locally instead")
+LOCAL_FALLBACK_MARKERS = ("failed, retrying locally", "running locally instead",
+                          "retried locally")
 # The fixed codes a payload can answer with. Captured so `crossfire.json` names
 # the rejection instead of leaving it in the guest's scrollback.
 PAYLOAD_CODE_PATTERN = re.compile(
@@ -564,6 +565,14 @@ def _probe_transport_down(adb: Adb, console: GuestConsole, tool, next_index,
                           size_kib: int = 180, label: str = "download") -> dict:
     """Device -> gvproxy -> guest download: the return leg of a real job.
 
+    Length-prefix protocol (PVM-13): the device sends an 8-byte ASCII decimal
+    length (space-padded `printf '%8d'`), then the payload; the guest reads
+    the length off the wire and stops at exactly that many bytes. It must not
+    wait for FIN -- gvproxy does not propagate the device side's FIN to the
+    guest leg, which is what made every earlier download probe hang until the
+    timeout killed it (the payload's own DOTI/DOTO frames are length-framed
+    for exactly the same reason).
+
     `label` scopes the failure codes so the 180 KiB and 8 KiB runs cannot
     overwrite each other's verdict. The size pair exists to separate
     "bandwidth" from "stall": if a 180 KiB transfer is slow but 8 KiB is
@@ -572,28 +581,56 @@ def _probe_transport_down(adb: Adb, console: GuestConsole, tool, next_index,
     """
     result: dict = {"elapsed_ms": None, "bytes": None}
     device_tmp = f"{DEVICE_PERF_DOWN}.{size_kib}"
+    device_len = f"{device_tmp}.len"
+    expected_total = 8 + size_kib * 1024
     adb.run("shell", "dd", "if=/dev/zero", f"of={device_tmp}", "bs=1024",
             "count=%d" % size_kib, check=False)
+    # Frame in its own call; the listener keeps the plain `< file` redirect,
+    # which is the form toybox nc actually flushes (a `cat |` pipe fed it
+    # once and nc accepted the connection but never flushed).
+    adb.run("shell", "sh", "-c",
+            f"printf '%8d' \"$(wc -c < {device_tmp})\" > {device_len} "
+            f"&& cat {device_tmp} >> {device_len}",
+            check=False)
     listener = subprocess.Popen(
         [adb.adb_path] + (["-s", adb.serial] if adb.serial else []) +
-        # Redirect, not a pipe: toybox `nc -l` fed by `cat |` accepted the
-        # connection but never flushed the file, so the guest side waited for
-        # data that never came and both ends hung. A plain `<` lets nc own the
-        # fd and stream it.
-        ["shell", f"nc -l -p {port} < {device_tmp}"],
+        ["shell", f"nc -l -p {port} < {device_len}"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    # 3 s, not 1.5: the `dd` above plus process start can exceed the old
+    # 3 s, not 1.5: the framing above plus process start can exceed the old
     # window, and a listener that is not up yet makes the guest's `nc` fail
     # instantly, which reads as a broken link instead of a late one.
     time.sleep(3.0)
+    # The guest buffers the stream into /root (both the chroot and the outer
+    # shell have it), parses the 8-byte header, then polls the file until it
+    # holds the declared total. Polling at 150 ms bounds the measurement
+    # noise; `usleep` falls back to `sleep 1` where busybox lacks it. The
+    # backgrounded `nc` is killed explicitly -- it would otherwise sit in
+    # read() forever, because the FIN it waits for never arrives.
+    inner = (
+        f"D=/root/dn.$$.tmp; rm -f $D; trap 'rm -f $D' EXIT; "
+        f"timeout {PERF_GUEST_NC_GUARD_S} nc {GUEST_HOST_IP} {port} > $D & NC=$!; "
+        f"i=0; "
+        f"while :; do SZ=$(wc -c < $D 2>/dev/null || echo 0); "
+        f'[ "$SZ" -ge 8 ] && break; '
+        f"i=$((i+1)); [ $i -ge 40 ] && break; "
+        f"usleep 150000 2>/dev/null || sleep 1; done; "
+        f"N=$(dd if=$D bs=1 count=8 2>/dev/null); "
+        f'N=$(echo $N); case "$N" in ""|*[!0-9]*) N=0;; esac; '
+        f"N=$((N + 0)); T=$((8 + N)); "
+        f"i=0; "
+        f"if [ \"$N\" -ge 1 ]; then "
+        f"while :; do SZ=$(wc -c < $D 2>/dev/null || echo 0); "
+        f'[ "$SZ" -ge "$T" ] && break; '
+        f"i=$((i+1)); [ $i -ge 200 ] && break; "
+        f"usleep 150000 2>/dev/null || sleep 1; done; "
+        f"fi; "
+        f"kill $NC 2>/dev/null; "
+        f"wc -c < $D"
+    )
     try:
-        # /dev/null exists in both worlds: the chroot gets one mknod'ed by
-        # the console setup, so the same path works either way.
-        command = f"timeout {PERF_GUEST_NC_GUARD_S} nc {GUEST_HOST_IP} " \
-                  f"{port} > /dev/null"
-        rc, text, elapsed = run_guest_transfer(console, tool, next_index, command,
-                                               command, PERF_NC_TIMEOUT_S,
-                                               bool(chroot_prefix))
+        rc, text, elapsed = run_guest_transfer(
+            console, tool, next_index, inner, inner, PERF_NC_TIMEOUT_S,
+            bool(chroot_prefix))
         if elapsed < 0:
             _record_probe_error(round_result, f"{label}_timeout")
         elif rc != 0:
@@ -606,13 +643,26 @@ def _probe_transport_down(adb: Adb, console: GuestConsole, tool, next_index,
                 "tail": (text or "").strip().splitlines()[-3:],
             }
         else:
-            result["elapsed_ms"] = elapsed
-            result["bytes"] = size_kib * 1024
+            received = None
+            body_lines = [line.strip() for line in (text or "").strip().splitlines()
+                          if line.strip()]
+            if body_lines and body_lines[-1].isdigit():
+                received = int(body_lines[-1])
+            if received is None or received < expected_total:
+                _record_probe_error(round_result, f"{label}_short_read")
+                round_result.setdefault("perf_probe_details", {})[label] = {
+                    "rc": rc, "received": received,
+                    "expected": expected_total,
+                    "tail": body_lines[-3:],
+                }
+            else:
+                result["elapsed_ms"] = elapsed
+                result["bytes"] = received
         _wait_perf_listener(listener, round_result, f"{label}_listener_timeout")
     finally:
         if listener.poll() is None:
             listener.kill()
-        adb.run("shell", "rm", "-f", device_tmp, check=False)
+        adb.run("shell", "rm", "-f", device_tmp, device_len, check=False)
     return result
 
 
@@ -1129,8 +1179,11 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
         round_result["distcc_tail"] = (text or "").strip().splitlines()[-12:]
         # The payload's own words live in distcc's server-stderr file; STAT
         # alone (0x0100 vs 0x6500) says which layer failed, the stderr says why.
+        # grep, not cat|head: the console stream mixes in banner and echo
+        # noise, and only the error lines name the actual failure. The echoed
+        # command is base64 on the wire, so the pattern cannot match itself.
         rc_err, err_text, _ = console.run(
-            tool("cat /tmp/distcc_server_stderr_*.txt 2>/dev/null | head -5"),
+            tool("grep -i error /tmp/distcc_server_stderr_*.txt 2>/dev/null | head -5"),
             next_index(), 30)
         round_result["server_stderr_tail"] = (err_text or "").strip().splitlines()[-5:]
         if rc != 0:
@@ -1188,17 +1241,11 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
         if args.compare_script and has_reference:
             compared_tail = ""
             try:
-                # --no-link: the objects are aarch64 and the analysis host
-                # is Windows/mingw, where both candidates fail to link and the
-                # four-level path can only answer INCONCLUSIVE. The static path
-                # judges the same two objects on .text bytes plus external
-                # symbol names, and --expect-arch turns a foreign-machine
-                # object (the 608 B x86-64 fake-engine stub) into DIFFERENT.
                 compared = subprocess.run(
-                    [sys.executable, args.compare_script,
-                     "--a", str(round_work / "cross.o"),
-                     "--b", str(round_work / "ref.o"),
-                     "--no-link", "--expect-arch", "aarch64"],
+                    static_compare_command(
+                        args.compare_script, round_work / "cross.o",
+                        round_work / "ref.o",
+                        expect_producer=getattr(args, "expect_producer", None)),
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                     encoding="utf-8", errors="replace", timeout=300)
                 lines = (compared.stdout or "").strip().splitlines()
@@ -1243,6 +1290,15 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
         }
         round_result["remote_compile"] = remote_compile_verdict(
             final, distcc_text, round_result.get("distcc_rc"))
+        # Fifth gate (after STAT / DOTO / rc / object-on-disk): a distcc
+        # client that silently recompiled locally produces a real-looking
+        # .o and rc=0 -- only the client's own log line betrays it. Surface
+        # it as round data AND fail the round, or the summary reads green
+        # for a job the payload never touched.
+        remote = round_result["remote_compile"]
+        round_result["remote_fallback"] = bool(remote.get("local_fallback"))
+        if round_result.get("failure_code") is None and remote.get("local_fallback"):
+            round_result["failure_code"] = "REMOTE_FALLBACK_LOCAL_COMPILE"
         if round_result.get("failure_code") is None and final.get("failure_code"):
             round_result["failure_code"] = final.get("failure_code")
         if round_result.get("failure_code") is None and not final.get("stop_confirmed"):
@@ -1254,6 +1310,28 @@ def _number(value):
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     return value
+
+
+def static_compare_command(compare_script, cross_obj, ref_obj,
+                           expect_producer=None) -> list:
+    """The compare_objects invocation for cross-machine objects.
+
+    --no-link: the objects are aarch64 and the analysis host is Windows/mingw,
+    where both candidates fail to link and the four-level path can only answer
+    INCONCLUSIVE. The static path judges .text bytes plus external symbol
+    names; --expect-arch turns a foreign-machine object (the 608 B x86-64
+    fake-engine stub) into DIFFERENT; --expect-producer holds object a -- the
+    object the payload produced -- to the payload toolchain's .comment
+    fingerprint (the cxx-3 lesson: byte-equality alone also fits two locally
+    re-compiled objects). The local reference b may carry another toolchain's
+    .comment and is not held to it.
+    """
+    command = [sys.executable, str(compare_script),
+               "--a", str(cross_obj), "--b", str(ref_obj),
+               "--no-link", "--expect-arch", "aarch64"]
+    if expect_producer:
+        command += ["--expect-producer", str(expect_producer)]
+    return command
 
 
 def remote_compile_verdict(evidence: dict, distcc_text, distcc_rc) -> dict:
@@ -1523,6 +1601,12 @@ def main(argv: list[str] | None = None) -> int:
                              "stopped one in the app's instance store")
     parser.add_argument("--compare-script", default=str(
         root / "tools" / "compiler-equivalence" / "compare_objects.py"))
+    parser.add_argument("--expect-producer", default=None, metavar="SUBSTRING",
+                        help="forwarded to compare_objects --expect-producer: object a "
+                             "(the remote object) must carry this compiler version "
+                             "substring in its .comment, or the verdict is DIFFERENT. "
+                             "Pass the payload's LLVM version, e.g. 22.1.8 — this is "
+                             "the gate that catches distcc's silent local fallback.")
     parser.add_argument("--fixtures", default=str(
         root / "tools" / "compiler-equivalence" / "fixtures" / "c"))
     parser.add_argument("--work-dir", required=True,
