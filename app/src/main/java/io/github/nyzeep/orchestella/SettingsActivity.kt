@@ -64,6 +64,19 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
+    private val terminalBackgroundPicker = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri ?: return@registerForActivityResult
+        if (themeStore.persistBackgroundPermission(this, uri)) {
+            themeStore.setTerminalBackgroundUri(uri.toString())
+            refreshAppearance()
+            Toast.makeText(this, "终端背景图片已更新", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(this, "无法保留图片访问权限，请重新选择本地图片", Toast.LENGTH_LONG).show()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         ThemeApplier.prepare(this)
         super.onCreate(savedInstanceState)
@@ -104,6 +117,8 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.txt_settings_terminal_palette).text =
             "配色：${theme.displayName}\n等宽字体与 16 色 ANSI 调色板跟随主题"
         findViewById<MaterialButton>(R.id.btn_clear_background).isEnabled = themeStore.backgroundUri() != null
+        findViewById<MaterialButton>(R.id.btn_clear_terminal_background)?.isEnabled =
+            themeStore.terminalBackgroundUri() != null
         findViewById<MaterialButton>(R.id.btn_pick_corner_radius)?.text =
             "按钮圆角：" + when (themeStore.cornerRadiusDp()) {
                 0 -> "直角（默认）"
@@ -148,6 +163,7 @@ class SettingsActivity : AppCompatActivity() {
         ThemeApplier.setRole(btnResetMirror, ThemeApplier.Role.SECONDARY_ACTION)
         ThemeApplier.setRole(findViewById(R.id.btn_pick_theme_mode), ThemeApplier.Role.SECONDARY_ACTION)
         ThemeApplier.setRole(findViewById(R.id.btn_clear_background), ThemeApplier.Role.SECONDARY_ACTION)
+        ThemeApplier.setRole(findViewById(R.id.btn_clear_terminal_background), ThemeApplier.Role.SECONDARY_ACTION)
     }
 
     private fun setupMirrorSection() {
@@ -409,6 +425,29 @@ class SettingsActivity : AppCompatActivity() {
             refreshAppearance()
             Toast.makeText(this, "已恢复纯色背景", Toast.LENGTH_SHORT).show()
         }
+
+        val scrimLabel = findViewById<TextView?>(R.id.tv_terminal_scrim_label)
+        val scrimSeek = findViewById<android.widget.SeekBar?>(R.id.seek_terminal_scrim)
+        findViewById<MaterialButton?>(R.id.btn_pick_terminal_background)?.setOnClickListener {
+            terminalBackgroundPicker.launch(arrayOf("image/*"))
+        }
+        findViewById<MaterialButton?>(R.id.btn_clear_terminal_background)?.setOnClickListener {
+            themeStore.setTerminalBackgroundUri(null)
+            refreshAppearance()
+            Toast.makeText(this, "终端已恢复纯色背景", Toast.LENGTH_SHORT).show()
+        }
+        scrimSeek?.max = 90
+        scrimSeek?.progress = themeStore.terminalScrimAlpha() * 90 / 230
+        scrimLabel?.text = "终端背景遮罩浓度：${scrimSeek?.progress ?: 0}%"
+        scrimSeek?.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                themeStore.setTerminalScrimAlpha(progress * 230 / 90)
+                scrimLabel?.text = "终端背景遮罩浓度：${progress}%"
+            }
+            override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {}
+        })
 
         fontSeek.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {

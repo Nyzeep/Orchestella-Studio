@@ -560,6 +560,49 @@
                         android:text="清除自定义背景"
                         android:textSize="12sp" />
 
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_pick_terminal_background"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:minHeight="48dp"
+                        android:layout_marginTop="8dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        app:cornerRadius="0dp"
+                        android:text="选择终端背景图片"
+                        android:textSize="13sp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_clear_terminal_background"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:minHeight="48dp"
+                        android:layout_marginTop="8dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        app:cornerRadius="0dp"
+                        android:text="清除终端背景"
+                        android:textSize="12sp" />
+
+                    <TextView
+                        android:id="@+id/tv_terminal_scrim_label"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="16dp"
+                        android:text="终端背景遮罩浓度：70%"
+                        android:textSize="12sp"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
+
+                    <SeekBar
+                        android:id="@+id/seek_terminal_scrim"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:minHeight="48dp"
+                        android:contentDescription="终端背景遮罩浓度"
+                        android:max="90" />
+
                     <TextView
                         android:id="@+id/tv_font_size_label"
                         android:layout_width="wrap_content"

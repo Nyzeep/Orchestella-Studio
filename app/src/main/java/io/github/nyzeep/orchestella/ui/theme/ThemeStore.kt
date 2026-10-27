@@ -141,6 +141,29 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
         }.apply()
     }
 
+    // --- Terminal-only background image (independent from the global wallpaper) ---
+
+    fun terminalBackgroundUri(): String? = prefs.getString(KEY_TERMINAL_BACKGROUND_URI, null)
+
+    fun setTerminalBackgroundUri(uri: String?) {
+        require(uri == null || uri.startsWith("content://")) { "Terminal background must be a picked content URI" }
+        prefs.edit().apply {
+            if (uri == null) remove(KEY_TERMINAL_BACKGROUND_URI) else putString(KEY_TERMINAL_BACKGROUND_URI, uri)
+        }.apply()
+    }
+
+    /** 0 = image fully visible, 255 = fully covered by the theme's terminal background. */
+    fun terminalScrimAlpha(): Int =
+        prefs.getInt(KEY_TERMINAL_SCRIM_ALPHA, DEFAULT_TERMINAL_SCRIM_ALPHA).coerceIn(0, 255)
+
+    fun setTerminalScrimAlpha(alpha: Int) {
+        prefs.edit().putInt(KEY_TERMINAL_SCRIM_ALPHA, alpha.coerceIn(0, 255)).apply()
+    }
+
+    /** Scrim color for the terminal background image: theme terminal background at the chosen alpha. */
+    fun terminalScrimArgb(theme: AppTheme): Int =
+        (theme.terminalBackground and 0x00FFFFFF) or (terminalScrimAlpha() shl 24)
+
     // --- Global button corner radius token ---
 
     /** 0 keeps the current square look; the settings dialog offers 0/8/16 dp. */
@@ -245,6 +268,9 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
         const val KEY_TERMINAL_LINE_SPACING = "terminal_line_spacing"
         const val KEY_CUSTOM_SLOT_PREFIX = "custom_slot_"
         const val KEY_CORNER_RADIUS_DP = "corner_radius_dp"
+        const val KEY_TERMINAL_BACKGROUND_URI = "terminal_background_uri"
+        const val KEY_TERMINAL_SCRIM_ALPHA = "terminal_scrim_alpha"
+        const val DEFAULT_TERMINAL_SCRIM_ALPHA = 0xB0
         const val MAX_CORNER_RADIUS_DP = 24
         const val MIN_TERMINAL_FONT_SP = 10
         const val MAX_TERMINAL_FONT_SP = 22
