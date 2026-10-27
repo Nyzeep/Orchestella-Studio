@@ -42,6 +42,24 @@ class ThemeColorsTest {
         assertFalse(ThemeColors.isWallpaperContentWrapper("root_container", "dialog_root"))
     }
 
+    @Test fun blindSpotSurfaceShadesResolveToTheSurfaceRole() {
+        // Audit S3: legacy dark surface tints must not depend on the luminance
+        // heuristic band; they are explicitly SURFACE (card backgrounds).
+        for (argb in intArrayOf(
+            0xFF121318.toInt(), 0xFF0B0C0F.toInt(), 0xFF0C0D10.toInt(), 0xFF0D0E12.toInt(),
+            0xFF0E0F14.toInt(), 0xFF1F2026.toInt(), 0xFF1E2028.toInt()
+        )) {
+            assertEquals("backgroundRole(${Integer.toHexString(argb)})",
+                ThemeColors.Role.SURFACE, ThemeColors.backgroundRole(argb))
+        }
+    }
+
+    @Test fun legacyMutedGrayTextResolvesToTheMutedRole() {
+        // Audit S3: #CCCCCC sits at the upper edge of the heuristic band;
+        // pin it explicitly to MUTED.
+        assertEquals(ThemeColors.Role.MUTED, ThemeColors.textRole(0xFFCCCCCC.toInt()))
+    }
+
     @Test fun allFontSizesRoundTripThroughTheZeroBasedSliderIncludingEndpoints() {
         for (sp in 10..22) assertEquals(sp, ThemeColors.fontSize(ThemeColors.fontProgress(sp)))
         assertEquals(10, ThemeColors.fontSize(-50))
