@@ -52,10 +52,60 @@ def aarch64_elf(payload: bytes = b"") -> bytes:
     return header + load + payload
 
 
-def write_so(abi_dir: Path, name: str, payload: bytes) -> Path:
+def aarch64_elf_with_needed(library: str, payload: bytes = b"") -> bytes:
+    """Minimal aarch64 ELF whose PT_DYNAMIC records one DT_NEEDED soname.
+
+    This is the host-side fingerprint of the compile engine: the CLANG payload
+    links libclang-cpp.so/libLLVM.so, the FAKE payload links neither. Only the
+    program headers and the dynamic string table matter here, so the file stays
+    a valid ELF without section headers.
+    """
+    dynstr = library.encode("ascii") + b"\0"
+    dynstr_offset = 64 + 2 * 56                      # after ELF header + 2 phdrs
+    dynamic_offset = dynstr_offset + len(dynstr)
+    dynamic_offset += (-dynamic_offset) % 8
+    dynamic = struct.pack(
+        "<QQQQQQQQ",
+        1, 0,                    # DT_NEEDED lidx 0
+        5, dynstr_offset,        # DT_STRTAB (vaddr == offset: PT_LOAD starts at 0)
+        10, len(dynstr),         # DT_STRSZ
+        0, 0,                    # DT_NULL
+    )
+    total = dynamic_offset + len(dynamic)
+    ident = bytes([0x7F]) + b"ELF" + bytes([2, 1, 1]) + bytes(9)
+    header = ident + struct.pack(
+        "<HHIQQQIHHHHHH",
+        3,            # e_type = ET_DYN
+        EM_AARCH64,   # e_machine
+        1,            # e_version
+        0,            # e_entry
+        64,           # e_phoff
+        0,            # e_shoff
+        0,            # e_flags
+        64,           # e_ehsize
+        56,           # e_phentsize
+        2,            # e_phnum
+        0,            # e_shentsize
+        0,            # e_shnum
+        0,            # e_shstrndx
+    )
+    load = struct.pack("<IIQQQQQQ", 1, 5, 0, 0, 0, total, total, PAGE_ALIGN)
+    dyn = struct.pack("<IIQQQQQQ", 2, 6, dynamic_offset, dynamic_offset,
+                      dynamic_offset, len(dynamic), len(dynamic), 8)
+    body = bytearray(total)
+    body[0:len(header)] = header
+    body[64:64 + 56] = load
+    body[120:120 + 56] = dyn
+    body[dynstr_offset:dynstr_offset + len(dynstr)] = dynstr
+    body[dynamic_offset:dynamic_offset + len(dynamic)] = dynamic
+    return bytes(body) + payload
+
+
+def write_so(abi_dir: Path, name: str, payload: bytes, needed: str | None = None) -> Path:
     abi_dir.mkdir(parents=True, exist_ok=True)
     path = abi_dir / name
-    path.write_bytes(aarch64_elf(payload))
+    body = aarch64_elf(payload) if needed is None else aarch64_elf_with_needed(needed, payload)
+    path.write_bytes(body)
     return path
 
 
@@ -89,13 +139,14 @@ class ManifestFixture(unittest.TestCase):
             write_so(abi, "libc++_shared.so", b"X" * 16)
         return abi.parent
 
-    def payload_dir(self, binary: str = DEFAULT_PAYLOAD_BINARY) -> Path:
+    def payload_dir(self, binary: str = DEFAULT_PAYLOAD_BINARY,
+                    linked_library: str | None = None) -> Path:
         abi = self.root / "payload" / "arm64-v8a"
         write_so(abi, "libfastlane_payload.so", b"P" * 8)
-        write_so(abi, binary, b"F" * 8)
+        write_so(abi, binary, b"F" * 8, needed=linked_library)
         return abi.parent
 
-    def generate(self, *extra) -> tuple[subprocess.CompletedProcess, Path]:
+    def generate(self, *extra, engine: str = "fake") -> tuple[subprocess.CompletedProcess, Path]:
         out = self.root / "staging"
         result = run_cli(
             "--compiler-dir", self.compiler_dir(),
@@ -103,6 +154,7 @@ class ManifestFixture(unittest.TestCase):
             "--out", out,
             "--compiler-version", COMPILER_VERSION,
             "--target-triple", TARGET_TRIPLE,
+            "--engine", engine,
             *extra,
         )
         return result, out
@@ -129,11 +181,12 @@ class GenerationTest(ManifestFixture):
         self.assertEqual(0, result.returncode, result.stderr)
         manifest = json.loads((out / MANIFEST).read_text(encoding="utf-8"))
         self.assertEqual(
-            ["schema", "compiler_version", "target_triple", "vcpu_topology",
+            ["schema", "engine", "compiler_version", "target_triple", "vcpu_topology",
              "memory_mib", "payload_binary", "libs"],
             list(manifest),
         )
         self.assertEqual(1, manifest["schema"])
+        self.assertEqual("fake", manifest["engine"])
         self.assertEqual(COMPILER_VERSION, manifest["compiler_version"])
         self.assertEqual(TARGET_TRIPLE, manifest["target_triple"])
         self.assertEqual("one_cpu", manifest["vcpu_topology"])
@@ -157,6 +210,7 @@ class GenerationTest(ManifestFixture):
             "--out", out,
             "--compiler-version", COMPILER_VERSION,
             "--target-triple", TARGET_TRIPLE,
+            "--engine", "fake",
         )
 
         self.assertEqual(0, result.returncode, result.stderr)
@@ -197,6 +251,7 @@ class GenerationTest(ManifestFixture):
             "--target-triple", TARGET_TRIPLE,
             "--payload-binary", binary,
             "--memory-mib", "512",
+            "--engine", "fake",
         )
 
         self.assertEqual(0, result.returncode, result.stderr)
@@ -211,10 +266,85 @@ class GenerationTest(ManifestFixture):
             "--out", out,
             "--compiler-version", COMPILER_VERSION,
             "--target-triple", TARGET_TRIPLE,
+            "--engine", "fake",
         )
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertTrue((out / MANIFEST).is_file())
+
+
+class EngineAttestationTest(ManifestFixture):
+    """A manifest that does not name the engine cannot prove which one shipped.
+
+    The flag is a declaration, so it is checked against the only host-side
+    evidence that cannot lie: the payload's DT_NEEDED list. The CLANG payload
+    links libclang-cpp.so/libLLVM.so, the FAKE payload links neither.
+    """
+
+    def generate_with(self, engine: str | None, payload_dir: Path | None = None):
+        out = self.root / "staging"
+        arguments = ["--compiler-dir", self.compiler_dir(), "--out", out,
+                     "--compiler-version", COMPILER_VERSION,
+                     "--target-triple", TARGET_TRIPLE]
+        if payload_dir is not None:
+            arguments += ["--payload-dir", payload_dir]
+        if engine is not None:
+            arguments += ["--engine", engine]
+        return run_cli(*arguments), out
+
+    def test_fake_engine_is_recorded(self):
+        result, out = self.generate_with("fake", self.payload_dir())
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        manifest = json.loads((out / MANIFEST).read_text(encoding="utf-8"))
+        self.assertEqual("fake", manifest["engine"])
+
+    def test_clang_engine_is_recorded_when_the_payload_links_libclang(self):
+        result, out = self.generate_with(
+            "clang", self.payload_dir(linked_library="libclang-cpp.so"))
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        manifest = json.loads((out / MANIFEST).read_text(encoding="utf-8"))
+        self.assertEqual("clang", manifest["engine"])
+
+    def test_clang_engine_rejects_a_payload_that_does_not_link_libclang(self):
+        result, out = self.generate_with("clang", self.payload_dir())
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn("libclang-cpp.so", result.stderr)
+        self.assertIn("clang", result.stderr)
+        self.assertFalse((out / MANIFEST).exists())
+
+    def test_fake_engine_rejects_a_payload_that_links_libclang(self):
+        result, out = self.generate_with(
+            "fake", self.payload_dir(linked_library="libclang-cpp.so"))
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn("libclang-cpp.so", result.stderr)
+        self.assertIn("fake", result.stderr)
+        self.assertFalse((out / MANIFEST).exists())
+
+    def test_engine_without_payload_dir_cannot_be_cross_checked(self):
+        result, out = self.generate_with("clang", None)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        manifest = json.loads((out / MANIFEST).read_text(encoding="utf-8"))
+        self.assertEqual("clang", manifest["engine"])
+
+    def test_missing_engine_fails(self):
+        result, out = self.generate_with(None, self.payload_dir())
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn("--engine", result.stderr)
+        self.assertFalse((out / MANIFEST).exists())
+
+    def test_unknown_engine_fails(self):
+        for value in ("gcc", "FAKE", "Clang", ""):
+            with self.subTest(value=value):
+                result, _ = self.generate_with(value, self.payload_dir())
+
+                self.assertEqual(1, result.returncode)
+                self.assertIn("--engine", result.stderr)
 
 
 class GenerationArgumentTest(ManifestFixture):
@@ -223,6 +353,7 @@ class GenerationArgumentTest(ManifestFixture):
             "--compiler-dir", self.compiler_dir(),
             "--out", self.root / "staging",
             "--target-triple", TARGET_TRIPLE,
+            "--engine", "fake",
         )
 
         self.assertEqual(1, result.returncode)
@@ -253,6 +384,7 @@ class GenerationArgumentTest(ManifestFixture):
             "--compiler-version", COMPILER_VERSION,
             "--target-triple", TARGET_TRIPLE,
             "--payload-binary", "libabsent_payload.so",
+            "--engine", "fake",
         )
 
         self.assertEqual(1, result.returncode)
@@ -273,6 +405,7 @@ class GenerationArgumentTest(ManifestFixture):
             "--out", self.root / "staging",
             "--compiler-version", COMPILER_VERSION,
             "--target-triple", TARGET_TRIPLE,
+            "--engine", "fake",
         )
 
         self.assertEqual(1, result.returncode)
@@ -292,6 +425,25 @@ class VerifyManifestTest(ManifestFixture):
         self.assertEqual(1, summary["schema"])
         self.assertEqual(2, summary["libs"])
         self.assertEqual(TARGET_TRIPLE, summary["target_triple"])
+        self.assertEqual("fake", summary["engine"])
+
+    def test_verify_rejects_a_manifest_without_engine(self):
+        out, _ = self.generated_manifest()
+        self.rewrite_manifest(out, lambda data: data.pop("engine"))
+
+        result = self.verify(out)
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn("engine", result.stderr)
+
+    def test_verify_rejects_an_unknown_engine(self):
+        out, _ = self.generated_manifest()
+        self.rewrite_manifest(out, lambda data: data.update(engine="fake-engine"))
+
+        result = self.verify(out)
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn("engine", result.stderr)
 
     def test_missing_manifest_fails(self):
         out, _ = self.generated_manifest()
@@ -413,7 +565,7 @@ class VerifyManifestTest(ManifestFixture):
         self.assertIn("schema", result.stderr)
 
     def test_missing_field_fails(self):
-        for field in ("compiler_version", "target_triple", "payload_binary", "vcpu_topology",
+        for field in ("engine", "compiler_version", "target_triple", "payload_binary", "vcpu_topology",
                       "memory_mib", "libs"):
             with self.subTest(field=field):
                 out = self.root / ("staging-" + field)
@@ -422,6 +574,7 @@ class VerifyManifestTest(ManifestFixture):
                     "--out", out,
                     "--compiler-version", COMPILER_VERSION,
                     "--target-triple", TARGET_TRIPLE,
+                    "--engine", "fake",
                 )
                 self.assertEqual(0, result.returncode, result.stderr)
                 self.rewrite_manifest(out, lambda data, key=field: data.pop(key))
@@ -458,6 +611,7 @@ class VerifyManifestTest(ManifestFixture):
                     "--out", out,
                     "--compiler-version", COMPILER_VERSION,
                     "--target-triple", TARGET_TRIPLE,
+                    "--engine", "fake",
                 )
                 self.assertEqual(0, result.returncode, result.stderr)
                 self.rewrite_manifest(out, lambda data, mem=value: data.update(memory_mib=mem))
@@ -509,6 +663,7 @@ class BuildManifestTest(ManifestFixture):
             abi,
             compiler_version=COMPILER_VERSION,
             target_triple=TARGET_TRIPLE,
+            engine="fake",
         )
 
         self.assertEqual(["libLLVM.so", "libclang-cpp.so"], [lib["name"] for lib in manifest["libs"]])
@@ -520,14 +675,15 @@ class BuildManifestTest(ManifestFixture):
         self.assertEqual(clang.stat().st_size, manifest["libs"][1]["size"])
         self.assertEqual(DEFAULT_PAYLOAD_BINARY, manifest["payload_binary"])
         self.assertEqual("one_cpu", manifest["vcpu_topology"])
+        self.assertEqual("fake", manifest["engine"])
 
     def test_builder_output_is_stable_across_file_creation_order(self):
         abi = self.root / "abi" / "arm64-v8a"
         write_so(abi, "libclang-cpp.so", b"C" * 8)
         write_so(abi, "libLLVM.so", b"L" * 16)
 
-        first = compiler.build_manifest(abi, COMPILER_VERSION, TARGET_TRIPLE)
-        second = compiler.build_manifest(abi, COMPILER_VERSION, TARGET_TRIPLE)
+        first = compiler.build_manifest(abi, COMPILER_VERSION, TARGET_TRIPLE, engine="fake")
+        second = compiler.build_manifest(abi, COMPILER_VERSION, TARGET_TRIPLE, engine="fake")
 
         self.assertEqual(first, second)
         self.assertEqual(["libLLVM.so", "libclang-cpp.so"], [lib["name"] for lib in first["libs"]])
