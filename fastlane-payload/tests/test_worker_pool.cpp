@@ -172,3 +172,14 @@ FL_TEST(worker_pool_rejects_missing_worker_without_counting) {
     FL_CHECK_EQ(pool.active(), 0u);
     pool.wait_drained();
 }
+
+FL_TEST(worker_stack_is_sized_for_the_clang_frontend) {
+    // musl's default thread stack is 128 KiB, and the compile service runs
+    // the clang frontend on these worker threads. On the device's real
+    // 2000-function C++ job the default overflowed: the worker died with
+    // SIGSEGV and the guest saw an AXP1 connection closed without any
+    // response (round 3 cxx). The reservation must sit orders of magnitude
+    // above the default -- virtual only, committed page by page, so the
+    // size is cheap on a 64-bit guest.
+    FL_CHECK(fl::pvm::worker_stack_bytes() >= (size_t(16) << 20));
+}
