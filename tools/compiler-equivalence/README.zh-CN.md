@@ -39,6 +39,38 @@ python tools/compiler-equivalence/compare_objects.py \
   gcc 产物）无法被 readelf 解析，结构级判据在其上必然 `INCONCLUSIVE`——
   这是显式边界，不是缺陷。
 
+## 不依赖链接器的路径（PVM-12，`--no-link`）
+
+跨机器对象（payload 出的 aarch64 ELF）在 Windows/mingw 上**永远**链不起来：
+两侧都失败 → 旧路径只能答 `INCONCLUSIVE`。上一轮的真机等价结论就是因此靠手工
+比对补出来的，没固化。`--no-link` 用两条不需要链接器的判据取代它：
+
+```bash
+python tools/compiler-equivalence/compare_objects.py \
+    --a cross.o --b ref.o --no-link --expect-arch aarch64
+# EQUIVALENT
+# .text sha256=9fd1d91e… on both (16004 B); external symbols 2001/2001 identical;
+# architecture aarch64; linker levels not used (--no-link)
+```
+
+1. **架构**：两侧 `e_machine` 必须一致（纯 ELF 头解析，不用 readelf）。
+   不一致时默认报 **「not comparable」**（`INCONCLUSIVE`）——跨机器比较字节
+   没有意义，判 `DIFFERENT` 是假警报。
+2. **`.text` 字节**：两侧 SHA-256 必须相同，detail 里给出**两个**哈希与字节数。
+3. **符号名**：`nm -g --defined-only` 的名字集合排序后逐项相等，detail 里给出
+   两侧数量（真机那轮是 `2001/2001`）。
+
+**只比 `.text` 与全局符号，是刻意的**：远端对象可以合法地缺
+`.eh_frame`/`.rela.eh_frame`（这是待定性的 C++ 问题，不是代码差异）。若把
+section 集合也纳入，就会把 `cross.o`（91,568 B）与 `ref.o`（179,832 B）判成
+`DIFFERENT`，而它们的机器码逐字节相同。用 `-g` 也是同一个原因：AArch64 的
+mapping symbol（`$x`/`$d`/`$c`）按 section 种类生成，缺 `.eh_frame` 的一侧会
+少一个 `$d`，那不是符号差异。
+
+`--expect-arch` 用于「作业目标已知」的场景：声明后，落在别的机器上的对象判
+**`DIFFERENT`**（不是「不可比」）——608 B 的 x86-64 假引擎桩就是这样被抓到的。
+不声明时它只是「不可比」，**永远不会**是 `EQUIVALENT`。
+
 ## 确定性编译开关（减少噪声，建议双方统一启用）
 
 ```bash
