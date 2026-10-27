@@ -358,8 +358,12 @@ def inject_fixture(adb: Adb, console: GuestConsole, fixture_bytes: bytes,
     lines = [line.strip() for line in text.strip().splitlines()]
     if rc == 0 and lines and lines[-1] == str(len(fixture_bytes)):
         return {"path": "9p-downloads", "injected": True, "rc": 0}
+    # fixture_path must travel with the fallback: the console push writes and
+    # verifies THE SAME path the compile will read, otherwise a C++ round can
+    # "succeed" while fixture.cpp does not exist (round 2-cxx-1 did exactly
+    # that: the bytes landed on fixture.c, the compile read fixture.cpp).
     result = push_fixture_via_console(console, fixture_bytes, command_timeout_s,
-                                      next_index, chroot_prefix)
+                                      next_index, chroot_prefix, fixture_path)
     result["primary_path"] = "9p-downloads"
     return result
 
