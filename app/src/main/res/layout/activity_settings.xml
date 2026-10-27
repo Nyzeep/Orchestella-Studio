@@ -496,6 +496,19 @@
                         android:textSize="13sp" />
 
                     <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_pick_custom_theme"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:minHeight="48dp"
+                        android:layout_marginTop="8dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        app:cornerRadius="0dp"
+                        android:text="自定义配色（3 组）"
+                        android:textSize="13sp" />
+
+                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_pick_accent"
                         style="@style/Widget.Material3.Button.TonalButton"
                         android:layout_width="match_parent"
