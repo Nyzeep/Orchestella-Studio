@@ -41,7 +41,7 @@ enable_testing()
 fl_pvm_add_test_target(pvm_compile_service_tests pvm_compile_service)
 add_test(NAME pvm_compile_service_tests COMMAND pvm_compile_service_tests)
 
-foreach(suite argv_policy distcc_server axp1_server pvm_e2e worker_pool)
+foreach(suite argv_policy cc1_defaults distcc_server axp1_server pvm_e2e worker_pool)
     add_test(NAME pvm_compile_service_${suite} COMMAND pvm_compile_service_tests)
     set_tests_properties(pvm_compile_service_${suite} PROPERTIES
         ENVIRONMENT "FL_TEST_FILTER=${suite}")

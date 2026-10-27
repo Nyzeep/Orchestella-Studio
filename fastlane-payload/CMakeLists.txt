@@ -214,12 +214,15 @@ if(FL_BUILD_TESTS AND FL_BUILD_HOST AND NOT ANDROID)
     set_tests_properties(inprocess_compiler_tests PROPERTIES
         ENVIRONMENT "FL_TEST_FILTER=inprocess")
     add_test(NAME compile_service_argv_policy COMMAND fastlane_payload_tests)
+    add_test(NAME compile_service_cc1_defaults COMMAND fastlane_payload_tests)
     add_test(NAME compile_service_distcc_server COMMAND fastlane_payload_tests)
     add_test(NAME compile_service_axp1_server COMMAND fastlane_payload_tests)
     add_test(NAME compile_service_e2e COMMAND fastlane_payload_tests)
     add_test(NAME compile_service_worker_pool COMMAND fastlane_payload_tests)
     set_tests_properties(compile_service_argv_policy PROPERTIES
         ENVIRONMENT "FL_TEST_FILTER=argv_policy")
+    set_tests_properties(compile_service_cc1_defaults PROPERTIES
+        ENVIRONMENT "FL_TEST_FILTER=cc1_defaults")
     set_tests_properties(compile_service_distcc_server PROPERTIES
         ENVIRONMENT "FL_TEST_FILTER=distcc_server")
     set_tests_properties(compile_service_axp1_server PROPERTIES
