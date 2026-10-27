@@ -365,59 +365,68 @@ def reference_object_present(console: GuestConsole, chroot_prefix: str,
         return False
 
 
-def device_sha256(console: GuestConsole, device_path: str, next_index,
-                  command_timeout_s: int):
-    """Device-side sha256 via the outer shell; None means unverifiable.
+def _sha_from_text(text: str):
+    """First 64-hex token in the text, or None (malformed/absent output)."""
+    for token in (text or "").strip().split():
+        if re.fullmatch(r"[0-9a-f]{64}", token):
+            return token
+    return None
 
-    The outer guest shell carries toybox/busybox sha256sum (the chroot
-    does not, but the path here is outer-shell). Any absence, nonzero
-    exit, or malformed output returns None — the caller must fail closed.
+
+def device_sha256(console: GuestConsole, device_path: str, next_index,
+                  command_timeout_s: int, tool=None, chroot_path: str = None):
+    """Device-side sha256; None means unverifiable (caller fails closed).
+
+    Three shells, best effort: the outer guest's `sha256sum` (toybox), then
+    its busybox, then — when a chroot exists — the chroot's own busybox
+    multi-call, which round 4 cxx-v5 proved present while the outer shell
+    lacked sha256sum entirely. Any absence, nonzero exit, or malformed
+    output returns None.
     """
     rc, text, _ = console.run(
         f"sha256sum {device_path} 2>/dev/null || "
         f"busybox sha256sum {device_path} 2>/dev/null",
         next_index(), command_timeout_s)
-    if rc != 0:
-        return None
-    token = (text or "").strip().split()
-    if token and re.fullmatch(r"[0-9a-f]{64}", token[0]):
-        return token[0]
+    if rc == 0:
+        digest = _sha_from_text(text)
+        if digest:
+            return digest
+    if tool and chroot_path:
+        rc, text, _ = console.run(
+            tool(f"/bin/busybox sha256sum {chroot_path} 2>/dev/null"),
+            next_index(), command_timeout_s)
+        if rc == 0:
+            return _sha_from_text(text)
     return None
 
 
 CHROOT_APPLET_HEALS = ("sleep", "rm", "timeout", "dd")
 
 
-def heal_chroot_applets(console: GuestConsole, chroot_prefix: str,
-                        next_index) -> dict:
-    """Best-effort applet heal for the minimal chroot.
+def heal_chroot_applets(console: GuestConsole, tool, next_index) -> dict:
+    """Best-effort applet heal for the minimal chroot, run INSIDE it.
 
     The chroot's /bin ships its shell without every applet symlink (round 3
-    cxx-v3: `sleep: not found` and `rm: not found` broke the download
-    probe's polling loop and its cleanup). The chroot is writable — the
-    distcc state directory proved it — so the OUTER shell links the chroot's
-    busybox multi-call binary for each applet the probe scripts need. A
-    missing busybox is reported instead of guessed at; the probe's delay
-    chain degrades rather than dying either way.
+    cxx-v3: `sleep: not found` broke the download probe's polling loop).
+    The outer guest shell cannot fix it either — it lacks `ln` AND `cp`
+    (round 4 cxx-v4/v5: every `ln -sf` and `cp` died there) — but the
+    chroot's own busybox multi-call binary is present, so the heal runs
+    through `tool()` and copies busybox under each applet name; busybox
+    dispatches on argv[0], a copy is as good as a symlink.
     """
-    if not chroot_prefix:
-        return {"applied": False, "reason": "no-chroot"}
     rc, text, _ = console.run(
-        f"[ -e {chroot_prefix}bin/busybox ] && echo QA_BB=yes "
-        f"|| echo QA_BB=no", next_index(), 30)
+        tool("[ -e /bin/busybox ] && echo QA_BB=yes || echo QA_BB=no"),
+        next_index(), 30)
     if "QA_BB=yes" not in (text or ""):
         return {"applied": False, "reason": "no-busybox"}
     linked = []
     for applet in CHROOT_APPLET_HEALS:
-        # cp, not ln: the outer shell carries cp (the 9p fixture path uses
-        # it) but not ln (round 4 cxx-v4: every `ln -sf` died). busybox
-        # dispatches on argv[0], so a copy is as good as a symlink.
         rc, _text, _ = console.run(
-            f"cp {chroot_prefix}bin/busybox {chroot_prefix}bin/{applet}",
+            tool(f"/bin/busybox cp /bin/busybox /bin/{applet}"),
             next_index(), 30)
         if rc == 0:
             linked.append(applet)
-    return {"applied": bool(linked), "reason": "" if linked else "ln-failed",
+    return {"applied": bool(linked), "reason": "" if linked else "cp-failed",
             "applets": linked}
 
 
@@ -499,7 +508,7 @@ def push_fixture_via_console(console: GuestConsole, fixture_bytes: bytes,
 def inject_fixture(adb: Adb, console: GuestConsole, fixture_bytes: bytes,
                    command_timeout_s: int, next_index,
                    chroot_prefix: str = "",
-                   fixture_path: str = GUEST_FIXTURE) -> dict:
+                   fixture_path: str = GUEST_FIXTURE, tool=None) -> dict:
     """Primary path: 9p downloads share; fallback: console base64 chunks.
 
     The product launch only attaches the share when the instance declares
@@ -510,7 +519,9 @@ def inject_fixture(adb: Adb, console: GuestConsole, fixture_bytes: bytes,
     an earlier round used to pass silently (`already-present`). Both fast
     paths verify the device-side sha256 against the local bytes before
     skipping the transfer; a mismatch — or an unverifiable hash — fails
-    closed into an overwrite.
+    closed into an overwrite. The hash check falls back to the chroot's
+    busybox when the outer shell lacks sha256sum (round 4 cxx-v5: it does,
+    and every round repushed 118 chunks for nothing).
     """
     outer_fixture = f"{chroot_prefix}{fixture_path}"
     local_hash = hashlib.sha256(fixture_bytes).hexdigest()
@@ -522,7 +533,9 @@ def inject_fixture(adb: Adb, console: GuestConsole, fixture_bytes: bytes,
         if not (rc == 0 and lines and lines[-1] == str(len(fixture_bytes))):
             return False
         device_hash = device_sha256(console, outer_fixture, next_index,
-                                    command_timeout_s)
+                                    command_timeout_s, tool=tool,
+                                    chroot_path=fixture_path
+                                    if (tool and chroot_prefix) else None)
         return device_hash == local_hash
 
     # A previous round's fixture may already sit in the persistent rootfs:
@@ -775,11 +788,16 @@ def _probe_transport_down(adb: Adb, console: GuestConsole, tool, next_index,
             "count=%d" % size_kib, check=False)
     # Frame in its own call; the listener keeps the plain `< file` redirect,
     # which is the form toybox nc actually flushes (a `cat |` pipe fed it
-    # once and nc accepted the connection but never flushed).
-    framed = adb.run("shell", "sh", "-c",
-                     f"printf '%8d' \"$(wc -c < {device_tmp})\" > {device_len} "
-                     f"&& cat {device_tmp} >> {device_len} "
-                     f"&& wc -c < {device_len}", check=False)
+    # once and nc accepted the connection but never flushed). ONE argv
+    # element, no `sh -c`: adb joins argv with spaces, so a split `sh -c`
+    # ran only `printf` as the command body and the 8-byte header never
+    # reached the file (rounds 3-4: every download probe red, framed
+    # 184320 instead of 184328).
+    framed = adb.run(
+        "shell",
+        f"printf '%8d' \"$(wc -c < {device_tmp})\" > {device_len} "
+        f"&& cat {device_tmp} >> {device_len} "
+        f"&& wc -c < {device_len}", check=False)
     framed_bytes = None
     for line in reversed((framed or "").strip().splitlines()):
         if line.strip().isdigit():
@@ -949,9 +967,14 @@ def probe_segments(adb: Adb, console: GuestConsole, args, tool, next_index,
         return
 
     # Heal the chroot's missing applet symlinks before any probe script runs
-    # (round 3 cxx-v3: sleep/rm not-found broke the download receiver).
-    round_result["chroot_applet_heal"] = heal_chroot_applets(
-        console, chroot_prefix, next_index)
+    # (round 3 cxx-v3: sleep/rm not-found broke the download receiver). The
+    # heal is meaningless without a chroot; the outer shell IS the OS there.
+    if chroot_prefix:
+        round_result["chroot_applet_heal"] = heal_chroot_applets(
+            console, tool, next_index)
+    else:
+        round_result["chroot_applet_heal"] = {
+            "applied": False, "reason": "no-chroot"}
 
     # --- T up / T down: the distcc topology, both directions ---------------
     up = _probe_transport_up(adb, console, tool, next_index, chroot_prefix,
@@ -1311,7 +1334,7 @@ def crossfire_round(adb: Adb, args, root: Path, work: Path, round_index: int,
         compiler = guest_compiler(args)
         inject = inject_fixture(adb, console, fixture_bytes,
                                 args.guest_command_timeout_s, next_index,
-                                chroot_prefix, fixture_path)
+                                chroot_prefix, fixture_path, tool)
         round_result["fixture_injection"] = inject
         if not inject.get("injected"):
             round_result["failure_code"] = "FIXTURE_INJECTION_FAILED"
