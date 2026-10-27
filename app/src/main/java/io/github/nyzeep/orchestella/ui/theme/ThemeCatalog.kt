@@ -884,6 +884,10 @@ object ThemeCatalog {
     /** Resolves a stored theme id, falling back to the flagship Constructivist Workstation default. */
     fun resolve(id: String?): AppTheme = byId(id) ?: constructivistWorkstation
 
+    /** Default 16-color ANSI palette for custom theme slots without a terminal palette of their own. */
+    fun defaultAnsi(isDark: Boolean): List<Int> =
+        if (isDark) constructivistWorkstation.ansi else lightAnsi()
+
     /** Resolves a stored theme id for the given target dark/light mode dynamically. */
     fun resolveForMode(id: String?, isDark: Boolean): AppTheme {
         val base = resolve(id)

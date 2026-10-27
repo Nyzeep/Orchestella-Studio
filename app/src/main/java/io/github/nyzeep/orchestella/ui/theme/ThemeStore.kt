@@ -20,11 +20,23 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
     }
 
     /** Missing/obsolete ids resolve through the catalog, without overwriting saved preferences. */
-    fun themeId(): String = ThemeCatalog.resolve(prefs.getString(KEY_THEME_ID, null)).id
+    fun themeId(): String {
+        val stored = prefs.getString(KEY_THEME_ID, null) ?: return ThemeCatalog.resolve(null).id
+        if (stored.startsWith(CustomThemeSlot.ID_PREFIX)) return stored
+        return ThemeCatalog.resolve(stored).id
+    }
 
     /** Choosing a labeled light/dark preset also selects its mode, atomically with its colors. */
     fun setThemeId(id: String) {
-        val theme = ThemeCatalog.byId(id) ?: return
+        val theme = ThemeCatalog.byId(id)
+        if (theme == null) {
+            if (!id.startsWith(CustomThemeSlot.ID_PREFIX)) return
+            val slot = resolveCustomSlot(id) ?: return
+            prefs.edit().putString(KEY_THEME_ID, id)
+                .putString(KEY_THEME_MODE, if (slot.isDark) Mode.DARK.value else Mode.LIGHT.value)
+                .remove(KEY_CUSTOM_ACCENT).remove(KEY_CUSTOM_TEXT).apply()
+            return
+        }
         prefs.edit().putString(KEY_THEME_ID, theme.id)
             .putString(KEY_THEME_MODE, if (theme.isDark) Mode.DARK.value else Mode.LIGHT.value)
             .remove(KEY_CUSTOM_ACCENT).remove(KEY_CUSTOM_TEXT).apply()
@@ -44,6 +56,61 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
             Mode.LIGHT -> AppCompatDelegate.MODE_NIGHT_NO
             Mode.DARK -> AppCompatDelegate.MODE_NIGHT_YES
         }
+    }
+
+    // --- Custom theme slots: three editable palettes in flat JVM-testable keys ---
+
+    fun customSlots(): List<CustomThemeSlot?> = (0 until CustomThemeSlot.SLOT_COUNT).map { customSlot(it) }
+
+    /** A slot is null when unset or when its palette keys are incomplete (corrupt data falls back). */
+    fun customSlot(index: Int): CustomThemeSlot? {
+        require(index in 0 until CustomThemeSlot.SLOT_COUNT) { "Custom slot index out of range: $index" }
+        val n = index + 1
+        val name = prefs.getString(slotKey(n, "name"), null) ?: return null
+        val dark = if (prefs.contains(slotKey(n, "dark"))) prefs.getBoolean(slotKey(n, "dark"), true) else return null
+        fun color(field: String): Int? =
+            if (prefs.contains(slotKey(n, field))) prefs.getInt(slotKey(n, field), 0) else null
+        return CustomThemeSlot(
+            name = name,
+            isDark = dark,
+            background = color("bg") ?: return null,
+            surface = color("surface") ?: return null,
+            primary = color("primary") ?: return null,
+            accent = color("accent") ?: return null,
+            text = color("text") ?: return null,
+            textDim = color("text_dim") ?: return null,
+            terminalBackground = color("term_bg") ?: return null,
+            terminalForeground = color("term_fg") ?: return null,
+        )
+    }
+
+    /** null resets the slot; writing one never touches the active theme id or other slots. */
+    fun setCustomSlot(index: Int, slot: CustomThemeSlot?) {
+        require(index in 0 until CustomThemeSlot.SLOT_COUNT) { "Custom slot index out of range: $index" }
+        val n = index + 1
+        prefs.edit().apply {
+            SLOT_FIELDS.forEach { remove(slotKey(n, it)) }
+            if (slot != null) {
+                putString(slotKey(n, "name"), slot.name)
+                putBoolean(slotKey(n, "dark"), slot.isDark)
+                putInt(slotKey(n, "bg"), slot.background or 0xFF000000.toInt())
+                putInt(slotKey(n, "surface"), slot.surface or 0xFF000000.toInt())
+                putInt(slotKey(n, "primary"), slot.primary or 0xFF000000.toInt())
+                putInt(slotKey(n, "accent"), slot.accent or 0xFF000000.toInt())
+                putInt(slotKey(n, "text"), slot.text or 0xFF000000.toInt())
+                putInt(slotKey(n, "text_dim"), slot.textDim or 0xFF000000.toInt())
+                putInt(slotKey(n, "term_bg"), slot.terminalBackground or 0xFF000000.toInt())
+                putInt(slotKey(n, "term_fg"), slot.terminalForeground or 0xFF000000.toInt())
+            }
+        }.apply()
+    }
+
+    /** "custom:1".."custom:3" resolve to their saved slot; anything else is null. */
+    fun resolveCustomSlot(id: String): CustomThemeSlot? {
+        if (!id.startsWith(CustomThemeSlot.ID_PREFIX)) return null
+        val index = id.substringAfter(CustomThemeSlot.ID_PREFIX).toIntOrNull() ?: return null
+        if (index !in 1..CustomThemeSlot.SLOT_COUNT) return null
+        return customSlot(index - 1)
     }
 
     fun customAccent(): Int? =
@@ -118,12 +185,22 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
 
     /** Android-free mode seam shared by chrome, terminal rendering and preferences tests. */
     fun resolveForMode(systemDark: Boolean): AppTheme {
+        val id = themeId()
+        val base = if (id.startsWith(CustomThemeSlot.ID_PREFIX)) {
+            resolveCustomSlot(id)?.toAppTheme(id) ?: catalogTheme(null, systemDark)
+        } else {
+            catalogTheme(id, systemDark)
+        }
+        return withOverrides(base)
+    }
+
+    private fun catalogTheme(id: String?, systemDark: Boolean): AppTheme {
         val isDark = when (mode()) {
             Mode.SYSTEM -> systemDark
             Mode.LIGHT -> false
             Mode.DARK -> true
         }
-        return withOverrides(ThemeCatalog.resolveForMode(themeId(), isDark))
+        return ThemeCatalog.resolveForMode(id, isDark)
     }
 
     private fun withOverrides(base: AppTheme): AppTheme {
@@ -157,7 +234,13 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
         const val KEY_TERMINAL_FONT_SP = "terminal_font_sp"
         const val KEY_TERMINAL_LETTER_SPACING = "terminal_letter_spacing"
         const val KEY_TERMINAL_LINE_SPACING = "terminal_line_spacing"
+        const val KEY_CUSTOM_SLOT_PREFIX = "custom_slot_"
         const val MIN_TERMINAL_FONT_SP = 10
         const val MAX_TERMINAL_FONT_SP = 22
+
+        private val SLOT_FIELDS = listOf(
+            "name", "dark", "bg", "surface", "primary", "accent", "text", "text_dim", "term_bg", "term_fg",
+        )
+        private fun slotKey(slotNumber: Int, field: String) = "${KEY_CUSTOM_SLOT_PREFIX}${slotNumber}_$field"
     }
 }

@@ -15,6 +15,7 @@ import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.materialswitch.MaterialSwitch
+import io.github.nyzeep.orchestella.ui.theme.CustomThemeSlot
 import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
 import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
 import io.github.nyzeep.orchestella.ui.theme.ThemeColors
@@ -305,17 +306,53 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         btnPickTheme.setOnClickListener {
+            val slots = themeStore.customSlots()
+            val customLabels = slots.mapIndexed { index, slot ->
+                slot?.let { "${it.name} · ${if (it.isDark) "暗" else "亮"}" } ?: "自定义 ${index + 1}（未设置）"
+            }
             val themes = ThemeCatalog.all
-            val names = themes.map { it.selectionLabel }.toTypedArray()
-            val current = themes.indexOfFirst { it.id == themeStore.resolve().id }
+            val names = (customLabels + themes.map { it.selectionLabel }).toTypedArray()
+            val resolvedId = themeStore.resolve().id
+            val current = when {
+                resolvedId.startsWith(CustomThemeSlot.ID_PREFIX) ->
+                    resolvedId.removePrefix(CustomThemeSlot.ID_PREFIX).toIntOrNull()?.minus(1) ?: -1
+                else -> slots.size + themes.indexOfFirst { it.id == resolvedId }
+            }
             androidx.appcompat.app.AlertDialog.Builder(this)
                 .setTitle("选择主题")
                 .setSingleChoiceItems(names, current) { dialog, which ->
-                    themeStore.setThemeId(themes[which].id)
-                    refreshLabels()
-                    refreshAppearance()
                     dialog.dismiss()
-                    Toast.makeText(this, "主题：${themes[which].selectionLabel}", Toast.LENGTH_SHORT).show()
+                    if (which < slots.size) {
+                        if (slots[which] == null) {
+                            showCustomThemeEditor(which)
+                        } else {
+                            themeStore.setThemeId("custom:${which + 1}")
+                            refreshAppearance()
+                            Toast.makeText(this, "主题：${slots[which]!!.name}", Toast.LENGTH_SHORT).show()
+                        }
+                    } else {
+                        val theme = themes[which - slots.size]
+                        themeStore.setThemeId(theme.id)
+                        refreshLabels()
+                        refreshAppearance()
+                        Toast.makeText(this, "主题：${theme.selectionLabel}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                .setNegativeButton("取消", null)
+                .show().also(ThemeApplier::apply)
+        }
+
+        findViewById<MaterialButton?>(R.id.btn_pick_custom_theme)?.setOnClickListener {
+            val slots = themeStore.customSlots()
+            val labels = slots.mapIndexed { index, slot ->
+                if (slot == null) "自定义 ${index + 1}（未设置）"
+                else "${slot.name} · ${if (slot.isDark) "暗" else "亮"} · 主色 ${hexLabel(slot.primary)}"
+            }.toTypedArray()
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("自定义配色（3 组）")
+                .setItems(labels) { dialog, which ->
+                    dialog.dismiss()
+                    showCustomThemeEditor(which)
                 }
                 .setNegativeButton("取消", null)
                 .show().also(ThemeApplier::apply)
@@ -384,4 +421,143 @@ class SettingsActivity : AppCompatActivity() {
             override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {}
         })
     }
+
+    /** Shared swatch board for the custom theme editor: neutrals plus common theme hues. */
+    private val swatchPalette = listOf(
+        "黑" to 0xFF000000.toInt(), "夜空" to 0xFF0D0E11.toInt(), "深灰" to 0xFF2E323B.toInt(),
+        "灰" to 0xFF8E929B.toInt(), "浅灰" to 0xFFC9CDD4.toInt(), "米白" to 0xFFF5F4F0.toInt(),
+        "白" to 0xFFFFFFFF.toInt(), "暗红" to 0xFF7F1D1D.toInt(), "红" to 0xFFD62828.toInt(),
+        "玫瑰" to 0xFFF43F5E.toInt(), "橙" to 0xFFEA580C.toInt(), "琥珀" to 0xFFFDBB24.toInt(),
+        "黄" to 0xFFFACC15.toInt(), "青柠" to 0xFF84CC16.toInt(), "绿" to 0xFF22C55E.toInt(),
+        "翠绿" to 0xFF10B981.toInt(), "青" to 0xFF06B6D4.toInt(), "天蓝" to 0xFF38BDF8.toInt(),
+        "蓝" to 0xFF0047AB.toInt(), "靛蓝" to 0xFF4F46E5.toInt(), "紫" to 0xFFBD93F9.toInt(),
+        "洋红" to 0xFFE056FD.toInt(), "粉" to 0xFFFF79C6.toInt(), "棕" to 0xFF92400E.toInt(),
+    )
+
+    private fun hexLabel(color: Int): String = String.format("#%06X", color and 0x00FFFFFF)
+
+    /** Slot editor: name + mode + eight color rows, each opening the shared swatch board. */
+    private fun showCustomThemeEditor(slotIndex: Int) {
+        val existing = themeStore.customSlots().getOrNull(slotIndex)
+        val fallback = themeStore.resolve()
+        var name = existing?.name ?: "自定义 ${slotIndex + 1}"
+        var isDark = existing?.isDark ?: fallback.isDark
+        var background = existing?.background ?: fallback.background
+        var surface = existing?.surface ?: fallback.surface
+        var primary = existing?.primary ?: fallback.primary
+        var accent = existing?.accent ?: fallback.accent
+        var text = existing?.text ?: fallback.text
+        var textDim = existing?.textDim ?: fallback.textDim
+        var terminalBackground = existing?.terminalBackground ?: fallback.terminalBackground
+        var terminalForeground = existing?.terminalForeground ?: fallback.terminalForeground
+
+        val density = resources.displayMetrics.density
+        val padding = (16 * density).toInt()
+        val container = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(padding, padding, padding, 0)
+        }
+        val nameEdit = android.widget.EditText(this).apply {
+            setText(name)
+            hint = "主题名称"
+            setSingleLine(true)
+        }
+        container.addView(nameEdit)
+
+        val modeButton = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle)
+        fun repaintMode() {
+            modeButton.text = "明暗：${if (isDark) "深色（暗色 ANSI）" else "浅色（亮色 ANSI）"}"
+        }
+        repaintMode()
+        modeButton.isAllCaps = false
+        modeButton.setOnClickListener {
+            isDark = !isDark
+            repaintMode()
+        }
+        container.addView(modeButton)
+
+        fun addColorRow(label: String, initial: Int, onPick: (Int) -> Unit) {
+            var current = initial
+            val button = MaterialButton(this)
+            button.isAllCaps = false
+            fun repaint() {
+                button.text = "$label：${hexLabel(current)}"
+                button.setBackgroundColor(current)
+                button.setTextColor(ThemeColors.onColor(current))
+            }
+            repaint()
+            button.setOnClickListener {
+                val names = swatchPalette.map { "${it.first} ${hexLabel(it.second)}" }.toTypedArray()
+                androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle(label)
+                    .setItems(names) { dialog, which ->
+                        current = swatchPalette[which].second
+                        onPick(current)
+                        repaint()
+                        dialog.dismiss()
+                    }
+                    .setNegativeButton("取消", null)
+                    .show().also(ThemeApplier::apply)
+            }
+            container.addView(button)
+        }
+
+        addColorRow("背景", background) { background = it }
+        addColorRow("表面", surface) { surface = it }
+        addColorRow("主色", primary) { primary = it }
+        addColorRow("强调色", accent) { accent = it }
+        addColorRow("正文", text) { text = it }
+        addColorRow("次要文字", textDim) { textDim = it }
+        addColorRow("终端背景", terminalBackground) { terminalBackground = it }
+        addColorRow("终端前景", terminalForeground) { terminalForeground = it }
+
+        val resetButton = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle)
+        resetButton.text = "重置此槽位"
+        resetButton.isAllCaps = false
+        resetButton.setOnClickListener {
+            themeStore.setCustomSlot(slotIndex, null)
+            refreshAppearance()
+            Toast.makeText(this, "自定义 ${slotIndex + 1} 已重置", Toast.LENGTH_SHORT).show()
+            currentEditorDialog?.dismiss()
+        }
+        container.addView(resetButton)
+
+        val scroll = android.widget.ScrollView(this).apply { addView(container) }
+        fun applySlot() {
+            val slot = CustomThemeSlot(
+                name = nameEdit.text.toString().ifBlank { "自定义 ${slotIndex + 1}" },
+                isDark = isDark,
+                background = background,
+                surface = surface,
+                primary = primary,
+                accent = accent,
+                text = text,
+                textDim = textDim,
+                terminalBackground = terminalBackground,
+                terminalForeground = terminalForeground,
+            )
+            themeStore.setCustomSlot(slotIndex, slot)
+            refreshAppearance()
+        }
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("编辑自定义主题 ${slotIndex + 1}")
+            .setView(scroll)
+            .setPositiveButton("应用") { _, _ ->
+                applySlot()
+                Toast.makeText(this, "自定义主题已保存", Toast.LENGTH_SHORT).show()
+            }
+            .setNeutralButton("选为当前主题") { _, _ ->
+                applySlot()
+                themeStore.setThemeId("custom:${slotIndex + 1}")
+                refreshAppearance()
+                Toast.makeText(this, "主题：${nameEdit.text}", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("取消", null)
+            .create()
+        currentEditorDialog = dialog
+        dialog.show()
+        ThemeApplier.apply(dialog)
+    }
+
+    private var currentEditorDialog: androidx.appcompat.app.AlertDialog? = null
 }
