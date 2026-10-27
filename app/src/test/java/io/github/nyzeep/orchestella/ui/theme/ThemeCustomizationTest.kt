@@ -152,4 +152,27 @@ class ThemeCustomizationTest {
         assertEquals(ThemeCatalog.constructivistWorkstation, store.resolveForMode(false))
         assertNull(store.resolveCustomSlot("custom:1"))
     }
+
+    // --- E3: global button corner radius token ---
+
+    @Test fun cornerRadiusDefaultsToZero() {
+        val store = ThemeStore(FakeSharedPreferences())
+        assertEquals(0, store.cornerRadiusDp())
+    }
+
+    @Test fun cornerRadiusClampsToTheZeroThroughTwentyFourRange() {
+        val store = ThemeStore(FakeSharedPreferences())
+        store.setCornerRadiusDp(8)
+        assertEquals(8, store.cornerRadiusDp())
+        store.setCornerRadiusDp(30)
+        assertEquals(24, store.cornerRadiusDp())
+        store.setCornerRadiusDp(-3)
+        assertEquals(0, store.cornerRadiusDp())
+    }
+
+    @Test fun cornerRadiusPersistsAcrossStoreInstances() {
+        val prefs = FakeSharedPreferences()
+        ThemeStore(prefs).setCornerRadiusDp(16)
+        assertEquals(16, ThemeStore(prefs).cornerRadiusDp())
+    }
 }
