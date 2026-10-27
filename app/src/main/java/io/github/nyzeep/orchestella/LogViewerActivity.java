@@ -44,8 +44,6 @@ public class LogViewerActivity extends Activity {
     public static final String KIND_GUEST = "guest";
     public static final String KIND_APP = "app";
 
-    private static final long MAX_CONSOLE_LOG_BYTES = 4L * 1024L * 1024L;
-
     private String kind;
     private String instanceId;
     private TextView logText;
@@ -220,26 +218,31 @@ public class LogViewerActivity extends Activity {
         Toast.makeText(this, "已清空", Toast.LENGTH_SHORT).show();
     }
 
-    /** Appends one console chunk to the guest log, rotating at {@link #MAX_CONSOLE_LOG_BYTES}. */
+    /**
+     * Single-thread executor for guest console writes. Every PTY output chunk used to be
+     * written to disk synchronously on the UI thread (a direct terminal-input jank source);
+     * a single worker keeps chunks ordered while the UI thread only enqueues.
+     */
+    private static final java.util.concurrent.ExecutorService CONSOLE_LOG_EXECUTOR =
+            java.util.concurrent.Executors.newSingleThreadExecutor(runnable -> {
+                Thread worker = new Thread(runnable, "guest-console-log");
+                worker.setDaemon(true);
+                return worker;
+            });
+
+    /** Appends one console chunk to the guest log off the UI thread, rotating at {@link GuestConsoleLogWriter#MAX_BYTES}. */
     public static void appendGuestConsole(Context context, String instanceId, String chunk) {
-        if (instanceId == null || chunk == null || chunk.isEmpty()) {
+        if (instanceId == null || instanceId.isEmpty() || chunk == null || chunk.isEmpty()) {
             return;
         }
-        try {
-            File logsDir = new File(context.getFilesDir(), "logs");
-            if (!logsDir.exists()) {
-                logsDir.mkdirs();
+        File logsDir = new File(context.getFilesDir(), "logs");
+        CONSOLE_LOG_EXECUTOR.execute(() -> {
+            try {
+                GuestConsoleLogWriter.append(logsDir, instanceId, chunk);
+            } catch (Exception ignored) {
+                // Logging must never break the terminal output path.
             }
-            File target = new File(logsDir, "console-" + instanceId + ".log");
-            if (target.length() > MAX_CONSOLE_LOG_BYTES) {
-                target.delete();
-                java.nio.file.Files.write(target.toPath(),
-                        "…（日志超过 4MB，已从此处继续）\n".getBytes(StandardCharsets.UTF_8));
-            }
-            java.nio.file.Files.write(target.toPath(), chunk.getBytes(StandardCharsets.UTF_8),
-                    java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
-        } catch (Exception ignored) {
-        }
+        });
     }
 
     private int dp(int value) {
