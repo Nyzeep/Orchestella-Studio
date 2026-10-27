@@ -313,5 +313,21 @@ class FixtureLanguageTest(unittest.TestCase):
         self.assertEqual("clang++", dv_pvm_crossfire.guest_compiler(cxx_args))
 
 
+class StaticCompareCommandTest(unittest.TestCase):
+    def test_the_base_command_targets_the_static_criterion(self):
+        command = dv_pvm_crossfire.static_compare_command(
+            "cmp.py", "cross.o", "ref.o")
+        self.assertIn("--no-link", command)
+        self.assertIn("--expect-arch", command)
+        self.assertEqual("cross.o", command[command.index("--a") + 1])
+        self.assertEqual("ref.o", command[command.index("--b") + 1])
+        self.assertNotIn("--expect-producer", command)
+
+    def test_the_producer_fingerprint_is_forwarded_when_given(self):
+        command = dv_pvm_crossfire.static_compare_command(
+            "cmp.py", "cross.o", "ref.o", expect_producer="22.1.8")
+        self.assertEqual("22.1.8", command[command.index("--expect-producer") + 1])
+
+
 if __name__ == "__main__":
     unittest.main()
