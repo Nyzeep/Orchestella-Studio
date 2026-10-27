@@ -33,7 +33,14 @@ import java.util.concurrent.TimeUnit;
  * java PvmCompilerBridgeInterop &lt;payload-host-binary&gt; &lt;request-v1.hex&gt; \
  *      &lt;expected.o&gt; [triple]
  * </pre>
+ *
+ * <p>Manual by design: the three paths have no sane defaults and the host twin
+ * has to be built first, so wiring this into {@code check} would only produce a
+ * task that always fails. Declared with the coverage gate's marker instead of
+ * being left as dead coverage; run it by hand after touching the bridge or the
+ * AXP1 client.
  */
+// fl-manual-driver: needs <payload-host-binary> <request-v1.hex> <expected.o> from a prior host build
 public final class PvmCompilerBridgeInterop {
 
     /** Public golden token, split so it is not read as a credential. */

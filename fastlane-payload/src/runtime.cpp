@@ -28,6 +28,7 @@
 #include "fastlane/protocol.h"
 #include "fastlane/proxy_bridge.h"
 #include "fastlane/pty.h"
+#include "fastlane/stop_flag.h"
 #include "fastlane/transport.h"
 #include "fastlane/vm_payload_api.h"
 
@@ -90,10 +91,12 @@ namespace {
 
 constexpr uint64_t kMaxImportBytes = 16ULL * 1024 * 1024 * 1024;
 
-std::atomic<bool> g_stop_requested{false};
-
+// The process-wide flag lives in fastlane/stop_flag.h: a signal handler must be
+// able to set it before runtime code ever ran (hence the constant-initialized
+// inline instance), and the reset that makes a second run() possible belongs
+// next to the rule for what a reset may forget.
 extern "C" void handle_stop_signal(int) {
-    g_stop_requested.store(true);
+    g_process_stop_flag.request_from_signal();
 }
 
 std::string environment(const char* name) {
@@ -819,7 +822,7 @@ void Runtime::start() {
     if (started_) {
         return;
     }
-    stopped_ = false;
+    stopped_.store(false);
     validate_config(config_);
     try {
         context_ = std::make_shared<RuntimeContext>(config_);
@@ -917,16 +920,17 @@ void Runtime::accept_framed(Listener* listener) {
 }
 
 void Runtime::stop() {
-    if (stopped_) {
+    // One stop wins: a host thread and run() itself may both reach here, and
+    // only one of them may tear the listeners down.
+    if (stopped_.exchange(true)) {
         return;
     }
-    stopped_ = true;
     if (!context_) {
         // A never-started (or config-rejected) runtime must not poison the
         // process-global signal flag for a later attempt.
         return;
     }
-    g_stop_requested.store(true);
+    g_process_stop_flag.request();
     context_->state->stopping.store(true);
     context_->state->idle.notify_all();
 
@@ -997,12 +1001,31 @@ int Runtime::run() {
         std::signal(SIGTERM, handle_stop_signal);
         std::signal(SIGINT, handle_stop_signal);
     }
+    // A run owns one stop state. Without these lines the second run() in a
+    // process both skipped its loop (the process flag was still set from the
+    // previous stop) and skipped its own stop() (stopped_ was still latched),
+    // which is the reuse defect: a host that relaunches the payload, or a test
+    // that runs twice, got a run() that returned before serving anything.
+    // begin_run() keeps a signal that no run has honored yet, so a SIGTERM
+    // that landed before this call still stops this run.
+    g_process_stop_flag.begin_run();
+    stopped_.store(false);
+    if (context_) {
+        // A reused runtime keeps the previous run's context, and that context
+        // carries a second stop latch: the loop below tests it, so it has to be
+        // cleared for the reset to mean anything. Nothing is running at this
+        // point — stop() joined every thread of the previous run.
+        context_->state->stopping.store(false);
+    }
     start();
     AVmPayload_notifyPayloadReady();
-    while (!g_stop_requested.load() && !context_->state->stopping.load()) {
+    while (!g_process_stop_flag.requested() && !context_->state->stopping.load()) {
         ::usleep(100000);
     }
     stop();
+    // Nothing is left to serve: a signal observed by this run is spent, so it
+    // cannot stop the next one.
+    g_process_stop_flag.end_run();
     return 0;
 }
 

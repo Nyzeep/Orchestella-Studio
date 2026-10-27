@@ -94,3 +94,12 @@ DV-03：真实 QEMU guest `make -j` + Fast Lane `distccd`；n≥10；端到端�
   `docs/reports/tickets/fastlane-P09/guest-contract-alignment.zh-CN.md`。
 - 未验证：protected payload、Bionic/Termux distccd、QEMU 转发地址、C++、
   端到端性能；`fastlane-payload/` 未改（P02 所有）。
+
+## 2026-10-24 改道（不改历史，只加说明）
+
+本票的数据路径（guest `-E` → 宿主 TCP → vsock → payload）**仍然有效**，失效的是「payload 侧 `fork/exec distccd`」这一跳：
+
+- 2026-10-22 真机证据：protected payload `execve("/mnt/apk/bin/sh")` → `EACCES(13)`，`avc denied { execute_no_trans }`；
+- 因此 §停止条件 里的「改用自研最小 distcc server」不是可选项，而是**唯一可走的实现**；
+- 新方案把编译器做成库、在 payload 进程内编译，wire 与宿主桥不变：`.scratch/orchestella-pvm-compiler/spec.md`，工单 PVM-02/PVM-03。
+- 本票的 guest 契约、宿主桥、golden fixture 继续复用；「protected payload 跑 distccd」的验收项作废，改由 PVM-03 的等价判据承接。
