@@ -1,6 +1,7 @@
 package io.github.nyzeep.orchestella;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -246,5 +247,57 @@ public final class InstanceSessionReconcilerTest {
 
         assertEquals(InstanceSessionReconciler.Status.NOT_FOUND, result.status());
         assertNull(result.instance());
+    }
+
+    @Test
+    public void unreadableMetadataReportsStoreErrorInsteadOfMissingInstance() throws Exception {
+        InstanceLifecycle.Store unreadableStore = new InstanceLifecycle.Store() {
+            @Override
+            public void save(InstanceLifecycle.Instance instance) {
+            }
+
+            @Override
+            public InstanceLifecycle.Instance load(String id) throws java.io.IOException {
+                throw new java.io.IOException(
+                        "instance metadata unreadable", new java.io.EOFException("truncated"));
+            }
+
+            @Override
+            public java.util.List<InstanceLifecycle.Instance> list() {
+                return java.util.Collections.emptyList();
+            }
+
+            @Override
+            public void delete(String id) {
+            }
+        };
+        InstanceSessionReconciler reconciler = new InstanceSessionReconciler(
+                pool, unreadableStore, controller, inst -> null);
+
+        InstanceSessionReconciler.ReconcileResult result =
+                reconciler.ensureSessionAliveOrRecover("corrupt-instance-id");
+
+        assertNotEquals(InstanceSessionReconciler.Status.NOT_FOUND, result.status());
+        assertEquals(InstanceSessionReconciler.Status.STORE_ERROR, result.status());
+        assertNull(result.instance());
+        assertNull(result.sessionHolder());
+        assertTrue(result.message().contains("Instance store read failed"));
+        assertTrue(result.message().contains("IOException"));
+        assertTrue(result.message().contains("instance metadata unreadable"));
+        assertTrue(result.message().contains("EOFException"));
+    }
+
+    @Test
+    public void absentMetadataStillReportsNotFound() throws Exception {
+        InstanceSessionReconciler reconciler = new InstanceSessionReconciler(
+                pool, store, controller, inst -> null);
+
+        String absentId = "0f8fad5b-d9cb-469f-a165-70867728950e";
+        InstanceSessionReconciler.ReconcileResult result =
+                reconciler.ensureSessionAliveOrRecover(absentId);
+
+        assertEquals(InstanceSessionReconciler.Status.NOT_FOUND, result.status());
+        assertNull(result.instance());
+        assertTrue(result.message().contains("Instance not found in store: " + absentId));
     }
 }

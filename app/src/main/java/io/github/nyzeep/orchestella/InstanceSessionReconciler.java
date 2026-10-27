@@ -2,8 +2,11 @@ package io.github.nyzeep.orchestella;
 
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle;
 import java.io.IOException;
+import java.nio.file.NoSuchFileException;
 import java.time.Clock;
 import java.util.Objects;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Reconciler coordinating instance metadata state and live terminal sessions.
@@ -23,7 +26,9 @@ public final class InstanceSessionReconciler {
         ATTACHED,
         OFFLINE,
         CRASHED,
-        NOT_FOUND
+        NOT_FOUND,
+        /** Metadata exists but could not be read: this is an I/O/decoding failure, not absence. */
+        STORE_ERROR
     }
 
     public static final class ReconcileResult {
@@ -49,6 +54,10 @@ public final class InstanceSessionReconciler {
 
         public static ReconcileResult notFound(String instanceId, String message) {
             return new ReconcileResult(Status.NOT_FOUND, null, null, message);
+        }
+
+        public static ReconcileResult storeError(String instanceId, String message) {
+            return new ReconcileResult(Status.STORE_ERROR, null, null, message);
         }
 
         private ReconcileResult(
@@ -84,6 +93,8 @@ public final class InstanceSessionReconciler {
         ExecutionSession recoverSession(InstanceLifecycle.Instance instance) throws Exception;
     }
 
+    private static final Logger LOGGER = Logger.getLogger(InstanceSessionReconciler.class.getName());
+
     private final PersistentTerminalSessionPool sessionPool;
     private final InstanceLifecycle.Store store;
     private final InstanceLifecycle.Controller controller;
@@ -118,9 +129,14 @@ public final class InstanceSessionReconciler {
 
         PersistentTerminalSessionPool.SessionHolder liveHolder = sessionPool.getHolder(instanceId);
         InstanceLifecycle.Instance instance = null;
+        Exception storeFailure = null;
         try {
             instance = store.load(instanceId);
-        } catch (Exception ignored) {
+        } catch (Exception failure) {
+            // Never fold a read failure into "instance does not exist": a torn or
+            // unreadable metadata file is a store fault the UI must not resolve by
+            // offering to recreate the instance.
+            storeFailure = failure;
         }
 
         if (liveHolder != null && liveHolder.hasOwner()) {
@@ -128,6 +144,15 @@ public final class InstanceSessionReconciler {
             // retire this session or persist a VM exit; never replace it with a socket probe.
             return ReconcileResult.attached(instance, liveHolder,
                     liveHolder.isAlive() ? "Active session found in pool" : "Terminal ended; VM exit is not confirmed");
+        }
+
+        if (storeFailure != null) {
+            if (isMissingMetadata(storeFailure)) {
+                return ReconcileResult.notFound(instanceId, "Instance not found in store: " + instanceId);
+            }
+            LOGGER.log(Level.WARNING, "Instance metadata read failed for " + instanceId, storeFailure);
+            return ReconcileResult.storeError(instanceId,
+                    "Instance store read failed for " + instanceId + ": " + describe(storeFailure));
         }
 
         if (instance == null) {
@@ -160,5 +185,36 @@ public final class InstanceSessionReconciler {
         }
 
         return ReconcileResult.offline(instance, "Instance state: " + instance.state());
+    }
+
+    /**
+     * {@link InstanceLifecycle.FileStore#load(String)} reports absence as an
+     * {@code IOException("instance metadata not found")}; every other read failure means the
+     * metadata is present but unusable. An id that cannot name any instance is also absence.
+     */
+    private static boolean isMissingMetadata(Exception failure) {
+        if (failure instanceof NoSuchFileException) {
+            return true;
+        }
+        String detail = failure.getMessage();
+        return detail != null
+                && (detail.startsWith("instance metadata not found")
+                        || detail.equals("invalid instance id"));
+    }
+
+    private static String describe(Exception failure) {
+        StringBuilder text = new StringBuilder(failure.getClass().getSimpleName());
+        if (failure.getMessage() != null) {
+            text.append(": ").append(failure.getMessage());
+        }
+        Throwable cause = failure.getCause();
+        if (cause != null && cause != failure) {
+            text.append(" (cause: ").append(cause.getClass().getSimpleName());
+            if (cause.getMessage() != null) {
+                text.append(": ").append(cause.getMessage());
+            }
+            text.append(')');
+        }
+        return text.toString();
     }
 }

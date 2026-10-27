@@ -1058,6 +1058,13 @@ public final class InstanceLifecycle {
          * @throws IllegalStateException if source instance is RUNNING or PROVISIONING
          */
         public synchronized Instance cloneInstance(String sourceId, Path targetRootVolume) throws IOException {
+            synchronized (store.stateMonitor()) {
+                return cloneInstanceLocked(sourceId, targetRootVolume);
+            }
+        }
+
+        /** Reads the source volume, so it must hold the directory-wide state monitor. */
+        private Instance cloneInstanceLocked(String sourceId, Path targetRootVolume) throws IOException {
             Objects.requireNonNull(targetRootVolume, "targetRootVolume");
             Instance source = store.load(sourceId);
             if (source.state() != State.STOPPED && source.state() != State.CREATED) {
@@ -1099,6 +1106,13 @@ public final class InstanceLifecycle {
          * beside the original with the new instance ID.
          */
         public synchronized Instance cloneInstance(String sourceId) throws IOException {
+            synchronized (store.stateMonitor()) {
+                return cloneInstanceLocked(sourceId);
+            }
+        }
+
+        /** Reads the source volume, so it must hold the directory-wide state monitor. */
+        private Instance cloneInstanceLocked(String sourceId) throws IOException {
             Instance source = store.load(sourceId);
             String newId = UUID.randomUUID().toString();
             Path sourceVolume = source.rootVolume();
@@ -1463,6 +1477,13 @@ public final class InstanceLifecycle {
          * to the given destination path.
          */
         public synchronized void exportDiagnostic(String id, Path destination) throws IOException {
+            synchronized (store.stateMonitor()) {
+                exportDiagnosticLocked(id, destination);
+            }
+        }
+
+        /** Reads the instance's crash log, so it must hold the directory-wide state monitor. */
+        private void exportDiagnosticLocked(String id, Path destination) throws IOException {
             Objects.requireNonNull(destination, "destination");
             Instance instance = store.load(id);
             CrashDiagnostic diagnostic = instance.crashDiagnostic();
@@ -1505,6 +1526,21 @@ public final class InstanceLifecycle {
                 long targetSizeBytes,
                 io.github.nyzeep.orchestella.runtime.contract.StorageContract.StorageSpaceChecker spaceChecker)
                 throws IOException {
+            synchronized (store.stateMonitor()) {
+                resizeRootVolumeLocked(id, targetSizeBytes, spaceChecker);
+            }
+        }
+
+        /**
+         * Rewrites the root volume, so it must hold the directory-wide state monitor: otherwise
+         * another Controller could transition the instance to RUNNING between the state check and
+         * the size change, and this method's stale snapshot could overwrite that transition.
+         */
+        private void resizeRootVolumeLocked(
+                String id,
+                long targetSizeBytes,
+                io.github.nyzeep.orchestella.runtime.contract.StorageContract.StorageSpaceChecker spaceChecker)
+                throws IOException {
             Instance instance = store.load(id);
             InstanceStorageManager.resizeRootVolume(instance, targetSizeBytes, spaceChecker);
             Instance updated = instance.withUpdatedAt(clock);
@@ -1515,6 +1551,17 @@ public final class InstanceLifecycle {
          * Exports an instance (root volume, metadata JSON, and checksums) to a directory.
          */
         public synchronized io.github.nyzeep.orchestella.runtime.contract.StorageContract.InstanceExportMetadata exportToDirectory(
+                String id,
+                Path destinationDirectory,
+                io.github.nyzeep.orchestella.runtime.contract.StorageContract.StorageSpaceChecker spaceChecker)
+                throws IOException {
+            synchronized (store.stateMonitor()) {
+                return exportToDirectoryLocked(id, destinationDirectory, spaceChecker);
+            }
+        }
+
+        /** Copies the root volume, so it must hold the directory-wide state monitor. */
+        private io.github.nyzeep.orchestella.runtime.contract.StorageContract.InstanceExportMetadata exportToDirectoryLocked(
                 String id,
                 Path destinationDirectory,
                 io.github.nyzeep.orchestella.runtime.contract.StorageContract.StorageSpaceChecker spaceChecker)

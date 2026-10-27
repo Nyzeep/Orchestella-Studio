@@ -51,7 +51,6 @@ endif()
 # layer, never on fastlane_payload_core (the compiler payload must not carry the
 # FLN1 transport, and the FLN1 core is Linux-only).
 set(FL_PVM_PAYLOAD_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
-set(FL_PVM_PAYLOAD_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/pvm-compile-service.cmake)
 fl_pvm_add_compile_service_library(pvm_compile_service)
 
@@ -172,10 +171,9 @@ elseif(FL_BUILD_HOST)
         src/compiler/host_main.cpp
     )
     target_link_libraries(pvm_compiler_host PRIVATE pvm_compiler)
-if(FL_ENABLE_WERROR)
-    target_compile_options(pvm_compiler_host PRIVATE -Wall -Wextra -Werror)
-endif()
-
+    if(FL_ENABLE_WERROR)
+        target_compile_options(pvm_compiler_host PRIVATE -Wall -Wextra -Werror)
+    endif()
 endif()
 
 if(FL_BUILD_TESTS AND FL_BUILD_HOST AND NOT ANDROID)
@@ -194,6 +192,7 @@ if(FL_BUILD_TESTS AND FL_BUILD_HOST AND NOT ANDROID)
         tests/test_distcc_server.cpp
         tests/test_axp1_server.cpp
         tests/test_compile_service_e2e.cpp
+        tests/test_worker_pool.cpp
         src/vm_payload_stub.cpp
     )
     target_link_libraries(fastlane_payload_tests PRIVATE fastlane_payload_core pvm_compiler pvm_compile_service)
@@ -204,8 +203,8 @@ if(FL_BUILD_TESTS AND FL_BUILD_HOST AND NOT ANDROID)
     )
     target_compile_definitions(fastlane_payload_tests PRIVATE
         FLN1_GOLDEN_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../protocol/fln1-golden.json"
-        FL_PVM_DISTCC_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../runtime/fastlane-distcc/src/test/resources/distcc"
-        FL_PVM_AXP1_GOLDEN_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../runtime/fastlane-distcc/src/test/resources/axp1/golden-v1.hex")
+        FL_PVM_DISTCC_GOLDEN_DIR="${FL_PVM_DISTCC_GOLDEN_DIR}"
+        FL_PVM_AXP1_GOLDEN_PATH="${FL_PVM_AXP1_GOLDEN_PATH}")
     target_compile_options(fastlane_payload_tests PRIVATE -Wall -Wextra -Werror -Wpedantic)
     if(WIN32)
         target_link_libraries(fastlane_payload_tests PRIVATE psapi)
@@ -218,6 +217,7 @@ if(FL_BUILD_TESTS AND FL_BUILD_HOST AND NOT ANDROID)
     add_test(NAME compile_service_distcc_server COMMAND fastlane_payload_tests)
     add_test(NAME compile_service_axp1_server COMMAND fastlane_payload_tests)
     add_test(NAME compile_service_e2e COMMAND fastlane_payload_tests)
+    add_test(NAME compile_service_worker_pool COMMAND fastlane_payload_tests)
     set_tests_properties(compile_service_argv_policy PROPERTIES
         ENVIRONMENT "FL_TEST_FILTER=argv_policy")
     set_tests_properties(compile_service_distcc_server PROPERTIES
@@ -226,6 +226,8 @@ if(FL_BUILD_TESTS AND FL_BUILD_HOST AND NOT ANDROID)
         ENVIRONMENT "FL_TEST_FILTER=axp1")
     set_tests_properties(compile_service_e2e PROPERTIES
         ENVIRONMENT "FL_TEST_FILTER=pvm_e2e")
+    set_tests_properties(compile_service_worker_pool PROPERTIES
+        ENVIRONMENT "FL_TEST_FILTER=worker_pool")
     if(UNIX)
         # Run through bash so the test does not depend on the script's exec bit.
         add_test(NAME inprocess_noexec

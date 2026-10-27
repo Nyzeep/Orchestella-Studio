@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <thread>
@@ -72,7 +73,10 @@ private:
     std::thread proxy_thread_;
     std::thread distcc_thread_;
     bool started_ = false;
-    bool stopped_ = false;
+    // stop() is public and hosts call it from a control thread while run() is
+    // blocked in the main loop, so the latch is read and written on two
+    // threads.
+    std::atomic<bool> stopped_{false};
 };
 
 }  // namespace fl
