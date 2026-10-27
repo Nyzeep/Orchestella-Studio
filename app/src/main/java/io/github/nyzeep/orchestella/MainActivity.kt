@@ -940,8 +940,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun buildGlowCardDrawable(theme: AppTheme): android.graphics.drawable.Drawable {
+        val radius = ThemeStore(this).cornerRadiusDp() * resources.displayMetrics.density
         val outer = android.graphics.drawable.GradientDrawable().apply {
-            cornerRadius = 0f
+            cornerRadius = radius
             setStroke(
                 (1.5f * resources.displayMetrics.density).toInt(),
                 (theme.glow and 0x00FFFFFF or 0x40000000.toInt()),
@@ -949,7 +950,7 @@ class MainActivity : AppCompatActivity() {
             setColor(android.graphics.Color.TRANSPARENT)
         }
         val inner = android.graphics.drawable.GradientDrawable().apply {
-            cornerRadius = 0f
+            cornerRadius = radius
             setColor(theme.surfaceTranslucent)
         }
         val inset = (2f * resources.displayMetrics.density).toInt()

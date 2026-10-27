@@ -15,6 +15,7 @@ import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import io.github.nyzeep.orchestella.StickyModifierStateMachine.Modifier;
 import io.github.nyzeep.orchestella.StickyModifierStateMachine.State;
+import io.github.nyzeep.orchestella.ui.theme.ThemeStore;
 import java.nio.charset.StandardCharsets;
 
 /**
@@ -332,13 +333,19 @@ public class MobileAuxiliaryKeyBar extends LinearLayout {
         }
     }
 
-    private static GradientDrawable createKeyBackground(int fillColor, int strokeColor) {
+    private GradientDrawable createKeyBackground(int fillColor, int strokeColor) {
         GradientDrawable gd = new GradientDrawable();
         gd.setShape(GradientDrawable.RECTANGLE);
         gd.setColor(fillColor);
-        gd.setCornerRadius(10f);
+        gd.setCornerRadius(keyCornerPx());
         gd.setStroke(2, strokeColor);
         return gd;
+    }
+
+    /** Global corner-radius token (dp) scaled to pixels; zero keeps square keys. */
+    private float keyCornerPx() {
+        float dp = new ThemeStore(getContext()).cornerRadiusDp();
+        return dp * getResources().getDisplayMetrics().density;
     }
 
     private static int dpToPx(Context context, int dp) {

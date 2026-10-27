@@ -325,6 +325,9 @@ public class TerminalActivity extends Activity {
                     ansi, theme.getTerminalForeground(), theme.getTerminalBackground());
             rootLayout.setBackgroundColor(theme.getTerminalBackground());
             io.github.nyzeep.orchestella.ui.theme.ThemeApplier.bind(this);
+            if (btnDrawerHandle != null) {
+                btnDrawerHandle.setBackground(createPillBackground(0xFF282A36, 0xFF6272A4, 8f));
+            }
             if (terminalView != null) {
                 terminalView.applyTheme(theme,
                         store.terminalFontSizeSp(),
@@ -1010,13 +1013,15 @@ public class TerminalActivity extends Activity {
                 TypedValue.COMPLEX_UNIT_DIP, dp, getResources().getDisplayMetrics());
     }
 
-    private static android.graphics.drawable.GradientDrawable createPillBackground(
+    private android.graphics.drawable.GradientDrawable createPillBackground(
             int fillColor, int strokeColor, float cornerRadiusDp) {
         android.graphics.drawable.GradientDrawable gd =
                 new android.graphics.drawable.GradientDrawable();
         gd.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
         gd.setColor(fillColor);
-        gd.setCornerRadius(cornerRadiusDp * 2.5f);
+        // The cornerRadiusDp parameter is legacy: the global token now decides the rounding.
+        gd.setCornerRadius((themeStore != null ? themeStore : new ThemeStore(this)).cornerRadiusDp()
+                * getResources().getDisplayMetrics().density);
         gd.setStroke(2, strokeColor);
         return gd;
     }

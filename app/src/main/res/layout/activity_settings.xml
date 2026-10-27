@@ -509,6 +509,19 @@
                         android:textSize="13sp" />
 
                     <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_pick_corner_radius"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:minHeight="48dp"
+                        android:layout_marginTop="8dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        app:cornerRadius="0dp"
+                        android:text="按钮圆角：直角（默认）"
+                        android:textSize="13sp" />
+
+                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_pick_accent"
                         style="@style/Widget.Material3.Button.TonalButton"
                         android:layout_width="match_parent"

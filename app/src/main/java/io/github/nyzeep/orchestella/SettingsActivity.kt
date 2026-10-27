@@ -104,6 +104,12 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.txt_settings_terminal_palette).text =
             "配色：${theme.displayName}\n等宽字体与 16 色 ANSI 调色板跟随主题"
         findViewById<MaterialButton>(R.id.btn_clear_background).isEnabled = themeStore.backgroundUri() != null
+        findViewById<MaterialButton>(R.id.btn_pick_corner_radius)?.text =
+            "按钮圆角：" + when (themeStore.cornerRadiusDp()) {
+                0 -> "直角（默认）"
+                16 -> "大圆角 16dp"
+                else -> "小圆角 8dp"
+            }
         ThemeApplier.bind(this)
     }
 
@@ -337,6 +343,20 @@ class SettingsActivity : AppCompatActivity() {
                         refreshAppearance()
                         Toast.makeText(this, "主题：${theme.selectionLabel}", Toast.LENGTH_SHORT).show()
                     }
+                }
+                .setNegativeButton("取消", null)
+                .show().also(ThemeApplier::apply)
+        }
+
+        findViewById<MaterialButton?>(R.id.btn_pick_corner_radius)?.setOnClickListener {
+            val options = listOf("直角（默认）" to 0, "小圆角 8dp" to 8, "大圆角 16dp" to 16)
+            val current = options.indexOfFirst { it.second == themeStore.cornerRadiusDp() }
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("全局按钮圆角")
+                .setSingleChoiceItems(options.map { it.first }.toTypedArray(), current) { dialog, which ->
+                    themeStore.setCornerRadiusDp(options[which].second)
+                    refreshAppearance()
+                    dialog.dismiss()
                 }
                 .setNegativeButton("取消", null)
                 .show().also(ThemeApplier::apply)

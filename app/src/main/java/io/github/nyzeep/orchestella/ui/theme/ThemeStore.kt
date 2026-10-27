@@ -141,6 +141,15 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
         }.apply()
     }
 
+    // --- Global button corner radius token ---
+
+    /** 0 keeps the current square look; the settings dialog offers 0/8/16 dp. */
+    fun cornerRadiusDp(): Int = prefs.getInt(KEY_CORNER_RADIUS_DP, 0).coerceIn(0, MAX_CORNER_RADIUS_DP)
+
+    fun setCornerRadiusDp(dp: Int) {
+        prefs.edit().putInt(KEY_CORNER_RADIUS_DP, dp.coerceIn(0, MAX_CORNER_RADIUS_DP)).apply()
+    }
+
     fun terminalFontSizeSp(): Int =
         prefs.getInt(KEY_TERMINAL_FONT_SP, 14).coerceIn(MIN_TERMINAL_FONT_SP, MAX_TERMINAL_FONT_SP)
 
@@ -235,6 +244,8 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
         const val KEY_TERMINAL_LETTER_SPACING = "terminal_letter_spacing"
         const val KEY_TERMINAL_LINE_SPACING = "terminal_line_spacing"
         const val KEY_CUSTOM_SLOT_PREFIX = "custom_slot_"
+        const val KEY_CORNER_RADIUS_DP = "corner_radius_dp"
+        const val MAX_CORNER_RADIUS_DP = 24
         const val MIN_TERMINAL_FONT_SP = 10
         const val MAX_TERMINAL_FONT_SP = 22
 
