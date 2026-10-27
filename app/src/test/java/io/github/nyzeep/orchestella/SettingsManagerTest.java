@@ -50,6 +50,31 @@ public final class SettingsManagerTest {
     }
 
     @Test
+    public void acceleratorLaneDefaultsToBuildFlagAndPersists() {
+        // Default must follow the build-time opt-in, whatever the build chose.
+        assertEquals("accelerator lane default must follow the build flag",
+                BuildConfig.ACCELERATOR_LANE_ENABLED, settings.isAcceleratorLaneEnabled());
+
+        // An explicit user toggle wins and persists across reads.
+        settings.setAcceleratorLaneEnabled(false);
+        assertFalse(settings.isAcceleratorLaneEnabled());
+
+        settings.setAcceleratorLaneEnabled(true);
+        assertTrue(settings.isAcceleratorLaneEnabled());
+    }
+
+    @Test
+    public void acceleratorLanePersistsAcrossManagers() {
+        FakeSharedPreferences prefs = new FakeSharedPreferences();
+        SettingsManager first = new SettingsManager(prefs);
+        first.setAcceleratorLaneEnabled(false);
+
+        SettingsManager second = new SettingsManager(prefs);
+        assertFalse("stored user value must win over the build default on a fresh manager",
+                second.isAcceleratorLaneEnabled());
+    }
+
+    @Test
     public void switchingBatteryPolicyPersists() {
         settings.setBatteryPolicy(BatteryPolicy.PERFORMANCE);
         assertEquals(BatteryPolicy.PERFORMANCE, settings.getBatteryPolicy());

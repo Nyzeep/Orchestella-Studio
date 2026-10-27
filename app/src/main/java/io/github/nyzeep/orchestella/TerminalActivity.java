@@ -106,6 +106,22 @@ public class TerminalActivity extends Activity {
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         bridgeToken = getIntent().getStringExtra("bridgeToken");
         instanceId = getIntent().getStringExtra("instanceId");
+        if (instanceId == null || instanceId.isEmpty()) {
+            // Direct launch (desktop shortcut / notification) may carry no
+            // instanceId. Exactly one stored instance is unambiguous, so bind
+            // it and enter the terminal normally; zero or several instances
+            // keeps the existing missing-instance card (never guess).
+            try {
+                java.util.List<InstanceLifecycle.Instance> stored =
+                        new InstanceLifecycle.FileStore(
+                                getFilesDir().toPath().resolve("instances")).list();
+                if (stored.size() == 1) {
+                    instanceId = stored.get(0).id();
+                }
+            } catch (Exception ignored) {
+                // Store unreadable: fall through to the offline card.
+            }
+        }
         session = ExecutionSessionRegistry.get(instanceId);
         ui = new Handler(Looper.getMainLooper());
         stickyStateMachine = new StickyModifierStateMachine();

@@ -1057,6 +1057,12 @@ class MainActivity : AppCompatActivity() {
 
         cpuChip?.text = getString(R.string.system_cpu_badge, profile.totalCores())
         virtBadge?.text = currentBadge(assessment)
+        findViewById<TextView>(R.id.accel_lane_badge)?.visibility =
+            if (settingsManager.isAcceleratorLaneEnabled() && BuildConfig.ACCELERATOR_LANE_ENABLED) {
+                View.VISIBLE
+            } else {
+                View.GONE
+            }
 
         statusText?.text = buildString {
             appendLine(getString(R.string.runtime_class_full_linux))
@@ -1567,7 +1573,11 @@ class MainActivity : AppCompatActivity() {
                         ).record(failure)
                     })
                 val dispatchResult = AcceleratorLaunchDispatcher.dispatch(
-                    BuildConfig.ACCELERATOR_LANE_ENABLED,
+                    // Runtime switch on the accelerator decision point: off keeps
+                    // today's launch path silently (no toast, no fact reads).
+                    // The build flag stays a hard gate so a build without the
+                    // accelerator components never assembles the lane.
+                    settingsManager.isAcceleratorLaneEnabled() && BuildConfig.ACCELERATOR_LANE_ENABLED,
                     parameters,
                     { params -> QemuInstanceLauncher(this).launch(params) },
                     AcceleratorLaunchDispatcher.AccelBackends(
