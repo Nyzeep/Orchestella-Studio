@@ -877,6 +877,11 @@ class MainActivity : AppCompatActivity() {
                     attachPressGlow(card, theme)
                 }
             }
+            // The ribbon banner's XML shape survives ThemeApplier's generic walk on light
+            // themes (session 17 leftover); paint it like the other glow cards explicitly.
+            findViewById<View>(R.id.banner_active_machine)?.let { banner ->
+                banner.background = buildGlowCardDrawable(theme)
+            }
             val distroCards = listOf(
                 R.id.card_create_linux_main,
                 R.id.card_distro_debian,
