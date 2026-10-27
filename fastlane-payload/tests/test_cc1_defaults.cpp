@@ -53,7 +53,7 @@ FL_TEST(cc1_defaults_cxx_restores_exceptions) {
     FL_CHECK_EQ(defaults[0], std::string("-funwind-tables=2"));
     FL_CHECK_EQ(defaults[1], std::string("-fcxx-exceptions"));
     FL_CHECK_EQ(defaults[2], std::string("-fexceptions"));
-    FL_CHECK_EQ(defaults[3], std::string("-fno-omit-frame-pointer"));
+    FL_CHECK_EQ(defaults[3], std::string("-mframe-pointer=all"));
 }
 
 // The job's own opt-outs are on the argv allow list and must survive: the
@@ -79,7 +79,7 @@ FL_TEST(cc1_defaults_other_flags_are_ignored) {
                              "-fno-rtti", "-Werror"});
     FL_CHECK_EQ(defaults.size(), std::size_t{4});
     FL_CHECK(contains(defaults, "-fcxx-exceptions"));
-    FL_CHECK(contains(defaults, "-fno-omit-frame-pointer"));
+    FL_CHECK(contains(defaults, "-mframe-pointer=all"));
 }
 
 FL_TEST(cc1_defaults_every_default_precedes_the_job_flags) {
