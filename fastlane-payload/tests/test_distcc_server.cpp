@@ -385,6 +385,60 @@ FL_TEST(distcc_server_truncates_diagnostics_without_splitting_utf8) {
     FL_CHECK(response.serr.size() <= limits.max_diagnostics_bytes);
 }
 
+FL_TEST(distcc_server_accepts_the_argv_a_real_distcc_client_sends) {
+    // PVM-11. This is the argv the guest actually produced, recovered by
+    // reconciling the device-side `bytes_in = 2672` against the known command:
+    //
+    //   12 + 12 + 9*12 + 110 + 12 + 2418 = 2672
+    //
+    // Entry [2] came from the user's build file; [7] and [8] were injected by
+    // distcc itself (dcc_add_clang_target appends the two-token spelling, and
+    // it does so even when a --target= is already present). The payload used
+    // to answer this with ARGV_REJECTED:UNKNOWN_FLAG, so the first remote
+    // compile in the whole crossfire chain never happened.
+    const std::vector<std::string> argv = {
+        "clang",
+        "-c",
+        "--target=aarch64-unknown-linux-android",
+        "-O1",
+        "/root/fixture.c",
+        "-o",
+        "/root/cross.o",
+        "-target",
+        "aarch64-alpine-linux-musl",
+    };
+
+    // Pin the argv block to the evidence: 9 entries, 12-byte headers each,
+    // 110 bytes of body. If this drifts the test is no longer about PVM-11.
+    size_t argv_body_bytes = 0;
+    for (const std::string& argument : argv) {
+        argv_body_bytes += argument.size();
+    }
+    FL_CHECK_EQ(argv_body_bytes, static_cast<size_t>(110));
+
+    const std::string doti = "int fastlane_answer;\n";
+    const std::vector<uint8_t> wire = fl::pvm::test::build_distcc_request(argv, doti);
+    FL_CHECK_EQ(wire.size(), static_cast<size_t>(12 + 12 + 9 * 12 + 110 + 12) +
+                                 doti.size());
+
+    const auto parsed = parse_distcc_request(wire, ServerLimits());
+    FL_CHECK(parsed.status == DistccParseStatus::kOk);
+
+    CountingEngine engine;
+    const auto response = run_distcc_job(parsed.request, policy(), ServerLimits(), &engine);
+    // Asserted before stat so a regression names the class instead of a number.
+    FL_CHECK_EQ(response.serr, std::string());
+    FL_CHECK_EQ(response.stat, 0u);
+    FL_CHECK_EQ(engine.calls, 1);
+    // Both target declarations are consumed by the policy: the engine always
+    // emits for the configured triple, so forwarding either would only invite
+    // the driver to disagree. -c and -O1 are the only survivors.
+    FL_CHECK_EQ(engine.last_flags.size(), static_cast<size_t>(2));
+    FL_CHECK_EQ(engine.last_flags[0], std::string("-c"));
+    FL_CHECK_EQ(engine.last_flags[1], std::string("-O1"));
+    FL_CHECK_EQ(response.doto.size(), static_cast<size_t>(4));
+}
+
 FL_TEST(distcc_server_forwards_only_allow_listed_flags_and_the_language) {
     CountingEngine engine;
     const std::vector<uint8_t> wire = fl::pvm::test::build_distcc_request(
