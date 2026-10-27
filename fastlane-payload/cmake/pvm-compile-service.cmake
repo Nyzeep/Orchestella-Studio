@@ -13,6 +13,7 @@ set(FL_PVM_COMPILE_SERVICE_SOURCES
     ${FL_PVM_PAYLOAD_ROOT}/src/compile_service/axp1_server.cpp
     ${FL_PVM_PAYLOAD_ROOT}/src/compile_service/fake_engine.cpp
     ${FL_PVM_PAYLOAD_ROOT}/src/compile_service/net.cpp
+    ${FL_PVM_PAYLOAD_ROOT}/src/compile_service/worker_pool.cpp
 )
 
 set(FL_PVM_COMPILE_SERVICE_TESTS
@@ -21,6 +22,7 @@ set(FL_PVM_COMPILE_SERVICE_TESTS
     ${FL_PVM_PAYLOAD_ROOT}/tests/test_distcc_server.cpp
     ${FL_PVM_PAYLOAD_ROOT}/tests/test_axp1_server.cpp
     ${FL_PVM_PAYLOAD_ROOT}/tests/test_compile_service_e2e.cpp
+    ${FL_PVM_PAYLOAD_ROOT}/tests/test_worker_pool.cpp
 )
 
 # The service core is deliberately independent of fastlane_payload_core: the

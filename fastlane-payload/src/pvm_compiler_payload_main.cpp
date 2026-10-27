@@ -23,16 +23,14 @@
 #include <string.h>
 
 #include <atomic>
-#include <condition_variable>
 #include <memory>
-#include <mutex>
 #include <string>
-#include <thread>
 #include <vector>
 
 #include "compile_service/axp1_server.h"
 #include "compile_service/compile_service.h"
 #include "compile_service/net.h"
+#include "compile_service/worker_pool.h"
 
 #if defined(FL_PVM_COMPILER_ENGINE_CLANG)
 #include "compile_service/clang_engine.h"
@@ -202,21 +200,31 @@ public:
                 fl::pvm::close_socket(handle);
                 break;
             }
-            if (active_.load() >= static_cast<unsigned>(limits_.max_jobs)) {
+            if (workers_.active() >= static_cast<unsigned>(limits_.max_jobs)) {
                 // distccd keeps excess peers in the listen backlog; there is
                 // no in-band "busy" packet in v1, so closing is the only
                 // signal available without inventing protocol.
                 fl::pvm::close_socket(handle);
                 continue;
             }
-            active_.fetch_add(1);
+            // A refused thread is a property of the machine, not of this peer:
+            // the pool rolls the counter back and closes `handle`, and the
+            // loop keeps accepting. Dropping out of serve_forever() here would
+            // turn a transient ENOMEM/EAGAIN into a dead payload.
+            const int spawn_failure = workers_.spawn(&CompileServiceServer::serve_one, this,
+                                                    handle);
+            if (spawn_failure != 0) {
+                std::fprintf(stderr,
+                             "PVM_CSDL worker spawn failed errno=%d (%s) active=%u\n",
+                             spawn_failure, ::strerror(spawn_failure),
+                             workers_.active());
+                continue;
+            }
             total_.fetch_add(1);
-            std::thread(&CompileServiceServer::serve_one, this, handle).detach();
         }
         // Detached workers capture `this`: wait for them before the members
         // they read go away.
-        std::unique_lock<std::mutex> lock(mutex_);
-        drained_.wait(lock, [this]() { return active_.load() == 0; });
+        workers_.wait_drained();
     }
 
     void stop() {
@@ -227,17 +235,17 @@ public:
     }
 
 private:
-    void serve_one(fl::pvm::SocketHandle handle) {
+    // Detached-worker body: `owner` is the server, because the pool only knows
+    // an opaque pointer and the connection handle.
+    static void serve_one(void* owner, fl::pvm::SocketHandle handle) {
+        CompileServiceServer* server = static_cast<CompileServiceServer*>(owner);
         SocketTransport transport(handle);
         const WireError outcome = fl::pvm::axp1_serve_connection(
-            &transport, config_, policy_, limits_, engine_.get());
+            &transport, server->config_, server->policy_, server->limits_,
+            server->engine_.get());
         std::fprintf(stderr, "PVM_CSDL job done code=%d total=%u\n",
-                     static_cast<int>(outcome), total_.load());
-        active_.fetch_sub(1);
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-        }
-        drained_.notify_all();
+                     static_cast<int>(outcome), server->total_.load());
+        server->workers_.finished();
     }
 
     static std::string read_triple() {
@@ -260,11 +268,9 @@ private:
     ArgvPolicyConfig policy_;
     ServerLimits limits_;
     std::unique_ptr<CompileEngine> engine_;
-    std::atomic<unsigned> active_{0};
+    fl::pvm::WorkerPool workers_;
     std::atomic<unsigned> total_{0};
     std::atomic<bool> stopping_{false};
-    std::mutex mutex_;
-    std::condition_variable drained_;
 };
 
 }  // namespace
