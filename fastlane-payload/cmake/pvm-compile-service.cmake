@@ -9,6 +9,7 @@
 set(FL_PVM_COMPILE_SERVICE_SOURCES
     ${FL_PVM_PAYLOAD_ROOT}/src/compile_service/compile_service.cpp
     ${FL_PVM_PAYLOAD_ROOT}/src/compile_service/argv_policy.cpp
+    ${FL_PVM_PAYLOAD_ROOT}/src/compile_service/cc1_defaults.cpp
     ${FL_PVM_PAYLOAD_ROOT}/src/compile_service/distcc_server.cpp
     ${FL_PVM_PAYLOAD_ROOT}/src/compile_service/axp1_server.cpp
     ${FL_PVM_PAYLOAD_ROOT}/src/compile_service/fake_engine.cpp
@@ -19,6 +20,7 @@ set(FL_PVM_COMPILE_SERVICE_SOURCES
 set(FL_PVM_COMPILE_SERVICE_TESTS
     ${FL_PVM_PAYLOAD_ROOT}/tests/pvm_test_main.cpp
     ${FL_PVM_PAYLOAD_ROOT}/tests/test_argv_policy.cpp
+    ${FL_PVM_PAYLOAD_ROOT}/tests/test_cc1_defaults.cpp
     ${FL_PVM_PAYLOAD_ROOT}/tests/test_distcc_server.cpp
     ${FL_PVM_PAYLOAD_ROOT}/tests/test_axp1_server.cpp
     ${FL_PVM_PAYLOAD_ROOT}/tests/test_compile_service_e2e.cpp

@@ -37,12 +37,22 @@ DEFAULT_PACKAGE = "io.github.nyzeep.orchestella.qa.dvpvm"
 EVIDENCE_DIR = "files/avf-qa"
 
 
-def build_fixture(functions: int) -> str:
-    """A preprocessed unit of the DV-PVM-01 proven shape (~85 KB at 2000)."""
+def build_fixture(functions: int, language: str = "c") -> str:
+    """A preprocessed unit of the DV-PVM-01 proven shape (~85 KB at 2000).
+
+    `language="cxx"` keeps the same probe functions (inside `extern "C"`, so
+    the symbol names stay unmangled and the two objects remain comparable) and
+    adds one function whose body has a try/catch: the object must then carry
+    .eh_frame, .rela.eh_frame and .gcc_except_table, and the payload must accept
+    the C++ job at all. That is the only device-side way to answer "can pVM
+    serve C++", which the C fixture cannot.
+    """
     lines = [
         "/* DV-PVM-02 device fixture: %d functions, preprocessed form. */" % functions,
-        "int puts(const char*);",
     ]
+    if language == "cxx":
+        lines.append('extern "C" {')
+    lines.append("int puts(const char*);")
     for index in range(functions):
         lines.append("int probe_fn_%d(int x) { return x + %d; }" % (index, index))
     touched = sorted({0, 1, 2, 3, functions // 2, functions - 1})
@@ -51,6 +61,16 @@ def build_fixture(functions: int) -> str:
     lines.append("    int total = %s;" % terms)
     lines.append("    return total % 251;")
     lines.append("}")
+    if language == "cxx":
+        lines.append("}  /* extern \"C\" */")
+        lines.append("int fixture_guarded(int x) {")
+        lines.append("    try {")
+        lines.append("        if (x < 0) { throw x; }")
+        lines.append("        return x;")
+        lines.append("    } catch (int value) {")
+        lines.append("        return -value;")
+        lines.append("    }")
+        lines.append("}")
     return "\n".join(lines) + "\n"
 
 
