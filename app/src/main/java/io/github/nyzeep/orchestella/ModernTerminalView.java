@@ -77,6 +77,9 @@ public class ModernTerminalView extends ScrollView {
     private float touchDownY;
     private long touchDownTime;
     private SizeListener sizeListener;
+    // Terminal-only background image (below the transcript, above the solid color).
+    private boolean hasBackgroundImage;
+    private int scrimColor;
 
     public interface SizeListener { void onTerminalSizeChanged(int columns, int rows); }
 
@@ -550,14 +553,56 @@ public class ModernTerminalView extends ScrollView {
 
     public void applyTheme(io.github.nyzeep.orchestella.ui.theme.AppTheme theme,
             int fontSizeSp, float letterSpacingEm, float lineSpacingExtraPx) {
-        setBackgroundColor(theme.getTerminalBackground());
-        transcriptView.setBackgroundColor(theme.getTerminalBackground());
+        // A picked image survives theme switches; only the scrim color follows the theme.
+        if (hasBackgroundImage) {
+            applyScrimColor();
+        } else {
+            setBackgroundColor(theme.getTerminalBackground());
+        }
+        transcriptView.setBackgroundColor(hasBackgroundImage ? android.graphics.Color.TRANSPARENT
+                : theme.getTerminalBackground());
         transcriptView.setTextColor(theme.getTerminalForeground());
         transcriptView.setTextSize(TypedValue.COMPLEX_UNIT_SP, fontSizeSp);
         transcriptView.setLetterSpacing(letterSpacingEm);
         transcriptView.setLineSpacing(lineSpacingExtraPx, 1f);
         updateTerminalSize();
         renderScreen();
+    }
+
+    /** Layers the decoded image under a scrim of the given color; the transcript turns transparent. */
+    public void setTerminalBackgroundImage(android.graphics.Bitmap bitmap, int scrimArgb) {
+        hasBackgroundImage = true;
+        scrimColor = scrimArgb;
+        android.graphics.drawable.BitmapDrawable image =
+                new android.graphics.drawable.BitmapDrawable(getResources(), bitmap);
+        image.setGravity(android.view.Gravity.FILL);
+        setBackground(new android.graphics.drawable.LayerDrawable(new android.graphics.drawable.Drawable[]{
+                image, new android.graphics.drawable.ColorDrawable(scrimArgb)}));
+        transcriptView.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+    }
+
+    /** Keeps the scrim color for the next image; falls back to the solid terminal color now. */
+    public void clearTerminalBackgroundImage(int fallbackColor) {
+        hasBackgroundImage = false;
+        setBackground(null);
+        setBackgroundColor(fallbackColor);
+        transcriptView.setBackgroundColor(fallbackColor);
+    }
+
+    /** Updates only the overlay color; the bitmap stays untouched. */
+    public void setTerminalScrimColor(int scrimArgb) {
+        scrimColor = scrimArgb;
+        if (hasBackgroundImage) applyScrimColor();
+    }
+
+    private void applyScrimColor() {
+        if (getBackground() instanceof android.graphics.drawable.LayerDrawable) {
+            android.graphics.drawable.Drawable scrim =
+                    ((android.graphics.drawable.LayerDrawable) getBackground()).getDrawable(1);
+            if (scrim instanceof android.graphics.drawable.ColorDrawable) {
+                ((android.graphics.drawable.ColorDrawable) scrim).setColor(scrimColor);
+            }
+        }
     }
 
     private final class TranscriptView extends androidx.appcompat.widget.AppCompatTextView {
