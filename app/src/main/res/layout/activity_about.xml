@@ -166,7 +166,10 @@
                                 android:text="N"
                                 android:textSize="26sp"
                                 android:textStyle="bold"
-                                android:textColor="#FF282A36" />
+                                android:textColor="#FF1F2026" />
+                                <!-- Fixed dark ink: this placeholder keeps its PRESERVEd
+                                     purple-to-cyan gradient in every theme, so a themed
+                                     text color would go unreadable in dark mode. -->
                         </FrameLayout>
 
                         <LinearLayout
