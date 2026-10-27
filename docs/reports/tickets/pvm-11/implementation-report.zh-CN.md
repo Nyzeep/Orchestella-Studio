@@ -37,7 +37,7 @@
 | A2 | `-march=native` 仍被拒 | 三个 `native` 写法全部 `UNKNOWN_FLAG`，具体值仍放行 | **绿** |
 | A3 | 路径型值仍被拒 | `-target aarch64-../../etc/passwd` → `PATH_LIKE`；空值/缺值 → `BAD_TARGET` | **绿** |
 
-全套：**52/52 用例通过**（改前 48 条，本轮新增 4 条），`ctest` 5/5。
+全套：**52/52 用例通过**（`pvm_compile_service_tests` 改前 46 条，本轮新增 6 条：`argv_policy` 10→15、`distcc_server` 16→17），`pvm-service` 构建树的 `ctest` 5/5（根构建树是 7 个 ctest 目标，CI 日志记 `0 tests failed out of 7`）。
 
 ## 2. 仓库状态
 
