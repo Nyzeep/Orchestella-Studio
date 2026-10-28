@@ -227,7 +227,11 @@ public class TerminalActivity extends Activity {
         // 3. Multi-terminal right slide-out drawer layout container
         multiManager = MultiTerminalSessionManager.getInstance();
         drawerLayout = new DrawerLayout(this);
-        drawerLayout.setScrimColor(0x88000000);
+        // Session 19 (T-E): the drawer scrim follows the terminal background's RGB so a
+        // light theme no longer dims through a hard-coded black veil; the alpha stays
+        // the same 0x88 the platform default used, so contrast does not change.
+        int drawerScrim = (themeStore.resolve().getTerminalBackground() & 0x00FFFFFF) | 0x88000000;
+        drawerLayout.setScrimColor(drawerScrim);
         drawerLayout.addView(rootLayout, new DrawerLayout.LayoutParams(
                 DrawerLayout.LayoutParams.MATCH_PARENT, DrawerLayout.LayoutParams.MATCH_PARENT));
 

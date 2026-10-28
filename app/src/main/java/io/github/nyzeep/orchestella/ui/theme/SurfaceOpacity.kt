@@ -1,8 +1,17 @@
 package io.github.nyzeep.orchestella.ui.theme
 
-/** Pure JVM math for the UI surface opacity slider (70..100 percent). */
+/**
+ * Pure JVM math for the UI surface opacity slider (55..100 percent).
+ *
+ * Session 19 lowered the floor from 70 to 55: the user asked for a deeper
+ * see-through effect, and a pure solid surface still clears the WCAG 4.5:1
+ * text floor at 55% because the surface composites onto the page background.
+ * Surfaces drawn over a wallpaper skip the contrast fallback instead: the
+ * terminal/page scrim owns legibility there, so the requested value is
+ * painted as chosen.
+ */
 object SurfaceOpacity {
-    const val MIN_PERCENT = 70
+    const val MIN_PERCENT = 55
     const val MAX_PERCENT = 100
     const val DEFAULT_PERCENT = 100
     const val MIN_TEXT_CONTRAST = 4.5
@@ -13,6 +22,29 @@ object SurfaceOpacity {
     fun applyOpacity(surfaceArgb: Int, percent: Int): Int {
         val alpha = (clampPercent(percent) * 255) / 100
         return (surfaceArgb and 0x00FFFFFF) or (alpha shl 24)
+    }
+
+    /**
+     * The single surface color every drawing path should paint.
+     *
+     * Solid pages (no wallpaper) keep the WCAG 4.5:1 text floor by falling
+     * back to [MIN_PERCENT] when the requested transparency would break it;
+     * wallpaper-backed surfaces skip that fallback because the scrim behind
+     * them owns legibility.
+     */
+    fun resolveSurfaceColor(
+        surfaceArgb: Int,
+        behindArgb: Int,
+        textArgb: Int,
+        requestedPercent: Int,
+        hasBackdrop: Boolean,
+    ): Int {
+        val percent = if (hasBackdrop) {
+            clampPercent(requestedPercent)
+        } else {
+            resolveEffectivePercent(surfaceArgb, behindArgb, textArgb, requestedPercent)
+        }
+        return applyOpacity(surfaceArgb, percent)
     }
 
     /** WCAG 2.x relative-luminance contrast after alpha-compositing the foreground onto the background. */

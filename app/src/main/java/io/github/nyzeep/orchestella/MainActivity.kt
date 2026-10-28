@@ -8,6 +8,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
@@ -46,6 +47,7 @@ import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig
 import io.github.nyzeep.orchestella.runtime.distro.DistroCatalogRegistry
 import io.github.nyzeep.orchestella.runtime.distro.OfficialDebianCatalog
 import io.github.nyzeep.orchestella.ui.theme.AppTheme
+import io.github.nyzeep.orchestella.ui.theme.SurfaceOpacity
 import io.github.nyzeep.orchestella.ui.theme.ThemeStore
 import io.github.nyzeep.orchestella.ui.theme.ThemeColors
 import io.github.nyzeep.orchestella.runtime.engineavf.AvfEngineException
@@ -96,6 +98,8 @@ class MainActivity : AppCompatActivity() {
     private var wizardModel: AvfAuthorizationWizardModel? = null
     private var pendingExportInstance: InstanceLifecycle.Instance? = null
     private var currentTabIndex = 0
+    /** False until the first switchTab painted every tab; later switches repaint the changed pair. */
+    private var tabsInitialized = false
     private var dashboardInstance: InstanceLifecycle.Instance? = null
     private var sshCommand: String? = null
     private var lastInstanceState = ""
@@ -290,11 +294,18 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.nav_tab_settings)?.setOnClickListener { switchTab(4) }
     }
 
-    private fun switchTab(tabIndex: Int) {
+    /**
+     * @param forceAll repaint every tab even when its index did not change. The theme
+     *   reapply path needs it; a user tap only changes two tabs (the one leaving and
+     *   the one entering), so repainting the other three is wasted invalidation that
+     *   made tab switches the worst scenario in the session-19 gfxinfo baseline.
+     */
+    private fun switchTab(tabIndex: Int, forceAll: Boolean = false) {
+        val previousTabIndex = currentTabIndex
         currentTabIndex = tabIndex
         val theme = activeTheme ?: themeStore.resolve()
         val activeColor = theme.primary
-        val inactiveBg = theme.surface
+        val inactiveBg = surfaceColor(theme)
         val inactiveText = theme.textDim
 
         val tabs = listOf(
@@ -329,6 +340,10 @@ class MainActivity : AppCompatActivity() {
         } catch (_: Exception) {}
 
         tabs.forEachIndexed { index, (containerId, navTabId, navElements) ->
+            // Skip untouched tabs after the first paint; their colors already match.
+            if (!forceAll && tabsInitialized && index != previousTabIndex && index != tabIndex) {
+                return@forEachIndexed
+            }
             val container = findViewById<View>(containerId)
             val navTab = findViewById<View>(navTabId)
             val icon = findViewById<ImageView>(navElements.first)
@@ -355,6 +370,7 @@ class MainActivity : AppCompatActivity() {
             renderHardwareSpecDetails()
             renderGauges(theme)
         }
+        tabsInitialized = true
     }
 
     private fun setupConsoleControls() {
@@ -697,6 +713,34 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Session 19 (T-B.2): the dashboard paints several surfaces by hand
+     * (header pills, glow cards, distro cards, instance cards, tab strip).
+     * ThemeApplier's walk repaints the tree, but those hand-painted colors
+     * only refresh when applyThemeToDashboard runs; without this listener a
+     * slider drag would not reach the home screen until the next resume.
+     */
+    private val surfaceOpacityListener =
+        SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == ThemeStore.KEY_UI_SURFACE_OPACITY) {
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) applyThemeToDashboard()
+                }
+            }
+        }
+
+    override fun onStart() {
+        super.onStart()
+        getSharedPreferences(ThemeStore.PREFS_NAME, Context.MODE_PRIVATE)
+            .registerOnSharedPreferenceChangeListener(surfaceOpacityListener)
+    }
+
+    override fun onStop() {
+        getSharedPreferences(ThemeStore.PREFS_NAME, Context.MODE_PRIVATE)
+            .unregisterOnSharedPreferenceChangeListener(surfaceOpacityListener)
+        super.onStop()
+    }
+
     override fun onResume() {
         super.onResume()
         if (::themeStore.isInitialized) {
@@ -863,6 +907,19 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * The one surface color for hand-painted dashboard chrome (session 19 T-B.2).
+     * Composes the persisted percent with the theme surface; with a wallpaper
+     * selected the scrim owns legibility, so the contrast floor is skipped.
+     */
+    private fun surfaceColor(theme: AppTheme): Int = SurfaceOpacity.resolveSurfaceColor(
+        theme.surface,
+        theme.background,
+        theme.text,
+        ThemeStore(this).surfaceOpacityPercent(),
+        ThemeStore(this).backgroundUri() != null,
+    )
+
     private fun applyThemeToDashboard() {
         try {
             val theme = themeStore.resolve()
@@ -883,7 +940,7 @@ class MainActivity : AppCompatActivity() {
             findViewById<TextView>(R.id.instances_empty)?.setTextColor(theme.textDim)
 
             // Header Action Buttons
-            val iconBtnTint = android.content.res.ColorStateList.valueOf(theme.surfaceTranslucent)
+            val iconBtnTint = android.content.res.ColorStateList.valueOf(surfaceColor(theme))
             val iconContentTint = android.content.res.ColorStateList.valueOf(theme.text)
             listOf(R.id.ssh_manager_button, R.id.theme_toggle_button, R.id.about_button, R.id.settings_button).forEach { id ->
                 findViewById<com.google.android.material.button.MaterialButton>(id)?.let { btn ->
@@ -896,7 +953,7 @@ class MainActivity : AppCompatActivity() {
 
             findViewById<View>(R.id.system_status_card)?.let { card ->
                 if (card is com.google.android.material.card.MaterialCardView) {
-                    card.setCardBackgroundColor(theme.surfaceTranslucent)
+                    card.setCardBackgroundColor(surfaceColor(theme))
                     card.strokeColor = (theme.glow and 0x00FFFFFF) or 0x33000000
                     card.strokeWidth = (1 * resources.displayMetrics.density).toInt()
                     attachPressGlow(card, theme)
@@ -927,7 +984,7 @@ class MainActivity : AppCompatActivity() {
             }
             renderGauges(theme)
             applyThemeToInstances(theme)
-            switchTab(currentTabIndex)
+            switchTab(currentTabIndex, forceAll = true)
         } catch (e: Exception) {
             android.util.Log.w("MainActivity", "theme apply failed", e)
         }
@@ -961,7 +1018,7 @@ class MainActivity : AppCompatActivity() {
         for (i in 0 until list.childCount) {
             val cardView = list.getChildAt(i)
             if (cardView is com.google.android.material.card.MaterialCardView) {
-                cardView.setCardBackgroundColor(theme.surfaceTranslucent)
+                cardView.setCardBackgroundColor(surfaceColor(theme))
                 cardView.strokeColor = (theme.glow and 0x00FFFFFF) or 0x30000000
                 cardView.strokeWidth = (1 * resources.displayMetrics.density).toInt()
                 cardView.findViewById<TextView>(R.id.card_distro_title)?.setTextColor(theme.text)
@@ -984,7 +1041,7 @@ class MainActivity : AppCompatActivity() {
         }
         val inner = android.graphics.drawable.GradientDrawable().apply {
             cornerRadius = radius
-            setColor(theme.surfaceTranslucent)
+            setColor(surfaceColor(theme))
         }
         val inset = (2f * resources.displayMetrics.density).toInt()
         return android.graphics.drawable.LayerDrawable(arrayOf(outer, inner)).apply {
@@ -996,11 +1053,15 @@ class MainActivity : AppCompatActivity() {
         view.setOnTouchListener { v, event ->
             when (event.actionMasked) {
                 android.view.MotionEvent.ACTION_DOWN, android.view.MotionEvent.ACTION_HOVER_ENTER -> {
-                    v.animate().scaleX(1.015f).scaleY(1.015f).setDuration(90).start()
+                    // Session 19 (T-D): press-in 100 ms / release 150 ms, the Material
+                    // Motion standard durations, instead of ad-hoc 90/120 ms.
+                    v.animate().scaleX(1.015f).scaleY(1.015f).setDuration(100)
+                        .setInterpolator(android.view.animation.DecelerateInterpolator()).start()
                 }
                 android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL,
                 android.view.MotionEvent.ACTION_HOVER_EXIT -> {
-                    v.animate().scaleX(1f).scaleY(1f).setDuration(120).start()
+                    v.animate().scaleX(1f).scaleY(1f).setDuration(150)
+                        .setInterpolator(android.view.animation.AccelerateInterpolator()).start()
                 }
             }
             false
@@ -1243,7 +1304,7 @@ class MainActivity : AppCompatActivity() {
 
             val currentTheme = activeTheme ?: themeStore.resolve()
             if (cardView is com.google.android.material.card.MaterialCardView) {
-                cardView.setCardBackgroundColor(currentTheme.surfaceTranslucent)
+                cardView.setCardBackgroundColor(surfaceColor(currentTheme))
                 cardView.strokeColor = (currentTheme.glow and 0x00FFFFFF) or 0x30000000
                 cardView.strokeWidth = (1 * resources.displayMetrics.density).toInt()
                 distroTitle?.setTextColor(currentTheme.text)

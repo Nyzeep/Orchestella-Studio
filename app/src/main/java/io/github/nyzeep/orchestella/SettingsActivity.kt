@@ -552,12 +552,12 @@ class SettingsActivity : AppCompatActivity() {
         }
         scrimSeek?.max = 90
         scrimSeek?.progress = themeStore.terminalScrimAlpha() * 90 / 230
-        scrimLabel?.text = "终端背景遮罩浓度：${scrimSeek?.progress ?: 0}%"
+        scrimLabel?.text = "背景遮罩浓度：${scrimSeek?.progress ?: 0}%"
         scrimSeek?.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
                 themeStore.setTerminalScrimAlpha(progress * 230 / 90)
-                scrimLabel?.text = "终端背景遮罩浓度：${progress}%"
+                scrimLabel?.text = "背景遮罩浓度：${progress}%"
             }
             override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) {}
             override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {
