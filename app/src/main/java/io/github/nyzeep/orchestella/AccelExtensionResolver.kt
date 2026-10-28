@@ -67,7 +67,14 @@ class AccelExtensionResolver(private val context: Context) {
 
     private fun versionCodeOf(packageName: String): Long = try {
         val info: PackageInfo = context.packageManager.getPackageInfo(packageName, 0)
-        info.longVersionCode
+        // longVersionCode is API 28+; the legacy int field is the same value
+        // for every version code this app has ever shipped (well below 2^31).
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            info.longVersionCode
+        } else {
+            @Suppress("DEPRECATION")
+            info.versionCode.toLong()
+        }
     } catch (absent: PackageManager.NameNotFoundException) {
         // The main package is always installed when this code runs; a failure
         // here means a broken PM state, which no decision can fix.
