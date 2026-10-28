@@ -103,8 +103,10 @@ object ThemeApplier {
     @JvmStatic
     @JvmOverloads
     fun apply(root: View, theme: AppTheme = ThemeStore(root.context).resolve(root.context)) {
+        val store = ThemeStore(root.context)
         walk(root, theme, force = true,
-            surfacePct = ThemeStore(root.context).surfaceOpacityPercent())
+            surfacePct = store.surfaceOpacityPercent(),
+            hasBackdrop = store.backgroundUri() != null)
     }
 
     /** Call after show(); Dialog windows are separate from the Activity content tree. */
@@ -132,9 +134,11 @@ object ThemeApplier {
                 })
             }
             binding.theme = theme
-            binding.surfaceOpacity = ThemeStore(dialog.context).surfaceOpacityPercent()
+            val dialogStore = ThemeStore(dialog.context)
+            binding.surfaceOpacity = dialogStore.surfaceOpacityPercent()
             walk(root, theme, force = true,
-                surfacePct = binding.surfaceOpacity)
+                surfacePct = binding.surfaceOpacity,
+                hasBackdrop = dialogStore.backgroundUri() != null)
         }
     }
 
@@ -214,9 +218,11 @@ object ThemeApplier {
             val opacity = store.surfaceOpacityPercent()
             val opacityChanged = binding.surfaceOpacity != opacity
             binding.surfaceOpacity = opacity
-            walk(content, theme, force = changed || radiusChanged || opacityChanged,
-                surfacePct = opacity)
             val terminal = activity.javaClass.simpleName == "TerminalActivity"
+            // Wallpaper belongs behind app chrome, never over terminal or guest pixels.
+            val uri = if (terminal || activity.javaClass.simpleName == "DesktopActivity") null else store.backgroundUri()
+            walk(content, theme, force = changed || radiusChanged || opacityChanged,
+                surfacePct = opacity, hasBackdrop = uri != null)
             val background = if (terminal) theme.terminalBackground else theme.background
             activity.window.setBackgroundDrawable(ColorDrawable(background))
             val controller = WindowCompat.getInsetsController(activity.window, activity.window.decorView)
@@ -225,8 +231,6 @@ object ThemeApplier {
             activity.window.statusBarColor = background
             activity.window.navigationBarColor = background
             val page = content.getChildAt(0) ?: return
-            // Wallpaper belongs behind app chrome, never over terminal or guest pixels.
-            val uri = if (terminal || activity.javaClass.simpleName == "DesktopActivity") null else store.backgroundUri()
             if (!binding.applied || changed || binding.wallpaper != uri || page.background == null) {
                 binding.applied = true
                 binding.wallpaper = uri
@@ -297,7 +301,7 @@ object ThemeApplier {
     }
 
     private fun walk(view: View, theme: AppTheme, force: Boolean, containerFill: Int? = null,
-        surfacePct: Int = SurfaceOpacity.MAX_PERCENT) {
+        surfacePct: Int = SurfaceOpacity.MAX_PERCENT, hasBackdrop: Boolean = false) {
         val name = resourceName(view)
         if (roles[view] == Role.PRESERVE || view is SurfaceView || view is TextureView ||
             view.javaClass.simpleName.contains("TerminalView") || name.contains("wayland_surface")) return
@@ -324,7 +328,7 @@ object ThemeApplier {
         if (force || state.theme != theme || backgroundChanged || state.textColor != currentText ||
             state.selected != selected || state.enabled != view.isEnabled || state.checked != checked ||
             state.containerFill != containerFill) {
-            colorView(view, name, theme, state, containerFill, surfacePct)
+            colorView(view, name, theme, state, containerFill, surfacePct, hasBackdrop)
             state.theme = theme
             state.background = WeakReference(view.background)
             state.backgroundColor = backgroundColor(view)
@@ -344,18 +348,20 @@ object ThemeApplier {
                     ThemeColors.color(theme, state.backgroundRole)
                 else -> containerFill
             }
-            for (index in 0 until view.childCount) walk(view.getChildAt(index), theme, force, childFill, surfacePct)
+            for (index in 0 until view.childCount) walk(view.getChildAt(index), theme, force, childFill, surfacePct, hasBackdrop)
         }
     }
 
     private fun colorView(view: View, name: String, theme: AppTheme, binding: ViewBinding,
-        containerFill: Int?, surfacePct: Int = SurfaceOpacity.MAX_PERCENT) {
+        containerFill: Int?, surfacePct: Int = SurfaceOpacity.MAX_PERCENT,
+        hasBackdrop: Boolean = false) {
         val outline = ThemeColors.color(theme, ColorRole.OUTLINE)
         val muted = ThemeColors.color(theme, ColorRole.MUTED)
         val disabled = ThemeColors.blend(theme.surface, theme.text, 0.45f)
         val actionColor = if (binding.buttonRole == Role.DANGER_ACTION) 0xFFEF4444.toInt() else theme.primary
         val primaryInk = ThemeColors.onColor(actionColor)
-        val effectiveSurface = SurfaceOpacity.applyOpacity(theme.surface, surfacePct)
+        val effectiveSurface = SurfaceOpacity.resolveSurfaceColor(
+            theme.surface, theme.background, theme.text, surfacePct, hasBackdrop)
         val normalInk = ThemeColors.readable(theme.text, containerFill ?: theme.surface)
         when (view) {
             is MaterialCardView -> {
@@ -370,7 +376,7 @@ object ThemeApplier {
             }
             is MaterialButton -> {
                 val secondary = binding.buttonRole == Role.SECONDARY_ACTION
-                val fill = if (secondary) theme.surface else actionColor
+                val fill = if (secondary) effectiveSurface else actionColor
                 val ink = if (secondary) normalInk else primaryInk
                 view.backgroundTintList = states(ThemeColors.blend(theme.surface, fill, 0.3f), actionColor, fill)
                 view.setTextColor(states(disabled, primaryInk, ink))
@@ -392,17 +398,17 @@ object ThemeApplier {
                 }
             }
             is NavigationBarView -> {
-                view.setBackgroundColor(theme.surface)
+                view.setBackgroundColor(effectiveSurface)
                 view.itemIconTintList = states(disabled, ThemeColors.readable(theme.primary, theme.surface), muted)
                 view.itemTextColor = view.itemIconTintList
             }
             is NavigationView -> {
-                view.setBackgroundColor(theme.surface)
+                view.setBackgroundColor(effectiveSurface)
                 view.itemIconTintList = states(disabled, ThemeColors.readable(theme.primary, theme.surface), normalInk)
                 view.itemTextColor = view.itemIconTintList
             }
             is TextInputLayout -> {
-                view.boxBackgroundColor = theme.surface
+                view.boxBackgroundColor = effectiveSurface
                 view.boxStrokeColor = theme.primary
                 view.defaultHintTextColor = ColorStateList.valueOf(muted)
                 view.hintTextColor = ColorStateList.valueOf(ThemeColors.readable(theme.primary, theme.surface))
@@ -420,7 +426,7 @@ object ThemeApplier {
                     view.backgroundTintList = null
                     view.setBackgroundColor(Color.TRANSPARENT)
                 } else if (!isStatus(name)) {
-                    recolorBackground(view, binding.backgroundRole, theme, outline)
+                    recolorBackground(view, binding.backgroundRole, theme, outline, effectiveSurface)
                 }
             }
         }
@@ -438,7 +444,7 @@ object ThemeApplier {
             view.highlightColor = (theme.primary and 0x00FFFFFF) or 0x50000000
             view.compoundDrawableTintList = ColorStateList.valueOf(foreground)
             if (view is Button && view !is CompoundButton) {
-                val fill = if (binding.buttonRole == Role.SECONDARY_ACTION) theme.surface else actionColor
+                val fill = if (binding.buttonRole == Role.SECONDARY_ACTION) effectiveSurface else actionColor
                 view.backgroundTintList = states(outline, actionColor, fill)
             }
         }
@@ -466,7 +472,7 @@ object ThemeApplier {
             view.imageTintList = states(disabled, normalInk, normalInk)
         }
         if (view is Spinner) {
-            view.setPopupBackgroundDrawable(ColorDrawable(theme.surface))
+            view.setPopupBackgroundDrawable(ColorDrawable(effectiveSurface))
             val adapter = view.adapter
             if (adapter != null && adapter !is ThemeSpinnerAdapter) {
                 val selection = view.selectedItemPosition
@@ -475,23 +481,33 @@ object ThemeApplier {
             }
         }
         if (roles[view] == Role.NAVIGATION) {
-            view.backgroundTintList = states(outline, theme.primary, theme.surface)
+            view.backgroundTintList = states(outline, theme.primary, effectiveSurface)
             if (view is TextView) view.setTextColor(states(disabled, primaryInk, muted))
         }
     }
 
-    private fun recolorBackground(view: View, role: ColorRole, theme: AppTheme, outline: Int) {
+    /**
+     * Repaints an inflated XML background in the resolved theme role.
+     *
+     * [surfaceFill] is the already-opacity-resolved SURFACE color: before
+     * session 19 every surface role was repainted fully opaque, which is why
+     * the opacity slider only moved the three call sites that composed the
+     * color themselves. Every surface-role fill now goes through this value,
+     * so the slider reaches cards, pills, bars and drawer rows alike.
+     */
+    private fun recolorBackground(view: View, role: ColorRole, theme: AppTheme, outline: Int, surfaceFill: Int) {
         val drawable = view.background?.mutate() ?: return
+        val resolvedFill = if (role == ColorRole.SURFACE) surfaceFill else ThemeColors.color(theme, role)
         fun update(background: Drawable) {
             when (background) {
                 is RippleDrawable -> {
                     background.setColor(ColorStateList.valueOf((theme.primary and 0x00FFFFFF) or 0x30000000))
                     for (index in 0 until background.numberOfLayers) update(background.getDrawable(index))
                 }
-                is ColorDrawable -> if (Color.alpha(background.color) != 0) background.color = ThemeColors.color(theme, role)
+                is ColorDrawable -> if (Color.alpha(background.color) != 0) background.color = resolvedFill
                 is GradientDrawable -> {
                     val fill = background.color?.defaultColor
-                    if (fill != null && Color.alpha(fill) != 0) background.setColor(ThemeColors.color(theme, role))
+                    if (fill != null && Color.alpha(fill) != 0) background.setColor(resolvedFill)
                     background.colors?.let { colors ->
                         background.colors = colors.map { ThemeColors.color(theme, inferBackgroundRole(it, theme)) }.toIntArray()
                     }
@@ -500,7 +516,7 @@ object ThemeApplier {
                     if (radiusPx > 0f) background.cornerRadius = radiusPx
                 }
                 is MaterialShapeDrawable -> {
-                    background.fillColor = ColorStateList.valueOf(ThemeColors.color(theme, role))
+                    background.fillColor = ColorStateList.valueOf(resolvedFill)
                     background.strokeColor = ColorStateList.valueOf(outline)
                 }
                 // Includes custom image composites: keep the picked bitmap intact.
@@ -510,7 +526,7 @@ object ThemeApplier {
             }
         }
         update(drawable)
-        view.backgroundTintList?.let { view.backgroundTintList = ColorStateList.valueOf(ThemeColors.color(theme, role)) }
+        view.backgroundTintList?.let { view.backgroundTintList = ColorStateList.valueOf(resolvedFill) }
     }
 
     /** Corner-radius token in pixels; zero means "keep the current geometry untouched". */

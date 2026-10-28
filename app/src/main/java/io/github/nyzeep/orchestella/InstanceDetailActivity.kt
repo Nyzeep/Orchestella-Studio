@@ -973,6 +973,15 @@ class InstanceDetailActivity : AppCompatActivity() {
         try {
             val themeStore = io.github.nyzeep.orchestella.ui.theme.ThemeStore(this)
             val theme = themeStore.resolve()
+            // Session 19 (T-B.2): the detail cards are surfaces too; paint them with the
+            // same opacity token the dashboard and terminal chrome already consume.
+            val surfaceFill = io.github.nyzeep.orchestella.ui.theme.SurfaceOpacity.resolveSurfaceColor(
+                theme.surface,
+                theme.background,
+                theme.text,
+                themeStore.surfaceOpacityPercent(),
+                themeStore.backgroundUri() != null,
+            )
             findViewById<View>(R.id.detail_root)?.setBackgroundColor(theme.background)
             toolbar.setTitleTextColor(theme.text)
             toolbar.navigationIcon?.setTint(theme.text)
@@ -991,7 +1000,7 @@ class InstanceDetailActivity : AppCompatActivity() {
             )
             cardIds.forEach { id ->
                 findViewById<com.google.android.material.card.MaterialCardView>(id)?.let { card ->
-                    card.setCardBackgroundColor(theme.surfaceTranslucent)
+                    card.setCardBackgroundColor(surfaceFill)
                     card.strokeColor = (theme.glow and 0x00FFFFFF) or 0x33000000
                     card.strokeWidth = (1 * resources.displayMetrics.density).toInt()
                 }
@@ -1013,7 +1022,7 @@ class InstanceDetailActivity : AppCompatActivity() {
 
             // Danger Zone Card with subtle red stroke
             findViewById<com.google.android.material.card.MaterialCardView>(R.id.card_danger_zone)?.let { card ->
-                card.setCardBackgroundColor(theme.surfaceTranslucent)
+                card.setCardBackgroundColor(surfaceFill)
                 card.strokeColor = 0x40EF4444.toInt()
                 card.strokeWidth = (1 * resources.displayMetrics.density).toInt()
             }

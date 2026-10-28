@@ -168,6 +168,18 @@ android {
         }
     }
 
+    signingConfigs {
+        // Session 19 (T-A.4): the AVF payload loader reads the v3 APK
+        // Signature Scheme block when it materializes an idsig for
+        // VirtualMachineConfig.setApkPath. A v2-only extension APK is refused
+        // at VM run with "No APK Signature Scheme block ... ID: 4031998144".
+        // v4 keeps the idsig file next to the APK, matching :app's debug config.
+        getByName("debug") {
+            enableV3Signing = true
+            enableV4Signing = true
+        }
+    }
+
     buildTypes {
         debug {
             if (buildChannel != "release") {

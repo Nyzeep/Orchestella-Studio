@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Closing page: 150 ms accelerate fade with a 4% slide out. Short on purpose —
+  a back gesture must feel immediate, and the destination is already visible.
+-->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:interpolator="@anim/oe_emphasized_accelerate">
+    <alpha
+        android:duration="150"
+        android:fromAlpha="1.0"
+        android:toAlpha="0.0" />
+    <translate
+        android:duration="150"
+        android:fromXDelta="0"
+        android:toXDelta="4%p" />
+</set>
