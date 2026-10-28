@@ -289,14 +289,18 @@ public final class TerminalDrawerPanel extends LinearLayout {
 
             if (isActive) {
                 tvActiveBadge.setVisibility(View.VISIBLE);
+                // Session 19 (T-B.2): drawer rows are surfaces too — the row fill
+                // goes through the same opacity token as the panel behind it.
                 itemView.setBackground(createPillBackground(
-                        ThemeColors.INSTANCE.blend(theme.getSurface(), theme.getPrimary(), 0.20f),
+                        SurfaceOpacity.INSTANCE.applyOpacity(
+                                ThemeColors.INSTANCE.blend(theme.getSurface(), theme.getPrimary(), 0.20f),
+                                new ThemeStore(getContext()).surfaceOpacityPercent()),
                         theme.getPrimary(), 10f));
                 tvTitle.setTextColor(theme.getPrimary());
             } else {
                 tvActiveBadge.setVisibility(View.GONE);
                 itemView.setBackground(createPillBackground(
-                        theme.getSurface(), alphaDerive(theme.getGlow(), 0x33000000), 10f));
+                        effectiveSurface(), alphaDerive(theme.getGlow(), 0x33000000), 10f));
                 tvTitle.setTextColor(theme.getText());
             }
 
