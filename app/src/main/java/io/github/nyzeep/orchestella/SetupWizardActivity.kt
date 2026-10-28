@@ -619,9 +619,11 @@ class SetupWizardActivity : AppCompatActivity() {
                 layoutWizardAvfFallback.visibility = View.VISIBLE
             }
             AvfCapabilityEvaluator.AvfStatus.MODE_UNSUPPORTED -> {
-                txtWizardAvfBadge.text = "AVF 模式不支持"
-                txtWizardAvfBadge.setTextColor(getColor(R.color.zone_red))
-                txtWizardAvfDetails.text = "$factsSummary\n${readiness.reasons().joinToString("；")}\n授权不会改变 VM 模式；当前使用 QEMU。\n$launchNotice"
+                // Session-18 W-B: capability statement, not a device defect —
+                // neutral wording, details point at the compatibility page.
+                txtWizardAvfBadge.text = BadgeCopy.avfUnsupportedEntryLabel()
+                txtWizardAvfBadge.setTextColor(getColor(R.color.zone_neutral))
+                txtWizardAvfDetails.text = "$factsSummary\n此功能依赖设备的硬件虚拟化能力，你的设备上不可用（不影响其他功能）。当前使用 QEMU。\n$launchNotice"
                 layoutWizardAvfFallback.visibility = View.VISIBLE
             }
             AvfCapabilityEvaluator.AvfStatus.MODE_UNKNOWN -> {

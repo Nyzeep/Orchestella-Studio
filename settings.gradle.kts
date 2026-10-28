@@ -57,6 +57,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "Orchestella-Studio"
 include(":app")
+include(":accel-extension")
 include(":runtime:contract")
 include(":runtime:distro")
 include(":runtime:instance")

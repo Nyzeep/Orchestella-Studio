@@ -51,6 +51,31 @@ public final class ReflectiveFastLaneApiTest {
     }
 
     @Test
+    public void payloadApkPathRedirectFailsHonestlyWhenPlatformLacksSetApkPath() {
+        // Session-18 W-A: the two-package redirect resolves setApkPath lazily.
+        // The fake Builder predates that method, so a redirect against this
+        // surface must fail with a fixed, attributable code — never a silent
+        // own-APK fallback (which would load no payload at all).
+        Harness harness = Harness.create();
+        FastLaneException failure = assertThrows(
+                FastLaneException.class,
+                () -> harness.api.start(spec().withPayloadApkPath("/data/app/~~x==/ext==/base.apk")));
+        // A missing setApkPath method is a truncated platform surface — the
+        // API maps it to HIDDEN_API_BLOCKED, the fixed code for "required
+        // platform capability absent".
+        assertEquals(FastLaneException.HIDDEN_API_BLOCKED, failure.reason());
+    }
+
+    @Test
+    public void payloadApkPathIsAbsentForOwnApkLaunches() throws Exception {
+        // The non-redirect path never touches setApkPath: the fake Builder
+        // (which lacks the method) must keep working unchanged.
+        Harness harness = Harness.create();
+        FastLaneHandle handle = harness.api.start(spec());
+        assertEquals(1, handle.status());
+    }
+
+    @Test
     public void mapsMatchHostAndDebugFull() throws Exception {
         Harness harness = Harness.create();
         FastLaneLaunchSpec spec = new FastLaneLaunchSpec(

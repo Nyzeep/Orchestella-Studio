@@ -53,6 +53,7 @@ public final class PvmCompilerManifest {
     private static final int MAX_JSON_DEPTH = 8;
 
     private static final String KEY_SCHEMA = "schema";
+    private static final String KEY_ENGINE = "engine";
     private static final String KEY_COMPILER_VERSION = "compiler_version";
     private static final String KEY_TARGET_TRIPLE = "target_triple";
     private static final String KEY_VCPU_TOPOLOGY = "vcpu_topology";
@@ -63,6 +64,7 @@ public final class PvmCompilerManifest {
     private static final String KEY_SIZE = "size";
     private static final String KEY_SHA256 = "sha256";
 
+    private final String engine;
     private final String compilerVersion;
     private final String targetTriple;
     private final int memoryMiB;
@@ -70,11 +72,13 @@ public final class PvmCompilerManifest {
     private final List<Lib> libs;
 
     private PvmCompilerManifest(
+            String engine,
             String compilerVersion,
             String targetTriple,
             int memoryMiB,
             String payloadBinary,
             List<Lib> libs) {
+        this.engine = engine;
         this.compilerVersion = compilerVersion;
         this.targetTriple = targetTriple;
         this.memoryMiB = memoryMiB;
@@ -106,6 +110,13 @@ public final class PvmCompilerManifest {
         if (!(schema instanceof Long tag) || tag != SCHEMA) {
             return Optional.empty();
         }
+        // Engine is an optional schema-1 field: older manifests without it
+        // stay parseable, and an absent engine is surfaced as an empty string
+        // so the runtime gate can refuse it explicitly.
+        String engine = trimmedText(document, KEY_ENGINE);
+        if (engine == null) {
+            engine = "";
+        }
         String compilerVersion = trimmedText(document, KEY_COMPILER_VERSION);
         String targetTriple = trimmedText(document, KEY_TARGET_TRIPLE);
         String payloadBinary = trimmedText(document, KEY_PAYLOAD_BINARY);
@@ -129,11 +140,22 @@ public final class PvmCompilerManifest {
             return Optional.empty();
         }
         return Optional.of(new PvmCompilerManifest(
+                engine,
                 compilerVersion,
                 targetTriple,
                 memoryMiB.intValue(),
                 payloadBinary,
                 libs.get()));
+    }
+
+    /**
+     * The engine this payload was built with; {@code ""} when the manifest
+     * predates the field. The runtime gate only accepts {@code "clang"} — a
+     * {@code "fake"} engine produces fabricated objects and must never be
+     * reported as an available compiler.
+     */
+    public String engine() {
+        return engine;
     }
 
     /** The compiler version the payload was built from; never blank. */

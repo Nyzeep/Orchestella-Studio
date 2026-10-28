@@ -95,4 +95,47 @@ public final class FastLaneLaunchSpecTest {
                 1L, FastLaneLaunchSpec.DebugLevel.NONE, 5000, 5001, 5002, 5003,
                 "A".repeat(64)));
     }
+
+    @Test
+    public void legacySpecCarriesNoPayloadApkPath() {
+        FastLaneLaunchSpec spec = spec("fastlane-01", "libfastlane_payload.so", 1024, 1L,
+                5000, 5001, 5002, 5003);
+        assertEquals(null, spec.payloadApkPath());
+    }
+
+    @Test
+    public void withPayloadApkPathCarriesAbsolutePath() {
+        FastLaneLaunchSpec base = spec("fastlane-01", "libfastlane_payload.so", 1024, 1L,
+                5000, 5001, 5002, 5003);
+        FastLaneLaunchSpec redirected =
+                base.withPayloadApkPath("/data/app/~~abc==/ext-hash==/base.apk");
+        assertEquals("/data/app/~~abc==/ext-hash==/base.apk", redirected.payloadApkPath());
+        // Immutable: the original keeps the platform-default semantics.
+        assertEquals(null, base.payloadApkPath());
+        assertEquals(base.instanceId(), redirected.instanceId());
+        assertEquals(base.payloadBinaryName(), redirected.payloadBinaryName());
+        assertEquals(base.distccPort(), redirected.distccPort());
+    }
+
+    @Test
+    public void withPayloadApkPathRejectsRelativePaths() {
+        FastLaneLaunchSpec base = spec("fastlane-01", "libfastlane_payload.so", 1024, 1L,
+                5000, 5001, 5002, 5003);
+        assertThrows(IllegalArgumentException.class,
+                () -> base.withPayloadApkPath("relative/base.apk"));
+        assertThrows(IllegalArgumentException.class, () -> base.withPayloadApkPath(" "));
+    }
+
+    @Test
+    public void fullConstructorAcceptsAndValidatesPayloadApkPath() {
+        FastLaneLaunchSpec spec = new FastLaneLaunchSpec(
+                "fastlane-01", "libfastlane_payload.so", "/data/app/x/base.apk",
+                1024, FastLaneLaunchSpec.CpuTopology.ONE_CPU, 1L,
+                FastLaneLaunchSpec.DebugLevel.NONE, 5000, 5001, 5002, 5003, SHA);
+        assertEquals("/data/app/x/base.apk", spec.payloadApkPath());
+        assertThrows(IllegalArgumentException.class, () -> new FastLaneLaunchSpec(
+                "fastlane-01", "libfastlane_payload.so", "no-leading-slash.apk",
+                1024, FastLaneLaunchSpec.CpuTopology.ONE_CPU, 1L,
+                FastLaneLaunchSpec.DebugLevel.NONE, 5000, 5001, 5002, 5003, SHA));
+    }
 }

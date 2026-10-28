@@ -16,6 +16,7 @@ import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import io.github.nyzeep.orchestella.ui.theme.AppTheme;
+import io.github.nyzeep.orchestella.ui.theme.SurfaceOpacity;
 import io.github.nyzeep.orchestella.ui.theme.ThemeColors;
 import io.github.nyzeep.orchestella.ui.theme.ThemeStore;
 import java.util.ArrayList;
@@ -63,7 +64,7 @@ public final class TerminalDrawerPanel extends LinearLayout {
         this.callback = callback;
         theme = new ThemeStore(context).resolve();
         setOrientation(VERTICAL);
-        setBackgroundColor(theme.getSurface());
+        setBackgroundColor(effectiveSurface());
 
         int pad = dpToPx(16);
         setPadding(pad, pad, pad, pad);
@@ -168,7 +169,7 @@ public final class TerminalDrawerPanel extends LinearLayout {
     public void applyTheme(AppTheme theme) {
         if (theme == null) return;
         this.theme = theme;
-        setBackgroundColor(theme.getSurface());
+        setBackgroundColor(effectiveSurface());
         tvHeader.setTextColor(theme.getText());
         tvHeaderHint.setTextColor(theme.getTextDim());
         btnNewTerminal.setTextColor(ThemeColors.INSTANCE.onColor(theme.getPrimary()));
@@ -183,6 +184,12 @@ public final class TerminalDrawerPanel extends LinearLayout {
     /** Keeps the audit's alpha-capsule pattern: token RGB under a fixed alpha. */
     private static int alphaDerive(int token, int alphaBits) {
         return (token & 0x00FFFFFF) | alphaBits;
+    }
+
+    /** Surface token composited to the user's chosen UI surface opacity (W-C.2). */
+    private int effectiveSurface() {
+        return SurfaceOpacity.INSTANCE.applyOpacity(
+                theme.getSurface(), new ThemeStore(getContext()).surfaceOpacityPercent());
     }
 
     private final class SessionListAdapter extends RecyclerView.Adapter<SessionViewHolder> {
@@ -278,6 +285,7 @@ public final class TerminalDrawerPanel extends LinearLayout {
             boolean connected = io.github.nyzeep.orchestella.PersistentTerminalSessionPool.getInstance().hasActiveSession(instanceId);
             tvStatusDot.setTextColor(connected ? theme.getAccent() : theme.getTextDim());
             tvStatusDot.setContentDescription(connected ? "Shell 已连接" : "Shell 已离线");
+            itemView.setContentDescription("切换到会话 " + session.getTitle());
 
             if (isActive) {
                 tvActiveBadge.setVisibility(View.VISIBLE);
