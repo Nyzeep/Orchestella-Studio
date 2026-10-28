@@ -196,8 +196,18 @@ public final class PvmPayloadLaneStarter {
             FastLaneHandle handle = api.start(spec);
             return new ProtectedLaneRuntime(new FastLaneSession(api, handle, spec));
         } catch (FastLaneException failure) {
+            // Session 19 (T-A.4): keep the platform's own words on the device log.
+            // The UI only ever sees the fixed code, but "which stage refused" must
+            // not be a guess; the message is a short platform string, never a path.
+            android.util.Log.w("OrchestellaAccel",
+                    "lane start failed reason=" + failure.reason()
+                            + " message=" + trimForLog(failure.getMessage())
+                            + " cause=" + causeChain(failure));
             throw new LaneStartException(mapStartFailure(failure.reason()));
         } catch (RuntimeException failure) {
+            android.util.Log.w("OrchestellaAccel",
+                    "lane start threw " + failure.getClass().getSimpleName()
+                            + " message=" + trimForLog(failure.getMessage()));
             throw new LaneStartException(PAYLOAD_LOAD_FAILED);
         }
     }
@@ -275,6 +285,31 @@ public final class PvmPayloadLaneStarter {
         return payloadApkPath == null
                 ? ownApkSpec
                 : ownApkSpec.withPayloadApkPath(payloadApkPath);
+    }
+
+    /** Platform messages are short; cap them anyway so a stray long string cannot flood the log. */
+    private static String trimForLog(String message) {
+        if (message == null) return "null";
+        return message.length() <= 200 ? message : message.substring(0, 200) + "…";
+    }
+
+    /**
+     * The platform's own words live in the cause chain: FastLaneException's
+     * message is our fixed stage wrapper, while VirtualMachineException carries
+     * the actual refusal (for example a rejected payload APK). Three levels is
+     * enough for the reflective layers and never walks user data.
+     */
+    private static String causeChain(Throwable failure) {
+        StringBuilder out = new StringBuilder();
+        Throwable current = failure.getCause();
+        for (int depth = 0; current != null && depth < 3; depth++) {
+            if (depth > 0) out.append(" <- ");
+            out.append(current.getClass().getSimpleName())
+                    .append(": ")
+                    .append(trimForLog(current.getMessage()));
+            current = current.getCause();
+        }
+        return out.length() == 0 ? "none" : out.toString();
     }
 
     /** Fixed-code mapping; an unknown reason is a load failure, never a guess. */

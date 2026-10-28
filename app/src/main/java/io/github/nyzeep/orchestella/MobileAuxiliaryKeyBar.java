@@ -222,7 +222,9 @@ public class MobileAuxiliaryKeyBar extends LinearLayout {
 
     private void styleKeyCap(Button key) {
         key.setTextColor(theme.getText());
-        key.setBackground(createKeyBackground(theme.getSurface(), theme.getGlow()));
+        // Session 19 (T-B.2): key caps follow the bar's surface opacity instead of
+        // staying fully opaque above a see-through bar.
+        key.setBackground(createKeyBackground(effectiveSurface(), theme.getGlow()));
     }
 
     /** Surface token composited to the user's chosen UI surface opacity (W-C.2). */

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Session 19 (T-D): one shared transition vocabulary for every Activity.
+  Material Motion "emphasized decelerate" (cubic-bezier 0.05, 0.7, 0.1, 1.0)
+  at 210 ms: content arrives quickly, then settles. Keeping the slide at 4%
+  of the width avoids the rubber-band feel of a full-width push.
+-->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:interpolator="@anim/oe_emphasized_decelerate">
+    <alpha
+        android:duration="210"
+        android:fromAlpha="0.0"
+        android:toAlpha="1.0" />
+    <translate
+        android:duration="210"
+        android:fromXDelta="4%p"
+        android:toXDelta="0" />
+</set>

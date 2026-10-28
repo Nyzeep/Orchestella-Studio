@@ -600,7 +600,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="16dp"
-                        android:text="终端背景遮罩浓度：70%"
+                        android:text="背景遮罩浓度：70%"
                         android:textSize="12sp"
                         android:textColor="?attr/colorOnSurfaceVariant" />
 
@@ -609,8 +609,17 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:minHeight="48dp"
-                        android:contentDescription="终端背景遮罩浓度"
+                        android:contentDescription="背景遮罩浓度"
                         android:max="90" />
+
+                    <TextView
+                        android:id="@+id/txt_settings_scrim_hint"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="仅作用于终端背景图片上方的遮罩；未选择终端背景图时不显示效果。"
+                        android:textSize="11sp"
+                        android:textColor="?attr/colorOutline" />
 
                     <TextView
                         android:id="@+id/tv_ui_surface_opacity_label"
@@ -627,7 +636,16 @@
                         android:layout_height="wrap_content"
                         android:minHeight="48dp"
                         android:contentDescription="界面表面不透明度"
-                        android:max="30" />
+                        android:max="45" />
+
+                    <TextView
+                        android:id="@+id/txt_settings_opacity_hint"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="作用于卡片、顶栏、抽屉等界面表面；55% 为可读性下限。"
+                        android:textSize="11sp"
+                        android:textColor="?attr/colorOutline" />
 
                     <TextView
                         android:id="@+id/tv_font_size_label"

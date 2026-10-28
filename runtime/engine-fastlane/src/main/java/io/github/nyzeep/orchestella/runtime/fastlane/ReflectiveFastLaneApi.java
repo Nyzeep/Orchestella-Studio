@@ -361,8 +361,21 @@ public final class ReflectiveFastLaneApi implements FastLaneVirtualMachineApi {
         Object stored = invoke(shape.vm, vm, "getConfig",
                 new Class<?>[0], new Object[0], FastLaneException.VM_CREATE_FAILED, notes);
         if (!configMatches(shape, stored, config)) {
-            throw error(FastLaneException.VM_CREATE_FAILED,
-                    "existing VM config differs; explicit delete is required", null);
+            // Session 19 (T-A.4): a two-package build pins the payload APK path into
+            // the VM config. Reinstalling the extension moves it to a new /data/app
+            // path, and the stored config then points at a file that no longer
+            // exists — run() fails with "Failed to open APK: ENOENT" forever.
+            // Drift is recoverable: delete the stale VM and build a fresh one.
+            deleteStaleVm(shape, vm, notes);
+            vm = invoke(shape.manager, manager, "getOrCreate",
+                    new Class<?>[] {String.class, shape.config},
+                    new Object[] {spec.instanceId(), config},
+                    FastLaneException.VM_CREATE_FAILED, notes);
+            if (vm == null || !shape.vm.isInstance(vm)) {
+                throw error(FastLaneException.VM_CREATE_FAILED,
+                        "manager returned no VM after drift delete", null);
+            }
+            notes.add("vm: recreated after config drift");
         }
         int status = statusOf(shape, vm);
         if (status != 0) {
@@ -371,6 +384,25 @@ public final class ReflectiveFastLaneApi implements FastLaneVirtualMachineApi {
         }
         notes.add("vm: ready");
         return vm;
+    }
+
+    /**
+     * Best-effort removal of a VM whose config no longer matches the launch spec.
+     * Delete requires STOPPED, so the stop is attempted first and its failure is
+     * not fatal: the delete attempt below reports the real outcome in the notes.
+     */
+    private static void deleteStaleVm(Shape shape, Object vm, List<String> notes) {
+        try {
+            shape.vm.getMethod("stop").invoke(vm);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            // Not running is the common case for a drifted payload VM.
+        }
+        try {
+            shape.vm.getMethod("delete").invoke(vm);
+            notes.add("vm: stale deleted");
+        } catch (ReflectiveOperationException | RuntimeException failure) {
+            notes.add("vm: stale delete failed");
+        }
     }
 
     private boolean configMatches(Shape shape, Object stored, Object expected)
@@ -401,7 +433,24 @@ public final class ReflectiveFastLaneApi implements FastLaneVirtualMachineApi {
                         configValue(shape, expected, "getEncryptedStorageBytes"))
                 && Objects.equals(
                         configValue(shape, stored, "getDebugLevel"),
-                        configValue(shape, expected, "getDebugLevel"));
+                        configValue(shape, expected, "getDebugLevel"))
+                && apkPathMatches(shape, stored, expected);
+    }
+
+    /**
+     * The payload APK path is part of the config's identity for a two-package
+     * build: after an extension reinstall the old path is gone and every run
+     * would fail on a missing file. Platforms without the getter keep the
+     * historical comparison (true) instead of refusing the whole lane.
+     */
+    private static boolean apkPathMatches(Shape shape, Object stored, Object expected) {
+        try {
+            return Objects.equals(
+                    configValue(shape, stored, "getApkPath"),
+                    configValue(shape, expected, "getApkPath"));
+        } catch (FastLaneException unavailable) {
+            return true;
+        }
     }
 
     private static Object configValue(Shape shape, Object config, String getter)
