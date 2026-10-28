@@ -16,12 +16,24 @@ column                  how it runs
 ``bare``                no proot: ``ld-musl-aarch64.so.1 --library-path ... clang``
                         with ``-fintegrated-cc1`` so the driver does not re-exec
                         itself through a musl PT_INTERP the device cannot resolve.
+``uml``                 research lane, session 20 (D10): the fixture is compiled
+                        by a shell *inside* a user-mode-Linux guest. Not a
+                        host-command-prefix lane; see ``uml_lane.py``.
 ======================  ============================================================
 
 The ``bare`` column exists to separate two costs that are otherwise lumped
 together: what ptrace-based path interception costs (proot minus bare) and what
 CPU emulation costs (qemu/pvm minus bare). Without it there is no way to tell
 whether a slow number is proot's fault or the emulator's.
+
+The ``uml`` column (session 20, D10, research only) cannot be expressed as a
+host command prefix: the UML guest kernel is a persistent host process and the
+workload runs in a shell *inside* the guest, so ``build_batch_script()`` /
+``run_batch()`` do not apply. The lane id is registered in ``LANE_REGISTRY``
+below and dispatched to ``uml_lane.py``, which owns launch-argv assembly,
+guest-side batch scripts and the UML methodology hard rules (interleaved
+conditions, 7 rounds with medians, compute-check discard, fault counts
+normalized by page bytes, no cross-table comparison).
 
 Concurrency
 -----------
@@ -75,6 +87,19 @@ DEFAULT_CLANG = "/usr/bin/clang-22"
 
 MEASURED_COLUMNS = ("proot", "bare")
 REUSED_COLUMNS = ("qemu", "pvm")
+
+# Session 20 (D10): the UML research lane. UML is NOT a "host command prefix"
+# lane -- the guest kernel is a persistent host process and the workload runs
+# in a shell inside the guest, so build_batch_script()/run_batch() cannot wrap
+# it the way they wrap proot/bare. The lane id is registered here and
+# dispatched to uml_lane.py, which owns launch-argv assembly, guest-side batch
+# scripts and the UML methodology hard rules (see uml_lane docstring).
+UML_LANE_ID = "uml"
+LANE_REGISTRY = {
+    "proot": "adb-prefix",
+    "bare": "adb-prefix",
+    UML_LANE_ID: "uml_lane.runner (guest-resident workload; independent runner)",
+}
 
 MARKER_T0 = "NL_T0="
 MARKER_PREFIX = "NL_"
@@ -502,7 +527,10 @@ def render_markdown(report: dict) -> str:
     lines.append("|---|---|---|---|---|---|")
 
     by_key = {(row["column"], row["jobs"]): row for row in report["rows"]}
-    for column in ("qemu", "pvm", "proot", "bare"):
+    for column in ("qemu", "pvm", "proot", "bare", UML_LANE_ID):
+        if column == UML_LANE_ID and not any(
+                row["column"] == UML_LANE_ID for row in report["rows"]):
+            continue  # don't render an empty uml row when the lane wasn't asked for
         if column in report["reused"]:
             reused = report["reused"][column]
             value = reused["value_ms"]
@@ -569,7 +597,7 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--serial", default=None,
                         help="device serial; never written to results")
     parser.add_argument("--columns", default=",".join(MEASURED_COLUMNS),
-                        help="comma-separated measured columns (proot,bare)")
+                        help="comma-separated measured columns (proot,bare,uml)")
     parser.add_argument("--jobs", default="1,7", help="job levels, e.g. 1,7")
     parser.add_argument("--files", type=int, default=7,
                         help="fixture copies per job level (>= max(jobs))")
@@ -592,6 +620,14 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--preflight-only", action="store_true",
                         help="probe the device and stop (first command after the "
                              "device comes back)")
+    # UML lane options live in uml_lane.py; registered lazily so this module
+    # stays importable/runnable without the runner present.
+    try:
+        import uml_lane
+    except ImportError:
+        pass
+    else:
+        uml_lane.add_uml_arguments(parser)
     return parser.parse_args(argv)
 
 
@@ -666,7 +702,7 @@ def main(argv: list[str] | None = None) -> int:
     jobs = [int(part) for part in args.jobs.split(",") if part.strip()]
     columns = [part.strip() for part in args.columns.split(",") if part.strip()]
     for column in columns:
-        if column not in MEASURED_COLUMNS:
+        if column not in LANE_REGISTRY:
             print(f"unknown column: {column}", file=sys.stderr)
             return 2
     if args.files < max(jobs):
@@ -678,9 +714,18 @@ def main(argv: list[str] | None = None) -> int:
     out_dir = Path(args.out) / run_id
     out_dir.mkdir(parents=True, exist_ok=True)
     warnings: list[str] = []
+    synthetic = bool(args.dry_run)
+
+    # `uml` never touches adb: it is served by its own runner (see
+    # LANE_REGISTRY); everything else keeps the adb-prefix path.
+    adb_columns = [column for column in columns if column != UML_LANE_ID]
+    if args.regen_dot_i and not adb_columns:
+        print("--regen-dot-i requires an adb-measured column; the UML lane "
+              "uses the host fixture as-is", file=sys.stderr)
+        return 2
 
     try:
-        adb = resolve_adb(args, out_dir)
+        adb = resolve_adb(args, out_dir) if adb_columns else None
         dot_i_path = Path(args.dot_i)
         fixture = fixture_facts(dot_i_path)
         warnings += fixture["warnings"]
@@ -688,65 +733,94 @@ def main(argv: list[str] | None = None) -> int:
         print(str(error), file=sys.stderr)
         return 2
 
-    try:
-        env_start, missing = probe_environment(adb)
-        rootfs_facts = probe_rootfs(adb, args.rootfs, args.clang)
-        clang_version = probe_clang_version(adb, args.proot, args.rootfs, args.clang)
-        if clang_version is None:
-            missing.append("clang_version")
-            warnings.append("proot could not run clang --version; the proot column may be dead "
-                            "on this ROM (see README, 'proot exec gate')")
-    except KitError as error:
-        print(str(error), file=sys.stderr)
-        return 2
-    except subprocess.TimeoutExpired:
-        print("PREFLIGHT_TIMEOUT: device did not answer within the probe budget",
-              file=sys.stderr)
-        return 2
+    env_start: dict = {}
+    missing: list[str] = []
+    preflight: dict = {}
+    rows: list[dict] = []
+    device_dot_i = f"{args.work}/fixture.i"
 
-    synthetic = bool(args.dry_run)
-    if synthetic:
-        env_start.pop("thermal_end", None)
+    if adb_columns:
+        try:
+            env_probe, missing = probe_environment(adb)
+            env_start.update(env_probe)
+            rootfs_facts = probe_rootfs(adb, args.rootfs, args.clang)
+            clang_version = probe_clang_version(adb, args.proot, args.rootfs, args.clang)
+            if clang_version is None:
+                missing.append("clang_version")
+                warnings.append("proot could not run clang --version; the proot column may be dead "
+                                "on this ROM (see README, 'proot exec gate')")
+        except KitError as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        except subprocess.TimeoutExpired:
+            print("PREFLIGHT_TIMEOUT: device did not answer within the probe budget",
+                  file=sys.stderr)
+            return 2
 
-    preflight = {
-        "rootfs_marker": rootfs_facts.get("marker"),
-        "loader": rootfs_facts.get("loader"),
-        "clang_version": clang_version,
-        "incomplete": missing,
-    }
+        if synthetic:
+            env_start.pop("thermal_end", None)
+
+        preflight = {
+            "rootfs_marker": rootfs_facts.get("marker"),
+            "loader": rootfs_facts.get("loader"),
+            "clang_version": clang_version,
+            "incomplete": missing,
+        }
+
+    if UML_LANE_ID in columns:
+        try:
+            import uml_lane
+        except ImportError as error:
+            print(f"UML_LANE_RUNNER_MISSING: {error}", file=sys.stderr)
+            return 2
+        try:
+            uml_result = uml_lane.run_column(
+                args, jobs, dot_i_path, out_dir,
+                synthetic=synthetic, preflight_only=args.preflight_only)
+        except (KitError, uml_lane.LaneError) as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        rows += uml_result["rows"]
+        # adb-probed fields win; the uml block only fills what adb could not.
+        for key, value in uml_result["env"].items():
+            env_start.setdefault(key, value)
+        for field in uml_result["incomplete"]:
+            if field not in missing:
+                missing.append(field)
+        preflight["uml"] = uml_result["preflight"]
+        warnings += uml_result["warnings"]
+
     if args.preflight_only:
         print(json.dumps(preflight, indent=2, ensure_ascii=False))
         return 0 if not missing else 3
 
-    # The fixture lives on the device before any timing starts; copying it into
-    # each batch directory is device-local, so no host path reaches a device
-    # command and the copy cost stays outside the measured region.
-    device_dot_i = f"{args.work}/fixture.i"
-    if args.regen_dot_i:
-        try:
-            fixture = regenerate_dot_i(adb, args, out_dir, fixture)
-            dot_i_path = Path(fixture["path"])
-            device_dot_i = f"{args.work}/fixture.device.i"
-        except KitError as error:
-            print(str(error), file=sys.stderr)
-            return 2
-    else:
-        try:
-            adb.run(["push", str(dot_i_path.resolve()), device_dot_i], timeout=300)
-        except KitError as error:
-            print(str(error), file=sys.stderr)
-            return 2
+    if adb_columns:
+        # The fixture lives on the device before any timing starts; copying it
+        # into each batch directory is device-local, so no host path reaches a
+        # device command and the copy cost stays outside the measured region.
+        if args.regen_dot_i:
+            try:
+                fixture = regenerate_dot_i(adb, args, out_dir, fixture)
+                dot_i_path = Path(fixture["path"])
+                device_dot_i = f"{args.work}/fixture.device.i"
+            except KitError as error:
+                print(str(error), file=sys.stderr)
+                return 2
+        else:
+            try:
+                adb.run(["push", str(dot_i_path.resolve()), device_dot_i], timeout=300)
+            except KitError as error:
+                print(str(error), file=sys.stderr)
+                return 2
 
-    rows = []
-    for column in columns:
-        for level in jobs:
-            workdir = f"{args.work}/{column}-j{level}"
-            row = run_batch(adb, column, level, args.files, args.clang, args.rootfs,
-                            args.proot, workdir, device_dot_i)
-            rows.append(row)
+        for column in adb_columns:
+            for level in jobs:
+                workdir = f"{args.work}/{column}-j{level}"
+                row = run_batch(adb, column, level, args.files, args.clang, args.rootfs,
+                                args.proot, workdir, device_dot_i)
+                rows.append(row)
 
-    env_end_thermal = probe_thermal(adb, [], "thermal_end")
-    env_start["thermal_end"] = env_end_thermal
+        env_start["thermal_end"] = probe_thermal(adb, [], "thermal_end")
 
     imported = None
     if args.import_crossfire:
