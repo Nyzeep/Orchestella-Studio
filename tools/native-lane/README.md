@@ -180,8 +180,10 @@ tools/native-lane/
   tools.lock.json           第三方件 URL + sha256 + 两档 profile
   prepare_rootfs.sh         fetch / extract / populate / plan / status / all
   measure.py                四列 × 两档，--dry-run 可全流程干跑
+  uml_lane.py               UML 研究车道 runner（会话20 D10，见第 8 节）
   fake_adb.py               确定性的 adb 替身（永不联网、永不碰设备）
   test_native_lane.py       14 个零设备用例
+  test_uml_lane.py          32 个 UML 车道零设备用例
   tests/expected_dry_run.json  干跑的手写期望值，diff 用
 ```
 
@@ -196,3 +198,81 @@ tools/native-lane/
 - 它给不出任何一条车道比另一条快多少。没有设备就没有数字，`--dry-run` 的数字是假的。
 - 它不解释 pVM 卸载为什么在某台机器上失败；那是 AXP1 / argv 策略那条线的事。
 - 它不覆盖 shell、I/O、包管理器；只测 distcc 型编译。
+
+---
+
+## 8. UML 研究车道（会话20 D10）
+
+> **未验证声明：真机未跑。** 本节与 `uml_lane.py` 是研究分支上的代码与测试。
+> UML 内核在本轮从未在任何设备/宿主上启动过；所有启动参数来自 fork 文档摘要
+> （`evidence/uml-20261028/fork-docs-summary.md`，只读参考），全部待 D10 真机回合验证。
+> 本节不产出也不暗示任何性能数字。
+
+### 用途
+
+让 UML（user-mode Linux，fork 的 `linux-bionic` 内核）成为与 `proot` / `pvm` / `qemu`
+同表的一列（对照 native），在 D10 真机回合用同一份 `fixtures/fixture.i` 产出五列数据。
+车道 id 为 `uml`，注册在 `measure.py` 的 `LANE_REGISTRY`；`--columns uml` 即接入，
+`qemu`/`pvm` 仍走 `reused` 通道，互不干扰。
+
+### 与既有车道的差异（为什么是独立 runner）
+
+- `proot`/`bare` 是**宿主命令前缀**车道：`measure.py` 把 clang 包进一条 adb shell 命令
+  （`build_batch_script()` / `run_batch()`）。UML 不行：guest 内核是**常驻宿主进程**，
+  负载由 guest 内 `/um-command.sh`（um-init legacy 模式）执行，`NL_*` 标记经
+  `con0=fd:0,fd:1` 从 guest 控制台回流宿主。因此 UML 走独立 runner `uml_lane.py`，
+  结果行 schema 与 `run_batch` 行对齐（column/jobs/files/status/wall_ms/
+  files_per_min/objects_ok/command），照常进同一份 `native-lane.json` 表。
+- 主机路径规则的偏离：adb 车道禁止宿主路径出现在设备命令里；UML 的启动命令**本身就是
+  宿主命令**，kernel/stub/rootflags 是仓外 release 目录的宿主路径，不受该规则约束。
+  仓内路径（`tools/native-lane/...`）仍然禁止出现在任何命令里。
+
+### 启动参数（可配置，默认按 fork 摘要）
+
+| 参数 | 选项 | 默认 | 依据 |
+|---|---|---|---|
+| kernel | `--uml-kernel` | `<workspace>/evidence/uml-20261028/release-v0.3.0/linux-bionic` | RELEASE.md 资产清单 |
+| stub | `--uml-stub` | 同目录 `stub_exe`，**必传**（Android 拒绝 memfd 执行，缺了 guest 起不来） | fork README:97 |
+| rootfs 通道 | `--uml-hostfs-dir` / `--uml-ubd0` | **hostfs** | boot.py 双通道 |
+| mem | `--uml-mem` | `512M` | fork README:134 |
+| ncpus | `--uml-ncpus` | `1` | ptrace userspace 只能单 CPU |
+| seccomp | `--uml-seccomp on/auto/off` | `on` | "roughly 5× faster per syscall" |
+| prefault | `--uml-prefault` | 不传 | fault 窗口语义待真机确认（128K→512K） |
+| con/con0 | 固定 | `con=null con0=fd:0,fd:1` | fork README:134-141 |
+| panic | 固定 | `panic=1` | boot.py 惯例 |
+| guest clang | `--uml-clang` | `clang` | guest 内路径 |
+
+**rootfs 双通道**：默认 **hostfs**（`rootfstype=hostfs rootflags=<dir>`），免 mke2fs，
+Windows/无设备侧也能准备目录（解 minirootfs + apk add clang + 注入 um-init）；ubd0 模式
+拼 `ubd0=<img> root=/dev/ubda`，但本轮**夹具投递未实现**（需 umnet/vec0 网络门），真跑
+会以 `UBD0_DELIVERY_UNAVAILABLE` 失败——不静默降级。
+
+**产物路径约定**：release 产物在**仓外目录** `<workspace>/evidence/uml-20261028/release-v0.3.0/`
+（workspace 根 = 仓库根的上一级，可用 `ORCHESTELLA_WORKSPACE` 覆盖）。任何绝对路径不入库，
+代码只在运行时按相对约定推导；路径不存在时以 `UML_KERNEL_MISSING` 等显式失败。
+
+### 方法学硬规则（写死在 `uml_lane.py` 文档字符串，测试机械断言）
+
+1. 同表条件交错（轮内轮转，消位置偏差）；
+2. 7 轮取**中位数**，never means；
+3. compute 校验项（`fixture_entry()` 求和，期望值与 `gen_fixture` 生成器由测试锁死）
+   偏差 >5% 或缺失 → **整表作废**（`DISCARD_TABLE`），不是只废一行；
+4. fault 指标按**字节归一**：native 4K 页 vs guest 16K 页（`CONFIG_PAGE_SIZE_16KB=y`），
+   比较的是 `faults × page_bytes`（折算 MiB），原始次数禁比；
+5. **跨表禁横比**：UML 与 proot/pVM/QEMU 不同表的数字不得相减或相比。
+
+### 用法示例
+
+```bash
+cd tools/native-lane
+
+python uml_lane.py --plan                          # 只拼装：启动 argv + guest 脚本 + 方法学清单，不执行
+python measure.py --dry-run --columns proot,bare,uml   # 干跑：uml 列以合成行进同表（synthetic: true）
+python uml_lane.py --run                           # 真跑：需 Linux 宿主 + 仓外 release 产物
+                                                   # （Windows 宿主会以 UML_HOST_UNSUPPORTED 拒绝）
+python -m unittest discover -s tools/native-lane -p 'test_*.py'
+```
+
+已测试覆盖（零设备）：启动参数组装（stub 必传、hostfs/ubd 分支、mem/seccomp/ncpus/prefault
+校验）、guest 批处理脚本生成（标记协议、真实 `xargs -P` 并发、无 proot/设备路径/Windows 路径）、
+compute/jitter/fault/交错判定、结果 schema、measure.py 混合列与纯 uml 干跑、`--run` 拒绝路径。
