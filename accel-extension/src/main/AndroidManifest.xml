@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- W-A two-package split: the accelerator extension is a payload-only APK.
+     hasCode=false: no dex, no components — the pVM payload is loaded by the
+     AVF loader directly from this APK (uncompressed, page-aligned .so). The
+     main package reads PVM-COMPILER-MANIFEST through createPackageContext. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application
+        android:label="@string/accel_extension_label"
+        android:hasCode="false"
+        android:allowBackup="false" />
+</manifest>

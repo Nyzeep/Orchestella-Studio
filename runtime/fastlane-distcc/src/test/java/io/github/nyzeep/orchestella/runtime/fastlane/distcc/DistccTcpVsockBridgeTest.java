@@ -110,7 +110,24 @@ public final class DistccTcpVsockBridgeTest {
         bridge.start();
         int port = bridge.port();
         bridge.close();
-        assertThrows(IOException.class, () -> new Socket(LOOPBACK, port).close());
+        try {
+            assertThrows(IOException.class, () -> new Socket(LOOPBACK, port).close());
+        } catch (AssertionError race) {
+            // Session-18 W-D diagnostic for the known flake: the close-vs-
+            // connect race leaves the backlog accepting for a few milliseconds
+            // after close() returns. Log the exact probe shape so a CI failure
+            // is attributable without a debugger; the assertion is unchanged.
+            try {
+                new Socket(LOOPBACK, port).close();
+                System.out.println(
+                        "[diag] closeStopsTheListener: connect still SUCCEEDS after close(); port=" + port);
+            } catch (IOException refused) {
+                System.out.println(
+                        "[diag] closeStopsTheListener: second connect refused as expected; port=" + port
+                                + " reason=" + refused.getClass().getSimpleName());
+            }
+            throw race;
+        }
     }
 
     @Test(timeout = 10000)

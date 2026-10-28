@@ -17,6 +17,7 @@ import android.widget.LinearLayout;
 import io.github.nyzeep.orchestella.StickyModifierStateMachine.Modifier;
 import io.github.nyzeep.orchestella.StickyModifierStateMachine.State;
 import io.github.nyzeep.orchestella.ui.theme.AppTheme;
+import io.github.nyzeep.orchestella.ui.theme.SurfaceOpacity;
 import io.github.nyzeep.orchestella.ui.theme.ThemeColors;
 import io.github.nyzeep.orchestella.ui.theme.ThemeStore;
 import java.nio.charset.StandardCharsets;
@@ -122,7 +123,7 @@ public class MobileAuxiliaryKeyBar extends LinearLayout {
     private void init(Context context) {
         theme = new ThemeStore(context).resolve();
         setOrientation(VERTICAL);
-        setBackgroundColor(theme.getSurface());
+        setBackgroundColor(effectiveSurface());
         // Only the secondary tools scroll horizontally. An outer HorizontalScrollView
         // measures its child with unbounded width and defeats the primary-row weights.
         LinearLayout rows = new LinearLayout(context);
@@ -209,7 +210,7 @@ public class MobileAuxiliaryKeyBar extends LinearLayout {
     public void applyTheme(AppTheme theme) {
         if (theme == null) return;
         this.theme = theme;
-        setBackgroundColor(theme.getSurface());
+        setBackgroundColor(effectiveSurface());
         for (Button key : collectKeys()) {
             styleKeyCap(key);
         }
@@ -222,6 +223,12 @@ public class MobileAuxiliaryKeyBar extends LinearLayout {
     private void styleKeyCap(Button key) {
         key.setTextColor(theme.getText());
         key.setBackground(createKeyBackground(theme.getSurface(), theme.getGlow()));
+    }
+
+    /** Surface token composited to the user's chosen UI surface opacity (W-C.2). */
+    private int effectiveSurface() {
+        return SurfaceOpacity.INSTANCE.applyOpacity(
+                theme.getSurface(), new ThemeStore(getContext()).surfaceOpacityPercent());
     }
 
     private List<Button> collectKeys() {

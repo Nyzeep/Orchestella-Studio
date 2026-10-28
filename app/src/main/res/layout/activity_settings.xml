@@ -613,6 +613,23 @@
                         android:max="90" />
 
                     <TextView
+                        android:id="@+id/tv_ui_surface_opacity_label"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="16dp"
+                        android:text="界面表面不透明度：100%"
+                        android:textSize="12sp"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
+
+                    <SeekBar
+                        android:id="@+id/seek_ui_surface_opacity"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:minHeight="48dp"
+                        android:contentDescription="界面表面不透明度"
+                        android:max="30" />
+
+                    <TextView
                         android:id="@+id/tv_font_size_label"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"

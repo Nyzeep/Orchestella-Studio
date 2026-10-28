@@ -316,6 +316,16 @@ public final class ReflectiveFastLaneApi implements FastLaneVirtualMachineApi {
         }
         set(shape.configBuilder, builder, "setPayloadBinaryName", String.class,
                 spec.payloadBinaryName(), notes);
+        // Two-package redirect: when the payload lives in the accelerator
+        // extension's APK, the platform must be told explicitly — otherwise
+        // it defaults to the calling app's own APK and finds no payload.
+        // setApkPath is resolved lazily (same API-34 surface as the rest of
+        // the shape, but optional for the non-redirect path so a truncated
+        // platform still serves own-APK payloads).
+        if (spec.payloadApkPath() != null) {
+            set(shape.configBuilder, builder, "setApkPath", String.class,
+                    spec.payloadApkPath(), notes);
+        }
         set(shape.configBuilder, builder, "setProtectedVm", boolean.class, true, notes);
         set(shape.configBuilder, builder, "setMemoryBytes", long.class,
                 Math.multiplyExact(spec.memoryMb(), BYTES_PER_MB), notes);

@@ -67,11 +67,15 @@ public final class PvmPayloadLaneStarter {
     }
 
     /**
-     * Production wiring: the manifest comes from the APK asset (the same
-     * reader the facts use) and the VM comes from the reflective protected
-     * API. Empty means this build ships no payload compiler — the same
-     * conservative answer the facts give, so the policy has already refused
-     * the lane before a caller could start it.
+     * Production wiring: the compiler manifest comes from the accelerator
+     * extension package when it is installed and admissible (two-package
+     * split); otherwise it falls back to this APK's own asset, the packaged
+     * payload shape that QA builds still use. In both cases the engine gate
+     * has already filtered non-clang manifests, so the returned starter — if
+     * any — describes a payload this runtime actually admits. Empty means no
+     * admissible payload compiler: the same conservative answer the facts
+     * give, so the policy has already refused the lane before a caller could
+     * start it.
      */
     public static Optional<PvmPayloadLaneStarter> createIfInstalled(
             Context context,
@@ -81,6 +85,18 @@ public final class PvmPayloadLaneStarter {
             long stopGraceMs) {
         Objects.requireNonNull(context, "context");
         Context application = context.getApplicationContext();
+        AccelExtensionResolver.Resolution extension =
+                new AccelExtensionResolver(application).resolve();
+        if (extension.getOk()) {
+            return Optional.of(new PvmPayloadLaneStarter(
+                    instanceId,
+                    extension.getManifest(),
+                    requiredTargetTriple,
+                    new ReflectiveFastLaneApi(application, application.getClassLoader()),
+                    readyTimeoutMs,
+                    stopGraceMs,
+                    extension.getPayloadApkPath()));
+        }
         return AndroidAcceleratorFactProvider.readPayloadManifest(application)
                 .map(manifest -> new PvmPayloadLaneStarter(
                         instanceId,
@@ -88,7 +104,8 @@ public final class PvmPayloadLaneStarter {
                         requiredTargetTriple,
                         new ReflectiveFastLaneApi(application, application.getClassLoader()),
                         readyTimeoutMs,
-                        stopGraceMs));
+                        stopGraceMs,
+                        null));
     }
 
     /**
@@ -111,8 +128,12 @@ public final class PvmPayloadLaneStarter {
     private final FastLaneVirtualMachineApi api;
     private final long readyTimeoutMs;
     private final long stopGraceMs;
+    /** Nullable: the extension APK path when the payload is two-package. */
+    private final String payloadApkPath;
 
     /**
+     * Legacy-shaped constructor: the payload rides this app's own APK.
+     *
      * @param instanceId platform VM name; the platform allows 64 characters
      * @param manifest the compiler payload's build-time declaration
      * @param requiredTargetTriple empty means "do not compare triples"
@@ -126,6 +147,27 @@ public final class PvmPayloadLaneStarter {
             FastLaneVirtualMachineApi api,
             long readyTimeoutMs,
             long stopGraceMs) {
+        this(instanceId, manifest, requiredTargetTriple, api, readyTimeoutMs, stopGraceMs, null);
+    }
+
+    /**
+     * @param instanceId platform VM name; the platform allows 64 characters
+     * @param manifest the compiler payload's build-time declaration
+     * @param requiredTargetTriple empty means "do not compare triples"
+     * @param readyTimeoutMs default bound for {@link #awaitReady(LaneRuntime)}
+     * @param stopGraceMs grace the lane owner passes to {@code stop}
+     * @param payloadApkPath null loads the payload from this app's own APK;
+     *   an absolute path loads it from that APK via the platform's
+     *   {@code setApkPath} (the accelerator extension case)
+     */
+    public PvmPayloadLaneStarter(
+            String instanceId,
+            PvmCompilerManifest manifest,
+            String requiredTargetTriple,
+            FastLaneVirtualMachineApi api,
+            long readyTimeoutMs,
+            long stopGraceMs,
+            String payloadApkPath) {
         this.instanceId = Objects.requireNonNull(instanceId, "instanceId");
         this.manifest = Objects.requireNonNull(manifest, "manifest");
         this.requiredTargetTriple = Objects.requireNonNull(requiredTargetTriple, "requiredTargetTriple");
@@ -135,6 +177,7 @@ public final class PvmPayloadLaneStarter {
         }
         this.readyTimeoutMs = readyTimeoutMs;
         this.stopGraceMs = stopGraceMs;
+        this.payloadApkPath = payloadApkPath;
     }
 
     /**
@@ -211,7 +254,7 @@ public final class PvmPayloadLaneStarter {
      * ports, and this lane opens none of them during start.
      */
     private FastLaneLaunchSpec launchSpec() {
-        return new FastLaneLaunchSpec(
+        FastLaneLaunchSpec ownApkSpec = new FastLaneLaunchSpec(
                 instanceId,
                 manifest.payloadBinary(),
                 manifest.memoryMiB(),
@@ -226,6 +269,12 @@ public final class PvmPayloadLaneStarter {
                 // an empty digest is honest; a placeholder hash would claim a
                 // toolbox that does not exist.
                 "");
+        // Two-package redirect: without this the platform looks for the
+        // payload in the calling app's APK and fails the load honestly but
+        // uselessly — the payload lives in the extension's APK.
+        return payloadApkPath == null
+                ? ownApkSpec
+                : ownApkSpec.withPayloadApkPath(payloadApkPath);
     }
 
     /** Fixed-code mapping; an unknown reason is a load failure, never a guess. */

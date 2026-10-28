@@ -21,6 +21,7 @@ import androidx.core.view.WindowInsetsCompat;
 import androidx.drawerlayout.widget.DrawerLayout;
 import io.github.nyzeep.orchestella.runtime.engineqemu.QemuProcessLauncher;
 import io.github.nyzeep.orchestella.ui.theme.AppTheme;
+import io.github.nyzeep.orchestella.ui.theme.SurfaceOpacity;
 import io.github.nyzeep.orchestella.ui.theme.ThemeStore;
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle;
 import io.github.nyzeep.orchestella.terminal.MultiTerminalSessionManager;
@@ -99,6 +100,8 @@ public class TerminalActivity extends Activity {
             });
     private String terminalBgUri;
     private int terminalBgGeneration;
+    /** Session-18 W-C.3: set when a direct launch must ask which instance. */
+    private java.util.List<InstanceLifecycle.Instance> pendingInstancePicker;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -109,17 +112,22 @@ public class TerminalActivity extends Activity {
         if (instanceId == null || instanceId.isEmpty()) {
             // Direct launch (desktop shortcut / notification) may carry no
             // instanceId. Exactly one stored instance is unambiguous, so bind
-            // it and enter the terminal normally; zero or several instances
-            // keeps the existing missing-instance card (never guess).
+            // it and enter the terminal normally; zero instances keeps the
+            // existing missing-instance card (never guess), and several
+            // instances show an explicit picker (session-18 W-C.3) instead of
+            // silently dropping the user on the offline card.
+            java.util.List<InstanceLifecycle.Instance> stored = null;
             try {
-                java.util.List<InstanceLifecycle.Instance> stored =
-                        new InstanceLifecycle.FileStore(
-                                getFilesDir().toPath().resolve("instances")).list();
+                stored = new InstanceLifecycle.FileStore(
+                        getFilesDir().toPath().resolve("instances")).list();
                 if (stored.size() == 1) {
                     instanceId = stored.get(0).id();
                 }
             } catch (Exception ignored) {
                 // Store unreadable: fall through to the offline card.
+            }
+            if (instanceId == null && stored != null && stored.size() > 1) {
+                pendingInstancePicker = stored;
             }
         }
         session = ExecutionSessionRegistry.get(instanceId);
@@ -161,7 +169,7 @@ public class TerminalActivity extends Activity {
         sessionHeader.setOrientation(LinearLayout.HORIZONTAL);
         sessionHeader.setGravity(Gravity.CENTER_VERTICAL);
         sessionHeader.setPadding(dpToPx(10), 0, dpToPx(8), 0);
-        sessionHeader.setBackgroundColor(themeStore.resolve().getSurface());
+        sessionHeader.setBackgroundColor(effectiveSurface(themeStore.resolve()));
         tvSessionTitle = new TextView(this);
         tvSessionTitle.setText("终端 1");
         tvSessionTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
@@ -186,7 +194,7 @@ public class TerminalActivity extends Activity {
         btnDrawerHandle.setMinHeight(0);
         btnDrawerHandle.setMinimumHeight(0);
         btnDrawerHandle.setBackground(createPillBackground(
-                themeStore.resolve().getSurface(), themeStore.resolve().getGlow(), 8f));
+                effectiveSurface(themeStore.resolve()), themeStore.resolve().getGlow(), 8f));
         btnDrawerHandle.setPadding(dpToPx(10), 0, dpToPx(10), 0);
         btnDrawerHandle.setOnClickListener(v -> {
             if (drawerLayout != null) {
@@ -334,8 +342,35 @@ public class TerminalActivity extends Activity {
 
         applyAppearance();
 
+        showInstancePickerIfNeeded();
         reconcileAndConnect();
         handleCommandExtra(getIntent());
+    }
+
+    /**
+     * Session-18 W-C.3: a direct launch with several stored instances asks
+     * instead of guessing. Relaunching with an explicit instanceId keeps the
+     * normal binding path untouched (single source of truth stays onCreate).
+     */
+    private void showInstancePickerIfNeeded() {
+        if (pendingInstancePicker == null) return;
+        java.util.List<InstanceLifecycle.Instance> candidates = pendingInstancePicker;
+        pendingInstancePicker = null;
+        String[] labels = new String[candidates.size()];
+        for (int index = 0; index < candidates.size(); index++) {
+            InstanceLifecycle.Instance candidate = candidates.get(index);
+            labels[index] = candidate.hostname() + "  (" + candidate.id() + ")";
+        }
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("选择要打开的实例")
+                .setItems(labels, (dialog, which) -> {
+                    Intent self = new Intent(this, TerminalActivity.class)
+                            .putExtra("instanceId", candidates.get(which).id());
+                    startActivity(self);
+                    finish();
+                })
+                .setCancelable(true)
+                .show();
     }
 
     private void applyAppearance() {
@@ -372,14 +407,14 @@ public class TerminalActivity extends Activity {
     /** Repaints the session header, drawer handle and offline card with the active theme. */
     private void applyChromeColors(AppTheme theme) {
         if (sessionHeader != null) {
-            sessionHeader.setBackgroundColor(theme.getSurface());
+            sessionHeader.setBackgroundColor(effectiveSurface(theme));
         }
         if (tvSessionTitle != null) {
             tvSessionTitle.setTextColor(theme.getTerminalForeground());
         }
         if (btnDrawerHandle != null) {
             btnDrawerHandle.setTextColor(theme.getAccent());
-            btnDrawerHandle.setBackground(createPillBackground(theme.getSurface(), theme.getGlow(), 8f));
+            btnDrawerHandle.setBackground(createPillBackground(effectiveSurface(theme), theme.getGlow(), 8f));
         }
         if (tvOfflineTitle != null) tvOfflineTitle.setTextColor(theme.getPrimary());
         if (tvOfflineMessage != null) tvOfflineMessage.setTextColor(theme.getText());
@@ -389,7 +424,7 @@ public class TerminalActivity extends Activity {
         }
         if (btnOfflineBack != null) {
             btnOfflineBack.setTextColor(theme.getTextDim());
-            btnOfflineBack.setBackground(createPillBackground(theme.getSurface(), theme.getGlow(), 10f));
+            btnOfflineBack.setBackground(createPillBackground(effectiveSurface(theme), theme.getGlow(), 10f));
         }
     }
 
@@ -817,7 +852,7 @@ public class TerminalActivity extends Activity {
         card.setOrientation(LinearLayout.VERTICAL);
         card.setGravity(Gravity.CENTER);
         card.setPadding(dpToPx(24), dpToPx(24), dpToPx(24), dpToPx(24));
-        card.setBackground(createPillBackground(theme.getSurface(), theme.getGlow(), 16f));
+        card.setBackground(createPillBackground(effectiveSurface(theme), theme.getGlow(), 16f));
 
         tvOfflineTitle = new TextView(this);
         tvOfflineTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
@@ -848,7 +883,7 @@ public class TerminalActivity extends Activity {
         btnOfflineBack.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
         btnOfflineBack.setTextColor(theme.getTextDim());
         btnOfflineBack.setTypeface(Typeface.MONOSPACE);
-        btnOfflineBack.setBackground(createPillBackground(theme.getSurface(), theme.getGlow(), 10f));
+        btnOfflineBack.setBackground(createPillBackground(effectiveSurface(theme), theme.getGlow(), 10f));
         btnOfflineBack.setPadding(dpToPx(16), dpToPx(8), dpToPx(16), dpToPx(8));
         LinearLayout.LayoutParams backLp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -1134,6 +1169,14 @@ public class TerminalActivity extends Activity {
     private int dpToPx(int dp) {
         return (int) TypedValue.applyDimension(
                 TypedValue.COMPLEX_UNIT_DIP, dp, getResources().getDisplayMetrics());
+    }
+
+    /** Surface token composited to the user's chosen UI surface opacity (W-C.2). */
+    private int effectiveSurface(AppTheme theme) {
+        int percent = themeStore != null
+                ? themeStore.surfaceOpacityPercent()
+                : new ThemeStore(this).surfaceOpacityPercent();
+        return SurfaceOpacity.INSTANCE.applyOpacity(theme.getSurface(), percent);
     }
 
     private android.graphics.drawable.GradientDrawable createPillBackground(
