@@ -1,6 +1,8 @@
 package io.github.nyzeep.orchestella
 
+import android.content.Intent
 import android.graphics.Color
+import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.widget.AdapterView
@@ -16,6 +18,7 @@ import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.materialswitch.MaterialSwitch
 import io.github.nyzeep.orchestella.ui.theme.CustomThemeSlot
+import io.github.nyzeep.orchestella.ui.theme.SurfaceOpacity
 import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
 import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
 import io.github.nyzeep.orchestella.ui.theme.ThemeColors
@@ -261,9 +264,16 @@ class SettingsActivity : AppCompatActivity() {
                 txtAvfDetails.text = "$factsSummary\n• 预检：${readiness.reasons().joinToString("；")}\n$launchNotice"
             }
             AvfCapabilityEvaluator.AvfStatus.MODE_UNSUPPORTED -> {
-                txtAvfBadge.text = "AVF 模式不支持"
-                txtAvfBadge.setTextColor(getColor(R.color.zone_red))
-                txtAvfDetails.text = "$factsSummary\n• 预检原因：${readiness.reasons().joinToString("；")}\n• 授权不会改变 VM 模式；当前使用 QEMU\n$launchNotice"
+                // Session-18 W-B: the unsupported verdict is a capability
+                // statement, not a device defect — the badge becomes a neutral
+                // entry point to the compatibility explanation page instead of
+                // a red dead end.
+                txtAvfBadge.text = BadgeCopy.avfUnsupportedEntryLabel()
+                txtAvfBadge.setTextColor(getColor(R.color.zone_neutral))
+                txtAvfBadge.setOnClickListener {
+                    startActivity(Intent(this, CompatExplanationActivity::class.java))
+                }
+                txtAvfDetails.text = "$factsSummary\n• 此功能依赖设备的硬件虚拟化能力，你的设备上不可用（不影响其他功能）\n• 点击上方徽章查看兼容性说明\n$launchNotice"
             }
             AvfCapabilityEvaluator.AvfStatus.MODE_UNKNOWN -> {
                 txtAvfBadge.text = "AVF 模式未验证"
@@ -337,7 +347,10 @@ class SettingsActivity : AppCompatActivity() {
     private fun probeAcceleratorLane() {
         txtAccelStatus.text = "pVM 编译加速：已启用（检测车道…）"
         txtAccelStatus.setTextColor(getColor(R.color.zone_yellow))
+        txtAccelStatus.setOnClickListener(null)
+        txtAccelStatus.isClickable = false
         backgroundExecutor.execute {
+            val resolution = AccelExtensionResolver(this).resolve()
             val laneUsable = try {
                 val facts = AndroidAcceleratorFactProvider.create(this).read()
                 AcceleratorPolicy.decide(
@@ -348,14 +361,45 @@ class SettingsActivity : AppCompatActivity() {
             }
             runOnUiThread {
                 if (!::txtAccelStatus.isInitialized) return@runOnUiThread
-                if (laneUsable) {
-                    txtAccelStatus.text = "pVM 编译加速：已启用（车道可用，实例启动时生效）"
-                    txtAccelStatus.setTextColor(getColor(R.color.zone_green))
-                } else {
-                    txtAccelStatus.text = "pVM 编译加速：已启用（车道暂不可用，实例启动时回退普通编译）"
-                    txtAccelStatus.setTextColor(getColor(R.color.zone_yellow))
+                when {
+                    laneUsable -> {
+                        txtAccelStatus.text = "pVM 编译加速：已启用（车道可用，实例启动时生效）"
+                        txtAccelStatus.setTextColor(getColor(R.color.zone_green))
+                    }
+                    resolution.decision.status == AccelExtensionRules.Status.EXTENSION_MISSING -> {
+                        // Two-package split: the honest "not installed" state
+                        // with a direct guide, instead of a generic fallback.
+                        txtAccelStatus.text = "pVM 编译加速：未安装 pVM 加速扩展（点此查看安装引导）"
+                        txtAccelStatus.setTextColor(getColor(R.color.zone_neutral))
+                        txtAccelStatus.setOnClickListener {
+                            openAcceleratorExtensionGuide()
+                        }
+                        txtAccelStatus.isClickable = true
+                    }
+                    else -> {
+                        // Version mismatch / engine rejected / unreadable
+                        // manifest / platform refusal — the resolver detail is
+                        // the reason, verbatim, no guessing.
+                        txtAccelStatus.text = "pVM 编译加速：已启用（${resolution.decision.detail}，实例启动时回退普通编译）"
+                        txtAccelStatus.setTextColor(getColor(R.color.zone_yellow))
+                    }
                 }
             }
+        }
+    }
+
+    /**
+     * D2: the extension guide points at the repository Releases page (the
+     * distribution channel for the standalone extension APK). Replaced by a
+     * stable in-app URL when the release round lands.
+     */
+    private fun openAcceleratorExtensionGuide() {
+        try {
+            startActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse(ReleaseSelector.RELEASES_PAGE))
+            )
+        } catch (_: RuntimeException) {
+            Toast.makeText(this, "未找到可用的浏览器，请手动访问仓库 Releases 页", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -442,6 +486,7 @@ class SettingsActivity : AppCompatActivity() {
                     themeStore.setCornerRadiusDp(options[which].second)
                     refreshAppearance()
                     dialog.dismiss()
+                    Toast.makeText(this, "圆角已更新：${options[which].first}", Toast.LENGTH_SHORT).show()
                 }
                 .setNegativeButton("取消", null)
                 .show().also(ThemeApplier::apply)
@@ -515,7 +560,28 @@ class SettingsActivity : AppCompatActivity() {
                 scrimLabel?.text = "终端背景遮罩浓度：${progress}%"
             }
             override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {
+                Toast.makeText(this@SettingsActivity, "遮罩浓度已保存", Toast.LENGTH_SHORT).show()
+            }
+        })
+
+        val opacityLabel = findViewById<TextView?>(R.id.tv_ui_surface_opacity_label)
+        val opacitySeek = findViewById<android.widget.SeekBar?>(R.id.seek_ui_surface_opacity)
+        opacitySeek?.max = SurfaceOpacity.MAX_PERCENT - SurfaceOpacity.MIN_PERCENT
+        opacitySeek?.progress = themeStore.surfaceOpacityPercent() - SurfaceOpacity.MIN_PERCENT
+        opacityLabel?.text = "界面表面不透明度：${themeStore.surfaceOpacityPercent()}%"
+        opacitySeek?.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                val percent = progress + SurfaceOpacity.MIN_PERCENT
+                themeStore.setUiSurfaceOpacityPercent(percent)
+                opacityLabel?.text = "界面表面不透明度：$percent%"
+                ThemeApplier.bind(this@SettingsActivity)
+            }
+            override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {
+                Toast.makeText(this@SettingsActivity, "界面表面不透明度已应用", Toast.LENGTH_SHORT).show()
+            }
         })
 
         fontSeek.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {

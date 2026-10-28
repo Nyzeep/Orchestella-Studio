@@ -92,6 +92,9 @@
         <activity android:name=".LocalEditorActivity" android:exported="false"
             android:launchMode="singleTask" android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.Orchestella" />
+        <activity android:name=".CompatExplanationActivity" android:exported="false"
+            android:parentActivityName=".SettingsActivity"
+            android:theme="@style/Theme.Orchestella" />
 
         <!-- ADR-0011: Persistent foreground service for ongoing guest execution -->
         <service

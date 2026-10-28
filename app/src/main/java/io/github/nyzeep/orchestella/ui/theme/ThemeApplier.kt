@@ -103,7 +103,8 @@ object ThemeApplier {
     @JvmStatic
     @JvmOverloads
     fun apply(root: View, theme: AppTheme = ThemeStore(root.context).resolve(root.context)) {
-        walk(root, theme, force = true)
+        walk(root, theme, force = true,
+            surfacePct = ThemeStore(root.context).surfaceOpacityPercent())
     }
 
     /** Call after show(); Dialog windows are separate from the Activity content tree. */
@@ -117,7 +118,9 @@ object ThemeApplier {
             val binding = dialogs[dialog]?.takeIf { it.root.get() === root } ?: RootBinding(root, theme).also {
                 dialogs[dialog] = it
                 // ListView choice rows are often inflated after show(); catch those on the first layout.
-                val layout = ViewTreeObserver.OnGlobalLayoutListener { it.root.get()?.let { root -> walk(root, it.theme, false) } }
+                val layout = ViewTreeObserver.OnGlobalLayoutListener {
+                    it.root.get()?.let { root -> walk(root, it.theme, false, surfacePct = it.surfaceOpacity) }
+                }
                 it.listener = layout
                 root.viewTreeObserver.addOnGlobalLayoutListener(layout)
                 root.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
@@ -129,7 +132,9 @@ object ThemeApplier {
                 })
             }
             binding.theme = theme
-            walk(root, theme, force = true)
+            binding.surfaceOpacity = ThemeStore(dialog.context).surfaceOpacityPercent()
+            walk(root, theme, force = true,
+                surfacePct = binding.surfaceOpacity)
         }
     }
 
@@ -161,6 +166,7 @@ object ThemeApplier {
         var wallpaper: String? = null
         var applied = false
         var cornerRadius = -1
+        var surfaceOpacity = SurfaceOpacity.MAX_PERCENT
         var listener: ViewTreeObserver.OnGlobalLayoutListener? = null
     }
 
@@ -205,7 +211,11 @@ object ThemeApplier {
             val radius = store.cornerRadiusDp()
             val radiusChanged = binding.cornerRadius != radius
             binding.cornerRadius = radius
-            walk(content, theme, force = changed || radiusChanged)
+            val opacity = store.surfaceOpacityPercent()
+            val opacityChanged = binding.surfaceOpacity != opacity
+            binding.surfaceOpacity = opacity
+            walk(content, theme, force = changed || radiusChanged || opacityChanged,
+                surfacePct = opacity)
             val terminal = activity.javaClass.simpleName == "TerminalActivity"
             val background = if (terminal) theme.terminalBackground else theme.background
             activity.window.setBackgroundDrawable(ColorDrawable(background))
@@ -286,7 +296,8 @@ object ThemeApplier {
         bindings[page]?.let { it.background = WeakReference(page.background); it.backgroundColor = null }
     }
 
-    private fun walk(view: View, theme: AppTheme, force: Boolean, containerFill: Int? = null) {
+    private fun walk(view: View, theme: AppTheme, force: Boolean, containerFill: Int? = null,
+        surfacePct: Int = SurfaceOpacity.MAX_PERCENT) {
         val name = resourceName(view)
         if (roles[view] == Role.PRESERVE || view is SurfaceView || view is TextureView ||
             view.javaClass.simpleName.contains("TerminalView") || name.contains("wayland_surface")) return
@@ -313,7 +324,7 @@ object ThemeApplier {
         if (force || state.theme != theme || backgroundChanged || state.textColor != currentText ||
             state.selected != selected || state.enabled != view.isEnabled || state.checked != checked ||
             state.containerFill != containerFill) {
-            colorView(view, name, theme, state, containerFill)
+            colorView(view, name, theme, state, containerFill, surfacePct)
             state.theme = theme
             state.background = WeakReference(view.background)
             state.backgroundColor = backgroundColor(view)
@@ -333,20 +344,22 @@ object ThemeApplier {
                     ThemeColors.color(theme, state.backgroundRole)
                 else -> containerFill
             }
-            for (index in 0 until view.childCount) walk(view.getChildAt(index), theme, force, childFill)
+            for (index in 0 until view.childCount) walk(view.getChildAt(index), theme, force, childFill, surfacePct)
         }
     }
 
-    private fun colorView(view: View, name: String, theme: AppTheme, binding: ViewBinding, containerFill: Int?) {
+    private fun colorView(view: View, name: String, theme: AppTheme, binding: ViewBinding,
+        containerFill: Int?, surfacePct: Int = SurfaceOpacity.MAX_PERCENT) {
         val outline = ThemeColors.color(theme, ColorRole.OUTLINE)
         val muted = ThemeColors.color(theme, ColorRole.MUTED)
         val disabled = ThemeColors.blend(theme.surface, theme.text, 0.45f)
         val actionColor = if (binding.buttonRole == Role.DANGER_ACTION) 0xFFEF4444.toInt() else theme.primary
         val primaryInk = ThemeColors.onColor(actionColor)
+        val effectiveSurface = SurfaceOpacity.applyOpacity(theme.surface, surfacePct)
         val normalInk = ThemeColors.readable(theme.text, containerFill ?: theme.surface)
         when (view) {
             is MaterialCardView -> {
-                view.setCardBackgroundColor(theme.surface)
+                view.setCardBackgroundColor(effectiveSurface)
                 view.strokeColor = outline
                 // Corner radius is the one deliberate geometry override: 0 keeps the XML look.
                 val radiusPx = cornerRadiusPx(view)

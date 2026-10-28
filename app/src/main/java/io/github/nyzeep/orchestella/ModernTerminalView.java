@@ -573,9 +573,8 @@ public class ModernTerminalView extends ScrollView {
     public void setTerminalBackgroundImage(android.graphics.Bitmap bitmap, int scrimArgb) {
         hasBackgroundImage = true;
         scrimColor = scrimArgb;
-        android.graphics.drawable.BitmapDrawable image =
-                new android.graphics.drawable.BitmapDrawable(getResources(), bitmap);
-        image.setGravity(android.view.Gravity.FILL);
+        android.graphics.drawable.Drawable image =
+                new CenterCropBackgroundDrawable(getResources(), bitmap);
         setBackground(new android.graphics.drawable.LayerDrawable(new android.graphics.drawable.Drawable[]{
                 image, new android.graphics.drawable.ColorDrawable(scrimArgb)}));
         transcriptView.setBackgroundColor(android.graphics.Color.TRANSPARENT);
@@ -593,6 +592,46 @@ public class ModernTerminalView extends ScrollView {
     public void setTerminalScrimColor(int scrimArgb) {
         scrimColor = scrimArgb;
         if (hasBackgroundImage) applyScrimColor();
+    }
+
+    /**
+     * Center-crops the bitmap to the view bounds while remembering the largest bounds seen.
+     * Under adjustResize the view shrinks when the IME opens; bounds only ever grow, so the
+     * image keeps its size instead of being squashed, and no re-scale flickers on IME close.
+     */
+    static final class CenterCropBackgroundDrawable extends android.graphics.drawable.BitmapDrawable {
+        private int moldWidth;
+        private int moldHeight;
+        private final android.graphics.Matrix matrix = new android.graphics.Matrix();
+
+        CenterCropBackgroundDrawable(android.content.res.Resources res, android.graphics.Bitmap bitmap) {
+            super(res, bitmap);
+        }
+
+        @Override
+        protected void onBoundsChange(android.graphics.Rect bounds) {
+            super.onBoundsChange(bounds);
+            if (bounds.isEmpty()) return;
+            if (moldWidth > 0 && bounds.width() <= moldWidth && bounds.height() <= moldHeight) return;
+            moldWidth = Math.max(moldWidth, bounds.width());
+            moldHeight = Math.max(moldHeight, bounds.height());
+            android.graphics.Bitmap bitmap = getBitmap();
+            if (bitmap == null || bitmap.getWidth() == 0 || bitmap.getHeight() == 0) return;
+            float scale = Math.max(moldWidth / (float) bitmap.getWidth(),
+                    moldHeight / (float) bitmap.getHeight());
+            float dx = (moldWidth - bitmap.getWidth() * scale) / 2f;
+            float dy = (moldHeight - bitmap.getHeight() * scale) / 2f;
+            matrix.setScale(scale, scale);
+            matrix.postTranslate(dx, dy);
+            invalidateSelf();
+        }
+
+        @Override
+        public void draw(android.graphics.Canvas canvas) {
+            android.graphics.Bitmap bitmap = getBitmap();
+            if (bitmap == null) return;
+            canvas.drawBitmap(bitmap, matrix, getPaint());
+        }
     }
 
     private void applyScrimColor() {

@@ -36,6 +36,8 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorMode
+import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorPolicy
 import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
 import io.github.nyzeep.orchestella.runtime.capability.AvfAuthorizationWizardModel
 import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator
@@ -361,7 +363,11 @@ class MainActivity : AppCompatActivity() {
                 AvfCapabilityEvaluator.AvfStatus.NEEDS_AUTHORIZATION -> {
                     showAvfAuthorizationWizard()
                 }
-                AvfCapabilityEvaluator.AvfStatus.MODE_UNSUPPORTED,
+                AvfCapabilityEvaluator.AvfStatus.MODE_UNSUPPORTED -> {
+                    // Session-18 W-B: unsupported → neutral compatibility
+                    // explanation page, not a dead-end dialog.
+                    startActivity(Intent(this, CompatExplanationActivity::class.java))
+                }
                 AvfCapabilityEvaluator.AvfStatus.MODE_UNKNOWN,
                 AvfCapabilityEvaluator.AvfStatus.HIDDEN_API_BLOCKED,
                 AvfCapabilityEvaluator.AvfStatus.REFLECTION_UNAVAILABLE -> {
@@ -619,7 +625,10 @@ class MainActivity : AppCompatActivity() {
             } else when (avfReadiness?.status()) {
                 AvfCapabilityEvaluator.AvfStatus.READY -> "AVF · 预检通过"
                 AvfCapabilityEvaluator.AvfStatus.NEEDS_AUTHORIZATION -> "AVF · 待授权"
-                AvfCapabilityEvaluator.AvfStatus.MODE_UNSUPPORTED -> "AVF · 模式不支持"
+                // Session-18 W-B (user-approved): a neutral entry point instead
+                // of a verdict — the explanation lives on the second-level page.
+                AvfCapabilityEvaluator.AvfStatus.MODE_UNSUPPORTED ->
+                    BadgeCopy.avfUnsupportedEntryLabel()
                 AvfCapabilityEvaluator.AvfStatus.MODE_UNKNOWN -> "AVF · 模式未验证"
                 AvfCapabilityEvaluator.AvfStatus.HIDDEN_API_BLOCKED -> "AVF · 接口受限"
                 AvfCapabilityEvaluator.AvfStatus.REFLECTION_UNAVAILABLE -> "AVF · 接口缺失"
@@ -742,6 +751,25 @@ class MainActivity : AppCompatActivity() {
             return readiness.performanceBadge()
         }
         return assessment.performanceBadge()
+    }
+
+    /**
+     * Whether the pVM compile-acceleration lane is ready right now, derived
+     * from the same facts + policy source the launch dispatcher consults —
+     * never from a static string. Session-18 W-B red line: when this returns
+     * false, no acceleration wording may appear anywhere on the home screen.
+     */
+    private fun acceleratorLaneReady(): Boolean {
+        if (!settingsManager.isAcceleratorLaneEnabled() || !BuildConfig.ACCELERATOR_LANE_ENABLED) {
+            return false
+        }
+        return try {
+            val facts = AndroidAcceleratorFactProvider.create(this).read()
+            AcceleratorPolicy.decide(facts, AcceleratorLaunchDispatcher.GUEST_COMPILER_TRIPLE)
+                .mode() == AcceleratorMode.QEMU_PLUS_ACCEL
+        } catch (failure: RuntimeException) {
+            false
+        }
     }
 
     private fun refreshWizardEntry() {
@@ -1062,12 +1090,19 @@ class MainActivity : AppCompatActivity() {
 
         cpuChip?.text = getString(R.string.system_cpu_badge, profile.totalCores())
         virtBadge?.text = currentBadge(assessment)
-        findViewById<TextView>(R.id.accel_lane_badge)?.visibility =
-            if (settingsManager.isAcceleratorLaneEnabled() && BuildConfig.ACCELERATOR_LANE_ENABLED) {
-                View.VISIBLE
-            } else {
-                View.GONE
-            }
+        // Session-18 W-B: the accel badge mirrors the real lane state (facts +
+        // policy, same source as dispatch) — "ready" only when the lane would
+        // actually serve the launch.
+        val laneReadyNow = acceleratorLaneReady()
+        findViewById<TextView>(R.id.accel_lane_badge)?.apply {
+            visibility =
+                if (settingsManager.isAcceleratorLaneEnabled() && BuildConfig.ACCELERATOR_LANE_ENABLED) {
+                    View.VISIBLE
+                } else {
+                    View.GONE
+                }
+            text = if (laneReadyNow) "pVM 编译加速 · 就绪" else "pVM 编译加速 · 未就绪"
+        }
 
         statusText?.text = buildString {
             appendLine(getString(R.string.runtime_class_full_linux))
@@ -1129,13 +1164,20 @@ class MainActivity : AppCompatActivity() {
 
         val supportsDesktop = false
         val strategyBadge = currentBadge(DeviceCapabilityEvaluator.evaluate(deviceProfile()))
+        // One probe per render, not per card: the facts/policy read is the
+        // same source the launch dispatcher consults.
+        val laneReady = acceleratorLaneReady()
 
         val inflater = LayoutInflater.from(this)
         for (instance in instances) {
             val cardView = inflater.inflate(R.layout.layout_instance_card, instanceList, false)
             val session = ExecutionSessionRegistry.get(instance.id())
             val runningStrategy = when (session) {
-                is QemuInstanceLauncher.Session -> "QEMU 软件虚拟化"
+                is QemuInstanceLauncher.Session ->
+                    // Session-18 W-B (user-approved copy): when the pVM lane is
+                    // really ready, say so; otherwise the plain software
+                    // virtualization wording stays — no fake acceleration.
+                    if (laneReady) BadgeCopy.derive(true, "") else "QEMU 软件虚拟化"
                 is AvfInstanceLauncher.AvfSession -> "AVF 硬件虚拟化"
                 else -> strategyBadge
             }

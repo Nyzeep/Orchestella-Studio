@@ -21,6 +21,9 @@
     <color name="zone_yellow_bg">#18F59E0B</color>
     <color name="zone_red">#EF4444</color>
     <color name="zone_red_bg">#18EF4444</color>
+    <!-- Neutral capability state: present-but-informational, never a warning. -->
+    <color name="zone_neutral">#9CA3AF</color>
+    <color name="zone_neutral_bg">#189CA3AF</color>
 
     <!-- Distro Palette -->
     <color name="distro_alpine_tint">#0D597F</color>
