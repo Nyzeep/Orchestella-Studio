@@ -139,7 +139,16 @@ public final class AndroidAcceleratorFactProvider implements AcceleratorFactProv
                 AndroidAcceleratorFactProvider::kernelExposesVsock,
                 () -> readThermal(application),
                 () -> readBattery(application),
-                () -> readPayloadManifest(application));
+                // Two-package first: the compiler manifest lives in the
+                // accelerator extension when it is installed and admissible;
+                // only then does the packaged-payload path (QA builds) apply.
+                () -> {
+                    PvmCompilerManifest extension =
+                            AccelExtensionResolver.admissibleExtensionManifest(application);
+                    return extension != null
+                            ? Optional.of(extension)
+                            : readPayloadManifest(application);
+                });
     }
 
     @Override
@@ -387,15 +396,29 @@ public final class AndroidAcceleratorFactProvider implements AcceleratorFactProv
      * the asset name appears; the same reader feeds the facts and the
      * production lane starter, so the two can never disagree about what is
      * installed. Empty on a missing, oversized or malformed document.
+     *
+     * <p>Engine gate (fail-closed): a manifest whose engine is not exactly
+     * {@link #REQUIRED_PAYLOAD_ENGINE} is reported as absent — a fake or
+     * unknown engine must never reach the policy as an available compiler.
+     * The two-package path filters the same way via
+     * {@code AccelExtensionResolver#admissibleExtensionManifest}.
      */
     public static Optional<PvmCompilerManifest> readPayloadManifest(Context context) {
         try {
             return readBoundedAsset(context, PVM_MANIFEST_ASSET, PVM_MANIFEST_MAX_BYTES)
-                    .flatMap(PvmCompilerManifest::parse);
+                    .flatMap(PvmCompilerManifest::parse)
+                    .filter(AndroidAcceleratorFactProvider::engineAdmissible);
         } catch (IOException | RuntimeException absentOrUnreadable) {
             // Not shipped, unreadable or malformed: there is no payload compiler.
             return Optional.empty();
         }
+    }
+
+    /** The only engine the runtime admits; see {@link #readPayloadManifest}. */
+    public static final String REQUIRED_PAYLOAD_ENGINE = "clang";
+
+    private static boolean engineAdmissible(PvmCompilerManifest manifest) {
+        return REQUIRED_PAYLOAD_ENGINE.equals(manifest.engine());
     }
 
     private static boolean kernelExposesVsock() {

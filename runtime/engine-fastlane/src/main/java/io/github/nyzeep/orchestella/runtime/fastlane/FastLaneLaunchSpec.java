@@ -28,6 +28,9 @@ public final class FastLaneLaunchSpec {
 
     private final String instanceId;
     private final String payloadBinaryName;
+    /** Nullable: absolute path of the APK carrying the payload. Null = the
+     * platform default (the calling app's own APK). See {@link #withPayloadApkPath}. */
+    private final String payloadApkPath;
     private final int memoryMb;
     private final CpuTopology cpuTopology;
     private final long encryptedStorageBytes;
@@ -59,6 +62,28 @@ public final class FastLaneLaunchSpec {
             int proxyPort,
             int distccPort,
             String toolboxManifestSha256) {
+        this(instanceId, payloadBinaryName, null, memoryMb, cpuTopology, encryptedStorageBytes,
+                debugLevel, controlPort, terminalPort, proxyPort, distccPort,
+                toolboxManifestSha256);
+    }
+
+    /**
+     * Full constructor including the payload APK path (see
+     * {@link #withPayloadApkPath} for the semantics).
+     */
+    public FastLaneLaunchSpec(
+            String instanceId,
+            String payloadBinaryName,
+            String payloadApkPath,
+            int memoryMb,
+            CpuTopology cpuTopology,
+            long encryptedStorageBytes,
+            DebugLevel debugLevel,
+            int controlPort,
+            int terminalPort,
+            int proxyPort,
+            int distccPort,
+            String toolboxManifestSha256) {
         this.instanceId = require(instanceId, "instanceId");
         if (!INSTANCE_ID.matcher(instanceId).matches()) {
             throw new IllegalArgumentException("instanceId must match [A-Za-z0-9._-]{1,64}");
@@ -67,6 +92,7 @@ public final class FastLaneLaunchSpec {
         if (!PAYLOAD_NAME.matcher(payloadBinaryName).matches()) {
             throw new IllegalArgumentException("payloadBinaryName must be a .so file name without a path");
         }
+        this.payloadApkPath = requirePayloadApkPath(payloadApkPath);
         if (memoryMb <= 0 || memoryMb > 16384) {
             throw new IllegalArgumentException("memoryMb must be between 1 and 16384");
         }
@@ -105,6 +131,47 @@ public final class FastLaneLaunchSpec {
         return value;
     }
 
+    /**
+     * Null means "no explicit payload APK": the platform loads the payload
+     * from the calling app's own APK. Non-null must be an absolute path to an
+     * installed APK file — the two-package accelerator extension case, where
+     * the payload lives in a separate app's {@code sourceDir} and the host
+     * app never needs to read the file itself (the virtualization service
+     * does).
+     */
+    private static String requirePayloadApkPath(String payloadApkPath) {
+        if (payloadApkPath == null) {
+            return null;
+        }
+        if (payloadApkPath.isBlank() || !payloadApkPath.startsWith("/")) {
+            throw new IllegalArgumentException(
+                    "payloadApkPath must be null or an absolute path");
+        }
+        return payloadApkPath;
+    }
+
+    /**
+     * Returns a copy of this spec whose payload is loaded from the given
+     * absolute APK path (the platform's {@code setApkPath} semantics) instead
+     * of the calling app's own APK. The path is carried verbatim; this class
+     * never touches the file.
+     */
+    public FastLaneLaunchSpec withPayloadApkPath(String payloadApkPath) {
+        return new FastLaneLaunchSpec(
+                this.instanceId,
+                this.payloadBinaryName,
+                requirePayloadApkPath(payloadApkPath),
+                this.memoryMb,
+                this.cpuTopology,
+                this.encryptedStorageBytes,
+                this.debugLevel,
+                this.controlPort,
+                this.terminalPort,
+                this.proxyPort,
+                this.distccPort,
+                this.toolboxManifestSha256);
+    }
+
     private static int requirePort(int port, String name) {
         if (port < 1024 || port > 65535) {
             throw new IllegalArgumentException(name + " must be in [1024, 65535]");
@@ -118,6 +185,11 @@ public final class FastLaneLaunchSpec {
 
     public String payloadBinaryName() {
         return payloadBinaryName;
+    }
+
+    /** Null when the payload rides the calling app's own APK. */
+    public String payloadApkPath() {
+        return payloadApkPath;
     }
 
     public int memoryMb() {

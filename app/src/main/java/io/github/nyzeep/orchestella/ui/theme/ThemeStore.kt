@@ -164,6 +164,19 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
     fun terminalScrimArgb(theme: AppTheme): Int =
         (theme.terminalBackground and 0x00FFFFFF) or (terminalScrimAlpha() shl 24)
 
+    // --- UI surface opacity token (cards and terminal chrome, 70..100 percent) ---
+
+    fun uiSurfaceOpacityPercent(): Int =
+        prefs.getInt(KEY_UI_SURFACE_OPACITY, SurfaceOpacity.DEFAULT_PERCENT)
+            .coerceIn(SurfaceOpacity.MIN_PERCENT, SurfaceOpacity.MAX_PERCENT)
+
+    fun setUiSurfaceOpacityPercent(percent: Int) {
+        prefs.edit().putInt(KEY_UI_SURFACE_OPACITY, SurfaceOpacity.clampPercent(percent)).apply()
+    }
+
+    /** Alias for consumers that only read the percent (composition happens at the call site). */
+    fun surfaceOpacityPercent(): Int = uiSurfaceOpacityPercent()
+
     // --- Global button corner radius token ---
 
     /** 0 keeps the current square look; the settings dialog offers 0/8/16 dp. */
@@ -271,6 +284,7 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
         const val KEY_TERMINAL_BACKGROUND_URI = "terminal_background_uri"
         const val KEY_TERMINAL_SCRIM_ALPHA = "terminal_scrim_alpha"
         const val DEFAULT_TERMINAL_SCRIM_ALPHA = 0xB0
+        const val KEY_UI_SURFACE_OPACITY = "ui_surface_opacity_pct"
         const val MAX_CORNER_RADIUS_DP = 24
         const val MIN_TERMINAL_FONT_SP = 10
         const val MAX_TERMINAL_FONT_SP = 22

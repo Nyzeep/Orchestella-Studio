@@ -23,6 +23,8 @@ public final class PvmCompilerManifestTest {
     private static final String MEMORY_MEMBER = "\"memory_mib\":2048";
     private static final String BINARY_MEMBER =
             "\"payload_binary\":\"libpvm_compiler_payload.so\"";
+    /** Leading comma: withUnknown appends members verbatim after the libs list. */
+    private static final String ENGINE_MEMBER = ",\"engine\":\"clang\"";
     // Deliberately out of order so the ascending-name contract is observable.
     private static final String LIBS_MEMBER =
             "\"libs\":[" + lib("libclang-cpp.so", "65200000", OTHER_SHA)
@@ -237,6 +239,21 @@ public final class PvmCompilerManifestTest {
                 () -> libs.add(new PvmCompilerManifest.Lib("libextra.so", 1L, SHA)));
         assertThrows(UnsupportedOperationException.class, () -> libs.clear());
         assertEquals(2, manifest.libs().size());
+    }
+
+    @Test
+    public void engineFieldIsExposedWhenPresent() {
+        PvmCompilerManifest manifest =
+                PvmCompilerManifest.parse(withUnknown(ENGINE_MEMBER)).orElseThrow();
+        assertEquals("clang", manifest.engine());
+    }
+
+    @Test
+    public void engineFieldIsEmptyWhenAbsent() {
+        // Manifests older than the engine field stay parseable; the accessor
+        // surfaces "" and the runtime gate refuses it explicitly.
+        PvmCompilerManifest manifest = PvmCompilerManifest.parse(valid()).orElseThrow();
+        assertEquals("", manifest.engine());
     }
 
     private static String valid() {

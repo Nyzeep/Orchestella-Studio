@@ -403,4 +403,10 @@
     <string name="shizuku_state_stopped">连接观察已停止，重新打开时再检查。</string>
     <string name="third_party_notices_title">第三方开源许可</string>
     <string name="third_party_notices_unavailable">许可文件暂时不可读，请重新打开此页面。</string>
+
+    <string name="compat_title">兼容性说明</string>
+    <string name="compat_body_pvm">pVM 加速与 AVF 模式依赖设备的硬件虚拟化能力。</string>
+    <string name="compat_body_unavailable">你的设备上此能力不可用或未开放——这不影响其他功能的完整使用（QEMU 完整架构模拟始终可用）。</string>
+    <string name="compat_body_supported">支持设备：Android 14+ 且提供 protected VM 能力（AVF）的机型；部分设备需系统开放虚拟化框架。</string>
+    <string name="compat_footer_note">本页说明不影响产品功能可用性</string>
 </resources>

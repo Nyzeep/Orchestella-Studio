@@ -38,8 +38,19 @@ jobs:
           SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f 2>/dev/null | head -1)
           if [ -n "$SDKMANAGER" ]; then
             yes | "$SDKMANAGER" --licenses || true
-            if ! "$SDKMANAGER" "platforms;android-36" "build-tools;36.1.0"; then
-              echo "::error::sdkmanager could not install platforms;android-36 and build-tools;36.1.0"
+            # Session-18 W-D: sdkmanager transient network flakes are on
+            # record; retry before failing the job.
+            sdk_ok=0
+            for attempt in 1 2 3; do
+              if "$SDKMANAGER" "platforms;android-36" "build-tools;36.1.0"; then
+                sdk_ok=1
+                break
+              fi
+              echo "::warning::sdkmanager attempt $attempt failed; retrying in 10s"
+              sleep 10
+            done
+            if [ "$sdk_ok" != 1 ]; then
+              echo "::error::sdkmanager could not install platforms;android-36 and build-tools;36.1.0 after 3 attempts"
               exit 1
             fi
           fi
@@ -154,8 +165,18 @@ jobs:
           SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f 2>/dev/null | head -1)
           if [ -n "$SDKMANAGER" ]; then
             yes | "$SDKMANAGER" --licenses || true
-            if ! "$SDKMANAGER" "platforms;android-36" "build-tools;36.1.0" "ndk;27.0.12077973"; then
-              echo "::error::sdkmanager could not install platforms;android-36, build-tools;36.1.0 and ndk;27.0.12077973"
+            # Session-18 W-D: same transient-flake retry as the test job.
+            sdk_ok=0
+            for attempt in 1 2 3; do
+              if "$SDKMANAGER" "platforms;android-36" "build-tools;36.1.0" "ndk;27.0.12077973"; then
+                sdk_ok=1
+                break
+              fi
+              echo "::warning::sdkmanager attempt $attempt failed; retrying in 10s"
+              sleep 10
+            done
+            if [ "$sdk_ok" != 1 ]; then
+              echo "::error::sdkmanager could not install platforms;android-36, build-tools;36.1.0 and ndk;27.0.12077973 after 3 attempts"
               exit 1
             fi
           fi
@@ -168,6 +189,41 @@ jobs:
 
       - name: Verify 16 KB ELF segments and zipalign
         run: bash tools/ci/check-apk-16kb.sh app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Dual-package size comparison (W-A session 18)
+        run: |
+          # The main package above is the two-package-split shape (no pVM
+          # assets). The extension is built against a clearly labeled CI
+          # fixture (tiny placeholder .so files) because hosted CI has no real
+          # pVM staging; the fixture APK is for packaging and size validation
+          # only and is never released.
+          FIXTURE="$RUNNER_TEMP/accel-fixture"
+          mkdir -p "$FIXTURE/payload/arm64-v8a" "$FIXTURE/compiler/arm64-v8a" "$FIXTURE/compiler/assets"
+          for so in libfastlane_payload.so libpvm_compiler_payload.so; do
+            printf 'ci-fixture-placeholder-not-a-real-payload' > "$FIXTURE/payload/arm64-v8a/$so"
+          done
+          for so in libLLVM.so libclang-cpp.so libc++_shared.so; do
+            printf 'ci-fixture-placeholder-not-a-real-compiler' > "$FIXTURE/compiler/arm64-v8a/$so"
+          done
+          cat > "$FIXTURE/compiler/assets/PVM-COMPILER-MANIFEST" <<'JSON'
+          {
+            "schema": 1,
+            "engine": "clang",
+            "note": "CI fixture - not a real compiler",
+            "compiler_version": "0.0.0-ci-fixture",
+            "target_triple": "aarch64-unknown-linux-android",
+            "vcpu_topology": "one_cpu",
+            "memory_mib": 2048,
+            "payload_binary": "libpvm_compiler_payload.so",
+            "libs": []
+          }
+          JSON
+          ./gradlew :accel-extension:assembleDebug \
+            -Porchestella.fastlane.payloadLibDir="$FIXTURE/payload" \
+            -Porchestella.pvmCompiler.libDir="$FIXTURE/compiler" --no-daemon
+          MAIN_BYTES=$(wc -c < app/build/outputs/apk/debug/app-debug.apk)
+          EXT_BYTES=$(wc -c < accel-extension/build/outputs/apk/debug/accel-extension-debug.apk)
+          echo "DUAL-PACKAGE-SIZE main=${MAIN_BYTES} bytes ext=${EXT_BYTES} bytes"
 
   release-metadata:
     name: Release Metadata Gate

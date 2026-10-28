@@ -157,7 +157,20 @@ public final class FastLaneProxyServerTest {
         final Socket idle = connect(proxy.port());
         idle.setSoTimeout(2000);
         proxy.close();
-        assertEquals(-1, idle.getInputStream().read());
+        try {
+            assertEquals(-1, idle.getInputStream().read());
+        } catch (IOException race) {
+            // Session-18 W-D diagnostic for the known flake: the close-vs-
+            // handshake race surfaces as SocketException instead of a clean
+            // EOF. Log it for CI attribution; the assertion is unchanged.
+            System.out.println("[diag] closeClosesPendingHandshake: read after close() threw "
+                    + race.getClass().getSimpleName() + ": " + race.getMessage());
+            throw race;
+        } catch (AssertionError race) {
+            System.out.println(
+                    "[diag] closeClosesPendingHandshake: read after close() did not return -1");
+            throw race;
+        }
         idle.close();
     }
 
