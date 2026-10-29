@@ -127,6 +127,7 @@ MEDIA_SUFFIXES = (
 # prefixes; anything wider turns the media rule into decoration.
 PRODUCT_MEDIA_PREFIXES = (
     "app/src/main/res/mipmap-",
+    "app/src/main/res/drawable-nodpi/mascot_original.png",
     "docs/assets/branding/",
     "docs/assets/screenshots/",
 )
@@ -506,6 +507,7 @@ def run_self_test() -> bool:
             # Product artwork is exempt; these two must NOT raise the count
             # below, which is what pins the allowlist to exactly these paths.
             "app/src/main/res/mipmap-mdpi/ic_launcher.png": "fixture",
+            "app/src/main/res/drawable-nodpi/mascot_original.png": "fixture",
             "docs/assets/branding/app-icon-512.png": "fixture",
             "docs/assets/screenshots/dashboard.jpg": "fixture",
             "signing/release.jks": "fixture",
