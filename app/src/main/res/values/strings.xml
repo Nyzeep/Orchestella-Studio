@@ -25,6 +25,7 @@
     <string name="create_checksum_failed_distro">%1$s rootfs SHA-256 校验失败，已丢弃损坏文件</string>
     <string name="instances_title">实例</string>
     <string name="instances_empty">尚无实例</string>
+    <string name="instances_load_failed">实例列表读取失败：%1$s。请完全关闭应用后重新打开重试；已有实例数据不会被删除。</string>
     <string name="instance_row">Alpine %1$s · %2$s</string>
     <string name="instance_row_distro">%1$s %2$s · %3$s</string>
     <string name="instance_launch">启动</string>
@@ -171,9 +172,9 @@
     <!-- Phase 4.8 Task 3: Dynamic Port Forwarding UI Strings -->
     <string name="port_forwarding_title">端口转发规则管理</string>
     <string name="port_forwarding_empty">暂无端口转发规则，可通过下方表单添加</string>
-    <string name="port_forwarding_host_port">宿主端口 (1024~65535)</string>
-    <string name="port_forwarding_guest_port">Guest 端口 (1~65535)</string>
-    <string name="port_forwarding_desc_hint">服务说明 (可选，如 Web 8080)</string>
+    <string name="port_forwarding_host_port">宿主端口（1024~65535）</string>
+    <string name="port_forwarding_guest_port">Guest 端口（1~65535）</string>
+    <string name="port_forwarding_desc_hint">服务说明（可选，如 Web 8080）</string>
     <string name="port_forwarding_add_rule">添加转发规则</string>
     <string name="port_forwarding_rule_format">宿主 %1$d ➔ Guest %2$d</string>
 

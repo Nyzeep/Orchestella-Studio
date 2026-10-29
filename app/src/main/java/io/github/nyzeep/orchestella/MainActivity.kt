@@ -1203,7 +1203,8 @@ class MainActivity : AppCompatActivity() {
         val instances = try {
             instanceStore.list()
         } catch (_: IOException) {
-            createStatus.text = getString(R.string.create_failed, "instance metadata unavailable")
+            // Listing failure is not a creation failure: say what broke and what the user can do.
+            createStatus.text = getString(R.string.instances_load_failed, "实例元数据不可读")
             return
         }
 

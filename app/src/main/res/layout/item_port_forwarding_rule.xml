@@ -79,6 +79,6 @@
             android:minHeight="48dp"
             app:icon="@drawable/ic_delete"
             app:iconTint="?attr/colorError"
-            android:contentDescription="Delete Rule" />
+            android:contentDescription="删除该端口转发规则" />
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>

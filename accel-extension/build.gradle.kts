@@ -140,6 +140,24 @@ val internalApplicationIdSuffix: String? = when (buildChannel) {
     else -> null
 }
 
+// Release signing mirrors :app — same four orchestella.signing.* properties,
+// and the same hard failure instead of a debug-signed package that looks
+// shippable. The extension specifically needs the v3 APK Signature Scheme
+// block: the AVF payload loader materializes an idsig from it when
+// VirtualMachineConfig.setApkPath points at this APK, so a v2-only key would
+// break the lane this package exists for.
+val signingStoreFileProperty: String? = providers.gradleProperty("orchestella.signing.storeFile").orNull?.trim()?.ifEmpty { null }
+val signingStorePasswordProperty: String? = providers.gradleProperty("orchestella.signing.storePassword").orNull?.ifEmpty { null }
+val signingKeyAliasProperty: String? = providers.gradleProperty("orchestella.signing.keyAlias").orNull?.trim()?.ifEmpty { null }
+val signingKeyPasswordProperty: String? = providers.gradleProperty("orchestella.signing.keyPassword").orNull?.ifEmpty { null }
+val missingSigningProperties: List<String> = buildList {
+    if (signingStoreFileProperty == null) add("orchestella.signing.storeFile")
+    if (signingStorePasswordProperty == null) add("orchestella.signing.storePassword")
+    if (signingKeyAliasProperty == null) add("orchestella.signing.keyAlias")
+    if (signingKeyPasswordProperty == null) add("orchestella.signing.keyPassword")
+}
+val releaseSigningConfigured: Boolean = missingSigningProperties.isEmpty()
+
 plugins {
     alias(libs.plugins.android.application)
 }
@@ -161,8 +179,8 @@ android {
         // D4 version lock: the runtime resolver refuses an extension whose
         // versionCode differs from the main package. Keep in lockstep with
         // :app's versionCode — the mismatch surfaces as VERSION_MISMATCH.
-        versionCode = 503
-        versionName = "0.5.3"
+        versionCode = 600
+        versionName = "0.6.0"
         ndk {
             abiFilters += "arm64-v8a"
         }
@@ -178,6 +196,18 @@ android {
             enableV3Signing = true
             enableV4Signing = true
         }
+        // Created only when all four properties are present; a release build
+        // without them fails in validateReleaseSigning before packaging.
+        if (releaseSigningConfigured) {
+            create("release") {
+                storeFile = file(signingStoreFileProperty!!)
+                storePassword = signingStorePasswordProperty
+                keyAlias = signingKeyAliasProperty
+                keyPassword = signingKeyPasswordProperty
+                enableV3Signing = true
+                enableV4Signing = true
+            }
+        }
     }
 
     buildTypes {
@@ -191,11 +221,12 @@ android {
             }
         }
         release {
-            // Placeholder per D1: release distribution is a separate APK from
-            // GitHub Releases; release signing material is wired in the
-            // release round, not here. Debug-signed release builds of this
-            // module are for local packaging checks only.
-            signingConfig = signingConfigs.getByName("debug")
+            // The published extension is signed with the release key when it is
+            // configured. Without it the build fails (see
+            // validateReleaseSigning) rather than shipping a debug-signed APK
+            // under the release applicationId; local packaging checks should
+            // use assembleDebug instead.
+            signingConfigs.findByName("release")?.let { signingConfig = it }
         }
     }
 
@@ -226,6 +257,34 @@ android {
         checkReleaseBuilds = true
         disable += "PropertyEscape"
     }
+}
+
+// Fail only release packaging when the explicit signing material is missing;
+// debug builds (the internal channels and the CI packaging fixture) keep working.
+val validateReleaseSigning = tasks.register("validateReleaseSigning") {
+    group = "verification"
+    description = "Fails unless the four explicit release signing properties are present and readable."
+    doLast {
+        if (missingSigningProperties.isNotEmpty()) {
+            throw GradleException(
+                "Extension release signing is not configured. Missing Gradle properties: " +
+                    missingSigningProperties.joinToString(", ") +
+                    ". The published extension must carry the same release identity as the " +
+                    "main package; use :accel-extension:assembleDebug for local packaging checks."
+            )
+        }
+        val keystore = file(signingStoreFileProperty!!)
+        if (!keystore.isFile) {
+            throw GradleException(
+                "Release signing storeFile does not exist or is not a regular file: $keystore"
+            )
+        }
+    }
+}
+tasks.matching {
+    it.name in setOf("assembleRelease", "bundleRelease", "installRelease", "packageRelease", "preReleaseBuild")
+}.configureEach {
+    dependsOn(validateReleaseSigning)
 }
 
 // Channel-qualified output name, mirroring :app's renameChannelApk pattern.

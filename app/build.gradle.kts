@@ -97,6 +97,22 @@ val internalApplicationIdSuffix: String? = when (buildChannel) {
     "qa" -> ".qa.$buildPurpose"
     else -> null
 }
+// Package visibility (Android 11+): <queries> in the manifest must name the
+// accelerator extension APK, or PackageManager hides it and
+// getApplicationInfo() throws NameNotFoundException, which the resolver can
+// only report as EXTENSION_MISSING. The extension's package name is
+// AccelExtensionRules.extensionPackageName(mainPackageName) — main plus
+// ".accel" — so the declared name has to follow whatever applicationIdSuffix
+// the current build type applies. This is the single source for both the
+// default (no suffix) and the channel-suffixed variants.
+//
+// The base id is also spelled out as a literal inside the android config block
+// below: the release gate (tools/release/check_release_fields.py) parses that
+// literal, so it must not be replaced by this constant. Both are asserted
+// equal by AccelExtensionRulesTest.
+val applicationIdBase = "io.github.nyzeep.orchestella"
+fun accelExtensionPackageFor(mainApplicationIdSuffix: String?): String =
+    applicationIdBase + (mainApplicationIdSuffix ?: "") + ".accel"
 // Release signing is explicit. There is deliberately no fallback password or
 // implicit keystore: a release build without all four properties fails before
 // packaging (see validateReleaseSigning below).
@@ -146,14 +162,20 @@ android {
         } else {
             36
         }
-        versionCode = 503
-        versionName = "0.5.3"
+        // 0.6.0 / 600 — the stable-release milestone: two-package delivery
+        // (main + pVM accelerator extension), 36-domain QEMU lane, app icon.
+        // versionCode = MAJOR*10000 + MINOR*100 + PATCH (VERSIONING.md §2).
+        versionCode = 600
+        versionName = "0.6.0"
         buildConfigField("boolean", "DEVELOPMENT_PREVIEW", "true")
         buildConfigField("boolean", "ACCELERATOR_LANE_ENABLED", acceleratorLaneEnabled.toString())
         // Payload builds store native libraries uncompressed and 16 KB aligned
         // for the AVF loader; all other channels keep the extracted layout.
         manifestPlaceholders["orcExtractNativeLibs"] =
             if (fastlanePayloadLibDir == null) "true" else "false"
+        // Release build type adds no suffix, so the unsuffixed name is the
+        // default; the debug channel branches below override it.
+        manifestPlaceholders["accelExtensionPackage"] = accelExtensionPackageFor(null)
 
         ndk {
             abiFilters += "arm64-v8a"
@@ -311,6 +333,14 @@ android {
                 storePassword = signingStorePasswordProperty
                 keyAlias = signingKeyAliasProperty
                 keyPassword = signingKeyPasswordProperty
+                // Same reason as the debug config above: the AVF payload loader
+                // materializes an idsig from the v3 block. A v2-only release key
+                // would fail at VirtualMachineManager.create on devices where the
+                // pVM lane is reachable, which is exactly the lane a signed
+                // release is meant to ship. v4 also keeps a local idsig for
+                // sideload verification.
+                enableV3Signing = true
+                enableV4Signing = true
             }
         }
     }
@@ -323,6 +353,8 @@ android {
                 applicationIdSuffix = internalApplicationIdSuffix
                 versionNameSuffix = internalVersionSuffix
                 signingConfig = signingConfigs.getByName("debug")
+                manifestPlaceholders["accelExtensionPackage"] =
+                    accelExtensionPackageFor(internalApplicationIdSuffix)
             } else {
                 // Historical default behavior: phase5 QA wins, otherwise a fully
                 // configured release key may sign debug builds on developer machines.
@@ -331,6 +363,7 @@ android {
                     applicationIdSuffix = ".phase5"
                     versionNameSuffix = "-phase5-local"
                     signingConfig = signingConfigs.getByName("phase5Debug")
+                    manifestPlaceholders["accelExtensionPackage"] = accelExtensionPackageFor(".phase5")
                 } else if (releaseSigning?.storeFile?.exists() == true) {
                     signingConfig = releaseSigning
                 }

@@ -1904,7 +1904,7 @@
                                     android:layout_height="30dp"
                                     android:layout_gravity="center"
                                     android:src="@drawable/ic_distro_ubuntu"
-                                    android:contentDescription="Ubuntu Distro" />
+                                    android:contentDescription="@null" />
                             </FrameLayout>
 
                             <LinearLayout
@@ -1940,7 +1940,7 @@
                                         android:paddingBottom="2dp"
                                         android:fontFamily="monospace"
                                         android:text="官方 LTS · 推荐"
-                                        android:textColor="#D62828"
+                                        android:textColor="#FFFFFF"
                                         android:textSize="10sp"
                                         android:textStyle="bold" />
                                 </LinearLayout>
@@ -2014,7 +2014,7 @@
                                     android:layout_height="30dp"
                                     android:layout_gravity="center"
                                     android:src="@drawable/ic_distro_debian"
-                                    android:contentDescription="Debian Distro" />
+                                    android:contentDescription="@null" />
                             </FrameLayout>
 
                             <LinearLayout
@@ -2050,7 +2050,7 @@
                                         android:paddingBottom="2dp"
                                         android:fontFamily="monospace"
                                         android:text="坚如磐石 · 极简稳定"
-                                        android:textColor="#F5F4F0"
+                                        android:textColor="#1F2026"
                                         android:textSize="10sp"
                                         android:textStyle="bold" />
                                 </LinearLayout>
@@ -2124,7 +2124,7 @@
                                     android:layout_height="30dp"
                                     android:layout_gravity="center"
                                     android:src="@drawable/ic_distro_fedora"
-                                    android:contentDescription="Fedora Distro" />
+                                    android:contentDescription="@null" />
                             </FrameLayout>
 
                             <LinearLayout
@@ -2160,7 +2160,7 @@
                                         android:paddingBottom="2dp"
                                         android:fontFamily="monospace"
                                         android:text="前沿创新 · DNF5"
-                                        android:textColor="#51A2DA"
+                                        android:textColor="#1F2026"
                                         android:textSize="10sp"
                                         android:textStyle="bold" />
                                 </LinearLayout>
@@ -2234,7 +2234,7 @@
                                     android:layout_height="30dp"
                                     android:layout_gravity="center"
                                     android:src="@drawable/ic_distro_arch"
-                                    android:contentDescription="Arch Linux Distro" />
+                                    android:contentDescription="@null" />
                             </FrameLayout>
 
                             <LinearLayout
@@ -2270,7 +2270,7 @@
                                         android:paddingBottom="2dp"
                                         android:fontFamily="monospace"
                                         android:text="滚动前沿 · Pacman"
-                                        android:textColor="#1793D1"
+                                        android:textColor="#1F2026"
                                         android:textSize="10sp"
                                         android:textStyle="bold" />
                                 </LinearLayout>
@@ -2344,7 +2344,7 @@
                                     android:layout_height="30dp"
                                     android:layout_gravity="center"
                                     android:src="@drawable/ic_distro_opensuse"
-                                    android:contentDescription="openSUSE Distro" />
+                                    android:contentDescription="@null" />
                             </FrameLayout>
 
                             <LinearLayout
@@ -2380,7 +2380,7 @@
                                         android:paddingBottom="2dp"
                                         android:fontFamily="monospace"
                                         android:text="稳健严谨 · Zypper"
-                                        android:textColor="#73BA25"
+                                        android:textColor="#1F2026"
                                         android:textSize="10sp"
                                         android:textStyle="bold" />
                                 </LinearLayout>
@@ -2454,7 +2454,7 @@
                                     android:layout_height="30dp"
                                     android:layout_gravity="center"
                                     android:src="@drawable/ic_distro_almalinux"
-                                    android:contentDescription="AlmaLinux Distro" />
+                                    android:contentDescription="@null" />
                             </FrameLayout>
 
                             <LinearLayout
@@ -2490,7 +2490,7 @@
                                         android:paddingBottom="2dp"
                                         android:fontFamily="monospace"
                                         android:text="1:1 RHEL 兼容"
-                                        android:textColor="#FF6F00"
+                                        android:textColor="#1F2026"
                                         android:textSize="10sp"
                                         android:textStyle="bold" />
                                 </LinearLayout>
@@ -2564,7 +2564,7 @@
                                     android:layout_height="30dp"
                                     android:layout_gravity="center"
                                     android:src="@drawable/ic_distro_rocky"
-                                    android:contentDescription="Rocky Linux Distro" />
+                                    android:contentDescription="@null" />
                             </FrameLayout>
 
                             <LinearLayout
@@ -2600,7 +2600,7 @@
                                         android:paddingBottom="2dp"
                                         android:fontFamily="monospace"
                                         android:text="企业生产 · 超高可用"
-                                        android:textColor="#10B981"
+                                        android:textColor="#1F2026"
                                         android:textSize="10sp"
                                         android:textStyle="bold" />
                                 </LinearLayout>

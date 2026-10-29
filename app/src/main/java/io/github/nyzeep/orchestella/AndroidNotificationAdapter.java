@@ -18,8 +18,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public final class AndroidNotificationAdapter implements BridgeControl.Notification {
     public static final String CHANNEL_ID = "orchestella_guest_notifications";
-    public static final String CHANNEL_NAME = "Orchestella Guest Notifications";
-    public static final String CHANNEL_DESCRIPTION = "Notifications from Orchestella guest instances";
+    public static final String CHANNEL_NAME = "实例通知";
+    public static final String CHANNEL_DESCRIPTION = "来自 Linux 实例的桥接通知：任务完成、命令结果等";
 
     /** Strategy-neutral seam for actual notification display. */
     public interface NotificationPoster {
@@ -60,14 +60,15 @@ public final class AndroidNotificationAdapter implements BridgeControl.Notificat
     private static void ensureNotificationChannel(Context context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationManager manager = context.getSystemService(NotificationManager.class);
-            if (manager != null && manager.getNotificationChannel(CHANNEL_ID) == null) {
-                NotificationChannel channel = new NotificationChannel(
-                        CHANNEL_ID,
-                        CHANNEL_NAME,
-                        NotificationManager.IMPORTANCE_DEFAULT);
-                channel.setDescription(CHANNEL_DESCRIPTION);
-                manager.createNotificationChannel(channel);
-            }
+            if (manager == null) return;
+            // Re-created on every process start so the localized name/description reach installs that
+            // already have the channel: Android keeps user-tuned importance and only refreshes the copy.
+            NotificationChannel channel = new NotificationChannel(
+                    CHANNEL_ID,
+                    CHANNEL_NAME,
+                    NotificationManager.IMPORTANCE_DEFAULT);
+            channel.setDescription(CHANNEL_DESCRIPTION);
+            manager.createNotificationChannel(channel);
         }
     }
 
