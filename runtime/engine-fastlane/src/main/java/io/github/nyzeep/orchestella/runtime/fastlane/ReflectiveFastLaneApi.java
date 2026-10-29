@@ -25,7 +25,10 @@ import java.util.concurrent.Executor;
  * permission; unavailable or hidden methods fail closed.
  *
  * <p>An existing VM is reused only when every configuration field matches and
- * it is stopped. A mismatch is refused instead of deleting encrypted storage.
+ * it is stopped. Any other mismatch is refused instead of deleting encrypted
+ * storage — with one documented exception: a payload APK path that drifted on
+ * the platform side (an extension reinstall moves the file) is recovered by
+ * replacing the stale VM, because the request itself is unchanged.</p>
  */
 public final class ReflectiveFastLaneApi implements FastLaneVirtualMachineApi {
     private static final String PACKAGE = "android.system.virtualmachine.";
@@ -361,6 +364,15 @@ public final class ReflectiveFastLaneApi implements FastLaneVirtualMachineApi {
         Object stored = invoke(shape.vm, vm, "getConfig",
                 new Class<?>[0], new Object[0], FastLaneException.VM_CREATE_FAILED, notes);
         if (!configMatches(shape, stored, config)) {
+            if (!onlyApkPathDrifted(shape, stored, config)) {
+                // Session 25 (#58): a config the caller actually changed — memory,
+                // topology, storage, debug level, payload name — is a different VM
+                // wearing the same instance id. Refuse it and leave the encrypted
+                // storage alone; silent reuse or silent replacement would both hide
+                // a real contract break from the caller.
+                throw error(FastLaneException.VM_CREATE_FAILED,
+                        "existing VM configuration differs from the launch spec", null);
+            }
             // Session 19 (T-A.4): a two-package build pins the payload APK path into
             // the VM config. Reinstalling the extension moves it to a new /data/app
             // path, and the stored config then points at a file that no longer
@@ -407,6 +419,32 @@ public final class ReflectiveFastLaneApi implements FastLaneVirtualMachineApi {
 
     private boolean configMatches(Shape shape, Object stored, Object expected)
             throws FastLaneException {
+        return identityMatches(shape, stored, expected) && apkPathMatches(shape, stored, expected);
+    }
+
+    /**
+     * The one recoverable mismatch: every identity field still agrees and only
+     * the payload APK path moved underneath us. When the platform has no APK
+     * getter there is nothing to attribute the mismatch to, so this returns
+     * false and the launch is refused — never guessed.
+     */
+    private boolean onlyApkPathDrifted(Shape shape, Object stored, Object expected)
+            throws FastLaneException {
+        if (!identityMatches(shape, stored, expected)) {
+            return false;
+        }
+        try {
+            return !Objects.equals(
+                    configValue(shape, stored, "getApkPath"),
+                    configValue(shape, expected, "getApkPath"));
+        } catch (FastLaneException unavailable) {
+            return false;
+        }
+    }
+
+    /** Payload name, protection, memory, topology, storage and debug level — the identity fields. */
+    private boolean identityMatches(Shape shape, Object stored, Object expected)
+            throws FastLaneException {
         if (!shape.config.isInstance(stored)) {
             return false;
         }
@@ -433,8 +471,7 @@ public final class ReflectiveFastLaneApi implements FastLaneVirtualMachineApi {
                         configValue(shape, expected, "getEncryptedStorageBytes"))
                 && Objects.equals(
                         configValue(shape, stored, "getDebugLevel"),
-                        configValue(shape, expected, "getDebugLevel"))
-                && apkPathMatches(shape, stored, expected);
+                        configValue(shape, expected, "getDebugLevel"));
     }
 
     /**

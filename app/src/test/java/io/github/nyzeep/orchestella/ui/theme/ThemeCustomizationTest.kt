@@ -155,9 +155,30 @@ class ThemeCustomizationTest {
 
     // --- E3: global button corner radius token ---
 
-    @Test fun cornerRadiusDefaultsToZero() {
-        val store = ThemeStore(FakeSharedPreferences())
-        assertEquals(0, store.cornerRadiusDp())
+    @Test fun cornerRadiusDefaultsToSixteenAndLegacyZeroSurvivesAsAnExplicitChoice() {
+        val prefs = FakeSharedPreferences()
+        assertEquals(ThemeStore.DEFAULT_CORNER_RADIUS_DP, ThemeStore(prefs).cornerRadiusDp())
+        assertEquals("default must be the shipped 16dp token", 16, ThemeStore(prefs).cornerRadiusDp())
+        // Users who explicitly picked "square corners" stored 0; reading must not rewrite it to 16.
+        ThemeStore(prefs).setCornerRadiusDp(0)
+        assertEquals(0, ThemeStore(prefs).cornerRadiusDp())
+    }
+
+    @Test fun cornerRadiusTokenBoundsArePinned() {
+        assertEquals(16, ThemeStore.DEFAULT_CORNER_RADIUS_DP)
+        assertEquals(24, ThemeStore.MAX_CORNER_RADIUS_DP)
+    }
+
+    @Test fun clampCornerRadiusOnlyGrowsExistingGeometry() {
+        // Existing geometry larger than the token wins: pills, circles and big cards stay intact.
+        assertEquals(40f, ThemeColors.clampCornerRadius(40f, 16f), 0f)
+        // Existing geometry smaller than the token is raised to the token.
+        assertEquals(16f, ThemeColors.clampCornerRadius(0f, 16f), 0f)
+        assertEquals(16f, ThemeColors.clampCornerRadius(8f, 16f), 0f)
+        assertEquals(16f, ThemeColors.clampCornerRadius(16f, 16f), 0f)
+        // Token 0 preserves the pre-session-25 behavior: geometry untouched.
+        assertEquals(40f, ThemeColors.clampCornerRadius(40f, 0f), 0f)
+        assertEquals(0f, ThemeColors.clampCornerRadius(0f, 0f), 0f)
     }
 
     @Test fun cornerRadiusClampsToTheZeroThroughTwentyFourRange() {

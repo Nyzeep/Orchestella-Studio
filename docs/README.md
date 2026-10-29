@@ -54,7 +54,7 @@ Fast Lane 的实现规格见 [fastlane-cross-lane-spec-20261021](reports/orchest
 | 目录 | 内容 | 说明 |
 | --- | --- | --- |
 | [`adr/`](adr/) | 20 份已接受架构决策 | 索引见 [`adr/README.md`](adr/README.md)；ADR-0015 缺失，禁止按标题补造 |
-| [`assets/branding/`](assets/branding/README.md) | 应用图标与品牌静图 | 说明见 [`assets/branding/README.md`](assets/branding/README.md)；源美术、构图语义与再生成脚本 `tools/branding/make_app_icons.py` |
+| [`assets/branding/`](assets/branding/README.md) | 应用图标与品牌静图 | 说明见 [`assets/branding/README.md`](assets/branding/README.md)；源美术、构图语义与再生成脚本 `tools/branding/make_app_icons.py`；主题配色同源校准 `tools/branding/sample_palette.py` |
 | [`research/`](research/) | 当前有效研究 | 旧 Phase 5 专项已移入 [`research/archive/`](research/archive/README.md) |
 | [`reports/orchestration/`](reports/orchestration/) | 当前主线方案与阶段报告 | 以 2026-10-21 Fast Lane 方案与 2026-10-18 P0 方案为入口 |
 | [`reports/tickets/`](reports/tickets/)、[`reviews/`](reports/reviews/)、[`prototypes/`](reports/prototypes/) | 当前 AVF / Shizuku 工单、最终轮审查与原型 | 首审与前轮复审已移入归档 |

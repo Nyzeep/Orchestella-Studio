@@ -132,6 +132,23 @@ public final class ReflectiveFastLaneApiTest {
     }
 
     @Test
+    public void apkPathDriftIsRecoveredByRecreatingTheStaleVm() throws Exception {
+        Harness harness = Harness.create();
+        harness.api.start(spec()).stopRuntime(100L);
+        // Platform-side drift (session 19 T-A.4): the extension APK was reinstalled
+        // and the stored config now points at a path that no longer exists. The
+        // request itself is unchanged, so this is recovered, not refused.
+        harness.vm().recordConfigForTest(
+                harness.manager.lastConfigForTest().withApkPathForTest("/data/app/~~old==/ext==/base.apk"));
+
+        FastLaneHandle second = harness.api.start(spec());
+        assertEquals(1, second.status());
+        assertEquals(2, harness.manager.createCallsForTest());
+        assertEquals(0, harness.manager.deleteCallsForTest());
+        assertTrue(second.notes().contains("vm: recreated after config drift"));
+    }
+
+    @Test
     public void refusesExistingRunningVm() throws Exception {
         Harness harness = Harness.create();
         harness.api.start(spec());

@@ -68,10 +68,12 @@ Calibration decisions
   documented locations, not host-user paths; only Windows drive paths and
   home-directory paths are findings.
 * Product artwork is a deliberate exception to the media rule: the launcher
-  icons under ``app/src/main/res/mipmap-*`` ship inside the APK and the
-  branding sheet under ``docs/assets/branding/`` documents the app itself, so
-  both must be tracked. The allowlist is two literal path prefixes and nothing
-  else — a screenshot dropped anywhere else is still a finding.
+  icons under ``app/src/main/res/mipmap-*`` ship inside the APK, the branding
+  sheet under ``docs/assets/branding/`` documents the app itself, and the
+  maintainer-curated UI screenshots under ``docs/assets/screenshots/`` are the
+  README's interface showcase, so these must be tracked. The allowlist is three
+  literal path prefixes and nothing else — a screenshot dropped anywhere else
+  is still a finding.
 * A tracked ``gradle.properties`` is a finding only when it carries signing
   credential keys (store/key password, store file, key alias, keystore).
   The repository intentionally tracks a benign build-config
@@ -119,12 +121,14 @@ MEDIA_SUFFIXES = (
 )
 
 # Product artwork that ships inside the APK or documents the app itself. It is
-# not developer-local media: launcher icons and the branding sheet are part of
+# not developer-local media: launcher icons, the branding sheet and the curated
+# UI screenshots are part of
 # the release artifact and have to be tracked. Keep this list at two literal
 # prefixes; anything wider turns the media rule into decoration.
 PRODUCT_MEDIA_PREFIXES = (
     "app/src/main/res/mipmap-",
     "docs/assets/branding/",
+    "docs/assets/screenshots/",
 )
 
 KEY_SUFFIXES = (".jks", ".keystore", ".p12", ".pfx", ".pem", ".key")
@@ -503,6 +507,7 @@ def run_self_test() -> bool:
             # below, which is what pins the allowlist to exactly these paths.
             "app/src/main/res/mipmap-mdpi/ic_launcher.png": "fixture",
             "docs/assets/branding/app-icon-512.png": "fixture",
+            "docs/assets/screenshots/dashboard.jpg": "fixture",
             "signing/release.jks": "fixture",
             "keys/app.pem": "fixture",
             ".env": "fixture",

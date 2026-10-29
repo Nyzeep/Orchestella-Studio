@@ -85,6 +85,8 @@ class AboutActivity : AppCompatActivity() {
         val avatarPlaceholder = findViewById<TextView>(R.id.txt_avatar_placeholder)
         ThemeApplier.setRole(avatarView, ThemeApplier.Role.PRESERVE)
         ThemeApplier.setRole(avatarPlaceholder, ThemeApplier.Role.PRESERVE)
+        // Brand artwork: the mascot keeps its own colors and its original aspect ratio.
+        ThemeApplier.setRole(findViewById(R.id.img_about_mascot), ThemeApplier.Role.PRESERVE)
         val cached = File(filesDir, AVATAR_CACHE_FILE)
         val cachedBitmap = if (cached.isFile) decodeAvatar(cached) else null
         if (cachedBitmap != null) {

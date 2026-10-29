@@ -16,6 +16,8 @@ public final class VirtualMachineConfig {
     private final int cpuTopology;
     private final long encryptedStorageBytes;
     private final int debugLevel;
+    private final Builder origin;
+    private final String apkPath;
     private final int payloadSetCalls;
     private final int protectedSetCalls;
     private final int memorySetCalls;
@@ -24,12 +26,18 @@ public final class VirtualMachineConfig {
     private final int debugSetCalls;
 
     private VirtualMachineConfig(Builder builder) {
+        this(builder, null);
+    }
+
+    private VirtualMachineConfig(Builder builder, String apkPathOverride) {
         payloadBinaryName = builder.payloadBinaryName;
         protectedVm = builder.protectedVm;
         memoryBytes = builder.memoryBytes;
         cpuTopology = builder.cpuTopology;
         encryptedStorageBytes = builder.encryptedStorageBytes;
         debugLevel = builder.debugLevel;
+        origin = builder;
+        apkPath = apkPathOverride;
         payloadSetCalls = builder.payloadSetCalls;
         protectedSetCalls = builder.protectedSetCalls;
         memorySetCalls = builder.memorySetCalls;
@@ -66,6 +74,20 @@ public final class VirtualMachineConfig {
         return protectedVm == other.protectedVm
                 && Objects.equals(payloadBinaryName, other.payloadBinaryName)
                 && Objects.equals(debugLevel, other.debugLevel);
+    }
+
+    public String getApkPath() {
+        return apkPath;
+    }
+
+    /**
+     * Simulates the platform-side drift of a two-package install: the extension
+     * APK was reinstalled, so the stored config now points at a path that no
+     * longer exists. The request's own config is unchanged — there is still no
+     * Builder.setApkPath on this fake, which is what the redirect test relies on.
+     */
+    public VirtualMachineConfig withApkPathForTest(String path) {
+        return new VirtualMachineConfig(origin, path);
     }
 
     public int payloadSetCallsForTest() {
