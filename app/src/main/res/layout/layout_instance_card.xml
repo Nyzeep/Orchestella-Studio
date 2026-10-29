@@ -41,7 +41,7 @@
                     android:layout_height="28dp"
                     android:layout_gravity="center"
                     android:src="@drawable/ic_distro_ubuntu"
-                    android:contentDescription="Distro Icon" />
+                    android:contentDescription="@null" />
             </FrameLayout>
 
             <LinearLayout

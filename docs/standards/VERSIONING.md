@@ -52,10 +52,10 @@ $$\text{versionCode} = \text{MAJOR} \times 10000 + \text{MINOR} \times 100 + \te
 
 ## 4. 当前版本状态
 
-- 源码：**0.5.3 / code503**（main `881e37a`，2026-10-18；runtime-performance 合并未改变版本号）。
-- 公开安装包：**v0.4.5** 开发预览版；0.5.0–0.5.3 为本地验证版本，未打 tag、未发布。
-- `0.5.x` 的版本记录只表示本地构建与验证范围，不代表已公开分发；公开发布仍需生产签名、对应源码、NOTICE 与验收门。
-- 内部开发/调试构建的版本标识与发布版本分离，见第 5 节；不得再用 `0.5.3` 这种发布版本名指代某个内部构建。
+- 源码：**0.6.0 / code600**（main `0383393` 之后，2026-10-29；稳定版准备轮的版本推进）。
+- 公开安装包：**v0.4.5** 开发预览版；0.5.0–0.5.3 为本地验证版本，未打 tag、未发布；0.6.0 尚未打 tag。
+- `0.5.x` / `0.6.0` 的版本记录只表示本地构建与验证范围，不代表已公开分发；公开发布仍需生产签名、对应源码、NOTICE 与验收门（见 `docs/standards/RELEASE-SIGNING.md`）。
+- 内部开发/调试构建的版本标识与发布版本分离，见第 5 节；不得再用 `0.6.0` 这种发布版本名指代某个内部构建。
 
 ## 5. 构建通道：发布版 / 内部开发版 / 隔离 QA 版
 
@@ -102,14 +102,17 @@ $$\text{versionCode} = \text{MAJOR} \times 10000 + \text{MINOR} \times 100 + \te
 
 | 场景 | applicationId | versionName | versionCode | 是否可发布 |
 | :--- | :--- | :--- | :--- | :--- |
-| 发布 | `io.github.nyzeep.orchestella` | `0.5.3` | 503 | 是 |
-| 内部开发 | `io.github.nyzeep.orchestella.dev` | `0.5.3-dev.881e37a` | 503 | 否 |
-| 隔离 QA | `io.github.nyzeep.orchestella.qa.runtimeperf` | `0.5.3-qa.runtimeperf.881e37a` | 503 | 否 |
+| 发布 | `io.github.nyzeep.orchestella` | `0.6.0` | 600 | 是 |
+| 内部开发 | `io.github.nyzeep.orchestella.dev` | `0.6.0-dev.0383393` | 600 | 否 |
+| 隔离 QA | `io.github.nyzeep.orchestella.qa.runtimeperf` | `0.6.0-qa.runtimeperf.0383393` | 600 | 否 |
+
+> 双包形态下，扩展包的 `applicationId` 恒为主包 `applicationId + ".accel"`，`versionCode` 必须与主包一致（`AccelExtensionRules` 版本锁）。
 
 ## 6. 版本迭代审计历史
 
 | 版本号 | versionCode | 发布日期 | 变更性质评估 | 关键修改摘要 |
 | :--- | :--- | :--- | :--- | :--- |
+| `0.6.0` | 600 | 未发布（2026-10-29 稳定版准备轮） | MINOR | 双包发布形态（主包不含 pVM 资产，扩展包 `<applicationId>.accel` 承载 payload 与编译器引擎，versionCode 锁）、36 域 QEMU 解封的发布侧收口（扩展包包可见性 `<queries>` 按通道注入）、四车道能力矩阵与文案纪律、应用图标（adaptive + monochrome）、背景图 cover 语义统一与一批 UX 细节修复。真机验证与 tag 延后到下一设备轮。 |
 | `0.5.3` | 503 | 2026-10-16（中断恢复后本地验证，未发布） | PATCH | 闭合独立审查发现的三项会话竞态：停止请求绑定点击时的会话，注册后先建立退出监督再刷新通知，启动代际采用排他准入。保留 502 及原始失败证据，最终构建、复审和设备结果另行记录。 |
 | `0.5.2` | 502 | 2026-10-16（本地集成验证，未发布） | PATCH | 集成有证据的会话退出代际、停止意图与前台通知防串代，自有装配日志路由、AltGr/死键和向导系统重建草稿恢复；独立 QA 包复验，保留旧签名包与数据。设备 AVF 与架构门按实际结果单列。 |
 | `0.5.1` | 501 | 2026-10-16（隔离QA，未发布） | PATCH | 输入 AltGr/死键与会话退出修复的首个冻结验证切片；以独立 `.phase5` 包验证原向导 Activity 重建。非工单最终完成包，不覆盖旧签名包或既有数据；后续不同源码APK继续递增。 |

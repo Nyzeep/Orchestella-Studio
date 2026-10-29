@@ -14,9 +14,17 @@ on:
           - "yes"
         default: "no"
       version_name:
-        description: Expected release versionName (for example 0.5.3)
+        description: Expected release versionName (for example 0.6.0)
         required: true
         type: string
+      publish:
+        description: Select yes to also create a DRAFT GitHub Release from the verified bundle
+        required: true
+        type: choice
+        options:
+          - "no"
+          - "yes"
+        default: "no"
 
 permissions:
   contents: read
@@ -202,3 +210,51 @@ jobs:
         if: always()
         run: |
           rm -f "$RUNNER_TEMP/release.keystore" "$HOME/.gradle/gradle.properties"
+
+  # Draft-only publication. Nothing here can make a release public: the CLI is
+  # invoked with --draft, the notes file must already exist in the tree, and the
+  # job needs an explicit publish=yes on top of a verified build. The accelerator
+  # extension APK is NOT built here (it needs the real pVM staging inputs, which
+  # hosted CI does not have); attach it to the same draft by hand after the
+  # packaging machine produces and verifies it.
+  publish-draft:
+    name: Create draft GitHub Release
+    needs: build-release
+    if: ${{ inputs.confirm == 'yes' && inputs.publish == 'yes' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      VERSION_NAME: ${{ inputs.version_name }}
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Download the verified bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: orchestella-release-candidate
+          path: release-bundle
+
+      - name: Require a release notes file in the tree
+        run: |
+          NOTES="docs/reports/releases/v${VERSION_NAME}.md"
+          if [ ! -f "$NOTES" ]; then
+            echo "::error::missing release notes: $NOTES (draft the notes before publishing)"
+            exit 1
+          fi
+
+      - name: Create the draft release with the main APK and checksums
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          NOTES="docs/reports/releases/v${VERSION_NAME}.md"
+          gh release create "v${VERSION_NAME}" \
+            --draft \
+            --title "Orchestella Studio v${VERSION_NAME}" \
+            --notes-file "$NOTES" \
+            release-bundle/*.apk \
+            release-bundle/SHA256SUMS
+          echo "::notice::Draft created. Attach the verified accelerator extension APK to the same draft before publishing."

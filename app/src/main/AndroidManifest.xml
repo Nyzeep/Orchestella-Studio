@@ -15,14 +15,26 @@
     <!-- ADR-0011 §4 & US-35: boot auto-start (disabled by default) -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- Package visibility (Android 11+, targetSdk >= 30). The pVM payload and
+         compiler engine live in a companion APK named <applicationId>.accel
+         (AccelExtensionRules.extensionPackageName). Without a declaration here
+         the filtered PackageManager hides that package, getApplicationInfo()
+         throws NameNotFoundException and the resolver can only answer
+         EXTENSION_MISSING — the observed 36-domain budget_rejected chain. The
+         value is a placeholder because the installed extension's name follows
+         this build's applicationId suffix (.dev / .qa.<purpose>), which
+         app/build.gradle.kts injects per build type. -->
     <queries>
         <package android:name="moe.shizuku.privileged.api" />
+        <package android:name="${accelExtensionPackage}" />
     </queries>
 
     <application
         android:name=".OrchestellaApplication"
         android:allowBackup="false"
         android:extractNativeLibs="${orcExtractNativeLibs}"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:largeHeap="true"
         android:usesCleartextTraffic="true"
         android:label="@string/app_name"
