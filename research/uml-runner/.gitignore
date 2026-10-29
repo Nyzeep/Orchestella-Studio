@@ -1,0 +1,8 @@
+build/
+.gradle/
+local.properties
+*.apk
+out/
+
+# 9.6 MB GPL 内核镜像与 2 KB stub 不入库：按 README 1.1 从 release 目录拷入
+app/src/main/jniLibs/
