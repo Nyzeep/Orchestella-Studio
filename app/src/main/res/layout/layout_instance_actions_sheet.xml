@@ -31,7 +31,7 @@
             android:layout_height="36dp"
             android:layout_marginEnd="12dp"
             android:src="@drawable/ic_distro_ubuntu"
-            android:contentDescription="Distro Icon" />
+            android:contentDescription="@null" />
 
         <LinearLayout
             android:layout_width="0dp"
@@ -99,7 +99,7 @@
             android:layout_height="28dp"
             android:layout_marginEnd="16dp"
             android:src="@drawable/ic_desktop"
-            android:contentDescription="Desktop" />
+            android:contentDescription="@null" />
 
         <LinearLayout
             android:layout_width="0dp"
@@ -144,7 +144,7 @@
             android:layout_height="28dp"
             android:layout_marginEnd="16dp"
             android:src="@drawable/ic_terminal"
-            android:contentDescription="Terminal" />
+            android:contentDescription="@null" />
 
         <LinearLayout
             android:layout_width="0dp"
@@ -190,7 +190,7 @@
             android:layout_height="28dp"
             android:layout_marginEnd="16dp"
             android:src="@drawable/ic_settings"
-            android:contentDescription="Hardware" />
+            android:contentDescription="@null" />
 
         <LinearLayout
             android:layout_width="0dp"
@@ -237,7 +237,7 @@
             android:layout_height="28dp"
             android:layout_marginEnd="16dp"
             android:src="@drawable/ic_backup"
-            android:contentDescription="Backup" />
+            android:contentDescription="@null" />
 
         <LinearLayout
             android:layout_width="0dp"
@@ -283,7 +283,7 @@
             android:layout_marginEnd="16dp"
             android:src="@drawable/ic_network"
             app:tint="?attr/colorPrimary"
-            android:contentDescription="Port Forwarding" />
+            android:contentDescription="@null" />
 
         <LinearLayout
             android:layout_width="0dp"
@@ -328,7 +328,7 @@
             android:layout_height="28dp"
             android:layout_marginEnd="16dp"
             android:src="@android:drawable/ic_lock_lock"
-            android:contentDescription="Credentials" />
+            android:contentDescription="@null" />
 
         <LinearLayout
             android:layout_width="0dp"
@@ -374,7 +374,7 @@
             android:layout_height="28dp"
             android:layout_marginEnd="16dp"
             android:src="@drawable/ic_clone"
-            android:contentDescription="Clone" />
+            android:contentDescription="@null" />
 
         <LinearLayout
             android:layout_width="0dp"
@@ -422,7 +422,7 @@
             android:layout_height="28dp"
             android:layout_marginEnd="16dp"
             android:src="@drawable/ic_delete"
-            android:contentDescription="Delete" />
+            android:contentDescription="@null" />
 
         <LinearLayout
             android:layout_width="0dp"

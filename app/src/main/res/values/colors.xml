@@ -58,4 +58,8 @@
     <color name="glass_card_stroke_light">#1A000000</color>
     <color name="icon_container_bg_dark">#20FFFFFF</color>
     <color name="icon_container_bg_light">#0D000000</color>
+
+    <!-- Launcher icon: flat backdrop of the mascot artwork (see
+         docs/assets/branding/README.md). Used by the adaptive-icon layer. -->
+    <color name="ic_launcher_background">#FF242424</color>
 </resources>

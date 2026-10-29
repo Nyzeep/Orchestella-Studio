@@ -21,7 +21,6 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.TypedValue
-import android.view.Gravity
 import android.view.SurfaceView
 import android.view.TextureView
 import android.view.View
@@ -294,7 +293,8 @@ object ThemeApplier {
     }
 
     private fun setWallpaper(page: View, bitmap: Bitmap, theme: AppTheme) {
-        val image = BitmapDrawable(page.resources, bitmap).apply { gravity = Gravity.FILL }
+        // Same cover-crop contract as the terminal background: fill the page, never stretch.
+        val image = io.github.nyzeep.orchestella.CoverCropDrawable(page.resources, bitmap)
         page.background = LayerDrawable(arrayOf(image, ColorDrawable((theme.background and 0x00FFFFFF) or 0xB0000000.toInt())))
         // The root is an intentional composite, not a legacy solid to remap on the next layout.
         bindings[page]?.let { it.background = WeakReference(page.background); it.backgroundColor = null }
