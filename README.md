@@ -2,247 +2,170 @@
 
 <div align="center">
 
-**无需 Root 的 Android 原生双引擎 Linux 虚拟机与移动工作站**  
-*Native Dual-Engine Linux VM Runtime & Mobile Workstation for Android (No Root Required)*
+<img src="docs/assets/branding/app-icon-512.png" width="128" alt="Orchestella Studio app icon" />
 
-[![Release](https://img.shields.io/badge/Release-v0.4.5%20Dev%20Preview-orange.svg?style=flat-square)](https://github.com/Nyzeep/Orchestella-Studio/releases/tag/v0.4.5)
+**A Linux VM and mobile workstation for Android — no root required**<br />
+*Native Linux VM runtime & mobile workstation, sandboxed inside an ordinary Android app*
+
+[![Release](https://img.shields.io/badge/Release-v0.6.0%20stable--prep-blueviolet.svg?style=flat-square)](https://github.com/Nyzeep/Orchestella-Studio/releases)
 [![License](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg?style=flat-square)](LICENSE)
 [![Android](https://img.shields.io/badge/Android-8.0%2B%20(API%2026%2B)-green.svg?style=flat-square)](https://developer.android.com)
 [![Arch](https://img.shields.io/badge/Arch-ARM64--v8a-purple.svg?style=flat-square)](#)
 [![CI](https://img.shields.io/github/actions/workflow/status/Nyzeep/Orchestella-Studio/ci.yml?branch=main&label=CI&style=flat-square)](https://github.com/Nyzeep/Orchestella-Studio/actions)
 
+[简体中文](README.zh-CN.md) · **English**
+
 </div>
 
 ---
 
-## 开发预览版说明
+## What this is
 
-> **当前版本 v0.4.5 仍为开发预览版（Development Preview），尚非稳定正式版。** 欢迎下载体验，并积极反馈启动、终端输入、主题显示、网络或设备兼容性问题。不同机型、Android 定制系统与发行版的表现可能存在差异，重要数据请先备份。
+Orchestella Studio runs Linux on 64-bit Android devices without root, without touching system partitions, and without unlocking the bootloader. Behind one terminal, network stack, and instance manager sit four execution lanes with genuinely different boundaries: only the QEMU lane delivers the full "kernel + systemd + seven distributions" contract. The other three have narrow, explicit ranges.
 
-- **下载安装**：[v0.4.5 发行说明与安装包](https://github.com/Nyzeep/Orchestella-Studio/releases/tag/v0.4.5)。请同时阅读其中的验证范围、已知限制和升级说明。
-- **问题反馈**：[提交 Issue](https://github.com/Nyzeep/Orchestella-Studio/issues/new)，建议附上应用版本、设备型号、Android / 系统版本、发行版、复现步骤及脱敏日志或截图。
-- **体验交流**：[GitHub Discussions](https://github.com/Nyzeep/Orchestella-Studio/discussions)。欢迎报告问题、提出建议，也欢迎分享成功运行的机型与使用场景。
+Every performance figure, status label, and license statement below points at a file in this repository. Where the repository has no measurement, the text says **not measured** or **unverified** instead of estimating.
 
-### 主分支源码进展：0.5.3（尚未发布安装包）
+## Development preview notice
 
-本次同步包含 0.5.0–0.5.3 的源码、测试、中文调研与近期方案；GitHub Releases 的公开安装包仍为 **v0.4.5**。
+> **0.6.0 is a "stable-release preparation" milestone, not a claim that the product is fully stable.** This round settles the two-package release shape and turns the four-lane positioning and measurement basis into something checkable. It still carries unverified scope, and some lanes have no product entry point yet.
 
-- **发布信任**：公开 v0.4.5 与 0.5.3 验证包仍使用 Android Debug 证书。生产签名与实例数据迁移是下一公开版本的 P0 门，不能继续用 Debug 证书发布“正式版”；详见[下一阶段优化方案](docs/reports/orchestration/next-optimization-plan-20261018.zh-CN.md)。
-- **下一阶段主线**：QEMU 是全设备可用的主要交付路径，AVF protected 是时间盒研究线，不阻塞发布。QEMU/gvproxy 停止收敛、跨 Controller 单实例互斥、终端输入生命周期和 CI 门禁仍是待完成项。
-- **本机授权准备**：接入 Shizuku 普通客户端，区分连接、拒绝、死亡、重连和超时；统一两项 VM 权限与预检说明。客户端授权不代表 AVF Guest 已运行。
-- **实例与终端可靠性**：修复旧会话回调、停止请求归属和启动互斥；补充 AltGr、死键、输入连接退役和创建向导草稿恢复；调整项目自有装配日志路由。
-- **构建与验证工具**：修复清洁检出的 Guest 模板准备与原始字节检查，提供受限设备预检和离线阶段记录工具。
-- **已验证范围**：747 项 App 测试通过，lint 无 Error/Fatal、仍有 748 项 Warning；隔离验证包完成 8 项 Android 框架场景。新 Debian QA 实例在 QEMU 路径完成 systemd/ready、限定日志路由、三种停止和重开持久性验证。
-- **硬件路线**：Protected VM 优先验证，non-protected 持续兼容，QEMU 保证当前完整 Linux 路径。当前测试 ROM 只声明 protected 支持，现 non-protected 适配器尚不适用；**真实 AVF Guest 成功样本仍为 0，无性能提升声明**。新 VM owner、私有盘和保护语义保留架构决策门。
+What remains true after this round:
 
-公开文档、工单状态与证据边界见 [文档入口](docs/README.md)。原始设备诊断、实例数据、构建资产和签名材料不随源码上传。
+- **Real AVF guest success samples are still 0.** The current test device declares `feature:android.software.virtualization_framework`, but no `virtualizationservice` is registered in the service list; the accelerator lane is rejected at the decision layer and falls back to QEMU.
+- **pVM has not been re-measured on-device in the targetSdk 36 domain**; **UML has only reached "boots and compiles a single file"**; **16 KB page execution on a real device is unverified**.
+- **Production signing and instance-data migration are still release gates.** No signing key is stored in this repository.
 
-### v0.4.5 已发布内容
+Public artifacts are what the [Releases](https://github.com/Nyzeep/Orchestella-Studio/releases) page lists. Merging into `main` is not a release, and it does not mean every ticket is closed.
 
-- **终端与登录**：修复点击终端无法重新呼出键盘、Fedora / Debian 重复登录与输入干扰，以及终端协议应答回路。
-- **主题与配置**：统一浅色、深色和跟随系统的页面/终端配色，修复 ANSI 索引色、容量按钮换行与高度不齐；切换主题保留向导配置。
-- **Guest 恢复**：修复 BusyBox 遮蔽原生命令导致 Ubuntu SSH 软件包配置失败，已有实例重启即可应用，无需重建根盘。
-- **更新与构建**：开发预览通道按语义版本检查更新，避免旧版误报升级；默认使用官方依赖仓库，补齐 Python 3 和 lint 验证。
-- 包含发行版独立卡片、40 套明暗主题及应用内更新入口。**AVF 权限授予、拒绝与回退已验证；真实 AVF Guest 成功样本仍为 0，当前测试设备仍受隐藏接口访问限制，实际使用 QEMU。**
+## The four lanes
 
-## 项目概述
+| Lane | Mechanism, in one line | Typical role | Measured per-file compile time | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **proot / bare** | Guest binaries run as **native** host ARM64 instructions; `ptrace` intercepts and rewrites syscalls. There is no guest kernel. | Lightweight shell, package management, and compatibility work on low-memory devices | bare **313 ms** (p50 of 7 files)<br />proot **337 ms** (p50) | **Conditional** — verified in the 28 domain; unavailable in the 36 domain |
+| **pVM** (protected Microdroid payload) | A Microdroid GKI kernel accepted by the platform chain of trust runs on an EL2 **hardware vCPU** | Offloading distcc compiles into an isolated VM | **2,809 ms** (single end-to-end job, n=1, reused run) | **Conditional** — the 28-domain chain is verified; in the 36 domain it is blocked by a missing AVF service on this device (not a packaging or permission issue); no on-device re-measurement |
+| **QEMU** (TCG) | Guest instructions are **translated** in software before execution | Full kernel, systemd, SSH, seven upstream distributions | **32,750 ms** (single full compile including preprocessing, n=1, reused run) | **Conditional** — the targetSdk 36 exec block is empirically cleared and guest networking is verified; package installation is blocked by the guest kernel lacking Landlock (fixable); compiling inside the guest is unverified |
+| **UML** (`ARCH=um`) | A real Linux kernel runs as an ordinary app process; guest instructions execute **natively** and binaries are loaded by the guest kernel's ELF loader | Research range: long-running user space / containers / Docker | **940 ms** (median on a 2,000-function fixture; 460 ms native in the same round, i.e. **2.04×**) | **Unverified** — boot and single-file `-c` compiles are verified; long-running, linking, and Docker are not |
 
-**Orchestella Studio** 是一款面向 64 位 Android 设备的原生 Linux 运行环境与移动工作站。无需对手机进行 Root 解锁，即可在 Android 应用沙盒内启动具有独立内核的 Linux 环境。项目持续开发中，具体功能与兼容性以当前预览版的实际验证结果为准。
+### How to read those numbers
 
-### 为什么选择 Orchestella？
+Every figure traces to §1.1 and §1.4 of [`docs/research/ACR-draft-four-lanes-20261029.md`](docs/research/ACR-draft-four-lanes-20261029.md). Nothing here is rounded or rephrased.
 
-在传统的 Android Linux 方案中（如 PRoot、chroot 容器），系统通过拦截和转换系统调用（syscall）来伪装环境。这类方案往往存在以下局限：
-* **无法加载真实内核特性**：缺乏独立的内核空间，无法支持原生 systemd、cgroups 资源控制、真正的虚拟文件系统与完整网络协议栈；
-* **系统调用兼容性差**：复杂软件或涉及内存映射、进程追踪（如 Docker/Podman、GCC/Clang、大型数据库）时极易崩溃；
-* **环境污染与权限穿透**：容器与宿主系统共享内核，受限于 SELinux 策略，难以实现安全隔离。
+- **313 / 337 / 2,809 / 32,750 ms come from the same round (session 16), with a 92 KB `.i` fixture.** The QEMU column is a single full compile *including preprocessing*; the pVM column is a single *end-to-end distcc job*. Neither is equivalent to the per-file basis used for bare and proot.
+- **940 / 460 ms come from a different round (session 22), with a 90,045 B `.c` fixture and `clang -c -O1`, on a different toolchain** (Alpine clang 22.1.3 musl static vs payload clang 22.1.8).
+- **Figures from different rounds are not comparable.** The 2.04× ratio only pairs with the 460 ms measured in the same round; it must not be divided by 313 ms or 2,809 ms. Any claim that "UML is N times faster or slower than lane X" currently lacks same-round, same-fixture data — **not measured**.
+- Four lanes measured in one round on one fixture, a `dockerd` result for the QEMU lane, and any long-running, linking, or Docker number for UML are all **not measured**.
 
-**Orchestella Studio 的根本不同在于**：
-它通过**硬件虚拟化（AVF）与软件虚拟化（QEMU TCG）双引擎机制**，在 Android 应用沙盒内启动**拥有独立 Linux 内核、独立虚拟块设备和独立网络堆栈**的虚拟机。硬件虚拟化是否可用取决于设备平台、系统接口及授权；预检不满足或启动失败时使用软件虚拟化。当前真机回归主要覆盖 QEMU 路径，不代表所有设备的 AVF、图形或工作负载均已验证。
+### Terminology discipline
 
----
+Product copy describes execution strategy in exactly three terms, never as a vague "speed-up":
 
-## 系统架构
+| Term | Definition | Lanes |
+| :--- | :--- | :--- |
+| **Native instruction execution** | The guest binary *is* host CPU code; there is no translation layer, but also no EL2 boundary, so syscalls may be intercepted by `ptrace` or land in a guest kernel | proot / bare, UML |
+| **Hardware vCPU** | A virtual CPU provided by an EL2 hypervisor; the guest kernel executes on it | pVM |
+| **Translated execution (TCG)** | Instructions are translated in software one at a time before they run | QEMU |
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Orchestella App UI                       │
-│      (Material 3 / 科技暗黑与纸感浅色 / 五级控制台导航)       │
-└──────────────────────────────┬──────────────────────────────┘
-                               │
-            ┌──────────────────┴──────────────────┐
-            ▼                                     ▼
-┌───────────────────────────────┐   ┌─────────────────────────┐
-│       AVF 硬件路径（待验）     │   │     QEMU TCG 仿真引擎    │
-│  protected / non-protected    │   │    ARM64 动态二进制翻译   │
-└───────────────┬───────────────┘   └────────────┬────────────┘
-                │                                │
-                └──────────────┬─────────────────┘
-                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│                 用户态网络层 (GVProxy / SLIRP)                │
-│    无需 Root 权限实现 NAT 转换、多重 DNS 路由与端口双向映射    │
-└──────────────────────────────┬──────────────────────────────┘
-                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│              Guest 操作系统环境 (Guest Assets)               │
-│   • initramfs 自愈装配与 EXT4 虚盘持久化挂载                  │
-│   • 7 大官方主流发行版 Rootfs (Ubuntu / Debian / Arch 等)    │
-│   • orchestella-agent 控制平面与双向串口交互 Shell          │
-└─────────────────────────────────────────────────────────────┘
-```
+The distinction is not "who executes the instruction" but "whose CPU the guest kernel runs on, and whether an EL2 boundary exists". Multiplier figures for pVM that circulated in earlier versions were invalidated in later sessions (see the note under §1.2 of the ACR draft); this project no longer quotes any ratio assembled across rounds.
 
----
+## Installation
 
-## 核心特性与工程亮点
+### Two packages
 
-### 1. 双引擎自适应虚拟化技术
-* **硬件虚拟化研究（AVF）**：按具体 ROM 开放的 protected/non-protected 模式、调用接口与身份、镜像来源、存储和生命周期逐门验证。AVF 是框架，底层实现及保护性质须按平台核实；当前尚无本应用真实 AVF Guest 成功或性能样本。
-* **软件仿真虚拟化（QEMU TCG aarch64）**：在满足支持地板与资源预算的 Android 8.0+ ARM64 设备上提供具有独立 Guest kernel 的软件执行路径。实际兼容性以所列设备、发行版与工作负载验收为准。
+Since 0.6.0 the app ships as two packages:
 
-### 2. 现代科技美学与分级控制台
-* **多套主题与一致的明暗模式**：
-  * 内置 20 组、共 40 套明暗主题预设，包括 Constructivist、Moonshot、Claude、Catppuccin 等风格；
-  * 支持 **跟随系统 / 浅色 / 深色**，明确选择亮色或暗色预设后立即应用，也可在设置中重新选择跟随系统；
-  * 终端背景、ANSI 调色板、页面按钮与选中状态统一适配，即时切换保留正在编辑的向导配置。
-* **五级二级选项卡控制台**：
-  * **概览（Overview）**：实时监控实例运行状态，提供一键复制 SSH 直连指令；
-  * **硬件（Hardware）**：支持动态分配 vCPU 核心数与内存阈值配额；
-  * **存储（Storage）**：虚拟磁盘卷管理与读写拓扑；
-  * **网络（Network）**：虚拟局域网 IP 显示、网络网关与端口转发映射；
-  * **维护（Maintenance）**：重置、快照备份与销毁等敏感操作具备二次安全锁确认。
+- **Main package**, `io.github.nyzeep.orchestella` — the app itself plus the full QEMU kernel path.
+- **pVM accelerator extension**, `io.github.nyzeep.orchestella.accel` — the pVM payload, the compiler engine, and `PVM-COMPILER-MANIFEST`. The main package carries no pVM assets.
 
-### 3. 专业移动终端交互体验
-* **滑动式辅助快捷键栏**：针对手机触屏重构，提供 `ESC`、`TAB`、`CTRL`、`ALT`、`^C`、`CLR`、`HOME`、`END` 等开发者高频控制符，集成常用 Shell 符号直达；
-* **粘滞键（Sticky Modifier）状态机**：支持单手组合键操作，清晰展示修饰键激活状态；
-* **多会话终端管理（Multi-Session Sheet）**：内置会话管理器，支持多终端 Shell 窗口的快速新建、无缝切换与优雅销毁；
-* **自适应高对比度调色板**：针对明暗主题分别适配锐利 ANSI 色彩阶，保证终端语法高亮清晰锐利。
+Two hard rules:
 
-### 4. 嵌入式 SSH 连接管理中心
-* **自动端口分配与映射**：为每个虚拟机实例自动绑定本地网络回环端口（默认映射宿主 `2222 -> 22`）；
-* **一键连接复制**：提供标准连接命令示例（如 `ssh -p 2222 root@127.0.0.1`），支持与外部第三方 SSH 客户端无缝桥接配合。
+1. **The extension's `versionCode` must equal the main package's.** On a mismatch the runtime refuses the extension outright and says so; it does not attempt a best-effort load, because a mismatched extension describes a payload this build was never verified against (`app/src/main/java/io/github/nyzeep/orchestella/AccelExtensionRules.kt:13`, `:71`).
+2. **The main package alone means the QEMU lane only.** Full kernel, systemd, SSH, and the distribution catalog all work; pVM entry points report that the accelerator extension is not installed.
 
-### 5. 七大主流官方发行版阵容与运行时韧性
-* **官方发行版目录**：提供 Ubuntu、Debian、Fedora、Arch Linux、openSUSE、AlmaLinux、Rocky Linux 的独立入口；具体版本与可用镜像以应用内目录为准，本轮真机回归覆盖 Fedora 43 与 Debian 13；
-* **多源镜像自动故障转移**：境内优先调度清华大学 TUNA 镜像站与阿里云镜像站加速下载（实测单线程拉取达 8.3 MB/s），海外节点自动容灾备选；
-* **自愈装配与极简环境容错**：initramfs 启动脚本集成多 DNS 冗余（阿里/腾讯/Cloudflare/Google），并对精简根文件系统缺少诊断工具（如 `ping`）的场景实现智能放行。
+When upgrading, move both packages to the same version. Do not upgrade just one.
 
----
+### HyperOS / Xiaomi install quirks
 
-## 快速上手
+- **New installs require on-screen confirmation.** Over ADB with the screen locked the install fails with `INSTALL_FAILED_USER_RESTRICTED`. Unlock the device and keep the screen on before installing.
+- **Updates to an already installed package are not restricted.** So do not uninstall first to get a "clean install" — uninstalling takes the instances stored in the app's private directory with it.
+- `settings put global adb_install_need_confirm 0` does not work on HyperOS; the real gate is the USB-install authorization plus a lit screen.
 
-### 1. 安装应用
-
-从 [GitHub Releases](https://github.com/Nyzeep/Orchestella-Studio/releases) 下载最新的开发预览版 APK（Android 8.0+，ARM64-v8a），可使用同页提供的 SHA-256 校验文件核对安装包。
-
-已有用户建议先正常关闭实例并备份重要数据，再覆盖安装；**不要为升级而卸载旧应用或清除应用数据**，这些操作会删除应用私有目录中的实例。若系统提示签名不一致，请先保留原应用与数据，并在 Issue 中反馈旧版本及安装来源。
-
-### 2. 创建并启动虚拟机
-
-1. 打开 **04/发行版**，选择发行版卡片上的 **装配实例**；也可从 **02/实例 → + 新建实例** 进入向导；
-2. 选择所需 Linux 发行版（初次体验推荐 Ubuntu 24.04），镜像源可保留默认的多层级自动回退策略；
-3. 根据设备余量配置内存、vCPU 与磁盘容量，并检查预检结果；
-4. 确认后下载镜像并进行首次装配，耗时取决于网络、镜像大小和设备性能；
-5. 装配完成后点击 **开机**，等待控制台进入 Shell。已有实例升级后正常重启即可应用本轮登录配置修复。
-
-本地实例控制台沿用自动登录行为；SSH 或需要认证的命令仍使用实例凭据。自动进入本地 Shell 与密码认证是不同的访问场景。
-
-### 3. 外部终端与网络连接
-实例开机后，在 **详情控制台 → 概览** 页面直接复制 SSH 指令：
-```bash
-ssh -p 2222 root@127.0.0.1
-```
-该回环地址用于本机终端应用。局域网访问需要显式配置对应的绑定范围与宿主地址，不会由默认回环规则自动开放。
-
----
-
-## 本地编译与构建
-
-开发环境要求：
-* **JDK 17** (推荐 Eclipse Temurin 17)
-* **Android SDK Platform 36** 与 **Build-Tools 36.1.0**
-* **Android NDK 27+** 与 **CMake 3.22+**
+### Granting the pVM permission
 
 ```bash
-# 1. 克隆代码仓库
+adb shell pm grant io.github.nyzeep.orchestella android.permission.MANAGE_VIRTUAL_MACHINE
+```
+
+A successful grant (`granted=true`) **does not** make the pVM lane usable: the device must also register `virtualizationservice`. The current test device does not, so it still falls back to QEMU — what is missing is the service, not the permission.
+
+### Shizuku
+
+The app uses a regular Shizuku client so it can distinguish connected, denied, process-died, reconnected, and timed-out states. **Client authorization does not mean an AVF guest is running**, and it does not mean the device has a usable AVF service.
+
+## Building from source
+
+Shortest working path (JDK 17, Android SDK Platform 36, NDK 27.0.12077973, CMake 3.22+):
+
+```bash
 git clone https://github.com/Nyzeep/Orchestella-Studio.git
 cd Orchestella-Studio
-
-# 2. 运行协议合规检查与核心单元测试
-./gradlew :runtime:contract:check :app:testDebugUnitTest
-
-# 3. 运行 Guest Assets 资产验证套件
-./gradlew -p guest-assets test
-
-# 4. 构建生成安装包并执行 Android lint
-./gradlew :app:assembleDebug :app:lintDebug
+./gradlew :app:assembleDebug
 ```
 
-开发主分支默认从官方 Google Maven 与 Maven Central 获取依赖。如所在网络确实需要区域镜像，可显式使用 `-Porchestella.repositories.useAliyunMirror=true`；不启用时不会优先访问镜像。首次完整执行测试和 lint 后可使用 `--offline` 复用依赖缓存；缺少依赖时应先通过正常解析补齐，不跳过检查。
+The build channel is a Gradle property, defaulting to `release`:
 
-Guest shell 回归需要 Python 3；容器构建依赖安装器已显式包含该工具，入口会在启动 Gradle 前检查它。本地开发构建使用明确的预览通道标记检查 GitHub Releases，版本比较不会将较旧版本当作更新；发布稳定构建前需同步检查通道标记。
+```bash
+# Internal development channel: .dev applicationId suffix, -dev.<shortSha> versionName
+./gradlew :app:assembleDebug -Porchestella.buildChannel=dev
 
----
+# Isolated QA channel: additionally requires buildPurpose (lowercase letters and digits only)
+./gradlew :app:assembleDebug -Porchestella.buildChannel=qa -Porchestella.buildPurpose=input
+```
 
-## 当前版本验证范围
+- Internal channels use a different `applicationId`, so they coexist with a release install instead of overwriting user data, and they are always debug-signed.
+- A release build with any signing property missing fails in `validateReleaseSigning`; it cannot silently produce something that looks like a production package.
+- **Payload and extension properties are internal build inputs.** `:accel-extension` has no payload-less variant; building it requires pre-staged input directories (`-Porchestella.fastlane.payloadLibDir`, `-Porchestella.pvmCompiler.libDir`). These are not installation steps, and the repository ships none of those binaries.
+- CI's Gradle gate runs every `:runtime:*:check` plus `:app:testDebugUnitTest`; separate jobs cover lint + assemble + the 16 KB packaging check, a dual-package size comparison that builds `:accel-extension` against a labelled fixture (placeholder `.so` files), and the Python harness checks.
 
-v0.4.5 已完成以下回归，验证结果仅覆盖所列场景：
+## Roadmap
 
-| 校验维度 | 本轮结果 |
-| :--- | :--- |
-| **构建与检查** | 713 项 App 测试、65 项 Guest 检查及 Android lint 通过；lint 仍有非阻断警告 |
-| **终端与主题** | 键盘收起后点击唤起、前后台返回、实际命令输入、浅深色显示与向导状态保留验证通过 |
-| **发行版回归** | Fedora / Debian 登录修复已验证；本轮 Ubuntu 包恢复达到 ready/verified，DBus 与 SSH 服务 active |
-| **数据保留** | 四个已有实例的身份、凭据和根盘引用保持不变，测试后均正常停止 |
-| **AVF 边界** | 两项权限已授予；自定义 VM 隐藏接口被系统拦截，实际回退 QEMU，未实现 AVF 端到端运行 |
+1. **0.6.0 stable (this round)** — two-package release shape, four-lane matrix, and measurement basis finalised; close production signing, instance-data migration, and the release manifest.
+2. **targetSdk 36 pVM end to end (next device round)** — the platform-side exec block is empirically cleared in the 36 domain; the extension's package-visibility declaration is fixed in 0.6.0 sources (`<queries>` now injects `<applicationId>.accel` per channel). What remains is the extension install strategy, confirming that `Resolver` flips to "installed" once the APK is on the device, and a `COMPLETED` distcc run in the 36 domain.
+3. **UML research line (long-running / containers / Docker)** — the compile role **has been empirically rejected**: on the 2,000-function fixture UML measures 940 ms median against 460 ms native, i.e. **2.04×**, which lands in the 1.5–3× band and misses the `≤1.5×` criterion for compiling. The lane's value range moves to long-running user space and container workloads, but 30-minute stability, the link stage, and Docker are all still undone.
+4. **AVF custom kernel (evaluate, do not implement)** — only meaningful on non-protected devices: pvmfw starts Google/OEM-signed images only (`Available OS list: ["microdroid"]`), so protected devices cannot run a custom kernel. This round is a feasibility assessment with no implementation commitment.
 
-> 主分支 0.5.3 的验证计数为 **747 项 App 测试 / 98 suites**、lint **0 Error / 748 Warning**；上表 713 项是 v0.4.5 发布包的验证结果。两个版本不要混用。
+## Known limitations
 
-验证覆盖所列 ARM64 真机与场景，不代表所有机型、发行版、输入法或图形/GPU 工作负载均已兼容。完整限制见发行说明；欢迎反馈未覆盖的使用场景。
+- **The proot lane requires the 28-domain package.** It exists only in the `-Porchestella.qaTargetSdk=28` QA/sideload channel. In the 36 domain only `.so` files under `nativeLibraryDir` can be executed, so distribution binaries cannot be exec'd from a writable directory.
+- **Real AVF guest success samples are still 0** (see [AGENTS.md](AGENTS.md) and the [documentation index](docs/README.md)).
+- **The extension package-visibility fix is not yet verified on a device.** 0.6.0 declares `<applicationId>.accel` (QA variants: `…qa.<purpose>.accel`) in the `<queries>` block, injected per channel; without it, package-visibility filtering at targetSdk ≥ 30 makes `AccelExtensionResolver` report an installed extension as missing. The fix ships with a source-contract unit test; the on-device verdict is deferred to the next device round.
+- **UML is research only.** Everything beyond `-c` (invoking `ld`/`lld`), plus systemd, Docker, SMP, and 16K-host-with-4K-guest, is unverified.
+- **16 KB pages.** ELF and APK alignment are verified; execution on a 16 KB device is untested.
+- **Signing.** No key is committed. v0.4.5 and the 0.5.3 verification builds were both Android Debug certificates (`docs/standards/VERSIONING.md` §4). Treat 0.6.0's certificate as unsigned-off until the release page and release manifest record it.
 
----
+## License and acknowledgements
 
-## 文档与验证入口
+The project as a whole is **GNU General Public License v3.0 or later (GPL-3.0-or-later)**; the full text is in [LICENSE](LICENSE).
 
-- [中文成果与开发文档](docs/README.md)：当前状态、研究依据、工单与归档索引。
-- [下一阶段优化方案（2026-10-18）](docs/reports/orchestration/next-optimization-plan-20261018.zh-CN.md)：P0 发布信任、运行时收敛、单实例锁、输入与 CI 门。
-- [0.5.3 真机验收报告](docs/reports/orchestration/avf-shizuku-device-20261016.zh-CN.md)：测试计数、设备验证范围与证据边界。
-- [当前测试设备 AVF / Gunyah 重检](docs/research/2026-10-17-avf-device-recheck.md)：protected-only、pKVM 未证实与 Gunyah 事实。
+| Component | License | Form and notes |
+| :--- | :--- | :--- |
+| QEMU 11.1.1 and statically linked libraries | GPL-2.0 (QEMU); glib LGPL-2.1+, pixman MIT, zlib, pcre2 BSD-3-Clause, libffi MIT, libfdt GPL-2.0+/BSD-2-Clause dual, libiconv LGPL-2.1, proxy-libintl LGPL-2.1+ | Shipped in the APK; corresponding-source record in `app/src/main/assets/QEMU-GPL-SOURCES.md` and `tools/qemu-android/gpl/` ([NOTICE.QEMU](app/src/main/assets/NOTICE.QEMU)) |
+| Guest control agent | GPL-3.0-or-later (project code), statically linked against musl 1.2.6-r2 | Shipped; see [NOTICE.GUEST-RUNTIME](app/src/main/assets/NOTICE.GUEST-RUNTIME) |
+| BusyBox 1.36.1-r31 (Alpine 3.20 `busybox-static`) | GPL-2.0-only | Shipped inside the Fast Lane minimal toolbox; requires corresponding source or a three-year written offer at the same distribution point ([NOTICE-fastlane.md](NOTICE-fastlane.md)) |
+| distcc 3.4 (`distccd`) | GPL-2.0-or-later | **Not shipped in the APK**; runs as a separate process, so the GPL boundary sits at the process boundary ([NOTICE-fastlane.md](NOTICE-fastlane.md)) |
+| gvproxy / gvisor-tap-vsock | Apache-2.0 | User-space network layer |
+| clang / LLVM | Apache-2.0 WITH LLVM-exception | Not shipped, no pinned binary |
+| PRoot | GPL-2.0 | Implementation reference for the compatibility class; not shipped in current packages |
+| UML kernel (downstream `zalexdev/linux-um-arm64`, base 7.2-rc4) | GPL-2.0 | The binary is excluded by `.gitignore`, is not in the repository, and is not distributed with 0.6.0. Any distribution must ship corresponding source separately under GPL-2.0; the delivery boundary is still undecided |
 
----
+Guest root filesystems for each distribution follow that distribution's upstream license. License consistency is checked by `tools/release/check_licenses.py`, and a release bundle must contain every file listed in `tools/release/release_bundle_manifest.json`.
 
-## 技术边界与使用说明
+## Previous versions
 
-1. **软件仿真性能边界**：当当前 ROM 的 VM 模式、权限、接口或镜像条件不满足已实现的硬件路径时，使用 QEMU TCG。protected-only 不代表芯片没有虚拟化硬件；TCG 性能须按实际 vCPU、工作负载、宿主资源与温控条件评估；
-2. **厂商后台管理策略**：部分 Android 定制系统（如 MagicOS、MIUI/HyperOS、EMUI）具备激进的后台清理机制。如需运行长时后台服务，建议在系统设置中将 Orchestella 设置为「允许后台运行 / 无限制」；
-3. **权限与可用性**：默认的软件虚拟化路径在 Android 应用沙盒内运行；硬件虚拟化需要设备平台支持及相应开发级授权。预检通过不等于实际启动成功，界面会显示当前授权与回退状态；
-4. **16 KB 页面兼容**：当前 QEMU / gvproxy 二进制与 APK 对齐已通过校验（`zipalign -c -P 16 4`），但 16 KB 真机运行尚未验证；Android 官方对应用更新的强制期从 2027-02-01 开始；
-5. **Android 17 适配窗口**：API 37 已稳定，项目当前 targetSdk 36。升级到 37 会触发本地网络权限、大屏方向/尺寸、IME 可见性和 `static final` 反射限制，计划在 2026Q4–2027H1 完成预研与适配；
-6. **QEMU 运行时可靠性**：QEMU 是当前唯一有真实设备证据的完整 Linux 路径，但停止超时、gvproxy 收尾和跨 Activity 单实例互斥仍在收敛中；遇到停止不确认时请保留实例与日志，不要反复强制启停。
+v0.4.5 is the last publicly released development preview (Android Debug certificate). Its notes and packages remain archived on the Releases page. It is no longer the primary download path: 0.6.0's defining changes — the two-package shape and the four-lane matrix — do not exist in v0.4.5, and mixing installation instructions across the two generations produces wrong conclusions.
 
----
+## Documentation and feedback
 
-## 开源协议
-
-本项目主体采用 **GNU General Public License v3.0 or later (GPL-3.0-or-later)** 开源许可证。
-
-* **强开源保障 (Strong Copyleft)**：保障本项目及其衍生版本持续保持自由与开源，防止任何第三方进行闭源商业专有化封装；
-* **反 Tivo 化与专利授权保障**：依照 GPLv3 条款，保护移动设备用户的自由修改与安装运行权利，并提供显式专利防御；
-* **第三方组件授权遵循**：
-  * Android 依赖库（Jetpack、Material 3 等）遵循 Apache 2.0 许可证（与 GPLv3 完全兼容）；
-  * 随包分发的 Linux Kernel 及 QEMU 运行时二进制严格遵循原作者著作权及 GPL-2.0 / LGPL 等相应条款，对应源码与构建脚本详见 `QEMU-GPL-SOURCES.md` 及官方 Release 对应源码包；
-  * 各发行版 Guest Rootfs 镜像遵循上游对应发行版的开源许可。
-
----
-
-## 社区交流与反馈
-
-**项目仍处于开发预览阶段，欢迎积极反馈体验问题。** 启动失败、输入异常、颜色冲突、网络不通、机型兼容性或不易理解的交互都可以提交 [Issue](https://github.com/Nyzeep/Orchestella-Studio/issues/new)；功能建议和使用交流可前往 [Discussions](https://github.com/Nyzeep/Orchestella-Studio/discussions)。
-
-为了便于复现，建议提供：
-
-- 应用版本与安装来源；设备型号、Android 版本及厂商系统版本。
-- Linux 发行版与版本、是否为已有实例升级、运行引擎（如界面有显示）。
-- 实际操作步骤、预期表现和实际表现；必要时附上截图或短录屏。
-- **运行日志**中的相关片段，并说明问题发生的时间。发布前请删除密码、令牌、SSH 私钥及个人文件内容。
-
-无需自行定位根因，也不必等到问题必现后再反馈；清晰的现象描述和使用场景同样有帮助。
+- [Documentation index (Chinese)](docs/README.md): current status, research basis, tickets, and archives.
+- [Four-lane decision material (ACR draft)](docs/research/ACR-draft-four-lanes-20261029.md): the authoritative source for every performance figure and four-state label in this README.
+- [Versioning and build-channel standard](docs/standards/VERSIONING.md): hard constraints on version names, `versionCode`, and the three channels.
+- Feedback: [open an issue](https://github.com/Nyzeep/Orchestella-Studio/issues/new) or use [Discussions](https://github.com/Nyzeep/Orchestella-Studio/discussions). Strip passwords, tokens, SSH private keys, and personal file contents first, and include app version, device model, Android version, distribution, and reproduction steps.

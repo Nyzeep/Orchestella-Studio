@@ -2,7 +2,7 @@
 
 Orchestella Studio（曾用工作名 DroidLayer）：无需 Root 的 Android 原生双引擎 Linux 运行环境与移动工作站 —— 在不要求 Root 的前提下，在 Android 手机上运行完整 ARM64 Linux 虚拟机（AVF 硬件虚拟化 + QEMU 软件虚拟化全透明降级、Mesa VirGL 3D 加速、Wayland 桌面、每实例随机凭据与持久后台保活）。
 
-**当前源码状态**：0.5.3 / code503（main，2026-10-19 历史重写后基线；旧 commit SHA 已作废），公开安装包仍为 v0.4.5 开发预览版。本次活动 effort 为 `.scratch/orchestella-fastlane/`；当前优先级与证据边界见 [下一阶段优化方案](docs/reports/orchestration/next-optimization-plan-20261018.zh-CN.md) 和 [中文文档入口](docs/README.md)。开头产品描述是目标，不代表 AVF、GPU、桌面或所有设备均已验收；当前真实 AVF Guest 成功样本为 0。不要跳过决策直接写代码。
+**当前源码状态**：0.6.0 / code600（main `0383393` 之后的稳定版准备轮，2026-10-29），公开安装包仍为 v0.4.5 开发预览版。本轮的发布工程、双包形态与四车道口径见 [README.zh-CN.md](README.zh-CN.md) 与 [中文文档入口](docs/README.md)。开头产品描述是目标，不代表 AVF、GPU、桌面或所有设备均已验收；当前真实 AVF Guest 成功样本为 0。不要跳过决策直接写代码。
 
 **当前主线**：QEMU 全设备可靠可用优先；AVF protected 是时间盒研究线，不阻塞发布。发布签名、QEMU/gvproxy 停止收敛、跨 Controller 单实例互斥、终端输入生命周期和 CI 门禁是 P0/P1 待完成项。
 
@@ -37,4 +37,4 @@ single-context：根目录 `CONTEXT.md` + `docs/adr/`。见 `docs/agents/domain.
 
 - `docs/adr/0015-release-channels.md`、`docs/agent-handoff/GPL_RELEASE_DELIVERY_POLICY.md` 以及 ADR-0017/0018/0019 引用的部分研究文档不存在；只能记录缺口，不能根据标题编造正文。
 - ADR-0010 关于 protected VM 双向通信的绝对表述与官方 vsock 证据冲突，等待 ACR-02 裁定；不要直接改写 accepted 正文。
-- 历史报告中的测试数量、版本号、签名状态和 AVF 结论只覆盖当时范围；当前事实以 0.5.3 验收报告与 2026-10-18 方案为准。
+- 历史报告中的测试数量、版本号、签名状态和 AVF 结论只覆盖当时范围；当前事实以 0.6.0 源码与 `docs/standards/VERSIONING.md` 第 4 节的版本状态为准。
