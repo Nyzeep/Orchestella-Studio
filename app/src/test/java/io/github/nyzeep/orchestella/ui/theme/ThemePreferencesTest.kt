@@ -84,7 +84,13 @@ class ThemePreferencesTest {
             store.setThemeId(preset.id)
             assertEquals(preset, store.resolveForMode(true))
             assertEquals(preset, store.resolveForMode(false))
-            assertEquals(if (preset.isDark) ThemeStore.Mode.DARK else ThemeStore.Mode.LIGHT, store.mode())
+            // A fixed palette pins its own brightness instead of LIGHT/DARK.
+            val expectedMode = when {
+                preset.isFixed -> ThemeStore.Mode.FIXED
+                preset.isDark -> ThemeStore.Mode.DARK
+                else -> ThemeStore.Mode.LIGHT
+            }
+            assertEquals(expectedMode, store.mode())
             val restored = ThemeStore(prefs)
             assertEquals(preset, restored.resolveForMode(!preset.isDark))
             restored.setMode(ThemeStore.Mode.SYSTEM)
@@ -114,7 +120,14 @@ class ThemePreferencesTest {
                 assertEquals(0xFF654321.toInt(), resolved.text)
                 assertEquals(resolved.text, resolved.terminalForeground)
                 assertEquals(if (resolved.isDark) ThemeCatalog.catppuccin.ansi else ThemeCatalog.catppuccinLatte.ansi, resolved.ansi)
-                assertEquals(if (mode == ThemeStore.Mode.SYSTEM) systemDark else mode == ThemeStore.Mode.DARK, resolved.isDark)
+                // FIXED locks to the theme's own brightness; it is not "always dark".
+                val expectedDark = when (mode) {
+                    ThemeStore.Mode.SYSTEM -> systemDark
+                    ThemeStore.Mode.LIGHT -> false
+                    ThemeStore.Mode.DARK -> true
+                    ThemeStore.Mode.FIXED -> ThemeCatalog.catppuccin.isDark
+                }
+                assertEquals(expectedDark, resolved.isDark)
             }
             assertEquals(mode, ThemeStore(prefs).mode())
             assertEquals("content://test/images/42", store.backgroundUri())

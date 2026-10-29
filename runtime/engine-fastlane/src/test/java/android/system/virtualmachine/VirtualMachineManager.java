@@ -54,6 +54,7 @@ public final class VirtualMachineManager {
         }
         VirtualMachine vm = factory.create(name, config);
         if (vm != null) {
+            vm.attachManagerForTest(this);
             vm.recordConfigForTest(config);
             persisted.put(name, vm);
             lastVm = vm;
@@ -79,6 +80,11 @@ public final class VirtualMachineManager {
     public synchronized void delete(String name) {
         deletes++;
         persisted.remove(name);
+    }
+
+    /** Eviction path for VirtualMachine.delete(): the instance stops existing. */
+    public synchronized void evictForTest(VirtualMachine vm) {
+        persisted.values().removeIf(candidate -> candidate == vm);
     }
 
     public void setCapabilityReadThrowsForTest(boolean value) {

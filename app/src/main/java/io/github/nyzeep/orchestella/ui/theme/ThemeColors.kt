@@ -104,6 +104,21 @@ object ThemeColors {
     fun boundedSpacing(value: Float, maximum: Float): Float =
         if (value.isFinite()) value.coerceIn(0f, maximum) else 0f
 
+    /**
+     * Monotonic corner-radius merge: the token may only grow existing geometry.
+     *
+     * Session 25 moved [ThemeStore.DEFAULT_CORNER_RADIUS_DP] from 0 to 16, so an
+     * unconditional assignment would flatten pill status badges, circular icon
+     * bases and already-large cards. Rules: a token of 0 keeps the existing
+     * geometry untouched (pre-session-25 behavior), an existing radius larger
+     * than the token wins, otherwise the token applies.
+     */
+    fun clampCornerRadius(existingPx: Float, tokenPx: Float): Float = when {
+        tokenPx <= 0f -> existingPx
+        existingPx.isFinite() && existingPx > tokenPx -> existingPx
+        else -> tokenPx
+    }
+
     private fun isNeutral(rgb: Int): Boolean {
         val channels = listOf(rgb ushr 16 and 255, rgb ushr 8 and 255, rgb and 255)
         return channels.max() - channels.min() < 48

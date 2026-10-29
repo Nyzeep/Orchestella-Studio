@@ -11,6 +11,7 @@ public class VirtualMachine implements AutoCloseable {
     public static final int STATUS_DELETED = 2;
 
     private final FakeVsockNetwork network;
+    private VirtualMachineManager ownerManager;
     private VirtualMachineConfig config;
     private VirtualMachineCallback callback;
     private Executor callbackExecutor;
@@ -127,6 +128,22 @@ public class VirtualMachine implements AutoCloseable {
 
     public void recordConfigForTest(VirtualMachineConfig value) {
         config = value;
+    }
+
+    /** Attached by the manager on create, so delete() can evict like the platform does. */
+    public void attachManagerForTest(VirtualMachineManager manager) {
+        ownerManager = manager;
+    }
+
+    /**
+     * Platform {@code VirtualMachine.delete()} removes the instance files and the
+     * manager's record; a later getOrCreate builds a fresh VM.
+     */
+    public void delete() {
+        status = STATUS_DELETED;
+        if (ownerManager != null) {
+            ownerManager.evictForTest(this);
+        }
     }
 
     public void setStatusForTest(int value) {

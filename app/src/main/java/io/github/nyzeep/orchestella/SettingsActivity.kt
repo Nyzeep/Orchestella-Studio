@@ -129,9 +129,11 @@ class SettingsActivity : AppCompatActivity() {
             themeStore.terminalBackgroundUri() != null
         findViewById<MaterialButton>(R.id.btn_pick_corner_radius)?.text =
             "按钮圆角：" + when (themeStore.cornerRadiusDp()) {
-                0 -> "直角（默认）"
-                16 -> "大圆角 16dp"
-                else -> "小圆角 8dp"
+                ThemeStore.DEFAULT_CORNER_RADIUS_DP -> "大圆角 ${ThemeStore.DEFAULT_CORNER_RADIUS_DP}dp（默认）"
+                12 -> "中圆角 12dp"
+                8 -> "小圆角 8dp"
+                0 -> "直角 0dp（保留 XML 圆角）"
+                else -> "自定义 ${themeStore.cornerRadiusDp()}dp"
             }
         ThemeApplier.bind(this)
     }
@@ -428,14 +430,25 @@ class SettingsActivity : AppCompatActivity() {
         refreshLabels()
 
         findViewById<MaterialButton>(R.id.btn_pick_theme_mode).setOnClickListener {
-            val modes = ThemeStore.Mode.entries
-            androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("明暗模式")
-                .setSingleChoiceItems(modes.map { it.displayName }.toTypedArray(), themeStore.mode().ordinal) { dialog, which ->
-                    themeStore.setMode(modes[which])
-                    dialog.dismiss()
-                    refreshAppearance()
-                }
+            // FIXED is not a manual choice: a single-form palette selects it when picked.
+            val modes = ThemeStore.Mode.entries.filter { it.isUserSelectable }
+            val theme = themeStore.resolve()
+            val builder = androidx.appcompat.app.AlertDialog.Builder(this).setTitle("明暗模式")
+            if (theme.isFixed) {
+                // Read-only note, not a row: this palette owns its brightness, so nothing
+                // here may look like it follows the system.
+                builder.setMessage(
+                    "当前主题「${theme.displayName}」自带明暗，不跟随系统。切换到普通主题后即可手动指定明暗模式。")
+            }
+            builder.setSingleChoiceItems(
+                modes.map { it.displayName }.toTypedArray(),
+                // Filtered list: ordinal would skip FIXED and select the wrong row.
+                modes.indexOf(themeStore.mode()),
+            ) { dialog, which ->
+                themeStore.setMode(modes[which])
+                dialog.dismiss()
+                refreshAppearance()
+            }
                 .setNegativeButton("取消", null)
                 .show().also(ThemeApplier::apply)
         }
@@ -478,8 +491,17 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         findViewById<MaterialButton?>(R.id.btn_pick_corner_radius)?.setOnClickListener {
-            val options = listOf("直角（默认）" to 0, "小圆角 8dp" to 8, "大圆角 16dp" to 16)
-            val current = options.indexOfFirst { it.second == themeStore.cornerRadiusDp() }
+            val standard = listOf(
+                "小圆角 8dp" to 8,
+                "中圆角 12dp" to 12,
+                "大圆角 ${ThemeStore.DEFAULT_CORNER_RADIUS_DP}dp（默认）" to ThemeStore.DEFAULT_CORNER_RADIUS_DP,
+            )
+            val saved = themeStore.cornerRadiusDp()
+            // Legacy 0 (an explicit "square corners" pick) and any historic value stay in the
+            // list, selected as-is: the dialog must never open at -1 nor silently rewrite them.
+            val options = if (standard.any { it.second == saved }) standard else standard + (
+                if (saved == 0) "直角 0dp（保留 XML 圆角）" to 0 else "自定义 ${saved}dp" to saved)
+            val current = options.indexOfFirst { it.second == saved }
             androidx.appcompat.app.AlertDialog.Builder(this)
                 .setTitle("全局按钮圆角")
                 .setSingleChoiceItems(options.map { it.first }.toTypedArray(), current) { dialog, which ->

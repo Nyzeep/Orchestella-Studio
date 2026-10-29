@@ -10,6 +10,7 @@ import android.database.DataSetObserver
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.RectF
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
@@ -370,8 +371,12 @@ object ThemeApplier {
                 // Corner radius is the one deliberate geometry override: 0 keeps the XML look.
                 val radiusPx = cornerRadiusPx(view)
                 if (radiusPx > 0f) {
-                    view.shapeAppearanceModel = view.shapeAppearanceModel.toBuilder()
-                        .setAllCornerSizes(radiusPx).build()
+                    val existing = existingCardCornerPx(view)
+                    val target = ThemeColors.clampCornerRadius(existing, radiusPx)
+                    if (target > existing) {
+                        view.shapeAppearanceModel = view.shapeAppearanceModel.toBuilder()
+                            .setAllCornerSizes(target).build()
+                    }
                 }
             }
             is MaterialButton -> {
@@ -384,7 +389,8 @@ object ThemeApplier {
                 view.strokeColor = states(outline, actionColor, if (secondary) outline else fill)
                 view.rippleColor = ColorStateList.valueOf((theme.text and 0x00FFFFFF) or 0x24000000)
                 val radiusPx = cornerRadiusPx(view)
-                if (radiusPx > 0f) view.cornerRadius = radiusPx.toInt()
+                val target = ThemeColors.clampCornerRadius(view.cornerRadius.toFloat(), radiusPx)
+                if (radiusPx > 0f && target > view.cornerRadius) view.cornerRadius = target.toInt()
             }
             is MaterialToolbar -> {
                 view.setBackgroundColor(theme.background)
@@ -513,7 +519,9 @@ object ThemeApplier {
                     }
                     background.setStroke((view.resources.displayMetrics.density * 1.5f).toInt().coerceAtLeast(1), outline)
                     val radiusPx = cornerRadiusPx(view)
-                    if (radiusPx > 0f) background.cornerRadius = radiusPx
+                    if (radiusPx > 0f) {
+                        background.cornerRadius = ThemeColors.clampCornerRadius(existingCornerPx(background), radiusPx)
+                    }
                 }
                 is MaterialShapeDrawable -> {
                     background.fillColor = ColorStateList.valueOf(resolvedFill)
@@ -529,9 +537,32 @@ object ThemeApplier {
         view.backgroundTintList?.let { view.backgroundTintList = ColorStateList.valueOf(resolvedFill) }
     }
 
-    /** Corner-radius token in pixels; zero means "keep the current geometry untouched". */
+    /**
+     * Corner-radius token in pixels; zero means "keep the current geometry untouched".
+     *
+     * Session 25 raised the default from 0dp to 16dp, so every consumer merges the
+     * token through [ThemeColors.clampCornerRadius]: only-grow, never shrink. That
+     * keeps pill status badges, circular icon bases and oversized cards intact while
+     * button-like geometry still picks up the product's rounded look.
+     */
     private fun cornerRadiusPx(view: View): Float =
         ThemeStore(view.context).cornerRadiusDp() * view.resources.displayMetrics.density
+
+    /** Widest existing corner on an inflated drawable; per-corner radii use their maximum. */
+    private fun existingCornerPx(background: GradientDrawable): Float {
+        val radii = background.cornerRadii
+        return if (radii != null && radii.isNotEmpty()) radii.maxOrNull() ?: 0f else background.cornerRadius
+    }
+
+    /** Widest existing card corner. Relative sizes need bounds, so fall back to the screen size. */
+    private fun existingCardCornerPx(view: MaterialCardView): Float {
+        val width = if (view.width > 0) view.width else view.resources.displayMetrics.widthPixels
+        val height = if (view.height > 0) view.height else view.resources.displayMetrics.heightPixels
+        val bounds = RectF(0f, 0f, width.toFloat(), height.toFloat())
+        val model = view.shapeAppearanceModel
+        return listOf(model.topLeftCornerSize, model.topRightCornerSize,
+            model.bottomRightCornerSize, model.bottomLeftCornerSize).maxOf { it.getCornerSize(bounds) }
+    }
 
     private fun backgroundColor(view: View): Int? = view.backgroundTintList?.defaultColor ?: when (val drawable = view.background) {        is ColorDrawable -> drawable.color
         is GradientDrawable -> drawable.color?.defaultColor

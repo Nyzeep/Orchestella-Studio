@@ -7,6 +7,8 @@ package io.github.nyzeep.orchestella.ui.theme
  *
  * @param terminalBackground distinct from [background] so the console can keep a
  *        denser, more opaque surface even under translucent UI chrome.
+ * @param isFixed the palette exists in exactly one brightness (the mascot lavender).
+ *        Fixed themes ignore the system dark/light setting and never swap variants.
  */
 data class AppTheme(
     val id: String,
@@ -23,8 +25,14 @@ data class AppTheme(
     val terminalBackground: Int,
     val terminalForeground: Int,
     val ansi: List<Int>,
+    val isFixed: Boolean = false,
 ) {
-    val selectionLabel: String get() = "$displayName · ${if (isDark) "暗" else "亮"}"
+    val selectionLabel: String
+        get() = "$displayName · " + when {
+            isFixed -> "固定"
+            isDark -> "暗"
+            else -> "亮"
+        }
 
     companion object {
         const val CUSTOM_ID = "custom"

@@ -1,8 +1,8 @@
 package io.github.nyzeep.orchestella.ui.theme
 
 /**
- * Built-in theme catalog: flagship Constructivist industrial controls, Claude,
- * Moonshot, and the 15 modern developer suites (Catppuccin, GitHub, Linear, Raycast,
+ * Built-in theme catalog: the mascot lavender flagship, Constructivist industrial controls,
+ * Claude, Moonshot, and the 15 modern developer suites (Catppuccin, GitHub, Linear, Raycast,
  * Rose Pine, Vercel, VS Code Plus, Xcode, etc.). The ANSI arrays follow the standard
  * 16-color order: black, red, green, yellow, blue, magenta, cyan, white, then the
  * bright eight.
@@ -16,6 +16,40 @@ object ThemeCatalog {
     ): List<Int> = listOf(
         black, red, green, yellow, blue, magenta, cyan, white,
         brightBlack, brightRed, brightGreen, brightYellow, brightBlue, brightMagenta, brightCyan, brightWhite,
+    )
+
+    // --- Flagship Mascot Theme (first in the picker: it is the product's face) ---
+
+    /**
+     * Lavender industrial-control palette sampled from the mascot artwork. Fixed to a
+     * single brightness: the artwork only exists on a light lavender field, so it has
+     * no paired dark twin and is deliberately absent from the dark/light swap maps.
+     *
+     * Colors come from `tools/branding/sample_palette.py`, which measures
+     * `docs/assets/branding/source-mascot.jpg`; re-run that script after any artwork or
+     * palette change and paste its measured hex values here — do not hand-tune by eye.
+     */
+    val mascotLavender = AppTheme(
+        id = "mascot-lavender",
+        displayName = "看板娘 · 淡紫工控",
+        isDark = false,
+        isFixed = true,
+        background = 0xFFC2A8C7.toInt(),
+        surface = 0xFFDCD0DF.toInt(),
+        surfaceTranslucent = 0xE6DCD0DF.toInt(),
+        primary = 0xFF41375A.toInt(),
+        accent = 0xFF675775.toInt(),
+        text = 0xFF1D1928.toInt(),
+        textDim = 0xFF4A3F57.toInt(),
+        glow = 0xFF675775.toInt(),
+        terminalBackground = 0xFF242424.toInt(),
+        terminalForeground = 0xFFFDF1DB.toInt(),
+        ansi = ansi(
+            0xFF38314A.toInt(), 0xFFCC7070.toInt(), 0xFF839C7C.toInt(), 0xFFCDA870.toInt(),
+            0xFF7B8FC2.toInt(), 0xFFB47BBC.toInt(), 0xFF78A9B0.toInt(), 0xFFD0C7D6.toInt(),
+            0xFFA89DA1.toInt(), 0xFFDD9C94.toInt(), 0xFFACB99C.toInt(), 0xFFDDC194.toInt(),
+            0xFFA7B0CA.toInt(), 0xFFCDA3C7.toInt(), 0xFFA5C1BF.toInt(), 0xFFDFD5D8.toInt(),
+        ),
     )
 
     // --- Strictly Preserved First 6 Themes ---
@@ -857,6 +891,8 @@ object ThemeCatalog {
     val lightToDarkMap: Map<String, String> = darkToLightMap.entries.associate { (k, v) -> v to k }
 
     val all: List<AppTheme> = listOf(
+        // The mascot lavender leads the picker: the first entry is the product's face.
+        mascotLavender,
         constructivistWorkstation, constructivistWorkstationLight,
         constructivistCobalt, constructivistCobaltLight,
         constructivistAmber, constructivistAmberLight,

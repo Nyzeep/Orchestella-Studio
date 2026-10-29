@@ -8,8 +8,18 @@ import androidx.appcompat.app.AppCompatDelegate
 
 /** One persistent appearance source, also usable with in-memory preferences in JVM tests. */
 class ThemeStore(private val prefs: SharedPreferences, private val context: Context? = null) {
+    /**
+     * [FIXED] means "the theme decides, not the system". It is not a manual override:
+     * a palette that only exists in one brightness (the mascot lavender) owns the
+     * decision, and [applyNightMode] honours it so resources inflate in that brightness
+     * too. Picking any ordinary preset replaces it with that preset's own brightness.
+     */
     enum class Mode(val value: String, val displayName: String) {
-        SYSTEM("system", "跟随系统"), LIGHT("light", "浅色"), DARK("dark", "深色")
+        SYSTEM("system", "跟随系统"), LIGHT("light", "浅色"), DARK("dark", "深色"),
+        FIXED("fixed", "固定（主题自带明暗）");
+
+        /** Modes the user may choose directly; FIXED is selected by picking a fixed theme. */
+        val isUserSelectable: Boolean get() = this != FIXED
     }
 
     constructor(context: Context) : this(
@@ -38,8 +48,15 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
             return
         }
         prefs.edit().putString(KEY_THEME_ID, theme.id)
-            .putString(KEY_THEME_MODE, if (theme.isDark) Mode.DARK.value else Mode.LIGHT.value)
+            .putString(KEY_THEME_MODE, modeForTheme(theme).value)
             .remove(KEY_CUSTOM_ACCENT).remove(KEY_CUSTOM_TEXT).apply()
+    }
+
+    /** A fixed palette pins its own brightness; every other preset pins the mode that matches its look. */
+    private fun modeForTheme(theme: AppTheme): Mode = when {
+        theme.isFixed -> Mode.FIXED
+        theme.isDark -> Mode.DARK
+        else -> Mode.LIGHT
     }
 
     /** Existing preferences retain their follow-system behavior until the user makes a selection. */
@@ -55,6 +72,11 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
             Mode.SYSTEM -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
             Mode.LIGHT -> AppCompatDelegate.MODE_NIGHT_NO
             Mode.DARK -> AppCompatDelegate.MODE_NIGHT_YES
+            // FIXED: inflate resources in the theme's own brightness so the first
+            // frame already matches, instead of flashing the system's choice.
+            Mode.FIXED ->
+                if (ThemeCatalog.resolve(themeId()).isDark) AppCompatDelegate.MODE_NIGHT_YES
+                else AppCompatDelegate.MODE_NIGHT_NO
         }
     }
 
@@ -179,8 +201,9 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
 
     // --- Global button corner radius token ---
 
-    /** 0 keeps the current square look; the settings dialog offers 0/8/16 dp. */
-    fun cornerRadiusDp(): Int = prefs.getInt(KEY_CORNER_RADIUS_DP, 0).coerceIn(0, MAX_CORNER_RADIUS_DP)
+    /** 8/12/16 dp are offered; 16 is the default. 0 still means "keep the XML geometry". */
+    fun cornerRadiusDp(): Int = prefs.getInt(KEY_CORNER_RADIUS_DP, DEFAULT_CORNER_RADIUS_DP)
+        .coerceIn(0, MAX_CORNER_RADIUS_DP)
 
     fun setCornerRadiusDp(dp: Int) {
         prefs.edit().putInt(KEY_CORNER_RADIUS_DP, dp.coerceIn(0, MAX_CORNER_RADIUS_DP)).apply()
@@ -240,10 +263,17 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
     }
 
     private fun catalogTheme(id: String?, systemDark: Boolean): AppTheme {
+        val stored = ThemeCatalog.resolve(id)
+        // A single-form palette has nothing to switch to: honour it before the
+        // mode is consulted, so a system dark change can never reach it.
+        if (stored.isFixed) return stored
         val isDark = when (mode()) {
             Mode.SYSTEM -> systemDark
             Mode.LIGHT -> false
             Mode.DARK -> true
+            // FIXED on a non-fixed theme (shell restored our prefs after the theme
+            // changed elsewhere): lock to that theme's own brightness.
+            Mode.FIXED -> stored.isDark
         }
         return ThemeCatalog.resolveForMode(id, isDark)
     }
@@ -286,6 +316,8 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
         const val DEFAULT_TERMINAL_SCRIM_ALPHA = 0xB0
         const val KEY_UI_SURFACE_OPACITY = "ui_surface_opacity_pct"
         const val MAX_CORNER_RADIUS_DP = 24
+        /** Session 25: the product ships with rounded buttons, so the token is no longer opt-in. */
+        const val DEFAULT_CORNER_RADIUS_DP = 16
         const val MIN_TERMINAL_FONT_SP = 10
         const val MAX_TERMINAL_FONT_SP = 22
 

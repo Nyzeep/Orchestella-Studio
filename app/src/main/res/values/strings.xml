@@ -373,6 +373,9 @@
     <string name="about_btn_copy_link">复制链接</string>
     <string name="about_link_copied">链接已复制到剪贴板</string>
     <string name="about_avatar_desc">作者 GitHub 头像</string>
+    <string name="about_mascot_title">看板娘 (Mascot)</string>
+    <string name="about_mascot_caption">Orchestella 看板娘原图，按原始比例完整展示，不裁切。</string>
+    <string name="about_mascot_desc">Orchestella 看板娘原图</string>
     <string name="about_avatar_loading_failed">已显示字母头像（网络加载失败）</string>
     <string name="console_delete_dialog_message_phrase">此操作将永久销毁实例数据，磁盘将被物理抹除且不可恢复！
 

@@ -61,6 +61,13 @@ test_*.md
 # Launcher icon bitmaps: adaptive foreground/monochrome + legacy 48dp icons.
 !/app/src/main/res/mipmap-*/ic_launcher*.png
 
+# About-page artwork: the mascot at its original ratio, zero-crop.
+!/app/src/main/res/drawable-nodpi/mascot_original.png
+
+# Maintainer-curated UI screenshots for the README showcase (session 25).
+!/docs/assets/screenshots/*.png
+!/docs/assets/screenshots/*.jpg
+
 # --- Signing material ------------------------------------------------------
 # Release keystores and their properties must never enter version control
 # (docs/standards/RELEASE-SIGNING.md). These patterns are a safety net, not a
@@ -68,3 +75,9 @@ test_*.md
 *.jks
 *.keystore
 signing.properties
+
+# 会话 25：4K 对齐的旧 QA 载荷隔离库存（勿提交；见目录内 README）
+/artifacts/qa-jniLibs-4k-arm64/
+
+# Local release staging (APK+idsig+sums before upload); binaries are gitignored, sums are not.
+/artifacts/release-*/
