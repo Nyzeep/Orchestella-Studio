@@ -109,88 +109,88 @@
             <Button
                 android:id="@+id/btn_key_esc"
                 android:layout_width="56dp"
-                android:layout_height="44dp"
-                android:minHeight="44dp"
+                android:layout_height="48dp"
+                android:minHeight="48dp"
                 android:text="@string/key_esc"
                 android:textSize="11sp" />
 
             <Button
                 android:id="@+id/btn_key_tab"
                 android:layout_width="56dp"
-                android:layout_height="44dp"
-                android:minHeight="44dp"
+                android:layout_height="48dp"
+                android:minHeight="48dp"
                 android:text="@string/key_tab"
                 android:textSize="11sp" />
 
             <Button
                 android:id="@+id/btn_key_ctrl"
                 android:layout_width="56dp"
-                android:layout_height="44dp"
-                android:minHeight="44dp"
+                android:layout_height="48dp"
+                android:minHeight="48dp"
                 android:text="@string/key_ctrl"
                 android:textSize="11sp" />
 
             <Button
                 android:id="@+id/btn_key_alt"
                 android:layout_width="56dp"
-                android:layout_height="44dp"
-                android:minHeight="44dp"
+                android:layout_height="48dp"
+                android:minHeight="48dp"
                 android:text="@string/key_alt"
                 android:textSize="11sp" />
 
             <Button
                 android:id="@+id/btn_key_shift"
                 android:layout_width="56dp"
-                android:layout_height="44dp"
-                android:minHeight="44dp"
+                android:layout_height="48dp"
+                android:minHeight="48dp"
                 android:text="@string/key_shift"
                 android:textSize="11sp" />
 
             <Button
                 android:id="@+id/btn_key_super"
                 android:layout_width="56dp"
-                android:layout_height="44dp"
-                android:minHeight="44dp"
+                android:layout_height="48dp"
+                android:minHeight="48dp"
                 android:text="@string/key_super"
                 android:textSize="11sp" />
 
             <Button
                 android:id="@+id/btn_key_up"
                 android:layout_width="48dp"
-                android:layout_height="44dp"
-                android:minHeight="44dp"
+                android:layout_height="48dp"
+                android:minHeight="48dp"
                 android:text="@string/key_up"
                 android:textSize="12sp" />
 
             <Button
                 android:id="@+id/btn_key_down"
                 android:layout_width="48dp"
-                android:layout_height="44dp"
-                android:minHeight="44dp"
+                android:layout_height="48dp"
+                android:minHeight="48dp"
                 android:text="@string/key_down"
                 android:textSize="12sp" />
 
             <Button
                 android:id="@+id/btn_key_left"
                 android:layout_width="48dp"
-                android:layout_height="44dp"
-                android:minHeight="44dp"
+                android:layout_height="48dp"
+                android:minHeight="48dp"
                 android:text="@string/key_left"
                 android:textSize="12sp" />
 
             <Button
                 android:id="@+id/btn_key_right"
                 android:layout_width="48dp"
-                android:layout_height="44dp"
-                android:minHeight="44dp"
+                android:layout_height="48dp"
+                android:minHeight="48dp"
                 android:text="@string/key_right"
                 android:textSize="12sp" />
 
             <Button
                 android:id="@+id/btn_toggle_ime"
                 android:layout_width="48dp"
-                android:layout_height="44dp"
-                android:minHeight="44dp"
+                android:layout_height="48dp"
+                android:minHeight="48dp"
                 android:text="@string/key_ime"
                 android:textSize="14sp" />
         </LinearLayout>

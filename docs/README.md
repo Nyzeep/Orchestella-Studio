@@ -1,12 +1,14 @@
 # 中文成果与开发文档
 
-主分支源码配置为 **0.5.3 / code503**（`main 4b075c93`，2026-10-21 只读核对）。公开安装包仍为 [v0.4.5 开发预览版](https://github.com/Nyzeep/Orchestella-Studio/releases/tag/v0.4.5)；源码同步不代表新安装包已发布，也不代表全部工单已完成。
+主分支源码配置为 **0.6.0 / code600**（`main 0383393`，2026-10-29「稳定版准备 + 双包」里程碑）。公开安装包仍为 [v0.4.5 开发预览版](https://github.com/Nyzeep/Orchestella-Studio/releases/tag/v0.4.5)；源码同步不代表新安装包已发布，也不代表全部工单已完成。
+
+> 下表「测试」「运行时」等行的计数与结论取自 0.5.3 阶段验收，尚未按 0.6.0 重新统计；四条执行车道的最新数字与四态标注以[四车道决策材料草案](research/ACR-draft-four-lanes-20261029.md)为准。
 
 ## 当前状态
 
 | 维度 | 当前事实 |
 | --- | --- |
-| 源码 / 公开包 | 源码 0.5.3 / code503；公开 release 仍为 v0.4.5 开发预览版 |
+| 源码 / 公开包 | 源码 0.6.0 / code600；公开 release 仍为 v0.4.5 开发预览版 |
 | 发布签名 | v0.4.5 与 0.5.3 验证包均为 Android Debug 证书；生产签名与数据迁移是下一公开版本的门 |
 | 测试 | 773 项 App 测试 / 100 suites；lint 0 Error / 753 Warning；65 项 Guest 检查；8 项 Android 框架场景 |
 | 运行时 | QEMU 是当前唯一有真实设备证据的完整 Linux 路径；QEMU / gvproxy 停止已收敛到单一 RuntimeProcessSupervisor（纯 JVM 验证；真机 20 次启停未测）；跨 Controller 单实例互斥已修复 |
@@ -21,7 +23,7 @@
 
 ## 当前交付与路线
 
-1. [Protected Fast Lane + QEMU Full Lane（2026-10-21）](reports/orchestration/protected-fast-lane-plan-20261021.zh-CN.md)：当前 AVF 研究方向。protected Microdroid 密封 Linux toolbox 作为硬件加速 Fast Lane；QEMU 继续作为完整 Linux Full Lane；non-protected Full Linux 保留为未来备选。ACR-03 未决前不对外声明新 Runtime 类别。
+1. [Protected Fast Lane + QEMU Full Lane（2026-10-21）](reports/orchestration/protected-fast-lane-plan-20261021.zh-CN.md)：当前 AVF 研究方向。protected Microdroid 密封 Linux toolbox 作为隔离 Fast Lane；QEMU 继续作为完整 Linux Full Lane；non-protected Full Linux 保留为未来备选。ACR-03 未决前不对外声明新 Runtime 类别。
 2. [Orchestella 下一阶段优化方案（2026-10-18）](reports/orchestration/next-optimization-plan-20261018.zh-CN.md)：QEMU 全设备可靠可用与发布 P0；生产签名、运行时收敛、单实例锁、输入与 CI 门仍是发布前阻塞。AVF 排序已由 2026-10-21 方案重排。
 3. [0.5.3 限定实现、构建与真机验收报告](reports/orchestration/avf-shizuku-device-20261016.zh-CN.md)：747 项 App 测试、lint 0 Error / 748 Warning、8 项 Android 框架验收，以及独立 Debian QA 的 QEMU / systemd / 日志与停止结果。
 4. [源码与中文成果同步（2026-10-17）](reports/orchestration/github-source-sync-20261017.zh-CN.md)：0.5.3 可靠性改进与 Protected AVF 规划的公开同步记录。
@@ -31,6 +33,8 @@
 
 Fast Lane 的实现规格见 [fastlane-cross-lane-spec-20261021](reports/orchestration/fastlane-cross-lane-spec-20261021.zh-CN.md)；并行零设备票与串行真机票见 [fastlane map](../.scratch/orchestella-fastlane/map.md)。并行票完成前不启动真机窗口。
 
+0.6.0 收口材料：[36 域收尾与 ACR 材料（2026-10-29）](research/2026-10-29-36domain-wrapup-and-acr-material.zh-CN.md)，由主会话入库，汇总结论与待裁项；它是本轮 ACR 的输入，不是实施承诺。
+
 ## 研究依据
 
 - [Shizuku / AVF 综合研究](research/2026-10-15-avf-shizuku-upgrade.md)。
@@ -39,6 +43,8 @@ Fast Lane 的实现规格见 [fastlane-cross-lane-spec-20261021](reports/orchest
 - [Protected Fast Lane × QEMU 交叉优化参考调研](research/2026-10-21-cross-lane-reference-survey.md)：Termux/PRoot/glibc/gvproxy/DroidVM/Podroid/AOSP 的借鉴与边界；distcc 跨车道设计。
 - [构建、CI 与开发预览发布可靠性](research/2026-10-15-build-release-reliability.md)。
 - [v0.4.2 终端与运行时下一阶段的有限优化](research/2026-10-15-terminal-runtime-next-phase.md)。
+- [四车道决策材料草案：定位、targetSdk 36 取舍与文案纪律（2026-10-29）](research/ACR-draft-four-lanes-20261029.md)：proot/bare、pVM、QEMU、UML 的机制、性能数字与「不可横比」口径的唯一权威来源，含四态标注与撤销条件。
+- [AVF 自定义内核资产调研（2026-10-29）](research/avf-kernel-asset-20261029.md)：non-protected 自定义内核方向的评估材料；由并行会话入库。
 - 各票的 [实施报告](reports/tickets/) 与 [独立审查](reports/reviews/)。历史报告中的版本、未提交和设备状态按当时快照理解。
 
 真实本应用 **AVF Guest 成功样本仍为 0**，本次没有 AVF 性能提升声明。平台 feature、权限、模式声明、Microdroid、合成 FD 和 QEMU 验证都不能互相替代。
@@ -48,6 +54,7 @@ Fast Lane 的实现规格见 [fastlane-cross-lane-spec-20261021](reports/orchest
 | 目录 | 内容 | 说明 |
 | --- | --- | --- |
 | [`adr/`](adr/) | 20 份已接受架构决策 | 索引见 [`adr/README.md`](adr/README.md)；ADR-0015 缺失，禁止按标题补造 |
+| [`assets/branding/`](assets/branding/README.md) | 应用图标与品牌静图 | 说明见 [`assets/branding/README.md`](assets/branding/README.md)；源美术、构图语义与再生成脚本 `tools/branding/make_app_icons.py` |
 | [`research/`](research/) | 当前有效研究 | 旧 Phase 5 专项已移入 [`research/archive/`](research/archive/README.md) |
 | [`reports/orchestration/`](reports/orchestration/) | 当前主线方案与阶段报告 | 以 2026-10-21 Fast Lane 方案与 2026-10-18 P0 方案为入口 |
 | [`reports/tickets/`](reports/tickets/)、[`reviews/`](reports/reviews/)、[`prototypes/`](reports/prototypes/) | 当前 AVF / Shizuku 工单、最终轮审查与原型 | 首审与前轮复审已移入归档 |
@@ -60,6 +67,7 @@ Fast Lane 的实现规格见 [fastlane-cross-lane-spec-20261021](reports/orchest
 ## 代码与验证入口
 
 - [Guest 生成与严格字节校验](../guest-assets/scripts/sync-guest-init.py)：清洁检出先使用 `--prepare-resource`，再使用只读 `--check`，不要先覆盖 canonical 来掩盖漂移。
+- [品牌资产与图标生成](assets/branding/README.md)：`app-icon-512.png` 为 README / 商店静图；由 `tools/branding/make_app_icons.py` 从源美术重生成，脚本会断言尺寸与 alpha 约束。
 - [设备与样本工具说明](../tools/device-validation/README.avf-validation.zh-CN.md)：Python 3.12+；固定查询、受限路径、显式外部输出根。样本工具只校结构与关联，不认证设备物理真实性。
 - [隔离 QA 原型](../prototypes/avf-shizuku-identity-probe/README.zh-CN.md)：研究组件和真实产品路径分开，QA 通过不签收原产品升级或 Full Linux 硬件运行。
 - [本地构建](../README.md#本地编译与构建)。完整设备或 Linux fixture 使用独立外部工作目录，保护用户实例，不自动更改系统策略或重新安装工具链。

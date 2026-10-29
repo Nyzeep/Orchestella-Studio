@@ -44,3 +44,27 @@ installer*.png
 screen_*.png
 test_*.md
 *.log
+
+# --- Branding assets -------------------------------------------------------
+# The global *.png / *.jpg rules further up would otherwise drop every
+# launcher icon. Re-include only these paths; /docs/ is ignored as a whole, so
+# each parent has to be re-opened first and its other children re-ignored
+# (`dir/*` keeps the directory walkable without exposing its contents).
+!/docs/
+/docs/*
+!/docs/assets/
+/docs/assets/*
+!/docs/assets/branding/
+!/docs/assets/branding/*.png
+!/docs/assets/branding/*.jpg
+
+# Launcher icon bitmaps: adaptive foreground/monochrome + legacy 48dp icons.
+!/app/src/main/res/mipmap-*/ic_launcher*.png
+
+# --- Signing material ------------------------------------------------------
+# Release keystores and their properties must never enter version control
+# (docs/standards/RELEASE-SIGNING.md). These patterns are a safety net, not a
+# substitute for keeping the material off the repository volume at all.
+*.jks
+*.keystore
+signing.properties
