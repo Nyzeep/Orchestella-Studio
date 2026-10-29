@@ -1,0 +1,52 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'dev.orchestella.umlrunner'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId "dev.orchestella.umlrunner"
+        // targetSdk 必须是 28：>=29 的 app 在 Android 10+ 落 untrusted_app_29+ 域，
+        // nativeLibraryDir 上的 exec 被 SELinux 拒绝；28 落 untrusted_app_27 类域。
+        minSdk 28
+        targetSdk 28
+        versionCode 1
+        versionName "0.1.0"
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
+    }
+
+    // UML 内核与 stub 以 lib*.so 形式进 nativeLibraryDir。
+    // useLegacyPackaging=true → 安装时解包到 nativeLibraryDir（否则 APK 内直读，没有可 exec 的实体文件）。
+    // keepDebugSymbols 覆盖 AGP 默认 strip：这两个不是真 .so，被 strip 会破坏内核镜像。
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+            keepDebugSymbols += '**/libuml_kernel.so'
+            keepDebugSymbols += '**/libuml_stub.so'
+        }
+    }
+
+    buildTypes {
+        debug {
+            minifyEnabled false
+        }
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}

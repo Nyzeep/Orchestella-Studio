@@ -1,0 +1,235 @@
+#!/bin/busybox sh
+
+set -u
+
+session=
+guest_cwd=/
+protocol=
+
+mount_proc() { mount -t proc proc /proc 2>/dev/null || test -r /proc/self/status; }
+mount_sys() { mount -t sysfs sysfs /sys 2>/dev/null || test -d /sys/kernel; }
+mount_dev() { mount -t devtmpfs devtmpfs /dev 2>/dev/null || test -c /dev/null; }
+# cgroup v2 is what container runtimes expect.  Best effort: the kernel may
+# have been built without cgroups, and boot must not depend on a feature the
+# caller did not ask for.  cgroup.controllers is the proof the mount worked.
+mount_cgroup() { mkdir -p /sys/fs/cgroup 2>/dev/null; mount -t cgroup2 none /sys/fs/cgroup 2>/dev/null || test -f /sys/fs/cgroup/cgroup.controllers; }
+# devtmpfs provides /dev/ptmx but not /dev/pts.  Without devpts, allocating a
+# pty fails with ENXIO ("unable to allocate pty"), which breaks sudo, sshd,
+# screen and anything else that opens a terminal of its own.
+# The fallback must prove the mount happened: mkdir alone would always succeed
+# and hide a failed mount behind a directory that exists but is not devpts.
+mount_pts() { mkdir -p /dev/pts 2>/dev/null; mount -t devpts devpts /dev/pts 2>/dev/null || [ -c /dev/pts/ptmx ]; }
+power_down() { sync; poweroff -f; while :; do sleep 3600; done; }
+
+if ! mount_proc || ! mount_sys || ! mount_dev || ! mount_pts; then
+    printf '%s\n' 'UM_SESSION_ERROR=125'
+    power_down
+fi
+mount_cgroup
+
+cmdline=$(cat /proc/cmdline 2>/dev/null || true)
+remaining=$cmdline
+space=' '
+tab=$(printf '\t')
+while [ -n "$remaining" ]; do
+    argument=
+    while [ -n "$remaining" ]; do
+        case "$remaining" in
+            "$space"*|"$tab"*)
+                remaining=${remaining#?}
+                if [ -n "$argument" ]; then break; fi
+                ;;
+            *)
+                first=${remaining%"${remaining#?}"}
+                argument=$argument$first
+                remaining=${remaining#?}
+                ;;
+        esac
+    done
+    case "$argument" in
+        neoproot_protocol=*) protocol=${argument#neoproot_protocol=} ;;
+        neoproot_session=*) session=${argument#neoproot_session=} ;;
+        neoproot_cwd=*) guest_cwd=${argument#neoproot_cwd=} ;;
+    esac
+done
+
+if [ -z "$session" ]; then
+    if [ "$protocol" = session-v1 ]; then
+        printf '%s\n' 'UM_SESSION_ERROR=125'
+        power_down
+    fi
+    /bin/busybox sh /um-command.sh
+    rc=$?
+    printf 'UM_COMMAND_EXIT=%s\n' "$rc"
+    if [ "$rc" -eq 0 ]; then echo UMARM_BOOT_OK; fi
+    power_down
+fi
+
+case "$session" in
+    /*) ;;
+    *) printf '%s\n' 'UM_SESSION_ERROR=125'; power_down ;;
+esac
+case "$guest_cwd" in
+    /*) ;;
+    *) printf '%s\n' 'UM_SESSION_ERROR=125'; power_down ;;
+esac
+case "$session" in
+    /|*..*|*,*|*' '*|*'	'*)
+        printf '%s\n' 'UM_SESSION_ERROR=125'
+        power_down
+        ;;
+esac
+case "$guest_cwd" in
+    *..*|*,*|*' '*|*'	'*)
+        printf '%s\n' 'UM_SESSION_ERROR=125'
+        power_down
+        ;;
+esac
+
+mount -t tmpfs tmpfs /run 2>/dev/null || test -d /run || {
+    printf '%s\n' 'UM_SESSION_ERROR=125'
+    power_down
+}
+if [ -L /run/neoproot ]; then
+    printf '%s\n' 'UM_SESSION_ERROR=125'
+    power_down
+fi
+mkdir -p /run/neoproot || { printf '%s\n' 'UM_SESSION_ERROR=125'; power_down; }
+mount none /run/neoproot -t hostfs -o "$session" 2>/dev/null || {
+    printf '%s\n' 'UM_SESSION_ERROR=125'
+    power_down
+}
+if [ ! -x /run/neoproot/init.sh ]; then
+    printf '%s\n' 'UM_SESSION_ERROR=125'
+    power_down
+fi
+
+# init protocol 2: declare what this init implements before init.sh runs.  The
+# supervisor's wrapper only checks the declaration when the session asked for
+# binds, so an image whose init predates this file fails loudly instead of
+# running the command with its binds silently absent.  Writing the file is
+# best effort: a session without binds must boot even when it cannot be written.
+{
+    printf '%s\n' 'neoproot-init-protocol=2'
+    printf '%s\n' 'feature=binds'
+} >/run/neoproot/init-features 2>/dev/null
+
+# hostfs cannot mount a file as a filesystem root, so a file bind record names
+# its parent directory as the source; the parent is mounted on scratch space
+# under /run and the file is bound out of it.
+mount_bind_file() {
+    bind_index=$1
+    bind_source=$2
+    bind_target=$3
+    bind_mode=$4
+    bind_name=$5
+    bind_scratch=/run/.neoproot-bind-$bind_index
+
+    case "$bind_target" in
+        */*) bind_parent=${bind_target%/*} ;;
+        *) bind_parent= ;;
+    esac
+    [ -n "$bind_parent" ] || bind_parent=/
+    mkdir -p "$bind_parent" 2>/dev/null
+    [ -e "$bind_target" ] || : >"$bind_target" 2>/dev/null
+    if [ ! -e "$bind_target" ]; then
+        bind_error="UM_BIND_ERROR=$bind_target:missing-target"
+        return 1
+    fi
+    mkdir -p "$bind_scratch" 2>/dev/null
+    if ! mount -t hostfs -o "$bind_source" none "$bind_scratch" 2>/dev/null; then
+        bind_error="UM_BIND_ERROR=$bind_target:mount-failed"
+        return 1
+    fi
+    if [ "$bind_mode" = "ro" ] &&
+        ! mount -o remount,ro "$bind_scratch" 2>/dev/null; then
+        bind_error="UM_BIND_ERROR=$bind_target:readonly-failed"
+        return 1
+    fi
+    if ! mount --bind "$bind_scratch/$bind_name" "$bind_target" 2>/dev/null; then
+        bind_error="UM_BIND_ERROR=$bind_target:bind-failed"
+        return 1
+    fi
+    return 0
+}
+
+# Mount the bind list the supervisor left in the session, one record per line:
+#
+#     source<TAB>target<TAB>dir|file<TAB>ro|rw<TAB>name
+#
+# A failed bind is fatal: the command must not run with its binds missing.
+mount_binds() {
+    bind_index=0
+    bind_tab=$(printf '\t')
+    while IFS=$bind_tab read -r bind_source bind_target bind_type bind_mode bind_name; do
+        case "$bind_source" in
+            '' | '#'*) continue ;;
+        esac
+        bind_index=$((bind_index + 1))
+        case "$bind_target" in
+            /run/neoproot | /run/neoproot/*)
+                bind_error="UM_BIND_ERROR=$bind_target:target-inside-session"
+                return 1
+                ;;
+            /*) ;;
+            *)
+                bind_error="UM_BIND_ERROR=$bind_target:relative-target"
+                return 1
+                ;;
+        esac
+        case "$bind_type" in
+            dir)
+                mkdir -p "$bind_target" 2>/dev/null
+                if [ ! -d "$bind_target" ]; then
+                    bind_error="UM_BIND_ERROR=$bind_target:missing-target"
+                    return 1
+                fi
+                if ! mount -t hostfs -o "$bind_source" none "$bind_target" 2>/dev/null; then
+                    bind_error="UM_BIND_ERROR=$bind_target:mount-failed"
+                    return 1
+                fi
+                if [ "$bind_mode" = "ro" ] &&
+                    ! mount -o remount,ro "$bind_target" 2>/dev/null; then
+                    bind_error="UM_BIND_ERROR=$bind_target:readonly-failed"
+                    return 1
+                fi
+                ;;
+            file)
+                mount_bind_file "$bind_index" "$bind_source" "$bind_target" \
+                    "$bind_mode" "$bind_name" || return 1
+                ;;
+            *)
+                bind_error="UM_BIND_ERROR=$bind_target:bad-type"
+                return 1
+                ;;
+        esac
+    done </run/neoproot/binds
+    return 0
+}
+
+if [ -f /run/neoproot/binds ]; then
+    bind_error=
+    if ! mount_binds; then
+        # The supervisor reads the first line of protocol-error and fails the
+        # run on it; status 125 makes the refusal visible to anything that only
+        # looks at the command status.  init.sh is never reached.
+        printf '%s\n' "$bind_error" >/run/neoproot/protocol-error 2>/dev/null || true
+        printf '%s\n' "$bind_error"
+        printf '%s\n' '125' >/run/neoproot/status 2>/dev/null || true
+        printf '%s\n' 'UM_SESSION_ERROR=125'
+        power_down
+    fi
+fi
+
+cd "$guest_cwd" 2>/dev/null || {
+    printf '%s\n' '126' > /run/neoproot/status 2>/dev/null || true
+    printf '%s\n' '126'
+    printf '%s\n' 'UM_COMMAND_EXIT=126'
+    power_down
+}
+/bin/busybox sh /run/neoproot/init.sh
+rc=$?
+printf '%s\n' "$rc" > /run/neoproot/status
+printf 'UM_COMMAND_EXIT=%s\n' "$rc"
+if [ "$rc" -eq 0 ]; then echo UMARM_BOOT_OK; fi
+power_down
