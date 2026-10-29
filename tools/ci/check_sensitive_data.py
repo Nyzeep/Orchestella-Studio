@@ -67,6 +67,11 @@ Calibration decisions
 * ``/tmp``, ``/var/tmp``, ``/dev/shm`` and SDK install prefixes are generic
   documented locations, not host-user paths; only Windows drive paths and
   home-directory paths are findings.
+* Product artwork is a deliberate exception to the media rule: the launcher
+  icons under ``app/src/main/res/mipmap-*`` ship inside the APK and the
+  branding sheet under ``docs/assets/branding/`` documents the app itself, so
+  both must be tracked. The allowlist is two literal path prefixes and nothing
+  else — a screenshot dropped anywhere else is still a finding.
 * A tracked ``gradle.properties`` is a finding only when it carries signing
   credential keys (store/key password, store file, key alias, keystore).
   The repository intentionally tracks a benign build-config
@@ -111,6 +116,15 @@ MEDIA_SUFFIXES = (
     ".webm",
     ".mkv",
     ".avi",
+)
+
+# Product artwork that ships inside the APK or documents the app itself. It is
+# not developer-local media: launcher icons and the branding sheet are part of
+# the release artifact and have to be tracked. Keep this list at two literal
+# prefixes; anything wider turns the media rule into decoration.
+PRODUCT_MEDIA_PREFIXES = (
+    "app/src/main/res/mipmap-",
+    "docs/assets/branding/",
 )
 
 KEY_SUFFIXES = (".jks", ".keystore", ".p12", ".pfx", ".pem", ".key")
@@ -322,7 +336,7 @@ def _path_categories(
     lower = path.lower()
     basename = lower.rsplit("/", 1)[-1]
     categories: list[str] = []
-    if lower.endswith(MEDIA_SUFFIXES):
+    if lower.endswith(MEDIA_SUFFIXES) and not lower.startswith(PRODUCT_MEDIA_PREFIXES):
         categories.append("tracked_media")
     if lower.endswith(KEY_SUFFIXES):
         categories.append("key_material")
@@ -485,6 +499,10 @@ def run_self_test() -> bool:
         fixtures = {
             "docs/media/frame.png": "fixture",
             "artifacts/clip.mp4": "fixture",
+            # Product artwork is exempt; these two must NOT raise the count
+            # below, which is what pins the allowlist to exactly these paths.
+            "app/src/main/res/mipmap-mdpi/ic_launcher.png": "fixture",
+            "docs/assets/branding/app-icon-512.png": "fixture",
             "signing/release.jks": "fixture",
             "keys/app.pem": "fixture",
             ".env": "fixture",
