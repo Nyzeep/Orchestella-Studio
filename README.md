@@ -26,7 +26,7 @@
 | ![工作台](docs/assets/screenshots/dashboard.jpg) | ![发行版目录](docs/assets/screenshots/distros.jpg) | ![硬件配额](docs/assets/screenshots/wizard-hardware.jpg) |
 | :---: | :---: | :---: |
 | **工作台 · 实时遥测** | **发行版目录 · 一键装配** | **新建实例 · 硬件配额** |
-| ![存储配额](docs/assets/screenshots/wizard-storage.jpg) | ![启动与部署](docs/assets/screenshots/wizard-deploy.jpg) | ![终端](docs/assets/screenshots/terminal.png) |
+| ![存储配额](docs/assets/screenshots/wizard-storage.jpg) | ![启动与部署](docs/assets/screenshots/wizard-deploy.jpg) | ![终端](docs/assets/screenshots/terminal.jpg) |
 | **新建实例 · 存储配额** | **新建实例 · 启动与部署** | **真实 Linux 终端** |
 
 ## 当前实现的功能

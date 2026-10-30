@@ -95,6 +95,8 @@ class MainActivity : AppCompatActivity() {
 
     private var avfReadiness: AvfCapabilityEvaluator.AvfReadiness? = null
     private lateinit var themeStore: ThemeStore
+    private lateinit var updateCenter: io.github.nyzeep.orchestella.update.UpdateCenter
+    private var aboutUpdateBadge: View? = null
     private var activeTheme: AppTheme? = null
     private var wizardModel: AvfAuthorizationWizardModel? = null
     private var pendingExportInstance: InstanceLifecycle.Instance? = null
@@ -241,6 +243,8 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.about_button)?.setOnClickListener {
             startActivity(Intent(this, AboutActivity::class.java))
         }
+        updateCenter = io.github.nyzeep.orchestella.update.UpdateCoordinator.center(this)
+        aboutUpdateBadge = findViewById(R.id.about_update_badge)
         findViewById<View>(R.id.ssh_manager_button)?.setOnClickListener {
             io.github.nyzeep.orchestella.ssh.SshManagerDialog.show(this)
         }
@@ -754,6 +758,15 @@ class MainActivity : AppCompatActivity() {
         if (::themeStore.isInitialized) {
             applyThemeToDashboard()
         }
+        refreshUpdateBadge()
+        if (::updateCenter.isInitialized) {
+            // Automatic, throttled, silent: the badge appears only when a newer release exists.
+            io.github.nyzeep.orchestella.update.UpdateCoordinator.checkInBackground(
+                this, BuildConfig.VERSION_NAME
+            ) {
+                if (!isFinishing && !isDestroyed) refreshUpdateBadge()
+            }
+        }
         if (::instanceStore.isInitialized) {
             avfReadiness = AvfCapabilityEvaluator.evaluate(AvfHostFactsProbe.probe(this))
             refreshWizardEntry()
@@ -766,6 +779,16 @@ class MainActivity : AppCompatActivity() {
         }
         dashboardHandler.removeCallbacks(refreshDashboard)
         dashboardHandler.post(refreshDashboard)
+    }
+
+    /** The About entry carries the only upgrade marker in the app; nothing else may add one. */
+    private fun refreshUpdateBadge() {
+        val pending = if (::updateCenter.isInitialized) {
+            updateCenter.pending(BuildConfig.VERSION_NAME)
+        } else {
+            null
+        }
+        aboutUpdateBadge?.visibility = if (pending != null) View.VISIBLE else View.GONE
     }
 
     override fun onPause() {
@@ -959,6 +982,8 @@ class MainActivity : AppCompatActivity() {
                     btn.strokeWidth = (1 * resources.displayMetrics.density).toInt()
                 }
             }
+            aboutUpdateBadge?.backgroundTintList =
+                android.content.res.ColorStateList.valueOf(theme.accent)
 
             findViewById<View>(R.id.system_status_card)?.let { card ->
                 if (card is com.google.android.material.card.MaterialCardView) {

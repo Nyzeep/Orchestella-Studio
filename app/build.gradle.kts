@@ -162,13 +162,13 @@ android {
         } else {
             36
         }
-        // 0.6.1 / 601 — the rootfs-catalog repair: every distro but Ubuntu could not
-        // download at all (pruned LXC snapshots + a self-hosted release that did not
-        // exist), and the mirror probe now ranks by sampled transfer speed instead of
-        // HEAD latency. No new user-visible feature, so PATCH (VERSIONING.md §3.2).
+        // 0.6.2 / 602 — automatic update check with an About-entry badge, the in-app update
+        // card (download / snooze), a consistent unavailable state in the instance sheet and
+        // a uniform README screenshot set. No new shell capability, so MINOR stays at 6 and
+        // PATCH moves (VERSIONING.md §3.2).
         // versionCode = MAJOR*10000 + MINOR*100 + PATCH (VERSIONING.md §2).
-        versionCode = 601
-        versionName = "0.6.1"
+        versionCode = 602
+        versionName = "0.6.2"
         buildConfigField("boolean", "DEVELOPMENT_PREVIEW", "true")
         buildConfigField("boolean", "ACCELERATOR_LANE_ENABLED", acceleratorLaneEnabled.toString())
         // Payload builds store native libraries uncompressed and 16 KB aligned
