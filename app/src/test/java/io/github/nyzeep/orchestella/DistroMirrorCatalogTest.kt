@@ -22,11 +22,16 @@ class DistroMirrorCatalogTest {
     @Test
     fun debianMirrorsLeadWithTunaLxcImagesThenPinnedSourceAndProxies() {
         val manifest = OfficialDebianCatalog.debian()
-        // Debian moved to its own dated cloud build; the pruned LXC snapshot and the
-        // GitHub-only copy are no longer candidates.
-        val mirrors = DistroMirrorCatalog.mirrorsFor(manifest)
-        assertEquals(1, mirrors.size)
-        assertEquals(manifest.source().toString(), mirrors[0])
+        val pinned =
+            "https://github.com/Nyzeep/Orchestella-Studio/releases/download/distro-catalog-v1/debian-13-rootfs.tar.xz"
+        val proxies = listOf("ghfast.top", "gh-proxy.com", "ghproxy.net", "hk.gh-proxy.com", "mirror.ghproxy.com")
+            .map { "https://$it/$pinned" }
+        val expected = listOf(
+            "https://mirrors.tuna.tsinghua.edu.cn/lxc-images/images/debian/trixie/arm64/default/20261013_05%3A24/rootfs.tar.xz",
+            pinned,
+        ) + proxies
+
+        assertEquals(expected, DistroMirrorCatalog.mirrorsFor(manifest))
     }
 
     @Test
@@ -70,14 +75,12 @@ class DistroMirrorCatalogTest {
 
     @Test
     fun mirrorsFollowCatalogVersionBumpWithoutManualMirrorEdits() {
-        // Fedora still ships from the self-hosted GitHub catalog asset, so it is the branch
-        // that exercises "a catalog bump propagates to every proxy without editing URLs".
         val bumped = DistroManifest(
-            "fedora",
-            "44",
+            "debian",
+            "14",
             "aarch64",
-            "https://github.com/Nyzeep/Orchestella-Studio/releases/download/v0.5.0/fedora-44-rootfs.tar.xz",
-            "fedora-44-rootfs.tar.xz",
+            "https://github.com/Nyzeep/Orchestella-Studio/releases/download/v0.5.0/debian-14-rootfs.tar.xz",
+            "debian-14-rootfs.tar.xz",
             "aa".repeat(32),
             95_000_000L,
         )
@@ -85,15 +88,15 @@ class DistroMirrorCatalogTest {
         val mirrors = DistroMirrorCatalog.mirrorsFor(bumped)
 
         assertEquals(
-            "https://github.com/Nyzeep/Orchestella-Studio/releases/download/v0.5.0/fedora-44-rootfs.tar.xz",
+            "https://github.com/Nyzeep/Orchestella-Studio/releases/download/v0.5.0/debian-14-rootfs.tar.xz",
             mirrors[1],
         )
         assertEquals(
-            "https://ghfast.top/https://github.com/Nyzeep/Orchestella-Studio/releases/download/v0.5.0/fedora-44-rootfs.tar.xz",
+            "https://ghfast.top/https://github.com/Nyzeep/Orchestella-Studio/releases/download/v0.5.0/debian-14-rootfs.tar.xz",
             mirrors[2],
         )
         assertEquals(
-            "https://gh-proxy.com/https://github.com/Nyzeep/Orchestella-Studio/releases/download/v0.5.0/fedora-44-rootfs.tar.xz",
+            "https://gh-proxy.com/https://github.com/Nyzeep/Orchestella-Studio/releases/download/v0.5.0/debian-14-rootfs.tar.xz",
             mirrors[3],
         )
     }
