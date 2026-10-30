@@ -21,11 +21,15 @@
 
 ## Screenshots
 
-| Workbench | Distro catalog |
+Captured on a real device (SM8850 / Android 16) with the default "Mascot · Lavender" theme.
+
+| Workbench · live telemetry | Distro catalog · one-tap install |
 | :---: | :---: |
 | ![Workbench dashboard](docs/assets/screenshots/dashboard.jpg) | ![Distro catalog](docs/assets/screenshots/distros.jpg) |
-| **Instance management** | **Real Linux terminal** |
-| ![Instances](docs/assets/screenshots/instances.jpg) | ![Terminal](docs/assets/screenshots/terminal.png) |
+| **New instance · vCPU & RAM** | **New instance · virtual disk** |
+| ![Resource quota](docs/assets/screenshots/wizard-hardware.jpg) | ![Disk quota](docs/assets/screenshots/wizard-storage.jpg) |
+| **New instance · boot & deploy** | **Real Linux terminal** |
+| ![Boot and deploy](docs/assets/screenshots/wizard-deploy.jpg) | ![Terminal](docs/assets/screenshots/terminal.png) |
 
 ## What it does today
 
@@ -53,9 +57,10 @@
 - **30+ built-in themes** (Constructivist / Claude / Catppuccin / GitHub / Gruvbox /
   Rose Pine…), each carrying UI colours plus a 16-colour terminal ANSI palette, with
   custom accent and text colours.
-- **The fixed "看板娘 · 淡紫工控" (Mascot Lavender) theme**: colours measured from the
-  artwork (`tools/branding/sample_palette.py`; every text/background pair ≥ 4.5:1 WCAG).
-  One form only — it ignores the system's dark/light setting.
+- **The fixed "看板娘 · 淡紫工控" (Mascot Lavender) theme — the default**: colours measured
+  from the artwork (`tools/branding/sample_palette.py`; every text/background pair
+  ≥ 4.5:1 WCAG). One form only — it ignores the system's dark/light setting, and the
+  first row of `THEME SELECTION` on the settings tab switches back to it in one tap.
 - Three-tier global button corner radius (8 / 12 / 16dp, 16 default), wallpaper and
   surface opacity, and an app icon that is the original artwork mapped 1:1 (zero
   processing).

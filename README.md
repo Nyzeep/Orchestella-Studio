@@ -21,11 +21,15 @@
 
 ## 界面预览
 
-| 工作台 | 发行版目录 |
+截图取自真机（SM8850 / Android 16），默认主题为「看板娘 · 淡紫工控」。
+
+| 工作台 · 实时遥测 | 发行版目录 · 一键装配 |
 | :---: | :---: |
 | ![工作台仪表盘](docs/assets/screenshots/dashboard.jpg) | ![发行版目录](docs/assets/screenshots/distros.jpg) |
-| **实例管理** | **真实 Linux 终端** |
-| ![实例管理](docs/assets/screenshots/instances.jpg) | ![终端](docs/assets/screenshots/terminal.png) |
+| **新建实例 · 硬件配额** | **新建实例 · 存储配额** |
+| ![硬件配额](docs/assets/screenshots/wizard-hardware.jpg) | ![存储配额](docs/assets/screenshots/wizard-storage.jpg) |
+| **新建实例 · 启动与部署** | **真实 Linux 终端** |
+| ![启动与部署](docs/assets/screenshots/wizard-deploy.jpg) | ![终端](docs/assets/screenshots/terminal.png) |
 
 ## 当前实现的功能
 
@@ -46,8 +50,9 @@
 
 - **30+ 内置主题**（构成主义工控 / Claude / Catppuccin / GitHub / Gruvbox / Rose Pine…），
   每套含 UI 配色与终端 16 色 ANSI 调色板，自定义强调色与文字色。
-- **「看板娘 · 淡紫工控」固定主题**：配色对原画实测采样（`tools/branding/sample_palette.py`，
-  全部文字/背景组合 WCAG ≥ 4.5:1），只有一种形态、不随系统深浅色切换。
+- **「看板娘 · 淡紫工控」固定主题（默认）**：配色对原画实测采样（`tools/branding/sample_palette.py`，
+  全部文字/背景组合 WCAG ≥ 4.5:1），只有一种形态、不随系统深浅色切换；配置页
+  `THEME SELECTION` 卡片首位可一键切回。
 - 全局按钮圆角三档（8 / 12 / 16dp，默认 16），墙纸与表面不透明度，应用图标 =
   原画 1:1 直出（零处理）。
 
