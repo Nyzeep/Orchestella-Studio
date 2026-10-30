@@ -44,6 +44,7 @@ import io.github.nyzeep.orchestella.runtime.distro.DistroCatalogRegistry
 import io.github.nyzeep.orchestella.runtime.distro.DistroManifest
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
 import io.github.nyzeep.orchestella.runtime.network.download.DownloadProgressCallback
+import io.github.nyzeep.orchestella.runtime.network.download.MirrorHealthProbe
 import io.github.nyzeep.orchestella.runtime.network.download.ResilientDownloadEngine
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -1297,7 +1298,14 @@ class SetupWizardActivity : AppCompatActivity() {
         backgroundExecutor.execute {
             try {
                 val engine = ResilientDownloadEngine()
-                engine.download(mirrors, targetPath, manifest.sha256(), object : DownloadProgressCallback {
+                // Rank before the first byte: the catalog is CN-first, which costs a VPN user
+                // minutes of dead-mirror retries before the working node is reached.
+                val ranked = MirrorHealthProbe.rankMirrors(mirrors)
+                runOnUiThread {
+                    txtDownloadSpeedEta.text = "已探测 ${mirrors.size} 个镜像节点，优先使用最快的一个"
+                    txtDownloadMirror.text = "镜像节点：${ranked.firstOrNull() ?: "--"}"
+                }
+                engine.download(ranked, targetPath, manifest.sha256(), object : DownloadProgressCallback {
                     override fun onProgress(
                         downloadedBytes: Long,
                         totalBytes: Long,

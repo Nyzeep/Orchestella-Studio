@@ -121,6 +121,12 @@ public class ResilientDownloadEngine implements DownloadEngine {
                 } catch (ChecksumMismatchException cme) {
                     // Fail-fast on checksum mismatch - tampering or unrecoverable corruption
                     throw cme;
+                } catch (PermanentHttpStatusException permanent) {
+                    // This mirror will not serve the artifact; skip straight to the next one.
+                    lastError = permanent;
+                    String nextMirror = (mIndex + 1 < mirrorUrls.size()) ? mirrorUrls.get(mIndex + 1) : null;
+                    cb.onMirrorFailover(currentMirror, nextMirror, permanent);
+                    break;
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
                     throw new IOException("Download interrupted for " + destination.getFileName(), ie);
@@ -152,6 +158,23 @@ public class ResilientDownloadEngine implements DownloadEngine {
                 lastError);
     }
 
+    /**
+     * A 4xx that no amount of retrying will fix (404 for a pruned snapshot, 403 from a
+     * proxy that does not carry the path). Retrying it three times with exponential
+     * backoff costs the user half a minute per dead mirror before the failover happens.
+     */
+    private static final class PermanentHttpStatusException extends IOException {
+        private static final long serialVersionUID = 1L;
+
+        PermanentHttpStatusException(String message) { super(message); }
+    }
+
+    private static boolean isPermanentlyUnavailable(int code) {
+        return code >= 400 && code < 500
+                && code != HttpURLConnection.HTTP_CLIENT_TIMEOUT        // 408: retry
+                && code != 429;                                        // 429: retry
+    }
+
     private void downloadFromMirror(
             String mirrorUrl,
             Path partPath,
@@ -178,7 +201,10 @@ public class ResilientDownloadEngine implements DownloadEngine {
 
             // Verify status code
             if (responseCode != HttpURLConnection.HTTP_OK && responseCode != HttpURLConnection.HTTP_PARTIAL) {
-                throw new IOException("HTTP " + responseCode + " " + conn.getResponseMessage() + " for " + mirrorUrl);
+                String message = "HTTP " + responseCode + " " + conn.getResponseMessage() + " for " + mirrorUrl;
+                throw isPermanentlyUnavailable(responseCode)
+                        ? new PermanentHttpStatusException(message)
+                        : new IOException(message);
             }
 
             boolean isPartial = (responseCode == HttpURLConnection.HTTP_PARTIAL);
