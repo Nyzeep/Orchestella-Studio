@@ -51,6 +51,7 @@ class GuestFeaturesActivity : AppCompatActivity() {
             "docker-cli" to "Docker CLI · 客户端与 daemon 分别检查")
         val distro = try { io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle.FileStore(
             filesDir.toPath().resolve("instances")).load(id).distro().id() } catch (_: Exception) { "unknown" }
+        addDevtoolchainCard(content, distro)
         profiles.filterKeys { profile ->
             if (profile in setOf("desktop-labwc", "docker-cli")) distro == "debian" else distro in setOf("debian", "ubuntu")
         }.forEach { (profile, title) ->
@@ -86,6 +87,69 @@ class GuestFeaturesActivity : AppCompatActivity() {
         })
         setContentView(ScrollView(this).apply { addView(content) })
         ThemeApplier.bind(this)
+    }
+
+    /**
+     * The base image deliberately ships a small package set (systemd, ssh, git, curl,
+     * nano/tmux…). Compilers and an editor are a one-off install, so this card hands the
+     * exact per-distro command to the user instead of silently downloading hundreds of
+     * megabytes during first boot. "在终端填入" opens the terminal with the command typed
+     * into the existing send-command dialog; nothing runs until the user confirms.
+     */
+    private fun addDevtoolchainCard(content: LinearLayout, distro: String) {
+        val commands = mapOf(
+            "ubuntu" to "apt-get update && apt-get install -y --no-install-recommends build-essential python3 python3-venv vim",
+            "debian" to "apt-get update && apt-get install -y --no-install-recommends build-essential python3 python3-venv vim",
+            "alpine" to "apk add --no-cache build-base python3 py3-pip vim",
+            "fedora" to "dnf install -y gcc gcc-c++ make python3 python3-pip vim-enhanced",
+            "almalinux" to "dnf install -y gcc gcc-c++ make python3 python3-pip vim-enhanced",
+            "rocky" to "dnf install -y gcc gcc-c++ make python3 python3-pip vim-enhanced",
+            "arch" to "pacman -Sy --needed --noconfirm base-devel python python-pip vim",
+            "opensuse" to "zypper --non-interactive install -y gcc gcc-c++ make python3 python3-pip vim",
+        )
+        val command = commands[distro] ?: commands.getValue("ubuntu")
+
+        content.addView(TextView(this).apply {
+            text = "开发者工具链（基础镜像未预装）"
+            textSize = 19f
+            setPadding(0, 24, 0, 8)
+        })
+        content.addView(TextView(this).apply {
+            text = "基础环境只装终端、网络与 SSH 工具，gcc / make / python3 / vim 需要一次性安装。" +
+                "按当前镜像速度大约 10-20 分钟，装完即可在实例内直接编译。"
+            textSize = 14f
+        })
+        content.addView(TextView(this).apply {
+            text = command
+            textSize = 12f
+            typeface = android.graphics.Typeface.MONOSPACE
+            setPadding(0, 8, 0, 8)
+        })
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val toTerminal = MaterialButton(this).apply {
+            text = "在终端填入命令"
+            textSize = 11f
+            setOnClickListener {
+                startActivity(
+                    DualModeNavigation.createTerminalIntent(this@GuestFeaturesActivity, this@GuestFeaturesActivity.id, token)
+                        .putExtra(TerminalActivity.EXTRA_COMMAND_DRAFT, command)
+                )
+            }
+        }
+        ThemeApplier.setRole(toTerminal, ThemeApplier.Role.SECONDARY_ACTION)
+        val copy = MaterialButton(this).apply {
+            text = "复制命令"
+            textSize = 11f
+            setOnClickListener {
+                val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Orchestella 开发工具链", command))
+                android.widget.Toast.makeText(this@GuestFeaturesActivity, "命令已复制", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+        ThemeApplier.setRole(copy, ThemeApplier.Role.SECONDARY_ACTION)
+        row.addView(toTerminal, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        row.addView(copy, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        content.addView(row)
     }
 
     private fun request(action: String, selected: String?) {

@@ -212,15 +212,22 @@ android {
 
     buildTypes {
         debug {
+            // The ".accel" tail marks the extension itself; the runtime only ever
+            // appends ".accel" to the MAIN package's id, so it must be present for
+            // every channel, including a release-channel debug packaging check.
+            applicationIdSuffix = (internalApplicationIdSuffix ?: "") + ".accel"
             if (buildChannel != "release") {
-                // The ".accel" tail marks the extension itself; the runtime
-                // only ever appends ".accel" to the MAIN package's id.
-                applicationIdSuffix = (internalApplicationIdSuffix ?: "") + ".accel"
                 versionNameSuffix = (internalVersionSuffix ?: "") + ".accel"
                 signingConfig = signingConfigs.getByName("debug")
             }
         }
         release {
+            // Session 27: the suffix used to live only in the debug block, so a release
+            // build shipped `io.github.nyzeep.orchestella` — byte-for-byte the MAIN
+            // application id, with the same versionCode and the same signing key. Installing
+            // it would have replaced the user's app with a package that has no launcher.
+            // The extension identity is `<main id>.accel` in every build type.
+            applicationIdSuffix = ".accel"
             // The published extension is signed with the release key when it is
             // configured. Without it the build fails (see
             // validateReleaseSigning) rather than shipping a debug-signed APK
@@ -256,6 +263,12 @@ android {
         abortOnError = true
         checkReleaseBuilds = true
         disable += "PropertyEscape"
+        // targetSdk 28 is pinned on purpose (see defaultConfig): this package ships no
+        // code and its only consumer is the AVF payload loader, but the extension still
+        // mirrors the main package's documented accelerator baseline. The Play-store
+        // rule below does not apply to a self-distributed APK, so the check would only
+        // block our own release build.
+        disable += "ExpiredTargetSdkVersion"
     }
 }
 

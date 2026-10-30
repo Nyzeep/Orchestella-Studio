@@ -193,11 +193,17 @@ if [ -f "$INPUT_DIR/sources.list" ]; then
     mkdir -p /newroot/etc/apt
     cp "$INPUT_DIR/sources.list" /newroot/etc/apt/sources.list || fail apt-source-install
     # Avoid duplicate cloud-image deb822 repositories bypassing the selected mirror policy.
+    # The backup must live OUTSIDE sources.list.d: apt reads every file in that directory
+    # and printed `N: Ignoring file 'ubuntu.sources.orchestella-original' ... invalid
+    # filename extension` on every single apt call, which reads as a broken package
+    # manager to the user.
     if [ -f /newroot/etc/apt/sources.list.d/ubuntu.sources ]; then
-        mv /newroot/etc/apt/sources.list.d/ubuntu.sources /newroot/etc/apt/sources.list.d/ubuntu.sources.orchestella-original
+        mkdir -p /newroot/var/lib/orchestella/apt-backup
+        mv /newroot/etc/apt/sources.list.d/ubuntu.sources /newroot/var/lib/orchestella/apt-backup/ubuntu.sources
     fi
     if [ -f /newroot/etc/apt/sources.list.d/debian.sources ]; then
-        mv /newroot/etc/apt/sources.list.d/debian.sources /newroot/etc/apt/sources.list.d/debian.sources.orchestella-original
+        mkdir -p /newroot/var/lib/orchestella/apt-backup
+        mv /newroot/etc/apt/sources.list.d/debian.sources /newroot/var/lib/orchestella/apt-backup/debian.sources
     fi
     chmod 0644 /newroot/etc/apt/sources.list
 fi
