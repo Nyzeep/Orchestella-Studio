@@ -7,7 +7,7 @@
 **A Linux VM and mobile workstation for Android — no root required**<br />
 *Native Linux VM runtime & mobile workstation, sandboxed inside an ordinary Android app*
 
-[![Release](https://img.shields.io/badge/Release-v0.6.0%20stable--prep-blueviolet.svg?style=flat-square)](https://github.com/Nyzeep/Orchestella-Studio/releases)
+[![Release](https://img.shields.io/badge/Release-v0.6.1-blueviolet.svg?style=flat-square)](https://github.com/Nyzeep/Orchestella-Studio/releases)
 [![License](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg?style=flat-square)](LICENSE)
 [![Android](https://img.shields.io/badge/Android-8.0%2B%20(API%2026%2B)-green.svg?style=flat-square)](https://developer.android.com)
 [![Arch](https://img.shields.io/badge/Arch-ARM64--v8a-purple.svg?style=flat-square)](#)
