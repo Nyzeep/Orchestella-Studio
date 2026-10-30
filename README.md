@@ -7,7 +7,7 @@
 **无需 Root 的 Android Linux 虚拟机与移动工作站**<br />
 *Native Linux VM Runtime & Mobile Workstation for Android — no root required*
 
-[![Release](https://img.shields.io/badge/Release-v0.6.1-blueviolet.svg?style=flat-square)](https://github.com/Nyzeep/Orchestella-Studio/releases)
+[![Release](https://img.shields.io/badge/Release-v0.6.2-blueviolet.svg?style=flat-square)](https://github.com/Nyzeep/Orchestella-Studio/releases)
 [![License](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg?style=flat-square)](LICENSE)
 [![Android](https://img.shields.io/badge/Android-8.0%2B%20(API%2026%2B)-green.svg?style=flat-square)](https://developer.android.com)
 [![Arch](https://img.shields.io/badge/Arch-ARM64--v8a-purple.svg?style=flat-square)](#)
