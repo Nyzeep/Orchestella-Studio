@@ -48,8 +48,8 @@ class SetupWizardModel(
             version = "13",
             tag = "🌀 稳如磐石 · 纯净开源 · 经典基石",
             description = "生态丰富、开箱即用、预置全套 apt 包管理、适合完整桌面开发与编译工作流",
-            approxDownloadSize = "~90 MB",
-            rootfsFileName = "debian-13-rootfs.tar.xz"
+            approxDownloadSize = "~205 MB",
+            rootfsFileName = "debian-13-genericcloud-arm64-20261026-2643.tar.xz"
         ),
         FEDORA(
             id = "fedora",

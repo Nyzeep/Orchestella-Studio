@@ -51,14 +51,14 @@ public final class SetupWizardDistroSelectionTest {
         assertEquals("13", option.getVersion());
         assertTrue(option.getTag().contains("稳如磐石") || option.getTag().contains("完整生态"));
         assertTrue(option.getDescription().contains("apt"));
-        assertEquals("debian-13-rootfs.tar.xz", option.getRootfsFileName());
+        assertEquals("debian-13-genericcloud-arm64-20261026-2643.tar.xz", option.getRootfsFileName());
 
         DistroManifest manifest = option.manifest();
         assertNotNull(manifest);
         assertEquals("debian", manifest.id());
         assertEquals("13", manifest.version());
         assertEquals("aarch64", manifest.architecture());
-        assertEquals(90_351_092L, manifest.sizeBytes());
+        assertEquals(214_878_388L, manifest.sizeBytes());
     }
 
     @Test
