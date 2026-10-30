@@ -9,11 +9,12 @@ public final class OfficialDebianCatalogTest {
         assertEquals("13", debian.version());
         assertEquals("aarch64", debian.architecture());
         assertEquals(
-                URI.create("https://github.com/Nyzeep/Orchestella-Studio/releases/download/distro-catalog-v1/debian-13-rootfs.tar.xz"),
+                URI.create("https://cloud.debian.org/images/cloud/trixie/20261026-2643"
+                        + "/debian-13-genericcloud-arm64-20261026-2643.tar.xz"),
                 debian.source());
-        assertEquals("debian-13-rootfs.tar.xz", debian.rootfsFileName());
-        assertEquals("000f18fbcea39b276754dee7a1972df357f53329371c2df477e6504e15ed2907", debian.sha256());
-        assertEquals(90_351_092L, debian.sizeBytes());
+        assertEquals("debian-13-genericcloud-arm64-20261026-2643.tar.xz", debian.rootfsFileName());
+        assertEquals("61ac9c6500688d04dfb52b7761f4e8eac891c97272b7da8867250b9e94df0645", debian.sha256());
+        assertEquals(214_878_388L, debian.sizeBytes());
     }
 
     private static void assertEquals(Object expected, Object actual) {
