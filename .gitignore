@@ -65,6 +65,10 @@ test_*.md
 !/app/src/main/res/drawable-nodpi/mascot_original.png
 
 # Maintainer-curated UI screenshots for the README showcase (session 25).
+# The directory itself must be re-opened FIRST: `/docs/assets/*` excludes it, and
+# git never walks into an excluded directory, so file-level negations alone stayed
+# inert and the README images 404'd on GitHub (fixed in session 26).
+!/docs/assets/screenshots/
 !/docs/assets/screenshots/*.png
 !/docs/assets/screenshots/*.jpg
 

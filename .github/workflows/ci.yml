@@ -63,6 +63,15 @@ jobs:
           python3 tools/ci/test_check_ci_module_coverage.py
           python3 tools/ci/check_ci_module_coverage.py
 
+      # Session 26: the README showcase images were referenced but never tracked
+      # (`/docs/assets/*` excludes the directory, so the file-level `!` negations
+      # were inert) and the published page rendered broken images. This gate fails
+      # when a README image is absent from the tree or absent from the git index.
+      - name: Verify README assets exist and are tracked
+        run: |
+          python3 -B tools/ci/test_check_readme_assets.py
+          python3 tools/ci/check_readme_assets.py
+
       # The harness has two test families: the avf_* unit tests and the dv_*
       # PVM/probe tests. A single 'test_avf*.py' pattern silently skipped the
       # latter. test_terminal_keyboard.py is a device-only script, not a unit
