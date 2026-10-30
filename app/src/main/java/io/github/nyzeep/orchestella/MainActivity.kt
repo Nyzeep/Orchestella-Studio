@@ -245,6 +245,7 @@ class MainActivity : AppCompatActivity() {
         }
         updateCenter = io.github.nyzeep.orchestella.update.UpdateCoordinator.center(this)
         aboutUpdateBadge = findViewById(R.id.about_update_badge)
+        aboutUpdateBadge?.let { ThemeApplier.setRole(it, ThemeApplier.Role.PRESERVE) }
         findViewById<View>(R.id.ssh_manager_button)?.setOnClickListener {
             io.github.nyzeep.orchestella.ssh.SshManagerDialog.show(this)
         }
@@ -982,8 +983,16 @@ class MainActivity : AppCompatActivity() {
                     btn.strokeWidth = (1 * resources.displayMetrics.density).toInt()
                 }
             }
-            aboutUpdateBadge?.backgroundTintList =
-                android.content.res.ColorStateList.valueOf(theme.accent)
+            aboutUpdateBadge?.let { badge ->
+                // Accent fill plus a ring in the button's own surface colour: readable on every
+                // theme without turning into a second "unread notification" alert.
+                val density = resources.displayMetrics.density
+                badge.background = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                    setColor(theme.accent)
+                    setStroke((2 * density).toInt(), surfaceColor(theme))
+                }
+            }
 
             findViewById<View>(R.id.system_status_card)?.let { card ->
                 if (card is com.google.android.material.card.MaterialCardView) {
