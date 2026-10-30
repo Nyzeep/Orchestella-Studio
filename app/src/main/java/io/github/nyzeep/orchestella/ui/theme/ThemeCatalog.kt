@@ -917,8 +917,11 @@ object ThemeCatalog {
 
     fun byId(id: String?): AppTheme? = all.firstOrNull { it.id == id }
 
-    /** Resolves a stored theme id, falling back to the flagship Constructivist Workstation default. */
-    fun resolve(id: String?): AppTheme = byId(id) ?: constructivistWorkstation
+    /** The palette a fresh install boots into, and the fallback for unknown or removed ids. */
+    val default: AppTheme = mascotLavender
+
+    /** Resolves a stored theme id, falling back to [default] (the flagship mascot lavender). */
+    fun resolve(id: String?): AppTheme = byId(id) ?: default
 
     /** Default 16-color ANSI palette for custom theme slots without a terminal palette of their own. */
     fun defaultAnsi(isDark: Boolean): List<Int> =
