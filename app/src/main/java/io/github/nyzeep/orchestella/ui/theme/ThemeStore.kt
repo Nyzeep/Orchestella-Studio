@@ -59,8 +59,13 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
         else -> Mode.LIGHT
     }
 
-    /** Existing preferences retain their follow-system behavior until the user makes a selection. */
-    fun mode(): Mode = Mode.entries.firstOrNull { it.value == prefs.getString(KEY_THEME_MODE, null) } ?: Mode.SYSTEM
+    /**
+     * Existing preferences retain their follow-system behavior until the user makes a
+     * selection. A fresh install boots into the mascot theme, which only exists in one
+     * brightness, so it defaults to [Mode.FIXED] instead of following the system.
+     */
+    fun mode(): Mode = Mode.entries.firstOrNull { it.value == prefs.getString(KEY_THEME_MODE, null) }
+        ?: if (ThemeCatalog.resolve(themeId()).isFixed) Mode.FIXED else Mode.SYSTEM
 
     fun setMode(mode: Mode) {
         prefs.edit().putString(KEY_THEME_MODE, mode.value).apply()

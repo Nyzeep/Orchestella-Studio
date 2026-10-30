@@ -2688,6 +2688,49 @@
                             android:textStyle="bold"
                             android:layout_marginBottom="10dp" />
 
+                        <!-- Theme 0: Mascot Lavender (shipped default, fixed brightness) -->
+                        <LinearLayout
+                            android:id="@+id/btn_theme_mascot"
+                            android:layout_width="match_parent"
+                            android:layout_height="46dp"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:background="#1F2026"
+                            android:paddingStart="10dp"
+                            android:paddingEnd="10dp"
+                            android:clickable="true"
+                            android:focusable="true">
+
+                            <View
+                                android:id="@+id/swatch_theme_mascot"
+                                android:layout_width="16dp"
+                                android:layout_height="16dp"
+                                android:background="#41375A" />
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginStart="10dp"
+                                android:fontFamily="monospace"
+                                android:text="看板娘 · 淡紫工控（默认）"
+                                android:textColor="#FFFFFF"
+                                android:textSize="11sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/badge_theme_mascot_active"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:background="#41375A"
+                                android:paddingStart="6dp"
+                                android:paddingEnd="6dp"
+                                android:fontFamily="monospace"
+                                android:text="ACTIVE"
+                                android:textColor="#FFFFFF"
+                                android:textSize="9sp" />
+                        </LinearLayout>
+
                         <!-- Theme 1: Constructivist Workstation (Red) -->
                         <LinearLayout
                             android:id="@+id/btn_theme_constructivist_red"
@@ -2698,6 +2741,7 @@
                             android:background="#1F2026"
                             android:paddingStart="10dp"
                             android:paddingEnd="10dp"
+                            android:layout_marginTop="6dp"
                             android:clickable="true"
                             android:focusable="true">
 

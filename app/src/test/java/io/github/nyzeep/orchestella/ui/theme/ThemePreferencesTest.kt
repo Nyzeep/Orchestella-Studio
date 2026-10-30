@@ -154,11 +154,21 @@ class ThemePreferencesTest {
 
     @Test fun freshAndUnknownThemeIdsUseCatalogDefaultWithoutRewritingUserData() {
         val prefs = FakeSharedPreferences()
-        assertEquals(ThemeCatalog.constructivistWorkstation, ThemeStore(prefs).resolve())
+        assertEquals(ThemeCatalog.default, ThemeStore(prefs).resolve())
+        assertEquals("a fresh install boots into the mascot palette", ThemeCatalog.mascotLavender, ThemeCatalog.default)
         prefs.edit().putString(ThemeStore.KEY_THEME_ID, "removed-theme").putString("instance", "keep-me").apply()
-        assertEquals(ThemeCatalog.constructivistWorkstation.id, ThemeStore(prefs).themeId())
+        assertEquals(ThemeCatalog.default.id, ThemeStore(prefs).themeId())
         assertEquals("removed-theme", prefs.getString(ThemeStore.KEY_THEME_ID, null))
         assertEquals("keep-me", prefs.getString("instance", null))
+    }
+
+    @Test fun freshInstallDefaultsToFixedModeBecauseTheDefaultPaletteHasOneBrightness() {
+        val prefs = FakeSharedPreferences()
+        assertEquals(ThemeStore.Mode.FIXED, ThemeStore(prefs).mode())
+        assertFalse(prefs.contains(ThemeStore.KEY_THEME_MODE))
+        // An explicitly saved follow-system choice is never overridden by the default palette.
+        prefs.edit().putString(ThemeStore.KEY_THEME_MODE, ThemeStore.Mode.SYSTEM.value).apply()
+        assertEquals(ThemeStore.Mode.SYSTEM, ThemeStore(prefs).mode())
     }
 
     @Test fun themeSelectionPersistsAcrossStoreInstancesAndPreservesWallpaperTypographyAndSettings() {

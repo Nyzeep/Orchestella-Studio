@@ -149,7 +149,7 @@ class ThemeCustomizationTest {
         store.setThemeId("custom:1")
         store.setCustomSlot(0, null)
         assertEquals("custom:1", prefs.getString(ThemeStore.KEY_THEME_ID, null))
-        assertEquals(ThemeCatalog.constructivistWorkstation, store.resolveForMode(false))
+        assertEquals(ThemeCatalog.default, store.resolveForMode(false))
         assertNull(store.resolveCustomSlot("custom:1"))
     }
 

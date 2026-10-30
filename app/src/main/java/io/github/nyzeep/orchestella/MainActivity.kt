@@ -40,6 +40,7 @@ import kotlinx.coroutines.withContext
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorMode
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorPolicy
 import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
+import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
 import io.github.nyzeep.orchestella.runtime.capability.AvfAuthorizationWizardModel
 import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator
 import io.github.nyzeep.orchestella.runtime.capability.DeviceCapabilityEvaluator
@@ -503,18 +504,25 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupSettingsTab() {
         listOf(
+            Triple(R.id.btn_theme_mascot, ThemeCatalog.mascotLavender.id, R.id.badge_theme_mascot_active),
             Triple(R.id.btn_theme_constructivist_red, "constructivist-workstation", R.id.badge_theme_red_active),
             Triple(R.id.btn_theme_constructivist_blue, "constructivist-cobalt", R.id.badge_theme_blue_active),
             Triple(R.id.btn_theme_constructivist_yellow, "constructivist-amber", R.id.badge_theme_yellow_active)
         ).forEach { (rowId, themeId, _) ->
             findViewById<LinearLayout>(rowId)?.getChildAt(0)?.let {
                 ThemeApplier.setRole(it, ThemeApplier.Role.PRESERVE)
-                val preview = io.github.nyzeep.orchestella.ui.theme.ThemeCatalog.all.first { it.id == themeId }
+                val preview = ThemeCatalog.all.first { it.id == themeId }
                 it.setBackgroundColor(preview.primary)
             }
         }
         findViewById<View>(R.id.btn_create_linux_instance_top)?.setOnClickListener {
             switchTab(3)
+        }
+        findViewById<View>(R.id.btn_theme_mascot)?.setOnClickListener {
+            themeStore.setThemeId(ThemeCatalog.mascotLavender.id)
+            applyThemeToDashboard()
+            switchTab(4)
+            Toast.makeText(this, "已应用主题: 看板娘 · 淡紫工控", Toast.LENGTH_SHORT).show()
         }
         findViewById<View>(R.id.btn_theme_constructivist_red)?.setOnClickListener {
             themeStore.setThemeId("constructivist-workstation")
@@ -926,6 +934,7 @@ class MainActivity : AppCompatActivity() {
             activeTheme = theme
             ThemeApplier.bind(this)
             listOf(
+                R.id.badge_theme_mascot_active to ThemeCatalog.mascotLavender.id,
                 R.id.badge_theme_red_active to "constructivist-workstation",
                 R.id.badge_theme_blue_active to "constructivist-cobalt",
                 R.id.badge_theme_yellow_active to "constructivist-amber"
