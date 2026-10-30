@@ -23,13 +23,11 @@
 
 截图取自真机（SM8850 / Android 16），默认主题为「看板娘 · 淡紫工控」。
 
-| 工作台 · 实时遥测 | 发行版目录 · 一键装配 |
-| :---: | :---: |
-| ![工作台仪表盘](docs/assets/screenshots/dashboard.jpg) | ![发行版目录](docs/assets/screenshots/distros.jpg) |
-| **新建实例 · 硬件配额** | **新建实例 · 存储配额** |
-| ![硬件配额](docs/assets/screenshots/wizard-hardware.jpg) | ![存储配额](docs/assets/screenshots/wizard-storage.jpg) |
-| **新建实例 · 启动与部署** | **真实 Linux 终端** |
-| ![启动与部署](docs/assets/screenshots/wizard-deploy.jpg) | ![终端](docs/assets/screenshots/terminal.png) |
+| ![工作台](docs/assets/screenshots/dashboard.jpg) | ![发行版目录](docs/assets/screenshots/distros.jpg) | ![硬件配额](docs/assets/screenshots/wizard-hardware.jpg) |
+| :---: | :---: | :---: |
+| **工作台 · 实时遥测** | **发行版目录 · 一键装配** | **新建实例 · 硬件配额** |
+| ![存储配额](docs/assets/screenshots/wizard-storage.jpg) | ![启动与部署](docs/assets/screenshots/wizard-deploy.jpg) | ![终端](docs/assets/screenshots/terminal.png) |
+| **新建实例 · 存储配额** | **新建实例 · 启动与部署** | **真实 Linux 终端** |
 
 ## 当前实现的功能
 
