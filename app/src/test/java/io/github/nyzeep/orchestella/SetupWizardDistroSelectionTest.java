@@ -58,7 +58,7 @@ public final class SetupWizardDistroSelectionTest {
         assertEquals("debian", manifest.id());
         assertEquals("13", manifest.version());
         assertEquals("aarch64", manifest.architecture());
-        assertEquals(90_351_092L, manifest.sizeBytes());
+        assertEquals(90_346_224L, manifest.sizeBytes());
     }
 
     @Test

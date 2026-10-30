@@ -3,9 +3,12 @@ package io.github.nyzeep.orchestella
 import io.github.nyzeep.orchestella.runtime.distro.DistroManifest
 import io.github.nyzeep.orchestella.runtime.distro.OfficialDebianCatalog
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DistroMirrorCatalogTest {
+
+    private val proxies = listOf("ghfast.top", "gh-proxy.com", "ghproxy.net", "hk.gh-proxy.com", "mirror.ghproxy.com")
 
     @Test
     fun ubuntuMirrorsLeadWithTunaAndUstcAndOfficialUpstream() {
@@ -20,67 +23,69 @@ class DistroMirrorCatalogTest {
     }
 
     @Test
-    fun debianMirrorsLeadWithTunaLxcImagesThenPinnedSourceAndProxies() {
+    fun debianIsSelfHostedBecauseEveryPublisherArtifactIsARawDiskImage() {
         val manifest = OfficialDebianCatalog.debian()
-        val pinned =
-            "https://github.com/Nyzeep/Orchestella-Studio/releases/download/distro-catalog-v1/debian-13-rootfs.tar.xz"
-        val proxies = listOf("ghfast.top", "gh-proxy.com", "ghproxy.net", "hk.gh-proxy.com", "mirror.ghproxy.com")
-            .map { "https://$it/$pinned" }
-        val expected = listOf(
-            "https://mirrors.tuna.tsinghua.edu.cn/lxc-images/images/debian/trixie/arm64/default/20261013_05%3A24/rootfs.tar.xz",
-            pinned,
-        ) + proxies
+        val pinned = manifest.source().toString()
+        val expected = listOf(pinned) + proxies.map { "https://$it/$pinned" }
 
         assertEquals(expected, DistroMirrorCatalog.mirrorsFor(manifest))
     }
 
     @Test
-    fun archMirrorsLeadWithTunaAndUstcThenPinnedSourceAndProxies() {
-        val manifest = io.github.nyzeep.orchestella.runtime.distro.OfficialArchCatalog.arch()
-        val mirrors = DistroMirrorCatalog.mirrorsFor(manifest)
-        assertEquals(DistroMirrorCatalog.ARCH_TUNA_MIRROR, mirrors[0])
-        assertEquals(DistroMirrorCatalog.ARCH_USTC_MIRROR, mirrors[1])
-        assertEquals(manifest.source().toString(), mirrors[2])
-    }
-
-    @Test
-    fun openSuseMirrorsLeadWithTunaAndUpstreamThenPinnedSourceAndProxies() {
+    fun openSuseMirrorsLeadWithTunaThenThePublisher() {
         val manifest = io.github.nyzeep.orchestella.runtime.distro.OfficialOpenSuseCatalog.opensuse()
-        val mirrors = DistroMirrorCatalog.mirrorsFor(manifest)
-        assertEquals(DistroMirrorCatalog.OPENSUSE_TUNA_MIRROR, mirrors[0])
-        assertEquals(DistroMirrorCatalog.OPENSUSE_UPSTREAM_MIRROR, mirrors[1])
-        assertEquals(manifest.source().toString(), mirrors[2])
+        val expected = listOf(
+            DistroMirrorCatalog.OPENSUSE_TUNA_MIRROR,
+            "https://download.opensuse.org/distribution/leap/15.6/appliances/opensuse-leap-image.aarch64-15.6.0-lxc-Build19.146.tar.xz",
+        )
+
+        assertEquals(expected, DistroMirrorCatalog.mirrorsFor(manifest))
     }
 
     @Test
-    fun fedoraMirrorsLeadWithTunaLxcImages() {
-        val manifest = io.github.nyzeep.orchestella.runtime.distro.OfficialFedoraCatalog.fedora()
-        val mirrors = DistroMirrorCatalog.mirrorsFor(manifest)
-        assertEquals(DistroMirrorCatalog.FEDORA_TUNA_LXC_IMAGES_MIRROR, mirrors[0])
+    fun selfHostedDistrosLeadWithTheCatalogUrlAndAddProxies() {
+        listOf(
+            io.github.nyzeep.orchestella.runtime.distro.OfficialFedoraCatalog.fedora(),
+            io.github.nyzeep.orchestella.runtime.distro.OfficialArchCatalog.arch(),
+            io.github.nyzeep.orchestella.runtime.distro.OfficialAlmaLinuxCatalog.almalinux(),
+            io.github.nyzeep.orchestella.runtime.distro.OfficialRockyLinuxCatalog.rocky(),
+        ).forEach { manifest ->
+            val pinned = manifest.source().toString()
+            val expected = listOf(pinned) + proxies.map { "https://$it/$pinned" }
+            assertEquals("mirror chain for ${manifest.id()}", expected, DistroMirrorCatalog.mirrorsFor(manifest))
+        }
     }
 
     @Test
-    fun almaLinuxMirrorsLeadWithTunaLxcImages() {
-        val manifest = io.github.nyzeep.orchestella.runtime.distro.OfficialAlmaLinuxCatalog.almalinux()
-        val mirrors = DistroMirrorCatalog.mirrorsFor(manifest)
-        assertEquals(DistroMirrorCatalog.ALMALINUX_TUNA_LXC_IMAGES_MIRROR, mirrors[0])
+    fun noChainPointsAtAPrunedLinuxcontainersSnapshot() {
+        io.github.nyzeep.orchestella.runtime.distro.DistroCatalogRegistry.createDefault()
+            .listAll()
+            .forEach { manifest ->
+                val chain = DistroMirrorCatalog.mirrorsFor(manifest)
+                assertTrue(
+                    "${manifest.id()} still lists an LXC snapshot: $chain",
+                    chain.none { it.contains("lxc-images") || it.contains("linuxcontainers.org") },
+                )
+            }
     }
 
     @Test
-    fun rockyMirrorsLeadWithTunaLxcImages() {
-        val manifest = io.github.nyzeep.orchestella.runtime.distro.OfficialRockyLinuxCatalog.rocky()
-        val mirrors = DistroMirrorCatalog.mirrorsFor(manifest)
-        assertEquals(DistroMirrorCatalog.ROCKY_TUNA_LXC_IMAGES_MIRROR, mirrors[0])
+    fun everyChainKeepsAtLeastOneCandidate() {
+        io.github.nyzeep.orchestella.runtime.distro.DistroCatalogRegistry.createDefault()
+            .listAll()
+            .forEach { manifest ->
+                assertTrue("empty chain for ${manifest.id()}", DistroMirrorCatalog.mirrorsFor(manifest).isNotEmpty())
+            }
     }
 
     @Test
     fun mirrorsFollowCatalogVersionBumpWithoutManualMirrorEdits() {
         val bumped = DistroManifest(
-            "debian",
-            "14",
+            "fedora",
+            "44",
             "aarch64",
-            "https://github.com/Nyzeep/Orchestella-Studio/releases/download/v0.5.0/debian-14-rootfs.tar.xz",
-            "debian-14-rootfs.tar.xz",
+            "https://github.com/Nyzeep/Orchestella-Studio/releases/download/distro-catalog-v1/fedora-44-minimal-rootfs.tar.gz",
+            "fedora-44-minimal-rootfs.tar.gz",
             "aa".repeat(32),
             95_000_000L,
         )
@@ -88,16 +93,16 @@ class DistroMirrorCatalogTest {
         val mirrors = DistroMirrorCatalog.mirrorsFor(bumped)
 
         assertEquals(
-            "https://github.com/Nyzeep/Orchestella-Studio/releases/download/v0.5.0/debian-14-rootfs.tar.xz",
+            "https://github.com/Nyzeep/Orchestella-Studio/releases/download/distro-catalog-v1/fedora-44-minimal-rootfs.tar.gz",
+            mirrors[0],
+        )
+        assertEquals(
+            "https://ghfast.top/https://github.com/Nyzeep/Orchestella-Studio/releases/download/distro-catalog-v1/fedora-44-minimal-rootfs.tar.gz",
             mirrors[1],
         )
         assertEquals(
-            "https://ghfast.top/https://github.com/Nyzeep/Orchestella-Studio/releases/download/v0.5.0/debian-14-rootfs.tar.xz",
+            "https://gh-proxy.com/https://github.com/Nyzeep/Orchestella-Studio/releases/download/distro-catalog-v1/fedora-44-minimal-rootfs.tar.gz",
             mirrors[2],
-        )
-        assertEquals(
-            "https://gh-proxy.com/https://github.com/Nyzeep/Orchestella-Studio/releases/download/v0.5.0/debian-14-rootfs.tar.xz",
-            mirrors[3],
         )
     }
 

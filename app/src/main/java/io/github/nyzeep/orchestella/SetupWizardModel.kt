@@ -57,7 +57,7 @@ class SetupWizardModel(
             version = "43",
             tag = "🎩 前沿创新 · RPM 生态 · 开发者友好",
             description = "前沿创新、DNF 与 RPM 现代生态、开发者友好且兼容最新技术",
-            approxDownloadSize = "~92 MB",
+            approxDownloadSize = "~52 MB",
             rootfsFileName = "fedora-43-minimal-rootfs.tar.gz"
         ),
         ARCH(
@@ -84,7 +84,7 @@ class SetupWizardModel(
             version = "9",
             tag = "💼 企业就绪 · RHEL 二进制兼容 · 社区驱动",
             description = "企业级 Linux、1:1 二进制兼容 RHEL、DNF/RPM 稳定生态与长期支持保障",
-            approxDownloadSize = "~104 MB",
+            approxDownloadSize = "~67 MB",
             rootfsFileName = "AlmaLinux-9-Base-rootfs.tar.gz"
         ),
         ROCKY(
@@ -93,7 +93,7 @@ class SetupWizardModel(
             version = "9.6",
             tag = "🏔️ 坚如磐石 · 企业计算 · 生产级稳定",
             description = "生产级企业发行版、严格遵循上游 RHEL 标准、云原生容器与服务器首选",
-            approxDownloadSize = "~104 MB",
+            approxDownloadSize = "~50 MB",
             rootfsFileName = "Rocky-9-Container-Base-9.6-20250531.0.aarch64.tar.xz"
         );
 

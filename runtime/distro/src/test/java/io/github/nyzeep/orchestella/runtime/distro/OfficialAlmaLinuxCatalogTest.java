@@ -12,8 +12,8 @@ public final class OfficialAlmaLinuxCatalogTest {
                 URI.create("https://github.com/Nyzeep/Orchestella-Studio/releases/download/distro-catalog-v1/AlmaLinux-9-Base-rootfs.tar.gz"),
                 almalinux.source());
         assertEquals("AlmaLinux-9-Base-rootfs.tar.gz", almalinux.rootfsFileName());
-        assertEquals("543b8e13d355d4143cdda20c55bcfce32467d72211bc8cbe8c2fac1088834443", almalinux.sha256());
-        assertEquals(103_733_984L, almalinux.sizeBytes());
+        assertEquals("ae65b206007f1635dfb045e9ac0e67dbdd9820c536115298b7e89cc078895d37", almalinux.sha256());
+        assertEquals(66_985_382L, almalinux.sizeBytes());
     }
 
     private static void assertEquals(Object expected, Object actual) {

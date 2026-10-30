@@ -1,10 +1,12 @@
 package io.github.nyzeep.orchestella.runtime.distro;
 
 /**
- * Pinned official catalog entry for Rocky Linux 9 Container Base rootfs.
+ * Pinned official catalog entry for Rocky Linux 9 Container Base rootfs (aarch64).
  *
- * <p>Uses the versioned linuxcontainers.org distrobuilder build {@code 20261013_03:17}
- * (upstream SHA256SUMS verified) with the TUNA lxc-images mirror leading the mirror chain.
+ * <p>Rocky now ships its container base as {@code .oci.tar.xz} plus a mutable
+ * {@code ...-latest.aarch64.tar.xz} name; neither can be pinned by digest. The dated
+ * {@code 9.6-20250531.0} rootfs snapshot on the project's immutable {@code distro-catalog-v1}
+ * release is the pinned artifact, and its SHA-256 / byte count are the uploaded ones.
  */
 public final class OfficialRockyLinuxCatalog {
     private OfficialRockyLinuxCatalog() {}
@@ -16,7 +18,7 @@ public final class OfficialRockyLinuxCatalog {
                 "aarch64",
                 "https://github.com/Nyzeep/Orchestella-Studio/releases/download/distro-catalog-v1/Rocky-9-Container-Base-9.6-20250531.0.aarch64.tar.xz",
                 "Rocky-9-Container-Base-9.6-20250531.0.aarch64.tar.xz",
-                "a68ba3a9ac9da45a69b3b3b6c420aa2b74d446548813adcbfdb46fc238f33d1b",
-                103_658_208L);
+                "257534a55c3422b91cf1bf2dfcd02a752d3b2661902b76350b7a9ca39cc27edb",
+                50_342_584L);
     }
 }

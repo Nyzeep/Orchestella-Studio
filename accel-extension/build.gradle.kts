@@ -179,8 +179,8 @@ android {
         // D4 version lock: the runtime resolver refuses an extension whose
         // versionCode differs from the main package. Keep in lockstep with
         // :app's versionCode — the mismatch surfaces as VERSION_MISMATCH.
-        versionCode = 600
-        versionName = "0.6.0"
+        versionCode = 601
+        versionName = "0.6.1"
         ndk {
             abiFilters += "arm64-v8a"
         }
