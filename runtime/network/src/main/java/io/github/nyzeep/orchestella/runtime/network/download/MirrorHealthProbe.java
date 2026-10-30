@@ -1,6 +1,7 @@
 package io.github.nyzeep.orchestella.runtime.network.download;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
@@ -17,7 +18,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
- * Orders a candidate mirror list by measured reachability before a large download starts.
+ * Orders a candidate mirror list by measured transfer speed before a large download starts.
  *
  * <p>The catalog lists domestic mirrors first and upstream last, which is right for a
  * domestic network and wrong for anyone on a VPN or a foreign link: the engine would spend
@@ -27,14 +28,14 @@ import java.util.concurrent.TimeoutException;
  * fastest healthy mirror first.
  *
  * <p>Probe results never remove a candidate: failures keep their original relative order at
- * the tail, so the engine's existing failover chain still covers a mirror that answers HEAD
- * but stalls during the real transfer.
+ * the tail, so the engine's existing failover chain still covers a mirror that answers the
+ * sample but stalls during the real transfer.
  */
 public final class MirrorHealthProbe {
 
     public static final int DEFAULT_TIMEOUT_MS = 4_000;
 
-    /** Returns the mirror's latency in milliseconds, or throws when it is not usable. */
+    /** Returns the mirror's ranking cost in milliseconds, or throws when it is not usable. */
     @FunctionalInterface
     public interface Prober {
         long latencyMillis(String url, int timeoutMs) throws IOException;
@@ -44,7 +45,7 @@ public final class MirrorHealthProbe {
     }
 
     public static List<String> rankMirrors(List<String> urls) {
-        return rankMirrors(urls, DEFAULT_TIMEOUT_MS, MirrorHealthProbe::headLatency);
+        return rankMirrors(urls, DEFAULT_TIMEOUT_MS, MirrorHealthProbe::sampleLatency);
     }
 
     /**
@@ -104,22 +105,53 @@ public final class MirrorHealthProbe {
         }
     }
 
-    /** HEAD probe; a reachable server that refuses HEAD (405) still counts as healthy. */
-    static long headLatency(String url, int timeoutMs) throws IOException {
+    /**
+     * Bytes sampled from each candidate while ranking. Small enough to be free on a metered
+     * connection, large enough that the number reflects transfer speed and not just ping.
+     */
+    static final int SAMPLE_BYTES = 64 * 1024;
+
+    /**
+     * Ranged-GET probe: time to first byte plus {@link #SAMPLE_BYTES} of body.
+     *
+     * <p>A HEAD probe ranks by round-trip only, and the 2026-10-30 device run showed why that
+     * is not enough: {@code gh-proxy.com} answered HEAD in under half a second and then served
+     * at 58 KB/s, while {@code cloud.debian.org} took 1.9 s to answer and then served at
+     * 700 KB/s. The proxy won the ranking and turned a five-minute download into eight hours.
+     * Timing a fixed sample picks the mirror that will actually finish first.
+     *
+     * <p>The sample is bounded: a server that ignores {@code Range} still only ever sends
+     * {@code SAMPLE_BYTES} before the connection is closed.
+     */
+    static long sampleLatency(String url, int timeoutMs) throws IOException {
         long started = System.nanoTime();
         HttpURLConnection connection = null;
         try {
             connection = (HttpURLConnection) new URL(url).openConnection();
-            connection.setRequestMethod("HEAD");
+            connection.setRequestMethod("GET");
             connection.setConnectTimeout(timeoutMs);
             connection.setReadTimeout(timeoutMs);
             connection.setInstanceFollowRedirects(true);
             connection.setRequestProperty("User-Agent", "Orchestella-MirrorProbe");
+            connection.setRequestProperty("Range", "bytes=0-" + (SAMPLE_BYTES - 1));
             int code = connection.getResponseCode();
             if (code >= 400 && code != HttpURLConnection.HTTP_BAD_METHOD) {
                 throw new IOException("probe returned HTTP " + code + " for " + url);
             }
-            return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+            try (InputStream body = connection.getInputStream()) {
+                byte[] buffer = new byte[8 * 1024];
+                int read = 0;
+                int count;
+                while (read < SAMPLE_BYTES) {
+                    int want = Math.min(buffer.length, SAMPLE_BYTES - read);
+                    count = body.read(buffer, 0, want);
+                    if (count < 0) {
+                        break;
+                    }
+                    read += count;
+                }
+            }
+            return Math.max(1L, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
         } finally {
             if (connection != null) {
                 connection.disconnect();

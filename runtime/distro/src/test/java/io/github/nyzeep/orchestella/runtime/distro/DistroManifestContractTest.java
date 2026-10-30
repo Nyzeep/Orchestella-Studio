@@ -97,10 +97,10 @@ public final class DistroManifestContractTest {
         assertEquals("aarch64", debian.architecture(), "official debian architecture");
         assertEquals("debian-13-rootfs.tar.xz", debian.rootfsFileName(), "official debian rootfs file name");
         assertEquals(
-                "000f18fbcea39b276754dee7a1972df357f53329371c2df477e6504e15ed2907",
+                "e4d504e13e43a384227639b74391ef164a67d916aa8f8a9871ecd73dc577db91",
                 debian.sha256(),
                 "official debian sha256");
-        assertEquals(90_351_092L, debian.sizeBytes(), "official debian sizeBytes");
+        assertEquals(90_346_224L, debian.sizeBytes(), "official debian sizeBytes");
     }
 
     private static void verifiesDebianInputWhenShaAndSizeMatch() throws Exception {

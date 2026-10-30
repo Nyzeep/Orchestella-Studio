@@ -6,6 +6,37 @@
 
 只写已经进入源码的变更；标注为「未验证」的条目在真机复核前不得当作已交付能力对外表述。
 
+## [0.6.1] - 2026-10-30
+
+### Fixed
+
+- **七种发行版里六种的 rootfs 下载必然失败**（用户报障「其余发行版一直下载失败」）。两条链同时断了：
+  ① 上游快照会被上游删掉——linuxcontainers.org 的 distrobuilder 构建按天生成，TUNA/USTC 的
+  `lxc-images` 只保留最近三天，清单钉的 `20261013_05:24` 一类路径今天全部 404；② 唯一的兜底是
+  `distro-catalog-v1` 这个 GitHub 发布，而它**在仓库里根本不存在**（只剩 `v0.6.0`），于是 GitHub
+  直连和 5 个代理全部 404。现在按「来源必须长期存在 + 候选必须逐字节相同」重排：openSUSE 改钉
+  download.opensuse.org 的 `Build19.146` 并由 TUNA 领跑，Ubuntu 维持 TUNA/USTC 直连；
+  Fedora / AlmaLinux / Rocky / Arch / Debian 只发布 OCI 布局、可变 `-latest` 或整盘镜像，无法按
+  摘要钉住，改为项目自托管快照并重建 `distro-catalog-v1` 发布。清单里的 LXC 快照路径与指向空发布的
+  条目全部删除，并加单测锁死：任何 `lxc-images` / `linuxcontainers.org` 候选再次出现即失败。
+- **镜像探测从「测 ping」改成「测下载」**：健康探测原本只发 HEAD，排的是往返延迟。真机上
+  `gh-proxy.com` 0.4 秒应答却只有 58 KB/s，`cloud.debian.org` 1.9 秒应答反而有 700 KB/s，旧逻辑
+  让代理赢下排序，把 5 分钟的 Debian 下载变成 8 小时。现在每个候选只取 64 KiB（带 Range 的
+  GET，服务端忽略 Range 也只读 64 KiB 就断开）按实测耗时排序，真机上自动选中 github.com 直连，
+  86 MB 约 4 分钟完成。
+- **Debian 的「官方云镜像」是个 3 GiB 的整盘镜像，不是 rootfs**：上一轮把 Debian 改钉
+  `cloud.debian.org/.../debian-13-genericcloud-arm64-20261026-2643.tar.xz` 后，下载与校验都过，
+  实例也能建出来，但真机装配时 guest 在 `input-verification` 阶段直接关机——那个 tar 里只有一个
+  `disk.raw`（解包 3.0 GiB，超出 2 GiB 提取上限），没有根文件系统树。该 pin 已撤回，Debian 回到
+  项目自托管的 `debian-13-rootfs.tar.xz`（90 MB，解包 0.41 GiB 的真 rootfs），教训记在这里：
+  rootfs 归档必须校验「成员是目录树」而不只是「sha256 对得上」。
+
+### Verified
+
+- **真机全链路（Honor MEY-AN00 / Android 16 / SM8735，2026-10-30）**：装 0.6.1 → 新建 Debian 13 →
+  下载（节点 github.com，86.2 MB）→ 装配 → systemd 到 `getty.target` → `root@orchestella` 自动登录；
+  `/etc/os-release` 为 Debian 13 (trixie)，`uname -r` 为 7.2.3。
+
 ## [Unreleased]
 
 ### Added

@@ -162,11 +162,13 @@ android {
         } else {
             36
         }
-        // 0.6.0 / 600 — the stable-release milestone: two-package delivery
-        // (main + pVM accelerator extension), 36-domain QEMU lane, app icon.
+        // 0.6.1 / 601 — the rootfs-catalog repair: every distro but Ubuntu could not
+        // download at all (pruned LXC snapshots + a self-hosted release that did not
+        // exist), and the mirror probe now ranks by sampled transfer speed instead of
+        // HEAD latency. No new user-visible feature, so PATCH (VERSIONING.md §3.2).
         // versionCode = MAJOR*10000 + MINOR*100 + PATCH (VERSIONING.md §2).
-        versionCode = 600
-        versionName = "0.6.0"
+        versionCode = 601
+        versionName = "0.6.1"
         buildConfigField("boolean", "DEVELOPMENT_PREVIEW", "true")
         buildConfigField("boolean", "ACCELERATOR_LANE_ENABLED", acceleratorLaneEnabled.toString())
         // Payload builds store native libraries uncompressed and 16 KB aligned
