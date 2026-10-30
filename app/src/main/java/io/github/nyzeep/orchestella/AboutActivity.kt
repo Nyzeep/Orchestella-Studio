@@ -25,6 +25,8 @@ import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
+import io.github.nyzeep.orchestella.update.UpdateCenter
+import io.github.nyzeep.orchestella.update.UpdateCoordinator
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -53,6 +55,11 @@ class AboutActivity : AppCompatActivity() {
     }
     private val avatarLoadStarted = AtomicBoolean(false)
 
+    private lateinit var updateCenter: UpdateCenter
+    private var cardUpdateAvailable: View? = null
+    private var txtUpdateHeadline: TextView? = null
+    private var txtUpdateSummary: TextView? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         ThemeApplier.prepare(this)
         super.onCreate(savedInstanceState)
@@ -80,6 +87,33 @@ class AboutActivity : AppCompatActivity() {
 
         val txtVersion = findViewById<TextView>(R.id.txt_about_version)
         txtVersion.text = "版本：v${BuildConfig.VERSION_NAME} · Phase 5.0"
+
+        updateCenter = UpdateCoordinator.center(this)
+        cardUpdateAvailable = findViewById(R.id.card_update_available)
+        txtUpdateHeadline = findViewById(R.id.txt_update_headline)
+        txtUpdateSummary = findViewById(R.id.txt_update_summary)
+        findViewById<MaterialButton>(R.id.btn_update_download).setOnClickListener {
+            updateCenter.pending(BuildConfig.VERSION_NAME)?.let { pending ->
+                showUpdateSheet(pending, GitHubUpdateChecker.channelForVersion(BuildConfig.VERSION_NAME).label())
+            }
+        }
+        findViewById<MaterialButton>(R.id.btn_update_ignore).setOnClickListener {
+            updateCenter.pending(BuildConfig.VERSION_NAME)?.let { pending ->
+                updateCenter.ignore(pending.version())
+                renderUpdateCard()
+                Toast.makeText(
+                    this,
+                    "已暂时忽略 ${pending.version()}，有新版本时会再次提示",
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+        }
+        renderUpdateCard()
+        // Opening About is itself a signal of interest: refresh the cached answer when the
+        // automatic interval allows it. The badge on the main screen updates on return.
+        UpdateCoordinator.checkInBackground(this, BuildConfig.VERSION_NAME) {
+            if (!isFinishing && !isDestroyed) renderUpdateCard()
+        }
 
         val avatarView = findViewById<ImageView>(R.id.img_author_avatar)
         val avatarPlaceholder = findViewById<TextView>(R.id.txt_avatar_placeholder)
@@ -150,35 +184,60 @@ class AboutActivity : AppCompatActivity() {
                     if (isFinishing || isDestroyed) return@runOnUiThread
                     btnCheckUpdates.isEnabled = true
                     btnCheckUpdates.text = "立即检测更新 · $updateChannel"
+                    updateCenter.record(result, System.currentTimeMillis())
+                    renderUpdateCard()
                     when (result.status()) {
                         GitHubUpdateChecker.Status.UPDATE_AVAILABLE -> {
-                            androidx.appcompat.app.AlertDialog.Builder(this)
-                                .setTitle("发现新版本 (${result.latestVersion()})")
-                                .setMessage("$updateChannel\n当前安装版本：v${BuildConfig.VERSION_NAME}\n最新可用版本：${result.latestVersion()}\n\n更新日志：\n${result.releaseNotes() ?: "无详细说明"}")
-                                .setPositiveButton("前往下载") { _, _ ->
-                                    openUrl(result.releaseUrl() ?: "$PROJECT_REPO_URL/releases")
-                                }
-                                .setNegativeButton("稍后再说", null)
-                                .show()
+                            val pending = updateCenter.pending(BuildConfig.VERSION_NAME)
+                            if (pending != null) {
+                                showUpdateSheet(pending, updateChannel)
+                            }
                         }
                         GitHubUpdateChecker.Status.UP_TO_DATE -> {
                             Toast.makeText(this, "$updateChannel：当前已是最新版本 (v${BuildConfig.VERSION_NAME})", Toast.LENGTH_SHORT).show()
                         }
                         else -> {
-                            androidx.appcompat.app.AlertDialog.Builder(this)
+                            val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
                                 .setTitle("检查更新结果")
                                 .setMessage("$updateChannel\n" + (result.errorMessage() ?: "无法获取版本信息") + "\n\n您可以直接前往 GitHub 仓库 Releases 页面手动查看与获取最新构建。")
                                 .setPositiveButton("访问 Releases 页面") { _, _ ->
                                     openUrl("$PROJECT_REPO_URL/releases")
                                 }
                                 .setNegativeButton("知道了", null)
-                                .show()
+                                .create()
+                            dialog.show()
+                            ThemeApplier.apply(dialog)
                         }
                     }
                 }
             }
         }
         ThemeApplier.bind(this)
+    }
+
+    private fun renderUpdateCard() {
+        val pending = updateCenter.pending(BuildConfig.VERSION_NAME)
+        cardUpdateAvailable?.visibility = if (pending == null) View.GONE else View.VISIBLE
+        if (pending == null) {
+            return
+        }
+        txtUpdateHeadline?.text = "有可用新版本 ${pending.version()}"
+        txtUpdateSummary?.text = pending.summary()
+            .ifBlank { "点击「前往下载」查看本次更新的完整说明。" }
+        cardUpdateAvailable?.let { ThemeApplier.apply(it) }
+    }
+
+    /** Brief notes + the two real choices; the download page carries the full changelog. */
+    private fun showUpdateSheet(pending: UpdateCenter.Available, channel: String) {
+        val summary = pending.summary().ifBlank { "本次更新暂无摘要，下载页有完整说明。" }
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("${pending.version()} · 更新说明")
+            .setMessage("$channel\n当前版本 v${BuildConfig.VERSION_NAME}\n\n$summary")
+            .setPositiveButton("打开下载页") { _, _ -> openUrl(pending.pageUrl()) }
+            .setNegativeButton("稍后", null)
+            .create()
+        dialog.show()
+        ThemeApplier.apply(dialog)
     }
 
     private fun loadAvatar(avatarView: ImageView, placeholder: TextView) {

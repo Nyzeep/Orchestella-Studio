@@ -26,7 +26,7 @@ Captured on a real device (SM8850 / Android 16) with the default "Mascot · Lave
 | ![Workbench](docs/assets/screenshots/dashboard.jpg) | ![Distro catalog](docs/assets/screenshots/distros.jpg) | ![Resource quota](docs/assets/screenshots/wizard-hardware.jpg) |
 | :---: | :---: | :---: |
 | **Workbench · live telemetry** | **Distro catalog · one-tap install** | **New instance · vCPU & RAM** |
-| ![Disk quota](docs/assets/screenshots/wizard-storage.jpg) | ![Boot and deploy](docs/assets/screenshots/wizard-deploy.jpg) | ![Terminal](docs/assets/screenshots/terminal.png) |
+| ![Disk quota](docs/assets/screenshots/wizard-storage.jpg) | ![Boot and deploy](docs/assets/screenshots/wizard-deploy.jpg) | ![Terminal](docs/assets/screenshots/terminal.jpg) |
 | **New instance · virtual disk** | **New instance · boot & deploy** | **Real Linux terminal** |
 
 ## What it does today

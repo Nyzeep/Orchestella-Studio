@@ -281,28 +281,44 @@
                 android:insetTop="0dp"
                 android:insetBottom="0dp" />
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/about_button"
-                style="@style/Widget.Material3.Button.IconButton"
+            <FrameLayout
                 android:layout_width="48dp"
                 android:layout_height="48dp"
-                android:layout_marginStart="4dp"
-                android:minWidth="0dp"
-                android:minHeight="48dp"
-                android:gravity="center"
-                app:cornerRadius="0dp"
-                android:backgroundTint="#1A1B22"
-                app:icon="@drawable/ic_info"
-                app:iconSize="18dp"
-                app:iconGravity="textStart"
-                app:iconPadding="0dp"
-                app:iconTint="#FFFFFF"
-                android:contentDescription="@string/about_title"
-                android:padding="0dp"
-                android:insetLeft="0dp"
-                android:insetRight="0dp"
-                android:insetTop="0dp"
-                android:insetBottom="0dp" />
+                android:layout_marginStart="4dp">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/about_button"
+                    style="@style/Widget.Material3.Button.IconButton"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:minWidth="0dp"
+                    android:minHeight="48dp"
+                    android:gravity="center"
+                    app:cornerRadius="0dp"
+                    android:backgroundTint="#1A1B22"
+                    app:icon="@drawable/ic_info"
+                    app:iconSize="18dp"
+                    app:iconGravity="textStart"
+                    app:iconPadding="0dp"
+                    app:iconTint="#FFFFFF"
+                    android:contentDescription="@string/about_title"
+                    android:padding="0dp"
+                    android:insetLeft="0dp"
+                    android:insetRight="0dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp" />
+
+                <!-- Upgrade marker: visible only while a strictly newer release is known. -->
+                <View
+                    android:id="@+id/about_update_badge"
+                    android:layout_width="10dp"
+                    android:layout_height="10dp"
+                    android:layout_gravity="top|end"
+                    android:layout_marginTop="7dp"
+                    android:layout_marginEnd="7dp"
+                    android:background="@drawable/bg_update_badge"
+                    android:visibility="gone" />
+            </FrameLayout>
         </LinearLayout>
 
         <!-- Red Accent Border Line -->

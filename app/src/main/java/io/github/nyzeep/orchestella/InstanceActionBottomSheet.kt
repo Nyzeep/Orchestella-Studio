@@ -72,14 +72,19 @@ class InstanceActionBottomSheet(
         val actionHardware = view.findViewById<View>(R.id.sheet_action_hardware)
         val textHardware = view.findViewById<TextView>(R.id.sheet_text_hardware)
         val hintHardware = view.findViewById<TextView>(R.id.sheet_hint_hardware)
+        val iconHardware = view.findViewById<View>(R.id.sheet_icon_hardware)
         if (!uiModel.canConfigureHardware) {
-            actionHardware.alpha = 0.5f
-            hintHardware.text = context.getString(R.string.action_config_hardware_disabled_hint)
+            markUnavailable(
+                actionHardware,
+                listOf(iconHardware, textHardware),
+                context.getString(R.string.action_config_hardware_disabled_hint),
+                hintHardware,
+            )
             actionHardware.setOnClickListener {
                 Toast.makeText(context, R.string.action_config_hardware_disabled_hint, Toast.LENGTH_SHORT).show()
             }
         } else {
-            actionHardware.alpha = 1.0f
+            markAvailable(actionHardware, listOf(iconHardware, textHardware))
             actionHardware.setOnClickListener {
                 dialog.dismiss()
                 callbacks.onConfigureHardware(instance)
@@ -110,14 +115,20 @@ class InstanceActionBottomSheet(
         // Action 6: Clone Instance (Guarded: only when stopped/created)
         val actionClone = view.findViewById<View>(R.id.sheet_action_clone)
         val hintClone = view.findViewById<TextView>(R.id.sheet_hint_clone)
+        val iconClone = view.findViewById<View>(R.id.sheet_icon_clone)
+        val textClone = view.findViewById<TextView>(R.id.sheet_text_clone)
         if (!uiModel.canClone) {
-            actionClone.alpha = 0.5f
-            hintClone.text = context.getString(R.string.action_clone_running_forbidden)
+            markUnavailable(
+                actionClone,
+                listOf(iconClone, textClone),
+                context.getString(R.string.action_clone_running_forbidden),
+                hintClone,
+            )
             actionClone.setOnClickListener {
                 Toast.makeText(context, R.string.action_clone_running_forbidden, Toast.LENGTH_SHORT).show()
             }
         } else {
-            actionClone.alpha = 1.0f
+            markAvailable(actionClone, listOf(iconClone, textClone))
             actionClone.setOnClickListener {
                 dialog.dismiss()
                 callbacks.onClone(instance)
@@ -130,13 +141,20 @@ class InstanceActionBottomSheet(
         ThemeApplier.setRole(view.findViewById(R.id.sheet_icon_delete), ThemeApplier.Role.PRESERVE)
         ThemeApplier.setRole(view.findViewById(R.id.sheet_text_delete), ThemeApplier.Role.PRESERVE)
         if (!uiModel.canDelete) {
-            actionDelete.alpha = 0.4f
-            hintDelete.text = context.getString(R.string.action_delete_running_forbidden)
+            markUnavailable(
+                actionDelete,
+                listOf(view.findViewById(R.id.sheet_icon_delete), view.findViewById(R.id.sheet_text_delete)),
+                context.getString(R.string.action_delete_running_forbidden),
+                hintDelete,
+            )
             actionDelete.setOnClickListener {
                 Toast.makeText(context, R.string.action_delete_running_forbidden, Toast.LENGTH_SHORT).show()
             }
         } else {
-            actionDelete.alpha = 1.0f
+            markAvailable(
+                actionDelete,
+                listOf(view.findViewById(R.id.sheet_icon_delete), view.findViewById(R.id.sheet_text_delete)),
+            )
             actionDelete.setOnClickListener {
                 dialog.dismiss()
                 callbacks.onDelete(instance)
@@ -145,5 +163,29 @@ class InstanceActionBottomSheet(
 
         dialog.show()
         ThemeApplier.apply(dialog)
+    }
+
+    /**
+     * Keeps the row's surface and stroke, and mutes only its content.
+     *
+     * <p>The sheet used to fade whole cards to 0.4–0.5 alpha. On the lavender and constructivist
+     * themes that reads as "broken button turned grey" rather than "not available while the
+     * instance runs". A muted content layer plus the explicit hint keeps the card's colour
+     * identity intact and makes the three guarded rows look identical.
+     */
+    private fun markUnavailable(row: View, content: List<View?>, message: String, hint: TextView) {
+        row.alpha = 1f
+        content.forEach { it?.alpha = UNAVAILABLE_CONTENT_ALPHA }
+        hint.text = message
+    }
+
+    private fun markAvailable(row: View, content: List<View?>) {
+        row.alpha = 1f
+        content.forEach { it?.alpha = 1f }
+    }
+
+    private companion object {
+        /** Enough to read as "not now", not so much that it looks like a rendering bug. */
+        const val UNAVAILABLE_CONTENT_ALPHA = 0.55f
     }
 }
