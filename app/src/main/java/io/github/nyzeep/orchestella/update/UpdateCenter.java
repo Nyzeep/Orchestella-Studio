@@ -23,6 +23,12 @@ public final class UpdateCenter {
     /** Six hours: enough to catch a release the same day without polling GitHub all day. */
     public static final long DEFAULT_INTERVAL_MS = 6L * 60L * 60L * 1000L;
 
+    /**
+     * Retry window used while nothing is cached yet. A first launch on a flaky network must not
+     * hide a real update for six hours; one retry per quarter hour is cheap and invisible.
+     */
+    public static final long FIRST_CHECK_RETRY_MS = 15L * 60L * 1000L;
+
     /** A pending update, ready for the badge and the card. */
     public static final class Available {
         private final String version;
@@ -66,7 +72,13 @@ public final class UpdateCenter {
     /** True when the automatic check may run now; a manual check ignores this. */
     public boolean shouldCheck(long nowMillis) {
         long last = store.lastCheckedAt();
-        return last <= 0L || nowMillis - last >= intervalMillis;
+        if (last <= 0L) {
+            return true;
+        }
+        long wait = store.cachedVersion() == null
+                ? Math.min(intervalMillis, FIRST_CHECK_RETRY_MS)
+                : intervalMillis;
+        return nowMillis - last >= wait;
     }
 
     /** Null when there is nothing to announce for the installed version. */

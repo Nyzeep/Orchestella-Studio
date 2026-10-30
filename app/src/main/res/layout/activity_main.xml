@@ -311,11 +311,11 @@
                 <!-- Upgrade marker: visible only while a strictly newer release is known. -->
                 <View
                     android:id="@+id/about_update_badge"
-                    android:layout_width="10dp"
-                    android:layout_height="10dp"
+                    android:layout_width="12dp"
+                    android:layout_height="12dp"
                     android:layout_gravity="top|end"
-                    android:layout_marginTop="7dp"
-                    android:layout_marginEnd="7dp"
+                    android:layout_marginTop="6dp"
+                    android:layout_marginEnd="6dp"
                     android:background="@drawable/bg_update_badge"
                     android:visibility="gone" />
             </FrameLayout>

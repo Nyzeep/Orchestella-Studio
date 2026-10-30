@@ -159,4 +159,28 @@ public final class UpdateCenterTest {
         assertFalse(center.shouldCheck(NOW + 59_999L));
         assertTrue(center.shouldCheck(NOW + 60_000L));
     }
+
+    @Test
+    public void aFailedFirstCheckRetriesSoonerThanTheFullInterval() {
+        MemoryStore store = new MemoryStore();
+        UpdateCenter center = new UpdateCenter(store, UpdateCenter.DEFAULT_INTERVAL_MS);
+
+        center.record(GitHubUpdateChecker.UpdateResult.error("网络不可用"), NOW);
+
+        assertNull(store.cachedVersion());
+        assertFalse("the next resume must not hammer GitHub",
+                center.shouldCheck(NOW + UpdateCenter.FIRST_CHECK_RETRY_MS - 1));
+        assertTrue("but a first failure must not hide an update for six hours",
+                center.shouldCheck(NOW + UpdateCenter.FIRST_CHECK_RETRY_MS));
+    }
+
+    @Test
+    public void onceSomethingIsCachedTheFullIntervalApplies() {
+        MemoryStore store = new MemoryStore();
+        UpdateCenter center = new UpdateCenter(store, UpdateCenter.DEFAULT_INTERVAL_MS);
+        center.record(GitHubUpdateChecker.UpdateResult.updateAvailable("v0.6.2", "", null), NOW);
+
+        assertFalse(center.shouldCheck(NOW + UpdateCenter.FIRST_CHECK_RETRY_MS));
+        assertTrue(center.shouldCheck(NOW + UpdateCenter.DEFAULT_INTERVAL_MS));
+    }
 }
