@@ -8,6 +8,23 @@
 
 ## [Unreleased]
 
+### Added
+
+- **「开发者工具链」入口**（`实例 → 桌面与开发工具`）：给出当前发行版的安装命令，支持「在终端填入
+  命令」（终端 + 预填的发送框，确认后执行）与「复制命令」。基础镜像按设计只带终端/网络/SSH 工具，
+  `gcc`、`make`、`python3`、`vim` 需要一次性安装（Ubuntu 24.04 实测 80 MB / 约 8 分钟）。
+- **pVM 加速扩展包随 0.6.0 发布**（`Orchestella-Accelerator-v0.6.0-release.apk`）：仅对平台开放
+  "非保护型 custom VM"的设备有效；本轮实测机型不支持，装上也只会回落 QEMU。
+
+### Fixed
+
+- **扩展包的 release 包名与主包相同**：`.accel` 后缀此前只加在 debug 构建类型，release 产物
+  applicationId 与主包完全一致（同 versionCode、同签名），安装会直接覆盖主包。现在两种构建类型
+  都带 `.accel`，并用 `verify_apk.py --expected-application-id` 固定。
+- **`apt` 每条命令都打印 `N: Ignoring file 'ubuntu.sources.orchestella-original'`**：云镜像 deb822
+  源的备份被放在 `sources.list.d/` 里，apt 会扫描该目录。备份改到 `/var/lib/orchestella/apt-backup/`
+  （源码修复；随下次 guest 产物重建生效）。
+
 ### Changed
 
 - **默认主题改为「看板娘 · 淡紫工控」**（`ThemeCatalog.default`）：全新安装首次启动即这套固定

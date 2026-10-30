@@ -42,6 +42,14 @@ import java.util.function.Consumer;
  */
 public class TerminalActivity extends Activity {
 
+    /**
+     * Optional command handed over by another screen (for example the developer-toolchain
+     * card). It is not executed on arrival: the first successful connect opens the existing
+     * "send command" dialog with the text already filled in, so the user still decides when
+     * to run it and against which prompt.
+     */
+    public static final String EXTRA_COMMAND_DRAFT = "commandDraft";
+
     private Handler ui;
     private ModernTerminalView terminalView;
     private FrameLayout contentArea;
@@ -61,6 +69,8 @@ public class TerminalActivity extends Activity {
     private Consumer<String> terminalOutputListener;
     private int bindingGeneration;
     private volatile boolean terminalConnected;
+    private String commandDraft;
+    private boolean commandDraftOffered;
     private volatile boolean foregroundActive;
     private volatile int foregroundGeneration;
     private volatile io.github.nyzeep.orchestella.runtime.contract.BridgeClient activeBridgeClient;
@@ -109,6 +119,7 @@ public class TerminalActivity extends Activity {
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         bridgeToken = getIntent().getStringExtra("bridgeToken");
         instanceId = getIntent().getStringExtra("instanceId");
+        commandDraft = getIntent().getStringExtra(EXTRA_COMMAND_DRAFT);
         if (instanceId == null || instanceId.isEmpty()) {
             // Direct launch (desktop shortcut / notification) may carry no
             // instanceId. Exactly one stored instance is unambiguous, so bind
@@ -734,6 +745,7 @@ public class TerminalActivity extends Activity {
         terminalConnected = true;
         terminalView.setTerminalInputEnabled(true);
         terminalView.startCursorBlink();
+        offerCommandDraftOnce();
         if (attachedHolder == holder) {
             scheduleTerminalResize();
             return;
@@ -1067,7 +1079,25 @@ public class TerminalActivity extends Activity {
         });
     }
 
-    private void showCommandEntryDialog() {
+    /**
+     * Hands a drafted command to the user exactly once, after the shell is reachable.
+     * Nothing is typed into the shell automatically: a boot-time write would race the
+     * guest's own prompt and could swallow the line.
+     */
+    private void offerCommandDraftOnce() {
+        if (commandDraftOffered || commandDraft == null || commandDraft.isEmpty()) return;
+        commandDraftOffered = true;
+        final String draft = commandDraft;
+        commandDraft = null;
+        ui.postDelayed(() -> {
+            if (isFinishing() || isDestroyed() || !terminalConnected) return;
+            showCommandEntryDialog(draft);
+        }, 800);
+    }
+
+    private void showCommandEntryDialog() { showCommandEntryDialog(null); }
+
+    private void showCommandEntryDialog(String draft) {
         if (!terminalConnected) return;
         final ExecutionSession commandSession = session;
         android.widget.EditText input = new android.widget.EditText(this);
@@ -1079,6 +1109,10 @@ public class TerminalActivity extends Activity {
         input.setMinLines(2);
         input.setMaxLines(6);
         input.setPadding(dpToPx(16), dpToPx(12), dpToPx(16), dpToPx(12));
+        if (draft != null && !draft.isEmpty()) {
+            input.setText(draft);
+            input.setSelection(draft.length());
+        }
         android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
                 .setTitle("发送命令")
                 .setMessage("命令将发送到当前 Shell；输出由 Shell 返回。")
