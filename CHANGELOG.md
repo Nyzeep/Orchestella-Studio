@@ -19,6 +19,17 @@
 
 ### Fixed
 
+- **发布包缺 QEMU 运行时载荷，装上去创建实例必然失败**（用户报障「Linux 实例不可用」）。
+  根因：`app/src/main/jniLibs/arm64-v8a/{libdroidlayer_qemu,libgvproxy}.so` 按许可证要求不入库，
+  会话 25 又把工作树里的副本移到了 `artifacts/qa-jniLibs-4k-arm64/`；于是构建照旧「成功」，
+  打出来的 0.6.0 里只剩 `assets/Image` 与 initramfs，`NativeExecutableStore.ensure()` 在
+  QEMU 启动前就抛 `missing from both nativeLibraryDir and the APK`。
+- **新增发布门禁 `tools/release/check_runtime_payload.py`**（7 例单测，已接入 `release.yml`
+  的 `publish-draft`）：逐字节比对 APK 里的内核 / initramfs / QEMU 二进制与
+  `runtime-artifacts-v1.sha256`，缺一件就拒绝建 Release。对旧包复现为 FAIL，对新包为 OK。
+- **真机复验（Xiaomi 25102RKBEC / Android 17 / 4 KB 页）**：清空旧包 → 装新包 → 建 Ubuntu 24.04
+  → 装配（格式化 / 解包 / 证书 / apt 装包 / 首次启动验证）→ systemd 到 `multi-user.target` →
+  `root` 自动登录。README 的终端截图换成本轮实拍。
 - **README 精选截图在 GitHub 上 404**（本次发布的直接起因）：`.gitignore` 里的
   `!/docs/assets/screenshots/*.png|jpg` 从未生效——`/docs/assets/*` 排除的是**目录本身**，
   git 不会走进被排除的目录，文件级反选无法解除父目录排除。补上 `!/docs/assets/screenshots/`

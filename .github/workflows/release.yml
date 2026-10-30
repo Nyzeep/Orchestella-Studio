@@ -245,6 +245,20 @@ jobs:
             exit 1
           fi
 
+      # session 26: 0.6.0 shipped without the QEMU payload (it is gitignored, so a clean
+      # checkout builds an APK that installs and then reports "Linux 实例不可用").
+      # Refuse to draft a release from such a bundle.
+      - name: Require the QEMU runtime payload in the APK
+        run: |
+          set -euo pipefail
+          APK=$(ls release-bundle/*.apk | head -1)
+          if ! python3 tools/release/check_runtime_payload.py --apk "$APK"; then
+            echo "::error::the bundle APK cannot boot a Linux instance (QEMU payload missing). \
+          Build the release on the packaging machine that has the payload, or restore \
+          app/src/main/jniLibs/arm64-v8a/{libdroidlayer_qemu,libgvproxy}.so and rebuild."
+            exit 1
+          fi
+
       - name: Create the draft release with the main APK and checksums
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -363,7 +363,6 @@
     <string name="about_app_desc">Orchestella Studio 是专为 Android 移动平台设计的高性能 Linux 运行环境与移动工作站。支持 pKVM / AVF 原生硬件加速虚拟化与高兼容度 QEMU 动态仿真，具备 7 大主流官方 Linux 发行版矩阵支持、多层级镜像源容灾及直接触控终端交互体验。</string>
     <string name="about_author_card_title">项目作者 (Author)</string>
     <string name="about_author_name">Nyzeep</string>
-    <string name="about_author_bio">Orchestella 架构师与核心开发者，专注于 Android 底层系统开发、Linux 虚拟化技术与移动端高性能运行时探索。</string>
     <string name="about_author_github_url">https://github.com/Nyzeep</string>
     <string name="about_project_card_title">开源项目 (Open Source Project)</string>
     <string name="about_project_name">Orchestella Studio</string>
