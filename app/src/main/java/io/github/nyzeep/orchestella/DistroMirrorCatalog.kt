@@ -49,10 +49,9 @@ object DistroMirrorCatalog {
                 substituteHost(source, "cdimage.ubuntu.com", "mirrors.ustc.edu.cn/ubuntu-cdimage"),
                 source,
             )
-            "debian" -> listOf(
-                DEBIAN_TUNA_LXC_IMAGES_MIRROR,
-                source,
-            ) + githubMirrors(source)
+            // Debian publishes the rootfs itself and keeps dated builds for the release's
+            // lifetime; the old LXC pin was pruned upstream (404 everywhere) so it is gone.
+            "debian" -> listOf(source)
             "fedora" -> listOf(
                 FEDORA_TUNA_LXC_IMAGES_MIRROR,
                 source,
