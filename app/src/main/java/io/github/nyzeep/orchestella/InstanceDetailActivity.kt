@@ -392,7 +392,19 @@ class InstanceDetailActivity : AppCompatActivity() {
         }
     }
 
+    /** Built once per activity: the card never depends on the guest, only on the distro id. */
+    private var devToolchainAttached = false
+
+    private fun attachDevToolchainCard(state: InstanceDetailUiState) {
+        if (devToolchainAttached) return
+        val scroll = findViewById<androidx.core.widget.NestedScrollView>(R.id.detail_scroll) ?: return
+        val content = scroll.getChildAt(0) as? android.widget.LinearLayout ?: return
+        DevToolchainCard.attach(this, content, state.distroId, state.instanceId, state.instance.bridgeToken(), atTop = true)
+        devToolchainAttached = true
+    }
+
     private fun renderState(state: InstanceDetailUiState) {
+        attachDevToolchainCard(state)
         val hasSession = ExecutionSessionRegistry.get(state.instanceId) != null
         val launching = InstanceLaunchGuard.isInFlight(state.instanceId)
         val busy = powerOperationPending.get() || exportInProgress.get()

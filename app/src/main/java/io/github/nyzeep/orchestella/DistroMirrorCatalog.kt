@@ -19,6 +19,28 @@ import io.github.nyzeep.orchestella.runtime.network.download.MirrorPriorityList
  */
 object DistroMirrorCatalog {
 
+    /**
+     * GitHub release proxies, in the order they are tried. A CN network cannot reach
+     * github.com release assets directly and individual proxies come and go, so several
+     * are listed; the health probe ranks them and the engine skips a dead one on the first
+     * 4xx instead of retrying it.
+     */
+    private val GITHUB_PROXIES = listOf(
+        "https://ghfast.top/https://github.com/",
+        "https://gh-proxy.com/https://github.com/",
+        "https://ghproxy.net/https://github.com/",
+        "https://hk.gh-proxy.com/https://github.com/",
+        "https://mirror.ghproxy.com/https://github.com/",
+    )
+
+    /** Proxy variants of a GitHub-hosted artifact; empty for any other host. */
+    private fun githubMirrors(source: String): List<String> =
+        if (!source.startsWith("https://github.com/")) {
+            emptyList()
+        } else {
+            GITHUB_PROXIES.map { prefix -> substitutePrefix(source, "https://github.com/", prefix) }
+        }
+
     fun mirrorsFor(manifest: DistroManifest): List<String> {
         val source = manifest.source().toString()
         val candidates = when (manifest.id()) {
@@ -30,41 +52,29 @@ object DistroMirrorCatalog {
             "debian" -> listOf(
                 DEBIAN_TUNA_LXC_IMAGES_MIRROR,
                 source,
-                substitutePrefix(source, "https://github.com/", "https://ghproxy.net/https://github.com/"),
-                substitutePrefix(source, "https://github.com/", "https://mirror.ghproxy.com/https://github.com/"),
-            )
+            ) + githubMirrors(source)
             "fedora" -> listOf(
                 FEDORA_TUNA_LXC_IMAGES_MIRROR,
                 source,
-                substitutePrefix(source, "https://github.com/", "https://ghproxy.net/https://github.com/"),
-                substitutePrefix(source, "https://github.com/", "https://mirror.ghproxy.com/https://github.com/"),
-            )
+            ) + githubMirrors(source)
             "arch" -> listOf(
                 ARCH_TUNA_MIRROR,
                 ARCH_USTC_MIRROR,
                 source,
-                substitutePrefix(source, "https://github.com/", "https://ghproxy.net/https://github.com/"),
-                substitutePrefix(source, "https://github.com/", "https://mirror.ghproxy.com/https://github.com/"),
-            )
+            ) + githubMirrors(source)
             "opensuse" -> listOf(
                 OPENSUSE_TUNA_MIRROR,
                 OPENSUSE_UPSTREAM_MIRROR,
                 source,
-                substitutePrefix(source, "https://github.com/", "https://ghproxy.net/https://github.com/"),
-                substitutePrefix(source, "https://github.com/", "https://mirror.ghproxy.com/https://github.com/"),
-            )
+            ) + githubMirrors(source)
             "almalinux" -> listOf(
                 ALMALINUX_TUNA_LXC_IMAGES_MIRROR,
                 source,
-                substitutePrefix(source, "https://github.com/", "https://ghproxy.net/https://github.com/"),
-                substitutePrefix(source, "https://github.com/", "https://mirror.ghproxy.com/https://github.com/"),
-            )
+            ) + githubMirrors(source)
             "rocky" -> listOf(
                 ROCKY_TUNA_LXC_IMAGES_MIRROR,
                 source,
-                substitutePrefix(source, "https://github.com/", "https://ghproxy.net/https://github.com/"),
-                substitutePrefix(source, "https://github.com/", "https://mirror.ghproxy.com/https://github.com/"),
-            )
+            ) + githubMirrors(source)
             else -> listOf(source)
         }
         return MirrorPriorityList.of(*candidates.distinct().toTypedArray())

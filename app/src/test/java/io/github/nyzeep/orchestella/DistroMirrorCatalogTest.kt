@@ -22,12 +22,14 @@ class DistroMirrorCatalogTest {
     @Test
     fun debianMirrorsLeadWithTunaLxcImagesThenPinnedSourceAndProxies() {
         val manifest = OfficialDebianCatalog.debian()
+        val pinned =
+            "https://github.com/Nyzeep/Orchestella-Studio/releases/download/distro-catalog-v1/debian-13-rootfs.tar.xz"
+        val proxies = listOf("ghfast.top", "gh-proxy.com", "ghproxy.net", "hk.gh-proxy.com", "mirror.ghproxy.com")
+            .map { "https://$it/$pinned" }
         val expected = listOf(
             "https://mirrors.tuna.tsinghua.edu.cn/lxc-images/images/debian/trixie/arm64/default/20261013_05%3A24/rootfs.tar.xz",
-            "https://github.com/Nyzeep/Orchestella-Studio/releases/download/distro-catalog-v1/debian-13-rootfs.tar.xz",
-            "https://ghproxy.net/https://github.com/Nyzeep/Orchestella-Studio/releases/download/distro-catalog-v1/debian-13-rootfs.tar.xz",
-            "https://mirror.ghproxy.com/https://github.com/Nyzeep/Orchestella-Studio/releases/download/distro-catalog-v1/debian-13-rootfs.tar.xz",
-        )
+            pinned,
+        ) + proxies
 
         assertEquals(expected, DistroMirrorCatalog.mirrorsFor(manifest))
     }
@@ -90,11 +92,11 @@ class DistroMirrorCatalogTest {
             mirrors[1],
         )
         assertEquals(
-            "https://ghproxy.net/https://github.com/Nyzeep/Orchestella-Studio/releases/download/v0.5.0/debian-14-rootfs.tar.xz",
+            "https://ghfast.top/https://github.com/Nyzeep/Orchestella-Studio/releases/download/v0.5.0/debian-14-rootfs.tar.xz",
             mirrors[2],
         )
         assertEquals(
-            "https://mirror.ghproxy.com/https://github.com/Nyzeep/Orchestella-Studio/releases/download/v0.5.0/debian-14-rootfs.tar.xz",
+            "https://gh-proxy.com/https://github.com/Nyzeep/Orchestella-Studio/releases/download/v0.5.0/debian-14-rootfs.tar.xz",
             mirrors[3],
         )
     }
