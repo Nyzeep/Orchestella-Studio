@@ -114,13 +114,15 @@ anything the repository cannot measure reads **unverified** instead of an estima
 Two hard rules: both packages must share the same `versionCode` (a mismatch is refused at
 runtime with a reason); upgrade both together, never just one.
 
-### Xiaomi / HyperOS notes
+### Install notes
 
-- **New installs require on-screen confirmation**: locked-screen ADB installs fail with
-  `INSTALL_FAILED_USER_RESTRICTED`. Unlock the device and keep the screen on.
-- **Updates to installed packages are unrestricted**: do not uninstall for a "clean
-  install" — uninstalling takes the instance data with it.
-- `settings put global adb_install_need_confirm 0` does not work on HyperOS.
+- Download the APK from the Releases page and install it the normal way. The package is
+  signed with a personal certificate, so an "unknown source / unknown certificate"
+  warning is expected.
+- **Do not uninstall for a "clean install"**: uninstalling takes the instances, settings
+  and credentials in the app's private directory with it.
+- Installing over the previous version upgrades in place; with the two-package shape,
+  update the main package and the extension together.
 
 ### pVM permission (extension users only)
 
