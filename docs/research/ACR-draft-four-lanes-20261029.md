@@ -28,14 +28,15 @@ scope: 四车道（proot/bare、pVM、QEMU、UML）定位与 targetSdk 36 取舍
 |---|---|---|---|---|
 | **targetSdk 域前提** | 必须落在 legacy 域：targetSdk 28 → `untrusted_app_27`；36 → `untrusted_app_34`，`app_data_file` 无 `execute`（来源：`docs/research/2026-10-29-uml-device-round-go-no-go.zh-CN.md` §4、§8.1） | 机制上与域无关：payload 由 AVF loader 从 APK 未压缩条目装载，不走 `nativeLibraryDir`（来源：`../handoff/prompts-archive/会话18-报告-两包拆分与感知修复-20261028.md` §2.1）；但现网扩展包是按 targetSdk 28 构建的（同上 §2.2），**36 域下的装载行为未验证**（来源：`docs/research/2026-10-29-36domain-unlock-and-uml-compile.zh-CN.md` §7） | **条件式**：36 域可用，但前提是主包 `useLegacyPackaging=true`（不带 payload 目录），`nativeLibraryDir` 下才有带 x 位的实体 `.so`（来源：`docs/research/2026-10-29-36domain-unlock-and-uml-compile.zh-CN.md` §4.1） | 需在 `nativeLibraryDir` 执行内核与 stub；`check_tmpexec()` 走 `mmap RWX`，在 36 域三探针全过（来源：`docs/research/2026-10-29-uml-device-round-go-no-go.zh-CN.md` §4） |
 | **执行机制** | 宿主 ARM64 指令原生执行 + `ptrace` 拦截 syscall 重写路径；guest 无内核（来源：`docs/research/2026-10-21-host-native-lane-evaluation.md` §4.1） | EL2 硬件 vCPU 执行平台信任链接受的 guest 内核（Microdroid GKI）（来源：`docs/research/2026-10-28-native-kernel-three-lane-exploration.zh-CN.md` §1.3、§2.3） | QEMU TCG 软件翻译 guest 指令（来源：`CONTEXT.md`「软件虚拟化」条） | 真 Linux 内核作为普通 App 进程运行，guest 指令由宿主 CPU 原生执行，guest 二进制由 guest 内核 ELF loader 加载、不经宿主 `execve`（来源：`docs/research/2026-10-28-native-kernel-three-lane-exploration.zh-CN.md` §0、§1.4） |
-| **性能实测数字** | bare ≈313 ms/文件 p50（2,120–2,260 ms/7 文件，n=3）；proot ≈337 ms/文件 p50，proot−bare ≈7.8%（来源：`../项目状况总结-20261027.md` §3.2）；`-j7` 批墙钟塌缩到 370–410 ms（≈1,105 文件/分，已近 `/proc/uptime` 厘秒量化地板）（同上） | 单 job 端到端 2,809 ms（distcc 卸载 payload，n=1 复用）（来源：`../项目状况总结-20261027.md` §3.2）；payload 内 clang 编译 P50 98 ms（来源：同上 §2 M1 行） | 单文件全编 32,750 ms（TCG，含预处理，n=1 复用）（来源：`../项目状况总结-20261027.md` §3.2） | 编制 2,000 函数夹具：UML 中位 940 ms vs native 中位 460 ms = **2.04×**（15 样本；三轮 2.02×/2.22×/2.04×）（来源：`docs/research/2026-10-29-36domain-unlock-and-uml-compile.zh-CN.md` §5.2、§5.4）；启动 220/320/340/400 ms，中位 ≈330 ms（来源：`docs/research/2026-10-29-uml-device-round-go-no-go.zh-CN.md` §6） |
+| **性能实测数字** | bare ≈313 ms/文件 p50（2,120–2,260 ms/7 文件，n=3）；proot ≈337 ms/文件 p50，proot−bare ≈7.8%（来源：`../项目状况总结-20261027.md` §3.2）；`-j7` 批墙钟塌缩到 370–410 ms（≈1,105 文件/分，已近 `/proc/uptime` 厘秒量化地板）（同上） | 单 job 端到端 2,809 ms（distcc 卸载 payload，n=1 复用）（来源：`../项目状况总结-20261027.md` §3.2）；payload 内 clang 编译 P50 98 ms（来源：同上 §2 M1 行） | 单文件全编 32,750 ms（TCG，含预处理，n=1 复用）（来源：`../项目状况总结-20261027.md` §3.2）。**F-MTTCG-C200（手机宿主首样本，QEMU 11.1.1，3 轮×6 列，全列 `.o` digest 逐字节一致）**：C200（2,000 函数 make）smp1/2/4/8 中位 399/241/281/356 s → **S(2)=1.66 / S(4)=1.42 / S(8)=1.12**（同轮相对比值口径三轮方向一致：>2 vCPU 无正收益）；翻译税 ≈88–93%（中位 92.0%，同轮 `-j1` 对 `-j1`）（来源：`docs/research/2026-11-07-uml-fabric-device-round.zh-CN.md` §4；**n=3 轮**，04 文档 n≥10 未达，正式曲线判定需补轮） | 编制 2,000 函数夹具：UML 中位 940 ms vs native 中位 460 ms = **2.04×**（15 样本；三轮 2.02×/2.22×/2.04×）（来源：`docs/research/2026-10-29-36domain-unlock-and-uml-compile.zh-CN.md` §5.2、§5.4）；启动 220/320/340/400 ms，中位 ≈330 ms（来源：`docs/research/2026-10-29-uml-device-round-go-no-go.zh-CN.md` §6）。**2026-10-31 设备轮增量**：app 域多核（G1）SMP `ncpus=4` guest nproc=4，4×sha256(32MB) 并行/串行 0.2554 → 有效加速 **3.92×**（E=0.98）；SMP 启动 0.23–0.43s（UP 0.21–0.43s）（来源：`docs/research/2026-11-07-uml-fabric-device-round.zh-CN.md` §1、§2） |
 | **能力边界：完整内核** | ❌ 无 guest 内核，无真实 namespace/cgroup（来源：`docs/adr/0001-two-runtime-classes.md`；`docs/research/2026-10-21-cross-lane-reference-survey.md` §3.3） | ⚠️ 有内核但不可自定义——`Available OS list: ["microdroid"]`，pvmfw 只启动 Google/OEM 签名镜像（来源：`../路线判定-原生车道与pVM卸载-20261027.md` §11.1；`docs/research/2026-10-28-native-kernel-three-lane-exploration.zh-CN.md` §2.3） | ✅ 完整内核，两执行策略共用同一 pinned 内核（来源：`docs/adr/0005-guest-kernel-contract.md`）；36 域实测 guest systemd 启动至 `root@orchestella:~ #`（来源：`docs/research/2026-10-29-36domain-unlock-and-uml-compile.zh-CN.md` §4.3） | ✅ 真内核已实测启动（kernel 7.2.0-rc4，`UMARM_BOOT_OK`）（来源：`docs/research/2026-10-29-uml-device-round-go-no-go.zh-CN.md` §5.1） |
 | **能力边界：Docker** | ❌ 不支持（`proot-distro` 明确「starting service supervisors (`systemd`, `OpenRC`…) is generally not possible」）（来源：`docs/research/2026-10-21-host-native-lane-evaluation.md` §4.1） | ❌ 不支持；payload 为 `microdroid_app` 域、caps 清空（来源：`docs/research/2026-10-21-cross-lane-reference-survey.md` §5.2） | 未取数（本仓库无 QEMU 车道跑 `dockerd` 的实测记录；仅 systemd 启动已实测，见上） | 未验证（D9 未做；下游 fork 自述 `dockerd` + overlay2 可用，属社区自述，非本项目复现）（来源：`docs/research/2026-10-28-native-kernel-three-lane-exploration.zh-CN.md` §2.1、§6.2） |
 | **能力边界：GPU** | ❌ 否（可借宿主 X/Wayland，非产品承诺）（来源：`docs/research/2026-10-21-host-native-lane-evaluation.md` §6） | ❌ 否；protected 无 virtio-net、Microdroid 无 graphics HAL（来源：`docs/research/2026-10-21-cross-lane-reference-survey.md` §5.2） | ⚠️ VirGL 设计在案但**未完成真机验收**（来源：`docs/research/2026-10-21-host-native-lane-evaluation.md` §6 能力矩阵；`CONTEXT.md`「显示通道」条） | ❌ `GPU=UNSUPPORTED`（写死进能力矩阵）（来源：`docs/research/2026-10-28-native-kernel-three-lane-exploration.zh-CN.md` §4.2） |
-| **发布形态约束** | 只能 targetSdk 28 → 上架通道受限；不可与 36 主包共存于同一 APK（来源：`../路线判定-原生车道与pVM卸载-20261027.md` §3.5） | 必须外置为扩展包：扩展包 126.7 MB（`132,898,402 B`），主包不带 pVM 资产（来源：`../handoff/prompts-archive/会话18-报告-两包拆分与感知修复-20261028.md` §2.3） | 内核 Image 49MB + QEMU 属主包不可减基线；主包两包形态 101.8 MB（`106,735,720 B`），对照旧单包 338 MB（来源：`../handoff/prompts-archive/会话18-报告-两包拆分与感知修复-20261028.md` §2.3） | 内核 `libuml_kernel.so` 9.6 MB（`9,648,496 B`）+ stub 2 KB（`2,000 B`），二进制由 `.gitignore` 排除、不入库（来源：`docs/research/2026-10-29-uml-device-round-go-no-go.zh-CN.md` §5.3；`docs/research/2026-10-29-36domain-unlock-and-uml-compile.zh-CN.md` §3）；GPL-2.0 分发义务见 §3.3 |
-| **当前状态** | **条件式**（28 域已验证；36 域不可用） | **条件式**（28 域链路已验证；36 域同机复测**未验证**，扩展包在 HyperOS 装不上）（来源：`docs/research/2026-10-29-36domain-unlock-and-uml-compile.zh-CN.md` §7） | **条件式**（36 域平台阻塞已实证解除；guest 出网与装配**未验证**）（同上 §4.4、§7） | **未验证为主**（启动与 `-c` 编译已验证；长驻、链接、Docker 未验证）（同上 §7） |
+| **发布形态约束** | 只能 targetSdk 28 → 上架通道受限；不可与 36 主包共存于同一 APK（来源：`../路线判定-原生车道与pVM卸载-20261027.md` §3.5） | 必须外置为扩展包：扩展包 126.7 MB（`132,898,402 B`），主包不带 pVM 资产（来源：`../handoff/prompts-archive/会话18-报告-两包拆分与感知修复-20261028.md` §2.3） | 内核 Image 49MB + QEMU 属主包不可减基线；主包两包形态 101.8 MB（`106,735,720 B`），对照旧单包 338 MB（来源：`../handoff/prompts-archive/会话18-报告-两包拆分与感知修复-20261028.md` §2.3） | 内核 `libuml_kernel.so` 9.6 MB（`9,648,496 B`）+ stub 2 KB（`2,000 B`），二进制由 `.gitignore` 排除、不入库（来源：`docs/research/2026-10-29-uml-device-round-go-no-go.zh-CN.md` §5.3；`docs/research/2026-10-29-36domain-unlock-and-uml-compile.zh-CN.md` §3）；GPL-2.0 分发义务见 §3.3（口径注：「不入库」指产品打包侧 jniLibs；research 复现资产库 `research/uml-kernel-build/release-assets/` 自批次 1 起显式入库，2026-11-08 新增 `stub_exe-16k` 2,056 B 亦属该库） |
+| **App 域长驻（freezer 约束，影响全部车道）** | 受同一平台约束（proot/bare 的发行版进程同为 App 子进程，推定同型；本表 UML 面实锤） | 受同一平台约束（crosvm 同为 App 子进程，推定同型；且 protected 内存不可换出，冻结恢复语义更敏感——[非实测-推定]） | 受同一平台约束（QEMU 进程同为 App 子进程，推定同型——[非实测-推定]） | **实锤（设备级）**：HyperOS cgroup freezer 把 Dozing 后的后台 App 连同其 UML 子进程整组冻结（`cgroup.freeze=1`，冻结 33min 零内存漂移；唤醒后 guest uptime 以宿主墙钟追赶 1710s 无回绕）→ **App 域长驻必须持前台服务 + wake lock**（来源：`docs/research/2026-11-07-uml-fabric-device-round.zh-CN.md` §7.1.6） |
+| **当前状态** | **条件式**（28 域已验证；36 域不可用） | **条件式**（28 域链路已验证；36 域同机复测**未验证**，扩展包在 HyperOS 装不上）（来源：`docs/research/2026-10-29-36domain-unlock-and-uml-compile.zh-CN.md` §7） | **条件式**（36 域平台阻塞已实证解除；guest 出网已验证〔§7.3〕；装配管线机械面已通、直驱受阻定位到传输面操作层并产出修正配方〔§7.4〕，package-install 终态**未取数**）（同上 §4.4、§7；设备轮 §6；`docs/research/2026-11-08-t7-network-closure.md`） | **条件式**（启动/单文件编译/app 域多核〔G1〕/长驻/崩溃恢复已验证——2026-10-31 设备轮 T1/T2/T3/T5 全 PASS；链接、Docker、16K 宿主未验证；长驻有 freezer 前提，见上行）（同上 §7；设备轮 §1–§3、§5） |
 
-### 1.2 三条倍数关系（同一轮、同一夹具才算数）
+### 1.2 倍数关系（同一轮、同一夹具才算数）
 
 | 关系 | 值 | 口径与来源 |
 |---|---|---|
@@ -43,6 +44,7 @@ scope: 四车道（proot/bare、pVM、QEMU、UML）定位与 targetSdk 36 取舍
 | pVM vs QEMU | **11.7×** | 32,750 / 2,809（同上；注意 §6 列出的 11.1× 已作废） |
 | 原生 vs QEMU | **≈105×** | 32,750 / 313（同上） |
 | UML vs native（编译） | **2.04×** | 940 / 460，同二进制同输入同设备、产物逐字节相同（来源：`docs/research/2026-10-29-36domain-unlock-and-uml-compile.zh-CN.md` §5.2） |
+| 三面并行宽度（设备轮同窗，UML-worker 判据） | native **6.63×**（E=0.83）> UML **3.92×**（E=0.98）> QEMU-TCG **≤1.77×**（S(2) 同轮峰值 1.45–1.77） | **非同一夹具，可并读不可相除**：native 与 QEMU 数字来自 C200 make 夹具（同轮 `-j8/-j1` 与 smpN/smp1），UML 数字来自 sha256(32MB) 夹具（T2）；同设备同窗口（device-myron，2026-10-31）。QEMU/UML 数字只在本轮同轮比值内使用（来源：`docs/research/2026-11-07-uml-fabric-device-round.zh-CN.md` §2、§4） |
 
 ### 1.3 「车道」与「Runtime 类别」不是一回事
 
@@ -57,6 +59,8 @@ scope: 四车道（proot/bare、pVM、QEMU、UML）定位与 targetSdk 36 取舍
 - 两侧工具链不同（Alpine clang 22.1.3 musl 静态 vs payload clang 22.1.8）（同上 §5.2；`../项目状况总结-20261027.md` §6）。
 
 因此 **`2.04×` 只能与同轮的 `460 ms` 配对使用，不能与 `313 ms` 或 `2,809 ms` 相除**。任何「UML 比 proot 快/慢 N 倍」的说法，目前都缺同一轮的共夹具数据——`未取数`。
+
+第三个会话（2026-10-31 设备轮）的数字适用同一纪律的加强版：**F-MTTCG 的 S(n) 只在「同轮 smpN/smp1」内使用**（跨轮热漂移显著，smp1 三轮 315→399→477s，绝对值不可跨轮比较）；**设备轮的 native 6.63× / UML 3.92× 与历史数字（2.04×、940 ms、460 ms 等）禁止混算**——不同轮、不同夹具（C200 make vs 90,045 B `.c` 单文件 vs sha256）。派发宽度优先级（native > UML > QEMU-TCG）只在设备轮同窗数据内成立。
 
 ---
 
@@ -171,14 +175,15 @@ release / dev / QA 默认**都是 36**；28 只是一个 QA 专用逃生门 `-Po
 
 | 项 | 状态 | 原因 | 来源 |
 |---|---|---|---|
-| 30 min+ 长驻稳定性 | **未验证** | 时间盒；本轮全部是「启动→跑完→退出」短周期 | `docs/research/2026-10-29-36domain-unlock-and-uml-compile.zh-CN.md` §7；`docs/research/2026-10-29-uml-device-round-go-no-go.zh-CN.md` §8.2 |
-| 链接阶段（`-c` 之外，调 `ld`/`lld`） | **未验证** | 本轮只做 `-c` | 同上 §7 |
-| UML 内 systemd/Docker（D9） | **未验证** | stretch，未进时间盒 | `docs/research/2026-10-29-uml-device-round-go-no-go.zh-CN.md` §8.2 |
-| SMP（多 vCPU） | **未验证** | 本轮 `--cpus=1`；需换 `linux-bionic-smp` | 同上 §8.1 第 4 条 |
-| 16K 宿主 + 4K guest | **未验证** | 下游只验证 4K 宿主；目标设备实测宿主页 4096（`getconf PAGE_SIZE`） | 同上 §3 |
-| 长驻场景的性能 | **未取数** | 现有 2.04× 是编译负载，长驻/Docker 类负载无本项目数据 | — |
+| 30 min+ 长驻稳定性 | **已验证（2026-10-31 设备轮）** | T5 门2：60min 驻留两段 RSS \|Δ\|<10%（−2.77%/+0.94%）、驻留中 kill -9 重启成功（EXT4 recovery→mount）、`poweroff -f` 干净退出 exit 0；门1 循环 20/20（归因后）。**前提：屏幕常亮 + deviceidle 白名单；产品化必须前台服务 + wake lock（见下行 freezer 约束）** | `docs/research/2026-11-07-uml-fabric-device-round.zh-CN.md` §5 |
+| HyperOS cgroup freezer（**平台约束，新增行**） | **实锤（设备级）** | 屏幕 Dozing 后数分钟内 App 进程与 UML 子进程同入 `apps/uid_*/pid_*` 且 `cgroup.freeze=1`，冻结 33min 零内存漂移；唤醒后 `cgroup.freeze→0`、guest uptime 以宿主墙钟追赶。06 票 preflight「须持前台服务」从设计建议升级为设备级硬证据 | 同上 §7.1.6 |
+| 链接阶段（`-c` 之外，调 `ld`/`lld`） | **未验证** | 设备轮仍未触碰链接 | 同上 §7（10-29 口径维持） |
+| UML 内 systemd/Docker（D9） | **未验证** | 设备轮未做；下游自述仍是社区证据 | 同上 §7 |
+| SMP（多 vCPU） | **已验证（2026-10-31 设备轮，G1）** | `linux-bionic-smp` + `ncpus=4`（**注意旋钮是 `ncpus=`，`--cpus=` 为 unknown param**）：guest nproc=4、4×sha256 加速 3.92×（E=0.98）、无 tracee 被杀；UP/SMP 双 profile 各 10/10 启动 exit 0 | 同上 §1、§2 |
+| 16K 宿主 + 4K guest | **未验证** | 设备为 4K 页宿主（`uname -r` 尾缀 `-4k`），无 16K 通道（T6 not-tested）；反向半边成立：16K guest 内核在 4K 宿主全程正常（T1/T5 隐式覆盖） | 同上 §0 T6 行、§1 |
+| 长驻场景的性能 | **未取数** | T5 验证的是长驻稳定性（RSS 门），长驻/Docker 类负载的性能数字仍无本项目数据 | — |
 
-**结论**：UML 目前的证据只够支撑「**可以启动、可以跑单文件编译、编译不划算**」。它离「长驻/容器车道」还差 30 min 稳定性 + Docker + 链接三块，**在补齐前不应写进产品能力矩阵的任何 `SUPPORTED` 单元格**。
+**结论（2026-11-08 修订）**：UML 的证据已从「可以启动、可以跑单文件编译、编译不划算」扩展为「**可以启动、多核可用（G1）、长驻稳定（有 freezer 前提）、崩溃可恢复**」。它离「长驻/容器车道」还差 **Docker（D9）+ 链接 + 16K 宿主**三块（前一项须设备窗口实测，后两项本轮未触碰）；**在补齐前，能力矩阵仍不应写 `SUPPORTED`，但「长驻稳定性」一栏可按 T5 结果如实标注为已验证（附前提）**。
 
 ---
 
@@ -234,8 +239,8 @@ release / dev / QA 默认**都是 36**；28 只是一个 QA 专用逃生门 `-Po
 | 1 | 36 域下 QEMU 车道可用（条件式） | ① 不带 payload 属性的构建在 36 域出现执行类 AVC 拒绝；② `useLegacyPackaging` 与「主包必须内嵌 payload」重新变成硬绑定（即两包拆分被撤销）；③ 目标机型 ROM 把 `apk_data_file` 的 execute 也收掉 |
 | 2 | 36 域下 proot 车道不可用 | 出现任一实证：36 域能在可写目录 exec 发行版二进制；或 `nativeLibraryDir` 被证明可承载可写 rootfs；或 `termux-exec` 式 `system_linker_exec` 在自研包名 + 只读前缀上跑通（后者门未闭合，见 `docs/research/2026-10-21-host-native-lane-evaluation.md` §7 G1） |
 | 3 | pVM 仍是唯一稳定契约的高速通道 | ① 36 域 pVM 同机复测出数且显著劣于 28 域；② 扩展包在目标机型稳定装不上（当前已是 HyperOS 拦截状态，来源：`docs/research/2026-10-29-36domain-unlock-and-uml-compile.zh-CN.md` §7）；③ pVM 11.7× 在同夹具复测中跌到 <1.5× |
-| 4 | UML 不进编译车道 | 同夹具复测（同一 clang、同一夹具、同设备、n≥10、控温）稳定 ≤1.5×（判据见 `docs/research/2026-10-29-36domain-unlock-and-uml-compile.zh-CN.md` §5.4；本次实测 2.04×，同上 §5.2）。注意：**必须同一轮四列**，不允许再用跨会话数字拼表（见 §1.4） |
-| 5 | UML 可作长驻/容器车道 | ① 30 min+ 出现不可恢复 panic；② D9 Docker 不可用；③ 链接阶段在 16K guest 失败；④ 16K 宿主设备上无法启动（四项均为 §3.4 表列的未验证项） |
+| 4 | UML 不进编译车道 | 同夹具复测（同一 clang、同一夹具、同设备、n≥10、控温）稳定 ≤1.5×（判据见 `docs/research/2026-10-29-36domain-unlock-and-uml-compile.zh-CN.md` §5.4；本次实测 2.04×，同上 §5.2）。注意：**必须同一轮四列**，不允许再用跨会话数字拼表（见 §1.4）。**2026-11-08 澄清（结论不受影响）**：设备轮 F-MTTCG-C200 的 QEMU 扩展性数据（S(2)=1.66 等）是 QEMU 面并行宽度数据，**不构成对结论 4 的观察触发**——它不度量 UML 编译衰减，与「UML 编译 2.04×」亦非同夹具，禁止互推 |
+| 5 | UML 可作长驻/容器车道 | ① 30 min+ 出现不可恢复 panic；② D9 Docker 不可用；③ 链接阶段在 16K guest 失败；④ 16K 宿主设备上无法启动（均为 §3.4 表列项）。**2026-11-08 观察状态更新**：① 已有首个实测窗口且**未触发**（T5 60min 驻留两段 PASS + 驻留中 kill 重启成功）；②③ 仍未取数；④ 未变（设备 4K 页无 16K 通道，反向半边成立）。另：长驻的成立前提新增 freezer 约束——**无前台服务的长驻在 HyperOS 上会被整组冻结**（设备级实锤，§3.4），这本身构成对「长驻可用」的一个条件化修正而非撤销 |
 | 6 | 「Play 通道」是升 36 的收益 | ACR 补齐 Play 的 targetSdk 最低要求与生效日期后（当前 `未取数`），若项目实际发布渠道判定为 GitHub/F-Droid，则此收益归零（`docs/adr/0003-rootless-tiers.md` 已倾向后者） |
 | 7 | 「原生 vs pVM = 9.0×」 | pVM 侧与 bare 侧不再同夹具（如 pVM 换成含预处理口径），或任一侧重新采样后比值 <1.5×（9.0× 的原始值见 `../项目状况总结-20261027.md` §3.2） |
 | 8 | 四车道数字可比 | 任一行更换夹具/编译器版本而未标注 —— 本结论即时失效，表须重做为「同轮四列」 |
@@ -261,14 +266,14 @@ release / dev / QA 默认**都是 36**；28 只是一个 QA 专用逃生门 `-Po
 1. 复核三件事是否同时满足：同一二进制、同一夹具、同一设备——缺一项则结论不成立，回到步骤 2。
 2. 复核产物等价性（两侧 `.o` 的 sha256 是否仍逐字节相同，本轮为 `b43f22e0…4e8b064`，来源：`docs/research/2026-10-29-36domain-unlock-and-uml-compile.zh-CN.md` §5.2）。
 3. 复核温度与降频（本轮 39→57 °C 未触降频，`thermal_zone27`，同上 §5.2）。
-4. 三项全过 → 结论 4 失效，UML 重新进入编译车道候选；此时**先补 30 min 稳定性**再谈角色，因为编译车道的长驻语义比一次性编译更严。
+4. 三项全过 → 结论 4 失效，UML 重新进入编译车道候选；此时长驻稳定性已过 T5 门（2026-10-31 设备轮），无需重补，直接谈角色与 freezer 前提。
 
 **R-4 · 若 pVM 在 36 域确认不可用（结论 3 失效）**
 
 1. 判定失败点：扩展包装不上（HyperOS/安装策略）vs 装上但 payload 装载失败 vs 装载成功但执行被拒。三者回退路径完全不同。
 2. 若为「装不上」→ 这是分发问题不是技术问题：评估把扩展包改为「同一 APK 内的可选下载资产」，但那会与 36 + `useLegacyPackaging` 冲突（§2.3），需回到 §2 重新投票。
 3. 若为「装载失败」→ 记录 `setApkPath` 反射调用的返回与 `AccelExtensionRules` 五态判定，属实现层修复，不改车道定位。
-4. 若为「执行被拒」→ pVM 与 proot 同命运，三车道收缩为「QEMU（完整但慢）+ UML（真内核但未验证）」两条，产品叙事需重写。
+4. 若为「执行被拒」→ pVM 与 proot 同命运，三车道收缩为「QEMU（完整但慢）+ UML（真内核，多核/长驻已验证但链接与 Docker 未验证）」两条，产品叙事需重写。
 
 **R-5 · 通用回退纪律**
 
@@ -286,7 +291,7 @@ release / dev / QA 默认**都是 36**；28 只是一个 QA 专用逃生门 `-Po
 2. Android 何时收回 targetSdk 28 的 legacy 域（会话 21 只写「后续 Android 版本」，无版本号）。
 3. 28 域失效后 proot 车道的替代路径（`system_linker_exec` 在自研包名上是否可用）。
 4. QEMU 车道跑 `dockerd` 的实测结论。
-5. UML 长驻 / Docker / 链接三块的任何数字。
+5. UML Docker / 链接的任何数字（长驻**稳定性**已有 2026-10-31 设备轮 T5 数据，长驻**性能**仍无——见 §3.4）。
 6. UML 内核以 `.so` 形式分发是否仍满足 ADR-0014 的「独立程序边界」——法务结论。
 7. 同夹具四列车道（proot / pVM / QEMU / UML）的同一轮数据。
 8. 扩展包在目标机型的可安装性（当前被 HyperOS 拦截，非技术结论）。
@@ -315,3 +320,51 @@ release / dev / QA 默认**都是 36**；28 只是一个 QA 专用逃生门 `-Po
 - 装配失败的根因是 **pacman 7 的下载沙箱**：`error: restricting filesystem access failed because Landlock is not supported by the kernel!`（guest `/sys/kernel/security/lsm` 只有 `capability`）。
 - 在 guest 内加 `DisableSandbox` 后 `pacman -Sy` 成功。**即 QEMU 车道的 36 域状态应从「guest 出网未验证」上修为「出网已验证；装配受 guest 内核无 Landlock 阻断，可修」。**
 - 附带更正一条会话 22 的经验：gvproxy **会**转发 ICMP；`ping 192.168.127.254` 100% 丢包是因为 hostIP 被映射为 `127.0.0.1` 后回包源地址被改写，与 TCP 无关。
+
+### 7.4 36 域 QEMU 装配面：T7 PARTIAL、传输层根因链与配方修正（2026-10-31 设备轮；QEMU 生产面=轨道 A 的唯一生产交付面、轨道 B 的兼容兜底面，见 05 文档 §2.4）
+
+- **T7 判定：PARTIAL（时间盒停止）**。装配管线**机械面**全部验证通过：DisableSandbox 预置被 pacman 接受、arch 判定（`archarm→arch`）、keyring 检查、provision state 机推进到 `stage=package-install` 并按产品格式报 `reason=offline-or-package-install-failed`（与会话 22 失败串逐字同型）。**网络面直驱**受阻，2026-11-07 记录的四步根因链经 2026-11-08 源码闭环**改判第 4 步**（每步有日志/源码证据）：
+  1. 打包 QEMU 11.1.1 **无 slirp**（`network backend 'user' is not compiled into this binary`）——成立；
+  2. passt daemon 被 SELinux 阻断（产品注释明示，`QemuInstanceLauncher.java:634` 附近）——成立；且 passt 本就是死资产（从未入库，`buildWithPasst` 仅命名化石）；
+  3. gvproxy unix socket bind 被 shell 域 SELinux 拒（产品把 api.sock 放 app 私有目录规避；TCP 可用）——成立；
+  4. ~~「QEMU 11.1.1 ↔ gvproxy v0.9.0 协议不匹配」~~——**误诊**：QEMU `-netdev socket` 与 `-netdev stream` 均为 4 字节大端长度前缀帧，与 gvproxy qemu 监听**线兼容**（QEMU net/socket.c、net/stream_data.c 与 gvproxy `QemuProtocol` 三方源码互证）。`cannot read size from socket: EOF` 的真语义是「连接被 accept 后 0 字节关闭」+ **gvproxy qemu 监听是单发 accept**——探活连接/残留连接烧掉 accept 槽位即永久断网。产品防御同坑：`portBound` 用 bind 测试而非连接测试、gvproxy 先于 QEMU 硬序、启动失败清理连带 gateway（提交 `109b43d5`，`NetworkGatewayDaemon.java:602-607/:243`）。
+- **判词（入档）**：10-29 的 `package-install reason=offline` 根因定位到**传输面操作层**（监听面生命周期管理）而非 pacman、亦非协议层——配合 02 票渠道结论（运行时下载内核=禁止、rootfs 下载=中风险），**包安装失败不是 36 域收敛的结构性阻塞**；真终态留给下一设备窗口（与 W-FAB-03 同窗）。
+- **产品语法（2026-11-08 逐字提取，更正 11-07「spec 不在本仓库」的记录）**：0.6.x 生产默认行 = `-netdev socket,id=orchestella-net,connect=127.0.0.1:<port>` + `-device virtio-net-device,netdev=orchestella-net`（`runtime/engine-qemu/.../QemuLaunchSpec.java:569-575`）；gvproxy 走 `-config` YAML（`interfaces.qemu: tcp://127.0.0.1:<port>` + stack 192.168.127.0/24 段；`NetworkGatewayDaemon.java:335-359`），端口形 24100–24899。
+- **配方修正**：`docs/research/2026-11-08-t7-network-closure.md`（产品语法 file:line 引用 + 协议矩阵 + EOF 语义 + 新配方三条硬规则：每尝试重启 gvproxy、只做 LISTEN 检查禁止连接式探活、先 gvproxy 后 QEMU）；探针配方已按其修正：`research/uml-fabric-probe/t7/`（含分层诊断 `probe-init.sh`）、`research/uml-fabric-probe/guest-overlay-qemu/qrun.sh`。下一窗口按新配方执行 T7（子代理自评一次通过置信度 ~85%）。
+- 本节与 §1.1 QEMU 行「当前状态」的口径一致：出网已验证（§7.3）、装配机械面已通、传输层已定位、package-install 终态未取数。
+
+### 7.5 fabric 资源账本输入：QEMU 面最优宽度降档为 2（R-Q 系增补）
+
+- 设备轮 F-MTTCG-C200（首个手机宿主样本）实测 `S(4)/S(2)=0.86<1.2`，触发 04 文档「扩展性不足→回退讨论」条款：**QEMU 车道 vCPU 预算按 2 记账**（04 文档「4=稳健默认档」降档）；宽并行任务不派 QEMU 面（来源：`docs/research/2026-11-07-uml-fabric-device-round.zh-CN.md` §4.1；`docs/research/2026-11-04-qemu-mttcg-scaling.md` §5.4 判据）。
+- 落到 04 文档 R-Q 系：**R-Q3（核数字段=并发预算语义）与 R-Q7（CPU 预算量级标定）的 QEMU 面输入从「4」改记「2」**；派发宽度优先级 native（6.63×）> UML（3.92×）> QEMU-TCG（≤1.77×）进入 D-3 编排策略输入（05 文档 §2.3 挂接条件表）。04 文档正文不回改，以本节为准（设备轮数据优先于其设计期判据）。
+- 口径：S(n) 只在同轮 smpN/smp1 内使用；n=3 轮未达 04 文档 n≥10，正式曲线判定需补轮后才能把「最优宽度=2」从工作假设升格为定案。
+
+---
+
+## 8. 修订记录与 ACR 就绪度（2026-11-08，fabric 批次 3 合入）
+
+### 8.1 修订记录
+
+| 版本 | 内容 |
+|---|---|
+| 2026-10-29 初稿（会话 23） | 四车道定位表、targetSdk 36 取舍、UML 定位修正、文案纪律、撤销条件；§7 现场补充（AVF 服务缺失、包可见性、Landlock 修正） |
+| 2026-11-08（fabric 批次 3） | 合入 2026-10-31 设备窗口轮（device-myron）T1–T7：§1.1 性能与状态行更新（F-MTTCG-C200、G1、长驻/崩溃恢复 PASS）、新增 freezer 能力约束行、§1.2 新增三面并行宽度行、§1.4 新增设备轮口径纪律、§3.4 未验证表修订（长驻→已验证、SMP→已验证、freezer 平台约束行）、§5.1 结论 4/5 观察状态更新、§7.4 T7 与配方指针（含对 11-07 四步根因链第 4 步「协议不匹配」的源码级改判）、§7.5 R-Q 降档。全部数字来源见各节标注 |
+
+### 8.2 投票前仍缺（就绪度清单）
+
+1. **T7 终态**：package-install 全链取数（下一设备窗口，按 §7.4 修正配方）；
+2. **16K 宿主**（T6 not-tested，无 16K 通道设备）；
+3. **D9 Docker**（UML 内 systemd/dockerd 实测）；
+4. **链接阶段**（16K guest 内 `ld`/`lld`）；
+5. **W-FAB-03 OEM 普查**（`virtualizationservice` 注册多机型样本——§7.1 单设备样本的扩样）；
+6. **distcc COMPLETED@36**（36 域 distcc 全链完成态，fastlane 线）；
+7. §6 原有八项中仍开放的：Play targetSdk 日期、28 域失效时间线、同夹具四列（proot/pVM/QEMU/UML 同轮）、`.so` 分发边界法务结论、扩展包可安装性。
+
+### 8.3 ACR 议程建议（按优先级）
+
+1. **头号：开发通道产品形态裁定**——05 票判词「Play 渠道第三方 App 在任何 AVF 设备均无 pVM 生产通道（双轨同判，只能开发/预装通道）」成立后，「开发通道以什么形态交付（引导 grant UX、能力卡片措辞、失败降级叙事）」成为产品决策的先决项（来源：`docs/research/2026-11-05-pvm-fabric-route.md` §2.4）；
+2. **D-7 建议**：`uml_host_top`/装载基址方案（06 票产出，标注待裁定）；
+3. **UML 扩展包形态**：独立 APK（自带对应源码交付物）vs 并入主包（§3.3 的法务/包链权衡）；
+4. **16KB stub 重链门槛**：`-z max-page-size=16384` 重链 stub 已产出（`research/uml-kernel-build/`，行为等价 not-tested）——ACR 需在「重链 stub 默认化」与「gate 豁免」间裁定（01 票 S3 二选一的收口）。
+
+> 本节为批次合入记录，不是新的事实来源；所有事实以 §1–§7 与其标注的来源文档为准。

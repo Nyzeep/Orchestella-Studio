@@ -1,0 +1,5 @@
+# 构建输入与输出，不入库（README「文件」表口径）：
+#   .toolchain/ = NDK r29 解包 + 源码树本地下副本（可重下）
+#   out/        = 构建输出（build-* / 日志 / config 对照）
+.toolchain/
+out/

@@ -6,7 +6,8 @@
 输出落到 `filesDir`，便于 `adb` 取证。
 
 - 包名：`dev.orchestella.umlrunner`
-- compileSdk 36 / **minSdk 28 / targetSdk 28** / 仅 `arm64-v8a`
+- compileSdk 36 / **minSdk 28** / 仅 `arm64-v8a`；targetSdk 拆双 flavor：`sdk36`（36 域判定）+ `sdk28`（10-29 轮对照基线），见 `app/build.gradle`
+- 长驻保活：前台服务 `KeepAliveService`（specialUse）+ PARTIAL_WAKE_LOCK，见第 9 节
 - 不进主 app 构建流水，不改 `research/uml-probe`
 
 ---
@@ -129,6 +130,7 @@ MSYS_NO_PATHCONV=1 ./prepare.sh config
 | 字段 | 类型 | 默认 | 说明 |
 | --- | --- | --- | --- |
 | `memMb` | int | `512` | 展开成 `mem=<N>M` |
+| `ncpus` | int | 省略 | **SMP 内核多核旋钮**：≥2 时追加 `ncpus=<N>`；省略 = 默认 **host-1**（单核）。写作 `ncpus=N`，**不是** `--cpus=N`（SMP 内核不识别 `--cpus=`，unknown param 会透传 userspace；见第 10 节）。`args` 覆盖时此字段不生效，需在 args 里自行写 `ncpus=N` |
 | `rootfs` | string | `filesDir/rootfs` | 展开成 `rootflags=<dir>` |
 | `kernel` | string | `nativeLibraryDir/libuml_kernel.so` | 可换内核（如 smp 版） |
 | `stubExe` | string | `nativeLibraryDir/libuml_stub.so` | 展开成 `stub_exe=<path>` |
@@ -136,29 +138,34 @@ MSYS_NO_PATHCONV=1 ./prepare.sh config
 | `stdin` | `"pipe"` \| `"null"` | `"pipe"` | `pipe` 保活 fd0 可 poll；`null` 接 `/dev/null` |
 | `args` | string[] | 见下 | **整体覆盖**默认参数；支持 `${stubExe}` `${rootfs}` `${nativeLibDir}` 占位 |
 
-默认参数数组（顺序即 argv）：
+默认参数数组（顺序即 argv；`ncpus` 仅在配置 ≥2 时追加到末尾）：
 
 ```
 mem=512M  rw  init=/um-init  con=null  con0=fd:0,fd:1
 stub_exe=<nativeLibraryDir>/libuml_stub.so
 rootfstype=hostfs  rootflags=<filesDir/rootfs>
-seccomp=on  panic=1
+seccomp=on  panic=1  [ncpus=<N>]
 ```
 
-示例（换 1G 内存 + SMP 内核 + 自定义 rootfs）：
+示例（换 1G 内存 + SMP 内核 4 核 + 自定义 rootfs）：
 
 ```json
 {
   "memMb": 1024,
+  "ncpus": 4,
   "kernel": "/data/user/0/dev.orchestella.umlrunner/files/linux-smp",
   "rootfs": "/data/user/0/dev.orchestella.umlrunner/files/rootfs",
   "args": [
     "mem=1024M", "rw", "init=/um-init", "con=null", "con0=fd:0,fd:1",
     "stub_exe=${stubExe}", "rootfstype=hostfs", "rootflags=${rootfs}",
-    "seccomp=on", "panic=1"
+    "seccomp=on", "panic=1", "ncpus=4"
   ]
 }
 ```
+
+> SMP 多核旋钮是 `ncpus=N`（默认 host-1，即省略 = 单核）。`--cpus=N` 不被 SMP
+> 内核识别（unknown param 透传 userspace），不要使用——2026-11-07 设备轮
+> §7.1.2 实测结论，全目录已按 `--cpus` 清零口径复核。
 
 > `con0=fd:0,fd:1` 要求 fd0 可 poll；若内核报 `epoll_ctl: EPERM`，把 `con0` 改成
 > `null,fd:1`（用 `args` 覆盖）。
@@ -265,3 +272,98 @@ rootfs 是否存在一行行写进 `uml-console.log` 头部（`precheck:` 前缀
 | `guest/um-command.sh` | guest 自证 + 基准入口（含 `BENCH boot_uptime_ms`） |
 | `guest/um-init.hostfs` | `um-init` 的 hostfs 兼容版（shebang 修补） |
 | `guest/probe-init.sh` | hostfs 符号链接/文件可见性诊断 init |
+
+---
+
+## 9. 长驻抗冻结（HyperOS freezer）与设备窗口操作指引
+
+**背景（设备级实锤）**：2026-11-07 设备轮 T5 门2 attempt1（`docs/research/
+2026-11-07-uml-fabric-device-round.zh-CN.md` §7.1.6）——屏幕 Dozing 后数分钟内，
+runner App 进程与其 UML 子进程同入 `0::/apps/uid_10051/pid_6642` 且
+`cgroup.freeze=1`（cpuset 落 `background`），guest uptime 冻结、console 停 tick、
+**冻结 33 分钟零内存漂移**。结论：**App 域长驻（W-064 门2 形态）在 HyperOS 上
+必须持前台服务 + wake lock，否则进程整组被冻结**——06 票 §4.4 preflight 的
+「后台约束：须持前台服务」由设计建议升级为设备级硬证据。
+
+**本轮已内置的保活（产品化前提，不是可选优化）**：
+
+| 机制 | 实现 | 生命周期 |
+|---|---|---|
+| 前台服务 | `KeepAliveService`（`foregroundServiceType="specialUse"`，`PROPERTY_SPECIAL_USE_FGS_SUBTYPE` 已声明用途；targetSdk 34+ 要求显式 type） | UML 启动时 `startForegroundService`，退出 `stopService`（`run()` 的 finally） |
+| 最低配通知 | `IMPORTANCE_LOW` channel，`setOngoing(true)`，无声音无横幅（targetSdk 33+ 需 `POST_NOTIFICATIONS` 运行时权限，onCreate 已申请） | 同服务 |
+| PARTIAL_WAKE_LOCK | `UmlRunner:uml-kernel`，`acquire(timeout=2h)` 防泄漏上限 | UML 存活期持有，`stopKeepAlive()` 在 finally 提前释放。**注意：超 2h 的驻留窗口 wake lock 会被系统超时回收（无续期），抗冻结能力静默失效——超长驻留须在指引脚本里分段重启会话或记录该时点** |
+
+**设备窗口操作指引（设备轮已验证的缓解组合，与前台服务叠加使用）**：
+
+```bash
+# 1) 屏幕常亮（USB 供电下不影响 RSS 判定，报告 §7.3）
+adb shell svc power stayon usb
+
+# 2) 电池优化白名单（避开 deviceidle Dozing 的调度压制）
+adb shell dumpsys deviceidle whitelist +dev.orchestella.umlrunner
+
+# 3) 验证冻结状态（冻结时 cgroup.freeze=1、uptime 停走）
+adb shell "cat /sys/fs/cgroup/uid_$(adb shell dumpsys package dev.orchestella.umlrunner | grep -m1 userId= | grep -o '[0-9]*')/cgroup.freeze" 2>/dev/null || \
+adb shell "ps -A | grep uml"
+```
+
+> 前台服务解决「cgroup freezer 整组冻结」，`stayon` + 白名单解决「Dozing 调度
+> 压制」；attempt2（仅手动缓解组合）已跑通 60min 驻留门，本轮把手动组合升级为
+> App 内生机制，下一设备窗口验证前台服务形态下的等价驻留表现。
+
+---
+
+## 10. 修缮包改动记录（2026-10-31，fabric 批次 3 / research 修缮包）
+
+### 10.1 stop-file watcher 修复（T5 门1 cycle1 根因）
+
+- **根因**：`watchStop` 循环条件 `while (p.isAlive())` 先退出，进程死后遗留的
+  `files/uml-stop` 不被消费/清理；下一实例启动 549ms 就把它当停止信号消费，
+  产生非正常退出（exit_code=1, reason=stop-file）。T5 门1 唯一非零循环即此
+  （报告 §5.1，根因归后 20/20）。
+- **修法（两方案都做，互补关系）**：
+  1. **启动期清理（权威修法）**：`run()` 开头 `stopFile.delete()`——App 被杀时
+     watcher 线程随之消亡，死后兜底够不到，只有下一实例能清陈旧文件；
+  2. **进程死后兜底**：`waitFor` 返回后 `stopFile.delete()`——关闭「本轮生成、
+     watcher 消费窗口已关」的竞态遗留；正常 stop-file 路径下该 delete 返回
+     false，无副作用。
+  两处均有代码注释说明理由；不变式 = **任何一轮结束时 filesDir 不留 uml-stop**。
+- **回归验证（本机无 JVM，脚本级模拟）**：`tools/stop_watcher_sim.sh` 把 watcher
+  状态机抽成 shell 镜像（startup sweep / watch 循环 / post-exit sweep），4 场景
+  断言（S1 消费路径不回归、S2 死后竞态——FIX=0 复现遗留 + FIX=1 证明修复、
+  S3 陈旧文件不误杀新实例、S4 自然退出无残留）。本机实跑 **6/6 PASS**。
+  设备窗口的端到端回归（T5 门1 20 循环原样重跑，期待 20/20 无归因）留待下窗：
+  `./prepare.sh all` + 门1 循环脚本，判定串 `exit_code=0 && reason=exited`。
+
+### 10.2 ncpus= 旋钮修正
+
+- SMP 内核多核旋钮是 `ncpus=N`（默认 **host-1**），`--cpus=N` 不被识别
+  （unknown param 透传 userspace）——报告 §7.1.2。
+- 落点：`Config.defaultArgs`（`ncpus` 配置字段 ≥2 时追加，UP 内核不加、避免
+  argv 污染）、`prepare.sh config`（`NCPUS=4 ./prepare.sh config`）、本 README
+  §5 表格与示例。
+- **清零复核**：`grep -rn '\-\-cpus' research/uml-runner/` = 0 处（含 guest/ 与
+  tools/，本轮前后各查一次）。
+
+### 10.3 长驻保活接线（详见第 9 节）
+
+- `AndroidManifest.xml`：`FOREGROUND_SERVICE` / `FOREGROUND_SERVICE_SPECIAL_USE` /
+  `WAKE_LOCK` / `POST_NOTIFICATIONS` 四权限 + `<service android:foregroundServiceType="specialUse">`；
+- 新增 `KeepAliveService.java`；`RunnerActivity` 启动 UML 时 `startForegroundService`
+  + wake lock `acquire(2h 上限)`，退出 finally 里 `stopKeepAlive()`；
+- 兼容性：minSdk 28 上 `foregroundServiceType`/specialUse 常量被旧平台忽略，
+  `Build.VERSION.SDK_INT >= 34` 才走三参 `startForeground`；sdk28 flavor 行为
+  不受影响（API 28 无 FGS type 强制）。
+
+### 10.4 构建判据记录（2026-10-31 实测）
+
+- **理想判据达成**：本机原无 Java/Android SDK，按协议装 openjdk-21-headless +
+  cmdline-tools + platform-36 + build-tools 36.0.0 后，`sh gradlew
+  assembleSdk36Debug assembleSdk28Debug` **双 flavor BUILD SUCCESSFUL**（68 tasks）。
+  产物：`app/build/outputs/apk/sdk{36,28}/debug/app-sdk{36,28}-debug.apk`；
+  aapt2 复核 sdk36 targetSdk=36 / sdk28 targetSdk=28，包内 manifest 含 4 权限 +
+  `<service>` `foregroundServiceType=0x40000000`(specialUse) + PROPERTY_SPECIAL_USE_FGS_SUBTYPE。
+- 附加验证：`javac`（classpath=android-36）对两个 .java 真实编译通过（JAVAC_OK）。
+- 环境注记：Maven Central 对本机出口 IP 429 限流，构建经命令行 init script 切
+  aliyun 镜像完成（未改动仓库 settings/build 文件）；`gradlew` 无执行位，用
+  `sh gradlew` 调用。
