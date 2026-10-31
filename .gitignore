@@ -85,3 +85,10 @@ signing.properties
 
 # Local release staging (APK+idsig+sums before upload); binaries are gitignored, sums are not.
 /artifacts/release-*/
+
+# --- UML kernel build (research/uml-kernel-build) ---------------------------
+# Rebuildable via build-bionic*.sh (pinned commit + manifest sha256); build
+# trees and the NDK toolchain stay local. Only scripts/defconfigs/manifest/
+# checklist/release-assets are tracked.
+/research/uml-kernel-build/out/
+/research/uml-kernel-build/.toolchain/
