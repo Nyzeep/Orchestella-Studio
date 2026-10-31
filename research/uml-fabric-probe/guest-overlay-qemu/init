@@ -1,0 +1,35 @@
+#!/bin/sh
+# QEMU guest init (ext4 rootfs) - orchestella-uml-fabric device round 2026-10-31
+export PATH=/usr/bin:/bin:/sbin:/usr/sbin
+export RES_J="1"
+[ -d /proc ] || mkdir -p /proc
+mount -t proc proc /proc 2>/dev/null
+mount -t sysfs sysfs /sys 2>/dev/null
+mount -t devtmpfs devtmpfs /dev 2>/dev/null
+UP=$(cut -d' ' -f1 /proc/uptime)
+NP=$(nproc 2>/dev/null || echo 1)
+PG=$(getconf PAGESIZE 2>/dev/null || echo '?')
+echo "UMARM_BOOT_OK guest_uptime=${UP} nproc=${NP} page=${PG}"
+uname -a
+WORK=""
+TICKS=""
+for a in $(cat /proc/cmdline); do
+  case "$a" in
+    work=*) WORK="${a#work=}" ;;
+    ticks=*) TICKS="${a#ticks=}" ;;
+    j=*) RES_J="${a#j=}" ;;
+  esac
+done
+export RES_TICKS="${TICKS:-120}"
+if [ -n "$WORK" ] && [ -f "/work/${WORK}.sh" ]; then
+  echo "UMARM_WORK_START work=${WORK} j=${RES_J} uptime=$(cut -d' ' -f1 /proc/uptime)"
+  sh "/work/${WORK}.sh"
+  RC=$?
+  echo "UMARM_WORK_DONE rc=${RC} uptime=$(cut -d' ' -f1 /proc/uptime)"
+  sync
+  poweroff -f 2>/dev/null || halt -f 2>/dev/null
+  sleep 5
+else
+  echo "UMARM_SHELL_READY (no work= given)"
+  exec /bin/sh
+fi
