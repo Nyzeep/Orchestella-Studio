@@ -1,0 +1,35 @@
+# um-arm64 release manifest.  Format and field meanings:
+# docs/RELEASE.md.  Regenerate with:
+#   tools/um-arm64/harness/verify-release.py make --dir <dir> ...
+manifest-format=1
+project=Raymer8639/linux-um-arm64
+tag=um-arm64-v0.3.0
+commit=169b17ff3f66d507cb137b770ceb1fd9f4547a32
+branch=um-arm64
+upstream-baseline=2f88f5689de1a039764d00f466209acf0c010eaf
+kernel-version=7.2.0-rc4
+linux-floor=7.2.0
+ndk=r29
+android-api=30
+ext4-gate=pass
+released=2026-10-24T09:15:00+08:00
+asset.linux-bionic.sha256=5c205533a5b02d5b22683475807aea7d6c2f4df8aec6be4d6034f8185ec59c18
+asset.linux-bionic.size=9648496
+asset.linux-bionic.kind=elf-exec
+asset.linux-bionic.gate=pass
+asset.linux-bionic-smp.sha256=b8ccc5f0d6327e2d3684ffe3d77c95835a66d277c5b6466c9452113272bdb360
+asset.linux-bionic-smp.size=13272376
+asset.linux-bionic-smp.kind=elf-exec
+asset.linux-bionic-smp.gate=pass
+asset.passt-bionic.sha256=81583f6a77bba0af7f942a2ad36d7d87596d68539d90479616f173928dea511c
+asset.passt-bionic.size=2709336
+asset.passt-bionic.kind=elf-exec
+asset.passt-bionic.gate=pass
+asset.stub_exe.sha256=731c48d5bf42ef25e26625af6a02627a5d658bf9f67d6f7fc443d6d644d6e52e
+asset.stub_exe.size=2000
+asset.stub_exe.kind=elf-exec
+asset.stub_exe.gate=pass
+asset.umnet.sha256=7683b4f8cba8cd403b889d8073cc47f390c0de699260d7ecb0f40f3479ce5ebb
+asset.umnet.size=2172944
+asset.umnet.kind=elf-exec
+asset.umnet.gate=pass
