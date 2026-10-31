@@ -1,0 +1,23 @@
+# T7 网络面直驱 · gvproxy 配置文件
+# 产品等价来源：app/src/main/java/io/github/nyzeep/orchestella/NetworkGatewayDaemon.java
+#   configuration() :335-359 逐字生成以下结构（经 ProcessBuilder(gvproxyPath, "-config", <file>) 启动，:218-219）
+#   端口规则 listenPortFor() :609-611 = 24100 + floorMod(instanceId.hashCode(), 800) → 取值 24100..24899；
+#   本探针取固定 24117 便于复现，功能等价（gvproxy interfaces.qemu 监听地址与端口号不参与协议语义）。
+#
+# 与产品的唯一差异：省略 services（gvproxy HTTP API unix socket）。
+# 产品把 api.sock 放 app 私有目录（filesDir/net-api/<hash>/api.sock，:191-200）；shell 域 bind unix
+# socket 被 SELinux 拒（设备轮 2026-10-31 实测 "listen unix …: bind: permission denied"，
+# docs/research/2026-11-07-uml-fabric-device-round.zh-CN.md §6）。本探针不注册端口转发
+# （pacman 直驱不需要 /services/forwarder/*），API 面整体省略不影响 qemu 监听面。
+# 若后续需要转发，用产品 ForwardingEngine 同款 HTTP-over-unix 或改在 app 域执行。
+log-level: info
+interfaces:
+  qemu: "tcp://127.0.0.1:24117"
+stack:
+  mtu: 1500
+  subnet: 192.168.127.0/24
+  gatewayIP: 192.168.127.1
+  deviceIP: 192.168.127.15
+  hostIP: 192.168.127.254
+  # gatewayMacAddress: 省略时由 gvproxy 自动生成（勿写入真实 MAC——本仓库门禁禁止）
+  forwards: {}

@@ -5,6 +5,7 @@
 #   ./prepare.sh install    安装 debug APK
 #   ./prepare.sh push       单次 adb push rootfs 到 /data/local/tmp + 设备侧 toybox tar 解包
 #   ./prepare.sh config     用 run-as 写入 files/uml-config.json
+#                           （NCPUS=4 ./prepare.sh config 可追加 SMP 旋钮 ncpus=4）
 #   ./prepare.sh start      启动 RunnerActivity 并跟 logcat
 #   ./prepare.sh stop       touch files/uml-stop 让内核优雅退出
 #   ./prepare.sh status     pm path / files 目录 / uml-exit.txt
@@ -113,13 +114,20 @@ cmd_config() {
   need_installed
   local fd tmp
   fd=$(files_dir)
+  # NCPUS=4 ./prepare.sh config —— SMP 内核多核旋钮（UML 参数写作 ncpus=4，
+  # 不是 --cpus=4；省略=默认 host-1 单核）。仅显式 >=2 才写入，避免 UP 内核 argv 污染。
+  local ncpus="${NCPUS:-}" ncpus_json=""
+  case "$ncpus" in
+    ''|*[!0-9]*) ;;
+    *) [ "$ncpus" -ge 2 ] && ncpus_json=',"ncpus": '"$ncpus" ;;
+  esac
   tmp=$(mktemp)
   cat > "$tmp" <<JSON
 {
   "_note": "uml-runner 研究配置；args 省略时用内置默认（含 nativeLibraryDir 里自动解析的 stub_exe）",
   "rootfs": "$fd/files/rootfs",
   "stdin": "pipe",
-  "memMb": 512
+  "memMb": 512${ncpus_json}
 }
 JSON
   log "写入 files/uml-config.json（rootfs=$fd/files/rootfs）"

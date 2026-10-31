@@ -67,3 +67,17 @@ docker run --rm -v <src>:/src -v <this-dir>:/work \
 | release stub_exe | **不过**（release 原生如此；app 域 exec 装载，详见 checklist 坑③） |
 | 重建 linux-bionic / linux-bionic-smp | 过 |
 | 重建 stub_exe（与 release 逐字节一致） | 不过（同一性使然） |
+| **stub_exe-16k（2026-10-31 重链，见下节）** | **过**（p_align=0x4000） |
+
+## stub 16KB 重链落地（2026-10-31 修缮包 fabric 批次 3，工单 01 S3 / 坑③修法一）
+
+| 产物 | 大小 (B) | sha256 | 与 release stub 比对 |
+|---|---|---|---|
+| **stub_exe-16k**（重链，`build-stub-16k.sh` 产出，已入 `release-assets/v0.3.0/`） | 2,056 | `87666f9167de09d0bf84b414618c39d9f460417a641f212f5f0f28c498a09a12` | 恒等性破坏（预期内，坑③修法一已知代价） |
+| stub_exe（release 原版，保留对照） | 2,000 | `731c48d5bf42ef25e26625af6a02627a5d658bf9f67d6f7fc443d6d644d6e52e` | 基线（2026-10-31 复跑第 3 次逐字节复现 ✓） |
+
+- **构建方式**：同源码同 defconfig 同工具链（NDK r29 / API 30 / x86_64 容器），先常规构建（原版 stub 逐字节复现），随后删除 stub 中间产物、`make STUB_EXE_LDFLAGS=…` 命令行覆盖重链（kbuild 同一条 `cmd_stub_exe` 规则）。kbuild 单目标构建不支持 `targets +=` 注册的 `stub_exe`（`No rule to make target`），必须走同 OUT 增量默认构建。
+- **关键实测发现（改写了坑③修法一的前提）**：原配方下**只追加** `-Wl,-z,max-page-size=16384` 无效——原 `STUB_EXE_LDFLAGS` 里的 `-Wl,-n`（nmagic）把 PT_LOAD p_align 钉死在最大段对齐 0x8，V=1 确认 flag 已进链接命令、但产出与不带你带逐字节相同（sha256 均为 731c48d5…）。`-n` 的唯一目的是配合 `--no-rosegment` 保证**单 LOAD 段**（Makefile 注释：双 LOAD 段共享页时内核 `MAP_FIXED_NOREPLACE` 二次 mmap 报 -EEXIST）——该目的由 `--no-rosegment` 独立成立。重链配方 = **去 `-n` + 加 max-page-size**：`STUB_EXE_LDFLAGS="-Wl,--no-rosegment -static -Wl,-z,max-page-size=16384"`。
+- **重链产物实测**（llvm-readelf）：单 `LOAD 0x000000 / 0x200000 / 0x60c / R E / p_align=0x4000`，ET_EXEC / AArch64 / statically linked / stripped；`p_vaddr ≡ p_offset (mod 0x4000)`（0x200000 ≡ 0）成立；`check-16kb-kernel.sh` → `ELF_16KB_OK all_targets_pass`。stub 2,056 B（nmagic 去除后的页填充代价 +56 B）。
+- **行为等价 not-tested，留设备窗口（16K 通道）**：4K 宿主上 release 未重链 stub 的 exec 路径已实测可用（10-31 轮 UP/SMP 全部启动 + T5 长驻走该路径）；重链 stub 的启动功能等价性需 16K 通道设备窗口验证。内核侧对 stub 的映射按 phdr（p_vaddr/p_offset/p_memsz）进行、不读 p_align（arch/um/kernel/skas/process.c 路径），故 4K 宿主行为预期不变——该预期同样待设备窗口证实。
+- 重建命令与验证口径见 `build-stub-16k.sh` 头注与 `README.md` 文件表。

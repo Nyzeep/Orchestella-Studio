@@ -8,6 +8,7 @@ Raymer8639/linux-um-arm64 `um-arm64-v0.3.0`（commit `169b17ff…`，Linux 7.2.0
 |---|---|
 | `build-bionic.sh` | UP（linux-bionic）profile 构建脚本，从 pinned config 出发 olddefconfig + 全量编译 |
 | `build-bionic-smp.sh` | SMP（linux-bionic-smp）profile 同构脚本 |
+| `build-stub-16k.sh` | stub_exe 16KB 重链变体：同源码同 config 先常规构建，再命令行覆盖 `STUB_EXE_LDFLAGS` 追加 `-Wl,-z,max-page-size=16384` 重链（工单 01 S3 坑③修法一；产物入 `release-assets/v0.3.0/stub_exe-16k`，行为等价 not-tested） |
 | `defconfigs/linux-bionic.config` | **pinned config**：release 二进制 IKCONFIG 提取（1734 行），非树内 defconfig 再生成 |
 | `defconfigs/linux-bionic-smp.config` | 同上，SMP profile（2021 行） |
 | `manifest.md` | pin、资产/产物 sha256、比对表、字节差异归因、复现步骤 |

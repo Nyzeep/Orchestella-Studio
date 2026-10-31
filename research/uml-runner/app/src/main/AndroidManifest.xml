@@ -1,6 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- 长驻保活（HyperOS cgroup freezer 对抗，2026-11-07 设备轮 §7.1.6）：
+         前台服务抬 foreground 状态 + PARTIAL_WAKE_LOCK 防 Dozing 冻结。 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- targetSdk 34+ 的 specialUse 前台服务类型要求；旧平台忽略，无害。 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- targetSdk 33+ 通知运行时权限（RunnerActivity onCreate 里申请）。 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- extractNativeLibs=true：把 jniLibs 里的 libuml_*.so 解包成 nativeLibraryDir 下的实体文件，
          这是唯一（在 legacy 域下）可 exec 的位置。 -->
     <application
@@ -18,6 +27,16 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- UML 存活期前台服务；specialUse 的用途说明走 PROPERTY_SPECIAL_USE_FGS_SUBTYPE。 -->
+        <service
+            android:name=".KeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="UML guest kernel residency: keep the runner process (and its UML child) out of the platform cgroup freezer for the lifetime of the VM" />
+        </service>
     </application>
 
 </manifest>
