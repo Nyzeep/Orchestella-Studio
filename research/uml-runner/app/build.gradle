@@ -8,14 +8,28 @@ android {
 
     defaultConfig {
         applicationId "dev.orchestella.umlrunner"
-        // targetSdk 必须是 28：>=29 的 app 在 Android 10+ 落 untrusted_app_29+ 域，
-        // nativeLibraryDir 上的 exec 被 SELinux 拒绝；28 落 untrusted_app_27 类域。
         minSdk 28
-        targetSdk 28
-        versionCode 1
-        versionName "0.1.0"
+        versionCode 2
+        versionName "0.2.0"
         ndk {
             abiFilters 'arm64-v8a'
+        }
+    }
+
+    // 2026-10-31 UML fabric 设备轮：targetSdk 改为 flavor。
+    // sdk36 → targetSdk 36（untrusted_app_34+ 域，本批次 T1/T2/T3/T5 的判定域）。
+    // sdk28 → 保持历史行为（untrusted_app_27 类域，10-29 轮的对照基线）。
+    // 36 域 exec 约束：只能 exec nativeLibraryDir（apk_data_file），filesDir 的 app_data_file exec 被禁；
+    // 内核/stub 全部经 jniLibs 进 nativeLibraryDir，不触碰禁令（10-29 三探针已验证 36 域 mmap/exec 面）。
+    flavorDimensions "targetsdk"
+    productFlavors {
+        sdk36 {
+            dimension "targetsdk"
+            targetSdk 36
+        }
+        sdk28 {
+            dimension "targetsdk"
+            targetSdk 28
         }
     }
 
@@ -25,7 +39,7 @@ android {
     packaging {
         jniLibs {
             useLegacyPackaging = true
-            keepDebugSymbols += '**/libuml_kernel.so'
+            keepDebugSymbols += '**/libuml_kernel*.so'
             keepDebugSymbols += '**/libuml_stub.so'
         }
     }
