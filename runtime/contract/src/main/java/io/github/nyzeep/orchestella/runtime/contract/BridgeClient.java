@@ -16,8 +16,13 @@ import java.util.Objects;
  * adapters supply plain byte streams and stay out of the protocol.
  */
 public final class BridgeClient {
-    /** Initial image verification (1800s), unpacking (1800s), and boot reserve (300s). */
-    public static final long DEFAULT_STARTUP_TIMEOUT_MS = 3_900_000L;
+    /**
+     * Outer host wall for one first boot: image verification and unpack, then the guest's
+     * own provision steps. The guest budgets 900s per download class step and 3600s per
+     * transaction class step (4500s combined), and 900s is kept for boot, first control
+     * handshake and settle, so 5400s keeps this deadline above every inner budget.
+     */
+    public static final long DEFAULT_STARTUP_TIMEOUT_MS = 5_400_000L;
     /** One first control transaction drains queued boot HELLO replies under TCG load. */
     public static final long DEFAULT_STARTUP_SETTLE_TIMEOUT_MS = 30_000L;
     private static final int MAX_RESPONSE_LINE_BYTES = 512 * 1024;

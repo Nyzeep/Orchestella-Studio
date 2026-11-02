@@ -83,6 +83,13 @@ tasks.register<JavaExec>("guestFeatureContractTest") {
     mainClass.set("io.github.nyzeep.orchestella.runtime.instance.features.GuestFeatureContractTest")
 }
 
+val stopSignalOutput = layout.buildDirectory.dir("stop-signal-contract")
+tasks.register<JavaExec>("instanceStopSignalContractTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.instance.InstanceStopSignalContractTest")
+    args(stopSignalOutput.get().asFile.absolutePath)
+}
+
 tasks.named("check") {
     dependsOn(
         "normalInstanceLifecycleContractTest",
@@ -94,7 +101,8 @@ tasks.named("check") {
         "instanceUserConfigTest",
         "instancePowerControllerTest",
         "instanceSnapshotManagerTest",
-        "guestFeatureContractTest"
+        "guestFeatureContractTest",
+        "instanceStopSignalContractTest"
     )
 }
 

@@ -713,6 +713,10 @@ EOF
         # The bootstrap has to install OpenRC before these services can be started.
     else
         mkdir -p "$target_root/etc/systemd/system/multi-user.target.wants"
+        # Outer guest wall. The provision script budgets every step individually; the worst
+        # first boot is one download class step (900s) followed by one transaction class step
+        # (3600s), so 4500s of work plus 900s for unit ordering, service starts and the final
+        # verification/report leaves this oneshot 5400s before systemd would kill it.
         cat > "$target_root/etc/systemd/system/orchestella-firstboot.service" <<'EOF'
 [Unit]
 Description=Orchestella Linux Baseline and Service Verification
@@ -722,7 +726,7 @@ Wants=network.target
 [Service]
 Type=oneshot
 ExecStart=/opt/orchestella/firstboot.sh --native
-TimeoutStartSec=2h
+TimeoutStartSec=5400
 RemainAfterExit=yes
 Environment=ORCHESTELLA_PROVISION_REPORT=journal
 StandardOutput=journal
@@ -3501,6 +3505,8 @@ stage=start
 reason=none
 operation_exit_code=0
 operation_timeout_seconds=0
+# No operation has been classified yet; run_step overwrites this before every command.
+operation_timeout_class=none
 last_step_stage=
 last_step_exit_code=0
 last_operation_stage=not-started
@@ -3512,8 +3518,8 @@ fi
 case "$attempt" in ''|*[!0-9]*) attempt=0 ;; esac
 attempt=$((attempt + 1))
 write_state() {
-    printf 'version=2\nstatus=%s\nstage=%s\nattempt=%s\nreason=%s\noperation_exit_code=%s\noperation_timeout_seconds=%s\nlast_operation_stage=%s\nlast_operation_exit_code=%s\n' \
-        "$status" "$stage" "$attempt" "$reason" "$operation_exit_code" "$operation_timeout_seconds" \
+    printf 'version=2\nstatus=%s\nstage=%s\nattempt=%s\nreason=%s\noperation_exit_code=%s\noperation_timeout_seconds=%s\noperation_timeout_class=%s\nlast_operation_stage=%s\nlast_operation_exit_code=%s\n' \
+        "$status" "$stage" "$attempt" "$reason" "$operation_exit_code" "$operation_timeout_seconds" "$operation_timeout_class" \
         "$last_operation_stage" "$last_operation_exit_code" > "$STATE_FILE.tmp" \
         && mv -f "$STATE_FILE.tmp" "$STATE_FILE"
 }
@@ -3574,20 +3580,112 @@ fail_stage() {
     report
     exit 1
 }
+# Each stage is budgeted from its I/O shape, never from words in its name. A download
+# only moves bytes from mirrors plus local metadata writes; a transaction moves the same
+# bytes and then pays the unpack plus package-database rebuild cost per archive, which
+# dominates when a single upgrade split the firmware packages; compute is a single
+# generator pass over the locale set; verify only reads local files. Values may be
+# overridden per class; an unusable override falls back to the default and says so.
+provision_timeout_class_for_stage() {
+    case "$1" in
+        repository-refresh|certificate-bootstrap-refresh|certificate-bootstrap-install)
+            printf 'download' ;;
+        package-install|package-recovery|init-repair|optional-upgrade)
+            printf 'transaction' ;;
+        locale)
+            printf 'compute' ;;
+        *)
+            printf 'verify' ;;
+    esac
+}
+provision_timeout_seconds_for_class() {
+    case "$1" in
+        download) default=900; override="${ORCHESTELLA_PROVISION_TIMEOUT_DOWNLOAD:-}" ;;
+        transaction) default=3600; override="${ORCHESTELLA_PROVISION_TIMEOUT_TRANSACTION:-}" ;;
+        compute) default=1800; override="${ORCHESTELLA_PROVISION_TIMEOUT_COMPUTE:-}" ;;
+        verify) default=600; override="${ORCHESTELLA_PROVISION_TIMEOUT_VERIFY:-}" ;;
+        *) return 1 ;;
+    esac
+    case "$override" in
+        '') ;;
+        # A usable budget is a positive decimal count: reject anything carrying a sign,
+        # a suffix or a non-digit before checking the leading digit, because the shell
+        # glob `[1-9][0-9]*` would otherwise accept `900s` and hand `timeout` a bad value.
+        *[!0-9]*|0*)
+            printf 'ORCHESTELLA_PROVISION_TIMEOUT_OVERRIDE_IGNORED class=%s value=%s\n' "$1" "$override" >&2
+            ;;
+        *) default="$override" ;;
+    esac
+    printf '%s' "$default"
+}
+# pacman writes db.lck as a zero-byte O_EXCL marker and never records a pid, so an open
+# descriptor is the only hard holder evidence; libalpm offers no "is this lock stale"
+# query. 0 = a holder exists, 1 = nobody holds it, 2 = the guest exposes no means to tell.
+pacman_lock_holder() {
+    lock_file="$1"; proc_root="$2"; evidence=0
+    if [ -d "$proc_root/1" ] || [ -d "$proc_root/self" ]; then
+        evidence=1
+        for descriptor in "$proc_root"/[0-9]*/fd/*; do
+            [ -L "$descriptor" ] || continue
+            [ "$(readlink "$descriptor" 2>/dev/null)" != "$lock_file" ] || return 0
+        done
+    fi
+    if command -v fuser >/dev/null 2>&1; then
+        # fuser(1) exits 0 only while a process still uses the file.
+        evidence=1
+        fuser "$lock_file" >/dev/null 2>&1 && return 0
+    fi
+    [ "$evidence" -eq 1 ] || return 2
+    return 1
+}
+# 0 = no lock or removed, 2 = held or unprovable (never delete), 1 = removal failed.
+recover_pacman_lock() {
+    lock_file="$1"; proc_root="$2"
+    pacman_lock_holder "$lock_file" "$proc_root"; holder=$?
+    if [ "$holder" -eq 2 ]; then lock_action=unavailable; return 2; fi
+    if [ "$holder" -eq 0 ]; then lock_action=held; return 2; fi
+    # Settle before unlinking so a process that just opened the lock is still observed.
+    sleep 3
+    pacman_lock_holder "$lock_file" "$proc_root"; holder=$?
+    if [ "$holder" -eq 2 ]; then lock_action=unavailable; return 2; fi
+    if [ "$holder" -eq 0 ]; then lock_action=held; return 2; fi
+    if rm -f "$lock_file" 2>/dev/null && [ ! -e "$lock_file" ]; then
+        lock_action=removed
+        return 0
+    fi
+    lock_action=unavailable
+    return 1
+}
+# Recovery reads /proc and unlinks one file, so the verify placeholder covers it.
+run_lock_recovery_stage() {
+    stage=package-lock-recovery; status=running; reason=none
+    operation_timeout_class="$(provision_timeout_class_for_stage "$stage")"
+    operation_timeout_seconds="$(provision_timeout_seconds_for_class "$operation_timeout_class")"
+    operation_exit_code=0; last_step_stage="$stage"; last_step_exit_code=0
+    write_state || fail_stage state-write persistent-state-unavailable
+    report
+    recover_pacman_lock "$1" "$ROOT/proc"
+    lock_result=$?
+    lock_mark="ORCHESTELLA_GUEST_PROVISION_LOCK_RECOVERY action=$lock_action path=$1"
+    printf '%s\n' "$lock_mark" >> "$LOG"
+    printf '%s\n' "$lock_mark"
+    last_operation_stage="$stage"; last_operation_exit_code="$lock_result"
+    if [ "$lock_result" -eq 0 ]; then return 0; fi
+    operation_exit_code="$lock_result"; last_step_exit_code="$lock_result"
+    return "$lock_result"
+}
 run_step() {
     stage="$1"; shift
     status=running; reason=none
-    case "$stage" in
-        repository-refresh|certificate-bootstrap-refresh|certificate-bootstrap-install|package-install|package-recovery|init-repair|optional-upgrade|locale)
-            operation_timeout_seconds=1800 ;;
-        *) operation_timeout_seconds=600 ;;
-    esac
+    operation_timeout_class="$(provision_timeout_class_for_stage "$stage")"
+    operation_timeout_seconds="$(provision_timeout_seconds_for_class "$operation_timeout_class")"
     operation_exit_code=0; last_step_stage="$stage"; last_step_exit_code=0
     write_state || fail_stage state-write persistent-state-unavailable
     report
     command -v timeout >/dev/null 2>&1 || fail_stage "$stage" timeout-tool-missing
-    # The transaction includes CPU-heavy metadata/solver/package work under TCG.
-    # Individual network requests retain the package manager's short timeout/retry policy.
+    # The budget covers the whole step: transfer of the archives plus the unpack and
+    # database rebuild that follows it. Individual requests keep the manager's own
+    # short connect/retry policy, so a stalled mirror still fails fast inside the step.
     if timeout "$operation_timeout_seconds" "$@" >> "$LOG" 2>&1; then
         last_operation_stage="$stage"; last_operation_exit_code=0
         return 0
@@ -3961,11 +4059,28 @@ case "$manager" in
         ;;
     pacman)
         command -v pacman >/dev/null 2>&1 || fail_stage package-manager pacman-missing
+        # A transaction killed by its timeout leaves db.lck behind and every later attempt
+        # dies on it. Clear only a lock proven stale, before anything takes the write lock.
+        pacman_lock="$ROOT/var/lib/pacman/db.lck"
+        if [ -e "$pacman_lock" ]; then
+            run_lock_recovery_stage "$pacman_lock"; lock_result=$?
+            if [ "$lock_result" -eq 2 ]; then
+                # The check fails before the transaction, so attribute its code to the stage
+                # that could not start instead of inventing an operation failure.
+                last_step_stage=package-install; last_step_exit_code=2
+                fail_stage package-install package-lock-held
+            fi
+            [ "$lock_result" -eq 0 ] || fail_stage package-lock-recovery package-lock-recovery-failed
+        fi
         if [ ! -f "$ROOT/etc/pacman.d/gnupg/pubring.gpg" ]; then
             run_step package-signing pacman-key --init || fail_stage package-signing keyring-init-failed
             run_step package-signing pacman-key --populate archlinuxarm || fail_stage package-signing keyring-populate-failed
         fi
-        run_step package-install pacman -Syu --noconfirm --needed $packages || fail_stage package-install offline-or-package-install-failed
+        if ! run_step package-install pacman -Syu --noconfirm --needed $packages; then
+            # A lock that reappeared means another pacman is live: never call that offline.
+            [ ! -e "$pacman_lock" ] || fail_stage package-install package-lock-held
+            fail_stage package-install offline-or-package-install-failed
+        fi
         if [ "$init_repair" -eq 1 ]; then
             run_step init-repair pacman -S --noconfirm systemd || fail_stage init-repair native-init-reinstall-failed
         fi
@@ -4687,11 +4802,17 @@ if [ -f "$INPUT_DIR/sources.list" ]; then
     mkdir -p /newroot/etc/apt
     cp "$INPUT_DIR/sources.list" /newroot/etc/apt/sources.list || fail apt-source-install
     # Avoid duplicate cloud-image deb822 repositories bypassing the selected mirror policy.
+    # The backup must live OUTSIDE sources.list.d: apt reads every file in that directory
+    # and printed `N: Ignoring file 'ubuntu.sources.orchestella-original' ... invalid
+    # filename extension` on every single apt call, which reads as a broken package
+    # manager to the user.
     if [ -f /newroot/etc/apt/sources.list.d/ubuntu.sources ]; then
-        mv /newroot/etc/apt/sources.list.d/ubuntu.sources /newroot/etc/apt/sources.list.d/ubuntu.sources.orchestella-original
+        mkdir -p /newroot/var/lib/orchestella/apt-backup
+        mv /newroot/etc/apt/sources.list.d/ubuntu.sources /newroot/var/lib/orchestella/apt-backup/ubuntu.sources
     fi
     if [ -f /newroot/etc/apt/sources.list.d/debian.sources ]; then
-        mv /newroot/etc/apt/sources.list.d/debian.sources /newroot/etc/apt/sources.list.d/debian.sources.orchestella-original
+        mkdir -p /newroot/var/lib/orchestella/apt-backup
+        mv /newroot/etc/apt/sources.list.d/debian.sources /newroot/var/lib/orchestella/apt-backup/debian.sources
     fi
     chmod 0644 /newroot/etc/apt/sources.list
 fi
