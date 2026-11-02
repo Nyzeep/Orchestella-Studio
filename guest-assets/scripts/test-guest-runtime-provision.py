@@ -359,6 +359,140 @@ def manual_recovery_checks():
     return results
 
 
+def pacman_lock_checks():
+    # Arch profile: the pacman database lock only exists on this branch. Every backend is
+    # synthetic; no package manager, no guest filesystem and no device is touched.
+    import time
+    results = []
+    arch_root = fixture / "arch-root"
+    write(arch_root / ".orchestella-provision-fixture", "synthetic fixture\n")
+    write(arch_root / "etc/os-release", "ID=archarm\nVERSION_ID=rolling\n")
+    write(arch_root / "proc/1/comm", "systemd\n")
+    write(arch_root / "usr/lib/systemd/systemd", chr(127) + "ELFsynthetic init\n")
+    write(arch_root / "etc/pacman.d/gnupg/pubring.gpg", "synthetic provisioned keyring\n")
+    (arch_root / "usr/sbin").mkdir(parents=True, exist_ok=True)
+    write(stubs / "pacman", """#!/bin/sh
+printf 'pacman %s\\n' "$*" >> "$ORCHESTELLA_PROVISION_ROOT/pacman-calls"
+case "$1" in
+    -Q) [ -f "$ORCHESTELLA_PROVISION_ROOT/inventory" ] || exit 1; exit 0 ;;
+esac
+if [ -e "$ORCHESTELLA_PROVISION_ROOT/var/lib/pacman/db.lck" ]; then
+    printf 'error: unable to lock database\\n' >&2
+    exit 1
+fi
+printf 'installed\\n' > "$ORCHESTELLA_PROVISION_ROOT/inventory"
+""")
+    for name in ["pacman-key", "update-ca-trust"]:
+        write(stubs / name, "#!/bin/sh\nexit 0\n")
+    arch_state = arch_root / "var/lib/orchestella/provision/state"
+    arch_lock = arch_root / "var/lib/pacman/db.lck"
+    arch_done = arch_root / "opt/orchestella/.firstboot-done"
+
+    def run_arch(env_stmt=""):
+        cmd = (f"export PATH={shlex.quote(unix(stubs))}:$PATH; "
+               f"export ORCHESTELLA_PROVISION_ROOT={shlex.quote(unix(arch_root))}; "
+               f"{env_stmt}sh {shlex.quote(unix(script))} --native")
+        return subprocess.run(["sh", "-c", cmd], text=True, capture_output=True, timeout=60)
+
+    def fields():
+        return dict(line.split("=", 1) for line in arch_state.read_text().splitlines())
+
+    def reset():
+        # A verified checkpoint would skip the transaction branch, and with it the lock check.
+        (arch_root / "var/lib/orchestella/provision/packages-v2").unlink(missing_ok=True)
+        arch_done.unlink(missing_ok=True)
+
+    # A: a stale lock with no holder is proven stale, removed, and the transaction runs.
+    reset()
+    write(arch_lock, "")
+    outcome = run_arch()
+    data = fields()
+    assert outcome.returncode == 0 and data["status"] == "ready" and data["stage"] == "verified", (outcome, data)
+    assert data["reason"] == "none" and data["operation_exit_code"] == "0", data
+    assert f"ORCHESTELLA_GUEST_PROVISION_LOCK_RECOVERY action=removed path={unix(arch_lock)}" in outcome.stdout, outcome
+    assert not arch_lock.exists() and arch_done.exists()
+    assert "pacman -Syu --noconfirm --needed base" in (arch_root / "pacman-calls").read_text()
+    results.append("pacman_stale_lock_removed_before_transaction_then_ready")
+    # B: a held lock keeps its file and reports lock contention, never a network failure.
+    reset()
+    write(arch_lock, "")
+    write(arch_root / "lock-holder", "synthetic live pacman holder\n")
+    write(fixture / "fuser-bin/fuser", """#!/bin/sh
+[ -e "$ORCHESTELLA_PROVISION_ROOT/lock-holder" ] || exit 1
+printf '%s\\n' 4242
+""")
+    outcome = run_arch(f"export PATH={shlex.quote(unix(fixture / 'fuser-bin'))}:$PATH; ")
+    data = fields()
+    assert outcome.returncode == 1 and data["status"] == "failed", (outcome, data)
+    assert data["stage"] == "package-install" and data["reason"] == "package-lock-held", data
+    assert data["operation_exit_code"] == "2" and data["last_operation_exit_code"] == "2", data
+    assert data["last_operation_stage"] == "package-lock-recovery", data
+    assert data["operation_timeout_class"] == "verify" and data["operation_timeout_seconds"] == "600", data
+    assert data["attempt"] == "2" and arch_lock.exists() and not arch_done.exists(), data
+    results.append("pacman_held_lock_reports_contention_preserves_lock_and_budget")
+    # C: no descriptor evidence and no fuser means unprovable, which is treated as held.
+    (arch_root / "lock-holder").unlink()
+    reset()
+    if shutil.which("fuser"):
+        results.append("pacman_unprovable_lock_case_skipped_host_fuser_present")
+    else:
+        write(arch_lock, "")
+        shutil.rmtree(arch_root / "proc")
+        outcome = run_arch()
+        write(arch_root / "proc/1/comm", "systemd\n")
+        data = fields()
+        assert outcome.returncode == 1 and data["reason"] == "package-lock-held", (outcome, data)
+        assert data["stage"] == "package-install" and data["operation_timeout_class"] == "verify", data
+        assert arch_lock.exists(), "an unprovable lock must never be deleted"
+        assert "ORCHESTELLA_GUEST_PROVISION_LOCK_RECOVERY action=unavailable" in outcome.stdout, outcome
+        results.append("pacman_unprovable_lock_refused_deletion_and_reported_as_held")
+    # D: without a lock file the recovery stage never runs, so no state transition is added.
+    arch_lock.unlink(missing_ok=True)
+    reset()
+    outcome = run_arch()
+    data = fields()
+    assert data["status"] == "ready" and arch_done.exists(), data
+    assert "package-lock-recovery" not in outcome.stdout and "LOCK_RECOVERY" not in outcome.stdout, outcome
+    assert data["last_operation_stage"] != "package-lock-recovery", data
+    results.append("pacman_absent_lock_never_adds_recovery_stage")
+    # The holder probe itself: a live /proc descriptor is decisive even without fuser.
+    source = (assets / "scripts/orchestella-guest-provision.sh").read_text()
+    probe = source[source.index("pacman_lock_holder() {"):source.index("run_lock_recovery_stage() {")]
+    probe_lock = fixture / "lock-probe" / "db.lck"
+    write(probe_lock, "")
+    holder = subprocess.Popen(["sh", "-c", 'exec 3<"$1"; sleep 20', "sh", unix(probe_lock)])
+    time.sleep(0.4)
+    try:
+        result = subprocess.run(["sh", "-c", probe + '\nrecover_pacman_lock "$1" /proc; '
+                                 'printf "rc=%s action=%s\\n" "$?" "$lock_action"', "sh", unix(probe_lock)],
+                                text=True, capture_output=True, timeout=30)
+        assert result.stdout.strip() == "rc=2 action=held", result
+        assert probe_lock.exists()
+        results.append("pacman_lock_descriptor_scan_detects_live_holder_without_fuser")
+    finally:
+        holder.kill()
+        holder.wait()
+    # Both probes missing is unprovable; neither probe finding a holder removes the lock.
+    empty_proc = fixture / "lock-probe" / "empty-proc"
+    write(empty_proc / "1/comm", "synthetic\n")
+    unreachable = subprocess.run([shutil.which("sh"), "-c",
+                                  probe + '\nrecover_pacman_lock "$1" /nonexistent-proc; '
+                                  'printf "rc=%s action=%s\\n" "$?" "$lock_action"',
+                                  "sh", unix(probe_lock)],
+                                 text=True, capture_output=True, timeout=30, env={"PATH": "/nonexistent"})
+    assert unreachable.stdout.strip() == "rc=2 action=unavailable", unreachable
+    assert probe_lock.exists(), "unprovable lock must survive"
+    cleared = subprocess.run(["sh", "-c",
+                              probe + '\nrecover_pacman_lock "$1" "$2"; '
+                              'printf "rc=%s action=%s\\n" "$?" "$lock_action"',
+                              "sh", unix(probe_lock), unix(empty_proc)],
+                             text=True, capture_output=True, timeout=30)
+    assert cleared.stdout.strip() == "rc=0 action=removed", cleared
+    assert not probe_lock.exists()
+    results.append("pacman_lock_probe_states_distinguish_unprovable_from_absent")
+    return results
+
+
 def identity_checks():
     identity_root = fixture / "identity-root"
     identity_input = fixture / "identity-input"
@@ -994,6 +1128,7 @@ subprocess.run([sys.executable, str(assets / "scripts/sync-guest-init.py"), "--c
 for path in [init_path, script, assets / "initramfs/runtime-functions.sh", assets / "initramfs/runtime-entry.sh"]:
     subprocess.run(["sh", "-n", unix(path)], check=True)
 checks.append("embedded_modules_syntax_and_template_sync")
+checks.extend(pacman_lock_checks())
 # Keep only compact, synthetic verification evidence; remove the fixture tree after completion.
 evidence = work / "guest-runtime-provision-results.txt"
 evidence.write_text("\n".join(checks + skips) + f"\nPASS count={len(checks)} skipped_native_symlink_execution={len(skips)}\n", encoding="utf-8")

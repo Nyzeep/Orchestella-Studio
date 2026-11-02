@@ -7,9 +7,11 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
+import android.os.SystemClock;
 
 /**
  * Persistent foreground service for running Linux instances (ADR-0011, AC-2).
@@ -34,7 +36,18 @@ public class OrchestellaForegroundService extends Service {
     public static final String EXTRA_BATTERY_POLICY = "extra_battery_policy";
     public static final String EXTRA_SESSION_GENERATION = "extra_session_generation";
 
+    /**
+     * Per-grant wake lock ceiling. This is a project policy, not a platform limit:
+     * no Android version mandates 2h. The shortest observed device window that must
+     * stay awake (a long provisioning transaction) is well under it, and the ceiling
+     * bounds a leaked lock if the process dies without releasing.
+     */
+    private static final long WAKE_LOCK_TIMEOUT_MS = 2L * 60 * 60 * 1000;
+    /** Below one hour left, extend the grant instead of waiting for it to lapse. */
+    private static final long WAKE_LOCK_RENEW_THRESHOLD_MS = 60L * 60 * 1000;
+
     private PowerManager.WakeLock wakeLock;
+    private long wakeLockAcquiredAtMs = WakeLockPolicy.NOT_HELD;
     private String currentInstanceId;
     private final ForegroundSessionBinding binding = new ForegroundSessionBinding();
 
@@ -132,9 +145,21 @@ public class OrchestellaForegroundService extends Service {
             // Pin session pool in memory alongside the foreground service
             PersistentTerminalSessionPool.getInstance();
 
-            acquireWakeLock();
+            // A start without a session generation is the boot cold-recovery path: the
+            // notification is raised so the user sees the auto-start, but no guest runs
+            // yet, so holding a wake lock would only drain the battery. The lock is
+            // claimed by the first real launch (generation != null).
+            boolean holdWakeLock = generation != null;
             Notification notification = buildPersistentNotification(distroTitle, badge, policy, currentInstanceId);
-            startForeground(NOTIFICATION_ID, notification);
+            boolean foregroundRaised = false;
+            try {
+                if (holdWakeLock) acquireWakeLock();
+                startForegroundNotification(notification);
+                foregroundRaised = true;
+            } finally {
+                // Never leave a dangling lock behind a failed foreground promotion.
+                if (holdWakeLock && !foregroundRaised) releaseWakeLock();
+            }
             return START_STICKY;
         }
 
@@ -164,6 +189,17 @@ public class OrchestellaForegroundService extends Service {
         stopSelf();
     }
 
+    private void startForegroundNotification(Notification notification) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            // Explicit type: the manifest declaration alone is not a contract once the
+            // manifest is merged or overridden; a mismatch throws
+            // MissingForegroundServiceTypeException on API 34+.
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+        } else {
+            startForeground(NOTIFICATION_ID, notification);
+        }
+    }
+
     private void acquireWakeLock() {
         if (wakeLock == null) {
             PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
@@ -172,15 +208,26 @@ public class OrchestellaForegroundService extends Service {
                 wakeLock.setReferenceCounted(false);
             }
         }
-        if (wakeLock != null && !wakeLock.isHeld()) {
-            wakeLock.acquire(12 * 60 * 60 * 1000L); // 12-hour safe upper timeout
+        if (wakeLock == null) return;
+        long nowMs = SystemClock.elapsedRealtime();
+        long heldSinceMs = wakeLock.isHeld() ? wakeLockAcquiredAtMs : WakeLockPolicy.NOT_HELD;
+        WakeLockPolicy.Decision decision = WakeLockPolicy.decide(
+                nowMs, heldSinceMs, WAKE_LOCK_TIMEOUT_MS, WAKE_LOCK_RENEW_THRESHOLD_MS);
+        if (decision == WakeLockPolicy.Decision.NOOP) return;
+        if (wakeLock.isHeld()) {
+            // Renewal and post-expiry re-acquire both start from a clean grant, so the
+            // platform deadline tracks the latest acquire rather than the first one.
+            wakeLock.release();
         }
+        wakeLock.acquire(WAKE_LOCK_TIMEOUT_MS);
+        wakeLockAcquiredAtMs = nowMs;
     }
 
     private void releaseWakeLock() {
         if (wakeLock != null && wakeLock.isHeld()) {
             wakeLock.release();
         }
+        wakeLockAcquiredAtMs = WakeLockPolicy.NOT_HELD;
     }
 
     private void createNotificationChannel() {

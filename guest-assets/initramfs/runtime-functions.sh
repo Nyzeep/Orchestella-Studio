@@ -295,6 +295,10 @@ EOF
         # The bootstrap has to install OpenRC before these services can be started.
     else
         mkdir -p "$target_root/etc/systemd/system/multi-user.target.wants"
+        # Outer guest wall. The provision script budgets every step individually; the worst
+        # first boot is one download class step (900s) followed by one transaction class step
+        # (3600s), so 4500s of work plus 900s for unit ordering, service starts and the final
+        # verification/report leaves this oneshot 5400s before systemd would kill it.
         cat > "$target_root/etc/systemd/system/orchestella-firstboot.service" <<'EOF'
 [Unit]
 Description=Orchestella Linux Baseline and Service Verification
@@ -304,7 +308,7 @@ Wants=network.target
 [Service]
 Type=oneshot
 ExecStart=/opt/orchestella/firstboot.sh --native
-TimeoutStartSec=2h
+TimeoutStartSec=5400
 RemainAfterExit=yes
 Environment=ORCHESTELLA_PROVISION_REPORT=journal
 StandardOutput=journal

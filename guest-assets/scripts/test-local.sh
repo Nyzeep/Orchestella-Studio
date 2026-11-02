@@ -38,9 +38,11 @@ bash -n "$GUEST_ASSETS_DIR/build.sh" \
   "$GUEST_ASSETS_DIR/scripts/common.sh" \
   "$GUEST_ASSETS_DIR/scripts/check-config-rejection.sh" \
   "$GUEST_ASSETS_DIR/scripts/check-reproducible.sh" \
+  "$GUEST_ASSETS_DIR/scripts/check-staging-fs.sh" \
   "$GUEST_ASSETS_DIR/scripts/test-local.sh" \
   "$GUEST_ASSETS_DIR/scripts/test-initramfs-init-fallback.sh" \
   "$GUEST_ASSETS_DIR/scripts/test-builder-python.sh" \
+  "$GUEST_ASSETS_DIR/scripts/test-staging-guard.sh" \
   "$GUEST_ASSETS_DIR/smoke/qemu-provisioning-smoke.sh" \
   "$GUEST_ASSETS_DIR/smoke/qemu-official-alpine-provisioning-smoke.sh" \
   "$GUEST_ASSETS_DIR/smoke/qemu-official-alpine-restart-smoke.sh" \
@@ -96,3 +98,6 @@ shellcheck --severity=warning --external-sources --source-path=SCRIPTDIR \
   "$GUEST_ASSETS_DIR/shell/aliases.sh" \
   "$GUEST_ASSETS_DIR/shell/00-orchestella-env.sh" \
   "$GUEST_ASSETS_DIR/shell/10-orchestella-graphics.sh"
+
+# Staging mode guard: PATH-stub based, so it needs no toolchain and no device.
+sh "$GUEST_ASSETS_DIR/scripts/test-staging-guard.sh"

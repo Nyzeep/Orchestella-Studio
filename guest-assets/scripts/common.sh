@@ -60,6 +60,34 @@ safe_reset_directory() {
   mkdir -p -- "$resolved"
 }
 
+# Behavioural probe for a staging directory that will become an archive or a
+# filesystem image. cpio and mkfs.ext4 both record the mode bits stat reports,
+# so a filesystem that silently rewrites them (WSL DrvFs without metadata maps
+# every object to the Windows ACL and reports 0777) poisons the artefact.
+#
+# Returns 0 when the modes survive, 1 when they are dropped, 2 when the probe
+# cannot decide. The probe directory is removed on every path so it can never
+# reach find, cpio or SHA256SUMS.
+staging_preserves_modes() {
+  local dir="$1"
+  local probe="$1/.mode-probe.$$"
+  local mode=""
+
+  [[ -d "$dir" ]] || return 2
+  if ! mkdir -- "$probe" 2>/dev/null; then
+    return 2
+  fi
+  if ! chmod 0700 -- "$probe" 2>/dev/null; then
+    rmdir -- "$probe" 2>/dev/null || true
+    return 2
+  fi
+  mode="$(stat -c %a -- "$probe" 2>/dev/null)" || mode=""
+  rmdir -- "$probe" 2>/dev/null || true
+  [[ -n "$mode" ]] || return 2
+  [[ "$mode" == 700 ]] || return 1
+  return 0
+}
+
 verify_ticket26_ticket25_asset_root() {
   local asset_root="$1"
   local checksum_line

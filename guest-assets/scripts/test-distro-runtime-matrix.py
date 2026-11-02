@@ -64,12 +64,20 @@ case "$name" in
         budget=$1; shift
         case " $* " in
             *' update '*|*' makecache '*|*' refresh '*)
-                [ "$budget" = 1800 ] || exit 88
+                expected=900
+                if [ -f "$ORCHESTELLA_PROVISION_ROOT/expected-download" ]; then
+                    expected=$(cat "$ORCHESTELLA_PROVISION_ROOT/expected-download")
+                fi
+                [ "$budget" = "$expected" ] || exit 88
                 if [ -f "$ORCHESTELLA_PROVISION_ROOT/timeout-refresh" ]; then
                     exit "$(cat "$ORCHESTELLA_PROVISION_ROOT/timeout-refresh")"
                 fi ;;
             *' install '*|*' -Syu '*|*' reinstall '*)
-                [ "$budget" = 1800 ] || exit 88
+                expected=3600
+                if [ -f "$ORCHESTELLA_PROVISION_ROOT/expected-transaction" ]; then
+                    expected=$(cat "$ORCHESTELLA_PROVISION_ROOT/expected-transaction")
+                fi
+                [ "$budget" = "$expected" ] || exit 88
                 if [ -f "$ORCHESTELLA_PROVISION_ROOT/timeout-install" ]; then
                     exit "$(cat "$ORCHESTELLA_PROVISION_ROOT/timeout-install")"
                 fi ;;
@@ -86,7 +94,11 @@ case "$name" in
         fi
         exit 0 ;;
     pacman)
-        if [ "$1" = -Q ]; then [ -f "$ORCHESTELLA_PROVISION_ROOT/inventory" ] || exit 1; exit 0; fi ;;
+        if [ "$1" = -Q ]; then [ -f "$ORCHESTELLA_PROVISION_ROOT/inventory" ] || exit 1; exit 0; fi
+        if [ -e "$ORCHESTELLA_PROVISION_ROOT/var/lib/pacman/db.lck" ]; then
+            printf 'error: unable to lock database\\n' >&2
+            exit 1
+        fi ;;
     systemctl)
         case " $* " in
             *' is-active '*) [ ! -f "$ORCHESTELLA_PROVISION_ROOT/services-failed" ] || exit 3 ;;
@@ -142,15 +154,22 @@ exit 0
     state = root / "var/lib/orchestella/provision/state"
     done = root / "opt/orchestella/.firstboot-done"
 
-    def run(mode="--native"):
-        return subprocess.run(["sh", "-c", cmd + " " + mode], text=True, capture_output=True, timeout=30)
+    def run(mode="--native", env_stmt=""):
+        prefix = env_stmt + "; " if env_stmt else ""
+        # A hang guard, not a budget assertion: one provision run forks several hundred
+        # short-lived stub processes, which is slow on hosts without cheap fork().
+        return subprocess.run(["sh", "-c", prefix + cmd + " " + mode], text=True, capture_output=True, timeout=180)
 
-    def expect(label, status, stage=None):
-        result = run()
+    def expect(label, status, stage=None, expected_class=None, env_stmt=""):
+        result = run(env_stmt=env_stmt)
         data = dict(line.split("=", 1) for line in state.read_text().splitlines())
         assert data["status"] == status, (distro, label, result, data)
         if stage:
             assert data["stage"] == stage, (distro, label, data)
+        assert data.get("operation_timeout_class") in ("download", "transaction", "compute", "verify", "none"), \
+            (distro, label, data)
+        if expected_class:
+            assert data["operation_timeout_class"] == expected_class, (distro, label, data)
         assert done.exists() == (status == "ready"), (distro, label, data)
         assert (result.returncode == 0) == (status == "ready"), (distro, label, result)
         checks.append(f"{distro}:{label}")
@@ -255,19 +274,107 @@ exit 0
     expect("missing_inventory_invalidates_checkpoint", "failed", "package-install")
     (root / "install-failed").unlink()
     expect("inventory_repaired_by_manager", "ready", "verified")
-    # CPU-heavy transactions get a finite 1800-second budget, distinct from network retries.
+    # Download and transaction steps carry distinct finite budgets, never a shared one.
     timeout_stage = "package-install" if manager == "pacman" else "repository-refresh"
+    timeout_class = "transaction" if manager == "pacman" else "download"
+    timeout_budget = "3600" if manager == "pacman" else "900"
     timeout_file = root / ("timeout-install" if manager == "pacman" else "timeout-refresh")
     for code in (124, 143):
         (root / "var/lib/orchestella/provision/packages-v2").unlink(missing_ok=True)
         done.unlink(missing_ok=True)
         write(timeout_file, str(code))
-        expect(f"transaction_timeout_{code}_never_reports_offline_or_ready", "failed", timeout_stage)
+        expect(f"transaction_timeout_{code}_never_reports_offline_or_ready", "failed", timeout_stage,
+               expected_class=timeout_class)
         data = dict(line.split("=", 1) for line in state.read_text().splitlines())
         assert data["reason"] == "operation-timeout" and data["operation_exit_code"] == str(code)
-        assert data["operation_timeout_seconds"] == "1800"
+        assert data["operation_timeout_seconds"] == timeout_budget, (distro, "timeout_budget", data)
     timeout_file.unlink()
     expect("transaction_timeout_retry_recovers_without_reformat", "ready", "verified")
+    # A per-class override replaces the default budget end to end and keeps the state shape.
+    (root / "var/lib/orchestella/provision/packages-v2").unlink(missing_ok=True)
+    done.unlink(missing_ok=True)
+    write(root / "expected-transaction", "123")
+    expect("transaction_budget_override_reaches_the_step", "ready", "verified",
+           env_stmt="export ORCHESTELLA_PROVISION_TIMEOUT_TRANSACTION=123")
+    (root / "expected-transaction").unlink()
+    # An unusable override is not applied silently: the default budget runs and the reason is printed.
+    (root / "var/lib/orchestella/provision/packages-v2").unlink(missing_ok=True)
+    done.unlink(missing_ok=True)
+    result = run(env_stmt="export ORCHESTELLA_PROVISION_TIMEOUT_TRANSACTION=fast")
+    assert result.returncode == 0, (distro, "override_fallback_run", result)
+    assert "ORCHESTELLA_PROVISION_TIMEOUT_OVERRIDE_IGNORED class=transaction value=fast" in result.stderr, \
+        (distro, "override_ignored_signal", result.stderr)
+    data = dict(line.split("=", 1) for line in state.read_text().splitlines())
+    assert data["status"] == "ready" and done.exists(), (distro, "override_fallback_state", data)
+    checks.append(f"{distro}:invalid_timeout_override_falls_back_to_transaction_default")
+    if manager == "pacman":
+        lock = root / "var/lib/pacman/db.lck"
+        checkpoint = root / "var/lib/orchestella/provision/packages-v2"
+        # The lock only gates the transaction branch, so every case must drop the checkpoint.
+        checkpoint.unlink(missing_ok=True)
+        done.unlink(missing_ok=True)
+        # A: a lock no process has open is stale and is removed before the transaction.
+        write(lock, "")
+        result = run()
+        data = dict(line.split("=", 1) for line in state.read_text().splitlines())
+        assert result.returncode == 0 and data["status"] == "ready" and data["stage"] == "verified", (distro, result, data)
+        assert "stage=package-lock-recovery reason=none" in result.stdout, (distro, result.stdout)
+        assert f"ORCHESTELLA_GUEST_PROVISION_LOCK_RECOVERY action=removed path={unix(lock)}" in result.stdout, \
+            (distro, result.stdout)
+        assert not lock.exists(), (distro, "stale lock survived recovery")
+        assert "pacman -Syu --noconfirm --needed base" in (root / "commands").read_text()
+        checks.append(f"{distro}:stale_pacman_lock_proven_unheld_removed_and_transaction_ready")
+        # B: a lock a process still holds stays put and is never described as offline.
+        checkpoint.unlink(missing_ok=True)
+        done.unlink(missing_ok=True)
+        write(lock, "")
+        write(root / "lock-holder", "synthetic live pacman holder\n")
+        write(profile / "fuser-bin/fuser", """#!/bin/sh
+[ -e "$ORCHESTELLA_PROVISION_ROOT/lock-holder" ] || exit 1
+printf '%s\\n' 4242
+""")
+        before_held = (root / "commands").read_text()
+        result = run(env_stmt=f"export PATH={shlex.quote(unix(profile / 'fuser-bin'))}:$PATH")
+        data = dict(line.split("=", 1) for line in state.read_text().splitlines())
+        assert result.returncode == 1 and data["status"] == "failed", (distro, result, data)
+        assert data["stage"] == "package-install" and data["reason"] == "package-lock-held", (distro, data)
+        assert "offline" not in data["reason"], (distro, data)
+        assert data["operation_exit_code"] == "2" and data["last_operation_exit_code"] == "2", (distro, data)
+        assert data["last_operation_stage"] == "package-lock-recovery", (distro, data)
+        assert data["operation_timeout_class"] == "verify" and data["operation_timeout_seconds"] == "600", (distro, data)
+        assert lock.exists() and not done.exists(), (distro, "held lock must survive")
+        assert "ORCHESTELLA_GUEST_PROVISION_LOCK_RECOVERY action=held" in result.stdout, (distro, result.stdout)
+        assert "pacman -Syu" not in (root / "commands").read_text()[len(before_held):], (distro, "held lock must block")
+        checks.append(f"{distro}:held_pacman_lock_reports_contention_and_is_preserved")
+        # C: without /proc descriptors and without fuser the state is unprovable, so the lock stays.
+        (root / "lock-holder").unlink()
+        checkpoint.unlink(missing_ok=True)
+        done.unlink(missing_ok=True)
+        if shutil.which("fuser"):
+            checks.append(f"{distro}:unprovable_lock_case_skipped_host_fuser_present")
+        else:
+            write(lock, "")
+            shutil.rmtree(root / "proc")
+            result = run()
+            write(root / "proc/1/comm", "systemd\n")
+            data = dict(line.split("=", 1) for line in state.read_text().splitlines())
+            assert result.returncode == 1 and data["status"] == "failed", (distro, result, data)
+            assert data["stage"] == "package-install" and data["reason"] == "package-lock-held", (distro, data)
+            assert data["operation_timeout_class"] == "verify", (distro, data)
+            assert lock.exists(), (distro, "unprovable lock must survive")
+            assert "ORCHESTELLA_GUEST_PROVISION_LOCK_RECOVERY action=unavailable" in result.stdout, (distro, result.stdout)
+            checks.append(f"{distro}:unprovable_pacman_lock_is_treated_as_held_and_preserved")
+        # D: no lock means the recovery stage never appears in the run at all.
+        lock.unlink(missing_ok=True)
+        checkpoint.unlink(missing_ok=True)
+        done.unlink(missing_ok=True)
+        result = run()
+        data = dict(line.split("=", 1) for line in state.read_text().splitlines())
+        assert data["status"] == "ready" and done.exists(), (distro, data)
+        assert "package-lock-recovery" not in result.stdout, (distro, result.stdout)
+        assert "ORCHESTELLA_GUEST_PROVISION_LOCK_RECOVERY" not in result.stdout, (distro, result.stdout)
+        assert data["last_operation_stage"] != "package-lock-recovery", (distro, data)
+        checks.append(f"{distro}:absent_pacman_lock_never_enters_recovery_stage")
     if manager == "dnf":
         # Minimal RPM roots can start with microdnf, then install the full dnf baseline.
         (commands / "dnf").unlink()

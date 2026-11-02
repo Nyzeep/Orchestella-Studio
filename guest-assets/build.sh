@@ -51,6 +51,30 @@ safe_reset_directory "$WORK_DIR"
 safe_reset_directory "$OUT_DIR"
 mkdir -p -- "$DOWNLOAD_CACHE"
 
+# The staging tree is packed into the initramfs exactly as stat reports it, and
+# the image recipes copy it into ext4 the same way. A filesystem that rewrites
+# Unix mode bits would publish group/world-writable directories (sshd rejects
+# its privilege separation directory for precisely that reason), so refuse to
+# spend a build on it.
+STAGING_MODE_STATUS=0
+staging_preserves_modes "$WORK_DIR" || STAGING_MODE_STATUS=$?
+case "$STAGING_MODE_STATUS" in
+  0) ;;
+  1)
+    printf 'staging filesystem drops Unix mode bits (WSL DrvFs without metadata?): %s\n' \
+      "$WORK_DIR" >&2
+    printf 'use ./guest-assets/run-in-builder.sh (staging stays on the container /tmp) ' >&2
+    printf 'or move the checkout onto a native ext4 filesystem, then retry\n' >&2
+    exit 70
+    ;;
+  *)
+    printf 'cannot verify that the staging filesystem preserves Unix mode bits: %s\n' \
+      "$WORK_DIR" >&2
+    printf 'check that the staging path is a writable Linux filesystem with GNU stat and retry\n' >&2
+    exit 70
+    ;;
+esac
+
 LINUX_ARCHIVE="$DOWNLOAD_CACHE/linux-$LINUX_VERSION.tar.xz"
 BUSYBOX_ARCHIVE="$DOWNLOAD_CACHE/busybox-$BUSYBOX_VERSION.tar.bz2"
 MUSL_ARCHIVE="$DOWNLOAD_CACHE/musl-$MUSL_VERSION.tar.gz"
@@ -297,6 +321,18 @@ chmod 0644 "$INITRAMFS_ROOT/opt/droidlayer/openrc/droidlayer-guest-agent.conf" \
   "$INITRAMFS_ROOT/etc/droidlayer/rootfs.sha256"
 mknod -m 0600 "$INITRAMFS_ROOT/dev/console" c 5 1
 mknod -m 0666 "$INITRAMFS_ROOT/dev/null" c 1 3
+
+# Normalise directory modes in the packed tree and prove the normalisation took
+# effect. On a filesystem without Unix mode support that chmod is silently a
+# no-op, so the assertion (not the chmod) is the gate; on a normal filesystem it
+# is idempotent and therefore leaves the archive bytes untouched.
+find "$INITRAMFS_ROOT" -xdev -type d -exec chmod 0755 {} + 2>/dev/null || true
+STAGING_WRITABLE_DIR="$(find "$INITRAMFS_ROOT" -xdev -type d -perm /022 -print -quit)"
+if [[ -n "$STAGING_WRITABLE_DIR" ]]; then
+  printf 'staging directory is group/world-writable after normalisation: %s\n' \
+    "$STAGING_WRITABLE_DIR" >&2
+  exit 1
+fi
 
 find "$INITRAMFS_ROOT" -xdev -exec touch -h --date="@$SOURCE_DATE_EPOCH" {} +
 (

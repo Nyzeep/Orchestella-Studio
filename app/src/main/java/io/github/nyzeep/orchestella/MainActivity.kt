@@ -1646,6 +1646,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun launchInstance(instance: InstanceLifecycle.Instance) {
+        NotificationPermissionPrompt.requestIfNeeded(this)
         setCreateButtonsEnabled(false)
         createStatus.setText(R.string.launch_started)
         operations.execute {
