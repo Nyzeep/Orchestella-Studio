@@ -506,7 +506,7 @@ case "$manager" in
             run_step package-signing pacman-key --init || fail_stage package-signing keyring-init-failed
             run_step package-signing pacman-key --populate archlinuxarm || fail_stage package-signing keyring-populate-failed
         fi
-        run_step package-install pacman -Sy --noconfirm --needed $packages || fail_stage package-install offline-or-package-install-failed
+        run_step package-install pacman -Syu --noconfirm --needed $packages || fail_stage package-install offline-or-package-install-failed
         if [ "$init_repair" -eq 1 ]; then
             run_step init-repair pacman -S --noconfirm systemd || fail_stage init-repair native-init-reinstall-failed
         fi
