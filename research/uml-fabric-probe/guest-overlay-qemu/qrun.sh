@@ -30,7 +30,9 @@ if [ "$1" = "net" ]; then
     LISTEN=
     while [ "$i" -lt 15 ]; do
         kill -0 "$GVPID" 2>/dev/null || { echo "gvproxy exited early"; exit 4; }
-        while read -r _ local st _; do
+        # /proc/net/tcp 列序 = sl local_address rem_address st …（2026-11-01 实修：原
+        # read 三变量把 rem_address 当 st，LISTEN(0A) 永不命中 → 15s 后 exit 5 静默退出）
+        while read -r _ local _ st _; do
             case "$local" in *:"$PORT_HEX") [ "$st" = "0A" ] && LISTEN=1 ;; esac
         done < /proc/net/tcp
         [ -n "$LISTEN" ] && break
@@ -50,14 +52,20 @@ if [ "$1" = "net" ]; then
     #   drive/device 行按产品 rootDriveArg/rootDeviceArg DEFAULTS :553-567/:542-551。
     #   内核网络参数按产品 QemuInstanceLauncher.java:651-655（orchestella.guest_* 通道），
     #   数值 = NetworkGatewayDaemon.java:96-100 常量。
-    # 与产品的既有差异（探针形态，与网络面无关）：无 initramfs（Arch rootfs 直启 init=/init，
+    # 与产品的既有差异（探针形态，与网络面无关）：无 initramfs（Arch rootfs 直启探针 init，
     #   2026-10-31 设备轮既定形态）；串口落文件替代 abstract chardev 终端面；
     #   省略 control/netproxy/display 三条 virtio-serial 平面（Arch 探针无 droidlayer guest agent）。
+    # init=/probe-init.sh（2026-11-01 设备轮修正）：t7-arch.ext4 无 /init（Arch rootfs 的
+    #   /sbin/init=systemd 符号链接），探针 init 以 /probe-init.sh 形态内置于镜像；原 init=/init
+    #   会 kernel panic——11-08 配方未经设备验证的缺口，本轮实机复核。
+    #   orchestella.guest_* 参数为惰性冗余（probe-init.sh 静态寻址同值硬编码），保留以贴产品形。
+    #   教训：注释不得插入 exec 命令的反斜杠续行链内——\ 续行会把注释行拼入命令行，`#` 之后
+    #   全部参数被吞，qemu 无 -kernel/-drive 裸起即退（本轮 SPAWN_FAIL attempt1 根因）。
     exec ./qemu-system-aarch64 -machine virt,gic-version=3 \
         -accel tcg,thread=multi -cpu cortex-a57 -smp 2 -m 2048M \
         -nodefaults -display none -monitor none -no-reboot \
         -kernel assets/Image \
-        -append "root=/dev/vda rw init=/init console=ttyAMA0 orchestella.guest_ip=192.168.127.15 orchestella.guest_gw=192.168.127.1 orchestella.guest_mask=255.255.255.0 orchestella.guest_dns=223.5.5.5 orchestella.proxy_enabled=0" \
+        -append "root=/dev/vda rw init=/probe-init.sh console=ttyAMA0 orchestella.guest_ip=192.168.127.15 orchestella.guest_gw=192.168.127.1 orchestella.guest_mask=255.255.255.0 orchestella.guest_dns=223.5.5.5 orchestella.proxy_enabled=0" \
         -drive if=none,id=root,file="$ROOTFS",format=raw,cache=writeback \
         -device virtio-blk-device,drive=root \
         -netdev socket,id=orchestella-net,connect=127.0.0.1:"$PORT" \
