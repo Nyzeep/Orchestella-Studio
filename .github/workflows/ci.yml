@@ -123,7 +123,13 @@ jobs:
       # needs no extra arguments or environment, so the full run covers it.
       - name: Run all runtime checks and app unit tests
         run: |
+          # Same clean-checkout situation as the packaging gate below: the QEMU
+          # runtime payload is git-ignored, and :app:testDebugUnitTest pulls in
+          # :app:preBuild -> :app:verifyRuntimeAssets, so the payload opt-out is
+          # required here too. The real payload APK stays gated by
+          # check_runtime_payload.py --apk in the release workflow.
           bash tools/ci/run-gradle-gate.sh \
+            -Porchestella.assets.allowMissingPayload=true \
             :runtime:contract:check \
             :runtime:instance:check \
             :runtime:engine-qemu:check \

@@ -249,7 +249,12 @@ jobs:
       - name: Assemble debug APK with bin/ packaged before signing
         run: |
           chmod +x gradlew
+          # Host-only packaging gate on a clean checkout: the QEMU runtime
+          # payload is git-ignored, so verifyRuntimeAssets (wired to preBuild)
+          # needs the explicit opt-out. Released APKs keep the payload gate in
+          # the release workflow (check_runtime_payload.py --apk).
           ./gradlew :app:assembleDebug :app:verifyFastlaneToolboxApk \
+            -Porchestella.assets.allowMissingPayload=true \
             -Porchestella.fastlane.toolboxDir=build/fastlane-toolbox \
             --no-daemon --stacktrace
 
