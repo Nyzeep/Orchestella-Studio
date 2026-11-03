@@ -194,7 +194,12 @@ jobs:
         run: chmod +x gradlew
 
       - name: Run lint and assemble debug
-        run: ./gradlew :app:lintDebug :app:assembleDebug --no-daemon --stacktrace
+        # This PR gate runs on a clean checkout with no QEMU runtime payload:
+        # Image, initramfs.cpio.gz and libdroidlayer_qemu.so are git-ignored, so
+        # :app:verifyRuntimeAssets is opted out explicitly here. Payload builds
+        # are gated afterwards by check_runtime_payload.py --apk in the release
+        # workflow, which inspects the real APK instead of the checkout.
+        run: ./gradlew :app:lintDebug :app:assembleDebug -Porchestella.assets.allowMissingPayload=true --no-daemon --stacktrace
 
       - name: Verify 16 KB ELF segments and zipalign
         run: bash tools/ci/check-apk-16kb.sh app/build/outputs/apk/debug/app-debug.apk

@@ -208,6 +208,18 @@ public final class LaunchTimeline {
                 + (message == null || message.isEmpty() ? "" : ": " + message));
     }
 
+    /**
+     * Records a non-fatal degradation observed during launch (for example a missing optional
+     * runtime payload) so it stays traceable in the {@code "diagnostics":[...]} array of
+     * {@code launch-timeline.jsonl} instead of vanishing silently. Recording a degradation never
+     * fails a launch and never marks a stage.
+     *
+     * @param note human-readable degradation note; must not carry secrets
+     */
+    public synchronized void noteDegradation(String note) {
+        diagnostics.add(Objects.requireNonNull(note, "note"));
+    }
+
     /** Canonical stage order; absent stages are simply omitted. */
     public synchronized List<Stage> stages() {
         return List.copyOf(elapsedMillis.keySet());

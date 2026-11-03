@@ -47,6 +47,8 @@ public final class QemuRuntimeBootstrapper {
     private final Path distroInputsDir;
     private final java.util.List<DistroManifest> distroManifests;
     private final RootfsStreamOpener rootfsStreams;
+    /** Non-fatal degradation sink; never fails a launch (production wires it to the timeline). */
+    private final java.util.function.Consumer<String> degradations;
 
     public QemuRuntimeBootstrapper(RuntimeArtifactManifest manifest,
             java.util.function.Function<String, InputStream> assetStreams,
@@ -65,12 +67,32 @@ public final class QemuRuntimeBootstrapper {
                 Files::newInputStream);
     }
 
+    /** Launcher seam: reports non-fatal degradations such as an absent {@code proxy_relay} payload. */
+    QemuRuntimeBootstrapper(RuntimeArtifactManifest manifest,
+            java.util.function.Function<String, InputStream> assetStreams,
+            java.util.function.Function<String, InputStream> resourceStreams,
+            Path runtimeDir, Path distroInputsDir,
+            java.util.function.Consumer<String> degradations) {
+        this(manifest, assetStreams, resourceStreams, runtimeDir, distroInputsDir,
+                DistroCatalogRegistry.createDefault().listAll(), Files::newInputStream, degradations);
+    }
+
     /** Test seam: an opener that must never be called on the credentials-only path. */
     QemuRuntimeBootstrapper(RuntimeArtifactManifest manifest,
             java.util.function.Function<String, InputStream> assetStreams,
             java.util.function.Function<String, InputStream> resourceStreams,
             Path runtimeDir, Path distroInputsDir, java.util.List<DistroManifest> distroManifests,
             RootfsStreamOpener rootfsStreams) {
+        this(manifest, assetStreams, resourceStreams, runtimeDir, distroInputsDir, distroManifests,
+                rootfsStreams, note -> {});
+    }
+
+    QemuRuntimeBootstrapper(RuntimeArtifactManifest manifest,
+            java.util.function.Function<String, InputStream> assetStreams,
+            java.util.function.Function<String, InputStream> resourceStreams,
+            Path runtimeDir, Path distroInputsDir, java.util.List<DistroManifest> distroManifests,
+            RootfsStreamOpener rootfsStreams,
+            java.util.function.Consumer<String> degradations) {
         this.manifest = Objects.requireNonNull(manifest, "manifest");
         this.assetStreams = Objects.requireNonNull(assetStreams, "assetStreams");
         this.resourceStreams = Objects.requireNonNull(resourceStreams, "resourceStreams");
@@ -78,6 +100,7 @@ public final class QemuRuntimeBootstrapper {
         this.distroInputsDir = Objects.requireNonNull(distroInputsDir, "distroInputsDir");
         this.distroManifests = java.util.List.copyOf(distroManifests);
         this.rootfsStreams = Objects.requireNonNull(rootfsStreams, "rootfsStreams");
+        this.degradations = Objects.requireNonNull(degradations, "degradations");
     }
 
     public RuntimePaths bootstrap(String rootfsFileName, String bridgeToken, Path instanceRootVolume)
@@ -196,10 +219,17 @@ public final class QemuRuntimeBootstrapper {
 
         byte[] proxyRelay = null;
         try (InputStream in = resourceStreams.apply("proxy_relay")) {
-            if (in != null) {
+            if (in == null) {
+                // An absent payload is tolerated (fixtures and stripped builds report null), but it
+                // is not silent any more: the guest then boots without its outbound proxy.
+                degradations.accept("proxy-relay-absent");
+            } else {
                 proxyRelay = readGuestScript(in);
             }
-        } catch (Exception ignored) {
+        } catch (IOException | RuntimeException failure) {
+            // Unreadable or oversized payload is a packaging defect, not an optional absence.
+            degradations.accept("proxy-relay-unreadable: " + failure);
+            throw new IOException("proxy-relay-unavailable", failure);
         }
 
         // The manifest is the trust anchor; observed download metadata is used only for comparison.

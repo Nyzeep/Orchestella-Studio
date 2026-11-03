@@ -1,4 +1,6 @@
 import java.nio.file.Files
+import java.security.MessageDigest
+import java.time.Instant
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 // Optional QEMU payload roots (Ticket 26 C gate): all three Gradle properties
@@ -146,8 +148,8 @@ plugins {
 android {
     namespace = "io.github.nyzeep.orchestella"
     compileSdk = 36
-    buildToolsVersion = "36.1.0"
-    ndkVersion = "27.0.12077973"
+    buildToolsVersion = libs.versions.buildtools.get()
+    ndkVersion = libs.versions.ndk.get()
 
     defaultConfig {
         applicationId = "io.github.nyzeep.orchestella"
@@ -468,7 +470,7 @@ kotlin {
 }
 
 dependencies {
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
     implementation(project(":runtime:capability"))
     implementation(project(":runtime:distro"))
     implementation(project(":runtime:engine-avf"))
@@ -483,16 +485,22 @@ dependencies {
     implementation(project(":runtime:fastlane-terminal"))
     implementation(libs.material)
     implementation(libs.appcompat)
-    implementation("dev.rikka.shizuku:api:13.1.5")
-    implementation("dev.rikka.shizuku:provider:13.1.5")
+    // MainActivity drives Dispatchers.Main (see MainActivity:1405/1409). The
+    // Main dispatcher is registered through kotlinx-coroutines-android's
+    // MainDispatcherFactory, so -android must be declared explicitly; a
+    // core-only classpath compiles but fails at runtime with
+    // "Module with the Main dispatcher had failed to initialize".
+    implementation(libs.coroutines.core)
+    implementation(libs.coroutines.android)
+    implementation(libs.shizuku.api)
+    implementation(libs.shizuku.provider)
     // Pin the in-process hidden-API exemption (Apache-2.0, LSPosed). It grants
     // no permission and is installed once before any AVF class load.
-    implementation("org.lsposed.hiddenapibypass:hiddenapibypass:6.1")
+    implementation(libs.hiddenapibypass)
     androidTestImplementation(project(":runtime:engine-fastlane"))
     // DV-PVM-02: the QA instrumentation bridges the payload's vsock port with
     // the production DistccTcpVsockBridge instead of a second byte pump.
     androidTestImplementation(project(":runtime:fastlane-distcc"))
-    androidTestImplementation(project(":runtime:fastlane-terminal"))
     testImplementation(libs.junit)
 }
 
@@ -536,6 +544,185 @@ tasks.register<JavaExec>("runPhase5JvmAppTests") {
     )
 }
 
+// Q1: fail the build, not the first boot, when the QEMU runtime payload is
+// absent or stale in this checkout. A clean clone used to assemble a
+// BUILD SUCCESSFUL APK that carried assets/runtime-artifacts-v1.sha256 and
+// none of the artifacts it names, so the failure only surfaced when the user
+// started an instance. The three payload files are git-ignored and can only
+// come from an explicit payload build or from the external -P payload roots.
+//
+// Only three of the seven manifest entries are verified: NOTICE.QEMU and
+// QEMU-GPL-SOURCES.md have drifted from the manifest since e16af2c, so a
+// full-entry check would be red on every machine today.
+val allowMissingRuntimePayload: Boolean = providers.gradleProperty("orchestella.assets.allowMissingPayload")
+    .orNull
+    ?.trim()
+    ?.lowercase()
+    ?.let { it == "true" || it == "1" }
+    ?: false
+
+val verifyRuntimeAssets = tasks.register("verifyRuntimeAssets") {
+    group = "verification"
+    description = "Fails unless Image, initramfs.cpio.gz and the QEMU ELF exist and match runtime-artifacts-v1.sha256."
+    doLast {
+        val repoRoot = rootProject.projectDir
+        // Messages stay repo-relative: absolute machine paths must not leak
+        // into build logs or review transcripts.
+        val relative: (File) -> String = { it.relativeToOrSelf(repoRoot).invariantSeparatorsPath }
+        fun sha256Of(file: File): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+            file.inputStream().use { input ->
+                val buffer = ByteArray(1 shl 16)
+                var read = input.read(buffer)
+                while (read != -1) {
+                    digest.update(buffer, 0, read)
+                    read = input.read(buffer)
+                }
+            }
+            return digest.digest().joinToString("") { "%02x".format(it) }
+        }
+
+        // Exemption 1: the external payload mode (-Porchestella.qemu.*, or the
+        // legacy -Pdroidlayer.qemu.* prefix still used by qemu-android.yml).
+        // The source sets point outside the checkout, so the in-tree files are
+        // irrelevant; only prove the three roots are populated.
+        if (qemuNativeLibDir != null || qemuAssetsDir != null || qemuInitramfsDir != null) {
+            logger.lifecycle(
+                "verifyRuntimeAssets: external QEMU payload mode " +
+                    "(-Porchestella.qemu.*/-Pdroidlayer.qemu.*): checking that the three payload " +
+                    "roots are populated and skipping the in-tree artifact check."
+            )
+            val problems = mutableListOf<String>()
+            listOf(
+                "qemu.nativeLibDir" to qemuNativeLibDir,
+                "qemu.assetsDir" to qemuAssetsDir,
+                "qemu.initramfsDir" to qemuInitramfsDir
+            ).forEach { (label, value) ->
+                if (value == null) {
+                    problems += "  -$label was not provided (all three roots are required together)"
+                    return@forEach
+                }
+                val root = rootProject.file(value)
+                when {
+                    !root.isDirectory -> problems += "  -$label is not an existing directory"
+                    !root.walkTopDown().any { it.isFile } ->
+                        problems += "  -$label contains no files (empty external payload root)"
+                }
+            }
+            if (problems.isNotEmpty()) {
+                problems.forEach { logger.error("verifyRuntimeAssets: $it") }
+                throw GradleException(
+                    "External QEMU payload mode is configured but the payload roots are unusable.\n" +
+                        problems.joinToString("\n") +
+                        "\nProvide three non-empty roots via -Porchestella.qemu.* or -Pdroidlayer.qemu.*, " +
+                        "or build the in-tree payload with guest-assets/run-in-builder.sh."
+                )
+            }
+            return@doLast
+        }
+
+        // Exemption 2: an explicit, recorded opt-out for clean checkouts that
+        // are not supposed to carry the payload (PR gates, docs-only jobs).
+        if (allowMissingRuntimePayload) {
+            val flagFile = layout.buildDirectory.file("runtime-assets-missing.flag").get().asFile
+            flagFile.parentFile.mkdirs()
+            flagFile.writeText(
+                "timestamp=${Instant.now()}\n" +
+                    "reason=-Porchestella.assets.allowMissingPayload=true\n" +
+                    "detail=Image, initramfs.cpio.gz and lib/arm64-v8a/libdroidlayer_qemu.so were " +
+                    "not verified; an APK from this build may carry runtime-artifacts-v1.sha256 " +
+                    "without the artifacts it names.\n"
+            )
+            logger.warn(
+                "verifyRuntimeAssets: WARNING: runtime payload verification is EXPLICITLY DISABLED " +
+                    "(-Porchestella.assets.allowMissingPayload=true). This build may produce an APK that " +
+                    "has runtime-artifacts-v1.sha256 but not Image, initramfs.cpio.gz or " +
+                    "lib/arm64-v8a/libdroidlayer_qemu.so, and that APK cannot boot the QEMU lane. " +
+                    "Marker written to build/runtime-assets-missing.flag."
+            )
+            return@doLast
+        }
+
+        val required = linkedMapOf(
+            "Image" to File(repoRoot, "app/src/main/assets/Image"),
+            "initramfs.cpio.gz" to File(repoRoot, "app/src/main/resources/initramfs.cpio.gz"),
+            "lib/arm64-v8a/libdroidlayer_qemu.so" to
+                File(repoRoot, "app/src/main/jniLibs/arm64-v8a/libdroidlayer_qemu.so")
+        )
+        val manifestFile = File(repoRoot, "app/src/main/assets/runtime-artifacts-v1.sha256")
+        // "<64 lowercase hex><two spaces><name>" per line; line order is not an
+        // invariant (the QEMU ELF is last, QEMU-BUILD-INPUTS is third).
+        val entryPattern = Regex("^([0-9a-f]{64})  (.+)$")
+        val expectedDigests = linkedMapOf<String, String>()
+        if (manifestFile.isFile) {
+            manifestFile.readLines().forEach { line ->
+                val match = entryPattern.matchEntire(line.trim())
+                if (match != null) expectedDigests[match.groupValues[2]] = match.groupValues[1]
+            }
+        }
+
+        val missing = mutableListOf<String>()
+        val empty = mutableListOf<String>()
+        val unlisted = mutableListOf<String>()
+        val mismatched = mutableListOf<Triple<String, String, String>>()
+        for ((name, file) in required) {
+            when {
+                !file.isFile -> missing += "$name (${relative(file)})"
+                file.length() == 0L -> empty += "$name (${relative(file)})"
+                else -> {
+                    val expected = expectedDigests[name]
+                    if (expected == null) {
+                        unlisted += name
+                    } else {
+                        val actual = sha256Of(file)
+                        if (!actual.equals(expected, ignoreCase = true)) {
+                            mismatched += Triple(name, expected, actual)
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!manifestFile.isFile || missing.isNotEmpty() || empty.isNotEmpty() ||
+            unlisted.isNotEmpty() || mismatched.isNotEmpty()
+        ) {
+            val details = mutableListOf<String>()
+            details += "The QEMU runtime payload in this checkout is incomplete or does not match " +
+                "app/src/main/assets/runtime-artifacts-v1.sha256."
+            if (!manifestFile.isFile) {
+                details += "  - missing manifest: app/src/main/assets/runtime-artifacts-v1.sha256 (tracked file)"
+            }
+            if (missing.isNotEmpty()) details += "  - missing files: ${missing.joinToString(", ")}"
+            if (empty.isNotEmpty()) details += "  - empty files: ${empty.joinToString(", ")}"
+            if (unlisted.isNotEmpty()) {
+                details += "  - not described by the manifest: ${unlisted.joinToString(", ")}"
+            }
+            mismatched.forEach { (name, expected, actual) ->
+                details += "  - sha256 mismatch: $name expected=$expected actual=$actual"
+            }
+            details += "How to obtain the payload:"
+            details += "  - local build: build the guest assets with guest-assets/run-in-builder.sh " +
+                "(produces Image and initramfs.cpio.gz) and stage the QEMU ELF at " +
+                "app/src/main/jniLibs/arm64-v8a/libdroidlayer_qemu.so, then rerun."
+            details += "  - CI: pass an external payload with -Porchestella.qemu.nativeLibDir/" +
+                "assetsDir/initramfsDir (or the legacy -Pdroidlayer.qemu.* prefix); that mode skips " +
+                "this check and only requires the three roots to be populated."
+            details += "  - intentional absence: rerun with -Porchestella.assets.allowMissingPayload=true " +
+                "to opt out explicitly; it warns and writes build/runtime-assets-missing.flag."
+            details.forEach { logger.error("verifyRuntimeAssets: $it") }
+            throw GradleException("QEMU runtime payload check failed.\n" + details.joinToString("\n"))
+        }
+
+        // A passing check invalidates any marker left by an earlier opted-out
+        // run; a stale flag would misreport this build as payload-less.
+        layout.buildDirectory.file("runtime-assets-missing.flag").get().asFile.delete()
+        logger.lifecycle(
+            "verifyRuntimeAssets: Image, initramfs.cpio.gz and lib/arm64-v8a/libdroidlayer_qemu.so " +
+                "match app/src/main/assets/runtime-artifacts-v1.sha256."
+        )
+    }
+}
+
 tasks.register<Copy>("packageOrchestellaRelease") {
     dependsOn("assembleRelease")
     from(layout.buildDirectory.dir("outputs/apk/release"))
@@ -573,8 +760,11 @@ val verifyFastlaneToolboxApk = fastlaneToolboxDir?.let { toolboxProperty ->
         )
         val sdk = providers.environmentVariable("ANDROID_HOME").orNull
             ?: providers.environmentVariable("ANDROID_SDK_ROOT").orNull
-        val zipalign = sdk?.let { File(it, "build-tools/36.1.0/zipalign") }
-        val zipalignExe = sdk?.let { File(it, "build-tools/36.1.0/zipalign.exe") }
+        // Same catalog source as buildToolsVersion above, otherwise the lookup
+        // path silently drifts from the toolchain the APK was built with.
+        val buildToolsDir = "build-tools/${libs.versions.buildtools.get()}"
+        val zipalign = sdk?.let { File(it, "$buildToolsDir/zipalign") }
+        val zipalignExe = sdk?.let { File(it, "$buildToolsDir/zipalign.exe") }
         val zipalignPath = when {
             zipalign?.isFile == true -> zipalign
             zipalignExe?.isFile == true -> zipalignExe
@@ -656,4 +846,11 @@ tasks.matching {
     it.name in listOf("mergeDebugAssets", "mergeReleaseAssets", "generateDebugAssets", "generateReleaseAssets", "preBuild", "preDebugBuild", "preReleaseBuild", "processDebugResources", "processReleaseResources", "processDebugJavaRes", "processReleaseJavaRes")
 }.configureEach {
     dependsOn(syncGuestShellAssets, syncGuestInitAndRelay)
+}
+
+// The payload gate sits at the very front of assembly, next to
+// syncGuestShellAssets/syncGuestInitAndRelay, so a checkout without the payload
+// stops before any compilation or packaging work happens.
+tasks.named("preBuild") {
+    dependsOn(verifyRuntimeAssets)
 }
