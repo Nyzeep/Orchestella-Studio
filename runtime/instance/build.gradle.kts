@@ -90,6 +90,13 @@ tasks.register<JavaExec>("instanceStopSignalContractTest") {
     args(stopSignalOutput.get().asFile.absolutePath)
 }
 
+val gatewaySlotOutput = layout.buildDirectory.dir("gateway-slot-contract")
+tasks.register<JavaExec>("gatewaySlotArbiterContractTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.instance.GatewaySlotArbiterContractTest")
+    args(gatewaySlotOutput.get().asFile.absolutePath)
+}
+
 tasks.named("check") {
     dependsOn(
         "normalInstanceLifecycleContractTest",
@@ -102,7 +109,8 @@ tasks.named("check") {
         "instancePowerControllerTest",
         "instanceSnapshotManagerTest",
         "guestFeatureContractTest",
-        "instanceStopSignalContractTest"
+        "instanceStopSignalContractTest",
+        "gatewaySlotArbiterContractTest"
     )
 }
 

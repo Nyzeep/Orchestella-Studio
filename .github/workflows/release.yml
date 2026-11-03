@@ -136,13 +136,18 @@ jobs:
           if-no-files-found: warn
 
       - name: Run lint and assemble debug for the packaging gate
-        run: ./gradlew :app:lintDebug :app:assembleDebug --no-daemon --stacktrace
+        # Clean checkout: the git-ignored QEMU payload is absent, which is the
+        # known baseline for this job. The real payload is gated later by
+        # check_runtime_payload.py --apk against the produced APK.
+        run: ./gradlew :app:lintDebug :app:assembleDebug -Porchestella.assets.allowMissingPayload=true --no-daemon --stacktrace
 
       - name: Verify debug APK 16 KB ELF segments and zipalign
         run: bash tools/ci/check-apk-16kb.sh app/build/outputs/apk/debug/app-debug.apk
 
       - name: Build release APK
-        run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
+        # Same clean-checkout baseline as the debug gate above; the payload is
+        # verified on the finished APK by check_runtime_payload.py --apk.
+        run: ./gradlew :app:assembleRelease -Porchestella.assets.allowMissingPayload=true --no-daemon --stacktrace
 
       - name: Locate release APK
         run: |

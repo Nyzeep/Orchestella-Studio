@@ -43,6 +43,14 @@ tasks.register<JavaExec>("bridgeProxyGatewayContractTest") {
     mainClass.set("io.github.nyzeep.orchestella.runtime.network.BridgeProxyGatewayContractTest")
 }
 
+// The diagnostics suite proves every formerly swallowed forwarder failure now reaches a
+// PortForwardingObserver. Like the contract suites above it must be an explicit JavaExec:
+// the test task excludes everything.
+tasks.register<JavaExec>("socketForwarderDiagnosticsTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.network.SocketPortForwarderDiagnosticsTest")
+}
+
 // The manager contract suite is strategy-neutral: other engine modules re-run
 // it against their own live forwarding engine (Ticket 36 AC-3), so the test
 // classes are published as consumable artifacts.
@@ -61,6 +69,7 @@ tasks.named("check") {
     dependsOn(
         "portForwardingManagerContractTest",
         "resilientDownloadEngineContractTest",
-        "bridgeProxyGatewayContractTest"
+        "bridgeProxyGatewayContractTest",
+        "socketForwarderDiagnosticsTest"
     )
 }

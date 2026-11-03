@@ -589,6 +589,7 @@ public final class QemuInstanceLauncher {
             throw failure;
         }
 
+        java.util.function.Consumer<String> degradations = timeline::noteDegradation;
         QemuRuntimeBootstrapper bootstrapper = new QemuRuntimeBootstrapper(manifest,
                 name -> {
                     try {
@@ -605,7 +606,8 @@ public final class QemuInstanceLauncher {
                     }
                 },
                 Paths.get(parameters.runtimeDirectory),
-                Paths.get(parameters.distroInputsDirectory));
+                Paths.get(parameters.distroInputsDirectory),
+                degradations);
         // Consume persisted guest evidence, not an in-memory instance: the caller may
         // hold a stale snapshot, and only the store's current record may unlock the
         // credentials-only path. Missing/ambiguous evidence stays on the full path.

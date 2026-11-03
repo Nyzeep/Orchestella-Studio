@@ -165,7 +165,7 @@ plugins {
 android {
     namespace = "io.github.nyzeep.orchestella.accel"
     compileSdk = 36
-    buildToolsVersion = "36.1.0"
+    buildToolsVersion = libs.versions.buildtools.get()
 
     defaultConfig {
         // Base id mirrors :app; the channel suffix below completes the mirror.

@@ -323,6 +323,10 @@ public final class AvfInstanceLauncher {
         try (InputStream in = PackagedAssetStreams.openAsset(context, RuntimeArtifactManifest.SCHEMA_FILE_NAME)) {
             manifest = RuntimeArtifactManifest.parse(in);
         }
+        // The timeline needs the admitted plan, so it only exists after prepare(). Degradations
+        // raised by the bootstrap are captured here and replayed into it below.
+        java.util.List<String> degradations = new java.util.ArrayList<>();
+        java.util.function.Consumer<String> degradationSink = degradations::add;
         QemuRuntimeBootstrapper bootstrapper = new QemuRuntimeBootstrapper(manifest,
                 name -> {
                     try {
@@ -339,7 +343,8 @@ public final class AvfInstanceLauncher {
                     }
                 },
                 Paths.get(parameters.runtimeDirectory),
-                Paths.get(parameters.distroInputsDirectory));
+                Paths.get(parameters.distroInputsDirectory),
+                degradationSink);
         PreparedSettings prepared = prepare(parameters, hostFacts(context),
                 () -> bootstrapper.bootstrap(parameters.rootfsFileName, parameters.bridgeToken,
                         parameters.guestPassword,
@@ -354,6 +359,9 @@ public final class AvfInstanceLauncher {
                 parameters.instanceId, "unknown", (int) prepared.plan.memoryMb(),
                 prepared.plan.cpuCount());
         timeline.mark(LaunchTimeline.Stage.LAUNCH_START);
+        for (String degradation : degradations) {
+            timeline.noteDegradation(degradation);
+        }
         AvfLaunchTrace trace = stage -> markStage(timeline, stage);
 
         AvfLaunchSpec.Builder specBuilder = AvfLaunchSpec.builder(
