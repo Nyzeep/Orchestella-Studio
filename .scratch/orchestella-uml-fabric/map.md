@@ -25,11 +25,13 @@
 
 - 2026-11-02 **零设备产品化轮（T1–T7，基线 main `3c24c54`）**：把 11-08 双设备实证暴露的 provision 与启动器缺口落成产品代码，报告 `docs/research/2026-11-02-zero-device-productization.zh-CN.md`，规格 `spec-zero-device-productization.md`，工单 07–13。①**prompt 三处偏差按仓库事实改写**：产品**零 stop-file 引用**（停止是「控制套接字 + 有界执行器」，8 条路径全收敛到 `RuntimeProcessSupervisor.stop()`）→ T3 用户裁定抽 `runtime:instance` 独立组件不接线；T4 的 manifest/specialUse/四权限/IMPORTANCE_LOW **已具备** → 范围收窄为真实缺口（API34+ 显式 type、2h 上限+续期、finally 释放、开机自启不空转、通知权限）；`assembleSdk36Debug/sdk28Debug` 是 research runner 的 flavor，产品 `:app` 无 productFlavors。②**T1 锁恢复**：`/proc` fd → `fuser` → 不可判定禁删 + 3s 二次确认；reason 词表新增 `package-lock-held` / `package-lock-recovery-failed`，锁遗留不再报 `offline`。③**T2 分档**：download 900 / transaction 3600 / compute 1800 / verify 600 + 每类环境变量覆盖；宿主 65→90min、guest `TimeoutStartSec` 2h→5400s；新增跨层一致性单测（解析 guest 脚本 + 两道墙，任一侧漂移即红）。④**T4** 决策逻辑抽 `WakeLockPolicy` 四情形单测。⑤**T5** 行为探针（mkdir+chmod 0700+stat 读回）0/1/2 三态；`build.sh` fail-fast `exit 70` + 打包前归一/断言（断言才是门，DrvFs 上 chmod 是 no-op）；新增 `check-staging-fs.sh` 供仓外 `mkfs.ext4 -d` 配方复用。⑥**T6 结论=不做**：产品侧 `ncpus` 零通道、`libuml*`/stub 不进产品构建，research 三处口径一致，stub 16KB 与 APK 16KB 复用同一 `check-elf-16kb.sh` 判据（无冲突）。触发条件：UML 车道进产品时在 `LaunchParameters` 暴露 `ncpus` 且默认 2。⑦**T7** `preflight_device_window.sh`（推送 md5 对账 / force-stop→sleep3→am start -W / 排程互斥 / 凉机阈值 / 中停须长驻）。**验证**：`:app:assembleDebug` + `:app:testDebugUnitTest` + `:runtime:instance:check` + `:runtime:contract:check` 全绿；research runner 双 flavor BUILD SUCCESSFUL；`STAGING_GUARD_TEST_OK` 9/9、`PREFLIGHT_DEVICE_WINDOW_TEST_OK` 19/19；`check_ci_module_coverage` 230 passed。**已知 flake**：7 发行版矩阵驱动器在本机 MSYS 下每 distro 需 7–10 分钟（fork 成本），本轮未跑完整环（探针副本已与产品脚本 diff 归零）。
 
+- 2026-11-04 **设备窗第三轮（device-mey，ACR 收口轮，报告 `docs/research/2026-11-04-device-window-round3.zh-CN.md`）**：①**T9 smp4/8 补列 PASS**（S(4)=1.26/E=0.31、S(8)=0.80/E=0.10、S(4)/S(2)=0.79、smp4↔smp8 分离 p≈1.1e-5，23/23 digest 与上轮逐字节一致；证据 `evidence/uml-fabric-20261104/t9-smp4-8/`）→ §5.4 回退条款双设备命中，**「QEMU 面最优宽度=2」升格定案**（ACR §7.5 追记），S(8)<1 为手机宿主首个宽原子反噬实证；②**W-FAB-03 联网取证入库**（`docs/research/2026-11-04-wfab03-oem-survey.zh-CN.md`：9 OEM 矩阵——轨道 A 判词无反例、轨道 B 收敛 Tensor G1+/Exynos 2500+/Dimensity 9400+、16K「无出货设备默认」平台级判词、T13 获荣耀论坛公开互证）；③pvm-compiler 线七票 tracker 对账回填（PR #19–#24 均 MERGED 实证，PVM-09 实为已实现）+ issues 全目录 14 票入库；④敏感门 token_shape 增 URL 段豁免（推文编号误报类）。**投票前技术缺项只剩 16K 宿主（公开通道仅 Pixel 系开发者选项）与 distcc@36（DV-01 外部阻断）**。
+
 ## Not yet specified
 
-- G1 app 域多核、G2 16K 宿主、G3 同夹具四列、G4 崩溃恢复：G1/G4 已过（设备轮）；G2/G3 需设备窗口，待零设备批次收口后立项。
-- 下一设备窗口清单增量（ACR §8.2）：T7 终态（按 2026-11-08 配方）、16K 宿主（含 stub_exe-16k 行为等价）、D9 Docker、链接阶段、W-FAB-03 OEM 普查、distcc COMPLETED@36、F-MTTCG 补轮（n≥10）。
-- ACR 投票：材料已合入（ACR §8），等设备窗口补数后开投票；议程头号=开发通道产品形态裁定。
+- G1 app 域多核、G2 16K 宿主、G3 同夹具四列、G4 崩溃恢复：G1/G4 已过（设备轮）；G2 需 16K 页设备（普查确认公开通道仅 Pixel 系开发者选项）；G3 需设备窗口。
+- 下一设备窗口清单增量（2026-11-04 刷新）：~~T7 终态~~✅、~~D9~~✅、~~链接~~✅、~~W-FAB-03 联网半边~~✅、~~F-MTTCG 补轮~~✅；仍缺 **16K 宿主（含 stub_exe-16k 行为等价）**、**distcc COMPLETED@36**（DV-01 外部阻断）、W-FAB-03 设备实测扩样（普查低置信三格）。
+- ACR 投票：技术缺项仅剩 16K 宿主与 distcc@36 两行（ACR §8.2 已刷新）；**可投票性判定=是否带此两行开票**，议程头号=开发通道产品形态裁定。
 
 ## Out of scope
 
