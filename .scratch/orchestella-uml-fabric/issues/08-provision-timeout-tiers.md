@@ -1,7 +1,7 @@
 # 08: T2 · provision 操作超时分档 + 跨层一致性
 
 Type: implementation
-Status: ready-for-agent
+Status: resolved（2026-11-02，零设备产品化轮）
 Priority: P0
 Owner: （待分配）
 Blocked by: None

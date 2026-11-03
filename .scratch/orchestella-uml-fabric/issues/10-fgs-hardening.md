@@ -1,7 +1,7 @@
 # 10: T4 · 前台服务硬化（真实缺口四项）
 
 Type: implementation
-Status: ready-for-agent
+Status: resolved（2026-11-02，零设备产品化轮）
 Priority: P0
 Owner: （待分配）
 Blocked by: None

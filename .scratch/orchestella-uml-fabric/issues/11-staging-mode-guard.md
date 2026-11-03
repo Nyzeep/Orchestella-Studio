@@ -1,7 +1,7 @@
 # 11: T5 · staging 文件系统 mode 守卫
 
 Type: implementation
-Status: ready-for-agent
+Status: resolved（2026-11-02，零设备产品化轮）
 Priority: P0
 Owner: （待分配）
 Blocked by: None

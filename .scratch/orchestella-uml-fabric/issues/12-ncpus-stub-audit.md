@@ -1,7 +1,7 @@
 # 12: T6 · ncpus 旋钮与 16KB stub 的产品通道核对（结论票）
 
 Type: audit
-Status: ready-for-agent
+Status: resolved（2026-11-02，零设备产品化轮）
 Priority: P2
 Owner: （待分配）
 Blocked by: None

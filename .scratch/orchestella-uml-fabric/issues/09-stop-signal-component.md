@@ -1,7 +1,7 @@
 # 09: T3 · InstanceStopSignal 停止信号组件（不接线）
 
 Type: implementation
-Status: ready-for-agent
+Status: resolved（2026-11-02，零设备产品化轮）
 Priority: P1
 Owner: （待分配）
 Blocked by: None
