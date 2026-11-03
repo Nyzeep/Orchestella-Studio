@@ -302,10 +302,19 @@ def _line_has_private_key(line: str) -> bool:
     return _PRIVATE_KEY_RE.search(line) is not None
 
 
+_URL_SPAN_RE = re.compile(r"https?://\S+")
+
+
 def _line_has_token_shape(line: str) -> bool:
+    # URL 内的中长十六进制段是公开标识符（推文/视频/issue 编号），不是开发
+    # 者密钥载体；URL 之外的裸值仍按原口径拦。密钥若真出现在 URL 查询串里，
+    # 其长度通常为 40/64（本就被豁免由 denylist/其他维度兜底）。
+    url_spans = [(m.start(), m.end()) for m in _URL_SPAN_RE.finditer(line)]
     for match in _HEX_RUN_RE.finditer(line):
         token = match.group(0)
         if len(token) in (40, 64):
+            continue
+        if any(start <= match.start() and match.end() <= end for start, end in url_spans):
             continue
         window_start = max(0, match.start() - 48)
         window_end = min(len(line), match.end() + 48)
@@ -424,6 +433,9 @@ def run_self_test() -> bool:
             "-----BEGIN " + "RSA " + "PRIVATE KEY-----",
             _hex_run(5),
             _hex_run(8),
+            # Run OUTSIDE the URL span must still fire even when a URL is
+            # present elsewhere on the line (guards the URL exemption).
+            "see " + "https" + "://" + "example.com/a " + _hex_run(5),
         ]
         # Denylist positives: the known values must be findings on a BARE
         # line (no Serial label, no adb -s) — that is the gap being closed.
@@ -455,6 +467,9 @@ def run_self_test() -> bool:
             _hex_run(16),
             "sha256" + ": " + _hex_run(5),
             "ADR-0001 " + _hex_run(5),
+            # Public identifier embedded in a citation URL (tweet/video/issue
+            # id) is not developer secret material — must stay exempt.
+            "引用 " + "https" + "://" + "x.com/user/status/" + _hex_run(5),
         ]
         # The concatenated source shape itself must never be a finding: the
         # fragments travel quoted, so no joined value appears in the line.
