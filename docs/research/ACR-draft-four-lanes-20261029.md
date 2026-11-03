@@ -341,7 +341,7 @@ release / dev / QA 默认**都是 36**；28 只是一个 QA 专用逃生门 `-Po
 
 ---
 
-## 8. 修订记录与 ACR 就绪度（2026-11-08，fabric 批次 3 合入）
+## 8. 修订记录与 ACR 就绪度（最近合入：2026-11-04 设备窗第三轮·对账半）
 
 ### 8.1 修订记录
 
@@ -349,16 +349,19 @@ release / dev / QA 默认**都是 36**；28 只是一个 QA 专用逃生门 `-Po
 |---|---|
 | 2026-10-29 初稿（会话 23） | 四车道定位表、targetSdk 36 取舍、UML 定位修正、文案纪律、撤销条件；§7 现场补充（AVF 服务缺失、包可见性、Landlock 修正） |
 | 2026-11-08（fabric 批次 3） | 合入 2026-10-31 设备窗口轮（device-myron）T1–T7：§1.1 性能与状态行更新（F-MTTCG-C200、G1、长驻/崩溃恢复 PASS）、新增 freezer 能力约束行、§1.2 新增三面并行宽度行、§1.4 新增设备轮口径纪律、§3.4 未验证表修订（长驻→已验证、SMP→已验证、freezer 平台约束行）、§5.1 结论 4/5 观察状态更新、§7.4 T7 与配方指针（含对 11-07 四步根因链第 4 步「协议不匹配」的源码级改判）、§7.5 R-Q 降档。全部数字来源见各节标注 |
+| 2026-11-08（设备窗第二轮） | T7-F 终态 PASS（awaiting-init，13 attempts）、T8 长驻双设备 PASS、T9 smp1/2 n=10（S(2)=1.60 跨设备）、T10 Docker PASS（D9）、T11 链接 PASS、T12 not-testable、T13 负样本（HONOR 无 AOSP virtualizationservice）——§8.2 就绪度逐项刷新 |
+| 2026-11-04（设备窗第三轮·对账半） | ①**W-FAB-03 OEM 普查联网取证入库**（`docs/research/2026-11-04-wfab03-oem-survey.zh-CN.md`：9 OEM × AVF/16K 矩阵、21 组引用；轨道 A 判词无反例；轨道 B 收敛 Tensor G1+ / Exynos 2500+ / Dimensity 9400+ 三条芯片线；16K「无出货设备默认」升级平台级判词；T13 获荣耀官方论坛公开互证）；②F-MTTCG smp4/8 补数进行中（同日设备道，完成后另记行）；③pvm-compiler 线七票 tracker 对账（PVM-01/02/04/05/07/08/09 状态过期回填，PR #19–#24 均 MERGED 实证；PVM-09 实为已实现——对「下一开发票」的误判在此更正） |
 
-### 8.2 投票前仍缺（就绪度清单）
+### 8.2 投票前仍缺（就绪度清单，2026-11-04 刷新）
 
-1. **T7 终态**：package-install 全链取数（下一设备窗口，按 §7.4 修正配方）；
-2. **16K 宿主**（T6 not-tested，无 16K 通道设备）；
-3. **D9 Docker**（UML 内 systemd/dockerd 实测）；
-4. **链接阶段**（16K guest 内 `ld`/`lld`）；
-5. **W-FAB-03 OEM 普查**（`virtualizationservice` 注册多机型样本——§7.1 单设备样本的扩样）；
-6. **distcc COMPLETED@36**（36 域 distcc 全链完成态，fastlane 线）；
-7. §6 原有八项中仍开放的：Play targetSdk 日期、28 域失效时间线、同夹具四列（proot/pVM/QEMU/UML 同轮）、`.so` 分发边界法务结论、扩展包可安装性。
+1. ~~T7 终态~~ ✅ **已闭合**：T7-F PASS（`awaiting-init` 终态，13 attempts，九层根因链收口；round-2 报告 §0）；
+2. **16K 宿主** ⏳ 仍缺（双设备均 4K 页）——W-FAB-03 普查已将其升级为**平台级判词**：截至 Android 17 beta 无任何出货设备 16K 默认、公开通道仅 Pixel 系开发者选项（survey §0/§1.1）；
+3. ~~D9 Docker~~ ✅ **已闭合**：T10 PASS（UML SMP 内 dockerd + `docker run` Hello RC=0，dockerd RSS 76128kB）；
+4. ~~链接阶段~~ ✅ **已闭合**：T11 PASS（16K guest 内 clang22 `-c` → ld.lld 动静态链接 → 执行成功）；
+5. ~~W-FAB-03 OEM 普查~~ ✅ **联网取证半边已闭合**（2026-11-04 survey，9 OEM 矩阵 + T13 公开互证）；设备实测扩样半边归真机窗口工单；
+6. **distcc COMPLETED@36** ⏳ 仍缺（blocked by DV-01 SELinux `execute_no_trans`，外部问题，非本项目可解）；
+7. **F-MTTCG n≥10** ⏳ smp1/2 已闭合（S(2)=1.60@n=10 跨设备）；**smp4/8 补数进行中**（设备窗第三轮 T9 道，完成后 §7.5「最优宽度=2」可从工作假设升格定案）；
+8. §6 原有八项中仍开放的：~~Play targetSdk 日期~~（✅ 已由 02 票渠道收敛裁定：Play 硬截止 2027-02-01、GitHub/F-Droid 无门槛，`docs/research/2026-11-02-platform-policy-matrix.md`）、28 域失效时间线、同夹具四列（proot/pVM/QEMU/UML 同轮，G3）、`.so` 分发边界法务结论、~~扩展包可安装性~~（✅ §7.1：更新路径下已装上并接入，HyperOS 拦截未复现；「可安装性」从拦截状态改为单机型证据）。
 
 ### 8.3 ACR 议程建议（按优先级）
 
