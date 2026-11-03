@@ -1,6 +1,6 @@
 # PVM-10 · 请求结束信号：从 TCP 半关闭换成 DOTI 自定界
 
-- 状态：**机制已实现并真机验证；验收 A/B/C 未过，阻塞点转为 argv 白名单（新票 PVM-11）**
+- 状态：**机制已实现并真机验证；argv 白名单阻塞点已由 PVM-11 零设备解决（见 Comments）；验收 A/B/C 的真机部分仍 pending（not-tested）**
 - 分支：`feat/pvm-10-doti-termination`
 - 报告：`docs/reports/tickets/pvm-10/implementation-report.zh-CN.md`
 - 基线：`main = 722bf8e`
@@ -42,3 +42,17 @@ argv 策略一直如此，只是此前请求永远走不到。**下一票 PVM-11
 - 数据面 `RST(TIMEOUT)` 的原因码拆分只影响诊断；生产默认开关仍关闭（等 AX-07）。
 - `tools/device-validation` 的 `test_avf_tools.py` 需要 `AVF_VALIDATION_TEST_ROOT` 环境变量，未纳入零设备车道。
 - QA 构建必须 `-Porchestella.qaTargetSdk=28`，否则 gvproxy 被 SELinux 拒绝执行（`QEMU_START_FAILED`）。
+
+## Comments
+
+- **2026-11-03（PVM-11 对账）**：本票发现的 argv 白名单阻塞点已在零设备条件下由 PVM-11
+  解决——根因确认为 clang 客户端自动追加的两段式 `-target aarch64-alpine-linux-musl`
+  触发 `ARGV_REJECTED:UNKNOWN_FLAG`（`STAT=0x6500`，即票面上那 27 字节 SERR 的来源；
+  不是 `INCLUDE_PATH`，distcc v1 客户端本地 strip 掉 `-I`，见 PVM-11 票 Comments ②）。
+  修复 commit：`753a3ff`（四种 target 写法 + `-march/-mtune/-mcpu=native` 拒绝 +
+  `declared_target` advisory）与 `2936a6c`（按输入文件名后缀推断语言）；
+  报告 `docs/reports/tickets/pvm-11/implementation-report.zh-CN.md`（宿主 52/52 用例绿，
+  27 B SERR / 87 B 回包 / 2672 B 请求与设备侧数字逐字节对账）。**验收 A/B/C 的真机部分
+  仍 pending**：`DOTO 长度>0`、秒级差值、无 `running locally instead` 三条判据要在
+  设备 crossfire 里过（入口见 PVM-11 票 Comments ③ / DV-PVM-02），本轮零设备，标
+  `not-tested`。
