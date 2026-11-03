@@ -1,7 +1,7 @@
 # 13: T7 · 设备窗口 preflight 自检脚本
 
 Type: implementation
-Status: ready-for-agent
+Status: resolved（2026-11-02，零设备产品化轮）
 Priority: P2（可选票，但成本低、下个窗口必用）
 Owner: （待分配）
 Blocked by: None

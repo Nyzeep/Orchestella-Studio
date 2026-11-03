@@ -1,7 +1,7 @@
 # 07: T1 · provision pacman db.lck 锁恢复
 
 Type: implementation
-Status: ready-for-agent
+Status: resolved（2026-11-02，零设备产品化轮）
 Priority: P0
 Owner: （待分配）
 Blocked by: 08（同一文件的超时分档先落地，本票在其 stage 表基础上新增锁恢复 stage）
