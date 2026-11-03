@@ -66,7 +66,13 @@ public final class ProtectedWarmPool implements Closeable {
         TTL_EXPIRED,
         PROCESS_DIED,
         DRAIN_TIMEOUT,
-        STOP_UNCONFIRMED
+        STOP_UNCONFIRMED,
+        /**
+         * PVM-06: a warm instance was discarded because the worker pool's
+         * injected health probe reported it unhealthy. Never emitted by the
+         * pool's own acquire path.
+         */
+        PROBE_FAILED
     }
 
     /** States of the single pool slot. */
@@ -307,6 +313,39 @@ public final class ProtectedWarmPool implements Closeable {
             EnumMap<Code, Long> reasons = new EnumMap<>(Code.class);
             reasons.putAll(evictReasons);
             return new Stats(coldCreates, reuses, createMillis, readyMillis, evictions, reasons);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * PVM-06 health hook: the warm session while the slot holds one ready for
+     * reuse, {@code null} otherwise. Read-only; lets an external health probe
+     * observe the instance without leasing it.
+     */
+    public FastLaneSession warmSessionIfReady() {
+        lock.lock();
+        try {
+            return state == State.READY && session != null ? session : null;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * PVM-06 health hook: discards the warm session when the slot holds one
+     * ready for reuse, recording {@link Code#PROBE_FAILED}. No-op when the
+     * slot is leased, empty or already failing; the next acquire cold-creates
+     * a replacement. Reports whether a session was discarded.
+     */
+    public boolean evictWarm() {
+        lock.lock();
+        try {
+            if (closed || closeRequested || state != State.READY || session == null) {
+                return false;
+            }
+            evict(Code.PROBE_FAILED);
+            return true;
         } finally {
             lock.unlock();
         }
