@@ -111,11 +111,6 @@ public class MobileAuxiliaryKeyBar extends LinearLayout {
         }
     }
 
-    @Deprecated
-    public void setTargetInput(EditText targetInput) {
-        // Deprecated: Ticket 06 eliminates isolated EditText; auxiliary bar sends directly to PTY sink
-    }
-
     public StickyModifierStateMachine getStateMachine() {
         return stateMachine;
     }
