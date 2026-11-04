@@ -3,7 +3,7 @@
 - 票号/标题：ci-hardening-20261104（Lane H）——积压清单 `docs/reports/quality-backlog-20261104.zh-CN.md` 的 P1-2、P2-10（部分）、P2-11
 - 执行 session / 模型 / thinking：ZCode agent（Lane H）/ GLM-5.3-Flash / thinking
 - 分支：`chore/ci-hardening-20261104`　基线 commit：`f366bbf`（main）
-- 工作区：`D:/t/orch-lane-wf`（独立 git worktree，未触碰主检出）
+- 工作区：`orch-lane-wf`（ASCII 路径）（独立 git worktree，未触碰主检出）
 
 ## 0. 任务目标
 
