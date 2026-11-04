@@ -1,7 +1,7 @@
 # P11: Fast Lane 构建、CI 与许可证（零设备）
 
 Type: implementation
-Status: ready-for-agent（zero-device）
+Status: implemented（zero-device；CI 门已接线；报告已归档 docs/reports/archive/2026-10-zero-device/tickets/fastlane-P11/；真机面 DV-01/04）
 Priority: P0（可交付基础）
 Owner: build/release owner
 Blocked by: None（零设备）；最终 APK 由 DV-01/02 验证
@@ -77,3 +77,7 @@ External gates: 许可证/法务审查
 - 未验证：本机无 Android SDK/JDK 17，Gradle/APK/真实 zipalign 未跑；payload
   真实 NDK 构建等待 P02。版本/通道未改。
 - 报告：`docs/reports/tickets/fastlane-P11/implementation-report.zh-CN.md`
+
+## Comments
+
+- 2026-11-04 / repo-hygiene lane（对账回填）：零设备实施（Gradle 门任务、`fastlane-zero-device.yml` CI、NOTICE/SBOM、`tools/fastlane-build/` 76 tests）已于 2026-10-21 完成并合入 main，实施报告归档至 `docs/reports/archive/2026-10-zero-device/tickets/fastlane-P11/`。同批兄弟票均已回填，本票漏更，现补齐：`ready-for-agent（zero-device）` → `implemented（zero-device）`；「本机 Gradle 未跑」与「payload 真实 NDK 构建」由后续 CI/P02 吸收，真机面归 DV-01/04。

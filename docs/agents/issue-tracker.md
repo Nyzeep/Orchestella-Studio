@@ -30,3 +30,37 @@ Used by `/wayfinder`. The **map** is a file with one **child** file per ticket.
 - **Resolve**: append the answer under an `## Answer` heading, set `Status: resolved`, then append a context pointer (gist + link) to the map's Decisions-so-far in `map.md`.
 
 The active wayfinding efforts are **`.scratch/orchestella-fastlane/`** (current main line) and **`.scratch/orchestella-avf-shizuku/`** (time-boxed AVF research line; does not block release). `.scratch/orchestella-platform/` and `.scratch/orchestella-phase5/` are historical efforts retained for provenance, not current work.
+
+## Reconciliation snapshot (2026-11-04)
+
+Full audit: `docs/reports/repo-hygiene-20261104.zh-CN.md`. Every ticket file in `.scratch/*/issues/` was checked against git history and archived implementation reports (ticket-face `Status:` is not trusted on its own).
+
+Backfilled this round (12 tickets, each with a dated `## Comments` entry citing the evidence):
+
+- `quality-phase5-integration` 01/02/03 `claimed` → `resolved`, 04 `pending` → `resolved` — merged long ago via PR #2 (`ec0df2d`, 2026-10-14); final reports now under `docs/reports/archive/2026-10-phase5-quality/`.
+- `orchestella-platform` 26/52/56 `ready-for-agent`/`ready-for-review` → `completed` — M1/M4 milestone merges on main (`3fc8143`, `dcaa5de`); the effort map already declared 25–58 fully accepted, the ticket files had not been updated.
+- `orchestella-fastlane` P03/P09/P11 `ready-for-agent（zero-device）` → `implemented` — zero-device work landed 2026-10-21; implementation reports archived under `docs/reports/archive/2026-10-zero-device/tickets/fastlane-P0x/`; sibling P-tickets were backfilled earlier, these three were missed.
+- `orchestella-pvm-compiler` PVM-10 and DV-PVM-03: status normalized to a `Status:` line per the convention above (they previously used a free-form `状态：` line).
+
+Still-open tickets (after backfill; grouped, with what unblocks them):
+
+| Effort | Tickets | Blocking reason | Needs |
+| --- | --- | --- | --- |
+| orchestella-fastlane | P13 (accel reservation leak, P1) | unclaimed, zero-device fix | nothing — ready work |
+| orchestella-fastlane | DV-01A → DV-01/02/03/04 | external: OEM SELinux `execute_no_trans` on protected payload | device window + OEM evidence |
+| orchestella-fastlane | P04 | FLN1 adapter landed; rest waits DV-02 | device window |
+| orchestella-avf-shizuku | 24, 27, 28 ready; 29/30 blocked by 28 | protected-lane chain, waits 28 prototype | agent + device window |
+| orchestella-avf-shizuku | 05/06/11/12/14/15/19/20 partial | dev done, external OEM/physical gates open | device window |
+| orchestella-avf-shizuku | 07/08/09/10, 25/26 blocked; ACR-01/02/03 | platform evidence / architecture decisions | maintainer + device |
+| orchestella-pvm-compiler | PVM-06 | Gradle gate not yet run by a main session | nothing — ready work |
+| orchestella-pvm-compiler | PVM-10, PVM-11, DV-PVM-02b | on-device A/B/C acceptance `not-tested` | device window |
+| orchestella-accelerator | AX-01..08, PL-01/02 | `ready-for-human`: zero-device done, awaiting human/device review | maintainer + device window |
+| orchestella-phase5 | 05–10 + ACR-01 | `implemented-local; device-gates-open`; ACR-01 is an open decision | device + maintainer |
+| orchestella-platform | 17 (AVF e2e prototype), 18 (QEMU TCG baseline) | prototype gates for tickets 34/35 device acceptance; 18 substantively answered by later UML-fabric device rounds but never formally closed | device + maintainer decision |
+| runtime-performance | 01–08 | `ready-for-human` on a superseded line; reports archived to `2026-10-zero-device` | maintainer: close as superseded or re-anchor |
+
+Zero open tickets remain in: `quality-round-20261103` (Q1–Q4 resolved, commit `46ce4e5`), `orchestella-uml-fabric` (13/13 resolved), `orchestella-hw-virt` (10/10), `p0-2-runtime-supervisor` (6/6), `quality-phase5-integration` (4/4 after this backfill). `release-readiness` holds no tickets (single handoff prompt, absorbed by the 0.6.0/0.6.2 release line). `round-20261104-device-window` is spec-only (T9 device lane landed on main as `1f4e0f4`).
+
+### release/0.6.0-stabilization disposition (recommendation only, no branch moved)
+
+The branch is fully merged: PR #57 (`b0b0b3a`) brought it into main, and its tip `c9717c3` is the merge-base — it is 0 commits ahead of main and ~31–32 behind. A fast-forward would be a no-op that only renames where the label sits, and keeping it invites accidental stabilization work against a two-weeks-stale base. Recommendation: delete the branch (local and `origin/release/0.6.0-stabilization`) once the current release line (0.6.2) needs no cherry-picks; if a future 0.6.x patch release is required, cut a fresh `release/0.6.x` from main at that time. Nothing is deleted by this reconciliation — maintainer call, tracked here so it does not get lost.
