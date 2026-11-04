@@ -249,8 +249,13 @@ jobs:
       - name: Assemble debug APK with bin/ packaged before signing
         run: |
           chmod +x gradlew
+          # Host-only packaging gate: the QEMU runtime payload is git-ignored and
+          # absent on clean checkouts. This job never boots the QEMU lane, so the
+          # explicit allowMissingPayload opt-out applies (same as ci.yml); it
+          # warns and writes build/runtime-assets-missing.flag.
           ./gradlew :app:assembleDebug :app:verifyFastlaneToolboxApk \
             -Porchestella.fastlane.toolboxDir=build/fastlane-toolbox \
+            -Porchestella.assets.allowMissingPayload=true \
             --no-daemon --stacktrace
 
       - name: Verify APK 16 KB ELF segments and zipalign
