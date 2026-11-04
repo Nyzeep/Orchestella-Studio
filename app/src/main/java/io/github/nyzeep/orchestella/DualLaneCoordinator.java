@@ -27,7 +27,9 @@ import java.util.concurrent.locks.ReentrantLock;
  * failure degrades to {@code ACCEL_LOST}/{@code DISABLED} and never stops
  * QEMU. Stops always try QEMU first and then the accelerator, even when the
  * QEMU stop is unconfirmed or throws. An {@code UNCONFIRMED} stop keeps its
- * lease and its budget reservation.
+ * lease and its budget reservation. A crashed accelerator runtime is
+ * {@code LOST}: its lease and budget reservation are released, and QEMU is
+ * untouched.
  *
  * <p>Readiness waits never hold the coordinator lock across a sleep. A
  * concurrent {@link #cancel()} sets the volatile stop flag before it acquires
@@ -225,6 +227,8 @@ public final class DualLaneCoordinator implements Closeable {
                     accelState = LaneState.LOST;
                     emit(LaneEvent.LANE_LOST, LaneId.ACCEL, "ACCEL_LOST",
                             elapsed(startedAt));
+                    releaseLaneReservation(LaneId.ACCEL);
+                    setLease(LaneId.ACCEL, false);
                     return false;
                 }
                 if (accelRuntime.isReady()) {
