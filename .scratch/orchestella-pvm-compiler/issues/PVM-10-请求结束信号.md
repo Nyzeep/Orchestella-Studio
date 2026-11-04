@@ -1,6 +1,7 @@
 # PVM-10 · 请求结束信号：从 TCP 半关闭换成 DOTI 自定界
 
-- 状态：**机制已实现并真机验证；argv 白名单阻塞点已由 PVM-11 零设备解决（见 Comments）；验收 A/B/C 的真机部分仍 pending（not-tested）**
+- Status: **implemented（机制已实现并真机验证；真机验收 A/B/C 的真机部分 pending，not-tested）**
+- 状态注记：argv 白名单阻塞点已由 PVM-11 零设备解决（见 Comments）
 - 分支：`feat/pvm-10-doti-termination`
 - 报告：`docs/reports/tickets/pvm-10/implementation-report.zh-CN.md`
 - 基线：`main = 722bf8e`
