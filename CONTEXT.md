@@ -19,11 +19,11 @@ Full Linux Runtime 内部执行 guest 指令的方式。对上层与用户不可
 _Avoid_: backend、engine（实现层词汇，禁入产品语言）
 
 **硬件虚拟化 (Hardware Virtualization)**:
-由 CPU 硬件直接执行 guest 指令的执行策略。AVF 是 Android 的虚拟化框架；具体后端按平台可能是 pKVM 或 Gunyah，当前测试设备 pKVM 未证实。
+由 CPU 硬件直接执行 guest 指令的执行策略。AVF 是 Android 的虚拟化框架；具体后端按平台可能是 pKVM 或 Gunyah，截至 2026-11-04 测试设备 pKVM 未证实。
 _Avoid_: 把 AVF 等同于 pKVM；向用户直呼 KVM/pKVM
 
 **Protected VM / Non-protected VM**:
-AVF 提供的两种 VM 保护模式。protected 模式的内存隔离与宿主不可见语义按 ACR-02 裁定；non-protected 模式的宿主↔Guest 通道受白名单约束。当前测试 ROM 只声明 protected，non-protected 适配器不适用。
+AVF 提供的两种 VM 保护模式。protected 模式的内存隔离与宿主不可见语义按 ACR-02 裁定；non-protected 模式的宿主↔Guest 通道受白名单约束。截至 2026-11-04，测试 ROM 只声明 protected，non-protected 适配器不适用。
 _Avoid_: 用“AVF 可用”概括两种模式；把模式声明当作真实 Guest 已运行
 
 **软件虚拟化 (Software Virtualization)**:
@@ -69,7 +69,7 @@ _Avoid_: 最低配置（易与 targetSdk 混淆）、门槛值散落
 _Avoid_: 降级模式（Compatibility Runtime 是显式选择，不是降级）
 
 **16 KB 页面兼容 (16 KB Page Compatibility)**:
-二进制与 APK 的 16 KB 页对齐（ELF LOAD 对齐、`zipalign -P 16`）与在 16 KB 内核设备上真实运行是两个层次。当前对齐已验证，16 KB 真机运行未测。
+二进制与 APK 的 16 KB 页对齐（ELF LOAD 对齐、`zipalign -P 16`）与在 16 KB 内核设备上真实运行是两个层次。截至 2026-11-04，对齐已验证，16 KB 真机运行未测。
 _Avoid_: 把“对齐通过”写成“16 KB 设备已验收”
 
 ### Guest
@@ -177,5 +177,5 @@ App 重启后从持久化实例状态一键重建实例运行环境的恢复方�
 _Avoid_: 热恢复（未做）、快照恢复（无快照）
 
 **显示通道 (Display Channel)**:
-guest 图形输出到宿主呈现的数据通道。当前方向为 Wayland-first（ADR-0017）；RFB CPU-copy 仅是实验通路，VNC-first 已被 ADR-0012 的 2026-10-01 修订废除。MVP 仍以终端能力为主，GPU 加速与桌面体验未完成真机验收。
+guest 图形输出到宿主呈现的数据通道。当前方向为 Wayland-first（ADR-0017）；RFB CPU-copy 仅是实验通路，VNC-first 已被 ADR-0012 的 2026-10-01 修订废除。截至 2026-11-04，MVP 仍以终端能力为主，GPU 加速与桌面体验未完成真机验收。
 _Avoid_: 屏幕（含混）、远程桌面（夸大）、把目标架构写成已验收能力
