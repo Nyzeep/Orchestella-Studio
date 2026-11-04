@@ -1,11 +1,12 @@
 # 报告索引
 
-报告按“当前有效”和“历史归档”分开。当前源码为 **0.5.3 / code503**，公开安装包仍为 **v0.4.5 开发预览版**。
+报告按“当前有效”和“历史归档”分开。当前源码为 **0.6.2 / code602**（tag v0.6.0–v0.6.2，见 [CHANGELOG](../../CHANGELOG.md)）；下方各报告的版本表述为其写作时的快照。
 
 ## 当前有效
 
 ### 主线与验收
 
+- [工程质量积压清单（2026-11-04）](quality-backlog-20261104.zh-CN.md)：P0–P3 分级积压 21 项；对 2026-10-27 两份质量报告逐条核对落地状态、cleanup-plan §4 裁定项现状、AGENTS.md/CONTEXT.md 过期标记与全仓静默失败扫描。
 - [交叉加速零设备进度与真机前置评估（2026-10-23）](orchestration/accelerator-zero-device-progress-20261023.zh-CN.md)：PL/AX 票状态、关键设计、测试证据、CI 历史失败与真机缺口；明确 AX-07/AX-08 未完成。
 - [Fast Lane × QEMU 交叉优化 Spec（2026-10-21）](orchestration/fastlane-cross-lane-spec-20261021.zh-CN.md)：当前实现规格；P01–P12 并行零设备模块、DV-01–DV-04 串行真机门、distcc 跨车道与能力矩阵。
 - [Protected Fast Lane + QEMU Full Lane（2026-10-21）](orchestration/protected-fast-lane-plan-20261021.zh-CN.md)：方向与硬边界；protected Microdroid 密封 Linux toolbox、QEMU Full Lane、构建 offload。
