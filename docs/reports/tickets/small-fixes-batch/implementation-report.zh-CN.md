@@ -1,7 +1,7 @@
 # 小修批次实施报告（small-fixes-batch：P3-8 / P3-4 / 设备门脱敏 / P2-10 后半）
 
 - 票号/标题：小修打包批次（Lane M）——积压 P3-8、P3-4、新发现（`qemu-android.yml:531` 设备标识文案）、P2-10 后半（Gradle 依赖校验，尝试性）
-- 执行 session / 模型 / thinking：ZCode agent（GLM-5.3-Flash），worktree `D:/t/orch-lane-m`（纯 ASCII）
+- 执行 session / 模型 / thinking：ZCode agent（GLM-5.3-Flash），worktree `orch-lane-m`（纯 ASCII 路径）
 - 分支：`chore/small-fixes-batch`　基线 commit：`9f18c31`（= origin/main）
 
 ## 1. 任务目标
@@ -85,7 +85,7 @@
 - 冒烟清单：真机验证项——本批次无（零设备批次，not-run 如实标注）。
 - 本机编译实跑（全部 `-Porchestella.assets.allowMissingPayload=true` 于 `:app` 任务）：
   - `:runtime:contract:compileJava :runtime:engine-avf:compileJava :runtime:fastlane-proxy:compileJava` → BUILD SUCCESSFUL（15s，级联编译 capability、engine-fastlane 共 5 个模块）；
-  - init 脚本（仓库外 `D:/t/orch-lane-m-verify/strict-flags.init.gradle`）打印执行期 javac 参数：5 个 compileJava 全部 `[-Xlint:all, -Werror]`——**-Werror 保留实据**；
+  - init 脚本（仓库外 `orch-lane-m-verify/strict-flags.init.gradle`（ASCII 路径））打印执行期 javac 参数：5 个 compileJava 全部 `[-Xlint:all, -Werror]`——**-Werror 保留实据**；
   - -Werror 强制性反证：向 `runtime/contract` 注入 rawtypes 警告探针（`StrictLintProbe.java`）→ `错误: 发现警告, 但指定了 -Werror`、BUILD FAILED（13s）；探针删除后复跑绿（探针未入库）；
   - `:app:compileDebugKotlin` 三次实跑绿（P3-8 删除后、P3-4 收敛后、verification 文件删除后各一次）。
 - not-run 如实标注：`:app:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug/assembleRelease`、14 模块全量 `check`、`check_sensitive_data.py --self-test`——均 not-run（单命令 <8 分钟约束 + 全量验证留 CI）。
