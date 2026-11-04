@@ -353,15 +353,16 @@ release / dev / QA 默认**都是 36**；28 只是一个 QA 专用逃生门 `-Po
 | 2026-11-08（设备窗第二轮） | T7-F 终态 PASS（awaiting-init，13 attempts）、T8 长驻双设备 PASS、T9 smp1/2 n=10（S(2)=1.60 跨设备）、T10 Docker PASS（D9）、T11 链接 PASS、T12 not-testable、T13 负样本（HONOR 无 AOSP virtualizationservice）——§8.2 就绪度逐项刷新 |
 | 2026-11-04（设备窗第三轮·对账半） | ①**W-FAB-03 OEM 普查联网取证入库**（`docs/research/2026-11-04-wfab03-oem-survey.zh-CN.md`：9 OEM × AVF/16K 矩阵、21 组引用；轨道 A 判词无反例；轨道 B 收敛 Tensor G1+ / Exynos 2500+ / Dimensity 9400+ 三条芯片线；16K「无出货设备默认」升级平台级判词；T13 获荣耀官方论坛公开互证）；②F-MTTCG smp4/8 补数进行中（同日设备道，完成后另记行）；③pvm-compiler 线七票 tracker 对账（PVM-01/02/04/05/07/08/09 状态过期回填，PR #19–#24 均 MERGED 实证；PVM-09 实为已实现——对「下一开发票」的误判在此更正） |
 | 2026-11-04（设备窗第三轮·T9 定案） | **F-MTTCG-C200 smp4/smp8 补列完成**（device-mey，各 n=10）：S(4)=1.26/E(4)=0.31、S(8)=0.80/E(8)=0.10、S(4)/S(2)=0.79、smp4↔smp8 完全分离（p≈1.1e-5）；23/23 列次 digest 逐字节一致（协议零漂移）。§5.4 回退条款双设备命中 → **「最优宽度=2 vCPU」升格定案**（§7.5 追记）；S(8)<1 为手机宿主首个宽原子反噬实证。就绪度清单 §8.2 的 F-MTTCG 行闭合——投票前技术缺项只剩 16K 宿主与 distcc@36 两行 |
+| 2026-11-04（设备窗 DV-01A 复现轮） | **第三台真机 4K 页实锤 + DV-01A 仍阻塞跨平台确认**（device-myron，小米 HyperOS OS4.0 / Android 17 API 37 release / security patch 2026-10-01，SM8850 档）：页大小四渠道交叉验证全为 4K（getconf PAGE_SIZE/PAGESIZE=4096、`ro.product.cpu.page_size` 未设置、内核版本串显式 `-4k`）——Android 17 出货机仍 4K 默认，为 §8.2 第 2 行 W-FAB-03「无出货设备默认 16K」平台级判词再添 release 级正样本；DV-01A preflight 同签名复现（FLN1 7 / execve EACCES 13 / control HELLO 3ms / STOP_CONFIRMED），`blocked_external` 维持。另取 HyperOS freezer 与 QA instrumentation 互斥实证（VM 创建后 ~5s `freezeUid`，deviceidle 白名单不豁免；亮屏+前台可绕行）。报告 `docs/reports/tickets/dv01a-mode-facts/implementation-report.zh-CN.md` |
 
 ### 8.2 投票前仍缺（就绪度清单，2026-11-04 刷新）
 
 1. ~~T7 终态~~ ✅ **已闭合**：T7-F PASS（`awaiting-init` 终态，13 attempts，九层根因链收口；round-2 报告 §0）；
-2. **16K 宿主** ⏳ 仍缺（双设备均 4K 页）——W-FAB-03 普查已将其升级为**平台级判词**：截至 Android 17 beta 无任何出货设备 16K 默认、公开通道仅 Pixel 系开发者选项（survey §0/§1.1）；
+2. **16K 宿主** ⏳ 仍缺（三设备均 4K 页：device-mey、device-myron、fabric 首轮 myron）——W-FAB-03 普查已将其升级为**平台级判词**：无任何出货设备 16K 默认、公开通道仅 Pixel 系开发者选项（survey §0/§1.1）；2026-11-04 追加：device-myron 为 Android 17 API 37 **release**（patch 2026-10-01）仍 4K 默认，判词时效延至 Android 17 出货代（`docs/reports/tickets/dv01a-mode-facts/implementation-report.zh-CN.md` §2）；
 3. ~~D9 Docker~~ ✅ **已闭合**：T10 PASS（UML SMP 内 dockerd + `docker run` Hello RC=0，dockerd RSS 76128kB）；
 4. ~~链接阶段~~ ✅ **已闭合**：T11 PASS（16K guest 内 clang22 `-c` → ld.lld 动静态链接 → 执行成功）；
 5. ~~W-FAB-03 OEM 普查~~ ✅ **联网取证半边已闭合**（2026-11-04 survey，9 OEM 矩阵 + T13 公开互证）；设备实测扩样半边归真机窗口工单；
-6. **distcc COMPLETED@36** ⏳ 仍缺（blocked by DV-01 SELinux `execute_no_trans`，外部问题，非本项目可解）；
+6. **distcc COMPLETED@36** ⏳ 仍缺（blocked by DV-01A SELinux `execute_no_trans`，外部问题，非本项目可解）——2026-11-04 在第二平台（HyperOS OS4.0 / Android 17 API 37）同签名复现：payload 侧 typed 诊断 `fln1=7 execve_errno_13` 与 2026-10-21 权威证据逐字一致，`blocked_external` 维持；该平台 guest 内核 audit 不经 console 转发、host dmesg 受限，raw avc 行不可采（DV-01A 工单 2026-11-04 节）；
 7. ~~F-MTTCG n≥10~~ ✅ **已闭合**（2026-11-04 设备窗第三轮：smp1/2 前轮 n=10 + smp4/8 本轮 n=10+10，23/23 digest 一致；S(4)=1.26、S(8)=0.80——**「最优宽度=2」定案**，§7.5 追记）；
 8. §6 原有八项中仍开放的：~~Play targetSdk 日期~~（✅ 已由 02 票渠道收敛裁定：Play 硬截止 2027-02-01、GitHub/F-Droid 无门槛，`docs/research/2026-11-02-platform-policy-matrix.md`）、28 域失效时间线、同夹具四列（proot/pVM/QEMU/UML 同轮，G3）、`.so` 分发边界法务结论、~~扩展包可安装性~~（✅ §7.1：更新路径下已装上并接入，HyperOS 拦截未复现；「可安装性」从拦截状态改为单机型证据）。
 
