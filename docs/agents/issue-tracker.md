@@ -73,3 +73,10 @@ PVM-06（`orchestella-pvm-compiler`）状态与门禁证据对账。本节为新
 - **门禁证据（来源：2026-11-04 并行优化轮 Lane C，全 Gradle 实跑、零设备）**：`:app:testDebugUnitTest` 1128 tests / 0 skipped / 0 failed / 0 errors（138 类）；`:runtime:fastlane-distcc` 77 tests / 8 skipped / 0 failed（8 个 skip 均为既有 POSIX 前置用例，含 PVM-11 的 E2E 本体）。
 - **剩余缺口**：产品 TCP 监听起点（guest distcc → `bridge.start()` → 本分派器）按 PVM-09 报告 §5.4 划归 **DV-PVM-02b** 的设备边界，**不属本票**。
 - **结论**：票面 `Status: implemented（零设备；Gradle 门禁待主会话统一跑）` 中「Gradle 门禁待跑」这一半已由上述证据闭合；状态字串本身留给维护者裁定，本轮不擅自改。
+
+## Comments（2026-11-05 · 票据收尾轮）
+
+本节为新增记录。上方 2026-11-04 reconciliation snapshot（含 still-open 表第 49 行 P13、第 52 行 avf-shizuku 24/27/28）是带日期的历史快照，不回改；本节记录其后的状态变化。对账报告：`docs/reports/tickets/ticket-closure-20261104/implementation-report.zh-CN.md`。
+
+- **orchestella-fastlane P13 → `implemented`（闭环）**：运行期 ACCEL_LOST 账本泄漏（P1）已由 commit `b07dca0` 修复并入库——`DualLaneCoordinator.awaitAcceleratorReady()` 崩溃分支补 `releaseLaneReservation(LaneId.ACCEL)` + `setLease(LaneId.ACCEL, false)`，与启动失败路径同口径；新用例 `accelCrashReleasesReservationAndLease` 红→绿反证成立（移除两行恰 1 failed），定向回归 31/31、全量 app 1129/0/0/0（2026-11-04 零设备收尾轮 Gradle 实跑，`docs/reports/orchestration/zero-device-closeout-20261104.zh-CN.md`）。三条验收判据全过、无剩余泄漏面（判据逐条证据见票面 2026-11-05 Comments）。快照表「unclaimed, zero-device fix」行自此失效。
+- **orchestella-avf-shizuku 27 → 核实未实现，维持 `ready-for-agent`，已补 agent-ready 开工说明**：无 `docs/reports/tickets/avf-shizuku-27/` 报告、无实现 commit、map.md 口径「22 离线完成 ≠ 27 已接生产」一致。QEMU 先行切片可零设备开工（真实触发点 observer：`QemuRuntimeBootstrapper` / `InstanceStrategyLauncher` / `RuntimeProcessSupervisor` / `BridgeConnector` 现有公共路由 / `ExecutionSession`，事件组件对齐 22 号离线 recorder 口径），What to build / Acceptance criteria / 阻塞边已写入票面 2026-11-05 Comments。真实 QEMU 事件原件与 AVF 侧事件仍属设备门（07 未过不产 AVF receipt）——快照表「agent + device window」的 Needs 对全票闭合仍成立，对零设备切片则只需 agent。
