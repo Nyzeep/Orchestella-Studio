@@ -120,7 +120,7 @@ gradle.properties 会全局永久关闭门禁，是错误做法，未采用）�
 
 ## 6. 测试与验证结果（真实输出）
 
-全部在 D:/t/orch-lane-ci worktree（payload 与 CI checkout 同构缺失）执行：
+全部在 orch-lane-ci worktree（ASCII 路径）（payload 与 CI checkout 同构缺失）执行：
 
 1. **复现 CI 红**（未加豁免）：
    `./gradlew :app:verifyRuntimeAssets --no-daemon`
