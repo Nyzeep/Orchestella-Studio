@@ -106,6 +106,8 @@ public final class AvfInstanceLauncher {
         private final AtomicBoolean isBridgeServing = new AtomicBoolean(false);
         private final RfbDisplaySession display;
         private final LaunchTimeline timeline;
+        /** Observation-only stage trace (ticket 27); no-op when diagnostics are off. */
+        private final LaunchStageObserver stageObserver;
         private final AtomicBoolean closed = new AtomicBoolean(false);
         private volatile SessionCapabilities capabilities;
         private volatile String shareFailureReason;
@@ -117,8 +119,14 @@ public final class AvfInstanceLauncher {
         }
 
         AvfSession(AvfVirtualMachineEngine.AvfVmSession session, String token, LaunchTimeline timeline) {
+            this(session, token, timeline, null);
+        }
+
+        AvfSession(AvfVirtualMachineEngine.AvfVmSession session, String token,
+                LaunchTimeline timeline, LaunchStageObserver stageObserver) {
             this.session = session;
             this.timeline = timeline;
+            this.stageObserver = stageObserver == null ? new LaunchStageObserver() {} : stageObserver;
             this.display = token == null ? null : new RfbDisplaySession(() -> {
                 try {
                     AvfVirtualMachineApi.AvfVsockChannel channel = session.graphicsChannel();
@@ -209,6 +217,11 @@ public final class AvfInstanceLauncher {
          */
         @Override
         public StopResult stopRuntime(long graceMs) {
+            // Ticket 27: the stop intent is a fact of its own. The platform
+            // stop is the only source for the VM-stopped fact; the channels
+            // close inside the engine is best-effort, so no resources fact is
+            // claimed for AVF v1 (no invented completion).
+            stageObserver.onGate(ProductionStageRecorder.Stage.STOP_REQUESTED);
             AvfStopResult result = session.stopRuntime(graceMs);
             StopResult mapped = switch (result) {
                 case CONFIRMED -> StopResult.CONFIRMED;
@@ -219,6 +232,13 @@ public final class AvfInstanceLauncher {
                 if (mapped == StopResult.UNCONFIRMED) timeline.markStopUnconfirmed();
                 else timeline.markStopConfirmed(mapped);
                 timeline.finish();
+            }
+            // An UNCONFIRMED stop stays retryable, so the trace stays ACTIVE
+            // (no invented failure, no fake completion); a later confirmed
+            // retry of the same owner still records the facts.
+            if (mapped != StopResult.UNCONFIRMED) {
+                stageObserver.onStopFact(ProductionStageRecorder.StopFact.OWNED_VM_STOPPED);
+                stageObserver.onFinish();
             }
             return mapped;
         }
@@ -290,6 +310,11 @@ public final class AvfInstanceLauncher {
             return isBridgeServing.compareAndSet(false, true);
         }
 
+        @Override
+        public LaunchStageObserver launchStageObserver() {
+            return stageObserver;
+        }
+
 
         private AvfVirtualMachineApi.AvfVsockChannel terminalChannel() throws IOException {
             try {
@@ -319,9 +344,22 @@ public final class AvfInstanceLauncher {
     /** Blocking bootstrap+launch; call on a worker thread. */
     public ExecutionSession launch(InstanceStrategyLauncher.LaunchParameters parameters)
             throws IOException {
+        // Ticket 27: observation-only stage trace, bound to this launch's real
+        // identity; disabled recording changes nothing on this path. An
+        // AvfEngineException escaping this method is exactly the strategy
+        // chain's fallback trigger, so it records the fallback with its real
+        // mapped reason.
+        LaunchStageObserver stageTrace = StageTraceProvider.observerForLaunch(context,
+                parameters.instanceId, InstanceLaunchGuard.generation(parameters.instanceId),
+                "avf");
+        stageTrace.onGate(ProductionStageRecorder.Stage.LAUNCH_REQUESTED);
+        stageTrace.onGate(ProductionStageRecorder.Stage.PREFLIGHT_BEGIN);
         RuntimeArtifactManifest manifest;
         try (InputStream in = PackagedAssetStreams.openAsset(context, RuntimeArtifactManifest.SCHEMA_FILE_NAME)) {
             manifest = RuntimeArtifactManifest.parse(in);
+        } catch (IOException | RuntimeException failure) {
+            stageTrace.onFailure(ProductionStageRecorder.Failure.CREATE_FAILED);
+            throw failure;
         }
         // The timeline needs the admitted plan, so it only exists after prepare(). Degradations
         // raised by the bootstrap are captured here and replayed into it below.
@@ -345,14 +383,37 @@ public final class AvfInstanceLauncher {
                 Paths.get(parameters.runtimeDirectory),
                 Paths.get(parameters.distroInputsDirectory),
                 degradationSink);
-        PreparedSettings prepared = prepare(parameters, hostFacts(context),
-                () -> bootstrapper.bootstrap(parameters.rootfsFileName, parameters.bridgeToken,
-                        parameters.guestPassword,
-                        Paths.get(parameters.instanceRootVolume),
-                        parameters.mirrorConfigFileName,
-                        parameters.mirrorConfigFileContent,
-                        parameters.firstBootScript,
-                        parameters.hostname, parameters.guestUser, parameters.hasSudo));
+        PreparedSettings prepared;
+        try {
+            prepared = prepare(parameters, hostFacts(context),
+                    () -> {
+                        stageTrace.onGate(ProductionStageRecorder.Stage.INPUTS_BEGIN);
+                        QemuRuntimeBootstrapper.RuntimePaths bootstrapped =
+                                bootstrapper.bootstrap(parameters.rootfsFileName,
+                                        parameters.bridgeToken, parameters.guestPassword,
+                                        Paths.get(parameters.instanceRootVolume),
+                                        parameters.mirrorConfigFileName,
+                                        parameters.mirrorConfigFileContent,
+                                        parameters.firstBootScript,
+                                        parameters.hostname, parameters.guestUser,
+                                        parameters.hasSudo);
+                        stageTrace.onGate(ProductionStageRecorder.Stage.INPUTS_VERIFIED);
+                        return bootstrapped;
+                    });
+            stageTrace.onGate(ProductionStageRecorder.Stage.PREFLIGHT_END);
+        } catch (AvfEngineException failure) {
+            // Admission or capability rejection: the strategy chain will fall
+            // back to QEMU with this exact reason, so the trace records the
+            // fallback with its real mapped cause.
+            stageTrace.onFallback(mapFailure(failure.reason()));
+            throw failure;
+        } catch (IOException | RuntimeException failure) {
+            // Shared-input failures degrade nothing — they would fail the QEMU
+            // path identically — so the trace keeps a real failure, not a
+            // fallback.
+            stageTrace.onFailure(ProductionStageRecorder.Failure.CREATE_FAILED);
+            throw failure;
+        }
         QemuRuntimeBootstrapper.RuntimePaths paths = prepared.paths;
 
         LaunchTimeline timeline = LaunchTimeline.open(Paths.get(parameters.runtimeDirectory),
@@ -362,7 +423,7 @@ public final class AvfInstanceLauncher {
         for (String degradation : degradations) {
             timeline.noteDegradation(degradation);
         }
-        AvfLaunchTrace trace = stage -> markStage(timeline, stage);
+        AvfLaunchTrace trace = stage -> markStage(timeline, stageTrace, stage);
 
         AvfLaunchSpec.Builder specBuilder = AvfLaunchSpec.builder(
                         parameters.instanceId,
@@ -386,7 +447,15 @@ public final class AvfInstanceLauncher {
         ReflectiveAvfVirtualMachineApi api = new ReflectiveAvfVirtualMachineApi(
                 context, context.getClass().getClassLoader(), AvfHiddenApiExemption::installOnce);
         AvfVirtualMachineEngine engine = new AvfVirtualMachineEngine(api);
-        AvfSession session = new AvfSession(engine.launch(spec, trace), parameters.bridgeToken, timeline);
+        stageTrace.onGate(ProductionStageRecorder.Stage.MANAGER_BEGIN);
+        AvfSession session;
+        try {
+            session = new AvfSession(engine.launch(spec, trace), parameters.bridgeToken,
+                    timeline, stageTrace);
+        } catch (AvfEngineException failure) {
+            stageTrace.onFallback(mapFailure(failure.reason()));
+            throw failure;
+        }
         startShareIfConfigured(session, parameters.sharedDirectory);
         try {
             ExecutionSessionRegistry.register(parameters.instanceId, session);
@@ -398,6 +467,25 @@ public final class AvfInstanceLauncher {
         }
         timeline.mark(LaunchTimeline.Stage.SESSION_REGISTERED);
         return session;
+    }
+
+    /** Maps the typed AVF engine reason onto the bounded trace failure vocabulary. */
+    static ProductionStageRecorder.Failure mapFailure(String avfReason) {
+        if (avfReason == null) return ProductionStageRecorder.Failure.UNKNOWN;
+        return switch (avfReason) {
+            case AvfEngineException.PERMISSION_DENIED -> ProductionStageRecorder.Failure.PERMISSION_DENIED;
+            case AvfEngineException.VM_CREATE_FAILED -> ProductionStageRecorder.Failure.CREATE_FAILED;
+            case AvfEngineException.VSOCK_CONNECT_FAILED -> ProductionStageRecorder.Failure.READINESS_FAILED;
+            case AvfEngineException.VM_STOP_UNCONFIRMED -> ProductionStageRecorder.Failure.STOP_FAILED;
+            case AvfEngineException.HARDWARE_UNSUPPORTED,
+                    AvfEngineException.REFLECTION_UNAVAILABLE,
+                    AvfEngineException.VM_MANAGER_UNAVAILABLE,
+                    AvfEngineException.CONFIG_MISMATCH,
+                    AvfEngineException.INVALID_LAUNCH_CONFIG,
+                    AvfEngineException.NETWORK_BACKEND_UNAVAILABLE ->
+                    ProductionStageRecorder.Failure.API_BLOCKED;
+            default -> ProductionStageRecorder.Failure.UNKNOWN;
+        };
     }
 
     /**
@@ -432,6 +520,15 @@ public final class AvfInstanceLauncher {
      */
     static void cleanupFailedRegistration(RuntimeOwnedSession session, IOException failure)
             throws IOException {
+        LaunchStageObserver trace = session.launchStageObserver();
+        if (trace != null) {
+            // The launch itself failed; record the real terminal reason before
+            // the owner stop retires the trace (the stop outcome stays
+            // authoritative in the LaunchTimeline). The bounded trace
+            // vocabulary has no registration code, so the honest
+            // classification stays UNKNOWN rather than inventing a precise one.
+            trace.onFailure(ProductionStageRecorder.Failure.UNKNOWN);
+        }
         StopResult result;
         try {
             result = session.stopRuntime(REGISTRATION_CLEANUP_GRACE_MS);
@@ -448,11 +545,22 @@ public final class AvfInstanceLauncher {
     }
 
     /** Maps engine lifecycle stages onto the App's append-only launch record. */
-    private static void markStage(LaunchTimeline timeline, AvfLaunchTrace.Stage stage) {
+    private static void markStage(LaunchTimeline timeline, LaunchStageObserver stageTrace,
+            AvfLaunchTrace.Stage stage) {
         switch (stage) {
             case LAUNCH_REQUESTED -> timeline.mark(LaunchTimeline.Stage.LAUNCH_START);
-            case VM_CREATED -> timeline.mark(LaunchTimeline.Stage.VM_CREATED);
-            case RUN_RETURNED -> timeline.mark(LaunchTimeline.Stage.RUN_RETURNED);
+            case VM_CREATED -> {
+                timeline.mark(LaunchTimeline.Stage.VM_CREATED);
+                if (stageTrace != null) {
+                    stageTrace.onGate(ProductionStageRecorder.Stage.VM_CREATED);
+                }
+            }
+            case RUN_RETURNED -> {
+                timeline.mark(LaunchTimeline.Stage.RUN_RETURNED);
+                if (stageTrace != null) {
+                    stageTrace.onGate(ProductionStageRecorder.Stage.RUN_RETURNED);
+                }
+            }
             case STOP_REQUESTED -> timeline.mark(LaunchTimeline.Stage.STOP_REQUESTED);
             case STOP_CONFIRMED -> { /* recorded with its typed result by stopRuntime */ }
             case STOP_UNCONFIRMED -> { /* recorded with its typed result by stopRuntime */ }
