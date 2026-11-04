@@ -117,6 +117,42 @@ public final class DualLaneCoordinatorTest {
     }
 
     @Test
+    public void accelCrashReleasesReservationAndLease() {
+        Fixture fixture = new Fixture();
+        fixture.accel.ready = true;
+        fixture.start();
+        assertTrue(fixture.coordinator.awaitAcceleratorReady(1_000L));
+
+        LaneBudgetLedger.Snapshot both = fixture.coordinator.ledger().snapshot();
+        assertEquals(6, both.cpuCores());
+        assertEquals(6144L, both.ramMiB());
+        assertEquals(48L, both.diskGiB());
+
+        fixture.accel.alive = false;
+        fixture.accel.ready = false;
+
+        assertFalse(fixture.coordinator.awaitAcceleratorReady(10L));
+        assertEquals(LaneState.LOST, fixture.coordinator.state(LaneId.ACCEL));
+        assertEquals(LaneState.READY, fixture.coordinator.state(LaneId.QEMU));
+        assertFalse(fixture.coordinator.hasLease(LaneId.ACCEL));
+        assertTrue(fixture.coordinator.hasLease(LaneId.QEMU));
+        assertTrue(fixture.hasEvent(LaneEvent.LANE_LOST, LaneId.ACCEL));
+
+        LaneBudgetLedger.Snapshot qemuOnly = fixture.coordinator.ledger().snapshot();
+        assertEquals(4, qemuOnly.cpuCores());
+        assertEquals(4096L, qemuOnly.ramMiB());
+        assertEquals(32L, qemuOnly.diskGiB());
+
+        DualLaneCoordinator.StopReport report = fixture.stop();
+        assertEquals(LaneStopOutcome.ALREADY_STOPPED, report.accel());
+        assertEquals(LaneStopOutcome.CONFIRMED, report.qemu());
+        LaneBudgetLedger.Snapshot drained = fixture.coordinator.ledger().snapshot();
+        assertEquals(0, drained.cpuCores());
+        assertEquals(0L, drained.ramMiB());
+        assertEquals(0L, drained.diskGiB());
+    }
+
+    @Test
     public void qemuCrashDuringStartStopsAccel() {
         Fixture fixture = new Fixture();
         fixture.qemu.alive = false;
