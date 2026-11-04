@@ -38,6 +38,11 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same branch/PR supersedes the run in flight.
+concurrency:
+  group: "${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
 jobs:
   schema:
     name: Schema validation and sanitization tests
