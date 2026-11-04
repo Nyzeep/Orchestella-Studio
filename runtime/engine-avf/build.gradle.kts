@@ -27,12 +27,6 @@ java {
     }
 }
 
-tasks.withType<JavaCompile>().configureEach {
-    options.encoding = "UTF-8"
-    options.release.set(17)
-    options.compilerArgs.addAll(listOf("-Xlint:all", "-Werror"))
-}
-
 tasks.register<JavaExec>("avfLaunchSpecTest") {
     classpath = sourceSets["test"].runtimeClasspath
     mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.AvfLaunchSpecTest")

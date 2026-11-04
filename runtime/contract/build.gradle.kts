@@ -12,12 +12,6 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
 }
 
-tasks.withType<JavaCompile>().configureEach {
-    options.encoding = "UTF-8"
-    options.release.set(17)
-    options.compilerArgs.addAll(listOf("-Xlint:all", "-Werror"))
-}
-
 tasks.register<JavaExec>("bridgeHandshakeContractTest") {
     classpath = sourceSets["test"].runtimeClasspath
     mainClass.set("io.github.nyzeep.orchestella.runtime.contract.BridgeHandshakeContractTest")

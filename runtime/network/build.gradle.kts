@@ -13,12 +13,6 @@ java {
     }
 }
 
-tasks.withType<JavaCompile>().configureEach {
-    options.encoding = "UTF-8"
-    options.release.set(17)
-    options.compilerArgs.addAll(listOf("-Xlint:all", "-Werror"))
-}
-
 tasks.named<Test>("test") {
     // Strategy-neutral contract suites are executed via JavaExec tasks
     // (portForwardingManagerContractTest, resilientDownloadEngineContractTest)
