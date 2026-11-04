@@ -6,6 +6,7 @@
 
 ### 主线与验收
 
+- [零设备收尾轮（2026-11-04）](orchestration/zero-device-closeout-20261104.zh-CN.md)：P1-1 `RfbInputEncoder` 补测 48 条、P13 `ACCEL_LOST` 预留泄漏修复（红→绿）、P0-2 `AGENTS.md` 时效刷新、P0-1 九份未入库证据文件快照；含中文路径 Gradle 单测坑复现与绕过。
 - [工程质量积压清单（2026-11-04）](quality-backlog-20261104.zh-CN.md)：P0–P3 分级积压 21 项；对 2026-10-27 两份质量报告逐条核对落地状态、cleanup-plan §4 裁定项现状、AGENTS.md/CONTEXT.md 过期标记与全仓静默失败扫描。
 - [交叉加速零设备进度与真机前置评估（2026-10-23）](orchestration/accelerator-zero-device-progress-20261023.zh-CN.md)：PL/AX 票状态、关键设计、测试证据、CI 历史失败与真机缺口；明确 AX-07/AX-08 未完成。
 - [Fast Lane × QEMU 交叉优化 Spec（2026-10-21）](orchestration/fastlane-cross-lane-spec-20261021.zh-CN.md)：当前实现规格；P01–P12 并行零设备模块、DV-01–DV-04 串行真机门、distcc 跨车道与能力矩阵。

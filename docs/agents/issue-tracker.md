@@ -64,3 +64,12 @@ Zero open tickets remain in: `quality-round-20261103` (Q1–Q4 resolved, commit 
 ### release/0.6.0-stabilization disposition (recommendation only, no branch moved)
 
 The branch is fully merged: PR #57 (`b0b0b3a`) brought it into main, and its tip `c9717c3` is the merge-base — it is 0 commits ahead of main and ~31–32 behind. A fast-forward would be a no-op that only renames where the label sits, and keeping it invites accidental stabilization work against a two-weeks-stale base. Recommendation: delete the branch (local and `origin/release/0.6.0-stabilization`) once the current release line (0.6.2) needs no cherry-picks; if a future 0.6.x patch release is required, cut a fresh `release/0.6.x` from main at that time. Nothing is deleted by this reconciliation — maintainer call, tracked here so it does not get lost.
+
+## Comments（2026-11-04 · 零设备收尾轮）
+
+PVM-06（`orchestella-pvm-compiler`）状态与门禁证据对账。本节为新增记录，上方 2026-11-04 的 reconciliation snapshot 表格是带日期的历史快照，不回改。
+
+- **分派器与生产接线已入库**：`app/src/main/java/io/github/nyzeep/orchestella/WorkerPoolDistccDispatcher.java`（提交 `95bcf97`）；配套测试 `app/src/test/java/io/github/nyzeep/orchestella/WorkerPoolDistccDispatcherTest.java`（现 10 条 `@Test`；工单报告 §5 的落档口径为 9 条，另 `AcceleratorLaneAssemblyTest` 新增 2 条）。
+- **门禁证据（来源：2026-11-04 并行优化轮 Lane C，全 Gradle 实跑、零设备）**：`:app:testDebugUnitTest` 1128 tests / 0 skipped / 0 failed / 0 errors（138 类）；`:runtime:fastlane-distcc` 77 tests / 8 skipped / 0 failed（8 个 skip 均为既有 POSIX 前置用例，含 PVM-11 的 E2E 本体）。
+- **剩余缺口**：产品 TCP 监听起点（guest distcc → `bridge.start()` → 本分派器）按 PVM-09 报告 §5.4 划归 **DV-PVM-02b** 的设备边界，**不属本票**。
+- **结论**：票面 `Status: implemented（零设备；Gradle 门禁待主会话统一跑）` 中「Gradle 门禁待跑」这一半已由上述证据闭合；状态字串本身留给维护者裁定，本轮不擅自改。
