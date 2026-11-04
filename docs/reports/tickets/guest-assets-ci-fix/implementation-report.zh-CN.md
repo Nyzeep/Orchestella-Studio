@@ -3,7 +3,7 @@
 - 票号/标题：Guest assets CI 诊断（Lane K）——workflow `guest-assets.yml` 为隐性发布门，近期连红
 - 执行 session / 模型 / thinking：Lane K / GLM-5.3-Flash (ZCode agent) / 高
 - 分支：`fix/guest-assets-ci`　基线 commit：`9f18c31`（main）
-- 工作区：`D:/t/orch-lane-k`（纯 ASCII git worktree，未触碰主检出）
+- 工作区：`orch-lane-k`（ASCII 路径）（纯 ASCII git worktree，未触碰主检出）
 - 报告日期：2026-11-05
 
 ## 0. 背景
