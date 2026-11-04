@@ -460,7 +460,10 @@ printf '%s\\n' 4242
     probe = source[source.index("pacman_lock_holder() {"):source.index("run_lock_recovery_stage() {")]
     probe_lock = fixture / "lock-probe" / "db.lck"
     write(probe_lock, "")
-    holder = subprocess.Popen(["sh", "-c", 'exec 3<"$1"; sleep 20', "sh", unix(probe_lock)])
+    # exec(1) is required: a plain `sleep 20` forks a child that inherits fd 3 and
+    # survives holder.kill(), so a fuser-equipped host still sees the lock as held
+    # in the cleared probe below. With exec the Popen child itself is the holder.
+    holder = subprocess.Popen(["sh", "-c", 'exec 3<"$1"; exec sleep 20', "sh", unix(probe_lock)])
     time.sleep(0.4)
     try:
         result = subprocess.run(["sh", "-c", probe + '\nrecover_pacman_lock "$1" /proc; '
