@@ -14,6 +14,8 @@ import java.util.Set;
 final class RfbInputEncoder {
     private static final int MAX_TEXT_CODE_POINTS = 1024;
     private static final int MODIFIERS = KeyEvent.MOD_SHIFT | KeyEvent.MOD_CTRL | KeyEvent.MOD_ALT | KeyEvent.MOD_SUPER;
+    /** Lock-state bits have no KeyEvent wire representation; accepting them means ignoring them. */
+    private static final int LOCK_MODIFIERS = KeyEvent.MOD_CAPS_LOCK | KeyEvent.MOD_NUM_LOCK;
     private static final int[] MODIFIER_CODES = {42, 29, 56, 125};
     private final Map<Integer, Integer> held = new LinkedHashMap<>();
     private final Set<Integer> syntheticModifiers = new LinkedHashSet<>();
@@ -25,7 +27,11 @@ final class RfbInputEncoder {
 
     static boolean supports(InputEvent event, RfbDisplayChannel.InputCapabilities capabilities) {
         if (event instanceof KeyEvent key) {
-            return capabilities.keyboard() && keysym(key.keyCode()) != 0 && (key.modifiers() & ~MODIFIERS) == 0;
+            // CAPS/NUM LOCK state bits are accepted and ignored: RFC 6143 §7.5.4 KeyEvent carries no
+            // lock state, and blindly synthesizing lock-key presses would toggle the guest's locks.
+            // The lock keys themselves (keycodes 58/69) still travel as ordinary keysyms.
+            return capabilities.keyboard() && keysym(key.keyCode()) != 0
+                    && (key.modifiers() & ~(MODIFIERS | LOCK_MODIFIERS)) == 0;
         }
         if (event instanceof TextCommitEvent text) {
             if ((!capabilities.unicodeText() && !capabilities.keyboard()) || text.text().isEmpty() || text.text().length() > MAX_TEXT_CODE_POINTS * 2) {
@@ -128,12 +134,20 @@ final class RfbInputEncoder {
     }
 
     private void pointer(ByteArrayOutputStream bytes, PointerEvent event, int width, int height) {
+        if (width < 1 || height < 1) {
+            // RFC 6143 framebuffer and pointer positions are meaningless without a positive size;
+            // the decoder never accepts 0-sized framebuffers, so this is a caller contract error.
+            throw new IllegalArgumentException("pointer input requires a positive framebuffer size: " + width + "x" + height);
+        }
         if (event.action() == PointerEvent.Action.RELATIVE_MOVE) {
             x = clamp(x + event.deltaX(), width);
             y = clamp(y + event.deltaY(), height);
             buttons = ((event.buttonMask() & 1) != 0 ? 1 : 0)
                     | ((event.buttonMask() & 2) != 0 ? 4 : 0) | ((event.buttonMask() & 4) != 0 ? 2 : 0);
-        } else {
+        } else if (event.action() != PointerEvent.Action.SCROLL) {
+            // RFC 6143 §7.5.5 asserts "the pointer is now at (x, y)" on every packet. Wheel events
+            // carry deltas only, and producers may fill their x/y with a placeholder, so the wheel
+            // packets reuse the tracked pointer position and never relocate the cursor.
             x = clamp(event.x(), width);
             y = clamp(event.y(), height);
         }
