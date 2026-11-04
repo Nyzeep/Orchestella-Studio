@@ -25,6 +25,24 @@ public final class RuntimeProcessSupervisor {
     static final long DEFAULT_CHANNELS_CLOSE_TIMEOUT_MS = 1000L;
     public enum StopResult { CONFIRMED, UNCONFIRMED, ALREADY_STOPPED }
 
+    /**
+     * Observation-only stop facts (ticket 27), fired at the existing decision
+     * points after the fact they report. Implementations must never throw,
+     * never block for long and never mutate control flow; a throwing observer
+     * is swallowed and the stop result is unaffected. Called while the
+     * supervisor lock is held.
+     */
+    public interface StopObserver {
+        /** The owner verified the backing VM is no longer alive. */
+        void onVmStoppedObserved();
+
+        /** The host channels/FDs were released ({@code true}) or not ({@code false}). */
+        void onChannelsReleased(boolean released);
+
+        /** The gateway process was stopped ({@code true}) or not ({@code false}). */
+        void onGatewayReleased(boolean released);
+    }
+
     /** Structured, secret-free stop diagnostics. */
     public static final class Diagnostics {
         private final String stage;
@@ -57,6 +75,7 @@ public final class RuntimeProcessSupervisor {
     private final Runnable closeChannels;
     private final long forceWaitMs;
     private final long channelsCloseTimeoutMs;
+    private final StopObserver stopObserver;
     private final Object lock = new Object();
     private StopResult result;
     private Diagnostics diagnostics = Diagnostics.none();
@@ -73,6 +92,13 @@ public final class RuntimeProcessSupervisor {
         this(process, gateway, closeChannels, forceWaitMs, DEFAULT_CHANNELS_CLOSE_TIMEOUT_MS);
     }
 
+    /** Adds the observation-only stop facts observer with the default deadlines. */
+    public RuntimeProcessSupervisor(QemuProcessLauncher.ProcessHandle process,
+            RuntimeGateway gateway, Runnable closeChannels, StopObserver stopObserver) {
+        this(process, gateway, closeChannels, 2000L, DEFAULT_CHANNELS_CLOSE_TIMEOUT_MS,
+                stopObserver);
+    }
+
     /**
      * @param forceWaitMs bounded wait after {@code destroyForcibly}
      * @param channelsCloseTimeoutMs hard deadline for the channel-cleanup stage;
@@ -81,6 +107,16 @@ public final class RuntimeProcessSupervisor {
     public RuntimeProcessSupervisor(QemuProcessLauncher.ProcessHandle process,
             RuntimeGateway gateway, Runnable closeChannels, long forceWaitMs,
             long channelsCloseTimeoutMs) {
+        this(process, gateway, closeChannels, forceWaitMs, channelsCloseTimeoutMs, null);
+    }
+
+    /**
+     * Adds the observation-only stop observer; {@code null} keeps the previous
+     * behavior exactly. Observing never changes the stop outcome.
+     */
+    public RuntimeProcessSupervisor(QemuProcessLauncher.ProcessHandle process,
+            RuntimeGateway gateway, Runnable closeChannels, long forceWaitMs,
+            long channelsCloseTimeoutMs, StopObserver stopObserver) {
         if (process == null) throw new IllegalArgumentException("process");
         if (closeChannels == null) throw new IllegalArgumentException("closeChannels");
         this.process = process;
@@ -88,6 +124,7 @@ public final class RuntimeProcessSupervisor {
         this.closeChannels = closeChannels;
         this.forceWaitMs = Math.max(0L, forceWaitMs);
         this.channelsCloseTimeoutMs = Math.max(0L, channelsCloseTimeoutMs);
+        this.stopObserver = stopObserver;
     }
 
     /**
@@ -105,8 +142,11 @@ public final class RuntimeProcessSupervisor {
             boolean processAlive = process.isAlive();
             boolean gatewayAlive = gateway != null && gateway.isAlive();
             if (!processAlive && !gatewayAlive) {
+                observeVmStopped();
                 boolean channels = closeChannelsOnce();
+                observeChannels(channels);
                 boolean gatewayStopped = gateway == null || stopGateway(grace);
+                observeGateway(gatewayStopped);
                 result = channels && gatewayStopped ? StopResult.ALREADY_STOPPED : StopResult.UNCONFIRMED;
                 // Channels succeeding must not mask a failed gateway cleanup: stage
                 // "gateway" is what tells a reader which resource is still unconfirmed.
@@ -131,14 +171,17 @@ public final class RuntimeProcessSupervisor {
                         return unconfirmed("force", grace, true);
                     }
                     if (!awaitExit(forceWaitMs)) {
-                        closeChannelsOnce();
+                        observeChannels(closeChannelsOnce());
                         return unconfirmed("force-wait", grace, true);
                     }
                 }
             }
+            observeVmStopped();
 
             boolean channels = closeChannelsOnce();
+            observeChannels(channels);
             boolean gatewayStopped = gateway == null || stopGateway(grace);
+            observeGateway(gatewayStopped);
             result = channels && gatewayStopped ? StopResult.CONFIRMED : StopResult.UNCONFIRMED;
             int code = process.isAlive() ? -1 : exitCode();
             diagnostics = new Diagnostics(channels && gatewayStopped ? "confirmed"
@@ -152,6 +195,34 @@ public final class RuntimeProcessSupervisor {
         result = StopResult.UNCONFIRMED;
         diagnostics = new Diagnostics(stage, process.pid(), grace, forced, -1);
         return result;
+    }
+
+    /** Observation only: a throwing observer never changes the stop outcome. */
+    private void observeVmStopped() {
+        if (stopObserver == null) return;
+        try {
+            stopObserver.onVmStoppedObserved();
+        } catch (RuntimeException | LinkageError ignored) {
+            // Diagnostics must never affect the owner stop.
+        }
+    }
+
+    private void observeChannels(boolean released) {
+        if (stopObserver == null) return;
+        try {
+            stopObserver.onChannelsReleased(released);
+        } catch (RuntimeException | LinkageError ignored) {
+            // Diagnostics must never affect the owner stop.
+        }
+    }
+
+    private void observeGateway(boolean released) {
+        if (stopObserver == null) return;
+        try {
+            stopObserver.onGatewayReleased(released);
+        } catch (RuntimeException | LinkageError ignored) {
+            // Diagnostics must never affect the owner stop.
+        }
     }
 
     private boolean stopGateway(long grace) {

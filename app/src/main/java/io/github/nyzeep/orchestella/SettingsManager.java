@@ -26,6 +26,8 @@ public final class SettingsManager {
     public static final String KEY_ONBOARDING_COMPLETED = "onboarding_completed";
     public static final String KEY_TERMINAL_CURSOR_BLINK = "terminal_cursor_blink";
     public static final String KEY_ACCELERATOR_LANE = "accelerator_lane_enabled";
+    /** Opt-in launch stage diagnostics (ticket 27); strictly off by default. */
+    public static final String KEY_STAGE_TRACE_DIAGNOSTICS = "stage_trace_diagnostics_enabled";
 
     private final SharedPreferences preferences;
 
@@ -143,6 +145,20 @@ public final class SettingsManager {
 
     public void setTerminalCursorBlinkEnabled(boolean enabled) {
         preferences.edit().putBoolean(KEY_TERMINAL_CURSOR_BLINK, enabled).apply();
+    }
+
+    /**
+     * Launch stage diagnostics (ticket 27): strictly off by default so normal
+     * launches create no trace file, queue or thread. When enabled, one
+     * bounded versioned JSONL trace is written per launch attempt into the
+     * app's private {@code stage-traces} directory.
+     */
+    public boolean isStageTraceDiagnosticsEnabled() {
+        return preferences.getBoolean(KEY_STAGE_TRACE_DIAGNOSTICS, false);
+    }
+
+    public void setStageTraceDiagnosticsEnabled(boolean enabled) {
+        preferences.edit().putBoolean(KEY_STAGE_TRACE_DIAGNOSTICS, enabled).apply();
     }
 
     /** Keep the listener strongly referenced; register in onStart and remove in onStop. */
