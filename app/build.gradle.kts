@@ -483,6 +483,10 @@ dependencies {
     // Protected-lane warm pool: pure-JVM Fast Lane session/control codec. It
     // adds no Android dependency and is only exercised when the pool switch is on.
     implementation(project(":runtime:fastlane-terminal"))
+    // PVM-06 wiring: the pool-backed distcc dispatcher implements the bridge's
+    // ChannelFactory, so the app must see the cross-lane distcc types. Pure JVM
+    // (engine-fastlane + contract); no Android dependency joins the classpath.
+    implementation(project(":runtime:fastlane-distcc"))
     implementation(libs.material)
     implementation(libs.appcompat)
     // MainActivity drives Dispatchers.Main (see MainActivity:1405/1409). The

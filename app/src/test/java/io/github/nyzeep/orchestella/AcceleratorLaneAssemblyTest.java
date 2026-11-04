@@ -259,6 +259,64 @@ public final class AcceleratorLaneAssemblyTest {
         }
     }
 
+    // --- PVM-06 wiring: the compile worker pool ---------------------------------
+
+    @Test
+    public void workerPoolStaysOffByDefaultAndNeverTouchesThePlatform() {
+        Fixture fixture = new Fixture();
+        AcceleratorLaneAssembly.Result result = fixture.assemble(false);
+
+        ProtectedWorkerPool pool = AcceleratorLaneAssembly.workerPool(
+                new NoVirtualMachineApi(),
+                (instanceId, topology) -> null,
+                result,
+                ProtectedWorkerPool.Config.defaults());
+        try {
+            pool.acquire(new WorkerPool.Job() {
+            });
+            fail("a zero-capacity worker pool must refuse");
+        } catch (WorkerPool.WorkerPoolException expected) {
+            assertEquals(WorkerPool.Code.DISABLED, expected.code());
+        }
+        assertEquals(0, pool.health().capacity());
+        assertEquals(0, pool.stats().activeInstances());
+    }
+
+    @Test
+    public void workerPoolGrowthIsBoundedByTheCoordinatorLedger() {
+        Fixture fixture = new Fixture();
+        fixture.facts = () -> facts(true, true, false, true, true,
+                ThermalState.NOMINAL, BatteryState.CHARGING);
+        AcceleratorLaneAssembly.Result result = fixture.assemble(true);
+        fixture.coordinator().startAll();
+        // Both lanes reserved 4 (QEMU) + 2 (ACCEL) of the 8-vCPU host budget;
+        // the worker pool must count its own footprint against the same ledger.
+        assertEquals(6, fixture.coordinator().ledger().snapshot().cpuCores());
+
+        ProtectedWorkerPool pool = AcceleratorLaneAssembly.workerPool(
+                new NoVirtualMachineApi(),
+                (instanceId, topology) -> null,
+                result,
+                ProtectedWorkerPool.Config.builder()
+                        .capacity(1)
+                        .memoryMbPerInstance(1024L)
+                        .build());
+        try {
+            WorkerPool.ResizeResult refused = pool.resize(3);
+            assertFalse(refused.accepted());
+            assertEquals(LaneRejectCode.CPU_EXCEEDED, refused.rejectReason());
+            assertEquals(1, pool.health().capacity());
+
+            WorkerPool.ResizeResult accepted = pool.resize(2);
+            assertTrue(accepted.accepted());
+            assertEquals(2, pool.health().capacity());
+            // Lazy slots: resize pre-checks the ledger but never starts a VM.
+            assertEquals(0, pool.stats().activeInstances());
+        } finally {
+            pool.close();
+        }
+    }
+
     private static AcceleratorFacts facts(
             boolean avfPresent,
             boolean nonProtected,
