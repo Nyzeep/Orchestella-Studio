@@ -528,4 +528,4 @@ jobs:
     steps:
       - name: Verify arm64 device evidence
         run: |
-          echo "ARM64_DEVICE_GATE_OK: Physical device gate verified on HONOR 80 GT (Android 15 / API 35) in Phase 1 with 34 items of native hardware evidence."
+          echo "ARM64_DEVICE_GATE_OK: Physical device gate verified on device-a (Android 15 / API 35) in Phase 1 with 34 items of native hardware evidence."
