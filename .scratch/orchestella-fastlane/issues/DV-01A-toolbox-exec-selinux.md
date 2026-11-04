@@ -85,10 +85,36 @@ scontext=u:r:microdroid_app:s0 tcontext=u:object_r:system_file:s0 tclass=file pe
 - 未改 root/SELinux/pvmfw，未使用 `/system/bin/sh`、encrypted storage 执行、chmod、memfd、execveat、伪 shell；
 - 未进入 DV-02。
 
+## 2026-11-04 真机复现（device-myron，小米 HyperOS OS4.0 / Android 17 API 37）——判定：仍阻塞
+
+**Status 保持 `blocked_external`。** 在一台与前两轮不同平台的设备（别名 device-myron：小米 HyperOS OS4.0、Android 17 / API 37、security patch 2026-10-01、内核 6.12 GKI 4K 页、骁龙 SM8850 档、hypervisor=gunyah）上，用与本票 2026-10-21/22 证据完全相同的 QA probe 合同（`AvfQaProbeInstrumentation` mode=`fastlane-dv01-preflight`，1 cycle、默认端口 5100/5101、未改 APK/payload/平台）复现了同一阻塞签名：
+
+- control HELLO/HELLO_OK 通过（3 ms）、payload ready 800 ms、create/run 全过；`terminal_pty` 返回 `blocked / TOOLBOX_EXEC_BLOCKED_BY_PLATFORM`，`fln1_code=7`（EXEC_FAILED）、`exec_stage=execve`、`errno=13`（EACCES）、`output_bytes=0`——与 2026-10-21 的 `fln1=7 execve_errno_13` 逐字一致；
+- sealed toolbox 未变：probe 复核的 `toolbox_manifest_sha256` = `e0352292…`，与本票 2026-10-21 权威证据相同；QA APK / payload .so 从 2026-10-24 构建复用（该日之后 payload 源码仅 distcc/cc1 变更，不触及 exec 路径）；
+- 停止干净：`STOP_CONFIRMED` + `VM_DELETED`；outcome=`PREFLIGHT_TERMINAL_BLOCKED`。
+
+### 本轮新增平台事实（非本票阻塞机制本身，但影响后续取证方式）
+
+1. **guest 内核 audit 在该平台不可采**：受保护 VM 的 console 转发只到 pvmfw 阶段（`Console(2051): [INFO] pVM firmware … Starting payload...` 之后再无 guest 输出，内核为 quiet），host 侧 `dmesg` 受 SELinux 限制（`klogctl: Permission denied`）。因此本轮拿不到与 2026-10-21 同形的 raw avc 行；阻塞判定改由 payload 侧 typed 诊断（`fln1=7 execve_errno_13`，`realpath/stat/access(X_OK)` 通过而仅 `execve` 拒绝）承载，机制描述仍引用本票上方的 2026-10-21 avc 行。
+2. **HyperOS freezer 与 QA instrumentation 互斥**（三轮实测）：app 侧在 VM 创建后约 5 秒被 HyperOS 冻结（`freezeUid SUCCESS uid=10054 reason=new process / tobg`，`PolicyMaker freeze_able`），crosvm 子进程随之停摆，`am instrument -w` 永久挂起；deviceidle 白名单**不能**豁免该冻结。可复现的处置是保持亮屏 + QA app 前台（TOP_APP 状态不满足 freeze_able），或按 UML 线已验证的 specialUse FGS + PARTIAL_WAKE_LOCK 方案。`run_dv01.py` 两轮均因此挂起被终止，本轮取证改用与 harness 完全同参的 `am instrument` 直跑（前台 + 亮屏守护循环）；这是 host 编排差异，device 侧命令逐字一致。
+3. AVF 平台能力实测：App actor `getCapabilities` raw bits=1（protected=true / non-protected=false），`setProtectedVm(false)` REJECTED（UnsupportedOperationException）——设备 protected-only，custom Linux 门保持 `NO_NON_PROTECTED_VM`；两权限显式 grant 后 GRANTED，hidden API exemption INSTALLED。qualification 四阶段（platform_declaration/capabilities/permissions/protected_mode）pass，样本计数 `platform_qualification_samples=1`、其余 0。
+
+### 原始证据（仓外，含真实标识）
+
+`evidence/dv01a-20261104/`（外部 evidence 根，永不入库）：`probe-fastlane-dv01-preflight-<token>.json`（本轮 probe 报告原件；qaRunToken 不入库，token SHA-256=`338958e1…` 记录于外部 `device-alias-mapping-20261104.md`）、`avf-qualification/avf-device-validation-20261104T155948*.json/.md`（qualification harness 报告与 stage 证据）、`preflight-run4-window-slice.txt`（virtmgr/Console(2051)/freezeUid 关键行切片）、`logcat-during-preflight-20261104.txt`（全程捕获，含三轮 freeze 取证）、`pagesize-channels-20261104.txt`、`getprop-full-20261104.txt`、`device-alias-mapping-20261104.md`（真实序列号/型号仅存此目录）。
+
+### 本轮未做
+
+- 未修改 FLN1 wire、payload、SELinux/pvmfw、签名身份、版本号；
+- 未使用任何绕过（/system/bin/sh、encrypted storage 执行、chmod、memfd、伪 shell 均未触碰）;
+- 未进入 DV-02；20 轮、storage persistence、负例未测（本票仍 blocked_external，无 20 轮要求）；
+- 未在 Pixel 系或 A17 QPR 上验证平台变更请求是否已被某次 OTA 满足（本设备 security patch 2026-10-01 的 HyperOS 未满足：执行仍被拒）。
+
 ## 关联
 
 - DV-01：`.scratch/orchestella-fastlane/issues/DV-01-protected-payload-device.md`
 - 报告：`docs/reports/orchestration/fastlane-dv01-20261021.zh-CN.md` §7
+- 本轮实施报告：`docs/reports/tickets/dv01a-mode-facts/implementation-report.zh-CN.md`
 - P03 toolbox 报告：`docs/reports/tickets/fastlane-P03/implementation-report.zh-CN.md`
 - 研究：`docs/research/microdroid-exec-selinux-20261022.zh-CN.md`
 - 平台变更请求：`docs/reports/orchestration/fastlane-dv01a-platform-change-request-20261022.zh-CN.md`
