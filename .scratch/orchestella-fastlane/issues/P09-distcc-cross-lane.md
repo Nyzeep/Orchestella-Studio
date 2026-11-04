@@ -1,7 +1,7 @@
 # P09: Distcc 跨车道编译（零设备）
 
 Type: implementation
-Status: ready-for-agent（zero-device）
+Status: implemented（zero-device 宿主桥+fixture；payload 侧经 2026-10-24 改道由 PVM-02/PVM-03 承接；报告已归档 docs/reports/archive/2026-10-zero-device/tickets/fastlane-P09/；真机门 DV-03）
 Priority: P0（交叉优化核心）
 Owner: distcc/cross-lane owner
 Blocked by: None（零设备）；与 P02/P03/P05 的集成由 DV-03 验证
@@ -103,3 +103,7 @@ DV-03：真实 QEMU guest `make -j` + Fast Lane `distccd`；n≥10；端到端�
 - 因此 §停止条件 里的「改用自研最小 distcc server」不是可选项，而是**唯一可走的实现**；
 - 新方案把编译器做成库、在 payload 进程内编译，wire 与宿主桥不变：`.scratch/orchestella-pvm-compiler/spec.md`，工单 PVM-02/PVM-03。
 - 本票的 guest 契约、宿主桥、golden fixture 继续复用；「protected payload 跑 distccd」的验收项作废，改由 PVM-03 的等价判据承接。
+
+## Comments
+
+- 2026-11-04 / repo-hygiene lane（对账回填）：零设备交付（宿主桥 17 tests、真实 distcc 3.4 host-only 编译、guest 契约与对照表）已于 2026-10-21 完成并合入 main，实施报告归档至 `docs/reports/archive/2026-10-zero-device/tickets/fastlane-P09/`。结合 2026-10-24 改道，本票剩余可做面已全部转移：payload 侧编译归 PVM-02/PVM-03（pvm 线），端到端真机归 DV-03。状态回填 `ready-for-agent（zero-device）` → `implemented（zero-device 宿主桥）`。
