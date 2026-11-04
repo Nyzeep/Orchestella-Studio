@@ -112,8 +112,10 @@ public final class BridgeConnector {
     public Session serveSession(ExecutionSession session, String bridgeToken, int columns, int rows,
             Events events, BridgeControl.Notification notification, BridgeControl.UrlOpener urlOpener,
             BridgeControl.Clipboard clipboard) throws IOException, InterruptedException {
+        LaunchStageObserver trace = session.launchStageObserver();
         BridgeClient client = session.bridgeClient();
         if (client == null) throw new IOException("Bridge control is unavailable");
+        notifyChannelConnected(trace);
         client.setDiagnosticListener(message -> android.util.Log.i("OrchestellaBridge", message));
         android.util.Log.i("OrchestellaBridge", "session control start state=" + client.readinessState());
         BridgeControl.Seams seams = createSeams(events, notification, urlOpener, clipboard);
@@ -121,12 +123,57 @@ public final class BridgeConnector {
             if (!client.isReady()) return "ORCHESTELLA/ERROR unauthenticated\n";
             return BridgeControl.dispatch(line, seams).wireResponse();
         });
-        if (!client.handshake(bridgeToken).accepted()) return new Session(3, null);
+        boolean authenticated = client.handshake(bridgeToken).accepted();
+        notifyAuthenticated(trace, authenticated);
+        if (!authenticated) return new Session(3, null);
         events.onReady();
-        if (client.ping().accepted()) events.onPong();
+        boolean pong = client.ping().accepted();
+        notifyGuestCommand(trace, pong);
+        if (pong) events.onPong();
         if (columns > 0 && rows > 0 && client.resize(columns, rows).accepted()) events.onResize(columns, rows);
         client.awaitResponsePump();
         return new Session(0, null);
+    }
+
+    /**
+     * Stage trace hooks (ticket 27), fired at the existing serving route's own
+     * handler signals: the stage facts come from the handshake/ping results the
+     * connector already consumed — never from a second reader and never from
+     * terminal text. Observation failures are swallowed.
+     */
+    static void notifyChannelConnected(LaunchStageObserver trace) {
+        if (trace == null) return;
+        try {
+            trace.onGate(ProductionStageRecorder.Stage.VSOCK_CONNECTED);
+        } catch (RuntimeException | LinkageError ignored) {
+            // Observation must never affect serving.
+        }
+    }
+
+    static void notifyAuthenticated(LaunchStageObserver trace, boolean accepted) {
+        if (trace == null) return;
+        try {
+            if (accepted) {
+                trace.onGateAuthenticated(ProductionStageRecorder.Stage.AGENT_AUTHENTICATED);
+            } else {
+                trace.onFailure(ProductionStageRecorder.Failure.READINESS_FAILED);
+            }
+        } catch (RuntimeException | LinkageError ignored) {
+            // Observation must never affect serving.
+        }
+    }
+
+    static void notifyGuestCommand(LaunchStageObserver trace, boolean accepted) {
+        if (trace == null) return;
+        try {
+            if (accepted) {
+                trace.onGateAuthenticated(ProductionStageRecorder.Stage.GUEST_COMMAND_OK);
+            } else {
+                trace.onFailure(ProductionStageRecorder.Failure.GUEST_COMMAND_FAILED);
+            }
+        } catch (RuntimeException | LinkageError ignored) {
+            // Observation must never affect serving.
+        }
     }
 
     private int serveControl(InputStream in, OutputStream out, String bridgeToken, int columns,

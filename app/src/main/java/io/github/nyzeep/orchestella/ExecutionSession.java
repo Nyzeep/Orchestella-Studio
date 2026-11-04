@@ -135,5 +135,16 @@ public interface ExecutionSession {
     default boolean markBridgeServing() {
         return false;
     }
+
+    /**
+     * Observation-only launch stage trace for this session (ticket 27), or
+     * null when the session records nothing. Implementations keep it strictly
+     * passive: observing must never change control flow, and the observer is
+     * consulted by existing routes (bridge serving, stop path) without any
+     * second reader or extra authentication.
+     */
+    default LaunchStageObserver launchStageObserver() {
+        return null;
+    }
 }
 

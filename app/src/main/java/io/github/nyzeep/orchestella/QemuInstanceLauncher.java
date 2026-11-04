@@ -41,6 +41,8 @@ public final class QemuInstanceLauncher {
         private final QemuProcessLauncher.ProcessHandle handle;
         private final RuntimeProcessSupervisor supervisor;
         private final LaunchTimeline timeline;
+        /** Observation-only stage trace (ticket 27); null records nothing. */
+        private final LaunchStageObserver stageObserver;
         private final BridgeConnector connector = new BridgeConnector();
         private final Object controlLock = new Object();
         private final Object terminalLock = new Object();
@@ -146,22 +148,70 @@ public final class QemuInstanceLauncher {
                 String displaySocketPath, String token, QemuProcessLauncher.ProcessHandle handle,
                 String instanceId, RuntimeGateway gateway) {
             this(controlSocketName, terminalSocketName, proxySocketName, displaySocketPath, token,
-                    handle, instanceId, gateway, null);
+                    handle, instanceId, gateway, null, null);
         }
 
         private Session(String controlSocketName, String terminalSocketName, String proxySocketName,
                 String displaySocketPath, String token, QemuProcessLauncher.ProcessHandle handle,
                 String instanceId, RuntimeGateway gateway, LaunchTimeline timeline) {
+            this(controlSocketName, terminalSocketName, proxySocketName, displaySocketPath, token,
+                    handle, instanceId, gateway, timeline, null);
+        }
+
+        private Session(String controlSocketName, String terminalSocketName, String proxySocketName,
+                String displaySocketPath, String token, QemuProcessLauncher.ProcessHandle handle,
+                String instanceId, RuntimeGateway gateway, LaunchTimeline timeline,
+                LaunchStageObserver stageObserver) {
             this.controlSocketName = controlSocketName;
             this.terminalSocketName = terminalSocketName;
             this.instanceId = instanceId;
             this.proxySocketName = proxySocketName;
             this.handle = handle;
             this.timeline = timeline;
-            this.supervisor = new RuntimeProcessSupervisor(handle, gateway, this::closeChannels);
+            this.stageObserver = stageObserver;
+            this.supervisor = new RuntimeProcessSupervisor(handle, gateway, this::closeChannels,
+                    stageObserver == null ? null : new SupervisorStopFacts());
             this.displayChannel = displaySocketPath == null ? null : new RfbDisplaySession(() ->
                     openDisplayStreams(displaySocketPath), token, this::bridgeClient);
             startProxyGateway();
+        }
+
+        @Override
+        public LaunchStageObserver launchStageObserver() {
+            return stageObserver;
+        }
+
+        /**
+         * Maps the supervisor's stop facts onto the independent stop facts
+         * (ticket 27): owner-verified VM exit, channels/FD release and gateway
+         * release are each observed from the existing decision points, and the
+         * resources fact is recorded only once both resource owners reported
+         * success. The recorder deduplicates retries.
+         */
+        private final class SupervisorStopFacts implements RuntimeProcessSupervisor.StopObserver {
+            private boolean channelsOk;
+            private boolean gatewayOk;
+
+            @Override public void onVmStoppedObserved() {
+                stageObserver.onStopFact(ProductionStageRecorder.StopFact.OWNED_VM_STOPPED);
+            }
+
+            @Override public void onChannelsReleased(boolean released) {
+                channelsOk = released;
+                observeResourcesReleased();
+            }
+
+            @Override public void onGatewayReleased(boolean released) {
+                gatewayOk = released;
+                observeResourcesReleased();
+            }
+
+            private void observeResourcesReleased() {
+                if (channelsOk && gatewayOk) {
+                    stageObserver.onStopFact(
+                            ProductionStageRecorder.StopFact.OWNED_RESOURCES_RELEASED);
+                }
+            }
         }
 
         private static final long DISPLAY_CONNECT_TIMEOUT_MS = 15_000L;
@@ -296,16 +346,25 @@ public final class QemuInstanceLauncher {
         public StopResult stopRuntime(long graceMs) {
             synchronized (this) { closing = true; }
             if (timeline != null) timeline.mark(LaunchTimeline.Stage.STOP_REQUESTED);
+            if (stageObserver != null) {
+                stageObserver.onGate(ProductionStageRecorder.Stage.STOP_REQUESTED);
+            }
             StopResult stop;
             try {
                 stop = supervisor.stop(graceMs);
             } catch (RuntimeException | Error failure) {
                 if (timeline != null) timeline.finish();
+                if (stageObserver != null) {
+                    stageObserver.onFailure(ProductionStageRecorder.Failure.STOP_FAILED);
+                }
                 throw failure;
             }
             if (timeline != null) {
                 timeline.markStopConfirmed(stop);
                 timeline.finish();
+            }
+            if (stageObserver != null && stop != StopResult.UNCONFIRMED) {
+                stageObserver.onFinish();
             }
             if (stop == StopResult.UNCONFIRMED) {
                 RuntimeProcessSupervisor.Diagnostics diagnostics = supervisor.diagnostics();
@@ -578,6 +637,12 @@ public final class QemuInstanceLauncher {
                 parameters.instanceId, resolveDistroId(parameters.rootfsFileName),
                 config.ramMegabytes(), config.cpuCores());
         timeline.mark(LaunchTimeline.Stage.LAUNCH_START);
+        // Ticket 27: observation-only stage trace, bound to this launch's real
+        // identity; disabled recording changes nothing on this path.
+        LaunchStageObserver stageTrace = StageTraceProvider.observerForLaunch(context,
+                parameters.instanceId, InstanceLaunchGuard.generation(parameters.instanceId),
+                "qemu");
+        stageTrace.onGate(ProductionStageRecorder.Stage.LAUNCH_REQUESTED);
 
         RuntimeArtifactManifest manifest;
         try (InputStream in = PackagedAssetStreams.openAsset(context, RuntimeArtifactManifest.SCHEMA_FILE_NAME)) {
@@ -585,6 +650,7 @@ public final class QemuInstanceLauncher {
         } catch (IOException | RuntimeException | Error failure) {
             // A launch attempt that cannot even read its manifest must still leave
             // one honest record; it never reaches asset verification.
+            stageTrace.onFailure(ProductionStageRecorder.Failure.CREATE_FAILED);
             timeline.finish();
             throw failure;
         }
@@ -615,6 +681,7 @@ public final class QemuInstanceLauncher {
                 context.getFilesDir().toPath().resolve("instances"),
                 parameters.instanceId, parameters.rootfsFileName);
         QemuRuntimeBootstrapper.RuntimePaths paths;
+        stageTrace.onGate(ProductionStageRecorder.Stage.INPUTS_BEGIN);
         try {
             paths = bootstrapper.bootstrap(parameters.rootfsFileName, parameters.bridgeToken,
                     parameters.guestPassword,
@@ -624,7 +691,9 @@ public final class QemuInstanceLauncher {
                     parameters.firstBootScript,
                     parameters.hostname, parameters.guestUser, parameters.hasSudo, timeline,
                     credentialsOnly);
+            stageTrace.onGate(ProductionStageRecorder.Stage.INPUTS_VERIFIED);
         } catch (IOException | RuntimeException | Error failure) {
+            stageTrace.onFailure(ProductionStageRecorder.Failure.CREATE_FAILED);
             timeline.finish();
             throw failure;
         }
@@ -641,6 +710,7 @@ public final class QemuInstanceLauncher {
             gateway = NetworkGatewayDaemon.start(context, parameters.instanceId,
                     Paths.get(parameters.runtimeDirectory).toFile());
         } catch (IOException | RuntimeException | Error failure) {
+            stageTrace.onFailure(ProductionStageRecorder.Failure.READINESS_FAILED);
             timeline.finish();
             throw failure;
         }
@@ -650,6 +720,7 @@ public final class QemuInstanceLauncher {
         java.util.concurrent.atomic.AtomicReference<Session> startingSession =
                 new java.util.concurrent.atomic.AtomicReference<>();
         return completeLaunch(() -> {
+        stageTrace.onGate(ProductionStageRecorder.Stage.RUN_BEGIN);
         String guestKernelArgs = "orchestella.guest_ip=" + NetworkGatewayDaemon.GUEST_IP
                 + " orchestella.guest_gw=" + NetworkGatewayDaemon.GUEST_GATEWAY
                 + " orchestella.guest_mask=" + NetworkGatewayDaemon.GUEST_NETMASK
@@ -731,11 +802,13 @@ public final class QemuInstanceLauncher {
         QemuProcessLauncher launcher = new QemuProcessLauncher(factory);
         QemuProcessLauncher.Launched launched = launcher.launch(sanitizedSpec);
         timeline.mark(LaunchTimeline.Stage.QEMU_STARTED);
+        stageTrace.onGate(ProductionStageRecorder.Stage.VM_CREATED);
         QemuProcessLauncher.ProcessHandle handle = launched.handle();
         startingHandle.set(handle);
         Session session = new Session(controlSocket, terminalSocket,
                 QemuLaunchSpec.defaultProxySocketName(controlSocket), displaySocketPath,
-                parameters.bridgeToken, handle, parameters.instanceId, gateway, timeline);
+                parameters.bridgeToken, handle, parameters.instanceId, gateway, timeline,
+                stageTrace);
         startingSession.set(session);
         Thread watcher = new Thread(() -> {
             try {
@@ -752,8 +825,14 @@ public final class QemuInstanceLauncher {
         ExecutionSessionRegistry.register(parameters.instanceId, session,
                 createProvisioningRecorder(parameters.instanceId, parameters.rootfsFileName));
         timeline.mark(LaunchTimeline.Stage.SESSION_REGISTERED);
+        stageTrace.onGate(ProductionStageRecorder.Stage.RUN_RETURNED);
         return session;
         }, () -> {
+            // Record the real terminal reason first: a later stop facts
+            // observation on the retired trace is a no-op, and the stop outcome
+            // stays authoritative in the LaunchTimeline and supervisor
+            // diagnostics.
+            stageTrace.onFailure(ProductionStageRecorder.Failure.RUN_FAILED);
             StopResult cleanupResult = cleanupFailedLaunch(
                     startingSession.get(), startingHandle.get(), gateway);
             LAST_FAILED_CLEANUP.put(parameters.instanceId, cleanupResult);
