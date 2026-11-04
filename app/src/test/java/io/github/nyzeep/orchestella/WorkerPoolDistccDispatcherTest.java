@@ -38,6 +38,7 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.Test;
 
 /**
@@ -57,6 +58,8 @@ public final class WorkerPoolDistccDispatcherTest {
     private static final String TRIPLE = "aarch64-unknown-linux-android";
     private static final int DISTCC_PORT = 5103;
     private static final long WAIT_MS = 5_000L;
+    /** Matches the pool's default 30s queue budget: admission must beat it. */
+    private static final long QUEUE_SETTLE_MS = 30_000L;
 
     // --- lease lifecycle over a fake pool ---------------------------------------
 
@@ -195,6 +198,10 @@ public final class WorkerPoolDistccDispatcherTest {
             CountDownLatch twoOpened = new CountDownLatch(2);
             CountDownLatch allOpened = new CountDownLatch(4);
             AtomicInteger failures = new AtomicInteger();
+            // A worker that fails must not vanish into a bare counter: the
+            // first cause is captured so a latch timeout below is diagnosable
+            // (CI once timed out here without any visible reason).
+            AtomicReference<Exception> firstFailure = new AtomicReference<>();
             // Four concurrent distcc connections against two slots: two are
             // served, two wait in the bounded queue and are served on release.
             for (int i = 0; i < 4; i++) {
@@ -207,6 +214,7 @@ public final class WorkerPoolDistccDispatcherTest {
                         twoOpened.countDown();
                         allOpened.countDown();
                     } catch (IOException | RuntimeException | FastLaneException failure) {
+                        firstFailure.compareAndSet(null, failure);
                         failures.incrementAndGet();
                     }
                 }, "pooled-dispatch-" + i);
@@ -220,7 +228,16 @@ public final class WorkerPoolDistccDispatcherTest {
                 channels.get(0).close();
                 channels.get(1).close();
             }
-            assertTrue(allOpened.await(WAIT_MS, TimeUnit.MILLISECONDS));
+            // Admission after release is millisecond-scale with the fakes, but
+            // CI runners stall under load; WAIT_MS is the per-step harness
+            // budget while the queue itself allows 30s, so wait out the queue
+            // budget before declaring the scenario broken.
+            assertTrue("queued workers were not admitted after two releases in "
+                            + QUEUE_SETTLE_MS + "ms; failures=" + failures.get()
+                            + ", firstFailure=" + firstFailure.get()
+                            + ", channels=" + channels.size()
+                            + ", health=" + pool.health(),
+                    allOpened.await(QUEUE_SETTLE_MS, TimeUnit.MILLISECONDS));
             assertEquals(0, failures.get());
             assertEquals(2, api.startCount);
             assertEquals(2, pool.health().leasedSlots());
