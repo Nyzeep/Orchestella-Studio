@@ -337,7 +337,10 @@ public final class RfbDisplayChannelTest {
             wire.key(true, '$'); wire.key(false, '$');
             wire.key(true, 0xffe1); wire.key(false, 0xffe1);
             assertFalse(wire.channel.sendInputEvent(new TextCommitEvent("x".repeat(1025), 6)));
-            assertFalse(wire.channel.sendInputEvent(KeyEvent.press(30, KeyEvent.MOD_CAPS_LOCK, 7)));
+            // Lock-state bits are accepted and ignored (the wire shows only the bare key press);
+            // rejecting them dropped every keystroke while a lock state bit was declared.
+            assertTrue(wire.channel.sendInputEvent(KeyEvent.press(30, KeyEvent.MOD_CAPS_LOCK, 7)));
+            wire.key(true, 'a');
             assertFalse(wire.channel.sendInputEvent(new io.github.nyzeep.orchestella.runtime.contract.InputEvent() {
                 @Override public Type eventType() { return Type.TOUCH; }
                 @Override public long timestampNs() { return 0; }

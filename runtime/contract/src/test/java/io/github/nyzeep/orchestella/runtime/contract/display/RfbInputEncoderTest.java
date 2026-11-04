@@ -351,22 +351,31 @@ public final class RfbInputEncoderTest {
     }
 
     // ---------------------------------------------------------------- wheel
+    // RFC 6143 §7.5.5: every PointerEvent asserts "the pointer is now at (x, y)", so wheel packets
+    // must carry a position. Wheel events carry deltas only (producers may fill x/y with a
+    // placeholder, e.g. the relative-capture path), so the encoder reuses its tracked pointer
+    // position; a scroll never relocates the cursor.
 
     @Test
     public void scrollUpSetsBit3AndFollowsWithPlainPointerPacket() {
+        RfbInputEncoder encoder = encoder();
+        encoder.encode(PointerEvent.motion(3, 4, 0.0, 0.0, 0L), 100, 100);
         assertArrayEquals(concat(pointerFrame(8, 3, 4), pointerFrame(0, 3, 4)),
-                encoder().encode(PointerEvent.scroll(3, 4, 0.0, 1.0, 0L), 100, 100));
+                encoder.encode(PointerEvent.scroll(3, 4, 0.0, 1.0, 0L), 100, 100));
     }
 
     @Test
     public void scrollDownSetsBit4() {
+        RfbInputEncoder encoder = encoder();
+        encoder.encode(PointerEvent.motion(3, 4, 0.0, 0.0, 0L), 100, 100);
         assertArrayEquals(concat(pointerFrame(16, 3, 4), pointerFrame(0, 3, 4)),
-                encoder().encode(PointerEvent.scroll(3, 4, 0.0, -1.0, 0L), 100, 100));
+                encoder.encode(PointerEvent.scroll(3, 4, 0.0, -1.0, 0L), 100, 100));
     }
 
     @Test
     public void scrollRightSetsBit6AndLeftSetsBit5() {
         RfbInputEncoder encoder = encoder();
+        encoder.encode(PointerEvent.motion(3, 4, 0.0, 0.0, 0L), 100, 100);
         assertArrayEquals(concat(pointerFrame(64, 3, 4), pointerFrame(0, 3, 4)),
                 encoder.encode(PointerEvent.scroll(3, 4, 1.0, 0.0, 0L), 100, 100));
         assertArrayEquals(concat(pointerFrame(32, 3, 4), pointerFrame(0, 3, 4)),
@@ -375,22 +384,38 @@ public final class RfbInputEncoderTest {
 
     @Test
     public void scrollEmitsOnePointerPairPerNotch() {
+        RfbInputEncoder encoder = encoder();
+        encoder.encode(PointerEvent.motion(3, 4, 0.0, 0.0, 0L), 100, 100);
         assertArrayEquals(concat(
                         pointerFrame(8, 3, 4), pointerFrame(0, 3, 4),
                         pointerFrame(8, 3, 4), pointerFrame(0, 3, 4)),
-                encoder().encode(PointerEvent.scroll(3, 4, 0.0, 2.5, 0L), 100, 100));
+                encoder.encode(PointerEvent.scroll(3, 4, 0.0, 2.5, 0L), 100, 100));
+    }
+
+    @Test
+    public void scrollIgnoresCarriedCoordinatesAndKeepsTrackedPointerPosition() {
+        RfbInputEncoder encoder = encoder();
+        encoder.encode(PointerEvent.motion(40, 30, 0.0, 0.0, 0L), 100, 100);
+        // Placeholder coordinates (as sent by the relative-capture wheel path) must not teleport
+        // the pointer, even though the wire packets themselves still need a position.
+        assertArrayEquals(concat(pointerFrame(8, 40, 30), pointerFrame(0, 40, 30)),
+                encoder.encode(PointerEvent.scroll(77, 88, 0.0, 1.0, 0L), 100, 100));
+        // Before any absolute position is known, the wheel packets point at the tracked origin.
+        assertArrayEquals(concat(pointerFrame(8, 0, 0), pointerFrame(0, 0, 0)),
+                encoder().encode(PointerEvent.scroll(5, 1, 0.0, 1.0, 0L), 100, 100));
     }
 
     @Test
     public void scrollAccumulatesFractionalDeltas() {
         RfbInputEncoder encoder = encoder();
+        encoder.encode(PointerEvent.motion(5, 7, 0.0, 0.0, 0L), 100, 100);
         assertEquals("0.4 is not enough for a notch", 0,
-                encoder.encode(PointerEvent.scroll(3, 4, 0.0, 0.4, 0L), 100, 100).length);
+                encoder.encode(PointerEvent.scroll(99, 99, 0.0, 0.4, 0L), 100, 100).length);
         assertEquals("0.8 is still not enough", 0,
-                encoder.encode(PointerEvent.scroll(3, 4, 0.0, 0.4, 0L), 100, 100).length);
-        assertArrayEquals("1.2 emits exactly one notch pair",
-                concat(pointerFrame(8, 3, 4), pointerFrame(0, 3, 4)),
-                encoder.encode(PointerEvent.scroll(3, 4, 0.0, 0.4, 0L), 100, 100));
+                encoder.encode(PointerEvent.scroll(99, 99, 0.0, 0.4, 0L), 100, 100).length);
+        assertArrayEquals("1.2 emits exactly one notch pair at the tracked position",
+                concat(pointerFrame(8, 5, 7), pointerFrame(0, 5, 7)),
+                encoder.encode(PointerEvent.scroll(99, 99, 0.0, 0.4, 0L), 100, 100));
     }
 
     @Test
@@ -411,15 +436,32 @@ public final class RfbInputEncoderTest {
     }
 
     @Test
-    public void rejectsUnmappedKeysAndIllegalModifierBits() {
+    public void acceptsLockStateBitsAndRejectsUnknownModifierBits() {
         assertFalse(RfbInputEncoder.supports(KeyEvent.press(200, KeyEvent.MOD_NONE, 0L), KEYBOARD_ONLY));
-        assertFalse(RfbInputEncoder.supports(KeyEvent.press(30, KeyEvent.MOD_CAPS_LOCK, 0L), KEYBOARD_ONLY));
-        assertFalse(RfbInputEncoder.supports(KeyEvent.press(30, KeyEvent.MOD_NUM_LOCK, 0L), KEYBOARD_ONLY));
-        assertFalse(RfbInputEncoder.supports(
+        // CAPS/NUM LOCK are lock-state bits: RFC 6143 §7.5.4 KeyEvent has no lock-state field and
+        // the lock keys themselves travel as ordinary keycodes, so accepting the bits (and ignoring
+        // them) keeps input flowing while a lock is engaged instead of dropping every keystroke.
+        assertTrue(RfbInputEncoder.supports(KeyEvent.press(30, KeyEvent.MOD_CAPS_LOCK, 0L), KEYBOARD_ONLY));
+        assertTrue(RfbInputEncoder.supports(KeyEvent.press(30, KeyEvent.MOD_NUM_LOCK, 0L), KEYBOARD_ONLY));
+        assertTrue(RfbInputEncoder.supports(
                 KeyEvent.press(30, KeyEvent.MOD_SHIFT | KeyEvent.MOD_CAPS_LOCK, 0L), KEYBOARD_ONLY));
+        // Truly unknown modifier bits stay rejected.
+        assertFalse(RfbInputEncoder.supports(KeyEvent.press(30, 0x40, 0L), KEYBOARD_ONLY));
+        assertFalse(RfbInputEncoder.supports(
+                KeyEvent.press(30, KeyEvent.MOD_SHIFT | 0x80, 0L), KEYBOARD_ONLY));
         assertTrue(RfbInputEncoder.supports(
                 KeyEvent.press(30, KeyEvent.MOD_SHIFT | KeyEvent.MOD_CTRL | KeyEvent.MOD_ALT | KeyEvent.MOD_SUPER, 0L),
                 KEYBOARD_ONLY));
+    }
+
+    @Test
+    public void lockStateBitsProduceNoExtraWireFrames() {
+        assertArrayEquals("caps lock state bit is ignored: only the bare key press is sent",
+                keyFrame(true, 'a'), press(30, KeyEvent.MOD_CAPS_LOCK));
+        assertArrayEquals(keyFrame(false, 'a'), release(30, KeyEvent.MOD_CAPS_LOCK));
+        assertArrayEquals("num lock state bit does not perturb synthesized shift",
+                concat(keyFrame(true, 0xffe1), keyFrame(true, 'a')),
+                press(30, KeyEvent.MOD_SHIFT | KeyEvent.MOD_NUM_LOCK));
     }
 
     // ---------------------------------------------------------------- supports(): text
@@ -520,6 +562,32 @@ public final class RfbInputEncoderTest {
         assertTrue(supportsPointer(PointerEvent.relativeMotion(1, 1, 7, 0L)));
         assertFalse(supportsPointer(PointerEvent.relativeMotion(1, 1, 8, 0L)));
         assertFalse(supportsPointer(PointerEvent.relativeMotion(1, 1, -1, 0L)));
+    }
+
+    @Test
+    public void rejectsPointerEncodingWithNonPositiveFramebufferSize() {
+        RfbInputEncoder encoder = encoder();
+        // A non-positive framebuffer is not a legal RFB state (the decoder rejects such sizes), so
+        // pointer encoding must fail fast instead of silently clamping the pointer to (0,0).
+        assertThrows(IllegalArgumentException.class,
+                () -> encoder.encode(PointerEvent.motion(1, 1, 0, 0, 0L), 0, 480));
+        assertThrows(IllegalArgumentException.class,
+                () -> encoder.encode(PointerEvent.motion(1, 1, 0, 0, 0L), 640, 0));
+        assertThrows(IllegalArgumentException.class,
+                () -> encoder.encode(PointerEvent.relativeMotion(1, 1, 0L), 0, 0));
+        assertThrows(IllegalArgumentException.class,
+                () -> encoder.encode(PointerEvent.buttonDown(1, 1, PointerEvent.BUTTON_LEFT, 0L), -1, 100));
+        assertThrows(IllegalArgumentException.class,
+                () -> encoder.encode(PointerEvent.scroll(1, 1, 0, 1, 0L), 100, -1));
+    }
+
+    @Test
+    public void keyboardAndTextEncodingDoNotRequireFramebufferDimensions() {
+        // KeyEvent/TextCommitEvent wire frames carry no coordinates, so dimensions are irrelevant.
+        assertArrayEquals(keyFrame(true, 'a'),
+                encoder().encode(KeyEvent.press(30, KeyEvent.MOD_NONE, 0L), 0, 0));
+        assertArrayEquals(concat(keyFrame(true, 'x'), keyFrame(false, 'x')),
+                encoder().encode(new TextCommitEvent("x", 0L), 0, 0));
     }
 
     // ---------------------------------------------------------------- supports(): non-events
