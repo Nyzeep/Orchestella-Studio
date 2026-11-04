@@ -29,6 +29,11 @@ on:
 permissions:
   contents: read
 
+# A re-dispatch on the same ref supersedes the release build in flight.
+concurrency:
+  group: "${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
 jobs:
   build-release:
     name: Build and verify release APK

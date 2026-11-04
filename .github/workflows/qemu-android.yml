@@ -24,6 +24,12 @@ on:
 permissions:
   contents: read
 
+# A re-dispatch on the same ref supersedes the run in flight: the heavy jobs
+# below run for hours, so parallel accumulation on one ref is never useful.
+concurrency:
+  group: "${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
 defaults:
   run:
     shell: bash
@@ -86,9 +92,13 @@ jobs:
     container:
       image: mcr.microsoft.com/devcontainers/base@sha256:3612b800eaae8513e7dca54f21d2e4eda48eda57426f3746a78677f342ac7ee9
       options: --platform linux/amd64
+    # Outer cap. The per-step timeouts below split this budget (total
+    # unchanged) so a hung step fails on its own instead of eating the
+    # whole 4-hour job.
     timeout-minutes: 240
     steps:
       - name: Fetch repository
+        timeout-minutes: 10
         run: |
           git clone --no-checkout --depth 1 "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" /workspace
           TARGET_SHA="${{ github.event.pull_request.head.sha || github.sha }}"
@@ -103,6 +113,7 @@ jobs:
           [[ "$(git -C /workspace rev-parse HEAD)" == "$TARGET_SHA" ]] || { echo "FAIL checkout SHA mismatch"; exit 1; }
           git -C /workspace rev-parse HEAD
       - name: Provision pinned inputs
+        timeout-minutes: 40
         run: |
           set -euo pipefail
           CI_REPO=/workspace bash /workspace/tools/qemu-android/scripts/verify-native-prebuild.sh
@@ -113,6 +124,7 @@ jobs:
           test -d /ndk/android-ndk-r28c || { echo "FAIL NDK extraction"; exit 1; }
           echo "INPUTS_PROVISIONED"
       - name: Two clean builds in the pinned builder (this container)
+        timeout-minutes: 190
         run: |
           set -euo pipefail
           cd /workspace
@@ -126,9 +138,13 @@ jobs:
     container:
       image: mcr.microsoft.com/devcontainers/base@sha256:3612b800eaae8513e7dca54f21d2e4eda48eda57426f3746a78677f342ac7ee9
       options: --platform linux/amd64
+    # Outer cap. The per-step timeouts below split this budget (total
+    # unchanged) so a hung step fails on its own instead of eating the
+    # whole 4-hour job.
     timeout-minutes: 240
     steps:
       - name: Fetch repository
+        timeout-minutes: 10
         run: |
           git clone --no-checkout --depth 1 "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" /workspace
           TARGET_SHA="${{ github.event.pull_request.head.sha || github.sha }}"
@@ -142,6 +158,7 @@ jobs:
           git -C /workspace checkout --detach "$TARGET_SHA"
           [[ "$(git -C /workspace rev-parse HEAD)" == "$TARGET_SHA" ]] || { echo "FAIL checkout SHA mismatch"; exit 1; }
       - name: Provision pinned inputs and build once
+        timeout-minutes: 220
         run: |
           set -euo pipefail
           CI_REPO=/workspace bash /workspace/tools/qemu-android/scripts/verify-native-prebuild.sh
@@ -153,6 +170,7 @@ jobs:
           cd /workspace
           bash tools/qemu-android/ci/build-in-container.sh all > build.log 2>&1 || { tail -50 build.log; exit 1; }
       - name: ELF64 / AArch64 / GNU_RELRO / PT_LOAD >= 2^14 / DT_NEEDED
+        timeout-minutes: 10
         run: |
           set -euo pipefail
           cd /workspace
@@ -169,9 +187,13 @@ jobs:
     # base from the fixed producer (three kernel-class builds total) and runs
     # the four-member consumer twice; disk budget ~5-8 GB in the runner
     # workspace, hence the raised timeout.
+    # Outer cap. The per-step timeouts below split this budget (total
+    # unchanged) so a hung step fails on its own instead of eating the
+    # whole 6-hour job.
     timeout-minutes: 360
     steps:
       - name: Fetch repository
+        timeout-minutes: 5
         run: |
           git clone --no-checkout --depth 1 "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" repo
           TARGET_SHA="${{ github.event.pull_request.head.sha || github.sha }}"
@@ -185,6 +207,7 @@ jobs:
           git -C repo checkout --detach "$TARGET_SHA"
           [[ "$(git -C repo rev-parse HEAD)" == "$TARGET_SHA" ]] || { echo "FAIL checkout SHA mismatch"; exit 1; }
       - name: Build QEMU payload in the pinned builder container
+        timeout-minutes: 110
         run: |
           set -euo pipefail
           cd repo
@@ -207,6 +230,7 @@ jobs:
       # 92766a6f927124d8046348fc4622aa93a842b3eccc279c6ae913f97d8313d7ec
       # (1,091,309 B). A mismatch is a producer-chain drift and fails here.
       - name: Rebuild guest-assets base from the fixed producer (A6)
+        timeout-minutes: 95
         run: |
           set -euo pipefail
           cd repo
@@ -229,6 +253,7 @@ jobs:
             || { echo "FAIL base initramfs size != 1091309"; exit 1; }
           echo "GA_BASE_REBUILD_OK"
       - name: Apply Ticket 26 four-member consumer (two clean rounds)
+        timeout-minutes: 60
         run: |
           set -euo pipefail
           cd repo
@@ -271,6 +296,7 @@ jobs:
           echo "GA_CONSUMER_TWO_ROUNDS_IDENTICAL"
           test -f guest-assets/out/initramfs.cpio.gz || { echo "FAIL guest-assets/out missing after consumer"; exit 1; }
       - name: Assemble payload and generate runtime-artifacts-v1.sha256
+        timeout-minutes: 5
         run: |
           set -euo pipefail
           cd repo
@@ -309,6 +335,7 @@ jobs:
       # (downloads.gradle.org, github.com/gradle/gradle-distributions) plus
       # snapshot.ubuntu.com fixed path (JDK 41 debs). Any other host stops.
       - name: Provision pinned CI Linux JDK, Gradle and SDK inputs
+        timeout-minutes: 15
         run: |
           set -euo pipefail
           cd repo
@@ -358,6 +385,7 @@ jobs:
           printf '8933bad161af4178b1185d1a37fbf41ea5269c55\n' > /tmp/androidci-sdk/licenses/android-sdk-license
           echo "ANDROID_CI_INPUTS_PROVISIONED"
       - name: Android build (assembleDebug, unit tests, lint) with the pinned payload
+        timeout-minutes: 45
         run: |
           set -euo pipefail
           cd repo
@@ -376,6 +404,7 @@ jobs:
           test -f app/build/outputs/apk/debug/app-debug.apk || { echo "FAIL APK output missing"; exit 1; }
           echo "ANDROID_BUILD_OK"
       - name: Verify Maven closure and aapt2 identity against the lock
+        timeout-minutes: 10
         run: |
           set -euo pipefail
           cd repo
@@ -430,6 +459,7 @@ jobs:
       # (2026-09-29 ruling: never pre-filled); until then this stage fails
       # closed with its own explicit reason and is never skipped-as-success.
       - name: Emit APK post-build record
+        timeout-minutes: 5
         run: |
           set -euo pipefail
           cd repo
@@ -442,6 +472,7 @@ jobs:
           test -s /tmp/androidci-io/apk-postbuild-record.json || { echo "FAIL post-build record empty"; exit 1; }
           echo "APK_POSTBUILD_RECORD_EMITTED"
       - name: zipalign -P 16, apksigner verify and packaging policy gates
+        timeout-minutes: 10
         run: |
           set -euo pipefail
           cd repo

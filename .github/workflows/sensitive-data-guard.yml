@@ -15,6 +15,11 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same ref/tag supersedes the run in flight.
+concurrency:
+  group: "${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
 jobs:
   sensitive-data-guard:
     name: Sensitive data guard
