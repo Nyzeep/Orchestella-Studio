@@ -90,7 +90,13 @@ jobs:
         run: chmod +x gradlew
 
       - name: Run engine-fastlane tests and compile androidTest sources
+        # Host-only compile gate: androidTest compilation pulls :app:preBuild,
+        # which runs verifyRuntimeAssets. The QEMU runtime payload is
+        # git-ignored and absent on clean checkouts; this job never boots the
+        # QEMU lane, so the explicit allowMissingPayload opt-out applies (same
+        # as ci.yml); it warns and writes build/runtime-assets-missing.flag.
         run: >
           ./gradlew :runtime:engine-fastlane:test
           :app:compileDebugAndroidTestJavaWithJavac
+          -Porchestella.assets.allowMissingPayload=true
           --no-daemon --stacktrace
