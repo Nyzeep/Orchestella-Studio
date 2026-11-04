@@ -277,3 +277,45 @@
 - 本轮未跑 gradle、未调用 adb、未连设备；`check_ci_module_coverage.py`（232/0）为唯一执行的工具脚本。
 - 本轮产出无设备序列号、无真实型号、无私人数据；设备一律 device-a/device-b 口径，序列号只以 redacted-serial-hash 指代。
 - 报告中的文件行号以 `b39e8e6` 为准，后续提交会使行号漂移，类名/方法名是更稳定的锚点。
+
+---
+
+## Addendum（2026-11-05 · 空catch分诊抽样）
+
+- 背景：P3-1 正文承诺「完整清单见 §5 P3-1 附注」，但该附注未随本轮报告入库，仅录了分布摘要。本节由 Lane N 性能方案轮在基线 `9f18c31` 上以脚本重扫生产代码（`app/src/main` + `runtime/*/src/main` + `accel-extension/src/main`，Java/Kotlin，纯空体 catch）**重建清单**：生产代码 **78 处**，与本报告 §2 的 78 完全对上（分布逐文件一致；`PersistentTerminalSessionPool` 本轮扫出 6 处 vs 正文 5 处，为 b39e8e6→9f18c31 间漂移，锚点类名不变）。测试代码空 catch 另有 22 处（本节抽样 2 处，维持现状档）。
+- 方法：抽样 22 处（20 处生产 + 2 处测试基建），覆盖 16 个文件/6 个模块（UI、终端池、音频、网络、QEMU 引擎、runtime 实例与契约），逐处读上下文分诊。**完整 78 处全量分诊留后续轮**（建议随 P3-1 机械补注释轮一并做，全量清单可由同一脚本重建）。
+- 行号口径：`9f18c31`。三档定义：**建议修复**（吞掉的失败对用户/上层不可见且无其他呈现面）、**建议注释说明**（有意 best-effort，补一句理由即达 P3-1 口径）、**维持现状**（测试基建/命名 catch 语义自明）。
+
+### 分诊抽样表（22 处）
+
+| # | 位置 | 吞掉的是什么 | 分诊 | 说明 |
+|---|---|---|---|---|
+| 1 | `TerminalActivity.java:1032` | 桥就绪等待的 `IOException`（awaitCurrentControlReady 连接失败） | **建议修复** | 失败即静默不回调 `onReady`，排障只剩超时；正文已点名人工确认。最小修复=记一条诊断日志；若确认 `BridgeClient` 失败事件面已覆盖 UI 呈现，可降为注释档 |
+| 2 | `PersistentTerminalSessionPool.java:189` | 终端输出泵循环的意外 `Exception`（EOF 正常返回不进此路） | **建议修复** | 会话静默结束无原因记录（finally 仅保证结束通知）；最小修复=debug 级日志后照常收尾，不改变结束语义 |
+| 3 | `LowLatencyAudioPlayer.java:167` | `audioTrack.play()` 的 `IllegalStateException` | **建议修复** | 状态机已先置 `RUNNING` 再 play，play 失败被吞 = UI 说在播、实际无声的状态漂移；建议失败时回退状态并记日志 |
+| 4 | `MainActivity.kt:1644` | `reconcileOrphanInstances` 对账循环异常 | **建议修复** | 孤儿实例对账失败静默跳过，实例可能停留幽灵 `RUNNING` 态且无线索；建议逐实例 try/catch + Log（不因单实例失败放弃整轮） |
+| 5 | `VirglJniBridge.java:127` | `nativeSetMemoryQuotaMb` 失败（catch Throwable） | **建议修复** | 上层认为配额已设置、实际未生效且不可见；建议返回 boolean 或记日志（同族 :104/:115/:137 等 getter 吞后回退默认值属防御读，见 #6） |
+| 6 | `VirglJniBridge.java:104` | native getter 失败（catch Throwable 回退默认值） | 建议注释说明 | GPU 桥防御读模式：native 未加载/已失效时返回默认值，与 `isNativeLoaded && isInitialized` 前置构成双保险；补一句理由即可 |
+| 7 | `NetworkGatewayDaemon.java:91` | `Files.deleteIfExists(apiSocket)` 清理失败 | 建议注释说明 | owner 自身 socket 文件的 best-effort 清理；正文已点名人工确认——建议注释里写明「残留 unix socket 文件对下次 bind 的影响由 gateway 互斥判定兜底」 |
+| 8 | `NetworkGatewayDaemon.java:224` | gvproxy 日志泵 `readLine` 的 `IOException` | 建议注释说明 | 日志线程随进程退出而结束，属预期收尾 |
+| 9 | `QemuInstanceLauncher.java:691` | QEMU 日志泵同上 | 建议注释说明 | 同 #8 同型 |
+| 10 | `QemuInstanceLauncher.java:943` | `closeOwned` 中 `socket.close()` 失败 | 建议注释说明 | 取消路径的 best-effort 关闭，`closed` CAS 已保证恰一次 |
+| 11 | `BridgeProxyGateway.java:237` | URL 端口 `NumberFormatException` | 建议注释说明 | 解析失败保留 host、端口走默认值，显式 best-effort 解析 |
+| 12 | `BridgeProxyGateway.java:308` | 数据泵循环 `IOException` | 建议注释说明 | 对端断开即结束泵；finally 发 `CMD_CLOSE` 兜底，失败原因对端已感知 |
+| 13 | `PersistentTerminalSessionPool.java:148` | 会话结束监听器 `listener.accept` 异常 | 建议注释说明 | 观察者隔离惯例（与 2026-11-03 收敛报告「一个写坏的观察者不能把转发打死」口径一致） |
+| 14 | `PersistentTerminalSessionPool.java:347` | `session.close()` 失败 | 建议注释说明 | 关闭路径 best-effort，结束通知在后续 `notifySessionEnded()` 不受影响 |
+| 15 | `LowLatencyAudioPlayer.java:205` | `audioTrack.release()` / `audioSource.close()` 失败 | 建议注释说明 | release/close best-effort 惯例（:145/:187/:210 同型一并处理） |
+| 16 | `MainActivity.kt:346` | `LocalTime` 格式化异常 | 建议注释说明 | 状态栏时钟属装饰性 best-effort，失败不显示时间即可 |
+| 17 | `WaylandSurfaceController.java:196` | 绘制帧异常（drawBitmap/lockCanvas 段） | 建议注释说明 | 帧级失败丢弃该帧自愈，finally 保证 `unlockCanvasAndPost`；连续失败的可观测性可在 P3-6 日志口径统一时一并评估（:201/:218/:223 同型） |
+| 18 | `PointerCaptureHandler.java:272` | 指针捕获/图标 API 异常（catch Throwable） | 建议注释说明 | OEM 兼容防御（部分 ROM 对 pointer capture 抛异常），:239/:248/:285 同型一并注释 |
+| 19 | `InstanceStorageManager.java:521` | 失败路径清理 `tempVolume` 失败 | 建议注释说明 | finally 内临时卷 best-effort 清理，主失败已在上游抛出 |
+| 20 | `ResilientDownloadEngine.java:368` | `Content-Range` total 解析 `NumberFormatException` | 建议注释说明 | 返回 -1 = 按未知总长继续，显式降级语义 |
+| 21 | `runtime/contract/.../BridgeClientResponsePumpTest.java:272` | 测试 fake guest 写已关管道的 `IOException`（命名 `expectedClosedPipe`） | **维持现状** | 测试基建 + 命名 catch 语义自明 |
+| 22 | `runtime/network/.../download/MockHttpServer.java:229` | 测试 fake server `serverSocket.close()` | **维持现状** | 测试基建 best-effort close |
+
+### 抽样结论（全量轮的处理建议）
+
+- **分布形态**：抽样 20 处生产命中 **5 处建议修复 / 15 处建议注释 / 0 处需要改逻辑**；与正文「绝大多数是 close/清理 best-effort 惯例」判断一致。建议修复的共性不是「行为错误」而是「失败不可见」，全部可用「最小日志/状态回退」闭合，不需要扩大改动面。
+- **模式分组**（可机械套注释模板）：① close/清理 best-effort（BridgeProxyGateway、TcpAudioSource、QemuQmpHostfwdClient、BridgeClient:212 等，约 55+ 处）；② 观察者隔离（PersistentTerminalSessionPool、LowLatencyAudioPlayer:348、BridgeClient:67）；③ 解析降级（BridgeProxyGateway:237、ResilientDownloadEngine:368）；④ 防御读/OEM 兼容（VirglJniBridge、PointerCaptureHandler）。
+- **执行建议**：P3-1 落地时按 #11–#20 模板机械补注释一轮即可消掉约 3/4 存量；#1–#5 五处走小修复（各 ≤5 行）；若 P2-3 detekt 落地，`EmptyCatchBlock` 规则以「注释豁免 + baseline 豁免存量」启用（正文既有建议维持）。
+- 本节仅分诊，未改任何产品代码；行号以 `9f18c31` 为准，漂移时以类名/方法名锚点定位。
