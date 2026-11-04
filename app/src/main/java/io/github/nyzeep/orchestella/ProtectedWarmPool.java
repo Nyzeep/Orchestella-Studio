@@ -50,6 +50,13 @@ import java.util.concurrent.locks.ReentrantLock;
  * cannot own a protected Microdroid payload; see the PL-01 implementation
  * report for the deviation.
  *
+ * <p>Locking (P1-5): the pool-wide lock guards the slot state machine, but the
+ * blocking platform calls of a cold create ({@code api.start}, payload
+ * readiness, control HELLO) run with the lock released. The slot stays in
+ * {@code CREATING} for the whole create episode, which keeps the create
+ * exclusive; {@code state()}/{@code stats()}/{@code release()} stay responsive
+ * meanwhile, and stats observed mid-create are weakly consistent.
+ *
  * <p>All counters are numbers plus fixed {@link Code} values. No path, token,
  * argv, payload or log line is stored here.
  */
@@ -354,6 +361,11 @@ public final class ProtectedWarmPool implements Closeable {
     /**
      * Acquires at most one lease. The wait for a busy slot is bounded by
      * {@code maxWaitMs}; a zero budget makes a busy slot fail immediately.
+     *
+     * <p>P1-5: the cold create runs with the main lock released, so one slot's
+     * VM start never blocks {@link #state()}, {@link #stats()} or
+     * {@link #release(Lease)}. The slot stays in {@code CREATING} for the whole
+     * create episode, which keeps the create exclusive without holding the lock.
      */
     public Lease acquire() throws PoolException {
         boolean locked;
@@ -366,123 +378,256 @@ public final class ProtectedWarmPool implements Closeable {
         if (!locked) {
             throw new PoolException(Code.WAIT_TIMEOUT, "pool slot is busy");
         }
+        int retriesLeft;
         try {
-            if (closed || closeRequested) {
-                throw new PoolException(Code.CLOSED, "pool is closed");
-            }
-            if (config.capacity == 0) {
-                throw new PoolException(Code.DISABLED, "warm pool capacity is zero");
-            }
             long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(config.maxWaitMs);
-            while (state == State.LEASED && currentLease != null) {
-                long remaining = deadline - System.nanoTime();
-                if (remaining <= 0L) {
-                    throw new PoolException(Code.WAIT_TIMEOUT, "pool slot is leased");
-                }
-                try {
-                    leaseChanged.awaitNanos(remaining);
-                } catch (InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
-                    throw new PoolException(Code.CLOSED, "interrupted while waiting for a lease");
-                }
-                if (closed) {
+            while (true) {
+                if (closed || closeRequested) {
                     throw new PoolException(Code.CLOSED, "pool is closed");
                 }
+                if (config.capacity == 0) {
+                    throw new PoolException(Code.DISABLED, "warm pool capacity is zero");
+                }
+                if ((state == State.LEASED && currentLease != null) || state == State.CREATING) {
+                    awaitSlotChange(deadline,
+                            state == State.CREATING ? "pool slot is cold-creating" : "pool slot is leased");
+                    continue;
+                }
+                if (state == State.READY && session != null) {
+                    ReuseOrReplace outcome = acquireReady();
+                    if (outcome.lease() != null) {
+                        return outcome.lease();
+                    }
+                    // The warm session was evicted; begin its replacement create
+                    // with the retry budget of the path that evicted it.
+                    beginColdCreate();
+                    retriesLeft = outcome.replacementRetries();
+                    break;
+                }
+                if (state == State.DRAINING) {
+                    throw new PoolException(Code.CLOSED, "pool is draining");
+                }
+                beginColdCreate();
+                retriesLeft = 1;
+                break;
             }
-            if (state == State.READY && session != null) {
-                return acquireReady();
+        } finally {
+            lock.unlock();
+        }
+        return createWithRetry(retriesLeft);
+    }
+
+    /** Bounded wait for the slot state to change; a lapsed budget fails into WAIT_TIMEOUT. */
+    private void awaitSlotChange(long deadline, String timeoutMessage) throws PoolException {
+        long remaining = deadline - System.nanoTime();
+        if (remaining <= 0L) {
+            throw new PoolException(Code.WAIT_TIMEOUT, timeoutMessage);
+        }
+        try {
+            leaseChanged.awaitNanos(remaining);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new PoolException(Code.CLOSED, "interrupted while waiting for a lease");
+        }
+        if (closed) {
+            throw new PoolException(Code.CLOSED, "pool is closed");
+        }
+    }
+
+    /**
+     * Leases the ready warm session, or evicts it and reports the HELLO retry
+     * budget its replacement create gets: PROCESS_DIED and TTL_EXPIRED keep the
+     * full "cold create once" retry, while a failed reuse HELLO already consumed
+     * that budget and leaves the replacement single-attempt.
+     */
+    private ReuseOrReplace acquireReady() throws PoolException {
+        if (!session.isAlive()) {
+            evict(Code.PROCESS_DIED);
+            return new ReuseOrReplace(null, 1);
+        }
+        if (expired()) {
+            evict(Code.TTL_EXPIRED);
+            return new ReuseOrReplace(null, 1);
+        }
+        if (!helloCheck(session)) {
+            // The failed warm session already consumed the "cold create once"
+            // retry budget; a failure here is reported, not retried again.
+            evict(Code.HELLO_FAILED);
+            return new ReuseOrReplace(null, 0);
+        }
+        reuses++;
+        return new ReuseOrReplace(lease(), 0);
+    }
+
+    /** Outcome of the warm-reuse check: either a fresh lease or a replacement budget. */
+    private record ReuseOrReplace(Lease lease, int replacementRetries) {}
+
+    /**
+     * Runs up to {@code retriesLeft + 1} create attempts. The slot stays
+     * CREATING for the whole episode, so no second creator can start; every
+     * terminal failure settles the slot back to FAILED before the exception
+     * escapes, which wakes the waiting acquires.
+     */
+    private Lease createWithRetry(int retriesLeft) throws PoolException {
+        while (true) {
+            try {
+                return createAttempt();
+            } catch (PoolException failure) {
+                if (failure.code() != Code.HELLO_FAILED || retriesLeft <= 0) {
+                    settleCreateFailed();
+                    throw failure;
+                }
+                retriesLeft--;
+                // The replacement re-runs the budget and admission checks.
+                try {
+                    beginColdCreate();
+                } catch (PoolException rejected) {
+                    settleCreateFailed();
+                    throw rejected;
+                }
+            } catch (RuntimeException unexpected) {
+                // The slot must never stick in CREATING; waiters rely on the settle.
+                settleCreateFailed();
+                throw unexpected;
             }
-            if (state == State.DRAINING) {
-                throw new PoolException(Code.CLOSED, "pool is draining");
+        }
+    }
+
+    /** Budget and admission under the main lock; marks the slot CREATING. */
+    private void beginColdCreate() throws PoolException {
+        lock.lock();
+        try {
+            if (config.memoryMb > config.poolMemoryLimitMb) {
+                state = State.FAILED;
+                throw new PoolException(Code.BUDGET_REJECTED, "pool memory limit is below one VM");
             }
-            return coldCreateOnce();
+            if (!admission.admit(config.memoryMb)) {
+                state = State.FAILED;
+                throw new PoolException(Code.BUDGET_REJECTED, "lane admission rejected the create");
+            }
+            state = State.CREATING;
         } finally {
             lock.unlock();
         }
     }
 
-    private Lease acquireReady() throws PoolException {
-        if (!session.isAlive()) {
-            evict(Code.PROCESS_DIED);
-            return coldCreateOnce();
-        }
-        if (expired()) {
-            evict(Code.TTL_EXPIRED);
-            return coldCreateOnce();
-        }
-        if (!helloCheck(session)) {
-            evict(Code.HELLO_FAILED);
-            // The failed warm session already consumed the "cold create once"
-            // retry budget; a failure here is reported, not retried again.
-            return coldCreate();
-        }
-        reuses++;
-        return lease();
-    }
-
-    /** One cold create; a HELLO failure gets exactly one fresh replacement. */
-    private Lease coldCreateOnce() throws PoolException {
+    /** Settles a finished create episode that did not produce a lease. */
+    private void settleCreateFailed() {
+        lock.lock();
         try {
-            return coldCreate();
-        } catch (PoolException first) {
-            if (first.code() != Code.HELLO_FAILED) {
-                throw first;
-            }
-            return coldCreate();
+            state = State.FAILED;
+            leaseChanged.signalAll();
+        } finally {
+            lock.unlock();
         }
     }
 
-    private Lease coldCreate() throws PoolException {
-        if (config.memoryMb > config.poolMemoryLimitMb) {
-            state = State.FAILED;
-            throw new PoolException(Code.BUDGET_REJECTED, "pool memory limit is below one VM");
-        }
-        if (!admission.admit(config.memoryMb)) {
-            state = State.FAILED;
-            throw new PoolException(Code.BUDGET_REJECTED, "lane admission rejected the create");
-        }
-
-        state = State.CREATING;
-        coldCreates++;
+    /**
+     * One platform create + payload readiness + control HELLO. The blocking
+     * platform calls run with the main lock released; the created session stays
+     * a local until {@link #publishLease(FastLaneSession)} publishes it, so no
+     * other path can stop or observe an unpublished VM.
+     */
+    private Lease createAttempt() throws PoolException {
+        String instanceId = beginCreateAttempt();
         long createStarted = clock.millis();
         FastLaneSession created;
         try {
-            String instanceId = config.instancePrefix + "-w" + (++instanceSequence);
             FastLaneLaunchSpec spec = specFactory.create(instanceId);
             FastLaneHandle handle = api.start(spec);
             created = new FastLaneSession(api, handle, spec);
         } catch (RuntimeException | FastLaneException failure) {
-            state = State.FAILED;
             throw new PoolException(Code.CREATE_FAILED, "protected VM create failed");
         }
-        createMillis += Math.max(0L, clock.millis() - createStarted);
-        session = created;
+        noteCreateMillis(createStarted);
+
         if (closeRequested) {
-            stopAndForget();
-            state = State.FAILED;
+            stopQuietly(created);
             throw new PoolException(Code.CLOSED, "pool was closed during create");
         }
 
         long readyStarted = clock.millis();
         if (!awaitPayloadReady(created)) {
-            stopAndForget();
-            state = State.FAILED;
+            stopQuietly(created);
             throw new PoolException(Code.READY_TIMEOUT, "payload readiness timed out");
         }
-        readyMillis += Math.max(0L, clock.millis() - readyStarted);
+        noteReadyMillis(readyStarted);
         if (closeRequested) {
-            stopAndForget();
-            state = State.FAILED;
+            stopQuietly(created);
             throw new PoolException(Code.CLOSED, "pool was closed while waiting for readiness");
         }
 
         if (!helloCheck(created)) {
-            stopAndForget();
-            recordEviction(Code.HELLO_FAILED);
-            state = State.FAILED;
+            stopQuietly(created);
+            recordEvictionUnderLock(Code.HELLO_FAILED);
             throw new PoolException(Code.HELLO_FAILED, "control HELLO failed");
         }
-        return lease();
+        return publishLease(created);
+    }
+
+    /** Allocates the next pool instance id and counts the cold-create attempt. */
+    private String beginCreateAttempt() {
+        lock.lock();
+        try {
+            coldCreates++;
+            return config.instancePrefix + "-w" + (++instanceSequence);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private void noteCreateMillis(long startedAtMillis) {
+        long elapsed = Math.max(0L, clock.millis() - startedAtMillis);
+        lock.lock();
+        try {
+            createMillis += elapsed;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private void noteReadyMillis(long startedAtMillis) {
+        long elapsed = Math.max(0L, clock.millis() - startedAtMillis);
+        lock.lock();
+        try {
+            readyMillis += elapsed;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** Counter commit from the lock-free create attempt; stats stay weakly consistent. */
+    private void recordEvictionUnderLock(Code reason) {
+        lock.lock();
+        try {
+            recordEviction(reason);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Stops an unpublished create attempt from the create-owner thread. The slot
+     * state is left untouched (still CREATING); the caller settles it.
+     */
+    private void stopQuietly(FastLaneSession victim) {
+        FastLaneStopResult result = stopSession(victim);
+        if (result == FastLaneStopResult.UNCONFIRMED) {
+            recordEvictionUnderLock(Code.STOP_UNCONFIRMED);
+        }
+    }
+
+    /** Publishes the created session as the slot's lease and wakes the waiters. */
+    private Lease publishLease(FastLaneSession created) {
+        lock.lock();
+        try {
+            session = created;
+            Lease published = lease();
+            leaseChanged.signalAll();
+            return published;
+        } finally {
+            lock.unlock();
+        }
     }
 
     private Lease lease() {
@@ -549,7 +694,7 @@ public final class ProtectedWarmPool implements Closeable {
                 state = State.DRAINING;
             }
             long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(Math.max(0L, timeoutMs));
-            while (currentLease != null) {
+            while (currentLease != null || state == State.CREATING) {
                 long remaining = deadline - System.nanoTime();
                 if (remaining <= 0L) {
                     break;
@@ -560,6 +705,12 @@ public final class ProtectedWarmPool implements Closeable {
                     Thread.currentThread().interrupt();
                     break;
                 }
+            }
+            if (state == State.CREATING) {
+                // P1-5: the in-flight create owns its still-unpublished session and honors
+                // closeRequested at its checkpoints, so it stops that VM itself; this path
+                // never touches an unpublished session and reports the lapsed budget.
+                return ShutdownResult.TIMED_OUT;
             }
             if (currentLease != null) {
                 currentLease.released = true;

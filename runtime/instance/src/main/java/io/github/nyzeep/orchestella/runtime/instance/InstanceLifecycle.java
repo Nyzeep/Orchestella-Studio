@@ -1004,6 +1004,17 @@ public final class InstanceLifecycle {
         }
 
         public synchronized void delete(String id) throws IOException {
+            synchronized (store.stateMonitor()) {
+                deleteLocked(id);
+            }
+        }
+
+        /**
+         * Purges the root volume, the sidecar files and the metadata entry, so it must hold the
+         * directory-wide state monitor: a custom store relies on the caller for exclusion, and
+         * another Controller's create or export must not interleave with the physical purge.
+         */
+        private void deleteLocked(String id) throws IOException {
             store.delete(id);
         }
 
@@ -1025,26 +1036,31 @@ public final class InstanceLifecycle {
             Objects.requireNonNull(rootVolume, "rootVolume");
             Objects.requireNonNull(hardwareConfig, "hardwareConfig");
             InstanceUserConfig effectiveConfig = userConfig != null ? userConfig : InstanceUserConfig.defaultRoot();
-            long now = clock.millis();
-            Instance instance =
-                    new Instance(
-                            UUID.randomUUID().toString(),
-                            distro,
-                            rootVolume,
-                            newBridgeToken(),
-                            effectiveConfig.password(),
-                            FullLinuxContract.RuntimeClass.FULL_LINUX,
-                            State.CREATED,
-                            now,
-                            now,
-                            null,
-                            hardwareConfig,
-                            effectiveConfig.hostname(),
-                            effectiveConfig.username(),
-                            effectiveConfig.hasSudo(),
-                            null);
-            store.save(instance);
-            return instance;
+            // Writes a fresh metadata entry, so it must hold the directory-wide state monitor:
+            // custom stores rely on the caller for exclusion, and the save must not interleave
+            // with another Controller's write on the same state directory.
+            synchronized (store.stateMonitor()) {
+                long now = clock.millis();
+                Instance instance =
+                        new Instance(
+                                UUID.randomUUID().toString(),
+                                distro,
+                                rootVolume,
+                                newBridgeToken(),
+                                effectiveConfig.password(),
+                                FullLinuxContract.RuntimeClass.FULL_LINUX,
+                                State.CREATED,
+                                now,
+                                now,
+                                null,
+                                hardwareConfig,
+                                effectiveConfig.hostname(),
+                                effectiveConfig.username(),
+                                effectiveConfig.hasSudo(),
+                                null);
+                store.save(instance);
+                return instance;
+            }
         }
 
         /**
@@ -1574,6 +1590,14 @@ public final class InstanceLifecycle {
          * Exports an instance as an archive package (ZIP) to an output stream.
          */
         public synchronized io.github.nyzeep.orchestella.runtime.contract.StorageContract.InstanceExportMetadata exportToArchive(
+                String id, OutputStream destinationStream) throws IOException {
+            synchronized (store.stateMonitor()) {
+                return exportToArchiveLocked(id, destinationStream);
+            }
+        }
+
+        /** Reads the root volume, so it must hold the directory-wide state monitor. */
+        private io.github.nyzeep.orchestella.runtime.contract.StorageContract.InstanceExportMetadata exportToArchiveLocked(
                 String id, OutputStream destinationStream) throws IOException {
             Instance instance = store.load(id);
             return InstanceStorageManager.exportToArchive(instance, destinationStream, clock);
