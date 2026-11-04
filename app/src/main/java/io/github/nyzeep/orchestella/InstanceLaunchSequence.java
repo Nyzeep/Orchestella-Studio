@@ -53,7 +53,12 @@ public final class InstanceLaunchSequence {
     public static ExitResult awaitGuestExit(InstanceLifecycle.Controller controller, String instanceId,
             ExecutionSession session, Runnable onConfirmedExit) throws IOException {
         final String generation = ExecutionSessionRegistry.generation(instanceId, session);
-        if (generation == null) return new ExitResult(ExitStatus.STALE, -1);
+        if (generation == null) {
+            // Ticket 27: a superseded generation's trace is cancelled, never
+            // revived; the newer generation's own trace is unaffected.
+            cancelStageTrace(session);
+            return new ExitResult(ExitStatus.STALE, -1);
+        }
         final int exitCode;
         try {
             exitCode = session.waitFor();
@@ -81,8 +86,15 @@ public final class InstanceLaunchSequence {
         // Notification delivery may fail on Android. The confirmed owner has already
         // been retired; its generation still guards a delayed STOP intent.
         if (completed) onConfirmedExit.run();
+        else cancelStageTrace(session);
         return new ExitResult(!completed ? ExitStatus.STALE
                 : normal[0] ? ExitStatus.NORMAL : ExitStatus.CRASHED, exitCode);
+    }
+
+    /** Observation only: a late, superseded trace is cancelled, not completed. */
+    private static void cancelStageTrace(ExecutionSession session) {
+        LaunchStageObserver trace = session.launchStageObserver();
+        if (trace != null) trace.onCancel();
     }
 
     private static StopResult stopAfterExit(ExecutionSession session) {

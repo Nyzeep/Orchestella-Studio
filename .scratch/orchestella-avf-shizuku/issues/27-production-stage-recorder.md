@@ -1,7 +1,7 @@
 # 27: 真实生产启动阶段与停止来源接线，先QEMU后扩AVF
 
 Type: implementation
-Status: ready-for-agent（现有QEMU/owner不变的范围）
+Status: implemented（零设备切片 @ a950ebd；真实QEMU事件原件与AVF样本仍归设备窗）
 Priority: P1
 Owner: recorder与各source模块owner协作；构建/设备主协调统一
 Blocked by: 22（completed-offline-reviewed）
@@ -75,3 +75,10 @@ Parent: 22离线工具的生产纵向切片，复用04/09样本边界
   - AVF 同口径事件依赖 07（真实 AVF guest）未过，本票不产 AVF 成功 receipt；
   - `BridgeConnector` 等模块共用文件的改动须按票面与原 owner 走写锁协调，由主协调分派，不抢文件；
   - 若确需 Guest bridge 命令版本扩张，另票走协议协商/ADR，本票禁止。
+
+- 2026-11-05 / ZCode（实施 lane J / GLM-5.3-Flash）：**零设备切片已实现，Status 置 implemented（零设备）**。证据（commit `a950ebd`，分支 `feat/avf-shizuku-27-stage-recorder`，基线 main@9f18c31；实施报告 `docs/reports/tickets/avf-shizuku-27/implementation-report.zh-CN.md`）：
+  - **实现**：`app/.../ProductionStageRecorder.java`（16 门 Stage/Route/StopFact/Failure 对齐 `tools/device-validation/avf_stage_recorder.py` 口径；注入单调时钟；观察序偏序、终态唯一、错代 IDENTITY_MISMATCH；16 事件/32768 bytes 上限；SINK_FAILED/CAPTURE_LIMIT 显式退役）＋ `StageTraceFileSink.java`（App 私有目录版本化 JSONL，文件头 `schema_version=1`，异 schema/旧 synthetic 显式拒绝并保留，轮转+保留份数显式）＋ `LaunchStageObserver.java`/`StageTraceProvider.java`（观察 seam 与组合根）。
+  - **挂点（纯观察）**：`QemuInstanceLauncher`（LAUNCH_REQUESTED/INPUTS_BEGIN/INPUTS_VERIFIED/RUN_BEGIN/VM_CREATED/RUN_RETURNED、失败 CREATE_FAILED/READINESS_FAILED/RUN_FAILED）、`AvfInstanceLauncher`（PREFLIGHT/MANAGER_BEGIN、AVF→QEMU 回退 `fallback(映射原因)`、`mapFailure` 有界映射）、`RuntimeProcessSupervisor`（StopObserver：owner 退出/通道释放/网关释放三事实独立）、`BridgeConnector.serveSession`（vsock_connected/agent_authenticated/guest_command_ok，取自原 handshake/ping 结果，不抢读不设第二 reader）、`InstanceLaunchSequence`（迟到错代 cancel）、`ExecutionSession.launchStageObserver()` 默认接入点、`SettingsManager` 新增 `stage_trace_diagnostics_enabled`（默认关）。
+  - **六组验收**：全部 JVM/宿主覆盖 ✅——①关闭零采集（无文件/时钟读/sink 调用断言）＋限额显式；②16 门按观察序分别记录＋stop 三事实独立（`STOP_COMPLETED` 需三事实齐全；无 guest shutdown ack 信号时不签 normal stop）；③失败路径 last-stage 真实（bootstrap 失败/权限拒绝/回退/cancel/错代/sink 失败/容量满各有行为测试，不假 ready、不阻塞收尾）；④schema 版本化（每行 `schema_version`＋sink 头；旧 synthetic 显式拒收不静默 reinterpret；不回填时间断言）；⑤敏感字段（事件键集合封闭＋token/path/设备序号形态 identity 拒绑定）；⑥构建与测试（见下）。
+  - **测试实跑**：`:app:testDebugUnitTest -Porchestella.assets.allowMissingPayload=true` 141 类 **1167 tests，0 fail/error/skip**（含新增 ProductionStageRecorderTest 21＋StageTraceFileSinkTest 7＋LaunchStageWiringTest 10）；`:runtime:contract:check`、`:runtime:engine-qemu:check` BUILD SUCCESSFUL（JavaExec 实跑非空跑）；Python `unittest` 新增 `test_avf_stage_trace_schema` **15 tests OK**。Python 全量 discover 197 项中 `test_avf_device_mode.DeviceCliTests` 的 23 fail＋1 error 为本 Windows 宿主 adb CLI 环境性失败（该工具与测试本票未改动，`git status` 可证；与 CI Linux 口径需 CI 复核）。
+  - **诚实边界（设备窗遗留）**：真实 QEMU 事件原件（正常＋受控失败）、guest shutdown ack 信号源、services_ready 服务回执信号源均未闭合——生产 wiring 中 `vm_running_observed`/`services_ready`/`GUEST_SHUTDOWN_ACKNOWLEDGED` 保持 not_observed，不伪造；成功组判定须过 `avf_stage_trace_schema` 全 16 门＋3 停止事实校验。AVF 同口径事件原件依赖票 07，本票不产 AVF 成功 receipt。开关 UI 入口未建（settings key 已备），记 follow-up。
