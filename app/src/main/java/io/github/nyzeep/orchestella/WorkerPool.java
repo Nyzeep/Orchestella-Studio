@@ -48,11 +48,15 @@ import java.util.Objects;
  * argv, payload or job content is ever stored here; {@link Job} is an opaque
  * identity used for FIFO ordering and cancellation matching only.
  *
- * <p><b>Intentionally not wired into production.</b> As of ticket PVM-06 no
- * product start path constructs a worker pool; the product wiring (feature
- * flag, dispatcher, coordinator hand-off) is PVM-09's decision. This type is
- * exercised solely by {@code ProtectedWorkerPoolTest} and is kept as a deep
- * module on purpose; it is not dead code.
+ * <p><b>Wiring state (PVM-06 follow-up).</b> The pool is on the design-intent
+ * dispatch path through {@link WorkerPoolDistccDispatcher}, the pool-backed
+ * {@code DistccTcpVsockBridge.ChannelFactory}: one distcc connection = one
+ * lease, constructed for production via {@code AcceleratorLaneAssembly#
+ * workerPool(...)}. What does not exist yet is the product TCP listener that
+ * would feed guest distcc connections into that dispatcher — starting it on a
+ * device is DV-PVM-02b work. With the shipped capacity of zero every acquire
+ * still refuses deterministically, so no product behaviour changes until a
+ * caller raises the capacity.
  */
 public interface WorkerPool extends AutoCloseable {
 

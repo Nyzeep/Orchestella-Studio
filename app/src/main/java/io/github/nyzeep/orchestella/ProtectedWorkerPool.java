@@ -68,14 +68,15 @@ import java.util.concurrent.locks.ReentrantLock;
  * path, token, argv, payload or job content is stored here; {@link WorkerPool.Job}
  * is matched by identity only.
  *
- * <p><b>Intentionally not wired into production.</b> As of ticket PVM-06 no
- * product start path constructs this pool and the shipped default capacity is
- * zero (decision map §8.4 — the default must not change): with zero capacity
- * the pool creates no VM, queues nothing, and every acquire is a
- * deterministic {@code DISABLED} refusal, which is exactly today's behaviour.
- * Product wiring (flag, dispatcher, coordinator hand-off) is PVM-09's
- * decision. This type is exercised solely by {@code ProtectedWorkerPoolTest}
- * and is not dead code.
+ * <p><b>Wiring state (PVM-06 follow-up).</b> The pool joins the design-intent
+ * dispatch path via {@link WorkerPoolDistccDispatcher} (the pool-backed distcc
+ * {@code ChannelFactory}) and is constructed for production through
+ * {@code AcceleratorLaneAssembly#workerPool(...)} with the coordinator's
+ * ledger. The shipped default capacity is still zero (decision map §8.4 — the
+ * default must not change): with zero capacity the pool creates no VM, queues
+ * nothing, and every acquire is a deterministic {@code DISABLED} refusal,
+ * which is exactly today's behaviour. The product TCP listener that would feed
+ * guest distcc connections into the dispatcher remains DV-PVM-02b work.
  */
 public final class ProtectedWorkerPool implements WorkerPool {
 
