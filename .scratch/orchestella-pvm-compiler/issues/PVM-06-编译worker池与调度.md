@@ -138,3 +138,44 @@ stateDiagram-v2
   `rebuildFailureBacksOffThenGivesUpAtTheCap` 与 `repeatedProbeFailuresSuspendTheSlotAtTheCap` 钉住）。
 - 真机项全部 `not-tested`（零设备轮）；下设备窗口入口：DV-PVM-02 02b crossfire 基础上
   观察 N=2 池的并发派发与重建行为。
+
+### Comment 5 · 2026-11-04 · 接线轮（Lane C）：分派器进设计意图调用路径，产品监听起点仍归 DV-PVM-02b
+
+**接线点**：工单背景那句「宿主把 distcc 连接分派到空闲实例」的落点就是
+`DistccTcpVsockBridge.ChannelFactory` 缝——桥每接受一条 distcc 连接经它开一个通道。
+本轮新增 `app/src/main/java/io/github/nyzeep/orchestella/WorkerPoolDistccDispatcher.java`
+实现该缝：一条连接 = 一次 `pool.acquire(job)` 租约，生产 opener
+（`axp1OverLease`）在**租出实例**的 distcc 端口（`session.openChannel(spec.distccPort())`）
+上做 AXP1 握手（`Axp1DistccChannelFactory` 原样复用）；桥在终态恰一次
+`channel.close()`，`LeasedChannel` 在其后把租约归还池（恰一次，半关不归还）。
+池拒绝码机械映射为固定 FastLane reason `WORKER_POOL_<CODE>`（如
+`WORKER_POOL_DISABLED`/`WORKER_POOL_POOL_SATURATED`），经桥的
+`ConnectionStats.failureCode` 可观测，归一化形状 `[A-Z0-9_]{1,64}` 有测试钉住。
+
+配套改动：
+- `AcceleratorLaneAssembly.workerPool(api, specFactory, result, config)` 生产构造缝：
+  经 `Admission.ledgerBacked(coordinator.ledger())` 与双车道共用同一账本（只读）；
+  容量来自调用方 config，出厂默认仍 0（决策地图 §8.4 未动）——0 容量下分派器在任何
+  平台调用前确定性拒绝，产品行为逐字节等价。
+- `app/build.gradle.kts`：主源新增 `implementation(project(":runtime:fastlane-distcc"))`
+  （纯 JVM：engine-fastlane + contract）。此前 app 主源根本引用不到桥类型——这本身就是
+  「零接线」的成因之一。
+- `WorkerPool.java`/`ProtectedWorkerPool.java` 的「intentionally not wired」javadoc 改写为
+  当前接线状态（分派器已接、产品监听起点未接）。
+
+**记录的缺口（不硬编）**：产品 TCP 监听起点（guest distcc → `bridge.start()` → 本分派器）
+在 app 主源仍不存在。这是 PVM-09 报告 §5.4 明文划归 DV-PVM-02b 的设备工作边界，本轮零设备
+不越界。最小可行方案已就绪：监听起点只需
+`new DistccTcpVsockBridge(loopback, port, new WorkerPoolDistccDispatcher(pool, axp1OverLease(token, caps, triple, limits)), jobs, idleMs)`
+——分派器即桥的直接消费缝，无剩余适配层。另注意排队语义：acquire 默认排队超时（30s）应短于
+桥 idle 看门狗（60s），看门狗先触发也会经 channel.close 归还租约，两侧安全但前者更礼貌。
+
+**测试**（全 Gradle 实跑，零设备）：新增
+`WorkerPoolDistccDispatcherTest` 9 条（fake pool 租约生命周期 6 条 + 真 `ProtectedWorkerPool`
+× fake 平台集成 3 条：串行复用同一实例、2 槽并发 4 连接排队、生产 opener 打到租出实例
+5103 端口且握手失败不泄漏租约）；`AcceleratorLaneAssemblyTest` +2（0 容量默认关且零平台调用、
+resize 增长受协调器账本约束：6 已占 + 3 > 8 拒 `CPU_EXCEEDED`、+2 ≤ 8 接受）。
+门禁：`:app:testDebugUnitTest` **1128/0/0/0**（138 类）、`:runtime:fastlane-distcc:test`+check
+**77 tests / 8 skipped（既有 POSIX 前置，含 PVM-11 E2E；模块源码本轮零改动）/ 0 failed**、
+`:runtime:instance:test`+check 44/44、`check_ci_module_coverage.py` 232 passed / 0 failed。
+报告 `docs/reports/tickets/pvm-06/worker-wiring-report.zh-CN.md`。

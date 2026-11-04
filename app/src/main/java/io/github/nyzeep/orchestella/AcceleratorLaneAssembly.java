@@ -198,6 +198,31 @@ public final class AcceleratorLaneAssembly {
                 result.coordinator().admission());
     }
 
+    /**
+     * PVM-06 wiring: the compile worker pool shares this coordinator's ledger
+     * through {@link WorkerPool.Admission#ledgerBacked} (read-only, the pool
+     * never reserves in it) so growth is bounded by the same budget the lanes
+     * were admitted under. The capacity comes from the caller's config and the
+     * shipped default stays zero — an unconfigured pool only ever refuses
+     * deterministically, which is decision map §8.4 unchanged. Dispatch goes
+     * through {@link WorkerPoolDistccDispatcher}, the pool-backed
+     * {@code DistccTcpVsockBridge.ChannelFactory}.
+     */
+    public static ProtectedWorkerPool workerPool(
+            FastLaneVirtualMachineApi api,
+            ProtectedWorkerPool.WorkerSpecFactory specFactory,
+            Result result,
+            ProtectedWorkerPool.Config config) {
+        Objects.requireNonNull(result, "result");
+        Objects.requireNonNull(config, "config");
+        return new ProtectedWorkerPool(
+                api,
+                specFactory,
+                config,
+                java.time.Clock.systemUTC(),
+                WorkerPool.Admission.ledgerBacked(result.coordinator().ledger()));
+    }
+
     private static DualLaneCoordinator coordinator(
             LaneBudget budget, Config config, Inputs inputs) {
         return new DualLaneCoordinator(
