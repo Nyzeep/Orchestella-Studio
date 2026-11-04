@@ -1,7 +1,7 @@
 # 26: 第一垂直切片——创建 Alpine 实例并进入 shell（QEMU 档）
 
 Type: implementation
-Status: ready-for-agent
+Status: completed
 Blocked by: 25
 Scope contract: docs/reports/tickets/26/worker-scope-contract.zh-CN.md
 
@@ -81,3 +81,7 @@ Bridge handshake/version/token/ping/terminal/resize 基座。
 ## Prototype/research dependency
 
 无硬依赖；「QEMU TCG 基线」（18）在本票完成后领取。
+
+## Comments
+
+- 2026-11-04 / repo-hygiene lane（对账回填）：票面 `ready-for-agent` 为遗留状态。上列 2026-09 治理勘误与 readiness 记录按原样保留为历史；实际结局：第一垂直切片已实现并经 M1 全量验收合流——effort map 记录「M1 工单（issues/25–37）已全量验收合流完成（Status: completed）」，后续票 27–33（outbound network、stop/cold restore、port forwarding 等）全部 `completed` 且都构建在本票切片之上，产品自 v0.3.0-preview 起即含 Alpine/QEMU 首切片。状态回填 `ready-for-agent` → `completed`（反映最终验收合流，不构成对历史 dispatch 的追认授权）。

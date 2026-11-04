@@ -1,8 +1,8 @@
 # 56: NDK 原生 GLES3/ANativeWindow 异步呈现通道与 PBO 乒乓流
 
-Type: implementation  
-Status: ready-for-review  
-Labels: m4-spec, tracer-bullet, graphics, ndk, gles3-pbo  
+Type: implementation
+Status: completed
+Labels: m4-spec, tracer-bullet, graphics, ndk, gles3-pbo
 
 ## User Story
 
@@ -71,3 +71,7 @@ adb shell dumpsys gfxinfo io.github.nyzeep.droidlayer framestats
 ## Prototype/research dependency
 
 依赖 Phase 2 接缝设计（ADR-0017）与 `docs/research/2026-10-06-phase4-gpu-acceleration.md` 第 5 节呈现通道升级规范。
+
+## Comments
+
+- 2026-11-04 / repo-hygiene lane（对账回填）：票面 `ready-for-review` 为遗留状态。实现已合流入 main——`67ed9bb`（Ticket 56 实现）经 merge `dcaa5de`（2026-10-06）合入，后续修复 `be17b52`；`NativeGlesSurfacePresenter` 已在 main 产品代码中；effort map「M4（Ticket 49~58）全量验收合流完成」含本票。状态回填 `ready-for-review` → `completed`。

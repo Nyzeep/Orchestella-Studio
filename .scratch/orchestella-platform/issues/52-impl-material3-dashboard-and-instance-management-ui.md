@@ -1,8 +1,8 @@
 # 52: Material 3 Expressive 仪表盘重塑与实例 CRUD 交互闭环
 
-Type: implementation  
-Status: ready-for-review  
-Labels: m4-spec, tracer-bullet, ui-ux, material3-dashboard  
+Type: implementation
+Status: completed
+Labels: m4-spec, tracer-bullet, ui-ux, material3-dashboard
 
 ## User Story
 
@@ -77,3 +77,7 @@ adb shell "run-as io.github.nyzeep.droidlayer ls -la files/instances/"
 ## Prototype/research dependency
 
 依赖 Ticket 49（生命周期删除与硬件实体）、Ticket 50（硬件探测与配置），以及 UTM 交互美学调研。
+
+## Comments
+
+- 2026-11-04 / repo-hygiene lane（对账回填）：票面 `ready-for-review` 为遗留状态。实现已合流入 main——`5372ac7`（Ticket 52 实现）经 merge `3fc8143`（2026-10-06）合入；effort map「M4 全栈体验重塑、硬件定制与 GPU 加速工单（Ticket 49~58）：全量验收合流完成（Status: completed）」含本票。状态回填 `ready-for-review` → `completed`。

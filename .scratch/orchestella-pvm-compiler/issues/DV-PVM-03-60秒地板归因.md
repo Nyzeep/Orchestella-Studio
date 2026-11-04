@@ -1,6 +1,6 @@
 # DV-PVM-03 · 60 秒地板归因
 
-- 状态：**已归因（C4）**，修复拆给 PVM-10
+- Status: **resolved（已归因 C4）**；修复拆给 PVM-10
 - 分支：`feat/pvm-10-floor-attribution`
 - 报告：`docs/reports/orchestration/session10-floor-attribution-2026-10-26.zh-CN.md`
 - 基线：`main = 50e0790`

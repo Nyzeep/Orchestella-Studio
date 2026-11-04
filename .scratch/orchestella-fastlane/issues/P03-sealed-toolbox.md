@@ -1,7 +1,7 @@
 # P03: Sealed Toolbox 打包（零设备）
 
 Type: implementation
-Status: ready-for-agent（zero-device）
+Status: implemented（zero-device；报告已归档 docs/reports/archive/2026-10-zero-device/tickets/fastlane-P03/；真机门 DV-02）
 Priority: P0（Fast Lane 产品形态）
 Owner: toolbox/build owner
 Blocked by: None（零设备）；真机由 DV-02 验证
@@ -78,3 +78,7 @@ DV-02：从 `/mnt/apk/bin` 执行 shell/编译器；数据写 encrypted storage�
 - 未验证：DV-02 设备执行、AGP 真实 APK、真实 `zipalign`；编译器未随 v1
   分发（`distcc-clang` profile 为 `not-tested`）。
 - 报告：`docs/reports/tickets/fastlane-P03/implementation-report.zh-CN.md`
+
+## Comments
+
+- 2026-11-04 / repo-hygiene lane（对账回填）：零设备实施（2026-10-21，见上「实施进展」）早已完成并合入 main（cleanup-plan §3 批次判定），实施报告已随零设备批次归档至 `docs/reports/archive/2026-10-zero-device/tickets/fastlane-P03/`。同批 P01/P02/P05–P08/P10 均已回填 `implemented`，本票漏更，现补齐：`ready-for-agent（zero-device）` → `implemented（zero-device）`；剩余外部门不变（DV-02 真机、许可证/体积预算）。
