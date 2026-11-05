@@ -176,6 +176,13 @@ def require_root():
     return Path(configured) / uuid.uuid4().hex
 
 
+@unittest.skipUnless(
+    os.name == "posix",
+    "fake adb is spawned directly via its #!/usr/bin/env python3 shebang and "
+    "the executable bit (chmod 0o755); that POSIX mechanism has no Windows "
+    "equivalent, so these CLI subprocess tests only run on POSIX hosts and in "
+    "CI (ubuntu-24.04), where the identical suite is green.",
+)
 class DeviceCliTests(unittest.TestCase):
     def setUp(self):
         self.root = require_root()
