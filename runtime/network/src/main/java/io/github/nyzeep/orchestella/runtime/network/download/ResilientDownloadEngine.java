@@ -365,7 +365,10 @@ public class ResilientDownloadEngine implements DownloadEngine {
             if (!"*".equals(totalStr)) {
                 try {
                     return Long.parseLong(totalStr);
-                } catch (NumberFormatException ignored) {}
+                } catch (NumberFormatException ignored) {
+                    // Parse degradation: an unparseable total falls through to -1 (unknown
+                    // total), which callers already treat as "continue without a fraction".
+                }
             }
         }
         return -1L;

@@ -212,6 +212,8 @@ public class LogViewerActivity extends Activity {
             try {
                 Runtime.getRuntime().exec(new String[] {"logcat", "-c"});
             } catch (Exception ignored) {
+                // Clearing logcat is best-effort: restricted ROMs deny the exec, and the
+                // stale buffer simply stays in view until the next refresh.
             }
         } else if (consoleLogFile.isFile()) {
             consoleLogFile.delete();

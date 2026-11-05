@@ -64,7 +64,12 @@ public final class BridgeClient {
     }
 
     private void diagnostic(String message) {
-        try { diagnosticListener.accept(message); } catch (Exception ignored) { }
+        try {
+            diagnosticListener.accept(message);
+        } catch (Exception ignored) {
+            // Listener isolation: a broken diagnostic consumer must never take down the
+            // control path it is diagnosing.
+        }
     }
 
     private static final class PendingResponse {
@@ -209,8 +214,13 @@ public final class BridgeClient {
         readySignal.countDown();
         PendingResponse waiting = pending.getAndSet(null);
         if (waiting != null) waiting.response.completeExceptionally(failure);
-        try { inbound.close(); } catch (IOException ignored) { }
-        try { outbound.close(); } catch (IOException ignored) { }
+        try { inbound.close(); } catch (IOException ignored) {
+            // Best-effort teardown of a transport that already failed above; that failure
+            // is the one worth reporting, so the close result is dropped.
+        }
+        try { outbound.close(); } catch (IOException ignored) {
+            // Same best-effort close for the outbound half.
+        }
     }
 
     private Result exchange(String request, String expected, boolean handshake) throws IOException {

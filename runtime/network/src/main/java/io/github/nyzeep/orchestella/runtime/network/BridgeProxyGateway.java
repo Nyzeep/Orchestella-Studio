@@ -234,7 +234,10 @@ public final class BridgeProxyGateway implements Closeable {
                         host = hp.substring(0, colon);
                         try {
                             port = Integer.parseInt(hp.substring(colon + 1));
-                        } catch (NumberFormatException ignored) {}
+                        } catch (NumberFormatException ignored) {
+                            // Parse degradation: host is kept and the port stays at its
+                            // default 80 from the initialization above.
+                        }
                     } else {
                         host = hp;
                     }
@@ -306,10 +309,15 @@ public final class BridgeProxyGateway implements Closeable {
                 sendFrame(state.channelId, CMD_DATA, chunk);
             }
         } catch (IOException ignored) {
+            // The target closing or dropping ends the pump; the CMD_CLOSE in the finally
+            // below tells the guest side, which is the observable outcome of this failure.
         } finally {
             try {
                 sendFrame(state.channelId, CMD_CLOSE, new byte[0]);
-            } catch (IOException ignored) {}
+            } catch (IOException ignored) {
+                // The pump is already finished; a failed CMD_CLOSE only skips the courtesy
+                // notice because closeChannel below reclaims the channel either way.
+            }
             closeChannel(state.channelId);
         }
     }
@@ -319,7 +327,11 @@ public final class BridgeProxyGateway implements Closeable {
             byte[] payload = errorBody.getBytes(StandardCharsets.US_ASCII);
             sendFrame(channelId, CMD_DATA, payload);
             sendFrame(channelId, CMD_RESET, new byte[0]);
-        } catch (IOException ignored) {}
+        } catch (IOException ignored) {
+            // Sending the 502 body failed because the transport itself is broken;
+            // closeChannel below still reclaims the channel, which is the outcome that
+            // matters here.
+        }
         closeChannel(channelId);
     }
 
@@ -361,10 +373,14 @@ public final class BridgeProxyGateway implements Closeable {
         activeChannels.clear();
         try {
             rawIn.close();
-        } catch (IOException ignored) {}
+        } catch (IOException ignored) {
+            // Best-effort close of a gateway transport that is already shutting down.
+        }
         try {
             rawOut.close();
-        } catch (IOException ignored) {}
+        } catch (IOException ignored) {
+            // Same best-effort close for the output half.
+        }
         executor.shutdownNow();
     }
 
@@ -383,13 +399,18 @@ public final class BridgeProxyGateway implements Closeable {
             try {
                 targetOut.write(data);
                 targetOut.flush();
-            } catch (IOException ignored) {}
+            } catch (IOException ignored) {
+                // A failed write leaves the target socket broken; the read pump for this
+                // channel hits the reset/EOF and runs the CMD_CLOSE + closeChannel teardown.
+            }
         }
 
         void close() {
             try {
                 socket.close();
-            } catch (IOException ignored) {}
+            } catch (IOException ignored) {
+                // Best-effort socket close in channel teardown.
+            }
         }
     }
 }

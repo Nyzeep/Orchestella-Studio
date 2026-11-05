@@ -1029,7 +1029,12 @@ public class TerminalActivity extends Activity {
                             }
                         } catch (InterruptedException interrupted) {
                             Thread.currentThread().interrupt();
-                        } catch (java.io.IOException unavailable) { }
+                        } catch (java.io.IOException unavailable) {
+                            // Without this log a failed ready wait is invisible: onReady is never
+                            // called and the only symptom left is the startup timeout itself.
+                            android.util.Log.w("TerminalActivity", "bridge ready wait failed: "
+                                    + unavailable.getClass().getSimpleName());
+                        }
                     }, "terminal-current-ready").start();
                 }
             }
