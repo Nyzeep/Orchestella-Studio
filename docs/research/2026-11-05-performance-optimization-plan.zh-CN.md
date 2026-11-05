@@ -100,6 +100,8 @@
 
 ### B2 · fabric 编排把 UML 面纳入编译 worker（宽并行任务派发） 【类型：新开发（编排层），数据已齐】
 
+> **落地记录（2026-11-06，Lane T fabric 编排接线智能体）**：编排层已落为可回归的消费契约（`feat/b2-fabric-orchestration-wiring`，基于 main `966c70e`）——新增 `FabricOrchestrator`（app 模块）消费 C1 `FabricWidthDecision.route`：宽并行（>2）硬性不派 QEMU 面、优先级 native > UML > QEMU、授予宽度 = min(并行度, 面可用宽度)；per-face 预算宽度由 `ledgerBackedWidths` 从协调器账本派生（QEMU 面 = C1 记账值 clamp 到 2、native 面 = ACCEL 车道预留 + 账本余量、UML 面 = 接线方供给默认 0 并 clamp 到余量），三面宽度之和恒等于账本核数和（D-3「任务并发上限 = 账本核数和」由构造保证）；per-worker 失败/掉线剔除（evict/arm）已实现，单任务（≤2）路径与 C1 时代路由逐字节一致，既有双 gate（build flag + 用户开关）之下 gate 关闭时零副作用。本方案 ①「桥 lane 标记通道」与 UML 面产品接线未做（受 lane 文件边界与 ACR 约束，D-1 桥改动需过 ACR；UML 启动链产品化 + 前台服务/wake lock 为硬前提）——记 follow-up（工单报告 §9）。工单报告 `docs/reports/tickets/b2-fabric-orchestration-wiring/implementation-report.zh-CN.md`。
+
 - **现状证据**：同一设备同窗三方并读（禁相除，E6 上下文）：native 6.63×（E5）、UML 3.92×/E=0.98（E1）、QEMU-TCG ≤1.77×（E2 同轮比值）。UML 编译夹具 2.04×（E11）；UML 启动 0.21–0.43 s（E12）比 QEMU 车道 24.8 s（E13）低两个量级；长驻/崩溃恢复门已过（T3/T5，2026-11-07 报告 §0）。
 - **优化方案**：按 05 文档 D-1/D-3 落地编排：`DistccTcpVsockBridge` 增加 lane 标记通道（vsock=pVM 面 / TCP=UML 面，wire 不变）、任务并发上限 = 账本核数和、per-worker 回退与掉线剔除（`docs/research/2026-11-05-pvm-fabric-route.md` §4 D-1/D-3）。
 - **预期收益**：宽并行编译任务的墙钟随 worker 宽度接近 native 形态（同 SoC 上 6.6× vs 1.1–1.7× 的差距，E5/E6）；UML worker 冷启动几乎免费（E12），可按需扩缩（**置信度：高**——三面宽度数字同窗实测；端到端编排收益未取数）。
