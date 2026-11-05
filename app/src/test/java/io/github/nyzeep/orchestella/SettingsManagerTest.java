@@ -84,6 +84,31 @@ public final class SettingsManagerTest {
     }
 
     @Test
+    public void stageTraceDiagnosticsDefaultsToOff() {
+        // Ticket 27: zero-collection precondition — a clean install must read
+        // the diagnostics switch as strictly off, before any UI or pipeline runs.
+        assertFalse("stage trace diagnostics must be off by default", settings.isStageTraceDiagnosticsEnabled());
+    }
+
+    @Test
+    public void togglingStageTraceDiagnosticsPersistsUnderSharedKey() {
+        // The switch UI (SettingsActivity) and the launch pipeline's raw reader
+        // (StageTraceProvider) must meet on exactly this stored key.
+        settings.setStageTraceDiagnosticsEnabled(true);
+        assertTrue(settings.isStageTraceDiagnosticsEnabled());
+
+        FakeSharedPreferences backing = new FakeSharedPreferences();
+        SettingsManager uiMirror = new SettingsManager(backing);
+        uiMirror.setStageTraceDiagnosticsEnabled(true);
+        assertTrue("UI write must land on the shared stage trace key",
+                backing.getBoolean(SettingsManager.KEY_STAGE_TRACE_DIAGNOSTICS, false));
+        assertTrue(new SettingsManager(backing).isStageTraceDiagnosticsEnabled());
+
+        settings.setStageTraceDiagnosticsEnabled(false);
+        assertFalse("turning the switch off must persist off", settings.isStageTraceDiagnosticsEnabled());
+    }
+
+    @Test
     public void trackingLastActiveInstanceIdPersists() {
         settings.setLastActiveInstanceId("inst-alpine-123");
         assertEquals("inst-alpine-123", settings.getLastActiveInstanceId());
