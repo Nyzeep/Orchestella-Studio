@@ -33,6 +33,12 @@ Orchestella Studio（曾用工作名 DroidLayer）：无需 Root 的 Android 原
 
 single-context：根目录 `CONTEXT.md` + `docs/adr/`。见 `docs/agents/domain.md`。
 
+## 零设备本地验证命令
+
+- Android Lint 0-error 门（CI 同款）：`./gradlew :app:lintDebug -Porchestella.assets.allowMissingPayload=true`。无 QEMU runtime payload 的本地检出必须带 `-Porchestella.assets.allowMissingPayload=true`；样式/排版类噪声已按 P2-3 收敛进 `app/lint.xml`（informational，全量报告仍可见），正确性/安全/a11y 类保持 warning，`abortOnError` 对新增 error 仍然 fail。
+- AVF 设备验证工具单测：`AVF_VALIDATION_TEST_ROOT=<绝对临时目录> python -B -m unittest discover -s tools/device-validation -p 'test_avf*.py'`（CI 用 python3；fake adb 依赖 POSIX shebang 机制，Windows 宿主自动 skip，ubuntu CI 全量运行）。
+- CI/release 模块覆盖门：`python tools/ci/check_ci_module_coverage.py`（Windows；CI 用 python3，同名自测跑 `tools/ci/test_check_ci_module_coverage.py`），232 项全 PASS 才算绿。
+
 ## 已知缺口与禁止补造
 
 - `docs/adr/0015-release-channels.md`、`docs/agent-handoff/GPL_RELEASE_DELIVERY_POLICY.md` 以及 ADR-0017/0018/0019 引用的部分研究文档不存在；只能记录缺口，不能根据标题编造正文。
