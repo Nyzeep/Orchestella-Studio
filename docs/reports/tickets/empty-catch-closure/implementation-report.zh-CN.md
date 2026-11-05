@@ -3,7 +3,7 @@
 - 票号/标题：P3-1（工程质量积压清单 2026-11-04）——生产代码 78 个纯空 catch 补理由注释 + 失败不可见类小修复
 - 执行 session / 模型 / thinking：Lane R 空 catch 闭合智能体 / GLM-5.3-Flash / thinking
 - 分支：`chore/empty-catch-closure`　基线 commit：`2d66f67`（main）
-- 工作区：`D:/t/orch-lane-r`（独立 worktree，未触碰主检出）
+- 工作区：`ASCII 路径 worktreet/orch-lane-r`（独立 worktree，未触碰主检出）
 - 报告日期：2026-11-06
 
 ## 1. 任务目标
@@ -35,7 +35,7 @@ Addendum 的 78 处清单在基线 `9f18c31` 上由脚本重建但未随报告�
 ### 2.3 重扫验证（本树，改动后）
 
 - 生产代码纯空体：**0 处**（改动前 73 严格 + 5 命名捕获；`comment_only` 由 70 → 138 = 70 存量 + 72 新注释 − 4 处命名捕获被扫描器口径排除）。
-- 扫描器：`scan.py`（括号/字符串/注释感知的状态机扫描，非 grep），结果 JSON 与上下文转储存于 worktree 外 `D:/t/scan-empty-catch/`（脚本不入库，方法与 Addendum 记载一致）。
+- 扫描器：`scan.py`（括号/字符串/注释感知的状态机扫描，非 grep），结果 JSON 与上下文转储存于 worktree 外 `ASCII 路径 worktreet/scan-empty-catch/`（脚本不入库，方法与 Addendum 记载一致）。
 
 ## 3. 修复类逐条说明（6 处）
 

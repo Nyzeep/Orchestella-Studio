@@ -3,7 +3,7 @@
 - 票号/标题：C1 · 派发宽度与 vCPU 记账定案——QEMU 面按 2 记账、宽并行不派 QEMU（性能方案最高性价比项，原判"零代码决策"，本票将其落为真实编排语义）
 - 执行 session / 模型 / thinking：Lane P 编排决策落地智能体 / GLM-5.3-Flash / thinking
 - 分支：`feat/c1-fabric-width-decision`　基线 commit：`2d66f67`
-- 工作区：`D:/t/orch-lane-p`（隔离 git worktree，主检出未触碰）
+- 工作区：`ASCII 路径 worktreet/orch-lane-p`（隔离 git worktree，主检出未触碰）
 
 ## 1. 任务目标
 
