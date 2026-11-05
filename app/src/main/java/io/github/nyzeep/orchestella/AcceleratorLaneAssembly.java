@@ -223,6 +223,43 @@ public final class AcceleratorLaneAssembly {
                 WorkerPool.Admission.ledgerBacked(result.coordinator().ledger()));
     }
 
+    /**
+     * B2 wiring: the fabric orchestration that consumes the C1 dispatch
+     * contract over this coordinator's ledger. The face widths are derived by
+     * {@link FabricOrchestrator#ledgerBackedWidths} — the QEMU face is the C1
+     * accounting value the launch reserved ({@code AcceleratorLaunchDispatcher}
+     * built the qemuRequest with {@code FabricWidthDecision.qemuLaneBudgetCores}),
+     * the native face is the accelerator lane's own reservation plus the
+     * ledger headroom the pool's {@code ledgerBacked} admission allows, and
+     * the UML face width comes from the UML face wiring (zero until C2 lands
+     * the {@code ncpus=} budget), so the face widths always sum to the
+     * ledger's core budget. The gate is the same double gate the launch
+     * consumed; while it is off every dispatch is a zero-side-effect refusal
+     * and today's run is unchanged. The face workers are injected: no product
+     * submitter feeds the orchestration yet (the native face's listener is
+     * recorded DV-PVM-02b work, the UML face's TCP access point is
+     * fabric-route doc D-1, ACR-bound).
+     */
+    public static FabricOrchestrator fabricOrchestrator(
+            boolean fabricDispatchEnabled,
+            Result result,
+            int qemuFaceWidth,
+            int nativeFaceWidth,
+            java.util.function.IntSupplier umlFaceWidth,
+            java.util.Map<FabricWidthDecision.Face, FabricOrchestrator.FaceWorker> workers) {
+        Objects.requireNonNull(result, "result");
+        Objects.requireNonNull(umlFaceWidth, "umlFaceWidth");
+        Objects.requireNonNull(workers, "workers");
+        return new FabricOrchestrator(
+                fabricDispatchEnabled,
+                FabricOrchestrator.ledgerBackedWidths(
+                        result.coordinator().ledger(),
+                        qemuFaceWidth,
+                        nativeFaceWidth,
+                        umlFaceWidth),
+                workers);
+    }
+
     private static DualLaneCoordinator coordinator(
             LaneBudget budget, Config config, Inputs inputs) {
         return new DualLaneCoordinator(
