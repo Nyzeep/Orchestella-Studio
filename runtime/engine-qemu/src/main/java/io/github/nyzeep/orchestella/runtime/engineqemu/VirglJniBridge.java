@@ -124,7 +124,10 @@ public final class VirglJniBridge {
         if (isNativeLoaded && isInitialized) {
             try {
                 nativeSetMemoryQuotaMb(quotaMb);
-            } catch (Throwable ignored) {
+            } catch (Throwable failure) {
+                // Callers assume the quota took effect; a swallowed failure would leave the
+                // native side unthrottled with no trace. Keep the void contract, log instead.
+                LOGGER.log(Level.WARNING, "nativeSetMemoryQuotaMb failed, native quota not applied (configured=" + quotaMb + ")", failure);
             }
         }
     }
