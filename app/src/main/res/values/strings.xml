@@ -75,6 +75,9 @@
     <string name="settings_check_update_now">立即检查更新</string>
     <string name="settings_phantom_guide">Android 12+ 幻影进程指引</string>
     <string name="settings_close">关闭</string>
+    <!-- Ticket 27: launch stage diagnostics opt-in switch (strictly off by default). -->
+    <string name="settings_stage_trace_diag_title">启动阶段诊断追踪（默认关）</string>
+    <string name="settings_stage_trace_diag_desc">开启后，每次实例启动的阶段事件写入应用私有目录，仅用于本机问题定位；关闭时不创建任何诊断文件、队列或后台任务</string>
 
     <!-- Update Check dialogs -->
     <string name="update_checking">正在向 GitHub API 查询最新发布…</string>

@@ -55,6 +55,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var txtAvfBadge: TextView
     private lateinit var txtAvfDetails: TextView
     private lateinit var switchCursorBlink: MaterialSwitch
+    private lateinit var switchStageTrace: MaterialSwitch
     private lateinit var switchAccelLane: MaterialSwitch
     private lateinit var txtAccelStatus: TextView
     private lateinit var themeStore: ThemeStore
@@ -112,6 +113,7 @@ class SettingsActivity : AppCompatActivity() {
         setupMirrorSection()
         setupAvfSection()
         setupTerminalSection()
+        setupDiagnosticsSection()
         setupThemeSection()
         setupAcceleratorSection()
         refreshAppearance()
@@ -167,6 +169,7 @@ class SettingsActivity : AppCompatActivity() {
             ShizukuClientDialog().show(supportFragmentManager, "shizuku-client")
         }
         switchCursorBlink = findViewById(R.id.switch_settings_cursor_blink)
+        switchStageTrace = findViewById(R.id.switch_settings_stage_trace)
 
         findViewById<TextView>(R.id.txt_settings_version)?.text = "版本：v${BuildConfig.VERSION_NAME}"
         toolbar.navigationContentDescription = "返回"
@@ -305,6 +308,18 @@ class SettingsActivity : AppCompatActivity() {
         switchCursorBlink.isChecked = settingsManager.isTerminalCursorBlinkEnabled
         switchCursorBlink.setOnCheckedChangeListener { _, isChecked ->
             settingsManager.isTerminalCursorBlinkEnabled = isChecked
+        }
+    }
+
+    /**
+     * Ticket 27: launch stage diagnostics opt-in. The UI only reads/writes the
+     * same SettingsManager key the launch pipeline consults; enabling here never
+     * collects anything by itself — capture starts on the next launch attempt.
+     */
+    private fun setupDiagnosticsSection() {
+        switchStageTrace.isChecked = settingsManager.isStageTraceDiagnosticsEnabled
+        switchStageTrace.setOnCheckedChangeListener { _, isChecked ->
+            settingsManager.isStageTraceDiagnosticsEnabled = isChecked
         }
     }
 
