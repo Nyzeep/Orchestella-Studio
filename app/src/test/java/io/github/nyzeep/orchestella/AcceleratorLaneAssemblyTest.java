@@ -2,6 +2,7 @@ package io.github.nyzeep.orchestella;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -139,6 +140,73 @@ public final class AcceleratorLaneAssemblyTest {
         assertEquals(LaneState.STARTING, fixture.coordinator().state(LaneId.ACCEL));
         assertTrue(fixture.coordinator().hasLease(LaneId.ACCEL));
         assertEquals(6, fixture.coordinator().ledger().snapshot().cpuCores());
+    }
+
+    // --- B2 wiring: the fabric orchestration consumes the C1 route contract -----
+
+    @Test
+    public void fabricOrchestratorConsumesTheC1RouteContractOverTheCoordinatorLedger() {
+        FakeSession qemuSession = new FakeSession();
+        FakeLane accelLane = new FakeLane();
+        List<LaneEvent> events = new ArrayList<>();
+        // The C1 product flow: an 8-core host's QEMU request is the clamped
+        // concurrency budget of 2, the accel lane reserves 1, and the envelope
+        // is exactly their sum.
+        LaneRequest qemuRequest = new LaneRequest(
+                LaneId.QEMU, FabricWidthDecision.qemuLaneBudgetCores(8), 4096L, 32L);
+        LaneRequest accelRequest = new LaneRequest(LaneId.ACCEL, 1, 2048L, 16L);
+        LaneBudget hostBudget = new LaneBudget(
+                qemuRequest.cpuCores() + accelRequest.cpuCores(),
+                qemuRequest.ramMiB() + accelRequest.ramMiB(),
+                qemuRequest.diskGiB() + accelRequest.diskGiB(),
+                true);
+
+        AcceleratorLaneAssembly.Result result = AcceleratorLaneAssembly.assemble(
+                new AcceleratorLaneAssembly.Config(true, TRIPLE, 50L, 50L),
+                new AcceleratorLaneAssembly.Inputs(
+                        hostBudget,
+                        qemuRequest,
+                        accelRequest,
+                        () -> AcceleratorLaneAssembly.qemuLane(qemuSession, QemuReadinessProbe.absent()),
+                        () -> accelLane,
+                        new FakeClock(),
+                        events::add,
+                        () -> facts(true, true, false, true, true,
+                                ThermalState.NOMINAL, BatteryState.CHARGING)));
+        assertTrue(result.acceleratorArmed());
+        result.coordinator().startAll();
+        assertEquals(
+                hostBudget.cpuCores(), result.coordinator().ledger().snapshot().cpuCores());
+
+        List<String> nativeExecutions = new ArrayList<>();
+        java.util.Map<FabricWidthDecision.Face, FabricOrchestrator.FaceWorker> workers =
+                new java.util.EnumMap<>(FabricWidthDecision.Face.class);
+        workers.put(FabricWidthDecision.Face.HOST_NATIVE,
+                (face, width, item) -> nativeExecutions.add(face + ":" + width));
+
+        FabricOrchestrator armed = AcceleratorLaneAssembly.fabricOrchestrator(
+                true, result, qemuRequest.cpuCores(), accelRequest.cpuCores(),
+                () -> 0, workers);
+
+        // Wide-parallel work (4-way) routes off the QEMU face onto the native
+        // face at its ledger-derived width (the accel lane's 1 core; the
+        // shipped envelope leaves no headroom beyond the two reservations).
+        FabricOrchestrator.Outcome wide = armed.dispatch(new FabricOrchestrator.WorkItem() { }, 4);
+        assertTrue(wide.admitted());
+        assertEquals(FabricWidthDecision.Face.HOST_NATIVE, wide.route().face());
+        assertEquals(1, wide.route().width());
+        assertEquals("HOST_NATIVE:1", nativeExecutions.get(0));
+
+        // The gate-off wiring answers the fixed code with zero side effects.
+        FabricOrchestrator gated = AcceleratorLaneAssembly.fabricOrchestrator(
+                false, result, qemuRequest.cpuCores(), accelRequest.cpuCores(),
+                () -> 0, workers);
+        FabricOrchestrator.Outcome gateOff =
+                gated.dispatch(new FabricOrchestrator.WorkItem() { }, 4);
+        assertFalse(gateOff.admitted());
+        assertNull(gateOff.route());
+        assertEquals(FabricOrchestrator.Code.GATE_DISABLED, gateOff.code());
+        assertEquals(1, nativeExecutions.size());
     }
 
     @Test
