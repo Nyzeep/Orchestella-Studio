@@ -45,6 +45,8 @@ public final class LocalSocketAudioSource implements AudioSourceSeam {
                 try {
                     ls.close();
                 } catch (IOException ignored) {
+                    // Closing the half-connected socket is best-effort; the original connect
+                    // failure is rethrown below and is the real error surface.
                 }
                 localSocket = null;
                 inputStream = null;
@@ -66,6 +68,8 @@ public final class LocalSocketAudioSource implements AudioSourceSeam {
             try {
                 inputStream.close();
             } catch (IOException ignored) {
+                // Best-effort close: the source is already marked closed and clearing the
+                // field must happen regardless of how the stream close ended.
             }
             inputStream = null;
         }
@@ -73,6 +77,7 @@ public final class LocalSocketAudioSource implements AudioSourceSeam {
             try {
                 localSocket.close();
             } catch (IOException ignored) {
+                // Same best-effort close for the socket half.
             }
             localSocket = null;
         }

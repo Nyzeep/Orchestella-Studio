@@ -113,7 +113,10 @@ public final class PackagedAssetStreams {
             if (appInfo != null && appInfo.sourceDir != null) {
                 return appInfo.sourceDir;
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {
+            // Defensive read: a failing ApplicationInfo lookup just yields null, and the
+            // callers already fall back to the plain AssetManager paths in that case.
+        }
         return null;
     }
 }

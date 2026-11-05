@@ -76,12 +76,16 @@ public class WaylandSurfaceView extends SurfaceView implements SurfaceHolder.Cal
             setFocusable(true);
             setFocusableInTouchMode(true);
         } catch (Exception ignored) {
+            // These view flags are nice-to-have for the pointer path; init must continue so
+            // the surface itself stays usable even if a ROM rejects the call.
         }
 
         SurfaceHolder holder = null;
         try {
             holder = getHolder();
         } catch (Exception ignored) {
+            // A null holder only disables the drawing path; the view still initializes and
+            // the callback registration below is guarded on holder != null.
         }
 
         if (customController != null) {

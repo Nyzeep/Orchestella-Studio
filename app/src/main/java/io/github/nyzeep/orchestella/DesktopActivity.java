@@ -132,7 +132,10 @@ public class DesktopActivity extends Activity {
                                 accepted = client.confirmDesktopFrame(ticket.generation()).accepted()
                                         && isCurrentDisplay(target, client, lifecycle);
                             }
-                        } catch (Exception ignored) { }
+                        } catch (Exception ignored) {
+                            // The failed confirm is not silent: finish(ticket, accepted=false)
+                            // below is the failure surface the presentation gate already records.
+                        }
                         presentationGate.finish(ticket, accepted);
                     });
                 } catch (java.util.concurrent.RejectedExecutionException stopped) {
@@ -337,7 +340,10 @@ public class DesktopActivity extends Activity {
                 BridgeClient.Result state = client.feature("STATUS", "desktop-labwc");
                 if (state.accepted())
                     applyDesktopEvidence(new org.json.JSONObject(state.payload()), target, client, lifecycle);
-            } catch (Exception ignored) { }
+            } catch (Exception ignored) {
+                // Polling probe: a failed round only skips one evidence refresh and the
+                // next tick retries, so no error path or state reset belongs here.
+            }
         }, 1, 1, java.util.concurrent.TimeUnit.SECONDS);
 
         hudUpdater = new Runnable() {
@@ -523,6 +529,8 @@ public class DesktopActivity extends Activity {
                 }
             }
         } catch (Exception ignored) {
+            // Immersive styling is best-effort decoration: if the system flags cannot be
+            // applied, the window simply keeps its default system chrome.
         }
     }
 

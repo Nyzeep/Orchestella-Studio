@@ -343,7 +343,10 @@ class MainActivity : AppCompatActivity() {
         try {
             val nowTime = java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
             findViewById<TextView>(R.id.tv_status_time)?.text = "[ $nowTime ]"
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+            // Decorative status-bar clock: a formatting failure just leaves the time
+            // label untouched for this repaint.
+        }
 
         tabs.forEachIndexed { index, (containerId, navTabId, navElements) ->
             // Skip untouched tabs after the first paint; their colors already match.

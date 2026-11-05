@@ -114,6 +114,8 @@ public final class MirrorSpeedTester {
                 try {
                     conn.disconnect();
                 } catch (Exception ignored) {
+                    // disconnect() in finally is best-effort: the probe result above is
+                    // already decided, and the connection is going away either way.
                 }
             }
         }
