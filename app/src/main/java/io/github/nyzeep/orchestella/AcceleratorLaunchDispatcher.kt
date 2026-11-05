@@ -41,6 +41,12 @@ import java.util.function.Supplier
  * ([AcceleratorLaneAssembly.Result.decisionBackend]) instead of re-deriving it
  * from the facts. A backend the dispatch cannot start is a fixed
  * [ACCEL_NO_BACKEND] failure, never a silent QEMU-only run.
+ *
+ * C1: this is also the one place hardware facts become a lane budget, so the
+ * QEMU-TCG face's concurrency budget is clamped to the measured effective TCG
+ * width here ([FabricWidthDecision.qemuLaneBudgetCores]); wide-parallel
+ * compile work is routed away from the QEMU face by [FabricWidthDecision.route]
+ * — the dispatch contract the fabric orchestration (B2) will consume.
  */
 object AcceleratorLaunchDispatcher {
     /**
@@ -150,9 +156,14 @@ object AcceleratorLaunchDispatcher {
 
         val hardware: VmHardwareConfig =
             Objects.requireNonNull(params.hardwareConfig, "hardwareConfig")
+        // C1 fabric width decision: the QEMU-TCG lane's *concurrency budget*
+        // (the LaneRequest.cpuCores semantics) is the guest topology clamped to
+        // the measured effective TCG width of 2 vCPU — not the -smp count. The
+        // VM still launches with the requested topology; accounting and launch
+        // width stay decoupled and the QemuTuning defaults are untouched.
         val qemuRequest = LaneRequest(
             LaneId.QEMU,
-            hardware.cpuCores(),
+            FabricWidthDecision.qemuLaneBudgetCores(hardware.cpuCores()),
             hardware.ramMegabytes().toLong(),
             gibibytes(hardware.diskCapacityBytes()),
         )
