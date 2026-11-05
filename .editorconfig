@@ -1,0 +1,37 @@
+# P2-3 step 1 / P3-3: repo-wide formatting baseline. Zero build-behavior
+# change today; future ktlint (P2-3 step 2) and editors/IDEs read this file.
+# Entries mirror .gitattributes (EOL) and the sampled dominant style of each
+# language (4-space indent; YAML 2-space).
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{yml,yaml}]
+indent_size = 2
+
+# CRLF is wire format for these files per .gitattributes.
+[*.{bat,cmd}]
+end_of_line = crlf
+
+# Runtime manifests validate exact packaged bytes (whitespace=cr-at-eol in
+# .gitattributes); editors must not normalize or trim them.
+[app/src/main/assets/**]
+end_of_line = crlf
+trim_trailing_whitespace = false
+insert_final_newline = false
+
+# Unified diffs encode blank context lines as a single trailing space; that is
+# wire format, not trailing whitespace.
+[tools/fastlane-build/*.patch]
+trim_trailing_whitespace = false
+
+# Markdown hard line breaks and fenced-block alignment rely on trailing
+# spaces; leave them alone.
+[*.md]
+trim_trailing_whitespace = false
