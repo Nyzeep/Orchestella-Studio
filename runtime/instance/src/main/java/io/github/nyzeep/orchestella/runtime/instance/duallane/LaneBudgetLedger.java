@@ -8,6 +8,21 @@ import java.util.Objects;
  * <p>Reservations are explicit and released only when a stop is confirmed.
  * An UNCONFIRMED stop keeps its reservation, matching the "do not delete the
  * lease" rule.
+ *
+ * <p>Semantics of every {@code cpuCores} field seen by this ledger (R-Q3,
+ * {@code docs/research/2026-11-04-qemu-mttcg-scaling.md} §4.2): a <em>lane
+ * concurrency budget</em>, never a physical-core count. Callers size the
+ * request from the concurrency they intend to run inside the lane: the
+ * QEMU-TCG lane sends its guest topology clamped to the measured effective TCG
+ * width at the single hardware-to-budget conversion point
+ * ({@code AcceleratorLaunchDispatcher} via
+ * {@code FabricWidthDecision.qemuLaneBudgetCores}), and the accelerator lane
+ * sends the host's full core count for its match_host tier (R-Q2). With both
+ * VMM faces live the summed reservations therefore legitimately exceed the
+ * physical core count ({@code usedCpu = smp N + match_host full cores}, R-Q7);
+ * {@link LaneRejectCode#CPU_EXCEEDED} means the shared concurrency queue is
+ * full, not that physical cores are exhausted. The ledger limits concurrency,
+ * it never promises core pinning.
  */
 public final class LaneBudgetLedger {
     private final LaneBudget budget;
@@ -69,9 +84,22 @@ public final class LaneBudgetLedger {
         return budget;
     }
 
+    /**
+     * A live lease against the budget; hold it for the lane's whole run.
+     *
+     * @param cpuCores concurrency budget held by this lease (R-Q3), not a
+     *                 physical-core count — see the class javadoc
+     */
     public record Reservation(LaneId lane, int cpuCores, long ramMiB, long diskGiB) {
     }
 
+    /**
+     * Point-in-time sums of all live leases.
+     *
+     * @param cpuCores total concurrency budget currently reserved (R-Q3),
+     *                 legitimately above the physical core count when both
+     *                 VMM faces are live (R-Q7)
+     */
     public record Snapshot(int cpuCores, long ramMiB, long diskGiB) {
     }
 }
