@@ -197,7 +197,10 @@ class SetupWizardActivity : AppCompatActivity() {
                     uri,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+                // Persisting the URI grant is best-effort: the picked folder still works for
+                // this session, and a lost grant surfaces at mount time where it can be re-picked.
+            }
             val displayPath = uri.lastPathSegment ?: uri.path ?: uri.toString()
             wizardModel.setMountHostSharedDirectory(true)
             wizardModel.setHostSharedDirectoryPath(displayPath)
@@ -921,7 +924,10 @@ class SetupWizardActivity : AppCompatActivity() {
                     }
                 }
             }
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+            // Defensive read: interface enumeration failing just yields a null address, and
+            // the explicit connectivity test below is the verdict shown to the user.
+        }
         return null
     }
 

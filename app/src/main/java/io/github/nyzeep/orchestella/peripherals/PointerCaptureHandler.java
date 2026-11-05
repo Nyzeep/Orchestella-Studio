@@ -236,7 +236,10 @@ public class PointerCaptureHandler {
             if (view != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 try {
                     view.requestPointerCapture();
-                } catch (Throwable ignored) {}
+                } catch (Throwable ignored) {
+                    // Some ROMs throw from pointer-capture APIs; capture is an enhancement
+                    // and its absence must not break the input routing around it.
+                }
             }
         }
 
@@ -245,7 +248,10 @@ public class PointerCaptureHandler {
             if (view != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 try {
                     view.releasePointerCapture();
-                } catch (Throwable ignored) {}
+                } catch (Throwable ignored) {
+                    // Same OEM defense: release may throw when capture was never taken; the
+                    // view state is unchanged either way.
+                }
             }
         }
 
@@ -269,7 +275,10 @@ public class PointerCaptureHandler {
                         defaultIcon = view.getPointerIcon();
                     }
                     view.setPointerIcon(PointerIcon.getSystemIcon(view.getContext(), PointerIcon.TYPE_NULL));
-                } catch (Throwable ignored) {}
+                } catch (Throwable ignored) {
+                    // Pointer icon APIs are OEM-flavored and may throw; a failed hide just
+                    // keeps whatever cursor the ROM shows by default.
+                }
             }
         }
 
@@ -282,7 +291,9 @@ public class PointerCaptureHandler {
                     } else {
                         view.setPointerIcon(PointerIcon.getSystemIcon(view.getContext(), PointerIcon.TYPE_DEFAULT));
                     }
-                } catch (Throwable ignored) {}
+                } catch (Throwable ignored) {
+                    // Same OEM defense for the restore side.
+                }
             }
         }
     }

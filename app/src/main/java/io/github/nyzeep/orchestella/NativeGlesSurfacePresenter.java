@@ -43,6 +43,8 @@ public class NativeGlesSurfacePresenter implements DoubleBufferedRenderer.Surfac
             try {
                 return nativeGetVersion();
             } catch (Throwable ignored) {
+                // Defensive read: an unloading/uninitialized native layer falls through to
+                // the fixed unavailable marker below instead of crashing the caller.
             }
         }
         return "GLES presenter unavailable";

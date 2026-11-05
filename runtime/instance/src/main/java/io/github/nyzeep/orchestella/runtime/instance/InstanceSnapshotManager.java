@@ -234,7 +234,11 @@ public final class InstanceSnapshotManager {
             stream.sorted(Comparator.reverseOrder()).forEach(path -> {
                 try {
                     Files.deleteIfExists(path);
-                } catch (IOException ignored) {}
+                } catch (IOException ignored) {
+                    // Per-file best-effort purge: one undeletable file must not abort the
+                    // whole snapshot-directory deletion; children are already removed first
+                    // by the reverse-order walk.
+                }
             });
         }
     }

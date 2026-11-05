@@ -90,6 +90,8 @@ public final class TerminalSessionInstance {
             try {
                 listener.accept(chunk);
             } catch (Exception ignored) {
+                // Observer isolation: one broken output listener must not break transcript
+                // delivery to the others.
             }
         }
     }

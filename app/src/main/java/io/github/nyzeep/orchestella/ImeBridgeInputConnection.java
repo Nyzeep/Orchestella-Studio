@@ -172,6 +172,8 @@ public class ImeBridgeInputConnection implements InputConnection {
                         io.github.nyzeep.orchestella.runtime.contract.KeyEvent.release(linuxKey, 0, now));
             }
         } catch (Exception ignored) {
+            // Nothing is swallowed silently: the false return below is the failure surface
+            // the IME framework already understands (event not delivered).
         }
         return false;
     }

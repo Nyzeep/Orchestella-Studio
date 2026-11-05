@@ -263,6 +263,8 @@ class AboutActivity : AppCompatActivity() {
                     val out = File(filesDir, AVATAR_CACHE_FILE)
                     out.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
                 } catch (_: Exception) {
+                    // Caching the avatar is best-effort polish: a failed PNG write only costs
+                    // the next cold start its cache hit; the avatar is already decoded above.
                 }
             }
             runOnUiThread {

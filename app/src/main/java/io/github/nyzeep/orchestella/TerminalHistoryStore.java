@@ -166,6 +166,8 @@ public class TerminalHistoryStore {
             try {
                 Files.deleteIfExists(tmpPath);
             } catch (IOException ignored) {
+                // Removing the temp file is best-effort cleanup: the real write result was
+                // already decided (or thrown) before this finally runs.
             }
             writeLock.unlock();
         }
