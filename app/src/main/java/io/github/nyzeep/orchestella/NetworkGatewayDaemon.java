@@ -88,7 +88,13 @@ public final class NetworkGatewayDaemon {
         /** Removes only this owner's LIVE entry and socket; never a replacement's. */
         private void cleanupLiveEntry() {
             if (LIVE.remove(instanceId, this)) {
-                try { Files.deleteIfExists(apiSocket.toPath()); } catch (IOException ignored) { }
+                try {
+                    Files.deleteIfExists(apiSocket.toPath());
+                } catch (IOException ignored) {
+                    // Owner's own socket file is removed best-effort: a leftover unix socket
+                    // file is tolerated because the gateway mutual-exclusion checks re-verify
+                    // liveness before any bind reuses the path.
+                }
             }
         }
     }
@@ -221,7 +227,10 @@ public final class NetworkGatewayDaemon {
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
                 String line;
                 while ((line = reader.readLine()) != null) Log.d(TAG, line);
-            } catch (IOException ignored) { }
+            } catch (IOException ignored) {
+                // The log pump dies with the gvproxy process: readLine failing here is the
+                // expected teardown, not a gateway failure of its own.
+            }
         }, "gvproxy-log-" + instanceId);
         logger.setDaemon(true);
         logger.start();

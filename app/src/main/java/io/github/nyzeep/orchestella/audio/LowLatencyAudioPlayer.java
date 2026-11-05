@@ -143,6 +143,8 @@ public final class LowLatencyAudioPlayer implements AudioStreamContract {
             try {
                 audioTrack.pause();
             } catch (Exception ignored) {
+                // pause() only throws for an already-invalid track (never while audibly
+                // playing), so keeping the PAUSED state here matches what is heard.
             }
         }
     }
@@ -164,7 +166,14 @@ public final class LowLatencyAudioPlayer implements AudioStreamContract {
             try {
                 audioTrack.play();
                 audioTrack.setVolume(focusHandler.getCurrentVolume());
-            } catch (Exception ignored) {
+            } catch (Exception playFailure) {
+                // The state machine already claims RUNNING, so swallowing a failed play()
+                // would leave the UI reporting playback while the track stays silent.
+                // Roll the observable state back to PAUSED and record the failure.
+                isPaused.set(true);
+                transitionState(State.PAUSED);
+                android.util.Log.w("AudioPlayer", "resume play failed: "
+                        + playFailure.getClass().getSimpleName());
             }
         }
     }
@@ -185,6 +194,9 @@ public final class LowLatencyAudioPlayer implements AudioStreamContract {
                 audioTrack.stop();
                 audioTrack.flush();
             } catch (Exception ignored) {
+                // stop()/flush() only fail on an already-invalid track; the write worker is
+                // stopped above, so the track drains to silence either way and STOPPED below
+                // is the accurate terminal state.
             }
 
             compensator.reset();
@@ -203,11 +215,14 @@ public final class LowLatencyAudioPlayer implements AudioStreamContract {
             try {
                 audioTrack.release();
             } catch (Exception ignored) {
+                // release() is best-effort teardown during shutdown; nothing further uses
+                // the track after this point.
             }
 
             try {
                 audioSource.close();
             } catch (IOException ignored) {
+                // Closing the input source is best-effort teardown, same as the release above.
             }
 
             focusHandler.abandonFocus();
@@ -346,6 +361,8 @@ public final class LowLatencyAudioPlayer implements AudioStreamContract {
                 try {
                     listener.onStateChanged(oldState, newState);
                 } catch (Exception ignored) {
+                    // Observer isolation: one broken state listener must not break the state
+                    // machine or the notifications to the other listeners.
                 }
             }
         }

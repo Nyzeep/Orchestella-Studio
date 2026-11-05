@@ -95,10 +95,14 @@ public final class QemuQmpHostfwdClient implements PortForwardingEngine, AutoClo
         running = false;
         try {
             reader.close();
-        } catch (IOException ignored) {}
+        } catch (IOException ignored) {
+            // Best-effort close of a QMP session that is already shutting down.
+        }
         try {
             writer.close();
-        } catch (IOException ignored) {}
+        } catch (IOException ignored) {
+            // Same best-effort close for the write half.
+        }
     }
 
     private void ensureInitialized() throws IOException {

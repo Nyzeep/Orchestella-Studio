@@ -106,7 +106,13 @@ public final class PersistentTerminalSessionPool {
             this.generation = launching != null ? launching : java.util.UUID.randomUUID().toString();
             this.ringBuffer = new TerminalRingBuffer(ringBufferCapacity);
             screenModel.setResponseSink(response -> {
-                try { sendBytes(response.getBytes(StandardCharsets.UTF_8)); } catch (IOException ignored) { }
+                try {
+                    sendBytes(response.getBytes(StandardCharsets.UTF_8));
+                } catch (IOException ignored) {
+                    // Writing a terminal query response back into the pty is best-effort: a
+                    // broken pipe means the session is already dying and the pump loop will
+                    // surface the end through notifySessionEnded().
+                }
             });
 
             this.pumpThread = new Thread(this::pumpLoop, "pty-term-pump-" + instanceId);
@@ -145,7 +151,12 @@ public final class PersistentTerminalSessionPool {
                 if (closed.get()) sessionEndListener = null;
             }
             for (int i = 0; i < events; i++) {
-                try { listener.accept(instanceId); } catch (Exception ignored) { }
+                try {
+                    listener.accept(instanceId);
+                } catch (Exception ignored) {
+                    // Observer isolation: one broken session-end listener must not take down
+                    // the bookkeeping around this one-shot notification.
+                }
             }
         }
 
@@ -177,6 +188,8 @@ public final class PersistentTerminalSessionPool {
                             try {
                                 listener.accept(chunk);
                             } catch (Exception ignored) {
+                                // Observer isolation: one broken output listener must not break
+                                // chunk delivery to the others, nor the ring buffer append.
                             }
                         }
                     } finally {
@@ -186,7 +199,11 @@ public final class PersistentTerminalSessionPool {
                     // terminal write lock is held.
                     if (provisioned) notifyProvisioning(ProvisioningSignal.MARKER_VERSION);
                 }
-            } catch (Exception ignored) {
+            } catch (Exception pumpFailure) {
+                // A normal EOF leaves via break above, so anything landing here is an abnormal
+                // pump death; without a record the session just ends with no reason trail.
+                android.util.Log.d("TerminalPump", "pty pump ended abnormally: "
+                        + pumpFailure.getClass().getSimpleName());
             } finally {
                 // Only a real end of stream can serve as the marker's trailing delimiter;
                 // a host-side close is not evidence that the guest finished Provisioning.
@@ -209,6 +226,8 @@ public final class PersistentTerminalSessionPool {
             try {
                 listener.onProvisioningComplete(instanceId, markerVersion);
             } catch (Exception ignored) {
+                // Observer isolation: the provisioning listener is UI-side; its failure must
+                // not affect the pump bookkeeping around this one-shot notification.
             }
         }
 
@@ -345,6 +364,8 @@ public final class PersistentTerminalSessionPool {
                 try {
                     session.close();
                 } catch (Exception ignored) {
+                    // Close is best-effort: the holder is already marked closed above, and the
+                    // end notification below must run regardless of how the close ended.
                 }
                 notifySessionEnded();
             }

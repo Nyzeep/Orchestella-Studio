@@ -760,6 +760,8 @@ public final class QemuInstanceLauncher {
                         Log.d("OrchestellaQemu", line);
                     }
                 } catch (IOException ignored) {
+                    // The log pump dies with the QEMU process: readLine failing here is the
+                    // expected teardown, same as the gvproxy log pump.
                 }
             }, "qemu-log-" + parameters.instanceId);
             logger.setDaemon(true);
@@ -1019,7 +1021,11 @@ public final class QemuInstanceLauncher {
         AtomicBoolean closed = new AtomicBoolean();
         Runnable closeOwned = () -> {
             if (closed.compareAndSet(false, true)) {
-                try { socket.close(); } catch (IOException ignored) { }
+                try { socket.close(); } catch (IOException ignored) {
+                    // Cancellation-path close is best-effort: the closed CAS guarantees exactly
+                    // one close, and every caller either rethrows a real connection error or
+                    // receives this handle as the Streams close hook, so nothing is hidden.
+                }
             }
         };
         java.util.concurrent.Future<?> connection;

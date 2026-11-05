@@ -90,7 +90,11 @@ public class FileDropTargetListener implements View.OnDragListener {
                             } else {
                                 bridgeClient.notify("文件接收失败", "保存 " + fileName + " 出错: " + error);
                             }
-                        } catch (IOException ignored) {}
+                        } catch (IOException ignored) {
+                            // The bridge notification is an extra surface: the transfer verdict
+                            // was already handed to this callback, so a failed notify drops
+                            // only the guest-side toast, not the outcome.
+                        }
                     }
                 }
         );
@@ -144,7 +148,11 @@ public class FileDropTargetListener implements View.OnDragListener {
         if (attachedActivity != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             try {
                 permissions = attachedActivity.requestDragAndDropPermissions(event);
-            } catch (Throwable ignored) {}
+            } catch (Throwable ignored) {
+                // requestDragAndDropPermissions is OEM-flavored: some builds throw on
+                // cross-app drops. A missing grant surfaces as a read error inside
+                // stageUris, which the transfer callback reports, so nothing is lost here.
+            }
         }
 
         ClipData clipData = event.getClipData();
@@ -169,7 +177,10 @@ public class FileDropTargetListener implements View.OnDragListener {
                 if (finalPermissions != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                     try {
                         finalPermissions.release();
-                    } catch (Throwable ignored) {}
+                    } catch (Throwable ignored) {
+                        // Releasing the grant in finally is best-effort cleanup after staging;
+                        // the transfer result was decided by stageUris, not by this call.
+                    }
                 }
             }
         });
@@ -289,7 +300,10 @@ public class FileDropTargetListener implements View.OnDragListener {
                         return cursor.getString(nameIndex);
                     }
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+                // Display-name resolution degrades to the URI's last path segment; callers
+                // only need a label for the transfer result.
+            }
             return uri.getLastPathSegment();
         }
 
@@ -303,7 +317,10 @@ public class FileDropTargetListener implements View.OnDragListener {
                         return cursor.getLong(sizeIndex);
                     }
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+                // Size probing degrades to -1 (unknown size), an explicitly supported
+                // answer for this seam.
+            }
             return -1L;
         }
     }

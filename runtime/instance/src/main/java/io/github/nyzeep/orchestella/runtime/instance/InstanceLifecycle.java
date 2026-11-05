@@ -958,7 +958,11 @@ public final class InstanceLifecycle {
                 }).forEach(p -> {
                     try {
                         Files.deleteIfExists(p);
-                    } catch (IOException ignored) {}
+                    } catch (IOException ignored) {
+                        // Per-file best-effort sweep: all known artifacts above propagate
+                        // their failures, so this catch-all only covers leftovers; an
+                        // undeletable residual file does not change the delete outcome.
+                    }
                 });
             }
 

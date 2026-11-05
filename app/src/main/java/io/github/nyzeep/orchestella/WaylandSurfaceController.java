@@ -194,11 +194,15 @@ public final class WaylandSurfaceController {
                     canvas.drawBitmap(bitmap, src, dst, paint);
                 }
             } catch (Exception ignored) {
+                // A failed frame is dropped self-healing: the next frame repaints, and the
+                // finally block below still posts whatever canvas was locked.
             } finally {
                 if (canvas != null) {
                     try {
                         holder.unlockCanvasAndPost(canvas);
                     } catch (Exception ignored) {
+                        // unlockCanvasAndPost failing is a surface teardown race; nothing can
+                        // be re-posted at this point.
                     }
                 }
             }
@@ -216,11 +220,14 @@ public final class WaylandSurfaceController {
                     canvas.drawColor(color);
                 }
             } catch (Exception ignored) {
+                // Decorative solid-fill clear: a failure just keeps the previous frame content.
             } finally {
                 if (canvas != null) {
                     try {
                         holder.unlockCanvasAndPost(canvas);
                     } catch (Exception ignored) {
+                        // unlockCanvasAndPost failing is a surface teardown race; nothing can
+                        // be re-posted at this point.
                     }
                 }
             }

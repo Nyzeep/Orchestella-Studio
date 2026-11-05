@@ -519,6 +519,8 @@ public final class InstanceStorageManager {
             try {
                 Files.deleteIfExists(tempVolume);
             } catch (IOException ignored) {
+                // The temp volume is cleaned up best-effort in finally: the primary failure
+                // (if any) was already thrown above with the tracked volume left in place.
             }
         }
     }

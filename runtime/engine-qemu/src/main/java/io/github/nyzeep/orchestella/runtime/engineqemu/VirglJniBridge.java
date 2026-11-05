@@ -102,6 +102,9 @@ public final class VirglJniBridge {
             try {
                 return nativeGetAllocatedMemoryBytes();
             } catch (Throwable ignored) {
+                // Defensive read: with the native layer mid-teardown, the JVM sentinel below
+                // keeps the accounting alive (same double guard as the isNativeLoaded &&
+                // isInitialized check above).
             }
         }
         return JVM_SENTINEL.allocatedBytes();
@@ -113,6 +116,8 @@ public final class VirglJniBridge {
             try {
                 return nativeGetMemoryQuotaMb();
             } catch (Throwable ignored) {
+                // Defensive read: falls back to the last configured quota, which is the best
+                // known value when the native getter is unavailable.
             }
         }
         return configuredQuotaMb;
@@ -124,7 +129,10 @@ public final class VirglJniBridge {
         if (isNativeLoaded && isInitialized) {
             try {
                 nativeSetMemoryQuotaMb(quotaMb);
-            } catch (Throwable ignored) {
+            } catch (Throwable failure) {
+                // Callers assume the quota took effect; a swallowed failure would leave the
+                // native side unthrottled with no trace. Keep the void contract, log instead.
+                LOGGER.log(Level.WARNING, "nativeSetMemoryQuotaMb failed, native quota not applied (configured=" + quotaMb + ")", failure);
             }
         }
     }
@@ -135,6 +143,7 @@ public final class VirglJniBridge {
             try {
                 return nativeIsRobustnessEnabled();
             } catch (Throwable ignored) {
+                // Defensive read: falls back to the JVM-side robustness flag.
             }
         }
         return robustnessActive;
@@ -146,6 +155,8 @@ public final class VirglJniBridge {
             try {
                 return nativeTryAllocateTestMemory(bytes);
             } catch (Throwable ignored) {
+                // Defensive read (test helper): falls back to the JVM sentinel allocator so
+                // quota tests keep working without a native layer.
             }
         }
         return JVM_SENTINEL.tryAllocate(bytes);
@@ -158,6 +169,8 @@ public final class VirglJniBridge {
                 nativeReleaseTestMemory(bytes);
                 return;
             } catch (Throwable ignored) {
+                // Defensive read (test helper): the JVM sentinel keeps test-only accounting
+                // consistent when the native release is unavailable.
             }
         }
         JVM_SENTINEL.release(bytes);
@@ -169,6 +182,8 @@ public final class VirglJniBridge {
             try {
                 return nativeSimulateShaderCrash();
             } catch (Throwable ignored) {
+                // Defensive read: falls through to the JVM mock response below, which is
+                // how this bridge behaves without a native layer anyway.
             }
         }
         LOGGER.info("VirglJniBridge: Simulated shader crash safely handled in JVM mock mode.");
