@@ -225,7 +225,12 @@ public class DesktopActivity extends Activity {
                                     @Override public void onResize(int c, int r) {}
                                 },
                                 notificationAdapter, urlOpenerAdapter, clipboardManager);
-                    } catch (Exception ignored) {
+                    } catch (Exception failure) {
+                        // The desktop bridge has no failure callback (Events carries onReady/onPong/
+                        // onResize only), so a dead serve loop would otherwise be indistinguishable
+                        // from a guest that simply never calls. Log the ending, keep the semantics.
+                        android.util.Log.w("DesktopBridge", "desktop bridge serving ended: "
+                                + failure.getClass().getSimpleName());
                     }
                 }, "desktop-bridge-serve").start();
             }

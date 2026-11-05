@@ -186,7 +186,11 @@ public final class PersistentTerminalSessionPool {
                     // terminal write lock is held.
                     if (provisioned) notifyProvisioning(ProvisioningSignal.MARKER_VERSION);
                 }
-            } catch (Exception ignored) {
+            } catch (Exception pumpFailure) {
+                // A normal EOF leaves via break above, so anything landing here is an abnormal
+                // pump death; without a record the session just ends with no reason trail.
+                android.util.Log.d("TerminalPump", "pty pump ended abnormally: "
+                        + pumpFailure.getClass().getSimpleName());
             } finally {
                 // Only a real end of stream can serve as the marker's trailing delimiter;
                 // a host-side close is not evidence that the guest finished Provisioning.

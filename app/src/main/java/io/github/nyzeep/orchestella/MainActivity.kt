@@ -1638,10 +1638,21 @@ class MainActivity : AppCompatActivity() {
                     continue
                 }
                 if (instance.state() == InstanceLifecycle.State.RUNNING && ExecutionSessionRegistry.get(instance.id()) == null) {
-                    controller.reconcileAfterHostDeath(instance.id(), InstanceLifecycle.State.INTERRUPTED)
+                    try {
+                        controller.reconcileAfterHostDeath(instance.id(), InstanceLifecycle.State.INTERRUPTED)
+                    } catch (failure: Exception) {
+                        // A failed per-instance reconcile must not abort the pass, but leaving it
+                        // unlogged strands the instance in a ghost RUNNING state with no trail.
+                        android.util.Log.w(
+                            "MainActivity",
+                            "orphan reconcile failed id=${instance.id()} type=${failure.javaClass.simpleName}"
+                        )
+                    }
                 }
             }
-        } catch (_: Exception) {
+        } catch (failure: Exception) {
+            // Store-level failure (list/controller construction): skip the pass, keep a trail.
+            android.util.Log.w("MainActivity", "orphan reconcile pass failed type=${failure.javaClass.simpleName}")
         }
     }
 

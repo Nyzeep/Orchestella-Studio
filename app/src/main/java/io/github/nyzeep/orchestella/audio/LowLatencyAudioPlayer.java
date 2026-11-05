@@ -164,7 +164,14 @@ public final class LowLatencyAudioPlayer implements AudioStreamContract {
             try {
                 audioTrack.play();
                 audioTrack.setVolume(focusHandler.getCurrentVolume());
-            } catch (Exception ignored) {
+            } catch (Exception playFailure) {
+                // The state machine already claims RUNNING, so swallowing a failed play()
+                // would leave the UI reporting playback while the track stays silent.
+                // Roll the observable state back to PAUSED and record the failure.
+                isPaused.set(true);
+                transitionState(State.PAUSED);
+                android.util.Log.w("AudioPlayer", "resume play failed: "
+                        + playFailure.getClass().getSimpleName());
             }
         }
     }
