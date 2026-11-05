@@ -92,6 +92,42 @@ class AcceleratorLaunchDispatcherTest {
     }
 
     @Test
+    fun c1AccountingClampsTheQemuBudgetWhileTheLaunchKeepsItsTopology() {
+        // C1: an 8-vCPU guest topology launches unchanged (QemuTuning defaults
+        // untouched), but the lane's concurrency budget is the measured
+        // effective TCG width — 2 — so the ledger carries 2+1=3, not 9.
+        val fixture = Fixture().apply { armedFacts() }
+        var launchedCpuCores = 0
+        fixture.qemuLaunch = AcceleratorLaunchDispatcher.QemuLaunch { params ->
+            launchedCpuCores = params.hardwareConfig.cpuCores()
+            fixture.qemuStarts.incrementAndGet()
+            fixture.qemuSession
+        }
+
+        val dispatch = fixture.dispatch(cpuCores = 8)
+
+        assertEquals(8, launchedCpuCores)
+        assertSame(fixture.qemuSession, dispatch.outcome.session)
+        assertEquals(1, fixture.qemuStarts.get())
+        // Accounting, not topology: the QEMU lane reserves its clamped budget.
+        assertEquals(3, dispatch.coordinator!!.ledger().budget().cpuCores())
+        assertEquals(3, dispatch.coordinator!!.ledger().snapshot().cpuCores())
+        dispatch.coordinator!!.close()
+    }
+
+    @Test
+    fun c1AccountingKeepsASingleCoreGuestAtItsRealWidth() {
+        // The clamp caps inflated accounting; it never invents budget.
+        val fixture = Fixture().apply { armedFacts() }
+
+        val dispatch = fixture.dispatch(cpuCores = 1)
+
+        assertEquals(2, dispatch.coordinator!!.ledger().budget().cpuCores())
+        assertEquals(2, dispatch.coordinator!!.ledger().snapshot().cpuCores())
+        dispatch.coordinator!!.close()
+    }
+
+    @Test
     fun unarmedFactsNeverStartTheAcceleratorLane() {
         val fixture = Fixture().apply {
             facts = AcceleratorFactProvider {
@@ -331,7 +367,7 @@ class AcceleratorLaunchDispatcherTest {
             }
         }
 
-        fun dispatch(): AcceleratorLaunchDispatcher.Dispatch {
+        fun dispatch(cpuCores: Int = 2): AcceleratorLaunchDispatcher.Dispatch {
             val images = imageDirectory ?: installImageFiles()
             val launcher = AcceleratorVmLauncher(
                 "accel-instance-1",
@@ -347,7 +383,7 @@ class AcceleratorLaunchDispatcherTest {
                 }
             }
             return AcceleratorLaunchDispatcher.dispatch(
-                true, params(), qemuLaunch,
+                true, params(cpuCores), qemuLaunch,
                 AcceleratorLaunchDispatcher.AccelBackends(
                     customVm = {
                         customVmBuilds.incrementAndGet()
@@ -433,8 +469,8 @@ class AcceleratorLaunchDispatcherTest {
             }
         }
 
-        fun params(): InstanceStrategyLauncher.LaunchParameters {
-            val hardware = VmHardwareConfig(2, 2048, 8L * 1024L * 1024L * 1024L, false, "")
+        fun params(cpuCores: Int = 2): InstanceStrategyLauncher.LaunchParameters {
+            val hardware = VmHardwareConfig(cpuCores, 2048, 8L * 1024L * 1024L * 1024L, false, "")
             return InstanceStrategyLauncher.LaunchParameters(
                 "instance-1", "token", "rootfs.tar.xz", "/data/volume.raw",
                 "/data/runtime", "/data/distro-inputs", "pw", hardware,

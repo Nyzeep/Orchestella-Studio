@@ -122,6 +122,8 @@
 
 ### C1 · 派发宽度与 vCPU 记账定案：QEMU 面按 2 记账、宽并行不派 QEMU 【类型：零代码决策，数据已齐——本方案最高性价比项】
 
+> **落地记录（2026-11-05，Lane P 编排决策落地智能体）**：①②已落地为编排语义（`feat/c1-fabric-width-decision`，实现 `5400fdb`、测试 `46b2c9f`）——记账挂点 `AcceleratorLaunchDispatcher`（硬件事实→车道预算的唯一转换点）：QEMU-TCG 车道并发预算 = 客户机拓扑 clamp 到实测有效 TCG 宽度 2（`FabricWidthDecision.qemuLaneBudgetCores`，min(拓扑,2)，1 核不虚增），launch 拓扑与 QemuTuning 默认值不变；宽并行（>2）不派 QEMU 面 + 优先级 native > UML > QEMU-TCG 落为 `FabricWidthDecision.route` 固定码契约（`WIDE_PARALLEL_NO_FACE` 区别于真无面），供 B2 编排消费。①的账本生效走既有 `LaneBudgetLedger.reserve`/`WorkerPool.Admission.ledgerBacked` 求和机制，`runtime/instance` 模块零改动。③ R-Q3「cpuCores=并发预算」javadoc 与 R-Q7 match_host 档在 `runtime/instance`（LaneBudgetLedger），按 lane 文件边界留 follow-up。**不新开 ADR**：性能参数级定案，`docs/adr/README.md` 索引 21 条均为架构级、无性能参数收录先例，Architecture Change Policy §3 明确此类实现取舍写实施报告即可；工单报告 `docs/reports/tickets/c1-fabric-width-decision/implementation-report.zh-CN.md`。
+
 - **现状证据**：T4 判据不满足（`S(4)≥2.0 且 E(4)≥0.60` 实测 1.42/0.35；`S(8)=1.12 < S(4)×1.15` 反噬条款命中，E2）；T9 以 n=10 复核 S(2)=1.60/E(2)=0.80 且跨设备一致（E3）；翻译税中位 92%（E4）；T4 报告已给结论「QEMU 车道 vCPU 预算按 2 记账（而非 4）；宽并行任务不应派给 QEMU 面；派发宽度优先级 native > UML > QEMU-TCG」（2026-11-07 报告 §4.1 对 W-FAB-07/08 的回答）；R-Q3 的「cpuCores=并发预算语义」为纯设计可定（mttcg 文档 §4.2 R-Q3）。
 - **优化方案**：ACR 投票采纳后写进编排（D-3 输入）与账本 javadoc：① QEMU 面预算按 2 vCPU 记账；② 派发器对宽并行任务（可拆分 make 型）跳过 QEMU 面或仅派 2 并发；③ 记账公式按 R-Q7（`usedCpu = smp N + match_host 全核`）。
 - **预期收益**：避免把宽并行任务压进 92% 翻译税且 S(8) 反噬的面——同负载在 native/UML 面可快 2–6×（E5/E1/E11 同窗可并读）；资源账本不再按虚高的 4 vCPU 占额（**置信度：高**——全部为已实测数字的直接应用）。
