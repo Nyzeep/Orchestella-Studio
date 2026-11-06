@@ -7,11 +7,11 @@
 <set xmlns:android="http://schemas.android.com/apk/res/android"
     android:interpolator="@anim/oe_emphasized_accelerate">
     <alpha
-        android:duration="150"
+        android:duration="@integer/oe_motion_duration_short3"
         android:fromAlpha="1.0"
         android:toAlpha="0.92" />
     <translate
-        android:duration="150"
+        android:duration="@integer/oe_motion_duration_short3"
         android:fromXDelta="0"
         android:toXDelta="-2%p" />
 </set>
