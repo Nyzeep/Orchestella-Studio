@@ -12,11 +12,29 @@
 
     <style name="Theme.DroidLayer" parent="Theme.Orchestella" />
 
+    <!-- Round 2026-11-07 (Lane B): completed the vocabulary to task-level
+         transitions. Every entry point a task can appear or leave through —
+         launcher cold start, NEW_TASK, recents to front, back out of the
+         root, home, launch-behind — now uses the same oe_ curve family, so
+         the platform default zoom/fade never flashes through mid-flow.
+         dream/wallpaper/fragment attrs are intentionally left inherited:
+         this app has no dreams, no wallpaper-backed windows and no
+         TRANSIT_FRAGMENT_* callers. -->
     <style name="Animation.Orchestella.Activity" parent="@android:style/Animation.Activity">
         <item name="android:activityOpenEnterAnimation">@anim/oe_activity_open_enter</item>
         <item name="android:activityOpenExitAnimation">@anim/oe_activity_open_exit</item>
         <item name="android:activityCloseEnterAnimation">@anim/oe_activity_close_enter</item>
         <item name="android:activityCloseExitAnimation">@anim/oe_activity_close_exit</item>
+        <item name="android:taskOpenEnterAnimation">@anim/oe_activity_open_enter</item>
+        <item name="android:taskOpenExitAnimation">@anim/oe_activity_open_exit</item>
+        <item name="android:taskCloseEnterAnimation">@anim/oe_activity_close_enter</item>
+        <item name="android:taskCloseExitAnimation">@anim/oe_activity_close_exit</item>
+        <item name="android:taskToFrontEnterAnimation">@anim/oe_activity_open_enter</item>
+        <item name="android:taskToFrontExitAnimation">@anim/oe_activity_open_exit</item>
+        <item name="android:taskToBackEnterAnimation">@anim/oe_activity_close_enter</item>
+        <item name="android:taskToBackExitAnimation">@anim/oe_activity_close_exit</item>
+        <item name="android:launchTaskBehindTargetAnimation">@anim/oe_launch_behind_target</item>
+        <item name="android:launchTaskBehindSourceAnimation">@anim/oe_launch_behind_source</item>
     </style>
 
     <style name="Widget.Orchestella.DiskPreset" parent="Widget.Material3.Button.OutlinedButton">

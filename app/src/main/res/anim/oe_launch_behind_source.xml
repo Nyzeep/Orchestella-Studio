@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Source window when a task is launched behind it
+  (launchTaskBehindSourceAnimation): 150 ms recede to 92% alpha, matching
+  the oe_activity_open_exit vocabulary of a page that stays legible while
+  yielding.
+-->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:interpolator="@anim/oe_standard_accelerate">
+    <alpha
+        android:duration="@integer/oe_motion_duration_short3"
+        android:fromAlpha="1.0"
+        android:toAlpha="0.92" />
+</set>
