@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  In-place content state enter (tab content, console/list state swaps):
+  fade in with a short rise (2% of parent height), 300 ms emphasized
+  decelerate. Keep the rise small so a state swap reads as a refresh, not
+  a page navigation. hardwareLayer note: pair with ViewPropertyAnimator
+  (see ui/motion/OrchestellaMotion) which sets withLayer().
+-->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:interpolator="@anim/oe_emphasized_decelerate">
+    <alpha
+        android:duration="@integer/oe_motion_duration_medium2"
+        android:fromAlpha="0.0"
+        android:toAlpha="1.0" />
+    <translate
+        android:duration="@integer/oe_motion_duration_medium2"
+        android:fromYDelta="2%p"
+        android:toYDelta="0" />
+</set>

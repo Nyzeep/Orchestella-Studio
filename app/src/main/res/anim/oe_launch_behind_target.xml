@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Target window when a task is launched behind the current one
+  (launchTaskBehindTargetAnimation): plain 150 ms fade-in so the new
+  background task materialises without stealing focus cues.
+-->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:interpolator="@anim/oe_emphasized_decelerate">
+    <alpha
+        android:duration="@integer/oe_motion_duration_short3"
+        android:fromAlpha="0.0"
+        android:toAlpha="1.0" />
+</set>

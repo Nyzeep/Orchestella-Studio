@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Lane B (round 2026-11-07): Material 3 motion duration tokens, oe_-prefixed.
+  Values mirror androidx.compose.material3 MotionTokens (verified against
+  androidx-main source) so the View-system XML resources and any future
+  Compose surface share one scale. The one non-token value, 210 ms, is the
+  Session 19 device-tuned "emphasized enter" duration: it sits between
+  short4 (200) and medium1 (250) and stays untouched to preserve the
+  evidence-backed open/close feel.
+-->
+<resources>
+    <!-- Material 3 duration scale: short -->
+    <integer name="oe_motion_duration_short1">50</integer>
+    <integer name="oe_motion_duration_short2">100</integer>
+    <integer name="oe_motion_duration_short3">150</integer>
+    <integer name="oe_motion_duration_short4">200</integer>
+
+    <!-- Material 3 duration scale: medium -->
+    <integer name="oe_motion_duration_medium1">250</integer>
+    <integer name="oe_motion_duration_medium2">300</integer>
+    <integer name="oe_motion_duration_medium3">350</integer>
+    <integer name="oe_motion_duration_medium4">400</integer>
+
+    <!-- Material 3 duration scale: long -->
+    <integer name="oe_motion_duration_long1">450</integer>
+    <integer name="oe_motion_duration_long2">500</integer>
+
+    <!-- Session 19 tuned value: activity emphasized enter/close-enter. -->
+    <integer name="oe_motion_duration_emphasized_enter">210</integer>
+</resources>

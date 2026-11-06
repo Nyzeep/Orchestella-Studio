@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  LayoutAnimationController for static section groups (settings cards,
+  dashboard panels): children play oe_list_item_enter with a 15% delay
+  cascade, top-to-bottom. Runs once on first layout; child add/remove
+  still re-triggers it, which is the desired list-entry behaviour.
+-->
+<layoutAnimation xmlns:android="http://schemas.android.com/apk/res/android"
+    android:delay="15%"
+    android:animationOrder="normal"
+    android:animation="@anim/oe_list_item_enter" />
