@@ -29,9 +29,4 @@ public interface UpdateStateStore {
     String cachedSummary();
 
     String cachedPageUrl();
-
-    /** Version the user asked to skip; it stays hidden until a newer one appears. */
-    String ignoredVersion();
-
-    void setIgnoredVersion(String version);
 }

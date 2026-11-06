@@ -17,7 +17,6 @@ public final class PrefsUpdateStateStore implements UpdateStateStore {
     public static final String KEY_VERSION = "update_available_version";
     public static final String KEY_SUMMARY = "update_available_summary";
     public static final String KEY_PAGE = "update_available_page";
-    public static final String KEY_IGNORED = "update_ignored_version";
 
     private final SharedPreferences preferences;
 
@@ -66,19 +65,5 @@ public final class PrefsUpdateStateStore implements UpdateStateStore {
     @Override
     public String cachedPageUrl() {
         return preferences.getString(KEY_PAGE, "");
-    }
-
-    @Override
-    public String ignoredVersion() {
-        return preferences.getString(KEY_IGNORED, null);
-    }
-
-    @Override
-    public void setIgnoredVersion(String version) {
-        if (version == null) {
-            preferences.edit().remove(KEY_IGNORED).apply();
-        } else {
-            preferences.edit().putString(KEY_IGNORED, version).apply();
-        }
     }
 }

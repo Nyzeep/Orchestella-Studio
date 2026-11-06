@@ -14,7 +14,9 @@ import java.util.Objects;
  * <ul>
  *   <li>one automatic check per {@link #DEFAULT_INTERVAL_MS}; a manual check always bypasses it</li>
  *   <li>only a strictly newer version is announced — never the same version, never a downgrade</li>
- *   <li>“暂时忽略” hides exactly that version; a newer one re-surfaces the badge</li>
+ *   <li>an announced version keeps showing until the installed build catches up or a check
+ *       reports the app as current — there is deliberately no “ignore this version” state
+ *       (docs/standards/APP-UPDATE.md §4)</li>
  *   <li>a failed check keeps the last known answer instead of clearing the badge</li>
  * </ul>
  */
@@ -87,10 +89,6 @@ public final class UpdateCenter {
         if (cached == null || cached.trim().isEmpty()) {
             return null;
         }
-        String ignored = store.ignoredVersion();
-        if (ignored != null && ignored.equals(cached)) {
-            return null;
-        }
         SemVer candidate = SemVer.parseTag(cached);
         SemVer installed = SemVer.parseTag(installedVersion);
         if (candidate == null || installed == null || candidate.compareTo(installed) <= 0) {
@@ -124,16 +122,5 @@ public final class UpdateCenter {
                 // Zero telemetry: when the user turned checks off, persist nothing at all.
                 break;
         }
-    }
-
-    public void ignore(String version) {
-        if (version != null && !version.trim().isEmpty()) {
-            store.setIgnoredVersion(version.trim());
-        }
-    }
-
-    /** Clears a previous “暂时忽略” so the badge can come back on the next check. */
-    public void clearIgnored() {
-        store.setIgnoredVersion(null);
     }
 }
