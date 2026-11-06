@@ -6,6 +6,7 @@
 
 ### 主线与验收
 
+- [零设备全项目优化轮（2026-11-07）](zero-device-optimization-20261107.zh-CN.md)：四 lane 两批次——A 大文件拆分（InstanceLifecycle 1724→739、BridgeControl 847→593、ProtectedPoolKnobs 统一旋钮）、B Material Motion task 级全局过渡+token 体系、C 冷启动 18 项审计落地（主线程 SHA-256 后台化+记忆化、通知权限首帧后请求）、D ErrorCopy 固定码文案契约+向导/设置/终端 UX；集成冒烟 1260/0/0，CI 一次绿 @ 4ac7f248。
 - [真机设备窗 2026-11-07（device-nova 首轮）](device-window-20261107.zh-CN.md)：T1 别名重建（4K 页/protected-only 候选）；T2 payload 缺件根因与重建（allowMissingPayload 构建产品 QEMU 必 IOException）；T4 票 27 真实事件（成功腿 10/16 门、guest_shutdown_acknowledged 缺口实测坐实、三失败腿 schema VALID、QEMU 产品链路真机全通）；T3 distcc@36 pVM 面平台级阻塞新形态（Gunyah vcpu crash exit 33，厂商 VM 正常）；T5① FabricOrchestrator.dispatch 零产品调用方结构性确认；T5② UML 面零设备切片并入 main（1227 测试）；T6 DV-01A 矩阵 +1（新形态）；T7 mode-facts qualification 4 pass / protected-only 实测。
 - [更新卡片收敛与真机环境重置轮（2026-11-06）](ui-and-device-reset-20261106.zh-CN.md)：关于页两处更新入口合并为单卡（三态、只留 Release 说明摘要 +「在 GitHub 查看」），删除「前往下载/暂时忽略」与忽略状态；真机 6 个开发遗留包卸载与残留核验、QA `dvpvm` 构建安装与 UI 验证。
 - [零设备收尾轮（2026-11-04）](orchestration/zero-device-closeout-20261104.zh-CN.md)：P1-1 `RfbInputEncoder` 补测 48 条、P13 `ACCEL_LOST` 预留泄漏修复（红→绿）、P0-2 `AGENTS.md` 时效刷新、P0-1 九份未入库证据文件快照；含中文路径 Gradle 单测坑复现与绕过。
