@@ -213,14 +213,14 @@ public final class ProtectedWarmPool implements Closeable {
 
         public static final class Builder {
             private int capacity = 0;
-            private long memoryMb = 1024L;
-            private long poolMemoryLimitMb = 1024L;
-            private long idleTtlMs = 120_000L;
+            private long memoryMb = ProtectedPoolKnobs.DEFAULT_MEMORY_MB;
+            private long poolMemoryLimitMb = ProtectedPoolKnobs.DEFAULT_MEMORY_MB;
+            private long idleTtlMs = ProtectedPoolKnobs.DEFAULT_IDLE_TTL_MS;
             private long maxWaitMs = 0L;
-            private long helloTimeoutMs = 2_000L;
-            private long payloadReadyTimeoutMs = 30_000L;
-            private long drainTimeoutMs = 2_000L;
-            private long stopGraceMs = 2_000L;
+            private long helloTimeoutMs = ProtectedPoolKnobs.DEFAULT_HELLO_TIMEOUT_MS;
+            private long payloadReadyTimeoutMs = ProtectedPoolKnobs.DEFAULT_PAYLOAD_READY_TIMEOUT_MS;
+            private long drainTimeoutMs = ProtectedPoolKnobs.DEFAULT_DRAIN_TIMEOUT_MS;
+            private long stopGraceMs = ProtectedPoolKnobs.DEFAULT_STOP_GRACE_MS;
             private String instancePrefix = "flwarm";
 
             public Builder capacity(int value) { this.capacity = value; return this; }
@@ -238,20 +238,16 @@ public final class ProtectedWarmPool implements Closeable {
                 if (capacity != 0 && capacity != 1) {
                     throw new IllegalArgumentException("capacity must be 0 or 1");
                 }
-                if (memoryMb <= 0L || memoryMb > 16_384L) {
-                    throw new IllegalArgumentException("memoryMb must be within (0, 16384]");
-                }
+                ProtectedPoolKnobs.memoryMb(memoryMb, "memoryMb");
                 if (poolMemoryLimitMb < 0L) {
                     throw new IllegalArgumentException("poolMemoryLimitMb must not be negative");
                 }
-                if (idleTtlMs < 0L || maxWaitMs < 0L || helloTimeoutMs <= 0L
-                        || payloadReadyTimeoutMs <= 0L || drainTimeoutMs < 0L
-                        || stopGraceMs < 0L) {
+                ProtectedPoolKnobs.commonTimeouts(idleTtlMs, helloTimeoutMs,
+                        payloadReadyTimeoutMs, drainTimeoutMs, stopGraceMs);
+                if (maxWaitMs < 0L) {
                     throw new IllegalArgumentException("timeouts must be non-negative");
                 }
-                if (instancePrefix == null || !instancePrefix.matches("[A-Za-z0-9._-]{1,48}")) {
-                    throw new IllegalArgumentException("instancePrefix must match [A-Za-z0-9._-]{1,48}");
-                }
+                ProtectedPoolKnobs.instancePrefix(instancePrefix);
                 return new Config(this);
             }
         }
