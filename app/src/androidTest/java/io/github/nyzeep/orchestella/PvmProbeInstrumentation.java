@@ -1815,8 +1815,15 @@ public final class PvmProbeInstrumentation extends Instrumentation {
                 notes.add("setCpuTopology: unavailable, platform default");
             }
             try {
-                final int debugFull = staticInt(configClass, "DEBUG_LEVEL_FULL", 2, notes);
+                // qaDebugLevel override (QA-only, 2026-11-07 device window): the
+                // Gunyah host crashed protected microdroid boots under the
+                // debuggable initrd (gh exit reason 3, vcpu crash ~3.4s); 0
+                // selects the normal initrd to separate that variable.
+                final int debugFull = Integer.parseInt(
+                        arguments.getString("qaDebugLevel", "2"));
                 builderClass.getMethod("setDebugLevel", int.class).invoke(builder, debugFull);
+            } catch (NumberFormatException bad) {
+                notes.add("qaDebugLevel: invalid");
             } catch (NoSuchMethodException absent) {
                 notes.add("setDebugLevel: unavailable");
             }
