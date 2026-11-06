@@ -287,7 +287,6 @@
     <string name="wizard_download_failover_info">节点故障，已自动故障转移至：%1$s</string>
     <string name="wizard_provisioning_info">正在校验 SHA-256 完整性并装配根文件系统…</string>
     <string name="wizard_init_success">🎉 首个实例已就绪，正在进入控制台…</string>
-    <string name="wizard_init_failed">初始化失败：%1$s</string>
 
     <!-- Ticket 01: Instance Creation Wizard Strings -->
     <string name="wizard_creation_title">新建实例向导</string>
@@ -424,4 +423,45 @@
     <string name="compat_body_unavailable">你的设备上此能力不可用或未开放——这不影响其他功能的完整使用（QEMU 完整架构模拟始终可用）。</string>
     <string name="compat_body_supported">支持设备：Android 14+ 且提供 protected VM 能力（AVF）的机型；部分设备需系统开放虚拟化框架。</string>
     <string name="compat_footer_note">本页说明不影响产品功能可用性</string>
+
+    <!-- Round 2026-11-07 Lane D: humanized error copy + fixed codes.
+         Headlines/hints are resolved by ErrorCopy (throwable -> entry);
+         codes are a stable contract, never rename, only add. -->
+    <string name="error_code_suffix">（错误码 %1$s）</string>
+    <string name="error_net_timeout">网络请求超时</string>
+    <string name="error_net_refused">无法连接到服务器</string>
+    <string name="error_net_dns">无法解析服务器地址</string>
+    <string name="error_net_tls">安全连接 (TLS) 建立失败</string>
+    <string name="error_file_missing">所需文件缺失或不可读</string>
+    <string name="error_storage_full">存储空间不足</string>
+    <string name="error_io_generic">数据读写失败</string>
+    <string name="error_wait_timeout">等待超时</string>
+    <string name="error_arg_invalid">配置参数未通过校验</string>
+    <string name="error_state_invalid">当前状态不允许执行该操作</string>
+    <string name="error_perm_denied">系统拒绝了所需权限</string>
+    <string name="error_interrupted">操作已被中断</string>
+    <string name="error_unknown">出现未知错误</string>
+    <string name="error_hint_check_network">请检查网络连接后重试</string>
+    <string name="error_hint_check_mirror">请检查网络，或返回上一步更换镜像源</string>
+    <string name="error_hint_check_clock">请检查系统时间是否正确后重试</string>
+    <string name="error_hint_check_storage">请清理存储空间后重试</string>
+    <string name="error_hint_retry">请重试；若持续失败请查看应用运行日志</string>
+    <string name="error_hint_recheck_config">请返回检查所选配置后重试</string>
+    <string name="error_hint_check_state">请确认实例状态后重试</string>
+    <string name="error_hint_check_permission">请在系统中授予所需权限后重试</string>
+    <string name="error_hint_see_log">详情见应用运行日志</string>
+
+    <!-- Setup wizard failure surface (consumes ErrorCopy). -->
+    <string name="wizard_init_failed_human">初始化失败：%1$s</string>
+    <string name="wizard_disk_input_invalid">请输入有效容量（GB，2–64 的整数）。</string>
+
+    <!-- Setup wizard exit confirmation while creation is still running. -->
+    <string name="wizard_exit_while_creating_title">创建仍在进行中</string>
+    <string name="wizard_exit_while_creating_message">退出本页不会取消已开始的下载与装配，实例创建会在后台继续完成；可稍后在实例列表查看结果。</string>
+    <string name="wizard_exit_while_creating_leave">仍要退出</string>
+    <string name="wizard_exit_while_creating_stay">留在本页</string>
+
+    <!-- Terminal empty state: no instance id was provided at all. -->
+    <string name="terminal_empty_no_instance_title">还没有可打开的实例</string>
+    <string name="terminal_empty_no_instance_message">请返回实例列表创建或选择一个实例。</string>
 </resources>

@@ -704,7 +704,10 @@ public class TerminalActivity extends Activity {
                     break;
             }
         } catch (Exception e) {
-            append("[reconcile error: " + e.getMessage() + "]\n");
+            // Humanized copy (Lane D): the raw throwable goes to logcat, the
+            // user surface gets a short headline plus a stable fixed code.
+            android.util.Log.w("TerminalActivity", "reconcile failed", e);
+            append("[实例状态恢复失败：" + ErrorCopy.detailMessage(this, e) + "]\n");
         }
     }
 
@@ -777,6 +780,11 @@ public class TerminalActivity extends Activity {
         if (active != null) { active.clear(); active.appendOutput(replay); }
         startBridgeServingIfNecessary(session);
         scheduleTerminalResize();
+        // After a fresh attach (snapshot replay included) land on the newest
+        // output, but only when the user has not scrolled away on purpose.
+        terminalView.post(() -> {
+            if (terminalView != null) terminalView.scrollToBottomIfFollowing();
+        });
     }
 
     private void showOfflinePlaceholder(InstanceLifecycle.Instance instance, boolean isCrashed) {
@@ -818,7 +826,15 @@ public class TerminalActivity extends Activity {
     }
 
     private void showMissingPlaceholder(String id) {
-        showTerminalPlaceholder("实例不存在", "在本地数据库中未找到 ID 为 " + id + " 的实例。");
+        // A direct launch with no instance id at all is an empty state, not a
+        // lookup failure: offer the creation path instead of a confusing
+        // "ID not found" line.
+        if (id == null || id.isEmpty()) {
+            showTerminalPlaceholder(getString(R.string.terminal_empty_no_instance_title),
+                    getString(R.string.terminal_empty_no_instance_message));
+        } else {
+            showTerminalPlaceholder("实例不存在", "在本地数据库中未找到 ID 为 " + id + " 的实例。");
+        }
     }
 
     /**
