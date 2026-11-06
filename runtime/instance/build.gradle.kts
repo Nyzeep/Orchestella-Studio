@@ -91,6 +91,25 @@ tasks.register<JavaExec>("gatewaySlotArbiterContractTest") {
     args(gatewaySlotOutput.get().asFile.absolutePath)
 }
 
+tasks.register<JavaExec>("instanceMetadataCodecContractTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.instance.InstanceMetadataCodecContractTest")
+}
+
+val fileStoreContractOutput = layout.buildDirectory.dir("filestore-contract")
+tasks.register<JavaExec>("instanceFileStoreContractTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.instance.InstanceFileStoreContractTest")
+    args(fileStoreContractOutput.get().asFile.absolutePath)
+}
+
+val controllerContractOutput = layout.buildDirectory.dir("controller-contract")
+tasks.register<JavaExec>("instanceLifecycleControllerContractTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycleControllerContractTest")
+    args(controllerContractOutput.get().asFile.absolutePath)
+}
+
 tasks.named("check") {
     dependsOn(
         "normalInstanceLifecycleContractTest",
@@ -104,7 +123,10 @@ tasks.named("check") {
         "instanceSnapshotManagerTest",
         "guestFeatureContractTest",
         "instanceStopSignalContractTest",
-        "gatewaySlotArbiterContractTest"
+        "gatewaySlotArbiterContractTest",
+        "instanceMetadataCodecContractTest",
+        "instanceFileStoreContractTest",
+        "instanceLifecycleControllerContractTest"
     )
 }
 
