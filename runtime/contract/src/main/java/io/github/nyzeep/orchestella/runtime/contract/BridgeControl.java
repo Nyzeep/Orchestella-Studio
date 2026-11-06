@@ -1,20 +1,21 @@
 package io.github.nyzeep.orchestella.runtime.contract;
 
-import java.net.URI;
-import java.net.URLDecoder;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
-import java.util.regex.Pattern;
 
-/** Strategy-neutral control behavior for an authenticated Bridge v1 byte stream. */
+/**
+ * Strategy-neutral control behavior for an authenticated Bridge v1 byte stream.
+ *
+ * <p>File layout: routing ({@code dispatch*}) and the adapter seams live here; per-verb
+ * request-line field parsing lives in {@link BridgeRequestParser}. The public API of this
+ * class is unchanged.
+ */
 public final class BridgeControl {
-    private static final int MAX_PAYLOAD_CHARS = 2048;
     public static final int MAX_CLIPBOARD_PAYLOAD_BYTES = 262144;
-    private static final Pattern SAFE_URL_PATTERN = Pattern.compile("^[hH][tT][tT][pP][sS]?://.+");
 
     private BridgeControl() {}
 
@@ -194,22 +195,6 @@ public final class BridgeControl {
         return dispatchInternal(requestLine, terminal, power, notification, urlOpener, display, clipboard);
     }
 
-    private static boolean matchesVerb(String line, String verb) {
-        if (line == null) {
-            return false;
-        }
-        return line.startsWith("ORCHESTELLA/" + verb + " ")
-                || ("ORCHESTELLA/" + verb + "\n").equals(line)
-                || ("ORCHESTELLA/" + verb + "\r\n").equals(line)
-                || line.startsWith("DROIDLAYER/" + verb + " ")
-                || ("DROIDLAYER/" + verb + "\n").equals(line)
-                || ("DROIDLAYER/" + verb + "\r\n").equals(line);
-    }
-
-    private static boolean isVerbField(String field, String verb) {
-        return ("ORCHESTELLA/" + verb).equals(field) || ("DROIDLAYER/" + verb).equals(field);
-    }
-
     private static Result dispatchInternal(
             String requestLine,
             Terminal terminal,
@@ -226,7 +211,7 @@ public final class BridgeControl {
             return dispatchClipboardInternal(requestLine, clipboard);
         }
         if (isPowerCommand(requestLine)) {
-            PowerRequest req = parsePower(requestLine);
+            BridgeRequestParser.PowerRequest req = BridgeRequestParser.parsePower(requestLine);
             if (req == null) {
                 return Result.rejected("ORCHESTELLA/ERROR malformed-command\n");
             }
@@ -238,7 +223,7 @@ public final class BridgeControl {
                     : Result.rejected("ORCHESTELLA/ERROR power-unavailable\n");
         }
         if (isResizeCommand(requestLine)) {
-            ResizeRequest resize = parseResize(requestLine);
+            BridgeRequestParser.ResizeRequest resize = BridgeRequestParser.parseResize(requestLine);
             if (resize == null) {
                 return Result.rejected("ORCHESTELLA/ERROR malformed-command\n");
             }
@@ -250,7 +235,7 @@ public final class BridgeControl {
                     : Result.rejected("ORCHESTELLA/ERROR resize-unavailable\n");
         }
         if (isNotifyCommand(requestLine)) {
-            NotifyRequest req = parseNotify(requestLine);
+            BridgeRequestParser.NotifyRequest req = BridgeRequestParser.parseNotify(requestLine);
             if (req == null) {
                 return Result.rejected("ORCHESTELLA/ERROR malformed-command\n");
             }
@@ -262,7 +247,7 @@ public final class BridgeControl {
                     : Result.rejected("ORCHESTELLA/ERROR notify-unavailable\n");
         }
         if (isOpenUrlCommand(requestLine)) {
-            OpenUrlRequest req = parseOpenUrl(requestLine);
+            BridgeRequestParser.OpenUrlRequest req = BridgeRequestParser.parseOpenUrl(requestLine);
             if (req == null) {
                 return Result.rejected("ORCHESTELLA/ERROR malformed-command\n");
             }
@@ -274,7 +259,7 @@ public final class BridgeControl {
                     : Result.rejected("ORCHESTELLA/ERROR open-url-unavailable\n");
         }
         if (isDisplayCommand(requestLine)) {
-            DisplayRequest req = parseDisplay(requestLine);
+            BridgeRequestParser.DisplayRequest req = BridgeRequestParser.parseDisplay(requestLine);
             if (req == null) {
                 return Result.rejected("ORCHESTELLA/ERROR malformed-command\n");
             }
@@ -304,7 +289,7 @@ public final class BridgeControl {
     }
 
     public static boolean isClipboardCommand(String requestLine) {
-        return matchesVerb(requestLine, "CLIPBOARD");
+        return BridgeRequestParser.matchesVerb(requestLine, "CLIPBOARD");
     }
 
     private static Result dispatchClipboardInternal(String requestLine, Clipboard clipboard) {
@@ -316,7 +301,7 @@ public final class BridgeControl {
             line = line.substring(0, line.length() - 1);
         }
         String[] fields = line.split(" ", -1);
-        if (fields.length < 2 || !isVerbField(fields[0], "CLIPBOARD")) {
+        if (fields.length < 2 || !BridgeRequestParser.isVerbField(fields[0], "CLIPBOARD")) {
             return Result.rejected("ORCHESTELLA/ERROR malformed-command\n");
         }
         String subcommand = fields[1];
@@ -378,203 +363,23 @@ public final class BridgeControl {
     }
 
     public static boolean isPowerCommand(String requestLine) {
-        return matchesVerb(requestLine, "POWER");
+        return BridgeRequestParser.matchesVerb(requestLine, "POWER");
     }
 
     public static boolean isResizeCommand(String requestLine) {
-        return matchesVerb(requestLine, "RESIZE");
+        return BridgeRequestParser.matchesVerb(requestLine, "RESIZE");
     }
 
     public static boolean isNotifyCommand(String requestLine) {
-        return matchesVerb(requestLine, "NOTIFY");
+        return BridgeRequestParser.matchesVerb(requestLine, "NOTIFY");
     }
 
     public static boolean isOpenUrlCommand(String requestLine) {
-        return matchesVerb(requestLine, "OPEN-URL");
+        return BridgeRequestParser.matchesVerb(requestLine, "OPEN-URL");
     }
 
     public static boolean isDisplayCommand(String requestLine) {
-        return matchesVerb(requestLine, "DISPLAY");
-    }
-
-    private static PowerRequest parsePower(String requestLine) {
-        if (requestLine == null || !requestLine.endsWith("\n") || requestLine.length() > MAX_PAYLOAD_CHARS) {
-            return null;
-        }
-        String line = requestLine.substring(0, requestLine.length() - 1);
-        if (line.endsWith("\r")) {
-            line = line.substring(0, line.length() - 1);
-        }
-        String[] fields = line.split(" ", -1);
-        if (fields.length != 2 || !isVerbField(fields[0], "POWER")) {
-            return null;
-        }
-        PowerAction action = PowerAction.fromWire(fields[1]);
-        if (action == null) {
-            return null;
-        }
-        return new PowerRequest(action);
-    }
-
-    private static ResizeRequest parseResize(String requestLine) {
-        if (requestLine == null || !requestLine.endsWith("\n") || requestLine.length() > MAX_PAYLOAD_CHARS) {
-            return null;
-        }
-        String line = requestLine.substring(0, requestLine.length() - 1);
-        if (line.endsWith("\r")) {
-            line = line.substring(0, line.length() - 1);
-        }
-        String[] fields = line.split(" ", -1);
-        if (fields.length != 3 || !isVerbField(fields[0], "RESIZE")) {
-            return null;
-        }
-        try {
-            int columns = Integer.parseInt(fields[1]);
-            int rows = Integer.parseInt(fields[2]);
-            if (columns < 1 || columns > 1000 || rows < 1 || rows > 1000) {
-                return null;
-            }
-            return new ResizeRequest(columns, rows);
-        } catch (NumberFormatException malformedNumber) {
-            return null;
-        }
-    }
-
-    private static NotifyRequest parseNotify(String requestLine) {
-        if (requestLine == null || !requestLine.endsWith("\n") || requestLine.length() > MAX_PAYLOAD_CHARS) {
-            return null;
-        }
-        String line = requestLine.substring(0, requestLine.length() - 1);
-        if (line.endsWith("\r")) {
-            line = line.substring(0, line.length() - 1);
-        }
-        String[] fields = line.split(" ", -1);
-        if (fields.length != 3 || !isVerbField(fields[0], "NOTIFY")) {
-            return null;
-        }
-        String title = decodeNotifyField(fields[1]);
-        String message = decodeNotifyField(fields[2]);
-        if (title == null || message == null || title.isEmpty() || message.isEmpty()
-                || title.length() > MAX_PAYLOAD_CHARS || message.length() > MAX_PAYLOAD_CHARS) {
-            return null;
-        }
-        return new NotifyRequest(title, message);
-    }
-
-    private static String decodeNotifyField(String field) {
-        if (field == null || field.isEmpty()) {
-            return null;
-        }
-        try {
-            if (field.startsWith("base64:")) {
-                byte[] decoded = Base64.getDecoder().decode(field.substring(7));
-                return new String(decoded, StandardCharsets.UTF_8);
-            }
-            return URLDecoder.decode(field, StandardCharsets.UTF_8);
-        } catch (IllegalArgumentException malformedEncoding) {
-            return null;
-        }
-    }
-
-    private static OpenUrlRequest parseOpenUrl(String requestLine) {
-        if (requestLine == null || !requestLine.endsWith("\n") || requestLine.length() > MAX_PAYLOAD_CHARS) {
-            return null;
-        }
-        String line = requestLine.substring(0, requestLine.length() - 1);
-        if (line.endsWith("\r")) {
-            line = line.substring(0, line.length() - 1);
-        }
-        String[] fields = line.split(" ", -1);
-        if (fields.length != 2 || !isVerbField(fields[0], "OPEN-URL")) {
-            return null;
-        }
-        String url = fields[1];
-        if (url.isEmpty() || url.length() > MAX_PAYLOAD_CHARS) {
-            return null;
-        }
-        if (!SAFE_URL_PATTERN.matcher(url).matches()) {
-            return null;
-        }
-        try {
-            URI uri = URI.create(url);
-            String scheme = uri.getScheme();
-            if (scheme == null || (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme))) {
-                return null;
-            }
-            if (uri.getHost() == null || uri.getHost().isEmpty()) {
-                return null;
-            }
-        } catch (IllegalArgumentException malformedUri) {
-            return null;
-        }
-        return new OpenUrlRequest(url);
-    }
-
-    private static DisplayRequest parseDisplay(String requestLine) {
-        if (requestLine == null || !requestLine.endsWith("\n") || requestLine.length() > MAX_PAYLOAD_CHARS) {
-            return null;
-        }
-        String line = requestLine.substring(0, requestLine.length() - 1);
-        if (line.endsWith("\r")) {
-            line = line.substring(0, line.length() - 1);
-        }
-        String[] fields = line.split(" ", -1);
-        if (fields.length < 2 || !isVerbField(fields[0], "DISPLAY")) {
-            return null;
-        }
-        String subcommand = fields[1];
-        if ("MODE".equals(subcommand)) {
-            if (fields.length != 5) {
-                return null;
-            }
-            try {
-                int width = Integer.parseInt(fields[2]);
-                int height = Integer.parseInt(fields[3]);
-                double scale = Double.parseDouble(fields[4]);
-                if (width < 100 || width > 7680 || height < 100 || height > 7680) {
-                    return null;
-                }
-                if (Double.isNaN(scale) || Double.isInfinite(scale) || scale < 0.1 || scale > 5.0) {
-                    return null;
-                }
-                return new DisplayRequest(DisplayCommandType.MODE, width, height, scale, 0);
-            } catch (NumberFormatException e) {
-                return null;
-            }
-        } else if ("RESIZE".equals(subcommand)) {
-            if (fields.length != 4) {
-                return null;
-            }
-            try {
-                int width = Integer.parseInt(fields[2]);
-                int height = Integer.parseInt(fields[3]);
-                if (width < 100 || width > 7680 || height < 100 || height > 7680) {
-                    return null;
-                }
-                return new DisplayRequest(DisplayCommandType.RESIZE, width, height, 0.0, 0);
-            } catch (NumberFormatException e) {
-                return null;
-            }
-        } else if ("FPS".equals(subcommand)) {
-            if (fields.length != 3) {
-                return null;
-            }
-            try {
-                int fps = Integer.parseInt(fields[2]);
-                if (fps < 1 || fps > 240) {
-                    return null;
-                }
-                return new DisplayRequest(DisplayCommandType.FPS, 0, 0, 0.0, fps);
-            } catch (NumberFormatException e) {
-                return null;
-            }
-        } else if ("LAUNCH".equals(subcommand)) {
-            if (fields.length != 2) {
-                return null;
-            }
-            return new DisplayRequest(DisplayCommandType.LAUNCH, 0, 0, 0.0, 0);
-        }
-        return null;
+        return BridgeRequestParser.matchesVerb(requestLine, "DISPLAY");
     }
 
     /** Adapter for strategy-neutral power management actions (shutdown/poweroff). */
@@ -583,7 +388,7 @@ public final class BridgeControl {
         boolean power(PowerAction action);
     }
 
-    /** Adapter for the strategy-neutral terminal behavior required by resize. */
+    /** Adapter for strategy-neutral terminal behavior required by resize. */
     @FunctionalInterface
     public interface Terminal {
         boolean resize(int columns, int rows);
@@ -756,65 +561,6 @@ public final class BridgeControl {
 
         public Clipboard clipboard() {
             return clipboard;
-        }
-    }
-
-    private enum DisplayCommandType {
-        MODE,
-        RESIZE,
-        FPS,
-        LAUNCH
-    }
-
-    private static final class DisplayRequest {
-        private final DisplayCommandType type;
-        private final int width;
-        private final int height;
-        private final double scale;
-        private final int fps;
-
-        private DisplayRequest(DisplayCommandType type, int width, int height, double scale, int fps) {
-            this.type = type;
-            this.width = width;
-            this.height = height;
-            this.scale = scale;
-            this.fps = fps;
-        }
-    }
-
-    private static final class PowerRequest {
-        private final PowerAction action;
-
-        private PowerRequest(PowerAction action) {
-            this.action = action;
-        }
-    }
-
-    private static final class ResizeRequest {
-        private final int columns;
-        private final int rows;
-
-        private ResizeRequest(int columns, int rows) {
-            this.columns = columns;
-            this.rows = rows;
-        }
-    }
-
-    private static final class NotifyRequest {
-        private final String title;
-        private final String message;
-
-        private NotifyRequest(String title, String message) {
-            this.title = title;
-            this.message = message;
-        }
-    }
-
-    private static final class OpenUrlRequest {
-        private final String url;
-
-        private OpenUrlRequest(String url) {
-            this.url = url;
         }
     }
 
