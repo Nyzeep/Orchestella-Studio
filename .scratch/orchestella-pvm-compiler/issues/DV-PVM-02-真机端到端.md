@@ -26,3 +26,10 @@
   - 报告：`docs/reports/tickets/dv-pvm-02b/implementation-report.zh-CN.md`。
 - 未验证：同版本宿主 clang 对照（`build/host` 的 `clang` 目标补编未完成）、真实 `distcc 3.4` 客户端、`ru_maxrss`、并发 >1。
 - 报告：`docs/reports/tickets/dv-pvm-02/implementation-report.zh-CN.md`（分支 `feat/dv-pvm-02-device-e2e`）。
+
+## Comments
+
+- 2026-11-07 / ZCode（设备窗 T5① / GLM-5.3-Flash）：**02b 产品 listening 缺口的结构性确认 + 编排层真机演练事实**（设备别名 device-nova，仓外证据 `evidence/device-window-20261106/t3-distcc36/`）：
+  - **结构性确认**：全仓 grep 证实 `FabricOrchestrator.dispatch` 产品侧**零调用方**（仅测试与 `AcceleratorLaneAssembly.fabricOrchestrator` 接线格）——B2 报告 follow-up ② 的"接线格已备、等 listening 起点"与 02b 的"native 面 TCP 监听起点缺口"互为同一缺口的两面。**收口条件合并为一票**：监听器（产品 TCP 起点）落地时必须把连接请求经 `FabricOrchestrator.dispatch` 走编排，二者同步收口；在既有双 gate 之下，无需新 ACR 改动面（D-1 标记通道仍单列）。
+  - **真机演练**：QA compiler-crossfire 探针经**生产 `DualLaneCoordinator`** 编排双车道真机运行（start_report: qemu READY / accel STARTING，reject_code=NONE，QEMU lane 走生产 `QemuInstanceLauncher` 同型参数）；ACCEL lane 在本设备死于平台级 hypervisor 崩溃（Gunyah vcpu crash，见 DV-01A 工单 2026-11-07 行与本轮报告）——编排层行为本身与平台崩溃无关，budget/request 形状按生产常量。
+  - **对 distcc@36 的影响**：ACR §8 该行在 device-nova 上因 pVM 平台崩溃不可达（非 02b 缺口所致）；QEMU 面（T4）与 UML 面（T5② 零设备切片已合并 main）不受影响。

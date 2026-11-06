@@ -87,3 +87,12 @@ Parent: 22离线工具的生产纵向切片，复用04/09样本边界
   - **UI 挂点**：`activity_settings.xml` 新增「🩺 诊断与开发者选项」分区（既有 MaterialCardView + MaterialSwitch 行模式，置尾随「加速与性能」之后），开关行 id `switch_settings_stage_trace`；标题/摘要走 strings 资源 `settings_stage_trace_diag_title`/`settings_stage_trace_diag_desc`（中文默认，文案含「启动阶段诊断追踪（默认关）」与关闭态零采集说明）；`SettingsActivity.setupDiagnosticsSection()` 仅读写 `SettingsManager` 既有 getter/setter（同键 `stage_trace_diagnostics_enabled`，即 `StageTraceProvider` 原始读取路径），不新增任何采集行为，recorder/sink 本体未动。
   - **测试与验证**：`SettingsManagerTest` 新增 2 项（默认严格关 + 双向切换持久化且落在共享键），`:app:testDebugUnitTest --tests SettingsManagerTest` **11 tests, 0 fail/error/skip**；`:app:compileDebugKotlin -Porchestella.assets.allowMissingPayload=true` 绿。
   - **诚实边界**：仓库无 UI 自动化测试基建（设置页为 View 体系非 Compose，androidTest 仅有设备探针，单测侧无 Robolectric/Espresso），UI 开关本身未自动化测试，仅 SettingsManager 键读写单测 + 编译验证；人工冒烟项（开关状态回显、切换持久化）记入实施报告。**剩余尾巴不变：真实 QEMU 正常 + 受控失败事件原件仍归设备窗，agent 不伪造。**
+
+## Comments
+
+- 2026-11-07 / ZCode（设备窗 T4 / GLM-5.3-Flash）：**真实 QEMU 事件原件已采集（正常 + 三失败腿），Status 维持 implemented 不变**。设备别名 device-nova（新设备，Android 16 / API 36 / HONOR 系粗口径；原始证据仓外 `evidence/device-window-20261106/t4-ticket27/`，四条会话 trace 均过 `avf_stage_trace_schema.py` VALID）：
+  - **成功腿**（debian 实例冷启→终端→UI"正常关机"，运行 273s）：观测 **10/16 门**（launch_requested/inputs_begin/inputs_verified/run_begin/vm_created/run_returned/vsock_connected/agent_authenticated/guest_command_ok/stop_requested），trace_end `state=ENDED`；**stop facts 2/3**（owned_vm_stopped + owned_resources_released 真实闭合；`guest_shutdown_acknowledged` 缺失 → `stop_completed` 依约不签）——lane J 2026-11-05 预言的三个 not_observed 信号源中，guest shutdown ack 缺口首次在真实产品启动链上实测坐实；"正常关机"路径 guest 侧无 ack 回执（console 未捕获 shutdown 序列）。
+  - **失败腿×3**：①payload 缺件构建（allowMissingPayload 豁免）→ `READINESS_FAILED`（IOException @ GATEWAY 阶段，3 门）；②rootfs 卷校验和不匹配（guest 自我关机）→ `READINESS_FAILED`（8 门，2 事实）；③注入失败（rootfs 卷改名→启动→还原）→ `CREATE_FAILED @ inputs_begin`（2 门）。
+  - **缺门归类**：preflight_begin/end、manager_begin 为 AVF lane 专属挂点（QEMU lane 不触发，符合挂点清单）；vm_running_observed/services_ready/guest_shutdown_acknowledged 维持缺信号源。
+  - **设备备注**：诊断开关经设置页 UI 真实开启/关闭走通（lane Q 的 UI 入口首次真机使用）；采集期间 stop_requested 后 stop facts 落盘及时，无悬挂 trace。
+  - **遗留不变**：guest shutdown ack / services_ready 信号源补齐仍 open；AVF 同口径事件依赖票 07。
