@@ -54,7 +54,9 @@ import io.github.nyzeep.orchestella.ui.theme.ThemeColors
 import io.github.nyzeep.orchestella.runtime.engineavf.AvfEngineException
 import io.github.nyzeep.orchestella.runtime.engineavf.AvfVirtualMachineEngine
 import io.github.nyzeep.orchestella.runtime.engineavf.ReflectiveAvfVirtualMachineApi
-import io.github.nyzeep.orchestella.runtime.engineqemu.RuntimeArtifactManifest
+import io.github.nyzeep.orchestella.HostHardwareProfile
+import io.github.nyzeep.orchestella.startup.DashboardSnapshot
+import io.github.nyzeep.orchestella.startup.RuntimeVerification
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
 import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneClock
 import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneStartException
@@ -64,7 +66,6 @@ import io.github.nyzeep.orchestella.runtime.network.PortConflictDetector
 import io.github.nyzeep.orchestella.runtime.network.PortForwardingManager
 import java.io.IOException
 import java.nio.file.Files
-import java.nio.file.Paths
 import java.time.Clock
 import java.util.concurrent.Executors
 
@@ -106,20 +107,25 @@ class MainActivity : AppCompatActivity() {
     private var dashboardInstance: InstanceLifecycle.Instance? = null
     private var sshCommand: String? = null
     private var lastInstanceState = ""
+    private var lastAssessment: DeviceCapabilityEvaluator.Assessment? = null
+    private var runtimeStatusLine: String? = null
     private val dashboardHandler = Handler(Looper.getMainLooper())
+
     private val refreshDashboard = object : Runnable {
         override fun run() {
             if (!::instanceStore.isInitialized || isFinishing || isDestroyed) return
-            val theme = activeTheme ?: themeStore.resolve()
-            renderGauges(theme)
-            val instances = try { instanceStore.list() } catch (_: IOException) { emptyList() }
-            val state = instances.joinToString { "${it.id()}:${it.state()}" }
-            if (state != lastInstanceState) {
-                showInstances()
-            } else {
-                updateConsoleWithInstance(dashboardInstance)
+            // 冷启动/主线程卫生（Lane C）：3 秒周期的实例列表与硬件/存储读数改在
+            // operations executor 上取齐，UI 线程只渲染快照；读取失败按空列表继续。
+            loadDashboardSnapshot(strict = false) { snapshot ->
+                val theme = activeTheme ?: themeStore.resolve()
+                renderGauges(theme, snapshot)
+                if (snapshot.stateKey != lastInstanceState) {
+                    renderInstances(snapshot)
+                } else {
+                    updateConsoleWithInstance(snapshot.primary, snapshot.ssh)
+                }
+                if (currentTabIndex == 2) renderHardwareSpecDetails()
             }
-            if (currentTabIndex == 2) renderHardwareSpecDetails()
             dashboardHandler.postDelayed(this, 3000L)
         }
     }
@@ -235,7 +241,10 @@ class MainActivity : AppCompatActivity() {
         instanceList = findViewById(R.id.instance_list)
         upgradeAuthorizationButton = findViewById(R.id.upgrade_authorization)
         instanceStore = InstanceLifecycle.FileStore(filesDir.toPath().resolve("instances"))
-        reconcileOrphanInstances()
+        // 冷启动主线程卫生（Lane C）：孤儿回收是实例目录遍历 + 可能的状态写盘，
+        // 迁到既有 operations executor；后续 showInstances() 的快照任务在同一
+        // 单线程队列上排队，仍看到回收后的状态（与原同步顺序一致）。
+        operations.execute { reconcileOrphanInstances() }
 
         settingsButton.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
@@ -289,7 +298,31 @@ class MainActivity : AppCompatActivity() {
         showInstances()
         switchTab(savedInstanceState?.getInt("dashboard_tab", 0) ?: 0)
         ThemeApplier.bind(this)
+        scheduleRuntimeVerification()
         handleLaunchIntent(intent)
+    }
+
+    /**
+     * 冷启动最大单点 IO：QEMU 运行时完整性校验（打开 APK ZipFile + 对
+     * libdroidlayer_qemu.so 全量 SHA-256）。迁到 operations executor 并进程级
+     * 记忆化；期间状态行先渲染其余内容，校验完成后补齐该行（见
+     * [renderSystemStatus]）。判定语义不变，只改计算线程与首次渲染时机。
+     */
+    private fun scheduleRuntimeVerification() {
+        RuntimeVerification.verifyAsync(
+            compute = { RuntimeVerification.computeProduction(applicationContext) },
+            executor = operations,
+        ) { result ->
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                runtimeStatusLine = when (result) {
+                    is RuntimeVerification.Result.Verified -> getString(R.string.qemu_runtime_verified)
+                    is RuntimeVerification.Result.Unavailable ->
+                        getString(R.string.qemu_runtime_unavailable, result.reason)
+                }
+                lastAssessment?.let { renderSystemStatus(it) }
+            }
+        }
     }
 
     private fun setupNavigationTabs() {
@@ -629,7 +662,14 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun updateConsoleWithInstance(instance: InstanceLifecycle.Instance?) {
+    /**
+     * @param sshPrefetch 非 null 表示 SSH 规则已在后台快照中取过（command 可为 null=
+     *   无规则），UI 线程不得再读规则文件；null 保持旧的自取路径，仅供未迁移调用方兜底。
+     */
+    private fun updateConsoleWithInstance(
+        instance: InstanceLifecycle.Instance?,
+        sshPrefetch: DashboardSnapshot.SshPrefetch? = null,
+    ) {
         dashboardInstance = instance
         val theme = activeTheme ?: themeStore.resolve()
         val session = instance?.let { ExecutionSessionRegistry.get(it.id()) }
@@ -668,18 +708,7 @@ class MainActivity : AppCompatActivity() {
             }
         findViewById<com.google.android.material.button.MaterialButton>(R.id.seg_qemu)?.text =
             if (session is QemuInstanceLauncher.Session) "QEMU · 正在使用" else "QEMU · 可用"
-        sshCommand = instance?.let { target ->
-            try {
-                val rule = FilePortForwardingStore(filesDir.toPath().resolve("network"))
-                    .loadRules(target.id()).firstOrNull {
-                        it.guestPort() == 22 && it.protocol().wireName() == "tcp"
-                    }
-                rule?.let {
-                    val host = if (it.isLanExposed()) "<手机IP>" else it.bindAddress()
-                    "ssh -p ${it.hostPort()} ${target.defaultUser()}@$host"
-                }
-            } catch (_: Exception) { null }
-        }
+        sshCommand = instance?.let { target -> sshPrefetch?.command ?: loadSshCommand(target) }
         findViewById<TextView>(R.id.ssh_string)?.text = sshCommand ?: "尚未配置 SSH 端口映射"
         findViewById<com.google.android.material.button.MaterialButton>(R.id.copy_ssh_btn)?.text =
             if (sshCommand == null) "配置" else "复制"
@@ -717,14 +746,26 @@ class MainActivity : AppCompatActivity() {
         val targetLaunchId = intent?.getStringExtra("action_launch_instance_id")
         if (targetLaunchId != null && ::instanceStore.isInitialized) {
             intent.removeExtra("action_launch_instance_id")
-            try {
-                val instance = instanceStore.load(targetLaunchId)
-                if (instance != null) {
-                    launchInstance(instance)
+            // 主线程卫生（Lane C）：实例元数据读取（属性文件 IO）迁 operations executor；
+            // launchInstance 仍回主线程触发，保持其内部 UI 写入线程不变。
+            val store = instanceStore
+            operations.execute {
+                val loaded = try {
+                    store.load(targetLaunchId)
+                } catch (failure: Exception) {
+                    runOnUiThread {
+                        if (isFinishing || isDestroyed) return@runOnUiThread
+                        createStatus.text = "读取实例失败：${failure.message ?: failure.javaClass.simpleName}"
+                        Toast.makeText(this@MainActivity, createStatus.text, Toast.LENGTH_LONG).show()
+                    }
+                    null
                 }
-            } catch (failure: Exception) {
-                createStatus.text = "读取实例失败：${failure.message ?: failure.javaClass.simpleName}"
-                Toast.makeText(this, createStatus.text, Toast.LENGTH_LONG).show()
+                if (loaded != null) {
+                    runOnUiThread {
+                        if (isFinishing || isDestroyed) return@runOnUiThread
+                        launchInstance(loaded)
+                    }
+                }
             }
         }
     }
@@ -774,7 +815,9 @@ class MainActivity : AppCompatActivity() {
         if (::instanceStore.isInitialized) {
             avfReadiness = AvfCapabilityEvaluator.evaluate(AvfHostFactsProbe.probe(this))
             refreshWizardEntry()
-            reconcileOrphanInstances()
+            // 孤儿回收是磁盘遍历 + 可能写盘，与 onCreate 一致迁后台；随后的
+            // showInstances() 快照任务在同一单线程队列上排队，仍看到回收后的状态。
+            operations.execute { reconcileOrphanInstances() }
             renderSystemStatus(DeviceCapabilityEvaluator.evaluate(deviceProfile()))
             showInstances()
             if (currentTabIndex == 2) {
@@ -946,13 +989,16 @@ class MainActivity : AppCompatActivity() {
      * The one surface color for hand-painted dashboard chrome (session 19 T-B.2).
      * Composes the persisted percent with the theme surface; with a wallpaper
      * selected the scrim owns legibility, so the contrast floor is skipped.
+     *
+     * 主线程卫生：原实现每次调用 new 两个 ThemeStore（且 ThemeStore 构造还要走一次
+     * ThemeApplier.install），读的是同一份偏好文件；改用 onCreate 已持有的字段。
      */
     private fun surfaceColor(theme: AppTheme): Int = SurfaceOpacity.resolveSurfaceColor(
         theme.surface,
         theme.background,
         theme.text,
-        ThemeStore(this).surfaceOpacityPercent(),
-        ThemeStore(this).backgroundUri() != null,
+        themeStore.surfaceOpacityPercent(),
+        themeStore.backgroundUri() != null,
     )
 
     private fun applyThemeToDashboard() {
@@ -1076,7 +1122,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun buildGlowCardDrawable(theme: AppTheme): android.graphics.drawable.Drawable {
-        val radius = ThemeStore(this).cornerRadiusDp() * resources.displayMetrics.density
+        val radius = themeStore.cornerRadiusDp() * resources.displayMetrics.density
         val outer = android.graphics.drawable.GradientDrawable().apply {
             cornerRadius = radius
             setStroke(
@@ -1114,7 +1160,27 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** 同步路径（主题应用/换页/手动刷新）：在主线程现取读数，行为与迁移前一致。 */
     private fun renderGauges(theme: AppTheme) {
+        renderGauges(
+            theme,
+            HostHardwareDetector.detect(this),
+            try { android.os.StatFs(filesDir.path).totalBytes } catch (_: Exception) { 0L },
+            try { android.os.StatFs(filesDir.path).availableBytes } catch (_: Exception) { 0L },
+        )
+    }
+
+    /** 周期刷新路径：使用后台快照预取的读数，UI 线程零磁盘/内核读。 */
+    private fun renderGauges(theme: AppTheme, snapshot: DashboardSnapshot) {
+        renderGauges(theme, snapshot.hardwareProfile, snapshot.storageTotalBytes, snapshot.storageFreeBytes)
+    }
+
+    private fun renderGauges(
+        theme: AppTheme,
+        profile: HostHardwareProfile,
+        storageTotalBytes: Long,
+        storageFreeBytes: Long,
+    ) {
         val density = resources.displayMetrics.density
         val memory = findViewById<io.github.nyzeep.orchestella.ui.RingProgressView>(R.id.ring_memory)
         val storage = findViewById<io.github.nyzeep.orchestella.ui.RingProgressView>(R.id.ring_storage)
@@ -1127,7 +1193,6 @@ class MainActivity : AppCompatActivity() {
         cpuRing?.configure(theme.primary, theme.text, theme.textDim, density)
         ramRing?.configure(theme.accent, theme.text, theme.textDim, density)
 
-        val profile = HostHardwareDetector.detect(this)
         val totalRamMb = profile.totalRamMb().coerceAtLeast(1)
         val availRamMb = profile.availRamMb().coerceIn(0, totalRamMb)
         val usedRam = totalRamMb - availRamMb
@@ -1146,9 +1211,8 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.tv_ram_free_swap)?.text =
             String.format(java.util.Locale.getDefault(), "可用 %.1f GB · 每 3 秒刷新", availRamMb / 1024.0)
 
-        val stat = android.os.StatFs(filesDir.path)
-        val totalBytes = stat.totalBytes
-        val freeBytes = stat.availableBytes
+        val totalBytes = storageTotalBytes
+        val freeBytes = storageFreeBytes
         val usedBytes = totalBytes - freeBytes
         storage?.setProgress(usedBytes.toFloat() / totalBytes.coerceAtLeast(1),
             "${usedBytes / (1024L * 1024L * 1024L)}G", "存储")
@@ -1190,6 +1254,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderSystemStatus(assessment: DeviceCapabilityEvaluator.Assessment) {
+        lastAssessment = assessment
         val profile = HostHardwareDetector.detect(this)
         val cpuChip = findViewById<TextView>(R.id.system_cpu_chip)
         val virtBadge = findViewById<TextView>(R.id.system_virtualization_badge)
@@ -1219,7 +1284,8 @@ class MainActivity : AppCompatActivity() {
                 appendLine(getString(R.string.support_floor_refused, assessment.refusalReason()))
             }
             assessment.emulatorNotice()?.let(::appendLine)
-            append(verifiedQemuStatus())
+            // 首次校验完成前该行为空，校验回调（scheduleRuntimeVerification）补齐。
+            runtimeStatusLine?.let(::append)
         }
     }
 
@@ -1243,25 +1309,87 @@ class MainActivity : AppCompatActivity() {
         runningAnimators.add(animator)
     }
 
+    /**
+     * 冷启动/主线程卫生（Lane C）：实例列表读取（目录遍历 + 逐实例属性文件解析）
+     * 与 SSH 规则、加速车道判定都在 operations executor 上取齐，UI 线程只渲染
+     * [DashboardSnapshot]。渲染顺序经单线程队列保持，最终状态与原同步实现一致。
+     */
     private fun showInstances() {
-        clearRunningAnimators()
-        instanceList.removeAllViews()
-        val instances = try {
-            instanceStore.list()
-        } catch (_: IOException) {
-            // Listing failure is not a creation failure: say what broke and what the user can do.
-            createStatus.text = getString(R.string.instances_load_failed, "实例元数据不可读")
-            return
+        loadDashboardSnapshot(strict = true) { snapshot -> renderInstances(snapshot) }
+    }
+
+    /**
+     * 后台取数：一次快照涵盖实例列表、主实例、SSH 规则预取、加速车道判定与
+     * 硬件/存储读数。
+     *
+     * 失败语义与原实现一致：strict=true（列表渲染路径）在 UI 线程清空卡片并展示
+     * 既有失败文案，不回调；strict=false（3 秒周期刷新）按原 catch 行为以空列表
+     * 快照继续回调，由调用方按原 diff 规则决定展示失败文案还是轻更新。
+     */
+    private fun loadDashboardSnapshot(strict: Boolean, onReady: (DashboardSnapshot) -> Unit) {
+        val appContext = applicationContext
+        val lastActiveId = if (::settingsManager.isInitialized) settingsManager.lastActiveInstanceId else null
+        val store = instanceStore
+        val instancesPath = filesDir.path
+        operations.execute {
+            val instances = try {
+                store.list()
+            } catch (_: IOException) {
+                null
+            }
+            val primary = instances?.let { DashboardSnapshot.pickPrimary(it, lastActiveId) }
+            val snapshot = DashboardSnapshot(
+                instances = instances ?: emptyList(),
+                stateKey = DashboardSnapshot.stateKeyOf(instances ?: emptyList()),
+                listFailed = instances == null,
+                primary = primary,
+                ssh = primary?.let { DashboardSnapshot.SshPrefetch(loadSshCommand(it)) },
+                acceleratorLaneReady = acceleratorLaneReady(),
+                hardwareProfile = HostHardwareDetector.detect(appContext),
+                storageTotalBytes = try { android.os.StatFs(instancesPath).totalBytes } catch (_: Exception) { 0L },
+                storageFreeBytes = try { android.os.StatFs(instancesPath).availableBytes } catch (_: Exception) { 0L },
+            )
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (instances == null && strict) {
+                    // Listing failure is not a creation failure: say what broke and what the user can do.
+                    // 原实现在读取前已清空卡片；失败时同样先清再报错，不留幻影卡片。
+                    clearRunningAnimators()
+                    instanceList.removeAllViews()
+                    createStatus.text = getString(R.string.instances_load_failed, "实例元数据不可读")
+                    return@runOnUiThread
+                }
+                onReady(snapshot)
+            }
+        }
+    }
+
+    /** 单实例的 SSH 命令拼装（端口转发规则文件读取，现仅由后台快照调用）。 */
+    private fun loadSshCommand(target: InstanceLifecycle.Instance): String? =
+        try {
+            val rule = FilePortForwardingStore(filesDir.toPath().resolve("network"))
+                .loadRules(target.id()).firstOrNull {
+                    it.guestPort() == 22 && it.protocol().wireName() == "tcp"
+                }
+            rule?.let {
+                val host = if (it.isLanExposed()) "<手机IP>" else it.bindAddress()
+                "ssh -p ${it.hostPort()} ${target.defaultUser()}@$host"
+            }
+        } catch (_: Exception) {
+            null
         }
 
-        lastInstanceState = instances.joinToString { "${it.id()}:${it.state()}" }
+    private fun renderInstances(snapshot: DashboardSnapshot) {
+        clearRunningAnimators()
+        instanceList.removeAllViews()
+        val instances = snapshot.instances
+
+        lastInstanceState = snapshot.stateKey
         val emptyView = findViewById<TextView>(R.id.instances_empty)
         val countBadge = findViewById<TextView>(R.id.instances_count_badge)
         countBadge?.text = "${instances.size} 个实例"
 
-        val runningInstance = instances.firstOrNull { it.state() == InstanceLifecycle.State.RUNNING }
-        val primaryInstance = runningInstance ?: instances.firstOrNull { it.id() == settingsManager.lastActiveInstanceId } ?: instances.firstOrNull()
-        updateConsoleWithInstance(primaryInstance)
+        updateConsoleWithInstance(snapshot.primary, snapshot.ssh)
 
         if (instances.isEmpty()) {
             emptyView?.visibility = View.VISIBLE
@@ -1273,8 +1401,10 @@ class MainActivity : AppCompatActivity() {
         val supportsDesktop = false
         val strategyBadge = currentBadge(DeviceCapabilityEvaluator.evaluate(deviceProfile()))
         // One probe per render, not per card: the facts/policy read is the
-        // same source the launch dispatcher consults.
-        val laneReady = acceleratorLaneReady()
+        // same source the launch dispatcher consults. Since the snapshot
+        // migration the probe runs on the executor, not the UI thread.
+        val laneReady = snapshot.acceleratorLaneReady
+        val currentTheme = activeTheme ?: themeStore.resolve()
 
         val inflater = LayoutInflater.from(this)
         for (instance in instances) {
@@ -1349,7 +1479,6 @@ class MainActivity : AppCompatActivity() {
                 true
             }
 
-            val currentTheme = activeTheme ?: themeStore.resolve()
             if (cardView is com.google.android.material.card.MaterialCardView) {
                 cardView.setCardBackgroundColor(surfaceColor(currentTheme))
                 cardView.strokeColor = (currentTheme.glow and 0x00FFFFFF) or 0x30000000
@@ -1904,6 +2033,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+
     private fun deviceProfile(): DeviceCapabilityEvaluator.DeviceProfile {
         val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         val memoryInfo = ActivityManager.MemoryInfo().also(activityManager::getMemoryInfo)
@@ -1924,21 +2054,6 @@ class MainActivity : AppCompatActivity() {
             Build.BRAND.startsWith("generic") ||
             Build.DEVICE.startsWith("generic") ||
             "google_sdk" == Build.PRODUCT
-
-    private fun verifiedQemuStatus(): String =
-        try {
-            PackagedAssetStreams.openAsset(this, RuntimeArtifactManifest.SCHEMA_FILE_NAME).use { input ->
-                val manifest = RuntimeArtifactManifest.parse(input)
-                val nativeLibraryDirectory = applicationInfo.nativeLibraryDir
-                    ?: return getString(R.string.qemu_runtime_unavailable, "nativeLibraryDir unavailable")
-                manifest.requireVerifiedInstalledQemu(Paths.get(nativeLibraryDirectory))
-                getString(R.string.qemu_runtime_verified)
-            }
-        } catch (rejection: RuntimeArtifactManifest.IntegrityRejectedException) {
-            getString(R.string.qemu_runtime_unavailable, rejection.reason())
-        } catch (_: IOException) {
-            getString(R.string.qemu_runtime_unavailable, "runtime manifest unavailable")
-        }
 
     private fun showCredentialsDialog(instance: InstanceLifecycle.Instance) {
         val password = instance.guestPassword()
