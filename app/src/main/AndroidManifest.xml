@@ -118,6 +118,19 @@
                 android:value="Linux virtual machine execution and guest terminal persistence" />
         </service>
 
+        <!-- B2 follow-up ②: UML compile-worker face keep-alive. Foreground
+             state + wake lock are the hard anti-freeze prerequisite for the
+             long-lived UML kernel (device-round evidence: a background face is
+             frozen with the app's whole cgroup). -->
+        <service
+            android:name=".UmlFaceKeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-mode Linux compile worker keep-alive" />
+        </service>
+
         <!-- ADR-0011 §4 & US-35: Device boot completion listener -->
         <receiver
             android:name=".BootCompletedReceiver"
