@@ -222,8 +222,15 @@ public final class AcceleratorLaneAssemblyTest {
             throws Exception {
         File libDir = tmp.newFolder("uml-native-lib");
         File filesDir = tmp.newFolder("uml-files");
-        assertTrue(new File(libDir, UmlFaceLauncher.KERNEL_LIB_NAME).createNewFile());
-        assertTrue(new File(libDir, UmlFaceLauncher.STUB_LIB_NAME).createNewFile());
+        File kernel = new File(libDir, UmlFaceLauncher.KERNEL_LIB_NAME);
+        File stub = new File(libDir, UmlFaceLauncher.STUB_LIB_NAME);
+        assertTrue(kernel.createNewFile());
+        assertTrue(stub.createNewFile());
+        // The launcher's asset pre-check requires the executable bit; POSIX
+        // filesystems honor it (CI Linux), while Windows canExecute() is
+        // always true for existing files, so this is a no-op there.
+        kernel.setExecutable(true);
+        stub.setExecutable(true);
         assertTrue(new File(filesDir, UmlFaceLauncher.ROOTFS_DIR_NAME).mkdirs());
 
         // The C2-shaped product flow: an 8-core host's QEMU request is the
