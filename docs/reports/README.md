@@ -23,6 +23,7 @@
 ### AVF / Shizuku 工单与审查
 
 - [工单实施报告](tickets/)：当前 AVF / Shizuku 工单的实施记录。
+- [pVM 探针两包适配（2026-11-06）](tickets/pvm-probe-two-package/implementation-report.zh-CN.md)：`PvmProbeInstrumentation` 未随两包拆分更新，`/mnt/apk` 指主包导致 `Failed to find payload`；改为按扩展包 APK 设 `setApkPath` 后 VM 能起载荷，失败前移到 `PAYLOAD_EXIT_BEFORE_READY`（exit 1，真因待 guest console）。
 - [票据收尾轮（2026-11-05）](tickets/ticket-closure-20261104/implementation-report.zh-CN.md)：fastlane P13（ACCEL_LOST 账本泄漏）闭环核验置 `implemented`（commit `b07dca0` 红绿反证）；avf-shizuku 27 核实未实现、补 agent-ready 开工说明。
 - 批次三（2026-10-23）：[批次二修复](tickets/batch2-fixes/implementation-report.zh-CN.md)、[AX-02 选道](tickets/ax-02/implementation-report.zh-CN.md)、[AX-06 distcc 宿主 e2e](tickets/ax-06/implementation-report.zh-CN.md)。
 - 真机交接：[真机交叉加速测试 Prompt](../agent-handoff/accelerator/device-cross-lane-test-prompt-20261023.zh-CN.md)：设备资格、AX-07/AX-08 前置门、分阶段测试与证据规则。
