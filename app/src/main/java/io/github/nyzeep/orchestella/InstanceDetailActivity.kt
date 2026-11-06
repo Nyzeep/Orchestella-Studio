@@ -39,6 +39,7 @@ import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
 import io.github.nyzeep.orchestella.ui.InstanceDetailViewModel
 import io.github.nyzeep.orchestella.ui.InstanceDetailViewModel.InstanceDetailUiState
 import io.github.nyzeep.orchestella.ui.InstanceDetailViewModel.UpdateHardwareResult
+import io.github.nyzeep.orchestella.ui.motion.OrchestellaMotion
 import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
 import java.io.IOException
 import java.time.Clock
@@ -124,6 +125,8 @@ class InstanceDetailActivity : AppCompatActivity() {
     private lateinit var containerStorage: View
     private lateinit var containerNetwork: View
     private lateinit var containerMaintenance: View
+    private var activeDetailContainer: View? = null
+    private var detailTabGeneration = 0
 
     // SSH Quick Access Card
     private lateinit var tvDetailSshCmd: TextView
@@ -324,6 +327,9 @@ class InstanceDetailActivity : AppCompatActivity() {
         containerStorage = findViewById(R.id.container_detail_storage)
         containerNetwork = findViewById(R.id.container_detail_network)
         containerMaintenance = findViewById(R.id.container_detail_maintenance)
+        // Preset so the initial check() below early-returns: the opening screen
+        // already has Lane B's stagger animation, no second enter on top of it.
+        activeDetailContainer = containerOverview
 
         // SSH Quick Access Card
         tvDetailSshCmd = findViewById(R.id.tv_detail_ssh_cmd)
@@ -550,16 +556,35 @@ class InstanceDetailActivity : AppCompatActivity() {
     }
 
     private fun setupActionListeners() {
-        // Modular Secondary Navigation Tabs
-        navToggleGroup.check(R.id.tab_detail_overview)
+        // Modular Secondary Navigation Tabs. Lane B motion consumption: the
+        // leaving container fades out (OrchestellaMotion.stateChangeExit) before
+        // it is GONE-ed and the arriving one rises in (stateChangeEnter) — the
+        // hook points named in that KDoc. The generation counter stops a stale
+        // exit timer from GONE-ing a container that was switched back to while
+        // its fade-out was still running.
         navToggleGroup.addOnButtonCheckedListener { _, checkedId, isChecked ->
             if (!isChecked) return@addOnButtonCheckedListener
-            containerOverview.visibility = if (checkedId == R.id.tab_detail_overview) View.VISIBLE else View.GONE
-            containerHardware.visibility = if (checkedId == R.id.tab_detail_hardware) View.VISIBLE else View.GONE
-            containerStorage.visibility = if (checkedId == R.id.tab_detail_storage) View.VISIBLE else View.GONE
-            containerNetwork.visibility = if (checkedId == R.id.tab_detail_network) View.VISIBLE else View.GONE
-            containerMaintenance.visibility = if (checkedId == R.id.tab_detail_maintenance) View.VISIBLE else View.GONE
+            val arriving = detailContainerFor(checkedId) ?: return@addOnButtonCheckedListener
+            val leaving = activeDetailContainer
+            if (arriving === leaving) return@addOnButtonCheckedListener
+            activeDetailContainer = arriving
+            detailTabGeneration++
+            val generation = detailTabGeneration
+            arriving.visibility = View.VISIBLE
+            detailTabContainers.filter { it !== arriving && it !== leaving }.forEach {
+                it.visibility = View.GONE
+            }
+            if (leaving != null) {
+                OrchestellaMotion.stateChangeExit(leaving)
+                leaving.postDelayed({
+                    if (generation == detailTabGeneration && leaving !== activeDetailContainer) {
+                        leaving.visibility = View.GONE
+                    }
+                }, OrchestellaMotion.DURATION_EXIT_MS + 16L)
+            }
+            OrchestellaMotion.stateChangeEnter(arriving)
         }
+        navToggleGroup.check(R.id.tab_detail_overview)
 
         // Section 1 Buttons
         btnTerminal.setOnClickListener {
@@ -769,6 +794,19 @@ class InstanceDetailActivity : AppCompatActivity() {
                 .setNegativeButton(R.string.action_delete_cancel_btn, null)
                 .show().also { ThemeApplier.apply(it) }
         }
+    }
+
+    private val detailTabContainers: List<View>
+        get() = listOf(containerOverview, containerHardware, containerStorage,
+            containerNetwork, containerMaintenance)
+
+    private fun detailContainerFor(checkedId: Int): View? = when (checkedId) {
+        R.id.tab_detail_overview -> containerOverview
+        R.id.tab_detail_hardware -> containerHardware
+        R.id.tab_detail_storage -> containerStorage
+        R.id.tab_detail_network -> containerNetwork
+        R.id.tab_detail_maintenance -> containerMaintenance
+        else -> null
     }
 
     private fun showPowerManagementDialog(state: InstanceDetailUiState) {
