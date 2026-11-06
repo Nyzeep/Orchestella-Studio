@@ -27,12 +27,15 @@ import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneState;
 import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneStopOutcome;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 
 /** AX-08: the assembly is the only gate that may arm the accelerator lane. */
 public final class AcceleratorLaneAssemblyTest {
@@ -40,6 +43,9 @@ public final class AcceleratorLaneAssemblyTest {
     private static final LaneBudget HOST_BUDGET = new LaneBudget(8, 8192L, 128L, true);
     private static final LaneRequest QEMU_REQUEST = new LaneRequest(LaneId.QEMU, 4, 4096L, 32L);
     private static final LaneRequest ACCEL_REQUEST = new LaneRequest(LaneId.ACCEL, 2, 2048L, 16L);
+
+    @Rule
+    public TemporaryFolder tmp = new TemporaryFolder();
 
     // --- feature flag off: today's behaviour, exactly ---------------------------
 
@@ -207,6 +213,134 @@ public final class AcceleratorLaneAssemblyTest {
         assertNull(gateOff.route());
         assertEquals(FabricOrchestrator.Code.GATE_DISABLED, gateOff.code());
         assertEquals(1, nativeExecutions.size());
+    }
+
+    // --- B2 follow-up ②: the UML face's product wiring ----------------------------
+
+    @Test
+    public void umlFaceWiringFeedsTheFabricOrchestratorSlotWithWidthAndWorker()
+            throws Exception {
+        File libDir = tmp.newFolder("uml-native-lib");
+        File filesDir = tmp.newFolder("uml-files");
+        assertTrue(new File(libDir, UmlFaceLauncher.KERNEL_LIB_NAME).createNewFile());
+        assertTrue(new File(libDir, UmlFaceLauncher.STUB_LIB_NAME).createNewFile());
+        assertTrue(new File(filesDir, UmlFaceLauncher.ROOTFS_DIR_NAME).mkdirs());
+
+        // The C2-shaped product flow: an 8-core host's QEMU request is the
+        // clamped 2, the accel lane reserves 1, and the ledger's remaining 5
+        // cores are the headroom the UML face's kernel width lives in.
+        LaneRequest qemuRequest = new LaneRequest(
+                LaneId.QEMU, FabricWidthDecision.qemuLaneBudgetCores(8), 4096L, 32L);
+        LaneRequest accelRequest = new LaneRequest(LaneId.ACCEL, 1, 2048L, 16L);
+        LaneBudget hostBudget = new LaneBudget(8, 8192L, 128L, true);
+        Fixture fixture = new Fixture();
+        fixture.hostBudget = hostBudget;
+        fixture.qemuRequest = qemuRequest;
+        fixture.accelRequest = accelRequest;
+        AcceleratorLaneAssembly.Result result = fixture.assemble(true);
+        result.coordinator().startAll();
+
+        FakeKeepAlive keepAlive = new FakeKeepAlive();
+        AtomicInteger spawns = new AtomicInteger();
+        UmlFaceLauncher.ProcessSpawner spawner = (command, environment, workingDir) -> {
+            spawns.incrementAndGet();
+            return new UmlFaceLauncher.UmlProcess() {
+                @Override public boolean isAlive() {
+                    return true;
+                }
+
+                @Override public void destroy() {
+                }
+
+                @Override public void destroyForcibly() {
+                }
+
+                @Override public boolean waitForExit(long timeoutMs) {
+                    return true;
+                }
+            };
+        };
+        List<String> channelExecutions = new ArrayList<>();
+        UmlFaceLauncher.Channel channel =
+                (grantedWidth, item) -> channelExecutions.add("UML:" + grantedWidth);
+
+        UmlFaceLauncher face = new UmlFaceLauncher(
+                true,
+                new UmlFaceLauncher.Environment() {
+                    @Override public File nativeLibraryDir() {
+                        return libDir;
+                    }
+
+                    @Override public File filesDir() {
+                        return filesDir;
+                    }
+                },
+                new UmlFaceLauncher.LaunchParams(
+                        512, 4, java.util.Collections.emptyList()),
+                keepAlive,
+                spawner,
+                channel);
+
+        // Face down: the fabric slot's umlFaceWidth reads 0, and since no
+        // other wired face exists the dispatch is a genuine outage, not the
+        // wide-parallel policy refusal.
+        java.util.Map<FabricWidthDecision.Face, FabricOrchestrator.FaceWorker> workers =
+                new java.util.EnumMap<>(FabricWidthDecision.Face.class);
+        workers.put(FabricWidthDecision.Face.UML, face.faceWorker());
+        FabricOrchestrator orchestrator = AcceleratorLaneAssembly.fabricOrchestrator(
+                true, result, qemuRequest.cpuCores(), accelRequest.cpuCores(),
+                face.widthSupplier(), workers);
+        FabricOrchestrator.Outcome faceDown =
+                orchestrator.dispatch(new FabricOrchestrator.WorkItem() { }, 4);
+        assertFalse(faceDown.admitted());
+        assertEquals(
+                FabricWidthDecision.RejectCode.NO_FACE_AVAILABLE,
+                faceDown.route().rejectCode());
+        assertEquals(0, spawns.get());
+
+        // Face up: the kernel's effective SMP width feeds the slot, is
+        // clamped to the ledger headroom (5), and the wide dispatch lands on
+        // the UML face through the injected worker — the QEMU face is never
+        // considered for wide work.
+        assertTrue(face.start().started());
+        assertEquals(1, spawns.get());
+        assertEquals(1, keepAlive.acquires);
+        FabricOrchestrator.Outcome wide =
+                orchestrator.dispatch(new FabricOrchestrator.WorkItem() { }, 8);
+        assertTrue(wide.admitted());
+        assertEquals(FabricWidthDecision.Face.UML, wide.route().face());
+        assertEquals(4, wide.route().width());
+        assertEquals(1, channelExecutions.size());
+        assertEquals("UML:4", channelExecutions.get(0));
+        // The keep-alive is still held: the kernel is running.
+        assertEquals(0, keepAlive.releases);
+    }
+
+    @Test
+    public void umlFaceGateOffStartIsAZeroSideEffectRefusal() throws Exception {
+        File libDir = tmp.newFolder("uml-gate-lib");
+        File filesDir = tmp.newFolder("uml-gate-files");
+
+        UmlFaceLauncher face = AcceleratorLaneAssembly.umlFace(
+                false,
+                new UmlFaceLauncher.Environment() {
+                    @Override public File nativeLibraryDir() {
+                        return libDir;
+                    }
+
+                    @Override public File filesDir() {
+                        return filesDir;
+                    }
+                },
+                UmlFaceLauncher.LaunchParams.defaults(),
+                new FakeKeepAlive());
+
+        UmlFaceLauncher.StartResult result = face.start();
+
+        assertFalse(result.started());
+        assertEquals(UmlFaceLauncher.StartCode.GATE_DISABLED, result.code());
+        assertEquals(0, face.width());
+        assertEquals(UmlFaceLauncher.Health.NOT_RUNNING, face.probe());
     }
 
     @Test
@@ -414,15 +548,20 @@ public final class AcceleratorLaneAssemblyTest {
         final List<LaneEvent> events = new ArrayList<>();
         QemuReadinessProbe qemuProbe = QemuReadinessProbe.absent();
         AcceleratorFactProvider facts = () -> AcceleratorFacts.unknown();
+        // Overridable for the UML-face flow (a host budget wider than the two
+        // lane reservations leaves the ledger headroom the UML face lives in).
+        LaneBudget hostBudget = HOST_BUDGET;
+        LaneRequest qemuRequest = QEMU_REQUEST;
+        LaneRequest accelRequest = ACCEL_REQUEST;
         private AcceleratorLaneAssembly.Result result;
 
         AcceleratorLaneAssembly.Result assemble(boolean flag) {
             result = AcceleratorLaneAssembly.assemble(
                     new AcceleratorLaneAssembly.Config(flag, TRIPLE, 50L, 50L),
                     new AcceleratorLaneAssembly.Inputs(
-                            HOST_BUDGET,
-                            QEMU_REQUEST,
-                            ACCEL_REQUEST,
+                            hostBudget,
+                            qemuRequest,
+                            accelRequest,
                             () -> {
                                 qemuStarts.incrementAndGet();
                                 return AcceleratorLaneAssembly.qemuLane(session, qemuProbe);
@@ -457,6 +596,20 @@ public final class AcceleratorLaneAssemblyTest {
                 }
             }
             return false;
+        }
+    }
+
+    /** The UML face's keep-alive seam recording acquire/release only. */
+    private static final class FakeKeepAlive implements UmlFaceLauncher.KeepAlive {
+        int acquires;
+        int releases;
+
+        @Override public void acquire() {
+            acquires++;
+        }
+
+        @Override public void release() {
+            releases++;
         }
     }
 
