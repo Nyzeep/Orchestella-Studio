@@ -17,6 +17,7 @@ import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.materialswitch.MaterialSwitch
+import io.github.nyzeep.orchestella.ui.motion.OrchestellaMotion
 import io.github.nyzeep.orchestella.ui.theme.CustomThemeSlot
 import io.github.nyzeep.orchestella.ui.theme.SurfaceOpacity
 import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
@@ -116,6 +117,7 @@ class SettingsActivity : AppCompatActivity() {
         setupDiagnosticsSection()
         setupThemeSection()
         setupAcceleratorSection()
+        setupFallbackExplanationSection()
         refreshAppearance()
     }
 
@@ -308,6 +310,38 @@ class SettingsActivity : AppCompatActivity() {
         switchCursorBlink.isChecked = settingsManager.isTerminalCursorBlinkEnabled
         switchCursorBlink.setOnCheckedChangeListener { _, isChecked ->
             settingsManager.isTerminalCursorBlinkEnabled = isChecked
+        }
+    }
+
+    /**
+     * Lane B motion consumption: the "启动验证与回退" explanation card becomes a
+     * toggleable section via [OrchestellaMotion.expandSection]/[collapseSection],
+     * exactly the hook point named in that KDoc. Default state stays expanded so
+     * first-open behavior is unchanged; a generation counter stops a stale
+     * collapse-end action from GONE-ing a section that was re-expanded meanwhile.
+     */
+    private fun setupFallbackExplanationSection() {
+        val header = findViewById<View?>(R.id.layout_settings_fallback_header) ?: return
+        val content = findViewById<View?>(R.id.layout_settings_fallback_content) ?: return
+        val indicator = findViewById<TextView?>(R.id.txt_settings_fallback_expand_indicator)
+        var expanded = true
+        var toggleGeneration = 0
+        fun repaintIndicator() {
+            indicator?.text = if (expanded) "▾" else "▸"
+        }
+        repaintIndicator()
+        header.setOnClickListener {
+            toggleGeneration++
+            val generation = toggleGeneration
+            expanded = !expanded
+            if (expanded) {
+                OrchestellaMotion.expandSection(content)
+            } else {
+                OrchestellaMotion.collapseSection(content) {
+                    if (generation == toggleGeneration) content.visibility = View.GONE
+                }
+            }
+            repaintIndicator()
         }
     }
 
