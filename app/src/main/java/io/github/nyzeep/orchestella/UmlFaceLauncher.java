@@ -1,0 +1,508 @@
+package io.github.nyzeep.orchestella;
+
+import java.io.File;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.IntSupplier;
+
+/**
+ * B2 follow-up ② (UML face product wiring, step one): the product lifecycle
+ * manager for the UML compile-worker face. It starts the UML kernel the same
+ * way the research prototype ({@code research/uml-runner}, the source of
+ * {@code dev.orchestella.umlrunner} 0.2.0) proved it on device — exec
+ * {@code nativeLibraryDir/libuml_kernel.so} with the {@code stub_exe=} hostfs
+ * configuration — and exposes exactly the two seams the B2 orchestration
+ * consumes: an {@link #widthSupplier() IntSupplier} for the fabric slot's
+ * {@code umlFaceWidth} and a {@link #faceWorker() FaceWorker} for the
+ * {@link FabricOrchestrator} workers map under
+ * {@link FabricWidthDecision.Face#UML}. {@code FabricOrchestrator} itself is
+ * untouched: it was built to consume this face through injection.
+ *
+ * <p><b>Hard prerequisite: foreground service + wake lock.</b> The 2026-11-07
+ * device round (§7.1.6) proved the whole process group — this app and its UML
+ * child together — is frozen by the OEM cgroup freezer within minutes of the
+ * screen dozing unless the app holds a foreground service and a wake lock;
+ * the E18 window measured 60 minutes of zero-freeze residency with that
+ * combination. {@link #start} therefore acquires the injected
+ * {@link KeepAlive} right after a successful spawn and releases it on stop or
+ * observed kernel death; the production {@code KeepAlive} is
+ * {@link UmlFaceKeepAliveService#keepAlive}, which is required, never a
+ * silent no-op.
+ *
+ * <p><b>Honest degradation.</b> A face that cannot start never pretends to:
+ * <ul>
+ *   <li>Missing assets (kernel/stub/rootfs — the kernel binaries are not in
+ *   the repository, they are placed per the prototype's prepare flow) answer
+ *   the fixed {@link StartCode#MISSING_ASSET} code and the width stays 0.</li>
+ *   <li>A spawn failure answers {@link StartCode#SPAWN_FAILED}; nothing is
+ *   acquired.</li>
+ *   <li>An unwired {@link Channel} (the device window injects the real
+ *   distcc-over-TCP channel; the bridge lane-marker change is fabric-route
+ *   doc D-1, ACR-bound) keeps the width at 0, so the orchestration never
+ *   routes work into a face that cannot serve it.</li>
+ *   <li>The gate off means a zero-side-effect refusal: no asset is read, no
+ *   process is spawned, no keep-alive is touched — the run stays today's
+ *   run.</li>
+ * </ul>
+ *
+ * <p><b>Width.</b> The UML face's dispatchable width is the worker's real
+ * serviceable compile concurrency, which is the kernel's SMP width: the
+ * {@code ncpus=} knob when it is ≥2 (the knob the device round measured —
+ * {@code ncpus=N}, never {@code --cpus=N}, which the SMP kernel does not
+ * recognize), and 1 for the default host-1 single-core shape. A stopped,
+ * dead, or channel-less face reads 0. The fabric slot clamps this to the
+ * ledger headroom, so an over-declaring config cannot oversubscribe the
+ * ledger.
+ */
+public final class UmlFaceLauncher {
+
+    /** The UML kernel image, packaged under {@code jniLibs} as a {@code lib*.so}. */
+    public static final String KERNEL_LIB_NAME = "libuml_kernel.so";
+    /** The UML {@code stub_exe} helper, packaged under {@code jniLibs} likewise. */
+    public static final String STUB_LIB_NAME = "libuml_stub.so";
+    /** The guest rootfs directory (hostfs channel) under {@code filesDir}. */
+    public static final String ROOTFS_DIR_NAME = "rootfs";
+
+    /** Fixed detail for a dispatch that reached a face with no kernel running. */
+    public static final String FACE_NOT_RUNNING_DETAIL = "uml-face-not-running";
+    /** Fixed detail for a dispatch that reached a face with no compile channel wired. */
+    public static final String CHANNEL_UNWIRED_DETAIL = "uml-face-compile-channel-unwired";
+
+    private static final long STOP_GRACE_MS = 3_000L;
+    /** Kernel env: the guest RAM backing files must land somewhere exec-mappable. */
+    private static final String PROCESS_PATH = "/system/bin:/system/xbin:/vendor/bin";
+
+    /**
+     * Fixed start outcomes. A start either succeeds or carries exactly one
+     * fixed code; diagnostics travel in {@link StartResult#detail()}.
+     */
+    public enum StartCode {
+        /** The kernel process is up and the keep-alive is held. */
+        STARTED,
+        /** The double gate is off: nothing was read, spawned or acquired. */
+        GATE_DISABLED,
+        /** A required asset (kernel, stub or rootfs) is missing — width stays 0. */
+        MISSING_ASSET,
+        /** The kernel process could not be spawned — nothing was acquired. */
+        SPAWN_FAILED,
+        /** A previous instance is still running; stop it first. */
+        ALREADY_RUNNING
+    }
+
+    /** One start outcome: a fixed code plus optional diagnostic detail. */
+    public record StartResult(StartCode code, String detail) {
+        public StartResult {
+            Objects.requireNonNull(code, "code");
+        }
+
+        public static StartResult of(StartCode code) {
+            return new StartResult(code, null);
+        }
+
+        public boolean started() {
+            return code == StartCode.STARTED;
+        }
+    }
+
+    /** Lifecycle states; {@link #STOPPING} already reads width 0. */
+    public enum State { STOPPED, RUNNING, STOPPING }
+
+    /** Fixed health codes for the probe the wiring owner polls. */
+    public enum Health {
+        /** Running and the kernel process is alive. */
+        HEALTHY,
+        /** Not running (never started, stopped, or reaped). */
+        NOT_RUNNING,
+        /** Marked running but the kernel process died — the probe reaps it. */
+        PROCESS_DEAD
+    }
+
+    /** The paths the face needs; the Android glue supplies the app's own dirs. */
+    public interface Environment {
+        /** The app's {@code nativeLibraryDir} — where the kernel images unpack. */
+        File nativeLibraryDir();
+
+        /** The app's {@code filesDir} — rootfs parent, TMPDIR and working dir. */
+        File filesDir();
+    }
+
+    /**
+     * The compile-work execution seam of the face. The device window injects
+     * the real channel (distcc over the fabric's TCP access point); until
+     * then the face is unwired, reads width 0 and is not routable.
+     */
+    @FunctionalInterface
+    public interface Channel {
+        void execute(int grantedWidth, FabricOrchestrator.WorkItem item)
+                throws FabricOrchestrator.FaceException;
+    }
+
+    /**
+     * The foreground-service + wake-lock seam (the anti-freeze hard
+     * prerequisite). Acquired once per running kernel and released on stop or
+     * observed death; an acquire failure must not crash the face (the
+     * research prototype keeps running without freeze protection), but the
+     * seam itself is required — a wiring point that cannot protect the face
+     * must not wire it at all.
+     */
+    public interface KeepAlive {
+        void acquire();
+
+        void release();
+    }
+
+    /** The spawned kernel process; the only process surface the launcher sees. */
+    public interface UmlProcess {
+        boolean isAlive();
+
+        /** Graceful stop (SIGTERM semantics). */
+        void destroy();
+
+        /** Last-resort stop (SIGKILL semantics). */
+        void destroyForcibly();
+
+        /** True when the process exited within the timeout. */
+        boolean waitForExit(long timeoutMs) throws InterruptedException;
+
+        static UmlProcess adapt(Process process) {
+            Objects.requireNonNull(process, "process");
+            return new UmlProcess() {
+                @Override public boolean isAlive() {
+                    return process.isAlive();
+                }
+
+                @Override public void destroy() {
+                    process.destroy();
+                }
+
+                @Override public void destroyForcibly() {
+                    process.destroyForcibly();
+                }
+
+                @Override public boolean waitForExit(long timeoutMs) throws InterruptedException {
+                    return process.waitFor(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+                }
+            };
+        }
+    }
+
+    /** Spawns the kernel; injectable so tests and the device window own exec. */
+    @FunctionalInterface
+    public interface ProcessSpawner {
+        UmlProcess spawn(List<String> command, Map<String, String> environment, File workingDir)
+                throws IOException;
+
+        /** The production spawner: merged stdout/stderr, explicit environment. */
+        static ProcessSpawner processBuilder() {
+            return (command, environment, workingDir) -> {
+                ProcessBuilder builder = new ProcessBuilder(command);
+                builder.directory(workingDir);
+                builder.redirectErrorStream(true);
+                builder.environment().putAll(environment);
+                return UmlProcess.adapt(builder.start());
+            };
+        }
+    }
+
+    /**
+     * Injectable launch parameters — the device window's tuning interface.
+     * The defaults are the prototype's proven shape (512M guest RAM, host-1
+     * single core, no extra args); {@code extraArgs} land verbatim after the
+     * fixed argument list so a device round can tune scalar kernel knobs
+     * (UML parses params sequentially, later scalar assignments win) without
+     * touching this class.
+     */
+    public record LaunchParams(int memMb, int ncpus, List<String> extraArgs) {
+        public LaunchParams {
+            if (memMb <= 0) {
+                throw new IllegalArgumentException("memMb must be positive, got: " + memMb);
+            }
+            if (ncpus < 0) {
+                throw new IllegalArgumentException("ncpus must be non-negative, got: " + ncpus);
+            }
+            extraArgs = List.copyOf(extraArgs == null ? List.of() : extraArgs);
+        }
+
+        /** The prototype's proven defaults: 512M, host-1 single core. */
+        public static LaunchParams defaults() {
+            return new LaunchParams(512, 0, List.of());
+        }
+
+        /**
+         * The worker's real serviceable compile concurrency: {@code ncpus=N}
+         * when the knob is ≥2, 1 for the omitted/host-1 single-core shape.
+         */
+        public int effectiveWidth() {
+            return ncpus >= 2 ? ncpus : 1;
+        }
+    }
+
+    private final boolean umlFaceEnabled;
+    private final Environment environment;
+    private final LaunchParams params;
+    private final KeepAlive keepAlive;
+    private final ProcessSpawner spawner;
+    private final Channel channel;
+
+    private UmlProcess process;
+    private State state = State.STOPPED;
+    private boolean keepAliveHeld;
+
+    /**
+     * @param umlFaceEnabled the existing double gate (build flag + user
+     *        setting) as the launch consumed it; off means every start is a
+     *        zero-side-effect {@link StartCode#GATE_DISABLED} answer
+     * @param environment the app directories the kernel runs from
+     * @param params the injectable launch parameters (device-window tuning)
+     * @param keepAlive the foreground-service + wake-lock seam; required,
+     *        never a silent no-op (the anti-freeze hard prerequisite)
+     * @param spawner the process spawn seam (production: ProcessBuilder)
+     * @param channel the compile-work channel; {@code null} until the device
+     *        window wires the real one — an unwired face reads width 0 and is
+     *        not routable, which keeps the orchestration honest
+     */
+    public UmlFaceLauncher(
+            boolean umlFaceEnabled,
+            Environment environment,
+            LaunchParams params,
+            KeepAlive keepAlive,
+            ProcessSpawner spawner,
+            Channel channel) {
+        this.umlFaceEnabled = umlFaceEnabled;
+        this.environment = Objects.requireNonNull(environment, "environment");
+        this.params = Objects.requireNonNull(params, "params");
+        this.keepAlive = Objects.requireNonNull(keepAlive, "keepAlive");
+        this.spawner = Objects.requireNonNull(spawner, "spawner");
+        this.channel = channel;
+    }
+
+    /**
+     * The production wiring: the ProcessBuilder spawner and no compile channel
+     * yet (the device window injects the real channel over the fabric's TCP
+     * access point).
+     */
+    public static UmlFaceLauncher create(
+            boolean umlFaceEnabled,
+            Environment environment,
+            LaunchParams params,
+            KeepAlive keepAlive) {
+        return new UmlFaceLauncher(
+                umlFaceEnabled, environment, params, keepAlive,
+                ProcessSpawner.processBuilder(), null);
+    }
+
+    /**
+     * Starts the UML compile worker: prechecks the assets, spawns the kernel
+     * with the prototype's proven command line and acquires the keep-alive.
+     * Every non-{@link StartCode#STARTED} outcome is a fixed code with zero
+     * side effects — the face never fakes a running state.
+     */
+    public synchronized StartResult start() {
+        if (!umlFaceEnabled) {
+            // Zero side effects: no asset read, no spawn, no keep-alive.
+            return StartResult.of(StartCode.GATE_DISABLED);
+        }
+        if (state != State.STOPPED) {
+            return StartResult.of(StartCode.ALREADY_RUNNING);
+        }
+        String missing = missingAsset();
+        if (missing != null) {
+            return new StartResult(StartCode.MISSING_ASSET, missing);
+        }
+        UmlProcess spawned;
+        try {
+            spawned = spawner.spawn(command(), kernelEnvironment(), environment.filesDir());
+        } catch (IOException | RuntimeException spawnFailure) {
+            return new StartResult(StartCode.SPAWN_FAILED, String.valueOf(spawnFailure));
+        }
+        process = spawned;
+        state = State.RUNNING;
+        acquireKeepAliveQuietly();
+        return StartResult.of(StartCode.STARTED);
+    }
+
+    /**
+     * Stops the kernel: SIGTERM, a bounded grace, then SIGKILL; releases the
+     * keep-alive. Idempotent — stopping a stopped face is a no-op. The width
+     * reads 0 from the moment the stop begins.
+     */
+    public void stop() {
+        UmlProcess stopping;
+        synchronized (this) {
+            if (state != State.RUNNING) {
+                return;
+            }
+            state = State.STOPPING;
+            stopping = process;
+        }
+        boolean exited = false;
+        if (stopping != null) {
+            stopping.destroy();
+            try {
+                exited = stopping.waitForExit(STOP_GRACE_MS);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+            if (!exited) {
+                stopping.destroyForcibly();
+            }
+        }
+        synchronized (this) {
+            process = null;
+            state = State.STOPPED;
+            releaseKeepAlive();
+        }
+    }
+
+    /**
+     * Probes the face and reaps a dead kernel lazily: the next observation
+     * after an unexpected kernel death zeroes the width and releases the
+     * keep-alive, so the face never keeps freeze protection for a kernel that
+     * is gone. The wiring owner may poll this; the width is honest either way.
+     */
+    public synchronized Health probe() {
+        if (state != State.RUNNING) {
+            return Health.NOT_RUNNING;
+        }
+        if (process == null || !process.isAlive()) {
+            process = null;
+            state = State.STOPPED;
+            releaseKeepAlive();
+            return Health.PROCESS_DEAD;
+        }
+        return Health.HEALTHY;
+    }
+
+    /**
+     * The face's dispatchable width: the kernel's effective SMP width while
+     * the face is running, healthy and channel-wired; 0 otherwise. This is
+     * the {@code umlFaceWidth} value the fabric slot consumes (it clamps the
+     * value to the ledger headroom).
+     */
+    public synchronized int width() {
+        if (state != State.RUNNING || process == null || !process.isAlive() || channel == null) {
+            return 0;
+        }
+        return params.effectiveWidth();
+    }
+
+    /** The {@code umlFaceWidth} supplier for the fabric slot. */
+    public IntSupplier widthSupplier() {
+        return this::width;
+    }
+
+    /**
+     * The face's {@link FabricOrchestrator.FaceWorker}: hands admitted work to
+     * the wired channel. A dispatch that reaches a face that stopped (or died)
+     * mid-flight throws the fixed {@link FabricOrchestrator.FaceException} —
+     * the orchestrator's own failure contract (release grant, evict face)
+     * takes over from there.
+     */
+    public FabricOrchestrator.FaceWorker faceWorker() {
+        return (face, grantedWidth, item) -> execute(grantedWidth, item);
+    }
+
+    private void execute(int grantedWidth, FabricOrchestrator.WorkItem item)
+            throws FabricOrchestrator.FaceException {
+        Channel wired;
+        synchronized (this) {
+            if (state != State.RUNNING || process == null || !process.isAlive()) {
+                throw new FabricOrchestrator.FaceException(FACE_NOT_RUNNING_DETAIL);
+            }
+            wired = channel;
+        }
+        if (wired == null) {
+            throw new FabricOrchestrator.FaceException(CHANNEL_UNWIRED_DETAIL);
+        }
+        wired.execute(grantedWidth, item);
+    }
+
+    /** The current lifecycle state (observability for the wiring owner). */
+    public synchronized State state() {
+        return state;
+    }
+
+    private String missingAsset() {
+        File libDir = environment.nativeLibraryDir();
+        File kernel = new File(libDir, KERNEL_LIB_NAME);
+        if (!kernel.isFile() || !kernel.canExecute()) {
+            return KERNEL_LIB_NAME;
+        }
+        File stub = new File(libDir, STUB_LIB_NAME);
+        if (!stub.isFile() || !stub.canExecute()) {
+            return STUB_LIB_NAME;
+        }
+        File rootfs = new File(environment.filesDir(), ROOTFS_DIR_NAME);
+        if (!rootfs.isDirectory()) {
+            return ROOTFS_DIR_NAME;
+        }
+        return null;
+    }
+
+    /**
+     * The prototype's proven command line (research/uml-runner README §5):
+     * hostfs rootfs, {@code stub_exe=} from the app's own library dir, and
+     * {@code ncpus=N} only when the knob is ≥2 (an UP kernel must not see the
+     * knob; {@code --cpus=} is never sent — the SMP kernel does not know it).
+     */
+    private List<String> command() {
+        File libDir = environment.nativeLibraryDir();
+        File files = environment.filesDir();
+        List<String> args = new ArrayList<>(Arrays.asList(
+                "mem=" + params.memMb() + "M",
+                "rw",
+                "init=/um-init",
+                "con=null",
+                "con0=fd:0,fd:1",
+                "stub_exe=" + new File(libDir, STUB_LIB_NAME).getAbsolutePath(),
+                "rootfstype=hostfs",
+                "rootflags=" + new File(files, ROOTFS_DIR_NAME).getAbsolutePath(),
+                "seccomp=on",
+                "panic=1"));
+        if (params.ncpus() >= 2) {
+            args.add("ncpus=" + params.ncpus());
+        }
+        args.addAll(params.extraArgs());
+        List<String> command = new ArrayList<>(args.size() + 1);
+        command.add(new File(libDir, KERNEL_LIB_NAME).getAbsolutePath());
+        command.addAll(args);
+        return command;
+    }
+
+    private Map<String, String> kernelEnvironment() {
+        Map<String, String> env = new LinkedHashMap<>();
+        File files = environment.filesDir();
+        env.put("TMPDIR", files.getAbsolutePath());
+        env.put("HOME", files.getAbsolutePath());
+        env.put("PATH", PROCESS_PATH);
+        return env;
+    }
+
+    private void acquireKeepAliveQuietly() {
+        try {
+            keepAlive.acquire();
+            keepAliveHeld = true;
+        } catch (RuntimeException acquireFailure) {
+            // The face keeps running without freeze protection (the prototype's
+            // contract); a release is then a no-op.
+            keepAliveHeld = false;
+        }
+    }
+
+    private void releaseKeepAlive() {
+        if (!keepAliveHeld) {
+            return;
+        }
+        keepAliveHeld = false;
+        try {
+            keepAlive.release();
+        } catch (RuntimeException releaseFailure) {
+            // Release failures must not mask the lifecycle result.
+        }
+    }
+}
