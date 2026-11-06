@@ -149,16 +149,16 @@ public final class ProtectedWorkerPool implements WorkerPool {
         public static final class Builder {
             private int capacity = 0;
             private int cpuPerInstance = 1;
-            private long memoryMbPerInstance = 1024L;
+            private long memoryMbPerInstance = ProtectedPoolKnobs.DEFAULT_MEMORY_MB;
             private FastLaneLaunchSpec.CpuTopology topology =
                     FastLaneLaunchSpec.CpuTopology.ONE_CPU;
             private boolean allowMatchHost = false;
             private long queueTimeoutMs = 30_000L;
-            private long drainTimeoutMs = 2_000L;
-            private long helloTimeoutMs = 2_000L;
-            private long payloadReadyTimeoutMs = 30_000L;
-            private long idleTtlMs = 120_000L;
-            private long stopGraceMs = 2_000L;
+            private long drainTimeoutMs = ProtectedPoolKnobs.DEFAULT_DRAIN_TIMEOUT_MS;
+            private long helloTimeoutMs = ProtectedPoolKnobs.DEFAULT_HELLO_TIMEOUT_MS;
+            private long payloadReadyTimeoutMs = ProtectedPoolKnobs.DEFAULT_PAYLOAD_READY_TIMEOUT_MS;
+            private long idleTtlMs = ProtectedPoolKnobs.DEFAULT_IDLE_TTL_MS;
+            private long stopGraceMs = ProtectedPoolKnobs.DEFAULT_STOP_GRACE_MS;
             private int rebuildFailureCap = 3;
             private long rebuildBackoffBaseMs = 1_000L;
             private long rebuildBackoffMaxMs = 30_000L;
@@ -187,15 +187,14 @@ public final class ProtectedWorkerPool implements WorkerPool {
                 if (cpuPerInstance < 1) {
                     throw new IllegalArgumentException("cpuPerInstance must be at least 1");
                 }
-                if (memoryMbPerInstance <= 0L || memoryMbPerInstance > 16_384L) {
-                    throw new IllegalArgumentException("memoryMbPerInstance must be within (0, 16384]");
-                }
+                ProtectedPoolKnobs.memoryMb(memoryMbPerInstance, "memoryMbPerInstance");
                 if (topology == FastLaneLaunchSpec.CpuTopology.MATCH_HOST && !allowMatchHost) {
                     throw new IllegalArgumentException(
                             "MATCH_HOST topology is an experimental opt-in; set allowMatchHost(true)");
                 }
-                if (queueTimeoutMs < 0L || drainTimeoutMs < 0L || helloTimeoutMs <= 0L
-                        || payloadReadyTimeoutMs <= 0L || idleTtlMs < 0L || stopGraceMs < 0L) {
+                ProtectedPoolKnobs.commonTimeouts(idleTtlMs, helloTimeoutMs,
+                        payloadReadyTimeoutMs, drainTimeoutMs, stopGraceMs);
+                if (queueTimeoutMs < 0L) {
                     throw new IllegalArgumentException("timeouts must be non-negative");
                 }
                 if (rebuildFailureCap < 1) {
@@ -204,9 +203,7 @@ public final class ProtectedWorkerPool implements WorkerPool {
                 if (rebuildBackoffBaseMs < 0L || rebuildBackoffMaxMs < 0L) {
                     throw new IllegalArgumentException("backoff budgets must be non-negative");
                 }
-                if (instancePrefix == null || !instancePrefix.matches("[A-Za-z0-9._-]{1,48}")) {
-                    throw new IllegalArgumentException("instancePrefix must match [A-Za-z0-9._-]{1,48}");
-                }
+                ProtectedPoolKnobs.instancePrefix(instancePrefix);
                 return new Config(this);
             }
         }
