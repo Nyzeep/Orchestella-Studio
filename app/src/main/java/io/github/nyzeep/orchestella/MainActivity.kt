@@ -56,6 +56,7 @@ import io.github.nyzeep.orchestella.runtime.engineavf.AvfVirtualMachineEngine
 import io.github.nyzeep.orchestella.runtime.engineavf.ReflectiveAvfVirtualMachineApi
 import io.github.nyzeep.orchestella.HostHardwareProfile
 import io.github.nyzeep.orchestella.startup.DashboardSnapshot
+import io.github.nyzeep.orchestella.startup.LaunchFailureCopy
 import io.github.nyzeep.orchestella.startup.RuntimeVerification
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
 import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneClock
@@ -110,6 +111,14 @@ class MainActivity : AppCompatActivity() {
     private var lastAssessment: DeviceCapabilityEvaluator.Assessment? = null
     private var runtimeStatusLine: String? = null
     private val dashboardHandler = Handler(Looper.getMainLooper())
+
+    companion object {
+        /**
+         * 进程级一次性门（协同落点，2026-11-07 设备窗实测：VM 启动时弹权限窗打断）。
+         * 通知权限改为进程首个首帧后请求一次；不再挂在每次 VM 启动路径上。
+         */
+        private val notificationPromptShownThisProcess = java.util.concurrent.atomic.AtomicBoolean(false)
+    }
 
     private val refreshDashboard = object : Runnable {
         override fun run() {
@@ -299,7 +308,22 @@ class MainActivity : AppCompatActivity() {
         switchTab(savedInstanceState?.getInt("dashboard_tab", 0) ?: 0)
         ThemeApplier.bind(this)
         scheduleRuntimeVerification()
+        requestNotificationPermissionAfterFirstFrame()
         handleLaunchIntent(intent)
+    }
+
+    /**
+     * 协同落点（Lane C 落地 / Lane D 规格，2026-11-07）：通知权限从「每次 VM 启动时
+     * 弹窗打断」提前到「进程首个首帧之后」请求一次。权限语义不变：仍走
+     * [NotificationPermissionPrompt.requestIfNeeded]（API < 33 与已授权时为 no-op），
+     * 只是不再占用启动/开机流程；用户拒绝后依赖系统的拒绝记忆，进程内不重复打扰。
+     */
+    private fun requestNotificationPermissionAfterFirstFrame() {
+        findViewById<View>(R.id.root_container)?.post {
+            if (isFinishing || isDestroyed) return@post
+            if (!notificationPromptShownThisProcess.compareAndSet(false, true)) return@post
+            NotificationPermissionPrompt.requestIfNeeded(this)
+        }
     }
 
     /**
@@ -1789,7 +1813,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun launchInstance(instance: InstanceLifecycle.Instance) {
-        NotificationPermissionPrompt.requestIfNeeded(this)
+        // 协同落点（2026-11-07）：通知权限已在首帧后请求过（requestNotificationPermissionAfterFirstFrame），
+        // 不再在 VM 启动路径上弹窗打断。
         setCreateButtonsEnabled(false)
         createStatus.setText(R.string.launch_started)
         operations.execute {
@@ -1981,7 +2006,7 @@ class MainActivity : AppCompatActivity() {
                         acceleratorCoordinator?.close()
                         runOnUiThread {
                             if (!InstanceLaunchGuard.isLatest(instance.id(), sessionGeneration)) return@runOnUiThread
-                            createStatus.text = getString(R.string.launch_failed, failure.javaClass.simpleName)
+                            createStatus.text = formatLaunchFailure(failure)
                         }
                     }
                 }.apply { isDaemon = true }.start()
@@ -2023,7 +2048,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 runOnUiThread {
                     if (failedGeneration != null && !InstanceLaunchGuard.isLatest(instance.id(), failedGeneration)) return@runOnUiThread
-                    createStatus.text = getString(R.string.launch_failed, failure.javaClass.simpleName)
+                    createStatus.text = formatLaunchFailure(failure)
                     Toast.makeText(this, createStatus.text, Toast.LENGTH_LONG).show()
                     android.util.Log.w("OrchestellaLaunch", "launch failed type=${failure.javaClass.simpleName}")
                     setCreateButtonsEnabled(DeviceCapabilityEvaluator.evaluate(deviceProfile()).canCreateFullLinuxInstance())
@@ -2033,6 +2058,15 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 协同落点（Lane C 落地 / Lane D 规格，2026-11-07）：启动失败不再直接展示
+     * 「启动失败：IOException」这类异常类名，而是按类型映射人类可读短文案
+     * （[LaunchFailureCopy]，本轮免资源化：文案为代码常量，res 资源目录归 B，
+     * strings.xml 归 D）；固定异常码括注在副文本，完整类型仍写日志。
+     */
+    private fun formatLaunchFailure(failure: Throwable): String =
+        getString(R.string.launch_failed, LaunchFailureCopy.describe(failure)) +
+            "（${failure.javaClass.simpleName}）"
 
     private fun deviceProfile(): DeviceCapabilityEvaluator.DeviceProfile {
         val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager

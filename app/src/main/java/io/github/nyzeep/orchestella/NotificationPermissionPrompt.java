@@ -9,8 +9,11 @@ import android.os.Build;
  * Minimal {@code POST_NOTIFICATIONS} prompt for the persistent foreground service.
  *
  * <p>Without the grant the service still runs, but its notification is invisible, so
- * the user cannot see or stop a running instance from the shade. The prompt is
- * requested once at the existing pre-launch site; everything else stays unchanged.
+ * the user cannot see or stop a running instance from the shade. Since the 2026-11-07
+ * cold-start round the prompt is requested once per process right after the home
+ * screen's first frame (MainActivity), instead of on every VM launch where the dialog
+ * interrupted the start flow. The permission semantics are unchanged: no-op below
+ * API 33 and when already granted.
  *
  * <p>Must be called from the main thread.
  */
