@@ -112,6 +112,11 @@ tasks.register<JavaExec>("bridgeClientResponsePumpTest") {
     mainClass.set("io.github.nyzeep.orchestella.runtime.contract.BridgeClientResponsePumpTest")
 }
 
+tasks.register<JavaExec>("bridgeRequestParserContractTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.contract.BridgeRequestParserContractTest")
+}
+
 tasks.named("check") {
     dependsOn(
         "bridgeHandshakeContractTest",
@@ -133,7 +138,8 @@ tasks.named("check") {
         "gestureStateEngineTest",
         "bridgeClientResponsePumpTest",
         "sessionCapabilitiesTest",
-        "capabilityProjectionTest"
+        "capabilityProjectionTest",
+        "bridgeRequestParserContractTest"
     )
 }
 
