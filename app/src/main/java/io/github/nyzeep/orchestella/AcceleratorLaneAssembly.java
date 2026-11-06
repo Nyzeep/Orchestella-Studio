@@ -260,6 +260,53 @@ public final class AcceleratorLaneAssembly {
                 workers);
     }
 
+    /**
+     * B2 follow-up ② wiring: the UML compile-worker face's product lifecycle
+     * manager. The face runs the UML kernel exactly the way the research
+     * prototype proved it on device ({@code research/uml-runner}) — the
+     * kernel image exec'd from the app's own {@code nativeLibraryDir}, the
+     * hostfs rootfs channel, the {@code ncpus=} SMP knob — and its two seams
+     * plug straight into {@link #fabricOrchestrator}: the face's
+     * {@link UmlFaceLauncher#widthSupplier()} is the slot's
+     * {@code umlFaceWidth} (the kernel's effective SMP width, clamped by the
+     * slot to the ledger headroom, 0 while the face is down), and
+     * {@link UmlFaceLauncher#faceWorker()} goes into the workers map under
+     * {@link FabricWidthDecision.Face#UML}.
+     *
+     * <p>Rules this slot enforces, not call sites:
+     * <ol>
+     *   <li>The gate is the same double gate the launch consumed (build flag
+     *   + user setting); while it is off, {@link UmlFaceLauncher#start} is a
+     *   zero-side-effect fixed-code refusal — no asset is read, no kernel is
+     *   spawned, no keep-alive is touched. No new flag exists.</li>
+     *   <li>{@code keepAlive} is required and never a silent no-op: the
+     *   foreground service + wake lock pair is the measured anti-freeze
+     *   prerequisite (the device round froze a background face's whole
+     *   process group; the protected form held 60 minutes of residency).</li>
+     *   <li>Missing kernel assets degrade to the fixed {@code MISSING_ASSET}
+     *   code with width 0 — the face never fakes a running state.</li>
+     * </ol>
+     *
+     * <p>{@code launchParams} is the device window's tuning interface
+     * (guest memory, the {@code ncpus} width, verbatim extra kernel args).
+     * The compile channel stays unwired here — the face reads width 0 until
+     * the device window injects the real channel (fabric-route doc D-1 is
+     * ACR-bound), so the orchestration never routes work into a face that
+     * cannot serve it. The face's start/stop remains the wiring owner's
+     * lifecycle decision (after {@code startAll}, like the other face
+     * reservations); nothing is spawned by assembly alone.
+     */
+    public static UmlFaceLauncher umlFace(
+            boolean umlFaceEnabled,
+            UmlFaceLauncher.Environment environment,
+            UmlFaceLauncher.LaunchParams launchParams,
+            UmlFaceLauncher.KeepAlive keepAlive) {
+        Objects.requireNonNull(environment, "environment");
+        Objects.requireNonNull(launchParams, "launchParams");
+        Objects.requireNonNull(keepAlive, "keepAlive");
+        return UmlFaceLauncher.create(umlFaceEnabled, environment, launchParams, keepAlive);
+    }
+
     private static DualLaneCoordinator coordinator(
             LaneBudget budget, Config config, Inputs inputs) {
         return new DualLaneCoordinator(
