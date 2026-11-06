@@ -118,3 +118,12 @@ scontext=u:r:microdroid_app:s0 tcontext=u:object_r:system_file:s0 tclass=file pe
 - P03 toolbox 报告：`docs/reports/tickets/fastlane-P03/implementation-report.zh-CN.md`
 - 研究：`docs/research/microdroid-exec-selinux-20261022.zh-CN.md`
 - 平台变更请求：`docs/reports/orchestration/fastlane-dv01a-platform-change-request-20261022.zh-CN.md`
+
+## Comments
+
+- 2026-11-07 / ZCode（设备窗 T6 / GLM-5.3-Flash）：**跨设备复现矩阵 +1（device-nova），判词：新形态**。设备别名 device-nova（Android 16 / API 36 / HONOR 系粗口径 / SM8735 / 4K 页 / protected-only 实测 REJECTED，非-protected `setProtectedVm(false)`→REJECTED 见同轮 qualification 落档）。原始证据仓外 `evidence/device-window-20261106/t6-dv01a/`。
+  - **probe 运行**：QA 通道包 purpose=dv01a + `AvfQaProbeInstrumentation qaMode=fastlane-dv01-preflight`（1 cycle），返回 `PREFLIGHT_BLOCKED_EXTERNAL`；evidence schema `orchestella.fastlane.dv01.preflight.v1`：parameter_validation=`QA_ARGUMENTS_REJECTED`（完整 toolbox 合同未装配，qaToolboxSha 等参数缺位），create/run/payload_ready/control_hello/terminal_pty 全部 blocked。
+  - **新形态实质**：本设备的阻塞比 2026-10-21 权威证据（myron：SELinux `execute_no_trans` execve EACCES）**更早更底层**——payload VM 在本机 hypervisor 层即崩溃：`crosvm: unknown gh exit reason: 3 → vcpu hit unknown error: Invalid argument (os error 22) → vcpu crashed → exiting with crash (exit 33)`，启动后 ~3.4s，payload 回调零发生（同轮 PvmProbe qaMode=compiler 取证，qaMemoryMb=1024/2048 均复现）。 toolbox exec 阶段不可达，本票签名（fln1=7 execve_errno_13）无法在本机复现亦无法证伪。
+  - **矩阵现状**：① Pixel 系/先行设备（2026-10-21 权威证据，同签名阻塞）；② device-myron / HyperOS API 37（2026-11-04 同签名复现）；③ device-nova / API 36（2026-11-07 **新形态**：Gunyah vcpu crash，先于 SELinux 阶段）。
+  - **佐证**：本机厂商自有受保护 VM（trustedvm/cpusys_vm）常驻正常 → hypervisor 本体可用，stock-AVF microdroid 崩溃；`qaDebugLevel=0` 时受保护 VM `VirtualMachineConfig.Builder.build()` 反常抛异常（本 ROM 似要求 debuggable initrd，与 AOSP 语义相反）——ROM virt 框架与 stock AVF 实现分歧的两条独立证据。
+  - **结论**：Status 维持 **blocked_external** 不变；解除条件不因新设备改变；待该平台适配（ROM/Gunyah 上游）后以完整 toolbox 合同复跑（20 轮/storage/负例等要求不变）。

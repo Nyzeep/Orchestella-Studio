@@ -362,7 +362,7 @@ release / dev / QA 默认**都是 36**；28 只是一个 QA 专用逃生门 `-Po
 3. ~~D9 Docker~~ ✅ **已闭合**：T10 PASS（UML SMP 内 dockerd + `docker run` Hello RC=0，dockerd RSS 76128kB）；
 4. ~~链接阶段~~ ✅ **已闭合**：T11 PASS（16K guest 内 clang22 `-c` → ld.lld 动静态链接 → 执行成功）；
 5. ~~W-FAB-03 OEM 普查~~ ✅ **联网取证半边已闭合**（2026-11-04 survey，9 OEM 矩阵 + T13 公开互证）；设备实测扩样半边归真机窗口工单；
-6. **distcc COMPLETED@36** ⏳ 仍缺（blocked by DV-01A SELinux `execute_no_trans`，外部问题，非本项目可解）——2026-11-04 在第二平台（HyperOS OS4.0 / Android 17 API 37）同签名复现：payload 侧 typed 诊断 `fln1=7 execve_errno_13` 与 2026-10-21 权威证据逐字一致，`blocked_external` 维持；该平台 guest 内核 audit 不经 console 转发、host dmesg 受限，raw avc 行不可采（DV-01A 工单 2026-11-04 节）；
+6. **distcc COMPLETED@36** ⏳ 仍缺（blocked by DV-01A SELinux `execute_no_trans`，外部问题，非本项目可解）——2026-11-04 在第二平台（HyperOS OS4.0 / Android 17 API 37）同签名复现：payload 侧 typed 诊断 `fln1=7 execve_errno_13` 与 2026-10-21 权威证据逐字一致，`blocked_external` 维持；该平台 guest 内核 audit 不经 console 转发、host dmesg 受限，raw avc 行不可采（DV-01A 工单 2026-11-04 节）；**2026-11-07 第三平台新形态**（device-nova，Android 16 / API 36 / HONOR 系 / Gunyah）：pVM 面在 hypervisor 层即崩溃——`crosvm: unknown gh exit reason: 3 → vcpu crashed → exit 33`（启动 ~3.4s，payload 回调零发生；厂商自有受保护 VM 正常运行，`setDebugLevel(0)` 反常拒绝）——判据不可达属平台实现分歧而非 02b 缺口；QEMU 面产品链路同轮真机全通（票 27 事件 10/16 门），UML 面零设备切片已并入 main（DV-01A 工单 2026-11-07 行 + `docs/reports/device-window-20261107.zh-CN.md`）；
 7. ~~F-MTTCG n≥10~~ ✅ **已闭合**（2026-11-04 设备窗第三轮：smp1/2 前轮 n=10 + smp4/8 本轮 n=10+10，23/23 digest 一致；S(4)=1.26、S(8)=0.80——**「最优宽度=2」定案**，§7.5 追记）；
 8. §6 原有八项中仍开放的：~~Play targetSdk 日期~~（✅ 已由 02 票渠道收敛裁定：Play 硬截止 2027-02-01、GitHub/F-Droid 无门槛，`docs/research/2026-11-02-platform-policy-matrix.md`）、28 域失效时间线、同夹具四列（proot/pVM/QEMU/UML 同轮，G3）、`.so` 分发边界法务结论、~~扩展包可安装性~~（✅ §7.1：更新路径下已装上并接入，HyperOS 拦截未复现；「可安装性」从拦截状态改为单机型证据）。
 
