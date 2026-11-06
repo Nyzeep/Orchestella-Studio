@@ -457,7 +457,7 @@ class SetupWizardActivity : AppCompatActivity() {
     }
 
     private fun setupListeners() {
-        btnWizardSkip.setOnClickListener { finish() }
+        btnWizardSkip.setOnClickListener { confirmExitWhileCreating() }
 
         // Step 1 Presets
         btnDisk4g.setOnClickListener { selectDiskPreset(4) }
@@ -477,7 +477,11 @@ class SetupWizardActivity : AppCompatActivity() {
                     highlightPresetButton(gb)
                     validateAndRefreshStorage()
                     updateCreationSummary()
-                } else if (s.isNullOrEmpty()) {
+                } else {
+                    // Empty or non-numeric input: keep the model untouched and
+                    // make the reason visible instead of a silent disabled button.
+                    txtStorageWarning.text = getString(R.string.wizard_disk_input_invalid)
+                    txtStorageWarning.visibility = View.VISIBLE
                     btnStep1Next.isEnabled = false
                 }
             }
@@ -588,6 +592,24 @@ class SetupWizardActivity : AppCompatActivity() {
             }
         }
         btnWizardInit.setOnClickListener { startDownloadAndInitialize() }
+    }
+
+    /**
+     * Exiting mid-creation does not cancel a started download/provisioning (the
+     * background executor only stops accepting new work), so say so instead of
+     * a silent finish; outside creation the skip button stays a plain exit.
+     */
+    private fun confirmExitWhileCreating() {
+        if (!wizardModel.isCreating) {
+            finish()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.wizard_exit_while_creating_title)
+            .setMessage(R.string.wizard_exit_while_creating_message)
+            .setPositiveButton(R.string.wizard_exit_while_creating_leave) { _, _ -> finish() }
+            .setNegativeButton(R.string.wizard_exit_while_creating_stay, null)
+            .show().also(ThemeApplier::apply)
     }
 
     private fun bindWizardAvfCard(
@@ -1416,12 +1438,15 @@ class SetupWizardActivity : AppCompatActivity() {
                     btnWizardInit.visibility = View.VISIBLE
                     btnWizardInit.text = "重试创建与部署"
                     progressDownloadBar.visibility = View.GONE
-                    txtDownloadStatus.text = "初始化失败：${e.message ?: e.javaClass.simpleName}"
+                    // Humanized mapping (Lane D): no bare exception names on the
+                    // user surface; the raw throwable stays in logcat above.
+                    val detail = ErrorCopy.detailMessage(this@SetupWizardActivity, e)
+                    txtDownloadStatus.text = getString(R.string.wizard_init_failed_human, detail)
                     txtDownloadStatus.setTextColor(getColor(R.color.status_crashed))
-                    txtDownloadSpeedEta.text = "请检查网络连接后点击重试"
+                    txtDownloadSpeedEta.text = getString(ErrorCopy.resolve(e).hintRes)
                     Toast.makeText(
                         this,
-                        getString(R.string.wizard_init_failed, e.message ?: e.javaClass.simpleName),
+                        getString(R.string.wizard_init_failed_human, detail),
                         Toast.LENGTH_LONG
                     ).show()
                 }
