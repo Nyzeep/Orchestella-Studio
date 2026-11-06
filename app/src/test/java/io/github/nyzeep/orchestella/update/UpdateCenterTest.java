@@ -18,7 +18,6 @@ public final class UpdateCenterTest {
         String version;
         String summary;
         String page;
-        String ignored;
 
         @Override public long lastCheckedAt() { return checkedAt; }
         @Override public void recordCheckAttempt(long nowMillis) { checkedAt = nowMillis; }
@@ -34,8 +33,6 @@ public final class UpdateCenterTest {
         @Override public String cachedVersion() { return version; }
         @Override public String cachedSummary() { return summary == null ? "" : summary; }
         @Override public String cachedPageUrl() { return page == null ? "" : page; }
-        @Override public String ignoredVersion() { return ignored; }
-        @Override public void setIgnoredVersion(String version) { this.ignored = version; }
     }
 
     @Test
@@ -97,17 +94,16 @@ public final class UpdateCenterTest {
     }
 
     @Test
-    public void ignoringOneVersionHidesItUntilSomethingNewerArrives() {
+    public void anAnnouncedVersionKeepsShowingUntilTheCheckSaysOtherwise() {
         MemoryStore store = new MemoryStore();
         UpdateCenter center = new UpdateCenter(store);
         center.record(GitHubUpdateChecker.UpdateResult.updateAvailable("v0.6.2", "", null), NOW);
 
-        center.ignore("v0.6.2");
-        assertNull(center.pending("0.6.1"));
-
-        center.record(GitHubUpdateChecker.UpdateResult.updateAvailable("v0.6.3", "", null), NOW + 1);
-        assertNotNull("a newer release re-surfaces the badge", center.pending("0.6.1"));
-        assertEquals("v0.6.3", center.pending("0.6.1").version());
+        // There is deliberately no "ignore this version" state (APP-UPDATE §4): the card lives
+        // on the About screen and disappears only when the installed build catches up or a
+        // later check reports the app as current.
+        assertEquals("v0.6.2", center.pending("0.6.1").version());
+        assertNull("installing the announced version retires the card", center.pending("0.6.2"));
     }
 
     @Test

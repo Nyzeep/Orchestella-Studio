@@ -56,9 +56,12 @@ class AboutActivity : AppCompatActivity() {
     private val avatarLoadStarted = AtomicBoolean(false)
 
     private lateinit var updateCenter: UpdateCenter
-    private var cardUpdateAvailable: View? = null
-    private var txtUpdateHeadline: TextView? = null
+    private var cardVersionUpdate: View? = null
+    private var txtUpdateStatus: TextView? = null
+    private var txtUpdateChannel: TextView? = null
     private var txtUpdateSummary: TextView? = null
+    private var btnUpdateCheck: MaterialButton? = null
+    private var btnUpdateRelease: MaterialButton? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         ThemeApplier.prepare(this)
@@ -89,30 +92,25 @@ class AboutActivity : AppCompatActivity() {
         txtVersion.text = "版本：v${BuildConfig.VERSION_NAME} · Phase 5.0"
 
         updateCenter = UpdateCoordinator.center(this)
-        cardUpdateAvailable = findViewById(R.id.card_update_available)
-        txtUpdateHeadline = findViewById(R.id.txt_update_headline)
+        cardVersionUpdate = findViewById(R.id.card_version_update)
+        txtUpdateStatus = findViewById(R.id.txt_update_status)
+        txtUpdateChannel = findViewById(R.id.txt_update_channel)
         txtUpdateSummary = findViewById(R.id.txt_update_summary)
-        findViewById<MaterialButton>(R.id.btn_update_download).setOnClickListener {
-            updateCenter.pending(BuildConfig.VERSION_NAME)?.let { pending ->
-                showUpdateSheet(pending, GitHubUpdateChecker.channelForVersion(BuildConfig.VERSION_NAME).label())
+        btnUpdateRelease = findViewById<MaterialButton>(R.id.btn_update_release).apply {
+            setOnClickListener {
+                updateCenter.pending(BuildConfig.VERSION_NAME)?.let { pending ->
+                    openUrl(pending.pageUrl())
+                }
             }
         }
-        findViewById<MaterialButton>(R.id.btn_update_ignore).setOnClickListener {
-            updateCenter.pending(BuildConfig.VERSION_NAME)?.let { pending ->
-                updateCenter.ignore(pending.version())
-                renderUpdateCard()
-                Toast.makeText(
-                    this,
-                    "已暂时忽略 ${pending.version()}，有新版本时会再次提示",
-                    Toast.LENGTH_SHORT,
-                ).show()
-            }
+        btnUpdateCheck = findViewById<MaterialButton>(R.id.btn_update_check).apply {
+            setOnClickListener { runManualUpdateCheck() }
         }
-        renderUpdateCard()
+        renderVersionCard()
         // Opening About is itself a signal of interest: refresh the cached answer when the
         // automatic interval allows it. The badge on the main screen updates on return.
         UpdateCoordinator.checkInBackground(this, BuildConfig.VERSION_NAME) {
-            if (!isFinishing && !isDestroyed) renderUpdateCard()
+            if (!isFinishing && !isDestroyed) renderVersionCard()
         }
 
         val avatarView = findViewById<ImageView>(R.id.img_author_avatar)
@@ -170,71 +168,86 @@ class AboutActivity : AppCompatActivity() {
                 .show().also(ThemeApplier::apply)
         }
 
-        val btnCheckUpdates = findViewById<MaterialButton>(R.id.btn_check_updates)
-        val updateChannel = GitHubUpdateChecker.channelForVersion(BuildConfig.VERSION_NAME).label()
-        btnCheckUpdates?.text = "立即检测更新 · $updateChannel"
-        btnCheckUpdates?.setOnClickListener {
-            btnCheckUpdates.isEnabled = false
-            btnCheckUpdates.text = "正在检测新版本 · $updateChannel..."
-            val settings = SettingsManager(this)
-            val checker = GitHubUpdateChecker(settings)
-            Executors.newSingleThreadExecutor().execute {
-                val result = checker.checkForUpdate(BuildConfig.VERSION_NAME, true)
-                runOnUiThread {
-                    if (isFinishing || isDestroyed) return@runOnUiThread
-                    btnCheckUpdates.isEnabled = true
-                    btnCheckUpdates.text = "立即检测更新 · $updateChannel"
-                    updateCenter.record(result, System.currentTimeMillis())
-                    renderUpdateCard()
-                    when (result.status()) {
-                        GitHubUpdateChecker.Status.UPDATE_AVAILABLE -> {
-                            val pending = updateCenter.pending(BuildConfig.VERSION_NAME)
-                            if (pending != null) {
-                                showUpdateSheet(pending, updateChannel)
-                            }
-                        }
-                        GitHubUpdateChecker.Status.UP_TO_DATE -> {
-                            Toast.makeText(this, "$updateChannel：当前已是最新版本 (v${BuildConfig.VERSION_NAME})", Toast.LENGTH_SHORT).show()
-                        }
-                        else -> {
-                            val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
-                                .setTitle("检查更新结果")
-                                .setMessage("$updateChannel\n" + (result.errorMessage() ?: "无法获取版本信息") + "\n\n您可以直接前往 GitHub 仓库 Releases 页面手动查看与获取最新构建。")
-                                .setPositiveButton("访问 Releases 页面") { _, _ ->
-                                    openUrl("$PROJECT_REPO_URL/releases")
-                                }
-                                .setNegativeButton("知道了", null)
-                                .create()
-                            dialog.show()
-                            ThemeApplier.apply(dialog)
-                        }
-                    }
-                }
-            }
-        }
         ThemeApplier.bind(this)
     }
 
-    private fun renderUpdateCard() {
+    /**
+     * One card, three states: a newer release is known / nothing newer is known / checks are
+     * off. The card reports status and summarises the GitHub release notes only — it offers no
+     * download and no "ignore" action (docs/standards/APP-UPDATE.md).
+     */
+    private fun renderVersionCard() {
+        val checksEnabled = SettingsManager(this).isUpdateCheckEnabled()
         val pending = updateCenter.pending(BuildConfig.VERSION_NAME)
-        cardUpdateAvailable?.visibility = if (pending == null) View.GONE else View.VISIBLE
-        if (pending == null) {
-            return
+        txtUpdateChannel?.text = getString(
+            R.string.version_update_channel,
+            GitHubUpdateChecker.channelForVersion(BuildConfig.VERSION_NAME).label(),
+            BuildConfig.VERSION_NAME,
+        )
+        when {
+            !checksEnabled -> {
+                txtUpdateStatus?.setText(R.string.version_update_status_disabled)
+                txtUpdateSummary?.setText(R.string.update_disabled_msg)
+                btnUpdateCheck?.visibility = View.GONE
+                btnUpdateRelease?.visibility = View.GONE
+            }
+            pending == null -> {
+                txtUpdateStatus?.setText(R.string.version_update_status_none)
+                txtUpdateSummary?.setText(R.string.version_update_hint)
+                btnUpdateCheck?.visibility = View.VISIBLE
+                btnUpdateRelease?.visibility = View.GONE
+            }
+            else -> {
+                txtUpdateStatus?.text =
+                    getString(R.string.version_update_status_available, pending.version())
+                txtUpdateSummary?.text = pending.summary()
+                    .ifBlank { getString(R.string.version_update_notes_fallback) }
+                btnUpdateCheck?.visibility = View.VISIBLE
+                btnUpdateRelease?.visibility = View.VISIBLE
+            }
         }
-        txtUpdateHeadline?.text = "有可用新版本 ${pending.version()}"
-        txtUpdateSummary?.text = pending.summary()
-            .ifBlank { "点击「前往下载」查看本次更新的完整说明。" }
-        cardUpdateAvailable?.let { ThemeApplier.apply(it) }
+        cardVersionUpdate?.let { ThemeApplier.apply(it) }
     }
 
-    /** Brief notes + the two real choices; the download page carries the full changelog. */
-    private fun showUpdateSheet(pending: UpdateCenter.Available, channel: String) {
-        val summary = pending.summary().ifBlank { "本次更新暂无摘要，下载页有完整说明。" }
+    /** Manual check: bypasses the interval, still respects the "check on start" setting. */
+    private fun runManualUpdateCheck() {
+        val button = btnUpdateCheck ?: return
+        if (!button.isEnabled) {
+            return
+        }
+        button.isEnabled = false
+        button.setText(R.string.version_update_checking)
+        val checker = GitHubUpdateChecker(SettingsManager(this))
+        Executors.newSingleThreadExecutor().execute {
+            val result = checker.checkForUpdate(BuildConfig.VERSION_NAME, true)
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                button.isEnabled = true
+                button.setText(R.string.version_update_check_now)
+                updateCenter.record(result, System.currentTimeMillis())
+                renderVersionCard()
+                when (result.status()) {
+                    // The card itself is the announcement; no toast duplicates it.
+                    GitHubUpdateChecker.Status.UPDATE_AVAILABLE -> Unit
+                    GitHubUpdateChecker.Status.UP_TO_DATE -> Toast.makeText(
+                        this,
+                        getString(R.string.update_up_to_date, BuildConfig.VERSION_NAME),
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                    else -> showUpdateFailure(result.errorMessage())
+                }
+            }
+        }
+    }
+
+    private fun showUpdateFailure(reason: String?) {
         val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("${pending.version()} · 更新说明")
-            .setMessage("$channel\n当前版本 v${BuildConfig.VERSION_NAME}\n\n$summary")
-            .setPositiveButton("打开下载页") { _, _ -> openUrl(pending.pageUrl()) }
-            .setNegativeButton("稍后", null)
+            .setTitle(R.string.version_update_failed_title)
+            .setMessage(reason ?: getString(R.string.version_update_hint))
+            .setPositiveButton(R.string.version_update_open_releases) { _, _ ->
+                openUrl("$PROJECT_REPO_URL/releases")
+            }
+            .setNegativeButton(R.string.version_update_dismiss, null)
             .create()
         dialog.show()
         ThemeApplier.apply(dialog)
