@@ -72,8 +72,9 @@ public final class DashboardSnapshotTest {
         controller.forceStop(c.id())
         val stoppedState = store.list()
         assertEquals(b.id(), DashboardSnapshot.pickPrimary(stoppedState, b.id())!!.id())
-        // 没有 lastActive 时回到首个。
-        assertEquals(a.id(), DashboardSnapshot.pickPrimary(stoppedState, null)!!.id())
+        // 没有 lastActive 时回退列表头。list() 按 id 排序（随机 UUID 的字典序
+        // 与创建顺序无关），期望值必须从同一排序推导，不得假设创建序。
+        assertEquals(stoppedState.first().id(), DashboardSnapshot.pickPrimary(stoppedState, null)!!.id())
         // 空列表为 null。
         assertNull(DashboardSnapshot.pickPrimary(emptyList(), b.id()))
     }
