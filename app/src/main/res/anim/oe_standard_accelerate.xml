@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Material 3 standard accelerate (cubic-bezier 0.3, 0, 1, 1): exits of
+     small in-place state changes where the emphasized curve is too theatrical. -->
+<pathInterpolator xmlns:android="http://schemas.android.com/apk/res/android"
+    android:controlX1="0.3"
+    android:controlY1="0.0"
+    android:controlX2="1.0"
+    android:controlY2="1.0" />

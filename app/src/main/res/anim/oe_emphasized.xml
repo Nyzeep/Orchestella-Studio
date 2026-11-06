@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Material 3 emphasized easing (cubic-bezier 0.2, 0, 0, 1), the M3 default
+  curve for state/content transitions that are neither a pure enter (use
+  oe_emphasized_decelerate) nor a pure exit (use oe_emphasized_accelerate).
+-->
+<pathInterpolator xmlns:android="http://schemas.android.com/apk/res/android"
+    android:controlX1="0.2"
+    android:controlY1="0.0"
+    android:controlX2="0.0"
+    android:controlY2="1.0" />

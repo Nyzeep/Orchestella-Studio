@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Settings/expandable section collapse: 150 ms fade-out. Wire this on the
+  container before swapping VISIBLE->GONE (see oe_section_expand_enter for
+  the code-hook TODO; not wired this round).
+-->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:interpolator="@anim/oe_standard_accelerate">
+    <alpha
+        android:duration="@integer/oe_motion_duration_short3"
+        android:fromAlpha="1.0"
+        android:toAlpha="0.0" />
+</set>

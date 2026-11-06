@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Settings/expandable section reveal (e.g. layout_settings_fallback_explanation):
+  fade + small downward settle, 300 ms emphasized decelerate. This plays on
+  the container when a collapsed section becomes visible. Code hook TODO:
+  requires the toggle site to swap GONE->VISIBLE plus play this resource;
+  not wired this round (zero-device, no verification).
+-->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:interpolator="@anim/oe_emphasized_decelerate">
+    <alpha
+        android:duration="@integer/oe_motion_duration_medium2"
+        android:fromAlpha="0.0"
+        android:toAlpha="1.0" />
+    <translate
+        android:duration="@integer/oe_motion_duration_medium2"
+        android:fromYDelta="-2%p"
+        android:toYDelta="0" />
+</set>
