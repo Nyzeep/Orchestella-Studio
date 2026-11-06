@@ -57,7 +57,7 @@
   安装新包（见 T2）。
 - MCP android-emulator 插件 preflight 现状：SDK root / adb / emulator 均
   not found（插件未拿到本机 Android SDK 根路径）——两条路任选：给插件配置
-  `ANDROID_PLUGIN_SDK_PATH=D:\AndroidSDK`（或 ANDROID_HOME）后用 MCP 设备
+  `ANDROID_PLUGIN_SDK_PATH` 指向本机 Android SDK 根目录（或 ANDROID_HOME）后用 MCP 设备
   工具；或按既有 lane 惯例直接用 `/d/AndroidSDK/platform-tools/adb.exe`
   （2026-11-06 快照即此路，设备在线 USB 供电）。
 
