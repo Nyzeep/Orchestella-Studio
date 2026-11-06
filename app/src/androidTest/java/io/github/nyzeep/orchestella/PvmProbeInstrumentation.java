@@ -1789,6 +1789,23 @@ public final class PvmProbeInstrumentation extends Instrumentation {
             builderClass.getMethod("setProtectedVm", boolean.class).invoke(builder, true);
             builderClass.getMethod("setPayloadBinaryName", String.class)
                     .invoke(builder, payloadName);
+            // Two-package split: the payload binary ships in the accelerator
+            // extension APK, so /mnt/apk has to point at that APK. The app's own
+            // APK carries no lib/arm64-v8a/libpvm_compiler_payload.so any more,
+            // and the VM then fails with "Failed to find payload" without ever
+            // reaching payloadReady (device evidence 2026-11-06).
+            final AccelExtensionResolver.Resolution extension =
+                    new AccelExtensionResolver(target).resolve();
+            if (extension.getPayloadApkPath() != null) {
+                try {
+                    builderClass.getMethod("setApkPath", String.class)
+                            .invoke(builder, extension.getPayloadApkPath());
+                } catch (NoSuchMethodException absent) {
+                    notes.add("setApkPath: unavailable");
+                }
+            } else {
+                notes.add("extension: missing, payload resolved from the app APK");
+            }
             builderClass.getMethod("setMemoryBytes", long.class)
                     .invoke(builder, (long) memoryMb * 1024L * 1024L);
             final int cpuTopology = staticInt(configClass, "CPU_TOPOLOGY_ONE_CPU", 0, notes);
