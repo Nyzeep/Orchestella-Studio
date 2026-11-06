@@ -237,15 +237,20 @@ public final class UmlFaceLauncherTest {
         FakeKeepAlive keepAlive = new FakeKeepAlive();
         FakeSpawner spawner = new FakeSpawner();
 
-        // Kernel present, stub missing.
-        assertTrue(new File(libDir, UmlFaceLauncher.KERNEL_LIB_NAME).createNewFile());
+        // Kernel present (and executable, as a packaged .so would be), stub
+        // missing entirely.
+        File kernel = new File(libDir, UmlFaceLauncher.KERNEL_LIB_NAME);
+        assertTrue(kernel.createNewFile());
+        kernel.setExecutable(true);
         UmlFaceLauncher noStub = launcher(true, params(0), spawner, keepAlive, null);
         StartResult stubResult = noStub.start();
         assertEquals(StartCode.MISSING_ASSET, stubResult.code());
         assertEquals(UmlFaceLauncher.STUB_LIB_NAME, stubResult.detail());
 
         // Stub present too, rootfs missing.
-        assertTrue(new File(libDir, UmlFaceLauncher.STUB_LIB_NAME).createNewFile());
+        File stub = new File(libDir, UmlFaceLauncher.STUB_LIB_NAME);
+        assertTrue(stub.createNewFile());
+        stub.setExecutable(true);
         UmlFaceLauncher noRootfs = launcher(true, params(0), spawner, keepAlive, null);
         StartResult rootfsResult = noRootfs.start();
         assertEquals(StartCode.MISSING_ASSET, rootfsResult.code());
