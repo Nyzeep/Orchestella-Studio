@@ -39,6 +39,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorMode
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorPolicy
+import io.github.nyzeep.orchestella.ui.motion.OrchestellaMotion
 import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
 import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
 import io.github.nyzeep.orchestella.runtime.capability.AvfAuthorizationWizardModel
@@ -104,6 +105,14 @@ class MainActivity : AppCompatActivity() {
     private var currentTabIndex = 0
     /** False until the first switchTab painted every tab; later switches repaint the changed pair. */
     private var tabsInitialized = false
+    /**
+     * T2 (2026-11-08) 动效守卫：每次带动画的页签切换自增一次；离场容器的延迟
+     * GONE 定时器仅在世代未变、且该容器不再是当前页签时才落地。快速连点时，
+     * 回切容器的 stateChangeEnter 会重置 alpha 并接管动画，旧退场定时器因世代
+     * 不匹配而失效——与 InstanceDetailActivity 五页签的既有守卫同一写法，
+     * 保证不留半透明残影。
+     */
+    private var tabSwitchGeneration = 0
     private var dashboardInstance: InstanceLifecycle.Instance? = null
     private var sshCommand: String? = null
     private var lastInstanceState = ""
@@ -404,6 +413,26 @@ class MainActivity : AppCompatActivity() {
             // label untouched for this repaint.
         }
 
+        // T2 (2026-11-08) Lane motion consumption: on a user-driven switch the
+        // leaving container fades out (OrchestellaMotion.stateChangeExit) before
+        // it is GONE-ed and the arriving one rises in (stateChangeEnter) — the
+        // console/list state swap hook named in that KDoc. First paint and
+        // theme repaints (forceAll) stay instant. The generation counter stops a
+        // stale exit timer from GONE-ing a container that was switched back to
+        // mid-fade, and the sweep below GONEs every other container so repeated
+        // fast switches can never stack invisible-but-tappable tab layers
+        // (same guard pattern as InstanceDetailActivity's five detail tabs).
+        val animateSwitch = tabsInitialized && !forceAll && previousTabIndex != tabIndex
+        if (animateSwitch) tabSwitchGeneration++
+        val switchGeneration = tabSwitchGeneration
+        if (animateSwitch) {
+            tabs.forEachIndexed { index, (containerId, _, _) ->
+                if (index != previousTabIndex && index != tabIndex) {
+                    findViewById<View>(containerId)?.visibility = View.GONE
+                }
+            }
+        }
+
         tabs.forEachIndexed { index, (containerId, navTabId, navElements) ->
             // Skip untouched tabs after the first paint; their colors already match.
             if (!forceAll && tabsInitialized && index != previousTabIndex && index != tabIndex) {
@@ -418,12 +447,24 @@ class MainActivity : AppCompatActivity() {
 
             if (index == tabIndex) {
                 container?.visibility = View.VISIBLE
+                if (animateSwitch) {
+                    container?.let(OrchestellaMotion::stateChangeEnter)
+                }
                 navTab?.setBackgroundColor(activeColor)
                 icon?.imageTintList = android.content.res.ColorStateList.valueOf(ThemeColors.onColor(activeColor))
                 text?.setTextColor(ThemeColors.onColor(activeColor))
                 text?.paint?.isFakeBoldText = true
             } else {
-                container?.visibility = View.GONE
+                if (animateSwitch && container != null) {
+                    OrchestellaMotion.stateChangeExit(container)
+                    container.postDelayed({
+                        if (switchGeneration == tabSwitchGeneration && index != currentTabIndex) {
+                            container.visibility = View.GONE
+                        }
+                    }, OrchestellaMotion.DURATION_EXIT_MS + 16L)
+                } else {
+                    container?.visibility = View.GONE
+                }
                 navTab?.setBackgroundColor(inactiveBg)
                 icon?.imageTintList = android.content.res.ColorStateList.valueOf(inactiveText)
                 text?.setTextColor(inactiveText)

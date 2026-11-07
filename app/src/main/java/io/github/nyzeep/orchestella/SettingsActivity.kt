@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
+import android.view.ViewGroup
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Spinner
@@ -238,6 +239,15 @@ class SettingsActivity : AppCompatActivity() {
                 }
 
                 Toast.makeText(this@SettingsActivity, "测速完成，推荐节点：${fastest.name()}", Toast.LENGTH_SHORT).show()
+
+                // T2 (2026-11-08) Lane motion consumption: a finished speed test is
+                // the page's explicit data-refresh moment, so replay the section
+                // stagger on settings_root_container. The first-open play is still
+                // owned solely by the XML layoutAnimation — this code path never
+                // runs in onCreate, so the two never double up.
+                findViewById<ViewGroup?>(R.id.settings_root_container)?.let {
+                    OrchestellaMotion.playSectionStagger(it)
+                }
             }
         }
     }

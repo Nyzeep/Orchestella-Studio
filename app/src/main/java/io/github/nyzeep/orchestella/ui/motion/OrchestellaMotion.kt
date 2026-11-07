@@ -15,19 +15,27 @@ import androidx.core.view.children
  * budget stays a pure raster op. All rise offsets are computed after layout
  * via a one-shot pre-draw listener — never from a stale pre-layout height.
  *
- * NOTE (TODO, device round): every helper is currently UNWIRED. The intended
- * hook points are listed per function; wiring needs edits in existing
- * activities which are outside Lane B's file boundary and impossible to
- * verify without a device. Consume from Lane D / the next device round:
+ * NOTE (wired, 2026-11-08 T2 motion-hooks round): every helper now has a live
+ * call site; the original device-round TODO list is retired as follows —
  *
- *  - [stateChangeEnter]/[stateChangeExit] -> MainActivity console/list state
- *    swaps (container_tab_console children), InstanceDetailActivity tab switch
- *    (container_detail_overview/hardware/storage/network/maintenance).
- *  - [expandSection]/[collapseSection] -> SettingsActivity toggleable areas
- *    (e.g. layout_settings_fallback_explanation).
- *  - [playSectionStagger] -> optional re-trigger of the layout animation that
- *    activity_settings.xml already wires statically via
- *    android:layoutAnimation="@anim/oe_layout_section_stagger".
+ *  - [stateChangeEnter]/[stateChangeExit] -> WIRED at MainActivity.switchTab
+ *    (five tab containers incl. the console/list state swap between
+ *    container_tab_console and container_tab_instances; first paint and
+ *    theme repaints stay instant) and at InstanceDetailActivity five detail
+ *    tabs (container_detail_overview/hardware/storage/network/maintenance).
+ *    Both sites carry a generation-counter guard so a stale exit timer never
+ *    GONEs a container switched back to mid-fade — rapid taps leave no
+ *    half-transparent residue.
+ *  - [expandSection]/[collapseSection] -> WIRED at SettingsActivity
+ *    setupFallbackExplanationSection (layout_settings_fallback_explanation
+ *    toggle, with the same generation guard on the collapse-end action).
+ *  - [playSectionStagger] -> WIRED at SettingsActivity.runMirrorSpeedTest
+ *    completion: the mirror speed test is the page's explicit data-refresh
+ *    moment and replays the settings_root_container stagger. The one-shot
+ *    first-open play remains owned by the XML
+ *    android:layoutAnimation="@anim/oe_layout_section_stagger" on
+ *    activity_settings.xml; the code replay only runs on refresh, so the
+ *    two never double up.
  */
 object OrchestellaMotion {
 
