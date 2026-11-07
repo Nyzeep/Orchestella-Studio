@@ -464,4 +464,7 @@
     <!-- Terminal empty state: no instance id was provided at all. -->
     <string name="terminal_empty_no_instance_title">还没有可打开的实例</string>
     <string name="terminal_empty_no_instance_message">请返回实例列表创建或选择一个实例。</string>
+
+    <!-- T2 (2026-11-08): ModernTerminalView.copySelection success feedback. -->
+    <string name="terminal_copy_done">已复制</string>
 </resources>

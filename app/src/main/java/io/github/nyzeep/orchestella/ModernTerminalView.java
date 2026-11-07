@@ -31,6 +31,7 @@ import android.view.inputmethod.InputMethodManager;
 import android.widget.FrameLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 import io.github.nyzeep.orchestella.terminal.TerminalScreenModel;
 
 /** Selectable, bounded VT screen with a single input path for IME, hardware and extra keys. */
@@ -226,6 +227,9 @@ public class ModernTerminalView extends ScrollView {
         if (clipboard == null) return false;
         clipboard.setPrimaryClip(ClipData.newPlainText("终端", transcriptView.getText()
                 .subSequence(Math.min(start, end), Math.max(start, end))));
+        // T2 (2026-11-08): user-perceivable feedback on the success path only —
+        // the failure paths above stay silent on purpose.
+        Toast.makeText(getContext(), R.string.terminal_copy_done, Toast.LENGTH_SHORT).show();
         return true;
     }
 
