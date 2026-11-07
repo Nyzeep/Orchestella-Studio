@@ -1,6 +1,9 @@
 package io.github.nyzeep.orchestella
 
 import androidx.annotation.StringRes
+import io.github.nyzeep.orchestella.runtime.engineavf.AvfEngineException
+import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
+import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneStartException
 import java.io.IOException
 
 /**
@@ -12,10 +15,12 @@ import java.io.IOException
  * this object only decides WHICH entry a throwable belongs to, so the table
  * itself stays a pure JVM decision with unit-test coverage.
  *
- * Consumers today: SetupWizardActivity (creation failure path) and
- * TerminalActivity (reconcile error line). Lane C may reuse [resolve] for the
- * MainActivity launch-failure surfaces — the codes are contract-stable:
- * never rename a code, only add new ones.
+ * Consumers today: SetupWizardActivity (creation failure path), TerminalActivity
+ * (reconcile error line) and MainActivity (launch-failure status row). Since the
+ * 2026-11-08 unification (T1) the former launch-path table
+ * [io.github.nyzeep.orchestella.startup.LaunchFailureCopy] delegates here, so
+ * this is the single source: the codes are contract-stable — never rename a
+ * code, only add new ones.
  */
 object ErrorCopy {
 
@@ -29,7 +34,9 @@ object ErrorCopy {
     /**
      * Maps a throwable to its copy entry. Checks run most-specific-first;
      * note SocketTimeoutException extends InterruptedIOException, so the
-     * network-timeout branch must stay above the interrupted-IO branch.
+     * network-timeout branch must stay above the interrupted-IO branch, and
+     * InvalidTransitionException extends IllegalStateException, so the
+     * lifecycle branch must stay above the state-invalid branch.
      */
     @JvmStatic
     fun resolve(error: Throwable?): Entry {
@@ -57,6 +64,29 @@ object ErrorCopy {
                 else -> Entry(
                     R.string.error_io_generic, CODE_IO_GENERIC, R.string.error_hint_retry)
             }
+            // 2026-11-08 单源化（T1）：启动路径专用族（原 LaunchFailureCopy 代码
+            // 常量表）并入本表，文案落在 strings.xml 的 error_* 键。判定顺序
+            // most-specific-first：InvalidTransitionException 是 IllegalStateException
+            // 的子类，必须先于下方 state-invalid 分支命中。
+            is InstanceLifecycle.InvalidTransitionException -> Entry(
+                R.string.error_lifecycle, CODE_LIFECYCLE, R.string.error_hint_check_state)
+            is AvfEngineException -> when (error.reason()) {
+                AvfEngineException.PERMISSION_DENIED -> Entry(
+                    R.string.error_avf_permission, CODE_AVF_PERMISSION,
+                    R.string.error_hint_check_permission)
+                AvfEngineException.HARDWARE_UNSUPPORTED -> Entry(
+                    R.string.error_avf_unsupported, CODE_AVF_UNSUPPORTED,
+                    R.string.error_hint_see_log)
+                AvfEngineException.CONFIG_MISMATCH -> Entry(
+                    R.string.error_avf_config, CODE_AVF_CONFIG,
+                    R.string.error_hint_see_log)
+                else -> Entry(
+                    R.string.error_avf_generic, CODE_AVF_GENERIC, R.string.error_hint_retry)
+            }
+            is LaneStartException -> Entry(
+                R.string.error_lane, CODE_LANE, R.string.error_hint_retry)
+            is OutOfMemoryError -> Entry(
+                R.string.error_oom, CODE_OOM, R.string.error_hint_retry)
             is java.util.concurrent.TimeoutException -> Entry(
                 R.string.error_wait_timeout, CODE_WAIT_TIMEOUT, R.string.error_hint_retry)
             is IllegalArgumentException -> Entry(
@@ -98,5 +128,13 @@ object ErrorCopy {
     const val CODE_STATE_INVALID = "E-STATE-INVALID"
     const val CODE_PERM_DENIED = "E-PERM-DENIED"
     const val CODE_INTERRUPTED = "E-INTERRUPTED"
+    // 2026-11-08 单源化（T1）：原 LaunchFailureCopy 启动路径专用族并入，码只增不改名。
+    const val CODE_LIFECYCLE = "E-LIFECYCLE"
+    const val CODE_AVF_PERMISSION = "E-AVF-PERMISSION"
+    const val CODE_AVF_UNSUPPORTED = "E-AVF-UNSUPPORTED"
+    const val CODE_AVF_CONFIG = "E-AVF-CONFIG"
+    const val CODE_AVF_GENERIC = "E-AVF-GENERIC"
+    const val CODE_LANE = "E-LANE"
+    const val CODE_OOM = "E-OOM"
     const val CODE_UNKNOWN = "E-UNKNOWN"
 }

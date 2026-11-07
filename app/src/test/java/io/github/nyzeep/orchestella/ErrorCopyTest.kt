@@ -1,5 +1,8 @@
 package io.github.nyzeep.orchestella
 
+import io.github.nyzeep.orchestella.runtime.engineavf.AvfEngineException
+import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
+import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneStartException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
@@ -128,6 +131,74 @@ class ErrorCopyTest {
         assertEquals(ErrorCopy.CODE_INTERRUPTED, threadEntry.code)
     }
 
+    // 2026-11-08 T1 单源化：启动路径专用族（原 LaunchFailureCopy 映射表）并入
+    // ErrorCopy 后的锁定用例；文案照抄迁移至 strings.xml 的 error_* 键。
+
+    @Test
+    fun invalidTransitionMapsToLifecycleFamily() {
+        val entry = ErrorCopy.resolve(
+            InstanceLifecycle.InvalidTransitionException("CREATED -> RUNNING")
+        )
+        assertEquals(ErrorCopy.CODE_LIFECYCLE, entry.code)
+        assertEquals(R.string.error_lifecycle, headline(entry))
+        assertEquals(R.string.error_hint_check_state, hint(entry))
+    }
+
+    @Test
+    fun invalidTransitionWinsOverGenericStateFamily() {
+        // 子类判定顺序回归：InvalidTransitionException 是 IllegalStateException 的
+        // 子类，必须命中专用 E-LIFECYCLE，而不是被 state-invalid 分支吞掉。
+        val lifecycle = ErrorCopy.resolve(
+            InstanceLifecycle.InvalidTransitionException("t")
+        )
+        val state = ErrorCopy.resolve(IllegalStateException("t"))
+        assertEquals(ErrorCopy.CODE_LIFECYCLE, lifecycle.code)
+        assertNotEquals(state.code, lifecycle.code)
+    }
+
+    @Test
+    fun avfEngineExceptionRefinesByReason() {
+        val permission = ErrorCopy.resolve(
+            AvfEngineException(AvfEngineException.PERMISSION_DENIED, "x")
+        )
+        assertEquals(ErrorCopy.CODE_AVF_PERMISSION, permission.code)
+        assertEquals(R.string.error_avf_permission, headline(permission))
+
+        val unsupported = ErrorCopy.resolve(
+            AvfEngineException(AvfEngineException.HARDWARE_UNSUPPORTED, "x")
+        )
+        assertEquals(ErrorCopy.CODE_AVF_UNSUPPORTED, unsupported.code)
+        assertEquals(R.string.error_avf_unsupported, headline(unsupported))
+
+        val config = ErrorCopy.resolve(
+            AvfEngineException(AvfEngineException.CONFIG_MISMATCH, "x")
+        )
+        assertEquals(ErrorCopy.CODE_AVF_CONFIG, config.code)
+        assertEquals(R.string.error_avf_config, headline(config))
+
+        // 未知 reason 落到 AVF 通用码，而不是未知错误兜底。
+        val generic = ErrorCopy.resolve(
+            AvfEngineException("SOME_FUTURE_REASON", "x")
+        )
+        assertEquals(ErrorCopy.CODE_AVF_GENERIC, generic.code)
+        assertEquals(R.string.error_avf_generic, headline(generic))
+        assertNotEquals(ErrorCopy.CODE_UNKNOWN, generic.code)
+    }
+
+    @Test
+    fun laneStartExceptionMapsToLaneFamily() {
+        val entry = ErrorCopy.resolve(LaneStartException("PAYLOAD_LOAD_FAILED"))
+        assertEquals(ErrorCopy.CODE_LANE, entry.code)
+        assertEquals(R.string.error_lane, headline(entry))
+    }
+
+    @Test
+    fun outOfMemoryMapsToOomFamily() {
+        val entry = ErrorCopy.resolve(OutOfMemoryError("heap"))
+        assertEquals(ErrorCopy.CODE_OOM, entry.code)
+        assertEquals(R.string.error_oom, headline(entry))
+    }
+
     @Test
     fun everyFamilyOwnsADistinctStableCode() {
         val codes = listOf(
@@ -143,6 +214,11 @@ class ErrorCopyTest {
             ErrorCopy.resolve(IllegalStateException("l")).code,
             ErrorCopy.resolve(SecurityException("p")).code,
             ErrorCopy.resolve(java.io.InterruptedIOException("n")).code,
+            // 2026-11-08 T1 并入的启动路径专用族。
+            ErrorCopy.resolve(InstanceLifecycle.InvalidTransitionException("t")).code,
+            ErrorCopy.resolve(AvfEngineException(AvfEngineException.PERMISSION_DENIED, "a")).code,
+            ErrorCopy.resolve(LaneStartException("X")).code,
+            ErrorCopy.resolve(OutOfMemoryError("o")).code,
             ErrorCopy.resolve(null).code,
         )
         assertEquals(codes.size, codes.toSet().size)
@@ -164,6 +240,11 @@ class ErrorCopyTest {
             ErrorCopy.resolve(IllegalStateException("l")),
             ErrorCopy.resolve(SecurityException("p")),
             ErrorCopy.resolve(java.io.InterruptedIOException("n")),
+            // 2026-11-08 T1 并入的启动路径专用族。
+            ErrorCopy.resolve(InstanceLifecycle.InvalidTransitionException("t")),
+            ErrorCopy.resolve(AvfEngineException(AvfEngineException.PERMISSION_DENIED, "a")),
+            ErrorCopy.resolve(LaneStartException("X")),
+            ErrorCopy.resolve(OutOfMemoryError("o")),
             ErrorCopy.resolve(null),
         )
         assertEquals(entries.size, entries.map { it.headlineRes }.toSet().size)

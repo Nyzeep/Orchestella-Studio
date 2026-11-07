@@ -441,6 +441,15 @@
     <string name="error_perm_denied">系统拒绝了所需权限</string>
     <string name="error_interrupted">操作已被中断</string>
     <string name="error_unknown">出现未知错误</string>
+    <!-- 2026-11-08 T1 单源化：启动路径专用族（原 LaunchFailureCopy 代码常量）并入
+         ErrorCopy，文案照抄迁移；码只增不改名（E-LIFECYCLE / E-AVF-* / E-LANE / E-OOM）。 -->
+    <string name="error_lifecycle">实例状态不允许本次启动，请刷新实例列表后重试</string>
+    <string name="error_avf_permission">AVF 授权已失效，请重新完成授权向导</string>
+    <string name="error_avf_unsupported">当前设备硬件不支持 AVF 硬件虚拟化</string>
+    <string name="error_avf_config">AVF 虚拟机配置已变化，请删除旧机后重试</string>
+    <string name="error_avf_generic">AVF 硬件虚拟机启动失败，可稍后重试</string>
+    <string name="error_lane">加速车道启动失败，本次启动已中止</string>
+    <string name="error_oom">系统内存不足，请关闭部分应用后重试</string>
     <string name="error_hint_check_network">请检查网络连接后重试</string>
     <string name="error_hint_check_mirror">请检查网络，或返回上一步更换镜像源</string>
     <string name="error_hint_check_clock">请检查系统时间是否正确后重试</string>

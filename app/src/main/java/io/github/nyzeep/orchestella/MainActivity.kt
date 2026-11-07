@@ -56,7 +56,6 @@ import io.github.nyzeep.orchestella.runtime.engineavf.AvfVirtualMachineEngine
 import io.github.nyzeep.orchestella.runtime.engineavf.ReflectiveAvfVirtualMachineApi
 import io.github.nyzeep.orchestella.HostHardwareProfile
 import io.github.nyzeep.orchestella.startup.DashboardSnapshot
-import io.github.nyzeep.orchestella.startup.LaunchFailureCopy
 import io.github.nyzeep.orchestella.startup.RuntimeVerification
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
 import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneClock
@@ -2059,14 +2058,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * 协同落点（Lane C 落地 / Lane D 规格，2026-11-07）：启动失败不再直接展示
-     * 「启动失败：IOException」这类异常类名，而是按类型映射人类可读短文案
-     * （[LaunchFailureCopy]，本轮免资源化：文案为代码常量，res 资源目录归 B，
-     * strings.xml 归 D）；固定异常码括注在副文本，完整类型仍写日志。
+     * 协同落点（Lane C 落地 / Lane D 规格，2026-11-07；2026-11-08 单源化收口）：
+     * 启动失败不再直接展示「启动失败：IOException」这类异常类名，而是统一走
+     * [ErrorCopy.detailMessage] 单源映射，输出「主文案（错误码 E-XXX）」副文本
+     * 格式；原 [io.github.nyzeep.orchestella.startup.LaunchFailureCopy] 代码常量
+     * 映射表已并入 ErrorCopy（见该对象的委托壳）。完整异常类名仍写 OrchestellaLaunch
+     * 日志（见上方 runOnUiThread 中的 Log.w，行为不变）。
      */
     private fun formatLaunchFailure(failure: Throwable): String =
-        getString(R.string.launch_failed, LaunchFailureCopy.describe(failure)) +
-            "（${failure.javaClass.simpleName}）"
+        ErrorCopy.detailMessage(this, failure)
 
     private fun deviceProfile(): DeviceCapabilityEvaluator.DeviceProfile {
         val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
