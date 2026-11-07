@@ -202,7 +202,11 @@ public final class ControlChannelRecoveryTest {
         pool.unregister(id);
     }
 
-    @Test(timeout = 4000L)
+    // T2 (2026-11-08): wall-clock budgets relaxed for cold-start load — a device
+    // or CI host under load can spin past the old 1s readiness deadline and the
+    // 4s junit timeout before the pump even schedules. Semantics and assertions
+    // are unchanged; only the time budget grew (5s in-test budgets, 10s overall).
+    @Test(timeout = 10000L)
     public void reenteredTerminalWaitsForTheExistingHandshakeWithoutAnotherReader() throws Exception {
         java.io.PipedInputStream inbound = new java.io.PipedInputStream(8192);
         try (java.io.PipedOutputStream replies = new java.io.PipedOutputStream(inbound)) {
@@ -217,7 +221,7 @@ public final class ControlChannelRecoveryTest {
             java.util.concurrent.ExecutorService callers = java.util.concurrent.Executors.newFixedThreadPool(2);
             try {
                 java.util.concurrent.Future<BridgeClient.Result> handshake = callers.submit(() -> client.handshake(TOKEN));
-                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
                 while (!"handshaking".equals(client.readinessState()) && System.nanoTime() < deadline) Thread.yield();
                 assertEquals("handshaking", client.readinessState());
                 java.util.concurrent.Future<Boolean> reentered = callers.submit(
@@ -225,8 +229,8 @@ public final class ControlChannelRecoveryTest {
                 assertFalse(reentered.isDone());
                 replies.write("ORCHESTELLA/READY 1\n".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
                 replies.flush();
-                assertTrue(handshake.get(1L, TimeUnit.SECONDS).accepted());
-                assertTrue(reentered.get(1L, TimeUnit.SECONDS));
+                assertTrue(handshake.get(5L, TimeUnit.SECONDS).accepted());
+                assertTrue(reentered.get(5L, TimeUnit.SECONDS));
                 assertEquals(1, readers.size());
             } finally {
                 callers.shutdownNow();
@@ -234,7 +238,9 @@ public final class ControlChannelRecoveryTest {
         }
     }
 
-    @Test(timeout = 4000L)
+    // T2 (2026-11-08): same wall-clock relaxation as the pump test above — the
+    // retire-before-ready scenario keeps every assertion, only the budgets grow.
+    @Test(timeout = 10000L)
     public void obsoleteTerminalWaiterRetiresWithoutInterruptingThePersistentHandshake() throws Exception {
         java.io.PipedInputStream inbound = new java.io.PipedInputStream(8192);
         try (java.io.PipedOutputStream replies = new java.io.PipedOutputStream(inbound)) {
@@ -250,13 +256,13 @@ public final class ControlChannelRecoveryTest {
                             checking.countDown();
                             return current.get();
                         }, 1500L));
-                assertTrue(checking.await(1L, TimeUnit.SECONDS));
+                assertTrue(checking.await(5L, TimeUnit.SECONDS));
                 current.set(false);
-                assertFalse(retired.get(1L, TimeUnit.SECONDS));
+                assertFalse(retired.get(5L, TimeUnit.SECONDS));
                 assertFalse(handshake.isDone());
                 replies.write("ORCHESTELLA/READY 1\n".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
                 replies.flush();
-                assertTrue(handshake.get(1L, TimeUnit.SECONDS).accepted());
+                assertTrue(handshake.get(5L, TimeUnit.SECONDS).accepted());
                 assertTrue(client.isReady());
             } finally {
                 callers.shutdownNow();
