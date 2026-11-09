@@ -101,7 +101,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="14dp"
                     app:cardCornerRadius="0dp"
-                    app:cardElevation="1dp"
+                    app:cardElevation="0dp"
                     app:strokeWidth="1dp"
                     app:strokeColor="?attr/colorOutlineVariant"
                     app:cardBackgroundColor="?attr/colorSurfaceContainer">
@@ -186,7 +186,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="14dp"
                     app:cardCornerRadius="0dp"
-                    app:cardElevation="1dp"
+                    app:cardElevation="0dp"
                     app:strokeWidth="1dp"
                     app:strokeColor="?attr/colorOutlineVariant"
                     app:cardBackgroundColor="?attr/colorSurfaceContainer">
@@ -276,7 +276,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="14dp"
                     app:cardCornerRadius="0dp"
-                    app:cardElevation="1dp"
+                    app:cardElevation="0dp"
                     app:strokeWidth="1dp"
                     app:strokeColor="?attr/colorOutlineVariant"
                     app:cardBackgroundColor="?attr/colorSurfaceContainer">
@@ -479,7 +479,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="14dp"
                     app:cardCornerRadius="0dp"
-                    app:cardElevation="1dp"
+                    app:cardElevation="0dp"
                     app:strokeWidth="1dp"
                     app:strokeColor="?attr/colorOutlineVariant"
                     app:cardBackgroundColor="?attr/colorSurfaceContainer">
@@ -582,7 +582,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="16dp"
                     app:cardCornerRadius="0dp"
-                    app:cardElevation="1dp"
+                    app:cardElevation="0dp"
                     app:strokeWidth="1dp"
                     app:strokeColor="?attr/colorOutlineVariant"
                     app:cardBackgroundColor="?attr/colorSurfaceContainer">
@@ -693,7 +693,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="16dp"
                     app:cardCornerRadius="0dp"
-                    app:cardElevation="1dp"
+                    app:cardElevation="0dp"
                     app:strokeWidth="1dp"
                     app:strokeColor="?attr/colorOutlineVariant"
                     app:cardBackgroundColor="?attr/colorSurfaceContainer">
@@ -884,7 +884,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="14dp"
                     app:cardCornerRadius="0dp"
-                    app:cardElevation="1dp"
+                    app:cardElevation="0dp"
                     app:strokeWidth="1dp"
                     app:strokeColor="?attr/colorOutlineVariant"
                     app:cardBackgroundColor="?attr/colorSurfaceContainer">
@@ -958,7 +958,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="14dp"
                     app:cardCornerRadius="0dp"
-                    app:cardElevation="1dp"
+                    app:cardElevation="0dp"
                     app:strokeWidth="1dp"
                     app:strokeColor="?attr/colorOutlineVariant"
                     app:cardBackgroundColor="?attr/colorSurfaceContainer">
@@ -995,7 +995,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="16dp"
                     app:cardCornerRadius="0dp"
-                    app:cardElevation="1dp"
+                    app:cardElevation="0dp"
                     app:strokeWidth="1dp"
                     app:strokeColor="?attr/colorOutlineVariant"
                     app:cardBackgroundColor="?attr/colorSurfaceContainer">
