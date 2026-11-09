@@ -1066,7 +1066,22 @@ class InstanceDetailActivity : AppCompatActivity() {
             ).forEach { tabId ->
                 findViewById<MaterialButton>(tabId)?.let { tabBtn ->
                     tabBtn.strokeColor = ColorStateList.valueOf((theme.glow and 0x00FFFFFF) or 0x33000000)
-                    tabBtn.setTextColor(theme.text)
+                    // A flat ink ignored the checked state: the selected tab painted dark
+                    // text on the primary fill (unreadable on the lavender flagship).
+                    tabBtn.setTextColor(
+                        ColorStateList(
+                            arrayOf(
+                                intArrayOf(-android.R.attr.state_enabled),
+                                intArrayOf(android.R.attr.state_checked),
+                                intArrayOf(),
+                            ),
+                            intArrayOf(
+                                io.github.nyzeep.orchestella.ui.theme.ThemeColors.disabledInk(theme),
+                                io.github.nyzeep.orchestella.ui.theme.ThemeColors.onColor(theme.primary),
+                                theme.text,
+                            ),
+                        )
+                    )
                 }
             }
 

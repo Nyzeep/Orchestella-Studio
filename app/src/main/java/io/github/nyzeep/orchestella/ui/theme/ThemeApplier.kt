@@ -357,8 +357,9 @@ object ThemeApplier {
         containerFill: Int?, surfacePct: Int = SurfaceOpacity.MAX_PERCENT,
         hasBackdrop: Boolean = false) {
         val outline = ThemeColors.color(theme, ColorRole.OUTLINE)
+        val hairline = ThemeColors.hairline(theme)
         val muted = ThemeColors.color(theme, ColorRole.MUTED)
-        val disabled = ThemeColors.blend(theme.surface, theme.text, 0.45f)
+        val disabled = ThemeColors.disabledInk(theme)
         val actionColor = if (binding.buttonRole == Role.DANGER_ACTION) 0xFFEF4444.toInt() else theme.primary
         val primaryInk = ThemeColors.onColor(actionColor)
         val effectiveSurface = SurfaceOpacity.resolveSurfaceColor(
@@ -367,7 +368,13 @@ object ThemeApplier {
         when (view) {
             is MaterialCardView -> {
                 view.setCardBackgroundColor(effectiveSurface)
-                view.strokeColor = outline
+                // Card edges use the on-palette hairline (a faint ink step over the
+                // surface) instead of the old full-strength grey outline band. The
+                // danger zone's red ring is semantic and survives the normalization.
+                if (!isSemanticStroke(name)) {
+                    view.strokeColor = hairline
+                    view.strokeWidth = view.resources.displayMetrics.density.toInt().coerceAtLeast(1)
+                }
                 // Corner radius is the one deliberate geometry override: 0 keeps the XML look.
                 val radiusPx = cornerRadiusPx(view)
                 if (radiusPx > 0f) {
@@ -383,10 +390,14 @@ object ThemeApplier {
                 val secondary = binding.buttonRole == Role.SECONDARY_ACTION
                 val fill = if (secondary) effectiveSurface else actionColor
                 val ink = if (secondary) normalInk else primaryInk
-                view.backgroundTintList = states(ThemeColors.blend(theme.surface, fill, 0.3f), actionColor, fill)
+                // Disabled is a ghost of the enabled style: a whisper of the same fill
+                // (never a flat grey slab) plus dimmed-but-legible content ink.
+                val disabledFill = ThemeColors.disabledFill(theme, fill)
+                view.backgroundTintList = states(disabledFill, actionColor, fill)
                 view.setTextColor(states(disabled, primaryInk, ink))
                 view.iconTint = states(disabled, primaryInk, ink)
-                view.strokeColor = states(outline, actionColor, if (secondary) outline else fill)
+                view.strokeColor = states(hairline, actionColor,
+                    if (secondary) ThemeColors.actionEdge(theme) else fill)
                 view.rippleColor = ColorStateList.valueOf((theme.text and 0x00FFFFFF) or 0x24000000)
                 val radiusPx = cornerRadiusPx(view)
                 val target = ThemeColors.clampCornerRadius(view.cornerRadius.toFloat(), radiusPx)
@@ -451,7 +462,8 @@ object ThemeApplier {
             view.compoundDrawableTintList = ColorStateList.valueOf(foreground)
             if (view is Button && view !is CompoundButton) {
                 val fill = if (binding.buttonRole == Role.SECONDARY_ACTION) effectiveSurface else actionColor
-                view.backgroundTintList = states(outline, actionColor, fill)
+                // Ghost fill when disabled: the old outline-grey slab read as "broken".
+                view.backgroundTintList = states(ThemeColors.disabledFill(theme, fill), actionColor, fill)
             }
         }
         if (view is CheckedTextView) view.checkMarkTintList = states(disabled, theme.primary, muted)
@@ -517,7 +529,9 @@ object ThemeApplier {
                     background.colors?.let { colors ->
                         background.colors = colors.map { ThemeColors.color(theme, inferBackgroundRole(it, theme)) }.toIntArray()
                     }
-                    background.setStroke((view.resources.displayMetrics.density * 1.5f).toInt().coerceAtLeast(1), outline)
+                    // 1dp on-palette hairline: the legacy 1.5dp grey outline band was the
+                    // "cheap grey border" the dashboard cards showed on every theme.
+                    background.setStroke(view.resources.displayMetrics.density.toInt().coerceAtLeast(1), ThemeColors.hairline(theme))
                     val radiusPx = cornerRadiusPx(view)
                     if (radiusPx > 0f) {
                         background.cornerRadius = ThemeColors.clampCornerRadius(existingCornerPx(background), radiusPx)
@@ -626,6 +640,9 @@ object ThemeApplier {
     }
 
     private fun isArtwork(name: String) = listOf("distro", "logo", "brand", "qr", "screenshot", "preview_image").any(name::contains)
+
+    /** Cards whose stroke carries meaning (the danger zone's red ring) keep it. */
+    private fun isSemanticStroke(name: String) = name.contains("danger")
     private fun isStatus(name: String) = listOf(
         "status_badge", "avf_badge", "badge_cfg_zone", "ram_safety_zone", "storage_warning",
         "txt_storage_warning", "net_test_result", "download_status", "runtime_badge", "fps_ping",

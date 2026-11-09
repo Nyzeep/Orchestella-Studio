@@ -18,6 +18,37 @@ object ThemeColors {
         Role.OUTLINE -> blend(theme.surface, theme.text, 0.28f)
     }
 
+    /**
+     * Hairline stroke for card edges (Material 3 "outlineVariant" tactic): one low
+     * mix step of the theme's own ink over its surface, so the border separates the
+     * card from the page without the heavy neutral-grey band a full-strength outline
+     * paints on light palettes. Both endpoints are theme roles, therefore every
+     * catalog theme and every custom slot inherits an on-palette hairline.
+     */
+    fun hairline(theme: AppTheme): Int = blend(theme.surface, theme.text, 0.12f)
+
+    /**
+     * Edge stroke for ghost (secondary/outline) buttons: the theme primary pulled
+     * toward the surface. Tinting the edge with the action hue keeps enabled ghost
+     * buttons reading as intentional controls instead of flat grey blocks.
+     */
+    fun actionEdge(theme: AppTheme): Int = blend(theme.surface, theme.primary, 0.40f)
+
+    /**
+     * Disabled content ink: clearly dimmed against the surface yet still legible
+     * (~4:1 contrast), so a disabled control reads "inactive by design" instead of
+     * "broken". Disabled controls are WCAG-contrast-exempt, but the content must
+     * stay recognizable.
+     */
+    fun disabledInk(theme: AppTheme): Int = blend(theme.surface, theme.text, 0.62f)
+
+    /**
+     * Disabled container fill: a whisper of the enabled fill over the surface
+     * (the ~40%-opacity-of-enabled tactic, resolved opaquely so translucency
+     * never lets the page background bleed through the button shape).
+     */
+    fun disabledFill(theme: AppTheme, fill: Int): Int = blend(theme.surface, fill, 0.14f)
+
     /** Prefer black/white by measured contrast; amber and pastel buttons need dark ink. */
     fun onColor(background: Int): Int =
         if (contrast(0xFF000000.toInt(), background) >= contrast(0xFFFFFFFF.toInt(), background)) {
