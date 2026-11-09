@@ -261,6 +261,50 @@ public final class AcceleratorLaneAssembly {
     }
 
     /**
+     * C lane (width thermostat, item 4): the fabric orchestration wired over a
+     * live {@link UmlFaceLauncher} — the UML face's width supply and its
+     * worker come from the face itself, never from a caller's constant. The
+     * face's {@link UmlFaceLauncher#widthSupplier()} feeds the slot's
+     * {@code umlFaceWidth}: the kernel's effective SMP width while the face is
+     * running, healthy and channel-wired ({@code ncpus=} ≥ 2 takes N, the
+     * host-1 shape takes 1 — the device round's verdict, supplied per device
+     * capability via {@link UmlFaceLauncher.LaunchParams#forDeviceCapability}),
+     * and 0 while the face is down. {@link FabricOrchestrator#ledgerBackedWidths}
+     * then clamps that supply to the ledger headroom, so the thermostat stays
+     * the ledger: a wide supply cannot oversubscribe, and the sum of the three
+     * face widths still equals the ledger's core budget (the invariant the
+     * locked fabric tests hold).
+     *
+     * <p>The UML worker is the face's own {@link UmlFaceLauncher#faceWorker()}
+     * (its fixed {@code uml-face-not-running} / {@code uml-face-compile-channel-unwired}
+     * details ride the orchestrator's eviction contract); a caller's map that
+     * already carries a {@link FabricWidthDecision.Face#UML} entry is refused —
+     * the UML worker comes from the face, not from the caller.
+     */
+    public static FabricOrchestrator fabricOrchestrator(
+            boolean fabricDispatchEnabled,
+            Result result,
+            int qemuFaceWidth,
+            int nativeFaceWidth,
+            UmlFaceLauncher umlFace,
+            java.util.Map<FabricWidthDecision.Face, FabricOrchestrator.FaceWorker> otherWorkers) {
+        Objects.requireNonNull(result, "result");
+        Objects.requireNonNull(umlFace, "umlFace");
+        Objects.requireNonNull(otherWorkers, "otherWorkers");
+        java.util.Map<FabricWidthDecision.Face, FabricOrchestrator.FaceWorker> workers =
+                new java.util.EnumMap<>(FabricWidthDecision.Face.class);
+        workers.putAll(otherWorkers);
+        if (workers.containsKey(FabricWidthDecision.Face.UML)) {
+            throw new IllegalArgumentException(
+                    "the UML face worker comes from the launcher, not the caller's map");
+        }
+        workers.put(FabricWidthDecision.Face.UML, umlFace.faceWorker());
+        return fabricOrchestrator(
+                fabricDispatchEnabled, result, qemuFaceWidth, nativeFaceWidth,
+                umlFace.widthSupplier(), workers);
+    }
+
+    /**
      * B2 follow-up ② wiring: the UML compile-worker face's product lifecycle
      * manager. The face runs the UML kernel exactly the way the research
      * prototype proved it on device ({@code research/uml-runner}) — the
@@ -284,7 +328,11 @@ public final class AcceleratorLaneAssembly {
      *   prerequisite (the device round froze a background face's whole
      *   process group; the protected form held 60 minutes of residency).</li>
      *   <li>Missing kernel assets degrade to the fixed {@code MISSING_ASSET}
-     *   code with width 0 — the face never fakes a running state.</li>
+     *   code with width 0 — the face never fakes a running state. The
+     *   checksum-level reconciliation of the placed assets (the device
+     *   window's manifest vs. what actually landed) is
+     *   {@link UmlKernelAssets#verify}; the start gate itself keeps the
+     *   historical existence precheck unchanged.</li>
      * </ol>
      *
      * <p>{@code launchParams} is the device window's tuning interface
