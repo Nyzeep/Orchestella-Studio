@@ -392,8 +392,11 @@ object ThemeApplier {
                 val ink = if (secondary) normalInk else primaryInk
                 // Disabled is a ghost of the enabled style: a whisper of the same fill
                 // (never a flat grey slab) plus dimmed-but-legible content ink.
+                // Pressed washes ~10% of the on-color over the fill (M3 state layer),
+                // so rest and pressed no longer look identical on hardcoded tints.
                 val disabledFill = ThemeColors.disabledFill(theme, fill)
-                view.backgroundTintList = states(disabledFill, actionColor, fill)
+                view.backgroundTintList = pressableStates(
+                    disabledFill, ThemeColors.pressedFill(fill, ink), actionColor, fill)
                 view.setTextColor(states(disabled, primaryInk, ink))
                 view.iconTint = states(disabled, primaryInk, ink)
                 view.strokeColor = states(hairline, actionColor,
@@ -425,7 +428,9 @@ object ThemeApplier {
                 view.itemTextColor = view.itemIconTintList
             }
             is TextInputLayout -> {
-                view.boxBackgroundColor = effectiveSurface
+                // Fields sit one tonal step above their container card
+                // (M3 surfaceContainerHigh tactic), still opacity-resolved.
+                view.boxBackgroundColor = ThemeColors.surfaceHigh(effectiveSurface, theme.text)
                 view.boxStrokeColor = theme.primary
                 view.defaultHintTextColor = ColorStateList.valueOf(muted)
                 view.hintTextColor = ColorStateList.valueOf(ThemeColors.readable(theme.primary, theme.surface))
@@ -462,8 +467,11 @@ object ThemeApplier {
             view.compoundDrawableTintList = ColorStateList.valueOf(foreground)
             if (view is Button && view !is CompoundButton) {
                 val fill = if (binding.buttonRole == Role.SECONDARY_ACTION) effectiveSurface else actionColor
+                val ink = if (binding.buttonRole == Role.SECONDARY_ACTION) normalInk else primaryInk
                 // Ghost fill when disabled: the old outline-grey slab read as "broken".
-                view.backgroundTintList = states(ThemeColors.disabledFill(theme, fill), actionColor, fill)
+                view.backgroundTintList = pressableStates(
+                    ThemeColors.disabledFill(theme, fill), ThemeColors.pressedFill(fill, ink),
+                    actionColor, fill)
             }
         }
         if (view is CheckedTextView) view.checkMarkTintList = states(disabled, theme.primary, muted)
@@ -490,7 +498,9 @@ object ThemeApplier {
             view.imageTintList = states(disabled, normalInk, normalInk)
         }
         if (view is Spinner) {
-            view.setPopupBackgroundDrawable(ColorDrawable(effectiveSurface))
+            // Menus pop ABOVE everything: the highest surface tier (M3 menus use
+            // surfaceContainerHigh), still derived from the opacity-resolved surface.
+            view.setPopupBackgroundDrawable(ColorDrawable(ThemeColors.surfaceHigh(effectiveSurface, theme.text)))
             val adapter = view.adapter
             if (adapter != null && adapter !is ThemeSpinnerAdapter) {
                 val selection = view.selectedItemPosition
@@ -515,7 +525,14 @@ object ThemeApplier {
      */
     private fun recolorBackground(view: View, role: ColorRole, theme: AppTheme, outline: Int, surfaceFill: Int) {
         val drawable = view.background?.mutate() ?: return
-        val resolvedFill = if (role == ColorRole.SURFACE) surfaceFill else ThemeColors.color(theme, role)
+        // Wells (banners/info strips sitting directly on the page) take the
+        // surfaceLow tier instead of the full card surface, completing the
+        // background → well → card → raised-control ladder (oe_design_tokens).
+        val resolvedFill = when {
+            isWell(view) -> ThemeColors.surfaceLow(theme.background, surfaceFill)
+            role == ColorRole.SURFACE -> surfaceFill
+            else -> ThemeColors.color(theme, role)
+        }
         fun update(background: Drawable) {
             when (background) {
                 is RippleDrawable -> {
@@ -625,6 +642,18 @@ object ThemeApplier {
         intArrayOf(disabled, active, active, normal),
     )
 
+    /**
+     * Control states with an explicit pressed layer for non-selected controls.
+     * Checked/selected win over pressed so an already-active toggle tab never
+     * flashes back to a surface fill mid-press (the ripple carries that feedback).
+     */
+    private fun pressableStates(disabled: Int, pressed: Int, active: Int, normal: Int) = ColorStateList(
+        arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf(android.R.attr.state_checked),
+            intArrayOf(android.R.attr.state_selected), intArrayOf(android.R.attr.state_pressed),
+            intArrayOf()),
+        intArrayOf(disabled, active, active, pressed, normal),
+    )
+
     private fun resourceName(view: View): String = if (view.id == View.NO_ID) "" else try {
         view.resources.getResourceEntryName(view.id)
     } catch (_: android.content.res.Resources.NotFoundException) { "" }
@@ -643,6 +672,9 @@ object ThemeApplier {
 
     /** Cards whose stroke carries meaning (the danger zone's red ring) keep it. */
     private fun isSemanticStroke(name: String) = name.contains("danger")
+
+    /** Wells are page-level banners/strips: ids prefixed "well_" take the surfaceLow tier. */
+    private fun isWell(view: View): Boolean = resourceName(view).startsWith("well_")
     private fun isStatus(name: String) = listOf(
         "status_badge", "avf_badge", "badge_cfg_zone", "ram_safety_zone", "storage_warning",
         "txt_storage_warning", "net_test_result", "download_status", "runtime_badge", "fps_ping",

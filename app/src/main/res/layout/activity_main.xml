@@ -362,7 +362,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:background="@drawable/bg_glow_card"
+                        android:background="@drawable/bg_oe_card"
                         android:padding="12dp"
                         android:layout_marginBottom="12dp">
 
@@ -567,7 +567,7 @@
                             android:minHeight="120dp"
                             android:layout_weight="1"
                             android:orientation="vertical"
-                            android:background="@drawable/bg_constructivist_card"
+                            android:background="@drawable/bg_oe_card"
                             android:padding="12dp">
 
                             <LinearLayout
@@ -662,7 +662,7 @@
                             android:layout_weight="1"
                             android:layout_marginStart="8dp"
                             android:orientation="vertical"
-                            android:background="@drawable/bg_constructivist_card"
+                            android:background="@drawable/bg_oe_card"
                             android:padding="12dp">
 
                             <LinearLayout
@@ -756,7 +756,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:background="@drawable/bg_constructivist_card"
+                        android:background="@drawable/bg_oe_card"
                         android:padding="12dp"
                         android:layout_marginBottom="12dp">
 
@@ -897,7 +897,7 @@
                                 android:minHeight="100dp"
                                 android:layout_weight="1"
                                 android:orientation="vertical"
-                                android:background="@drawable/bg_constructivist_card"
+                                android:background="@drawable/bg_oe_card"
                                 android:padding="10dp"
                                 android:clickable="true"
                                 android:focusable="true">
@@ -964,7 +964,7 @@
                                 android:layout_weight="1"
                                 android:layout_marginStart="8dp"
                                 android:orientation="vertical"
-                                android:background="@drawable/bg_constructivist_card"
+                                android:background="@drawable/bg_oe_card"
                                 android:padding="10dp"
                                 android:clickable="true"
                                 android:focusable="true">
@@ -1038,7 +1038,7 @@
                                 android:minHeight="100dp"
                                 android:layout_weight="1"
                                 android:orientation="vertical"
-                                android:background="@drawable/bg_constructivist_card"
+                                android:background="@drawable/bg_oe_card"
                                 android:padding="10dp"
                                 android:clickable="true"
                                 android:focusable="true">
@@ -1105,7 +1105,7 @@
                                 android:layout_weight="1"
                                 android:layout_marginStart="8dp"
                                 android:orientation="vertical"
-                                android:background="@drawable/bg_constructivist_card"
+                                android:background="@drawable/bg_oe_card"
                                 android:padding="10dp"
                                 android:clickable="true"
                                 android:focusable="true">
@@ -1169,7 +1169,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:background="@drawable/bg_constructivist_card"
+                        android:background="@drawable/bg_oe_card"
                         android:padding="12dp"
                         android:layout_marginBottom="12dp">
 
@@ -1426,7 +1426,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:background="@drawable/bg_constructivist_card"
+                        android:background="@drawable/bg_oe_card"
                         android:padding="14dp"
                         android:layout_marginBottom="12dp">
 
@@ -1570,7 +1570,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:background="@drawable/bg_constructivist_card"
+                        android:background="@drawable/bg_oe_card"
                         android:padding="14dp"
                         android:layout_marginBottom="12dp">
 
@@ -1658,7 +1658,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:background="@drawable/bg_constructivist_card"
+                        android:background="@drawable/bg_oe_card"
                         android:padding="14dp"
                         android:layout_marginBottom="12dp">
 
@@ -1811,7 +1811,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:background="@drawable/bg_constructivist_card"
+                        android:background="@drawable/bg_oe_card"
                         android:padding="14dp"
                         android:layout_marginBottom="12dp">
 
@@ -1902,7 +1902,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:background="@drawable/bg_glow_card"
+                        android:background="@drawable/bg_oe_card"
                         android:padding="16dp"
                         android:clickable="true"
                         android:focusable="true"
@@ -2012,7 +2012,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:background="@drawable/bg_glow_card"
+                        android:background="@drawable/bg_oe_card"
                         android:padding="16dp"
                         android:clickable="true"
                         android:focusable="true"
@@ -2122,7 +2122,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:background="@drawable/bg_glow_card"
+                        android:background="@drawable/bg_oe_card"
                         android:padding="16dp"
                         android:clickable="true"
                         android:focusable="true"
@@ -2232,7 +2232,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:background="@drawable/bg_glow_card"
+                        android:background="@drawable/bg_oe_card"
                         android:padding="16dp"
                         android:clickable="true"
                         android:focusable="true"
@@ -2342,7 +2342,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:background="@drawable/bg_glow_card"
+                        android:background="@drawable/bg_oe_card"
                         android:padding="16dp"
                         android:clickable="true"
                         android:focusable="true"
@@ -2452,7 +2452,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:background="@drawable/bg_glow_card"
+                        android:background="@drawable/bg_oe_card"
                         android:padding="16dp"
                         android:clickable="true"
                         android:focusable="true"
@@ -2562,7 +2562,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:background="@drawable/bg_glow_card"
+                        android:background="@drawable/bg_oe_card"
                         android:padding="16dp"
                         android:clickable="true"
                         android:focusable="true"
@@ -2694,7 +2694,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:background="@drawable/bg_constructivist_card"
+                        android:background="@drawable/bg_oe_card"
                         android:padding="14dp"
                         android:layout_marginBottom="12dp">
 
@@ -2886,7 +2886,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:background="@drawable/bg_constructivist_card"
+                        android:background="@drawable/bg_oe_card"
                         android:padding="14dp"
                         android:layout_marginBottom="12dp">
 

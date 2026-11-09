@@ -42,25 +42,33 @@
             <!-- ============================================== -->
             <!-- 分区 1：镜像源与容器加速管理 (Mirror Management) -->
             <!-- ============================================== -->
-            <TextView
+            <LinearLayout
+                style="@style/Widget.Orchestella.InlineIconRow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:layout_marginBottom="8dp"
-                app:drawableStartCompat="@drawable/ic_sym_globe"
-                android:drawablePadding="8dp"
-                android:gravity="center_vertical"
-                android:text="镜像源与容器加速管理"
-                android:textSize="14sp"
-                android:textStyle="bold"
-                android:textColor="?attr/colorPrimary" />
+                android:layout_marginBottom="8dp">
+
+                <ImageView
+                    style="@style/Widget.Orchestella.InlineIcon"
+                    app:srcCompat="@drawable/ic_sym_globe"
+                    app:tint="?attr/colorPrimary" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="镜像源与容器加速管理"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="?attr/colorPrimary" />
+            </LinearLayout>
 
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/card_settings_mirrors"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 app:cardCornerRadius="0dp"
-                app:cardElevation="2dp"
+                app:cardElevation="0dp"
                 app:strokeWidth="1dp"
                 app:strokeColor="?attr/colorOutlineVariant"
                 app:cardBackgroundColor="?attr/colorSurfaceContainer">
@@ -177,25 +185,33 @@
             <!-- ============================================== -->
             <!-- 分区 2：硬件与虚拟化检测 (AVF & Hardware)      -->
             <!-- ============================================== -->
-            <TextView
+            <LinearLayout
+                style="@style/Widget.Orchestella.InlineIconRow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="22dp"
-                android:layout_marginBottom="8dp"
-                app:drawableStartCompat="@drawable/ic_sym_bolt"
-                android:drawablePadding="8dp"
-                android:gravity="center_vertical"
-                android:text="硬件虚拟化与运行架构"
-                android:textSize="14sp"
-                android:textStyle="bold"
-                android:textColor="?attr/colorPrimary" />
+                android:layout_marginBottom="8dp">
+
+                <ImageView
+                    style="@style/Widget.Orchestella.InlineIcon"
+                    app:srcCompat="@drawable/ic_sym_bolt"
+                    app:tint="?attr/colorPrimary" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="硬件虚拟化与运行架构"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="?attr/colorPrimary" />
+            </LinearLayout>
 
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/card_settings_virtualization"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 app:cardCornerRadius="0dp"
-                app:cardElevation="2dp"
+                app:cardElevation="0dp"
                 app:strokeWidth="1dp"
                 app:strokeColor="?attr/colorOutlineVariant"
                 app:cardBackgroundColor="?attr/colorSurfaceContainer">
@@ -316,25 +332,33 @@
             <!-- ============================================== -->
             <!-- 分区 3：终端使用体验偏好 (Terminal Preferences) -->
             <!-- ============================================== -->
-            <TextView
+            <LinearLayout
+                style="@style/Widget.Orchestella.InlineIconRow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="22dp"
-                android:layout_marginBottom="8dp"
-                app:drawableStartCompat="@drawable/ic_terminal"
-                android:drawablePadding="8dp"
-                android:gravity="center_vertical"
-                android:text="终端使用体验偏好"
-                android:textSize="14sp"
-                android:textStyle="bold"
-                android:textColor="?attr/colorPrimary" />
+                android:layout_marginBottom="8dp">
+
+                <ImageView
+                    style="@style/Widget.Orchestella.InlineIcon"
+                    app:srcCompat="@drawable/ic_terminal"
+                    app:tint="?attr/colorPrimary" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="终端使用体验偏好"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="?attr/colorPrimary" />
+            </LinearLayout>
 
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/card_settings_terminal"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 app:cardCornerRadius="0dp"
-                app:cardElevation="2dp"
+                app:cardElevation="0dp"
                 app:strokeWidth="1dp"
                 app:strokeColor="?attr/colorOutlineVariant"
                 app:cardBackgroundColor="?attr/colorSurfaceContainer">
@@ -414,25 +438,33 @@
             <!-- ============================================== -->
             <!-- 分区 4：关于与官方商标声明 (About & Licenses)   -->
             <!-- ============================================== -->
-            <TextView
+            <LinearLayout
+                style="@style/Widget.Orchestella.InlineIconRow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="22dp"
-                android:layout_marginBottom="8dp"
-                app:drawableStartCompat="@drawable/ic_info"
-                android:drawablePadding="8dp"
-                android:gravity="center_vertical"
-                android:text="关于平台与官方商标合规"
-                android:textSize="14sp"
-                android:textStyle="bold"
-                android:textColor="?attr/colorPrimary" />
+                android:layout_marginBottom="8dp">
+
+                <ImageView
+                    style="@style/Widget.Orchestella.InlineIcon"
+                    app:srcCompat="@drawable/ic_info"
+                    app:tint="?attr/colorPrimary" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="关于平台与官方商标合规"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="?attr/colorPrimary" />
+            </LinearLayout>
 
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/card_settings_about"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 app:cardCornerRadius="0dp"
-                app:cardElevation="2dp"
+                app:cardElevation="0dp"
                 app:strokeWidth="1dp"
                 app:strokeColor="?attr/colorOutlineVariant"
                 app:cardBackgroundColor="?attr/colorSurfaceContainer">
@@ -475,17 +507,25 @@
 
 
             <!-- ============ 外观与主题 ============ -->
-            <TextView
+            <LinearLayout
+                style="@style/Widget.Orchestella.InlineIconRow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="22dp"
-                app:drawableStartCompat="@drawable/ic_palette"
-                android:drawablePadding="8dp"
-                android:gravity="center_vertical"
-                android:text="外观与主题"
-                android:textSize="14sp"
-                android:textStyle="bold"
-                android:textColor="?attr/colorPrimary" />
+                android:layout_marginTop="22dp">
+
+                <ImageView
+                    style="@style/Widget.Orchestella.InlineIcon"
+                    app:srcCompat="@drawable/ic_palette"
+                    app:tint="?attr/colorPrimary" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="外观与主题"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="?attr/colorPrimary" />
+            </LinearLayout>
 
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/card_settings_theme"
@@ -493,7 +533,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 app:cardCornerRadius="0dp"
-                app:cardElevation="2dp"
+                app:cardElevation="0dp"
                 app:strokeWidth="1dp"
                 app:strokeColor="?attr/colorOutlineVariant"
                 app:cardBackgroundColor="?attr/colorSurfaceContainer">
@@ -746,25 +786,33 @@
             </com.google.android.material.card.MaterialCardView>
 
             <!-- ============ 加速与性能 ============ -->
-            <TextView
+            <LinearLayout
+                style="@style/Widget.Orchestella.InlineIconRow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="22dp"
-                android:layout_marginBottom="8dp"
-                app:drawableStartCompat="@drawable/ic_sym_bolt"
-                android:drawablePadding="8dp"
-                android:gravity="center_vertical"
-                android:text="加速与性能"
-                android:textSize="14sp"
-                android:textStyle="bold"
-                android:textColor="?attr/colorPrimary" />
+                android:layout_marginBottom="8dp">
+
+                <ImageView
+                    style="@style/Widget.Orchestella.InlineIcon"
+                    app:srcCompat="@drawable/ic_sym_bolt"
+                    app:tint="?attr/colorPrimary" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="加速与性能"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="?attr/colorPrimary" />
+            </LinearLayout>
 
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/card_settings_accelerator"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 app:cardCornerRadius="0dp"
-                app:cardElevation="2dp"
+                app:cardElevation="0dp"
                 app:strokeWidth="1dp"
                 app:strokeColor="?attr/colorOutlineVariant"
                 app:cardBackgroundColor="?attr/colorSurfaceContainer">
@@ -813,25 +861,33 @@
             </com.google.android.material.card.MaterialCardView>
 
             <!-- ============ 诊断与开发者选项 ============ -->
-            <TextView
+            <LinearLayout
+                style="@style/Widget.Orchestella.InlineIconRow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="22dp"
-                android:layout_marginBottom="8dp"
-                app:drawableStartCompat="@drawable/ic_tune"
-                android:drawablePadding="8dp"
-                android:gravity="center_vertical"
-                android:text="诊断与开发者选项"
-                android:textSize="14sp"
-                android:textStyle="bold"
-                android:textColor="?attr/colorPrimary" />
+                android:layout_marginBottom="8dp">
+
+                <ImageView
+                    style="@style/Widget.Orchestella.InlineIcon"
+                    app:srcCompat="@drawable/ic_tune"
+                    app:tint="?attr/colorPrimary" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="诊断与开发者选项"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="?attr/colorPrimary" />
+            </LinearLayout>
 
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/card_settings_diagnostics"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 app:cardCornerRadius="0dp"
-                app:cardElevation="2dp"
+                app:cardElevation="0dp"
                 app:strokeWidth="1dp"
                 app:strokeColor="?attr/colorOutlineVariant"
                 app:cardBackgroundColor="?attr/colorSurfaceContainer">

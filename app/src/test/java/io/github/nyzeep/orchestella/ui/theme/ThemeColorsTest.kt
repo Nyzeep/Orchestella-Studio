@@ -2,6 +2,8 @@ package io.github.nyzeep.orchestella.ui.theme
 
 import org.junit.Assert.*
 import org.junit.Test
+import kotlin.math.max
+import kotlin.math.min
 
 class ThemeColorsTest {
     @Test fun everyExistingPaletteHasUniquePersistentIdAndCompleteOpaqueAnsiColors() {
@@ -80,5 +82,72 @@ class ThemeColorsTest {
         assertEquals(22, ThemeColors.fontSize(50))
         assertEquals(0f, ThemeColors.boundedSpacing(Float.NaN, 0.2f), 0f)
         assertEquals(0.2f, ThemeColors.boundedSpacing(0.5f, 0.2f), 0f)
+    }
+
+    /** Contrast against pure black is monotonic in luminance — the ordering proxy. */
+    private fun relLum(color: Int): Double = ThemeColors.contrast(color, 0xFF000000.toInt())
+
+    private fun assertBetween(lower: Double, upper: Double, value: Double, label: String) {
+        assertTrue("$label $value between [$lower, $upper]",
+            value > min(lower, upper) && value < max(lower, upper))
+    }
+
+    @Test fun surfaceTierLadderStaysStrictlyBetweenPageAndInkForEveryTheme() {
+        // B-lane surface 三档: low sits between page and card, high between card
+        // and ink. Ordering via luminance works for light AND dark palettes.
+        for (theme in ThemeCatalog.all) {
+            val low = ThemeColors.surfaceLow(theme)
+            val high = ThemeColors.surfaceHigh(theme)
+            assertBetween(relLum(theme.background), relLum(theme.surface), relLum(low),
+                "${theme.id}: surfaceLow")
+            assertBetween(relLum(theme.surface), relLum(theme.text), relLum(high),
+                "${theme.id}: surfaceHigh")
+            // The stroke register stays stronger than the fill register so hairline
+            // edges never dissolve into a raised fill.
+            assertTrue("${theme.id}: hairline != surfaceHigh step",
+                Math.abs(relLum(ThemeColors.hairline(theme)) - relLum(theme.surface)) >
+                    Math.abs(relLum(high) - relLum(theme.surface)))
+        }
+    }
+
+    @Test fun surfaceTierDerivationsKeepTheFourIdentityThemesOnPalette() {
+        // 旗舰淡紫工控 (light) + 构成主义三色 (dark): exact blends, hand-computed
+        // so a regression in the derivation constants fails loudly.
+        val mascot = ThemeCatalog.mascotLavender
+        assertEquals(0xFFCFBCD3.toInt(), ThemeColors.surfaceLow(mascot))
+        assertEquals(0xFFD0C5D4.toInt(), ThemeColors.surfaceHigh(mascot))
+        for (id in listOf("constructivist-workstation", "constructivist-cobalt", "constructivist-amber")) {
+            val theme = ThemeCatalog.resolve(id)
+            val low = ThemeColors.surfaceLow(theme)
+            val high = ThemeColors.surfaceHigh(theme)
+            assertTrue("$id: well tinted, not pure grey",
+                (low ushr 16 and 255) != (low ushr 8 and 255) || (low ushr 8 and 255) != (low and 255))
+            assertTrue("$id: raised stays subtle (measured 1.12-1.15 across the four identities)",
+                ThemeColors.contrast(high, theme.surface) < 1.25)
+        }
+    }
+
+    @Test fun opacityResolvedOverloadsMatchTheThemeDerivations() {
+        for (theme in ThemeCatalog.all) {
+            assertEquals(ThemeColors.surfaceLow(theme),
+                ThemeColors.surfaceLow(theme.background, theme.surface))
+            assertEquals(ThemeColors.surfaceHigh(theme),
+                ThemeColors.surfaceHigh(theme.surface, theme.text))
+        }
+    }
+
+    @Test fun pressedFillIsASubtleStateLayerNotARepaint() {
+        for (theme in ThemeCatalog.all) {
+            val ink = ThemeColors.onColor(theme.primary)
+            val pressed = ThemeColors.pressedFill(theme.primary, ink)
+            val delta = ThemeColors.contrast(pressed, theme.primary)
+            assertTrue("${theme.id}: pressed visible", delta > 1.0)
+            // M3 state layers land near ~1.3-1.4 contrast on dark primaries
+            // (mascot lavender primary measures 1.35); anything beyond ~1.5
+            // would read as a repaint instead of a press.
+            assertTrue("${theme.id}: pressed subtle", delta < 1.50)
+            val ghost = ThemeColors.pressedFill(theme.surface, ThemeColors.color(theme, ThemeColors.Role.TEXT))
+            assertTrue("${theme.id}: ghost pressed visible", ThemeColors.contrast(ghost, theme.surface) > 1.0)
+        }
     }
 }

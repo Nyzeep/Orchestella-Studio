@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  B-lane (round 2026-11-09) component vocabulary.
+
+  Split of concerns (deliberate):
+    - geometry + typography live here as reusable styles,
+    - every COLOR state (rest / pressed / checked / selected / disabled) stays
+      owned by ThemeApplier, which derives it per theme from ThemeColors.
+      Components consume tokens; they never hard-code palette values — the
+      token-consumption rule Now in Android and the DroidKaigi conference-app
+      both enforce in their core/designsystem modules. This keeps the four
+      built-in identities plus custom slots repaintable without style edits.
+
+  Typography weight rhythm follows M3 Expressive: titles and labels sit at
+  medium (500, sans-serif-medium), body stays regular (400). Sources:
+    https://m3.material.io/styles/typography/applying-type
+    https://m3.material.io/blog/building-with-m3-expressive
+-->
+<resources>
+
+    <!-- ==================================================== -->
+    <!-- Typography 权重节奏: Title / SectionHeader / Body / Label -->
+    <!-- ==================================================== -->
+
+    <style name="TextAppearance.Orchestella.Title" parent="TextAppearance.Material3.TitleMedium">
+        <item name="android:letterSpacing">0.01</item>
+    </style>
+
+    <style name="TextAppearance.Orchestella.SectionHeader" parent="TextAppearance.Material3.TitleSmall">
+        <item name="android:letterSpacing">0.02</item>
+    </style>
+
+    <style name="TextAppearance.Orchestella.Body" parent="TextAppearance.Material3.BodyMedium" />
+
+    <style name="TextAppearance.Orchestella.Label" parent="TextAppearance.Material3.BodySmall" />
+
+    <style name="TextAppearance.Orchestella.LabelEmphasized" parent="TextAppearance.Material3.LabelMedium">
+        <item name="android:letterSpacing">0.02</item>
+    </style>
+
+    <!-- ==================================================== -->
+    <!-- 按钮状态样式族: geometry/type only, states stay in ThemeApplier -->
+    <!-- ==================================================== -->
+
+    <style name="Widget.Orchestella.Button" parent="">
+        <item name="cornerRadius">@dimen/oe_corner_md</item>
+        <item name="android:textAppearance">@style/TextAppearance.Orchestella.LabelEmphasized</item>
+    </style>
+
+    <style name="Widget.Orchestella.Button.Filled" parent="Widget.Material3.Button">
+        <item name="cornerRadius">@dimen/oe_corner_md</item>
+        <item name="android:textAppearance">@style/TextAppearance.Orchestella.LabelEmphasized</item>
+    </style>
+
+    <style name="Widget.Orchestella.Button.Tonal" parent="Widget.Material3.Button.TonalButton">
+        <item name="cornerRadius">@dimen/oe_corner_md</item>
+        <item name="android:textAppearance">@style/TextAppearance.Orchestella.LabelEmphasized</item>
+    </style>
+
+    <style name="Widget.Orchestella.Button.Outlined" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="cornerRadius">@dimen/oe_corner_md</item>
+        <item name="android:textAppearance">@style/TextAppearance.Orchestella.LabelEmphasized</item>
+    </style>
+
+    <style name="Widget.Orchestella.Button.Text" parent="Widget.Material3.Button.TextButton">
+        <item name="cornerRadius">@dimen/oe_corner_md</item>
+        <item name="android:textAppearance">@style/TextAppearance.Orchestella.LabelEmphasized</item>
+    </style>
+
+    <!-- ==================================================== -->
+    <!-- 页签条样式: detail page segmented tab strip -->
+    <!-- ==================================================== -->
+
+    <style name="Widget.Orchestella.DetailTab" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="cornerRadius">@dimen/oe_corner_md</item>
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">40dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:paddingStart">@dimen/oe_space_md</item>
+        <item name="android:paddingEnd">@dimen/oe_space_md</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:letterSpacing">0.01</item>
+        <item name="iconGravity">textStart</item>
+        <item name="iconSize">@dimen/oe_icon_inline</item>
+    </style>
+
+    <!-- ==================================================== -->
+    <!-- 16dp 行内小图标方案: ImageView row layout replaces drawableStart,
+         which cannot scale a 24dp vector down (InsetDrawable only grows
+         bounds). ThemeApplier tints these via imageTintList, same contract
+         as compound drawables before. -->
+    <!-- ==================================================== -->
+
+    <style name="Widget.Orchestella.InlineIconRow" parent="">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:gravity">center_vertical</item>
+    </style>
+
+    <style name="Widget.Orchestella.InlineIcon" parent="">
+        <item name="android:layout_width">@dimen/oe_icon_inline</item>
+        <item name="android:layout_height">@dimen/oe_icon_inline</item>
+        <item name="android:layout_marginEnd">@dimen/oe_icon_inline_gap</item>
+        <item name="android:scaleType">centerInside</item>
+        <item name="android:importantForAccessibility">no</item>
+    </style>
+</resources>

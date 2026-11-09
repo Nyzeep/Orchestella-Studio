@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Icon base: theme-primary fill (runtime-recolored by ThemeApplier), hairline edge. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <corners android:radius="0dp" />
+    <corners android:radius="@dimen/oe_corner_md" />
     <solid android:color="#D62828" />
     <stroke
         android:width="1dp"
