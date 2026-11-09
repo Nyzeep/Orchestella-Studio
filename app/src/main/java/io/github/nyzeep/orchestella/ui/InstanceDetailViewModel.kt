@@ -153,7 +153,16 @@ class InstanceDetailViewModel(
     fun resetDeadlockState(): InstanceLifecycle.Instance? {
         val current = uiState?.instance ?: return null
         return try {
-            val reconciled = controller.reconcileAfterHostDeath(current.id(), InstanceLifecycle.State.STOPPED)
+            // 2026-11-08 真机走查缺陷根因：reconcileAfterHostDeath 只迁移
+            // RUNNING/SUSPENDED（宿主死亡对账），对 INTERRUPTED/CRASHED 是
+            // no-op——复位后状态不变，删除守卫因此永不解除，而 UI 还提示
+            // 「已重置为已停止」。resetToStopped 才是清除中断/崩溃态的正确
+            // 迁移；运行/挂起态（无会话的陈旧 RUNNING）保留原对账路径。
+            val reconciled = when (current.state()) {
+                InstanceLifecycle.State.RUNNING, InstanceLifecycle.State.SUSPENDED ->
+                    controller.reconcileAfterHostDeath(current.id(), InstanceLifecycle.State.STOPPED)
+                else -> controller.resetToStopped(current.id())
+            }
             loadInstance(current.id())
             reconciled
         } catch (_: Exception) {

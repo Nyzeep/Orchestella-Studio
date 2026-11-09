@@ -958,6 +958,17 @@
                                 android:text="删除" />
                         </LinearLayout>
 
+                        <!-- 2026-11-08 走查：删除按钮禁用时不再静默浅粉，给出原因
+                             （运行中断需先复位；运行中需先关机），文本由状态驱动。 -->
+                        <TextView
+                            android:id="@+id/tv_danger_delete_guard_hint"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:textSize="11sp"
+                            android:textColor="@color/status_crashed"
+                            android:visibility="gone" />
+
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 

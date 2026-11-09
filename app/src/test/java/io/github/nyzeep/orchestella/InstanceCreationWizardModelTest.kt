@@ -186,6 +186,67 @@ class InstanceCreationWizardModelTest {
     }
 
     @Test
+    fun exitDecisionPinsBackGuardBehavior() {
+        // T4② 契约：空闲向导 BACK 直接退出；创建进行中 BACK 必须先确认。
+        // 恢复的草稿（creating=true）与本分支同路，由 WizardDraftCandidateTest 覆盖。
+        assertFalse("未开始创建时 BACK 应直接退出，无需确认", wizard.shouldConfirmExit())
+        assertTrue(wizard.tryBeginCreation())
+        assertTrue("创建进行中 BACK 必须走确认框", wizard.shouldConfirmExit())
+        wizard.setCreating(false)
+        assertFalse("创建失败回落后 BACK 应恢复直接退出", wizard.shouldConfirmExit())
+    }
+
+    @Test
+    fun storageOvercommitmentPreflightBlocksWhenExistingInstancesCommitted() {
+        // T4③ 预检补强契约：磁盘请求上限 2–64 GB，125.5 GB 可用时单看请求量
+        // 64 GB 恒可通过——这正是 2026-11-08 走查记录的静默放行洞。
+        val gb = 1024L * 1024L * 1024L
+        val available = 125.5 * gb
+        val request64Gb = 64L * gb
+        val alone = wizard.validateStorage(availableBytes = available.toLong(), requestedBytes = request64Gb)
+        assertTrue("无已有占用时 64GB 请求应保持放行（行为不变）",
+            alone is InstanceCreationWizardModel.StorageValidationResult.Valid)
+
+        // 计入一个已存在 64GB 实例的承诺占用后必须拒绝，并携带占用明细。
+        val overCommitted = wizard.validateStorage(
+            availableBytes = available.toLong(),
+            requestedBytes = request64Gb,
+            existingCommittedBytes = 64L * gb
+        )
+        val insufficient = overCommitted as InstanceCreationWizardModel.StorageValidationResult.InsufficientSpace
+        assertEquals(64L * gb, insufficient.existingCommittedBytes)
+        assertEquals(request64Gb + 64L * gb + InstanceCreationWizardModel.RESERVED_HOST_BYTES,
+            insufficient.requiredBytes)
+
+        // 二参旧签名等价于零占用，保证既有调用方/用例语义不变。
+        val twoArg = wizard.validateStorage(available.toLong(), request64Gb)
+        assertTrue(twoArg is InstanceCreationWizardModel.StorageValidationResult.Valid)
+
+        // 负数承诺（脏数据）按 0 计，不得让预检凭空变宽松或崩溃。
+        assertTrue(wizard.validateStorage(1L, request64Gb, -5L)
+            is InstanceCreationWizardModel.StorageValidationResult.InsufficientSpace)
+    }
+
+    @Test
+    fun committedCapacityAggregationSumsAndClampsDirtyInput() {
+        val gb = 1024L * 1024L * 1024L
+        assertEquals(96L * gb, InstanceCreationWizardModel.committedCapacityBytes(listOf(64L * gb, 32L * gb)))
+        assertEquals(0L, InstanceCreationWizardModel.committedCapacityBytes(emptyList()))
+        assertEquals(8L * gb, InstanceCreationWizardModel.committedCapacityBytes(listOf(8L * gb, -1L * gb)))
+    }
+
+    @Test
+    fun storagePreflightRejectionInjectsIntoStorageFullErrorFamily() {
+        // T4③ 注入腿契约：预检拒绝异常必须命中 ErrorCopy 磁盘满族，真机上向导
+        // 据此展示「存储空间不足（错误码 E-STORAGE-FULL）」，而不是静默通过。
+        val rejection = InstanceCreationWizardModel.storagePreflightRejection("已有实例承诺 64 GB")
+        val entry = ErrorCopy.resolve(rejection)
+        assertEquals(ErrorCopy.CODE_STORAGE_FULL, entry.code)
+        assertEquals(R.string.error_storage_full, entry.headlineRes)
+        assertEquals(R.string.error_hint_check_storage, entry.hintRes)
+    }
+
+    @Test
     fun firstBootScriptGeneration() {
         wizard.setAutoUpdateOnFirstBoot(true)
         assertTrue(wizard.autoUpdateOnFirstBoot)

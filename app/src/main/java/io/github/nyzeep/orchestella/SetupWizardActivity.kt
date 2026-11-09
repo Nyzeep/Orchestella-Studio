@@ -24,6 +24,7 @@ import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
@@ -258,6 +259,7 @@ class SetupWizardActivity : AppCompatActivity() {
 
         initViews()
         setupListeners()
+        setupBackExitGuard()
         bindWizardAvfCard()
         setupDistroSpinner()
         bindStep1Storage()
@@ -595,12 +597,26 @@ class SetupWizardActivity : AppCompatActivity() {
     }
 
     /**
+     * T4② 缺陷修复：系统返回键此前未接线，创建中按 BACK 会绕过确认框直接退出。
+     * 常驻回调统一委托给 confirmExitWhileCreating()：isCreating 时弹确认框
+     * （对话框分支已存在，勿重复建），空闲时走 finish()，与默认返回行为一致。
+     */
+    private fun setupBackExitGuard() {
+        onBackPressedDispatcher.addCallback(object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                confirmExitWhileCreating()
+            }
+        })
+    }
+
+    /**
      * Exiting mid-creation does not cancel a started download/provisioning (the
      * background executor only stops accepting new work), so say so instead of
      * a silent finish; outside creation the skip button stays a plain exit.
+     * Both the skip button and the system BACK key (T4②) funnel through here.
      */
     private fun confirmExitWhileCreating() {
-        if (!wizardModel.isCreating) {
+        if (!wizardModel.shouldConfirmExit()) {
             finish()
             return
         }
@@ -802,13 +818,31 @@ class SetupWizardActivity : AppCompatActivity() {
         validateAndRefreshStorage()
     }
 
+    /**
+     * T4③ 预检补强：汇总已存在实例承诺的虚拟磁盘容量。稀疏盘增长上限是标称
+     * 容量，新请求 + 承诺占用越过宿主可用空间时必须在装配前拒绝。读取失败不
+     * 阻断创建流程——退回不计入已有占用，最终创建门禁仍会兜底。
+     */
+    private fun existingCommittedCapacityBytes(): Long {
+        return try {
+            val instancesDir = filesDir.toPath().resolve("instances")
+            val store = InstanceLifecycle.FileStore(instancesDir)
+            InstanceCreationWizardModel.committedCapacityBytes(
+                store.list().map { instance -> instance.hardwareConfig()?.diskCapacityBytes() ?: 0L }
+            )
+        } catch (_: Exception) {
+            0L
+        }
+    }
+
     private fun validateAndRefreshStorage() {
         val statFs = StatFs(filesDir.path)
         val availableBytes = statFs.availableBytes
         val availableGb = availableBytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
         txtHwStorage.text = getString(R.string.wizard_storage_available, String.format("%.1f GB", availableGb))
 
-        val result = wizardModel.validateStorage(availableBytes, wizardModel.requestedDiskBytes)
+        val existingCommittedBytes = existingCommittedCapacityBytes()
+        val result = wizardModel.validateStorage(availableBytes, wizardModel.requestedDiskBytes, existingCommittedBytes)
         when (result) {
             is InstanceCreationWizardModel.StorageValidationResult.Valid -> {
                 txtStorageWarning.visibility = View.GONE
@@ -816,7 +850,21 @@ class SetupWizardActivity : AppCompatActivity() {
             }
             is InstanceCreationWizardModel.StorageValidationResult.InsufficientSpace -> {
                 val reqGb = result.requiredBytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
-                txtStorageWarning.text = getString(R.string.wizard_storage_insufficient_warn, availableGb, reqGb)
+                txtStorageWarning.text = if (result.existingCommittedBytes > 0L) {
+                    // E-STORAGE-FULL 族受控注入腿（T4③）：容量+已有实例占用越过
+                    // 宿主可用空间时显式拒绝并展示错误码，而不是静默放行到装配期
+                    // 才 ENOSPC。文案经 ErrorCopy 单源映射，错误码为契约稳定值。
+                    val entry = ErrorCopy.resolve(
+                        InstanceCreationWizardModel.storagePreflightRejection(
+                            "已有实例承诺 ${result.existingCommittedBytes / (1024L * 1024L * 1024L)} GB"
+                        )
+                    )
+                    getString(entry.headlineRes) + getString(R.string.error_code_suffix, entry.code) + "\n" +
+                        getString(R.string.wizard_storage_insufficient_warn, availableGb, reqGb) + "\n" +
+                        getString(entry.hintRes)
+                } else {
+                    getString(R.string.wizard_storage_insufficient_warn, availableGb, reqGb)
+                }
                 txtStorageWarning.visibility = View.VISIBLE
                 btnStep1Next.isEnabled = false
             }
@@ -1297,9 +1345,23 @@ class SetupWizardActivity : AppCompatActivity() {
         }
         val manifest = getManifest()
         val availableBytes = StatFs(filesDir.path).availableBytes
-        val requiredBytes = wizardModel.requestedDiskBytes + manifest.sizeBytes() + 128L * 1024L * 1024L
+        // 最终门禁同样计入已有实例承诺占用（T4③）：稀疏盘可增长到标称容量，
+        // 只看本次请求会在多实例场景下静默越过宿主可用空间。
+        val existingCommittedBytes = existingCommittedCapacityBytes()
+        val requiredBytes = wizardModel.requestedDiskBytes + manifest.sizeBytes() +
+            128L * 1024L * 1024L + existingCommittedBytes
         if (availableBytes < requiredBytes) {
-            Toast.makeText(this, R.string.create_storage_low, Toast.LENGTH_LONG).show()
+            if (existingCommittedBytes > 0L) {
+                val detail = ErrorCopy.detailMessage(
+                    this,
+                    InstanceCreationWizardModel.storagePreflightRejection(
+                        "已有实例承诺 ${existingCommittedBytes / (1024L * 1024L * 1024L)} GB"
+                    )
+                )
+                Toast.makeText(this, "$detail ${getString(R.string.create_storage_low)}", Toast.LENGTH_LONG).show()
+            } else {
+                Toast.makeText(this, R.string.create_storage_low, Toast.LENGTH_LONG).show()
+            }
             return
         }
 
