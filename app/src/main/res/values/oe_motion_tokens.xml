@@ -7,6 +7,16 @@
   Session 19 device-tuned "emphasized enter" duration: it sits between
   short4 (200) and medium1 (250) and stays untouched to preserve the
   evidence-backed open/close feel.
+
+  Lane D (round 2026-11-10): duration scale completed to the full M3 token
+  range (long3/long4 + extra-long1..4) and semantic duration/stagger aliases
+  added for the named motion needs (container transform prep, dialog in/out,
+  list item enter/reorder). Every alias resolves to a step of the canonical
+  M3 scale — no new absolute values were invented:
+    https://m3.material.io/styles/motion/easing-and-duration/tokens-specs
+  (short1-4 50/100/150/200 · medium1-4 250/300/350/400 · long1-4 450/500/550/600
+   · extra-long1-4 700/800/900/1000; legacy easing+duration scale, the View-system
+   counterpart of the Expressive spring system which has no View-XML surface).
 -->
 <resources>
     <!-- Material 3 duration scale: short -->
@@ -24,7 +34,39 @@
     <!-- Material 3 duration scale: long -->
     <integer name="oe_motion_duration_long1">450</integer>
     <integer name="oe_motion_duration_long2">500</integer>
+    <integer name="oe_motion_duration_long3">550</integer>
+    <integer name="oe_motion_duration_long4">600</integer>
+
+    <!-- Material 3 duration scale: extra long (container-transform prep,
+         large surface transitions; never for feedback loops). -->
+    <integer name="oe_motion_duration_extra_long1">700</integer>
+    <integer name="oe_motion_duration_extra_long2">800</integer>
+    <integer name="oe_motion_duration_extra_long3">900</integer>
+    <integer name="oe_motion_duration_extra_long4">1000</integer>
 
     <!-- Session 19 tuned value: activity emphasized enter/close-enter. -->
     <integer name="oe_motion_duration_emphasized_enter">210</integer>
+
+    <!-- Semantic durations (Lane D): aliases onto the scale above so call
+         sites name the intent, not the number.
+         container_transform = long2: M3 container transform guidance pairs
+           emphasized easing with the long band (450-600 ms); 500 is the
+           scale's midpoint step.
+         dialog enter slower than exit (250/150): Material dialog guidance
+           keeps exit durations <= 200 ms so dismissal never lags the gesture. -->
+    <integer name="oe_motion_duration_container_transform">500</integer>
+    <integer name="oe_motion_duration_dialog_enter">250</integer>
+    <integer name="oe_motion_duration_dialog_exit">150</integer>
+    <integer name="oe_motion_duration_list_item_enter">300</integer>
+    <integer name="oe_motion_duration_list_item_reorder">250</integer>
+
+    <!-- Stagger rhythm (Lane D): per-item start delay and the cap on how far
+         the cascade may walk before late items join immediately. The cap keeps
+         N-instance lists from accumulating an unbounded pre-roll (an instance
+         list longer than max_steps still animates; it just loses the tail
+         delay), mirroring Material guidance that stagger reads as rhythm only
+         while the total cascade stays shorter than one item's own duration. -->
+    <integer name="oe_motion_stagger_list_ms">40</integer>
+    <integer name="oe_motion_stagger_list_max_steps">5</integer>
+    <integer name="oe_motion_stagger_section_ms">45</integer>
 </resources>

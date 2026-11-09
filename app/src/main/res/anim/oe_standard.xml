@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Material 3 standard easing (cubic-bezier 0.2, 0, 0, 1), the M3 default
+  curve for utilitarian transitions (androidx EasingTokens.kt
+  StandardEasing). Numerically identical to oe_emphasized.xml — both mirror
+  their androidx namesakes, which share the same control points — kept as a
+  separate token so call sites name the intent (standard = utilitarian,
+  emphasized = expressive large-surface).
+-->
+<pathInterpolator xmlns:android="http://schemas.android.com/apk/res/android"
+    android:controlX1="0.2"
+    android:controlY1="0.0"
+    android:controlX2="0.0"
+    android:controlY2="1.0" />

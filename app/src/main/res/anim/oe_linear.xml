@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Linear easing (androidx EasingTokens.kt LinearEasing): the token for
+  position-tracked movement — item reorder/settle and any progress-like
+  motion where the on-screen position must track the driven value 1:1
+  instead of interpreting it expressively.
+-->
+<pathInterpolator xmlns:android="http://schemas.android.com/apk/res/android"
+    android:controlX1="0.0"
+    android:controlY1="0.0"
+    android:controlX2="1.0"
+    android:controlY2="1.0" />
