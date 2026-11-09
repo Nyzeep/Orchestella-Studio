@@ -47,3 +47,8 @@ Files: ui/motion/OrchestellaMotion.kt、res/anim/、res/values/oe_motion_tokens.
 - B token 基座：res/values XML，编译期资产。
 - **结论：审计后新增代码面未引入任何主线程磁盘 IO。** 本轮新增（ReportFullyDrawn 接线、列表/仪表盘进场）同为纯 View 属性操作。
 
+## Comments
+
+### 2026-11-10（编排层回填）
+
+lane/d-motion 00dffacd+9e55abca 合并 main；:app 1283/0/0（+6 stagger 契约）。M3 duration scale 补齐+语义别名+stagger token（40ms×5 封顶）+easing 对齐 androidx 全集；列表/仪表盘差异化进场（指纹 diff 防 3s 重播）；ReportFullyDrawn 接线；保守保留 6 项复审判词全「不做」+理由（工单 Comments）。真机走查 8 点清单在 lane 回报；RESUME 重播观感待真机定夺。

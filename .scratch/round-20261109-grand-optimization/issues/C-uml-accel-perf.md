@@ -1,6 +1,6 @@
 # C · UML 加速性能增强
 
-Status: pending
+Status: done
 Owner: lane/c-uml-perf
 Files: UmlFaceLauncher.java、UmlFaceKeepAliveService.java、AcceleratorLaneAssembly.java（接线格）、新增通道/内核资产装配件
 
@@ -25,3 +25,9 @@ Files: UmlFaceLauncher.java、UmlFaceKeepAliveService.java、AcceleratorLaneAsse
 ## 边界
 
 - 不碰 res/、不碰 pVM 线（设备平台级崩溃区）、不动 QEMU 面已收口件
+
+## Comments
+
+### 2026-11-10（编排层回填）
+
+lane/c-uml-perf 78ca3f7a 合并 main；:app 1320/0/0（+47：资产13/通道12/宽度12/续期10）。四项全落（资产对账七态/UmlChannel seam+ACR 边界写清/wake lock 60min 阈值 24h 上限/forDeviceCapability 宽度入账本）。真机联调遗留 4 条在 lane 回报（资产实机落位、D-1 真通道注入、续期实机观测、宽度实机观测）。dispatch 零调用方立票不动。

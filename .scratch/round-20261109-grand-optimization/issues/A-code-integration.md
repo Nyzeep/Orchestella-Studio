@@ -1,6 +1,6 @@
 # A · 代码优化与系统整合
 
-Status: pending
+Status: done
 Owner: lane/a-code-integration
 Files: app/src/main/java（除 res/、startup/ 已收口件外按盘点分配）、runtime/ 对应拆分件
 
@@ -21,3 +21,9 @@ Files: app/src/main/java（除 res/、startup/ 已收口件外按盘点分配）
 
 - 不碰 res/（B 边界）、不碰 startup/、不碰 TerminalMux（此前判词：无可中性拆分 seam）
 - MainActivity 本轮**只减不改**（UI 大改归 B/E/F 之后的 UI 重构轮，避免三线打架）
+
+## Comments
+
+### 2026-11-10（编排层回填）
+
+lane/a-integration 46f89756+efc53e28 合并 main；:app 1273/0/0（+7）、fastlane 129/0/0（+8）、lint 0e。QemuLaunchEvidence（持久化 seam）+ FastLaneReflectionSupport（故障映射 seam）；放弃项判词见 lane 回报（Session 反射字段锁定/双池/Activity 视图接线）。死代码：showCrashDiagnosticDialog、PhantomProcessKillerGuide。

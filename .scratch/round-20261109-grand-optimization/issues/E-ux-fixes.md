@@ -1,6 +1,6 @@
 # E · UX 走查改进（含缺陷修复，批次3 开工）
 
-Status: pending
+Status: done
 Owner: lane/e-ux-walkthrough
 Files: SetupWizardActivity.kt、SettingsActivity.kt、InstanceDetailActivity.kt、TerminalActivity.java（走查项）
 
@@ -21,3 +21,9 @@ Files: SetupWizardActivity.kt、SettingsActivity.kt、InstanceDetailActivity.kt�
 
 - BACK 确认框：创建中两分支真机可复现（截图）
 - :app 全量 ≥1266/0/0；lint 0 新增
+
+## Comments
+
+### 2026-11-10（编排层回填）
+
+lane/e-ux 3b85050c 合并 main；:app 1292/0/0（+9）。BACK 确认框接线（shouldConfirmExit 纯函数）收口 T4②；**复位 no-op 根因修复**（reconcileAfterHostDeath 对 INTERRUPTED/CRASHED no-op → resetToStopped 分流，2026-11-08 真机缺陷解除）；删除守卫提示键；E-STORAGE-FULL 注入腿（预检计已有占用）打通 T4③；终端空态契约收口 T4⑥。离线装配腿留下轮。

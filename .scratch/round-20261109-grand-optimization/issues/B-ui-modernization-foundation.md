@@ -1,6 +1,6 @@
 # B · UI 现代化设计基座（设计 token + 基础组件）
 
-Status: pending
+Status: done
 Owner: lane/b-ui-foundation
 Files: app/src/main/res/values/{colors,dimens,styles,oe_motion_tokens}.xml、res/drawable（card/button 表面族）、res/layout 共用卡片容器、ui/motion/OrchestellaMotion.kt（只读参考）、新 ui/design/ 目录（如需代码侧 token）
 
@@ -33,3 +33,9 @@ Files: app/src/main/res/values/{colors,dimens,styles,oe_motion_tokens}.xml、res
 
 - 不动 startup/、runtime/、ControlChannelRecoveryTest
 - res/anim 参数不动（D lane 边界）；strings.xml 只动 emoji 标签文本（不动 error_* 键区）
+
+## Comments
+
+### 2026-11-10（编排层回填）
+
+lane/b-ui-foundation 5c67f866+f3e3efd4+98d88697 合并 main；:app 1270/0/0（+4 四主题派生测试）。token 基座 oe_design_tokens/styles/Widget.Orchestella.* + surfaceLow/High/pressedFill；bg_oe_card/well 族收敛；8 死 drawable 删；elevation 0dp 收口；DetailTab + 16dp 行内图标。调研来源在 commit body。遗留：按钮样式全量挂接与死布局 item_instance_card 归 F（已由 F 完成）。
