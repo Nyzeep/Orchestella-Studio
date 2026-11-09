@@ -11,7 +11,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.Executor;
@@ -61,27 +60,27 @@ public final class ReflectiveFastLaneApi implements FastLaneVirtualMachineApi {
         try {
             shape = loadShape();
         } catch (ReflectiveOperationException | LinkageError failure) {
-            throw error(FastLaneException.HIDDEN_API_BLOCKED,
+            throw FastLaneReflectionSupport.error(FastLaneException.HIDDEN_API_BLOCKED,
                     "required protected-VM SystemApi is absent", failure);
         } catch (SecurityException denied) {
-            throw error(FastLaneException.HIDDEN_API_BLOCKED,
+            throw FastLaneReflectionSupport.error(FastLaneException.HIDDEN_API_BLOCKED,
                     "protected-VM SystemApi access is denied", denied);
         } catch (RuntimeException failure) {
-            throw error(FastLaneException.HIDDEN_API_BLOCKED,
+            throw FastLaneReflectionSupport.error(FastLaneException.HIDDEN_API_BLOCKED,
                     "protected-VM SystemApi shape is unusable", failure);
         }
         if (!shape.context.isInstance(context)) {
-            throw error(FastLaneException.HIDDEN_API_BLOCKED,
+            throw FastLaneReflectionSupport.error(FastLaneException.HIDDEN_API_BLOCKED,
                     "Android Context is required", null);
         }
         Object manager = systemService(shape);
         if (manager == null) {
-            throw error(FastLaneException.PROTECTED_UNAVAILABLE,
+            throw FastLaneReflectionSupport.error(FastLaneException.PROTECTED_UNAVAILABLE,
                     "VirtualMachineManager is unavailable", null);
         }
         int capabilities = capabilities(shape, manager);
         if ((capabilities & shape.capabilityProtected) == 0) {
-            throw error(FastLaneException.PROTECTED_UNAVAILABLE,
+            throw FastLaneReflectionSupport.error(FastLaneException.PROTECTED_UNAVAILABLE,
                     "device does not declare protected VMs", null);
         }
         requirePermission(shape);
@@ -98,13 +97,13 @@ public final class ReflectiveFastLaneApi implements FastLaneVirtualMachineApi {
     public FastLaneChannel connect(FastLaneHandle handle, int port) throws FastLaneException {
         ReflectiveHandle reflective = requireHandle(handle);
         if (port < 1024 || port > 65535) {
-            throw error(FastLaneException.VSOCK_FAILED,
+            throw FastLaneReflectionSupport.error(FastLaneException.VSOCK_FAILED,
                     "vsock port is outside the launch contract", null);
         }
         reflective.ensureOpen();
         Object raw;
         try {
-            raw = invoke(reflective.shape.vm, reflective.vm, "connectVsock",
+            raw = FastLaneReflectionSupport.invoke(reflective.shape.vm, reflective.vm, "connectVsock",
                     new Class<?>[] {long.class}, new Object[] {(long) port},
                     FastLaneException.VSOCK_FAILED, new ArrayList<>());
         } catch (FastLaneException failure) {
@@ -117,12 +116,12 @@ public final class ReflectiveFastLaneApi implements FastLaneVirtualMachineApi {
         }
         if (raw == null) {
             reflective.ensureOpen();
-            throw error(FastLaneException.VSOCK_FAILED,
+            throw FastLaneReflectionSupport.error(FastLaneException.VSOCK_FAILED,
                     "vsock returned no descriptor", null);
         }
         if (!reflective.shape.pfd.isInstance(raw)) {
             closePfd(reflective.shape, raw, null);
-            throw error(FastLaneException.VSOCK_FAILED,
+            throw FastLaneReflectionSupport.error(FastLaneException.VSOCK_FAILED,
                     "vsock returned an unexpected descriptor", null);
         }
         if (reflective.hostStopped) {
@@ -136,7 +135,7 @@ public final class ReflectiveFastLaneApi implements FastLaneVirtualMachineApi {
         } catch (IOException | RuntimeException | LinkageError failure) {
             FastLaneException mapped = reflective.hostStopped
                     ? reflective.closedFailure()
-                    : mapped("PFD stream adoption", FastLaneException.VSOCK_FAILED, failure);
+                    : FastLaneReflectionSupport.mapped("PFD stream adoption", FastLaneException.VSOCK_FAILED, failure);
             if (reflective.hostStopped) {
                 mapped.addSuppressed(failure);
             }
@@ -146,7 +145,7 @@ public final class ReflectiveFastLaneApi implements FastLaneVirtualMachineApi {
         HandleChannel channel = new HandleChannel(reflective, owned);
         if (!reflective.addChannel(channel)) {
             FastLaneException closed = reflective.closedFailure();
-            closeChannel(channel, closed);
+            FastLaneReflectionSupport.closeChannel(channel, closed);
             throw closed;
         }
         return channel;
@@ -211,11 +210,11 @@ public final class ReflectiveFastLaneApi implements FastLaneVirtualMachineApi {
                     "protected-VM config/create/run/connectVsock/PFD signatures are required");
         }
 
-        int cpuOne = intField(config, "CPU_TOPOLOGY_ONE_CPU");
-        int cpuMatch = intField(config, "CPU_TOPOLOGY_MATCH_HOST");
-        int debugNone = intField(config, "DEBUG_LEVEL_NONE");
-        int debugFull = intField(config, "DEBUG_LEVEL_FULL");
-        int capabilityProtected = intField(manager, "CAPABILITY_PROTECTED_VM");
+        int cpuOne = FastLaneReflectionSupport.intField(config, "CPU_TOPOLOGY_ONE_CPU");
+        int cpuMatch = FastLaneReflectionSupport.intField(config, "CPU_TOPOLOGY_MATCH_HOST");
+        int debugNone = FastLaneReflectionSupport.intField(config, "DEBUG_LEVEL_NONE");
+        int debugFull = FastLaneReflectionSupport.intField(config, "DEBUG_LEVEL_FULL");
+        int capabilityProtected = FastLaneReflectionSupport.intField(manager, "CAPABILITY_PROTECTED_VM");
 
         boolean callbackSupported = false;
         if (callback != null) {
@@ -253,21 +252,21 @@ public final class ReflectiveFastLaneApi implements FastLaneVirtualMachineApi {
         } catch (InvocationTargetException failure) {
             Throwable cause = failure.getCause();
             if (cause instanceof SecurityException) {
-                throw error(FastLaneException.PERMISSION_DENIED,
+                throw FastLaneReflectionSupport.error(FastLaneException.PERMISSION_DENIED,
                         "MANAGE_VIRTUAL_MACHINE is denied", cause);
             }
-            throw error(FastLaneException.HIDDEN_API_BLOCKED,
+            throw FastLaneReflectionSupport.error(FastLaneException.HIDDEN_API_BLOCKED,
                     "permission read failed", cause);
         } catch (ReflectiveOperationException | LinkageError | SecurityException failure) {
-            throw error(FastLaneException.HIDDEN_API_BLOCKED,
+            throw FastLaneReflectionSupport.error(FastLaneException.HIDDEN_API_BLOCKED,
                     "permission read is unavailable", failure);
         }
         if (!(value instanceof Integer permission)) {
-            throw error(FastLaneException.HIDDEN_API_BLOCKED,
+            throw FastLaneReflectionSupport.error(FastLaneException.HIDDEN_API_BLOCKED,
                     "permission read returned a non-integer", null);
         }
         if (permission != PERMISSION_GRANTED) {
-            throw error(FastLaneException.PERMISSION_DENIED,
+            throw FastLaneReflectionSupport.error(FastLaneException.PERMISSION_DENIED,
                     "required permission missing: " + MANAGE_PERMISSION, null);
         }
     }
@@ -283,23 +282,23 @@ public final class ReflectiveFastLaneApi implements FastLaneVirtualMachineApi {
         } catch (InvocationTargetException failure) {
             Throwable cause = failure.getCause();
             if (cause instanceof SecurityException) {
-                throw error(FastLaneException.PERMISSION_DENIED,
+                throw FastLaneReflectionSupport.error(FastLaneException.PERMISSION_DENIED,
                         "VirtualMachineManager access is denied", cause);
             }
-            throw error(FastLaneException.HIDDEN_API_BLOCKED,
+            throw FastLaneReflectionSupport.error(FastLaneException.HIDDEN_API_BLOCKED,
                     "VirtualMachineManager access failed", cause);
         } catch (ReflectiveOperationException | LinkageError | SecurityException failure) {
-            throw error(FastLaneException.HIDDEN_API_BLOCKED,
+            throw FastLaneReflectionSupport.error(FastLaneException.HIDDEN_API_BLOCKED,
                     "VirtualMachineManager access is unavailable", failure);
         }
     }
 
     private int capabilities(Shape shape, Object manager) throws FastLaneException {
-        Object value = invoke(shape.manager, manager, "getCapabilities",
+        Object value = FastLaneReflectionSupport.invoke(shape.manager, manager, "getCapabilities",
                 new Class<?>[0], new Object[0], FastLaneException.HIDDEN_API_BLOCKED,
                 new ArrayList<>());
         if (!(value instanceof Integer capabilities)) {
-            throw error(FastLaneException.HIDDEN_API_BLOCKED,
+            throw FastLaneReflectionSupport.error(FastLaneException.HIDDEN_API_BLOCKED,
                     "capability read returned a non-integer", null);
         }
         return capabilities;
@@ -311,13 +310,13 @@ public final class ReflectiveFastLaneApi implements FastLaneVirtualMachineApi {
         try {
             builder = shape.builderConstructor.newInstance(context);
         } catch (InvocationTargetException failure) {
-            throw mapped("config builder construction",
+            throw FastLaneReflectionSupport.mapped("config builder construction",
                     FastLaneException.VM_CREATE_FAILED, failure.getCause());
         } catch (ReflectiveOperationException | LinkageError | RuntimeException failure) {
-            throw error(FastLaneException.HIDDEN_API_BLOCKED,
+            throw FastLaneReflectionSupport.error(FastLaneException.HIDDEN_API_BLOCKED,
                     "config builder is inaccessible", failure);
         }
-        set(shape.configBuilder, builder, "setPayloadBinaryName", String.class,
+        FastLaneReflectionSupport.set(shape.configBuilder, builder, "setPayloadBinaryName", String.class,
                 spec.payloadBinaryName(), notes);
         // Two-package redirect: when the payload lives in the accelerator
         // extension's APK, the platform must be told explicitly — otherwise
@@ -326,24 +325,24 @@ public final class ReflectiveFastLaneApi implements FastLaneVirtualMachineApi {
         // the shape, but optional for the non-redirect path so a truncated
         // platform still serves own-APK payloads).
         if (spec.payloadApkPath() != null) {
-            set(shape.configBuilder, builder, "setApkPath", String.class,
+            FastLaneReflectionSupport.set(shape.configBuilder, builder, "setApkPath", String.class,
                     spec.payloadApkPath(), notes);
         }
-        set(shape.configBuilder, builder, "setProtectedVm", boolean.class, true, notes);
-        set(shape.configBuilder, builder, "setMemoryBytes", long.class,
+        FastLaneReflectionSupport.set(shape.configBuilder, builder, "setProtectedVm", boolean.class, true, notes);
+        FastLaneReflectionSupport.set(shape.configBuilder, builder, "setMemoryBytes", long.class,
                 Math.multiplyExact(spec.memoryMb(), BYTES_PER_MB), notes);
-        set(shape.configBuilder, builder, "setCpuTopology", int.class,
+        FastLaneReflectionSupport.set(shape.configBuilder, builder, "setCpuTopology", int.class,
                 spec.cpuTopology() == FastLaneLaunchSpec.CpuTopology.ONE_CPU
                         ? shape.cpuOne : shape.cpuMatch, notes);
-        set(shape.configBuilder, builder, "setEncryptedStorageBytes", long.class,
+        FastLaneReflectionSupport.set(shape.configBuilder, builder, "setEncryptedStorageBytes", long.class,
                 spec.encryptedStorageBytes(), notes);
-        set(shape.configBuilder, builder, "setDebugLevel", int.class,
+        FastLaneReflectionSupport.set(shape.configBuilder, builder, "setDebugLevel", int.class,
                 spec.debugLevel() == FastLaneLaunchSpec.DebugLevel.NONE
                         ? shape.debugNone : shape.debugFull, notes);
-        Object config = invoke(shape.configBuilder, builder, "build",
+        Object config = FastLaneReflectionSupport.invoke(shape.configBuilder, builder, "build",
                 new Class<?>[0], new Object[0], FastLaneException.VM_CREATE_FAILED, notes);
         if (!shape.config.isInstance(config)) {
-            throw error(FastLaneException.HIDDEN_API_BLOCKED,
+            throw FastLaneReflectionSupport.error(FastLaneException.HIDDEN_API_BLOCKED,
                     "config builder returned an unexpected type", null);
         }
         return config;
@@ -353,15 +352,15 @@ public final class ReflectiveFastLaneApi implements FastLaneVirtualMachineApi {
             Object config, List<String> notes) throws FastLaneException {
         // getOrCreate is atomic inside VirtualMachineManager. A get-then-create
         // pair would let two starts of the same instance race and create twice.
-        Object vm = invoke(shape.manager, manager, "getOrCreate",
+        Object vm = FastLaneReflectionSupport.invoke(shape.manager, manager, "getOrCreate",
                 new Class<?>[] {String.class, shape.config},
                 new Object[] {spec.instanceId(), config},
                 FastLaneException.VM_CREATE_FAILED, notes);
         if (vm == null || !shape.vm.isInstance(vm)) {
-            throw error(FastLaneException.VM_CREATE_FAILED,
+            throw FastLaneReflectionSupport.error(FastLaneException.VM_CREATE_FAILED,
                     "manager returned no VM", null);
         }
-        Object stored = invoke(shape.vm, vm, "getConfig",
+        Object stored = FastLaneReflectionSupport.invoke(shape.vm, vm, "getConfig",
                 new Class<?>[0], new Object[0], FastLaneException.VM_CREATE_FAILED, notes);
         if (!configMatches(shape, stored, config)) {
             if (!onlyApkPathDrifted(shape, stored, config)) {
@@ -370,7 +369,7 @@ public final class ReflectiveFastLaneApi implements FastLaneVirtualMachineApi {
                 // wearing the same instance id. Refuse it and leave the encrypted
                 // storage alone; silent reuse or silent replacement would both hide
                 // a real contract break from the caller.
-                throw error(FastLaneException.VM_CREATE_FAILED,
+                throw FastLaneReflectionSupport.error(FastLaneException.VM_CREATE_FAILED,
                         "existing VM configuration differs from the launch spec", null);
             }
             // Session 19 (T-A.4): a two-package build pins the payload APK path into
@@ -379,19 +378,19 @@ public final class ReflectiveFastLaneApi implements FastLaneVirtualMachineApi {
             // exists — run() fails with "Failed to open APK: ENOENT" forever.
             // Drift is recoverable: delete the stale VM and build a fresh one.
             deleteStaleVm(shape, vm, notes);
-            vm = invoke(shape.manager, manager, "getOrCreate",
+            vm = FastLaneReflectionSupport.invoke(shape.manager, manager, "getOrCreate",
                     new Class<?>[] {String.class, shape.config},
                     new Object[] {spec.instanceId(), config},
                     FastLaneException.VM_CREATE_FAILED, notes);
             if (vm == null || !shape.vm.isInstance(vm)) {
-                throw error(FastLaneException.VM_CREATE_FAILED,
+                throw FastLaneReflectionSupport.error(FastLaneException.VM_CREATE_FAILED,
                         "manager returned no VM after drift delete", null);
             }
             notes.add("vm: recreated after config drift");
         }
         int status = statusOf(shape, vm);
         if (status != 0) {
-            throw error(FastLaneException.VM_CREATE_FAILED,
+            throw FastLaneReflectionSupport.error(FastLaneException.VM_CREATE_FAILED,
                     "existing VM must be stopped before launch", null);
         }
         notes.add("vm: ready");
@@ -448,7 +447,7 @@ public final class ReflectiveFastLaneApi implements FastLaneVirtualMachineApi {
         if (!shape.config.isInstance(stored)) {
             return false;
         }
-        Object compatible = invoke(shape.config, stored, "isCompatibleWith",
+        Object compatible = FastLaneReflectionSupport.invoke(shape.config, stored, "isCompatibleWith",
                 new Class<?>[] {shape.config}, new Object[] {expected},
                 FastLaneException.HIDDEN_API_BLOCKED, new ArrayList<>());
         if (!Boolean.TRUE.equals(compatible)) {
@@ -492,7 +491,7 @@ public final class ReflectiveFastLaneApi implements FastLaneVirtualMachineApi {
 
     private static Object configValue(Shape shape, Object config, String getter)
             throws FastLaneException {
-        return invoke(shape.config, config, getter, new Class<?>[0], new Object[0],
+        return FastLaneReflectionSupport.invoke(shape.config, config, getter, new Class<?>[0], new Object[0],
                 FastLaneException.HIDDEN_API_BLOCKED, new ArrayList<>());
     }
 
@@ -547,7 +546,7 @@ public final class ReflectiveFastLaneApi implements FastLaneVirtualMachineApi {
 
     private void runVm(Shape shape, Object vm, List<String> notes) throws FastLaneException {
         try {
-            invoke(shape.vm, vm, "run", new Class<?>[0], new Object[0],
+            FastLaneReflectionSupport.invoke(shape.vm, vm, "run", new Class<?>[0], new Object[0],
                     FastLaneException.VM_CREATE_FAILED, notes);
         } catch (FastLaneException failure) {
             closeAfterFailure(shape, vm, failure);
@@ -557,7 +556,7 @@ public final class ReflectiveFastLaneApi implements FastLaneVirtualMachineApi {
 
     private static void closeVm(Shape shape, Object vm, List<String> notes) {
         try {
-            invoke(shape.vm, vm, "close", new Class<?>[0], new Object[0],
+            FastLaneReflectionSupport.invoke(shape.vm, vm, "close", new Class<?>[0], new Object[0],
                     FastLaneException.STOP_UNCONFIRMED, notes);
         } catch (FastLaneException failure) {
             notes.add("close: failed (" + failure.reason() + ")");
@@ -574,87 +573,6 @@ public final class ReflectiveFastLaneApi implements FastLaneVirtualMachineApi {
         }
     }
 
-    private static void set(Class<?> type, Object target, String method, Class<?> param,
-            Object value, List<String> notes) throws FastLaneException {
-        invoke(type, target, method, new Class<?>[] {param}, new Object[] {value},
-                FastLaneException.VM_CREATE_FAILED, notes);
-    }
-
-    private static Object invoke(Class<?> type, Object target, String name, Class<?>[] params,
-            Object[] args, String reason, List<String> notes) throws FastLaneException {
-        try {
-            Object value = type.getMethod(name, params).invoke(target, args);
-            notes.add(name + ": applied");
-            return value;
-        } catch (InvocationTargetException failure) {
-            throw mapped(name, reason, failure.getCause());
-        } catch (ReflectiveOperationException | LinkageError failure) {
-            throw error(FastLaneException.HIDDEN_API_BLOCKED,
-                    "required AVF method inaccessible: " + name, failure);
-        } catch (SecurityException | IllegalArgumentException failure) {
-            throw error(FastLaneException.HIDDEN_API_BLOCKED,
-                    "required AVF method rejected: " + name, failure);
-        }
-    }
-
-    private static FastLaneException mapped(String stage, String reason, Throwable cause) {
-        Throwable boundary = unwrapIoBoundary(cause);
-        String mappedReason = reason;
-        if (boundary instanceof SecurityException) {
-            mappedReason = FastLaneException.PERMISSION_DENIED;
-        } else if (boundary instanceof UnsupportedOperationException) {
-            mappedReason = FastLaneException.PROTECTED_UNAVAILABLE;
-        } else if (boundary instanceof ReflectiveOperationException
-                || boundary instanceof LinkageError) {
-            mappedReason = FastLaneException.HIDDEN_API_BLOCKED;
-        } else if (looksLikePayloadVerificationFailure(boundary)) {
-            mappedReason = FastLaneException.PAYLOAD_VERIFY_FAILED;
-        }
-        return error(mappedReason, "Fast Lane operation failed: " + stage, cause);
-    }
-
-    /**
-     * A descriptor-adoption failure wraps the real boundary exception in an
-     * IOException. A platform VirtualMachineException keeps its own identity so
-     * payload verification is not mistaken for a transport error.
-     */
-    private static Throwable unwrapIoBoundary(Throwable cause) {
-        if (cause instanceof IOException && cause.getCause() != null
-                && !isVirtualMachineException(cause.getCause())) {
-            return cause.getCause();
-        }
-        return cause;
-    }
-
-    private static boolean looksLikePayloadVerificationFailure(Throwable cause) {
-        for (Throwable current = cause; current != null; current = current.getCause()) {
-            if (isVirtualMachineException(current)) {
-                String message = current.getMessage();
-                if (message != null) {
-                    String lower = message.toLowerCase(Locale.ROOT);
-                    if (lower.contains("verif")
-                            || lower.contains("payload changed")
-                            || lower.contains("payload has changed")) {
-                        return true;
-                    }
-                }
-            }
-            if (current.getCause() == current) {
-                break;
-            }
-        }
-        return false;
-    }
-
-    private static boolean isVirtualMachineException(Throwable value) {
-        return "android.system.virtualmachine.VirtualMachineException"
-                .equals(value.getClass().getName());
-    }
-
-    private static FastLaneException error(String reason, String message, Throwable cause) {
-        return new FastLaneException(reason, message, cause);
-    }
-
     private static void closePfd(Shape shape, Object pfd, Throwable primary) {
         try {
             shape.pfd.getMethod("close").invoke(pfd);
@@ -666,22 +584,6 @@ public final class ReflectiveFastLaneApi implements FastLaneVirtualMachineApi {
             if (primary != null) {
                 primary.addSuppressed(failure);
             }
-        }
-    }
-
-    private static void closeChannel(FastLaneChannel channel, Throwable primary) {
-        try {
-            channel.close();
-        } catch (IOException | RuntimeException failure) {
-            primary.addSuppressed(failure);
-        }
-    }
-
-    private static int intField(Class<?> type, String name) throws NoSuchFieldException {
-        try {
-            return type.getField(name).getInt(null);
-        } catch (IllegalAccessException | IllegalArgumentException failure) {
-            throw new NoSuchFieldException(name + ": " + failure.getMessage());
         }
     }
 
@@ -720,7 +622,7 @@ public final class ReflectiveFastLaneApi implements FastLaneVirtualMachineApi {
 
     private ReflectiveHandle requireHandle(FastLaneHandle handle) throws FastLaneException {
         if (!(handle instanceof ReflectiveHandle reflective) || reflective.owner != this) {
-            throw error(FastLaneException.VSOCK_FAILED,
+            throw FastLaneReflectionSupport.error(FastLaneException.VSOCK_FAILED,
                     "VM handle belongs to another adapter", null);
         }
         return reflective;
@@ -942,7 +844,7 @@ public final class ReflectiveFastLaneApi implements FastLaneVirtualMachineApi {
                 notifyAll();
                 closeChannels();
                 try {
-                    invoke(shape.vm, vm, "stop", new Class<?>[0], new Object[0],
+                    FastLaneReflectionSupport.invoke(shape.vm, vm, "stop", new Class<?>[0], new Object[0],
                             FastLaneException.STOP_UNCONFIRMED, notes);
                 } catch (FastLaneException failure) {
                     addNote("stop: failed (" + failure.reason() + ")");
@@ -994,7 +896,7 @@ public final class ReflectiveFastLaneApi implements FastLaneVirtualMachineApi {
         }
 
         private FastLaneException closedFailure() {
-            return error(FastLaneException.VSOCK_FAILED, "VM handle is closed", null);
+            return FastLaneReflectionSupport.error(FastLaneException.VSOCK_FAILED, "VM handle is closed", null);
         }
 
         private void closeChannels() {
@@ -1036,17 +938,17 @@ public final class ReflectiveFastLaneApi implements FastLaneVirtualMachineApi {
         }
 
         private FastLaneException stopUnconfirmed() {
-            return error(FastLaneException.STOP_UNCONFIRMED,
+            return FastLaneReflectionSupport.error(FastLaneException.STOP_UNCONFIRMED,
                     "platform never reported STOPPED or DELETED", null);
         }
 
         private static FastLaneException payloadVerificationFailure() {
-            return error(FastLaneException.PAYLOAD_VERIFY_FAILED,
+            return FastLaneReflectionSupport.error(FastLaneException.PAYLOAD_VERIFY_FAILED,
                     "platform reported payload verification failure", null);
         }
 
         private static FastLaneException invalidPayloadConfigFailure() {
-            return error(FastLaneException.VM_CREATE_FAILED,
+            return FastLaneReflectionSupport.error(FastLaneException.VM_CREATE_FAILED,
                     "platform rejected the payload configuration", null);
         }
 
