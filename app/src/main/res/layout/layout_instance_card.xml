@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 仪表盘实例卡（TAB2 列表项）
+     卡片层级：一级决策卡（实例即主操作对象）；规格行/按钮区间距按
+     信息密度收紧（oe_space_sm 行距），legacy #16171D/#2E323B 灰边
+     归一到 bg_oe_card 族 pre-bind 值（运行时 ThemeApplier 统一重涂）。 -->
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/instance_card"
@@ -6,21 +10,21 @@
     android:layout_height="wrap_content"
     android:layout_marginStart="0dp"
     android:layout_marginEnd="0dp"
-    android:layout_marginBottom="12dp"
+    android:layout_marginBottom="@dimen/oe_space_md"
     android:clickable="true"
     android:focusable="true"
     android:foreground="?android:attr/selectableItemBackground"
     app:cardCornerRadius="0dp"
     app:cardElevation="0dp"
-    app:strokeWidth="1.5dp"
-    app:strokeColor="#2E323B"
-    app:cardBackgroundColor="#16171D">
+    app:strokeWidth="@dimen/oe_stroke_hairline"
+    app:strokeColor="?attr/colorOutlineVariant"
+    app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:padding="@dimen/oe_space_lg">
 
         <!-- Row 1: Distro Icon + Title & ID + State Capsule Badge -->
         <LinearLayout
@@ -32,7 +36,7 @@
             <FrameLayout
                 android:layout_width="44dp"
                 android:layout_height="44dp"
-                android:layout_marginEnd="14dp"
+                android:layout_marginEnd="@dimen/oe_space_md"
                 android:background="@drawable/bg_icon_container">
 
                 <ImageView
@@ -65,7 +69,7 @@
                     android:id="@+id/card_instance_id"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
+                    android:layout_marginTop="@dimen/oe_space_xs"
                     android:singleLine="true"
                     android:ellipsize="end"
                     android:fontFamily="monospace"
@@ -83,10 +87,10 @@
                 android:ellipsize="end"
                 android:fontFamily="monospace"
                 android:background="@drawable/bg_status_badge"
-                android:paddingStart="8dp"
-                android:paddingTop="4dp"
-                android:paddingEnd="8dp"
-                android:paddingBottom="4dp"
+                android:paddingStart="@dimen/oe_space_sm"
+                android:paddingTop="@dimen/oe_space_xs"
+                android:paddingEnd="@dimen/oe_space_sm"
+                android:paddingBottom="@dimen/oe_space_xs"
                 android:text="[ 已停止 ]"
                 android:textSize="10sp"
                 android:textStyle="bold"
@@ -97,7 +101,7 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
+            android:layout_marginTop="@dimen/oe_space_sm"
             android:orientation="horizontal"
             android:gravity="center_vertical">
 
@@ -147,8 +151,8 @@
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
-            android:layout_marginTop="10dp"
-            android:layout_marginBottom="8dp"
+            android:layout_marginTop="@dimen/oe_space_sm"
+            android:layout_marginBottom="@dimen/oe_space_sm"
             android:background="#2E323B" />
 
         <!-- Row 3: Detail Hint & High-Priority Quick Power Action Button -->
@@ -169,15 +173,15 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/card_btn_power"
-                style="@style/Widget.Material3.Button.TonalButton"
+                style="@style/Widget.Orchestella.Button.Tonal"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:minHeight="38dp"
                 app:cornerRadius="0dp"
                 app:icon="@drawable/ic_power"
                 app:iconSize="16dp"
-                android:paddingStart="12dp"
-                android:paddingEnd="12dp"
+                android:paddingStart="@dimen/oe_space_md"
+                android:paddingEnd="@dimen/oe_space_md"
                 android:fontFamily="monospace"
                 android:textSize="11sp"
                 android:textStyle="bold"

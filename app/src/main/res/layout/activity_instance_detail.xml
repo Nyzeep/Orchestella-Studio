@@ -33,13 +33,15 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp"
-            android:paddingTop="8dp"
+            android:paddingStart="@dimen/oe_space_lg"
+            android:paddingEnd="@dimen/oe_space_lg"
+            android:paddingTop="@dimen/oe_space_sm"
             android:paddingBottom="36dp">
 
             <!-- ============================================== -->
             <!-- 分区 1：头部状态看板与核心操作栏 (Header & Actions) -->
+            <!-- 卡片层级：一级决策卡（实例身份 + 核心操作 CTA）；
+                 glass_* 遗留色归一到 bg_oe_card 族 card 档 pre-bind 值 -->
             <!-- ============================================== -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/card_header_dashboard"
@@ -47,15 +49,15 @@
                 android:layout_height="wrap_content"
                 app:cardCornerRadius="0dp"
                 app:cardElevation="0dp"
-                app:strokeWidth="1dp"
-                app:strokeColor="@color/glass_card_stroke_dark"
-                app:cardBackgroundColor="@color/glass_card_bg_dark">
+                app:strokeWidth="@dimen/oe_stroke_hairline"
+                app:strokeColor="?attr/colorOutlineVariant"
+                app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="20dp">
+                    android:padding="@dimen/oe_space_xl">
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -66,7 +68,7 @@
                         <FrameLayout
                             android:layout_width="52dp"
                             android:layout_height="52dp"
-                            android:layout_marginEnd="16dp"
+                            android:layout_marginEnd="@dimen/oe_space_lg"
                             android:background="@drawable/bg_icon_container">
 
                             <ImageView
@@ -97,7 +99,7 @@
                                 android:id="@+id/detail_instance_id"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:layout_marginTop="2dp"
+                                android:layout_marginTop="@dimen/oe_space_xs"
                                 android:text="ID: instance-001 · root@orchestella"
                                 android:textSize="13sp"
                                 android:textColor="?attr/colorOutline" />
@@ -108,24 +110,26 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:background="@drawable/bg_status_badge"
-                            android:paddingStart="12dp"
-                            android:paddingTop="6dp"
-                            android:paddingEnd="12dp"
-                            android:paddingBottom="6dp"
+                            android:paddingStart="@dimen/oe_space_md"
+                            android:paddingTop="@dimen/oe_icon_inline_gap"
+                            android:paddingEnd="@dimen/oe_space_md"
+                            android:paddingBottom="@dimen/oe_icon_inline_gap"
                             android:text="○ 已关机"
                             android:textSize="12sp"
                             android:textStyle="bold"
                             android:textColor="@color/status_stopped" />
                     </LinearLayout>
 
-                    <!-- Realtime specs & IP status banner (surfaceLow well tier) -->
+                    <!-- Realtime specs & IP status banner
+                         卡片层级：二级数据卡（well 档：id 前缀 well_ → 运行时
+                         ThemeApplier 重涂 surfaceLow，比 card 档低一阶） -->
                     <LinearLayout
                         android:id="@+id/well_detail_specs"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="16dp"
+                        android:layout_marginTop="@dimen/oe_space_lg"
                         android:background="@drawable/bg_oe_well"
-                        android:padding="12dp"
+                        android:padding="@dimen/oe_space_md"
                         android:orientation="horizontal">
 
                         <LinearLayout
@@ -172,19 +176,19 @@
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="18dp"
+                        android:layout_marginTop="@dimen/oe_space_lg"
                         android:orientation="horizontal"
                         android:gravity="center">
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btn_detail_terminal"
-                            style="@style/Widget.Material3.Button.TonalButton"
+                            style="@style/Widget.Orchestella.Button.Tonal"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:layout_marginEnd="6dp"
-                            android:paddingTop="10dp"
-                            android:paddingBottom="10dp"
+                            android:layout_marginEnd="@dimen/oe_icon_inline_gap"
+                            android:paddingTop="@dimen/oe_space_sm"
+                            android:paddingBottom="@dimen/oe_space_sm"
                             app:cornerRadius="0dp"
                             app:icon="@drawable/ic_terminal"
                             app:iconSize="20dp"
@@ -194,13 +198,13 @@
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btn_detail_desktop"
-                            style="@style/Widget.Material3.Button.TonalButton"
+                            style="@style/Widget.Orchestella.Button.Tonal"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:layout_marginEnd="6dp"
-                            android:paddingTop="10dp"
-                            android:paddingBottom="10dp"
+                            android:layout_marginEnd="@dimen/oe_icon_inline_gap"
+                            android:paddingTop="@dimen/oe_space_sm"
+                            android:paddingBottom="@dimen/oe_space_sm"
                             app:cornerRadius="0dp"
                             app:icon="@drawable/ic_desktop"
                             app:iconSize="20dp"
@@ -214,8 +218,8 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:paddingTop="10dp"
-                            android:paddingBottom="10dp"
+                            android:paddingTop="@dimen/oe_space_sm"
+                            android:paddingBottom="@dimen/oe_space_sm"
                             app:cornerRadius="0dp"
                             app:icon="@drawable/ic_power"
                             app:iconSize="20dp"
@@ -228,17 +232,17 @@
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
+                        android:layout_marginTop="@dimen/oe_space_sm"
                         android:orientation="horizontal"
                         android:gravity="center">
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btn_detail_guest_log"
-                            style="@style/Widget.Material3.Button.TonalButton"
+                            style="@style/Widget.Orchestella.Button.Tonal"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:layout_marginEnd="6dp"
+                            android:layout_marginEnd="@dimen/oe_icon_inline_gap"
                             app:cornerRadius="0dp"
                             app:icon="@drawable/ic_terminal"
                             app:iconSize="18dp"
@@ -247,7 +251,7 @@
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btn_detail_app_log"
-                            style="@style/Widget.Material3.Button.TonalButton"
+                            style="@style/Widget.Orchestella.Button.Tonal"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
@@ -267,8 +271,8 @@
             <HorizontalScrollView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:layout_marginBottom="14dp"
+                android:layout_marginTop="@dimen/oe_space_lg"
+                android:layout_marginBottom="@dimen/oe_space_md"
                 android:scrollbars="none"
                 android:overScrollMode="never">
 
@@ -327,12 +331,14 @@
                 android:orientation="vertical"
                 android:visibility="visible">
 
-                <!-- SSH Quick Connect Card -->
+                <!-- SSH Quick Connect Card
+                     卡片层级：二级数据卡（页签内容区读数卡；MaterialCardView
+                     运行时由 ThemeApplier 统一重涂 card 档 + 发丝线） -->
                 <com.google.android.material.card.MaterialCardView
                     android:id="@+id/card_detail_ssh_connect"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="14dp"
+                    android:layout_marginBottom="@dimen/oe_space_md"
                     app:cardCornerRadius="0dp"
                     app:cardElevation="0dp"
                     app:strokeWidth="1dp"
@@ -343,7 +349,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:padding="16dp">
+                        android:padding="@dimen/oe_space_lg">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -376,10 +382,10 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:background="@drawable/bg_status_badge"
-                                android:paddingStart="8dp"
-                                android:paddingTop="2dp"
-                                android:paddingEnd="8dp"
-                                android:paddingBottom="2dp"
+                                android:paddingStart="@dimen/oe_space_sm"
+                                android:paddingTop="@dimen/oe_space_xs"
+                                android:paddingEnd="@dimen/oe_space_sm"
+                                android:paddingBottom="@dimen/oe_space_xs"
                                 android:text="端口 2222"
                                 android:textSize="11sp"
                                 android:textColor="?attr/colorPrimary" />
@@ -389,9 +395,9 @@
                             android:id="@+id/tv_detail_ssh_cmd"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="10dp"
+                            android:layout_marginTop="@dimen/oe_space_sm"
                             android:background="@drawable/bg_status_badge"
-                            android:padding="10dp"
+                            android:padding="@dimen/oe_space_sm"
                             android:text="ssh -p 2222 root@127.0.0.1"
                             android:fontFamily="monospace"
                             android:textSize="13sp"
@@ -400,16 +406,16 @@
                         <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="12dp"
+                            android:layout_marginTop="@dimen/oe_space_md"
                             android:orientation="horizontal">
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btn_detail_ssh_copy"
-                                style="@style/Widget.Material3.Button.TonalButton"
+                                style="@style/Widget.Orchestella.Button.Tonal"
                                 android:layout_width="0dp"
                                 android:layout_height="40dp"
                                 android:layout_weight="1"
-                                android:layout_marginEnd="6dp"
+                                android:layout_marginEnd="@dimen/oe_icon_inline_gap"
                                 android:insetTop="0dp"
                                 android:insetBottom="0dp"
                                 app:cornerRadius="0dp"
@@ -420,7 +426,7 @@
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btn_detail_ssh_manage"
-                                style="@style/Widget.Material3.Button.OutlinedButton"
+                                style="@style/Widget.Orchestella.Button.Outlined"
                                 android:layout_width="0dp"
                                 android:layout_height="40dp"
                                 android:layout_weight="1"
@@ -436,7 +442,8 @@
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
-                <!-- System Fact Specs Overview Card -->
+                <!-- System Fact Specs Overview Card
+                     卡片层级：二级数据卡（环境特征只读清单） -->
                 <com.google.android.material.card.MaterialCardView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -450,7 +457,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:padding="16dp">
+                        android:padding="@dimen/oe_space_lg">
 
                         <TextView
                             android:layout_width="wrap_content"
@@ -463,7 +470,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
+                            android:layout_marginTop="@dimen/oe_space_sm"
                             android:text="• 内核架构：Linux 6.x aarch64 / arm64 架构隔离运行"
                             android:textSize="12sp"
                             android:textColor="?attr/colorOutline" />
@@ -471,7 +478,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
+                            android:layout_marginTop="@dimen/oe_space_xs"
                             android:text="• 网络通道：用户态 GVProxy SLIRP NAT / 双向端口转发"
                             android:textSize="12sp"
                             android:textColor="?attr/colorOutline" />
@@ -479,7 +486,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
+                            android:layout_marginTop="@dimen/oe_space_xs"
                             android:text="• 磁盘驱动：virtio-blk 硬件增量稀疏镜像"
                             android:textSize="12sp"
                             android:textColor="?attr/colorOutline" />
@@ -501,12 +508,13 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="8dp"
+                    android:layout_marginBottom="@dimen/oe_space_sm"
                     android:text="@string/console_section_hardware"
                     android:textSize="14sp"
                     android:textStyle="bold"
                     android:textColor="?attr/colorPrimary" />
 
+                <!-- 卡片层级：二级数据卡（硬件配额编辑，含保存 CTA） -->
                 <com.google.android.material.card.MaterialCardView
                     android:id="@+id/card_hardware_specs_editor"
                     android:layout_width="match_parent"
@@ -521,16 +529,16 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:padding="16dp">
+                        android:padding="@dimen/oe_space_lg">
 
                         <!-- Running Lock Warning Banner -->
                         <TextView
                             android:id="@+id/tv_hw_locked_hint"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginBottom="12dp"
+                            android:layout_marginBottom="@dimen/oe_space_md"
                             android:background="@drawable/bg_status_badge"
-                            android:padding="10dp"
+                            android:padding="@dimen/oe_space_sm"
                             android:gravity="center"
                             android:text="@string/console_hw_running_hint"
                             android:textSize="13sp"
@@ -552,7 +560,7 @@
                             android:id="@+id/seek_detail_vcpu"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
+                            android:layout_marginTop="@dimen/oe_icon_inline_gap"
                             android:max="7"
                             android:progress="1" />
 
@@ -561,7 +569,7 @@
                             android:id="@+id/tv_detail_ram_label"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="14dp"
+                            android:layout_marginTop="@dimen/oe_space_md"
                             android:text="运存 (RAM) 配额：2048 MB"
                             android:textSize="14sp"
                             android:textStyle="bold"
@@ -571,7 +579,7 @@
                             android:id="@+id/seek_detail_ram"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
+                            android:layout_marginTop="@dimen/oe_icon_inline_gap"
                             android:max="15"
                             android:progress="3" />
 
@@ -580,7 +588,7 @@
                             android:id="@+id/tv_detail_ram_safety_zone"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
+                            android:layout_marginTop="@dimen/oe_space_xs"
                             android:text="@string/hardware_ram_zone_green"
                             android:textSize="12sp"
                             android:textColor="@color/zone_green" />
@@ -591,7 +599,7 @@
                             style="@style/Widget.Material3.Button"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="14dp"
+                            android:layout_marginTop="@dimen/oe_space_md"
                             android:layout_gravity="end"
                             app:cornerRadius="0dp"
                             android:text="@string/console_hw_save" />
@@ -614,12 +622,13 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="8dp"
+                    android:layout_marginBottom="@dimen/oe_space_sm"
                     android:text="@string/console_section_storage"
                     android:textSize="14sp"
                     android:textStyle="bold"
                     android:textColor="?attr/colorPrimary" />
 
+                <!-- 卡片层级：二级数据卡（存储占用读数 + 扩容/备份操作） -->
                 <com.google.android.material.card.MaterialCardView
                     android:id="@+id/card_storage_manager"
                     android:layout_width="match_parent"
@@ -634,7 +643,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:padding="16dp">
+                        android:padding="@dimen/oe_space_lg">
 
                         <LinearLayout style="@style/Widget.Orchestella.InlineIconRow">
 
@@ -654,7 +663,7 @@
 
                         <LinearLayout
                             style="@style/Widget.Orchestella.InlineIconRow"
-                            android:layout_marginTop="6dp">
+                            android:layout_marginTop="@dimen/oe_icon_inline_gap">
 
                             <ImageView
                                 style="@style/Widget.Orchestella.InlineIcon"
@@ -673,23 +682,23 @@
                         <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="12dp"
+                            android:layout_marginTop="@dimen/oe_space_md"
                             android:orientation="horizontal">
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btn_expand_disk"
-                                style="@style/Widget.Material3.Button.OutlinedButton"
+                                style="@style/Widget.Orchestella.Button.Outlined"
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
-                                android:layout_marginEnd="8dp"
+                                android:layout_marginEnd="@dimen/oe_space_sm"
                                 app:cornerRadius="0dp"
                                 android:text="@string/console_storage_expand_disk"
                                 android:textSize="12sp" />
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btn_export_backup"
-                                style="@style/Widget.Material3.Button.TonalButton"
+                                style="@style/Widget.Orchestella.Button.Tonal"
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
@@ -718,12 +727,13 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="8dp"
+                    android:layout_marginBottom="@dimen/oe_space_sm"
                     android:text="@string/console_section_network"
                     android:textSize="14sp"
                     android:textStyle="bold"
                     android:textColor="?attr/colorPrimary" />
 
+                <!-- 卡片层级：二级数据卡（网络模式读数 + 端口映射入口） -->
                 <com.google.android.material.card.MaterialCardView
                     android:id="@+id/card_network_port_forwarding"
                     android:layout_width="match_parent"
@@ -738,7 +748,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:padding="16dp">
+                        android:padding="@dimen/oe_space_lg">
 
                         <LinearLayout style="@style/Widget.Orchestella.InlineIconRow">
 
@@ -757,7 +767,7 @@
 
                         <LinearLayout
                             style="@style/Widget.Orchestella.InlineIconRow"
-                            android:layout_marginTop="6dp">
+                            android:layout_marginTop="@dimen/oe_icon_inline_gap">
 
                             <ImageView
                                 style="@style/Widget.Orchestella.InlineIcon"
@@ -775,10 +785,10 @@
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btn_manage_port_forwarding"
-                            style="@style/Widget.Material3.Button.TonalButton"
+                            style="@style/Widget.Orchestella.Button.Tonal"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="12dp"
+                            android:layout_marginTop="@dimen/oe_space_md"
                             app:cornerRadius="0dp"
                             android:text="@string/console_network_port_forwarding"
                             android:textSize="12sp" />
@@ -801,12 +811,14 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="8dp"
+                    android:layout_marginBottom="@dimen/oe_space_sm"
                     android:text="@string/console_section_danger"
                     android:textSize="14sp"
                     android:textStyle="bold"
                     android:textColor="@color/status_crashed" />
 
+                <!-- 卡片层级：语义特例（危险区红描边保留，ThemeApplier
+                     isSemanticStroke 白名单，不参与三档归一） -->
                 <com.google.android.material.card.MaterialCardView
                     android:id="@+id/card_danger_zone"
                     android:layout_width="match_parent"
@@ -821,7 +833,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:padding="16dp">
+                        android:padding="@dimen/oe_space_lg">
 
                         <!-- Clone Action -->
                         <LinearLayout
@@ -854,7 +866,7 @@
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btn_danger_clone"
-                                style="@style/Widget.Material3.Button.OutlinedButton"
+                                style="@style/Widget.Orchestella.Button.Outlined"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 app:cornerRadius="0dp"
@@ -866,8 +878,8 @@
                         <View
                             android:layout_width="match_parent"
                             android:layout_height="1dp"
-                            android:layout_marginTop="12dp"
-                            android:layout_marginBottom="12dp"
+                            android:layout_marginTop="@dimen/oe_space_md"
+                            android:layout_marginBottom="@dimen/oe_space_md"
                             android:background="?attr/colorOutlineVariant" />
 
                         <!-- Reset Deadlock State -->
@@ -901,7 +913,7 @@
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btn_danger_reset"
-                                style="@style/Widget.Material3.Button.OutlinedButton"
+                                style="@style/Widget.Orchestella.Button.Outlined"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 app:cornerRadius="0dp"
@@ -913,8 +925,8 @@
                         <View
                             android:layout_width="match_parent"
                             android:layout_height="1dp"
-                            android:layout_marginTop="12dp"
-                            android:layout_marginBottom="12dp"
+                            android:layout_marginTop="@dimen/oe_space_md"
+                            android:layout_marginBottom="@dimen/oe_space_md"
                             android:background="?attr/colorOutlineVariant" />
 
                         <!-- Delete Permanently -->

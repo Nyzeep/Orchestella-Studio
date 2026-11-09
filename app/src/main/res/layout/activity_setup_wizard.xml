@@ -18,9 +18,9 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingStart="20dp"
-            android:paddingEnd="20dp"
-            android:paddingTop="20dp"
+            android:paddingStart="@dimen/oe_space_xl"
+            android:paddingEnd="@dimen/oe_space_xl"
+            android:paddingTop="@dimen/oe_space_xl"
             android:paddingBottom="28dp">
 
             <!-- Wizard Top Header with Skip Button -->
@@ -49,7 +49,7 @@
                         android:id="@+id/wizard_subtitle"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
+                        android:layout_marginTop="@dimen/oe_space_xs"
                         android:text="@string/wizard_creation_subtitle"
                         android:textSize="12sp"
                         android:textColor="?attr/colorOutline" />
@@ -57,7 +57,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_wizard_skip"
-                    style="@style/Widget.Material3.Button.TonalButton"
+                    style="@style/Widget.Orchestella.Button.Tonal"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:minHeight="48dp"
@@ -72,13 +72,13 @@
                 android:id="@+id/wizard_step_badge"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
-                android:layout_marginBottom="16dp"
+                android:layout_marginTop="@dimen/oe_space_md"
+                android:layout_marginBottom="@dimen/oe_space_lg"
                 android:background="@drawable/bg_status_badge"
-                android:paddingStart="12dp"
-                android:paddingTop="6dp"
-                android:paddingEnd="12dp"
-                android:paddingBottom="6dp"
+                android:paddingStart="@dimen/oe_space_md"
+                android:paddingTop="@dimen/oe_icon_inline_gap"
+                android:paddingEnd="@dimen/oe_space_md"
+                android:paddingBottom="@dimen/oe_icon_inline_gap"
                 android:text="第 1 步 / 共 4 步：存储与挂载"
                 android:textSize="13sp"
                 android:textStyle="bold"
@@ -99,7 +99,7 @@
                     android:id="@+id/card_wizard_avf_detection"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="14dp"
+                    android:layout_marginBottom="@dimen/oe_space_md"
                     app:cardCornerRadius="0dp"
                     app:cardElevation="0dp"
                     app:strokeWidth="1dp"
@@ -110,7 +110,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:padding="16dp">
+                        android:padding="@dimen/oe_space_lg">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -132,10 +132,10 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:background="@drawable/bg_status_badge"
-                                android:paddingStart="8dp"
-                                android:paddingTop="3dp"
-                                android:paddingEnd="8dp"
-                                android:paddingBottom="3dp"
+                                android:paddingStart="@dimen/oe_space_sm"
+                                android:paddingTop="@dimen/oe_space_xs"
+                                android:paddingEnd="@dimen/oe_space_sm"
+                                android:paddingBottom="@dimen/oe_space_xs"
                                 android:text="检测中…"
                                 android:textSize="11sp"
                                 android:textStyle="bold"
@@ -146,7 +146,7 @@
                             android:id="@+id/txt_wizard_avf_details"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
+                            android:layout_marginTop="@dimen/oe_space_sm"
                             android:textSize="12sp"
                             android:textColor="?attr/colorOutline" />
 
@@ -154,9 +154,9 @@
                             android:id="@+id/layout_wizard_avf_fallback"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
+                            android:layout_marginTop="@dimen/oe_space_sm"
                             android:background="@drawable/bg_status_badge"
-                            android:padding="8dp"
+                            android:padding="@dimen/oe_space_sm"
                             android:orientation="vertical"
                             android:visibility="gone">
 
@@ -171,7 +171,7 @@
                             <TextView
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:layout_marginTop="2dp"
+                                android:layout_marginTop="@dimen/oe_space_xs"
                                 android:text="当前仅检查 AVF 平台声明与应用权限。custom VM 在实例启动时验证创建与运行；预检不满足或启动失败时自动回退至 QEMU。"
                                 android:textSize="11sp"
                                 android:textColor="?attr/colorOnSurfaceVariant" />
@@ -184,7 +184,7 @@
                     android:id="@+id/card_distro_selector"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="14dp"
+                    android:layout_marginBottom="@dimen/oe_space_md"
                     app:cardCornerRadius="0dp"
                     app:cardElevation="0dp"
                     app:strokeWidth="1dp"
@@ -195,7 +195,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:padding="16dp">
+                        android:padding="@dimen/oe_space_lg">
 
                         <TextView
                             android:layout_width="wrap_content"
@@ -218,9 +218,9 @@
                             android:id="@+id/layout_distro_preview"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="10dp"
+                            android:layout_marginTop="@dimen/oe_space_sm"
                             android:background="?attr/colorSurfaceContainerLow"
-                            android:padding="12dp"
+                            android:padding="@dimen/oe_space_md"
                             android:orientation="horizontal"
                             android:gravity="center_vertical">
 
@@ -228,7 +228,7 @@
                                 android:id="@+id/img_distro_icon_preview"
                                 android:layout_width="40dp"
                                 android:layout_height="40dp"
-                                android:layout_marginEnd="12dp"
+                                android:layout_marginEnd="@dimen/oe_space_md"
                                 android:src="@drawable/ic_distro_ubuntu"
                                 android:contentDescription="@null" />
 
@@ -251,7 +251,7 @@
                                     android:id="@+id/txt_distro_tag_preview"
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
-                                    android:layout_marginTop="2dp"
+                                    android:layout_marginTop="@dimen/oe_space_xs"
                                     android:text="通用开发 · 云原生首选"
                                     android:textSize="12sp"
                                     android:textColor="?attr/colorPrimary" />
@@ -260,7 +260,7 @@
                                     android:id="@+id/txt_distro_desc_preview"
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
-                                    android:layout_marginTop="2dp"
+                                    android:layout_marginTop="@dimen/oe_space_xs"
                                     android:text="预设 APT 极速多层镜像源与 Docker 加速"
                                     android:textSize="11sp"
                                     android:textColor="?attr/colorOutline" />
@@ -274,7 +274,7 @@
                     android:id="@+id/card_storage_config"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="14dp"
+                    android:layout_marginBottom="@dimen/oe_space_md"
                     app:cardCornerRadius="0dp"
                     app:cardElevation="0dp"
                     app:strokeWidth="1dp"
@@ -285,7 +285,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:padding="16dp">
+                        android:padding="@dimen/oe_space_lg">
 
                         <TextView
                             android:layout_width="wrap_content"
@@ -298,7 +298,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
+                            android:layout_marginTop="@dimen/oe_space_xs"
                             android:text="@string/wizard_storage_card_desc"
                             android:textSize="12sp"
                             android:textColor="?attr/colorOutline" />
@@ -307,7 +307,7 @@
                             android:id="@+id/txt_hw_storage"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="10dp"
+                            android:layout_marginTop="@dimen/oe_space_sm"
                             android:text="私有存储空间：-- GB 可用"
                             android:textSize="13sp"
                             android:textColor="?attr/colorOnSurfaceVariant" />
@@ -316,7 +316,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="12dp"
+                            android:layout_marginTop="@dimen/oe_space_md"
                             android:text="@string/wizard_disk_size_label"
                             android:textSize="13sp"
                             android:textStyle="bold"
@@ -327,7 +327,7 @@
                             android:layout_height="wrap_content"
                             android:orientation="horizontal"
                             android:baselineAligned="false"
-                            android:layout_marginTop="8dp">
+                            android:layout_marginTop="@dimen/oe_space_sm">
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btn_disk_4g"
@@ -335,7 +335,7 @@
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
-                                android:layout_marginEnd="4dp"
+                                android:layout_marginEnd="@dimen/oe_space_xs"
                                 app:cornerRadius="0dp"
                                 android:text="4 GB" />
 
@@ -345,7 +345,7 @@
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
-                                android:layout_marginEnd="4dp"
+                                android:layout_marginEnd="@dimen/oe_space_xs"
                                 app:cornerRadius="0dp"
                                 android:text="8 GB" />
 
@@ -355,7 +355,7 @@
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
-                                android:layout_marginEnd="4dp"
+                                android:layout_marginEnd="@dimen/oe_space_xs"
                                 app:cornerRadius="0dp"
                                 android:text="16 GB" />
 
@@ -375,7 +375,7 @@
                             style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="10dp"
+                            android:layout_marginTop="@dimen/oe_space_sm"
                             app:boxCornerRadiusTopStart="0dp"
                             app:boxCornerRadiusTopEnd="0dp"
                             app:boxCornerRadiusBottomStart="0dp"
@@ -396,7 +396,7 @@
                             android:id="@+id/txt_storage_warning"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
+                            android:layout_marginTop="@dimen/oe_space_sm"
                             android:textSize="12sp"
                             android:textColor="@color/zone_red"
                             android:visibility="gone" />
@@ -404,8 +404,8 @@
                         <View
                             android:layout_width="match_parent"
                             android:layout_height="1dp"
-                            android:layout_marginTop="12dp"
-                            android:layout_marginBottom="12dp"
+                            android:layout_marginTop="@dimen/oe_space_md"
+                            android:layout_marginBottom="@dimen/oe_space_md"
                             android:background="?attr/colorOutlineVariant" />
 
                         <!-- Host Shared Directory Mount Checkbox -->
@@ -421,18 +421,18 @@
                             android:id="@+id/txt_shared_dir_desc"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginStart="32dp"
+                            android:layout_marginStart="@dimen/oe_space_xxxl"
                             android:text="@string/wizard_mount_shared_dir_desc"
                             android:textSize="12sp"
                             android:textColor="?attr/colorOutline" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btn_pick_shared_dir"
-                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            style="@style/Widget.Orchestella.Button.Outlined"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginStart="32dp"
-                            android:layout_marginTop="6dp"
+                            android:layout_marginStart="@dimen/oe_space_xxxl"
+                            android:layout_marginTop="@dimen/oe_icon_inline_gap"
                             app:cornerRadius="0dp"
                             android:text="@string/wizard_select_shared_folder"
                             android:visibility="gone" />
@@ -441,8 +441,8 @@
                             android:id="@+id/txt_shared_folder_path"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginStart="32dp"
-                            android:layout_marginTop="4dp"
+                            android:layout_marginStart="@dimen/oe_space_xxxl"
+                            android:layout_marginTop="@dimen/oe_space_xs"
                             android:textSize="12sp"
                             android:textColor="?attr/colorPrimary"
                             android:visibility="gone" />
@@ -477,7 +477,7 @@
                     android:id="@+id/card_network_diag"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="14dp"
+                    android:layout_marginBottom="@dimen/oe_space_md"
                     app:cardCornerRadius="0dp"
                     app:cardElevation="0dp"
                     app:strokeWidth="1dp"
@@ -488,7 +488,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:padding="16dp">
+                        android:padding="@dimen/oe_space_lg">
 
                         <TextView
                             android:layout_width="wrap_content"
@@ -501,7 +501,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
+                            android:layout_marginTop="@dimen/oe_space_xs"
                             android:text="@string/wizard_network_card_desc"
                             android:textSize="12sp"
                             android:textColor="?attr/colorOutline" />
@@ -509,8 +509,8 @@
                         <View
                             android:layout_width="match_parent"
                             android:layout_height="1dp"
-                            android:layout_marginTop="10dp"
-                            android:layout_marginBottom="10dp"
+                            android:layout_marginTop="@dimen/oe_space_sm"
+                            android:layout_marginBottom="@dimen/oe_space_sm"
                             android:background="?attr/colorOutlineVariant" />
 
                         <TextView
@@ -525,7 +525,7 @@
                             android:id="@+id/txt_net_ip"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
+                            android:layout_marginTop="@dimen/oe_space_xs"
                             android:text="宿主 IP：192.168.1.100"
                             android:textSize="13sp"
                             android:textColor="?attr/colorOnSurface" />
@@ -534,7 +534,7 @@
                             android:id="@+id/txt_net_gateway"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
+                            android:layout_marginTop="@dimen/oe_space_xs"
                             android:text="默认网关：192.168.127.1"
                             android:textSize="13sp"
                             android:textColor="?attr/colorOnSurface" />
@@ -543,7 +543,7 @@
                             android:id="@+id/txt_net_dns"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
+                            android:layout_marginTop="@dimen/oe_space_xs"
                             android:text="DNS 服务器：8.8.8.8"
                             android:textSize="13sp"
                             android:textColor="?attr/colorOnSurface" />
@@ -551,13 +551,13 @@
                         <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="10dp"
+                            android:layout_marginTop="@dimen/oe_space_sm"
                             android:orientation="horizontal"
                             android:gravity="center_vertical">
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btn_test_network"
-                                style="@style/Widget.Material3.Button.TonalButton"
+                                style="@style/Widget.Orchestella.Button.Tonal"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 app:cornerRadius="0dp"
@@ -568,7 +568,7 @@
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
-                                android:layout_marginStart="10dp"
+                                android:layout_marginStart="@dimen/oe_space_sm"
                                 android:textSize="12sp"
                                 android:textColor="@color/zone_green" />
                         </LinearLayout>
@@ -580,7 +580,7 @@
                     android:id="@+id/card_mirror_select"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="16dp"
+                    android:layout_marginBottom="@dimen/oe_space_lg"
                     app:cardCornerRadius="0dp"
                     app:cardElevation="0dp"
                     app:strokeWidth="1dp"
@@ -591,7 +591,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:padding="16dp">
+                        android:padding="@dimen/oe_space_lg">
 
                         <TextView
                             android:layout_width="wrap_content"
@@ -605,19 +605,19 @@
                             android:id="@+id/spinner_mirror_source"
                             android:layout_width="match_parent"
                             android:layout_height="48dp"
-                            android:layout_marginTop="8dp"
+                            android:layout_marginTop="@dimen/oe_space_sm"
                             android:background="@drawable/bg_dropdown_field"
-                            android:paddingStart="14dp"
+                            android:paddingStart="@dimen/oe_space_md"
                             android:paddingEnd="36dp" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btn_wizard_speed_test"
-                            style="@style/Widget.Material3.Button.TonalButton"
+                            style="@style/Widget.Orchestella.Button.Tonal"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:minHeight="44dp"
                             app:cornerRadius="0dp"
-                            android:layout_marginTop="10dp"
+                            android:layout_marginTop="@dimen/oe_space_sm"
                             app:icon="@drawable/ic_network"
                             app:iconSize="16dp"
                             android:text="一键测速并自动优选最快源"
@@ -628,7 +628,7 @@
                             android:id="@+id/txt_wizard_speed_test_results"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
+                            android:layout_marginTop="@dimen/oe_icon_inline_gap"
                             android:textSize="11sp"
                             android:textColor="?attr/colorPrimary"
                             android:visibility="gone" />
@@ -637,7 +637,7 @@
                             android:id="@+id/txt_mirror_preview"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="10dp"
+                            android:layout_marginTop="@dimen/oe_space_sm"
                             android:textSize="12sp"
                             android:lineSpacingExtra="2dp"
                             android:textColor="?attr/colorOutline" />
@@ -652,13 +652,13 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_step2_prev"
-                        style="@style/Widget.Material3.Button.TonalButton"
+                        style="@style/Widget.Orchestella.Button.Tonal"
                         android:layout_width="0dp"
                         android:layout_height="52dp"
                         android:minHeight="52dp"
                         app:cornerRadius="0dp"
                         android:layout_weight="1"
-                        android:layout_marginEnd="8dp"
+                        android:layout_marginEnd="@dimen/oe_space_sm"
                         android:text="@string/wizard_btn_prev"
                         android:textSize="15sp" />
 
@@ -691,7 +691,7 @@
                     android:id="@+id/card_hardware_quota"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="16dp"
+                    android:layout_marginBottom="@dimen/oe_space_lg"
                     app:cardCornerRadius="0dp"
                     app:cardElevation="0dp"
                     app:strokeWidth="1dp"
@@ -702,7 +702,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:padding="16dp">
+                        android:padding="@dimen/oe_space_lg">
 
                         <TextView
                             android:layout_width="wrap_content"
@@ -715,7 +715,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
+                            android:layout_marginTop="@dimen/oe_space_xs"
                             android:text="@string/wizard_hardware_card_desc"
                             android:textSize="12sp"
                             android:textColor="?attr/colorOutline" />
@@ -723,8 +723,8 @@
                         <View
                             android:layout_width="match_parent"
                             android:layout_height="1dp"
-                            android:layout_marginTop="10dp"
-                            android:layout_marginBottom="10dp"
+                            android:layout_marginTop="@dimen/oe_space_sm"
+                            android:layout_marginBottom="@dimen/oe_space_sm"
                             android:background="?attr/colorOutlineVariant" />
 
                         <!-- vCPU Slider & Stepper -->
@@ -742,11 +742,11 @@
                             android:layout_height="wrap_content"
                             android:orientation="horizontal"
                             android:gravity="center_vertical"
-                            android:layout_marginTop="2dp">
+                            android:layout_marginTop="@dimen/oe_space_xs">
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btn_vcpu_minus"
-                                style="@style/Widget.Material3.Button.TonalButton"
+                                style="@style/Widget.Orchestella.Button.Tonal"
                                 android:layout_width="44dp"
                                 android:layout_height="44dp"
                                 android:padding="0dp"
@@ -764,8 +764,8 @@
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
-                                android:layout_marginStart="4dp"
-                                android:layout_marginEnd="4dp"
+                                android:layout_marginStart="@dimen/oe_space_xs"
+                                android:layout_marginEnd="@dimen/oe_space_xs"
                                 android:valueFrom="1"
                                 android:valueTo="8"
                                 android:stepSize="1"
@@ -773,7 +773,7 @@
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btn_vcpu_plus"
-                                style="@style/Widget.Material3.Button.TonalButton"
+                                style="@style/Widget.Orchestella.Button.Tonal"
                                 android:layout_width="44dp"
                                 android:layout_height="44dp"
                                 android:padding="0dp"
@@ -792,7 +792,7 @@
                             android:id="@+id/txt_cfg_ram"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
+                            android:layout_marginTop="@dimen/oe_space_sm"
                             android:text="运行内存 (RAM)：2048 MB"
                             android:textSize="13sp"
                             android:textStyle="bold"
@@ -812,12 +812,12 @@
                             android:id="@+id/badge_cfg_zone"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
+                            android:layout_marginTop="@dimen/oe_space_sm"
                             android:background="@drawable/bg_status_badge"
-                            android:paddingStart="10dp"
-                            android:paddingTop="4dp"
-                            android:paddingEnd="10dp"
-                            android:paddingBottom="4dp"
+                            android:paddingStart="@dimen/oe_space_sm"
+                            android:paddingTop="@dimen/oe_space_xs"
+                            android:paddingEnd="@dimen/oe_space_sm"
+                            android:paddingBottom="@dimen/oe_space_xs"
                             android:text="@string/wizard_config_zone_green"
                             android:textSize="12sp"
                             android:textStyle="bold"
@@ -825,10 +825,10 @@
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btn_avf_auth_wizard"
-                            style="@style/Widget.Material3.Button.TonalButton"
+                            style="@style/Widget.Orchestella.Button.Tonal"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="10dp"
+                            android:layout_marginTop="@dimen/oe_space_sm"
                             app:cornerRadius="0dp"
                             android:text="@string/wizard_btn_auth_guide"
                             android:visibility="gone" />
@@ -843,13 +843,13 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_step3_prev"
-                        style="@style/Widget.Material3.Button.TonalButton"
+                        style="@style/Widget.Orchestella.Button.Tonal"
                         android:layout_width="0dp"
                         android:layout_height="52dp"
                         android:minHeight="52dp"
                         app:cornerRadius="0dp"
                         android:layout_weight="1"
-                        android:layout_marginEnd="8dp"
+                        android:layout_marginEnd="@dimen/oe_space_sm"
                         android:text="@string/wizard_btn_prev"
                         android:textSize="15sp" />
 
@@ -882,7 +882,7 @@
                     android:id="@+id/card_startup_tasks"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="14dp"
+                    android:layout_marginBottom="@dimen/oe_space_md"
                     app:cardCornerRadius="0dp"
                     app:cardElevation="0dp"
                     app:strokeWidth="1dp"
@@ -893,7 +893,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:padding="16dp">
+                        android:padding="@dimen/oe_space_lg">
 
                         <TextView
                             android:layout_width="wrap_content"
@@ -906,7 +906,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
+                            android:layout_marginTop="@dimen/oe_space_xs"
                             android:text="首次启动必须安装并验证基础环境：按发行版使用 systemd 或 OpenRC，包含证书、网络、SSH 与常用工具。安装失败可重试；下方选项仅控制额外系统升级。"
                             android:textSize="12sp"
                             android:textColor="?attr/colorOutline" />
@@ -914,8 +914,8 @@
                         <View
                             android:layout_width="match_parent"
                             android:layout_height="1dp"
-                            android:layout_marginTop="10dp"
-                            android:layout_marginBottom="10dp"
+                            android:layout_marginTop="@dimen/oe_space_sm"
+                            android:layout_marginBottom="@dimen/oe_space_sm"
                             android:background="?attr/colorOutlineVariant" />
 
                         <!-- Auto Update Checkbox -->
@@ -931,8 +931,8 @@
                             android:id="@+id/txt_update_command_desc"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginStart="32dp"
-                            android:layout_marginTop="2dp"
+                            android:layout_marginStart="@dimen/oe_space_xxxl"
+                            android:layout_marginTop="@dimen/oe_space_xs"
                             android:text="勾选后将自动生成 firstboot 脚本并在后台执行更新"
                             android:textSize="12sp"
                             android:textColor="?attr/colorOutline" />
@@ -941,10 +941,10 @@
                             android:id="@+id/txt_update_command_preview"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginStart="32dp"
-                            android:layout_marginTop="6dp"
+                            android:layout_marginStart="@dimen/oe_space_xxxl"
+                            android:layout_marginTop="@dimen/oe_icon_inline_gap"
                             android:background="@drawable/bg_status_badge"
-                            android:padding="8dp"
+                            android:padding="@dimen/oe_space_sm"
                             android:typeface="monospace"
                             android:textSize="11sp"
                             android:textColor="?attr/colorPrimary" />
@@ -956,7 +956,7 @@
                     android:id="@+id/card_spec_summary"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="14dp"
+                    android:layout_marginBottom="@dimen/oe_space_md"
                     app:cardCornerRadius="0dp"
                     app:cardElevation="0dp"
                     app:strokeWidth="1dp"
@@ -967,7 +967,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:padding="16dp">
+                        android:padding="@dimen/oe_space_lg">
 
                         <TextView
                             android:layout_width="wrap_content"
@@ -981,7 +981,7 @@
                             android:id="@+id/txt_creation_summary"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
+                            android:layout_marginTop="@dimen/oe_space_sm"
                             android:lineSpacingExtra="3dp"
                             android:textSize="13sp"
                             android:textColor="?attr/colorOnSurfaceVariant" />
@@ -993,7 +993,7 @@
                     android:id="@+id/card_download_panel"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="16dp"
+                    android:layout_marginBottom="@dimen/oe_space_lg"
                     app:cardCornerRadius="0dp"
                     app:cardElevation="0dp"
                     app:strokeWidth="1dp"
@@ -1004,7 +1004,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:padding="16dp">
+                        android:padding="@dimen/oe_space_lg">
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btn_wizard_init"
@@ -1025,7 +1025,7 @@
                             android:id="@+id/layout_download_progress"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="12dp"
+                            android:layout_marginTop="@dimen/oe_space_md"
                             android:orientation="vertical"
                             android:visibility="gone">
 
@@ -1042,7 +1042,7 @@
                                 android:id="@+id/progress_download_bar"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:layout_marginTop="8dp"
+                                android:layout_marginTop="@dimen/oe_space_sm"
                                 android:max="100"
                                 android:progress="0"
                                 app:indicatorColor="?attr/colorPrimary"
@@ -1054,7 +1054,7 @@
                                 android:id="@+id/txt_download_speed_eta"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:layout_marginTop="6dp"
+                                android:layout_marginTop="@dimen/oe_icon_inline_gap"
                                 android:text="-- MB/s · 已下载 0 MB / 0 MB"
                                 android:textSize="12sp"
                                 android:textColor="?attr/colorOutline" />
@@ -1063,7 +1063,7 @@
                                 android:id="@+id/txt_download_mirror"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:layout_marginTop="4dp"
+                                android:layout_marginTop="@dimen/oe_space_xs"
                                 android:text="镜像节点：--"
                                 android:textSize="11sp"
                                 android:textColor="?attr/colorOutline" />
@@ -1074,7 +1074,7 @@
                 <!-- Step 4 Bottom Prev Button -->
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_step4_prev"
-                    style="@style/Widget.Material3.Button.TonalButton"
+                    style="@style/Widget.Orchestella.Button.Tonal"
                     android:layout_width="match_parent"
                     android:layout_height="52dp"
                     android:minHeight="52dp"

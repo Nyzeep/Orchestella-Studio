@@ -1,14 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 端口转发规则条目（sheet 内数据项）
+     卡片层级：二级数据卡；pre-bind 归一到 bg_oe_card 族
+     （colorSurfaceContainerLow + 发丝线），运行时 ThemeApplier 重涂。 -->
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginTop="4dp"
-    android:layout_marginBottom="4dp"
+    android:layout_marginTop="@dimen/oe_space_xs"
+    android:layout_marginBottom="@dimen/oe_space_xs"
     app:cardCornerRadius="0dp"
     app:cardElevation="0dp"
-    app:strokeWidth="1dp"
-    app:strokeColor="?attr/colorOutlineVariant">
+    app:strokeWidth="@dimen/oe_stroke_hairline"
+    app:strokeColor="?attr/colorOutlineVariant"
+    app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -16,25 +20,25 @@
         android:minHeight="56dp"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:paddingStart="12dp"
-        android:paddingEnd="8dp"
-        android:paddingTop="8dp"
-        android:paddingBottom="8dp">
+        android:paddingStart="@dimen/oe_space_md"
+        android:paddingEnd="@dimen/oe_space_sm"
+        android:paddingTop="@dimen/oe_space_sm"
+        android:paddingBottom="@dimen/oe_space_sm">
 
         <TextView
             android:id="@+id/tv_rule_protocol"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:background="@drawable/bg_status_badge"
-            android:paddingStart="6dp"
-            android:paddingTop="2dp"
-            android:paddingEnd="6dp"
-            android:paddingBottom="2dp"
+            android:paddingStart="@dimen/oe_icon_inline_gap"
+            android:paddingTop="@dimen/oe_space_xs"
+            android:paddingEnd="@dimen/oe_icon_inline_gap"
+            android:paddingBottom="@dimen/oe_space_xs"
             android:text="TCP"
             android:textSize="11sp"
             android:textStyle="bold"
             android:textColor="?attr/colorPrimary"
-            android:layout_marginEnd="10dp" />
+            android:layout_marginEnd="@dimen/oe_space_sm" />
 
         <LinearLayout
             android:layout_width="0dp"
@@ -68,7 +72,7 @@
             android:minWidth="48dp"
             android:minHeight="48dp"
             android:checked="true"
-            android:layout_marginEnd="4dp" />
+            android:layout_marginEnd="@dimen/oe_space_xs" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_rule_delete"

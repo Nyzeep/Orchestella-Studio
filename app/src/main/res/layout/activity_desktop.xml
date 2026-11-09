@@ -21,11 +21,11 @@
         android:layout_gravity="top"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:padding="8dp">
+        android:padding="@dimen/oe_space_sm">
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_switch_terminal"
-            style="@style/Widget.Material3.Button.TonalButton"
+            style="@style/Widget.Orchestella.Button.Tonal"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:minHeight="48dp"
@@ -33,52 +33,52 @@
             android:text="@string/desktop_open_terminal"
             android:textSize="12sp"
             android:textStyle="bold"
-            android:paddingStart="14dp"
-            android:paddingEnd="14dp" />
+            android:paddingStart="@dimen/oe_space_md"
+            android:paddingEnd="@dimen/oe_space_md" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_pointer_capture"
-            style="@style/Widget.Material3.Button.OutlinedButton"
+            style="@style/Widget.Orchestella.Button.Outlined"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:minHeight="48dp"
             app:cornerRadius="0dp"
-            android:layout_marginStart="8dp"
+            android:layout_marginStart="@dimen/oe_space_sm"
             android:text="@string/mouse_capture"
             android:textSize="12sp"
             android:textStyle="bold"
-            android:paddingStart="14dp"
-            android:paddingEnd="14dp" />
+            android:paddingStart="@dimen/oe_space_md"
+            android:paddingEnd="@dimen/oe_space_md" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_toggle_touch_mode"
-            style="@style/Widget.Material3.Button.TonalButton"
+            style="@style/Widget.Orchestella.Button.Tonal"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:minHeight="48dp"
             app:cornerRadius="0dp"
-            android:layout_marginStart="8dp"
+            android:layout_marginStart="@dimen/oe_space_sm"
             android:text="@string/touch_mode_trackpad_label"
             android:textSize="12sp"
             android:textStyle="bold"
-            android:paddingStart="14dp"
-            android:paddingEnd="14dp" />
+            android:paddingStart="@dimen/oe_space_md"
+            android:paddingEnd="@dimen/oe_space_md" />
 
         <LinearLayout
             android:id="@+id/desktop_hud_overlay"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:minHeight="44dp"
-            android:layout_marginStart="8dp"
+            android:layout_marginStart="@dimen/oe_space_sm"
             android:orientation="horizontal"
             android:gravity="center_vertical"
             android:background="@drawable/bg_status_badge"
             android:clickable="true"
             android:focusable="true"
-            android:paddingStart="10dp"
-            android:paddingEnd="10dp"
-            android:paddingTop="6dp"
-            android:paddingBottom="6dp">
+            android:paddingStart="@dimen/oe_space_sm"
+            android:paddingEnd="@dimen/oe_space_sm"
+            android:paddingTop="@dimen/oe_icon_inline_gap"
+            android:paddingBottom="@dimen/oe_icon_inline_gap">
 
             <TextView
                 android:id="@+id/desktop_hud_text"
@@ -98,7 +98,7 @@
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
         android:background="#CC1E1E1E"
-        android:padding="4dp">
+        android:padding="@dimen/oe_space_xs">
 
         <LinearLayout
             android:id="@+id/virtual_key_bar_layout"
