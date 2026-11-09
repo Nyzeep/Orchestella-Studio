@@ -8,7 +8,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="20dp">
+        android:padding="@dimen/oe_space_xl">
 
         <TextView
             android:layout_width="wrap_content"
@@ -21,7 +21,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
+            android:layout_marginTop="@dimen/oe_space_xs"
             android:text="基于宿主硬件感知与防 OOM 安全防护"
             android:textSize="12sp"
             android:textColor="?attr/colorOutline" />
@@ -29,8 +29,8 @@
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
-            android:layout_marginTop="12dp"
-            android:layout_marginBottom="12dp"
+            android:layout_marginTop="@dimen/oe_space_md"
+            android:layout_marginBottom="@dimen/oe_space_md"
             android:background="?attr/colorOutlineVariant" />
 
         <!-- 1. vCPU Cores Slider -->
@@ -64,7 +64,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:minHeight="48dp"
-            android:layout_marginTop="6dp"
+            android:layout_marginTop="@dimen/oe_icon_inline_gap"
             android:max="7"
             android:progress="1" />
 
@@ -72,7 +72,7 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="@dimen/oe_space_lg"
             android:orientation="horizontal"
             android:gravity="center_vertical">
 
@@ -99,12 +99,12 @@
             android:id="@+id/hw_ram_zone_status"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="@dimen/oe_space_xs"
             android:background="@drawable/bg_status_badge"
-            android:paddingStart="8dp"
-            android:paddingTop="3dp"
-            android:paddingEnd="8dp"
-            android:paddingBottom="3dp"
+            android:paddingStart="@dimen/oe_space_sm"
+            android:paddingTop="@dimen/oe_space_xs"
+            android:paddingEnd="@dimen/oe_space_sm"
+            android:paddingBottom="@dimen/oe_space_xs"
             android:text="@string/hardware_ram_zone_green"
             android:textSize="11sp"
             android:textColor="@color/zone_green" />
@@ -114,7 +114,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:minHeight="48dp"
-            android:layout_marginTop="6dp"
+            android:layout_marginTop="@dimen/oe_icon_inline_gap"
             android:max="30"
             android:progress="6" />
 
@@ -122,7 +122,7 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="@dimen/oe_space_lg"
             android:orientation="horizontal"
             android:gravity="center_vertical">
 
@@ -148,7 +148,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
+            android:layout_marginTop="@dimen/oe_space_xs"
             android:text="@string/hardware_disk_notice"
             android:textSize="11sp"
             android:textColor="?attr/colorOutline" />
@@ -158,7 +158,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:minHeight="48dp"
-            android:layout_marginTop="6dp"
+            android:layout_marginTop="@dimen/oe_icon_inline_gap"
             android:max="62"
             android:progress="6" />
 
@@ -167,7 +167,7 @@
             android:id="@+id/hw_gpu_switch"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="@dimen/oe_space_lg"
             android:text="@string/hardware_gpu_label"
             android:checked="true"
             android:textSize="14sp"
@@ -177,20 +177,20 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
+            android:layout_marginTop="@dimen/oe_space_xl"
             android:orientation="horizontal"
             android:gravity="end">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/hw_btn_cancel"
-                style="@style/Widget.Material3.Button.TextButton"
+                style="@style/Widget.Orchestella.Button.Text"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:minHeight="48dp"
                 app:cornerRadius="0dp"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
-                android:layout_marginEnd="8dp"
+                android:paddingStart="@dimen/oe_space_lg"
+                android:paddingEnd="@dimen/oe_space_lg"
+                android:layout_marginEnd="@dimen/oe_space_sm"
                 android:text="@string/hardware_cancel_btn" />
 
             <com.google.android.material.button.MaterialButton
@@ -200,8 +200,8 @@
                 android:layout_height="wrap_content"
                 android:minHeight="48dp"
                 app:cornerRadius="0dp"
-                android:paddingStart="20dp"
-                android:paddingEnd="20dp"
+                android:paddingStart="@dimen/oe_space_xl"
+                android:paddingEnd="@dimen/oe_space_xl"
                 android:textStyle="bold"
                 android:text="@string/hardware_save_btn" />
         </LinearLayout>
