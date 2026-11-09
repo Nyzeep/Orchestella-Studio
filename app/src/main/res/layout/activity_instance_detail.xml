@@ -118,38 +118,54 @@
                             android:textColor="@color/status_stopped" />
                     </LinearLayout>
 
-                    <!-- Realtime specs & IP status banner -->
+                    <!-- Realtime specs & IP status banner (surfaceLow well tier) -->
                     <LinearLayout
+                        android:id="@+id/well_detail_specs"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="16dp"
-                        android:background="?attr/colorSurfaceContainerLow"
+                        android:background="@drawable/bg_oe_well"
                         android:padding="12dp"
                         android:orientation="horizontal">
 
-                        <TextView
-                            android:id="@+id/detail_specs_summary"
+                        <LinearLayout
+                            style="@style/Widget.Orchestella.InlineIconRow"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:drawableStart="@drawable/ic_cpu"
-                            android:drawablePadding="6dp"
-                            android:gravity="center_vertical"
-                            android:text="2 vCPU · 2048 MB · 8 GB"
-                            android:textSize="12sp"
-                            android:textColor="?attr/colorOnSurfaceVariant" />
+                            android:layout_weight="1">
 
-                        <TextView
-                            android:id="@+id/detail_ip_address"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:drawableStart="@drawable/ic_network"
-                            android:drawableTint="?attr/colorOnSurfaceVariant"
-                            android:drawablePadding="6dp"
-                            android:gravity="center_vertical"
-                            android:text="IP: 离线"
-                            android:textSize="12sp"
-                            android:textColor="?attr/colorOnSurfaceVariant" />
+                            <ImageView
+                                style="@style/Widget.Orchestella.InlineIcon"
+                                app:srcCompat="@drawable/ic_cpu"
+                                app:tint="?attr/colorOnSurfaceVariant" />
+
+                            <TextView
+                                android:id="@+id/detail_specs_summary"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:gravity="center_vertical"
+                                android:text="2 vCPU · 2048 MB · 8 GB"
+                                android:textSize="12sp"
+                                android:textColor="?attr/colorOnSurfaceVariant" />
+                        </LinearLayout>
+
+                        <LinearLayout style="@style/Widget.Orchestella.InlineIconRow">
+
+                            <ImageView
+                                style="@style/Widget.Orchestella.InlineIcon"
+                                app:srcCompat="@drawable/ic_network"
+                                app:tint="?attr/colorOnSurfaceVariant" />
+
+                            <TextView
+                                android:id="@+id/detail_ip_address"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:gravity="center_vertical"
+                                android:text="IP: 离线"
+                                android:textSize="12sp"
+                                android:textColor="?attr/colorOnSurfaceVariant" />
+                        </LinearLayout>
                     </LinearLayout>
 
                     <!-- Core Action Buttons -->
@@ -265,78 +281,38 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/tab_detail_overview"
-                        style="@style/Widget.Material3.Button.OutlinedButton"
-                        android:layout_width="wrap_content"
-                        android:layout_height="40dp"
-                        android:insetTop="0dp"
-                        android:insetBottom="0dp"
-                        android:paddingStart="11dp"
-                        android:paddingEnd="11dp"
+                        style="@style/Widget.Orchestella.DetailTab"
                         app:icon="@drawable/ic_sym_pin"
-                        app:iconSize="16dp"
-                        app:iconGravity="textStart"
                         android:text="概览"
-                        android:textSize="13sp" />
+                        />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/tab_detail_hardware"
-                        style="@style/Widget.Material3.Button.OutlinedButton"
-                        android:layout_width="wrap_content"
-                        android:layout_height="40dp"
-                        android:insetTop="0dp"
-                        android:insetBottom="0dp"
-                        android:paddingStart="11dp"
-                        android:paddingEnd="11dp"
+                        style="@style/Widget.Orchestella.DetailTab"
                         app:icon="@drawable/ic_sym_bolt"
-                        app:iconSize="16dp"
-                        app:iconGravity="textStart"
                         android:text="硬件"
-                        android:textSize="13sp" />
+                        />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/tab_detail_storage"
-                        style="@style/Widget.Material3.Button.OutlinedButton"
-                        android:layout_width="wrap_content"
-                        android:layout_height="40dp"
-                        android:insetTop="0dp"
-                        android:insetBottom="0dp"
-                        android:paddingStart="11dp"
-                        android:paddingEnd="11dp"
+                        style="@style/Widget.Orchestella.DetailTab"
                         app:icon="@drawable/ic_sym_storage"
-                        app:iconSize="16dp"
-                        app:iconGravity="textStart"
                         android:text="存储"
-                        android:textSize="13sp" />
+                        />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/tab_detail_network"
-                        style="@style/Widget.Material3.Button.OutlinedButton"
-                        android:layout_width="wrap_content"
-                        android:layout_height="40dp"
-                        android:insetTop="0dp"
-                        android:insetBottom="0dp"
-                        android:paddingStart="11dp"
-                        android:paddingEnd="11dp"
+                        style="@style/Widget.Orchestella.DetailTab"
                         app:icon="@drawable/ic_sym_globe"
-                        app:iconSize="16dp"
-                        app:iconGravity="textStart"
                         android:text="网络"
-                        android:textSize="13sp" />
+                        />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/tab_detail_maintenance"
-                        style="@style/Widget.Material3.Button.OutlinedButton"
-                        android:layout_width="wrap_content"
-                        android:layout_height="40dp"
-                        android:insetTop="0dp"
-                        android:insetBottom="0dp"
-                        android:paddingStart="11dp"
-                        android:paddingEnd="11dp"
+                        style="@style/Widget.Orchestella.DetailTab"
                         app:icon="@drawable/ic_sym_warning"
-                        app:iconSize="16dp"
-                        app:iconGravity="textStart"
                         android:text="维护"
-                        android:textSize="13sp" />
+                        />
 
                 </com.google.android.material.button.MaterialButtonToggleGroup>
             </HorizontalScrollView>
@@ -375,17 +351,26 @@
                             android:orientation="horizontal"
                             android:gravity="center_vertical">
 
-                            <TextView
+                            <LinearLayout
+                                style="@style/Widget.Orchestella.InlineIconRow"
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:drawableStart="@drawable/ic_terminal"
-                                android:drawablePadding="6dp"
-                                android:gravity="center_vertical"
-                                android:text="SSH 远程终端连接"
-                                android:textSize="14sp"
-                                android:textStyle="bold"
-                                android:textColor="?attr/colorOnSurface" />
+                                android:layout_weight="1">
+
+                                <ImageView
+                                    style="@style/Widget.Orchestella.InlineIcon"
+                                    app:srcCompat="@drawable/ic_terminal"
+                                    app:tint="?attr/colorOnSurface" />
+
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="SSH 远程终端连接"
+                                    android:textSize="14sp"
+                                    android:textStyle="bold"
+                                    android:textColor="?attr/colorOnSurface" />
+                            </LinearLayout>
 
                             <TextView
                                 android:layout_width="wrap_content"
@@ -651,26 +636,39 @@
                         android:orientation="vertical"
                         android:padding="16dp">
 
-                        <TextView
-                            android:id="@+id/tv_storage_physical"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:drawableStart="@drawable/ic_disk"
-                            android:drawablePadding="6dp"
-                            android:text="实际物理占用：1.2 GB"
-                            android:textSize="13sp"
-                            android:textColor="?attr/colorOnSurface" />
+                        <LinearLayout style="@style/Widget.Orchestella.InlineIconRow">
 
-                        <TextView
-                            android:id="@+id/tv_storage_logical"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
-                            android:drawableStart="@drawable/ic_disk"
-                            android:drawablePadding="6dp"
-                            android:text="逻辑虚拟上限：8 GB (稀疏增量扩容)"
-                            android:textSize="13sp"
-                            android:textColor="?attr/colorOutline" />
+                            <ImageView
+                                style="@style/Widget.Orchestella.InlineIcon"
+                                app:srcCompat="@drawable/ic_disk"
+                                app:tint="?attr/colorOnSurface" />
+
+                            <TextView
+                                android:id="@+id/tv_storage_physical"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="实际物理占用：1.2 GB"
+                                android:textSize="13sp"
+                                android:textColor="?attr/colorOnSurface" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            style="@style/Widget.Orchestella.InlineIconRow"
+                            android:layout_marginTop="6dp">
+
+                            <ImageView
+                                style="@style/Widget.Orchestella.InlineIcon"
+                                app:srcCompat="@drawable/ic_disk"
+                                app:tint="?attr/colorOutline" />
+
+                            <TextView
+                                android:id="@+id/tv_storage_logical"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="逻辑虚拟上限：8 GB (稀疏增量扩容)"
+                                android:textSize="13sp"
+                                android:textColor="?attr/colorOutline" />
+                        </LinearLayout>
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -742,27 +740,38 @@
                         android:orientation="vertical"
                         android:padding="16dp">
 
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:drawableStart="@drawable/ic_network"
-                            android:drawableTint="?attr/colorOnSurface"
-                            android:drawablePadding="6dp"
-                            android:text="@string/console_network_mode"
-                            android:textSize="13sp"
-                            android:textColor="?attr/colorOnSurface" />
+                        <LinearLayout style="@style/Widget.Orchestella.InlineIconRow">
 
-                        <TextView
-                            android:id="@+id/tv_network_ip_detail"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
-                            android:drawableStart="@drawable/ic_network"
-                            android:drawableTint="?attr/colorOutline"
-                            android:drawablePadding="6dp"
-                            android:text="分配虚拟 IP：192.168.127.15"
-                            android:textSize="13sp"
-                            android:textColor="?attr/colorOutline" />
+                            <ImageView
+                                style="@style/Widget.Orchestella.InlineIcon"
+                                app:srcCompat="@drawable/ic_network"
+                                app:tint="?attr/colorOnSurface" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="@string/console_network_mode"
+                                android:textSize="13sp"
+                                android:textColor="?attr/colorOnSurface" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            style="@style/Widget.Orchestella.InlineIconRow"
+                            android:layout_marginTop="6dp">
+
+                            <ImageView
+                                style="@style/Widget.Orchestella.InlineIcon"
+                                app:srcCompat="@drawable/ic_network"
+                                app:tint="?attr/colorOutline" />
+
+                            <TextView
+                                android:id="@+id/tv_network_ip_detail"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="分配虚拟 IP：192.168.127.15"
+                                android:textSize="13sp"
+                                android:textColor="?attr/colorOutline" />
+                        </LinearLayout>
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btn_manage_port_forwarding"

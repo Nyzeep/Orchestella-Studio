@@ -101,34 +101,46 @@
             android:orientation="horizontal"
             android:gravity="center_vertical">
 
-            <TextView
-                android:id="@+id/card_hardware_specs"
+            <LinearLayout
+                style="@style/Widget.Orchestella.InlineIconRow"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:drawableStart="@drawable/ic_cpu"
-                android:drawableTint="#8E929B"
-                android:drawablePadding="6dp"
-                android:gravity="center_vertical"
-                android:singleLine="true"
-                android:ellipsize="end"
-                android:fontFamily="monospace"
-                android:text="2 vCPU · 2048 MB · 8 GB"
-                android:textSize="11sp"
-                android:textColor="#8E929B" />
+                android:layout_weight="1">
 
-            <TextView
-                android:id="@+id/card_ip_address"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:drawableStart="@drawable/ic_network"
-                android:drawableTint="#8E929B"
-                android:drawablePadding="4dp"
-                android:gravity="center_vertical"
-                android:fontFamily="monospace"
-                android:text="192.168.127.15"
-                android:textSize="11sp"
-                android:textColor="#8E929B" />
+                <ImageView
+                    style="@style/Widget.Orchestella.InlineIcon"
+                    app:srcCompat="@drawable/ic_cpu"
+                    app:tint="#8E929B" />
+
+                <TextView
+                    android:id="@+id/card_hardware_specs"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:singleLine="true"
+                    android:ellipsize="end"
+                    android:fontFamily="monospace"
+                    android:text="2 vCPU · 2048 MB · 8 GB"
+                    android:textSize="11sp"
+                    android:textColor="#8E929B" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/Widget.Orchestella.InlineIconRow">
+
+                <ImageView
+                    style="@style/Widget.Orchestella.InlineIcon"
+                    app:srcCompat="@drawable/ic_network"
+                    app:tint="#8E929B" />
+
+                <TextView
+                    android:id="@+id/card_ip_address"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:text="192.168.127.15"
+                    android:textSize="11sp"
+                    android:textColor="#8E929B" />
+            </LinearLayout>
         </LinearLayout>
 
         <!-- Divider line -->
