@@ -115,8 +115,8 @@
 - lint：终集成 0 error。
 - 敏感门：每次合并后 SENSITIVE_DATA_OK。
 - CI：批次1/2 各 push 全绿（c-uml 4m55s 绿）；ec387e05 首轮遭平台 provisioning
-  瞬断（test+package-gate 未创建），重跑后 **Contract & Unit Tests 通过**
-  （android-package-gate 于 attempt3 重试中）。
+  瞬断（startup_failure 型缺 job，不可 rerun）——三 job 经分 attempt 与空提交
+  d56cbdb5 新 run 分别验证，**终态 CI @ d56cbdb5 全绿（4m11s，三 job 一次通过）**。
 - 真机：ec387e05 构建 APK 4546e5f6（清残留后构建）上机，进程级冷启动零崩溃；
   UI 走查因设备锁屏转人工（清单：B §6 五点、D §3 八点、E §5 五点、F §6 六点）。
 
