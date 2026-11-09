@@ -9,8 +9,6 @@ import io.github.nyzeep.orchestella.runtime.contract.BridgeControl;
 import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract;
 import io.github.nyzeep.orchestella.runtime.contract.SessionCapabilities;
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig;
-import io.github.nyzeep.orchestella.runtime.distro.DistroCatalogRegistry;
-import io.github.nyzeep.orchestella.runtime.distro.DistroManifest;
 import io.github.nyzeep.orchestella.runtime.engineqemu.QemuLaunchSpec;
 import io.github.nyzeep.orchestella.runtime.engineqemu.QemuProcessLauncher;
 import io.github.nyzeep.orchestella.runtime.engineqemu.RuntimeArtifactManifest;
@@ -844,14 +842,7 @@ public final class QemuInstanceLauncher {
 
     /** Non-secret distro id for telemetry; unknown or ambiguous filenames stay honest. */
     static String resolveDistroId(String rootfsFileName) {
-        if (rootfsFileName == null || rootfsFileName.isEmpty()) return "unknown";
-        String matched = null;
-        for (DistroManifest manifest : DistroCatalogRegistry.createDefault().listAll()) {
-            if (!rootfsFileName.equals(manifest.rootfsFileName())) continue;
-            if (matched != null && !matched.equals(manifest.id())) return "unknown";
-            matched = manifest.id();
-        }
-        return matched == null ? "unknown" : matched;
+        return QemuLaunchEvidence.resolveDistroId(rootfsFileName);
     }
 
     /**
@@ -919,19 +910,7 @@ public final class QemuInstanceLauncher {
      * rather than guess a digest.
      */
     static String resolveRootfsSha256(String rootfsFileName) {
-        if (rootfsFileName == null || rootfsFileName.isEmpty()) {
-            return null;
-        }
-        String resolved = null;
-        for (DistroManifest manifest : DistroCatalogRegistry.createDefault().listAll()) {
-            if (rootfsFileName.equals(manifest.rootfsFileName())) {
-                if (resolved != null && !resolved.equals(manifest.sha256())) {
-                    return null;
-                }
-                resolved = manifest.sha256();
-            }
-        }
-        return resolved;
+        return QemuLaunchEvidence.resolveRootfsSha256(rootfsFileName);
     }
 
     /**
@@ -940,25 +919,13 @@ public final class QemuInstanceLauncher {
      */
     static boolean isProvisionedForInstance(
             java.nio.file.Path instancesDirectory, String instanceId, String rootfsSha256) {
-        if (instancesDirectory == null || instanceId == null || instanceId.isEmpty()
-                || rootfsSha256 == null) {
-            return false;
-        }
-        try {
-            InstanceLifecycle.Instance instance =
-                    new InstanceLifecycle.FileStore(instancesDirectory).load(instanceId);
-            return instance.isProvisionedFor(rootfsSha256);
-        } catch (IOException | RuntimeException unavailable) {
-            return false;
-        }
+        return QemuLaunchEvidence.isProvisionedForInstance(instancesDirectory, instanceId, rootfsSha256);
     }
 
     /** Resolves the catalog digest for the launch filename, then checks persisted evidence. */
     static boolean credentialsOnlyLaunch(
             java.nio.file.Path instancesDirectory, String instanceId, String rootfsFileName) {
-        String rootfsSha256 = resolveRootfsSha256(rootfsFileName);
-        return rootfsSha256 != null
-                && isProvisionedForInstance(instancesDirectory, instanceId, rootfsSha256);
+        return QemuLaunchEvidence.credentialsOnlyLaunch(instancesDirectory, instanceId, rootfsFileName);
     }
 
     /**
@@ -969,23 +936,7 @@ public final class QemuInstanceLauncher {
      */
     static PersistentTerminalSessionPool.ProvisioningListener provisioningRecorder(
             InstanceLifecycle.Controller controller, String instanceId, String rootfsSha256) {
-        if (controller == null || instanceId == null || rootfsSha256 == null) {
-            return null;
-        }
-        return (reportedInstanceId, markerVersion) -> {
-            if (!instanceId.equals(reportedInstanceId)) {
-                return;
-            }
-            try {
-                controller.recordProvisioning(
-                        reportedInstanceId,
-                        new InstanceLifecycle.ProvisioningEvidence(
-                                markerVersion, rootfsSha256, System.currentTimeMillis()));
-            } catch (IOException | RuntimeException failed) {
-                // Evidence is advisory: never let metadata persistence break the pump thread.
-                Log.w(TAG, "provisioning-record-failed");
-            }
-        };
+        return QemuLaunchEvidence.provisioningRecorder(controller, instanceId, rootfsSha256);
     }
 
     private PersistentTerminalSessionPool.ProvisioningListener createProvisioningRecorder(

@@ -1648,33 +1648,6 @@ class MainActivity : AppCompatActivity() {
         startActivity(intent)
     }
 
-    private fun showCrashDiagnosticDialog(instance: InstanceLifecycle.Instance) {
-        val diag = instance.crashDiagnostic() ?: return
-        val message = buildString {
-            appendLine(getString(R.string.crash_dialog_exit_code, diag.exitCode()))
-            if (diag.logPath() != null) {
-                appendLine(getString(R.string.crash_dialog_log_path, diag.logPath()))
-            }
-            if (diag.message() != null) {
-                appendLine(getString(R.string.crash_dialog_message, diag.message()))
-            }
-        }
-        AlertDialog.Builder(this)
-            .setTitle(R.string.crash_dialog_title)
-            .setMessage(message)
-            .setPositiveButton(R.string.credentials_close, null)
-            .apply {
-                if (diag.logPath() != null) {
-                    setNeutralButton(R.string.crash_dialog_copy) { _, _ ->
-                        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("CrashLogPath", diag.logPath().toString()))
-                        Toast.makeText(this@MainActivity, "日志路径已复制", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            }
-            .show().also { ThemeApplier.apply(it) }
-    }
-
     private fun showInstanceActionBottomSheet(instance: InstanceLifecycle.Instance, uiModel: InstanceCardUiModel) {
         val sheet = InstanceActionBottomSheet(this, instance, uiModel, object : InstanceActionBottomSheet.Callbacks {
             override fun onLaunchDesktop(instance: InstanceLifecycle.Instance) {
