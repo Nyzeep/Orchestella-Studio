@@ -37,7 +37,7 @@ class SetupWizardModel(
             id = "ubuntu",
             displayName = "Ubuntu Linux",
             version = "24.04",
-            tag = "🐧 工业标准 · 广泛支持 · 云原生首选",
+            tag = "工业标准 · 广泛支持 · 云原生首选",
             description = "工业标准、生态广泛、深度集成云原生开发栈、云原生首选",
             approxDownloadSize = "~30 MB",
             rootfsFileName = "ubuntu-base-24.04.5-base-arm64.tar.gz"
@@ -46,7 +46,7 @@ class SetupWizardModel(
             id = "debian",
             displayName = "Debian Linux",
             version = "13",
-            tag = "🌀 稳如磐石 · 纯净开源 · 经典基石",
+            tag = "稳如磐石 · 纯净开源 · 经典基石",
             description = "生态丰富、开箱即用、预置全套 apt 包管理、适合完整桌面开发与编译工作流",
             approxDownloadSize = "~90 MB",
             rootfsFileName = "debian-13-rootfs.tar.xz"
@@ -55,7 +55,7 @@ class SetupWizardModel(
             id = "fedora",
             displayName = "Fedora Linux",
             version = "43",
-            tag = "🎩 前沿创新 · RPM 生态 · 开发者友好",
+            tag = "前沿创新 · RPM 生态 · 开发者友好",
             description = "前沿创新、DNF 与 RPM 现代生态、开发者友好且兼容最新技术",
             approxDownloadSize = "~52 MB",
             rootfsFileName = "fedora-43-minimal-rootfs.tar.gz"
@@ -64,7 +64,7 @@ class SetupWizardModel(
             id = "arch",
             displayName = "Arch Linux ARM",
             version = "rolling",
-            tag = "🏹 极客首选 · 滚动更新 · 软件前沿",
+            tag = "极客首选 · 滚动更新 · 软件前沿",
             description = "极客首选、pacman 极速滚动更新、软件前沿与轻量定制",
             approxDownloadSize = "~830 MB",
             rootfsFileName = "ArchLinuxARM-aarch64-latest.tar.gz"
@@ -73,7 +73,7 @@ class SetupWizardModel(
             id = "opensuse",
             displayName = "openSUSE Leap",
             version = "15.6",
-            tag = "🦎 严谨规范 · YaST 工具 · 企业基线",
+            tag = "严谨规范 · YaST 工具 · 企业基线",
             description = "严谨规范、zypper 依赖解析与企业级基线架构，版本化稳定发布",
             approxDownloadSize = "~34 MB",
             rootfsFileName = "opensuse-leap-image.aarch64-15.6.0-lxc-Build19.146.tar.xz"
@@ -82,7 +82,7 @@ class SetupWizardModel(
             id = "almalinux",
             displayName = "AlmaLinux",
             version = "9",
-            tag = "💼 企业就绪 · RHEL 二进制兼容 · 社区驱动",
+            tag = "企业就绪 · RHEL 二进制兼容 · 社区驱动",
             description = "企业级 Linux、1:1 二进制兼容 RHEL、DNF/RPM 稳定生态与长期支持保障",
             approxDownloadSize = "~67 MB",
             rootfsFileName = "AlmaLinux-9-Base-rootfs.tar.gz"
@@ -91,7 +91,7 @@ class SetupWizardModel(
             id = "rocky",
             displayName = "Rocky Linux",
             version = "9.6",
-            tag = "🏔️ 坚如磐石 · 企业计算 · 生产级稳定",
+            tag = "坚如磐石 · 企业计算 · 生产级稳定",
             description = "生产级企业发行版、严格遵循上游 RHEL 标准、云原生容器与服务器首选",
             approxDownloadSize = "~50 MB",
             rootfsFileName = "Rocky-9-Container-Base-9.6-20250531.0.aarch64.tar.xz"

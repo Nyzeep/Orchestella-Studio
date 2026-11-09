@@ -222,7 +222,7 @@ class SettingsActivity : AppCompatActivity() {
                 }
 
                 val fastest = MirrorSpeedTester.selectFastest(results, candidates.first())
-                sb.append("\n⚡ 建议优选：").append(fastest.name())
+                sb.append("\n建议优选：").append(fastest.name())
                 txtSpeedTestResults.text = sb.toString().trim()
 
                 // If fastest matches Aliyun or TUNA, update spinner accordingly

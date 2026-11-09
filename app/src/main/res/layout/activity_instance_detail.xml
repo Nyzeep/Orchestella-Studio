@@ -272,7 +272,10 @@
                         android:insetBottom="0dp"
                         android:paddingStart="11dp"
                         android:paddingEnd="11dp"
-                        android:text="📌 概览"
+                        app:icon="@drawable/ic_sym_pin"
+                        app:iconSize="16dp"
+                        app:iconGravity="textStart"
+                        android:text="概览"
                         android:textSize="13sp" />
 
                     <com.google.android.material.button.MaterialButton
@@ -284,7 +287,10 @@
                         android:insetBottom="0dp"
                         android:paddingStart="11dp"
                         android:paddingEnd="11dp"
-                        android:text="⚡ 硬件"
+                        app:icon="@drawable/ic_sym_bolt"
+                        app:iconSize="16dp"
+                        app:iconGravity="textStart"
+                        android:text="硬件"
                         android:textSize="13sp" />
 
                     <com.google.android.material.button.MaterialButton
@@ -296,7 +302,10 @@
                         android:insetBottom="0dp"
                         android:paddingStart="11dp"
                         android:paddingEnd="11dp"
-                        android:text="💾 存储"
+                        app:icon="@drawable/ic_sym_storage"
+                        app:iconSize="16dp"
+                        app:iconGravity="textStart"
+                        android:text="存储"
                         android:textSize="13sp" />
 
                     <com.google.android.material.button.MaterialButton
@@ -308,7 +317,10 @@
                         android:insetBottom="0dp"
                         android:paddingStart="11dp"
                         android:paddingEnd="11dp"
-                        android:text="🌐 网络"
+                        app:icon="@drawable/ic_sym_globe"
+                        app:iconSize="16dp"
+                        app:iconGravity="textStart"
+                        android:text="网络"
                         android:textSize="13sp" />
 
                     <com.google.android.material.button.MaterialButton
@@ -320,7 +332,10 @@
                         android:insetBottom="0dp"
                         android:paddingStart="11dp"
                         android:paddingEnd="11dp"
-                        android:text="⚠️ 维护"
+                        app:icon="@drawable/ic_sym_warning"
+                        app:iconSize="16dp"
+                        app:iconGravity="textStart"
+                        android:text="维护"
                         android:textSize="13sp" />
 
                 </com.google.android.material.button.MaterialButtonToggleGroup>
@@ -343,7 +358,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="14dp"
                     app:cardCornerRadius="0dp"
-                    app:cardElevation="1dp"
+                    app:cardElevation="0dp"
                     app:strokeWidth="1dp"
                     app:strokeColor="?attr/colorOutlineVariant"
                     app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
@@ -413,7 +428,9 @@
                                 android:insetTop="0dp"
                                 android:insetBottom="0dp"
                                 app:cornerRadius="0dp"
-                                android:text="📋 复制命令"
+                                app:icon="@drawable/ic_copy"
+                                app:iconSize="16dp"
+                                android:text="复制命令"
                                 android:textSize="12sp" />
 
                             <com.google.android.material.button.MaterialButton
@@ -425,7 +442,9 @@
                                 android:insetTop="0dp"
                                 android:insetBottom="0dp"
                                 app:cornerRadius="0dp"
-                                android:text="⚙️ SSH 管理器"
+                                app:icon="@drawable/ic_settings"
+                                app:iconSize="16dp"
+                                android:text="SSH 管理器"
                                 android:textSize="12sp" />
                         </LinearLayout>
 
@@ -437,7 +456,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     app:cardCornerRadius="0dp"
-                    app:cardElevation="1dp"
+                    app:cardElevation="0dp"
                     app:strokeWidth="1dp"
                     app:strokeColor="?attr/colorOutlineVariant"
                     app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
@@ -508,7 +527,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     app:cardCornerRadius="0dp"
-                    app:cardElevation="1dp"
+                    app:cardElevation="0dp"
                     app:strokeWidth="1dp"
                     app:strokeColor="?attr/colorOutlineVariant"
                     app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
@@ -621,7 +640,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     app:cardCornerRadius="0dp"
-                    app:cardElevation="1dp"
+                    app:cardElevation="0dp"
                     app:strokeWidth="1dp"
                     app:strokeColor="?attr/colorOutlineVariant"
                     app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
@@ -712,7 +731,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     app:cardCornerRadius="0dp"
-                    app:cardElevation="1dp"
+                    app:cardElevation="0dp"
                     app:strokeWidth="1dp"
                     app:strokeColor="?attr/colorOutlineVariant"
                     app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
@@ -784,7 +803,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     app:cardCornerRadius="0dp"
-                    app:cardElevation="1dp"
+                    app:cardElevation="0dp"
                     app:strokeWidth="1.5dp"
                     app:strokeColor="@color/status_crashed"
                     app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
@@ -877,6 +896,8 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 app:cornerRadius="0dp"
+                                app:icon="@drawable/ic_restart_alt"
+                                app:iconSize="16dp"
                                 android:text="复位" />
                         </LinearLayout>
 

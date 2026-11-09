@@ -132,7 +132,7 @@ class PortForwardingBottomSheet(
             val btnDelete = itemView.findViewById<MaterialButton>(R.id.btn_rule_delete)
 
             tvProtocol.text = rule.protocol.name
-            tvPorts.text = "${rule.hostPort} ➔ ${rule.guestPort}"
+            tvPorts.text = "${rule.hostPort} → ${rule.guestPort}"
 
             if (rule.description.isNotEmpty()) {
                 tvDesc.text = rule.description

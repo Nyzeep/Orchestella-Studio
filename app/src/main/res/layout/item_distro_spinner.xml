@@ -37,7 +37,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
-            android:text="🐧 通用开发 · 云原生首选"
+            android:text="通用开发 · 云原生首选"
             android:textSize="11sp"
             android:textColor="?attr/colorPrimary" />
     </LinearLayout>
