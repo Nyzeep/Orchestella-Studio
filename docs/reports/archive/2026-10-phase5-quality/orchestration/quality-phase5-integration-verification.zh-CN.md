@@ -78,7 +78,7 @@ QEMU input ELF SHA `525469bdd64a565e7e52536915321f6ca307a976599f1e6ba72d2a643357
 
 ## 设备结果
 
-本轮起初 adb 无设备；构建后设备 MEY-AN00/API36 重新连接。重新预检：当前前台为系统 launcher，没有正在运行的 QEMU/gvproxy；主应用仍 code300/0.3.0-preview.1。实际读取安装的 base.apk 摘要 `53adad7f88e83359c721ed91f21a72a19dd86eeaa53ca7c910eddf7cd79d734b`，等于品质冻结 APK。
+本轮起初 adb 无设备；构建后设备 HONOR 档/API36 重新连接。重新预检：当前前台为系统 launcher，没有正在运行的 QEMU/gvproxy；主应用仍 code300/0.3.0-preview.1。实际读取安装的 base.apk 摘要 `53adad7f88e83359c721ed91f21a72a19dd86eeaa53ca7c910eddf7cd79d734b`，等于品质冻结 APK。
 
 已安装主应用证书 SHA-256 `473783ce71218e02b322ef4d5440d7ef19328431921475b8d0bf5f45ecf3bde0`；新候选 Android Debug 证书 `a831ede3237180a5741c98fa3062f5dc9975d775ef3b6ba3ac49b517c485ac01`。签名不兼容，保留数据的覆盖更新不可行。按 prompt 不读取/复制 release signing 材料、不卸载主应用、不清数据/改系统确认策略，本次未执行 install，也未 force-stop/启动旧应用冒充新代码。
 

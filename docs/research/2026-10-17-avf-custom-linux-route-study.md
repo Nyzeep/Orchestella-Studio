@@ -28,7 +28,7 @@
 | discussion2 | 主帖2026-01-06，更新2026-09-30；3顶层+1回复，pagination全部hasNextPage=false | 用户实测/评论，未给精确设备、ROM、adb版本；非产品端到端验收 |
 | AOSP Custom VM | android15-qpr1-release固定 `a435bfa0ea482e240d7d05d5f459e8304db149b2` | 用户指定cs链接的官方Gitiles等价源码；与Android16及目标ROM分开 |
 | AOSP Android16 | 已固定 `c984fc337c11ca5edc03ccf02037b2455dd8fcaf` | 解释服务检查与API，不冒充HONOR APEX精确源码 |
-| 当前手机 | 前一回合2026-10-17检测，HONOR MEY-AN00/SM8735/API36 | 本轮只引用，真实AVF Guest样本仍0 |
+| 当前手机 | 前一回合2026-10-17检测，HONOR 档/SM8735/API36 | 本轮只引用，真实AVF Guest样本仍0 |
 
 博客嵌入BV1PdaJzbEa4，但用户新视频文案没有给自身视频链接。不能把该旧iframe当小米18新测试的身份。所有抓取失败、动态文档、未核许可在各source ledger里记录；不以HTTP失败推不存在。下载只限必要公开小文件，无大型Debian镜像、上游脚本执行或整AOSP clone。
 
@@ -147,7 +147,7 @@ QUIC Gunyah官方README固定 `254727746fce809aba0e629a13711a954b246968`，明�
 
 ## 7. 对当前设备的含义
 
-当前已证：MEY-AN00/SM8735，Android16/API36，CONFIG_KVM/GUNYAH=y，/dev/gunyah有、/dev/kvm无；平台vm info退出0，仅protected，OS列表microdroid；旧US getCapabilities bits1且两权限已granted。当时普通App hiddenAPI受限、US访问App私有state EACCES，合成32B FD成功。这些是多道独立门，不互相替代。
+当前已证：HONOR 档/SM8735，Android16/API36，CONFIG_KVM/GUNYAH=y，/dev/gunyah有、/dev/kvm无；平台vm info退出0，仅protected，OS列表microdroid；旧US getCapabilities bits1且两权限已granted。当时普通App hiddenAPI受限、US访问App私有state EACCES，合成32B FD成功。这些是多道独立门，不互相替代。
 
 未知：精确后端/固件版本；为什么未开放nonprotected是芯片硅限制还是OEM配置/策略；protected实际Guestboot；合法customLinux boot/文件FD/网络/owner是否可交付。当前无硬件Guest成功样本，系统qcrosvm不能借用作本App通过证据。
 

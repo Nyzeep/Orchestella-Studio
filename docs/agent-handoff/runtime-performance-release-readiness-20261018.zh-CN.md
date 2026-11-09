@@ -9,7 +9,7 @@
 - 代码：T1/T2/T3/T4/T7/T8 已合入 main；T5/T6 deferred。
 - 本地：app 105 suites / 823 tests / 0 failures；contract 24；instance 15；engine-qemu 2；lint 0 error / 748 warning。
 - CI：PR #3 `Contract & Unit Tests` pass（3m33s）。
-- 真机（HONOR MEY-AN00 / Android 16 / API 36）：
+- 真机（HONOR 档 / Android 16 / API 36）：
   - T2 marker 已记录：`provisioning.markerVersion=1`，Ubuntu SHA-256 `a91d5a93...`。
   - T3 快速路径：initramfs `30,225,552 B → 1,327,092 B`，`rootfsBytes 29,936,675 → 0`，`INITRAMFS_BUILT 1115 ms → 62/75 ms`。
   - T4：运行中强制停止 `CONFIRMED` 约 102 ms；正常停止幂等 `ALREADY_STOPPED`；无 `qemu`/`gvproxy` 孤儿。

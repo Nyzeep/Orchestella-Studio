@@ -193,11 +193,19 @@ _INSTANCE_UUID_FRAGMENTS = (
     "192796b" "1-",
     "e7b9" "-4ed2-a7f4-689fcaa41b" "09",
 )
-_KNOWN_DEVICE_VALUES = frozenset({
-    "".join(_SERIAL_FRAGMENTS),
-    "".join(_INSTANCE_PREFIX_FRAGMENTS),
-    "".join(_INSTANCE_UUID_FRAGMENTS),
-})
+# Exact device model SKUs: same adjacent-literal discipline (no line in this
+# file contains the assembled token). 2026-11-10 audit found these surviving
+# the 2026-10-19 rewrite in 28 tracked files; coarse wording is the rule.
+_MODEL_FRAGMENTS = (
+    ("ME", "Y-AN", "00"),
+    ("ME", "Y_AN", "00"),
+    ("HN", "ME", "Y"),
+)
+_KNOWN_DEVICE_VALUES = frozenset(
+    {"".join(_SERIAL_FRAGMENTS), "".join(_INSTANCE_PREFIX_FRAGMENTS)}
+    | {"".join(f) for f in _MODEL_FRAGMENTS}
+    | set(_INSTANCE_UUID_FRAGMENTS)
+)
 
 # Absolute host paths. The lookbehind and lookahead keep URL scheme
 # separators and longer hex-like runs from being mistaken for drive paths.

@@ -2,7 +2,7 @@
 
 - Scope：2026-10-13 第二开发线的隔离实现、本地构建与审查交付；无 commit/push/远端 PR/release。
 - 工作区 `Orchestella_phase5_dev`；分支 `phase5/graphics-productivity-storage`；HEAD 基线 `8d0e8c75d769ecc645ea102b90a304c8657344a1`。
-- 第一会话 `Orchestella_dev` 和荣耀 MEY-AN00 始终独占；此批没有 APK 安装、force-stop、ADB server 重启或设备输入。
+- 第一会话 `Orchestella_dev` 和荣耀 HONOR 档 始终独占；此批没有 APK 安装、force-stop、ADB server 重启或设备输入。
 
 ## 本地产物与基线
 

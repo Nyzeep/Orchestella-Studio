@@ -1,6 +1,6 @@
 # 设备窗第三轮规格 · ACR 收口（2026-11-04）
 
-- 基线：main `777827e`，工作树干净；设备 device-mey（HONOR MEY_AN00 别名口径，Android 16/SDK36，4K 页，55% 电量 35°C 充电中）
+- 基线：main `777827e`，工作树干净；设备 device-mey（HONOR HONOR 档 别名口径，Android 16/SDK36，4K 页，55% 电量 35°C 充电中）
 - 任务来源：上一轮建议（W-FAB-03 + ACR 议程定稿 + 设备窗项）+ 记忆排队项「下窗 t9-matrix.sh 10 1 补 smp4/8」
 - 纪律：设备道串行（排程互斥）；联网取证带引用与四级置信；tracker 对账必须 gh/git 实证
 

@@ -11,7 +11,7 @@ def main():
     parser.add_argument("--apk", required=True, type=Path)
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
-    request = {"owner": "phase5", "status": "REQUESTED_NOT_GRANTED", "device": "HONOR MEY-AN00 API36",
+    request = {"owner": "phase5", "status": "REQUESTED_NOT_GRANTED", "device": "HONOR 档 API36",
                "activity": "First session retains exclusive access until an explicit local handoff",
                "apk": str(args.apk), "applicationId": "io.github.nyzeep.orchestella.phase5",
                "estimatedMinutes": 90,

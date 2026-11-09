@@ -65,7 +65,7 @@ External gates: 当前 HONOR 设备、QA APK、MANAGE_VIRTUAL_MACHINE（必要�
 
 ### 前置与构建
 
-- 操作者指定替代 QA 设备（别名 `qa-alt-01`，API 36；不是 HONOR MEY-AN00，按要求只写别名）。APK 安装成功，`MANAGE_VIRTUAL_MACHINE`/`USE_CUSTOM_VIRTUAL_MACHINE` 均 granted。
+- 操作者指定替代 QA 设备（别名 `qa-alt-01`，API 36；不是 HONOR 档，按要求只写别名）。APK 安装成功，`MANAGE_VIRTUAL_MACHINE`/`USE_CUSTOM_VIRTUAL_MACHINE` 均 granted。
 - payload：NDK 27.0.12077973 构建成功，`T AVmPayload_main`，三个 `PT_LOAD p_align=0x4000`；staged SHA256 `7f5c4d72…`，APK 内 stripped SHA256 `0d40e13f…`；`libvm_payload.so` 未打包。
 - 首次真机 create 因 v2-only APK 无法生成 idsig 而失败；在现有 debug signing config 启用 v3 后通过。最终 APK SHA256 `40b9b211…`，test APK `0e26c4dd…`；证书/渠道未变。
 - payload 默认端口为 5100–5103，与 harness 默认 9100–9103 不一致；最终运行使用显式覆盖 5100–5103。后续需收敛默认值。

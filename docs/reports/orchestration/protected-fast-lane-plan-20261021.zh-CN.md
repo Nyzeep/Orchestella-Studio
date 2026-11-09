@@ -43,7 +43,7 @@
 
 ### 1.3 当前设备与 non-protected 事实
 
-- HONOR MEY-AN00 / SM8735 / Android 16 / API 36；`android.software.virtualization_framework=true`，`com.android.virt` 存在。
+- HONOR 档 / SM8735 / Android 16 / API 36；`android.software.virtualization_framework=true`，`com.android.virt` 存在。
 - `vm info` 只声明 protected；`getCapabilities()=1`；`/dev/gunyah` 存在，`/dev/kvm` 不存在；后端更可能是 Gunyah，不是 pKVM。
 - 真实 AVF Guest 成功样本仍为 0；protected 平台 payload 也尚未真实跑通。
 - non-protected 在 AOSP 下不检查 `app_data_file` label，是 Full Linux AVF 的自洽路径；但当前 ROM 不声明 non-protected。未来候选设备包括 Pixel/Tensor、天玑 9400+、Exynos 2500 等，但**两份分享中的设备清单只是线索，不是本项目的验收证据**；购买前必须实测 `getCapabilities() & 2`、`setProtectedVm(false)`、App 私有盘、custom create/run/stop。

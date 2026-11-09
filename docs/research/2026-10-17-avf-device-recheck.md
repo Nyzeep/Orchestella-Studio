@@ -20,11 +20,11 @@
 
 | 字段 | 观察 |
 | --- | --- |
-| 厂商/型号 | HONOR / MEY-AN00，device HNMEY |
+| 厂商/型号 | HONOR / HONOR 档，device HONOR 档 |
 | SoC/平台 | QTI SM8735，board sun，hardware qcom |
 | CPU | 8个逻辑核，aarch64/arm64-v8a；公开CPU part集合0xd81、0xd82 |
 | Android/API | 16 / 36 |
-| ROM | build ID HONORMEY-AN00，incremental 10DLDLD170SP1C00E170，user/release-keys |
+| ROM | build ID HONORHONOR 档，incremental 10DLDLD170SP1C00E170，user/release-keys |
 | 安全补丁 | system/vendor均2026-07-01 |
 | Linux内核 | 6.6.118-android15-8-gf17133276a57-abogki518694926-4k |
 | 页面 | 4096字节；CONFIG_ARM64_4K_PAGES=y，16K not set |

@@ -2,7 +2,7 @@
 
 - 日期：2026-11-04（设备执行窗口 01:00–07:42 设备本地时间，单会话串行）
 - 基线：main `777827e` → 本轮两个推送 `803f097`（对账半）+ `b39e8e6`（敏感门）→ 本文随 T9 定案提交
-- 设备：device-mey（HONOR MEY_AN00，MagicOS，Android 16/SDK36，4K 页，8 核，USB 供电全程）；电量 55→60%，电池温度 34–38°C（43°C 熔断门未触发），Battery Saver OFF
+- 设备：device-mey（HONOR HONOR 档，MagicOS，Android 16/SDK36，4K 页，8 核，USB 供电全程）；电量 55→60%，电池温度 34–38°C（43°C 熔断门未触发），Battery Saver OFF
 - 输入：上一轮建议（W-FAB-03 + ACR 议程定稿 + 设备窗项）、记忆排队项「下窗 t9-matrix.sh 10 1 补 smp4/8」、规格 `.scratch/round-20261104-device-window/spec.md`
 - 纪律：设备道串行排程互斥；联网取证带引用与四级置信；tracker 对账必须 gh/git 实证；本轮无产品代码改动（ACR 未投票）
 

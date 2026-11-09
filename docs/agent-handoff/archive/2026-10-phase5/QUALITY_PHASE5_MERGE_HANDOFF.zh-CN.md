@@ -138,7 +138,7 @@ Phase 5 APK：`Orchestella-Phase5-local-debug.apk`。
 
 ### 真机已取得的结果与仍未闭合项
 
-设备为荣耀 MEY-AN00、API36；同轮 AVF预检声明/授权不等同 custom VM 服务可用，本机实际执行 QEMU。
+设备为荣耀 HONOR 档、API36；同轮 AVF预检声明/授权不等同 custom VM 服务可用，本机实际执行 QEMU。
 
 | 范围 | 冻结时结果 |
 | --- | --- |

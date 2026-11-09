@@ -31,7 +31,7 @@
 - 统一静态 Linux AArch64 agent：477400 bytes，SHA-256 `6c6470872f2bc45c56729bb4d9848f0f0b5e559f79dc8b3e64e3ba4c643893e1`。47 输入锁含 39 个实际消费头文件；无动态解释器/动态段、栈不可执行。
 - cpio 只更新唯一 agent，另 428 项 payload/mode 保全。七个 optional payload 与最终 canonical init/APK resource 相等。
 
-上述批准只覆盖被审源码与宿主/构建产物，不批准设备功能验收或公开二进制 release。荣耀 MEY-AN00/API36 已预检，安装主包与候选证书不兼容；新包没有安装，设备运行回归 **NOT_RUN**，原应用和实例数据保留。桌面/IDE/WebView、OEM AVF、Android 9p/SAF/USB、GPU/zero-copy 的实验、未运行或未实现状态保留；七发行版长测保持取消。
+上述批准只覆盖被审源码与宿主/构建产物，不批准设备功能验收或公开二进制 release。荣耀 HONOR 档/API36 已预检，安装主包与候选证书不兼容；新包没有安装，设备运行回归 **NOT_RUN**，原应用和实例数据保留。桌面/IDE/WebView、OEM AVF、Android 9p/SAF/USB、GPU/zero-copy 的实验、未运行或未实现状态保留；七发行版长测保持取消。
 
 ## 公开访问问题
 

@@ -50,7 +50,7 @@ Phase 5 的 14 个交付校验项、141 个文件闭包与 before 原始字节�
 
 完整本次结果、失败历史、APK 身份/签名及 NOT_RUN 矩阵见 [合流验证报告](quality-phase5-integration-verification.zh-CN.md)；小型脱敏摘要见 [verification-summary.json](../../../artifacts/quality-phase5-integration/verification-summary.json)。最终 App 663 项全绿、全适用 runtime checks、profile 完整 39 项全绿、lint 0 错误/688 警告、Android ARM64 NDK 与 APK 构建通过。
 
-候选 APK：`Orchestella/artifacts/quality-phase5-integration/delivery/Orchestella-Quality-Phase5-local-debug.apk`，71969178 bytes，SHA `e0ac730bd4e0441e6d9d347e7f25643f1ba9b0b00c4c8fa5a63474fdd8e7101a`；正式主 ID/code300/0.3.0-preview.1/min26/target36。Debug signer 与已安装主应用 release signer 不兼容。已核设备 MEY-AN00/API36、无既有 QEMU/gvproxy，已安装 base.apk 与品质冻结摘要一致；本次未尝试覆盖安装、未卸载或清数据，也未读取/复制 release 签名材料。设备运行回归因此 NOT_RUN，不能据宿主 fixture 宣称真机 Linux/桌面/IDE验收通过。
+候选 APK：`Orchestella/artifacts/quality-phase5-integration/delivery/Orchestella-Quality-Phase5-local-debug.apk`，71969178 bytes，SHA `e0ac730bd4e0441e6d9d347e7f25643f1ba9b0b00c4c8fa5a63474fdd8e7101a`；正式主 ID/code300/0.3.0-preview.1/min26/target36。Debug signer 与已安装主应用 release signer 不兼容。已核设备 HONOR 档/API36、无既有 QEMU/gvproxy，已安装 base.apk 与品质冻结摘要一致；本次未尝试覆盖安装、未卸载或清数据，也未读取/复制 release 签名材料。设备运行回归因此 NOT_RUN，不能据宿主 fixture 宣称真机 Linux/桌面/IDE验收通过。
 
 ## 未完成与风险
 

@@ -43,7 +43,7 @@
 
 ## 4. 当前真机：已连接，但 AVF 尚未验证
 
-设备别名 `handoff-device-01`，本回合恰好1台adb状态device。型号 `MEY_AN00`（发现时），ROM build ID `HONORMEY-AN00`；当前Android user=0。与2026-10-15历史403取证设备不是可以默认相同的对象，不继承其grants/实例/ROM行为。
+设备别名 `handoff-device-01`，本回合恰好1台adb状态device。型号 `HONOR 档`（发现时），ROM build ID `HONORHONOR 档`；当前Android user=0。与2026-10-15历史403取证设备不是可以默认相同的对象，不继承其grants/实例/ROM行为。
 
 | 只读字段 | 观察 | 不能推导 |
 | --- | --- | --- |

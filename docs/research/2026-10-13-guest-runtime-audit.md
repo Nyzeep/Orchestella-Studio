@@ -65,7 +65,7 @@
 
 ## 主会话设备观测与待验事项
 
-主会话在 Honor MEY-AN00 上运行 0.3.0 Ubuntu 新实例，基础链已得到真实验证：首次 rootfs 解包约 357 秒；其间 QEMU CPU 活跃、根盘 allocated 大小增长，因此先前仅有 mount 日志不能推出无限循环。随后 guest 网络 ping/TCP/DNS 可通，基础包安装、init repair、CA、machine identity、locale、SSH 配置和 service enablement 成功，恢复阶段正确为 awaiting-init 且无完成标记。主会话正常关机后复用同一根盘冷启动，成功运行真实 systemd PID1，cgroup2、dbus 和 SSH active、DNS 正常；guest 243.722 秒记录 `status=ready stage=verified reason=none attempt=2` 并到达 `multi-user.target`。
+主会话在 HONOR 档 上运行 0.3.0 Ubuntu 新实例，基础链已得到真实验证：首次 rootfs 解包约 357 秒；其间 QEMU CPU 活跃、根盘 allocated 大小增长，因此先前仅有 mount 日志不能推出无限循环。随后 guest 网络 ping/TCP/DNS 可通，基础包安装、init repair、CA、machine identity、locale、SSH 配置和 service enablement 成功，恢复阶段正确为 awaiting-init 且无完成标记。主会话正常关机后复用同一根盘冷启动，成功运行真实 systemd PID1，cgroup2、dbus 和 SSH active、DNS 正常；guest 243.722 秒记录 `status=ready stage=verified reason=none attempt=2` 并到达 `multi-user.target`。
 
 Canonical 设备证据为项目外部 `Orchestella/artifacts/quality-20261013/evidence/ubuntu-native-final-progress.log.txt`，本 agent 只读核对：953 行 `cgroup2fs`、954/955 行 `active`、1005/1006 行 ready、1008 行 multi-user.target。该日志属于主会话；本 agent 没有操作设备，不能将这些运行归为自己的探针。此轮实测使用前一版模板；最后无共享挂载和 checkpoint 优化已在 45 项回归中通过，待最新 APK 冷启动复核。
 

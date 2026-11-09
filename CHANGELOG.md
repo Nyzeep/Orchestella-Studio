@@ -60,7 +60,7 @@
 
 ### Verified
 
-- **真机全链路（Honor MEY-AN00 / Android 16 / SM8735，2026-10-30）**：装 0.6.1 → 新建 Debian 13 →
+- **真机全链路（HONOR 档 / Android 16 / SM8735，2026-10-30）**：装 0.6.1 → 新建 Debian 13 →
   下载（节点 github.com，86.2 MB）→ 装配 → systemd 到 `getty.target` → `root@orchestella` 自动登录；
   `/etc/os-release` 为 Debian 13 (trixie)，`uname -r` 为 7.2.3。
 

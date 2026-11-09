@@ -30,7 +30,7 @@ Date: 2026-10-19
 - **Q3 关闭**：AOSP A16 QPR2 `android/virtmgr/src/virtualmachine.rs:679-710` 的 label 校验整段在 `if config.protectedVm` 内；non-protected 不检查 App 私有盘 label。ADR-0007 对 App-owner + non-protected 保住；真机 create 仍要在设备 effort 复核。
 - **Q4 对 non-protected 不适用**：DICE/pvmfw 是 protected VM 的启动链；raw custom kernel 只能 non-protected，protected 需要 pvmfw 签名 payload。不要为本 effort 设计“App 升级重建实例”的 DICE 迁移；持久 VM 配置路径稳定性由工单 03 处理。
 - **Q1 条件成立**：TerminalAppPlus（targetSdk 37 + hiddenapibypass 6.1）证明本进程豁免 + 两次 `pm grant` + non-protected 可跑通；但 Android 16 的 ART 变更曾破坏旧版，且 Google 不保证。工单 05 实现 App-owner 接缝，shell-owner 留作设备门失败后的下一 effort。
-- **设备门**：当前 HONOR MEY-AN00（SM8735/API 36）protected-only，`setProtectedVm(false)` 直接抛异常；不能作为 AVF custom Linux 交付路径。设备资格（Pixel 6 Pro/Pixel Tablet/Pixel 10/11 或 MT6991/GenieZone，必须实测 `getCapabilities` bit2）是下一个 effort 的入口，不属于本 map。
+- **设备门**：当前 HONOR 档（SM8735/API 36）protected-only，`setProtectedVm(false)` 直接抛异常；不能作为 AVF custom Linux 交付路径。设备资格（Pixel 6 Pro/Pixel Tablet/Pixel 10/11 或 MT6991/GenieZone，必须实测 `getCapabilities` bit2）是下一个 effort 的入口，不属于本 map。
 - **QEMU 边界**：QEMU 冻结功能，继续作为默认交付；本 map 不改 QEMU 引擎功能，只允许必要的 capability matrix 修正（04）和 CI（01）。发布 keystore/迁移/真机 20 次启停/T7 性能不在本 map。
 - **范围**：本 map 只做零设备代码硬化，不做真机、prototype、protected、shell-owner、H5 rig、QEMU 新功能。
 - **零设备收口（2026-10-20，Agent D / 10）**：01–10 的代码/测试/报告已完成，集成分支 `avf/zero-device-integration` 由 09→10 链构成；全量 runtime checks + app 875 tests + lint/assemble + APK 16KB gate 本地通过。真实 AVF 样本仍为 0，GitHub Actions 远端未执行。

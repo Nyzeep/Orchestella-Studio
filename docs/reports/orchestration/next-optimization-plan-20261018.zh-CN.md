@@ -65,7 +65,7 @@
 
 ### 1.6 AVF / Shizuku
 
-- 当前测试机 HONOR MEY-AN00 / SM8735 / API36：平台 `getCapabilities()` 只声明 protected，non-protected=false；无 `/dev/kvm`，有 Gunyah 节点。
+- 当前测试机 HONOR 档 / SM8735 / API36：平台 `getCapabilities()` 只声明 protected，non-protected=false；无 `/dev/kvm`，有 Gunyah 节点。
 - 生产 AVF 适配器在真机 `VirtualMachineCustomImageConfig$Builder.<init>` 处被 hidden API 拦截并回退 QEMU（项目报告）；真实 AVF Guest 成功样本仍为 0。
 - `VmHardwareConfig.DEFAULT_CPU_CORES = 2`，而 `ReflectiveAvfVirtualMachineApi.java:87-90` 只接受 1 个 vCPU；`AvfInstanceLauncher` 若拿到默认硬件配置会直接失败。AVF 默认 spec 本身是 1 vCPU，但 UI 默认配置是 2，这是一处语义不一致。
 - `ReflectiveAvfVirtualMachineApi.java:555-559` 把 `STATUS_DELETED=2` 当正常退出；AVF 异常终止可能被记录成正常关机。

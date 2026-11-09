@@ -40,7 +40,7 @@
 
 昨日canonical交付seal：`Orchestella/artifacts/avf-shizuku-next-stage/20261015/closeout/delivery-manifest.json`。只定点比较必要任务文件，禁止整仓/.git归档或对外上传。写本轮baseline/设备队列/操作账本到新外部批次，不覆盖昨日证据。
 
-当前设备别名handoff-device-01，交接时恰好1台adb device，MEY_AN00、Android16/API36、arm64、4KiB，feature=true，com.android.virt versionCode3；nonprotected声明未知、protected声明true，两权限/API能力未知。当前user0下精确查询未返回本App或Shizuku管理器。**这些是查询结果，安装/活实例/真实能力必须在新会话再次核查。** 本交接没有安装或启动VM，真实AVF样本仍0。
+当前设备别名handoff-device-01，交接时恰好1台adb device，HONOR 档、Android16/API36、arm64、4KiB，feature=true，com.android.virt versionCode3；nonprotected声明未知、protected声明true，两权限/API能力未知。当前user0下精确查询未返回本App或Shizuku管理器。**这些是查询结果，安装/活实例/真实能力必须在新会话再次核查。** 本交接没有安装或启动VM，真实AVF样本仍0。
 
 宿主今日 `subst`为空且W:/V:不存在。构建需ASCII路径，先确认盘符空闲再映射W:到主仓、V:到Orchestella外部根；禁止覆盖其他会话映射。SDK D:/AndroidSDK、JDK D:/JDK17、adb ADB_PATH，Git Bash adb设置MSYS_NO_PATHCONV=1。WSL Ubuntu-24.04启动前复核，复用既有缓存/工具链，不重装。
 

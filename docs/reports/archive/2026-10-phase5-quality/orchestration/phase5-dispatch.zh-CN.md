@@ -40,7 +40,7 @@ worker 仅拥有独立新模块及其测试/报告：图形通道核心；guest 
 
 SDK `D:/AndroidSDK`，Java `D:/JDK17`；W:/V:/O: 现有映射不改。短盘符先核对空闲再只绑定新工作区。独立 Gradle daemon/cache/output，Class A 依赖只读复用或定点复制。不改系统 PATH、注册表、服务、驱动、防火墙、虚拟化、ADB server。
 
-荣耀 MEY-AN00 / Android 16 / API 36 由第一会话独占；本会话不 install、force-stop、启动 VM、截屏/输入、方向切换或 ADB 重启。准备脚本与本地设备交接请求，只有明确交接才运行。未实测项目保留未运行标签，不用 mock/模板图像冒充 desktop/GPU/container 成功。
+荣耀 HONOR 档 / Android 16 / API 36 由第一会话独占；本会话不 install、force-stop、启动 VM、截屏/输入、方向切换或 ADB 重启。准备脚本与本地设备交接请求，只有明确交接才运行。未实测项目保留未运行标签，不用 mock/模板图像冒充 desktop/GPU/container 成功。
 
 ## 当前验证与状态
 

@@ -6,7 +6,7 @@
 
 ## 亮点
 
-- **重复启动不再重新打包整个发行版 rootfs**。已装配实例只嵌入约 60 KB 凭据段；Ubuntu 24.04 实测 initramfs `30,225,552 B → 1,327,092 B`，宿主 `INITRAMFS_BUILT` `1115 ms → 62 ms`（HONOR MEY-AN00 / Android 16 / 4 vCPU / 3656 MB）。
+- **重复启动不再重新打包整个发行版 rootfs**。已装配实例只嵌入约 60 KB 凭据段；Ubuntu 24.04 实测 initramfs `30,225,552 B → 1,327,092 B`，宿主 `INITRAMFS_BUILT` `1115 ms → 62 ms`（HONOR 档 / Android 16 / 4 vCPU / 3656 MB）。
 - **旧实例与证据缺失自动回退**。首次启动识别 guest provisioning marker 并持久化 evidence；移除 evidence 后实测回到 `30,225,552 B / 1005 ms`，不会误跳过 rootfs。
 - **停止更快且可确认**。跳过逐转发 remote `unexpose`，1 s 硬 deadline；运行中强制停止 `CONFIRMED` 约 **102 ms**，无 `qemu`/`gvproxy` 孤儿；正常停止幂等（`ALREADY_STOPPED`）。
 - **新增启动时间线**。每次启动写一行 `launch-timeline.jsonl`：stage、耗时、字节数、停止结果；不含 token、口令或按键。

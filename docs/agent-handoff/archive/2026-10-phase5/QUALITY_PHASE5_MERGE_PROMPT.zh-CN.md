@@ -246,7 +246,7 @@ Gradle8.13历史位于 `V:\gradle-8.13\bin\gradle.bat`，已有依赖cache `V:\g
 
 ## 11. 定向真机验证与未运行边界
 
-历史设备为荣耀MEY-AN00、Android16/API36，实际主线走QEMU。先重新列设备和前台运行状态，确认没有其它会话占用。用户已有此设备APK安装/调试授权；当前整合包与安全系统确认按该授权操作，不重设安全策略。Phase5历史 `REQUESTED_NOT_GRANTED`是当时独立`.phase5`会话请求，不能伪装成旧设备验收PASS，也不能沿用旧grant/serial执行其专用脚本。
+历史设备为荣耀HONOR 档、Android16/API36，实际主线走QEMU。先重新列设备和前台运行状态，确认没有其它会话占用。用户已有此设备APK安装/调试授权；当前整合包与安全系统确认按该授权操作，不重设安全策略。Phase5历史 `REQUESTED_NOT_GRANTED`是当时独立`.phase5`会话请求，不能伪装成旧设备验收PASS，也不能沿用旧grant/serial执行其专用脚本。
 
 需要的设备回归只针对合流影响：新APK身份/签名兼容，基础native init/读写/网络仍工作，终端clear/长输出阅读/命令高亮/重入，authenticated POWER后真实退出与冷文件保留，active网络DNS和loopback规则关闭/恢复。选择一个具备资源条件的已支持profile验证真实labwc显示与输入或普通用户开发服务；保存真实证据并关闭该批自己创建的临时服务/forward。不要恢复已经取消的七族任务。
 

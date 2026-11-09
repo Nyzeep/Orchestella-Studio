@@ -23,7 +23,7 @@
 | 证据 | 当前可以相信的结论 | 本计划不允许推导的结论 |
 | --- | --- | --- |
 | 最新503编排/原件 | App747/98、零失败错误跳过；lint0Error/748Warning；隔离.phase5八框架场景，Debian QEMU systemd/ready、三停止/重开标记限定通过 | 所有故障/事务/OEM/签名升级通过，或这些是AVF结果 |
-| 本机重检 | HONOR MEY-AN00/SM8735/API36，AVF feature、Gunyah驱动/节点，vm info仅protected；无/dev/kvm | 芯片硅层不能non-protected、后端必然pKVM、protected实际boot通过 |
+| 本机重检 | HONOR 档/SM8735/API36，AVF feature、Gunyah驱动/节点，vm info仅protected；无/dev/kvm | 芯片硅层不能non-protected、后端必然pKVM、protected实际boot通过 |
 | A15/A16 Custom VM/guide | 教程Debian/U-Boot为protected:false；平台CLI、普通App、系统Terminal有不同前提 | 照搬JSON即可用protected，所有字段都被本ROM接受 |
 | A16 protected raw检查 | 参考实现拒绝典型app_data_file的kernel/initrd/整盘；FD转交不改标签；实际固件信任有多种分支 | Rootless App私有盘已解决、所有pVM必须OEM签名，或HONOR完全等于固定AOSP实现 |
 | ADB/vsock与两参考App | adbd可为已启动Guest转发；App owning-FD接口/高位port不同；Podroid/TerminalAppPlus仍要求non-protected | 两grant/无线ADB创建了新硬件能力，SSH通就等于NAT/FullLinux |

@@ -72,7 +72,7 @@
 
 真机暂由第一会话独占：
 
-- 已连接荣耀 MEY-AN00，Android 16/API 36。这台设备不是已证明可运行 custom AVF 的 Android 15 pKVM 旗舰。
+- 已连接荣耀 HONOR 档，Android 16/API 36。这台设备不是已证明可运行 custom AVF 的 Android 15 pKVM 旗舰。
 - 第一会话正在安装 APK、启动 VM、截屏、输入和测试。你不能同时 install、force-stop、启动 VM、修改屏幕方向、截获输入或切换应用；也不要重新连接/重启 adb。
 - 你可准备隔离 APK、独立测试脚本、探针与测试步骤；需要真机时通过本地交接记录请求设备时间，待明确交接再执行。
 - 后续若用户提供另一台设备或第一会话释放设备，重新核对授权、能力和目标。不接受“Android 15 + Snapdragon”作为 AVF/GPU 可用性证明。

@@ -10,7 +10,7 @@
 ## 0. 结论摘要
 
 1. **上一份报告的三个"未决"里，Q3 已经可以判定为"是"，Q4 对 non-protected 路径不适用，Q1 是"条件成立但脆弱"。** 这改变了计划的形状：真正的硬门不是源码事实，而是**一台声明 non-protected 的设备**。
-2. **当前 HONOR MEY-AN00（SM8735 / API 36）只声明 protected，不能运行本项目的未签名自定义内核。** 这不是权限或 hidden API 问题，也不是改一个布尔值能解决的。Podroid 的一手实现同样明确：protected VM 需要 pvmfw 签名的 payload，raw custom kernel 只能走 non-protected；只有 protected 的设备必须回退 QEMU。
+2. **当前 HONOR 档（SM8735 / API 36）只声明 protected，不能运行本项目的未签名自定义内核。** 这不是权限或 hidden API 问题，也不是改一个布尔值能解决的。Podroid 的一手实现同样明确：protected VM 需要 pvmfw 签名的 payload，raw custom kernel 只能走 non-protected；只有 protected 的设备必须回退 QEMU。
 3. **本地审计新增两个 P0，严重度不低于上一份报告的停止/退出问题：**
    - `AvfSession.close()` 只关通道，不调用 `session.stop()`；`PersistentTerminalSessionPool` 对非 `RuntimeOwnedSession` 直接当作"已确认停止/仍存活"，因此正常关闭也可能把 AVF VM 留在后台。
    - `AvfInstanceLauncher` 在 `engine.launch()` 之后、`ExecutionSessionRegistry.register()` 失败时没有清理路径，VM 会成为孤儿。
@@ -136,7 +136,7 @@ implementation("org.lsposed.hiddenapibypass:hiddenapibypass:6.1")
 
 已有真机证据（2026-10-17，未在本回合重跑）：
 
-- HONOR MEY-AN00 / SM8735 / Android 16 / API 36；
+- HONOR 档 / SM8735 / Android 16 / API 36；
 - `android.software.virtualization_framework=true`，`com.android.virt` 存在；
 - `vm info`：`Only protected VMs are supported`；
 - `getCapabilities() = 1`（protected），non-protected=false；
