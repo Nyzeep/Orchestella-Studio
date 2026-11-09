@@ -1,6 +1,7 @@
 package io.github.nyzeep.orchestella
 
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig
+import java.io.IOException
 import java.util.Locale
 
 /**
@@ -33,7 +34,9 @@ class InstanceCreationWizardModel(
         data class InsufficientSpace(
             val availableBytes: Long,
             val requestedBytes: Long,
-            val requiredBytes: Long
+            val requiredBytes: Long,
+            /** 已存在实例承诺的虚拟磁盘容量（稀疏盘可长到标称值），0 表示未计入。 */
+            val existingCommittedBytes: Long = 0L
         ) : StorageValidationResult()
         data class InvalidRequestedSize(val reason: String) : StorageValidationResult()
     }
@@ -82,6 +85,24 @@ class InstanceCreationWizardModel(
             model.setCreating(flag("creating"))
             return model
         }
+
+        /**
+         * 汇总已存在实例承诺的虚拟磁盘容量（T4③ 预检补强的输入）。稀疏磁盘
+         * 实际占用可能远小于标称值，但增长上限是标称值，预检按承诺量对账。
+         */
+        @JvmStatic
+        fun committedCapacityBytes(instanceDiskCapacityBytes: List<Long>): Long =
+            instanceDiskCapacityBytes.sumOf { it.coerceAtLeast(0L) }
+
+        /**
+         * T4③ 受控注入点：磁盘预检拒绝的标准异常。消息命中 ErrorCopy 磁盘满族
+         * 标记（「空间不足」），经 ErrorCopy.resolve 稳定映射到
+         * E-STORAGE-FULL（headline=存储空间不足，hint=请清理存储空间后重试），
+         * 使向导校验点成为真机可复现的 E-* 文案展示路径。
+         */
+        @JvmStatic
+        fun storagePreflightRejection(detail: String): IOException =
+            IOException("disk preflight rejected: 宿主存储空间不足（$detail）")
     }
 
     var currentStep: CreationStep = initialStep
@@ -278,6 +299,13 @@ class InstanceCreationWizardModel(
         isCreating = creating
     }
 
+    /**
+     * 2026-11-08 真机走查 T4②：创建进行中时系统返回键（BACK）与「取消创建」按钮
+     * 必须同路——先确认再退出，而不是直接 finish。空闲向导（未开始创建）则直接
+     * 退出。纯 JVM 决策，供契约用例锁定与 Activity 消费。
+     */
+    fun shouldConfirmExit(): Boolean = isCreating
+
     fun tryBeginCreation(): Boolean {
         if (isCreating) return false
         isCreating = true
@@ -288,16 +316,33 @@ class InstanceCreationWizardModel(
         return hardwareProfile.evaluateOverallZone(hardwareConfig.cpuCores(), hardwareConfig.ramMegabytes())
     }
 
-    fun validateStorage(availableBytes: Long, requestedBytes: Long): StorageValidationResult {
+    fun validateStorage(availableBytes: Long, requestedBytes: Long): StorageValidationResult =
+        validateStorage(availableBytes, requestedBytes, existingCommittedBytes = 0L)
+
+    /**
+     * 2026-11-09 批次3 E 工单（T4③ 受控注入腿）——预检逻辑补强：磁盘单次请求
+     * 上限 2–64 GB，宿主可用空间充足时单看请求量恒可通过；但稀疏磁盘可增长到
+     * 标称容量，把「容量 + 已有实例承诺占用」一起对可用空间对账，才能在装配前
+     * 显式拒绝并展示 E-STORAGE-FULL 族文案，而不是等写入时 ENOSPC。
+     * 真机复现：连续创建大容量实例，直到容量+占用越过宿主可用空间（例如
+     * 可用 125.5 GB 时第 2 个 64 GB 实例即被拦截，可用更大则更晚触发）。
+     */
+    fun validateStorage(
+        availableBytes: Long,
+        requestedBytes: Long,
+        existingCommittedBytes: Long
+    ): StorageValidationResult {
         if (requestedBytes <= 0L) {
             return StorageValidationResult.InvalidRequestedSize("Requested disk capacity must be greater than 0")
         }
-        val requiredBytes = requestedBytes + RESERVED_HOST_BYTES
+        val committed = existingCommittedBytes.coerceAtLeast(0L)
+        val requiredBytes = requestedBytes + committed + RESERVED_HOST_BYTES
         if (availableBytes < requiredBytes) {
             return StorageValidationResult.InsufficientSpace(
                 availableBytes = availableBytes,
                 requestedBytes = requestedBytes,
-                requiredBytes = requiredBytes
+                requiredBytes = requiredBytes,
+                existingCommittedBytes = committed
             )
         }
         return StorageValidationResult.Valid

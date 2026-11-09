@@ -828,10 +828,11 @@ public class TerminalActivity extends Activity {
     private void showMissingPlaceholder(String id) {
         // A direct launch with no instance id at all is an empty state, not a
         // lookup failure: offer the creation path instead of a confusing
-        // "ID not found" line.
-        if (id == null || id.isEmpty()) {
-            showTerminalPlaceholder(getString(R.string.terminal_empty_no_instance_title),
-                    getString(R.string.terminal_empty_no_instance_message));
+        // "ID not found" line. Trigger condition + copy keys are pinned by the
+        // TerminalEmptyStateRules JVM contract (2026-11-09 batch-3 ticket E).
+        if (TerminalEmptyStateRules.isEmptyStateLaunch(id)) {
+            showTerminalPlaceholder(getString(TerminalEmptyStateRules.EMPTY_STATE_TITLE_RES),
+                    getString(TerminalEmptyStateRules.EMPTY_STATE_MESSAGE_RES));
         } else {
             showTerminalPlaceholder("实例不存在", "在本地数据库中未找到 ID 为 " + id + " 的实例。");
         }

@@ -117,6 +117,7 @@ class InstanceDetailActivity : AppCompatActivity() {
     private lateinit var btnDangerClone: MaterialButton
     private lateinit var btnDangerReset: MaterialButton
     private lateinit var btnDangerDelete: MaterialButton
+    private lateinit var tvDeleteGuardHint: TextView
 
     // Secondary Navigation Tabs & Containers
     private lateinit var navToggleGroup: MaterialButtonToggleGroup
@@ -319,6 +320,7 @@ class InstanceDetailActivity : AppCompatActivity() {
         btnDangerClone = findViewById(R.id.btn_danger_clone)
         btnDangerReset = findViewById(R.id.btn_danger_reset)
         btnDangerDelete = findViewById(R.id.btn_danger_delete)
+        tvDeleteGuardHint = findViewById(R.id.tv_danger_delete_guard_hint)
 
         // Secondary Navigation & Containers
         navToggleGroup = findViewById(R.id.detail_nav_toggle_group)
@@ -485,8 +487,28 @@ class InstanceDetailActivity : AppCompatActivity() {
         btnDangerClone.isEnabled = state.canClone && inactive
         btnDangerDelete.isEnabled = state.canDelete && inactive
         btnDangerReset.isEnabled = state.canResetState && inactive
+        renderDeleteGuardHint(state)
 
         renderSshConnection(state)
+    }
+
+    /**
+     * 2026-11-08 走查（T4② 删除守卫 UX）：运行中断实例的删除按钮呈禁用浅粉但
+     * 无任何解释。禁用的按钮收不到点击，长按提示也进不去——把原因直接铺在按钮
+     * 下方，文案随实例状态驱动：中断态指向「复位」，其余不可删态沿用既有的
+     * 「运行中禁止删除」文案。
+     */
+    private fun renderDeleteGuardHint(state: InstanceDetailUiState) {
+        if (state.canDelete) {
+            tvDeleteGuardHint.visibility = View.GONE
+            return
+        }
+        tvDeleteGuardHint.text = if (state.state == InstanceLifecycle.State.INTERRUPTED) {
+            getString(R.string.console_delete_guard_interrupted)
+        } else {
+            getString(R.string.action_delete_running_forbidden)
+        }
+        tvDeleteGuardHint.visibility = View.VISIBLE
     }
 
     private fun sshRules(instanceId: String): List<PortForwardingRule> =

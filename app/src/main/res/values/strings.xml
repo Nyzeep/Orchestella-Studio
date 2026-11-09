@@ -363,6 +363,7 @@
     <string name="console_danger_reset_desc">针对异常宿主断电导致的死锁进行状态对齐修复</string>
     <string name="console_danger_delete">永久物理删除 (Delete Permanently)</string>
     <string name="console_danger_delete_desc">彻底物理回收虚拟磁盘与元数据，必须二次验证输入</string>
+    <string name="console_delete_guard_interrupted">运行中断实例需先复位后删除；点击上方「复位」解除锁定。</string>
     <string name="console_delete_dialog_title">危险操作：永久物理删除</string>
     <string name="console_delete_dialog_message">此操作将永久销毁实例数据，磁盘将被物理抹除且不可恢复！\n\n为防止误触，请输入实例完整 ID「%1$s」以确认删除：</string>
     <string name="console_delete_dialog_confirm">我已知晓风险，永久删除</string>
