@@ -49,6 +49,39 @@ object ThemeColors {
      */
     fun disabledFill(theme: AppTheme, fill: Int): Int = blend(theme.surface, fill, 0.14f)
 
+    /**
+     * Surface tier "low" — the well/banner step directly above the page
+     * background (Material 3's tonal surfaceContainerLow tactic: emphasis by
+     * tone, never by shadow). Half a blend-step from the page color toward the
+     * card surface, so every catalog theme and custom slot inherits an
+     * on-palette ladder. Sources:
+     * https://m3.material.io/styles/color/roles
+     * https://m3.material.io/blog/tone-based-surface-color-m3
+     */
+    fun surfaceLow(theme: AppTheme): Int = blend(theme.background, theme.surface, 0.5f)
+
+    /** Overload for opacity-resolved inputs: page and card colors resolved by the caller. */
+    fun surfaceLow(pageColor: Int, surfaceColor: Int): Int = blend(pageColor, surfaceColor, 0.5f)
+
+    /**
+     * Surface tier "high" — controls sitting ON a card (text fields, menus,
+     * popups) raised one whisper of ink above their container
+     * (surfaceContainerHigh tactic). A lighter step than [hairline] so fills
+     * and strokes stay in separate visual registers.
+     */
+    fun surfaceHigh(theme: AppTheme): Int = blend(theme.surface, theme.text, 0.06f)
+
+    /** Overload for opacity-resolved inputs. */
+    fun surfaceHigh(surfaceColor: Int, ink: Int): Int = blend(surfaceColor, ink, 0.06f)
+
+    /**
+     * Pressed fill of a stateful control: the M3 state-layer tactic — ~10% of
+     * the on-color washed over the container, replacing the flat "pressed looks
+     * identical to rest" gap the hardcoded-tint buttons had. Sources:
+     * https://m3.material.io/foundations/interactive-components/states
+     */
+    fun pressedFill(fill: Int, ink: Int): Int = blend(fill, ink, 0.10f)
+
     /** Prefer black/white by measured contrast; amber and pastel buttons need dark ink. */
     fun onColor(background: Int): Int =
         if (contrast(0xFF000000.toInt(), background) >= contrast(0xFFFFFFFF.toInt(), background)) {

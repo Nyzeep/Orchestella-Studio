@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  B-lane unified card surface (round 2026-11-09): replaces the scattered
+  bg_glass_card / bg_glow_card / bg_constructivist_card family. ThemeApplier
+  recolors the fill to the opacity-resolved theme surface and the stroke to
+  the on-palette hairline at runtime (W2 contract), so the attr references
+  below only set the sane pre-bind default.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <corners android:radius="@dimen/oe_corner_lg" />
+    <solid android:color="?attr/colorSurfaceContainerLow" />
+    <stroke
+        android:width="@dimen/oe_stroke_hairline"
+        android:color="?attr/colorOutlineVariant" />
+</shape>

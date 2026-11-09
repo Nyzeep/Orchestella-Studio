@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  B-lane surface-low "well" (round 2026-11-09): banners and info strips that
+  sit directly on the page background, one tonal step above it (ids prefixed
+  "well_" are repainted to ThemeColors.surfaceLow at runtime). Slightly tighter
+  radius than bg_oe_card, same hairline stroke register.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <corners android:radius="@dimen/oe_corner_md" />
+    <solid android:color="?attr/colorSurfaceContainerLow" />
+    <stroke
+        android:width="@dimen/oe_stroke_hairline"
+        android:color="?attr/colorOutlineVariant" />
+</shape>

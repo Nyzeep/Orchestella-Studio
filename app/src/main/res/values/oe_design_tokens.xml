@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  B-lane (round 2026-11-09) design tokens, oe_-prefixed, continuing the
+  oe_motion_tokens.xml naming convention. XML carries the static geometry /
+  typography tokens; color tokens stay derived in ThemeColors (hairline family)
+  because every palette value must re-resolve per theme — one mechanism per
+  concern, mirroring how Now in Android keeps Color/Shape/Spacing/Type in one
+  designsystem home and how DroidKaigi's conference-app gates all components
+  through its Kaigi theme instead of scattered literals.
+
+  Sources:
+    https://m3.material.io/styles/shape/corner-radius-scale
+    https://m3.material.io/styles/color/roles
+    https://github.com/android/nowinandroid (core/designsystem)
+    https://github.com/DroidKaigi/conference-app-2024 (core/designsystem)
+-->
+<resources>
+    <!-- 圆角 scale (M3 corner radius tokens): sharp industrial surfaces stay 0,
+         chips/inputs 8/12, cards 16 (aligns ThemeStore.DEFAULT_CORNER_RADIUS_DP),
+         oversized cards / sheets 28. ThemeApplier merges these only-grow at
+         runtime, so a user's larger corner setting always wins. -->
+    <dimen name="oe_corner_none">0dp</dimen>
+    <dimen name="oe_corner_sm">8dp</dimen>
+    <dimen name="oe_corner_md">12dp</dimen>
+    <dimen name="oe_corner_lg">16dp</dimen>
+    <dimen name="oe_corner_xl">28dp</dimen>
+
+    <!-- 间距 scale: 4dp baseline grid (M3 spacing guidance). The one non-multiple
+         below is an optical half-step for icon-to-text gaps, matching the tuned
+         drawablePadding this app already ships. -->
+    <dimen name="oe_space_xs">4dp</dimen>
+    <dimen name="oe_space_sm">8dp</dimen>
+    <dimen name="oe_space_md">12dp</dimen>
+    <dimen name="oe_space_lg">16dp</dimen>
+    <dimen name="oe_space_xl">20dp</dimen>
+    <dimen name="oe_space_xxl">24dp</dimen>
+    <dimen name="oe_space_xxxl">32dp</dimen>
+    <dimen name="oe_icon_inline_gap">6dp</dimen>
+
+    <!-- 发丝线 stroke: one device-density pixel, matching ThemeApplier's
+         runtime hairline (density-based) for pre-bind consistency. -->
+    <dimen name="oe_stroke_hairline">1dp</dimen>
+
+    <!-- 16dp inline icon: the compound-drawable replacement size (see
+         Widget.Orchestella.InlineIcon) and the detail-tab leading icon size. -->
+    <dimen name="oe_icon_inline">16dp</dimen>
+</resources>
