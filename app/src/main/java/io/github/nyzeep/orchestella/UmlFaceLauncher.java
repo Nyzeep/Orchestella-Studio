@@ -234,6 +234,30 @@ public final class UmlFaceLauncher {
         }
 
         /**
+         * The device-capability default (C lane, the width thermostat's
+         * supply side): the guest gets the device's whole core count as the
+         * {@code ncpus} knob when the device has a multi-core CPU
+         * ({@code ncpus=N} — the knob the device round measured, never
+         * {@code --cpus=N}), and stays on the host-1 single-core shape when it
+         * does not. This is a supply, not a grant: the fabric's ledger is the
+         * thermostat — {@link FabricOrchestrator#ledgerBackedWidths} clamps the
+         * resulting width to the ledger headroom, so an eight-core supply on a
+         * two-core ledger budget cannot oversubscribe the fabric (the
+         * sum-of-faces-equals-ledger invariant the locked tests hold).
+         *
+         * @param deviceCpuCores the device's CPU core count
+         *        ({@code Runtime.getRuntime().availableProcessors()} shape)
+         * @throws IllegalArgumentException when {@code deviceCpuCores <= 0}
+         */
+        public static LaunchParams forDeviceCapability(int deviceCpuCores) {
+            if (deviceCpuCores <= 0) {
+                throw new IllegalArgumentException(
+                        "deviceCpuCores must be positive, got: " + deviceCpuCores);
+            }
+            return new LaunchParams(512, deviceCpuCores >= 2 ? deviceCpuCores : 0, List.of());
+        }
+
+        /**
          * The worker's real serviceable compile concurrency: {@code ncpus=N}
          * when the knob is ≥2, 1 for the omitted/host-1 single-core shape.
          */
@@ -428,20 +452,9 @@ public final class UmlFaceLauncher {
     }
 
     private String missingAsset() {
-        File libDir = environment.nativeLibraryDir();
-        File kernel = new File(libDir, KERNEL_LIB_NAME);
-        if (!kernel.isFile() || !kernel.canExecute()) {
-            return KERNEL_LIB_NAME;
-        }
-        File stub = new File(libDir, STUB_LIB_NAME);
-        if (!stub.isFile() || !stub.canExecute()) {
-            return STUB_LIB_NAME;
-        }
-        File rootfs = new File(environment.filesDir(), ROOTFS_DIR_NAME);
-        if (!rootfs.isDirectory()) {
-            return ROOTFS_DIR_NAME;
-        }
-        return null;
+        // Single source of the placement layout (C lane): the parity check in
+        // UmlKernelAssets, kept semantics-identical to the historical precheck.
+        return UmlKernelAssets.firstMissingName(environment);
     }
 
     /**
