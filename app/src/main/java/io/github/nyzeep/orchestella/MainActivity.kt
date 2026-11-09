@@ -19,6 +19,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.view.LayoutInflater
 import android.view.View
+import android.view.ViewGroup
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.Button
 import android.widget.ImageView
@@ -142,6 +143,8 @@ class MainActivity : AppCompatActivity() {
                     updateConsoleWithInstance(snapshot.primary, snapshot.ssh)
                 }
                 if (currentTabIndex == 2) renderHardwareSpecDetails()
+                maybeReportFullyDrawn()
+                maybePlayDashboardEntry()
             }
             dashboardHandler.postDelayed(this, 3000L)
         }
@@ -332,6 +335,49 @@ class MainActivity : AppCompatActivity() {
             if (!notificationPromptShownThisProcess.compareAndSet(false, true)) return@post
             NotificationPermissionPrompt.requestIfNeeded(this)
         }
+    }
+
+    /**
+     * ReportFullyDrawn 接线（Lane D, 2026-11-10）：启动链路的「首帧数据齐备点」=
+     * 第一份仪表盘快照在 UI 线程分发（实例列表/主实例/仪表读数渲染输入就绪）。
+     * 设备实测锚点（2026-11-08 T5）：700ms 帧仍是默认占位态，~1.6s 完成回调
+     * 填充——以该点上报，fully drawn 指标覆盖到真实数据呈现而非空骨架。
+     * 实现走 root_container.post：上报排进本轮 traversal 之后，贴近首帧呈现；
+     * 布尔门保证每次 Activity 实例只报一次；strict 失败路径（错误态同样是
+     * 「可用」状态）也上报，指标不悬挂。
+     */
+    private var fullyDrawnReported = false
+
+    private fun maybeReportFullyDrawn() {
+        if (fullyDrawnReported || isFinishing || isDestroyed) return
+        fullyDrawnReported = true
+        findViewById<View>(R.id.root_container)?.post {
+            if (isFinishing || isDestroyed) return@post
+            try {
+                reportFullyDrawn()
+            } catch (failure: Exception) {
+                // 个别 ROM 在窗口第一帧完成前上报会抛异常——指标接线永不影响功能路径。
+                android.util.Log.w("MainActivity", "reportFullyDrawn rejected", failure)
+            }
+        }
+    }
+
+    /**
+     * 仪表盘卡片差异化进场（Lane D, 2026-11-10）：控制台卡组（横幅/机器卡/
+     * 仪表/动作区/TTY）在首个快照渲染落位时播一次 fade+scale-settle 级联，
+     * 与实例列表的 rise 进场（OrchestellaMotion.playListEntryStagger）刻意
+     * 区分词汇。守卫：每次 Activity 实例只在首个快照渲染尝试一次，且仅在
+     * 控制台页签可见时真的播放——恢复到其他页签时不武装（页签到达由容器级
+     * stateChangeEnter 覆盖，主题重绘保持瞬时，T2 契约），3 秒刷新循环因此
+     * 永不重播。
+     */
+    private var dashboardEntryPlayed = false
+
+    private fun maybePlayDashboardEntry() {
+        if (dashboardEntryPlayed || isFinishing || isDestroyed) return
+        dashboardEntryPlayed = true
+        if (currentTabIndex != 0) return
+        findViewById<ViewGroup>(R.id.container_tab_console)?.let(OrchestellaMotion::playDashboardEntry)
     }
 
     /**
@@ -1209,14 +1255,17 @@ class MainActivity : AppCompatActivity() {
         view.setOnTouchListener { v, event ->
             when (event.actionMasked) {
                 android.view.MotionEvent.ACTION_DOWN, android.view.MotionEvent.ACTION_HOVER_ENTER -> {
-                    // Session 19 (T-D): press-in 100 ms / release 150 ms, the Material
-                    // Motion standard durations, instead of ad-hoc 90/120 ms.
-                    v.animate().scaleX(1.015f).scaleY(1.015f).setDuration(100)
+                    // Session 19 (T-D): press-in 100 ms (short2) / release 150 ms
+                    // (short3), now consumed via the OrchestellaMotion token mirror
+                    // (Lane D) instead of bare literals.
+                    v.animate().scaleX(1.015f).scaleY(1.015f)
+                        .setDuration(OrchestellaMotion.DURATION_PRESS_IN_MS.toLong())
                         .setInterpolator(android.view.animation.DecelerateInterpolator()).start()
                 }
                 android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL,
                 android.view.MotionEvent.ACTION_HOVER_EXIT -> {
-                    v.animate().scaleX(1f).scaleY(1f).setDuration(150)
+                    v.animate().scaleX(1f).scaleY(1f)
+                        .setDuration(OrchestellaMotion.DURATION_PRESS_OUT_MS.toLong())
                         .setInterpolator(android.view.animation.AccelerateInterpolator()).start()
                 }
             }
@@ -1364,7 +1413,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun startBreathingAnimation(badgeView: View) {
         val animator = ObjectAnimator.ofFloat(badgeView, View.ALPHA, 1.0f, 0.35f).apply {
-            duration = 1000L
+            duration = OrchestellaMotion.DURATION_BREATH_CYCLE_MS.toLong()
             repeatMode = ValueAnimator.REVERSE
             repeatCount = ValueAnimator.INFINITE
             interpolator = AccelerateDecelerateInterpolator()
@@ -1415,6 +1464,7 @@ class MainActivity : AppCompatActivity() {
             )
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
+                maybeReportFullyDrawn()
                 if (instances == null && strict) {
                     // Listing failure is not a creation failure: say what broke and what the user can do.
                     // 原实现在读取前已清空卡片；失败时同样先清再报错，不留幻影卡片。
@@ -1557,6 +1607,12 @@ class MainActivity : AppCompatActivity() {
             instanceList.addView(cardView)
             ThemeApplier.apply(cardView, currentTheme)
         }
+        // Lane D (2026-11-10)：实例卡差异化进场（fade + 4% rise 级联）。只在完整
+        // 重渲染后播放：3 秒周期里状态指纹未变走 updateConsoleWithInstance 轻更新
+        // 路径，永不重播（2026-11-08 M5 验证点）；指纹变化（实例创建/状态迁移）或
+        // 显式刷新（onResume/删除/克隆后 showInstances）按数据刷新时刻重播。级联
+        // 无延迟 GONE/定时器，下一次重渲染直接移除动画中的卡片，无半透明滞留面。
+        OrchestellaMotion.playListEntryStagger(instanceList)
     }
 
     private fun showPowerDialog(instance: InstanceLifecycle.Instance) {
