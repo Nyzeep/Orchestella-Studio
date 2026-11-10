@@ -67,8 +67,8 @@
 | head | `git rev-parse HEAD` | `c7d450a7`，与表一致 |
 | 脚本语法 | `bash -n` × 4、`py_compile make-manifest.py` | 全 PASS |
 | manifest JSON | `python3 -m json.tool` × 5 | 合法；`jsonschema` 模块未安装，只做标准库最小结构检查，**完整 Schema 校验未复现** |
-| 独立重建 Alpine x86_64 | `./build-rootfs.sh --distro alpine --arch x86_64 --out /tmp/u2-alpine-x64` | exit 0，64 s，111 包，114,590,691 B；sha `90ac674f6148ed4b99f7e832c426826e7129ae286312e73bec54fd8baeb372c4`，**与报告声明的 x86_64 sha 逐字节一致** |
-| verify | `./verify.sh --root /tmp/u2-rootfs --manifest /tmp/u2-alpine-x64/manifest.json` | **20/20 PASS，0 FAIL/WARN** |
+| 独立重建 Alpine x86_64 | `./build-rootfs.sh --distro alpine --arch x86_64 --out <tmp>/u2-alpine-x64` | exit 0，64 s，111 包，114,590,691 B；sha `90ac674f6148ed4b99f7e832c426826e7129ae286312e73bec54fd8baeb372c4`，**与报告声明的 x86_64 sha 逐字节一致** |
+| verify | `./verify.sh --root <tmp>/u2-rootfs --manifest <tmp>/u2-alpine-x64/manifest.json` | **20/20 PASS，0 FAIL/WARN** |
 | 首启脚本 | grep pm/network、检查 apk 缓存/lock/provisioning 标记 | 无 apk/apt/dpkg/pacman、无网络调用、无缓存/lock/日志残留 |
 | 产品/敏感门 | `diff --check`、产品路径、敏感门、产物入库检查 | 全 PASS；无 `.tar.gz/.ext4/.img` 入库 |
 
@@ -78,11 +78,13 @@
 
 ### 3.1 输入
 
+> 以下命令用 `<u1-worktree>`、`<tmp>` 占位符；报告不记录本机绝对路径，复现时替换为本地工作树与临时目录。
+
 | 输入 | 来源 | 值 |
 | --- | --- | --- |
-| U1 fast kernel | `/workspace-wt/u1/research/uml-fastboot/out/x86_64-up/artifacts/` | `linux-fast-noinitrd` 8,417,560 B，sha256 `81c85621…9520` |
+| U1 fast kernel | `<u1-worktree>/research/uml-fastboot/out/x86_64-up/artifacts/` | `linux-fast-noinitrd` 8,417,560 B，sha256 `81c85621…9520` |
 | U1 stub | 同上 | `stub_exe` 2,368 B，sha256 `a581fb59…a67a2` |
-| U2 rootfs | 本会话独立重建的 Alpine 3.22.8 x86_64（tar.gz `90ac674f…72c4`）解包 | `/tmp/u2-rootfs` |
+| U2 rootfs | 本会话独立重建的 Alpine 3.22.8 x86_64（tar.gz `90ac674f…72c4`）解包 | `<tmp>/u2-rootfs` |
 | 宿主 | 参考容器 | Linux 5.4.241-1-tlinux4-0025.17 x86_64 |
 
 ### 3.2 命令与结果
@@ -95,15 +97,15 @@ SECCOMP userspace requested but not functional!
 rc=1
 ```
 
-原因是宿主 5.4 内核没有 `close_range`，与 U1 报告记录的宿主差异一致。按 U1 参考运行方式改用 `seccomp=auto` 重试（这是本轮唯一命令偏差，已记录）：
+原因是宿主 5.4 内核没有 `close_range`，与 U1 报告记录的宿主差异一致。按 U1 参考运行方式改用 `seccomp=auto` 重试。两处命令偏差均记录在此：`seccomp=on` → `auto`；`timeout 60s` → `90s`（仅放宽等待，不改变判定）：
 
 ```bash
-U1=/workspace-wt/u1/research/uml-fastboot/out/x86_64-up/artifacts
-TMPDIR=/tmp timeout 90s "$U1/linux-fast-noinitrd" \
+U1=<u1-worktree>/research/uml-fastboot/out/x86_64-up/artifacts
+TMPDIR=<tmp> timeout 90s "$U1/linux-fast-noinitrd" \
   mem=512M rw con=null con0=null,fd:1 seccomp=auto panic=1 printk.time=1 \
   stub_exe="$U1/stub_exe" \
-  init=/init-zero-install rootfstype=hostfs rootflags=/tmp/u2-rootfs \
-  orchestella.ready=poweroff | tee /tmp/u1-u2-cross.log
+  init=/init-zero-install rootfstype=hostfs rootflags=<tmp>/u2-rootfs \
+  orchestella.ready=poweroff | tee <tmp>/u1-u2-cross.log.txt
 ```
 
 关键输出：
@@ -128,7 +130,7 @@ timeout: 被监视的命令已核心转储
 | T3 first command | PASS，`T3_READY uptime=0.09 action=poweroff` |
 | READY | PASS |
 | 无包管理器 | PASS，日志无 `apk`/`apt`/`dpkg`/`pacman` |
-| 无网络 | PASS，日志无 `eth0`/DHCP |
+| 无网络配置标记 | PASS，日志无 `eth0`/DHCP（按日志判定，不是独立网络隔离测试） |
 | 退出码 | `rc=134`（SIGABRT）；`READY` 之后 `reboot: Power down`，UML 在宿主上核心转储，属已知宿主差异，不影响 READY 判定 |
 | guest 时间 | `T3_READY uptime=0.09 s`（10 ms 粒度） |
 | 宿主墙钟 | 粗测 **2216 ms**（`date +%s%N`，含 UML 进程启动、ptrace 探测、退出）；**不是 U0 的 T0→T3 协议，不能与 guest uptime 相减或外推** |
@@ -141,13 +143,14 @@ U0 parser 只识别 `BENCH boot_uptime_ms=`、`UMARM_WORK_START`、`BOOTPROBE`�
 
 ```bash
 python3 tools/research/uml-boot-bench/parse_boot_log.py \
-  --lane uml --console /tmp/u1-u2-cross.log --format json
+  --lane uml --console <tmp>/u1-u2-cross.log.txt --format json
 ```
 
-结果：`T1/T2/T3` 全部为 `null`，missing 提示“no 'BENCH boot_uptime_ms=' or 'UMARM_WORK_START ... uptime=' marker”。也就是说：
+结果：`T1=40 ms`、`T2=40 ms`、`T3=null`。其中 T1/T2 由 parser 用带时间戳的 `Run /init-zero-install as init process` 与 `VFS: Mounted root` fallback 得到；T3 的 missing 提示为“no 'BENCH boot_uptime_ms=' or 'UMARM_WORK_START ... uptime=' marker”。也就是说：
 
 - U1 的 `U1_READY uptime=`、U2 的 `T2_MOUNTS_READY uptime=` / `T3_READY uptime=` / `READY` 都不在 U0 协议内；
-- 本次跨测只能用人工读取日志 + 宿主墙钟记录，**没有把结果写进 U0 JSON**，避免伪造字段；
+- parser 的 `T2=40 ms` 来自 VFS 时间戳，不是 U2 的 `T2_MOUNTS_READY uptime=0.09`；两者语义不同，不能混用；
+- 本次跨测的 T3 只能用人工读取日志 + 宿主墙钟记录，**没有把 `T3_READY` 写进 U0 JSON**，避免伪造字段；
 - 这是**跨会话标记契约缺口**，不是任何单支的失败。
 
 建议：新开 U0.1 小票，为 parser 增加 `U1_READY` / `T2_MOUNTS_READY` / `T3_READY` alias + 对应 fixture + self-test；本会话不擅自改 U0 parser（改动虽小，但属于协议变更，应独立评审）。
@@ -161,8 +164,9 @@ python3 tools/research/uml-boot-bench/parse_boot_log.py \
 - 真 SMP（宿主 5.4 被夹到 1 CPU）；
 - systemd T4 / full systemd profile；
 - U1 两次 ARM64 重建逐字节一致（仓库无构建日志）；
+- U2 两次构建一致（实现会话证据；本会话只重建一次，未复现第二次）；
 - U2 的 aarch64/Debian 独立重建、Debian verify 23 项、ext4、ARM64 ext4 boot；
-- U0 的原始 11-07/11-08 console/exit 日志回归；
+- U0 的原始 11-07/11-08 console/exit 日志回归（票据必须做 4 的替代理由见 §2.1，报告已文档化）；
 - 跨测 n=1，只作组合冒烟，不做中位数/分布结论。
 
 ## 6. Wave 2 可以依赖什么、不能依赖什么
@@ -190,20 +194,21 @@ python3 tools/research/uml-boot-bench/parse_boot_log.py \
 ## 8. 复现命令
 
 ```bash
+# 占位符：<tmp> 为临时目录，<u1-worktree> 为 U1 工作树
 # U0
 python3 tools/research/uml-boot-bench/parse_boot_log.py --self-test
 
 # U2 独立重建 + 校验
 cd research/uml-rootfs-prebake
-./build-rootfs.sh --distro alpine --arch x86_64 --out /tmp/u2-alpine-x64
-mkdir -p /tmp/u2-rootfs
-tar -xzf /tmp/u2-alpine-x64/alpine-*-x86_64.tar.gz -C /tmp/u2-rootfs
-./verify.sh --root /tmp/u2-rootfs --manifest /tmp/u2-alpine-x64/manifest.json
+./build-rootfs.sh --distro alpine --arch x86_64 --out <tmp>/u2-alpine-x64
+mkdir -p <tmp>/u2-rootfs
+tar -xzf <tmp>/u2-alpine-x64/alpine-*-x86_64.tar.gz -C <tmp>/u2-rootfs
+./verify.sh --root <tmp>/u2-rootfs --manifest <tmp>/u2-alpine-x64/manifest.json
 
 # U1 + U2 跨测（宿主无 close_range 时必须用 seccomp=auto）
-U1=/workspace-wt/u1/research/uml-fastboot/out/x86_64-up/artifacts
-TMPDIR=/tmp timeout 90s "$U1/linux-fast-noinitrd" \
+U1=<u1-worktree>/research/uml-fastboot/out/x86_64-up/artifacts
+TMPDIR=<tmp> timeout 90s "$U1/linux-fast-noinitrd" \
   mem=512M rw con=null con0=null,fd:1 seccomp=auto panic=1 printk.time=1 \
   stub_exe="$U1/stub_exe" init=/init-zero-install rootfstype=hostfs \
-  rootflags=/tmp/u2-rootfs orchestella.ready=poweroff
+  rootflags=<tmp>/u2-rootfs orchestella.ready=poweroff
 ```
