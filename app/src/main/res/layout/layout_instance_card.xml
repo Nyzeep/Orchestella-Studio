@@ -113,7 +113,7 @@
 
                 <ImageView
                     style="@style/Widget.Orchestella.InlineIcon"
-                    app:srcCompat="@drawable/ic_cpu"
+                    app:srcCompat="@drawable/ic_sym_memory"
                     app:tint="#8E929B" />
 
                 <TextView
@@ -133,7 +133,7 @@
 
                 <ImageView
                     style="@style/Widget.Orchestella.InlineIcon"
-                    app:srcCompat="@drawable/ic_network"
+                    app:srcCompat="@drawable/ic_sym_lan"
                     app:tint="#8E929B" />
 
                 <TextView
@@ -178,7 +178,7 @@
                 android:layout_height="wrap_content"
                 android:minHeight="38dp"
                 app:cornerRadius="0dp"
-                app:icon="@drawable/ic_power"
+                app:icon="@drawable/ic_sym_power_settings_new"
                 app:iconSize="16dp"
                 android:paddingStart="@dimen/oe_space_md"
                 android:paddingEnd="@dimen/oe_space_md"
