@@ -50,6 +50,7 @@ class PortForwardingBottomSheet(
 
     private var containerRulesList: LinearLayout? = null
     private var tvNoRulesHint: TextView? = null
+    private var wellPortEmpty: LinearLayout? = null
     private var tilHostPort: TextInputLayout? = null
     private var etHostPort: TextInputEditText? = null
     private var tilGuestPort: TextInputLayout? = null
@@ -72,6 +73,7 @@ class PortForwardingBottomSheet(
         // Bind list container
         containerRulesList = view.findViewById(R.id.container_rules_list)
         tvNoRulesHint = view.findViewById(R.id.tv_no_rules_hint)
+        wellPortEmpty = view.findViewById(R.id.well_port_empty)
 
         // Bind form
         tilHostPort = view.findViewById(R.id.til_host_port)
@@ -116,11 +118,10 @@ class PortForwardingBottomSheet(
         val hint = tvNoRulesHint ?: return
 
         container.removeAllViews()
-        if (rules.isEmpty()) {
-            hint.visibility = View.VISIBLE
-            return
-        }
-        hint.visibility = View.GONE
+        val (wellVisibility, hintVisibility) = emptyStateVisibility(rules.size)
+        wellPortEmpty?.visibility = wellVisibility
+        hint.visibility = hintVisibility
+        if (rules.isEmpty()) return
 
         val inflater = LayoutInflater.from(context)
         for (rule in rules) {
@@ -189,5 +190,23 @@ class PortForwardingBottomSheet(
 
     override fun showError(message: String?) {
         updateUi { if (!message.isNullOrEmpty()) Toast.makeText(context, message, Toast.LENGTH_LONG).show() }
+    }
+
+    companion object {
+        /**
+         * Pure visibility contract for the empty-state well (U4 walkthrough fix).
+         *
+         * <p>The outer [R.id.well_port_empty] container and its inner
+         * [R.id.tv_no_rules_hint] must appear and disappear together, as the sheet
+         * layout comment specifies. Previously only the inner hint was toggled, so
+         * a populated rule list left the bg_oe_well stroke behind as a collapsed
+         * hairline ghost.
+         *
+         * @return (outerWellVisibility, innerHintVisibility) for the given rule count.
+         */
+        fun emptyStateVisibility(ruleCount: Int): Pair<Int, Int> {
+            val visibility = if (ruleCount > 0) View.GONE else View.VISIBLE
+            return visibility to visibility
+        }
     }
 }
