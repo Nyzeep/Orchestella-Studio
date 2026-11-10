@@ -21,7 +21,9 @@
 >
 > Wave 1 集成结果：`docs/research/2026-11-10-zero-device-uml-wave1-integration.zh-CN.md`；三票 `resolved`；U1 x86_64 fast kernel + U2 Alpine x86_64 rootfs 跨测到 `READY`（n=1，宿主 `seccomp=auto`，不是 ARM64 结论）。Wave 2 以集成分支为 base。
 >
-> 已发现的跨会话契约缺口：U0 parser 认 `BENCH boot_uptime_ms` / `UMARM_WORK_START` / `BOOTPROBE` / `UMARM_SHELL_READY`，不认 U1 的 `U1_READY` 与 U2 的 `T2_MOUNTS_READY` / `T3_READY` / `READY`。08 集成报告必须记录；若要补 alias，另开 U0.1 小票，不要混进集成会话的大 diff。
+> Wave 2 结果（2026-11-10）：`docs/research/2026-11-10-zero-device-uml-wave2-integration.zh-CN.md`。U3/U5 经敏感门清理（09/10 prompt，原分支修复）后合并：清理后 head `80d66d4e` / `b74f57a5`，merge `fd8d1f7b` / `d54abd1c`；票 04 `resolved`、U5 记录在 `integration-log.md`。U3/U5/U4/U6 的工作分支一律基于**最新** `github/integration/uml-zero-device-20261110` 开工。
+>
+> 已发现的跨会话契约缺口：U0 parser 认 `BENCH boot_uptime_ms` / `UMARM_WORK_START` / `BOOTPROBE` / `UMARM_SHELL_READY`，不认 U1 的 `U1_READY` 与 U2 的 `T2_MOUNTS_READY` / `T3_READY` / `READY`。08 集成报告必须记录；若要补 alias，另开 U0.1 小票（`12-u0-marker-aliases.md` + `issues/05-u0-marker-aliases.md`，在 research 分支），不要混进集成会话的大 diff。
 
 **并行上限建议：** 同时不超过 3 个实现会话 + 1 个协调者；每个实现会话内部最多 2 个子智能体。这样既并行，又不会让同一文件/构建缓存互相踩踏。
 

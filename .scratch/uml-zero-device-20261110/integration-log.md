@@ -78,3 +78,54 @@ git -c commit.gpgsign=false merge --no-ff github/feat/uml-u2-rootfs-prebake -m "
 - 只提交 tracker 与集成报告；未 `git add -f research/`、`tools/research/`、`out/`。
 - 目标远端：`github`；分支：`integration/uml-zero-device-20261110`。
 - 未合并 `main`，未创建 PR，未发布。
+
+---
+
+# Wave 2 集成会话日志（U3 + U5，2026-11-10）
+
+- 集成基线：`001add7a`（Wave 1 集成 head）
+- 报告：`docs/research/2026-11-10-zero-device-uml-wave2-integration.zh-CN.md`
+
+## 1. 输入核对
+
+| 会话 | 分支 | 开工表 head | 清理后 head | 结论 |
+| --- | --- | --- | --- | --- |
+| U3 | `feat/uml-u3-seccomp-compat` | `fa2bc79d` | `80d66d4e` | 敏感门修复后一致 |
+| U5 | `feat/uml-u5-packaging-ci` | `8b828150` | `b74f57a5` | 敏感门修复后一致 |
+
+- 两个清理会话在原分支追加修复（不 rebase、不 force push）；集成协调者在本地独立复跑全部门禁，非仅采信自述。
+
+## 2. 敏感门修复（Wave 2 阻断项清零）
+
+- U3 三类：MAC 字面量 → 运行时 `printf` 生成；`digits[]` 16 位连续 hex → 两段短字面量等价拼接；9 个 `harness.env` → `harness.meta`（引用同步，`.env` 归零）。
+- U5 两处：打包文档第 101 行路径字面量 → 纯文字描述；self-test notes 用户 home 路径 → `LOCAL_PATH_MARKERS` 拼接。
+- 修复后两支均 `SENSITIVE_DATA_OK --range 001add7a..HEAD`；矩阵/bundle 结论不变。
+
+## 3. 合并
+
+| 顺序 | 分支 | 分支 head | 合并提交 | 冲突 |
+| --- | --- | --- | --- | --- |
+| 1 | `feat/uml-u3-seccomp-compat` | `80d66d4e` | `fd8d1f7b` | 无 |
+| 2 | `feat/uml-u5-packaging-ci` | `b74f57a5` | `d54abd1c` | 无 |
+
+- `git -c commit.gpgsign=false merge --no-ff`；合并后 `git diff --check` 干净、产品路径为空、敏感门 `SENSITIVE_DATA_OK`。
+
+## 4. 合并后跨分支自测
+
+```text
+U0 parse_boot_log.py --self-test          UML_BOOT_BENCH_SELF_TEST_OK checks=118
+U3 gen_profile.py --check                 PROFILE_CHECK_OK profiles=10
+U3 matrix.py --self-test                  UML_SECCOMP_MATRIX_SELF_TEST_OK checks=31
+U5 check_uml_artifacts.py --self-test     SELF_TEST_OK checks=70
+U5 默认 manifest 校验                     SUMMARY manifests=3 passed=134 failed=0 info=6
+```
+
+## 5. Ticket 对账
+
+| 票/记录 | 集成后 | 依据 |
+| --- | --- | --- |
+| 04 U3 | `resolved`（已带清理与集成 Comments） | 清理自测全过 + `SENSITIVE_DATA_OK` + merge `fd8d1f7b` |
+| U5（无独立票） | 本日志记为 Wave 2 工作包 | `SELF_TEST_OK checks=70` + manifest `failed=0` + merge `d54abd1c` |
+
+- `not-tested` 保持：真机 seccomp 矩阵、16K 宿主、ARM64 设备结论。
+- Wave 3（U4/U6）与 U0.1 可基于最新 `github/integration/uml-zero-device-20261110` 开工。

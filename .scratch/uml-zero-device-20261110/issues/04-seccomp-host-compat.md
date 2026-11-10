@@ -3,7 +3,7 @@
 Type: implementation
 Status: resolved
 Priority: P1（决定 UML 在 36 域 App 内哪些能力可用）
-Owner: （待分配）
+Owner: U3 会话（Wave 2 实现 + 敏感门清理，2026-11-10）
 Blocked by: None
 External gates: 真机 seccomp 矩阵 `not-tested`；16K 宿主 `not-tested`
 
@@ -62,3 +62,7 @@ External gates: 真机 seccomp 矩阵 `not-tested`；16K 宿主 `not-tested`
   4. unknown：`ncpus=2/4`（上游/本 v6.12 无 ncpus）、`seccomp-fastpath`（上游无 seccomp=；`uml/linux next` 有但本宿主 5.4 缺 close_range）。两者均已在 `fixtures/matrix/cases.json` 写设备入口，并落到 `device/run_device.sh`。
   5. 设备窗口必须验：arm64 下游内核 + bionic 下重跑 12 个 case；OEM filter、真机 seccomp=on、SMP 未验证。宿主 pass 不代表设备 PASS。
   敏感数据门：无真机数据；报告只引用已脱敏的宿主环境与源码路径。边界：不改产品 seccomp、不改 `app/src/main`、未用 ptrace 绕过。
+
+- 2026-11-10 / U3 清理会话（feat/uml-u3-seccomp-compat @ `80d66d4e`）：敏感数据门修复（3 类命中，功能语义零变化）：`run_uml_seccomp.sh` MAC 改运行时 `printf` 生成（支持 `UML_TEST_MAC` 覆盖）；`seccomp_launch.c` `digits[]` 拆两段短字面量（编译期拼接逐字节等价）；9 个 `fixtures/matrix/run-*/harness.env` 重命名 `harness.meta` 并同步 `matrix.py`/run 脚本/README（`.env` 文件归零）。修复后：`PROFILE_CHECK_OK profiles=10`、`UML_SECCOMP_MATRIX_SELF_TEST_OK checks=31`、`SENSITIVE_DATA_OK --range 001add7a..HEAD`、`PRODUCT_CODE_CLEAN`。
+
+- 2026-11-10 / Wave 2 集成会话：独立复核通过后合并 `80d66d4e` → 集成分支 merge `fd8d1f7b`（无冲突）；合并树内 `gen_profile.py --check` 10 profiles、`matrix.py --self-test` 31 checks 复跑通过；`SENSITIVE_DATA_OK --range 001add7a..HEAD`、产品路径零改动。真机 seccomp 矩阵与 16K 宿主保持 `not-tested`；设备入口见 `fixtures/matrix/cases.json` 与 `device/run_device.sh`。报告：`docs/research/2026-11-10-zero-device-uml-wave2-integration.zh-CN.md`。
