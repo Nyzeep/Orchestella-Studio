@@ -434,6 +434,7 @@ public final class BridgeClientResponsePumpTest {
                 pair.reply("ORCHESTELLA/ERROR unauthorized\n");
             });
             pair.client.handshake(TOKEN);
+            requireSeamObservesTheAuthenticatedToken(pair.client);
             expectIo(() -> pair.client.power("shutdown"));
             join(guest, failed);
             require(!pair.client.isReady(), "denied native token retained cached READY");
@@ -454,6 +455,7 @@ public final class BridgeClientResponsePumpTest {
                 pair.reply("ORCHESTELLA/ERROR unauthorized\n");
             });
             pair.client.handshake(TOKEN);
+            requireSeamObservesTheAuthenticatedToken(pair.client);
             expectIo(() -> pair.client.handshake(wrongToken));
             require(!pair.client.isReady(), "wrong token inherited prior READY");
             require(privateTokenIsCleared(pair.client), "failed handshake retained private token");
@@ -578,11 +580,21 @@ public final class BridgeClientResponsePumpTest {
         }
     }
 
-    private static boolean privateTokenIsCleared(BridgeClient client) throws Exception {
-        java.lang.reflect.Field tokenField = BridgeClient.class.getDeclaredField("authenticationToken");
-        require(java.lang.reflect.Modifier.isPrivate(tokenField.getModifiers()), "token storage is not private");
-        tokenField.setAccessible(true);
-        return tokenField.get(client) == null;
+    /**
+     * T2 (2026-11-10): reads the session-lifetime token reference through the
+     * package-private {@code authenticationTokenForTest} seam instead of
+     * reflection. The seam is deliberately not public — the token never
+     * crosses this package through the API — and the positive-value
+     * assertions after each successful handshake prove the seam observes the
+     * real field rather than a constant null.
+     */
+    private static boolean privateTokenIsCleared(BridgeClient client) {
+        return client.authenticationTokenForTest() == null;
+    }
+
+    private static void requireSeamObservesTheAuthenticatedToken(BridgeClient client) {
+        require(TOKEN.equals(client.authenticationTokenForTest()),
+                "token seam lost the authenticated token reference");
     }
 
     private static void diagnosticsDistinguishControlStagesWithoutForeignMessages() throws Exception {
