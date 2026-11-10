@@ -5,7 +5,7 @@ Status: resolved（u1-fastboot，2026-11-10）
 Priority: P0（直接回答“为什么不能像 proot 一样快”的产品承诺）
 Owner: u1-fastboot
 Blocked by: None（与 01 并行；计时字段必须对齐 01 的 T0–T3）
-External gates: 真机 ARM64 boot `not-tested`；16K 宿主 `not-tested`
+External gates: 真机 ARM64 boot `resolved（2026-11-11 设备窗口，见 Comments）`；16K 宿主 `not-tested`（4K 设备不冒充）
 
 ## 背景
 
@@ -63,3 +63,5 @@ External gates: 真机 ARM64 boot `not-tested`；16K 宿主 `not-tested`
 - 2026-11-10 / wave1-integration：**保留 resolved（复核通过，带边界）**。独立复核 head `40173565`：ARM64 UP 7 项 / SMP 6 项产物 sha 与 `manifest.md` §3/§5 一致；内核 `p_align=0x10000`、stub `p_align=0x4000`，`CONFIG_PAGE_SIZE_16KB=y`；`bash -n` × 4、`py_compile`、JSON 均过；设备入口含 `printk.time=1`；产品路径干净、敏感门 OK；合并提交 `69903a0e`。
   - 未能独立复核：两次 ARM64 重建逐字节一致（仓库内无构建日志，仍属实现会话自述）；`manifest.md` 的 x86_64 ext4 sha `30bc505a…` 与当前 `out/rootfs-x86_64.ext4` 不一致（rw ubd boot 已写脏），且 tree digest 公式含绝对路径，跨路径不可复现。
   - ARM64 设备 boot、16 KB 宿主、真 SMP、systemd T4 保持 `not-tested`；不得把 x86_64 宿主当 ARM64 结论。
+
+- 2026-11-11 / device-window（device/uml-wave2-20261110）：**真机 ARM64 boot PASS**。设备 device-a（HONOR/API 36/4KB 宿主页/USB 供电）。WSL(Ubuntu 24.04, gcc 13.3.0)+NDK r29 重建：stub `87666f91…`、两个 `linux-fast-noinitrd`、initramfs `7523c9a2…` 与 manifest pin 逐字节一致；两个 `linux-fast`（内置 initramfs）跨路径未复现 pin（大小逐字节同、16K 检查过、功能全过；差异隔离在 initramfs 内嵌段，记 open）。`check-16kb-kernel.sh` = `ELF_16KB_OK all_targets_pass`。启动矩阵：UP 内置 initramfs n=5 `U1_T2_READY`/`U1_READY` 全过 exit 0（T3 中位 330 ms guest uptime）；SMP `ncpus=4` n=3 `U1_INFO ncpus=4`（guest cpuinfo=nproc 口径）T3 中位 410 ms。`printk.time=1` 全程在位；真机 `seccomp=on` 落 `Userspace mode: SECCOMP`。16 KB 宿主、systemd T4 保持 not-tested。报告：`docs/research/2026-11-11-uml-arm64-device-window-wave2.zh-CN.md`。

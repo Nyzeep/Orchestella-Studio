@@ -5,7 +5,7 @@ Status: resolved（2026-11-10，u2-rootfs-prebake）
 Priority: P0（压缩“下载完还要等很久”的最大杠杆）
 Owner: u2-rootfs-prebake
 Blocked by: None（与 01/02 并行；首启计时对齐 01 的 T2/T3）
-External gates: 真机首启 `not-tested`；16K 宿主 `not-tested`
+External gates: 真机首启 `resolved（2026-11-11 设备窗口：Alpine aarch64 hostfs+ext4，见 Comments）`；16K 宿主 `not-tested`
 
 ## 背景
 
@@ -60,3 +60,5 @@ proot-distro 的“下载完就秒开”并不执行这些步骤：它只解包 
 - 2026-11-10 / wave1-integration：**保留 resolved（复核通过，带边界）**。独立重建 Alpine 3.22.8 x86_64：64 s、111 包、114,590,691 B，tar.gz sha `90ac674f6148ed4b99f7e832c426826e7129ae286312e73bec54fd8baeb372c4`，与报告声明逐字节一致；`verify.sh` **20/20 PASS**；manifest JSON 合法（`jsonschema` 未安装，只做标准库结构检查）；首启脚本无包管理器/网络调用，rootfs 无 apk 缓存/lock/日志；产品路径干净、敏感门 OK；无构建产物入库；合并提交 `1968704c`。
   - 跨测：U1 x86_64 fast kernel + 本票 Alpine x86_64 rootfs 到达 `T2_MOUNTS_READY` → `T3_READY` → `READY`，日志无 `apk`/`apt`/`dpkg`/`pacman`、无 `eth0`/DHCP（n=1，宿主 `seccomp=auto`；不是 ARM64 结论）。
   - 未独立复跑：aarch64/Debian 构建、Debian `verify.sh` 23 项、ext4、ARM64 真机首启；上述边界保持 `not-tested`。GPL/NOTICE/Android APK 分发边界未审查，不进入产品打包。
+
+- 2026-11-11 / device-window（device/uml-wave2-20261110）：**Alpine 3.22.8 aarch64 真机首启 PASS（两通道）**。WSL 重建：tar.gz sha `ab254365…`、ext4 sha `b2683da2…`；`verify.sh` 19 checks 0 fail `VERIFY_OK`（构建侧）。设备侧：tar.gz push 双侧 md5 `f000f1ad…` 一致 → `run-as` 管道解包 4,331 文件 → `init-zero-install`/`ready.sh`/`bin/busybox` 就位；ext4 push 双侧 md5 `7ab1ded9…` 一致。hostfs 通道 n=5：`T2_MOUNTS_READY` 中位 340 / `T3_READY` 中位 350 / `READY`，exit 0×5；ext4（ubd0）通道 n=5：T2 中位 350 / T3 中位 350 / `READY`，exit 0×5。阴性检查：console 无 `apk add`/`apt`/`pacman`/`eth0`/DHCP。设备事实记录：App 数据目录 toybox tar 硬链接创建受限（工具链交叉链接数十条 Permission denied；boot 路径零依赖，不影响结论）。Debian aarch64 仍未构建；16K 宿主 not-tested。报告：`docs/research/2026-11-11-uml-arm64-device-window-wave2.zh-CN.md`。
