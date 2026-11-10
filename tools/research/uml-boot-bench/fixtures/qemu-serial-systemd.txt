@@ -1,0 +1,11 @@
+[    0.000000] Booting Linux on physical CPU 0x0000000000 [0x411fd070]
+[    0.000000] Linux version 7.2.3-droidlayer #1 SMP PREEMPT
+[    0.000000] Kernel command line: root=/dev/vda rw init=/init console=ttyAMA0
+[    0.031000] Run /init as init process
+[    0.045000] systemd[1]: systemd 256 running in system mode.
+[    0.500000] systemd[1]: Reached target Multi-User System.
+UMARM_BOOT_OK guest_uptime=0.510 nproc=2 page=4096
+UMARM_WORK_START work=bootprobe j=2 uptime=0.620
+UMARM_WORK_DONE rc=0 uptime=0.700
+Startup finished in 0.480s (kernel) + 1.250s (userspace) = 1.730s
+graphical.target reached after 1.250s in userspace.

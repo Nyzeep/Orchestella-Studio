@@ -1,0 +1,9 @@
+[    0.000000] Linux version 7.2.0-um #1 SMP PREEMPT
+[    0.000000] Kernel command line: mem=512M rw init=/um-init con=null con0=fd:0,fd:1 rootfstype=hostfs seccomp=on panic=1
+[    0.018000] VFS: Mounted root (hostfs filesystem) on device 0:13.
+[    0.040000] Run /um-init as init process
+UMARM_BOOT_OK guest_uptime=0.120 nproc=1 page=16384
+===== UML GUEST ALIVE =====
+--- uname ---
+Linux (none) 7.2.0-um #1 SMP PREEMPT aarch64 Linux
+UM_COMMAND_EXIT=0

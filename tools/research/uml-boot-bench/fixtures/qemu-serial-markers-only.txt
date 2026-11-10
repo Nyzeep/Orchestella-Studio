@@ -1,0 +1,5 @@
+[    0.000000] Booting Linux on physical CPU 0x0000000000 [0x411fd070]
+[    0.000000] Linux version 7.2.3-droidlayer #1 SMP PREEMPT
+[    0.040000] Run /init as init process
+UMARM_BOOT_OK guest_uptime=0.300 nproc=2 page=4096
+[    0.900000] systemd[1]: Reached target Multi-User System.
