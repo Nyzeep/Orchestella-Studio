@@ -13,8 +13,8 @@
 | --- | --- | --- | --- | --- |
 | **T0 spawn** | 宿主创建 guest 进程 | 宿主 `CLOCK_MONOTONIC`，绝对毫秒（anchor，不是时长） | `ProcessBuilder.start()` / `exec` 返回 | UML / QEMU / proot |
 | **T1 kernel init** | guest 内核开始执行可控 init | guest 内核时间，毫秒（自内核启动） | 带内核 timestamp 的 `Run /<init> as init process` | UML / QEMU |
-| **T2 rootfs mounted** | `/` 与 `/proc`、`/sys`、`/dev`、`/dev/pts`、cgroup2 就绪 | guest `/proc/uptime`，毫秒 | 挂载完成后的 `UMARM_BOOT_OK guest_uptime=<s>`；缺失时退回 `VFS: Mounted root` 内核 timestamp | UML / QEMU |
-| **T3 first command** | 第一条用户命令可执行并输出 `READY` | guest `/proc/uptime`，毫秒 | `BENCH boot_uptime_ms=<ms>`（首选）、`UMARM_WORK_START ... uptime=<s>`（fallback）、`BOOTPROBE ... uptime=<s>`（第二 fallback） | UML / QEMU |
+| **T2 rootfs mounted** | `/` 与 `/proc`、`/sys`、`/dev`、`/dev/pts`、cgroup2 就绪 | guest `/proc/uptime`，毫秒 | 挂载完成后的 `UMARM_BOOT_OK guest_uptime=<s>`（首选）；U2 零安装的 `T2_MOUNTS_READY uptime=<s>`（U0.1 alias，次之）；缺失时退回 `VFS: Mounted root` 内核 timestamp | UML / QEMU |
+| **T3 first command** | 第一条用户命令可执行并输出 `READY` | guest `/proc/uptime`，毫秒 | `BENCH boot_uptime_ms=<ms>`（首选）、`UMARM_WORK_START ... uptime=<s>`（fallback）、`BOOTPROBE ... uptime=<s>`（第二 fallback）；U1/U2 alias `U1_READY uptime=<s>` / `T3_READY uptime=<s>` 排在最后；裸 `READY` 不产生数值（见 §4.1 alias 规则） | UML / QEMU |
 | **T4 service ready** | systemd `multi-user.target` / 网络 / SSH 就绪 | guest 内核时间，毫秒 | `systemd-analyze` 的 `Startup finished in ... = <total>`；缺失时退回带 timestamp 的 `Reached target multi-user.target` | UML / QEMU |
 | **T5 warm resume** | 从 snapshot/预热点恢复到 T3 | 宿主 `CLOCK_MONOTONIC`，毫秒 | `BOOT_TIMING` 的 `ready_point=T5` 配对 | UML（待验证） |
 | **P0 proot exec** | proot 进程 exec 到 shell 并输出 `READY` | 宿主 `CLOCK_MONOTONIC`，毫秒 | `p0_ms=` 或 `t0_monotonic_ms`/`ready_monotonic_ms` 配对 | proot |
@@ -60,8 +60,13 @@
 | `BENCH boot_uptime_ms=<int>` | `research/uml-runner/guest/um-command.sh` | ms | T3（首选） |
 | `UMARM_WORK_START ... uptime=<float>` | `research/uml-fabric-probe/guest-overlay-uml/init` | s | T3（fallback） |
 | `BOOTPROBE ... uptime=<float>` | `research/uml-fabric-probe/guest-overlay-uml/work/bootprobe.sh` | s | T3（第二 fallback，11-07 bootprobe 格式） |
+| `U1_READY uptime=<float>` | U1 fast shell `research/uml-fastboot/initramfs/um-command.sh` | s | T3（U0.1 alias，低于以上全部 canonical marker） |
+| `T3_READY uptime=<float> action=<shell\|poweroff>` | U2 `research/uml-rootfs-prebake/ready.sh` | s | T3（U0.1 alias，低于 `U1_READY`） |
 | `UMARM_BOOT_OK guest_uptime=<float> nproc=<N> page=<P>` | 两个 guest overlay 的 init | s | T2；`nproc`/`page` 进夹具 |
 | `UMARM_BOOT_OK`（无 `guest_uptime`） | 旧日志 | — | T2 缺失；不猜 |
+| `T2_MOUNTS_READY uptime=<float>` | U2 `research/uml-rootfs-prebake/init-zero-install` | s | T2（U0.1 alias；优先于 `VFS: Mounted root` 内核 timestamp，低于 `UMARM_BOOT_OK guest_uptime=`） |
+| `INIT_ZERO_INSTALL ...` | U2 `init-zero-install` 前缀行 | — | 不单独映射；仅作为裸 `READY` 的识别门 |
+| `READY`（裸行） | U2 `ready.sh` | — | 仅当同一 run 出现 `T3_READY` 或 `INIT_ZERO_INSTALL` 前缀时视为零安装 run 的就绪佐证；自身无 uptime，不产生数值，不归任何 lane |
 | `[    <s>] Run /<init> as init process` | 内核 printk（需 `printk.time=1`） | s | T1 |
 | `[    <s>] VFS: Mounted root ...` / `EXT4-fs (...) mounted filesystem` | 内核 printk | s | T2 fallback |
 | `[    <s>] Reached target multi-user.target` | systemd | s | T4 fallback |
@@ -71,6 +76,13 @@
 | `BOOT_TIMELINE T5 elapsed_ms=<ms>` | 本协议规范 marker | ms | T5 |
 
 > 内核 printk timestamp 需要 `printk.time=1`（或 sysfs `/sys/module/printk/parameters/time=1`）。仓库 pinned UML 内核的 `CONFIG_PRINTK_TIME` 未开；没有 timestamp 时 T1/T2 只能 `unknown`。`initcall_debug` 的 `returned ... usecs` 是单个 initcall 的耗时，不是 init 开始时刻，解析器不用它推 T1。
+
+**U0.1 alias 规则（票 05，跨会话标记）**：
+
+- alias 的 uptime 单位是 guest `/proc/uptime` 秒（与 `UMARM_*` marker 相同，10 ms 截断粒度）；值非法/带单位后缀（如 `uptime=0.09ms`）给 warning 且不猜值。
+- 优先级低于全部 canonical marker：T3 为 `BENCH` > `UMARM_WORK_START` > `BOOTPROBE` > `U1_READY` > `T3_READY`；T2 为 `UMARM_BOOT_OK guest_uptime=` > `T2_MOUNTS_READY` > 内核 timestamp fallback。canonical marker 在场时 alias 不生效。
+- 裸 `READY` 永远不会产生 T3 数值（它没有 uptime）：同一 run 出现 `T3_READY` 或 `INIT_ZERO_INSTALL` 前缀时，它只是零安装 run 的就绪佐证（T3 仍取自带 uptime 的 marker；若全部缺失，missing 提示指向 `T3_READY`/`U1_READY` alias）；没有该上下文的 `READY`（例如其他工具的 shell READY）不归任何 lane，不产生 T3。
+- U1 的 `U1_T2_READY uptime=` 目前**不在**协议内（已知缺口）：U1 fast-shell 日志的 T2 仍走 `VFS: Mounted root` 内核 timestamp fallback。
 
 ### 4.2 `uml-exit.txt`
 
@@ -135,7 +147,7 @@ rc=0
 ```bash
 # 自测：唯一 OK 串
 python3 tools/research/uml-boot-bench/parse_boot_log.py --self-test
-# -> UML_BOOT_BENCH_SELF_TEST_OK checks=118
+# -> UML_BOOT_BENCH_SELF_TEST_OK checks=157
 
 # UML 单 run（console + exit）
 python3 tools/research/uml-boot-bench/parse_boot_log.py \
@@ -244,13 +256,28 @@ python3 tools/research/uml-boot-bench/parse_boot_log.py \
 - QEMU 旧式 systemd（firmware/loader/kernel/initrd/userspace 五段）=8492 ms；截断行不给 T4。
 - proot fixture：P0=50.101 ms；T1–T4 明确 `not applicable`，不伪装成 0。
 
+### 7.4 U1/U2 alias 合成样本（U0.1，票 05）
+
+`fixtures/uml-console-u1-ready-ok.txt`（U1 fast shell）与 `fixtures/uml-console-u2-zero-install-ok.txt`（U2 零安装；字段形态取自 Wave 1 集成报告 §3 的跨测日志摘录，非真机日志）：
+
+| fixture | 字段 | 值 |
+| --- | --- | --- |
+| U1 alias | T3 | 110 ms（`U1_READY uptime=0.11`）；T2=60 ms 走 VFS timestamp fallback（`U1_T2_READY` 不在协议内） |
+| U2 alias | T2 | 90 ms（`T2_MOUNTS_READY uptime=0.09`，优先于同 run 的 VFS timestamp 50 ms） |
+| U2 alias | T3 | 110 ms（`T3_READY uptime=0.11 action=poweroff`）；裸 `READY` 被 `INIT_ZERO_INSTALL` 门住，不加值 |
+| 裸 READY 歧义 | T3 | `unknown`（无 `T3_READY`/`INIT_ZERO_INSTALL` 上下文，不归任何 lane） |
+| 缺 uptime | T3 | `unknown`（`U1_READY` 无 uptime 不猜值） |
+| 非法单位/值 | T2/T3 | `unknown` + `invalid ... uptime=` warning（`uptime=0.09ms`、`uptime=abc`） |
+
+**限制**：U1/U2 的原始 console 日志在外部证据根，不在本仓库；alias 行为由上述合成 fixture 覆盖，真实 U1/U2 日志回归标 `not-tested`。
+
 ## 8. 缺失字段时该补什么
 
 | 缺失 | 需要补的日志/参数 |
 | --- | --- |
 | T1 | 内核 cmdline 加 `printk.time=1`（或 `initcall_debug`）；保留 `Run /... as init process` 行 |
-| T2 | init 挂载 `/proc,/sys,/dev,/dev/pts,cgroup2` 后输出 `UMARM_BOOT_OK guest_uptime=$(cut -d' ' -f1 /proc/uptime) nproc=$(nproc) page=$(getconf PAGESIZE)` |
-| T3 | 第一条命令后输出 `BENCH boot_uptime_ms=$(awk '{printf "%d", $1*1000}' /proc/uptime)`，或 `UMARM_WORK_START ... uptime=<s>` |
+| T2 | init 挂载 `/proc,/sys,/dev,/dev/pts,cgroup2` 后输出 `UMARM_BOOT_OK guest_uptime=$(cut -d' ' -f1 /proc/uptime) nproc=$(nproc) page=$(getconf PAGESIZE)`；U2 零安装 init 输出 `T2_MOUNTS_READY uptime=<s>` |
+| T3 | 第一条命令后输出 `BENCH boot_uptime_ms=$(awk '{printf "%d", $1*1000}' /proc/uptime)`，或 `UMARM_WORK_START ... uptime=<s>`；U1 fast shell 输出 `U1_READY uptime=<s>`，U2 `ready.sh` 输出 `T3_READY uptime=<s>`（alias 优先级见 §4.1） |
 | T4 | guest 内运行 `systemd-analyze` 并把 `Startup finished in ... = ...` 落到 serial；或输出 `BOOT_TIMELINE T4 uptime_s=<s>` |
 | T5 | warm-resume 采集脚本写 `BOOT_TIMING`，`ready_point=T5`，两端同一宿主 monotonic clock |
 | P0 | proot 采集脚本写 `p0_ms=`，或 `t0_monotonic_ms`/`ready_monotonic_ms` + `ready_point=P0` |
@@ -261,6 +288,8 @@ python3 tools/research/uml-boot-bench/parse_boot_log.py \
 
 - `.scratch/uml-zero-device-20261110/spec.md` §2（指标定义）、§3（U0）
 - `.scratch/uml-zero-device-20261110/issues/01-boot-timeline-harness.md`
+- `.scratch/uml-zero-device-20261110/issues/05-u0-marker-aliases.md`（U0.1 alias，票 05）
+- `docs/research/2026-11-10-zero-device-uml-wave1-integration.zh-CN.md` §3/§4（U1/U2 跨测标记证据与契约缺口）
 - `docs/research/2026-11-10-proot-vs-uml-zero-device-direction.zh-CN.md`
 - `docs/research/2026-10-29-uml-device-round-go-no-go.zh-CN.md` §1、§5.1
 - `docs/research/2026-11-07-uml-fabric-device-round.zh-CN.md` §1、§5.1

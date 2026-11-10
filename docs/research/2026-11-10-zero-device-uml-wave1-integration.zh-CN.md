@@ -155,6 +155,8 @@ python3 tools/research/uml-boot-bench/parse_boot_log.py \
 
 建议：新开 U0.1 小票，为 parser 增加 `U1_READY` / `T2_MOUNTS_READY` / `T3_READY` alias + 对应 fixture + self-test；本会话不擅自改 U0 parser（改动虽小，但属于协议变更，应独立评审）。
 
+**U0.1 跟进（票 05，2026-11-10）**：本节记录的契约缺口已在 `feat/uml-u0-marker-aliases` 分支补上。U0 parser 新增三个带 uptime 的 alias——`U1_READY uptime=<s>` → T3、`T2_MOUNTS_READY uptime=<s>` → T2、`T3_READY uptime=<s>` → T3——以及裸 `READY` 的门控识别：仅当同一 run 出现 `T3_READY` 或 `INIT_ZERO_INSTALL` 前缀时记为零安装 run 的佐证（裸 `READY` 自身无 uptime，不产生数值，不归任何 lane）。alias 优先级低于全部 canonical marker（T3：`BENCH` > `UMARM_WORK_START` > `BOOTPROBE` > `U1_READY` > `T3_READY`；T2：`UMARM_BOOT_OK` > `T2_MOUNTS_READY` > 内核 timestamp fallback），本节指出的「T2=40 ms 来自 VFS 而非 `T2_MOUNTS_READY`」的语义混用问题随之消除（alias 的 guest uptime 优先于 VFS timestamp）。现有 19 个 fixture 的解析输出逐字节不变；self-test 118 → 157。本节对 Wave 1 当时行为的记录保持原样。
+
 ## 5. not-tested / 证据分级
 
 以下项目本轮**没有**验证，保持原状态，不得写成 PASS：

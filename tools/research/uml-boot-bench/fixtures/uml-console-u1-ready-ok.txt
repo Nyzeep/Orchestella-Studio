@@ -1,0 +1,7 @@
+[    0.000000] Linux version 7.2.0-um-fast #1 SMP PREEMPT (synthetic fixture, not a real log)
+[    0.010000] Run /init as init process
+U1_INFO kernel=7.2.0-um-fast ncpus=1
+[    0.060000] VFS: Mounted root (hostfs filesystem) on device 0:13.
+U1_T2_READY uptime=0.08
+U1_READY uptime=0.11
+kernel exited code=0 reason=exited duration_ms=450
