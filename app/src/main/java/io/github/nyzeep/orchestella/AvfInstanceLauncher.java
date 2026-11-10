@@ -114,6 +114,17 @@ public final class AvfInstanceLauncher {
 
         AvfSession(AvfVirtualMachineEngine.AvfVmSession session) { this(session, null, null); }
 
+        /**
+         * Test seam: construct with a pre-cached control client so the
+         * recovery contract tests can observe the unsupported branch against a
+         * non-empty cache without reflection. The unsupported recover/claim
+         * behavior itself is unchanged.
+         */
+        AvfSession(AvfVirtualMachineEngine.AvfVmSession session, BridgeClient seededBridgeClient) {
+            this(session, null, null);
+            this.bridgeClient = seededBridgeClient;
+        }
+
         AvfSession(AvfVirtualMachineEngine.AvfVmSession session, String token) {
             this(session, token, null);
         }

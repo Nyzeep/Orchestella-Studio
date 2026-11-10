@@ -42,18 +42,20 @@ public final class QemuInstanceLauncher {
         /** Observation-only stage trace (ticket 27); null records nothing. */
         private final LaunchStageObserver stageObserver;
         private final BridgeConnector connector = new BridgeConnector();
-        private final Object controlLock = new Object();
         private final Object terminalLock = new Object();
-        private LocalSocket controlSocket;
-        private boolean controlClosed;
         private LocalSocket terminalSocket;
-        private BridgeClient bridgeClient;
         private volatile BridgeControl.Clipboard clipboardBridge;
         private final String proxySocketName;
         private LocalSocket proxySocket;
         private io.github.nyzeep.orchestella.runtime.network.BridgeProxyGateway proxyGateway;
         private final RfbDisplaySession displayChannel;
-        private final AtomicBoolean isBridgeServing = new AtomicBoolean(false);
+        /**
+         * Named owner of the control-channel protocol (connect / recover /
+         * claim / control-side retirement) and of the monitor that guards it.
+         * The session keeps the shell: every public signature below is
+         * unchanged and delegates to this collaborator.
+         */
+        private final ControlChannelLifecycle controlLifecycle;
         private final java.util.Set<SessionServiceForward> serviceForwards =
                 new java.util.concurrent.CopyOnWriteArraySet<>();
 
@@ -169,6 +171,8 @@ public final class QemuInstanceLauncher {
             this.stageObserver = stageObserver;
             this.supervisor = new RuntimeProcessSupervisor(handle, gateway, this::closeChannels,
                     stageObserver == null ? null : new SupervisorStopFacts());
+            this.controlLifecycle = new ControlChannelLifecycle(controlSocketName, this::connect,
+                    this::hasLiveTerminal);
             this.displayChannel = displaySocketPath == null ? null : new RfbDisplaySession(() ->
                     openDisplayStreams(displaySocketPath), token, this::bridgeClient);
             startProxyGateway();
@@ -396,16 +400,12 @@ public final class QemuInstanceLauncher {
 
         @Override
         public OutputStream controlInput() throws IOException {
-            synchronized (controlLock) {
-                return control().getOutputStream();
-            }
+            return controlLifecycle.controlInput();
         }
 
         @Override
         public InputStream controlOutput() throws IOException {
-            synchronized (controlLock) {
-                return control().getInputStream();
-            }
+            return controlLifecycle.controlOutput();
         }
 
         @Override
@@ -434,13 +434,7 @@ public final class QemuInstanceLauncher {
                 closeQuietly(proxySocket);
                 proxySocket = null;
             }
-            synchronized (controlLock) {
-                controlClosed = true;
-                if (controlSocket != null) {
-                    closeQuietly(controlSocket);
-                    controlSocket = null;
-                }
-            }
+            controlLifecycle.retireControlChannel();
             synchronized (terminalLock) {
                 if (terminalSocket != null) {
                     closeQuietly(terminalSocket);
@@ -485,54 +479,42 @@ public final class QemuInstanceLauncher {
 
         @Override
         public BridgeClient bridgeClient() {
-            synchronized (controlLock) {
-                if (controlClosed) return null;
-                if (bridgeClient == null) {
-                    try {
-                        bridgeClient = new BridgeClient(controlOutput(), controlInput());
-                    } catch (IOException e) {
-                        return null;
-                    }
-                }
-                return bridgeClient;
-            }
+            return controlLifecycle.bridgeClient();
         }
 
         @Override
         public boolean recoverControlChannel() {
-            BridgeClient failedClient;
-            synchronized (controlLock) {
-                failedClient = bridgeClient;
-                if (controlClosed || failedClient == null
-                        || !"failed".equals(failedClient.readinessState()) || !hasLiveTerminal()) {
-                    return false;
-                }
-            }
-            // Never hold a session lock while joining the old reader. The
-            // failed transport must be fully retired before another can read.
-            try {
-                if (!failedClient.awaitDisconnectedReader(5000L)) return false;
-            } catch (InterruptedException interrupted) {
-                Thread.currentThread().interrupt();
-                return false;
-            }
-            synchronized (controlLock) {
-                if (controlClosed || bridgeClient != failedClient
-                        || !"failed".equals(failedClient.readinessState()) || !hasLiveTerminal()) {
-                    return false;
-                }
-                if (controlSocket != null) {
-                    try {
-                        controlSocket.close();
-                    } catch (IOException unavailable) {
-                        return false;
-                    }
-                    controlSocket = null;
-                }
-                bridgeClient = null;
-                isBridgeServing.set(false);
-                return true;
-            }
+            return controlLifecycle.recoverControlChannel();
+        }
+
+        /**
+         * Contract tests hold this monitor to prove that retirement and
+         * recovery never require terminal-lock ownership (a caller or the
+         * holder's pump may own the monitor while the control protocol runs)
+         * and to keep a registered holder's pump alive without entering
+         * Android socket code. The control protocol itself never takes it.
+         */
+        Object terminalMonitorForTest() {
+            return terminalLock;
+        }
+
+        /**
+         * Test seam: install a cached control client directly, reaching the
+         * intermediate states the public API cannot produce (a failed
+         * transport whose reader has not exited, a client mid-handshake).
+         * Delegates to the lifecycle's own seam; never called by production.
+         */
+        void installControlClientForTest(BridgeClient client) {
+            controlLifecycle.installClientForTest(client);
+        }
+
+        /**
+         * Test seam: the raw cached control client without lazy creation, so
+         * tests can assert that a rejected recovery keeps the cache instead of
+         * triggering a new connect.
+         */
+        BridgeClient cachedControlClientForTest() {
+            return controlLifecycle.cachedClientForTest();
         }
 
         private boolean hasLiveTerminal() {
@@ -553,22 +535,7 @@ public final class QemuInstanceLauncher {
 
         @Override
         public boolean markBridgeServing() {
-            synchronized (controlLock) {
-                if (controlClosed || (bridgeClient != null
-                        && "failed".equals(bridgeClient.readinessState()))) return false;
-                return isBridgeServing.compareAndSet(false, true);
-            }
-        }
-
-
-        private LocalSocket control() throws IOException {
-            synchronized (controlLock) {
-                if (controlClosed) throw new IOException("Control channel is closed");
-                if (controlSocket == null) {
-                    controlSocket = connect(controlSocketName);
-                }
-                return controlSocket;
-            }
+            return controlLifecycle.markBridgeServing();
         }
 
         private LocalSocket terminal() throws IOException {
