@@ -19,12 +19,14 @@ git fetch github
 mkdir -p /workspace-wt
 git worktree add /workspace-wt/u6 \
   -b feat/uml-u6-multi-instance \
-  github/research/uml-zero-device-direction-20261110
+  github/integration/uml-zero-device-20261110
 cd /workspace-wt/u6
 ```
 
 - 只改本分支；不改 `main`；不合并；不 push 到 main。
 - 不写产品代码；只动 `tools/research/uml-multi-instance/`、必要的 docs/research。
+- **依赖**：`08-wave1-integration.md` 已 push `integration/uml-zero-device-20261110`；未 push 不要开工。
+- **可用输入**：U1 `research/uml-fastboot/out/`（fast kernel/rootfs，若存在）、U2 `research/uml-rootfs-prebake/`（Alpine x86_64 rootfs/manifest）。
 
 ## 2. 范围
 

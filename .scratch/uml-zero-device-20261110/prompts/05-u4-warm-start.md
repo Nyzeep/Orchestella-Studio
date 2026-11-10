@@ -20,12 +20,14 @@ git fetch github
 mkdir -p /workspace-wt
 git worktree add /workspace-wt/u4 \
   -b feat/uml-u4-warm-start \
-  github/research/uml-zero-device-direction-20261110
+  github/integration/uml-zero-device-20261110
 cd /workspace-wt/u4
 ```
 
 - 只改本分支；不改 `main`；不合并；不 push 到 main。
 - 只写 `docs/research/2026-11-XX-uml-warm-start-feasibility.zh-CN.md`（必要时加一个最小 host 原型目录，但不写产品代码）。
+- **依赖**：`08-wave1-integration.md` 已 push `integration/uml-zero-device-20261110`；未 push 不要开工。
+- **可用输入**：U1 `docs/research/2026-11-10-uml-fastboot-profile.zh-CN.md` 与 `research/uml-fastboot/out/`（如存在）、U2 `docs/research/2026-11-10-uml-rootfs-prebake.zh-CN.md`。
 
 ## 2. 必须回答的问题
 

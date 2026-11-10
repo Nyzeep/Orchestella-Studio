@@ -19,12 +19,15 @@ git fetch github
 mkdir -p /workspace-wt
 git worktree add /workspace-wt/u5 \
   -b feat/uml-u5-packaging-ci \
-  github/research/uml-zero-device-direction-20261110
+  github/integration/uml-zero-device-20261110
 cd /workspace-wt/u5
 ```
 
 - 只改本分支；不改 `main`；不合并；不 push 到 main。
 - 不写产品代码；只动 `tools/research/uml-artifacts/`、`.github/workflows/uml-research-artifacts.yml`（如果批准）、必要的 docs/research。
+- **依赖**：`08-wave1-integration.md` 已 push `integration/uml-zero-device-20261110`；未 push 不要开工。
+- **可用输入**：U1 `research/uml-fastboot/manifest.md`、U2 `research/uml-rootfs-prebake/manifests/*.json`、U0 `tools/research/uml-boot-bench/`（仅作证据格式参考）。
+- **不要**改 `release.yml`/现有 CI；研究 workflow 仅 `workflow_dispatch`。
 
 ## 2. 范围
 

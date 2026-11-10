@@ -6,15 +6,20 @@
 
 | 顺序 | 会话 | Prompt | 分支 | 工作区 | 依赖 |
 | --- | --- | --- | --- | --- | --- |
-| Wave 0 | 协调者 | `00-coordinator.md` | `integration/uml-zero-device-20261110` | `/workspace-wt/integration` | 无 |
+| Wave 0 | 通用协调者 | `00-coordinator.md` | `integration/uml-zero-device-20261110` | `/workspace-wt/integration` | 无（泛用模板） |
 | Wave 1 | U0 Boot timeline | `01-u0-boot-timeline.md` | `feat/uml-u0-boot-timeline` | `/workspace-wt/u0` | 无 |
 | Wave 1 | U1 Fast-boot profile | `02-u1-fastboot-profile.md` | `feat/uml-u1-fastboot` | `/workspace-wt/u1` | 可与 U0 并行 |
 | Wave 1 | U2 Rootfs 预烘焙 | `03-u2-rootfs-prebake.md` | `feat/uml-u2-rootfs-prebake` | `/workspace-wt/u2` | 可与 U0 并行 |
-| Wave 2 | U3 Seccomp/host compat | `04-u3-seccomp-compat.md` | `feat/uml-u3-seccomp-compat` | `/workspace-wt/u3` | 无（可与 Wave 1 并行） |
-| Wave 2 | U5 打包/CI | `06-u5-packaging-ci.md` | `feat/uml-u5-packaging-ci` | `/workspace-wt/u5` | 建议等 U1 的 manifest 形状 |
-| Wave 3 | U4 Warm-start | `05-u4-warm-start.md` | `feat/uml-u4-warm-start` | `/workspace-wt/u4` | 等 U1/U2 基线 |
-| Wave 3 | U6 多实例 | `07-u6-multi-instance.md` | `feat/uml-u6-multi-instance` | `/workspace-wt/u6` | 等 U1/U2 基线 |
+| **Wave 1.5** | **Wave 1 集成** | **`08-wave1-integration.md`** | `integration/uml-zero-device-20261110` | `/workspace-wt/integration` | U0/U1/U2 已返回；先合并/跨测 |
+| Wave 2 | U3 Seccomp/host compat | `04-u3-seccomp-compat.md` | `feat/uml-u3-seccomp-compat` | `/workspace-wt/u3` | **等 08 push 集成分支** |
+| Wave 2 | U5 打包/CI | `06-u5-packaging-ci.md` | `feat/uml-u5-packaging-ci` | `/workspace-wt/u5` | **等 08 push 集成分支** |
+| Wave 3 | U4 Warm-start | `05-u4-warm-start.md` | `feat/uml-u4-warm-start` | `/workspace-wt/u4` | **等 08 push 集成分支** |
+| Wave 3 | U6 多实例 | `07-u6-multi-instance.md` | `feat/uml-u6-multi-instance` | `/workspace-wt/u6` | **等 08 push 集成分支** |
 | 持续 | ACR 证据包 | 由协调者执行 | integration | 同上 | U0–U3/U5 |
+
+> U3/U5/U4/U6 的 Prompt 已把 base 改为 `github/integration/uml-zero-device-20261110`；**08 集成会话未 push 之前不要开工**，否则会漏掉 U0/U1/U2 的成果。
+>
+> 已发现的跨会话契约缺口：U0 parser 认 `BENCH boot_uptime_ms` / `UMARM_WORK_START` / `BOOTPROBE` / `UMARM_SHELL_READY`，不认 U1 的 `U1_READY` 与 U2 的 `T3_READY`。08 集成报告必须记录；若要补 alias，另开 U0.1 小票，不要混进集成会话的大 diff。
 
 **并行上限建议：** 同时不超过 3 个实现会话 + 1 个协调者；每个实现会话内部最多 2 个子智能体。这样既并行，又不会让同一文件/构建缓存互相踩踏。
 

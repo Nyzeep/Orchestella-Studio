@@ -20,12 +20,15 @@ git fetch github
 mkdir -p /workspace-wt
 git worktree add /workspace-wt/u3 \
   -b feat/uml-u3-seccomp-compat \
-  github/research/uml-zero-device-direction-20261110
+  github/integration/uml-zero-device-20261110
 cd /workspace-wt/u3
 ```
 
 - 只改本分支；不改 `main`；不合并；不 push 到 main。
 - 不写产品代码；只动 `tools/research/uml-seccomp/`、必要的 `docs/research/`。
+- **依赖**：`08-wave1-integration.md` 已 push `integration/uml-zero-device-20261110`；未 push 不要开工。
+- **可用输入**：U0 `tools/research/uml-boot-bench/`（T0–T5 口径）、U1 `research/uml-fastboot/`（fast kernel/README/device cmdline）、U2 `research/uml-rootfs-prebake/`（manifests/init）。
+- **已知缺口**：U0 parser 不识别 U1 `U1_READY` / U2 `T3_READY`；U3 若测启动，只报宿主墙钟或 `unknown`，不要伪造 U0 JSON。
 
 ## 2. 范围
 
