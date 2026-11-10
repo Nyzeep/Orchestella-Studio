@@ -11,21 +11,23 @@
 | Wave 1 | U1 Fast-boot profile | `02-u1-fastboot-profile.md` | `feat/uml-u1-fastboot` | `/workspace-wt/u1` | 可与 U0 并行 |
 | Wave 1 | U2 Rootfs 预烘焙 | `03-u2-rootfs-prebake.md` | `feat/uml-u2-rootfs-prebake` | `/workspace-wt/u2` | 可与 U0 并行 |
 | **Wave 1.5** | **Wave 1 集成** | **`08-wave1-integration.md`** | `integration/uml-zero-device-20261110` | `/workspace-wt/integration` | U0/U1/U2 已返回；先合并/跨测 |
-| Wave 2 | U3 Seccomp/host compat | `04-u3-seccomp-compat.md` | `feat/uml-u3-seccomp-compat` | `/workspace-wt/u3` | **等 08 push 集成分支** |
-| Wave 2 | U5 打包/CI | `06-u5-packaging-ci.md` | `feat/uml-u5-packaging-ci` | `/workspace-wt/u5` | **等 08 push 集成分支** |
-| Wave 3 | U4 Warm-start | `05-u4-warm-start.md` | `feat/uml-u4-warm-start` | `/workspace-wt/u4` | **等 08 push 集成分支** |
-| Wave 3 | U6 多实例 | `07-u6-multi-instance.md` | `feat/uml-u6-multi-instance` | `/workspace-wt/u6` | **等 08 push 集成分支** |
-| 持续 | ACR 证据包 | 由协调者执行 | integration | 同上 | U0–U3/U5 |
+| **Wave 2.0** | **U3 敏感门清理** | **`09-u3-gate-cleanup.md`** | `feat/uml-u3-seccomp-compat` | `/workspace-wt/u3` | U3 功能已过；敏感门 3 类命中 |
+| **Wave 2.0** | **U5 敏感门清理** | **`10-u5-gate-cleanup.md`** | `feat/uml-u5-packaging-ci` | `/workspace-wt/u5` | U5 功能已过；敏感门 2 处命中 |
+| **Wave 2.1** | **Wave 2 集成** | **`11-wave2-integration.md`** | `integration/uml-zero-device-20261110` | `/workspace-wt/integration` | 等 09/10 push；合并 U3+U5 |
+| **Wave 2.5** | **U0.1 marker aliases** | **`12-u0-marker-aliases.md`** | `feat/uml-u0-marker-aliases` | `/workspace-wt/u0-aliases` | 可与 11 并行；base 最新集成 |
+| Wave 3 | U4 Warm-start | `05-u4-warm-start.md` | `feat/uml-u4-warm-start` | `/workspace-wt/u4` | **等 11 push 集成分支** |
+| Wave 3 | U6 多实例 | `07-u6-multi-instance.md` | `feat/uml-u6-multi-instance` | `/workspace-wt/u6` | **等 11 push 集成分支** |
+| 持续 | ACR 证据包 | 由协调者执行 | integration | 同上 | U0–U3/U5 + U0.1 |
 
-> U3/U5/U4/U6 的 Prompt 已把 base 改为 `github/integration/uml-zero-device-20261110`；**08 集成会话未 push 之前不要开工**，否则会漏掉 U0/U1/U2 的成果。
+> Wave 2+ 的 base 是 `github/integration/uml-zero-device-20261110`（最新 head）。**Wave 2.1 集成未 push 前不要开 Wave 3**，否则会漏掉 U3/U5 的成果。
 >
-> 已发现的跨会话契约缺口：U0 parser 认 `BENCH boot_uptime_ms` / `UMARM_WORK_START` / `BOOTPROBE` / `UMARM_SHELL_READY`，不认 U1 的 `U1_READY` 与 U2 的 `T3_READY`。08 集成报告必须记录；若要补 alias，另开 U0.1 小票，不要混进集成会话的大 diff。
+> 已发现的跨会话契约缺口：U0 parser 认 `BENCH boot_uptime_ms` / `UMARM_WORK_START` / `BOOTPROBE` / `UMARM_SHELL_READY`，不认 U1 的 `U1_READY`、U2 的 `T2_MOUNTS_READY` / `T3_READY` / `READY`。已开 **U0.1 票 05** 与 Prompt 12，和 Wave 2.1 并行做，不要混进集成大 diff。
 
 **并行上限建议：** 同时不超过 3 个实现会话 + 1 个协调者；每个实现会话内部最多 2 个子智能体。这样既并行，又不会让同一文件/构建缓存互相踩踏。
 
 ## 1. 所有会话的共同纪律
 
-1. **基线**：`github/research/uml-zero-device-direction-20261110`（已推送）。每个会话先 `git fetch github`，再从该分支切自己的工作分支。
+1. **基线**：Wave 2+ 用 `github/integration/uml-zero-device-20261110`（已推送）；Wave 1 历史分支用 `github/research/uml-zero-device-direction-20261110`。每个会话先 `git fetch github`，再从对应基线切自己的工作分支。
 2. **工作区隔离**：用 `git worktree`，不要多个会话共用 `/workspace` 的工作树；也不要让两个会话改同一个文件。
 3. **不写产品代码**：ACR 通过前不改 `app/`、`runtime/`、`guest-assets/` 的产品路径；只改 `tools/research/`、`research/`、`docs/research/`、`.scratch/uml-zero-device-20261110/`。
 4. **不改 main**：不合并、不 rebase main、不 force push；完成后 push 自己的分支，由协调者集成。
@@ -36,9 +38,9 @@
    ```
 6. **敏感数据门**：push 前跑
    ```bash
-   python3 tools/ci/check_sensitive_data.py --range github/research/uml-zero-device-direction-20261110..HEAD
+   python3 tools/ci/check_sensitive_data.py --range <你的 base>..HEAD
    ```
-   必须 `SENSITIVE_DATA_OK`；不得带入设备序列号/IMEI/Android ID/截图/完整日志/真实 IP/本机路径。
+   必须 `SENSITIVE_DATA_OK`；不得带入设备序列号/IMEI/Android ID/截图/完整日志/真实 IP/本机路径。U3/U5 已因 `.env` fixture、完整 MAC 字面量、Windows 盘符文档示例和用户 home 路径自测被拦，修复见 Prompt 09/10。
 7. **联网调研**：允许 WebSearch/WebFetch，但一手来源优先（官方文档、源码、规范、项目仓库）；博客/论坛只能作互证，不能单独作为事实依据；每条关键事实写 URL 与访问日期。
 8. **子智能体**：每个实现会话用 Agent 工具最多并发 2 个子智能体：一个研究子智能体（一手来源/外部事实）、一个验证子智能体（独立跑验收/审阅）。主会话拥有文件与最终提交；子智能体不提交、不 push、不改同一文件。
 9. **证据分级**：报告里区分 `事实` / `推断` / `待实测`；跨夹具、跨就绪点数字禁止相除；真机项标 `not-tested` 并给下个设备窗口入口。
