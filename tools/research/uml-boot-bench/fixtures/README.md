@@ -15,6 +15,11 @@ summary already published in `docs/research/`.
 | `uml-exit-real-20261029-excerpt.txt` | **sanitised excerpt** | Same report §5.1 exit summary | `duration_ms=3182`, exit 0 |
 | `uml-console-20261107-synthetic.txt` | synthetic | Field shape and median order of `docs/research/2026-11-07-uml-fabric-device-round.zh-CN.md` §1; **not** a real log | T2=340, T3=350, duration=612 ms |
 | `uml-console-bootprobe.txt` | synthetic | 11-07 `bootprobe.sh` marker shape (`BOOTPROBE ... uptime=`) | T2=340, T3=350 ms from `BOOTPROBE` |
+| `uml-console-u1-ready-ok.txt` | synthetic | U1 fast-shell marker shape (`U1_INFO`, `U1_T2_READY`, `U1_READY`; from `research/uml-fastboot/initramfs/um-command.sh`); **not** a real log | T3=110 ms from `U1_READY`; T2=60 ms via VFS fallback (`U1_T2_READY` is not a protocol marker) |
+| `uml-console-u2-zero-install-ok.txt` | synthetic | U2 zero-install marker shape (`INIT_ZERO_INSTALL`, `T2_MOUNTS_READY`, `T3_READY ... action=`, bare `READY`; from `research/uml-rootfs-prebake/`), modelled on the Wave 1 cross-test excerpt; **not** a real log | T2=90 ms from `T2_MOUNTS_READY` (beats the VFS timestamp), T3=110 ms from `T3_READY`; bare `READY` is gated and adds no value |
+| `uml-console-bare-ready-ambiguous.txt` | synthetic | Bare `READY` line without any `T3_READY`/`INIT_ZERO_INSTALL` context | T3 `unknown`; bare `READY` maps to no lane metric |
+| `uml-console-u1-ready-no-uptime.txt` | synthetic | U1 console with `U1_READY` missing the uptime field | T3 `unknown`; never estimated |
+| `uml-console-u2-ready-bad-unit.txt` | synthetic | U2 console with `uptime=0.09ms` / `uptime=abc` (value with unit suffix / non-numeric) | T2/T3 `unknown` + `invalid ... uptime=` warnings; no guessing |
 | `uml-exit-20261107-synthetic.txt` | synthetic | 11-07 median `duration_ms` order | `duration_ms=612` |
 | `qemu-serial-systemd.txt` | synthetic | QEMU serial with kernel timestamps, guest markers and `systemd-analyze` total | T1=31, T2=510, T3=620, T4=1730 ms |
 | `qemu-serial-markers-only.txt` | synthetic | QEMU serial without `systemd-analyze` | T4=900 ms from `multi-user.target` timestamp |
