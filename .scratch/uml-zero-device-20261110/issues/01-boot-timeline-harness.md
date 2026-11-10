@@ -51,4 +51,5 @@ External gates: 无（纯宿主 Python；真机日志只作脱敏输入）
 - 2026-11-10 / 主会话（ask-matt 研究轮）：建票。输入：`docs/research/2026-11-10-proot-vs-uml-zero-device-direction.zh-CN.md`、`.scratch/uml-zero-device-20261110/spec.md` §2、UML 设备轮报告。
 - 2026-11-10 / uml-u0-boot-timeline：认领；base 62d96e99；worktree /workspace-wt/u0。
 - 2026-11-10 / wave1-integration：集成复核通过，Status → resolved。head `4289b217`；`--self-test` → `UML_BOOT_BENCH_SELF_TEST_OK checks=118`；19 个 fixtures；2026-10-29 真实脱敏片段 T3=400 ms / `duration_ms=3182` / T1,T2 `unknown`；`py_compile`、`git diff --check`、产品路径、敏感门全过；合并提交 `8915fdea`。
-  - 跨测日志的 `T2_MOUNTS_READY` / `T3_READY` / `READY` 当前不被 parser 识别（T1/T2/T3 均为 null），已作为跨会话标记契约缺口记录在集成报告 §4；建议开 U0.1 小票，本会话未改 parser。
+  - 票据“必须做 4”要求 11-07/11-08 原始脱敏日志回归；本轮仓库内没有这两天的原始日志，按报告 §2.1 以 2026-10-29 真实片段 + 11-07 合成样本替代并保持该原始日志回归为 `not-tested`。这是范围内的替代，不是完整满足。
+  - 跨测日志的 `T3_READY` / `READY` 当前不被 parser 识别，T3 为 `null`；T1/T2 由 kernel timestamp fallback 得到 40 ms，但 T2 是 VFS 时点，不等于 U2 的 `T2_MOUNTS_READY=0.09 s`。该契约缺口记录在集成报告 §4；建议开 U0.1 小票，本会话未改 parser。

@@ -53,13 +53,14 @@ git -c commit.gpgsign=false merge --no-ff github/feat/uml-u2-rootfs-prebake -m "
 
 - 输入：U1 `out/x86_64-up/artifacts/linux-fast-noinitrd`（8,417,560 B，`81c85621…9520`）+ U2 Alpine x86_64 rootfs（`90ac674f…72c4`）。
 - 第 1 次：`seccomp=on` → 宿主 5.4 无 `close_range`，`SECCOMP userspace requested but not functional!`，rc=1。
-- 第 2 次：`seccomp=auto` → `Userspace mode: ptrace`，`T2_MOUNTS_READY uptime=0.09`、`T3_READY uptime=0.09`、`READY`；无 pm/网络标记；poweroff 后 rc=134（宿主差异）。
+- 第 2 次：`seccomp=auto` → `Userspace mode: ptrace`，`T2_MOUNTS_READY uptime=0.09`、`T3_READY uptime=0.09`、`READY`；无 pm/网络标记；poweroff 后 rc=134（宿主差异）。`timeout` 由 60s 放宽到 90s（仅等待，不改变判定）。
 - 宿主墙钟粗测 2216 ms（含进程启动/退出），不写入 U0 JSON。
-- n=1，仅组合冒烟；不是 ARM64 结论。
+- 控制台存为临时 `<tmp>/u1-u2-cross.log.txt`（`.log.txt` 命名，未入库）；n=1，仅组合冒烟；不是 ARM64 结论。
 
 ## 5. 契约缺口
 
-- U0 parser 不识别 `U1_READY` / `T2_MOUNTS_READY` / `T3_READY` / `READY`；对跨测日志 T1/T2/T3 均为 null。
+- U0 parser 不识别 `U1_READY` / `T2_MOUNTS_READY` / `T3_READY` / `READY`；对跨测日志 T1=40 ms、T2=40 ms（kernel timestamp fallback），T3 为 null。
+- T2 的 40 ms 是 VFS 时间戳，不是 U2 的 `T2_MOUNTS_READY=0.09 s`，两者不能混用。
 - 本会话未改 parser；建议开 U0.1 小票（alias + fixture + self-test）。
 
 ## 6. Ticket 对账
