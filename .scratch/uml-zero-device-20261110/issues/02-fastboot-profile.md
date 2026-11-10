@@ -1,7 +1,7 @@
 # 02: Fast-boot UML profile — 最小内核 + 内置 initramfs + 预烘焙 rootfs
 
 Type: implementation
-Status: claimed（u1-fastboot，2026-11-10）
+Status: resolved（u1-fastboot，2026-11-10）
 Priority: P0（直接回答“为什么不能像 proot 一样快”的产品承诺）
 Owner: u1-fastboot
 Blocked by: None（与 01 并行；计时字段必须对齐 01 的 T0–T3）
@@ -58,3 +58,5 @@ External gates: 真机 ARM64 boot `not-tested`；16K 宿主 `not-tested`
 
 - 2026-11-10 / 主会话（ask-matt 研究轮）：建票。输入：`.scratch/uml-zero-device-20261110/spec.md` §3 U1、`docs/research/2026-11-10-proot-vs-uml-zero-device-direction.zh-CN.md`、UML 设备轮报告。
 - 2026-11-10 / u1-fastboot：认领；base 62d96e99ad0334a5cc666f8387ac949fc0f2c025；worktree /workspace-wt/u1。
+
+- 2026-11-10 / u1-fastboot：实现完成，head `daa30557`（claim `8dfa6dfe`）。ARM64 UP/SMP 内核 + 16 KB stub + 内置 initramfs 构建通过；两次干净重建逐字节一致；`check-16kb-kernel.sh` 全过；x86_64 参考 T0–T3 n=5（7 case 全 ok）；报告 `docs/research/2026-11-10-uml-fastboot-profile.zh-CN.md`。ARM64 设备 boot、16 KB 宿主、真 SMP、systemd T4 not-tested；下个设备窗口入口见报告 §8。
