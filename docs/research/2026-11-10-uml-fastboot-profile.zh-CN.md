@@ -91,6 +91,7 @@
 - 所有运行都在 READY 后由 harness `SIGTERM` 停止；UML 进程退出 `-6`（SIGABRT）。这是宿主 5.4 上 guest `poweroff`/停止路径触发 UML `os_dump_core` 的已知失败模式，发生在 T3 之后；不影响 T3 采集。设备 6.12 的既有 `poweroff` 路径为 exit 0（2026-10-29 证据），待设备窗口复验。
 - 启动日志有 `epollctl add err fd …, Operation not permitted`（UML 控制台 fd 注册）与 `Using a channel type which is configured out of UML`（裁掉 pty/tty/xterm channel 后的默认 console 探测）两类噪声；均未阻断启动。
 
+- **T2/T3 粒度**：T2 由 `/um-command.sh` 在 root/pseudo-fs 就绪后打印，T3 在真实执行 `busybox true` 之后；二者常落在同一个 10 ms tick，说明 first command 的额外成本 <10 ms。T2 不在 `switch_root` 之前打印（外置根用例已修正）。
 - **断网/无包管理器**：所有 case 都不传 `vec0=`/网络设备，guest 日志无网络接口初始化；`initramfs/init` 与 `um-command.sh` 均不调用包管理器，Alpine rootfs 的 `apk` 未被调用。宿主级“断网注入”未单独做（guest 本身没有网络设备），属于 `not-tested` 的边界。
 - **失败退出码**：PID 1 不能以非零码退出（内核会转成 kernel panic），所以 init 的失败契约是 `UM_INIT_ERROR` + `poweroff`；`bench-fast.py` 的 `main` 对任何 init 错误返回 1（非零），作为可执行的失败判据。
 
