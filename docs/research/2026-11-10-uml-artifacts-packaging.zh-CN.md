@@ -224,7 +224,7 @@ BUNDLE_VERIFY_OK files=11
 |---|---|---|
 | 正式发布、签名、版本号、Release | **not-tested（范围外）** | 本工具只做研究侧；发布以 `release.yml` + ACR 为准 |
 | 真实内核重建 | 未在本次运行 | 需要 NDK r29 + 容器 + 约 10 分钟；manifest 记录命令，不把构建放进校验循环 |
-| U1/U2 未入库产物的实校验 | 缺口（已记录） | `--artifact-root` + `--require-artifacts`；报告 §7 显示严格模式 exit 1 |
+| U1/U2 产物未入库 | 干净检出严格模式失败（exit 1）；构建机对真实输出校验通过（U1 63/0，U2 38/0） | `--artifact-root` + `--require-artifacts`；或不入库产物只跑默认 INFO 校验 |
 | 16 KB 宿主行为 | not-tested | 16 KB stub 只做 p_align 记录；行为等价需设备/16 KB 通道 |
 | GPL 法务定性（aggregate、编译器、`.config`） | 未决 | 只记录义务；维护者/ACR 决定 |
 | 研究 workflow | 未添加 | default-branch 前提 + 未获批；报告 §6 给获批形态 |
