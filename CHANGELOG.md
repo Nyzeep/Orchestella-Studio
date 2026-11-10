@@ -8,7 +8,7 @@
 
 ## [Unreleased]
 
-0.6.2 之后的 153 个提交（含 2026-11-09→10 六 lane 大优化与 T1 `InstanceLaunchCoordinator` 深模块）尚未整理为用户可感知条目；下一版本号待定。明细见 [大优化轮总报告](docs/reports/grand-optimization-20261109.zh-CN.md)。
+0.6.2 之后的 150+ 个提交（含 2026-11-09→10 六 lane 大优化与 T1 `InstanceLaunchCoordinator` 深模块）尚未整理为用户可感知条目；下一版本号待定。明细见 [大优化轮总报告](docs/reports/grand-optimization-20261109.zh-CN.md)。
 
 ## [0.6.2] - 2026-10-30
 

@@ -1,6 +1,6 @@
 # 中文成果与开发文档
 
-主分支源码配置为 **0.6.2 / code602**（`main @ ff279d64`，`v0.6.2-153-gff279d64`；2026-11-10）。公开安装包为 [v0.6.2](https://github.com/Nyzeep/Orchestella-Studio/releases/tag/v0.6.2)；源码同步不代表新安装包已发布，也不代表全部工单已完成。
+主分支源码配置为 **0.6.2 / code602**（2026-11-10；v0.6.2 之后 150+ 个未发版提交）。公开安装包为 [v0.6.2](https://github.com/Nyzeep/Orchestella-Studio/releases/tag/v0.6.2)；源码同步不代表新安装包已发布，也不代表全部工单已完成。
 
 > 下表「测试」「运行时」等行以 2026-11-10 大优化轮报告与当前 main CI 为准；四车道与 UML 研究的最新数字、四态标注以[四车道决策材料草案](research/ACR-draft-four-lanes-20261029.md)与 [UML fabric map](../.scratch/orchestella-uml-fabric/map.md) 为准。
 
@@ -8,7 +8,7 @@
 
 | 维度 | 当前事实 |
 | --- | --- |
-| 源码 / 公开包 | 源码 0.6.2 / code602（main 在 v0.6.2 之后 153 个提交）；公开 release v0.6.2（2026-10-30） |
+| 源码 / 公开包 | 源码 0.6.2 / code602（main 在 v0.6.2 之后 150+ 个提交）；公开 release v0.6.2（2026-10-30） |
 | 发布签名 | v0.6.2 发布包由 release keystore 签名并经发布门校验；v0.4.5 / 0.5.3 历史验证包为 Debug 证书 |
 | 测试 | 1339 项 App 测试 / 0 失败；lint 0 Error（2026-11-10 大优化轮报告快照；HEAD CI 全绿） |
 | 运行时 | QEMU 是当前唯一有真实设备证据的完整 Linux 路径；QEMU / gvproxy 停止已收敛到单一 RuntimeProcessSupervisor（纯 JVM 验证；真机 20 次启停未测）；跨 Controller 单实例互斥已修复 |
@@ -16,7 +16,7 @@
 | UML fabric | 13/13 工单 resolved；ACR 待投票；技术缺项：16K 宿主、distcc@36 |
 | 16 KB | ELF / APK 对齐已验证（`zipalign -c -P 16 4` 通过）；16 KB 真机运行未测 |
 | Android 17 | API 37 已稳定；项目 targetSdk 36，`ACCESS_LOCAL_NETWORK`、大屏方向、IME 可见性、static final 反射限制是 2026Q4–2027H1 适配窗口 |
-| CI | 3 job：Release Metadata Gate、Contract & Unit Tests、Android lint / assemble / 16 KB packaging；main @ ff279d64 全绿（2026-11-10） |
+| CI | 3 job：Release Metadata Gate、Contract & Unit Tests、Android lint / assemble / 16 KB packaging；main 最新 CI 全绿（2026-11-10） |
 
 **当前研究主线（2026-11-10）**：UML fabric（[map](../.scratch/orchestella-uml-fabric/map.md)）——13/13 工单 resolved，ACR 待投票；技术缺项只剩 16K 宿主与 distcc@36。ACR 通过前不写产品集成代码。
 
