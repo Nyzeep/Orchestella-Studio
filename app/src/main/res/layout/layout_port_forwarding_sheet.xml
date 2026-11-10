@@ -29,7 +29,7 @@
             android:layout_width="32dp"
             android:layout_height="32dp"
             android:layout_marginEnd="@dimen/oe_space_md"
-            android:src="@drawable/ic_network"
+            android:src="@drawable/ic_sym_lan"
             app:tint="?attr/colorPrimary"
             android:contentDescription="@null" />
 

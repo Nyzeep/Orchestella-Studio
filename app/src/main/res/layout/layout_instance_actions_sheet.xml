@@ -98,7 +98,7 @@
             android:layout_width="28dp"
             android:layout_height="28dp"
             android:layout_marginEnd="@dimen/oe_space_lg"
-            android:src="@drawable/ic_desktop"
+            android:src="@drawable/ic_sym_desktop_windows"
             android:contentDescription="@null" />
 
         <LinearLayout
@@ -143,7 +143,7 @@
             android:layout_width="28dp"
             android:layout_height="28dp"
             android:layout_marginEnd="@dimen/oe_space_lg"
-            android:src="@drawable/ic_terminal"
+            android:src="@drawable/ic_sym_terminal"
             android:contentDescription="@null" />
 
         <LinearLayout
@@ -189,7 +189,7 @@
             android:layout_width="28dp"
             android:layout_height="28dp"
             android:layout_marginEnd="@dimen/oe_space_lg"
-            android:src="@drawable/ic_settings"
+            android:src="@drawable/ic_sym_settings"
             android:contentDescription="@null" />
 
         <LinearLayout
@@ -236,7 +236,7 @@
             android:layout_width="28dp"
             android:layout_height="28dp"
             android:layout_marginEnd="@dimen/oe_space_lg"
-            android:src="@drawable/ic_backup"
+            android:src="@drawable/ic_sym_backup"
             android:contentDescription="@null" />
 
         <LinearLayout
@@ -281,7 +281,7 @@
             android:layout_width="28dp"
             android:layout_height="28dp"
             android:layout_marginEnd="@dimen/oe_space_lg"
-            android:src="@drawable/ic_network"
+            android:src="@drawable/ic_sym_lan"
             app:tint="?attr/colorPrimary"
             android:contentDescription="@null" />
 
@@ -373,7 +373,7 @@
             android:layout_width="28dp"
             android:layout_height="28dp"
             android:layout_marginEnd="@dimen/oe_space_lg"
-            android:src="@drawable/ic_clone"
+            android:src="@drawable/ic_sym_content_copy"
             android:contentDescription="@null" />
 
         <LinearLayout
@@ -421,7 +421,7 @@
             android:layout_width="28dp"
             android:layout_height="28dp"
             android:layout_marginEnd="@dimen/oe_space_lg"
-            android:src="@drawable/ic_delete"
+            android:src="@drawable/ic_sym_delete"
             android:contentDescription="@null" />
 
         <LinearLayout

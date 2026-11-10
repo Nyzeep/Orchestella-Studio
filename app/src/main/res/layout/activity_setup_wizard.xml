@@ -618,7 +618,7 @@
                             android:minHeight="44dp"
                             app:cornerRadius="0dp"
                             android:layout_marginTop="@dimen/oe_space_sm"
-                            app:icon="@drawable/ic_network"
+                            app:icon="@drawable/ic_sym_lan"
                             app:iconSize="16dp"
                             android:text="一键测速并自动优选最快源"
                             android:textSize="12sp"
