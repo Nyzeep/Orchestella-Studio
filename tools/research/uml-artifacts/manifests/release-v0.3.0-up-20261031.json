@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 1,
+  "kind": "kernel-set",
+  "setId": "uml-kernel-v0.3.0-up-20261031",
+  "createdAt": "2026-10-31T00:00:00Z",
+  "artifactRoot": "research/uml-kernel-build/release-assets/v0.3.0",
+  "notes": [
+    "Ticket 01 reproducible-build set for the UP profile (Raymer8639/linux-um-arm64 um-arm64-v0.3.0).",
+    "The kernel artifact is the published v0.3.0 release binary; the rebuilt binary differs by 1,040 B because the release used a non-stock clang flavor (MANIFEST omission).",
+    "The stub_exe-16k artifact is the 16 KB re-link produced by build-stub-16k.sh; the original 2,000 B stub is kept for comparison and is not part of this set.",
+    "build.env records the KBUILD_* pins required for a deterministic rebuild. build-bionic.sh does not export them itself, and the original release build environment is not fully recorded in the upstream MANIFEST."
+  ],
+  "source": {
+    "project": "Raymer8639/linux-um-arm64",
+    "tag": "um-arm64-v0.3.0",
+    "commit": "169b17ff3f66d507cb137b770ceb1fd9f4547a32",
+    "version": "7.2.0-rc4",
+    "license": "GPL-2.0-only",
+    "tarballSha256": "08578a494412125dfc6b8f203e984b68d20e313173319d6a6c115e2875e0116c",
+    "upstreamBaseline": "2f88f5689de1a039764d00f466209acf0c010eaf"
+  },
+  "toolchain": {
+    "name": "android-ndk",
+    "version": "r29",
+    "compiler": "Android (13989888, +pgo, +bolt, +lto, +mlgo, based on r563880c) clang version 21.0.0",
+    "buildContainer": "ubuntu:24.04",
+    "hostArch": "x86_64",
+    "byteReproducible": false,
+    "reproducibilityNote": "stub_exe reproduces byte-for-byte (731c48d5...) with stock NDK r29; the kernel differs from the release asset by 1,040 B because the release clang flavor (dev, +pgo, -bolt, -lto, -mlgo) is not publicly available."
+  },
+  "build": {
+    "script": {
+      "path": "research/uml-kernel-build/build-bionic.sh",
+      "sha256": "d047ecb3c2ad7147b85d8c80f2ea797e88e43ec80fc88cb4b494833fa3dfc31c"
+    },
+    "command": "docker run --rm -v $PWD/src:/src -v $PWD:/work -e SRC=/src -e OUT=/work/out/build-up -e NDK=/work/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64 -e KBUILD_BUILD_TIMESTAMP='Thu Jan 1 00:00:00 UTC 1970' -e KBUILD_BUILD_USER=orchestella -e KBUILD_BUILD_HOST=u1-kernel-build -e KBUILD_BUILD_VERSION=1 ubuntu:24.04 bash -c 'apt-get update -qq && apt-get install -y -qq build-essential bison flex bc python3 file && bash /work/research/uml-kernel-build/build-bionic.sh'",
+    "env": {
+      "SOURCE_DATE_EPOCH": "0",
+      "KBUILD_BUILD_TIMESTAMP": "Thu Jan 1 00:00:00 UTC 1970",
+      "KBUILD_BUILD_USER": "orchestella",
+      "KBUILD_BUILD_HOST": "u1-kernel-build",
+      "KBUILD_BUILD_VERSION": "1",
+      "NDK_API": "30"
+    }
+  },
+  "kernel": {
+    "defconfig": {
+      "path": "research/uml-kernel-build/defconfigs/linux-bionic.config",
+      "sha256": "2344f4e0c8b9763633b7ae12d2dc172d8e42f37f5ba9fa8b670d4efa57bfb3dc"
+    },
+    "effectiveConfig": {
+      "path": "extracted-linux-bionic.config",
+      "sha256": "2344f4e0c8b9763633b7ae12d2dc172d8e42f37f5ba9fa8b670d4efa57bfb3dc"
+    }
+  },
+  "stub": {
+    "pAlign": 16384
+  },
+  "artifacts": [
+    {
+      "id": "linux-bionic",
+      "component": "kernel",
+      "role": "kernel",
+      "path": "linux-bionic",
+      "sha256": "5c205533a5b02d5b22683475807aea7d6c2f4df8aec6be4d6034f8185ec59c18",
+      "sizeBytes": 9648496,
+      "format": "elf"
+    },
+    {
+      "id": "stub_exe-16k",
+      "component": "stub",
+      "role": "stub",
+      "path": "stub_exe-16k",
+      "sha256": "87666f9167de09d0bf84b414618c39d9f460417a641f212f5f0f28c498a09a12",
+      "sizeBytes": 2056,
+      "format": "elf",
+      "pAlign": 16384
+    }
+  ],
+  "gpl": {
+    "license": "GPL-2.0-only",
+    "obligations": [
+      "Convey the complete corresponding source (kernel tree at the pinned commit, stub sources and build rules) with the binaries, or a valid written offer valid for at least three years under GPL-2.0 section 3.",
+      "Include the scripts used to control compilation and installation: the pinned extracted config, build scripts, toolchain identity and the exact build command.",
+      "Include the pinned source (tag, commit, tarball sha256) that the binaries were actually built from; the GitHub release page is a pointer, not the conveyance.",
+      "Keep the source offer no narrower than the binary offer; when binaries are downloadable, equivalent source access from the same place is the baseline (GPL-2.0 section 3, last paragraph).",
+      "Record why the kernel is not byte-identical to the release asset (clang flavor) so the build recipe is auditable rather than implied; exact hash equality is not a GPL requirement.",
+      "Keep the GPL-2.0 text, copyright notices and this provenance record with every conveyed bundle.",
+      "This list records obligations for the research bundle; it is not a legal conclusion. The maintainer or ACR decides the distribution scope."
+    ],
+    "sourceComponents": [
+      {
+        "name": "linux-um-arm64",
+        "license": "GPL-2.0-only",
+        "url": "https://github.com/Raymer8639/linux-um-arm64",
+        "revision": "169b17ff3f66d507cb137b770ceb1fd9f4547a32",
+        "sha256": "08578a494412125dfc6b8f203e984b68d20e313173319d6a6c115e2875e0116c",
+        "covers": [
+          "kernel",
+          "stub"
+        ]
+      }
+    ],
+    "buildScripts": [
+      {
+        "path": "research/uml-kernel-build/build-bionic.sh",
+        "sha256": "d047ecb3c2ad7147b85d8c80f2ea797e88e43ec80fc88cb4b494833fa3dfc31c"
+      },
+      {
+        "path": "research/uml-kernel-build/build-stub-16k.sh",
+        "sha256": "522bb30c160bde38c024efb72a77b37bdb0812546a499503112342798e3fb508"
+      },
+      {
+        "path": "research/uml-kernel-build/check-16kb-kernel.sh",
+        "sha256": "b092ed24a34e31a180ea1d2b56bb42c51c1fc4baf4c015f166cf397950da6829"
+      }
+    ],
+    "bundle": {
+      "script": {
+        "path": "tools/research/uml-artifacts/build-source-bundle.sh",
+        "sha256": "f501995b0c9ccaee1a13018fb1784842a1a269059c0f5c3dafab38dc51d56773"
+      },
+      "format": "tar.gz"
+    }
+  }
+}
