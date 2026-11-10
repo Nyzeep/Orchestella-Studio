@@ -1,9 +1,9 @@
 # 03: Rootfs 预烘焙与 build-time provisioning — 首启零安装
 
 Type: implementation
-Status: ready-for-agent
+Status: claimed（u2-rootfs-prebake，2026-11-10）
 Priority: P0（压缩“下载完还要等很久”的最大杠杆）
-Owner: （待分配）
+Owner: u2-rootfs-prebake
 Blocked by: None（与 01/02 并行；首启计时对齐 01 的 T2/T3）
 External gates: 真机首启 `not-tested`；16K 宿主 `not-tested`
 
@@ -50,3 +50,4 @@ proot-distro 的“下载完就秒开”并不执行这些步骤：它只解包 
 ## Comments
 
 - 2026-11-10 / 主会话（ask-matt 研究轮）：建票。输入：`.scratch/uml-zero-device-20261110/spec.md` §3 U2、`docs/research/2026-11-10-proot-vs-uml-zero-device-direction.zh-CN.md`、`docs/research/2026-11-08-uml-fabric-device-round-2.zh-CN.md` §T7-F。
+- 2026-11-10 / u2-rootfs-prebake：认领；base 62d96e99；worktree /workspace-wt/u2。
