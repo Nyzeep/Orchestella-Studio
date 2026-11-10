@@ -1,0 +1,21 @@
+// U3 bpftrace sketch: count host syscalls issued by the UML processes.
+//
+// Not executed on the 2026-11-10 host (bpftrace is not installed); kept as
+// the alternative collector for hosts where it is available.  Run it around
+// run_uml_seccomp.sh --mode baseline:
+//
+//   bpftrace collect/syscalls.bt &
+//   run_uml_seccomp.sh ...
+//
+// The comm filter matches the UML binary name; adjust if your kernel image is
+// named differently.  Syscall ids are architecture-specific.
+tracepoint:raw_syscalls:sys_enter
+/comm == "vmlinux" || comm == "linux"/
+{
+    @syscalls[args->id] = count();
+}
+
+END
+{
+    print(@syscalls);
+}
