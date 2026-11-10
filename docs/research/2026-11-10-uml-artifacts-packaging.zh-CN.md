@@ -55,7 +55,7 @@ manifest 的 `gpl.obligations` 固化了上述可执行子集；`gpl.sourceCompo
 
 ### 2.2 当前 manifest 的覆盖
 
-- `fast-arm64-up`：kernel + stub 由 `linux-um-arm64@169b17ff` 覆盖；initramfs 由 `busybox-static 1.37.0-r20` 覆盖；build scripts 含 U1/U0 构建与 16 KB 检查脚本。
+- `fast-arm64-up`：kernel + stub 由 `linux-um-arm64@169b17ff` 覆盖；initramfs 由 BusyBox upstream 1.37.0 + Alpine aports 1.37.0-r20 补丁覆盖；build scripts 含 U1/U0 构建与 16 KB 检查脚本。
 - `release-v0.3.0-up`：kernel + stub 同一源码树；记录 release clang flavor 导致的 1,040 B 差异；不把它说成可逐字节复现。
 - `prebaked-alpine-3.22.8-aarch64`：rootfs 由 `alpine-aports`（mixed）与 `alpine-busybox`（GPL-2.0-only）覆盖；显式记录“镜像混合许可证，不归约为 GPL-2.0”。
 
@@ -188,7 +188,7 @@ $ python3 tools/research/uml-artifacts/check_uml_artifacts.py --self-test
 SELF_TEST_OK checks=70
 
 $ python3 tools/research/uml-artifacts/check_uml_artifacts.py
-SUMMARY manifests=3 passed=130 failed=0 info=6
+SUMMARY manifests=3 passed=134 failed=0 info=6
 
 $ python3 tools/research/uml-artifacts/check_uml_artifacts.py \
     --manifest tools/research/uml-artifacts/manifests/release-v0.3.0-up-20261031.json \
@@ -199,13 +199,16 @@ SUMMARY manifests=1 passed=44 failed=0 info=0
 $ python3 tools/research/uml-artifacts/check_uml_artifacts.py \
     --manifest tools/research/uml-artifacts/manifests/fast-arm64-up-20261110.json \
     --require-artifacts
-SUMMARY manifests=1 passed=52 failed=5 info=0   # exit 1
+SUMMARY manifests=1 passed=54 failed=5 info=0   # exit 1
+
+# 对本地真实构建输出做严格校验（路径不入库）：U1 63 checks / 0 failed；
+# U2 Alpine rootfs 38 checks / 0 failed。两组的 sha256/size 与 manifest 完全一致。
 
 # 两次打包逐字节一致；校验通过
 $ tools/research/uml-artifacts/build-source-bundle.sh --manifest .../fast-arm64-up-20261110.json --out /tmp/a.tar.gz
-BUNDLE_OK path=/tmp/a.tar.gz sha256=<same> files=10
+BUNDLE_OK path=/tmp/a.tar.gz sha256=<same> files=12
 $ tools/research/uml-artifacts/build-source-bundle.sh --verify-source-bundle /tmp/a.tar.gz --expect-manifest ...
-BUNDLE_VERIFY_OK files=9
+BUNDLE_VERIFY_OK files=11
 ```
 
 其余验收：

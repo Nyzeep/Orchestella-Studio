@@ -118,7 +118,7 @@
       "Include the scripts used to control compilation and installation: defconfig/effective config, linker recipe, initramfs assembly, build scripts, toolchain pin and the exact command recorded here.",
       "Include the pinned source (tag, commit, tarball sha256) that the binaries were actually built from; a download URL or release page is a pointer, not the conveyance.",
       "Keep the source offer no narrower than the binary offer; when binaries are downloadable, equivalent source access from the same place is the baseline (GPL-2.0 section 3, last paragraph).",
-      "BusyBox in the initramfs is GPL-2.0 whether or not it was modified: ship its exact source, config and patches or the distro source offer; the obligation cannot be delegated to the distro.",
+      "BusyBox in the initramfs is GPL-2.0 whether or not it was modified: ship its exact upstream source, config and the Alpine aports patches used for 1.37.0-r20; the distro source offer is additional evidence, not a substitute.",
       "Keep the GPL-2.0 text, copyright notices and this provenance record with every conveyed bundle.",
       "Exact binary-hash reproduction is not a GPL requirement (GPL FAQ), but the recorded recipe and toolchain must be sufficient to rebuild the corresponding source.",
       "This list records obligations for the research bundle; it is not a legal conclusion. The maintainer or ACR decides the distribution scope and the aggregate-vs-combined question for kernel + initramfs + rootfs."
@@ -136,9 +136,18 @@
         ]
       },
       {
-        "name": "busybox-static",
+        "name": "busybox",
         "license": "GPL-2.0-only",
-        "url": "https://dl-cdn.alpinelinux.org/alpine/v3.22/main/aarch64/busybox-static-1.37.0-r20.apk",
+        "url": "https://busybox.net/downloads/busybox-1.37.0.tar.bz2",
+        "revision": "1.37.0",
+        "covers": [
+          "initramfs"
+        ]
+      },
+      {
+        "name": "alpine-busybox-aports",
+        "license": "GPL-2.0-only",
+        "url": "https://git.alpinelinux.org/aports/tree/3.22-stable/main/busybox",
         "revision": "1.37.0-r20",
         "covers": [
           "initramfs"
@@ -165,6 +174,10 @@
       {
         "path": "research/uml-kernel-build/check-16kb-kernel.sh",
         "sha256": "b092ed24a34e31a180ea1d2b56bb42c51c1fc4baf4c015f166cf397950da6829"
+      },
+      {
+        "path": "research/uml-fastboot/initramfs/um-command.sh",
+        "sha256": "761c9368e74ef42c1d302d5ec0b2da9738dc61c077d52786070acbf017668947"
       }
     ],
     "bundle": {

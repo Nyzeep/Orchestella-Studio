@@ -40,7 +40,6 @@ import argparse
 import gzip
 import hashlib
 import json
-import os
 import re
 import shutil
 import sys
@@ -357,7 +356,7 @@ def check_manifest(
         ):
             report.check(key in env, f"build.env pins {key}")
 
-    build_script = _check_file_pin(
+    _check_file_pin(
         report, repo_root, document["build"]["script"], "build.script", must_exist=True
     )
     report.check(
@@ -428,8 +427,13 @@ def check_manifest(
         )
 
     if kind == "kernel-set":
+        kernel_binaries = [
+            artifact
+            for artifact in components.get("kernel", [])
+            if artifact["role"] in ("kernel", "kernel-no-initramfs")
+        ]
         report.check(
-            bool(components.get("kernel")), "kernel-set has a kernel artifact"
+            bool(kernel_binaries), "kernel-set has a kernel binary artifact"
         )
         report.check(
             relative_path_ok(document["kernel"]["defconfig"]["path"]),
@@ -634,10 +638,12 @@ def _copy_into(stage: Path, source: Path, relative: str) -> Path:
     target = stage / relative
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(source, target)
+    shutil.copymode(source, target)
     return target
 
 
 def _bundle_readme(document: dict[str, Any], manifest_name: str, kernel_included: bool) -> str:
+    has_kernel = document.get("source") is not None
     lines = [
         "UML research artifact source bundle",
         "===================================",
@@ -656,12 +662,20 @@ def _bundle_readme(document: dict[str, Any], manifest_name: str, kernel_included
         "- configs/: committed defconfigs and initramfs init scripts.",
         "- build-scripts/: scripts that control compilation and installation.",
         "- rootfs-manifests/: U2 pre-bake manifests when the set contains a rootfs.",
-        f"- upstream/: kernel source archive ({'included' if kernel_included else 'NOT included'}).",
-        "- SHA256SUMS: digests of every file above.",
-        "",
-        "Recorded GPL-2.0 obligations (record only; not a legal conclusion)",
-        "---------------------------------------------------------------",
     ]
+    if has_kernel:
+        lines.append(
+            f"- upstream/: kernel source archive "
+            f"({'included' if kernel_included else 'NOT included'})."
+        )
+    lines.extend(
+        [
+            "- SHA256SUMS: digests of every file above.",
+            "",
+            "Recorded GPL-2.0 obligations (record only; not a legal conclusion)",
+            "---------------------------------------------------------------",
+        ]
+    )
     lines.extend(f"- {item}" for item in document["gpl"]["obligations"])
     lines.extend(
         [
@@ -687,7 +701,7 @@ def _bundle_readme(document: dict[str, Any], manifest_name: str, kernel_included
             f"@ {component['revision']}"
         )
     lines.append("")
-    if not kernel_included:
+    if has_kernel and not kernel_included:
         lines.append(
             "The kernel source archive was not included at bundle time. A bundle used"
         )
@@ -857,7 +871,7 @@ def _tar_stage(stage: Path, out_path: Path) -> None:
                         info.mode = 0o755
                         archive.addfile(info)
                     elif info.isreg():
-                        info.mode = 0o755 if os.access(entry, os.X_OK) else 0o644
+                        info.mode = 0o755 if entry.stat().st_mode & 0o111 else 0o644
                         with open(entry, "rb") as handle:
                             archive.addfile(info, handle)
                     else:
