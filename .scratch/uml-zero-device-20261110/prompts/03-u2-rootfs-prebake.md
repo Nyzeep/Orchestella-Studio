@@ -35,6 +35,7 @@ cd /workspace-wt/u2
    - 在 `## Comments` 追加：`2026-11-10 / <session-name>：认领；base <sha>；worktree /workspace-wt/u2。`
 2. 先单独提交认领，再开始实现：
    ```bash
+   git add -f .scratch/uml-zero-device-20261110/issues/03-rootfs-prebake.md
    env -u GIT_COMMITTER_NAME -u GIT_COMMITTER_EMAIL \
      git -c commit.gpgsign=false commit -m "chore(uml-u2): claim ticket 03"
    ```
