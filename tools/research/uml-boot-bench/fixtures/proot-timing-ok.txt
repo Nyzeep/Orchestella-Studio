@@ -1,0 +1,6 @@
+BOOT_TIMING v1 lane=proot
+label=proot-alpine
+t0_monotonic_ms=100000.000
+ready_monotonic_ms=100050.101
+ready_point=P0
+rc=0

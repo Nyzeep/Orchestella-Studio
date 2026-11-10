@@ -1,0 +1,3 @@
+<6>[    0.000000] Linux version 7.2.0-um #1 SMP PREEMPT
+<6>[    0.020000] Run /um-init as init process
+<6>[    0.026000] VFS: Mounted root (ext4 filesystem) on device 179:1.

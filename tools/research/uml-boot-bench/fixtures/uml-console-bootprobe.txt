@@ -1,0 +1,6 @@
+[    0.000000] Linux version 7.2.0-um #1 SMP PREEMPT
+[    0.030000] Run /init as init process
+UMARM_BOOT_OK guest_uptime=0.340 nproc=1 page=16384
+BOOTPROBE uname=Linux 7.2.0-um uptime=0.350
+BOOTPROBE_SHA_OK digest-ok
+BOOTPROBE_DONE uptime=0.412
