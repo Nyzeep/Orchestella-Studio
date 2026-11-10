@@ -1,0 +1,111 @@
+#!/bin/busybox sh
+# Orchestella Studio — U1 fast-shell UML init (PID 1).
+#
+# Contract:
+#   1. mount /proc, /sys, /dev, /dev/pts, cgroup2;
+#   2. if the kernel command line carries umroot= and umrootfstype=, mount that
+#      external root and switch_root into it;
+#   3. otherwise exec /um-command.sh inside the initramfs (or /bin/sh when
+#      um.shell=1).
+#
+# Failure policy: print exactly one structured UM_INIT_ERROR line, then power
+# the guest off.  PID 1 cannot return a non-zero exit status without turning
+# the boot into a kernel panic, so the machine-readable line — not the process
+# status — is the failure contract; the bench harness fails the run on it.
+#
+# This script intentionally depends only on busybox applets shipped in the
+# initramfs.  Do not use absolute symlink shebangs here: hostfs expands the
+# interpreter path itself (see research/uml-runner/README.md §8), and the same
+# /um-command.sh also runs from hostfs roots.
+
+set -u
+PATH=/bin:/sbin:/usr/bin:/usr/sbin
+export PATH
+
+fail() {
+    code=$1
+    step=$2
+    shift 2
+    printf 'UM_INIT_ERROR code=%s step=%s detail=%s\n' "$code" "$step" "$*" >&2
+    printf 'UM_INIT_FAIL step=%s\n' "$step" >&2
+    sync 2>/dev/null || :
+    poweroff -f 2>/dev/null || :
+    while :; do sleep 3600; done
+}
+
+is_mounted() {
+    grep -q " $1 " /proc/mounts 2>/dev/null
+}
+
+mount_pseudo() {
+    # mount_pseudo <mountpoint> <fstype> <source> <options>
+    mp=$1
+    fstype=$2
+    src=$3
+    opts=$4
+    mkdir -p "$mp" || fail 20 mkdir "$mp"
+    is_mounted "$mp" && return 0
+    if [ -n "$opts" ]; then
+        mount -t "$fstype" -o "$opts" "$src" "$mp" || return 1
+    else
+        mount -t "$fstype" "$src" "$mp" || return 1
+    fi
+}
+
+cmdline_param() {
+    # cmdline_param <key> — prints the value of key=... from /proc/cmdline.
+    key=$1
+    for word in $(cat /proc/cmdline 2>/dev/null); do
+        case "$word" in
+            "$key"=*) printf '%s' "${word#*=}"; return 0 ;;
+        esac
+    done
+    return 1
+}
+
+# /proc first: every later check reads /proc/mounts and /proc/cmdline.
+mount_pseudo /proc proc proc nosuid,nodev,noexec || fail 10 mount_proc /proc
+mount_pseudo /sys sysfs sysfs nosuid,nodev,noexec || fail 11 mount_sys /sys
+mount_pseudo /dev devtmpfs devtmpfs nosuid,mode=0755 || fail 12 mount_dev /dev
+mount_pseudo /dev/pts devpts devpts nosuid,noexec,gid=5,mode=620 \
+    || fail 13 mount_devpts /dev/pts
+mount_pseudo /sys/fs/cgroup cgroup2 cgroup2 nosuid,nodev,noexec \
+    || fail 14 mount_cgroup2 /sys/fs/cgroup
+
+umroot=$(cmdline_param umroot || :)
+umrootfstype=$(cmdline_param umrootfstype || :)
+
+if [ -n "$umroot" ] && [ -n "$umrootfstype" ]; then
+    mkdir -p /newroot || fail 21 mkdir /newroot
+    case "$umrootfstype" in
+        hostfs)
+            # hostfs takes the host path as its mount option, not as a device.
+            mount -t hostfs -o "$umroot" none /newroot \
+                || fail 22 mount_hostfs "root=$umroot"
+            ;;
+        *)
+            mount -t "$umrootfstype" "$umroot" /newroot \
+                || fail 23 mount_root "fstype=$umrootfstype root=$umroot"
+            ;;
+    esac
+    mount_pseudo /newroot/proc proc proc nosuid,nodev,noexec \
+        || fail 24 mount_root_proc /newroot/proc
+    mount_pseudo /newroot/sys sysfs sysfs nosuid,nodev,noexec \
+        || fail 25 mount_root_sys /newroot/sys
+    mount_pseudo /newroot/dev devtmpfs devtmpfs nosuid,mode=0755 \
+        || fail 26 mount_root_dev /newroot/dev
+    mount_pseudo /newroot/dev/pts devpts devpts nosuid,noexec,gid=5,mode=620 \
+        || fail 27 mount_root_devpts /newroot/dev/pts
+    mount_pseudo /newroot/sys/fs/cgroup cgroup2 cgroup2 nosuid,nodev,noexec \
+        || fail 28 mount_root_cgroup2 /newroot/sys/fs/cgroup
+
+    [ -x /newroot/um-command.sh ] \
+        || fail 29 missing_command "/newroot/um-command.sh"
+    exec switch_root /newroot /bin/busybox sh /um-command.sh
+fi
+
+if [ "$(cmdline_param um.shell || :)" = 1 ]; then
+    exec /bin/sh
+fi
+[ -x /um-command.sh ] || fail 30 missing_command "/um-command.sh"
+exec /bin/busybox sh /um-command.sh
