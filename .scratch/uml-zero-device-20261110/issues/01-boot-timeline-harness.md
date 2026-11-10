@@ -1,9 +1,9 @@
 # 01: Boot timeline harness — 统一 T0–T5 的 UML/QEMU/proot 启动分解
 
 Type: implementation
-Status: ready-for-agent
+Status: claimed（uml-u0-boot-timeline，2026-11-10）
 Priority: P0（所有快速启动与规模化工作的口径底座）
-Owner: （待分配）
+Owner: uml-u0-boot-timeline
 Blocked by: None
 External gates: 无（纯宿主 Python；真机日志只作脱敏输入）
 
@@ -49,3 +49,4 @@ External gates: 无（纯宿主 Python；真机日志只作脱敏输入）
 ## Comments
 
 - 2026-11-10 / 主会话（ask-matt 研究轮）：建票。输入：`docs/research/2026-11-10-proot-vs-uml-zero-device-direction.zh-CN.md`、`.scratch/uml-zero-device-20261110/spec.md` §2、UML 设备轮报告。
+- 2026-11-10 / uml-u0-boot-timeline：认领；base 62d96e99；worktree /workspace-wt/u0。
