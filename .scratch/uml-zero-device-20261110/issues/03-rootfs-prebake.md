@@ -1,7 +1,7 @@
 # 03: Rootfs 预烘焙与 build-time provisioning — 首启零安装
 
 Type: implementation
-Status: claimed（u2-rootfs-prebake，2026-11-10）
+Status: resolved（2026-11-10，u2-rootfs-prebake）
 Priority: P0（压缩“下载完还要等很久”的最大杠杆）
 Owner: u2-rootfs-prebake
 Blocked by: None（与 01/02 并行；首启计时对齐 01 的 T2/T3）
@@ -51,3 +51,9 @@ proot-distro 的“下载完就秒开”并不执行这些步骤：它只解包 
 
 - 2026-11-10 / 主会话（ask-matt 研究轮）：建票。输入：`.scratch/uml-zero-device-20261110/spec.md` §3 U2、`docs/research/2026-11-10-proot-vs-uml-zero-device-direction.zh-CN.md`、`docs/research/2026-11-08-uml-fabric-device-round-2.zh-CN.md` §T7-F。
 - 2026-11-10 / u2-rootfs-prebake：认领；base 62d96e99；worktree /workspace-wt/u2。
+- 2026-11-10 / u2-rootfs-prebake：**resolved**。交付 `research/uml-rootfs-prebake/`：`build-rootfs.sh`（Alpine + Debian）、`manifest.schema.json`/`make-manifest.py`、`init-zero-install`、`ready.sh`、`verify.sh`、4 份样例 manifest；报告 `docs/research/2026-11-10-uml-rootfs-prebake.zh-CN.md`。
+  - 复现：Alpine 3.22.8 aarch64 111 包 / tar.gz 110,170,511 B / 两次 sha `149b2041…bab59` 一致（58–87 s）；Debian trixie aarch64 213 包 / 228,692,824 B / 两次 sha `a27c4353…792e` 一致（346–439 s，含下载）；Alpine x86_64 tar.gz `90ac674f…72c4`、ext4 `2d569b36…845f` 两次一致。
+  - 断网首启：x86_64 UML 参考 hostfs 与 ext4 均到 `T2_MOUNTS_READY`→`T3_READY`→`READY`；三次 n=5 复跑 T3 宿主中位 132–201 ms（Alpine）/133–281 ms（Debian），guest 0.10–0.19 s；boot 日志无包管理器、无 eth0/DHCP；init/ready 无网络或包管理器调用。
+  - 校验：`verify.sh` Alpine 20 / Debian 23 项全 PASS（含整树 tree digest、apt/dpkg lock 缺失、manifest/产物 sha）；manifest 过 JSON Schema。
+  - 许可证：Alpine 111/111 有 `L:`；Debian 213/213 doc 条目可解析到 copyright；GPL 对应源码/NOTICE/Android APK 分发边界未审查，**不进入产品打包**。
+  - not-tested：ARM64 真机首启、16K 宿主、Debian aarch64 内核首启（x86_64 glibc 参考已 boot）、ARM64 ext4 boot。停止条件未触发。
