@@ -1,7 +1,7 @@
 # 04: Android-like seccomp / host compatibility harness
 
 Type: implementation
-Status: ready-for-agent
+Status: resolved
 Priority: P1（决定 UML 在 36 域 App 内哪些能力可用）
 Owner: （待分配）
 Blocked by: None
@@ -54,3 +54,11 @@ External gates: 真机 seccomp 矩阵 `not-tested`；16K 宿主 `not-tested`
 ## Comments
 
 - 2026-11-10 / 主会话（ask-matt 研究轮）：建票。输入：`.scratch/uml-zero-device-20261110/spec.md` §3 U3、`docs/research/2026-11-10-proot-vs-uml-zero-device-direction.zh-CN.md`、`.scratch/orchestella-uml-fabric/issues/03-selinux-seccomp-closure.md`。
+
+- 2026-11-10 / U3 会话（feat/uml-u3-seccomp-compat）：**resolved（零设备部分）**。交付 `tools/research/uml-seccomp/`（10 个版本化 profile、gen_profile.py、seccomp_launch.c、run_uml_seccomp.sh、matrix.py、guest、device 入口）与 `docs/research/2026-11-10-uml-seccomp-host-compat.zh-CN.md`。关键结果：
+  1. AOSP app 过滤器按 `(SYSCALLS.TXT − BLOCKLIST_COMMON − BLOCKLIST_APP) + ALLOWLIST_COMMON + ALLOWLIST_APP` 组合，默认 `SECCOMP_RET_TRAP`，无参数过滤；android17 arm64 允许 227 个 syscall。
+  2. host-arch UML（torvalds v6.12 `ARCH=um`）在 android17 x86_64 profile + glibc 宿主 shim 下完成 hostfs、ubd0 ext4、vector、mconsole、SIGCHLD/clone/mount/personality/setrlimit：矩阵 **9 pass / 0 fail / 3 unknown**，`matrix.py --self-test` 31 项、`gen_profile.py --check` 10 个 profile。
+  3. profile-only 的 denied 列表是 9 个 x86_64 遗留/glibc 调用（rseq、set_robust_list、access、mkdir、rmdir、unlink、poll、epoll_create、epoll_wait）；arm64 对应路径（*at、ppoll、epoll_create1、epoll_pwait）均在 profile 内，未发现结构性阻断。
+  4. unknown：`ncpus=2/4`（上游/本 v6.12 无 ncpus）、`seccomp-fastpath`（上游无 seccomp=；`uml/linux next` 有但本宿主 5.4 缺 close_range）。两者均已在 `fixtures/matrix/cases.json` 写设备入口，并落到 `device/run_device.sh`。
+  5. 设备窗口必须验：arm64 下游内核 + bionic 下重跑 12 个 case；OEM filter、真机 seccomp=on、SMP 未验证。宿主 pass 不代表设备 PASS。
+  敏感数据门：无真机数据；报告只引用已脱敏的宿主环境与源码路径。边界：不改产品 seccomp、不改 `app/src/main`、未用 ptrace 绕过。

@@ -1,0 +1,3 @@
+Linux version 6.12.0 (um) #1
+Run /init as init process
+GUEST_READY uptime=0.51
