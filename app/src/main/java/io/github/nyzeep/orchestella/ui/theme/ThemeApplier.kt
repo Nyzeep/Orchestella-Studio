@@ -58,6 +58,7 @@ import java.lang.ref.WeakReference
 import java.util.WeakHashMap
 import java.util.concurrent.Executors
 import io.github.nyzeep.orchestella.ui.theme.ThemeColors.Role as ColorRole
+import io.github.nyzeep.orchestella.ui.theme.ThemeColors.SurfaceTier as CardTier
 
 /**
  * Recolors existing Android Views without replacing their layout, corners, or typography.
@@ -70,6 +71,7 @@ object ThemeApplier {
     private val main = Handler(Looper.getMainLooper())
     private val bindings = WeakHashMap<View, ViewBinding>()
     private val roles = WeakHashMap<View, Role>()
+    private val surfaceTiersByView = WeakHashMap<View, CardTier>()
     private val dialogs = WeakHashMap<Dialog, RootBinding>()
     private var registration: Registration? = null
 
@@ -150,6 +152,19 @@ object ThemeApplier {
         bindings.remove(view)
     }
 
+    /**
+     * Explicit surface-tier registration, mirroring [setRole]: the extension point
+     * future UI rounds use instead of growing name-sniffing arms. Overrides the
+     * id-keyed archive table ([ThemeColors.surfaceTierFor]); applies on the next
+     * walk of the view.
+     */
+    @JvmStatic
+    fun setSurfaceTier(view: View, tier: CardTier) {
+        if (surfaceTiersByView[view] == tier) return
+        surfaceTiersByView[view] = tier
+        bindings.remove(view)
+    }
+
     private class ViewBinding(
         var textRole: ColorRole,
         var backgroundRole: ColorRole,
@@ -163,6 +178,7 @@ object ThemeApplier {
         var enabled = true
         var checked = false
         var containerFill: Int? = null
+        var surfaceTier: CardTier? = null
     }
 
     private class RootBinding(root: ViewGroup, var theme: AppTheme) {
@@ -320,7 +336,7 @@ object ThemeApplier {
                         (view is MaterialButton && view.strokeWidth > 0)) -> Role.SECONDARY_ACTION
                     else -> Role.PRIMARY_ACTION
                 },
-            )
+            ).also { it.surfaceTier = surfaceTiersByView[view] ?: ThemeColors.surfaceTierFor(name) }
         }
         val backgroundChanged = state.background.get() !== view.background || state.backgroundColor != currentBackground
         if (state.theme == null || backgroundChanged) {
@@ -367,11 +383,14 @@ object ThemeApplier {
         val normalInk = ThemeColors.readable(theme.text, containerFill ?: theme.surface)
         when (view) {
             is MaterialCardView -> {
-                view.setCardBackgroundColor(effectiveSurface)
+                // Registered tier decides the fill (registry or explicit setSurfaceTier);
+                // an unregistered card gets the plain surface — byte-identical to the
+                // pre-registry single-tier behavior.
+                view.setCardBackgroundColor(ThemeColors.cardSurfaceFill(binding.surfaceTier, theme, effectiveSurface))
                 // Card edges use the on-palette hairline (a faint ink step over the
                 // surface) instead of the old full-strength grey outline band. The
                 // danger zone's red ring is semantic and survives the normalization.
-                if (!isSemanticStroke(name)) {
+                if (!ThemeColors.isSemanticStrokeName(name)) {
                     view.strokeColor = hairline
                     view.strokeWidth = view.resources.displayMetrics.density.toInt().coerceAtLeast(1)
                 }
@@ -443,16 +462,16 @@ object ThemeApplier {
             }
             is RingProgressView -> view.configure(theme.primary, normalInk, muted, view.resources.displayMetrics.density)
             else -> {
-                if (isWallpaperContentWrapper(view, name)) {
+                if (hasWallpaperWrapperAncestor(view, name)) {
                     // root_coordinator alone owns page color/wallpaper. Keep theming the wrapper's children.
                     view.backgroundTintList = null
                     view.setBackgroundColor(Color.TRANSPARENT)
-                } else if (!isStatus(name)) {
+                } else if (!ThemeColors.isStatusName(name)) {
                     recolorBackground(view, binding.backgroundRole, theme, outline, effectiveSurface)
                 }
             }
         }
-        if (view is TextView && view !is MaterialButton && !isStatus(name)) {
+        if (view is TextView && view !is MaterialButton && !ThemeColors.isStatusName(name)) {
             val backgroundRole = binding.backgroundRole
             val filled = view.background != null && backgroundColor(view)?.let { Color.alpha(it) > 200 } == true &&
                 backgroundRole in setOf(ColorRole.PRIMARY, ColorRole.ACCENT, ColorRole.TEXT)
@@ -494,7 +513,7 @@ object ThemeApplier {
             }
             if (view is SeekBar) view.thumbTintList = ColorStateList.valueOf(theme.primary)
         }
-        if (view is ImageView && !isArtwork(name) && (view is ImageButton || view.imageTintList != null)) {
+        if (view is ImageView && !ThemeColors.isArtworkName(name) && (view is ImageButton || view.imageTintList != null)) {
             view.imageTintList = states(disabled, normalInk, normalInk)
         }
         if (view is Spinner) {
@@ -658,7 +677,12 @@ object ThemeApplier {
         view.resources.getResourceEntryName(view.id)
     } catch (_: android.content.res.Resources.NotFoundException) { "" }
 
-    private fun isWallpaperContentWrapper(view: View, name: String): Boolean {
+    /**
+     * Renamed from isWallpaperContentWrapper (2026-11-11 U1): the old name collided
+     * with [ThemeColors.isWallpaperContentWrapper] while meaning a different thing
+     * (view + ancestors vs pure name pair). This one walks the live tree.
+     */
+    private fun hasWallpaperWrapperAncestor(view: View, name: String): Boolean {
         if (name != "root_container") return false
         var ancestor = view.parent as? View
         while (ancestor != null) {
@@ -668,17 +692,8 @@ object ThemeApplier {
         return false
     }
 
-    private fun isArtwork(name: String) = listOf("distro", "logo", "brand", "qr", "screenshot", "preview_image").any(name::contains)
-
-    /** Cards whose stroke carries meaning (the danger zone's red ring) keep it. */
-    private fun isSemanticStroke(name: String) = name.contains("danger")
-
     /** Wells are page-level banners/strips: ids prefixed "well_" take the surfaceLow tier. */
-    private fun isWell(view: View): Boolean = resourceName(view).startsWith("well_")
-    private fun isStatus(name: String) = listOf(
-        "status_badge", "avf_badge", "badge_cfg_zone", "ram_safety_zone", "storage_warning",
-        "txt_storage_warning", "net_test_result", "download_status", "runtime_badge", "fps_ping",
-    ).any(name::contains)
+    private fun isWell(view: View): Boolean = ThemeColors.isWellId(resourceName(view))
 
     /** Applies both selected rows and popup rows without replacing custom distro artwork/layouts. */
     private class ThemeSpinnerAdapter(private val source: SpinnerAdapter, private val context: Context) : BaseAdapter() {
