@@ -11,16 +11,17 @@ import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
 import android.os.SystemClock;
+import android.util.Log;
 import java.io.File;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 
 /**
  * B2 follow-up ②: the Android glue for the UML compile-worker face — the
  * foreground keep-alive service plus the Context-bound seams
  * ({@link #keepAlive}, {@link #environment}) the assembly's
- * {@code umlFace(...)} wiring slot consumes.
+ * {@code umlFace(...)} wiring slot consumes. The grant lifecycle itself
+ * (ticker, renewal budget, idempotence, honest stop) is
+ * {@link UmlKeepAliveSession}; this service only owns the foreground state,
+ * the channel and the seam adapters.
  *
  * <p><b>Why a foreground service is a hard prerequisite, not an optimization.</b>
  * The 2026-11-07 device round (§7.1.6) proved that with the screen dozing, the
@@ -33,13 +34,17 @@ import java.util.concurrent.TimeUnit;
  * <p>The service mirrors the research prototype's proven shape
  * ({@code research/uml-runner} {@code KeepAliveService}): it owns only the
  * foreground state and a minimal low-importance ongoing notification; the wake
- * lock is managed by the {@link #keepAlive(Context)} seam over the kernel's
- * lifetime, so the two mechanisms stay decoupled (the research prototype's
- * rationale: reclaiming the service must not entangle the wake-lock
- * semantics). {@code START_NOT_STICKY} keeps the notification honest — it
- * never claims a running kernel after the process died.
+ * lock is managed by the {@link UmlKeepAliveSession} that
+ * {@link #keepAlive(Context)} wires, over the kernel's lifetime, so the two
+ * mechanisms stay decoupled (the research prototype's rationale: reclaiming
+ * the service must not entangle the wake-lock semantics). {@code
+ * START_NOT_STICKY} keeps the notification honest — it never claims a running
+ * kernel after the process died.
  */
 public class UmlFaceKeepAliveService extends Service {
+
+    /** Diagnostics tag (the {@code Orchestella*} family: Bridge/Qemu/Accel/Uml). */
+    private static final String TAG = "OrchestellaUml";
 
     public static final String CHANNEL_ID = "orchestella_uml_face_keepalive";
     public static final int NOTIFICATION_ID = 1002;
@@ -100,148 +105,77 @@ public class UmlFaceKeepAliveService extends Service {
      * renewals per session). Past the ceiling the session ends honestly —
      * lock released, service stopped, notice posted — never a lapsed lock
      * under a notification that still claims a running worker. The decision
-     * logic is {@link WakeLockPolicy} (pure, JVM-tested); this glue only
-     * executes the answer on the real lock.
+     * logic is {@link WakeLockPolicy} (pure, JVM-tested); the execution
+     * order is {@link UmlKeepAliveSession} (JVM-tested against fakes); this
+     * glue only adapts the Android surfaces both consume.
      */
     public static UmlFaceLauncher.KeepAlive keepAlive(Context context) {
         Context appContext = context.getApplicationContext();
-        return new UmlFaceLauncher.KeepAlive() {
-            private final Object monitor = new Object();
-            private PowerManager.WakeLock wakeLock;
-            private ScheduledExecutorService renewalTicker;
-            private long grantStartedMs = WakeLockPolicy.NOT_HELD;
-            private int renewalsDone;
-            private boolean stoppedHonestly;
+        return new UmlKeepAliveSession(
+                () -> SystemClock.elapsedRealtime(),
+                wakeLocks(appContext),
+                effects(appContext),
+                new UmlKeepAliveSession.ScheduledTicker());
+    }
 
+    /**
+     * The lock factory adapter: resolves {@code PowerManager} per creation
+     * (answering {@code null} when it is unavailable — the session's
+     * historical early-exit) and adapts the lock to the narrow
+     * {@link UmlKeepAliveSession.UmlWakeLock} surface, reference counting off.
+     */
+    private static UmlKeepAliveSession.WakeLockFactory wakeLocks(Context appContext) {
+        return () -> {
+            PowerManager power =
+                    (PowerManager) appContext.getSystemService(Context.POWER_SERVICE);
+            if (power == null) {
+                return null;
+            }
+            PowerManager.WakeLock lock = power.newWakeLock(
+                    PowerManager.PARTIAL_WAKE_LOCK, "Orchestella:uml-face");
+            lock.setReferenceCounted(false);
+            return new UmlKeepAliveSession.UmlWakeLock() {
+                @Override
+                public boolean isHeld() {
+                    return lock.isHeld();
+                }
+
+                @Override
+                public void acquire(long timeoutMs) {
+                    lock.acquire(timeoutMs);
+                }
+
+                @Override
+                public void release() {
+                    lock.release();
+                }
+            };
+        };
+    }
+
+    /**
+     * The effects adapter: the raise/stop intents and the honest-stop notice.
+     */
+    private static UmlKeepAliveSession.Effects effects(Context appContext) {
+        return new UmlKeepAliveSession.Effects() {
             @Override
-            public void acquire() {
+            public void raiseForegroundService() {
                 appContext.startForegroundService(
                         new Intent(appContext, UmlFaceKeepAliveService.class));
-                synchronized (monitor) {
-                    renewalsDone = 0;
-                    stoppedHonestly = false;
-                    reTakeGrantLocked(SystemClock.elapsedRealtime());
-                    startRenewalTickerLocked();
-                }
             }
 
-            /** Caller holds {@code monitor}. */
-            private void reTakeGrantLocked(long nowMs) {
-                PowerManager power =
-                        (PowerManager) appContext.getSystemService(Context.POWER_SERVICE);
-                if (power == null) {
-                    return;
-                }
-                if (wakeLock == null) {
-                    wakeLock = power.newWakeLock(
-                            PowerManager.PARTIAL_WAKE_LOCK, "Orchestella:uml-face");
-                    wakeLock.setReferenceCounted(false);
-                }
-                if (wakeLock.isHeld()) {
-                    // Renewal and post-expiry re-take both start from a clean
-                    // grant (the guest-execution service's proven pattern), so
-                    // the platform deadline tracks the latest acquire.
-                    try {
-                        wakeLock.release();
-                    } catch (RuntimeException ignored) {
-                        // The re-take must not be masked by a stale release.
-                    }
-                }
-                wakeLock.acquire(WakeLockPolicy.UML_GRANT_TIMEOUT_MS);
-                grantStartedMs = nowMs;
-            }
-
-            /** Caller holds {@code monitor}. */
-            private void startRenewalTickerLocked() {
-                if (renewalTicker != null) {
-                    return;
-                }
-                renewalTicker = Executors.newSingleThreadScheduledExecutor(runnable -> {
-                    Thread thread = new Thread(runnable, "uml-face-wakelock-renewal");
-                    thread.setDaemon(true);
-                    return thread;
-                });
-                renewalTicker.scheduleWithFixedDelay(
-                        this::tick,
-                        WakeLockPolicy.UML_CHECK_INTERVAL_MS,
-                        WakeLockPolicy.UML_CHECK_INTERVAL_MS,
-                        TimeUnit.MILLISECONDS);
-            }
-
-            private void tick() {
-                try {
-                    WakeLockPolicy.UmlSessionDecision decision;
-                    synchronized (monitor) {
-                        if (renewalTicker == null) {
-                            return;
-                        }
-                        long nowMs = SystemClock.elapsedRealtime();
-                        long heldSinceMs =
-                                wakeLock != null && wakeLock.isHeld()
-                                        ? grantStartedMs
-                                        : WakeLockPolicy.NOT_HELD;
-                        decision = WakeLockPolicy.decideSession(
-                                nowMs, heldSinceMs, renewalsDone);
-                        if (decision == WakeLockPolicy.UmlSessionDecision.HOLD) {
-                            return;
-                        }
-                        if (decision == WakeLockPolicy.UmlSessionDecision.RENEW) {
-                            reTakeGrantLocked(nowMs);
-                            renewalsDone++;
-                            return;
-                        }
-                    }
-                    // STOP: outside the monitor — the honest shutdown.
-                    stopHonestly();
-                } catch (RuntimeException tickFailure) {
-                    // A failed tick must not kill the scheduled task: the
-                    // schedule would silently stop renewing forever.
-                }
-            }
-
-            private void stopHonestly() {
-                synchronized (monitor) {
-                    if (stoppedHonestly) {
-                        return;
-                    }
-                    stoppedHonestly = true;
-                    stopTickerLocked();
-                    releaseGrantLocked();
-                }
-                postStopNotice();
-                appContext.stopService(new Intent(appContext, UmlFaceKeepAliveService.class));
-            }
-
-            /** Caller holds {@code monitor}. */
-            private void releaseGrantLocked() {
-                grantStartedMs = WakeLockPolicy.NOT_HELD;
-                if (wakeLock != null) {
-                    try {
-                        wakeLock.release();
-                    } catch (RuntimeException ignored) {
-                        // Release must not mask the face lifecycle result.
-                    }
-                    wakeLock = null;
-                }
-            }
-
-            /** Caller holds {@code monitor}. */
-            private void stopTickerLocked() {
-                if (renewalTicker != null) {
-                    renewalTicker.shutdownNow();
-                    renewalTicker = null;
-                }
-            }
-
-            private void postStopNotice() {
+            @Override
+            public void postStopNotice() {
                 NotificationManager manager =
                         (NotificationManager) appContext.getSystemService(
                                 Context.NOTIFICATION_SERVICE);
                 if (manager == null) {
                     return;
                 }
-                manager.createNotificationChannel(new NotificationChannel(
-                        CHANNEL_ID, "UML compile face", NotificationManager.IMPORTANCE_LOW));
+                // The channel already exists by construction: acquire() raises
+                // this service (onCreate creates the channel) before any
+                // session tick can run, so the historical re-create here was
+                // redundant. Same id, name and importance — no visible change.
                 Notification notice = new Notification.Builder(appContext, CHANNEL_ID)
                         .setSmallIcon(android.R.drawable.stat_notify_sync)
                         .setContentTitle("Orchestella")
@@ -252,12 +186,16 @@ public class UmlFaceKeepAliveService extends Service {
             }
 
             @Override
-            public void release() {
-                synchronized (monitor) {
-                    stopTickerLocked();
-                    releaseGrantLocked();
-                }
+            public void stopForegroundService() {
                 appContext.stopService(new Intent(appContext, UmlFaceKeepAliveService.class));
+            }
+
+            @Override
+            public void reportTickFailure(RuntimeException failure) {
+                // One warning line, class name only (the TerminalActivity
+                // ready-wait lesson: a silent catch leaves only the symptom).
+                Log.w(TAG, "uml keep-alive tick failed: "
+                        + failure.getClass().getSimpleName());
             }
         };
     }
