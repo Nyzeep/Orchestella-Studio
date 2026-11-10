@@ -1,0 +1,7 @@
+[    0.000000] Linux version 7.2.0-um-fast #1 SMP PREEMPT (synthetic fixture, not a real log)
+[    0.040000] Run /init-zero-install as init process
+INIT_ZERO_INSTALL stage=mounts
+T2_MOUNTS_READY uptime=0.09ms
+T3_READY uptime=abc action=poweroff
+READY
+kernel exited code=0 reason=exited duration_ms=600
