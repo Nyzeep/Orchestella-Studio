@@ -8,6 +8,92 @@ import kotlin.math.pow
 object ThemeColors {
     enum class Role { BACKGROUND, SURFACE, PRIMARY, ACCENT, TEXT, MUTED, OUTLINE }
 
+    /**
+     * The card surface ladder (F-lane 三档归档, made runtime-visible for
+     * MaterialCardView by the 2026-11-11 U1 round — the applier previously
+     * flattened every tier to one surface):
+     * background → CARD_WELL → CARD_PRIMARY → CARD_AUXILIARY (raised controls).
+     *
+     * - [CARD_PRIMARY]: decision/identity/form cards — the plain card surface
+     *   (bg_oe_card tier). Paints exactly the pre-registry fill.
+     * - [CARD_WELL]: secondary data-readout cards — one tonal step down toward
+     *   the page ([surfaceLow]), matching the well_ LinearLayout banner treatment
+     *   so both card shapes speak the same ladder.
+     * - [CARD_AUXILIARY]: auxiliary info raised a whisper above the card surface
+     *   ([surfaceHigh], the surfaceContainerHigh tactic). Defined for future
+     *   registration; no layout consumer yet this round.
+     *
+     * Assignment is registration, not name-sniffing arms: cards land here either
+     * through ThemeApplier.setSurfaceTier (explicit) or the id-keyed
+     * [surfaceTierFor] archive table (declarative). Unregistered cards keep the
+     * single-surface behavior byte-identically — that fallback is the regression
+     * contract, so the danger zone and id-less cards ride it unchanged.
+     */
+    enum class SurfaceTier { CARD_PRIMARY, CARD_WELL, CARD_AUXILIARY }
+
+    /**
+     * The 2026-11-11 U1 三档归档 for every id-bearing MaterialCardView, keyed by
+     * the existing layout id (zero renames — the id contract stays intact; the
+     * table only READS it). Id-less cards and the semantic danger zone stay
+     * unregistered on purpose: the fallback gives them the plain card surface,
+     * which is exactly the tier where those are classified.
+     */
+    private val cardSurfaceTiers: Map<String, SurfaceTier> = mapOf(
+        // activity_instance_detail: 一级决策卡 + 二级数据卡（F 注释归档）
+        "card_header_dashboard" to SurfaceTier.CARD_PRIMARY,
+        "card_detail_ssh_connect" to SurfaceTier.CARD_WELL,
+        "card_detail_specs" to SurfaceTier.CARD_WELL,
+        "card_hardware_specs_editor" to SurfaceTier.CARD_WELL,
+        "card_storage_manager" to SurfaceTier.CARD_WELL,
+        "card_network_port_forwarding" to SurfaceTier.CARD_WELL,
+        // "card_danger_zone": 语义特例（红描边），不参与三档归一 → 不注册。
+        // activity_settings: 全部为决策/表单区卡（一级）
+        "card_settings_mirrors" to SurfaceTier.CARD_PRIMARY,
+        "card_settings_virtualization" to SurfaceTier.CARD_PRIMARY,
+        "card_settings_terminal" to SurfaceTier.CARD_PRIMARY,
+        "card_settings_about" to SurfaceTier.CARD_PRIMARY,
+        "card_settings_theme" to SurfaceTier.CARD_PRIMARY,
+        "card_settings_accelerator" to SurfaceTier.CARD_PRIMARY,
+        "card_settings_diagnostics" to SurfaceTier.CARD_PRIMARY,
+        // activity_setup_wizard: 读数卡 well 档，选择/配置卡 card 档
+        "card_wizard_avf_detection" to SurfaceTier.CARD_WELL,
+        "card_distro_selector" to SurfaceTier.CARD_PRIMARY,
+        "card_storage_config" to SurfaceTier.CARD_PRIMARY,
+        "card_network_diag" to SurfaceTier.CARD_WELL,
+        "card_mirror_select" to SurfaceTier.CARD_PRIMARY,
+        "card_hardware_quota" to SurfaceTier.CARD_PRIMARY,
+        "card_startup_tasks" to SurfaceTier.CARD_PRIMARY,
+        "card_spec_summary" to SurfaceTier.CARD_WELL,
+        "card_download_panel" to SurfaceTier.CARD_PRIMARY,
+        // 列表/条目卡：实例卡一级决策（F 注释），端口转发规则条目二级数据（F 注释）
+        "instance_card" to SurfaceTier.CARD_PRIMARY,
+        "card_pf_rule" to SurfaceTier.CARD_WELL,
+        // activity_about（走查报告清单外，按「一级决策=card、二级数据=well」判）：
+        // 版本/更新卡是纯状态读数 → well；介绍/看板娘/作者/仓库四卡无 id，
+        // 未注册 → fallback 即 card 档旧行为，视觉零变化。
+        "card_version_update" to SurfaceTier.CARD_WELL,
+    )
+
+    /** Exact-id registry lookup (no prefix sniffing); null = unregistered fallback. */
+    fun surfaceTierFor(id: String): SurfaceTier? = cardSurfaceTiers[id]
+
+    /**
+     * Card fill for a registered surface tier. Pure derivation so the JVM tier
+     * tests can pin the ladder per theme without a view tree:
+     *
+     * - null / CARD_PRIMARY: the plain (already opacity-resolved) card surface —
+     *   the exact pre-registry fill, so unregistered views are byte-identical.
+     * - CARD_WELL: the [surfaceLow] step, same tactic as the well_ LinearLayout
+     *   banners (page → well → card ladder).
+     * - CARD_AUXILIARY: the [surfaceHigh] step above the card
+     *   (surfaceContainerHigh tactic, same register as in-card text fields).
+     */
+    fun cardSurfaceFill(tier: SurfaceTier?, theme: AppTheme, effectiveSurface: Int): Int = when (tier) {
+        SurfaceTier.CARD_WELL -> surfaceLow(theme.background, effectiveSurface)
+        SurfaceTier.CARD_AUXILIARY -> surfaceHigh(effectiveSurface, theme.text)
+        SurfaceTier.CARD_PRIMARY, null -> effectiveSurface
+    }
+
     fun color(theme: AppTheme, role: Role): Int = when (role) {
         Role.BACKGROUND -> theme.background
         Role.SURFACE -> theme.surface
@@ -162,6 +248,28 @@ object ThemeColors {
     /** Only this dashboard wrapper inherits its outer page's wallpaper; cards still paint surfaces. */
     fun isWallpaperContentWrapper(viewName: String, ancestorName: String): Boolean =
         viewName == "root_container" && ancestorName == "root_coordinator"
+
+    // --- Name contracts (2026-11-11 U1: single source, table-tested) ---
+    // The legacy id-name sniffing moved here from ThemeApplier so the contracts
+    // are JVM-testable from one place. The applier now treats them strictly as
+    // FALLBACK: registered views (Role / SurfaceTier) bypass these predicates,
+    // and the id-keyed surface registry above carries the card tier semantics.
+
+    /** Wells are page-level banners/strips: ids prefixed "well_" take the surfaceLow tier. */
+    fun isWellId(id: String): Boolean = id.startsWith("well_")
+
+    /** Cards whose stroke carries meaning (the danger zone's red ring) keep it. */
+    fun isSemanticStrokeName(name: String): Boolean = name.contains("danger")
+
+    /** Brand artwork never gets tinted (mascot/distro/logo/qr and friends). */
+    fun isArtworkName(name: String): Boolean =
+        listOf("distro", "logo", "brand", "qr", "screenshot", "preview_image").any(name::contains)
+
+    /** Status badges keep their palette-independent ink when the theme repaints. */
+    fun isStatusName(name: String): Boolean = listOf(
+        "status_badge", "avf_badge", "badge_cfg_zone", "ram_safety_zone", "storage_warning",
+        "txt_storage_warning", "net_test_result", "download_status", "runtime_badge", "fps_ping",
+    ).any(name::contains)
 
     fun fontProgress(sp: Int): Int = sp.coerceIn(10, 22) - 10
     fun fontSize(progress: Int): Int = 10 + progress.coerceIn(0, 12)
