@@ -251,3 +251,11 @@ U4/U6/U5 先在 spec 中保留，等 Wave 1 结果再建票，避免过度拆分
 - 跨分支最小测试：U1 x86_64 fast kernel + U2 Alpine x86_64 预烘焙 rootfs 到达 `T2_MOUNTS_READY` → `T3_READY` → `READY`；日志无包管理器/网络；n=1，宿主 `seccomp=auto`，**不是 ARM64 设备结论**。
 - 已知契约缺口：U0 parser 不识别 `U1_READY` / `T2_MOUNTS_READY` / `T3_READY` / `READY`；建议开 U0.1 小票（alias + fixture + self-test），本集成会话未改 parser。
 - Wave 2（U3/U5）可以集成分支为 base 开工；不得把 x86_64 宿主数字外推为 ARM64 结论，也不得把预烘焙 rootfs 当产品可分发物。
+
+## 10. Wave 2 结果（2026-11-10）
+
+- U3/U5 经敏感门清理后合并到 `integration/uml-zero-device-20261110`：清理后 head U3 `80d66d4e`、U5 `b74f57a5`；merge 提交 U3 `fd8d1f7b`、U5 `d54abd1c`。报告：`docs/research/2026-11-10-zero-device-uml-wave2-integration.zh-CN.md`。
+- 敏感门修复：U3 三类（MAC 运行时生成、`digits[]` 拆分、9 个 `harness.env` → `harness.meta`）；U5 两处（打包文档路径字面量、self-test notes 占位符）。修复后两支与合并树均 `SENSITIVE_DATA_OK`。
+- 合并树自测：U0 `checks=118`、U3 `profiles=10` + `checks=31`、U5 `checks=70` + manifest `passed=134 failed=0 info=6`；产品路径与 `release.yml` 零改动。
+- 票 04 `resolved`（真机 seccomp 矩阵、16K 宿主保持 `not-tested`）；U5 记录在 `integration-log.md`。
+- Wave 3（U4/U6）与 U0.1（parser 标记别名小票）以**最新** `github/integration/uml-zero-device-20261110` 为 base 开工；U0.1 只改 `tools/research/uml-boot-bench/`。
