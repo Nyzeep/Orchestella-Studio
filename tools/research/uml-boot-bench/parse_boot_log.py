@@ -158,6 +158,14 @@ _WORK_START_RE = re.compile(r"^UMARM_WORK_START\b.*?\buptime=(\S+)")
 _BOOTPROBE_RE = re.compile(r"^BOOTPROBE\b.*?\buptime=(\S+)")
 _BOOT_OK_RE = re.compile(r"^UMARM_BOOT_OK(?:\s+guest_uptime=(\S+))?")
 _SHELL_READY_RE = re.compile(r"^UMARM_SHELL_READY\b")
+# U0.1 cross-session aliases (U1 fast shell / U2 zero-install). Lower
+# priority than every canonical marker above; see _scan_legacy.
+_U1_READY_RE = re.compile(r"^U1_READY\b.*?\buptime=(\S+)")
+_T2_MOUNTS_READY_RE = re.compile(r"^T2_MOUNTS_READY\b.*?\buptime=(\S+)")
+_T3_READY_RE = re.compile(r"^T3_READY\b.*?\buptime=(\S+)")
+_T3_READY_LINE_RE = re.compile(r"^T3_READY\b")
+_INIT_ZERO_INSTALL_RE = re.compile(r"^INIT_ZERO_INSTALL\b")
+_BARE_READY_RE = re.compile(r"^READY$")
 _KERNEL_EXITED_RE = re.compile(
     r"\bkernel exited code=(-?\d+) reason=(\S+) duration_ms=(\S+)"
 )
@@ -490,6 +498,9 @@ def _scan_legacy(
         "init_seen": False,
         "boot_ok_without_value": False,
         "shell_ready": False,
+        "init_zero_install_seen": False,
+        "t3_ready_seen": False,
+        "bare_ready_seen": False,
         "exit": None,
     }
     boot_ok: tuple[float, str] | None = None
@@ -498,6 +509,9 @@ def _scan_legacy(
     bench: tuple[float, str] | None = None
     mount: tuple[float, str] | None = None
     t4_marker: tuple[float, str] | None = None
+    u1_ready: tuple[float, str] | None = None
+    t2_mounts_ready: tuple[float, str] | None = None
+    t3_ready: tuple[float, str] | None = None
 
     for timestamp, message in lines:
         if _INIT_MARKER_RE.search(message):
@@ -567,6 +581,58 @@ def _scan_legacy(
         if _SHELL_READY_RE.match(message):
             meta["shell_ready"] = True
 
+        u1_match = _U1_READY_RE.match(message)
+        if u1_match:
+            raw_value = u1_match.group(1)
+            value = _parse_nonnegative(raw_value)
+            if value is None:
+                warnings.append(
+                    f"{source}: invalid U1_READY uptime={raw_value}"
+                )
+            elif u1_ready is None:
+                u1_ready = (
+                    _round_ms(value * 1000.0),
+                    f"{source}:u1_ready_uptime",
+                )
+
+        t2m_match = _T2_MOUNTS_READY_RE.match(message)
+        if t2m_match:
+            raw_value = t2m_match.group(1)
+            value = _parse_nonnegative(raw_value)
+            if value is None:
+                warnings.append(
+                    f"{source}: invalid T2_MOUNTS_READY uptime={raw_value}"
+                )
+            elif t2_mounts_ready is None:
+                t2_mounts_ready = (
+                    _round_ms(value * 1000.0),
+                    f"{source}:t2_mounts_ready_uptime",
+                )
+
+        if _T3_READY_LINE_RE.match(message):
+            # The bare-READY gate only needs the line to exist; the uptime
+            # value is validated separately below.
+            meta["t3_ready_seen"] = True
+        t3r_match = _T3_READY_RE.match(message)
+        if t3r_match:
+            raw_value = t3r_match.group(1)
+            value = _parse_nonnegative(raw_value)
+            if value is None:
+                warnings.append(
+                    f"{source}: invalid T3_READY uptime={raw_value}"
+                )
+            elif t3_ready is None:
+                t3_ready = (
+                    _round_ms(value * 1000.0),
+                    f"{source}:t3_ready_uptime",
+                )
+
+        if _INIT_ZERO_INSTALL_RE.match(message):
+            meta["init_zero_install_seen"] = True
+
+        if _BARE_READY_RE.match(message):
+            meta["bare_ready_seen"] = True
+
         if timestamp is not None and t4_marker is None and _T4_MARKER_RE.search(message):
             t4_marker = (
                 _round_ms(timestamp * 1000.0),
@@ -597,20 +663,31 @@ def _scan_legacy(
             }
 
     # A guest-uptime marker is a direct T2 measurement and beats the kernel
-    # timestamp on the rootfs mount line.
+    # timestamp on the rootfs mount line. UMARM_BOOT_OK keeps precedence over
+    # the U2 T2_MOUNTS_READY alias; both beat the kernel-timestamp fallback.
     if boot_ok is not None:
         found.setdefault("t2_rootfs_mounted_ms", boot_ok)
+    elif t2_mounts_ready is not None:
+        found.setdefault("t2_rootfs_mounted_ms", t2_mounts_ready)
     elif mount is not None:
         found.setdefault("t2_rootfs_mounted_ms", mount)
     # BENCH is the explicit first-command marker; WORK_START is the next
     # best; the 11-07 bootprobe work script's BOOTPROBE line is the last
-    # in-guest fallback.
+    # in-guest fallback among the canonical markers. The U0.1 cross-session
+    # aliases (U1_READY, then T3_READY) rank below all of them. A bare READY
+    # line never contributes a value (it has no uptime); whether it was seen
+    # inside a zero-install run only shapes the missing-field hint in
+    # build_run, and it is never attributed to another lane.
     if bench is not None:
         found.setdefault("t3_first_command_ms", bench)
     elif work_start is not None:
         found.setdefault("t3_first_command_ms", work_start)
     elif bootprobe is not None:
         found.setdefault("t3_first_command_ms", bootprobe)
+    elif u1_ready is not None:
+        found.setdefault("t3_first_command_ms", u1_ready)
+    elif t3_ready is not None:
+        found.setdefault("t3_first_command_ms", t3_ready)
     if t4_marker is not None:
         found.setdefault("t4_service_ready_ms", t4_marker)
     return found, meta
@@ -742,6 +819,11 @@ def build_run(
             legacy_meta["boot_ok_without_value"] or dmesg_meta["boot_ok_without_value"]
         ),
         "shell_ready": legacy_meta["shell_ready"] or dmesg_meta["shell_ready"],
+        "init_zero_install_seen": (
+            legacy_meta["init_zero_install_seen"] or dmesg_meta["init_zero_install_seen"]
+        ),
+        "t3_ready_seen": legacy_meta["t3_ready_seen"] or dmesg_meta["t3_ready_seen"],
+        "bare_ready_seen": legacy_meta["bare_ready_seen"] or dmesg_meta["bare_ready_seen"],
         "exit": legacy_meta["exit"] or dmesg_meta["exit"],
     }
 
@@ -845,6 +927,16 @@ def build_run(
             missing[metric] = (
                 "UMARM_SHELL_READY has no guest uptime; emit "
                 "'BENCH boot_uptime_ms=<ms>' or add uptime=<seconds>"
+            )
+        elif metric == "t3_first_command_ms" and meta["bare_ready_seen"] and (
+            meta["init_zero_install_seen"] or meta["t3_ready_seen"]
+        ):
+            # Bare READY only counts inside a U1/U2 zero-install run and
+            # never carries a value itself; point at the aliases that do.
+            missing[metric] = (
+                "zero-install run printed READY but no T3 alias carried a "
+                "usable uptime; emit 'T3_READY uptime=<seconds>' or "
+                "'U1_READY uptime=<seconds>'"
             )
         else:
             missing[metric] = MISSING_HINTS[metric]
@@ -1179,6 +1271,218 @@ def self_test() -> int:
     check("bootprobe.source",
           bootprobe.sources.get("t3_first_command_ms") == "console:bootprobe_uptime",
           repr(bootprobe.sources))
+
+    # ---- U0.1 cross-session alias markers (U1/U2, ticket 05) --------------
+    # U1 fast-shell: U1_READY uptime=<s> maps to T3. U1_T2_READY is not yet a
+    # protocol marker, so T2 falls back to the VFS kernel timestamp.
+    u1_alias = build_run(
+        "uml", "u1-alias",
+        console_text=_fixture("uml-console-u1-ready-ok.txt"),
+    )
+    check("u1_alias.t1", approx(u1_alias.metrics["t1_kernel_init_ms"], 10.0),
+          repr(u1_alias.metrics["t1_kernel_init_ms"]))
+    check("u1_alias.t2_vfs_fallback",
+          approx(u1_alias.metrics["t2_rootfs_mounted_ms"], 60.0),
+          repr(u1_alias.metrics["t2_rootfs_mounted_ms"]))
+    check("u1_alias.t2_source",
+          u1_alias.sources.get("t2_rootfs_mounted_ms") == "console:kernel_timestamp",
+          repr(u1_alias.sources))
+    check("u1_alias.t3", approx(u1_alias.metrics["t3_first_command_ms"], 110.0),
+          repr(u1_alias.metrics["t3_first_command_ms"]))
+    check("u1_alias.t3_source",
+          u1_alias.sources.get("t3_first_command_ms") == "console:u1_ready_uptime",
+          repr(u1_alias.sources))
+    check("u1_alias.duration", approx(u1_alias.metrics["duration_ms"], 450.0),
+          repr(u1_alias.metrics["duration_ms"]))
+    check("u1_alias.no_invalid_warning",
+          not any("invalid" in warning for warning in u1_alias.warnings),
+          repr(u1_alias.warnings))
+
+    # U2 zero-install: T2_MOUNTS_READY is a direct T2 measurement and beats
+    # the VFS kernel timestamp; T3_READY maps to T3; the bare READY line is
+    # gated by INIT_ZERO_INSTALL/T3_READY in the same run and adds nothing.
+    u2_alias = build_run(
+        "uml", "u2-alias",
+        console_text=_fixture("uml-console-u2-zero-install-ok.txt"),
+    )
+    check("u2_alias.t1", approx(u2_alias.metrics["t1_kernel_init_ms"], 40.0),
+          repr(u2_alias.metrics["t1_kernel_init_ms"]))
+    check("u2_alias.t2", approx(u2_alias.metrics["t2_rootfs_mounted_ms"], 90.0),
+          repr(u2_alias.metrics["t2_rootfs_mounted_ms"]))
+    check("u2_alias.t2_beats_vfs_fallback",
+          u2_alias.sources.get("t2_rootfs_mounted_ms") == "console:t2_mounts_ready_uptime",
+          repr(u2_alias.sources))
+    check("u2_alias.t3", approx(u2_alias.metrics["t3_first_command_ms"], 110.0),
+          repr(u2_alias.metrics["t3_first_command_ms"]))
+    check("u2_alias.t3_source",
+          u2_alias.sources.get("t3_first_command_ms") == "console:t3_ready_uptime",
+          repr(u2_alias.sources))
+    check("u2_alias.duration", approx(u2_alias.metrics["duration_ms"], 600.0),
+          repr(u2_alias.metrics["duration_ms"]))
+    check("u2_alias.no_invalid_warning",
+          not any("invalid" in warning for warning in u2_alias.warnings),
+          repr(u2_alias.warnings))
+
+    # Bare READY without U1/U2 context maps to no lane metric at all.
+    bare_ambig = build_run(
+        "uml", "bare-ambiguous",
+        console_text=_fixture("uml-console-bare-ready-ambiguous.txt"),
+    )
+    check("bare_ambig.t3_none", bare_ambig.metrics["t3_first_command_ms"] is None,
+          repr(bare_ambig.metrics["t3_first_command_ms"]))
+    check("bare_ambig.no_t3_source",
+          "t3_first_command_ms" not in bare_ambig.sources, repr(bare_ambig.sources))
+    check("bare_ambig.generic_hint",
+          bare_ambig.missing["t3_first_command_ms"].startswith("no 'BENCH"),
+          bare_ambig.missing["t3_first_command_ms"])
+    check("bare_ambig.duration", approx(bare_ambig.metrics["duration_ms"], 300.0),
+          repr(bare_ambig.metrics["duration_ms"]))
+
+    # U1_READY without an uptime value is never estimated.
+    u1_no_uptime = build_run(
+        "uml", "u1-no-uptime",
+        console_text=_fixture("uml-console-u1-ready-no-uptime.txt"),
+    )
+    check("u1_no_uptime.t3_none",
+          u1_no_uptime.metrics["t3_first_command_ms"] is None,
+          repr(u1_no_uptime.metrics["t3_first_command_ms"]))
+    check("u1_no_uptime.generic_hint",
+          u1_no_uptime.missing["t3_first_command_ms"].startswith("no 'BENCH"),
+          u1_no_uptime.missing["t3_first_command_ms"])
+    check("u1_no_uptime.t2_vfs_fallback",
+          approx(u1_no_uptime.metrics["t2_rootfs_mounted_ms"], 60.0),
+          repr(u1_no_uptime.metrics["t2_rootfs_mounted_ms"]))
+    check("u1_no_uptime.no_invalid_warning",
+          not any("invalid" in warning for warning in u1_no_uptime.warnings),
+          repr(u1_no_uptime.warnings))
+
+    # Unit/value errors on the aliases produce warnings, never guesses.
+    bad_unit = build_run(
+        "uml", "u2-bad-unit",
+        console_text=_fixture("uml-console-u2-ready-bad-unit.txt"),
+    )
+    check("bad_unit.t2_none", bad_unit.metrics["t2_rootfs_mounted_ms"] is None,
+          repr(bad_unit.metrics["t2_rootfs_mounted_ms"]))
+    check("bad_unit.t3_none", bad_unit.metrics["t3_first_command_ms"] is None,
+          repr(bad_unit.metrics["t3_first_command_ms"]))
+    check("bad_unit.t2_warning",
+          any("invalid T2_MOUNTS_READY uptime=0.09ms" in warning
+              for warning in bad_unit.warnings),
+          repr(bad_unit.warnings))
+    check("bad_unit.t3_warning",
+          any("invalid T3_READY uptime=abc" in warning for warning in bad_unit.warnings),
+          repr(bad_unit.warnings))
+    check("bad_unit.gated_ready_hint",
+          "READY" in bad_unit.missing["t3_first_command_ms"],
+          bad_unit.missing["t3_first_command_ms"])
+
+    # Alias priority: canonical BENCH/UMARM/BOOTPROBE markers keep precedence.
+    alias_priority = build_run(
+        "uml", "alias-priority",
+        console_text=(
+            "INIT_ZERO_INSTALL stage=mounts\n"
+            "BENCH boot_uptime_ms=400\n"
+            "U1_READY uptime=0.30\n"
+            "T3_READY uptime=0.29 action=shell\n"
+            "READY\n"
+        ),
+    )
+    check("alias_priority.bench_beats_alias",
+          approx(alias_priority.metrics["t3_first_command_ms"], 400.0)
+          and alias_priority.sources.get("t3_first_command_ms") == "console:boot_uptime_ms",
+          repr(alias_priority.sources.get("t3_first_command_ms")))
+
+    alias_work_start = build_run(
+        "uml", "alias-work-start",
+        console_text=(
+            "UMARM_WORK_START work=w uptime=0.35\n"
+            "BOOTPROBE probe=1 uptime=0.33\n"
+            "U1_READY uptime=0.30\n"
+            "T3_READY uptime=0.29 action=shell\n"
+            "READY\n"
+        ),
+    )
+    check("alias_priority.work_start_beats_alias",
+          approx(alias_work_start.metrics["t3_first_command_ms"], 350.0)
+          and alias_work_start.sources.get("t3_first_command_ms") == "console:work_start_uptime",
+          repr(alias_work_start.sources.get("t3_first_command_ms")))
+
+    alias_bootprobe = build_run(
+        "uml", "alias-bootprobe",
+        console_text=(
+            "BOOTPROBE probe=1 uptime=0.33\n"
+            "U1_READY uptime=0.30\n"
+            "T3_READY uptime=0.29 action=shell\n"
+            "READY\n"
+        ),
+    )
+    check("alias_priority.bootprobe_beats_alias",
+          approx(alias_bootprobe.metrics["t3_first_command_ms"], 330.0)
+          and alias_bootprobe.sources.get("t3_first_command_ms") == "console:bootprobe_uptime",
+          repr(alias_bootprobe.sources.get("t3_first_command_ms")))
+
+    alias_u1_first = build_run(
+        "uml", "alias-u1-first",
+        console_text="U1_READY uptime=0.30\nT3_READY uptime=0.29 action=shell\nREADY\n",
+    )
+    check("alias_priority.u1_ready_beats_t3_ready",
+          approx(alias_u1_first.metrics["t3_first_command_ms"], 300.0)
+          and alias_u1_first.sources.get("t3_first_command_ms") == "console:u1_ready_uptime",
+          repr(alias_u1_first.sources.get("t3_first_command_ms")))
+
+    alias_t3_only = build_run(
+        "uml", "alias-t3-only",
+        console_text="T3_READY uptime=0.29 action=shell\nREADY\n",
+    )
+    check("alias_priority.t3_ready",
+          approx(alias_t3_only.metrics["t3_first_command_ms"], 290.0)
+          and alias_t3_only.sources.get("t3_first_command_ms") == "console:t3_ready_uptime",
+          repr(alias_t3_only.sources.get("t3_first_command_ms")))
+
+    # Bare READY is only trusted inside a zero-install run; even then it has
+    # no uptime of its own, so T3 stays unknown unless an alias carried one.
+    bare_gated_init = build_run(
+        "uml", "bare-gated-init",
+        console_text="INIT_ZERO_INSTALL stage=mounts\nREADY\n",
+    )
+    check("bare_ready.gated_by_init_zero_install",
+          bare_gated_init.metrics["t3_first_command_ms"] is None,
+          repr(bare_gated_init.metrics["t3_first_command_ms"]))
+    check("bare_ready.gated_hint",
+          "READY" in bare_gated_init.missing["t3_first_command_ms"],
+          bare_gated_init.missing["t3_first_command_ms"])
+
+    bare_gated_t3 = build_run(
+        "uml", "bare-gated-t3",
+        console_text="T3_READY uptime=abc action=shell\nREADY\n",
+    )
+    check("bare_ready.gated_by_t3_ready_line",
+          bare_gated_t3.metrics["t3_first_command_ms"] is None,
+          repr(bare_gated_t3.metrics["t3_first_command_ms"]))
+    check("bare_ready.invalid_t3_ready_warning",
+          any("invalid T3_READY uptime=abc" in warning for warning in bare_gated_t3.warnings),
+          repr(bare_gated_t3.warnings))
+
+    bare_ungated = build_run("uml", "bare-ungated", console_text="READY\n")
+    check("bare_ready.ungated_not_t3",
+          bare_ungated.metrics["t3_first_command_ms"] is None,
+          repr(bare_ungated.metrics["t3_first_command_ms"]))
+    check("bare_ready.ungated_generic_hint",
+          bare_ungated.missing["t3_first_command_ms"].startswith("no 'BENCH"),
+          bare_ungated.missing["t3_first_command_ms"])
+
+    # T2 alias priority: UMARM_BOOT_OK keeps precedence over T2_MOUNTS_READY.
+    t2_alias_priority = build_run(
+        "uml", "t2-alias-priority",
+        console_text=(
+            "UMARM_BOOT_OK guest_uptime=0.12\n"
+            "T2_MOUNTS_READY uptime=0.09\n"
+        ),
+    )
+    check("t2_alias.boot_ok_beats_alias",
+          approx(t2_alias_priority.metrics["t2_rootfs_mounted_ms"], 120.0)
+          and t2_alias_priority.sources.get("t2_rootfs_mounted_ms") == "console:guest_uptime",
+          repr(t2_alias_priority.sources.get("t2_rootfs_mounted_ms")))
 
     # ---- QEMU with systemd-analyze ----------------------------------------
     qemu = build_run(
