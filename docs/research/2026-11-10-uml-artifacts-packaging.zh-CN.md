@@ -209,6 +209,9 @@ $ tools/research/uml-artifacts/build-source-bundle.sh --manifest .../fast-arm64-
 BUNDLE_OK path=/tmp/a.tar.gz sha256=<same> files=12
 $ tools/research/uml-artifacts/build-source-bundle.sh --verify-source-bundle /tmp/a.tar.gz --expect-manifest ...
 BUNDLE_VERIFY_OK files=11
+
+# 真实内核源码入包（tarball sha256 08578a49…）：kernelSourceIncluded=true，
+# upstream/linux-um-arm64-v0.3.0.tar.gz 进入 bundle，BUNDLE_VERIFY_OK files=12。
 ```
 
 其余验收：
