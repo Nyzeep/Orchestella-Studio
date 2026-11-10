@@ -42,7 +42,7 @@ GPL-2.0 §3 要求分发二进制时选择其一：随附完整对应源码；�
 | G5 | 源码要约不得窄于二进制要约；二进制可下载时，从同一位置提供等价源码访问是基线 | 必须 | §3 末段；FAQ 下载费条目 [S1][S2] |
 | G6 | 精确二进制哈希可复现**不是** GPL 要求 | 记录 | GPL FAQ [S2] |
 | G7 | `.config` 未被 GPL 文本点名，但 kernel Kconfig 明确 IKCONFIG 保存“重建当前内核的输入”；BusyBox 合规页把 config + 脚本列为最稳妥做法 | 应做/记录 | kernel `init/Kconfig`、BusyBox [S3][S4] |
-| G8 | initramfs 里的 BusyBox 无论是否修改都是 GPL-2.0；需提供其精确源码/config/补丁或 distro 源码要约 | 必须 | BusyBox [S4] |
+| G8 | initramfs 里的 BusyBox 无论是否修改都是 GPL-2.0；需提供其精确源码/config/补丁，distro 源码要约只能作为补充证据 | 必须 | BusyBox [S4] |
 | G9 | rootfs 中每个 GPL 包都需要对应源码；Alpine 以 aports APKBUILD + 上游 `source=` 提供，Debian 以 `.dsc` + upstream tar 提供 | 必须 | Alpine/Debian 文档 [S5][S6] |
 | G10 | 义务**不能委托**给 Alpine/Debian/供应商；我们的镜像分发必须自带源码要约 | 记录 | BusyBox [S4] |
 | G11 | kernel 与 initramfs/rootfs 是否构成 “mere aggregation” 是法律问题，FAQ 明确由法院判断；不得在仓库中断言是 aggregate | 记录 | §2 末段；FAQ [S1][S2] |
