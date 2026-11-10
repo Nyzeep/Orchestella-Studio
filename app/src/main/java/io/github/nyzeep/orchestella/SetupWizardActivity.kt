@@ -37,6 +37,7 @@ import io.github.nyzeep.orchestella.ui.theme.ThemeStore
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.slider.Slider
 import com.google.android.material.textfield.TextInputEditText
+import io.github.nyzeep.orchestella.ui.motion.OrchestellaMotion
 import io.github.nyzeep.orchestella.runtime.capability.AvfAuthorizationWizardModel
 import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator
 import io.github.nyzeep.orchestella.runtime.engineavf.AvfLaunchAdmission
@@ -118,8 +119,14 @@ class SetupWizardActivity : AppCompatActivity() {
 
     // Step 1 Views (AVF Detection Card)
     private lateinit var txtWizardAvfBadge: TextView
+    private lateinit var txtWizardAvfSummary: TextView
+    private lateinit var txtWizardAvfExpandIndicator: TextView
+    private lateinit var layoutWizardAvfSummaryHeader: LinearLayout
     private lateinit var txtWizardAvfDetails: TextView
     private lateinit var layoutWizardAvfFallback: LinearLayout
+    // W2(d): AVF detail block starts collapsed; the toggle follows the
+    // SettingsActivity expand-section paradigm (generation-guarded).
+    private var avfDetailCollapse = WizardAvfDiagnostics.CollapseState()
 
     // Step 1 Views (Distro Spinner & Preview)
     private lateinit var spinnerDistroSelect: Spinner
@@ -382,6 +389,9 @@ class SetupWizardActivity : AppCompatActivity() {
 
         // Step 1 - AVF Detection Card
         txtWizardAvfBadge = findViewById(R.id.txt_wizard_avf_badge)
+        txtWizardAvfSummary = findViewById(R.id.txt_wizard_avf_summary)
+        txtWizardAvfExpandIndicator = findViewById(R.id.txt_wizard_avf_expand_indicator)
+        layoutWizardAvfSummaryHeader = findViewById(R.id.layout_wizard_avf_summary_header)
         txtWizardAvfDetails = findViewById(R.id.txt_wizard_avf_details)
         layoutWizardAvfFallback = findViewById(R.id.layout_wizard_avf_fallback)
 
@@ -460,6 +470,7 @@ class SetupWizardActivity : AppCompatActivity() {
 
     private fun setupListeners() {
         btnWizardSkip.setOnClickListener { confirmExitWhileCreating() }
+        setupAvfDetailToggle()
 
         // Step 1 Presets
         btnDisk4g.setOnClickListener { selectDiskPreset(4) }
@@ -637,15 +648,29 @@ class SetupWizardActivity : AppCompatActivity() {
         btnAvfAuthWizard.visibility =
             if (readiness.status() == AvfCapabilityEvaluator.AvfStatus.NEEDS_AUTHORIZATION)
                 View.VISIBLE else View.GONE
-        val factsSummary = """
-            AVF feature：${if (facts.virtualizationFrameworkFeature()) "已声明" else "未声明"}
-            虚拟化属性：${facts.virtualizationProperty()?.takeIf { it.isNotBlank() } ?: "无法读取或未提供"}
-            VM 模式：${AvfHostFactsProbe.modeSummary(facts.modeFacts())}
-            平台访问：${AvfHostFactsProbe.platformSummary(facts.platformFacts())}
-            MANAGE_VIRTUAL_MACHINE：${AvfHostFactsProbe.permissionLabel(facts.manageVirtualMachinePermissionState())}
-            USE_CUSTOM_VIRTUAL_MACHINE：${AvfHostFactsProbe.permissionLabel(facts.useCustomVirtualMachinePermissionState())}
-        """.trimIndent()
+        // W2(a): the platform summary already inlines the mode-facts kv tail
+        // (来源/actor/采样/ROM) — pass it alone when a platform observation
+        // exists so the tail is concatenated exactly once. Detection and
+        // fallback semantics are untouched.
+        val hasPlatformObservation = facts.platformFacts() != null
+        val factsSummary = WizardAvfDiagnostics.factsSummary(
+            avfFeatureDeclared = facts.virtualizationFrameworkFeature(),
+            virtualizationProperty = facts.virtualizationProperty(),
+            platformSummary = if (hasPlatformObservation) {
+                AvfHostFactsProbe.platformSummary(facts.platformFacts())
+            } else {
+                null
+            },
+            modeSummary = AvfHostFactsProbe.modeSummary(facts.modeFacts()),
+            managePermissionLabel = AvfHostFactsProbe.permissionLabel(facts.manageVirtualMachinePermissionState()),
+            customPermissionLabel = AvfHostFactsProbe.permissionLabel(facts.useCustomVirtualMachinePermissionState()),
+            sampledAtFormatter = ::formatSampledAtLocal
+        )
         val launchNotice = getString(R.string.avf_preflight_boundary)
+        txtWizardAvfSummary.text = WizardAvfDiagnostics.summaryLine(readiness.status())
+        txtWizardAvfExpandIndicator.text = WizardAvfDiagnostics.expandIndicator(avfDetailCollapse.expanded)
+        txtWizardAvfDetails.visibility =
+            if (avfDetailCollapse.expanded) View.VISIBLE else View.GONE
 
         when (readiness.status()) {
             AvfCapabilityEvaluator.AvfStatus.READY -> {
@@ -698,6 +723,42 @@ class SetupWizardActivity : AppCompatActivity() {
                 txtWizardAvfBadge.setTextColor(getColor(R.color.zone_yellow))
                 txtWizardAvfDetails.text = "$factsSummary\n$launchNotice"
                 layoutWizardAvfFallback.visibility = View.VISIBLE
+            }
+        }
+    }
+
+    /**
+     * W2(b): the mode-facts summary renders 采样=<epoch millis>; show a local
+     * wall-clock time instead. Used only for display — probe/evaluator values
+     * are never rewritten.
+     */
+    private fun formatSampledAtLocal(millis: Long): String = try {
+        java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+            .withZone(java.time.ZoneId.systemDefault())
+            .format(java.time.Instant.ofEpochMilli(millis)) + "（本地时间）"
+    } catch (_: Exception) {
+        "$millis（时间戳）"
+    }
+
+    /**
+     * W2(d): the AVF kv wall renders collapsed behind a one-line conclusion;
+     * this header row is the expand entry. Same vocabulary and stale-callback
+     * guard as SettingsActivity's expandable section.
+     */
+    private fun setupAvfDetailToggle() {
+        layoutWizardAvfSummaryHeader.contentDescription = "AVF 平台声明详情，点按展开或折叠"
+        layoutWizardAvfSummaryHeader.setOnClickListener {
+            val next = WizardAvfDiagnostics.toggled(avfDetailCollapse)
+            avfDetailCollapse = next
+            txtWizardAvfExpandIndicator.text = WizardAvfDiagnostics.expandIndicator(next.expanded)
+            if (next.expanded) {
+                OrchestellaMotion.expandSection(txtWizardAvfDetails)
+            } else {
+                OrchestellaMotion.collapseSection(txtWizardAvfDetails) {
+                    if (next.generation == avfDetailCollapse.generation) {
+                        txtWizardAvfDetails.visibility = View.GONE
+                    }
+                }
             }
         }
     }
