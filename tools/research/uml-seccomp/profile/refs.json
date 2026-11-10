@@ -1,0 +1,11 @@
+{
+  "schema": "uml-seccomp-refs/1",
+  "note": "One profile per AOSP release branch; do not extrapolate across Android versions.",
+  "refs": [
+    {"id": "android14", "bionic_ref": "android14-release", "api": 34},
+    {"id": "android15", "bionic_ref": "android15-release", "api": 35},
+    {"id": "android16", "bionic_ref": "android16-release", "api": 36},
+    {"id": "android17", "bionic_ref": "android17-release", "api": 37},
+    {"id": "main", "bionic_ref": "main", "api": null}
+  ]
+}

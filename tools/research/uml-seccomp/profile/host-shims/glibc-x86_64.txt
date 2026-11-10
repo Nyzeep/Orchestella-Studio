@@ -1,0 +1,19 @@
+# x86_64 host-proxy additions for a host-arch UML run.
+#
+# These are NOT Android allowances.  They compensate for the fact that the
+# host-arch run uses x86_64 glibc and x86_64 legacy syscalls, while the target
+# is arm64 Android (bionic):
+#   rseq, set_robust_list  glibc >= 2.35 startup; bionic never issues them.
+#   access                 x86_64 glibc access(); arm64 uses faccessat.
+#   mkdir, rmdir, unlink   x86_64 legacy calls; arm64 glibc uses *at variants.
+#   poll                   x86_64 poll(); arm64 uses ppoll.
+#   epoll_create           x86_64 legacy call; arm64 uses epoll_create1.
+rseq
+set_robust_list
+access
+mkdir
+rmdir
+unlink
+poll
+epoll_create
+epoll_wait

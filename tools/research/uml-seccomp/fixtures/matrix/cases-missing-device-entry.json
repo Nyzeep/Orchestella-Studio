@@ -1,0 +1,11 @@
+{
+  "schema": "uml-seccomp-cases/1",
+  "profile": "aosp-app-android17-x86_64",
+  "cases": [
+    {
+      "id": "hostfs-boot",
+      "title": "hostfs rootfs boot",
+      "markers": ["CAP hostfs=ok"]
+    }
+  ]
+}
