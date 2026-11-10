@@ -451,10 +451,10 @@ class InstanceDetailActivity : AppCompatActivity() {
 
         if (hasSession) {
             btnPower.text = getString(R.string.console_btn_power)
-            btnPower.setIconResource(R.drawable.ic_power)
+            btnPower.setIconResource(R.drawable.ic_sym_power_settings_new)
         } else {
             btnPower.text = getString(R.string.console_btn_start)
-            btnPower.setIconResource(R.drawable.ic_power)
+            btnPower.setIconResource(R.drawable.ic_sym_power_settings_new)
         }
 
         // Section 2: Hardware Lock

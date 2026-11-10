@@ -125,7 +125,7 @@
                             android:layout_weight="1"
                             android:layout_marginEnd="@dimen/oe_icon_inline_gap"
                             app:cornerRadius="0dp"
-                            app:icon="@drawable/ic_network"
+                            app:icon="@drawable/ic_sym_lan"
                             app:iconSize="18dp"
                             android:text="一键测速并优选"
                             android:textSize="12sp"
@@ -341,7 +341,7 @@
 
                 <ImageView
                     style="@style/Widget.Orchestella.InlineIcon"
-                    app:srcCompat="@drawable/ic_terminal"
+                    app:srcCompat="@drawable/ic_sym_terminal"
                     app:tint="?attr/colorPrimary" />
 
                 <TextView
@@ -447,7 +447,7 @@
 
                 <ImageView
                     style="@style/Widget.Orchestella.InlineIcon"
-                    app:srcCompat="@drawable/ic_info"
+                    app:srcCompat="@drawable/ic_sym_info"
                     app:tint="?attr/colorPrimary" />
 
                 <TextView
@@ -515,7 +515,7 @@
 
                 <ImageView
                     style="@style/Widget.Orchestella.InlineIcon"
-                    app:srcCompat="@drawable/ic_palette"
+                    app:srcCompat="@drawable/ic_sym_palette"
                     app:tint="?attr/colorPrimary" />
 
                 <TextView
@@ -870,7 +870,7 @@
 
                 <ImageView
                     style="@style/Widget.Orchestella.InlineIcon"
-                    app:srcCompat="@drawable/ic_tune"
+                    app:srcCompat="@drawable/ic_sym_tune"
                     app:tint="?attr/colorPrimary" />
 
                 <TextView

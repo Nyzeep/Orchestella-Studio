@@ -140,7 +140,7 @@
 
                             <ImageView
                                 style="@style/Widget.Orchestella.InlineIcon"
-                                app:srcCompat="@drawable/ic_cpu"
+                                app:srcCompat="@drawable/ic_sym_memory"
                                 app:tint="?attr/colorOnSurfaceVariant" />
 
                             <TextView
@@ -158,7 +158,7 @@
 
                             <ImageView
                                 style="@style/Widget.Orchestella.InlineIcon"
-                                app:srcCompat="@drawable/ic_network"
+                                app:srcCompat="@drawable/ic_sym_lan"
                                 app:tint="?attr/colorOnSurfaceVariant" />
 
                             <TextView
@@ -190,7 +190,7 @@
                             android:paddingTop="@dimen/oe_space_sm"
                             android:paddingBottom="@dimen/oe_space_sm"
                             app:cornerRadius="0dp"
-                            app:icon="@drawable/ic_terminal"
+                            app:icon="@drawable/ic_sym_terminal"
                             app:iconSize="20dp"
                             app:iconGravity="textTop"
                             android:text="@string/console_btn_terminal"
@@ -206,7 +206,7 @@
                             android:paddingTop="@dimen/oe_space_sm"
                             android:paddingBottom="@dimen/oe_space_sm"
                             app:cornerRadius="0dp"
-                            app:icon="@drawable/ic_desktop"
+                            app:icon="@drawable/ic_sym_desktop_windows"
                             app:iconSize="20dp"
                             app:iconGravity="textTop"
                             android:text="@string/console_btn_desktop"
@@ -221,7 +221,7 @@
                             android:paddingTop="@dimen/oe_space_sm"
                             android:paddingBottom="@dimen/oe_space_sm"
                             app:cornerRadius="0dp"
-                            app:icon="@drawable/ic_power"
+                            app:icon="@drawable/ic_sym_power_settings_new"
                             app:iconSize="20dp"
                             app:iconGravity="textTop"
                             android:text="@string/console_btn_power"
@@ -244,7 +244,7 @@
                             android:layout_weight="1"
                             android:layout_marginEnd="@dimen/oe_icon_inline_gap"
                             app:cornerRadius="0dp"
-                            app:icon="@drawable/ic_terminal"
+                            app:icon="@drawable/ic_sym_terminal"
                             app:iconSize="18dp"
                             android:text="@string/console_btn_guest_log"
                             android:textSize="12sp" />
@@ -256,7 +256,7 @@
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
                             app:cornerRadius="0dp"
-                            app:icon="@drawable/ic_info"
+                            app:icon="@drawable/ic_sym_info"
                             app:iconSize="18dp"
                             android:text="@string/console_btn_app_log"
                             android:textSize="12sp" />
@@ -365,7 +365,7 @@
 
                                 <ImageView
                                     style="@style/Widget.Orchestella.InlineIcon"
-                                    app:srcCompat="@drawable/ic_terminal"
+                                    app:srcCompat="@drawable/ic_sym_terminal"
                                     app:tint="?attr/colorOnSurface" />
 
                                 <TextView
@@ -419,7 +419,7 @@
                                 android:insetTop="0dp"
                                 android:insetBottom="0dp"
                                 app:cornerRadius="0dp"
-                                app:icon="@drawable/ic_copy"
+                                app:icon="@drawable/ic_sym_content_copy"
                                 app:iconSize="16dp"
                                 android:text="复制命令"
                                 android:textSize="12sp" />
@@ -433,7 +433,7 @@
                                 android:insetTop="0dp"
                                 android:insetBottom="0dp"
                                 app:cornerRadius="0dp"
-                                app:icon="@drawable/ic_settings"
+                                app:icon="@drawable/ic_sym_settings"
                                 app:iconSize="16dp"
                                 android:text="SSH 管理器"
                                 android:textSize="12sp" />
@@ -650,7 +650,7 @@
 
                             <ImageView
                                 style="@style/Widget.Orchestella.InlineIcon"
-                                app:srcCompat="@drawable/ic_disk"
+                                app:srcCompat="@drawable/ic_sym_hard_disk"
                                 app:tint="?attr/colorOnSurface" />
 
                             <TextView
@@ -668,7 +668,7 @@
 
                             <ImageView
                                 style="@style/Widget.Orchestella.InlineIcon"
-                                app:srcCompat="@drawable/ic_disk"
+                                app:srcCompat="@drawable/ic_sym_hard_disk"
                                 app:tint="?attr/colorOutline" />
 
                             <TextView
@@ -704,7 +704,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
                                 app:cornerRadius="0dp"
-                                app:icon="@drawable/ic_backup"
+                                app:icon="@drawable/ic_sym_backup"
                                 app:iconSize="16dp"
                                 android:text="@string/console_storage_export_backup"
                                 android:textSize="12sp" />
@@ -755,7 +755,7 @@
 
                             <ImageView
                                 style="@style/Widget.Orchestella.InlineIcon"
-                                app:srcCompat="@drawable/ic_network"
+                                app:srcCompat="@drawable/ic_sym_lan"
                                 app:tint="?attr/colorOnSurface" />
 
                             <TextView
@@ -772,7 +772,7 @@
 
                             <ImageView
                                 style="@style/Widget.Orchestella.InlineIcon"
-                                app:srcCompat="@drawable/ic_network"
+                                app:srcCompat="@drawable/ic_sym_lan"
                                 app:tint="?attr/colorOutline" />
 
                             <TextView
@@ -871,7 +871,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 app:cornerRadius="0dp"
-                                app:icon="@drawable/ic_clone"
+                                app:icon="@drawable/ic_sym_content_copy"
                                 app:iconSize="16dp"
                                 android:text="克隆" />
                         </LinearLayout>
@@ -918,7 +918,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 app:cornerRadius="0dp"
-                                app:icon="@drawable/ic_restart_alt"
+                                app:icon="@drawable/ic_sym_restart_alt"
                                 app:iconSize="16dp"
                                 android:text="复位" />
                         </LinearLayout>
@@ -966,7 +966,7 @@
                                 android:layout_height="wrap_content"
                                 app:backgroundTint="@color/status_crashed"
                                 app:cornerRadius="0dp"
-                                app:icon="@drawable/ic_delete"
+                                app:icon="@drawable/ic_sym_delete"
                                 app:iconSize="16dp"
                                 android:text="删除" />
                         </LinearLayout>
