@@ -445,6 +445,7 @@
                 <!-- System Fact Specs Overview Card
                      卡片层级：二级数据卡（环境特征只读清单） -->
                 <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/card_detail_specs"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     app:cardCornerRadius="0dp"

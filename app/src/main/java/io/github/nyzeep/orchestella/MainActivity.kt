@@ -40,6 +40,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorMode
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorPolicy
+import io.github.nyzeep.orchestella.ui.TouchTargets
 import io.github.nyzeep.orchestella.ui.motion.OrchestellaMotion
 import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
 import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
@@ -728,6 +729,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupSettingsTab() {
+        val themeRowIds = listOf(
+            R.id.btn_theme_mascot, R.id.btn_theme_constructivist_red,
+            R.id.btn_theme_constructivist_blue, R.id.btn_theme_constructivist_yellow,
+        )
         listOf(
             Triple(R.id.btn_theme_mascot, ThemeCatalog.mascotLavender.id, R.id.badge_theme_mascot_active),
             Triple(R.id.btn_theme_constructivist_red, "constructivist-workstation", R.id.badge_theme_red_active),
@@ -738,6 +743,19 @@ class MainActivity : AppCompatActivity() {
                 ThemeApplier.setRole(it, ThemeApplier.Role.PRESERVE)
                 val preview = ThemeCatalog.all.first { it.id == themeId }
                 it.setBackgroundColor(preview.primary)
+            }
+        }
+        // W3 walk-through: the 46dp theme rows leave 6dp dead gaps, and the text
+        // node alone is far under the 48dp minimum. Grow the rows' hit areas via a
+        // container touch delegate instead of changing XML geometry, so the visual
+        // rhythm stays byte-identical while every row's target reaches ≥48dp and
+        // the gaps between rows stop eating taps.
+        val themeRows = themeRowIds.mapNotNull { findViewById<View>(it) }
+        val themeRowContainer = (themeRows.firstOrNull()?.parent as? ViewGroup)
+        if (themeRowContainer != null && themeRows.size == themeRowIds.size) {
+            themeRowContainer.post {
+                TouchTargets.installStackedRowTargets(
+                    themeRowContainer, themeRows, themeRowContainer.resources.displayMetrics.density)
             }
         }
         findViewById<View>(R.id.btn_create_linux_instance_top)?.setOnClickListener {
