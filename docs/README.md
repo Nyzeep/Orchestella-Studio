@@ -1,34 +1,37 @@
 # 中文成果与开发文档
 
-主分支源码配置为 **0.6.0 / code600**（`main 0383393`，2026-10-29「稳定版准备 + 双包」里程碑）。公开安装包仍为 [v0.4.5 开发预览版](https://github.com/Nyzeep/Orchestella-Studio/releases/tag/v0.4.5)；源码同步不代表新安装包已发布，也不代表全部工单已完成。
+主分支源码配置为 **0.6.2 / code602**（`main @ ff279d64`，`v0.6.2-153-gff279d64`；2026-11-10）。公开安装包为 [v0.6.2](https://github.com/Nyzeep/Orchestella-Studio/releases/tag/v0.6.2)；源码同步不代表新安装包已发布，也不代表全部工单已完成。
 
-> 下表「测试」「运行时」等行的计数与结论取自 0.5.3 阶段验收，尚未按 0.6.0 重新统计；四条执行车道的最新数字与四态标注以[四车道决策材料草案](research/ACR-draft-four-lanes-20261029.md)为准。
+> 下表「测试」「运行时」等行以 2026-11-10 大优化轮报告与当前 main CI 为准；四车道与 UML 研究的最新数字、四态标注以[四车道决策材料草案](research/ACR-draft-four-lanes-20261029.md)与 [UML fabric map](../.scratch/orchestella-uml-fabric/map.md) 为准。
 
 ## 当前状态
 
 | 维度 | 当前事实 |
 | --- | --- |
-| 源码 / 公开包 | 源码 0.6.0 / code600；公开 release 仍为 v0.4.5 开发预览版 |
-| 发布签名 | v0.4.5 与 0.5.3 验证包均为 Android Debug 证书；生产签名与数据迁移是下一公开版本的门 |
-| 测试 | 773 项 App 测试 / 100 suites；lint 0 Error / 753 Warning；65 项 Guest 检查；8 项 Android 框架场景 |
+| 源码 / 公开包 | 源码 0.6.2 / code602（main 在 v0.6.2 之后 153 个提交）；公开 release v0.6.2（2026-10-30） |
+| 发布签名 | v0.6.2 发布包由 release keystore 签名并经发布门校验；v0.4.5 / 0.5.3 历史验证包为 Debug 证书 |
+| 测试 | 1339 项 App 测试 / 0 失败；lint 0 Error（2026-11-10 大优化轮报告快照；HEAD CI 全绿） |
 | 运行时 | QEMU 是当前唯一有真实设备证据的完整 Linux 路径；QEMU / gvproxy 停止已收敛到单一 RuntimeProcessSupervisor（纯 JVM 验证；真机 20 次启停未测）；跨 Controller 单实例互斥已修复 |
-| AVF | 真实 AVF Guest 成功样本为 **0**；当前测试 ROM 只声明 protected，non-protected 不适用；pKVM 未证实，存在 Gunyah 节点 |
+| AVF | 真实 AVF Guest 成功样本为 **0**（截至 2026-11-04）；当前测试 ROM 只声明 protected，non-protected 不适用；pKVM 未证实，存在 Gunyah 节点 |
+| UML fabric | 13/13 工单 resolved；ACR 待投票；技术缺项：16K 宿主、distcc@36 |
 | 16 KB | ELF / APK 对齐已验证（`zipalign -c -P 16 4` 通过）；16 KB 真机运行未测 |
 | Android 17 | API 37 已稳定；项目 targetSdk 36，`ACCESS_LOCAL_NETWORK`、大屏方向、IME 可见性、static final 反射限制是 2026Q4–2027H1 适配窗口 |
-| CI | 当前只门禁 `:runtime:contract:check` 与 `:app:testDebugUnitTest`；runtime 其余模块、lint、assemble 与 16 KB 检查尚未全部进入门禁 |
+| CI | 3 job：Release Metadata Gate、Contract & Unit Tests、Android lint / assemble / 16 KB packaging；main @ ff279d64 全绿（2026-11-10） |
 
-> 本次维护（2026-10-18）：已加入跨 Controller 状态串行化与并发契约测试，修复同一目录多个 `FileStore` 下的单实例竞态；详见[维护与优化 Prompt](reports/orchestration/optimization-prompt-20261018.zh-CN.md)。P0-1 生产签名、P0-4 输入与 P0-5 CI 门禁仍未完成；P0-2 已完成代码与 JVM 回归，真机启停待验证，详见[P0-2 报告](reports/orchestration/p0-2-runtime-supervisor-20261018.zh-CN.md)。
+**当前研究主线（2026-11-10）**：UML fabric（[map](../.scratch/orchestella-uml-fabric/map.md)）——13/13 工单 resolved，ACR 待投票；技术缺项只剩 16K 宿主与 distcc@36。ACR 通过前不写产品集成代码。
+
+> 本次维护（2026-10-18，历史快照；P0 状态已变化，当前见上表）：已加入跨 Controller 状态串行化与并发契约测试，修复同一目录多个 `FileStore` 下的单实例竞态；详见[维护与优化 Prompt](reports/orchestration/optimization-prompt-20261018.zh-CN.md)。P0-1 生产签名、P0-4 输入与 P0-5 CI 门禁当时仍未完成；P0-2 已完成代码与 JVM 回归，真机启停待验证，详见[P0-2 报告](reports/orchestration/p0-2-runtime-supervisor-20261018.zh-CN.md)。
 >
 > 方向更新（2026-10-21）：protected 自定义 Full Linux 经 AOSP/SELinux 复核不可行；AVF 研究线改为 protected Microdroid 密封 Linux toolbox（Fast Lane）+ QEMU Full Lane，non-protected 保留未来备选。详见[Protected Fast Lane 方案](reports/orchestration/protected-fast-lane-plan-20261021.zh-CN.md)。
 
 ## 当前交付与路线
 
-1. [Protected Fast Lane + QEMU Full Lane（2026-10-21）](reports/orchestration/protected-fast-lane-plan-20261021.zh-CN.md)：当前 AVF 研究方向。protected Microdroid 密封 Linux toolbox 作为隔离 Fast Lane；QEMU 继续作为完整 Linux Full Lane；non-protected Full Linux 保留为未来备选。ACR-03 未决前不对外声明新 Runtime 类别。
-2. [Orchestella 下一阶段优化方案（2026-10-18）](reports/orchestration/next-optimization-plan-20261018.zh-CN.md)：QEMU 全设备可靠可用与发布 P0；生产签名、运行时收敛、单实例锁、输入与 CI 门仍是发布前阻塞。AVF 排序已由 2026-10-21 方案重排。
+1. [Protected Fast Lane + QEMU Full Lane（2026-10-21）](reports/orchestration/protected-fast-lane-plan-20261021.zh-CN.md)：AVF 研究方向（2026-10-21 入口；当前研究主线已转为 UML fabric，见上）。protected Microdroid 密封 Linux toolbox 作为隔离 Fast Lane；QEMU 继续作为完整 Linux Full Lane；non-protected Full Linux 保留为未来备选。ACR-03 未决前不对外声明新 Runtime 类别。
+2. [Orchestella 下一阶段优化方案（2026-10-18）](reports/orchestration/next-optimization-plan-20261018.zh-CN.md)：QEMU 全设备可靠可用与发布 P0；该方案的发布签名、运行时收敛与 CI 门禁已在 0.6.x 落地，生产签名/数据迁移与剩余输入项以最新报告为准。AVF 排序已由 2026-10-21 方案重排。
 3. [0.5.3 限定实现、构建与真机验收报告](reports/orchestration/avf-shizuku-device-20261016.zh-CN.md)：747 项 App 测试、lint 0 Error / 748 Warning、8 项 Android 框架验收，以及独立 Debian QA 的 QEMU / systemd / 日志与停止结果。
 4. [源码与中文成果同步（2026-10-17）](reports/orchestration/github-source-sync-20261017.zh-CN.md)：0.5.3 可靠性改进与 Protected AVF 规划的公开同步记录。
-5. [Protected 优先近期方案（2026-10-17）](reports/orchestration/protected-avf-near-term-plan-20261017.zh-CN.md)：Protected 专项门、阶段门与停止条件；其 protected custom 产品化排序已被 2026-10-21 Fast Lane 方案取代，保留作历史证据要求。
-6. [工单地图与依赖图](../.scratch/orchestella-avf-shizuku/map.md)、[规格](../.scratch/orchestella-avf-shizuku/spec.md)、[任务范围](../.scratch/orchestella-avf-shizuku/scope.md)。**建立工单不等于实现完成。**
+5. [Protected 优先近期方案（2026-10-17）](reports/orchestration/protected-avf-near-term-plan-20261017.zh-CN.md)：Protected 专项门、阶段门与停止条件；其 protected custom 产品化排序已被 2026-10-21 Fast Lane 方案与 UML fabric 研究线取代，保留作历史证据要求。
+6. [UML fabric 当前工单地图](../.scratch/orchestella-uml-fabric/map.md)；[AVF 工单地图与依赖图](../.scratch/orchestella-avf-shizuku/map.md)、[规格](../.scratch/orchestella-avf-shizuku/spec.md)、[任务范围](../.scratch/orchestella-avf-shizuku/scope.md)（时间盒研究线）。**建立工单不等于实现完成。**
 7. [VM 所有权与 FD 边界 ACR-01](../.scratch/orchestella-avf-shizuku/issues/ACR-01-vm-ownership.md)、[保护意图与隔离语义 ACR-02](../.scratch/orchestella-avf-shizuku/issues/ACR-02-protection-semantics.md)、[Fast Lane Runtime 类别 ACR-03](../.scratch/orchestella-avf-shizuku/issues/ACR-03-protected-fast-lane-runtime-class.md)：仍未决；本次没有新增生产 VM owner 或自动授予权限入口。
 
 Fast Lane 的实现规格见 [fastlane-cross-lane-spec-20261021](reports/orchestration/fastlane-cross-lane-spec-20261021.zh-CN.md)；并行零设备票与串行真机票见 [fastlane map](../.scratch/orchestella-fastlane/map.md)。并行票完成前不启动真机窗口。
@@ -44,10 +47,11 @@ Fast Lane 的实现规格见 [fastlane-cross-lane-spec-20261021](reports/orchest
 - [构建、CI 与开发预览发布可靠性](research/2026-10-15-build-release-reliability.md)。
 - [v0.4.2 终端与运行时下一阶段的有限优化](research/2026-10-15-terminal-runtime-next-phase.md)。
 - [四车道决策材料草案：定位、targetSdk 36 取舍与文案纪律（2026-10-29）](research/ACR-draft-four-lanes-20261029.md)：proot/bare、pVM、QEMU、UML 的机制、性能数字与「不可横比」口径的唯一权威来源，含四态标注与撤销条件。
+- [UML fabric 当前研究线 map](../.scratch/orchestella-uml-fabric/map.md) 与 [UML 方向研究](research/2026-10-31-uml-direction-research.zh-CN.md)、[全谱研究](research/2026-10-31-uml-full-spectrum-research.zh-CN.md)：当前研究主线的目标、已完成工单、ACR 待投票项与证据基线。
 - [AVF 自定义内核资产调研（2026-10-29）](research/avf-kernel-asset-20261029.md)：non-protected 自定义内核方向的评估材料；由并行会话入库。
 - 各票的 [实施报告](reports/tickets/) 与 [独立审查](reports/reviews/)。历史报告中的版本、未提交和设备状态按当时快照理解。
 
-真实本应用 **AVF Guest 成功样本仍为 0**，本次没有 AVF 性能提升声明。平台 feature、权限、模式声明、Microdroid、合成 FD 和 QEMU 验证都不能互相替代。
+真实本应用 **AVF Guest 成功样本截至 2026-11-04 仍为 0**，本次没有 AVF 性能提升声明。平台 feature、权限、模式声明、Microdroid、合成 FD 和 QEMU 验证都不能互相替代。
 
 ## 文档分类
 
@@ -56,7 +60,7 @@ Fast Lane 的实现规格见 [fastlane-cross-lane-spec-20261021](reports/orchest
 | [`adr/`](adr/) | 20 份已接受架构决策 | 索引见 [`adr/README.md`](adr/README.md)；ADR-0015 缺失，禁止按标题补造 |
 | [`assets/branding/`](assets/branding/README.md) | 应用图标与品牌静图 | 说明见 [`assets/branding/README.md`](assets/branding/README.md)；源美术、构图语义与再生成脚本 `tools/branding/make_app_icons.py`；主题配色同源校准 `tools/branding/sample_palette.py` |
 | [`research/`](research/) | 当前有效研究 | 旧 Phase 5 专项已移入 [`research/archive/`](research/archive/README.md) |
-| [`reports/orchestration/`](reports/orchestration/) | 当前主线方案与阶段报告 | 以 2026-10-21 Fast Lane 方案与 2026-10-18 P0 方案为入口 |
+| [`reports/orchestration/`](reports/orchestration/) | 当前主线方案与阶段报告 | 以 2026-11-09 大优化轮报告与 [UML fabric map](../.scratch/orchestella-uml-fabric/map.md) 为当前入口；2026-10-21 Fast Lane 与 2026-10-18 P0 方案为历史入口 |
 | [`reports/tickets/`](reports/tickets/)、[`reviews/`](reports/reviews/)、[`prototypes/`](reports/prototypes/) | 当前 AVF / Shizuku 工单、最终轮审查与原型 | 首审与前轮复审已移入归档 |
 | [`reports/archive/`](reports/archive/README.md) | Phase 5 / 质量合流 / v0.4.5 / 被取代的 AVF 审查 | 历史快照，不代表当前版本 |
 | [`standards/`](standards/) | 版本命名等标准 | `VERSIONING.md` 为唯一现行版本标准 |
