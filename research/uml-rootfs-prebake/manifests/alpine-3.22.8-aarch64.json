@@ -1,0 +1,512 @@
+{
+  "artifactContent": {
+    "initSha256": "d6bedb262e43de2a2e0e6d7f66d3a362a7176b3a958e7fe49647d71111067b33",
+    "packageDatabaseSha256": "e9f328d606f4b054863b1885cecf9e5db545a450d8405b4b274c943bc7ab1583",
+    "readySha256": "dfa1d9905e2dc210dc3fb285ecac6ed493bb11bf08ca21aeaac374fd1c1c3849",
+    "treeSha256": "6ad3811f9793b2c1503306ab8da3b119cbdee272d2b13c2d076988e14dee040f"
+  },
+  "build": {
+    "durationSeconds": 68,
+    "host": "Linux 5.4.241-1-tlinux4-0025.17 x86_64",
+    "sourceDateEpoch": 1762732800,
+    "startedAtUtc": "2026-11-10T06:22:29Z",
+    "tool": "apk-tools-static 2.14.13-r0"
+  },
+  "distro": {
+    "arch": "aarch64",
+    "libc": "musl",
+    "name": "alpine",
+    "version": "3.22.8"
+  },
+  "inputs": {
+    "base": {
+      "sha256": "36091efacd083c1cf5a8c837272530bff4fc72db1fbfdef559f52de0d890bca4",
+      "url": "https://dl-cdn.alpinelinux.org/alpine/v3.22/releases/aarch64/alpine-minirootfs-3.22.8-aarch64.tar.gz"
+    },
+    "packageSet": [
+      {
+        "name": "acl-libs",
+        "version": "2.3.2-r1"
+      },
+      {
+        "name": "alpine-baselayout",
+        "version": "3.7.0-r0"
+      },
+      {
+        "name": "alpine-baselayout-data",
+        "version": "3.7.0-r0"
+      },
+      {
+        "name": "alpine-keys",
+        "version": "2.5-r0"
+      },
+      {
+        "name": "alpine-release",
+        "version": "3.22.8-r0"
+      },
+      {
+        "name": "apk-tools",
+        "version": "2.14.13-r0"
+      },
+      {
+        "name": "bash",
+        "version": "5.2.37-r0"
+      },
+      {
+        "name": "binutils",
+        "version": "2.44-r3"
+      },
+      {
+        "name": "brotli-libs",
+        "version": "1.1.1-r0"
+      },
+      {
+        "name": "build-base",
+        "version": "0.5-r3"
+      },
+      {
+        "name": "busybox",
+        "version": "1.37.0-r20"
+      },
+      {
+        "name": "busybox-binsh",
+        "version": "1.37.0-r20"
+      },
+      {
+        "name": "c-ares",
+        "version": "1.34.9-r0"
+      },
+      {
+        "name": "ca-certificates",
+        "version": "20261020-r0"
+      },
+      {
+        "name": "ca-certificates-bundle",
+        "version": "20261020-r0"
+      },
+      {
+        "name": "coreutils",
+        "version": "9.7-r1"
+      },
+      {
+        "name": "coreutils-env",
+        "version": "9.7-r1"
+      },
+      {
+        "name": "coreutils-fmt",
+        "version": "9.7-r1"
+      },
+      {
+        "name": "coreutils-sha512sum",
+        "version": "9.7-r1"
+      },
+      {
+        "name": "curl",
+        "version": "8.14.1-r4"
+      },
+      {
+        "name": "e2fsprogs",
+        "version": "1.47.2-r2"
+      },
+      {
+        "name": "e2fsprogs-libs",
+        "version": "1.47.2-r2"
+      },
+      {
+        "name": "file",
+        "version": "5.46-r2"
+      },
+      {
+        "name": "findutils",
+        "version": "4.10.0-r0"
+      },
+      {
+        "name": "fortify-headers",
+        "version": "1.1-r5"
+      },
+      {
+        "name": "g++",
+        "version": "14.2.0-r6"
+      },
+      {
+        "name": "gawk",
+        "version": "5.3.2-r2"
+      },
+      {
+        "name": "gcc",
+        "version": "14.2.0-r6"
+      },
+      {
+        "name": "gdbm",
+        "version": "1.24-r0"
+      },
+      {
+        "name": "git",
+        "version": "2.49.1-r0"
+      },
+      {
+        "name": "git-init-template",
+        "version": "2.49.1-r0"
+      },
+      {
+        "name": "gmp",
+        "version": "6.3.0-r3"
+      },
+      {
+        "name": "grep",
+        "version": "3.12-r0"
+      },
+      {
+        "name": "gzip",
+        "version": "1.14-r2"
+      },
+      {
+        "name": "iproute2",
+        "version": "6.15.0-r0"
+      },
+      {
+        "name": "iproute2-minimal",
+        "version": "6.15.0-r0"
+      },
+      {
+        "name": "iproute2-ss",
+        "version": "6.15.0-r0"
+      },
+      {
+        "name": "iproute2-tc",
+        "version": "6.15.0-r0"
+      },
+      {
+        "name": "isl26",
+        "version": "0.26-r1"
+      },
+      {
+        "name": "jansson",
+        "version": "2.14.1-r0"
+      },
+      {
+        "name": "less",
+        "version": "679-r0"
+      },
+      {
+        "name": "libapk2",
+        "version": "2.14.13-r0"
+      },
+      {
+        "name": "libatomic",
+        "version": "14.2.0-r6"
+      },
+      {
+        "name": "libattr",
+        "version": "2.5.2-r2"
+      },
+      {
+        "name": "libblkid",
+        "version": "2.41.6-r1"
+      },
+      {
+        "name": "libbz2",
+        "version": "1.0.8-r6"
+      },
+      {
+        "name": "libcap2",
+        "version": "2.78-r0"
+      },
+      {
+        "name": "libcom_err",
+        "version": "1.47.2-r2"
+      },
+      {
+        "name": "libcrypto3",
+        "version": "3.5.9-r0"
+      },
+      {
+        "name": "libcurl",
+        "version": "8.14.1-r4"
+      },
+      {
+        "name": "libeconf",
+        "version": "0.6.3-r0"
+      },
+      {
+        "name": "libedit",
+        "version": "20250104.3.1-r1"
+      },
+      {
+        "name": "libelf",
+        "version": "0.193-r0"
+      },
+      {
+        "name": "libexpat",
+        "version": "2.10.0-r0"
+      },
+      {
+        "name": "libffi",
+        "version": "3.4.8-r0"
+      },
+      {
+        "name": "libgcc",
+        "version": "14.2.0-r6"
+      },
+      {
+        "name": "libgomp",
+        "version": "14.2.0-r6"
+      },
+      {
+        "name": "libidn2",
+        "version": "2.3.7-r0"
+      },
+      {
+        "name": "libintl",
+        "version": "0.24.1-r0"
+      },
+      {
+        "name": "libmagic",
+        "version": "5.46-r2"
+      },
+      {
+        "name": "libmnl",
+        "version": "1.0.5-r2"
+      },
+      {
+        "name": "libncursesw",
+        "version": "6.5_p20250503-r0"
+      },
+      {
+        "name": "libpanelw",
+        "version": "6.5_p20250503-r0"
+      },
+      {
+        "name": "libproc2",
+        "version": "4.0.4-r3"
+      },
+      {
+        "name": "libpsl",
+        "version": "0.21.5-r3"
+      },
+      {
+        "name": "libssl3",
+        "version": "3.5.9-r0"
+      },
+      {
+        "name": "libstdc++",
+        "version": "14.2.0-r6"
+      },
+      {
+        "name": "libstdc++-dev",
+        "version": "14.2.0-r6"
+      },
+      {
+        "name": "libunistring",
+        "version": "1.3-r0"
+      },
+      {
+        "name": "libuuid",
+        "version": "2.41.6-r1"
+      },
+      {
+        "name": "libxtables",
+        "version": "1.8.11-r1"
+      },
+      {
+        "name": "make",
+        "version": "4.4.1-r3"
+      },
+      {
+        "name": "mpc1",
+        "version": "1.3.1-r1"
+      },
+      {
+        "name": "mpdecimal",
+        "version": "4.0.1-r0"
+      },
+      {
+        "name": "mpfr4",
+        "version": "4.2.1_p1-r0"
+      },
+      {
+        "name": "musl",
+        "version": "1.2.5-r13"
+      },
+      {
+        "name": "musl-dev",
+        "version": "1.2.5-r13"
+      },
+      {
+        "name": "musl-locales",
+        "version": "0.1.0-r1"
+      },
+      {
+        "name": "musl-utils",
+        "version": "1.2.5-r13"
+      },
+      {
+        "name": "ncurses-terminfo-base",
+        "version": "6.5_p20250503-r0"
+      },
+      {
+        "name": "nghttp2-libs",
+        "version": "1.69.0-r0"
+      },
+      {
+        "name": "openssh",
+        "version": "10.0_p1-r11"
+      },
+      {
+        "name": "openssh-client-common",
+        "version": "10.0_p1-r11"
+      },
+      {
+        "name": "openssh-client-default",
+        "version": "10.0_p1-r11"
+      },
+      {
+        "name": "openssh-keygen",
+        "version": "10.0_p1-r11"
+      },
+      {
+        "name": "openssh-server",
+        "version": "10.0_p1-r11"
+      },
+      {
+        "name": "openssh-server-common",
+        "version": "10.0_p1-r11"
+      },
+      {
+        "name": "openssh-sftp-server",
+        "version": "10.0_p1-r11"
+      },
+      {
+        "name": "openssl",
+        "version": "3.5.9-r0"
+      },
+      {
+        "name": "patch",
+        "version": "2.8-r0"
+      },
+      {
+        "name": "pcre2",
+        "version": "10.46-r1"
+      },
+      {
+        "name": "procps-ng",
+        "version": "4.0.4-r3"
+      },
+      {
+        "name": "pyc",
+        "version": "3.12.16-r0"
+      },
+      {
+        "name": "python3",
+        "version": "3.12.16-r0"
+      },
+      {
+        "name": "python3-pyc",
+        "version": "3.12.16-r0"
+      },
+      {
+        "name": "python3-pycache-pyc0",
+        "version": "3.12.16-r0"
+      },
+      {
+        "name": "readline",
+        "version": "8.2.13-r1"
+      },
+      {
+        "name": "scanelf",
+        "version": "1.3.8-r1"
+      },
+      {
+        "name": "sed",
+        "version": "4.9-r2"
+      },
+      {
+        "name": "skalibs-libs",
+        "version": "2.14.4.0-r0"
+      },
+      {
+        "name": "sqlite-libs",
+        "version": "3.49.2-r1"
+      },
+      {
+        "name": "ssl_client",
+        "version": "1.37.0-r20"
+      },
+      {
+        "name": "tar",
+        "version": "1.35-r3"
+      },
+      {
+        "name": "tzdata",
+        "version": "2026f-r0"
+      },
+      {
+        "name": "utmps-libs",
+        "version": "0.1.3.1-r0"
+      },
+      {
+        "name": "wget",
+        "version": "1.25.0-r1"
+      },
+      {
+        "name": "xz",
+        "version": "5.8.4-r0"
+      },
+      {
+        "name": "xz-libs",
+        "version": "5.8.4-r0"
+      },
+      {
+        "name": "zlib",
+        "version": "1.3.2-r1"
+      },
+      {
+        "name": "zstd",
+        "version": "1.5.7-r0"
+      },
+      {
+        "name": "zstd-libs",
+        "version": "1.5.7-r0"
+      }
+    ],
+    "repositories": [
+      {
+        "indexSha256": "f7487e55c3926507a678fc684d8f49795149a359ce7703424c9953c868b7ec76",
+        "url": "https://dl-cdn.alpinelinux.org/alpine/v3.22/main/aarch64/APKINDEX.tar.gz"
+      },
+      {
+        "indexSha256": "d71ca5e889ff83def85e614fe67641abd910beb7b9929461875de1d28a5713bf",
+        "url": "https://dl-cdn.alpinelinux.org/alpine/v3.22/community/aarch64/APKINDEX.tar.gz"
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "format": "tar.gz",
+      "path": "alpine-3.22.8-aarch64.tar.gz",
+      "sha256": "149b2041a93a22a0f94aa105cc1f2480c1ff92b7b06926e909ad6e58201bab59",
+      "sizeBytes": 110170511
+    }
+  ],
+  "provisioning": {
+    "certificates": {
+      "bundlePath": "/etc/ssl/certs/ca-certificates.crt",
+      "sha256": "5961c0a3c65459931c023e0075c09733f09aea4ca439cb85bc4a08bb4f3f568b",
+      "sizeBytes": 178791
+    },
+    "firstBoot": {
+      "init": "/init-zero-install",
+      "networkRequired": false,
+      "packageManagerInvocations": 0,
+      "ready": "/ready.sh"
+    },
+    "locale": {
+      "default": "C.UTF-8",
+      "generated": [
+        "C.UTF-8"
+      ]
+    },
+    "mode": "build-time"
+  },
+  "schemaVersion": 1
+}
