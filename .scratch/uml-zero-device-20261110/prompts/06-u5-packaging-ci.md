@@ -78,7 +78,7 @@ cd /workspace-wt/u5
 2. 干净检出可构建/校验，不依赖本地 `evidence/` 或未入库二进制。
 3. manifest 与产物 sha256 一致；schema 校验通过。
 4. 未修改 `release.yml`/现有 CI；未创建 Release；未改版本号/签名。
-5. `git diff --name-only ... | grep -E '^(app/|runtime/|guest-assets/)'` 无输出。
+5. `git diff --name-only github/integration/uml-zero-device-20261110..HEAD | grep -E '^(app/|runtime/|guest-assets/)'` 无输出。
 6. 敏感数据门通过。
 
 ## 7. 提交与 Handoff

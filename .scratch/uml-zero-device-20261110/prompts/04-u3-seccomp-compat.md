@@ -80,7 +80,7 @@ cd /workspace-wt/u3
 2. harness 能在 filter 下启动 host-arch UML，或明确记录宿主内核/二进制不支持的原因。
 3. 矩阵每项有 `pass`/`fail`/`unknown`；`unknown` 必须有设备验证命令入口。
 4. 报告列出与 AOSP 策略源的对应关系；profile 版本化。
-5. `git diff --name-only ... | grep -E '^(app/|runtime/|guest-assets/)'` 无输出；敏感数据门通过。
+5. `git diff --name-only github/integration/uml-zero-device-20261110..HEAD | grep -E '^(app/|runtime/|guest-assets/)'` 无输出；敏感数据门通过。
 
 ## 7. 提交与 Handoff
 

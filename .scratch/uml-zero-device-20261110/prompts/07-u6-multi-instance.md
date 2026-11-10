@@ -72,7 +72,7 @@ cd /workspace-wt/u6
 1. host 数据表覆盖 N=1/2/4/8（至少 1/2/4）；每项有 n、中位数、夹具、失败数。
 2. 内存/CPU 账本公式有输入与假设；与 `LaneBudgetLedger` 语义对齐。
 3. 设备项全部 `not-tested`，并给命令/入口。
-4. 不写产品代码；`git diff --name-only ... | grep -E '^(app/|runtime/|guest-assets/)'` 无输出。
+4. 不写产品代码；`git diff --name-only github/integration/uml-zero-device-20261110..HEAD | grep -E '^(app/|runtime/|guest-assets/)'` 无输出。
 5. 敏感数据门通过。
 
 ## 7. 提交与 Handoff
