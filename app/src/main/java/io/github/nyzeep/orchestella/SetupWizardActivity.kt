@@ -11,6 +11,8 @@ import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.StatFs
 import android.text.Editable
 import android.text.TextWatcher
@@ -78,9 +80,24 @@ class SetupWizardActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_TARGET_DISTRO = "extra_target_distro"
         private const val STATE_DRAFT = "creation_draft_v1"
+
+        /**
+         * grand-optimization-20261109 §8 risk 4: custom-disk typing used to run
+         * one StatFs read + one instance-directory scan per keystroke on the
+         * main thread. A burst of keystrokes now costs one background check.
+         */
+        const val STORAGE_CHECK_DEBOUNCE_MS = 300L
     }
 
     private val backgroundExecutor = Executors.newSingleThreadExecutor()
+    private val storageUiHandler = Handler(Looper.getMainLooper())
+
+    /**
+     * Generation guard for the debounced storage check: bumped by every
+     * schedule, so a background read that started before a newer keystroke can
+     * never overwrite the UI with a stale verdict.
+     */
+    private var storageCheckGeneration = 0
     private lateinit var settingsManager: SettingsManager
     private lateinit var hostProfile: HostHardwareProfile
     private lateinit var wizardModel: InstanceCreationWizardModel
@@ -480,6 +497,7 @@ class SetupWizardActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         if (isFinishing) {
+            storageUiHandler.removeCallbacksAndMessages(null)
             backgroundExecutor.shutdown()
         }
     }
@@ -598,7 +616,7 @@ class SetupWizardActivity : AppCompatActivity() {
                 if (gb != null) {
                     syncFromViews()
                     highlightPresetButton(gb)
-                    validateAndRefreshStorage()
+                    scheduleDebouncedStorageValidation()
                 } else {
                     // Empty or non-numeric input: keep the model untouched and
                     // make the reason visible instead of a silent disabled button.
@@ -979,12 +997,47 @@ class SetupWizardActivity : AppCompatActivity() {
     }
 
     private fun validateAndRefreshStorage() {
-        val statFs = StatFs(filesDir.path)
-        val availableBytes = statFs.availableBytes
+        val availableBytes = StatFs(filesDir.path).availableBytes
+        applyStorageValidation(availableBytes, existingCommittedCapacityBytes())
+    }
+
+    /**
+     * Typing path: one debounced background check per burst of keystrokes
+     * instead of one StatFs + instance-directory scan per keystroke (§8 risk
+     * 4). While a check is pending the last available-space value stays on
+     * screen (chosen over a "计算中" swap: no flicker), and the step-1 gate is
+     * disabled — an unvalidated request is not yet proven. Preset clicks and
+     * step re-entry keep the synchronous check, and the final creation gate
+     * re-validates synchronously regardless.
+     */
+    private fun scheduleDebouncedStorageValidation() {
+        storageCheckGeneration++
+        btnStep1Next.isEnabled = false
+        storageUiHandler.removeCallbacks(debouncedStorageCheck)
+        storageUiHandler.postDelayed(debouncedStorageCheck, STORAGE_CHECK_DEBOUNCE_MS)
+    }
+
+    private val debouncedStorageCheck = Runnable {
+        val generation = storageCheckGeneration
+        backgroundExecutor.execute {
+            val availableBytes = try {
+                StatFs(filesDir.path).availableBytes
+            } catch (_: Exception) {
+                0L
+            }
+            val committedBytes = existingCommittedCapacityBytes()
+            runOnUiThread {
+                if (generation != storageCheckGeneration) return@runOnUiThread
+                applyStorageValidation(availableBytes, committedBytes)
+            }
+        }
+    }
+
+    /** Applies one storage verdict to the step-1 UI; facts may come from the background. */
+    private fun applyStorageValidation(availableBytes: Long, existingCommittedBytes: Long) {
         val availableGb = availableBytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
         txtHwStorage.text = getString(R.string.wizard_storage_available, String.format("%.1f GB", availableGb))
 
-        val existingCommittedBytes = existingCommittedCapacityBytes()
         val result = wizardModel.validateStorage(availableBytes, wizardModel.requestedDiskBytes, existingCommittedBytes)
         when (result) {
             is InstanceCreationWizardModel.StorageValidationResult.Valid -> {
