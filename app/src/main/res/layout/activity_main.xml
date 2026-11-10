@@ -140,6 +140,11 @@
                     android:baselineAligned="false"
                     android:gravity="center_vertical">
 
+                    <!-- W1 走查修复：标题在窄幅（与 4×48dp 头部按钮同行）下被
+                         TextView 在任意字符位断成 "ORCHESTEL/LA"（单词超行宽的
+                         溢出断行，非连字符断词）。改 autoSize uniform（10–15sp，
+                         上限=原字号档）+ 单行：单单词永不折行，窄幅自适应收缩，
+                         正常宽度观感不变；其余 tab 的中文标题同理单行收缩。 -->
                     <TextView
                         android:id="@+id/dashboard_title"
                         android:layout_width="0dp"
@@ -147,8 +152,11 @@
                         android:layout_height="wrap_content"
                         android:fontFamily="sans-serif"
                         android:text="ORCHESTELLA"
-                        android:maxLines="2"
+                        android:maxLines="1"
                         android:ellipsize="end"
+                        android:autoSizeTextType="uniform"
+                        android:autoSizeMinTextSize="10sp"
+                        android:autoSizeMaxTextSize="15sp"
                         android:textColor="#F5F4F0"
                         android:textSize="15sp"
                         android:textStyle="bold" />
@@ -308,7 +316,8 @@
                     android:insetTop="0dp"
                     android:insetBottom="0dp" />
 
-                <!-- Upgrade marker: visible only while a strictly newer release is known. -->
+                <!-- Upgrade marker: visible only while a strictly newer release is known.
+                     W4 走查修复：dot 补无障碍语义（contentDescription + 出现时 announce）。 -->
                 <View
                     android:id="@+id/about_update_badge"
                     android:layout_width="12dp"
@@ -317,6 +326,7 @@
                     android:layout_marginTop="@dimen/oe_icon_inline_gap"
                     android:layout_marginEnd="@dimen/oe_icon_inline_gap"
                     android:background="@drawable/bg_update_badge"
+                    android:contentDescription="@string/about_update_badge_desc"
                     android:visibility="gone" />
             </FrameLayout>
         </LinearLayout>
