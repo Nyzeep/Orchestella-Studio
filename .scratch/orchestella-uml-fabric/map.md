@@ -29,6 +29,8 @@
 
 ## Not yet specified
 
+- 零设备快速启动与规模化方向（2026-11-10）：`docs/research/2026-11-10-proot-vs-uml-zero-device-direction.zh-CN.md` + `.scratch/uml-zero-device-20261110/spec.md`；首批 U0–U3 票见该目录 `issues/01..04`。核心判词：proot 的“秒开”来自无 guest 内核；UML 已有 0.22–0.40 s 到 marker 的设备样本，下一步是 fast shell / full systemd 两档 + 预烘焙 rootfs + 零设备基准。
+
 - G1 app 域多核、G2 16K 宿主、G3 同夹具四列、G4 崩溃恢复：G1/G4 已过（设备轮）；G2 需 16K 页设备（普查确认公开通道仅 Pixel 系开发者选项）；G3 需设备窗口。
 - 下一设备窗口清单增量（2026-11-04 刷新）：~~T7 终态~~✅、~~D9~~✅、~~链接~~✅、~~W-FAB-03 联网半边~~✅、~~F-MTTCG 补轮~~✅；仍缺 **16K 宿主（含 stub_exe-16k 行为等价）**、**distcc COMPLETED@36**（DV-01 外部阻断）、W-FAB-03 设备实测扩样（普查低置信三格）。
 - ACR 投票：技术缺项仅剩 16K 宿主与 distcc@36 两行（ACR §8.2 已刷新）；**可投票性判定=是否带此两行开票**，议程头号=开发通道产品形态裁定。
