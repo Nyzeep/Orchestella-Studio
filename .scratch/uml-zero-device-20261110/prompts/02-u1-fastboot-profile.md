@@ -29,6 +29,19 @@ cd /workspace-wt/u1
 - 只改本分支；不改 `main`；不合并；不 push 到 main。
 - 不写产品代码；只动 `research/uml-fastboot/`、必要的 `docs/research/`。
 
+### 1.1 任务认领（开工前第一步）
+
+1. 在 worktree 内编辑 `.scratch/uml-zero-device-20261110/issues/02-fastboot-profile.md`：
+   - `Status: claimed（<session-name>，2026-11-10）`
+   - `Owner: <session-name>`
+   - 在 `## Comments` 追加：`2026-11-10 / <session-name>：认领；base <sha>；worktree /workspace-wt/u1。`
+2. 先单独提交认领，再开始实现：
+   ```bash
+   env -u GIT_COMMITTER_NAME -u GIT_COMMITTER_EMAIL \
+     git -c commit.gpgsign=false commit -m "chore(uml-u1): claim ticket 02"
+   ```
+3. 不要先改实现再补认领；协调者以 `Status: claimed` + Owner + 分支提交判断任务归属。
+
 ## 2. 范围
 
 **做：**
