@@ -1665,13 +1665,13 @@ class MainActivity : AppCompatActivity() {
             // Quick Power Action Button
             if (instance.state() == InstanceLifecycle.State.RUNNING) {
                 btnPower?.text = "关机"
-                btnPower?.setIconResource(R.drawable.ic_power)
+                btnPower?.setIconResource(R.drawable.ic_sym_power_settings_new)
                 btnPower?.setOnClickListener {
                     showPowerDialog(instance)
                 }
             } else {
                 btnPower?.text = "开机"
-                btnPower?.setIconResource(R.drawable.ic_power)
+                btnPower?.setIconResource(R.drawable.ic_sym_power_settings_new)
                 btnPower?.setOnClickListener {
                     launchInstance(instance)
                 }

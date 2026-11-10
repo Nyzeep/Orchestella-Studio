@@ -63,7 +63,7 @@
                         <ImageView
                             android:layout_width="48dp"
                             android:layout_height="48dp"
-                            android:src="@drawable/ic_terminal"
+                            android:src="@drawable/ic_sym_terminal"
                             app:tint="?attr/colorPrimary"
                             android:contentDescription="@string/app_name" />
 

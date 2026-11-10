@@ -231,7 +231,7 @@
                 android:gravity="center"
                 app:cornerRadius="0dp"
                 android:backgroundTint="#1A1B22"
-                app:icon="@drawable/ic_ssh"
+                app:icon="@drawable/ic_sym_key"
                 app:iconSize="18dp"
                 app:iconGravity="textStart"
                 app:iconPadding="0dp"
@@ -254,7 +254,7 @@
                 android:gravity="center"
                 app:cornerRadius="0dp"
                 android:backgroundTint="#1A1B22"
-                app:icon="@drawable/ic_palette"
+                app:icon="@drawable/ic_sym_palette"
                 app:iconSize="18dp"
                 app:iconGravity="textStart"
                 app:iconPadding="0dp"
@@ -277,7 +277,7 @@
                 android:gravity="center"
                 app:cornerRadius="0dp"
                 android:backgroundTint="#FFFFFF"
-                app:icon="@drawable/ic_tune"
+                app:icon="@drawable/ic_sym_tune"
                 app:iconSize="18dp"
                 app:iconGravity="textStart"
                 app:iconPadding="0dp"
@@ -304,7 +304,7 @@
                     android:gravity="center"
                     app:cornerRadius="0dp"
                     android:backgroundTint="#1A1B22"
-                    app:icon="@drawable/ic_info"
+                    app:icon="@drawable/ic_sym_info"
                     app:iconSize="18dp"
                     app:iconGravity="textStart"
                     app:iconPadding="0dp"
@@ -560,7 +560,7 @@
                                     android:textColor="#000000"
                                     android:textSize="11sp"
                                     android:textStyle="bold"
-                                    app:icon="@drawable/ic_copy"
+                                    app:icon="@drawable/ic_sym_content_copy"
                                     app:iconSize="14dp"
                                     app:iconTint="#000000"
                                     android:insetTop="0dp"
@@ -938,7 +938,8 @@
                                             android:layout_width="18dp"
                                             android:layout_height="18dp"
                                             android:layout_gravity="center"
-                                            android:src="@drawable/ic_terminal"
+                                            android:src="@drawable/ic_sym_terminal"
+                                            android:importantForAccessibility="no"
                                             app:tint="#000000" />
                                     </FrameLayout>
 
@@ -1005,7 +1006,8 @@
                                             android:layout_width="18dp"
                                             android:layout_height="18dp"
                                             android:layout_gravity="center"
-                                            android:src="@drawable/ic_cell_tower"
+                                            android:src="@drawable/ic_sym_swap_horiz"
+                                            android:importantForAccessibility="no"
                                             app:tint="#000000" />
                                     </FrameLayout>
 
@@ -1079,7 +1081,8 @@
                                             android:layout_width="18dp"
                                             android:layout_height="18dp"
                                             android:layout_gravity="center"
-                                            android:src="@drawable/ic_restart_alt"
+                                            android:src="@drawable/ic_sym_article"
+                                            android:importantForAccessibility="no"
                                             app:tint="#FFFFFF" />
                                     </FrameLayout>
 
@@ -1146,7 +1149,8 @@
                                             android:layout_width="18dp"
                                             android:layout_height="18dp"
                                             android:layout_gravity="center"
-                                            android:src="@drawable/ic_snapshot"
+                                            android:src="@drawable/ic_sym_backup"
+                                            android:importantForAccessibility="no"
                                             app:tint="#FFFFFF" />
                                     </FrameLayout>
 
@@ -1232,7 +1236,7 @@
                             android:layout_marginTop="@dimen/oe_space_md"
                             android:text="查看运行日志"
                             app:cornerRadius="0dp"
-                            app:icon="@drawable/ic_terminal" />
+                            app:icon="@drawable/ic_sym_article" />
                     </LinearLayout>
                 </LinearLayout>
 
@@ -1333,7 +1337,7 @@
                             android:text="导入备份归档"
                             android:textColor="#F5F4F0"
                             android:textSize="12sp"
-                            app:icon="@drawable/ic_backup"
+                            app:icon="@drawable/ic_sym_backup"
                             app:iconSize="16dp"
                             app:iconTint="#FFFFFF"
                             android:insetTop="0dp"
@@ -2942,7 +2946,7 @@
                             android:text="SSH 配置文件与凭据管理"
                             android:textColor="#FFFFFF"
                             android:textSize="11sp"
-                            app:icon="@drawable/ic_ssh"
+                            app:icon="@drawable/ic_sym_key"
                             app:iconSize="16dp"
                             app:iconTint="#FFFFFF"
                             android:insetTop="0dp"
@@ -2961,7 +2965,7 @@
                             android:text="系统镜像源策略与更新设置"
                             android:textColor="#FFFFFF"
                             android:textSize="11sp"
-                            app:icon="@drawable/ic_tune"
+                            app:icon="@drawable/ic_sym_tune"
                             app:iconSize="16dp"
                             app:iconTint="#FFFFFF"
                             android:insetTop="0dp"
@@ -2980,7 +2984,7 @@
                             android:text="关于 Orchestella Studio"
                             android:textColor="#FFFFFF"
                             android:textSize="11sp"
-                            app:icon="@drawable/ic_info"
+                            app:icon="@drawable/ic_sym_info"
                             app:iconSize="16dp"
                             app:iconTint="#FFFFFF"
                             android:insetTop="0dp"
@@ -3020,7 +3024,8 @@
                     android:id="@+id/nav_icon_console"
                     android:layout_width="18dp"
                     android:layout_height="18dp"
-                    android:src="@drawable/ic_developer_board"
+                    android:src="@drawable/ic_sym_developer_board"
+                    android:importantForAccessibility="no"
                     app:tint="#FFFFFF" />
 
                 <TextView
@@ -3051,7 +3056,8 @@
                     android:id="@+id/nav_icon_instances"
                     android:layout_width="18dp"
                     android:layout_height="18dp"
-                    android:src="@drawable/ic_layers"
+                    android:src="@drawable/ic_sym_layers"
+                    android:importantForAccessibility="no"
                     app:tint="#8E929B" />
 
                 <TextView
@@ -3081,7 +3087,8 @@
                     android:id="@+id/nav_icon_hardware"
                     android:layout_width="18dp"
                     android:layout_height="18dp"
-                    android:src="@drawable/ic_hardware_spec"
+                    android:src="@drawable/ic_sym_memory_alt"
+                    android:importantForAccessibility="no"
                     app:tint="#8E929B" />
 
                 <TextView
@@ -3141,7 +3148,8 @@
                     android:id="@+id/nav_icon_settings"
                     android:layout_width="18dp"
                     android:layout_height="18dp"
-                    android:src="@drawable/ic_tune"
+                    android:src="@drawable/ic_sym_tune"
+                    android:importantForAccessibility="no"
                     app:tint="#8E929B" />
 
                 <TextView
