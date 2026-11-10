@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "kind": "rootfs-set",
+  "setId": "uml-rootfs-alpine-3228-aarch64-20261110",
+  "createdAt": "2026-11-10T00:00:00Z",
+  "artifactRoot": "research/uml-rootfs-prebake/out/alpine-arm64",
+  "notes": [
+    "U2 pre-baked rootfs (Alpine 3.22.8, musl, aarch64) with zero first-boot package-manager invocations.",
+    "The tar.gz is not committed (110 MB); the U2 manifest in research/uml-rootfs-prebake/manifests/ is the committed provenance record.",
+    "Debian trixie glibc sets follow the same schema; only the Alpine target set is sampled here."
+  ],
+  "toolchain": {
+    "name": "apk-tools-static",
+    "version": "2.14.13-r0",
+    "compiler": "n/a (package installation and image assembly only)",
+    "buildContainer": "host Linux x86_64 builder with binfmt/qemu-user for cross-arch hooks",
+    "hostArch": "x86_64",
+    "byteReproducible": true,
+    "reproducibilityNote": "Fixed base tarball, recorded APKINDEX digests, fixed package P/V set, SOURCE_DATE_EPOCH=1762732800 and normalized mtimes/ownership make two builds with the same input set converge. Alpine CDN indexes roll, so cross-time reproduction requires the recorded index digests."
+  },
+  "build": {
+    "script": {
+      "path": "research/uml-rootfs-prebake/build-rootfs.sh",
+      "sha256": "18e9ab6df097ec0c33f6f25b49c3d1c0ad846679b5e2fbaec99ffa4c1a6f9c73"
+    },
+    "command": "bash research/uml-rootfs-prebake/build-rootfs.sh --distro alpine --arch aarch64 --out ./out/alpine-arm64",
+    "env": {
+      "SOURCE_DATE_EPOCH": "1762732800",
+      "ALPINE_BRANCH": "3.22",
+      "ALPINE_VERSION": "3.22.8",
+      "ALPINE_BASE_SHA256_AARCH64": "36091efacd083c1cf5a8c837272530bff4fc72db1fbfdef559f52de0d890bca4"
+    }
+  },
+  "rootfs": {
+    "distro": {
+      "name": "alpine",
+      "version": "3.22.8",
+      "arch": "aarch64",
+      "libc": "musl"
+    },
+    "manifestPath": "research/uml-rootfs-prebake/manifests/alpine-3.22.8-aarch64.json",
+    "manifestSha256": "a83849265f8f649212420a9e6db4eef5d01ce076a7dd499346582d542c51e9a3",
+    "outputs": [
+      {
+        "path": "alpine-3.22.8-aarch64.tar.gz",
+        "format": "tar.gz",
+        "sha256": "149b2041a93a22a0f94aa105cc1f2480c1ff92b7b06926e909ad6e58201bab59",
+        "sizeBytes": 110170511
+      }
+    ],
+    "provisioning": {
+      "firstBootPackageManagerInvocations": 0,
+      "networkRequired": false
+    }
+  },
+  "artifacts": [
+    {
+      "id": "alpine-3.22.8-aarch64",
+      "component": "rootfs",
+      "role": "rootfs-archive",
+      "path": "alpine-3.22.8-aarch64.tar.gz",
+      "sha256": "149b2041a93a22a0f94aa105cc1f2480c1ff92b7b06926e909ad6e58201bab59",
+      "sizeBytes": 110170511,
+      "format": "tar.gz"
+    }
+  ],
+  "gpl": {
+    "license": "GPL-2.0-only",
+    "obligations": [
+      "Each GPL-2.0 package in the image needs corresponding source; record per-package source pointers (Alpine aports APKBUILD with source= URLs and checksums, Debian .dsc plus upstream tar) at the pinned revision.",
+      "If the rootfs is conveyed, provide the source or a valid written offer for its GPL-2.0 packages; a distro mirror or aports tree is a pointer, not by itself the offer.",
+      "The obligation cannot be delegated to Alpine or Debian: our image distribution must carry its own source offer.",
+      "Keep per-package license metadata and NOTICE material; the image is mixed-license and is not reduced to GPL-2.0.",
+      "Whether the rootfs is a mere aggregate with the kernel is a legal question (GPL-2.0 section 2, last paragraph; GPL FAQ); record it as open and do not assert aggregation.",
+      "Include the build scripts, the U2 manifest and the pinned repository indexes that control image assembly.",
+      "This list records obligations for the research bundle; it is not a legal conclusion. The maintainer or ACR decides the distribution scope."
+    ],
+    "notes": [
+      "The image contains mixed licenses; this block records only the GPL-2.0 trigger and the source pointers for those packages."
+    ],
+    "sourceComponents": [
+      {
+        "name": "alpine-aports",
+        "license": "mixed (per package)",
+        "url": "https://gitlab.alpinelinux.org/alpine/aports",
+        "revision": "3.22.8",
+        "covers": [
+          "rootfs"
+        ]
+      },
+      {
+        "name": "alpine-busybox",
+        "license": "GPL-2.0-only",
+        "url": "https://git.alpinelinux.org/aports/tree/3.22-stable/main/busybox",
+        "revision": "1.37.0-r20",
+        "covers": [
+          "rootfs"
+        ]
+      }
+    ],
+    "buildScripts": [
+      {
+        "path": "research/uml-rootfs-prebake/build-rootfs.sh",
+        "sha256": "18e9ab6df097ec0c33f6f25b49c3d1c0ad846679b5e2fbaec99ffa4c1a6f9c73"
+      },
+      {
+        "path": "research/uml-rootfs-prebake/make-manifest.py",
+        "sha256": "79284c82e70cc707354997c459cc4c5d9f6c36f5022dac9d809a19bc7912f44f"
+      },
+      {
+        "path": "research/uml-rootfs-prebake/verify.sh",
+        "sha256": "4a1ebea98b547401d4e74ec1f70b8ed09d8c1ecf3427b282a975e717a5e7a763"
+      }
+    ],
+    "bundle": {
+      "script": {
+        "path": "tools/research/uml-artifacts/build-source-bundle.sh",
+        "sha256": "f501995b0c9ccaee1a13018fb1784842a1a269059c0f5c3dafab38dc51d56773"
+      },
+      "format": "tar.gz"
+    }
+  }
+}
