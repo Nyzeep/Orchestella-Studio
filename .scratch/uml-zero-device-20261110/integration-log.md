@@ -129,3 +129,14 @@ U5 默认 manifest 校验                     SUMMARY manifests=3 passed=134 fai
 
 - `not-tested` 保持：真机 seccomp 矩阵、16K 宿主、ARM64 设备结论。
 - Wave 3（U4/U6）与 U0.1 可基于最新 `github/integration/uml-zero-device-20261110` 开工。
+
+## 6. Wave 3 集成（U4 + U6，2026-11-11）
+
+| 会话 | 分支 | head | 合并提交 | 门禁 |
+| --- | --- | --- | --- | --- |
+| U4 warm-start memo | `feat/uml-u4-warm-start` | `1e99f53b` | `5ef13035` | SENSITIVE_DATA_OK / PRODUCT_CODE_CLEAN / memo 三判词（checkpoint/restore NO-GO、hibernation NO-GO、pre-warmed pool CONDITIONAL GO） |
+| U6 多实例基准 | `feat/uml-u6-multi-instance` | `d1dec9bd` | 本节 merge | self-test 21 checks / SENSITIVE_DATA_OK / PRODUCT_CODE_CLEAN |
+
+- U0.1（`feat/uml-u0-marker-aliases` @ `143dc74d`）已在 Wave 2 之后先行合并（merge `e7095ec9`，self-test 118→157）。
+- 设备窗口结果见 `device/uml-wave2-20261110` @ `965b2fb6`（报告 `docs/research/2026-11-11-uml-arm64-device-window-wave2.zh-CN.md`）：U1 UP/SMP、U2 hostfs/ext4、seccomp 启动级、2 实例、FGS 60min 全 PASS；16K 宿主/systemd T4/U3 12-case/Debian 保持 not-tested。
+- U6 宿主数据（x86_64 参考非设备结论）：N=1/2/4/8 × n=3 全 READY；边际 ≈18.1 MB VmRSS / 11.1 MB Pss 每实例；`N_max = min(三条上限分量)` 公式与 LaneBudgetLedger 语义对齐；设备项全部 not-tested。
