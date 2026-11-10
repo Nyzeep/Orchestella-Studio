@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Small upgrade dot on the About entry. Recoloured from the active theme at runtime. -->
+<!-- Small upgrade dot on the About entry. Fill is the semantic notice slot
+     (W4: no longer the hardcoded literal, and never re-tinted per theme);
+     the runtime theme pass only re-derives the readability ring. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="oval">
-    <solid android:color="#E0533D" />
+    <solid android:color="@color/oe_notice" />
     <stroke
         android:width="1dp"
         android:color="#40FFFFFF" />
