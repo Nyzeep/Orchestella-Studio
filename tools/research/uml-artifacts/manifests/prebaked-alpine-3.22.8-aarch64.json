@@ -110,6 +110,14 @@
       {
         "path": "research/uml-rootfs-prebake/verify.sh",
         "sha256": "4a1ebea98b547401d4e74ec1f70b8ed09d8c1ecf3427b282a975e717a5e7a763"
+      },
+      {
+        "path": "research/uml-rootfs-prebake/init-zero-install",
+        "sha256": "d6bedb262e43de2a2e0e6d7f66d3a362a7176b3a958e7fe49647d71111067b33"
+      },
+      {
+        "path": "research/uml-rootfs-prebake/ready.sh",
+        "sha256": "dfa1d9905e2dc210dc3fb285ecac6ed493bb11bf08ca21aeaac374fd1c1c3849"
       }
     ],
     "bundle": {

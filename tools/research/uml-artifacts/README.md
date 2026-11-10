@@ -43,6 +43,27 @@ tools/research/uml-artifacts/build-source-bundle.sh \
 退出码：`0` = 全部通过；`1` = 有 FAIL；`2` = 参数/IO/打包错误。`--self-test` 成功输出
 `SELF_TEST_OK checks=<n>`。
 
+## 干净检出构建 / 校验
+
+工具本身不重新构建内核（NDK、容器与 10 分钟级构建不适合放进校验循环）。干净检出按各 manifest
+的 `build.command` 构建，然后用本文工具校验：
+
+```bash
+# U1：ARM64 fast kernel + 16 KB stub + initramfs（需要 NDK r29 与构建容器）
+# 命令见 manifests/fast-arm64-up-20261110.json 的 build.command
+
+# U2：预烘焙 rootfs（需要 root；跨架构 hook 需要 qemu-user/binfmt）
+bash research/uml-rootfs-prebake/build-rootfs.sh --distro alpine --arch aarch64 --out ./out/alpine-arm64
+
+# 构建完成后严格校验（artifactRoot 指向实际输出目录）
+python3 tools/research/uml-artifacts/check_uml_artifacts.py \
+  --manifest tools/research/uml-artifacts/manifests/fast-arm64-up-20261110.json \
+  --artifact-root research/uml-fastboot/out/arm64-up/artifacts --require-artifacts
+```
+
+`release-v0.3.0-up` 的产物已入库（`research/uml-kernel-build/release-assets/v0.3.0/`），
+干净检出即可用 `--require-artifacts` 完整校验，不需要先构建。
+
 ## Manifest 模型
 
 两个 `kind`：
@@ -57,7 +78,7 @@ tools/research/uml-artifacts/build-source-bundle.sh \
 | `kernel.defconfig` | 仓库根 | 必须存在且 sha256 匹配（干净检出可校验） |
 | `kernel.effectiveConfig` | `artifactRoot` | 构建产物；存在时校验，`--require-artifacts` 时强制 |
 | `initramfs.init` | 仓库根 | 必须存在且 sha256 匹配 |
-| `build.script`、`gpl.buildScripts[]`、`gpl.bundle.script` | 仓库根 | 必须存在且 sha256 匹配 |
+| `build.script`、`gpl.buildScripts[]`、`gpl.bundle.script` | 仓库根 | 必须存在且 sha256 匹配。`buildScripts` 同时收录被安装进产物的 init/启动脚本（GPL 的 installation 脚本口径） |
 | `rootfs.manifestPath` | 仓库根 | 必须存在；其 outputs/provisioning 与 entry 交叉校验 |
 | `artifacts[].path` | `artifactRoot`（或 `--artifact-root`） | 存在时校验 size + sha256 |
 
