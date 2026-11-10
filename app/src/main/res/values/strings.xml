@@ -84,6 +84,8 @@
     <string name="version_update_status_available">有可用新版本 %1$s</string>
     <string name="version_update_status_none">尚无可用更新</string>
     <string name="version_update_status_disabled">更新检查已关闭</string>
+    <!-- W4 走查修复：masthead ⓘ 按钮更新徽标 dot 的无障碍语义（中英文案同义）。 -->
+    <string name="about_update_badge_desc">有可用新版本</string>
     <string name="version_update_channel">%1$s · 当前 v%2$s</string>
     <string name="version_update_hint">进入本页时自动检查 GitHub Releases；卡片只保留发布说明摘要，完整内容在 Release 页。</string>
     <string name="version_update_notes_fallback">本次发布没有文字说明，完整变更请见 Release 页。</string>

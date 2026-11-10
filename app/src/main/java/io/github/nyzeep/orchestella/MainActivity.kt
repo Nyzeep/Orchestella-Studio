@@ -1037,7 +1037,14 @@ class MainActivity : AppCompatActivity() {
         } else {
             null
         }
-        aboutUpdateBadge?.visibility = if (pending != null) View.VISIBLE else View.GONE
+        aboutUpdateBadge?.let { badge ->
+            val wasHidden = badge.visibility != View.VISIBLE
+            badge.visibility = if (pending != null) View.VISIBLE else View.GONE
+            // W4 走查修复：dot 出现时向无障碍用户宣告语义（徽标本体已带 contentDescription）。
+            if (pending != null && wasHidden) {
+                badge.announceForAccessibility(getString(R.string.about_update_badge_desc))
+            }
+        }
     }
 
     override fun onPause() {
@@ -1235,12 +1242,13 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             aboutUpdateBadge?.let { badge ->
-                // Accent fill plus a ring in the button's own surface colour: readable on every
-                // theme without turning into a second "unread notification" alert.
+                // W4 走查修复：dot 填充走语义 notice 色槽（不再随主题 accent 紫/红漂移），
+                // 环仍取按钮自身 surface 色：每个主题下都可读，不变成第二个"未读通知"。
                 val density = resources.displayMetrics.density
+                val notice = getColor(R.color.oe_notice)
                 badge.background = android.graphics.drawable.GradientDrawable().apply {
                     shape = android.graphics.drawable.GradientDrawable.OVAL
-                    setColor(theme.accent)
+                    setColor(notice)
                     setStroke((2 * density).toInt(), surfaceColor(theme))
                 }
             }
