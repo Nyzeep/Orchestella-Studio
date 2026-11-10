@@ -14,6 +14,11 @@
     <color name="status_suspended">#F59E0B</color>
     <color name="status_suspended_bg">#20F59E0B</color>
 
+    <!-- 语义提示色槽（W4 走查修复）：更新徽标 dot 等「有新信息」标记。
+         刻意非主题派生——沿用 theme.accent 会让 dot 随主题紫/红漂移、
+         语义不明；值取徽标 drawable 既有的 shipped 默认色。 -->
+    <color name="oe_notice">#E0533D</color>
+
     <!-- Safety Zones for Hardware Config -->
     <color name="zone_green">#10B981</color>
     <color name="zone_green_bg">#1810B981</color>

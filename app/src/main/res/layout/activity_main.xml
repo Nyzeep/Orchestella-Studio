@@ -316,7 +316,8 @@
                     android:insetTop="0dp"
                     android:insetBottom="0dp" />
 
-                <!-- Upgrade marker: visible only while a strictly newer release is known. -->
+                <!-- Upgrade marker: visible only while a strictly newer release is known.
+                     W4 走查修复：dot 补无障碍语义（contentDescription + 出现时 announce）。 -->
                 <View
                     android:id="@+id/about_update_badge"
                     android:layout_width="12dp"
@@ -325,6 +326,7 @@
                     android:layout_marginTop="@dimen/oe_icon_inline_gap"
                     android:layout_marginEnd="@dimen/oe_icon_inline_gap"
                     android:background="@drawable/bg_update_badge"
+                    android:contentDescription="@string/about_update_badge_desc"
                     android:visibility="gone" />
             </FrameLayout>
         </LinearLayout>
