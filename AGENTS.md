@@ -2,19 +2,22 @@
 
 Orchestella Studio（曾用工作名 DroidLayer）：无需 Root 的 Android 原生双引擎 Linux 运行环境与移动工作站 —— 在不要求 Root 的前提下，在 Android 手机上运行完整 ARM64 Linux 虚拟机（AVF 硬件虚拟化 + QEMU 软件虚拟化全透明降级、Mesa VirGL 3D 加速、Wayland 桌面、每实例随机凭据与持久后台保活）。
 
-**当前源码状态（截至 2026-11-04）**：0.6.2 / code602（`app/build.gradle.kts` 的 `versionCode 602` / `versionName "0.6.2"`；tag `v0.6.0`/`v0.6.1`/`v0.6.2` 均存在，`CHANGELOG.md` 已记到 0.6.2）。发布工程、双包形态与四车道口径见 [README.md](README.md)（中文，默认）与 [中文文档入口](docs/README.md)。开头产品描述是目标，不代表 AVF、GPU、桌面或所有设备均已验收；截至 2026-11-04，真实 AVF Guest 成功样本为 0。不要跳过决策直接写代码。
+**当前源码状态（截至 2026-11-10）**：0.6.2 / code602（`app/build.gradle.kts` 的 `versionCode 602` / `versionName "0.6.2"`；v0.6.2 之后已有 150+ 个未发版提交（2026-11-10）；tag `v0.6.0`/`v0.6.1`/`v0.6.2` 均存在，`CHANGELOG.md` 已记到 0.6.2）。发布工程、双包形态与四车道口径见 [README.md](README.md)（中文，默认）与 [中文文档入口](docs/README.md)。开头产品描述是目标，不代表 AVF、GPU、桌面或所有设备均已验收；截至 2026-11-04，真实 AVF Guest 成功样本为 0。不要跳过决策直接写代码。
 
-**当前主线（截至 2026-11-04）**：QEMU 全设备可靠可用优先；AVF protected 是时间盒研究线，不阻塞发布。已完成项：发布签名接线、QEMU/gvproxy 停止收敛（`RuntimeProcessSupervisor`）、跨 Controller 网关互斥判定入库（`GatewaySlotArbiter`/`GatewaySlotVerdict`）、CI 门禁扩容。仍在设备窗的项：上述网关互斥的生产接线，以及由 DV-01A（OEM SELinux `execute_no_trans`）单点阻塞的 DV-01→04 链。原清单中的「终端输入生命周期」本轮未复核，暂不作完成或未完成判定。
+**当前主线（截至 2026-11-10）**：QEMU 全设备可靠可用优先；**UML fabric 是当前研究/优化主线**（`.scratch/orchestella-uml-fabric/map.md`，13/13 工单 resolved，ACR 待投票）；AVF protected 是时间盒研究线，不阻塞发布。最近完成：2026-11-09→10 六 lane 大优化（UI token 基座、UML 加速、动效、UX、布局 token 化）与 T1 `InstanceLaunchCoordinator` 深模块及契约测试；v0.6.2 之后已有 150+ 个未发版提交。设备窗遗留：`GatewaySlotArbiter`/`GatewaySlotVerdict` 的生产接线，以及由 DV-01A（OEM SELinux `execute_no_trans`）单点阻塞的 DV-01→04 链。原清单中的「终端输入生命周期」仍未复核，暂不作完成或未完成判定。
 
 **文档跟踪**：`/docs/` 仍默认被 `.gitignore` 忽略；经审查的文档必须显式 `git add -f`，不要整体强制添加，且 `git add -f` 前必须先过敏感开发者数据检查门。2026-10-18 优化方案与两份 2026-10-15 支撑研究已显式纳入版本控制；历史阶段报告已移入 `docs/reports/archive/`，旧交接已移入 `docs/agent-handoff/archive/`。
 
 **版本与构建通道**：发布版 / 内部开发版 / 隔离 QA 版的版本号、applicationId、签名与分发边界以 `docs/standards/VERSIONING.md` 第 5 节为硬约束；合并到 `main` 不等于发布，不自动递增版本号。
 
-**历史阶段记录**：v0.1.5-preview 的“全链路测试通过”只说明当时所列范围，不能作为当前版本或后续硬件能力的证明。下列旧 platform map/default tracker 指针保留历史用途，本轮任务以明确指定的 avf-shizuku effort 为准。
+**历史阶段记录**：v0.1.5-preview 的“全链路测试通过”只说明当时所列范围，不能作为当前版本或后续硬件能力的证明。下列旧 platform map/default tracker 指针保留历史用途；本轮任务以 **UML fabric** 为当前 effort，`avf-shizuku` 保留时间盒研究入口。
 
 - 治理规范与防御性硬约束：`docs/agent-handoff/DEFENSIVE_CONSTRAINTS/README.md` 及其目录内全部 policy；该目录规则是所有 Agent 的硬约束。
 - 敏感开发者数据与真机证据：真机序列号/IMEI/Android ID/设备指纹及其哈希、真机截图/录屏/完整设备日志、真实 LAN/公网 IP/MAC、个人邮箱/本机路径、签名与凭据永不入库；设备证据只用稳定别名并放外部 artifact 根。提交前执行 [SENSITIVE_DEVELOPER_DATA_POLICY](docs/agent-handoff/DEFENSIVE_CONSTRAINTS/SENSITIVE_DEVELOPER_DATA_POLICY.md)。
-- 当前决策地图（截至 2026-11-04，三条线）：`.scratch/orchestella-uml-fabric/map.md`（UML fabric，13/13 工单 resolved，ACR 待投票）、`.scratch/round-20261104-device-window/spec.md`（设备窗第三轮）、`docs/reports/quality-backlog-20261104.zh-CN.md`（P0–P3 积压 21 项）。`.scratch/orchestella-fastlane/map.md` 已非当前主线，仅作历史入口；`.scratch/orchestella-avf-shizuku/map.md` 为 AVF 时间盒研究线入口，`.scratch/orchestella-platform/map.md` 仅历史入口。
+- 当前决策地图（截至 2026-11-10）：
+  - **当前研究主线**：`.scratch/orchestella-uml-fabric/map.md`（UML fabric，13/13 工单 resolved；ACR 待投票，技术缺项为 16K 宿主与 distcc@36）。
+  - **并行线**：`.scratch/round-20261104-device-window/spec.md`（设备窗第三轮）、`docs/reports/quality-backlog-20261104.zh-CN.md`（P0–P3 积压 21 项）。
+  - **历史入口**：`.scratch/orchestella-fastlane/map.md`、`.scratch/orchestella-avf-shizuku/map.md`（AVF 时间盒研究线）、`.scratch/orchestella-platform/map.md`。
 - 研究资料（已核实的外部事实）：`docs/research/`；旧 Phase 5 专项见 `docs/research/archive/2026-10-phase5/`。
 - 当前报告索引：`docs/reports/README.md`；归档索引：`docs/reports/archive/README.md`。
 - 架构决策索引：`docs/adr/README.md`；ADR-0015 缺失，不得按引用标题补造正文。
@@ -23,7 +26,7 @@ Orchestella Studio（曾用工作名 DroidLayer）：无需 Root 的 Android 原
 
 ### Issue tracker
 
-本地 Markdown tracker：工单与 spec 存放在 `.scratch/`，当前 effort 以「当前决策地图」一节列出的三条线为准。见 `docs/agents/issue-tracker.md`。
+本地 Markdown tracker：工单与 spec 存放在 `.scratch/`，当前 effort 为 `.scratch/orchestella-uml-fabric/`；设备窗与质量积压为并行线。见 `docs/agents/issue-tracker.md`。
 
 ### Triage labels
 
@@ -43,4 +46,4 @@ single-context：根目录 `CONTEXT.md` + `docs/adr/`。见 `docs/agents/domain.
 
 - `docs/adr/0015-release-channels.md`、`docs/agent-handoff/GPL_RELEASE_DELIVERY_POLICY.md` 以及 ADR-0017/0018/0019 引用的部分研究文档不存在；只能记录缺口，不能根据标题编造正文。
 - ADR-0010 关于 protected VM 双向通信的绝对表述与官方 vsock 证据冲突，等待 ACR-02 裁定；不要直接改写 accepted 正文。
-- 历史报告中的测试数量、版本号、签名状态和 AVF 结论只覆盖当时范围；当前事实以 0.6.2 源码（`app/build.gradle.kts`）与 `docs/standards/VERSIONING.md` 第 4 节的版本状态为准。
+- 历史报告中的测试数量、版本号、签名状态和 AVF 结论只覆盖当时范围；当前事实以 0.6.2 源码（`app/build.gradle.kts`）、当前 main 与 `docs/standards/VERSIONING.md` 第 4 节的版本状态为准（截至 2026-11-10）。

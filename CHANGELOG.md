@@ -6,6 +6,10 @@
 
 只写已经进入源码的变更；标注为「未验证」的条目在真机复核前不得当作已交付能力对外表述。
 
+## [Unreleased]
+
+0.6.2 之后的 150+ 个提交（含 2026-11-09→10 六 lane 大优化与 T1 `InstanceLaunchCoordinator` 深模块）尚未整理为用户可感知条目；下一版本号待定。明细见 [大优化轮总报告](docs/reports/grand-optimization-20261109.zh-CN.md)。
+
 ## [0.6.2] - 2026-10-30
 
 ### Added
@@ -64,7 +68,9 @@
   下载（节点 github.com，86.2 MB）→ 装配 → systemd 到 `getty.target` → `root@orchestella` 自动登录；
   `/etc/os-release` 为 Debian 13 (trixie)，`uname -r` 为 7.2.3。
 
-## [Unreleased]
+## [0.6.1] 补充记录 — 2026-10-30
+
+以下条目随 0.6.1 发布，原先误置于 `[Unreleased]`；保留原文以便追溯。
 
 ### Added
 
