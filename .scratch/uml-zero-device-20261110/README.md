@@ -8,6 +8,7 @@
 ## 入口
 
 - [Spec](spec.md)：问题陈述、T0–T5 指标、U0–U6 工作包、优先级、里程碑、ACR 边界。
+- [多会话并行开工 Prompt](prompts/README.md)：8 份自包含 Prompt（协调者 + U0–U6），含分支/工作区/子智能体/验收/handoff 规范。
 - [研究报告](../../docs/research/2026-11-10-proot-vs-uml-zero-device-direction.zh-CN.md)：proot / UML / QEMU 的一手来源与启动分解。
 - 第一批零设备票：
   - [01 · Boot timeline harness](issues/01-boot-timeline-harness.md)
