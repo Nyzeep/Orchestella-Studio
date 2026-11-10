@@ -98,7 +98,7 @@ manifest 的 `gpl.obligations` 固化了上述可执行子集；`gpl.sourceCompo
 
 ### 4.2 schema 之外的门
 
-- 可移植性扫描：拒绝 `/workspace`、`/home/`、`/Users/`、`/root/`、`C:\`、`file://` 等本地路径标记
+- 可移植性扫描：拒绝 workspace 根、home 目录、Users、root、Windows 盘符、file URL 等本地路径标记
   （防止把本机路径写进仓库）。
 - 唯一性：artifact id/path 不重复；component 与 role 匹配。
 - stub：`pAlign` 与 stub 块一致；< 16 KB 时 WARN（16 KB 宿主 lane 会拒绝）。

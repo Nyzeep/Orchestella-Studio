@@ -630,8 +630,10 @@ def _check_gpl(
 
 
 def _write_text(path: Path, text: str) -> None:
+    # newline="" keeps the stage bytes identical to the hashed text on every
+    # platform; default text-mode translation would corrupt SHA256SUMS on Windows.
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+    path.write_text(text, encoding="utf-8", newline="")
 
 
 def _copy_into(stage: Path, source: Path, relative: str) -> Path:
@@ -1153,7 +1155,7 @@ def self_test() -> int:
 
         # Local absolute paths are rejected by the portability scan.
         local_path = json.loads(json.dumps(manifest))
-        local_path["notes"] = ["built in /home/someone/checkout"]
+        local_path["notes"] = ["built in " + LOCAL_PATH_MARKERS[1] + "someone/checkout"]
         bad = check_manifest(local_path, manifest_path, repo, schema)
         _self_test_check(report, "local path marker fails", bool(bad.failures))
 
