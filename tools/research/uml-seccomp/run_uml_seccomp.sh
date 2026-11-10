@@ -285,8 +285,9 @@ if [ "$USE_BPF_WRAP" = 1 ]; then
         printf '\n'
     } > "$OUT/bpftrace-cmd.sh"
     chmod +x "$OUT/bpftrace-cmd.sh"
-    timeout -s KILL "$TIMEOUT" bpftrace -c "$OUT/bpftrace-cmd.sh" \
-        "$HERE/collect/syscalls.bt" >>"$CONSOLE" 2>>"$STDERR"
+    timeout -s KILL "$TIMEOUT" bpftrace -o "$OUT/bpftrace.txt" \
+        -c "$OUT/bpftrace-cmd.sh" "$HERE/collect/syscalls.bt" \
+        >>"$CONSOLE" 2>>"$STDERR"
     RC=$?
 elif [ "$USE_MCONSOLE" = 1 ]; then
     UMID="u3-$CASE-$$"
