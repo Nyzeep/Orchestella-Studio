@@ -47,13 +47,11 @@ import io.github.nyzeep.orchestella.runtime.capability.AvfAuthorizationWizardMod
 import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator
 import io.github.nyzeep.orchestella.runtime.capability.DeviceCapabilityEvaluator
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig
-import io.github.nyzeep.orchestella.runtime.distro.DistroCatalogRegistry
 import io.github.nyzeep.orchestella.runtime.distro.OfficialDebianCatalog
 import io.github.nyzeep.orchestella.ui.theme.AppTheme
 import io.github.nyzeep.orchestella.ui.theme.SurfaceOpacity
 import io.github.nyzeep.orchestella.ui.theme.ThemeStore
 import io.github.nyzeep.orchestella.ui.theme.ThemeColors
-import io.github.nyzeep.orchestella.runtime.engineavf.AvfEngineException
 import io.github.nyzeep.orchestella.runtime.engineavf.AvfVirtualMachineEngine
 import io.github.nyzeep.orchestella.runtime.engineavf.ReflectiveAvfVirtualMachineApi
 import io.github.nyzeep.orchestella.HostHardwareProfile
@@ -61,6 +59,7 @@ import io.github.nyzeep.orchestella.startup.DashboardSnapshot
 import io.github.nyzeep.orchestella.startup.RuntimeVerification
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
 import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneClock
+import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneEventSink
 import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneStartException
 import io.github.nyzeep.orchestella.runtime.instance.SparseDiskResizer
 import io.github.nyzeep.orchestella.runtime.network.FilePortForwardingStore
@@ -70,6 +69,7 @@ import java.io.IOException
 import java.nio.file.Files
 import java.time.Clock
 import java.util.concurrent.Executors
+import java.util.function.BooleanSupplier
 
 /**
  * Material 3 Expressive Dashboard for Orchestella Studio (Ticket 52 / M4).
@@ -86,6 +86,7 @@ class MainActivity : AppCompatActivity() {
     private val operations = Executors.newSingleThreadExecutor()
     private val runningAnimators = mutableListOf<Animator>()
     private lateinit var instanceStore: InstanceLifecycle.FileStore
+    private lateinit var launchCoordinator: InstanceLaunchCoordinator
     private lateinit var settingsManager: SettingsManager
     private lateinit var settingsButton: View
     private lateinit var refusalBanner: Button
@@ -265,6 +266,79 @@ class MainActivity : AppCompatActivity() {
         // 迁到既有 operations executor；后续 showInstances() 的快照任务在同一
         // 单线程队列上排队，仍看到回收后的状态（与原同步顺序一致）。
         operations.execute { reconcileOrphanInstances() }
+
+        // InstanceLaunchCoordinator（2026-11-10 加深轮 T1）：启动编排收进深模块，构造注入
+        // 资源句柄；Android 侧启动件（前台服务、AVF/QEMU/PVM 启动器、事实源、资源串）在此
+        // 绑定，编排决策与世代门卫全部在 InstanceLaunchCoordinator 内。
+        launchCoordinator = InstanceLaunchCoordinator(
+            store = instanceStore,
+            settings = launchSettings,
+            foreground = launchForeground,
+            ui = launchFeedback,
+            copy = launchCopy,
+            diagnostics = launchDiagnostics,
+            cleanupBridge = InstanceLaunchCoordinator.CleanupBridge { instanceId ->
+                QemuInstanceLauncher.takeLastCleanupResult(instanceId)
+            },
+            filesDir = filesDir,
+            performanceBadge = { currentBadge(DeviceCapabilityEvaluator.evaluate(deviceProfile())) },
+            preferAvf = BooleanSupplier {
+                avfReadiness?.status() == AvfCapabilityEvaluator.AvfStatus.READY
+            },
+            avfLaunch = InstanceStrategyLauncher.AvfLaunch { params ->
+                AvfInstanceLauncher(this).launch(params)
+            },
+            qemuLaunch = InstanceStrategyLauncher.QemuLaunch { params ->
+                QemuInstanceLauncher(this).launch(params)
+            },
+            customVmBackend = InstanceLaunchCoordinator.CustomVmBackend { instanceId ->
+                AcceleratorVmLauncher(
+                    "accel-" + instanceId,
+                    filesDir.resolve("accelerator-image").resolve("kernel").toPath(),
+                    filesDir.resolve("accelerator-image").resolve("initrd").toPath(),
+                    filesDir.resolve("accelerator-image").resolve("rootfs.ext4").toPath(),
+                    AcceleratorLaunchDispatcher.ACCEL_REQUEST.ramMiB,
+                ) {
+                    AcceleratorVmLauncher.engine(
+                        AvfVirtualMachineEngine(
+                            ReflectiveAvfVirtualMachineApi(
+                                this, classLoader, AvfHiddenApiExemption::installOnce,
+                            ),
+                        ),
+                    )
+                }
+            },
+            pvmPayloadBackend = InstanceLaunchCoordinator.PvmPayloadBackend { instanceId ->
+                // Built only when the verdict selected PVM_PAYLOAD,
+                // which already implies the manifest parsed. An
+                // absent payload at that point is a load failure,
+                // never a silent QEMU-only run.
+                PvmPayloadLaneStarter.createIfInstalled(
+                    this,
+                    "accel-pvm-" + instanceId,
+                    AcceleratorLaunchDispatcher.GUEST_COMPILER_TRIPLE,
+                    AcceleratorLaunchDispatcher.PAYLOAD_READY_TIMEOUT_MS,
+                    AcceleratorLaunchDispatcher.STOP_GRACE_MS,
+                ).orElseThrow {
+                    LaneStartException(PvmPayloadLaneStarter.PAYLOAD_LOAD_FAILED)
+                }
+            },
+            factsSource = InstanceLaunchCoordinator.FactsSource {
+                AndroidAcceleratorFactProvider.create(this)
+            },
+            payloadManifestSource = InstanceLaunchCoordinator.PayloadManifestSource {
+                AndroidAcceleratorFactProvider.readPayloadManifest(applicationContext)
+            },
+            laneEventSink = LaneEventSink { event ->
+                android.util.Log.i(
+                    "OrchestellaAccelerator",
+                    "${event.name()} ${event.lane()} ${event.code()} ${event.durationMs()}ms",
+                )
+            },
+            laneClock = LaneClock.system(),
+            clock = Clock.systemUTC(),
+            orphanReconciler = Runnable { reconcileOrphanInstances() },
+        )
 
         settingsButton.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
@@ -1881,249 +1955,83 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private val launchSettings = object : InstanceLaunchCoordinator.LaunchSettings {
+        override fun setLastActiveInstanceId(instanceId: String) {
+            settingsManager.lastActiveInstanceId = instanceId
+        }
+        override fun batteryPolicy(): BatteryPolicy = settingsManager.batteryPolicy
+        override fun isAcceleratorLaneEnabled(): Boolean = settingsManager.isAcceleratorLaneEnabled()
+    }
+
+    private val launchForeground = object : InstanceLaunchCoordinator.ForegroundServiceHandle {
+        override fun start(instanceId: String, distroTitle: String, performanceBadge: String,
+            batteryPolicy: BatteryPolicy, launchGeneration: String?) {
+            OrchestellaForegroundService.start(this@MainActivity, instanceId, distroTitle,
+                performanceBadge, batteryPolicy, launchGeneration)
+        }
+        override fun stop(instanceId: String, generation: String?) {
+            OrchestellaForegroundService.stop(this@MainActivity, instanceId, generation)
+        }
+    }
+
+    private val launchFeedback = object : InstanceLaunchCoordinator.LaunchUi {
+        override fun runOnUi(update: Runnable) {
+            runOnUiThread(update)
+        }
+        override fun resetCreateButtons() {
+            setCreateButtonsEnabled(DeviceCapabilityEvaluator.evaluate(deviceProfile()).canCreateFullLinuxInstance())
+        }
+        override fun showStatus(message: String) {
+            createStatus.text = message
+        }
+        override fun showAttached(instance: InstanceLifecycle.Instance) {
+            createStatus.text = "已连接到运行中的实例"
+            openTerminal(instance)
+        }
+        override fun showLaunchBusyStatus() {
+            createStatus.text = "实例正在启动，请稍后再试"
+        }
+        override fun showLaunchSuccess(navigation: InstanceLaunchCoordinator.LaunchNavigation) {
+            val intent = Intent(this@MainActivity, TerminalActivity::class.java)
+                .putExtra("bridgeToken", navigation.bridgeToken)
+                .putExtra("instanceId", navigation.instanceId)
+                .putExtra("hostname", navigation.hostname)
+                .putExtra("defaultUser", navigation.defaultUser)
+            startActivity(intent)
+        }
+        override fun surfaceLaunchFailure(message: String) {
+            createStatus.text = message
+            Toast.makeText(this@MainActivity, createStatus.text, Toast.LENGTH_LONG).show()
+        }
+        override fun showInstances() {
+            this@MainActivity.showInstances()
+        }
+    }
+
+    private val launchCopy = object : InstanceLaunchCoordinator.LaunchCopy {
+        override fun detailMessage(failure: Throwable): String = formatLaunchFailure(failure)
+        override fun guestExitedStatus(): String = getString(R.string.launch_guest_exited)
+        override fun launchStartedHardwareStatus(): String = getString(R.string.launch_started_hardware)
+        override fun launchDegradedToSoftwareStatus(reason: String): String =
+            getString(R.string.launch_degraded_to_software, reason)
+    }
+
+    private val launchDiagnostics = object : InstanceLaunchCoordinator.LaunchDiagnostics {
+        override fun logAcceleratorSnapshot(line: String) {
+            android.util.Log.i("OrchestellaAccelerator", line)
+        }
+        override fun logLaunchFailure(failureType: String) {
+            android.util.Log.w("OrchestellaLaunch", "launch failed type=$failureType")
+        }
+    }
+
     private fun launchInstance(instance: InstanceLifecycle.Instance) {
         // 协同落点（2026-11-07）：通知权限已在首帧后请求过（requestNotificationPermissionAfterFirstFrame），
         // 不再在 VM 启动路径上弹窗打断。
         setCreateButtonsEnabled(false)
         createStatus.setText(R.string.launch_started)
         operations.execute {
-            // A live session means the VM is already running: launching again would fork a
-            // second QEMU that fails to bind the instance's sockets AND unregister the live
-            // session in the failure path (observed on-device as "无法输入指令"). Attach instead.
-            if (ExecutionSessionRegistry.get(instance.id()) != null) {
-                runOnUiThread {
-                    setCreateButtonsEnabled(DeviceCapabilityEvaluator.evaluate(deviceProfile()).canCreateFullLinuxInstance())
-                    createStatus.text = "已连接到运行中的实例"
-                    openTerminal(instance)
-                }
-                return@execute
-            }
-            reconcileOrphanInstances()
-            val controller = InstanceLifecycle.Controller(instanceStore, Clock.systemUTC())
-            var running = false
-            var launchGeneration: String? = null
-            var acceleratorCoordinator: DualLaneCoordinator? = null
-            try {
-                DistroResourceRequirements.requireBootRam(instance.distro().id(), instance.hardwareConfig().ramMegabytes())
-                launchGeneration = InstanceLaunchGuard.begin(instance.id())
-                if (launchGeneration == null) {
-                    runOnUiThread {
-                        createStatus.text = "实例正在启动，请稍后再试"
-                        setCreateButtonsEnabled(DeviceCapabilityEvaluator.evaluate(deviceProfile()).canCreateFullLinuxInstance())
-                    }
-                    return@execute
-                }
-                InstanceLaunchSequence.beforeLaunch(controller, instance)
-                running = true
-                val distroTitle = instance.distro().id().replaceFirstChar { it.uppercase() } + " " + instance.distro().version()
-                val badge = currentBadge(DeviceCapabilityEvaluator.evaluate(deviceProfile()))
-                settingsManager.lastActiveInstanceId = instance.id()
-                OrchestellaForegroundService.start(this, instance.id(), distroTitle, badge,
-                    settingsManager.batteryPolicy, launchGeneration)
-                val rootfsFileName = DistroCatalogRegistry.getInstance().get(instance.distro().id())?.rootfsFileName()
-                    ?: if (instance.distro().id() == "alpine") "alpine-minirootfs-3.24.1-aarch64.tar.gz"
-                    else "${instance.distro().id()}-rootfs.tar.xz"
-                val mirrorConfigFile = filesDir.resolve("instances").resolve("${instance.id()}.mirror")
-                val firstbootFile = filesDir.resolve("instances").resolve("${instance.id()}.firstboot")
-                val mirrorConfigName = DistroMirrorProvisioner.getConfigFileName(instance.distro().id())
-                val mirrorBytes = if (mirrorConfigFile.exists()) Files.readAllBytes(mirrorConfigFile.toPath()) else null
-                val firstbootBytes = if (firstbootFile.exists()) {
-                    Files.readAllBytes(firstbootFile.toPath())
-                } else FirstBootProvisionPipeline.generateScriptForDistro(instance.distro().id())
-                    .toByteArray(Charsets.UTF_8)
-
-                val provisionPayload = FirstBootProvisionPipeline.ProvisionPayload(
-                    mirrorConfigName,
-                    mirrorBytes,
-                    firstbootBytes
-                )
-
-                val parameters = InstanceStrategyLauncher.LaunchParameters(
-                    instance.id(),
-                    instance.bridgeToken(),
-                    rootfsFileName,
-                    instance.rootVolume().toString(),
-                    filesDir.resolve("runtime").resolve(instance.id()).absolutePath,
-                    filesDir.resolve("distro-inputs").absolutePath,
-                    instance.guestPassword(),
-                    instance.hardwareConfig(),
-                    provisionPayload,
-                    instance.hostname(),
-                    instance.defaultUser(),
-                    instance.hasSudo()
-                )
-                val preferAvf =
-                    avfReadiness?.status() == AvfCapabilityEvaluator.AvfStatus.READY
-                val strategyLauncher = InstanceStrategyLauncher(
-                    { params -> AvfInstanceLauncher(this).launch(params) },
-                    { params -> QemuInstanceLauncher(this).launch(params) },
-                    { failure ->
-                        AvfDegradationLog(
-                            filesDir.resolve("avf-degradations.txt").toPath(),
-                        ).record(failure)
-                    })
-                val dispatchResult = AcceleratorLaunchDispatcher.dispatch(
-                    // Runtime switch on the accelerator decision point: off keeps
-                    // today's launch path silently (no toast, no fact reads).
-                    // The build flag stays a hard gate so a build without the
-                    // accelerator components never assembles the lane.
-                    settingsManager.isAcceleratorLaneEnabled() && BuildConfig.ACCELERATOR_LANE_ENABLED,
-                    parameters,
-                    { params -> QemuInstanceLauncher(this).launch(params) },
-                    AcceleratorLaunchDispatcher.AccelBackends(
-                        customVm = {
-                            AcceleratorVmLauncher(
-                                "accel-" + instance.id(),
-                                filesDir.resolve("accelerator-image").resolve("kernel").toPath(),
-                                filesDir.resolve("accelerator-image").resolve("initrd").toPath(),
-                                filesDir.resolve("accelerator-image").resolve("rootfs.ext4").toPath(),
-                                AcceleratorLaunchDispatcher.ACCEL_REQUEST.ramMiB,
-                            ) {
-                                AcceleratorVmLauncher.engine(
-                                    AvfVirtualMachineEngine(
-                                        ReflectiveAvfVirtualMachineApi(
-                                            this, classLoader, AvfHiddenApiExemption::installOnce,
-                                        ),
-                                    ),
-                                )
-                            }
-                        },
-                        pvmPayload = {
-                            // Built only when the verdict selected PVM_PAYLOAD,
-                            // which already implies the manifest parsed. An
-                            // absent payload at that point is a load failure,
-                            // never a silent QEMU-only run.
-                            PvmPayloadLaneStarter.createIfInstalled(
-                                this,
-                                "accel-pvm-" + instance.id(),
-                                AcceleratorLaunchDispatcher.GUEST_COMPILER_TRIPLE,
-                                AcceleratorLaunchDispatcher.PAYLOAD_READY_TIMEOUT_MS,
-                                AcceleratorLaunchDispatcher.STOP_GRACE_MS,
-                            ).orElseThrow {
-                                LaneStartException(PvmPayloadLaneStarter.PAYLOAD_LOAD_FAILED)
-                            }
-                        },
-                    ),
-                    AndroidAcceleratorFactProvider.create(this),
-                    { ExecutionSessionRegistry.get(instance.id()) },
-                    AcceleratorLaunchDispatcher.GUEST_COMPILER_TRIPLE,
-                    LaneClock.system(),
-                    { event ->
-                        android.util.Log.i(
-                            "OrchestellaAccelerator",
-                            "${event.name()} ${event.lane()} ${event.code()} ${event.durationMs()}ms",
-                        )
-                    },
-                ) { strategyLauncher.launch(parameters, preferAvf) }
-                acceleratorCoordinator = dispatchResult.coordinator
-                if (dispatchResult.coordinator != null) {
-                    android.util.Log.i(
-                        "OrchestellaAccelerator",
-                        "backend=${dispatchResult.backend} ${dispatchResult.decisionJson}",
-                    )
-                    // PVM-09: the declared compiler identity next to the
-                    // decision. The decision JSON stays a stable contract, so
-                    // this observability lives in the log; the handshake-
-                    // measured version joins when compile work lands in
-                    // DV-PVM-02b. Flag-on only: this read must not happen
-                    // while the lane is off.
-                    val payload = AndroidAcceleratorFactProvider
-                        .readPayloadManifest(applicationContext)
-                    android.util.Log.i(
-                        "OrchestellaAccelerator",
-                        if (payload.isPresent) {
-                            val manifest = payload.get()
-                            "payload-compiler present=true" +
-                                " version=${manifest.compilerVersion()}" +
-                                " triple=${manifest.targetTriple()}"
-                        } else {
-                            "payload-compiler present=false"
-                        },
-                    )
-                }
-                val outcome = dispatchResult.outcome
-                val session = outcome.session
-                val sessionGeneration = ExecutionSessionRegistry.generation(instance.id(), session)
-                    ?: throw IOException("运行会话已变化")
-                Thread {
-                    try {
-                        val exit = InstanceLaunchSequence.awaitGuestExit(controller, instance.id(), session) {
-                            OrchestellaForegroundService.stop(this, instance.id(), sessionGeneration)
-                        }
-                        // The guest session is over (or no longer ours): the
-                        // accelerator lane must not outlive the launch that
-                        // armed it. A WAIT_FAILED keeps both lanes untouched.
-                        if (exit.status() != InstanceLaunchSequence.ExitStatus.WAIT_FAILED) {
-                            acceleratorCoordinator?.close()
-                        }
-                        if (exit.status() != InstanceLaunchSequence.ExitStatus.STALE) runOnUiThread {
-                            if (!InstanceLaunchGuard.isLatest(instance.id(), sessionGeneration)) return@runOnUiThread
-                            createStatus.text = when (exit.status()) {
-                                InstanceLaunchSequence.ExitStatus.NORMAL -> getString(R.string.launch_guest_exited)
-                                InstanceLaunchSequence.ExitStatus.CRASHED -> "实例异常退出（退出码 ${exit.exitCode()}），可查看诊断并冷恢复"
-                                InstanceLaunchSequence.ExitStatus.STOP_UNCONFIRMED ->
-                                    "停止未确认：运行时未在时限内停止，实例仍保留，请检查运行日志"
-                                else -> "无法确认虚拟机退出，已保留运行会话，请检查运行状态"
-                            }
-                            setCreateButtonsEnabled(DeviceCapabilityEvaluator.evaluate(deviceProfile()).canCreateFullLinuxInstance())
-                            showInstances()
-                        }
-                    } catch (failure: Exception) {
-                        // The watcher only throws after the guest was observed
-                        // exiting, so the QEMU runtime is already gone; the
-                        // accelerator lane must not survive it unattended.
-                        acceleratorCoordinator?.close()
-                        runOnUiThread {
-                            if (!InstanceLaunchGuard.isLatest(instance.id(), sessionGeneration)) return@runOnUiThread
-                            createStatus.text = formatLaunchFailure(failure)
-                        }
-                    }
-                }.apply { isDaemon = true }.start()
-                OrchestellaForegroundService.start(this, instance.id(), distroTitle,
-                    if (outcome.hardwareAccelerated()) "AVF 硬件虚拟化" else "QEMU 软件虚拟化",
-                    settingsManager.batteryPolicy, sessionGeneration)
-                runOnUiThread {
-                    if (!InstanceLaunchGuard.isLatest(instance.id(), sessionGeneration)
-                        || ExecutionSessionRegistry.get(instance.id()) !== session) return@runOnUiThread
-                    if (outcome.hardwareAccelerated()) {
-                        createStatus.setText(R.string.launch_started_hardware)
-                    } else if (outcome.degradationReason != null) {
-                        createStatus.text = getString(
-                            R.string.launch_degraded_to_software, outcome.degradationReason
-                        )
-                    }
-                    val intent = Intent(this, TerminalActivity::class.java)
-                        .putExtra("bridgeToken", instance.bridgeToken())
-                        .putExtra("instanceId", instance.id())
-                        .putExtra("hostname", instance.hostname())
-                        .putExtra("defaultUser", instance.defaultUser())
-                    startActivity(intent)
-                }
-            } catch (failure: Throwable) {
-                val failedGeneration = launchGeneration
-                // A failed launch may have left a runtime whose stop was not
-                // confirmed; keep RUNNING metadata and the foreground binding in
-                // that case instead of pretending the instance crashed.
-                acceleratorCoordinator?.close()
-                val cleanupResult = QemuInstanceLauncher.takeLastCleanupResult(instance.id())
-                try {
-                    InstanceLaunchSequence.afterLaunchFailure(
-                        controller, instance.id(), failedGeneration, running, cleanupResult
-                    ) {
-                        OrchestellaForegroundService.stop(this, instance.id(), failedGeneration)
-                    }
-                } catch (_: Exception) {
-                    // A metadata/observer failure is not evidence of VM death; retain its owner.
-                }
-                runOnUiThread {
-                    if (failedGeneration != null && !InstanceLaunchGuard.isLatest(instance.id(), failedGeneration)) return@runOnUiThread
-                    createStatus.text = formatLaunchFailure(failure)
-                    Toast.makeText(this, createStatus.text, Toast.LENGTH_LONG).show()
-                    android.util.Log.w("OrchestellaLaunch", "launch failed type=${failure.javaClass.simpleName}")
-                    setCreateButtonsEnabled(DeviceCapabilityEvaluator.evaluate(deviceProfile()).canCreateFullLinuxInstance())
-                    showInstances()
-                }
-            }
+            launchCoordinator.launch(instance)
         }
     }
 
