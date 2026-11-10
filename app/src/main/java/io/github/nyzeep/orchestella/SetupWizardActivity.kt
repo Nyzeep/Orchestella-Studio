@@ -11,6 +11,8 @@ import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.StatFs
 import android.text.Editable
 import android.text.TextWatcher
@@ -37,6 +39,7 @@ import io.github.nyzeep.orchestella.ui.theme.ThemeStore
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.slider.Slider
 import com.google.android.material.textfield.TextInputEditText
+import io.github.nyzeep.orchestella.ui.motion.OrchestellaMotion
 import io.github.nyzeep.orchestella.runtime.capability.AvfAuthorizationWizardModel
 import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator
 import io.github.nyzeep.orchestella.runtime.engineavf.AvfLaunchAdmission
@@ -77,9 +80,24 @@ class SetupWizardActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_TARGET_DISTRO = "extra_target_distro"
         private const val STATE_DRAFT = "creation_draft_v1"
+
+        /**
+         * grand-optimization-20261109 §8 risk 4: custom-disk typing used to run
+         * one StatFs read + one instance-directory scan per keystroke on the
+         * main thread. A burst of keystrokes now costs one background check.
+         */
+        const val STORAGE_CHECK_DEBOUNCE_MS = 300L
     }
 
     private val backgroundExecutor = Executors.newSingleThreadExecutor()
+    private val storageUiHandler = Handler(Looper.getMainLooper())
+
+    /**
+     * Generation guard for the debounced storage check: bumped by every
+     * schedule, so a background read that started before a newer keystroke can
+     * never overwrite the UI with a stale verdict.
+     */
+    private var storageCheckGeneration = 0
     private lateinit var settingsManager: SettingsManager
     private lateinit var hostProfile: HostHardwareProfile
     private lateinit var wizardModel: InstanceCreationWizardModel
@@ -118,8 +136,14 @@ class SetupWizardActivity : AppCompatActivity() {
 
     // Step 1 Views (AVF Detection Card)
     private lateinit var txtWizardAvfBadge: TextView
+    private lateinit var txtWizardAvfSummary: TextView
+    private lateinit var txtWizardAvfExpandIndicator: TextView
+    private lateinit var layoutWizardAvfSummaryHeader: LinearLayout
     private lateinit var txtWizardAvfDetails: TextView
     private lateinit var layoutWizardAvfFallback: LinearLayout
+    // W2(d): AVF detail block starts collapsed; the toggle follows the
+    // SettingsActivity expand-section paradigm (generation-guarded).
+    private var avfDetailCollapse = WizardAvfDiagnostics.CollapseState()
 
     // Step 1 Views (Distro Spinner & Preview)
     private lateinit var spinnerDistroSelect: Spinner
@@ -205,15 +229,15 @@ class SetupWizardActivity : AppCompatActivity() {
             val displayPath = uri.lastPathSegment ?: uri.path ?: uri.toString()
             wizardModel.setMountHostSharedDirectory(true)
             wizardModel.setHostSharedDirectoryPath(displayPath)
-            chkMountSharedDir.isChecked = true
-            txtSharedFolderPath.text = getString(R.string.wizard_shared_folder_selected, displayPath)
-            txtSharedFolderPath.visibility = View.VISIBLE
-            btnPickSharedDir.visibility = View.VISIBLE
+            renderDraftFields(WizardDraft.fromModel(wizardModel))
+            renderDraftDerived()
         } else {
             if (wizardModel.hostSharedDirectoryPath == null) {
-                chkMountSharedDir.isChecked = false
-                txtSharedFolderPath.visibility = View.GONE
-                btnPickSharedDir.visibility = View.GONE
+                // Cancel with no prior path: realign the model with the box the
+                // draft render is about to uncheck (checkbox and model agree).
+                wizardModel.setMountHostSharedDirectory(false)
+                renderDraftFields(WizardDraft.fromModel(wizardModel))
+                renderDraftDerived()
             }
         }
     }
@@ -298,7 +322,7 @@ class SetupWizardActivity : AppCompatActivity() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
-        captureIdentityDraft()
+        captureDraftFromViews()
         val draft = Bundle()
         wizardModel.saveDraft().forEach { (key, value) -> draft.putString(key, value) }
         outState.putBundle(STATE_DRAFT, draft)
@@ -313,37 +337,147 @@ class SetupWizardActivity : AppCompatActivity() {
         bindDraftViews()
     }
 
-    private fun captureIdentityDraft() {
+    /**
+     * Views → model capture used by save/restore and the distro switch: fold
+     * every widget row into a draft and apply it. Same guards as the old
+     * identity-only capture; the draft path just covers all fields now.
+     */
+    private fun captureDraftFromViews() {
         if (wizardModel.isCreating || !::editGuestUser.isInitialized || !::editGuestHostname.isInitialized) return
-        wizardModel.updateGuestIdentityDraft(editGuestUser.text?.toString().orEmpty(),
-            editGuestHostname.text?.toString().orEmpty(), chkGuestSudo.isChecked)
-        wizardModel.setOptionalProfiles(chkDesktop.isChecked, chkPodman.isChecked, chkEditor.isChecked)
+        readDraftFromViews().applyTo(wizardModel)
     }
 
     private fun bindDraftViews() {
+        renderDraftFields(WizardDraft.fromModel(wizardModel))
+        officialDistros.firstOrNull { it.id == wizardModel.distroId }?.let(::updateDistroPreview)
+        highlightPresetButton(wizardModel.diskSizeGb)
+        renderDraftDerived()
+        updateStepVisibility()
+        renderDraftState()
+    }
+
+    /**
+     * Full field render (draft → views): initial bind, restore, process
+     * recreation, folder-picker outcome. Input widgets are written only here —
+     * edit events must never re-render the widget being typed in (cursor).
+     */
+    private fun renderDraftFields(draft: WizardDraft) {
         applyingDraftViews = true
         try {
-            editCustomDiskGb.setText(wizardModel.diskSizeGb.toString())
-            spinnerDistroSelect.setSelection(officialDistros.indexOfFirst { it.id == wizardModel.distroId }.coerceAtLeast(0))
-            spinnerMirrorSource.setSelection(wizardModel.selectedMirror.ordinal)
-            sliderVcpu.value = wizardModel.hardwareConfig.cpuCores().toFloat()
-            sliderRam.value = wizardModel.hardwareConfig.ramMegabytes().toFloat()
-            editGuestUser.setText(wizardModel.guestUsernameDraft)
-            editGuestHostname.setText(wizardModel.guestHostnameDraft)
-            chkGuestSudo.isChecked = wizardModel.guestSudoDraft
-            chkDesktop.isChecked = wizardModel.desktopSelected
-            chkPodman.isChecked = wizardModel.podmanSelected
-            chkEditor.isChecked = wizardModel.editorSelected
-            chkAutoUpdate.isChecked = wizardModel.autoUpdateOnFirstBoot
+            draftWidgetBindings.forEach { binding -> binding.renderView(draft) }
         } finally { applyingDraftViews = false }
-        highlightPresetButton(wizardModel.diskSizeGb)
-        officialDistros.firstOrNull { it.id == wizardModel.distroId }?.let(::updateDistroPreview)
+    }
+
+    /** Derived, non-input render: previews, labels, summary, shared-dir views. */
+    private fun renderDraftDerived() {
         updateMirrorPreview()
         updateStartupTaskPreview()
         updateHardwareLabels()
-        updateStepVisibility()
+        renderSharedDirectoryViews(WizardDraft.fromModel(wizardModel))
         updateCreationSummary()
-        renderDraftState()
+    }
+
+    /** Shared-directory display state (picker-driven; render-only draft lane). */
+    private fun renderSharedDirectoryViews(draft: WizardDraft) {
+        val path = draft.sharedDirPath
+        if (path != null) {
+            txtSharedFolderPath.text = getString(R.string.wizard_shared_folder_selected, path)
+            txtSharedFolderPath.visibility = View.VISIBLE
+            btnPickSharedDir.visibility = View.VISIBLE
+        } else {
+            txtSharedFolderPath.visibility = View.GONE
+            btnPickSharedDir.visibility = View.GONE
+        }
+    }
+
+    /**
+     * One row per editable field: the single view-registration point
+     * (candidate 4). Value semantics live in the [WizardDraftFields] lane;
+     * this row is pure view wiring — [DraftWidgetBinding.readView] feeds the
+     * lane's parse, [DraftWidgetBinding.renderView] writes one widget pair.
+     */
+    private class DraftWidgetBinding(
+        val name: String,
+        val field: WizardField<*>,
+        val readView: () -> String?,
+        val renderView: (WizardDraft) -> Unit
+    )
+
+    private val draftWidgetBindings: List<DraftWidgetBinding> by lazy {
+        listOf(
+            DraftWidgetBinding("distroId", WizardDraftFields.distroId,
+                readView = { officialDistros.getOrNull(spinnerDistroSelect.selectedItemPosition)?.id },
+                renderView = { draft ->
+                    val index = officialDistros.indexOfFirst { it.id == draft.distroId }
+                    if (index >= 0 && spinnerDistroSelect.selectedItemPosition != index) {
+                        spinnerDistroSelect.setSelection(index)
+                        updateDistroPreview(officialDistros[index])
+                    }
+                }),
+            DraftWidgetBinding("diskSizeGb", WizardDraftFields.diskSizeGb,
+                readView = { editCustomDiskGb.text?.toString() },
+                renderView = { draft -> editCustomDiskGb.setText(draft.diskSizeGb.toString()) }),
+            DraftWidgetBinding("cpuCores", WizardDraftFields.cpuCores,
+                readView = { sliderVcpu.value.toInt().toString() },
+                renderView = { draft -> sliderVcpu.value = draft.cpuCores.toFloat() }),
+            DraftWidgetBinding("ramMb", WizardDraftFields.ramMb,
+                readView = { sliderRam.value.toInt().toString() },
+                renderView = { draft -> sliderRam.value = draft.ramMb.toFloat() }),
+            DraftWidgetBinding("mirrorOrdinal", WizardDraftFields.mirrorOrdinal,
+                readView = { spinnerMirrorSource.selectedItemPosition.toString() },
+                renderView = { draft ->
+                    if (spinnerMirrorSource.selectedItemPosition != draft.mirrorOrdinal) {
+                        spinnerMirrorSource.setSelection(draft.mirrorOrdinal)
+                    }
+                }),
+            DraftWidgetBinding("guestUsername", WizardDraftFields.guestUsername,
+                readView = { editGuestUser.text?.toString() },
+                renderView = { draft -> editGuestUser.setText(draft.guestUsername) }),
+            DraftWidgetBinding("guestHostname", WizardDraftFields.guestHostname,
+                readView = { editGuestHostname.text?.toString() },
+                renderView = { draft -> editGuestHostname.setText(draft.guestHostname) }),
+            DraftWidgetBinding("guestSudo", WizardDraftFields.guestSudo,
+                readView = { chkGuestSudo.isChecked.toString() },
+                renderView = { draft -> chkGuestSudo.isChecked = draft.guestSudo }),
+            DraftWidgetBinding("desktopSelected", WizardDraftFields.desktopSelected,
+                readView = { chkDesktop.isChecked.toString() },
+                renderView = { draft -> chkDesktop.isChecked = draft.desktopSelected }),
+            DraftWidgetBinding("podmanSelected", WizardDraftFields.podmanSelected,
+                readView = { chkPodman.isChecked.toString() },
+                renderView = { draft -> chkPodman.isChecked = draft.podmanSelected }),
+            DraftWidgetBinding("editorSelected", WizardDraftFields.editorSelected,
+                readView = { chkEditor.isChecked.toString() },
+                renderView = { draft -> chkEditor.isChecked = draft.editorSelected }),
+            DraftWidgetBinding("autoUpdateOnFirstBoot", WizardDraftFields.autoUpdateOnFirstBoot,
+                readView = { chkAutoUpdate.isChecked.toString() },
+                renderView = { draft -> chkAutoUpdate.isChecked = draft.autoUpdateOnFirstBoot }),
+            DraftWidgetBinding("mountSharedDir", WizardDraftFields.mountSharedDir,
+                readView = { chkMountSharedDir.isChecked.toString() },
+                renderView = { draft -> chkMountSharedDir.isChecked = draft.mountSharedDir }),
+            DraftWidgetBinding("sharedDirPath", WizardDraftFields.sharedDirPath,
+                readView = { null },
+                renderView = { renderSharedDirectoryViews(it) })
+        )
+    }
+
+    /** views → draft: fold every widget row into a fromModel base, then normalize. */
+    private fun readDraftFromViews(): WizardDraft {
+        var draft = WizardDraft.fromModel(wizardModel)
+        for (binding in draftWidgetBindings) {
+            draft = binding.field.parseInto(draft, binding.readView())
+        }
+        return draft.normalized()
+    }
+
+    /**
+     * One-way edit flow (candidate 4): views → read() → draft → applyTo(model)
+     * → derived render. Never re-renders the input widgets (cursor safety);
+     * full field render is [renderDraftFields]' job.
+     */
+    private fun syncFromViews() {
+        if (applyingDraftViews || wizardModel.isCreating) return
+        readDraftFromViews().applyTo(wizardModel)
+        renderDraftDerived()
     }
 
     private fun renderDraftState() {
@@ -363,6 +497,7 @@ class SetupWizardActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         if (isFinishing) {
+            storageUiHandler.removeCallbacksAndMessages(null)
             backgroundExecutor.shutdown()
         }
     }
@@ -382,6 +517,9 @@ class SetupWizardActivity : AppCompatActivity() {
 
         // Step 1 - AVF Detection Card
         txtWizardAvfBadge = findViewById(R.id.txt_wizard_avf_badge)
+        txtWizardAvfSummary = findViewById(R.id.txt_wizard_avf_summary)
+        txtWizardAvfExpandIndicator = findViewById(R.id.txt_wizard_avf_expand_indicator)
+        layoutWizardAvfSummaryHeader = findViewById(R.id.layout_wizard_avf_summary_header)
         txtWizardAvfDetails = findViewById(R.id.txt_wizard_avf_details)
         layoutWizardAvfFallback = findViewById(R.id.layout_wizard_avf_fallback)
 
@@ -460,6 +598,7 @@ class SetupWizardActivity : AppCompatActivity() {
 
     private fun setupListeners() {
         btnWizardSkip.setOnClickListener { confirmExitWhileCreating() }
+        setupAvfDetailToggle()
 
         // Step 1 Presets
         btnDisk4g.setOnClickListener { selectDiskPreset(4) }
@@ -473,12 +612,11 @@ class SetupWizardActivity : AppCompatActivity() {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
                 if (applyingDraftViews || wizardModel.isCreating) return
-                val gb = s?.toString()?.toIntOrNull()
-                if (gb != null && gb > 0) {
-                    wizardModel.setCustomDiskSizeGb(gb)
+                val gb = WizardDraftFields.diskSizeGb.parse(s?.toString())
+                if (gb != null) {
+                    syncFromViews()
                     highlightPresetButton(gb)
-                    validateAndRefreshStorage()
-                    updateCreationSummary()
+                    scheduleDebouncedStorageValidation()
                 } else {
                     // Empty or non-numeric input: keep the model untouched and
                     // make the reason visible instead of a silent disabled button.
@@ -491,18 +629,11 @@ class SetupWizardActivity : AppCompatActivity() {
 
         chkMountSharedDir.setOnCheckedChangeListener { _, isChecked ->
             if (applyingDraftViews || wizardModel.isCreating) return@setOnCheckedChangeListener
-            wizardModel.setMountHostSharedDirectory(isChecked)
-            if (isChecked) {
-                if (wizardModel.hostSharedDirectoryPath == null) {
-                    pickSharedDirLauncher.launch(null)
-                } else {
-                    btnPickSharedDir.visibility = View.VISIBLE
-                    txtSharedFolderPath.visibility = View.VISIBLE
-                }
-            } else {
-                wizardModel.setHostSharedDirectoryPath(null)
-                btnPickSharedDir.visibility = View.GONE
-                txtSharedFolderPath.visibility = View.GONE
+            if (!isChecked) wizardModel.setHostSharedDirectoryPath(null)
+            syncFromViews()
+            // Picker launch stays listener-owned: navigation, not state render.
+            if (isChecked && wizardModel.hostSharedDirectoryPath == null) {
+                pickSharedDirLauncher.launch(null)
             }
         }
         btnPickSharedDir.setOnClickListener {
@@ -536,31 +667,21 @@ class SetupWizardActivity : AppCompatActivity() {
 
         // Step 3 Listeners
         btnVcpuMinus.setOnClickListener {
-            val newVal = (sliderVcpu.value - 1f).coerceAtLeast(sliderVcpu.valueFrom)
-            sliderVcpu.value = newVal
-            wizardModel.updateCpuCores(newVal.toInt())
-            updateHardwareLabels()
+            sliderVcpu.value = (sliderVcpu.value - 1f).coerceAtLeast(sliderVcpu.valueFrom)
+            syncFromViews()
         }
         btnVcpuPlus.setOnClickListener {
-            val newVal = (sliderVcpu.value + 1f).coerceAtMost(sliderVcpu.valueTo)
-            sliderVcpu.value = newVal
-            wizardModel.updateCpuCores(newVal.toInt())
-            updateHardwareLabels()
+            sliderVcpu.value = (sliderVcpu.value + 1f).coerceAtMost(sliderVcpu.valueTo)
+            syncFromViews()
         }
         btnAvfAuthWizard.setOnClickListener {
             showAvfAuthorizationWizard()
         }
-        sliderVcpu.addOnChangeListener { _, value, fromUser ->
-            if (fromUser) {
-                wizardModel.updateCpuCores(value.toInt())
-                updateHardwareLabels()
-            }
+        sliderVcpu.addOnChangeListener { _, _, fromUser ->
+            if (fromUser) syncFromViews()
         }
-        sliderRam.addOnChangeListener { _, value, fromUser ->
-            if (fromUser) {
-                wizardModel.updateRamMegabytes(value.toInt())
-                updateHardwareLabels()
-            }
+        sliderRam.addOnChangeListener { _, _, fromUser ->
+            if (fromUser) syncFromViews()
         }
         btnStep3Prev.setOnClickListener {
             if (wizardModel.canGoBack()) {
@@ -583,9 +704,7 @@ class SetupWizardActivity : AppCompatActivity() {
         // Step 4 Listeners
         chkAutoUpdate.setOnCheckedChangeListener { _, isChecked ->
             if (applyingDraftViews || wizardModel.isCreating) return@setOnCheckedChangeListener
-            wizardModel.setAutoUpdateOnFirstBoot(isChecked)
-            updateStartupTaskPreview()
-            updateCreationSummary()
+            syncFromViews()
         }
         btnStep4Prev.setOnClickListener {
             if (wizardModel.canGoBack()) {
@@ -637,15 +756,29 @@ class SetupWizardActivity : AppCompatActivity() {
         btnAvfAuthWizard.visibility =
             if (readiness.status() == AvfCapabilityEvaluator.AvfStatus.NEEDS_AUTHORIZATION)
                 View.VISIBLE else View.GONE
-        val factsSummary = """
-            AVF feature：${if (facts.virtualizationFrameworkFeature()) "已声明" else "未声明"}
-            虚拟化属性：${facts.virtualizationProperty()?.takeIf { it.isNotBlank() } ?: "无法读取或未提供"}
-            VM 模式：${AvfHostFactsProbe.modeSummary(facts.modeFacts())}
-            平台访问：${AvfHostFactsProbe.platformSummary(facts.platformFacts())}
-            MANAGE_VIRTUAL_MACHINE：${AvfHostFactsProbe.permissionLabel(facts.manageVirtualMachinePermissionState())}
-            USE_CUSTOM_VIRTUAL_MACHINE：${AvfHostFactsProbe.permissionLabel(facts.useCustomVirtualMachinePermissionState())}
-        """.trimIndent()
+        // W2(a): the platform summary already inlines the mode-facts kv tail
+        // (来源/actor/采样/ROM) — pass it alone when a platform observation
+        // exists so the tail is concatenated exactly once. Detection and
+        // fallback semantics are untouched.
+        val hasPlatformObservation = facts.platformFacts() != null
+        val factsSummary = WizardAvfDiagnostics.factsSummary(
+            avfFeatureDeclared = facts.virtualizationFrameworkFeature(),
+            virtualizationProperty = facts.virtualizationProperty(),
+            platformSummary = if (hasPlatformObservation) {
+                AvfHostFactsProbe.platformSummary(facts.platformFacts())
+            } else {
+                null
+            },
+            modeSummary = AvfHostFactsProbe.modeSummary(facts.modeFacts()),
+            managePermissionLabel = AvfHostFactsProbe.permissionLabel(facts.manageVirtualMachinePermissionState()),
+            customPermissionLabel = AvfHostFactsProbe.permissionLabel(facts.useCustomVirtualMachinePermissionState()),
+            sampledAtFormatter = ::formatSampledAtLocal
+        )
         val launchNotice = getString(R.string.avf_preflight_boundary)
+        txtWizardAvfSummary.text = WizardAvfDiagnostics.summaryLine(readiness.status())
+        txtWizardAvfExpandIndicator.text = WizardAvfDiagnostics.expandIndicator(avfDetailCollapse.expanded)
+        txtWizardAvfDetails.visibility =
+            if (avfDetailCollapse.expanded) View.VISIBLE else View.GONE
 
         when (readiness.status()) {
             AvfCapabilityEvaluator.AvfStatus.READY -> {
@@ -698,6 +831,42 @@ class SetupWizardActivity : AppCompatActivity() {
                 txtWizardAvfBadge.setTextColor(getColor(R.color.zone_yellow))
                 txtWizardAvfDetails.text = "$factsSummary\n$launchNotice"
                 layoutWizardAvfFallback.visibility = View.VISIBLE
+            }
+        }
+    }
+
+    /**
+     * W2(b): the mode-facts summary renders 采样=<epoch millis>; show a local
+     * wall-clock time instead. Used only for display — probe/evaluator values
+     * are never rewritten.
+     */
+    private fun formatSampledAtLocal(millis: Long): String = try {
+        java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+            .withZone(java.time.ZoneId.systemDefault())
+            .format(java.time.Instant.ofEpochMilli(millis)) + "（本地时间）"
+    } catch (_: Exception) {
+        "$millis（时间戳）"
+    }
+
+    /**
+     * W2(d): the AVF kv wall renders collapsed behind a one-line conclusion;
+     * this header row is the expand entry. Same vocabulary and stale-callback
+     * guard as SettingsActivity's expandable section.
+     */
+    private fun setupAvfDetailToggle() {
+        layoutWizardAvfSummaryHeader.contentDescription = "AVF 平台声明详情，点按展开或折叠"
+        layoutWizardAvfSummaryHeader.setOnClickListener {
+            val next = WizardAvfDiagnostics.toggled(avfDetailCollapse)
+            avfDetailCollapse = next
+            txtWizardAvfExpandIndicator.text = WizardAvfDiagnostics.expandIndicator(next.expanded)
+            if (next.expanded) {
+                OrchestellaMotion.expandSection(txtWizardAvfDetails)
+            } else {
+                OrchestellaMotion.collapseSection(txtWizardAvfDetails) {
+                    if (next.generation == avfDetailCollapse.generation) {
+                        txtWizardAvfDetails.visibility = View.GONE
+                    }
+                }
             }
         }
     }
@@ -757,7 +926,7 @@ class SetupWizardActivity : AppCompatActivity() {
         if (wizardModel.isCreating) return
         val currentDistro = wizardModel.distroId
         if (currentDistro == distroId) return
-        captureIdentityDraft()
+        captureDraftFromViews()
 
         val manifest = DistroCatalogRegistry.getInstance().get(distroId)
         val version = manifest?.version() ?: "latest"
@@ -767,28 +936,20 @@ class SetupWizardActivity : AppCompatActivity() {
             distroVersion = version,
             hardwareProfile = hostProfile,
             initialStep = previousModel.currentStep
-        ).also {
-            it.setCustomDiskSizeGb(previousModel.diskSizeGb)
-            it.updateCpuCores(previousModel.hardwareConfig.cpuCores())
-            it.updateRamMegabytes(previousModel.hardwareConfig.ramMegabytes())
-            it.setUserConfig(previousModel.userConfig)
-            it.updateGuestIdentityDraft(previousModel.guestUsernameDraft, previousModel.guestHostnameDraft,
-                previousModel.guestSudoDraft)
-            it.setOptionalProfiles(previousModel.desktopSelected, previousModel.podmanSelected, previousModel.editorSelected)
-            it.selectMirror(previousModel.selectedMirror)
-            it.setAutoUpdateOnFirstBoot(previousModel.autoUpdateOnFirstBoot)
-            it.setMountHostSharedDirectory(previousModel.mountHostSharedDirectory)
-            it.setHostSharedDirectoryPath(previousModel.hostSharedDirectoryPath)
-        }
+        )
+        // Credential continuity: the generated password survives the distro
+        // switch (userConfig is model-owned, not a draft field).
+        wizardModel.setUserConfig(previousModel.userConfig)
+        // Everything else the user chose rides the draft across the rebuild
+        // (candidate 4): one apply instead of eleven hand-carried setters.
+        WizardDraft.fromModel(previousModel).applyTo(wizardModel)
         bindRamHardware()
         val targetIdx = officialDistros.indexOfFirst { it.id.equals(distroId, ignoreCase = true) }
         if (targetIdx >= 0 && spinnerDistroSelect.selectedItemPosition != targetIdx) {
             spinnerDistroSelect.setSelection(targetIdx)
             updateDistroPreview(officialDistros[targetIdx])
         }
-        updateMirrorPreview()
-        updateStartupTaskPreview()
-        updateCreationSummary()
+        renderDraftDerived()
     }
 
     private fun selectDiskPreset(gb: Int) {
@@ -836,12 +997,47 @@ class SetupWizardActivity : AppCompatActivity() {
     }
 
     private fun validateAndRefreshStorage() {
-        val statFs = StatFs(filesDir.path)
-        val availableBytes = statFs.availableBytes
+        val availableBytes = StatFs(filesDir.path).availableBytes
+        applyStorageValidation(availableBytes, existingCommittedCapacityBytes())
+    }
+
+    /**
+     * Typing path: one debounced background check per burst of keystrokes
+     * instead of one StatFs + instance-directory scan per keystroke (§8 risk
+     * 4). While a check is pending the last available-space value stays on
+     * screen (chosen over a "计算中" swap: no flicker), and the step-1 gate is
+     * disabled — an unvalidated request is not yet proven. Preset clicks and
+     * step re-entry keep the synchronous check, and the final creation gate
+     * re-validates synchronously regardless.
+     */
+    private fun scheduleDebouncedStorageValidation() {
+        storageCheckGeneration++
+        btnStep1Next.isEnabled = false
+        storageUiHandler.removeCallbacks(debouncedStorageCheck)
+        storageUiHandler.postDelayed(debouncedStorageCheck, STORAGE_CHECK_DEBOUNCE_MS)
+    }
+
+    private val debouncedStorageCheck = Runnable {
+        val generation = storageCheckGeneration
+        backgroundExecutor.execute {
+            val availableBytes = try {
+                StatFs(filesDir.path).availableBytes
+            } catch (_: Exception) {
+                0L
+            }
+            val committedBytes = existingCommittedCapacityBytes()
+            runOnUiThread {
+                if (generation != storageCheckGeneration) return@runOnUiThread
+                applyStorageValidation(availableBytes, committedBytes)
+            }
+        }
+    }
+
+    /** Applies one storage verdict to the step-1 UI; facts may come from the background. */
+    private fun applyStorageValidation(availableBytes: Long, existingCommittedBytes: Long) {
         val availableGb = availableBytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
         txtHwStorage.text = getString(R.string.wizard_storage_available, String.format("%.1f GB", availableGb))
 
-        val existingCommittedBytes = existingCommittedCapacityBytes()
         val result = wizardModel.validateStorage(availableBytes, wizardModel.requestedDiskBytes, existingCommittedBytes)
         when (result) {
             is InstanceCreationWizardModel.StorageValidationResult.Valid -> {
@@ -946,9 +1142,7 @@ class SetupWizardActivity : AppCompatActivity() {
         spinnerMirrorSource.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                 if (applyingDraftViews || wizardModel.isCreating) return
-                wizardModel.selectMirror(sources[position])
-                updateMirrorPreview()
-                updateCreationSummary()
+                syncFromViews()
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
@@ -1208,23 +1402,20 @@ class SetupWizardActivity : AppCompatActivity() {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
                 if (applyingDraftViews || wizardModel.isCreating) return
-                captureIdentityDraft()
-                updateCreationSummary()
+                syncFromViews()
             }
         }
         editGuestUser.addTextChangedListener(identityWatcher)
         editGuestHostname.addTextChangedListener(identityWatcher)
         chkGuestSudo.setOnCheckedChangeListener { _, _ ->
             if (!applyingDraftViews && !wizardModel.isCreating) {
-                captureIdentityDraft()
-                updateCreationSummary()
+                syncFromViews()
             }
         }
         listOf(chkDesktop, chkPodman, chkEditor).forEach { checkbox ->
             checkbox.setOnCheckedChangeListener { _, _ ->
                 if (!applyingDraftViews && !wizardModel.isCreating) {
-                    captureIdentityDraft()
-                    updateCreationSummary()
+                    syncFromViews()
                 }
             }
         }
@@ -1307,8 +1498,9 @@ class SetupWizardActivity : AppCompatActivity() {
 
     private fun startDownloadAndInitialize() {
         if (wizardModel.isCreating) return
-        val username = editGuestUser.text?.toString()?.trim().orEmpty()
-        val hostname = editGuestHostname.text?.toString()?.trim().orEmpty()
+        val draft = readDraftFromViews()
+        val username = draft.guestUsername.trim()
+        val hostname = draft.guestHostname.trim()
         editGuestUser.error = null
         editGuestHostname.error = null
         if (!io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig.isValidUsername(username)) {
@@ -1323,13 +1515,13 @@ class SetupWizardActivity : AppCompatActivity() {
         }
         val userConfig = try {
             io.github.nyzeep.orchestella.runtime.instance.InstanceUserConfig(
-                username, wizardModel.userConfig.password(), chkGuestSudo.isChecked, hostname)
+                username, wizardModel.userConfig.password(), draft.guestSudo, hostname)
         } catch (invalid: IllegalArgumentException) {
             editGuestHostname.error = "主机名须为有效的字母、数字或连字符标签。"
             editGuestHostname.requestFocus()
             return
         }
-        if ((chkDesktop.isChecked || chkPodman.isChecked || chkEditor.isChecked) && userConfig.username() == "root") {
+        if ((draft.desktopSelected || draft.podmanSelected || draft.editorSelected) && userConfig.username() == "root") {
             editGuestUser.error = "所选桌面和开发服务需要普通用户，请填写新的 Linux 用户名。"
             editGuestUser.requestFocus()
             return
@@ -1380,9 +1572,9 @@ class SetupWizardActivity : AppCompatActivity() {
         val targetPath = targetDir.resolve(manifest.rootfsFileName())
         val mirrors = DistroMirrorCatalog.mirrorsFor(manifest)
         val selectedProfiles = buildSet {
-            if (chkDesktop.isChecked) add("desktop-labwc")
-            if (chkPodman.isChecked) add("podman")
-            if (chkEditor.isChecked) add("code-server")
+            if (draft.desktopSelected) add("desktop-labwc")
+            if (draft.podmanSelected) add("podman")
+            if (draft.editorSelected) add("code-server")
         }
 
         backgroundExecutor.execute {
