@@ -13,13 +13,23 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.lang.reflect.Field;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.Test;
 
-/** Pure JVM cache/lifecycle tests; no Android socket or VM is opened. */
+/**
+ * Pure JVM cache/lifecycle tests; no Android socket or VM is opened.
+ *
+ * <p>T2 (2026-11-10): driven through the extracted {@link ControlChannelLifecycle}
+ * via the session's package-private test seams instead of field reflection.
+ * Every intermediate cache state (a failed transport whose reader has not
+ * exited, a client mid-handshake) is installed with
+ * {@code installControlClientForTest}, and the terminal monitor is taken with
+ * {@code terminalMonitorForTest} to prove the control protocol never needs
+ * terminal-lock ownership. Assertion semantics are unchanged from the
+ * reflection-driven version.
+ */
 public final class ControlChannelRecoveryTest {
     private static final AtomicInteger IDS = new AtomicInteger();
     private static final String TOKEN = "a".repeat(64);
@@ -33,9 +43,8 @@ public final class ControlChannelRecoveryTest {
 
     @Test
     public void avfDoesNotPretendItsCachedControlChannelCanReopen() throws Exception {
-        AvfInstanceLauncher.AvfSession session = new AvfInstanceLauncher.AvfSession(null);
         BridgeClient failed = failedClient();
-        setField(session, "bridgeClient", failed);
+        AvfInstanceLauncher.AvfSession session = new AvfInstanceLauncher.AvfSession(null, failed);
         assertTrue(session.markBridgeServing());
         assertFalse(session.recoverControlChannel());
         assertSame(failed, session.bridgeClient());
@@ -49,11 +58,11 @@ public final class ControlChannelRecoveryTest {
         QemuInstanceLauncher.Session session = session(id, handle);
         assertTrue(session.markBridgeServing());
         BridgeClient failed = failedClient();
-        setField(session, "bridgeClient", failed);
+        session.installControlClientForTest(failed);
         assertSame(failed, session.bridgeClient());
         withLiveHolder(id, session, holder -> {
             assertTrue(session.recoverControlChannel());
-            assertNull(getField(session, "bridgeClient"));
+            assertNull(session.cachedControlClientForTest());
             assertTrue(session.markBridgeServing());
             assertFalse(session.markBridgeServing());
             assertFalse(session.recoverControlChannel());
@@ -72,7 +81,7 @@ public final class ControlChannelRecoveryTest {
                 new ByteArrayOutputStream());
         assertTrue(healthy.handshake(TOKEN).accepted());
         assertTrue(session.markBridgeServing());
-        setField(session, "bridgeClient", healthy);
+        session.installControlClientForTest(healthy);
         withLiveHolder(id, session, holder -> {
             assertFalse(session.recoverControlChannel());
             assertSame(healthy, session.bridgeClient());
@@ -90,7 +99,7 @@ public final class ControlChannelRecoveryTest {
                     Thread.yield();
                 }
                 assertEquals("handshaking", handshaking.readinessState());
-                setField(session, "bridgeClient", handshaking);
+                session.installControlClientForTest(handshaking);
                 assertFalse(session.recoverControlChannel());
                 assertSame(handshaking, session.bridgeClient());
             } finally {
@@ -108,7 +117,7 @@ public final class ControlChannelRecoveryTest {
         FakeHandle handle = new FakeHandle();
         QemuInstanceLauncher.Session session = session(id, handle);
         BridgeClient failed = failedClient();
-        setField(session, "bridgeClient", failed);
+        session.installControlClientForTest(failed);
         try {
             assertFalse(session.recoverControlChannel());
             PersistentTerminalSessionPool.getInstance().register(id, new CountingSession());
@@ -125,7 +134,7 @@ public final class ControlChannelRecoveryTest {
     public void legacySessionWithUnknownIdentityRejectsRecovery() throws Exception {
         QemuInstanceLauncher.Session session = session(null, new FakeHandle());
         BridgeClient failed = failedClient();
-        setField(session, "bridgeClient", failed);
+        session.installControlClientForTest(failed);
         try {
             assertFalse(session.recoverControlChannel());
             assertSame(failed, session.bridgeClient());
@@ -141,7 +150,7 @@ public final class ControlChannelRecoveryTest {
         QemuInstanceLauncher.Session session = session(id, handle);
         HeldTransport transport = new HeldTransport();
         BridgeClient failed = failedClient(transport);
-        setField(session, "bridgeClient", failed);
+        session.installControlClientForTest(failed);
         try {
             withLiveHolder(id, session, holder -> {
                 assertFalse(session.recoverControlChannel());
@@ -162,7 +171,7 @@ public final class ControlChannelRecoveryTest {
         QemuInstanceLauncher.Session session = session(id, new FakeHandle());
         HeldTransport transport = new HeldTransport();
         BridgeClient failed = failedClient(transport);
-        setField(session, "bridgeClient", failed);
+        session.installControlClientForTest(failed);
         try {
             withLiveHolder(id, session, holder -> {
                 Thread.currentThread().interrupt();
@@ -185,9 +194,9 @@ public final class ControlChannelRecoveryTest {
         String id = nextId();
         QemuInstanceLauncher.Session session = session(id, new FakeHandle());
         BridgeClient failed = failedClient();
-        setField(session, "bridgeClient", failed);
+        session.installControlClientForTest(failed);
         PersistentTerminalSessionPool pool = PersistentTerminalSessionPool.getInstance();
-        synchronized (getField(session, "terminalLock")) {
+        synchronized (session.terminalMonitorForTest()) {
             assertTrue(pool.register(id, session).isAlive());
             // Retirement must be safe while the caller still owns the terminal
             // monitor: the actual stop runs outside the pool transition lock, and
@@ -197,7 +206,7 @@ public final class ControlChannelRecoveryTest {
             assertFalse(session.recoverControlChannel());
             assertFalse(session.markBridgeServing());
             assertNull(session.bridgeClient());
-            assertSame(failed, getField(session, "bridgeClient"));
+            assertSame(failed, session.cachedControlClientForTest());
         }
         pool.unregister(id);
     }
@@ -317,7 +326,7 @@ public final class ControlChannelRecoveryTest {
         // entering Android socket code. Recovery must not need this lock.
         PersistentTerminalSessionPool pool = PersistentTerminalSessionPool.getInstance();
         try {
-            synchronized (getField(session, "terminalLock")) {
+            synchronized (session.terminalMonitorForTest()) {
                 PersistentTerminalSessionPool.SessionHolder holder = pool.register(id, session);
                 assertTrue(holder.isAlive());
                 check.run(holder);
@@ -327,18 +336,6 @@ public final class ControlChannelRecoveryTest {
             // caller-held session monitor must not span the retirement call.
             pool.unregister(id);
         }
-    }
-
-    private static Object getField(Object target, String name) throws Exception {
-        Field field = target.getClass().getDeclaredField(name);
-        field.setAccessible(true);
-        return field.get(target);
-    }
-
-    private static void setField(Object target, String name, Object value) throws Exception {
-        Field field = target.getClass().getDeclaredField(name);
-        field.setAccessible(true);
-        field.set(target, value);
     }
 
     /** Simulates a transport whose closed reader has not exited yet. */

@@ -72,6 +72,17 @@ public final class BridgeClient {
         }
     }
 
+    /**
+     * Test seam: the session-lifetime token reference, for memory-hygiene
+     * contract tests to assert the reference is dropped on failure without
+     * reflection. Package-private on purpose: the token never crosses this
+     * package through the public API. Never persisted, returned by an API, or
+     * included in diagnostics.
+     */
+    String authenticationTokenForTest() {
+        return authenticationToken;
+    }
+
     private static final class PendingResponse {
         final String expected;
         final String stage;
