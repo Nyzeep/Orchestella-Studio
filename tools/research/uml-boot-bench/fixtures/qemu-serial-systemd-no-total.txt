@@ -1,0 +1,6 @@
+[    0.000000] Booting Linux on physical CPU 0x0000000000 [0x411fd070]
+[    0.000000] Linux version 7.2.3-droidlayer #1 SMP PREEMPT
+[    0.031000] Run /init as init process
+UMARM_BOOT_OK guest_uptime=0.510 nproc=2 page=4096
+UMARM_WORK_START work=bootprobe j=2 uptime=0.620
+Startup finished in 480ms (kernel) + 1.250s (userspace) =

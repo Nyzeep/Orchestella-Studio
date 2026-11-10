@@ -1,0 +1,12 @@
+Run /um-init as init process
+===== UML GUEST ALIVE =====
+BENCH boot_uptime_ms=400
+--- uname ---
+Linux (none) 7.2.0-rc4-g856737c31142 #1 Thu Jan  1 00:00:00 UTC 1970 aarch64 Linux
+--- id --- uid=0(root) gid=0(root)
+--- pagesize --- 16384
+--- mounts --- /dev/root / hostfs rw,...  proc/sysfs/devtmpfs/devpts/cgroup2 mounted
+--- write test --- hello-from-guest
+UM_COMMAND_EXIT=0
+UMARM_BOOT_OK
+kernel exited code=0 reason=exited duration_ms=3182

@@ -1,0 +1,6 @@
+BOOT_TIMING v1 lane=uml
+label=uml-t0-t3
+t0_monotonic_ms=300000.000
+ready_monotonic_ms=300400.000
+ready_point=T3
+rc=0
