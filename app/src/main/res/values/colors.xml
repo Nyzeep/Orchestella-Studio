@@ -56,11 +56,9 @@
     <color name="claude_sand_bg">#FAF8F5</color>
     <color name="claude_slate_bg">#18181B</color>
 
-    <!-- Glassmorphism Surface & Hairline Stroke -->
-    <color name="glass_card_bg_dark">#C0161B22</color>
-    <color name="glass_card_bg_light">#E0FFFFFF</color>
-    <color name="glass_card_stroke_dark">#26FFFFFF</color>
-    <color name="glass_card_stroke_light">#1A000000</color>
+    <!-- Glassmorphism Surface & Hairline Stroke: glass_card_* quartet deleted
+         (U4 dead-resource closeout, zero references; drawable bg_glass_card was
+         already removed by lane B). icon_container_bg_* retained. -->
     <color name="icon_container_bg_dark">#20FFFFFF</color>
     <color name="icon_container_bg_light">#0D000000</color>
 
