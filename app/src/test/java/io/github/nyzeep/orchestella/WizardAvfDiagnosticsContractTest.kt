@@ -80,7 +80,8 @@ class WizardAvfDiagnosticsContractTest {
 
     @Test
     fun unparseableOrOverflowingSampledTokensAreLeftUnchanged() {
-        val raw = "采样=abc；采样=99999999999999999999999999"
+        val overflow = "9".repeat(24)
+        val raw = "采样=abc；采样=$overflow"
         assertEquals(raw, WizardAvfDiagnostics.humanizeSampledAt(raw) { "never" })
     }
 
