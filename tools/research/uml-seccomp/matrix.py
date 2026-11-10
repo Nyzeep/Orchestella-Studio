@@ -59,7 +59,9 @@ def read_text(run_dir, names):
 def parse_denied(text):
     denied = []
     for line in text.splitlines():
-        if not line.startswith("SECCOMP_DENY"):
+        # UML os_info sometimes writes without a trailing newline, so a
+        # SECCOMP_DENY record can be appended to a "Checking ..." line.
+        if "SECCOMP_DENY" not in line:
             continue
         fields = dict(re.findall(r"(\w+)=(\S+)", line))
         name = fields.get("name") or ("nr-%s" % fields.get("nr", "?"))
