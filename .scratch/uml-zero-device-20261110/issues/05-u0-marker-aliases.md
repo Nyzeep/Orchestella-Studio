@@ -1,11 +1,11 @@
 # 05: U0.1 — Boot timeline parser marker aliases
 
 Type: implementation
-Status: claimed（u0-aliases 会话，2026-11-10）
+Status: resolved（u0-aliases 会话实现，2026-11-10；设备窗口实采验证，2026-11-11）
 Priority: P1（跨会话证据可被 U0 解析）
 Owner: u0-aliases 会话
 Blocked by: U0/U1/U2 Wave 1 集成已 push（`integration/uml-zero-device-20261110` @ `001add7a`）
-External gates: 无（纯 Python，零设备）
+External gates: 无（纯 Python，零设备）；真机 console 解析 = 2026-11-11 设备窗口实采 PASS（见 Comments）
 
 ## 背景
 
@@ -46,4 +46,8 @@ Wave 1 跨测已证明 U1 fast kernel + U2 预烘焙 rootfs 能到 `T2_MOUNTS_RE
 ## Comments
 
 - 2026-11-10 / Wave 1 集成：建票。跨测 PASS，但 parser 不识别 U1/U2 marker；不阻塞 Wave 2，建议在 Wave 2/3 并行补。
+
+- 2026-11-10 / u0-aliases 会话：实现完成，head `143dc74d`（claim `9a53b1c2`，base `5836a7ae`）。self-test 118 → 157（+39 checks）；5 类新 fixture（U1 正常/U2 正常/裸 READY 歧义/缺 uptime/非法单位）；alias 优先级低于 canonical；19 个旧 fixture 输出逐字节回归一致；四门全过并 push。已知缺口（票面范围外）：`U1_T2_READY`（U1 独立 T2）未在 alias 清单，记入 README/self-test，另开小票。
+
+- 2026-11-11 / device-window（device/uml-wave2-20261110）：**真机 console 实采解析 PASS**。用 checks=157 版 parser 解析 18 条真机 UML console（device-a）：`U1_READY`/`T2_MOUNTS_READY`/`T3_READY`/裸 `READY` 四类 alias 全部命中（T3 来源均为 `console:u1_ready_uptime` / `console:t3_ready_uptime`，无 fallback 冒充）；裸 `READY` 歧义门未误触发。`U1_T2_READY` 缺口如上（U1 组 T2=null+missing 原因，未猜值）。矩阵数字见设备窗口报告 §4。
 - 2026-11-10 / u0-aliases 会话：claim；base `github/integration/uml-zero-device-20261110` @ `5836a7ae`；worktree `/workspace-wt/u0-aliases`。
