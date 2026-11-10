@@ -1,0 +1,3 @@
+Linux version 6.12.0 (um) #1
+CAP hostfs=ok
+GUEST_READY uptime=0.04

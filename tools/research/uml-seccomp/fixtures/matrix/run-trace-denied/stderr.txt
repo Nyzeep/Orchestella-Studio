@@ -1,0 +1,3 @@
+SECCOMP_DENY nr=232 name=epoll_wait arch=c000003e ip=0x1
+SECCOMP_DENY nr=334 name=rseq arch=c000003e ip=0x2
+SECCOMP_DENY nr=232 name=epoll_wait arch=c000003e ip=0x3

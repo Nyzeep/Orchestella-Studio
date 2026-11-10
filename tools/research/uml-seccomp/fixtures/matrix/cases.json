@@ -1,0 +1,102 @@
+{
+  "schema": "uml-seccomp-cases/1",
+  "profile": "aosp-app-android17-x86_64",
+  "cases": [
+    {
+      "id": "hostfs-boot",
+      "title": "hostfs rootfs boot",
+      "markers": [
+        "CAP hostfs=ok"
+      ],
+      "device_entry": "adb shell 'cd /data/local/tmp/uml-seccomp && UML_KERNEL=/data/local/tmp/uml/vmlinux GUEST_ROOT=/data/local/tmp/uml/rootfs GUEST_IMAGE=/data/local/tmp/uml/rootfs.img ./device/run_device.sh --case hostfs-boot'"
+    },
+    {
+      "id": "ubd0-boot",
+      "title": "ubd0 ext4 rootfs boot",
+      "markers": [
+        "CAP ubd0=ok"
+      ],
+      "device_entry": "adb shell 'cd /data/local/tmp/uml-seccomp && UML_KERNEL=/data/local/tmp/uml/vmlinux GUEST_ROOT=/data/local/tmp/uml/rootfs GUEST_IMAGE=/data/local/tmp/uml/rootfs.img ./device/run_device.sh --case ubd0-boot'"
+    },
+    {
+      "id": "vector-net",
+      "title": "vector network eth0",
+      "markers": [
+        "CAP vector=ok"
+      ],
+      "device_entry": "adb shell 'cd /data/local/tmp/uml-seccomp && UML_KERNEL=/data/local/tmp/uml/vmlinux GUEST_ROOT=/data/local/tmp/uml/rootfs GUEST_IMAGE=/data/local/tmp/uml/rootfs.img ./device/run_device.sh --case vector-net'"
+    },
+    {
+      "id": "ncpus-2",
+      "title": "SMP ncpus=2",
+      "markers": [
+        "CAP smp=2"
+      ],
+      "device_entry": "adb shell 'cd /data/local/tmp/uml-seccomp && UML_KERNEL=/data/local/tmp/uml/vmlinux GUEST_ROOT=/data/local/tmp/uml/rootfs GUEST_IMAGE=/data/local/tmp/uml/rootfs.img ./device/run_device.sh --case ncpus-2'"
+    },
+    {
+      "id": "ncpus-4",
+      "title": "SMP ncpus=4",
+      "markers": [
+        "CAP smp=4"
+      ],
+      "device_entry": "adb shell 'cd /data/local/tmp/uml-seccomp && UML_KERNEL=/data/local/tmp/uml/vmlinux GUEST_ROOT=/data/local/tmp/uml/rootfs GUEST_IMAGE=/data/local/tmp/uml/rootfs.img ./device/run_device.sh --case ncpus-4'"
+    },
+    {
+      "id": "mconsole",
+      "title": "mconsole handshake",
+      "markers": [
+        "CAP mconsole=ok"
+      ],
+      "device_entry": "adb shell 'cd /data/local/tmp/uml-seccomp && UML_KERNEL=/data/local/tmp/uml/vmlinux GUEST_ROOT=/data/local/tmp/uml/rootfs GUEST_IMAGE=/data/local/tmp/uml/rootfs.img ./device/run_device.sh --case mconsole'"
+    },
+    {
+      "id": "sigchld",
+      "title": "SIGCHLD / wait4 child reaping",
+      "markers": [
+        "CAP sigchld=ok"
+      ],
+      "device_entry": "adb shell 'cd /data/local/tmp/uml-seccomp && UML_KERNEL=/data/local/tmp/uml/vmlinux GUEST_ROOT=/data/local/tmp/uml/rootfs GUEST_IMAGE=/data/local/tmp/uml/rootfs.img ./device/run_device.sh --case sigchld'"
+    },
+    {
+      "id": "clone",
+      "title": "clone syscall",
+      "markers": [
+        "CAP clone=ok"
+      ],
+      "device_entry": "adb shell 'cd /data/local/tmp/uml-seccomp && UML_KERNEL=/data/local/tmp/uml/vmlinux GUEST_ROOT=/data/local/tmp/uml/rootfs GUEST_IMAGE=/data/local/tmp/uml/rootfs.img ./device/run_device.sh --case clone'"
+    },
+    {
+      "id": "mount",
+      "title": "mount syscall (guest mounts, host mount denied)",
+      "markers": [
+        "CAP mount=ok"
+      ],
+      "device_entry": "adb shell 'cd /data/local/tmp/uml-seccomp && UML_KERNEL=/data/local/tmp/uml/vmlinux GUEST_ROOT=/data/local/tmp/uml/rootfs GUEST_IMAGE=/data/local/tmp/uml/rootfs.img ./device/run_device.sh --case mount'"
+    },
+    {
+      "id": "personality",
+      "title": "personality syscall",
+      "markers": [
+        "CAP personality=ok"
+      ],
+      "device_entry": "adb shell 'cd /data/local/tmp/uml-seccomp && UML_KERNEL=/data/local/tmp/uml/vmlinux GUEST_ROOT=/data/local/tmp/uml/rootfs GUEST_IMAGE=/data/local/tmp/uml/rootfs.img ./device/run_device.sh --case personality'"
+    },
+    {
+      "id": "setrlimit",
+      "title": "setrlimit syscall",
+      "markers": [
+        "CAP setrlimit=ok"
+      ],
+      "device_entry": "adb shell 'cd /data/local/tmp/uml-seccomp && UML_KERNEL=/data/local/tmp/uml/vmlinux GUEST_ROOT=/data/local/tmp/uml/rootfs GUEST_IMAGE=/data/local/tmp/uml/rootfs.img ./device/run_device.sh --case setrlimit'"
+    },
+    {
+      "id": "seccomp-fastpath",
+      "title": "UML seccomp=on fast path (downstream-only option)",
+      "markers": [
+        "CAP hostfs=ok"
+      ],
+      "device_entry": "adb shell 'cd /data/local/tmp/uml-seccomp && UML_KERNEL=/data/local/tmp/uml/vmlinux GUEST_ROOT=/data/local/tmp/uml/rootfs GUEST_IMAGE=/data/local/tmp/uml/rootfs.img ./device/run_device.sh --case seccomp-fastpath'"
+    }
+  ]
+}
