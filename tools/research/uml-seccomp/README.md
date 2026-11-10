@@ -29,7 +29,7 @@ profile/vendor/<ref>/       verbatim AOSP bionic inputs (25 policy files + uapi)
 profile/generated/          versioned JSON profiles, 10 files
 profile/host-shims/         x86_64 glibc proxy additions
 seccomp_launch.c            no_new_privs + BPF filter; enforce / trace / baseline
-run_uml_seccomp.sh          one case: assemble args, run, write harness.env
+run_uml_seccomp.sh          one case: assemble args, run, write harness.meta
 run_with_fd.py              socketpair fd helper for the UML vector transport
 mconsole_probe.py           binary mconsole client (UML's protocol, not text)
 guest/init.c                static guest init with CAP probes

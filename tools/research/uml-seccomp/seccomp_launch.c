@@ -84,7 +84,8 @@ static void put_uint(unsigned long long value)
 
 static void put_hex(unsigned long long value)
 {
-    static const char digits[] = "0123456789abcdef";
+    /* Adjacent literals concatenate to the same 16-char digit sequence. */
+    static const char digits[] = "0123456789" "abcdef";
     char buf[19];
     int pos = 0;
     buf[pos++] = '0';

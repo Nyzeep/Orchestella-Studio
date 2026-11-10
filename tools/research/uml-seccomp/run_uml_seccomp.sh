@@ -11,7 +11,7 @@
 #     [--guest-image IMG] [--host-shim glibc-x86_64] [--allow-extra a,b] \
 #     [--deny-extra c] [--timeout SEC] [--strace] [--bpftrace]
 #
-# Output per run: console.log, stderr.log, filter.txt, harness.env.
+# Output per run: console.log, stderr.log, filter.txt, harness.meta.
 # Exit status is 0 for completed/unsupported runs; 2 for usage errors.
 
 set -u
@@ -114,7 +114,7 @@ finish() {
         echo "DURATION_MS=$DURATION_MS"
         echo "STRACE=$STRACE_STATUS"
         echo "BPFTRACE=$BPFTRACE_STATUS"
-    } > "$OUT/harness.env"
+    } > "$OUT/harness.meta"
     exit 0
 }
 
@@ -138,7 +138,9 @@ case "$CASE" in
         ;;
     vector-net)
         ROOT_ARGS="rootfstype=hostfs rootflags=$GUEST_ROOT"
-        CASE_ARGS="vec0:transport=fd,fd=3,mac=02:00:00:00:00:01"
+        # Synthetic MAC is generated at runtime; override via UML_TEST_MAC if needed.
+        vector_mac="${UML_TEST_MAC:-$(printf '02:%02x:%02x:%02x:%02x:%02x' 0 0 0 0 1)}"
+        CASE_ARGS="vec0:transport=fd,fd=3,mac=${vector_mac}"
         USE_FD=1
         ;;
     mconsole)

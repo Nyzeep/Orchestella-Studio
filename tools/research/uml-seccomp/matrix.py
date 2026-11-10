@@ -118,9 +118,9 @@ def build_matrix(cases_path, run_dirs, mode="aosp", profile_path=None):
     expected_sha = sha256_file(profile_path) if profile_path else ""
     runs = {}
     for run_dir in run_dirs:
-        env_path = Path(run_dir) / "harness.env"
+        env_path = Path(run_dir) / "harness.meta"
         if not env_path.is_file():
-            raise InputError("%s: harness.env missing" % run_dir)
+            raise InputError("%s: harness.meta missing" % run_dir)
         env = parse_env(env_path)
         case_id = env.get("CASE")
         if not case_id:
@@ -289,13 +289,13 @@ def self_test():
     with tempfile.TemporaryDirectory() as tmp:
         run_dir = Path(tmp) / "bad"
         run_dir.mkdir()
-        (run_dir / "harness.env").write_text("CASE=hostfs-boot\nBROKEN\n", encoding="utf-8")
+        (run_dir / "harness.meta").write_text("CASE=hostfs-boot\nBROKEN\n", encoding="utf-8")
         try:
             build_matrix(cases_path, [run_dir])
         except InputError:
             checks += 1
         else:
-            raise AssertionError("malformed harness.env must be rejected")
+            raise AssertionError("malformed harness.meta must be rejected")
 
     print("UML_SECCOMP_MATRIX_SELF_TEST_OK checks=%d" % checks)
     return 0

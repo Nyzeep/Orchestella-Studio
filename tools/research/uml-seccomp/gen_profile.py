@@ -166,13 +166,13 @@ def build_profile(ref, arch, refs_doc):
         "source_note": ("AOSP app seccomp policy as compiled by bionic genseccomp.py; "
                         "default action SECCOMP_RET_TRAP (SIGSYS), no argument filters."),
         "numbers_source": {
-            "file": str(numbers["path"].relative_to(ROOT)),
+            "file": numbers["path"].relative_to(ROOT).as_posix(),
             "url": "https://android.googlesource.com/platform/bionic/+/refs/heads/%s/libc/kernel/uapi/%s?format=TEXT"
                    % (bionic_ref, "asm-generic/unistd.h" if arch == "arm64" else "asm-x86/asm/unistd_64.h"),
             "sha256": sha256(numbers["path"]),
         },
         "sources": [{
-            "file": str(path.relative_to(ROOT)),
+            "file": path.relative_to(ROOT).as_posix(),
             "url": "https://android.googlesource.com/platform/bionic/+/refs/heads/%s/libc/%s?format=TEXT"
                    % (bionic_ref, path.name),
             "sha256": sha256(path),
