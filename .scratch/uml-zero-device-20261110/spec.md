@@ -243,3 +243,11 @@ M1 的“目标值”由 U0 实测基线决定，不在本 spec 里凭空写毫�
 - `issues/04-seccomp-host-compat.md`（U3）
 
 U4/U6/U5 先在 spec 中保留，等 Wave 1 结果再建票，避免过度拆分。
+
+## 9. Wave 1 结果（2026-11-10）
+
+- U0/U1/U2 三支已合并到 `integration/uml-zero-device-20261110`；合并 head `1968704c`（U0 `8915fdea`、U1 `69903a0e`、U2 `1968704c`）。集成报告：`docs/research/2026-11-10-zero-device-uml-wave1-integration.zh-CN.md`。
+- 票据 01/02/03 均为 `resolved`；U1/U2 的 ARM64 设备、16 KB 宿主、真 SMP、systemd T4、aarch64/Debian 独立复现等边界保持 `not-tested`。
+- 跨分支最小测试：U1 x86_64 fast kernel + U2 Alpine x86_64 预烘焙 rootfs 到达 `T2_MOUNTS_READY` → `T3_READY` → `READY`；日志无包管理器/网络；n=1，宿主 `seccomp=auto`，**不是 ARM64 设备结论**。
+- 已知契约缺口：U0 parser 不识别 `U1_READY` / `T2_MOUNTS_READY` / `T3_READY` / `READY`；建议开 U0.1 小票（alias + fixture + self-test），本集成会话未改 parser。
+- Wave 2（U3/U5）可以集成分支为 base 开工；不得把 x86_64 宿主数字外推为 ARM64 结论，也不得把预烘焙 rootfs 当产品可分发物。

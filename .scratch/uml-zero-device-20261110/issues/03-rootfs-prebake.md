@@ -57,3 +57,6 @@ proot-distro 的“下载完就秒开”并不执行这些步骤：它只解包 
   - 校验：`verify.sh` Alpine 20 / Debian 23 项全 PASS（含整树 tree digest、apt/dpkg lock 缺失、manifest/产物 sha）；manifest 过 JSON Schema。
   - 许可证：Alpine 111/111 有 `L:`；Debian 213/213 doc 条目可解析到 copyright；GPL 对应源码/NOTICE/Android APK 分发边界未审查，**不进入产品打包**。
   - not-tested：ARM64 真机首启、16K 宿主、Debian aarch64 内核首启（x86_64 glibc 参考已 boot）、ARM64 ext4 boot。停止条件未触发。
+- 2026-11-10 / wave1-integration：**保留 resolved（复核通过，带边界）**。独立重建 Alpine 3.22.8 x86_64：64 s、111 包、114,590,691 B，tar.gz sha `90ac674f6148ed4b99f7e832c426826e7129ae286312e73bec54fd8baeb372c4`，与报告声明逐字节一致；`verify.sh` **20/20 PASS**；manifest JSON 合法（`jsonschema` 未安装，只做标准库结构检查）；首启脚本无包管理器/网络调用，rootfs 无 apk 缓存/lock/日志；产品路径干净、敏感门 OK；无构建产物入库；合并提交 `1968704c`。
+  - 跨测：U1 x86_64 fast kernel + 本票 Alpine x86_64 rootfs 到达 `T2_MOUNTS_READY` → `T3_READY` → `READY`，日志无 `apk`/`apt`/`dpkg`/`pacman`、无 `eth0`/DHCP（n=1，宿主 `seccomp=auto`；不是 ARM64 结论）。
+  - 未独立复跑：aarch64/Debian 构建、Debian `verify.sh` 23 项、ext4、ARM64 真机首启；上述边界保持 `not-tested`。GPL/NOTICE/Android APK 分发边界未审查，不进入产品打包。
