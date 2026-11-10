@@ -131,11 +131,20 @@ U0 parser 目前不识别 U1 的 `U1_READY` 与 U2 的 `T3_READY/READY`；它只
 ## 7. 提交与 push
 
 ```bash
-git add -f .scratch/uml-zero-device-20261110 docs/research tools/research research
+# 只添加你本会话新增/修改的 tracker 与集成报告；不要 git add -f research/ 或 out/
+git add -f .scratch/uml-zero-device-20261110/spec.md \
+  .scratch/uml-zero-device-20261110/prompts/README.md \
+  .scratch/uml-zero-device-20261110/integration-log.md \
+  .scratch/uml-zero-device-20261110/issues/01-boot-timeline-harness.md \
+  .scratch/uml-zero-device-20261110/issues/02-fastboot-profile.md \
+  .scratch/uml-zero-device-20261110/issues/03-rootfs-prebake.md
+git add -f docs/research/2026-11-10-zero-device-uml-wave1-integration.zh-CN.md
 env -u GIT_COMMITTER_NAME -u GIT_COMMITTER_EMAIL \
   git -c commit.gpgsign=false commit -m "chore(integration): 合并零设备 UML Wave 1 并完成跨分支验证"
 git push -u github integration/uml-zero-device-20261110
 ```
+
+> 三个实现分支的代码/文档已由 merge 提交带入，不需要再次 `git add`。**严禁** `git add -f research/`、`git add -f tools/research/` 或 `git add -f .`：`research/uml-fastboot/out/` 与 U2 的 rootfs 产物是 gitignored 大文件，强制添加会把 100–200 MB 构建产物塞进仓库。
 
 - 不合并 `main`；不创建 PR（除非用户明确要求）。
 - push 后给用户 400 字内摘要：集成分支/head、三票状态、跨测 pass/fail/not-tested、产品路径是否干净、Wave 2 能否开工。
