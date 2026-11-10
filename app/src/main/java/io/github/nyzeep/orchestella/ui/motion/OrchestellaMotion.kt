@@ -126,8 +126,12 @@ object OrchestellaMotion {
 
     /**
      * Expandable settings section reveal: makes [view] visible and plays the
-     * oe_section_expand_enter vocabulary (fade + downward settle). Pair with
+     * section-expand vocabulary (fade + downward settle). Pair with
      * [collapseSection]; neither hides the view by itself.
+     *
+     * This code helper is the single source of that vocabulary — the twin XML
+     * anims (oe_section_expand_enter / oe_section_collapse_exit) were never
+     * wired and were deleted in the U4 dead-resource closeout.
      */
     fun expandSection(view: View) {
         if (view.visibility != View.VISIBLE) {
