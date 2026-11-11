@@ -1,0 +1,64 @@
+{
+  "fixture": "x86_64-host-tlinux4-5.4-4k",
+  "mem": "256M",
+  "n": 5,
+  "hold_ms": 5000,
+  "timeout_s": 30,
+  "cases": [
+    {
+      "label": "initramfs-up",
+      "kernel": "out/x86_64-up/artifacts/linux-fast",
+      "mode": "initramfs",
+      "ncpus": 1,
+      "seccomp": "auto"
+    },
+    {
+      "label": "hostfs-init-up",
+      "kernel": "out/x86_64-up/artifacts/linux-fast",
+      "mode": "hostfs-initramfs",
+      "root": "out/rootfs-x86_64",
+      "ncpus": 1,
+      "seccomp": "auto"
+    },
+    {
+      "label": "ubd-init-up",
+      "kernel": "out/x86_64-up/artifacts/linux-fast",
+      "mode": "ubd-initramfs",
+      "root": "out/rootfs-x86_64.ext4",
+      "ncpus": 1,
+      "seccomp": "auto"
+    },
+    {
+      "label": "hostfs-direct-up",
+      "kernel": "out/x86_64-up/artifacts/linux-fast-noinitrd",
+      "mode": "hostfs",
+      "root": "out/rootfs-x86_64",
+      "ncpus": 1,
+      "seccomp": "auto"
+    },
+    {
+      "label": "ubd-direct-up",
+      "kernel": "out/x86_64-up/artifacts/linux-fast-noinitrd",
+      "mode": "ubd",
+      "root": "out/rootfs-x86_64.ext4",
+      "ncpus": 1,
+      "seccomp": "auto"
+    },
+    {
+      "label": "initramfs-smp",
+      "kernel": "out/x86_64-smp/artifacts/linux-fast",
+      "mode": "initramfs",
+      "ncpus": 4,
+      "seccomp": "auto"
+    },
+    {
+      "label": "hostfs-init-smp",
+      "kernel": "out/x86_64-smp/artifacts/linux-fast",
+      "mode": "hostfs-initramfs",
+      "root": "out/rootfs-x86_64",
+      "ncpus": 4,
+      "seccomp": "auto"
+    }
+  ],
+  "seccomp": "auto"
+}

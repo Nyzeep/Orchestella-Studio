@@ -1,0 +1,6 @@
+out/
+__pycache__/
+logs/
+tmp/
+*.result.json
+*.result.md

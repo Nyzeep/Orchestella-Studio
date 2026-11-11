@@ -1,0 +1,14 @@
+[    0.000000] Linux version 7.2.0-um-fast #1 SMP PREEMPT (synthetic fixture, not a real log)
+Checking that seccomp filters can be installed...ok
+[    0.040000] Run /init-zero-install as init process
+[    0.050000] VFS: Mounted root (hostfs filesystem) on device 0:15.
+INIT_ZERO_INSTALL stage=mounts
+INIT_MOUNT_PRESENT fs=proc target=/proc
+INIT_MOUNT_PRESENT fs=sysfs target=/sys
+INIT_MOUNT_PRESENT fs=dev target=/dev
+INIT_MOUNT_PRESENT fs=devpts target=/dev/pts
+T2_MOUNTS_READY uptime=0.09
+T3_READY uptime=0.11 action=poweroff
+READY
+[    0.120000] reboot: Power down
+kernel exited code=0 reason=exited duration_ms=600

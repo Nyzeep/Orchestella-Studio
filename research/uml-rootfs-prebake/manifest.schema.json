@@ -1,0 +1,311 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orchestella.invalid/schemas/uml-rootfs-prebake-manifest-v1.json",
+  "title": "UML pre-baked rootfs manifest",
+  "description": "Provenance and first-boot contract for a rootfs whose packages, locale, certificates and base toolchain were provisioned at build time.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "distro",
+    "build",
+    "inputs",
+    "provisioning",
+    "artifactContent",
+    "outputs"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "distro": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version",
+        "arch",
+        "libc"
+      ],
+      "properties": {
+        "name": {
+          "enum": [
+            "alpine",
+            "debian"
+          ]
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "arch": {
+          "enum": [
+            "aarch64",
+            "x86_64"
+          ]
+        },
+        "libc": {
+          "enum": [
+            "musl",
+            "glibc"
+          ]
+        }
+      }
+    },
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceDateEpoch",
+        "startedAtUtc",
+        "durationSeconds",
+        "host",
+        "tool"
+      ],
+      "properties": {
+        "sourceDateEpoch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "startedAtUtc": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "durationSeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "host": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tool": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "base",
+        "repositories",
+        "packageSet"
+      ],
+      "properties": {
+        "base": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "url",
+            "sha256"
+          ],
+          "properties": {
+            "url": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sha256": {
+              "$ref": "#/$defs/sha256"
+            }
+          }
+        },
+        "repositories": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "url",
+              "indexSha256"
+            ],
+            "properties": {
+              "url": {
+                "type": "string",
+                "minLength": 1
+              },
+              "indexSha256": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/sha256"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "packageSet": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "version"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "provisioning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "firstBoot",
+        "locale",
+        "certificates"
+      ],
+      "properties": {
+        "mode": {
+          "const": "build-time"
+        },
+        "firstBoot": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "packageManagerInvocations",
+            "networkRequired",
+            "init",
+            "ready"
+          ],
+          "properties": {
+            "packageManagerInvocations": {
+              "const": 0
+            },
+            "networkRequired": {
+              "const": false
+            },
+            "init": {
+              "const": "/init-zero-install"
+            },
+            "ready": {
+              "const": "/ready.sh"
+            }
+          }
+        },
+        "locale": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "default",
+            "generated"
+          ],
+          "properties": {
+            "default": {
+              "type": "string",
+              "minLength": 1
+            },
+            "generated": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "certificates": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "bundlePath",
+            "sha256",
+            "sizeBytes"
+          ],
+          "properties": {
+            "bundlePath": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "sizeBytes": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      }
+    },
+    "artifactContent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "initSha256",
+        "readySha256",
+        "packageDatabaseSha256",
+        "treeSha256"
+      ],
+      "properties": {
+        "initSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "readySha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "packageDatabaseSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "treeSha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "outputs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "format",
+          "sha256",
+          "sizeBytes"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "format": {
+            "enum": [
+              "tar.gz",
+              "ext4"
+            ]
+          },
+          "sha256": {
+            "$ref": "#/$defs/sha256"
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

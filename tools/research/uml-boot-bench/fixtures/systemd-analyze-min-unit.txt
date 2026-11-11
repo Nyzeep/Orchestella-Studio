@@ -1,0 +1,1 @@
+Startup finished in 250ms (kernel) + 1min 2.500s (userspace) = 1min 2.750s

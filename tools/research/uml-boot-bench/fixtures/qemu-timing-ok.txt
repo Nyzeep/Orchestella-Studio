@@ -1,0 +1,6 @@
+BOOT_TIMING v1 lane=qemu
+label=qemu-t0-t4
+t0_monotonic_ms=200000.000
+ready_monotonic_ms=201730.000
+ready_point=Q0
+rc=0
