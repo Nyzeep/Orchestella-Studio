@@ -98,8 +98,9 @@ python3 bench-fast.py bench-matrix.example.json
    stub_exe=<nativeLibraryDir>/libuml_stub.so
    ```
    （内置 initramfs 不需要 `rootfs`/`init=`；要测外置 rootfs，再传
-   `ubd0=<filesDir>/rootfs-aarch64.ext4 umroot=/dev/ubda umrootfstype=ext4`，
-   或 `umroot=<filesDir>/rootfs umrootfstype=hostfs`。）
+   `ubd0=<filesDir>/rootfs.ext4 umroot=/dev/ubda umrootfstype=ext4`
+   （UmlFaceLauncher 的 FAST_ROOTFS_IMAGE_NAME 约定名为 `rootfs.ext4`，
+   放入时按此命名），或 `umroot=<filesDir>/rootfs umrootfstype=hostfs`。）
 4. 判定串：console 出现 `U1_T2_READY`、`U1_READY`、exit 0；失败时只认
    `UM_INIT_ERROR code=… step=…`。
 

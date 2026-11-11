@@ -362,7 +362,9 @@ prepare() {
     say "device lib dir  : $lib"
     tarball=$(mktemp -u).tar.gz
     tar -czf "$tarball" -C "$U3_ROOTFS_DIR" . || die "tar failed for U3_ROOTFS_DIR"
-    "$ADB" -s "$DEVICE_SERIAL" push "$tarball" /data/local/tmp/uml-u3-rootfs.tar.gz >/dev/null \
+    # Windows adb can't read MSYS-style paths (/tmp/...): convert for the push arg.
+    tarball_push=$(command -v cygpath >/dev/null 2>&1 && cygpath -m "$tarball" || printf '%s' "$tarball")
+    "$ADB" -s "$DEVICE_SERIAL" push "$tarball_push" /data/local/tmp/uml-u3-rootfs.tar.gz >/dev/null \
         || die "push rootfs tarball failed"
     dsh "run-as $RUNNER_PKG mkdir -p files/rootfs"
     dsh "cat /data/local/tmp/uml-u3-rootfs.tar.gz | run-as $RUNNER_PKG sh -c 'gzip -dc | tar -xf - -C files/rootfs'" \
@@ -373,7 +375,8 @@ prepare() {
     if [ -n "${U3_ROOTFS_IMG:-}" ] && [ -f "$U3_ROOTFS_IMG" ]; then
         imgtmp=$(mktemp -u).img
         cp "$U3_ROOTFS_IMG" "$imgtmp" || die "cannot read U3_ROOTFS_IMG"
-        "$ADB" -s "$DEVICE_SERIAL" push "$imgtmp" /data/local/tmp/uml-u3-rootfs.img >/dev/null \
+        imgtmp_push=$(command -v cygpath >/dev/null 2>&1 && cygpath -m "$imgtmp" || printf '%s' "$imgtmp")
+        "$ADB" -s "$DEVICE_SERIAL" push "$imgtmp_push" /data/local/tmp/uml-u3-rootfs.img >/dev/null \
             || die "push rootfs.img failed"
         dsh "cat /data/local/tmp/uml-u3-rootfs.img | run-as $RUNNER_PKG sh -c 'cat > files/rootfs.img'" \
             || die "on-device rootfs.img copy failed"
@@ -492,7 +495,6 @@ run_case() {
     [ -f "$run_dir/exit.txt" ] && signal=$(sed -n 's/^signal_guess=//p' "$run_dir/exit.txt" | head -n 1 | tr -d '\r')
     [ -n "$rc" ] || rc=""
 
-    local status=ok
     write_meta "$run_dir" "$id" ok "" "$rc" "${signal:-0}" "$((end_ms - start_ms))" "$run_dir/console.log" "$timedout"
     write_verdict "$run_dir" "$verdict" "$reason" "$triage"
     say "[$id] $verdict ($reason) console=$run_dir/console.log"
@@ -569,8 +571,8 @@ EOFROWS
 }
 
 judge() {
-    # Offline re-judge from pulled dirs: --judge [--outdir DIR]
-    local ts_dir=${ONLY_CASE:-}
+    # Offline re-judge from pulled dirs: --judge [--outdir DIR]  (--case accepted as an alias for --outdir)
+    local ts_dir=${OUT_ROOT:-${ONLY_CASE:-}}
     [ -n "$ts_dir" ] || die "--judge needs --outdir <ts dir containing per-case subdirs>"
     say "== offline re-judge over $ts_dir =="
     for v in "$ts_dir"/*/verdict.txt; do
