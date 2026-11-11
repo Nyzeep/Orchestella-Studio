@@ -584,10 +584,12 @@ public final class UmlKernelAssets {
      * L3 content self-check is the verify.sh-calibrated five-stage pipeline
      * ({@link #selfCheckPlan()}), implemented as pure-JVM static analysis over
      * the received tar stream: identity fields, artifact digests, package
-     * database, top-level structure — with {@link SelfCheckStage#FIRST_BOOT_CLEANLINESS}
-     * honestly {@link StageState#PLANNED} (it needs real-device first-boot
-     * data; a stage that cannot run must not pretend it passed). {@link
-     * #requireVerifiedAndSelfChecked} chains L1/L2/L3 fail-closed in one call.
+     * database, top-level structure, and the static tarball-side half of
+     * first-boot cleanliness ({@link EntryForm}-parameterized — the dynamic
+     * on-device first-boot verification stays verify.sh's, a separately
+     * tracked open item; a static pass never masquerades as a dynamic one).
+     * {@link #requireVerifiedAndSelfChecked} chains L1/L2/L3 fail-closed in
+     * one call.
      */
     public static final class RootfsDownload {
 
@@ -627,14 +629,44 @@ public final class UmlKernelAssets {
         }
 
         /**
+         * The two artifact shapes this pipeline verifies — the axis
+         * {@link SelfCheckStage#FIRST_BOOT_CLEANLINESS} parameterizes on.
+         * verify.sh's first-boot section is calibrated for the prebake route's
+         * expanded tree; the download route receives the official minirootfs,
+         * which ships a different (genuinely cleaner in one spot, thinner in
+         * another) shape, so every first-boot check declares which form it
+         * applies to and which form it skips — never silently.
+         */
+        public enum EntryForm {
+            /**
+             * The official Alpine minirootfs tarball as published — the pinned
+             * download artifact. Ships no first-boot scripts and no
+             * prebake-baked state (first-hand over v3.22.2 aarch64, 2026-11-12:
+             * no machine-id/resolv.conf/ssh-host-key entries,
+             * {@code etc/hostname} = {@code localhost}, empty apk cache and
+             * log — but a 0-byte {@code lib/apk/db/lock}).
+             */
+            MINIROOTFS,
+            /**
+             * A pre-baked rootfs tarball that already carries the product's
+             * first-boot scripts ({@code init-zero-install}, {@code
+             * ready.sh}) and the baked state verify.sh audits. The form
+             * verify.sh's first-boot section is written for.
+             */
+            PREBAKE
+        }
+
+        /**
          * One pinned downloadable rootfs. The validation mirrors the distro
          * manifest's: a fixed HTTPS source with no userinfo/query/fragment
          * whose path ends in the declared file name, a lowercase 64-hex pin,
-         * and a positive size whenever a size is pinned at all.
+         * and a positive size whenever a size is pinned at all. The
+         * {@link #form() form} selects which first-boot cleanliness checks
+         * apply (see {@link EntryForm}).
          */
         public record Entry(
                 String id, String version, String architecture, URI source, String fileName,
-                String sha256Pin, Long sizeBytes) {
+                String sha256Pin, Long sizeBytes, EntryForm form) {
 
             public Entry {
                 requireNonBlank("id", id);
@@ -643,6 +675,7 @@ public final class UmlKernelAssets {
                 requireNonBlank("fileName", fileName);
                 Objects.requireNonNull(source, "source");
                 Objects.requireNonNull(sha256Pin, "sha256Pin");
+                Objects.requireNonNull(form, "form");
                 if (!"https".equalsIgnoreCase(source.getScheme())
                         || source.getHost() == null
                         || source.getUserInfo() != null
@@ -662,6 +695,17 @@ public final class UmlKernelAssets {
             }
 
             /**
+             * The historical seven-field shape, defaulting the form to
+             * {@link EntryForm#MINIROOTFS} — the form of every entry this
+             * pipeline has pinned so far.
+             */
+            public Entry(String id, String version, String architecture, URI source,
+                    String fileName, String sha256Pin, Long sizeBytes) {
+                this(id, version, architecture, source, fileName, sha256Pin, sizeBytes,
+                        EntryForm.MINIROOTFS);
+            }
+
+            /**
              * The production entry: the pinned Alpine minirootfs tar, with the
              * officially locked CDN byte count ({@link FastProfile#ROOTFS_TAR_SIZE_BYTES})
              * — first-hand verified on 2026-11-12 (HEAD Content-Length and a
@@ -675,7 +719,7 @@ public final class UmlKernelAssets {
                         ENTRY_ID, ENTRY_VERSION, ENTRY_ARCHITECTURE,
                         URI.create(ROOTFS_TAR_URL), FastProfile.ROOTFS_TAR,
                         FastProfile.pins().get(FastProfile.ROOTFS_TAR),
-                        FastProfile.ROOTFS_TAR_SIZE_BYTES);
+                        FastProfile.ROOTFS_TAR_SIZE_BYTES, EntryForm.MINIROOTFS);
             }
         }
 
@@ -804,15 +848,34 @@ public final class UmlKernelAssets {
              */
             TREE_DIGEST,
             /**
-             * First-boot cleanliness: no package-manager queue/cache/lock, no
-             * baked host keys, empty machine-id/resolv.conf. <b>Declared, not
-             * implemented</b> — these are properties of the expanded tree on a
-             * real device's first boot, which no static read of the tarball
-             * can prove (the official minirootfs ships none of that state to
-             * begin with; it is produced — or avoided — at first boot). The
-             * stage answers {@link StageState#PLANNED} until a device window
-             * supplies the first-boot data the verify.sh port needs; it never
-             * masquerades as a pass.
+             * First-boot cleanliness, statically — the port of verify.sh's
+             * first-boot state section over the {@link TarSnapshot}:
+             * no product first-boot residue ({@code
+             * opt/orchestella/.firstboot-done}, {@code
+             * var/lib/orchestella/provision/state}), empty-or-absent
+             * per-instance identity files ({@code etc/machine-id}, {@code
+             * etc/resolv.conf} — the shell {@code -s} semantics), no baked
+             * per-instance ssh host keys, a present certificate bundle, no
+             * package-manager queue/cache/lock residue — and, for the
+             * {@link EntryForm#PREBAKE} form, the two first-boot scripts
+             * present, executable, and free of package-manager/network
+             * invocations in their comment-stripped bodies, with the hostname
+             * fixed. Checks parameterize by {@link EntryForm}: properties the
+             * prebake step bakes in are demanded only of the prebake form; the
+             * official minirootfs's own clean shape passes (first-hand
+             * 2026-11-12, see {@link EntryForm#MINIROOTFS} — including the
+             * 0-byte apk db lock whose <em>absence</em> only the prebake form
+             * demands).
+             *
+             * <p><b>The honest boundary (two layers, never conflated).</b>
+             * This stage is the static half: what the tarball's own content
+             * proves before any boot ever happens. The dynamic half — that the
+             * expanded tree on a real device's first boot stays clean (no
+             * state files appear, the machine-id regenerates, no package
+             * manager ever runs) — is a property of the post-boot tree, which
+             * no static read of the tarball can prove; it stays with verify.sh
+             * and a device window and remains an open item. A static pass
+             * here is not a dynamic pass.
              */
             FIRST_BOOT_CLEANLINESS
         }
@@ -826,7 +889,10 @@ public final class UmlKernelAssets {
             /**
              * The stage is declared by the plan but not yet implementable from
              * the inputs this pipeline receives — it never counts as a pass
-             * and never fails the chain by itself.
+             * and never fails the chain by itself. No stage answers this
+             * today (all five L3 stages are implemented statically); kept as
+             * the honest placeholder should a future declared-only stage
+             * appear.
              */
             PLANNED
         }
@@ -855,7 +921,7 @@ public final class UmlKernelAssets {
                 return stages.stream().anyMatch(stage -> stage.state() == StageState.FAIL);
             }
 
-            /** The declared-only stages, in plan order (empty once L3 fully lands). */
+            /** The declared-only stages, in plan order — empty today: all five stages answer statically. */
             public List<SelfCheckStage> plannedStages() {
                 return stages.stream().filter(stage -> stage.state() == StageState.PLANNED)
                         .map(StageResult::stage)
@@ -882,9 +948,9 @@ public final class UmlKernelAssets {
          * header walk, no disk expansion, no apk execution) records the
          * snapshot every content stage consumes, then {@link #selfCheckPlan()}
          * evaluates in order. Never throws for a content defect — defects are
-         * {@link StageState#FAIL} stage states; {@link
-         * SelfCheckStage#FIRST_BOOT_CLEANLINESS} answers
-         * {@link StageState#PLANNED}.
+         * {@link StageState#FAIL} stage states; the first-boot cleanliness
+         * stage judges the static tarball-side half of verify.sh's first-boot
+         * section, parameterized by the entry's {@link EntryForm}.
          */
         public static SelfCheckReport selfCheck(Entry entry, byte[] artifact) throws IOException {
             Objects.requireNonNull(entry, "entry");
@@ -947,10 +1013,7 @@ public final class UmlKernelAssets {
                 case TREE_DIGEST:
                     return treeDigestStage(snapshot);
                 case FIRST_BOOT_CLEANLINESS:
-                    return new StageResult(stage, StageState.PLANNED,
-                            "first-boot cleanliness needs real-device first-boot data;"
-                                    + " declared by the plan, ported from verify.sh when the"
-                                    + " device window supplies it — never faked as a pass");
+                    return firstBootCleanlinessStage(entry, snapshot);
                 default:
                     throw new IllegalStateException("stage outside the declared plan: " + stage);
             }
@@ -1095,6 +1158,274 @@ public final class UmlKernelAssets {
                             + snapshot.entryCount + " entries walked)");
         }
 
+        // ---------------------------------------------------- first-boot state
+        // The static port of verify.sh's first-boot section: what the tarball's
+        // own content proves before any boot happens, parameterized by the
+        // entry's EntryForm. The dynamic half — the expanded tree a real
+        // device's first boot produces — stays verify.sh's (device window);
+        // this stage never claims it.
+
+        /**
+         * The {@link SelfCheckStage#FIRST_BOOT_CLEANLINESS} checks, ported
+         * from verify.sh's first-boot section as pure snapshot reads. Defects
+         * accumulate into one fail-closed answer; form-gated checks skip
+         * visibly (in the pass detail) instead of pretending either way.
+         */
+        private static StageResult firstBootCleanlinessStage(Entry entry, TarSnapshot snapshot) {
+            if (snapshot.parseError != null) {
+                return new StageResult(SelfCheckStage.FIRST_BOOT_CLEANLINESS, StageState.FAIL,
+                        "archive unreadable: " + snapshot.parseError);
+            }
+            List<String> defects = new ArrayList<>();
+            List<String> notes = new ArrayList<>();
+            boolean prebake = entry.form() == EntryForm.PREBAKE;
+
+            if (prebake) {
+                // verify.sh: "[ -x $ROOT/init-zero-install ]" / "[ -x $ROOT/ready.sh ]" —
+                // the scripts the prebake route installs. The official
+                // minirootfs ships neither, so this whole block (presence,
+                // executability, body word scans) is PREBAKE-gated and the
+                // minirootfs form skips it without failing.
+                for (String script : List.of(BOOT_SCRIPT_INIT, BOOT_SCRIPT_READY)) {
+                    if (!snapshot.regularFileNames.contains(script)) {
+                        defects.add(script + " missing or not a regular file"
+                                + " (prebake form requires it)");
+                    } else if (!snapshot.executableFileNames.contains(script)) {
+                        defects.add(script + " is not executable");
+                    }
+                }
+                // verify.sh: the comment-stripped bodies ("grep -v '^\s*#'")
+                // must invoke no package manager and no network
+                // client/configuration command (word-boundary EREs copied).
+                for (String script : List.of(BOOT_SCRIPT_INIT, BOOT_SCRIPT_READY)) {
+                    byte[] body = snapshot.fileContents.get(script);
+                    if (body == null) {
+                        if (snapshot.regularFileNames.contains(script)) {
+                            notes.add(script
+                                    + " content beyond the retention cap: word scans skipped");
+                        }
+                        continue;
+                    }
+                    String stripped = commentStrippedBody(
+                            new String(body, java.nio.charset.StandardCharsets.UTF_8));
+                    if (PACKAGE_MANAGER_INVOCATION.matcher(stripped).find()) {
+                        defects.add(script + " invokes a package manager");
+                    }
+                    if (NETWORK_CLIENT_OR_CONFIG.matcher(stripped).find()) {
+                        defects.add(script + " contains a network client/configuration command");
+                    }
+                }
+            }
+
+            // verify.sh: "[ ! -e $ROOT/opt/orchestella/.firstboot-done ]" /
+            // "[ ! -e $ROOT/var/lib/orchestella/provision/state ]" — any entry
+            // type counts as present; both forms check this.
+            if (snapshot.entryNames.contains(FIRSTBOOT_DONE_MARKER)) {
+                defects.add("product firstboot-done marker is present: " + FIRSTBOOT_DONE_MARKER);
+            }
+            if (snapshot.entryNames.contains(PROVISION_STATE_FILE)) {
+                defects.add("provisioning state file is present: " + PROVISION_STATE_FILE);
+            }
+
+            // verify.sh's -s family: empty or absent passes, present and
+            // non-empty fails. Both forms check this.
+            if (presentAndNonEmpty(snapshot, MACHINE_ID_PATH)) {
+                defects.add(MACHINE_ID_PATH + " is not empty");
+            }
+            if (presentAndNonEmpty(snapshot, RESOLV_CONF_PATH)) {
+                defects.add(RESOLV_CONF_PATH + " is not empty");
+            }
+
+            // verify.sh: hostname fixed to "orchestella" — a prebake-baked
+            // property. The official minirootfs ships "localhost"; the
+            // download form demands presence (not the value) one stage
+            // earlier, in MANIFEST_FIELDS.
+            if (prebake) {
+                byte[] hostname = snapshot.fileContents.get(HOSTNAME_PATH);
+                if (hostname == null) {
+                    if (snapshot.regularFileNames.contains(HOSTNAME_PATH)) {
+                        notes.add(HOSTNAME_PATH + " beyond the retention cap: value not verified");
+                    } else {
+                        defects.add(HOSTNAME_PATH + " missing (prebake form fixes it to \""
+                                + PREBAKE_HOSTNAME + "\")");
+                    }
+                } else if (!stripTrailingNewlines(
+                        new String(hostname, java.nio.charset.StandardCharsets.UTF_8))
+                        .equals(PREBAKE_HOSTNAME)) {
+                    defects.add(HOSTNAME_PATH + " is not fixed to \"" + PREBAKE_HOSTNAME + "\""
+                            + " (prebake form)");
+                }
+            }
+
+            // verify.sh: "ls $ROOT/etc/ssh/ssh_host_*" must find nothing — no
+            // per-instance host key may be baked in. Both forms check this.
+            for (String name : snapshot.entryNames) {
+                if (name.startsWith(SSH_HOST_KEY_PREFIX)) {
+                    defects.add("per-instance ssh host key is baked into the image: " + name);
+                    break; // one representative carries the defect
+                }
+            }
+
+            // verify.sh: "[ -s $ROOT/etc/ssl/certs/ca-certificates.crt ]" —
+            // the trust anchors must be present and non-empty. Both forms.
+            if (!snapshot.entryNames.contains(CA_BUNDLE_PATH)) {
+                defects.add("certificate bundle missing: " + CA_BUNDLE_PATH);
+            } else {
+                byte[] bundle = snapshot.fileContents.get(CA_BUNDLE_PATH);
+                if (bundle != null && bundle.length == 0) {
+                    defects.add("certificate bundle is empty: " + CA_BUNDLE_PATH);
+                }
+            }
+
+            // verify.sh's package-manager queue/cache/lock block. The port
+            // keys the branches on the package-database evidence the tree
+            // itself carries (verify.sh keys on the build manifest's declared
+            // distro — a field a tar stream has no equivalent of).
+            boolean apkTree = snapshot.entryNames.contains(APK_INSTALLED_DB_PATH);
+            if (apkTree) {
+                String cached = firstRegularUnder(snapshot, APK_CACHE_PREFIX, APK_CACHE_DIR);
+                if (cached != null) {
+                    defects.add("Alpine apk cache is not empty: " + cached);
+                }
+                for (String name : snapshot.regularFileNames) {
+                    if (name.endsWith(".apk")) {
+                        defects.add("unpacked .apk files remain in image: " + name);
+                        break;
+                    }
+                }
+                // The lock's ABSENCE is a prebake demand: the official
+                // minirootfs tarball itself ships a 0-byte lib/apk/db/lock
+                // (first-hand, v3.22.2 aarch64, 2026-11-12) — requiring its
+                // absence of the minirootfs form would reject the authentic
+                // artifact, so the minirootfs form skips exactly this check.
+                if (prebake && snapshot.entryNames.contains(APK_DB_LOCK)) {
+                    defects.add("Alpine apk db lock is present: " + APK_DB_LOCK
+                            + " (prebake form requires it absent)");
+                }
+                if (snapshot.entryNames.contains(APK_LOG)) {
+                    defects.add("Alpine apk log is present: " + APK_LOG);
+                }
+            }
+            if (snapshot.entryNames.contains(DPKG_DB_DIR)) {
+                String lists = firstRegularUnder(snapshot, APT_LISTS_PREFIX, APT_LISTS_DIR);
+                if (lists != null) {
+                    defects.add("Debian apt lists are not empty: " + lists);
+                }
+                for (String name : snapshot.regularFileNames) {
+                    if (name.startsWith(APT_ARCHIVE_PREFIX) && name.endsWith(".deb")) {
+                        defects.add("Debian .deb cache is not empty: " + name);
+                        break;
+                    }
+                }
+                String updates = firstRegularUnder(snapshot, DPKG_UPDATES_PREFIX, DPKG_UPDATES_DIR);
+                if (updates != null) {
+                    defects.add("Debian dpkg updates queue is not empty: " + updates);
+                }
+                for (String lock : DEBIAN_LOCKS) {
+                    if (snapshot.entryNames.contains(lock)) {
+                        defects.add("Debian lock present: " + lock);
+                    }
+                }
+            }
+
+            if (defects.isEmpty()) {
+                List<String> parts = new ArrayList<>();
+                parts.add(prebake
+                        ? "form=prebake: first-boot scripts present, executable and clean"
+                        : "form=minirootfs: boot-script checks skipped"
+                                + " (the official minirootfs ships no first-boot scripts)");
+                parts.add("no product first-boot residue");
+                parts.add("per-instance identity files (machine-id, resolv.conf) empty or absent");
+                if (prebake) {
+                    parts.add("hostname fixed to \"" + PREBAKE_HOSTNAME + "\"");
+                }
+                parts.add("no baked ssh host keys");
+                parts.add("certificate bundle present");
+                if (apkTree) {
+                    parts.add(prebake
+                            ? "apk queue/cache/lock/log clean"
+                            : "apk queue/cache/log clean"
+                                    + " (the official tarball's own 0-byte db lock is not a defect)");
+                }
+                if (snapshot.entryNames.contains(DPKG_DB_DIR)) {
+                    parts.add("dpkg queue/cache/locks clean");
+                }
+                parts.addAll(notes);
+                return new StageResult(SelfCheckStage.FIRST_BOOT_CLEANLINESS, StageState.PASS,
+                        String.join("; ", parts));
+            }
+            String detail = String.join("; ", defects);
+            if (!notes.isEmpty()) {
+                detail = detail + " [" + String.join("; ", notes) + "]";
+            }
+            return new StageResult(SelfCheckStage.FIRST_BOOT_CLEANLINESS, StageState.FAIL, detail);
+        }
+
+        /**
+         * verify.sh's {@code -s}: present and non-empty fails. A retained
+         * regular file judges by its bytes; anything else present (a
+         * directory, a link, a regular file beyond the retention cap —
+         * necessarily non-empty) judges by structural existence.
+         */
+        private static boolean presentAndNonEmpty(TarSnapshot snapshot, String path) {
+            if (!snapshot.entryNames.contains(path)) {
+                return false;
+            }
+            byte[] content = snapshot.fileContents.get(path);
+            return content == null || content.length > 0;
+        }
+
+        /** The first regular file under {@code prefix} (or the start path itself, as find would report it), if any. */
+        private static String firstRegularUnder(TarSnapshot snapshot, String prefix, String start) {
+            if (snapshot.regularFileNames.contains(start)) {
+                return start;
+            }
+            for (String name : snapshot.regularFileNames) {
+                if (name.startsWith(prefix)) {
+                    return name;
+                }
+            }
+            return null;
+        }
+
+        /**
+         * verify.sh's body preparation: {@code grep -v '^\s*#'} — drop the
+         * lines whose first non-blank character is {@code #}, keep everything
+         * else (inline trailing comments stay; they are body text to grep).
+         */
+        private static String commentStrippedBody(String body) {
+            StringBuilder kept = new StringBuilder();
+            for (String line : body.split("\n", -1)) {
+                if (!isCommentLine(line)) {
+                    kept.append(line).append('\n');
+                }
+            }
+            return kept.toString();
+        }
+
+        /** True when the line matches {@code ^[ \t\f\x0B\r]*#} — a comment line grep -v would drop. */
+        private static boolean isCommentLine(String line) {
+            int i = 0;
+            while (i < line.length()) {
+                char c = line.charAt(i);
+                if (c == ' ' || c == '\t' || c == '\f' || c == '\u000B' || c == '\r') {
+                    i++;
+                    continue;
+                }
+                return c == '#';
+            }
+            return false;
+        }
+
+        /** {@code $(cat ...)} semantics: trailing newlines only, everything else significant. */
+        private static String stripTrailingNewlines(String value) {
+            int end = value.length();
+            while (end > 0 && value.charAt(end - 1) == '\n') {
+                end--;
+            }
+            return value.substring(0, end);
+        }
+
         /**
          * The packages a rooted Alpine userland cannot be without — the
          * package manager itself, the base layout, the trust-anchor keyring,
@@ -1129,32 +1460,101 @@ public final class UmlKernelAssets {
         /** Content retention cap: the stages need small text files only. */
         private static final long FILE_CONTENT_CAP = 8L * 1024 * 1024;
 
+        /** verify.sh's first-boot scripts — present and executable only of the {@link EntryForm#PREBAKE} form. */
+        private static final String BOOT_SCRIPT_INIT = "init-zero-install";
+        private static final String BOOT_SCRIPT_READY = "ready.sh";
+        /** Product first-boot residue — any entry type at these paths fails both forms. */
+        private static final String FIRSTBOOT_DONE_MARKER = "opt/orchestella/.firstboot-done";
+        private static final String PROVISION_STATE_FILE = "var/lib/orchestella/provision/state";
+        /** Per-instance identity files — the {@code -s} family: empty or absent passes. */
+        private static final String MACHINE_ID_PATH = "etc/machine-id";
+        private static final String RESOLV_CONF_PATH = "etc/resolv.conf";
+        /** Baked per-instance host keys fail both forms (any entry type under this prefix). */
+        private static final String SSH_HOST_KEY_PREFIX = "etc/ssh/ssh_host_";
+        /** The trust anchors — present and non-empty of both forms. */
+        private static final String CA_BUNDLE_PATH = "etc/ssl/certs/ca-certificates.crt";
+        /** The hostname the prebake form fixes (the official minirootfs ships {@code localhost}). */
+        private static final String PREBAKE_HOSTNAME = "orchestella";
+        /** Alpine apk queue/cache/lock/log paths — the verify.sh alpine branch. */
+        private static final String APK_CACHE_PREFIX = "var/cache/apk/";
+        private static final String APK_CACHE_DIR = "var/cache/apk";
+        private static final String APK_DB_LOCK = "lib/apk/db/lock";
+        private static final String APK_LOG = "var/log/apk.log";
+        /** Debian apt/dpkg queue/cache/lock paths — the verify.sh debian branch. */
+        private static final String DPKG_DB_DIR = "var/lib/dpkg";
+        private static final String APT_LISTS_PREFIX = "var/lib/apt/lists/";
+        private static final String APT_LISTS_DIR = "var/lib/apt/lists";
+        private static final String APT_ARCHIVE_PREFIX = "var/cache/apt/archives/";
+        private static final String DPKG_UPDATES_PREFIX = "var/lib/dpkg/updates/";
+        private static final String DPKG_UPDATES_DIR = "var/lib/dpkg/updates";
+        private static final List<String> DEBIAN_LOCKS = List.of(
+                "var/lib/dpkg/lock", "var/lib/dpkg/lock-frontend",
+                "var/lib/apt/lists/lock", "var/cache/apt/archives/lock");
+
+        /**
+         * verify.sh's package-manager invocation ERE, copied verbatim into
+         * Java (POSIX {@code [[:alnum:]_]} ≙ {@code [a-zA-Z0-9_]}, and
+         * {@code MULTILINE} gives {@code ^}/{@code $} grep's per-line
+         * anchors): a keyword must stand on its own — {@code apk.static},
+         * {@code apt-get}, {@code zypper} … — not inside a larger word.
+         */
+        private static final java.util.regex.Pattern PACKAGE_MANAGER_INVOCATION =
+                java.util.regex.Pattern.compile(
+                        "(^|[^a-zA-Z0-9_])(apk|apk\\.static|apt|apt-get|dpkg|pacman|yum|dnf"
+                                + "|zypper)([^a-zA-Z0-9_]|$)",
+                        java.util.regex.Pattern.MULTILINE);
+
+        /**
+         * verify.sh's network client/configuration ERE, copied verbatim into
+         * Java — note its right boundary is deliberately narrower than the
+         * package-manager one ({@code [[:space:]]|$}, not any non-word
+         * character): copied as-is, semantics included.
+         */
+        private static final java.util.regex.Pattern NETWORK_CLIENT_OR_CONFIG =
+                java.util.regex.Pattern.compile(
+                        "(^|[^a-zA-Z0-9_])(wget|curl|nc|ncat|ssh|scp|ping|dhclient|udhcpc"
+                                + "|ifconfig|route|netstat|ss|ip)([ \\t\\x0B\\f\\r\\n]|$)",
+                        java.util.regex.Pattern.MULTILINE);
+
         /**
          * What one pass over the (already gunzipped) tar stream recorded — the
          * pure input every content stage consumes. Nothing is written to disk
          * and nothing is executed; file contents beyond {@link
-         * #FILE_CONTENT_CAP} are walked but not retained.
+         * #FILE_CONTENT_CAP} are walked but not retained (their names still
+         * are — the first-boot stage judges over-cap entries structurally).
+         * Names are bounded by the archive's own byte size (each entry costs
+         * at least one 512-byte header).
          */
         private static final class TarSnapshot {
             final String parseError;
             final List<String> unsafeEntryNames;
             final Map<String, byte[]> fileContents;
             final Set<String> topLevelDirs;
+            /** Every walked entry's normalized name — the {@code -e} probe set (any entry type). */
+            final Set<String> entryNames;
+            /** Regular-file names, including those whose content was not retained (beyond the cap). */
+            final Set<String> regularFileNames;
+            /** Regular-file names carrying any execute bit — the {@code -x} probe set. */
+            final Set<String> executableFileNames;
             final int entryCount;
 
             TarSnapshot(String parseError, List<String> unsafeEntryNames,
                     Map<String, byte[]> fileContents, Set<String> topLevelDirs,
-                    int entryCount) {
+                    Set<String> entryNames, Set<String> regularFileNames,
+                    Set<String> executableFileNames, int entryCount) {
                 this.parseError = parseError;
                 this.unsafeEntryNames = List.copyOf(unsafeEntryNames);
                 this.fileContents = Map.copyOf(fileContents);
                 this.topLevelDirs = Set.copyOf(topLevelDirs);
+                this.entryNames = Set.copyOf(entryNames);
+                this.regularFileNames = Set.copyOf(regularFileNames);
+                this.executableFileNames = Set.copyOf(executableFileNames);
                 this.entryCount = entryCount;
             }
 
             static TarSnapshot unreadable(String reason) {
                 return new TarSnapshot("tar stream unreadable (" + reason + ")",
-                        List.of(), Map.of(), Set.of(), 0);
+                        List.of(), Map.of(), Set.of(), Set.of(), Set.of(), Set.of(), 0);
             }
 
             /**
@@ -1170,6 +1570,9 @@ public final class UmlKernelAssets {
                 List<String> unsafe = new ArrayList<>();
                 Map<String, byte[]> contents = new LinkedHashMap<>();
                 Set<String> topLevelDirs = new TreeSet<>();
+                Set<String> entryNames = new TreeSet<>();
+                Set<String> regularFileNames = new TreeSet<>();
+                Set<String> executableFileNames = new TreeSet<>();
                 int entryCount = 0;
                 String pendingLongName = null;
                 String pendingPaxPath = null;
@@ -1184,13 +1587,16 @@ public final class UmlKernelAssets {
                     long declaredChecksum = parseNumber(header, 148, 8);
                     if (declaredChecksum < 0 || headerChecksum(header) != declaredChecksum) {
                         return new TarSnapshot("tar header checksum mismatch", unsafe,
-                                contents, topLevelDirs, entryCount);
+                                contents, topLevelDirs, entryNames, regularFileNames,
+                                executableFileNames, entryCount);
                     }
                     long size = parseNumber(header, 124, 12);
                     if (size < 0) {
                         return new TarSnapshot("tar size field unreadable", unsafe,
-                                contents, topLevelDirs, entryCount);
+                                contents, topLevelDirs, entryNames, regularFileNames,
+                                executableFileNames, entryCount);
                     }
+                    long mode = parseNumber(header, 100, 8);
                     char type = (char) (header[156] & 0xFF);
                     String name = cString(header, 0, 100);
                     String prefix = cString(header, 345, 155);
@@ -1211,7 +1617,8 @@ public final class UmlKernelAssets {
                         case 'L': // GNU long name: the data is the next entry's name
                             if (size > 1024 * 1024) {
                                 return new TarSnapshot("tar long-name block absurd", unsafe,
-                                        contents, topLevelDirs, entryCount);
+                                        contents, topLevelDirs, entryNames, regularFileNames,
+                                        executableFileNames, entryCount);
                             }
                             pendingLongName = text(readExactly(tar, size));
                             skipFully(tar, padded - size);
@@ -1220,7 +1627,8 @@ public final class UmlKernelAssets {
                         case 'g':
                             if (size > 1024 * 1024) {
                                 return new TarSnapshot("tar pax block absurd", unsafe,
-                                        contents, topLevelDirs, entryCount);
+                                        contents, topLevelDirs, entryNames, regularFileNames,
+                                        executableFileNames, entryCount);
                             }
                             if (type == 'x') {
                                 pendingPaxPath = paxPathOverride(readExactly(tar, size));
@@ -1233,22 +1641,32 @@ public final class UmlKernelAssets {
                         case '1':
                         case '2':
                         default: // unknown-but-plausible types: walked, never executed
-                            recordEntry(effectiveName, type, size, tar, padded,
-                                    unsafe, contents, topLevelDirs);
+                            recordEntry(effectiveName, type, mode, size, tar, padded,
+                                    unsafe, contents, topLevelDirs,
+                                    entryNames, regularFileNames, executableFileNames);
                             entryCount++;
                             break;
                     }
                 }
-                return new TarSnapshot(null, unsafe, contents, topLevelDirs, entryCount);
+                return new TarSnapshot(null, unsafe, contents, topLevelDirs,
+                        entryNames, regularFileNames, executableFileNames, entryCount);
             }
 
-            private static void recordEntry(String effectiveName, char type, long size,
+            private static void recordEntry(String effectiveName, char type, long mode, long size,
                     InputStream tar, long padded, List<String> unsafe,
-                    Map<String, byte[]> contents, Set<String> topLevelDirs) throws IOException {
+                    Map<String, byte[]> contents, Set<String> topLevelDirs,
+                    Set<String> entryNames, Set<String> regularFileNames,
+                    Set<String> executableFileNames) throws IOException {
                 String normalized = normalize(effectiveName);
-                if (normalized == null) {
+                if (normalized == null || normalized.equals("/")) {
                     skipFully(tar, padded);
-                    return; // the archive root itself ("./")
+                    return; // the archive root itself ("./" or "/")
+                }
+                // Directories travel with a trailing slash ("etc/ssh/"); the
+                // entry-name set is the stages' -e probe set and must key on
+                // the canonical slash-less spelling.
+                while (normalized.endsWith("/")) {
+                    normalized = normalized.substring(0, normalized.length() - 1);
                 }
                 int firstSlash = normalized.indexOf('/');
                 String top = firstSlash < 0 ? normalized : normalized.substring(0, firstSlash);
@@ -1258,7 +1676,12 @@ public final class UmlKernelAssets {
                 if (type == '5') {
                     topLevelDirs.add(top);
                 }
+                entryNames.add(normalized);
                 if (type == '0' || type == '\0') {
+                    regularFileNames.add(normalized);
+                    if (mode >= 0 && (mode & 0111) != 0) {
+                        executableFileNames.add(normalized); // verify.sh's -x: any execute bit
+                    }
                     if (size <= FILE_CONTENT_CAP) {
                         contents.put(normalized, readExactly(tar, size));
                         skipFully(tar, padded - size);
