@@ -191,13 +191,14 @@ Lane A 交付（`feat/uml-adbshell-channel`）：sepolicy 一手判定 GO（tag 
 | U3 12-case vector-net / mconsole | **done**（§4.5 adb-shell 通道实测 PASS） |
 | 16KB 宿主 | not-tested（device-b 4K 页） |
 | payload manifest 两处 pin 过期（QEMU 线） | open（下轮 QEMU 收口回写） |
-| rootfs tar 官方 sizeBytes / 下载 URL 存活复核 | open（P1 未决，ACR 通过后补） |
+| rootfs tar 官方 sizeBytes / URL 存活 | **closed**（官方 pin 三方锁定：6bf49190… / 3,981,043 B / GPG 核验；四 URL 存活表在管线文档） |
 | stub_exe 许可归属 | open（R2 §6，待裁定） |
+| FIRST_BOOT 动态口径（真机首启后落盘树） | **静态口径 done；动态证据已采集**（真机首启 exit 0、apk db md5 前后一致、零 part/lock/marker，仓库外 firstboot-snapshot/）——动态验证自动化未排期 |
 | O1 linux-fast 跨路径 sha | **closed**（§4.5 定界：内嵌 initramfs 段，布局敏感，源码零漂移） |
 
 ## 8. 收口与交付
 
-- **集成**：R1/R2（`10851948`）+ P1（`9cf26e60`）+ P2（`6a429677`）+ docs（`98142f6e`）+ 续轮三车道（Lane B `ab3ef9f0` manifest 回写 / Lane C `b8d20f5e` L2/L3 / Lane A `d6298ad8` adb-shell 通道）全入 main；敏感门全程 OK；测试 **1494 全绿**（1468 + Lane C 26）、lint 0 error。
+- **集成**：R1/R2（`10851948`）+ P1/P2 + 续轮五车道（Lane B manifest 回写 / Lane C L2/L3 / Lane A adb-shell 通道 / Lane D transport 接线 `6c36d6f6` / Lane E FIRST_BOOT `d3709e35`）全入 main；敏感门全程 OK；测试 **1526 全绿**（集成适配 2 处：fixture 补 CA bundle、plannedStages 断言随语义切换）、lint 0 error。
 - **ACR 证据包**：`.scratch/uml-productization-20261112/acr/acr-draft.md`（待投票：D1–D5；续轮已刷新——U3 12/12、L3 四阶段、官方 pin 三方锁定）。
 - **纪律确认**：三 flag（bundledFastProfile/rootfsDownload/fastProfile）默认 false，flag off 零行为由测试逐字节锁死；UML 面默认 0 宽度未变；设备序列号/截图/console 未入任何 commit。
 
