@@ -26,14 +26,14 @@
 
 ### 1.2 高价值产物 sha 对账（开工即验，全部一致）
 
-| 产物 | pin 前缀 | 实测 | 判定 |
+| 产物 | pin 前缀 | 实测（前缀） | 判定 |
 | --- | --- | --- | --- |
-| arm64-up/linux-fast | `572c3433…` | `572c343314aea1a6…` | ✓ |
-| arm64-smp/linux-fast | `096e29a0…` | `096e29a05679ea0d…` | ✓ |
-| linux-fast-noinitrd | `a5efce2b…` | `a5efce2b9197071a…` | ✓ |
-| stub_exe | `87666f91…` | `87666f9167de09d0…` | ✓ |
-| alpine tar.gz | `ab254365…` | `ab25436566500b1e…` | ✓ |
-| alpine ext4 | `b2683da2…` | `b2683da2883f5926…` | ✓ |
+| arm64-up/linux-fast | `572c3433…` | 同 pin | ✓ |
+| arm64-smp/linux-fast | `096e29a0…` | 同 pin | ✓ |
+| linux-fast-noinitrd | `a5efce2b…` | 同 pin | ✓ |
+| stub_exe | `87666f91…` | 同 pin | ✓ |
+| alpine tar.gz | `ab254365…` | 同 pin | ✓ |
+| alpine ext4 | `b2683da2…` | 同 pin | ✓ |
 | busybox aarch64 / x86_64 | `ee469aee…` / `488ad6ef…` | 一致 | ✓ |
 
 ### 1.3 payload manifest 诚实记录（新发现，非阻断）
@@ -86,8 +86,8 @@
 ### 3.4 本轮新血泪（自动化避坑清单）
 
 1. **QA 通道构建 task 是 `assembleDebug`**：`applicationIdSuffix` 只挂在 debug buildType；`assembleRelease + buildChannel=qa` 产出的是干净主包（versionName 无后缀、包名无 .qa.*），静默违反隔离纪律。判别法：APK versionName 必须含 `-qa.<purpose>.<sha>`。
-2. **Windows 原生 adb 不认 MSYS 路径**：`/d/t/...` 报 cannot stat，必须 `D:/t/...` 风格（相对路径可用）。
-3. **adb shell + stdin 重定向挂起**：旧版 adb（本机 C:\WINDOWS\adb 1.0.32）`adb shell "run-as … cat > f" < file` 永久挂起。改 base64 内联：本地 `base64 -w0` → `echo <b64> | base64 -d > f`。
+2. **Windows 原生 adb 不认 MSYS 路径**：MSYS 风格绝对路径报 cannot stat，必须 `盘符:/t/...` 风格（相对路径可用）。
+3. **adb shell + stdin 重定向挂起**：系统自带旧版 adb（1.0.32）`adb shell "run-as … cat > f" < file` 永久挂起。改 base64 内联：本地 `base64 -w0` → `echo <b64> | base64 -d > f`。
 4. **runner config 的 `kernel` 字段不走 `${nativeLibDir}` 占位符**：expand() 只作用于 `args` 数组元素。kernel/rootfs 需写实测绝对路径；nativeLibraryDir 从 `pm path` 推导，**dirname 只需一层**（`/data/app/~~A==/B==/base.apk` → lib 目录在 `~~A==/B==/lib/arm64`）。
 5. **POST_NOTIFICATIONS 权限框形成 task 幽灵（新坑，matrix 自动化必踩）**：首次 am start 触发 runner 的 `requestPermissions`，`GrantPermissionsActivity` 常驻同 task 顶部（RESUMED），后续一切 `am start`（含 `-S`）被 "delivered to top-most instance" 吞掉、onCreate 永不重跑。解法三连：`pm grant <pkg> android.permission.POST_NOTIFICATIONS` + BACK 关框 + **`am start -S --activity-clear-task`**。矩阵脚本必须先 grant 再 start。
 
