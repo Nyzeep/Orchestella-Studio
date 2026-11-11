@@ -147,6 +147,36 @@ val acceleratorLaneEnabled: Boolean = providers.gradleProperty("orchestella.acce
     ?.let { it == "true" || it == "1" }
     ?: true
 
+// UML payload productization round (ACR-pending, both routes default OFF).
+// 方案 A bundles the U1 fast-profile artifacts into the git-ignored payload
+// paths at build time; 方案 B opens the flag gate in front of the (still
+// unwired) rootfs download entry. Off by default means zero behavior change:
+// no staging task runs, no extra BuildConfig behavior, the UML face keeps its
+// width-0 shape. Flags are gradle properties only — no runtime
+// SharedPreferences anywhere in this round.
+val umlBundledFastProfile: Boolean = providers.gradleProperty("orchestella.uml.bundledFastProfile")
+    .orNull
+    ?.trim()
+    ?.lowercase()
+    ?.let { it == "true" || it == "1" }
+    ?: false
+val umlRootfsDownload: Boolean = providers.gradleProperty("orchestella.uml.rootfsDownload")
+    .orNull
+    ?.trim()
+    ?.lowercase()
+    ?.let { it == "true" || it == "1" }
+    ?: false
+val umlFastProfileDir: String? = providers.gradleProperty("orchestella.uml.fastProfileDir")
+    .orNull
+    ?.trim()
+    ?.ifEmpty { null }
+if (umlBundledFastProfile) {
+    require(!umlFastProfileDir.isNullOrEmpty()) {
+        "orchestella.uml.bundledFastProfile=true requires -Porchestella.uml.fastProfileDir=<dir with the U1 artifacts (linux-fast, stub_exe)>"
+    }
+}
+// No cross-constraint: the two routes are independent and may combine.
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -182,6 +212,11 @@ android {
         versionName = "0.6.3"
         buildConfigField("boolean", "DEVELOPMENT_PREVIEW", "true")
         buildConfigField("boolean", "ACCELERATOR_LANE_ENABLED", acceleratorLaneEnabled.toString())
+        // UML payload routes (default off, ACR-pending): the wiring owner passes
+        // these into UmlKernelAssets.verifyBundledFastProfile / the RootfsDownload
+        // gate; off answers a disabled report / closed gate with zero side effects.
+        buildConfigField("boolean", "UML_BUNDLED_FAST_PROFILE", umlBundledFastProfile.toString())
+        buildConfigField("boolean", "UML_ROOTFS_DOWNLOAD_ENABLED", umlRootfsDownload.toString())
         // Payload builds store native libraries uncompressed and 16 KB aligned
         // for the AVF loader; all other channels keep the extracted layout.
         manifestPlaceholders["orcExtractNativeLibs"] =
@@ -734,6 +769,134 @@ val verifyRuntimeAssets = tasks.register("verifyRuntimeAssets") {
                 "match app/src/main/assets/runtime-artifacts-v1.sha256."
         )
     }
+}
+
+// UML payload productization, 方案 A skeleton (default OFF, ACR-pending): stage
+// the U1 fast-profile artifacts into the git-ignored payload paths with sha
+// accounting — the same fail-the-build-not-the-first-boot philosophy as
+// verifyRuntimeAssets above. The pins are parsed from the PIN_MANIFEST constant
+// in UmlKernelAssets.java, so the build-time accounting and the runtime
+// verification read one single pin source. Artifacts land in:
+//   src/main/jniLibs/arm64-v8a/libuml_kernel.so   <- linux-fast (git-ignored)
+//   src/main/jniLibs/arm64-v8a/libuml_stub.so     <- stub_exe   (git-ignored)
+//   src/main/resources/alpine-minirootfs-3.22.2-aarch64.tar.gz (git-ignored, optional)
+// and the accounting manifest is written to src/main/assets/uml-fast-profile-v1.sha256
+// (git-ignored build product; packaged names, so the runtime can consume it).
+// Nothing runs when orchestella.uml.bundledFastProfile is off (the default).
+val stageUmlFastProfile = tasks.register("stageUmlFastProfile") {
+    group = "verification"
+    description = "Stages U1 fast-profile artifacts into the git-ignored payload paths with sha accounting."
+    onlyIf { umlBundledFastProfile }
+    doLast {
+        val repoRoot = projectDir
+        val relative: (File) -> String = { it.relativeToOrSelf(repoRoot).invariantSeparatorsPath }
+        fun sha256Of(file: File): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+            file.inputStream().use { input ->
+                val buffer = ByteArray(1 shl 16)
+                var read = input.read(buffer)
+                while (read != -1) {
+                    digest.update(buffer, 0, read)
+                    read = input.read(buffer)
+                }
+            }
+            return digest.digest().joinToString("") { "%02x".format(it) }
+        }
+
+        // Single pin source: the PIN_MANIFEST constant lines inside
+        // UmlKernelAssets.java ("<64-hex>␠␠<name>" string literals).
+        val kernelAssetsSource = file(
+            "src/main/java/io/github/nyzeep/orchestella/UmlKernelAssets.java")
+        val pinPattern = Regex("\"([0-9a-f]{64})  ([A-Za-z0-9._\\-]+)\"")
+        val pins = linkedMapOf<String, String>()
+        kernelAssetsSource.readLines().forEach { line ->
+            pinPattern.find(line)?.let { pins[it.groupValues[2]] = it.groupValues[1] }
+        }
+        require(pins.containsKey("linux-fast") && pins.containsKey("stub_exe")) {
+            "stageUmlFastProfile: could not parse the fast-profile pins from " +
+                "UmlKernelAssets.java PIN_MANIFEST — the constant format must have drifted."
+        }
+
+        val profileRoot = rootProject.file(umlFastProfileDir!!)
+        if (!profileRoot.isDirectory) {
+            throw GradleException(
+                "stageUmlFastProfile: orchestella.uml.fastProfileDir is not an existing directory: " +
+                    relative(profileRoot)
+            )
+        }
+
+        // artifact name -> (staged payload path); the rootfs tar is optional.
+        val staged = linkedMapOf(
+            "linux-fast" to file("src/main/jniLibs/arm64-v8a/libuml_kernel.so"),
+            "stub_exe" to file("src/main/jniLibs/arm64-v8a/libuml_stub.so")
+        )
+        val optionalStaged = linkedMapOf(
+            "alpine-minirootfs-3.22.2-aarch64.tar.gz" to
+                file("src/main/resources/alpine-minirootfs-3.22.2-aarch64.tar.gz")
+        )
+
+        val problems = mutableListOf<String>()
+        staged.forEach { (artifact, target) ->
+            val source = File(profileRoot, artifact)
+            if (!source.isFile) {
+                problems += "  - missing artifact: $artifact (${relative(source)})"
+                return@forEach
+            }
+            target.parentFile.mkdirs()
+            source.copyTo(target, overwrite = true)
+            val actual = sha256Of(target)
+            val expected = pins[artifact]
+            if (expected == null || !actual.equals(expected, ignoreCase = true)) {
+                problems += "  - sha256 mismatch: $artifact expected=$expected actual=$actual"
+            }
+        }
+        optionalStaged.forEach { (artifact, target) ->
+            val source = File(profileRoot, artifact)
+            if (source.isFile) {
+                source.copyTo(target, overwrite = true)
+                val actual = sha256Of(target)
+                val expected = pins[artifact]
+                if (expected == null || !actual.equals(expected, ignoreCase = true)) {
+                    problems += "  - sha256 mismatch: $artifact expected=$expected actual=$actual"
+                }
+            }
+        }
+
+        if (problems.isNotEmpty()) {
+            problems.forEach { logger.error("stageUmlFastProfile: $it") }
+            throw GradleException(
+                "The U1 fast-profile staging failed sha accounting.\n" +
+                    problems.joinToString("\n") +
+                    "\nProvide the pinned artifacts (research/uml-fastboot/manifest.md §3) in " +
+                    "orchestella.uml.fastProfileDir, or rerun without " +
+                    "-Porchestella.uml.bundledFastProfile=true."
+            )
+        }
+
+        // Accounting manifest: packaged names, so the runtime's manifest parser
+        // can consume the same file P2 wires through PackagedAssetStreams.
+        val accounting = file("src/main/assets/uml-fast-profile-v1.sha256")
+        accounting.parentFile.mkdirs()
+        accounting.writeText(
+            (staged + optionalStaged.filterKeys { File(profileRoot, it).isFile })
+                .entries.joinToString("") { (artifact, target) ->
+                    val packagedName = when (artifact) {
+                        "linux-fast" -> "libuml_kernel.so"
+                        "stub_exe" -> "libuml_stub.so"
+                        else -> artifact
+                    }
+                    pins[artifact] + "  " + packagedName + "\n"
+                }
+        )
+        logger.lifecycle(
+            "stageUmlFastProfile: staged ${staged.size + optionalStaged.count { File(profileRoot, it.key).isFile }} " +
+                "fast-profile artifacts with matching pins; accounting manifest at " +
+                relative(accounting) + "."
+        )
+    }
+}
+if (umlBundledFastProfile) {
+    tasks.named("preBuild") { dependsOn(stageUmlFastProfile) }
 }
 
 tasks.register<Copy>("packageOrchestellaRelease") {
