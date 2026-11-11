@@ -61,38 +61,50 @@
 | **QEMU** | 软件翻译执行（TCG），完整内核 | **可用** — 上述功能的主体 |
 | **proot / bare** | 宿主原生指令 + `ptrace` 系统调用改写，无 guest 内核 | **条件可用** — 仅 28 域 QA 通道 |
 | **pVM** | Microdroid 跑在 EL2 硬件 vCPU（保护型） | **条件可用** — 依赖设备注册 `virtualizationservice`（扩展包承载 payload） |
-| **UML** | 真实内核以普通进程运行 | **研究线 · 零设备阶段完成** — fast profile 真机启动全 PASS，待 ACR 决策后产品化（详见下文「UML 研究线现状」） |
+| **UML** | 真实内核以普通进程运行 | **研究线 · 双真机验证完成，产品化待 ACR 投票** — 双设备启动/12-case seccomp 矩阵/长驻全 PASS，payload 管线骨架已入 main（默认关）（详见下文「UML 研究线现状」） |
 
 所有性能数字与状态标注的判定依据见
 [四车道决策材料（ACR 草案）](docs/research/ACR-draft-four-lanes-20261029.md)；
 仓库里取不到数的一律写「未验证」，不做估算。
 
-### UML 研究线现状（2026-11-11）
+### UML 研究线现状（2026-11-12）
 
 UML（User Mode Linux）车道在 2026-11-07 起的零设备开发线上完成了六个工作包
 （U0 启动时间线 / U1 fast-boot profile / U2 预烘焙 rootfs / U3 seccomp 兼容矩阵 /
-U4 warm-start 评估 / U6 多实例基准），并已在真机（Android 16，4KB 宿主页）完成
-ARM64 启动验证：
+U4 warm-start 评估 / U6 多实例基准），并已在**两台真机**（Android 16 / API 36 /
+内核 6.6 与 Android 15 / API 35 / 内核 5.10，均 4KB 宿主页）完成 ARM64 启动验证：
 
-- **启动性能**：fast profile（最小内核 + 内置 initramfs）单核 330 ms / SMP 4 核
-  410 ms 到达 first command（guest uptime 口径，n≥5，全程 `exit 0`）；
-  Alpine 3.22 预烘焙 rootfs 经 hostfs 与 ext4 双通道均为 350 ms 级到 `READY`。
-- **App 域兼容**：36 域内 `seccomp=on` 落真 SECCOMP 快路径（非 ptrace 回退），
-  启动矩阵全程零 SIGSYS；内核 ELF 按 16 KB 对齐构建。
+- **双设备启动矩阵**：fast profile（最小内核 + 内置 initramfs）UP 250–330 ms /
+  SMP 4 核 300–410 ms 到达 first command（guest uptime 口径，n≥5，全程 `exit 0`）；
+  Alpine 3.22 预烘焙 rootfs 经 hostfs 与 ext4 双通道 350–360 ms 级到 `READY`。
+- **App 域兼容（跨内核代次）**：两个 SELinux 域（API 35 与 36）内 `seccomp=on`
+  均落真 SECCOMP 快路径（非 ptrace 回退），启动矩阵全程零 SIGSYS；
+  内核 ELF 按 16 KB 对齐构建。
 - **多实例与长驻**：2 实例并存（SECCOMP 互不干扰，边际 RSS ≈ 18 MB/实例）；
-  前台服务 + wake lock 长驻 60 分钟冻结计数为 0、内核 RSS 零漂移，kill 后恢复正常。
+  前台服务 + wake lock 长驻 60 分钟冻结计数为 0、内核 RSS 零漂移，kill 后恢复正常
+  （双设备复刻）。
+- **seccomp 12-case 能力矩阵**：API 35 profile 下 10/12 实测 PASS（hostfs/ext4
+  双通道 boot、SMP ncpus=2/4、sigchld、clone、mount、personality、setrlimit、
+  seccomp-fastpath 双 marker），2 case（vector-net/mconsole）受 runner 通道结构性
+  限制转 adb-shell 通道，0 反例。
 - **构建确定性**：内核 / rootfs / initramfs 产物在 pin 一致时逐字节复现，
-  全部输入 sha256 pin 入 manifest。
+  全部输入 sha256 pin 入 manifest；pinned 布局跨路径重建的 sha 差异已定界于
+  内嵌 initramfs 段（源码/配置零漂移）。
+- **产品化骨架已入 main（默认全关）**：UML payload 管线（内置/下载双方案 +
+  sha 记账 + 三层校验链）与 fast-profile 启动形态已实现并过独立审查，三个
+  gradle flag 默认 false，flag off 时行为逐字节不变（测试锁定）。
 - **warm-start 判词**：checkpoint/restore 与 hibernation 均 NO-GO（上游无机制 +
   CRIU 不支持 UML），预热点池为 CONDITIONAL GO（每实例常驻成本 ≈ 22 MB）。
 - **尚未验证**（诚实边界）：fast profile 只承诺 T3 shell——无 systemd / 网络 /
-  包管理器（产品化走 U2 预烘焙 rootfs 路径）；16 KB 宿主、systemd、seccomp 全量
-  12-case 能力矩阵、多设备样本未测。
+  包管理器（产品化走 U2 预烘焙 rootfs 路径）；16 KB 宿主、systemd、
+  vector-net/mconsole 两 case（adb-shell 通道）未测。
 
-下一步是 ACR 决策：通过后进入 payload 管线与产品装配链集成（当前产品内 UML 车道
-仍为 0 宽度默认关闭），再评估受控内测。研究明细见
-[零设备方向 spec](docs/research/2026-11-10-proot-vs-uml-zero-device-direction.zh-CN.md)
-与 [ARM64 设备窗报告](docs/research/2026-11-11-uml-arm64-device-window-wave2.zh-CN.md)。
+下一步是 ACR 投票（双方案对比 + 合规清单已定稿，见
+`.scratch/uml-productization-20261112/acr/acr-draft.md`）：通过后按已入 main 的
+payload 管线骨架接线（当前产品内 UML 车道仍为 0 宽度默认关闭），再评估受控内测。
+研究明细见 [零设备方向 spec](docs/research/2026-11-10-proot-vs-uml-zero-device-direction.zh-CN.md)、
+[ARM64 设备窗报告](docs/research/2026-11-11-uml-arm64-device-window-wave2.zh-CN.md)
+与 [UML 产品化轮报告](docs/research/2026-11-12-uml-productization-round.zh-CN.md)。
 
 ### 双包形态（0.6.0 起）
 
@@ -168,8 +180,9 @@ cd Orchestella-Studio
 - **proot 车道只在 28 域 QA 包**：36 域只允许执行 `nativeLibraryDir` 下的 `.so`。
 - **真实 AVF guest 成功样本为 0**：当前测试设备声明 AVF 能力但未注册
   `virtualizationservice`。
-- **UML 未接入产品**：fast profile 已真机验证启动（见「UML 研究线现状」），
-  但产品装配链尚未集成；full profile（systemd / 网络 / Docker / SMP）未验证。
+- **UML 未接入产品**：fast profile 已双真机验证启动与 12-case seccomp 矩阵
+  （见「UML 研究线现状」），payload 管线骨架已入 main 但三 flag 默认关、
+  装配链待 ACR 投票后接线；full profile（systemd / 网络 / Docker）未验证。
 - **16 KB 页**：真机执行未测。
 - **签名**：仓库不含密钥；0.6.0 的发布证书指纹在 Release 页记录后才算数。
 
