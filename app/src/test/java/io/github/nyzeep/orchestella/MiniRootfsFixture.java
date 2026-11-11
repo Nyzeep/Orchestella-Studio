@@ -78,6 +78,8 @@ final class MiniRootfsFixture {
         }
         entries.add(new Spec("./etc/alpine-release", '0', VERSION + "\n"));
         entries.add(new Spec("./etc/hostname", '0', HOSTNAME + "\n"));
+        // The official tarball ships a non-empty CA bundle; FIRST_BOOT demands it.
+        entries.add(new Spec("./etc/ssl/certs/ca-certificates.crt", '0', "fixture-ca-bundle\n"));
         entries.add(new Spec("./lib/apk/db/installed", '0', INSTALLED_DB));
         entries.add(new Spec("./usr/bin/binary-helper", '0', "fixture-elf-bytes"));
         entries.add(new Spec("./bin/sh", '2', "/bin/busybox"));

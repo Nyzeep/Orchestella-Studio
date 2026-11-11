@@ -218,7 +218,8 @@ public final class RootfsTransportContractTest {
                     .findFirst().orElseThrow().state();
             assertTrue(stage + " must not fail", state != StageState.FAIL);
         }
-        assertEquals(List.of(SelfCheckStage.FIRST_BOOT_CLEANLINESS), report.plannedStages());
+        // Lane E moved FIRST_BOOT_CLEANLINESS from PLANNED to implemented: no stage plans anymore.
+        assertEquals(List.of(), report.plannedStages());
         assertTrue(report.describe().isEmpty());
 
         // Publish consumed the staging: only the formal name remains.
