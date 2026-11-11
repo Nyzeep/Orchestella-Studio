@@ -1,5 +1,6 @@
 package io.github.nyzeep.orchestella;
 
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -13,6 +14,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * C lane (UML acceleration round): the UML kernel assets' placement and
@@ -377,6 +380,19 @@ public final class UmlKernelAssets {
         /** The Alpine minirootfs tar — the rootfs entry both delivery routes consume. */
         public static final String ROOTFS_TAR = "alpine-minirootfs-3.22.2-aarch64.tar.gz";
 
+        /**
+         * The rootfs tar's official byte count, locked first-hand on 2026-11-12
+         * against the release CDN (dl-cdn.alpinelinux.org, v3.22 aarch64
+         * directory): the HEAD {@code Content-Length} and the byte count of a
+         * full download both read 3,981,043, and the downloaded bytes hash to
+         * the {@link #PIN_MANIFEST} rootfs pin (the official {@code .sha256}
+         * sidecar agrees). This closes the research manifest's open item — the
+         * manifest pinned the digest but recorded no size — with the distro's
+         * own number, never a guessed one. The x86_64 point release and the
+         * other v3.22 point releases are different artifacts and stay unpinned.
+         */
+        public static final long ROOTFS_TAR_SIZE_BYTES = 3_981_043L;
+
         /** The kernel variant the bundled route stages when the wiring owner does not choose one. */
         public static final String DEFAULT_KERNEL = KERNEL;
 
@@ -421,10 +437,12 @@ public final class UmlKernelAssets {
         }
 
         /**
-         * The whole family in fixed registry order, with the research sizes
-         * (bytes). The rootfs tar's size is {@code null} on purpose: the
-         * research manifest pinned its digest but no byte count, and an
-         * unpinned size must read as unpinned — never as a guessed number.
+         * The whole family in fixed registry order, with the byte counts. The
+         * four build products carry the research manifest's sizes; the rootfs
+         * tar carries the officially locked CDN size ({@link
+         * #ROOTFS_TAR_SIZE_BYTES}) — the research manifest pinned only its
+         * digest, and the missing number came from the release CDN itself
+         * rather than a guess.
          */
         public static List<PinnedArtifact> artifacts() {
             return List.of(
@@ -432,7 +450,7 @@ public final class UmlKernelAssets {
                     new PinnedArtifact(KERNEL_NOINITRD, PINS.get(KERNEL_NOINITRD), 8_862_400L),
                     new PinnedArtifact(STUB, PINS.get(STUB), 2_056L),
                     new PinnedArtifact(INITRAMFS, PINS.get(INITRAMFS), 661_899L),
-                    new PinnedArtifact(ROOTFS_TAR, PINS.get(ROOTFS_TAR), null));
+                    new PinnedArtifact(ROOTFS_TAR, PINS.get(ROOTFS_TAR), ROOTFS_TAR_SIZE_BYTES));
         }
 
         /**
@@ -548,9 +566,9 @@ public final class UmlKernelAssets {
     }
 
     /**
-     * The 方案 B (downloaded rootfs) skeleton: the pinned entry plus the
-     * verification chain in the distro-catalog paradigm — the download
-     * transport itself stays flag-gated and unwired until the ACR lands it.
+     * The 方案 B (downloaded rootfs) verification chain in the distro-catalog
+     * paradigm — the download transport itself stays flag-gated and unwired
+     * until the ACR lands it.
      *
      * <p><b>The three layers, and where each lives.</b> L1 transport
      * integrity (HTTPS-only fixed source, byte-count parity, {@code .part}
@@ -559,11 +577,17 @@ public final class UmlKernelAssets {
      * the declared size must match the pinned size when one is pinned, and
      * the streamed SHA-256 must match the pin. L2 identity is the pin compare
      * itself — constant-time, fail-closed, no mirror failover on a mismatch
-     * (the catalog's "candidates must be byte-identical" rule). L3 content
-     * self-check is the verify.sh-calibrated stage plan ({@link #selfCheckPlan()}):
-     * declared and ordered here, implemented on the expanded tree by the
-     * follow-up round — a skeleton that pretended to pass L3 would be exactly
-     * the dishonesty this class exists to prevent.
+     * (the catalog's "candidates must be byte-identical" rule); the pin and
+     * size are the officially locked ones (2026-11-12 first-hand: the CDN's
+     * own {@code .sha256} sidecar, a full download hashed, and a good ncopa
+     * GPG signature all agree — see the download-pipeline research note).
+     * L3 content self-check is the verify.sh-calibrated five-stage pipeline
+     * ({@link #selfCheckPlan()}), implemented as pure-JVM static analysis over
+     * the received tar stream: identity fields, artifact digests, package
+     * database, top-level structure — with {@link SelfCheckStage#FIRST_BOOT_CLEANLINESS}
+     * honestly {@link StageState#PLANNED} (it needs real-device first-boot
+     * data; a stage that cannot run must not pretend it passed). {@link
+     * #requireVerifiedAndSelfChecked} chains L1/L2/L3 fail-closed in one call.
      */
     public static final class RootfsDownload {
 
@@ -637,12 +661,21 @@ public final class UmlKernelAssets {
                 }
             }
 
-            /** The production entry: the pinned Alpine minirootfs tar (size deliberately unpinned). */
+            /**
+             * The production entry: the pinned Alpine minirootfs tar, with the
+             * officially locked CDN byte count ({@link FastProfile#ROOTFS_TAR_SIZE_BYTES})
+             * — first-hand verified on 2026-11-12 (HEAD Content-Length and a
+             * full download agree; the bytes also hash to the pin and carry a
+             * good ncopa GPG signature, see the download-pipeline research
+             * note). A pinned size makes the L1 byte gate exact instead of
+             * digest-only.
+             */
             public static Entry alpineMinirootfsAarch64() {
                 return new Entry(
                         ENTRY_ID, ENTRY_VERSION, ENTRY_ARCHITECTURE,
                         URI.create(ROOTFS_TAR_URL), FastProfile.ROOTFS_TAR,
-                        FastProfile.pins().get(FastProfile.ROOTFS_TAR), null);
+                        FastProfile.pins().get(FastProfile.ROOTFS_TAR),
+                        FastProfile.ROOTFS_TAR_SIZE_BYTES);
             }
         }
 
@@ -654,6 +687,12 @@ public final class UmlKernelAssets {
 
             RootfsRejectionException(String reason) {
                 super(reason);
+                this.reason = reason;
+            }
+
+            /** Same stable reason code, with non-secret detail riding the message. */
+            RootfsRejectionException(String reason, String detail) {
+                super(detail == null || detail.isEmpty() ? reason : reason + ": " + detail);
                 this.reason = reason;
             }
 
@@ -721,9 +760,8 @@ public final class UmlKernelAssets {
         /**
          * The L3 content self-check plan, in verify.sh's calibration order:
          * manifest structure → artifact digests → package database parity →
-         * whole-tree digest → first-boot cleanliness. Declared here so the
-         * chain's shape is locked before any stage is implemented; the
-         * follow-up round implements the stages on the expanded tree.
+         * tree structure → first-boot cleanliness. {@link #selfCheck}
+         * evaluates exactly this plan, in this order.
          */
         public static List<SelfCheckStage> selfCheckPlan() {
             return List.of(SelfCheckStage.values());
@@ -731,16 +769,656 @@ public final class UmlKernelAssets {
 
         /** The L3 stages, in fail-closed evaluation order. */
         public enum SelfCheckStage {
-            /** The rootfs manifest's structure and fields are legal. */
+            /**
+             * The archive's identity fields parse and match the entry's
+             * declaration ({@code etc/alpine-release} against the pinned
+             * version, {@code etc/hostname} present), and the archive is
+             * structurally sane (parses, no path-traversal entries). The
+             * verify.sh stage-① analogue; the "manifest" it reads is the
+             * download entry plus the tarball's own identity files.
+             */
             MANIFEST_FIELDS,
-            /** Every artifact's sha256/size matches the manifest. */
+            /**
+             * The received artifact's SHA-256 and byte count match the entry's
+             * pins — the verify.sh stage-② analogue, re-verifying over the
+             * exact bytes this stage was handed (constant-time compare), so a
+             * caller cannot pass L2 on one byte sequence and L3 on another.
+             */
             ARTIFACT_DIGESTS,
-            /** The package database matches the manifest's package set. */
+            /**
+             * {@code lib/apk/db/installed} parses statically and carries the
+             * required packages — the verify.sh stage-⑤ analogue narrowed to
+             * what a static read can prove. The apk database grammar only
+             * ({@code P:}/{@code V:} stanzas on blank-line separators, the same
+             * shape verify.sh's parser reads); apk itself is never executed.
+             */
             PACKAGE_DATABASE,
-            /** The normalized whole-tree digest matches the manifest. */
+            /**
+             * The archive's top-level directory structure is complete (the FHS
+             * directories the official tarball ships, each as an explicit
+             * directory entry) — the download-side analogue of verify.sh's
+             * whole-tree digest, honest about the narrowing: a byte-exact
+             * whole-tree digest needs the expanded tree and stays with the
+             * prebake route's verify.sh; a tar stream can prove structure, not
+             * every file's content.
+             */
             TREE_DIGEST,
-            /** First-boot cleanliness: no package-manager state, no host keys, empty machine-id. */
+            /**
+             * First-boot cleanliness: no package-manager queue/cache/lock, no
+             * baked host keys, empty machine-id/resolv.conf. <b>Declared, not
+             * implemented</b> — these are properties of the expanded tree on a
+             * real device's first boot, which no static read of the tarball
+             * can prove (the official minirootfs ships none of that state to
+             * begin with; it is produced — or avoided — at first boot). The
+             * stage answers {@link StageState#PLANNED} until a device window
+             * supplies the first-boot data the verify.sh port needs; it never
+             * masquerades as a pass.
+             */
             FIRST_BOOT_CLEANLINESS
+        }
+
+        /** Fixed per-stage answers: implemented stages answer PASS/FAIL, declared-only stages PLANNED. */
+        public enum StageState {
+            /** The stage's checks ran and all passed. */
+            PASS,
+            /** The stage's checks ran and found a defect (fail-closed). */
+            FAIL,
+            /**
+             * The stage is declared by the plan but not yet implementable from
+             * the inputs this pipeline receives — it never counts as a pass
+             * and never fails the chain by itself.
+             */
+            PLANNED
+        }
+
+        /** One stage's L3 answer: the fixed state plus a non-secret detail. */
+        public record StageResult(SelfCheckStage stage, StageState state, String detail) {
+            public StageResult {
+                Objects.requireNonNull(stage, "stage");
+                Objects.requireNonNull(state, "state");
+                Objects.requireNonNull(detail, "detail");
+            }
+        }
+
+        /**
+         * The whole L3 answer, stages in {@link #selfCheckPlan()} order.
+         * {@link #failed()} is the fail-closed gate; {@link #plannedStages()}
+         * keeps what is still declared-only honestly visible.
+         */
+        public record SelfCheckReport(List<StageResult> stages) {
+            public SelfCheckReport {
+                stages = List.copyOf(stages);
+            }
+
+            /** True when any implemented stage failed. */
+            public boolean failed() {
+                return stages.stream().anyMatch(stage -> stage.state() == StageState.FAIL);
+            }
+
+            /** The declared-only stages, in plan order (empty once L3 fully lands). */
+            public List<SelfCheckStage> plannedStages() {
+                return stages.stream().filter(stage -> stage.state() == StageState.PLANNED)
+                        .map(StageResult::stage)
+                        .collect(java.util.stream.Collectors.toList());
+            }
+
+            /** The failing stages' detail lines, in plan order; empty when nothing failed. */
+            public List<String> describe() {
+                List<String> lines = new ArrayList<>();
+                for (StageResult stage : stages) {
+                    if (stage.state() == StageState.FAIL) {
+                        lines.add(stage.stage() + ": " + stage.detail());
+                    }
+                }
+                return lines;
+            }
+        }
+
+        /** Fail-closed rejection reason for a failing L3 stage. */
+        public static final String REASON_SELF_CHECK_FAILED = "uml-rootfs-self-check-failed";
+
+        /**
+         * L3 over the received artifact bytes: one pure-JVM pass (gzip → tar
+         * header walk, no disk expansion, no apk execution) records the
+         * snapshot every content stage consumes, then {@link #selfCheckPlan()}
+         * evaluates in order. Never throws for a content defect — defects are
+         * {@link StageState#FAIL} stage states; {@link
+         * SelfCheckStage#FIRST_BOOT_CLEANLINESS} answers
+         * {@link StageState#PLANNED}.
+         */
+        public static SelfCheckReport selfCheck(Entry entry, byte[] artifact) throws IOException {
+            Objects.requireNonNull(entry, "entry");
+            Objects.requireNonNull(artifact, "artifact");
+            TarSnapshot snapshot;
+            try (InputStream tar = new java.util.zip.GZIPInputStream(
+                    new ByteArrayInputStream(artifact))) {
+                snapshot = TarSnapshot.read(tar);
+            } catch (IOException unreadable) {
+                // A gzip/tar-level defect must surface as stage failures (with
+                // the artifact digest verdict intact), not as a transport error.
+                snapshot = TarSnapshot.unreadable(unreadable.getClass().getSimpleName());
+            }
+            List<StageResult> stages = new ArrayList<>(SelfCheckStage.values().length);
+            for (SelfCheckStage stage : selfCheckPlan()) {
+                stages.add(evaluateStage(entry, artifact, snapshot, stage));
+            }
+            return new SelfCheckReport(stages);
+        }
+
+        /**
+         * The fail-closed form: like {@link #selfCheck}, but any failing stage
+         * rejects the artifact with {@link #REASON_SELF_CHECK_FAILED}, the
+         * failing stages' details riding the message.
+         */
+        public static SelfCheckReport requireSelfCheck(Entry entry, byte[] artifact)
+                throws IOException {
+            SelfCheckReport report = selfCheck(entry, artifact);
+            if (report.failed()) {
+                throw new RootfsRejectionException(REASON_SELF_CHECK_FAILED,
+                        String.join("; ", report.describe()));
+            }
+            return report;
+        }
+
+        /**
+         * The L2→L3 chain in one call: {@link #requireVerified} gates the
+         * declared size and the pin (L1/L2) on the stream, then {@link
+         * #requireSelfCheck} gates the content (L3) over the same bytes. Any
+         * layer's rejection fails the whole call closed — a download proceeds
+         * only with both the transport identity and the content self-check
+         * behind it.
+         */
+        public static SelfCheckReport requireVerifiedAndSelfChecked(
+                Entry entry, byte[] artifact, Long declaredSize) throws IOException {
+            Objects.requireNonNull(artifact, "artifact");
+            requireVerified(entry, new ByteArrayInputStream(artifact), declaredSize);
+            return requireSelfCheck(entry, artifact);
+        }
+
+        private static StageResult evaluateStage(
+                Entry entry, byte[] artifact, TarSnapshot snapshot, SelfCheckStage stage) {
+            switch (stage) {
+                case MANIFEST_FIELDS:
+                    return manifestFieldsStage(entry, snapshot);
+                case ARTIFACT_DIGESTS:
+                    return artifactDigestsStage(entry, artifact);
+                case PACKAGE_DATABASE:
+                    return packageDatabaseStage(snapshot);
+                case TREE_DIGEST:
+                    return treeDigestStage(snapshot);
+                case FIRST_BOOT_CLEANLINESS:
+                    return new StageResult(stage, StageState.PLANNED,
+                            "first-boot cleanliness needs real-device first-boot data;"
+                                    + " declared by the plan, ported from verify.sh when the"
+                                    + " device window supplies it — never faked as a pass");
+                default:
+                    throw new IllegalStateException("stage outside the declared plan: " + stage);
+            }
+        }
+
+        private static StageResult manifestFieldsStage(Entry entry, TarSnapshot snapshot) {
+            if (snapshot.parseError != null) {
+                return new StageResult(SelfCheckStage.MANIFEST_FIELDS, StageState.FAIL,
+                        "archive unreadable: " + snapshot.parseError);
+            }
+            if (!snapshot.unsafeEntryNames.isEmpty()) {
+                return new StageResult(SelfCheckStage.MANIFEST_FIELDS, StageState.FAIL,
+                        "unsafe archive entries (extraction would escape the rootfs root): "
+                                + String.join(", ", snapshot.unsafeEntryNames));
+            }
+            byte[] release = snapshot.fileContents.get(ALPINE_RELEASE_PATH);
+            if (release == null) {
+                return new StageResult(SelfCheckStage.MANIFEST_FIELDS, StageState.FAIL,
+                        "missing required identity file: " + ALPINE_RELEASE_PATH);
+            }
+            String releaseVersion = text(release);
+            if (!entry.version().equals(releaseVersion)) {
+                return new StageResult(SelfCheckStage.MANIFEST_FIELDS, StageState.FAIL,
+                        ALPINE_RELEASE_PATH + " says \"" + releaseVersion
+                                + "\" but the entry pins version " + entry.version());
+            }
+            byte[] hostname = snapshot.fileContents.get(HOSTNAME_PATH);
+            if (hostname == null || text(hostname).isEmpty()) {
+                return new StageResult(SelfCheckStage.MANIFEST_FIELDS, StageState.FAIL,
+                        "missing or blank required identity file: " + HOSTNAME_PATH);
+            }
+            // .PKGINFO is apk's own marker, not part of the official minirootfs
+            // tarball (first-hand: the v3.22.2 aarch64 archive carries none) —
+            // parsed when present, never required: demanding it would fail the
+            // official artifact exactly as shipped.
+            byte[] pkgInfo = snapshot.fileContents.get(PKGINFO_PATH);
+            if (pkgInfo != null && text(pkgInfo).isEmpty()) {
+                return new StageResult(SelfCheckStage.MANIFEST_FIELDS, StageState.FAIL,
+                        PKGINFO_PATH + " present but blank");
+            }
+            return new StageResult(SelfCheckStage.MANIFEST_FIELDS, StageState.PASS,
+                    "version=" + releaseVersion + " hostname=" + text(hostname)
+                            + (pkgInfo != null
+                                    ? " .PKGINFO present"
+                                    : " .PKGINFO absent (the official tarball's shape)"));
+        }
+
+        private static StageResult artifactDigestsStage(Entry entry, byte[] artifact) {
+            String actual = sha256Hex(artifact);
+            if (!MessageDigest.isEqual(
+                    entry.sha256Pin().getBytes(java.nio.charset.StandardCharsets.US_ASCII),
+                    actual.getBytes(java.nio.charset.StandardCharsets.US_ASCII))) {
+                return new StageResult(SelfCheckStage.ARTIFACT_DIGESTS, StageState.FAIL,
+                        "sha256 mismatch: expected=" + entry.sha256Pin() + " actual=" + actual);
+            }
+            if (entry.sizeBytes() != null && artifact.length != entry.sizeBytes().longValue()) {
+                return new StageResult(SelfCheckStage.ARTIFACT_DIGESTS, StageState.FAIL,
+                        "size mismatch: pinned=" + entry.sizeBytes()
+                                + " actual=" + artifact.length);
+            }
+            return new StageResult(SelfCheckStage.ARTIFACT_DIGESTS, StageState.PASS,
+                    "sha256 ok, " + artifact.length + " bytes"
+                            + (entry.sizeBytes() != null ? " (size pinned)" : " (size unpinned)"));
+        }
+
+        private static StageResult packageDatabaseStage(TarSnapshot snapshot) {
+            if (snapshot.parseError != null) {
+                return new StageResult(SelfCheckStage.PACKAGE_DATABASE, StageState.FAIL,
+                        "archive unreadable: " + snapshot.parseError);
+            }
+            byte[] db = snapshot.fileContents.get(APK_INSTALLED_DB_PATH);
+            if (db == null) {
+                return new StageResult(SelfCheckStage.PACKAGE_DATABASE, StageState.FAIL,
+                        "missing package database: " + APK_INSTALLED_DB_PATH);
+            }
+            // Static parse of the apk installed-db grammar (single-char key
+            // lines, blank-line stanza separators — the shape verify.sh's
+            // parse_alpine reads). apk itself is never executed.
+            List<Map<String, String>> stanzas = new ArrayList<>();
+            Map<String, String> stanza = new LinkedHashMap<>();
+            for (String line : text(db).split("\n", -1)) {
+                if (line.isEmpty()) {
+                    if (!stanza.isEmpty()) {
+                        stanzas.add(stanza);
+                        stanza = new LinkedHashMap<>();
+                    }
+                } else if (line.length() > 2 && line.charAt(1) == ':') {
+                    stanza.put(line.substring(0, 1), line.substring(2));
+                }
+            }
+            if (!stanza.isEmpty()) {
+                stanzas.add(stanza);
+            }
+            if (stanzas.isEmpty()) {
+                return new StageResult(SelfCheckStage.PACKAGE_DATABASE, StageState.FAIL,
+                        "package database parsed to zero packages");
+            }
+            Map<String, String> versions = new LinkedHashMap<>();
+            for (Map<String, String> parsed : stanzas) {
+                String name = parsed.get("P");
+                String version = parsed.get("V");
+                if (name == null || name.isEmpty() || version == null || version.isEmpty()) {
+                    return new StageResult(SelfCheckStage.PACKAGE_DATABASE, StageState.FAIL,
+                            "malformed stanza (missing or blank P/V)");
+                }
+                versions.put(name, version);
+            }
+            List<String> missing = new ArrayList<>();
+            for (String required : REQUIRED_PACKAGES) {
+                if (!versions.containsKey(required)) {
+                    missing.add(required);
+                }
+            }
+            if (!missing.isEmpty()) {
+                return new StageResult(SelfCheckStage.PACKAGE_DATABASE, StageState.FAIL,
+                        "required packages absent: " + String.join(", ", missing));
+            }
+            return new StageResult(SelfCheckStage.PACKAGE_DATABASE, StageState.PASS,
+                    stanzas.size() + " packages parsed; all "
+                            + REQUIRED_PACKAGES.size() + " required packages present");
+        }
+
+        private static StageResult treeDigestStage(TarSnapshot snapshot) {
+            if (snapshot.parseError != null) {
+                return new StageResult(SelfCheckStage.TREE_DIGEST, StageState.FAIL,
+                        "archive unreadable: " + snapshot.parseError);
+            }
+            List<String> missing = new ArrayList<>();
+            for (String dir : REQUIRED_TOP_LEVEL_DIRS) {
+                if (!snapshot.topLevelDirs.contains(dir)) {
+                    missing.add(dir);
+                }
+            }
+            if (!missing.isEmpty()) {
+                return new StageResult(SelfCheckStage.TREE_DIGEST, StageState.FAIL,
+                        "required top-level directories absent: "
+                                + String.join(", ", missing));
+            }
+            return new StageResult(SelfCheckStage.TREE_DIGEST, StageState.PASS,
+                    REQUIRED_TOP_LEVEL_DIRS.size() + "/" + REQUIRED_TOP_LEVEL_DIRS.size()
+                            + " required top-level directories present ("
+                            + snapshot.entryCount + " entries walked)");
+        }
+
+        /**
+         * The packages a rooted Alpine userland cannot be without — the
+         * package manager itself, the base layout, the trust-anchor keyring,
+         * the userland shell, the libc and the TLS certificate bundle. Static
+         * name membership only; a missing required package fails
+         * {@link SelfCheckStage#PACKAGE_DATABASE} closed.
+         */
+        static final List<String> REQUIRED_PACKAGES = List.of(
+                "alpine-baselayout",
+                "alpine-keys",
+                "apk-tools",
+                "busybox",
+                "ca-certificates-bundle",
+                "musl");
+
+        /**
+         * The FHS top-level directories the official minirootfs tarball ships,
+         * each as an explicit directory entry (first-hand over the v3.22.2
+         * aarch64 archive, 2026-11-12). Extra top-level names do not fail —
+         * completeness, not equality; an absent one fails
+         * {@link SelfCheckStage#TREE_DIGEST} closed.
+         */
+        static final List<String> REQUIRED_TOP_LEVEL_DIRS = List.of(
+                "bin", "dev", "etc", "home", "lib", "media", "mnt", "opt", "proc",
+                "root", "run", "sbin", "srv", "sys", "tmp", "usr", "var");
+
+        /** Key file paths inside the official tarball, spelled without the leading {@code ./}. */
+        private static final String ALPINE_RELEASE_PATH = "etc/alpine-release";
+        private static final String HOSTNAME_PATH = "etc/hostname";
+        private static final String PKGINFO_PATH = ".PKGINFO";
+        private static final String APK_INSTALLED_DB_PATH = "lib/apk/db/installed";
+        /** Content retention cap: the stages need small text files only. */
+        private static final long FILE_CONTENT_CAP = 8L * 1024 * 1024;
+
+        /**
+         * What one pass over the (already gunzipped) tar stream recorded — the
+         * pure input every content stage consumes. Nothing is written to disk
+         * and nothing is executed; file contents beyond {@link
+         * #FILE_CONTENT_CAP} are walked but not retained.
+         */
+        private static final class TarSnapshot {
+            final String parseError;
+            final List<String> unsafeEntryNames;
+            final Map<String, byte[]> fileContents;
+            final Set<String> topLevelDirs;
+            final int entryCount;
+
+            TarSnapshot(String parseError, List<String> unsafeEntryNames,
+                    Map<String, byte[]> fileContents, Set<String> topLevelDirs,
+                    int entryCount) {
+                this.parseError = parseError;
+                this.unsafeEntryNames = List.copyOf(unsafeEntryNames);
+                this.fileContents = Map.copyOf(fileContents);
+                this.topLevelDirs = Set.copyOf(topLevelDirs);
+                this.entryCount = entryCount;
+            }
+
+            static TarSnapshot unreadable(String reason) {
+                return new TarSnapshot("tar stream unreadable (" + reason + ")",
+                        List.of(), Map.of(), Set.of(), 0);
+            }
+
+            /**
+             * One defensive ustar pass: header checksum verified, GNU long
+             * names ({@code L}) and PAX {@code path=} overrides applied, data
+             * blocks padded through, and — the non-negotiable part — entries
+             * whose names escape the archive root recorded as unsafe instead
+             * of silently trusted. A checksum mismatch, a truncation or an
+             * absurd metadata block ends the walk with a {@link #parseError};
+             * the stages then fail closed.
+             */
+            static TarSnapshot read(InputStream tar) throws IOException {
+                List<String> unsafe = new ArrayList<>();
+                Map<String, byte[]> contents = new LinkedHashMap<>();
+                Set<String> topLevelDirs = new TreeSet<>();
+                int entryCount = 0;
+                String pendingLongName = null;
+                String pendingPaxPath = null;
+                byte[] header = new byte[512];
+                while (true) {
+                    if (!readFully(tar, header)) {
+                        break; // clean EOF at a header boundary
+                    }
+                    if (isZeroBlock(header)) {
+                        break; // the tar end marker (GNU tar writes two; one ends it)
+                    }
+                    long declaredChecksum = parseNumber(header, 148, 8);
+                    if (declaredChecksum < 0 || headerChecksum(header) != declaredChecksum) {
+                        return new TarSnapshot("tar header checksum mismatch", unsafe,
+                                contents, topLevelDirs, entryCount);
+                    }
+                    long size = parseNumber(header, 124, 12);
+                    if (size < 0) {
+                        return new TarSnapshot("tar size field unreadable", unsafe,
+                                contents, topLevelDirs, entryCount);
+                    }
+                    char type = (char) (header[156] & 0xFF);
+                    String name = cString(header, 0, 100);
+                    String prefix = cString(header, 345, 155);
+                    if (isUstar(header) && !prefix.isEmpty()) {
+                        name = prefix + "/" + name;
+                    }
+                    String effectiveName = name;
+                    if (pendingLongName != null) {
+                        effectiveName = pendingLongName;
+                        pendingLongName = null;
+                    }
+                    if (pendingPaxPath != null) {
+                        effectiveName = pendingPaxPath;
+                        pendingPaxPath = null;
+                    }
+                    long padded = (size + 511L) / 512L * 512L;
+                    switch (type) {
+                        case 'L': // GNU long name: the data is the next entry's name
+                            if (size > 1024 * 1024) {
+                                return new TarSnapshot("tar long-name block absurd", unsafe,
+                                        contents, topLevelDirs, entryCount);
+                            }
+                            pendingLongName = text(readExactly(tar, size));
+                            skipFully(tar, padded - size);
+                            break;
+                        case 'x': // PAX extended header: only the path override matters here
+                        case 'g':
+                            if (size > 1024 * 1024) {
+                                return new TarSnapshot("tar pax block absurd", unsafe,
+                                        contents, topLevelDirs, entryCount);
+                            }
+                            if (type == 'x') {
+                                pendingPaxPath = paxPathOverride(readExactly(tar, size));
+                            }
+                            skipFully(tar, padded - size);
+                            break;
+                        case '0':
+                        case '\0':
+                        case '5': // the entry types the stages reason about
+                        case '1':
+                        case '2':
+                        default: // unknown-but-plausible types: walked, never executed
+                            recordEntry(effectiveName, type, size, tar, padded,
+                                    unsafe, contents, topLevelDirs);
+                            entryCount++;
+                            break;
+                    }
+                }
+                return new TarSnapshot(null, unsafe, contents, topLevelDirs, entryCount);
+            }
+
+            private static void recordEntry(String effectiveName, char type, long size,
+                    InputStream tar, long padded, List<String> unsafe,
+                    Map<String, byte[]> contents, Set<String> topLevelDirs) throws IOException {
+                String normalized = normalize(effectiveName);
+                if (normalized == null) {
+                    skipFully(tar, padded);
+                    return; // the archive root itself ("./")
+                }
+                int firstSlash = normalized.indexOf('/');
+                String top = firstSlash < 0 ? normalized : normalized.substring(0, firstSlash);
+                if (top.isEmpty() || top.equals(".") || containsDotDotSegment(normalized)) {
+                    unsafe.add(effectiveName);
+                }
+                if (type == '5') {
+                    topLevelDirs.add(top);
+                }
+                if (type == '0' || type == '\0') {
+                    if (size <= FILE_CONTENT_CAP) {
+                        contents.put(normalized, readExactly(tar, size));
+                        skipFully(tar, padded - size);
+                    } else {
+                        // Too big to retain: walked for structure, content skipped.
+                        skipFully(tar, padded);
+                    }
+                } else {
+                    skipFully(tar, padded);
+                }
+            }
+
+            /** True when any path segment is {@code ..} — extraction would climb out of the root. */
+            private static boolean containsDotDotSegment(String path) {
+                for (String segment : path.split("/")) {
+                    if (segment.equals("..")) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            /** Strips the {@code ./} prefix; {@code null} for the archive root. */
+            private static String normalize(String name) {
+                String normalized = name;
+                while (normalized.startsWith("./")) {
+                    normalized = normalized.substring(2);
+                }
+                if (normalized.isEmpty()) {
+                    return null;
+                }
+                return normalized;
+            }
+
+            private static String paxPathOverride(byte[] records) {
+                for (String record : text(records).split("\n")) {
+                    int space = record.indexOf(' ');
+                    if (space <= 0) {
+                        continue;
+                    }
+                    String value = record.substring(space + 1);
+                    if (value.startsWith("path=")) {
+                        return value.substring("path=".length());
+                    }
+                }
+                return null;
+            }
+
+            private static boolean isUstar(byte[] header) {
+                return header[257] == 'u' && header[258] == 's' && header[259] == 't'
+                        && header[260] == 'a' && header[261] == 'r';
+            }
+
+            private static boolean isZeroBlock(byte[] block) {
+                for (byte b : block) {
+                    if (b != 0) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+
+            private static long headerChecksum(byte[] header) {
+                long sum = 0;
+                for (int i = 0; i < 512; i++) {
+                    sum += (i >= 148 && i < 156) ? 0x20 : (header[i] & 0xFF);
+                }
+                return sum;
+            }
+
+            private static String cString(byte[] header, int offset, int length) {
+                int end = offset;
+                int limit = offset + length;
+                while (end < limit && header[end] != 0) {
+                    end++;
+                }
+                return new String(header, offset, end - offset,
+                        java.nio.charset.StandardCharsets.UTF_8);
+            }
+
+            /** Tar's numeric fields: octal with space/NUL padding, or GNU base-256. */
+            private static long parseNumber(byte[] header, int offset, int length) {
+                if ((header[offset] & 0x80) != 0) {
+                    long value = header[offset] & 0x7F;
+                    for (int i = offset + 1; i < offset + length; i++) {
+                        value = (value << 8) | (header[i] & 0xFF);
+                    }
+                    return value;
+                }
+                long value = 0;
+                boolean sawDigit = false;
+                for (int i = offset; i < offset + length; i++) {
+                    byte b = header[i];
+                    if (b == ' ' || b == 0) {
+                        if (sawDigit) {
+                            break;
+                        }
+                        continue;
+                    }
+                    if (b < '0' || b > '7') {
+                        return -1;
+                    }
+                    sawDigit = true;
+                    value = value * 8 + (b - '0');
+                }
+                return sawDigit ? value : -1;
+            }
+
+            private static boolean readFully(InputStream in, byte[] buffer) throws IOException {
+                int read = 0;
+                while (read < buffer.length) {
+                    int chunk = in.read(buffer, read, buffer.length - read);
+                    if (chunk < 0) {
+                        if (read == 0) {
+                            return false; // clean EOF exactly at a header boundary
+                        }
+                        throw new java.io.EOFException("tar stream truncated mid-header");
+                    }
+                    read += chunk;
+                }
+                return true;
+            }
+
+            private static byte[] readExactly(InputStream in, long size) throws IOException {
+                byte[] data = new byte[(int) size];
+                int read = 0;
+                while (read < data.length) {
+                    int chunk = in.read(data, read, data.length - read);
+                    if (chunk < 0) {
+                        throw new java.io.EOFException("tar stream truncated mid-entry");
+                    }
+                    read += chunk;
+                }
+                return data;
+            }
+
+            private static void skipFully(InputStream in, long count) throws IOException {
+                long skipped = 0;
+                while (skipped < count) {
+                    long chunk = in.skip(count - skipped);
+                    if (chunk <= 0) {
+                        if (in.read() < 0) {
+                            throw new java.io.EOFException("tar stream truncated mid-padding");
+                        }
+                        skipped++;
+                    } else {
+                        skipped += chunk;
+                    }
+                }
+            }
+        }
+
+        private static String text(byte[] bytes) {
+            return new String(bytes, java.nio.charset.StandardCharsets.UTF_8).trim();
+        }
+
+        private static String sha256Hex(byte[] bytes) {
+            MessageDigest digest = sha256Digest();
+            digest.update(bytes);
+            return toLowerHex(digest.digest());
         }
 
         private static void requireNonBlank(String field, String value) {
