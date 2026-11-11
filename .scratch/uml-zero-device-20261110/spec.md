@@ -259,3 +259,14 @@ U4/U6/U5 先在 spec 中保留，等 Wave 1 结果再建票，避免过度拆分
 - 合并树自测：U0 `checks=118`、U3 `profiles=10` + `checks=31`、U5 `checks=70` + manifest `passed=134 failed=0 info=6`；产品路径与 `release.yml` 零改动。
 - 票 04 `resolved`（真机 seccomp 矩阵、16K 宿主保持 `not-tested`）；U5 记录在 `integration-log.md`。
 - Wave 3（U4/U6）与 U0.1（parser 标记别名小票）以**最新** `github/integration/uml-zero-device-20261110` 为 base 开工；U0.1 只改 `tools/research/uml-boot-bench/`。
+
+## 11. ARM64 设备窗口结果（2026-11-11）
+
+- 设备分支 `device/uml-wave2-20261110`（base `5ef13035`）；设备 device-a（HONOR，API 36，4KB 宿主页）。报告：`docs/research/2026-11-11-uml-arm64-device-window-wave2.zh-CN.md`。
+- **U1 真机 boot PASS**：UP 内置 initramfs n=5（T3 中位 330 ms guest uptime，exit 0）；SMP `ncpus=4` n=3（`U1_INFO ncpus=4`，T3 中位 410 ms）；16K 检查 `ELF_16KB_OK`。
+- **U2 真机首启 PASS（两通道）**：Alpine 3.22.8 aarch64 hostfs n=5（T2/T3 中位 340/350 ms）与 ext4 n=5（350/350 ms），阴性检查无包管理器/网络。
+- **seccomp 启动级 PASS**：`seccomp=on` 与 `auto` 均落 `Userspace mode: SECCOMP`，零 SIGSYS；U3 12-case 设备矩阵仍 `not-tested`。
+- **2 实例并发 PASS**（runner 外 run-as 通道）；**FGS+wake lock 60 min**：frz=0、内核 RSS 零漂移、kill 后恢复 PASS。
+- 保持 `not-tested`：16K 宿主、systemd T4、U3 12-case 设备矩阵、Debian aarch64、N≥3 多实例、周期 tick。
+- 跨路径复现 open 项：`linux-fast`（内置 initramfs）未复现 manifest pin sha（其余产物逐字节一致；差异隔离在 initramfs 内嵌段）。
+- 票据：02/03 External gates 设备项转 `resolved`；04 启动级转 `resolved`；05 实采解析 PASS 后 `resolved`。
