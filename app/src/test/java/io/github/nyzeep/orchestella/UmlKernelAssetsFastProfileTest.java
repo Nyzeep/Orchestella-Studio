@@ -150,7 +150,7 @@ public final class UmlKernelAssetsFastProfileTest {
     }
 
     @Test
-    public void artifactsCarryTheResearchSizesAndTheHonestUnknownSize() {
+    public void artifactsCarryTheResearchSizesAndTheOfficialRootfsSize() {
         List<FastProfile.PinnedArtifact> artifacts = FastProfile.artifacts();
 
         assertEquals(5, artifacts.size());
@@ -159,9 +159,13 @@ public final class UmlKernelAssetsFastProfileTest {
         assertEquals(8_862_400L, artifacts.get(1).sizeBytes().longValue());
         assertEquals(2_056L, artifacts.get(2).sizeBytes().longValue());
         assertEquals(661_899L, artifacts.get(3).sizeBytes().longValue());
-        // The rootfs tar's size was never pinned by the research manifest — it
-        // must read as unpinned, never as a guessed number.
-        assertNull(artifacts.get(4).sizeBytes());
+        // The research manifest pinned the rootfs digest but recorded no byte
+        // count; L2L3 closed that gap first-hand against the release CDN
+        // (2026-11-12: HEAD Content-Length and a full download both read
+        // 3,981,043 and the bytes hash to the pin) — the official number, not
+        // a guess.
+        assertEquals(FastProfile.ROOTFS_TAR_SIZE_BYTES, artifacts.get(4).sizeBytes().longValue());
+        assertEquals(3_981_043L, FastProfile.ROOTFS_TAR_SIZE_BYTES);
         for (FastProfile.PinnedArtifact artifact : artifacts) {
             assertEquals(artifact.sha256(), FastProfile.pins().get(artifact.name()));
         }
@@ -322,9 +326,10 @@ public final class UmlKernelAssetsFastProfileTest {
         assertEquals(FastProfile.pins().get(FastProfile.ROOTFS_TAR), entry.sha256Pin());
         assertTrue(entry.source().toString().startsWith("https://"));
         assertTrue(entry.source().getPath().endsWith("/" + FastProfile.ROOTFS_TAR));
-        // The research manifest pinned the digest but no size — unpinned must
-        // stay unpinned; the digest alone still fails closed.
-        assertNull(entry.sizeBytes());
+        // L2L3 locked the size first-hand from the release CDN (2026-11-12:
+        // HEAD Content-Length = a full download's byte count = 3,981,043, and
+        // the bytes hash to the pin) — the L1 byte gate is now exact.
+        assertEquals(FastProfile.ROOTFS_TAR_SIZE_BYTES, entry.sizeBytes().longValue());
     }
 
     @Test
