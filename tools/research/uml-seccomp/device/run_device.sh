@@ -52,9 +52,15 @@ else
     exit 2
 fi
 
+# Profile: the device lane locks the profile to the device's own API domain.
+# device-b (API 35) default is android15; a device on another API level must
+# override via UML_SECCOMP_PROFILE (never let a wrong-API profile masquerade).
+SECCOMP_PROFILE=${UML_SECCOMP_PROFILE:-$ROOT/profile/generated/aosp-app-android15-arm64.json}
+[ -f "$SECCOMP_PROFILE" ] || { echo "run_device: profile not found: $SECCOMP_PROFILE" >&2; exit 2; }
+
 exec "$ROOT/run_uml_seccomp.sh" \
     --case "$CASE" \
-    --profile "$ROOT/profile/generated/aosp-app-android17-arm64.json" \
+    --profile "$SECCOMP_PROFILE" \
     --kernel "$UML_KERNEL" \
     --outdir "$OUTDIR/$CASE" \
     --mode aosp \
