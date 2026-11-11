@@ -361,7 +361,17 @@ prepare() {
     say "device filesDir : $files"
     say "device lib dir  : $lib"
     tarball=$(mktemp -u).tar.gz
-    tar -czf "$tarball" -C "$U3_ROOTFS_DIR" . || die "tar failed for U3_ROOTFS_DIR"
+    if [ -n "${U3_ROOTFS_TGZ:-}" ] && [ -f "$U3_ROOTFS_TGZ" ]; then
+        # Preferred: the tarball packed by guest/build_guest.sh on the POSIX host
+        # (real exec bits). A Windows/DrvFs-side pack loses +x and the guest init
+        # dies with error -13 on device.
+        cp "$U3_ROOTFS_TGZ" "$tarball" || die "cannot read U3_ROOTFS_TGZ"
+    else
+        # Fallback: pack here, forcing exec bits (GNU tar --mode) because a
+        # DrvFs checkout cannot carry them.
+        tar --mode='u+rwx,go+rwx' -czf "$tarball" -C "$U3_ROOTFS_DIR" . \
+            || tar -czf "$tarball" -C "$U3_ROOTFS_DIR" . || die "tar failed for U3_ROOTFS_DIR"
+    fi
     # Windows adb can't read MSYS-style paths (/tmp/...): convert for the push arg.
     tarball_push=$(command -v cygpath >/dev/null 2>&1 && cygpath -m "$tarball" || printf '%s' "$tarball")
     "$ADB" -s "$DEVICE_SERIAL" push "$tarball_push" /data/local/tmp/uml-u3-rootfs.tar.gz >/dev/null \
@@ -405,7 +415,11 @@ $(case_args "$akey")
 EOFARGS
     json="$json]}"
     printf '%s' "$json" > "$run_dir/uml-config.json"
-    dsh "run-as $RUNNER_PKG sh -c 'cat > files/uml-config.json'" < "$run_dir/uml-config.json" \
+    # Windows adb hangs forever on `adb shell cmd < file` stdin redirects; inline the
+    # payload as base64 on the command line instead (toybox base64 -d decodes it).
+    local b64
+    b64=$(base64 -w0 "$run_dir/uml-config.json")
+    dsh "run-as $RUNNER_PKG sh -c 'echo $b64 | base64 -d > files/uml-config.json'" \
         || die "config push failed"
 }
 
@@ -437,8 +451,8 @@ run_case() {
     files=$(resolve_files_dir)
 
     # Conditional assets: missing → BLOCKED (never a fake FAIL).
-    if [ "$kkey" = "smp" ] && ! dsh "ls $lib/libuml_kernel_smp.so" >/dev/null 2>&1; then
-        say "[$id] BLOCKED: missing-smp-kernel ($lib/libuml_kernel_smp.so not in nativeLibraryDir)"
+    if [ "$kkey" = "smp" ] && ! dsh "ls $lib/libuml_kernel_smp_noinitrd.so" >/dev/null 2>&1; then
+        say "[$id] BLOCKED: missing-smp-kernel ($lib/libuml_kernel_smp_noinitrd.so not in nativeLibraryDir)"
         write_meta "$run_dir" "$id" blocked "missing-smp-kernel" 0 0 "" "$run_dir/console.log"
         write_verdict "$run_dir" "BLOCKED" "missing-smp-kernel" "none"
         return
@@ -451,8 +465,11 @@ run_case() {
     fi
 
     # Measured absolute paths: kernel has NO placeholder support (README §5).
-    kernel="$lib/libuml_kernel.so"
-    [ "$kkey" = "smp" ] && kernel="$lib/libuml_kernel_smp.so"
+    # RUN cases boot the U3 guest rootfs via external-rootfs shape → the built-in
+    # initramfs kernels (libuml_kernel.so / _smp.so) carry their own U1 root and
+    # never reach the CAP probes; the *noinitrd* builds are mandatory here.
+    kernel="$lib/libuml_kernel_noinitrd.so"
+    [ "$kkey" = "smp" ] && kernel="$lib/libuml_kernel_smp_noinitrd.so"
     rootfs_path="$files/rootfs"
     [ "$akey" = "ubd0" ] && rootfs_path="$files/rootfs.img"
 
