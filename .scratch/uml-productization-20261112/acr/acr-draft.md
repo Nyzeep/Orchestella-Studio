@@ -46,8 +46,8 @@
 | ncpus-2 / ncpus-4 | **pass** | SMP 内核（noinitrd 重建 `99f6c3e7…`＝manifest pin） |
 | sigchld / clone / mount / personality / setrlimit | **pass** | mount 案例为 guest 内 PASS + 宿主面缺失（API 35 无 mount/umount2）符合预期 |
 | seccomp-fastpath | **pass** | 双 marker：CAP 探针 + `Userspace mode: SECCOMP`（真快路径非 ptrace） |
-| vector-net / mconsole | **unknown**（runner 通道结构性 BLOCKED） | 需 adb-shell 通道（`device/run_device.sh` + Termux cc/预编译 seccomp_launch）——下窗补 |
-| fail | **0** | R1 §5.2 预期 12/12 中 10 实测 PASS、2 待通道、0 反例 |
+| vector-net / mconsole | **pass**（adb-shell 通道，2026-11-12 同日补全） | sepolicy 一手判定 GO（shell 域 rx_file_perms）；socket 落点 shell_test_data_file；vec0 fd 通道 + mconsole 握手双 PASS |
+| fail | **0** | **U3 12/12 全绿**（10 runner + 2 adb-shell），R1 §5.2 预期全实证、0 反例 |
 
 ### 3.3 复现性（O1 定界）
 
@@ -70,7 +70,7 @@ pinned 布局（`SRC=/src` + `OUT=/work/research/uml-fastboot/out`）重建逐�
 | vector-net/mconsole 无 runner 通道 | adb-shell 通道下窗补；不阻塞 D1–D5 |
 | payload manifest 两处 pin 过期（QEMU 线） | 本轮记录，下轮 QEMU 收口回写 |
 | 内置 rootfs 的 Play 150MB 门槛 | D2 建议混合形态规避 |
-| rootfs 下载源的官方签名链（Alpine `.asc` 在位 / Debian SHA512SUMS 签名存疑） | R2 §3 三层校验管线已设计；L2 固化 pin fail-closed |
+| rootfs 下载源的官方签名链（Alpine `.asc` 在位 / Debian SHA512SUMS 签名存疑） | R2 §3 三层校验管线已设计并**实现到位**（L3 四阶段 done、官方 pin 三方锁定 6bf49190/3,981,043 B；L2 固化 pin fail-closed） |
 
 ## 7. 投票入口
 
