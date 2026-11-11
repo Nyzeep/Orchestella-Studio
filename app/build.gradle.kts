@@ -130,15 +130,22 @@ val missingSigningProperties: List<String> = buildList {
 }
 val releaseSigningConfigured: Boolean = missingSigningProperties.isEmpty()
 
-// AX-08: the accelerator lane is a build-time opt-in and defaults to off, so a
-// plain build keeps the historical QEMU-only behaviour. Enabling it only makes
-// the assembly ask AcceleratorPolicy; a QEMU_ONLY verdict still refuses the lane.
+// The accelerator lane is on by default. AX-08 made it a build-time opt-in
+// (default off) while the lane was an unreleased experiment; since the
+// two-package split the pVM payload ships as a separate extension APK, so an
+// off-by-default lane makes the published build permanently unable to
+// accelerate — the extension installs, resolves and then is never consulted.
+// Enabling the lane only makes the assembly ask AcceleratorPolicy: a QEMU_ONLY
+// verdict (no extension, version mismatch, unsupported platform, thermal or
+// battery refusal) still refuses the lane and falls back to plain QEMU
+// compilation, so the failure mode stays fail-closed. Pass
+// -Porchestella.acceleratorLane=false to reproduce the historical QEMU-only build.
 val acceleratorLaneEnabled: Boolean = providers.gradleProperty("orchestella.acceleratorLane")
     .orNull
     ?.trim()
     ?.lowercase()
     ?.let { it == "true" || it == "1" }
-    ?: false
+    ?: true
 
 plugins {
     alias(libs.plugins.android.application)

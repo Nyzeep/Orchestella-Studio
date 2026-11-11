@@ -155,7 +155,10 @@ jobs:
       - name: Build release APK
         # Same clean-checkout baseline as the debug gate above; the payload is
         # verified on the finished APK by check_runtime_payload.py --apk.
-        run: ./gradlew :app:assembleRelease -Porchestella.assets.allowMissingPayload=true --no-daemon --stacktrace
+        # The accelerator lane is stated explicitly even though the Gradle
+        # default is now on: v0.6.3 shipped with the lane compiled out, so the
+        # release pipeline must never depend on a default to get this right.
+        run: ./gradlew :app:assembleRelease -Porchestella.assets.allowMissingPayload=true -Porchestella.acceleratorLane=true --no-daemon --stacktrace
 
       - name: Locate release APK
         run: |

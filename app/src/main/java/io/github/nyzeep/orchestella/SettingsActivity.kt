@@ -4,6 +4,7 @@ import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import android.widget.AdapterView
@@ -27,9 +28,14 @@ import io.github.nyzeep.orchestella.ui.theme.ThemeColors
 import io.github.nyzeep.orchestella.ui.theme.ThemeStore
 import androidx.activity.result.contract.ActivityResultContracts
 import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator
+import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorDecision
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorMode
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorPolicy
+import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorReasonCode
 import java.util.concurrent.Executors
+
+/** Logcat tag for the accelerator-lane verdict (enum names only, no paths). */
+private const val ACCEL_LANE_TAG = "AccelLane"
 
 /**
  * Secondary Settings & Control Center Activity (ADR-0006, Phase 5.0 R4).
@@ -412,14 +418,22 @@ class SettingsActivity : AppCompatActivity() {
         txtAccelStatus.isClickable = false
         backgroundExecutor.execute {
             val resolution = AccelExtensionResolver(this).resolve()
-            val laneUsable = try {
+            val laneVerdict = try {
                 val facts = AndroidAcceleratorFactProvider.create(this).read()
                 AcceleratorPolicy.decide(
                     facts, AcceleratorLaunchDispatcher.GUEST_COMPILER_TRIPLE
-                ).mode() == AcceleratorMode.QEMU_PLUS_ACCEL
+                )
             } catch (_: RuntimeException) {
-                false
+                null
             }
+            val laneUsable = laneVerdict?.mode() == AcceleratorMode.QEMU_PLUS_ACCEL
+            // The verdict's own JSON contract (enum names only, never paths or
+            // device identifiers): a refused lane must name its reason here,
+            // because the UI can only explain what the probe observed.
+            Log.i(
+                ACCEL_LANE_TAG,
+                "extension=${resolution.decision.status} lane=${laneVerdict?.toJson() ?: "unavailable"}"
+            )
             runOnUiThread {
                 if (!::txtAccelStatus.isInitialized) return@runOnUiThread
                 when {
@@ -438,14 +452,49 @@ class SettingsActivity : AppCompatActivity() {
                         txtAccelStatus.isClickable = true
                     }
                     else -> {
-                        // Version mismatch / engine rejected / unreadable
-                        // manifest / platform refusal — the resolver detail is
-                        // the reason, verbatim, no guessing.
-                        txtAccelStatus.text = "pVM 编译加速：已启用（${resolution.decision.detail}，实例启动时回退普通编译）"
+                        // Extension problems are the user's to fix, so they
+                        // outrank the platform verdict; once the extension is
+                        // ready, the policy's refusal reason is the only
+                        // explanation left (and the only honest one).
+                        val reason = if (resolution.decision.status != AccelExtensionRules.Status.OK) {
+                            resolution.decision.detail
+                        } else {
+                            acceleratorReasonText(laneVerdict)
+                                ?: resolution.decision.detail
+                        }
+                        txtAccelStatus.text = "pVM 编译加速：已启用（$reason，实例启动时回退普通编译）"
                         txtAccelStatus.setTextColor(getColor(R.color.zone_yellow))
                     }
                 }
             }
+        }
+    }
+
+    /**
+     * One path-free sentence for a refused lane, in the policy's own
+     * vocabulary. Returns null when the verdict is not a refusal, so the
+     * caller falls back to the extension-side detail instead of inventing a
+     * cause. Unmapped codes keep their enum name — never a guessed story.
+     */
+    private fun acceleratorReasonText(decision: AcceleratorDecision?): String? {
+        val code = decision?.reasonCode() ?: return null
+        return when (code) {
+            AcceleratorReasonCode.ACCEL_AVAILABLE -> null
+            AcceleratorReasonCode.PAYLOAD_UNAVAILABLE_NO_PROTECTED ->
+                "系统未提供受保护虚拟机能力"
+            AcceleratorReasonCode.PAYLOAD_IMAGE_MISSING -> "加速载荷缺失"
+            AcceleratorReasonCode.PAYLOAD_COMPILER_MISMATCH ->
+                "加速载荷与 guest 编译器不匹配"
+            AcceleratorReasonCode.ACCEL_UNAVAILABLE_NO_NON_PROTECTED ->
+                "系统不支持非保护型虚拟机"
+            AcceleratorReasonCode.ACCEL_UNAVAILABLE_NO_BACKEND ->
+                "本机未提供可用的加速后端（若尚未授权硬件虚拟化，请先完成 AVF 授权）"
+            AcceleratorReasonCode.ACCEL_IMAGE_MISSING -> "加速镜像缺失"
+            AcceleratorReasonCode.ACCEL_VSOCK_UNAVAILABLE -> "系统未提供 vsock 通道"
+            AcceleratorReasonCode.COMPILER_MISMATCH ->
+                "编译器版本与加速镜像不匹配"
+            AcceleratorReasonCode.THERMAL_BUDGET -> "当前温度或电量不允许加速"
+            else -> code.name
         }
     }
 
