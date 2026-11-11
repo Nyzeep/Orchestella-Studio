@@ -1,12 +1,11 @@
 package io.github.nyzeep.orchestella;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotEquals;
-import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import io.github.nyzeep.orchestella.UmlKernelAssets.RootfsDownload.Entry;
+import io.github.nyzeep.orchestella.UmlKernelAssets.RootfsDownload.EntryForm;
 import io.github.nyzeep.orchestella.UmlKernelAssets.RootfsDownload.RootfsRejectionException;
 import io.github.nyzeep.orchestella.UmlKernelAssets.RootfsDownload.SelfCheckReport;
 import io.github.nyzeep.orchestella.UmlKernelAssets.RootfsDownload.SelfCheckStage;
@@ -27,18 +26,23 @@ import org.junit.Test;
  * The 方案 B L3 content self-check's contract (the follow-up to
  * {@link UmlKernelAssetsFastProfileTest}'s download-skeleton tests): every
  * implemented stage answers pass / defect / missing-field in three states,
- * the declared-only {@code FIRST_BOOT_CLEANLINESS} stage never masquerades as
- * a pass, the tar walker is defensive (checksums, containment, GNU long
- * names, PAX overrides), and the L2→L3 chain fails closed layer by layer.
+ * the {@code FIRST_BOOT_CLEANLINESS} stage answers statically with its
+ * verify.sh port, parameterized by the entry's {@link EntryForm} (prebake
+ * demands the baked scripts and hostname; minirootfs skips exactly those and
+ * still checks the residue/hygiene family), the tar walker is defensive
+ * (checksums, containment, GNU long names, PAX overrides), and the L2→L3
+ * chain fails closed layer by layer.
  *
  * <p>Every fixture is a small tar the test builds in memory with a minimal
  * ustar writer (headers + gzip) — never a real rootfs. The fixture's shape
  * mirrors the official Alpine minirootfs 3.22.2 aarch64 tarball first-hand on
  * 2026-11-12: {@code ./}-prefixed names, all 17 FHS top-level directories as
  * explicit directory entries, {@code etc/alpine-release} = {@code 3.22.2},
- * {@code etc/hostname} = {@code localhost}, no {@code .PKGINFO}, and the apk
+ * {@code etc/hostname} = {@code localhost}, no {@code .PKGINFO}, the apk
  * installed-db grammar in {@code lib/apk/db/installed} (87 files, 98 dirs,
- * 335 symlinks there — three files here).
+ * 335 symlinks there — three files here), a non-empty
+ * {@code etc/ssl/certs/ca-certificates.crt}, and no machine-id/resolv.conf/
+ * ssh-host-key entries at all.
  */
 public final class UmlKernelAssetsRootfsSelfCheckTest {
 
@@ -81,12 +85,30 @@ public final class UmlKernelAssetsRootfsSelfCheckTest {
 
     private static final String OFFICIAL_VERSION = "3.22.2";
 
-    /** One fixture entry: tar name, typeflag, payload. */
-    private record Spec(String name, char type, byte[] content) {
+    /**
+     * Stand-in for the trust-anchor bundle the official tarball ships
+     * non-empty (first-hand: {@code etc/ssl/certs/ca-certificates.crt},
+     * 219,404 bytes of PEMs — a small deterministic fixture text here).
+     */
+    private static final String FIXTURE_CA_BUNDLE =
+            "-----BEGIN CERTIFICATE-----\nfixture-anchor\n-----END CERTIFICATE-----\n";
+
+    /** One fixture entry: tar name, typeflag, payload, optional mode override. */
+    private record Spec(String name, char type, byte[] content, Integer mode) {
+        Spec(String name, char type, byte[] content) {
+            this(name, type, content, null);
+        }
+
         Spec(String name, char type, String text) {
-            this(name, type, text.getBytes(StandardCharsets.UTF_8));
+            this(name, type, text.getBytes(StandardCharsets.UTF_8), null);
         }
     }
+
+    /** The first-boot scripts the prebake route bakes in — clean bodies (comments + no keywords). */
+    private static final String CLEAN_INIT_BODY =
+            "#!/bin/sh\n# mount the newroot and hand over; no package manager, no network\n"
+                    + "/sbin/switch_root /newroot /sbin/init\n";
+    private static final String CLEAN_READY_BODY = "#!/bin/sh\necho ready > /dev/console\n";
 
     /** The official-shape minirootfs fixture — every stage passes on it. */
     private static List<Spec> officialShape() {
@@ -97,10 +119,20 @@ public final class UmlKernelAssetsRootfsSelfCheckTest {
         }
         entries.add(new Spec("./etc/alpine-release", '0', OFFICIAL_VERSION + "\n"));
         entries.add(new Spec("./etc/hostname", '0', "localhost\n"));
+        entries.add(new Spec("./etc/ssl/certs/ca-certificates.crt", '0', FIXTURE_CA_BUNDLE));
         entries.add(new Spec("./lib/apk/db/installed", '0', INSTALLED_DB));
         entries.add(new Spec("./usr/bin/binary-helper", '0', "fixture-elf-bytes"));
         entries.add(new Spec("./bin/sh", '2', "/bin/busybox"));
         entries.add(new Spec("./etc/periodic/hourly/fixture", '1', "./usr/bin/binary-helper"));
+        return entries;
+    }
+
+    /** The prebake-shape fixture: the official tree plus the baked first-boot state. */
+    private static List<Spec> prebakeShape() {
+        List<Spec> entries = officialShape();
+        entries.add(executable("./init-zero-install", CLEAN_INIT_BODY));
+        entries.add(executable("./ready.sh", CLEAN_READY_BODY));
+        replaceByName(entries, "./etc/hostname", file("./etc/hostname", "orchestella\n"));
         return entries;
     }
 
@@ -109,8 +141,23 @@ public final class UmlKernelAssetsRootfsSelfCheckTest {
         return new Spec(name, '0', text);
     }
 
+    /** An executable regular file (any execute bit set — verify.sh's {@code -x}). */
+    private static Spec executable(String name, String text) {
+        return new Spec(name, '0', text.getBytes(StandardCharsets.UTF_8), 0755);
+    }
+
     private static Spec dir(String name) {
         return new Spec(name, '5', "");
+    }
+
+    /** A body padded past the content-retention cap with benign comment lines. */
+    private static String oversizedBody(String firstLine) {
+        StringBuilder body = new StringBuilder(firstLine);
+        String pad = "# padding line\n";
+        while (body.length() <= 8L * 1024 * 1024) {
+            body.append(pad);
+        }
+        return body.toString();
     }
 
     private static void replaceByName(List<Spec> entries, String name, Spec replacement) {
@@ -141,7 +188,8 @@ public final class UmlKernelAssetsRootfsSelfCheckTest {
             // Links carry their target in the linkname field, not the data.
             boolean isLink = spec.type() == '1' || spec.type() == '2';
             long size = (spec.type() == '5' || isLink) ? 0L : spec.content().length;
-            putOctal(header, 100, 8, spec.type() == '5' ? 0755 : 0644);
+            putOctal(header, 100, 8, spec.mode() != null
+                    ? spec.mode() : (spec.type() == '5' ? 0755 : 0644));
             putOctal(header, 108, 8, 0); // uid
             putOctal(header, 116, 8, 0); // gid
             putOctal(header, 124, 12, size);
@@ -232,10 +280,16 @@ public final class UmlKernelAssetsRootfsSelfCheckTest {
     /** A test entry shaped like the production one, pinned to the fixture's own bytes. */
     private static Entry pinnedEntry(byte[] artifact, Long sizeBytes)
             throws NoSuchAlgorithmException {
+        return pinnedEntry(artifact, sizeBytes, EntryForm.MINIROOTFS);
+    }
+
+    /** Same, with the entry form the first-boot stage parameterizes on. */
+    private static Entry pinnedEntry(byte[] artifact, Long sizeBytes, EntryForm form)
+            throws NoSuchAlgorithmException {
         return new Entry("test-rootfs", OFFICIAL_VERSION, "aarch64",
                 URI.create("https://dl-cdn.example.test/pool/"
                         + UmlKernelAssets.FastProfile.ROOTFS_TAR),
-                UmlKernelAssets.FastProfile.ROOTFS_TAR, sha256Hex(artifact), sizeBytes);
+                UmlKernelAssets.FastProfile.ROOTFS_TAR, sha256Hex(artifact), sizeBytes, form);
     }
 
     private static StageResult stage(SelfCheckReport report, SelfCheckStage stage) {
@@ -259,15 +313,15 @@ public final class UmlKernelAssetsRootfsSelfCheckTest {
         assertEquals(StageState.PASS, stage(report, SelfCheckStage.ARTIFACT_DIGESTS).state());
         assertEquals(StageState.PASS, stage(report, SelfCheckStage.PACKAGE_DATABASE).state());
         assertEquals(StageState.PASS, stage(report, SelfCheckStage.TREE_DIGEST).state());
+        assertEquals(StageState.PASS, stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS).state());
         assertTrue(stage(report, SelfCheckStage.MANIFEST_FIELDS).detail()
                 .contains("version=" + OFFICIAL_VERSION));
         assertTrue(stage(report, SelfCheckStage.ARTIFACT_DIGESTS).detail()
                 .contains("sha256 ok, " + artifact.length + " bytes (size pinned)"));
         assertTrue(stage(report, SelfCheckStage.PACKAGE_DATABASE).detail().contains("6 packages"));
         assertTrue(stage(report, SelfCheckStage.TREE_DIGEST).detail().contains("17/17"));
-        // The implemented stages pass, but the report is not "all passed":
-        // FIRST_BOOT_CLEANLINESS is planned and must stay visible.
-        assertEquals(List.of(SelfCheckStage.FIRST_BOOT_CLEANLINESS), report.plannedStages());
+        // All five stages now answer statically — nothing stays planned.
+        assertEquals(List.of(), report.plannedStages());
         assertTrue(report.describe().isEmpty());
     }
 
@@ -526,22 +580,375 @@ public final class UmlKernelAssetsRootfsSelfCheckTest {
         assertTrue(stage(report, SelfCheckStage.TREE_DIGEST).detail().contains(": proc"));
     }
 
-    // --- FIRST_BOOT_CLEANLINESS: declared, never faked -----------------------------------
+    // --- FIRST_BOOT_CLEANLINESS: the static verify.sh port, form-parameterized -----------
+    //
+    // Six check families, ported from verify.sh's first-boot section:
+    //   1. boot scripts present + executable   (prebake only)
+    //   2. script bodies: no package manager   (prebake only)
+    //   3. script bodies: no network commands  (prebake only)
+    //   4. no product first-boot residue       (both forms)
+    //   5. per-instance identity empty/absent  (both forms, -s semantics)
+    //   6. no baked host/instance state        (both, with form-gated exceptions
+    //      (hostname, ssh keys, CA bundle,      documented first-hand)
+    //      package-manager queues)
+    // The minirootfs-form pass over the official shape IS the "real
+    // minirootfs expectation" lock: no init-zero-install entry → the script
+    // block skips instead of failing.
 
     @Test
-    public void firstBootCleanlinessAnswersPlannedAndNeverPass() throws Exception {
+    public void firstBootCleanlinessPassesOnTheOfficialMinirootfsShape() throws Exception {
         byte[] artifact = gzipTar(officialShape());
         SelfCheckReport report = UmlKernelAssets.RootfsDownload.selfCheck(
                 pinnedEntry(artifact, (long) artifact.length), artifact);
 
-        StageResult planned = stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS);
-        assertEquals(StageState.PLANNED, planned.state());
-        assertNotEquals(StageState.PASS, planned.state());
-        assertNotNull(planned.detail());
-        assertTrue(planned.detail().contains("real-device first-boot data"));
-        assertEquals(List.of(SelfCheckStage.FIRST_BOOT_CLEANLINESS), report.plannedStages());
-        // A planned stage is not a failure — but it is also not a pass.
+        StageResult clean = stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS);
+        assertEquals(StageState.PASS, clean.state());
+        // The skip is visible, not silent: the official minirootfs ships no
+        // first-boot scripts, so the script block skips without failing.
+        assertTrue(clean.detail().contains("form=minirootfs"));
+        assertTrue(clean.detail().contains("boot-script checks skipped"));
+        assertEquals(List.of(), report.plannedStages());
         assertTrue(report.describe().isEmpty());
+    }
+
+    @Test
+    public void firstBootCleanlinessPassesOnThePrebakeShape() throws Exception {
+        byte[] artifact = gzipTar(prebakeShape());
+        SelfCheckReport report = UmlKernelAssets.RootfsDownload.selfCheck(
+                pinnedEntry(artifact, (long) artifact.length, EntryForm.PREBAKE), artifact);
+
+        StageResult clean = stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS);
+        assertEquals(StageState.PASS, clean.state());
+        assertTrue(clean.detail().contains("form=prebake"));
+        assertTrue(clean.detail().contains("first-boot scripts present, executable and clean"));
+        assertTrue(clean.detail().contains("hostname fixed"));
+    }
+
+    @Test
+    public void firstBootCleanlinessPrebakeFailsWhenABootScriptIsMissing() throws Exception {
+        List<Spec> missing = prebakeShape();
+        missing.removeIf(spec -> spec.name().equals("./init-zero-install"));
+        byte[] artifact = gzipTar(missing);
+
+        SelfCheckReport report = UmlKernelAssets.RootfsDownload.selfCheck(
+                pinnedEntry(artifact, (long) artifact.length, EntryForm.PREBAKE), artifact);
+
+        assertEquals(StageState.FAIL, stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS).state());
+        assertTrue(stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS).detail()
+                .contains("init-zero-install missing or not a regular file"));
+        assertTrue(report.failed());
+    }
+
+    @Test
+    public void firstBootCleanlinessPrebakeFailsWhenABootScriptIsNotExecutable() throws Exception {
+        List<Spec> plain = prebakeShape();
+        replaceByName(plain, "./init-zero-install", file("./init-zero-install", CLEAN_INIT_BODY));
+        byte[] artifact = gzipTar(plain);
+
+        SelfCheckReport report = UmlKernelAssets.RootfsDownload.selfCheck(
+                pinnedEntry(artifact, (long) artifact.length, EntryForm.PREBAKE), artifact);
+
+        // The writer's default file mode is 0644 — no execute bit, exactly
+        // what verify.sh's -x probe rejects.
+        assertEquals(StageState.FAIL, stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS).state());
+        assertTrue(stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS).detail()
+                .contains("init-zero-install is not executable"));
+    }
+
+    @Test
+    public void firstBootCleanlinessPrebakeFailsOnAPackageManagerInvocation() throws Exception {
+        List<Spec> tampered = prebakeShape();
+        replaceByName(tampered, "./ready.sh", executable("./ready.sh",
+                "#!/bin/sh\napk add busybox\n"));
+        byte[] artifact = gzipTar(tampered);
+
+        SelfCheckReport report = UmlKernelAssets.RootfsDownload.selfCheck(
+                pinnedEntry(artifact, (long) artifact.length, EntryForm.PREBAKE), artifact);
+
+        assertEquals(StageState.FAIL, stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS).state());
+        assertTrue(stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS).detail()
+                .contains("ready.sh invokes a package manager"));
+    }
+
+    @Test
+    public void firstBootCleanlinessPrebakeFailsOnANetworkClientInvocation() throws Exception {
+        List<Spec> tampered = prebakeShape();
+        replaceByName(tampered, "./ready.sh", executable("./ready.sh",
+                "#!/bin/sh\nwget -O /tmp/fixture http://example.invalid/fixture\n"));
+        byte[] artifact = gzipTar(tampered);
+
+        SelfCheckReport report = UmlKernelAssets.RootfsDownload.selfCheck(
+                pinnedEntry(artifact, (long) artifact.length, EntryForm.PREBAKE), artifact);
+
+        assertEquals(StageState.FAIL, stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS).state());
+        assertTrue(stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS).detail()
+                .contains("ready.sh contains a network client/configuration command"));
+    }
+
+    @Test
+    public void firstBootCleanlinessWordScansStripCommentsAndHonorWordBoundaries() throws Exception {
+        List<Spec> tricky = prebakeShape();
+        replaceByName(tricky, "./ready.sh", executable("./ready.sh",
+                "# apk add busybox would be a violation — but this line is a comment\n"
+                        + "  # wget http://example.invalid — indented comment, still dropped\n"
+                        + "apktool=/usr/bin/apktool\n"
+                        + "busybox-nc-hero\n"));
+        byte[] artifact = gzipTar(tricky);
+
+        SelfCheckReport report = UmlKernelAssets.RootfsDownload.selfCheck(
+                pinnedEntry(artifact, (long) artifact.length, EntryForm.PREBAKE), artifact);
+
+        // Comment lines are dropped (verify.sh's grep -v '^\s*#'); "apktool"
+        // keeps 'apk' inside a word (right boundary is a word character);
+        // "nc" in "busybox-nc-hero" fails the network scan's stricter
+        // space-or-end-of-line right boundary. Copied semantics.
+        assertEquals(StageState.PASS, stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS).state());
+    }
+
+    @Test
+    public void firstBootCleanlinessFailsOnTheFirstbootDoneMarker() throws Exception {
+        List<Spec> marked = officialShape();
+        marked.add(file("./opt/orchestella/.firstboot-done", ""));
+        byte[] artifact = gzipTar(marked);
+
+        SelfCheckReport report = UmlKernelAssets.RootfsDownload.selfCheck(
+                pinnedEntry(artifact, (long) artifact.length), artifact);
+
+        assertEquals(StageState.FAIL, stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS).state());
+        assertTrue(stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS).detail()
+                .contains("product firstboot-done marker is present"));
+        assertTrue(stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS).detail()
+                .contains("opt/orchestella/.firstboot-done"));
+    }
+
+    @Test
+    public void firstBootCleanlinessFailsOnTheProvisionStateFile() throws Exception {
+        List<Spec> provisioned = officialShape();
+        provisioned.add(file("./var/lib/orchestella/provision/state", "provisioned"));
+        byte[] artifact = gzipTar(provisioned);
+
+        SelfCheckReport report = UmlKernelAssets.RootfsDownload.selfCheck(
+                pinnedEntry(artifact, (long) artifact.length), artifact);
+
+        assertEquals(StageState.FAIL, stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS).state());
+        assertTrue(stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS).detail()
+                .contains("provisioning state file is present"));
+    }
+
+    @Test
+    public void firstBootCleanlinessFailsOnANonEmptyMachineId() throws Exception {
+        List<Spec> identified = officialShape();
+        identified.add(file("./etc/machine-id", "fixture-machine-id-payload\n"));
+        byte[] artifact = gzipTar(identified);
+
+        SelfCheckReport report = UmlKernelAssets.RootfsDownload.selfCheck(
+                pinnedEntry(artifact, (long) artifact.length), artifact);
+
+        assertEquals(StageState.FAIL, stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS).state());
+        assertTrue(stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS).detail()
+                .contains("etc/machine-id is not empty"));
+    }
+
+    @Test
+    public void firstBootCleanlinessTreatsAnEmptyMachineIdAsClean() throws Exception {
+        List<Spec> pristine = officialShape();
+        pristine.add(file("./etc/machine-id", ""));
+        byte[] artifact = gzipTar(pristine);
+
+        SelfCheckReport report = UmlKernelAssets.RootfsDownload.selfCheck(
+                pinnedEntry(artifact, (long) artifact.length), artifact);
+
+        // verify.sh's -s: an existing but zero-byte file passes — and so does
+        // an absent one (the official tarball ships no machine-id entry).
+        assertEquals(StageState.PASS, stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS).state());
+    }
+
+    @Test
+    public void firstBootCleanlinessFailsOnANonEmptyResolvConf() throws Exception {
+        List<Spec> configured = officialShape();
+        configured.add(file("./etc/resolv.conf", "nameserver 10.0.0.1\n"));
+        byte[] artifact = gzipTar(configured);
+
+        SelfCheckReport report = UmlKernelAssets.RootfsDownload.selfCheck(
+                pinnedEntry(artifact, (long) artifact.length), artifact);
+
+        assertEquals(StageState.FAIL, stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS).state());
+        assertTrue(stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS).detail()
+                .contains("etc/resolv.conf is not empty"));
+    }
+
+    @Test
+    public void firstBootCleanlinessFailsOnBakedSshHostKeys() throws Exception {
+        List<Spec> keyed = officialShape();
+        keyed.add(file("./etc/ssh/ssh_host_rsa_key", "fixture-private-key"));
+        keyed.add(file("./etc/ssh/ssh_host_rsa_key.pub", "fixture-public-key"));
+        byte[] artifact = gzipTar(keyed);
+
+        SelfCheckReport report = UmlKernelAssets.RootfsDownload.selfCheck(
+                pinnedEntry(artifact, (long) artifact.length), artifact);
+
+        assertEquals(StageState.FAIL, stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS).state());
+        assertTrue(stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS).detail()
+                .contains("per-instance ssh host key is baked into the image"));
+    }
+
+    @Test
+    public void firstBootCleanlinessFailsOnAMissingOrEmptyCertificateBundle() throws Exception {
+        List<Spec> without = officialShape();
+        without.removeIf(spec -> spec.name().equals("./etc/ssl/certs/ca-certificates.crt"));
+        byte[] missing = gzipTar(without);
+        SelfCheckReport missingReport = UmlKernelAssets.RootfsDownload.selfCheck(
+                pinnedEntry(missing, (long) missing.length), missing);
+
+        assertEquals(StageState.FAIL,
+                stage(missingReport, SelfCheckStage.FIRST_BOOT_CLEANLINESS).state());
+        assertTrue(stage(missingReport, SelfCheckStage.FIRST_BOOT_CLEANLINESS).detail()
+                .contains("certificate bundle missing"));
+
+        List<Spec> blanked = officialShape();
+        blanked.removeIf(spec -> spec.name().equals("./etc/ssl/certs/ca-certificates.crt"));
+        blanked.add(file("./etc/ssl/certs/ca-certificates.crt", ""));
+        byte[] empty = gzipTar(blanked);
+        SelfCheckReport emptyReport = UmlKernelAssets.RootfsDownload.selfCheck(
+                pinnedEntry(empty, (long) empty.length), empty);
+
+        assertEquals(StageState.FAIL,
+                stage(emptyReport, SelfCheckStage.FIRST_BOOT_CLEANLINESS).state());
+        assertTrue(stage(emptyReport, SelfCheckStage.FIRST_BOOT_CLEANLINESS).detail()
+                .contains("certificate bundle is empty"));
+    }
+
+    @Test
+    public void firstBootCleanlinessHostnameIsFormParameterized() throws Exception {
+        // The prebake tree without the hostname swap: the scripts are baked
+        // but etc/hostname still says the official "localhost".
+        List<Spec> bakedHost = officialShape();
+        bakedHost.add(executable("./init-zero-install", CLEAN_INIT_BODY));
+        bakedHost.add(executable("./ready.sh", CLEAN_READY_BODY));
+        byte[] artifact = gzipTar(bakedHost);
+
+        SelfCheckReport prebake = UmlKernelAssets.RootfsDownload.selfCheck(
+                pinnedEntry(artifact, (long) artifact.length, EntryForm.PREBAKE), artifact);
+        assertEquals(StageState.FAIL,
+                stage(prebake, SelfCheckStage.FIRST_BOOT_CLEANLINESS).state());
+        assertTrue(stage(prebake, SelfCheckStage.FIRST_BOOT_CLEANLINESS).detail()
+                .contains("etc/hostname is not fixed to \"orchestella\""));
+
+        // The very same tree as the minirootfs form: the official artifact
+        // ships "localhost" and the download form demands presence (already
+        // MANIFEST_FIELDS's job), not the prebake value.
+        SelfCheckReport minirootfs = UmlKernelAssets.RootfsDownload.selfCheck(
+                pinnedEntry(artifact, (long) artifact.length, EntryForm.MINIROOTFS), artifact);
+        assertEquals(StageState.PASS,
+                stage(minirootfs, SelfCheckStage.FIRST_BOOT_CLEANLINESS).state());
+    }
+
+    @Test
+    public void firstBootCleanlinessFailsOnAlpineQueueResidue() throws Exception {
+        List<Spec> dirty = officialShape();
+        dirty.add(file("./var/cache/apk/busybox-1.37.0-r20.apk", "package payload"));
+        dirty.add(file("./var/log/apk.log", "2026-11-12 apk add busybox"));
+        byte[] artifact = gzipTar(dirty);
+
+        SelfCheckReport report = UmlKernelAssets.RootfsDownload.selfCheck(
+                pinnedEntry(artifact, (long) artifact.length), artifact);
+
+        assertEquals(StageState.FAIL, stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS).state());
+        String detail = stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS).detail();
+        assertTrue(detail.contains("Alpine apk cache is not empty"));
+        assertTrue(detail.contains("unpacked .apk files remain in image"));
+        assertTrue(detail.contains("Alpine apk log is present"));
+    }
+
+    @Test
+    public void firstBootCleanlinessApkDbLockIsAPrebakeOnlyDemand() throws Exception {
+        // First-hand over the official v3.22.2 aarch64 tarball: it ships a
+        // 0-byte lib/apk/db/lock. Demanding its absence of the minirootfs
+        // form would reject the authentic artifact — so only the prebake
+        // form carries that demand.
+        List<Spec> locked = officialShape();
+        locked.add(file("./lib/apk/db/lock", ""));
+        byte[] artifact = gzipTar(locked);
+
+        SelfCheckReport minirootfs = UmlKernelAssets.RootfsDownload.selfCheck(
+                pinnedEntry(artifact, (long) artifact.length, EntryForm.MINIROOTFS), artifact);
+        assertEquals(StageState.PASS,
+                stage(minirootfs, SelfCheckStage.FIRST_BOOT_CLEANLINESS).state());
+        assertTrue(stage(minirootfs, SelfCheckStage.FIRST_BOOT_CLEANLINESS).detail()
+                .contains("0-byte db lock is not a defect"));
+
+        SelfCheckReport prebake = UmlKernelAssets.RootfsDownload.selfCheck(
+                pinnedEntry(artifact, (long) artifact.length, EntryForm.PREBAKE), artifact);
+        assertEquals(StageState.FAIL,
+                stage(prebake, SelfCheckStage.FIRST_BOOT_CLEANLINESS).state());
+        assertTrue(stage(prebake, SelfCheckStage.FIRST_BOOT_CLEANLINESS).detail()
+                .contains("Alpine apk db lock is present"));
+    }
+
+    @Test
+    public void firstBootCleanlinessPortsTheDebianQueueChecksOnDpkgEvidence() throws Exception {
+        List<Spec> debian = officialShape();
+        debian.add(dir("./var/lib/dpkg/"));
+        debian.add(file("./var/lib/dpkg/updates/0001", "queued-update"));
+        debian.add(file("./var/lib/apt/lists/lock", ""));
+        byte[] artifact = gzipTar(debian);
+
+        SelfCheckReport report = UmlKernelAssets.RootfsDownload.selfCheck(
+                pinnedEntry(artifact, (long) artifact.length), artifact);
+
+        // verify.sh keys this block on the build manifest's distro.name; the
+        // tar stream has no manifest, so the port keys on the package-database
+        // evidence the tree itself carries (here: var/lib/dpkg present).
+        assertEquals(StageState.FAIL, stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS).state());
+        String detail = stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS).detail();
+        assertTrue(detail.contains("Debian dpkg updates queue is not empty"));
+        assertTrue(detail.contains("Debian lock present: var/lib/apt/lists/lock"));
+    }
+
+    @Test
+    public void firstBootCleanlinessJudgesBeyondCapEntriesStructurally() throws Exception {
+        // A first-boot script larger than the content-retention cap: walked
+        // for structure (present + executable), but its bytes are not
+        // retained, so the word scans cannot read it — the stage says so
+        // instead of pretending it scanned.
+        List<Spec> fat = prebakeShape();
+        fat.removeIf(spec -> spec.name().equals("./init-zero-install"));
+        fat.add(executable("./init-zero-install", oversizedBody("apk add busybox\n")));
+        byte[] artifact = gzipTar(fat);
+
+        SelfCheckReport report = UmlKernelAssets.RootfsDownload.selfCheck(
+                pinnedEntry(artifact, (long) artifact.length, EntryForm.PREBAKE), artifact);
+
+        assertEquals(StageState.PASS, stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS).state());
+        assertTrue(stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS).detail()
+                .contains("content beyond the retention cap: word scans skipped"));
+
+        // The -s family degrades the other way: a beyond-cap entry is
+        // necessarily non-empty, so an over-cap machine-id fails.
+        List<Spec> fatIdentity = prebakeShape();
+        fatIdentity.add(file("./etc/machine-id", oversizedBody("identity\n")));
+        byte[] artifact2 = gzipTar(fatIdentity);
+        SelfCheckReport report2 = UmlKernelAssets.RootfsDownload.selfCheck(
+                pinnedEntry(artifact2, (long) artifact2.length, EntryForm.PREBAKE), artifact2);
+
+        assertEquals(StageState.FAIL,
+                stage(report2, SelfCheckStage.FIRST_BOOT_CLEANLINESS).state());
+        assertTrue(stage(report2, SelfCheckStage.FIRST_BOOT_CLEANLINESS).detail()
+                .contains("etc/machine-id is not empty"));
+    }
+
+    @Test
+    public void theEntryFormDefaultsToTheOfficialMinirootfsShape() throws Exception {
+        byte[] artifact = gzipTar(officialShape());
+        // The historical seven-field shape defaults honestly: every entry
+        // this pipeline has pinned so far IS a minirootfs.
+        assertEquals(EntryForm.MINIROOTFS,
+                pinnedEntry(artifact, (long) artifact.length).form());
+        assertEquals(EntryForm.MINIROOTFS,
+                UmlKernelAssets.RootfsDownload.Entry.alpineMinirootfsAarch64().form());
+        // And an explicit prebake declaration is retained verbatim.
+        assertEquals(EntryForm.PREBAKE,
+                pinnedEntry(artifact, (long) artifact.length, EntryForm.PREBAKE).form());
     }
 
     // --- the tar walker's defenses --------------------------------------------------------
@@ -559,6 +966,7 @@ public final class UmlKernelAssetsRootfsSelfCheckTest {
             decorated.add(dir("./" + top + "/"));
         }
         decorated.add(file("./etc/hostname", "localhost\n"));
+        decorated.add(file("./etc/ssl/certs/ca-certificates.crt", FIXTURE_CA_BUNDLE));
         decorated.add(file("./lib/apk/db/installed", INSTALLED_DB));
         decorated.add(gnuLongName(longName));
         decorated.add(file("placeholder-short-name", "content under the long name"));
@@ -577,6 +985,7 @@ public final class UmlKernelAssetsRootfsSelfCheckTest {
                 .contains("version=" + OFFICIAL_VERSION));
         assertEquals(StageState.PASS, stage(report, SelfCheckStage.PACKAGE_DATABASE).state());
         assertEquals(StageState.PASS, stage(report, SelfCheckStage.TREE_DIGEST).state());
+        assertEquals(StageState.PASS, stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS).state());
     }
 
     @Test
@@ -603,6 +1012,9 @@ public final class UmlKernelAssetsRootfsSelfCheckTest {
                 .contains("archive unreadable"));
         assertEquals(StageState.FAIL, stage(report, SelfCheckStage.PACKAGE_DATABASE).state());
         assertEquals(StageState.FAIL, stage(report, SelfCheckStage.TREE_DIGEST).state());
+        assertEquals(StageState.FAIL, stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS).state());
+        assertTrue(stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS).detail()
+                .contains("archive unreadable"));
         assertTrue(report.failed());
     }
 
@@ -653,7 +1065,8 @@ public final class UmlKernelAssetsRootfsSelfCheckTest {
                 pinnedEntry(artifact, (long) artifact.length), artifact);
 
         assertEquals(StageState.PASS, stage(report, SelfCheckStage.MANIFEST_FIELDS).state());
-        assertEquals(List.of(SelfCheckStage.FIRST_BOOT_CLEANLINESS), report.plannedStages());
+        assertEquals(StageState.PASS, stage(report, SelfCheckStage.FIRST_BOOT_CLEANLINESS).state());
+        assertEquals(List.of(), report.plannedStages());
     }
 
     @Test
