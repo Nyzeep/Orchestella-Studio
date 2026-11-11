@@ -21,7 +21,7 @@
 
 ## Screenshots
 
-Captured on a real device (SM8850 / Android 16) with the default "Mascot · Lavender" theme.
+Captured on real devices (Android 16 / 17) with the default "Mascot · Lavender" theme.
 
 | ![Workbench](docs/assets/screenshots/dashboard.jpg) | ![Distro catalog](docs/assets/screenshots/distros.jpg) | ![Resource quota](docs/assets/screenshots/wizard-hardware.jpg) |
 | :---: | :---: | :---: |
@@ -70,7 +70,39 @@ Captured on a real device (SM8850 / Android 16) with the default "Mascot · Lave
 | **QEMU** | translated execution (TCG), full kernel | **Available** — the backbone of everything above |
 | **proot / bare** | native host instructions + `ptrace` syscall rewriting, no guest kernel | **Conditional** — 28-domain QA channel only |
 | **pVM** | Microdroid on an EL2 hardware vCPU (protected) | **Conditional** — requires the device to register `virtualizationservice` (payload shipped by the extension package) |
-| **UML** | a real kernel as an ordinary process | **Research line** — compile offload measured 2.04× slower than native; pivoted to long-running / container work |
+| **UML** | a real kernel as an ordinary process | **Research line · zero-device phase complete** — fast profile boots on a real device (all PASS); productization pending ACR decision (see "UML research status" below) |
+
+### UML research status (2026-11-11)
+
+The UML lane completed its six zero-device work packages (U0 boot timeline /
+U1 fast-boot profile / U2 pre-baked rootfs / U3 seccomp matrix / U4 warm-start
+evaluation / U6 multi-instance benchmark) and passed ARM64 boot verification on a
+real device (Android 16, 4 KB host pages):
+
+- **Boot performance**: the fast profile (minimal kernel + built-in initramfs)
+  reaches first command in 330 ms UP / 410 ms SMP-4 (guest uptime, n≥5, all
+  `exit 0`); the Alpine 3.22 pre-baked rootfs reaches `READY` in ~350 ms over
+  both hostfs and ext4.
+- **App-domain compatibility**: `seccomp=on` lands on the real SECCOMP fast path
+  inside the targetSdk-36 domain (zero SIGSYS across the boot matrix); kernel
+  ELF is 16 KB aligned.
+- **Multi-instance & long-running**: two concurrent instances coexist
+  (~18 MB marginal RSS each); 60 minutes of foreground-service residency with
+  zero freeze and zero kernel-RSS drift; kill/restart recovers.
+- **Deterministic builds**: kernel / rootfs / initramfs artifacts reproduce
+  byte-identically for a pinned input set; all inputs are sha256-pinned.
+- **Warm-start verdict**: checkpoint/restore and hibernation are NO-GO; the
+  pre-warmed pool is CONDITIONAL GO (~22 MB resident per instance).
+- **Not yet verified**: the fast profile only promises a T3 shell (no systemd /
+  network / package manager — productization follows the U2 pre-baked rootfs
+  path); 16 KB hosts, systemd, the full 12-case seccomp matrix and multi-device
+  samples remain untested.
+
+Next step is the ACR decision; after that come the payload pipeline and
+provisioning integration (the in-product UML lane stays at zero width by
+default until then). Details: the
+[zero-device direction spec](docs/research/2026-11-10-proot-vs-uml-zero-device-direction.zh-CN.md)
+and the [ARM64 device-window report](docs/research/2026-11-11-uml-arm64-device-window-wave2.zh-CN.md).
 
 Every figure and status label traces to
 [the four-lane decision material (ACR draft)](docs/research/ACR-draft-four-lanes-20261029.md);
@@ -91,9 +123,10 @@ anything the repository cannot measure reads **unverified** instead of an estima
 2. **Guest provisioning fix**: the guest kernel lacks `CONFIG_SECURITY_LANDLOCK`, which
    stops pacman 7's download sandbox — the single root cause of `package-install`
    failures (network verified healthy). Kernel config or a pacconf downgrade, pick one.
-3. **UML research line**: 30-minute stability, dynamic linking, Docker. The compile role
-   is measured out (940 ms vs 460 ms native on the 2,000-function fixture, 2.04×); only
-   long-running user space / containers remain in scope.
+3. **UML productization** (after the ACR decision): payload pipeline and provisioning
+   integration for the fast profile / pre-baked rootfs, 16 KB host and multi-device
+   matrix, full profile (systemd / networking). Warm-start follows the pre-warmed pool
+   route (checkpoint/restore measured NO-GO).
 4. **16 KB pages on a real device**: ELF / APK alignment passes the gate; execution is
    untested.
 5. **AVF custom kernel assessment**: protected devices are closed by the chain of trust
@@ -161,8 +194,9 @@ cd Orchestella-Studio
   files under `nativeLibraryDir`.
 - **Real AVF guest success samples: 0**: the current test device declares the AVF feature
   but never registered `virtualizationservice`.
-- **UML is research only**: everything beyond single-file `-c` compiles (linking /
-  systemd / Docker / SMP) is unverified.
+- **UML is not wired into the product**: the fast profile is verified booting on a real
+  device (see "UML research status"), but the provisioning chain is not integrated;
+  the full profile (systemd / networking / Docker / SMP) is unverified.
 - **16 KB pages**: real-device execution untested.
 - **Signing**: no key in the repository; the 0.6.0 certificate counts once the Release
   page records its fingerprint.
