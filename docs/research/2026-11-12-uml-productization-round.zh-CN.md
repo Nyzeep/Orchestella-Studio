@@ -11,7 +11,7 @@
 | Wave 0 环境重建 | **DONE** | 产物 sha 全对账；device-b 登记 + 旧包清理 + QA/runner 双包部署 |
 | 双设备启动矩阵 | **PASS** | device-b（API35/内核5.10）UP 250ms / SMP4 300ms / hostfs 350 / ext4 360，device-a（API36/6.6）存档对照全持平或更优 |
 | seccomp 跨内核代次 | **PASS** | 宿主 5.10（API 35）与 6.6（API 36）双双落真 SECCOMP；auto 探测均落 SECCOMP 而非 ptrace |
-| U3 12-case（API 35 profile） | **10 PASS / 2 BLOCKED / 0 FAIL** | API 35 profile 已存在（R1 勘误）；vector-net/mconsole 结构性 BLOCKED 转 adb-shell 通道下窗 |
+| U3 12-case（API 35 profile） | **12/12 PASS** | 10 runner + 2 adb-shell（vector-net/mconsole 同日补全），0 fail / 0 denied |
 | Wave 1 调研（R1/R2） | **DONE** | API35 seccomp 面 / payload 产品化合规，已入 main `10851948` |
 | Wave 2 实现（P1/P2） | **DONE** | payload 管线 + fast-profile 形态 + 12-case harness，双独立 code-review APPROVE，已入 main |
 | 产品默认行为 | **未变** | 三 flag 默认 false、UML 面 0 宽度（测试逐字节锁死） |
@@ -143,7 +143,22 @@ harness：`tools/research/uml-seccomp/device/run_device_matrix.sh`（runner 通�
 1. Windows/DrvFs 打包 rootfs 丢 exec 位（MSYS tar 0644）→ 设备上 guest init EACCES(-13)——对策：`build_guest.sh` 在 POSIX 宿主产出 `rootfs.tar.gz`（0755）+ harness `U3_ROOTFS_TGZ` 直推（回退 GNU `--mode` 兜底）；
 2. NDK bionic 静态 init 被 UML 7.2-rc4 arm64 binfmt 拒载（error -22，BTI/PAC GNU_PROPERTY notes；musl busybox 对照 exec 成功）——对策：guest init 用 glibc 静态（0 GNU_PROPERTY）。修复链实测：-13（权限）→ -22（bionic 拒载）→ **PASS**。
 
-### 4.5 O1 linux-fast 跨路径 sha 复现（open 项收窄，判定性）
+### 4.5 adb-shell 通道补全：U3 12-case 达成 12/12（续轮，2026-11-12 同日）
+
+Lane A 交付（`feat/uml-adbshell-channel`）：sepolicy 一手判定 GO（tag android-15.0.0_r1：shell 域对 `/data/local/tmp` shell_data_file 有 rx_file_perms）+ `seccomp_launch`/`run_with_fd`/`mconsole_probe` C 版静态产物（glibc，0 GNU_PROPERTY）+ harness `--channel adb-shell`。**A-3 勘误**：v5.10 `mconsole=<path>` 只认 notify 形态，socket 落点恒为 `uml_dir=<abs>/<umid>/mconsole`——通道用 `umid=` + `uml_dir=` 控落点。
+
+**探针实证（PROBE_* 行）**：`exec_ok=1`（通道可行）；`PROBE_BIND` `/data/local/tmp` 被 OEM 拒（errno 13，与 AOSP 基线一致——shell_data_file 无 sock_file），落点改 `/data/local/tests/unittest/uml-probe`（shell_test_data_file，ok=1）。
+
+**实测结果**：`vector-net PASS`（vec0 fd=3 socketpair 通道，CAP vector=ok）+ `mconsole PASS`（MCONSOLE_OK 握手 + CAP 行）。**U3 12-case 合计：12/12 全绿（10 runner + 2 adb-shell），0 fail / 0 denied**。
+
+**通道内新根因（三处，均已修）**：
+1. WindowsApps `python3` shim 静默 exit 49——host python 选择加执行性验证；
+2. Windows python 读不了 MSYS 路径——gen_profile 调用走 `cygpath -m`；
+3. mconsole CAP 行 in-place append 被内核 truncate-mode fd 后续输出**原地覆盖**——改为内核退出（wait）后追加。
+
+**L3 首启段说明**：`FIRST_BOOT_CLEANLINESS` 保持 PLANNED（需真机首启落盘树数据，不冒充 PASS）。
+
+### 4.6 O1 linux-fast 跨路径 sha 复现（open 项收窄，判定性）
 
 按 manifest §5 复现条件（同容器布局 `SRC=/src` + `OUT=/work/research/uml-fastboot/out`、源码来自同一 pin 解包树、NDK r29、JOBS=10）在 WSL 重建 arm64-up 与 arm64-smp：
 
@@ -173,7 +188,7 @@ harness：`tools/research/uml-seccomp/device/run_device_matrix.sh`（runner 通�
 
 | 项 | 状态 |
 | --- | --- |
-| U3 12-case：vector-net / mconsole | **unknown**（runner 通道 BLOCKED；adb-shell 通道下窗补） |
+| U3 12-case vector-net / mconsole | **done**（§4.5 adb-shell 通道实测 PASS） |
 | 16KB 宿主 | not-tested（device-b 4K 页） |
 | payload manifest 两处 pin 过期（QEMU 线） | open（下轮 QEMU 收口回写） |
 | rootfs tar 官方 sizeBytes / 下载 URL 存活复核 | open（P1 未决，ACR 通过后补） |
@@ -182,8 +197,8 @@ harness：`tools/research/uml-seccomp/device/run_device_matrix.sh`（runner 通�
 
 ## 8. 收口与交付
 
-- **集成**：R1/R2（`10851948`）+ P1（`9cf26e60`）+ P2（`6a429677`）+ docs（`98142f6e`）全入 main；敏感门全程 OK（一次 token_shape/absolute_path 命中已整改）；测试 **1468 全绿**、lint 0 error。
-- **ACR 证据包**：`.scratch/uml-productization-20261112/acr/acr-draft.md`（待投票：D1–D5——方案 A/B/混合、`linux-fast` pin 裁定、GPL §3a 路径、UML 面默认宽度、NOTICE 落地）。
+- **集成**：R1/R2（`10851948`）+ P1（`9cf26e60`）+ P2（`6a429677`）+ docs（`98142f6e`）+ 续轮三车道（Lane B `ab3ef9f0` manifest 回写 / Lane C `b8d20f5e` L2/L3 / Lane A `d6298ad8` adb-shell 通道）全入 main；敏感门全程 OK；测试 **1494 全绿**（1468 + Lane C 26）、lint 0 error。
+- **ACR 证据包**：`.scratch/uml-productization-20261112/acr/acr-draft.md`（待投票：D1–D5；续轮已刷新——U3 12/12、L3 四阶段、官方 pin 三方锁定）。
 - **纪律确认**：三 flag（bundledFastProfile/rootfsDownload/fastProfile）默认 false，flag off 零行为由测试逐字节锁死；UML 面默认 0 宽度未变；设备序列号/截图/console 未入任何 commit。
 
 ## 9. 合规自查
