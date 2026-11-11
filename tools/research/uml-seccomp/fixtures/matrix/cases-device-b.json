@@ -1,7 +1,7 @@
 {
   "schema": "uml-seccomp-cases/1",
   "profile": "aosp-app-android15-arm64",
-  "note": "device-b lane (API 35 / arm64 / 5.10 host): the runner-app channel executes these cases with the U3 guest rootfs and the kernel inheriting the real API 35 app-domain seccomp filter. Aggregation: python tools/research/uml-seccomp/matrix.py --cases <this file> --run-dir <per-case dirs> --mode aosp --profile tools/research/uml-seccomp/profile/generated/aosp-app-android15-arm64.json",
+  "note": "device-b lane (API 35 / arm64 / 5.10 host): the runner-app channel executes these cases with the U3 guest rootfs and the kernel inheriting the real API 35 app-domain seccomp filter; vector-net and mconsole belong to the adb-shell channel (run_device_matrix.sh --run --channel adb-shell, see device/adbshell-channel.md) and stay BLOCKED on the runner channel. Aggregation: python tools/research/uml-seccomp/matrix.py --cases <this file> --run-dir <per-case dirs> --mode aosp --profile tools/research/uml-seccomp/profile/generated/aosp-app-android15-arm64.json",
   "cases": [
     {
       "id": "hostfs-boot",
@@ -17,9 +17,9 @@
     },
     {
       "id": "vector-net",
-      "title": "vector network eth0 (runner channel cannot pass the vec0 fd; needs the adb-shell channel per run_device.sh)",
+      "title": "vector network eth0 (adb-shell channel: vec0 transport=fd,fd=3 via the static run_with_fd wrapper; runner channel is structurally BLOCKED on the vec0 fd pass)",
       "markers": ["CAP vector=ok"],
-      "device_entry": "adb shell 'cd /data/local/tmp/uml-seccomp && UML_KERNEL=<path> GUEST_ROOT=<path> ./device/run_device.sh --case vector-net'"
+      "device_entry": "DEVICE_SERIAL=<serial> U3_ROOTFS_TGZ=<posix-packed rootfs.tar.gz> tools/research/uml-seccomp/device/run_device_matrix.sh --run --channel adb-shell --case vector-net"
     },
     {
       "id": "ncpus-2",
@@ -35,9 +35,9 @@
     },
     {
       "id": "mconsole",
-      "title": "mconsole handshake (runner channel cannot host the probe client; needs the adb-shell channel per run_device.sh)",
+      "title": "mconsole handshake (adb-shell channel: socket at <uml_dir>/<umid>/mconsole via umid=+uml_dir= kernel args, probed by the static mconsole_probe client; the mconsole= param only accepts notify: and cannot set the path; runner channel is structurally BLOCKED on hosting the probe client)",
       "markers": ["CAP mconsole=ok"],
-      "device_entry": "adb shell 'cd /data/local/tmp/uml-seccomp && UML_KERNEL=<path> GUEST_ROOT=<path> ./device/run_device.sh --case mconsole'"
+      "device_entry": "DEVICE_SERIAL=<serial> U3_ROOTFS_TGZ=<posix-packed rootfs.tar.gz> tools/research/uml-seccomp/device/run_device_matrix.sh --run --channel adb-shell --case mconsole"
     },
     {
       "id": "sigchld",
