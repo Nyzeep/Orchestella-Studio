@@ -217,6 +217,11 @@ android {
         // gate; off answers a disabled report / closed gate with zero side effects.
         buildConfigField("boolean", "UML_BUNDLED_FAST_PROFILE", umlBundledFastProfile.toString())
         buildConfigField("boolean", "UML_ROOTFS_DOWNLOAD_ENABLED", umlRootfsDownload.toString())
+        // UML fast-profile launch shape (research/uml-fastboot README §4);
+        // consumed by UmlFaceLauncher.FastProfile.currentBuild(). Default off:
+        // the shipped build keeps the runner shape byte-identically.
+        buildConfigField("boolean", "UML_FAST_PROFILE",
+            (providers.gradleProperty("orchestella.uml.fastProfile").orNull?.trim()?.toBoolean() ?: false).toString())
         // Payload builds store native libraries uncompressed and 16 KB aligned
         // for the AVF loader; all other channels keep the extracted layout.
         manifestPlaceholders["orcExtractNativeLibs"] =

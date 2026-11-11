@@ -14,7 +14,7 @@ touch `app/`, and a host `pass` never replaces a device `PASS`.
 | AOSP source versions | faithful: one profile per `android14/15/16/17-release` + `main`, vendored verbatim |
 | Architecture | **proxy**: host x86_64 runs the x86_64 profile; the device target is arm64 |
 | libc | **proxy**: host UML is glibc-linked; Android UML kernels use bionic |
-| Kernel | **proxy**: upstream 6.12 UML has no `ncpus=`/`seccomp=`; those rows are `unknown` |
+| Kernel | **proxy**: the upstream lane moved — UML gained `seccomp=<on/auto/off>` in v6.16 and SMP (`ncpus=`) in v6.19 (R1 §4.1); the local 6.12-era "uniprocessor, no seccomp=" note is obsolete. On device-b the Raymer arm64 fork (7.2-rc4 base) already carries both, so those rows run with `--case` rather than falling to `unknown` |
 
 `profile/host-shims/glibc-x86_64.txt` lists the x86_64-only syscalls glibc
 issues that have no arm64 counterpart (rseq/set_robust_list, access, mkdir,
@@ -36,7 +36,10 @@ guest/init.c                static guest init with CAP probes
 guest/build_guest.sh        builds rootfs dir + ubd0 ext4 image
 matrix.py                   pass/fail/unknown matrix + --self-test
 fixtures/matrix/            synthetic run dirs for the self-test
-device/run_device.sh        on-device entry for the `unknown` rows
+fixtures/matrix/cases-device-b.json  the device-b (API 35 arm64) lane doc: same 12 cases, android15 profile
+device/run_device.sh        on-device entry for the `unknown` rows (adb-shell channel)
+device/run_device_matrix.sh the runner-app channel: 12-case closed loop with a zero-touch plan mode
+profile_sanity.py           API 35 sanity (check-only): pipeline drift + android15→16 monotonicity
 collect/syscalls.bt         bpftrace sketch (this host has no bpftrace)
 ```
 
@@ -122,16 +125,49 @@ android14 and present from android15.
 - A run whose profile name or profile sha256 differs is `unknown`
   (`profile-mismatch` / `profile-hash-mismatch`), never silently mixed.
 
+## device-b lane (API 35 / arm64, runner-app channel)
+
+Two device channels exist and are never mixed:
+
+| channel | entry | domain/filter | notes |
+| --- | --- | --- | --- |
+| adb-shell | `device/run_device.sh` | shell domain; filter installed by `seccomp_launch` from the profile | full harness semantics (fd passing, mconsole probe, trace mode); needs `cc` or a prebuilt launcher on the device |
+| runner-app | `device/run_device_matrix.sh` | the runner app's own domain — on an API 35 device the kernel inherits the **real** zygote-installed API 35 app filter (R1 §5.1.3), so no `seccomp_launch` is involved | one-key closed loop: config → `am start -S --activity-clear-task` → poll `uml-exit.txt` → pull `uml-console.log` → judge; `--plan` lists the 12 cases with zero device contact |
+
+Runner-channel case classes (device-b): 10 cases run through per-case `args`
+whole-replacement configs (`init=/init` for the U3 guest init; `ncpus=N` +
+`libuml_kernel_smp.so` for the SMP rows; `ubd0=${rootfs}` + `rootfs.img` for
+the ext4 row); `vector-net` (needs a host socketpair fd) and `mconsole` (needs
+a host-side probe client inside the run window) are structurally unservable
+there and stay on the adb-shell channel. `run_device_matrix.sh --judge`
+triage follows the R1 §5.1.5 three-way reading: SIGSYS = filter TRAP (check
+the profile reverse set; enforce carries no name), "SECCOMP userspace
+requested but not functional" = close_range/seccomp probe fatal, errno=38 /
+"Function not implemented" = host-kernel absence (5.10 lacks `epoll_pwait2`
+and friends; the API 35 filter allows those numbers, so it is an errno fact,
+never SIGSYS).
+
+Before any device run, `profile_sanity.py --check` re-derives the checked-in
+android15 profile from the vendored `android15-release` inputs (check-only,
+no regeneration) and asserts the monotonicity `android16 − android15 ==
+{landlock_add_rule, landlock_create_ruleset, landlock_restrict_self, mseal}`
+with an empty reverse difference (R1 §2.3, both arches); `UmlSeccompProfileSanityTest`
+locks the same invariants on the JVM side so a policy widening cannot reach a
+matrix silently.
+
 ## Known limits
 
 - Host x86_64 + glibc is not the arm64 + bionic target. The host shim marks
   the delta; those syscalls are reported separately and are not device claims.
-- Upstream 6.12 UML is uniprocessor and has no `seccomp=on`; the `ncpus=2/4`
-  and `seccomp-fastpath` rows are `unknown` with device commands. The
-  `seccomp-fastpath` probe also requires host `close_range` (Linux 5.9+).
+- The host harness still refuses `ncpus=`/`seccomp=` rows unless the kernel
+  reports the knob (`--help` probe), so old upstream kernels keep those rows
+  `unknown`; device-b's fork kernel carries both (the runner channel runs
+  them with the SMP kernel image). The fast path itself needs host
+  `close_range` (Linux 5.9+) — device-b's 5.10.236 satisfies it.
 - The mconsole socket exists only while UML runs; the mconsole case keeps the
   guest alive with `u3_wait_ms=4000` so the host can connect.
-- UML requires an exec-capable `TMPDIR`; the harness sets it to `<outdir>/tmp`.
+- UML requires an exec-capable `TMPDIR`; the host harness sets it to
+  `<outdir>/tmp`, the runner channel uses the app's `filesDir`.
 - Fixtures read by the self-test use `console.txt`/`stderr.txt` because `*.log`
   is git-ignored; runtime output still uses `.log`.
 - No root, kernel modules, SELinux changes, or ptrace-based seccomp bypass.

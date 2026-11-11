@@ -2,6 +2,7 @@ package io.github.nyzeep.orchestella;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -542,6 +543,270 @@ public final class UmlFaceLauncherTest {
         assertEquals(1, keepAlive.releases);
         assertEquals(Health.NOT_RUNNING, face.probe());
         assertEquals(UmlFaceLauncher.State.STOPPED, face.state());
+    }
+
+    // --- fast profile (P2, research/uml-fastboot README §4) ------------------------
+    //
+    // The flag-gated fast-profile launch shape: when the FastProfile seam is
+    // null (the default, and what the existing 6-arg constructor feeds) the
+    // launcher answers exactly today's command line (locked by the tests
+    // above); an explicit FastProfile selects the §4 fast shapes, and every
+    // degradation stays honest (missing assets answer the fixed code, the
+    // double gate still refuses first).
+
+    private UmlFaceLauncher launcher(
+            UmlFaceLauncher.FastProfile fast, UmlFaceLauncher.LaunchParams params,
+            FakeSpawner spawner, FakeKeepAlive keepAlive, UmlFaceLauncher.Channel channel) {
+        return new UmlFaceLauncher(true, environment(), params, keepAlive, spawner, channel, fast);
+    }
+
+    @Test
+    public void buildFlagSelectsTheFastProfileShapeAndDefaultsToTheRunnerShape() {
+        // Hermetic in both builds: the default build has the flag off, so
+        // currentBuild() must answer the default runner shape (null); a build
+        // with -Porchestella.uml.fastProfile=true must answer the §4 UP
+        // initramfs shape.
+        if (BuildConfig.UML_FAST_PROFILE) {
+            assertEquals(
+                    UmlFaceLauncher.FastProfile.Root.INITRAMFS,
+                    UmlFaceLauncher.FastProfile.currentBuild().root());
+        } else {
+            assertNull("the default build must keep the runner shape (flag off)",
+                    UmlFaceLauncher.FastProfile.currentBuild());
+        }
+        // The explicit factories are flag-independent (the device window tunes
+        // the root channel without touching the build flag).
+        for (UmlFaceLauncher.FastProfile.Root root : UmlFaceLauncher.FastProfile.Root.values()) {
+            assertNotNull(new UmlFaceLauncher.FastProfile(root));
+        }
+    }
+
+    @Test
+    public void fastProfileInitramfsCommandLineMatchesFastbootReadmeSection4() {
+        // README §4 device-window line, argument for argument:
+        //   mem=512M rw con=null con0=null,fd:1 seccomp=on panic=1 printk.time=1
+        //   um.hold_ms=1000 stub_exe=<nativeLibraryDir>/libuml_stub.so
+        // No rootfs/init= — the built-in initramfs does not need them.
+        List<String> command = UmlFaceLauncher.fastProfileCommand(
+                UmlFaceLauncher.FastProfile.initramfs(), params(0),
+                libDir, filesDir);
+
+        assertEquals(new File(libDir, UmlFaceLauncher.KERNEL_LIB_NAME).getAbsolutePath(),
+                command.get(0));
+        List<String> expected = java.util.Arrays.asList(
+                "mem=512M",
+                "rw",
+                "con=null",
+                "con0=null,fd:1",
+                "seccomp=on",
+                "panic=1",
+                "printk.time=1",
+                "um.hold_ms=1000",
+                "stub_exe=" + new File(libDir, UmlFaceLauncher.STUB_LIB_NAME).getAbsolutePath());
+        assertEquals(expected, command.subList(1, command.size()));
+        for (String arg : command) {
+            assertFalse("the built-in initramfs needs no rootflags", arg.startsWith("rootflags="));
+            assertFalse("the built-in initramfs needs no init=", arg.startsWith("init="));
+            assertFalse("an UP kernel must not see the ncpus knob", arg.startsWith("ncpus="));
+        }
+    }
+
+    @Test
+    public void fastProfileHostfsShapeAppendsTheUmrootChannel() {
+        // §4: "要测外置 rootfs，再传 umroot=<filesDir>/rootfs umrootfstype=hostfs".
+        List<String> command = UmlFaceLauncher.fastProfileCommand(
+                UmlFaceLauncher.FastProfile.hostfs(), params(0), libDir, filesDir);
+
+        List<String> expected = java.util.Arrays.asList(
+                new File(libDir, UmlFaceLauncher.KERNEL_LIB_NAME).getAbsolutePath(),
+                "mem=512M",
+                "rw",
+                "con=null",
+                "con0=null,fd:1",
+                "seccomp=on",
+                "panic=1",
+                "printk.time=1",
+                "um.hold_ms=1000",
+                "stub_exe=" + new File(libDir, UmlFaceLauncher.STUB_LIB_NAME).getAbsolutePath(),
+                "umroot=" + new File(filesDir, UmlFaceLauncher.ROOTFS_DIR_NAME).getAbsolutePath(),
+                "umrootfstype=hostfs");
+        assertEquals(expected, command);
+    }
+
+    @Test
+    public void fastProfileExt4ShapeAppendsTheUbd0Channel() {
+        // §4: "再传 ubd0=<filesDir>/rootfs.ext4 umroot=/dev/ubda umrootfstype=ext4".
+        List<String> command = UmlFaceLauncher.fastProfileCommand(
+                UmlFaceLauncher.FastProfile.ext4(), params(0), libDir, filesDir);
+
+        List<String> expected = java.util.Arrays.asList(
+                new File(libDir, UmlFaceLauncher.KERNEL_LIB_NAME).getAbsolutePath(),
+                "mem=512M",
+                "rw",
+                "con=null",
+                "con0=null,fd:1",
+                "seccomp=on",
+                "panic=1",
+                "printk.time=1",
+                "um.hold_ms=1000",
+                "stub_exe=" + new File(libDir, UmlFaceLauncher.STUB_LIB_NAME).getAbsolutePath(),
+                "ubd0=" + new File(filesDir, UmlFaceLauncher.FAST_ROOTFS_IMAGE_NAME).getAbsolutePath(),
+                "umroot=/dev/ubda",
+                "umrootfstype=ext4");
+        assertEquals(expected, command);
+        for (String arg : command) {
+            assertFalse("the ext4 fast shape goes through umroot, not rootflags",
+                    arg.startsWith("rootflags="));
+        }
+    }
+
+    @Test
+    public void fastProfileSmpKnobLandsBeforeTheVerbatimExtraArgs() {
+        // SMP rides the same §4 base line (wave2 §3: SMP kernel + ncpus=4, not
+        // --cpus=), and extraArgs stay last so a device window can override a
+        // scalar (UML parses params sequentially, later assignments win).
+        List<String> command = UmlFaceLauncher.fastProfileCommand(
+                UmlFaceLauncher.FastProfile.initramfs(), params(4, "um.hold_ms=5000"),
+                libDir, filesDir);
+
+        int hold = command.indexOf("um.hold_ms=1000");
+        int ncpus = command.indexOf("ncpus=4");
+        assertTrue("an SMP fast shape must carry the ncpus knob", ncpus >= 0);
+        assertTrue("the §4 hold marker must precede the tuning args", hold >= 0);
+        // The knob lands after the §4 fixed line and before the verbatim tail:
+        // the last arg is the override, the one before it the ncpus knob.
+        assertEquals("um.hold_ms=5000", command.get(command.size() - 1));
+        assertEquals(ncpus, command.size() - 2);
+        assertTrue(hold < ncpus);
+    }
+
+    @Test
+    public void fastProfileStartSpawnsTheFastShapeWithTheSameLifecycle()
+            throws IOException {
+        placeAssets();
+        FakeSpawner spawner = new FakeSpawner();
+        FakeKeepAlive keepAlive = new FakeKeepAlive();
+        UmlFaceLauncher face = launcher(
+                UmlFaceLauncher.FastProfile.initramfs(), params(4), spawner, keepAlive,
+                new RecordingChannel());
+
+        StartResult result = face.start();
+
+        // The fast shape changes only the command line and the asset precheck:
+        // lifecycle, keep-alive, width and channel honesty are the face's own
+        // invariants and stay exactly as locked above.
+        assertTrue(result.started());
+        assertEquals(StartCode.STARTED, result.code());
+        List<String> command = spawner.lastSpawn().command;
+        assertEquals("ncpus=4", command.get(command.size() - 1));
+        assertEquals(filesDir, spawner.lastSpawn().workingDir);
+        assertEquals(filesDir.getAbsolutePath(), spawner.lastSpawn().environment.get("TMPDIR"));
+        assertEquals(1, keepAlive.acquires);
+        assertEquals(4, face.width());
+        assertEquals(Health.HEALTHY, face.probe());
+        face.stop();
+        assertEquals(1, keepAlive.releases);
+    }
+
+    @Test
+    public void fastProfileInitramfsNeedsNoRootfsDirectory() throws IOException {
+        // Kernel + stub present, rootfs deliberately absent: the built-in
+        // initramfs boots without an external root, so this is a start, not a
+        // degradation (the runner shape would answer MISSING_ASSET here).
+        File kernel = new File(libDir, UmlFaceLauncher.KERNEL_LIB_NAME);
+        File stub = new File(libDir, UmlFaceLauncher.STUB_LIB_NAME);
+        assertTrue(kernel.createNewFile());
+        assertTrue(stub.createNewFile());
+        kernel.setExecutable(true);
+        stub.setExecutable(true);
+        FakeSpawner spawner = new FakeSpawner();
+        FakeKeepAlive keepAlive = new FakeKeepAlive();
+        UmlFaceLauncher face = launcher(
+                UmlFaceLauncher.FastProfile.initramfs(), params(0), spawner, keepAlive, null);
+
+        assertTrue(face.start().started());
+        assertEquals(1, spawner.spawns.size());
+    }
+
+    @Test
+    public void fastProfileHostfsWithoutRootfsDegradesToTheFixedCode() throws IOException {
+        placeAssets();
+        FakeSpawner spawner = new FakeSpawner();
+        FakeKeepAlive keepAlive = new FakeKeepAlive();
+        UmlFaceLauncher face = launcher(
+                UmlFaceLauncher.FastProfile.hostfs(), params(0), spawner, keepAlive, null);
+        // placeAssets laid the rootfs dir down; remove it so the external-root
+        // shape is honestly missing its channel.
+        assertTrue(new File(filesDir, UmlFaceLauncher.ROOTFS_DIR_NAME).delete());
+
+        StartResult result = face.start();
+
+        assertFalse(result.started());
+        assertEquals(StartCode.MISSING_ASSET, result.code());
+        assertEquals(UmlFaceLauncher.ROOTFS_DIR_NAME, result.detail());
+        assertEquals(0, spawner.spawns.size());
+        assertEquals(0, keepAlive.acquires);
+        assertEquals(0, face.width());
+    }
+
+    @Test
+    public void fastProfileExt4WithoutRootfsImageDegradesToTheFixedCode() throws IOException {
+        placeAssets();
+        FakeSpawner spawner = new FakeSpawner();
+        FakeKeepAlive keepAlive = new FakeKeepAlive();
+        UmlFaceLauncher face = launcher(
+                UmlFaceLauncher.FastProfile.ext4(), params(0), spawner, keepAlive, null);
+        // placeAssets lays the hostfs dir, never the ext4 image: the ext4 fast
+        // shape is honestly missing its image (rootfs.ext4 under filesDir).
+        StartResult result = face.start();
+
+        assertFalse(result.started());
+        assertEquals(StartCode.MISSING_ASSET, result.code());
+        assertEquals(UmlFaceLauncher.FAST_ROOTFS_IMAGE_NAME, result.detail());
+        assertEquals(0, spawner.spawns.size());
+        assertEquals(0, keepAlive.acquires);
+    }
+
+    @Test
+    public void fastProfileMissingKernelAndStubDegradeTheSameWay() throws IOException {
+        FakeSpawner spawner = new FakeSpawner();
+        FakeKeepAlive keepAlive = new FakeKeepAlive();
+        UmlFaceLauncher noKernel = launcher(
+                UmlFaceLauncher.FastProfile.initramfs(), params(0), spawner, keepAlive, null);
+        StartResult kernelResult = noKernel.start();
+        assertEquals(StartCode.MISSING_ASSET, kernelResult.code());
+        assertEquals(UmlFaceLauncher.KERNEL_LIB_NAME, kernelResult.detail());
+
+        // Kernel present, stub missing: same fixed code, same honesty.
+        File kernel = new File(libDir, UmlFaceLauncher.KERNEL_LIB_NAME);
+        assertTrue(kernel.createNewFile());
+        kernel.setExecutable(true);
+        UmlFaceLauncher noStub = launcher(
+                UmlFaceLauncher.FastProfile.initramfs(), params(0), spawner, keepAlive, null);
+        StartResult stubResult = noStub.start();
+        assertEquals(StartCode.MISSING_ASSET, stubResult.code());
+        assertEquals(UmlFaceLauncher.STUB_LIB_NAME, stubResult.detail());
+        assertEquals(0, spawner.spawns.size());
+        assertEquals(0, keepAlive.acquires);
+    }
+
+    @Test
+    public void fastProfileDoesNotBypassTheDoubleGate() {
+        FakeSpawner spawner = new FakeSpawner();
+        FakeKeepAlive keepAlive = new FakeKeepAlive();
+        UmlFaceLauncher face = new UmlFaceLauncher(
+                false, environment(), params(4), keepAlive, spawner, null,
+                UmlFaceLauncher.FastProfile.initramfs());
+
+        StartResult result = face.start();
+
+        // The fast-profile flag selects a launch shape, never an authorization:
+        // with the double gate off the start stays a zero-side-effect refusal.
+        assertFalse(result.started());
+        assertEquals(StartCode.GATE_DISABLED, result.code());
+        assertEquals(0, spawner.spawns.size());
+        assertEquals(0, keepAlive.acquires);
+        assertEquals(0, face.width());
     }
 
     // --- the fabric slot's supplier view ----------------------------------------------

@@ -1,0 +1,79 @@
+{
+  "schema": "uml-seccomp-cases/1",
+  "profile": "aosp-app-android15-arm64",
+  "note": "device-b lane (API 35 / arm64 / 5.10 host): the runner-app channel executes these cases with the U3 guest rootfs and the kernel inheriting the real API 35 app-domain seccomp filter. Aggregation: python tools/research/uml-seccomp/matrix.py --cases <this file> --run-dir <per-case dirs> --mode aosp --profile tools/research/uml-seccomp/profile/generated/aosp-app-android15-arm64.json",
+  "cases": [
+    {
+      "id": "hostfs-boot",
+      "title": "hostfs rootfs boot (runner channel, U3 guest init)",
+      "markers": ["CAP hostfs=ok"],
+      "device_entry": "DEVICE_SERIAL=<serial> tools/research/uml-seccomp/device/run_device_matrix.sh --run --case hostfs-boot"
+    },
+    {
+      "id": "ubd0-boot",
+      "title": "ubd0 ext4 rootfs boot (runner channel; needs files/rootfs.img pushed)",
+      "markers": ["CAP ubd0=ok"],
+      "device_entry": "DEVICE_SERIAL=<serial> tools/research/uml-seccomp/device/run_device_matrix.sh --run --case ubd0-boot"
+    },
+    {
+      "id": "vector-net",
+      "title": "vector network eth0 (runner channel cannot pass the vec0 fd; needs the adb-shell channel per run_device.sh)",
+      "markers": ["CAP vector=ok"],
+      "device_entry": "adb shell 'cd /data/local/tmp/uml-seccomp && UML_KERNEL=<path> GUEST_ROOT=<path> ./device/run_device.sh --case vector-net'"
+    },
+    {
+      "id": "ncpus-2",
+      "title": "SMP ncpus=2 (runner channel; needs libuml_kernel_smp.so in nativeLibraryDir)",
+      "markers": ["CAP smp=2"],
+      "device_entry": "DEVICE_SERIAL=<serial> tools/research/uml-seccomp/device/run_device_matrix.sh --run --case ncpus-2"
+    },
+    {
+      "id": "ncpus-4",
+      "title": "SMP ncpus=4 (runner channel; needs libuml_kernel_smp.so in nativeLibraryDir)",
+      "markers": ["CAP smp=4"],
+      "device_entry": "DEVICE_SERIAL=<serial> tools/research/uml-seccomp/device/run_device_matrix.sh --run --case ncpus-4"
+    },
+    {
+      "id": "mconsole",
+      "title": "mconsole handshake (runner channel cannot host the probe client; needs the adb-shell channel per run_device.sh)",
+      "markers": ["CAP mconsole=ok"],
+      "device_entry": "adb shell 'cd /data/local/tmp/uml-seccomp && UML_KERNEL=<path> GUEST_ROOT=<path> ./device/run_device.sh --case mconsole'"
+    },
+    {
+      "id": "sigchld",
+      "title": "SIGCHLD / wait4 child reaping (runner channel)",
+      "markers": ["CAP sigchld=ok"],
+      "device_entry": "DEVICE_SERIAL=<serial> tools/research/uml-seccomp/device/run_device_matrix.sh --run --case sigchld"
+    },
+    {
+      "id": "clone",
+      "title": "clone syscall (runner channel)",
+      "markers": ["CAP clone=ok"],
+      "device_entry": "DEVICE_SERIAL=<serial> tools/research/uml-seccomp/device/run_device_matrix.sh --run --case clone"
+    },
+    {
+      "id": "mount",
+      "title": "mount syscall (guest mounts, host mount denied; runner channel)",
+      "markers": ["CAP mount=ok"],
+      "device_entry": "DEVICE_SERIAL=<serial> tools/research/uml-seccomp/device/run_device_matrix.sh --run --case mount"
+    },
+    {
+      "id": "personality",
+      "title": "personality syscall (runner channel)",
+      "markers": ["CAP personality=ok"],
+      "device_entry": "DEVICE_SERIAL=<serial> tools/research/uml-seccomp/device/run_device_matrix.sh --run --case personality"
+    },
+    {
+      "id": "setrlimit",
+      "title": "setrlimit syscall (runner channel)",
+      "markers": ["CAP setrlimit=ok"],
+      "device_entry": "DEVICE_SERIAL=<serial> tools/research/uml-seccomp/device/run_device_matrix.sh --run --case setrlimit"
+    },
+    {
+      "id": "seccomp-fastpath",
+      "title": "UML seccomp=on fast path (upstream v6.16+; runner channel; 5.10 host satisfies close_range >= 5.9)",
+      "markers": ["CAP hostfs=ok", "Userspace mode: SECCOMP"],
+      "device_entry": "DEVICE_SERIAL=<serial> tools/research/uml-seccomp/device/run_device_matrix.sh --run --case seccomp-fastpath"
+    }
+  ]
+}
