@@ -723,15 +723,19 @@ shell_stage() {
 
     say "[stage] filter.txt (host gen_profile.py, aosp-app-android15-arm64)"
     local PY=""
-    if command -v python3 >/dev/null 2>&1; then
-        PY=python3
-    elif command -v python >/dev/null 2>&1; then
-        PY=python
-    else
-        die "python not found on host (needed for gen_profile.py)"
-    fi
-    "$PY" "$SECCOMP_ROOT/gen_profile.py" --emit-filter "$PROFILE_PATH" \
-        --allow-extra "" --deny-extra "" -o "$OUT_ROOT/$ts/filter.txt" >/dev/null \
+    # Pick the first interpreter that actually executes: on Windows the
+    # WindowsApps python3 shim exists but exits 49 silently.
+    PY=""
+    for cand in python python3; do
+        if command -v "$cand" >/dev/null 2>&1 && "$cand" -c "pass" >/dev/null 2>&1; then
+            PY=$cand
+            break
+        fi
+    done
+    [ -n "$PY" ] || die "no working python on host (needed for gen_profile.py)"
+    # Windows python cannot read MSYS-style paths: hand it cygpath -m forms.
+    "$PY" "$(winpath "$SECCOMP_ROOT/gen_profile.py")" --emit-filter "$(winpath "$PROFILE_PATH")" \
+        --allow-extra "" --deny-extra "" -o "$(winpath "$OUT_ROOT/$ts/filter.txt")" >/dev/null \
         || die "filter generation failed"
     "$ADB" -s "$DEVICE_SERIAL" push "$(winpath "$OUT_ROOT/$ts/filter.txt")" "$SHELL_WORK/filter.txt" >/dev/null \
         || die "push filter.txt failed"
@@ -817,11 +821,14 @@ elif [ "$CASE" = "mconsole" ]; then
         KPID=$!
         "$WORK/bin/mconsole_probe" --socket "${UMLDIR}${UMID}/mconsole" \
             --timeout 8 > "$PROBELOG" 2>&1
+        # Append only AFTER the kernel exits: the kernel owns a truncate-mode fd
+        # on the same console file and its later writes would overwrite an
+        # earlier in-place append (device-b 2026-11-12 evidence).
+        wait "$KPID"; RC2=$?
         if grep -q MCONSOLE_OK "$PROBELOG" 2>/dev/null; then
             echo "CAP mconsole=ok" >> "$RAW"
         fi
-        wait "$KPID"
-        exit $?
+        exit $RC2
     '
     RC=$?
 else
