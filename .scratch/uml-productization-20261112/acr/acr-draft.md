@@ -70,7 +70,7 @@ pinned 布局（`SRC=/src` + `OUT=/work/research/uml-fastboot/out`）重建逐�
 | vector-net/mconsole 无 runner 通道 | adb-shell 通道下窗补；不阻塞 D1–D5 |
 | payload manifest 两处 pin 过期（QEMU 线） | 本轮记录，下轮 QEMU 收口回写 |
 | 内置 rootfs 的 Play 150MB 门槛 | D2 建议混合形态规避 |
-| rootfs 下载源的官方签名链（Alpine `.asc` 在位 / Debian SHA512SUMS 签名存疑） | R2 §3 三层校验管线已设计并**实现到位**（L3 四阶段 done、官方 pin 三方锁定 6bf49190/3,981,043 B；L2 固化 pin fail-closed） |
+| rootfs 下载源的官方签名链（Alpine `.asc` 在位 / Debian SHA512SUMS 签名存疑） | R2 §3 三层校验管线已**实现闭环**（L3 五阶段 done + transport 接线 RootfsTransport、官方 pin 三方锁定 6bf49190/3,981,043 B；fail-closed 全链契约测试） |
 
 ## 7. 投票入口
 
