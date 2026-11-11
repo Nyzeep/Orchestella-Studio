@@ -1,7 +1,7 @@
 # UML rootfs 下载版校验管线（方案 B L2L3）——官方 pin 锁定与 L3 五阶段 JVM 移植
 
 - 日期：2026-11-12
-- 车道：C（续轮·UML rootfs 下载管线深化）；前置：`2026-11-12-uml-productization-payload-research.zh-CN.md`（R2，三层管线设计）、P1 骨架（`UmlKernelAssets.java` 的 `RootfsDownload`）
+- 车道：C（续轮·UML rootfs 下载管线深化）；前置：`2026-11-12-uml-productization-payload-research.zh-CN.md`（R2，三层管线设计）、P1 骨架（`UmlKernelAssets.java` 的 `RootfsDownload`）。**Lane D 补记（同日）**：transport 接线落地（`RootfsTransport.downloadAndVerify`），见 §5 L1 行与 §6 #2。
 - 代码：`app/src/main/java/io/github/nyzeep/orchestella/UmlKernelAssets.java`（`RootfsDownload` 内 L3 实现）；测试：`app/src/test/java/io/github/nyzeep/orchestella/UmlKernelAssetsRootfsSelfCheckTest.java`
 - 边界：flag `orchestella.uml.rootfsDownload` 默认值不动（false）；下载 transport 仍未接线；产品默认行为零改动。
 
@@ -102,13 +102,13 @@ FIRST_BOOT_CLEANLINESS PLANNED
 
 | 层 | Orchestella（方案 B） | Alpine 官方校验链 | 本轮状态 |
 | --- | --- | --- | --- |
-| L1 传输完整性 | `ResilientDownloadEngine`（`.part` 原子落盘、Range/If-Range、Content-Length 比对）+ `Entry.sizeBytes` 字节门 | CDN 的 `Accept-Ranges`/强 ETag（§2 表） | 校验半 done（字节门现已是精确值）；transport 接线未做 |
+| L1 传输完整性 | `ResilientDownloadEngine`（`.part` 原子落盘、Range/If-Range、Content-Length 比对）+ `Entry.sizeBytes` 字节门 | CDN 的 `Accept-Ranges`/强 ETag（§2 表） | **done（Lane D）**：`RootfsTransport.downloadAndVerify` 闭环（下载 → `.part` → 收货字节 → L1/L2/L3 → 原子发布）。引擎实测只发 `Range` 不发 `If-Range`（§6 #2 发现），续传防污染由 L2 pin 收尾 |
 | L2 身份 | 固定 HTTPS 源 + sha256 pin + `MessageDigest.isEqual`（常量时间）+ 镜像轮换仅限网络类失败 | tarball 自带 `.sha256`/`.sha512`/`.asc`（ncopa 直签 tarball，指纹带外比对） | done。设备不跑 GPG：构建/发布期人工验一次 `.asc`（§1 已示范），把验证过的 pin 固化进 app，运行期只验 pin——R2 §3.4 的取舍落地 |
 | L3 内容自检 | 五阶段静态自检（§3），`selfCheckPlan()` 固定次序 | （Alpine 无此层；口径来自本仓库 `research/uml-rootfs-prebake/verify.sh`） | 四阶段 done + 首启 PLANNED；`requireVerifiedAndSelfChecked` 把三层钉成一个 fail-closed 调用 |
 
 ## 6. 未决问题
 
 1. **`FIRST_BOOT_CLEANLINESS` = PLANNED**：等设备窗提供真机首启数据后，按 verify.sh 的首启状态检查移植（init/ready 可执行、无包管理器调用、无网络命令、无 provisioning 标记、machine-id/resolv.conf 空、无 ssh host key、apk 缓存/锁/日志干净）。注意验收对象是"**首启后的落盘树**"——官方 minirootfs 本身不带这些状态（一手清点：无 machine-id/resolv.conf/ssh host key 条目），静态读 tarball 无法也不应假装通过。
-2. **transport 接线**：`ResilientDownloadEngine` ↔ `requireVerifiedAndSelfChecked` 的对接仍未做；flag `orchestella.uml.rootfsDownload` 默认 false，本轮零默认行为变化、零产品路径触碰。
+2. **transport 接线（Lane D，2026-11-12 done）**：`RootfsTransport.downloadAndVerify(transport, entry, destDir)`（app 侧新类，`runtime:network` 只读）把 `ResilientDownloadEngine` ↔ `requireVerifiedAndSelfChecked` 接成闭环——引擎把 `entry.source` 拉到 `destDir/<fileName>.part`（引擎内部瞬态 `<fileName>.part.part`，原子协议），收货字节 → L1/L2/L3 fail-closed 串联 → 通过才原子 rename 为正式名并返回收据（size/sha/阶段报告）；任何层失败清扫全部 staged 名，不留半成品（跨调用续传有意让位于 fail-closed；单调用内的重试续传保留并契约测试锁定）。flag 门在入口内部：读 `BuildConfig.UML_ROOTFS_DOWNLOAD_ENABLED`（gradle 属性 `orchestella.uml.rootfsDownload`，**默认 false 不变**），off 返回 disabled 收据且零传输零落盘；单测锁死默认 build 的 gate 为 off。**引擎行为发现（只读未修）**：引擎发送 `Range: bytes=N-` 但从不发送 `If-Range`、不消费 ETag（R2 §3.2 规划的 If-Range 契约引擎未实现）——换源字节续传混流由 L2 pin 收尾（sha 失配 → 引擎自清 .part + destination → fail-closed），契约测试锁定（`RootfsDownloadResumeContractTest`）；若 ACR 要求真 If-Range 语义属引擎改动。剩余：**真实网络（官方 CDN）下的端到端待真机窗**；产品调用方接线待 ACR 落地（当前零产品路径调用）。
 3. **point release 升级**：换 pin 前必须按 §1 链条重新一手锁定并同步 sizeBytes（§1 升级纪律）；当前 3.22.2 pin 与官方一致，无升级压力。
 4. **内存形态**：L3 目前以 `byte[]` 为输入（4 MB 级合理）；若未来把同一管线接向更大的预烘焙 tar（106 MB 级），需要补 `File` 流式重载避免整块驻内存。
