@@ -92,7 +92,7 @@
     },
     {
       "id": "seccomp-fastpath",
-      "title": "UML seccomp=on fast path (downstream-only option)",
+      "title": "UML seccomp=on fast path (upstream v6.16+; needs host close_range >= 5.9)",
       "markers": [
         "CAP hostfs=ok"
       ],

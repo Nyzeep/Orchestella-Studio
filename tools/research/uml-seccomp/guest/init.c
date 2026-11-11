@@ -133,6 +133,23 @@ static int probe_setrlimit(void)
     return 1;
 }
 
+/* Guest-visible SMP width: the "processor" lines of /proc/cpuinfo.  The
+ * ncpus-2/ncpus-4 matrix rows declare "CAP smp=<n>" as their marker; without
+ * this probe the rows can never pass (the marker would be missing on any
+ * boot, including a healthy SMP one).  A UP kernel, or an ncpus= knob the
+ * kernel did not honor, reports 1 and fails both rows honestly. */
+static int probe_smp_count(void)
+{
+    static char buf[16384];
+    if (read_file("/proc/cpuinfo", buf, sizeof(buf)) < 0)
+        return 1;
+    int n = 0;
+    for (char *line = strtok(buf, "\n"); line; line = strtok(NULL, "\n"))
+        if (strncmp(line, "processor", 9) == 0)
+            n++;
+    return n > 0 ? n : 1;
+}
+
 int main(void)
 {
     printf("GUEST_INIT start\n");
@@ -154,6 +171,8 @@ int main(void)
     cap("personality", probe_personality());
     cap("setrlimit", probe_setrlimit());
     cap("vector", access("/sys/class/net/vec0", F_OK) == 0 || access("/sys/class/net/eth0", F_OK) == 0);
+    printf("CAP smp=%d\n", probe_smp_count());
+    fflush(stdout);
 
     char uptime[128] = "0.00";
     char buf[256];
