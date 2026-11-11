@@ -1,0 +1,4 @@
+[    0.000000] Linux version 7.2.0-um-fast #1 SMP PREEMPT (synthetic fixture, not a real log)
+[    0.010000] Run /init as init process
+READY
+kernel exited code=0 reason=exited duration_ms=300

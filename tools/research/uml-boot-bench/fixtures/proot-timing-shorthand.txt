@@ -1,0 +1,4 @@
+BOOT_TIMING v1 lane=proot
+label=proot-shorthand
+p0_ms=50.101
+rc=0

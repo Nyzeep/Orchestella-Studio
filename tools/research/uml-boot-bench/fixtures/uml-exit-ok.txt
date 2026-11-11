@@ -1,0 +1,10 @@
+exit_code=0
+exit_code_hex=0x0
+signal_guess=0
+reason=exited
+ended_at=2026-11-10 12:00:00.000
+duration_ms=3182
+kernel=<nativeLibraryDir>/libuml_kernel.so
+stub_exe=<nativeLibraryDir>/libuml_stub.so
+rootfs=<filesDir>/rootfs
+args=mem=512M rw init=/um-init con=null con0=fd:0,fd:1
