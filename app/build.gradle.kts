@@ -604,9 +604,11 @@ tasks.register<JavaExec>("runPhase5JvmAppTests") {
 // started an instance. The three payload files are git-ignored and can only
 // come from an explicit payload build or from the external -P payload roots.
 //
-// Only three of the seven manifest entries are verified: NOTICE.QEMU and
-// QEMU-GPL-SOURCES.md have drifted from the manifest since e16af2c, so a
-// full-entry check would be red on every machine today.
+// All seven manifest entries are verified. NOTICE.QEMU and QEMU-GPL-SOURCES.md
+// drifted from the manifest between e16af2c and the 2026-11-12 rewrite (the two
+// text files were edited without re-pinning); the pins were re-written from the
+// tracked file contents that round, so a full-entry check is green again and
+// future drift fails the build instead of rotting silently.
 val allowMissingRuntimePayload: Boolean = providers.gradleProperty("orchestella.assets.allowMissingPayload")
     .orNull
     ?.trim()
@@ -699,6 +701,10 @@ val verifyRuntimeAssets = tasks.register("verifyRuntimeAssets") {
         val required = linkedMapOf(
             "Image" to File(repoRoot, "app/src/main/assets/Image"),
             "initramfs.cpio.gz" to File(repoRoot, "app/src/main/resources/initramfs.cpio.gz"),
+            "QEMU-BUILD-INPUTS" to File(repoRoot, "app/src/main/assets/QEMU-BUILD-INPUTS"),
+            "QEMU-GPL-SOURCES.md" to File(repoRoot, "app/src/main/assets/QEMU-GPL-SOURCES.md"),
+            "LICENSE.GPL-2.0" to File(repoRoot, "app/src/main/assets/LICENSE.GPL-2.0"),
+            "NOTICE.QEMU" to File(repoRoot, "app/src/main/assets/NOTICE.QEMU"),
             "lib/arm64-v8a/libdroidlayer_qemu.so" to
                 File(repoRoot, "app/src/main/jniLibs/arm64-v8a/libdroidlayer_qemu.so")
         )
@@ -770,8 +776,9 @@ val verifyRuntimeAssets = tasks.register("verifyRuntimeAssets") {
         // run; a stale flag would misreport this build as payload-less.
         layout.buildDirectory.file("runtime-assets-missing.flag").get().asFile.delete()
         logger.lifecycle(
-            "verifyRuntimeAssets: Image, initramfs.cpio.gz and lib/arm64-v8a/libdroidlayer_qemu.so " +
-                "match app/src/main/assets/runtime-artifacts-v1.sha256."
+            "verifyRuntimeAssets: all ${required.size} manifest entries (Image, initramfs.cpio.gz, " +
+                "QEMU-BUILD-INPUTS, QEMU-GPL-SOURCES.md, LICENSE.GPL-2.0, NOTICE.QEMU, " +
+                "lib/arm64-v8a/libdroidlayer_qemu.so) match app/src/main/assets/runtime-artifacts-v1.sha256."
         )
     }
 }
