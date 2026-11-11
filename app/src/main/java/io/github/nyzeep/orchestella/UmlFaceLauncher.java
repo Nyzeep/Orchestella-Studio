@@ -50,6 +50,18 @@ import java.util.function.IntSupplier;
  *   run.</li>
  * </ul>
  *
+ * <p><b>Fast profile (P2, flag-gated).</b> A build that opts in via the
+ * {@code orchestella.uml.fastProfile} Gradle property (→ {@code
+ * BuildConfig.UML_FAST_PROFILE}, default <b>off</b>) launches the
+ * {@code research/uml-fastboot} §4 fast shapes: the built-in-initramfs UP
+ * base line and its {@code umroot=}/{@code ubd0=} external-root channels, as
+ * selected by {@link FastProfile}. The flag only changes the command line and
+ * the asset precheck; the double gate, the lifecycle, the keep-alive, the
+ * width honesty and the channel contract are this class's own invariants and
+ * stay exactly as locked. The default build reads the flag off, answers
+ * {@code null}, and produces today's command line byte-identically — the
+ * flag-off contract tests hold that without exception.
+ *
  * <p><b>Width.</b> The UML face's dispatchable width is the worker's real
  * serviceable compile concurrency, which is the kernel's SMP width: the
  * {@code ncpus=} knob when it is ≥2 (the knob the device round measured —
@@ -67,6 +79,12 @@ public final class UmlFaceLauncher {
     public static final String STUB_LIB_NAME = "libuml_stub.so";
     /** The guest rootfs directory (hostfs channel) under {@code filesDir}. */
     public static final String ROOTFS_DIR_NAME = "rootfs";
+    /**
+     * The fast-profile ext4 image under {@code filesDir} — the {@code ubd0=}
+     * channel of {@link FastProfile} (the name the device windows place it
+     * under; see {@link #fastProfileCommand}).
+     */
+    public static final String FAST_ROOTFS_IMAGE_NAME = "rootfs.ext4";
 
     /** Fixed detail for a dispatch that reached a face with no kernel running. */
     public static final String FACE_NOT_RUNNING_DETAIL = "uml-face-not-running";
@@ -266,29 +284,88 @@ public final class UmlFaceLauncher {
         }
     }
 
+    /**
+     * The fast-profile launch shape ({@code research/uml-fastboot} README §4,
+     * the authoritative fast-kernel window): the minimal UP kernel with the
+     * built-in initramfs boots through the §4 command line —
+     * {@code mem=…M rw con=null con0=null,fd:1 seccomp=on panic=1
+     * printk.time=1 um.hold_ms=1000 stub_exe=…} — and an external root is
+     * switched into by the initramfs init via {@code umroot=}. The shapes:
+     * <ul>
+     *   <li>{@link Root#INITRAMFS} — the §4 base line only; no external root,
+     *   so no rootfs asset is required;</li>
+     *   <li>{@link Root#HOSTFS} — the §4 base line plus
+     *   {@code umroot=<filesDir>/rootfs umrootfstype=hostfs}; requires the
+     *   {@link #ROOTFS_DIR_NAME} directory;</li>
+     *   <li>{@link Root#EXT4} — the §4 base line plus
+     *   {@code ubd0=<filesDir>/rootfs.ext4 umroot=/dev/ubda umrootfstype=ext4};
+     *   requires the {@link #FAST_ROOTFS_IMAGE_NAME} image.</li>
+     * </ul>
+     *
+     * <p>All three shapes run the same kernel image ({@link #KERNEL_LIB_NAME},
+     * the built-in-initramfs fast kernel) and the same stub, keep the same
+     * lifecycle/width/channel honesty as the runner shape, and stay behind the
+     * double gate — a fast profile is a launch shape, never an authorization.
+     * The shape is selected by the build flag ({@code
+     * orchestella.uml.fastProfile} → {@code BuildConfig.UML_FAST_PROFILE},
+     * default off) via {@link #currentBuild()}, or injected explicitly by the
+     * device window through the seven-argument constructor. {@code null} (and
+     * {@link #currentBuild()} when the flag is off) keeps the exact
+     * runner-shape command line the locked tests hold.
+     */
+    public record FastProfile(Root root) {
+        public FastProfile {
+            Objects.requireNonNull(root, "root");
+        }
+
+        /** The external-root channel of the §4 fast shapes. */
+        public enum Root { INITRAMFS, HOSTFS, EXT4 }
+
+        /** The §4 UP built-in-initramfs shape (no external root). */
+        public static FastProfile initramfs() {
+            return new FastProfile(Root.INITRAMFS);
+        }
+
+        /** The §4 external hostfs root shape ({@code umroot=}). */
+        public static FastProfile hostfs() {
+            return new FastProfile(Root.HOSTFS);
+        }
+
+        /** The §4 external ext4 root shape ({@code ubd0=} + {@code umroot=}). */
+        public static FastProfile ext4() {
+            return new FastProfile(Root.EXT4);
+        }
+
+        /**
+         * The build-flag read ({@code BuildConfig.UML_FAST_PROFILE}, the
+         * {@code orchestella.uml.fastProfile} Gradle property): the §4 UP
+         * initramfs shape when the build opted in, {@code null} — the exact
+         * runner shape — otherwise. The default build keeps the flag off, so
+         * the shipped wiring answers {@code null} and nothing changes.
+         */
+        public static FastProfile currentBuild() {
+            return BuildConfig.UML_FAST_PROFILE ? initramfs() : null;
+        }
+    }
+
     private final boolean umlFaceEnabled;
     private final Environment environment;
     private final LaunchParams params;
     private final KeepAlive keepAlive;
     private final ProcessSpawner spawner;
     private final Channel channel;
+    /** {@code null} = the exact runner shape (the flag-off contract). */
+    private final FastProfile fastProfile;
 
     private UmlProcess process;
     private State state = State.STOPPED;
     private boolean keepAliveHeld;
 
     /**
-     * @param umlFaceEnabled the existing double gate (build flag + user
-     *        setting) as the launch consumed it; off means every start is a
-     *        zero-side-effect {@link StartCode#GATE_DISABLED} answer
-     * @param environment the app directories the kernel runs from
-     * @param params the injectable launch parameters (device-window tuning)
-     * @param keepAlive the foreground-service + wake-lock seam; required,
-     *        never a silent no-op (the anti-freeze hard prerequisite)
-     * @param spawner the process spawn seam (production: ProcessBuilder)
-     * @param channel the compile-work channel; {@code null} until the device
-     *        window wires the real one — an unwired face reads width 0 and is
-     *        not routable, which keeps the orchestration honest
+     * The historical six-argument wiring: the exact runner-shape launcher the
+     * locked tests hold (byte-identical command line, unchanged asset
+     * precheck). Equivalent to the seven-argument constructor with a
+     * {@code null} fast profile.
      */
     public UmlFaceLauncher(
             boolean umlFaceEnabled,
@@ -297,18 +374,48 @@ public final class UmlFaceLauncher {
             KeepAlive keepAlive,
             ProcessSpawner spawner,
             Channel channel) {
+        this(umlFaceEnabled, environment, params, keepAlive, spawner, channel, null);
+    }
+
+    /**
+     * @param umlFaceEnabled the existing double gate (build flag + user
+     *        setting) as the launch consumed it; off means every start is a
+     *        zero-side-effect {@link StartCode#GATE_DISABLED} answer — the
+     *        fast profile never bypasses it
+     * @param environment the app directories the kernel runs from
+     * @param params the injectable launch parameters (device-window tuning)
+     * @param keepAlive the foreground-service + wake-lock seam; required,
+     *        never a silent no-op (the anti-freeze hard prerequisite)
+     * @param spawner the process spawn seam (production: ProcessBuilder)
+     * @param channel the compile-work channel; {@code null} until the device
+     *        window wires the real one — an unwired face reads width 0 and is
+     *        not routable, which keeps the orchestration honest
+     * @param fastProfile the fast-profile launch shape ({@code
+     *        research/uml-fastboot} README §4); {@code null} keeps the exact
+     *        runner shape — the default build's answer, locked byte-identical
+     *        by the flag-off contract tests
+     */
+    public UmlFaceLauncher(
+            boolean umlFaceEnabled,
+            Environment environment,
+            LaunchParams params,
+            KeepAlive keepAlive,
+            ProcessSpawner spawner,
+            Channel channel,
+            FastProfile fastProfile) {
         this.umlFaceEnabled = umlFaceEnabled;
         this.environment = Objects.requireNonNull(environment, "environment");
         this.params = Objects.requireNonNull(params, "params");
         this.keepAlive = Objects.requireNonNull(keepAlive, "keepAlive");
         this.spawner = Objects.requireNonNull(spawner, "spawner");
         this.channel = channel;
+        this.fastProfile = fastProfile;
     }
 
     /**
      * The production wiring: the ProcessBuilder spawner and no compile channel
      * yet (the device window injects the real channel over the fabric's TCP
-     * access point).
+     * access point), in the exact runner shape.
      */
     public static UmlFaceLauncher create(
             boolean umlFaceEnabled,
@@ -318,6 +425,22 @@ public final class UmlFaceLauncher {
         return new UmlFaceLauncher(
                 umlFaceEnabled, environment, params, keepAlive,
                 ProcessSpawner.processBuilder(), null);
+    }
+
+    /**
+     * The production wiring with the build flag's fast-profile shape
+     * ({@link FastProfile#currentBuild()}): the §4 fast command line when the
+     * build opted in ({@code -Porchestella.uml.fastProfile=true}), the exact
+     * runner shape otherwise. The lifecycle seams are unchanged.
+     */
+    public static UmlFaceLauncher createWithCurrentFastProfile(
+            boolean umlFaceEnabled,
+            Environment environment,
+            LaunchParams params,
+            KeepAlive keepAlive) {
+        return new UmlFaceLauncher(
+                umlFaceEnabled, environment, params, keepAlive,
+                ProcessSpawner.processBuilder(), null, FastProfile.currentBuild());
     }
 
     /**
@@ -452,9 +575,114 @@ public final class UmlFaceLauncher {
     }
 
     private String missingAsset() {
-        // Single source of the placement layout (C lane): the parity check in
-        // UmlKernelAssets, kept semantics-identical to the historical precheck.
-        return UmlKernelAssets.firstMissingName(environment);
+        // The runner shape keeps the single source of the placement layout (C
+        // lane): the parity check in UmlKernelAssets, semantics-identical to
+        // the historical precheck. The fast shapes need a different asset set
+        // (the built-in initramfs needs no external root at all), so they
+        // precheck locally with the same honesty: binaries must be executable
+        // files, the root channel must exist, first failure names the asset.
+        if (fastProfile == null) {
+            return UmlKernelAssets.firstMissingName(environment);
+        }
+        return fastMissingAsset(fastProfile, environment);
+    }
+
+    /**
+     * The fast-shape asset precheck, in the fixed priority kernel → stub →
+     * root channel, named exactly as the {@code MISSING_ASSET} detail names
+     * it. {@link FastProfile.Root#INITRAMFS} requires no external root; {@link
+     * FastProfile.Root#HOSTFS} requires the {@link #ROOTFS_DIR_NAME}
+     * directory; {@link FastProfile.Root#EXT4} requires the {@link
+     * #FAST_ROOTFS_IMAGE_NAME} image. Null when everything the shape needs is
+     * in place — a missing root channel is a fixed-code refusal, never a
+     * faked start.
+     */
+    static String fastMissingAsset(FastProfile fast, Environment environment) {
+        Objects.requireNonNull(fast, "fast");
+        Objects.requireNonNull(environment, "environment");
+        File libDir = environment.nativeLibraryDir();
+        File kernel = new File(libDir, KERNEL_LIB_NAME);
+        if (!kernel.isFile() || !kernel.canExecute()) {
+            return KERNEL_LIB_NAME;
+        }
+        File stub = new File(libDir, STUB_LIB_NAME);
+        if (!stub.isFile() || !stub.canExecute()) {
+            return STUB_LIB_NAME;
+        }
+        File files = environment.filesDir();
+        switch (fast.root()) {
+            case INITRAMFS:
+                return null;
+            case HOSTFS:
+                File rootfs = new File(files, ROOTFS_DIR_NAME);
+                return rootfs.isDirectory() ? null : ROOTFS_DIR_NAME;
+            case EXT4:
+                File image = new File(files, FAST_ROOTFS_IMAGE_NAME);
+                return image.isFile() ? null : FAST_ROOTFS_IMAGE_NAME;
+            default:
+                throw new IllegalStateException("unknown fast profile root " + fast.root());
+        }
+    }
+
+    /**
+     * The fast-profile command line (research/uml-fastboot README §4, the
+     * authoritative fast-kernel device window): the §4 base line over the
+     * built-in-initramfs kernel, the shape's external-root channel appended,
+     * then the {@code ncpus=} knob when the launch parameters ask for SMP
+     * (wave2 §3: {@code ncpus=N}, never {@code --cpus=N}), then the verbatim
+     * {@code extraArgs} last so a device window can override a scalar (UML
+     * parses params sequentially, later scalar assignments win — including
+     * {@code um.hold_ms}). Pure and framework-free: the contract tests assert
+     * the §4 list argument for argument.
+     *
+     * @param fast the fast-profile shape (non-null)
+     * @param params the launch parameters ({@code memMb}, {@code ncpus},
+     *        {@code extraArgs})
+     * @param nativeLibraryDir the app's {@code nativeLibraryDir} (kernel and
+     *        stub placement)
+     * @param filesDir the app's {@code filesDir} (the external-root channels
+     *        live under it)
+     */
+    public static List<String> fastProfileCommand(
+            FastProfile fast, LaunchParams params, File nativeLibraryDir, File filesDir) {
+        Objects.requireNonNull(fast, "fast");
+        Objects.requireNonNull(params, "params");
+        Objects.requireNonNull(nativeLibraryDir, "nativeLibraryDir");
+        Objects.requireNonNull(filesDir, "filesDir");
+        List<String> args = new ArrayList<>(Arrays.asList(
+                "mem=" + params.memMb() + "M",
+                "rw",
+                "con=null",
+                "con0=null,fd:1",
+                "seccomp=on",
+                "panic=1",
+                "printk.time=1",
+                "um.hold_ms=1000",
+                "stub_exe=" + new File(nativeLibraryDir, STUB_LIB_NAME).getAbsolutePath()));
+        switch (fast.root()) {
+            case INITRAMFS:
+                // The built-in initramfs is the root; no external-root args.
+                break;
+            case HOSTFS:
+                args.add("umroot=" + new File(filesDir, ROOTFS_DIR_NAME).getAbsolutePath());
+                args.add("umrootfstype=hostfs");
+                break;
+            case EXT4:
+                args.add("ubd0=" + new File(filesDir, FAST_ROOTFS_IMAGE_NAME).getAbsolutePath());
+                args.add("umroot=/dev/ubda");
+                args.add("umrootfstype=ext4");
+                break;
+            default:
+                throw new IllegalStateException("unknown fast profile root " + fast.root());
+        }
+        if (params.ncpus() >= 2) {
+            args.add("ncpus=" + params.ncpus());
+        }
+        args.addAll(params.extraArgs());
+        List<String> command = new ArrayList<>(args.size() + 1);
+        command.add(new File(nativeLibraryDir, KERNEL_LIB_NAME).getAbsolutePath());
+        command.addAll(args);
+        return command;
     }
 
     /**
@@ -462,8 +690,15 @@ public final class UmlFaceLauncher {
      * hostfs rootfs, {@code stub_exe=} from the app's own library dir, and
      * {@code ncpus=N} only when the knob is ≥2 (an UP kernel must not see the
      * knob; {@code --cpus=} is never sent — the SMP kernel does not know it).
+     * With the fast profile wired, the §4 fast shape takes over (see {@link
+     * #fastProfileCommand}); with it {@code null} — the default build — this
+     * is byte-identical to the historical list the locked tests hold.
      */
     private List<String> command() {
+        if (fastProfile != null) {
+            return fastProfileCommand(
+                    fastProfile, params, environment.nativeLibraryDir(), environment.filesDir());
+        }
         File libDir = environment.nativeLibraryDir();
         File files = environment.filesDir();
         List<String> args = new ArrayList<>(Arrays.asList(
