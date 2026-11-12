@@ -76,3 +76,18 @@ pinned 布局（`SRC=/src` + `OUT=/work/research/uml-fastboot/out`）重建逐�
 
 - 投票前先核对：`docs/research/2026-11-12-uml-productization-round.zh-CN.md`（数据）+ 本包 §3/§5/§6。
 - 投票动作：D1–D5 逐项 Go/No-Go/改判；通过后按 P1 未决清单第 5 条接线（BuildConfig 注入点 → AcceleratorLaneAssembly → 默认宽度）。
+
+
+## 8. 投票结果（2026-11-12，裁决人：项目所有者）
+
+**D1–D5 全部按建议通过**（裁决原话：「全部按照你的建议来即可」）：
+
+| # | 决议 | 执行动作 |
+| --- | --- | --- |
+| D1 | **Go**——方案 A kernel 内置开启 | release 流水线显式传 `-Porchestella.uml.bundledFastProfile=true`（与 acceleratorLane 同构）；本地裸构建默认仍 false（无 payload 即 fail-fast 的既有豁免语义不变） |
+| D2 | **Go（混合形态）**——kernel 内置 + rootfs 下载 | 内置 initramfs 通道立即可用（宽度 1 到 T3）；rootfs 下载为增强路径（方案 B 管线已闭环待产品调用方） |
+| D3 | **Go（`21e1c3f9…`）**——可复现版入记账 pin | `FastProfile.PIN_MANIFEST` 现值即 21e1c3f9（与 manifest §3 一致），确认无需改码；真机验证版 572c3433 以注记保留 |
+| D4 | **Go**——UML 面默认宽度 0→1 | 装配链接线：`createWithCurrentFastProfile` 接入生产调用方（AcceleratorLaneAssembly/AcceleratorLaunchDispatcher 链），0 宽度锁死测试按新语义切换；flag 关闭时仍 0（诚实降级不变） |
+| D5 | **Go（§3a 公开 tag + Release 源码包）** | NOTICE.UML-DRAFT 正式化随资产入包执行；fork pin + defconfig-fast.fragment 交付清单照 R2 §2.4 十条 |
+
+**决议效力**：本表即 ACR 通过记录；后续工单/报告/接线 commit 引用本节。执行进loc：接线实现见 `feat/uml-lane-default-on`（同日）。
