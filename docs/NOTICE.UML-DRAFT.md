@@ -1,9 +1,15 @@
-# NOTICE — UML 车道补充（草稿，ACR 未决，不入包）
+# NOTICE — UML 车道补充（草稿，资产未入包，不入包）
 
 - 状态：**DRAFT**。本文件是 `app/src/main/assets/NOTICE.QEMU` 的 UML 车道补充草稿，
   供 UML payload 产品化轮（ACR 双方案：方案 A 内置 / 方案 B 下载）评审用；
-  不覆盖、不修改现有 `NOTICE.QEMU`。方案 A 或 B 在 ACR 通过并真正开关之前，
-  以下任何条目都**不得**视为已交付。
+  不覆盖、不修改现有 `NOTICE.QEMU`。
+- **正式化时点（2026-11-12 接线轮判定，保守口径）**：ACR D1–D5 已于 2026-11-12
+  全部通过，release 流水线已显式传参（`orchestella.uml.bundledFastProfile` /
+  `orchestella.uml.fastProfile`）——但托管流水线的干净检出不含 U1 产物，staging
+  记录豁免并跳过，打包机的产物目录构建才会真实入包。在**资产真实出现在发布
+  APK** 之前，本文件保持 DRAFT、以下任何条目都不得视为已交付；正式化（改名
+  `NOTICE.UML` 并入包覆盖口径）是 release 流水线的后续工单：打包机产出含资产
+  APK 时，同步提交 NOTICE 正式化 + ADR-0014 门禁（公开固定 tag + Release 源码包）。
 - 依据：`docs/research/2026-11-12-uml-productization-payload-research.zh-CN.md` §2.4
   （UML 版 NOTICE 需补 10 条清单）；pin 值全部来自
   `research/uml-fastboot/manifest.md` §3（2026-11-10 U1 ARM64 UP 首建）。

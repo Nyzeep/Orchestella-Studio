@@ -201,6 +201,7 @@ Lane A 交付（`feat/uml-adbshell-channel`）：sepolicy 一手判定 GO（tag 
 - **集成**：R1/R2（`10851948`）+ P1/P2 + 续轮五车道（Lane B manifest 回写 / Lane C L2/L3 / Lane A adb-shell 通道 / Lane D transport 接线 `6c36d6f6` / Lane E FIRST_BOOT `d3709e35`）全入 main；敏感门全程 OK；测试 **1526 全绿**（集成适配 2 处：fixture 补 CA bundle、plannedStages 断言随语义切换）、lint 0 error。
 - **ACR 证据包**：`.scratch/uml-productization-20261112/acr/acr-draft.md`（待投票：D1–D5；续轮已刷新——U3 12/12、L3 四阶段、官方 pin 三方锁定）。
 - **纪律确认**：三 flag（bundledFastProfile/rootfsDownload/fastProfile）默认 false，flag off 零行为由测试逐字节锁死；UML 面默认 0 宽度未变；设备序列号/截图/console 未入任何 commit。
+- **ACR 通过后接线（D1/D4，`feat/uml-lane-default-on`，2026-11-12 同日）**：装配槽 `AcceleratorLaneAssembly.umlFace` 改接 `UmlFaceLauncher.createWithCurrentFastProfile`（BuildConfig 注入点 → AcceleratorLaneAssembly → 默认宽度，ACR §7 路径）；fast 形态宽度语义按 D4 切换——flag on 构建内置 initramfs 通道默认宽度 1（无通道仍 1，routability 由 worker 的固定 CHANNEL_UNWIRED 拒绝守门），flag off 构建逐字节保持 0 宽度语义；release.yml assembleRelease 行显式追加 `-Porchestella.uml.bundledFastProfile=true -Porchestella.uml.fastProfile=true`（bundledFastProfile 缺 fastProfileDir 时 staging 记录豁免并跳过，提供目录仍 fail-closed）；测试 1526→1531（+5 全绿，两 flag 变体同绿）、lint 0 error、敏感门 OK；NOTICE.UML-DRAFT 保持 DRAFT，正式化放入资产真实入包的 release 工单。
 
 ## 9. 合规自查
 

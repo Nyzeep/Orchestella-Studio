@@ -70,7 +70,7 @@ Captured on real devices (Android 16 / 17) with the default "Mascot · Lavender"
 | **QEMU** | translated execution (TCG), full kernel | **Available** — the backbone of everything above |
 | **proot / bare** | native host instructions + `ptrace` syscall rewriting, no guest kernel | **Conditional** — 28-domain QA channel only |
 | **pVM** | Microdroid on an EL2 hardware vCPU (protected) | **Conditional** — requires the device to register `virtualizationservice` (payload shipped by the extension package) |
-| **UML** | a real kernel as an ordinary process | **Research line · zero-device phase complete** — fast profile boots on a real device (all PASS); productization pending ACR decision (see "UML research status" below) |
+| **UML** | a real kernel as an ordinary process | **Research line · zero-device phase complete** — fast profile boots on a real device (all PASS); ACR passed 2026-11-12: the release pipeline opts in (bundled-initramfs channel at width 1 in flag-on builds; see "UML research status" below) |
 
 ### UML research status (2026-11-11)
 
@@ -98,9 +98,15 @@ real device (Android 16, 4 KB host pages):
   path); 16 KB hosts, systemd, the full 12-case seccomp matrix and multi-device
   samples remain untested.
 
-Next step is the ACR decision; after that come the payload pipeline and
-provisioning integration (the in-product UML lane stays at zero width by
-default until then). Details: the
+The ACR passed on 2026-11-12 (D1–D5 all Go, decision record in the
+`.scratch/uml-productization-20261112/acr/acr-draft.md` §8): the release
+pipeline opts into the bundled kernel + fast shape explicitly (D1), and the
+assembly wires the UML face onto the fast-profile shape — the D4 default
+width is 1 in flag-on builds and 0 in flag-off builds (which stay
+byte-identical, test-locked). The rootfs-download enhancement (the scheme-B
+verification pipeline is already closed-loop) and the compile channel (the
+fabric-route D-1 bridge) follow in the next rounds, when the product call
+sites wire them. Details: the
 [zero-device direction spec](docs/research/2026-11-10-proot-vs-uml-zero-device-direction.zh-CN.md)
 and the [ARM64 device-window report](docs/research/2026-11-11-uml-arm64-device-window-wave2.zh-CN.md).
 
