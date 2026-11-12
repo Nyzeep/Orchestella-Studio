@@ -400,6 +400,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.card_distro_opensuse)?.setOnClickListener { launchCreationWizard("opensuse") }
         findViewById<View>(R.id.card_distro_almalinux)?.setOnClickListener { launchCreationWizard("almalinux") }
         findViewById<View>(R.id.card_distro_rocky)?.setOnClickListener { launchCreationWizard("rocky") }
+        setupUmlRootfsCard()
 
         createUbuntuButton.setOnClickListener { launchCreationWizard("ubuntu") }
         createDebianButton.setOnClickListener { launchCreationWizard("debian") }
@@ -989,6 +990,170 @@ class MainActivity : AppCompatActivity() {
             if (running) "出站 NAT · 入站访问需显式配置端口映射" else "网络随实例启动 · 默认无 LAN 暴露"
     }
 
+    // -----------------------------------------------------------------------------------
+    // Lane B (Phase B2): the distro-tab「UML rootfs (Alpine minirootfs)」readiness card.
+    // The card's every decision comes from UmlRootfsCardState — this Activity only
+    // binds. The ready state claims "verified + extracted" and nothing more: the
+    // official Alpine minirootfs ships no /um-command.sh (research/uml-fastboot/
+    // initramfs/init fail 29 missing_command), so this round's artifact cannot start
+    // to READY over the external-root channel, and the compile channel is
+    // CHANNEL_UNWIRED (Lane A's honest edge). Launch/compile usability is the
+    // fabric-route round's design problem.
+    // -----------------------------------------------------------------------------------
+
+    /** The card's current render decision; mutated only on the UI thread. */
+    @Volatile
+    private var umlRootfsCardModel: UmlRootfsCardState.CardModel? = null
+
+    /**
+     * Bind the readiness card. Flag-off builds: the card stays GONE and no
+     * listener is bound — zero entry. Flag-on builds: an off-main-thread
+     * readiness probe (pure reads) decides the initial phase; the click
+     * entry starts the provision on the same IO executor.
+     */
+    private fun setupUmlRootfsCard() {
+        val card = findViewById<View>(R.id.card_uml_rootfs) ?: return
+        if (!UmlRootfsCardState.visible(BuildConfig.UML_ROOTFS_DOWNLOAD_ENABLED)) {
+            card.visibility = View.GONE
+            return
+        }
+        umlRootfsCardModel = UmlRootfsCardState.notReady()
+        renderUmlRootfsCard()
+        operations.execute {
+            try {
+                val readiness = UmlRootfsProvisioner.readiness(filesDir.toPath())
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    umlRootfsCardModel = UmlRootfsCardState.initial(
+                        BuildConfig.UML_ROOTFS_DOWNLOAD_ENABLED, readiness)
+                    renderUmlRootfsCard()
+                }
+            } catch (probeFailure: Exception) {
+                // A probe that cannot read stays honestly at NOT_READY; the
+                // provision path surfaces the real failure on click.
+                runOnUiThread { renderUmlRootfsCard() }
+            }
+        }
+        findViewById<View>(R.id.btn_uml_rootfs_action)?.setOnClickListener {
+            startUmlRootfsProvision()
+        }
+    }
+
+    /** The card's only entry action: provision off the main thread, render every transition. */
+    private fun startUmlRootfsProvision() {
+        val model = umlRootfsCardModel ?: return
+        if (model.phase() == UmlRootfsCardState.Phase.DOWNLOADING ||
+            model.phase() == UmlRootfsCardState.Phase.READY
+        ) {
+            return
+        }
+        umlRootfsCardModel = UmlRootfsCardState.downloading(0, 0)
+        renderUmlRootfsCard()
+        operations.execute {
+            try {
+                // The production engine (same constructor pattern as the distro
+                // download's existing consumer) under a progress tap, because
+                // RootfsTransport passes the engine a null callback by contract.
+                val engine = UmlRootfsProgressEngine(
+                    io.github.nyzeep.orchestella.runtime.network.download.ResilientDownloadEngine(),
+                ) { downloaded, total ->
+                    runOnUiThread {
+                        if (isFinishing || isDestroyed) return@runOnUiThread
+                        umlRootfsCardModel = UmlRootfsCardState.downloading(downloaded, total)
+                        renderUmlRootfsCard()
+                    }
+                }
+                val receipt = UmlRootfsProvisioner.provision(engine, filesDir.toPath())
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    umlRootfsCardModel = UmlRootfsCardState.ready(receipt)
+                    renderUmlRootfsCard()
+                }
+            } catch (failure: Exception) {
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    umlRootfsCardModel = UmlRootfsCardState.failed(failure)
+                    renderUmlRootfsCard()
+                }
+            }
+        }
+    }
+
+    /** Bind one CardModel to the card views. No IO, no decisions — only the mapping. */
+    private fun renderUmlRootfsCard() {
+        val card = findViewById<View>(R.id.card_uml_rootfs) ?: return
+        val model = umlRootfsCardModel ?: return
+        if (!UmlRootfsCardState.visible(BuildConfig.UML_ROOTFS_DOWNLOAD_ENABLED)) {
+            card.visibility = View.GONE
+            return
+        }
+        when (model.phase()) {
+            UmlRootfsCardState.Phase.DISABLED -> {
+                card.visibility = View.GONE
+                return
+            }
+            else -> card.visibility = View.VISIBLE
+        }
+        val status = findViewById<TextView>(R.id.txt_uml_rootfs_status)
+        val button = findViewById<com.google.android.material.button.MaterialButton>(
+            R.id.btn_uml_rootfs_action)
+        when (model.phase()) {
+            UmlRootfsCardState.Phase.NOT_READY -> {
+                status?.text = "未就绪 · 下载并解包后可供给 UML hostfs 通道"
+                showUmlRootfsProgress(false, 0, show = false)
+                button?.isEnabled = true
+                button?.text = "下载并验证（约 3.8 MB）→"
+            }
+            UmlRootfsCardState.Phase.DOWNLOADING -> {
+                val percent = model.progressPercent()
+                status?.text = if (percent >= 0) {
+                    "下载中 $percent%（下载后进行 sha256 pin 校验与内容自检）"
+                } else {
+                    "连接中…（网络类失败由引擎重试与镜像容灾，校验类失败将如实拒绝）"
+                }
+                showUmlRootfsProgress(indeterminate = percent < 0, percent = percent, show = true)
+                button?.isEnabled = false
+                button?.text = "下载中…"
+            }
+            UmlRootfsCardState.Phase.READY -> {
+                val provenance = if (model.alreadyVerified()) {
+                    "已就绪（重复入口命中，本次零网络流量）"
+                } else {
+                    "已就绪"
+                }
+                status?.text = "$provenance · 已验证+已解包 ${model.extractedEntries()} 项 · " +
+                    "官方镜像不含 UML 启动脚本，本轮不可直接启动或编译"
+                showUmlRootfsProgress(false, 0, show = false)
+                button?.isEnabled = false
+                button?.text = "已就绪"
+            }
+            UmlRootfsCardState.Phase.FAILED -> {
+                status?.text = "失败：${model.failureReason()} · 下载/校验/解包任一层拒绝都如实呈现，可重试"
+                showUmlRootfsProgress(false, 0, show = false)
+                button?.isEnabled = true
+                button?.text = "重试 →"
+            }
+            UmlRootfsCardState.Phase.DISABLED -> card.visibility = View.GONE
+        }
+    }
+
+    /**
+     * The card's progress bar. The indeterminate flag may only change while
+     * the indicator is hidden — this helper re-hides, flips, then shows.
+     */
+    private fun showUmlRootfsProgress(indeterminate: Boolean, percent: Int, show: Boolean) {
+        val progress = findViewById<com.google.android.material.progressindicator.LinearProgressIndicator>(
+            R.id.progress_uml_rootfs) ?: return
+        if (progress.isIndeterminate != indeterminate) {
+            progress.visibility = View.GONE
+            progress.isIndeterminate = indeterminate
+        }
+        if (!indeterminate) {
+            progress.setProgressCompat(percent, true)
+        }
+        progress.visibility = if (show) View.VISIBLE else View.GONE
+    }
+
     private fun launchCreationWizard(distroId: String) {
         val intent = Intent(this, SetupWizardActivity::class.java).apply {
             putExtra(SetupWizardActivity.EXTRA_TARGET_DISTRO, distroId)
@@ -1329,6 +1494,7 @@ class MainActivity : AppCompatActivity() {
             }
             val distroCards = listOf(
                 R.id.card_create_linux_main,
+                R.id.card_uml_rootfs,
                 R.id.card_distro_debian,
                 R.id.card_distro_fedora,
                 R.id.card_distro_arch,
