@@ -408,6 +408,118 @@ public final class AcceleratorLaneAssemblyTest {
         assertEquals(UmlFaceLauncher.State.STOPPED, face.state());
     }
 
+    // --- Lane A (2026-11-13): the spawner-injecting umlFace slot -----------------
+
+    @Test
+    public void spawnerInjectingUmlFaceSlotKeepsTheLockedWiringAndExposesTheDrainSeam()
+            throws Exception {
+        // The 5-argument slot is the 4-argument slot plus the exec seam: the
+        // same double gate, the same required keep-alive, the launch shape
+        // still following the build flag. The spawner is the launcher's own
+        // reserved injection seam ("tests and the device window own exec") —
+        // the wiring owner uses it to attach the console drain, because the
+        // fast shape's console rides fd 1 and an unread pipe would stall the
+        // kernel on a full buffer. UmlFaceLauncher itself stays untouched.
+        File libDir = tmp.newFolder("uml-spawner-lib");
+        File filesDir = tmp.newFolder("uml-spawner-files");
+        File kernel = new File(libDir, UmlFaceLauncher.KERNEL_LIB_NAME);
+        File stub = new File(libDir, UmlFaceLauncher.STUB_LIB_NAME);
+        assertTrue(kernel.createNewFile());
+        assertTrue(stub.createNewFile());
+        // The launcher's asset pre-check requires the executable bit; POSIX
+        // filesystems honor it (CI Linux), while Windows canExecute() is
+        // always true for existing files, so this is a no-op there.
+        kernel.setExecutable(true);
+        stub.setExecutable(true);
+        // The runner shape needs the rootfs directory too; the INITRAMFS
+        // shape ignores it — creating it keeps this test shape-proof.
+        assertTrue(new File(filesDir, UmlFaceLauncher.ROOTFS_DIR_NAME).mkdirs());
+
+        AtomicInteger spawns = new AtomicInteger();
+        java.util.concurrent.atomic.AtomicReference<List<String>> spawnedCommand =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        UmlFaceLauncher.ProcessSpawner spawner = (command, environment, workingDir) -> {
+            spawns.incrementAndGet();
+            spawnedCommand.set(command);
+            return new UmlFaceLauncher.UmlProcess() {
+                @Override public boolean isAlive() {
+                    return true;
+                }
+
+                @Override public void destroy() {
+                }
+
+                @Override public void destroyForcibly() {
+                }
+
+                @Override public boolean waitForExit(long timeoutMs) {
+                    return true;
+                }
+            };
+        };
+        FakeKeepAlive keepAlive = new FakeKeepAlive();
+
+        UmlFaceLauncher face = AcceleratorLaneAssembly.umlFace(
+                true,
+                new UmlFaceLauncher.Environment() {
+                    @Override public File nativeLibraryDir() {
+                        return libDir;
+                    }
+
+                    @Override public File filesDir() {
+                        return filesDir;
+                    }
+                },
+                UmlFaceLauncher.LaunchParams.defaults(),
+                keepAlive,
+                spawner);
+
+        assertTrue(face.start().started());
+        assertEquals("the injected spawner is the exec seam", 1, spawns.get());
+        assertEquals("the kernel image is exec'd from the native library dir",
+                kernel.getAbsolutePath(), spawnedCommand.get().get(0));
+        assertEquals("the keep-alive is acquired exactly once", 1, keepAlive.acquires);
+        // Shape-proof liveness: whichever shape the build flag selected, the
+        // face is up, healthy, and honest about it.
+        assertEquals(UmlFaceLauncher.Health.HEALTHY, face.probe());
+    }
+
+    @Test
+    public void spawnerInjectingUmlFaceSlotGateOffIsAZeroSideEffectRefusal() throws Exception {
+        File libDir = tmp.newFolder("uml-spawner-gate-lib");
+        File filesDir = tmp.newFolder("uml-spawner-gate-files");
+        AtomicInteger spawns = new AtomicInteger();
+        UmlFaceLauncher.ProcessSpawner spawner = (command, environment, workingDir) -> {
+            spawns.incrementAndGet();
+            throw new AssertionError("a gate-off face never spawns");
+        };
+        FakeKeepAlive keepAlive = new FakeKeepAlive();
+
+        UmlFaceLauncher face = AcceleratorLaneAssembly.umlFace(
+                false,
+                new UmlFaceLauncher.Environment() {
+                    @Override public File nativeLibraryDir() {
+                        return libDir;
+                    }
+
+                    @Override public File filesDir() {
+                        return filesDir;
+                    }
+                },
+                UmlFaceLauncher.LaunchParams.defaults(),
+                keepAlive,
+                spawner);
+
+        UmlFaceLauncher.StartResult result = face.start();
+
+        assertFalse(result.started());
+        assertEquals(UmlFaceLauncher.StartCode.GATE_DISABLED, result.code());
+        assertEquals("zero side effects: the spawner is never consulted", 0, spawns.get());
+        assertEquals(0, face.width());
+        assertEquals(0, keepAlive.acquires);
+        assertEquals(UmlFaceLauncher.Health.NOT_RUNNING, face.probe());
+    }
+
     @Test
     public void imageMissingYieldsQemuOnly() {
         Fixture fixture = new Fixture();
