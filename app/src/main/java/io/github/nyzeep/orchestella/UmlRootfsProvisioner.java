@@ -77,8 +77,21 @@ import java.util.zip.GZIPInputStream;
  * calls this yet: the entry action's UI wiring is the follow-up round's
  * decision (IA proposal pending), and this class is the seam it will call.
  *
+ * <p><b>Honesty boundary of the ready state (2026-11-13 主会话裁决).</b> The
+ * official Alpine minirootfs ships no {@code /um-command.sh}: the research
+ * initramfs's external-root path demands an executable {@code
+ * /newroot/um-command.sh} before it will {@code switch_root} ({@code
+ * research/uml-fastboot/initramfs/init}, {@code fail 29 missing_command}),
+ * and the official tree contains none. A provisioned extract is therefore
+ * exactly "verified + extracted" — never "startable to READY" and never
+ * "compile-capable". The compile channel's own honesty edge is {@code
+ * CHANNEL_UNWIRED} (Lane A); launch usability of the downloaded rootfs is a
+ * fabric-route-round design problem against the real init semantics, not a
+ * property this class, its receipt, or its readiness probe claims.
+ *
  * <p><b>Threading.</b> Every stage does network and disk IO — callers invoke
- * this off the main thread.
+ * this off the main thread. The {@link #readiness} probe is the one pure-read
+ * answer: no transport, no writes, no directory creation.
  */
 public final class UmlRootfsProvisioner {
 
@@ -250,6 +263,84 @@ public final class UmlRootfsProvisioner {
         public String reason() {
             return reason;
         }
+    }
+
+    /**
+     * The side-effect-free readiness answer for the entry card. {@code
+     * enabled=false} is the flag-off gate (nothing was read); {@code ready}
+     * means both reconciliations hold — the formal tar's observed digest
+     * equals the pin <i>and</i> the extracted tree is attested by the same
+     * pin — in which case {@code extractedDir()} is the HOSTFS {@code
+     * umroot} target and the counts are the honest extraction numbers. A
+     * tar without an attested tree is honestly {@code notReady} (provision
+     * would repair it without downloading). Ready here never implies
+     * startable or compile-capable — see the class honesty boundary.
+     */
+    public record ReadinessReport(boolean enabled, boolean ready, Path extractedDir,
+            int extractedEntries, int executableEntries) {
+
+        public ReadinessReport {
+            if (!enabled && (ready || extractedDir != null
+                    || extractedEntries != 0 || executableEntries != 0)) {
+                throw new IllegalArgumentException(
+                        "a disabled readiness report must not carry a provisioned artifact");
+            }
+            if (!ready && (extractedDir != null
+                    || extractedEntries != 0 || executableEntries != 0)) {
+                throw new IllegalArgumentException(
+                        "a not-ready readiness report must not carry an extracted tree");
+            }
+        }
+
+        /** The flag-off answer: nothing was read, nothing is claimed. */
+        public static ReadinessReport disabled() {
+            return new ReadinessReport(false, false, null, 0, 0);
+        }
+
+        /** The enabled, not-yet-provisioned answer — no download was started by this probe. */
+        public static ReadinessReport notReady() {
+            return new ReadinessReport(true, false, null, 0, 0);
+        }
+    }
+
+    /**
+     * The production readiness probe: the pinned Alpine minirootfs, gated by
+     * {@code BuildConfig.UML_ROOTFS_DOWNLOAD_ENABLED}. Pure reads — no
+     * transport call, no write, no directory creation, so a UI may call it
+     * for a render decision without side effects.
+     */
+    public static ReadinessReport readiness(Path filesDir) throws IOException {
+        return readiness(Entry.alpineMinirootfsAarch64(), filesDir,
+                BuildConfig.UML_ROOTFS_DOWNLOAD_ENABLED);
+    }
+
+    /**
+     * The flag-injectable probe (tests own the flag; production goes through
+     * the single-source {@link #readiness(Path)} overload). Both
+     * reconciliations run against the pin exactly as {@link #provision}
+     * would, minus every side effect.
+     */
+    static ReadinessReport readiness(Entry entry, Path filesDir,
+            boolean rootfsDownloadBuildFlag) throws IOException {
+        if (!rootfsDownloadBuildFlag) {
+            // The gate answers first: a disabled probe reads nothing.
+            return ReadinessReport.disabled();
+        }
+        Objects.requireNonNull(entry, "entry");
+        Objects.requireNonNull(filesDir, "filesDir");
+        Path umRootfsDir = filesDir.resolve(UML_ROOTFS_DIR_NAME);
+        Path formalTar = umRootfsDir.resolve(entry.fileName());
+        if (!Files.isRegularFile(formalTar)
+                || !pinMatches(entry.sha256Pin(), UmlKernelAssets.sha256Hex(formalTar.toFile()))) {
+            return ReadinessReport.notReady();
+        }
+        Path extractDir = umRootfsDir.resolve(extractDirName(entry));
+        Path sidecar = umRootfsDir.resolve(extractDirName(entry) + VERIFIED_SIDECAR_SUFFIX);
+        if (!Files.isDirectory(extractDir) || !attestsPin(sidecar, entry.sha256Pin())) {
+            return ReadinessReport.notReady();
+        }
+        return new ReadinessReport(true, true, extractDir,
+                countedEntries(sidecar), countedExecutables(sidecar));
     }
 
     // ---------------------------------------------------------------------------------

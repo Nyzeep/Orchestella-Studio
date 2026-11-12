@@ -2059,6 +2059,153 @@
                     </LinearLayout>
 
                     <!-- ============================================== -->
+                    <!-- 1b. UML rootfs readiness card (Lane B, Phase   -->
+                    <!--     B2: flag-gated; hidden by default, the    -->
+                    <!--     render gate in UmlRootfsCardState flips   -->
+                    <!--     it visible only when the build opened     -->
+                    <!--     orchestella.uml.rootfsDownload — flag     -->
+                    <!--     off builds keep zero entry). A readiness  -->
+                    <!--     card, NOT a distro card: it claims        -->
+                    <!--     "verified + extracted" only, never        -->
+                    <!--     "startable/compile-capable" (the official -->
+                    <!--     Alpine minirootfs ships no /um-command.sh,-->
+                    <!--     so the external-root init probe would     -->
+                    <!--     reject it; launch usability belongs to    -->
+                    <!--     the fabric-route round).                  -->
+                    <!-- ============================================== -->
+                    <LinearLayout
+                        android:id="@+id/card_uml_rootfs"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:background="@drawable/bg_oe_card"
+                        android:padding="@dimen/oe_space_lg"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:visibility="gone"
+                        android:layout_marginBottom="@dimen/oe_space_md">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+
+                            <FrameLayout
+                                android:layout_width="44dp"
+                                android:layout_height="44dp"
+                                android:background="@drawable/bg_icon_container">
+
+                                <ImageView
+                                    android:layout_width="30dp"
+                                    android:layout_height="30dp"
+                                    android:layout_gravity="center"
+                                    android:src="@drawable/ic_distro_catalog"
+                                    android:contentDescription="@null" />
+                            </FrameLayout>
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginStart="@dimen/oe_space_md"
+                                android:orientation="vertical">
+
+                                <LinearLayout
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:orientation="horizontal"
+                                    android:gravity="center_vertical">
+
+                                    <TextView
+                                        android:id="@+id/txt_uml_rootfs_title"
+                                        android:layout_width="0dp"
+                                        android:layout_height="wrap_content"
+                                        android:layout_weight="1"
+                                        android:fontFamily="sans-serif"
+                                        android:text="UML rootfs (Alpine minirootfs)"
+                                        android:textColor="#FFFFFF"
+                                        android:textSize="16sp"
+                                        android:textStyle="bold" />
+
+                                    <TextView
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:background="@drawable/bg_constructivist_tag_red"
+                                        android:paddingStart="@dimen/oe_icon_inline_gap"
+                                        android:paddingTop="@dimen/oe_space_xs"
+                                        android:paddingEnd="@dimen/oe_icon_inline_gap"
+                                        android:paddingBottom="@dimen/oe_space_xs"
+                                        android:fontFamily="monospace"
+                                        android:text="实验 · UML"
+                                        android:textColor="#FFFFFF"
+                                        android:textSize="10sp"
+                                        android:textStyle="bold" />
+                                </LinearLayout>
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="@dimen/oe_space_xs"
+                                    android:fontFamily="monospace"
+                                    android:text="alpine-minirootfs-3.22.2-aarch64 · 官方 pin 校验 · 约 3.8 MB"
+                                    android:textColor="#8E929B"
+                                    android:textSize="11sp" />
+                            </LinearLayout>
+                        </LinearLayout>
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/oe_space_sm"
+                            android:fontFamily="sans-serif"
+                            android:text="为 UML 实验引擎准备的 guest 根文件系统：自 Alpine 官方 CDN 下载，sha256 pin 校验 + 五阶段内容自检，通过后安全解包就绪。官方镜像不含 UML 启动脚本（um-command.sh），因此「已就绪」仅指已验证+已解包，本轮不可直接启动或编译。"
+                            android:textColor="#CCCCCC"
+                            android:textSize="12sp"
+                            android:lineSpacingExtra="2dp" />
+
+                        <TextView
+                            android:id="@+id/txt_uml_rootfs_status"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/oe_space_sm"
+                            android:fontFamily="monospace"
+                            android:text="未就绪 · 下载并解包后可供给 UML hostfs 通道"
+                            android:textColor="#8E929B"
+                            android:textSize="11sp" />
+
+                        <com.google.android.material.progressindicator.LinearProgressIndicator
+                            android:id="@+id/progress_uml_rootfs"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/oe_space_sm"
+                            android:max="100"
+                            android:progress="0"
+                            android:visibility="gone"
+                            app:indicatorColor="?attr/colorPrimary"
+                            app:trackColor="?attr/colorOutlineVariant"
+                            app:trackCornerRadius="0dp"
+                            app:trackThickness="8dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_uml_rootfs_action"
+                            style="@style/Widget.Material3.Button"
+                            android:layout_width="match_parent"
+                            android:layout_height="44dp"
+                            android:layout_marginTop="@dimen/oe_space_md"
+                            android:gravity="center"
+                            app:cornerRadius="0dp"
+                            android:backgroundTint="#D62828"
+                            android:fontFamily="monospace"
+                            android:text="下载并验证（约 3.8 MB）→"
+                            android:textColor="#FFFFFF"
+                            android:textSize="12sp"
+                            android:textStyle="bold"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp" />
+                    </LinearLayout>
+
+                    <!-- ============================================== -->
                     <!-- 2. Debian Card                                 -->
                     <!-- ============================================== -->
                     <LinearLayout
