@@ -170,6 +170,14 @@ class InstanceLaunchCoordinator(
 
         /** Stops the face and releases its status; idempotent, mirrors [close]. */
         fun disarm(instanceId: String)
+
+        /**
+         * Gate 1 (compile bridge, ACR 2026-11-13 方案 A): publishes the
+         * launch's fabric orchestrator to the lane — the compile-bridge
+         * submitter dispatches through it until [disarm]. Default no-op: lanes
+         * without a compile bridge ignore it.
+         */
+        fun bindFabric(orchestrator: FabricOrchestrator?) {}
     }
 
     /** Performance badge source for the first foreground-service start. */
@@ -411,8 +419,11 @@ class InstanceLaunchCoordinator(
      * flag-on dispatch arms the face through the assembly slot with the same
      * double-gate value the dispatch consumed, then constructs the fabric
      * orchestration over it — the three-face ledger snapshot is logged once,
-     * and nothing else happens on it (no submitter, no dispatch loop: the
-     * compile routing is the fabric-route round's work). A refused arm
+     * and the orchestrator is published to the lane (Gate 1 compile bridge:
+     * the submitter dispatches through it until disarm; a no-op on a flag-off
+     * build). No dispatch loop runs here — work enters only through the
+     * submitter's listener, which nothing connects to until the compile
+     * bridge's guest side is up (Gate 2). A refused arm
      * (GATE_DISABLED / MISSING_ASSET / SPAWN_FAILED / backend declined) is an
      * honest log line with width 0 and zero side effects; the disarm rides
      * the accelerator coordinator's three close points below.
@@ -435,6 +446,10 @@ class InstanceLaunchCoordinator(
             umlFace,
             emptyMap(),
         ).also {
+            // Gate 1 (compile bridge): the lane's submitter dispatches through
+            // this launch's orchestrator until disarm — a no-op on a flag-off
+            // build or a lane without the compile bridge.
+            umlFaceLane.bindFabric(it)
             val widths = FabricOrchestrator.ledgerBackedWidths(
                 assemblyResult.coordinator().ledger(),
                 dispatchResult.qemuFaceWidth,
