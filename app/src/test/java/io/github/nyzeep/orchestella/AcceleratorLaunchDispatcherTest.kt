@@ -67,6 +67,10 @@ class AcceleratorLaunchDispatcherTest {
         assertEquals("", dispatch.decisionJson)
         assertEquals(CompileBackend.NONE, dispatch.backend)
         assertEquals(0, factReads.get())
+        // Lane A: a flag-off dispatch carries no assembly picture at all.
+        assertNull(dispatch.assemblyResult)
+        assertEquals(0, dispatch.qemuFaceWidth)
+        assertEquals(0, dispatch.nativeFaceWidth)
     }
 
     // --- feature flag on: the assembly decides, the dispatch wires --------------
@@ -88,6 +92,52 @@ class AcceleratorLaunchDispatcherTest {
         // The envelope is exactly what the two lanes request; both reserves used it.
         assertEquals(3, dispatch.coordinator!!.ledger().budget().cpuCores())
         assertEquals(3, dispatch.coordinator!!.ledger().snapshot().cpuCores())
+        dispatch.coordinator!!.close()
+    }
+
+    @Test
+    fun dispatchCarriesTheAssemblyResultAndFaceReservationsForTheWiringOwner() {
+        // Lane A (2026-11-13): the wiring owner builds the ride-along UML face
+        // from the dispatch — the assembly result (with its coordinator's
+        // ledger) and the two face reservations ride along so nobody
+        // re-derives them ("pass the reservations, never re-derivations").
+        val fixture = Fixture().apply { armedFacts() }
+
+        val dispatch = fixture.dispatch()
+
+        val result = dispatch.assemblyResult
+        assertTrue(result != null)
+        assertSame(dispatch.coordinator, result!!.coordinator())
+        assertEquals(dispatch.decisionJson, result.decisionJson())
+        assertEquals(dispatch.backend, result.decisionBackend())
+        // The QEMU face is the C1 accounting value; the armed backend carries
+        // the accelerator lane's own reservation (ACCEL_REQUEST = 1 vCPU).
+        assertEquals(2, dispatch.qemuFaceWidth)
+        assertEquals(1, dispatch.nativeFaceWidth)
+        dispatch.coordinator!!.close()
+    }
+
+    @Test
+    fun unarmedDispatchStillCarriesTheResultWithZeroNativeReservation() {
+        val fixture = Fixture().apply {
+            facts = AcceleratorFactProvider {
+                AcceleratorFacts.builder()
+                    .avfPresent(false)
+                    .nonProtectedSupported(false)
+                    .acceleratorImagePresent(false)
+                    .vsockSupported(false)
+                    .compilerTriple("")
+                    .thermalState(ThermalState.NOMINAL)
+                    .batteryState(BatteryState.OK)
+                    .build()
+            }
+        }
+
+        val dispatch = fixture.dispatch()
+
+        assertTrue(dispatch.assemblyResult != null)
+        assertEquals(2, dispatch.qemuFaceWidth)
+        assertEquals("a refused backend reserves no native face budget", 0, dispatch.nativeFaceWidth)
         dispatch.coordinator!!.close()
     }
 
