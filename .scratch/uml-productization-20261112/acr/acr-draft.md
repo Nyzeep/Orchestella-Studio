@@ -91,3 +91,14 @@ pinned 布局（`SRC=/src` + `OUT=/work/research/uml-fastboot/out`）重建逐�
 | D5 | **Go（§3a 公开 tag + Release 源码包）** | NOTICE.UML-DRAFT 正式化随资产入包执行；fork pin + defconfig-fast.fragment 交付清单照 R2 §2.4 十条 |
 
 **决议效力**：本表即 ACR 通过记录；后续工单/报告/接线 commit 引用本节。执行进loc：接线实现见 `feat/uml-lane-default-on`（同日）。
+
+## 8.1 执行状态回填（2026-11-13 可路由轮）
+
+| # | 上轮边界 | 本轮执行（main `87aebabb`） |
+| --- | --- | --- |
+| D1 | release.yml 显式传参落位 | **加固闭环**：`check_uml_payload.py` APK 级断言门入 publish-draft（auto=诚实 skip/`--require-payload`=打包机正向断言，P2-1 残余风险闭合）；实弹抓获 AGP strip 破坏 pin 记账链并以 `keepDebugSymbols` 修复（随包字节=pin 字节恢复成立） |
+| D2 | rootfs 下载为增强路径（产品调用方待接） | **产品调用方落地**：发行版 tab 就绪卡（flag 门控）→ `RootfsTransport.downloadAndVerify` → 安全解包幂等落盘；device-b 首个真实 CDN 端到端 PASS（3.8MB→校验→解包 519 项→「已就绪」诚实呈现）；官方 minirootfs 缺 um-command.sh，hostfs 启动可用性留 fabric-route 轮 |
+| D4 | 装配槽 fast 形态供宽 1=潜在语义（生产调用方为零） | **生产调用方落地**：实例启动链随行布防（dispatch 成功窗口经装配槽 arm、三 close 点 disarm）；§4 探针形态生命周期真机全链 PASS（started width=1 channel=unwired → READY 220ms → hold 自终止 → EOF 复探收尸 → uml-face stopped）；三面恒等账本真路由（host-native=0 uml=1 qemu=2 sum=3 ledger-budget=3） |
+| D5 | NOTICE 正式化随资产入包执行 | 不变（打包机工单落触发条件，见 docs/reports/tickets/uml-fast-profile-packaging/） |
+
+详见 [UML 可路由轮报告](../../docs/research/2026-11-13-uml-routable-round.zh-CN.md)。

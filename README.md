@@ -61,13 +61,13 @@
 | **QEMU** | 软件翻译执行（TCG），完整内核 | **可用** — 上述功能的主体 |
 | **proot / bare** | 宿主原生指令 + `ptrace` 系统调用改写，无 guest 内核 | **条件可用** — 仅 28 域 QA 通道 |
 | **pVM** | Microdroid 跑在 EL2 硬件 vCPU（保护型） | **条件可用** — 依赖设备注册 `virtualizationservice`（扩展包承载 payload） |
-| **UML** | 真实内核以普通进程运行 | **研究线 · 双真机验证完成，产品化待 ACR 投票** — 双设备启动/12-case seccomp 矩阵/长驻全 PASS，payload 管线骨架已入 main（默认关）（详见下文「UML 研究线现状」） |
+| **UML** | 真实内核以普通进程运行 | **实验性 · face 生命周期已接线（2026-11-13 可路由轮）** — 实例启动随行 spawn/READY/清理全链真机验证，宽度入三面账本；编译通道（distcc D-1 桥）未接、不可路由编译（详见下文「UML 研究线现状」） |
 
 所有性能数字与状态标注的判定依据见
 [四车道决策材料（ACR 草案）](docs/research/ACR-draft-four-lanes-20261029.md)；
 仓库里取不到数的一律写「未验证」，不做估算。
 
-### UML 研究线现状（2026-11-12）
+### UML 研究线现状（2026-11-12 · 可路由轮更新 2026-11-13）
 
 UML（User Mode Linux）车道在 2026-11-07 起的零设备开发线上完成了六个工作包
 （U0 启动时间线 / U1 fast-boot profile / U2 预烘焙 rootfs / U3 seccomp 兼容矩阵 /
@@ -107,6 +107,28 @@ ACR 已于 2026-11-12 投票通过（D1–D5 全部按建议通过，决议记�
 fast 形态由 release 流水线显式传参开启（D1），UML 面默认宽度按 D4 接线为
 「flag on 构建 = 1、flag off 构建 = 0」；rootfs 下载增强（方案 B 校验管线已闭环）
 与编译通道（fabric-route D-1 桥）由产品调用方在后续轮接线，届时再评估受控内测。
+
+**2026-11-13 可路由轮（生产调用方落地）**：上表「产品调用方为零」的如实边界本轮闭环——
+
+- **face 生命周期接线（Lane A）**：实例启动链随行布防——dispatch 成功窗口经装配槽
+  `umlFace()` 构造 face 并 start，stop 挂既有 lane 清理三 close 点；生命周期取
+  设备窗证明的 §4 探针形态（`um.hold_ms=1000` 锁定命令行，`um.shell=1` 是测试接口
+  不是内核契约，禁用）。device-b 真机全链验证：`started width=1 channel=unwired` →
+  内核 200ms 到 `U1_T2_READY`/`U1_READY` → hold 自终止 `Power down` → console EOF
+  收尸（teardown 竞态由宽限复探兜底）；三面恒等账本快照真路由
+  （`host-native=0 uml=1 qemu=2 sum=3 ledger-budget=3`，QEMU_ONLY 时 UML 得 1）。
+- **rootfs 下载产品调用方（Lane B）**：发行版 tab「UML rootfs (Alpine minirootfs)」
+  就绪卡（flag 门控渲染，flag off 零入口）→ `RootfsTransport.downloadAndVerify` →
+  安全解包（slip 防护 + exec 位保留）→ 幂等 pin 对账。device-b 首个真实 CDN 端到端
+  PASS：3.8 MB 官方 minirootfs 下载→校验→解包 519 项→「已就绪」诚实呈现（官方镜像
+  不含 `um-command.sh`，外置根探针契约不可达，启动可用性留 fabric-route 轮设计）。
+- **发布门加固（Lane C）**：`check_uml_payload.py` APK 级断言门入 release.yml
+  （auto=诚实 skip / `--require-payload`=打包机正向断言）；实弹抓获并修复 AGP strip
+  破坏 pin 记账链（`keepDebugSymbols` 保 UML 两库，随包字节=pin 字节恢复成立）；
+  打包机构建工单入库。
+- **诚实边界（不变）**：编译通道仍未接（fabric-route D-1 桥）——face 宽度是账本上
+  的真实容量，UI/日志处处明示「编译通道未接」，不冒充可路由；三 flag gradle 默认
+  仍 false，双门/降级语义零触碰（双 flag 变体测试全绿）。
 研究明细见 [零设备方向 spec](docs/research/2026-11-10-proot-vs-uml-zero-device-direction.zh-CN.md)、
 [ARM64 设备窗报告](docs/research/2026-11-11-uml-arm64-device-window-wave2.zh-CN.md)
 与 [UML 产品化轮报告](docs/research/2026-11-12-uml-productization-round.zh-CN.md)。
@@ -124,9 +146,10 @@ fast 形态由 release 流水线显式传参开启（D1），UML 面默认宽度
 2. **发行版 guest 装配修复**：guest 内核缺 `CONFIG_SECURITY_LANDLOCK` 导致 pacman 7
    下载沙箱起不来（装配 `package-install` 失败的唯一根因，网络实测健康）——内核配置
    或 pacconf 降级方案二选一。
-3. **UML 产品化**（ACR 决策后）：fast profile / 预烘焙 rootfs 的 payload 管线与
-   装配链接入、16 KB 宿主与多设备矩阵、full profile（systemd / 网络）立项；
-   warm-start 走预热点池路线（checkpoint/restore 已判 NO-GO）。
+3. **UML fabric-route 轮**（可路由轮之后）：编译通道 D-1 桥（distcc over fabric TCP
+   接入点）、HOSTFS/EXT4 外置根 face 形态的真实 init 语义（下载 rootfs 的启动可用性）、
+   启动链幂等 rootfs 兜底（候选 B）、16 KB 宿主与多设备矩阵、full profile（systemd /
+   网络）立项。
 4. **16 KB 页真机执行**：ELF / APK 对齐已过门禁，真机运行未测。
 5. **AVF 自定义内核评估**：protected 域被信任链封死（pvmfw 只收 Google/OEM 签名镜像），
    仅在 non-protected 设备上有意义——只评估，不承诺实现。
