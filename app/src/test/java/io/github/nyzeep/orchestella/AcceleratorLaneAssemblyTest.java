@@ -351,6 +351,64 @@ public final class AcceleratorLaneAssemblyTest {
     }
 
     @Test
+    public void umlFaceSlotSelectsTheLaunchShapeFromTheBuildFlag() throws Exception {
+        // ACR 2026-11-12 D4 wiring: the slot assembles the launch shape the
+        // build asked for — the §4 built-in-initramfs fast shape when the
+        // build opted in (-Porchestella.uml.fastProfile=true), the exact
+        // byte-identical runner shape otherwise. The shape is observable
+        // through the asset precheck: with kernel+stub placed but no rootfs,
+        // the runner shape answers the fixed MISSING_ASSET(rootfs) refusal
+        // while the fast INITRAMFS shape passes the precheck and attempts the
+        // spawn (which honestly fails on the empty stand-in file — no kernel
+        // binary is needed here).
+        File libDir = tmp.newFolder("uml-shape-lib");
+        File filesDir = tmp.newFolder("uml-shape-files");
+        File kernel = new File(libDir, UmlFaceLauncher.KERNEL_LIB_NAME);
+        File stub = new File(libDir, UmlFaceLauncher.STUB_LIB_NAME);
+        assertTrue(kernel.createNewFile());
+        assertTrue(stub.createNewFile());
+        // The launcher's asset pre-check requires the executable bit; POSIX
+        // filesystems honor it (CI Linux), while Windows canExecute() is
+        // always true for existing files, so this is a no-op there.
+        kernel.setExecutable(true);
+        stub.setExecutable(true);
+        // No rootfs directory: the runner shape's third precheck leg,
+        // deliberately absent.
+
+        UmlFaceLauncher face = AcceleratorLaneAssembly.umlFace(
+                true,
+                new UmlFaceLauncher.Environment() {
+                    @Override public File nativeLibraryDir() {
+                        return libDir;
+                    }
+
+                    @Override public File filesDir() {
+                        return filesDir;
+                    }
+                },
+                UmlFaceLauncher.LaunchParams.defaults(),
+                new FakeKeepAlive());
+
+        UmlFaceLauncher.StartResult result = face.start();
+
+        if (BuildConfig.UML_FAST_PROFILE) {
+            // The fast INITRAMFS shape needs no external root: the precheck
+            // passes and the spawn attempt fails honestly on the stand-in
+            // file (every spawn failure is the fixed SPAWN_FAILED code).
+            assertEquals(UmlFaceLauncher.StartCode.SPAWN_FAILED, result.code());
+        } else {
+            // The runner shape requires the rootfs directory: the fixed
+            // refusal names it before any spawn attempt.
+            assertEquals(UmlFaceLauncher.StartCode.MISSING_ASSET, result.code());
+            assertEquals(UmlFaceLauncher.ROOTFS_DIR_NAME, result.detail());
+        }
+        // Either way the face never fakes a running state.
+        assertEquals(0, face.width());
+        assertEquals(UmlFaceLauncher.Health.NOT_RUNNING, face.probe());
+        assertEquals(UmlFaceLauncher.State.STOPPED, face.state());
+    }
+
+    @Test
     public void imageMissingYieldsQemuOnly() {
         Fixture fixture = new Fixture();
         fixture.facts = () -> facts(true, true, false, false, true,

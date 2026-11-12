@@ -147,12 +147,14 @@ val acceleratorLaneEnabled: Boolean = providers.gradleProperty("orchestella.acce
     ?.let { it == "true" || it == "1" }
     ?: true
 
-// UML payload productization round (ACR-pending, both routes default OFF).
-// 方案 A bundles the U1 fast-profile artifacts into the git-ignored payload
-// paths at build time; 方案 B opens the flag gate in front of the (still
-// unwired) rootfs download entry. Off by default means zero behavior change:
-// no staging task runs, no extra BuildConfig behavior, the UML face keeps its
-// width-0 shape. Flags are gradle properties only — no runtime
+// UML payload productization (ACR passed 2026-11-12, D1-D5 all Go). 方案 A
+// bundles the U1 fast-profile artifacts into the git-ignored payload paths at
+// build time; 方案 B opens the flag gate in front of the (still unwired)
+// rootfs download entry. The Gradle defaults stay OFF — a bare local build
+// keeps zero behavior change (no staging task runs, no extra BuildConfig
+// behavior) — while the release pipeline states the bundled/fast flags
+// explicitly (ACR D1/D4, the same stated-parameter pattern as
+// orchestella.acceleratorLane). Flags are gradle properties only — no runtime
 // SharedPreferences anywhere in this round.
 val umlBundledFastProfile: Boolean = providers.gradleProperty("orchestella.uml.bundledFastProfile")
     .orNull
@@ -170,11 +172,12 @@ val umlFastProfileDir: String? = providers.gradleProperty("orchestella.uml.fastP
     .orNull
     ?.trim()
     ?.ifEmpty { null }
-if (umlBundledFastProfile) {
-    require(!umlFastProfileDir.isNullOrEmpty()) {
-        "orchestella.uml.bundledFastProfile=true requires -Porchestella.uml.fastProfileDir=<dir with the U1 artifacts (linux-fast, stub_exe)>"
-    }
-}
+// fastProfileDir is optional on purpose (ACR D1): the release gate states
+// -Porchestella.uml.bundledFastProfile=true on the hosted clean checkout too,
+// where the U1 artifacts cannot exist (git-ignored machine inputs, like the
+// QEMU payload). stageUmlFastProfile records that absence and skips; a build
+// that DOES provide the dir is fail-closed (missing artifacts / sha mismatch
+// still fail the build) — the packaging machine's path.
 // No cross-constraint: the two routes are independent and may combine.
 
 plugins {
@@ -212,14 +215,17 @@ android {
         versionName = "0.6.3"
         buildConfigField("boolean", "DEVELOPMENT_PREVIEW", "true")
         buildConfigField("boolean", "ACCELERATOR_LANE_ENABLED", acceleratorLaneEnabled.toString())
-        // UML payload routes (default off, ACR-pending): the wiring owner passes
+        // UML payload routes (ACR passed 2026-11-12; gradle defaults stay off,
+        // the release pipeline states them explicitly): the wiring owner passes
         // these into UmlKernelAssets.verifyBundledFastProfile / the RootfsDownload
         // gate; off answers a disabled report / closed gate with zero side effects.
         buildConfigField("boolean", "UML_BUNDLED_FAST_PROFILE", umlBundledFastProfile.toString())
         buildConfigField("boolean", "UML_ROOTFS_DOWNLOAD_ENABLED", umlRootfsDownload.toString())
         // UML fast-profile launch shape (research/uml-fastboot README §4);
-        // consumed by UmlFaceLauncher.FastProfile.currentBuild(). Default off:
-        // the shipped build keeps the runner shape byte-identically.
+        // consumed by UmlFaceLauncher.FastProfile.currentBuild() through the
+        // assembly's umlFace slot (ACR D4 wiring). Bare-local default off: that
+        // build keeps the runner shape byte-identically; the release pipeline
+        // passes -Porchestella.uml.fastProfile=true (ACR D4).
         buildConfigField("boolean", "UML_FAST_PROFILE",
             (providers.gradleProperty("orchestella.uml.fastProfile").orNull?.trim()?.toBoolean() ?: false).toString())
         // Payload builds store native libraries uncompressed and 16 KB aligned
@@ -795,6 +801,12 @@ val verifyRuntimeAssets = tasks.register("verifyRuntimeAssets") {
 // and the accounting manifest is written to src/main/assets/uml-fast-profile-v1.sha256
 // (git-ignored build product; packaged names, so the runtime can consume it).
 // Nothing runs when orchestella.uml.bundledFastProfile is off (the default).
+// When the flag is on but no fastProfileDir is provided (the hosted release
+// gate states the bundled flag explicitly, ACR D1 — its clean checkout cannot
+// carry the git-ignored U1 artifacts), staging records the absence and skips:
+// no jniLibs, no accounting manifest, so the packaged APK carries no UML
+// kernel and the runtime answers MISSING_ASSET honestly (width 0, never a
+// faked face). A provided dir stays fail-closed, unchanged.
 val stageUmlFastProfile = tasks.register("stageUmlFastProfile") {
     group = "verification"
     description = "Stages U1 fast-profile artifacts into the git-ignored payload paths with sha accounting."
@@ -815,6 +827,28 @@ val stageUmlFastProfile = tasks.register("stageUmlFastProfile") {
             return digest.digest().joinToString("") { "%02x".format(it) }
         }
 
+        if (umlFastProfileDir == null) {
+            val flagFile =
+                layout.buildDirectory.file("uml-fast-profile-staging-skipped.flag").get().asFile
+            flagFile.parentFile.mkdirs()
+            flagFile.writeText(
+                "timestamp=${Instant.now()}\n" +
+                    "reason=-Porchestella.uml.bundledFastProfile=true without " +
+                    "-Porchestella.uml.fastProfileDir\n" +
+                    "detail=no U1 artifacts in this checkout; the APK carries no UML kernel " +
+                    "asset and UmlFaceLauncher answers MISSING_ASSET (width 0).\n"
+            )
+            logger.warn(
+                "stageUmlFastProfile: WARNING: bundledFastProfile is on but no " +
+                    "orchestella.uml.fastProfileDir was provided; staging skipped and recorded " +
+                    "in build/uml-fast-profile-staging-skipped.flag. The packaged APK carries " +
+                    "no UML kernel asset. Provide the pinned artifacts " +
+                    "(research/uml-fastboot/manifest.md §3) on the packaging machine to stage " +
+                    "them for real."
+            )
+            return@doLast
+        }
+
         // Single pin source: the PIN_MANIFEST constant lines inside
         // UmlKernelAssets.java ("<64-hex>␠␠<name>" string literals).
         val kernelAssetsSource = file(
@@ -829,7 +863,7 @@ val stageUmlFastProfile = tasks.register("stageUmlFastProfile") {
                 "UmlKernelAssets.java PIN_MANIFEST — the constant format must have drifted."
         }
 
-        val profileRoot = rootProject.file(umlFastProfileDir!!)
+        val profileRoot = rootProject.file(umlFastProfileDir)
         if (!profileRoot.isDirectory) {
             throw GradleException(
                 "stageUmlFastProfile: orchestella.uml.fastProfileDir is not an existing directory: " +
