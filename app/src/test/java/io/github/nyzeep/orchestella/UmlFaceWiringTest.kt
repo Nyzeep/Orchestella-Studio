@@ -424,15 +424,33 @@ class UmlFaceWiringTest {
 
     @Test
     fun unwiredRunnerShapeStillReadsWidthZero() {
-        // The launcher's locked width honesty, contrasted through the slot: the
-        // runner shape without a channel reads 0; the wired test above proves
-        // the same shape reads real once the channel rides in.
+        // The launcher's locked width honesty, stated shape-explicitly: the
+        // RUNNER shape (fastProfile null, constructed directly, never through
+        // the build-flag-following assembly slot) without a channel reads 0 —
+        // under both gradle flag variants. The wired test above proves the
+        // same honesty flips real once the channel rides in.
         val lines = mutableListOf<String>()
         val lib = temporaryFolder.newFolder("arm-unwired-runner-lib")
+        val kernel = File(lib, UmlFaceLauncher.KERNEL_LIB_NAME)
+        val stub = File(lib, UmlFaceLauncher.STUB_LIB_NAME)
+        kernel.createNewFile()
+        stub.createNewFile()
+        kernel.setExecutable(true)
+        stub.setExecutable(true)
+        File(lib, UmlFaceLauncher.ROOTFS_DIR_NAME).mkdirs()
+        val face = UmlFaceLauncher(
+            true,
+            FaceFactory.environment(lib),
+            UmlFaceLauncher.LaunchParams.defaults(),
+            CountingKeepAlive(),
+            FaceFactory.aliveSpawner(),
+            null,
+            null, // the exact runner shape, independent of the build flag
+        )
         val lane = UmlFaceRideAlong(
-            backend = { instanceId, gate, channel ->
+            backend = { _, _, channel ->
                 assertNull(channel)
-                slotBackend(lib)(instanceId, gate, null)
+                face
             },
             compileBridge = null,
             log = { lines.add(it) },
