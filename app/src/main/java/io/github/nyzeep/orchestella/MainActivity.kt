@@ -135,18 +135,42 @@ class MainActivity : AppCompatActivity() {
         log = umlFaceConsoleLog,
     )
     private val umlConsoleSpawner = ConsoleDrainingUmlSpawner(umlFaceConsoleSink)
+    // Gate 1（2026-11-13，编译桥 D-1 接线）：第四 flag（orchestella.uml.
+    // compileBridge）为 off 时 wiring 全程惰性——arm 日志保持逐字节 channel=
+    // unwired、无 submitter listener；为 on 时 arm 供给 UML-TCP lane 通道
+    // （UmlChannels.overTcpLane 经装配槽 6 参重载入缝），arm 日志翻转为
+    // channel=wired。launch 形态（fastProfile）与可路由（compileBridge）是
+    // 两个独立 flag，互不推导。
+    private val umlCompileBridge = UmlCompileBridgeWiring(
+        enabled = BuildConfig.UML_COMPILE_BRIDGE,
+        log = umlFaceConsoleLog,
+    )
     private val umlFaceRideAlong = UmlFaceRideAlong(
-        backend = { _, gate ->
-            AcceleratorLaneAssembly.umlFace(
-                gate,
-                UmlFaceKeepAliveService.environment(this),
-                // 内置 initramfs 探针形态：512M / host-1 单核（fast 形态语义宽 1）；
-                // 命令行即 fastProfileCommand 锁定输出，零 extraArgs。
-                UmlFaceLauncher.LaunchParams.defaults(),
-                UmlFaceKeepAliveService.keepAlive(this),
-                umlConsoleSpawner,
-            )
+        backend = { _, gate, channel ->
+            if (channel != null) {
+                AcceleratorLaneAssembly.umlFace(
+                    gate,
+                    UmlFaceKeepAliveService.environment(this),
+                    // 内置 initramfs 探针形态：512M / host-1 单核（fast 形态语义宽 1）；
+                    // 命令行即 fastProfileCommand 锁定输出，零 extraArgs。
+                    UmlFaceLauncher.LaunchParams.defaults(),
+                    UmlFaceKeepAliveService.keepAlive(this),
+                    umlConsoleSpawner,
+                    channel,
+                )
+            } else {
+                AcceleratorLaneAssembly.umlFace(
+                    gate,
+                    UmlFaceKeepAliveService.environment(this),
+                    // 内置 initramfs 探针形态：512M / host-1 单核（fast 形态语义宽 1）；
+                    // 命令行即 fastProfileCommand 锁定输出，零 extraArgs。
+                    UmlFaceLauncher.LaunchParams.defaults(),
+                    UmlFaceKeepAliveService.keepAlive(this),
+                    umlConsoleSpawner,
+                )
+            }
         },
+        compileBridge = umlCompileBridge,
         log = umlFaceConsoleLog,
     )
 

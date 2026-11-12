@@ -383,12 +383,44 @@ public final class AcceleratorLaneAssembly {
             UmlFaceLauncher.LaunchParams launchParams,
             UmlFaceLauncher.KeepAlive keepAlive,
             UmlFaceLauncher.ProcessSpawner spawner) {
+        return umlFace(umlFaceEnabled, environment, launchParams, keepAlive, spawner, null);
+    }
+
+    /**
+     * Gate 1 wiring (ACR 2026-11-13 方案 A, fabric-route doc D-1): the
+     * compile-channel-injecting variant of {@link #umlFace(boolean,
+     * UmlFaceLauncher.Environment, UmlFaceLauncher.LaunchParams,
+     * UmlFaceLauncher.KeepAlive, UmlFaceLauncher.ProcessSpawner)}. Everything
+     * is identical — the same double gate, the same required keep-alive, the
+     * launch shape still following {@code BuildConfig.UML_FAST_PROFILE} through
+     * {@link UmlFaceLauncher.FastProfile#currentBuild()} — except the caller
+     * supplies the face's compile {@link UmlFaceLauncher.Channel}: production
+     * passes {@code UmlChannels.asFaceChannel(UmlChannels.overTcpLane(...))},
+     * the D-1 UML-TCP lane adapter over the bridge's channel factory. A
+     * {@code null} channel is the historical unwired shape — this overload
+     * degenerates to the five-argument one byte-identically, so a flag-off
+     * build's arm path is unchanged and the face's locked width honesty (a
+     * wired face reads the kernel's real width; an unwired runner shape reads
+     * 0) follows the launcher's own contract, untouched.
+     *
+     * <p>{@code UmlFaceLauncher} itself stays byte-identical: the channel
+     * arrives through the constructor's existing seam; no new flag is read
+     * here (the caller decides wired vs unwired from the build flag it
+     * already consumed).
+     */
+    public static UmlFaceLauncher umlFace(
+            boolean umlFaceEnabled,
+            UmlFaceLauncher.Environment environment,
+            UmlFaceLauncher.LaunchParams launchParams,
+            UmlFaceLauncher.KeepAlive keepAlive,
+            UmlFaceLauncher.ProcessSpawner spawner,
+            UmlFaceLauncher.Channel compileChannel) {
         Objects.requireNonNull(environment, "environment");
         Objects.requireNonNull(launchParams, "launchParams");
         Objects.requireNonNull(keepAlive, "keepAlive");
         Objects.requireNonNull(spawner, "spawner");
         return new UmlFaceLauncher(
-                umlFaceEnabled, environment, launchParams, keepAlive, spawner, null,
+                umlFaceEnabled, environment, launchParams, keepAlive, spawner, compileChannel,
                 UmlFaceLauncher.FastProfile.currentBuild());
     }
 
