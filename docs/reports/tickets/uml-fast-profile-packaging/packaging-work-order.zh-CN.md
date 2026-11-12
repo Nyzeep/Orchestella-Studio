@@ -87,6 +87,7 @@ python tools/release/check_uml_payload.py --apk <APK 路径> --require-payload
 - **OK**：APK 内 `assets/uml-fast-profile-v1.sha256` 记账的每个产物（`lib/arm64-v8a/libuml_kernel.so`、`lib/arm64-v8a/libuml_stub.so`、可选 rootfs tar）逐字节与记账行一致；
 - **FAIL（非零退出）**：sha 不匹配 / 记账产物缺位于 APK / manifest 残缺或不可解析——输出含差异两侧摘要前缀与修复指引；
 - 脚本从 APK **内部** manifest 读取并比对 APK 内 so 的实际 sha256，不依赖构建树、不内置 pin——它证的是"随包字节与随包账本一致"，pin 的正确性由 §3 的 fail-closed staging 保证；
+- **前置事实（2026-11-13 实测）**：本门成立依赖 `app/build.gradle.kts` packaging 块对 `libuml_kernel.so`/`libuml_stub.so` 的 `keepDebugSymbols`——AGP 默认 debug-symbol strip 曾在 merge→APK 之间改写内核字节（staged 9,517,760 B/sha 21e1c3f9… → APK 内 8,071,168 B/sha 52764628…，stub 无符号可 strip 故逐字节幸存），记账链断裂、门必红。该保护已入库；打包机侧若见 libuml_kernel.so FAIL 且两侧 sha 均非 pin，先核对构建脚本该保护是否仍在；
 - `--selftest` 可独立自测（合成 zip fixture 正/反 12 例），打包机无需任何输入即可验证脚本本身可用。
 
 ### 4.2 记账 manifest 对账（人眼复核，与 4.1 互补）
