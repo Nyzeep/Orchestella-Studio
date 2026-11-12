@@ -520,6 +520,134 @@ public final class AcceleratorLaneAssemblyTest {
         assertEquals(UmlFaceLauncher.Health.NOT_RUNNING, face.probe());
     }
 
+    // --- Gate 1 (2026-11-13): the compile-channel-injecting umlFace slot -------------
+
+    @Test
+    public void compileChannelInjectingUmlFaceSlotWiresTheChannelThroughTheSeam()
+            throws Exception {
+        // The 6-argument slot is the 5-argument slot plus the compile Channel:
+        // the same double gate, the same required keep-alive, the launch shape
+        // still following the build flag. UmlFaceLauncher stays byte-identical;
+        // the channel arrives through the constructor's existing seam, and the
+        // face's locked width honesty does the flip: a wired face reads the
+        // kernel's real width while up, where the unwired runner shape reads 0.
+        File libDir = tmp.newFolder("uml-channel-lib");
+        File filesDir = tmp.newFolder("uml-channel-files");
+        File kernel = new File(libDir, UmlFaceLauncher.KERNEL_LIB_NAME);
+        File stub = new File(libDir, UmlFaceLauncher.STUB_LIB_NAME);
+        assertTrue(kernel.createNewFile());
+        assertTrue(stub.createNewFile());
+        kernel.setExecutable(true);
+        stub.setExecutable(true);
+        assertTrue(new File(filesDir, UmlFaceLauncher.ROOTFS_DIR_NAME).mkdirs());
+        FakeKeepAlive keepAlive = new FakeKeepAlive();
+        UmlFaceLauncher.UmlProcess process = new UmlFaceLauncher.UmlProcess() {
+            @Override public boolean isAlive() {
+                return true;
+            }
+
+            @Override public void destroy() {
+            }
+
+            @Override public void destroyForcibly() {
+            }
+
+            @Override public boolean waitForExit(long timeoutMs) {
+                return true;
+            }
+        };
+
+        List<String> executed = new ArrayList<>();
+        UmlFaceLauncher.Channel channel = (grantedWidth, item) ->
+                executed.add(grantedWidth + ":" + (item != null));
+
+        UmlFaceLauncher face = AcceleratorLaneAssembly.umlFace(
+                true,
+                environment(libDir, filesDir),
+                UmlFaceLauncher.LaunchParams.defaults(),
+                keepAlive,
+                (command, environment, workingDir) -> process,
+                channel);
+
+        assertTrue(face.start().started());
+        // The width-honesty flip: runner shape + wired channel reads real width.
+        assertEquals(1, face.width());
+        // The dispatch reaches the channel through the launcher's own execute.
+        FabricOrchestrator.WorkItem item = new FabricOrchestrator.WorkItem() {
+        };
+        face.faceWorker().execute(FabricWidthDecision.Face.UML, 1, item);
+        assertEquals(List.of("1:true"), executed);
+        face.stop();
+    }
+
+    @Test
+    public void compileChannelSlotWithNullChannelIsTheHistoricalUnwiredShape()
+            throws Exception {
+        // null degenerates to the five-argument slot shape-for-shape: both
+        // slots answer the same launch shape (whatever the build flag selected
+        // — the tests hold under both gradle variants) and the same honest
+        // width (runner shape reads 0 unwired; the INITRAMFS shape reads 1
+        // while up, the ACR D4 rule the launcher owns).
+        File libDir = tmp.newFolder("uml-channel-null-lib");
+        File filesDir = tmp.newFolder("uml-channel-null-files");
+        File kernel = new File(libDir, UmlFaceLauncher.KERNEL_LIB_NAME);
+        File stub = new File(libDir, UmlFaceLauncher.STUB_LIB_NAME);
+        assertTrue(kernel.createNewFile());
+        assertTrue(stub.createNewFile());
+        kernel.setExecutable(true);
+        stub.setExecutable(true);
+        assertTrue(new File(filesDir, UmlFaceLauncher.ROOTFS_DIR_NAME).mkdirs());
+
+        List<List<String>> spawnedCommands = new ArrayList<>();
+        UmlFaceLauncher.ProcessSpawner spawner = (command, environment, workingDir) -> {
+            spawnedCommands.add(command);
+            return new UmlFaceLauncher.UmlProcess() {
+                @Override public boolean isAlive() {
+                    return true;
+                }
+
+                @Override public void destroy() {
+                }
+
+                @Override public void destroyForcibly() {
+                }
+
+                @Override public boolean waitForExit(long timeoutMs) {
+                    return true;
+                }
+            };
+        };
+        UmlFaceLauncher.Environment dirs = environment(libDir, filesDir);
+
+        UmlFaceLauncher fiveArg = AcceleratorLaneAssembly.umlFace(
+                true, dirs, UmlFaceLauncher.LaunchParams.defaults(),
+                new FakeKeepAlive(), spawner);
+        UmlFaceLauncher sixArgNull = AcceleratorLaneAssembly.umlFace(
+                true, dirs, UmlFaceLauncher.LaunchParams.defaults(),
+                new FakeKeepAlive(), spawner, null);
+
+        assertTrue(fiveArg.start().started());
+        assertTrue(sixArgNull.start().started());
+        assertEquals("the launch shape is identical through both slots",
+                spawnedCommands.get(0), spawnedCommands.get(1));
+        assertEquals("the width honesty is identical through both slots",
+                fiveArg.width(), sixArgNull.width());
+        fiveArg.stop();
+        sixArgNull.stop();
+    }
+
+    private static UmlFaceLauncher.Environment environment(File libDir, File filesDir) {
+        return new UmlFaceLauncher.Environment() {
+            @Override public File nativeLibraryDir() {
+                return libDir;
+            }
+
+            @Override public File filesDir() {
+                return filesDir;
+            }
+        };
+    }
+
     @Test
     public void imageMissingYieldsQemuOnly() {
         Fixture fixture = new Fixture();
