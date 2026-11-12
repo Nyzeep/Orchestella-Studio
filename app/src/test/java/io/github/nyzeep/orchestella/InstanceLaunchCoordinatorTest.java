@@ -8,6 +8,11 @@ import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 import io.github.nyzeep.orchestella.runtime.engineavf.AvfEngineException;
+import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorFactProvider;
+import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorFacts;
+import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.BatteryState;
+import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.PvmCompilerManifest;
+import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.ThermalState;
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle;
 import io.github.nyzeep.orchestella.runtime.instance.duallane.LaneClock;
 import java.io.File;
@@ -24,8 +29,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.Assume;
 import org.junit.Rule;
 import org.junit.Test;
@@ -204,6 +212,25 @@ public final class InstanceLaunchCoordinatorTest {
     // Harness
     // ------------------------------------------------------------------
 
+    /** Records the ride-along UML face lane's arm/disarm calls (Lane A 2026-11-13). */
+    private static final class RecordingUmlFaceLane implements InstanceLaunchCoordinator.UmlFaceLane {
+        final AtomicInteger arms = new AtomicInteger();
+        final AtomicInteger disarms = new AtomicInteger();
+        final AtomicBoolean lastGate = new AtomicBoolean(false);
+        /** When set, arm answers this face; null keeps the backend-declined shape. */
+        volatile UmlFaceLauncher faceToArm;
+
+        @Override public UmlFaceLauncher arm(String instanceId, boolean gateEnabled) {
+            arms.incrementAndGet();
+            lastGate.set(gateEnabled);
+            return faceToArm;
+        }
+
+        @Override public void disarm(String instanceId) {
+            disarms.incrementAndGet();
+        }
+    }
+
     private static final class Seams {
         final FakeSettings settings = new FakeSettings();
         final RecordingUi ui = new RecordingUi();
@@ -211,10 +238,22 @@ public final class InstanceLaunchCoordinatorTest {
         final StubCopy copy = new StubCopy();
         final RecordingDiagnostics diagnostics = new RecordingDiagnostics();
         final CleanupBridge cleanup = new CleanupBridge();
+        final RecordingUmlFaceLane umlFaceLane = new RecordingUmlFaceLane();
         final AtomicInteger reconciles = new AtomicInteger();
         final AtomicInteger factReads = new AtomicInteger();
         final AtomicReference<InstanceStrategyLauncher.LaunchParameters> captured = new AtomicReference<>();
         volatile boolean preferAvf;
+        /**
+         * The facts provider the flag-on dispatch reads; the default throws on
+         * read (the flag-off tests pin that nothing reads it).
+         */
+        volatile AcceleratorFactProvider facts = () -> {
+            throw new AssertionError("facts must not be read while the lane is off");
+        };
+        /** The payload manifest the flag-on snapshot reads; default refuses. */
+        volatile java.util.Optional<PvmCompilerManifest> payloadManifest =
+                java.util.Optional.empty();
+        volatile boolean refusePayloadManifestRead = true;
     }
 
     private static final class Setup {
@@ -269,15 +308,19 @@ public final class InstanceLaunchCoordinatorTest {
                     // The original wiring constructs the provider eagerly per launch
                     // even when the lane is off; only .read() is lane-gated.
                     seams.factReads.incrementAndGet();
-                    return () -> {
-                        throw new AssertionError("facts must not be read while the lane is off");
-                    };
+                    return seams.facts;
                 },
-                () -> { throw new UnsupportedOperationException("payload manifest not expected"); },
+                () -> {
+                    if (seams.refusePayloadManifestRead) {
+                        throw new UnsupportedOperationException("payload manifest not expected");
+                    }
+                    return seams.payloadManifest;
+                },
                 event -> { },
                 LaneClock.system(),
                 Clock.systemUTC(),
-                seams.reconciles::incrementAndGet);
+                seams.reconciles::incrementAndGet,
+                seams.umlFaceLane);
     }
 
     /** A qemu seam that registers the session like the real launcher does. */
@@ -947,6 +990,194 @@ public final class InstanceLaunchCoordinatorTest {
                     failed.getFailure() instanceof AssertionError);
         } finally {
             ExecutionSessionRegistry.unregister(setup.instance.id());
+            InstanceLaunchGuard.end(setup.instance.id());
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Ride-along UML face (Lane A 2026-11-13)
+    // ------------------------------------------------------------------
+
+    /** A fake always-alive kernel process; the fake spawner hands it back. */
+    private static final class AliveUmlProcess implements UmlFaceLauncher.UmlProcess {
+        volatile boolean alive = true;
+
+        @Override public boolean isAlive() { return alive; }
+
+        @Override public void destroy() { alive = false; }
+
+        @Override public void destroyForcibly() { alive = false; }
+
+        @Override public boolean waitForExit(long timeoutMs) { return true; }
+    }
+
+    /** Counts keep-alive acquire/release like the assembly test's fake. */
+    private static final class CountingKeepAlive implements UmlFaceLauncher.KeepAlive {
+        final AtomicInteger acquires = new AtomicInteger();
+        final AtomicInteger releases = new AtomicInteger();
+
+        @Override public void acquire() { acquires.incrementAndGet(); }
+
+        @Override public void release() { releases.incrementAndGet(); }
+    }
+
+    /**
+     * A real fast-shape face over stand-in assets: kernel+stub executable
+     * files, the §4 INITRAMFS shape (needs no external root), the always-alive
+     * fake spawner — start() honestly answers STARTED and width() reads 1.
+     */
+    private UmlFaceLauncher givenArmedFastFace(File libDir) throws Exception {
+        File kernel = new File(libDir, UmlFaceLauncher.KERNEL_LIB_NAME);
+        File stub = new File(libDir, UmlFaceLauncher.STUB_LIB_NAME);
+        assertTrue(kernel.createNewFile());
+        assertTrue(stub.createNewFile());
+        // POSIX CI honors the executable bit; Windows canExecute() is always
+        // true for existing files (the assembly test's comment, same rule).
+        kernel.setExecutable(true);
+        stub.setExecutable(true);
+        AliveUmlProcess process = new AliveUmlProcess();
+        return new UmlFaceLauncher(
+                true,
+                new UmlFaceLauncher.Environment() {
+                    @Override public File nativeLibraryDir() { return libDir; }
+
+                    @Override public File filesDir() { return libDir; }
+                },
+                UmlFaceLauncher.LaunchParams.defaults(),
+                new CountingKeepAlive(),
+                (command, environment, workingDir) -> process,
+                null,
+                UmlFaceLauncher.FastProfile.initramfs());
+    }
+
+    /** Unarmed facts: the verdict is QEMU_ONLY and the dispatch still succeeds. */
+    private static AcceleratorFactProvider unarmedFacts() {
+        return () -> AcceleratorFacts.builder()
+                .avfPresent(false)
+                .nonProtectedSupported(false)
+                .acceleratorImagePresent(false)
+                .vsockSupported(false)
+                .compilerTriple("")
+                .thermalState(ThermalState.NOMINAL)
+                .batteryState(BatteryState.OK)
+                .build();
+    }
+
+    @Test
+    public void gateOffLaunchNeverTouchesTheRideAlongUmlFace() throws Exception {
+        Seams seams = new Seams();
+        File filesDir = givenFilesDir();
+        Setup setup = givenDebianInstance("uml-face-gateoff-store");
+        CountDownLatch release = new CountDownLatch(1);
+        ExitSession session = gatedExitSession(release);
+        InstanceLaunchCoordinator coordinator = newCoordinator(setup, filesDir, seams,
+                registeringQemu(seams, session));
+        try {
+            InstanceLaunchCoordinator.LaunchOutcome outcome = coordinator.launch(setup.instance);
+            assertSame(InstanceLaunchCoordinator.LaunchOutcome.Launched.class, outcome.getClass());
+            // A gate-off dispatch returns a null coordinator: zero face, zero
+            // new behavior — the face lane is never consulted.
+            assertEquals("a gate-off dispatch arms no face at all",
+                    0, seams.umlFaceLane.arms.get());
+            assertFalse(seams.umlFaceLane.lastGate.get());
+            assertNull("no face is bound to the status registry",
+                    UmlFaceStatusRegistry.current());
+            release.countDown();
+            assertTrue(seams.foreground.firstStop.await(5, TimeUnit.SECONDS));
+            awaitRunOnUiCalls(seams.ui, 2);
+            // The watcher close point's disarm rides the same gate-off path
+            // inertly: the unbound registry answers null, so it is a no-op.
+        } finally {
+            ExecutionSessionRegistry.unregister(setup.instance.id());
+            InstanceLaunchGuard.end(setup.instance.id());
+        }
+    }
+
+    @Test
+    public void flagOnLaunchArmsTheRideAlongFaceAndLogsTheLedgerIdentity() throws Exception {
+        Assume.assumeTrue(BuildConfig.ACCELERATOR_LANE_ENABLED);
+        Seams seams = new Seams();
+        seams.settings.acceleratorLaneEnabled = true;
+        seams.facts = unarmedFacts();
+        seams.refusePayloadManifestRead = false;
+        File filesDir = givenFilesDir();
+        Setup setup = givenDebianInstance("uml-face-store");
+        File libDir = temporaryFolder.newFolder("uml-face-lib");
+        seams.umlFaceLane.faceToArm = givenArmedFastFace(libDir);
+        CountDownLatch release = new CountDownLatch(1);
+        ExitSession session = gatedExitSession(release);
+        InstanceLaunchCoordinator coordinator = newCoordinator(setup, filesDir, seams,
+                registeringQemu(seams, session));
+        try {
+            InstanceLaunchCoordinator.LaunchOutcome outcome = coordinator.launch(setup.instance);
+            assertSame(InstanceLaunchCoordinator.LaunchOutcome.Launched.class, outcome.getClass());
+            assertEquals("the face lane armed exactly once", 1, seams.umlFaceLane.arms.get());
+            assertTrue("the face gate is the double gate the dispatch consumed",
+                    seams.umlFaceLane.lastGate.get());
+
+            // The three-face ledger identity is logged once and the face
+            // widths sum to the ledger's core budget.
+            String identityLine = null;
+            for (String line : seams.diagnostics.snapshots) {
+                if (line.contains("fabric orchestrator constructed")) {
+                    identityLine = line;
+                }
+            }
+            assertNotNull("the fabric snapshot must be logged", identityLine);
+            assertTrue("the snapshot carries all three faces", identityLine.contains("uml="));
+            Matcher matcher = Pattern.compile("sum=(\\d+) ledger-budget=(\\d+)")
+                    .matcher(identityLine);
+            assertTrue("the snapshot carries the sum and the ledger budget", matcher.find());
+            assertEquals("the three face widths sum to the ledger budget",
+                    matcher.group(2), matcher.group(1));
+
+            // The watcher's exit close point disarms the face.
+            release.countDown();
+            assertTrue(seams.foreground.firstStop.await(5, TimeUnit.SECONDS));
+            awaitRunOnUiCalls(seams.ui, 2);
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (seams.umlFaceLane.disarms.get() < 1 && System.nanoTime() < deadline) {
+                Thread.sleep(20);
+            }
+            assertEquals("the watcher close point disarms the face",
+                    1, seams.umlFaceLane.disarms.get());
+        } finally {
+            ExecutionSessionRegistry.unregister(setup.instance.id());
+            InstanceLaunchGuard.end(setup.instance.id());
+        }
+    }
+
+    @Test
+    public void launchFailureAfterArmDisarmsTheRideAlongFace() throws Exception {
+        Assume.assumeTrue(BuildConfig.ACCELERATOR_LANE_ENABLED);
+        Seams seams = new Seams();
+        seams.settings.acceleratorLaneEnabled = true;
+        seams.facts = unarmedFacts();
+        seams.refusePayloadManifestRead = false;
+        File filesDir = givenFilesDir();
+        Setup setup = givenDebianInstance("uml-face-fail-store");
+        File libDir = temporaryFolder.newFolder("uml-face-fail-lib");
+        seams.umlFaceLane.faceToArm = givenArmedFastFace(libDir);
+        // The QEMU seam returns the session WITHOUT registering it: the
+        // generation lookup after the face window fails, so the launch takes
+        // its failure cleanup path — which must disarm the face too.
+        InstanceStrategyLauncher.QemuLaunch unregisteredQemu = params -> {
+            seams.captured.set(params);
+            return new ExitSession(0);
+        };
+        InstanceLaunchCoordinator coordinator = newCoordinator(setup, filesDir, seams,
+                unregisteredQemu);
+        try {
+            InstanceLaunchCoordinator.LaunchOutcome outcome = coordinator.launch(setup.instance);
+            assertSame(InstanceLaunchCoordinator.LaunchOutcome.Failed.class, outcome.getClass());
+            assertEquals("the face armed before the generation failure",
+                    1, seams.umlFaceLane.arms.get());
+            assertTrue(seams.umlFaceLane.lastGate.get());
+            assertEquals("the launch failure path disarms the face",
+                    1, seams.umlFaceLane.disarms.get());
+            assertNull("the status registry is left unbound",
+                    UmlFaceStatusRegistry.current());
+        } finally {
             InstanceLaunchGuard.end(setup.instance.id());
         }
     }

@@ -123,6 +123,33 @@ class MainActivity : AppCompatActivity() {
     private var runtimeStatusLine: String? = null
     private val dashboardHandler = Handler(Looper.getMainLooper())
 
+    // Lane A（2026-11-13）：随行 UML face 的 Android 侧绑定。face 经装配槽的
+    // spawner 注入重载构造（drain 线程消费内置 initramfs 的 §4 契约串），生命
+    // 周期由 InstanceLaunchCoordinator 的 UmlFaceLane 端口驱动；日志沿
+    // OrchestellaUml 家族 tag（UmlFaceKeepAliveService 既有 tag），不发明新 tag。
+    private val umlFaceConsoleLog: (String) -> Unit = { line ->
+        android.util.Log.i("OrchestellaUml", line)
+    }
+    private val umlFaceConsoleSink = UmlFaceConsoleSink(
+        faceSource = { UmlFaceStatusRegistry.current()?.face },
+        log = umlFaceConsoleLog,
+    )
+    private val umlConsoleSpawner = ConsoleDrainingUmlSpawner(umlFaceConsoleSink)
+    private val umlFaceRideAlong = UmlFaceRideAlong(
+        backend = { _, gate ->
+            AcceleratorLaneAssembly.umlFace(
+                gate,
+                UmlFaceKeepAliveService.environment(this),
+                // 内置 initramfs 探针形态：512M / host-1 单核（fast 形态语义宽 1）；
+                // 命令行即 fastProfileCommand 锁定输出，零 extraArgs。
+                UmlFaceLauncher.LaunchParams.defaults(),
+                UmlFaceKeepAliveService.keepAlive(this),
+                umlConsoleSpawner,
+            )
+        },
+        log = umlFaceConsoleLog,
+    )
+
     companion object {
         /**
          * 进程级一次性门（协同落点，2026-11-07 设备窗实测：VM 启动时弹权限窗打断）。
@@ -339,6 +366,7 @@ class MainActivity : AppCompatActivity() {
             laneClock = LaneClock.system(),
             clock = Clock.systemUTC(),
             orphanReconciler = Runnable { reconcileOrphanInstances() },
+            umlFaceLane = umlFaceRideAlong,
         )
 
         settingsButton.setOnClickListener {
@@ -634,6 +662,29 @@ class MainActivity : AppCompatActivity() {
         }
         findViewById<View>(R.id.seg_qemu)?.setOnClickListener { switchTab(2) }
 
+        // Lane A（2026-11-13）：第三段「UML 实验」是状态+导航条的状态项，不是
+        // 偏好选择器——与 seg_pkvm 的 AVF 模式同一语义（状态文案+诚实解释，
+        // 就绪才进硬件页）。gate 即双门（构建 flag + 用户设置），两层分开说。
+        findViewById<View>(R.id.seg_uml)?.setOnClickListener {
+            when {
+                !BuildConfig.ACCELERATOR_LANE_ENABLED -> {
+                    androidx.appcompat.app.AlertDialog.Builder(this)
+                        .setTitle("UML 实验编译面")
+                        .setMessage("当前构建未包含加速车道组件，UML 实验编译面不可用。\n应用继续使用完整 QEMU 路径运行 Linux 实例。")
+                        .setPositiveButton("了解", null)
+                        .show()
+                }
+                !settingsManager.isAcceleratorLaneEnabled() -> {
+                    androidx.appcompat.app.AlertDialog.Builder(this)
+                        .setTitle("UML 实验编译面")
+                        .setMessage("UML 实验编译面随加速车道总开关关闭而停用（你在设置中关闭）。\n应用继续使用完整 QEMU 路径运行 Linux 实例。")
+                        .setPositiveButton("了解", null)
+                        .show()
+                }
+                else -> switchTab(2)
+            }
+        }
+
         findViewById<View>(R.id.copy_ssh_btn)?.setOnClickListener {
             val command = sshCommand
             if (command == null) {
@@ -910,6 +961,13 @@ class MainActivity : AppCompatActivity() {
             }
         findViewById<com.google.android.material.button.MaterialButton>(R.id.seg_qemu)?.text =
             if (session is QemuInstanceLauncher.Session) "QEMU · 正在使用" else "QEMU · 可用"
+        // Lane A（2026-11-13）：UML face 的两层诚实语义分开说——「运行中」是
+        // 容量事实（fast 形态宽 1 上账本），「编译通道未接」是可路由性事实
+        // （fabric-route D-1 未落地，固定 CHANNEL_UNWIRED 守门）；不在运行
+        // 窗口内一律「未启用」，不冒充可用。
+        findViewById<com.google.android.material.button.MaterialButton>(R.id.seg_uml)?.text =
+            if (UmlFaceStatusRegistry.runningWidth() > 0) "UML · 运行中(实验)·编译通道未接"
+            else "UML · 未启用"
         sshCommand = instance?.let { target -> sshPrefetch?.command ?: loadSshCommand(target) }
         findViewById<TextView>(R.id.ssh_string)?.text = sshCommand ?: "尚未配置 SSH 端口映射"
         findViewById<com.google.android.material.button.MaterialButton>(R.id.copy_ssh_btn)?.text =

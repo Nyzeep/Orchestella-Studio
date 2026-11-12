@@ -38,6 +38,12 @@ import java.util.function.Supplier
  * WAIT_FAILED/STALE guards, and the double generation gate
  * ([InstanceLaunchGuard.isLatest] + registry identity) before every success or
  * exit UI update.
+ *
+ * <p>Lane A (2026-11-13): the ride-along UML face ([UmlFaceLane]) arms once
+ * per successful flag-on dispatch with the same double-gate value the dispatch
+ * consumed, and disarms at the three accelerator-coordinator close points
+ * (watcher exit, watcher exception, launch failure). A gate-off dispatch
+ * returns a null coordinator and never touches the face lane at all.
  */
 class InstanceLaunchCoordinator(
     private val store: InstanceLifecycle.FileStore,
@@ -60,6 +66,7 @@ class InstanceLaunchCoordinator(
     private val laneClock: LaneClock,
     private val clock: Clock,
     private val orphanReconciler: Runnable,
+    private val umlFaceLane: UmlFaceLane,
 ) {
 
     /** Settings values the orchestration consumes (SettingsManager handle). */
@@ -144,6 +151,25 @@ class InstanceLaunchCoordinator(
     /** Per-launch payload-manifest read for the compiler identity snapshot. */
     fun interface PayloadManifestSource {
         fun read(): Optional<PvmCompilerManifest>
+    }
+
+    /**
+     * Ride-along UML face lane port (Lane A, 2026-11-13): the launch chain
+     * arms the UML compile-worker face through the assembly's
+     * spawner-injecting `umlFace` slot after a successful dispatch, and
+     * disarms it exactly where the accelerator coordinator closes (the
+     * watcher's exit and exception paths, plus the launch failure path). The
+     * gate is the same double-gate value the dispatch consumed. Implementations
+     * must be honest: a refused start (GATE_DISABLED / MISSING_ASSET /
+     * SPAWN_FAILED) never fakes a state — width stays 0, no keep-alive is
+     * touched, and at most one face is ever bound at a time.
+     */
+    interface UmlFaceLane {
+        /** Arms the face; answers the armed launcher, or null when declined/refused. */
+        fun arm(instanceId: String, gateEnabled: Boolean): UmlFaceLauncher?
+
+        /** Stops the face and releases its status; idempotent, mirrors [close]. */
+        fun disarm(instanceId: String)
     }
 
     /** Performance badge source for the first foreground-service start. */
@@ -250,12 +276,14 @@ class InstanceLaunchCoordinator(
                     filesDir.resolve("avf-degradations.txt").toPath(),
                 ).record(failure)
             }
+            // Runtime switch on the accelerator decision point: off keeps
+            // today's launch path silently (no toast, no fact reads).
+            // The build flag stays a hard gate so a build without the
+            // accelerator components never assembles the lane. The ride-along
+            // UML face consumes this exact same double-gate value below.
+            val laneGate = settings.isAcceleratorLaneEnabled() && BuildConfig.ACCELERATOR_LANE_ENABLED
             val dispatchResult = AcceleratorLaunchDispatcher.dispatch(
-                // Runtime switch on the accelerator decision point: off keeps
-                // today's launch path silently (no toast, no fact reads).
-                // The build flag stays a hard gate so a build without the
-                // accelerator components never assembles the lane.
-                settings.isAcceleratorLaneEnabled() && BuildConfig.ACCELERATOR_LANE_ENABLED,
+                laneGate,
                 parameters,
                 { params -> qemuLaunch.launch(params) },
                 AcceleratorLaunchDispatcher.AccelBackends(
@@ -290,6 +318,7 @@ class InstanceLaunchCoordinator(
                         "payload-compiler present=false"
                     },
                 )
+                armRideAlongUmlFace(instance.id(), laneGate, dispatchResult)
             }
             val outcome = dispatchResult.outcome
             val session = outcome.session
@@ -305,6 +334,7 @@ class InstanceLaunchCoordinator(
                     // armed it. A WAIT_FAILED keeps both lanes untouched.
                     if (exit.status() != InstanceLaunchSequence.ExitStatus.WAIT_FAILED) {
                         acceleratorCoordinator?.close()
+                        umlFaceLane.disarm(instance.id())
                     }
                     if (exit.status() != InstanceLaunchSequence.ExitStatus.STALE) ui.runOnUi {
                         if (!InstanceLaunchGuard.isLatest(instance.id(), sessionGeneration)) return@runOnUi
@@ -326,6 +356,7 @@ class InstanceLaunchCoordinator(
                     // exiting, so the QEMU runtime is already gone; the
                     // accelerator lane must not survive it unattended.
                     acceleratorCoordinator?.close()
+                    umlFaceLane.disarm(instance.id())
                     ui.runOnUi {
                         if (!InstanceLaunchGuard.isLatest(instance.id(), sessionGeneration)) return@runOnUi
                         ui.showStatus(copy.detailMessage(failure))
@@ -352,6 +383,7 @@ class InstanceLaunchCoordinator(
             // confirmed; keep RUNNING metadata and the foreground binding in
             // that case instead of pretending the instance crashed.
             acceleratorCoordinator?.close()
+            umlFaceLane.disarm(instance.id())
             val cleanupResult = cleanupBridge.takeLastCleanupResult(instance.id())
             try {
                 InstanceLaunchSequence.afterLaunchFailure(
@@ -371,6 +403,52 @@ class InstanceLaunchCoordinator(
                 ui.showInstances()
             }
             return LaunchOutcome.Failed(failure)
+        }
+    }
+
+    /**
+     * The ride-along UML face window (Lane A, 2026-11-13): a successful
+     * flag-on dispatch arms the face through the assembly slot with the same
+     * double-gate value the dispatch consumed, then constructs the fabric
+     * orchestration over it — the three-face ledger snapshot is logged once,
+     * and nothing else happens on it (no submitter, no dispatch loop: the
+     * compile routing is the fabric-route round's work). A refused arm
+     * (GATE_DISABLED / MISSING_ASSET / SPAWN_FAILED / backend declined) is an
+     * honest log line with width 0 and zero side effects; the disarm rides
+     * the accelerator coordinator's three close points below.
+     */
+    private fun armRideAlongUmlFace(
+        instanceId: String,
+        laneGate: Boolean,
+        dispatchResult: AcceleratorLaunchDispatcher.Dispatch,
+    ) {
+        val assemblyResult = dispatchResult.assemblyResult
+        val umlFace = umlFaceLane.arm(instanceId, laneGate)
+        if (umlFace == null || assemblyResult == null) {
+            return
+        }
+        AcceleratorLaneAssembly.fabricOrchestrator(
+            laneGate,
+            assemblyResult,
+            dispatchResult.qemuFaceWidth,
+            dispatchResult.nativeFaceWidth,
+            umlFace,
+            emptyMap(),
+        ).also {
+            val widths = FabricOrchestrator.ledgerBackedWidths(
+                assemblyResult.coordinator().ledger(),
+                dispatchResult.qemuFaceWidth,
+                dispatchResult.nativeFaceWidth,
+                umlFace.widthSupplier(),
+            ).budgetWidths()
+            diagnostics.logAcceleratorSnapshot(
+                "fabric orchestrator constructed (no submitter yet): " +
+                    "host-native=${widths[FabricWidthDecision.Face.HOST_NATIVE]}" +
+                    " uml=${widths[FabricWidthDecision.Face.UML]}" +
+                    " qemu=${widths[FabricWidthDecision.Face.QEMU_TCG]}" +
+                    " sum=${widths.values.sum()}" +
+                    " ledger-budget=${assemblyResult.coordinator().ledger().budget().cpuCores()}",
+            )
         }
     }
 
