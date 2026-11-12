@@ -337,12 +337,18 @@ public final class AcceleratorLaneAssembly {
      *
      * <p>{@code launchParams} is the device window's tuning interface
      * (guest memory, the {@code ncpus} width, verbatim extra kernel args).
-     * The compile channel stays unwired here — the face reads width 0 until
-     * the device window injects the real channel (fabric-route doc D-1 is
-     * ACR-bound), so the orchestration never routes work into a face that
-     * cannot serve it. The face's start/stop remains the wiring owner's
-     * lifecycle decision (after {@code startAll}, like the other face
-     * reservations); nothing is spawned by assembly alone.
+     * The launch shape follows the build flag (ACR 2026-11-12 D4 wiring):
+     * {@link UmlFaceLauncher#createWithCurrentFastProfile} reads {@code
+     * BuildConfig.UML_FAST_PROFILE}, so a build that opted in
+     * ({@code -Porchestella.uml.fastProfile=true}) assembles the §4
+     * built-in-initramfs fast face — the ACR D4 default width for that shape
+     * is 1 while the face is up — and the flag-off build assembles the exact
+     * byte-identical runner shape as before. The compile channel stays
+     * unwired here (fabric-route doc D-1 is ACR-bound): a flag-off face
+     * reads width 0 until the channel lands, and a fast face's unroutability
+     * rides the worker's fixed channel-unwired refusal. The face's start/stop
+     * remains the wiring owner's lifecycle decision (after {@code startAll},
+     * like the other face reservations); nothing is spawned by assembly alone.
      */
     public static UmlFaceLauncher umlFace(
             boolean umlFaceEnabled,
@@ -352,7 +358,8 @@ public final class AcceleratorLaneAssembly {
         Objects.requireNonNull(environment, "environment");
         Objects.requireNonNull(launchParams, "launchParams");
         Objects.requireNonNull(keepAlive, "keepAlive");
-        return UmlFaceLauncher.create(umlFaceEnabled, environment, launchParams, keepAlive);
+        return UmlFaceLauncher.createWithCurrentFastProfile(
+                umlFaceEnabled, environment, launchParams, keepAlive);
     }
 
     private static DualLaneCoordinator coordinator(

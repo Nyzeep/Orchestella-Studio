@@ -404,6 +404,76 @@ public final class UmlFaceWidthSupplyTest {
     }
 
     @Test
+    public void fastFaceDefaultUpShapeSuppliesWidthOneThroughTheSlot() throws IOException {
+        // ACR 2026-11-12 D4: the built-in-initramfs UP face — the shape the
+        // flag-on build's product wiring assembles — supplies its kernel's
+        // effective width (1) through the same launcher slot while it is up,
+        // compile channel or not; the fabric slot's derivation is unchanged.
+        File kernel = new File(libDir, UmlFaceLauncher.KERNEL_LIB_NAME);
+        assertTrue(kernel.createNewFile());
+        kernel.setExecutable(true);
+        File stub = new File(libDir, UmlFaceLauncher.STUB_LIB_NAME);
+        assertTrue(stub.createNewFile());
+        stub.setExecutable(true);
+        // No rootfs: the fast INITRAMFS shape needs no external root (the
+        // ACR D2 built-in-channel verdict).
+
+        AcceleratorLaneAssembly.Result result = assembledResult();
+        reserveQuietly(result.coordinator().ledger(),
+                new LaneRequest(LaneId.QEMU, 2, 4096L, 32L));
+        UmlFaceLauncher face = new UmlFaceLauncher(
+                true,
+                environment(),
+                new LaunchParams(512, 0, List.of()),
+                new FakeKeepAlive(),
+                (command, env, workingDir) -> new FakeProcess(),
+                // The compile channel stays unwired (fabric-route D-1 is
+                // ACR-bound); the fast shape's width is the kernel's, and its
+                // unroutability rides the worker's fixed refusal.
+                null,
+                UmlFaceLauncher.FastProfile.initramfs());
+        assertTrue(face.start().started());
+        assertEquals(1, face.width());
+
+        Map<Face, Integer> snapshot = widthsWith(result, 0, face);
+        assertEquals(1, snapshot.get(Face.UML).intValue());
+        assertEquals(5, snapshot.get(Face.HOST_NATIVE).intValue());
+        assertEquals(2, snapshot.get(Face.QEMU_TCG).intValue());
+        assertSumIsTheLedgerBudget(result, snapshot);
+    }
+
+    @Test
+    public void fastFaceWideSupplyIsStillClampedToTheLedgerHeadroom() throws IOException {
+        // The thermostat does not change with the shape: a channel-less fast
+        // face supplying its full kernel width is clamped to the ledger
+        // headroom exactly like a runner-shape supply.
+        File kernel = new File(libDir, UmlFaceLauncher.KERNEL_LIB_NAME);
+        assertTrue(kernel.createNewFile());
+        kernel.setExecutable(true);
+        File stub = new File(libDir, UmlFaceLauncher.STUB_LIB_NAME);
+        assertTrue(stub.createNewFile());
+        stub.setExecutable(true);
+
+        AcceleratorLaneAssembly.Result result = assembledResult();
+        reserveQuietly(result.coordinator().ledger(),
+                new LaneRequest(LaneId.QEMU, 2, 4096L, 32L));
+        UmlFaceLauncher face = new UmlFaceLauncher(
+                true,
+                environment(),
+                new LaunchParams(512, 8, List.of()),
+                new FakeKeepAlive(),
+                (command, env, workingDir) -> new FakeProcess(),
+                null,
+                UmlFaceLauncher.FastProfile.initramfs());
+        assertTrue(face.start().started());
+        assertEquals(8, face.width());
+
+        Map<Face, Integer> snapshot = widthsWith(result, 0, face);
+        assertEquals(6, snapshot.get(Face.UML).intValue());
+        assertSumIsTheLedgerBudget(result, snapshot);
+    }
+
+    @Test
     public void startGateKeepsTheFixedMissingAssetAnswerForTheWidthSupply() {
         // Nothing placed: the width supply stays 0 because the start refuses —
         // the reconciliation layer's honest answer is the launcher's fixed code.

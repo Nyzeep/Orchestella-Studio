@@ -809,6 +809,60 @@ public final class UmlFaceLauncherTest {
         assertEquals(0, face.width());
     }
 
+    @Test
+    public void fastFaceSuppliesItsKernelWidthWhileTheCompileChannelIsUnwired()
+            throws IOException {
+        // ACR 2026-11-12 D4: the fast shape's width is the kernel's effective
+        // SMP width — the built-in-initramfs UP default reads 1 while the face
+        // is up (the device round's T3 verdict), an SMP fast shape reads its
+        // ncpus — even before the device window wires the compile channel
+        // (fabric-route doc D-1). The unwired channel is a routability
+        // question, not a capacity one: the worker still refuses with the
+        // fixed detail, so the orchestration's release-grant-and-evict
+        // contract is what keeps a channel-less face from serving work.
+        placeAssets();
+        FakeSpawner upSpawner = new FakeSpawner();
+        FakeKeepAlive upKeepAlive = new FakeKeepAlive();
+        UmlFaceLauncher upFace = launcher(
+                UmlFaceLauncher.FastProfile.initramfs(), params(0), upSpawner, upKeepAlive,
+                null);
+        assertTrue(upFace.start().started());
+
+        // The ACR D4 default: the UP built-in-initramfs face reads 1 while up.
+        assertEquals(1, upFace.width());
+        try {
+            upFace.faceWorker().execute(FabricWidthDecision.Face.UML, 1, ITEM);
+            fail("an unwired fast face must not execute work");
+        } catch (FabricOrchestrator.FaceException expected) {
+            assertEquals(UmlFaceLauncher.CHANNEL_UNWIRED_DETAIL, expected.getMessage());
+        }
+
+        // The SMP fast shape supplies the knob's width on the same rule.
+        FakeSpawner smpSpawner = new FakeSpawner();
+        FakeKeepAlive smpKeepAlive = new FakeKeepAlive();
+        UmlFaceLauncher smpFace = launcher(
+                UmlFaceLauncher.FastProfile.initramfs(), params(4), smpSpawner, smpKeepAlive,
+                null);
+        assertTrue(smpFace.start().started());
+        assertEquals(4, smpFace.width());
+    }
+
+    @Test
+    public void runnerShapeKeepsTheLockedZeroWidthWhileUnwiredEvenInFastBuilds()
+            throws IOException {
+        // The flag-off semantics survive unchanged: a runner-shape face (the
+        // only shape the flag-off build's product wiring assembles) reads 0
+        // while its compile channel is unwired. The D4 width rule is a
+        // fast-shape rule, never a runner-shape one.
+        placeAssets();
+        FakeSpawner spawner = new FakeSpawner();
+        FakeKeepAlive keepAlive = new FakeKeepAlive();
+        UmlFaceLauncher face = launcher(true, params(0), spawner, keepAlive, null);
+        assertTrue(face.start().started());
+
+        assertEquals(0, face.width());
+    }
+
     // --- the fabric slot's supplier view ----------------------------------------------
 
     @Test
