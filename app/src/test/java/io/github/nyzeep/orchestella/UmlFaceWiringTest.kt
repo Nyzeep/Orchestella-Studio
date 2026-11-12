@@ -7,6 +7,7 @@ import java.io.StringReader
 import java.util.concurrent.atomic.AtomicInteger
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -117,7 +118,7 @@ class UmlFaceWiringTest {
         val face = FaceFactory.gateOff(temporaryFolder.newFolder("arm-gate-lib"))
         var backendCalls = 0
         val lane = UmlFaceRideAlong(
-            backend = { _, gate ->
+            backend = { _, gate, _ ->
                 backendCalls++
                 assertFalse("the consumed gate must ride into the slot", gate)
                 face
@@ -141,7 +142,7 @@ class UmlFaceWiringTest {
         val lines = mutableListOf<String>()
         val emptyLib = temporaryFolder.newFolder("arm-missing-lib")
         val face = FaceFactory.armed(emptyLib, withAssets = false, aliveProcess = true)
-        val lane = UmlFaceRideAlong(backend = { _, _ -> face }, log = { lines.add(it) })
+        val lane = UmlFaceRideAlong(backend = { _, _, _ -> face }, log = { lines.add(it) })
         try {
             assertNull(lane.arm("arm-missing", true))
             assertTrue(lines.single().contains("MISSING_ASSET"))
@@ -157,7 +158,7 @@ class UmlFaceWiringTest {
         val lines = mutableListOf<String>()
         val lib = temporaryFolder.newFolder("arm-ok-lib")
         val face = FaceFactory.armed(lib, withAssets = true, aliveProcess = true)
-        val lane = UmlFaceRideAlong(backend = { _, _ -> face }, log = { lines.add(it) })
+        val lane = UmlFaceRideAlong(backend = { _, _, _ -> face }, log = { lines.add(it) })
         try {
             val armed = lane.arm("arm-ok", true)
             assertTrue(armed === face)
@@ -178,7 +179,7 @@ class UmlFaceWiringTest {
         val lines = mutableListOf<String>()
         val lib = temporaryFolder.newFolder("disarm-lib")
         val face = FaceFactory.armed(lib, withAssets = true, aliveProcess = true)
-        val lane = UmlFaceRideAlong(backend = { _, _ -> face }, log = { lines.add(it) })
+        val lane = UmlFaceRideAlong(backend = { _, _, _ -> face }, log = { lines.add(it) })
         try {
             lane.arm("disarm", true)
             lane.disarm("disarm")
@@ -201,7 +202,7 @@ class UmlFaceWiringTest {
         val lines = mutableListOf<String>()
         val lib = temporaryFolder.newFolder("disarm-foreign-lib")
         val face = FaceFactory.armed(lib, withAssets = true, aliveProcess = true)
-        val lane = UmlFaceRideAlong(backend = { _, _ -> face }, log = { lines.add(it) })
+        val lane = UmlFaceRideAlong(backend = { _, _, _ -> face }, log = { lines.add(it) })
         try {
             lane.arm("disarm-owner", true)
             lane.disarm("disarm-stranger")
@@ -220,7 +221,7 @@ class UmlFaceWiringTest {
         val boundFace = FaceFactory.armed(temporaryFolder.newFolder("arm-busy-lib"), withAssets = true, aliveProcess = true)
         var backendCalls = 0
         val lane = UmlFaceRideAlong(
-            backend = { _, _ ->
+            backend = { _, _, _ ->
                 backendCalls++
                 FaceFactory.armed(temporaryFolder.newFolder("arm-busy-lib2"), withAssets = false, aliveProcess = true)
             },
@@ -323,6 +324,237 @@ class UmlFaceWiringTest {
         assertTrue(lines.isEmpty())
     }
 
+    // --- the compile-bridge wiring (Gate 1, D-1): the wired flip ---------------------
+
+    /**
+     * The MainActivity-shaped backend: the channel rides the assembly slot
+     * through the six-argument overload when present, the historical
+     * five-argument one when not. Shape-proof: the runner shape's rootfs
+     * directory exists either way.
+     */
+    private fun slotBackend(libDir: File): (String, Boolean, UmlFaceLauncher.Channel?) -> UmlFaceLauncher? {
+        // Shape-proof assets: the runner shape needs kernel+stub executables and
+        // the rootfs directory; the INITRAMFS shape ignores the rootfs.
+        val kernel = File(libDir, UmlFaceLauncher.KERNEL_LIB_NAME)
+        val stub = File(libDir, UmlFaceLauncher.STUB_LIB_NAME)
+        kernel.createNewFile()
+        stub.createNewFile()
+        kernel.setExecutable(true)
+        stub.setExecutable(true)
+        File(libDir, UmlFaceLauncher.ROOTFS_DIR_NAME).mkdirs()
+        return { _, gate, channel ->
+            if (channel != null) {
+                AcceleratorLaneAssembly.umlFace(
+                    gate,
+                    FaceFactory.environment(libDir),
+                    UmlFaceLauncher.LaunchParams.defaults(),
+                    CountingKeepAlive(),
+                    FaceFactory.aliveSpawner(),
+                    channel,
+                )
+            } else {
+                AcceleratorLaneAssembly.umlFace(
+                    gate,
+                    FaceFactory.environment(libDir),
+                    UmlFaceLauncher.LaunchParams.defaults(),
+                    CountingKeepAlive(),
+                    FaceFactory.aliveSpawner(),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun wiredArmFlipsTheLogToChannelWiredAndRidesTheRealSlot() {
+        val lines = mutableListOf<String>()
+        val wiring = UmlCompileBridgeWiring(
+            enabled = true,
+            log = { lines.add(it) },
+            listenerPort = 0,
+        )
+        val lib = temporaryFolder.newFolder("arm-wired-lib")
+        val receivedChannel = java.util.concurrent.atomic.AtomicReference<UmlFaceLauncher.Channel?>()
+        val delegate = slotBackend(lib)
+        val lane = UmlFaceRideAlong(
+            backend = { instanceId, gate, channel ->
+                receivedChannel.set(channel)
+                delegate(instanceId, gate, channel)
+            },
+            compileBridge = wiring,
+            log = { lines.add(it) },
+        )
+        try {
+            val armed = lane.arm("arm-wired", true)
+            assertNotNull("the flag-on wiring provisions the D-1 lane channel", armed)
+            assertNotNull(receivedChannel.get())
+            val armLine = lines.single { it.startsWith("uml-face started") }
+            assertEquals("the wired flip is exact", "uml-face started width=1 channel=wired", armLine)
+            assertTrue("the wiring states its lane endpoint",
+                lines.any { it.contains("uml-face channel wired: uml-tcp lane 127.0.0.1:") })
+            assertEquals("the width reads real once the channel is wired", 1,
+                UmlFaceStatusRegistry.runningWidth())
+        } finally {
+            lane.disarm("arm-wired")
+            UmlFaceStatusRegistry.unregister("arm-wired")
+        }
+    }
+
+    @Test
+    fun unwiredArmKeepsTheByteIdenticalLogLine() {
+        val lines = mutableListOf<String>()
+        val lib = temporaryFolder.newFolder("arm-unwired-lib")
+        val face = FaceFactory.armed(lib, withAssets = true, aliveProcess = true)
+        val lane = UmlFaceRideAlong(
+            backend = { _, _, channel ->
+                assertNull("no wiring means no channel", channel)
+                face
+            },
+            compileBridge = null,
+            log = { lines.add(it) },
+        )
+        try {
+            lane.arm("arm-unwired", true)
+            assertEquals("the historical arm line, byte for byte",
+                "uml-face started width=1 channel=unwired", lines.single())
+        } finally {
+            lane.disarm("arm-unwired")
+            UmlFaceStatusRegistry.unregister("arm-unwired")
+        }
+    }
+
+    @Test
+    fun unwiredRunnerShapeStillReadsWidthZero() {
+        // The launcher's locked width honesty, stated shape-explicitly: the
+        // RUNNER shape (fastProfile null, constructed directly, never through
+        // the build-flag-following assembly slot) without a channel reads 0 —
+        // under both gradle flag variants. The wired test above proves the
+        // same honesty flips real once the channel rides in.
+        val lines = mutableListOf<String>()
+        val lib = temporaryFolder.newFolder("arm-unwired-runner-lib")
+        val kernel = File(lib, UmlFaceLauncher.KERNEL_LIB_NAME)
+        val stub = File(lib, UmlFaceLauncher.STUB_LIB_NAME)
+        kernel.createNewFile()
+        stub.createNewFile()
+        kernel.setExecutable(true)
+        stub.setExecutable(true)
+        File(lib, UmlFaceLauncher.ROOTFS_DIR_NAME).mkdirs()
+        val face = UmlFaceLauncher(
+            true,
+            FaceFactory.environment(lib),
+            UmlFaceLauncher.LaunchParams.defaults(),
+            CountingKeepAlive(),
+            FaceFactory.aliveSpawner(),
+            null,
+            null, // the exact runner shape, independent of the build flag
+        )
+        val lane = UmlFaceRideAlong(
+            backend = { _, _, channel ->
+                assertNull(channel)
+                face
+            },
+            compileBridge = null,
+            log = { lines.add(it) },
+        )
+        try {
+            lane.arm("arm-unwired-runner", true)
+            assertEquals("uml-face started width=0 channel=unwired", lines.single())
+            assertEquals(0, UmlFaceStatusRegistry.runningWidth())
+        } finally {
+            lane.disarm("arm-unwired-runner")
+            UmlFaceStatusRegistry.unregister("arm-unwired-runner")
+        }
+    }
+
+    @Test
+    fun flagOffWiringIsInert() {
+        val lines = mutableListOf<String>()
+        val wiring = UmlCompileBridgeWiring(
+            enabled = false,
+            log = { lines.add(it) },
+            listenerPort = 0,
+        )
+        assertNull("flag off never provisions a channel", wiring.faceChannel())
+        wiring.bindFabric(
+            FabricOrchestrator(false, { emptyMap() }, emptyMap()),
+        )
+        wiring.disarm()
+        assertTrue("a flag-off build logs nothing and starts nothing", lines.isEmpty())
+    }
+
+    @Test
+    fun bindFabricStartsTheSubmitterAndDisarmStopsIt() {
+        val lines = mutableListOf<String>()
+        val wiring = UmlCompileBridgeWiring(
+            enabled = true,
+            log = { lines.add(it) },
+            listenerPort = 0,
+        )
+        val orchestrator = FabricOrchestrator(false, { emptyMap() }, emptyMap())
+        wiring.bindFabric(orchestrator)
+        assertTrue("the submitter listener is up for the armed orchestrator",
+            lines.any { it.startsWith("fabric submitter listening 127.0.0.1:") })
+        wiring.disarm()
+        val listeningLines = lines.count { it.startsWith("fabric submitter listening") }
+        assertEquals(1, listeningLines)
+        // A fresh arm after disarm binds a fresh listener.
+        wiring.bindFabric(orchestrator)
+        assertEquals("the listener never outlives its disarm",
+            2, lines.count { it.startsWith("fabric submitter listening") })
+        wiring.disarm()
+    }
+
+    @Test
+    fun rideAlongBindFabricReachesTheCompileBridge() {
+        val lines = mutableListOf<String>()
+        val wiring = UmlCompileBridgeWiring(
+            enabled = true,
+            log = { lines.add(it) },
+            listenerPort = 0,
+        )
+        val lane = UmlFaceRideAlong(
+            backend = { _, _, _ -> null },
+            compileBridge = wiring,
+            log = { lines.add(it) },
+        )
+        try {
+            lane.bindFabric(FabricOrchestrator(false, { emptyMap() }, emptyMap()))
+            assertTrue(lines.any { it.startsWith("fabric submitter listening") })
+        } finally {
+            wiring.disarm()
+        }
+    }
+
+    @Test
+    fun faceChannelClosesTheStaleSessionNeverDoubling() {
+        val lines = mutableListOf<String>()
+        val wiring = UmlCompileBridgeWiring(
+            enabled = true,
+            log = { lines.add(it) },
+            guestDistccPort = 1, // an ephemeral-dead dial target; open() does no I/O
+            listenerPort = 0,
+        )
+        val first = wiring.faceChannel()
+        assertNotNull(first)
+        val second = wiring.faceChannel()
+        assertNotNull(second)
+        // The stale channel was closed by the second provisioning: a dispatch
+        // through the first adapter refuses with the fixed closed detail under
+        // the uml-channel: prefix.
+        val error = java.util.concurrent.atomic.AtomicReference<FabricOrchestrator.FaceException>()
+        try {
+            first!!.execute(1, FabricCompileItem(
+                java.io.PipedInputStream(1024),
+                java.io.PipedOutputStream(java.io.PipedInputStream(1024)),
+            ))
+        } catch (mapped: FabricOrchestrator.FaceException) {
+            error.set(mapped)
+        } catch (ignored: java.io.IOException) {
+            // The fixture pipe setup cannot fail here.
+        }
+        assertEquals("uml-channel:" + UmlChannel.CLOSED_DETAIL, error.get()?.message)
+        wiring.disarm()
+    }
+
     // --- fixtures -------------------------------------------------------------------
 
     /** Counts keep-alive acquire/release; [FaceFactory.lastKeepAlive] exposes the newest. */
@@ -408,7 +640,14 @@ class UmlFaceWiringTest {
             )
         }
 
-        private fun environment(libDir: File): UmlFaceLauncher.Environment =
+        /** A spawner that answers one live fake kernel process. */
+        fun aliveSpawner(): UmlFaceLauncher.ProcessSpawner {
+            val process = DeadOrAliveProcess(true)
+            lastProcess = process
+            return UmlFaceLauncher.ProcessSpawner { _, _, _ -> process }
+        }
+
+        fun environment(libDir: File): UmlFaceLauncher.Environment =
             object : UmlFaceLauncher.Environment {
                 override fun nativeLibraryDir(): File = libDir
 

@@ -168,6 +168,12 @@ jobs:
         # The accelerator lane is stated explicitly even though the Gradle
         # default is now on: v0.6.3 shipped with the lane compiled out, so the
         # release pipeline must never depend on a default to get this right.
+        # A fourth stated-parameter flag exists since the 2026-11-13 compile-
+        # bridge round: -Porchestella.uml.compileBridge=<bool> (Gradle default
+        # false) gates the UML face's UML-TCP compile lane wiring. Whether the
+        # release pipeline passes it this round is a deliberate decision, not a
+        # default to lean on — it is NOT passed here yet; state it explicitly
+        # when the UML compile lane is meant to ship.
         run: ./gradlew :app:assembleRelease -Porchestella.assets.allowMissingPayload=true -Porchestella.acceleratorLane=true -Porchestella.uml.bundledFastProfile=true -Porchestella.uml.fastProfile=true --no-daemon --stacktrace
 
       - name: Locate release APK

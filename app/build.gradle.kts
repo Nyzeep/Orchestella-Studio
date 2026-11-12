@@ -168,6 +168,20 @@ val umlRootfsDownload: Boolean = providers.gradleProperty("orchestella.uml.rootf
     ?.lowercase()
     ?.let { it == "true" || it == "1" }
     ?: false
+// UML compile bridge (fabric-route doc D-1, Gate 1 wiring, ACR 2026-11-13 方案 A):
+// the face's compile Channel seam gains the UML-TCP lane (vsock=pVM / TCP=UML is
+// the既定 wire design). Gradle default stays OFF — a bare local build keeps zero
+// behavior change (the arm path stays byte-identical: channel=unwired, no
+// submitter listener, no lane factory construction) — while the QA/release
+// pipeline states it explicitly like the other UML flags. Never derived from
+// orchestella.uml.fastProfile: launch shape != routability is the locked honest
+// semantics (the two flags answer different questions and stay independent).
+val umlCompileBridge: Boolean = providers.gradleProperty("orchestella.uml.compileBridge")
+    .orNull
+    ?.trim()
+    ?.lowercase()
+    ?.let { it == "true" || it == "1" }
+    ?: false
 val umlFastProfileDir: String? = providers.gradleProperty("orchestella.uml.fastProfileDir")
     .orNull
     ?.trim()
@@ -228,6 +242,12 @@ android {
         // passes -Porchestella.uml.fastProfile=true (ACR D4).
         buildConfigField("boolean", "UML_FAST_PROFILE",
             (providers.gradleProperty("orchestella.uml.fastProfile").orNull?.trim()?.toBoolean() ?: false).toString())
+        // UML compile bridge (fabric-route doc D-1, Gate 1 wiring): consumed by
+        // the wiring owner (UmlCompileBridgeWiring) — flag on arms the face with
+        // the UML-TCP lane channel (UmlChannels.overTcpLane over the bridge's
+        // UmlTcpChannelFactory) and binds the fabric submitter listener; flag
+        // off keeps today's byte-identical arm path (channel=unwired).
+        buildConfigField("boolean", "UML_COMPILE_BRIDGE", umlCompileBridge.toString())
         // Payload builds store native libraries uncompressed and 16 KB aligned
         // for the AVF loader; all other channels keep the extracted layout.
         manifestPlaceholders["orcExtractNativeLibs"] =
