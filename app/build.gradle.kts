@@ -457,6 +457,19 @@ android {
             useLegacyPackaging = fastlanePayloadLibDir == null
             keepDebugSymbols += "**/liborchestella_qemu.so"
             keepDebugSymbols += "**/libdroidlayer_qemu.so"
+            // The UML fast-profile accounting manifest
+            // (assets/uml-fast-profile-v1.sha256, written by stageUmlFastProfile)
+            // accounts for the staged bytes of the two UML native libs, and
+            // tools/release/check_uml_payload.py re-proves shipped-bytes-equal-
+            // manifest at the APK level. AGP's default debug-symbol strip would
+            // rewrite libuml_kernel.so between the merge and the APK (measured
+            // 2026-11-13: staged 9517760 B / sha 21e1c3f9… → APK entry 8071168 B
+            // / sha 52764628…), breaking that chain while the stub (nothing to
+            // strip) survived byte-identically. Keep both unstripped so the
+            // shipped bytes stay the pinned bytes the manifest accounts for
+            // (same reason as the QEMU payload libs above; ~1.4 MB APK cost).
+            keepDebugSymbols += "**/libuml_kernel.so"
+            keepDebugSymbols += "**/libuml_stub.so"
         }
     }
 
