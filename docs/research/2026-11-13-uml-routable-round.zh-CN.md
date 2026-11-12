@@ -39,7 +39,7 @@
 
 ### 2.1 QA 包重建烟测
 
-- 构建：`./gradlew :app:assembleDebug -Porchestella.buildChannel=qa -Porchestella.buildPurpose=umlflag -Porchestella.uml.bundledFastProfile=true -Porchestella.uml.rootfsDownload=true -Porchestella.uml.fastProfile=true "-Porchestella.uml.fastProfileDir=D:/t/round-20261112/u1-pinned"` → BUILD SUCCESSFUL（35s，热缓存；69 tasks）。
+- 构建：`./gradlew :app:assembleDebug -Porchestella.buildChannel=qa -Porchestella.buildPurpose=umlflag -Porchestella.uml.bundledFastProfile=true -Porchestella.uml.rootfsDownload=true -Porchestella.uml.fastProfile=true "-Porchestella.uml.fastProfileDir=<pinned U1 产物目录（本机绝对路径不入库）>"` → BUILD SUCCESSFUL（35s，热缓存；69 tasks）。
 - 判别（§2.2 纪律）：applicationId `io.github.nyzeep.orchestella.qa.umlflag`、versionName `0.6.3-qa.umlflag.81b3461`（含 `-qa.<purpose>.<sha>` ✅，assembleDebug 通道正确）。
 - APK 内实况：`lib/arm64-v8a/libuml_kernel.so`（8,071,168 B）+ `lib/arm64-v8a/libuml_stub.so` + `assets/uml-fast-profile-v1.sha256`（两行记账：libuml_kernel.so / libuml_stub.so，与 pin 一致）。
 - 装机：`adb install -r` Success（111,906,384 B ≈ 12.4MB 记账口径沿用上轮的 APK 级数字需在 Wave 3 复核——本行以 install 实测字节为准）；`pm grant POST_NOTIFICATIONS` → `am start -S --activity-clear-task` 启动 → 进程存活、MainActivity 持焦点、UI 渲染正常（首页「AVF · 未就绪 / QEMU · 可用」两项选择器与全新安装态，与上轮终态一致）。
@@ -146,7 +146,7 @@ flag-on+rootfsDownload QA 包（`v0.6.3-qa.umlroute2.87aebab`）→ 发行版 ta
 
 1. **QA 包按 purpose 并存隔离**：`buildPurpose` 变化=新 applicationId——`adb install -r` 三连 Success 却"没换包"的假象真相是装成了并存的新包（本会话踩坑 20 分钟）；判别法先看 applicationId 再看 versionName。
 2. **已卸载应用的 UML 内核子进程可逃过卸载存活**（ppid=1 孤儿，SELinux 上下文仍在）——旧包清理检查须包含 `/proc` 进位；重启清零。
-3. **MSYS 路径转换吞 `/data` 参数**（`adb push … /data/local/tmp` 变 `D:/Git/data/...`）——`MSYS_NO_PATHCONV=1`。
+3. **MSYS 路径转换吞 `/data` 参数**（`adb push … /data/local/tmp` 被宿主 shell 前缀化成本机盘符路径——形如 <盘>:/Git/data/...，措辞脱敏）——`MSYS_NO_PATHCONV=1`。
 4. 熄屏期间 OEM freezer 冻结下载流（向导下载失败「数据读写失败」，重试从 .part 断点续传成功）——长下载须保活循环。
 
 ### 6.5 降级对照（MISSING_ASSET）
