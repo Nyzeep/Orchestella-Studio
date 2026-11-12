@@ -285,6 +285,26 @@ jobs:
             exit 1
           fi
 
+      # ACR 2026-11-12 D1/D4, review P2-1 closure: a build that staged the UML
+      # fast profile ships assets/uml-fast-profile-v1.sha256, and every digest
+      # it accounts for must match the shipped .so bytes. An APK without the
+      # manifest is the honest-degradation shape (flag-off, or the sanctioned
+      # hosted exemption — the runtime answers MISSING_ASSET at width 0), so
+      # the gate SKIPs there instead of refusing; the packaging machine, which
+      # knows it passed -Porchestella.uml.fastProfileDir, asserts positively
+      # with --require-payload (see docs/reports/tickets/uml-fast-profile-packaging/).
+      - name: Verify the UML fast-profile payload accounting in the APK
+        run: |
+          set -euo pipefail
+          APK=$(ls release-bundle/*.apk | head -1)
+          if ! python3 tools/release/check_uml_payload.py --apk "$APK"; then
+            echo "::error::the bundle APK's UML fast-profile payload does not match its \
+          in-APK accounting manifest (assets/uml-fast-profile-v1.sha256). Rebuild on the \
+          packaging machine with -Porchestella.uml.fastProfileDir=<pinned U1 artifacts>, \
+          or build without the UML flags; shipped bytes and manifest must agree."
+            exit 1
+          fi
+
       - name: Create the draft release with the main APK and checksums
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
