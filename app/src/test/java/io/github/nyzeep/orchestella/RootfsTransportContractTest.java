@@ -6,6 +6,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assume.assumeFalse;
 
 import io.github.nyzeep.orchestella.UmlKernelAssets.RootfsDownload.Entry;
 import io.github.nyzeep.orchestella.UmlKernelAssets.RootfsDownload.RootfsRejectionException;
@@ -132,23 +133,56 @@ public final class RootfsTransportContractTest {
     }
 
     @Test
-    public void theProductionGateAnswersDisabledInThisDefaultBuild() throws Exception {
-        // The default build compiles orchestella.uml.rootfsDownload=false into
-        // BuildConfig — this test locks that default: flipping the flag on is
-        // a conscious ACR decision that must revisit this precondition, and
-        // until then the production entry is unreachable by construction.
-        assertFalse("the shipped default must keep the rootfs download gate closed",
-                BuildConfig.UML_ROOTFS_DOWNLOAD_ENABLED);
-
+    public void theProductionGateTracksThisBuildsFlag() throws Exception {
+        // The production overload reads BuildConfig.UML_ROOTFS_DOWNLOAD_ENABLED
+        // and answers exactly that: flag-off builds take the zero-side-effect
+        // disabled shape, stated-parameter builds (ACR D1 release/QA shape)
+        // drive the full loop through the same entry. Variant-robust by
+        // construction — the 2026-11-13 routable round runs the flag-on
+        // variant as a gate, so this contract must not hardcode either shape.
+        boolean buildFlag = BuildConfig.UML_ROOTFS_DOWNLOAD_ENABLED;
+        byte[] artifact = MiniRootfsFixture.gzipTar();
         FakeTransport transport = new FakeTransport();
-        Path destDir = tempFolder.getRoot().toPath().resolve("buildconfig-gate-never-created");
+        transport.payload = artifact;
+        // The enabled loop stages its .part under destDir, so it needs the
+        // directory to exist (same precondition as anOpenFlagDrivesTheFullLoop);
+        // the flag-off shape must observe the directory untouched — never
+        // created.
+        Path destDir = tempFolder.getRoot().toPath().resolve(
+                buildFlag ? "buildconfig-gate-open" : "buildconfig-gate-never-created");
+        if (buildFlag) {
+            Files.createDirectories(destDir);
+        }
 
         RootfsTransport.DownloadReceipt receipt = RootfsTransport.downloadAndVerify(
-                transport, entryFor(MiniRootfsFixture.gzipTar(), null), destDir);
+                transport, entryFor(artifact, (long) artifact.length), destDir);
 
-        assertFalse(receipt.enabled());
-        assertTrue(transport.requestedUrls.isEmpty());
-        assertFalse(Files.exists(destDir));
+        assertEquals("the production overload must answer exactly this build's flag",
+                buildFlag, receipt.enabled());
+        if (!buildFlag) {
+            // The flag-off zero-side-effect shape (the shipped default build):
+            // zero transport calls, zero filesystem touches.
+            assertTrue(transport.requestedUrls.isEmpty());
+            assertFalse(Files.exists(destDir));
+        } else {
+            assertTrue(receipt.file().toFile().isFile());
+        }
+    }
+
+    @Test
+    public void buildsThatDidNotOptIntoTheUmlFlagFamilyKeepTheRootfsGateClosed() {
+        // The gradle-defaults lock: a build that did not state any UML flag
+        // must compile the rootfs download gate closed (the shipped default).
+        // The stated-parameter variant run — bundledFastProfile=true, the ACR
+        // D1 release/QA shape — is the sanctioned exception and yields here;
+        // every default/CI run still enforces the lock (a flipped gradle
+        // default fails this test in CI). The explicit-gate tests above hold
+        // the disabled byte-lock in every variant regardless.
+        assumeFalse("stated UML flag-on variant run — the default lock's "
+                + "precondition is absent by design",
+                BuildConfig.UML_BUNDLED_FAST_PROFILE);
+        assertFalse("the shipped default must keep the rootfs download gate closed",
+                BuildConfig.UML_ROOTFS_DOWNLOAD_ENABLED);
     }
 
     @Test
