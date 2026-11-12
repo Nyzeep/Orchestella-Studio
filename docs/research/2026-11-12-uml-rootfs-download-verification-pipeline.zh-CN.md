@@ -145,3 +145,17 @@ FIRST_BOOT_CLEANLINESS PASS :: form=minirootfs: boot-script checks skipped (the
 3. **point release 升级**：换 pin 前必须按 §1 链条重新一手锁定并同步 sizeBytes（§1 升级纪律）；当前 3.22.2 pin 与官方一致，无升级压力。
 4. **内存形态**：L3 目前以 `byte[]` 为输入（4 MB 级合理）；若未来把同一管线接向更大的预烘焙 tar（106 MB 级），需要补 `File` 流式重载避免整块驻内存。Lane E 的三组名字保留（`entryNames`/`regularFileNames`/`executableFileNames`）随条目数线性增长、以归档自身字节量为上界——同一未来重载需要一并流式化。
 5. **prebake 形态的下载管线接线未做**：`EntryForm.PREBAKE` 与首启六类检查已就位，但目前没有任何 prebake entry/源被 pin；等 prebake 路线产出可下载 artifact 时按 §1 链条锁定并显式声明 `PREBAKE` 形态。
+6. **If-Range 引擎语义评估（2026-11-13 发布门加固轮 Lane C 追加）——本节为评估，未实现**：对 §6 #2 记录的"引擎发 `Range` 不发 `If-Range`、不消费 ETag"做改动面盘点，裁决权留主会话/用户（属引擎改动，ACR 需单列决议）。
+   - **引擎改动面**（`ResilientDownloadEngine`，`runtime:network` 模块——注意这是发行版下载与 UML rootfs 下载**共享**的引擎，`SetupWizardActivity` 也在消费）：
+     1. `Range` 发送点唯一（`openConnectionWithRedirects` 的 rangeOffset 分支）——`If-Range` 需在同处分支追加，且仅当存在已存 validator 时；
+     2. ETag 消费点现状为零：引擎只读 `Content-Range` 与 `Content-Length`。需新增 (a) 首段响应的强 validator 捕获（仅强 ETag：带引号且非 `W/` 前缀——官方 CDN 形状即如此，§2 表）；(b) validator 持久化——引擎当前除 `.part` 字节外无任何跨连接状态，需 `.part` 旁 sidecar（如 `<dest>.part.etag`）并定义其写/读/清时点；
+     3. 200/206 分叉：带 `If-Range` 的 Range 请求在 representation 变化时服务器回 200 全量——引擎既有 200 分支（TRUNCATE_EXISTING + `digest.reset()` 全量重下）天然落 RFC 语义，改动量小；416 分支与 sidecar 清理需同步；
+     4. **镜像轮换交互（最大语义风险）**：validator 实际是 per-mirror 的（不同镜像对同一 artifact 可发不同 ETag）；现引擎跨镜像续传（mirror B 接 mirror A 的 offset）。两条候选路：镜像切换时清 sidecar + `.part`（退化为全量重下，安全但浪费）或仅同镜像续传时带 `If-Range`——两者都保安全（L2 pin 兜底不变），只差效率；
+     5. 状态清扫面：fail-closed 路径（`ChecksumMismatchException`）现 purge `.part` + destination，sidecar 必须一并 purge，否则残留脏 validator 污染下次续传。
+   - **与现有 tripwire 测试的同步点**：
+     1. `RootfsDownloadResumeContractTest.engineResumesByRangeAndNeverSendsIfRange`——测试名与断言（`assertFalse(containsKey("if-range"))`）都要反转改写；它是"引擎发现"的锁定器，实现时必须同步改写；
+     2. `resumingAcrossAChangedArtifactFailsClosedThroughThePin`——有 sidecar 的续传在 representation 变化时改走 200 全量 → 结果仍是 pin 拒（`ChecksumMismatchException`，fail-closed 不变），但到达路径与连接细节变化；该测试手写的 `.part` 无 sidecar → 行为同今天，断言需按此分叉重写；
+     3. `aRangelessServerFallsBackToAFreshFullDownload` 与 416 分支——sidecar 写/清时点要进契约断言；
+     4. 引擎属 `runtime:network` 模块级改动：`ResilientDownloadEngineContractTest`（模块自测）与 `RootfsTransportContractTest`（app 侧 seam 契约）两族都要过；
+     5. 口径同步三处 javadoc/文档：`RootfsTransport.java` 类注释（"sends `Range` but never `If-Range`"）、本文档 §5 L1 行、§6 #2 的"引擎行为发现"——随实现一并改写，禁止实现后留三套口径。
+   - **ACR 补充裁决建议**：(a) 现状安全——If-Range 缺位的完整性风险已由 L2 pin fail-closed 闭环（换源混流必被 sha 拒且引擎自清），If-Range 是**效率/健壮性增强而非安全修复**，不实现不构成发布阻塞；(b) 若实现，建议引擎参数化（如 validator 策略开关）而非全局行为切换——共享引擎的全局切换会改变非 UML 车道的续传行为，需全消费者回归；(c) 建议单列新决议（D6）承载，本节改动面盘点可直接作为决议素材；(d) 时机与 Wave 2 真机窗解耦——首次真实 CDN 端到端按现状跑（不阻塞 #2 的闭环），若实测镜像轮换浪费显著再排期。

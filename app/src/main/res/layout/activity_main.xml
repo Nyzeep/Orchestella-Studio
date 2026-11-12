@@ -498,6 +498,26 @@
                                     android:textSize="11sp"
                                     android:insetTop="0dp"
                                     android:insetBottom="0dp" />
+
+                                <!-- Lane A（2026-11-13）：第三段「UML 实验」状态项。
+                                     状态+导航语义（同 seg_pkvm/seg_qemu），不是偏好
+                                     选择器；文案映射见 MainActivity.updateConsoleWith
+                                     Instance（运行中(实验)·编译通道未接 / 未启用）。 -->
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/seg_uml"
+                                    style="@style/Widget.Orchestella.Button.Tonal"
+                                    android:layout_width="0dp"
+                                    android:layout_height="38dp"
+                                    android:layout_weight="1"
+                                    android:layout_marginStart="@dimen/oe_space_xs"
+                                    app:cornerRadius="0dp"
+                                    android:backgroundTint="#171820"
+                                    android:fontFamily="monospace"
+                                    android:text="UML 实验"
+                                    android:textColor="#8E929B"
+                                    android:textSize="11sp"
+                                    android:insetTop="0dp"
+                                    android:insetBottom="0dp" />
                             </LinearLayout>
 
                             <!-- SSH Tunnel Bridge Strip

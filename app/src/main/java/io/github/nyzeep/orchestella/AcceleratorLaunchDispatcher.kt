@@ -115,12 +115,27 @@ object AcceleratorLaunchDispatcher {
      * caller stops it once the QEMU session has exited. [backend] is the
      * verdict's backend, or [CompileBackend.NONE] when the lane was never in
      * the picture.
+     *
+     * The three fabric-slot fields (Lane A, 2026-11-13) ride along for the
+     * wiring owner so the UML face joins the ledger without anyone
+     * re-deriving a reservation: [assemblyResult] is the assembly's own
+     * verdict object ([AcceleratorLaneAssembly.fabricOrchestrator] consumes
+     * it directly), [qemuFaceWidth] is the C1 accounting value the QEMU
+     * request reserved, and [nativeFaceWidth] is the accelerator lane's own
+     * reservation ([ACCEL_REQUEST.cpuCores]) when the verdict selected a
+     * startable backend, 0 otherwise — both already counted inside the
+     * ledger snapshot ("pass the reservations, never re-derivations").
+     * All three answer their honest flag-off shape (null / 0 / 0): a
+     * flag-off dispatch carries no assembly picture at all.
      */
     data class Dispatch(
         val outcome: InstanceStrategyLauncher.Outcome,
         val coordinator: DualLaneCoordinator?,
         val decisionJson: String,
         val backend: CompileBackend,
+        val assemblyResult: AcceleratorLaneAssembly.Result? = null,
+        val qemuFaceWidth: Int = 0,
+        val nativeFaceWidth: Int = 0,
     )
 
     fun dispatch(
@@ -248,6 +263,12 @@ object AcceleratorLaunchDispatcher {
             result.coordinator(),
             result.decisionJson(),
             result.decisionBackend(),
+            assemblyResult = result,
+            qemuFaceWidth = qemuRequest.cpuCores,
+            nativeFaceWidth = when (result.decisionBackend()) {
+                CompileBackend.PVM_PAYLOAD, CompileBackend.CUSTOM_VM -> ACCEL_REQUEST.cpuCores
+                else -> 0
+            },
         )
     }
 
