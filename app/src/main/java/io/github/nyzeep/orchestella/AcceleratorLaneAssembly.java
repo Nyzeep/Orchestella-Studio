@@ -362,6 +362,36 @@ public final class AcceleratorLaneAssembly {
                 umlFaceEnabled, environment, launchParams, keepAlive);
     }
 
+    /**
+     * The spawner-injecting variant of {@link #umlFace(boolean, UmlFaceLauncher.Environment,
+     * UmlFaceLauncher.LaunchParams, UmlFaceLauncher.KeepAlive)}: identical wiring — the same
+     * double gate, the same required keep-alive, the launch shape still following the build
+     * flag through {@link UmlFaceLauncher.FastProfile#currentBuild()} — but the caller
+     * supplies the {@link UmlFaceLauncher.ProcessSpawner}. That is the seam the launcher's
+     * class doc already reserves ("injectable so tests and the device window own exec"), and
+     * the wiring owner needs it for one reason: the fast shape's console rides the process's
+     * fd 1 ({@code con0=null,fd:1}), so the spawned kernel's stdout must be drained — both to
+     * read the §4 READY / {@code UM_INIT_ERROR} contract lines and because an unread pipe
+     * would eventually stall the kernel on a full buffer. {@link UmlFaceLauncher} itself
+     * stays byte-identical: the drain lives entirely on the wiring-owner side, behind this
+     * seam. {@code launchParams} keeps the prototype's proven defaults here (512M, the
+     * host-1 single-core shape whose width reads 1 while the face is up).
+     */
+    public static UmlFaceLauncher umlFace(
+            boolean umlFaceEnabled,
+            UmlFaceLauncher.Environment environment,
+            UmlFaceLauncher.LaunchParams launchParams,
+            UmlFaceLauncher.KeepAlive keepAlive,
+            UmlFaceLauncher.ProcessSpawner spawner) {
+        Objects.requireNonNull(environment, "environment");
+        Objects.requireNonNull(launchParams, "launchParams");
+        Objects.requireNonNull(keepAlive, "keepAlive");
+        Objects.requireNonNull(spawner, "spawner");
+        return new UmlFaceLauncher(
+                umlFaceEnabled, environment, launchParams, keepAlive, spawner, null,
+                UmlFaceLauncher.FastProfile.currentBuild());
+    }
+
     private static DualLaneCoordinator coordinator(
             LaneBudget budget, Config config, Inputs inputs) {
         return new DualLaneCoordinator(
