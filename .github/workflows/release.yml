@@ -153,12 +153,22 @@ jobs:
         run: bash tools/ci/check-apk-16kb.sh app/build/outputs/apk/debug/app-debug.apk
 
       - name: Build release APK
-        # Same clean-checkout baseline as the debug gate above; the payload is
-        # verified on the finished APK by check_runtime_payload.py --apk.
+        # Same clean-checkout baseline as the debug gate above. allowMissingPayload
+        # stays: no step of this job produces the QEMU payload (it is git-ignored,
+        # absent from a clean checkout), the APK built here therefore cannot boot
+        # the QEMU lane, and publish-draft refuses to draft from such a bundle —
+        # the real payload-bearing APK is built on the packaging machine.
+        # ACR 2026-11-12 D1+D4: the UML fast-profile lane is stated explicitly
+        # like the accelerator lane, so the release pipeline never depends on a
+        # default to get this right. On this hosted checkout the U1 artifacts are
+        # absent too, so stageUmlFastProfile records the absence and skips (the
+        # APK ships no UML kernel; the runtime answers MISSING_ASSET honestly);
+        # the packaging machine adds -Porchestella.uml.fastProfileDir=<U1 dir>
+        # and gets the fail-closed sha-accounted staging for real.
         # The accelerator lane is stated explicitly even though the Gradle
         # default is now on: v0.6.3 shipped with the lane compiled out, so the
         # release pipeline must never depend on a default to get this right.
-        run: ./gradlew :app:assembleRelease -Porchestella.assets.allowMissingPayload=true -Porchestella.acceleratorLane=true --no-daemon --stacktrace
+        run: ./gradlew :app:assembleRelease -Porchestella.assets.allowMissingPayload=true -Porchestella.acceleratorLane=true -Porchestella.uml.bundledFastProfile=true -Porchestella.uml.fastProfile=true --no-daemon --stacktrace
 
       - name: Locate release APK
         run: |

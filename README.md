@@ -90,18 +90,23 @@ U4 warm-start 评估 / U6 多实例基准），并已在**两台真机**（Andro
 - **构建确定性**：内核 / rootfs / initramfs 产物在 pin 一致时逐字节复现，
   全部输入 sha256 pin 入 manifest；pinned 布局跨路径重建的 sha 差异已定界于
   内嵌 initramfs 段（源码/配置零漂移）。
-- **产品化骨架已入 main（默认全关）**：UML payload 管线（内置/下载双方案 +
-  sha 记账 + 三层校验链）与 fast-profile 启动形态已实现并过独立审查，三个
-  gradle flag 默认 false，flag off 时行为逐字节不变（测试锁定）。
+- **产品化按 ACR 决议接线（2026-11-12 投票，D1–D5 全部通过）**：UML payload 管线
+  （内置/下载双方案 + sha 记账 + 三层校验链）与 fast-profile 启动形态已实现并过独立
+  审查；release 流水线显式传参开启内置 kernel 与 fast 形态（ACR D1/D4），装配链把
+  UML 面接到 fast-profile 形态——flag on 构建的内置 initramfs 通道默认宽度 1，
+  编译通道（distcc D-1 桥）与 rootfs 下载增强待后续轮接线；本地裸构建三个
+  gradle flag 仍默认 false，flag off 时行为逐字节不变（测试锁定）。
 - **warm-start 判词**：checkpoint/restore 与 hibernation 均 NO-GO（上游无机制 +
   CRIU 不支持 UML），预热点池为 CONDITIONAL GO（每实例常驻成本 ≈ 22 MB）。
 - **尚未验证**（诚实边界）：fast profile 只承诺 T3 shell——无 systemd / 网络 /
   包管理器（产品化走 U2 预烘焙 rootfs 路径）；16 KB 宿主、systemd、
   vector-net/mconsole 两 case（adb-shell 通道）未测。
 
-下一步是 ACR 投票（双方案对比 + 合规清单已定稿，见
-`.scratch/uml-productization-20261112/acr/acr-draft.md`）：通过后按已入 main 的
-payload 管线骨架接线（当前产品内 UML 车道仍为 0 宽度默认关闭），再评估受控内测。
+ACR 已于 2026-11-12 投票通过（D1–D5 全部按建议通过，决议记录见
+`.scratch/uml-productization-20261112/acr/acr-draft.md` §8）：方案 A 内置 kernel +
+fast 形态由 release 流水线显式传参开启（D1），UML 面默认宽度按 D4 接线为
+「flag on 构建 = 1、flag off 构建 = 0」；rootfs 下载增强（方案 B 校验管线已闭环）
+与编译通道（fabric-route D-1 桥）由产品调用方在后续轮接线，届时再评估受控内测。
 研究明细见 [零设备方向 spec](docs/research/2026-11-10-proot-vs-uml-zero-device-direction.zh-CN.md)、
 [ARM64 设备窗报告](docs/research/2026-11-11-uml-arm64-device-window-wave2.zh-CN.md)
 与 [UML 产品化轮报告](docs/research/2026-11-12-uml-productization-round.zh-CN.md)。

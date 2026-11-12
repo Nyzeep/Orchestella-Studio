@@ -62,14 +62,18 @@ import java.util.function.IntSupplier;
  * {@code null}, and produces today's command line byte-identically — the
  * flag-off contract tests hold that without exception.
  *
- * <p><b>Width.</b> The UML face's dispatchable width is the worker's real
- * serviceable compile concurrency, which is the kernel's SMP width: the
- * {@code ncpus=} knob when it is ≥2 (the knob the device round measured —
- * {@code ncpus=N}, never {@code --cpus=N}, which the SMP kernel does not
- * recognize), and 1 for the default host-1 single-core shape. A stopped,
- * dead, or channel-less face reads 0. The fabric slot clamps this to the
- * ledger headroom, so an over-declaring config cannot oversubscribe the
- * ledger.
+ * <p><b>Width.</b> The UML face's dispatchable width is the kernel's
+ * effective SMP width: the {@code ncpus=} knob when it is ≥2 (the knob the
+ * device round measured — {@code ncpus=N}, never {@code --cpus=N}, which the
+ * SMP kernel does not recognize), and 1 for the default host-1 single-core
+ * shape. A stopped or dead face reads 0. The runner shape (the flag-off
+ * build's face) additionally reads 0 while the compile channel is unwired —
+ * its locked flag-off semantics. The fast-profile shapes (ACR 2026-11-12 D4,
+ * the built-initramfs UP default reads 1) report the kernel's real width
+ * while up; their unroutability until the device window wires the compile
+ * channel is enforced at the worker (the fixed channel-unwired refusal), not
+ * by zeroing the width. The fabric slot clamps this to the ledger headroom,
+ * so an over-declaring config cannot oversubscribe the ledger.
  */
 public final class UmlFaceLauncher {
 
@@ -340,8 +344,10 @@ public final class UmlFaceLauncher {
          * The build-flag read ({@code BuildConfig.UML_FAST_PROFILE}, the
          * {@code orchestella.uml.fastProfile} Gradle property): the §4 UP
          * initramfs shape when the build opted in, {@code null} — the exact
-         * runner shape — otherwise. The default build keeps the flag off, so
-         * the shipped wiring answers {@code null} and nothing changes.
+         * runner shape — otherwise. The default (bare local) build keeps the
+         * flag off, so it answers {@code null}; the release pipeline states
+         * the flag explicitly (ACR 2026-11-12 D1/D4), and the assembly's
+         * {@code umlFace} slot feeds this read into the shipped face.
          */
         public static FastProfile currentBuild() {
             return BuildConfig.UML_FAST_PROFILE ? initramfs() : null;
@@ -432,6 +438,15 @@ public final class UmlFaceLauncher {
      * ({@link FastProfile#currentBuild()}): the §4 fast command line when the
      * build opted in ({@code -Porchestella.uml.fastProfile=true}), the exact
      * runner shape otherwise. The lifecycle seams are unchanged.
+     *
+     * <p>Wired since ACR 2026-11-12 D4: {@link AcceleratorLaneAssembly#umlFace}
+     * — the assembly's one UML-face wiring point — calls this instead of
+     * {@link #create}, so the shipped face's launch shape follows
+     * {@code BuildConfig.UML_FAST_PROFILE} (the {@code
+     * orchestella.uml.fastProfile} Gradle property) and the flag-off build
+     * keeps the byte-identical runner shape. The double gate, the keep-alive
+     * seam and the honest-degradation contract are the constructor's own
+     * invariants; the fast profile is a launch shape, never an authorization.
      */
     public static UmlFaceLauncher createWithCurrentFastProfile(
             boolean umlFaceEnabled,
@@ -527,12 +542,31 @@ public final class UmlFaceLauncher {
 
     /**
      * The face's dispatchable width: the kernel's effective SMP width while
-     * the face is running, healthy and channel-wired; 0 otherwise. This is
-     * the {@code umlFaceWidth} value the fabric slot consumes (it clamps the
-     * value to the ledger headroom).
+     * the face is running and healthy; 0 otherwise. This is the {@code
+     * umlFaceWidth} value the fabric slot consumes (it clamps the value to
+     * the ledger headroom).
+     *
+     * <p>Channel semantics by shape (ACR 2026-11-12 D4): the runner shape —
+     * the flag-off build's exact historical face — keeps the locked rule that
+     * an unwired compile channel reads 0, so the orchestration never routes
+     * work into a face that cannot serve it. A fast-profile face reads the
+     * kernel's real width while it is up (the built-in-initramfs UP default
+     * reads 1, the device round's T3 verdict); its unwired channel is a
+     * routability question, not a capacity one, and stays enforced at the
+     * worker — a dispatch that reaches a channel-less fast face throws the
+     * fixed {@link #CHANNEL_UNWIRED_DETAIL} {@link FabricOrchestrator.FaceException},
+     * which rides the orchestrator's release-grant-and-evict contract. The
+     * flag-off build never constructs a fast-profile face through the product
+     * wiring, so its width semantics are byte-identical to the locked ones.
      */
     public synchronized int width() {
-        if (state != State.RUNNING || process == null || !process.isAlive() || channel == null) {
+        if (state != State.RUNNING || process == null || !process.isAlive()) {
+            return 0;
+        }
+        if (channel == null && fastProfile == null) {
+            // The runner shape's locked rule: an unwired compile channel keeps
+            // the face at width 0. The fast shape (ACR D4) reports the kernel's
+            // real width below; its unroutability rides the worker's contract.
             return 0;
         }
         return params.effectiveWidth();
