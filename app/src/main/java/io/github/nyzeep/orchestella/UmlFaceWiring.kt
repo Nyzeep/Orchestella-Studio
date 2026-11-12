@@ -198,10 +198,35 @@ object UmlFaceStatusRegistry {
  * and on EOF the honest reap — `probe()` turns the expected self-termination of
  * the §4 probe shape (exit 0 after `um.hold_ms`) into width 0 with the
  * keep-alive released, so nothing freeze-protects a kernel that is gone.
+ *
+ * <p>Device-verified detail (2026-11-13 device-b, the routable round): the
+ * kernel's console closes at powerdown a beat <b>before</b> the process is
+ * reaped, so the EOF probe can still observe HEALTHY — the measured window
+ * was ~5 ms (`uml console closed while the kernel is alive` right before the
+ * `[1.22] reboot: Power down` exit). One delayed re-probe closes that race
+ * without a poller thread: if the kernel died in the grace window the reap
+ * still runs (width 0, keep-alive released); if it is genuinely alive the
+ * stop stays the wiring owner's call as before.
+ *
+ * @param delayedReprobe runs the given re-probe after [REPROBE_GRACE_MS]; the
+ *   production default is a single daemon thread, tests pass a direct runner
  */
 class UmlFaceConsoleSink(
     private val faceSource: () -> UmlFaceLauncher?,
     private val log: (String) -> Unit,
+    private val delayedReprobe: (Runnable) -> Unit = { task ->
+        Thread {
+            try {
+                Thread.sleep(REPROBE_GRACE_MS)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+            task.run()
+        }.apply {
+            name = "OrchestellaUmlReprobe"
+            isDaemon = true
+        }.start()
+    },
 ) : UmlConsoleSink {
 
     override fun onLine(line: UmlConsoleLine) {
@@ -213,12 +238,27 @@ class UmlFaceConsoleSink(
         when (face.probe()) {
             UmlFaceLauncher.Health.PROCESS_DEAD ->
                 log("uml face reaped after console EOF; width reads 0")
-            UmlFaceLauncher.Health.HEALTHY ->
-                log("uml console closed while the kernel is alive; stop stays the wiring owner's call")
+            UmlFaceLauncher.Health.HEALTHY -> {
+                log("uml console closed while the kernel is alive; re-probing after teardown grace")
+                delayedReprobe {
+                    val probed = faceSource() ?: return@delayedReprobe
+                    when (probed.probe()) {
+                        UmlFaceLauncher.Health.PROCESS_DEAD ->
+                            log("uml face reaped after teardown grace; width reads 0")
+                        else ->
+                            log("kernel still alive at re-probe; stop stays the wiring owner's call")
+                    }
+                }
+            }
             UmlFaceLauncher.Health.NOT_RUNNING -> {
                 // Already stopped honestly; nothing to reap.
             }
         }
+    }
+
+    companion object {
+        /** Covers the §4 probe shape's `hold_ms` + teardown window with margin. */
+        const val REPROBE_GRACE_MS = 2_000L
     }
 }
 

@@ -260,11 +260,49 @@ class UmlFaceWiringTest {
     }
 
     @Test
+    fun consoleEofTeardownRaceIsClosedByTheDelayedReprobe() {
+        // Device-measured 2026-11-13: the kernel's console closes at powerdown
+        // a beat before the process is reaped, so the EOF probe can still read
+        // HEALTHY. The delayed re-probe must catch the death in the grace
+        // window and run the honest reap (width 0, keep-alive released).
+        val lines = mutableListOf<String>()
+        val face = FaceFactory.armed(temporaryFolder.newFolder("eof-race-lib"), withAssets = true, aliveProcess = true)
+        val keepAlive = FaceFactory.lastKeepAlive!!
+        val sink = UmlFaceConsoleSink(
+            faceSource = { face }, log = { lines.add(it) },
+            // Direct runner standing in for the 2s daemon thread; the kernel's
+            // teardown completes (the process dies) before the re-probe runs —
+            // exactly the device-measured order.
+            delayedReprobe = { task ->
+                // The kernel's teardown completes (the process dies) before the
+                // re-probe runs — exactly the device-measured order.
+                FaceFactory.lastProcess!!.destroy()
+                task.run()
+            },
+        )
+        try {
+            assertTrue(face.start().started())
+            assertEquals("the kernel holds the keep-alive while alive", 1, keepAlive.acquires.get())
+            sink.onConsoleEof()
+            assertTrue("the EOF probe raced the teardown", lines.first().contains("re-probing after teardown grace"))
+            assertTrue(lines.last().contains("reaped after teardown grace"))
+            assertEquals("the re-probe reap zeroes the width", 0, face.width())
+            assertEquals("the re-probe reap releases the keep-alive", 1, keepAlive.releases.get())
+            assertEquals(UmlFaceLauncher.Health.NOT_RUNNING, face.probe())
+        } finally {
+            UmlFaceStatusRegistry.unregister("eof-race")
+        }
+    }
+
+    @Test
     fun consoleEofWithALiveKernelLeavesTheStopToTheWiringOwner() {
         val lines = mutableListOf<String>()
         val face = FaceFactory.armed(temporaryFolder.newFolder("eof-live-lib"), withAssets = true, aliveProcess = true)
         val keepAlive = FaceFactory.lastKeepAlive!!
-        val sink = UmlFaceConsoleSink(faceSource = { face }, log = { lines.add(it) })
+        val sink = UmlFaceConsoleSink(
+            faceSource = { face }, log = { lines.add(it) },
+            delayedReprobe = { it.run() },
+        )
         try {
             assertTrue(face.start().started())
             sink.onConsoleEof()
@@ -322,6 +360,9 @@ class UmlFaceWiringTest {
         var lastKeepAlive: CountingKeepAlive? = null
             private set
 
+        var lastProcess: DeadOrAliveProcess? = null
+            private set
+
         /**
          * A gate-off face: start() answers the fixed GATE_DISABLED code with
          * zero side effects — the spawner throws if it is ever consulted.
@@ -354,12 +395,14 @@ class UmlFaceWiringTest {
             }
             val keepAlive = CountingKeepAlive()
             lastKeepAlive = keepAlive
+            val process = DeadOrAliveProcess(aliveProcess)
+            lastProcess = process
             return UmlFaceLauncher(
                 true,
                 environment(libDir),
                 UmlFaceLauncher.LaunchParams.defaults(),
                 keepAlive,
-                { _, _, _ -> DeadOrAliveProcess(aliveProcess) },
+                { _, _, _ -> process },
                 null,
                 UmlFaceLauncher.FastProfile.initramfs(),
             )
