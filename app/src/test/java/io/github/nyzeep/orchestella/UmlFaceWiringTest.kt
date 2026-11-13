@@ -9,6 +9,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -553,6 +555,190 @@ class UmlFaceWiringTest {
         }
         assertEquals("uml-channel:" + UmlChannel.CLOSED_DETAIL, error.get()?.message)
         wiring.disarm()
+    }
+
+    // --- the net-supervisor spawner (Gate 2, umnet 候选 a) ---------------------------
+
+    /** Records every spawn call; answers one live fake kernel process. */
+    private class RecordingSpawner : UmlFaceLauncher.ProcessSpawner {
+        val commands = mutableListOf<List<String>>()
+        val environments = mutableListOf<Map<String, String>>()
+        val workingDirs = mutableListOf<File>()
+        var calls = 0
+        val process = DeadOrAliveProcess(true)
+
+        override fun spawn(
+            command: List<String>,
+            environment: Map<String, String>,
+            workingDir: File,
+        ): UmlFaceLauncher.UmlProcess {
+            calls++
+            commands.add(ArrayList(command))
+            environments.add(java.util.LinkedHashMap(environment))
+            workingDirs.add(workingDir)
+            return process
+        }
+    }
+
+    /** A native-library dir with both helper libs staged, exec bit set for POSIX CI. */
+    private fun stagedHelperLibDir(name: String): File {
+        val libDir = temporaryFolder.newFolder(name)
+        val umnet = File(libDir, UmlNetSupervisorSpawner.NET_HELPER_LIB)
+        val passt = File(libDir, UmlNetSupervisorSpawner.PASST_HELPER_LIB)
+        assertTrue(umnet.createNewFile())
+        assertTrue(passt.createNewFile())
+        umnet.setExecutable(true)
+        passt.setExecutable(true)
+        return libDir
+    }
+
+    @Test
+    fun flagOffNetSupervisorPassesThroughByteForByte() {
+        // The libs are even present — the flag alone gates the rewrite.
+        val libDir = stagedHelperLibDir("net-off-lib")
+        val recorder = RecordingSpawner()
+        val spawner = UmlNetSupervisorSpawner(recorder, enabled = false, nativeLibraryDir = { libDir })
+        val command = listOf(
+            File(libDir, UmlFaceLauncher.KERNEL_LIB_NAME).absolutePath,
+            "mem=512M", "rw", "con0=fd:0,fd:1",
+        )
+        val environment = mapOf("TMPDIR" to "/data/tmp", "PATH" to "/system/bin")
+        val workingDir = temporaryFolder.newFolder("net-off-work")
+        val process = spawner.spawn(command, environment, workingDir)
+        assertEquals(1, recorder.calls)
+        assertEquals("the original command rides through untouched", command, recorder.commands[0])
+        assertEquals("the original environment rides through untouched", environment, recorder.environments[0])
+        assertFalse(
+            "a flag-off build never grows a supervisor variable",
+            recorder.environments[0].containsKey(UmlNetSupervisorSpawner.NO_ISOLATION_ENV),
+        )
+        assertEquals(workingDir, recorder.workingDirs[0])
+        assertSame("the delegate's process is the wrapper's answer", recorder.process, process)
+    }
+
+    @Test
+    fun flagOnNetSupervisorRewritesCommandAndAddsNoIsolationEnv() {
+        val libDir = stagedHelperLibDir("net-on-lib")
+        val recorder = RecordingSpawner()
+        val spawner = UmlNetSupervisorSpawner(recorder, enabled = true, nativeLibraryDir = { libDir })
+        val kernel = File(libDir, UmlFaceLauncher.KERNEL_LIB_NAME).absolutePath
+        val command = listOf(kernel, "mem=512M", "rw", "con0=fd:0,fd:1")
+        val environment = mapOf("TMPDIR" to "/data/tmp")
+        val workingDir = temporaryFolder.newFolder("net-on-work")
+        spawner.spawn(command, environment, workingDir)
+        assertEquals(1, recorder.calls)
+        assertEquals(
+            "[umnet, --passt, passt, --, kernel, …args] exactly, in order",
+            listOf(
+                File(libDir, UmlNetSupervisorSpawner.NET_HELPER_LIB).absolutePath,
+                "--passt",
+                File(libDir, UmlNetSupervisorSpawner.PASST_HELPER_LIB).absolutePath,
+                "--",
+                kernel,
+                "mem=512M", "rw", "con0=fd:0,fd:1",
+            ),
+            recorder.commands[0],
+        )
+        assertEquals("the isolation escape rides in the environment",
+            "1", recorder.environments[0][UmlNetSupervisorSpawner.NO_ISOLATION_ENV])
+        assertEquals("the original environment survives alongside it",
+            "/data/tmp", recorder.environments[0]["TMPDIR"])
+        assertEquals("the working dir is the kernel's own", workingDir, recorder.workingDirs[0])
+        assertFalse("the caller's map is never mutated",
+            environment.containsKey(UmlNetSupervisorSpawner.NO_ISOLATION_ENV))
+    }
+
+    @Test
+    fun supervisorAndPasstPathsDeriveFromNativeLibraryDir() {
+        // The kernel command and the working dir both live elsewhere on
+        // purpose: the two helper paths must come from nativeLibraryDir alone.
+        val libDir = stagedHelperLibDir("net-path-lib")
+        val kernelElsewhere = File(
+            temporaryFolder.newFolder("net-path-kernel"), UmlFaceLauncher.KERNEL_LIB_NAME,
+        ).absolutePath
+        val recorder = RecordingSpawner()
+        val spawner = UmlNetSupervisorSpawner(recorder, enabled = true, nativeLibraryDir = { libDir })
+        spawner.spawn(
+            listOf(kernelElsewhere, "rw"),
+            emptyMap(),
+            temporaryFolder.newFolder("net-path-work"),
+        )
+        val rewritten = recorder.commands[0]
+        assertEquals(File(libDir, UmlNetSupervisorSpawner.NET_HELPER_LIB).absolutePath, rewritten[0])
+        assertEquals(UmlNetSupervisorSpawner.PASST_HELPER_LIB, File(rewritten[2]).name)
+        assertEquals(File(libDir, UmlNetSupervisorSpawner.PASST_HELPER_LIB).absolutePath, rewritten[2])
+        assertEquals("the kernel keeps its own path behind the separator",
+            kernelElsewhere, rewritten[4])
+    }
+
+    @Test
+    fun flagOnWithoutUmnetThrowsTheNamedIOExceptionAndNeverSpawns() {
+        val libDir = temporaryFolder.newFolder("net-no-umnet-lib")
+        val recorder = RecordingSpawner()
+        val spawner = UmlNetSupervisorSpawner(recorder, enabled = true, nativeLibraryDir = { libDir })
+        val failure = assertThrows(IOException::class.java) {
+            spawner.spawn(listOf("kernel", "rw"), emptyMap(), temporaryFolder.newFolder("net-no-umnet-work"))
+        }
+        assertEquals("uml-net-helper missing: libuml_net.so", failure.message)
+        assertEquals("the honest refusal never reaches the delegate", 0, recorder.calls)
+    }
+
+    @Test
+    fun flagOnWithoutPasstThrowsTheNamedIOExceptionAndNeverSpawns() {
+        val libDir = temporaryFolder.newFolder("net-no-passt-lib")
+        val umnet = File(libDir, UmlNetSupervisorSpawner.NET_HELPER_LIB)
+        assertTrue(umnet.createNewFile())
+        umnet.setExecutable(true)
+        val recorder = RecordingSpawner()
+        val spawner = UmlNetSupervisorSpawner(recorder, enabled = true, nativeLibraryDir = { libDir })
+        val failure = assertThrows(IOException::class.java) {
+            spawner.spawn(listOf("kernel", "rw"), emptyMap(), temporaryFolder.newFolder("net-no-passt-work"))
+        }
+        assertEquals("uml-net-helper missing: libuml_passt.so", failure.message)
+        assertEquals("the honest refusal never reaches the delegate", 0, recorder.calls)
+    }
+
+    @Test
+    fun netSupervisorPassthroughKeepsTheConsoleDrainContract() {
+        // A real process through the wrapper (flag off, delegate = the
+        // draining spawner): the console lines still classify through the
+        // contract and the EOF still fires exactly once — the wrapper adds
+        // nothing between the drain and its sink.
+        val lines = mutableListOf<UmlConsoleLine>()
+        val eof = java.util.concurrent.CountDownLatch(1)
+        val sink = object : UmlConsoleSink {
+            override fun onLine(line: UmlConsoleLine) {
+                lines.add(line)
+            }
+
+            override fun onConsoleEof() {
+                eof.countDown()
+            }
+        }
+        val libDir = stagedHelperLibDir("net-drain-lib")
+        val spawner = UmlNetSupervisorSpawner(
+            ConsoleDrainingUmlSpawner(sink),
+            enabled = false,
+            nativeLibraryDir = { libDir },
+        )
+        val osName = (System.getProperty("os.name") ?: "").lowercase()
+        val javaBin = File(
+            File(System.getProperty("java.home"), "bin"),
+            if (osName.contains("win")) "java.exe" else "java",
+        )
+        val process = spawner.spawn(
+            listOf(javaBin.absolutePath, "-version"),
+            emptyMap(),
+            temporaryFolder.newFolder("net-drain-work"),
+        )
+        assertTrue("the real process exits on its own", process.waitForExit(30_000))
+        assertTrue("the console EOF arrives exactly once after exit", eof.await(10, java.util.concurrent.TimeUnit.SECONDS))
+        assertTrue(lines.isNotEmpty())
+        assertTrue(
+            "java -version's output (stderr merged) drains as plain console lines",
+            lines.all { it.kind == UmlConsoleLineKind.PLAIN } &&
+                lines.any { it.raw.contains("version", ignoreCase = true) },
+        )
     }
 
     // --- fixtures -------------------------------------------------------------------

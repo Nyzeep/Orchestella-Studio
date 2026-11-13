@@ -193,6 +193,22 @@ val umlFastProfileDir: String? = providers.gradleProperty("orchestella.uml.fastP
 // that DOES provide the dir is fail-closed (missing artifacts / sha mismatch
 // still fail the build) — the packaging machine's path.
 // No cross-constraint: the two routes are independent and may combine.
+// Gate 2 net helper (ACR 2026-11-13 §8, the umnet supervisor, 候选 a): the
+// git-ignored machine-input pair umnet_bionic/passt_bionic (static bionic
+// ELFs; passt fork pin 25f9c1f+1a0c657) stages into jniLibs as
+// libuml_net.so/libuml_passt.so under this stated parameter — the same
+// stated-parameter mode as fastProfileDir, no extra Gradle flag: the dir's
+// presence IS the staging opt-in (packaging is independent of the behavior
+// flag; orchestella.uml.compileBridge governs the spawner rewrite, not the
+// packaging). Without the dir the staging records the absence and skips
+// with a WARN + marker (the bundledFastProfile-missing-dir shape); a
+// provided dir stays fail-closed (missing artifacts / pin mismatch fail the
+// build). Not passed by release.yml this round — see the release.yml
+// comment before the release run line.
+val umlNetHelperDir: String? = providers.gradleProperty("orchestella.uml.netHelperDir")
+    .orNull
+    ?.trim()
+    ?.ifEmpty { null }
 
 plugins {
     alias(libs.plugins.android.application)
@@ -490,6 +506,16 @@ android {
             // (same reason as the QEMU payload libs above; ~1.4 MB APK cost).
             keepDebugSymbols += "**/libuml_kernel.so"
             keepDebugSymbols += "**/libuml_stub.so"
+            // Gate 2 net helper (2026-11-13, umnet 候选 a): libuml_net.so /
+            // libuml_passt.so are static bionic executables carrying a .so
+            // name (the umnet supervisor and its passt child, staged by
+            // stageUmlNetHelper). AGP's default debug-symbol strip rewrites
+            // the ELF exactly as it rewrote libuml_kernel.so (measured same
+            // round), which would break the uml-net-helper-v1.sha256
+            // accounting chain the same way — staged bytes must stay the
+            // pinned bytes. Unstripped, same reason as the payload libs above.
+            keepDebugSymbols += "**/libuml_net.so"
+            keepDebugSymbols += "**/libuml_passt.so"
         }
     }
 
@@ -976,6 +1002,141 @@ val stageUmlFastProfile = tasks.register("stageUmlFastProfile") {
 }
 if (umlBundledFastProfile) {
     tasks.named("preBuild") { dependsOn(stageUmlFastProfile) }
+}
+
+// Gate 2 net-helper staging (ACR 2026-11-13 §8, umnet 候选 a), the
+// stageUmlFastProfile discipline applied to the net supervisor pair. The
+// artifacts are git-ignored machine inputs (built per the passt-android fork
+// pin 25f9c1f+1a0c657 and the build-net-bionic recipe, check_bin three-check
+// proven; round 2026-11-13 preflight sha256). They land in:
+//   src/main/jniLibs/arm64-v8a/libuml_net.so    <- umnet_bionic (git-ignored)
+//   src/main/jniLibs/arm64-v8a/libuml_passt.so  <- passt_bionic (git-ignored)
+// and the accounting manifest is written to src/main/assets/uml-net-helper-v1.sha256
+// (git-ignored build product; packaged names, two sha lines).
+// Staging semantics, mirroring stageUmlFastProfile:
+//   - neither the dir nor the compileBridge flag: the task is not scheduled —
+//     a bare local build stays silent (the default);
+//   - compileBridge on but no dir: the task runs, records the absence
+//     (WARN + build/uml-net-helper-staging-skipped.flag) and skips — no
+//     jniLibs, no accounting manifest, so the packaged APK carries no net
+//     helper and the flag-on spawner answers SPAWN_FAILED
+//     (uml-net-helper missing) honestly at runtime;
+//   - a dir provided: fail-closed staging — missing artifacts or a pin
+//     mismatch fail the build, never stage a half pair.
+val umlNetHelperPins: Map<String, String> = linkedMapOf(
+    "umnet_bionic" to "2586201cea1b53197c0847699fdd187d0481da793996492789c58a75011fcb22",
+    "passt_bionic" to "a8451a0152387f0eaeb0b90615168e10d6433336a91f38774c209cdbefd554b5",
+)
+
+val stageUmlNetHelper = tasks.register("stageUmlNetHelper") {
+    group = "verification"
+    description = "Stages the umnet/passt net-helper bionic pair into jniLibs with sha accounting."
+    onlyIf { umlCompileBridge || umlNetHelperDir != null }
+    doLast {
+        val repoRoot = projectDir
+        val relative: (File) -> String = { it.relativeToOrSelf(repoRoot).invariantSeparatorsPath }
+        fun sha256Of(file: File): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+            file.inputStream().use { input ->
+                val buffer = ByteArray(1 shl 16)
+                var read = input.read(buffer)
+                while (read != -1) {
+                    digest.update(buffer, 0, read)
+                    read = input.read(buffer)
+                }
+            }
+            return digest.digest().joinToString("") { "%02x".format(it) }
+        }
+
+        if (umlNetHelperDir == null) {
+            val flagFile =
+                layout.buildDirectory.file("uml-net-helper-staging-skipped.flag").get().asFile
+            flagFile.parentFile.mkdirs()
+            flagFile.writeText(
+                "timestamp=${Instant.now()}\n" +
+                    "reason=-Porchestella.uml.compileBridge=true without " +
+                    "-Porchestella.uml.netHelperDir\n" +
+                    "detail=no net-helper artifacts in this checkout; the APK carries no " +
+                    "libuml_net.so/libuml_passt.so and the compile-bridge spawner answers " +
+                    "SPAWN_FAILED (uml-net-helper missing) honestly.\n"
+            )
+            logger.warn(
+                "stageUmlNetHelper: WARNING: the compile bridge is on but no " +
+                    "orchestella.uml.netHelperDir was provided; staging skipped and recorded " +
+                    "in build/uml-net-helper-staging-skipped.flag. The packaged APK carries " +
+                    "no net helper, so a flag-on face refuses to spawn with the named " +
+                    "uml-net-helper missing detail instead of faking a routable kernel. " +
+                    "Provide the pinned umnet/passt bionic pair on the packaging machine to " +
+                    "stage it for real."
+            )
+            return@doLast
+        }
+
+        val helperRoot = rootProject.file(umlNetHelperDir)
+        if (!helperRoot.isDirectory) {
+            throw GradleException(
+                "stageUmlNetHelper: orchestella.uml.netHelperDir is not an existing directory: " +
+                    relative(helperRoot)
+            )
+        }
+
+        // artifact name -> (staged payload path); the packaged names ride the
+        // jniLibs convention (lib*.so) so the app domain execs them from
+        // nativeLibraryDir.
+        val staged = linkedMapOf(
+            "umnet_bionic" to file("src/main/jniLibs/arm64-v8a/libuml_net.so"),
+            "passt_bionic" to file("src/main/jniLibs/arm64-v8a/libuml_passt.so")
+        )
+
+        val problems = mutableListOf<String>()
+        staged.forEach { (artifact, target) ->
+            val source = File(helperRoot, artifact)
+            if (!source.isFile) {
+                problems += "  - missing artifact: $artifact (${relative(source)})"
+                return@forEach
+            }
+            target.parentFile.mkdirs()
+            source.copyTo(target, overwrite = true)
+            val actual = sha256Of(target)
+            val expected = umlNetHelperPins[artifact]
+            if (expected == null || !actual.equals(expected, ignoreCase = true)) {
+                problems += "  - sha256 mismatch: $artifact expected=$expected actual=$actual"
+            }
+        }
+
+        if (problems.isNotEmpty()) {
+            problems.forEach { logger.error("stageUmlNetHelper: $it") }
+            throw GradleException(
+                "The umnet/passt net-helper staging failed sha accounting.\n" +
+                    problems.joinToString("\n") +
+                    "\nProvide the pinned pair (round 2026-11-13 Gate 2 preflight build, " +
+                    "passt fork pin 25f9c1f+1a0c657) in orchestella.uml.netHelperDir, or " +
+                    "rerun without -Porchestella.uml.netHelperDir."
+            )
+        }
+
+        // Accounting manifest: packaged names, two sha lines, the same
+        // <64-hex>␠␠<name> grammar the other manifests speak.
+        val accounting = file("src/main/assets/uml-net-helper-v1.sha256")
+        accounting.parentFile.mkdirs()
+        accounting.writeText(
+            staged.entries.joinToString("") { (artifact, _) ->
+                val packagedName = when (artifact) {
+                    "umnet_bionic" -> "libuml_net.so"
+                    "passt_bionic" -> "libuml_passt.so"
+                    else -> artifact
+                }
+                umlNetHelperPins[artifact] + "  " + packagedName + "\n"
+            }
+        )
+        logger.lifecycle(
+            "stageUmlNetHelper: staged ${staged.size} net-helper artifacts with matching pins; " +
+                "accounting manifest at " + relative(accounting) + "."
+        )
+    }
+}
+if (umlCompileBridge || umlNetHelperDir != null) {
+    tasks.named("preBuild") { dependsOn(stageUmlNetHelper) }
 }
 
 tasks.register<Copy>("packageOrchestellaRelease") {
