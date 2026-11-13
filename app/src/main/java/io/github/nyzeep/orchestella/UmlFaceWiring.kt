@@ -50,6 +50,14 @@ import java.io.InputStreamReader
  *   the armed orchestrator, and closes both exactly at disarm. Inert when the
  *   build flag is off — the historical `channel=unwired` arm path byte for
  *   byte.
+ * - [UmlNetSupervisorSpawner] — the Gate 2 net-supervisor wrapper (ACR
+ *   2026-11-13 §8, umnet 候选 a) around the draining spawner: flag on and
+ *   both helper libs present rewrites the kernel command into the
+ *   `libuml_net.so --passt <lib> -- <kernel> …` supervisor invocation with
+ *   `PASST_ANDROID_NO_ISOLATION=1` in the environment; flag off is a
+ *   byte-for-byte passthrough; flag on without the libs throws the named
+ *   [IOException] the launcher's `SPAWN_FAILED` code catches — never a
+ *   silent launch of an unroutable kernel under a wired arm line.
  *
  * The compile channel wiring follows the fourth build flag
  * (`orchestella.uml.compileBridge` → `BuildConfig.UML_COMPILE_BRIDGE`, default
@@ -158,6 +166,110 @@ class ConsoleDrainingUmlSpawner(
             override fun waitForExit(timeoutMs: Long): Boolean =
                 process.waitFor(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
         }
+    }
+}
+
+/**
+ * Gate 2 (ACR 2026-11-13 §8, fd 路径＝候选 a, the umnet native supervisor):
+ * the net-supervisor wrapper around a [UmlFaceLauncher.ProcessSpawner] — in
+ * production around [ConsoleDrainingUmlSpawner], so the console drain keeps
+ * its owner and this layer stays a pure command-shaper. The Gate 2 preflight
+ * (round 2026-11-13, device-b, untrusted_app + SELinux Enforcing) proved the
+ * app domain execs the static bionic pair and umnet's socketpair/passt-fork
+ * chain runs green; this class only wires that proven invocation into the
+ * face's existing spawn seam.
+ *
+ * <p>Behavior, exactly three shapes:
+ * <ul>
+ *   <li>flag off — byte-for-byte passthrough of the original command list,
+ *   environment and working dir (the historical behavior; the wrapper is
+ *   invisible);</li>
+ *   <li>flag on and both helper libraries present and executable in
+ *   [nativeLibraryDir]'s dir — the kernel command is rewritten into
+ *   `[libuml_net.so, --passt, <libuml_passt.so>, --, <kernel>, <original
+ *   args…>]` (the kernel is the original command's first element — both the
+ *   runner and the fast-profile command lead with the kernel path, and the
+ *   launcher is this seam's only caller) with `PASST_ANDROID_NO_ISOLATION=1`
+ *   added to the environment (the caller's map is never mutated). umnet then
+ *   builds the vec0 fd pair, forks passt and execs the kernel; it appends the
+ *   `vec0:transport=fd,…` kernel argument and assembles passt's `-F`
+ *   interaction internally — this layer never spells them. The kernel's
+ *   console still rides fd 1 through umnet's stdio passthrough, so the
+ *   delegate's drain semantics are untouched; umnet's own stderr diagnostics
+ *   mix in as plain console lines the contract already tolerates.</li>
+ *   <li>flag on but a helper library missing or not executable — [spawn]
+ *   throws the named [IOException] (`uml-net-helper missing: <lib>`), which
+ *   the launcher's `SPAWN_FAILED` fixed code catches with the message riding
+ *   in its detail. The flag claims routability, so a build without its
+ *   helpers must fail the spawn — never launch an unroutable kernel while
+ *   the arm line reads `channel=wired`.</li>
+ * </ul>
+ *
+ * @param delegate the spawner this layer wraps (console ownership stays with
+ *   it — the drain thread, EOF handling and process adaptation are its job)
+ * @param enabled the fourth build flag (`BuildConfig.UML_COMPILE_BRIDGE`) as
+ *   the Android edge consumed it; off = pure passthrough
+ * @param nativeLibraryDir supplies the app's native library dir at spawn
+ *   time — the Android edge defers `applicationInfo` reads past attach; the
+ *   passt path and the supervisor path both derive from it, never from the
+ *   command or the working dir
+ */
+class UmlNetSupervisorSpawner(
+    private val delegate: UmlFaceLauncher.ProcessSpawner,
+    private val enabled: Boolean,
+    private val nativeLibraryDir: () -> File,
+) : UmlFaceLauncher.ProcessSpawner {
+
+    override fun spawn(
+        command: List<String>,
+        environment: Map<String, String>,
+        workingDir: File,
+    ): UmlFaceLauncher.UmlProcess {
+        if (!enabled) {
+            return delegate.spawn(command, environment, workingDir)
+        }
+        val libDir = nativeLibraryDir()
+        val umnet = File(libDir, NET_HELPER_LIB)
+        if (!umnet.isFile || !umnet.canExecute()) {
+            throw IOException("uml-net-helper missing: $NET_HELPER_LIB")
+        }
+        val passt = File(libDir, PASST_HELPER_LIB)
+        if (!passt.isFile || !passt.canExecute()) {
+            throw IOException("uml-net-helper missing: $PASST_HELPER_LIB")
+        }
+        val rewritten = ArrayList<String>(command.size + SUPERVISOR_PREFIX_LENGTH)
+        rewritten.add(umnet.absolutePath)
+        rewritten.add("--passt")
+        rewritten.add(passt.absolutePath)
+        rewritten.add(ARGUMENT_SEPARATOR)
+        rewritten.addAll(command)
+        val supervisorEnvironment = LinkedHashMap(environment)
+        supervisorEnvironment[NO_ISOLATION_ENV] = NO_ISOLATION_VALUE
+        return delegate.spawn(rewritten, supervisorEnvironment, workingDir)
+    }
+
+    companion object {
+        /** The umnet supervisor, staged as a jniLib executable (Gate 2 staging). */
+        const val NET_HELPER_LIB = "libuml_net.so"
+
+        /** The passt child, static bionic, staged next to [NET_HELPER_LIB]. */
+        const val PASST_HELPER_LIB = "libuml_passt.so"
+
+        /**
+         * passt's Android isolation escape: the preflight proved the app
+         * domain rejects passt's default namespace setup, and the fork's
+         * vendored Android fixes read this variable to skip it.
+         */
+        const val NO_ISOLATION_ENV = "PASST_ANDROID_NO_ISOLATION"
+
+        /** The value the fork's Android fixes expect. */
+        const val NO_ISOLATION_VALUE = "1"
+
+        /** The umnet argument separator: everything after it is the kernel's. */
+        const val ARGUMENT_SEPARATOR = "--"
+
+        /** supervisor + --passt + passt + -- prepended to the kernel command. */
+        const val SUPERVISOR_PREFIX_LENGTH = 4
     }
 }
 

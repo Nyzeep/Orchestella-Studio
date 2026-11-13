@@ -134,7 +134,18 @@ class MainActivity : AppCompatActivity() {
         faceSource = { UmlFaceStatusRegistry.current()?.face },
         log = umlFaceConsoleLog,
     )
-    private val umlConsoleSpawner = ConsoleDrainingUmlSpawner(umlFaceConsoleSink)
+    // Gate 2（2026-11-13，umnet 候选 a）：net supervisor 包装层包住 drain spawner。
+    // compileBridge flag 为 off 时逐字节透传原命令（既有行为）；为 on 且
+    // nativeLibraryDir 两库（libuml_net.so/libuml_passt.so，stageUmlNetHelper
+    // staged）在位时重写为 umnet supervisor 调用并附 PASST_ANDROID_NO_ISOLATION=1；
+    // 为 on 而库缺时 spawn 抛指名 IOException——launcher 的 SPAWN_FAILED 固定码
+    // 接住，绝不静默降级冒充可路由。console 链不破：drain 仍归
+    // ConsoleDrainingUmlSpawner，umnet stdout=内核 console（fd 透传）。
+    private val umlConsoleSpawner = UmlNetSupervisorSpawner(
+        delegate = ConsoleDrainingUmlSpawner(umlFaceConsoleSink),
+        enabled = BuildConfig.UML_COMPILE_BRIDGE,
+        nativeLibraryDir = { java.io.File(applicationInfo.nativeLibraryDir) },
+    )
     // Gate 1（2026-11-13，编译桥 D-1 接线）：第四 flag（orchestella.uml.
     // compileBridge）为 off 时 wiring 全程惰性——arm 日志保持逐字节 channel=
     // unwired、无 submitter listener；为 on 时 arm 供给 UML-TCP lane 通道
