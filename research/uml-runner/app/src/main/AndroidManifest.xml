@@ -9,6 +9,10 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- targetSdk 33+ 通知运行时权限（RunnerActivity onCreate 里申请）。 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Gate 2 网络自测（2026-11-13）：umnet/passt 出网 sockets——passt 作为
+         runner 进程的 fork 子进程，出网 sockets 需要宿主 app 的 INTERNET
+         权限（inet 补充组）；没有它 passt 的 DHCP/TCP 面全部 EPERM。 -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- extractNativeLibs=true：把 jniLibs 里的 libuml_*.so 解包成 nativeLibraryDir 下的实体文件，
          这是唯一（在 legacy 域下）可 exec 的位置。 -->
