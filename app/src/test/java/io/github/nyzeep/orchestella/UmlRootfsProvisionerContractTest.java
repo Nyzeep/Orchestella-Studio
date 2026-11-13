@@ -45,6 +45,16 @@ import org.junit.rules.TemporaryFolder;
  * tar never passes the verification chain, so the full pipeline cannot reach
  * the extractor's own rejections.
  *
+ * <p>The external-root launcher injection (the 2026-11-13 candidate-A
+ * ruling) is locked end to end: the owned constant keeps the research probe
+ * contract (shebang, U1 markers, busybox-true T3, um.hold_ms/um.shell), a
+ * fresh provision lands it executable 0755 at the extract root, a repeated
+ * provision never rewrites it (mtime-frozen proof), a tampered or deleted
+ * launcher is repaired to the owned bytes over the same attested extraction
+ * with zero transport calls, an extraction failure injects nothing, and an
+ * injection failure propagates fail-closed with the stable reason while its
+ * {@code .part} staging is swept.
+ *
  * <p>Symlink-materialization tests probe the filesystem first ({@code
  * assumeTrue}) — hosts without symlink privilege (e.g. a Windows CI runner)
  * skip them honestly; the device (Linux) always runs them.
@@ -293,6 +303,7 @@ public final class UmlRootfsProvisionerContractTest {
 
         assertFalse(receipt.enabled());
         assertFalse(receipt.alreadyVerified());
+        assertFalse(receipt.injectedLauncher());
         assertEquals(null, receipt.fileName());
         assertEquals(null, receipt.file());
         assertEquals(0L, receipt.sizeBytes());
@@ -310,9 +321,13 @@ public final class UmlRootfsProvisionerContractTest {
     public void theDisabledReceiptCarriesNothingByConstruction() {
         UmlRootfsProvisioner.ProvisionReceipt receipt = UmlRootfsProvisioner.ProvisionReceipt.disabled();
         assertFalse(receipt.enabled());
+        assertFalse(receipt.injectedLauncher());
         assertThrows(IllegalArgumentException.class,
                 () -> new UmlRootfsProvisioner.ProvisionReceipt(false, false,
-                        "name", null, 0L, null, null, 0, 0));
+                        "name", null, 0L, null, null, 0, 0, false));
+        assertThrows(IllegalArgumentException.class,
+                () -> new UmlRootfsProvisioner.ProvisionReceipt(false, false,
+                        null, null, 0L, null, null, 0, 0, true));
     }
 
     // --- state 2: verified download + extraction ------------------------------------------
@@ -598,6 +613,215 @@ public final class UmlRootfsProvisionerContractTest {
         assertFalse(second.alreadyVerified());
         assertArrayEquals(transport.payload, Files.readAllBytes(second.file()));
         assertEquals(22, second.extractedEntries());
+    }
+
+    // --- the external-root launcher: /um-command.sh injection (ACR §8 candidate A) -----------
+
+    /** The extract tree's launcher path for the standard fixture's extract dir. */
+    private static Path launcherPath(Path filesDir) {
+        return umRootfsDir(filesDir).resolve(EXTRACT_DIR_NAME)
+                .resolve(UmlRootfsProvisioner.LAUNCHER_FILE_NAME);
+    }
+
+    @Test
+    public void theOwnedLauncherKeepsTheResearchProbeContract() {
+        String launcher = UmlRootfsProvisioner.UM_COMMAND_LAUNCHER;
+        assertEquals("the first line is the contract shebang",
+                "#!/bin/busybox sh", launcher.split("\n", -1)[0]);
+        assertTrue("a POSIX script ends with a newline", launcher.endsWith("\n"));
+        assertTrue("the guarded-flags discipline is kept", launcher.contains("set -u"));
+        assertTrue("the U1_INFO marker is the research contract's",
+                launcher.contains("printf 'U1_INFO kernel=%s ncpus=%s\\n'"));
+        assertTrue("the U1_T2_READY marker is the research contract's",
+                launcher.contains("printf 'U1_T2_READY uptime=%s\\n'"));
+        assertTrue("the U1_READY marker is the research contract's",
+                launcher.contains("printf 'U1_READY uptime=%s\\n'"));
+        assertTrue("the U1_CMD_ERROR marker is the research contract's",
+                launcher.contains("printf 'U1_CMD_ERROR cmd=busybox_true\\n' >&2"));
+        assertTrue("the T3 probe runs a real binary (busybox true), not a builtin",
+                launcher.contains("if /bin/busybox true; then"));
+        assertTrue("the um.shell test-interface branch is kept",
+                launcher.contains("um.shell"));
+        assertTrue("the um.hold_ms batch-hold branch is kept",
+                launcher.contains("um.hold_ms"));
+        assertTrue("the provenance header names the injection owner",
+                launcher.contains("# External-root edition"));
+    }
+
+    @Test
+    public void aFreshProvisionInjectsTheOwnedLauncherExecutableWithTheContractShebang()
+            throws Exception {
+        FakeTransport transport = new FakeTransport();
+        transport.payload = officialShapeWithoutSymlink();
+        Path filesDir = tempFolder.newFolder("files").toPath();
+
+        UmlRootfsProvisioner.ProvisionReceipt receipt = UmlRootfsProvisioner.provision(
+                transport, entryFor(transport.payload), filesDir, true);
+
+        Path launcher = launcherPath(filesDir);
+        assertTrue(receipt.enabled());
+        assertTrue("the enabled receipt attests the injected launcher",
+                receipt.injectedLauncher());
+        assertTrue("the launcher lands at the extract root (the /um-command.sh contract)",
+                Files.isRegularFile(launcher));
+        assertEquals("the launcher is the owned constant, byte for byte",
+                UmlRootfsProvisioner.UM_COMMAND_LAUNCHER,
+                new String(Files.readAllBytes(launcher), StandardCharsets.UTF_8));
+        assertTrue("the init's `-x /um-command.sh` contract",
+                Files.isExecutable(launcher));
+        if (posixPermissionsSupported()) {
+            assertEquals("0755 by construction: owner rwx, group/other r-x",
+                    java.util.EnumSet.of(
+                            java.nio.file.attribute.PosixFilePermission.OWNER_READ,
+                            java.nio.file.attribute.PosixFilePermission.OWNER_WRITE,
+                            java.nio.file.attribute.PosixFilePermission.OWNER_EXECUTE,
+                            java.nio.file.attribute.PosixFilePermission.GROUP_READ,
+                            java.nio.file.attribute.PosixFilePermission.GROUP_EXECUTE,
+                            java.nio.file.attribute.PosixFilePermission.OTHERS_READ,
+                            java.nio.file.attribute.PosixFilePermission.OTHERS_EXECUTE),
+                    Files.getPosixFilePermissions(launcher));
+        }
+        assertFalse("the .part staging never survives a successful injection",
+                Files.exists(umRootfsDir(filesDir).resolve(EXTRACT_DIR_NAME)
+                        .resolve(UmlRootfsProvisioner.LAUNCHER_FILE_NAME + ".part")));
+        assertEquals("the launcher is not a tar entry — the extraction counts are untouched",
+                22, receipt.extractedEntries());
+    }
+
+    @Test
+    public void aRepeatedProvisionNeverRewritesTheOwnedLauncher() throws Exception {
+        FakeTransport transport = new FakeTransport();
+        transport.payload = officialShapeWithoutSymlink();
+        Path filesDir = tempFolder.newFolder("files").toPath();
+        UmlRootfsProvisioner.provision(transport, entryFor(transport.payload), filesDir, true);
+        transport.requestedUrls.clear();
+        Path launcher = launcherPath(filesDir);
+        // Freeze the mtime at a known past instant: any rewrite would move it.
+        java.nio.file.attribute.FileTime frozen =
+                java.nio.file.attribute.FileTime.fromMillis(1000L);
+        Files.setLastModifiedTime(launcher, frozen);
+
+        UmlRootfsProvisioner.ProvisionReceipt second = UmlRootfsProvisioner.provision(
+                transport, entryFor(transport.payload), filesDir, true);
+
+        assertTrue(second.enabled());
+        assertTrue(second.alreadyVerified());
+        assertTrue("the idempotent hit still attests the owned launcher",
+                second.injectedLauncher());
+        assertTrue("a digest-matching launcher is skipped, never rewritten (mtime frozen)",
+                Files.getLastModifiedTime(launcher).equals(frozen));
+        assertEquals("and its bytes stay the owned constant",
+                UmlRootfsProvisioner.UM_COMMAND_LAUNCHER,
+                new String(Files.readAllBytes(launcher), StandardCharsets.UTF_8));
+        assertTrue("no network for an idempotent hit",
+                transport.requestedUrls.isEmpty());
+        assertFalse("no .part staging may survive a skipped injection",
+                Files.exists(umRootfsDir(filesDir).resolve(EXTRACT_DIR_NAME)
+                        .resolve(UmlRootfsProvisioner.LAUNCHER_FILE_NAME + ".part")));
+    }
+
+    @Test
+    public void aTamperedLauncherIsRepairedToTheOwnedContentOnReProvision() throws Exception {
+        FakeTransport transport = new FakeTransport();
+        transport.payload = officialShapeWithoutSymlink();
+        Path filesDir = tempFolder.newFolder("files").toPath();
+        UmlRootfsProvisioner.provision(transport, entryFor(transport.payload), filesDir, true);
+        transport.requestedUrls.clear();
+        Path launcher = launcherPath(filesDir);
+        byte[] tampered = "#!/bin/sh\necho planted\n".getBytes(StandardCharsets.UTF_8);
+        Files.write(launcher, tampered);
+
+        UmlRootfsProvisioner.ProvisionReceipt second = UmlRootfsProvisioner.provision(
+                transport, entryFor(transport.payload), filesDir, true);
+
+        assertTrue("the repair ran over the same attested extraction — no network, no re-extract",
+                second.alreadyVerified());
+        assertTrue(second.injectedLauncher());
+        assertTrue("no network for a repair over a reconciled pin",
+                transport.requestedUrls.isEmpty());
+        assertEquals("the owned content is restored, byte for byte — this class owns the name",
+                UmlRootfsProvisioner.UM_COMMAND_LAUNCHER,
+                new String(Files.readAllBytes(launcher), StandardCharsets.UTF_8));
+        assertTrue("the restored launcher satisfies the init's `-x` contract",
+                Files.isExecutable(launcher));
+    }
+
+    @Test
+    public void aDeletedLauncherIsReprovisionedWithoutAnyNetworkCall() throws Exception {
+        FakeTransport transport = new FakeTransport();
+        transport.payload = officialShapeWithoutSymlink();
+        Path filesDir = tempFolder.newFolder("files").toPath();
+        UmlRootfsProvisioner.provision(transport, entryFor(transport.payload), filesDir, true);
+        transport.requestedUrls.clear();
+        Files.delete(launcherPath(filesDir));
+
+        UmlRootfsProvisioner.ProvisionReceipt second = UmlRootfsProvisioner.provision(
+                transport, entryFor(transport.payload), filesDir, true);
+
+        assertTrue(second.enabled());
+        assertTrue(second.injectedLauncher());
+        assertTrue(transport.requestedUrls.isEmpty());
+        assertTrue(Files.isExecutable(launcherPath(filesDir)));
+        assertEquals(UmlRootfsProvisioner.UM_COMMAND_LAUNCHER,
+                new String(Files.readAllBytes(launcherPath(filesDir)), StandardCharsets.UTF_8));
+    }
+
+    @Test
+    public void anExtractionFailureInjectsNoLauncherAndLeavesNoTree() throws Exception {
+        // A sha-consistent tar carrying a duplicate entry name passes the
+        // transport chain (L1 size, L2 pin, L3 identity) and dies in the
+        // extractor's slip defenses — no tree, no launcher, no receipt.
+        List<MiniRootfsFixture.Spec> specs = new ArrayList<>(MiniRootfsFixture.officialShape());
+        specs.removeIf(spec -> spec.type() == '2');
+        specs.add(new MiniRootfsFixture.Spec("./etc/hostname", '0', "duplicate\n"));
+        byte[] payload = MiniRootfsFixture.gzipTar(specs);
+        FakeTransport transport = new FakeTransport();
+        transport.payload = payload;
+        Path filesDir = tempFolder.newFolder("files").toPath();
+
+        UmlRootfsProvisioner.ExtractionRejectionException failure =
+                assertThrows(UmlRootfsProvisioner.ExtractionRejectionException.class,
+                        () -> UmlRootfsProvisioner.provision(
+                                transport, entryFor(payload), filesDir, true));
+
+        assertEquals(UmlRootfsProvisioner.REASON_DUPLICATE_ENTRY, failure.reason());
+        assertEquals("only the published tar may exist — no extract tree, no launcher",
+                List.of(FILE_NAME), listing(umRootfsDir(filesDir)));
+        assertFalse(Files.exists(umRootfsDir(filesDir).resolve(EXTRACT_DIR_NAME)));
+    }
+
+    @Test
+    public void aLauncherInjectionFailurePropagatesFailClosedAndSweepsItsStaging()
+            throws Exception {
+        FakeTransport transport = new FakeTransport();
+        transport.payload = officialShapeWithoutSymlink();
+        Path filesDir = tempFolder.newFolder("files").toPath();
+        UmlRootfsProvisioner.provision(transport, entryFor(transport.payload), filesDir, true);
+        transport.requestedUrls.clear();
+        // A planted non-empty directory occupying the launcher's name: the
+        // atomic move cannot replace it, so the write path must fail closed,
+        // sweep its .part staging, and never answer ready.
+        Path extractDir = umRootfsDir(filesDir).resolve(EXTRACT_DIR_NAME);
+        Path planted = extractDir.resolve(UmlRootfsProvisioner.LAUNCHER_FILE_NAME);
+        Files.delete(planted);
+        Files.createDirectories(planted.resolve("planted-child"));
+
+        IOException failure = assertThrows(IOException.class,
+                () -> UmlRootfsProvisioner.provision(
+                        transport, entryFor(transport.payload), filesDir, true));
+
+        assertTrue("the failure carries the stable injection reason",
+                failure instanceof UmlRootfsProvisioner.ExtractionRejectionException);
+        assertEquals(UmlRootfsProvisioner.REASON_LAUNCHER_INJECTION_FAILED,
+                ((UmlRootfsProvisioner.ExtractionRejectionException) failure).reason());
+        assertTrue("the planted block is not our data to delete — it stays",
+                Files.isDirectory(planted));
+        assertFalse("the .part staging is swept on the failure path",
+                Files.exists(extractDir.resolve(
+                        UmlRootfsProvisioner.LAUNCHER_FILE_NAME + ".part")));
+        assertTrue("the attested extract tree itself is never destroyed by a failed injection",
+                Files.isRegularFile(umRootfsDir(filesDir)
+                        .resolve(EXTRACT_DIR_NAME + ".verified")));
     }
 
     // --- the extractor's slip-defense matrix (direct stage tests) ----------------------------
