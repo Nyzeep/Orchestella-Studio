@@ -2,11 +2,14 @@ package io.github.nyzeep.orchestella;
 
 import io.github.nyzeep.orchestella.UmlKernelAssets.RootfsDownload.Entry;
 import io.github.nyzeep.orchestella.runtime.network.download.DownloadEngine;
+import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -32,6 +35,7 @@ import java.util.zip.GZIPInputStream;
  * <pre>
  *   alpine-minirootfs-3.22.2-aarch64.tar.gz          the verified artifact (pin attested)
  *   alpine-minirootfs-3.22.2-aarch64/                the extracted tree (HOSTFS umroot target)
+ *   alpine-minirootfs-3.22.2-aarch64/um-command.sh   the injected external-root launcher (0755)
  *   alpine-minirootfs-3.22.2-aarch64.verified        the extraction attestation (idempotency key)
  *   alpine-minirootfs-3.22.2-aarch64.part/           transient extraction staging, always swept
  * </pre>
@@ -39,14 +43,18 @@ import java.util.zip.GZIPInputStream;
  * {@code .part}-suffixed name is an unverified artifact, never consumed; every
  * failure path sweeps it before propagating.
  *
- * <p><b>Idempotency (pin-sha reconciliation, not file-name trust).</b> Both
- * stages reconcile against the entry's pinned sha256 — the single source of
- * the pin stays {@link UmlKernelAssets}. The download stage skips the network
+ * <p><b>Idempotency (pin-sha reconciliation, not file-name trust).</b> All
+ * three stages reconcile by content digest — the single source of the pin
+ * stays {@link UmlKernelAssets}. The download stage skips the network
  * when the formal tar's observed digest equals the pin (a corrupt or stale
  * artifact fails the compare and is replaced by a fresh verified download);
  * the extraction stage skips re-unpacking when the {@code .verified} sidecar
- * attests the same pin. An already-verified product therefore answers without
- * a single transport call — repeated entry actions never waste traffic.
+ * attests the same pin; the launcher injection skips the write when the
+ * extract tree's {@code um-command.sh} already carries the owned bytes' digest
+ * (a missing, tampered, or foreign launcher is replaced by the owned content —
+ * this class is the launcher's single owner). An already-verified product
+ * therefore answers without a single transport call and without a single
+ * launcher rewrite — repeated entry actions never waste traffic.
  *
  * <p><b>Slip-safe extraction (the tar is untrusted input all the way down).</b>
  * Even though the tar has passed L1/L2/L3 by the time it is extracted, the
@@ -77,17 +85,31 @@ import java.util.zip.GZIPInputStream;
  * calls this yet: the entry action's UI wiring is the follow-up round's
  * decision (IA proposal pending), and this class is the seam it will call.
  *
- * <p><b>Honesty boundary of the ready state (2026-11-13 主会话裁决).</b> The
- * official Alpine minirootfs ships no {@code /um-command.sh}: the research
- * initramfs's external-root path demands an executable {@code
+ * <p><b>The external-root launcher (2026-11-13 主会话裁决, ACR §8 candidate
+ * A).</b> The official Alpine minirootfs ships no {@code /um-command.sh}, but
+ * the research initramfs's external-root path demands an executable {@code
  * /newroot/um-command.sh} before it will {@code switch_root} ({@code
- * research/uml-fastboot/initramfs/init}, {@code fail 29 missing_command}),
- * and the official tree contains none. A provisioned extract is therefore
- * exactly "verified + extracted" — never "startable to READY" and never
- * "compile-capable". The compile channel's own honesty edge is {@code
+ * research/uml-fastboot/initramfs/init}, {@code fail 29 missing_command}).
+ * After a successful extraction this provisioner therefore <i>injects</i> the
+ * owned launcher into the extract tree's root ({@code 0755}, shebang {@code
+ * #!/bin/busybox sh}) — a byte-faithful port of the research probe script
+ * {@code research/uml-fastboot/initramfs/um-command.sh}, embedded as {@link
+ * #UM_COMMAND_LAUNCHER} (no assets dependency, the pinned kernel stays
+ * untouched). The injection is a <i>launch-chain preparation</i>, not a
+ * capability promise.
+ *
+ * <p><b>Honesty boundary of the ready state (2026-11-13 主会话裁决).</b>
+ * A provisioned extract is exactly "verified + extracted" — never "startable
+ * to READY" and never "compile-capable", with or without the injected
+ * launcher: reaching READY on a device over the hostfs external-root channel
+ * is a face-launch-chain result the device window must attest, not something
+ * this class, its receipt, or its readiness probe claims. The readiness
+ * answer's semantics are deliberately unchanged by the injection (still the
+ * two reconciliations of the pin and the sidecar), and the {@code .verified}
+ * sidecar keeps meaning extraction only — it is written before any injection
+ * and never by one. The compile channel's own honesty edge is {@code
  * CHANNEL_UNWIRED} (Lane A); launch usability of the downloaded rootfs is a
- * fabric-route-round design problem against the real init semantics, not a
- * property this class, its receipt, or its readiness probe claims.
+ * fabric-route-round design problem against the real init semantics.
  *
  * <p><b>Threading.</b> Every stage does network and disk IO — callers invoke
  * this off the main thread. The {@link #readiness} probe is the one pure-read
@@ -123,6 +145,23 @@ public final class UmlRootfsProvisioner {
     public static final String REASON_MALFORMED_LINK = "uml-rootfs-malformed-link";
     public static final String REASON_ARCHIVE_UNREADABLE = "uml-rootfs-archive-unreadable";
 
+    /**
+     * The external-root launcher's name at the extract tree's root — the exact
+     * path the research init's {@code switch_root} contract demands ({@code
+     * [ -x /newroot/um-command.sh ]}). Never renamed by a pin upgrade: the
+     * contract path is fixed.
+     */
+    public static final String LAUNCHER_FILE_NAME = "um-command.sh";
+
+    /**
+     * Stable rejection reason for the launcher injection stage's own failures
+     * (write, chmod, move): an {@link ExtractionRejectionException} with this
+     * reason propagates fail-closed — the provision never answers ready over a
+     * launcher that is not in place.
+     */
+    public static final String REASON_LAUNCHER_INJECTION_FAILED =
+            "uml-rootfs-launcher-injection-failed";
+
     private UmlRootfsProvisioner() {
     }
 
@@ -145,7 +184,8 @@ public final class UmlRootfsProvisioner {
      * reconciliation of any existing formal tar → (skipped or) {@link
      * RootfsTransport#downloadAndVerify} → sidecar reconciliation of any
      * existing extract tree → (skipped or) slip-safe extraction of the
-     * verified tar into place → the receipt.
+     * verified tar into place → (skipped or) launcher injection into the
+     * extract tree's root → the receipt.
      *
      * @throws IOException the transport's or verification chain's failure, or
      *         an {@link ExtractionRejectionException} with a stable reason
@@ -197,6 +237,12 @@ public final class UmlRootfsProvisioner {
             result = extractVerifiedTar(formalTar, extractDir, entry.sha256Pin());
         }
 
+        // Stage 3: launcher injection (skipped when the extract tree's
+        // /um-command.sh already carries the owned bytes' digest). The sidecar
+        // was written before this point and is never touched here — the
+        // attestation keeps meaning extraction only.
+        ensureUmCommandLauncher(extractDir);
+
         return new ProvisionReceipt(
                 true,
                 !downloadedThisCall && result == null,
@@ -206,44 +252,53 @@ public final class UmlRootfsProvisioner {
                 UmlKernelAssets.sha256Hex(formalTar.toFile()),
                 extractDir,
                 result == null ? countedEntries(sidecar) : result.entries(),
-                result == null ? countedExecutables(sidecar) : result.executables());
+                result == null ? countedExecutables(sidecar) : result.executables(),
+                true);
     }
 
     /**
      * The orchestration's answer. The enabled receipt exists only after the
-     * verified tar <i>and</i> the extracted, attested tree both exist: {@code
-     * file()} is the pinned artifact, {@code sha256()} its observed digest,
-     * {@code extractedDir()} the HOSTFS {@code umroot} target, {@code
+     * verified tar <i>and</i> the extracted, attested tree <i>and</i> the
+     * external-root launcher are all in place: {@code file()} is the pinned
+     * artifact, {@code sha256()} its observed digest, {@code extractedDir()}
+     * the HOSTFS {@code umroot} target, {@code
      * extractedEntries()}/{@code executableEntries()} the honest extraction
-     * counts (executables = regular files extracted with an exec bit). An
-     * idempotent hit sets {@code alreadyVerified()} and made no transport
-     * call. The disabled receipt carries nothing at all — a disabled answer
-     * must not imply a provision that never ran.
+     * counts (executables = regular files extracted with an exec bit — the
+     * injected launcher is never counted, it is not a tar entry), and {@code
+     * injectedLauncher()} attests that the extract tree's {@code
+     * /um-command.sh} is the provisioner-owned launcher, digest-verified
+     * before the receipt exists — a launch-chain preparation, never a
+     * startability claim. An idempotent hit sets {@code alreadyVerified()}
+     * and made no transport call and no launcher rewrite. The disabled
+     * receipt carries nothing at all — a disabled answer must not imply a
+     * provision that never ran.
      */
     public record ProvisionReceipt(boolean enabled, boolean alreadyVerified, String fileName,
             Path file, long sizeBytes, String sha256, Path extractedDir,
-            int extractedEntries, int executableEntries) {
+            int extractedEntries, int executableEntries, boolean injectedLauncher) {
 
         public ProvisionReceipt {
             if (!enabled && (fileName != null || file != null || sizeBytes != 0L
                     || sha256 != null || extractedDir != null
-                    || extractedEntries != 0 || executableEntries != 0)) {
+                    || extractedEntries != 0 || executableEntries != 0 || injectedLauncher)) {
                 throw new IllegalArgumentException(
                         "a disabled uml-rootfs provision receipt must not carry"
-                                + " a provisioned artifact");
+                                + " a provisioned artifact or an injected launcher");
             }
         }
 
         /** The flag-off answer: no transport ran, nothing was read, nothing exists. */
         public static ProvisionReceipt disabled() {
-            return new ProvisionReceipt(false, false, null, null, 0L, null, null, 0, 0);
+            return new ProvisionReceipt(false, false, null, null, 0L, null, null, 0, 0, false);
         }
     }
 
     /**
-     * A slip-defense rejection with a stable reason code — the extraction
-     * half's counterpart of {@code RootfsRejectionException}: never a raw
-     * archive byte, never laundered into success.
+     * A rejection with a stable reason code carrying this class's own fail-
+     * closed verdicts — the extraction slip-defense matrix, and the launcher
+     * injection stage's write/chmod/move failures ({@link
+     * #REASON_LAUNCHER_INJECTION_FAILED}): never a raw archive byte, never a
+     * raw filesystem error surfaced as a success, never laundered into ready.
      */
     public static final class ExtractionRejectionException extends IOException {
         private static final long serialVersionUID = 1L;
@@ -257,6 +312,11 @@ public final class UmlRootfsProvisioner {
 
         ExtractionRejectionException(String reason, String detail) {
             super(detail == null || detail.isEmpty() ? reason : reason + ": " + detail);
+            this.reason = reason;
+        }
+
+        ExtractionRejectionException(String reason, String detail, Throwable cause) {
+            super(detail == null || detail.isEmpty() ? reason : reason + ": " + detail, cause);
             this.reason = reason;
         }
 
@@ -767,6 +827,191 @@ public final class UmlRootfsProvisioner {
                         "truncated payload");
             }
             read += count;
+        }
+    }
+
+    // ---------------------------------------------------------------------------------
+    // The external-root launcher: the /um-command.sh injection (ACR §8 candidate A)
+    // ---------------------------------------------------------------------------------
+
+    /**
+     * The owned external-root launcher — a byte-faithful port of the research
+     * probe script {@code research/uml-fastboot/initramfs/um-command.sh}:
+     * everything below the provenance header (the 8 lines after the shebang)
+     * is the research original, verbatim. The official minirootfs ships no
+     * {@code /um-command.sh}, and the init's external-root path refuses to
+     * {@code switch_root} without an executable one — so the provisioner
+     * writes this constant into the extract tree's root. Embedded as a
+     * constant on purpose: no assets dependency (the content survives a
+     * missing-payload checkout), and this class is its single owner.
+     * Package-private for the contract tests.
+     *
+     * <p>The script runs inside the <i>new root</i> after {@code switch_root}
+     * (the init execs {@code /bin/busybox sh /um-command.sh}), where the guest
+     * PATH carries busybox — so the port needs no hostfs-specific edit: the
+     * U1 marker contract ({@code U1_INFO}/{@code U1_T2_READY}/{@code
+     * U1_READY}), the busybox-true T3 probe, and the {@code um.hold_ms}/{@code
+     * um.shell} branches are the research script's own semantics, kept as-is.
+     */
+    static final String UM_COMMAND_LAUNCHER = """
+            #!/bin/busybox sh
+            # External-root edition — injected into the extracted minirootfs tree by
+            # UmlRootfsProvisioner: the official Alpine minirootfs ships no /um-command.sh,
+            # and the fast init's external-root path refuses to switch_root without an
+            # executable one (fail 29 missing_command, research/uml-fastboot/initramfs/init).
+            # It runs inside the new root after switch_root, launched as
+            # /bin/busybox sh /um-command.sh, where busybox is on PATH.  Everything below
+            # the provenance header is the initramfs original, verbatim.
+            #
+            # Orchestella Studio — U1 fast-shell T3 probe.
+            #
+            # Runs as the first user command after the fast init.  It proves that the
+            # guest can execute a real binary (busybox true) and prints the T3 marker with
+            # the guest uptime.  Then it either drops to a shell (um.shell=1) or powers
+            # the guest off after um.hold_ms (default 200 ms) so a batch harness can reap
+            # a clean exit.
+            #
+            # Markers (parsed by bench-fast.py):
+            #   U1_INFO kernel=<release> ncpus=<n>
+            #   U1_T2_READY uptime=<seconds>   (root + pseudo-fs ready; this script is the
+            #                                  first user command, after any switch_root)
+            #   U1_READY uptime=<seconds>
+            #   U1_CMD_ERROR ...              (a real command failed; run is failed)
+            #   UM_*                          (init contract; see initramfs/init)
+
+            set -u
+            PATH=/bin:/sbin:/usr/bin:/usr/sbin
+            export PATH
+
+            param() {
+                for word in $(cat /proc/cmdline 2>/dev/null); do
+                    case "$word" in
+                        "$1"=*) printf '%s' "${word#*=}"; return 0 ;;
+                    esac
+                done
+                return 1
+            }
+
+            hold_ms=$(param um.hold_ms || printf 200)
+            case "$hold_ms" in
+                ''|*[!0-9]*) hold_ms=200 ;;
+            esac
+
+            ncpus=$(grep -c '^processor' /proc/cpuinfo 2>/dev/null || :)
+            [ -n "$ncpus" ] || ncpus=1
+            kernel=$(uname -r 2>/dev/null || printf unknown)
+            uptime=$(cut -d' ' -f1 /proc/uptime 2>/dev/null || printf unknown)
+            printf 'U1_INFO kernel=%s ncpus=%s\\n' "$kernel" "$ncpus"
+            # T2 is printed here, after the root (initramfs or switch_root target) and
+            # pseudo-filesystems are ready.  The init no longer prints it: for the
+            # umroot/switch_root path that would have been before the root switch.
+            printf 'U1_T2_READY uptime=%s\\n' "$uptime"
+
+            if [ "$(param um.shell || :)" = 1 ]; then
+                exec /bin/sh
+            fi
+
+            # T3 = a real command, not just a shell builtin, completed successfully.
+            if /bin/busybox true; then
+                :
+            else
+                printf 'U1_CMD_ERROR cmd=busybox_true\\n' >&2
+                poweroff -f 2>/dev/null || :
+                while :; do sleep 3600; done
+            fi
+
+            printf 'U1_READY uptime=%s\\n' "$uptime"
+
+            if [ "$hold_ms" -ge 1000 ]; then
+                sleep $((hold_ms / 1000)) 2>/dev/null || sleep 1
+            else
+                sleep "0.$(printf '%03d' "$hold_ms")" 2>/dev/null || sleep 1
+            fi
+            sync 2>/dev/null || :
+            poweroff -f 2>/dev/null || :
+            while :; do sleep 3600; done
+
+            """;
+
+    /** The owned launcher's own digest — the injection stage's idempotency authority. */
+    private static final String LAUNCHER_SHA256 =
+            sha256Hex(UM_COMMAND_LAUNCHER.getBytes(StandardCharsets.UTF_8));
+
+    /** The SHA-256 of raw bytes as lowercase hex (the launcher constant's digest). */
+    private static String sha256Hex(byte[] bytes) {
+        try {
+            return toLowerHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+        } catch (java.security.NoSuchAlgorithmException impossible) {
+            throw new AssertionError("every JVM carries SHA-256", impossible);
+        }
+    }
+
+    private static String toLowerHex(byte[] digest) {
+        StringBuilder hex = new StringBuilder(digest.length * 2);
+        for (byte b : digest) {
+            hex.append(Character.forDigit((b >> 4) & 0xF, 16));
+            hex.append(Character.forDigit(b & 0xF, 16));
+        }
+        return hex.toString();
+    }
+
+    /**
+     * The launcher injection stage: the extract tree's root must carry the
+     * owned {@code /um-command.sh}, executable, before the provision may
+     * answer — the init fails {@code 29 missing_command} without it.
+     * Idempotent by digest: a regular file already carrying the owned bytes'
+     * digest is skipped without a rewrite (a repeated provision never
+     * rewrites the launcher); anything else — missing, tampered, foreign, a
+     * directory planted on the name — is replaced by the owned content, the
+     * single source of which is {@link #UM_COMMAND_LAUNCHER}. The write goes
+     * through a {@code .part} staging name (never consumed, swept first and
+     * on every failure) that is chmod'ed executable <i>before</i> an atomic
+     * move into place, so the formal name only ever holds a complete,
+     * executable file. Every failure propagates fail-closed as an {@link
+     * ExtractionRejectionException} with {@link #REASON_LAUNCHER_INJECTION_FAILED}
+     * — never laundered into a receipt.
+     */
+    private static void ensureUmCommandLauncher(Path extractDir) throws IOException {
+        Path target = extractDir.resolve(LAUNCHER_FILE_NAME);
+        if (Files.isRegularFile(target)
+                && pinMatches(LAUNCHER_SHA256, UmlKernelAssets.sha256Hex(target.toFile()))) {
+            // Already the owned launcher — nothing to write, nothing to touch.
+            return;
+        }
+        Path staging = extractDir.resolve(LAUNCHER_FILE_NAME + EXTRACT_STAGING_SUFFIX);
+        try {
+            // The .part discipline: sweep any leftover staging, then create
+            // the payload with CREATE_NEW — nothing pre-existing is followed
+            // or truncated, and the formal name only ever gains a complete
+            // file by an atomic move.
+            deleteRecursively(staging);
+            Files.write(staging, UM_COMMAND_LAUNCHER.getBytes(StandardCharsets.UTF_8),
+                    StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
+            // 0755 by construction: the owner keeps its created rw, and every
+            // class gains read + execute — the init's `-x /um-command.sh`
+            // contract. The exec bit precedes the move, so the formal name
+            // never holds a non-executable file.
+            File launcher = staging.toFile();
+            if (!launcher.setReadable(true, false) || !launcher.setExecutable(true, false)) {
+                throw new ExtractionRejectionException(REASON_LAUNCHER_INJECTION_FAILED,
+                        "chmod failed: " + staging);
+            }
+            try {
+                Files.move(staging, target,
+                        StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException unsupported) {
+                Files.move(staging, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (ExtractionRejectionException rejection) {
+            deleteRecursively(staging);
+            throw rejection;
+        } catch (IOException failure) {
+            deleteRecursively(staging);
+            throw new ExtractionRejectionException(REASON_LAUNCHER_INJECTION_FAILED,
+                    failure.getMessage(), failure);
+        } catch (RuntimeException failure) {
+            deleteRecursively(staging);
+            throw failure;
         }
     }
 

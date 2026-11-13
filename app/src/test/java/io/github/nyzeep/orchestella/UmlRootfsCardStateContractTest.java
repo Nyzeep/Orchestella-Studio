@@ -109,7 +109,7 @@ public final class UmlRootfsCardStateContractTest {
     public void aFreshProvisionReceiptRendersReadyWithoutTheIdempotentClaim()
             throws Exception {
         UmlRootfsProvisioner.ProvisionReceipt receipt = new UmlRootfsProvisioner.ProvisionReceipt(
-                true, false, "name", null, 10L, "sha", null, 520, 87);
+                true, false, "name", null, 10L, "sha", null, 520, 87, true);
         UmlRootfsCardState.CardModel model = UmlRootfsCardState.ready(receipt);
         assertEquals(UmlRootfsCardState.Phase.READY, model.phase());
         assertEquals(520, model.extractedEntries());
@@ -119,7 +119,7 @@ public final class UmlRootfsCardStateContractTest {
     @Test
     public void anIdempotentHitRendersReadyWithTheAlreadyProvisionedClaim() throws Exception {
         UmlRootfsProvisioner.ProvisionReceipt receipt = new UmlRootfsProvisioner.ProvisionReceipt(
-                true, true, "name", null, 10L, "sha", null, 520, 87);
+                true, true, "name", null, 10L, "sha", null, 520, 87, true);
         assertTrue(UmlRootfsCardState.ready(receipt).alreadyVerified());
     }
 

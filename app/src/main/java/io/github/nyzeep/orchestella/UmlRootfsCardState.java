@@ -19,12 +19,12 @@ import java.util.Objects;
  * size), {@code READY} ("verified + extracted N items"), {@code FAILED}
  * (stable reason + the retry entry). Ready never means startable or
  * compile-capable: the official Alpine minirootfs ships no {@code
- * /um-command.sh}, so the research initramfs's external-root path would
- * reject it ({@code fail 29 missing_command} in {@code
- * research/uml-fastboot/initramfs/init}) — the copy around the READY state
- * says exactly "verified + extracted", and launch usability is the
- * fabric-route round's design problem. The compile channel's honesty edge is
- * {@code CHANNEL_UNWIRED} (Lane A).
+ * /um-command.sh} — the provisioner injects the owned external-root launcher
+ * (the 2026-11-13 candidate-A ruling) as a launch-chain preparation, not a
+ * capability promise — so the copy around the READY state still says exactly
+ * "verified + extracted", and launch usability is the fabric-route round's
+ * verified device-window result, never a card claim. The compile channel's
+ * honesty edge is {@code CHANNEL_UNWIRED} (Lane A).
  *
  * <p><b>Failure reasons are stable and non-secret.</b> A {@link
  * RootfsRejectionException} (verification chain) or an {@link
