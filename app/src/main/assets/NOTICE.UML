@@ -1,0 +1,133 @@
+NOTICE — UML engine components shipped in this application
+==========================================================
+
+This application ships the UML (User Mode Linux) engine family inside the
+main APK: the pinned fast-profile kernel pair (lib/arm64-v8a/libuml_kernel.so
+and lib/arm64-v8a/libuml_stub.so), the umnet/passt network helper pair
+(lib/arm64-v8a/libuml_net.so and lib/arm64-v8a/libuml_passt.so) and the
+Alpine minirootfs baseline tar (alpine-minirootfs-3.22.2-aarch64.tar.gz,
+packaged as a java resource at the APK root). The complete license/source
+record for the QEMU engine is in NOTICE.QEMU, QEMU-GPL-SOURCES.md and
+QEMU-BUILD-INPUTS packaged alongside this notice; this file covers only the
+UML lane's own components. It is the formalized successor of the drafting
+record kept during the UML productization research (the draft's registry of
+what had to be true before the assets could ship); the assets this notice
+describes are real, packaged bytes, verified at build time and at the
+artifact level by the release gates.
+
+UML kernel
+----------
+The kernel is Linux modified for User Mode Linux on ARM64. Modified-version
+distribution follows the GPL-2.0 obligations: the modified source is public,
+the binary in this APK is pinned, and the release flow keeps the binary and
+its corresponding source in a one-to-one relationship (see "Corresponding
+source" below).
+
+  - Fork: Raymer8639/linux-um-arm64, public tag `um-arm64-v0.3.0`
+    (Linux 7.2.0-rc4, commit 169b17ff3f66d507cb137b770ceb1fd9f4547a32).
+  - Source tarball sha256:
+    08578a494412125dfc6b8f203e984b68d20e313173319d6a6c115e2875e0116c
+  - Product pins (ARM64 UP build, registry order):
+      linux-fast            21e1c3f97269a831fa8bab5fd3ff0e8a0e9edc59554d17cce34913924f584389
+      linux-fast-noinitrd   a5efce2b9197071a2db89735e247fa3cf548644b7d036ea99bf688b14eff17fb
+      stub_exe              87666f9167de09d0bf84b414618c39d9f460417a641f212f5f0f28c498a09a12
+      initramfs.cpio.gz     7523c9a20b956a3104d04540559422a7b566ef630a592c9d4ca8fdb2e5bd8381
+    The single pin source is the PIN_MANIFEST constant in
+    app/src/main/java/io/github/nyzeep/orchestella/UmlKernelAssets.java — the
+    build-time accounting, the runtime verification and the release gates all
+    read that one registry. OPEN: the device-window build of `linux-fast` (the
+    kernel variant with the initramfs embedded) did not reproduce the pinned
+    digest across build paths (observed 572c3433…, same size, difference
+    isolated to the embedded initramfs segment); the shipped pin is the
+    reproducible container-build artifact (21e1c3f9…), and the cross-path
+    variance is recorded here rather than papered over. An artifact that does
+    not match the shipped pin fails closed at runtime — the pin governs.
+  - Configuration delivery: research/uml-fastboot/defconfig-fast plus
+    research/uml-fastboot/defconfig-fast.fragment, derived from the pinned
+    linux-bionic.config via olddefconfig; the final kernel.config and
+    kernel-noinitrd.config digests are recorded in
+    research/uml-fastboot/manifest.md (§3). These out-of-tree control scripts
+    are part of the preferred form for modification (GPLv2 §2) and ship in the
+    same public repository.
+  - Build environment: research/uml-fastboot/build-fast.sh is the build
+    entrypoint; Android NDK r29 (official zip sha256 4abbbcdc…08ecf); build
+    container Ubuntu 24.04 with GCC 13.3.0; KBUILD_BUILD_TIMESTAMP and
+    SOURCE_DATE_EPOCH are fixed. Two clean rebuilds on the same container
+    layout are byte-identical (the cross-path variance above is a separate,
+    recorded phenomenon). The 16 KB page-size stub relink recipe is
+    research/uml-kernel-build/build-stub-16k.sh; the 16 KB ELF checks are
+    recorded in the build research, not here.
+
+stub_exe
+--------
+libuml_stub.so is this project's own work (a 16 KB-relinked helper, byte-
+identical to the release stub recipe). It is distributed under this
+project's root LICENSE (GPL-3.0-or-later). OPEN: the final licensing-attribution
+ruling for this artifact is reserved to the project's licensing decision
+record; this notice states the current practice without claiming a closed
+verdict.
+
+initramfs content
+-----------------
+The initramfs embedded in / shipped next to the kernel carries
+busybox-static 1.37.0-r20 (Alpine 3.22, GPL-2.0; aarch64 apk
+ee469aee…34da2, binary a6bb1e6e…004ff; x86_64 apk 488ad6ef…c74b) and this
+project's own scripts research/uml-fastboot/initramfs/init and
+research/uml-fastboot/initramfs/um-command.sh. The embedded decompressor is
+gzip only.
+
+rootfs baseline (Alpine minirootfs)
+-----------------------------------
+The guest rootfs baseline is the official Alpine minirootfs 3.22.2 for
+aarch64: alpine-minirootfs-3.22.2-aarch64.tar.gz, sha256
+6bf491907b705caa5fc65773fbbc1d0954530b6c455d4446f670a4c1fdcea489
+(3,981,043 bytes, locked against the release CDN and the distro's own
+.sha256 sidecar). It travels one asset, two transport lines: embedded in
+this APK (consumed by the provisioner first) and downloadable from
+https://dl-cdn.alpinelinux.org/alpine/v3.22/releases/aarch64/ as the repair
+channel; both lines verify the same fixed pin at runtime (constant-time
+digest compare, fail-closed) — no GPG verification runs on device. The
+upstream package license inventory rides the tar's apk database. The tree
+the provisioner extracts is a project-modified version of the minirootfs
+(it injects /um-command.sh, the external-root launcher described below),
+which triggers the corresponding-source obligation for the injected files;
+the launcher is this project's own script and its source is public in the
+same repository.
+
+um-command.sh launcher
+----------------------
+The provisioner injects a project-owned launcher script
+(research/uml-fastboot/initramfs/um-command.sh is its source of record)
+into the extracted rootfs. It is this project's work, distributed under
+this project's root LICENSE (GPL-3.0-or-later), and is a launch-chain
+preparation, not a capability promise.
+
+umnet/passt network helpers
+---------------------------
+libuml_net.so (the umnet supervisor, built from the passt-android fork's
+umnet harness with this project's loopback-only inbound forward patch) and
+libuml_passt.so (passt, built from the passt-android fork at its v0.2.0
+pin) are statically linked bionic executables carrying a .so name for the
+jniLibs packaging convention. passt is GPL-2.0-or-later (see its upstream
+source); the umnet harness and the forwarding patch are distributed with
+the same public repository as the rest of the corresponding source. The
+inbound forward binds loopback only (127.0.0.1:3632) and serves the guest's
+distccd compile route; there is no UDP inbound and no LAN exposure.
+
+Corresponding source and written offer
+--------------------------------------
+The corresponding source for every GPL component above is public: the
+modified UML kernel at the fixed tag, the build and configuration scripts
+under research/uml-fastboot/, and the project-owned scripts named here. The
+written-offer text for the guest-runtime assets is guest-assets/SOURCE-OFFER.txt
+(the template this project distributes with the QEMU lane); the UML
+components ride the same written-offer channel. OPEN: a UML-specific
+BUILD-INPUTS identifier and the ADR-style one-to-one release source package
+are process items that ride the release flow; the pin registry in this
+repository is the binding identity record in the meantime.
+
+Upgrade discipline
+------------------
+A UML kernel upgrade is one atomic change: a new fixed public tag, a new
+matching source record, and new PIN_MANIFEST values, updated in the same
+change as the binary. Shipped bytes and this notice must never disagree.

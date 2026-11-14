@@ -4,6 +4,7 @@
   "files": [
     "LICENSE",
     "app/src/main/assets/NOTICE.QEMU",
+    "app/src/main/assets/NOTICE.UML",
     "app/src/main/assets/NOTICE.GUEST-RUNTIME",
     "app/src/main/assets/QEMU-GPL-SOURCES.md",
     "app/src/main/assets/QEMU-BUILD-INPUTS",

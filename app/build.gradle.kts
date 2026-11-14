@@ -1,6 +1,7 @@
 import java.nio.file.Files
 import java.security.MessageDigest
 import java.time.Instant
+import java.util.Properties
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 // Optional QEMU payload roots (Ticket 26 C gate): all three Gradle properties
@@ -149,39 +150,45 @@ val acceleratorLaneEnabled: Boolean = providers.gradleProperty("orchestella.acce
 
 // UML payload productization (ACR passed 2026-11-12, D1-D5 all Go). 方案 A
 // bundles the U1 fast-profile artifacts into the git-ignored payload paths at
-// build time; 方案 B opens the flag gate in front of the (still unwired)
-// rootfs download entry. The Gradle defaults stay OFF — a bare local build
-// keeps zero behavior change (no staging task runs, no extra BuildConfig
-// behavior) — while the release pipeline states the bundled/fast flags
-// explicitly (ACR D1/D4, the same stated-parameter pattern as
-// orchestella.acceleratorLane). Flags are gradle properties only — no runtime
+// build time; 方案 B opens the flag gate in front of the rootfs download entry.
+//
+// 2026-11-14 single-package round: the complete-package shape (qa.fullpkg and
+// every future payload-bearing build) carries the UML engine in the APK, so the
+// four flags default ON — the packaged reality is "bundled fast profile present,
+// fast launch shape, compile bridge wired, rootfs repair channel open". A bare
+// local build without the machine staging dirs still behaves honestly: the
+// staging tasks run, record the absence (WARN + build/*.flag) and skip, so the
+// runtime answers MISSING_ASSET / SPAWN_FAILED (named detail) at width 0 — the
+// same fail-honest contracts as before, only reached by default. An explicit
+// -Porchestella.uml.*=false still turns any flag off (CI variants and negative
+// tests) — the gradle property, when present, always wins over the default.
+// Runtime flag semantics are unchanged: BuildConfig booleans only, no runtime
 // SharedPreferences anywhere in this round.
 val umlBundledFastProfile: Boolean = providers.gradleProperty("orchestella.uml.bundledFastProfile")
     .orNull
     ?.trim()
     ?.lowercase()
     ?.let { it == "true" || it == "1" }
-    ?: false
+    ?: true
 val umlRootfsDownload: Boolean = providers.gradleProperty("orchestella.uml.rootfsDownload")
     .orNull
     ?.trim()
     ?.lowercase()
     ?.let { it == "true" || it == "1" }
-    ?: false
+    ?: true
 // UML compile bridge (fabric-route doc D-1, Gate 1 wiring, ACR 2026-11-13 方案 A):
 // the face's compile Channel seam gains the UML-TCP lane (vsock=pVM / TCP=UML is
-// the既定 wire design). Gradle default stays OFF — a bare local build keeps zero
-// behavior change (the arm path stays byte-identical: channel=unwired, no
-// submitter listener, no lane factory construction) — while the QA/release
-// pipeline states it explicitly like the other UML flags. Never derived from
-// orchestella.uml.fastProfile: launch shape != routability is the locked honest
-// semantics (the two flags answer different questions and stay independent).
+// the既定 wire design). Default ON since the single-package round: the complete
+// package ships the net-helper pair, so wired is the factory fact. Never derived
+// from orchestella.uml.fastProfile: launch shape != routability is the locked
+// honest semantics (the two flags answer different questions and stay
+// independent).
 val umlCompileBridge: Boolean = providers.gradleProperty("orchestella.uml.compileBridge")
     .orNull
     ?.trim()
     ?.lowercase()
     ?.let { it == "true" || it == "1" }
-    ?: false
+    ?: true
 val umlFastProfileDir: String? = providers.gradleProperty("orchestella.uml.fastProfileDir")
     .orNull
     ?.trim()
@@ -253,21 +260,30 @@ android {
         buildConfigField("boolean", "UML_ROOTFS_DOWNLOAD_ENABLED", umlRootfsDownload.toString())
         // UML fast-profile launch shape (research/uml-fastboot README §4);
         // consumed by UmlFaceLauncher.FastProfile.currentBuild() through the
-        // assembly's umlFace slot (ACR D4 wiring). Bare-local default off: that
-        // build keeps the runner shape byte-identically; the release pipeline
-        // passes -Porchestella.uml.fastProfile=true (ACR D4).
+        // assembly's umlFace slot (ACR D4 wiring). Default ON since the
+        // single-package round (the complete package's factory launch shape);
+        // an explicit -Porchestella.uml.fastProfile=false still restores the
+        // runner shape (CI variants and negative tests).
         buildConfigField("boolean", "UML_FAST_PROFILE",
-            (providers.gradleProperty("orchestella.uml.fastProfile").orNull?.trim()?.toBoolean() ?: false).toString())
+            (providers.gradleProperty("orchestella.uml.fastProfile").orNull?.trim()?.toBoolean() ?: true).toString())
         // UML compile bridge (fabric-route doc D-1, Gate 1 wiring): consumed by
         // the wiring owner (UmlCompileBridgeWiring) — flag on arms the face with
         // the UML-TCP lane channel (UmlChannels.overTcpLane over the bridge's
         // UmlTcpChannelFactory) and binds the fabric submitter listener; flag
         // off keeps today's byte-identical arm path (channel=unwired).
         buildConfigField("boolean", "UML_COMPILE_BRIDGE", umlCompileBridge.toString())
-        // Payload builds store native libraries uncompressed and 16 KB aligned
-        // for the AVF loader; all other channels keep the extracted layout.
-        manifestPlaceholders["orcExtractNativeLibs"] =
-            if (fastlanePayloadLibDir == null) "true" else "false"
+        // Single-package round (2026-11-14): extractNativeLibs stays true for
+        // every build. The manifest flag decides whether the installer
+        // unpacks native libraries into nativeLibraryDir — the UML lane
+        // execs libuml_kernel.so / libuml_stub.so / libuml_net.so /
+        // libuml_passt.so and the QEMU lane execs gvproxy/qemu from there,
+        // so an unextracted layout (extractNativeLibs=false leaves
+        // nativeLibraryDir empty on device) kills every exec-based engine.
+        // The pVM five-lib payload is independent of this flag: its AVF
+        // loader reads the APK entries directly and only demands stored
+        // (uncompressed) 16 KB page-aligned entries, which the repack
+        // pipeline guarantees post-packaging (see repackPvmPayload below).
+        manifestPlaceholders["orcExtractNativeLibs"] = "true"
         // Release build type adds no suffix, so the unsuffixed name is the
         // default; the debug channel branches below override it.
         manifestPlaceholders["accelExtensionPackage"] = accelExtensionPackageFor(null)
@@ -486,11 +502,17 @@ android {
 
     packaging {
         jniLibs {
-            // AVF loads the app payload from the APK and requires an
-            // uncompressed, 16 KB-aligned .so entry. Payload builds therefore
-            // use direct (non-legacy) native-library packaging; every other
-            // build keeps the historical extracted layout.
-            useLegacyPackaging = fastlanePayloadLibDir == null
+            // useLegacyPackaging is decoupled from the pVM payload parameters
+            // (2026-11-14 single-package decision, device-verified): it stays
+            // true for every build so the installer unpacks native libraries
+            // into nativeLibraryDir — the exec-based engines (UML kernel and
+            // net helpers, QEMU's qemu/gvproxy spawns) cannot run from an
+            // unextracted layout. The pVM payload's AVF-loader contract is
+            // satisfied separately: the five payload libraries are rewritten
+            // from compressed entries to stored, 16 KB page-aligned entries
+            // after packaging (repackPvmPayload task chain below), which is
+            // exactly the entry shape the loader reads directly from the APK.
+            useLegacyPackaging = true
             keepDebugSymbols += "**/liborchestella_qemu.so"
             keepDebugSymbols += "**/libdroidlayer_qemu.so"
             // The UML fast-profile accounting manifest
@@ -516,6 +538,20 @@ android {
             // pinned bytes. Unstripped, same reason as the payload libs above.
             keepDebugSymbols += "**/libuml_net.so"
             keepDebugSymbols += "**/libuml_passt.so"
+            // The pVM five-lib payload (single-package round): the AVF loader
+            // and the PVM-COMPILER-MANIFEST pin chain account for the staged
+            // bytes verbatim. AGP's default debug-symbol strip rewrites the
+            // ELF between merge and APK exactly as it rewrote libuml_kernel.so
+            // (measured 2026-11-13), which would break the repack gate's
+            // byte-for-byte manifest reconciliation (repack_pvm_payload.py
+            // re-proves shipped-bytes-equal-manifest against the three
+            // manifest-pinned compiler libs). Keep all five unstripped so the
+            // shipped bytes stay the pinned bytes.
+            keepDebugSymbols += "**/libfastlane_payload.so"
+            keepDebugSymbols += "**/libpvm_compiler_payload.so"
+            keepDebugSymbols += "**/libLLVM.so"
+            keepDebugSymbols += "**/libclang-cpp.so"
+            keepDebugSymbols += "**/libc++_shared.so"
         }
     }
 
@@ -527,6 +563,200 @@ android {
         abortOnError = true
         checkReleaseBuilds = true
         disable += "PropertyEscape"
+    }
+}
+
+// ---- Single-package repack pipeline (2026-11-14) ----
+// Mixed packaging, device-verified: useLegacyPackaging stays true above so the
+// installer unpacks the exec-based engines into nativeLibraryDir, and the pVM
+// payload's AVF-loader contract is satisfied post-packaging. The chain runs
+// only when both pVM staging parameters are present (payload five-lib set
+// staged), and goes: package (AGP) → repack (five payload entries deflate →
+// stored, content bytes reconciled against the staged sources and the APK's
+// own PVM-COMPILER-MANIFEST) → zipalign -P 16 → apksigner re-sign (debug key;
+// the rewrite invalidates AGP's signature by construction) → apksigner verify.
+// The channel copy (renameChannelApk) ships the final APK, not AGP's raw
+// output. Release wiring lands with the release pipeline's single-package
+// adoption: the same chain instantiated over the release APK and the release
+// keystore — it is deliberately not registered for release in this round.
+val pvmCompilerLibDirParam: String? = providers.gradleProperty("orchestella.pvmCompiler.libDir")
+    .orNull
+    ?.trim()
+    ?.ifEmpty { null }
+val pvmRepackEnabled: Boolean = fastlanePayloadLibDir != null && pvmCompilerLibDirParam != null
+
+if (pvmRepackEnabled) {
+    val repackSdkDir: File? = sequenceOf(
+        providers.environmentVariable("ANDROID_HOME").orNull,
+        providers.environmentVariable("ANDROID_SDK_ROOT").orNull,
+    ).firstOrNull { !it.isNullOrBlank() }?.let { File(it.trim()) }
+        ?: run {
+            val localProps = rootProject.file("local.properties")
+            if (localProps.isFile) {
+                val props = Properties()
+                localProps.inputStream().use { props.load(it) }
+                props.getProperty("sdk.dir")?.let { File(it.trim()) }
+            } else {
+                null
+            }
+        }
+    val buildToolsRelative = "build-tools/${libs.versions.buildtools.get()}"
+    val isWindowsHost = System.getProperty("os.name").lowercase().contains("windows")
+    val zipalignTool: File? = repackSdkDir?.resolve(buildToolsRelative)?.let { dir ->
+        val exe = File(dir, "zipalign.exe")
+        val plain = File(dir, "zipalign")
+        when {
+            exe.isFile -> exe
+            plain.isFile -> plain
+            else -> null
+        }
+    }
+    val apksignerTool: File? = repackSdkDir?.resolve(buildToolsRelative)?.let { dir ->
+        val bat = File(dir, "apksigner.bat")
+        val plain = File(dir, "apksigner")
+        when {
+            isWindowsHost && bat.isFile -> bat
+            plain.isFile -> plain
+            else -> null
+        }
+    }
+    require(zipalignTool != null) {
+        "repackPvmPayload: zipalign not found under " +
+            (repackSdkDir?.resolve(buildToolsRelative)?.absolutePath ?: "ANDROID_HOME") +
+            " — set ANDROID_HOME (or sdk.dir in local.properties)"
+    }
+    require(apksignerTool != null) {
+        "repackPvmPayload: apksigner not found under " +
+            (repackSdkDir?.resolve(buildToolsRelative)?.absolutePath ?: "ANDROID_HOME") +
+            " — set ANDROID_HOME (or sdk.dir in local.properties)"
+    }
+
+    // Same identity as AGP's debug signing: the default debug keystore and its
+    // documented constants. Property overrides exist for machines with a
+    // relocated keystore; the release keystore is intentionally NOT reachable
+    // here — this chain signs QA/internal builds only this round.
+    val repackStoreFile: File = providers.gradleProperty("orchestella.repack.debugKeystore")
+        .orNull?.let { rootProject.file(it) }
+        ?: android.signingConfigs.getByName("debug").storeFile
+        ?: File(System.getProperty("user.home"), ".android/debug.keystore")
+    val repackStorePass: String = providers.gradleProperty("orchestella.repack.debugStorePassword")
+        .orNull ?: "android"
+    val repackKeyAlias: String = providers.gradleProperty("orchestella.repack.debugKeyAlias")
+        .orNull ?: "androiddebugkey"
+    val repackKeyPass: String = providers.gradleProperty("orchestella.repack.debugKeyPassword")
+        .orNull ?: "android"
+    require(repackStoreFile.isFile) {
+        "repackPvmPayload: debug keystore not found: $repackStoreFile " +
+            "(set -Porchestella.repack.debugKeystore or let AGP generate the default)"
+    }
+
+    val fullpkgDir = layout.buildDirectory.dir("outputs/apk/fullpkg")
+    val debugApkFile = layout.buildDirectory.file("outputs/apk/debug/app-debug.apk")
+    val storedApkFile = fullpkgDir.map { it.file("app-debug-stored.apk") }
+    val alignedApkFile = fullpkgDir.map { it.file("app-debug-aligned.apk") }
+    val fullpkgApkFile = fullpkgDir.map { it.file("app-debug-fullpkg.apk") }
+    val idsigFile = fullpkgDir.map { it.file("app-debug-fullpkg.apk.idsig") }
+    val payloadRootDir = rootProject.file(fastlanePayloadLibDir!!)
+    val compilerRootDir = rootProject.file(pvmCompilerLibDirParam!!)
+
+    val repackPvmPayloadStore = tasks.register<Exec>("repackPvmPayloadStore") {
+        group = "verification"
+        description = "Rewrites the five staged pVM payload entries to stored with byte reconciliation."
+        dependsOn("assembleDebug")
+        workingDir(rootProject.projectDir)
+        inputs.file(debugApkFile)
+        inputs.dir(payloadRootDir)
+        inputs.dir(compilerRootDir)
+        outputs.file(storedApkFile)
+        commandLine(
+            pythonExecutable,
+            "tools/release/repack_pvm_payload.py",
+            "--apk", debugApkFile.get().asFile.absolutePath,
+            "--output", storedApkFile.get().asFile.absolutePath,
+            "--payload-lib-dir", payloadRootDir.absolutePath,
+            "--compiler-lib-dir", compilerRootDir.absolutePath,
+        )
+    }
+
+    val zipalignFullpkg = tasks.register<Exec>("zipalignFullpkg") {
+        group = "verification"
+        description = "16 KB page-aligns the repacked full-package APK."
+        dependsOn(repackPvmPayloadStore)
+        inputs.file(storedApkFile)
+        outputs.file(alignedApkFile)
+        commandLine(
+            zipalignTool!!.absolutePath,
+            "-f", "-P", "16", "4",
+            storedApkFile.get().asFile.absolutePath,
+            alignedApkFile.get().asFile.absolutePath,
+        )
+    }
+
+    val signFullpkg = tasks.register<Exec>("signFullpkg") {
+        group = "verification"
+        description = "Re-signs the aligned full-package APK (v2+v3+v4, debug key)."
+        dependsOn(zipalignFullpkg)
+        inputs.file(alignedApkFile)
+        outputs.file(fullpkgApkFile)
+        outputs.file(idsigFile)
+        // apksigner.bat is a batch wrapper: Windows executes it through cmd.
+        val launcher = if (isWindowsHost && apksignerTool.name.endsWith(".bat")) "cmd" else null
+        if (launcher != null) {
+            commandLine(
+                launcher, "/c", apksignerTool.absolutePath, "sign",
+                "--ks", repackStoreFile.absolutePath,
+                "--ks-pass", "pass:$repackStorePass",
+                "--ks-key-alias", repackKeyAlias,
+                "--key-pass", "pass:$repackKeyPass",
+                "--v2-signing-enabled", "true",
+                "--v3-signing-enabled", "true",
+                "--v4-signing-enabled", "true",
+                "--out", fullpkgApkFile.get().asFile.absolutePath,
+                alignedApkFile.get().asFile.absolutePath,
+            )
+        } else {
+            commandLine(
+                apksignerTool.absolutePath, "sign",
+                "--ks", repackStoreFile.absolutePath,
+                "--ks-pass", "pass:$repackStorePass",
+                "--ks-key-alias", repackKeyAlias,
+                "--key-pass", "pass:$repackKeyPass",
+                "--v2-signing-enabled", "true",
+                "--v3-signing-enabled", "true",
+                "--v4-signing-enabled", "true",
+                "--out", fullpkgApkFile.get().asFile.absolutePath,
+                alignedApkFile.get().asFile.absolutePath,
+            )
+        }
+    }
+
+    val verifyFullpkgSignature = tasks.register<Exec>("verifyFullpkgSignature") {
+        group = "verification"
+        description = "Verifies the full-package APK signature chain."
+        dependsOn(signFullpkg)
+        inputs.file(fullpkgApkFile)
+        outputs.file(fullpkgDir.map { it.file("signature-verified.flag") })
+        doLast {
+            fullpkgDir.get().asFile.resolve("signature-verified.flag").writeText("ok\n")
+        }
+        // apksigner.bat runs through cmd on Windows; --verbose names every
+        // scheme block so the log attests v2/v3 without a second invocation.
+        val launcher = if (isWindowsHost && apksignerTool.name.endsWith(".bat")) "cmd" else null
+        if (launcher != null) {
+            commandLine(
+                launcher, "/c", apksignerTool.absolutePath, "verify",
+                "--verbose", fullpkgApkFile.get().asFile.absolutePath,
+            )
+        } else {
+            commandLine(
+                apksignerTool.absolutePath, "verify",
+                "--verbose", fullpkgApkFile.get().asFile.absolutePath,
+            )
+        }
+    }
+
+    tasks.matching { it.name == "renameChannelApk" }.configureEach {
+        dependsOn(verifyFullpkgSignature)
     }
 }
 
@@ -564,16 +794,28 @@ tasks.matching {
 }
 
 // Internal builds keep both the stable app-debug.apk path used by tooling and a
-// channel-identifying copy required by VERSIONING.md section 5.3.
+// channel-identifying copy required by VERSIONING.md section 5.3. When the pVM
+// payload repack pipeline is enabled (both staging parameters present), the
+// channel copy is the repacked, re-signed full-package APK, not AGP's raw
+// packaging output — the channel artifact must be the shippable bytes.
 if (buildChannel != "release") {
     val renameChannelApk = tasks.register<Copy>("renameChannelApk") {
         description = "Copies the internal debug APK to its channel-qualified name."
-        from(layout.buildDirectory.file("outputs/apk/debug/app-debug.apk"))
+        if (pvmRepackEnabled) {
+            from(layout.buildDirectory.file("outputs/apk/fullpkg/app-debug-fullpkg.apk"))
+        } else {
+            from(layout.buildDirectory.file("outputs/apk/debug/app-debug.apk"))
+        }
         into(layout.buildDirectory.dir("outputs/apk/channel"))
         rename { channelApkName!! }
     }
     tasks.matching { it.name == "assembleDebug" }.configureEach {
         finalizedBy(renameChannelApk)
+    }
+    if (pvmRepackEnabled) {
+        tasks.matching { it.name == "renameChannelApk" }.configureEach {
+            dependsOn("verifyFullpkgSignature")
+        }
     }
 }
 
@@ -1033,9 +1275,20 @@ if (umlBundledFastProfile) {
 // Patched source: umnet.c copied from the harness tree with the `-t` line and
 // its comment updated; build recipe unchanged (NDK API 30, -static, 16K page).
 // passt_bionic stays byte-identical to the Gate 2 pin.
+//
+// 2026-11-14 single-package round re-pin (same commit as the embed wiring):
+// the original Lane A artifacts (04c065c8…/a8451a01…) were destroyed with their
+// machine directories, so Lane T2-a rebuilt the pair from the same source pins
+// (passt fork v0.2.0 + the same-repo umnet harness with the lane-A `-t
+// 127.0.0.1/3632` patch). Both artifacts pass the check_bin three checks; the
+// byte difference from the old pins is build-path DWARF source-path records
+// only — the umnet semantics are unchanged (same 3632 inbound forward, same
+// supervisor contract), which the rebuild's diff of the patched umnet.c and the
+// passt inbound bind attested. Pin discipline is the same as the Lane A re-pin:
+// changed artifact bytes → pins re-stated in the same commit that ships them.
 val umlNetHelperPins: Map<String, String> = linkedMapOf(
-    "umnet_bionic" to "04c065c8069d3d979ba72f96cc9384a67e694e028f57fea9f70c971c285201b2",
-    "passt_bionic" to "a8451a0152387f0eaeb0b90615168e10d6433336a91f38774c209cdbefd554b5",
+    "umnet_bionic" to "858efb9b9e5ae6ba17207b93079bf7794283c954aa5d95e7ec458fc87d6367ae",
+    "passt_bionic" to "f42171416bc1e0d78029fd16cf3ec3cff53b642a62246b4507c1464fabf6f9f9",
 )
 
 val stageUmlNetHelper = tasks.register("stageUmlNetHelper") {
@@ -1119,8 +1372,9 @@ val stageUmlNetHelper = tasks.register("stageUmlNetHelper") {
             throw GradleException(
                 "The umnet/passt net-helper staging failed sha accounting.\n" +
                     problems.joinToString("\n") +
-                    "\nProvide the pinned pair (round 2026-11-13 Gate 2 preflight build, " +
-                    "passt fork pin 25f9c1f+1a0c657) in orchestella.uml.netHelperDir, or " +
+                    "\nProvide the pinned pair (2026-11-14 rebuild, passt fork v0.2.0 + " +
+                    "the lane-A umnet harness with the 127.0.0.1/3632 inbound forward; " +
+                    "see the umlNetHelperPins comment) in orchestella.uml.netHelperDir, or " +
                     "rerun without -Porchestella.uml.netHelperDir."
             )
         }

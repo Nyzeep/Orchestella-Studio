@@ -4,6 +4,8 @@ import io.github.nyzeep.orchestella.UmlKernelAssets.RootfsDownload.Entry;
 import io.github.nyzeep.orchestella.runtime.network.download.DownloadEngine;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
@@ -170,14 +172,65 @@ public final class UmlRootfsProvisioner {
     }
 
     /**
+     * The embedded rootfs channel (2026-11-14 single-package round): the
+     * pinned tar ships as a java resource at the APK root (the {@code
+     * initramfs.cpio.gz} precedent — java resources bypass aapt, so the
+     * {@code *.gz} name and bytes survive packaging verbatim). The stream
+     * comes from the classloader, so this source needs no {@code Context}:
+     * the production {@link #provision(DownloadEngine, Path)} overload stays
+     * signature-compatible with its existing callers. On-device resolution of
+     * APK-root resources rides the same mechanism the QEMU initramfs uses.
+     * When the lookup fails (a split build without the packaged tar, or a
+     * classloader that cannot see the entry), the source returns {@code null}
+     * and the CDN repair channel takes over — the same pin, one asset truth,
+     * two transport lines.
+     */
+    public interface EmbeddedRootfsSource {
+        /**
+         * Opens the embedded artifact for {@code entry}, or {@code null} when
+         * this source has no embedded copy. The stream is owned by the
+         * caller and always closed.
+         */
+        InputStream openEmbeddedTar(Entry entry) throws IOException;
+    }
+
+    /** The packaged-APK source: the tar as a classloader resource at the APK root. */
+    public static final EmbeddedRootfsSource PACKAGED_ROOTFS_SOURCE = entry -> {
+        InputStream direct = UmlRootfsProvisioner.class.getResourceAsStream("/" + entry.fileName());
+        if (direct != null) {
+            return direct;
+        }
+        ClassLoader contextLoader = Thread.currentThread().getContextClassLoader();
+        if (contextLoader != null) {
+            return contextLoader.getResourceAsStream(entry.fileName());
+        }
+        return null;
+    };
+
+    /**
      * The production entry: the pinned Alpine minirootfs, gated by {@code
      * BuildConfig.UML_ROOTFS_DOWNLOAD_ENABLED} compiled in. The pin's single
      * source stays {@link UmlKernelAssets} — this class never restates it.
+     * Since the single-package round the tar travels the embedded channel
+     * first ({@link #PACKAGED_ROOTFS_SOURCE}, same pin, byte-identical) and
+     * the CDN transport remains the repair channel: absent or corrupt
+     * embedded bytes fall through to the unchanged L1–L3 download chain.
      */
     public static ProvisionReceipt provision(DownloadEngine transport, Path filesDir)
             throws IOException {
         return provision(transport, Entry.alpineMinirootfsAarch64(), filesDir,
-                BuildConfig.UML_ROOTFS_DOWNLOAD_ENABLED);
+                BuildConfig.UML_ROOTFS_DOWNLOAD_ENABLED, PACKAGED_ROOTFS_SOURCE);
+    }
+
+    /**
+     * The flag-injectable orchestration without the embedded channel — the
+     * exact CDN-only shape the contract tests own. Production goes through
+     * the single-source {@link #provision(DownloadEngine, Path)} overload.
+     */
+    static ProvisionReceipt provision(
+            DownloadEngine transport, Entry entry, Path filesDir,
+            boolean rootfsDownloadBuildFlag) throws IOException {
+        return provision(transport, entry, filesDir, rootfsDownloadBuildFlag, null);
     }
 
     /**
@@ -185,7 +238,9 @@ public final class UmlRootfsProvisioner {
      * through the single-source {@link #provision(DownloadEngine, Path)}
      * overload). Flag off answers {@linkplain ProvisionReceipt#disabled()
      * disabled} before anything is consulted. Flag on runs: pin-sha
-     * reconciliation of any existing formal tar → (skipped or) {@link
+     * reconciliation of any existing formal tar → (skipped or) the embedded
+     * channel ({@code embeddedSource}, digest-checked into place; a miss or
+     * mismatch falls through) → (still nothing in place?) {@link
      * RootfsTransport#downloadAndVerify} → sidecar reconciliation of any
      * existing extract tree → (skipped or) slip-safe extraction of the
      * verified tar into place → (skipped or) launcher injection into the
@@ -199,7 +254,8 @@ public final class UmlRootfsProvisioner {
      */
     static ProvisionReceipt provision(
             DownloadEngine transport, Entry entry, Path filesDir,
-            boolean rootfsDownloadBuildFlag) throws IOException {
+            boolean rootfsDownloadBuildFlag, EmbeddedRootfsSource embeddedSource)
+            throws IOException {
         if (!rootfsDownloadBuildFlag) {
             // The gate answers first: a disabled provision must not name a
             // path, call the transport, or touch the filesystem at all.
@@ -212,12 +268,19 @@ public final class UmlRootfsProvisioner {
         Files.createDirectories(umRootfsDir);
         Path formalTar = umRootfsDir.resolve(entry.fileName());
 
-        // Stage 1: download (skipped when an artifact already reconciles with
-        // the pin — the pin compare is the only idempotency authority; the
-        // file name alone never attests anything).
+        // Stage 1: acquire the verified tar. An artifact already on disk is
+        // accepted only when it reconciles with the pin (the pin compare is
+        // the only idempotency authority; the file name alone never attests
+        // anything). Otherwise the embedded channel runs first — same pin,
+        // byte-identical asset, zero transport — and the CDN download chain
+        // (L1–L3, unchanged) stays the repair channel for an absent or
+        // corrupt embedded copy.
         boolean downloadedThisCall;
         if (Files.exists(formalTar) && pinMatches(entry.sha256Pin(),
                 UmlKernelAssets.sha256Hex(formalTar.toFile()))) {
+            downloadedThisCall = false;
+        } else if (embeddedSource != null
+                && placeEmbeddedTar(embeddedSource, entry, umRootfsDir, formalTar)) {
             downloadedThisCall = false;
         } else {
             RootfsTransport.DownloadReceipt receipt = RootfsTransport.downloadAndVerify(
@@ -264,6 +327,64 @@ public final class UmlRootfsProvisioner {
                 result == null ? countedEntries(sidecar) : result.entries(),
                 result == null ? countedExecutables(sidecar) : result.executables(),
                 true);
+    }
+
+    /**
+     * The embedded channel: stream the packaged tar through a {@code .part}
+     * staging file (the {@link RootfsTransport} discipline — a {@code .part}
+     * name is an unverified artifact, never consumed, always swept), digest
+     * it against the pin, and atomically publish it as the formal tar only
+     * when the digests agree. Every failure mode — absent stream, read
+     * error, digest mismatch — sweeps the staging file and answers {@code
+     * false} so the CDN repair channel takes over; the transport is the one
+     * error surface the caller sees, never a laundered half-state.
+     */
+    private static boolean placeEmbeddedTar(
+            EmbeddedRootfsSource source, Entry entry, Path umRootfsDir, Path formalTar)
+            throws IOException {
+        Path staging = umRootfsDir.resolve(entry.fileName() + EXTRACT_STAGING_SUFFIX);
+        try (InputStream in = source.openEmbeddedTar(entry)) {
+            if (in == null) {
+                return false;
+            }
+            try (OutputStream out = Files.newOutputStream(staging,
+                    java.nio.file.StandardOpenOption.CREATE,
+                    java.nio.file.StandardOpenOption.TRUNCATE_EXISTING,
+                    java.nio.file.StandardOpenOption.WRITE)) {
+                byte[] buffer = new byte[1 << 16];
+                int read;
+                while ((read = in.read(buffer)) != -1) {
+                    out.write(buffer, 0, read);
+                }
+            }
+            if (pinMatches(entry.sha256Pin(), UmlKernelAssets.sha256Hex(staging.toFile()))) {
+                try {
+                    Files.move(staging, formalTar,
+                            java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                            java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                } catch (AtomicMoveNotSupportedException unsupported) {
+                    Files.move(staging, formalTar,
+                            java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                }
+                return true;
+            }
+            // Wrong bytes (corrupt or stale asset): sweep and hand over to
+            // the CDN repair channel. Nothing is deleted beyond this method's
+            // own staging file.
+            Files.deleteIfExists(staging);
+            return false;
+        } catch (IOException failure) {
+            try {
+                Files.deleteIfExists(staging);
+            } catch (IOException swept) {
+                failure.addSuppressed(swept);
+            }
+            // Read/decode failure of the embedded line: the CDN channel is
+            // the repair path and the error surface. A formal tar previously
+            // attested is untouched (it failed the pin compare before we got
+            // here, so there was nothing good to destroy).
+            return false;
+        }
     }
 
     /**
