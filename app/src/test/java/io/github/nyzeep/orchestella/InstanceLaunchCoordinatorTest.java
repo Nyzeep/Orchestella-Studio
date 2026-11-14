@@ -1124,6 +1124,12 @@ public final class InstanceLaunchCoordinatorTest {
                 }
             }
             assertNotNull("the fabric snapshot must be logged", identityLine);
+            // Formalization round (2026-11-14): bindFabric runs before the
+            // snapshot inside the same .also block, so the line must not
+            // claim "(no submitter yet)" — the submitter's state rides the
+            // later listening/refused lines, never this one.
+            assertFalse("the constructed line must not claim no-submitter",
+                    identityLine.contains("no submitter yet"));
             assertTrue("the snapshot carries all three faces", identityLine.contains("uml="));
             Matcher matcher = Pattern.compile("sum=(\\d+) ledger-budget=(\\d+)")
                     .matcher(identityLine);

@@ -17,14 +17,14 @@ import java.util.Objects;
  * does not render at all — zero entry), {@code NOT_READY} (entry button +
  * size hint), {@code DOWNLOADING} (real percent against the pinned byte
  * size), {@code READY} ("verified + extracted N items"), {@code FAILED}
- * (stable reason + the retry entry). Ready never means startable or
- * compile-capable: the official Alpine minirootfs ships no {@code
- * /um-command.sh} — the provisioner injects the owned external-root launcher
- * (the 2026-11-13 candidate-A ruling) as a launch-chain preparation, not a
- * capability promise — so the copy around the READY state still says exactly
- * "verified + extracted", and launch usability is the fabric-route round's
- * verified device-window result, never a card claim. The compile channel's
- * honesty edge is {@code CHANNEL_UNWIRED} (Lane A).
+ * (stable reason + the retry entry). Ready means verified + extracted plus
+ * the provisioner-injected owned launcher ({@code /um-command.sh}, the
+ * 2026-11-13 candidate-A ruling): the compile-route round's device window
+ * (2026-11-14 E2E, 3x pass) verified that a wired arm rides the tree over
+ * the hostfs channel to a real compile. The Activity's READY copy stays
+ * flag-honest — a compile-bridge-off build states that it does not consume
+ * the tree — and this state machine itself claims nothing beyond the phase
+ * and the attested counts.
  *
  * <p><b>Failure reasons are stable and non-secret.</b> A {@link
  * RootfsRejectionException} (verification chain) or an {@link

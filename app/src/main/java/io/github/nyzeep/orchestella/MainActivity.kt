@@ -729,22 +729,22 @@ class MainActivity : AppCompatActivity() {
         }
         findViewById<View>(R.id.seg_qemu)?.setOnClickListener { switchTab(2) }
 
-        // Lane A（2026-11-13）：第三段「UML 实验」是状态+导航条的状态项，不是
+        // 正式化轮（2026-11-14）：第三段「UML」是状态+导航条的状态项，不是
         // 偏好选择器——与 seg_pkvm 的 AVF 模式同一语义（状态文案+诚实解释，
         // 就绪才进硬件页）。gate 即双门（构建 flag + 用户设置），两层分开说。
         findViewById<View>(R.id.seg_uml)?.setOnClickListener {
             when {
                 !BuildConfig.ACCELERATOR_LANE_ENABLED -> {
                     androidx.appcompat.app.AlertDialog.Builder(this)
-                        .setTitle("UML 实验编译面")
-                        .setMessage("当前构建未包含加速车道组件，UML 实验编译面不可用。\n应用继续使用完整 QEMU 路径运行 Linux 实例。")
+                        .setTitle(getString(R.string.engine_uml_face_gate_title))
+                        .setMessage(getString(R.string.engine_uml_face_gate_build))
                         .setPositiveButton("了解", null)
                         .show()
                 }
                 !settingsManager.isAcceleratorLaneEnabled() -> {
                     androidx.appcompat.app.AlertDialog.Builder(this)
-                        .setTitle("UML 实验编译面")
-                        .setMessage("UML 实验编译面随加速车道总开关关闭而停用（你在设置中关闭）。\n应用继续使用完整 QEMU 路径运行 Linux 实例。")
+                        .setTitle(getString(R.string.engine_uml_face_gate_title))
+                        .setMessage(getString(R.string.engine_uml_face_gate_setting))
                         .setPositiveButton("了解", null)
                         .show()
                 }
@@ -1028,13 +1028,19 @@ class MainActivity : AppCompatActivity() {
             }
         findViewById<com.google.android.material.button.MaterialButton>(R.id.seg_qemu)?.text =
             if (session is QemuInstanceLauncher.Session) "QEMU · 正在使用" else "QEMU · 可用"
-        // Lane A（2026-11-13）：UML face 的两层诚实语义分开说——「运行中」是
-        // 容量事实（fast 形态宽 1 上账本），「编译通道未接」是可路由性事实
-        // （fabric-route D-1 未落地，固定 CHANNEL_UNWIRED 守门）；不在运行
-        // 窗口内一律「未启用」，不冒充可用。
+        // 正式化轮（2026-11-14）：UML face 的两层诚实语义分开说——「运行中」
+        // 是容量事实（fast 形态宽 1 上账本）；通道事实由 arm 随 face 生命周期
+        // 登记进 UmlFaceStatusRegistry（编译路由 D-1 桥接线 arm=channel wired，
+        // 否则 unwired），渲染按真实状态分流：wired 宣「运行中」，unwired
+        // 如实明示「编译通道未接线」——绝不在不可路由的构建形态冒充已接；
+        // 不在运行窗口内一律「未启用」，不冒充可用。
         findViewById<com.google.android.material.button.MaterialButton>(R.id.seg_uml)?.text =
-            if (UmlFaceStatusRegistry.runningWidth() > 0) "UML · 运行中(实验)·编译通道未接"
-            else "UML · 未启用"
+            getString(
+                UmlSegmentCopy.resourceFor(
+                    UmlFaceStatusRegistry.runningWidth(),
+                    UmlFaceStatusRegistry.channelWired(),
+                ),
+            )
         sshCommand = instance?.let { target -> sshPrefetch?.command ?: loadSshCommand(target) }
         findViewById<TextView>(R.id.ssh_string)?.text = sshCommand ?: "尚未配置 SSH 端口映射"
         findViewById<com.google.android.material.button.MaterialButton>(R.id.copy_ssh_btn)?.text =
@@ -1059,12 +1065,15 @@ class MainActivity : AppCompatActivity() {
     // -----------------------------------------------------------------------------------
     // Lane B (Phase B2): the distro-tab「UML rootfs (Alpine minirootfs)」readiness card.
     // The card's every decision comes from UmlRootfsCardState — this Activity only
-    // binds. The ready state claims "verified + extracted" and nothing more: the
-    // official Alpine minirootfs ships no /um-command.sh (research/uml-fastboot/
-    // initramfs/init fail 29 missing_command), so this round's artifact cannot start
-    // to READY over the external-root channel, and the compile channel is
-    // CHANNEL_UNWIRED (Lane A's honest edge). Launch/compile usability is the
-    // fabric-route round's design problem.
+    // binds. The ready state claims "verified + extracted + launcher injected" —
+    // the official Alpine minirootfs ships no /um-command.sh, and the provisioner
+    // injects the owned external-root launcher after extraction (0755, idempotent),
+    // so the ready tree CAN ride instance launch over the hostfs channel; the
+    // compile-route round (2026-11-14 E2E) verified that chain end to end on a
+    // device, 3x pass. The claim stays flag-honest: only a build whose compile
+    // bridge is wired actually consumes the tree (UmlRootfsExtraArgs answers the
+    // external-root triple on a wired arm); a bridge-off build states that
+    // boundary in the READY copy instead of promising.
     // -----------------------------------------------------------------------------------
 
     /** The card's current render decision; mutated only on the UI thread. */
@@ -1165,39 +1174,55 @@ class MainActivity : AppCompatActivity() {
             R.id.btn_uml_rootfs_action)
         when (model.phase()) {
             UmlRootfsCardState.Phase.NOT_READY -> {
-                status?.text = "未就绪 · 下载并解包后可供给 UML hostfs 通道"
+                status?.text = getString(R.string.engine_uml_rootfs_status_not_ready)
                 showUmlRootfsProgress(false, 0, show = false)
                 button?.isEnabled = true
-                button?.text = "下载并验证（约 3.8 MB）→"
+                button?.text = getString(R.string.engine_uml_rootfs_download_action)
             }
             UmlRootfsCardState.Phase.DOWNLOADING -> {
                 val percent = model.progressPercent()
                 status?.text = if (percent >= 0) {
-                    "下载中 $percent%（下载后进行 sha256 pin 校验与内容自检）"
+                    getString(R.string.engine_uml_rootfs_downloading, percent)
                 } else {
-                    "连接中…（网络类失败由引擎重试与镜像容灾，校验类失败将如实拒绝）"
+                    getString(R.string.engine_uml_rootfs_connecting)
                 }
                 showUmlRootfsProgress(indeterminate = percent < 0, percent = percent, show = true)
                 button?.isEnabled = false
-                button?.text = "下载中…"
+                button?.text = getString(R.string.engine_uml_rootfs_downloading_action)
             }
             UmlRootfsCardState.Phase.READY -> {
                 val provenance = if (model.alreadyVerified()) {
-                    "已就绪（重复入口命中，本次零网络流量）"
+                    getString(R.string.engine_uml_rootfs_ready_provenance)
                 } else {
-                    "已就绪"
+                    getString(R.string.engine_uml_rootfs_ready)
                 }
-                status?.text = "$provenance · 已验证+已解包 ${model.extractedEntries()} 项 · " +
-                    "官方镜像不含 UML 启动脚本，本轮不可直接启动或编译"
+                // Flag-honest READY tail: the injected launcher makes the tree
+                // launchable over the hostfs channel only where the compile
+                // bridge is wired (UmlRootfsExtraArgs' decision); a bridge-off
+                // build keeps its honest boundary instead of promising.
+                val readyTail = if (BuildConfig.UML_COMPILE_BRIDGE) {
+                    getString(R.string.engine_uml_rootfs_ready_wired)
+                } else {
+                    getString(R.string.engine_uml_rootfs_ready_unwired)
+                }
+                status?.text = getString(
+                    R.string.engine_uml_rootfs_ready_line,
+                    provenance,
+                    model.extractedEntries(),
+                    readyTail,
+                )
                 showUmlRootfsProgress(false, 0, show = false)
                 button?.isEnabled = false
-                button?.text = "已就绪"
+                button?.text = getString(R.string.engine_uml_rootfs_ready)
             }
             UmlRootfsCardState.Phase.FAILED -> {
-                status?.text = "失败：${model.failureReason()} · 下载/校验/解包任一层拒绝都如实呈现，可重试"
+                status?.text = getString(
+                    R.string.engine_uml_rootfs_failed,
+                    model.failureReason(),
+                )
                 showUmlRootfsProgress(false, 0, show = false)
                 button?.isEnabled = true
-                button?.text = "重试 →"
+                button?.text = getString(R.string.engine_uml_rootfs_retry_action)
             }
             UmlRootfsCardState.Phase.DISABLED -> card.visibility = View.GONE
         }

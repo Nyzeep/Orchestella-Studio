@@ -853,7 +853,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/oe_space_xs"
-                        android:text="QEMU 车道内的 pVM 编译加速；关闭后实例始终走普通编译"
+                        android:text="@string/settings_accel_lane_subtitle"
                         android:textSize="12sp"
                         android:textColor="?attr/colorOutline" />
 

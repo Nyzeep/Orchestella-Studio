@@ -32,7 +32,11 @@ import java.io.InputStreamReader
  * - [UmlFaceStatusRegistry] — the minimal read-only status holder the dashboard
  *   mirrors `ExecutionSessionRegistry`'s registry shape with: one bound face at
  *   a time, register/unregister by instance id, and a width read that is honest
- *   through every lifecycle state (a reaped or stopped face reads 0).
+ *   through every lifecycle state (a reaped or stopped face reads 0). Since the
+ *   formalization round (2026-11-14) the binding also carries the channel fact
+ *   the arm already computed (`channel=wired/unwired`): the dashboard renders
+ *   the routability truth from the registry instead of hardcoding it, so a
+ *   wired arm claims and an unwired arm says so — never the reverse.
  * - [UmlFaceRideAlong] — the [InstanceLaunchCoordinator.UmlFaceLane] port
  *   implementation: arms the face through the assembly slot after a successful
  *   dispatch, refuses a second face while one is bound (never two kernels),
@@ -345,19 +349,24 @@ object UmlRootfsExtraArgs {
  * gate-refused face reads 0 and the UI says so.
  */
 object UmlFaceStatusRegistry {
-    class BoundFace(val instanceId: String, val face: UmlFaceLauncher)
+    class BoundFace(val instanceId: String, val face: UmlFaceLauncher, val channelWired: Boolean)
 
     @Volatile
     private var bound: BoundFace? = null
 
-    /** False when a face is already bound — at most one face may ride at a time. */
+    /**
+     * False when a face is already bound — at most one face may ride at a
+     * time. [channelWired] is the arm's own channel fact (the D-1 lane rode
+     * into the assembly slot or it did not); the default is `false` — a caller
+     * that omits it states the unwired truth, never a faked wired claim.
+     */
     @Synchronized
     @JvmStatic
-    fun register(instanceId: String, face: UmlFaceLauncher): Boolean {
+    fun register(instanceId: String, face: UmlFaceLauncher, channelWired: Boolean = false): Boolean {
         if (bound != null) {
             return false
         }
-        bound = BoundFace(instanceId, face)
+        bound = BoundFace(instanceId, face, channelWired)
         return true
     }
 
@@ -380,6 +389,32 @@ object UmlFaceStatusRegistry {
     /** The bound face's dispatchable width; 0 when no face is bound or it is down. */
     @JvmStatic
     fun runningWidth(): Int = current()?.face?.width() ?: 0
+
+    /**
+     * The bound face's channel truth, as the arm stated it at register time:
+     * `true` only when the D-1 lane channel rode into the assembly slot. No
+     * binding reads unwired — the dashboard's honest default.
+     */
+    @JvmStatic
+    fun channelWired(): Boolean = current()?.channelWired ?: false
+}
+
+/**
+ * The engine bar's UML segment copy decision (2026-11-14 formalization round):
+ * a pure mapping from the registry's two honest reads — the running width and
+ * the channel fact — to the string resource the segment renders. The wired
+ * running state claims (`UML · 运行中`); the unwired running state states the
+ * boundary (`UML · 运行中 · 编译通道未接线`) — never the reverse; anything not
+ * running stays the idle copy. Pure so the dual-state copy is JVM-contract
+ * tested; the Activity only calls getString with the mapped id (the resource
+ * constants are plain ints, no Android runtime needed).
+ */
+object UmlSegmentCopy {
+    fun resourceFor(runningWidth: Int, channelWired: Boolean): Int = when {
+        runningWidth > 0 && channelWired -> R.string.engine_uml_running_wired
+        runningWidth > 0 -> R.string.engine_uml_running_unwired
+        else -> R.string.engine_uml_idle
+    }
 }
 
 /**
@@ -489,15 +524,17 @@ class UmlFaceRideAlong(
             log("uml-face start refused code=${result.code} detail=${result.detail ?: "-"}")
             return null
         }
-        if (!UmlFaceStatusRegistry.register(instanceId, face)) {
+        if (!UmlFaceStatusRegistry.register(instanceId, face, channelWired = channel != null)) {
             // A concurrent arm won the slot mid-start: never run two kernels.
             log("uml-face arm refused: registry slot taken mid-start; stopping this face")
             face.stop()
             return null
         }
         // The arm line states the channel truthfully: wired when the D-1 lane
-        // channel rode into the assembly slot, unwired when it did not. The
-        // width stays the face's own honest read either way.
+        // channel rode into the assembly slot, unwired when it did not — and
+        // the same fact now rides into the registry (channelWired) so the
+        // dashboard renders the routability truth. The width stays the face's
+        // own honest read either way.
         log("uml-face started width=${face.width()} channel=${if (channel != null) "wired" else "unwired"}")
         return face
     }
