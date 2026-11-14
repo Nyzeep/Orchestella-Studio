@@ -11,7 +11,7 @@ Parent: `.scratch/orchestella-hw-virt/map.md`
 
 前九票分散在不同分支；需要一次集成把行为拼起来，并用架构守卫锁住“能力/所有权/数据面/CI”不变量，避免后续 agent 又把声明改回旧状态。同时把票 23 的正式报告/双轴评审写完，给用户一个可交接的“零设备就绪”结论，明确哪些必须等真机。
 
-来源：`.scratch/orchestella-hw-virt/map.md`；`docs/research/2026-10-19-avf-reachability-corrections.zh-CN.md`；票 23 的 `issues/23-*.md` 与现有 review 目录。
+来源：`.scratch/orchestella-hw-virt/map.md`；`docs/research/archive/2026-10-avf/2026-10-19-avf-reachability-corrections.zh-CN.md`；票 23 的 `issues/23-*.md` 与现有 review 目录。
 
 ## What to build / 范围
 

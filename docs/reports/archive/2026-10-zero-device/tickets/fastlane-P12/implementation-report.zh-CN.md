@@ -1,7 +1,7 @@
 # P12 实施报告：宿主 Termux / glibc / PRoot 兜底评估（零设备）
 
 > 票：[P12-host-native-research.md](../../../.scratch/orchestella-fastlane/issues/P12-host-native-research.md)
-> 主报告：[2026-10-21-host-native-lane-evaluation.md](../../../research/2026-10-21-host-native-lane-evaluation.md)
+> 主报告：[2026-10-21-host-native-lane-evaluation.md](../../../../../research/archive/2026-10-reference-surveys/2026-10-21-host-native-lane-evaluation.md)
 > 结论：**本阶段不产品化；保留为 Userspace Compatibility 兜底候选/内部对照；需要更多证据。** 不改 Runtime 类别、不改 `CONTEXT.md`、不写产品承诺。
 
 ## 1. 目标

@@ -6,7 +6,7 @@ Canonical 文档：
 
 - [Fast Lane × QEMU 交叉优化 Spec](../../docs/reports/orchestration/fastlane-cross-lane-spec-20261021.zh-CN.md)
 - [Protected Fast Lane 方案](../../docs/reports/orchestration/protected-fast-lane-plan-20261021.zh-CN.md)
-- [参考项目调研](../../docs/research/2026-10-21-cross-lane-reference-survey.md)
+- [参考项目调研](../../docs/research/archive/2026-10-reference-surveys/2026-10-21-cross-lane-reference-survey.md)
 - [ACR-03 Runtime 类别裁定](../orchestella-avf-shizuku/issues/ACR-03-protected-fast-lane-runtime-class.md)
 
 ## 当前方向
@@ -112,7 +112,7 @@ P09 的零设备版本可用假 distcc 客户端/服务器先做；与 P02/P03/P
 
 ## 证据与文档
 
-- 研究：[`docs/research/2026-10-21-cross-lane-reference-survey.md`](../../docs/research/2026-10-21-cross-lane-reference-survey.md)
+- 研究：[`docs/research/archive/2026-10-reference-surveys/2026-10-21-cross-lane-reference-survey.md`](../../docs/research/archive/2026-10-reference-surveys/2026-10-21-cross-lane-reference-survey.md)
 - Spec：[`docs/reports/orchestration/fastlane-cross-lane-spec-20261021.zh-CN.md`](../../docs/reports/orchestration/fastlane-cross-lane-spec-20261021.zh-CN.md)
 - 参考项目：本地 `references/`（本地 exclude，不进入 GitHub）
 - 本回合：只建图/票/文档，不运行设备/构建；P 票的真实代码由后续实现票闭合。

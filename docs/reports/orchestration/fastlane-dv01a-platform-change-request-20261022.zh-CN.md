@@ -1,7 +1,7 @@
 # 平台 / ROM 变更请求：允许 protected Microdroid payload 执行 APK 内 sealed toolbox
 
 日期：2026-10-22 ｜ 请求方：Orchestella Fast Lane（DV-01 / DV-01A）｜ 状态：`blocked_external`，等待平台 / ROM 决策
-关联研究：`docs/research/microdroid-exec-selinux-20261022.zh-CN.md`
+关联研究：`docs/research/archive/2026-10-avf/microdroid-exec-selinux-20261022.zh-CN.md`
 
 ---
 
@@ -247,7 +247,7 @@ allow shell microdroid_payload_file:file rx_file_perms;
 
 ## 10. 参考
 
-- 研究全文：`docs/research/microdroid-exec-selinux-20261022.zh-CN.md`
+- 研究全文：`docs/research/archive/2026-10-avf/microdroid-exec-selinux-20261022.zh-CN.md`
 - DV-01A：`.scratch/orchestella-fastlane/issues/DV-01A-toolbox-exec-selinux.md`
 - DV-01：`.scratch/orchestella-fastlane/issues/DV-01-protected-payload-device.md`
 - DV-01 报告：`docs/reports/orchestration/fastlane-dv01-20261021.zh-CN.md`

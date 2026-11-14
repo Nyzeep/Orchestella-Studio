@@ -24,4 +24,4 @@ Status: completed
 
 ## Prototype/research dependency
 
-P1（17）数据；Podroid 的 9p-over-vsock 可行性规模作为旁证（docs/research/2026-09-05-podroid-源码分析.md §4）。
+P1（17）数据；Podroid 的 9p-over-vsock 可行性规模作为旁证（docs/research/archive/2026-10-reference-surveys/2026-09-05-podroid-源码分析.md §4）。

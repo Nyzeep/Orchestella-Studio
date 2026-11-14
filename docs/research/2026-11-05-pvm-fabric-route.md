@@ -19,7 +19,7 @@ evidence: [官方源码] AOSP 源码/官方文档；[社区] 第三方项目文�
 
 ## 1. 硬边界与本次调研范围
 
-10-28 文档 §3.1 的单条决定性事实不变：硬件 vCPU 由 EL2 hypervisor 提供，hypervisor 只执行平台信任链接受的镜像，故「第三方 App 自有内核 + 硬件 vCPU 同体」在 protected-only 设备上被证伪（pvmfw AVB 信任键、virtmgr 文件标签、`setProtectedVm(false)` 在 `hypervisor_vm_supported=false` 的设备上直接抛 `UnsupportedOperationException`——本次在源码级复核了第三条，见 §2.4）。（来源：`docs/research/2026-10-28-native-kernel-three-lane-exploration.zh-CN.md` §3.1，内部文档）
+10-28 文档 §3.1 的单条决定性事实不变：硬件 vCPU 由 EL2 hypervisor 提供，hypervisor 只执行平台信任链接受的镜像，故「第三方 App 自有内核 + 硬件 vCPU 同体」在 protected-only 设备上被证伪（pvmfw AVB 信任键、virtmgr 文件标签、`setProtectedVm(false)` 在 `hypervisor_vm_supported=false` 的设备上直接抛 `UnsupportedOperationException`——本次在源码级复核了第三条，见 §2.4）。（来源：`docs/research/archive/2026-10-uml-origins/2026-10-28-native-kernel-three-lane-exploration.zh-CN.md` §3.1，内部文档）
 
 本次求证对象是**组合编排路线**：一个逻辑 Linux、多个执行面（QEMU 翻译执行面 + pVM 硬件 vCPU 面 + UML 原生指令面），即「fabric」。所有结论遵守工单全局纪律：不同夹具数字禁止相除；推算标注非实测；本批次无设备，真机相关项标 `not-tested` 并入设备窗口清单（§6）。
 
@@ -239,7 +239,7 @@ evidence: [官方源码] AOSP 源码/官方文档；[社区] 第三方项目文�
 - [社区] extv.github.io/Podroid/guide/backends.html（Pixel 8–10 non-protected 自定义内核 VM、双权限 grant、多核 bringup 自动降核、权限生命周期）
 - [社区] github.com/droid-vm/droidvm（/dev/gzvm、/dev/gunyah、/dev/kvm 三后端自述）
 - [社区] sparkles.petar-kirov.dev/research/android-dev-env/concepts（GenieZone adapter ≠ AVF 暴露的边界表述）
-- [内部基线] .scratch/orchestella-uml-fabric/issues/05-pvm-fabric-route.md；docs/research/2026-10-28-native-kernel-three-lane-exploration.zh-CN.md §3；docs/research/ACR-draft-four-lanes-20261029.md §4/§7；docs/research/2026-10-31-uml-direction-research.zh-CN.md §1
+- [内部基线] .scratch/orchestella-uml-fabric/issues/05-pvm-fabric-route.md；docs/research/archive/2026-10-uml-origins/2026-10-28-native-kernel-three-lane-exploration.zh-CN.md §3；docs/research/ACR-draft-four-lanes-20261029.md §4/§7；docs/research/2026-10-31-uml-direction-research.zh-CN.md §1
 - [内部基线] .scratch/orchestella-fastlane/issues/P09-distcc-cross-lane.md（含 2026-10-24 改道节）
 - [本项目实测] tools/device-validation/dv_pvm_crossfire.py（clang major=22 门、payload 基线 1.05–1.08 s、回退判定）；runtime/instance/.../LaneBudgetLedger.java；runtime/fastlane-distcc/.../DistccTcpVsockBridge.java
 - [本项目实测] 会话 22/23 真机数据（经工单指定为已确立内部事实，本票未复测）

@@ -11,7 +11,7 @@ Parent: `.scratch/orchestella-hw-virt/map.md`
 
 适配器无条件 `useNetwork(true)`，但 Android 17 的 `crosvm_minimal` 没有 `net` feature：无 GPU 的联网 VM 会被路由到 minimal，`--net` 在参数解析阶段失败（status 35），整台 VM 起不来。Podroid 的修复是声明一个 headless 2D GPU，把 VM 路由到完整 crosvm。我们的 guest 网络配置还只传 DNS，没有 guest IP/DHCP 契约；AVF 网络是否真能通仍未设计完。
 
-来源：`docs/research/2026-10-19-avf-reachability-corrections.zh-CN.md` §0.6、§4；Podroid issue #44（含 1.2.6 修复说明）；`ReflectiveAvfVirtualMachineApi.java:101`；`AvfLaunchSpec.java:90-105`；`guest-assets/initramfs/init:4152-4195`；`AvfNetworkAssemblyContractTest`。
+来源：`docs/research/archive/2026-10-avf/2026-10-19-avf-reachability-corrections.zh-CN.md` §0.6、§4；Podroid issue #44（含 1.2.6 修复说明）；`ReflectiveAvfVirtualMachineApi.java:101`；`AvfLaunchSpec.java:90-105`；`guest-assets/initramfs/init:4152-4195`；`AvfNetworkAssemblyContractTest`。
 
 ## What to build / 范围
 

@@ -170,7 +170,7 @@ java -cp <out/test>:<out/main>:<junit-4.13.2.jar>:<hamcrest-core-1.3.jar> \
 
 - `docs/reports/orchestration/fastlane-cross-lane-spec-20261021.zh-CN.md` §2.2/§4.8/§6。
 - `.scratch/orchestella-fastlane/issues/P07-capability-router.md`。
-- `docs/research/2026-10-21-cross-lane-reference-survey.md` §1/§5/§8。
+- `docs/research/archive/2026-10-reference-surveys/2026-10-21-cross-lane-reference-survey.md` §1/§5/§8。
 - 本仓 `runtime/contract/src/main/java/.../FullLinuxContract.java`（只读参考能力词汇，未修改）。
 - AOSP `VirtualMachineManager.getCapabilities()` / `CAPABILITY_PROTECTED_VM`：`references/aosp-virtualization/libs/framework-virtualization/src/android/system/virtualmachine/VirtualMachineManager.java:102/188`。
 - ACR-03：`../orchestella-avf-shizuku/issues/ACR-03-protected-fast-lane-runtime-class.md`（未决）。

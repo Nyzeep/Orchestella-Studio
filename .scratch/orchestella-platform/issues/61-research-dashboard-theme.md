@@ -19,4 +19,4 @@ Blocked by: none
 
 保留既有构建主义几何设计，统一 ThemeApplier/ThemeStore 对页面、弹窗、导航、输入与动态卡片着色；设置字号/光标/间距真实持久化。去掉强制 App 引导、假终端及固定性能信息，改为真实操作、前台3秒设备刷新、实际运行引擎与 Linux 初始化进度。SSH 基于实际用户保存和应用的规则显示，转发关闭后不会重启再开放；图形真实通道未完成，UI 不再显示模板画面为可用桌面，该增强交独立 Phase 5 会话。
 
-证据：[主题审计](../../../docs/research/2026-10-13-theme-ui-audit.md)、[独立 Phase 5 开工指令](../../../docs/agent-handoff/PHASE5_PARALLEL_SESSION_PROMPT.zh-CN.md)。
+证据：[主题审计](../../../docs/research/archive/2026-10-reference-surveys/2026-10-13-theme-ui-audit.md)、[独立 Phase 5 开工指令](../../../docs/agent-handoff/PHASE5_PARALLEL_SESSION_PROMPT.zh-CN.md)。

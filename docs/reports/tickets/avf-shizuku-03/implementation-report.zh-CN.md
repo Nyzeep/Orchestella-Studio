@@ -3,7 +3,7 @@
 - 工单：`.scratch/orchestella-avf-shizuku/issues/03-shizuku-client-lifecycle.md`。
 - Owner：A / 主协调；执行：Codex / new-provider/gpt-6.1-sol；日期：2026-10-15。
 - 分支/基线：main / `428860ad9a1cb335f8be78c157b2ff57faf2a6da`。无A新commit、push、worktree；版本0.5.0/code500由主协调管理，A只在App依赖块加SDK。
-- E=`LOCAL_RESOURCES/artifacts/avf-shizuku-next-stage/20261015`。研究：E/research-auth/report.zh-CN.md与reference-manifest.json，正式综合研究在docs/research/2026-10-15-avf-shizuku-upgrade.md。
+- E=`LOCAL_RESOURCES/artifacts/avf-shizuku-next-stage/20261015`。研究：E/research-auth/report.zh-CN.md与reference-manifest.json，正式综合研究在docs/research/archive/2026-10-avf/2026-10-15-avf-shizuku-upgrade.md。
 
 ## 用户价值与当前状态
 

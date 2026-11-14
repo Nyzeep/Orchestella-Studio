@@ -2,7 +2,7 @@
 
 Status: 0.5.3本地/框架交付范围保留；2026-10-17追加protected优先规划（23–27/ACR-02），新增任务未实现，具体就绪/阻塞按map与各票；未决架构不整份ready化。
 Owner: Codex 主协调。建立：2026-10-15；2026-10-16增补。基线：428860ad9a1cb335f8be78c157b2ff57faf2a6da，保留dirty0.5.0→0.5.3。
-来源：[正式研究](../../docs/research/2026-10-15-avf-shizuku-upgrade.md)、[scope](scope.md)、[map](map.md)。用户已授权直接合成、拆票与选择现有行为seam，不再进行常规粒度访谈。
+来源：[正式研究](../../docs/research/archive/2026-10-avf/2026-10-15-avf-shizuku-upgrade.md)、[scope](scope.md)、[map](map.md)。用户已授权直接合成、拆票与选择现有行为seam，不再进行常规粒度访谈。
 
 ## Problem Statement
 

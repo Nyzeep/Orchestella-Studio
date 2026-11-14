@@ -472,8 +472,8 @@ AOSP `VirtualMachineConfig` 提供了与 custom image 并列的 **app payload** 
 - `runtime/engine-avf/.../AvfVirtualMachineEngine.java`：capability matrix 与 vsock session。
 - `runtime/engine-qemu/.../QemuTuning.java`：默认值与实验字段。
 - `runtime/engine-qemu/.../QemuLaunchSpec.java`：`-cpu`/`-accel`/`-drive`/passt 参数。
-- `docs/research/2026-10-19-avf-reachability-corrections.zh-CN.md`：non-protected label、pvmfw、hidden API、设备门。
-- `docs/research/2026-10-17-avf-custom-linux-route-study.md`：protected/custom Linux 硬门。
+- `docs/research/archive/2026-10-avf/2026-10-19-avf-reachability-corrections.zh-CN.md`：non-protected label、pvmfw、hidden API、设备门。
+- `docs/research/archive/2026-10-avf/2026-10-17-avf-custom-linux-route-study.md`：protected/custom Linux 硬门。
 - `docs/reports/orchestration/next-optimization-plan-20261018.zh-CN.md`：P0/P1 与 QEMU 主线。
 - `docs/reports/orchestration/release-readiness-fix-20261019.zh-CN.md`：生产签名缺口。
 - `docs/reports/orchestration/p0-2-runtime-supervisor-20261018.zh-CN.md`：QEMU 生命周期收敛。

@@ -11,7 +11,7 @@ Parent: `.scratch/orchestella-hw-virt/map.md`
 
 同一能力在 evaluator、engine、session、MainActivity、SoC blocklist 各说一套；engine 声称 graphics/audio/clipboard/pointer，session 只承认 baseline，UI 又声称 graphics。QEMU session 没有覆写 `capabilityMatrix()`，桌面 HUD 反而把 QEMU 显示读成 software baseline；`MainActivity.currentCapabilityMatrix()` 目前没有调用方。用户看到的“支持”与真实接线不一致。
 
-来源：`docs/research/2026-10-19-avf-reachability-corrections.zh-CN.md` §4；`AvfCapabilityEvaluator.java:129-136`；`AvfVirtualMachineEngine.java:23-25`；`AvfInstanceLauncher.java:59-61`；`MainActivity.kt:744-753`；`DesktopActivity.java:493-495`；`QemuInstanceLauncher.java`。
+来源：`docs/research/archive/2026-10-avf/2026-10-19-avf-reachability-corrections.zh-CN.md` §4；`AvfCapabilityEvaluator.java:129-136`；`AvfVirtualMachineEngine.java:23-25`；`AvfInstanceLauncher.java:59-61`；`MainActivity.kt:744-753`；`DesktopActivity.java:493-495`；`QemuInstanceLauncher.java`。
 
 ## What to build / 范围
 

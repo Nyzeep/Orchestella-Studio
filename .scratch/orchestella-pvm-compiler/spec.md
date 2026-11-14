@@ -180,6 +180,6 @@ Wave 2（gate 通过后）
 7. LLVM 许可证：Apache-2.0 with LLVM Exceptions（含 object form 嵌入豁免）。
    https://llvm.org/LICENSE.txt
 8. 本仓设备证据：protected payload `execve` → `EACCES(13)`，`avc denied { execute_no_trans }`。
-   `docs/research/microdroid-exec-selinux-20261022.zh-CN.md`
+   `docs/research/archive/2026-10-avf/microdroid-exec-selinux-20261022.zh-CN.md`
 9. 本仓设备事实：`getCapabilities` raw=1，protected-only。
    `docs/reports/tickets/avf-device-mode/implementation-report.zh-CN.md:215`

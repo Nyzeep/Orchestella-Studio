@@ -3,7 +3,7 @@
 - 基线：main `bd315c08`（2026-11-10，v0.6.2 + 150+ 未发版提交），工作分支 `research/uml-zero-device-direction-20261110`
 - 当前 effort：`.scratch/orchestella-uml-fabric/map.md`（13/13 工单 resolved，ACR 待投票）
 - 研究输入：`docs/research/2026-11-10-proot-vs-uml-zero-device-direction.zh-CN.md`（外部一手来源与启动分解）
-- 内部证据：`docs/research/2026-10-29-uml-device-round-go-no-go.zh-CN.md`、`docs/research/2026-11-07-uml-fabric-device-round.zh-CN.md`、`docs/research/2026-11-08-uml-fabric-device-round-2.zh-CN.md`、`docs/research/ACR-draft-four-lanes-20261029.md`、`docs/research/2026-10-21-host-native-lane-evaluation.md`
+- 内部证据：`docs/research/2026-10-29-uml-device-round-go-no-go.zh-CN.md`、`docs/research/2026-11-07-uml-fabric-device-round.zh-CN.md`、`docs/research/2026-11-08-uml-fabric-device-round-2.zh-CN.md`、`docs/research/ACR-draft-four-lanes-20261029.md`、`docs/research/archive/2026-10-reference-surveys/2026-10-21-host-native-lane-evaluation.md`
 - 纪律：**零设备优先**；ACR 通过前不写产品集成代码；真机项标 `not-tested` 并给出下个窗口入口；跨夹具数字禁止相除；不补造 ADR-0015。
 
 ## 0. 问题陈述
@@ -24,8 +24,8 @@
 
 | # | 事实 | 证据 | 对方向的含义 |
 | --- | --- | --- | --- |
-| F1 | proot 无 guest 内核，`ptrace` 重写路径；`proot-distro` 明确 systemd/OpenRC/socket 服务通常不可启动，真实 namespace/cgroup 不可用 | `docs/research/2026-10-21-host-native-lane-evaluation.md` §4.1；ACR §1.1 | proot 的“秒开”不能作为 UML 的对照基线；它属于 Userspace Compatibility |
-| F2 | proot 原生指令但 syscall 路径有开销；内部记录 `openat` proot 28.005 µs vs native 2.503 µs（约 11×） | `docs/research/2026-10-21-host-native-lane-evaluation.md` §2；ACR §4.3 | “启动快”不等于“跑得快”；UML 也要单独测 syscall/IO |
+| F1 | proot 无 guest 内核，`ptrace` 重写路径；`proot-distro` 明确 systemd/OpenRC/socket 服务通常不可启动，真实 namespace/cgroup 不可用 | `docs/research/archive/2026-10-reference-surveys/2026-10-21-host-native-lane-evaluation.md` §4.1；ACR §1.1 | proot 的“秒开”不能作为 UML 的对照基线；它属于 Userspace Compatibility |
+| F2 | proot 原生指令但 syscall 路径有开销；内部记录 `openat` proot 28.005 µs vs native 2.503 µs（约 11×） | `docs/research/archive/2026-10-reference-surveys/2026-10-21-host-native-lane-evaluation.md` §2；ACR §4.3 | “启动快”不等于“跑得快”；UML 也要单独测 syscall/IO |
 | F3 | UML 真内核已在 Android 17 App 域启动；启动 220–400 ms，中位 ≈330 ms；fork+exec 1.49×、纯 CPU 1.08×；syscall 约 8× 是结构性开销 | `docs/research/2026-10-29-uml-device-round-go-no-go.zh-CN.md` §1 | UML 的卖点是“真内核 + 原生指令”，不是“零开销” |
 | F4 | 2026-11-07 设备轮：ext4 + `work=bootprobe` 20 循环，19/20 干净，boot 0.22–0.40 s；唯一失败为 stop 文件残留（基础设施，非 boot 不稳定） | `docs/research/2026-11-07-uml-fabric-device-round.zh-CN.md` §5.1 | UML 已有亚秒级 fast path 的真机样本；下一步是产品化与可重复测量 |
 | F5 | SMP `ncpus=4` guest nproc=4，4×sha256(32MB) 有效加速 3.92×；SMP 启动 0.23–0.43 s（UP 0.21–0.43 s） | `docs/research/2026-11-07-uml-fabric-device-round.zh-CN.md` §1–§2 | 多核 fast path 可用；SMP 不是启动时间的致命变量 |

@@ -45,7 +45,7 @@ git remote add github git@github.com:Nyzeep/Orchestella-Studio.git
 
 1. `AGENTS.md`、`CONTEXT.md`
 2. `docs/reports/orchestration/fastlane-cross-lane-spec-20261021.zh-CN.md`
-3. `docs/research/2026-10-21-cross-lane-reference-survey.md`
+3. `docs/research/archive/2026-10-reference-surveys/2026-10-21-cross-lane-reference-survey.md`
 4. `.scratch/orchestella-fastlane/map.md`
 5. 三张票：`P08-qemu-tuning.md`、`P10-telemetry-security.md`、`P12-host-native-research.md`
 6. 现有代码/报告：`runtime/engine-qemu/**`、`tools/qemu-tuning/**`、`runtime/fastlane-telemetry/`、`docs/reports/orchestration/runtime-performance-*.zh-CN.md`
@@ -88,7 +88,7 @@ git remote add github git@github.com:Nyzeep/Orchestella-Studio.git
 
 ### P12 — Host-native Termux/glibc/PRoot 兜底研究
 
-产出 `docs/research/2026-10-21-host-native-lane-evaluation.md`：
+产出 `docs/research/archive/2026-10-reference-surveys/2026-10-21-host-native-lane-evaluation.md`：
 
 - 评估 Termux 原生 Bionic、Termux glibc/`glibc-runner`、PRoot/proot-distro 的 CPU/兼容性/许可证/隔离边界；
 - 明确 PRoot 在 protected Microdroid 不可行（ptrace `neverallow`）；Host Termux/PRoot 只是 Userspace Compatibility 兜底/对照，不是 Fast Lane；
@@ -139,7 +139,7 @@ git remote add github git@github.com:Nyzeep/Orchestella-Studio.git
    ```bash
    grep -RInE "BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|/root/|/home/|/Users/|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}" \
      docs/reports/tickets/fastlane-P08 docs/reports/tickets/fastlane-P10 docs/reports/tickets/fastlane-P12 \
-     docs/research/2026-10-21-host-native-lane-evaluation.md || true
+     docs/research/archive/2026-10-reference-surveys/2026-10-21-host-native-lane-evaluation.md || true
    ```
 8. 最终 `git status --short` 只应包含你有意提交的文件。
 
@@ -167,7 +167,7 @@ git merge-base --is-ancestor github/feature/fastlane-qemu-observability HEAD && 
 
 ```bash
 git add runtime/engine-qemu tools/qemu-tuning runtime/fastlane-telemetry
-git add -f docs/research/2026-10-21-host-native-lane-evaluation.md
+git add -f docs/research/archive/2026-10-reference-surveys/2026-10-21-host-native-lane-evaluation.md
 git add -f .scratch/orchestella-fastlane/issues/P08-qemu-tuning.md
 git add -f .scratch/orchestella-fastlane/issues/P10-telemetry-security.md
 git add -f .scratch/orchestella-fastlane/issues/P12-host-native-research.md

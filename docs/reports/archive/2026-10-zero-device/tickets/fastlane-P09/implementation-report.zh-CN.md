@@ -139,4 +139,4 @@ P02 已实现的 typed 返回。客户端 `DISTCC_FALLBACK=1`（默认）不应�
   <https://github.com/termux/termux-packages/blob/master/packages/distcc/build.sh>
 - AOSP Microdroid vsock/TCP 边界（背景）：
   <https://source.android.com/docs/core/virtualization/microdroid>
-- 本仓跨车道调研：`docs/research/2026-10-21-cross-lane-reference-survey.md`
+- 本仓跨车道调研：`docs/research/archive/2026-10-reference-surveys/2026-10-21-cross-lane-reference-survey.md`

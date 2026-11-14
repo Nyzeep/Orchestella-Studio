@@ -216,7 +216,7 @@ if config.protectedVm {
         .or_service_specific_exception(-1)?;
 ```
 
-而允许列表显式排除了 `app_data_file`（`docs/research/2026-10-19-avf-reachability-corrections.zh-CN.md` §2.1 已逐行核对，D 级）。我们所有资产都在 App 私有目录，直接不满足。
+而允许列表显式排除了 `app_data_file`（`docs/research/archive/2026-10-avf/2026-10-19-avf-reachability-corrections.zh-CN.md` §2.1 已逐行核对，D 级）。我们所有资产都在 App 私有目录，直接不满足。
 
 - **第 3 道门（信任链，唯一不可绕）**：见 §3.2。
 
@@ -256,7 +256,7 @@ fn perform_verified_boot<'a>(signed_kernel: &[u8], ramdisk: Option<&[u8]>)
 
 **所以"C1 不可用"的准确表述是**：不是"我们没配对"，是"我们的镜像不是由被信任的私钥签出来的"。配置层能改的（`protected: false`、debug level、内存、CPU 拓扑）全都不触及这条链；改属性只会让 VM 更早失败或换一种失败。
 
-**同样重要的反向结论**：这也**不是硅层判决**。同一颗 SoC 换一个 ROM 声明 `ro.boot.hypervisor.vm.supported=true`，non-protected 路径就可能开放（`docs/research/2026-10-17-avf-custom-linux-route-study.md` §1 已论证过"不能合并成一个芯片支持/不支持标签"）。所以问题不是"这块芯片不行"，是"这台 ROM 只卖了 protected 这一种"。
+**同样重要的反向结论**：这也**不是硅层判决**。同一颗 SoC 换一个 ROM 声明 `ro.boot.hypervisor.vm.supported=true`，non-protected 路径就可能开放（`docs/research/archive/2026-10-avf/2026-10-17-avf-custom-linux-route-study.md` §1 已论证过"不能合并成一个芯片支持/不支持标签"）。所以问题不是"这块芯片不行"，是"这台 ROM 只卖了 protected 这一种"。
 
 ### 3.3 信任链原理图
 
@@ -373,7 +373,7 @@ public class VirtualMachineCustomImageConfig {
 三个已经在仓库里的先例，按可信度排：
 
 1. `../Podroid` 的 `AvfReflect.kt:5-12` 头注释直接写明："Each call is one Method.invoke with setAccessible(true) — **Android 14+ requires HiddenApiBypass (installed at app onCreate)** for these to resolve."
-2. `docs/research/2026-10-19-avf-reachability-corrections.zh-CN.md` §2.3 记录了 TerminalAppPlus 在 targetSdk 37 上使用 `hiddenapibypass:6.1` + `addHiddenApiExemptions("Landroid/system/", ...)` 的存在性证据。
+2. `docs/research/archive/2026-10-avf/2026-10-19-avf-reachability-corrections.zh-CN.md` §2.3 记录了 TerminalAppPlus 在 targetSdk 37 上使用 `hiddenapibypass:6.1` + `addHiddenApiExemptions("Landroid/system/", ...)` 的存在性证据。
 3. 同一节也记录了反例：Android 16 的 ART 变更曾让旧版 HiddenApiBypass 在 `setHiddenApiExemptions` 崩溃（LSPosed issue #52）。
 
 **注意 `../Podroid` 自身的一个缝**：`AvfReflect` 全文件只有 `Class.forName`，没有安装豁免的代码——它把这件事推给了 App 层。我们要照抄的话，**豁免必须装在 `Application.attachBaseContext`**，且必须早于任何 AVF 类加载，否则 `ReflectiveAvfVirtualMachineApi.loadShape()` 第一次 `classLoader.loadClass(...)` 就会失败。
@@ -528,7 +528,7 @@ fun choose(capabilities: Int): ProtectedVmChoice = when {
 
 因此本轮**无法**做"与 phase5 快照逐字比对"，改用两条替代路径：
 1. AOSP 模块的 GitHub 镜像固定分支（本回合直读，B 级）；
-2. 项目内已有的 AOSP 引用（`docs/research/microdroid-exec-selinux-20261022.zh-CN.md` §5.1 的 API 行号表、`2026-10-19-avf-reachability-corrections.zh-CN.md` §2.1 的 virtmgr 行号）。
+2. 项目内已有的 AOSP 引用（`docs/research/archive/2026-10-avf/microdroid-exec-selinux-20261022.zh-CN.md` §5.1 的 API 行号表、`2026-10-19-avf-reachability-corrections.zh-CN.md` §2.1 的 virtmgr 行号）。
 
 **这也意味着"pinned 上游快照"这个说法对 AVF 模块目前不成立**——记入 §9。
 
@@ -670,7 +670,7 @@ guest-assets/run-in-builder.sh build
 - `runtime/engine-avf/src/main/java/io/github/nyzeep/orchestella/runtime/engineavf/ReflectiveAvfVirtualMachineApi.java:171, 535-560`
 - `../Podroid/app/src/main/java/com/excp/podroid/engine/avf/AvfReflect.kt`、`AvfEngine.kt`、`AvfCapabilities.kt`
 - `.gitignore:11-12, 23`；`README.md:129-142`
-- 既有研究（D 级引用，未重测）：`docs/research/2026-10-17-avf-custom-linux-route-study.md`、`2026-10-17-avf-device-recheck.md`、`2026-10-19-avf-reachability-corrections.zh-CN.md`、`2026-10-15-avf-shizuku-upgrade.md`、`2026-10-29-36domain-unlock-and-uml-compile.zh-CN.md`、`ACR-draft-four-lanes-20261029.md`、`microdroid-exec-selinux-20261022.zh-CN.md`
+- 既有研究（D 级引用，未重测）：`docs/research/archive/2026-10-avf/2026-10-17-avf-custom-linux-route-study.md`、`2026-10-17-avf-device-recheck.md`、`2026-10-19-avf-reachability-corrections.zh-CN.md`、`2026-10-15-avf-shizuku-upgrade.md`、`2026-10-29-36domain-unlock-and-uml-compile.zh-CN.md`、`ACR-draft-four-lanes-20261029.md`、`microdroid-exec-selinux-20261022.zh-CN.md`
 
 ### 10.2 联网核证（可点击 URL）
 

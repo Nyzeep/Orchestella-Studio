@@ -53,7 +53,7 @@ git remote add github git@github.com:Nyzeep/Orchestella-Studio.git
 
 1. `AGENTS.md`、`CONTEXT.md`
 2. `docs/reports/orchestration/fastlane-cross-lane-spec-20261021.zh-CN.md`
-3. `docs/research/2026-10-21-cross-lane-reference-survey.md`
+3. `docs/research/archive/2026-10-reference-surveys/2026-10-21-cross-lane-reference-survey.md`
 4. `.scratch/orchestella-fastlane/map.md`
 5. 三张票：`P03-sealed-toolbox.md`、`P09-distcc-cross-lane.md`、`P11-build-ci-licensing.md`
 6. 现有实现/报告：`fastlane-toolbox/**`、`runtime/fastlane-distcc/**`、`tools/fastlane-build/**`、`.github/workflows/fastlane-zero-device.yml`、`docs/reports/tickets/fastlane-P03|P09|P11/**`

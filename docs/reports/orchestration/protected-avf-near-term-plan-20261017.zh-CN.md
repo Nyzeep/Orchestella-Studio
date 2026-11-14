@@ -31,8 +31,8 @@
 
 直接依据，后续执行以这些canonical为入口，不重新复制全部原文：
 
-- [设备重新检测](../../research/2026-10-17-avf-device-recheck.md)。
-- [AVF/Custom Linux路线详细研究](../../research/2026-10-17-avf-custom-linux-route-study.md)：完整教程、discussion主帖+3评论+1回复，固定AOSP权限/label/firmware、ADB/sepolicy、Root Gunyah、参考App和官方营销核验。
+- [设备重新检测](../../research/archive/2026-10-avf/2026-10-17-avf-device-recheck.md)。
+- [AVF/Custom Linux路线详细研究](../../research/archive/2026-10-avf/2026-10-17-avf-custom-linux-route-study.md)：完整教程、discussion主帖+3评论+1回复，固定AOSP权限/label/firmware、ADB/sepolicy、Root Gunyah、参考App和官方营销核验。
 - [最新503编排与限定设备验收](avf-shizuku-device-20261016.zh-CN.md)。
 - [当前工单与旧证据索引](../../../.scratch/orchestella-avf-shizuku/map.md)，以及本回合scope/spec增补。
 

@@ -40,15 +40,15 @@ Fast Lane 的实现规格见 [fastlane-cross-lane-spec-20261021](reports/orchest
 
 ## 研究依据
 
-- [Shizuku / AVF 综合研究](research/2026-10-15-avf-shizuku-upgrade.md)。
-- [当前测试设备的 AVF / Gunyah 能力重检](research/2026-10-17-avf-device-recheck.md)：系统仅声明 protected，不能推导芯片完全没有硬件虚拟化；AVF 框架不等于 pKVM 后端。
-- [Custom Linux、AOSP、ADB/vsock 与参考项目路线调研](research/2026-10-17-avf-custom-linux-route-study.md)：固定源码、教程与作者经验分层；protected 引导与 App 私有根盘仍需独立验证。
-- [Protected Fast Lane × QEMU 交叉优化参考调研](research/2026-10-21-cross-lane-reference-survey.md)：Termux/PRoot/glibc/gvproxy/DroidVM/Podroid/AOSP 的借鉴与边界；distcc 跨车道设计。
-- [构建、CI 与开发预览发布可靠性](research/2026-10-15-build-release-reliability.md)。
-- [v0.4.2 终端与运行时下一阶段的有限优化](research/2026-10-15-terminal-runtime-next-phase.md)。
+- [Shizuku / AVF 综合研究](research/archive/2026-10-avf/2026-10-15-avf-shizuku-upgrade.md)。
+- [当前测试设备的 AVF / Gunyah 能力重检](research/archive/2026-10-avf/2026-10-17-avf-device-recheck.md)：系统仅声明 protected，不能推导芯片完全没有硬件虚拟化；AVF 框架不等于 pKVM 后端。
+- [Custom Linux、AOSP、ADB/vsock 与参考项目路线调研](research/archive/2026-10-avf/2026-10-17-avf-custom-linux-route-study.md)：固定源码、教程与作者经验分层；protected 引导与 App 私有根盘仍需独立验证。
+- [Protected Fast Lane × QEMU 交叉优化参考调研](research/archive/2026-10-reference-surveys/2026-10-21-cross-lane-reference-survey.md)：Termux/PRoot/glibc/gvproxy/DroidVM/Podroid/AOSP 的借鉴与边界；distcc 跨车道设计。
+- [构建、CI 与开发预览发布可靠性](research/archive/2026-10-phase5/2026-10-15-build-release-reliability.md)。
+- [v0.4.2 终端与运行时下一阶段的有限优化](research/archive/2026-10-phase5/2026-10-15-terminal-runtime-next-phase.md)。
 - [四车道决策材料草案：定位、targetSdk 36 取舍与文案纪律（2026-10-29）](research/ACR-draft-four-lanes-20261029.md)：proot/bare、pVM、QEMU、UML 的机制、性能数字与「不可横比」口径的唯一权威来源，含四态标注与撤销条件。
 - [UML fabric 当前研究线 map](../.scratch/orchestella-uml-fabric/map.md) 与 [UML 方向研究](research/2026-10-31-uml-direction-research.zh-CN.md)、[全谱研究](research/2026-10-31-uml-full-spectrum-research.zh-CN.md)：当前研究主线的目标、已完成工单、ACR 待投票项与证据基线。
-- [AVF 自定义内核资产调研（2026-10-29）](research/avf-kernel-asset-20261029.md)：non-protected 自定义内核方向的评估材料；由并行会话入库。
+- [AVF 自定义内核资产调研（2026-10-29）](research/archive/2026-10-avf/avf-kernel-asset-20261029.md)：non-protected 自定义内核方向的评估材料；由并行会话入库。
 - 各票的 [实施报告](reports/tickets/) 与 [独立审查](reports/reviews/)。历史报告中的版本、未提交和设备状态按当时快照理解。
 
 真实本应用 **AVF Guest 成功样本截至 2026-11-04 仍为 0**，本次没有 AVF 性能提升声明。平台 feature、权限、模式声明、Microdroid、合成 FD 和 QEMU 验证都不能互相替代。

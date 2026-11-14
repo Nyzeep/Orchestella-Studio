@@ -38,7 +38,7 @@ External gates: 无
 
 ## 交付
 
-- `docs/research/2026-10-21-host-native-lane-evaluation.md`（或追加到现有调研）；
+- `docs/research/archive/2026-10-reference-surveys/2026-10-21-host-native-lane-evaluation.md`（或追加到现有调研）；
 - 能力/性能/许可证对比表；
 - 明确建议：不产品化 / 作为兜底 / 需要更多证据；
 - 不修改产品代码。
@@ -53,4 +53,4 @@ External gates: 无
 - 2026-10-21 / Agent D：研究完成，未改 Runtime 类别/`CONTEXT.md`/产品代码。结论：**本阶段不产品化**；Host Termux/glibc/PRoot 只能归入既有 Userspace Compatibility，作为兜底候选/内部对照；需 G1 targetSdk/exec、G2 只读 APK 前缀、G3 Android 14/15/16、G4 本项目 PRoot 开销、G5 GPL/LGPL 五门全部有证据才可讨论产品化。
 - 关键修正：既有调研“Microdroid 官方 neverallow ptrace”证据不足。AOSP `microdroid_payload.te`（`7836cbb29`）无 ptrace allow、也无显式 neverallow；SELinux 默认拒绝，PRoot 在 protected 内大概率不可用，但需真机探针，不能继续写“官方明确禁止”。
 - 未验证：无 Android 真机、无宿主 PoC、无本项目性能 n≥10、无法务结论；所有本项目数字 `not-tested`。
-- 报告：`docs/research/2026-10-21-host-native-lane-evaluation.md`；实施摘要：`docs/reports/tickets/fastlane-P12/implementation-report.zh-CN.md`。
+- 报告：`docs/research/archive/2026-10-reference-surveys/2026-10-21-host-native-lane-evaluation.md`；实施摘要：`docs/reports/tickets/fastlane-P12/implementation-report.zh-CN.md`。

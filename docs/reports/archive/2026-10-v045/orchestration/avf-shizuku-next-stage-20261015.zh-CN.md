@@ -6,7 +6,7 @@
 
 ## 实际交付
 
-正式综合研究：`docs/research/2026-10-15-avf-shizuku-upgrade.md`，含证据分级、方案取舍、授权状态/身份/FD/owner、ROM/设备门、性能阶段/五假设、CI/当前缺陷、许可与ACR、实施补记。
+正式综合研究：`docs/research/archive/2026-10-avf/2026-10-15-avf-shizuku-upgrade.md`，含证据分级、方案取舍、授权状态/身份/FD/owner、ROM/设备门、性能阶段/五假设、CI/当前缺陷、许可与ACR、实施补记。
 
 本地effort：`.scratch/orchestella-avf-shizuku/`，有scope/map/spec、16张编号票与ACR-01，共17张独立工单及Mermaid依赖图。01–04本地实施完成，13本地集成完成；16历史治理来源保全完成；11公共seam局部red已复现，上层/设备门仍开。其他票按设备/架构/框架/测量保持blocked，不伪ready。
 

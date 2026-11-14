@@ -8,7 +8,7 @@
 
 ## 1. 任务目标与依据
 
-按正式研究 `docs/research/2026-10-15-avf-shizuku-upgrade.md` §8、当前 effort 的 scope/spec 和 01 票，解除 clean checkout 缺 ignored `app/src/main/resources/guest_init` 时的 Guest CI 阻塞，同时保留 canonical 漂移失败门。
+按正式研究 `docs/research/archive/2026-10-avf/2026-10-15-avf-shizuku-upgrade.md` §8、当前 effort 的 scope/spec 和 01 票，解除 clean checkout 缺 ignored `app/src/main/resources/guest_init` 时的 Guest CI 阻塞，同时保留 canonical 漂移失败门。
 
 用户已明确授权直接实施，并把测试 seam 固定为既有 Guest CLI 的真实子进程。本地 `PROJECT_ROOT/.agents/skills/tdd/SKILL.md`、tests.md、mocking.md 已读取；Skill 工具因项目/全局同名歧义被拒，随后按项目本地版本逐片 red→green，没有重新询问已确认的 seam。`GLOSSARY.md` 不存在；已继承研究阶段完整政策、CONTEXT、ADR 的约束，不重做广泛研究。
 

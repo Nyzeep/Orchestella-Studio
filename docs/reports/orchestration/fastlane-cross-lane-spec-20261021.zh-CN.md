@@ -3,7 +3,7 @@
 > 状态：可实现规格；ACR-03 未决前不对外声明新 Runtime 类别，不进入默认发布。
 > 目标：在无 Root、protected-only 设备上，让硬件 CPU 充分参与 Linux 工作负载；QEMU 继续承担完整 Linux 契约。
 > 非目标：在 protected 内运行完整发行版 VM；绕过 pvmfw/SELinux；把 Fast Lane 叫 Full Linux。
-> 基准：`main 4b075c93`；参考调研见 `docs/research/2026-10-21-cross-lane-reference-survey.md`。
+> 基准：`main 4b075c93`；参考调研见 `docs/research/archive/2026-10-reference-surveys/2026-10-21-cross-lane-reference-survey.md`。
 
 ---
 

@@ -11,7 +11,7 @@ Parent: `.scratch/orchestella-hw-virt/map.md`
 
 `AvfHostFactsProbe.readModeFacts()` 在 Activity 里直接 `Class.forName` + `getSystemService` + `getCapabilities`，没有 hidden API 豁免；在受限设备上返回 `UNKNOWN`，UI 无法区分“仅 protected”和“未知”。引擎 `ReflectiveAvfVirtualMachineApi` 又有另一套 class shape、bit 常量、失败语义。探针和引擎必须看到同一个平台事实，豁免只能装一次，且要早于任何 AVF 类加载。
 
-来源：`docs/research/2026-10-19-avf-reachability-corrections.zh-CN.md` §2.3、§4；`AvfHostFactsProbe.java:108-136`；`ReflectiveAvfVirtualMachineApi.java:388-441`；TerminalAppPlus `Application.kt`（targetSdk 37 + hiddenapibypass 6.1）。
+来源：`docs/research/archive/2026-10-avf/2026-10-19-avf-reachability-corrections.zh-CN.md` §2.3、§4；`AvfHostFactsProbe.java:108-136`；`ReflectiveAvfVirtualMachineApi.java:388-441`；TerminalAppPlus `Application.kt`（targetSdk 37 + hiddenapibypass 6.1）。
 
 ## What to build / 范围
 

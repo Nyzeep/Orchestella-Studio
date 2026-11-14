@@ -33,7 +33,7 @@
 - `CONTEXT.md` 与任务相关 ADR，尤其 0001/0002/0005/0006/0007/0008/0009/0010/0011/0014/0016/0017/0018/0019。
 - `docs/agents/issue-tracker.md` 与 `.scratch/orchestella-platform/map.md`，已有 M2/M3/M4 spec。
 - `.scratch/orchestella-platform/spec-quality-20261013.md`：第一会话正在实施的 Linux 基线、终端、主题、网络与诚实 UI 的验收依据。只读参考，不修改其工单或抢占文件。
-- `docs/research/2026-10-13-linux-reference-survey.md`、`2026-10-13-distro-validation-matrix.md`、`2026-10-13-guest-runtime-audit.md`、`2026-10-13-terminal-reference-survey.md`、`2026-10-13-theme-ui-audit.md`。
+- `docs/research/archive/2026-10-reference-surveys/2026-10-13-linux-reference-survey.md`、`2026-10-13-distro-validation-matrix.md`、`2026-10-13-guest-runtime-audit.md`、`2026-10-13-terminal-reference-survey.md`、`2026-10-13-theme-ui-audit.md`。
 - 历史 GPU/Wayland/AVF/Podroid 研究可按相关问题定点读取，不把旧“验收全通过”文档直接当成当前真实功能证明。
 
 旧 policy 使用过 DroidLayer 名称，实际现有目录已改为 Orchestella。不要因此新建一套 DroidLayer 影子目录。用户本次明确授权当前目录内隔离开发和下载公开参考输入，仍须遵守数据边界与宿主系统规则。

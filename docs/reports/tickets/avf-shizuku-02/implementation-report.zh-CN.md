@@ -3,7 +3,7 @@
 - 工单：`.scratch/orchestella-avf-shizuku/issues/02-honest-authorization-preflight.md`。
 - Owner：A / 主协调；执行：Codex / new-provider/gpt-6.1-sol；日期：2026-10-15。
 - 分支/基线：main / `428860ad9a1cb335f8be78c157b2ff57faf2a6da`；无本票commit、push、worktree。主协调独立管理集成版本0.5.0/code500，A未修改版本条目。
-- 来源：`docs/research/2026-10-15-avf-shizuku-upgrade.md`；外部E/research-auth/report.zh-CN.md，其中E=`LOCAL_RESOURCES/artifacts/avf-shizuku-next-stage/20261015`。
+- 来源：`docs/research/archive/2026-10-avf/2026-10-15-avf-shizuku-upgrade.md`；外部E/research-auth/report.zh-CN.md，其中E=`LOCAL_RESOURCES/artifacts/avf-shizuku-next-stage/20261015`。
 
 ## 目标与完成状态
 
