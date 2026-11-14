@@ -1473,24 +1473,36 @@
                             android:insetBottom="0dp" />
                     </LinearLayout>
 
-                    <!-- Creation Progress & Status if active -->
-                    <ProgressBar
-                        android:id="@+id/create_progress"
-                        style="?android:attr/progressBarStyleHorizontal"
+                    <!-- Creation Progress & Status（UI 重新设计轮 C6：自独立行
+                         收敛为紧贴列表头部的卡内横幅，bg_oe_card 一级卡档；
+                         create_progress/create_status id 与读写语义保持，
+                         空闲整卡隐藏、可见性由 MainActivity 随进度/文案聚合） -->
+                    <LinearLayout
+                        android:id="@+id/create_progress_banner"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginBottom="@dimen/oe_icon_inline_gap"
-                        android:visibility="gone" />
+                        android:orientation="vertical"
+                        android:background="@drawable/bg_oe_card"
+                        android:padding="@dimen/oe_card_pad"
+                        android:layout_marginBottom="@dimen/oe_card_gap"
+                        android:visibility="gone">
 
-                    <TextView
-                        android:id="@+id/create_status"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginBottom="@dimen/oe_space_md"
-                        android:fontFamily="monospace"
-                        android:textSize="11sp"
-                        android:textColor="#FDBB24"
-                        android:accessibilityLiveRegion="polite" />
+                        <ProgressBar
+                            android:id="@+id/create_progress"
+                            style="?android:attr/progressBarStyleHorizontal"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:visibility="gone" />
+
+                        <TextView
+                            android:id="@+id/create_status"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:fontFamily="monospace"
+                            android:textSize="11sp"
+                            android:textColor="#FDBB24"
+                            android:accessibilityLiveRegion="polite" />
+                    </LinearLayout>
 
                     <!-- Empty state -->
                     <LinearLayout
@@ -1541,12 +1553,15 @@
                             android:visibility="gone" />
                     </LinearLayout>
 
-                    <!-- Dynamic Instances Cards Container -->
-                    <LinearLayout
+                    <!-- Dynamic Instances Cards Container（UI 重新设计轮 C6：
+                         LinearLayout 全量渲染改 RecyclerView 回收复用 + 分组
+                         header（运行中/已停止）；layoutManager 程序化设置；
+                         layoutAnimation 禁挂 RecyclerView，条目进场仍走
+                         程序化 playListEntryStagger（含交错上限）） -->
+                    <androidx.recyclerview.widget.RecyclerView
                         android:id="@+id/instance_list"
                         android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical" />
+                        android:layout_height="wrap_content" />
                 </LinearLayout>
 
                 <!-- ============================================== -->
