@@ -1519,6 +1519,26 @@
                             android:text="点击上方「+ 新建实例」或切至「04/发行版」装配运行"
                             android:textColor="#8E929B"
                             android:textSize="12sp" />
+
+                        <!-- 空态直接 CTA（UI 重新设计轮 C6 布局段占位）：去发行版
+                             装配，默认 gone，可见性与点击接线随逻辑提交。 -->
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_empty_goto_distros"
+                            style="@style/Widget.Material3.Button"
+                            android:layout_width="wrap_content"
+                            android:layout_height="@dimen/oe_btn_h_primary"
+                            android:layout_marginTop="@dimen/oe_space_lg"
+                            android:gravity="center"
+                            app:cornerRadius="0dp"
+                            android:backgroundTint="?attr/colorPrimary"
+                            android:fontFamily="monospace"
+                            android:text="@string/instances_empty_cta"
+                            android:textColor="#FFFFFF"
+                            android:textSize="12sp"
+                            android:textStyle="bold"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:visibility="gone" />
                     </LinearLayout>
 
                     <!-- Dynamic Instances Cards Container -->
