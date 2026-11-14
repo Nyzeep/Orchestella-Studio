@@ -1036,12 +1036,12 @@ public final class UmlRootfsProvisioner {
                 fi
 
                 if command -v distccd >/dev/null 2>&1; then
-                    if distccd --daemon --listen 0.0.0.0 --port 3632 --allow 10.0.2.0/24 2>/dev/null; then
-                        printf 'UM_NET distccd listening port=3632\\n'
-                    elif distccd --daemon --user nobody --listen 0.0.0.0 --port 3632 --allow 10.0.2.0/24 2>/dev/null; then
+                    if distccd --daemon --user distcc --listen 0.0.0.0 --port 3632 --allow 10.0.2.0/24 --log-file /tmp/distccd.log --pid-file /tmp/distccd.pid 2>/tmp/distccd.err; then
+                        printf 'UM_NET distccd listening port=3632 user=distcc\\n'
+                    elif distccd --daemon --user nobody --listen 0.0.0.0 --port 3632 --allow 10.0.2.0/24 --log-file /tmp/distccd.log --pid-file /tmp/distccd.pid 2>/tmp/distccd.err; then
                         printf 'UM_NET distccd listening port=3632 user=nobody\\n'
                     else
-                        printf 'UM_NET_ERROR step=distccd detail=daemon start failed\\n' >&2
+                        printf 'UM_NET_ERROR step=distccd detail=rc=%s err=%s\\n' "$?" "$(tail -1 /tmp/distccd.err 2>/dev/null)" >&2
                     fi
                 else
                     printf 'UM_NET_ERROR step=distccd detail=distccd binary missing after install\\n' >&2
