@@ -57,6 +57,12 @@ class SettingsSubActivity : AppCompatActivity() {
         /** 「外观与主题」：8 选择按钮 + 5 滑条 + 终端光标偏好（并入）。 */
         const val SECTION_APPEARANCE = "appearance"
 
+        /** 「镜像源与加速」：软件源策略 Spinner + 测速优选 + Docker 加速源。 */
+        const val SECTION_MIRROR = "mirror"
+
+        /** 「关于与合规」：版本 + 商标与合规声明（折叠块）。 */
+        const val SECTION_ABOUT = "about"
+
         /** Container-transform approximation: entry scale (and alpha 0→1). */
         private const val TRANSFORM_START_SCALE = 0.96f
 
@@ -69,6 +75,9 @@ class SettingsSubActivity : AppCompatActivity() {
 
     private lateinit var settingsManager: SettingsManager
     private lateinit var themeStore: ThemeStore
+
+    /** Mirror speed-test probe runs off the main thread; shutdown in onDestroy. */
+    private val backgroundExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
 
     private val backgroundPicker = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -127,6 +136,8 @@ class SettingsSubActivity : AppCompatActivity() {
         val container = findViewById<LinearLayout>(R.id.settings_sub_container)
         when (intent?.getStringExtra(EXTRA_SECTION)) {
             SECTION_APPEARANCE -> bindAppearance(container)
+            SECTION_MIRROR -> bindMirror(container)
+            SECTION_ABOUT -> bindAbout(container)
             // Sections land here as their migration commits land; anything
             // unknown must not linger as an empty shell.
             else -> {
@@ -144,6 +155,11 @@ class SettingsSubActivity : AppCompatActivity() {
         if (currentSection == SECTION_APPEARANCE) {
             refreshAppearance()
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        backgroundExecutor.shutdown()
     }
 
     /** Section currently bound (null before onCreate dispatch completes). */
@@ -598,4 +614,142 @@ class SettingsSubActivity : AppCompatActivity() {
     }
 
     private var currentEditorDialog: androidx.appcompat.app.AlertDialog? = null
+
+    // =====================================================================
+    // 镜像源与加速（旧一级页「镜像源与容器加速管理」卡迁入；偏好与探测
+    // 行为不变，测速完成后的分节 stagger 重放落在子页容器上）
+    // =====================================================================
+
+    private fun bindMirror(container: LinearLayout) {
+        currentSection = SECTION_MIRROR
+        toolbarTitle(R.string.settings_section_mirror_title)
+        layoutInflater.inflate(R.layout.layout_settings_section_mirror, container, true)
+        setupMirrorSection()
+    }
+
+    private fun setupMirrorSection() {
+        val spinnerMirrorSource = findViewById<android.widget.Spinner>(R.id.spinner_settings_mirror_source)
+        val btnSpeedTest = findViewById<MaterialButton>(R.id.btn_settings_speed_test)
+        val btnResetMirror = findViewById<MaterialButton>(R.id.btn_settings_reset_mirror)
+        val txtSpeedTestResults = findViewById<TextView>(R.id.txt_settings_speed_test_results)
+
+        ThemeApplier.setRole(btnSpeedTest, ThemeApplier.Role.PRIMARY_ACTION)
+        ThemeApplier.setRole(btnResetMirror, ThemeApplier.Role.SECONDARY_ACTION)
+
+        val sources = DistroMirrorProvisioner.MirrorSource.values()
+        val adapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_dropdown_item,
+            sources.map { it.displayName() }
+        )
+        spinnerMirrorSource.adapter = adapter
+        spinnerMirrorSource.setSelection(0) // Default: MULTI_TIER
+
+        btnSpeedTest.setOnClickListener {
+            runMirrorSpeedTest(btnSpeedTest, spinnerMirrorSource, txtSpeedTestResults)
+        }
+
+        btnResetMirror.setOnClickListener {
+            spinnerMirrorSource.setSelection(0)
+            txtSpeedTestResults.text = "已恢复为默认多层级回退配置 (国内云源 -> 教育网 -> 官方源)"
+            Toast.makeText(this, "已恢复默认镜像源策略", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun runMirrorSpeedTest(
+        btnSpeedTest: MaterialButton,
+        spinnerMirrorSource: android.widget.Spinner,
+        txtSpeedTestResults: TextView,
+    ) {
+        btnSpeedTest.isEnabled = false
+        txtSpeedTestResults.text = "正在并发测速探测各镜像节点 (阿里云 / 清华 / USTC / 华为 / 腾讯 / 官方)..."
+
+        backgroundExecutor.execute {
+            val candidates = MirrorSpeedTester.defaultSystemCandidates()
+            val results = MirrorSpeedTester.probeAll(candidates, 3000)
+
+            runOnUiThread {
+                btnSpeedTest.isEnabled = true
+                val sb = StringBuilder()
+                sb.append("实时测速结果 (响应时间从快到慢)：\n")
+                for (r in results) {
+                    val statusText = if (r.isSuccess) "${r.latencyMs()} ms ✓" else "连接超时 ✕"
+                    sb.append("• ").append(r.candidate().name()).append("：").append(statusText).append("\n")
+                }
+
+                val fastest = MirrorSpeedTester.selectFastest(results, candidates.first())
+                sb.append("\n建议优选：").append(fastest.name())
+                txtSpeedTestResults.text = sb.toString().trim()
+
+                // If fastest matches Aliyun or TUNA, update spinner accordingly
+                val sources = DistroMirrorProvisioner.MirrorSource.values()
+                if (fastest.name().contains("阿里")) {
+                    val idx = sources.indexOf(DistroMirrorProvisioner.MirrorSource.ALIYUN)
+                    if (idx >= 0) spinnerMirrorSource.setSelection(idx)
+                } else if (fastest.name().contains("清华")) {
+                    val idx = sources.indexOf(DistroMirrorProvisioner.MirrorSource.TUNA)
+                    if (idx >= 0) spinnerMirrorSource.setSelection(idx)
+                } else if (fastest.name().contains("中科大")) {
+                    val idx = sources.indexOf(DistroMirrorProvisioner.MirrorSource.USTC)
+                    if (idx >= 0) spinnerMirrorSource.setSelection(idx)
+                }
+
+                Toast.makeText(this@SettingsSubActivity, "测速完成，推荐节点：${fastest.name()}", Toast.LENGTH_SHORT).show()
+
+                // T2 (2026-11-08) Lane motion consumption: a finished speed test is
+                // the page's explicit data-refresh moment, so replay the section
+                // stagger on the sub-page container. First-open motion is owned by
+                // the container-transform entrance, so the two never double up.
+                findViewById<ViewGroup?>(R.id.settings_sub_container)?.let {
+                    OrchestellaMotion.playSectionStagger(it)
+                }
+            }
+        }
+    }
+
+    // =====================================================================
+    // 关于与合规（旧一级页「关于与官方商标声明」卡迁入；商标长文折叠为
+    // 「商标与合规声明」expandSection 折叠块，默认收起）
+    // =====================================================================
+
+    private fun bindAbout(container: LinearLayout) {
+        currentSection = SECTION_ABOUT
+        toolbarTitle(R.string.settings_section_about_title)
+        layoutInflater.inflate(R.layout.layout_settings_section_about, container, true)
+        findViewById<TextView>(R.id.txt_settings_version)?.text = "版本：v${BuildConfig.VERSION_NAME}"
+        setupTrademarkDisclosureSection()
+    }
+
+    /**
+     * The trademark wall becomes a toggleable section via
+     * [OrchestellaMotion.expandSection]/[collapseSection] — the same
+     * vocabulary as the launch-fallback block on the settings home page.
+     * Default state is collapsed (reference material, not a decision);
+     * a generation counter stops a stale collapse-end action from GONE-ing
+     * a section that was re-expanded meanwhile.
+     */
+    private fun setupTrademarkDisclosureSection() {
+        val header = findViewById<View?>(R.id.layout_settings_trademark_header) ?: return
+        val content = findViewById<View?>(R.id.layout_settings_trademark_content) ?: return
+        val indicator = findViewById<TextView?>(R.id.txt_settings_trademark_indicator)
+        var expanded = false
+        var toggleGeneration = 0
+        fun repaintIndicator() {
+            indicator?.text = if (expanded) "▾" else "▸"
+        }
+        repaintIndicator()
+        header.setOnClickListener {
+            toggleGeneration++
+            val generation = toggleGeneration
+            expanded = !expanded
+            if (expanded) {
+                OrchestellaMotion.expandSection(content)
+            } else {
+                OrchestellaMotion.collapseSection(content) {
+                    if (generation == toggleGeneration) content.visibility = View.GONE
+                }
+            }
+            repaintIndicator()
+        }
+    }
 }
