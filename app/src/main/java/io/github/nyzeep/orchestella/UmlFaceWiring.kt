@@ -589,7 +589,7 @@ class UmlCompileBridgeWiring(
                 session = null
             }
             val laneFactory = io.github.nyzeep.orchestella.runtime.fastlane.distcc.UmlTcpChannelFactory.loopback(
-                java.net.InetAddress.getLoopbackAddress(),
+                LOOPBACK_V4,
                 guestDistccPort,
             )
             val channel = UmlChannels.overTcpLane(laneFactory)
@@ -637,7 +637,7 @@ class UmlCompileBridgeWiring(
                 )
             }
             try {
-                started.start(java.net.InetAddress.getLoopbackAddress())
+                started.start(LOOPBACK_V4)
                 submitter = started
                 log("fabric submitter listening 127.0.0.1:${started.port()}")
             } catch (bindFailure: IOException) {
@@ -665,6 +665,20 @@ class UmlCompileBridgeWiring(
     }
 
     companion object {
+        /**
+         * The loopback these loopback-only hops dial and bind: IPv4 127.0.0.1,
+         * explicitly. Device-measured 2026-11-14 (Lane A E2E, device-b):
+         * [java.net.InetAddress.getLoopbackAddress] resolved to the IPv6
+         * loopback on the device, which left the submitter listener bound
+         * ::1-only (tcp6 table) and the lane dialing ::1:3632 — both refused
+         * by the IPv4-only passt forward and the QEMU user-network gateway
+         * (10.0.2.2 → host 127.0.0.1), Connection refused on every hop. Every
+         * loopback constant in this wiring (the log lines, passt's bind, the
+         * gateway's forward target) names 127.0.0.1; the address must be the
+         * same IPv4 one.
+         */
+        val LOOPBACK_V4: java.net.InetAddress = java.net.InetAddress.getByName("127.0.0.1")
+
         /** Provisional Gate 1 dial target: the guest distccd via passt's loopback forward. */
         const val DEFAULT_GUEST_DISTCC_PORT = 3632
 
