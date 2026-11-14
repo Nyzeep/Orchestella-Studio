@@ -90,7 +90,7 @@ Lane B 信息架构现状报告（13 条对照表）→ Lane D 以其为蓝本�
 1. **Windows assumeTrue(POSIX) 跳过 = CI Linux 盲区**：本地全绿的 POSIX 断言测试在 CI 上可能从未真正跑过；推送后必须等 CI 完成再断言绿（前会话即栽于此）。
 2. `TarSpec.file()` 默认 0644——写 0755 语义断言的测试必须用 `TarSpec.fileMode(…, 0755L, …)`。
 3. 敏感门必须**从仓库目录内**运行（`GitRepo.discover()` 基于 CWD），仓外运行一律 fail-closed 报 `scanner_error`。
-4. `cmd //c '单串引号'` 删目录被 MSYS 引号转换打挂（error 123）；须 `MSYS_NO_PATHCONV=1 cmd /c rmdir /s /q "D:\path"`。
+4. `cmd //c '单串引号'` 删目录被 MSYS 引号转换打挂（error 123）；须 `MSYS_NO_PATHCONV=1 cmd /c rmdir /s /q <目标路径>`（盘符字面量会被敏感门 absolute_path 拦下——本报告首推即触）。
 5. adb server 版本混用（v32/v41）致 `unknown host service`：kill-server + 用统一 client 重启。
 6. MSYS `grep -r` 递归存在静默漏报；引用核查类任务以 python os.walk 全树扫描为权威（`/d/t/` 作为 grep 模式会被 MSYS 路径转换吃掉，须写 `/d[/]t/`）。
 
