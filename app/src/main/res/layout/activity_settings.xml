@@ -61,7 +61,59 @@
                     android:paddingTop="@dimen/oe_space_xs"
                     android:paddingBottom="@dimen/oe_space_xs">
 
-                    <!-- 外观与主题行（其余分节行随迁移提交加入） -->
+                    <!-- mirror行：oe_list_item_min_h + trailing chevron，进 SettingsSubActivity 对应节 -->
+                    <LinearLayout
+                        android:id="@+id/row_settings_mirror"
+                        android:layout_width="match_parent"
+                        android:layout_height="@dimen/oe_list_item_min_h"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:background="?android:attr/selectableItemBackground"
+                        android:paddingStart="@dimen/oe_space_md"
+                        android:paddingEnd="@dimen/oe_space_md"
+                        android:clickable="true"
+                        android:focusable="true">
+
+                        <ImageView
+                            android:layout_width="@dimen/oe_icon_inline"
+                            android:layout_height="@dimen/oe_icon_inline"
+                            android:src="@drawable/ic_sym_globe"
+                            android:importantForAccessibility="no"
+                            app:tint="?attr/colorPrimary" />
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="@dimen/oe_space_sm"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="@string/settings_section_mirror_title"
+                                android:textSize="13sp"
+                                android:textStyle="bold"
+                                android:textColor="?attr/colorOnSurface" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/oe_space_xs"
+                                android:text="@string/settings_section_mirror_subtitle"
+                                android:textSize="11sp"
+                                android:textColor="?attr/colorOutline" />
+                        </LinearLayout>
+
+                        <ImageView
+                            android:layout_width="@dimen/oe_icon_inline"
+                            android:layout_height="@dimen/oe_icon_inline"
+                            android:src="@drawable/ic_sym_chevron_right"
+                            android:importantForAccessibility="no"
+                            app:tint="?attr/colorOutline" />
+                    </LinearLayout>
+
+                    <!-- 外观与主题行 -->
                     <LinearLayout
                         android:id="@+id/row_settings_appearance"
                         android:layout_width="match_parent"
@@ -112,148 +164,58 @@
                             android:importantForAccessibility="no"
                             app:tint="?attr/colorOutline" />
                     </LinearLayout>
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
 
-            <!-- ============================================== -->
-            <!-- 分区 1：镜像源与容器加速管理 (Mirror Management) -->
-            <!-- ============================================== -->
-            <LinearLayout
-                style="@style/Widget.Orchestella.InlineIconRow"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/oe_space_sm"
-                android:layout_marginBottom="@dimen/oe_space_sm">
-
-                <ImageView
-                    style="@style/Widget.Orchestella.InlineIcon"
-                    app:srcCompat="@drawable/ic_sym_globe"
-                    app:tint="?attr/colorPrimary" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="镜像源与容器加速管理"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    android:textColor="?attr/colorPrimary" />
-            </LinearLayout>
-
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/card_settings_mirrors"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                app:cardCornerRadius="0dp"
-                app:cardElevation="0dp"
-                app:strokeWidth="1dp"
-                app:strokeColor="?attr/colorOutlineVariant"
-                app:cardBackgroundColor="?attr/colorSurfaceContainer">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="@dimen/oe_space_xl">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="系统软件源策略 (apt / dnf / pacman / zypper)"
-                        android:textSize="15sp"
-                        android:textStyle="bold"
-                        android:textColor="?attr/colorOnSurface" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/oe_space_xs"
-                        android:text="多层级回退：国内云镜像 (Tier 1) → 教育网骨干 (Tier 2) → 官方上游 (Tier 3)"
-                        android:textSize="12sp"
-                        android:textColor="?attr/colorOutline" />
-
-                    <Spinner
-                        android:id="@+id/spinner_settings_mirror_source"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:minHeight="48dp"
-                        android:layout_marginTop="@dimen/oe_space_md"
-                        android:background="@drawable/bg_status_badge"
-                        android:paddingStart="@dimen/oe_space_md"
-                        android:paddingEnd="@dimen/oe_space_md" />
-
-                    <!-- Speed test & Auto-select row -->
+                    <!-- about行：oe_list_item_min_h + trailing chevron，进 SettingsSubActivity 对应节 -->
                     <LinearLayout
+                        android:id="@+id/row_settings_about"
                         android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/oe_space_md"
+                        android:layout_height="@dimen/oe_list_item_min_h"
                         android:orientation="horizontal"
-                        android:gravity="center_vertical">
+                        android:gravity="center_vertical"
+                        android:background="?android:attr/selectableItemBackground"
+                        android:paddingStart="@dimen/oe_space_md"
+                        android:paddingEnd="@dimen/oe_space_md"
+                        android:clickable="true"
+                        android:focusable="true">
 
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btn_settings_speed_test"
-                            style="@style/Widget.Orchestella.Button.Tonal"
-                            android:layout_width="0dp"
-                            android:layout_height="64dp"
-                            android:minHeight="64dp"
-                            android:insetTop="0dp"
-                            android:insetBottom="0dp"
-                            android:gravity="center"
-                            android:layout_weight="1"
-                            android:layout_marginEnd="@dimen/oe_icon_inline_gap"
-                            app:cornerRadius="0dp"
-                            app:icon="@drawable/ic_sym_lan"
-                            app:iconSize="18dp"
-                            android:text="一键测速并优选"
-                            android:textSize="12sp"
-                            android:textStyle="bold" />
+                        <ImageView
+                            android:layout_width="@dimen/oe_icon_inline"
+                            android:layout_height="@dimen/oe_icon_inline"
+                            android:src="@drawable/ic_sym_info"
+                            android:importantForAccessibility="no"
+                            app:tint="?attr/colorPrimary" />
 
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btn_settings_reset_mirror"
-                            style="@style/Widget.Orchestella.Button.Outlined"
+                        <LinearLayout
                             android:layout_width="0dp"
-                            android:layout_height="64dp"
-                            android:minHeight="64dp"
-                            android:insetTop="0dp"
-                            android:insetBottom="0dp"
-                            android:gravity="center"
+                            android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:layout_marginStart="@dimen/oe_icon_inline_gap"
-                            app:cornerRadius="0dp"
-                            android:text="恢复默认配置"
-                            android:textSize="12sp" />
+                            android:layout_marginStart="@dimen/oe_space_sm"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="@string/settings_section_about_title"
+                                android:textSize="13sp"
+                                android:textStyle="bold"
+                                android:textColor="?attr/colorOnSurface" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/oe_space_xs"
+                                android:text="@string/settings_section_about_subtitle"
+                                android:textSize="11sp"
+                                android:textColor="?attr/colorOutline" />
+                        </LinearLayout>
+
+                        <ImageView
+                            android:layout_width="@dimen/oe_icon_inline"
+                            android:layout_height="@dimen/oe_icon_inline"
+                            android:src="@drawable/ic_sym_chevron_right"
+                            android:importantForAccessibility="no"
+                            app:tint="?attr/colorOutline" />
                     </LinearLayout>
-
-                    <TextView
-                        android:id="@+id/txt_settings_speed_test_results"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/oe_space_sm"
-                        android:background="?attr/colorSurfaceContainerLow"
-                        android:padding="@dimen/oe_space_sm"
-                        android:text="节点延迟监测就绪，点击上方按钮测速"
-                        android:textSize="12sp"
-                        android:textColor="?attr/colorOnSurfaceVariant" />
-
-                    <!-- Docker mirrors subsection -->
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/oe_space_lg"
-                        android:text="Docker 容器加速源 (/etc/docker/daemon.json)"
-                        android:textSize="14sp"
-                        android:textStyle="bold"
-                        android:textColor="?attr/colorOnSurface" />
-
-                    <TextView
-                        android:id="@+id/txt_settings_docker_mirrors"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/oe_icon_inline_gap"
-                        android:background="?attr/colorSurfaceContainerLow"
-                        android:padding="@dimen/oe_space_sm"
-                        android:text="• 轩辕镜像 (docker.xuanyuan.me)\n• 毫秒镜像 (docker.1ms.run)\n• DaoCloud 加速 (docker.m.daocloud.io)\n• Docker Hub 官方兜底 (registry-1.docker.io)"
-                        android:textSize="12sp"
-                        android:textColor="?attr/colorOnSurfaceVariant" />
 
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -404,77 +366,6 @@
 
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
-
-            <!-- ============================================== -->
-            <!-- 分区 4：关于与官方商标声明 (About & Licenses)   -->
-            <!-- ============================================== -->
-            <LinearLayout
-                style="@style/Widget.Orchestella.InlineIconRow"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/oe_space_xl"
-                android:layout_marginBottom="@dimen/oe_space_sm">
-
-                <ImageView
-                    style="@style/Widget.Orchestella.InlineIcon"
-                    app:srcCompat="@drawable/ic_sym_info"
-                    app:tint="?attr/colorPrimary" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="关于平台与官方商标合规"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    android:textColor="?attr/colorPrimary" />
-            </LinearLayout>
-
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/card_settings_about"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                app:cardCornerRadius="0dp"
-                app:cardElevation="0dp"
-                app:strokeWidth="1dp"
-                app:strokeColor="?attr/colorOutlineVariant"
-                app:cardBackgroundColor="?attr/colorSurfaceContainer">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="@dimen/oe_space_xl">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Orchestella Studio"
-                        android:textSize="18sp"
-                        android:textStyle="bold"
-                        android:textColor="?attr/colorOnSurface" />
-
-                    <TextView
-                        android:id="@+id/txt_settings_version"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/oe_space_xs"
-                        android:text="版本：v0.1.5 · Phase 5.0"
-                        android:textSize="13sp"
-                        android:textColor="?attr/colorOutline" />
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/oe_space_md"
-                        android:background="?attr/colorSurfaceContainerLow"
-                        android:padding="@dimen/oe_space_md"
-                        android:text="官方发行版商标合规声明：\n• Ubuntu 是 Canonical Ltd. 的注册商标。\n• Debian 是 Software in the Public Interest, Inc. 的注册商标。\n• Fedora 是 Red Hat, Inc. 的注册商标。\n• Arch Linux 是 Judd Vinet 与 Aaron Griffin 的注册商标。\n• openSUSE 是 SUSE LLC 的商标。\n• AlmaLinux 是 AlmaLinux OS Foundation 的商标。\n• Rocky Linux 是 Rocky Enterprise Software Foundation 的商标。\n所有官方图标资源均遵循各项目开源品牌规范使用。"
-                        android:textSize="11sp"
-                        android:textColor="?attr/colorOnSurfaceVariant" />
-
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
 
             <!-- ============ 加速与性能 ============ -->
             <LinearLayout

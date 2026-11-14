@@ -6,10 +6,6 @@ import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import android.view.View
-import android.view.ViewGroup
-import android.widget.AdapterView
-import android.widget.ArrayAdapter
-import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -32,16 +28,13 @@ import java.util.concurrent.Executors
 private const val ACCEL_LANE_TAG = "AccelLane"
 
 /**
- * Secondary Settings & Control Center Activity (ADR-0006, Phase 5.0 R4).
+ * Settings home page: section directory (ADR-0006, T3 settings IA redesign).
  *
- * <p>Aligned with the Instance Detail Console UI/UX standards:
- * <ul>
- *   <li>Comprehensive Multi-tier Mirror Management & One-click parallel latency probe;</li>
- *   <li>Docker registry-mirrors overview & reset;</li>
- *   <li>Realtime AVF Hardware virtualization probe & Graceful fallback documentation;</li>
- *   <li>Terminal cursor blink preferences;</li>
- *   <li>Official Linux distro trademarks & compliance credits.</li>
- * </ul>
+ * <p>Level 1 is a section directory — the rows open per-section sub-pages
+ * ([SettingsSubActivity]); the 「硬件虚拟化与运行架构」summary card stays here
+ * because the AVF badge is a decision item, not a preference. Section
+ * content and its listeners live in the sub-pages; preference keys are
+ * untouched by the migration.
  */
 class SettingsActivity : AppCompatActivity() {
 
@@ -49,11 +42,6 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var settingsManager: SettingsManager
 
     private lateinit var toolbar: MaterialToolbar
-    private lateinit var spinnerMirrorSource: Spinner
-    private lateinit var btnSpeedTest: MaterialButton
-    private lateinit var btnResetMirror: MaterialButton
-    private lateinit var txtSpeedTestResults: TextView
-    private lateinit var txtDockerMirrors: TextView
     private lateinit var txtAvfBadge: TextView
     private lateinit var txtAvfDetails: TextView
     private lateinit var switchStageTrace: MaterialSwitch
@@ -84,7 +72,6 @@ class SettingsActivity : AppCompatActivity() {
 
         settingsManager = SettingsManager(this)
         initViews()
-        setupMirrorSection()
         setupAvfSection()
         setupDiagnosticsSection()
         setupAcceleratorSection()
@@ -106,11 +93,6 @@ class SettingsActivity : AppCompatActivity() {
         toolbar = findViewById(R.id.settings_toolbar)
         toolbar.setNavigationOnClickListener { finish() }
 
-        spinnerMirrorSource = findViewById(R.id.spinner_settings_mirror_source)
-        btnSpeedTest = findViewById(R.id.btn_settings_speed_test)
-        btnResetMirror = findViewById(R.id.btn_settings_reset_mirror)
-        txtSpeedTestResults = findViewById(R.id.txt_settings_speed_test_results)
-        txtDockerMirrors = findViewById(R.id.txt_settings_docker_mirrors)
         txtAvfBadge = findViewById(R.id.txt_settings_avf_badge)
         txtAvfDetails = findViewById(R.id.txt_settings_avf_details)
         findViewById<MaterialButton>(R.id.btn_settings_shizuku).setOnClickListener {
@@ -118,84 +100,18 @@ class SettingsActivity : AppCompatActivity() {
         }
         switchStageTrace = findViewById(R.id.switch_settings_stage_trace)
 
-        findViewById<TextView>(R.id.txt_settings_version)?.text = "版本：v${BuildConfig.VERSION_NAME}"
         toolbar.navigationContentDescription = "返回"
-        ThemeApplier.setRole(btnSpeedTest, ThemeApplier.Role.PRIMARY_ACTION)
-        ThemeApplier.setRole(btnResetMirror, ThemeApplier.Role.SECONDARY_ACTION)
 
         // 分节目录（T3 settings IA redesign）：行点击进 SettingsSubActivity 对应节；
         // 「虚拟化与架构」摘要卡保留一级（决策项），不进目录。
+        findViewById<View?>(R.id.row_settings_mirror)?.setOnClickListener {
+            startActivity(SettingsSubActivity.intent(this, SettingsSubActivity.SECTION_MIRROR))
+        }
         findViewById<View?>(R.id.row_settings_appearance)?.setOnClickListener {
             startActivity(SettingsSubActivity.intent(this, SettingsSubActivity.SECTION_APPEARANCE))
         }
-    }
-
-    private fun setupMirrorSection() {
-        val sources = DistroMirrorProvisioner.MirrorSource.values()
-        val adapter = ArrayAdapter(
-            this,
-            android.R.layout.simple_spinner_dropdown_item,
-            sources.map { it.displayName() }
-        )
-        spinnerMirrorSource.adapter = adapter
-        spinnerMirrorSource.setSelection(0) // Default: MULTI_TIER
-
-        btnSpeedTest.setOnClickListener {
-            runMirrorSpeedTest()
-        }
-
-        btnResetMirror.setOnClickListener {
-            spinnerMirrorSource.setSelection(0)
-            txtSpeedTestResults.text = "已恢复为默认多层级回退配置 (国内云源 -> 教育网 -> 官方源)"
-            Toast.makeText(this, "已恢复默认镜像源策略", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun runMirrorSpeedTest() {
-        btnSpeedTest.isEnabled = false
-        txtSpeedTestResults.text = "正在并发测速探测各镜像节点 (阿里云 / 清华 / USTC / 华为 / 腾讯 / 官方)..."
-
-        backgroundExecutor.execute {
-            val candidates = MirrorSpeedTester.defaultSystemCandidates()
-            val results = MirrorSpeedTester.probeAll(candidates, 3000)
-
-            runOnUiThread {
-                btnSpeedTest.isEnabled = true
-                val sb = StringBuilder()
-                sb.append("实时测速结果 (响应时间从快到慢)：\n")
-                for (r in results) {
-                    val statusText = if (r.isSuccess) "${r.latencyMs()} ms ✓" else "连接超时 ✕"
-                    sb.append("• ").append(r.candidate().name()).append("：").append(statusText).append("\n")
-                }
-
-                val fastest = MirrorSpeedTester.selectFastest(results, candidates.first())
-                sb.append("\n建议优选：").append(fastest.name())
-                txtSpeedTestResults.text = sb.toString().trim()
-
-                // If fastest matches Aliyun or TUNA, update spinner accordingly
-                val sources = DistroMirrorProvisioner.MirrorSource.values()
-                if (fastest.name().contains("阿里")) {
-                    val idx = sources.indexOf(DistroMirrorProvisioner.MirrorSource.ALIYUN)
-                    if (idx >= 0) spinnerMirrorSource.setSelection(idx)
-                } else if (fastest.name().contains("清华")) {
-                    val idx = sources.indexOf(DistroMirrorProvisioner.MirrorSource.TUNA)
-                    if (idx >= 0) spinnerMirrorSource.setSelection(idx)
-                } else if (fastest.name().contains("中科大")) {
-                    val idx = sources.indexOf(DistroMirrorProvisioner.MirrorSource.USTC)
-                    if (idx >= 0) spinnerMirrorSource.setSelection(idx)
-                }
-
-                Toast.makeText(this@SettingsActivity, "测速完成，推荐节点：${fastest.name()}", Toast.LENGTH_SHORT).show()
-
-                // T2 (2026-11-08) Lane motion consumption: a finished speed test is
-                // the page's explicit data-refresh moment, so replay the section
-                // stagger on settings_root_container. The first-open play is still
-                // owned solely by the XML layoutAnimation — this code path never
-                // runs in onCreate, so the two never double up.
-                findViewById<ViewGroup?>(R.id.settings_root_container)?.let {
-                    OrchestellaMotion.playSectionStagger(it)
-                }
-            }
+        findViewById<View?>(R.id.row_settings_about)?.setOnClickListener {
+            startActivity(SettingsSubActivity.intent(this, SettingsSubActivity.SECTION_ABOUT))
         }
     }
 
