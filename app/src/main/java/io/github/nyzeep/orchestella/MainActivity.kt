@@ -459,13 +459,16 @@ class MainActivity : AppCompatActivity() {
             refusalBanner.visibility = View.GONE
         }
 
-        findViewById<View>(R.id.card_create_linux_main)?.setOnClickListener { launchCreationWizard("ubuntu") }
-        findViewById<View>(R.id.card_distro_debian)?.setOnClickListener { launchCreationWizard("debian") }
-        findViewById<View>(R.id.card_distro_fedora)?.setOnClickListener { launchCreationWizard("fedora") }
-        findViewById<View>(R.id.card_distro_arch)?.setOnClickListener { launchCreationWizard("arch") }
-        findViewById<View>(R.id.card_distro_opensuse)?.setOnClickListener { launchCreationWizard("opensuse") }
-        findViewById<View>(R.id.card_distro_almalinux)?.setOnClickListener { launchCreationWizard("almalinux") }
-        findViewById<View>(R.id.card_distro_rocky)?.setOnClickListener { launchCreationWizard("rocky") }
+        // UI 重新设计轮 C5（04/发行版目录化）：点卡 = 展开该卡底部手风琴
+        // （描述 + 装配 CTA），装配动作保留在展开区的 create_* 按钮上，
+        // 点击目标与 action 语义逐字未动。UML rootfs 独立卡不参与手风琴。
+        findViewById<View>(R.id.card_create_linux_main)?.setOnClickListener { toggleDistroCard(R.id.card_create_linux_main) }
+        findViewById<View>(R.id.card_distro_debian)?.setOnClickListener { toggleDistroCard(R.id.card_distro_debian) }
+        findViewById<View>(R.id.card_distro_fedora)?.setOnClickListener { toggleDistroCard(R.id.card_distro_fedora) }
+        findViewById<View>(R.id.card_distro_arch)?.setOnClickListener { toggleDistroCard(R.id.card_distro_arch) }
+        findViewById<View>(R.id.card_distro_opensuse)?.setOnClickListener { toggleDistroCard(R.id.card_distro_opensuse) }
+        findViewById<View>(R.id.card_distro_almalinux)?.setOnClickListener { toggleDistroCard(R.id.card_distro_almalinux) }
+        findViewById<View>(R.id.card_distro_rocky)?.setOnClickListener { toggleDistroCard(R.id.card_distro_rocky) }
         setupUmlRootfsCard()
 
         createUbuntuButton.setOnClickListener { launchCreationWizard("ubuntu") }
@@ -1452,6 +1455,50 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.create_opensuse)?.isEnabled = enabled
         findViewById<View>(R.id.create_almalinux)?.isEnabled = enabled
         findViewById<View>(R.id.create_rocky)?.isEnabled = enabled
+    }
+
+    // UI 重新设计轮 C5：发行版目录化点卡手风琴状态（Activity 侧标记）。
+    // 单开状态机——同一时刻至多一张卡展开，点开新卡时旧卡自动收起，
+    // 再点已展开卡收起；比各自独立更可预期（目录同屏只聚焦一张卡），
+    // 也避免多卡展开把 2 列网格拉回长页。动效走 OrchestellaMotion
+    // expand/collapseSection 既有词汇（alpha + settle，无 layout 高度动画）。
+    private var expandedDistroCardId: Int = View.NO_ID
+
+    private fun toggleDistroCard(cardId: Int) {
+        val tab = findViewById<View>(R.id.container_tab_distros) ?: return
+        val expand = tab.findViewById<View>(expandSectionIdOf(cardId)) ?: return
+        if (expandedDistroCardId == cardId) {
+            expandedDistroCardId = View.NO_ID
+            collapseDistroExpand(expand, cardId)
+            return
+        }
+        val previousId = expandedDistroCardId
+        expandedDistroCardId = cardId
+        if (previousId != View.NO_ID) {
+            tab.findViewById<View>(expandSectionIdOf(previousId))?.let { previous ->
+                if (previous.visibility == View.VISIBLE) collapseDistroExpand(previous, previousId)
+            }
+        }
+        expand.visibility = View.VISIBLE
+        OrchestellaMotion.expandSection(expand)
+    }
+
+    /** 收起收敛守卫：淡出落 GONE 前复核状态，快速换卡时不打断新展开。 */
+    private fun collapseDistroExpand(expand: View, cardId: Int) {
+        OrchestellaMotion.collapseSection(expand) {
+            if (expandedDistroCardId != cardId) expand.visibility = View.GONE
+        }
+    }
+
+    private fun expandSectionIdOf(cardId: Int): Int = when (cardId) {
+        R.id.card_create_linux_main -> R.id.card_create_linux_main_expand
+        R.id.card_distro_debian -> R.id.card_distro_debian_expand
+        R.id.card_distro_fedora -> R.id.card_distro_fedora_expand
+        R.id.card_distro_arch -> R.id.card_distro_arch_expand
+        R.id.card_distro_opensuse -> R.id.card_distro_opensuse_expand
+        R.id.card_distro_almalinux -> R.id.card_distro_almalinux_expand
+        R.id.card_distro_rocky -> R.id.card_distro_rocky_expand
+        else -> View.NO_ID
     }
 
     private fun currentBadge(assessment: DeviceCapabilityEvaluator.Assessment): String {
