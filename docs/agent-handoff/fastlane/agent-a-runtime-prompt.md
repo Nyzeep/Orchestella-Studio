@@ -52,7 +52,7 @@ git remote add github git@github.com:Nyzeep/Orchestella-Studio.git
 
 1. `AGENTS.md`、`CONTEXT.md`
 2. `docs/reports/orchestration/fastlane-cross-lane-spec-20261021.zh-CN.md`
-3. `docs/research/2026-10-21-cross-lane-reference-survey.md`
+3. `docs/research/archive/2026-10-reference-surveys/2026-10-21-cross-lane-reference-survey.md`
 4. `.scratch/orchestella-fastlane/map.md`
 5. 三张票：`P01-engine-fastlane-adapter.md`、`P04-terminal-multiplexer.md`、`P07-capability-router.md`
 6. 现有代码：`runtime/engine-fastlane/**`、`runtime/engine-avf/**`（只读参考）、`runtime/fastlane-terminal/`、`runtime/fastlane-capability/`

@@ -6,7 +6,7 @@
 
 用户要求广泛联网研究、拉取相似项目并实际优化完整 Linux 环境、终端、主题、首页与布局；后续追加命令记录/高亮分段、七个发行版验证，并将 AVF 图形、桌面、容器/开发服务、USB/存储增强交独立 Phase 5 会话。所有仓库禁止远端推送。
 
-参考目录及固定源码调查见 [Linux 参考研究](../../../research/2026-10-13-linux-reference-survey.md) 与 [Termux/终端研究](../../../research/2026-10-13-terminal-reference-survey.md)。Droidspaces 要求 host Root，其服务装配可研究，但本项目保持无 Root、独立 guest kernel 的 VM-first 路线。没有把 GPL 实现复制进原创 Apache 应用代码。
+参考目录及固定源码调查见 [Linux 参考研究](../../../../../research/archive/2026-10-reference-surveys/2026-10-13-linux-reference-survey.md) 与 [Termux/终端研究](../../../../../research/archive/2026-10-reference-surveys/2026-10-13-terminal-reference-survey.md)。Droidspaces 要求 host Root，其服务装配可研究，但本项目保持无 Root、独立 guest kernel 的 VM-first 路线。没有把 GPL 实现复制进原创 Apache 应用代码。
 
 第二会话的完整指令已交付：[Phase 5 并行开发 prompt](../../../agent-handoff/PHASE5_PARALLEL_SESSION_PROMPT.zh-CN.md)。要求隔离工作树/构建、协调设备时间、先闭合真实图形帧与输入，再引入 KDE/niri 等可选环境。
 

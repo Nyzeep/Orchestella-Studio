@@ -263,7 +263,7 @@ Termux 仓库 2022 年的讨论提出“Termux-on-Termux / UML”方向，并列
 - [S10] 本项目 `docs/research/2026-10-29-uml-device-round-go-no-go.zh-CN.md`（UML 220–400 ms；fork+exec 1.49×；CPU 1.08×；syscall 8×；QEMU 分钟级）
 - [S11] 本项目 `docs/research/2026-11-07-uml-fabric-device-round.zh-CN.md`（T5 0.22–0.40 s；SMP 0.23–0.43 s；G1 3.92×；QEMU TCG 翻译税）
 - [S12] 本项目 `docs/research/2026-11-08-uml-fabric-device-round-2.zh-CN.md`（T7 92 包事务 <1800 s；T8② FGS 驻留；T10 Docker；T11 链接）
-- [S13] 本项目 `docs/research/2026-10-21-host-native-lane-evaluation.md`（proot 机制、systemd/namespaces 限制、openat 28.005 µs vs native 2.503 µs）
+- [S13] 本项目 `docs/research/archive/2026-10-reference-surveys/2026-10-21-host-native-lane-evaluation.md`（proot 机制、systemd/namespaces 限制、openat 28.005 µs vs native 2.503 µs）
 - [S14] 本项目 `docs/research/ACR-draft-four-lanes-20261029.md`、`.scratch/orchestella-uml-fabric/map.md`（四车道定位、ACR §8.2 缺项、13/13 resolved）
 - [S15] 本项目 `research/uml-runner/README.md`、`research/uml-kernel-build/README.md`（`seccomp=on`、`ncpus=`、内核可复现构建、16KB stub）
 

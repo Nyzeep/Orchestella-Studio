@@ -13,7 +13,7 @@ Parent: `.scratch/orchestella-hw-virt/map.md`
 
 默认 `VmHardwareConfig` 是 2 vCPU，AVF 适配器只接受 1 vCPU，但拒绝发生在 `AvfInstanceLauncher` 已经 bootstrap rootfs/initramfs 之后；策略链随后回退 QEMU 又 bootstrap 一次。默认 AVF 路径“存在但不可达”，还付两次装配成本。持久 VM 配置用严格相等校验，DNS/内存一变就 `CONFIG_MISMATCH`，没有恢复路径。
 
-来源：`docs/research/2026-10-19-avf-reachability-corrections.zh-CN.md` §4、§5；`VmHardwareConfig.java:15`；`AvfInstanceLauncher.java:198-211`；`ReflectiveAvfVirtualMachineApi.java:85-90,154-192`；AOSP `VirtualMachineManager.java:356`（`delete`）、`VirtualMachineConfig.java:709-716`（`isCompatibleWith`）。
+来源：`docs/research/archive/2026-10-avf/2026-10-19-avf-reachability-corrections.zh-CN.md` §4、§5；`VmHardwareConfig.java:15`；`AvfInstanceLauncher.java:198-211`；`ReflectiveAvfVirtualMachineApi.java:85-90,154-192`；AOSP `VirtualMachineManager.java:356`（`delete`）、`VirtualMachineConfig.java:709-716`（`isCompatibleWith`）。
 
 ## What to build / 范围
 

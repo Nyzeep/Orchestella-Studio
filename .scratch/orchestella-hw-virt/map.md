@@ -13,7 +13,7 @@ Date: 2026-10-19
 
 - **零设备是硬约束**：本 effort 的每个工单都必须在 fake host / fake vsock / JVM / URI fixture 上完成验收；不得把“需要真机”写进 Definition of Done。真机验收是下一个 effort。
 - **基线**：`avf/mode-facts` @ `9f7790e` 已包含票 23 的模式事实切片；本分支已包含它。票 23 的正式报告/双轴评审/合并 main 折进工单 10，不单独占并行槽位。
-- **证据**：`docs/research/2026-10-19-avf-reachability-corrections.zh-CN.md`（本分支 force-add）。其中 Q3 已由 AOSP 源码判定、Q4 对 non-protected 不适用、Q1 条件成立但脆弱；当前 HONOR 为 protected-only，不能运行未签名 custom Linux。
+- **证据**：`docs/research/archive/2026-10-avf/2026-10-19-avf-reachability-corrections.zh-CN.md`（本分支 force-add）。其中 Q3 已由 AOSP 源码判定、Q4 对 non-protected 不适用、Q1 条件成立但脆弱；当前 HONOR 为 protected-only，不能运行未签名 custom Linux。
 - **工程默认值（可在实现中调整，但必须显式记录）**：
   - Owner：App-owner + non-protected；shell-owner 不在本 effort 实现，只保留接口。
   - CPU：AVF v1 默认/上限 1 vCPU；>1 明确 UNSUPPORTED，不做 hidden exact-count hack。

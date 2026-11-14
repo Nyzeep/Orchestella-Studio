@@ -22,7 +22,7 @@
 | 所有者 | 唯一输出 | 研究问题 | 独占新增参考 |
 | --- | --- | --- | --- |
 | graphics-research | `docs/research/2026-10-13-phase5-graphics-avf.md` | AVF 权限、rutabaga/gfxstream/virgl、真实显示传输、共享 buffer 边界 | aosp-virtualization、crosvm、gfxstream、qemu、virglrenderer |
-| desktop-research | `docs/research/2026-10-13-phase5-desktop-matrix.md` | 七发行版 ARM64 包、会话/seat、KDE/niri/labwc/轻量桌面，真实可执行首组合 | labwc、niri、weston、waypipe、noVNC、kwin |
+| desktop-research | `docs/research/archive/2026-10-phase5/2026-10-13-phase5-desktop-matrix.md` | 七发行版 ARM64 包、会话/seat、KDE/niri/labwc/轻量桌面，真实可执行首组合 | labwc、niri、weston、waypipe、noVNC、kwin |
 | productivity-research | `docs/research/2026-10-13-phase5-productivity.md` | rootless Podman/Docker 与 code-server，认证、生命周期、loopback/LAN 边界 | podman、common、netavark、aardvark-dns、rootlesskit、moby-cli、code-server、openvscode-server |
 | storage-research | `docs/research/2026-10-13-phase5-usb-storage.md` | Android USB Host/FD、usbip/9p/virtiofs/SAF、明确无 Root 数据面 | virtiofsd、libfuse、usbipd-win、linux-usbip（稀疏源码） |
 

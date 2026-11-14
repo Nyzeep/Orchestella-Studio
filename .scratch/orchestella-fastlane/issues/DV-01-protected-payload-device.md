@@ -123,7 +123,7 @@ scontext=u:r:microdroid_app:s0 tcontext=u:object_r:system_file:s0 tclass=file pe
 **Status 保持 `dv01_core_pass_terminal_blocked`；不进入 DV-02。**
 
 - `/research` 结论（决策门 B）：Android 16 当前平台不存在仅靠 host/APK 打包/公开 AVF API 让 `microdroid_app` 执行 `/mnt/apk/bin` 的合规路径。根因仍是 guest SELinux：`coredomain` 对 `system_file` 有 `execute`、无 `execute_no_trans`，且无 `type_transition`；zipfuse 的 `bin/` 执行位只解决 Unix mode。
-- 研究：`docs/research/microdroid-exec-selinux-20261022.zh-CN.md`
+- 研究：`docs/research/archive/2026-10-avf/microdroid-exec-selinux-20261022.zh-CN.md`
 - 平台/ROM 变更请求：`docs/reports/orchestration/fastlane-dv01a-platform-change-request-20261022.zh-CN.md`
 - 2026-10-22 最小复现（新 token、`qaCycleCount=1`、默认端口、无代码改动）：control HELLO/HELLO_OK 与 stop `CONFIRMED` 通过；terminal 仍为 `TERMINAL_ERROR_FLN1_7` / `fln1=7 execve_errno_13`。1-cycle 的 `outcome=FAILED` 是完整 20 轮与 terminal 要求的预期结果；20/20 权威结果仍为 2026-10-21。
 - 本轮只提交研究/决策/报告与 ticket 更新；未改代码、FLN1 wire、accepted ADR、版本号、签名身份、release channel；未改 root/SELinux/pvmfw，未使用任何绕过。

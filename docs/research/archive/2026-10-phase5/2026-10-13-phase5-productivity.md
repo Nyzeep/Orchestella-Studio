@@ -18,7 +18,7 @@
 
 ## 2. 治理、读取与数据边界
 
-已读取隔离目录 `AGENTS.md`、派发报告和本工单；隔离 worktree 缺少 ignored/untracked 治理资料，因此按协调者说明，从只读活动主仓 `Orchestella_dev` 读取 `AGENTS.md`、`docs/agent-handoff/DEFENSIVE_CONSTRAINTS/README.md` 及目录两份 policy，以及 HOST、ARTIFACT、ARCHITECTURE、ASSET、REPORTING 五份政策、ADR-0005/0008/0009/0010/0011 和 `docs/research/2026-10-13-guest-runtime-audit.md`。没有复制或修改这些文件。
+已读取隔离目录 `AGENTS.md`、派发报告和本工单；隔离 worktree 缺少 ignored/untracked 治理资料，因此按协调者说明，从只读活动主仓 `Orchestella_dev` 读取 `AGENTS.md`、`docs/agent-handoff/DEFENSIVE_CONSTRAINTS/README.md` 及目录两份 policy，以及 HOST、ARTIFACT、ARCHITECTURE、ASSET、REPORTING 五份政策、ADR-0005/0008/0009/0010/0011 和 `docs/research/archive/2026-10-phase5/2026-10-13-guest-runtime-audit.md`。没有复制或修改这些文件。
 
 `research` Skill 调用返回用户级/项目级同名歧义，随后直接读取总目录 `.agents/skills/research/SKILL.md`，执行其中 primary-source、单文件归档要求。其后台代理要求由任务“亲自研究、不再派生”覆盖。没有调用 workflow 或新代理。
 

@@ -134,7 +134,7 @@ java -cp <out/test>:<out/main>:<junit-4.13.2.jar>:<hamcrest-core-1.3.jar> \
 
 - `docs/reports/orchestration/fastlane-cross-lane-spec-20261021.zh-CN.md` §4.4/§5.2/§6。
 - `.scratch/orchestella-fastlane/issues/P04-terminal-multiplexer.md`。
-- `docs/research/2026-10-21-cross-lane-reference-survey.md` §2/§5/§9。
+- `docs/research/archive/2026-10-reference-surveys/2026-10-21-cross-lane-reference-survey.md` §2/§5/§9。
 - 对端契约：`fastlane-payload/docs/protocol.md` @ `github/feature/fastlane-dataplane`（`2755f2d3`），只读。
 - 现有 App 终端参考：`app/src/main/java/io/github/nyzeep/orchestella/terminal/PtyMultiplexerProtocol.java`（未修改）。
 - vsock 流控/credit 设计参考：spec §4.4；Termux 终端/session 生命周期参考：调研 §2。

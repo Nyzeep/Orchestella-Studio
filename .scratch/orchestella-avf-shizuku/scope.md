@@ -8,7 +8,7 @@
 
 ## 事实与文档归属
 
-- 综合研究唯一 canonical：`docs/research/2026-10-15-avf-shizuku-upgrade.md`。
+- 综合研究唯一 canonical：`docs/research/archive/2026-10-avf/2026-10-15-avf-shizuku-upgrade.md`。
 - 本 effort：map/spec/issues 及 scope。
 - 原始证据和参考 manifest：开发根 `Orchestella/artifacts/avf-shizuku-next-stage/20261015/`，四线各自目录与 preservation。
 - 单票实施/review：现有 `docs/reports/tickets/`、`docs/reports/reviews/`。

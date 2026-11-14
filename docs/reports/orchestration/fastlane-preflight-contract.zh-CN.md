@@ -234,5 +234,5 @@ preflight 恰好执行以下九个阶段；每个阶段都必须出现在 `stage
 - [DV-01 真机结果](fastlane-dv01-20261021.zh-CN.md)
 - [DV-01A 平台变更请求](fastlane-dv01a-platform-change-request-20261022.zh-CN.md)
 - [Fast Lane × QEMU 交叉优化 Spec](fastlane-cross-lane-spec-20261021.zh-CN.md)
-- [Microdroid exec SELinux 研究](../../research/microdroid-exec-selinux-20261022.zh-CN.md)
+- [Microdroid exec SELinux 研究](../../research/archive/2026-10-avf/microdroid-exec-selinux-20261022.zh-CN.md)
 - [敏感开发者数据策略](../../agent-handoff/DEFENSIVE_CONSTRAINTS/SENSITIVE_DEVELOPER_DATA_POLICY.md)

@@ -62,7 +62,7 @@ AVF 引擎已经写完，但生产接线残缺：正常关闭可能不停 VM；�
 
 ## 设备门（不在本 effort）
 
-用户提供一台声明 non-protected 的设备后，按 `docs/research/2026-10-19-avf-reachability-corrections.zh-CN.md` §3.3 与工单 09 执行。候选：Pixel 6 Pro、Pixel Tablet、Pixel 10/11；Pixel 8a/8 Pro 有已知问题；MT6991/GenieZone 需自验。必须实测 `getCapabilities() & 2`、两权限、`setProtectedVm(false)`、create/run/vsock/stop。
+用户提供一台声明 non-protected 的设备后，按 `docs/research/archive/2026-10-avf/2026-10-19-avf-reachability-corrections.zh-CN.md` §3.3 与工单 09 执行。候选：Pixel 6 Pro、Pixel Tablet、Pixel 10/11；Pixel 8a/8 Pro 有已知问题；MT6991/GenieZone 需自验。必须实测 `getCapabilities() & 2`、两权限、`setProtectedVm(false)`、create/run/vsock/stop。
 
 ## 风险
 

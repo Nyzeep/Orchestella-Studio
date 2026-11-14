@@ -67,7 +67,7 @@
 
 1. `docs/agent-handoff/DEFENSIVE_CONSTRAINTS/` 全部 Markdown policy，及 HOST_ENVIRONMENT_POLICY、ARTIFACT_ORGANIZATION_POLICY、ASSET_REUSE_AND_HYGIENE_POLICY、ARCHITECTURE_CHANGE_POLICY、REPORTING_STANDARD.zh-CN。
 2. 本文、配套Prompt、`.scratch/orchestella-avf-shizuku/scope.md`、`map.md`、`spec.md`、17份issues；活动effort仍是这一份，不新起另一套tracker。
-3. `docs/research/2026-10-15-avf-shizuku-upgrade.md`，优先其后续实施补记；`docs/reports/orchestration/avf-shizuku-next-stage-20261015.zh-CN.md`；逐票01/02/03/04/13实施与独立review。
+3. `docs/research/archive/2026-10-avf/2026-10-15-avf-shizuku-upgrade.md`，优先其后续实施补记；`docs/reports/orchestration/avf-shizuku-next-stage-20261015.zh-CN.md`；逐票01/02/03/04/13实施与独立review。
 4. 外部昨日 `closeout/delivery-manifest.json`、`final-audit.json`、`integration/*`；A/B/C/D分项研究按工作主题读取，不重新clone/重做全部调研。
 5. ADR至少0001/0002/0003/0005/0007/0008/0009/0010/0011/0014/0016；涉及输入/图形/剪贴板时再读0012/0017/0018/0019，历史强断言与当前证据冲突按ACR处理。
 

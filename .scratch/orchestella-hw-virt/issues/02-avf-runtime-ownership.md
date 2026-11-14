@@ -11,7 +11,7 @@ Parent: `.scratch/orchestella-hw-virt/map.md`
 
 当前 AVF 的正常关闭可能把 VM 留在后台：`AvfSession.close()` 只关通道，不调用 `session.stop()`；`PersistentTerminalSessionPool` 对非 `RuntimeOwnedSession` 直接返回 `true`（“legacy sessions keep close-only”）；`InstanceLaunchSequence` 对非 owner 直接当 `CONFIRMED`。同时 `waitFor()` 把 STOPPED 和 DELETED 都返回 0，`stop()` 吞异常、无 grace、无二次探测。用户看到“已停止”，VM 可能还活着；这是本 effort 最高优先级的安全不变量。
 
-来源：`docs/research/2026-10-19-avf-reachability-corrections.zh-CN.md` §4；`AvfInstanceLauncher.java:94-101,213-218`；`PersistentTerminalSessionPool.java:648-654`；`InstanceLaunchSequence.java:88-93`；`ReflectiveAvfVirtualMachineApi.java:551-595`。
+来源：`docs/research/archive/2026-10-avf/2026-10-19-avf-reachability-corrections.zh-CN.md` §4；`AvfInstanceLauncher.java:94-101,213-218`；`PersistentTerminalSessionPool.java:648-654`；`InstanceLaunchSequence.java:88-93`；`ReflectiveAvfVirtualMachineApi.java:551-595`。
 
 ## What to build / 范围
 

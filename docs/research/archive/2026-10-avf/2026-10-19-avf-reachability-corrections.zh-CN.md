@@ -289,7 +289,7 @@ Podroid 的设备兼容清单（issue #62，2026-09 更新）给出了可复现�
   - Podroid `ce0121896b2895637ab1f656cbb0d75fa2874489`，`AvfCapabilities.kt`、`AvfEngine.kt`、`AvfReflect.kt`、`AvfCpuPolicy.kt`；issues #44、#62、#29、#108。
   - TerminalAppPlus `88a015928ebc26012f515ae34859a431de1a9c98`，`Application.kt`、`app/build.gradle.kts`。
   - LSPosed/AndroidHiddenApiBypass issue #52。
-- 项目既有真机证据：`docs/research/2026-10-17-avf-device-recheck.md`、`docs/research/2026-10-15-avf-shizuku-upgrade.md`、`docs/research/2026-10-17-avf-custom-linux-route-study.md`。
+- 项目既有真机证据：`docs/research/archive/2026-10-avf/2026-10-17-avf-device-recheck.md`、`docs/research/archive/2026-10-avf/2026-10-15-avf-shizuku-upgrade.md`、`docs/research/archive/2026-10-avf/2026-10-17-avf-custom-linux-route-study.md`。
 
 ### 7.2 未验证/不能声称
 

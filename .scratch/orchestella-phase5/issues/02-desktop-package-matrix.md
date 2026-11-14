@@ -11,7 +11,7 @@ Blocked by: none
 
 ## Supporting output
 
-`docs/research/2026-10-13-phase5-desktop-matrix.md`。优先核对活动主仓现有 distro 矩阵、M2/M3/M4 spec、质量规格与 ADR；报告无绿色实测虚报。不得修改 App UI、guest init、tracker、ADR。固定引用和参考源码许可。
+`docs/research/archive/2026-10-phase5/2026-10-13-phase5-desktop-matrix.md`。优先核对活动主仓现有 distro 矩阵、M2/M3/M4 spec、质量规格与 ADR；报告无绿色实测虚报。不得修改 App UI、guest init、tracker、ADR。固定引用和参考源码许可。
 
 ## Comments
 
@@ -19,4 +19,4 @@ Blocked by: none
 
 ## Answer
 
-研究已完成，官方URL/revision/许可、权限和未运行边界：[正式研究](../../../docs/research/2026-10-13-phase5-desktop-matrix.md)。本答案是决策证据，不是设备验收。后续源码/本地APK与验证矩阵已交付。
+研究已完成，官方URL/revision/许可、权限和未运行边界：[正式研究](../../../docs/research/archive/2026-10-phase5/2026-10-13-phase5-desktop-matrix.md)。本答案是决策证据，不是设备验收。后续源码/本地APK与验证矩阵已交付。

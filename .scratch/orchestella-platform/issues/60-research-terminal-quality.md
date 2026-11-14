@@ -19,4 +19,4 @@ Blocked by: none
 
 采用原创持久 VT 屏幕模型、唯一控制 reader、分包 UTF-8、统一 IME/快捷键与有界启动握手；真实视口通过已鉴权 RESIZE/TIOCSWINSZ 更新。正常输出基于明确 Bash OSC133 标记归档已提交命令，以高对比颜色和空行分段；备用屏幕保持原网格，编辑中的异步混流边界如实记录。修复长命令显示换行、历史淘汰锚点和重入状态。真机已观察命令分段、41列/键盘变化、top 与 nano 的真实运行及重新进入恢复，后续最终 APK 证据由实施报告记录。
 
-证据：[终端研究与实现审计](../../../docs/research/2026-10-13-terminal-reference-survey.md)。
+证据：[终端研究与实现审计](../../../docs/research/archive/2026-10-reference-surveys/2026-10-13-terminal-reference-survey.md)。

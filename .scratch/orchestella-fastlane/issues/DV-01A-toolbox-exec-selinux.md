@@ -57,7 +57,7 @@ scontext=u:r:microdroid_app:s0 tcontext=u:object_r:system_file:s0 tclass=file pe
 
 **Status 保持 `blocked_external`。决策门 B：Android 16 当前平台不存在合规路径。**
 
-研究全文：`docs/research/microdroid-exec-selinux-20261022.zh-CN.md`
+研究全文：`docs/research/archive/2026-10-avf/microdroid-exec-selinux-20261022.zh-CN.md`
 平台变更请求：`docs/reports/orchestration/fastlane-dv01a-platform-change-request-20261022.zh-CN.md`
 
 ### 结论
@@ -116,7 +116,7 @@ scontext=u:r:microdroid_app:s0 tcontext=u:object_r:system_file:s0 tclass=file pe
 - 报告：`docs/reports/orchestration/fastlane-dv01-20261021.zh-CN.md` §7
 - 本轮实施报告：`docs/reports/tickets/dv01a-mode-facts/implementation-report.zh-CN.md`
 - P03 toolbox 报告：`docs/reports/tickets/fastlane-P03/implementation-report.zh-CN.md`
-- 研究：`docs/research/microdroid-exec-selinux-20261022.zh-CN.md`
+- 研究：`docs/research/archive/2026-10-avf/microdroid-exec-selinux-20261022.zh-CN.md`
 - 平台变更请求：`docs/reports/orchestration/fastlane-dv01a-platform-change-request-20261022.zh-CN.md`
 
 ## Comments

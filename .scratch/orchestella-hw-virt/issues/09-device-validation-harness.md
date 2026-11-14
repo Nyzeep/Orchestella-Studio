@@ -11,7 +11,7 @@ Parent: `.scratch/orchestella-hw-virt/map.md`
 
 用户会在零设备工单完成后提供真机。现在需要一个**一条命令**的 AVF 设备验收工具：它能在没有设备时 dry-run，明确输出每一步 `not-tested`，绝不伪造通过；有设备时按同一 schema 产出可归档报告。现有 `tools/device-validation/` 已有 preflight、stage recorder、fixtures，应复用而不是重写。
 
-来源：`docs/research/2026-10-19-avf-reachability-corrections.zh-CN.md` §3.3；`tools/device-validation/README.avf-validation.zh-CN.md`、`avf_preflight.py`、`avf_stage_recorder.py`、`avf_test_fixtures.py`、`run_distro_smoke.py`。
+来源：`docs/research/archive/2026-10-avf/2026-10-19-avf-reachability-corrections.zh-CN.md` §3.3；`tools/device-validation/README.avf-validation.zh-CN.md`、`avf_preflight.py`、`avf_stage_recorder.py`、`avf_test_fixtures.py`、`run_distro_smoke.py`。
 
 ## What to build / 范围
 

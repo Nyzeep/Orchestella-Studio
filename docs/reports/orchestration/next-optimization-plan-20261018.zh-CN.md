@@ -185,8 +185,8 @@
 - `README.md`、`CONTEXT.md`、`AGENTS.md`
 - `docs/reports/orchestration/protected-avf-near-term-plan-20261017.zh-CN.md`
 - `docs/reports/orchestration/avf-shizuku-device-20261016.zh-CN.md`
-- `docs/research/2026-10-17-avf-custom-linux-route-study.md`
-- `docs/research/2026-10-15-terminal-runtime-next-phase.md`
+- `docs/research/archive/2026-10-avf/2026-10-17-avf-custom-linux-route-study.md`
+- `docs/research/archive/2026-10-phase5/2026-10-15-terminal-runtime-next-phase.md`
 - `.scratch/orchestella-avf-shizuku/map.md`、issues 23–26、ACR-01/02
 - `tools/qemu-android/qemu-jni.lock`、`guest-assets/inputs/inputs.lock`
 - `.github/workflows/ci.yml`、`guest-assets.yml`、`qemu-android.yml`

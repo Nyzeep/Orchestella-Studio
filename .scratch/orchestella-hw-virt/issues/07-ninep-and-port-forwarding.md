@@ -11,7 +11,7 @@ Parent: `.scratch/orchestella-hw-virt/map.md`
 
 `Avf9pShareServer` 与 `AvfVsockPortForwarder` 在生产引用为 0；`AvfSession` 没有覆写 `openServiceForward`，所以端口转发直接抛默认“当前执行策略尚未验证”。9p 的 guest 侧 mount 与 vsock 端口公告已经存在，但宿主从未调用 `startShareServer()`。共享目录与端口转发是 Full Linux 的两个核心数据面，要么接线，要么诚实标 UNSUPPORTED。
 
-来源：`docs/research/2026-10-19-avf-reachability-corrections.zh-CN.md` §4；`AvfVirtualMachineEngine.java:123-153,182-206`；`ExecutionSession.java:85-93`；`Avf9pShareServer.java`；`AvfVsockPortForwarder.java`；`guest-assets/initramfs/init:288-301,466`。
+来源：`docs/research/archive/2026-10-avf/2026-10-19-avf-reachability-corrections.zh-CN.md` §4；`AvfVirtualMachineEngine.java:123-153,182-206`；`ExecutionSession.java:85-93`；`Avf9pShareServer.java`；`AvfVsockPortForwarder.java`；`guest-assets/initramfs/init:288-301,466`。
 
 ## What to build / 范围
 

@@ -227,6 +227,6 @@ flowchart TD
 - [QUIC Gunyah固定说明](https://github.com/quic/gunyah-hypervisor/blob/254727746fce809aba0e629a13711a954b246968/README.md)和[RM 2023文档变更](https://github.com/quic/gunyah-resource-manager/commit/54ce6544c7cabac01d876f545d3d1faf19704e01)：架构与软件演进证据，不当商品机nonprotected兼容清单。
 - [Podroid固定源码](https://github.com/ExTV/Podroid/tree/ce0121896b2895637ab1f656cbb0d75fa2874489)与[TerminalAppPlus固定源码](https://github.com/KawaiiHachimi/TerminalAppPlus/tree/88a015928ebc26012f515ae34859a431de1a9c98)：只读机制比较、逐许可未完成闭包，不复制代码/二进制到产品。
 
-三份专题报告E/aosp-protected/report.zh-CN.md、vsock-adb/report.zh-CN.md、platform-claims/report.zh-CN.md是支撑材料，正式研究事实以本文合成并链接的固定证据为准。当前设备事实引用 `docs/research/2026-10-17-avf-device-recheck.md`，不重复从手机采集或改变其终态。
+三份专题报告E/aosp-protected/report.zh-CN.md、vsock-adb/report.zh-CN.md、platform-claims/report.zh-CN.md是支撑材料，正式研究事实以本文合成并链接的固定证据为准。当前设备事实引用 `docs/research/archive/2026-10-avf/2026-10-17-avf-device-recheck.md`，不重复从手机采集或改变其终态。
 
 报告人：Codex主协调 / GPT-6.1 ｜ 日期：2026-10-17 ｜ 耗时：未可靠计量

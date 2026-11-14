@@ -11,7 +11,7 @@ Parent: `.scratch/orchestella-hw-virt/map.md`
 
 AVF 最脆弱的代码（hidden API 反射、持久 VM 配置、1 vCPU 约束、生命周期）目前不在 PR 或 release 门禁里；一个回归可以变红而无人看见。本票把所有 runtime 模块、lint/assemble/16KB 和 AVF 的 JavaExec harness 变成真正的门。
 
-来源：`docs/research/2026-10-19-avf-reachability-corrections.zh-CN.md` §4、§5.2；现有 `.github/workflows/ci.yml:45`、`release.yml:97`、`qemu-android.yml:383,463`。
+来源：`docs/research/archive/2026-10-avf/2026-10-19-avf-reachability-corrections.zh-CN.md` §4、§5.2；现有 `.github/workflows/ci.yml:45`、`release.yml:97`、`qemu-android.yml:383,463`。
 
 ## What to build / 范围
 

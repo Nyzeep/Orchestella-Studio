@@ -16,7 +16,7 @@
 2. 本文件的主代理 Prompt、分工协议和全部 Worker Prompt。
 3. 主仓 AGENTS.md、CONTEXT.md；DEFENSIVE_CONSTRAINTS 全部 policy；HOST_ENVIRONMENT_POLICY、ARTIFACT_ORGANIZATION_POLICY、ASSET_REUSE_AND_HYGIENE_POLICY、ARCHITECTURE_CHANGE_POLICY、REPORTING_STANDARD.zh-CN。
 4. `.scratch/orchestella-avf-shizuku/scope.md`、map.md、spec.md、issues内17份工单；`docs/agents/issue-tracker.md` 的旧活动入口只作背景，本次明确继续新effort，不改全局默认。
-5. `docs/research/2026-10-15-avf-shizuku-upgrade.md`、`docs/reports/orchestration/avf-shizuku-next-stage-20261015.zh-CN.md`；01–04与13实施/独立审查，按主题读A/B/C/D外部分项证据和相关ADR。
+5. `docs/research/archive/2026-10-avf/2026-10-15-avf-shizuku-upgrade.md`、`docs/reports/orchestration/avf-shizuku-next-stage-20261015.zh-CN.md`；01–04与13实施/独立审查，按主题读A/B/C/D外部分项证据和相关ADR。
 
 事实优先级：当前代码/设备与固定一手证据决定事实，accepted ADR决定契约；冲突按ACR处理。旧文档中无设备、clean405、只有文字Shizuku引导、W:/V:已存在都是历史状态，必须更正而非照抄。不要复用旧设备serial或把原403日志换成500/当前ROM。
 

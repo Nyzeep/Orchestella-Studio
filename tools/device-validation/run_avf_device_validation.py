@@ -3,7 +3,7 @@
 """One-command AVF device-validation harness.
 
 The harness defines the twelve stages from the device-gate checklist in
-docs/research/2026-10-19-avf-reachability-corrections.zh-CN.md section 3.3 and
+docs/research/archive/2026-10-avf/2026-10-19-avf-reachability-corrections.zh-CN.md section 3.3 and
 emits one versioned JSON report plus a Markdown summary.
 
 Modes:

@@ -204,7 +204,7 @@ java -cp <out/test>:<out/main>:<junit-4.13.2.jar>:<hamcrest-core-1.3.jar> \
 
 - `docs/reports/orchestration/fastlane-cross-lane-spec-20261021.zh-CN.md` §4.1/§6/§7。
 - `.scratch/orchestella-fastlane/issues/P01-engine-fastlane-adapter.md`。
-- `docs/research/2026-10-21-cross-lane-reference-survey.md` §5/§9/§13。
+- `docs/research/archive/2026-10-reference-surveys/2026-10-21-cross-lane-reference-survey.md` §5/§9/§13。
 - 本地 AOSP 参考 checkout：`references/aosp-virtualization`（`libs/framework-virtualization/src/android/system/virtualmachine/`），调研记录快照 `175a51b`。
 - AOSP 官方：<https://android.googlesource.com/platform/packages/modules/Virtualization/+/refs/heads/main/libs/framework-virtualization/README.md>、<https://source.android.com/docs/core/virtualization/microdroid>。
 - 本仓只读参考：`runtime/engine-avf/src/main/java/.../ReflectiveAvfVirtualMachineApi.java`（反射 shape/失败映射模式；未修改）。

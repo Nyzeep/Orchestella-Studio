@@ -180,4 +180,4 @@ python3 tools/fastlane-build/reproduce.py \
 - LLVM/clang 许可证：
   <https://llvm.org/LICENSE.txt>
 - 本仓调研中的 gvproxy Apache-2.0 / Termux GPLv3：
-  `docs/research/2026-10-21-cross-lane-reference-survey.md`
+  `docs/research/archive/2026-10-reference-surveys/2026-10-21-cross-lane-reference-survey.md`

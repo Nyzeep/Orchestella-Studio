@@ -11,7 +11,7 @@ Parent: `.scratch/orchestella-hw-virt/map.md`
 
 AVF 生产显示用的是 `QemuWaylandChannel` + RFB over vsock 9103；`engine-avf` 里的 `AvfWaylandChannel`/`AvfGraphicsVsockProtocol` 在生产引用为 0。音频 `AvfAudioChannel` 也没有生产调用，且 guest 的 pulseaudio 只监听 `127.0.0.1:9104`，不是 vsock。能力矩阵却声称 graphics/audio/clipboard/pointer。用户会看到“有图形/音频”的承诺，实际只有一条 RFB 路径。
 
-来源：`docs/research/2026-10-19-avf-reachability-corrections.zh-CN.md` §4；`AvfInstanceLauncher.java:39-45`；`AvfVirtualMachineEngine.java:123-206`；`AvfWaylandChannel.java`；`AvfAudioChannel.java`；`guest-assets/display/display-relay.py:31`；`guest-assets/scripts/desktop/pulseaudio/default.pa:25`。
+来源：`docs/research/archive/2026-10-avf/2026-10-19-avf-reachability-corrections.zh-CN.md` §4；`AvfInstanceLauncher.java:39-45`；`AvfVirtualMachineEngine.java:123-206`；`AvfWaylandChannel.java`；`AvfAudioChannel.java`；`guest-assets/display/display-relay.py:31`；`guest-assets/scripts/desktop/pulseaudio/default.pa:25`。
 
 ## What to build / 范围
 

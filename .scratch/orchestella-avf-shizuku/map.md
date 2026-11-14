@@ -4,7 +4,7 @@
 
 ## 当前事实与证据口径
 
-本地图以当前原件替换旧的“设备待到、仅17票、尚未修产品、502待装”进度描述。2026-10-15研究与500本地交付、20261016交接及首审仍是历史证据，不改写其当时结论。正式研究唯一 canonical 为 `docs/research/2026-10-15-avf-shizuku-upgrade.md`；授权范围见 [scope](scope.md)，验收约束见 [spec](spec.md)。
+本地图以当前原件替换旧的“设备待到、仅17票、尚未修产品、502待装”进度描述。2026-10-15研究与500本地交付、20261016交接及首审仍是历史证据，不改写其当时结论。正式研究唯一 canonical 为 `docs/research/archive/2026-10-avf/2026-10-15-avf-shizuku-upgrade.md`；授权范围见 [scope](scope.md)，验收约束见 [spec](spec.md)。
 
 以下 E 指开发根 `Orchestella/artifacts/avf-shizuku-device-20261016/batch-01/`，R 指 `E/resume-01/`。设备/安装/权限/Gradle/版本/签名实际操作均由主协调执行；本次收口只读原件、更新文档及定点保全。
 
@@ -132,7 +132,7 @@ Guest `/sbin/poweroff`、App“正常关机”、仅新QA“强制断电”均�
 
 用户已确认protected优先研发、non-protected持续兼容、QEMU保证当前FullLinux可用，并要求更新近期优化文档。目标是有证据地判断protected能否满足无Root/共同kernel/App私有持久根盘/完整网络与生命周期契约，同时完成已可用路径的剩余可靠性门。
 
-Canonical近期执行方案：[Protected优先近期优化方案](../../docs/reports/orchestration/protected-avf-near-term-plan-20261017.zh-CN.md)。资料依据：[当前设备重检](../../docs/research/2026-10-17-avf-device-recheck.md)、[完整Custom Linux路线研究](../../docs/research/2026-10-17-avf-custom-linux-route-study.md)。本map只索引事实/票/依赖，不复写全部来源。
+Canonical近期执行方案：[Protected优先近期优化方案](../../docs/reports/orchestration/protected-avf-near-term-plan-20261017.zh-CN.md)。资料依据：[当前设备重检](../../docs/research/archive/2026-10-avf/2026-10-17-avf-device-recheck.md)、[完整Custom Linux路线研究](../../docs/research/archive/2026-10-avf/2026-10-17-avf-custom-linux-route-study.md)。本map只索引事实/票/依赖，不复写全部来源。
 
 当前已核：仍main428860a/单worktree/dirty0.5.3/code503，生产源码未改；真实AVF成功样本仍0。当前protected-only是ROM声明，不等芯片物理不能non-protected或已确认pKVM，社区覆盖/未来增长尚无实测分母。
 
