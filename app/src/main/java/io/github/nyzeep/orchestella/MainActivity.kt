@@ -158,13 +158,26 @@ class MainActivity : AppCompatActivity() {
     )
     private val umlFaceRideAlong = UmlFaceRideAlong(
         backend = { _, gate, channel ->
+            // Gate 2 E2E（launcher v2 wiring，2026-11-13）：wired arm（compileBridge
+            // flag on 且 D-1 lane 通道已开）且 rootfs 解包树就绪时，face 命令行经既有
+            // extraArgs 缝追加外置根三参数（umroot=<解包树绝对路径> /
+            // umrootfstype=hostfs / um.net=1）——fastProfileCommand 之后逐字追加，
+            // initramfs init switch_root 进注入的 v2 启动器（passt DHCP 出网 +
+            // distccd 驻留）。其余形态（flag off / lane 未开 / rootfs 未就绪或未装）
+            // 零 extraArgs，探针形态逐字节不变——unwired face 的 EOF 收割契约依赖
+            // 探针自终止，绝不把 unwired face 变成长驻内核。512M / host-1 单核
+            // （fast 形态语义宽 1）保持 defaults 不变。
+            val defaults = UmlFaceLauncher.LaunchParams.defaults()
+            val launchParams = UmlFaceLauncher.LaunchParams(
+                defaults.memMb(),
+                defaults.ncpus(),
+                if (channel != null) umlRootfsExtraArgs() else UmlRootfsExtraArgs.NONE,
+            )
             if (channel != null) {
                 AcceleratorLaneAssembly.umlFace(
                     gate,
                     UmlFaceKeepAliveService.environment(this),
-                    // 内置 initramfs 探针形态：512M / host-1 单核（fast 形态语义宽 1）；
-                    // 命令行即 fastProfileCommand 锁定输出，零 extraArgs。
-                    UmlFaceLauncher.LaunchParams.defaults(),
+                    launchParams,
                     UmlFaceKeepAliveService.keepAlive(this),
                     umlConsoleSpawner,
                     channel,
@@ -173,9 +186,7 @@ class MainActivity : AppCompatActivity() {
                 AcceleratorLaneAssembly.umlFace(
                     gate,
                     UmlFaceKeepAliveService.environment(this),
-                    // 内置 initramfs 探针形态：512M / host-1 单核（fast 形态语义宽 1）；
-                    // 命令行即 fastProfileCommand 锁定输出，零 extraArgs。
-                    UmlFaceLauncher.LaunchParams.defaults(),
+                    launchParams,
                     UmlFaceKeepAliveService.keepAlive(this),
                     umlConsoleSpawner,
                 )
@@ -184,6 +195,26 @@ class MainActivity : AppCompatActivity() {
         compileBridge = umlCompileBridge,
         log = umlFaceConsoleLog,
     )
+
+    /**
+     * Gate 2 E2E：wired face 的外置根 extraArgs 决策（纯决策在
+     * UmlRootfsExtraArgs.forArm，此处只供 flag 与探测结果）。compileBridge flag
+     * 开且 UmlRootfsProvisioner.readiness 报 ready 时返回
+     * [umroot=<解包树绝对路径>, umrootfstype=hostfs, um.net=1]，否则零。
+     * readiness 是纯读探测（对 pinned artifact 做 sha256 对账），在 arm 的调用
+     * 线程（launch 链的 operations executor）执行——主线程零阻塞；探测 IO 失败
+     * 按未就绪诚实降级为探针形态（不冒充可路由）。
+     */
+    private fun umlRootfsExtraArgs(): List<String> {
+        return try {
+            UmlRootfsExtraArgs.forArm(
+                BuildConfig.UML_COMPILE_BRIDGE,
+                UmlRootfsProvisioner.readiness(filesDir.toPath()),
+            )
+        } catch (_: java.io.IOException) {
+            UmlRootfsExtraArgs.NONE
+        }
+    }
 
     companion object {
         /**
