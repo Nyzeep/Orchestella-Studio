@@ -649,6 +649,133 @@ public final class UmlRootfsProvisionerContractTest {
     }
 
     @Test
+    public void theOwnedLauncherV2AddsTheGuestNetworkBootBranchUnderTheUmNetKnob() {
+        String launcher = UmlRootfsProvisioner.UM_COMMAND_LAUNCHER;
+        // The v2 guard reads the knob the same way um.shell does (the ruling's
+        // param style), only around the boot branch.
+        int guard = launcher.indexOf("if [ \"$(param um.net || :)\" = 1 ]; then");
+        assertTrue("the um.net=1 guard is the branch's only entry", guard >= 0);
+        int linkUp = launcher.indexOf("ip link set vec0 up 2>/dev/null || :");
+        int dhcp = launcher.indexOf("udhcpc -i vec0 -q 2>/dev/null");
+        int apkAdd = launcher.indexOf("apk add distcc 2>/dev/null");
+        int daemon = launcher.indexOf(
+                "distccd --daemon --listen 0.0.0.0 --port 3632 --allow 10.0.2.0/24 2>/dev/null");
+        assertTrue("the branch brings vec0 up before the lease", linkUp > guard);
+        assertTrue("the lease runs right after the link is up", dhcp > linkUp);
+        assertTrue("distccd installs from the CDN through passt", apkAdd > dhcp);
+        assertTrue("the daemon binds 0.0.0.0:3632 for the passt forward to 10.0.2.0/24",
+                daemon > apkAdd);
+        assertTrue("a root-refused daemon retries as nobody before giving up",
+                launcher.contains(
+                        "distccd --daemon --user nobody --listen 0.0.0.0 --port 3632 "
+                                + "--allow 10.0.2.0/24 2>/dev/null"));
+        assertTrue("the DHCP failure is an honest named marker",
+                launcher.contains("UM_NET_ERROR step=dhcp detail=udhcpc failed on vec0"));
+        assertTrue("the apk failure is an honest named marker",
+                launcher.contains("UM_NET_ERROR step=apk detail=apk add distcc failed"));
+        assertTrue("the daemon failure is an honest named marker",
+                launcher.contains("UM_NET_ERROR step=distccd detail=daemon start failed"));
+        assertTrue("the missing-binary cascade is an honest named marker",
+                launcher.contains("UM_NET_ERROR step=distccd detail=distccd binary missing"));
+        assertTrue("a bound lease is announced with the guest address",
+                launcher.contains("UM_NET dhcp bound ip="));
+        assertTrue("the resident milestone closes the branch's boot story",
+                launcher.contains("UM_NET resident: wired face holding"));
+        // Residency: exactly one added sleep-forever loop, inside the branch —
+        // the branch never falls through to the v1 poweroff path.
+        assertEquals("exactly three sleep-forever loops: T3-fail, the v2 branch, the v1 tail",
+                3, launcher.split("while :; do sleep 3600; done", -1).length - 1);
+        assertTrue("the branch's resident loop precedes the v1 tail (mutually exclusive paths)",
+                launcher.indexOf("UM_NET resident") < launcher.indexOf(V1_HOLD_POWEROFF_TAIL));
+        // The wired branch holds resident: between the um.net guard and the v1
+        // tail no poweroff exists — the branch's only exit is its own
+        // sleep-forever loop, never a probe poweroff.
+        String branch = launcher.substring(guard, launcher.indexOf(V1_HOLD_POWEROFF_TAIL));
+        assertFalse("the wired branch never powers the guest off", branch.contains("poweroff"));
+    }
+
+    /**
+     * The v1 tail, byte for byte: under the default (no um.net) the launcher's
+     * hold_ms → sync → poweroff path is the research original, untouched — the
+     * v2 branch is strictly an addition before it.
+     */
+    private static final String V1_HOLD_POWEROFF_TAIL = """
+            if [ "$hold_ms" -ge 1000 ]; then
+                sleep $((hold_ms / 1000)) 2>/dev/null || sleep 1
+            else
+                sleep "0.$(printf '%03d' "$hold_ms")" 2>/dev/null || sleep 1
+            fi
+            sync 2>/dev/null || :
+            poweroff -f 2>/dev/null || :
+            while :; do sleep 3600; done
+            """;
+
+    @Test
+    public void theOwnedLauncherKeepsTheV1ProbePathVerbatimWhenUmNetIsAbsent() {
+        String launcher = UmlRootfsProvisioner.UM_COMMAND_LAUNCHER;
+        // The T3 probe contract (busybox true → U1_READY) is untouched and
+        // still precedes everything the v2 branch adds.
+        int ready = launcher.indexOf("printf 'U1_READY uptime=%s");
+        int guard = launcher.indexOf("param um.net");
+        int tail = launcher.indexOf(V1_HOLD_POWEROFF_TAIL);
+        assertTrue(ready >= 0);
+        assertTrue(guard > ready);
+        assertTrue("the v1 hold→poweroff tail survives byte for byte", tail > guard);
+        // The original research body (up to and including U1_READY) is still
+        // verbatim: every line below the provenance header minus the branch.
+        assertTrue(launcher.contains("PATH=/bin:/sbin:/usr/bin:/usr/sbin"));
+        assertTrue(launcher.contains("hold_ms=$(param um.hold_ms || printf 200)"));
+        assertTrue(launcher.contains("ncpus=$(grep -c '^processor' /proc/cpuinfo 2>/dev/null || :)"));
+        assertTrue(launcher.contains("if [ \"$(param um.shell || :)" + "\" = 1 ]; then"));
+        assertTrue(launcher.contains("exec /bin/sh"));
+        assertTrue(launcher.contains("if /bin/busybox true; then"));
+        assertTrue(launcher.contains("printf 'U1_CMD_ERROR cmd=busybox_true\\n' >&2"));
+        // The final poweroff stays the DEFAULT exit (the probe still powers
+        // off after hold_ms when um.net is absent).
+        assertTrue("the tail still ends in sync→poweroff, the v1 default exit",
+                tail == launcher.lastIndexOf("poweroff -f 2>/dev/null || :\n            while")
+                        || launcher.regionMatches(
+                                tail + V1_HOLD_POWEROFF_TAIL.length() - "while :; do sleep 3600; done".length() - 1,
+                                "while :; do sleep 3600; done", 0,
+                                "while :; do sleep 3600; done".length()));
+    }
+
+    @Test
+    public void aV1ShapedLauncherTreeMigratesToTheOwnedV2ContentOnReProvision() throws Exception {
+        FakeTransport transport = new FakeTransport();
+        transport.payload = officialShapeWithoutSymlink();
+        Path filesDir = tempFolder.newFolder("files").toPath();
+        // A v1-shaped tree: the launcher carries a pre-v2 provenance header (no
+        // v2 note, no um.net branch) and therefore a digest the owned constant
+        // no longer matches. The exact v1 bytes live only in git history
+        // (8581c77f); what migrates a tree is the digest mismatch itself — the
+        // same repair the real v1 tree takes on its first re-provision.
+        String v1Shaped = "#!/bin/busybox sh\n"
+                + "# External-root edition — injected into the extracted minirootfs tree by\n"
+                + "# UmlRootfsProvisioner (v1: probe contract only, hold_ms to poweroff).\n"
+                + "set -u\n";
+        UmlRootfsProvisioner.provision(transport, entryFor(transport.payload), filesDir, true);
+        Files.write(launcherPath(filesDir), v1Shaped.getBytes(StandardCharsets.UTF_8));
+        transport.requestedUrls.clear();
+
+        UmlRootfsProvisioner.ProvisionReceipt second = UmlRootfsProvisioner.provision(
+                transport, entryFor(transport.payload), filesDir, true);
+
+        assertTrue("the repair ran over the same attested extraction — no network",
+                second.alreadyVerified());
+        assertTrue(second.injectedLauncher());
+        assertTrue(transport.requestedUrls.isEmpty());
+        assertEquals("the owned v2 content replaces the v1 bytes, byte for byte",
+                UmlRootfsProvisioner.UM_COMMAND_LAUNCHER,
+                new String(Files.readAllBytes(launcherPath(filesDir)), StandardCharsets.UTF_8));
+        assertTrue("the migrated launcher carries the v2 network boot branch",
+                new String(Files.readAllBytes(launcherPath(filesDir)), StandardCharsets.UTF_8)
+                        .contains("param um.net"));
+        assertTrue("the migrated launcher satisfies the init's `-x` contract",
+                Files.isExecutable(launcherPath(filesDir)));
+    }
+
+    @Test
     public void aFreshProvisionInjectsTheOwnedLauncherExecutableWithTheContractShebang()
             throws Exception {
         FakeTransport transport = new FakeTransport();
