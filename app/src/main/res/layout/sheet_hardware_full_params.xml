@@ -1,0 +1,329 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  03/硬件「完整参数」二级抽屉（UI 重新设计轮）：原一级页 SEC.01-04 的
+  12+ 条 bullet 读数井整体搬迁至此——well/TextView id 逐字不动，取值逻辑
+  （MainActivity.renderHardwareSpecDetails）不变，仅容器搬家；SEC.04 的
+  bullet 原为裸文本直出，本轮补挂 well_hw_readout_os 井容器（沿用 well_
+  前缀 → surfaceLow 档语义）。头部统一为「色块 SEC.0x + 13sp 标题」模板
+  （原 SEC.04 破格的 monospace 括号头一并归一）。经 BottomSheetDialog
+  承载并走 ThemeApplier.apply(dialog) 通道重涂。
+-->
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="@drawable/bg_oe_card"
+        android:padding="@dimen/oe_card_pad">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="sans-serif"
+            android:text="@string/sheet_hw_full_params_title"
+            android:textColor="#FFFFFF"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="@dimen/oe_space_sm" />
+
+        <!-- SEC.01 · AVF 平台声明 / 授权 / kvm 节点 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="#D62828"
+                android:paddingStart="@dimen/oe_icon_inline_gap"
+                android:paddingEnd="@dimen/oe_icon_inline_gap"
+                android:fontFamily="monospace"
+                android:text="SEC.01"
+                android:textColor="#FFFFFF"
+                android:textSize="9sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="@dimen/oe_space_sm"
+                android:fontFamily="sans-serif"
+                android:text="@string/hw_sec01_title"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- Detailed Specs Readout Grid
+             卡片层级：二级数据卡（well 档读数井），id 自一级页原样搬入 -->
+        <LinearLayout
+            android:id="@+id/well_hw_readout_avf"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/bg_oe_well"
+            android:padding="@dimen/oe_space_sm"
+            android:layout_marginTop="@dimen/oe_space_sm">
+
+            <TextView
+                android:id="@+id/hw_detail_platform_declared"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:text="• 平台虚拟化声明：android.software.virtualization_framework"
+                android:textColor="#F5F4F0"
+                android:textSize="10sp" />
+
+            <TextView
+                android:id="@+id/hw_detail_avf_permission"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/oe_space_xs"
+                android:fontFamily="monospace"
+                android:text="• 开发级授权 (MANAGE_VM)：检测中…"
+                android:textColor="#F5F4F0"
+                android:textSize="10sp" />
+
+            <TextView
+                android:id="@+id/hw_detail_kvm_node"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/oe_space_xs"
+                android:fontFamily="monospace"
+                android:text="• /dev/kvm 设备节点：探测中…"
+                android:textColor="#8E929B"
+                android:textSize="10sp" />
+        </LinearLayout>
+
+        <!-- SEC.02 · 处理器拓扑读数（system_cpu_chip 随容器搬入抽屉头部） -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="@dimen/oe_card_gap">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="#FDBB24"
+                android:paddingStart="@dimen/oe_icon_inline_gap"
+                android:paddingEnd="@dimen/oe_icon_inline_gap"
+                android:fontFamily="monospace"
+                android:text="SEC.02"
+                android:textColor="#000000"
+                android:textSize="9sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="@dimen/oe_space_sm"
+                android:fontFamily="sans-serif"
+                android:text="@string/hw_sec02_title"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/system_cpu_chip"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:text="8 核心 CPU"
+                android:textColor="#FDBB24"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/well_hw_readout_cpu"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/bg_oe_well"
+            android:padding="@dimen/oe_space_sm"
+            android:layout_marginTop="@dimen/oe_space_sm">
+
+            <TextView
+                android:id="@+id/hw_detail_cpu_arch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:text="• 指令集架构：ARM64 (arm64-v8a)"
+                android:textColor="#F5F4F0"
+                android:textSize="10sp" />
+
+            <TextView
+                android:id="@+id/hw_detail_cpu_model"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/oe_space_xs"
+                android:fontFamily="monospace"
+                android:text="• 硬件芯片识别：Qualcomm Snapdragon"
+                android:textColor="#F5F4F0"
+                android:textSize="10sp" />
+
+            <TextView
+                android:id="@+id/hw_detail_cpu_cores"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/oe_space_xs"
+                android:fontFamily="monospace"
+                android:text="• CPU 调度拓扑：big.LITTLE 异构集群"
+                android:textColor="#8E929B"
+                android:textSize="10sp" />
+        </LinearLayout>
+
+        <!-- SEC.03 · 内存 / 存储读数（三环仪表保留在一级摘要页） -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="@dimen/oe_card_gap">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="#0047AB"
+                android:paddingStart="@dimen/oe_icon_inline_gap"
+                android:paddingEnd="@dimen/oe_icon_inline_gap"
+                android:fontFamily="monospace"
+                android:text="SEC.03"
+                android:textColor="#FFFFFF"
+                android:textSize="9sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="@dimen/oe_space_sm"
+                android:fontFamily="sans-serif"
+                android:text="@string/hw_sec03_readout_title"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/well_hw_readout_mem"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/bg_oe_well"
+            android:padding="@dimen/oe_space_sm"
+            android:layout_marginTop="@dimen/oe_space_sm">
+
+            <TextView
+                android:id="@+id/hw_detail_ram_specs"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:text="• 物理运存总额：读取中…"
+                android:textColor="#F5F4F0"
+                android:textSize="10sp" />
+
+            <TextView
+                android:id="@+id/hw_detail_ram_reserve"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/oe_space_xs"
+                android:fontFamily="monospace"
+                android:text="• 宿主强制保留：2048 MB (防 LMK 闪退线)"
+                android:textColor="#FDBB24"
+                android:textSize="10sp" />
+
+            <TextView
+                android:id="@+id/hw_detail_storage_specs"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/oe_space_xs"
+                android:fontFamily="monospace"
+                android:text="• 内部存储余量：读取中…"
+                android:textColor="#8E929B"
+                android:textSize="10sp" />
+        </LinearLayout>
+
+        <!-- SEC.04 · OS 与内核档案（原 SEC.04 破格头部归一为色块模板，
+             bullet 补挂 well_hw_readout_os 井容器） -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="@dimen/oe_card_gap">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="#FFFFFF"
+                android:paddingStart="@dimen/oe_icon_inline_gap"
+                android:paddingEnd="@dimen/oe_icon_inline_gap"
+                android:fontFamily="monospace"
+                android:text="SEC.04"
+                android:textColor="#000000"
+                android:textSize="9sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="@dimen/oe_space_sm"
+                android:fontFamily="sans-serif"
+                android:text="@string/hw_sec04_title"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/well_hw_readout_os"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/bg_oe_well"
+            android:padding="@dimen/oe_space_sm"
+            android:layout_marginTop="@dimen/oe_space_sm">
+
+            <TextView
+                android:id="@+id/hw_detail_os_release"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:text="• Android 系统：Android 15 (API 35)"
+                android:textColor="#F5F4F0"
+                android:textSize="10sp" />
+
+            <TextView
+                android:id="@+id/hw_detail_kernel_release"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/oe_space_xs"
+                android:fontFamily="monospace"
+                android:text="• 宿主内核版本：Linux 6.6 aarch64"
+                android:textColor="#F5F4F0"
+                android:textSize="10sp" />
+
+            <TextView
+                android:id="@+id/hw_detail_device_model"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/oe_space_xs"
+                android:fontFamily="monospace"
+                android:text="• 设备厂商型号：读取中…"
+                android:textColor="#8E929B"
+                android:textSize="10sp" />
+        </LinearLayout>
+    </LinearLayout>
+</androidx.core.widget.NestedScrollView>
