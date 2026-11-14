@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 实例列表分组 header（UI 重新设计轮 C6）：运行中/已停止分组行。
+     文案由 InstanceListAdapter 经 strings.xml 设置（xml 默认值仅供预览）；
+     pre-bind 字面量 #8E929B 由 ThemeApplier 按文本角色统一重涂。 -->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/instance_section_title"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="@dimen/oe_card_gap"
+    android:layout_marginBottom="@dimen/oe_space_sm"
+    android:fontFamily="monospace"
+    android:text="@string/instance_section_running"
+    android:textColor="#8E929B"
+    android:textSize="11sp"
+    android:textStyle="bold" />

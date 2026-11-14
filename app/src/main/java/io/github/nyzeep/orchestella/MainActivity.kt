@@ -31,10 +31,13 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityOptionsCompat
+import androidx.core.view.OneShotPreDrawListener
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -96,7 +99,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var upgradeAuthorizationButton: Button
     private lateinit var createProgress: ProgressBar
     private lateinit var createStatus: TextView
-    private lateinit var instanceList: LinearLayout
+    private lateinit var instanceList: RecyclerView
+    // UI 重新设计轮 C6：实例列表自 LinearLayout 全量渲染迁 RecyclerView
+    // （回收复用 + 分组 header）；适配器为纯结构壳，绑定逻辑经 cardBinder
+    // 留在渲染方（bindInstanceCard），热路径回滚粒度保持细。
+    private val instanceListAdapter = InstanceListAdapter()
 
     private var avfReadiness: AvfCapabilityEvaluator.AvfReadiness? = null
     private lateinit var themeStore: ThemeStore
@@ -280,7 +287,8 @@ class MainActivity : AppCompatActivity() {
             operations.execute {
                 runOnUiThread {
                     createProgress.visibility = View.VISIBLE
-                    createStatus.text = getString(R.string.import_instance_progress)
+                    syncCreateProgressBanner()
+                    setCreateStatusLine(getString(R.string.import_instance_progress))
                 }
                 try {
                     val adapter = AndroidSafImportAdapter(this, Clock.systemUTC())
@@ -289,7 +297,8 @@ class MainActivity : AppCompatActivity() {
                     val imported = adapter.importArchiveToStorage(srcUri, storageDir, controller)
                     runOnUiThread {
                         createProgress.visibility = View.GONE
-                        createStatus.text = ""
+                        syncCreateProgressBanner()
+                        setCreateStatusLine("")
                         Toast.makeText(
                             this@MainActivity,
                             getString(R.string.import_instance_success, imported.id()),
@@ -300,7 +309,8 @@ class MainActivity : AppCompatActivity() {
                 } catch (e: Exception) {
                     runOnUiThread {
                         createProgress.visibility = View.GONE
-                        createStatus.text = getString(R.string.import_instance_failed, e.message)
+                        syncCreateProgressBanner()
+                        setCreateStatusLine(getString(R.string.import_instance_failed, e.message))
                         Toast.makeText(
                             this@MainActivity,
                             getString(R.string.import_instance_failed, e.message),
@@ -354,6 +364,12 @@ class MainActivity : AppCompatActivity() {
         createProgress = findViewById(R.id.create_progress)
         createStatus = findViewById(R.id.create_status)
         instanceList = findViewById(R.id.instance_list)
+        // UI 重新设计轮 C6：RecyclerView 基线——纵向线性布局；条目增删不播
+        // 默认位移动画（与原全量重渲染的瞬时换列表语义一致）；layoutAnimation
+        // 不挂 RecyclerView（进场走程序化 playListEntryStagger）。
+        instanceList.layoutManager = LinearLayoutManager(this)
+        instanceList.adapter = instanceListAdapter
+        instanceList.itemAnimator = null
         upgradeAuthorizationButton = findViewById(R.id.upgrade_authorization)
         instanceStore = InstanceLifecycle.FileStore(filesDir.toPath().resolve("instances"))
         // 冷启动主线程卫生（Lane C）：孤儿回收是实例目录遍历 + 可能的状态写盘，
@@ -482,6 +498,11 @@ class MainActivity : AppCompatActivity() {
         upgradeAuthorizationButton.setOnClickListener { showAvfAuthorizationWizard() }
         findViewById<View>(R.id.btn_import_instance)?.setOnClickListener {
             safImportLauncher.launch(arrayOf("application/zip", "application/octet-stream", "*/*"))
+        }
+        // 空态直接 CTA（UI 重新设计轮 C6）：去发行版装配 = 切至 04/发行版，
+        // 与 btn_create_linux_instance_top 既有跳转同语义。
+        findViewById<View>(R.id.btn_empty_goto_distros)?.setOnClickListener {
+            switchTab(3)
         }
         refreshWizardEntry()
         setupNavigationTabs()
@@ -1340,7 +1361,7 @@ class MainActivity : AppCompatActivity() {
                 } catch (failure: Exception) {
                     runOnUiThread {
                         if (isFinishing || isDestroyed) return@runOnUiThread
-                        createStatus.text = "读取实例失败：${failure.message ?: failure.javaClass.simpleName}"
+                        setCreateStatusLine("读取实例失败：${failure.message ?: failure.javaClass.simpleName}")
                         Toast.makeText(this@MainActivity, createStatus.text, Toast.LENGTH_LONG).show()
                     }
                     null
@@ -1744,19 +1765,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun applyThemeToInstances(theme: AppTheme) {
-        val list = findViewById<LinearLayout>(R.id.instance_list) ?: return
-        for (i in 0 until list.childCount) {
-            val cardView = list.getChildAt(i)
-            if (cardView is com.google.android.material.card.MaterialCardView) {
-                cardView.setCardBackgroundColor(surfaceColor(theme))
-                cardView.strokeColor = (theme.glow and 0x00FFFFFF) or 0x30000000
-                cardView.strokeWidth = (1 * resources.displayMetrics.density).toInt()
-                cardView.findViewById<TextView>(R.id.card_distro_title)?.setTextColor(theme.text)
-                cardView.findViewById<TextView>(R.id.card_instance_id)?.setTextColor(theme.textDim)
-                cardView.findViewById<TextView>(R.id.card_hardware_specs)?.setTextColor(theme.textDim)
-                cardView.findViewById<TextView>(R.id.card_ip_address)?.setTextColor(theme.textDim)
-            }
-        }
+        // UI 重新设计轮 C6：实例卡自持全量主题重涂（bindInstanceCard 内
+        // 卡面/描边/文字色/按压光晕 + ThemeApplier.apply），换主题时整表
+        // 重绑即等价于旧逐子 MaterialCardView 重涂；分组 header 文字色由
+        // applyThemeToDashboard 的 ThemeApplier 全树 walk 覆盖。
+        // onCreate 早期（L333，视图绑定前）也会走到：与旧 findViewById
+        // 空安全等价，未初始化时直接跳过。
+        if (!::instanceList.isInitialized) return
+        val adapter = instanceList.adapter as? InstanceListAdapter ?: return
+        if (adapter.itemCount == 0) return
+        adapter.notifyDataSetChanged()
     }
 
     private fun buildGlowCardDrawable(theme: AppTheme): android.graphics.drawable.Drawable {
@@ -1934,12 +1952,36 @@ class MainActivity : AppCompatActivity() {
         renderSystemStatus(DeviceCapabilityEvaluator.evaluate(deviceProfile()))
     }
 
+    // 创建/导入进度横幅（UI 重新设计轮 C6）：自独立行收敛为紧贴列表头部的
+    // 卡内横幅（create_progress_banner）。create_progress/create_status 的
+    // id 与读写语义保持，仅可见性聚合到横幅容器——进度条可见或状态文案非空
+    // 时整卡可见，空闲时整卡隐藏（不再占独立行）。
+    private fun syncCreateProgressBanner() {
+        if (!::createProgress.isInitialized || !::createStatus.isInitialized) return
+        val banner = findViewById<View>(R.id.create_progress_banner) ?: return
+        banner.visibility =
+            if (createProgress.visibility == View.VISIBLE || createStatus.text.isNotBlank()) {
+                View.VISIBLE
+            } else {
+                View.GONE
+            }
+    }
+
+    /** createStatus 文案写入的统一入口：写入并同步横幅可见性。 */
+    private fun setCreateStatusLine(text: CharSequence) {
+        createStatus.text = text
+        syncCreateProgressBanner()
+    }
+
     private fun clearRunningAnimators() {
         runningAnimators.forEach { it.cancel() }
         runningAnimators.clear()
     }
 
     private fun startBreathingAnimation(badgeView: View) {
+        // C6（RecyclerView 迁移）：同一徽章重绑时先取消旧呼吸动画，避免
+        // 反复 bind（滚动回收/主题重绑）无限动画器累积。
+        (badgeView.tag as? ValueAnimator)?.cancel()
         val animator = ObjectAnimator.ofFloat(badgeView, View.ALPHA, 1.0f, 0.35f).apply {
             duration = OrchestellaMotion.DURATION_BREATH_CYCLE_MS.toLong()
             repeatMode = ValueAnimator.REVERSE
@@ -1947,6 +1989,7 @@ class MainActivity : AppCompatActivity() {
             interpolator = AccelerateDecelerateInterpolator()
         }
         animator.start()
+        badgeView.tag = animator
         runningAnimators.add(animator)
     }
 
@@ -1997,8 +2040,8 @@ class MainActivity : AppCompatActivity() {
                     // Listing failure is not a creation failure: say what broke and what the user can do.
                     // 原实现在读取前已清空卡片；失败时同样先清再报错，不留幻影卡片。
                     clearRunningAnimators()
-                    instanceList.removeAllViews()
-                    createStatus.text = getString(R.string.instances_load_failed, "实例元数据不可读")
+                    instanceListAdapter.submit(emptyList())
+                    setCreateStatusLine(getString(R.string.instances_load_failed, "实例元数据不可读"))
                     return@runOnUiThread
                 }
                 onReady(snapshot)
@@ -2023,7 +2066,6 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderInstances(snapshot: DashboardSnapshot) {
         clearRunningAnimators()
-        instanceList.removeAllViews()
         val instances = snapshot.instances
 
         lastInstanceState = snapshot.stateKey
@@ -2033,11 +2075,16 @@ class MainActivity : AppCompatActivity() {
 
         updateConsoleWithInstance(snapshot.primary, snapshot.ssh)
 
+        val emptyCta = findViewById<View>(R.id.btn_empty_goto_distros)
         if (instances.isEmpty()) {
             emptyView?.visibility = View.VISIBLE
+            // 空态直接 CTA（UI 重新设计轮 C6）：仅空态可见，接线见 onCreate。
+            emptyCta?.visibility = View.VISIBLE
+            instanceListAdapter.submit(emptyList())
             return
         } else {
             emptyView?.visibility = View.GONE
+            emptyCta?.visibility = View.GONE
         }
 
         val supportsDesktop = false
@@ -2046,101 +2093,169 @@ class MainActivity : AppCompatActivity() {
         // same source the launch dispatcher consults. Since the snapshot
         // migration the probe runs on the executor, not the UI thread.
         val laneReady = snapshot.acceleratorLaneReady
-        val currentTheme = activeTheme ?: themeStore.resolve()
 
-        val inflater = LayoutInflater.from(this)
-        for (instance in instances) {
-            val cardView = inflater.inflate(R.layout.layout_instance_card, instanceList, false)
-            val session = ExecutionSessionRegistry.get(instance.id())
-            val runningStrategy = when (session) {
-                is QemuInstanceLauncher.Session ->
-                    // Session-18 W-B (user-approved copy): when the pVM lane is
-                    // really ready, say so; otherwise the plain software
-                    // virtualization wording stays — no fake acceleration.
-                    if (laneReady) BadgeCopy.derive(true, "") else "QEMU 软件虚拟化"
-                is AvfInstanceLauncher.AvfSession -> "AVF 硬件虚拟化"
-                else -> strategyBadge
-            }
-            val guestIp = (session as? QemuInstanceLauncher.Session)?.let { NetworkGatewayDaemon.GUEST_IP }
-            val uiModel = InstanceCardUiModel.from(instance, runningStrategy, supportsDesktop, guestIp)
-
-            val distroIcon = cardView.findViewById<ImageView>(R.id.card_distro_icon)
-            val distroTitle = cardView.findViewById<TextView>(R.id.card_distro_title)
-            val instanceIdText = cardView.findViewById<TextView>(R.id.card_instance_id)
-            val statusBadge = cardView.findViewById<TextView>(R.id.card_status_badge)
-            val hardwareSpecs = cardView.findViewById<TextView>(R.id.card_hardware_specs)
-            val ipAddress = cardView.findViewById<TextView>(R.id.card_ip_address)
-            val btnPower = cardView.findViewById<com.google.android.material.button.MaterialButton>(R.id.card_btn_power)
-
-            // Distro Icon & Info
-            distroIcon?.setImageResource(
-                DistroIconHelper.getIconRes(uiModel.distroId)
-            )
-            distroTitle?.text = "${uiModel.distroDisplayName} Linux ${uiModel.distroVersion}"
-            instanceIdText?.text = getString(R.string.instance_card_id_prefix, uiModel.shortId)
-
-            // State Badge & Breathing animation
-            statusBadge?.text = uiModel.stateBadgeText
-            statusBadge?.setTextColor(getColor(uiModel.stateBadgeColorRes))
-            if (uiModel.isBreathing) {
-                startBreathingAnimation(statusBadge)
-            }
-
-            // Hardware Specs & Virtual IP Address
-            hardwareSpecs?.text = uiModel.hardwareSpecsText
-            ipAddress?.text = uiModel.ipAddress
-
-            // Quick Power Action Button
-            if (instance.state() == InstanceLifecycle.State.RUNNING) {
-                btnPower?.text = "关机"
-                btnPower?.setIconResource(R.drawable.ic_sym_power_settings_new)
-                btnPower?.setOnClickListener {
-                    showPowerDialog(instance)
-                }
-            } else {
-                btnPower?.text = "开机"
-                btnPower?.setIconResource(R.drawable.ic_sym_power_settings_new)
-                btnPower?.setOnClickListener {
-                    launchInstance(instance)
+        // UI 重新设计轮 C6：分组 header（运行中/已停止，FlClash 式分组目录）
+        // + 卡行扁平序列；组内保持 store.list() 既有顺序（filter 保序），
+        // 全量渲染频率仍由 DashboardSnapshot 状态指纹门控（不变）。
+        val rows = buildList {
+            val running = instances.filter { it.state() == InstanceLifecycle.State.RUNNING }
+            val stopped = instances.filter { it.state() != InstanceLifecycle.State.RUNNING }
+            if (running.isNotEmpty()) {
+                add(InstanceListAdapter.Row.Section(getString(R.string.instance_section_running)))
+                running.forEach { instance ->
+                    add(
+                        InstanceListAdapter.Row.Card(
+                            instance,
+                            buildInstanceUiModel(instance, supportsDesktop, strategyBadge, laneReady),
+                        )
+                    )
                 }
             }
-
-            // Material scale-up transition to InstanceDetailActivity
-            cardView.setOnClickListener {
-                val intent = Intent(this, InstanceDetailActivity::class.java).apply {
-                    putExtra(InstanceDetailActivity.EXTRA_INSTANCE_ID, instance.id())
+            if (stopped.isNotEmpty()) {
+                add(InstanceListAdapter.Row.Section(getString(R.string.instance_section_stopped)))
+                stopped.forEach { instance ->
+                    add(
+                        InstanceListAdapter.Row.Card(
+                            instance,
+                            buildInstanceUiModel(instance, supportsDesktop, strategyBadge, laneReady),
+                        )
+                    )
                 }
-                val options = ActivityOptionsCompat.makeScaleUpAnimation(
-                    cardView, 0, 0, cardView.width.coerceAtLeast(1), cardView.height.coerceAtLeast(1)
-                )
-                startActivity(intent, options.toBundle())
             }
-
-            cardView.setOnLongClickListener {
-                showInstanceActionBottomSheet(instance, uiModel)
-                true
-            }
-
-            if (cardView is com.google.android.material.card.MaterialCardView) {
-                cardView.setCardBackgroundColor(surfaceColor(currentTheme))
-                cardView.strokeColor = (currentTheme.glow and 0x00FFFFFF) or 0x30000000
-                cardView.strokeWidth = (1 * resources.displayMetrics.density).toInt()
-                distroTitle?.setTextColor(currentTheme.text)
-                instanceIdText?.setTextColor(currentTheme.textDim)
-                hardwareSpecs?.setTextColor(currentTheme.textDim)
-                ipAddress?.setTextColor(currentTheme.textDim)
-                attachPressGlow(cardView, currentTheme)
-            }
-
-            instanceList.addView(cardView)
-            ThemeApplier.apply(cardView, currentTheme)
         }
+        instanceListAdapter.cardBinder = { cardView, row -> bindInstanceCard(cardView, row) }
+        instanceListAdapter.submit(rows)
+
         // Lane D (2026-11-10)：实例卡差异化进场（fade + 4% rise 级联）。只在完整
         // 重渲染后播放：3 秒周期里状态指纹未变走 updateConsoleWithInstance 轻更新
         // 路径，永不重播（2026-11-08 M5 验证点）；指纹变化（实例创建/状态迁移）或
         // 显式刷新（onResume/删除/克隆后 showInstances）按数据刷新时刻重播。级联
         // 无延迟 GONE/定时器，下一次重渲染直接移除动画中的卡片，无半透明滞留面。
-        OrchestellaMotion.playListEntryStagger(instanceList)
+        // C6 迁移注：RecyclerView 子项要等自身下一帧布局才存在——挂列表自身的
+        // OneShotPreDrawListener，首次绘制时子项已就位（与旧 LinearLayout 在
+        // GONE 容器上的进场时机一致：tab 切回可见才播）；layoutAnimation 禁挂
+        // RecyclerView，交错上限 5 步机制保持。
+        OneShotPreDrawListener.add(instanceList) {
+            OrchestellaMotion.playListEntryStagger(instanceList)
+        }
+    }
+
+    /** 单实例 UI 模型推导（原 renderInstances 循环内联逻辑原位迁移）。 */
+    private fun buildInstanceUiModel(
+        instance: InstanceLifecycle.Instance,
+        supportsDesktop: Boolean,
+        strategyBadge: String,
+        laneReady: Boolean,
+    ): InstanceCardUiModel {
+        val session = ExecutionSessionRegistry.get(instance.id())
+        val runningStrategy = when (session) {
+            is QemuInstanceLauncher.Session ->
+                // Session-18 W-B (user-approved copy): when the pVM lane is
+                // really ready, say so; otherwise the plain software
+                // virtualization wording stays — no fake acceleration.
+                if (laneReady) BadgeCopy.derive(true, "") else "QEMU 软件虚拟化"
+            is AvfInstanceLauncher.AvfSession -> "AVF 硬件虚拟化"
+            else -> strategyBadge
+        }
+        val guestIp = (session as? QemuInstanceLauncher.Session)?.let { NetworkGatewayDaemon.GUEST_IP }
+        return InstanceCardUiModel.from(instance, runningStrategy, supportsDesktop, guestIp)
+    }
+
+    /** 单卡绑定（原 renderInstances 循环体原位迁移）：数据、监听、呼吸动画
+     * 与主题重涂逐字保持。终端按钮为运行中实例的前置入口，语义复用实例
+     * 操作 sheet 的 onOpenTerminal（RUNNING→openTerminal，否则
+     * launchInstance），不发明新行为；桌面入口仍在长按 sheet。 */
+    private fun bindInstanceCard(cardView: View, row: InstanceListAdapter.Row.Card) {
+        val instance = row.instance
+        val uiModel = row.uiModel
+
+        val distroIcon = cardView.findViewById<ImageView>(R.id.card_distro_icon)
+        val distroTitle = cardView.findViewById<TextView>(R.id.card_distro_title)
+        val instanceIdText = cardView.findViewById<TextView>(R.id.card_instance_id)
+        val statusBadge = cardView.findViewById<TextView>(R.id.card_status_badge)
+        val hardwareSpecs = cardView.findViewById<TextView>(R.id.card_hardware_specs)
+        val ipAddress = cardView.findViewById<TextView>(R.id.card_ip_address)
+        val btnPower = cardView.findViewById<com.google.android.material.button.MaterialButton>(R.id.card_btn_power)
+
+        // Distro Icon & Info
+        distroIcon?.setImageResource(
+            DistroIconHelper.getIconRes(uiModel.distroId)
+        )
+        distroTitle?.text = "${uiModel.distroDisplayName} Linux ${uiModel.distroVersion}"
+        instanceIdText?.text = getString(R.string.instance_card_id_prefix, uiModel.shortId)
+
+        // State Badge & Breathing animation
+        statusBadge?.text = uiModel.stateBadgeText
+        statusBadge?.setTextColor(getColor(uiModel.stateBadgeColorRes))
+        if (uiModel.isBreathing) {
+            startBreathingAnimation(statusBadge)
+        }
+
+        // Hardware Specs & Virtual IP Address
+        hardwareSpecs?.text = uiModel.hardwareSpecsText
+        ipAddress?.text = uiModel.ipAddress
+
+        // Quick Power Action Button
+        if (instance.state() == InstanceLifecycle.State.RUNNING) {
+            btnPower?.text = "关机"
+            btnPower?.setIconResource(R.drawable.ic_sym_power_settings_new)
+            btnPower?.setOnClickListener {
+                showPowerDialog(instance)
+            }
+        } else {
+            btnPower?.text = "开机"
+            btnPower?.setIconResource(R.drawable.ic_sym_power_settings_new)
+            btnPower?.setOnClickListener {
+                launchInstance(instance)
+            }
+        }
+
+        // Terminal secondary button（UI 重新设计轮 C6）：与电源键同排同高，
+        // 仅运行中实例卡可见；动作与 sheet 的 onOpenTerminal 一致。
+        val btnTerminal = cardView.findViewById<com.google.android.material.button.MaterialButton>(R.id.card_btn_terminal)
+        if (instance.state() == InstanceLifecycle.State.RUNNING) {
+            btnTerminal?.visibility = View.VISIBLE
+            btnTerminal?.setOnClickListener {
+                if (instance.state() == InstanceLifecycle.State.RUNNING) {
+                    openTerminal(instance)
+                } else {
+                    launchInstance(instance)
+                }
+            }
+        } else {
+            btnTerminal?.visibility = View.GONE
+            btnTerminal?.setOnClickListener(null)
+        }
+
+        // Material scale-up transition to InstanceDetailActivity
+        cardView.setOnClickListener {
+            val intent = Intent(this, InstanceDetailActivity::class.java).apply {
+                putExtra(InstanceDetailActivity.EXTRA_INSTANCE_ID, instance.id())
+            }
+            val options = ActivityOptionsCompat.makeScaleUpAnimation(
+                cardView, 0, 0, cardView.width.coerceAtLeast(1), cardView.height.coerceAtLeast(1)
+            )
+            startActivity(intent, options.toBundle())
+        }
+
+        cardView.setOnLongClickListener {
+            showInstanceActionBottomSheet(instance, uiModel)
+            true
+        }
+
+        val currentTheme = activeTheme ?: themeStore.resolve()
+        if (cardView is com.google.android.material.card.MaterialCardView) {
+            cardView.setCardBackgroundColor(surfaceColor(currentTheme))
+            cardView.strokeColor = (currentTheme.glow and 0x00FFFFFF) or 0x30000000
+            cardView.strokeWidth = (1 * resources.displayMetrics.density).toInt()
+            distroTitle?.setTextColor(currentTheme.text)
+            instanceIdText?.setTextColor(currentTheme.textDim)
+            hardwareSpecs?.setTextColor(currentTheme.textDim)
+            ipAddress?.setTextColor(currentTheme.textDim)
+            attachPressGlow(cardView, currentTheme)
+        }
+
+        ThemeApplier.apply(cardView, currentTheme)
     }
 
     private fun showPowerDialog(instance: InstanceLifecycle.Instance) {
@@ -2183,7 +2298,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 withContext(Dispatchers.Main) {
-                    createStatus.text = "关机请求已发送，等待实例退出"
+                    setCreateStatusLine("关机请求已发送，等待实例退出")
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -2436,14 +2551,14 @@ class MainActivity : AppCompatActivity() {
             setCreateButtonsEnabled(DeviceCapabilityEvaluator.evaluate(deviceProfile()).canCreateFullLinuxInstance())
         }
         override fun showStatus(message: String) {
-            createStatus.text = message
+            setCreateStatusLine(message)
         }
         override fun showAttached(instance: InstanceLifecycle.Instance) {
-            createStatus.text = "已连接到运行中的实例"
+            setCreateStatusLine("已连接到运行中的实例")
             openTerminal(instance)
         }
         override fun showLaunchBusyStatus() {
-            createStatus.text = "实例正在启动，请稍后再试"
+            setCreateStatusLine("实例正在启动，请稍后再试")
         }
         override fun showLaunchSuccess(navigation: InstanceLaunchCoordinator.LaunchNavigation) {
             val intent = Intent(this@MainActivity, TerminalActivity::class.java)
@@ -2454,7 +2569,7 @@ class MainActivity : AppCompatActivity() {
             startActivity(intent)
         }
         override fun surfaceLaunchFailure(message: String) {
-            createStatus.text = message
+            setCreateStatusLine(message)
             Toast.makeText(this@MainActivity, createStatus.text, Toast.LENGTH_LONG).show()
         }
         override fun showInstances() {
@@ -2483,7 +2598,7 @@ class MainActivity : AppCompatActivity() {
         // 协同落点（2026-11-07）：通知权限已在首帧后请求过（requestNotificationPermissionAfterFirstFrame），
         // 不再在 VM 启动路径上弹窗打断。
         setCreateButtonsEnabled(false)
-        createStatus.setText(R.string.launch_started)
+        setCreateStatusLine(getString(R.string.launch_started))
         operations.execute {
             launchCoordinator.launch(instance)
         }
