@@ -220,6 +220,9 @@ val umlNetHelperDir: String? = providers.gradleProperty("orchestella.uml.netHelp
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
+    // Compose migration batch 1 (2026-11-14 UI round, user ruling): the compiler
+    // plugin version is the Kotlin version by contract, so the two can never drift.
+    alias(libs.plugins.kotlin.compose)
 }
 
 android {
@@ -504,6 +507,9 @@ android {
 
     buildFeatures {
         buildConfig = true
+        // Compose is additive in batch 1: new screens are Compose, existing XML
+        // pages keep working (the custom terminal View is wrapped, never rewritten).
+        compose = true
     }
 
     packaging {
@@ -870,6 +876,12 @@ dependencies {
     // "Module with the Main dispatcher had failed to initialize".
     implementation(libs.coroutines.core)
     implementation(libs.coroutines.android)
+    // Compose migration batch 1. The BOM pins every Compose artifact, so the
+    // module names below carry no version — one upgrade point, no drift.
+    implementation(platform(libs.compose.bom))
+    implementation(libs.compose.ui)
+    implementation(libs.compose.foundation)
+    implementation(libs.compose.material3)
     implementation(libs.shizuku.api)
     implementation(libs.shizuku.provider)
     // Pin the in-process hidden-API exemption (Apache-2.0, LSPosed). It grants

@@ -627,7 +627,7 @@ class MainActivity : AppCompatActivity() {
             Triple(R.id.container_tab_settings, R.id.nav_tab_settings, Pair(R.id.nav_icon_settings, R.id.nav_text_settings)),
         )
 
-        val indexLabels = listOf("01/K", "02/I", "03/H", "04/D", "05/S")
+        val indexLabels = listOf("01", "02", "03", "04", "05")
         val titleLabels = listOf(
             "ORCHESTELLA",
             "实例管理",
@@ -636,8 +636,8 @@ class MainActivity : AppCompatActivity() {
             "设置与主题"
         )
 
-        findViewById<TextView>(R.id.masthead_index_text)?.text = indexLabels.getOrElse(tabIndex) { "01/K" }
-        findViewById<TextView>(R.id.dashboard_title)?.text = titleLabels.getOrElse(tabIndex) { "ORCHESTELLA // pKVM" }
+        findViewById<TextView>(R.id.masthead_index_text)?.text = indexLabels.getOrElse(tabIndex) { "01" }
+        findViewById<TextView>(R.id.dashboard_title)?.text = titleLabels.getOrElse(tabIndex) { "ORCHESTELLA" }
 
         findViewById<View>(R.id.masthead_index_box)?.setBackgroundColor(activeColor)
         findViewById<TextView>(R.id.tv_status_time)?.setBackgroundColor(activeColor)
@@ -957,6 +957,10 @@ class MainActivity : AppCompatActivity() {
             applyThemeToDashboard()
             switchTab(4)
             Toast.makeText(this, "已应用主题: 镉黄警示 · 黄", Toast.LENGTH_SHORT).show()
+        }
+        // Compose 迁移第一批：整页 Compose 的主题画廊（预览卡 + 即时套用）。
+        findViewById<View>(R.id.btn_open_theme_gallery)?.setOnClickListener {
+            startActivity(io.github.nyzeep.orchestella.ui.compose.ThemeGalleryActivity.intent(this))
         }
         findViewById<View>(R.id.btn_settings_open_ssh)?.setOnClickListener {
             io.github.nyzeep.orchestella.ssh.SshManagerDialog.show(this)
@@ -1882,10 +1886,10 @@ class MainActivity : AppCompatActivity() {
         if (level >= 0 && scale > 0) {
             val pct = level.toFloat() / scale
             battery?.setProgress(pct, "${(pct * 100).toInt()}%", "电池")
-            findViewById<TextView>(R.id.tv_status_bat)?.text = "BAT:${(pct * 100).toInt()}%"
+            findViewById<TextView>(R.id.tv_status_bat)?.text = "电量 ${(pct * 100).toInt()}%"
         } else {
             battery?.setProgress(0f, "--", "电池")
-            findViewById<TextView>(R.id.tv_status_bat)?.text = "BAT:--"
+            findViewById<TextView>(R.id.tv_status_bat)?.text = "电量 --"
         }
         val temperature = intent?.getIntExtra(android.os.BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE)
         findViewById<TextView>(R.id.tv_telemetry_temp)?.text =
@@ -1898,14 +1902,14 @@ class MainActivity : AppCompatActivity() {
         val network = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val capabilities = network.activeNetwork?.let(network::getNetworkCapabilities)
         val transport = when {
-            capabilities == null -> "OFFLINE"
+            capabilities == null -> "离线"
             capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN) -> "VPN"
             capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "Wi-Fi"
             capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "移动"
             capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "有线"
             else -> "在线"
         }
-        findViewById<TextView>(R.id.tv_status_net)?.text = "NET:$transport"
+        findViewById<TextView>(R.id.tv_status_net)?.text = "网络 $transport"
     }
 
     private fun registerForBattery(): android.content.Intent? {

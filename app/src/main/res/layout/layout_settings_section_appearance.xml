@@ -82,6 +82,22 @@
                 android:text="选择主题"
                 android:textSize="13sp" />
 
+            <!-- Compose 迁移第一批（2026-11-14 UI 轮）：Compose 主题画廊入口。
+                 保留原「选择主题」列表对话框不动（自定义槽位仍在那里管理），
+                 画廊只做「预览卡 + 即时套用」。 -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_open_theme_gallery"
+                style="@style/Widget.Orchestella.Button.Tonal"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/oe_space_sm"
+                android:minHeight="48dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                app:cornerRadius="0dp"
+                android:text="@string/theme_gallery_entry"
+                android:textSize="13sp" />
+
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_pick_custom_theme"
                 style="@style/Widget.Orchestella.Button.Tonal"

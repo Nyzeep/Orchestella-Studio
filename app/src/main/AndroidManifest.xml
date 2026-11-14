@@ -81,6 +81,13 @@
         <!-- T3 settings IA redesign: generic per-section sub-page (no Fragment;
              section layout selected by intent extra). Not exported: launched
              only from the settings home directory rows. -->
+        <!-- Compose 迁移第一批（2026-11-14 UI 轮）：主题画廊。第一个整页
+             Compose 界面，用来实证 AppTheme -> Material3 主题桥。 -->
+        <activity
+            android:name=".ui.compose.ThemeGalleryActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Orchestella" />
+
         <activity
             android:name=".SettingsSubActivity"
             android:exported="false"

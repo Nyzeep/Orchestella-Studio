@@ -272,6 +272,11 @@ class SettingsSubActivity : AppCompatActivity() {
         val lineLabel = findViewById<TextView>(R.id.tv_line_spacing_label)
         val lineSeek = findViewById<android.widget.SeekBar>(R.id.seek_terminal_line_spacing)
         if (btnPickTheme == null || fontSeek == null) return
+        // Compose 主题画廊（迁移第一批）：预览卡 + 即时套用。原「选择主题」
+        // 列表对话框保留，自定义槽位仍在那里增删。
+        findViewById<MaterialButton?>(R.id.btn_open_theme_gallery)?.setOnClickListener {
+            startActivity(io.github.nyzeep.orchestella.ui.compose.ThemeGalleryActivity.intent(this))
+        }
 
         fun refreshLabels() {
             fontLabel?.text = "终端字号：${themeStore.terminalFontSizeSp()}sp"

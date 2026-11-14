@@ -59,7 +59,7 @@
                 android:maxLines="1"
                 android:ellipsize="end"
                 android:fontFamily="monospace"
-                android:text="ORCHESTELLA // WORKSTATION"
+                android:text="@string/masthead_workstation"
                 android:textColor="#8E929B"
                 android:textSize="10sp"
                 android:textStyle="bold" />
@@ -69,7 +69,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:fontFamily="monospace"
-                android:text="NET:--"
+                android:text="@string/status_net_placeholder"
                 android:textColor="#8E929B"
                 android:textSize="10sp" />
 
@@ -79,7 +79,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginStart="@dimen/oe_space_sm"
                 android:fontFamily="monospace"
-                android:text="BAT:--"
+                android:text="@string/status_bat_placeholder"
                 android:textColor="#FDBB24"
                 android:textSize="10sp"
                 android:textStyle="bold" />
@@ -173,7 +173,7 @@
                         android:paddingEnd="@dimen/oe_space_xs"
                         android:paddingBottom="1dp"
                         android:fontFamily="monospace"
-                        android:text="IDLE"
+                        android:text="@string/state_idle"
                         android:textColor="#000000"
                         android:textSize="9sp"
                         android:textStyle="bold" />
@@ -396,7 +396,7 @@
                                 android:paddingEnd="@dimen/oe_icon_inline_gap"
                                 android:paddingBottom="@dimen/oe_space_xs"
                                 android:fontFamily="monospace"
-                                android:text="MACH-ID"
+                                android:text="@string/mach_id_label"
                                 android:textColor="#FFFFFF"
                                 android:textSize="10sp"
                                 android:textStyle="bold" />
@@ -579,7 +579,7 @@
                                     app:cornerRadius="0dp"
                                     android:backgroundTint="#FFFFFF"
                                     android:fontFamily="monospace"
-                                    android:text="COPY"
+                                    android:text="@string/action_copy"
                                     android:textColor="#000000"
                                     android:textSize="11sp"
                                     android:textStyle="bold"
@@ -656,7 +656,7 @@
                                         android:layout_weight="1"
                                         android:layout_marginStart="@dimen/oe_icon_inline_gap"
                                         android:fontFamily="monospace"
-                                        android:text="HOST // CPU"
+                                        android:text="@string/metric_cpu"
                                         android:textColor="#FFFFFF"
                                         android:textSize="10sp"
                                         android:textStyle="bold" />
@@ -750,7 +750,7 @@
                                         android:layout_weight="1"
                                         android:layout_marginStart="@dimen/oe_icon_inline_gap"
                                         android:fontFamily="monospace"
-                                        android:text="HOST // RAM"
+                                        android:text="@string/metric_ram"
                                         android:textColor="#FFFFFF"
                                         android:textSize="10sp"
                                         android:textStyle="bold" />
@@ -848,7 +848,7 @@
                                         android:paddingStart="@dimen/oe_space_xs"
                                         android:paddingEnd="@dimen/oe_space_xs"
                                         android:fontFamily="monospace"
-                                        android:text="THERMAL"
+                                        android:text="@string/metric_thermal"
                                         android:textColor="#000000"
                                         android:textSize="9sp"
                                         android:textStyle="bold" />
@@ -992,7 +992,7 @@
                                 android:layout_weight="1"
                                 android:layout_marginStart="@dimen/oe_icon_inline_gap"
                                 android:fontFamily="monospace"
-                                android:text="CONTROL MATRIX [SYS.OVERRIDE]"
+                                android:text="@string/control_matrix_label"
                                 android:textColor="#FFFFFF"
                                 android:textSize="11sp"
                                 android:textStyle="bold" />
@@ -1013,7 +1013,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:fontFamily="monospace"
-                                android:text="DIRECT I/O"
+                                android:text="@string/io_direct"
                                 android:textColor="#8E929B"
                                 android:textSize="10sp" />
                         </LinearLayout>
@@ -1066,7 +1066,7 @@
                                         android:layout_width="wrap_content"
                                         android:layout_height="wrap_content"
                                         android:fontFamily="monospace"
-                                        android:text="ACT.01"
+                                        android:text="@string/action_index_01"
                                         android:textColor="#8E929B"
                                         android:textSize="9sp"
                                         android:textStyle="bold" />
@@ -1134,7 +1134,7 @@
                                         android:layout_width="wrap_content"
                                         android:layout_height="wrap_content"
                                         android:fontFamily="monospace"
-                                        android:text="ACT.02"
+                                        android:text="@string/action_index_02"
                                         android:textColor="#8E929B"
                                         android:textSize="9sp"
                                         android:textStyle="bold" />
@@ -1209,7 +1209,7 @@
                                         android:layout_width="wrap_content"
                                         android:layout_height="wrap_content"
                                         android:fontFamily="monospace"
-                                        android:text="ACT.03"
+                                        android:text="@string/action_index_03"
                                         android:textColor="#8E929B"
                                         android:textSize="9sp"
                                         android:textStyle="bold" />
@@ -1277,7 +1277,7 @@
                                         android:layout_width="wrap_content"
                                         android:layout_height="wrap_content"
                                         android:fontFamily="monospace"
-                                        android:text="ACT.04"
+                                        android:text="@string/action_index_04"
                                         android:textColor="#8E929B"
                                         android:textSize="9sp"
                                         android:textStyle="bold" />
@@ -1620,7 +1620,7 @@
                                 android:paddingStart="@dimen/oe_icon_inline_gap"
                                 android:paddingEnd="@dimen/oe_icon_inline_gap"
                                 android:fontFamily="monospace"
-                                android:text="SEC.01"
+                                android:text="@string/section_index_01"
                                 android:textColor="#FFFFFF"
                                 android:textSize="9sp"
                                 android:textStyle="bold" />
@@ -1900,7 +1900,7 @@
                                 android:paddingStart="@dimen/oe_icon_inline_gap"
                                 android:paddingEnd="@dimen/oe_icon_inline_gap"
                                 android:fontFamily="monospace"
-                                android:text="SEC.03"
+                                android:text="@string/section_index_03"
                                 android:textColor="#FFFFFF"
                                 android:textSize="9sp"
                                 android:textStyle="bold" />
@@ -1943,7 +1943,7 @@
                                     android:layout_height="wrap_content"
                                     android:layout_marginTop="@dimen/oe_space_xs"
                                     android:fontFamily="monospace"
-                                    android:text="MEM / 内存"
+                                    android:text="@string/metric_mem_short"
                                     android:textColor="#8E929B"
                                     android:textSize="9sp" />
                             </LinearLayout>
@@ -1965,7 +1965,7 @@
                                     android:layout_height="wrap_content"
                                     android:layout_marginTop="@dimen/oe_space_xs"
                                     android:fontFamily="monospace"
-                                    android:text="DISK / 存储"
+                                    android:text="@string/metric_disk_short"
                                     android:textColor="#8E929B"
                                     android:textSize="9sp" />
                             </LinearLayout>
@@ -1987,7 +1987,7 @@
                                     android:layout_height="wrap_content"
                                     android:layout_marginTop="@dimen/oe_space_xs"
                                     android:fontFamily="monospace"
-                                    android:text="BAT / 电量"
+                                    android:text="@string/metric_bat_short"
                                     android:textColor="#8E929B"
                                     android:textSize="9sp" />
                             </LinearLayout>
@@ -3028,7 +3028,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:fontFamily="monospace"
-                            android:text="[ THEME SELECTION // 工控色彩风格 ]"
+                            android:text="@string/theme_section_header"
                             android:textColor="#8E929B"
                             android:textSize="10sp"
                             android:textStyle="bold"
@@ -3072,7 +3072,7 @@
                                 android:paddingStart="@dimen/oe_icon_inline_gap"
                                 android:paddingEnd="@dimen/oe_icon_inline_gap"
                                 android:fontFamily="monospace"
-                                android:text="ACTIVE"
+                                android:text="@string/theme_active_badge"
                                 android:textColor="#FFFFFF"
                                 android:textSize="9sp" />
                         </LinearLayout>
@@ -3115,7 +3115,7 @@
                                 android:paddingStart="@dimen/oe_icon_inline_gap"
                                 android:paddingEnd="@dimen/oe_icon_inline_gap"
                                 android:fontFamily="monospace"
-                                android:text="ACTIVE"
+                                android:text="@string/theme_active_badge"
                                 android:textColor="#FFFFFF"
                                 android:textSize="9sp" />
                         </LinearLayout>
@@ -3157,7 +3157,7 @@
                                 android:paddingStart="@dimen/oe_icon_inline_gap"
                                 android:paddingEnd="@dimen/oe_icon_inline_gap"
                                 android:fontFamily="monospace"
-                                android:text="ACTIVE"
+                                android:text="@string/theme_active_badge"
                                 android:textColor="#FFFFFF"
                                 android:textSize="9sp"
                                 android:visibility="gone" />
@@ -3200,12 +3200,26 @@
                                 android:paddingStart="@dimen/oe_icon_inline_gap"
                                 android:paddingEnd="@dimen/oe_icon_inline_gap"
                                 android:fontFamily="monospace"
-                                android:text="ACTIVE"
+                                android:text="@string/theme_active_badge"
                                 android:textColor="#000000"
                                 android:textSize="9sp"
                                 android:visibility="gone" />
                         </LinearLayout>
                     </LinearLayout>
+
+                    <!-- Compose 迁移第一批（2026-11-14 UI 轮）：主题画廊入口。
+                         预览卡 + 即时套用，是第一个整页 Compose 界面。 -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_open_theme_gallery"
+                        style="@style/Widget.Orchestella.Button.Tonal"
+                        android:layout_width="match_parent"
+                        android:layout_height="@dimen/oe_btn_h_primary"
+                        android:layout_marginBottom="@dimen/oe_card_gap"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        app:cornerRadius="0dp"
+                        android:text="@string/theme_gallery_entry"
+                        android:textSize="13sp" />
 
                     <!-- Advanced Sub-Page Entrances（UI 重新设计轮：入口按钮墙
                          收敛为分组列表行——行高 oe_list_item_min_h、trailing
@@ -3224,7 +3238,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:fontFamily="monospace"
-                            android:text="[ MULTI-LEVEL MANAGEMENT ENTRIES ]"
+                            android:text="@string/management_section_header"
                             android:textColor="#8E929B"
                             android:textSize="10sp"
                             android:textStyle="bold"
