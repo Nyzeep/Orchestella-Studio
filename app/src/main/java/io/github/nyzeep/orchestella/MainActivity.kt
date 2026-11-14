@@ -778,7 +778,23 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        findViewById<View>(R.id.btn_fullscreen_terminal)?.setOnClickListener { openRuntimeLogs() }
+        // UI 重新设计轮：长文收 ⓘ——NET 摘要条与 WORKSPACE 尾行卡点按弹出
+        // 说明对话框（长文不在面板直出）；「查看运行日志」独立按钮删除，
+        // 运行日志入口收敛至 ACT.03 瓦片。
+        findViewById<View>(R.id.well_telemetry_graphic)?.setOnClickListener {
+            showInfoDialog(
+                getString(R.string.net_info_dialog_title),
+                findViewById<TextView>(R.id.network_runtime_summary)?.text ?: "",
+            )
+        }
+        findViewById<View>(R.id.btn_workspace_info)?.setOnClickListener {
+            val allocation = findViewById<TextView>(R.id.vm_allocation_summary)?.text ?: ""
+            val guidance = findViewById<TextView>(R.id.console_tty_text)?.text ?: ""
+            showInfoDialog(
+                getString(R.string.workspace_info_dialog_title),
+                "$allocation\n\n$guidance",
+            )
+        }
 
         findViewById<View>(R.id.act_port_forwarding)?.setOnClickListener {
             val instances = try { instanceStore.list() } catch (_: Exception) { emptyList() }
@@ -815,6 +831,16 @@ class MainActivity : AppCompatActivity() {
                 if (instance != null) LogViewerActivity.KIND_GUEST else LogViewerActivity.KIND_APP)
             instance?.let { putExtra(LogViewerActivity.EXTRA_INSTANCE_ID, it.id()) }
         })
+    }
+
+    /** ⓘ 说明对话框（UI 重新设计轮）：走 ThemeApplier.apply(dialog) 通道重涂。 */
+    private fun showInfoDialog(title: String, message: CharSequence) {
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(message)
+            .setPositiveButton(getString(R.string.dialog_action_understood), null)
+            .show()
+        ThemeApplier.apply(dialog)
     }
 
     private fun requireColdBackup(instanceId: String): InstanceLifecycle.Instance {
