@@ -95,8 +95,12 @@ import java.util.zip.GZIPInputStream;
  * #!/bin/busybox sh}) — a byte-faithful port of the research probe script
  * {@code research/uml-fastboot/initramfs/um-command.sh}, embedded as {@link
  * #UM_COMMAND_LAUNCHER} (no assets dependency, the pinned kernel stays
- * untouched). The injection is a <i>launch-chain preparation</i>, not a
- * capability promise.
+ * untouched). Since the launcher's v2 the script also carries the guest-
+ * network boot branch under the {@code um.net=1} kernel knob (wired compile-
+ * route arm only: passt DHCP, apk add distcc, distccd daemonized on 3632,
+ * resident instead of powering off — see the constant's provenance header);
+ * without the knob the v1 probe behavior is unchanged line for line. The
+ * injection is a <i>launch-chain preparation</i>, not a capability promise.
  *
  * <p><b>Honesty boundary of the ready state (2026-11-13 主会话裁决).</b>
  * A provisioned extract is exactly "verified + extracted" — never "startable
@@ -835,14 +839,16 @@ public final class UmlRootfsProvisioner {
     // ---------------------------------------------------------------------------------
 
     /**
-     * The owned external-root launcher — a byte-faithful port of the research
-     * probe script {@code research/uml-fastboot/initramfs/um-command.sh}:
-     * everything below the provenance header (the 8 lines after the shebang)
-     * is the research original, verbatim. The official minirootfs ships no
-     * {@code /um-command.sh}, and the init's external-root path refuses to
-     * {@code switch_root} without an executable one — so the provisioner
-     * writes this constant into the extract tree's root. Embedded as a
-     * constant on purpose: no assets dependency (the content survives a
+     * The owned external-root launcher (v2) — a byte-faithful port of the
+     * research probe script {@code research/uml-fastboot/initramfs/um-command.sh}:
+     * every original line is verbatim, and the only addition is the v2
+     * guest-network boot branch after the {@code U1_READY} marker, guarded by
+     * the {@code um.net=1} kernel knob (the provenance header after the
+     * shebang carries the version and the change note). The official
+     * minirootfs ships no {@code /um-command.sh}, and the init's external-root
+     * path refuses to {@code switch_root} without an executable one — so the
+     * provisioner writes this constant into the extract tree's root. Embedded
+     * as a constant on purpose: no assets dependency (the content survives a
      * missing-payload checkout), and this class is its single owner.
      * Package-private for the contract tests.
      *
@@ -852,16 +858,42 @@ public final class UmlRootfsProvisioner {
      * U1 marker contract ({@code U1_INFO}/{@code U1_T2_READY}/{@code
      * U1_READY}), the busybox-true T3 probe, and the {@code um.hold_ms}/{@code
      * um.shell} branches are the research script's own semantics, kept as-is.
+     *
+     * <p><b>v2 semantics.</b> Without {@code um.net=1} the v1 probe path runs
+     * unchanged — the hold_ms sleep, then sync and poweroff. With {@code
+     * um.net=1} (the wired compile-route arm appends it via the extraArgs
+     * seam, see {@code UmlRootfsExtraArgs}): the branch brings vec0 up, takes
+     * the passt DHCP lease (the Alpine tree's own {@code
+     * /usr/share/udhcpc/default.script} applies address, route and
+     * resolv.conf), installs distccd through the passt→WAN CDN path when
+     * missing, daemonizes it on 0.0.0.0:3632 for 10.0.2.0/24 — the D-1 lane's
+     * dial target — and then holds resident instead of powering off: a wired
+     * face is a long-lived compile host. Every step is best-effort with an
+     * honest {@code UM_NET_ERROR} marker; nothing but the T3 probe failure
+     * ever powers the guest off. A pre-v2 tree migrates by the injection's
+     * ordinary digest repair (the owned digest no longer matches the v1
+     * bytes, so the next provision rewrites the owned content).
      */
     static final String UM_COMMAND_LAUNCHER = """
             #!/bin/busybox sh
-            # External-root edition — injected into the extracted minirootfs tree by
+            # External-root edition v2 — injected into the extracted minirootfs tree by
             # UmlRootfsProvisioner: the official Alpine minirootfs ships no /um-command.sh,
             # and the fast init's external-root path refuses to switch_root without an
             # executable one (fail 29 missing_command, research/uml-fastboot/initramfs/init).
             # It runs inside the new root after switch_root, launched as
-            # /bin/busybox sh /um-command.sh, where busybox is on PATH.  Everything below
-            # the provenance header is the initramfs original, verbatim.
+            # /bin/busybox sh /um-command.sh, where busybox is on PATH.
+            #
+            # v2 (2026-11-13, Gate 2 E2E): with um.net=1 on the kernel command line (the
+            # wired compile-route arm appends it next to umroot=/umrootfstype=hostfs) the
+            # script adds a guest-network boot branch after the T3 probe — vec0 up, a
+            # passt DHCP lease (10.0.2.15; the tree's own /usr/share/udhcpc/default.script
+            # applies it), apk add distcc when missing (Alpine CDN through passt→WAN), and
+            # distccd daemonized on 0.0.0.0:3632 for 10.0.2.0/24 — then holds resident
+            # instead of the hold_ms→poweroff path: a wired face is a long-lived compile
+            # host, not a probe run. Every branch step is best-effort and honestly marked
+            # (UM_NET milestones, UM_NET_ERROR lines); a failure never blocks the residency.
+            # Without um.net=1 the v1 probe behavior is unchanged: every original line
+            # stays verbatim, only this branch was added.
             #
             # Orchestella Studio — U1 fast-shell T3 probe.
             #
@@ -921,6 +953,46 @@ public final class UmlRootfsProvisioner {
             fi
 
             printf 'U1_READY uptime=%s\\n' "$uptime"
+
+            # launcher v2: the guest-network boot branch, entered only under the
+            # um.net=1 knob (the wired compile-route arm).  Best-effort at every
+            # step — a failure prints its UM_NET_ERROR line and the branch still
+            # ends in the resident loop below, so the face stays up, honest and
+            # diagnosable (never a faked-ready guest, never a probe poweroff).
+            if [ "$(param um.net || :)" = 1 ]; then
+                ip link set vec0 up 2>/dev/null || :
+                if udhcpc -i vec0 -q 2>/dev/null; then
+                    leased=$(ip -4 addr show dev vec0 2>/dev/null | sed -n 's/.*inet \\([0-9.]*\\).*/\\1/p' | head -n 1)
+                    printf 'UM_NET dhcp bound ip=%s\\n' "${leased:-unknown}"
+                else
+                    printf 'UM_NET_ERROR step=dhcp detail=udhcpc failed on vec0\\n' >&2
+                fi
+
+                if command -v distccd >/dev/null 2>&1; then
+                    printf 'UM_NET distccd present\\n'
+                else
+                    if apk add distcc 2>/dev/null; then
+                        printf 'UM_NET distccd installed\\n'
+                    else
+                        printf 'UM_NET_ERROR step=apk detail=apk add distcc failed\\n' >&2
+                    fi
+                fi
+
+                if command -v distccd >/dev/null 2>&1; then
+                    if distccd --daemon --listen 0.0.0.0 --port 3632 --allow 10.0.2.0/24 2>/dev/null; then
+                        printf 'UM_NET distccd listening port=3632\\n'
+                    elif distccd --daemon --user nobody --listen 0.0.0.0 --port 3632 --allow 10.0.2.0/24 2>/dev/null; then
+                        printf 'UM_NET distccd listening port=3632 user=nobody\\n'
+                    else
+                        printf 'UM_NET_ERROR step=distccd detail=daemon start failed\\n' >&2
+                    fi
+                else
+                    printf 'UM_NET_ERROR step=distccd detail=distccd binary missing after install\\n' >&2
+                fi
+
+                printf 'UM_NET resident: wired face holding, distccd boot done\\n'
+                while :; do sleep 3600; done
+            fi
 
             if [ "$hold_ms" -ge 1000 ]; then
                 sleep $((hold_ms / 1000)) 2>/dev/null || sleep 1
