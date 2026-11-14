@@ -20,13 +20,7 @@ import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.materialswitch.MaterialSwitch
 import io.github.nyzeep.orchestella.ui.motion.OrchestellaMotion
-import io.github.nyzeep.orchestella.ui.theme.CustomThemeSlot
-import io.github.nyzeep.orchestella.ui.theme.SurfaceOpacity
 import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
-import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
-import io.github.nyzeep.orchestella.ui.theme.ThemeColors
-import io.github.nyzeep.orchestella.ui.theme.ThemeStore
-import androidx.activity.result.contract.ActivityResultContracts
 import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorDecision
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorMode
@@ -62,36 +56,9 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var txtDockerMirrors: TextView
     private lateinit var txtAvfBadge: TextView
     private lateinit var txtAvfDetails: TextView
-    private lateinit var switchCursorBlink: MaterialSwitch
     private lateinit var switchStageTrace: MaterialSwitch
     private lateinit var switchAccelLane: MaterialSwitch
     private lateinit var txtAccelStatus: TextView
-    private lateinit var themeStore: ThemeStore
-    private val backgroundPicker = registerForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        uri ?: return@registerForActivityResult
-        if (themeStore.persistBackgroundPermission(this, uri)) {
-            themeStore.setBackgroundUri(uri.toString())
-            refreshAppearance()
-            Toast.makeText(this, "背景图片已更新", Toast.LENGTH_SHORT).show()
-        } else {
-            Toast.makeText(this, "无法保留图片访问权限，请重新选择本地图片", Toast.LENGTH_LONG).show()
-        }
-    }
-
-    private val terminalBackgroundPicker = registerForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        uri ?: return@registerForActivityResult
-        if (themeStore.persistBackgroundPermission(this, uri)) {
-            themeStore.setTerminalBackgroundUri(uri.toString())
-            refreshAppearance()
-            Toast.makeText(this, "终端背景图片已更新", Toast.LENGTH_SHORT).show()
-        } else {
-            Toast.makeText(this, "无法保留图片访问权限，请重新选择本地图片", Toast.LENGTH_LONG).show()
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         ThemeApplier.prepare(this)
@@ -117,45 +84,17 @@ class SettingsActivity : AppCompatActivity() {
 
         settingsManager = SettingsManager(this)
         initViews()
-        themeStore = ThemeStore(this)
         setupMirrorSection()
         setupAvfSection()
-        setupTerminalSection()
         setupDiagnosticsSection()
-        setupThemeSection()
         setupAcceleratorSection()
         setupFallbackExplanationSection()
-        refreshAppearance()
-    }
-
-    private fun refreshAppearance() {
-        val theme = themeStore.resolve()
-        findViewById<TextView>(R.id.txt_settings_theme_summary).text =
-            "${theme.selectionLabel} · ${themeStore.mode().displayName} · 立即应用到全部页面"
-        findViewById<MaterialButton>(R.id.btn_pick_theme_mode).text = "明暗模式：${themeStore.mode().displayName}"
-        findViewById<TextView>(R.id.txt_settings_terminal_palette).text =
-            "配色：${theme.displayName}\n等宽字体与 16 色 ANSI 调色板跟随主题"
-        findViewById<MaterialButton>(R.id.btn_clear_background).isEnabled = themeStore.backgroundUri() != null
-        findViewById<MaterialButton>(R.id.btn_clear_terminal_background)?.isEnabled =
-            themeStore.terminalBackgroundUri() != null
-        findViewById<MaterialButton>(R.id.btn_pick_corner_radius)?.text =
-            "按钮圆角：" + when (themeStore.cornerRadiusDp()) {
-                ThemeStore.DEFAULT_CORNER_RADIUS_DP -> "大圆角 ${ThemeStore.DEFAULT_CORNER_RADIUS_DP}dp（默认）"
-                12 -> "中圆角 12dp"
-                8 -> "小圆角 8dp"
-                0 -> "直角 0dp（保留 XML 圆角）"
-                else -> "自定义 ${themeStore.cornerRadiusDp()}dp"
-            }
-        ThemeApplier.bind(this)
     }
 
     override fun onResume() {
         super.onResume()
-        if (::themeStore.isInitialized) {
-            refreshAppearance()
-            setupAvfSection()
-            setupAcceleratorSection()
-        }
+        setupAvfSection()
+        setupAcceleratorSection()
     }
 
     override fun onDestroy() {
@@ -177,16 +116,18 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<MaterialButton>(R.id.btn_settings_shizuku).setOnClickListener {
             ShizukuClientDialog().show(supportFragmentManager, "shizuku-client")
         }
-        switchCursorBlink = findViewById(R.id.switch_settings_cursor_blink)
         switchStageTrace = findViewById(R.id.switch_settings_stage_trace)
 
         findViewById<TextView>(R.id.txt_settings_version)?.text = "版本：v${BuildConfig.VERSION_NAME}"
         toolbar.navigationContentDescription = "返回"
         ThemeApplier.setRole(btnSpeedTest, ThemeApplier.Role.PRIMARY_ACTION)
         ThemeApplier.setRole(btnResetMirror, ThemeApplier.Role.SECONDARY_ACTION)
-        ThemeApplier.setRole(findViewById(R.id.btn_pick_theme_mode), ThemeApplier.Role.SECONDARY_ACTION)
-        ThemeApplier.setRole(findViewById(R.id.btn_clear_background), ThemeApplier.Role.SECONDARY_ACTION)
-        ThemeApplier.setRole(findViewById(R.id.btn_clear_terminal_background), ThemeApplier.Role.SECONDARY_ACTION)
+
+        // 分节目录（T3 settings IA redesign）：行点击进 SettingsSubActivity 对应节；
+        // 「虚拟化与架构」摘要卡保留一级（决策项），不进目录。
+        findViewById<View?>(R.id.row_settings_appearance)?.setOnClickListener {
+            startActivity(SettingsSubActivity.intent(this, SettingsSubActivity.SECTION_APPEARANCE))
+        }
     }
 
     private fun setupMirrorSection() {
@@ -319,13 +260,6 @@ class SettingsActivity : AppCompatActivity() {
                 val reasons = readiness.reasons().joinToString("；")
                 txtAvfDetails.text = "$factsSummary\n• 预检原因：$reasons\n• 启动路径：QEMU\n$launchNotice"
             }
-        }
-    }
-
-    private fun setupTerminalSection() {
-        switchCursorBlink.isChecked = settingsManager.isTerminalCursorBlinkEnabled
-        switchCursorBlink.setOnCheckedChangeListener { _, isChecked ->
-            settingsManager.isTerminalCursorBlinkEnabled = isChecked
         }
     }
 
@@ -512,376 +446,4 @@ class SettingsActivity : AppCompatActivity() {
             Toast.makeText(this, "未找到可用的浏览器，请手动访问仓库 Releases 页", Toast.LENGTH_LONG).show()
         }
     }
-
-    private fun setupThemeSection() {
-        val btnPickTheme = findViewById<MaterialButton?>(R.id.btn_pick_theme)
-        val btnPickAccent = findViewById<MaterialButton?>(R.id.btn_pick_accent)
-        val btnPickBackground = findViewById<MaterialButton?>(R.id.btn_pick_background)
-        val btnClearBackground = findViewById<MaterialButton?>(R.id.btn_clear_background)
-        val fontLabel = findViewById<android.widget.TextView?>(R.id.tv_font_size_label)
-        val fontSeek = findViewById<android.widget.SeekBar?>(R.id.seek_terminal_font)
-        val spacingLabel = findViewById<android.widget.TextView?>(R.id.tv_letter_spacing_label)
-        val spacingSeek = findViewById<android.widget.SeekBar?>(R.id.seek_letter_spacing)
-        val lineLabel = findViewById<TextView>(R.id.tv_line_spacing_label)
-        val lineSeek = findViewById<android.widget.SeekBar>(R.id.seek_terminal_line_spacing)
-        if (btnPickTheme == null || fontSeek == null) return
-
-        fun refreshLabels() {
-            fontLabel?.text = "终端字号：${themeStore.terminalFontSizeSp()}sp"
-            fontSeek.progress = ThemeColors.fontProgress(themeStore.terminalFontSizeSp())
-            val em = themeStore.terminalLetterSpacingEm()
-            spacingLabel?.text = "终端字间距：%.2fem".format(em)
-            spacingSeek?.progress = (em * 100).toInt()
-            lineLabel.text = "终端额外行距：%.1fpx".format(themeStore.terminalLineSpacingPx())
-            lineSeek.progress = themeStore.terminalLineSpacingPx().toInt()
-        }
-        refreshLabels()
-
-        findViewById<MaterialButton>(R.id.btn_pick_theme_mode).setOnClickListener {
-            // FIXED is not a manual choice: a single-form palette selects it when picked.
-            val modes = ThemeStore.Mode.entries.filter { it.isUserSelectable }
-            val theme = themeStore.resolve()
-            val builder = androidx.appcompat.app.AlertDialog.Builder(this).setTitle("明暗模式")
-            if (theme.isFixed) {
-                // Read-only note, not a row: this palette owns its brightness, so nothing
-                // here may look like it follows the system.
-                builder.setMessage(
-                    "当前主题「${theme.displayName}」自带明暗，不跟随系统。切换到普通主题后即可手动指定明暗模式。")
-            }
-            builder.setSingleChoiceItems(
-                modes.map { it.displayName }.toTypedArray(),
-                // Filtered list: ordinal would skip FIXED and select the wrong row.
-                modes.indexOf(themeStore.mode()),
-            ) { dialog, which ->
-                themeStore.setMode(modes[which])
-                dialog.dismiss()
-                refreshAppearance()
-            }
-                .setNegativeButton("取消", null)
-                .show().also(ThemeApplier::apply)
-        }
-
-        btnPickTheme.setOnClickListener {
-            val slots = themeStore.customSlots()
-            val customLabels = slots.mapIndexed { index, slot ->
-                slot?.let { "${it.name} · ${if (it.isDark) "暗" else "亮"}" } ?: "自定义 ${index + 1}（未设置）"
-            }
-            val themes = ThemeCatalog.all
-            val names = (customLabels + themes.map { it.selectionLabel }).toTypedArray()
-            val resolvedId = themeStore.resolve().id
-            val current = when {
-                resolvedId.startsWith(CustomThemeSlot.ID_PREFIX) ->
-                    resolvedId.removePrefix(CustomThemeSlot.ID_PREFIX).toIntOrNull()?.minus(1) ?: -1
-                else -> slots.size + themes.indexOfFirst { it.id == resolvedId }
-            }
-            androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("选择主题")
-                .setSingleChoiceItems(names, current) { dialog, which ->
-                    dialog.dismiss()
-                    if (which < slots.size) {
-                        if (slots[which] == null) {
-                            showCustomThemeEditor(which)
-                        } else {
-                            themeStore.setThemeId("custom:${which + 1}")
-                            refreshAppearance()
-                            Toast.makeText(this, "主题：${slots[which]!!.name}", Toast.LENGTH_SHORT).show()
-                        }
-                    } else {
-                        val theme = themes[which - slots.size]
-                        themeStore.setThemeId(theme.id)
-                        refreshLabels()
-                        refreshAppearance()
-                        Toast.makeText(this, "主题：${theme.selectionLabel}", Toast.LENGTH_SHORT).show()
-                    }
-                }
-                .setNegativeButton("取消", null)
-                .show().also(ThemeApplier::apply)
-        }
-
-        findViewById<MaterialButton?>(R.id.btn_pick_corner_radius)?.setOnClickListener {
-            val standard = listOf(
-                "小圆角 8dp" to 8,
-                "中圆角 12dp" to 12,
-                "大圆角 ${ThemeStore.DEFAULT_CORNER_RADIUS_DP}dp（默认）" to ThemeStore.DEFAULT_CORNER_RADIUS_DP,
-            )
-            val saved = themeStore.cornerRadiusDp()
-            // Legacy 0 (an explicit "square corners" pick) and any historic value stay in the
-            // list, selected as-is: the dialog must never open at -1 nor silently rewrite them.
-            val options = if (standard.any { it.second == saved }) standard else standard + (
-                if (saved == 0) "直角 0dp（保留 XML 圆角）" to 0 else "自定义 ${saved}dp" to saved)
-            val current = options.indexOfFirst { it.second == saved }
-            androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("全局按钮圆角")
-                .setSingleChoiceItems(options.map { it.first }.toTypedArray(), current) { dialog, which ->
-                    themeStore.setCornerRadiusDp(options[which].second)
-                    refreshAppearance()
-                    dialog.dismiss()
-                    Toast.makeText(this, "圆角已更新：${options[which].first}", Toast.LENGTH_SHORT).show()
-                }
-                .setNegativeButton("取消", null)
-                .show().also(ThemeApplier::apply)
-        }
-
-        findViewById<MaterialButton?>(R.id.btn_pick_custom_theme)?.setOnClickListener {
-            val slots = themeStore.customSlots()
-            val labels = slots.mapIndexed { index, slot ->
-                if (slot == null) "自定义 ${index + 1}（未设置）"
-                else "${slot.name} · ${if (slot.isDark) "暗" else "亮"} · 主色 ${hexLabel(slot.primary)}"
-            }.toTypedArray()
-            androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("自定义配色（3 组）")
-                .setItems(labels) { dialog, which ->
-                    dialog.dismiss()
-                    showCustomThemeEditor(which)
-                }
-                .setNegativeButton("取消", null)
-                .show().also(ThemeApplier::apply)
-        }
-
-        btnPickAccent?.setOnClickListener {
-            val accents = listOf(
-                "紫" to 0xFFBD93F9.toInt(), "青" to 0xFF8BE9FD.toInt(), "粉" to 0xFFFF79C6.toInt(),
-                "绿" to 0xFF50FA7B.toInt(), "蓝" to 0xFF61AFEF.toInt(), "橙" to 0xFFFE8019.toInt(),
-                "黄" to 0xFFF1FA8C.toInt(), "红" to 0xFFFF5555.toInt(),
-            )
-            val names = accents.map { it.first }.toTypedArray()
-            androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("自定义强调色（按钮、导航与仪表）")
-                .setItems(names) { dialog, which ->
-                    themeStore.setCustomAccent(accents[which].second)
-                    refreshAppearance()
-                    dialog.dismiss()
-                }
-                .setNeutralButton("跟随主题") { _, _ ->
-                    themeStore.setCustomAccent(null)
-                    refreshAppearance()
-                }
-                .setNegativeButton("取消", null)
-                .show().also(ThemeApplier::apply)
-        }
-
-        btnPickBackground?.setOnClickListener {
-            backgroundPicker.launch(arrayOf("image/*"))
-        }
-
-        btnClearBackground?.setOnClickListener {
-            themeStore.setBackgroundUri(null)
-            refreshAppearance()
-            Toast.makeText(this, "已恢复纯色背景", Toast.LENGTH_SHORT).show()
-        }
-
-        val scrimLabel = findViewById<TextView?>(R.id.tv_terminal_scrim_label)
-        val scrimSeek = findViewById<android.widget.SeekBar?>(R.id.seek_terminal_scrim)
-        findViewById<MaterialButton?>(R.id.btn_pick_terminal_background)?.setOnClickListener {
-            terminalBackgroundPicker.launch(arrayOf("image/*"))
-        }
-        findViewById<MaterialButton?>(R.id.btn_clear_terminal_background)?.setOnClickListener {
-            themeStore.setTerminalBackgroundUri(null)
-            refreshAppearance()
-            Toast.makeText(this, "终端已恢复纯色背景", Toast.LENGTH_SHORT).show()
-        }
-        scrimSeek?.max = 90
-        scrimSeek?.progress = themeStore.terminalScrimAlpha() * 90 / 230
-        scrimLabel?.text = "背景遮罩浓度：${scrimSeek?.progress ?: 0}%"
-        scrimSeek?.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
-                if (!fromUser) return
-                themeStore.setTerminalScrimAlpha(progress * 230 / 90)
-                scrimLabel?.text = "背景遮罩浓度：${progress}%"
-            }
-            override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {
-                Toast.makeText(this@SettingsActivity, "遮罩浓度已保存", Toast.LENGTH_SHORT).show()
-            }
-        })
-
-        val opacityLabel = findViewById<TextView?>(R.id.tv_ui_surface_opacity_label)
-        val opacitySeek = findViewById<android.widget.SeekBar?>(R.id.seek_ui_surface_opacity)
-        opacitySeek?.max = SurfaceOpacity.MAX_PERCENT - SurfaceOpacity.MIN_PERCENT
-        opacitySeek?.progress = themeStore.surfaceOpacityPercent() - SurfaceOpacity.MIN_PERCENT
-        opacityLabel?.text = "界面表面不透明度：${themeStore.surfaceOpacityPercent()}%"
-        opacitySeek?.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
-                if (!fromUser) return
-                val percent = progress + SurfaceOpacity.MIN_PERCENT
-                themeStore.setUiSurfaceOpacityPercent(percent)
-                opacityLabel?.text = "界面表面不透明度：$percent%"
-                ThemeApplier.bind(this@SettingsActivity)
-            }
-            override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {
-                Toast.makeText(this@SettingsActivity, "界面表面不透明度已应用", Toast.LENGTH_SHORT).show()
-            }
-        })
-
-        fontSeek.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
-                if (!fromUser) return
-                val sp = ThemeColors.fontSize(progress)
-                themeStore.setTerminalFontSizeSp(sp)
-                fontLabel?.text = "终端字号：${themeStore.terminalFontSizeSp()}sp"
-            }
-            override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {}
-        })
-
-        spacingSeek?.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
-                if (!fromUser) return
-                val em = progress / 100f
-                themeStore.setTerminalLetterSpacingEm(em)
-                spacingLabel?.text = "终端字间距：%.2fem".format(em)
-            }
-            override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {}
-        })
-        lineSeek.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
-                if (!fromUser) return
-                themeStore.setTerminalLineSpacingPx(progress.toFloat())
-                lineLabel.text = "终端额外行距：${progress}px"
-            }
-            override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {}
-        })
-    }
-
-    /** Shared swatch board for the custom theme editor: neutrals plus common theme hues. */
-    private val swatchPalette = listOf(
-        "黑" to 0xFF000000.toInt(), "夜空" to 0xFF0D0E11.toInt(), "深灰" to 0xFF2E323B.toInt(),
-        "灰" to 0xFF8E929B.toInt(), "浅灰" to 0xFFC9CDD4.toInt(), "米白" to 0xFFF5F4F0.toInt(),
-        "白" to 0xFFFFFFFF.toInt(), "暗红" to 0xFF7F1D1D.toInt(), "红" to 0xFFD62828.toInt(),
-        "玫瑰" to 0xFFF43F5E.toInt(), "橙" to 0xFFEA580C.toInt(), "琥珀" to 0xFFFDBB24.toInt(),
-        "黄" to 0xFFFACC15.toInt(), "青柠" to 0xFF84CC16.toInt(), "绿" to 0xFF22C55E.toInt(),
-        "翠绿" to 0xFF10B981.toInt(), "青" to 0xFF06B6D4.toInt(), "天蓝" to 0xFF38BDF8.toInt(),
-        "蓝" to 0xFF0047AB.toInt(), "靛蓝" to 0xFF4F46E5.toInt(), "紫" to 0xFFBD93F9.toInt(),
-        "洋红" to 0xFFE056FD.toInt(), "粉" to 0xFFFF79C6.toInt(), "棕" to 0xFF92400E.toInt(),
-    )
-
-    private fun hexLabel(color: Int): String = String.format("#%06X", color and 0x00FFFFFF)
-
-    /** Slot editor: name + mode + eight color rows, each opening the shared swatch board. */
-    private fun showCustomThemeEditor(slotIndex: Int) {
-        val existing = themeStore.customSlots().getOrNull(slotIndex)
-        val fallback = themeStore.resolve()
-        var name = existing?.name ?: "自定义 ${slotIndex + 1}"
-        var isDark = existing?.isDark ?: fallback.isDark
-        var background = existing?.background ?: fallback.background
-        var surface = existing?.surface ?: fallback.surface
-        var primary = existing?.primary ?: fallback.primary
-        var accent = existing?.accent ?: fallback.accent
-        var text = existing?.text ?: fallback.text
-        var textDim = existing?.textDim ?: fallback.textDim
-        var terminalBackground = existing?.terminalBackground ?: fallback.terminalBackground
-        var terminalForeground = existing?.terminalForeground ?: fallback.terminalForeground
-
-        val density = resources.displayMetrics.density
-        val padding = (16 * density).toInt()
-        val container = android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.VERTICAL
-            setPadding(padding, padding, padding, 0)
-        }
-        val nameEdit = android.widget.EditText(this).apply {
-            setText(name)
-            hint = "主题名称"
-            setSingleLine(true)
-        }
-        container.addView(nameEdit)
-
-        val modeButton = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle)
-        fun repaintMode() {
-            modeButton.text = "明暗：${if (isDark) "深色（暗色 ANSI）" else "浅色（亮色 ANSI）"}"
-        }
-        repaintMode()
-        modeButton.isAllCaps = false
-        modeButton.setOnClickListener {
-            isDark = !isDark
-            repaintMode()
-        }
-        container.addView(modeButton)
-
-        fun addColorRow(label: String, initial: Int, onPick: (Int) -> Unit) {
-            var current = initial
-            val button = MaterialButton(this)
-            button.isAllCaps = false
-            fun repaint() {
-                button.text = "$label：${hexLabel(current)}"
-                button.setBackgroundColor(current)
-                button.setTextColor(ThemeColors.onColor(current))
-            }
-            repaint()
-            button.setOnClickListener {
-                val names = swatchPalette.map { "${it.first} ${hexLabel(it.second)}" }.toTypedArray()
-                androidx.appcompat.app.AlertDialog.Builder(this)
-                    .setTitle(label)
-                    .setItems(names) { dialog, which ->
-                        current = swatchPalette[which].second
-                        onPick(current)
-                        repaint()
-                        dialog.dismiss()
-                    }
-                    .setNegativeButton("取消", null)
-                    .show().also(ThemeApplier::apply)
-            }
-            container.addView(button)
-        }
-
-        addColorRow("背景", background) { background = it }
-        addColorRow("表面", surface) { surface = it }
-        addColorRow("主色", primary) { primary = it }
-        addColorRow("强调色", accent) { accent = it }
-        addColorRow("正文", text) { text = it }
-        addColorRow("次要文字", textDim) { textDim = it }
-        addColorRow("终端背景", terminalBackground) { terminalBackground = it }
-        addColorRow("终端前景", terminalForeground) { terminalForeground = it }
-
-        val resetButton = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle)
-        resetButton.text = "重置此槽位"
-        resetButton.isAllCaps = false
-        resetButton.setOnClickListener {
-            themeStore.setCustomSlot(slotIndex, null)
-            refreshAppearance()
-            Toast.makeText(this, "自定义 ${slotIndex + 1} 已重置", Toast.LENGTH_SHORT).show()
-            currentEditorDialog?.dismiss()
-        }
-        container.addView(resetButton)
-
-        val scroll = android.widget.ScrollView(this).apply { addView(container) }
-        fun applySlot() {
-            val slot = CustomThemeSlot(
-                name = nameEdit.text.toString().ifBlank { "自定义 ${slotIndex + 1}" },
-                isDark = isDark,
-                background = background,
-                surface = surface,
-                primary = primary,
-                accent = accent,
-                text = text,
-                textDim = textDim,
-                terminalBackground = terminalBackground,
-                terminalForeground = terminalForeground,
-            )
-            themeStore.setCustomSlot(slotIndex, slot)
-            refreshAppearance()
-        }
-        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("编辑自定义主题 ${slotIndex + 1}")
-            .setView(scroll)
-            .setPositiveButton("应用") { _, _ ->
-                applySlot()
-                Toast.makeText(this, "自定义主题已保存", Toast.LENGTH_SHORT).show()
-            }
-            .setNeutralButton("选为当前主题") { _, _ ->
-                applySlot()
-                themeStore.setThemeId("custom:${slotIndex + 1}")
-                refreshAppearance()
-                Toast.makeText(this, "主题：${nameEdit.text}", Toast.LENGTH_SHORT).show()
-            }
-            .setNegativeButton("取消", null)
-            .create()
-        currentEditorDialog = dialog
-        dialog.show()
-        ThemeApplier.apply(dialog)
-    }
-
-    private var currentEditorDialog: androidx.appcompat.app.AlertDialog? = null
 }

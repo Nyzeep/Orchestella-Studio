@@ -78,6 +78,14 @@
             android:exported="true"
             android:theme="@style/Theme.Orchestella" />
 
+        <!-- T3 settings IA redesign: generic per-section sub-page (no Fragment;
+             section layout selected by intent extra). Not exported: launched
+             only from the settings home directory rows. -->
+        <activity
+            android:name=".SettingsSubActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Orchestella" />
+
         <activity
             android:name=".TerminalActivity"
             android:exported="true"
