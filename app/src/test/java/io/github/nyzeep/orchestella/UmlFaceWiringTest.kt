@@ -112,6 +112,60 @@ class UmlFaceWiringTest {
         assertEquals(0, UmlFaceStatusRegistry.runningWidth())
     }
 
+    @Test
+    fun channelWiredIsFalseWithoutABoundFace() {
+        assertFalse(UmlFaceStatusRegistry.channelWired())
+    }
+
+    /**
+     * The formalization round's status pipeline (2026-11-14): the binding
+     * carries the arm's channel fact through the face lifecycle, and the
+     * default is the unwired truth — an omitted fact never fakes a wired
+     * claim. Unregistering the face retires the fact with it.
+     */
+    @Test
+    fun registryCarriesTheChannelFactThroughTheLifecycle() {
+        val face = FaceFactory.gateOff(temporaryFolder.newFolder("reg-channel-lib"))
+        try {
+            assertTrue(UmlFaceStatusRegistry.register("channel-wired", face, channelWired = true))
+            assertTrue("the arm's wired fact rides the binding",
+                UmlFaceStatusRegistry.channelWired())
+            assertTrue(UmlFaceStatusRegistry.unregister("channel-wired"))
+            assertFalse("the fact dies with the binding",
+                UmlFaceStatusRegistry.channelWired())
+
+            assertTrue(UmlFaceStatusRegistry.register("channel-unwired", face, channelWired = false))
+            assertFalse(UmlFaceStatusRegistry.channelWired())
+            assertTrue(UmlFaceStatusRegistry.unregister("channel-unwired"))
+
+            // The two-argument register (tests and the historical shape) states
+            // the unwired truth by default — never a faked wired claim.
+            assertTrue(UmlFaceStatusRegistry.register("channel-default", face))
+            assertFalse("an omitted channel fact reads unwired",
+                UmlFaceStatusRegistry.channelWired())
+        } finally {
+            UmlFaceStatusRegistry.unregister("channel-default")
+        }
+    }
+
+    /**
+     * The engine bar's dual-state copy contract: the wired running state
+     * claims, the unwired running state states the boundary — never the
+     * reverse — and anything not running stays the idle copy regardless of
+     * the channel fact. The Activity renders getString(resourceFor(...)).
+     */
+    @Test
+    fun segmentCopyMapsTheRegistryDualStateHonestly() {
+        assertEquals("wired running claims", R.string.engine_uml_running_wired,
+            UmlSegmentCopy.resourceFor(1, true))
+        assertEquals("unwired running states the compile-channel boundary",
+            R.string.engine_uml_running_unwired, UmlSegmentCopy.resourceFor(1, false))
+        assertEquals("not running stays the idle copy even with a wired fact",
+            R.string.engine_uml_idle, UmlSegmentCopy.resourceFor(0, true))
+        assertEquals("width 0 never claims running", R.string.engine_uml_idle,
+            UmlSegmentCopy.resourceFor(0, false))
+    }
+
     // --- the ride-along lane over a real face --------------------------------------
 
     @Test
@@ -170,6 +224,8 @@ class UmlFaceWiringTest {
             assertEquals("arm-ok", UmlFaceStatusRegistry.current()?.instanceId)
             assertEquals("the fast UP face's honest width while up", 1,
                 UmlFaceStatusRegistry.runningWidth())
+            assertFalse("the unwired arm registers the unwired truth",
+                UmlFaceStatusRegistry.channelWired())
         } finally {
             lane.disarm("arm-ok")
             UmlFaceStatusRegistry.unregister("arm-ok")
@@ -187,6 +243,8 @@ class UmlFaceWiringTest {
             lane.disarm("disarm")
             assertNull("disarm unbinds the face", UmlFaceStatusRegistry.current())
             assertEquals(0, UmlFaceStatusRegistry.runningWidth())
+            assertFalse("the channel fact retires with the binding",
+                UmlFaceStatusRegistry.channelWired())
             assertEquals("a stopped face probes as not running",
                 UmlFaceLauncher.Health.NOT_RUNNING, face.probe())
             // Idempotent: a second disarm on the unbound registry does nothing.
@@ -395,6 +453,8 @@ class UmlFaceWiringTest {
                 lines.any { it.contains("uml-face channel wired: uml-tcp lane 127.0.0.1:") })
             assertEquals("the width reads real once the channel is wired", 1,
                 UmlFaceStatusRegistry.runningWidth())
+            assertTrue("the wired arm registers the wired fact for the dashboard",
+                UmlFaceStatusRegistry.channelWired())
         } finally {
             lane.disarm("arm-wired")
             UmlFaceStatusRegistry.unregister("arm-wired")

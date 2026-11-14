@@ -499,10 +499,13 @@
                                     android:insetTop="0dp"
                                     android:insetBottom="0dp" />
 
-                                <!-- Lane A（2026-11-13）：第三段「UML 实验」状态项。
+                                <!-- 正式化轮（2026-11-14）：第三段「UML」状态项。
                                      状态+导航语义（同 seg_pkvm/seg_qemu），不是偏好
                                      选择器；文案映射见 MainActivity.updateConsoleWith
-                                     Instance（运行中(实验)·编译通道未接 / 未启用）。 -->
+                                     Instance（运行中按通道真实状态分流 wired=「UML ·
+                                     运行中」/ unwired=「UML · 运行中 · 编译通道未接
+                                     线」；未运行=「UML · 未启用」）。2026-11-14 编译
+                                     路由 E2E 真机 3 次全通后摘「实验」。 -->
                                 <com.google.android.material.button.MaterialButton
                                     android:id="@+id/seg_uml"
                                     style="@style/Widget.Orchestella.Button.Tonal"
@@ -513,7 +516,7 @@
                                     app:cornerRadius="0dp"
                                     android:backgroundTint="#171820"
                                     android:fontFamily="monospace"
-                                    android:text="UML 实验"
+                                    android:text="@string/engine_uml_segment"
                                     android:textColor="#8E929B"
                                     android:textSize="11sp"
                                     android:insetTop="0dp"
@@ -2066,12 +2069,15 @@
                     <!--     orchestella.uml.rootfsDownload — flag     -->
                     <!--     off builds keep zero entry). A readiness  -->
                     <!--     card, NOT a distro card: it claims        -->
-                    <!--     "verified + extracted" only, never        -->
-                    <!--     "startable/compile-capable" (the official -->
-                    <!--     Alpine minirootfs ships no /um-command.sh,-->
-                    <!--     so the external-root init probe would     -->
-                    <!--     reject it; launch usability belongs to    -->
-                    <!--     the fabric-route round).                  -->
+                    <!--     "verified + extracted + launcher          -->
+                    <!--     injected" (the provisioner injects the    -->
+                    <!--     owned /um-command.sh after extraction,    -->
+                    <!--     0755 idempotent); the wired compile-route -->
+                    <!--     arm rides the tree over hostfs — the      -->
+                    <!--     2026-11-14 E2E verified launch→compile    -->
+                    <!--     end to end, 3x pass. A bridge-off build   -->
+                    <!--     keeps its honest boundary in the READY    -->
+                    <!--     copy.                                     -->
                     <!-- ============================================== -->
                     <LinearLayout
                         android:id="@+id/card_uml_rootfs"
@@ -2137,7 +2143,7 @@
                                         android:paddingEnd="@dimen/oe_icon_inline_gap"
                                         android:paddingBottom="@dimen/oe_space_xs"
                                         android:fontFamily="monospace"
-                                        android:text="实验 · UML"
+                                        android:text="@string/engine_uml_rootfs_tag"
                                         android:textColor="#FFFFFF"
                                         android:textSize="10sp"
                                         android:textStyle="bold" />
@@ -2159,7 +2165,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="@dimen/oe_space_sm"
                             android:fontFamily="sans-serif"
-                            android:text="为 UML 实验引擎准备的 guest 根文件系统：自 Alpine 官方 CDN 下载，sha256 pin 校验 + 五阶段内容自检，通过后安全解包就绪。官方镜像不含 UML 启动脚本（um-command.sh），因此「已就绪」仅指已验证+已解包，本轮不可直接启动或编译。"
+                            android:text="@string/engine_uml_rootfs_desc"
                             android:textColor="#CCCCCC"
                             android:textSize="12sp"
                             android:lineSpacingExtra="2dp" />
@@ -2170,7 +2176,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="@dimen/oe_space_sm"
                             android:fontFamily="monospace"
-                            android:text="未就绪 · 下载并解包后可供给 UML hostfs 通道"
+                            android:text="@string/engine_uml_rootfs_status_not_ready"
                             android:textColor="#8E929B"
                             android:textSize="11sp" />
 
@@ -2197,7 +2203,7 @@
                             app:cornerRadius="0dp"
                             android:backgroundTint="#D62828"
                             android:fontFamily="monospace"
-                            android:text="下载并验证（约 3.8 MB）→"
+                            android:text="@string/engine_uml_rootfs_download_action"
                             android:textColor="#FFFFFF"
                             android:textSize="12sp"
                             android:textStyle="bold"

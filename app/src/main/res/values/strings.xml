@@ -479,4 +479,39 @@
 
     <!-- T2 (2026-11-08): ModernTerminalView.copySelection success feedback. -->
     <string name="terminal_copy_done">已复制</string>
+
+    <!-- UML 引擎条与编译面（2026-11-14 正式化轮）：编译路由 E2E 已于 2026-11-14
+         真机 3 次全通，措辞按真实通道状态分流——wired 构建宣「运行中」，
+         unwired 构建如实明示「编译通道未接线」，绝不在不可路由形态冒充已接。
+         双门正文是诚实拒绝文案，保留其原有口径。 -->
+    <string name="engine_uml_segment">UML</string>
+    <string name="engine_uml_running_wired">UML · 运行中</string>
+    <string name="engine_uml_running_unwired">UML · 运行中 · 编译通道未接线</string>
+    <string name="engine_uml_idle">UML · 未启用</string>
+    <string name="engine_uml_face_gate_title">UML 编译面</string>
+    <string name="engine_uml_face_gate_build">当前构建未包含加速车道组件，UML 实验编译面不可用。\n应用继续使用完整 QEMU 路径运行 Linux 实例。</string>
+    <string name="engine_uml_face_gate_setting">UML 实验编译面随加速车道总开关关闭而停用（你在设置中关闭）。\n应用继续使用完整 QEMU 路径运行 Linux 实例。</string>
+
+    <!-- UML rootfs 就绪卡（发行版 tab）：就绪=已验证+已解包+已注入启动脚本
+         （官方镜像本身不含 um-command.sh，由 provisioner 注入，0755 幂等）；
+         READY 尾句按构建形态分流（wired 可随实例启动供 hostfs 通道，
+         unwired 构建不消费该树）。 -->
+    <string name="engine_uml_rootfs_tag">UML</string>
+    <string name="engine_uml_rootfs_desc">为 UML 引擎准备的 guest 根文件系统：自 Alpine 官方 CDN 下载，sha256 pin 校验 + 五阶段内容自检，通过后安全解包，并注入 UML 启动脚本（um-command.sh，官方镜像本身不含）。</string>
+    <string name="engine_uml_rootfs_status_not_ready">未就绪 · 下载并解包后可供给 UML hostfs 通道</string>
+    <string name="engine_uml_rootfs_downloading">下载中 %1$d%%（下载后进行 sha256 pin 校验与内容自检）</string>
+    <string name="engine_uml_rootfs_connecting">连接中…（网络类失败由引擎重试与镜像容灾，校验类失败将如实拒绝）</string>
+    <string name="engine_uml_rootfs_downloading_action">下载中…</string>
+    <string name="engine_uml_rootfs_ready">已就绪</string>
+    <string name="engine_uml_rootfs_ready_provenance">已就绪（重复入口命中，本次零网络流量）</string>
+    <string name="engine_uml_rootfs_ready_line">%1$s · 已验证+已解包 %2$d 项 · %3$s</string>
+    <string name="engine_uml_rootfs_ready_wired">已注入 UML 启动脚本（um-command.sh），可随实例启动供 hostfs 通道</string>
+    <string name="engine_uml_rootfs_ready_unwired">已注入 UML 启动脚本（um-command.sh）· 编译通道未接线的构建不消费该树</string>
+    <string name="engine_uml_rootfs_failed">失败：%1$s · 下载/校验/解包任一层拒绝都如实呈现，可重试</string>
+    <string name="engine_uml_rootfs_download_action">下载并验证（约 3.8 MB）→</string>
+    <string name="engine_uml_rootfs_retry_action">重试 →</string>
+
+    <!-- 设置页「加速与性能」副文案（正式化轮补门控联动：同一总开关同时
+         门控 UML 编译面，MainActivity 双门对话框引用的就是此开关）。 -->
+    <string name="settings_accel_lane_subtitle">QEMU 车道内的 pVM 编译加速；关闭后实例始终走普通编译，UML 编译面同受此开关控制。</string>
 </resources>

@@ -457,7 +457,7 @@ class InstanceLaunchCoordinator(
                 umlFace.widthSupplier(),
             ).budgetWidths()
             diagnostics.logAcceleratorSnapshot(
-                "fabric orchestrator constructed (no submitter yet): " +
+                "fabric orchestrator constructed: " +
                     "host-native=${widths[FabricWidthDecision.Face.HOST_NATIVE]}" +
                     " uml=${widths[FabricWidthDecision.Face.UML]}" +
                     " qemu=${widths[FabricWidthDecision.Face.QEMU_TCG]}" +
