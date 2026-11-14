@@ -2094,7 +2094,7 @@ class MainActivity : AppCompatActivity() {
         // migration the probe runs on the executor, not the UI thread.
         val laneReady = snapshot.acceleratorLaneReady
 
-        // UI 重新设计轮 C6：分组 header（运行中/已停止，FlClash 式分组目录）
+        // UI 重新设计轮 C6：分组 header（运行中/已停止，分组目录式）
         // + 卡行扁平序列；组内保持 store.list() 既有顺序（filter 保序），
         // 全量渲染频率仍由 DashboardSnapshot 状态指纹门控（不变）。
         val rows = buildList {
@@ -2187,6 +2187,16 @@ class MainActivity : AppCompatActivity() {
         // State Badge & Breathing animation
         statusBadge?.text = uiModel.stateBadgeText
         statusBadge?.setTextColor(getColor(uiModel.stateBadgeColorRes))
+        // C6 收尾（P2 残留窗口修复）：RecyclerView holder 会跨实例重排回收，
+        // 每次重绑先无条件取消该徽章 tag 上可能残留的呼吸动画器，并把 alpha
+        // 复位到非呼吸初值（动画起点 1.0f，与 startBreathingAnimation 的
+        // ofFloat(1.0f, 0.35f) 呼吸域一致）——否则已停实例可能继承上一个
+        // 实例的无限呼吸/中间透明度。呼吸实例随后经 startBreathingAnimation
+        // 重启（其对 tag 的取消守卫语义不变，二次取消安全）。
+        statusBadge?.let { badge ->
+            (badge.tag as? ValueAnimator)?.cancel()
+            badge.alpha = 1f
+        }
         if (uiModel.isBreathing) {
             startBreathingAnimation(statusBadge)
         }
