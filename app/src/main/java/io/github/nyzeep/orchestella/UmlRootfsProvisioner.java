@@ -247,6 +247,12 @@ public final class UmlRootfsProvisioner {
         // attestation keeps meaning extraction only.
         ensureUmCommandLauncher(extractDir);
 
+        // Stage 4: repair trees extracted before the archive-root mode fix —
+        // their sidecar attests the pin (extraction is never redone), but the
+        // extract root they carry is the pre-fix host umask's 0700, which the
+        // guest's non-root users cannot traverse (the Lane A E2E root cause).
+        ensureRootTraversable(extractDir);
+
         return new ProvisionReceipt(
                 true,
                 !downloadedThisCall && result == null,
@@ -525,7 +531,15 @@ public final class UmlRootfsProvisioner {
                 long mode = parseMode(header);
                 String normalized = normalizeEntryName(name);
                 if (normalized.isEmpty()) {
-                    // The archive root ("./") — the staging dir itself.
+                    // The archive root ("./") IS the staging/extract dir itself:
+                    // its tar mode rides too. Device-measured 2026-11-14 (Lane A
+                    // E2E): skipping it left the extract root at the host
+                    // umask's 0700; hostfs presents that mode to the guest, so
+                    // every non-root guest process got EACCES on the very first
+                    // path-lookup through "/" — distccd's dropped uid failed
+                    // openat("/tmp/distccd.log") with /tmp itself 0777. The
+                    // pinned Alpine artifact's root dir is 0755.
+                    applyModeBestEffort(staging, mode);
                     skipPayload(gzip, size, block);
                     continue;
                 }
@@ -662,6 +676,45 @@ public final class UmlRootfsProvisioner {
         } catch (RuntimeException | IOException bestEffortFailure) {
             // The host filesystem refused the mode — the guest daemon's own
             // error site carries the evidence; extraction stays verified.
+        }
+    }
+
+    /**
+     * Best-effort repair of an extract tree root whose mode hides it from the
+     * guest's non-root users: trees extracted before the archive-root mode
+     * fix ({@code ./} handling above) carry the host umask's 0700 root, and
+     * since the tree is skipped on every idempotent provision (the sidecar
+     * attests the pin), the legacy mode would survive forever. The repair
+     * brings the root to 0755 — owner rwx, group/others r-x, the same shape
+     * the pinned artifact's own root entry carries — under the same
+     * best-effort contract as {@link #applyModeBestEffort}: a host that
+     * refuses the mode leaves the honest runtime EACCES at the guest
+     * program's own error site. The provision (write) path only — the
+     * readiness probe stays side-effect-free.
+     */
+    private static void ensureRootTraversable(Path extractDir) {
+        if (!java.nio.file.FileSystems.getDefault().supportedFileAttributeViews()
+                .contains("posix")) {
+            return;
+        }
+        try {
+            java.util.Set<java.nio.file.attribute.PosixFilePermission> perms =
+                    Files.getPosixFilePermissions(extractDir);
+            if (perms.contains(java.nio.file.attribute.PosixFilePermission.OTHERS_EXECUTE)
+                    && perms.contains(java.nio.file.attribute.PosixFilePermission.OTHERS_READ)) {
+                return;
+            }
+            perms.add(java.nio.file.attribute.PosixFilePermission.OWNER_READ);
+            perms.add(java.nio.file.attribute.PosixFilePermission.OWNER_WRITE);
+            perms.add(java.nio.file.attribute.PosixFilePermission.OWNER_EXECUTE);
+            perms.add(java.nio.file.attribute.PosixFilePermission.GROUP_READ);
+            perms.add(java.nio.file.attribute.PosixFilePermission.GROUP_EXECUTE);
+            perms.add(java.nio.file.attribute.PosixFilePermission.OTHERS_READ);
+            perms.add(java.nio.file.attribute.PosixFilePermission.OTHERS_EXECUTE);
+            Files.setPosixFilePermissions(extractDir, perms);
+        } catch (RuntimeException | IOException bestEffortFailure) {
+            // The host filesystem refused the repair — the guest daemon's own
+            // error site carries the evidence; provision stays a success.
         }
     }
 
@@ -964,6 +1017,15 @@ public final class UmlRootfsProvisioner {
             # instead of the hold_ms→poweroff path: a wired face is a long-lived compile
             # host, not a probe run. Every branch step is best-effort and honestly marked
             # (UM_NET milestones, UM_NET_ERROR lines); a failure never blocks the residency.
+            # v2.2 (2026-11-14, Lane A E2E): the daemon drops to a guest user
+            # ("hostfs") whose uid/gid equal the HOSTFS tree owner's host-side
+            # ids (stat -c on this script), not the distcc package's uid 100:
+            # hostfs maps every file's owner to the host-side id, so with uid
+            # 100 a self-created 0600 job file was owned by "someone else" in
+            # the guest view and distccd's own reopen of it died with EACCES
+            # (strace: openat O_TRUNC after O_EXCL 0600 = -1 EACCES). Matching
+            # the owner id puts every tree and job file under owner-matched
+            # DAC; /etc/passwd gains the entry once and it persists.
             # Without um.net=1 the v1 probe behavior is unchanged: every original line
             # stays verbatim, only this branch was added.
             #
@@ -1051,12 +1113,15 @@ public final class UmlRootfsProvisioner {
                 fi
 
                 if command -v distccd >/dev/null 2>&1; then
-                    if distccd --daemon --user distcc --listen 0.0.0.0 --port 3632 --allow 10.0.2.0/24 --log-file /tmp/distccd.log --pid-file /tmp/distccd.pid 2>/tmp/distccd.err; then
-                        printf 'UM_NET distccd listening port=3632 user=distcc\\n'
-                    elif distccd --daemon --user nobody --listen 0.0.0.0 --port 3632 --allow 10.0.2.0/24 --log-file /tmp/distccd.log --pid-file /tmp/distccd.pid 2>/tmp/distccd.err; then
-                        printf 'UM_NET distccd listening port=3632 user=nobody\\n'
+                    host_uid=$(stat -c '%u' /um-command.sh 2>/dev/null || printf 0)
+                    host_gid=$(stat -c '%g' /um-command.sh 2>/dev/null || printf 0)
+                    grep -q '^hostfs:' /etc/passwd 2>/dev/null || \
+                        printf 'hostfs:x:%s:%s:hostfs-owner-mapped:/tmp:/bin/sh\n' \
+                            "$host_uid" "$host_gid" >> /etc/passwd 2>/dev/null || :
+                    if distccd --daemon --user hostfs --listen 0.0.0.0 --port 3632 --allow 10.0.2.0/24 --log-file /tmp/distccd.log --pid-file /tmp/distccd.pid 2>/tmp/distccd.err; then
+                        printf 'UM_NET distccd listening port=3632 user=hostfs uid=%s\n' "$host_uid"
                     else
-                        printf 'UM_NET_ERROR step=distccd detail=rc=%s err=%s\\n' "$?" "$(tail -1 /tmp/distccd.err 2>/dev/null)" >&2
+                        printf 'UM_NET_ERROR step=distccd detail=rc=%s err=%s\n' "$?" "$(tail -1 /tmp/distccd.err 2>/dev/null)" >&2
                     fi
                 else
                     printf 'UM_NET_ERROR step=distccd detail=distccd binary missing after install\\n' >&2

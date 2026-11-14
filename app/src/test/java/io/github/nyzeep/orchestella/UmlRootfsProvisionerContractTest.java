@@ -462,6 +462,57 @@ public final class UmlRootfsProvisionerContractTest {
     }
 
     @Test
+    public void theArchiveRootDirModeRidesTheExtractionSoGuestNonRootUsersCanTraverse() throws Exception {
+        // Device-measured 2026-11-14 (Lane A E2E): the extractor skipped the
+        // tar's archive-root entry ("./"), so the extract dir kept the host
+        // umask's 0700 — hostfs presented that mode to the guest and distccd's
+        // dropped uid could not even LOOK UP /tmp/distccd.log (strace:
+        // openat("/tmp/distccd.log", O_WRONLY|O_CREAT|O_APPEND) = -1 EACCES
+        // with /tmp itself 0777). The root entry's tar mode rides like every
+        // other entry's.
+        Path filesDir = tempFolder.newFolder("root-mode").toPath();
+        extractIn(filesDir, gzipTar(
+                TarSpec.dirMode("./", 0755L),
+                TarSpec.file("bin/tool", "elf")));
+        Path extractDir = filesDir.resolve("extracted");
+        assertTrue(Files.isDirectory(extractDir.resolve("bin")));
+        assumeTrue("Windows dev host cannot assert POSIX modes; CI/Linux does",
+                posixPermissionsSupported());
+        Set<java.nio.file.attribute.PosixFilePermission> root =
+                Files.getPosixFilePermissions(extractDir);
+        assertTrue("the guest's / must be other-traversable (the 0700-root EACCES lesson)",
+                root.contains(java.nio.file.attribute.PosixFilePermission.OTHERS_EXECUTE)
+                        && root.contains(java.nio.file.attribute.PosixFilePermission.OTHERS_READ));
+    }
+
+    @Test
+    public void theProvisionRepairsALegacyExtractTreeWhoseRootIsUntraversable() throws Exception {
+        // Trees extracted before the root-mode fix carry the umask's 0700
+        // root, and their sidecar still attests the pin — the idempotent
+        // provision never re-extracts, so the repair stage is what makes
+        // existing device trees provision-safe again.
+        Path filesDir = tempFolder.newFolder("root-repair").toPath();
+        FakeTransport transport = new FakeTransport();
+        transport.payload = officialShapeWithoutSymlink();
+        UmlRootfsProvisioner.provision(transport, entryFor(transport.payload), filesDir, true);
+        Path extractDir = umRootfsDir(filesDir).resolve(EXTRACT_DIR_NAME);
+        assumeTrue("Windows dev host cannot assert POSIX modes; CI/Linux does",
+                posixPermissionsSupported());
+        Files.setPosixFilePermissions(extractDir, Set.of(
+                java.nio.file.attribute.PosixFilePermission.OWNER_READ,
+                java.nio.file.attribute.PosixFilePermission.OWNER_WRITE,
+                java.nio.file.attribute.PosixFilePermission.OWNER_EXECUTE));
+        UmlRootfsProvisioner.ProvisionReceipt receipt = UmlRootfsProvisioner.provision(
+                transport, entryFor(transport.payload), filesDir, true);
+        assertTrue(receipt.alreadyVerified());
+        Set<java.nio.file.attribute.PosixFilePermission> root =
+                Files.getPosixFilePermissions(extractDir);
+        assertTrue("the repaired root must be other-traversable again",
+                root.contains(java.nio.file.attribute.PosixFilePermission.OTHERS_EXECUTE)
+                        && root.contains(java.nio.file.attribute.PosixFilePermission.OTHERS_READ));
+    }
+
+    @Test
     public void gnuLongNamesAndPaxPathOverridesLandAtTheirRealPaths() throws Exception {
         String longName = "usr/share/deeply/nested/" + "segment-".repeat(12)
                 + "final-name-exceeding-ustar-hundred-byte-field.txt";
@@ -708,17 +759,13 @@ public final class UmlRootfsProvisionerContractTest {
         int dhcp = launcher.indexOf("udhcpc -i vec0 -q 2>/dev/null");
         int apkAdd = launcher.indexOf("apk add distcc 2>/dev/null");
         int daemon = launcher.indexOf(
-                "distccd --daemon --user distcc --listen 0.0.0.0 --port 3632 "
+                "distccd --daemon --user hostfs --listen 0.0.0.0 --port 3632 "
                         + "--allow 10.0.2.0/24 --log-file /tmp/distccd.log");
         assertTrue("the branch brings vec0 up before the lease", linkUp > guard);
         assertTrue("the lease runs right after the link is up", dhcp > linkUp);
         assertTrue("distccd installs from the CDN through passt", apkAdd > dhcp);
         assertTrue("the daemon binds 0.0.0.0:3632 for the passt forward to 10.0.2.0/24",
                 daemon > apkAdd);
-        assertTrue("a root-refused daemon retries as nobody over the same /tmp log before giving up",
-                launcher.contains(
-                        "distccd --daemon --user nobody --listen 0.0.0.0 --port 3632 "
-                                + "--allow 10.0.2.0/24 --log-file /tmp/distccd.log"));
         assertTrue("the DHCP failure is an honest named marker",
                 launcher.contains("UM_NET_ERROR step=dhcp detail=udhcpc failed on vec0"));
         assertTrue("the apk failure is an honest named marker",
@@ -726,8 +773,16 @@ public final class UmlRootfsProvisionerContractTest {
         assertTrue("the daemon failure is an honest named marker with captured diagnostics",
                 launcher.contains("UM_NET_ERROR step=distccd detail=rc=")
                         && launcher.contains("$(tail -1 /tmp/distccd.err 2>/dev/null)"));
-        assertTrue("the daemon start drops to the package's own user over /tmp (hostfs EACCES lesson)",
-                launcher.contains("--user distcc") && launcher.contains("--log-file /tmp/distccd.log"));
+        assertTrue("the daemon start drops to the hostfs-owner-mapped uid (the Lane A reopen-EACCES lesson)",
+                launcher.contains("--user hostfs") && launcher.contains("--log-file /tmp/distccd.log"));
+        assertTrue("the hostfs owner ids come from the tree itself (stat), never restated",
+                launcher.contains("stat -c '%u' /um-command.sh")
+                        && launcher.contains("stat -c '%g' /um-command.sh"));
+        assertTrue("the guest passwd gains the mapped entry once and idempotently",
+                launcher.contains("grep -q '^hostfs:' /etc/passwd")
+                        && launcher.contains("hostfs-owner-mapped"));
+        assertTrue("the listening line states the mapped uid for the device window",
+                launcher.contains("UM_NET distccd listening port=3632 user=hostfs uid="));
         assertTrue("the missing-binary cascade is an honest named marker",
                 launcher.contains("UM_NET_ERROR step=distccd detail=distccd binary missing"));
         assertTrue("a bound lease is announced with the guest address",
