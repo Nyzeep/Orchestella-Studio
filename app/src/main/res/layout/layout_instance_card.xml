@@ -2,7 +2,12 @@
 <!-- 仪表盘实例卡（TAB2 列表项）
      卡片层级：一级决策卡（实例即主操作对象）；规格行/按钮区间距按
      信息密度收紧（oe_space_sm 行距），legacy #16171D/#2E323B 灰边
-     归一到 bg_oe_card 族 pre-bind 值（运行时 ThemeApplier 统一重涂）。 -->
+     归一到 bg_oe_card 族 pre-bind 值（运行时 ThemeApplier 统一重涂）。
+     UI 重新设计轮（C6 布局段）：卡内边距归 oe_card_pad、卡距归
+     oe_card_gap、图标盒归 oe_icon_box_lg，电源键 38dp 升
+     oe_btn_h_primary(48dp) 档；「终端」次级按钮与电源键同排同高
+     （id 沿用既有隐藏别名 card_btn_terminal，先占位默认 gone，
+     点击接线随逻辑提交）。 -->
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/instance_card"
@@ -10,7 +15,7 @@
     android:layout_height="wrap_content"
     android:layout_marginStart="0dp"
     android:layout_marginEnd="0dp"
-    android:layout_marginBottom="@dimen/oe_space_md"
+    android:layout_marginBottom="@dimen/oe_card_gap"
     android:clickable="true"
     android:focusable="true"
     android:foreground="?android:attr/selectableItemBackground"
@@ -24,7 +29,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="@dimen/oe_space_lg">
+        android:padding="@dimen/oe_card_pad">
 
         <!-- Row 1: Distro Icon + Title & ID + State Capsule Badge -->
         <LinearLayout
@@ -34,8 +39,8 @@
             android:gravity="center_vertical">
 
             <FrameLayout
-                android:layout_width="44dp"
-                android:layout_height="44dp"
+                android:layout_width="@dimen/oe_icon_box_lg"
+                android:layout_height="@dimen/oe_icon_box_lg"
                 android:layout_marginEnd="@dimen/oe_space_md"
                 android:background="@drawable/bg_icon_container">
 
@@ -155,7 +160,9 @@
             android:layout_marginBottom="@dimen/oe_space_sm"
             android:background="#2E323B" />
 
-        <!-- Row 3: Detail Hint & High-Priority Quick Power Action Button -->
+        <!-- Row 3: Detail Hint & High-Priority Quick Actions（UI 重新设计轮：
+             运行中实例卡新增「终端」次级按钮——与电源键同排同高
+             oe_btn_h_primary，占位默认 gone，点击接线随逻辑提交） -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -172,11 +179,27 @@
                 android:textColor="#8E929B" />
 
             <com.google.android.material.button.MaterialButton
+                android:id="@+id/card_btn_terminal"
+                style="@style/Widget.Orchestella.Button.Tonal"
+                android:layout_width="wrap_content"
+                android:layout_height="@dimen/oe_btn_h_primary"
+                app:cornerRadius="0dp"
+                app:icon="@drawable/ic_sym_terminal"
+                app:iconSize="16dp"
+                android:paddingStart="@dimen/oe_space_md"
+                android:paddingEnd="@dimen/oe_space_md"
+                android:fontFamily="monospace"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:text="@string/instance_card_terminal_action"
+                android:visibility="gone" />
+
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/card_btn_power"
                 style="@style/Widget.Orchestella.Button.Tonal"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:minHeight="38dp"
+                android:layout_height="@dimen/oe_btn_h_primary"
+                android:layout_marginStart="@dimen/oe_space_sm"
                 app:cornerRadius="0dp"
                 app:icon="@drawable/ic_sym_power_settings_new"
                 app:iconSize="16dp"
