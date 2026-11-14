@@ -162,6 +162,10 @@ public final class UmlRootfsProvisionerContractTest {
             return new TarSpec(name, '5', new byte[0], 0755L, null);
         }
 
+        static TarSpec dirMode(String name, long mode) {
+            return new TarSpec(name, '5', new byte[0], mode, null);
+        }
+
         static TarSpec symlink(String name, String target) {
             return new TarSpec(name, '2', new byte[0], 0777L, target);
         }
@@ -410,6 +414,28 @@ public final class UmlRootfsProvisionerContractTest {
                     extractDir.resolve("etc/plain.conf"));
             assertFalse(plainPerms.contains(java.nio.file.attribute.PosixFilePermission.OWNER_EXECUTE));
         }
+    }
+
+    @Test
+    public void directoryModesRideTheExtractionForGuestDaemons() throws Exception {
+        // Device-measured 2026-11-14 (Gate 2 E2E): createDirectories left the
+        // Alpine tree's world-writable /tmp (tar 1777) at the umask's 0700,
+        // and distccd — dropping to its own uid before opening its log — hit
+        // hostfs EACCES on every path it needs to write. The extractor now
+        // applies a directory entry's tar rwx bits (best-effort, POSIX view).
+        Path filesDir = tempFolder.newFolder("dir-modes").toPath();
+        UmlRootfsProvisioner.ExtractResult result = extractIn(filesDir, gzipTar(
+                TarSpec.dirMode("tmp/", 01777L),
+                TarSpec.file("tmp/probe", "x")));
+        Path tmp = filesDir.resolve("extracted").resolve("tmp");
+        assertTrue(Files.isDirectory(tmp));
+        assertEquals(2, result.entries());
+        assumeTrue("Windows dev host cannot assert POSIX modes; CI/Linux does",
+                posixPermissionsSupported());
+        Set<java.nio.file.attribute.PosixFilePermission> perms = Files.getPosixFilePermissions(tmp);
+        assertTrue("a tar 1777 directory must be world-writable for guest daemons",
+                perms.contains(java.nio.file.attribute.PosixFilePermission.OTHERS_WRITE));
+        assertTrue(perms.contains(java.nio.file.attribute.PosixFilePermission.OTHERS_EXECUTE));
     }
 
     @Test

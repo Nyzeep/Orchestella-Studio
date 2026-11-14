@@ -549,6 +549,7 @@ public final class UmlRootfsProvisioner {
                     entries++;
                 } else if (type == '5') {
                     Files.createDirectories(target);
+                    applyDirModeBestEffort(target, mode);
                     entries++;
                 } else if (type == '2') {
                     Files.createDirectories(target.getParent());
@@ -591,6 +592,62 @@ public final class UmlRootfsProvisioner {
                     "gzip stream ended mid-archive");
         }
         return new ExtractResult(entries, executables);
+    }
+
+    /**
+     * Best-effort application of a directory entry's tar mode. Device-measured
+     * 2026-11-14 (Gate 2 E2E): {@link Files#createDirectories} leaves the
+     * host's umask mode in place, so the Alpine tree's world-writable
+     * {@code /tmp} (tar 1777) landed as 0700 — and guest-side daemons running
+     * as a non-root user (distccd drops to its own uid before opening its
+     * log) then hit hostfs EACCES on every path they need to write. The rwx
+     * bits ride the POSIX attribute view when the host filesystem supports
+     * it; the special bits (sticky/setuid) are best-effort-skipped — Android
+     * exposes no unix-extended attribute view for them, and a regular 0777
+     * {@code /tmp} serves the daemons the same. Every failure is swallowed on
+     * purpose: a mode that does not stick is an honest runtime EACCES at the
+     * daemon's own error site, never a reason to fail a verified extraction.
+     */
+    private static void applyDirModeBestEffort(Path dir, long mode) {
+        if (!java.nio.file.FileSystems.getDefault().supportedFileAttributeViews()
+                .contains("posix")) {
+            return;
+        }
+        try {
+            java.util.Set<java.nio.file.attribute.PosixFilePermission> perms =
+                    java.util.EnumSet.noneOf(java.nio.file.attribute.PosixFilePermission.class);
+            if ((mode & 0400) != 0) {
+                perms.add(java.nio.file.attribute.PosixFilePermission.OWNER_READ);
+            }
+            if ((mode & 0200) != 0) {
+                perms.add(java.nio.file.attribute.PosixFilePermission.OWNER_WRITE);
+            }
+            if ((mode & 0100) != 0) {
+                perms.add(java.nio.file.attribute.PosixFilePermission.OWNER_EXECUTE);
+            }
+            if ((mode & 0040) != 0) {
+                perms.add(java.nio.file.attribute.PosixFilePermission.GROUP_READ);
+            }
+            if ((mode & 0020) != 0) {
+                perms.add(java.nio.file.attribute.PosixFilePermission.GROUP_WRITE);
+            }
+            if ((mode & 0010) != 0) {
+                perms.add(java.nio.file.attribute.PosixFilePermission.GROUP_EXECUTE);
+            }
+            if ((mode & 0004) != 0) {
+                perms.add(java.nio.file.attribute.PosixFilePermission.OTHERS_READ);
+            }
+            if ((mode & 0002) != 0) {
+                perms.add(java.nio.file.attribute.PosixFilePermission.OTHERS_WRITE);
+            }
+            if ((mode & 0001) != 0) {
+                perms.add(java.nio.file.attribute.PosixFilePermission.OTHERS_EXECUTE);
+            }
+            Files.setPosixFilePermissions(dir, perms);
+        } catch (RuntimeException | IOException bestEffortFailure) {
+            // The host filesystem refused the mode — the guest daemon's own
+            // error site carries the evidence; extraction stays verified.
+        }
     }
 
     // ---------------------------------------------------------------------------------
