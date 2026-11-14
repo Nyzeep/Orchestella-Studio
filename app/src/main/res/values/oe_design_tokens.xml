@@ -44,4 +44,26 @@
     <!-- 16dp inline icon: the compound-drawable replacement size (see
          Widget.Orchestella.InlineIcon) and the detail-tab leading icon size. -->
     <dimen name="oe_icon_inline">16dp</dimen>
+
+    <!-- UI 重新设计轮（2026-11-14）语义 token：卡片/按钮/列表行的层级几何。
+         消费规则（同层级同 token）：①按钮三档——页面级 primary / 卡内
+         secondary / 行内 inline，不出现第五档高度；②卡内外边距只用
+         oe_card_pad / oe_card_gap / oe_group_gap；③列表行两档，sheet 与
+         二级页共享 oe_list_item_min_h，紧凑行（主题选择等）用 dense 档。
+         全部为追加档位，既有 scale 值不变。 -->
+    <dimen name="oe_card_pad">16dp</dimen>
+    <dimen name="oe_card_gap">12dp</dimen>
+    <dimen name="oe_group_gap">24dp</dimen>
+    <dimen name="oe_list_item_min_h">56dp</dimen>
+    <dimen name="oe_list_item_min_h_dense">48dp</dimen>
+    <dimen name="oe_btn_h_primary">48dp</dimen>
+    <dimen name="oe_btn_h_secondary">44dp</dimen>
+    <dimen name="oe_btn_h_inline">36dp</dimen>
+    <dimen name="oe_btn_seg_h">40dp</dimen>
+    <dimen name="oe_tile_min_h">100dp</dimen>
+    <dimen name="oe_icon_box_lg">44dp</dimen>
+    <dimen name="oe_icon_box_md">26dp</dimen>
+    <dimen name="oe_ring_size_sm">56dp</dimen>
+    <dimen name="oe_ring_size_lg">72dp</dimen>
+    <dimen name="oe_list_divider_inset">16dp</dimen>
 </resources>
