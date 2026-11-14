@@ -149,13 +149,27 @@ public final class UmlRootfsEmbeddedChannelTest {
     }
 
     @Test
-    public void thePackagedSourceAnswersNullWithoutTheResource() throws Exception {
-        // No alpine-minirootfs tar is on this test's classpath, so the
-        // production source must answer null (the split-build signal), not
-        // throw — null is what sends the CDN channel to work.
-        InputStream stream = UmlRootfsProvisioner.PACKAGED_ROOTFS_SOURCE.openEmbeddedTar(
-                readinessEntry(readinessPayload()));
-        assertNull(stream);
+    public void thePackagedSourceMirrorsClasspathReality() throws Exception {
+        // The production source answers the classpath, never a guess: with no
+        // packaged tar visible it must answer null (the split-build signal —
+        // null is what sends the CDN channel to work), and with one visible
+        // (a packaging build stages it into src/main/resources, which lands on
+        // the unit-test classpath) it must hand out a readable stream. The
+        // expected side is derived from the same lookup, so this holds on a
+        // bare checkout AND after a full-package staging without being
+        // environment-fragile.
+        boolean resourcePresent = UmlRootfsEmbeddedChannelTest.class
+                .getResourceAsStream("/" + UmlKernelAssets.FastProfile.ROOTFS_TAR) != null;
+        try (InputStream stream = UmlRootfsProvisioner.PACKAGED_ROOTFS_SOURCE.openEmbeddedTar(
+                readinessEntry(readinessPayload()))) {
+            if (resourcePresent) {
+                assertTrue("a visible packaged tar must be served, not hidden",
+                        stream != null);
+            } else {
+                assertNull("an absent packaged tar must answer null (the split-build "
+                        + "signal), not throw", stream);
+            }
+        }
     }
 
     // --- shared fixtures (same shape the card-state contract tests use) -------

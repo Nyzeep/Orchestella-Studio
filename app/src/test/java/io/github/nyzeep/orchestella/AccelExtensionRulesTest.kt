@@ -125,13 +125,6 @@ class AccelExtensionRulesTest {
     }
 
     /**
-     * The app module's build script, resolved by content rather than by path:
-     * Gradle runs unit tests with the module directory as the working
-     * directory (so `build.gradle.kts` is the app script), while an IDE runner
-     * may start at the repository root (so `app/build.gradle.kts` is). Reading
-     * the wrong one would silently assert against the root script.
-     */
-    /**
      * Single-package round (2026-11-14): the resolver must resolve the
      * embedded shape first — the complete package carries the compiler
      * manifest in its OWN assets and loads the payload from its OWN APK.
@@ -170,6 +163,13 @@ class AccelExtensionRulesTest {
         }
     }
 
+    /**
+     * The app module's build script, resolved by content rather than by path:
+     * Gradle runs unit tests with the module directory as the working
+     * directory (so `build.gradle.kts` is the app script), while an IDE runner
+     * may start at the repository root (so `app/build.gradle.kts` is). Reading
+     * the wrong one would silently assert against the root script.
+     */
     private fun appModuleBuildScript(): String {
         val readable = listOf("build.gradle.kts", "app/build.gradle.kts")
             .map { java.io.File(it) }

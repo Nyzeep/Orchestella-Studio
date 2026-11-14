@@ -354,9 +354,15 @@ android {
     // libclang-cpp.so) that must land in the same APK lib/arm64-v8a/ directory
     // as libfastlane_payload.so, so the Microdroid linker resolves them by
     // soname next to the payload instead of via absolute paths. They are only
-    // meaningful next to the payload: extractNativeLibs/useLegacyPackaging key
-    // off the payload property, and a payload-less APK has no consumer for
-    // them, so requiring the payload property keeps the two in lockstep.
+    // meaningful next to the payload — a payload-less APK has no consumer for
+    // them — so requiring the payload property keeps the two in lockstep.
+    // Packaging note (2026-11-14 single-package round): extractNativeLibs and
+    // useLegacyPackaging no longer key off this property (see packaging above —
+    // legacy extraction stays true for the exec-based engines, and the AVF
+    // loader's uncompressed-page-aligned contract is satisfied post-packaging
+    // by the repack chain), so these libraries ship deflated in AGP's output
+    // and stored after the repack. The lockstep requirement is about payload
+    // presence, not about packaging flags.
     val pvmCompilerLibDir: String? = providers.gradleProperty("orchestella.pvmCompiler.libDir")
         .orNull
         ?.trim()
@@ -586,6 +592,15 @@ val pvmCompilerLibDirParam: String? = providers.gradleProperty("orchestella.pvmC
 val pvmRepackEnabled: Boolean = fastlanePayloadLibDir != null && pvmCompilerLibDirParam != null
 
 if (pvmRepackEnabled) {
+    // Tool and keystore RESOLUTION only — deliberately no configuration-time
+    // requires. Any project must stay configurable on a machine that has
+    // neither the build tools at a known path nor a generated debug keystore
+    // yet: ci.yml's dual-package fixture job passes both payload parameters
+    // (to :accel-extension), and Gradle configures every module including
+    // :app, so a config-time require here would break that job on a hosted
+    // runner. The requires enforce at EXECUTION, inside the doFirst of the
+    // tasks that actually consume zipalign / apksigner / the keystore —
+    // exactly when the repack chain is about to run.
     val repackSdkDir: File? = sequenceOf(
         providers.environmentVariable("ANDROID_HOME").orNull,
         providers.environmentVariable("ANDROID_SDK_ROOT").orNull,
@@ -620,17 +635,6 @@ if (pvmRepackEnabled) {
             else -> null
         }
     }
-    require(zipalignTool != null) {
-        "repackPvmPayload: zipalign not found under " +
-            (repackSdkDir?.resolve(buildToolsRelative)?.absolutePath ?: "ANDROID_HOME") +
-            " — set ANDROID_HOME (or sdk.dir in local.properties)"
-    }
-    require(apksignerTool != null) {
-        "repackPvmPayload: apksigner not found under " +
-            (repackSdkDir?.resolve(buildToolsRelative)?.absolutePath ?: "ANDROID_HOME") +
-            " — set ANDROID_HOME (or sdk.dir in local.properties)"
-    }
-
     // Same identity as AGP's debug signing: the default debug keystore and its
     // documented constants. Property overrides exist for machines with a
     // relocated keystore; the release keystore is intentionally NOT reachable
@@ -645,11 +649,6 @@ if (pvmRepackEnabled) {
         .orNull ?: "androiddebugkey"
     val repackKeyPass: String = providers.gradleProperty("orchestella.repack.debugKeyPassword")
         .orNull ?: "android"
-    require(repackStoreFile.isFile) {
-        "repackPvmPayload: debug keystore not found: $repackStoreFile " +
-            "(set -Porchestella.repack.debugKeystore or let AGP generate the default)"
-    }
-
     val fullpkgDir = layout.buildDirectory.dir("outputs/apk/fullpkg")
     val debugApkFile = layout.buildDirectory.file("outputs/apk/debug/app-debug.apk")
     val storedApkFile = fullpkgDir.map { it.file("app-debug-stored.apk") }
@@ -684,12 +683,20 @@ if (pvmRepackEnabled) {
         dependsOn(repackPvmPayloadStore)
         inputs.file(storedApkFile)
         outputs.file(alignedApkFile)
-        commandLine(
-            zipalignTool!!.absolutePath,
-            "-f", "-P", "16", "4",
-            storedApkFile.get().asFile.absolutePath,
-            alignedApkFile.get().asFile.absolutePath,
-        )
+        doFirst {
+            // Execution-time tool require (see the resolution-only note above).
+            val zipalign = zipalignTool
+                ?: throw GradleException(
+                    "zipalignFullpkg: zipalign not found under " +
+                        (repackSdkDir?.resolve(buildToolsRelative)?.absolutePath ?: "ANDROID_HOME") +
+                        " — set ANDROID_HOME (or sdk.dir in local.properties)")
+            commandLine(
+                zipalign.absolutePath,
+                "-f", "-P", "16", "4",
+                storedApkFile.get().asFile.absolutePath,
+                alignedApkFile.get().asFile.absolutePath,
+            )
+        }
     }
 
     val signFullpkg = tasks.register<Exec>("signFullpkg") {
@@ -699,11 +706,30 @@ if (pvmRepackEnabled) {
         inputs.file(alignedApkFile)
         outputs.file(fullpkgApkFile)
         outputs.file(idsigFile)
-        // apksigner.bat is a batch wrapper: Windows executes it through cmd.
-        val launcher = if (isWindowsHost && apksignerTool.name.endsWith(".bat")) "cmd" else null
-        if (launcher != null) {
-            commandLine(
-                launcher, "/c", apksignerTool.absolutePath, "sign",
+        doFirst {
+            // Execution-time tool + keystore requires (see the resolution-only
+            // note above): AGP generates the default debug keystore while
+            // signing the debug APK, so by the time this task runs on a fresh
+            // machine the keystore exists — a configuration-time check would
+            // have fired before that.
+            val apksigner = apksignerTool
+                ?: throw GradleException(
+                    "signFullpkg: apksigner not found under " +
+                        (repackSdkDir?.resolve(buildToolsRelative)?.absolutePath ?: "ANDROID_HOME") +
+                        " — set ANDROID_HOME (or sdk.dir in local.properties)")
+            if (!repackStoreFile.isFile) {
+                throw GradleException(
+                    "signFullpkg: debug keystore not found: $repackStoreFile " +
+                        "(set -Porchestella.repack.debugKeystore or build once so AGP " +
+                        "generates the default)")
+            }
+            // apksigner.bat is a batch wrapper: Windows executes it through cmd.
+            val args = mutableListOf<String>()
+            if (isWindowsHost && apksigner.name.endsWith(".bat")) {
+                args += listOf("cmd", "/c")
+            }
+            args += listOf(
+                apksigner.absolutePath, "sign",
                 "--ks", repackStoreFile.absolutePath,
                 "--ks-pass", "pass:$repackStorePass",
                 "--ks-key-alias", repackKeyAlias,
@@ -714,19 +740,7 @@ if (pvmRepackEnabled) {
                 "--out", fullpkgApkFile.get().asFile.absolutePath,
                 alignedApkFile.get().asFile.absolutePath,
             )
-        } else {
-            commandLine(
-                apksignerTool.absolutePath, "sign",
-                "--ks", repackStoreFile.absolutePath,
-                "--ks-pass", "pass:$repackStorePass",
-                "--ks-key-alias", repackKeyAlias,
-                "--key-pass", "pass:$repackKeyPass",
-                "--v2-signing-enabled", "true",
-                "--v3-signing-enabled", "true",
-                "--v4-signing-enabled", "true",
-                "--out", fullpkgApkFile.get().asFile.absolutePath,
-                alignedApkFile.get().asFile.absolutePath,
-            )
+            commandLine(*args.toTypedArray())
         }
     }
 
@@ -739,25 +753,29 @@ if (pvmRepackEnabled) {
         doLast {
             fullpkgDir.get().asFile.resolve("signature-verified.flag").writeText("ok\n")
         }
-        // apksigner.bat runs through cmd on Windows; --verbose names every
-        // scheme block so the log attests v2/v3 without a second invocation.
-        val launcher = if (isWindowsHost && apksignerTool.name.endsWith(".bat")) "cmd" else null
-        if (launcher != null) {
-            commandLine(
-                launcher, "/c", apksignerTool.absolutePath, "verify",
+        doFirst {
+            // Execution-time tool require (see the resolution-only note above).
+            val apksigner = apksignerTool
+                ?: throw GradleException(
+                    "verifyFullpkgSignature: apksigner not found under " +
+                        (repackSdkDir?.resolve(buildToolsRelative)?.absolutePath ?: "ANDROID_HOME") +
+                        " — set ANDROID_HOME (or sdk.dir in local.properties)")
+            // apksigner.bat runs through cmd on Windows; --verbose names every
+            // scheme block so the log attests v2/v3 without a second invocation.
+            val args = mutableListOf<String>()
+            if (isWindowsHost && apksigner.name.endsWith(".bat")) {
+                args += listOf("cmd", "/c")
+            }
+            args += listOf(
+                apksigner.absolutePath, "verify",
                 "--verbose", fullpkgApkFile.get().asFile.absolutePath,
             )
-        } else {
-            commandLine(
-                apksignerTool.absolutePath, "verify",
-                "--verbose", fullpkgApkFile.get().asFile.absolutePath,
-            )
+            commandLine(*args.toTypedArray())
         }
     }
-
-    tasks.matching { it.name == "renameChannelApk" }.configureEach {
-        dependsOn(verifyFullpkgSignature)
-    }
+    // The renameChannelApk dependency on this chain is registered next to the
+    // renameChannelApk task itself (buildChannel != "release" block), where the
+    // task is declared.
 }
 
 val channelApkName: String? = internalVersionSuffix?.let {
@@ -1274,7 +1292,8 @@ if (umlBundledFastProfile) {
 // D-1 lane dials (no UDP inbound, no LAN exposure; preflight ④'s expected bind).
 // Patched source: umnet.c copied from the harness tree with the `-t` line and
 // its comment updated; build recipe unchanged (NDK API 30, -static, 16K page).
-// passt_bionic stays byte-identical to the Gate 2 pin.
+// passt_bionic in the Lane A build was byte-identical to the Gate 2 pin —
+// see the 2026-11-14 re-pin paragraph below for how that history ended.
 //
 // 2026-11-14 single-package round re-pin (same commit as the embed wiring):
 // the original Lane A artifacts (04c065c8…/a8451a01…) were destroyed with their

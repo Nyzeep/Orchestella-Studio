@@ -6,7 +6,6 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assume.assumeFalse;
 
 import io.github.nyzeep.orchestella.UmlKernelAssets.RootfsDownload.Entry;
 import io.github.nyzeep.orchestella.UmlKernelAssets.RootfsDownload.RootfsRejectionException;
@@ -179,10 +178,17 @@ public final class RootfsTransportContractTest {
         // -Porchestella.uml.rootfsDownload=false variant run: the disabled
         // byte-lock itself is held by the explicit-gate tests above in every
         // variant regardless, so this lock only exempts the requested-off run
-        // instead of failing it. A reverted gradle default cannot silently
-        // change a pipeline build: release.yml and the packaging-machine work
-        // order state all four UML flags explicitly, so the stated-parameter
-        // discipline is what catches a default flip at the pipeline level.
+        // instead of failing it. Honesty note on scope (review fix): the
+        // stated-parameter discipline (release.yml and the packaging-machine
+        // work order state all four UML flags explicitly) makes pipeline builds
+        // IMMUNE to a gradle-default flip — the pipeline outcome does not
+        // depend on the default — but nothing here DETECTS one, and an all-off
+        // negative variant has no hosted CI run to catch it either (a reverted
+        // default would be indistinguishable from a requested negative variant
+        // in this test's only observable, the compiled BuildConfig values).
+        // Default-drift protection is therefore process-level: the pipelines
+        // keep stating the flags, and a revert shows up in review of the gradle
+        // file itself.
         if (!BuildConfig.UML_ROOTFS_DOWNLOAD_ENABLED) {
             // Explicit-off variant run: the negative shape is requested, not a
             // default to lock — nothing to enforce here (and every other UML

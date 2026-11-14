@@ -334,9 +334,15 @@ def run_selftest() -> int:
         return payload_dir, compiler_dir
 
     def write_apk(path: Path, entries: dict[str, bytes]) -> None:
+        # The non-payload fixture entries exercise both methods: writestr takes
+        # the compression per ZipInfo, so "assets/Image" rides deflated and
+        # "assets/stored-extra" rides stored. The rewrite must preserve each.
         with zipfile.ZipFile(path, "w") as archive:
             for name, data in entries.items():
-                archive.writestr(name, data)
+                info = zipfile.ZipInfo(name)
+                info.compress_type = (zipfile.ZIP_DEFLATED if name == "assets/Image"
+                                      else zipfile.ZIP_STORED)
+                archive.writestr(info, data)
 
     cases: list[tuple[str, list[str], int, str]] = []
 
@@ -351,6 +357,7 @@ def run_selftest() -> int:
             LIB_PREFIX + "libclang-cpp.so": clang,
             LIB_PREFIX + "libc++_shared.so": cppshared,
             "assets/Image": other,
+            "assets/stored-extra": b"stored-extra-bytes",
             MANIFEST_ENTRY: manifest,
         }
 
@@ -364,19 +371,6 @@ def run_selftest() -> int:
              "--payload-lib-dir", str(payload_dir), "--compiler-lib-dir", str(compiler_dir)],
             EXIT_OK, "REPACK_OK",
         ))
-
-        # The output of the positive case must actually carry stored payload entries
-        # and byte-identical other entries.
-        if out.is_file():
-            with zipfile.ZipFile(out) as archive:
-                for name in PAYLOAD_SOS:
-                    entry = LIB_PREFIX + name
-                    if archive.getinfo(entry).compress_type != zipfile.ZIP_STORED:
-                        cases.append(("post-store-" + name, [], EXIT_FAIL, "never-checked"))
-                if archive.getinfo("assets/Image").compress_type != zipfile.ZIP_DEFLATED:
-                    cases.append(("post-other-method", [], EXIT_FAIL, "never-checked"))
-                if archive.read("assets/Image") != other:
-                    cases.append(("post-other-bytes", [], EXIT_FAIL, "never-checked"))
 
         # Negative: the APK's LLVM entry was stripped (different bytes).
         stripped = root / "stripped.apk"
@@ -422,6 +416,7 @@ def run_selftest() -> int:
         ))
 
         failures: list[str] = []
+        executed = 0
         for label, argv, expected_code, expected_marker in cases:
             buffer = io.StringIO()
             try:
@@ -431,18 +426,55 @@ def run_selftest() -> int:
                 code = exc.code if isinstance(exc.code, int) else 3
                 buffer.write(f"SystemExit({exc.code})")
             output = buffer.getvalue()
+            executed += 1
             if code != expected_code:
                 failures.append(f"{label}: exit {code} != expected {expected_code}\n{output}")
             elif expected_marker not in output:
                 failures.append(f"{label}: output missing {expected_marker!r}\n{output}")
 
+        # Post-checks on the positive rewrite's actual output. They run here,
+        # AFTER the case loop has executed "ok-full-repack" (they inspect that
+        # case's artifact, so they cannot be argv-driven cases registered up
+        # front -- the review-fix note: the previous registration ran before
+        # main() and never fired). Each post-check is tallied in the same
+        # executed count as the argv-driven cases.
+        post_checks: list[tuple[str, bool]] = []
+        if out.is_file():
+            with zipfile.ZipFile(out) as archive:
+                for name in PAYLOAD_SOS:
+                    entry = LIB_PREFIX + name
+                    post_checks.append((
+                        f"post-stored-{name}",
+                        archive.getinfo(entry).compress_type == zipfile.ZIP_STORED,
+                    ))
+                post_checks.append((
+                    "post-deflated-entry-method-preserved",
+                    archive.getinfo("assets/Image").compress_type == zipfile.ZIP_DEFLATED,
+                ))
+                post_checks.append((
+                    "post-stored-extra-method-preserved",
+                    archive.getinfo("assets/stored-extra").compress_type == zipfile.ZIP_STORED,
+                ))
+                post_checks.append((
+                    "post-other-bytes-identical",
+                    archive.read("assets/Image") == other
+                    and archive.read("assets/stored-extra") == b"stored-extra-bytes",
+                ))
+        else:
+            post_checks.append(("post-output-exists", False))
+        for label, ok in post_checks:
+            executed += 1
+            if not ok:
+                failures.append(f"{label}: FAILED (positive rewrite output did not hold the shape)")
+
         if failures:
-            print(f"REPACK_SELFTEST_FAIL {len(failures)} cases failed:")
+            print(f"REPACK_SELFTEST_FAIL {len(failures)} checks failed:")
             for failure in failures:
                 print("  - " + failure)
             return EXIT_FAIL
-        print(f"REPACK_SELFTEST_OK all fixture cases passed "
-              "(positive rewrite, stored-method post-check, strip, manifest-pin, missing, usage-error)")
+        print(f"REPACK_SELFTEST_OK all {executed} checks passed ({len(cases)} argv-driven fixture "
+              "cases + stored-method and byte-preservation post-checks on the positive rewrite output; "
+              "strip, manifest-pin, missing and usage-error paths covered)")
         return EXIT_OK
 
 
