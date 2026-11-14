@@ -217,6 +217,58 @@
                             app:tint="?attr/colorOutline" />
                     </LinearLayout>
 
+                    <!-- 高级行：oe_list_item_min_h + trailing chevron，进 SettingsSubActivity 对应节 -->
+                    <LinearLayout
+                        android:id="@+id/row_settings_advanced"
+                        android:layout_width="match_parent"
+                        android:layout_height="@dimen/oe_list_item_min_h"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:background="?android:attr/selectableItemBackground"
+                        android:paddingStart="@dimen/oe_space_md"
+                        android:paddingEnd="@dimen/oe_space_md"
+                        android:clickable="true"
+                        android:focusable="true">
+
+                        <ImageView
+                            android:layout_width="@dimen/oe_icon_inline"
+                            android:layout_height="@dimen/oe_icon_inline"
+                            android:src="@drawable/ic_sym_tune"
+                            android:importantForAccessibility="no"
+                            app:tint="?attr/colorPrimary" />
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="@dimen/oe_space_sm"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="@string/settings_section_advanced_title"
+                                android:textSize="13sp"
+                                android:textStyle="bold"
+                                android:textColor="?attr/colorOnSurface" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/oe_space_xs"
+                                android:text="@string/settings_section_advanced_subtitle"
+                                android:textSize="11sp"
+                                android:textColor="?attr/colorOutline" />
+                        </LinearLayout>
+
+                        <ImageView
+                            android:layout_width="@dimen/oe_icon_inline"
+                            android:layout_height="@dimen/oe_icon_inline"
+                            android:src="@drawable/ic_sym_chevron_right"
+                            android:importantForAccessibility="no"
+                            app:tint="?attr/colorOutline" />
+                    </LinearLayout>
+
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -362,161 +414,6 @@
                                 android:textSize="11sp"
                                 android:textColor="?attr/colorOnSurfaceVariant" />
                         </LinearLayout>
-                    </LinearLayout>
-
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- ============ 加速与性能 ============ -->
-            <LinearLayout
-                style="@style/Widget.Orchestella.InlineIconRow"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/oe_space_xl"
-                android:layout_marginBottom="@dimen/oe_space_sm">
-
-                <ImageView
-                    style="@style/Widget.Orchestella.InlineIcon"
-                    app:srcCompat="@drawable/ic_sym_bolt"
-                    app:tint="?attr/colorPrimary" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="加速与性能"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    android:textColor="?attr/colorPrimary" />
-            </LinearLayout>
-
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/card_settings_accelerator"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                app:cardCornerRadius="0dp"
-                app:cardElevation="0dp"
-                app:strokeWidth="1dp"
-                app:strokeColor="?attr/colorOutlineVariant"
-                app:cardBackgroundColor="?attr/colorSurfaceContainer">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="@dimen/oe_space_xl">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical">
-
-                        <TextView
-                            android:id="@+id/txt_settings_accel_status"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:text="pVM 编译加速：检测中"
-                            android:textSize="15sp"
-                            android:textStyle="bold"
-                            android:textColor="?attr/colorOnSurface" />
-
-                        <com.google.android.material.materialswitch.MaterialSwitch
-                            android:id="@+id/switch_settings_accel_lane"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:minWidth="48dp"
-                            android:minHeight="48dp"
-                            android:contentDescription="pVM 编译加速"
-                            android:checked="false" />
-                    </LinearLayout>
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/oe_space_xs"
-                        android:text="@string/settings_accel_lane_subtitle"
-                        android:textSize="12sp"
-                        android:textColor="?attr/colorOutline" />
-
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- ============ 诊断与开发者选项 ============ -->
-            <LinearLayout
-                style="@style/Widget.Orchestella.InlineIconRow"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/oe_space_xl"
-                android:layout_marginBottom="@dimen/oe_space_sm">
-
-                <ImageView
-                    style="@style/Widget.Orchestella.InlineIcon"
-                    app:srcCompat="@drawable/ic_sym_tune"
-                    app:tint="?attr/colorPrimary" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="诊断与开发者选项"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    android:textColor="?attr/colorPrimary" />
-            </LinearLayout>
-
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/card_settings_diagnostics"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                app:cardCornerRadius="0dp"
-                app:cardElevation="0dp"
-                app:strokeWidth="1dp"
-                app:strokeColor="?attr/colorOutlineVariant"
-                app:cardBackgroundColor="?attr/colorSurfaceContainer">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="@dimen/oe_space_xl">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical">
-
-                        <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical">
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="@string/settings_stage_trace_diag_title"
-                                android:textSize="15sp"
-                                android:textStyle="bold"
-                                android:textColor="?attr/colorOnSurface" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="@dimen/oe_space_xs"
-                                android:text="@string/settings_stage_trace_diag_desc"
-                                android:textSize="12sp"
-                                android:textColor="?attr/colorOutline" />
-                        </LinearLayout>
-
-                        <com.google.android.material.materialswitch.MaterialSwitch
-                            android:id="@+id/switch_settings_stage_trace"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:minWidth="48dp"
-                            android:minHeight="48dp"
-                            android:contentDescription="@string/settings_stage_trace_diag_title"
-                            android:checked="false" />
                     </LinearLayout>
 
                 </LinearLayout>

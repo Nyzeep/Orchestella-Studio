@@ -2,30 +2,18 @@ package io.github.nyzeep.orchestella
 
 import android.content.Intent
 import android.graphics.Color
-import android.net.Uri
 import android.os.Bundle
-import android.util.Log
 import android.view.View
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
-import com.google.android.material.materialswitch.MaterialSwitch
 import io.github.nyzeep.orchestella.ui.motion.OrchestellaMotion
 import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
 import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator
-import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorDecision
-import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorMode
-import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorPolicy
-import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorReasonCode
-import java.util.concurrent.Executors
-
-/** Logcat tag for the accelerator-lane verdict (enum names only, no paths). */
-private const val ACCEL_LANE_TAG = "AccelLane"
 
 /**
  * Settings home page: section directory (ADR-0006, T3 settings IA redesign).
@@ -38,15 +26,9 @@ private const val ACCEL_LANE_TAG = "AccelLane"
  */
 class SettingsActivity : AppCompatActivity() {
 
-    private val backgroundExecutor = Executors.newSingleThreadExecutor()
-    private lateinit var settingsManager: SettingsManager
-
     private lateinit var toolbar: MaterialToolbar
     private lateinit var txtAvfBadge: TextView
     private lateinit var txtAvfDetails: TextView
-    private lateinit var switchStageTrace: MaterialSwitch
-    private lateinit var switchAccelLane: MaterialSwitch
-    private lateinit var txtAccelStatus: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         ThemeApplier.prepare(this)
@@ -70,23 +52,15 @@ class SettingsActivity : AppCompatActivity() {
             insets
         }
 
-        settingsManager = SettingsManager(this)
         initViews()
         setupAvfSection()
-        setupDiagnosticsSection()
-        setupAcceleratorSection()
         setupFallbackExplanationSection()
+        ThemeApplier.bind(this)
     }
 
     override fun onResume() {
         super.onResume()
         setupAvfSection()
-        setupAcceleratorSection()
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        backgroundExecutor.shutdown()
     }
 
     private fun initViews() {
@@ -98,7 +72,6 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<MaterialButton>(R.id.btn_settings_shizuku).setOnClickListener {
             ShizukuClientDialog().show(supportFragmentManager, "shizuku-client")
         }
-        switchStageTrace = findViewById(R.id.switch_settings_stage_trace)
 
         toolbar.navigationContentDescription = "返回"
 
@@ -112,6 +85,9 @@ class SettingsActivity : AppCompatActivity() {
         }
         findViewById<View?>(R.id.row_settings_about)?.setOnClickListener {
             startActivity(SettingsSubActivity.intent(this, SettingsSubActivity.SECTION_ABOUT))
+        }
+        findViewById<View?>(R.id.row_settings_advanced)?.setOnClickListener {
+            startActivity(SettingsSubActivity.intent(this, SettingsSubActivity.SECTION_ADVANCED))
         }
     }
 
@@ -208,158 +184,6 @@ class SettingsActivity : AppCompatActivity() {
                 }
             }
             repaintIndicator()
-        }
-    }
-
-    /**
-     * Ticket 27: launch stage diagnostics opt-in. The UI only reads/writes the
-     * same SettingsManager key the launch pipeline consults; enabling here never
-     * collects anything by itself — capture starts on the next launch attempt.
-     */
-    private fun setupDiagnosticsSection() {
-        switchStageTrace.isChecked = settingsManager.isStageTraceDiagnosticsEnabled
-        switchStageTrace.setOnCheckedChangeListener { _, isChecked ->
-            settingsManager.isStageTraceDiagnosticsEnabled = isChecked
-        }
-    }
-
-    /**
-     * Accelerator lane status + runtime switch. Status mirrors the launch-time
-     * decision: the build flag is a hard gate, the stored user value decides
-     * otherwise, and an enabled lane is probed with the same facts + policy the
-     * dispatcher consults (no separate source of truth).
-     */
-    private fun setupAcceleratorSection() {
-        val switch = findViewById<MaterialSwitch>(R.id.switch_settings_accel_lane) ?: return
-        val status = findViewById<TextView>(R.id.txt_settings_accel_status) ?: return
-        switchAccelLane = switch
-        txtAccelStatus = status
-
-        val buildEnabled = BuildConfig.ACCELERATOR_LANE_ENABLED
-        val userEnabled = settingsManager.isAcceleratorLaneEnabled()
-        // Assign state before the listener so a re-run never re-persists.
-        switch.isChecked = userEnabled && buildEnabled
-        switch.isEnabled = buildEnabled
-        when {
-            !buildEnabled -> {
-                txtAccelStatus.text = "pVM 编译加速：不可用（构建未含加速组件）"
-                txtAccelStatus.setTextColor(getColor(R.color.zone_yellow))
-            }
-            !userEnabled -> {
-                txtAccelStatus.text = "pVM 编译加速：已停用（你在设置中关闭）"
-                txtAccelStatus.setTextColor(getColor(R.color.zone_red))
-            }
-            else -> probeAcceleratorLane()
-        }
-        switch.setOnCheckedChangeListener { _, isChecked ->
-            settingsManager.setAcceleratorLaneEnabled(isChecked)
-            if (isChecked) probeAcceleratorLane() else {
-                txtAccelStatus.text = "pVM 编译加速：已停用（你在设置中关闭）"
-                txtAccelStatus.setTextColor(getColor(R.color.zone_red))
-            }
-        }
-    }
-
-    /** Best-effort lane availability probe; identical source to the dispatch verdict. */
-    private fun probeAcceleratorLane() {
-        txtAccelStatus.text = "pVM 编译加速：已启用（检测车道…）"
-        txtAccelStatus.setTextColor(getColor(R.color.zone_yellow))
-        txtAccelStatus.setOnClickListener(null)
-        txtAccelStatus.isClickable = false
-        backgroundExecutor.execute {
-            val resolution = AccelExtensionResolver(this).resolve()
-            val laneVerdict = try {
-                val facts = AndroidAcceleratorFactProvider.create(this).read()
-                AcceleratorPolicy.decide(
-                    facts, AcceleratorLaunchDispatcher.GUEST_COMPILER_TRIPLE
-                )
-            } catch (_: RuntimeException) {
-                null
-            }
-            val laneUsable = laneVerdict?.mode() == AcceleratorMode.QEMU_PLUS_ACCEL
-            // The verdict's own JSON contract (enum names only, never paths or
-            // device identifiers): a refused lane must name its reason here,
-            // because the UI can only explain what the probe observed.
-            Log.i(
-                ACCEL_LANE_TAG,
-                "extension=${resolution.decision.status} lane=${laneVerdict?.toJson() ?: "unavailable"}"
-            )
-            runOnUiThread {
-                if (!::txtAccelStatus.isInitialized) return@runOnUiThread
-                when {
-                    laneUsable -> {
-                        txtAccelStatus.text = "pVM 编译加速：已启用（车道可用，实例启动时生效）"
-                        txtAccelStatus.setTextColor(getColor(R.color.zone_green))
-                    }
-                    resolution.decision.status == AccelExtensionRules.Status.EXTENSION_MISSING -> {
-                        // Two-package split: the honest "not installed" state
-                        // with a direct guide, instead of a generic fallback.
-                        txtAccelStatus.text = "pVM 编译加速：未安装 pVM 加速扩展（点此查看安装引导）"
-                        txtAccelStatus.setTextColor(getColor(R.color.zone_neutral))
-                        txtAccelStatus.setOnClickListener {
-                            openAcceleratorExtensionGuide()
-                        }
-                        txtAccelStatus.isClickable = true
-                    }
-                    else -> {
-                        // Extension problems are the user's to fix, so they
-                        // outrank the platform verdict; once the extension is
-                        // ready, the policy's refusal reason is the only
-                        // explanation left (and the only honest one).
-                        val reason = if (resolution.decision.status != AccelExtensionRules.Status.OK) {
-                            resolution.decision.detail
-                        } else {
-                            acceleratorReasonText(laneVerdict)
-                                ?: resolution.decision.detail
-                        }
-                        txtAccelStatus.text = "pVM 编译加速：已启用（$reason，实例启动时回退普通编译）"
-                        txtAccelStatus.setTextColor(getColor(R.color.zone_yellow))
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * One path-free sentence for a refused lane, in the policy's own
-     * vocabulary. Returns null when the verdict is not a refusal, so the
-     * caller falls back to the extension-side detail instead of inventing a
-     * cause. Unmapped codes keep their enum name — never a guessed story.
-     */
-    private fun acceleratorReasonText(decision: AcceleratorDecision?): String? {
-        val code = decision?.reasonCode() ?: return null
-        return when (code) {
-            AcceleratorReasonCode.ACCEL_AVAILABLE -> null
-            AcceleratorReasonCode.PAYLOAD_UNAVAILABLE_NO_PROTECTED ->
-                "系统未提供受保护虚拟机能力"
-            AcceleratorReasonCode.PAYLOAD_IMAGE_MISSING -> "加速载荷缺失"
-            AcceleratorReasonCode.PAYLOAD_COMPILER_MISMATCH ->
-                "加速载荷与 guest 编译器不匹配"
-            AcceleratorReasonCode.ACCEL_UNAVAILABLE_NO_NON_PROTECTED ->
-                "系统不支持非保护型虚拟机"
-            AcceleratorReasonCode.ACCEL_UNAVAILABLE_NO_BACKEND ->
-                "本机未提供可用的加速后端（若尚未授权硬件虚拟化，请先完成 AVF 授权）"
-            AcceleratorReasonCode.ACCEL_IMAGE_MISSING -> "加速镜像缺失"
-            AcceleratorReasonCode.ACCEL_VSOCK_UNAVAILABLE -> "系统未提供 vsock 通道"
-            AcceleratorReasonCode.COMPILER_MISMATCH ->
-                "编译器版本与加速镜像不匹配"
-            AcceleratorReasonCode.THERMAL_BUDGET -> "当前温度或电量不允许加速"
-            else -> code.name
-        }
-    }
-
-    /**
-     * D2: the extension guide points at the repository Releases page (the
-     * distribution channel for the standalone extension APK). Replaced by a
-     * stable in-app URL when the release round lands.
-     */
-    private fun openAcceleratorExtensionGuide() {
-        try {
-            startActivity(
-                Intent(Intent.ACTION_VIEW, Uri.parse(ReleaseSelector.RELEASES_PAGE))
-            )
-        } catch (_: RuntimeException) {
-            Toast.makeText(this, "未找到可用的浏览器，请手动访问仓库 Releases 页", Toast.LENGTH_LONG).show()
         }
     }
 }
