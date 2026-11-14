@@ -31,9 +31,13 @@ payload at the artifact level, from the APK alone:
     build, or the sanctioned hosted exemption): the runtime answers
     MISSING_ASSET at width 0 and the app still boots, so — unlike the QEMU
     gate, which must refuse — this gate SKIPs with the reason and exits 0.
-    `--require-payload` flips that: the packaging machine, which KNOWS it
-    staged the UML artifacts, asserts positively that the payload is really
-    in the APK; there a skip is a failure. That is the closing move for
+    `--require-payload` (and `--fullpkg`, which implies it) flips that: the
+    packaging machine, which KNOWS it staged the UML artifacts, asserts
+    positively that the payload is really in the APK; there a skip is a
+    failure, and BOTH manifests are required — a fast-profile-only or
+    net-helper-only half-package fails the gate (the review fix, 2026-11-14:
+    a single missing manifest is exactly the SPAWN_FAILED-at-runtime shape
+    the release pipeline claims to refuse). That is the closing move for
     P2-1: the exemption stays honest, and the machine that promised the
     payload proves it.
   - `--fullpkg` (2026-11-14 single-package round) is the complete-package
@@ -345,19 +349,32 @@ def check_apk(apk: Path, require_payload: bool, fullpkg: bool) -> Result:
                     "the single-package build ships the UML engine and must ship its notice",
                 ))
 
-    if not fast_present and not net_present:
-        if require_payload or fullpkg:
+    if require_payload or fullpkg:
+        # Single-package discipline (review fix, 2026-11-14): BOTH UML
+        # accounting manifests must be present. A build that stages only one
+        # half must not pass: the fast profile without the net helper answers
+        # MISSING_ASSET / SPAWN_FAILED (named detail) at runtime, and the net
+        # helper without the kernel cannot launch a face at all — either way
+        # the APK is not the payload the flag defaults promise.
+        missing = [
+            entry for entry, present in (
+                (FAST_MANIFEST_ENTRY, fast_present),
+                (NET_HELPER_MANIFEST_ENTRY, net_present),
+            ) if not present
+        ]
+        if missing:
             return Result(
                 status="fail",
                 problems=[Problem(
-                    FAST_MANIFEST_ENTRY,
-                    "the APK carries neither UML accounting manifest but "
+                    " / ".join(missing),
+                    "missing UML accounting manifest(s): " + ", ".join(missing)
+                    + " — this mode requires BOTH ("
                     + ("--fullpkg" if fullpkg else "--require-payload")
-                    + " was given: this build was expected to stage the UML payloads "
-                    "(were -Porchestella.uml.fastProfileDir / -Porchestella.uml.netHelperDir "
-                    "actually passed?)",
+                    + "; were -Porchestella.uml.fastProfileDir and "
+                    "-Porchestella.uml.netHelperDir actually passed?)",
                 )],
             )
+    if not fast_present and not net_present:
         return Result(
             status="skip",
             reason=(
@@ -610,14 +627,39 @@ def run_selftest() -> int:
              "--require-payload"],
             "1", "UML_PAYLOAD_GATE_FAIL",
         ))
-        # Require mode: a real payload build asserts positively and passes.
+        # Require mode (review fix, 2026-11-14): BOTH manifests are required —
+        # a fast-profile-only APK must fail, not slip out the door.
+        cases.append((
+            "fail-require-fast-only",
+            ["--apk", apk("fast_only.apk", {
+                kernel_entry: kernel,
+                stub_entry: stub,
+                FAST_MANIFEST_ENTRY: no_tar_manifest.encode(),
+            }), "--require-payload"],
+            "1", "UML_PAYLOAD_GATE_FAIL",
+        ))
+        # ...and so must a net-helper-only APK.
+        cases.append((
+            "fail-require-net-only",
+            ["--apk", apk("net_only.apk", {
+                net_entry: umnet,
+                passt_entry: passt,
+                NET_HELPER_MANIFEST_ENTRY: net_manifest.encode(),
+            }), "--require-payload"],
+            "1", "UML_PAYLOAD_GATE_FAIL",
+        ))
+        # Require mode: a real payload build asserts positively and passes —
+        # both manifests present (the single-package discipline).
         cases.append((
             "ok-require-full-payload",
             ["--apk", apk("ok.apk", {
                 kernel_entry: kernel,
                 stub_entry: stub,
                 rootfs_entry: rootfs,
+                net_entry: umnet,
+                passt_entry: passt,
                 FAST_MANIFEST_ENTRY: full_manifest.encode(),
+                NET_HELPER_MANIFEST_ENTRY: net_manifest.encode(),
             }), "--require-payload"],
             "0", "UML_PAYLOAD_GATE_OK",
         ))

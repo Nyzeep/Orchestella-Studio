@@ -153,9 +153,10 @@ jobs:
         # absence (WARN + build marker) and skip — the hosted build stays the
         # honest no-payload test form. The shippable single-package APK is
         # built ONLY on the packaging machine that owns the staging inputs
-        # (see the packaging-machine build line in
-        # docs/reports/tickets/uml-fast-profile-packaging/); hosted CI cannot
-        # produce it and does not pretend to.
+        # (the packaging-machine work order — internal documentation that no
+        # longer rides the public tree — carries the full build line and the
+        # acceptance checklist); hosted CI cannot produce it and does not
+        # pretend to.
         run: ./gradlew :app:lintDebug :app:assembleDebug -Porchestella.assets.allowMissingPayload=true --no-daemon --stacktrace
 
       - name: Verify debug APK 16 KB ELF segments and zipalign
@@ -312,24 +313,32 @@ jobs:
           set -euo pipefail
           APK=$(ls release-bundle/*.apk | head -1)
           if ! python3 tools/release/check_runtime_payload.py --apk "$APK"; then
-            echo "::error::the bundle APK cannot boot a Linux instance (QEMU payload missing). \
-          Build the release on the packaging machine that has the payload, or restore \
-          app/src/main/jniLibs/arm64-v8a/{libdroidlayer_qemu,libgvproxy}.so and rebuild."
+            echo "::error::the bundle APK is not a complete, self-consistent single \
+          package (UML fast profile + net helper manifests, embedded rootfs tar, pVM \
+          compiler manifest pins, QEMU manifest, NOTICE.UML). Rebuild on the packaging \
+          machine with all four staging parameters (-Porchestella.uml.fastProfileDir / \
+          .netHelperDir / -Porchestella.fastlane.payloadLibDir / \
+          -Porchestella.pvmCompiler.libDir) and the repack chain; shipped bytes and \
+          manifests must agree."
             exit 1
           fi
 
       # ACR 2026-11-12 D1/D4, review P2-1 closure; tightened 2026-11-14
-      # (single-package round): a draftable release is a single-package APK
-      # built on the packaging machine, so both UML accounting manifests
-      # (fast profile AND net helper, added 2026-11-14) are REQUIRED here —
-      # the hosted no-payload form never reaches this job (the QEMU gate
-      # above refuses it first), and a skip-tolerant UML gate would re-open
-      # the "flag-on but nothing staged" hole this gate exists to close.
-      - name: Verify the UML payload accounting in the APK
+      # (single-package round) and again by the 2026-11-14 review: a draftable
+      # release is a single-package APK built on the packaging machine, so the
+      # gate runs at its strongest shape (--fullpkg): BOTH UML accounting
+      # manifests (fast profile AND net helper) are required, the embedded
+      # rootfs tar must be staged and accounted, the pVM compiler manifest's
+      # three library pins must match the shipped bytes, the QEMU manifest is
+      # reconciled entry-for-entry, and NOTICE.UML must ship. The hosted
+      # no-payload form never reaches this job (the QEMU gate above refuses it
+      # first), and a skip-tolerant UML gate would re-open the "flag-on but
+      # nothing staged" hole this gate exists to close.
+      - name: Verify the single-package payload accounting in the APK
         run: |
           set -euo pipefail
           APK=$(ls release-bundle/*.apk | head -1)
-          if ! python3 tools/release/check_uml_payload.py --apk "$APK" --require-payload; then
+          if ! python3 tools/release/check_uml_payload.py --apk "$APK" --fullpkg; then
             echo "::error::the bundle APK's UML payloads do not match their in-APK \
           accounting manifests (assets/uml-fast-profile-v1.sha256 and \
           assets/uml-net-helper-v1.sha256). Rebuild on the packaging machine with \
