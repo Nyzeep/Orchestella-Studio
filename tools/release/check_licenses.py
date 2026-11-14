@@ -59,6 +59,8 @@ MANIFEST_REQUIRED_BASENAMES = (
     "LICENSE.GPL-2.0",
     "NOTICE.QEMU",
     "NOTICE.GUEST-RUNTIME",
+    # Single-package round (2026-11-14): the UML notice rides the bundle too.
+    "NOTICE.UML",
 )
 
 
