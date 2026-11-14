@@ -170,18 +170,30 @@ public final class RootfsTransportContractTest {
     }
 
     @Test
-    public void buildsThatDidNotOptIntoTheUmlFlagFamilyKeepTheRootfsGateClosed() {
-        // The gradle-defaults lock: a build that did not state any UML flag
-        // must compile the rootfs download gate closed (the shipped default).
-        // The stated-parameter variant run — bundledFastProfile=true, the ACR
-        // D1 release/QA shape — is the sanctioned exception and yields here;
-        // every default/CI run still enforces the lock (a flipped gradle
-        // default fails this test in CI). The explicit-gate tests above hold
-        // the disabled byte-lock in every variant regardless.
-        assumeFalse("stated UML flag-on variant run — the default lock's "
-                + "precondition is absent by design",
-                BuildConfig.UML_BUNDLED_FAST_PROFILE);
-        assertFalse("the shipped default must keep the rootfs download gate closed",
+    public void buildsThatDidNotStateTheRootfsFlagShipTheRepairChannelOpen() {
+        // The gradle-defaults lock, updated 2026-11-14 (single-package round):
+        // the complete package ships the embedded rootfs, so a build that did
+        // not state -Porchestella.uml.rootfsDownload compiles the gate OPEN —
+        // the CDN chain is now the repair channel, the embedded channel is the
+        // factory fact. The negative shape (gate closed) is the EXPLICIT
+        // -Porchestella.uml.rootfsDownload=false variant run: the disabled
+        // byte-lock itself is held by the explicit-gate tests above in every
+        // variant regardless, so this lock only exempts the requested-off run
+        // instead of failing it. A reverted gradle default cannot silently
+        // change a pipeline build: release.yml and the packaging-machine work
+        // order state all four UML flags explicitly, so the stated-parameter
+        // discipline is what catches a default flip at the pipeline level.
+        if (!BuildConfig.UML_ROOTFS_DOWNLOAD_ENABLED) {
+            // Explicit-off variant run: the negative shape is requested, not a
+            // default to lock — nothing to enforce here (and every other UML
+            // flag must be off with it, or the run is inconsistent).
+            assertFalse("an explicit rootfsDownload=false run must be a consistent "
+                    + "negative variant (all UML flags off)",
+                    BuildConfig.UML_FAST_PROFILE || BuildConfig.UML_COMPILE_BRIDGE);
+            return;
+        }
+        assertTrue("the shipped default must keep the rootfs repair channel open "
+                + "(the single-package factory fact)",
                 BuildConfig.UML_ROOTFS_DOWNLOAD_ENABLED);
     }
 

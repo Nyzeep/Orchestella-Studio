@@ -131,6 +131,45 @@ class AccelExtensionRulesTest {
      * may start at the repository root (so `app/build.gradle.kts` is). Reading
      * the wrong one would silently assert against the root script.
      */
+    /**
+     * Single-package round (2026-11-14): the resolver must resolve the
+     * embedded shape first — the complete package carries the compiler
+     * manifest in its OWN assets and loads the payload from its OWN APK.
+     * The resolver is Android-context-bound (no JVM construction), so the
+     * wiring is asserted structurally, in the same style as the manifest
+     * and gradle checks above: own-assets read present, evaluated before
+     * the extension query, version lock self-vs-self, payload path = the
+     * application's own sourceDir, and the two-package query retained as
+     * the defense path.
+     */
+    @Test
+    fun resolverResolvesTheEmbeddedShapeBeforeTheExtensionQuery() {
+        val source = sourceFile(
+            "src/main/java/io/github/nyzeep/orchestella/AccelExtensionResolver.kt",
+            "app/src/main/java/io/github/nyzeep/orchestella/AccelExtensionResolver.kt",
+        )
+        assert(source.contains("readOwnManifest()")) {
+            "the resolver must consult its own assets (readOwnManifest) — the embedded " +
+                "shape's signal is the presence of assets/PVM-COMPILER-MANIFEST in this app"
+        }
+        assert(source.contains("AccelExtensionRules.evaluate(true, mainVersionCode, mainVersionCode, engine)")) {
+            "the embedded verdict must lock the version self-versus-self through the same " +
+                "rules (one verdict shape, engine gate still applied)"
+        }
+        assert(source.contains("applicationInfo.sourceDir")) {
+            "the embedded payload path must be this app's own APK (the platform's setApkPath " +
+                "contract), not the extension's"
+        }
+        assert(source.indexOf("readOwnManifest()") < source.indexOf("extensionPackageName(application.packageName)")) {
+            "the embedded resolution must run BEFORE the two-package query — a stale extension " +
+                "installed next to a complete package must not win"
+        }
+        assert(source.contains("catch (absent: PackageManager.NameNotFoundException)")) {
+            "the two-package query stays as the defense path (EXTENSION_MISSING stays reachable " +
+                "for split builds)"
+        }
+    }
+
     private fun appModuleBuildScript(): String {
         val readable = listOf("build.gradle.kts", "app/build.gradle.kts")
             .map { java.io.File(it) }
