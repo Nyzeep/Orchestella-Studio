@@ -685,22 +685,26 @@ public final class UmlRootfsProvisionerContractTest {
         int dhcp = launcher.indexOf("udhcpc -i vec0 -q 2>/dev/null");
         int apkAdd = launcher.indexOf("apk add distcc 2>/dev/null");
         int daemon = launcher.indexOf(
-                "distccd --daemon --listen 0.0.0.0 --port 3632 --allow 10.0.2.0/24 2>/dev/null");
+                "distccd --daemon --user distcc --listen 0.0.0.0 --port 3632 "
+                        + "--allow 10.0.2.0/24 --log-file /tmp/distccd.log");
         assertTrue("the branch brings vec0 up before the lease", linkUp > guard);
         assertTrue("the lease runs right after the link is up", dhcp > linkUp);
         assertTrue("distccd installs from the CDN through passt", apkAdd > dhcp);
         assertTrue("the daemon binds 0.0.0.0:3632 for the passt forward to 10.0.2.0/24",
                 daemon > apkAdd);
-        assertTrue("a root-refused daemon retries as nobody before giving up",
+        assertTrue("a root-refused daemon retries as nobody over the same /tmp log before giving up",
                 launcher.contains(
                         "distccd --daemon --user nobody --listen 0.0.0.0 --port 3632 "
-                                + "--allow 10.0.2.0/24 2>/dev/null"));
+                                + "--allow 10.0.2.0/24 --log-file /tmp/distccd.log"));
         assertTrue("the DHCP failure is an honest named marker",
                 launcher.contains("UM_NET_ERROR step=dhcp detail=udhcpc failed on vec0"));
         assertTrue("the apk failure is an honest named marker",
                 launcher.contains("UM_NET_ERROR step=apk detail=apk add distcc failed"));
-        assertTrue("the daemon failure is an honest named marker",
-                launcher.contains("UM_NET_ERROR step=distccd detail=daemon start failed"));
+        assertTrue("the daemon failure is an honest named marker with captured diagnostics",
+                launcher.contains("UM_NET_ERROR step=distccd detail=rc=")
+                        && launcher.contains("$(tail -1 /tmp/distccd.err 2>/dev/null)"));
+        assertTrue("the daemon start drops to the package's own user over /tmp (hostfs EACCES lesson)",
+                launcher.contains("--user distcc") && launcher.contains("--log-file /tmp/distccd.log"));
         assertTrue("the missing-binary cascade is an honest named marker",
                 launcher.contains("UM_NET_ERROR step=distccd detail=distccd binary missing"));
         assertTrue("a bound lease is announced with the guest address",
