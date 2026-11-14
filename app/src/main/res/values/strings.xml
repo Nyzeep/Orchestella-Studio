@@ -521,4 +521,23 @@
     <string name="settings_entry_ssh_title">SSH 配置文件与凭据管理</string>
     <string name="settings_entry_system_title">系统镜像源策略与更新设置</string>
     <string name="settings_entry_about_title">关于 Orchestella Studio</string>
+
+    <!-- 03/硬件页（UI 重新设计轮）：摘要卡 + 完整参数二级抽屉。SEC 头部
+         标题自布局字面量收拢为单一来源（原文案逐字保留）；摘要 chip 短值
+         与完整读数同源（MainActivity 渲染），完整参数在二级抽屉。 -->
+    <string name="hw_refresh_action">重新检测</string>
+    <string name="hw_sec01_title">虚拟化框架与运行支持地板</string>
+    <string name="hw_sec02_title">物理处理器与核心拓扑</string>
+    <string name="hw_sec03_title">物理内存、存储与电池三维度量</string>
+    <string name="hw_sec03_readout_title">内存与存储读数</string>
+    <string name="hw_sec04_title">OS 与内核档案</string>
+    <string name="sheet_hw_full_params_title">完整参数读数</string>
+    <string name="hardware_full_params_action">查看完整参数</string>
+    <string name="chip_hw_label_arch">CPU 架构</string>
+    <string name="chip_hw_label_cores">核心数</string>
+    <string name="chip_hw_label_ram">运存总额</string>
+    <string name="chip_hw_label_os">Android 版本</string>
+    <string name="chip_hw_value_cores">%1$d 核</string>
+    <string name="chip_hw_value_ram">%1$d GB</string>
+    <string name="chip_hw_value_os">Android %1$s</string>
 </resources>

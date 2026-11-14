@@ -844,6 +844,11 @@ class MainActivity : AppCompatActivity() {
             renderGauges(theme)
             Toast.makeText(this, "硬件遥测状态已刷新", Toast.LENGTH_SHORT).show()
         }
+        // UI 重新设计轮：完整参数收进二级抽屉（well 读数井容器搬家，id 与
+        // 取值逻辑不动；BottomSheet 走 ThemeApplier.apply(dialog) 通道）。
+        findViewById<View>(R.id.btn_hw_full_params)?.setOnClickListener {
+            openHardwareFullParamsSheet()
+        }
     }
 
     private fun setupSettingsTab() {
@@ -914,60 +919,95 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 03/硬件「完整参数」二级抽屉（UI 重新设计轮）：well 读数井容器自
+     * activity_main.xml 搬入 sheet_hardware_full_params.xml——id 与取值
+     * 逻辑不动、仅容器搬家；活动树查不到时回查抽屉内容缓存（同一 id、
+     * 同一渲染函数），抽屉关闭即清缓存。
+     */
+    private var hwParamsSheetContent: View? = null
+
+    private fun hwDetailText(id: Int): TextView? =
+        findViewById<TextView>(id) ?: hwParamsSheetContent?.findViewById(id)
+
+    private fun openHardwareFullParamsSheet() {
+        val content = LayoutInflater.from(this).inflate(R.layout.sheet_hardware_full_params, null)
+        hwParamsSheetContent = content
+        // 搬入抽屉的读数井与 cpu chip 首次渲染：同一取值源重放，保证新容器
+        // 展示的是本次会话真实读数而非 pre-bind 占位文本。
+        renderHardwareSpecDetails()
+        lastAssessment?.let { renderSystemStatus(it) }
+        val sheet = com.google.android.material.bottomsheet.BottomSheetDialog(this)
+        sheet.setContentView(content)
+        sheet.setOnDismissListener { hwParamsSheetContent = null }
+        sheet.show()
+        ThemeApplier.apply(sheet)
+    }
+
     private fun renderHardwareSpecDetails() {
         val profile = HostHardwareDetector.detect(this)
         val facts = AvfHostFactsProbe.probe(this)
 
-        findViewById<TextView>(R.id.hw_detail_platform_declared)?.text =
+        hwDetailText(R.id.hw_detail_platform_declared)?.text =
             if (facts.virtualizationFrameworkFeature() || "true".equals(facts.virtualizationProperty(), ignoreCase = true))
                 "SUPPORTED (FEATURE_VIRTUALIZATION=true)"
             else "NOT DECLARED (FEATURE_VIRTUALIZATION=false)"
 
-        findViewById<TextView>(R.id.hw_detail_avf_permission)?.text =
+        hwDetailText(R.id.hw_detail_avf_permission)?.text =
             "MANAGE：${AvfHostFactsProbe.permissionLabel(facts.manageVirtualMachinePermissionState())}\n" +
                 "CUSTOM：${AvfHostFactsProbe.permissionLabel(facts.useCustomVirtualMachinePermissionState())}\n" +
                 "平台访问：${AvfHostFactsProbe.platformSummary(facts.platformFacts())}\n" +
                 getString(R.string.avf_preflight_boundary)
 
         val kvmFile = java.io.File("/dev/kvm")
-        findViewById<TextView>(R.id.hw_detail_kvm_node)?.text = when {
+        hwDetailText(R.id.hw_detail_kvm_node)?.text = when {
             kvmFile.canRead() && kvmFile.canWrite() -> "可读写 /dev/kvm（仍需后端运行验证）"
             kvmFile.exists() -> "/dev/kvm 存在，App 无读写权限"
             else -> "当前 App 未发现 /dev/kvm"
         }
 
-        findViewById<TextView>(R.id.hw_detail_cpu_arch)?.text =
-            "${System.getProperty("os.arch")} (${Build.SUPPORTED_ABIS.joinToString(", ")})"
+        val osArch = System.getProperty("os.arch") ?: "--"
+        hwDetailText(R.id.hw_detail_cpu_arch)?.text =
+            "$osArch (${Build.SUPPORTED_ABIS.joinToString(", ")})"
 
         val soc = if (Build.VERSION.SDK_INT >= 31) Build.SOC_MODEL else "ARM-v8"
-        findViewById<TextView>(R.id.hw_detail_cpu_model)?.text =
+        hwDetailText(R.id.hw_detail_cpu_model)?.text =
             "${Build.HARDWARE} / ${Build.BOARD} ($soc)"
 
-        findViewById<TextView>(R.id.hw_detail_cpu_cores)?.text =
+        hwDetailText(R.id.hw_detail_cpu_cores)?.text =
             "${profile.totalCores()} Cores (SMP Architecture, Multi-threaded)"
 
         val totalRamMb = profile.totalRamMb()
         val availRamMb = profile.availRamMb()
-        findViewById<TextView>(R.id.hw_detail_ram_specs)?.text =
+        hwDetailText(R.id.hw_detail_ram_specs)?.text =
             "物理 RAM: ${totalRamMb} MB / 可用: ${availRamMb} MB"
 
-        findViewById<TextView>(R.id.hw_detail_ram_reserve)?.text =
+        hwDetailText(R.id.hw_detail_ram_reserve)?.text =
             "LowMem阈值: ${profile.thresholdRamMb()} MB / 紧张状态: ${if (profile.isLowMemory()) "YES" else "NO"}"
 
         val stat = StatFs(filesDir.path)
         val totalGb = stat.totalBytes / (1024L * 1024L * 1024L)
         val freeGb = stat.availableBytes / (1024L * 1024L * 1024L)
-        findViewById<TextView>(R.id.hw_detail_storage_specs)?.text =
+        hwDetailText(R.id.hw_detail_storage_specs)?.text =
             "应用沙箱存储: ${totalGb} GB (剩余: ${freeGb} GB, 块大小: ${stat.blockSizeLong} B)"
 
-        findViewById<TextView>(R.id.hw_detail_os_release)?.text =
+        hwDetailText(R.id.hw_detail_os_release)?.text =
             "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}, Build ${Build.DISPLAY})"
 
-        findViewById<TextView>(R.id.hw_detail_kernel_release)?.text =
+        hwDetailText(R.id.hw_detail_kernel_release)?.text =
             "Linux Kernel ${System.getProperty("os.version") ?: "unknown"}"
 
-        findViewById<TextView>(R.id.hw_detail_device_model)?.text =
+        hwDetailText(R.id.hw_detail_device_model)?.text =
             "${Build.MANUFACTURER} ${Build.MODEL} (${Build.BRAND} / ${Build.DEVICE})"
+
+        // 摘要 chip：与完整读数同源的短值提升（完整参数在二级抽屉）。
+        findViewById<TextView>(R.id.chip_hw_cpu_arch)?.text = osArch
+        findViewById<TextView>(R.id.chip_hw_cpu_cores)?.text =
+            getString(R.string.chip_hw_value_cores, profile.totalCores())
+        findViewById<TextView>(R.id.chip_hw_ram_total)?.text =
+            getString(R.string.chip_hw_value_ram, totalRamMb / 1024)
+        findViewById<TextView>(R.id.chip_hw_os_version)?.text =
+            getString(R.string.chip_hw_value_os, Build.VERSION.RELEASE)
     }
 
     private fun openPortForwarding(instance: InstanceLifecycle.Instance) {
@@ -1784,7 +1824,7 @@ class MainActivity : AppCompatActivity() {
     private fun renderSystemStatus(assessment: DeviceCapabilityEvaluator.Assessment) {
         lastAssessment = assessment
         val profile = HostHardwareDetector.detect(this)
-        val cpuChip = findViewById<TextView>(R.id.system_cpu_chip)
+        val cpuChip = hwDetailText(R.id.system_cpu_chip)
         val virtBadge = findViewById<TextView>(R.id.system_virtualization_badge)
         val statusText = findViewById<TextView>(R.id.runtime_status)
 

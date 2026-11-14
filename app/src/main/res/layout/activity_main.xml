@@ -1436,50 +1436,35 @@
                     android:paddingEnd="@dimen/oe_space_md"
                     android:visibility="gone">
 
-                    <!-- Hardware Screen Header -->
-                    <LinearLayout
-                        android:layout_width="match_parent"
+                    <!-- Hardware Screen Header（UI 重新设计轮：刷新钮升
+                         oe_btn_h_secondary 并移入 SEC.01 摘要卡头部） -->
+                    <TextView
+                        android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
-                        android:layout_marginBottom="@dimen/oe_space_md">
+                        android:fontFamily="sans-serif"
+                        android:text="硬件规格与运行支持地板检测"
+                        android:textColor="#FFFFFF"
+                        android:textSize="15sp"
+                        android:textStyle="bold"
+                        android:layout_marginBottom="@dimen/oe_space_md" />
 
-                        <TextView
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:fontFamily="sans-serif"
-                            android:text="硬件规格与运行支持地板检测"
-                            android:textColor="#FFFFFF"
-                            android:textSize="15sp"
-                            android:textStyle="bold" />
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btn_hw_refresh"
-                            style="@style/Widget.Material3.Button"
-                            android:layout_width="wrap_content"
-                            android:layout_height="36dp"
-                            app:cornerRadius="0dp"
-                            android:backgroundTint="#1F2026"
-                            android:fontFamily="monospace"
-                            android:text="重新检测"
-                            android:textColor="#FFFFFF"
-                            android:textSize="10sp"
-                            android:insetTop="0dp"
-                            android:insetBottom="0dp" />
-                    </LinearLayout>
-
-                    <!-- TAB 3 卡片归档：SEC.01-04 均为一级决策卡（含授权/刷新
-                         CTA），其内嵌读数井为二级数据卡（well 档） -->
-                    <!-- Card 1: Virtualization Engine & Support Floor -->
+                    <!-- TAB 3 卡片归档（UI 重新设计轮）：一级摘要卡 = SEC.01
+                         「运行支持地板」摘要（决策项：AVF 徽章 / 拒绝横幅 /
+                         授权 CTA / 刷新）+ 4 枚摘要 chip + 完整参数入口；
+                         SEC.03 三环仪表卡保留一级；原 SEC.02 CPU 卡与
+                         SEC.04 OS 卡的 12+ 条 bullet 读数井整体移入
+                         「完整参数」BottomSheet 二级抽屉
+                         （sheet_hardware_full_params.xml，id 与取值逻辑
+                         不变、仅容器搬家）。 -->
+                    <!-- Card 1: Virtualization Engine & Support Floor（摘要卡） -->
                     <LinearLayout
                         android:id="@+id/system_status_card"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
                         android:background="@drawable/bg_oe_card"
-                        android:padding="@dimen/oe_space_md"
-                        android:layout_marginBottom="@dimen/oe_space_md">
+                        android:padding="@dimen/oe_card_pad"
+                        android:layout_marginBottom="@dimen/oe_card_gap">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -1505,10 +1490,12 @@
                                 android:layout_weight="1"
                                 android:layout_marginStart="@dimen/oe_space_sm"
                                 android:fontFamily="sans-serif"
-                                android:text="虚拟化框架与运行支持地板"
+                                android:text="@string/hw_sec01_title"
                                 android:textColor="#FFFFFF"
                                 android:textSize="13sp"
-                                android:textStyle="bold" />
+                                android:textStyle="bold"
+                                android:maxLines="1"
+                                android:ellipsize="end" />
 
                             <TextView
                                 android:id="@+id/system_virtualization_badge"
@@ -1524,6 +1511,21 @@
                                 android:textColor="#D62828"
                                 android:textSize="10sp"
                                 android:textStyle="bold" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btn_hw_refresh"
+                                style="@style/Widget.Orchestella.Button.Tonal"
+                                android:layout_width="wrap_content"
+                                android:layout_height="@dimen/oe_btn_h_secondary"
+                                android:layout_marginStart="@dimen/oe_space_sm"
+                                app:cornerRadius="0dp"
+                                android:backgroundTint="#1F2026"
+                                android:fontFamily="monospace"
+                                android:text="@string/hw_refresh_action"
+                                android:textColor="#FFFFFF"
+                                android:textSize="10sp"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp" />
                         </LinearLayout>
 
                         <TextView
@@ -1536,53 +1538,12 @@
                             android:textColor="#8E929B"
                             android:textSize="11sp" />
 
-                        <!-- Detailed Specs Readout Grid
-                             卡片层级：二级数据卡（well 档读数井） -->
-                        <LinearLayout
-                            android:id="@+id/well_hw_readout_avf"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:orientation="vertical"
-                            android:background="@drawable/bg_oe_well"
-                            android:padding="@dimen/oe_space_sm"
-                            android:layout_marginTop="@dimen/oe_space_sm">
-
-                            <TextView
-                                android:id="@+id/hw_detail_platform_declared"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:fontFamily="monospace"
-                                android:text="• 平台虚拟化声明：android.software.virtualization_framework"
-                                android:textColor="#F5F4F0"
-                                android:textSize="10sp" />
-
-                            <TextView
-                                android:id="@+id/hw_detail_avf_permission"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="@dimen/oe_space_xs"
-                                android:fontFamily="monospace"
-                                android:text="• 开发级授权 (MANAGE_VM)：检测中…"
-                                android:textColor="#F5F4F0"
-                                android:textSize="10sp" />
-
-                            <TextView
-                                android:id="@+id/hw_detail_kvm_node"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="@dimen/oe_space_xs"
-                                android:fontFamily="monospace"
-                                android:text="• /dev/kvm 设备节点：探测中…"
-                                android:textColor="#8E929B"
-                                android:textSize="10sp" />
-                        </LinearLayout>
-
                         <!-- Honest Refusal Banner if failed floor -->
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/refusal_banner"
                             style="@style/Widget.Material3.Button"
                             android:layout_width="match_parent"
-                            android:layout_height="44dp"
+                            android:layout_height="@dimen/oe_btn_h_secondary"
                             app:cornerRadius="0dp"
                             android:backgroundTint="#EF4444"
                             android:layout_marginTop="@dimen/oe_space_sm"
@@ -1602,7 +1563,7 @@
                             android:id="@+id/upgrade_authorization"
                             style="@style/Widget.Material3.Button"
                             android:layout_width="match_parent"
-                            android:layout_height="44dp"
+                            android:layout_height="@dimen/oe_btn_h_secondary"
                             app:cornerRadius="0dp"
                             android:backgroundTint="#D62828"
                             android:layout_marginTop="@dimen/oe_space_sm"
@@ -1616,105 +1577,174 @@
                             android:insetTop="0dp"
                             android:insetBottom="0dp"
                             android:visibility="gone" />
-                    </LinearLayout>
 
-                    <!-- Card 2: Physical CPU & Processor -->
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:background="@drawable/bg_oe_card"
-                        android:padding="@dimen/oe_space_md"
-                        android:layout_marginBottom="@dimen/oe_space_md">
-
+                        <!-- 摘要 chip 行：CPU 架构 / 核心数 / 运存总额 /
+                             Android 版本——从完整读数提升的短值（完整参数
+                             在二级抽屉，取值同源 MainActivity 渲染） -->
                         <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:orientation="horizontal"
-                            android:gravity="center_vertical">
+                            android:baselineAligned="false"
+                            android:layout_marginTop="@dimen/oe_space_sm">
 
-                            <TextView
-                                android:layout_width="wrap_content"
+                            <LinearLayout
+                                android:layout_width="0dp"
                                 android:layout_height="wrap_content"
-                                android:background="#FDBB24"
-                                android:paddingStart="@dimen/oe_icon_inline_gap"
-                                android:paddingEnd="@dimen/oe_icon_inline_gap"
-                                android:fontFamily="monospace"
-                                android:text="SEC.02"
-                                android:textColor="#000000"
-                                android:textSize="9sp"
-                                android:textStyle="bold" />
+                                android:layout_weight="1"
+                                android:orientation="vertical"
+                                android:gravity="center"
+                                android:background="#1F2026"
+                                android:paddingStart="@dimen/oe_space_xs"
+                                android:paddingTop="@dimen/oe_space_sm"
+                                android:paddingEnd="@dimen/oe_space_xs"
+                                android:paddingBottom="@dimen/oe_space_sm">
 
-                            <TextView
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:fontFamily="monospace"
+                                    android:text="@string/chip_hw_label_arch"
+                                    android:textColor="#8E929B"
+                                    android:textSize="9sp" />
+
+                                <TextView
+                                    android:id="@+id/chip_hw_cpu_arch"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:fontFamily="monospace"
+                                    android:text="--"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="11sp"
+                                    android:textStyle="bold" />
+                            </LinearLayout>
+
+                            <LinearLayout
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
                                 android:layout_marginStart="@dimen/oe_space_sm"
-                                android:fontFamily="sans-serif"
-                                android:text="物理处理器与核心拓扑"
-                                android:textColor="#FFFFFF"
-                                android:textSize="13sp"
-                                android:textStyle="bold" />
+                                android:orientation="vertical"
+                                android:gravity="center"
+                                android:background="#1F2026"
+                                android:paddingStart="@dimen/oe_space_xs"
+                                android:paddingTop="@dimen/oe_space_sm"
+                                android:paddingEnd="@dimen/oe_space_xs"
+                                android:paddingBottom="@dimen/oe_space_sm">
 
-                            <TextView
-                                android:id="@+id/system_cpu_chip"
-                                android:layout_width="wrap_content"
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:fontFamily="monospace"
+                                    android:text="@string/chip_hw_label_cores"
+                                    android:textColor="#8E929B"
+                                    android:textSize="9sp" />
+
+                                <TextView
+                                    android:id="@+id/chip_hw_cpu_cores"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:fontFamily="monospace"
+                                    android:text="--"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="11sp"
+                                    android:textStyle="bold" />
+                            </LinearLayout>
+
+                            <LinearLayout
+                                android:layout_width="0dp"
                                 android:layout_height="wrap_content"
-                                android:fontFamily="monospace"
-                                android:text="8 核心 CPU"
-                                android:textColor="#FDBB24"
-                                android:textSize="11sp"
-                                android:textStyle="bold" />
+                                android:layout_weight="1"
+                                android:layout_marginStart="@dimen/oe_space_sm"
+                                android:orientation="vertical"
+                                android:gravity="center"
+                                android:background="#1F2026"
+                                android:paddingStart="@dimen/oe_space_xs"
+                                android:paddingTop="@dimen/oe_space_sm"
+                                android:paddingEnd="@dimen/oe_space_xs"
+                                android:paddingBottom="@dimen/oe_space_sm">
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:fontFamily="monospace"
+                                    android:text="@string/chip_hw_label_ram"
+                                    android:textColor="#8E929B"
+                                    android:textSize="9sp" />
+
+                                <TextView
+                                    android:id="@+id/chip_hw_ram_total"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:fontFamily="monospace"
+                                    android:text="--"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="11sp"
+                                    android:textStyle="bold" />
+                            </LinearLayout>
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginStart="@dimen/oe_space_sm"
+                                android:orientation="vertical"
+                                android:gravity="center"
+                                android:background="#1F2026"
+                                android:paddingStart="@dimen/oe_space_xs"
+                                android:paddingTop="@dimen/oe_space_sm"
+                                android:paddingEnd="@dimen/oe_space_xs"
+                                android:paddingBottom="@dimen/oe_space_sm">
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:fontFamily="monospace"
+                                    android:text="@string/chip_hw_label_os"
+                                    android:textColor="#8E929B"
+                                    android:textSize="9sp" />
+
+                                <TextView
+                                    android:id="@+id/chip_hw_os_version"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:fontFamily="monospace"
+                                    android:text="--"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="11sp"
+                                    android:textStyle="bold" />
+                            </LinearLayout>
                         </LinearLayout>
 
-                        <LinearLayout
-                            android:id="@+id/well_hw_readout_cpu"
+                        <!-- 完整参数入口（二级抽屉：sheet_hardware_full_params） -->
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_hw_full_params"
+                            style="@style/Widget.Orchestella.Button.Tonal"
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:orientation="vertical"
-                            android:background="@drawable/bg_oe_well"
-                            android:padding="@dimen/oe_space_sm"
-                            android:layout_marginTop="@dimen/oe_space_sm">
-
-                            <TextView
-                                android:id="@+id/hw_detail_cpu_arch"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:fontFamily="monospace"
-                                android:text="• 指令集架构：ARM64 (arm64-v8a)"
-                                android:textColor="#F5F4F0"
-                                android:textSize="10sp" />
-
-                            <TextView
-                                android:id="@+id/hw_detail_cpu_model"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="@dimen/oe_space_xs"
-                                android:fontFamily="monospace"
-                                android:text="• 硬件芯片识别：Qualcomm Snapdragon"
-                                android:textColor="#F5F4F0"
-                                android:textSize="10sp" />
-
-                            <TextView
-                                android:id="@+id/hw_detail_cpu_cores"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="@dimen/oe_space_xs"
-                                android:fontFamily="monospace"
-                                android:text="• CPU 调度拓扑：big.LITTLE 异构集群"
-                                android:textColor="#8E929B"
-                                android:textSize="10sp" />
-                        </LinearLayout>
+                            android:layout_height="@dimen/oe_btn_h_secondary"
+                            android:layout_marginTop="@dimen/oe_space_sm"
+                            app:cornerRadius="0dp"
+                            android:backgroundTint="#1F2026"
+                            android:fontFamily="monospace"
+                            android:text="@string/hardware_full_params_action"
+                            android:textColor="#FFFFFF"
+                            android:textSize="11sp"
+                            app:icon="@drawable/ic_sym_article"
+                            app:iconSize="16dp"
+                            app:iconTint="#FFFFFF"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp" />
                     </LinearLayout>
 
-                    <!-- Card 3: Physical Memory & Resource Gauges -->
+                    <!-- Card 3: Physical Memory & Resource Gauges（SEC.03
+                         三环仪表保留一级；读数井移入完整参数抽屉） -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
                         android:background="@drawable/bg_oe_card"
-                        android:padding="@dimen/oe_space_md"
-                        android:layout_marginBottom="@dimen/oe_space_md">
+                        android:padding="@dimen/oe_card_pad"
+                        android:layout_marginBottom="@dimen/oe_card_gap">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -1740,7 +1770,7 @@
                                 android:layout_weight="1"
                                 android:layout_marginStart="@dimen/oe_space_sm"
                                 android:fontFamily="sans-serif"
-                                android:text="物理内存、存储与电池三维度量"
+                                android:text="@string/hw_sec03_title"
                                 android:textColor="#FFFFFF"
                                 android:textSize="13sp"
                                 android:textStyle="bold" />
@@ -1764,8 +1794,8 @@
 
                                 <io.github.nyzeep.orchestella.ui.RingProgressView
                                     android:id="@+id/ring_memory"
-                                    android:layout_width="72dp"
-                                    android:layout_height="72dp" />
+                                    android:layout_width="@dimen/oe_ring_size_lg"
+                                    android:layout_height="@dimen/oe_ring_size_lg" />
 
                                 <TextView
                                     android:layout_width="wrap_content"
@@ -1786,8 +1816,8 @@
 
                                 <io.github.nyzeep.orchestella.ui.RingProgressView
                                     android:id="@+id/ring_storage"
-                                    android:layout_width="72dp"
-                                    android:layout_height="72dp" />
+                                    android:layout_width="@dimen/oe_ring_size_lg"
+                                    android:layout_height="@dimen/oe_ring_size_lg" />
 
                                 <TextView
                                     android:layout_width="wrap_content"
@@ -1808,8 +1838,8 @@
 
                                 <io.github.nyzeep.orchestella.ui.RingProgressView
                                     android:id="@+id/ring_battery"
-                                    android:layout_width="72dp"
-                                    android:layout_height="72dp" />
+                                    android:layout_width="@dimen/oe_ring_size_lg"
+                                    android:layout_height="@dimen/oe_ring_size_lg" />
 
                                 <TextView
                                     android:layout_width="wrap_content"
@@ -1821,92 +1851,6 @@
                                     android:textSize="9sp" />
                             </LinearLayout>
                         </LinearLayout>
-
-                        <LinearLayout
-                            android:id="@+id/well_hw_readout_mem"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:orientation="vertical"
-                            android:background="@drawable/bg_oe_well"
-                            android:padding="@dimen/oe_space_sm">
-
-                            <TextView
-                                android:id="@+id/hw_detail_ram_specs"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:fontFamily="monospace"
-                                android:text="• 物理运存总额：读取中…"
-                                android:textColor="#F5F4F0"
-                                android:textSize="10sp" />
-
-                            <TextView
-                                android:id="@+id/hw_detail_ram_reserve"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="@dimen/oe_space_xs"
-                                android:fontFamily="monospace"
-                                android:text="• 宿主强制保留：2048 MB (防 LMK 闪退线)"
-                                android:textColor="#FDBB24"
-                                android:textSize="10sp" />
-
-                            <TextView
-                                android:id="@+id/hw_detail_storage_specs"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="@dimen/oe_space_xs"
-                                android:fontFamily="monospace"
-                                android:text="• 内部存储余量：读取中…"
-                                android:textColor="#8E929B"
-                                android:textSize="10sp" />
-                        </LinearLayout>
-                    </LinearLayout>
-
-                    <!-- Card 4: OS & Platform Profile -->
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:background="@drawable/bg_oe_card"
-                        android:padding="@dimen/oe_space_md"
-                        android:layout_marginBottom="@dimen/oe_space_md">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:fontFamily="monospace"
-                            android:text="[ SEC.04 // OS &amp; KERNEL PROFILE ]"
-                            android:textColor="#8E929B"
-                            android:textSize="10sp"
-                            android:layout_marginBottom="@dimen/oe_space_sm" />
-
-                        <TextView
-                            android:id="@+id/hw_detail_os_release"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:fontFamily="monospace"
-                            android:text="• Android 系统：Android 15 (API 35)"
-                            android:textColor="#F5F4F0"
-                            android:textSize="10sp" />
-
-                        <TextView
-                            android:id="@+id/hw_detail_kernel_release"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/oe_space_xs"
-                            android:fontFamily="monospace"
-                            android:text="• 宿主内核版本：Linux 6.6 aarch64"
-                            android:textColor="#F5F4F0"
-                            android:textSize="10sp" />
-
-                        <TextView
-                            android:id="@+id/hw_detail_device_model"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/oe_space_xs"
-                            android:fontFamily="monospace"
-                            android:text="• 设备厂商型号：读取中…"
-                            android:textColor="#8E929B"
-                            android:textSize="10sp" />
                     </LinearLayout>
                 </LinearLayout>
 
