@@ -2,6 +2,7 @@ package io.github.nyzeep.orchestella;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -393,19 +394,47 @@ public final class AcceleratorLaneAssemblyTest {
 
         if (BuildConfig.UML_FAST_PROFILE) {
             // The fast INITRAMFS shape needs no external root: the precheck
-            // passes and the spawn attempt fails honestly on the stand-in
-            // file (every spawn failure is the fixed SPAWN_FAILED code).
-            assertEquals(UmlFaceLauncher.StartCode.SPAWN_FAILED, result.code());
+            // passes and the spawn is ATTEMPTED on the empty stand-in file.
+            // The attempt's outcome is platform-defined, and both answers are
+            // honest: Windows CreateProcess refuses a non-image outright
+            // (IOException inside the spawner, the fixed SPAWN_FAILED code),
+            // while a POSIX execvp honors the ENOEXEC -> /bin/sh fallback and
+            // CREATES a process (an empty script exits immediately), so the
+            // face honestly reports STARTED there and probe() reaps it lazily.
+            // The invariant that holds on every platform: the face either
+            // refuses with the fixed spawn code or started for real — it
+            // never fakes readiness or invents a third verdict.
+            assertTrue("the fast shape must attempt the spawn: the fixed spawn "
+                    + "refusal (CreateProcess rejects a non-image) or an honest start "
+                    + "(POSIX execvp runs the empty stand-in through its /bin/sh "
+                    + "fallback); anything else fakes or misplaces a verdict",
+                    result.code() == UmlFaceLauncher.StartCode.SPAWN_FAILED
+                        || result.code() == UmlFaceLauncher.StartCode.STARTED);
         } else {
             // The runner shape requires the rootfs directory: the fixed
             // refusal names it before any spawn attempt.
             assertEquals(UmlFaceLauncher.StartCode.MISSING_ASSET, result.code());
             assertEquals(UmlFaceLauncher.ROOTFS_DIR_NAME, result.detail());
         }
-        // Either way the face never fakes a running state.
+        // Either way the face never fakes a running state: once the spawn
+        // outcome is reaped, the width reads 0 and the state is stopped.
+        // probe() owns the lazy reap; a POSIX-started empty stand-in dies the
+        // moment its (empty) /bin/sh script ends, so the bounded poll settles
+        // in one step — the bound exists so a pathological stand-in that stays
+        // alive fails this test loudly instead of hanging it.
+        UmlFaceLauncher.Health observed = face.probe();
+        long reapDeadlineNanos = System.nanoTime() + 2_000_000_000L;
+        while (observed == UmlFaceLauncher.Health.HEALTHY
+                && System.nanoTime() < reapDeadlineNanos) {
+            Thread.sleep(5);
+            observed = face.probe();
+        }
+        assertNotEquals("a spawned stand-in kernel must die (or the spawn must "
+                + "have been refused): a healthy face here would mean the fake "
+                + "kernel served real work", UmlFaceLauncher.Health.HEALTHY, observed);
         assertEquals(0, face.width());
-        assertEquals(UmlFaceLauncher.Health.NOT_RUNNING, face.probe());
         assertEquals(UmlFaceLauncher.State.STOPPED, face.state());
+        assertEquals(UmlFaceLauncher.Health.NOT_RUNNING, face.probe());
     }
 
     // --- Lane A (2026-11-13): the spawner-injecting umlFace slot -----------------
