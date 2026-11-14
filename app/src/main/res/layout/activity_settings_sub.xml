@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generic Settings sub-page shell (T3 settings IA redesign): one shell,
+     one section layout inflated into settings_sub_container per the intent
+     extra read by SettingsSubActivity (EXTRA_SECTION). No Fragment — the
+     section layout is plain XML inflated into this container.
+     ThemeApplier.prepare/bind in the activity keeps the custom wallpaper,
+     corners and surface opacity alive here (AboutActivity paradigm); ids are
+     free-form because the wallpaper path binds the activity root directly.
+     Entrance transition: a scale+alpha container-transform approximation is
+     played by SettingsSubActivity on settings_sub_container (alpha/scale
+     only, no layout-height animation). -->
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/settings_sub_root_coordinator"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="?attr/colorSurface">
+
+    <com.google.android.material.appbar.AppBarLayout
+        android:id="@+id/settings_sub_app_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="?attr/colorSurface"
+        app:elevation="0dp">
+
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/settings_sub_toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            app:navigationIcon="?attr/homeAsUpIndicator"
+            app:titleTextColor="?attr/colorOnSurface" />
+    </com.google.android.material.appbar.AppBarLayout>
+
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:id="@+id/settings_sub_container"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingStart="@dimen/oe_space_lg"
+            android:paddingEnd="@dimen/oe_space_lg"
+            android:paddingTop="@dimen/oe_space_sm"
+            android:paddingBottom="36dp" />
+    </androidx.core.widget.NestedScrollView>
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

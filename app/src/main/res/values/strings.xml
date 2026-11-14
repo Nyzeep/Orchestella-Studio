@@ -522,6 +522,20 @@
     <string name="settings_entry_system_title">系统镜像源策略与更新设置</string>
     <string name="settings_entry_about_title">关于 Orchestella Studio</string>
 
+    <!-- 设置页分节目录 + 子页（T3 settings IA redesign）：一级页收敛为
+         分节目录（行几何 oe_list_item_min_h + chevron），四个子节进
+         SettingsSubActivity（外观与主题 / 镜像源与加速 / 关于与合规 / 高级）；
+         「虚拟化与架构」摘要卡保留一级（决策项）。行标题与子页标题同源。 -->
+    <string name="settings_section_appearance_title">外观与主题</string>
+    <string name="settings_section_appearance_subtitle">主题、明暗、圆角、强调色、背景与终端显示偏好</string>
+    <string name="settings_section_mirror_title">镜像源与加速</string>
+    <string name="settings_section_mirror_subtitle">系统软件源策略、一键测速优选与 Docker 加速源</string>
+    <string name="settings_section_about_title">关于与合规</string>
+    <string name="settings_section_about_subtitle">版本信息与官方发行版商标合规声明</string>
+    <string name="settings_section_advanced_title">高级</string>
+    <string name="settings_section_advanced_subtitle">pVM 编译加速与启动阶段诊断</string>
+    <string name="settings_trademark_disclosure_title">商标与合规声明</string>
+
     <!-- 03/硬件页（UI 重新设计轮）：摘要卡 + 完整参数二级抽屉。SEC 头部
          标题自布局字面量收拢为单一来源（原文案逐字保留）；摘要 chip 短值
          与完整读数同源（MainActivity 渲染），完整参数在二级抽屉。 -->
