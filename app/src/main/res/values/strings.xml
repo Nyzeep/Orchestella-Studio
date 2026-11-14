@@ -540,4 +540,11 @@
     <string name="chip_hw_value_cores">%1$d 核</string>
     <string name="chip_hw_value_ram">%1$d GB</string>
     <string name="chip_hw_value_os">Android %1$s</string>
+
+    <!-- 01/工作站（UI 重新设计轮）：HOST METRICS 网格 + 长文 ⓘ 说明对话框。 -->
+    <string name="host_metrics_header">HOST METRICS [PHYSICAL]</string>
+    <string name="metrics_storage_label">STORAGE</string>
+    <string name="workspace_info_dialog_title">运行状态详情</string>
+    <string name="net_info_dialog_title">网络运行时说明</string>
+    <string name="dialog_action_understood">了解</string>
 </resources>
