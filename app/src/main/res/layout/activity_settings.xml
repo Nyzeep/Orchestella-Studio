@@ -39,6 +39,82 @@
             android:paddingTop="@dimen/oe_space_sm"
             android:paddingBottom="36dp">
 
+            <!-- 分节目录（T3 settings IA redesign）：一级页收敛为分节目录，行几何
+                 oe_list_item_min_h + trailing chevron，行点击进 SettingsSubActivity
+                 对应节；「硬件虚拟化与运行架构」摘要卡保留一级（AVF 徽章 + 启动回退
+                 折叠块，决策项），仍在原位。 -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/card_settings_directory"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/oe_space_sm"
+                app:cardCornerRadius="0dp"
+                app:cardElevation="0dp"
+                app:strokeWidth="1dp"
+                app:strokeColor="?attr/colorOutlineVariant"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingTop="@dimen/oe_space_xs"
+                    android:paddingBottom="@dimen/oe_space_xs">
+
+                    <!-- 外观与主题行（其余分节行随迁移提交加入） -->
+                    <LinearLayout
+                        android:id="@+id/row_settings_appearance"
+                        android:layout_width="match_parent"
+                        android:layout_height="@dimen/oe_list_item_min_h"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:background="?android:attr/selectableItemBackground"
+                        android:paddingStart="@dimen/oe_space_md"
+                        android:paddingEnd="@dimen/oe_space_md"
+                        android:clickable="true"
+                        android:focusable="true">
+
+                        <ImageView
+                            android:layout_width="@dimen/oe_icon_inline"
+                            android:layout_height="@dimen/oe_icon_inline"
+                            android:src="@drawable/ic_sym_palette"
+                            android:importantForAccessibility="no"
+                            app:tint="?attr/colorPrimary" />
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="@dimen/oe_space_sm"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="@string/settings_section_appearance_title"
+                                android:textSize="13sp"
+                                android:textStyle="bold"
+                                android:textColor="?attr/colorOnSurface" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/oe_space_xs"
+                                android:text="@string/settings_section_appearance_subtitle"
+                                android:textSize="11sp"
+                                android:textColor="?attr/colorOutline" />
+                        </LinearLayout>
+
+                        <ImageView
+                            android:layout_width="@dimen/oe_icon_inline"
+                            android:layout_height="@dimen/oe_icon_inline"
+                            android:src="@drawable/ic_sym_chevron_right"
+                            android:importantForAccessibility="no"
+                            app:tint="?attr/colorOutline" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
             <!-- ============================================== -->
             <!-- 分区 1：镜像源与容器加速管理 (Mirror Management) -->
             <!-- ============================================== -->
@@ -330,112 +406,6 @@
             </com.google.android.material.card.MaterialCardView>
 
             <!-- ============================================== -->
-            <!-- 分区 3：终端使用体验偏好 (Terminal Preferences) -->
-            <!-- ============================================== -->
-            <LinearLayout
-                style="@style/Widget.Orchestella.InlineIconRow"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/oe_space_xl"
-                android:layout_marginBottom="@dimen/oe_space_sm">
-
-                <ImageView
-                    style="@style/Widget.Orchestella.InlineIcon"
-                    app:srcCompat="@drawable/ic_sym_terminal"
-                    app:tint="?attr/colorPrimary" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="终端使用体验偏好"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    android:textColor="?attr/colorPrimary" />
-            </LinearLayout>
-
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/card_settings_terminal"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                app:cardCornerRadius="0dp"
-                app:cardElevation="0dp"
-                app:strokeWidth="1dp"
-                app:strokeColor="?attr/colorOutlineVariant"
-                app:cardBackgroundColor="?attr/colorSurfaceContainer">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="@dimen/oe_space_xl">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical">
-
-                        <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical">
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="光标周期性闪烁动画"
-                                android:textSize="15sp"
-                                android:textStyle="bold"
-                                android:textColor="?attr/colorOnSurface" />
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="@dimen/oe_space_xs"
-                                android:text="关闭后保持光标可见；偏好会保存并立即应用"
-                                android:textSize="12sp"
-                                android:textColor="?attr/colorOutline" />
-                        </LinearLayout>
-
-                        <com.google.android.material.materialswitch.MaterialSwitch
-                            android:id="@+id/switch_settings_cursor_blink"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:minWidth="48dp"
-                            android:minHeight="48dp"
-                            android:contentDescription="终端光标闪烁"
-                            android:checked="true" />
-                    </LinearLayout>
-
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginTop="@dimen/oe_space_md"
-                        android:layout_marginBottom="@dimen/oe_space_md"
-                        android:background="?attr/colorOutlineVariant" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="配色与字体规范"
-                        android:textSize="15sp"
-                        android:textStyle="bold"
-                        android:textColor="?attr/colorOnSurface" />
-
-                    <TextView
-                        android:id="@+id/txt_settings_terminal_palette"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/oe_space_xs"
-                        android:text="配色与 16 色 ANSI 调色板跟随当前主题\n字体：等宽对齐"
-                        android:textSize="12sp"
-                        android:textColor="?attr/colorOutline" />
-
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- ============================================== -->
             <!-- 分区 4：关于与官方商标声明 (About & Licenses)   -->
             <!-- ============================================== -->
             <LinearLayout
@@ -505,285 +475,6 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-
-            <!-- ============ 外观与主题 ============ -->
-            <LinearLayout
-                style="@style/Widget.Orchestella.InlineIconRow"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/oe_space_xl">
-
-                <ImageView
-                    style="@style/Widget.Orchestella.InlineIcon"
-                    app:srcCompat="@drawable/ic_sym_palette"
-                    app:tint="?attr/colorPrimary" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="外观与主题"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    android:textColor="?attr/colorPrimary" />
-            </LinearLayout>
-
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/card_settings_theme"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/oe_space_sm"
-                app:cardCornerRadius="0dp"
-                app:cardElevation="0dp"
-                app:strokeWidth="1dp"
-                app:strokeColor="?attr/colorOutlineVariant"
-                app:cardBackgroundColor="?attr/colorSurfaceContainer">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="@dimen/oe_space_xl">
-
-                    <TextView
-                        android:id="@+id/txt_settings_theme_summary"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginBottom="@dimen/oe_space_md"
-                        android:text="当前主题"
-                        android:textSize="13sp"
-                        android:accessibilityLiveRegion="polite"
-                        android:textColor="?attr/colorOnSurfaceVariant" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_pick_theme_mode"
-                        style="@style/Widget.Orchestella.Button.Outlined"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:minHeight="48dp"
-                        android:insetTop="0dp"
-                        android:insetBottom="0dp"
-                        app:cornerRadius="0dp"
-                        android:text="明暗模式：跟随系统"
-                        android:textSize="13sp" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_pick_theme"
-                        style="@style/Widget.Orchestella.Button.Tonal"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/oe_space_sm"
-                        android:minHeight="48dp"
-                        android:insetTop="0dp"
-                        android:insetBottom="0dp"
-                        app:cornerRadius="0dp"
-                        android:text="选择主题"
-                        android:textSize="13sp" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_pick_custom_theme"
-                        style="@style/Widget.Orchestella.Button.Tonal"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:minHeight="48dp"
-                        android:layout_marginTop="@dimen/oe_space_sm"
-                        android:insetTop="0dp"
-                        android:insetBottom="0dp"
-                        app:cornerRadius="0dp"
-                        android:text="自定义配色（3 组）"
-                        android:textSize="13sp" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_pick_corner_radius"
-                        style="@style/Widget.Orchestella.Button.Tonal"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:minHeight="48dp"
-                        android:layout_marginTop="@dimen/oe_space_sm"
-                        android:insetTop="0dp"
-                        android:insetBottom="0dp"
-                        app:cornerRadius="0dp"
-                        android:text="按钮圆角：直角（默认）"
-                        android:textSize="13sp" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_pick_accent"
-                        style="@style/Widget.Orchestella.Button.Tonal"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:minHeight="48dp"
-                        android:layout_marginTop="@dimen/oe_space_sm"
-                        android:insetTop="0dp"
-                        android:insetBottom="0dp"
-                        app:cornerRadius="0dp"
-                        android:text="自定义强调色"
-                        android:textSize="13sp" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_pick_background"
-                        style="@style/Widget.Orchestella.Button.Tonal"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:minHeight="48dp"
-                        android:layout_marginTop="@dimen/oe_space_sm"
-                        android:insetTop="0dp"
-                        android:insetBottom="0dp"
-                        app:cornerRadius="0dp"
-                        android:text="选择背景图片"
-                        android:textSize="13sp" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_clear_background"
-                        style="@style/Widget.Orchestella.Button.Outlined"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:minHeight="48dp"
-                        android:layout_marginTop="@dimen/oe_space_sm"
-                        android:insetTop="0dp"
-                        android:insetBottom="0dp"
-                        app:cornerRadius="0dp"
-                        android:text="清除自定义背景"
-                        android:textSize="12sp" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_pick_terminal_background"
-                        style="@style/Widget.Orchestella.Button.Tonal"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:minHeight="48dp"
-                        android:layout_marginTop="@dimen/oe_space_sm"
-                        android:insetTop="0dp"
-                        android:insetBottom="0dp"
-                        app:cornerRadius="0dp"
-                        android:text="选择终端背景图片"
-                        android:textSize="13sp" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_clear_terminal_background"
-                        style="@style/Widget.Orchestella.Button.Outlined"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:minHeight="48dp"
-                        android:layout_marginTop="@dimen/oe_space_sm"
-                        android:insetTop="0dp"
-                        android:insetBottom="0dp"
-                        app:cornerRadius="0dp"
-                        android:text="清除终端背景"
-                        android:textSize="12sp" />
-
-                    <TextView
-                        android:id="@+id/txt_settings_theme_applies_live"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/oe_space_md"
-                        android:text="主题、配色、圆角与背景立即生效，无需重启"
-                        android:textSize="12sp"
-                        android:textColor="?attr/colorOutline" />
-
-                    <TextView
-                        android:id="@+id/tv_terminal_scrim_label"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/oe_space_lg"
-                        android:text="背景遮罩浓度：70%"
-                        android:textSize="12sp"
-                        android:textColor="?attr/colorOnSurfaceVariant" />
-
-                    <SeekBar
-                        android:id="@+id/seek_terminal_scrim"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:minHeight="48dp"
-                        android:contentDescription="背景遮罩浓度"
-                        android:max="90" />
-
-                    <TextView
-                        android:id="@+id/txt_settings_scrim_hint"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/oe_space_xs"
-                        android:text="仅作用于终端背景图片上方的遮罩；未选择终端背景图时不显示效果。"
-                        android:textSize="11sp"
-                        android:textColor="?attr/colorOutline" />
-
-                    <TextView
-                        android:id="@+id/tv_ui_surface_opacity_label"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/oe_space_lg"
-                        android:text="界面表面不透明度：100%"
-                        android:textSize="12sp"
-                        android:textColor="?attr/colorOnSurfaceVariant" />
-
-                    <SeekBar
-                        android:id="@+id/seek_ui_surface_opacity"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:minHeight="48dp"
-                        android:contentDescription="界面表面不透明度"
-                        android:max="45" />
-
-                    <TextView
-                        android:id="@+id/txt_settings_opacity_hint"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/oe_space_xs"
-                        android:text="作用于卡片、顶栏、抽屉等界面表面；55% 为可读性下限。"
-                        android:textSize="11sp"
-                        android:textColor="?attr/colorOutline" />
-
-                    <TextView
-                        android:id="@+id/tv_font_size_label"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/oe_space_lg"
-                        android:text="终端字号：14sp"
-                        android:textSize="12sp"
-                        android:textColor="?attr/colorOnSurfaceVariant" />
-
-                    <SeekBar
-                        android:id="@+id/seek_terminal_font"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:minHeight="48dp"
-                        android:contentDescription="终端字号"
-                        android:min="0"
-                        android:max="12" />
-
-                    <TextView
-                        android:id="@+id/tv_letter_spacing_label"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/oe_space_sm"
-                        android:text="终端字间距：0.00em"
-                        android:textSize="12sp"
-                        android:textColor="?attr/colorOnSurfaceVariant" />
-
-                    <SeekBar
-                        android:id="@+id/seek_letter_spacing"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:minHeight="48dp"
-                        android:contentDescription="终端字间距"
-                        android:max="20" />
-
-                    <TextView
-                        android:id="@+id/tv_line_spacing_label"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/oe_space_sm"
-                        android:text="终端额外行距：0px"
-                        android:textSize="12sp"
-                        android:textColor="?attr/colorOnSurfaceVariant" />
-
-                    <SeekBar
-                        android:id="@+id/seek_terminal_line_spacing"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:minHeight="48dp"
-                        android:contentDescription="终端额外行距"
-                        android:max="8" />
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
 
             <!-- ============ 加速与性能 ============ -->
             <LinearLayout
