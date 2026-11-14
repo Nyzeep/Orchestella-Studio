@@ -58,6 +58,13 @@ import java.io.InputStreamReader
  *   byte-for-byte passthrough; flag on without the libs throws the named
  *   [IOException] the launcher's `SPAWN_FAILED` code catches — never a
  *   silent launch of an unroutable kernel under a wired arm line.
+ * - [UmlRootfsExtraArgs] — the Gate 2 E2E wired-arm decision (launcher v2
+ *   wiring, 2026-11-13): bridge on + the provisioned rootfs tree ready → the
+ *   external-root triple `umroot=<extracted dir>`, `umrootfstype=hostfs`,
+ *   `um.net=1` rides the launch params' existing extraArgs seam (the launcher
+ *   appends them verbatim after the fast-profile base line); every other
+ *   shape answers zero extra args and the face keeps the built-in-initramfs
+ *   probe shape byte for byte.
  *
  * The compile channel wiring follows the fourth build flag
  * (`orchestella.uml.compileBridge` → `BuildConfig.UML_COMPILE_BRIDGE`, default
@@ -270,6 +277,63 @@ class UmlNetSupervisorSpawner(
 
         /** supervisor + --passt + passt + -- prepended to the kernel command. */
         const val SUPERVISOR_PREFIX_LENGTH = 4
+    }
+}
+
+/**
+ * Gate 2 E2E (2026-11-13, launcher v2 wiring): the wired face's external-root
+ * extra-args decision — pure and JVM-testable, so the Android edge only feeds
+ * it the build flag and the pure-read readiness probe and never makes this
+ * decision inline.
+ *
+ * <p>Exactly three honest states:
+ * <ul>
+ *   <li>compile bridge off, or the rootfs-download gate closed, or the tree
+ *   not ready — [NONE]: the face keeps the built-in-initramfs probe shape
+ *   byte for byte. An unwired or unprovisioned build never fakes a routable
+ *   guest, and the probe's self-termination stays load-bearing for the
+ *   unwired arm's EOF reap contract;</li>
+ *   <li>bridge on and the provisioned tree ready — the external-root triple:
+ *   `umroot=<the extracted tree's absolute path>` (the HOSTFS mount option
+ *   the fast init switch_roots into, i.e. the tree whose `/um-command.sh` is
+ *   the provisioner-owned v2 launcher), `umrootfstype=hostfs`, and
+ *   [UM_NET_ARG] — the v2 launcher's guest-network boot knob (passt DHCP,
+ *   apk add distcc, distccd daemonized on 3632, resident).</li>
+ * </ul>
+ *
+ * <p>The caller invokes this off the main thread: [UmlRootfsProvisioner.readiness]
+ * is a pure-read probe but hashes the pinned artifact (~4 MB), so it belongs
+ * on the launch chain's IO executor — the arm path already runs there.
+ */
+object UmlRootfsExtraArgs {
+    /** The zero-extra-args answer: the historical probe shape, untouched. */
+    val NONE: List<String> = emptyList()
+
+    /** The v2 launcher's guest-network boot knob (the um.net branch guard). */
+    const val UM_NET_ARG = "um.net=1"
+
+    /** The fast init's external-root fstype for the provisioned tree. */
+    const val UMROOT_FSTYPE_ARG = "umrootfstype=hostfs"
+
+    /**
+     * The decision for one arm. The readiness report must come from the
+     * caller's own off-main probe ([UmlRootfsProvisioner.readiness]); a
+     * ready report's extracted dir is the HOSTFS umroot target by the
+     * provisioner's own naming contract — nothing is restated here.
+     */
+    fun forArm(
+        compileBridgeEnabled: Boolean,
+        readiness: UmlRootfsProvisioner.ReadinessReport,
+    ): List<String> {
+        if (!compileBridgeEnabled || !readiness.enabled || !readiness.ready) {
+            return NONE
+        }
+        val extractDir = readiness.extractedDir ?: return NONE
+        return listOf(
+            "umroot=" + extractDir.toAbsolutePath(),
+            UMROOT_FSTYPE_ARG,
+            UM_NET_ARG,
+        )
     }
 }
 

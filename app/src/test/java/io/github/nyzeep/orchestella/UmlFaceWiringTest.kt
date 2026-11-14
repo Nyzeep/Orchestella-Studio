@@ -741,6 +741,73 @@ class UmlFaceWiringTest {
         )
     }
 
+    // --- the Gate 2 E2E external-root extra-args decision (launcher v2 wiring) -------
+
+    @Test
+    fun wiredArmWithAReadyTreeRidesTheExternalRootTriple() {
+        val tree = temporaryFolder.newFolder("umroot-ready")
+        val args = UmlRootfsExtraArgs.forArm(
+            compileBridgeEnabled = true,
+            readiness = UmlRootfsProvisioner.ReadinessReport(true, true, tree.toPath(), 42, 42),
+        )
+        // Exactly the three-arg triple, in order: the provisioner-owned extract
+        // tree's absolute path (the HOSTFS mount target the fast init
+        // switch_roots into), the fstype, then the v2 launcher's um.net knob.
+        assertEquals(
+            listOf(
+                "umroot=" + tree.absolutePath,
+                UmlRootfsExtraArgs.UMROOT_FSTYPE_ARG,
+                UmlRootfsExtraArgs.UM_NET_ARG,
+            ),
+            args,
+        )
+        assertTrue("the umroot target is absolute", File(args[0].removePrefix("umroot=")).isAbsolute)
+    }
+
+    @Test
+    fun bridgeOffKeepsTheProbeShapeWithZeroExtraArgsEvenWhenTheTreeIsReady() {
+        val tree = temporaryFolder.newFolder("umroot-bridge-off")
+        // Flag off → zero, whatever the readiness says: an unwired build never
+        // fakes a routable guest, and the probe's self-termination stays the
+        // load-bearing EOF-reap contract.
+        assertEquals(
+            UmlRootfsExtraArgs.NONE,
+            UmlRootfsExtraArgs.forArm(
+                compileBridgeEnabled = false,
+                readiness = UmlRootfsProvisioner.ReadinessReport(true, true, tree.toPath(), 42, 42),
+            ),
+        )
+        assertEquals(
+            UmlRootfsExtraArgs.NONE,
+            UmlRootfsExtraArgs.forArm(false, UmlRootfsProvisioner.ReadinessReport.disabled()),
+        )
+    }
+
+    @Test
+    fun flagOnWithAnUnreadyOrGatedRootfsKeepsTheProbeShapeWithZeroExtraArgs() {
+        // Enabled but not provisioned yet: the honest degradation is the
+        // byte-identical probe shape, never a umroot pointing at a missing tree.
+        assertEquals(
+            UmlRootfsExtraArgs.NONE,
+            UmlRootfsExtraArgs.forArm(true, UmlRootfsProvisioner.ReadinessReport.notReady()),
+        )
+        // The rootfs-download gate closed: the probe answers disabled and the
+        // decision stays zero even with the bridge flag on.
+        assertEquals(
+            UmlRootfsExtraArgs.NONE,
+            UmlRootfsExtraArgs.forArm(true, UmlRootfsProvisioner.ReadinessReport.disabled()),
+        )
+        // A ready report without a tree (the record allows it; forArm must not
+        // build a umroot from nothing).
+        assertEquals(
+            UmlRootfsExtraArgs.NONE,
+            UmlRootfsExtraArgs.forArm(
+                true,
+                UmlRootfsProvisioner.ReadinessReport(true, true, null, 0, 0),
+            ),
+        )
+    }
+
     // --- fixtures -------------------------------------------------------------------
 
     /** Counts keep-alive acquire/release; [FaceFactory.lastKeepAlive] exposes the newest. */
