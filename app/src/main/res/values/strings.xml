@@ -489,8 +489,8 @@
     <string name="engine_uml_running_unwired">UML · 运行中 · 编译通道未接线</string>
     <string name="engine_uml_idle">UML · 未启用</string>
     <string name="engine_uml_face_gate_title">UML 编译面</string>
-    <string name="engine_uml_face_gate_build">当前构建未包含加速车道组件，UML 实验编译面不可用。\n应用继续使用完整 QEMU 路径运行 Linux 实例。</string>
-    <string name="engine_uml_face_gate_setting">UML 实验编译面随加速车道总开关关闭而停用（你在设置中关闭）。\n应用继续使用完整 QEMU 路径运行 Linux 实例。</string>
+    <string name="engine_uml_face_gate_build">当前构建未包含加速车道组件，UML 编译面不可用。\n应用继续使用完整 QEMU 路径运行 Linux 实例。</string>
+    <string name="engine_uml_face_gate_setting">UML 编译面随加速车道总开关关闭而停用（你在设置中关闭）。\n应用继续使用完整 QEMU 路径运行 Linux 实例。</string>
 
     <!-- UML rootfs 就绪卡（发行版 tab）：就绪=已验证+已解包+已注入启动脚本
          （官方镜像本身不含 um-command.sh，由 provisioner 注入，0755 幂等）；
