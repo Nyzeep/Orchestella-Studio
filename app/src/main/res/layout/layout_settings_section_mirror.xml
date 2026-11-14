@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 「镜像源与加速」设置子页节布局（T3 settings IA redesign）。
+     旧一级页「镜像源与容器加速管理」卡整体搬入：Spinner / 测速 / 恢复默认 /
+     测速结果框 / Docker 加速 4 行，控件 id 一律不变。
+     唯一几何变化：测速与恢复默认两枚 64dp 大按钮收敛为 oe_btn_h_secondary
+     （44dp 次级档，规格书模式卡 E「设置类界面不用大按钮墙」）。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <LinearLayout
+        style="@style/Widget.Orchestella.InlineIconRow"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/oe_space_sm"
+        android:layout_marginBottom="@dimen/oe_space_sm">
+
+        <ImageView
+            style="@style/Widget.Orchestella.InlineIcon"
+            app:srcCompat="@drawable/ic_sym_globe"
+            app:tint="?attr/colorPrimary" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="镜像源与容器加速管理"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:textColor="?attr/colorPrimary" />
+    </LinearLayout>
+
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/card_settings_mirrors"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        app:cardCornerRadius="0dp"
+        app:cardElevation="0dp"
+        app:strokeWidth="1dp"
+        app:strokeColor="?attr/colorOutlineVariant"
+        app:cardBackgroundColor="?attr/colorSurfaceContainer">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="@dimen/oe_space_xl">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="系统软件源策略 (apt / dnf / pacman / zypper)"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:textColor="?attr/colorOnSurface" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/oe_space_xs"
+                android:text="多层级回退：国内云镜像 (Tier 1) → 教育网骨干 (Tier 2) → 官方上游 (Tier 3)"
+                android:textSize="12sp"
+                android:textColor="?attr/colorOutline" />
+
+            <Spinner
+                android:id="@+id/spinner_settings_mirror_source"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:layout_marginTop="@dimen/oe_space_md"
+                android:background="@drawable/bg_status_badge"
+                android:paddingStart="@dimen/oe_space_md"
+                android:paddingEnd="@dimen/oe_space_md" />
+
+            <!-- Speed test & Auto-select row (44dp 次级档，行内化) -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/oe_space_md"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_settings_speed_test"
+                    style="@style/Widget.Orchestella.Button.Tonal"
+                    android:layout_width="0dp"
+                    android:layout_height="@dimen/oe_btn_h_secondary"
+                    android:minHeight="@dimen/oe_btn_h_secondary"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:gravity="center"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="@dimen/oe_icon_inline_gap"
+                    app:cornerRadius="0dp"
+                    app:icon="@drawable/ic_sym_lan"
+                    app:iconSize="18dp"
+                    android:text="一键测速并优选"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_settings_reset_mirror"
+                    style="@style/Widget.Orchestella.Button.Outlined"
+                    android:layout_width="0dp"
+                    android:layout_height="@dimen/oe_btn_h_secondary"
+                    android:minHeight="@dimen/oe_btn_h_secondary"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:gravity="center"
+                    android:layout_weight="1"
+                    android:layout_marginStart="@dimen/oe_icon_inline_gap"
+                    app:cornerRadius="0dp"
+                    android:text="恢复默认配置"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/txt_settings_speed_test_results"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/oe_space_sm"
+                android:background="?attr/colorSurfaceContainerLow"
+                android:padding="@dimen/oe_space_sm"
+                android:text="节点延迟监测就绪，点击上方按钮测速"
+                android:textSize="12sp"
+                android:textColor="?attr/colorOnSurfaceVariant" />
+
+            <!-- Docker mirrors subsection -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/oe_space_lg"
+                android:text="Docker 容器加速源 (/etc/docker/daemon.json)"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:textColor="?attr/colorOnSurface" />
+
+            <TextView
+                android:id="@+id/txt_settings_docker_mirrors"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/oe_icon_inline_gap"
+                android:background="?attr/colorSurfaceContainerLow"
+                android:padding="@dimen/oe_space_sm"
+                android:text="• 轩辕镜像 (docker.xuanyuan.me)\n• 毫秒镜像 (docker.1ms.run)\n• DaoCloud 加速 (docker.m.daocloud.io)\n• Docker Hub 官方兜底 (registry-1.docker.io)"
+                android:textSize="12sp"
+                android:textColor="?attr/colorOnSurfaceVariant" />
+
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+</LinearLayout>
