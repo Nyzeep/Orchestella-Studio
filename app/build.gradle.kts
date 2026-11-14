@@ -1459,13 +1459,25 @@ val verifyFastlaneToolboxApk = fastlaneToolboxDir?.let { toolboxProperty ->
 
 // The payload gate is deliberately separate from the toolbox gate: it proves
 // the APK entry itself is stored, aligned and exported for the AVF loader.
+// Single-package round: with the mixed-packaging decision the shippable APK is
+// the REPACKED output (the five payload entries are stored only after
+// repackPvmPayloadStore), so when the repack chain is enabled this gate reads
+// the full-package APK and rides the chain instead of AGP's raw output.
 val verifyFastlanePayloadApk = fastlanePayloadLibDir?.let { payloadProperty ->
     tasks.register<Exec>("verifyFastlanePayloadApk") {
         group = "verification"
         description = "Verifies the packaged arm64 Fast Lane payload, its symbol, zipalign and the absence of libvm_payload.so."
-        dependsOn("assembleDebug")
+        if (pvmRepackEnabled) {
+            dependsOn("verifyFullpkgSignature")
+        } else {
+            dependsOn("assembleDebug")
+        }
         workingDir(rootProject.projectDir)
-        val apk = layout.buildDirectory.file("outputs/apk/debug/app-debug.apk").get().asFile
+        val apk = if (pvmRepackEnabled) {
+            layout.buildDirectory.file("outputs/apk/fullpkg/app-debug-fullpkg.apk").get().asFile
+        } else {
+            layout.buildDirectory.file("outputs/apk/debug/app-debug.apk").get().asFile
+        }
         val sourceSo = rootProject.file(payloadProperty)
             .resolve("arm64-v8a/libfastlane_payload.so")
         val packagedSo = layout.buildDirectory.file(
