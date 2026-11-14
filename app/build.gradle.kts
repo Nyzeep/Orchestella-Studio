@@ -1023,8 +1023,18 @@ if (umlBundledFastProfile) {
 //     (uml-net-helper missing) honestly at runtime;
 //   - a dir provided: fail-closed staging — missing artifacts or a pin
 //     mismatch fail the build, never stage a half pair.
+// 2026-11-14 Lane A (umlroute E2E): umnet_bionic repinned to the forward-enabled
+// rebuild. The gate2-net build hardcodes passt `-t none` (no inbound forwarding,
+// umnet.c harness), which left the D-1 uml-tcp lane's dial target
+// (127.0.0.1:3632) with no listener — Connection refused, compile route dead.
+// The rebuild changes exactly one thing: passt's TCP inbound spec becomes
+// `-t 127.0.0.1/3632` — the loopback-only forward of the guest distccd port the
+// D-1 lane dials (no UDP inbound, no LAN exposure; preflight ④'s expected bind).
+// Patched source: umnet.c copied from the harness tree with the `-t` line and
+// its comment updated; build recipe unchanged (NDK API 30, -static, 16K page).
+// passt_bionic stays byte-identical to the Gate 2 pin.
 val umlNetHelperPins: Map<String, String> = linkedMapOf(
-    "umnet_bionic" to "2586201cea1b53197c0847699fdd187d0481da793996492789c58a75011fcb22",
+    "umnet_bionic" to "04c065c8069d3d979ba72f96cc9384a67e694e028f57fea9f70c971c285201b2",
     "passt_bionic" to "a8451a0152387f0eaeb0b90615168e10d6433336a91f38774c209cdbefd554b5",
 )
 
