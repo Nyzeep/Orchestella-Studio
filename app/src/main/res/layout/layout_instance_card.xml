@@ -6,8 +6,8 @@
      UI 重新设计轮（C6 布局段）：卡内边距归 oe_card_pad、卡距归
      oe_card_gap、图标盒归 oe_icon_box_lg，电源键 38dp 升
      oe_btn_h_primary(48dp) 档；「终端」次级按钮与电源键同排同高
-     （id 沿用既有隐藏别名 card_btn_terminal，先占位默认 gone，
-     点击接线随逻辑提交）。 -->
+     （id 沿用旧别名 card_btn_terminal；旧 0dp 隐藏别名钮已删除——
+     同 id 双钮触发 lint DuplicateIds，C6-B 逻辑接线即接此新钮）。 -->
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/instance_card"
@@ -219,12 +219,6 @@
 
             <ImageButton
                 android:id="@+id/card_btn_more"
-                android:layout_width="0dp"
-                android:layout_height="0dp"
-                android:visibility="gone" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/card_btn_terminal"
                 android:layout_width="0dp"
                 android:layout_height="0dp"
                 android:visibility="gone" />

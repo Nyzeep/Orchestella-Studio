@@ -16,6 +16,11 @@ NOTICE_QEMU = (
     "See guest-assets/SOURCE-OFFER.txt, docs/adr/0014-licensing.md section 3 "
     "and tools/qemu-android/gpl/QEMU-GPL-SOURCES.md.\n"
 )
+NOTICE_UML = (
+    "UML engine components ship in the main APK. The written-offer text for "
+    "the guest-runtime assets is guest-assets/SOURCE-OFFER.txt; the UML "
+    "components ride the same written-offer channel.\n"
+)
 NOTICE_GUEST = (
     "The agent is statically linked with musl 1.2.6-r2.\n"
     "Musl pin: tools/phase5/guest-agent-inputs.lock.json.\n"
@@ -43,6 +48,7 @@ AGENT_LOCK = {
 MANIFEST_FILES = [
     "LICENSE",
     "app/src/main/assets/NOTICE.QEMU",
+    "app/src/main/assets/NOTICE.UML",
     "app/src/main/assets/NOTICE.GUEST-RUNTIME",
     "app/src/main/assets/QEMU-GPL-SOURCES.md",
     "app/src/main/assets/QEMU-BUILD-INPUTS",
@@ -73,6 +79,7 @@ class LicenseCheckTests(unittest.TestCase):
             "GNU GENERAL PUBLIC LICENSE\nVersion 3, 29 June 2007\n",
         )
         write(self.root, "app/src/main/assets/NOTICE.QEMU", NOTICE_QEMU)
+        write(self.root, "app/src/main/assets/NOTICE.UML", NOTICE_UML)
         write(self.root, "app/src/main/assets/NOTICE.GUEST-RUNTIME", NOTICE_GUEST)
         write(self.root, "app/src/main/assets/QEMU-GPL-SOURCES.md", NOTICE_QEMU)
         write(
