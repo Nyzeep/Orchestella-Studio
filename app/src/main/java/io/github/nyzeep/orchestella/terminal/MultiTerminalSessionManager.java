@@ -245,6 +245,29 @@ public final class MultiTerminalSessionManager {
     }
 
     /**
+     * The console-bound primary session: the first session created for an
+     * instance. Only this one renders the runtime holder's live screen model;
+     * every later session owns a private model that starts empty at creation
+     * time (2026-11-14 terminal round: "new terminal" is a brand new output
+     * terminal, not a second view of the current one).
+     */
+    public TerminalSessionInstance getPrimarySession(String instanceId) {
+        if (instanceId == null) {
+            return null;
+        }
+        Map<String, TerminalSessionInstance> sessionMap = instanceSessions.get(instanceId);
+        if (sessionMap == null) {
+            return null;
+        }
+        synchronized (sessionMap) {
+            for (TerminalSessionInstance candidate : sessionMap.values()) {
+                return candidate;
+            }
+            return null;
+        }
+    }
+
+    /**
      * Returns the total session count for the instance.
      */
     public int getSessionCount(String instanceId) {

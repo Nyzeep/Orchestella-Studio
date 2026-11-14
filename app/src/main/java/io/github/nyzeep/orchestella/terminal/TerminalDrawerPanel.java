@@ -71,7 +71,7 @@ public final class TerminalDrawerPanel extends LinearLayout {
 
         // Header Title
         tvHeader = new TextView(context);
-        tvHeader.setText("终端输出视图");
+        tvHeader.setText(context.getString(io.github.nyzeep.orchestella.R.string.terminal_drawer_title));
         tvHeader.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
         tvHeader.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         tvHeader.setTextColor(theme.getText());
@@ -82,7 +82,7 @@ public final class TerminalDrawerPanel extends LinearLayout {
 
         // Honest labeling: each entry is an independent output view over the one guest shell.
         tvHeaderHint = new TextView(context);
-        tvHeaderHint.setText("输出视图共享同一 Shell 会话");
+        tvHeaderHint.setText(context.getString(io.github.nyzeep.orchestella.R.string.terminal_drawer_hint));
         tvHeaderHint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
         tvHeaderHint.setTextColor(theme.getTextDim());
         LinearLayout.LayoutParams hintLp = new LinearLayout.LayoutParams(
@@ -90,9 +90,9 @@ public final class TerminalDrawerPanel extends LinearLayout {
         hintLp.setMargins(0, 0, 0, dpToPx(10));
         addView(tvHeaderHint, hintLp);
 
-        // Top: "+ 新建输出视图" prominent action button
+        // Top: "+ 新建终端" prominent action button
         btnNewTerminal = new Button(context, null, android.R.attr.buttonStyleSmall);
-        btnNewTerminal.setText("+ 新建输出视图");
+        btnNewTerminal.setText(context.getString(io.github.nyzeep.orchestella.R.string.terminal_drawer_new));
         btnNewTerminal.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
         btnNewTerminal.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         btnNewTerminal.setTextColor(ThemeColors.INSTANCE.onColor(theme.getPrimary()));
@@ -328,7 +328,7 @@ public final class TerminalDrawerPanel extends LinearLayout {
             input.setTextColor(theme.getText());
 
             new AlertDialog.Builder(ctx)
-                    .setTitle("重命名输出视图")
+                    .setTitle(io.github.nyzeep.orchestella.R.string.terminal_drawer_rename_title)
                     .setView(input)
                     .setPositiveButton("确定", (dialog, which) -> {
                         String newTitle = input.getText().toString().trim();
@@ -343,7 +343,7 @@ public final class TerminalDrawerPanel extends LinearLayout {
         private void showCloseConfirmDialog(TerminalSessionInstance session) {
             Context ctx = itemView.getContext();
             new AlertDialog.Builder(ctx)
-                    .setTitle("关闭输出视图")
+                    .setTitle(io.github.nyzeep.orchestella.R.string.terminal_drawer_close_title)
                     .setMessage("关闭 \"" + session.getTitle() + "\"？Shell 会话继续运行。")
                     .setPositiveButton("关闭", (dialog, which) -> {
                         if (callback != null) {

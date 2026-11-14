@@ -21,6 +21,16 @@ public final class TerminalSessionInstance {
     private final String instanceId;
     private volatile String title;
     private final TerminalRingBuffer ringBuffer;
+    /**
+     * Per-session screen state (2026-11-14 terminal round). A session owns its
+     * own {@link TerminalScreenModel} so switching terminals restores that
+     * session's own viewport instead of replaying the shared console snapshot;
+     * the primary session binds the live console model through
+     * {@link #bindScreenModel}. Background sessions keep receiving the same
+     * byte stream (one guest console today), but each keeps its own scrollback,
+     * cursor and alternate-screen state.
+     */
+    private volatile TerminalScreenModel screenModel = new TerminalScreenModel(80, 24);
     private volatile int cursorPosition = 0;
     private volatile String imeBuffer = "";
     private final AtomicBoolean active = new AtomicBoolean(true);
@@ -74,6 +84,22 @@ public final class TerminalSessionInstance {
 
     public TerminalRingBuffer getRingBuffer() {
         return ringBuffer;
+    }
+
+    public TerminalScreenModel getScreenModel() {
+        return screenModel;
+    }
+
+    /**
+     * Binds this session to an externally owned screen model (the console-bound
+     * primary session uses the runtime holder's model, which must stay the
+     * single canonical renderer for the live shell). Secondary sessions never
+     * call this: they keep the private model created with the session.
+     */
+    public void bindScreenModel(TerminalScreenModel model) {
+        if (model != null) {
+            screenModel = model;
+        }
     }
 
     public String getTranscript() {

@@ -90,9 +90,16 @@ public class TerminalActivity extends Activity {
     private DrawerLayout drawerLayout;
     private LinearLayout rootLayout;
     private TerminalDrawerPanel drawerPanel;
-    private LinearLayout sessionHeader;
-    private TextView tvSessionTitle;
-    private Button btnDrawerHandle;
+    /**
+     * Floating session chip (2026-11-14 terminal round). The old 40dp header
+     * row above the viewport is gone — the user asked for the output-view bar
+     * to disappear while the terminal runs — so the session-list entry is an
+     * overlay that costs zero layout height and dims itself when idle.
+     */
+    private TextView floatingSessionChip;
+    private final Runnable dimSessionChip = () -> {
+        if (floatingSessionChip != null) floatingSessionChip.setAlpha(0.38f);
+    };
     private MultiTerminalSessionManager multiManager;
     private final java.util.concurrent.atomic.AtomicBoolean sessionDeathHandled =
             new java.util.concurrent.atomic.AtomicBoolean(false);
@@ -165,7 +172,10 @@ public class TerminalActivity extends Activity {
         };
         terminalView.setInputSink(inputSink);
         terminalView.setStickyStateMachine(stickyStateMachine);
-        terminalView.setSizeListener((columns, rows) -> scheduleTerminalResize());
+        terminalView.setSizeListener((columns, rows) -> {
+            syncSessionScreens(columns, rows);
+            scheduleTerminalResize();
+        });
         terminalView.setTerminalInputEnabled(false);
         contentArea.addView(terminalView, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
@@ -176,38 +186,19 @@ public class TerminalActivity extends Activity {
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
         // Reserve header height above the VT viewport; controls must never cover output.
-        sessionHeader = new LinearLayout(this);
-        sessionHeader.setOrientation(LinearLayout.HORIZONTAL);
-        sessionHeader.setGravity(Gravity.CENTER_VERTICAL);
-        sessionHeader.setPadding(dpToPx(10), 0, dpToPx(8), 0);
-        sessionHeader.setBackgroundColor(effectiveSurface(themeStore.resolve()));
-        tvSessionTitle = new TextView(this);
-        tvSessionTitle.setText("终端 1");
-        tvSessionTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
-        tvSessionTitle.setTextColor(themeStore.resolve().getTerminalForeground());
-        tvSessionTitle.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-        tvSessionTitle.setSingleLine(true);
-        tvSessionTitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        tvSessionTitle.setGravity(Gravity.CENTER_VERTICAL);
-        sessionHeader.addView(tvSessionTitle, new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.MATCH_PARENT, 1f));
-
-        btnDrawerHandle = new Button(this, null, android.R.attr.buttonStyleSmall);
-        btnDrawerHandle.setText("1个输出视图");
-        btnDrawerHandle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
-        btnDrawerHandle.setTextColor(themeStore.resolve().getAccent());
-        btnDrawerHandle.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-        btnDrawerHandle.setAllCaps(false);
-        btnDrawerHandle.setSingleLine(true);
-        btnDrawerHandle.setFocusable(false);
-        btnDrawerHandle.setMinWidth(0);
-        btnDrawerHandle.setMinimumWidth(0);
-        btnDrawerHandle.setMinHeight(0);
-        btnDrawerHandle.setMinimumHeight(0);
-        btnDrawerHandle.setBackground(createPillBackground(
+        // 2026-11-14 terminal round: the header row is gone. The session entry is a
+        // floating chip laid over the top-right corner of the viewport, so the VT grid
+        // gets the whole height instead of losing 40dp to chrome.
+        floatingSessionChip = new TextView(this);
+        floatingSessionChip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
+        floatingSessionChip.setTextColor(themeStore.resolve().getTerminalForeground());
+        floatingSessionChip.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        floatingSessionChip.setSingleLine(true);
+        floatingSessionChip.setGravity(Gravity.CENTER);
+        floatingSessionChip.setPadding(dpToPx(10), dpToPx(4), dpToPx(10), dpToPx(4));
+        floatingSessionChip.setBackground(createPillBackground(
                 effectiveSurface(themeStore.resolve()), themeStore.resolve().getGlow(), 8f));
-        btnDrawerHandle.setPadding(dpToPx(10), 0, dpToPx(10), 0);
-        btnDrawerHandle.setOnClickListener(v -> {
+        floatingSessionChip.setOnClickListener(v -> {
             if (drawerLayout != null) {
                 if (drawerLayout.isDrawerOpen(GravityCompat.END)) {
                     drawerLayout.closeDrawer(GravityCompat.END);
@@ -219,10 +210,13 @@ public class TerminalActivity extends Activity {
                 }
             }
         });
-        sessionHeader.addView(btnDrawerHandle, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.MATCH_PARENT));
-        rootLayout.addView(sessionHeader, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(40)));
+        FrameLayout.LayoutParams chipLp = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP | Gravity.END);
+        chipLp.topMargin = dpToPx(8);
+        chipLp.rightMargin = dpToPx(8);
+        contentArea.addView(floatingSessionChip, chipLp);
+
         rootLayout.addView(contentArea, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
@@ -269,7 +263,7 @@ public class TerminalActivity extends Activity {
                         }
                         switchToSessionUi(newSession);
                         android.widget.Toast.makeText(TerminalActivity.this,
-                                "已新建输出视图，与当前 Shell 共享输入", android.widget.Toast.LENGTH_SHORT).show();
+                                getString(R.string.terminal_new_session_toast), android.widget.Toast.LENGTH_SHORT).show();
                     } catch (Exception e) {
                         android.widget.Toast.makeText(TerminalActivity.this, e.getMessage(), android.widget.Toast.LENGTH_SHORT).show();
                     }
@@ -284,7 +278,7 @@ public class TerminalActivity extends Activity {
                 if (multiManager != null && instanceId != null) {
                     multiManager.renameSession(instanceId, targetSession.getSessionId(), newTitle);
                     TerminalSessionInstance currentActive = multiManager.getActiveSession(instanceId);
-                    updateDrawerHandleText(currentActive);
+                    updateSessionChip(currentActive);
                     if (drawerPanel != null) {
                         drawerPanel.refresh();
                     }
@@ -309,7 +303,7 @@ public class TerminalActivity extends Activity {
                         }
                     } else {
                         TerminalSessionInstance currentActive = multiManager.getActiveSession(instanceId);
-                        updateDrawerHandleText(currentActive);
+                        updateSessionChip(currentActive);
                     }
                     if (drawerPanel != null) {
                         drawerPanel.refresh();
@@ -421,15 +415,9 @@ public class TerminalActivity extends Activity {
 
     /** Repaints the session header, drawer handle and offline card with the active theme. */
     private void applyChromeColors(AppTheme theme) {
-        if (sessionHeader != null) {
-            sessionHeader.setBackgroundColor(effectiveSurface(theme));
-        }
-        if (tvSessionTitle != null) {
-            tvSessionTitle.setTextColor(theme.getTerminalForeground());
-        }
-        if (btnDrawerHandle != null) {
-            btnDrawerHandle.setTextColor(theme.getAccent());
-            btnDrawerHandle.setBackground(createPillBackground(effectiveSurface(theme), theme.getGlow(), 8f));
+        if (floatingSessionChip != null) {
+            floatingSessionChip.setTextColor(theme.getTerminalForeground());
+            floatingSessionChip.setBackground(createPillBackground(effectiveSurface(theme), theme.getGlow(), 8f));
         }
         if (tvOfflineTitle != null) tvOfflineTitle.setTextColor(theme.getPrimary());
         if (tvOfflineMessage != null) tvOfflineMessage.setTextColor(theme.getText());
@@ -531,7 +519,7 @@ public class TerminalActivity extends Activity {
                                     && target.bridgeClient() == expectedClient && foregroundActive && !isDestroyed()
                                     && foreground == foregroundGeneration && binding == bindingGeneration);
                     bridgeStatus = "";
-                    updateDrawerHandleText(multiManager.getActiveSession(instanceId));
+                    updateSessionChip(multiManager.getActiveSession(instanceId));
                     scheduleTerminalResize();
                 });
             }
@@ -721,8 +709,8 @@ public class TerminalActivity extends Activity {
         if (terminalView != null) {
             terminalView.setVisibility(View.VISIBLE);
         }
-        if (sessionHeader != null) {
-            sessionHeader.setVisibility(View.VISIBLE);
+        if (floatingSessionChip != null) {
+            floatingSessionChip.setVisibility(View.VISIBLE);
         }
 
         if (instanceId != null) {
@@ -737,7 +725,11 @@ public class TerminalActivity extends Activity {
                     active.appendOutput(snapshot);
                 }
             }
-            updateDrawerHandleText(active);
+            // The primary session renders the console's canonical screen model; a
+            // secondary session keeps its own model and therefore never mirrors it.
+            TerminalSessionInstance primary = multiManager.getPrimarySession(instanceId);
+            if (primary != null) primary.bindScreenModel(holder.getScreenModel());
+            updateSessionChip(active);
             if (drawerPanel != null) {
                 drawerPanel.refresh();
             }
@@ -765,6 +757,10 @@ public class TerminalActivity extends Activity {
                 TerminalSessionInstance active = multiManager.getActiveSession(boundInstanceId);
                 if (active != null) active.appendOutput(chunk);
                 terminalView.appendOutput(chunk);
+                // Background sessions share one guest console, so they get the same
+                // bytes — but each parses them into its own screen model, which is
+                // why switching terminals restores that session's own viewport.
+                feedBackgroundScreens(boundInstanceId, active, chunk);
                 LogViewerActivity.appendGuestConsole(this, boundInstanceId, chunk);
             });
         };
@@ -775,9 +771,17 @@ public class TerminalActivity extends Activity {
             if (!holder.hasOwner() || sessionDeathHandled.compareAndSet(false, true)) reconcileAndConnect();
         }));
         String replay = holder.attach(terminalOutputListener);
-        terminalView.setSessionScreen(holder.getScreenModel());
         TerminalSessionInstance active = multiManager.getActiveSession(boundInstanceId);
-        if (active != null) { active.clear(); active.appendOutput(replay); }
+        TerminalSessionInstance primary = multiManager.getPrimarySession(boundInstanceId);
+        if (active != null && active == primary) {
+            terminalView.setSessionScreen(holder.getScreenModel());
+            active.clear();
+            active.appendOutput(replay);
+        } else if (active != null) {
+            terminalView.setSessionScreen(active.getScreenModel());
+        } else {
+            terminalView.setSessionScreen(holder.getScreenModel());
+        }
         startBridgeServingIfNecessary(session);
         scheduleTerminalResize();
         // After a fresh attach (snapshot replay included) land on the newest
@@ -802,8 +806,8 @@ public class TerminalActivity extends Activity {
         if (terminalView != null) {
             terminalView.setVisibility(View.GONE);
         }
-        if (sessionHeader != null) {
-            sessionHeader.setVisibility(View.GONE);
+        if (floatingSessionChip != null) {
+            floatingSessionChip.setVisibility(View.GONE);
         }
 
         btnOfflineAction.setVisibility(View.VISIBLE);
@@ -864,8 +868,8 @@ public class TerminalActivity extends Activity {
         if (terminalView != null) {
             terminalView.setVisibility(View.GONE);
         }
-        if (sessionHeader != null) {
-            sessionHeader.setVisibility(View.GONE);
+        if (floatingSessionChip != null) {
+            floatingSessionChip.setVisibility(View.GONE);
         }
         tvOfflineTitle.setText(title);
         tvOfflineMessage.setText(message);
@@ -1000,7 +1004,7 @@ public class TerminalActivity extends Activity {
                     activeBridgeClient = null; // Retire old callbacks before publishing the new client.
                     startBridgeServingIfNecessary(target);
                 }
-                updateDrawerHandleText(multiManager.getActiveSession(instanceId));
+                updateSessionChip(multiManager.getActiveSession(instanceId));
             });
         });
     }
@@ -1093,7 +1097,7 @@ public class TerminalActivity extends Activity {
                     ui.post(() -> {
                         if (session == s && activeBridgeClient == expectedClient && foregroundActive && !isDestroyed()) {
                             bridgeStatus = "控制不可用";
-                            updateDrawerHandleText(multiManager.getActiveSession(instanceId));
+                            updateSessionChip(multiManager.getActiveSession(instanceId));
                         }
                     });
                 }
@@ -1209,7 +1213,7 @@ public class TerminalActivity extends Activity {
             ui.post(() -> {
                 if (session == target && !bridgeStatus.isEmpty()) {
                     bridgeStatus = "";
-                    updateDrawerHandleText(multiManager.getActiveSession(instanceId));
+                    updateSessionChip(multiManager.getActiveSession(instanceId));
                 }
             });
             try {
@@ -1256,15 +1260,23 @@ public class TerminalActivity extends Activity {
         if (targetSession == null || terminalView == null) {
             return;
         }
-        updateDrawerHandleText(targetSession);
+        updateSessionChip(targetSession);
         stickyStateMachine.reset();
-        // These are output views of one shell. Replay the canonical shell snapshot so
-        // a view switch never invents an independent shell/cursor state.
         PersistentTerminalSessionPool.SessionHolder holder = attachedHolder;
-        if (holder != null) {
+        TerminalSessionInstance primary = multiManager != null && instanceId != null
+                ? multiManager.getPrimarySession(instanceId) : null;
+        if (holder != null && targetSession == primary) {
+            // The primary session is the console itself: re-attach so its canonical
+            // screen model (and the live listener generation) is the one on screen.
             detachTerminalListener();
             showTerminalSession(holder);
-        } else terminalView.replaceTranscript(targetSession.getTranscript());
+        } else if (targetSession.getScreenModel() != null) {
+            // Secondary sessions render their own model; nothing is replayed from the
+            // console, so a new terminal never shows the current terminal's content.
+            terminalView.setSessionScreen(targetSession.getScreenModel());
+        } else {
+            terminalView.replaceTranscript(targetSession.getTranscript());
+        }
         terminalView.post(() -> {
             terminalView.scrollToBottom();
             terminalView.requestTerminalFocus();
@@ -1274,22 +1286,58 @@ public class TerminalActivity extends Activity {
         }
     }
 
-    private void updateDrawerHandleText(TerminalSessionInstance session) {
-        if (btnDrawerHandle == null || tvSessionTitle == null) {
+    /**
+     * Feeds the live console bytes into every non-active session's own screen
+     * model. The active session is rendered by the view itself, so skipping it
+     * here avoids parsing the same chunk twice.
+     */
+    private void feedBackgroundScreens(String forInstanceId, TerminalSessionInstance active, String chunk) {
+        if (multiManager == null || forInstanceId == null || chunk == null || chunk.isEmpty()) return;
+        java.util.List<TerminalSessionInstance> sessions = multiManager.listSessions(forInstanceId);
+        for (int index = 0; index < sessions.size(); index++) {
+            TerminalSessionInstance candidate = sessions.get(index);
+            if (candidate == active) continue;
+            io.github.nyzeep.orchestella.terminal.TerminalScreenModel model = candidate.getScreenModel();
+            if (model == null) continue;
+            try {
+                model.append(chunk);
+            } catch (RuntimeException ignored) {
+                // A background viewport must never break the live console stream.
+            }
+        }
+    }
+
+    /** Keeps every background session model on the same grid as the visible one. */
+    private void syncSessionScreens(int columns, int rows) {
+        if (multiManager == null || instanceId == null) return;
+        TerminalSessionInstance active = multiManager.getActiveSession(instanceId);
+        java.util.List<TerminalSessionInstance> sessions = multiManager.listSessions(instanceId);
+        for (int index = 0; index < sessions.size(); index++) {
+            TerminalSessionInstance candidate = sessions.get(index);
+            if (candidate == active) continue;
+            io.github.nyzeep.orchestella.terminal.TerminalScreenModel model = candidate.getScreenModel();
+            if (model == null) continue;
+            if (model.columns() != columns || model.rows() != rows) model.resize(columns, rows);
+        }
+    }
+
+    private void updateSessionChip(TerminalSessionInstance session) {
+        if (floatingSessionChip == null) {
             return;
         }
         int count = 1;
-        String title = "终端";
         if (multiManager != null && instanceId != null) {
             count = multiManager.listSessions(instanceId).size();
         }
-        if (session != null && session.getTitle() != null && !session.getTitle().isEmpty()) {
-            title = session.getTitle();
-        }
         String status = bridgeStatus.isEmpty() ? "" : bridgeStatus + " · ";
-        tvSessionTitle.setText(status + title);
-        tvSessionTitle.setContentDescription(status + title);
-        btnDrawerHandle.setText(count + "个输出视图");
-        btnDrawerHandle.setContentDescription("打开输出视图列表，" + count + "个输出视图共享同一 Shell");
+        floatingSessionChip.setText(getString(R.string.terminal_chip_label, count));
+        floatingSessionChip.setContentDescription(bridgeStatus.isEmpty()
+                ? getString(R.string.terminal_chip_content_desc, count)
+                : getString(R.string.terminal_chip_content_desc_busy, bridgeStatus, count));
+        floatingSessionChip.setAlpha(0.92f);
+        if (ui != null) {
+            ui.removeCallbacks(dimSessionChip);
+            ui.postDelayed(dimSessionChip, 3000L);
+        }
     }
 }

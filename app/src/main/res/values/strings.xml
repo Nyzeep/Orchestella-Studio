@@ -556,8 +556,8 @@
     <string name="chip_hw_value_os">Android %1$s</string>
 
     <!-- 01/工作站（UI 重新设计轮）：HOST METRICS 网格 + 长文 ⓘ 说明对话框。 -->
-    <string name="host_metrics_header">HOST METRICS [PHYSICAL]</string>
-    <string name="metrics_storage_label">STORAGE</string>
+    <string name="host_metrics_header">宿主指标</string>
+    <string name="metrics_storage_label">存储</string>
     <string name="workspace_info_dialog_title">运行状态详情</string>
     <string name="net_info_dialog_title">网络运行时说明</string>
     <string name="dialog_action_understood">了解</string>
@@ -569,4 +569,49 @@
     <string name="instances_empty_cta">去发行版装配</string>
     <string name="instance_section_running">运行中</string>
     <string name="instance_section_stopped">已停止</string>
+
+    <!-- UI 二期去英文滥用（2026-11-14 用户裁决：中文为主，视觉骨架保留）：
+         工作站首页的装饰性英文代号全部中文化或简化为序号，全部进资源文件。 -->
+    <string name="masthead_workstation">ORCHESTELLA · 工作站</string>
+    <string name="status_net_placeholder">网络 --</string>
+    <string name="status_bat_placeholder">电量 --</string>
+    <string name="mach_id_label">当前实例</string>
+    <string name="metric_cpu">CPU</string>
+    <string name="metric_ram">内存</string>
+    <string name="metric_thermal">电池温度</string>
+    <string name="metric_mem_short">内存</string>
+    <string name="metric_disk_short">存储</string>
+    <string name="metric_bat_short">电量</string>
+    <string name="control_matrix_label">控制中心</string>
+    <string name="action_index_01">01</string>
+    <string name="action_index_02">02</string>
+    <string name="action_index_03">03</string>
+    <string name="action_index_04">04</string>
+    <string name="section_index_01">分组 01</string>
+    <string name="section_index_03">分组 03</string>
+    <string name="action_copy">复制</string>
+    <string name="io_direct">直连 I/O</string>
+    <string name="state_idle">空闲</string>
+
+    <!-- 主题画廊（Compose 迁移第一批）：预览卡 + 即时套用。 -->
+    <string name="theme_gallery_title">主题画廊</string>
+    <string name="theme_gallery_subtitle">点按卡片即时套用；配色、圆角、背景图与终端配色仍在「外观」页微调</string>
+    <string name="theme_gallery_back">返回</string>
+    <string name="theme_gallery_custom">自定义主题与外观微调</string>
+    <string name="theme_gallery_done">完成</string>
+    <string name="theme_gallery_entry">主题画廊（预览并套用）</string>
+    <string name="theme_section_header">主题选择 · 工控色彩风格</string>
+    <string name="management_section_header">管理入口</string>
+    <string name="theme_active_badge">使用中</string>
+    <!-- 终端重做（2026-11-14）：会话模型与视口文案。全部进资源文件，
+         不在 Java 里新增中文字面量。 -->
+    <string name="terminal_new_session_toast">已新建终端：空白输出视图，自此刻起独立记录</string>
+    <string name="terminal_chip_label">%1$d 终端</string>
+    <string name="terminal_chip_content_desc">%1$d 个终端，点按打开终端列表</string>
+    <string name="terminal_chip_content_desc_busy">%1$s，%2$d 个终端，点按打开终端列表</string>
+    <string name="terminal_drawer_title">终端</string>
+    <string name="terminal_drawer_hint">新建终端 = 空白输出视图，自创建起独立记录（当前共用同一 Shell；分屏多会话待 guest PTY 通道）</string>
+    <string name="terminal_drawer_new">+ 新建终端</string>
+    <string name="terminal_drawer_rename_title">重命名终端</string>
+    <string name="terminal_drawer_close_title">关闭终端</string>
 </resources>
