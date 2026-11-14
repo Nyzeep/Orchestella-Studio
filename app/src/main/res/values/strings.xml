@@ -514,4 +514,11 @@
     <!-- 设置页「加速与性能」副文案（正式化轮补门控联动：同一总开关同时
          门控 UML 编译面，MainActivity 双门对话框引用的就是此开关）。 -->
     <string name="settings_accel_lane_subtitle">QEMU 车道内的 pVM 编译加速；关闭后实例始终走普通编译，UML 编译面同受此开关控制。</string>
+
+    <!-- 05/配置 tab 入口分组行（UI 重新设计轮）：行标题沿用原三枚入口按钮
+         文案逐字不改，跳转目标不变（SshManagerDialog / SettingsActivity /
+         AboutActivity）。 -->
+    <string name="settings_entry_ssh_title">SSH 配置文件与凭据管理</string>
+    <string name="settings_entry_system_title">系统镜像源策略与更新设置</string>
+    <string name="settings_entry_about_title">关于 Orchestella Studio</string>
 </resources>

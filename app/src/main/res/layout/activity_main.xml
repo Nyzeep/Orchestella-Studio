@@ -2919,7 +2919,7 @@
                         <LinearLayout
                             android:id="@+id/btn_theme_mascot"
                             android:layout_width="match_parent"
-                            android:layout_height="46dp"
+                            android:layout_height="@dimen/oe_list_item_min_h_dense"
                             android:orientation="horizontal"
                             android:gravity="center_vertical"
                             android:background="#1F2026"
@@ -2962,7 +2962,7 @@
                         <LinearLayout
                             android:id="@+id/btn_theme_constructivist_red"
                             android:layout_width="match_parent"
-                            android:layout_height="46dp"
+                            android:layout_height="@dimen/oe_list_item_min_h_dense"
                             android:orientation="horizontal"
                             android:gravity="center_vertical"
                             android:background="#1F2026"
@@ -3005,7 +3005,7 @@
                         <LinearLayout
                             android:id="@+id/btn_theme_constructivist_blue"
                             android:layout_width="match_parent"
-                            android:layout_height="46dp"
+                            android:layout_height="@dimen/oe_list_item_min_h_dense"
                             android:orientation="horizontal"
                             android:gravity="center_vertical"
                             android:background="#1F2026"
@@ -3048,7 +3048,7 @@
                         <LinearLayout
                             android:id="@+id/btn_theme_constructivist_yellow"
                             android:layout_width="match_parent"
-                            android:layout_height="46dp"
+                            android:layout_height="@dimen/oe_list_item_min_h_dense"
                             android:orientation="horizontal"
                             android:gravity="center_vertical"
                             android:background="#1F2026"
@@ -3088,7 +3088,11 @@
                         </LinearLayout>
                     </LinearLayout>
 
-                    <!-- Advanced Sub-Page Entrances -->
+                    <!-- Advanced Sub-Page Entrances（UI 重新设计轮：入口按钮墙
+                         收敛为分组列表行——行高 oe_list_item_min_h、trailing
+                         chevron 指示进入；行 id 沿用原按钮 id，MainActivity
+                         点击目标零变化（SshManagerDialog / SettingsActivity /
+                         AboutActivity）。） -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -3108,60 +3112,123 @@
                             android:layout_marginBottom="@dimen/oe_space_sm" />
 
                         <!-- SSH Entry -->
-                        <com.google.android.material.button.MaterialButton
+                        <LinearLayout
                             android:id="@+id/btn_settings_open_ssh"
-                            style="@style/Widget.Orchestella.Button.Tonal"
                             android:layout_width="match_parent"
-                            android:layout_height="44dp"
-                            app:cornerRadius="0dp"
-                            android:backgroundTint="#1F2026"
-                            android:fontFamily="monospace"
-                            android:text="SSH 配置文件与凭据管理"
-                            android:textColor="#FFFFFF"
-                            android:textSize="11sp"
-                            app:icon="@drawable/ic_sym_key"
-                            app:iconSize="16dp"
-                            app:iconTint="#FFFFFF"
-                            android:insetTop="0dp"
-                            android:insetBottom="0dp" />
+                            android:layout_height="@dimen/oe_list_item_min_h"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:background="#1F2026"
+                            android:paddingStart="@dimen/oe_space_lg"
+                            android:paddingEnd="@dimen/oe_space_lg"
+                            android:clickable="true"
+                            android:focusable="true">
+
+                            <ImageView
+                                android:layout_width="@dimen/oe_icon_inline"
+                                android:layout_height="@dimen/oe_icon_inline"
+                                android:src="@drawable/ic_sym_key"
+                                android:importantForAccessibility="no"
+                                app:tint="#8E929B" />
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginStart="@dimen/oe_space_sm"
+                                android:fontFamily="monospace"
+                                android:text="@string/settings_entry_ssh_title"
+                                android:textColor="#FFFFFF"
+                                android:textSize="11sp"
+                                android:textStyle="bold" />
+
+                            <ImageView
+                                android:layout_width="@dimen/oe_icon_inline"
+                                android:layout_height="@dimen/oe_icon_inline"
+                                android:src="@drawable/ic_sym_chevron_right"
+                                android:importantForAccessibility="no"
+                                app:tint="#8E929B" />
+                        </LinearLayout>
 
                         <!-- System Settings Entry -->
-                        <com.google.android.material.button.MaterialButton
+                        <LinearLayout
                             android:id="@+id/btn_settings_open_system"
-                            style="@style/Widget.Orchestella.Button.Tonal"
                             android:layout_width="match_parent"
-                            android:layout_height="44dp"
+                            android:layout_height="@dimen/oe_list_item_min_h"
                             android:layout_marginTop="@dimen/oe_space_sm"
-                            app:cornerRadius="0dp"
-                            android:backgroundTint="#1F2026"
-                            android:fontFamily="monospace"
-                            android:text="系统镜像源策略与更新设置"
-                            android:textColor="#FFFFFF"
-                            android:textSize="11sp"
-                            app:icon="@drawable/ic_sym_tune"
-                            app:iconSize="16dp"
-                            app:iconTint="#FFFFFF"
-                            android:insetTop="0dp"
-                            android:insetBottom="0dp" />
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:background="#1F2026"
+                            android:paddingStart="@dimen/oe_space_lg"
+                            android:paddingEnd="@dimen/oe_space_lg"
+                            android:clickable="true"
+                            android:focusable="true">
+
+                            <ImageView
+                                android:layout_width="@dimen/oe_icon_inline"
+                                android:layout_height="@dimen/oe_icon_inline"
+                                android:src="@drawable/ic_sym_tune"
+                                android:importantForAccessibility="no"
+                                app:tint="#8E929B" />
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginStart="@dimen/oe_space_sm"
+                                android:fontFamily="monospace"
+                                android:text="@string/settings_entry_system_title"
+                                android:textColor="#FFFFFF"
+                                android:textSize="11sp"
+                                android:textStyle="bold" />
+
+                            <ImageView
+                                android:layout_width="@dimen/oe_icon_inline"
+                                android:layout_height="@dimen/oe_icon_inline"
+                                android:src="@drawable/ic_sym_chevron_right"
+                                android:importantForAccessibility="no"
+                                app:tint="#8E929B" />
+                        </LinearLayout>
 
                         <!-- About Entry -->
-                        <com.google.android.material.button.MaterialButton
+                        <LinearLayout
                             android:id="@+id/btn_settings_open_about"
-                            style="@style/Widget.Orchestella.Button.Tonal"
                             android:layout_width="match_parent"
-                            android:layout_height="44dp"
+                            android:layout_height="@dimen/oe_list_item_min_h"
                             android:layout_marginTop="@dimen/oe_space_sm"
-                            app:cornerRadius="0dp"
-                            android:backgroundTint="#1F2026"
-                            android:fontFamily="monospace"
-                            android:text="关于 Orchestella Studio"
-                            android:textColor="#FFFFFF"
-                            android:textSize="11sp"
-                            app:icon="@drawable/ic_sym_info"
-                            app:iconSize="16dp"
-                            app:iconTint="#FFFFFF"
-                            android:insetTop="0dp"
-                            android:insetBottom="0dp" />
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:background="#1F2026"
+                            android:paddingStart="@dimen/oe_space_lg"
+                            android:paddingEnd="@dimen/oe_space_lg"
+                            android:clickable="true"
+                            android:focusable="true">
+
+                            <ImageView
+                                android:layout_width="@dimen/oe_icon_inline"
+                                android:layout_height="@dimen/oe_icon_inline"
+                                android:src="@drawable/ic_sym_info"
+                                android:importantForAccessibility="no"
+                                app:tint="#8E929B" />
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:layout_marginStart="@dimen/oe_space_sm"
+                                android:fontFamily="monospace"
+                                android:text="@string/settings_entry_about_title"
+                                android:textColor="#FFFFFF"
+                                android:textSize="11sp"
+                                android:textStyle="bold" />
+
+                            <ImageView
+                                android:layout_width="@dimen/oe_icon_inline"
+                                android:layout_height="@dimen/oe_icon_inline"
+                                android:src="@drawable/ic_sym_chevron_right"
+                                android:importantForAccessibility="no"
+                                app:tint="#8E929B" />
+                        </LinearLayout>
                     </LinearLayout>
                 </LinearLayout>
 
