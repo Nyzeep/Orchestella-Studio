@@ -541,15 +541,27 @@ public final class UmlRootfsProvisioner {
                             java.nio.file.StandardOpenOption.WRITE)) {
                         copyPayload(gzip, out, size, block);
                     }
-                    // The exec bit, preserved at the Java layer for every mode
-                    // that carries any execute bit — the device-side contract.
-                    if ((mode & 0111) != 0 && target.toFile().setExecutable(true, false)) {
-                        executables++;
+                    // The tar mode, preserved at the Java layer — the
+                    // device-side contract. Device-measured 2026-11-14 (Gate 2
+                    // E2E): newOutputStream alone leaves 0600 (umask'd), and
+                    // hostfs presents that mode to the guest — every guest
+                    // non-root user then had zero access to every tree file
+                    // (even /bin/sh was 0700, un-executable), which broke
+                    // distccd's own-user drop and any guest daemon. The rwx
+                    // bits ride the POSIX view best-effort; the exec-bit
+                    // fallback below keeps non-POSIX hosts working, and the
+                    // executables counter still counts exactly the tar modes
+                    // that carry any execute bit.
+                    applyModeBestEffort(target, mode);
+                    if ((mode & 0111) != 0) {
+                        if (target.toFile().setExecutable(true, false)) {
+                            executables++;
+                        }
                     }
                     entries++;
                 } else if (type == '5') {
                     Files.createDirectories(target);
-                    applyDirModeBestEffort(target, mode);
+                    applyModeBestEffort(target, mode);
                     entries++;
                 } else if (type == '2') {
                     Files.createDirectories(target.getParent());
@@ -595,20 +607,23 @@ public final class UmlRootfsProvisioner {
     }
 
     /**
-     * Best-effort application of a directory entry's tar mode. Device-measured
-     * 2026-11-14 (Gate 2 E2E): {@link Files#createDirectories} leaves the
-     * host's umask mode in place, so the Alpine tree's world-writable
-     * {@code /tmp} (tar 1777) landed as 0700 — and guest-side daemons running
-     * as a non-root user (distccd drops to its own uid before opening its
-     * log) then hit hostfs EACCES on every path they need to write. The rwx
-     * bits ride the POSIX attribute view when the host filesystem supports
-     * it; the special bits (sticky/setuid) are best-effort-skipped — Android
-     * exposes no unix-extended attribute view for them, and a regular 0777
-     * {@code /tmp} serves the daemons the same. Every failure is swallowed on
-     * purpose: a mode that does not stick is an honest runtime EACCES at the
-     * daemon's own error site, never a reason to fail a verified extraction.
+     * Best-effort application of an entry's tar mode (files and directories).
+     * Device-measured 2026-11-14 (Gate 2 E2E, two findings): directories
+     * created via {@link Files#createDirectories} carried the host umask's
+     * 0700 instead of the Alpine tree's world-writable {@code /tmp} (tar
+     * 1777), and regular files carried 0600 instead of their tar 0644 — and
+     * since hostfs presents the host mode to the guest verbatim, every guest
+     * non-root user had zero access to every tree file (even {@code /bin/sh}
+     * was un-executable), breaking distccd's own-user drop and any guest
+     * daemon. The rwx bits ride the POSIX attribute view when the host
+     * filesystem supports it; the special bits (sticky/setuid) are
+     * best-effort-skipped — Android exposes no unix-extended attribute view
+     * for them, and a plain 0777 {@code /tmp} serves the daemons the same.
+     * Every failure is swallowed on purpose: a mode that does not stick is an
+     * honest runtime EACCES at the failing guest program's own error site,
+     * never a reason to fail a verified extraction.
      */
-    private static void applyDirModeBestEffort(Path dir, long mode) {
+    private static void applyModeBestEffort(Path target, long mode) {
         if (!java.nio.file.FileSystems.getDefault().supportedFileAttributeViews()
                 .contains("posix")) {
             return;
@@ -643,7 +658,7 @@ public final class UmlRootfsProvisioner {
             if ((mode & 0001) != 0) {
                 perms.add(java.nio.file.attribute.PosixFilePermission.OTHERS_EXECUTE);
             }
-            Files.setPosixFilePermissions(dir, perms);
+            Files.setPosixFilePermissions(target, perms);
         } catch (RuntimeException | IOException bestEffortFailure) {
             // The host filesystem refused the mode — the guest daemon's own
             // error site carries the evidence; extraction stays verified.

@@ -417,6 +417,29 @@ public final class UmlRootfsProvisionerContractTest {
     }
 
     @Test
+    public void fileModesRideTheExtractionTooSoGuestNonRootUsersKeepAccess() throws Exception {
+        // The device finding's other half: regular files landed 0600 (tar 0644
+        // unapplied) — hostfs presents that to the guest, so distccd's
+        // non-root uid had zero access to every tree file. Tar 0644 must come
+        // out readable-by-others and tar 0755 executable-by-others.
+        Path filesDir = tempFolder.newFolder("file-modes").toPath();
+        extractIn(filesDir, gzipTar(
+                TarSpec.file("etc/plain.conf", "content"),
+                TarSpec.file("bin/tool", "elf")));
+        Path extracted = filesDir.resolve("extracted");
+        assumeTrue("Windows dev host cannot assert POSIX modes; CI/Linux does",
+                posixPermissionsSupported());
+        Set<java.nio.file.attribute.PosixFilePermission> plain = Files.getPosixFilePermissions(
+                extracted.resolve("etc/plain.conf"));
+        assertTrue("a tar 0644 file must stay world-readable for guest non-root users",
+                plain.contains(java.nio.file.attribute.PosixFilePermission.OTHERS_READ));
+        Set<java.nio.file.attribute.PosixFilePermission> tool = Files.getPosixFilePermissions(
+                extracted.resolve("bin/tool"));
+        assertTrue("a tar 0755 file must stay world-executable for guest non-root users",
+                tool.contains(java.nio.file.attribute.PosixFilePermission.OTHERS_EXECUTE));
+    }
+
+    @Test
     public void directoryModesRideTheExtractionForGuestDaemons() throws Exception {
         // Device-measured 2026-11-14 (Gate 2 E2E): createDirectories left the
         // Alpine tree's world-writable /tmp (tar 1777) at the umask's 0700,
