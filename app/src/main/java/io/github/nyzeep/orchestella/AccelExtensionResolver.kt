@@ -7,25 +7,39 @@ import android.util.Log
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.PvmCompilerManifest
 
 /**
- * Android shell around [AccelExtensionRules]: queries the extension package,
- * reads its compiler manifest through a package context, and folds both into
- * one [Resolution].
+ * Android shell around [AccelExtensionRules]: resolves the pVM payload shape
+ * and folds manifest + version into one [Resolution].
  *
- * Cross-package facts used here are all platform-supported, permission-free
- * reads: [PackageManager.getApplicationInfo] for presence/version, and
- * [Context.createPackageContext] with [Context.CONTEXT_IGNORE_SECURITY] for
- * the manifest asset. The extension's APK file itself is never read by this
- * process — the payload path is only carried for the virtualization service
- * (see PvmPayloadLaneStarter / FastLaneLaunchSpec.withPayloadApkPath).
+ * Two shapes, embedded first (2026-11-14 single-package round):
+ *  1. **Embedded (complete package).** The APK carries its own payload: the
+ *     compiler manifest lives in this app's own `assets/PVM-COMPILER-MANIFEST`
+ *     and the payload libraries ride this APK's own `lib/arm64-v8a/`. The
+ *     resolver reads the manifest from its own assets, the version lock is
+ *     self-versus-self (trivially satisfied — the rules still evaluate it so
+ *     the verdict keeps one shape), and `payloadApkPath` is this app's own
+ *     `applicationInfo.sourceDir` — the path the virtualization service hands
+ *     to `VirtualMachineConfig.Builder.setApkPath` (the platform reads the
+ *     payload directly from the APK's stored, page-aligned entries).
+ *  2. **Two-package (legacy split).** No own-asset manifest: the extension
+ *     package (`<main>.accel`) is queried the way it always was —
+ *     [PackageManager.getApplicationInfo] for presence/version and
+ *     [Context.createPackageContext] with [Context.CONTEXT_IGNORE_SECURITY]
+ *     for the manifest asset. Kept as the defense path so a two-package build
+ *     still resolves and an embedded build that somehow lost its asset falls
+ *     through to the honest EXTENSION_MISSING verdict instead of crashing.
+ *
+ * The extension's APK file itself is never read by this process — the payload
+ * path is only carried for the virtualization service (see
+ * PvmPayloadLaneStarter / FastLaneLaunchSpec.withPayloadApkPath).
  */
 class AccelExtensionResolver(private val context: Context) {
 
     data class Resolution(
         val decision: AccelExtensionRules.Decision,
         val manifest: PvmCompilerManifest?,
-        /** The extension APK's absolute path, or null when not installed. */
+        /** The APK the payload loads from, or null when none was resolved. */
         val payloadApkPath: String?,
-        /** The extension's versionCode, or null when not installed. */
+        /** The payload package's versionCode, or null when not installed. */
         val extVersionCode: Long?,
     ) {
         val ok: Boolean get() = decision.status == AccelExtensionRules.Status.OK
@@ -34,6 +48,24 @@ class AccelExtensionResolver(private val context: Context) {
     fun resolve(): Resolution {
         val application = context.applicationContext
         val mainVersionCode = versionCodeOf(application.packageName)
+
+        // Embedded first: the complete package carries the manifest in its own
+        // assets. A stale two-package extension may also still be installed
+        // next to it; the embedded payload wins — the APK's own manifest is
+        // the bytes this build was assembled and verified against.
+        val ownManifest = readOwnManifest()
+        if (ownManifest != null) {
+            val engine: String? = ownManifest.engine()
+            return resolution(
+                // Self-versus-self version lock: evaluate keeps the one verdict
+                // shape, and the engine gate still refuses non-clang manifests.
+                AccelExtensionRules.evaluate(true, mainVersionCode, mainVersionCode, engine),
+                ownManifest,
+                application.applicationInfo.sourceDir,
+                mainVersionCode,
+            )
+        }
+
         val extPackage = AccelExtensionRules.extensionPackageName(application.packageName)
         val extInfo = try {
             application.packageManager.getApplicationInfo(extPackage, 0)
@@ -64,6 +96,29 @@ class AccelExtensionResolver(private val context: Context) {
         payloadApkPath: String?,
         extVersionCode: Long?,
     ) = Resolution(decision, manifest, payloadApkPath, extVersionCode)
+
+    /**
+     * Reads PVM-COMPILER-MANIFEST from this app's own assets (the embedded,
+     * complete-package shape). Returns null when the asset is absent — that is
+     * the two-package shape's signal, never an error.
+     */
+    private fun readOwnManifest(): PvmCompilerManifest? = try {
+        context.assets.open(MANIFEST_ASSET).use { stream ->
+            val bytes = stream.readBytes()
+            if (bytes.size > MAX_MANIFEST_BYTES) {
+                null
+            } else {
+                PvmCompilerManifest.parse(String(bytes, Charsets.UTF_8)).orElse(null)
+            }
+        }
+    } catch (absent: java.io.FileNotFoundException) {
+        // No embedded manifest: the two-package shape. Not logged — this is
+        // the normal answer for a split build, not a defect.
+        null
+    } catch (failure: Exception) {
+        Log.i(TAG, "embedded manifest unreadable: ${failure.javaClass.simpleName}")
+        null
+    }
 
     private fun versionCodeOf(packageName: String): Long = try {
         val info: PackageInfo = context.packageManager.getPackageInfo(packageName, 0)

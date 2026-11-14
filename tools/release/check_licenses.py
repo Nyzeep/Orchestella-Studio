@@ -28,12 +28,16 @@ REQUIRED_FILES = (
     "tools/qemu-android/gpl/QEMU-GPL-SOURCES.md",
     "app/src/main/assets/NOTICE.GUEST-RUNTIME",
     "app/src/main/assets/NOTICE.QEMU",
+    # Single-package round (2026-11-14): the UML engine ships in the main APK,
+    # so its notice ships with it (the formalized NOTICE.UML asset).
+    "app/src/main/assets/NOTICE.UML",
 )
 
 REFERENCE_DOCS = (
     "app/src/main/assets/NOTICE.QEMU",
     "app/src/main/assets/NOTICE.GUEST-RUNTIME",
     "app/src/main/assets/NOTICE.PHASE5",
+    "app/src/main/assets/NOTICE.UML",
     "app/src/main/assets/QEMU-GPL-SOURCES.md",
     "guest-assets/GPL-SOURCES.md",
     "guest-assets/SOURCE-OFFER.txt",

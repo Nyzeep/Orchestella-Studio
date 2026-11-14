@@ -147,6 +147,15 @@ jobs:
         # Clean checkout: the git-ignored QEMU payload is absent, which is the
         # known baseline for this job. The real payload is gated later by
         # check_runtime_payload.py --apk against the produced APK.
+        # Single-package round (2026-11-14): the UML flags default ON in gradle
+        # (the complete-package factory facts); on this hosted checkout the
+        # machine staging inputs are absent, so the staging tasks record the
+        # absence (WARN + build marker) and skip — the hosted build stays the
+        # honest no-payload test form. The shippable single-package APK is
+        # built ONLY on the packaging machine that owns the staging inputs
+        # (see the packaging-machine build line in
+        # docs/reports/tickets/uml-fast-profile-packaging/); hosted CI cannot
+        # produce it and does not pretend to.
         run: ./gradlew :app:lintDebug :app:assembleDebug -Porchestella.assets.allowMissingPayload=true --no-daemon --stacktrace
 
       - name: Verify debug APK 16 KB ELF segments and zipalign
@@ -157,35 +166,24 @@ jobs:
         # stays: no step of this job produces the QEMU payload (it is git-ignored,
         # absent from a clean checkout), the APK built here therefore cannot boot
         # the QEMU lane, and publish-draft refuses to draft from such a bundle —
-        # the real payload-bearing APK is built on the packaging machine.
-        # ACR 2026-11-12 D1+D4: the UML fast-profile lane is stated explicitly
-        # like the accelerator lane, so the release pipeline never depends on a
-        # default to get this right. On this hosted checkout the U1 artifacts are
-        # absent too, so stageUmlFastProfile records the absence and skips (the
-        # APK ships no UML kernel; the runtime answers MISSING_ASSET honestly);
-        # the packaging machine adds -Porchestella.uml.fastProfileDir=<U1 dir>
-        # and gets the fail-closed sha-accounted staging for real.
+        # the real payload-bearing single-package APK is built on the packaging
+        # machine (all four staging parameters + the pVM repack chain, no
+        # exemption).
+        # ACR 2026-11-12 D1+D4 stated-parameter discipline, updated 2026-11-14:
+        # the four UML flags now default ON (single-package factory facts), and
+        # this pipeline still states them explicitly so the release build never
+        # depends on a gradle default to get them right. On this hosted checkout
+        # the machine staging inputs are absent, so the staging tasks record the
+        # absence and skip (the APK carries no UML assets; the runtime answers
+        # MISSING_ASSET / SPAWN_FAILED with named details honestly); the
+        # packaging machine adds -Porchestella.uml.fastProfileDir / .netHelperDir
+        # / -Porchestella.fastlane.payloadLibDir / -Porchestella.pvmCompiler.libDir
+        # and gets the fail-closed sha-accounted staging plus the pVM stored-entry
+        # repack for real.
         # The accelerator lane is stated explicitly even though the Gradle
         # default is now on: v0.6.3 shipped with the lane compiled out, so the
         # release pipeline must never depend on a default to get this right.
-        # A fourth stated-parameter flag exists since the 2026-11-13 compile-
-        # bridge round: -Porchestella.uml.compileBridge=<bool> (Gradle default
-        # false) gates the UML face's UML-TCP compile lane wiring. Whether the
-        # release pipeline passes it this round is a deliberate decision, not a
-        # default to lean on — it is NOT passed here yet; state it explicitly
-        # when the UML compile lane is meant to ship.
-        # The Gate 2 net helper (the umnet/passt bionic pair behind the net-
-        # supervisor spawner) stages under the stated parameter
-        # -Porchestella.uml.netHelperDir=<dir> — the dir's presence IS the
-        # staging opt-in (no extra flag; packaging is independent of the
-        # compileBridge flag). Like the other machine inputs it is absent on
-        # this hosted checkout and NOT passed here this round (stated-
-        # parameter mode, decided per round): stageUmlNetHelper records the
-        # absence and skips, so the release APK carries no helper. State the
-        # dir on the packaging machine when the net supervisor is meant to
-        # ship; a compileBridge-on build without it answers SPAWN_FAILED
-        # (uml-net-helper missing) honestly rather than faking a routable face.
-        run: ./gradlew :app:assembleRelease -Porchestella.assets.allowMissingPayload=true -Porchestella.acceleratorLane=true -Porchestella.uml.bundledFastProfile=true -Porchestella.uml.fastProfile=true --no-daemon --stacktrace
+        run: ./gradlew :app:assembleRelease -Porchestella.assets.allowMissingPayload=true -Porchestella.acceleratorLane=true -Porchestella.uml.bundledFastProfile=true -Porchestella.uml.fastProfile=true -Porchestella.uml.compileBridge=true -Porchestella.uml.rootfsDownload=true --no-daemon --stacktrace
 
       - name: Locate release APK
         run: |
@@ -255,11 +253,13 @@ jobs:
           rm -f "$RUNNER_TEMP/release.keystore" "$HOME/.gradle/gradle.properties"
 
   # Draft-only publication. Nothing here can make a release public: the CLI is
-  # invoked with --draft, the notes file must already exist in the tree, and the
-  # job needs an explicit publish=yes on top of a verified build. The accelerator
-  # extension APK is NOT built here (it needs the real pVM staging inputs, which
-  # hosted CI does not have); attach it to the same draft by hand after the
-  # packaging machine produces and verifies it.
+  # invoked with --draft, the job needs an explicit publish=yes on top of a
+  # verified build, and the QEMU/UML gates below refuse any bundle that does
+  # not carry the payloads (i.e. any bundle not built on the packaging machine
+  # — hosted CI has no staging inputs and its exemption-form APKs are test
+  # artifacts, never drafts). Single-package round: the draft APK is the ONE
+  # package (QEMU + UML + pVM engines inside the main APK); there is no
+  # accelerator extension APK to build or attach anymore.
   publish-draft:
     name: Create draft GitHub Release
     needs: build-release
@@ -280,12 +280,28 @@ jobs:
           name: orchestella-release-candidate
           path: release-bundle
 
-      - name: Require a release notes file in the tree
+      - name: Resolve release notes (tolerate an absent local notes file)
+        # Single-package round: docs/ stopped riding the public tree, so a
+        # curated notes file at docs/reports/releases/ is optional now. When
+        # it exists it is used verbatim; when it does not, a minimal standard
+        # header is generated so the draft can still be created (editors fill
+        # in the body before publishing).
         run: |
           NOTES="docs/reports/releases/v${VERSION_NAME}.md"
-          if [ ! -f "$NOTES" ]; then
-            echo "::error::missing release notes: $NOTES (draft the notes before publishing)"
-            exit 1
+          if [ -f "$NOTES" ]; then
+            echo "NOTES_FILE=$NOTES" >> "$GITHUB_ENV"
+          else
+            GENERATED="$RUNNER_TEMP/release-notes-v${VERSION_NAME}.md"
+            {
+              echo "# Orchestella Studio v${VERSION_NAME}"
+              echo
+              echo "_Curated release notes were not found in the tree for this version;"
+              echo "replace this placeholder before publishing the draft._"
+              echo
+              echo "Single-package build: the QEMU, UML and pVM engines ship inside the main APK."
+            } > "$GENERATED"
+            echo "NOTES_FILE=$GENERATED" >> "$GITHUB_ENV"
+            echo "::notice::no curated notes at $NOTES — generated a placeholder at $GENERATED"
           fi
 
       # session 26: 0.6.0 shipped without the QEMU payload (it is gitignored, so a clean
@@ -302,23 +318,24 @@ jobs:
             exit 1
           fi
 
-      # ACR 2026-11-12 D1/D4, review P2-1 closure: a build that staged the UML
-      # fast profile ships assets/uml-fast-profile-v1.sha256, and every digest
-      # it accounts for must match the shipped .so bytes. An APK without the
-      # manifest is the honest-degradation shape (flag-off, or the sanctioned
-      # hosted exemption — the runtime answers MISSING_ASSET at width 0), so
-      # the gate SKIPs there instead of refusing; the packaging machine, which
-      # knows it passed -Porchestella.uml.fastProfileDir, asserts positively
-      # with --require-payload (see docs/reports/tickets/uml-fast-profile-packaging/).
-      - name: Verify the UML fast-profile payload accounting in the APK
+      # ACR 2026-11-12 D1/D4, review P2-1 closure; tightened 2026-11-14
+      # (single-package round): a draftable release is a single-package APK
+      # built on the packaging machine, so both UML accounting manifests
+      # (fast profile AND net helper, added 2026-11-14) are REQUIRED here —
+      # the hosted no-payload form never reaches this job (the QEMU gate
+      # above refuses it first), and a skip-tolerant UML gate would re-open
+      # the "flag-on but nothing staged" hole this gate exists to close.
+      - name: Verify the UML payload accounting in the APK
         run: |
           set -euo pipefail
           APK=$(ls release-bundle/*.apk | head -1)
-          if ! python3 tools/release/check_uml_payload.py --apk "$APK"; then
-            echo "::error::the bundle APK's UML fast-profile payload does not match its \
-          in-APK accounting manifest (assets/uml-fast-profile-v1.sha256). Rebuild on the \
-          packaging machine with -Porchestella.uml.fastProfileDir=<pinned U1 artifacts>, \
-          or build without the UML flags; shipped bytes and manifest must agree."
+          if ! python3 tools/release/check_uml_payload.py --apk "$APK" --require-payload; then
+            echo "::error::the bundle APK's UML payloads do not match their in-APK \
+          accounting manifests (assets/uml-fast-profile-v1.sha256 and \
+          assets/uml-net-helper-v1.sha256). Rebuild on the packaging machine with \
+          -Porchestella.uml.fastProfileDir=<pinned U1 artifacts> and \
+          -Porchestella.uml.netHelperDir=<netfwd pair>; shipped bytes and manifests \
+          must agree."
             exit 1
           fi
 
@@ -327,11 +344,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          NOTES="docs/reports/releases/v${VERSION_NAME}.md"
           gh release create "v${VERSION_NAME}" \
             --draft \
             --title "Orchestella Studio v${VERSION_NAME}" \
-            --notes-file "$NOTES" \
+            --notes-file "$NOTES_FILE" \
             release-bundle/*.apk \
             release-bundle/SHA256SUMS
-          echo "::notice::Draft created. Attach the verified accelerator extension APK to the same draft before publishing."
+          echo "::notice::Draft created. The single-package APK carries the QEMU, UML and \
+          pVM engines; no accelerator extension APK is attached (the two-package split \
+          is retired for release builds)."
