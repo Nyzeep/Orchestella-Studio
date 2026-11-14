@@ -425,7 +425,12 @@ public final class UmlRootfsProvisionerContractTest {
         Path filesDir = tempFolder.newFolder("file-modes").toPath();
         extractIn(filesDir, gzipTar(
                 TarSpec.file("etc/plain.conf", "content"),
-                TarSpec.file("bin/tool", "elf")));
+                // TarSpec.file defaults to tar 0644; the 0755 half of this
+                // contract needs an explicit mode (CI Linux 2026-11-14: the
+                // 0644 tool entry could never carry OTHERS_EXECUTE, so the
+                // assert below failed on every POSIX host while Windows dev
+                // hosts skipped the whole block via assumeTrue).
+                TarSpec.fileMode("bin/tool", 0755L, "elf")));
         Path extracted = filesDir.resolve("extracted");
         assumeTrue("Windows dev host cannot assert POSIX modes; CI/Linux does",
                 posixPermissionsSupported());
