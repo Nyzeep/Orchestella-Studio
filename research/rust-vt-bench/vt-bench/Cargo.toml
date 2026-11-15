@@ -1,0 +1,11 @@
+[package]
+name = "vt-bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Benchmark CLI for the vt-core prototype (sha256-verified fixtures, allocation counters)."
+
+[dependencies]
+vt-core = { path = "../vt-core" }
+sha2 = "0.10"

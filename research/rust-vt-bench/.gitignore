@@ -1,0 +1,6 @@
+fixtures/generated/
+target/
+*.so
+*.a
+android/jniLibs/
+jni/classes/
