@@ -100,8 +100,14 @@ private fun OeBoardSmallTextPreview() {
     OeBoard(ThemeCatalog.constructivistWorkstation, textScale = 0.85f)
 }
 
+/**
+ * The board itself. `internal` rather than private so the debug-only
+ * `OeBoardActivity` can host the very same composition on a device: the
+ * @Preview panes below stay the design-review entry point in Android Studio,
+ * but the board is no longer unreachable outside it.
+ */
 @Composable
-private fun OeBoard(theme: AppTheme, compact: Boolean = false, textScale: Float = 1f) {
+internal fun OeBoard(theme: AppTheme, compact: Boolean = false, textScale: Float = 1f) {
     OrchestellaComposeTheme(theme = theme, textScale = textScale) {
         Surface(color = MaterialTheme.colorScheme.background) {
             Column(

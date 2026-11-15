@@ -13,6 +13,23 @@
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|density"
             android:exported="true"
             android:theme="@style/Theme.Orchestella" />
+
+        <!--
+            Oe v2 component board (design-system acceptance). The board used to be reachable
+            only from Android Studio's @Preview panes, so a device build shipped the design
+            system with nothing to look at. Debug-only and given its own launcher entry, with
+            the "debug" suffix in the label so it is never mistaken for a product screen.
+        -->
+        <activity
+            android:name=".ui.design.OeBoardActivity"
+            android:exported="true"
+            android:label="Oe 组件板 · debug"
+            android:theme="@style/Theme.Orchestella">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
     </application>
 
 </manifest>
