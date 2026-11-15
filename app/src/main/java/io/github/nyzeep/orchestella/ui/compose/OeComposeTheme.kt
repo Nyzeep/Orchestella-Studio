@@ -12,51 +12,50 @@ import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.unit.dp
 import io.github.nyzeep.orchestella.ui.design.LocalOeTheme
 import io.github.nyzeep.orchestella.ui.design.OeGlassLevel
+import io.github.nyzeep.orchestella.ui.design.OeTextScale
 import io.github.nyzeep.orchestella.ui.design.OeThemeData
 import io.github.nyzeep.orchestella.ui.theme.AppTheme
 
 /**
- * Compose design tokens (batch 1 of the 2026-11-14 UI round).
- *
- * Same numbers as `res/values/oe_design_tokens.xml` on purpose: the XML pages and
- * the Compose pages must agree on geometry, otherwise the three reported defects
- * (mixed single/double card borders, over-wide card gaps, inconsistent button
- * heights) simply reappear on whichever side is not migrated yet. One scale, two
- * consumers.
- */
-object OeSpacing {
-    val xxs = 2.dp
-    val xs = 4.dp
-    val sm = 8.dp
-    val md = 12.dp
-    val lg = 16.dp
-    val xl = 20.dp
-    val xxl = 24.dp
-    val xxxl = 32.dp
-}
-
-object OeSizes {
-    /** Single hairline for every card. There is no second border style. */
-    val cardBorder = 1.dp
-    val cardPad = 16.dp
-    val cardGap = 12.dp
-    val groupGap = 24.dp
-    val btnPrimary = 48.dp
-    val btnSecondary = 44.dp
-    val btnInline = 36.dp
-}
-
-/**
  * Bridges the app's own [AppTheme] palettes into a Material 3 [MaterialTheme], so
  * Compose screens inherit the user's theme (including every custom-theme slot)
- * instead of inventing a second palette. `cornerRadiusDp` comes from ThemeStore —
- * the user's rounding choice is authoritative, exactly as ThemeApplier enforces
- * for XML.
+ * instead of inventing a second palette.
+ *
+ * `cornerRadiusDp` comes from ThemeStore — the user's rounding choice is
+ * authoritative for controls (buttons, inputs, segmented tracks), exactly as
+ * ThemeApplier enforces for XML. Surface radii stay on [io.github.nyzeep.orchestella.ui.design.OeShape]
+ * by design: stretching a 24dp card to a control preference is what made the
+ * old UI read as unrelated boxes.
+ *
+ * This three-argument entry point keeps the pre-ticket-05 signature intact and
+ * follows the system font scale. Use the overload below to apply the stored
+ * 85–130% in-app override.
  */
 @Composable
 fun OrchestellaComposeTheme(
     theme: AppTheme,
     cornerRadiusDp: Int = 16,
+    content: @Composable () -> Unit,
+) {
+    OrchestellaComposeTheme(
+        theme = theme,
+        cornerRadiusDp = cornerRadiusDp,
+        textScale = 1f,
+        content = content,
+    )
+}
+
+/**
+ * [textScale] is the ticket-05 in-app override (85–130%); 1.0 means the
+ * composition follows the system font scale. The value is clamped here because
+ * this is the public boundary: a hand-edited preference or a preview caller
+ * must not produce NaN or 3× display type.
+ */
+@Composable
+fun OrchestellaComposeTheme(
+    theme: AppTheme,
+    cornerRadiusDp: Int = 16,
+    textScale: Float,
     content: @Composable () -> Unit,
 ) {
     val outlineVariant = Color(theme.glow).copy(alpha = if (theme.isDark) 0.32f else 0.24f)
@@ -99,6 +98,9 @@ fun OrchestellaComposeTheme(
                 cornerDp = radius,
                 isDark = theme.isDark,
                 glassLevel = OeGlassLevel.None,
+                // The 85–130% ticket band is enforced here so a hand-edited
+                // preference or a preview caller cannot produce 3× display type.
+                textScale = OeTextScale.safeFactor(textScale),
             ),
             content = content,
         )

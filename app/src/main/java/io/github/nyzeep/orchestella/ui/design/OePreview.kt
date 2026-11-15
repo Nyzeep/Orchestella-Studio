@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import io.github.nyzeep.orchestella.ui.compose.OrchestellaComposeTheme
 import io.github.nyzeep.orchestella.ui.theme.AppTheme
 import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
+import kotlin.math.roundToInt
 
 /**
  * Visual acceptance board for the Oe v2 foundation (ticket 01, acceptance #4).
@@ -77,9 +78,31 @@ private fun OeBoardRtlPreview() {
     OeBoard(ThemeCatalog.mascotLavender, compact = true)
 }
 
+@Preview(
+    name = "Oe v2 组件板 · 字号 130%",
+    widthDp = 412,
+    heightDp = 1500,
+    showBackground = true,
+)
 @Composable
-private fun OeBoard(theme: AppTheme, compact: Boolean = false) {
-    OrchestellaComposeTheme(theme = theme) {
+private fun OeBoardLargeTextPreview() {
+    OeBoard(ThemeCatalog.mascotLavender, textScale = 1.3f)
+}
+
+@Preview(
+    name = "Oe v2 组件板 · 字号 85%",
+    widthDp = 412,
+    heightDp = 1500,
+    showBackground = true,
+)
+@Composable
+private fun OeBoardSmallTextPreview() {
+    OeBoard(ThemeCatalog.constructivistWorkstation, textScale = 0.85f)
+}
+
+@Composable
+private fun OeBoard(theme: AppTheme, compact: Boolean = false, textScale: Float = 1f) {
+    OrchestellaComposeTheme(theme = theme, textScale = textScale) {
         Surface(color = MaterialTheme.colorScheme.background) {
             Column(
                 modifier = Modifier
@@ -95,7 +118,11 @@ private fun OeBoard(theme: AppTheme, compact: Boolean = false) {
                         color = MaterialTheme.colorScheme.onBackground,
                     )
                     Text(
-                        text = "10 个基础组件 · 一套几何 · 深浅两套主题",
+                        text = if (textScale == 1f) {
+                            "10 个基础组件 · 一套几何 · 深浅两套主题"
+                        } else {
+                            "10 个基础组件 · 应用内字号 ${(textScale * 100).roundToInt()}%"
+                        },
                         style = OeType.body(),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

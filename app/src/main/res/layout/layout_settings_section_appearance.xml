@@ -124,6 +124,30 @@
                 android:text="按钮圆角：直角（默认）"
                 android:textSize="13sp" />
 
+            <!-- 工单 05：应用内字号 85–130%（Oe Compose 层）。旧 XML 页面仍按
+                 系统 fontScale 一次缩放，待页面迁移后自动继承这里的选择。 -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_pick_text_scale"
+                style="@style/Widget.Orchestella.Button.Tonal"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/oe_space_sm"
+                android:minHeight="48dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                app:cornerRadius="0dp"
+                android:text="应用内字号：跟随系统"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/txt_settings_text_scale_hint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/oe_space_xs"
+                android:text="在系统字号基础上再缩放，仅作用于已迁移的 Oe 新版界面；旧页面仍只跟随系统字号"
+                android:textSize="11sp"
+                android:textColor="?attr/colorOutline" />
+
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_pick_accent"
                 style="@style/Widget.Orchestella.Button.Tonal"

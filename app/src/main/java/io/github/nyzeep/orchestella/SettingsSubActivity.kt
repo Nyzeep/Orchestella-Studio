@@ -21,6 +21,8 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.activity.result.contract.ActivityResultContracts
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
+import io.github.nyzeep.orchestella.ui.design.OeTextScale
+import io.github.nyzeep.orchestella.ui.design.OeTextScaleMode
 import io.github.nyzeep.orchestella.ui.motion.OrchestellaMotion
 import io.github.nyzeep.orchestella.ui.theme.CustomThemeSlot
 import io.github.nyzeep.orchestella.ui.theme.SurfaceOpacity
@@ -201,6 +203,23 @@ class SettingsSubActivity : AppCompatActivity() {
         findViewById<MaterialToolbar>(R.id.settings_sub_toolbar).setTitle(resId)
     }
 
+    /** Shared single-choice dialog for the appearance pickers (corner radius, text scale). */
+    private fun showSingleChoicePicker(
+        title: String,
+        labels: List<String>,
+        current: Int,
+        onPick: (Int) -> Unit,
+    ) {
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(title)
+            .setSingleChoiceItems(labels.toTypedArray(), current) { dialog, which ->
+                onPick(which)
+                dialog.dismiss()
+            }
+            .setNegativeButton("取消", null)
+            .show().also(ThemeApplier::apply)
+    }
+
     /**
      * Level-1 → level-2 transition: scale+alpha container-transform
      * approximation on the section container, pivoting at the top edge so the
@@ -246,6 +265,11 @@ class SettingsSubActivity : AppCompatActivity() {
                 8 -> "小圆角 8dp"
                 0 -> "直角 0dp（保留 XML 圆角）"
                 else -> "自定义 ${themeStore.cornerRadiusDp()}dp"
+            }
+        findViewById<MaterialButton>(R.id.btn_pick_text_scale)?.text =
+            "应用内字号：" + when (themeStore.textScaleMode()) {
+                OeTextScaleMode.FollowSystem -> "跟随系统"
+                OeTextScaleMode.Custom -> "${themeStore.textScalePercent()}%"
             }
         ThemeApplier.bind(this)
     }
@@ -361,17 +385,45 @@ class SettingsSubActivity : AppCompatActivity() {
             // list, selected as-is: the dialog must never open at -1 nor silently rewrite them.
             val options = if (standard.any { it.second == saved }) standard else standard + (
                 if (saved == 0) "直角 0dp（保留 XML 圆角）" to 0 else "自定义 ${saved}dp" to saved)
-            val current = options.indexOfFirst { it.second == saved }
-            androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("全局按钮圆角")
-                .setSingleChoiceItems(options.map { it.first }.toTypedArray(), current) { dialog, which ->
-                    themeStore.setCornerRadiusDp(options[which].second)
-                    refreshAppearance()
-                    dialog.dismiss()
-                    Toast.makeText(this, "圆角已更新：${options[which].first}", Toast.LENGTH_SHORT).show()
+            showSingleChoicePicker(
+                title = "全局按钮圆角",
+                labels = options.map { it.first },
+                current = options.indexOfFirst { it.second == saved },
+            ) { which ->
+                themeStore.setCornerRadiusDp(options[which].second)
+                refreshAppearance()
+                Toast.makeText(this, "圆角已更新：${options[which].first}", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        findViewById<MaterialButton?>(R.id.btn_pick_text_scale)?.setOnClickListener {
+            val savedMode = themeStore.textScaleMode()
+            val savedPercent = themeStore.textScalePercent()
+            // Historic or hand-edited percentages stay selectable instead of
+            // silently snapping to the nearest 5% step.
+            val percents = OeTextScale.optionsFor(savedMode, savedPercent)
+            val labels = listOf("跟随系统（默认）") + percents.map { "$it%" }
+            val current = if (savedMode == OeTextScaleMode.FollowSystem) {
+                0
+            } else {
+                1 + percents.indexOf(savedPercent)
+            }
+            showSingleChoicePicker(
+                title = "应用内字号（Oe 新版界面）",
+                labels = labels,
+                current = current,
+            ) { which ->
+                if (which == 0) {
+                    themeStore.setTextScale(
+                        OeTextScaleMode.FollowSystem,
+                        themeStore.textScalePercent(),
+                    )
+                } else {
+                    themeStore.setTextScale(OeTextScaleMode.Custom, percents[which - 1])
                 }
-                .setNegativeButton("取消", null)
-                .show().also(ThemeApplier::apply)
+                refreshAppearance()
+                Toast.makeText(this, "字号已保存：${labels[which]}", Toast.LENGTH_SHORT).show()
+            }
         }
 
         findViewById<MaterialButton?>(R.id.btn_pick_custom_theme)?.setOnClickListener {
