@@ -1,0 +1,11 @@
+{
+  "schema": "terminal-bench-baseline-v1",
+  "status": "pending-device",
+  "capturedAt": null,
+  "thresholds": {
+    "p95MaxRegressionRatio": 0.15,
+    "jankyMaxRegressionPoints": 5.0,
+    "fpsMaxDrop": 3.0
+  },
+  "buckets": {}
+}
