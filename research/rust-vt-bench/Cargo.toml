@@ -1,0 +1,15 @@
+[workspace]
+members = ["vt-core", "vt-bench"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+# NOTE: panic = "abort" is deliberately NOT set. A later JNI bridge needs
+# catch_unwind across the FFI boundary, which requires the default unwind.

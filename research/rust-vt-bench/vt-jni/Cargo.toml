@@ -1,0 +1,21 @@
+[package]
+name = "vt-jni"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Standalone workspace: this crate is a measurement shim, not part of the
+# vt-core/vt-bench workspace, so that `cargo ndk` builds exactly one cdylib.
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+vt-core = { path = "../vt-core" }
+jni = { version = "0.21", default-features = false }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
