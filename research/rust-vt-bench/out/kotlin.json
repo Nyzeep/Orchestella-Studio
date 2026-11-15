@@ -1,6 +1,5 @@
 {"schema":"orchestella.vtbench/1","impl":"kotlin",
  "jvm":"17.0.21 / 17.0.21+9",
- "jvm_args":"-Djava.awt.headless=true -Djava.library.path=/usr/java/packages/lib:/usr/lib64:/lib64:/lib:/usr/lib:/workspace/.worktrees/rust/app/src/testDebug/jniLibs:/workspace/.worktrees/rust/app/src/test/jniLibs -Dorg.gradle.internal.worker.tmpdir=/workspace/.worktrees/rust/app/build/tmp/testDebugUnitTest/work --add-opens=java.base/java.io=ALL-UNNAMED -Xmx512m -Dfile.encoding=UTF-8 -Duser.country=CN -Duser.language=zh -Duser.variant -ea",
  "model":"90x30 core(shellIntegration=false)",
  "fixtures":[
   {"id":"plain","bytes":10485760,"sha256":"7c48831495b8dec788fb7b9058c966a99cb2165edfefc011787e1d4cc5c4b7ee",

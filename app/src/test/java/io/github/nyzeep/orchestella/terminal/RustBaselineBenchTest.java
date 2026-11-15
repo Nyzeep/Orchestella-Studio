@@ -275,7 +275,10 @@ public final class RustBaselineBenchTest {
         StringBuilder out = new StringBuilder();
         out.append("{\"schema\":\"orchestella.vtbench/1\",\"impl\":\"kotlin\",\n");
         out.append(" \"jvm\":\"").append(escape(jvm())).append("\",\n");
-        out.append(" \"jvm_args\":\"").append(escape(jvmArgs())).append("\",\n");
+        // Launch arguments are printed to the console but deliberately kept out
+        // of the tracked artifact: they embed machine-specific absolute paths
+        // (jniLibs, Gradle worker tmpdir), which the repo's sensitive-data
+        // policy forbids from entering version control.
         out.append(" \"model\":\"").append(COLUMNS).append('x').append(ROWS)
                 .append(" core(shellIntegration=false)\",\n");
         out.append(" \"fixtures\":[\n");
