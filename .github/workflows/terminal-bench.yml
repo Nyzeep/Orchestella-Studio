@@ -1,0 +1,49 @@
+name: Terminal bench (offline)
+
+# Host-side offline acceptance for tools/terminal-bench. This job never touches
+# adb, a device, the Android SDK or repository secrets: the five frame fixtures
+# are measured on a real device by an operator, and this gate only checks the
+# harness and the committed baseline file. Device baseline capture stays a
+# manual step; see tools/terminal-bench/README.md sections 8 and 13.
+on:
+  push:
+    paths:
+      - "tools/terminal-bench/**"
+      - ".github/workflows/terminal-bench.yml"
+  pull_request:
+    paths:
+      - "tools/terminal-bench/**"
+      - ".github/workflows/terminal-bench.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch/PR supersedes the run in flight.
+concurrency:
+  group: "${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  offline:
+    name: Offline unit tests and dry-run
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Compile the harness
+        run: python3 -m py_compile tools/terminal-bench/run.py
+
+      - name: Run offline unit tests
+        run: python3 -B -m unittest discover -s tools/terminal-bench -p 'test_*.py'
+
+      - name: Dry-run all fixtures against the baseline
+        run: python3 tools/terminal-bench/run.py --dry-run --fixture all
