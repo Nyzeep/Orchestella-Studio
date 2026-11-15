@@ -33,6 +33,7 @@ only meaningful on identical input bytes.
 import argparse
 import json
 import os
+import string
 import sys
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -152,7 +153,7 @@ def _pct(base, new, lower_is_better=False):
 
 def _valid_sha(value):
     return isinstance(value, str) and len(value) == 64 and all(
-        char in "0123456789abcdef" for char in value
+        char in string.hexdigits.lower() for char in value
     )
 
 
