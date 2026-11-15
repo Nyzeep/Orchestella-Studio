@@ -1,0 +1,21 @@
+<!-- Orchestella Oe icon: 端口 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+  <path
+      android:fillColor="@android:color/transparent"
+      android:strokeColor="?android:attr/colorControlNormal"
+      android:strokeWidth="1.8"
+      android:strokeLineCap="round"
+      android:strokeLineJoin="round"
+      android:pathData="M6,7H12A2,2 0 0 1 14,9V15A2,2 0 0 1 12,17H6A2,2 0 0 1 4,15V9A2,2 0 0 1 6,7Z" />
+  <path
+      android:fillColor="@android:color/transparent"
+      android:strokeColor="?android:attr/colorControlNormal"
+      android:strokeWidth="1.8"
+      android:strokeLineCap="round"
+      android:strokeLineJoin="round"
+      android:pathData="M14,9H19.5M14,12H19.5M14,15H19.5" />
+</vector>

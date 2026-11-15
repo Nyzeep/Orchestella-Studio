@@ -66,4 +66,31 @@
     <dimen name="oe_ring_size_sm">56dp</dimen>
     <dimen name="oe_ring_size_lg">72dp</dimen>
     <dimen name="oe_list_divider_inset">16dp</dimen>
+
+    <!-- Oe v2（2026-11-15 设计基座，工单 01）：形状语义 / 间距节奏 / 行高。
+         与 ui/design/OeTokens.kt 一一对应（一套数值两处消费）。全部为追加
+         档位：既有 oe_corner_* / oe_space_* / oe_list_item_* 的值一个没改，
+         XML 页面可继续用旧名，新页面按语义名取用。
+         注意：用户「按钮圆角」设置只作用于 oe_corner_control 及以下控件，
+         不得放大 card/hero——表面圆角是版式，控件圆角是偏好。 -->
+    <dimen name="oe_corner_hero">32dp</dimen>
+    <dimen name="oe_corner_card">24dp</dimen>
+    <dimen name="oe_corner_block">20dp</dimen>
+    <dimen name="oe_corner_control">16dp</dimen>
+    <dimen name="oe_corner_badge">14dp</dimen>
+
+    <dimen name="oe_space_page">16dp</dimen>
+    <dimen name="oe_space_card">16dp</dimen>
+    <dimen name="oe_space_gap">12dp</dimen>
+    <dimen name="oe_space_group">28dp</dimen>
+    <dimen name="oe_space_header_top">24dp</dimen>
+    <dimen name="oe_space_header_bottom">8dp</dimen>
+
+    <dimen name="oe_row_h">56dp</dimen>
+    <dimen name="oe_row_h_dense">48dp</dimen>
+    <dimen name="oe_row_divider_inset">56dp</dimen>
+    <dimen name="oe_topbar_h">56dp</dimen>
+    <dimen name="oe_dock_h">62dp</dimen>
+    <dimen name="oe_dock_clearance">96dp</dimen>
+    <dimen name="oe_tap_min">44dp</dimen>
 </resources>

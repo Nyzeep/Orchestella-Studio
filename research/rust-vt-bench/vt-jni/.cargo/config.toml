@@ -1,0 +1,3 @@
+[target.aarch64-linux-android]
+# 16 KB page compatibility: every PT_LOAD segment must be 16 KB aligned.
+rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]
