@@ -43,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
@@ -107,7 +108,7 @@ fun OePage(
     bottomClearance: Dp = OeSize.dockClearance,
     content: LazyListScope.() -> Unit,
 ) {
-    val hasHeader = title != null
+    val hasHeader = title != null || onBack != null || action != null
     Box(modifier.fillMaxSize()) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -125,7 +126,13 @@ fun OePage(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(OeSize.topBar)
-                    .background(MaterialTheme.colorScheme.background.copy(alpha = 0.94f))
+                    .background(
+                        Brush.verticalGradient(
+                            0f to MaterialTheme.colorScheme.background,
+                            0.72f to MaterialTheme.colorScheme.background.copy(alpha = 0.94f),
+                            1f to MaterialTheme.colorScheme.background.copy(alpha = 0f),
+                        ),
+                    )
                     .padding(horizontal = OeSpace.page),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -155,14 +162,18 @@ fun OePage(
                     }
                     Spacer(Modifier.width(OeSpace.gap))
                 }
-                Text(
-                    text = title,
-                    style = OeType.pageTitle(),
-                    color = MaterialTheme.colorScheme.onBackground,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
+                if (title != null) {
+                    Text(
+                        text = title,
+                        style = OeType.pageTitle(),
+                        color = MaterialTheme.colorScheme.onBackground,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                } else {
+                    Spacer(Modifier.weight(1f))
+                }
                 action?.invoke()
             }
         }
