@@ -43,7 +43,11 @@ DEFAULT_APK = (
     REPO_ROOT / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk"
 )
 DEFAULT_PACKAGE = "io.github.nyzeep.orchestella"
-ACTIVITY_SUFFIX = ".bench.TerminalBenchActivity"
+# The debug activity keeps its namespace class name in every channel build; only
+# the package (applicationId) carries the dev/qa suffix. ``am start`` resolves a
+# leading-dot component against the applicationId, so a channel build has to be
+# addressed by the fully qualified class (release builds accepted either form).
+ACTIVITY_CLASS = "io.github.nyzeep.orchestella.bench.TerminalBenchActivity"
 DEFAULT_TIMEOUT_SECONDS = 240.0
 POLL_INTERVAL_SECONDS = 2.0
 QUICK_COMMAND_TIMEOUT_SECONDS = 30.0
@@ -573,7 +577,7 @@ def force_stop(adb: str, serial: str, package: str) -> None:
 
 
 def launch_activity(adb: str, serial: str, package: str, fixture: str, alias: str | None) -> None:
-    component = f"{package}/{ACTIVITY_SUFFIX}"
+    component = f"{package}/{ACTIVITY_CLASS}"
     cmd = [adb]
     if serial:
         cmd += ["-s", serial]
