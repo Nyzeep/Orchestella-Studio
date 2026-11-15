@@ -1,0 +1,28 @@
+<!-- Orchestella Oe icon: 内存 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+  <path
+      android:fillColor="@android:color/transparent"
+      android:strokeColor="?android:attr/colorControlNormal"
+      android:strokeWidth="1.8"
+      android:strokeLineCap="round"
+      android:strokeLineJoin="round"
+      android:pathData="M5,7H19A1,1 0 0 1 20,8V16A1,1 0 0 1 19,17H5A1,1 0 0 1 4,16V8A1,1 0 0 1 5,7Z" />
+  <path
+      android:fillColor="@android:color/transparent"
+      android:strokeColor="?android:attr/colorControlNormal"
+      android:strokeWidth="1.8"
+      android:strokeLineCap="round"
+      android:strokeLineJoin="round"
+      android:pathData="M7.5,15.8V17M10.5,15.8V17M13.5,15.8V17M16.5,15.8V17" />
+  <path
+      android:fillColor="@android:color/transparent"
+      android:strokeColor="?android:attr/colorControlNormal"
+      android:strokeWidth="1.8"
+      android:strokeLineCap="round"
+      android:strokeLineJoin="round"
+      android:pathData="M6.1,9.2H8.3V11.8H6.1ZM10.9,9.2H13.1V11.8H10.9ZM15.7,9.2H17.9V11.8H15.7Z" />
+</vector>

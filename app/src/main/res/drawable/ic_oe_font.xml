@@ -1,0 +1,14 @@
+<!-- Orchestella Oe icon: 字体 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+  <path
+      android:fillColor="@android:color/transparent"
+      android:strokeColor="?android:attr/colorControlNormal"
+      android:strokeWidth="1.8"
+      android:strokeLineCap="round"
+      android:strokeLineJoin="round"
+      android:pathData="M6.2,19.5L12,4.5L17.8,19.5M8.8,13.5H15.2" />
+</vector>

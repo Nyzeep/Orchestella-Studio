@@ -882,6 +882,11 @@ dependencies {
     implementation(libs.compose.ui)
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
+    // OePreview.kt ships @Preview boards in main (the design review entry point),
+    // so the annotation artifact is a compile dependency; the renderer stays
+    // debug-only. Ticket 01 requires the board, hence the two extra modules.
+    implementation(libs.compose.ui.tooling.preview)
+    debugImplementation(libs.compose.ui.tooling)
     implementation(libs.shizuku.api)
     implementation(libs.shizuku.provider)
     // Pin the in-process hidden-API exemption (Apache-2.0, LSPosed). It grants

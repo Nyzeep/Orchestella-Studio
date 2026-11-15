@@ -6,9 +6,13 @@ import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.unit.dp
+import io.github.nyzeep.orchestella.ui.design.LocalOeTheme
+import io.github.nyzeep.orchestella.ui.design.OeGlassLevel
+import io.github.nyzeep.orchestella.ui.design.OeThemeData
 import io.github.nyzeep.orchestella.ui.theme.AppTheme
 
 /**
@@ -86,5 +90,17 @@ fun OrchestellaComposeTheme(
         large = RoundedCornerShape(radius * 3 / 2),
         extraLarge = RoundedCornerShape(radius * 2),
     )
-    MaterialTheme(colorScheme = scheme, shapes = shapes, content = content)
+    MaterialTheme(colorScheme = scheme, shapes = shapes) {
+        // The Oe v2 component layer reads rounding/brightness/glass level from
+        // one ambient state instead of re-deriving it from M3 shapes per call
+        // site. glassLevel stays None until ticket 02 fills the material engine.
+        CompositionLocalProvider(
+            LocalOeTheme provides OeThemeData(
+                cornerDp = radius,
+                isDark = theme.isDark,
+                glassLevel = OeGlassLevel.None,
+            ),
+            content = content,
+        )
+    }
 }
