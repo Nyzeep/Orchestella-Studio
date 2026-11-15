@@ -2,7 +2,7 @@
 
 调试专用 `TerminalBenchActivity` 在真机上跑五组固定夹具，把每组的帧统计以 `OE_BENCH {json}` 写入 logcat。本目录是宿主侧闸门：一条命令完成「安装 APK → 跑夹具 → 收结果 → 对比基线 → 退出码」，只用 `adb` 与 Python 标准库。
 
-当前状态：**PENDING-DEVICE**。仓库内的 `baseline.json` 是空桶占位（`status: pending-device`），没有任何真机数字；在抓到第一份基线之前，本工具只报告、不判定。
+当前状态：**PENDING-DEVICE**。仓库内的 `baseline.json` 是空桶占位（`status: pending-device`），没有任何真机数字；在抓到第一份基线之前，本工具只报告、不判定。离线自测已接入 GitHub Actions（`.github/workflows/terminal-bench.yml`），设备基线仍需人工抓取。
 
 ## 1. 边界
 
@@ -226,4 +226,4 @@ python3 tools/terminal-bench/run.py --dry-run --fixture all
 
 测试覆盖：brief 格式解析（含 CRLF）、`OE_BENCH_DONE` 不被当成夹具、p95/janky/fps 三条回归规则、缺桶与缺指标的 report-only 行为、`--update-baseline` 的分桶/保留旧桶/diff、`--dry-run` 无设备退出 0。
 
-这套测试**尚未接进 GitHub CI**（本工单明确不接设备夹具；离线单测可以后续一并挂到 CI）。目前的门是人工执行上面三条命令。
+这套测试已接进 GitHub Actions：`.github/workflows/terminal-bench.yml` 会在 push / PR 改到 `tools/terminal-bench/**` 或该 workflow 时自动跑上面三条命令。该 job 不接设备、不装 adb、不需要 secrets，因此只验证 harness 与基线文件；真机夹具与 `--update-baseline` 仍是人工步骤（见 §8）。
