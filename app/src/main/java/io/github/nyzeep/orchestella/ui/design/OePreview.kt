@@ -34,7 +34,8 @@ import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
 /**
  * Visual acceptance board for the Oe v2 foundation (ticket 01, acceptance #4).
  *
- * Two full-component boards (light + dark) and one page-composition preview.
+ * Three full-component boards (light, dark, RTL) and three page-composition
+ * previews (shell page, titled sub-page, dark sub-page).
  * This file is the review entry point in Android Studio; the device-side
  * walkthrough list lives in the lane report because this environment has no
  * emulator.
@@ -84,10 +85,10 @@ private fun OeBoard(theme: AppTheme, compact: Boolean = false) {
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
-                    .padding(vertical = OeSpace.page),
+                    .padding(horizontal = OeSpace.page, vertical = OeSpace.page),
                 verticalArrangement = Arrangement.spacedBy(OeSpace.gap),
             ) {
-                Column(modifier = Modifier.padding(horizontal = OeSpace.page)) {
+                Column {
                     Text(
                         text = "Oe v2 组件板",
                         style = OeType.pageTitle(),
@@ -198,20 +199,18 @@ private fun OeControlsSection() {
 
 @Composable
 private fun OeCardsSection() {
-    Column(modifier = Modifier.padding(horizontal = OeSpace.page)) {
-        OeCard(onClick = {}) {
-            Text(
-                text = "OeCard",
-                style = OeType.emptyTitle(),
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = "单一发丝线、无发光；按下 0.98 缩放 + 4% 明度偏移。",
-                style = OeType.body(),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+    OeCard(onClick = {}) {
+        Text(
+            text = "OeCard",
+            style = OeType.emptyTitle(),
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = "单一发丝线、无发光；按下 0.98 缩放 + 4% 明度偏移。",
+            style = OeType.body(),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -242,17 +241,15 @@ private fun OeStatsSection() {
 
 @Composable
 private fun OeEmptySection() {
-    Column(modifier = Modifier.padding(horizontal = OeSpace.page)) {
-        OeCard {
-            OeEmptyState(
-                icon = OeIcons.Instances,
-                title = "还没有 Linux 实例",
-                message = "选择一个发行版，几分钟内就能得到一台完整的 ARM64 工作站。",
-                action = {
-                    OeButton(text = "选择发行版", style = OeButtonStyle.Primary, icon = OeIcons.Plus, onClick = {})
-                },
-            )
-        }
+    OeCard {
+        OeEmptyState(
+            icon = OeIcons.Instances,
+            title = "还没有 Linux 实例",
+            message = "选择一个发行版，几分钟内就能得到一台完整的 ARM64 工作站。",
+            action = {
+                OeButton(text = "选择发行版", style = OeButtonStyle.Primary, icon = OeIcons.Plus, onClick = {})
+            },
+        )
     }
 }
 

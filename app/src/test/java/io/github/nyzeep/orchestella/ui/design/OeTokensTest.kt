@@ -68,9 +68,9 @@ class OeTokensTest {
         // The platform applies the system factor when sp is converted to px.
         assertTrue("title must grow with fontScale", titleLarge > titleNormal)
         assertTrue("caption must grow with fontScale", captionLarge > captionNormal)
-        // Android 14+ scales text non-linearly, so a 28sp title must NOT reach
-        // the linear 36.4px at 130% — if the token had pre-multiplied the
-        // factor it would overshoot this ceiling.
+        // Android 14+ scales text non-linearly, so the platform result must stay
+        // at or below the linear 36.4px ceiling; a token that pre-multiplied the
+        // factor would overshoot it.
         assertTrue("title must not double-apply fontScale", titleLarge <= 28f * 1.3f + 0.01f)
         // The stored token stays the base size; only conversion is affected.
         assertEquals(28f, title.fontSize.value, 0.001f)
@@ -86,19 +86,12 @@ class OeTokensTest {
     fun textScaleFollowSystemNeverDoubleApplies() {
         assertEquals(
             1f,
-            OeTextScale.effectiveFactor(
-                systemFontScale = 1.3f,
-                mode = OeTextScaleMode.FollowSystem,
-            ),
+            OeTextScale.effectiveFactor(mode = OeTextScaleMode.FollowSystem),
             0.0001f,
         )
         assertEquals(
             1.3f,
-            OeTextScale.effectiveFactor(
-                systemFontScale = 1f,
-                mode = OeTextScaleMode.Custom,
-                customPercent = 130,
-            ),
+            OeTextScale.effectiveFactor(mode = OeTextScaleMode.Custom, customPercent = 130),
             0.0001f,
         )
     }

@@ -212,8 +212,6 @@ fun OeSection(
                 style = OeType.section(),
                 color = scheme.onSurfaceVariant,
                 modifier = Modifier.padding(
-                    start = OeSpace.page,
-                    end = OeSpace.page,
                     top = titleTopPadding,
                     bottom = OeSpace.headerBottom,
                 ),
@@ -233,26 +231,26 @@ fun OeSection(
                 .drawWithContent {
                     drawContent()
                     if (dividerYs.isEmpty()) return@drawWithContent
-                    val startPx = OeSpace.rowDividerInset.toPx()
-                    val endPx = OeSpace.card.toPx()
+                    val startInset = OeSpace.rowDividerInset.toPx()
+                    val endInset = OeSpace.card.toPx()
                     val stroke = OeSpace.hairline.toPx()
+                    val startX = if (layoutDirection == LayoutDirection.Rtl) {
+                        size.width - startInset
+                    } else {
+                        startInset
+                    }
+                    val endX = if (layoutDirection == LayoutDirection.Rtl) {
+                        endInset
+                    } else {
+                        size.width - endInset
+                    }
                     dividerYs.forEach { y ->
-                        val yPos = y.toFloat()
-                        if (layoutDirection == LayoutDirection.Rtl) {
-                            drawLine(
-                                color = dividerColor,
-                                start = Offset(size.width - startPx, yPos),
-                                end = Offset(endPx, yPos),
-                                strokeWidth = stroke,
-                            )
-                        } else {
-                            drawLine(
-                                color = dividerColor,
-                                start = Offset(startPx, yPos),
-                                end = Offset(size.width - endPx, yPos),
-                                strokeWidth = stroke,
-                            )
-                        }
+                        drawLine(
+                            color = dividerColor,
+                            start = Offset(startX, y.toFloat()),
+                            end = Offset(endX, y.toFloat()),
+                            strokeWidth = stroke,
+                        )
                     }
                 },
         ) { measurables, constraints ->
@@ -283,11 +281,7 @@ fun OeSection(
                 text = footer,
                 style = OeType.caption(),
                 color = scheme.onSurfaceVariant,
-                modifier = Modifier.padding(
-                    start = OeSpace.page,
-                    end = OeSpace.page,
-                    top = OeSpace.headerBottom,
-                ),
+                modifier = Modifier.padding(top = OeSpace.headerBottom),
             )
         }
     }
@@ -332,6 +326,15 @@ fun OeCard(
                         role = Role.Button,
                         onClick = onClick,
                     )
+                } else {
+                    Modifier
+                },
+            )
+            .then(
+                if (onClick != null) {
+                    // A clickable card reads as one node; inner interactive
+                    // elements are not expected in this slot by contract.
+                    Modifier.semantics(mergeDescendants = true) {}
                 } else {
                     Modifier
                 },
@@ -391,7 +394,7 @@ fun OeRow(
                     Modifier
                 },
             )
-            .padding(horizontal = OeSpace.page, vertical = OeSpace.headerBottom),
+            .padding(horizontal = OeSpace.page, vertical = OeSpace.rowVertical),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (leading != null) {
@@ -401,7 +404,7 @@ fun OeRow(
             ) {
                 leading()
             }
-            Spacer(Modifier.width(OeSpace.card))
+            Spacer(Modifier.width(OeSpace.leadingGap))
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -499,10 +502,10 @@ fun OeSwitch(
     }
     Box(
         modifier = modifier
-            .size(OeSize.switchTrackWidth, OeSize.switchTrackHeight)
+            // The visual track stays 52x32; the touch target is 44dp tall so
+            // the switch remains comfortable without changing its geometry.
+            .size(OeSize.switchTrackWidth, OeSize.tap)
             .graphicsLayer { alpha = if (enabled) 1f else 0.38f }
-            .clip(CircleShape)
-            .background(trackColor)
             .toggleable(
                 value = checked,
                 enabled = enabled,
@@ -519,16 +522,26 @@ fun OeSwitch(
                     Modifier
                 },
             )
-            .padding(OeSize.switchInset),
-        contentAlignment = Alignment.CenterStart,
+            .padding(vertical = (OeSize.tap - OeSize.switchTrackHeight) / 2),
+        contentAlignment = Alignment.Center,
     ) {
         Box(
             modifier = Modifier
-                .offset(x = thumbOffset)
-                .size(OeSize.switchThumb)
+                .fillMaxWidth()
+                .height(OeSize.switchTrackHeight)
                 .clip(CircleShape)
-                .background(thumbColor),
-        )
+                .background(trackColor)
+                .padding(OeSize.switchInset),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Box(
+                modifier = Modifier
+                    .offset(x = thumbOffset)
+                    .size(OeSize.switchThumb)
+                    .clip(CircleShape)
+                    .background(thumbColor),
+            )
+        }
     }
 }
 
@@ -537,8 +550,11 @@ fun OeSwitch(
 // ---------------------------------------------------------------------------
 
 /**
- * Equal-width segmented control on a capsule track (surfaceVariant) with the
- * selected segment painted in primary. Fires [OeHaptics.select] on change.
+ * Equal-width segmented control on a surfaceVariant track with the selected
+ * segment painted in primary. The track radius follows the user's control
+ * preference (the ticket explicitly puts segmented controls in that scope), so
+ * at the default 16dp on a 40dp track it reads as a pill; an 8dp preference
+ * deliberately makes it squarer. Fires [OeHaptics.select] on change.
  */
 @Composable
 fun OeSegmented(
@@ -653,6 +669,22 @@ private fun tinted(base: Color, surface: Color): Pair<Color, Color> {
 
 enum class OeButtonStyle { Primary, Secondary, Ghost }
 
+private data class OeButtonSpec(
+    val height: Dp,
+    val background: Color,
+    val foreground: Color,
+)
+
+@Composable
+private fun oeButtonSpec(style: OeButtonStyle): OeButtonSpec {
+    val scheme = MaterialTheme.colorScheme
+    return when (style) {
+        OeButtonStyle.Primary -> OeButtonSpec(OeSize.buttonPrimary, scheme.primary, scheme.onPrimary)
+        OeButtonStyle.Secondary -> OeButtonSpec(OeSize.buttonSecondary, scheme.surfaceVariant, scheme.onSurface)
+        OeButtonStyle.Ghost -> OeButtonSpec(OeSize.buttonGhost, Color.Transparent, scheme.primary)
+    }
+}
+
 /**
  * Three-height action button (48 / 44 / 36). [icon] is a vector drawable id;
  * the tint follows the text color so one asset works on every style.
@@ -666,28 +698,13 @@ fun OeButton(
     icon: Int? = null,
     enabled: Boolean = true,
 ) {
-    val scheme = MaterialTheme.colorScheme
-    val height = when (style) {
-        OeButtonStyle.Primary -> OeSize.buttonPrimary
-        OeButtonStyle.Secondary -> OeSize.buttonSecondary
-        OeButtonStyle.Ghost -> OeSize.buttonGhost
-    }
-    val background = when (style) {
-        OeButtonStyle.Primary -> scheme.primary
-        OeButtonStyle.Secondary -> scheme.surfaceVariant
-        OeButtonStyle.Ghost -> Color.Transparent
-    }
-    val foreground = when (style) {
-        OeButtonStyle.Primary -> scheme.onPrimary
-        OeButtonStyle.Secondary -> scheme.onSurface
-        OeButtonStyle.Ghost -> scheme.primary
-    }
+    val spec = oeButtonSpec(style)
     Row(
         modifier = modifier
-            .height(height)
+            .height(spec.height)
             .graphicsLayer { alpha = if (enabled) 1f else 0.38f }
             .clip(OeTheme.controlShape)
-            .background(background)
+            .background(spec.background)
             .clickable(
                 enabled = enabled,
                 role = Role.Button,
@@ -701,7 +718,7 @@ fun OeButton(
             Icon(
                 painter = painterResource(icon),
                 contentDescription = null,
-                tint = foreground,
+                tint = spec.foreground,
                 modifier = Modifier.size(18.dp),
             )
             Spacer(Modifier.width(8.dp))
@@ -709,7 +726,7 @@ fun OeButton(
         Text(
             text = text,
             style = OeType.row(),
-            color = foreground,
+            color = spec.foreground,
             maxLines = 1,
         )
     }

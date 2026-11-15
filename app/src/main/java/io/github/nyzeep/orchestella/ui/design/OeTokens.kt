@@ -34,9 +34,6 @@ object OeShape {
     /** Fully rounded capsule: segmented tracks, chips, pills. */
     val capsule: Shape = RoundedCornerShape(percent = 50)
 
-    /** Blank shape used by the 2dp segmented inset. */
-    val none: Shape = RoundedCornerShape(0.dp)
-
     /**
      * Maps the stored button-corner preference (8/12/16) onto a control radius.
      * Values outside the supported band are clamped instead of trusted, so a
@@ -57,6 +54,12 @@ object OeSpace {
     /** Space above a group title when the title is rendered by [OeSection]. */
     val headerTop = 24.dp
     val headerBottom = 8.dp
+
+    /** Vertical padding inside a row; keeps `OeSection.headerBottom` semantic. */
+    val rowVertical = 8.dp
+
+    /** Gap between a row's 24dp leading slot and its title column. */
+    val leadingGap = 16.dp
 
     /** Divider start inset measured from the card edge: 16 row pad + 24 icon + 16 gap. */
     val rowDividerInset = 56.dp
@@ -105,7 +108,7 @@ object OeMotion {
     const val staggerMax = 5
 }
 
-/** The five text roles Oe v2 allows. Anything else is a page-specific style. */
+/** The text roles Oe v2 allows. Anything else is a page-specific style. */
 enum class OeTextRole {
     PageTitle,
     Section,
@@ -187,17 +190,16 @@ object OeType {
 enum class OeTextScaleMode { FollowSystem, Custom }
 
 /**
- * In-app text scaling. When the app follows the system, the factor stays 1.0
- * because `sp` already scales with `Configuration.fontScale`; multiplying here
- * as well would double-scale every label. Only the explicit 85–130% override
- * produces a factor.
+ * In-app text scaling. The platform already applies `Configuration.fontScale`
+ * exactly once when `sp` is converted to pixels (including Android 14's
+ * non-linear curve), so this factor is only the explicit 85–130% app override;
+ * in follow-system mode it stays 1.0.
  */
 object OeTextScale {
     const val MIN_PERCENT = 85
     const val MAX_PERCENT = 130
 
     fun effectiveFactor(
-        systemFontScale: Float = 1f,
         mode: OeTextScaleMode = OeTextScaleMode.FollowSystem,
         customPercent: Int = 100,
     ): Float = when (mode) {
@@ -207,9 +209,6 @@ object OeTextScale {
             MAX_PERCENT / 100f,
         )
     }
-
-    /** Reads the system value once; used by pages that want to show the effective scale. */
-    fun systemScale(fontScale: Float): Float = if (fontScale.isFinite() && fontScale > 0f) fontScale else 1f
 }
 
 /** Liquid-glass level; filled by ticket 02, declared here so [OeTheme] is stable. */
