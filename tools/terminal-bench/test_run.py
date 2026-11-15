@@ -20,6 +20,7 @@ from pathlib import Path
 import run as bench
 
 DEVICE = "Test Model"
+ALIAS = "bench-a"
 API = 34
 
 
@@ -29,6 +30,7 @@ def sample_results() -> dict:
         "flood_seq": {
             "fixture": "flood_seq",
             "device": DEVICE,
+            "alias": ALIAS,
             "api": API,
             "frames": 500,
             "janky": 10,
@@ -50,6 +52,7 @@ def sample_results() -> dict:
         "flood_color": {
             "fixture": "flood_color",
             "device": DEVICE,
+            "alias": ALIAS,
             "api": API,
             "frames": 400,
             "janky": 4,
@@ -71,6 +74,7 @@ def sample_results() -> dict:
         "scroll_2000": {
             "fixture": "scroll_2000",
             "device": DEVICE,
+            "alias": ALIAS,
             "api": API,
             "frames": 300,
             "janky": 3,
@@ -92,6 +96,7 @@ def sample_results() -> dict:
         "type_100": {
             "fixture": "type_100",
             "device": DEVICE,
+            "alias": ALIAS,
             "api": API,
             "frames": 200,
             "janky": 2,
@@ -113,6 +118,7 @@ def sample_results() -> dict:
         "resize_font": {
             "fixture": "resize_font",
             "device": DEVICE,
+            "alias": ALIAS,
             "api": API,
             "frames": 150,
             "janky": 1,
@@ -161,7 +167,7 @@ def baseline_document(results: dict | None = None) -> dict:
         "status": "captured",
         "capturedAt": "2026-01-01T00:00:00Z",
         "thresholds": dict(bench.DEFAULT_THRESHOLDS),
-        "buckets": {f"{DEVICE}/{API}": {"device": DEVICE, "api": API, "capturedAt": "2026-01-01T00:00:00Z", "fixtures": fixtures}},
+        "buckets": {f"{ALIAS}/{API}": {"alias": ALIAS, "api": API, "capturedAt": "2026-01-01T00:00:00Z", "fixtures": fixtures}},
     }
 
 
@@ -293,11 +299,11 @@ class BaselineTests(unittest.TestCase):
         code, out, _ = self.run_gate(sample_results())
 
         self.assertEqual(code, bench.EXIT_OK)
-        self.assertIn(f"NO_BASELINE bucket={DEVICE}/{API}", out)
+        self.assertIn(f"NO_BASELINE bucket={ALIAS}/{API}", out)
 
     def test_missing_fixture_in_baseline_is_report_only(self) -> None:
         document = baseline_document()
-        fixtures = document["buckets"][f"{DEVICE}/{API}"]["fixtures"]
+        fixtures = document["buckets"][f"{ALIAS}/{API}"]["fixtures"]
         del fixtures["flood_color"]
         self.write_baseline(document)
 
@@ -309,7 +315,7 @@ class BaselineTests(unittest.TestCase):
 
     def test_null_metric_in_baseline_is_report_only(self) -> None:
         document = baseline_document()
-        document["buckets"][f"{DEVICE}/{API}"]["fixtures"]["flood_seq"]["p95"] = None
+        document["buckets"][f"{ALIAS}/{API}"]["fixtures"]["flood_seq"]["p95"] = None
         self.write_baseline(document)
         measured = sample_results()
         measured["flood_seq"]["p95"] = 99.0
@@ -320,6 +326,88 @@ class BaselineTests(unittest.TestCase):
         # p95 cannot be judged, but janky and fps still are.
         self.assertNotIn("FAIL", out)
         self.assertIn("PASS flood_seq", out)
+
+    def test_missing_fixture_in_capture_is_incomplete(self) -> None:
+        self.write_baseline(baseline_document())
+        partial = {"flood_seq": sample_results()["flood_seq"]}
+        self.write_logcat(logcat_text(partial))
+
+        code, _, err = call_main(
+            ["--logcat", str(self.logcat_path), "--baseline", str(self.baseline_path)]
+        )
+
+        self.assertEqual(code, bench.EXIT_ENV)
+        self.assertIn("ERROR=BENCH_INCOMPLETE", err)
+
+    def test_bucket_is_selected_by_alias_not_model(self) -> None:
+        document = baseline_document()
+        document["buckets"][f"{DEVICE}/{API}"] = document["buckets"].pop(f"{ALIAS}/{API}")
+        self.write_baseline(document)
+
+        code, out, _ = self.run_gate(sample_results())
+
+        self.assertEqual(code, bench.EXIT_OK)
+        self.assertIn(f"NO_BASELINE bucket={ALIAS}/{API}", out)
+        self.assertNotIn(f"BUCKET {DEVICE}/{API}", out)
+
+    def test_update_baseline_rejects_api_mismatch(self) -> None:
+        self.write_baseline(baseline_document())
+        self.write_logcat(logcat_text(sample_results()))
+
+        code, _, err = call_main(
+            [
+                "--update-baseline",
+                "--model",
+                ALIAS,
+                "--api",
+                str(API + 1),
+                "--baseline",
+                str(self.baseline_path),
+                "--logcat",
+                str(self.logcat_path),
+            ]
+        )
+
+        self.assertEqual(code, bench.EXIT_ENV)
+        self.assertIn("ERROR=API_MISMATCH", err)
+
+    def test_update_baseline_rejects_alias_mismatch(self) -> None:
+        self.write_baseline(baseline_document())
+        self.write_logcat(logcat_text(sample_results()))
+
+        code, _, err = call_main(
+            [
+                "--update-baseline",
+                "--model",
+                "some-other-alias",
+                "--api",
+                str(API),
+                "--baseline",
+                str(self.baseline_path),
+                "--logcat",
+                str(self.logcat_path),
+            ]
+        )
+
+        self.assertEqual(code, bench.EXIT_ENV)
+        self.assertIn("ERROR=ALIAS_MISMATCH", err)
+
+    def test_json_out_inside_repository_is_refused(self) -> None:
+        self.write_baseline(baseline_document())
+
+        code, _, err = call_main(
+            [
+                "--logcat",
+                str(self.logcat_path),
+                "--baseline",
+                str(self.baseline_path),
+                "--json-out",
+                str(bench.REPO_ROOT / "artifacts" / "terminal-bench.json"),
+            ]
+        )
+
+        self.assertEqual(code, bench.EXIT_ENV)
+        self.assertIn("ERROR=ARTIFACT_ROOT_REJECTED", err)
 
     def test_thresholds_are_read_from_the_baseline_file(self) -> None:
         document = baseline_document()
@@ -373,7 +461,7 @@ class BaselineTests(unittest.TestCase):
             [
                 "--update-baseline",
                 "--model",
-                DEVICE,
+                ALIAS,
                 "--api",
                 str(API),
                 "--baseline",
@@ -385,12 +473,12 @@ class BaselineTests(unittest.TestCase):
 
         self.assertEqual(code, bench.EXIT_OK, err)
         updated = json.loads(self.baseline_path.read_text(encoding="utf-8"))
-        self.assertIn(f"{DEVICE}/{API}", updated["buckets"])
+        self.assertIn(f"{ALIAS}/{API}", updated["buckets"])
         self.assertEqual(updated["buckets"]["Old Model/33"], old_bucket)
         self.assertEqual(updated["status"], "captured")
         self.assertTrue(updated["capturedAt"].endswith("Z"))
-        self.assertEqual(set(updated["buckets"][f"{DEVICE}/{API}"]["fixtures"]), set(bench.FIXTURES))
-        self.assertEqual(updated["buckets"][f"{DEVICE}/{API}"]["fixtures"]["flood_seq"]["p95"], 14.8)
+        self.assertEqual(set(updated["buckets"][f"{ALIAS}/{API}"]["fixtures"]), set(bench.FIXTURES))
+        self.assertEqual(updated["buckets"][f"{ALIAS}/{API}"]["fixtures"]["flood_seq"]["p95"], 14.8)
         self.assertIn("BASELINE_UPDATE", out)
         self.assertIn("flood_seq.p95:", out)
         self.assertIn("->", out)
@@ -409,7 +497,7 @@ class BaselineTests(unittest.TestCase):
             [
                 "--update-baseline",
                 "--model",
-                DEVICE,
+                ALIAS,
                 "--baseline",
                 str(self.baseline_path),
                 "--logcat",

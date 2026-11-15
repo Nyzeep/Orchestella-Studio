@@ -8,7 +8,8 @@
 
 - 只跑 debug 构建里的 `app/src/debug/.../bench/TerminalBenchActivity`，不碰 release 包。
 - 只读 logcat 的 `OE_BENCH` / `OE_BENCH_DONE` / `OE_BENCH_ERROR` 三个 tag；不抓全量日志。
-- 不在仓库里写设备序列号、完整日志或截图；`--json-out` 默认关闭，路径由调用者给。
+- 不在仓库里写设备序列号、完整日志或截图；`--json-out` 默认关闭、拒绝写入仓库内，路径由调用者给。
+- **提交进仓库的基线只用稳定别名**（`--model`），绝不写 `Build.MODEL` / 型号 / 序列号；`device` 字段只存在于本机 logcat。见 `AGENTS.md` 的敏感开发者数据约束与 `tools/accelerator-perf/README.md` §7.1。
 - 没有设备也能验收工具本身：`--dry-run` 不碰 adb、不需要 APK。
 
 ## 2. 前置条件
@@ -28,8 +29,10 @@
 一次性跑全部夹具并判定：
 
 ```bash
-python3 tools/terminal-bench/run.py --fixture all
+python3 tools/terminal-bench/run.py --model <稳定别名> --fixture all
 ```
+
+`--model` 在这里不是 marketing 型号，而是**稳定别名**（如 `bench-a`）：它会被当作 intent extra 传给 activity，结果行里的 `alias` 字段就是它，基线桶也用它。不传时脚本退回用结果行里的 `Build.MODEL` 选桶并打印 `WARN`；那样抓到的桶不要提交。
 
 分夹具跑（排查单个路径时用）：
 
@@ -72,7 +75,9 @@ python3 tools/terminal-bench/run.py --json-out /tmp/terminal-bench-result.json
 | `type_100` | 通过真实输入连接提交 100 次 ASCII 字符与 20 次 CJK 组合输入 | 输入法/回显/光标重绘路径 |
 | `resize_font` | 字号 10→20sp 往返 5 次（每次改字号都走真实的 `applyTheme` + 重新布局） | 主题应用与 relayout 成本 |
 
-`--fixture all` 依次跑上面五个；结果里缺哪个夹具会打印 `NOTE missing fixtures: ...`，但不因此判失败。
+`--fixture all` 依次跑上面五个；缺任何一个都按 harness 失败处理（退出码 2，`BENCH_INCOMPLETE`），因为「全部在阈值内」的前提是五个都跑完。
+
+注意 `scroll_2000` 的 2000 行受 `TerminalScreenModel` 的 100k 单元格上限约束（`MAX_HISTORY_CELLS`）：屏幕列数越宽，实际能留在回滚区的行越少（42 列约 2000 行，100 列约 1000 行）。结果行的 `historyRows` 是测量结束时的真实回滚行数，用它核对，而不是假定一定是 2000。
 
 ## 5. 输出字段
 
@@ -81,7 +86,8 @@ python3 tools/terminal-bench/run.py --json-out /tmp/terminal-bench-result.json
 | 字段 | 单位 / 含义 |
 | --- | --- |
 | `fixture` | 夹具 id |
-| `device` | `Build.MODEL` |
+| `device` | `Build.MODEL`（只在本机 logcat；不进基线） |
+| `alias` | `--model` 传入的稳定别名；基线桶只用它 |
 | `api` | `Build.VERSION.SDK_INT` |
 | `frames` | 测量窗口内呈现的帧数（不含预热阶段） |
 | `janky` | 帧间隔超过 **2×刷新间隔** 的帧数 |
@@ -89,6 +95,7 @@ python3 tools/terminal-bench/run.py --json-out /tmp/terminal-bench-result.json
 | `fps` | `frames * 1000 / durationMs`，帧/秒；上限受 `refreshHz` 限制 |
 | `javaKb` / `nativeKb` | 夹具前后 Java / native 堆的**差值**，KiB，可为负 |
 | `cols` / `rows` | 终端网格列数 / 行数 |
+| `historyRows` | 测量结束时的回滚行数（受 100k 单元格上限约束；`-1` 表示读取失败） |
 | `refreshHz` | 屏幕刷新率，Hz |
 | `durationMs` | 测量窗口长度，毫秒 |
 | `drawP95` / `layoutP95` | 绘制 / 布局阶段的 p95，毫秒 |
@@ -127,8 +134,8 @@ python3 tools/terminal-bench/run.py --json-out /tmp/terminal-bench-result.json
 抓到一个桶之后长这样（数值仅为结构示例，**不是本仓库的测量结果**）：
 
 ```json
-"<model>/<api>": {
-  "device": "<model>",
+"<alias>/<api>": {
+  "alias": "<stable alias>",
   "api": 36,
   "capturedAt": "2026-01-01T00:00:00Z",
   "fixtures": {
@@ -147,20 +154,20 @@ python3 tools/terminal-bench/run.py --json-out /tmp/terminal-bench-result.json
 }
 ```
 
-分桶规则：桶键是 `<model>/<api>`；`--model` 原样写入，其中的 `/` 会替换成 `_`；`api` 必须是正整数。对比时只用实测结果里 `device`/`api` 对应的那个桶，绝不跨型号或跨 API 比较。捕获时还会一并写入 `cols`/`rows`/`refreshHz`/`durationMs`/`drawP95`/`layoutP95`/`dropped` 供人工诊断，这些字段不参与回归判定。
+分桶规则：桶键是 `<别名>/<api>`；`--model` 原样写入（其中的 `/` 会替换成 `_`），`api` 必须是正整数。对比时只用实测结果里 `alias`/`api` 对应的那个桶，绝不跨别名或跨 API 比较。捕获时还会一并写入 `cols`/`rows`/`historyRows`/`refreshHz`/`durationMs`/`drawP95`/`layoutP95`/`dropped` 供人工诊断，这些字段不参与回归判定。
 
 ## 8. 更新基线
 
 ```bash
 python3 tools/terminal-bench/run.py \
-  --update-baseline --model "<型号>" --api 36 --fixture all
+  --update-baseline --model "<稳定别名>" --api 36 --fixture all
 ```
 
-- 必须同时给 `--model` 和 `--api`，否则退出码 2（`MODEL_REQUIRED` / `API_REQUIRED`）。
-- 必须在与 gate 相同的型号、相同的 API、相同的刷新率上抓；换设备就换桶，不要覆盖别的桶。
+- 必须同时给 `--model`（稳定别名，不是型号/序列号）和 `--api`，否则退出码 2（`MODEL_REQUIRED` / `API_REQUIRED`）。
+- 必须在与 gate 相同的别名、相同的 API、相同的刷新率上抓；换设备就换桶，不要覆盖别的桶。
 - 只合并本次实测到的夹具到该桶；桶里原有的其他夹具保留；**其他桶原样不动**。
 - 跑完打印逐指标 diff（旧值 → 新值，p95 额外给百分比），并把顶层 `status` 置为 `captured`、写入 UTC 秒级 `capturedAt`。
-- 解析出的 `device`/`api` 与显式参数不一致时打印 `WARN`，以显式参数为准。
+- 实测 `api` 与 `--api` 不一致 → `API_MISMATCH` 退出 2；activity 回传的 `alias` 与 `--model` 不一致 → `ALIAS_MISMATCH` 退出 2。两者都是为了禁止把 A 设备的数字写进 B 桶。
 - 基线是代码的一部分：`baseline.json` 的改动走正常评审，并在 PR 里贴出 diff 与结果 JSON。
 
 注意：`--dry-run --update-baseline` 不会写文件，只打印将要写入的桶；去掉 `--dry-run` 才落盘。
@@ -169,7 +176,7 @@ python3 tools/terminal-bench/run.py \
 
 以下情况打印 `NO_BASELINE bucket=<key>` 和本次实测指标，然后退出 0（report only，不判定）：
 
-- 基线里没有该 `<model>/<api>` 桶；
+- 基线里没有该 `<别名>/<api>` 桶；
 - 桶存在但 `fixtures` 为空；
 - `baseline.json` 仍是 `pending-device` 空桶。
 
@@ -183,12 +190,13 @@ python3 tools/terminal-bench/run.py \
 | `1` | 至少一个夹具判回归（p95、janky 比例或 fps） |
 | `2` | 环境或 harness 失败：无 adb、无设备、安装失败、启动失败、超时、`OE_BENCH_ERROR`、基线/参数错误 |
 
-退出码 2 会在 stderr 打印 ASCII token，例如 `ERROR=ADB_UNAVAILABLE`、`ERROR=NO_DEVICE`、`ERROR=INSTALL_FAILED`、`ERROR=BENCH_TIMEOUT`、`ERROR=BENCH_ERROR`、`ERROR=BENCH_NO_RESULTS`，并附上解释失败的原始 adb 输出。
+退出码 2 会在 stderr 打印 ASCII token，例如 `ERROR=ADB_UNAVAILABLE`、`ERROR=NO_DEVICE`、`ERROR=INSTALL_FAILED`、`ERROR=BENCH_TIMEOUT`、`ERROR=BENCH_ERROR`、`ERROR=BENCH_NO_RESULTS`、`ERROR=BENCH_INCOMPLETE`、`ERROR=API_MISMATCH`、`ERROR=ALIAS_MISMATCH`、`ERROR=ARTIFACT_ROOT_REJECTED`，并附上解释失败的原始 adb 输出。
 
 ## 11. 结果贴到哪里
 
-- 发布 checklist：用 `--json-out /tmp/terminal-bench-result.json` 生成 `{"bucket":..., "capturedAt":..., "results":{...}}`，把 JSON 贴进 checklist 对应条目。
-- 本仓库没有单独的 `docs/` 入口；本 README 就是 terminal-bench 的唯一入口，结果与基线变更都引用这里。
+- **发版前人工跑一次**：在有代表性的设备上执行 `run.py --model <稳定别名> --fixture all --json-out /tmp/terminal-bench-result.json`，把结果 JSON 贴进 release checklist 对应条目。设备基线本身走 `--update-baseline` 提交。
+- 本仓库的 `docs/` 目录默认被 `.gitignore` 忽略；本 README 是 terminal-bench 的唯一入口，结果与基线变更都引用这里。
+- `--json-out` 拒绝写入仓库内（结果里有 `Build.MODEL`）；只写外部 artifact 根或 `/tmp`。
 - 不要提交完整 logcat、设备序列号、截图或录屏；这些只留在本地或外部 artifact 根。
 
 ## 12. 测量陷阱
@@ -196,12 +204,13 @@ python3 tools/terminal-bench/run.py \
 1. **debug 构建 vs release**：夹具 activity 只在 debug 源集里；debug 包没有 R8 优化、断言更多，绝对数值天然更差。永远不要把 release 包的数字和本基线比。
 2. **JIT / 冷启动预热**：脚本或手动跑之前先 `am force-stop <包名>`，activity 在测量窗口前也有预热，但安装后的第一次运行仍会受 dexopt、类加载、着色器初始化影响。gate 前先手动跑一轮，正式结果取预热后的那一轮。
 3. **刷新率与 fps 上限**：`fps` 的理论上限是 `refreshHz`；60/90/120 Hz 下同一份代码的 fps 不可比。抓基线和跑 gate 必须同刷新率，并记录 `refreshHz`。
-4. **模拟器与真机不可比**：模拟器的 GPU、vsync、调度都与真机不同；基线桶只对同型号真机有效。
+4. **模拟器与真机不可比**：模拟器的 GPU、vsync、调度都与真机不同；基线桶只对同一稳定别名（同一台设备）有效。
 5. **flood 夹具偏乐观**：`flood_seq` / `flood_color` 绕过 PTY 直接写屏幕模型，省掉了 guest 输出与传输成本，只应作为渲染路径的下限参考。
 6. **真实视图路径**：`type_100` 与 `resize_font` 走真实的输入连接、主题应用与布局路径，更接近用户操作，但仍不等于完整虚拟机负载。
 7. **热与后台**：设备发热降频、后台应用、系统更新都会污染结果；每轮开始前静置到正常温度，保持相同后台状态。
 8. **字体缩放 / 显示大小**：会改变 `cols`/`rows` 与布局成本；同一桶必须保持同一设置。
 9. **日志开销**：采集只过滤三个 tag 并每 2 秒轮询一次，但测量期间不要同时跑全量 `adb logcat` 或其他 adb 大流量操作。
+10. **本夹具只测帧**：`type_100`/`resize_font` 输出的是帧分位数，不含「输入到上屏 ≤50ms」「重排 ≤100ms」这类端到端时延；后者需要单独打点，属于后续轮次。别把帧指标当成端到端时延。
 
 ## 13. 自测
 
@@ -216,3 +225,5 @@ python3 tools/terminal-bench/run.py --dry-run --fixture all
 ```
 
 测试覆盖：brief 格式解析（含 CRLF）、`OE_BENCH_DONE` 不被当成夹具、p95/janky/fps 三条回归规则、缺桶与缺指标的 report-only 行为、`--update-baseline` 的分桶/保留旧桶/diff、`--dry-run` 无设备退出 0。
+
+这套测试**尚未接进 GitHub CI**（本工单明确不接设备夹具；离线单测可以后续一并挂到 CI）。目前的门是人工执行上面三条命令。

@@ -81,7 +81,16 @@ CAPTURE_FIELDS = (
     "nativeKb",
 )
 # Extra diagnostics kept for humans; never used by the regression rules.
-EXTRA_FIELDS = ("cols", "rows", "refreshHz", "durationMs", "drawP95", "layoutP95", "dropped")
+EXTRA_FIELDS = (
+    "cols",
+    "rows",
+    "historyRows",
+    "refreshHz",
+    "durationMs",
+    "drawP95",
+    "layoutP95",
+    "dropped",
+)
 
 
 class BenchError(Exception):
@@ -199,12 +208,32 @@ def bucket_key(device: str, api: int) -> str:
 
 
 def measured_identity(results: dict) -> tuple[str, int] | None:
+    """``(stable alias, api)`` for the bucket key.
+
+    The activity reports ``alias`` (passed in by the operator) separately from
+    ``device`` (Build.MODEL). The committed baseline must key on the alias: AGENTS.md
+    requires device evidence to use a stable alias, and tools/accelerator-perf/README
+    forbids recording the marketing model. An empty alias falls back to ``device`` so an
+    old build still reports, but such a bucket must not be committed.
+    """
     for result in results.values():
-        device = result.get("device")
         api = _number(result.get("api"))
-        if isinstance(device, str) and device and api is not None:
-            return device, int(api)
+        if api is None:
+            continue
+        alias = result.get("alias")
+        if isinstance(alias, str) and alias.strip():
+            return alias.strip(), int(api)
+        device = result.get("device")
+        if isinstance(device, str) and device.strip():
+            return device.strip(), int(api)
     return None
+
+
+def has_alias(results: dict) -> bool:
+    return any(
+        isinstance(result.get("alias"), str) and result.get("alias").strip()
+        for result in results.values()
+    )
 
 
 def utc_now() -> str:
@@ -259,7 +288,7 @@ def update_baseline(
 
     captured_at = utc_now()
     buckets[key] = {
-        "device": str(model),
+        "alias": str(model),
         "api": int(api),
         "capturedAt": captured_at,
         "fixtures": new_fixtures,
@@ -543,14 +572,16 @@ def force_stop(adb: str, serial: str, package: str) -> None:
         print("WARN am force-stop failed: " + (_combined(proc) or "adb exit != 0"))
 
 
-def launch_activity(adb: str, serial: str, package: str, fixture: str) -> None:
+def launch_activity(adb: str, serial: str, package: str, fixture: str, alias: str | None) -> None:
     component = f"{package}/{ACTIVITY_SUFFIX}"
-    proc = command(
-        _device_args(adb, serial)
-        + ["shell", "am", "start", "-W", "-n", component, "--es", "fixture", fixture],
-        QUICK_COMMAND_TIMEOUT_SECONDS,
-        "BENCH_ERROR",
-    )
+    cmd = [adb]
+    if serial:
+        cmd += ["-s", serial]
+    cmd += ["shell", "am", "start", "-W", "-n", component, "--es", "fixture", fixture]
+    if alias:
+        # The alias is what the baseline bucket may key on; Build.MODEL never leaves the device.
+        cmd += ["--es", "alias", alias]
+    proc = command(cmd, QUICK_COMMAND_TIMEOUT_SECONDS, "BENCH_ERROR")
     output = _combined(proc)
     if proc.returncode != 0 or "Error:" in output or "Exception" in output:
         raise BenchError("BENCH_ERROR", "activity launch failed: " + (output or "no output"))
@@ -599,12 +630,13 @@ def capture(
     apk: Path,
     install: bool,
     timeout: float,
+    alias: str | None,
 ) -> dict:
     if install:
         install_apk(adb, serial, apk, max(INSTALL_TIMEOUT_SECONDS, timeout))
     force_stop(adb, serial, package)
     clear_logcat(adb, serial)
-    launch_activity(adb, serial, package, fixture)
+    launch_activity(adb, serial, package, fixture, alias)
     return poll_logcat(adb, serial, timeout)
 
 
@@ -641,7 +673,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="applicationId override for channel builds",
     )
     parser.add_argument("--adb", default=None, help="explicit adb path")
-    parser.add_argument("--model", default=None, help="device model for --update-baseline")
+    parser.add_argument(
+        "--model",
+        default=None,
+        help=(
+            "stable device alias for the bucket key and --update-baseline "
+            "(never Build.MODEL or a serial)"
+        ),
+    )
     parser.add_argument("--api", type=int, default=None, help="API level for --update-baseline")
     parser.add_argument(
         "--timeout",
@@ -658,7 +697,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--logcat", default=None, help="parse a saved logcat instead of running adb"
     )
     parser.add_argument(
-        "--json-out", default=None, help="write a result envelope for a release checklist"
+        "--json-out",
+        default=None,
+        help="write a result envelope to an external path (inside the repo is refused)",
     )
     parser.add_argument(
         "--no-install",
@@ -695,6 +736,9 @@ def execute(args: argparse.Namespace) -> int:
 
     baseline = load_baseline(baseline_path, create=bool(args.update_baseline))
     thresholds = baseline["thresholds"]
+    json_out: Path | None = Path(args.json_out).expanduser() if args.json_out else None
+    if json_out is not None:
+        assert_outside_repo(json_out)
 
     needs_device = not args.dry_run and not args.logcat
     adb: str | None = None
@@ -702,13 +746,15 @@ def execute(args: argparse.Namespace) -> int:
     if needs_device:
         adb = resolve_adb(args.adb)
         serial = resolve_serial(adb, args.serial)
-        adb_display, serial_display = adb, serial
+        adb_display, serial_display = adb, "<serial>"
     elif args.dry_run:
         try:
             adb_display = resolve_adb(args.adb)
         except BenchError as error:
             adb_display = f"<{error.token}>"
-        serial_display = args.serial or os.environ.get("ANDROID_SERIAL") or "<auto>"
+        serial_display = "<serial>" if (
+            args.serial or os.environ.get("ANDROID_SERIAL")
+        ) else "<auto>"
     else:
         adb_display = serial_display = "not-used"
 
@@ -745,8 +791,9 @@ def execute(args: argparse.Namespace) -> int:
             apk=apk_path,
             install=not args.no_install,
             timeout=timeout,
+            alias=args.model,
         )
-        source = f"device {serial}"
+        source = f"device {_masked_serial(serial)}"
 
     if parsed["errors"]:
         for entry in parsed["errors"]:
@@ -758,16 +805,37 @@ def execute(args: argparse.Namespace) -> int:
     expected = FIXTURES if args.fixture == "all" else (args.fixture,)
     missing = [fixture for fixture in expected if fixture not in parsed["results"]]
     if missing:
-        print("NOTE missing fixtures: " + ",".join(missing))
+        # Exit 0 means "every fixture ran and stayed within its thresholds". A fixture that
+        # never reported is a harness failure, not a pass with nothing to judge.
+        raise BenchError(
+            "BENCH_INCOMPLETE",
+            f"missing fixtures: {','.join(missing)} (expected {','.join(expected)}; {source})",
+        )
 
     identity = measured_identity(parsed["results"])
     if args.update_baseline:
         assert args.model is not None and args.api is not None
-        if identity is not None and (identity[0] != args.model or identity[1] != args.api):
-            print(
-                f"WARN parsed device/api {identity[0]}/{identity[1]} differs from "
-                f"--model/--api {args.model}/{args.api}; keeping the explicit values"
+        if identity is None:
+            raise BenchError(
+                "BENCH_NO_DEVICE_IDENTITY",
+                "result lines carry no usable alias/api; cannot write a baseline bucket",
             )
+        measured_name, measured_api = identity
+        # Filing device A's numbers under device B would poison every later gate run, so a
+        # mismatch is an error rather than a warning.
+        if measured_api != args.api:
+            raise BenchError(
+                "API_MISMATCH",
+                f"measured api {measured_api} != --api {args.api}; refusing to cross buckets",
+            )
+        if has_alias(parsed["results"]) and measured_name != args.model:
+            raise BenchError(
+                "ALIAS_MISMATCH",
+                f"measured alias {measured_name!r} != --model {args.model!r}; "
+                "pass the same stable alias the activity was launched with",
+            )
+        if not has_alias(parsed["results"]):
+            print("WARN no alias in the result lines; keying on the explicit --model alias")
         key = bucket_key(args.model, args.api)
         old_bucket = baseline["buckets"].get(key)
         old_fixtures = old_bucket.get("fixtures") if isinstance(old_bucket, dict) else {}
@@ -788,9 +856,9 @@ def execute(args: argparse.Namespace) -> int:
             print(line)
         print(f"BASE_STATUS status={baseline['status']} fixtures={len(new_fixtures)}")
         print(f"WROTE_BASELINE {baseline_path}")
-        if args.json_out:
+        if json_out is not None:
             write_json(
-                Path(args.json_out).expanduser(),
+                json_out,
                 {"bucket": key, "capturedAt": captured_at, "results": parsed["results"]},
                 "JSON_OUT_FAILED",
             )
@@ -803,6 +871,11 @@ def execute(args: argparse.Namespace) -> int:
         )
     device, api = identity
     key = bucket_key(device, api)
+    if not has_alias(parsed["results"]):
+        print(
+            "WARN result lines carry no alias; keying on Build.MODEL. "
+            "Pass --model <alias> when launching so the bucket stays stable and non-identifying."
+        )
     bucket = baseline["buckets"].get(key)
     print(f"BUCKET {key}")
 
@@ -815,9 +888,9 @@ def execute(args: argparse.Namespace) -> int:
         for fixture, result in parsed["results"].items():
             print(f"  {fixture} {_metrics(result)}")
         print("NOTE report only; no judgment")
-        if args.json_out:
+        if json_out is not None:
             write_json(
-                Path(args.json_out).expanduser(),
+                json_out,
                 {
                     "bucket": key,
                     "capturedAt": captured_at,
@@ -830,9 +903,9 @@ def execute(args: argparse.Namespace) -> int:
     report = evaluate(parsed["results"], bucket, thresholds)
     for line in report["lines"]:
         print(line)
-    if args.json_out:
+    if json_out is not None:
         write_json(
-            Path(args.json_out).expanduser(),
+            json_out,
             {
                 "bucket": key,
                 "capturedAt": captured_at,
@@ -908,6 +981,23 @@ def _metrics(result: dict) -> str:
         if value is not None:
             parts.append(f"{key}={_fmt(value)}")
     return " ".join(parts) or "no metrics"
+
+
+def _masked_serial(serial: str) -> str:
+    """Never echo an adb serial: device evidence may only use a stable alias."""
+    return "<serial>"
+
+
+def assert_outside_repo(path: Path) -> None:
+    """Refuse to drop a result envelope (it carries Build.MODEL) inside the repository."""
+    try:
+        path.expanduser().resolve().relative_to(REPO_ROOT)
+    except ValueError:
+        return
+    raise BenchError(
+        "ARTIFACT_ROOT_REJECTED",
+        f"{path} is inside the repository; write device evidence to an external artifact root",
+    )
 
 
 if __name__ == "__main__":
