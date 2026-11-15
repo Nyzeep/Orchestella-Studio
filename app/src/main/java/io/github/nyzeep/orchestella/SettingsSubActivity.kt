@@ -21,6 +21,8 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.activity.result.contract.ActivityResultContracts
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
+import io.github.nyzeep.orchestella.ui.design.OeTextScale
+import io.github.nyzeep.orchestella.ui.design.OeTextScaleMode
 import io.github.nyzeep.orchestella.ui.motion.OrchestellaMotion
 import io.github.nyzeep.orchestella.ui.theme.CustomThemeSlot
 import io.github.nyzeep.orchestella.ui.theme.SurfaceOpacity
@@ -247,6 +249,11 @@ class SettingsSubActivity : AppCompatActivity() {
                 0 -> "直角 0dp（保留 XML 圆角）"
                 else -> "自定义 ${themeStore.cornerRadiusDp()}dp"
             }
+        findViewById<MaterialButton>(R.id.btn_pick_text_scale)?.text =
+            "应用内字号：" + when (themeStore.textScaleMode()) {
+                OeTextScaleMode.FollowSystem -> "跟随系统"
+                OeTextScaleMode.Custom -> "${themeStore.textScalePercent()}%"
+            }
         ThemeApplier.bind(this)
     }
 
@@ -369,6 +376,35 @@ class SettingsSubActivity : AppCompatActivity() {
                     refreshAppearance()
                     dialog.dismiss()
                     Toast.makeText(this, "圆角已更新：${options[which].first}", Toast.LENGTH_SHORT).show()
+                }
+                .setNegativeButton("取消", null)
+                .show().also(ThemeApplier::apply)
+        }
+
+        findViewById<MaterialButton?>(R.id.btn_pick_text_scale)?.setOnClickListener {
+            val savedMode = themeStore.textScaleMode()
+            val savedPercent = themeStore.textScalePercent()
+            // Historic or hand-edited percentages stay selectable instead of
+            // silently snapping to the nearest 5% step.
+            val percents = OeTextScale.optionsFor(savedMode, savedPercent)
+            val labels = listOf("跟随系统（默认）") + percents.map { "$it%" }
+            val current = if (savedMode == OeTextScaleMode.FollowSystem) {
+                0
+            } else {
+                1 + percents.indexOf(savedPercent)
+            }
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("应用内字号（Oe 新版界面）")
+                .setSingleChoiceItems(labels.toTypedArray(), current) { dialog, which ->
+                    if (which == 0) {
+                        themeStore.setTextScaleMode(OeTextScaleMode.FollowSystem)
+                    } else {
+                        themeStore.setTextScaleMode(OeTextScaleMode.Custom)
+                        themeStore.setTextScalePercent(percents[which - 1])
+                    }
+                    refreshAppearance()
+                    dialog.dismiss()
+                    Toast.makeText(this, "字号已保存：${labels[which]}", Toast.LENGTH_SHORT).show()
                 }
                 .setNegativeButton("取消", null)
                 .show().also(ThemeApplier::apply)

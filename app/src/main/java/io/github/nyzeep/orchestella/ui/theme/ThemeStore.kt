@@ -5,6 +5,8 @@ import android.content.SharedPreferences
 import android.net.Uri
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
+import io.github.nyzeep.orchestella.ui.design.OeTextScale
+import io.github.nyzeep.orchestella.ui.design.OeTextScaleMode
 
 /** One persistent appearance source, also usable with in-memory preferences in JVM tests. */
 class ThemeStore(private val prefs: SharedPreferences, private val context: Context? = null) {
@@ -214,6 +216,38 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
         prefs.edit().putInt(KEY_CORNER_RADIUS_DP, dp.coerceIn(0, MAX_CORNER_RADIUS_DP)).apply()
     }
 
+    // --- In-app text scale (ticket 05: 85–130% on top of the system font scale) ---
+
+    /**
+     * Follow-system is the default and deliberately stores nothing on a fresh
+     * install: the platform's own font scale is authoritative until the user
+     * opts into an app-level override.
+     */
+    fun textScaleMode(): OeTextScaleMode = when (prefs.getString(KEY_TEXT_SCALE_MODE, null)) {
+        TEXT_SCALE_MODE_CUSTOM -> OeTextScaleMode.Custom
+        else -> OeTextScaleMode.FollowSystem
+    }
+
+    fun setTextScaleMode(mode: OeTextScaleMode) {
+        prefs.edit().putString(
+            KEY_TEXT_SCALE_MODE,
+            when (mode) {
+                OeTextScaleMode.FollowSystem -> TEXT_SCALE_MODE_FOLLOW_SYSTEM
+                OeTextScaleMode.Custom -> TEXT_SCALE_MODE_CUSTOM
+            },
+        ).apply()
+    }
+
+    fun textScalePercent(): Int =
+        OeTextScale.clampPercent(prefs.getInt(KEY_TEXT_SCALE_PERCENT, OeTextScale.DEFAULT_PERCENT))
+
+    fun setTextScalePercent(percent: Int) {
+        prefs.edit().putInt(KEY_TEXT_SCALE_PERCENT, OeTextScale.clampPercent(percent)).apply()
+    }
+
+    /** Multiplier for the Oe Compose layer; 1.0 while following the system. */
+    fun textScaleFactor(): Float = OeTextScale.effectiveFactor(textScaleMode(), textScalePercent())
+
     fun terminalFontSizeSp(): Int =
         prefs.getInt(KEY_TERMINAL_FONT_SP, 14).coerceIn(MIN_TERMINAL_FONT_SP, MAX_TERMINAL_FONT_SP)
 
@@ -320,11 +354,16 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
         const val KEY_TERMINAL_SCRIM_ALPHA = "terminal_scrim_alpha"
         const val DEFAULT_TERMINAL_SCRIM_ALPHA = 0xB0
         const val KEY_UI_SURFACE_OPACITY = "ui_surface_opacity_pct"
+        const val KEY_TEXT_SCALE_MODE = "text_scale_mode"
+        const val KEY_TEXT_SCALE_PERCENT = "text_scale_percent"
         const val MAX_CORNER_RADIUS_DP = 24
         /** Session 25: the product ships with rounded buttons, so the token is no longer opt-in. */
         const val DEFAULT_CORNER_RADIUS_DP = 16
         const val MIN_TERMINAL_FONT_SP = 10
         const val MAX_TERMINAL_FONT_SP = 22
+
+        private const val TEXT_SCALE_MODE_FOLLOW_SYSTEM = "follow_system"
+        private const val TEXT_SCALE_MODE_CUSTOM = "custom"
 
         private val SLOT_FIELDS = listOf(
             "name", "dark", "bg", "surface", "primary", "accent", "text", "text_dim", "term_bg", "term_fg",

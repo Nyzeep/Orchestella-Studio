@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.unit.dp
 import io.github.nyzeep.orchestella.ui.design.LocalOeTheme
 import io.github.nyzeep.orchestella.ui.design.OeGlassLevel
+import io.github.nyzeep.orchestella.ui.design.OeTextScale
 import io.github.nyzeep.orchestella.ui.design.OeThemeData
 import io.github.nyzeep.orchestella.ui.theme.AppTheme
 
@@ -51,12 +52,14 @@ object OeSizes {
  * Compose screens inherit the user's theme (including every custom-theme slot)
  * instead of inventing a second palette. `cornerRadiusDp` comes from ThemeStore —
  * the user's rounding choice is authoritative, exactly as ThemeApplier enforces
- * for XML.
+ * for XML. `textScale` is the ticket-05 in-app override (85–130%); 1.0 means the
+ * composition follows the system font scale.
  */
 @Composable
 fun OrchestellaComposeTheme(
     theme: AppTheme,
     cornerRadiusDp: Int = 16,
+    textScale: Float = 1f,
     content: @Composable () -> Unit,
 ) {
     val outlineVariant = Color(theme.glow).copy(alpha = if (theme.isDark) 0.32f else 0.24f)
@@ -99,6 +102,9 @@ fun OrchestellaComposeTheme(
                 cornerDp = radius,
                 isDark = theme.isDark,
                 glassLevel = OeGlassLevel.None,
+                // The 85–130% ticket band is enforced here so a hand-edited
+                // preference or a preview caller cannot produce 3× display type.
+                textScale = OeTextScale.safeFactor(textScale),
             ),
             content = content,
         )
