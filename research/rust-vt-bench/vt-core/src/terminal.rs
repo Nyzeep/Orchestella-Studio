@@ -51,15 +51,6 @@ pub struct Style {
 }
 
 impl Style {
-    fn is_default(&self) -> bool {
-        self.fg.is_none()
-            && self.bg.is_none()
-            && !self.bold
-            && !self.italic
-            && !self.underline
-            && !self.inverse
-    }
-
     fn attrs(&self) -> u8 {
         (self.bold as u8) * ATTR_BOLD
             | (self.italic as u8) * ATTR_ITALIC
@@ -68,17 +59,19 @@ impl Style {
     }
 }
 
-/// One terminal cell. `cp` is the base code point (`' '` for blanks); `width` is
-/// 0 for the right half of a wide character. Combining marks live in `extra`,
-/// which stays `None` unless a mark was actually attached.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// Cell layout is 16 bytes: three `u32` colors/code point, two `u8` flags, and a
+/// `u16` index into the terminal-level grapheme pool.
+pub const NO_EXTRA: u16 = u16::MAX;
+const MAX_EXTRA_SLOTS: usize = 65_534;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Cell {
     pub cp: u32,
     pub fg: u32,
     pub bg: u32,
     pub attrs: u8,
     pub width: u8,
-    pub extra: Option<Box<[u32]>>,
+    pub extra: u16,
 }
 
 impl Cell {
@@ -89,7 +82,7 @@ impl Cell {
         bg: COLOR_SENTINEL,
         attrs: 0,
         width: 1,
-        extra: None,
+        extra: NO_EXTRA,
     };
 
     /// Never-written cell (Java `null`): renders as a default blank, but a
@@ -100,7 +93,7 @@ impl Cell {
         bg: COLOR_SENTINEL,
         attrs: 0,
         width: 1,
-        extra: None,
+        extra: NO_EXTRA,
     };
 
     /// Blank cell carrying the current SGR colors/attributes (Java `blank()`).
@@ -111,7 +104,7 @@ impl Cell {
             bg: style.bg.unwrap_or(COLOR_SENTINEL),
             attrs: style.attrs(),
             width: 1,
-            extra: None,
+            extra: NO_EXTRA,
         }
     }
 
@@ -122,7 +115,7 @@ impl Cell {
             bg: style.bg.unwrap_or(COLOR_SENTINEL),
             attrs: style.attrs(),
             width,
-            extra: None,
+            extra: NO_EXTRA,
         }
     }
 
@@ -134,30 +127,8 @@ impl Cell {
             bg: style.bg.unwrap_or(COLOR_SENTINEL),
             attrs: style.attrs(),
             width: 0,
-            extra: None,
+            extra: NO_EXTRA,
         }
-    }
-
-    /// Rebuilds the cell text (`cp` plus combining marks). Test/projection only.
-    pub fn text(&self) -> String {
-        if self.width == 0 {
-            return String::new();
-        }
-        if self.cp == 0 {
-            return " ".to_string();
-        }
-        let mut out = String::new();
-        if let Some(ch) = char::from_u32(self.cp) {
-            out.push(ch);
-        }
-        if let Some(extra) = &self.extra {
-            for cp in extra.iter() {
-                if let Some(ch) = char::from_u32(*cp) {
-                    out.push(ch);
-                }
-            }
-        }
-        out
     }
 
     pub fn bold(&self) -> bool {
@@ -175,23 +146,106 @@ impl Cell {
     pub fn inverse(&self) -> bool {
         self.attrs & ATTR_INVERSE != 0
     }
+}
 
-    fn push_extra(&mut self, cp: u32) {
-        match &mut self.extra {
-            Some(extra) => {
-                let mut values = std::mem::take(extra).into_vec();
-                values.push(cp);
-                self.extra = Some(values.into_boxed_slice());
-            }
-            None => {
-                self.extra = Some(vec![cp].into_boxed_slice());
+/// Grapheme continuations live outside the grid so a Cell stays 16 bytes.
+/// Slots are unique per cell; indices are recycled through `free`.
+#[derive(Default)]
+struct CellPool {
+    slots: Vec<Option<Box<[u32]>>>,
+    free: Vec<u16>,
+    live: usize,
+}
+
+impl CellPool {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn clear(&mut self) {
+        self.slots.clear();
+        self.free.clear();
+        self.live = 0;
+    }
+
+    fn release(&mut self, index: u16) {
+        if index == NO_EXTRA {
+            return;
+        }
+        if let Some(slot) = self.slots.get_mut(index as usize) {
+            if slot.take().is_some() {
+                self.free.push(index);
+                self.live -= 1;
             }
         }
     }
+
+    fn alloc(&mut self, values: Vec<u32>) -> Option<u16> {
+        let boxed = values.into_boxed_slice();
+        if let Some(index) = self.free.pop() {
+            self.slots[index as usize] = Some(boxed);
+            self.live += 1;
+            return Some(index);
+        }
+        if self.slots.len() < MAX_EXTRA_SLOTS {
+            self.slots.push(Some(boxed));
+            self.live += 1;
+            return Some((self.slots.len() - 1) as u16);
+        }
+        #[cfg(test)]
+        {
+            panic!("extras pool exhausted at {MAX_EXTRA_SLOTS} slots");
+        }
+        #[cfg(not(test))]
+        {
+            let _ = boxed;
+            None
+        }
+    }
+
+    fn append(&mut self, index: u16, cp: u32) -> bool {
+        if index == NO_EXTRA {
+            return false;
+        }
+        match self.slots.get_mut(index as usize).and_then(|slot| slot.as_mut()) {
+            Some(boxed) => {
+                let mut values = std::mem::take(boxed).into_vec();
+                values.push(cp);
+                *boxed = values.into_boxed_slice();
+                true
+            }
+            None => false,
+        }
+    }
+
+    fn get(&self, index: u16) -> Option<&[u32]> {
+        if index == NO_EXTRA {
+            return None;
+        }
+        self.slots.get(index as usize)?.as_deref()
+    }
+}
+
+/// Storage for one frozen scrollback row. Rows whose invisible tail is at least
+/// half the line are copied into the shared arena; nearly-full rows keep their
+/// already-allocated buffer (moved, zero copy) to preserve throughput.
+enum HistoryCells {
+    Arena { start: usize, len: usize },
+    Owned(Vec<Cell>),
+}
+
+/// `width` is the row length when it entered history (Java `Cell[].length`),
+/// so the 100k-cell cap keeps the original accounting.
+struct HistoryRow {
+    cells: HistoryCells,
+    width: usize,
 }
 
 struct Screen {
     lines: Vec<Vec<Cell>>,
+    /// Last written column + 1 per row (an over-estimate is safe; it only keeps
+    /// a few invisible cells when the row is frozen into history).
+    extents: Vec<usize>,
     row: usize,
     column: usize,
     saved_row: usize,
@@ -206,6 +260,7 @@ impl Screen {
     fn new(cols: usize, rows: usize) -> Self {
         Screen {
             lines: vec![vec![Cell::UNWRITTEN; cols]; rows],
+            extents: vec![0; rows],
             row: 0,
             column: 0,
             saved_row: 0,
@@ -226,7 +281,9 @@ pub struct Terminal {
     primary: Screen,
     alternate: Screen,
     alternate_active: bool,
-    history: VecDeque<Vec<Cell>>,
+    history: VecDeque<HistoryRow>,
+    history_arena: Vec<Cell>,
+    history_head: usize,
     history_cells: usize,
     evicted_history_rows: u64,
     control: String,
@@ -245,7 +302,8 @@ pub struct Terminal {
     osc_string: bool,
     osc_overflow: bool,
     responses: Vec<String>,
-    spare_row: Option<Vec<Cell>>,
+    spare_rows: Vec<Vec<Cell>>,
+    extras: CellPool,
 }
 
 impl Terminal {
@@ -260,6 +318,8 @@ impl Terminal {
             alternate: Screen::new(columns, rows),
             alternate_active: false,
             history: VecDeque::new(),
+            history_arena: Vec::new(),
+            history_head: 0,
             history_cells: 0,
             evicted_history_rows: 0,
             control: String::new(),
@@ -278,7 +338,8 @@ impl Terminal {
             osc_string: false,
             osc_overflow: false,
             responses: Vec::new(),
-            spare_row: None,
+            spare_rows: Vec::new(),
+            extras: CellPool::new(),
         }
     }
 
@@ -380,19 +441,25 @@ impl Terminal {
         let mut out = String::new();
         for cell in &self.active().lines[row] {
             if cell.width != 0 {
-                out.push_str(&cell.text());
+                out.push_str(&self.cell_text(cell));
             }
         }
         out.trim_end().to_string()
     }
 
-    /// History row as text (index 0 = oldest retained row).
+    /// History row as text (index 0 = oldest retained row). Trimmed tails read
+    /// back as blank cells, so the text is identical to the untrimmed row.
     pub fn history_line_text(&self, row: usize) -> String {
         let mut out = String::new();
         if let Some(line) = self.history.get(row) {
-            for cell in line {
+            let cells: &[Cell] = match &line.cells {
+                HistoryCells::Arena { start, len } => &self.history_arena[*start..*start + *len],
+                HistoryCells::Owned(cells) => cells,
+            };
+            for col in 0..line.width {
+                let cell = cells.get(col).copied().unwrap_or(Cell::BLANK);
                 if cell.width != 0 {
-                    out.push_str(&cell.text());
+                    out.push_str(&self.cell_text(&cell));
                 }
             }
         }
@@ -420,14 +487,50 @@ impl Terminal {
         }
     }
 
-    fn fill_row(&mut self, row: usize) {
-        let style = self.style;
-        let line = &mut self.active_mut().lines[row];
-        if style.is_default() {
-            line.fill(Cell::BLANK);
+    fn screens_mut(&mut self) -> (&mut Screen, &mut CellPool) {
+        if self.alternate_active {
+            (&mut self.alternate, &mut self.extras)
         } else {
-            line.fill(Cell::blank(style));
+            (&mut self.primary, &mut self.extras)
         }
+    }
+
+    /// Rebuilds the text of a cell (base code point plus pooled combining marks).
+    pub fn cell_text(&self, cell: &Cell) -> String {
+        if cell.width == 0 {
+            return String::new();
+        }
+        if cell.cp == 0 {
+            return " ".to_string();
+        }
+        let mut out = String::new();
+        if let Some(ch) = char::from_u32(cell.cp) {
+            out.push(ch);
+        }
+        if let Some(extra) = self.extras.get(cell.extra) {
+            for cp in extra.iter() {
+                if let Some(ch) = char::from_u32(*cp) {
+                    out.push(ch);
+                }
+            }
+        }
+        out
+    }
+
+    fn blank_extent(&self) -> usize {
+        if self.style.bg.is_some() || self.style.inverse {
+            self.columns
+        } else {
+            0
+        }
+    }
+
+    fn fill_row(&mut self, row: usize) {
+        let blank = Cell::blank(self.style);
+        let extent = self.blank_extent();
+        let (screen, pool) = self.screens_mut();
+        fill_line(pool, &mut screen.lines[row], blank);
+        screen.extents[row] = extent;
     }
 
     /// Full reset (RIS / `ESC c`). Scrollback is discarded.
@@ -436,6 +539,8 @@ impl Terminal {
         self.alternate = Screen::new(self.columns, self.rows);
         self.alternate_active = false;
         self.history.clear();
+        self.history_arena.clear();
+        self.history_head = 0;
         self.history_cells = 0;
         self.evicted_history_rows = 0;
         self.style = Style::default();
@@ -453,7 +558,8 @@ impl Terminal {
         self.osc_utf16_len = 0;
         self.osc_string = false;
         self.osc_overflow = false;
-        self.spare_row = None;
+        self.release_spares();
+        self.extras.clear();
     }
 
     // ------------------------------------------------------------------
@@ -669,10 +775,17 @@ impl Terminal {
             }
             if col >= 0 {
                 let row = self.active().row;
-                let host = &mut self.active_mut().lines[row][col as usize];
+                let (screen, pool) = self.screens_mut();
+                let host = &mut screen.lines[row][col as usize];
                 // Java drops marks aimed at a null cell; a blank/written cell accepts them.
                 if host.cp != 0 || host.width != 1 {
-                    host.push_extra(cp);
+                    if !pool.append(host.extra, cp) {
+                        host.extra = pool.alloc(vec![cp]).unwrap_or(NO_EXTRA);
+                    }
+                    let extent = col as usize + 1;
+                    if extent > screen.extents[row] {
+                        screen.extents[row] = extent;
+                    }
                 }
             }
             return;
@@ -696,14 +809,19 @@ impl Terminal {
         let style = self.style;
         let row = self.active().row;
         {
-            let line = &mut self.active_mut().lines[row];
-            clear_wide_cell(line, col, columns);
+            let (screen, pool) = self.screens_mut();
+            let line = &mut screen.lines[row];
+            clear_wide_cell(pool, line, col, columns);
             if width == 2 {
-                clear_wide_cell(line, col + 1, columns);
+                clear_wide_cell(pool, line, col + 1, columns);
             }
             line[col] = Cell::ch(cp, style, width as u8);
             if width == 2 {
                 line[col + 1] = Cell::right_half(style);
+            }
+            let extent = col + width;
+            if extent > screen.extents[row] {
+                screen.extents[row] = extent;
             }
         }
 
@@ -754,55 +872,168 @@ impl Terminal {
         let full_primary = !self.alternate_active && top == 0 && bottom == self.rows - 1;
         for _ in 0..count {
             if up {
-                let removed = self.active_mut().lines.remove(top);
+                let (mut removed, removed_extent) = {
+                    let screen = self.screens_mut().0;
+                    (screen.lines.remove(top), screen.extents.remove(top))
+                };
                 if full_primary {
-                    self.add_history(removed);
+                    let width = self.columns;
+                    let visible = removed_extent.min(width);
+                    if visible * 2 <= width {
+                        // Sparse row: keep only the visible prefix in the arena and
+                        // recycle this full-width buffer as the next blank row.
+                        self.add_history_arena(&removed[..visible], width);
+                        // The arena copy now owns those grapheme slots; detach them
+                        // before blanking the recycled row so fill_line cannot free them.
+                        for cell in &mut removed[..visible] {
+                            cell.extra = NO_EXTRA;
+                        }
+                        let blank = Cell::blank(self.style);
+                        fill_line(&mut self.extras, &mut removed, blank);
+                        let extent = self.blank_extent();
+                        let screen = self.screens_mut().0;
+                        screen.lines.insert(bottom, removed);
+                        screen.extents.insert(bottom, extent);
+                    } else {
+                        // Nearly full: move the row (zero copy) and take a blank row
+                        // from the spare pool (replenished by evictions).
+                        self.add_history_owned(removed);
+                        let blank = self.take_blank_row();
+                        let extent = self.blank_extent();
+                        let screen = self.screens_mut().0;
+                        screen.lines.insert(bottom, blank);
+                        screen.extents.insert(bottom, extent);
+                    }
                 } else {
                     self.stash_spare(removed);
+                    let blank = self.take_blank_row();
+                    let extent = self.blank_extent();
+                    let screen = self.screens_mut().0;
+                    screen.lines.insert(bottom, blank);
+                    screen.extents.insert(bottom, extent);
                 }
-                let blank = self.take_blank_row();
-                self.active_mut().lines.insert(bottom, blank);
             } else {
-                let removed = self.active_mut().lines.remove(bottom);
+                let removed = {
+                    let screen = self.screens_mut().0;
+                    let row = screen.lines.remove(bottom);
+                    screen.extents.remove(bottom);
+                    row
+                };
                 self.stash_spare(removed);
                 let blank = self.take_blank_row();
-                self.active_mut().lines.insert(top, blank);
+                let extent = self.blank_extent();
+                let screen = self.screens_mut().0;
+                screen.lines.insert(top, blank);
+                screen.extents.insert(top, extent);
             }
         }
     }
 
-    /// Recycles one scrolled-out row instead of allocating a fresh one per line.
+    const MAX_SPARE_ROWS: usize = 64;
+
+    /// Recycles scrolled-out rows; a small pool absorbs bursts so full-width
+    /// buffers circulate instead of being allocated and freed per line.
     fn stash_spare(&mut self, row: Vec<Cell>) {
-        if row.len() == self.columns && self.spare_row.is_none() {
-            self.spare_row = Some(row);
+        if row.len() == self.columns && self.spare_rows.len() < Self::MAX_SPARE_ROWS {
+            self.spare_rows.push(row);
+        } else {
+            release_row(&mut self.extras, &row);
+        }
+    }
+
+    fn release_spares(&mut self) {
+        while let Some(row) = self.spare_rows.pop() {
+            release_row(&mut self.extras, &row);
         }
     }
 
     fn take_blank_row(&mut self) -> Vec<Cell> {
-        let mut row = match self.spare_row.take() {
-            Some(row) if row.len() == self.columns => row,
-            _ => vec![Cell::BLANK; self.columns],
+        let columns = self.columns;
+        let blank = Cell::blank(self.style);
+        let mut row = match self.spare_rows.pop() {
+            Some(row) if row.len() == columns => row,
+            Some(row) => {
+                release_row(&mut self.extras, &row);
+                vec![Cell::UNWRITTEN; columns]
+            }
+            None => vec![Cell::UNWRITTEN; columns],
         };
-        if self.style.is_default() {
-            row.fill(Cell::BLANK);
-        } else {
-            row.fill(Cell::blank(self.style));
-        }
+        fill_line(&mut self.extras, &mut row, blank);
         row
     }
 
+    /// Scroll path: appends only the visible prefix to the history arena, so the
+    /// caller's full-width row stays available as the next blank screen row.
+    fn add_history_arena(&mut self, prefix: &[Cell], width: usize) {
+        let start = self.history_arena.len();
+        if self.history_arena.capacity() - self.history_arena.len() < prefix.len() {
+            self.history_arena.reserve_exact(prefix.len() + 4096);
+        }
+        self.history_arena.extend_from_slice(prefix);
+        self.push_history_row(
+            HistoryCells::Arena {
+                start,
+                len: prefix.len(),
+            },
+            width,
+        );
+    }
+
+    fn add_history_owned(&mut self, line: Vec<Cell>) {
+        let width = line.len();
+        self.push_history_row(HistoryCells::Owned(line), width);
+    }
+
+    /// Resize path: the row is owned; choose arena or move by tail density.
     fn add_history(&mut self, line: Vec<Cell>) {
-        self.history_cells += line.len();
-        self.history.push_back(line);
+        let width = line.len();
+        let visible = visible_len(&line);
+        if visible * 2 <= width {
+            self.add_history_arena(&line[..visible], width);
+        } else {
+            self.push_history_row(HistoryCells::Owned(line), width);
+        }
+    }
+
+    fn push_history_row(&mut self, cells: HistoryCells, width: usize) {
+        self.history.push_back(HistoryRow { cells, width });
+        self.history_cells += width;
         while self.history_cells > MAX_HISTORY_CELLS || self.history.len() > MAX_HISTORY_ROWS {
             match self.history.pop_front() {
                 Some(old) => {
-                    self.history_cells -= old.len();
+                    self.history_cells -= old.width;
                     self.evicted_history_rows += 1;
-                    self.stash_spare(old);
+                    match old.cells {
+                        HistoryCells::Owned(row) => self.stash_spare(row),
+                        HistoryCells::Arena { start, len } => {
+                            if self.extras.live > 0 {
+                                let dead = &self.history_arena[start..start + len];
+                                for cell in dead {
+                                    self.extras.release(cell.extra);
+                                }
+                            }
+                            self.history_head = self.history_head.max(start + len);
+                        }
+                    }
                 }
                 None => break,
             }
+        }
+        // Reclaim dead arena cells once a quarter of the arena is dead.
+        if self.history_head > 1024 && self.history_head * 4 >= self.history_arena.len() {
+            self.history_arena.drain(..self.history_head);
+            for row in &mut self.history {
+                if let HistoryCells::Arena { start, .. } = &mut row.cells {
+                    *start -= self.history_head;
+                }
+            }
+            self.history_head = 0;
+        }
+    }
+
+    fn release_screen(&mut self, screen: Screen) {
+        for line in &screen.lines {
+            release_row(&mut self.extras, line);
         }
     }
 
@@ -814,26 +1045,27 @@ impl Terminal {
         let columns = self.columns;
         let count = count.min(columns - column);
         let blank = Cell::blank(self.style);
-        {
-            let line = &mut self.active_mut().lines[row];
-            if insert {
-                line[column..columns].rotate_right(count);
-                line[column..column + count].fill(blank.clone());
-            } else {
-                line[column..columns].rotate_left(count);
-                line[columns - count..columns].fill(blank.clone());
-            }
+        let (screen, pool) = self.screens_mut();
+        let line = &mut screen.lines[row];
+        if insert {
+            line[column..columns].rotate_right(count);
+            fill_line(pool, &mut line[column..column + count], blank);
+        } else {
+            line[column..columns].rotate_left(count);
+            fill_line(pool, &mut line[columns - count..columns], blank);
         }
         // Remove orphan wide-cell halves after shifting at a boundary.
-        let line = &mut self.active_mut().lines[row];
         for col in 0..columns {
             if line[col].width == 0 && (col == 0 || line[col - 1].width != 2) {
-                line[col] = blank.clone();
+                pool.release(line[col].extra);
+                line[col] = blank;
             }
             if line[col].width == 2 && (col + 1 == columns || line[col + 1].width != 0) {
-                line[col] = blank.clone();
+                pool.release(line[col].extra);
+                line[col] = blank;
             }
         }
+        screen.extents[row] = visible_len(line);
     }
 
     // ------------------------------------------------------------------
@@ -915,8 +1147,13 @@ impl Terminal {
                 let column = self.active().column;
                 let to = ((column as i64) + n).min(columns as i64) as usize;
                 let style = self.style;
-                let line = &mut self.active_mut().lines[row];
-                erase(line, column, to, style);
+                let visible_style = style.bg.is_some() || style.inverse;
+                let (screen, pool) = self.screens_mut();
+                let line = &mut screen.lines[row];
+                erase(pool, line, column, to, style);
+                if visible_style {
+                    screen.extents[row] = screen.extents[row].max(to);
+                }
             }
             '@' => self.shift_characters(n as usize, true),
             'P' => self.shift_characters(n as usize, false),
@@ -993,7 +1230,11 @@ impl Terminal {
                         self.save_cursor();
                     }
                     if mode != 47 {
-                        self.alternate = Screen::new(self.columns, self.rows);
+                        let old = std::mem::replace(
+                            &mut self.alternate,
+                            Screen::new(self.columns, self.rows),
+                        );
+                        self.release_screen(old);
                     }
                     self.alternate_active = true;
                 } else if !enabled && self.alternate_active {
@@ -1046,11 +1287,26 @@ impl Terminal {
         };
         let columns = self.columns;
         let style = self.style;
-        let line = &mut self.active_mut().lines[row];
+        let visible_style = style.bg.is_some() || style.inverse;
+        let (screen, pool) = self.screens_mut();
+        let line = &mut screen.lines[row];
         match mode {
-            0 => erase(line, column, columns, style),
-            1 => erase(line, 0, column + 1, style),
-            2 => erase(line, 0, columns, style),
+            0 => {
+                erase(pool, line, column, columns, style);
+                if visible_style {
+                    screen.extents[row] = screen.extents[row].max(columns);
+                }
+            }
+            1 => {
+                erase(pool, line, 0, column + 1, style);
+                if visible_style {
+                    screen.extents[row] = screen.extents[row].max(column + 1);
+                }
+            }
+            2 => {
+                erase(pool, line, 0, columns, style);
+                screen.extents[row] = if visible_style { columns } else { 0 };
+            }
             _ => {}
         }
     }
@@ -1061,7 +1317,23 @@ impl Terminal {
         match mode {
             3 => {
                 self.evicted_history_rows += self.history.len() as u64;
+                if self.extras.live > 0 {
+                    for row in &self.history {
+                        match &row.cells {
+                            HistoryCells::Owned(cells) => {
+                                release_row(&mut self.extras, cells);
+                            }
+                            HistoryCells::Arena { start, len } => {
+                                for cell in &self.history_arena[*start..*start + *len] {
+                                    self.extras.release(cell.extra);
+                                }
+                            }
+                        }
+                    }
+                }
                 self.history.clear();
+                self.history_arena.clear();
+                self.history_head = 0;
                 self.history_cells = 0;
             }
             2 => {
@@ -1188,7 +1460,7 @@ impl Terminal {
         if width == self.columns && height == self.rows {
             return;
         }
-        self.spare_row = None;
+        self.release_spares();
         self.resize_screen(true, width, height);
         self.resize_screen(false, width, height);
         self.columns = width;
@@ -1221,11 +1493,23 @@ impl Terminal {
             for col in 0..copy {
                 result[row][col] = std::mem::replace(&mut screen.lines[source][col], Cell::UNWRITTEN);
             }
+            for col in copy..old_columns {
+                let cell = std::mem::replace(&mut screen.lines[source][col], Cell::UNWRITTEN);
+                self.extras.release(cell.extra);
+            }
             if width < old_columns && result[row][width - 1].width == 2 {
+                self.extras.release(result[row][width - 1].extra);
                 result[row][width - 1] = Cell::UNWRITTEN;
             }
         }
+        // Rows below the new height are discarded; their graphemes must be recycled.
+        for row in offset + height..screen.lines.len() {
+            for cell in &screen.lines[row] {
+                self.extras.release(cell.extra);
+            }
+        }
 
+        screen.extents = result.iter().map(|line| visible_len(line)).collect();
         screen.lines = result;
         screen.row = screen.row.saturating_sub(offset).min(height - 1);
         screen.column = screen.column.min(width - 1);
@@ -1285,37 +1569,74 @@ impl Terminal {
 
         for row in 0..rows_to_write {
             let index = first + row;
-            let line: &[Cell] = if index < history_rows {
-                &self.history[index]
-            } else {
-                &self.active().lines[index - history_rows]
-            };
             let base = row * columns;
-            for col in 0..columns {
-                let slot = base + col;
-                let cell = &line[col];
-                let mut attrs = cell.attrs;
-                let cp = if cell.width == 0 {
-                    attrs |= 1 << 5;
-                    0
-                } else {
-                    if cell.width == 2 {
-                        attrs |= 1 << 4;
+            if index < history_rows {
+                let line = &self.history[index];
+                let cells: &[Cell] = match &line.cells {
+                    HistoryCells::Arena { start, len } => {
+                        &self.history_arena[*start..*start + *len]
                     }
-                    if cell.cp == 0 {
-                        0x20
-                    } else {
-                        cell.cp
-                    }
+                    HistoryCells::Owned(cells) => cells,
                 };
-                out_cp[slot] = cp;
-                out_fg[slot] = cell.fg;
-                out_bg[slot] = cell.bg;
-                out_attrs[slot] = attrs;
+                for col in 0..columns {
+                    let cell = cells.get(col).copied().unwrap_or(Cell::BLANK);
+                    write_cell(cell, base + col, out_cp, out_fg, out_bg, out_attrs);
+                }
+            } else {
+                let line = &self.active().lines[index - history_rows];
+                for col in 0..columns {
+                    write_cell(line[col], base + col, out_cp, out_fg, out_bg, out_attrs);
+                }
             }
         }
         rows_to_write
     }
+}
+
+fn is_invisible(cell: &Cell) -> bool {
+    (cell.cp == 0x20 || cell.cp == 0)
+        && cell.width != 0
+        && cell.bg == COLOR_SENTINEL
+        && (cell.attrs & ATTR_INVERSE) == 0
+        && cell.extra == NO_EXTRA
+}
+
+/// `lineLength()`: index one past the last visible cell.
+fn visible_len(line: &[Cell]) -> usize {
+    let mut len = line.len();
+    while len > 0 && is_invisible(&line[len - 1]) {
+        len -= 1;
+    }
+    len
+}
+
+#[inline]
+fn write_cell(
+    cell: Cell,
+    slot: usize,
+    out_cp: &mut [u32],
+    out_fg: &mut [u32],
+    out_bg: &mut [u32],
+    out_attrs: &mut [u8],
+) {
+    let mut attrs = cell.attrs;
+    let cp = if cell.width == 0 {
+        attrs |= 1 << 5;
+        0
+    } else {
+        if cell.width == 2 {
+            attrs |= 1 << 4;
+        }
+        if cell.cp == 0 {
+            0x20
+        } else {
+            cell.cp
+        }
+    };
+    out_cp[slot] = cp;
+    out_fg[slot] = cell.fg;
+    out_bg[slot] = cell.bg;
+    out_attrs[slot] = attrs;
 }
 
 fn line_length(line: &[Cell]) -> usize {
@@ -1323,7 +1644,7 @@ fn line_length(line: &[Cell]) -> usize {
         let cell = &line[col];
         if (cell.cp != 0x20 && !(cell.cp == 0 && cell.width == 1))
             || cell.width == 0
-            || cell.extra.is_some()
+            || cell.extra != NO_EXTRA
             || cell.bg != COLOR_SENTINEL
             || (cell.attrs & ATTR_INVERSE) != 0
         {
@@ -1333,25 +1654,42 @@ fn line_length(line: &[Cell]) -> usize {
     0
 }
 
-fn clear_wide_cell(line: &mut [Cell], column: usize, columns: usize) {
+/// Replaces every cell in `line`, returning its pooled graphemes first.
+fn fill_line(pool: &mut CellPool, line: &mut [Cell], blank: Cell) {
+    for cell in line.iter_mut() {
+        pool.release(cell.extra);
+        *cell = blank;
+    }
+}
+
+fn release_row(pool: &mut CellPool, row: &[Cell]) {
+    for cell in row {
+        pool.release(cell.extra);
+    }
+}
+
+fn clear_wide_cell(pool: &mut CellPool, line: &mut [Cell], column: usize, columns: usize) {
     let width = line[column].width;
     if width == 0 && column > 0 {
+        pool.release(line[column - 1].extra);
         line[column - 1] = Cell::UNWRITTEN;
     }
     if width == 2 && column + 1 < columns {
+        pool.release(line[column + 1].extra);
         line[column + 1] = Cell::UNWRITTEN;
     }
+    pool.release(line[column].extra);
     line[column] = Cell::UNWRITTEN;
 }
 
-fn erase(line: &mut [Cell], from: usize, to: usize, style: Style) {
+fn erase(pool: &mut CellPool, line: &mut [Cell], from: usize, to: usize, style: Style) {
     if from >= to {
         return;
     }
     let columns = line.len();
-    clear_wide_cell(line, from, columns);
-    clear_wide_cell(line, to - 1, columns);
-    line[from..to].fill(Cell::blank(style));
+    clear_wide_cell(pool, line, from, columns);
+    clear_wide_cell(pool, line, to - 1, columns);
+    fill_line(pool, &mut line[from..to], Cell::blank(style));
 }
 
 fn first_param(clean: &str) -> &str {
@@ -1404,5 +1742,109 @@ fn utf8_sequence_len(lead: u8) -> usize {
         0xE0..=0xEF => 3,
         0xF0..=0xF4 => 4,
         _ => 1,
+    }
+}
+
+#[cfg(test)]
+mod pool_tests {
+    use super::*;
+
+    #[test]
+    fn extra_pool_recycles_slots() {
+        let mut terminal = Terminal::new(10, 3);
+        for _ in 0..1000 {
+            terminal.feed("e\u{301}".as_bytes());
+            terminal.feed(b"\x1b[1;1H\x1b[K");
+        }
+        assert_eq!(terminal.extras.slots.len(), 1);
+        assert!(terminal.extras.slots[0].is_none());
+        assert_eq!(terminal.extras.free.len(), 1);
+    }
+
+    #[test]
+    fn erasing_a_row_releases_every_grapheme() {
+        let mut terminal = Terminal::new(10, 2);
+        terminal.feed("a\u{301}b\u{302}c\u{303}".as_bytes());
+        assert_eq!(terminal.extras.slots.len(), 3);
+        terminal.feed(b"\x1b[2K");
+        assert!(terminal.extras.slots.iter().all(|slot| slot.is_none()));
+        assert_eq!(terminal.extras.free.len(), 3);
+    }
+
+    #[test]
+    fn history_eviction_releases_graphemes() {
+        let mut terminal = Terminal::new(4, 2);
+        for _ in 0..50 {
+            terminal.feed("e\u{301}\r\n".as_bytes());
+        }
+        // Only the bounded history and spare row may still hold marks.
+        assert!(terminal.extras.slots.len() < 3000);
+        assert!(terminal.extras.slots.iter().filter(|slot| slot.is_some()).count() <= 100);
+    }
+}
+
+#[cfg(test)]
+mod history_tests {
+    use super::*;
+
+    #[test]
+    fn trimmed_history_rows_store_only_visible_cells() {
+        let mut terminal = Terminal::new(6, 2);
+        terminal.feed(b"ab\r\n\n");
+        let row = &terminal.history[0];
+        assert!(matches!(row.cells, HistoryCells::Arena { len: 2, .. }));
+        assert_eq!(row.width, 6);
+        assert_eq!(terminal.history_cells, 6);
+    }
+
+    #[test]
+    fn blank_history_rows_store_zero_cells() {
+        let mut terminal = Terminal::new(6, 2);
+        terminal.feed(b"\r\n\n");
+        assert!(matches!(
+            terminal.history[0].cells,
+            HistoryCells::Arena { len: 0, .. }
+        ));
+        assert_eq!(terminal.history[0].width, 6);
+    }
+
+    #[test]
+    fn wide_right_half_survives_trimming() {
+        let mut terminal = Terminal::new(8, 2);
+        terminal.feed("ab你\r\n\n".as_bytes());
+        let row = &terminal.history[0];
+        match row.cells {
+            HistoryCells::Arena { start, len } => {
+                assert_eq!(len, 4);
+                assert_eq!(terminal.history_arena[start + 3].width, 0);
+            }
+            HistoryCells::Owned(_) => panic!("wide row should use the arena"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod history_threshold_tests {
+    use super::*;
+
+    #[test]
+    fn nearly_full_rows_keep_their_owned_buffer() {
+        let mut terminal = Terminal::new(90, 2);
+        terminal.feed("x".repeat(79).as_bytes());
+        terminal.feed(b"\r\n\n");
+        assert!(matches!(
+            terminal.history[0].cells,
+            HistoryCells::Owned(_)
+        ));
+    }
+
+    #[test]
+    fn sparse_rows_use_the_arena() {
+        let mut terminal = Terminal::new(90, 2);
+        terminal.feed("short\r\n\n".as_bytes());
+        assert!(matches!(
+            terminal.history[0].cells,
+            HistoryCells::Arena { len: 5, .. }
+        ));
     }
 }

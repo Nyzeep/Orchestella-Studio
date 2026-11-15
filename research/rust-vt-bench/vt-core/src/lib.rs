@@ -15,5 +15,6 @@ mod terminal;
 
 pub use terminal::{
     Cell, Style, Terminal, ATTR_BOLD, ATTR_INVERSE, ATTR_ITALIC, ATTR_UNDERLINE, COLOR_SENTINEL,
+    NO_EXTRA,
 };
 pub use width::character_width;

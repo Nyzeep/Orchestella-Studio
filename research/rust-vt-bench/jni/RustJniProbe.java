@@ -128,6 +128,27 @@ public final class RustJniProbe {
                 fixture.getFileName(), bytes.length, cols, copied, sha);
         System.out.printf("jni smoke input_sha256=%s%n", expected);
         require(nativeFree(handle) == 0, "nativeFree failed");
+
+        // End-to-end: one feed call + one copy_rows call per round, which is the
+        // batch model the R02 seam assumes.
+        double[] mibPerSecond = new double[5];
+        for (int round = 0; round < mibPerSecond.length; round++) {
+            long fresh = nativeNew(cols, rows);
+            require(fresh != 0, "nativeNew returned 0");
+            input.rewind();
+            long started = System.nanoTime();
+            require(nativeFeed(fresh, input, bytes.length) == 0, "nativeFeed failed");
+            require(nativeCopyRows(fresh, 0, displayRows, cp, fg, bg, attrs) > 0,
+                    "nativeCopyRows wrote nothing");
+            long elapsed = System.nanoTime() - started;
+            require(nativeFree(fresh) == 0, "nativeFree failed");
+            mibPerSecond[round] = (bytes.length / 1048576.0) / (elapsed / 1_000_000_000.0);
+        }
+        double[] sortedRates = mibPerSecond.clone();
+        Arrays.sort(sortedRates);
+        System.out.printf("jni e2e fixture=%s mib_per_s_median=%.1f rounds=%s%n",
+                fixture.getFileName(), sortedRates[sortedRates.length / 2],
+                Arrays.toString(mibPerSecond));
     }
 
     private static String sha256(byte[] bytes) throws IOException {

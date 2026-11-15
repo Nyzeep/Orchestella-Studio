@@ -1,7 +1,7 @@
 //! Behavioural tests mirroring `TerminalScreenModelTest.java` where the Java
 //! semantics are observable, plus checks for the `copy_rows` flattening contract.
 
-use vt_core::{palette, Terminal, COLOR_SENTINEL};
+use vt_core::{palette, Terminal, COLOR_SENTINEL, NO_EXTRA};
 
 fn term(cols: usize, rows: usize) -> Terminal {
     Terminal::new(cols, rows)
@@ -13,6 +13,10 @@ fn feed(terminal: &mut Terminal, text: &str) {
 
 fn line(terminal: &Terminal, row: usize) -> String {
     terminal.line_text(row)
+}
+
+fn text_at(terminal: &Terminal, row: usize, col: usize) -> String {
+    terminal.cell_text(terminal.cell(row, col).unwrap())
 }
 
 // ---------------------------------------------------------------------------
@@ -103,7 +107,7 @@ fn ascii_write_and_control_characters() {
     let mut t = term(20, 4);
     feed(&mut t, "a\tb");
     assert_eq!(t.cursor_column(), 9);
-    assert_eq!(t.cell(0, 8).unwrap().text(), "b");
+    assert_eq!(text_at(&t, 0, 8), "b");
 
     let mut t = term(20, 4);
     feed(&mut t, "a\x0bb\x0cc");
@@ -134,12 +138,12 @@ fn wide_characters_occupy_two_cells() {
     let mut t = term(12, 4);
     feed(&mut t, "你a");
     let left = t.cell(0, 0).unwrap();
-    assert_eq!(left.text(), "你");
+    assert_eq!(t.cell_text(left), "你");
     assert_eq!(left.width, 2);
     let right = t.cell(0, 1).unwrap();
-    assert_eq!(right.text(), "");
+    assert_eq!(t.cell_text(right), "");
     assert_eq!(right.width, 0);
-    assert_eq!(t.cell(0, 2).unwrap().text(), "a");
+    assert_eq!(text_at(&t, 0, 2), "a");
     assert_eq!(t.cursor_column(), 3);
     assert_eq!(line(&t, 0), "你a");
 }
@@ -152,7 +156,7 @@ fn wide_character_at_last_column_wraps_or_degrades() {
     feed(&mut t, "abc你");
     assert_eq!(t.cursor_row(), 1);
     assert_eq!(line(&t, 0), "abc");
-    assert_eq!(t.cell(1, 0).unwrap().text(), "你");
+    assert_eq!(text_at(&t, 1, 0), "你");
     assert_eq!(t.cell(1, 0).unwrap().width, 2);
     feed(&mut t, "d");
     assert_eq!(line(&t, 1), "你d");
@@ -162,7 +166,7 @@ fn wide_character_at_last_column_wraps_or_degrades() {
     feed(&mut t, "\x1b[?7labc你");
     assert_eq!(t.cursor_row(), 0);
     let cell = t.cell(0, 3).unwrap();
-    assert_eq!(cell.text(), "你");
+    assert_eq!(t.cell_text(cell), "你");
     assert_eq!(cell.width, 1);
     assert_eq!(line(&t, 0), "abc你");
 }
@@ -171,9 +175,9 @@ fn wide_character_at_last_column_wraps_or_degrades() {
 fn combining_marks_attach_to_their_host_cell() {
     let mut t = term(12, 4);
     feed(&mut t, "e\u{301}你\u{301}");
-    assert_eq!(t.cell(0, 0).unwrap().text(), "e\u{301}");
+    assert_eq!(text_at(&t, 0, 0), "e\u{301}");
     assert_eq!(t.cell(0, 0).unwrap().width, 1);
-    assert_eq!(t.cell(0, 1).unwrap().text(), "你\u{301}");
+    assert_eq!(text_at(&t, 0, 1), "你\u{301}");
     assert_eq!(t.cell(0, 1).unwrap().width, 2);
     assert_eq!(t.cursor_column(), 3);
     assert_eq!(line(&t, 0), "e\u{301}你\u{301}");
@@ -186,7 +190,7 @@ fn overwriting_a_wide_character_removes_both_halves() {
     feed(&mut t, "\x1b[1;2HX");
     assert!(!t.line_text(0).contains('你'));
     assert!(!t.line_text(0).contains('\u{FFFD}'));
-    assert_eq!(t.cell(0, 1).unwrap().text(), "X");
+    assert_eq!(text_at(&t, 0, 1), "X");
 }
 
 #[test]
@@ -196,7 +200,7 @@ fn deleting_a_wide_base_repairs_the_orphan_half() {
     feed(&mut t, "\x1b[1;1H\x1b[P");
     // The left half was deleted, so the shifted right half must be blanked.
     assert_eq!(t.cell(0, 0).unwrap().width, 1);
-    assert_eq!(t.cell(0, 1).unwrap().text(), "x");
+    assert_eq!(text_at(&t, 0, 1), "x");
 }
 
 // ---------------------------------------------------------------------------
@@ -439,7 +443,7 @@ fn resize_clears_wide_base_in_last_column() {
     feed(&mut t, "abcd你");
     assert_eq!(t.cell(0, 4).unwrap().width, 2);
     t.resize(5, 2);
-    assert_eq!(t.cell(0, 4).unwrap().text(), " ");
+    assert_eq!(text_at(&t, 0, 4), " ");
     assert_eq!(t.cell(0, 4).unwrap().width, 1);
     assert_eq!(line(&t, 0), "abcd");
 }
@@ -449,9 +453,9 @@ fn resize_growing_columns_keeps_old_cells_and_blank_fills_new_ones() {
     let mut t = term(4, 2);
     feed(&mut t, "ab");
     t.resize(6, 2);
-    assert_eq!(t.cell(0, 0).unwrap().text(), "a");
-    assert_eq!(t.cell(0, 1).unwrap().text(), "b");
-    assert_eq!(t.cell(0, 5).unwrap().text(), " ");
+    assert_eq!(text_at(&t, 0, 0), "a");
+    assert_eq!(text_at(&t, 0, 1), "b");
+    assert_eq!(text_at(&t, 0, 5), " ");
     assert_eq!(t.cell(0, 5).unwrap().width, 1);
 }
 
@@ -505,11 +509,11 @@ fn oversized_osc_is_discarded_without_leaking_to_screen() {
 fn dec_graphics_charset_maps_line_drawing() {
     let mut t = term(10, 2);
     feed(&mut t, "\x1b(0q\x1b(Bq");
-    assert_eq!(t.cell(0, 0).unwrap().text(), "─");
-    assert_eq!(t.cell(0, 1).unwrap().text(), "q");
+    assert_eq!(text_at(&t, 0, 0), "─");
+    assert_eq!(text_at(&t, 0, 1), "q");
     feed(&mut t, "\x0eq\x0fq");
-    assert_eq!(t.cell(0, 2).unwrap().text(), "─");
-    assert_eq!(t.cell(0, 3).unwrap().text(), "q");
+    assert_eq!(text_at(&t, 0, 2), "─");
+    assert_eq!(text_at(&t, 0, 3), "q");
 }
 
 // ---------------------------------------------------------------------------
@@ -585,14 +589,17 @@ fn copy_rows_with_alternate_screen_has_no_history_offset() {
 
 #[test]
 fn cell_is_a_compact_value_type() {
+    fn assert_copy<T: Copy>() {}
+    assert_copy::<vt_core::Cell>();
     let size = std::mem::size_of::<vt_core::Cell>();
-    println!("size_of::<Cell>() = {size} bytes (target <= 32)");
-    assert!(size <= 32, "Cell is {size} bytes, expected <= 32");
+    println!("size_of::<Cell>() = {size} bytes (target 16)");
+    assert_eq!(size, 16, "Cell is {size} bytes, expected 16");
     assert_eq!(vt_core::Cell::BLANK.cp, 0x20);
     assert_eq!(vt_core::Cell::BLANK.fg, COLOR_SENTINEL);
     assert_eq!(vt_core::Cell::BLANK.bg, COLOR_SENTINEL);
     assert_eq!(vt_core::Cell::BLANK.width, 1);
-    assert!(vt_core::Cell::BLANK.extra.is_none());
+    assert_eq!(vt_core::Cell::BLANK.extra, NO_EXTRA);
+    assert_eq!(vt_core::Cell::UNWRITTEN.extra, NO_EXTRA);
 }
 
 #[test]
@@ -601,9 +608,93 @@ fn combining_mark_on_never_written_cell_is_dropped() {
     let mut t = term(10, 2);
     feed(&mut t, "\x1b[1;3H\u{301}");
     assert_eq!(t.cursor_column(), 2);
-    assert!(t.cell(0, 1).unwrap().extra.is_none());
+    assert_eq!(t.cell(0, 1).unwrap().extra, NO_EXTRA);
     assert_eq!(line(&t, 0), "");
     // A written host accepts the mark as usual.
     feed(&mut t, "e\u{301}");
-    assert_eq!(t.cell(0, 2).unwrap().text(), "e\u{301}");
+    assert_eq!(text_at(&t, 0, 2), "e\u{301}");
+}
+
+#[test]
+fn history_tail_blanks_are_trimmed_but_copy_rows_is_unchanged() {
+    let mut t = term(6, 2);
+    feed(&mut t, "ab\r\n\n");
+    assert_eq!(t.history_rows(), 1);
+    assert_eq!(t.history_line_text(0), "ab");
+    let mut cp = [0u32; 6];
+    let mut fg = [0u32; 6];
+    let mut bg = [0u32; 6];
+    let mut attrs = [0u8; 6];
+    assert_eq!(t.copy_rows(0, 1, &mut cp, &mut fg, &mut bg, &mut attrs), 1);
+    assert_eq!(&cp[..6], &[b'a' as u32, b'b' as u32, 0x20, 0x20, 0x20, 0x20]);
+    assert_eq!(bg[2], COLOR_SENTINEL);
+}
+
+#[test]
+fn history_keeps_trailing_background_cells() {
+    let mut t = term(6, 2);
+    feed(&mut t, "\x1b[44m  \x1b[0m\r\n\n");
+    let mut cp = [0u32; 6];
+    let mut fg = [0u32; 6];
+    let mut bg = [0u32; 6];
+    let mut attrs = [0u8; 6];
+    t.copy_rows(0, 1, &mut cp, &mut fg, &mut bg, &mut attrs);
+    assert_eq!(bg[0], palette::COLOR_BLUE);
+    assert_eq!(bg[1], palette::COLOR_BLUE);
+    assert_eq!(bg[2], COLOR_SENTINEL);
+    assert_eq!(cp[2], 0x20);
+}
+
+#[test]
+fn history_keeps_trailing_inverse_cells() {
+    let mut t = term(6, 2);
+    feed(&mut t, "\x1b[7m  \x1b[0m\r\n\n");
+    let mut cp = [0u32; 6];
+    let mut fg = [0u32; 6];
+    let mut bg = [0u32; 6];
+    let mut attrs = [0u8; 6];
+    t.copy_rows(0, 1, &mut cp, &mut fg, &mut bg, &mut attrs);
+    assert_eq!(attrs[0] & 0b1000, 0b1000);
+    assert_eq!(attrs[1] & 0b1000, 0b1000);
+    assert_eq!(attrs[2] & 0b1000, 0);
+}
+
+#[test]
+fn history_keeps_wide_right_half_and_its_base() {
+    let mut t = term(4, 2);
+    feed(&mut t, "ab你\r\n\n");
+    assert_eq!(t.history_line_text(0), "ab你");
+    let mut cp = [0u32; 4];
+    let mut fg = [0u32; 4];
+    let mut bg = [0u32; 4];
+    let mut attrs = [0u8; 4];
+    t.copy_rows(0, 1, &mut cp, &mut fg, &mut bg, &mut attrs);
+    assert_eq!(cp[2], '你' as u32);
+    assert_eq!(cp[3], 0);
+    assert_eq!(attrs[2] & 0b01_0000, 0b01_0000);
+    assert_eq!(attrs[3] & 0b10_0000, 0b10_0000);
+}
+
+#[test]
+fn fully_blank_history_row_still_occupies_a_line() {
+    let mut t = term(3, 2);
+    feed(&mut t, "\r\n\n");
+    assert_eq!(t.history_rows(), 1);
+    assert_eq!(t.history_line_text(0), "");
+    let mut cp = [0u32; 3];
+    let mut fg = [0u32; 3];
+    let mut bg = [0u32; 3];
+    let mut attrs = [0u8; 3];
+    assert_eq!(t.copy_rows(0, 1, &mut cp, &mut fg, &mut bg, &mut attrs), 1);
+    assert_eq!(&cp[..3], &[0x20, 0x20, 0x20]);
+}
+
+#[test]
+fn history_cap_still_counts_untrimmed_columns() {
+    let mut t = term(90, 2);
+    for _ in 0..1200 {
+        feed(&mut t, "x\r\n");
+    }
+    assert_eq!(t.history_rows(), 1111);
+    assert_eq!(t.history_cells(), 1111 * 90);
 }
