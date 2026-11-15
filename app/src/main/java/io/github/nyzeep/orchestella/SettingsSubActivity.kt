@@ -203,6 +203,23 @@ class SettingsSubActivity : AppCompatActivity() {
         findViewById<MaterialToolbar>(R.id.settings_sub_toolbar).setTitle(resId)
     }
 
+    /** Shared single-choice dialog for the appearance pickers (corner radius, text scale). */
+    private fun showSingleChoicePicker(
+        title: String,
+        labels: List<String>,
+        current: Int,
+        onPick: (Int) -> Unit,
+    ) {
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(title)
+            .setSingleChoiceItems(labels.toTypedArray(), current) { dialog, which ->
+                onPick(which)
+                dialog.dismiss()
+            }
+            .setNegativeButton("取消", null)
+            .show().also(ThemeApplier::apply)
+    }
+
     /**
      * Level-1 → level-2 transition: scale+alpha container-transform
      * approximation on the section container, pivoting at the top edge so the
@@ -368,17 +385,15 @@ class SettingsSubActivity : AppCompatActivity() {
             // list, selected as-is: the dialog must never open at -1 nor silently rewrite them.
             val options = if (standard.any { it.second == saved }) standard else standard + (
                 if (saved == 0) "直角 0dp（保留 XML 圆角）" to 0 else "自定义 ${saved}dp" to saved)
-            val current = options.indexOfFirst { it.second == saved }
-            androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("全局按钮圆角")
-                .setSingleChoiceItems(options.map { it.first }.toTypedArray(), current) { dialog, which ->
-                    themeStore.setCornerRadiusDp(options[which].second)
-                    refreshAppearance()
-                    dialog.dismiss()
-                    Toast.makeText(this, "圆角已更新：${options[which].first}", Toast.LENGTH_SHORT).show()
-                }
-                .setNegativeButton("取消", null)
-                .show().also(ThemeApplier::apply)
+            showSingleChoicePicker(
+                title = "全局按钮圆角",
+                labels = options.map { it.first },
+                current = options.indexOfFirst { it.second == saved },
+            ) { which ->
+                themeStore.setCornerRadiusDp(options[which].second)
+                refreshAppearance()
+                Toast.makeText(this, "圆角已更新：${options[which].first}", Toast.LENGTH_SHORT).show()
+            }
         }
 
         findViewById<MaterialButton?>(R.id.btn_pick_text_scale)?.setOnClickListener {
@@ -393,21 +408,22 @@ class SettingsSubActivity : AppCompatActivity() {
             } else {
                 1 + percents.indexOf(savedPercent)
             }
-            androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("应用内字号（Oe 新版界面）")
-                .setSingleChoiceItems(labels.toTypedArray(), current) { dialog, which ->
-                    if (which == 0) {
-                        themeStore.setTextScaleMode(OeTextScaleMode.FollowSystem)
-                    } else {
-                        themeStore.setTextScaleMode(OeTextScaleMode.Custom)
-                        themeStore.setTextScalePercent(percents[which - 1])
-                    }
-                    refreshAppearance()
-                    dialog.dismiss()
-                    Toast.makeText(this, "字号已保存：${labels[which]}", Toast.LENGTH_SHORT).show()
+            showSingleChoicePicker(
+                title = "应用内字号（Oe 新版界面）",
+                labels = labels,
+                current = current,
+            ) { which ->
+                if (which == 0) {
+                    themeStore.setTextScale(
+                        OeTextScaleMode.FollowSystem,
+                        themeStore.textScalePercent(),
+                    )
+                } else {
+                    themeStore.setTextScale(OeTextScaleMode.Custom, percents[which - 1])
                 }
-                .setNegativeButton("取消", null)
-                .show().also(ThemeApplier::apply)
+                refreshAppearance()
+                Toast.makeText(this, "字号已保存：${labels[which]}", Toast.LENGTH_SHORT).show()
+            }
         }
 
         findViewById<MaterialButton?>(R.id.btn_pick_custom_theme)?.setOnClickListener {

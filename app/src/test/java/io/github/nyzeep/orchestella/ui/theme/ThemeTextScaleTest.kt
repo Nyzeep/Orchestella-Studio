@@ -40,6 +40,16 @@ class ThemeTextScaleTest {
     }
 
     @Test
+    fun atomicTextScaleWritePersistsBothFieldsAndClampsThePercent() {
+        val prefs = FakeSharedPreferences()
+        ThemeStore(prefs).setTextScale(OeTextScaleMode.Custom, 200)
+        val restored = ThemeStore(prefs)
+        assertEquals(OeTextScaleMode.Custom, restored.textScaleMode())
+        assertEquals(130, restored.textScalePercent())
+        assertEquals(1.30f, restored.textScaleFactor(), 0.0001f)
+    }
+
+    @Test
     fun textScalePercentClampsToTheTicketBand() {
         val store = ThemeStore(FakeSharedPreferences())
         store.setTextScaleMode(OeTextScaleMode.Custom)

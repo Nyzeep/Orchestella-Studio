@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import io.github.nyzeep.orchestella.ui.compose.OrchestellaComposeTheme
 import io.github.nyzeep.orchestella.ui.theme.AppTheme
 import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
+import kotlin.math.roundToInt
 
 /**
  * Visual acceptance board for the Oe v2 foundation (ticket 01, acceptance #4).
@@ -120,7 +121,7 @@ private fun OeBoard(theme: AppTheme, compact: Boolean = false, textScale: Float 
                         text = if (textScale == 1f) {
                             "10 个基础组件 · 一套几何 · 深浅两套主题"
                         } else {
-                            "10 个基础组件 · 应用内字号 ${(textScale * 100).toInt()}%"
+                            "10 个基础组件 · 应用内字号 ${(textScale * 100).roundToInt()}%"
                         },
                         style = OeType.body(),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

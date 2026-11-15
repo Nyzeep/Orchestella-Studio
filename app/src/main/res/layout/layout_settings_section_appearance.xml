@@ -144,7 +144,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/oe_space_xs"
-                android:text="作用于已迁移的 Oe 新版界面；旧页面继续跟随系统字号"
+                android:text="在系统字号基础上再缩放，仅作用于已迁移的 Oe 新版界面；旧页面仍只跟随系统字号"
                 android:textSize="11sp"
                 android:textColor="?attr/colorOutline" />
 

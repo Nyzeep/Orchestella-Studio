@@ -14,7 +14,7 @@ import androidx.compose.ui.unit.sp
 /**
  * Oe v2 geometry. The single Kotlin source for shape / space / size / motion,
  * mirrored by `res/values/oe_design_tokens.xml` for the XML pages — one scale,
- * two consumers (same contract as [io.github.nyzeep.orchestella.ui.compose.OeSpacing]).
+ * two consumers.
  *
  * The user's "button corner" preference only changes [OeShape.control] and
  * below. Surface radii ([hero], [card], [block]) are layout, not preference:

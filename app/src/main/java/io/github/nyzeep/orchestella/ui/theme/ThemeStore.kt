@@ -229,13 +229,7 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
     }
 
     fun setTextScaleMode(mode: OeTextScaleMode) {
-        prefs.edit().putString(
-            KEY_TEXT_SCALE_MODE,
-            when (mode) {
-                OeTextScaleMode.FollowSystem -> TEXT_SCALE_MODE_FOLLOW_SYSTEM
-                OeTextScaleMode.Custom -> TEXT_SCALE_MODE_CUSTOM
-            },
-        ).apply()
+        prefs.edit().putString(KEY_TEXT_SCALE_MODE, modeValue(mode)).apply()
     }
 
     fun textScalePercent(): Int =
@@ -243,6 +237,22 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
 
     fun setTextScalePercent(percent: Int) {
         prefs.edit().putInt(KEY_TEXT_SCALE_PERCENT, OeTextScale.clampPercent(percent)).apply()
+    }
+
+    /**
+     * One editor for the picker's two-field change: a crash or a concurrent
+     * reader can never observe "Custom" paired with the previous percent.
+     */
+    fun setTextScale(mode: OeTextScaleMode, percent: Int) {
+        prefs.edit()
+            .putString(KEY_TEXT_SCALE_MODE, modeValue(mode))
+            .putInt(KEY_TEXT_SCALE_PERCENT, OeTextScale.clampPercent(percent))
+            .apply()
+    }
+
+    private fun modeValue(mode: OeTextScaleMode): String = when (mode) {
+        OeTextScaleMode.FollowSystem -> TEXT_SCALE_MODE_FOLLOW_SYSTEM
+        OeTextScaleMode.Custom -> TEXT_SCALE_MODE_CUSTOM
     }
 
     /** Multiplier for the Oe Compose layer; 1.0 while following the system. */

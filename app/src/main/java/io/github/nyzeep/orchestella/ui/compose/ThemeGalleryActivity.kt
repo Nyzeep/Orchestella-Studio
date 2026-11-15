@@ -67,6 +67,9 @@ import io.github.nyzeep.orchestella.ui.theme.ThemeStore
  * them in [onResume], so a corner-radius or in-app text-scale change made in the
  * appearance page is visible when the user returns instead of surviving only
  * until the next cold start.
+ *
+ * Preview cards use `OeShape.card` (24dp) deliberately: surface radii are
+ * layout, while the user's corner preference reaches the OeButton controls.
  */
 class ThemeGalleryActivity : AppCompatActivity() {
 
