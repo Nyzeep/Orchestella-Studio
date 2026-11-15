@@ -17,6 +17,7 @@ import android.view.Window;
 import android.view.WindowManager;
 import android.view.inputmethod.InputConnection;
 import android.widget.FrameLayout;
+import android.widget.TextView;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.Arrays;
@@ -84,7 +85,15 @@ public final class TerminalBenchActivity extends Activity {
     private static final int MAX_LAYOUT_RETRIES = 50;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+
     private final Deque<String> pendingFixtures = new ArrayDeque<>();
+
+    /**
+     * Overlay label naming the fixture in flight. The measured view keeps MATCH_PARENT, so
+     * this adds no layout change; it exists because the raw terminal (dark canvas, raw text)
+     * reads as a broken app to anyone glancing at the device mid-run.
+     */
+    private TextView benchHint;
 
     private HandlerThread metricsThread;
     private Handler metricsHandler;
@@ -162,6 +171,23 @@ public final class TerminalBenchActivity extends Activity {
         terminalView.applyTheme(benchTheme, 12, 0f, 0f);
         root.addView(terminalView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        benchHint = new TextView(this);
+        benchHint.setText("terminal-bench · 准备中");
+        benchHint.setTextSize(12f);
+        benchHint.setTextColor(0xFFF3ECFF);
+        // Opaque: the terminal keeps drawing behind this chip, so a translucent fill would
+        // let raw fixture text bleed through it.
+        benchHint.setBackgroundColor(0xFF1A1526);
+        int padH = Math.round(12 * getResources().getDisplayMetrics().density);
+        int padV = Math.round(5 * getResources().getDisplayMetrics().density);
+        benchHint.setPadding(padH, padV, padH, padV);
+        FrameLayout.LayoutParams hintParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        hintParams.gravity = android.view.Gravity.TOP | android.view.Gravity.CENTER_HORIZONTAL;
+        // The window draws edge to edge, so clear the status bar or the clock sits on top of
+        // the chip. The terminal view itself stays MATCH_PARENT and unchanged.
+        hintParams.topMargin = statusBarHeight() + Math.round(10 * getResources().getDisplayMetrics().density);
+        root.addView(benchHint, hintParams);
         setContentView(root);
 
         model = new TerminalScreenModel(80, 24);
@@ -171,6 +197,12 @@ public final class TerminalBenchActivity extends Activity {
             benchColumns = columns;
             benchRows = rows;
         });
+    }
+
+    /** Status bar height in px; 0 when the resource is missing (headless/automotive builds). */
+    private int statusBarHeight() {
+        int id = getResources().getIdentifier("status_bar_height", "dimen", "android");
+        return id > 0 ? getResources().getDimensionPixelSize(id) : 0;
     }
 
     private void startWhenDrawn() {
@@ -235,10 +267,12 @@ public final class TerminalBenchActivity extends Activity {
         if (isFinishing()) return;
         String fixture = pendingFixtures.pollFirst();
         if (fixture == null) {
+            if (benchHint != null) benchHint.setText("terminal-bench · 完成，退出中");
             logDone();
             mainHandler.postDelayed(this::finish, 200L);
             return;
         }
+        if (benchHint != null) benchHint.setText("terminal-bench · " + fixture);
         resetSession();
         try {
             switch (fixture) {
