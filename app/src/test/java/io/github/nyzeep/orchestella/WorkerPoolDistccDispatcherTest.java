@@ -57,9 +57,20 @@ public final class WorkerPoolDistccDispatcherTest {
             "00112233" + "44556677" + "8899aabb" + "ccddeeff";
     private static final String TRIPLE = "aarch64-unknown-linux-android";
     private static final int DISTCC_PORT = 5103;
-    private static final long WAIT_MS = 5_000L;
-    /** Matches the pool's default 30s queue budget: admission must beat it. */
-    private static final long QUEUE_SETTLE_MS = 30_000L;
+    /** Per-step harness budget: thread start and fake admission on a loaded worker. */
+    private static final long STEP_BUDGET_MS = 30_000L;
+    /**
+     * Queue-settle budget for the four-connections-two-slots case. It must
+     * stay above the dispatcher's explicit acquire bound below; the pool's
+     * own 30s default is deliberately not the harness's deadline.
+     */
+    private static final long QUEUE_SETTLE_MS = 90_000L;
+    /**
+     * Explicit acquire bound for the queued-connections case: the pool's 30s
+     * default queue deadline can otherwise fire before a loaded CI worker
+     * observes the release-driven admission this test pins.
+     */
+    private static final long ACQUIRE_BUDGET_MS = 120_000L;
 
     // --- lease lifecycle over a fake pool ---------------------------------------
 
@@ -192,7 +203,8 @@ public final class WorkerPoolDistccDispatcherTest {
                 api, api::nextSpec,
                 ProtectedWorkerPool.Config.builder().capacity(2).build(),
                 CLOCK)) {
-            WorkerPoolDistccDispatcher dispatcher = new WorkerPoolDistccDispatcher(pool, opener);
+            WorkerPoolDistccDispatcher dispatcher = new WorkerPoolDistccDispatcher(
+                    pool, opener, ACQUIRE_BUDGET_MS);
             List<FastLaneChannel> channels = new ArrayList<>();
             List<Thread> workers = new ArrayList<>();
             CountDownLatch twoOpened = new CountDownLatch(2);
@@ -222,16 +234,16 @@ public final class WorkerPoolDistccDispatcherTest {
                 worker.start();
                 workers.add(worker);
             }
-            assertTrue(twoOpened.await(WAIT_MS, TimeUnit.MILLISECONDS));
+            assertTrue(twoOpened.await(STEP_BUDGET_MS, TimeUnit.MILLISECONDS));
             // Returning the first two leases is what lets the queued two in.
             synchronized (channels) {
                 channels.get(0).close();
                 channels.get(1).close();
             }
             // Admission after release is millisecond-scale with the fakes, but
-            // CI runners stall under load; WAIT_MS is the per-step harness
-            // budget while the queue itself allows 30s, so wait out the queue
-            // budget before declaring the scenario broken.
+            // CI runners stall under load; the dispatcher holds an explicit
+            // 120s acquire bound, so this 90s settle window always wins and a
+            // slow worker is not mistaken for a broken queue.
             assertTrue("queued workers were not admitted after two releases in "
                             + QUEUE_SETTLE_MS + "ms; failures=" + failures.get()
                             + ", firstFailure=" + firstFailure.get()
@@ -246,7 +258,7 @@ public final class WorkerPoolDistccDispatcherTest {
                 channel.close();
             }
             for (Thread worker : workers) {
-                worker.join(WAIT_MS);
+                worker.join(STEP_BUDGET_MS);
             }
             assertEquals(2, opener.instances.stream().distinct().count());
             assertEquals(0, pool.health().leasedSlots());

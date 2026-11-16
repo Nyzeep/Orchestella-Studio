@@ -54,6 +54,13 @@ import org.junit.rules.TemporaryFolder;
  */
 public final class InstanceLaunchCoordinatorTest {
 
+    /**
+     * Explicit watcher/paint budget. Every step is millisecond-scale with the
+     * fakes; the budget only keeps a loaded full-suite worker from being
+     * mistaken for a hung watcher.
+     */
+    private static final long WATCHER_BUDGET_MS = 30_000L;
+
     @Rule public final TemporaryFolder temporaryFolder = new TemporaryFolder();
 
     // ------------------------------------------------------------------
@@ -89,12 +96,31 @@ public final class InstanceLaunchCoordinatorTest {
     private static final class RecordingUi implements InstanceLaunchCoordinator.LaunchUi {
         final List<String> events = new ArrayList<>();
         final AtomicInteger runOnUiCalls = new AtomicInteger();
+        private final Object paintSignal = new Object();
         volatile InstanceLaunchCoordinator.LaunchNavigation successNavigation;
 
         /** Counts a paint only after its update completed, so awaits are deterministic. */
         @Override public void runOnUi(Runnable update) {
             update.run();
-            runOnUiCalls.incrementAndGet();
+            synchronized (paintSignal) {
+                runOnUiCalls.incrementAndGet();
+                paintSignal.notifyAll();
+            }
+        }
+
+        /** Waits until at least {@code expected} paints completed, or the budget elapsed. */
+        boolean awaitRunOnUiCalls(int expected, long timeoutMs) throws InterruptedException {
+            long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs);
+            synchronized (paintSignal) {
+                while (runOnUiCalls.get() < expected) {
+                    long remaining = deadline - System.nanoTime();
+                    if (remaining <= 0L) {
+                        return false;
+                    }
+                    TimeUnit.NANOSECONDS.timedWait(paintSignal, remaining);
+                }
+                return true;
+            }
         }
 
         @Override public synchronized void resetCreateButtons() { events.add("reset-buttons"); }
@@ -182,10 +208,19 @@ public final class InstanceLaunchCoordinatorTest {
         private final int code;
         int closes;
         int terminations;
+        /**
+         * Signals that the watcher reached its wait. The generation lookup runs
+         * before waitFor, so this latch also pins "the watcher already saw its
+         * admitted generation" for the owner-swap tests.
+         */
+        final CountDownLatch waitEntered = new CountDownLatch(1);
         /** Signals that the watcher reached the stop-after-exit phase. */
         final CountDownLatch stopRuntimeEntered = new CountDownLatch(1);
         ExitSession(int code) { this.code = code; }
-        @Override public int waitFor() throws InterruptedException { return code; }
+        @Override public int waitFor() throws InterruptedException {
+            waitEntered.countDown();
+            return code;
+        }
         @Override public java.io.InputStream terminalOutput() { return new java.io.ByteArrayInputStream(new byte[0]); }
         @Override public java.io.OutputStream terminalInput() { return new java.io.ByteArrayOutputStream(); }
         @Override public java.io.InputStream controlOutput() { return new java.io.ByteArrayInputStream(new byte[0]); }
@@ -217,6 +252,7 @@ public final class InstanceLaunchCoordinatorTest {
         final AtomicInteger arms = new AtomicInteger();
         final AtomicInteger disarms = new AtomicInteger();
         final AtomicBoolean lastGate = new AtomicBoolean(false);
+        private final Object disarmSignal = new Object();
         /** When set, arm answers this face; null keeps the backend-declined shape. */
         volatile UmlFaceLauncher faceToArm;
 
@@ -227,7 +263,25 @@ public final class InstanceLaunchCoordinatorTest {
         }
 
         @Override public void disarm(String instanceId) {
-            disarms.incrementAndGet();
+            synchronized (disarmSignal) {
+                disarms.incrementAndGet();
+                disarmSignal.notifyAll();
+            }
+        }
+
+        /** Waits until at least {@code expected} disarms happened, or the budget elapsed. */
+        boolean awaitDisarms(int expected, long timeoutMs) throws InterruptedException {
+            long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs);
+            synchronized (disarmSignal) {
+                while (disarms.get() < expected) {
+                    long remaining = deadline - System.nanoTime();
+                    if (remaining <= 0L) {
+                        return false;
+                    }
+                    TimeUnit.NANOSECONDS.timedWait(disarmSignal, remaining);
+                }
+                return true;
+            }
         }
     }
 
@@ -336,19 +390,22 @@ public final class InstanceLaunchCoordinatorTest {
     private static ExitSession gatedExitSession(CountDownLatch release) {
         return new ExitSession(0) {
             @Override public int waitFor() throws InterruptedException {
-                if (!release.await(5, TimeUnit.SECONDS)) throw new AssertionError("latch timeout");
+                waitEntered.countDown();
+                if (!release.await(WATCHER_BUDGET_MS, TimeUnit.MILLISECONDS)) {
+                    throw new AssertionError("latch timeout");
+                }
                 return 0;
             }
         };
     }
 
-    /** Waits until the watcher thread reached its pending ui paint attempt. */
+    /** Waits until the watcher completed its expected paint attempts. */
     private static void awaitRunOnUiCalls(RecordingUi ui, int expected) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-        while (ui.runOnUiCalls.get() < expected && System.nanoTime() < deadline) {
-            Thread.sleep(20);
-        }
-        assertEquals("the expected paint attempts must have been reached", expected, ui.runOnUiCalls.get());
+        assertTrue("the expected paint attempts must have been reached within "
+                        + WATCHER_BUDGET_MS + "ms",
+                ui.awaitRunOnUiCalls(expected, WATCHER_BUDGET_MS));
+        assertEquals("the expected paint attempts must have been reached",
+                expected, ui.runOnUiCalls.get());
     }
 
     // ------------------------------------------------------------------
@@ -476,7 +533,7 @@ public final class InstanceLaunchCoordinatorTest {
             // Watcher: confirmed normal exit stops the foreground binding with the
             // session generation and repaints the dashboard.
             release.countDown();
-            assertTrue(seams.foreground.firstStop.await(5, TimeUnit.SECONDS));
+            assertTrue(seams.foreground.firstStop.await(WATCHER_BUDGET_MS, TimeUnit.MILLISECONDS));
             awaitRunOnUiCalls(seams.ui, 2);
             assertTrue(seams.foreground.snapshot().contains(
                     "stop:" + setup.instance.id() + ":" + generation));
@@ -559,7 +616,10 @@ public final class InstanceLaunchCoordinatorTest {
         CountDownLatch release = new CountDownLatch(1);
         ExitSession session = new ExitSession(23) {
             @Override public int waitFor() throws InterruptedException {
-                if (!release.await(5, TimeUnit.SECONDS)) throw new AssertionError("latch timeout");
+                waitEntered.countDown();
+                if (!release.await(WATCHER_BUDGET_MS, TimeUnit.MILLISECONDS)) {
+                    throw new AssertionError("latch timeout");
+                }
                 return 23;
             }
         };
@@ -569,7 +629,7 @@ public final class InstanceLaunchCoordinatorTest {
         try {
             coordinator.launch(setup.instance);
             release.countDown();
-            assertTrue(seams.foreground.firstStop.await(5, TimeUnit.SECONDS));
+            assertTrue(seams.foreground.firstStop.await(WATCHER_BUDGET_MS, TimeUnit.MILLISECONDS));
             awaitRunOnUiCalls(seams.ui, 2);
             assertTrue("the confirmed crash stops the foreground binding",
                     seams.foreground.snapshot().stream()
@@ -598,7 +658,10 @@ public final class InstanceLaunchCoordinatorTest {
         CountDownLatch release = new CountDownLatch(1);
         UnconfirmedExitSession session = new UnconfirmedExitSession() {
             @Override public int waitFor() throws InterruptedException {
-                if (!release.await(5, TimeUnit.SECONDS)) throw new AssertionError("latch timeout");
+                waitEntered.countDown();
+                if (!release.await(WATCHER_BUDGET_MS, TimeUnit.MILLISECONDS)) {
+                    throw new AssertionError("latch timeout");
+                }
                 return 0;
             }
         };
@@ -663,6 +726,11 @@ public final class InstanceLaunchCoordinatorTest {
         String generation = null;
         try {
             coordinator.launch(setup.instance);
+            // Pin the watcher at its wait: the generation lookup runs before
+            // waitFor, so the owner swap below is guaranteed to meet an
+            // already-admitted watcher rather than racing its startup.
+            assertTrue("the watcher must enter its wait",
+                    session.waitEntered.await(WATCHER_BUDGET_MS, TimeUnit.MILLISECONDS));
             // Replace the registered owner before the watcher observes the exit: the
             // completion can no longer be confirmed for the old session, so the
             // watcher goes stale and must stay silent on every channel.
@@ -671,10 +739,11 @@ public final class InstanceLaunchCoordinatorTest {
             ExecutionSessionRegistry.register(setup.instance.id(), replacement);
             release.countDown();
             assertTrue("the watcher must reach the stop-after-exit phase",
-                    session.stopRuntimeEntered.await(5, TimeUnit.SECONDS));
-            // A stale watcher paints nothing and stops nothing; the confirmed-stop
-            // probe plus a short settle bound the thread's remaining work.
-            Thread.sleep(200);
+                    session.stopRuntimeEntered.await(WATCHER_BUDGET_MS, TimeUnit.MILLISECONDS));
+            // No settle sleep: the stale classification is decided by the
+            // registry identity inside completeExit, so a fast assert cannot
+            // see a paint that the state forbids — and a slow watcher cannot
+            // paint one later.
             assertTrue("no status line for a stale watcher",
                     seams.ui.events.stream().noneMatch(event -> event.startsWith("status:")));
             assertTrue("no foreground stop for a stale watcher",
@@ -703,6 +772,10 @@ public final class InstanceLaunchCoordinatorTest {
         String generation = null;
         try {
             coordinator.launch(setup.instance);
+            // Same pin as the stale case: the watcher read its admitted
+            // generation before parking in waitFor.
+            assertTrue("the watcher must enter its wait",
+                    session.waitEntered.await(WATCHER_BUDGET_MS, TimeUnit.MILLISECONDS));
             generation = InstanceLaunchGuard.generation(setup.instance.id());
             // A newer launch admission supersedes the old watcher's generation: the
             // completion can no longer be confirmed, so the watcher goes stale and
@@ -711,8 +784,10 @@ public final class InstanceLaunchCoordinatorTest {
             String newerGeneration = InstanceLaunchGuard.begin(setup.instance.id());
             release.countDown();
             assertTrue("the watcher must reach the stop-after-exit phase",
-                    session.stopRuntimeEntered.await(5, TimeUnit.SECONDS));
-            Thread.sleep(200);
+                    session.stopRuntimeEntered.await(WATCHER_BUDGET_MS, TimeUnit.MILLISECONDS));
+            // completeExit's superseded guard is atomic under the instance
+            // transition lock: the no-paint assertion holds regardless of how
+            // the watcher thread is scheduled after the stop phase.
             assertTrue("no foreground stop for a superseded watcher",
                     seams.foreground.snapshot().stream().noneMatch(event -> event.startsWith("stop:")));
             assertFalse("the old generation is no longer latest",
@@ -747,7 +822,7 @@ public final class InstanceLaunchCoordinatorTest {
                 InstanceLaunchGuard.end(setup.instance.id(), admitted);
                 InstanceLaunchGuard.begin(setup.instance.id());
             };
-            assertTrue(seams.foreground.firstStop.await(5, TimeUnit.SECONDS));
+            assertTrue(seams.foreground.firstStop.await(WATCHER_BUDGET_MS, TimeUnit.MILLISECONDS));
             awaitRunOnUiCalls(seams.ui, 2);
             assertTrue("the binding stop still ran",
                     seams.foreground.snapshot().stream()
@@ -1072,6 +1147,10 @@ public final class InstanceLaunchCoordinatorTest {
         ExitSession session = gatedExitSession(release);
         InstanceLaunchCoordinator coordinator = newCoordinator(setup, filesDir, seams,
                 registeringQemu(seams, session));
+        // The status registry is process-wide; this test asserts that the
+        // gate-off launch does not touch it, not that the whole worker JVM
+        // happens to have no foreign binding.
+        UmlFaceStatusRegistry.BoundFace bindingBeforeLaunch = UmlFaceStatusRegistry.current();
         try {
             InstanceLaunchCoordinator.LaunchOutcome outcome = coordinator.launch(setup.instance);
             assertSame(InstanceLaunchCoordinator.LaunchOutcome.Launched.class, outcome.getClass());
@@ -1080,10 +1159,10 @@ public final class InstanceLaunchCoordinatorTest {
             assertEquals("a gate-off dispatch arms no face at all",
                     0, seams.umlFaceLane.arms.get());
             assertFalse(seams.umlFaceLane.lastGate.get());
-            assertNull("no face is bound to the status registry",
-                    UmlFaceStatusRegistry.current());
+            assertSame("a gate-off launch leaves the status registry untouched",
+                    bindingBeforeLaunch, UmlFaceStatusRegistry.current());
             release.countDown();
-            assertTrue(seams.foreground.firstStop.await(5, TimeUnit.SECONDS));
+            assertTrue(seams.foreground.firstStop.await(WATCHER_BUDGET_MS, TimeUnit.MILLISECONDS));
             awaitRunOnUiCalls(seams.ui, 2);
             // The watcher close point's disarm rides the same gate-off path
             // inertly: the unbound registry answers null, so it is a no-op.
@@ -1139,12 +1218,11 @@ public final class InstanceLaunchCoordinatorTest {
 
             // The watcher's exit close point disarms the face.
             release.countDown();
-            assertTrue(seams.foreground.firstStop.await(5, TimeUnit.SECONDS));
+            assertTrue(seams.foreground.firstStop.await(WATCHER_BUDGET_MS, TimeUnit.MILLISECONDS));
             awaitRunOnUiCalls(seams.ui, 2);
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-            while (seams.umlFaceLane.disarms.get() < 1 && System.nanoTime() < deadline) {
-                Thread.sleep(20);
-            }
+            assertTrue("the watcher close point must disarm the face within "
+                            + WATCHER_BUDGET_MS + "ms",
+                    seams.umlFaceLane.awaitDisarms(1, WATCHER_BUDGET_MS));
             assertEquals("the watcher close point disarms the face",
                     1, seams.umlFaceLane.disarms.get());
         } finally {
@@ -1173,6 +1251,7 @@ public final class InstanceLaunchCoordinatorTest {
         };
         InstanceLaunchCoordinator coordinator = newCoordinator(setup, filesDir, seams,
                 unregisteredQemu);
+        UmlFaceStatusRegistry.BoundFace bindingBeforeLaunch = UmlFaceStatusRegistry.current();
         try {
             InstanceLaunchCoordinator.LaunchOutcome outcome = coordinator.launch(setup.instance);
             assertSame(InstanceLaunchCoordinator.LaunchOutcome.Failed.class, outcome.getClass());
@@ -1181,8 +1260,8 @@ public final class InstanceLaunchCoordinatorTest {
             assertTrue(seams.umlFaceLane.lastGate.get());
             assertEquals("the launch failure path disarms the face",
                     1, seams.umlFaceLane.disarms.get());
-            assertNull("the status registry is left unbound",
-                    UmlFaceStatusRegistry.current());
+            assertSame("the status registry is left untouched",
+                    bindingBeforeLaunch, UmlFaceStatusRegistry.current());
         } finally {
             InstanceLaunchGuard.end(setup.instance.id());
         }
