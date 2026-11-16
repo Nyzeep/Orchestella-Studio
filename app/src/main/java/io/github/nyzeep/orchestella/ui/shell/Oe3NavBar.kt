@@ -15,8 +15,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.sizeIn
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.Text
@@ -89,7 +89,11 @@ fun Oe3NavBar(
                     if (isSelected) {
                         Box(
                             modifier = Modifier
-                                .width(cellWidth + Oe3Sizes.navPillOverhang)
+                                // requiredWidth: the cell constrains width to its
+                                // slot, so plain width() would clamp away the 8dp
+                                // overhang. The bar's capsule clip keeps the
+                                // overflow inside the chrome.
+                                .requiredWidth(cellWidth + Oe3Sizes.navPillOverhang)
                                 .height(Oe3Sizes.navPill)
                                 .clip(Oe3Shapes.pill)
                                 .background(Color(colors.surfaceHigh)),
