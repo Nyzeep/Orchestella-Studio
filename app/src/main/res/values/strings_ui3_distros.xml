@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  发行版页（UI3-08）文案。页面工单各自持有 strings_ui3_<area>.xml，
+  避免与 res/values/strings.xml 的独占所有权冲突（spec §5）。
+  UML rootfs 卡复用既有 engine_uml_rootfs_* 文案，不在这里重写状态语义。
+-->
+<resources>
+    <string name="ui3_distros_title">发行版</string>
+    <string name="ui3_distros_meta_line">官方 rootfs · 直源 · 校验</string>
+
+    <string name="ui3_distros_install">装配实例</string>
+    <string name="ui3_distros_card_meta">%1$s · %2$s · SHA %3$s</string>
+    <string name="ui3_distros_state_expanded">已展开</string>
+    <string name="ui3_distros_state_collapsed">已收起</string>
+
+    <string name="ui3_distros_capability_lts">LTS</string>
+    <string name="ui3_distros_capability_rolling">滚动</string>
+    <string name="ui3_distros_capability_minimal">极简</string>
+    <string name="ui3_distros_capability_current">前沿</string>
+    <string name="ui3_distros_capability_enterprise">企业</string>
+
+    <string name="ui3_distros_description_ubuntu">Canonical 长期技术支持旗舰版本。生态极其繁荣，标配 APT 软件源，开箱即用适配绝大多数编译环境与应用工具栈。</string>
+    <string name="ui3_distros_description_debian">以极高稳定性与严谨自由哲学著称的通用操作系统。资源占用极低，系统结构精炼，提供纯正可靠的 Linux 基底。</string>
+    <string name="ui3_distros_description_fedora">Red Hat 赞助的开源前沿阵地。搭载极速 DNF5 包管理器与最新开源软件包，适合追求新技术栈的敏捷开发者。</string>
+    <string name="ui3_distros_description_arch">轻量简洁、完全可控的滚动发布版本。软件永保最新版本，搭载极简 Pacman 管理器，深受进阶开发者青睐。</string>
+    <string name="ui3_distros_description_opensuse">基于 SUSE Linux Enterprise 核心代码构建。搭载强大的 Zypper 包管理器，企业级内核稳定性与丰富工具链。</string>
+    <string name="ui3_distros_description_almalinux">由社区完全自治的 1:1 RHEL 二进制兼容企业级操作系统。提供长达十年的企业级安全生命周期与极致兼容。</string>
+    <string name="ui3_distros_description_rocky">由原 CentOS 创始人领衔打造的企业级发行版。专为高并发、高可用与关键任务生产负载设计。</string>
+
+    <string name="ui3_distros_empty_title">目录为空</string>
+    <string name="ui3_distros_empty_body">没有可用的官方 rootfs。检查内置目录清单后再进入这里。</string>
+
+    <string name="ui3_distros_uml_section">UML</string>
+    <string name="ui3_distros_uml_title">UML rootfs (Alpine minirootfs)</string>
+</resources>
