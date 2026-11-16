@@ -89,7 +89,10 @@ object StopOutcomeAdapters {
 
     /**
      * 池的逐出/审计码：只有 STOP_UNCONFIRMED 是停止结果（停止未确认，暖实例
-     * 可能仍存活）；其余是创建/就绪/探活失败码，不是停止事实 -> null。
+     * 可能仍存活）；其余不是停止结果词汇（创建/就绪/探活失败码，以及
+     * DRAIN_TIMEOUT/TTL_EXPIRED/PROCESS_DIED/CLOSED 等驱逐审计与生命周期码）。
+     * DRAIN_TIMEOUT 单独出现时不与 STOP_UNCONFIRMED 并存，不能单独作为停止
+     * 事实 -> null。
      */
     fun toStopOutcome(code: ProtectedWarmPool.Code): StopOutcome? =
         when (code) {

@@ -335,6 +335,10 @@ class StopOutcomeAdaptersTest {
         }
         // 契约形态：任何把 Unconfirmed 通过 `->` 映射到 Confirmed 的表达式或
         // 模式分支都是禁止的升格映射。
+        // 局限声明：这是逐行正则，两行式 switch（`case UNCONFIRMED:` 换行
+        // `return ... Confirmed;`）会漏报；本单适配器全部为单行 when/ternary
+        // 表达式，全仓人工逐行复核兜底。若后续新增跨行映射写法，应先把本
+        // tripwire 升级为按文件归一化空白后再匹配。
         val forbidden = Regex("""Unconfirmed[^\r\n]*->\s*(StopOutcome\.)?Confirmed\b""")
         val offenders = mutableListOf<String>()
         for (base in mainRoots) {
