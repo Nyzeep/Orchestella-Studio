@@ -370,30 +370,23 @@ class MainActivity : AppCompatActivity() {
         oe3Shell = controller
         refreshOe3ShellSnapshot()
 
-        val textScale = themeStore.textScaleFactor()
-        val animatorsEnabled = android.animation.ValueAnimator.areAnimatorsEnabled()
-        val reduceMotion = !animatorsEnabled
-        // UI3-10 玻璃层的运行时闸：动效被系统关闭或省电模式时退到实色 scrim 面。
-        val powerManager = getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
-        val glassEnabled = animatorsEnabled && powerManager?.isPowerSaveMode != true
-
         val composeView = ComposeView(this).apply {
             setBackgroundColor(themeStore.resolve().background)
             setContent {
                 val theme = oe3ThemeState.value ?: themeStore.resolve()
                 val prefs = oe3PrefsState.value
                 if (oe3ThemeStudioOpen.value) {
-                    Oe3ThemeStudioHost(reduceMotion = reduceMotion)
+                    Oe3ThemeStudioHost(reduceMotion = prefs.reduceMotion)
                 } else {
                     Oe3App(
                         selectedTab = controller.selectedTab,
                         onTabSelected = { tab -> controller.select(tab) },
                         theme = theme,
-                        textScale = textScale,
-                        reduceMotion = reduceMotion,
+                        textScale = prefs.textScale,
+                        reduceMotion = prefs.reduceMotion,
                         pureBlack = prefs.pureBlack,
                         glassLevel = prefs.glassLevel,
-                        glassEnabled = glassEnabled,
+                        glassEnabled = prefs.glassEnabled,
                         navStyle = prefs.navStyle,
                         monoBody = prefs.monoBody,
                         pages = buildOe3Pages(),
@@ -429,14 +422,20 @@ class MainActivity : AppCompatActivity() {
         dashboardHandler.post(refreshDashboard)
     }
 
-    /** 壳层快照：主题与 Theme Studio 呈现偏好的唯一读取点。 */
+    /** 壳层快照：主题与 Theme Studio 呈现偏好的唯一读取点（含运行时呈现量）。 */
     private fun refreshOe3ShellSnapshot() {
         oe3ThemeState.value = themeStore.resolve()
+        // UI3-10 玻璃层的运行时闸：动效被系统关闭或省电模式时退到实色 scrim 面。
+        val animatorsEnabled = android.animation.ValueAnimator.areAnimatorsEnabled()
+        val powerManager = getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
         oe3PrefsState.value = Oe3ShellPrefs(
             pureBlack = themeStore.uiPureBlack(),
             glassLevel = glassLevelFromKey(themeStore.uiGlassLevel()),
             navStyle = Oe3NavStyle.fromKey(themeStore.uiNavStyle()),
             monoBody = themeStore.uiFontChoice() == "mono",
+            textScale = themeStore.textScaleFactor(),
+            reduceMotion = !animatorsEnabled,
+            glassEnabled = animatorsEnabled && powerManager?.isPowerSaveMode != true,
         )
     }
 
@@ -1667,12 +1666,17 @@ class MainActivity : AppCompatActivity() {
 
 /**
  * Theme Studio 呈现偏好的壳层快照（UI3-12）：MainActivity 从 ThemeStore 读出
- * 后一次性传给 [Oe3App]，Oe3App 保持状态无知。字段与 ThemeStore 的四个
- * UI3-13 键一一对应；值域归一化在壳层完成（未知值回落默认）。
+ * 后经 [refreshOe3ShellSnapshot] 传给 [Oe3App]，Oe3App 保持状态无知。四个偏好
+ * 字段与 ThemeStore 的 UI3-13 键一一对应，值域归一化在壳层完成（未知值回落
+ * 默认）；textScale/reduceMotion/glassEnabled 是运行时呈现量（字号偏好 +
+ * 系统动效/省电探测），随快照一起刷新，壳内改偏好即时生效（复核 P2 修订）。
  */
 private data class Oe3ShellPrefs(
     val pureBlack: Boolean = false,
     val glassLevel: Oe3GlassLevel = Oe3GlassLevel.None,
     val navStyle: Oe3NavStyle = Oe3NavStyle.Floating,
     val monoBody: Boolean = false,
+    val textScale: Float = 1f,
+    val reduceMotion: Boolean = false,
+    val glassEnabled: Boolean = true,
 )

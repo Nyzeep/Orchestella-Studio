@@ -87,7 +87,7 @@ class SettingsSubActivity : AppCompatActivity() {
         /** Container-transform approximation: entry scale (and alpha 0→1). */
         private const val TRANSFORM_START_SCALE = 0.96f
 
-        /** Low-RAM tier duration: oe_motion_duration_medium3. */
+        /** Low-RAM tier duration (350ms, between short4 and medium1). */
         private const val TRANSFORM_LOW_TIER_MS = 350L
 
         /** Fade-only tier for the user's 「精简」 choice. */

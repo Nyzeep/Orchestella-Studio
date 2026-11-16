@@ -32,11 +32,9 @@ import androidx.core.view.children
  *    toggle, with the same generation guard on the collapse-end action).
  *  - [playSectionStagger] -> WIRED at SettingsActivity.runMirrorSpeedTest
  *    completion: the mirror speed test is the page's explicit data-refresh
- *    moment and replays the settings_root_container stagger. The one-shot
- *    first-open play remains owned by the XML
- *    android:layoutAnimation="@anim/oe_layout_section_stagger" on
- *    activity_settings.xml; the code replay only runs on refresh, so the
- *    two never double up.
+ *    moment and replays the settings_root_container stagger. (The old one-shot
+ *    XML layoutAnimation hook was removed with the old settings shell in the
+ *    UI3 cleanup; the code replay is the only stagger path now.)
  *
  * NOTE (wired, 2026-11-10 Lane D list/dashboard round): the two entry
  * vocabularies are deliberately differentiated —
@@ -59,32 +57,34 @@ import androidx.core.view.children
  */
 object OrchestellaMotion {
 
-    // Mirror of res/values/oe_motion_tokens.xml (XML keeps the single source;
-    // these constants exist so code hooks do not re-inflate animations).
-    const val DURATION_ENTER_MS = 300          // oe_motion_duration_medium2
-    const val DURATION_EXIT_MS = 150           // oe_motion_duration_short3
-    const val DURATION_ACTIVITY_ENTER_MS = 210 // oe_motion_duration_emphasized_enter
+    // Values were originally mirrored from res/values/oe_motion_tokens.xml;
+    // the UI3 cleanup removed the XML aliases that had no View-system
+    // consumers, so these constants are now the code-side source for the
+    // legacy animation hooks (no re-inflating animations from XML).
+    const val DURATION_ENTER_MS = 300
+    const val DURATION_EXIT_MS = 150           // = oe_motion_duration_short3
+    const val DURATION_ACTIVITY_ENTER_MS = 210 // = oe_motion_duration_emphasized_enter
 
-    // Lane D (2026-11-10) mirror of the semantic duration aliases.
-    const val DURATION_CONTAINER_TRANSFORM_MS = 500 // oe_motion_duration_container_transform (= long2)
-    const val DURATION_DIALOG_ENTER_MS = 250        // oe_motion_duration_dialog_enter (= medium1)
-    const val DURATION_DIALOG_EXIT_MS = 150         // oe_motion_duration_dialog_exit (= short3)
-    const val DURATION_LIST_ITEM_ENTER_MS = 300     // oe_motion_duration_list_item_enter (= medium2)
-    const val DURATION_LIST_ITEM_REORDER_MS = 250   // oe_motion_duration_list_item_reorder (= medium1)
+    // Lane D (2026-11-10) semantic duration aliases.
+    const val DURATION_CONTAINER_TRANSFORM_MS = 500
+    const val DURATION_DIALOG_ENTER_MS = 250
+    const val DURATION_DIALOG_EXIT_MS = 150
+    const val DURATION_LIST_ITEM_ENTER_MS = 300
+    const val DURATION_LIST_ITEM_REORDER_MS = 250
 
-    // Lane D (2026-11-10) stagger rhythm tokens; see the XML comment for why
-    // the cascade is capped. Also consumed by the pure [staggeredDelayMs].
-    const val STAGGER_LIST_ITEM_MS = 40        // oe_motion_stagger_list_ms
-    const val STAGGER_LIST_MAX_STEPS = 5       // oe_motion_stagger_list_max_steps
-    const val STAGGER_SECTION_MS = 45          // oe_motion_stagger_section_ms
+    // Lane D (2026-11-10) stagger rhythm tokens (UI3 cleanup moved them
+    // code-side only). Also consumed by the pure [staggeredDelayMs].
+    const val STAGGER_LIST_ITEM_MS = 40
+    const val STAGGER_LIST_MAX_STEPS = 5
+    const val STAGGER_SECTION_MS = 45
 
     // Existing press-feedback / ambient-loop durations, previously bare
     // literals at their call sites (session 19 press tuning, dashboard
-    // breathing); now token-named. Press-in/out land on the M3 short scale,
-    // the breathing cycle on extra_long4.
-    const val DURATION_PRESS_IN_MS = 100       // oe_motion_duration_short2
-    const val DURATION_PRESS_OUT_MS = 150      // oe_motion_duration_short3
-    const val DURATION_BREATH_CYCLE_MS = 1000  // oe_motion_duration_extra_long4
+    // breathing); now token-named. Press-in/out land on the M3 short scale
+    // (short3 survives in XML), the breathing cycle on extra_long4.
+    const val DURATION_PRESS_IN_MS = 100
+    const val DURATION_PRESS_OUT_MS = 150      // = oe_motion_duration_short3
+    const val DURATION_BREATH_CYCLE_MS = 1000
 
     // Mirror of res/anim/oe_emphasized_decelerate.xml (0.05, 0.7, 0.1, 1.0).
     private val emphasizedDecelerate = PathInterpolator(0.05f, 0.7f, 0.1f, 1.0f)

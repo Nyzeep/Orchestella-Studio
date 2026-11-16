@@ -41,19 +41,11 @@
          Widget.Orchestella.InlineIcon) and the detail-tab leading icon size. -->
     <dimen name="oe_icon_inline">16dp</dimen>
 
-    <!-- UI 重新设计轮（2026-11-14）语义 token：卡片/按钮/列表行的层级几何。
-         消费规则（同层级同 token）：①按钮三档——页面级 primary / 卡内
-         secondary / 行内 inline，不出现第五档高度；②卡内外边距只用
-         oe_card_pad / oe_card_gap / oe_group_gap；③列表行两档，sheet 与
-         二级页共享 oe_list_item_min_h，紧凑行（主题选择等）用 dense 档。
-         全部为追加档位，既有 scale 值不变。 -->
+    <!-- UI 重新设计轮（2026-11-14）语义 token：卡片/按钮的层级几何。
+         消费规则（同层级同 token）：卡内外边距间隙用 oe_card_gap；卡内
+         次级按钮高度用 oe_btn_h_secondary（同层级同 token，不另立档位）。
+         同期引入的列表行/组间距档位已随旧壳清理移除，Oe3 侧几何由
+         ui/oe3/tokens 接管。 -->
     <dimen name="oe_card_gap">12dp</dimen>
     <dimen name="oe_btn_h_secondary">44dp</dimen>
-
-    <!-- Oe v2（2026-11-15 设计基座，工单 01）：形状语义 / 间距节奏 / 行高。
-         与 ui/design/OeTokens.kt 一一对应（一套数值两处消费）。全部为追加
-         档位：既有 oe_corner_* / oe_space_* / oe_list_item_* 的值一个没改，
-         XML 页面可继续用旧名，新页面按语义名取用。
-         注意：用户「按钮圆角」设置只作用于 oe_corner_control 及以下控件，
-         不得放大 card/hero——表面圆角是版式，控件圆角是偏好。 -->
 </resources>
