@@ -169,11 +169,12 @@ public final class UmlCompileChannelTest {
             }
         });
         channel.open();
-        PipedInputStream requestRead = new PipedInputStream(16 * 1024);
-        // The request side must stay a live, silent client: an unconnected
-        // PipedInputStream fails the pump with "Pipe not connected", which
-        // would race the lane failure this test pins as the terminal cause.
-        PipedOutputStream requestWrite = new PipedOutputStream(requestRead);
+        // A live, silent request client. PipedInputStream.close() does not
+        // reliably wake a blocked reader (it only flags closedByReader), so a
+        // pipe can leave the upstream pump stuck after a lane failure. This
+        // stream blocks until close() and then fails the read, which is the
+        // socket-like contract the pump's teardown relies on.
+        InputStream requestRead = new SilentRequestStream();
         PipedInputStream responseRead = new PipedInputStream(16 * 1024);
         FabricCompileItem item = new FabricCompileItem(
                 requestRead, new PipedOutputStream(responseRead));
@@ -192,10 +193,39 @@ public final class UmlCompileChannelTest {
             UmlChannelException failure = (UmlChannelException) wrapped.getCause().getCause();
             assertEquals(UmlChannel.EXECUTE_FAILED_DETAIL, failure.detail());
             assertTrue(failure.getCause() instanceof IOException);
-        } finally {
-            closeQuietly(requestWrite);
         }
         assertSame(State.OPEN, channel.state());
+    }
+
+    /**
+     * A request client that stays silent until the channel tears it down.
+     * Unlike PipedInputStream, close() reliably wakes a blocked read.
+     */
+    private static final class SilentRequestStream extends InputStream {
+        private final CountDownLatch closed = new CountDownLatch(1);
+
+        @Override public int read() throws IOException {
+            awaitClose();
+            throw new IOException("request stream closed");
+        }
+
+        @Override public int read(byte[] buffer, int offset, int length) throws IOException {
+            awaitClose();
+            throw new IOException("request stream closed");
+        }
+
+        private void awaitClose() throws IOException {
+            try {
+                closed.await();
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new IOException("request stream interrupted", interrupted);
+            }
+        }
+
+        @Override public void close() {
+            closed.countDown();
+        }
     }
 
     // --- the byte pipe pump ----------------------------------------------------------
