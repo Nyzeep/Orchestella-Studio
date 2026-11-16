@@ -26,7 +26,7 @@
     <string name="ui3_theme_pure_standard">标准</string>
     <string name="ui3_theme_pure_black">纯黑</string>
     <string name="ui3_theme_pure_black_note">仅深色主题生效</string>
-    <string name="ui3_theme_pure_black_preview">仅本页预览；偏好键由壳层统一接管后持久化</string>
+    <string name="ui3_theme_pure_black_preview">偏好已保存；全局生效由壳层接线</string>
 
     <!-- 4. 主题预设 -->
     <string name="ui3_theme_section_presets">主题预设</string>
@@ -68,7 +68,7 @@
     <string name="ui3_theme_font_system">系统</string>
     <string name="ui3_theme_font_mono">等宽</string>
     <string name="ui3_theme_font_imported">导入</string>
-    <string name="ui3_theme_font_import_hint">选择字体文件（记录名称；字体加载由壳层接线）</string>
+    <string name="ui3_theme_font_import_hint">随字体导入开放</string>
     <string name="ui3_theme_font_imported_value">已选择：%1$s（预览仍用系统字体）</string>
     <string name="ui3_theme_font_note">系统/等宽影响本页预览；全局字体由壳层接线</string>
 

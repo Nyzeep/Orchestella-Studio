@@ -114,37 +114,90 @@ class ThemeStudioControllerTest {
         assertEquals(ThemeStore.Mode.DARK, state.mode)
     }
 
+    /**
+     * UI3-13: the four presentation events persist through ThemeStore, so the
+     * rendered state and a fresh controller over the same preference file (the
+     * "leave the page and come back" path) agree on all four.
+     */
     @Test
-    fun pureBlackIsDroppedWhenTheThemeTurnsLight() {
-        val controller = ThemeStudioController(store())
+    fun fourPresentationEventsRoundTripThroughTheStore() {
+        val prefs = FakeSharedPreferences()
+        val controller = ThemeStudioController(ThemeStore(prefs))
         controller.handle(ThemeStudioEvent.SelectTheme(ThemeCatalog.constructivistWorkstation.id))
+
         assertTrue(controller.handle(ThemeStudioEvent.SetPureBlack(true)).pureBlack)
-        val light = controller.handle(ThemeStudioEvent.SelectTheme(ThemeCatalog.constructivistWorkstationLight.id))
-        assertFalse("pure black must not survive a light palette", light.pureBlack)
-        controller.handle(ThemeStudioEvent.SelectTheme(ThemeCatalog.constructivistWorkstation.id))
-        assertTrue(controller.handle(ThemeStudioEvent.SetPureBlack(true)).pureBlack)
+        assertEquals(
+            GlassOption.Ultra,
+            controller.handle(ThemeStudioEvent.SetGlass(GlassOption.Ultra)).glass,
+        )
+        assertEquals(
+            NavStyleOption.Fixed,
+            controller.handle(ThemeStudioEvent.SetNavStyle(NavStyleOption.Fixed)).navStyle,
+        )
+        assertEquals(
+            FontChoice.Mono,
+            controller.handle(ThemeStudioEvent.SetFontChoice(FontChoice.Mono)).fontChoice,
+        )
+
+        val reentered = ThemeStudioController(ThemeStore(prefs)).read()
+        assertTrue(reentered.pureBlack)
+        assertEquals(GlassOption.Ultra, reentered.glass)
+        assertEquals(NavStyleOption.Fixed, reentered.navStyle)
+        assertEquals(FontChoice.Mono, reentered.fontChoice)
     }
 
     @Test
-    fun localPreviewOptionsNeverWritePreferences() {
+    fun lightThemeReadDropsPureBlackWhileTheStoreRetainsTheChoice() {
+        val prefs = FakeSharedPreferences()
+        val controller = ThemeStudioController(ThemeStore(prefs))
+        controller.handle(ThemeStudioEvent.SelectTheme(ThemeCatalog.constructivistWorkstation.id))
+        assertTrue(controller.handle(ThemeStudioEvent.SetPureBlack(true)).pureBlack)
+        val light = controller.handle(ThemeStudioEvent.SelectTheme(ThemeCatalog.constructivistWorkstationLight.id))
+        assertFalse("light palettes must not render pure black", light.pureBlack)
+        assertTrue("the stored choice survives a temporary light palette", ThemeStore(prefs).uiPureBlack())
+        assertTrue(
+            "returning to a dark palette restores the stored choice",
+            controller.handle(ThemeStudioEvent.SelectTheme(ThemeCatalog.constructivistWorkstation.id)).pureBlack,
+        )
+    }
+
+    @Test
+    fun readStartsFromTheStoreInsteadOfControllerMemory() {
+        val prefs = FakeSharedPreferences()
+        val store = ThemeStore(prefs)
+        store.setUiPureBlack(true)
+        store.setUiGlassLevel("standard")
+        store.setUiNavStyle("fixed")
+        store.setUiFontChoice("mono")
+        val controller = ThemeStudioController(store)
+        controller.handle(ThemeStudioEvent.SelectTheme(ThemeCatalog.constructivistWorkstation.id))
+        val state = controller.read()
+        assertTrue(state.pureBlack)
+        assertEquals(GlassOption.Standard, state.glass)
+        assertEquals(NavStyleOption.Fixed, state.navStyle)
+        assertEquals(FontChoice.Mono, state.fontChoice)
+    }
+
+    @Test
+    fun importedFontLabelStaysPageMemoryAndCannotPersistAFont() {
         val prefs = FakeSharedPreferences()
         val controller = ThemeStudioController(ThemeStore(prefs))
         controller.handle(ThemeStudioEvent.SelectTheme(ThemeCatalog.constructivistWorkstation.id))
         val before = prefs.all.keys.toSet()
 
-        controller.handle(ThemeStudioEvent.SetPureBlack(true))
-        controller.handle(ThemeStudioEvent.SetGlass(GlassOption.Ultra))
-        controller.handle(ThemeStudioEvent.SetNavStyle(NavStyleOption.Fixed))
-        controller.handle(ThemeStudioEvent.SetFontChoice(FontChoice.Mono))
-        controller.handle(ThemeStudioEvent.SetImportedFontLabel("inter.ttf"))
+        // The Imported row is disabled until font import ships (随字体导入开放),
+        // so production UI cannot reach these events; they stay spec-compatible
+        // and memory-only, and no unloadable font is ever written to the file.
+        val labeled = controller.handle(ThemeStudioEvent.SetImportedFontLabel("inter.ttf"))
+        assertEquals("inter.ttf", labeled.importedFontLabel)
+        assertEquals(FontChoice.System, labeled.fontChoice)
+        val rejected = controller.handle(ThemeStudioEvent.SetFontChoice(FontChoice.Imported))
+        assertEquals(FontChoice.System, rejected.fontChoice)
 
-        assertEquals(before, prefs.all.keys.toSet())
-        val state = controller.read()
-        assertTrue(state.pureBlack)
-        assertEquals(GlassOption.Ultra, state.glass)
-        assertEquals(NavStyleOption.Fixed, state.navStyle)
-        assertEquals(FontChoice.Imported, state.fontChoice)
-        assertEquals("inter.ttf", state.importedFontLabel)
+        assertEquals("no font preference may appear in the file", before, prefs.all.keys.toSet())
+        val reentered = ThemeStudioController(ThemeStore(prefs)).read()
+        assertNull(reentered.importedFontLabel)
+        assertEquals(FontChoice.System, reentered.fontChoice)
     }
 
     @Test

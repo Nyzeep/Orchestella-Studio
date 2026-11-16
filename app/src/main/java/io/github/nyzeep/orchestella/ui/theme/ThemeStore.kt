@@ -216,6 +216,60 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
         prefs.edit().putInt(KEY_CORNER_RADIUS_DP, dp.coerceIn(0, MAX_CORNER_RADIUS_DP)).apply()
     }
 
+    // --- Theme Studio presentation options (ticket 13: pure black / glass / bottom bar / app font) ---
+
+    /**
+     * Dark-only OLED override; [uiPureBlack] reports what the user picked and
+     * the reader (ThemeStudioController.read) still gates it on palette
+     * brightness, so a light theme never renders pure black.
+     */
+    fun uiPureBlack(): Boolean = prefs.getBoolean(KEY_UI_PURE_BLACK, false)
+
+    fun setUiPureBlack(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_UI_PURE_BLACK, enabled).apply()
+    }
+
+    /** "none"|"standard"|"ultra"; a corrupt or unknown value falls back to "none". */
+    fun uiGlassLevel(): String {
+        val stored = prefs.getString(KEY_UI_GLASS_LEVEL, null) ?: return DEFAULT_UI_GLASS_LEVEL
+        return if (stored in UI_GLASS_LEVELS) stored else DEFAULT_UI_GLASS_LEVEL
+    }
+
+    fun setUiGlassLevel(level: String) {
+        prefs.edit()
+            .putString(KEY_UI_GLASS_LEVEL, if (level in UI_GLASS_LEVELS) level else DEFAULT_UI_GLASS_LEVEL)
+            .apply()
+    }
+
+    /** "floating"|"fixed"; a corrupt or unknown value falls back to "floating". */
+    fun uiNavStyle(): String {
+        val stored = prefs.getString(KEY_UI_NAV_STYLE, null) ?: return DEFAULT_UI_NAV_STYLE
+        return if (stored in UI_NAV_STYLES) stored else DEFAULT_UI_NAV_STYLE
+    }
+
+    fun setUiNavStyle(style: String) {
+        prefs.edit()
+            .putString(KEY_UI_NAV_STYLE, if (style in UI_NAV_STYLES) style else DEFAULT_UI_NAV_STYLE)
+            .apply()
+    }
+
+    /**
+     * "system"|"mono" only, and "imported" is deliberately not accepted: font
+     * import does not exist yet, so persisting a chosen font file (or any
+     * unloadable URI) would restore a font the app cannot load. Corrupt or
+     * unknown values fall back to "system" — 随字体导入开放.
+     */
+    fun uiFontChoice(): String {
+        val stored = prefs.getString(KEY_UI_FONT_CHOICE, null) ?: return DEFAULT_UI_FONT_CHOICE
+        return if (stored in UI_FONT_CHOICES) stored else DEFAULT_UI_FONT_CHOICE
+    }
+
+    fun setUiFontChoice(choice: String) {
+        prefs.edit()
+            .putString(KEY_UI_FONT_CHOICE, if (choice in UI_FONT_CHOICES) choice else DEFAULT_UI_FONT_CHOICE)
+            .apply()
+    }
+
     // --- In-app text scale (ticket 05: 85–130% on top of the system font scale) ---
 
     /**
@@ -366,6 +420,11 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
         const val KEY_UI_SURFACE_OPACITY = "ui_surface_opacity_pct"
         const val KEY_TEXT_SCALE_MODE = "text_scale_mode"
         const val KEY_TEXT_SCALE_PERCENT = "text_scale_percent"
+        /** Theme Studio presentation options (ticket 13). */
+        const val KEY_UI_PURE_BLACK = "ui_pure_black"
+        const val KEY_UI_GLASS_LEVEL = "ui_glass_level"
+        const val KEY_UI_NAV_STYLE = "ui_nav_style"
+        const val KEY_UI_FONT_CHOICE = "ui_font_choice"
         const val MAX_CORNER_RADIUS_DP = 24
         /** Session 25: the product ships with rounded buttons, so the token is no longer opt-in. */
         const val DEFAULT_CORNER_RADIUS_DP = 16
@@ -374,6 +433,14 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
 
         private const val TEXT_SCALE_MODE_FOLLOW_SYSTEM = "follow_system"
         private const val TEXT_SCALE_MODE_CUSTOM = "custom"
+
+        /** Accepted values for the ticket-13 presentation keys; everything else coerces to the default. */
+        private const val DEFAULT_UI_GLASS_LEVEL = "none"
+        private val UI_GLASS_LEVELS = setOf("none", "standard", "ultra")
+        private const val DEFAULT_UI_NAV_STYLE = "floating"
+        private val UI_NAV_STYLES = setOf("floating", "fixed")
+        private const val DEFAULT_UI_FONT_CHOICE = "system"
+        private val UI_FONT_CHOICES = setOf("system", "mono")
 
         private val SLOT_FIELDS = listOf(
             "name", "dark", "bg", "surface", "primary", "accent", "text", "text_dim", "term_bg", "term_fg",
