@@ -8,6 +8,8 @@ name: UI verify
 on:
   pull_request:
     branches: [main, "ui3/**"]
+  push:
+    branches: ["ui3/**"]
   workflow_dispatch:
 
 permissions:
