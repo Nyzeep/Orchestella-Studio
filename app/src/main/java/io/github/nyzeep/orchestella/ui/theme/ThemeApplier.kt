@@ -53,7 +53,6 @@ import com.google.android.material.progressindicator.BaseProgressIndicator
 import com.google.android.material.shape.MaterialShapeDrawable
 import com.google.android.material.slider.Slider
 import com.google.android.material.textfield.TextInputLayout
-import io.github.nyzeep.orchestella.ui.RingProgressView
 import java.lang.ref.WeakReference
 import java.util.WeakHashMap
 import java.util.concurrent.Executors
@@ -460,7 +459,6 @@ object ThemeApplier {
                 view.trackInactiveTintList = ColorStateList.valueOf(outline)
                 view.haloTintList = ColorStateList.valueOf((theme.primary and 0x00FFFFFF) or 0x33000000)
             }
-            is RingProgressView -> view.configure(theme.primary, normalInk, muted, view.resources.displayMetrics.density)
             else -> {
                 if (hasWallpaperWrapperAncestor(view, name)) {
                     // root_coordinator alone owns page color/wallpaper. Keep theming the wrapper's children.

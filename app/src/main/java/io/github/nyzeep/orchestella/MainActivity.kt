@@ -1253,8 +1253,11 @@ class MainActivity : AppCompatActivity() {
                 } catch (failure: Exception) {
                     runOnUiThread {
                         if (isFinishing || isDestroyed) return@runOnUiThread
-                        setCreateStatusLine("读取实例失败：${failure.message ?: failure.javaClass.simpleName}")
-                        Toast.makeText(this@MainActivity, "实例读取失败", Toast.LENGTH_LONG).show()
+                        val detail = failure.message ?: failure.javaClass.simpleName
+                        setCreateStatusLine("读取实例失败：$detail")
+                        // Oe3 壳没有可见状态条：toast 承载同一份全文（复核 P3 修订，
+                        // 旧壳语义=状态条全文，不漂移成短句）。
+                        Toast.makeText(this@MainActivity, "读取实例失败：$detail", Toast.LENGTH_LONG).show()
                     }
                     null
                 }
