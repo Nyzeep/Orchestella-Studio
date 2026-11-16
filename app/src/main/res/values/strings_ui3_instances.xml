@@ -6,7 +6,7 @@
 <resources>
     <string name="ui3_instances_title">实例</string>
     <string name="ui3_instances_meta_summary">%1$d 个实例 · %2$d 个运行中</string>
-    <string name="ui3_instances_meta_empty">暂无实例</string>
+    <string name="ui3_instances_meta_empty">0 个实例</string>
 
     <string name="ui3_instances_create">创建</string>
     <string name="ui3_instances_import">导入</string>
@@ -19,7 +19,9 @@
 
     <string name="ui3_instances_action_terminal">终端</string>
     <string name="ui3_instances_action_launch">启动</string>
+    <string name="ui3_instances_action_resume">继续</string>
     <string name="ui3_instances_action_more">更多</string>
+    <string name="ui3_instances_action_description">%1$s：%2$s</string>
 
     <string name="ui3_instances_card_id">ID %1$s</string>
     <string name="ui3_instances_card_ip">IP %1$s</string>
@@ -32,7 +34,7 @@
     <string name="ui3_instances_sheet_delete">删除</string>
     <string name="ui3_instances_sheet_subtitle">%1$s · ID %2$s</string>
 
-    <string name="ui3_instances_progress_description">创建进度</string>
+    <string name="ui3_instances_progress_description">实例准备进度</string>
 
     <string name="ui3_instances_empty_title">还没有实例</string>
     <string name="ui3_instances_empty_body">创建第一个 Linux 实例，或从备份导入归档。</string>

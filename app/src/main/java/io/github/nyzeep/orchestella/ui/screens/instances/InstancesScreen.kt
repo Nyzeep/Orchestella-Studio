@@ -27,7 +27,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -72,13 +72,13 @@ object InstancesSpec {
      * 票面写 44dp pill，但 Oe3Button 的可点底限是 48dp（spec §2.3 / WCAG
      * 2.5.5）；两个创建/导入入口保持一致，不另造 44dp 变体。
      */
-    val headerActionHeight = 48.dp
+    val headerActionHeight = Oe3Sizes.button
 
     /** 卡片主操作与按钮的 48dp 命中区。 */
-    val actionHeight = 48.dp
+    val actionHeight = Oe3Sizes.button
 
     /** 发行版单色标记所在的 48dp well。 */
-    val distroWell = 48.dp
+    val distroWell = Oe3Sizes.minTouchTarget
 
     val progressBarHeight = 4.dp
 }
@@ -106,7 +106,12 @@ fun InstancesScreen(
     modifier: Modifier = Modifier,
 ) {
     val colors = Oe3ThemeValues.colors
-    var sheetItem by remember { mutableStateOf<InstanceRowUi?>(null) }
+    var sheetInstanceId by rememberSaveable { mutableStateOf<String?>(null) }
+    val sheetItem = sheetInstanceId?.let { id ->
+        state.groups.asSequence()
+            .flatMap { it.items.asSequence() }
+            .firstOrNull { it.id == id }
+    }
 
     PullToRefreshBox(
         isRefreshing = state.isRefreshing,
@@ -157,9 +162,10 @@ fun InstancesScreen(
                                 when (item.primaryAction) {
                                     InstancePrimaryAction.Terminal -> actions.openTerminal(item.id)
                                     InstancePrimaryAction.Launch -> actions.launch(item.id)
+                                    InstancePrimaryAction.Resume -> actions.resume(item.id)
                                 }
                             },
-                            onMore = { sheetItem = item },
+                            onMore = { sheetInstanceId = item.id },
                             modifier = Modifier
                                 .animateItem()
                                 .padding(bottom = Oe3Spacing.xs),
@@ -174,7 +180,7 @@ fun InstancesScreen(
         InstanceActionsSheet(
             item = item,
             actions = actions,
-            onDismiss = { sheetItem = null },
+            onDismiss = { sheetInstanceId = null },
         )
     }
 }
@@ -318,6 +324,13 @@ private fun EmptyCard(actions: InstancesActions) {
     }
 }
 
+/**
+ * 实例大卡。
+ *
+ * 票面同时要求“卡片整体可点且有描述”和卡内主操作/更多，所以这里有意在可点
+ * [Oe3Card] 里保留两个按钮——这是对 Oe3Card “单节点”建议的显式例外。为了
+ * 不让读屏只听到重复的“终端/更多”，两个按钮各自带上实例名描述。
+ */
 @Composable
 private fun InstanceCard(
     item: InstanceRowUi,
@@ -335,9 +348,21 @@ private fun InstanceCard(
         item.specsText,
     )
     val primaryLabel = stringResource(item.primaryAction.labelRes)
+    val primaryDescription = stringResource(
+        R.string.ui3_instances_action_description,
+        item.name,
+        primaryLabel,
+    )
+    val moreLabel = stringResource(R.string.ui3_instances_action_more)
+    val moreDescription = stringResource(
+        R.string.ui3_instances_action_description,
+        item.name,
+        moreLabel,
+    )
     val primaryIcon: ImageVector = when (item.primaryAction) {
         InstancePrimaryAction.Terminal -> Oe3Icons.Terminal
         InstancePrimaryAction.Launch -> Oe3Icons.Power
+        InstancePrimaryAction.Resume -> Oe3Icons.Update
     }
 
     Oe3Card(
@@ -389,7 +414,7 @@ private fun InstanceCard(
             horizontalArrangement = Arrangement.spacedBy(Oe3Spacing.xs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            StatusChip(status = item.status)
+            StatusChip(status = item.status, instanceId = item.id)
             item.engineLabel?.let { engine ->
                 Oe3Chip(
                     label = engine,
@@ -407,6 +432,7 @@ private fun InstanceCard(
                 modifier = Modifier
                     .weight(1f)
                     .heightIn(min = InstancesSpec.actionHeight)
+                    .semantics { contentDescription = primaryDescription }
                     .testTag("instances-primary-${item.id}"),
                 leading = {
                     Oe3Icon(
@@ -422,10 +448,12 @@ private fun InstanceCard(
             )
             Spacer(Modifier.width(Oe3Spacing.xs))
             Oe3Button(
-                text = stringResource(R.string.ui3_instances_action_more),
+                text = moreLabel,
                 onClick = onMore,
                 style = Oe3ButtonStyle.Text,
-                modifier = Modifier.testTag("instances-more-${item.id}"),
+                modifier = Modifier
+                    .semantics { contentDescription = moreDescription }
+                    .testTag("instances-more-${item.id}"),
             )
         }
     }
@@ -433,7 +461,7 @@ private fun InstanceCard(
 
 /** 状态 chip：文字是语义，圆点只是权重提示；不设点击，所以不占 48dp 命中区。 */
 @Composable
-private fun StatusChip(status: InstanceStatus) {
+private fun StatusChip(status: InstanceStatus, instanceId: String) {
     val colors = Oe3ThemeValues.colors
     val dot = when (status.tone) {
         InstanceStatusTone.Active -> colors.primary.oe3Color()
@@ -444,7 +472,7 @@ private fun StatusChip(status: InstanceStatus) {
     Oe3Chip(
         label = stringResource(status.labelRes),
         selected = status.tone == InstanceStatusTone.Active,
-        modifier = Modifier.testTag("instances-status-${status.name.lowercase()}"),
+        modifier = Modifier.testTag("instances-status-${status.name.lowercase()}-$instanceId"),
         leading = {
             Box(
                 modifier = Modifier
@@ -586,8 +614,8 @@ private fun SheetAction(
     icon: ImageVector?,
     label: String,
     enabled: Boolean,
-    danger: Boolean = false,
     modifier: Modifier = Modifier,
+    danger: Boolean = false,
     onClick: () -> Unit,
 ) {
     val colors = Oe3ThemeValues.colors
@@ -603,7 +631,7 @@ private fun SheetAction(
             .clip(RoundedCornerShape(Oe3Shapes.sm))
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .semantics(mergeDescendants = true) {}
-            .padding(horizontal = Oe3Spacing.sm, vertical = Oe3Spacing.xs),
+            .padding(horizontal = Oe3Spacing.rowHorizontal, vertical = Oe3Spacing.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (icon != null) {

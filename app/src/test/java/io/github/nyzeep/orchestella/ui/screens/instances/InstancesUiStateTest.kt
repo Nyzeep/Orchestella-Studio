@@ -122,7 +122,7 @@ class InstancesUiStateTest {
         assertEquals(0, state.totalCount)
         assertEquals(0, state.runningCount)
         assertTrue(state.groups.isEmpty())
-        assertTrue(state.listKeys().isEmpty())
+        assertTrue(keysOf(state).isEmpty())
         assertNull(state.progress)
         assertFalse(state.isRefreshing)
     }
@@ -209,22 +209,24 @@ class InstancesUiStateTest {
         assertFalse(row.canOpenTerminal)
         assertFalse(row.canLaunch)
         assertFalse(row.primaryEnabled)
-        assertFalse(row.canPowerOff)
+        // PROVISIONING→STOPPED 是合法转移，电源可作为取消卡住的装配。
+        assertTrue(row.canPowerOff)
         assertFalse(row.canExport)
         assertFalse(row.canDelete)
         assertTrue(row.canShowLogs)
     }
 
     @Test
-    fun suspendedCardSitsInStoppedGroupButStillAllowsPowerOff() {
+    fun suspendedCardSitsInStoppedGroupAndOffersResume() {
         val row = InstancesUiState.from(listOf(card(suspended("opensuse")))).groups.single().items.single()
 
         assertEquals(InstanceStatus.Suspended, row.status)
         assertEquals(InstanceGroup.Stopped, row.status.group)
         assertFalse(row.canOpenTerminal)
         assertFalse(row.canLaunch)
-        assertFalse(row.primaryEnabled)
-        // forceStop 的合法前置是 RUNNING 或 SUSPENDED。
+        assertEquals(InstancePrimaryAction.Resume, row.primaryAction)
+        assertTrue(row.primaryEnabled)
+        // 挂起可以恢复，也可以强制关机，但不能再“启动”。
         assertTrue(row.canPowerOff)
         assertFalse(row.canExport)
         assertFalse(row.canDelete)
@@ -240,11 +242,11 @@ class InstancesUiStateTest {
         assertFalse(row.canLaunch)
         assertFalse(row.primaryEnabled)
         assertFalse(row.canLaunchDesktop)
-        assertFalse(row.canPowerOff)
+        // CRASHED→STOPPED 是合法转移，电源用于复位。
+        assertTrue(row.canPowerOff)
         assertTrue(row.canShowLogs)
         assertTrue(row.canExport)
         assertTrue(row.canDelete)
-        assertTrue(row.hasCrashDiagnostic)
     }
 
     @Test
@@ -256,6 +258,7 @@ class InstancesUiStateTest {
         assertTrue(row.canLaunch)
         assertFalse(row.canOpenTerminal)
         assertTrue(row.primaryEnabled)
+        assertTrue(row.canPowerOff)
         assertTrue(row.canExport)
         assertFalse(row.canDelete)
     }
@@ -270,7 +273,7 @@ class InstancesUiStateTest {
         assertEquals(2, state.totalCount)
         assertEquals(1, state.runningCount)
         assertEquals(2, state.groups.sumOf { it.count })
-        val keys = state.listKeys()
+        val keys = keysOf(state)
         assertEquals(keys.size, keys.toSet().size)
         assertEquals(
             listOf("instances:group:running", runningCard.instanceId),
@@ -281,7 +284,7 @@ class InstancesUiStateTest {
     @Test
     fun listKeysCoverEveryGroupAndItemExactlyOnce() {
         val state = InstancesUiState.from(oneCardPerState())
-        val keys = state.listKeys()
+        val keys = keysOf(state)
 
         assertEquals(4 + 7, keys.size)
         assertEquals(keys.size, keys.toSet().size)
@@ -308,8 +311,8 @@ class InstancesUiStateTest {
     fun ipIsShownOnlyWhenTheCardCarriesARealAddress() {
         val base = card(stopped("debian"))
 
-        val ipv4 = InstancesUiState.from(listOf(base.copy(ipAddress = "192.168.1.42")))
-        assertEquals("192.168.1.42", ipv4.groups.single().items.single().ipAddress)
+        val ipv4 = InstancesUiState.from(listOf(base.copy(ipAddress = "192.0.2.42")))
+        assertEquals("192.0.2.42", ipv4.groups.single().items.single().ipAddress)
 
         val ipv6 = InstancesUiState.from(listOf(base.copy(ipAddress = "fd00::2")))
         assertEquals("fd00::2", ipv6.groups.single().items.single().ipAddress)
@@ -350,6 +353,11 @@ class InstancesUiStateTest {
         assertEquals(0f, clampedLow!!.fraction!!, 0.0001f)
 
         assertNull(InstancesProgressUi.of("装配中…", null)!!.fraction)
+    }
+
+    /** 与屏幕相同的 key 来源：组头走 InstancesListKeys.group，条目就是实例 id。 */
+    private fun keysOf(state: InstancesUiState): List<String> = state.groups.flatMap { group ->
+        listOf(InstancesListKeys.group(group.kind)) + group.items.map { InstancesListKeys.item(it.id) }
     }
 
     @Test

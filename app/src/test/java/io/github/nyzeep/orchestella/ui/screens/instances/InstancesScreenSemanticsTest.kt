@@ -10,6 +10,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -54,15 +55,23 @@ class InstancesScreenSemanticsTest {
         status = status,
         engineLabel = engine,
         specsText = "2 vCPU · 2048 MB · 8 GB",
-        ipAddress = if (terminal) "192.168.1.42" else null,
+        ipAddress = if (terminal) "192.0.2.42" else null,
         canOpenTerminal = terminal,
         canLaunch = launch,
         canLaunchDesktop = false,
-        canPowerOff = terminal,
+        canPowerOff = status == InstanceStatus.Running ||
+            status == InstanceStatus.Provisioning ||
+            status == InstanceStatus.Suspended ||
+            status == InstanceStatus.Crashed ||
+            status == InstanceStatus.Interrupted,
         canShowLogs = true,
-        canExport = !terminal,
-        canDelete = !terminal,
-        hasCrashDiagnostic = status == InstanceStatus.Crashed,
+        canExport = status == InstanceStatus.Stopped ||
+            status == InstanceStatus.Created ||
+            status == InstanceStatus.Crashed ||
+            status == InstanceStatus.Interrupted,
+        canDelete = status == InstanceStatus.Stopped ||
+            status == InstanceStatus.Created ||
+            status == InstanceStatus.Crashed,
     )
 
     private val running = row(
@@ -120,6 +129,9 @@ class InstancesScreenSemanticsTest {
         card.performClick()
 
         assertEquals("running-1", opened)
+        // 卡内按钮各带实例名，读屏不会只听到重复的“终端/更多”。
+        compose.onNodeWithContentDescription("Ubuntu 24.04：终端").assertExists()
+        compose.onNodeWithContentDescription("Ubuntu 24.04：更多").assertExists()
     }
 
     @Test
@@ -167,9 +179,13 @@ class InstancesScreenSemanticsTest {
 
     @Test
     fun moreOpensTheActionSheetWithAvailabilityIntact() {
-        content()
+        var opened = 0
+        content(InstancesActions(openInstance = { opened += 1 }))
 
         compose.onNodeWithTag("instances-more-running-1").performClick()
+
+        // 卡内按钮消费点击，不应顺带触发整卡点击。
+        assertEquals(0, opened)
 
         // 运行中：电源/日志可用；桌面未接线、冷备份要等关机、删除要等关机。
         compose.onNodeWithTag("instances-sheet-power").assertIsEnabled()
@@ -177,6 +193,35 @@ class InstancesScreenSemanticsTest {
         compose.onNodeWithTag("instances-sheet-logs").assertIsEnabled()
         compose.onNodeWithTag("instances-sheet-export").assertIsNotEnabled()
         compose.onNodeWithTag("instances-sheet-delete").assertIsNotEnabled()
+    }
+
+    @Test
+    fun suspendedCardOffersResumeInsteadOfStart() {
+        val suspended = row(
+            id = "suspended-4",
+            name = "openSUSE 24.04",
+            status = InstanceStatus.Suspended,
+            engine = null,
+            terminal = false,
+            launch = false,
+        )
+        compose.setContent {
+            Oe3Theme(theme = ThemeCatalog.constructivistWorkstation, reduceMotion = true) {
+                InstancesScreen(
+                    state = InstancesUiState(
+                        groups = listOf(InstanceGroupUi(InstanceGroup.Stopped, listOf(suspended))),
+                        totalCount = 1,
+                        runningCount = 0,
+                    ),
+                    actions = InstancesActions(),
+                )
+            }
+        }
+
+        compose.onNodeWithTag("instances-primary-suspended-4")
+            .assertIsEnabled()
+            .also(::assertTouchTarget)
+        compose.onNodeWithText("继续", useUnmergedTree = true).assertExists()
     }
 
     @Test

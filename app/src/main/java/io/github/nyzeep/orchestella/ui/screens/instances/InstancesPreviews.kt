@@ -27,7 +27,6 @@ private fun previewRow(
     power: Boolean,
     export: Boolean,
     delete: Boolean,
-    crash: Boolean = false,
 ) = InstanceRowUi(
     id = id,
     shortId = id.take(8),
@@ -44,7 +43,6 @@ private fun previewRow(
     canShowLogs = status != InstanceStatus.Created,
     canExport = export,
     canDelete = delete,
-    hasCrashDiagnostic = crash,
 )
 
 private val previewRunning = previewRow(
@@ -54,7 +52,7 @@ private val previewRunning = previewRow(
     status = InstanceStatus.Running,
     specs = "4 vCPU · 4096 MB · 16 GB · GPU加速",
     engine = "QEMU 软件虚拟化",
-    ip = "192.168.1.42",
+    ip = "192.0.2.42",
     terminal = true,
     launch = false,
     desktop = false,
@@ -109,7 +107,6 @@ private val previewCrashed = previewRow(
     power = false,
     export = true,
     delete = true,
-    crash = true,
 )
 
 private val previewProvisioning = previewRow(

@@ -11,6 +11,8 @@ data class InstancesActions(
     val openTerminal: (String) -> Unit = {},
     /** 启动已停止/已创建/中断的实例。 */
     val launch: (String) -> Unit = {},
+    /** 恢复已挂起实例（InstancePowerController.resume）。 */
+    val resume: (String) -> Unit = {},
     /** 进入实例详情或诊断；卡片整体点击走这里。 */
     val openInstance: (String) -> Unit = {},
     /** 进入创建流程。 */

@@ -56,7 +56,6 @@ class InstancesScreenshotTest {
         canShowLogs = true,
         canExport = !terminal,
         canDelete = delete,
-        hasCrashDiagnostic = status == InstanceStatus.Crashed,
     )
 
     private fun withInstances() = InstancesUiState(
@@ -70,7 +69,7 @@ class InstancesScreenshotTest {
                         name = "Ubuntu 24.04",
                         status = InstanceStatus.Running,
                         engine = "QEMU 软件虚拟化",
-                        ip = "192.168.1.42",
+                        ip = "192.0.2.42",
                         terminal = true,
                         launch = false,
                         delete = false,

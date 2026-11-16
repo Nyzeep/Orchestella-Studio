@@ -11,7 +11,8 @@ import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3DistroIcons
  *
  * 页面不读 Context、不测量、不推断引擎：[from] 只把既有的
  * [InstanceCardUiModel]（单实例展示事实，与旧列表同一份数据）折算成四组
- * 渲染输入。引擎文案由接线方按实际启动策略传入，空白即不显示，不猜一个引擎。
+ * 渲染输入。引擎是设备级事实（同一时刻只有一个运行实例），文案由接线方按
+ * 当前启动策略传入，空白即不显示，不猜一个引擎。
  */
 data class InstancesUiState(
     val groups: List<InstanceGroupUi>,
@@ -22,17 +23,6 @@ data class InstancesUiState(
 ) {
     val hasInstances: Boolean get() = totalCount > 0
 
-    /**
-     * LazyColumn 的组头与条目 key，顺序与屏幕一致。屏幕直接用这些值，
-     * 测试用它证明 key 唯一且不重不漏。
-     */
-    fun listKeys(): List<String> = groups.flatMap { group ->
-        buildList {
-            add(InstancesListKeys.group(group.kind))
-            group.items.forEach { add(InstancesListKeys.item(it.id)) }
-        }
-    }
-
     companion object {
         /** 固定组序：运行中 → 装配中 → 已停止 → 异常。 */
         fun from(
@@ -42,7 +32,8 @@ data class InstancesUiState(
             isRefreshing: Boolean = false,
         ): InstancesUiState {
             val engine = engineLabel?.trim()?.takeIf { it.isNotEmpty() }
-            // 同一实例在快照切换期间可能重复出现；保留第一份，key 才唯一。
+            // 同一实例在快照切换期间可能重复出现；卡片模型不带时间戳，无法
+            // 判断哪份更新，按调用方给的快照顺序保留第一份，key 才唯一。
             val rows = cards
                 .distinctBy { it.instanceId }
                 .map { it.toRow(engine) }
@@ -73,9 +64,20 @@ data class InstancesUiState(
                 canOpenTerminal = canOpenTerminal,
                 canLaunch = canLaunch,
                 canLaunchDesktop = canLaunchDesktop,
-                // forceStop 的合法前置是 RUNNING 或 SUSPENDED（InstanceLifecycleController）。
-                canPowerOff = state == InstanceLifecycle.State.RUNNING ||
-                    state == InstanceLifecycle.State.SUSPENDED,
+                // InstanceLifecycle 的合法转移允许从 RUNNING/PROVISIONING/
+                // SUSPENDED/CRASHED/INTERRUPTED 直接落到 STOPPED；STOPPED
+                // 再关机是空操作，CREATED 不能直接关机。
+                canPowerOff = when (state) {
+                    InstanceLifecycle.State.STOPPED,
+                    InstanceLifecycle.State.CREATED,
+                    -> false
+                    InstanceLifecycle.State.RUNNING,
+                    InstanceLifecycle.State.PROVISIONING,
+                    InstanceLifecycle.State.SUSPENDED,
+                    InstanceLifecycle.State.CRASHED,
+                    InstanceLifecycle.State.INTERRUPTED,
+                    -> true
+                },
                 // CREATED 从未启动过，没有可读日志。
                 canShowLogs = state != InstanceLifecycle.State.CREATED,
                 // 与 legacy requireColdBackup 一致：运行中/装配中/已挂起不可冷备份。
@@ -91,7 +93,6 @@ data class InstancesUiState(
                     -> true
                 },
                 canDelete = canDelete,
-                hasCrashDiagnostic = hasCrashDiagnostic,
             )
         }
 
@@ -157,8 +158,6 @@ enum class InstanceStatus(
     Crashed(R.string.ui3_instances_status_crashed, InstanceStatusTone.Error, InstanceGroup.Error),
     Created(R.string.ui3_instances_status_created, InstanceStatusTone.Idle, InstanceGroup.Stopped);
 
-    val canOpenTerminal: Boolean get() = this == Running
-
     companion object {
         fun of(state: InstanceLifecycle.State): InstanceStatus = when (state) {
             InstanceLifecycle.State.RUNNING -> Running
@@ -172,10 +171,11 @@ enum class InstanceStatus(
     }
 }
 
-/** 卡片主操作：运行中进终端，其余状态尝试启动；可用性由行状态决定。 */
+/** 卡片主操作：运行中进终端，已挂起继续，其余状态尝试启动。 */
 enum class InstancePrimaryAction(@StringRes val labelRes: Int) {
     Terminal(R.string.ui3_instances_action_terminal),
     Launch(R.string.ui3_instances_action_launch),
+    Resume(R.string.ui3_instances_action_resume),
 }
 
 /**
@@ -198,19 +198,20 @@ data class InstanceRowUi(
     val canShowLogs: Boolean,
     val canExport: Boolean,
     val canDelete: Boolean,
-    val hasCrashDiagnostic: Boolean,
 ) {
     val primaryAction: InstancePrimaryAction
-        get() = if (status == InstanceStatus.Running) {
-            InstancePrimaryAction.Terminal
-        } else {
-            InstancePrimaryAction.Launch
+        get() = when (status) {
+            InstanceStatus.Running -> InstancePrimaryAction.Terminal
+            InstanceStatus.Suspended -> InstancePrimaryAction.Resume
+            else -> InstancePrimaryAction.Launch
         }
 
     val primaryEnabled: Boolean
         get() = when (primaryAction) {
             InstancePrimaryAction.Terminal -> canOpenTerminal
             InstancePrimaryAction.Launch -> canLaunch
+            // 挂起是唯一可直接恢复的状态；控制器提供 resume。
+            InstancePrimaryAction.Resume -> true
         }
 }
 

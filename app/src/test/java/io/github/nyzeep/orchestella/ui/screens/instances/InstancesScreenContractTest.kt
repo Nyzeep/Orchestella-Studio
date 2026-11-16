@@ -158,6 +158,11 @@ class InstancesScreenContractTest {
             val key = "ui3_instances_group_${group.name.lowercase()}"
             assertTrue("strings_ui3_instances.xml is missing $key", names.contains(key))
         }
+        InstancePrimaryAction.values().forEach { action ->
+            val key = "ui3_instances_action_${action.name.lowercase()}"
+            assertTrue("strings_ui3_instances.xml is missing $key", names.contains(key))
+            assertTrue("$key must be referenced from the instances model", model.contains("R.string.$key"))
+        }
         for (index in 0 until strings.length) {
             val element = strings.item(index)
             val key = element.attributes.getNamedItem("name").nodeValue
