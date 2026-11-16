@@ -27,9 +27,11 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.ui.platform.ComposeView
 import androidx.core.app.ActivityOptionsCompat
 import androidx.core.view.OneShotPreDrawListener
 import androidx.core.view.ViewCompat
@@ -45,6 +47,9 @@ import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.Acce
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorPolicy
 import io.github.nyzeep.orchestella.ui.TouchTargets
 import io.github.nyzeep.orchestella.ui.motion.OrchestellaMotion
+import io.github.nyzeep.orchestella.ui.shell.Oe3App
+import io.github.nyzeep.orchestella.ui.shell.Oe3Feature
+import io.github.nyzeep.orchestella.ui.shell.Oe3ShellController
 import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
 import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
 import io.github.nyzeep.orchestella.runtime.capability.AvfAuthorizationWizardModel
@@ -113,6 +118,9 @@ class MainActivity : AppCompatActivity() {
     private var wizardModel: AvfAuthorizationWizardModel? = null
     private var pendingExportInstance: InstanceLifecycle.Instance? = null
     private var currentTabIndex = 0
+    /** UI3-02：Compose 壳层特性开关（默认关闭；旧壳路径不受影响）。 */
+    private var oe3Enabled = false
+    private var oe3Shell: Oe3ShellController? = null
     /** False until the first switchTab painted every tab; later switches repaint the changed pair. */
     private var tabsInitialized = false
     /**
@@ -334,6 +342,17 @@ class MainActivity : AppCompatActivity() {
         window.statusBarColor = Color.TRANSPARENT
         window.navigationBarColor = Color.TRANSPARENT
 
+        // UI3-02: debug-only Compose shell. When the flag is off this branch is
+        // skipped and every statement below executes exactly as before.
+        oe3Enabled = Oe3Feature.resolve(
+            savedState = savedInstanceState?.getBoolean(Oe3Feature.STATE_KEY),
+            context = this,
+        )
+        if (oe3Enabled) {
+            mountOe3Shell(savedInstanceState)
+            return
+        }
+
         applyThemeToDashboard()
         val rootContainer = findViewById<View>(R.id.root_container)
         val density = resources.displayMetrics.density
@@ -515,6 +534,54 @@ class MainActivity : AppCompatActivity() {
         scheduleRuntimeVerification()
         requestNotificationPermissionAfterFirstFrame()
         handleLaunchIntent(intent)
+    }
+
+    /**
+     * UI3-02：开关为真时只挂 Compose 壳层。旧壳根（root_coordinator）用 GONE
+     * 移出布局，不与 Compose 叠放；后续页面由 UI3-12 接真实实现。
+     */
+    private fun mountOe3Shell(savedInstanceState: Bundle?) {
+        // root_coordinator 是旧壳的根（含空 masthead 与 root_container）；GONE 后
+        // ComposeView 作为 content 的兄弟层独占窗口，不与 NestedScrollView 叠放。
+        findViewById<View>(R.id.root_coordinator)?.visibility = View.GONE
+        val controller = Oe3ShellController(
+            Oe3ShellController.restore(savedInstanceState?.getString(Oe3ShellController.STATE_KEY)),
+        )
+        oe3Shell = controller
+
+        val theme = themeStore.resolve()
+        val textScale = themeStore.textScaleFactor()
+        val reduceMotion = !ValueAnimator.areAnimatorsEnabled()
+        val composeView = ComposeView(this).apply {
+            setBackgroundColor(theme.background)
+            setContent {
+                Oe3App(
+                    selectedTab = controller.selectedTab,
+                    onTabSelected = { tab -> controller.select(tab) },
+                    theme = theme,
+                    textScale = textScale,
+                    reduceMotion = reduceMotion,
+                )
+            }
+        }
+        addContentView(
+            composeView,
+            ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            ),
+        )
+
+        // 返回键：非首 tab 回工作站；工作站上放行给系统（退出）。
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (!controller.back()) {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                    isEnabled = true
+                }
+            }
+        })
     }
 
     /**
@@ -1353,6 +1420,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleLaunchIntent(intent: Intent?) {
+        // UI3-02: 占位壳层没有实例路由（instanceStore 未初始化）；显式忽略，
+        // 真实跳转由 UI3-12 接入页面后恢复。
+        if (oe3Enabled) return
         val targetLaunchId = intent?.getStringExtra("action_launch_instance_id")
         if (targetLaunchId != null && ::instanceStore.isInitialized) {
             intent.removeExtra("action_launch_instance_id")
@@ -1410,6 +1480,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // UI3-02: the Compose shell owns the window; skip the legacy XML
+        // repaint/refresh chain instead of painting hidden views.
+        if (oe3Enabled) return
         if (::themeStore.isInitialized) {
             applyThemeToDashboard()
         }
@@ -1461,6 +1534,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
+        oe3Shell?.let { outState.putString(Oe3ShellController.STATE_KEY, it.selectedTab.key) }
+        if (oe3Enabled) outState.putBoolean(Oe3Feature.STATE_KEY, true)
         outState.putInt("dashboard_tab", currentTabIndex)
         super.onSaveInstanceState(outState)
     }
