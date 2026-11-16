@@ -5,8 +5,8 @@ import io.github.nyzeep.orchestella.HostHardwareProfile
 import io.github.nyzeep.orchestella.R
 import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator
 import io.github.nyzeep.orchestella.ui.screens.common.StorageFacts
+import io.github.nyzeep.orchestella.ui.screens.common.formatGigabytes
 import java.util.Locale
-import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -427,16 +427,8 @@ data class HardwareEngineFacts(
 /** 摘要与圆环的确定性格格式化（Locale.US，保证截图与单测稳定）。 */
 object HardwareFormat {
 
-    private const val GIB = 1024.0 * 1024.0 * 1024.0
-
-    fun gigabytes(bytes: Long): String {
-        val value = bytes.coerceAtLeast(0L) / GIB
-        return if (abs(value - value.roundToInt()) < 1e-6) {
-            String.format(Locale.US, "%.0f GB", value)
-        } else {
-            String.format(Locale.US, "%.1f GB", value)
-        }
-    }
+    /** 委托单一格式化源（UI3-12），与工作站页同一套读数口径。 */
+    fun gigabytes(bytes: Long): String = formatGigabytes(bytes)
 
     fun percent(value: Int): String = "${value.coerceIn(0, 100)}%"
 
