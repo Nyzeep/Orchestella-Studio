@@ -86,6 +86,7 @@ class HardwareScreenSemanticsTest {
 
         listOf(
             "hardware:details-button",
+            "hardware:refresh",
             "hardware:engine:avf",
             "hardware:engine:qemu",
             "hardware:engine:uml",
@@ -93,6 +94,18 @@ class HardwareScreenSemanticsTest {
         ).forEach { tag ->
             compose.onNodeWithTag(tag).assertHeightIsAtLeast(48.dp)
         }
+    }
+
+    @Test
+    fun summaryRefreshIsReachable() {
+        var refreshed = false
+        setScreen(
+            state = HardwareTestFixtures.ready(),
+            actions = HardwareActions(refresh = { refreshed = true }),
+        )
+
+        compose.onNodeWithTag("hardware:refresh").assertIsDisplayed().performClick()
+        assertTrue(refreshed)
     }
 
     @Test

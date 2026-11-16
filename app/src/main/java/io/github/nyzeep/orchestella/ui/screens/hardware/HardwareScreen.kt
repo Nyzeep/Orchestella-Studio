@@ -33,9 +33,12 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.github.nyzeep.orchestella.R
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Button
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3ButtonStyle
@@ -66,6 +69,13 @@ object HardwareSpec {
     val summaryCellPadding = 12.dp
 }
 
+/** 72dp 环心读数；八级 token 之外的页面局部样式（与工作站页同口径）。 */
+private val RingFigureTextStyle = TextStyle(
+    fontSize = 18.sp,
+    lineHeight = 22.sp,
+    fontWeight = FontWeight.SemiBold,
+)
+
 /**
  * 硬件页：摘要 + 三环 + 引擎状态 + 完整参数底部表。
  *
@@ -88,7 +98,7 @@ fun HardwareScreen(
             .background(colors.background.oe3Color())
             .verticalScroll(rememberScrollState())
             .padding(horizontal = Oe3Spacing.pageInset)
-            .padding(top = Oe3Spacing.sm, bottom = Oe3Spacing.contentBottom)
+            .padding(top = Oe3Spacing.xl, bottom = Oe3Spacing.contentBottom)
             .testTag("hardware:screen"),
     ) {
         Text(
@@ -122,7 +132,7 @@ private fun HardwareContent(
     actions: HardwareActions,
     onOpenDetails: () -> Unit,
 ) {
-    SummaryCard(summary = state.summary)
+    SummaryCard(summary = state.summary, onRefresh = actions.refresh)
 
     Oe3SectionHeader(title = stringResource(R.string.ui3_hardware_section_gauges))
     RingsCard(rings = state.rings)
@@ -146,7 +156,7 @@ private fun HardwareContent(
 }
 
 @Composable
-private fun SummaryCard(summary: HardwareSummaryUi) {
+private fun SummaryCard(summary: HardwareSummaryUi, onRefresh: () -> Unit) {
     val colors = Oe3ThemeValues.colors
     val placeholder = stringResource(R.string.ui3_hardware_value_placeholder)
 
@@ -155,27 +165,42 @@ private fun SummaryCard(summary: HardwareSummaryUi) {
             .fillMaxWidth()
             .testTag("hardware:summary"),
     ) {
-        Text(
-            text = summary.deviceName ?: placeholder,
-            style = Oe3Typography.style(Oe3TextRole.Section),
-            color = colors.onSurface.oe3Color(),
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Spacer(Modifier.height(Oe3Spacing.xxs))
-        Text(
-            text = stringResource(
-                R.string.ui3_hardware_summary_platform,
-                summary.androidRelease,
-                summary.apiLevel,
-                summary.architecture ?: placeholder,
-                summary.cores,
-            ),
-            style = Oe3Typography.style(Oe3TextRole.Caption),
-            color = colors.onSurfaceVariant.oe3Color(),
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Row(verticalAlignment = Alignment.Top) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = summary.deviceName ?: placeholder,
+                    style = Oe3Typography.style(Oe3TextRole.Section),
+                    color = colors.onSurface.oe3Color(),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(Oe3Spacing.xxs))
+                Text(
+                    text = stringResource(
+                        R.string.ui3_hardware_summary_platform,
+                        summary.androidRelease,
+                        summary.apiLevel,
+                        summary.architecture ?: placeholder,
+                        summary.cores,
+                    ),
+                    style = Oe3Typography.style(Oe3TextRole.Caption),
+                    color = colors.onSurfaceVariant.oe3Color(),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Oe3Button(
+                text = stringResource(R.string.ui3_hardware_refresh),
+                onClick = onRefresh,
+                style = Oe3ButtonStyle.Text,
+                modifier = Modifier
+                    .heightIn(min = HardwareSpec.detailsButtonHeight)
+                    .testTag("hardware:refresh"),
+                leading = {
+                    Oe3Icon(image = Oe3Icons.Update, contentDescription = null)
+                },
+            )
+        }
         Spacer(Modifier.height(Oe3Spacing.md))
 
         Row(horizontalArrangement = Arrangement.spacedBy(Oe3Spacing.gridGap)) {
@@ -295,7 +320,7 @@ private fun RowScope.RingColumn(
         ) {
             Text(
                 text = percentText ?: placeholder,
-                style = Oe3Typography.style(Oe3TextRole.BodyStrong),
+                style = RingFigureTextStyle,
                 color = colors.onSurface.oe3Color(),
                 modifier = Modifier.clearAndSetSemantics {},
             )
@@ -446,6 +471,7 @@ private fun HardwareDetailsSheet(
         sheetState = sheetState,
         containerColor = colors.surface.oe3Color(),
         contentColor = colors.onSurface.oe3Color(),
+        shape = RoundedCornerShape(topStart = Oe3Shapes.xl, topEnd = Oe3Shapes.xl),
         modifier = Modifier.testTag("hardware:details-sheet"),
     ) {
         HardwareDetailsContent(groups = groups)
@@ -501,7 +527,7 @@ private fun DetailRow(row: HardwareDetailUi) {
         null -> placeholder
         is HardwareDetailValue.Text -> value.text
         is HardwareDetailValue.Resource -> stringResource(value.res)
-        is HardwareDetailValue.Formatted -> stringResource(value.res, *value.args.toTypedArray())
+        is HardwareDetailValue.Template -> stringResource(value.res, *value.args.toTypedArray())
     }
 
     Column(

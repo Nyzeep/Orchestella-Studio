@@ -312,9 +312,21 @@ class HardwareUiStateTest {
             .associateBy { it.labelRes }
             .getValue(R.string.ui3_hardware_detail_android)
 
-        val value = row.value as HardwareDetailValue.Formatted
+        val value = row.value as HardwareDetailValue.Template
         assertEquals(R.string.ui3_hardware_detail_android_value, value.res)
         assertEquals(listOf("15", "35"), value.args)
+    }
+
+    @Test
+    fun androidVersionRowIsOmittedWhenUnreadable() {
+        val row = HardwareTestFixtures.ready(
+            deviceFacts = HardwareTestFixtures.device.copy(androidRelease = " ", sdkInt = 0),
+        ).details
+            .flatMap { it.rows }
+            .associateBy { it.labelRes }
+            .getValue(R.string.ui3_hardware_detail_android)
+
+        assertNull(row.value)
     }
 
     @Test

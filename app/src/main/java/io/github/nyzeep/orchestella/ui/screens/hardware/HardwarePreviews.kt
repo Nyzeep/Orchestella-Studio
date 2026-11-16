@@ -64,8 +64,9 @@ private fun HardwarePreview(
     theme: AppTheme,
     state: HardwareUiState,
     textScale: Float,
+    pureBlack: Boolean = false,
 ) {
-    Oe3Theme(theme = theme, textScale = textScale) {
+    Oe3Theme(theme = theme, pureBlack = pureBlack, textScale = textScale) {
         HardwareScreen(state = state, actions = HardwareActions())
     }
 }
@@ -120,6 +121,40 @@ fun HardwareReadyLightLargePreview() {
     HardwarePreview(theme = ThemeCatalog.moonshotLight, state = previewReady, textScale = 1.3f)
 }
 
+@Preview(
+    name = "Hardware · Pure black · 1.0x",
+    group = "hardware",
+    widthDp = 393,
+    heightDp = 1080,
+    showBackground = true,
+)
+@Composable
+fun HardwareReadyBlackPreview() {
+    HardwarePreview(
+        theme = ThemeCatalog.moonshotDark,
+        state = previewReady,
+        textScale = 1f,
+        pureBlack = true,
+    )
+}
+
+@Preview(
+    name = "Hardware · Pure black · 1.3x",
+    group = "hardware",
+    widthDp = 393,
+    heightDp = 1080,
+    showBackground = true,
+)
+@Composable
+fun HardwareReadyBlackLargePreview() {
+    HardwarePreview(
+        theme = ThemeCatalog.moonshotDark,
+        state = previewReady,
+        textScale = 1.3f,
+        pureBlack = true,
+    )
+}
+
 // --- 探针失败 -------------------------------------------------------------
 
 @Preview(
@@ -135,6 +170,18 @@ fun HardwareFailedDarkPreview() {
 }
 
 @Preview(
+    name = "Probe failed · Dark · 1.3x",
+    group = "hardware",
+    widthDp = 393,
+    heightDp = 1080,
+    showBackground = true,
+)
+@Composable
+fun HardwareFailedDarkLargePreview() {
+    HardwarePreview(theme = ThemeCatalog.moonshotDark, state = previewFailed, textScale = 1.3f)
+}
+
+@Preview(
     name = "Probe failed · Light · 1.0x",
     group = "hardware",
     widthDp = 393,
@@ -144,6 +191,52 @@ fun HardwareFailedDarkPreview() {
 @Composable
 fun HardwareFailedLightPreview() {
     HardwarePreview(theme = ThemeCatalog.moonshotLight, state = previewFailed, textScale = 1f)
+}
+
+@Preview(
+    name = "Probe failed · Light · 1.3x",
+    group = "hardware",
+    widthDp = 393,
+    heightDp = 1080,
+    showBackground = true,
+)
+@Composable
+fun HardwareFailedLightLargePreview() {
+    HardwarePreview(theme = ThemeCatalog.moonshotLight, state = previewFailed, textScale = 1.3f)
+}
+
+@Preview(
+    name = "Probe failed · Pure black · 1.0x",
+    group = "hardware",
+    widthDp = 393,
+    heightDp = 1080,
+    showBackground = true,
+)
+@Composable
+fun HardwareFailedBlackPreview() {
+    HardwarePreview(
+        theme = ThemeCatalog.moonshotDark,
+        state = previewFailed,
+        textScale = 1f,
+        pureBlack = true,
+    )
+}
+
+@Preview(
+    name = "Probe failed · Pure black · 1.3x",
+    group = "hardware",
+    widthDp = 393,
+    heightDp = 1080,
+    showBackground = true,
+)
+@Composable
+fun HardwareFailedBlackLargePreview() {
+    HardwarePreview(
+        theme = ThemeCatalog.moonshotDark,
+        state = previewFailed,
+        textScale = 1.3f,
+        pureBlack = true,
+    )
 }
 
 // --- 完整参数底部表（内容预览，无需 dialog 窗口）---------------------------

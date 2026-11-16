@@ -132,9 +132,7 @@ sealed interface HardwareUiState {
                     cores = cores,
                     totalRam = totalRam,
                     availRam = availRam,
-                    memoryAvailable = memoryAvailable,
                     storage = storage,
-                    storageAvailable = storageAvailable,
                     engines = enginesUi,
                     avfReasons = reasons,
                     avfModeSummary = engines.avfModeSummary,
@@ -148,84 +146,91 @@ sealed interface HardwareUiState {
             cores: Int,
             totalRam: Long,
             availRam: Long,
-            memoryAvailable: Boolean,
             storage: StorageFacts,
-            storageAvailable: Boolean,
             engines: HardwareEnginesUi,
             avfReasons: List<String>,
             avfModeSummary: String?,
-        ): List<HardwareDetailGroup> = listOf(
-            HardwareDetailGroup(
-                titleRes = R.string.ui3_hardware_details_group_chip,
-                rows = listOf(
-                    detail(R.string.ui3_hardware_detail_soc, device.socModel),
-                    detail(R.string.ui3_hardware_detail_abi, abis.joinToString(", ")),
-                    detail(R.string.ui3_hardware_detail_cores, cores.toString()),
+        ): List<HardwareDetailGroup> {
+            val memoryAvailable = totalRam > 0L
+            val storageAvailable = storage.totalBytes > 0L
+            val androidValue = device.androidRelease.trim()
+                .takeIf { it.isNotEmpty() && device.sdkInt > 0 }
+                ?.let { release ->
+                    HardwareDetailValue.Template(
+                        res = R.string.ui3_hardware_detail_android_value,
+                        args = listOf(release, device.sdkInt.toString()),
+                    )
+                }
+
+            return listOf(
+                HardwareDetailGroup(
+                    titleRes = R.string.ui3_hardware_details_group_chip,
+                    rows = listOf(
+                        detail(R.string.ui3_hardware_detail_soc, device.socModel),
+                        detail(R.string.ui3_hardware_detail_abi, abis.joinToString(", ")),
+                        detail(R.string.ui3_hardware_detail_cores, cores.toString()),
+                    ),
                 ),
-            ),
-            HardwareDetailGroup(
-                titleRes = R.string.ui3_hardware_details_group_system,
-                rows = listOf(
-                    HardwareDetailUi(
-                        labelRes = R.string.ui3_hardware_detail_android,
-                        value = HardwareDetailValue.Formatted(
-                            res = R.string.ui3_hardware_detail_android_value,
-                            args = listOf(device.androidRelease.trim(), device.sdkInt.toString()),
+                HardwareDetailGroup(
+                    titleRes = R.string.ui3_hardware_details_group_system,
+                    rows = listOf(
+                        HardwareDetailUi(
+                            labelRes = R.string.ui3_hardware_detail_android,
+                            value = androidValue,
+                        ),
+                        detail(R.string.ui3_hardware_detail_kernel, device.kernelVersion),
+                        detail(R.string.ui3_hardware_detail_selinux, device.selinuxStatus),
+                    ),
+                ),
+                HardwareDetailGroup(
+                    titleRes = R.string.ui3_hardware_details_group_display,
+                    rows = listOf(
+                        detail(R.string.ui3_hardware_detail_screen, device.screenSpec),
+                        detail(R.string.ui3_hardware_detail_gpu, device.gpuRenderer),
+                    ),
+                ),
+                HardwareDetailGroup(
+                    titleRes = R.string.ui3_hardware_details_group_memory,
+                    rows = listOf(
+                        detail(
+                            R.string.ui3_hardware_detail_ram_total,
+                            if (memoryAvailable) HardwareFormat.gigabytes(totalRam) else null,
+                        ),
+                        detail(
+                            R.string.ui3_hardware_detail_ram_available,
+                            if (memoryAvailable) HardwareFormat.gigabytes(availRam) else null,
+                        ),
+                        detail(
+                            R.string.ui3_hardware_detail_storage_total,
+                            if (storageAvailable) HardwareFormat.gigabytes(storage.totalBytes) else null,
+                        ),
+                        detail(
+                            R.string.ui3_hardware_detail_storage_free,
+                            if (storageAvailable) HardwareFormat.gigabytes(storage.freeBytes) else null,
                         ),
                     ),
-                    detail(R.string.ui3_hardware_detail_kernel, device.kernelVersion),
-                    detail(R.string.ui3_hardware_detail_selinux, device.selinuxStatus),
                 ),
-            ),
-            HardwareDetailGroup(
-                titleRes = R.string.ui3_hardware_details_group_display,
-                rows = listOf(
-                    detail(R.string.ui3_hardware_detail_screen, device.screenSpec),
-                    detail(R.string.ui3_hardware_detail_gpu, device.gpuRenderer),
-                ),
-            ),
-            HardwareDetailGroup(
-                titleRes = R.string.ui3_hardware_details_group_memory,
-                rows = listOf(
-                    detail(
-                        R.string.ui3_hardware_detail_ram_total,
-                        if (memoryAvailable) HardwareFormat.gigabytes(totalRam) else null,
-                    ),
-                    detail(
-                        R.string.ui3_hardware_detail_ram_available,
-                        if (memoryAvailable) HardwareFormat.gigabytes(availRam) else null,
-                    ),
-                    detail(
-                        R.string.ui3_hardware_detail_storage_total,
-                        if (storageAvailable) HardwareFormat.gigabytes(storage.totalBytes) else null,
-                    ),
-                    detail(
-                        R.string.ui3_hardware_detail_storage_free,
-                        if (storageAvailable) HardwareFormat.gigabytes(storage.freeBytes) else null,
+                HardwareDetailGroup(
+                    titleRes = R.string.ui3_hardware_details_group_engines,
+                    rows = listOf(
+                        HardwareDetailUi(
+                            labelRes = R.string.ui3_hardware_detail_avf_verdict,
+                            value = HardwareDetailValue.Resource(engines.avf.state.labelRes),
+                        ),
+                        detail(R.string.ui3_hardware_detail_avf_mode, avfModeSummary),
+                        detail(R.string.ui3_hardware_detail_avf_reasons, avfReasons.joinToString("；")),
+                        HardwareDetailUi(
+                            labelRes = R.string.ui3_hardware_detail_qemu,
+                            value = HardwareDetailValue.Resource(engines.qemuStatusRes),
+                        ),
+                        HardwareDetailUi(
+                            labelRes = R.string.ui3_hardware_detail_uml,
+                            value = HardwareDetailValue.Resource(engines.uml.statusRes),
+                        ),
                     ),
                 ),
-            ),
-            HardwareDetailGroup(
-                titleRes = R.string.ui3_hardware_details_group_engines,
-                rows = listOf(
-                    HardwareDetailUi(
-                        labelRes = R.string.ui3_hardware_detail_avf_verdict,
-                        value = HardwareDetailValue.Resource(engines.avf.state.labelRes),
-                    ),
-                    detail(R.string.ui3_hardware_detail_avf_mode, avfModeSummary),
-                    detail(R.string.ui3_hardware_detail_avf_reasons, avfReasons.joinToString("；")),
-                    HardwareDetailUi(
-                        labelRes = R.string.ui3_hardware_detail_qemu,
-                        value = HardwareDetailValue.Resource(engines.qemuStatusRes),
-                    ),
-                    HardwareDetailUi(
-                        labelRes = R.string.ui3_hardware_detail_uml,
-                        value = HardwareDetailValue.Resource(engines.uml.statusRes),
-                    ),
-                ),
-            ),
-        )
-
+            )
+        }
         private fun detail(@StringRes labelRes: Int, value: String?): HardwareDetailUi =
             HardwareDetailUi(
                 labelRes = labelRes,
@@ -374,8 +379,8 @@ sealed interface HardwareDetailValue {
     data class Text(val text: String) : HardwareDetailValue
     data class Resource(@StringRes val res: Int) : HardwareDetailValue
 
-    /** 需要占位符的值（日期、版本组合）；文案仍在资源里。 */
-    data class Formatted(@StringRes val res: Int, val args: List<String>) : HardwareDetailValue
+    /** 带占位符的字符串资源（版本组合等）；null 值才代表“未提供”。 */
+    data class Template(@StringRes val res: Int, val args: List<String>) : HardwareDetailValue
 }
 
 data class HardwareDetailGroup(

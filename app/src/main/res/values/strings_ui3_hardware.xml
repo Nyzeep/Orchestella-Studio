@@ -5,6 +5,7 @@
 -->
 <resources>
     <string name="ui3_hardware_title">硬件</string>
+    <string name="ui3_hardware_refresh">刷新</string>
     <string name="ui3_hardware_value_placeholder">—</string>
 
     <string name="ui3_hardware_summary_platform">Android %1$s · API %2$d · %3$s · %4$d 核</string>

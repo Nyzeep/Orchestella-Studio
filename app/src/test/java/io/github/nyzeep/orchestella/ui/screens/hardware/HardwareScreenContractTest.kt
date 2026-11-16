@@ -96,9 +96,10 @@ class HardwareScreenContractTest {
     fun previewsCoverNormalAndFailureInBothBrightnesses() {
         val previews = File(sourceRoot, "HardwarePreviews.kt").readText()
 
-        assertTrue(Regex("@Preview\\(").findAll(previews).count() >= 4)
+        assertTrue(Regex("@Preview\\(").findAll(previews).count() >= 6)
         assertTrue(previews.contains("ThemeCatalog.moonshotDark"))
         assertTrue(previews.contains("ThemeCatalog.moonshotLight"))
+        assertTrue(previews.contains("pureBlack = true"))
         assertTrue(previews.contains("HardwareUiState.Failed("))
         assertTrue(previews.contains("previewReady"))
         assertTrue(previews.contains("previewFailed"))
@@ -131,6 +132,7 @@ class HardwareScreenContractTest {
             "ui3_hardware_retry",
             "ui3_hardware_details_title",
             "ui3_hardware_details_action",
+            "ui3_hardware_refresh",
         ).forEach { key ->
             assertTrue("strings_ui3_hardware.xml is missing $key", names.contains(key))
         }
