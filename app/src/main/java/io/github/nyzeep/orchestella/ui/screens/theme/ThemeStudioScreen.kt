@@ -69,10 +69,10 @@ import kotlin.math.roundToInt
  * apply the in-app font multiplier twice.
  *
  * All persisted writes arrive as [ThemeStudioEvent] and are mapped by
- * [ThemeStudioController] onto existing ThemeStore/SettingsManager setters.
- * Pure black, glass, bottom-bar style and app font family have no existing
- * preference key; they are preview-only until the shell owns them, and the UI
- * says so instead of inventing a schema.
+ * [ThemeStudioController] onto ThemeStore/SettingsManager setters. Pure black,
+ * glass, bottom-bar style and app font family are real preferences since
+ * UI3-13; the shell still applies them page-wide once it wires the store, and
+ * the imported-font row stays disabled until font import ships (随字体导入开放).
  */
 @Composable
 fun ThemeStudioScreen(
@@ -344,11 +344,14 @@ private fun ThemeStudioContent(
                         else -> null
                     },
                     selected = state.fontChoice == choice,
+                    // Font import does not exist yet (随字体导入开放): the row stays
+                    // disabled so a selection can never persist an unloadable font.
+                    enabled = choice != FontChoice.Imported,
+                    // No-op for Imported: the row is disabled, and never wiring a
+                    // callback here makes "a font can never persist" structural.
+                    // onPickFont can be re-wired when the font-import ticket lands.
                     onSelect = {
-                        if (choice == FontChoice.Imported) {
-                            onPickFont?.invoke()
-                            onEvent(ThemeStudioEvent.SetFontChoice(choice))
-                        } else {
+                        if (choice != FontChoice.Imported) {
                             onEvent(ThemeStudioEvent.SetFontChoice(choice))
                         }
                     },

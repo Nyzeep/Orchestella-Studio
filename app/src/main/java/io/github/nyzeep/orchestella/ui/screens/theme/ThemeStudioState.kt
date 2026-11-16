@@ -15,11 +15,11 @@ import io.github.nyzeep.orchestella.ui.theme.ThemeStore
 
 /**
  * Everything the Theme Studio renders. Persisted fields are re-read from
- * [ThemeStore] after every event; the four presentation-only fields have no
- * existing preference key yet (pure black, glass, bottom-bar style and app
- * font family), so they stay local to this page until the shell owns them.
- * The ticket forbids inventing new keys, and this is the only honest way to
- * show those controls without pretending they survive a restart.
+ * [ThemeStore] after every event. Since UI3-13 the four presentation options
+ * (pure black, glass, bottom-bar style and app font family) are real
+ * preferences too; only the imported-font label stays page-local, because
+ * font import does not exist yet (随字体导入开放) and a chosen font file must
+ * never be persisted as an unloadable URI.
  */
 @Immutable
 data class ThemeStudioState(
@@ -76,33 +76,29 @@ class SettingsCursorBlinkPort(private val settings: SettingsManager) : CursorBli
 }
 
 /**
- * Adapter from [ThemeStudioEvent] to the existing ThemeStore/SettingsManager
- * setters. It never creates a preference key: every persisted write below is
- * an existing setter on an existing key.
+ * Adapter from [ThemeStudioEvent] to the ThemeStore/SettingsManager setters.
+ * Every persisted write is a setter on a ThemeStore-owned key — UI3-13 added
+ * the four presentation keys to the store; nothing here invents a raw key.
  */
 class ThemeStudioController(
     private val store: ThemeStore,
     private val cursorBlink: CursorBlinkPort = CursorBlinkPort.Default,
 ) {
-    private var pureBlack = false
-    private var glass = GlassOption.None
-    private var navStyle = NavStyleOption.Floating
-    private var fontChoice = FontChoice.System
+    /** Page-memory only: a picked font name has no key until font import ships. */
     private var importedFontLabel: String? = null
 
     fun read(): ThemeStudioState {
         val theme = store.resolve()
         // Pure black is a dark-only override. Carrying it into a light palette
         // would leave the header claiming 纯黑 while the preview correctly
-        // ignores it; drop the local flag when brightness no longer permits it.
-        if (!theme.isDark) pureBlack = false
+        // ignores it; drop it at read time while the store retains the choice.
         return ThemeStudioState(
             theme = theme,
             mode = store.mode(),
-            pureBlack = pureBlack,
-            glass = glass,
-            navStyle = navStyle,
-            fontChoice = fontChoice,
+            pureBlack = theme.isDark && store.uiPureBlack(),
+            glass = glassOption(store.uiGlassLevel()),
+            navStyle = navStyleOption(store.uiNavStyle()),
+            fontChoice = fontChoice(store.uiFontChoice()),
             importedFontLabel = importedFontLabel,
             customSlots = store.customSlots(),
             customAccent = store.customAccent(),
@@ -126,21 +122,27 @@ class ThemeStudioController(
         when (event) {
             is ThemeStudioEvent.SelectTheme -> store.setThemeId(event.id)
             is ThemeStudioEvent.SelectMode -> store.setMode(event.mode)
-            is ThemeStudioEvent.SetPureBlack -> pureBlack = event.enabled
-            is ThemeStudioEvent.SetNavStyle -> navStyle = event.option
-            is ThemeStudioEvent.SetGlass -> glass = event.option
+            is ThemeStudioEvent.SetPureBlack -> store.setUiPureBlack(event.enabled)
+            is ThemeStudioEvent.SetNavStyle -> store.setUiNavStyle(event.option.key)
+            is ThemeStudioEvent.SetGlass -> store.setUiGlassLevel(event.option.key)
             is ThemeStudioEvent.SetCornerDp -> store.setCornerRadiusDp(event.dp)
             is ThemeStudioEvent.SetTextScaleMode -> store.setTextScaleMode(event.mode)
             is ThemeStudioEvent.SetTextScalePercent ->
                 store.setTextScale(OeTextScaleMode.Custom, event.percent)
             is ThemeStudioEvent.SetSurfaceOpacity -> store.setUiSurfaceOpacityPercent(event.percent)
             is ThemeStudioEvent.SetFontChoice -> {
-                fontChoice = event.choice
-                if (event.choice != FontChoice.Imported) importedFontLabel = null
+                // "Imported" stays inert (随字体导入开放): persisting it would
+                // save a font the app cannot load, and the store would coerce
+                // it back to system anyway; skipping keeps the file untouched.
+                if (event.choice != FontChoice.Imported) {
+                    store.setUiFontChoice(event.choice.key)
+                    importedFontLabel = null
+                }
             }
             is ThemeStudioEvent.SetImportedFontLabel -> {
+                // Page-memory only; the label never becomes a preference until
+                // font import ships with a real key of its own.
                 importedFontLabel = event.label
-                if (event.label != null) fontChoice = FontChoice.Imported
             }
             is ThemeStudioEvent.SetCustomAccent -> store.setCustomAccent(event.argb)
             is ThemeStudioEvent.SaveCustomSlot -> {
@@ -157,6 +159,16 @@ class ThemeStudioController(
         }
         return read()
     }
+
+    /** Enum ↔ key mapping over the store's normalized values (unknown falls back to the default). */
+    private fun glassOption(level: String): GlassOption =
+        GlassOption.entries.firstOrNull { it.key == level } ?: GlassOption.None
+
+    private fun navStyleOption(style: String): NavStyleOption =
+        NavStyleOption.entries.firstOrNull { it.key == style } ?: NavStyleOption.Floating
+
+    private fun fontChoice(choice: String): FontChoice =
+        FontChoice.entries.firstOrNull { it.key == choice } ?: FontChoice.System
 }
 
 /** Hoisted state + event sink for the screen; the host only supplies the store. */

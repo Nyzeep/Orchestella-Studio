@@ -3,8 +3,10 @@ package io.github.nyzeep.orchestella.ui.screens.theme
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -189,6 +191,22 @@ class ThemeStudioScreenTest {
         compose.onNodeWithTag("theme-row:mode:light").assertIsNotEnabled()
         compose.onNodeWithTag("theme-row:mode:dark").assertIsNotEnabled()
         compose.onNodeWithTag("theme-row:mode:system").assertIsNotEnabled()
+    }
+
+    @Test
+    fun importedFontRowIsDisabledUntilFontImportShips() {
+        compose.setContent {
+            ThemeStudioScreen(state = fixture(), onEvent = {}, renderTerminalView = false, reduceMotion = true, presets = testPresets)
+        }
+        // 随字体导入开放: no font can be picked yet, so the row must not accept
+        // a selection that would persist an unloadable font choice.
+        compose.onNodeWithTag("theme-row:font:imported")
+            .performScrollTo()
+            .assertIsNotEnabled()
+            .assertTextContains("随字体导入开放")
+        compose.onNodeWithTag("theme-row:font:system")
+            .performScrollTo()
+            .assertIsEnabled()
     }
 
     @Test

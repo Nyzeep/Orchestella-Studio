@@ -9,14 +9,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The Theme Studio is not allowed to grow the preference schema. This sweeps
- * every event that persists something and checks the resulting keys are all
- * ones ThemeStore already owned.
+ * The Theme Studio may only write the preference keys ThemeStore owns. This
+ * sweeps every event that persists something and checks the resulting keys are
+ * all whitelisted: the schema grew exactly once for UI3-13 (pure black, glass,
+ * bottom-bar style, app font) and nothing else may join it.
  */
 class ThemeStudioPreferenceKeysTest {
 
     @Test
-    fun everyPersistingEventWritesOnlyExistingThemeStoreKeys() {
+    fun everyPersistingEventWritesOnlyWhitelistedThemeStoreKeys() {
         val prefs = FakeSharedPreferences()
         val controller = ThemeStudioController(ThemeStore(prefs))
         val slot = CustomThemeSlot(
@@ -34,6 +35,10 @@ class ThemeStudioPreferenceKeysTest {
         listOf(
             ThemeStudioEvent.SelectTheme(ThemeCatalog.github.id),
             ThemeStudioEvent.SelectMode(ThemeStore.Mode.DARK),
+            ThemeStudioEvent.SetPureBlack(true),
+            ThemeStudioEvent.SetGlass(GlassOption.Ultra),
+            ThemeStudioEvent.SetNavStyle(NavStyleOption.Fixed),
+            ThemeStudioEvent.SetFontChoice(FontChoice.Mono),
             ThemeStudioEvent.SetCornerDp(20),
             ThemeStudioEvent.SetTextScaleMode(OeTextScaleMode.Custom),
             ThemeStudioEvent.SetTextScalePercent(120),
@@ -54,7 +59,7 @@ class ThemeStudioPreferenceKeysTest {
                 "accent", "text", "text_dim", "term_bg", "term_fg",
             ).map { "${ThemeStore.KEY_CUSTOM_SLOT_PREFIX}${slotNumber}_$it" }
         }
-        val existingKeys = setOf(
+        val whitelistedKeys = setOf(
             ThemeStore.KEY_THEME_ID,
             ThemeStore.KEY_THEME_MODE,
             ThemeStore.KEY_CUSTOM_ACCENT,
@@ -69,12 +74,26 @@ class ThemeStudioPreferenceKeysTest {
             ThemeStore.KEY_TERMINAL_FONT_SP,
             ThemeStore.KEY_TERMINAL_LETTER_SPACING,
             ThemeStore.KEY_TERMINAL_LINE_SPACING,
+            ThemeStore.KEY_UI_PURE_BLACK,
+            ThemeStore.KEY_UI_GLASS_LEVEL,
+            ThemeStore.KEY_UI_NAV_STYLE,
+            ThemeStore.KEY_UI_FONT_CHOICE,
         ) + slotKeys
 
         assertTrue(
-            "Theme Studio invented preference keys: ${prefs.all.keys - existingKeys}",
-            existingKeys.containsAll(prefs.all.keys),
+            "Theme Studio invented preference keys: ${prefs.all.keys - whitelistedKeys}",
+            whitelistedKeys.containsAll(prefs.all.keys),
         )
+        // The UI3-13 sweep above must actually reach each of the four new keys;
+        // anything else staying unwritten keeps the schema frozen.
+        listOf(
+            ThemeStore.KEY_UI_PURE_BLACK,
+            ThemeStore.KEY_UI_GLASS_LEVEL,
+            ThemeStore.KEY_UI_NAV_STYLE,
+            ThemeStore.KEY_UI_FONT_CHOICE,
+        ).forEach { key ->
+            assertTrue("expected the sweep to persist $key", prefs.all.containsKey(key))
+        }
         assertTrue(prefs.all.isNotEmpty())
     }
 }
