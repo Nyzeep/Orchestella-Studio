@@ -31,6 +31,11 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.core.app.ActivityOptionsCompat
 import androidx.core.view.OneShotPreDrawListener
@@ -47,9 +52,37 @@ import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.Acce
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorPolicy
 import io.github.nyzeep.orchestella.ui.TouchTargets
 import io.github.nyzeep.orchestella.ui.motion.OrchestellaMotion
+import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3GlassLevel
+import io.github.nyzeep.orchestella.ui.screens.common.StorageFacts
+import io.github.nyzeep.orchestella.ui.screens.config.ConfigDestination
+import io.github.nyzeep.orchestella.ui.screens.config.ConfigOptions
+import io.github.nyzeep.orchestella.ui.screens.config.ConfigPreferences
+import io.github.nyzeep.orchestella.ui.screens.config.ConfigRoute
+import io.github.nyzeep.orchestella.ui.screens.config.ConfigScreen
+import io.github.nyzeep.orchestella.ui.screens.config.ConfigScreenState
+import io.github.nyzeep.orchestella.ui.screens.config.SharedPreferencesConfigStore
+import io.github.nyzeep.orchestella.ui.screens.dashboard.DashboardActions
+import io.github.nyzeep.orchestella.ui.screens.dashboard.DashboardScreen
+import io.github.nyzeep.orchestella.ui.screens.dashboard.DashboardUiState
+import io.github.nyzeep.orchestella.ui.screens.distros.DistrosActions
+import io.github.nyzeep.orchestella.ui.screens.distros.DistrosScreen
+import io.github.nyzeep.orchestella.ui.screens.distros.DistrosUiState
+import io.github.nyzeep.orchestella.ui.screens.hardware.HardwareActions
+import io.github.nyzeep.orchestella.ui.screens.hardware.HardwareScreen
+import io.github.nyzeep.orchestella.ui.screens.hardware.HardwareDeviceFacts
+import io.github.nyzeep.orchestella.ui.screens.hardware.HardwareEngineFacts
+import io.github.nyzeep.orchestella.ui.screens.hardware.HardwareUiState
+import io.github.nyzeep.orchestella.ui.screens.instances.InstancesActions
+import io.github.nyzeep.orchestella.ui.screens.instances.InstancesScreen
+import io.github.nyzeep.orchestella.ui.screens.instances.InstancesProgressUi
+import io.github.nyzeep.orchestella.ui.screens.instances.InstancesUiState
+import io.github.nyzeep.orchestella.ui.screens.theme.ThemeStudioScreen
+import io.github.nyzeep.orchestella.ui.screens.theme.rememberThemeStudioHandle
 import io.github.nyzeep.orchestella.ui.shell.Oe3App
 import io.github.nyzeep.orchestella.ui.shell.Oe3Feature
 import io.github.nyzeep.orchestella.ui.shell.Oe3NavStyle
+import io.github.nyzeep.orchestella.ui.shell.Oe3Pages
+import io.github.nyzeep.orchestella.ui.shell.Oe3Tab
 import io.github.nyzeep.orchestella.ui.shell.Oe3ShellController
 import io.github.nyzeep.orchestella.ui.shell.glassLevelFromKey
 import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
@@ -62,6 +95,7 @@ import io.github.nyzeep.orchestella.runtime.distro.OfficialDebianCatalog
 import io.github.nyzeep.orchestella.ui.theme.AppTheme
 import io.github.nyzeep.orchestella.ui.theme.SurfaceOpacity
 import io.github.nyzeep.orchestella.ui.theme.ThemeStore
+import io.github.nyzeep.orchestella.update.UpdateCoordinator
 import io.github.nyzeep.orchestella.ui.theme.ThemeColors
 import io.github.nyzeep.orchestella.runtime.engineavf.AvfVirtualMachineEngine
 import io.github.nyzeep.orchestella.runtime.engineavf.ReflectiveAvfVirtualMachineApi
@@ -123,6 +157,40 @@ class MainActivity : AppCompatActivity() {
     /** UI3-02：Compose 壳层。UI3-12 起为唯一界面；旧壳路径在删除前不再可达。 */
     private var oe3Enabled = true
     private var oe3Shell: Oe3ShellController? = null
+
+    // ==================== UI3-12：Oe3 页面状态（Compose 壳层的渲染输入） ====================
+    // Activity 持有快照与动作，Compose 只读不写偏好之外的任何状态；所有页面的
+    // 数据仍来自既有 DashboardSnapshot 周期与既有动作入口，不另立数据源。
+
+    /** 配置页的四个可玩性选项持久化（与 SettingsActivity 同一 ConfigPreferences）。 */
+    private lateinit var configPreferences: ConfigPreferences
+
+    /** 壳层主题与呈现偏好快照；ThemeStore 变更经 onStart 注册的监听刷新。 */
+    private val oe3ThemeState = mutableStateOf<AppTheme?>(null)
+    private val oe3PrefsState = mutableStateOf(Oe3ShellPrefs())
+
+    /** 五页状态；null 期间壳层渲染占位页（首帧快照落地前短暂存在）。 */
+    private val oe3DashboardState = mutableStateOf<DashboardUiState?>(null)
+    private val oe3InstancesState = mutableStateOf<InstancesUiState?>(null)
+    private val oe3InstancesRefreshingState = mutableStateOf(false)
+    private val oe3HardwareState = mutableStateOf<HardwareUiState?>(null)
+    private val oe3ConfigState = mutableStateOf<ConfigScreenState?>(null)
+
+    /** 创建/导入等异步进度的文字（launchFeedback 链路的 Compose 侧出口）。 */
+    private val oe3ProgressText = mutableStateOf("")
+
+    /** 配置页 → 主题工坊的壳内推入状态；返回键与关闭回调共同驱动。 */
+    private val oe3ThemeStudioOpen = mutableStateOf(false)
+
+    /** UML rootfs 卡状态机输出；state 承载让发行版页随下载进度重组。 */
+    private var umlRootfsCardModel: UmlRootfsCardState.CardModel? by mutableStateOf(null)
+
+    /** 硬件页的宿主剖面与存储事实（快照周期里在 executor 侧更新）。 */
+    @Volatile
+    private var oe3HardwareProfile: HostHardwareProfile? = null
+    @Volatile
+    private var oe3Storage: StorageFacts = StorageFacts.None
+    private val oe3HostUiFacts = mutableStateOf(HostUiFacts.empty())
     /** False until the first switchTab painted every tab; later switches repaint the changed pair. */
     private var tabsInitialized = false
     /**
@@ -247,6 +315,13 @@ class MainActivity : AppCompatActivity() {
             // 冷启动/主线程卫生（Lane C）：3 秒周期的实例列表与硬件/存储读数改在
             // operations executor 上取齐，UI 线程只渲染快照；读取失败按空列表继续。
             loadDashboardSnapshot(strict = false) { snapshot ->
+                // UI3-12：Compose 壳层消费同一份快照；旧视图渲染链在 Oe3 模式
+                // 下不执行（视图不存在）。
+                if (oe3Enabled) {
+                    updateOe3Pages(snapshot)
+                    maybeReportFullyDrawn()
+                    return@loadDashboardSnapshot
+                }
                 val theme = activeTheme ?: themeStore.resolve()
                 renderGauges(theme, snapshot)
                 if (snapshot.stateKey != lastInstanceState) {
@@ -296,8 +371,12 @@ class MainActivity : AppCompatActivity() {
         uri?.let { srcUri ->
             operations.execute {
                 runOnUiThread {
-                    createProgress.visibility = View.VISIBLE
-                    syncCreateProgressBanner()
+                    // UI3-12：Compose 壳层没有旧横幅视图，进度文字走实例页
+                    // 进度横幅状态；旧壳路径视图写入保持原样。
+                    if (!oe3Enabled && ::createProgress.isInitialized) {
+                        createProgress.visibility = View.VISIBLE
+                        syncCreateProgressBanner()
+                    }
                     setCreateStatusLine(getString(R.string.import_instance_progress))
                 }
                 try {
@@ -306,20 +385,24 @@ class MainActivity : AppCompatActivity() {
                     val storageDir = filesDir.toPath().resolve("instances")
                     val imported = adapter.importArchiveToStorage(srcUri, storageDir, controller)
                     runOnUiThread {
-                        createProgress.visibility = View.GONE
-                        syncCreateProgressBanner()
+                        if (!oe3Enabled && ::createProgress.isInitialized) {
+                            createProgress.visibility = View.GONE
+                            syncCreateProgressBanner()
+                        }
                         setCreateStatusLine("")
                         Toast.makeText(
                             this@MainActivity,
                             getString(R.string.import_instance_success, imported.id()),
                             Toast.LENGTH_SHORT
                         ).show()
-                        showInstances()
+                        refreshInstanceListAfterMutation()
                     }
                 } catch (e: Exception) {
                     runOnUiThread {
-                        createProgress.visibility = View.GONE
-                        syncCreateProgressBanner()
+                        if (!oe3Enabled && ::createProgress.isInitialized) {
+                            createProgress.visibility = View.GONE
+                            syncCreateProgressBanner()
+                        }
                         setCreateStatusLine(getString(R.string.import_instance_failed, e.message))
                         Toast.makeText(
                             this@MainActivity,
@@ -329,6 +412,33 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             }
+        }
+    }
+
+    // UI3-12：主题工坊的壁纸/终端背景 SAF 选择（与 SettingsSubActivity 同一
+    // 契约：仅接受用户手选的 content://，先留权再入库）。
+    private val backgroundPicker = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri ?: return@registerForActivityResult
+        if (themeStore.persistBackgroundPermission(this, uri)) {
+            themeStore.setBackgroundUri(uri.toString())
+            refreshOe3ShellSnapshot()
+            Toast.makeText(this, "背景图片已更新", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(this, "无法保留图片访问权限，请重新选择本地图片", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private val terminalBackgroundPicker = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri ?: return@registerForActivityResult
+        if (themeStore.persistBackgroundPermission(this, uri)) {
+            themeStore.setTerminalBackgroundUri(uri.toString())
+            Toast.makeText(this, "终端背景图片已更新", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(this, "无法保留图片访问权限，请重新选择本地图片", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -349,6 +459,7 @@ class MainActivity : AppCompatActivity() {
         // unreachable since the flip.
         oe3Enabled = Oe3Feature.enabled()
         if (oe3Enabled) {
+            ensureSharedInfrastructure()
             mountOe3Shell(savedInstanceState)
             return
         }
@@ -399,76 +510,7 @@ class MainActivity : AppCompatActivity() {
         // InstanceLaunchCoordinator（2026-11-10 加深轮 T1）：启动编排收进深模块，构造注入
         // 资源句柄；Android 侧启动件（前台服务、AVF/QEMU/PVM 启动器、事实源、资源串）在此
         // 绑定，编排决策与世代门卫全部在 InstanceLaunchCoordinator 内。
-        launchCoordinator = InstanceLaunchCoordinator(
-            store = instanceStore,
-            settings = launchSettings,
-            foreground = launchForeground,
-            ui = launchFeedback,
-            copy = launchCopy,
-            diagnostics = launchDiagnostics,
-            cleanupBridge = InstanceLaunchCoordinator.CleanupBridge { instanceId ->
-                QemuInstanceLauncher.takeLastCleanupResult(instanceId)
-            },
-            filesDir = filesDir,
-            performanceBadge = { currentBadge(DeviceCapabilityEvaluator.evaluate(deviceProfile())) },
-            preferAvf = BooleanSupplier {
-                avfReadiness?.status() == AvfCapabilityEvaluator.AvfStatus.READY
-            },
-            avfLaunch = InstanceStrategyLauncher.AvfLaunch { params ->
-                AvfInstanceLauncher(this).launch(params)
-            },
-            qemuLaunch = InstanceStrategyLauncher.QemuLaunch { params ->
-                QemuInstanceLauncher(this).launch(params)
-            },
-            customVmBackend = InstanceLaunchCoordinator.CustomVmBackend { instanceId ->
-                AcceleratorVmLauncher(
-                    "accel-" + instanceId,
-                    filesDir.resolve("accelerator-image").resolve("kernel").toPath(),
-                    filesDir.resolve("accelerator-image").resolve("initrd").toPath(),
-                    filesDir.resolve("accelerator-image").resolve("rootfs.ext4").toPath(),
-                    AcceleratorLaunchDispatcher.ACCEL_REQUEST.ramMiB,
-                ) {
-                    AcceleratorVmLauncher.engine(
-                        AvfVirtualMachineEngine(
-                            ReflectiveAvfVirtualMachineApi(
-                                this, classLoader, AvfHiddenApiExemption::installOnce,
-                            ),
-                        ),
-                    )
-                }
-            },
-            pvmPayloadBackend = InstanceLaunchCoordinator.PvmPayloadBackend { instanceId ->
-                // Built only when the verdict selected PVM_PAYLOAD,
-                // which already implies the manifest parsed. An
-                // absent payload at that point is a load failure,
-                // never a silent QEMU-only run.
-                PvmPayloadLaneStarter.createIfInstalled(
-                    this,
-                    "accel-pvm-" + instanceId,
-                    AcceleratorLaunchDispatcher.GUEST_COMPILER_TRIPLE,
-                    AcceleratorLaunchDispatcher.PAYLOAD_READY_TIMEOUT_MS,
-                    AcceleratorLaunchDispatcher.STOP_GRACE_MS,
-                ).orElseThrow {
-                    LaneStartException(PvmPayloadLaneStarter.PAYLOAD_LOAD_FAILED)
-                }
-            },
-            factsSource = InstanceLaunchCoordinator.FactsSource {
-                AndroidAcceleratorFactProvider.create(this)
-            },
-            payloadManifestSource = InstanceLaunchCoordinator.PayloadManifestSource {
-                AndroidAcceleratorFactProvider.readPayloadManifest(applicationContext)
-            },
-            laneEventSink = LaneEventSink { event ->
-                android.util.Log.i(
-                    "OrchestellaAccelerator",
-                    "${event.name()} ${event.lane()} ${event.code()} ${event.durationMs()}ms",
-                )
-            },
-            laneClock = LaneClock.system(),
-            clock = Clock.systemUTC(),
-            orphanReconciler = Runnable { reconcileOrphanInstances() },
-            umlFaceLane = umlFaceRideAlong,
-        )
+        launchCoordinator = buildLaunchCoordinator()
 
         settingsButton.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
@@ -539,7 +581,9 @@ class MainActivity : AppCompatActivity() {
     /**
      * UI3-12：Compose 壳层为唯一界面。Theme Studio 的呈现偏好（纯黑/玻璃/
      * 底栏样式/等宽字体）在这里读出并传入 [Oe3App]——读取放壳层桥（Activity），
-     * Oe3App 保持状态无知，兑现 UI3-13 文案的「全局生效」。
+     * Oe3App 保持状态无知，兑现 UI3-13 文案的「全局生效」。五页状态与动作
+     * 也由本类持有：数据全部来自既有 DashboardSnapshot 周期与既有动作入口
+     * （Activity / 对话框 / SAF），壳层只做路由，不重写任何既有功能。
      */
     private fun mountOe3Shell(savedInstanceState: Bundle?) {
         // 旧壳删除前的过渡（批次 C 移除）：把旧壳根移出布局，让 ComposeView 独占窗口。
@@ -548,29 +592,40 @@ class MainActivity : AppCompatActivity() {
             Oe3ShellController.restore(savedInstanceState?.getString(Oe3ShellController.STATE_KEY)),
         )
         oe3Shell = controller
+        refreshOe3ShellSnapshot()
 
-        val theme = themeStore.resolve()
         val textScale = themeStore.textScaleFactor()
         val animatorsEnabled = ValueAnimator.areAnimatorsEnabled()
         val reduceMotion = !animatorsEnabled
         // UI3-10 玻璃层的运行时闸：动效被系统关闭或省电模式时退到实色 scrim 面。
         val powerManager = getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
         val glassEnabled = animatorsEnabled && powerManager?.isPowerSaveMode != true
+
         val composeView = ComposeView(this).apply {
-            setBackgroundColor(theme.background)
+            setBackgroundColor(themeStore.resolve().background)
             setContent {
-                Oe3App(
-                    selectedTab = controller.selectedTab,
-                    onTabSelected = { tab -> controller.select(tab) },
-                    theme = theme,
-                    textScale = textScale,
-                    reduceMotion = reduceMotion,
-                    pureBlack = themeStore.uiPureBlack(),
-                    glassLevel = glassLevelFromKey(themeStore.uiGlassLevel()),
-                    glassEnabled = glassEnabled,
-                    navStyle = Oe3NavStyle.fromKey(themeStore.uiNavStyle()),
-                    monoBody = themeStore.uiFontChoice() == "mono",
-                )
+                val theme = oe3ThemeState.value ?: themeStore.resolve()
+                val prefs = oe3PrefsState.value
+                if (oe3ThemeStudioOpen.value) {
+                    Oe3ThemeStudioHost(
+                        onDismiss = { oe3ThemeStudioOpen.value = false },
+                        reduceMotion = reduceMotion,
+                    )
+                } else {
+                    Oe3App(
+                        selectedTab = controller.selectedTab,
+                        onTabSelected = { tab -> controller.select(tab) },
+                        theme = theme,
+                        textScale = textScale,
+                        reduceMotion = reduceMotion,
+                        pureBlack = prefs.pureBlack,
+                        glassLevel = prefs.glassLevel,
+                        glassEnabled = glassEnabled,
+                        navStyle = prefs.navStyle,
+                        monoBody = prefs.monoBody,
+                        pages = buildOe3Pages(),
+                    )
+                }
             }
         }
         addContentView(
@@ -581,16 +636,488 @@ class MainActivity : AppCompatActivity() {
             ),
         )
 
-        // 返回键：非首 tab 回工作站；工作站上放行给系统（退出）。
+        // 返回键：主题工坊先关工坊；非首 tab 回工作站；工作站上放行给系统（退出）。
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (!controller.back()) {
-                    isEnabled = false
-                    onBackPressedDispatcher.onBackPressed()
-                    isEnabled = true
+                when {
+                    oe3ThemeStudioOpen.value -> oe3ThemeStudioOpen.value = false
+                    !controller.back() -> {
+                        isEnabled = false
+                        onBackPressedDispatcher.onBackPressed()
+                        isEnabled = true
+                    }
                 }
             }
         })
+
+        // 协同落点（Lane C 落地 / Lane D 规格，2026-11-07）：通知权限请求挂到
+        // Compose 宿主首帧之后，语义与旧壳路径一致。
+        composeView.post {
+            if (isFinishing || isDestroyed) return@post
+            if (!notificationPromptShownThisProcess.compareAndSet(false, true)) return@post
+            NotificationPermissionPrompt.requestIfNeeded(this)
+        }
+    }
+
+    /** 壳层快照：主题与 Theme Studio 呈现偏好的唯一读取点。 */
+    private fun refreshOe3ShellSnapshot() {
+        oe3ThemeState.value = themeStore.resolve()
+        oe3PrefsState.value = Oe3ShellPrefs(
+            pureBlack = themeStore.uiPureBlack(),
+            glassLevel = glassLevelFromKey(themeStore.uiGlassLevel()),
+            navStyle = Oe3NavStyle.fromKey(themeStore.uiNavStyle()),
+            monoBody = themeStore.uiFontChoice() == "mono",
+        )
+    }
+
+    private fun buildOe3Pages(): Oe3Pages = Oe3Pages(
+        workstation = {
+            oe3DashboardState.value?.let { DashboardScreen(it, oe3DashboardActions) }
+        },
+        instances = {
+            oe3InstancesState.value?.let { InstancesScreen(it, oe3InstancesActions) }
+        },
+        hardware = {
+            oe3HardwareState.value?.let { HardwareScreen(it, oe3HardwareActions) }
+        },
+        distros = {
+            val model = umlRootfsCardModel
+            DistrosScreen(
+                DistrosUiState.from(
+                    umlModel = model,
+                    compileBridgeWired = BuildConfig.UML_COMPILE_BRIDGE,
+                ),
+                oe3DistrosActions,
+            )
+        },
+        config = {
+            oe3ConfigState.value?.let {
+                ConfigScreen(it, oe3ConfigNavigate, ::persistOe3ConfigOptions)
+            }
+        },
+    )
+
+    /** 主题工坊的壳内承载：独立 Oe3Theme 根（页面自带主题包装，不得嵌套）。 */
+    @Composable
+    private fun Oe3ThemeStudioHost(onDismiss: () -> Unit, reduceMotion: Boolean) {
+        val handle = rememberThemeStudioHandle(themeStore)
+        ThemeStudioScreen(
+            state = handle.state,
+            onEvent = handle.onEvent,
+            reduceMotion = reduceMotion,
+            onPickBackground = { backgroundPicker.launch(arrayOf("image/*")) },
+            onPickTerminalBackground = { terminalBackgroundPicker.launch(arrayOf("image/*")) },
+        )
+        // 工坊改动即时反映到壳层偏好（返回时壳层已用新值重组）。
+        DisposableEffect(handle.state) {
+            refreshOe3ShellSnapshot()
+            onDispose { }
+        }
+    }
+
+    // ==================== Oe3 五页动作（全部路由到既有入口） ====================
+
+    private val oe3DashboardActions by lazy {
+        DashboardActions(
+            openTerminal = { id ->
+                instanceById(id) { instance ->
+                    if (instance == null) {
+                        toastInstanceMissing()
+                    } else if (instance.state() == InstanceLifecycle.State.RUNNING) {
+                        openTerminal(instance)
+                    } else {
+                        launchInstance(instance)
+                    }
+                }
+            },
+            // 工作站的创建入口 = 发行版装配目录（旧壳空态 CTA 同语义），不新造向导分叉。
+            createInstance = { oe3Shell?.select(Oe3Tab.Distros) },
+            openInstance = { id -> openInstanceDetail(id) },
+            // 存储读数与磁盘事实在硬件页；没有独立的存储设置页，路由不编造。
+            openStorageSettings = { oe3Shell?.select(Oe3Tab.Hardware) },
+        )
+    }
+
+    private val oe3InstancesActions by lazy {
+        InstancesActions(
+            openTerminal = { id ->
+                instanceById(id) { instance ->
+                    if (instance == null) {
+                        toastInstanceMissing()
+                    } else if (instance.state() == InstanceLifecycle.State.RUNNING) {
+                        openTerminal(instance)
+                    } else {
+                        launchInstance(instance)
+                    }
+                }
+            },
+            launch = { id ->
+                instanceById(id) { instance ->
+                    if (instance == null) toastInstanceMissing() else launchInstance(instance)
+                }
+            },
+            // 产品尚无独立的挂起恢复通道（InstancePowerController 不存在）；
+            // 挂起实例路由到实例详情页做管理，不在壳层发明新启动语义。
+            resume = { id -> openInstanceDetail(id) },
+            openInstance = { id -> openInstanceDetail(id) },
+            createInstance = { oe3Shell?.select(Oe3Tab.Distros) },
+            importArchive = { oe3ImportArchive() },
+            refresh = {
+                oe3InstancesRefreshingState.value = true
+                loadDashboardSnapshot(strict = false) { snapshot -> updateOe3Pages(snapshot) }
+            },
+            powerOff = { id ->
+                instanceById(id) { instance ->
+                    if (instance == null) toastInstanceMissing() else showPowerDialog(instance)
+                }
+            },
+            openDesktop = { id ->
+                instanceById(id) { instance ->
+                    if (instance == null) toastInstanceMissing() else launchDesktop(instance)
+                }
+            },
+            openLogs = { id -> openInstanceLogs(id) },
+            exportInstance = { id ->
+                instanceById(id) { instance ->
+                    if (instance == null) toastInstanceMissing() else exportStoppedInstance(instance)
+                }
+            },
+            deleteInstance = { id ->
+                instanceById(id) { instance ->
+                    if (instance == null) toastInstanceMissing() else confirmDeleteInstance(instance)
+                }
+            },
+        )
+    }
+
+    private val oe3HardwareActions by lazy {
+        HardwareActions(
+            refresh = { refreshOe3Hardware() },
+            requestAvfAuthorization = { showAvfAuthorizationWizard() },
+        )
+    }
+
+    private val oe3DistrosActions by lazy {
+        DistrosActions(
+            // 发行版 CTA 复用既有装配向导入口（旧壳 create_* 同一 target）。
+            install = { id -> launchCreationWizard(id) },
+            provisionUmlRootfs = { startUmlRootfsProvision() },
+        )
+    }
+
+    private val oe3ConfigNavigate: (ConfigRoute) -> Unit = { route -> navigateOe3Config(route) }
+
+    /** 配置目录的路由分发；目标全部是既有 Activity / 对话框 / SAF 通道。 */
+    private fun navigateOe3Config(route: ConfigRoute) {
+        when (val destination = route.destination) {
+            is ConfigDestination.SettingsSection ->
+                startActivity(SettingsSubActivity.intent(this, destination.section))
+            ConfigDestination.ThemeStudio -> oe3ThemeStudioOpen.value = true
+            ConfigDestination.SshManager ->
+                io.github.nyzeep.orchestella.ssh.SshManagerDialog.show(this)
+            ConfigDestination.PortForwarding -> openOe3PortForwarding()
+            ConfigDestination.Logs -> openRuntimeLogs()
+            ConfigDestination.Backup -> showOe3BackupDialog()
+            ConfigDestination.Import -> oe3ImportArchive()
+            ConfigDestination.Export -> chooseAndExportOe3Instance()
+            ConfigDestination.UpdateCheck, ConfigDestination.AboutPage ->
+                startActivity(Intent(this, AboutActivity::class.java))
+            ConfigDestination.Licenses -> showOe3LicensesDialog()
+        }
+    }
+
+    private fun persistOe3ConfigOptions(next: ConfigOptions) {
+        val previous = configPreferences.readOptions()
+        oe3ConfigState.value = oe3ConfigState.value?.copy(
+            options = configPreferences.writeOptions(previous, next),
+        )
+    }
+
+    // ==================== Oe3 数据供给（复用既有快照周期） ====================
+
+    /**
+     * Oe3 模式下 onCreate 需要的最小共享设施：与旧壳路径同一批对象
+     * （instanceStore / launchCoordinator / updateCenter / AVF 判定 /
+     * ConfigPreferences），全部沿用既有构造，不新增数据源。
+     */
+    private fun ensureSharedInfrastructure() {
+        if (!::instanceStore.isInitialized) {
+            instanceStore = InstanceLifecycle.FileStore(filesDir.toPath().resolve("instances"))
+            // 冷启动主线程卫生（Lane C）：孤儿回收在 executor 上执行。
+            operations.execute { reconcileOrphanInstances() }
+        }
+        if (!::launchCoordinator.isInitialized) {
+            launchCoordinator = buildLaunchCoordinator()
+        }
+        if (!::updateCenter.isInitialized) {
+            updateCenter = UpdateCoordinator.center(this)
+        }
+        if (avfReadiness == null) {
+            avfReadiness = AvfCapabilityEvaluator.evaluate(AvfHostFactsProbe.probe(this))
+            wizardModel = AvfAuthorizationWizardModel.fromAssessment(avfReadiness!!)
+        }
+        if (!::configPreferences.isInitialized) {
+            configPreferences = ConfigPreferences(SharedPreferencesConfigStore(this))
+        }
+    }
+
+    /**
+     * 快照到五页状态的唯一折算点。3 秒周期、onResume、拉手刷新共用；
+     * 每一页的输入都来自快照里已有的读数与既有判定，不做二次探测。
+     */
+    private fun updateOe3Pages(snapshot: DashboardSnapshot) {
+        val badge = currentBadge(DeviceCapabilityEvaluator.evaluate(deviceProfile()))
+        oe3HardwareProfile = snapshot.hardwareProfile
+        oe3Storage = StorageFacts.from(snapshot)
+
+        val primaryCard = snapshot.primary?.let {
+            buildInstanceUiModel(it, supportsDesktop = false, badge, snapshot.acceleratorLaneReady)
+        }
+        oe3DashboardState.value = DashboardUiState.from(
+            snapshot = snapshot,
+            card = primaryCard,
+            storage = oe3Storage,
+            engineLabel = badge,
+        )
+        val cards = snapshot.instances.map {
+            buildInstanceUiModel(it, supportsDesktop = false, badge, snapshot.acceleratorLaneReady)
+        }
+        oe3InstancesState.value = InstancesUiState.from(
+            cards = cards,
+            engineLabel = badge,
+            progress = InstancesProgressUi.of(oe3ProgressText.value, fraction = null),
+            isRefreshing = oe3InstancesRefreshingState.value,
+        )
+        refreshOe3HardwareState()
+        refreshOe3ConfigState()
+        oe3InstancesRefreshingState.value = false
+    }
+
+    private fun refreshOe3Hardware() {
+        operations.execute {
+            val facts = HostUiFacts.probe(this)
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                oe3HostUiFacts.value = facts
+                refreshOe3HardwareState()
+                Toast.makeText(this, "硬件遥测状态已刷新", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    /** 硬件页状态折算；事实缺失时模型层按「—」占位，不编造读数。 */
+    private fun refreshOe3HardwareState() {
+        val profile = oe3HardwareProfile ?: HostHardwareDetector.detect(this).also {
+            oe3HardwareProfile = it
+        }
+        val readiness = avfReadiness
+            ?: AvfCapabilityEvaluator.evaluate(AvfHostFactsProbe.probe(this)).also {
+                avfReadiness = it
+            }
+        val engines = HardwareEngineFacts(
+            avfStatus = readiness.status(),
+            avfReasons = readiness.reasons(),
+            qemuAvailable = DeviceCapabilityEvaluator.evaluate(deviceProfile())
+                .canCreateFullLinuxInstance(),
+            umlRunningWidth = UmlFaceStatusRegistry.runningWidth(),
+            umlChannelWired = UmlFaceStatusRegistry.channelWired(),
+        )
+        val facts = oe3HostUiFacts.value
+        val device = HardwareDeviceFacts(
+            model = listOf(Build.MANUFACTURER, Build.MODEL).filter { it.isNotBlank() }
+                .joinToString(" ").ifBlank { Build.MODEL },
+            androidRelease = Build.VERSION.RELEASE ?: "",
+            sdkInt = Build.VERSION.SDK_INT,
+            abis = Build.SUPPORTED_ABIS?.filter { it.isNotBlank() } ?: emptyList(),
+            socModel = if (Build.VERSION.SDK_INT >= 31) Build.SOC_MODEL?.takeIf { it.isNotBlank() } else null,
+            kernelVersion = System.getProperty("os.version")?.takeIf { it.isNotBlank() },
+            screenSpec = facts.screenSpec,
+            gpuRenderer = facts.gpuRenderer,
+            selinuxStatus = facts.selinuxStatus,
+        )
+        oe3HardwareState.value = HardwareUiState.from(
+            device = device,
+            hardware = profile,
+            storage = oe3Storage,
+            engines = engines,
+        )
+    }
+
+    private fun refreshOe3ConfigState() {
+        val pending = updateCenter.pending(BuildConfig.VERSION_NAME)
+        oe3ConfigState.value = ConfigScreenState(
+            versionName = BuildConfig.VERSION_NAME,
+            engineSummary = engineSummaryLine(),
+            updateAvailable = pending?.version(),
+            updateNote = pending?.summary(),
+            options = configPreferences.readOptions(),
+        )
+    }
+
+    /** 引擎与授权行的一句话判定（与 SettingsActivity 同源同文案）。 */
+    private fun engineSummaryLine(): String {
+        val readiness = avfReadiness
+            ?: AvfCapabilityEvaluator.evaluate(AvfHostFactsProbe.probe(this)).also {
+                avfReadiness = it
+            }
+        return when (readiness.status()) {
+            AvfCapabilityEvaluator.AvfStatus.READY -> getString(R.string.config_engine_ready)
+            AvfCapabilityEvaluator.AvfStatus.NEEDS_AUTHORIZATION ->
+                getString(R.string.config_engine_needs_authorization)
+            AvfCapabilityEvaluator.AvfStatus.MODE_UNSUPPORTED ->
+                getString(R.string.config_engine_mode_unsupported)
+            AvfCapabilityEvaluator.AvfStatus.MODE_UNKNOWN ->
+                getString(R.string.config_engine_mode_unknown)
+            AvfCapabilityEvaluator.AvfStatus.HIDDEN_API_BLOCKED ->
+                getString(R.string.config_engine_hidden_api_blocked)
+            AvfCapabilityEvaluator.AvfStatus.REFLECTION_UNAVAILABLE ->
+                getString(R.string.config_engine_reflection_unavailable)
+            AvfCapabilityEvaluator.AvfStatus.UNSUPPORTED ->
+                getString(R.string.config_engine_unsupported)
+            else -> getString(R.string.config_engine_unknown)
+        }
+    }
+
+    // ==================== Oe3 动作的既有入口粘合 ====================
+
+    /** 单实例异步读取：与快照任务共用 operations executor，不阻塞主线程。 */
+    private fun instanceById(id: String, onReady: (InstanceLifecycle.Instance?) -> Unit) {
+        operations.execute {
+            val loaded = try {
+                instanceStore.load(id)
+            } catch (_: Exception) {
+                null
+            }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                onReady(loaded)
+            }
+        }
+    }
+
+    private fun toastInstanceMissing() {
+        Toast.makeText(this, "实例不存在或已被删除", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun openInstanceDetail(id: String) {
+        startActivity(
+            Intent(this, InstanceDetailActivity::class.java)
+                .putExtra(InstanceDetailActivity.EXTRA_INSTANCE_ID, id),
+        )
+    }
+
+    /** 实例日志：运行中实例走 GUEST 通道，其余走 App 通道（旧壳同一语义）。 */
+    private fun openInstanceLogs(id: String) {
+        instanceById(id) { instance ->
+            startActivity(
+                Intent(this, LogViewerActivity::class.java).apply {
+                    putExtra(
+                        LogViewerActivity.EXTRA_KIND,
+                        if (instance?.state() == InstanceLifecycle.State.RUNNING) {
+                            LogViewerActivity.KIND_GUEST
+                        } else {
+                            LogViewerActivity.KIND_APP
+                        },
+                    )
+                    instance?.let { putExtra(LogViewerActivity.EXTRA_INSTANCE_ID, it.id()) }
+                },
+            )
+        }
+    }
+
+    private fun oe3ImportArchive() {
+        safImportLauncher.launch(arrayOf("application/zip", "application/octet-stream", "*/*"))
+    }
+
+    private fun chooseAndExportOe3Instance() {
+        operations.execute {
+            val instances = try {
+                instanceStore.list()
+            } catch (_: IOException) {
+                emptyList()
+            }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                when {
+                    instances.isEmpty() -> Toast.makeText(
+                        this, R.string.config_no_instances, Toast.LENGTH_SHORT,
+                    ).show()
+                    instances.size == 1 -> exportStoppedInstance(instances.first())
+                    else -> {
+                        val labels = instances
+                            .map { "${it.hostname()} · ${it.id()}" }
+                            .toTypedArray()
+                        androidx.appcompat.app.AlertDialog.Builder(this)
+                            .setTitle(R.string.config_choose_instance)
+                            .setItems(labels) { _, which ->
+                                exportStoppedInstance(instances[which])
+                            }
+                            .setNegativeButton(R.string.config_dialog_cancel, null)
+                            .show()
+                            .also { ThemeApplier.apply(it) }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun showOe3BackupDialog() {
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(R.string.config_backup_dialog_title)
+            .setMessage(R.string.config_backup_dialog_message)
+            .setItems(
+                arrayOf(
+                    getString(R.string.config_backup_export),
+                    getString(R.string.config_backup_import),
+                ),
+            ) { _, which ->
+                if (which == 0) chooseAndExportOe3Instance() else oe3ImportArchive()
+            }
+            .setNegativeButton(R.string.config_dialog_cancel, null)
+            .show()
+            .also { ThemeApplier.apply(it) }
+    }
+
+    private fun showOe3LicensesDialog() {
+        val notice = try {
+            assets.open("third-party-notices.txt").bufferedReader(Charsets.UTF_8).use { it.readText() }
+        } catch (_: IOException) {
+            getString(R.string.config_licenses_unavailable)
+        }
+        val padding = (20 * resources.displayMetrics.density).toInt()
+        val text = TextView(this).apply {
+            this.text = notice
+            setTextIsSelectable(true)
+            setPadding(padding, padding, padding, padding)
+        }
+        val scroll = android.widget.ScrollView(this).apply { addView(text) }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(R.string.config_licenses_title)
+            .setView(scroll)
+            .setPositiveButton(R.string.config_dialog_ok, null)
+            .show()
+            .also { ThemeApplier.apply(it) }
+    }
+
+    private fun openOe3PortForwarding() {
+        operations.execute {
+            val instances = try {
+                instanceStore.list()
+            } catch (_: IOException) {
+                emptyList()
+            }
+            val target = instances.firstOrNull { it.state() == InstanceLifecycle.State.RUNNING }
+                ?: instances.firstOrNull { it.id() == settingsManager.lastActiveInstanceId }
+                ?: instances.firstOrNull()
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (target == null) {
+                    Toast.makeText(this, R.string.config_no_instances, Toast.LENGTH_SHORT).show()
+                    return@runOnUiThread
+                }
+                openPortForwarding(target)
+            }
+        }
     }
 
     /**
@@ -1246,10 +1773,6 @@ class MainActivity : AppCompatActivity() {
     // boundary in the READY copy instead of promising.
     // -----------------------------------------------------------------------------------
 
-    /** The card's current render decision; mutated only on the UI thread. */
-    @Volatile
-    private var umlRootfsCardModel: UmlRootfsCardState.CardModel? = null
-
     /**
      * Bind the readiness card. Flag-off builds: the card stays GONE and no
      * listener is bound — zero entry. Flag-on builds: an off-main-thread
@@ -1429,9 +1952,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleLaunchIntent(intent: Intent?) {
-        // UI3-02: 占位壳层没有实例路由（instanceStore 未初始化）；显式忽略，
-        // 真实跳转由 UI3-12 接入页面后恢复。
-        if (oe3Enabled) return
+        // UI3-12：Oe3 恢复 action_launch_instance_id（旧壳同语义：读实例并直接
+        // 启动）；instanceStore 未初始化的守卫保留，避免装配槽未就绪时崩溃。
         val targetLaunchId = intent?.getStringExtra("action_launch_instance_id")
         if (targetLaunchId != null && ::instanceStore.isInitialized) {
             intent.removeExtra("action_launch_instance_id")
@@ -1468,6 +1990,13 @@ class MainActivity : AppCompatActivity() {
      */
     private val surfaceOpacityListener =
         SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            // UI3-12：ThemeStore 的呈现偏好（纯黑/玻璃/底栏/字体/主题）变化
+            // 经这里回流壳层快照，使壳内主题工坊做的改动即时全局生效。
+            if (oe3Enabled) {
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) refreshOe3ShellSnapshot()
+                }
+            }
             if (key == ThemeStore.KEY_UI_SURFACE_OPACITY) {
                 runOnUiThread {
                     if (!isFinishing && !isDestroyed) applyThemeToDashboard()
@@ -1489,9 +2018,28 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // UI3-02: the Compose shell owns the window; skip the legacy XML
-        // repaint/refresh chain instead of painting hidden views.
-        if (oe3Enabled) return
+        // UI3-12：Compose 壳层拥有窗口，但快照周期照常驱动五页数据；只跳过
+        // 旧视图的重涂链。Theme Studio 在壳内做的偏好改动随快照周期生效。
+        if (oe3Enabled) {
+            refreshOe3ShellSnapshot()
+            if (::updateCenter.isInitialized) {
+                refreshOe3ConfigState()
+                io.github.nyzeep.orchestella.update.UpdateCoordinator.checkInBackground(
+                    this, BuildConfig.VERSION_NAME,
+                ) {
+                    if (!isFinishing && !isDestroyed) refreshOe3ConfigState()
+                }
+            }
+            if (::instanceStore.isInitialized) {
+                avfReadiness = AvfCapabilityEvaluator.evaluate(AvfHostFactsProbe.probe(this))
+                operations.execute { reconcileOrphanInstances() }
+                refreshOe3Hardware()
+                loadDashboardSnapshot(strict = false) { snapshot -> updateOe3Pages(snapshot) }
+            }
+            dashboardHandler.removeCallbacks(refreshDashboard)
+            dashboardHandler.post(refreshDashboard)
+            return
+        }
         if (::themeStore.isInitialized) {
             applyThemeToDashboard()
         }
@@ -2054,10 +2602,15 @@ class MainActivity : AppCompatActivity() {
             }
     }
 
-    /** createStatus 文案写入的统一入口：写入并同步横幅可见性。 */
+    /** createStatus 文案写入的统一入口：写入并同步横幅可见性。UI3-12 起
+     *  Compose 壳层同步消费同一段文字（实例页进度横幅），旧视图仅在已装配
+     *  时写入——Oe3 模式不持旧视图引用。 */
     private fun setCreateStatusLine(text: CharSequence) {
-        createStatus.text = text
-        syncCreateProgressBanner()
+        oe3ProgressText.value = text.toString()
+        if (::createStatus.isInitialized) {
+            createStatus.text = text
+            syncCreateProgressBanner()
+        }
     }
 
     private fun clearRunningAnimators() {
@@ -2087,6 +2640,18 @@ class MainActivity : AppCompatActivity() {
      */
     private fun showInstances() {
         loadDashboardSnapshot(strict = true) { snapshot -> renderInstances(snapshot) }
+    }
+
+    /**
+     * 实例列表在共享流程（导入/克隆/删除/改密/硬件改配）后的刷新出口：
+     * Compose 壳层走快照周期，旧壳走严格列表渲染。两条路径都不重写动作本身。
+     */
+    private fun refreshInstanceListAfterMutation() {
+        if (oe3Enabled) {
+            loadDashboardSnapshot(strict = false) { snapshot -> updateOe3Pages(snapshot) }
+        } else {
+            showInstances()
+        }
     }
 
     /**
@@ -2478,7 +3043,7 @@ class MainActivity : AppCompatActivity() {
                             )
                             runOnUiThread {
                                 Toast.makeText(this@MainActivity, result.noticeMessage, Toast.LENGTH_SHORT).show()
-                                showInstances()
+                                refreshInstanceListAfterMutation()
                             }
                         } catch (e: Exception) {
                             runOnUiThread {
@@ -2540,7 +3105,7 @@ class MainActivity : AppCompatActivity() {
                                 getString(R.string.action_clone_success, cloned.id()),
                                 Toast.LENGTH_SHORT
                             ).show()
-                            showInstances()
+                            refreshInstanceListAfterMutation()
                         }
                     } catch (e: Exception) {
                         runOnUiThread {
@@ -2577,7 +3142,7 @@ class MainActivity : AppCompatActivity() {
                                 getString(R.string.action_delete_success, instance.id()),
                                 Toast.LENGTH_SHORT
                             ).show()
-                            showInstances()
+                            refreshInstanceListAfterMutation()
                         }
                     } catch (e: Exception) {
                         runOnUiThread {
@@ -2670,7 +3235,12 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this@MainActivity, createStatus.text, Toast.LENGTH_LONG).show()
         }
         override fun showInstances() {
-            this@MainActivity.showInstances()
+            // UI3-12：Compose 壳层走快照周期刷新，不触碰旧视图列表。
+            if (oe3Enabled) {
+                loadDashboardSnapshot(strict = false) { snapshot -> updateOe3Pages(snapshot) }
+            } else {
+                this@MainActivity.showInstances()
+            }
         }
     }
 
@@ -2690,6 +3260,82 @@ class MainActivity : AppCompatActivity() {
             android.util.Log.w("OrchestellaLaunch", "launch failed type=$failureType")
         }
     }
+
+    /**
+     * 启动编排的唯一构造点（onCreate 旧壳路径与 Oe3 路径共用）：Android 侧
+     * 启动件（前台服务、AVF/QEMU/PVM 启动器、事实源、资源串）在此绑定，
+     * 编排决策与世代门卫全部在 InstanceLaunchCoordinator 内。
+     */
+    private fun buildLaunchCoordinator(): InstanceLaunchCoordinator = InstanceLaunchCoordinator(
+        store = instanceStore,
+        settings = launchSettings,
+        foreground = launchForeground,
+        ui = launchFeedback,
+        copy = launchCopy,
+        diagnostics = launchDiagnostics,
+        cleanupBridge = InstanceLaunchCoordinator.CleanupBridge { instanceId ->
+            QemuInstanceLauncher.takeLastCleanupResult(instanceId)
+        },
+        filesDir = filesDir,
+        performanceBadge = { currentBadge(DeviceCapabilityEvaluator.evaluate(deviceProfile())) },
+        preferAvf = BooleanSupplier {
+            avfReadiness?.status() == AvfCapabilityEvaluator.AvfStatus.READY
+        },
+        avfLaunch = InstanceStrategyLauncher.AvfLaunch { params ->
+            AvfInstanceLauncher(this).launch(params)
+        },
+        qemuLaunch = InstanceStrategyLauncher.QemuLaunch { params ->
+            QemuInstanceLauncher(this).launch(params)
+        },
+        customVmBackend = InstanceLaunchCoordinator.CustomVmBackend { instanceId ->
+            AcceleratorVmLauncher(
+                "accel-" + instanceId,
+                filesDir.resolve("accelerator-image").resolve("kernel").toPath(),
+                filesDir.resolve("accelerator-image").resolve("initrd").toPath(),
+                filesDir.resolve("accelerator-image").resolve("rootfs.ext4").toPath(),
+                AcceleratorLaunchDispatcher.ACCEL_REQUEST.ramMiB,
+            ) {
+                AcceleratorVmLauncher.engine(
+                    AvfVirtualMachineEngine(
+                        ReflectiveAvfVirtualMachineApi(
+                            this, classLoader, AvfHiddenApiExemption::installOnce,
+                        ),
+                    ),
+                )
+            }
+        },
+        pvmPayloadBackend = InstanceLaunchCoordinator.PvmPayloadBackend { instanceId ->
+            // Built only when the verdict selected PVM_PAYLOAD,
+            // which already implies the manifest parsed. An
+            // absent payload at that point is a load failure,
+            // never a silent QEMU-only run.
+            PvmPayloadLaneStarter.createIfInstalled(
+                this,
+                "accel-pvm-" + instanceId,
+                AcceleratorLaunchDispatcher.GUEST_COMPILER_TRIPLE,
+                AcceleratorLaunchDispatcher.PAYLOAD_READY_TIMEOUT_MS,
+                AcceleratorLaunchDispatcher.STOP_GRACE_MS,
+            ).orElseThrow {
+                LaneStartException(PvmPayloadLaneStarter.PAYLOAD_LOAD_FAILED)
+            }
+        },
+        factsSource = InstanceLaunchCoordinator.FactsSource {
+            AndroidAcceleratorFactProvider.create(this)
+        },
+        payloadManifestSource = InstanceLaunchCoordinator.PayloadManifestSource {
+            AndroidAcceleratorFactProvider.readPayloadManifest(applicationContext)
+        },
+        laneEventSink = LaneEventSink { event ->
+            android.util.Log.i(
+                "OrchestellaAccelerator",
+                "${event.name()} ${event.lane()} ${event.code()} ${event.durationMs()}ms",
+            )
+        },
+        laneClock = LaneClock.system(),
+        clock = Clock.systemUTC(),
+        orphanReconciler = Runnable { reconcileOrphanInstances() },
+        umlFaceLane = umlFaceRideAlong,
+    )
 
     private fun launchInstance(instance: InstanceLifecycle.Instance) {
         // 协同落点（2026-11-07）：通知权限已在首帧后请求过（requestNotificationPermissionAfterFirstFrame），
@@ -2778,7 +3424,7 @@ class MainActivity : AppCompatActivity() {
                         controller.updateGuestPassword(instance.id(), newPass)
                         runOnUiThread {
                             Toast.makeText(this, R.string.credentials_updated, Toast.LENGTH_SHORT).show()
-                            showInstances()
+                            refreshInstanceListAfterMutation()
                         }
                     } catch (e: Exception) {
                         runOnUiThread {
@@ -2799,3 +3445,15 @@ class MainActivity : AppCompatActivity() {
             .show().also { ThemeApplier.apply(it) }
     }
 }
+
+/**
+ * Theme Studio 呈现偏好的壳层快照（UI3-12）：MainActivity 从 ThemeStore 读出
+ * 后一次性传给 [Oe3App]，Oe3App 保持状态无知。字段与 ThemeStore 的四个
+ * UI3-13 键一一对应；值域归一化在壳层完成（未知值回落默认）。
+ */
+private data class Oe3ShellPrefs(
+    val pureBlack: Boolean = false,
+    val glassLevel: Oe3GlassLevel = Oe3GlassLevel.None,
+    val navStyle: Oe3NavStyle = Oe3NavStyle.Floating,
+    val monoBody: Boolean = false,
+)

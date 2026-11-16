@@ -52,6 +52,7 @@ fun Oe3App(
     glassEnabled: Boolean = true,
     navStyle: Oe3NavStyle = Oe3NavStyle.Floating,
     monoBody: Boolean = false,
+    pages: Oe3Pages? = null,
 ) {
     Oe3Theme(
         theme = theme,

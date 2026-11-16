@@ -18,11 +18,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Card
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
+import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Sizes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
@@ -32,15 +34,22 @@ import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
  * Fade-only page container (ticket UI3-02 §4): no horizontal swipe, no shared
  * element, and the duration/easing comes from the Oe3 motion token so reduced
  * motion collapses it to 0ms.
+ *
+ * UI3-12: [pages] carries the real screens wired by the host activity; `null`
+ * keeps the placeholder page so previews and goldens render the bare shell.
+ * The bar reserve the pages must keep clear of is published through
+ * [LocalOe3PageBottomPadding], derived from the active nav geometry.
  */
 @Composable
 fun Oe3Pager(
     selected: Oe3Tab,
     modifier: Modifier = Modifier,
+    navStyle: Oe3NavStyle = Oe3NavStyle.Floating,
+    pages: Oe3Pages? = null,
 ) {
     val fade = Oe3ThemeValues.motion.pageFade
     val systemBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    val bottomReserve = Oe3Sizes.navBar + Oe3Sizes.navBottomInset(systemBottom)
+    val bottomReserve = pageBottomReserve(navStyle, systemBottom)
 
     AnimatedContent(
         targetState = selected,
@@ -51,7 +60,14 @@ fun Oe3Pager(
         },
         label = "oe3Pager",
     ) { tab ->
-        Oe3Placeholder(title = tab.label, bottomReserve = bottomReserve)
+        CompositionLocalProvider(LocalOe3PageBottomPadding provides bottomReserve) {
+            val page = pages?.slot(tab)
+            if (page != null) {
+                page()
+            } else {
+                Oe3Placeholder(title = tab.label, bottomReserve = bottomReserve)
+            }
+        }
     }
 }
 

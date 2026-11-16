@@ -56,6 +56,7 @@ import io.github.nyzeep.orchestella.ui.oe3.components.Oe3EmptyState
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3SectionHeader
 import io.github.nyzeep.orchestella.ui.oe3.components.oe3Color
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3DistroIcons
+import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icon
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3IconTint
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icons
@@ -128,7 +129,7 @@ fun InstancesScreen(
                 start = Oe3Spacing.pageInset,
                 end = Oe3Spacing.pageInset,
                 top = Oe3Spacing.xl,
-                bottom = Oe3Spacing.contentBottom,
+                bottom = LocalOe3PageBottomPadding.current,
             ),
         ) {
             item(key = "instances:header") {

@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.nyzeep.orchestella.R
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Button
+import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3ButtonStyle
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Card
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Divider
@@ -98,7 +99,7 @@ fun HardwareScreen(
             .background(colors.background.oe3Color())
             .verticalScroll(rememberScrollState())
             .padding(horizontal = Oe3Spacing.pageInset)
-            .padding(top = Oe3Spacing.xl, bottom = Oe3Spacing.contentBottom)
+            .padding(top = Oe3Spacing.xl, bottom = LocalOe3PageBottomPadding.current)
             .testTag("hardware:screen"),
     ) {
         Text(
