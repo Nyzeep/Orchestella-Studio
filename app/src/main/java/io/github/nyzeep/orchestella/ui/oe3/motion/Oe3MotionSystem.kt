@@ -18,9 +18,6 @@ import androidx.compose.ui.platform.LocalContext
  */
 object Oe3MotionSystem {
 
-    /** Mirrors [Settings.Global.ANIMATOR_DURATION_SCALE]. */
-    const val SETTING_ANIMATOR_DURATION_SCALE = "animator_duration_scale"
-
     /** The scale the system reports when the setting is absent or unreadable. */
     const val DEFAULT_SCALE = 1f
 

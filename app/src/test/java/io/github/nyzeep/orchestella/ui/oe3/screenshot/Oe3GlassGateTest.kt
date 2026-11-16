@@ -87,8 +87,11 @@ class Oe3GlassGateTest {
             1,
             COUNT.compile(text, "hazeChild("),
         )
-        // Haze 1.x API only: the 2.x entry points and any nested source marker
-        // are structural defects, not style issues.
+        // This round standardizes on the 1.x `haze`/`hazeChild` pair (ticket
+        // wording). `hazeSource`/`hazeEffect` are the renamed 2.x-style entry
+        // points (already present as deprecated aliases late in 1.6.x); they
+        // stay forbidden until the Haze upgrade ticket lands and rewires the
+        // gate. Any nested source marker is a structural defect, not style.
         assertEquals(0, COUNT.compile(text, "hazeSource("))
         assertEquals(0, COUNT.compile(text, "hazeEffect("))
         assertEquals(0, COUNT.compile(text, "Modifier.blur("))

@@ -13,6 +13,7 @@ import androidx.compose.ui.test.onRoot
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.captureRoboImage
 import io.github.nyzeep.orchestella.ui.oe3.glass.LocalOe3GlassEnabled
+import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3GlassLevel
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3Theme
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.shell.Oe3Tab
@@ -70,7 +71,7 @@ class Oe3NavBarScreenshotTest {
 private fun Oe3NavBarFallbackBoard(theme: AppTheme) {
     Oe3Theme(
         theme = theme,
-        glassLevel = io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3GlassLevel.Standard,
+        glassLevel = Oe3GlassLevel.Standard,
         reduceMotion = true,
     ) {
         CompositionLocalProvider(LocalOe3GlassEnabled provides false) {

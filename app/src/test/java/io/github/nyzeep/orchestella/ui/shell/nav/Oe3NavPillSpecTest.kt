@@ -55,6 +55,9 @@ class Oe3NavPillSpecTest {
     fun thePressSpringKeepsTheDocumentedDampingAndTheNominalQuarterSecond() {
         val spring = Oe3NavPillSpec.pressSpring(Oe3Motion.standard())
         assertEquals(0.85f, spring.dampingRatio, 0.0001f)
+        // The ≈250ms nominal maps to StiffnessMedium; anchor the choice so a
+        // silent stiffness change cannot drift the press feel away from spec.
+        assertEquals(Spring.StiffnessMedium, spring.stiffness, 0.0001f)
         // ≈250ms nominal; the tokens' press duration stays the design source.
         assertEquals(250, Oe3Motion.standard().press.durationMillis)
     }

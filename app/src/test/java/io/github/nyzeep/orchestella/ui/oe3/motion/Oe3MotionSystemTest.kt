@@ -42,9 +42,4 @@ class Oe3MotionSystemTest {
         // Negative scales are corrupt data, not "slower motion": treat as default.
         assertEquals(1f, Oe3MotionSystem.parseScale("-1"), 0.0001f)
     }
-
-    @Test
-    fun theSettingKeyMatchesTheFrameworkConstant() {
-        assertEquals("animator_duration_scale", Oe3MotionSystem.SETTING_ANIMATOR_DURATION_SCALE)
-    }
 }
