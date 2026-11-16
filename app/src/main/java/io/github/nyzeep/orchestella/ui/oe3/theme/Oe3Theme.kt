@@ -14,6 +14,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3ColorTokens
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Colors
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Glass
@@ -46,6 +48,15 @@ val LocalOe3Motion = staticCompositionLocalOf { Oe3Motion.standard() }
 val LocalOe3Glass = staticCompositionLocalOf<Oe3GlassTokens> {
     error("Oe3 components must be composed inside Oe3Theme")
 }
+
+/**
+ * The active surface radius, or null when the fixed Oe3 ladder is in use.
+ *
+ * Theme Studio passes the user's 8–24dp choice here so its live preview and
+ * grouped cards can follow it. The primitive components keep their documented
+ * ladder; this local only feeds surfaces that opt into the preference.
+ */
+val LocalOe3CornerRadius = staticCompositionLocalOf<Dp?> { null }
 
 val LocalOe3ThemeInfo = staticCompositionLocalOf {
     Oe3ThemeInfo(
@@ -114,13 +125,27 @@ object Oe3ThemeScheme {
         )
     }
 
-    fun shapes(): Shapes = Shapes(
-        extraSmall = RoundedCornerShape(Oe3Shapes.xs),
-        small = RoundedCornerShape(Oe3Shapes.sm),
-        medium = RoundedCornerShape(Oe3Shapes.md),
-        large = RoundedCornerShape(Oe3Shapes.lg),
-        extraLarge = RoundedCornerShape(Oe3Shapes.xl),
-    )
+    fun shapes(cornerRadius: Dp? = null): Shapes = if (cornerRadius == null) {
+        Shapes(
+            extraSmall = RoundedCornerShape(Oe3Shapes.xs),
+            small = RoundedCornerShape(Oe3Shapes.sm),
+            medium = RoundedCornerShape(Oe3Shapes.md),
+            large = RoundedCornerShape(Oe3Shapes.lg),
+            extraLarge = RoundedCornerShape(Oe3Shapes.xl),
+        )
+    } else {
+        // One user choice replaces the visual ladder; the capsule shapes
+        // (buttons, nav pills) stay capsules because they are not corner
+        // radii. Only Material surfaces read this projection.
+        val shape = RoundedCornerShape(cornerRadius)
+        Shapes(
+            extraSmall = shape,
+            small = shape,
+            medium = shape,
+            large = shape,
+            extraLarge = shape,
+        )
+    }
 
     fun typography(): Typography = Oe3Typography.materialTypography()
 }
@@ -139,9 +164,11 @@ object Oe3ThemeScheme {
  * pre-multiplies its own scale, so passing the same override into both layers
  * would scale that subtree twice.
  *
- * Corner radii are the fixed Oe3 ladder, not the legacy control-corner
- * preference. Theme Studio's radius choice needs an explicit shape input when
- * UI3-09 lands; keeping it out of this ticket avoids a half-wired preference.
+ * Corner radii default to the fixed Oe3 ladder. Theme Studio can pass
+ * [cornerRadiusDp] (8–24) to project the user's choice into Material surfaces
+ * and to expose [LocalOe3CornerRadius] to surfaces that opt into it; colors,
+ * typography and text scaling keep their existing meaning. An explicit
+ * [shapes] argument wins over the derived projection.
  */
 @Composable
 fun Oe3Theme(
@@ -150,6 +177,8 @@ fun Oe3Theme(
     glassLevel: Oe3GlassLevel = Oe3GlassLevel.None,
     textScale: Float = 1f,
     reduceMotion: Boolean = false,
+    cornerRadiusDp: Int? = null,
+    shapes: Shapes? = null,
     content: @Composable () -> Unit,
 ) {
     val colors = remember(theme, pureBlack) { Oe3Colors.resolve(theme, pureBlack) }
@@ -162,7 +191,12 @@ fun Oe3Theme(
     val scheme = remember(colors, theme.isDark) {
         Oe3ThemeScheme.colorScheme(colors, theme.isDark)
     }
-    val shapes = remember { Oe3ThemeScheme.shapes() }
+    val cornerRadius = remember(cornerRadiusDp) {
+        cornerRadiusDp?.coerceIn(0, 24)?.dp
+    }
+    val resolvedShapes = remember(shapes, cornerRadius) {
+        shapes ?: Oe3ThemeScheme.shapes(cornerRadius)
+    }
     val typography = remember { Oe3ThemeScheme.typography() }
 
     val density = LocalDensity.current
@@ -183,11 +217,12 @@ fun Oe3Theme(
         LocalOe3Colors provides colors,
         LocalOe3Motion provides motion,
         LocalOe3Glass provides glass,
+        LocalOe3CornerRadius provides cornerRadius,
         LocalOe3ThemeInfo provides info,
     ) {
         MaterialTheme(
             colorScheme = scheme,
-            shapes = shapes,
+            shapes = resolvedShapes,
             typography = typography,
             content = content,
         )
