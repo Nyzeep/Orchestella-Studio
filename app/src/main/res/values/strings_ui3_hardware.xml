@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  硬件页（UI3-07）文案。页面工单各自持有 strings_ui3_<area>.xml，
+  避免与 res/values/strings.xml 的独占所有权冲突（spec §5）。
+-->
+<resources>
+    <string name="ui3_hardware_title">硬件</string>
+    <string name="ui3_hardware_refresh">刷新</string>
+    <string name="ui3_hardware_value_placeholder">—</string>
+
+    <string name="ui3_hardware_summary_platform">Android %1$s · API %2$d · %3$s · %4$d 核</string>
+    <string name="ui3_hardware_summary_ram">内存</string>
+    <string name="ui3_hardware_summary_storage">存储余量</string>
+    <string name="ui3_hardware_summary_battery">电量</string>
+    <string name="ui3_hardware_summary_temperature">温度</string>
+
+    <string name="ui3_hardware_section_gauges">内存 · 存储 · 电池</string>
+    <string name="ui3_hardware_ring_memory">内存</string>
+    <string name="ui3_hardware_ring_storage">存储</string>
+    <string name="ui3_hardware_ring_battery">电池</string>
+    <string name="ui3_hardware_ring_description">%1$s：%2$s，%3$s</string>
+    <string name="ui3_hardware_ring_unavailable">%1$s：读数不可用</string>
+
+    <string name="ui3_hardware_section_engines">引擎就绪</string>
+    <string name="ui3_hardware_engine_avf">AVF 硬件虚拟化</string>
+    <string name="ui3_hardware_engine_avf_subtitle">%1$s · %2$s</string>
+    <string name="ui3_hardware_engine_qemu">QEMU 软件模拟</string>
+    <string name="ui3_hardware_engine_uml">UML 编译面</string>
+
+    <string name="ui3_hardware_avf_ready">预检通过</string>
+    <string name="ui3_hardware_avf_ready_reason">平台声明与两项权限满足，Guest 待启动验证</string>
+    <string name="ui3_hardware_avf_needs_authorization">待授权</string>
+    <string name="ui3_hardware_avf_needs_authorization_reason">完成授权向导后重新检测</string>
+    <string name="ui3_hardware_avf_interface_blocked">接口受限</string>
+    <string name="ui3_hardware_avf_interface_blocked_reason">系统接口不可读，授权不会改变该状态</string>
+    <string name="ui3_hardware_avf_unsupported">不支持</string>
+    <string name="ui3_hardware_avf_unsupported_reason">设备或系统不满足硬件虚拟化条件</string>
+    <string name="ui3_hardware_avf_unknown">状态未知</string>
+    <string name="ui3_hardware_avf_unknown_reason">无法读取虚拟化模式，暂不判定</string>
+    <string name="ui3_hardware_avf_authorize">授权</string>
+
+    <string name="ui3_hardware_qemu_available">可用</string>
+    <string name="ui3_hardware_qemu_unavailable">不可用</string>
+
+    <string name="ui3_hardware_uml_running">运行中</string>
+    <string name="ui3_hardware_uml_idle">未启用</string>
+    <string name="ui3_hardware_uml_wired">编译通道已接线</string>
+    <string name="ui3_hardware_uml_unwired">编译通道未接线</string>
+    <string name="ui3_hardware_uml_running_summary">%1$s · %2$s · 宽度 %3$d</string>
+
+    <string name="ui3_hardware_details_action">完整参数</string>
+    <string name="ui3_hardware_details_title">完整参数</string>
+    <string name="ui3_hardware_details_group_chip">芯片</string>
+    <string name="ui3_hardware_details_group_system">系统</string>
+    <string name="ui3_hardware_details_group_display">显示</string>
+    <string name="ui3_hardware_details_group_memory">内存与存储</string>
+    <string name="ui3_hardware_details_group_engines">引擎</string>
+
+    <string name="ui3_hardware_detail_soc">SoC</string>
+    <string name="ui3_hardware_detail_abi">ABI</string>
+    <string name="ui3_hardware_detail_cores">CPU 核心数</string>
+    <string name="ui3_hardware_detail_android">Android 版本</string>
+    <string name="ui3_hardware_detail_android_value">Android %1$s (API %2$s)</string>
+    <string name="ui3_hardware_detail_kernel">内核</string>
+    <string name="ui3_hardware_detail_selinux">SELinux</string>
+    <string name="ui3_hardware_detail_screen">屏幕</string>
+    <string name="ui3_hardware_detail_gpu">GPU</string>
+    <string name="ui3_hardware_detail_ram_total">内存总量</string>
+    <string name="ui3_hardware_detail_ram_available">内存可用</string>
+    <string name="ui3_hardware_detail_storage_total">存储总量</string>
+    <string name="ui3_hardware_detail_storage_free">存储余量</string>
+    <string name="ui3_hardware_detail_avf_verdict">AVF 判定</string>
+    <string name="ui3_hardware_detail_avf_mode">AVF 模式</string>
+    <string name="ui3_hardware_detail_avf_reasons">AVF 说明</string>
+    <string name="ui3_hardware_detail_qemu">QEMU</string>
+    <string name="ui3_hardware_detail_uml">UML</string>
+
+    <string name="ui3_hardware_probe_failed_title">硬件探针不可用</string>
+    <string name="ui3_hardware_probe_failed_body">无法读取宿主机硬件事实；本页不显示推测值。</string>
+    <string name="ui3_hardware_retry">重试</string>
+</resources>
