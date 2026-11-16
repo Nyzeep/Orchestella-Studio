@@ -44,6 +44,7 @@ app/src/test/screenshots/
   oe3/shell/light-130.png          shell chrome / light / 130%
   oe3/shell/pure-black-100.png     shell chrome / pure black / 100%
   oe3/shell/pure-black-130.png     shell chrome / pure black / 130%
+  oe3/nav/fallback-<mode>.png      nav bar glass fallback / α0.96 + top scrim (UI3-10)
   oe3/screens/theme-studio-<mode>-<scale>.png   UI3-09 theme studio, 6 files (own test)
   oe3/screens/theme-terminal-<mode>-100.png     UI3-09 terminal sketch, 2 files (own test)
   ui3/dashboard/overview-<mode>.png     UI3-05 workstation page (UI3-11A)
@@ -77,6 +78,16 @@ Ownership notes (UI3-11A):
   window is the accepted fallback (dashboard does this); prefer a `testTag`
   when the page offers one.
 
+Ownership notes (UI3-10):
+
+- `oe3/nav/` goldens pin the nav bar's glass fallback draw path (the solid
+  α0.96 surface with the 24dp top scrim that renders when backdrop blur is
+  unavailable or the layer is switched off). Robolectric does not render blur,
+  so the golden board forces the fallback deterministically: `Oe3Theme` at
+  `glassLevel = Standard` with `LocalOe3GlassEnabled = false`. The default
+  `None` level (solid, scrim-free) stays covered by the UI3-11A shell goldens;
+  the real blur on API 31+ is a device-stage review item.
+
 ## Adding a golden
 
 1. Add a test next to the surface it pins: shell and token boards in
@@ -100,10 +111,11 @@ Ownership notes (UI3-11A):
    ```
 
 5. Keep new golden batches at 40 files or fewer per PR (ticket limit). The
-   current inventory is 35 goldens: 8 foundation (tokens + icons), 6 shell
-   (UI3-11A), 6 config/dashboard/hardware pages (UI3-11A), 8 theme studio +
-   terminal (UI3-09, owner: UI3-13), 4 instances (UI3-06) and 3 distros
-   (UI3-08). The UI3-11A batch adds 12 files (6 shell + 6 pages).
+   current inventory is 37 goldens: 8 foundation (tokens + icons), 6 shell
+   (UI3-11A), 2 nav glass fallback (UI3-10), 6 config/dashboard/hardware pages
+   (UI3-11A), 8 theme studio + terminal (UI3-09, owner: UI3-13), 4 instances
+   (UI3-06) and 3 distros (UI3-08). The UI3-11A batch adds 12 files (6 shell +
+   6 pages); the UI3-10 batch adds 2.
 
 ## Why these settings
 
