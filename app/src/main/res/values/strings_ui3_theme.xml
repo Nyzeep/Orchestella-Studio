@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Theme Studio (UI3-09) copy. Page tickets own their strings_ui3_<area>.xml so
+  strings.xml stays UI3-04's file (spec §5). Terminal command output itself is
+  English shell text and lives with the fake shell, not here.
+-->
+<resources>
+    <string name="ui3_theme_title">外观与主题</string>
+    <string name="ui3_theme_meta">所见即所得 · 41 套预设 · 终端实时预览</string>
+
+    <!-- 1. 主页预览 -->
+    <string name="ui3_theme_section_preview">主页预览</string>
+    <string name="ui3_theme_home_preview_desc">主页预览：%1$s</string>
+    <string name="ui3_theme_preview_caption">168dp · 9:19.5 · 实时</string>
+
+    <!-- 2. 主题模式 -->
+    <string name="ui3_theme_section_mode">主题模式</string>
+    <string name="ui3_theme_mode_auto">自动（跟随系统）</string>
+    <string name="ui3_theme_mode_light">浅色</string>
+    <string name="ui3_theme_mode_dark">深色</string>
+    <string name="ui3_theme_mode_fixed">固定（主题自带）</string>
+    <string name="ui3_theme_mode_fixed_note">当前主题自带明暗，切换到普通主题后可手动选择。</string>
+
+    <!-- 3. 纯黑模式 -->
+    <string name="ui3_theme_section_pure_black">纯黑模式</string>
+    <string name="ui3_theme_pure_standard">标准</string>
+    <string name="ui3_theme_pure_black">纯黑</string>
+    <string name="ui3_theme_pure_black_note">仅深色主题生效</string>
+    <string name="ui3_theme_pure_black_preview">仅本页预览；偏好键由壳层统一接管后持久化</string>
+
+    <!-- 4. 主题预设 -->
+    <string name="ui3_theme_section_presets">主题预设</string>
+    <string name="ui3_theme_presets_count">%1$d 套</string>
+    <string name="ui3_theme_preset_current">当前</string>
+    <string name="ui3_theme_preset_fixed">固定</string>
+    <string name="ui3_theme_preset_dark">暗色</string>
+    <string name="ui3_theme_preset_light">浅色</string>
+
+    <!-- 5. 主色与自定义槽 -->
+    <string name="ui3_theme_section_accent">主色与自定义槽</string>
+    <string name="ui3_theme_accent_title">主色</string>
+    <string name="ui3_theme_accent_follow">跟随主题</string>
+    <string name="ui3_theme_slot">自定义 %1$d</string>
+    <string name="ui3_theme_slot_unset">未设置</string>
+    <string name="ui3_theme_slot_edit">编辑</string>
+    <string name="ui3_theme_slot_current">使用中</string>
+    <string name="ui3_theme_accent_desc">主色 %1$s</string>
+
+    <!-- 6. 底栏样式 -->
+    <string name="ui3_theme_section_nav">底栏样式</string>
+    <string name="ui3_theme_nav_floating">悬浮（默认）</string>
+    <string name="ui3_theme_nav_fixed">固定</string>
+    <string name="ui3_theme_preview_only">预览 · 壳层接线后生效</string>
+
+    <!-- 7. 液态玻璃 -->
+    <string name="ui3_theme_section_glass">液态玻璃</string>
+    <string name="ui3_theme_glass_none">无</string>
+    <string name="ui3_theme_glass_standard">标准</string>
+    <string name="ui3_theme_glass_ultra">极致</string>
+    <string name="ui3_theme_glass_note">静态示意；Haze 渲染由 UI3-10/12 接线</string>
+
+    <!-- 8. 圆角 -->
+    <string name="ui3_theme_section_corner">圆角</string>
+    <string name="ui3_theme_corner_value">%1$d dp</string>
+
+    <!-- 9. 字体 -->
+    <string name="ui3_theme_section_font">字体</string>
+    <string name="ui3_theme_font_system">系统</string>
+    <string name="ui3_theme_font_mono">等宽</string>
+    <string name="ui3_theme_font_imported">导入</string>
+    <string name="ui3_theme_font_import_hint">选择字体文件（记录名称；字体加载由壳层接线）</string>
+    <string name="ui3_theme_font_imported_value">已选择：%1$s（预览仍用系统字体）</string>
+    <string name="ui3_theme_font_note">系统/等宽影响本页预览；全局字体由壳层接线</string>
+
+    <!-- 10. 文本缩放 -->
+    <string name="ui3_theme_section_text_scale">文本缩放</string>
+    <string name="ui3_theme_text_follow">跟随系统</string>
+    <string name="ui3_theme_text_custom">自定义</string>
+    <string name="ui3_theme_text_percent">%1$d%%</string>
+    <string name="ui3_theme_text_slider_desc">应用内字号 %1$d%%</string>
+
+    <!-- 11. 壁纸与表面不透明度 -->
+    <string name="ui3_theme_section_wallpaper">壁纸与表面不透明度</string>
+    <string name="ui3_theme_wallpaper_title">壁纸</string>
+    <string name="ui3_theme_wallpaper_pick">选择壁纸</string>
+    <string name="ui3_theme_wallpaper_clear">清除</string>
+    <string name="ui3_theme_wallpaper_none">无壁纸</string>
+    <string name="ui3_theme_wallpaper_set">已选择壁纸</string>
+    <string name="ui3_theme_opacity">表面不透明度</string>
+    <string name="ui3_theme_opacity_desc">表面不透明度 %1$d%%</string>
+
+    <!-- 12. 终端个性化 -->
+    <string name="ui3_theme_section_terminal">终端个性化</string>
+    <string name="ui3_theme_terminal_palette">ANSI 16 色</string>
+    <string name="ui3_theme_terminal_base">终端底色与前景</string>
+    <string name="ui3_theme_terminal_font">字号</string>
+    <string name="ui3_theme_terminal_font_value">%1$d sp</string>
+    <string name="ui3_theme_terminal_font_desc">终端字号 %1$d sp</string>
+    <string name="ui3_theme_terminal_letter">字距</string>
+    <string name="ui3_theme_terminal_letter_value">%1$.2f em</string>
+    <string name="ui3_theme_terminal_letter_desc">终端字距 %1$.2f em</string>
+    <string name="ui3_theme_terminal_line">行距</string>
+    <string name="ui3_theme_terminal_line_value">%1$.1f px</string>
+    <string name="ui3_theme_terminal_line_desc">终端额外行距 %1$.1f px</string>
+    <string name="ui3_theme_terminal_cursor">光标闪烁</string>
+    <string name="ui3_theme_terminal_bg_pick">选择终端背景图</string>
+    <string name="ui3_theme_terminal_bg_clear">清除终端背景图</string>
+    <string name="ui3_theme_terminal_bg_set">已选择终端背景图</string>
+    <string name="ui3_theme_terminal_bg_note">背景图与遮罩作用于真实终端；预览保持纯色</string>
+    <string name="ui3_theme_terminal_scrim">背景遮罩</string>
+    <string name="ui3_theme_terminal_scrim_value">%1$d%%</string>
+    <string name="ui3_theme_terminal_scrim_desc">背景遮罩 %1$d%%</string>
+    <string name="ui3_theme_terminal_preview_label">终端预览</string>
+    <string name="ui3_theme_terminal_commands">help / echo / ls / theme / clear · 历史 20 条</string>
+    <string name="ui3_theme_terminal_sketch_desc">终端色板示意</string>
+    <string name="ui3_theme_terminal_sketch_caption">结构示意 · 真实 AndroidView 终端由设备阶段验证</string>
+    <string name="ui3_theme_terminal_input_hint">输入命令…</string>
+    <string name="ui3_theme_terminal_run">运行</string>
+    <string name="ui3_theme_terminal_bg">终端底色</string>
+    <string name="ui3_theme_terminal_fg">终端前景</string>
+
+    <!-- 自定义槽编辑器 -->
+    <string name="ui3_theme_slot_dialog_title">自定义配色 %1$d</string>
+    <string name="ui3_theme_slot_pick_title">选择%1$s</string>
+    <string name="ui3_theme_slot_name">主题名称</string>
+    <string name="ui3_theme_slot_dark">深色配色</string>
+    <string name="ui3_theme_slot_dark_desc">影响预览与终端 ANSI 的默认明暗</string>
+    <string name="ui3_theme_slot_reset">重置为当前值</string>
+    <string name="ui3_theme_slot_current_color">当前 %1$s：%2$s</string>
+    <string name="ui3_theme_slot_save">保存</string>
+    <string name="ui3_theme_slot_save_apply">保存并应用</string>
+    <string name="ui3_theme_cancel">取消</string>
+    <string name="ui3_theme_close">关闭</string>
+    <string name="ui3_theme_back">返回</string>
+    <string name="ui3_theme_role_background">背景</string>
+    <string name="ui3_theme_role_surface">表面</string>
+    <string name="ui3_theme_role_primary">主色</string>
+    <string name="ui3_theme_role_accent">强调色</string>
+    <string name="ui3_theme_role_text">正文</string>
+    <string name="ui3_theme_role_text_dim">次要文字</string>
+    <string name="ui3_theme_role_terminal_background">终端背景</string>
+    <string name="ui3_theme_role_terminal_foreground">终端前景</string>
+</resources>
