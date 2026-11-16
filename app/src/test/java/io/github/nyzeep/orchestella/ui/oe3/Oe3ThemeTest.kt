@@ -76,7 +76,7 @@ class Oe3ThemeTest {
         assertEquals(1f, none.tintAlpha, 0.001f)
 
         val standard = Oe3Glass.resolve(theme, Oe3GlassLevel.Standard)
-        assertEquals(theme.surfaceTranslucent, standard.tint)
+        assertEquals(theme.surfaceTranslucent or 0xFF000000.toInt(), standard.tint)
         assertEquals(16.dp, standard.blurRadius)
         assertEquals(0.72f, standard.tintAlpha, 0.001f)
         assertEquals(0xF5, standard.fallbackTint ushr 24)

@@ -9,9 +9,10 @@ import io.github.nyzeep.orchestella.ui.theme.AppTheme
 enum class Oe3GlassLevel { None, Standard, Ultra }
 
 /**
- * Resolved glass parameters. [fallbackTint] is the opaque, almost-solid fill
- * used below API 31 (or without RenderEffect): the bar must still read as a
- * surface, never as a black hole.
+ * Resolved glass parameters. [tint] is always opaque; apply [tintAlpha] at the
+ * draw site so the stored palette alpha cannot be multiplied twice.
+ * [fallbackTint] is the opaque, almost-solid fill used below API 31 (or without
+ * RenderEffect): the bar must still read as a surface, never as a black hole.
  */
 @Immutable
 data class Oe3GlassTokens(
@@ -28,6 +29,7 @@ object Oe3Glass {
 
     fun resolve(theme: AppTheme, level: Oe3GlassLevel): Oe3GlassTokens {
         val fallback = (theme.surface and 0x00FFFFFF) or (FALLBACK_ALPHA shl 24)
+        val glassTint = (theme.surfaceTranslucent and 0x00FFFFFF) or (0xFF shl 24)
         return when (level) {
             Oe3GlassLevel.None -> Oe3GlassTokens(
                 level = level,
@@ -38,14 +40,14 @@ object Oe3Glass {
             )
             Oe3GlassLevel.Standard -> Oe3GlassTokens(
                 level = level,
-                tint = theme.surfaceTranslucent,
+                tint = glassTint,
                 tintAlpha = 0.72f,
                 blurRadius = 16.dp,
                 fallbackTint = fallback,
             )
             Oe3GlassLevel.Ultra -> Oe3GlassTokens(
                 level = level,
-                tint = theme.surfaceTranslucent,
+                tint = glassTint,
                 tintAlpha = 0.55f,
                 blurRadius = 28.dp,
                 fallbackTint = fallback,
