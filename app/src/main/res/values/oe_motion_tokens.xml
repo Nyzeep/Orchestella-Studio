@@ -20,29 +20,14 @@
 -->
 <resources>
     <!-- Material 3 duration scale: short -->
-    <integer name="oe_motion_duration_short1">50</integer>
-    <integer name="oe_motion_duration_short2">100</integer>
     <integer name="oe_motion_duration_short3">150</integer>
-    <integer name="oe_motion_duration_short4">200</integer>
 
     <!-- Material 3 duration scale: medium -->
-    <integer name="oe_motion_duration_medium1">250</integer>
-    <integer name="oe_motion_duration_medium2">300</integer>
-    <integer name="oe_motion_duration_medium3">350</integer>
-    <integer name="oe_motion_duration_medium4">400</integer>
 
     <!-- Material 3 duration scale: long -->
-    <integer name="oe_motion_duration_long1">450</integer>
-    <integer name="oe_motion_duration_long2">500</integer>
-    <integer name="oe_motion_duration_long3">550</integer>
-    <integer name="oe_motion_duration_long4">600</integer>
 
     <!-- Material 3 duration scale: extra long (container-transform prep,
          large surface transitions; never for feedback loops). -->
-    <integer name="oe_motion_duration_extra_long1">700</integer>
-    <integer name="oe_motion_duration_extra_long2">800</integer>
-    <integer name="oe_motion_duration_extra_long3">900</integer>
-    <integer name="oe_motion_duration_extra_long4">1000</integer>
 
     <!-- Session 19 tuned value: activity emphasized enter/close-enter. -->
     <integer name="oe_motion_duration_emphasized_enter">210</integer>
@@ -54,11 +39,6 @@
            scale's midpoint step.
          dialog enter slower than exit (250/150): Material dialog guidance
            keeps exit durations <= 200 ms so dismissal never lags the gesture. -->
-    <integer name="oe_motion_duration_container_transform">500</integer>
-    <integer name="oe_motion_duration_dialog_enter">250</integer>
-    <integer name="oe_motion_duration_dialog_exit">150</integer>
-    <integer name="oe_motion_duration_list_item_enter">300</integer>
-    <integer name="oe_motion_duration_list_item_reorder">250</integer>
 
     <!-- Stagger rhythm (Lane D): per-item start delay and the cap on how far
          the cascade may walk before late items join immediately. The cap keeps
@@ -66,7 +46,4 @@
          list longer than max_steps still animates; it just loses the tail
          delay), mirroring Material guidance that stagger reads as rhythm only
          while the total cascade stays shorter than one item's own duration. -->
-    <integer name="oe_motion_stagger_list_ms">40</integer>
-    <integer name="oe_motion_stagger_list_max_steps">5</integer>
-    <integer name="oe_motion_stagger_section_ms">45</integer>
 </resources>

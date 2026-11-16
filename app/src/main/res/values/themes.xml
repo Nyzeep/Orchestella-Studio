@@ -10,7 +10,6 @@
         <item name="android:windowAnimationStyle">@style/Animation.Orchestella.Activity</item>
     </style>
 
-    <style name="Theme.DroidLayer" parent="Theme.Orchestella" />
 
     <!-- Round 2026-11-07 (Lane B): completed the vocabulary to task-level
          transitions. Every entry point a task can appear or leave through —

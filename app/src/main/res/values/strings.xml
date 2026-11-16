@@ -1,36 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Orchestella</string>
-    <string name="runtime_status_loading">正在检查 Full Linux Runtime…</string>
-    <string name="runtime_class_full_linux">完整 Linux Runtime</string>
-    <string name="support_floor_passed">支持地板：已满足</string>
-    <string name="support_floor_refused">支持地板：拒绝创建（%1$s）</string>
-    <string name="qemu_runtime_verified">QEMU runtime：已通过 nativeLibraryDir 完整性门</string>
-    <string name="qemu_runtime_unavailable">QEMU runtime：不可启动（%1$s）</string>
-    <string name="create_ubuntu">创建 Ubuntu 实例</string>
-    <string name="create_debian">创建 Debian 实例</string>
-    <string name="create_downloading">正在获取 Alpine rootfs…</string>
-    <string name="create_downloading_distro">正在获取 %1$s rootfs…</string>
-    <string name="create_success">实例已创建，等待首次引导</string>
-    <string name="create_failed">创建失败：%1$s</string>
     <string name="create_storage_low">私有存储剩余空间不足</string>
-    <string name="create_network_failed">Alpine 下载失败</string>
-    <string name="create_network_failed_distro">%1$s 下载失败</string>
-    <string name="create_invalid_input">Alpine rootfs 校验失败（%1$s）</string>
-    <string name="create_invalid_input_distro">%1$s rootfs 校验失败（%2$s）</string>
-    <string name="create_download_progress_info">%1$.1f MB/s · 已下载 %2$s / %3$s · 预计剩余 %4$s · 镜像 %5$s</string>
-    <string name="create_download_retry_info">下载中断，正在从节点 %1$s 进行第 %2$d 次重试…</string>
-    <string name="create_download_failover_info">节点故障，已自动故障转移至：%1$s</string>
-    <string name="create_provisioning_info">正在校验 SHA-256 完整性并装配根文件系统…</string>
-    <string name="create_checksum_failed_distro">%1$s rootfs SHA-256 校验失败，已丢弃损坏文件</string>
-    <string name="instances_title">实例</string>
-    <string name="instances_empty">尚无实例</string>
-    <string name="instances_load_failed">实例列表读取失败：%1$s。请完全关闭应用后重新打开重试；已有实例数据不会被删除。</string>
-    <string name="instance_row">Alpine %1$s · %2$s</string>
-    <string name="instance_row_distro">%1$s %2$s · %3$s</string>
-    <string name="instance_launch">启动</string>
     <string name="launch_started">正在启动实例（首次引导需要一些时间）…</string>
-    <string name="launch_failed">启动失败：%1$s</string>
     <string name="launch_guest_exited">guest 正常关机，实例已停止</string>
     <!-- ADR-0003 authorization wizard (Ticket 34): detection first, Shizuku
          preferred, copy-ready ADB command fallback; backend names never shown. -->
@@ -43,38 +15,16 @@
     <string name="wizard_copy_command">复制命令</string>
     <string name="wizard_command_copied">授权命令已复制到剪贴板</string>
     <string name="wizard_authorization_done">我已完成授权</string>
-    <string name="wizard_later">稍后再说</string>
-    <string name="wizard_authorized_toast">两项权限已确认，实际运行仍待启动验证</string>
-    <string name="wizard_not_yet_authorized">尚未检测到授权，请完成命令后再试</string>
     <string name="launch_started_hardware">正在以硬件加速启动实例…</string>
     <string name="launch_degraded_to_software">硬件加速启动失败（%1$s），已自动回退软件模拟</string>
 
     <!-- AC-1: Per-instance Credentials (ADR-0010) -->
-    <string name="instance_credentials">凭据</string>
     <string name="credentials_title">实例登录凭据（每实例随机）</string>
-    <string name="credentials_message">用户名：root\n密码：%1$s\n\n提示：该密码为本实例专属随机凭据，用于终端与服务登录。公开常量已被彻底杜绝。</string>
     <string name="credentials_copy">复制密码</string>
     <string name="credentials_copied">凭据密码已复制到剪贴板</string>
-    <string name="credentials_change">修改密码</string>
-    <string name="credentials_change_title">修改实例凭据密码</string>
-    <string name="credentials_change_hint">请输入新密码（至少 8 位，不能包含空白字符）</string>
-    <string name="credentials_updated">凭据密码已更新</string>
-    <string name="credentials_invalid">密码不合法：需至少 8 位且不含空白字符</string>
     <string name="credentials_close">关闭</string>
 
     <!-- AC-2 & AC-3: Settings, Battery Policy & Update Check -->
-    <string name="settings_title">设置与指引</string>
-    <string name="settings_button">系统设置与指引</string>
-    <string name="settings_boot_autostart">开机自启动</string>
-    <string name="settings_boot_autostart_desc">设备开机重启后自动恢复上次运行的实例（默认关闭）</string>
-    <string name="settings_update_check">检查 GitHub 更新</string>
-    <string name="settings_update_check_desc">启动或手动检查最新 Release 版本（可关闭，严格零遥测）</string>
-    <string name="settings_battery_policy">电池执行策略</string>
-    <string name="settings_battery_balanced">均衡策略（后台按需唤醒）</string>
-    <string name="settings_battery_performance">性能策略（持续最高优先级与唤醒锁）</string>
-    <string name="settings_check_update_now">立即检查更新</string>
-    <string name="settings_phantom_guide">Android 12+ 幻影进程指引</string>
-    <string name="settings_close">关闭</string>
     <!-- Ticket 27: launch stage diagnostics opt-in switch (strictly off by default). -->
     <string name="settings_stage_trace_diag_title">启动阶段诊断追踪（默认关）</string>
     <string name="settings_stage_trace_diag_desc">开启后，每次实例启动的阶段事件写入应用私有目录，仅用于本机问题定位；关闭时不创建任何诊断文件、队列或后台任务</string>
@@ -85,7 +35,6 @@
     <string name="version_update_status_none">尚无可用更新</string>
     <string name="version_update_status_disabled">更新检查已关闭</string>
     <!-- W4 走查修复：masthead ⓘ 按钮更新徽标 dot 的无障碍语义（中英文案同义）。 -->
-    <string name="about_update_badge_desc">有可用新版本</string>
     <string name="version_update_channel">%1$s · 当前 v%2$s</string>
     <string name="version_update_hint">进入本页时自动检查 GitHub Releases；卡片只保留发布说明摘要，完整内容在 Release 页。</string>
     <string name="version_update_notes_fallback">本次发布没有文字说明，完整变更请见 Release 页。</string>
@@ -99,9 +48,6 @@
     <string name="update_disabled_msg">更新检查已在设置中关闭（遵循 ADR-0015 零网络遥测）。</string>
 
     <!-- AC-4: Honest Refusal & Support Floor Details -->
-    <string name="refusal_banner_title">当前设备未达到最低支持标准</string>
-    <string name="refusal_dialog_title">设备支持底线说明（诚实拒绝）</string>
-    <string name="refusal_dialog_message">Orchestella Studio 在手机上运行具备独立 Linux 内核的完整 Linux 环境，具有以下硬性要求：\n\n1. 物理内存（RAM）≥ 3 GiB：完整内核与发行版服务需要足够物理内存，内存不足会导致严重 OOM 甚至系统死机崩溃。\n2. 芯片架构：必须为 64 位 ARM（arm64-v8a）。\n3. 系统版本：Android 8.0（API 26）或更高版本。\n\n本设备原因：%1$s。\n为保证系统稳定与不提供劣质假体验，Orchestella Studio 诚实拒绝创建实例。</string>
 
     <!-- AC-4: Authorization Wizard Terminal States & Vendor Guidance (US-38) -->
     <string name="wizard_vendor_failure_title">硬件加速授权排查指引（厂商特定机制）</string>
@@ -110,11 +56,8 @@
     <string name="wizard_authorized_success_msg">MANAGE_VIRTUAL_MACHINE 与 USE_CUSTOM_VIRTUAL_MACHINE 均已授权。\n这只完成权限预检。平台 API、非保护虚拟机与 Guest 是否可运行，仍需实例启动验证；不能据此确认硬件加速、隔离或性能。当前适配器只支持精确 1 vCPU。</string>
 
     <!-- Ticket 43: Desktop Activity, Dual Mode Navigation, and Virtual Keys -->
-    <string name="desktop_title">图形桌面</string>
     <string name="desktop_open_terminal">打开终端</string>
-    <string name="terminal_open_desktop">进入图形桌面</string>
     <string name="instance_open_terminal">打开终端</string>
-    <string name="instance_launch_desktop">启动图形桌面</string>
     <string name="key_esc">ESC</string>
     <string name="key_tab">TAB</string>
     <string name="key_ctrl">CTRL</string>
@@ -132,53 +75,15 @@
     <!-- Phase 4.9 Task 4: Wayland Trackpad HUD & Sensitivity Strings -->
     <string name="touch_mode_trackpad_label">触控板</string>
     <string name="touch_mode_touchscreen_label">触屏模式</string>
-    <string name="touch_mode_trackpad_active">已切换至触控板模式（相对滑动与智能阻尼）</string>
-    <string name="touch_mode_touchscreen_active">已切换至直接触屏模式（绝对坐标映射）</string>
     <string name="trackpad_sensitivity_title">触控板阻尼与灵敏度微调</string>
     <string name="trackpad_sensitivity_updated">阻尼系数已调整为：%1$s</string>
 
     <!-- Ticket 52: Material 3 Expressive Dashboard & UTM Instance Management -->
-    <string name="dashboard_title">Orchestella Studio</string>
-    <string name="dashboard_subtitle">无 Root Android Linux Runtime</string>
-    <string name="system_status_title">宿主硬件与虚拟化能力</string>
-    <string name="system_cpu_badge">%1$d 核心 CPU</string>
-    <string name="system_ram_badge">%1$d MB 可用 / %2$d MB</string>
-    <string name="system_storage_badge">%1$d GB 可用空间</string>
-    <string name="quick_create_title">快速创建 Linux 实例</string>
-    <string name="create_ubuntu_desc">官方主流 · 24.04 LTS · 云原生首选</string>
-    <string name="create_debian_desc">完整生态 · 预置工具 · 兼容性佳</string>
-
-    <string name="instance_card_id_prefix">ID: %1$s</string>
-    <string name="instance_hardware_specs">%1$d vCPU · %2$d MB · %3$d GB</string>
-    <string name="instance_hardware_specs_gpu">%1$d vCPU · %2$d MB · %3$d GB · GPU加速</string>
-    <string name="instance_state_running">● 运行中 · %1$s</string>
-    <string name="instance_state_stopped">■ 已停止</string>
-    <string name="instance_state_crashed">▲ 异常终止（点击查看诊断）</string>
-    <string name="instance_state_created">○ 已创建</string>
-    <string name="instance_state_provisioning">⏳ 初始化装配中…</string>
 
     <!-- Context Actions BottomSheet -->
-    <string name="action_sheet_title">实例操作与配置</string>
-    <string name="action_launch_desktop">启动图形桌面</string>
-    <string name="action_launch_desktop_desc">连接 60 FPS Wayland 硬件渲染桌面环境</string>
-    <string name="action_open_terminal">打开终端控制台</string>
-    <string name="action_open_terminal_desc">连接极客交互式 Shell 终端</string>
-    <string name="action_config_hardware">配置硬件参数</string>
-    <string name="action_config_hardware_desc">调整 vCPU 核心、RAM 配额、磁盘扩容与 GPU 开关</string>
-    <string name="action_config_hardware_disabled_hint">虚拟机运行中，需关机后调整</string>
-    <string name="action_export_backup">导出备份归档</string>
-    <string name="action_export_backup_desc">通过 SAF 导出根磁盘镜像与元数据包</string>
-    <string name="action_port_forwarding">动态端口转发管理</string>
-    <string name="action_port_forwarding_desc">查看、添加与管理 TCP/UDP 动态端口映射规则</string>
-    <string name="action_credentials_desc">查看或修改本实例专属 root 密码</string>
-    <string name="action_delete_instance">彻底物理删除</string>
-    <string name="action_delete_instance_desc">物理清扫 .raw 磁盘镜像与所有关联元数据</string>
     <string name="action_delete_running_forbidden">虚拟机运行中，禁止删除！请先关机。</string>
 
     <!-- Phase 5.0: SAF Instance Import Strings -->
-    <string name="import_instance_btn">导入备份</string>
-    <string name="import_instance_title">从备份文件导入实例</string>
-    <string name="import_instance_desc">选择 SAF 归档文件（.zip）并校验还原为独立实例</string>
     <string name="import_instance_progress">正在导入并校验备份文件…</string>
     <string name="import_instance_success">实例「%1$s」导入恢复成功</string>
     <string name="import_instance_failed">导入恢复失败：%1$s</string>
@@ -190,11 +95,8 @@
     <string name="port_forwarding_guest_port">Guest 端口（1~65535）</string>
     <string name="port_forwarding_desc_hint">服务说明（可选，如 Web 8080）</string>
     <string name="port_forwarding_add_rule">添加转发规则</string>
-    <string name="port_forwarding_rule_format">宿主 %1$d → Guest %2$d</string>
 
     <!-- Phase 4.9 Task 3: Instance Clone Strings -->
-    <string name="action_clone_instance">快速克隆实例</string>
-    <string name="action_clone_instance_desc">复制实例配置与底层磁盘镜像生成新的独立实例</string>
     <string name="action_clone_running_forbidden">虚拟机运行中，禁止克隆！请先关机。</string>
     <string name="action_clone_confirm_title">克隆 Linux 实例</string>
     <string name="action_clone_confirm_message">确定要快速克隆实例「%1$s」吗？\n\n系统将复制其硬件规格与根磁盘镜像，并生成全新的独立实例。</string>
@@ -224,8 +126,6 @@
     <string name="hardware_gpu_label">3D GPU 硬件加速 (virtio-gpu / VirGL)</string>
     <string name="hardware_save_btn">保存并生效</string>
     <string name="hardware_cancel_btn">取消</string>
-    <string name="hardware_update_success">硬件规格配置已更新</string>
-    <string name="hardware_update_failed">保存硬件配置失败：%1$s</string>
 
     <!-- Crash Diagnostic Dialog -->
     <string name="crash_dialog_title">虚拟机异常终止诊断</string>
@@ -235,60 +135,29 @@
     <string name="crash_dialog_copy">复制日志路径</string>
 
     <!-- Ticket 53: Setup Wizard & Tiered Onboarding Strings -->
-    <string name="wizard_onboarding_title">首次启动向导</string>
-    <string name="wizard_onboarding_subtitle">欢迎使用 Orchestella Studio · 移动独立 Linux 虚拟化环境</string>
 
     <string name="wizard_step_indicator">第 %1$d 步 / 共 %2$d 步：%3$s</string>
-    <string name="wizard_step_1_name">环境感知</string>
-    <string name="wizard_step_2_name">发行版选单</string>
-    <string name="wizard_step_3_name">推荐配置与就绪</string>
 
     <!-- Step 1: Detect -->
-    <string name="wizard_step1_card_title">宿主硬件感知</string>
-    <string name="wizard_step1_card_desc">全面感知芯片架构、多核算力与可用资源</string>
-    <string name="wizard_cpu_arch">芯片架构：%1$s</string>
-    <string name="wizard_cpu_cores">物理 CPU：%1$d 核心</string>
-    <string name="wizard_ram_overview">运存总览：%1$d MB 可用 / %2$d MB 总量</string>
     <string name="wizard_storage_available">私有存储空间：%1$s 可用</string>
 
-    <string name="wizard_virt_card_title">虚拟化运行引擎</string>
-    <string name="wizard_virt_avf_ready_badge">硬件虚拟化权限预检满足</string>
-    <string name="wizard_virt_avf_ready_desc">平台声明与两项 Android 权限满足；实际调用、非保护虚拟机与 Guest 待启动验证，性能与隔离不能由预检确认。</string>
-    <string name="wizard_virt_avf_auth_badge">硬件虚拟化权限待确认</string>
-    <string name="wizard_virt_avf_auth_desc">请分别确认 MANAGE 与 CUSTOM 权限。授权流程尚不能证明实际运行能力；暂不授权可继续使用软件虚拟化。</string>
-    <string name="wizard_virt_qemu_badge">Class A 软模拟引擎就绪</string>
-    <string name="wizard_virt_qemu_desc">当前系统未开放 AVF，已默认启用 QEMU 完整架构模拟，免 Root 开箱即用。</string>
-
     <string name="wizard_btn_auth_guide">获取授权指引</string>
-    <string name="wizard_btn_skip_auth">跳过授权并继续</string>
     <string name="wizard_btn_next">下一步</string>
     <string name="wizard_btn_prev">上一步</string>
 
     <!-- Step 2: Distro -->
-    <string name="wizard_step2_card_title">选择首个 Linux 发行版</string>
-    <string name="wizard_step2_card_desc">选择最适合您当前场景的操作系统（可在主界面自由增减）</string>
-    <string name="wizard_distro_selected_badge">✓ 当前选中</string>
-    <string name="wizard_distro_select_btn">选择此版本</string>
 
     <!-- Step 3: Config & Download -->
-    <string name="wizard_step3_card_title">安全配置推荐与初始化</string>
-    <string name="wizard_step3_card_desc">已自动计算符合手机硬件的安全配额，杜绝 LMK 杀后台</string>
     <string name="wizard_config_vcpu_info">虚拟 CPU：%1$d 核（宿主保留 1 核用于 UI 调度）</string>
     <string name="wizard_config_vcpu_avf_notice">AVF 硬件虚拟化当前仅支持 1 vCPU；此配置将回退到软件模拟。将 vCPU 设为 1 才能使用硬件虚拟化。</string>
     <string name="wizard_config_ram_info">运存配额：%1$d MB（宿主保留 ≥2GB 防闪退线）</string>
-    <string name="wizard_config_disk_info">稀疏磁盘：%1$d GB（按需占用宿主空间）</string>
-    <string name="wizard_config_gpu_info">3D 图形加速：已启用（Mesa VirGL 硬件直通）</string>
     <string name="wizard_config_zone_green">安全推荐区间：宿主保留充裕内存</string>
-
-    <string name="wizard_download_panel_title">弹性断点续传与部署</string>
-    <string name="wizard_btn_start_init">立即初始化首个实例</string>
     <string name="wizard_download_status_fetching">正在拉取 %1$s rootfs 镜像…</string>
     <string name="wizard_download_speed_info">%1$.1f MB/s · 已下载 %2$s / %3$s · 预计剩余 %4$s</string>
     <string name="wizard_download_mirror_info">镜像节点：%1$s</string>
     <string name="wizard_download_retry_info">正在从节点 %1$s 进行第 %2$d 次重试…</string>
     <string name="wizard_download_failover_info">节点故障，已自动故障转移至：%1$s</string>
     <string name="wizard_provisioning_info">正在校验 SHA-256 完整性并装配根文件系统…</string>
-    <string name="wizard_init_success">首个实例已就绪，正在进入控制台…</string>
 
     <!-- Ticket 01: Instance Creation Wizard Strings -->
     <string name="wizard_creation_title">新建实例向导</string>
@@ -305,7 +174,6 @@
     <string name="wizard_storage_insufficient_warn">宿主内部存储空间不足！当前可用 %1$.1f GB，需至少预留 %2$.1f GB（含 2GB 宿主系统安全缓冲）。</string>
     <string name="wizard_mount_shared_dir_label">挂载宿主共享目录 (/mnt/shared)</string>
     <string name="wizard_mount_shared_dir_desc">勾选后将宿主共享目录映射为 Guest 内的 /mnt/shared</string>
-    <string name="wizard_shared_dir_default">默认映射宿主 Documents / 外部存储</string>
 
     <string name="wizard_network_card_title">网络看板与镜像软件源</string>
     <string name="wizard_network_card_desc">检测网络环境并为包管理器预设极速软件源</string>
@@ -323,11 +191,6 @@
 
     <string name="wizard_hardware_card_title">vCPU 与 RAM 资源配置</string>
     <string name="wizard_hardware_card_desc">手动指定虚拟机规格，动态感知宿主安全红黄绿阈值</string>
-
-    <string name="wizard_startup_card_title">初次引导与自动化任务</string>
-    <string name="wizard_startup_card_desc">实例初次就绪后，在后台静默执行系统软件更新与初始化</string>
-    <string name="wizard_startup_auto_update_label">实例初次引导时自动执行系统软件更新</string>
-    <string name="wizard_startup_auto_update_desc">勾选后将自动生成 firstboot 脚本，后台静默执行对应发行版升级指令：\n%1$s</string>
     <string name="wizard_btn_create_instance">立即创建并部署实例</string>
 
     <!-- Headless desktop guard & user guidance -->
@@ -337,8 +200,6 @@
 
     <!-- Ticket 04: 二级实例详情控制台与极简卡片 -->
     <string name="instance_detail_title">虚拟机详情控制台</string>
-    <string name="instance_card_ip_offline">离线</string>
-    <string name="console_section_header_actions">状态与核心控制</string>
     <string name="console_btn_terminal">打开终端</string>
     <string name="console_btn_desktop">进入桌面</string>
     <string name="console_btn_power">电源管理</string>
@@ -367,7 +228,6 @@
     <string name="console_danger_delete_desc">彻底物理回收虚拟磁盘与元数据，必须二次验证输入</string>
     <string name="console_delete_guard_interrupted">运行中断实例需先复位后删除；点击上方「复位」解除锁定。</string>
     <string name="console_delete_dialog_title">危险操作：永久物理删除</string>
-    <string name="console_delete_dialog_message">此操作将永久销毁实例数据，磁盘将被物理抹除且不可恢复！\n\n为防止误触，请输入实例完整 ID「%1$s」以确认删除：</string>
     <string name="console_delete_dialog_confirm">我已知晓风险，永久删除</string>
     <string name="console_delete_dialog_mismatch">输入不一致（需输入「确认删除」），删除已拦截取消</string>
     <string name="console_delete_success">实例已彻底物理删除</string>
@@ -389,7 +249,6 @@
     <string name="about_mascot_title">看板娘 (Mascot)</string>
     <string name="about_mascot_caption">Orchestella 看板娘原图，按原始比例完整展示，不裁切。</string>
     <string name="about_mascot_desc">Orchestella 看板娘原图</string>
-    <string name="about_avatar_loading_failed">已显示字母头像（网络加载失败）</string>
     <string name="console_delete_dialog_message_phrase">此操作将永久销毁实例数据，磁盘将被物理抹除且不可恢复！
 
 为防止误触，请输入「确认删除」以继续：</string>
@@ -484,13 +343,9 @@
          真机 3 次全通，措辞按真实通道状态分流——wired 构建宣「运行中」，
          unwired 构建如实明示「编译通道未接线」，绝不在不可路由形态冒充已接。
          双门正文是诚实拒绝文案，保留其原有口径。 -->
-    <string name="engine_uml_segment">UML</string>
     <string name="engine_uml_running_wired">UML · 运行中</string>
     <string name="engine_uml_running_unwired">UML · 运行中 · 编译通道未接线</string>
     <string name="engine_uml_idle">UML · 未启用</string>
-    <string name="engine_uml_face_gate_title">UML 编译面</string>
-    <string name="engine_uml_face_gate_build">当前构建未包含加速车道组件，UML 编译面不可用。\n应用继续使用完整 QEMU 路径运行 Linux 实例。</string>
-    <string name="engine_uml_face_gate_setting">UML 编译面随加速车道总开关关闭而停用（你在设置中关闭）。\n应用继续使用完整 QEMU 路径运行 Linux 实例。</string>
 
     <!-- UML rootfs 就绪卡（发行版 tab）：就绪=已验证+已解包+已注入启动脚本
          （官方镜像本身不含 um-command.sh，由 provisioner 注入，0755 幂等）；
@@ -518,91 +373,31 @@
     <!-- 05/配置 tab 入口分组行（UI 重新设计轮）：行标题沿用原三枚入口按钮
          文案逐字不改，跳转目标不变（SshManagerDialog / SettingsActivity /
          AboutActivity）。 -->
-    <string name="settings_entry_ssh_title">SSH 配置文件与凭据管理</string>
-    <string name="settings_entry_system_title">系统镜像源策略与更新设置</string>
-    <string name="settings_entry_about_title">关于 Orchestella Studio</string>
 
     <!-- 设置页分节目录 + 子页（T3 settings IA redesign）：一级页收敛为
          分节目录（行几何 oe_list_item_min_h + chevron），四个子节进
          SettingsSubActivity（外观与主题 / 镜像源与加速 / 关于与合规 / 高级）；
          「虚拟化与架构」摘要卡保留一级（决策项）。行标题与子页标题同源。 -->
     <string name="settings_section_appearance_title">外观与主题</string>
-    <string name="settings_section_appearance_subtitle">主题、明暗、圆角、强调色、背景与终端显示偏好</string>
     <string name="settings_section_mirror_title">镜像源与加速</string>
-    <string name="settings_section_mirror_subtitle">系统软件源策略、一键测速优选与 Docker 加速源</string>
     <string name="settings_section_about_title">关于与合规</string>
-    <string name="settings_section_about_subtitle">版本信息与官方发行版商标合规声明</string>
     <string name="settings_section_advanced_title">高级</string>
-    <string name="settings_section_advanced_subtitle">pVM 编译加速与启动阶段诊断</string>
     <string name="settings_trademark_disclosure_title">商标与合规声明</string>
 
     <!-- 03/硬件页（UI 重新设计轮）：摘要卡 + 完整参数二级抽屉。SEC 头部
          标题自布局字面量收拢为单一来源（原文案逐字保留）；摘要 chip 短值
          与完整读数同源（MainActivity 渲染），完整参数在二级抽屉。 -->
-    <string name="hw_refresh_action">重新检测</string>
-    <string name="hw_sec01_title">虚拟化框架与运行支持地板</string>
-    <string name="hw_sec02_title">物理处理器与核心拓扑</string>
-    <string name="hw_sec03_title">物理内存、存储与电池三维度量</string>
-    <string name="hw_sec03_readout_title">内存与存储读数</string>
-    <string name="hw_sec04_title">OS 与内核档案</string>
-    <string name="sheet_hw_full_params_title">完整参数读数</string>
-    <string name="hardware_full_params_action">查看完整参数</string>
-    <string name="chip_hw_label_arch">CPU 架构</string>
-    <string name="chip_hw_label_cores">核心数</string>
-    <string name="chip_hw_label_ram">运存总额</string>
-    <string name="chip_hw_label_os">Android 版本</string>
-    <string name="chip_hw_value_cores">%1$d 核</string>
-    <string name="chip_hw_value_ram">%1$d GB</string>
-    <string name="chip_hw_value_os">Android %1$s</string>
 
     <!-- 01/工作站（UI 重新设计轮）：HOST METRICS 网格 + 长文 ⓘ 说明对话框。 -->
-    <string name="host_metrics_header">宿主指标</string>
-    <string name="metrics_storage_label">存储</string>
-    <string name="workspace_info_dialog_title">运行状态详情</string>
-    <string name="net_info_dialog_title">网络运行时说明</string>
-    <string name="dialog_action_understood">了解</string>
 
     <!-- 02/实例页（UI 重新设计轮）：运行中实例卡的「终端」次级按钮与
          空态「去发行版装配」CTA（布局先行占位，可见性与点击接线随逻辑提交）；
          实例列表分组 header（运行中/已停止）。 -->
-    <string name="instance_card_terminal_action">终端</string>
-    <string name="instances_empty_cta">去发行版装配</string>
-    <string name="instance_section_running">运行中</string>
-    <string name="instance_section_stopped">已停止</string>
 
     <!-- UI 二期去英文滥用（2026-11-14 用户裁决：中文为主，视觉骨架保留）：
          工作站首页的装饰性英文代号全部中文化或简化为序号，全部进资源文件。 -->
-    <string name="masthead_workstation">ORCHESTELLA · 工作站</string>
-    <string name="status_net_placeholder">网络 --</string>
-    <string name="status_bat_placeholder">电量 --</string>
-    <string name="mach_id_label">当前实例</string>
-    <string name="metric_cpu">CPU</string>
-    <string name="metric_ram">内存</string>
-    <string name="metric_thermal">电池温度</string>
-    <string name="metric_mem_short">内存</string>
-    <string name="metric_disk_short">存储</string>
-    <string name="metric_bat_short">电量</string>
-    <string name="control_matrix_label">控制中心</string>
-    <string name="action_index_01">01</string>
-    <string name="action_index_02">02</string>
-    <string name="action_index_03">03</string>
-    <string name="action_index_04">04</string>
-    <string name="section_index_01">分组 01</string>
-    <string name="section_index_03">分组 03</string>
-    <string name="action_copy">复制</string>
-    <string name="io_direct">直连 I/O</string>
-    <string name="state_idle">空闲</string>
 
     <!-- 主题画廊（Compose 迁移第一批）：预览卡 + 即时套用。 -->
-    <string name="theme_gallery_title">主题画廊</string>
-    <string name="theme_gallery_subtitle">点按卡片即时套用；配色、圆角、背景图与终端配色仍在「外观」页微调</string>
-    <string name="theme_gallery_back">返回</string>
-    <string name="theme_gallery_custom">自定义主题与外观微调</string>
-    <string name="theme_gallery_done">完成</string>
-    <string name="theme_gallery_entry">主题画廊（预览并套用）</string>
-    <string name="theme_section_header">主题选择 · 工控色彩风格</string>
-    <string name="management_section_header">管理入口</string>
-    <string name="theme_active_badge">使用中</string>
     <!-- 终端重做（2026-11-14）：会话模型与视口文案。全部进资源文件，
          不在 Java 里新增中文字面量。 -->
     <string name="terminal_new_session_toast">已新建终端：空白输出视图，自此刻起独立记录</string>

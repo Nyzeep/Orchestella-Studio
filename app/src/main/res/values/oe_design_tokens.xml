@@ -19,11 +19,7 @@
          chips/inputs 8/12, cards 16 (aligns ThemeStore.DEFAULT_CORNER_RADIUS_DP),
          oversized cards / sheets 28. ThemeApplier merges these only-grow at
          runtime, so a user's larger corner setting always wins. -->
-    <dimen name="oe_corner_none">0dp</dimen>
-    <dimen name="oe_corner_sm">8dp</dimen>
     <dimen name="oe_corner_md">12dp</dimen>
-    <dimen name="oe_corner_lg">16dp</dimen>
-    <dimen name="oe_corner_xl">28dp</dimen>
 
     <!-- 间距 scale: 4dp baseline grid (M3 spacing guidance). The one non-multiple
          below is an optical half-step for icon-to-text gaps, matching the tuned
@@ -51,21 +47,8 @@
          oe_card_pad / oe_card_gap / oe_group_gap；③列表行两档，sheet 与
          二级页共享 oe_list_item_min_h，紧凑行（主题选择等）用 dense 档。
          全部为追加档位，既有 scale 值不变。 -->
-    <dimen name="oe_card_pad">16dp</dimen>
     <dimen name="oe_card_gap">12dp</dimen>
-    <dimen name="oe_group_gap">24dp</dimen>
-    <dimen name="oe_list_item_min_h">56dp</dimen>
-    <dimen name="oe_list_item_min_h_dense">48dp</dimen>
-    <dimen name="oe_btn_h_primary">48dp</dimen>
     <dimen name="oe_btn_h_secondary">44dp</dimen>
-    <dimen name="oe_btn_h_inline">36dp</dimen>
-    <dimen name="oe_btn_seg_h">40dp</dimen>
-    <dimen name="oe_tile_min_h">100dp</dimen>
-    <dimen name="oe_icon_box_lg">44dp</dimen>
-    <dimen name="oe_icon_box_md">26dp</dimen>
-    <dimen name="oe_ring_size_sm">56dp</dimen>
-    <dimen name="oe_ring_size_lg">72dp</dimen>
-    <dimen name="oe_list_divider_inset">16dp</dimen>
 
     <!-- Oe v2（2026-11-15 设计基座，工单 01）：形状语义 / 间距节奏 / 行高。
          与 ui/design/OeTokens.kt 一一对应（一套数值两处消费）。全部为追加
@@ -73,24 +56,4 @@
          XML 页面可继续用旧名，新页面按语义名取用。
          注意：用户「按钮圆角」设置只作用于 oe_corner_control 及以下控件，
          不得放大 card/hero——表面圆角是版式，控件圆角是偏好。 -->
-    <dimen name="oe_corner_hero">32dp</dimen>
-    <dimen name="oe_corner_card">24dp</dimen>
-    <dimen name="oe_corner_block">20dp</dimen>
-    <dimen name="oe_corner_control">16dp</dimen>
-    <dimen name="oe_corner_badge">14dp</dimen>
-
-    <dimen name="oe_space_page">16dp</dimen>
-    <dimen name="oe_space_card">16dp</dimen>
-    <dimen name="oe_space_gap">12dp</dimen>
-    <dimen name="oe_space_group">28dp</dimen>
-    <dimen name="oe_space_header_top">24dp</dimen>
-    <dimen name="oe_space_header_bottom">8dp</dimen>
-
-    <dimen name="oe_row_h">56dp</dimen>
-    <dimen name="oe_row_h_dense">48dp</dimen>
-    <dimen name="oe_row_divider_inset">56dp</dimen>
-    <dimen name="oe_topbar_h">56dp</dimen>
-    <dimen name="oe_dock_h">62dp</dimen>
-    <dimen name="oe_dock_clearance">96dp</dimen>
-    <dimen name="oe_tap_min">44dp</dimen>
 </resources>

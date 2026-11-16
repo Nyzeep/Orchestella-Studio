@@ -31,7 +31,6 @@
     <!-- 4. 主题预设 -->
     <string name="ui3_theme_section_presets">主题预设</string>
     <string name="ui3_theme_presets_count">%1$d 套</string>
-    <string name="ui3_theme_preset_current">当前</string>
     <string name="ui3_theme_preset_fixed">固定</string>
     <string name="ui3_theme_preset_dark">暗色</string>
     <string name="ui3_theme_preset_light">浅色</string>
