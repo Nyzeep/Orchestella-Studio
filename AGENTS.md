@@ -26,7 +26,7 @@ Orchestella Studio（曾用工作名 DroidLayer）：无需 Root 的 Android 原
 
 ### Issue tracker
 
-本地 Markdown tracker：工单与 spec 存放在 `.scratch/`，当前 effort 为 `.scratch/orchestella-uml-fabric/`；设备窗与质量积压为并行线。见 `docs/agents/issue-tracker.md`。
+工单、spec 与开发文档存放在独立私有仓库 `Nyzeep/Orchestella-Specs`（SSH 访问，本地镜像 `/workspace/.specs/Orchestella-Specs`），不在本仓库内。见 `docs/agents/issue-tracker.md`。
 
 ### Triage labels
 
