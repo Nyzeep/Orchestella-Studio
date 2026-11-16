@@ -11,6 +11,17 @@ desugar = "2.1.5"
 buildtools = "36.1.0"
 ndk = "27.0.12077973"
 compose-bom = "2026.06.01"
+# Zero-device UI verification (UI3-11). Roborazzi 1.79.0 is built against
+# AGP 8.13.2 / Kotlin 2.3.21 / Compose 1.10-1.11 and requires Robolectric
+# 4.10+ (NATIVE graphics). Compose BOM 2026.06.01 pins Compose 1.11.4.
+roborazzi = "1.79.0"
+robolectric = "4.18"
+# Haze 2.1.0 is what UI3-10 asked for, but its Android artifact requires
+# Compose 1.12.1 (AGP 9.1.0+, compileSdk 37) and kotlin-stdlib 2.4.21, which
+# this AGP 8.13.2 / compileSdk 36 / Kotlin 2.2.21 build cannot consume.
+# 1.6.10 is the newest Haze that resolves against this toolchain (Compose 1.8,
+# Kotlin 2.1 metadata); re-evaluate when the AGP/Kotlin upgrade lands.
+haze = "1.6.10"
 
 [libraries]
 junit = { module = "junit:junit", version.ref = "junit" }
@@ -28,8 +39,16 @@ compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
 compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
 compose-foundation = { module = "androidx.compose.foundation:foundation" }
 compose-material3 = { module = "androidx.compose.material3:material3" }
+compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
+compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
+roborazzi = { module = "io.github.takahirom.roborazzi:roborazzi", version.ref = "roborazzi" }
+roborazzi-compose = { module = "io.github.takahirom.roborazzi:roborazzi-compose", version.ref = "roborazzi" }
+roborazzi-junit-rule = { module = "io.github.takahirom.roborazzi:roborazzi-junit-rule", version.ref = "roborazzi" }
+robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
+haze = { module = "dev.chrisbanes.haze:haze", version.ref = "haze" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+roborazzi = { id = "io.github.takahirom.roborazzi", version.ref = "roborazzi" }
