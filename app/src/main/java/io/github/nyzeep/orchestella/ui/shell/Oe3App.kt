@@ -91,6 +91,7 @@ fun Oe3App(
                     Oe3Pager(
                         selected = selectedTab,
                         modifier = Modifier.weight(1f),
+                        pages = pages,
                     )
                 }
                 Oe3NavBar(

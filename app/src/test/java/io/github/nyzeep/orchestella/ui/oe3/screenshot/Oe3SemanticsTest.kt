@@ -2,6 +2,7 @@ package io.github.nyzeep.orchestella.ui.oe3.screenshot
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -32,6 +33,7 @@ import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icon
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icons
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3Theme
 import io.github.nyzeep.orchestella.ui.shell.Oe3App
+import io.github.nyzeep.orchestella.ui.shell.Oe3Pages
 import io.github.nyzeep.orchestella.ui.shell.Oe3ShellController
 import io.github.nyzeep.orchestella.ui.shell.Oe3Tab
 import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
@@ -130,6 +132,34 @@ class Oe3SemanticsTest {
             .assertCountEquals(1)
         compose.onNode(tabWithLabel("工作站")).assertIsSelected()
         compose.onNode(tabWithLabel("配置")).assertIsNotSelected()
+    }
+
+    /**
+     * 回归钉（真机冒烟 2026-11-17）：Oe3App 必须把 [Oe3Pages] 槽位透传给
+     * [Oe3Pager]——此前壳层根丢掉了 pages 参数，五页永远回落占位页，而
+     * 既有零设备门（语义测 tab/标签、页面 golden 直渲页面组件）都探不到
+     * 这条参数链。本用例在真实 Oe3App 根上断言槽位内容可见。
+     */
+    @Test
+    fun pagesSlotsRenderThroughTheRealShellRoot() {
+        compose.setContent {
+            Oe3App(
+                selectedTab = Oe3Tab.Workstation,
+                onTabSelected = {},
+                theme = ThemeCatalog.constructivistWorkstation,
+                reduceMotion = true,
+                pages = Oe3Pages(
+                    workstation = {
+                        Text(
+                            "slot marker",
+                            modifier = Modifier.testTag("slot-marker"),
+                        )
+                    },
+                ),
+            )
+        }
+        compose.waitForIdle()
+        compose.onNodeWithTag("slot-marker").assertIsDisplayed()
     }
 
     @Test
