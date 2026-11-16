@@ -18,7 +18,8 @@ import org.robolectric.annotation.GraphicsMode
  *
  * golden 收进 `src/test/screenshots/ui3/config/`，命名与 UI3-06/08 的
  * `<state>-<mode>` 约定一致；[ConfigScreenState] 为纯字面量样本（取值与
- * `ConfigScreen.kt` 的预览样本同源），路由与选项回调全为空实现，动效关闭，
+ * `ConfigScreen.kt` 的预览样本同源，仅去掉待更新字段：`updateAvailable` 与
+ * 更新说明置 null），路由与选项回调全为空实现，动效关闭，
  * 所以干净检出重放得到同一批像素。捕获页内已声明的 `config:screen` 节点。
  */
 @RunWith(AndroidJUnit4::class)

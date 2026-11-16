@@ -107,6 +107,13 @@ class Oe3SemanticsTest {
         }
     }
 
+    /**
+     * 工单「非首 tab 返回工作站」的两个落点：
+     * 返回键（`Oe3ShellController.back()`）语义由 `Oe3ShellModelTest.
+     * everyNonFirstTabBacksOutToWorkstation` 钉住（back dispatcher 归
+     * MainActivity 持有，`Oe3App` 不可测）；本用例覆盖点击工作站 tab
+     * 的路径，断言控制器状态与选中态同步迁移。
+     */
     @Test
     fun tappingWorkstationFromANonFirstTabReturnsToTheWorkstation() {
         val controller = Oe3ShellController(Oe3Tab.Config)

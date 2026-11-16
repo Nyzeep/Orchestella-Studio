@@ -18,7 +18,9 @@ import org.robolectric.annotation.GraphicsMode
  *
  * golden 收进 `src/test/screenshots/ui3/dashboard/`，命名与 UI3-06/08 的
  * `<state>-<mode>` 约定一致；样本为纯静态 [DashboardUiState] 字面量
- * （与 `DashboardPreviews.kt` 的「有实例」矩阵同源），动作全为空实现，动效
+ * （与 `DashboardPreviews.kt` 的「有实例」矩阵同源，仅把示例实例 id
+ * `preview-ubuntu` 改名 `golden-ubuntu`、第二条最近实例 Fedora 41 换成
+ * Rocky Linux 9），动作全为空实现，动效
  * 关闭，所以干净检出重放得到同一批像素。页面未暴露 screen testTag，
  * 按既有约定捕获整窗根节点（UI3-06 同款）。
  */
