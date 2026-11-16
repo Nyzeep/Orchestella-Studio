@@ -1,7 +1,7 @@
 package io.github.nyzeep.orchestella.ui.screens.theme
 
-import io.github.nyzeep.orchestella.ui.design.OeTextScale
-import io.github.nyzeep.orchestella.ui.design.OeTextScaleMode
+import io.github.nyzeep.orchestella.ui.theme.OeTextScale
+import io.github.nyzeep.orchestella.ui.theme.OeTextScaleMode
 import io.github.nyzeep.orchestella.ui.theme.AppTheme
 import io.github.nyzeep.orchestella.ui.theme.ThemeStore
 import kotlin.math.roundToInt

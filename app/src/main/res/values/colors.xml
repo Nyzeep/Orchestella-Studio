@@ -17,7 +17,6 @@
     <!-- 语义提示色槽（W4 走查修复）：更新徽标 dot 等「有新信息」标记。
          刻意非主题派生——沿用 theme.accent 会让 dot 随主题紫/红漂移、
          语义不明；值取徽标 drawable 既有的 shipped 默认色。 -->
-    <color name="oe_notice">#E0533D</color>
 
     <!-- Safety Zones for Hardware Config -->
     <color name="zone_green">#10B981</color>
@@ -28,41 +27,21 @@
     <color name="zone_red_bg">#18EF4444</color>
     <!-- Neutral capability state: present-but-informational, never a warning. -->
     <color name="zone_neutral">#9CA3AF</color>
-    <color name="zone_neutral_bg">#189CA3AF</color>
 
     <!-- Distro Palette -->
-    <color name="distro_alpine_tint">#0D597F</color>
-    <color name="distro_debian_tint">#D70A53</color>
 
     <!-- Glow (泛光) accents, mirroring DraculaPalette constants -->
     <color name="glow_purple">#FFBD93F9</color>
     <color name="glow_cyan">#FF8BE9FD</color>
-    <color name="glow_pink">#FFFF79C6</color>
     <color name="glow_purple_soft">#40BD93F9</color>
     <color name="glow_purple_faint">#26BD93F9</color>
-    <color name="glow_cyan_soft">#408BE9FD</color>
-    <color name="glow_cyan_faint">#268BE9FD</color>
 
     <!-- Moonshot AI (Kimi) & Claude Aesthetics -->
-    <color name="moonshot_blue">#007CFF</color>
-    <color name="moonshot_blue_glow">#00A1FF</color>
-    <color name="moonshot_cyan">#00F6FF</color>
-    <color name="moonshot_dark_bg">#0C1017</color>
-    <color name="moonshot_glass_surface">#D9161B22</color>
-    <color name="moonshot_glass_stroke">#3300A1FF</color>
-
-    <color name="claude_terracotta">#D97706</color>
-    <color name="claude_clay">#E07A5F</color>
-    <color name="claude_sand_bg">#FAF8F5</color>
-    <color name="claude_slate_bg">#18181B</color>
 
     <!-- Glassmorphism Surface & Hairline Stroke: glass_card_* quartet deleted
          (U4 dead-resource closeout, zero references; drawable bg_glass_card was
          already removed by lane B). icon_container_bg_* retained. -->
-    <color name="icon_container_bg_dark">#20FFFFFF</color>
-    <color name="icon_container_bg_light">#0D000000</color>
 
     <!-- Launcher icon: flat backdrop of the mascot artwork (see
          docs/assets/branding/README.md). Used by the adaptive-icon layer. -->
-    <color name="ic_launcher_background">#FF242424</color>
 </resources>

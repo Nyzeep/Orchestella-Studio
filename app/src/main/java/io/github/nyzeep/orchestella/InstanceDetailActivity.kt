@@ -1124,8 +1124,7 @@ internal object InstanceDetailActionRules {
     enum class ExitDecision { READY, WAITING, REPLACED, TIMED_OUT }
 
     fun canColdBackup(state: InstanceLifecycle.State, hasSession: Boolean, launching: Boolean): Boolean =
-        !hasSession && !launching && state in setOf(InstanceLifecycle.State.STOPPED,
-            InstanceLifecycle.State.CREATED, InstanceLifecycle.State.CRASHED, InstanceLifecycle.State.INTERRUPTED)
+        ColdBackupGuard.canExport(state, hasSession, launching)
 
     fun exitDecision(state: InstanceLifecycle.State, hasSession: Boolean, launching: Boolean,
             sessionReplaced: Boolean, timedOut: Boolean): ExitDecision = when {

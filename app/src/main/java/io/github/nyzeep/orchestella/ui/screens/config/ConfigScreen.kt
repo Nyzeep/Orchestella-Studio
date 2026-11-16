@@ -44,6 +44,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import io.github.nyzeep.orchestella.R
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Card
+import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3ListRow
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3SectionHeader
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3SwitchRow
@@ -98,7 +99,7 @@ fun ConfigScreen(
             start = Oe3Spacing.pageInset,
             end = Oe3Spacing.pageInset,
             top = Oe3Spacing.xs,
-            bottom = Oe3Spacing.contentBottom,
+            bottom = LocalOe3PageBottomPadding.current,
         ),
     ) {
         item(key = "config-header") {

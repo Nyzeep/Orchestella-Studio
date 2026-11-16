@@ -42,6 +42,8 @@ import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Ring
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3SectionHeader
 import io.github.nyzeep.orchestella.ui.oe3.components.oe3Color
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3DistroIcons
+import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
+import io.github.nyzeep.orchestella.ui.screens.common.formatGigabytes
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icon
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3IconTint
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icons
@@ -52,9 +54,6 @@ import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
 import io.github.nyzeep.orchestella.ui.theme.ThemeColors
-import java.util.Locale
-import kotlin.math.abs
-import kotlin.math.roundToInt
 
 /** 页面级几何常量；语义与命中区断言直接读这里。 */
 object DashboardSpec {
@@ -102,7 +101,7 @@ fun DashboardScreen(
             .background(colors.background.oe3Color())
             .verticalScroll(rememberScrollState())
             .padding(horizontal = Oe3Spacing.pageInset)
-            .padding(top = Oe3Spacing.xl, bottom = Oe3Spacing.contentBottom),
+            .padding(top = Oe3Spacing.xl, bottom = LocalOe3PageBottomPadding.current),
     ) {
         Text(
             text = stringResource(R.string.ui3_dashboard_title),
@@ -475,18 +474,5 @@ private fun DashboardPill(label: String, tone: DashboardStatusTone) {
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-    }
-}
-
-/**
- * 以 1024³ 为 1 GB 的读数（与系统存储口径一致）。整 GB 不显示小数，
- * 其余保留一位小数；1e-6 容差只吸收除法误差，不会把 1.96 GB 说成 2 GB。
- */
-internal fun formatGigabytes(bytes: Long): String {
-    val gib = bytes.coerceAtLeast(0L) / (1024.0 * 1024.0 * 1024.0)
-    return if (abs(gib - gib.roundToInt()) < 1e-6) {
-        String.format(Locale.US, "%.0f GB", gib)
-    } else {
-        String.format(Locale.US, "%.1f GB", gib)
     }
 }

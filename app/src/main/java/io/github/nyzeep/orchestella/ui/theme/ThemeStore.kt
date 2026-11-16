@@ -5,8 +5,8 @@ import android.content.SharedPreferences
 import android.net.Uri
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
-import io.github.nyzeep.orchestella.ui.design.OeTextScale
-import io.github.nyzeep.orchestella.ui.design.OeTextScaleMode
+import io.github.nyzeep.orchestella.ui.theme.OeTextScale
+import io.github.nyzeep.orchestella.ui.theme.OeTextScaleMode
 
 /** One persistent appearance source, also usable with in-memory preferences in JVM tests. */
 class ThemeStore(private val prefs: SharedPreferences, private val context: Context? = null) {

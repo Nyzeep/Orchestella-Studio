@@ -55,7 +55,7 @@ class Oe3TypographyTest {
 
     @Test
     fun stylesKeepTheBaseSizeForThePlatformToScale() {
-        val style = Oe3Typography.style(Oe3TextRole.PageTitle)
+        val style = Oe3Typography.styleStatic(Oe3TextRole.PageTitle)
         assertEquals(30f, style.fontSize.value, 0.001f)
         assertEquals(36f, style.lineHeight.value, 0.001f)
         assertEquals(FontWeight.SemiBold, style.fontWeight)
@@ -64,7 +64,27 @@ class Oe3TypographyTest {
 
     @Test
     fun monoIsAMonospaceRole() {
-        assertEquals(FontFamily.Monospace, Oe3Typography.style(Oe3TextRole.Mono).fontFamily)
+        assertEquals(FontFamily.Monospace, Oe3Typography.styleStatic(Oe3TextRole.Mono).fontFamily)
+    }
+
+    /**
+     * UI3-12 mono wiring: the shell's 等宽 choice overrides the base family
+     * for every non-mono role, and the mono role stays monospace regardless.
+     */
+    @Test
+    fun monoOverrideReplacesTheDefaultFamilyOnly() {
+        assertEquals(
+            FontFamily.Monospace,
+            Oe3Typography.styleStatic(Oe3TextRole.Body, baseFamily = FontFamily.Monospace).fontFamily,
+        )
+        assertEquals(
+            FontFamily.Monospace,
+            Oe3Typography.styleStatic(Oe3TextRole.Mono, baseFamily = FontFamily.Monospace).fontFamily,
+        )
+        assertEquals(
+            FontFamily.Default,
+            Oe3Typography.styleStatic(Oe3TextRole.Body, baseFamily = null).fontFamily,
+        )
     }
 
     @Test

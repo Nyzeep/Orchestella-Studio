@@ -7,8 +7,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import io.github.nyzeep.orchestella.SettingsManager
-import io.github.nyzeep.orchestella.ui.design.OeTextScale
-import io.github.nyzeep.orchestella.ui.design.OeTextScaleMode
+import io.github.nyzeep.orchestella.ui.theme.OeTextScale
+import io.github.nyzeep.orchestella.ui.theme.OeTextScaleMode
 import io.github.nyzeep.orchestella.ui.theme.AppTheme
 import io.github.nyzeep.orchestella.ui.theme.CustomThemeSlot
 import io.github.nyzeep.orchestella.ui.theme.ThemeStore

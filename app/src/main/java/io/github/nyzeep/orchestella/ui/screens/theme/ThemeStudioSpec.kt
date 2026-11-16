@@ -1,7 +1,7 @@
 package io.github.nyzeep.orchestella.ui.screens.theme
 
 import androidx.compose.ui.unit.dp
-import io.github.nyzeep.orchestella.ui.design.OeTextScale
+import io.github.nyzeep.orchestella.ui.theme.OeTextScale
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3GlassLevel
 import io.github.nyzeep.orchestella.ui.theme.SurfaceOpacity
 import io.github.nyzeep.orchestella.ui.theme.ThemeStore
@@ -112,7 +112,7 @@ sealed interface ThemeStudioEvent {
     data class SetNavStyle(val option: NavStyleOption) : ThemeStudioEvent
     data class SetGlass(val option: GlassOption) : ThemeStudioEvent
     data class SetCornerDp(val dp: Int) : ThemeStudioEvent
-    data class SetTextScaleMode(val mode: io.github.nyzeep.orchestella.ui.design.OeTextScaleMode) :
+    data class SetTextScaleMode(val mode: io.github.nyzeep.orchestella.ui.theme.OeTextScaleMode) :
         ThemeStudioEvent
 
     data class SetTextScalePercent(val percent: Int) : ThemeStudioEvent

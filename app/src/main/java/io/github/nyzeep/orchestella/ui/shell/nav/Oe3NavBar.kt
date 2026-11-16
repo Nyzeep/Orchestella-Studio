@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -56,6 +57,7 @@ import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Shapes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Sizes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
+import io.github.nyzeep.orchestella.ui.shell.Oe3NavStyle
 import io.github.nyzeep.orchestella.ui.shell.Oe3Tab
 
 /**
@@ -104,8 +106,14 @@ object Oe3NavPillSpec {
     const val REST_SCALE = 1f
 }
 
+/** Top corners of the docked (fixed) bar; the bottom edge stays square. */
+private val FixedBarShape = RoundedCornerShape(
+    topStart = Oe3Shapes.md,
+    topEnd = Oe3Shapes.md,
+)
+
 /**
- * Floating capsule navigation bar (spec §2.3).
+ * Bottom navigation bar (spec §2.3, Theme Studio 底栏样式).
  *
  * UI3-10 upgrade: the background is the glass layer (`Oe3GlassSurface`) —
  * level `None` (the default) keeps the exact solid surface the shell shipped;
@@ -116,12 +124,20 @@ object Oe3NavPillSpec {
  * content on the ≈250ms press spring. Geometry, `Role.Tab` semantics and the
  * 48dp hit floor are owned here; [glassState] is optional so existing callers
  * (previews, goldens) keep compiling.
+ *
+ * [style] picks the geometry (UI3-12 wires Theme Studio's 底栏样式): the
+ * default [Oe3NavStyle.Floating] is the shipped capsule; [Oe3NavStyle.Fixed]
+ * docks the bar flush to the bottom edge as a full-width surface with rounded
+ * top corners, extending behind the system navigation bar. Both share the
+ * same 62dp tab strip, pill and semantics — only the container geometry
+ * differs, so the preference never changes what a tab is or does.
  */
 @Composable
 fun Oe3NavBar(
     selected: Oe3Tab,
     onSelect: (Oe3Tab) -> Unit,
     modifier: Modifier = Modifier,
+    style: Oe3NavStyle = Oe3NavStyle.Floating,
     glassState: HazeState? = null,
 ) {
     val colors = Oe3ThemeValues.colors
@@ -129,13 +145,21 @@ fun Oe3NavBar(
     val info = Oe3ThemeValues.info
     val systemBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val density = LocalDensity.current
+    val fixed = style == Oe3NavStyle.Fixed
 
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = Oe3Sizes.navSideMargin)
-            .padding(bottom = Oe3Sizes.navBottomInset(systemBottom))
-            .height(Oe3Sizes.navBar),
+            .then(
+                if (fixed) {
+                    Modifier
+                } else {
+                    Modifier
+                        .padding(horizontal = Oe3Sizes.navSideMargin)
+                        .padding(bottom = Oe3Sizes.navBottomInset(systemBottom))
+                },
+            )
+            .height(if (fixed) Oe3Sizes.navBar + systemBottom else Oe3Sizes.navBar),
     ) {
         val cellWidth = (maxWidth - Oe3Sizes.navPadding * 2) / Oe3Tab.entries.size
 
@@ -165,14 +189,21 @@ fun Oe3NavBar(
             level = info.glassLevel,
             modifier = Modifier
                 .fillMaxSize()
-                .clip(Oe3Shapes.pill),
+                .clip(if (fixed) FixedBarShape else Oe3Shapes.pill),
             state = glassState,
         ) {
             Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(Oe3Sizes.navPadding)
-                    .selectableGroup(),
+                modifier = (
+                    if (fixed) {
+                        Modifier
+                            .height(Oe3Sizes.navBar)
+                            .padding(horizontal = Oe3Sizes.navPadding)
+                    } else {
+                        Modifier
+                            .fillMaxSize()
+                            .padding(Oe3Sizes.navPadding)
+                    }
+                    ).selectableGroup(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Oe3Tab.entries.forEachIndexed { index, tab ->

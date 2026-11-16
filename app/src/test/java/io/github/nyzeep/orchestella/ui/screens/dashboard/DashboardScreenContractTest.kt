@@ -1,5 +1,6 @@
 package io.github.nyzeep.orchestella.ui.screens.dashboard
 
+import io.github.nyzeep.orchestella.ui.screens.common.formatGigabytes
 import java.io.File
 import javax.xml.parsers.DocumentBuilderFactory
 import org.junit.Assert.assertEquals

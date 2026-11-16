@@ -1,7 +1,7 @@
 package io.github.nyzeep.orchestella.ui.screens.theme
 
 import io.github.nyzeep.orchestella.FakeSharedPreferences
-import io.github.nyzeep.orchestella.ui.design.OeTextScaleMode
+import io.github.nyzeep.orchestella.ui.theme.OeTextScaleMode
 import io.github.nyzeep.orchestella.ui.theme.CustomThemeSlot
 import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
 import io.github.nyzeep.orchestella.ui.theme.ThemeStore
