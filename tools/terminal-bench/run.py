@@ -11,7 +11,8 @@ Exit codes:
   (missing baseline bucket / missing baseline fixture);
 * ``1`` - at least one fixture regressed;
 * ``2`` - environment or harness failure (no adb, no device, install failed,
-  benchmark timeout, activity reported an error).
+  benchmark timeout, activity reported an error), or a missing/unusable
+  baseline when ``--require-baseline`` is set (``BASELINE_PENDING``).
 
 The measurements themselves are produced on a device by the debug activity.
 This script never invents numbers. ``--dry-run`` needs neither adb nor an APK
@@ -205,6 +206,31 @@ def merged_thresholds(raw: object) -> dict:
             if value is not None:
                 merged[key] = value
     return merged
+
+
+def require_captured_baseline(baseline: dict, path: Path) -> None:
+    """Release gate: only a real captured bucket may satisfy ``--require-baseline``.
+
+    ``status`` starts as ``pending-device`` and only ``--update-baseline`` writes
+    ``captured``. The offline replay fixture uses ``synthetic``, so it can never
+    stand in for a device baseline here.
+    """
+    if baseline.get("synthetic"):
+        raise BenchError(
+            "BASELINE_PENDING",
+            f"{path}: synthetic replay fixture; "
+            "--require-baseline needs a captured device baseline",
+        )
+    status = baseline.get("status")
+    buckets = baseline.get("buckets") or {}
+    if status == "captured" and buckets:
+        return
+    raise BenchError(
+        "BASELINE_PENDING",
+        f"{path}: status={status!r} buckets={len(buckets)}; "
+        "--require-baseline needs a captured device baseline "
+        "(run --update-baseline on the target device first)",
+    )
 
 
 def bucket_key(device: str, api: int) -> str:
@@ -655,6 +681,15 @@ def build_parser() -> argparse.ArgumentParser:
         )
     )
     parser.add_argument(
+        "--require-baseline",
+        action="store_true",
+        help=(
+            "release gate: refuse to report-only; exit 2 when the baseline is "
+            "not a captured device baseline (pending-device, empty buckets, "
+            "synthetic fixtures or a missing/incomplete device bucket)"
+        ),
+    )
+    parser.add_argument(
         "--serial",
         default=None,
         help="adb serial (default: $ANDROID_SERIAL or the single device)",
@@ -730,6 +765,11 @@ def execute(args: argparse.Namespace) -> int:
     timeout = args.timeout if args.timeout is not None else DEFAULT_TIMEOUT_SECONDS
     if not math.isfinite(timeout) or timeout <= 0:
         raise BenchError("BAD_ARGUMENT", "--timeout must be a positive number")
+    if args.require_baseline and args.update_baseline:
+        raise BenchError(
+            "BAD_ARGUMENT",
+            "--require-baseline gates a run; it cannot be combined with --update-baseline",
+        )
     if args.update_baseline:
         if not args.model:
             raise BenchError("MODEL_REQUIRED", "--update-baseline requires --model")
@@ -739,6 +779,14 @@ def execute(args: argparse.Namespace) -> int:
             raise BenchError("BAD_ARGUMENT", "--api must be a positive integer")
 
     baseline = load_baseline(baseline_path, create=bool(args.update_baseline))
+    if args.update_baseline and baseline.get("synthetic"):
+        raise BenchError(
+            "BASELINE_SYNTHETIC_READONLY",
+            f"{baseline_path} is the synthetic replay fixture; "
+            "capture real numbers into baseline.json instead",
+        )
+    if args.require_baseline:
+        require_captured_baseline(baseline, baseline_path)
     thresholds = baseline["thresholds"]
     json_out: Path | None = Path(args.json_out).expanduser() if args.json_out else None
     if json_out is not None:
@@ -888,6 +936,14 @@ def execute(args: argparse.Namespace) -> int:
         captured_at = baseline.get("capturedAt")
 
     if not isinstance(bucket, dict) or not bucket.get("fixtures"):
+        if args.require_baseline:
+            # Running the gate with nothing to compare is the failure mode this
+            # flag exists to prevent, so an absent device bucket is exit 2.
+            raise BenchError(
+                "BASELINE_PENDING",
+                f"no baseline fixtures for bucket {key}; "
+                "capture this device with --update-baseline before gating",
+            )
         print(f"NO_BASELINE bucket={key}")
         for fixture, result in parsed["results"].items():
             print(f"  {fixture} {_metrics(result)}")
@@ -920,6 +976,14 @@ def execute(args: argparse.Namespace) -> int:
     if report["failures"]:
         print(f"RESULT=REGRESSION failures={len(report['failures'])}")
         return EXIT_REGRESSION
+    if args.require_baseline and report["judged"] < len(expected):
+        # A bucket that only covers some fixtures would otherwise print PASS for
+        # the rest by omission; the release gate must judge every expected fixture.
+        raise BenchError(
+            "BASELINE_PENDING",
+            f"only {report['judged']}/{len(expected)} fixtures have baseline metrics; "
+            f"capture every fixture for bucket {key} before gating",
+        )
     print(f"RESULT=PASS judged={report['judged']}")
     return EXIT_OK
 
