@@ -11,8 +11,9 @@ import org.junit.Test
  * The ticket's rule is source-level on purpose: a screenshot cannot prove a
  * card has no outline, and code review misses one `strokeWidth` in a large
  * page diff. The scan covers the Oe3 primitives plus the shell and screen
- * trees as soon as they exist; only `ui/oe3/icons` is exempt from the stroke
- * rule, because vector glyphs are strokes by design.
+ * trees as soon as they exist. Card outlines and MaterialCardView are banned;
+ * `drawLine(strokeWidth = ...)` stays legal because the config page draws its
+ * chevron as a line glyph (the same exemption the vector icons get).
  */
 class Oe3StructureGateTest {
 
@@ -30,9 +31,15 @@ class Oe3StructureGateTest {
                 "${file.path} must not use MaterialCardView",
                 text.contains("MaterialCardView", ignoreCase = true),
             )
-            if (!file.normalizedPath().contains("/ui/oe3/icons/")) {
+            assertFalse(
+                "${file.path} must not draw a card outline",
+                text.contains("Modifier.border(") ||
+                    text.contains("BorderStroke") ||
+                    text.contains("CardDefaults.outlinedCardColors"),
+            )
+            if (file.name.contains("Card")) {
                 assertFalse(
-                    "${file.path} must not use strokeWidth (only ui/oe3/icons may stroke)",
+                    "${file.path} is a card source and must not use strokeWidth",
                     text.contains("strokeWidth", ignoreCase = true),
                 )
             }
@@ -71,6 +78,4 @@ class Oe3StructureGateTest {
                 .toList()
         }
     }
-
-    private fun File.normalizedPath(): String = path.replace('\\', '/')
 }
