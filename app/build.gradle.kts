@@ -223,6 +223,10 @@ plugins {
     // Compose migration batch 1 (2026-11-14 UI round, user ruling): the compiler
     // plugin version is the Kotlin version by contract, so the two can never drift.
     alias(libs.plugins.kotlin.compose)
+    // Roborazzi's record/verify tasks are the screenshot gate for UI changes
+    // (UI3-11). The plugin only adds tasks; the capture code lives in
+    // app/src/test/java/.../ui/oe3/screenshot.
+    alias(libs.plugins.roborazzi)
 }
 
 android {
@@ -576,6 +580,14 @@ android {
         checkReleaseBuilds = true
         disable += "PropertyEscape"
     }
+
+    testOptions {
+        unitTests {
+            // Robolectric needs the merged manifest/resources to render the
+            // Compose tree; the screenshot gate runs on the Debug variant.
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 // ---- Single-package repack pipeline (2026-11-14) ----
@@ -882,6 +894,10 @@ dependencies {
     implementation(libs.compose.ui)
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
+    // Glass/blur layer for UI3-10 (ticket UI3-11 owns the dependency lock).
+    // No production file imports Haze yet; the structure gate below forbids
+    // card files from importing it.
+    implementation(libs.haze)
     // OePreview.kt ships @Preview boards in main (the design review entry point),
     // so the annotation artifact is a compile dependency; the renderer stays
     // debug-only. Ticket 01 requires the board, hence the two extra modules.
@@ -897,6 +913,33 @@ dependencies {
     // the production DistccTcpVsockBridge instead of a second byte pump.
     androidTestImplementation(project(":runtime:fastlane-distcc"))
     testImplementation(libs.junit)
+    // Zero-device UI verification (UI3-11): Roborazzi captures Compose trees
+    // through Robolectric's NATIVE graphics on the JVM.
+    testImplementation(libs.robolectric)
+    testImplementation(libs.roborazzi)
+    testImplementation(libs.roborazzi.compose)
+    testImplementation(libs.roborazzi.junit.rule)
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.compose.ui.test.junit4)
+    // ui-test-manifest contributes the host ComponentActivity to the debug
+    // manifest (a manifest entry, not an androidTest dependency).
+    debugImplementation(libs.compose.ui.test.manifest)
+}
+
+// Robolectric downloads android-all-instrumented outside Gradle's repository
+// configuration. When the regional mirror is requested, point that resolver at
+// the same host instead of maven central (which rate-limits CI and this host).
+if (providers.gradleProperty("orchestella.repositories.useAliyunMirror")
+        .map { it.toBooleanStrict() }
+        .getOrElse(false)
+) {
+    tasks.withType<Test>().configureEach {
+        systemProperty("robolectric.dependency.repo.id", "aliyun")
+        systemProperty(
+            "robolectric.dependency.repo.url",
+            "https://maven.aliyun.com/repository/public",
+        )
+    }
 }
 
 tasks.register<JavaExec>("runPureJvmAppTests") {
