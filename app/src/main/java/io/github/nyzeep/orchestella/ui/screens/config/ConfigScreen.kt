@@ -1,0 +1,531 @@
+package io.github.nyzeep.orchestella.ui.screens.config
+
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
+import io.github.nyzeep.orchestella.R
+import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Card
+import io.github.nyzeep.orchestella.ui.oe3.components.Oe3ListRow
+import io.github.nyzeep.orchestella.ui.oe3.components.Oe3SectionHeader
+import io.github.nyzeep.orchestella.ui.oe3.components.Oe3SwitchRow
+import io.github.nyzeep.orchestella.ui.oe3.components.oe3Color
+import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3Theme
+import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
+import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Shapes
+import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Sizes
+import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
+import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
+import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
+import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
+
+/** Live values the page needs besides [ConfigOptions]. */
+@Immutable
+data class ConfigScreenState(
+    val versionName: String,
+    /** One-line AVF/QEMU verdict for the 引擎与授权 row. */
+    val engineSummary: String,
+    /** Newer release cached by `UpdateCenter`, if any. */
+    val updateAvailable: String? = null,
+    /** Release-note summary shipped with [updateAvailable]. */
+    val updateNote: String? = null,
+    val options: ConfigOptions = ConfigOptions(),
+)
+
+/**
+ * The 配置 page: five tonal group cards, a directory row per tool, and the
+ * four persisted playability options.
+ *
+ * Structure rules from the ticket/spec: the page title is content (not a
+ * toolbar), every group header sits outside its card, rows are Oe3's 56dp
+ * rows (48dp interactive floor), and every chevron carries a description.
+ * [onRoute] is the only navigation seam — the host activity owns Activity
+ * starts and dialogs, so this screen stays previewable.
+ */
+@Composable
+fun ConfigScreen(
+    state: ConfigScreenState,
+    onRoute: (ConfigRoute) -> Unit,
+    onOptionsChange: (ConfigOptions) -> Unit,
+    modifier: Modifier = Modifier,
+    onBack: (() -> Unit)? = null,
+) {
+    val colors = Oe3ThemeValues.colors
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .background(colors.background.oe3Color()),
+        contentPadding = PaddingValues(
+            start = Oe3Spacing.pageInset,
+            end = Oe3Spacing.pageInset,
+            top = Oe3Spacing.xs,
+            bottom = Oe3Spacing.contentBottom,
+        ),
+    ) {
+        item(key = "config-header") {
+            ConfigPageHeader(
+                meta = stringResource(R.string.config_page_meta),
+                onBack = onBack,
+            )
+        }
+        ConfigCatalog.groups().forEach { spec ->
+            item(key = "config-header:${spec.group.name}") {
+                Oe3SectionHeader(title = stringResource(spec.group.titleRes))
+            }
+            item(key = "config-card:${spec.group.name}") {
+                Oe3Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(0.dp),
+                ) {
+                    spec.entries.forEachIndexed { index, entry ->
+                        ConfigRow(
+                            entry = entry,
+                            state = state,
+                            showDivider = index < spec.entries.lastIndex || spec.group.hasOptions(),
+                            onClick = { onRoute(entry.route) },
+                        )
+                    }
+                    if (spec.group.hasOptions()) {
+                        OptionLabel()
+                        GroupOptions(
+                            group = spec.group,
+                            options = state.options,
+                            onOptionsChange = onOptionsChange,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun ConfigGroup.hasOptions(): Boolean = when (this) {
+    ConfigGroup.APPEARANCE, ConfigGroup.RUNTIME, ConfigGroup.ABOUT -> true
+    ConfigGroup.CONNECTION, ConfigGroup.DATA -> false
+}
+
+@Composable
+private fun ConfigPageHeader(meta: String, onBack: (() -> Unit)?) {
+    val colors = Oe3ThemeValues.colors
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = Oe3Spacing.xs, bottom = Oe3Spacing.xxs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (onBack != null) {
+            val back = stringResource(R.string.config_back_desc)
+            Box(
+                modifier = Modifier
+                    .size(Oe3Sizes.minTouchTarget)
+                    .clickable(role = Role.Button, onClick = onBack)
+                    .semantics { contentDescription = back },
+                contentAlignment = Alignment.Center,
+            ) {
+                DirectionChevron(pointsLeft = true)
+            }
+            Spacer(Modifier.width(Oe3Spacing.xxs))
+        }
+        Column {
+            Text(
+                text = stringResource(R.string.config_page_title),
+                style = Oe3Typography.style(Oe3TextRole.PageTitle),
+                color = colors.onSurface.oe3Color(),
+            )
+            Text(
+                text = meta,
+                style = Oe3Typography.style(Oe3TextRole.Caption),
+                color = colors.onSurfaceVariant.oe3Color(),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ConfigRow(
+    entry: ConfigEntry,
+    state: ConfigScreenState,
+    showDivider: Boolean,
+    onClick: () -> Unit,
+) {
+    val title = stringResource(entry.titleRes)
+    val colors = Oe3ThemeValues.colors
+    Oe3ListRow(
+        title = title,
+        subtitle = entrySubtitle(entry.route, state),
+        leading = {
+            Icon(
+                painter = painterResource(entry.iconRes),
+                contentDescription = null,
+                tint = colors.primary.oe3Color(),
+                modifier = Modifier.size(Oe3Sizes.icon),
+            )
+        },
+        trailing = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Oe3Spacing.xs),
+            ) {
+                if (entry.route == ConfigRoute.UPDATE &&
+                    state.options.updateCheck &&
+                    state.updateAvailable != null
+                ) {
+                    UpdateBadge()
+                }
+                ConfigChevron(title)
+            }
+        },
+        showDivider = showDivider,
+        onClick = onClick,
+    )
+}
+
+@Composable
+private fun entrySubtitle(route: ConfigRoute, state: ConfigScreenState): String? = when (route) {
+    ConfigRoute.VERSION -> stringResource(R.string.config_version_value, state.versionName)
+    ConfigRoute.ENGINE -> state.engineSummary
+    ConfigRoute.UPDATE -> updateSubtitle(state)
+    else -> {
+        val res = ConfigCatalog.groups()
+            .asSequence()
+            .flatMap { it.entries.asSequence() }
+            .firstOrNull { it.route == route }
+            ?.subtitleRes
+        res?.let { stringResource(it) }
+    }
+}
+
+@Composable
+private fun updateSubtitle(state: ConfigScreenState): String = when {
+    !state.options.updateCheck -> stringResource(R.string.config_update_disabled)
+    state.updateAvailable != null -> {
+        val note = state.updateNote
+            ?.lineSequence()
+            ?.firstOrNull { it.isNotBlank() }
+        val head = stringResource(R.string.config_update_available, state.updateAvailable)
+        if (note.isNullOrBlank()) head else "$head · $note"
+    }
+    else -> stringResource(R.string.config_update_current, state.versionName)
+}
+
+@Composable
+private fun UpdateBadge() {
+    val colors = Oe3ThemeValues.colors
+    Text(
+        text = stringResource(R.string.config_update_badge),
+        style = Oe3Typography.style(Oe3TextRole.Caption),
+        color = colors.primary.oe3Color(),
+        modifier = Modifier
+            .background(
+                color = colors.primaryContainer.oe3Color(),
+                shape = RoundedCornerShape(Oe3Shapes.sm),
+            )
+            .padding(horizontal = Oe3Spacing.xs, vertical = 2.dp),
+    )
+}
+
+@Composable
+private fun OptionLabel() {
+    val colors = Oe3ThemeValues.colors
+    Text(
+        text = stringResource(R.string.config_options_label),
+        style = Oe3Typography.style(Oe3TextRole.Caption),
+        color = colors.onSurfaceVariant.oe3Color(),
+        modifier = Modifier.padding(
+            start = Oe3Spacing.rowHorizontal,
+            end = Oe3Spacing.rowHorizontal,
+            top = Oe3Spacing.sm,
+            bottom = Oe3Spacing.xxs,
+        ),
+    )
+}
+
+@Composable
+private fun GroupOptions(
+    group: ConfigGroup,
+    options: ConfigOptions,
+    onOptionsChange: (ConfigOptions) -> Unit,
+) {
+    when (group) {
+        ConfigGroup.APPEARANCE -> MotionOption(options, onOptionsChange)
+        ConfigGroup.RUNTIME -> {
+            MirrorOption(options, onOptionsChange)
+            BootRestoreOption(options, onOptionsChange)
+        }
+        ConfigGroup.ABOUT -> UpdateCheckOption(options, onOptionsChange)
+        ConfigGroup.CONNECTION, ConfigGroup.DATA -> Unit
+    }
+}
+
+@Composable
+private fun MotionOption(options: ConfigOptions, onOptionsChange: (ConfigOptions) -> Unit) {
+    var showDialog by remember { mutableStateOf(false) }
+    ChoiceRow(
+        title = stringResource(R.string.config_option_motion),
+        description = stringResource(R.string.config_option_motion_desc),
+        value = stringResource(options.sectionMotion.labelRes),
+        showDivider = false,
+        onClick = { showDialog = true },
+    )
+    if (showDialog) {
+        ChoiceDialog(
+            title = stringResource(R.string.config_option_motion),
+            choices = SectionMotion.entries.map { it.labelRes to it },
+            current = options.sectionMotion,
+            onPick = { picked ->
+                showDialog = false
+                onOptionsChange(options.copy(sectionMotion = picked))
+            },
+            onDismiss = { showDialog = false },
+        )
+    }
+}
+
+@Composable
+private fun MirrorOption(options: ConfigOptions, onOptionsChange: (ConfigOptions) -> Unit) {
+    var showDialog by remember { mutableStateOf(false) }
+    ChoiceRow(
+        title = stringResource(R.string.config_option_mirror),
+        description = null,
+        value = stringResource(options.defaultMirror.labelRes),
+        showDivider = true,
+        onClick = { showDialog = true },
+    )
+    if (showDialog) {
+        ChoiceDialog(
+            title = stringResource(R.string.config_option_mirror),
+            choices = DefaultMirror.entries.map { it.labelRes to it },
+            current = options.defaultMirror,
+            onPick = { picked ->
+                showDialog = false
+                onOptionsChange(options.copy(defaultMirror = picked))
+            },
+            onDismiss = { showDialog = false },
+        )
+    }
+}
+
+@Composable
+private fun BootRestoreOption(options: ConfigOptions, onOptionsChange: (ConfigOptions) -> Unit) {
+    Oe3SwitchRow(
+        title = stringResource(R.string.config_option_boot_restore),
+        subtitle = stringResource(R.string.config_option_boot_restore_desc),
+        checked = options.bootRestore,
+        onCheckedChange = { onOptionsChange(options.copy(bootRestore = it)) },
+        showDivider = false,
+    )
+}
+
+@Composable
+private fun UpdateCheckOption(options: ConfigOptions, onOptionsChange: (ConfigOptions) -> Unit) {
+    Oe3SwitchRow(
+        title = stringResource(R.string.config_option_update_check),
+        subtitle = stringResource(R.string.config_option_update_check_desc),
+        checked = options.updateCheck,
+        onCheckedChange = { onOptionsChange(options.copy(updateCheck = it)) },
+        showDivider = false,
+    )
+}
+
+@Composable
+private fun ChoiceRow(
+    title: String,
+    description: String?,
+    value: String,
+    showDivider: Boolean,
+    onClick: () -> Unit,
+) {
+    val colors = Oe3ThemeValues.colors
+    Oe3ListRow(
+        title = title,
+        subtitle = description,
+        trailing = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Oe3Spacing.xs),
+            ) {
+                Text(
+                    text = value,
+                    style = Oe3Typography.style(Oe3TextRole.Caption),
+                    color = colors.onSurfaceVariant.oe3Color(),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                ConfigChevron(title)
+            }
+        },
+        showDivider = showDivider,
+        onClick = onClick,
+    )
+}
+
+@Composable
+private fun <T> ChoiceDialog(
+    title: String,
+    choices: List<Pair<Int, T>>,
+    current: T,
+    onPick: (T) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val colors = Oe3ThemeValues.colors
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = title,
+                style = Oe3Typography.style(Oe3TextRole.Section),
+                color = colors.onSurface.oe3Color(),
+            )
+        },
+        text = {
+            Column {
+                choices.forEach { (labelRes, value) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = Oe3Sizes.minTouchTarget)
+                            .selectable(
+                                selected = value == current,
+                                role = Role.RadioButton,
+                                onClick = { onPick(value) },
+                            )
+                            .semantics(mergeDescendants = true) {},
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = value == current, onClick = null)
+                        Spacer(Modifier.width(Oe3Spacing.sm))
+                        Text(
+                            text = stringResource(labelRes),
+                            style = Oe3Typography.style(Oe3TextRole.Body),
+                            color = colors.onSurface.oe3Color(),
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(
+                    text = stringResource(R.string.config_dialog_cancel),
+                    color = colors.primary.oe3Color(),
+                )
+            }
+        },
+        containerColor = colors.surfaceHigh.oe3Color(),
+    )
+}
+
+/**
+ * A decorative chevron that still names its row for screen readers; the row
+ * merges descendants, so the description is announced once with the title.
+ */
+@Composable
+private fun ConfigChevron(title: String) {
+    val description = stringResource(R.string.config_chevron_desc, title)
+    val color = Oe3ThemeValues.colors.onSurfaceVariant.oe3Color()
+    Canvas(
+        modifier = Modifier
+            .size(Oe3Sizes.icon)
+            .semantics { contentDescription = description },
+    ) {
+        drawChevron(color = color, pointsLeft = false)
+    }
+}
+
+@Composable
+private fun DirectionChevron(pointsLeft: Boolean) {
+    val color = Oe3ThemeValues.colors.onSurface.oe3Color()
+    Canvas(modifier = Modifier.size(Oe3Sizes.icon)) {
+        drawChevron(color = color, pointsLeft = pointsLeft)
+    }
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawChevron(
+    color: androidx.compose.ui.graphics.Color,
+    pointsLeft: Boolean,
+) {
+    val stroke = 1.75.dp.toPx()
+    val nearX = size.width * 0.38f
+    val farX = size.width * 0.62f
+    val top = Offset(if (pointsLeft) farX else nearX, size.height * 0.28f)
+    val middle = Offset(if (pointsLeft) nearX else farX, size.height * 0.5f)
+    val bottom = Offset(if (pointsLeft) farX else nearX, size.height * 0.72f)
+    drawLine(color, top, middle, strokeWidth = stroke, cap = StrokeCap.Round)
+    drawLine(color, middle, bottom, strokeWidth = stroke, cap = StrokeCap.Round)
+}
+
+@Preview(name = "配置 · 暗色", showBackground = true, widthDp = 390, heightDp = 900)
+@Composable
+private fun ConfigScreenDarkPreview() {
+    Oe3Theme(theme = ThemeCatalog.all.first { it.isDark }) {
+        ConfigScreen(
+            state = previewState(),
+            onRoute = {},
+            onOptionsChange = {},
+        )
+    }
+}
+
+@Preview(name = "配置 · 浅色", showBackground = true, widthDp = 390, heightDp = 900)
+@Composable
+private fun ConfigScreenLightPreview() {
+    Oe3Theme(theme = ThemeCatalog.all.first { !it.isDark }) {
+        ConfigScreen(
+            state = previewState(),
+            onRoute = {},
+            onOptionsChange = {},
+        )
+    }
+}
+
+private fun previewState() = ConfigScreenState(
+    versionName = "0.6.2",
+    engineSummary = "AVF 未授权 · QEMU 回退",
+    updateAvailable = "0.7.0",
+    updateNote = "配置中心与设置目录\n新增可玩性选项",
+    options = ConfigOptions(
+        sectionMotion = SectionMotion.Standard,
+        defaultMirror = DefaultMirror.MultiTier,
+        bootRestore = false,
+        updateCheck = true,
+    ),
+)
