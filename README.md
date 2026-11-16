@@ -23,6 +23,10 @@
 
 截图取自真机（Android 16 / 17 设备），默认主题为「看板娘 · 淡紫工控」。
 
+> 界面重构后，应用默认启用全新的五页界面（工作站 / 实例 / 硬件 / 发行版 / 配置，
+> 底部悬浮胶囊栏切换；主题入口收敛为「外观与主题」）。下图为上一版本界面，
+> 新界面的零设备像素基线见 `app/src/test/screenshots/`（37 张 golden，随构建校验）。
+
 | ![工作台](docs/assets/screenshots/dashboard.jpg) | ![发行版目录](docs/assets/screenshots/distros.jpg) | ![硬件配额](docs/assets/screenshots/wizard-hardware.jpg) |
 | :---: | :---: | :---: |
 | **工作台 · 实时遥测** | **发行版目录 · 一键装配** | **新建实例 · 硬件配额** |
