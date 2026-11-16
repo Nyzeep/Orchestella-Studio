@@ -28,6 +28,22 @@ median_ns + bytes, snapshot_copy_us, ...) so the two benches can land
 independently.  Missing row metrics render as "—"; a missing sha256 or a
 sha256 disagreement is a hard error (exit 2), because the whole comparison is
 only meaningful on identical input bytes.
+
+Regression gate
+---------------
+
+`--baseline PATH` (default: `<out>/alloc_baseline.json`) turns the comparison
+into a gate: the median allocation per MB of every fixture must stay within
+`--alloc-tolerance` percent (default 10) of the recorded baseline.  Allocation
+counts are deterministic for a given toolchain and input bytes, so they are safe
+to gate; throughput depends on the host and is printed as an advisory delta
+only, never compared against a threshold.
+
+Exit codes:
+  0  table rendered, allocations within tolerance (or the gate was skipped)
+  1  allocation regression beyond tolerance, or the current run lacks a gated metric
+  2  missing/unreadable input or baseline, missing fixture, sha256 problem, or a
+     baseline that does not carry the gated metric
 """
 
 import argparse
@@ -39,6 +55,8 @@ import sys
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 FIXTURE_ORDER = ("plain", "ansi_color", "cursor", "wide", "osc")
 MIB = 1048576
+BASELINE_NAME = "alloc_baseline.json"
+DEFAULT_ALLOC_TOLERANCE_PCT = 10.0
 
 HEADER = (
     "| 夹具 | Kotlin MB/s | Rust MB/s | 提升 | Kotlin 分配/MB | Rust 分配/MB "
@@ -178,6 +196,90 @@ def build_table(kotlin, rust):
     return "\n".join(lines)
 
 
+def check_baseline(baseline, rust):
+    """Reject a baseline that was not measured on these exact fixtures."""
+    problems = []
+    for fixture_id in FIXTURE_ORDER:
+        if fixture_id not in baseline:
+            problems.append("baseline missing fixture {!r}".format(fixture_id))
+            continue
+        if baseline[fixture_id]["alloc_per_mb"] is None:
+            problems.append(
+                "baseline {!r} has no alloc_bytes_per_mb".format(fixture_id)
+            )
+        base_sha = baseline[fixture_id]["sha256"]
+        rust_sha = rust[fixture_id]["sha256"]
+        if base_sha != rust_sha:
+            problems.append(
+                "baseline {!r} sha256 {} does not match current {}".format(
+                    fixture_id, base_sha, rust_sha
+                )
+            )
+    return problems
+
+
+def gate_allocations(baseline, rust, tolerance_pct):
+    """Return (report lines, violation lines) for the median alloc/MB gate."""
+    rows = [
+        "## 分配门（median alloc/MB，容差 +{:.1f}%）".format(tolerance_pct),
+        "",
+        "变化为正表示分配增加（更差）。",
+        "",
+        "| 夹具 | 基线 | 当前 | 变化 | 结论 |",
+        "| --- | --- | --- | --- | --- |",
+    ]
+    violations = []
+    for fixture_id in FIXTURE_ORDER:
+        base = baseline[fixture_id]["alloc_per_mb"]
+        current = rust[fixture_id]["alloc_per_mb"]
+        if base is None or base <= 0:
+            rows.append(
+                "| {} | — | {} | — | NO-BASELINE |".format(
+                    fixture_id, _fmt(current, "B")
+                )
+            )
+            continue
+        if current is None:
+            rows.append("| {} | {} | — | — | FAIL |".format(fixture_id, _fmt(base, "B")))
+            violations.append(
+                "  {:<10} alloc/MB missing (baseline {})".format(
+                    fixture_id, _fmt(base, "B")
+                )
+            )
+            continue
+        change = (current - base) / base * 100.0
+        verdict = "PASS" if change <= tolerance_pct else "FAIL"
+        rows.append(
+            "| {} | {} | {} | {:+.1f}% | {} |".format(
+                fixture_id,
+                _fmt(base, "B"),
+                _fmt(current, "B"),
+                change,
+                verdict,
+            )
+        )
+        if change > tolerance_pct:
+            violations.append(
+                "  {:<10} {:.1f} -> {:.1f} B/MB ({:+.1f}%)".format(
+                    fixture_id, base, current, change
+                )
+            )
+    return rows, violations
+
+
+def throughput_advisory(baseline, rust):
+    rows = ["", "吞吐（advisory，不设门；同一夹具跨机不可比）：", ""]
+    for fixture_id in FIXTURE_ORDER:
+        base = baseline[fixture_id]["mbps"]
+        current = rust[fixture_id]["mbps"]
+        rows.append(
+            "  {:<10} {} -> {}  {}".format(
+                fixture_id, _fmt(base, "MB/s"), _fmt(current, "MB/s"), _pct(base, current)
+            )
+        )
+    return rows
+
+
 def main(argv=None):
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -186,6 +288,23 @@ def main(argv=None):
         "--out",
         default=os.path.join(SCRIPT_DIR, "out"),
         help="directory holding kotlin.json/rust.json (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--baseline",
+        default=None,
+        help="allocation baseline JSON (default: <out>/%s)" % BASELINE_NAME,
+    )
+    parser.add_argument(
+        "--no-baseline",
+        action="store_true",
+        help="render the table only; never gate allocations",
+    )
+    parser.add_argument(
+        "--alloc-tolerance",
+        type=float,
+        default=DEFAULT_ALLOC_TOLERANCE_PCT,
+        metavar="PCT",
+        help="allowed growth of median alloc/MB in percent (default: %(default)s)",
     )
     args = parser.parse_args(argv)
     out_dir = os.path.abspath(args.out)
@@ -261,6 +380,45 @@ def main(argv=None):
     with open(compare_path, "w", encoding="utf-8", newline="\n") as handle:
         handle.write(document)
     sys.stdout.write(document)
+
+    if args.no_baseline:
+        return 0
+
+    if args.baseline:
+        baseline_path = os.path.abspath(args.baseline)
+        if not os.path.isfile(baseline_path):
+            print("error: baseline not found: %s" % baseline_path, file=sys.stderr)
+            return 2
+    else:
+        baseline_path = os.path.join(out_dir, BASELINE_NAME)
+        if not os.path.isfile(baseline_path):
+            print(
+                "note: no allocation baseline at %s; gate skipped" % baseline_path,
+                file=sys.stderr,
+            )
+            return 0
+
+    try:
+        baseline = load_results(baseline_path)
+    except (OSError, ValueError) as exc:
+        print("error: cannot read baseline %s: %s" % (baseline_path, exc), file=sys.stderr)
+        return 2
+
+    problems = check_baseline(baseline, rust)
+    if problems:
+        for problem in problems:
+            print("error: " + problem, file=sys.stderr)
+        return 2
+
+    report, violations = gate_allocations(baseline, rust, args.alloc_tolerance)
+    advisory = throughput_advisory(baseline, rust)
+    sys.stdout.write("\n" + "\n".join(report + advisory) + "\n")
+
+    if violations:
+        print("error: allocation regression", file=sys.stderr)
+        for violation in violations:
+            print(violation, file=sys.stderr)
+        return 1
     return 0
 
 
