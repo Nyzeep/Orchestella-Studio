@@ -22,7 +22,7 @@
 |---|---|---|---|
 | ubuntu | Ubuntu | CC0-1.0 | <https://design.ubuntu.com/resources>；Ubuntu 是 Canonical 的商标 |
 | debian | Debian | LGPL-3.0-or-later | <https://www.debian.org/logos/>；simple-icons 记录为 CC-BY-SA-3.0，但 Debian 官方同时提供 LGPL-3.0-or-later 选项，本仓库选择后者以满足与 GPL-3.0 代码库的兼容性 |
-| fedora | Fedora | Fedora brand terms | <https://docs.fedoraproject.org/en-US/project/brand/>；仅用于指明 Fedora 发行版 |
+| fedora | Fedora | CC0-1.0 | Oe3 自绘中性 "F" 标记，非上游图形；仅用于指明发行版 |
 | archlinux | Arch Linux | CC0-1.0 | <https://www.archlinux.org/art>；Arch Linux 是商标 |
 | alpinelinux | Alpine Linux | CC0-1.0 | <https://alpinelinux.org> |
 | kalilinux | Kali Linux | CC0-1.0 | <https://www.kali.org/docs/policy/trademark/> |
@@ -36,7 +36,7 @@
 - `debian` 的单色派生图形（`Oe3BrandPathsRestricted.kt` 中的 `Oe3DebianPath` 与
   `oe3_distro_debian.xml`）适用 LGPL-3.0-or-later；`rockylinux` 的对应文件适用
   CC-BY-SA-4.0（其与 GPLv3 为单向兼容）。应用其余部分不是这些图形的派生作品。
-- `fedora` 图形按 Fedora 品牌条款使用：仅指明发行版，不做背书暗示。
+- `fedora` 是 Oe3 自绘的中性字母标记，未使用 Fedora 官方图形；Fedora 名称是商标，仅作指明性使用。
 - 其余图标适用 CC0-1.0，无署名义务；下表来源仍保留以便追溯。
 
 ## 2. 商标声明

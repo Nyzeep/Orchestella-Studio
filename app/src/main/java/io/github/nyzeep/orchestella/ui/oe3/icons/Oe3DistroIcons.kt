@@ -15,7 +15,6 @@ enum class Oe3IconLicense(val label: String, val url: String) {
     Cc0("CC0-1.0", "https://creativecommons.org/publicdomain/zero/1.0/"),
     Lgpl30("LGPL-3.0-or-later", "https://www.gnu.org/licenses/lgpl-3.0.html"),
     CcBySa40("CC-BY-SA-4.0", "https://creativecommons.org/licenses/by-sa/4.0/"),
-    FedoraBrand("Fedora brand terms", "https://docs.fedoraproject.org/en-US/project/brand/"),
 }
 
 /**
@@ -93,9 +92,9 @@ object Oe3DistroIcons {
             id = "fedora",
             slug = "fedora",
             displayName = "Fedora",
-            license = Oe3IconLicense.FedoraBrand,
+            license = Oe3IconLicense.Cc0,
             aliases = emptyList(),
-            pathData = Oe3BrandPathsRestricted.Oe3FedoraPath,
+            pathData = Oe3BrandPathsCc0.Oe3FedoraNeutralPath,
         ),
         Oe3BrandIcon(
             id = "arch",
