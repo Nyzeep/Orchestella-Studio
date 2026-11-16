@@ -4,7 +4,12 @@ import android.content.res.Configuration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,7 +44,10 @@ fun Oe3App(
         Box(
             modifier = modifier
                 .fillMaxSize()
-                .background(Color(colors.background)),
+                .background(Color(colors.background))
+                // 横屏/挖孔：只让左右安全区推开内容，顶部与底部仍由各自的
+                // statusBarsPadding / navBar token 处理，避免重复叠加。
+                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)),
         ) {
             Column(Modifier.fillMaxSize()) {
                 Oe3TopBar()

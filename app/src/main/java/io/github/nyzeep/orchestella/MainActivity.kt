@@ -50,7 +50,6 @@ import io.github.nyzeep.orchestella.ui.motion.OrchestellaMotion
 import io.github.nyzeep.orchestella.ui.shell.Oe3App
 import io.github.nyzeep.orchestella.ui.shell.Oe3Feature
 import io.github.nyzeep.orchestella.ui.shell.Oe3ShellController
-import io.github.nyzeep.orchestella.ui.shell.Oe3Tab
 import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
 import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
 import io.github.nyzeep.orchestella.runtime.capability.AvfAuthorizationWizardModel
@@ -549,7 +548,6 @@ class MainActivity : AppCompatActivity() {
             Oe3ShellController.restore(savedInstanceState?.getString(Oe3ShellController.STATE_KEY)),
         )
         oe3Shell = controller
-        currentTabIndex = controller.selectedTab.ordinal
 
         val theme = themeStore.resolve()
         val textScale = themeStore.textScaleFactor()
@@ -559,10 +557,7 @@ class MainActivity : AppCompatActivity() {
             setContent {
                 Oe3App(
                     selectedTab = controller.selectedTab,
-                    onTabSelected = { tab ->
-                        controller.select(tab)
-                        currentTabIndex = tab.ordinal
-                    },
+                    onTabSelected = { tab -> controller.select(tab) },
                     theme = theme,
                     textScale = textScale,
                     reduceMotion = reduceMotion,
@@ -580,9 +575,7 @@ class MainActivity : AppCompatActivity() {
         // 返回键：非首 tab 回工作站；工作站上放行给系统（退出）。
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (controller.back()) {
-                    currentTabIndex = Oe3Tab.Workstation.ordinal
-                } else {
+                if (!controller.back()) {
                     isEnabled = false
                     onBackPressedDispatcher.onBackPressed()
                     isEnabled = true

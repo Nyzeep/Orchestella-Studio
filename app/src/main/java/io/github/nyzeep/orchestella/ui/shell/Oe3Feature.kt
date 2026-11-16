@@ -39,11 +39,14 @@ object Oe3Feature {
      * never enable the shell either way.
      */
     fun resolve(savedState: Boolean?, requested: Boolean, debugBuild: Boolean): Boolean =
-        enabled(requested, debugBuild) || (debugBuild && savedState == true)
+        combine(savedState, liveEnabled = enabled(requested, debugBuild), debugBuild = debugBuild)
 
-    fun resolve(savedState: Boolean?, context: Context): Boolean {
-        if (!BuildConfig.DEBUG) return false
-        if (savedState == true) return true
-        return enabled(context)
-    }
+    fun resolve(savedState: Boolean?, context: Context): Boolean =
+        combine(savedState, liveEnabled = enabled(context), debugBuild = BuildConfig.DEBUG)
+
+    private fun combine(
+        savedState: Boolean?,
+        liveEnabled: Boolean,
+        debugBuild: Boolean,
+    ): Boolean = liveEnabled || (debugBuild && savedState == true)
 }
