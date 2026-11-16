@@ -43,7 +43,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.nyzeep.orchestella.R
-import io.github.nyzeep.orchestella.ui.design.OeTextScaleMode
+import io.github.nyzeep.orchestella.ui.theme.OeTextScaleMode
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Button
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3ButtonStyle
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Card

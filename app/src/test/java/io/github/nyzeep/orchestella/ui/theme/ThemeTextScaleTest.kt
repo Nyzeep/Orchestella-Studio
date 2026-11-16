@@ -1,8 +1,8 @@
 package io.github.nyzeep.orchestella.ui.theme
 
 import io.github.nyzeep.orchestella.FakeSharedPreferences
-import io.github.nyzeep.orchestella.ui.design.OeTextScale
-import io.github.nyzeep.orchestella.ui.design.OeTextScaleMode
+import io.github.nyzeep.orchestella.ui.theme.OeTextScale
+import io.github.nyzeep.orchestella.ui.theme.OeTextScaleMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
