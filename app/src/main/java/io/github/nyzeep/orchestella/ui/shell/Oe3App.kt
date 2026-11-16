@@ -15,8 +15,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
+import io.github.nyzeep.orchestella.ui.oe3.glass.oe3GlassSource
+import io.github.nyzeep.orchestella.ui.oe3.glass.rememberOe3GlassState
+import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3GlassLevel
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3Theme
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
+import io.github.nyzeep.orchestella.ui.shell.nav.Oe3NavBar
 import io.github.nyzeep.orchestella.ui.theme.AppTheme
 import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
 
@@ -41,6 +45,18 @@ fun Oe3App(
         reduceMotion = reduceMotion,
     ) {
         val colors = Oe3ThemeValues.colors
+        // UI3-10 玻璃接线：内容区是唯一的 haze 源，底栏消费同一个 state。
+        // 源标记仅在玻璃等级非 None 时挂载：None 级在结构上就是基线组件树
+        // （不产生任何 haze 节点），像素与既有壳层完全一致；等级本体仍由
+        // Oe3Theme 的 glassLevel 注入，UI3-12 再把 ThemeStore 的
+        // ui_glass_level / ui_nav_style 接到这里的入参上。
+        val glassState = rememberOe3GlassState()
+        val glassSourceModifier =
+            if (Oe3ThemeValues.info.glassLevel != Oe3GlassLevel.None) {
+                Modifier.oe3GlassSource(glassState)
+            } else {
+                Modifier
+            }
         Box(
             modifier = modifier
                 .fillMaxSize()
@@ -49,7 +65,11 @@ fun Oe3App(
                 // statusBarsPadding / navBar token 处理，避免重复叠加。
                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)),
         ) {
-            Column(Modifier.fillMaxSize()) {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .then(glassSourceModifier),
+            ) {
                 Oe3TopBar()
                 Oe3Pager(
                     selected = selectedTab,
@@ -60,6 +80,7 @@ fun Oe3App(
                 selected = selectedTab,
                 onSelect = onTabSelected,
                 modifier = Modifier.align(Alignment.BottomCenter),
+                glassState = glassState,
             )
         }
     }

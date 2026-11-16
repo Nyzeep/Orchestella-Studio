@@ -19,7 +19,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.captureRoboImage
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3Theme
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
-import io.github.nyzeep.orchestella.ui.shell.Oe3NavBar
+import io.github.nyzeep.orchestella.ui.shell.nav.Oe3NavBar
 import io.github.nyzeep.orchestella.ui.shell.Oe3Pager
 import io.github.nyzeep.orchestella.ui.shell.Oe3Tab
 import io.github.nyzeep.orchestella.ui.shell.Oe3TopBar
