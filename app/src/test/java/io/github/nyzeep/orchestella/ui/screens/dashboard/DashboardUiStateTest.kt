@@ -5,6 +5,7 @@ import io.github.nyzeep.orchestella.InstanceCardUiModel
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
 import io.github.nyzeep.orchestella.startup.DashboardSnapshot
+import io.github.nyzeep.orchestella.ui.screens.common.StorageFacts
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
