@@ -26,7 +26,7 @@
     <string name="ui3_theme_pure_standard">标准</string>
     <string name="ui3_theme_pure_black">纯黑</string>
     <string name="ui3_theme_pure_black_note">仅深色主题生效</string>
-    <string name="ui3_theme_pure_black_preview">偏好已保存；全局生效由壳层接线</string>
+    <string name="ui3_theme_pure_black_preview">已全局生效</string>
 
     <!-- 4. 主题预设 -->
     <string name="ui3_theme_section_presets">主题预设</string>
@@ -50,14 +50,14 @@
     <string name="ui3_theme_section_nav">底栏样式</string>
     <string name="ui3_theme_nav_floating">悬浮（默认）</string>
     <string name="ui3_theme_nav_fixed">固定</string>
-    <string name="ui3_theme_preview_only">预览 · 壳层接线后生效</string>
+    <string name="ui3_theme_preview_only">已全局生效</string>
 
     <!-- 7. 液态玻璃 -->
     <string name="ui3_theme_section_glass">液态玻璃</string>
     <string name="ui3_theme_glass_none">无</string>
     <string name="ui3_theme_glass_standard">标准</string>
     <string name="ui3_theme_glass_ultra">极致</string>
-    <string name="ui3_theme_glass_note">静态示意；Haze 渲染由 UI3-10/12 接线</string>
+    <string name="ui3_theme_glass_note">已全局生效</string>
 
     <!-- 8. 圆角 -->
     <string name="ui3_theme_section_corner">圆角</string>
@@ -70,7 +70,7 @@
     <string name="ui3_theme_font_imported">导入</string>
     <string name="ui3_theme_font_import_hint">随字体导入开放</string>
     <string name="ui3_theme_font_imported_value">已选择：%1$s（预览仍用系统字体）</string>
-    <string name="ui3_theme_font_note">系统/等宽影响本页预览；全局字体由壳层接线</string>
+    <string name="ui3_theme_font_note">已全局生效</string>
 
     <!-- 10. 文本缩放 -->
     <string name="ui3_theme_section_text_scale">文本缩放</string>
