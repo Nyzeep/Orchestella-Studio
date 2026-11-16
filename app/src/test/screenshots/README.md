@@ -38,17 +38,52 @@ app/src/test/screenshots/
   oe3/tokens/pure-black-130.png    pure black / 130%
   oe3/icons/dark.png               navigation + actions + distro marks
   oe3/icons/light.png
+  oe3/shell/dark-100.png           shell chrome / dark / 100%   (UI3-11A)
+  oe3/shell/dark-130.png           shell chrome / dark / 130%
+  oe3/shell/light-100.png          shell chrome / light / 100%
+  oe3/shell/light-130.png          shell chrome / light / 130%
+  oe3/shell/pure-black-100.png     shell chrome / pure black / 100%
+  oe3/shell/pure-black-130.png     shell chrome / pure black / 130%
+  oe3/screens/theme-studio-<mode>-<scale>.png   UI3-09 theme studio, 6 files (own test)
+  oe3/screens/theme-terminal-<mode>-100.png     UI3-09 terminal sketch, 2 files (own test)
+  ui3/dashboard/overview-<mode>.png     UI3-05 workstation page (UI3-11A)
+  ui3/instances/<state>-<mode>.png      UI3-06 instance page states (own test)
+  ui3/distros/<state>-<mode>.png        UI3-08 distros page states (own test)
+  ui3/config/catalog-<mode>.png         UI3-04 config page (UI3-11A)
+  ui3/hardware/ready-<mode>.png         UI3-07 hardware page (UI3-11A)
 ```
 
-`<area>/<screen>-<mode>-<scale>` is fixed. Page tickets add their own area:
-`oe3/screens/<page>-<mode>-<scale>.png`, shell goldens go under
-`oe3/shell/`. One screen per file; do not encode dates or device names in the
-path.
+`<area>/<screen>-<mode>-<scale>` is fixed. Areas that render one fixed
+composition (tokens, icons, shell) omit the `<screen>` segment and name only
+`<mode>-<scale>`; page areas follow the UI3-06/08 `<state>-<mode>` convention.
+One screen per file; do not encode dates or device names in the path.
+
+Ownership notes (UI3-11A):
+
+- Shell goldens live under `oe3/shell/` and the board composes the production
+  `Oe3TopBar` / `Oe3Pager` / `Oe3NavBar` exactly like `Oe3App` does:
+  `Oe3App` applies its own theme and does not forward a `pureBlack` argument,
+  so the board passes the mode to `Oe3Theme` instead of rendering the app
+  root. The real `Oe3App` composable is verified in `Oe3SemanticsTest`.
+- Page goldens are unified under `ui3/<page>/` (`dashboard` = 05 工作站,
+  `config` = 04 配置, `hardware` = 07 硬件), one dark + one light file each;
+  their tests sit beside the screens in `ui/screens/<page>/`. The existing
+  `ui3/instances/` (UI3-06) and `ui3/distros/` (UI3-08) sets stay untouched.
+- The theme-studio and theme-terminal goldens under `oe3/screens/` were
+  recorded by UI3-09 and are owned by the theme-studio lane (UI3-13); they
+  are listed here for inventory only — do not re-record or rename them from
+  this lane.
+- When a page exposes no stable test tag, capturing `onRoot()` under a fixed
+  window is the accepted fallback (dashboard does this); prefer a `testTag`
+  when the page offers one.
 
 ## Adding a golden
 
-1. Add a test in `app/src/test/java/.../ui/oe3/screenshot/`, capture the
-   smallest stable node with `onNodeWithTag("board").captureRoboImage(...)`.
+1. Add a test next to the surface it pins: shell and token boards in
+   `app/src/test/java/.../ui/oe3/screenshot/`, page screens in their own
+   `app/src/test/java/.../ui/screens/<page>/` package. Capture the smallest
+   stable node with `captureRoboImage(...)` writing under
+   `app/src/test/screenshots/`.
 2. Use a fixed board size and a fixed `@Config` qualifier. The existing boards
    use `w412dp-h<N>dp-mdpi`; 412dp is the Pixel reference width.
 3. Never read the clock, preferences, network or a random seed. Disable motion
@@ -57,15 +92,18 @@ path.
 4. Record, inspect the images, and commit the PNGs with the test. Record mode
    rewrites files silently; a reviewer must look at the diff.
    The repository ignores `*.png` globally, so the golden directory must be
-   force-added explicitly (same policy as reviewed docs):
+   force-added explicitly (same policy as reviewed docs) — this covers the
+   `oe3/` and `ui3/` areas alike:
 
    ```sh
-   git add -f app/src/test/screenshots/oe3
+   git add -f app/src/test/screenshots
    ```
 
 5. Keep new golden batches at 40 files or fewer per PR (ticket limit). The
-   foundation set is 8 files; shell goldens wait for UI3-02, page goldens for
-   their page tickets.
+   current inventory is 35 goldens: 8 foundation (tokens + icons), 6 shell
+   (UI3-11A), 6 config/dashboard/hardware pages (UI3-11A), 8 theme studio +
+   terminal (UI3-09, owner: UI3-13), 4 instances (UI3-06) and 3 distros
+   (UI3-08). The UI3-11A batch adds 12 files (6 shell + 6 pages).
 
 ## Why these settings
 

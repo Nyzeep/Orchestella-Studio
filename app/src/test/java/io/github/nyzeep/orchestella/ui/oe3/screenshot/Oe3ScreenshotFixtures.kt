@@ -8,11 +8,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -22,8 +20,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Button
@@ -40,14 +36,11 @@ import io.github.nyzeep.orchestella.ui.oe3.components.Oe3SwitchRow
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3DistroIcons
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icon
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icons
-import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3Theme
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Shapes
-import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Sizes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
-import io.github.nyzeep.orchestella.ui.theme.AppTheme
 
 /** Fixed board width: the Pixel-class 412dp reference used by the spec. */
 internal val BoardWidth = 412.dp
@@ -217,71 +210,6 @@ private fun Swatch(name: String, argb: Int) {
             maxLines = 2,
             textAlign = TextAlign.Start,
         )
-    }
-}
-
-/**
- * Five-destination navigation contract probe.
- *
- * UI3-02 owns the production shell; until it lands, this fixture pins the
- * semantics every future shell must expose: exactly five `Role.Tab` nodes,
- * one selected destination, 48dp hit boxes and non-empty labels at 130%.
- * Replace this composable with the real shell in the semantics test when 02
- * merges; keep the assertions.
- */
-@Composable
-internal fun Oe3NavContractFixture(
-    selectedIndex: Int,
-    appTheme: AppTheme,
-    textScale: Float = 1f,
-) {
-    Oe3Theme(
-        theme = appTheme,
-        textScale = textScale,
-        reduceMotion = true,
-    ) {
-        val colors = Oe3ThemeValues.colors
-        Row(
-            modifier = Modifier
-                .width(BoardWidth)
-                .background(Color(colors.background))
-                .padding(Oe3Sizes.navSideMargin),
-            horizontalArrangement = Arrangement.spacedBy(Oe3Sizes.navPadding),
-        ) {
-            NavLabels.forEachIndexed { index, label ->
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = Oe3Sizes.minTouchTarget)
-                        .clip(Oe3Shapes.pill)
-                        .selectable(
-                            selected = index == selectedIndex,
-                            role = Role.Tab,
-                            onClick = {},
-                        )
-                        .semantics(mergeDescendants = true) {}
-                        .padding(vertical = Oe3Spacing.xxs)
-                        .testTag("nav-tab-$index"),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    Oe3Icon(
-                        image = Oe3Icons.navigation[index],
-                        contentDescription = null,
-                        selected = index == selectedIndex,
-                    )
-                    Text(
-                        text = label,
-                        style = Oe3Typography.style(Oe3TextRole.NavLabel),
-                        color = Color(
-                            if (index == selectedIndex) colors.primary else colors.onSurfaceVariant,
-                        ),
-                        maxLines = 1,
-                        modifier = Modifier.testTag("nav-label-$index"),
-                    )
-                }
-            }
-        }
     }
 }
 
