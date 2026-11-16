@@ -39,21 +39,16 @@
         android:textSize="12sp"
         android:textColor="?attr/colorOnSurfaceVariant" />
 
-    <com.google.android.material.card.MaterialCardView
+    <!-- Flat tonal block, no stroke: spec §6 forbids legacy card containers
+         and strokes in new page files. The legacy settings shell is
+         square-cornered anyway. -->
+    <LinearLayout
         android:id="@+id/card_settings_virtualization"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        app:cardCornerRadius="0dp"
-        app:cardElevation="0dp"
-        app:strokeWidth="1dp"
-        app:strokeColor="?attr/colorOutlineVariant"
-        app:cardBackgroundColor="?attr/colorSurfaceContainer">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="@dimen/oe_space_xl">
+        android:orientation="vertical"
+        android:background="?attr/colorSurfaceContainer"
+        android:padding="@dimen/oe_space_xl">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -159,7 +154,6 @@
                 </LinearLayout>
             </LinearLayout>
 
-        </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
+    </LinearLayout>
 
 </LinearLayout>

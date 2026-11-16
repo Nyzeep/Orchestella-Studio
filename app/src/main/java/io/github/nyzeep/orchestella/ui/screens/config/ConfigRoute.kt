@@ -67,12 +67,16 @@ data class ConfigEntry(
 )
 
 /** The five groups from the ticket, in spec order. */
-enum class ConfigGroup(@StringRes val titleRes: Int) {
-    APPEARANCE(R.string.config_group_appearance),
-    CONNECTION(R.string.config_group_connection),
-    RUNTIME(R.string.config_group_runtime),
-    DATA(R.string.config_group_data),
-    ABOUT(R.string.config_group_about),
+enum class ConfigGroup(
+    @StringRes val titleRes: Int,
+    /** Whether this group carries one of the persisted playability options. */
+    val hasOptions: Boolean,
+) {
+    APPEARANCE(R.string.config_group_appearance, true),
+    CONNECTION(R.string.config_group_connection, false),
+    RUNTIME(R.string.config_group_runtime, true),
+    DATA(R.string.config_group_data, false),
+    ABOUT(R.string.config_group_about, true),
 }
 
 /** A group header plus its directory rows; the header sits outside the card. */

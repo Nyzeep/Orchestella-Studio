@@ -33,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -91,6 +92,7 @@ fun ConfigScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
+            .testTag("config:screen")
             .background(colors.background.oe3Color()),
         contentPadding = PaddingValues(
             start = Oe3Spacing.pageInset,
@@ -118,11 +120,11 @@ fun ConfigScreen(
                         ConfigRow(
                             entry = entry,
                             state = state,
-                            showDivider = index < spec.entries.lastIndex || spec.group.hasOptions(),
+                            showDivider = index < spec.entries.lastIndex || spec.group.hasOptions,
                             onClick = { onRoute(entry.route) },
                         )
                     }
-                    if (spec.group.hasOptions()) {
+                    if (spec.group.hasOptions) {
                         OptionLabel()
                         GroupOptions(
                             group = spec.group,
@@ -134,11 +136,6 @@ fun ConfigScreen(
             }
         }
     }
-}
-
-private fun ConfigGroup.hasOptions(): Boolean = when (this) {
-    ConfigGroup.APPEARANCE, ConfigGroup.RUNTIME, ConfigGroup.ABOUT -> true
-    ConfigGroup.CONNECTION, ConfigGroup.DATA -> false
 }
 
 @Composable
@@ -155,6 +152,7 @@ private fun ConfigPageHeader(meta: String, onBack: (() -> Unit)?) {
             Box(
                 modifier = Modifier
                     .size(Oe3Sizes.minTouchTarget)
+                    .testTag("config:back")
                     .clickable(role = Role.Button, onClick = onBack)
                     .semantics { contentDescription = back },
                 contentAlignment = Alignment.Center,
@@ -191,7 +189,13 @@ private fun ConfigRow(
     val colors = Oe3ThemeValues.colors
     Oe3ListRow(
         title = title,
-        subtitle = entrySubtitle(entry.route, state),
+        modifier = Modifier.testTag("config:route:${entry.route.id}"),
+        subtitle = when (entry.route) {
+            ConfigRoute.VERSION -> stringResource(R.string.config_version_value, state.versionName)
+            ConfigRoute.ENGINE -> state.engineSummary
+            ConfigRoute.UPDATE -> updateSubtitle(state)
+            else -> entry.subtitleRes?.let { stringResource(it) }
+        },
         leading = {
             Icon(
                 painter = painterResource(entry.iconRes),
@@ -217,21 +221,6 @@ private fun ConfigRow(
         showDivider = showDivider,
         onClick = onClick,
     )
-}
-
-@Composable
-private fun entrySubtitle(route: ConfigRoute, state: ConfigScreenState): String? = when (route) {
-    ConfigRoute.VERSION -> stringResource(R.string.config_version_value, state.versionName)
-    ConfigRoute.ENGINE -> state.engineSummary
-    ConfigRoute.UPDATE -> updateSubtitle(state)
-    else -> {
-        val res = ConfigCatalog.groups()
-            .asSequence()
-            .flatMap { it.entries.asSequence() }
-            .firstOrNull { it.route == route }
-            ?.subtitleRes
-        res?.let { stringResource(it) }
-    }
 }
 
 @Composable
@@ -303,6 +292,7 @@ private fun MotionOption(options: ConfigOptions, onOptionsChange: (ConfigOptions
         title = stringResource(R.string.config_option_motion),
         description = stringResource(R.string.config_option_motion_desc),
         value = stringResource(options.sectionMotion.labelRes),
+        tag = "motion",
         showDivider = false,
         onClick = { showDialog = true },
     )
@@ -327,6 +317,7 @@ private fun MirrorOption(options: ConfigOptions, onOptionsChange: (ConfigOptions
         title = stringResource(R.string.config_option_mirror),
         description = null,
         value = stringResource(options.defaultMirror.labelRes),
+        tag = "mirror",
         showDivider = true,
         onClick = { showDialog = true },
     )
@@ -351,6 +342,7 @@ private fun BootRestoreOption(options: ConfigOptions, onOptionsChange: (ConfigOp
         subtitle = stringResource(R.string.config_option_boot_restore_desc),
         checked = options.bootRestore,
         onCheckedChange = { onOptionsChange(options.copy(bootRestore = it)) },
+        modifier = Modifier.testTag("config:option:boot_restore"),
         showDivider = false,
     )
 }
@@ -362,6 +354,7 @@ private fun UpdateCheckOption(options: ConfigOptions, onOptionsChange: (ConfigOp
         subtitle = stringResource(R.string.config_option_update_check_desc),
         checked = options.updateCheck,
         onCheckedChange = { onOptionsChange(options.copy(updateCheck = it)) },
+        modifier = Modifier.testTag("config:option:update_check"),
         showDivider = false,
     )
 }
@@ -371,12 +364,14 @@ private fun ChoiceRow(
     title: String,
     description: String?,
     value: String,
+    tag: String,
     showDivider: Boolean,
     onClick: () -> Unit,
 ) {
     val colors = Oe3ThemeValues.colors
     Oe3ListRow(
         title = title,
+        modifier = Modifier.testTag("config:option:$tag"),
         subtitle = description,
         trailing = {
             Row(

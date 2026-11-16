@@ -201,13 +201,6 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         ThemeApplier.bind(this)
-        // Opening 配置 is an interest signal, but the six-hour interval still
-        // governs the network call; a disabled check returns immediately.
-        UpdateCoordinator.checkInBackground(this, BuildConfig.VERSION_NAME) {
-            if (!isFinishing && !isDestroyed) {
-                updateState.value = updateCenter.pending(BuildConfig.VERSION_NAME)
-            }
-        }
     }
 
     override fun onResume() {
@@ -251,13 +244,6 @@ class SettingsActivity : AppCompatActivity() {
     private fun persistOptions(next: ConfigOptions) {
         val previous = optionsState.value
         optionsState.value = configPreferences.writeOptions(previous, next)
-        if (next.updateCheck && !previous.updateCheck) {
-            UpdateCoordinator.checkInBackground(this, BuildConfig.VERSION_NAME) {
-                if (!isFinishing && !isDestroyed) {
-                    updateState.value = updateCenter.pending(BuildConfig.VERSION_NAME)
-                }
-            }
-        }
     }
 
     /** Exhaustive by construction: a new [ConfigDestination] breaks the build. */

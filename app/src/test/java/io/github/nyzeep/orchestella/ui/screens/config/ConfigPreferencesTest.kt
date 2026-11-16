@@ -37,7 +37,7 @@ class ConfigPreferencesTest {
         assertEquals(SectionMotion.Standard, options.sectionMotion)
         assertEquals(DefaultMirror.MultiTier, options.defaultMirror)
         assertFalse("boot restore is opt-in (ADR-0011)", options.bootRestore)
-        assertTrue("update check is on by default (ADR-0015)", options.updateCheck)
+        assertTrue("update check is on by default", options.updateCheck)
     }
 
     @Test

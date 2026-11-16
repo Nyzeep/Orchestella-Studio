@@ -55,7 +55,7 @@
     <!-- 可玩性选项 -->
     <string name="config_options_label">偏好</string>
     <string name="config_option_motion">入场动效</string>
-    <string name="config_option_motion_desc">设置子页与配置分组的出现动效</string>
+    <string name="config_option_motion_desc">设置子页打开时的入场动效</string>
     <string name="config_option_mirror">默认镜像源</string>
     <string name="config_option_boot_restore">开机自动恢复上次实例</string>
     <string name="config_option_boot_restore_desc">开机后冷恢复上次运行的实例；默认关闭</string>

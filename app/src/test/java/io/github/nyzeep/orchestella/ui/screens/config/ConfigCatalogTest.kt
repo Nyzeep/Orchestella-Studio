@@ -98,6 +98,12 @@ class ConfigCatalogTest {
     }
 
     @Test
+    fun everyRouteIdYieldsAUniqueTestTag() {
+        val tags = ConfigCatalog.routes().map { "config:route:${it.id}" }
+        assertEquals("duplicate testTag: $tags", tags.size, tags.distinct().size)
+    }
+
+    @Test
     fun everyEntryHasATitleAndAnIcon() {
         ConfigCatalog.groups().flatMap { it.entries }.forEach { entry ->
             assertTrue("route ${entry.route.id} is missing a title", entry.titleRes != 0)

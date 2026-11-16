@@ -56,6 +56,24 @@ class ConfigUiContractTest {
     }
 
     @Test
+    fun everyDirectoryRowCarriesAUniqueTestTag() {
+        val text = source("src/main/java/io/github/nyzeep/orchestella/ui/screens/config/ConfigScreen.kt")
+        assertTrue(
+            "directory rows must expose a stable testTag for semantics tests",
+            text.contains("testTag(\"config:route:\${entry.route.id}\")"),
+        )
+        assertTrue(text.contains("testTag(\"config:option:"))
+    }
+
+    @Test
+    fun newSettingsPageUsesNoCardOutlineOrDepth() {
+        val layout = source("src/main/res/layout/layout_settings_section_system.xml")
+        listOf("MaterialCardView", "strokeWidth", "cardElevation").forEach { token ->
+            assertFalse("system section must not use $token", layout.contains(token))
+        }
+    }
+
+    @Test
     fun configScreenUsesToneNotOutlineOrDepth() {
         val text = source("src/main/java/io/github/nyzeep/orchestella/ui/screens/config/ConfigScreen.kt")
         listOf("MaterialCardView", "shadowElevation", "CardDefaults").forEach { token ->

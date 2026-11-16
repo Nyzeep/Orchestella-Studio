@@ -104,14 +104,14 @@ class ConfigPreferences(private val store: ConfigStore) {
         store.putString(KEY_DEFAULT_MIRROR, value.key)
     }
 
-    /** Boot cold-restore; ADR-0011 keeps this off unless the user opts in. */
+    /** Boot cold-restore; off unless the user opts in (ADR-0011 boot policy). */
     fun bootRestore(): Boolean = store.getBoolean(KEY_BOOT_RESTORE, false)
 
     fun setBootRestore(enabled: Boolean) {
         store.putBoolean(KEY_BOOT_RESTORE, enabled)
     }
 
-    /** GitHub release check; enabled by default and fully disableable (ADR-0015). */
+    /** GitHub release check; enabled by default and fully disableable. */
     fun updateCheck(): Boolean = store.getBoolean(KEY_UPDATE_CHECK, true)
 
     fun setUpdateCheck(enabled: Boolean) {
@@ -142,10 +142,10 @@ class ConfigPreferences(private val store: ConfigStore) {
         /** New key: default software-source policy. */
         const val KEY_DEFAULT_MIRROR = "ui3_config_default_mirror"
 
-        /** Existing product key; default false lives in SettingsManager/ADR-0011. */
+        /** Existing product key; default false lives in SettingsManager. */
         const val KEY_BOOT_RESTORE = SettingsManager.KEY_BOOT_AUTO_START
 
-        /** Existing product key; default true lives in SettingsManager/ADR-0015. */
+        /** Existing product key; default true lives in SettingsManager. */
         const val KEY_UPDATE_CHECK = SettingsManager.KEY_UPDATE_CHECK
     }
 }
