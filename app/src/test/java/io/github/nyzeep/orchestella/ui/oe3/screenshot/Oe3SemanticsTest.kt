@@ -2,6 +2,7 @@ package io.github.nyzeep.orchestella.ui.oe3.screenshot
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -19,6 +20,7 @@ import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Button
@@ -29,6 +31,9 @@ import io.github.nyzeep.orchestella.ui.oe3.components.Oe3SwitchRow
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icon
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icons
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3Theme
+import io.github.nyzeep.orchestella.ui.shell.Oe3App
+import io.github.nyzeep.orchestella.ui.shell.Oe3ShellController
+import io.github.nyzeep.orchestella.ui.shell.Oe3Tab
 import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -38,12 +43,18 @@ import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 
 /**
- * Accessibility contract for the Oe3 shell and controls.
+ * Accessibility contract for the real Oe3 shell (`ui/shell/Oe3App.kt`).
  *
- * The five-tab fixture stands in for UI3-02's shell (not merged at this
- * branch); the assertions are the ones the real shell must keep. The expected
- * labels are hardcoded here rather than read from the fixture, so removing or
- * renaming a destination fails the test instead of moving the goalposts.
+ * The shell is rendered as-is with motion disabled and the oe3 mode passed
+ * explicitly (never through the debug-only intent gate), mirroring the wiring
+ * `MainActivity.mountOe3Shell` uses: the selection lives in a real
+ * [Oe3ShellController] and the bar writes back through [Oe3ShellController.select].
+ * The production nav bar exposes no testTags, so a destination is located as
+ * the merged `Role.Tab` node carrying its label. The expected labels are
+ * hardcoded here rather than read from [Oe3Tab], so removing or renaming a
+ * destination fails the test instead of moving the goalposts. The back
+ * fallthrough of the controller itself is pinned by `Oe3ShellModelTest`;
+ * this suite covers the composed shell contract on top of it.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-mdpi")
@@ -53,12 +64,9 @@ class Oe3SemanticsTest {
     val compose = createComposeRule()
 
     @Test
-    fun navigationContractHasFiveTabsAndOneSelectedDestination() {
+    fun realShellHasFiveTabsAndOneSelectedDestination() {
         compose.setContent {
-            Oe3NavContractFixture(
-                selectedIndex = 2,
-                appTheme = ThemeCatalog.constructivistWorkstation,
-            )
+            RealShell(controller = Oe3ShellController(Oe3Tab.Hardware))
         }
 
         compose.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab))
@@ -66,38 +74,55 @@ class Oe3SemanticsTest {
         compose.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.Selected, true))
             .assertCountEquals(1)
 
-        ExpectedNavLabels.indices.forEach { index ->
-            val tab = compose.onNodeWithTag("nav-tab-$index")
+        ExpectedNavLabels.forEach { label ->
+            val tab = compose.onNode(tabWithLabel(label))
             tab.assertIsDisplayed()
                 .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab))
             assertTouchTarget(tab)
         }
-        compose.onNodeWithTag("nav-tab-2").assertIsSelected()
-        listOf(0, 1, 3, 4).forEach { index ->
-            compose.onNodeWithTag("nav-tab-$index").assertIsNotSelected()
+        compose.onNode(tabWithLabel("硬件")).assertIsSelected()
+        listOf("工作站", "实例", "发行版", "配置").forEach { label ->
+            compose.onNode(tabWithLabel(label)).assertIsNotSelected()
         }
     }
 
     @Test
     fun navigationLabelsStayNonEmptyAt130Percent() {
         compose.setContent {
-            Oe3NavContractFixture(
-                selectedIndex = 0,
-                appTheme = ThemeCatalog.constructivistWorkstation,
+            RealShell(
+                controller = Oe3ShellController(Oe3Tab.Workstation),
                 textScale = 1.3f,
             )
         }
 
-        ExpectedNavLabels.forEachIndexed { index, expected ->
-            val node = compose.onNodeWithTag("nav-label-$index", useUnmergedTree = true)
+        ExpectedNavLabels.forEach { expected ->
+            val node = compose.onNode(tabWithLabel(expected))
             node.assertIsDisplayed()
             val text = node.fetchSemanticsNode()
                 .config
                 .getOrNull(SemanticsProperties.Text)
                 ?.joinToString(separator = "") { it.text }
-            assertTrue("nav label $index must not be empty at 130%", !text.isNullOrBlank())
+            assertTrue("nav label '$expected' must not be empty at 130%", !text.isNullOrBlank())
             assertEquals(expected, text)
         }
+    }
+
+    @Test
+    fun tappingWorkstationFromANonFirstTabReturnsToTheWorkstation() {
+        val controller = Oe3ShellController(Oe3Tab.Config)
+        compose.setContent {
+            RealShell(controller = controller)
+        }
+
+        compose.onNode(tabWithLabel("配置")).assertIsSelected()
+        compose.onNode(tabWithLabel("工作站")).performClick()
+        compose.waitForIdle()
+
+        assertEquals(Oe3Tab.Workstation, controller.selectedTab)
+        compose.onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.Selected, true))
+            .assertCountEquals(1)
+        compose.onNode(tabWithLabel("工作站")).assertIsSelected()
+        compose.onNode(tabWithLabel("配置")).assertIsNotSelected()
     }
 
     @Test
@@ -154,6 +179,37 @@ class Oe3SemanticsTest {
 
         compose.onNodeWithContentDescription("72%").assertIsDisplayed()
         compose.onNodeWithTag("power").assertContentDescriptionEquals("电源")
+    }
+
+    /**
+     * The production nav bar exposes no testTags: a destination is the merged
+     * selectable node with `Role.Tab` semantics carrying its label text.
+     */
+    private fun tabWithLabel(label: String): SemanticsMatcher = SemanticsMatcher(
+        "tab labeled '$label'",
+    ) { node ->
+        node.config.getOrNull(SemanticsProperties.Role) == Role.Tab &&
+            node.config.getOrNull(SemanticsProperties.Text)
+                ?.any { it.text == label } == true
+    }
+
+    /**
+     * The real application shell with the production state holder. The
+     * selection is read inside composition so [Oe3ShellController.select]
+     * recomposes the bar exactly like the Activity wiring does.
+     */
+    @Composable
+    private fun RealShell(
+        controller: Oe3ShellController,
+        textScale: Float = 1f,
+    ) {
+        Oe3App(
+            selectedTab = controller.selectedTab,
+            onTabSelected = controller::select,
+            theme = ThemeCatalog.constructivistWorkstation,
+            textScale = textScale,
+            reduceMotion = true,
+        )
     }
 
     /**
