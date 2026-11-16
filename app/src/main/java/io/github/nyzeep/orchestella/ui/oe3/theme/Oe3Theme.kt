@@ -25,6 +25,7 @@ import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Shapes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TypeScale
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
 import io.github.nyzeep.orchestella.ui.theme.AppTheme
+import io.github.nyzeep.orchestella.ui.theme.ThemeColors
 
 @Immutable
 data class Oe3ThemeInfo(
@@ -82,6 +83,16 @@ object Oe3ThemeScheme {
             onPrimary = Color(tokens.onPrimary),
             primaryContainer = Color(tokens.primaryContainer),
             onPrimaryContainer = Color(tokens.onSurface),
+            secondary = Color(tokens.accent),
+            onSecondary = Color(ThemeColors.onColor(tokens.accent)),
+            secondaryContainer = Color(
+                ThemeColors.blend(tokens.surface, tokens.accent, if (isDark) 0.22f else 0.14f),
+            ),
+            onSecondaryContainer = Color(tokens.onSurface),
+            tertiary = Color(tokens.primary),
+            onTertiary = Color(tokens.onPrimary),
+            tertiaryContainer = Color(tokens.primaryContainer),
+            onTertiaryContainer = Color(tokens.onSurface),
             background = Color(tokens.background),
             onBackground = Color(tokens.onSurface),
             surface = Color(tokens.surface),
@@ -96,6 +107,10 @@ object Oe3ThemeScheme {
             onError = Color(tokens.onError),
             outline = Color(tokens.divider),
             outlineVariant = Color(tokens.divider),
+            inverseSurface = Color(tokens.onSurface),
+            inverseOnSurface = Color(tokens.surface),
+            inversePrimary = Color(tokens.primary),
+            surfaceTint = Color(tokens.primary),
         )
     }
 
@@ -118,6 +133,15 @@ object Oe3ThemeScheme {
  * [textScale] is the in-app 85–130% override. The theme multiplies it into
  * `LocalDensity.fontScale`, which makes every `sp` token scale exactly once —
  * pre-multiplying the tokens themselves would apply the factor twice.
+ *
+ * Composition rule: do not nest the legacy `OrchestellaComposeTheme` with a
+ * non-1.0 `textScale` inside this theme. The legacy Oe token layer
+ * pre-multiplies its own scale, so passing the same override into both layers
+ * would scale that subtree twice.
+ *
+ * Corner radii are the fixed Oe3 ladder, not the legacy control-corner
+ * preference. Theme Studio's radius choice needs an explicit shape input when
+ * UI3-09 lands; keeping it out of this ticket avoids a half-wired preference.
  */
 @Composable
 fun Oe3Theme(
@@ -129,7 +153,9 @@ fun Oe3Theme(
     content: @Composable () -> Unit,
 ) {
     val colors = remember(theme, pureBlack) { Oe3Colors.resolve(theme, pureBlack) }
-    val glass = remember(theme, glassLevel) { Oe3Glass.resolve(theme, glassLevel) }
+    val glass = remember(theme, glassLevel, pureBlack) {
+        Oe3Glass.resolve(theme, glassLevel, pureBlack)
+    }
     val motion = remember(reduceMotion) {
         if (reduceMotion) Oe3Motion.reduced() else Oe3Motion.standard()
     }

@@ -2,23 +2,21 @@ package io.github.nyzeep.orchestella.ui.oe3
 
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeScheme
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Colors
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Glass
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3GlassLevel
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Shapes
-import io.github.nyzeep.orchestella.ui.theme.AppTheme
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /** Pure-JVM contract for the Oe3 → Material3 projection. */
 class Oe3ThemeTest {
 
-    private val theme = AppTheme(
-        id = "test",
-        displayName = "test",
-        isDark = true,
+    private val theme = oe3TestTheme(
+        dark = true,
         background = 0xFF0A0B0E.toInt(),
         surface = 0xFF14151A.toInt(),
         surfaceTranslucent = 0xE614151A.toInt(),
@@ -26,10 +24,6 @@ class Oe3ThemeTest {
         accent = 0xFFFFB4AB.toInt(),
         text = 0xFFF4F5F7.toInt(),
         textDim = 0xFF9BA1AB.toInt(),
-        glow = 0xFF7C9CFF.toInt(),
-        terminalBackground = 0xFF0A0B0E.toInt(),
-        terminalForeground = 0xFFF4F5F7.toInt(),
-        ansi = List(16) { 0xFF000000.toInt() },
     )
 
     @Test
@@ -45,8 +39,19 @@ class Oe3ThemeTest {
         assertEquals(Color(tokens.onSurfaceVariant), scheme.onSurfaceVariant)
         assertEquals(Color(tokens.primary), scheme.primary)
         assertEquals(Color(tokens.onPrimary), scheme.onPrimary)
+        assertEquals(Color(tokens.accent), scheme.secondary)
         assertEquals(Color(tokens.error), scheme.error)
         assertEquals(Color(tokens.divider), scheme.outlineVariant)
+        assertEquals(Color(tokens.onSurface), scheme.inverseSurface)
+        assertEquals(Color(tokens.surface), scheme.inverseOnSurface)
+    }
+
+    @Test
+    fun materialTypographyUsesBodyWeightForTheDefaultTextStyle() {
+        val typography = Oe3ThemeScheme.typography()
+        assertEquals(14f, typography.bodyLarge.fontSize.value, 0.001f)
+        assertEquals(FontWeight.Normal, typography.bodyLarge.fontWeight)
+        assertEquals(FontWeight.SemiBold, typography.titleSmall.fontWeight)
     }
 
     @Test
@@ -86,5 +91,12 @@ class Oe3ThemeTest {
         assertEquals(0.55f, ultra.tintAlpha, 0.001f)
         assertEquals(0xF5, ultra.fallbackTint ushr 24)
         assertEquals(theme.surface and 0x00FFFFFF, ultra.fallbackTint and 0x00FFFFFF)
+    }
+
+    @Test
+    fun pureBlackGlassUsesTheBlackSurfaceInsteadOfThePaletteSurface() {
+        val glass = Oe3Glass.resolve(theme, Oe3GlassLevel.Standard, pureBlack = true)
+        assertEquals(0x0B0B0C, glass.tint and 0x00FFFFFF)
+        assertEquals(0x0B0B0C, glass.fallbackTint and 0x00FFFFFF)
     }
 }
