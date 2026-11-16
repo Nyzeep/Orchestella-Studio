@@ -1,6 +1,8 @@
 package io.github.nyzeep.orchestella.ui.oe3.components
 
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -38,7 +40,8 @@ import io.github.nyzeep.orchestella.ui.theme.ThemeColors
  * depth effect. Press feedback is a 10% ink wash, not a moving shadow.
  *
  * [content] is a [ColumnScope], so pages compose their own internal rhythm;
- * the primitive owns only the surface, clipping and padding.
+ * the primitive owns only the surface, clipping and padding. A clickable card
+ * is one accessibility node, so [content] must not add a second click target.
  */
 @Composable
 fun Oe3Card(
@@ -54,7 +57,14 @@ fun Oe3Card(
     val pressed by interaction.collectIsPressedAsState()
     val pressFraction by animateFloatAsState(
         targetValue = if (pressed) 1f else 0f,
-        animationSpec = tween(press.durationMillis, easing = press.easing),
+        animationSpec = if (press.durationMillis == 0) {
+            tween(0)
+        } else {
+            spring(
+                dampingRatio = press.dampingRatio.coerceAtLeast(0.1f),
+                stiffness = Spring.StiffnessMediumLow,
+            )
+        },
         label = "oe3CardPress",
     )
     val fill = lerp(

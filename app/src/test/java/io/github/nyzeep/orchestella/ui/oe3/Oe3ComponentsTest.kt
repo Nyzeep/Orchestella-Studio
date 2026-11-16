@@ -31,13 +31,13 @@ class Oe3ComponentsTest {
         assertEquals(Oe3Sizes.dividerStart, Oe3DividerSpec.startIndent(hasLeading = true))
         assertEquals(56.dp, Oe3DividerSpec.startIndent(hasLeading = true))
         assertEquals(16.dp, Oe3DividerSpec.startIndent(hasLeading = false))
-        assertEquals(14.dp, Oe3DividerSpec.endIndent())
+        assertEquals(14.dp, Oe3Sizes.dividerEnd)
     }
 
     @Test
     fun chipKeepsACompactVisualInsideA48dpTarget() {
         assertEquals(32.dp, Oe3Sizes.chip)
+        assertEquals(48.dp, Oe3Sizes.interactiveMinHeight(Oe3Sizes.chip))
         assertEquals(48.dp, Oe3Sizes.button)
-        assertEquals(48.dp, Oe3Sizes.minTouchTarget)
     }
 }

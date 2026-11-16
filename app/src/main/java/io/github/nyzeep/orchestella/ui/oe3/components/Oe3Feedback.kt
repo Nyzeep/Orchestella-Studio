@@ -147,12 +147,10 @@ fun Oe3EmptyState(
     }
 }
 
-/** Row-start/end insets for the in-card divider, independent of layout. */
+/** Row-start inset for the in-card divider, independent of layout. */
 object Oe3DividerSpec {
     fun startIndent(hasLeading: Boolean): Dp =
         if (hasLeading) Oe3Sizes.dividerStart else Oe3Spacing.rowHorizontal
-
-    fun endIndent(): Dp = Oe3Sizes.dividerEnd
 }
 
 /**
