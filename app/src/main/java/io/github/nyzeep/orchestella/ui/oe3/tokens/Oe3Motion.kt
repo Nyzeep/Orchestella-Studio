@@ -27,12 +27,16 @@ data class Oe3MotionTokens(
     val cardEnter: Oe3MotionSpec,
     val dialog: Oe3MotionSpec,
     val themeTween: Oe3MotionSpec,
+    /** Starting scale of the card entrance; 1.0 under reduced motion. */
+    val cardEnterScaleFrom: Float,
+    /** Null under reduced motion, so the pill lands instead of springing. */
+    val navSelectionSpring: SpringSpec<Float>?,
 )
 
 /**
  * Oe3 motion scale. [reduced] is the global "reduce motion" result: every
- * duration becomes 0 so state changes land instantly, while the token shape
- * stays identical for call sites.
+ * duration becomes 0 and the navigation spring is withdrawn, so state changes
+ * land instantly while the token shape stays identical for call sites.
  */
 object Oe3Motion {
 
@@ -41,18 +45,19 @@ object Oe3Motion {
     private val easeInOut = CubicBezierEasing(0.4f, 0f, 0.2f, 1f)
     private val easeOutCubic = CubicBezierEasing(0.215f, 0.61f, 0.355f, 1f)
 
-    /** The bottom-bar pill: spring, 0.85 damping, ~400ms perceived settle. */
-    val navSelectionSpring: SpringSpec<Float> =
-        SpringSpec(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow)
-
     fun standard(): Oe3MotionTokens = Oe3MotionTokens(
         navSelection = Oe3MotionSpec(400, standard, dampingRatio = 0.85f),
-        press = Oe3MotionSpec(250, decelerate),
+        press = Oe3MotionSpec(250, decelerate, dampingRatio = 0.85f),
         pageFade = Oe3MotionSpec(220, easeInOut),
         pageSlide = Oe3MotionSpec(300, decelerate),
         cardEnter = Oe3MotionSpec(300, decelerate),
         dialog = Oe3MotionSpec(250, easeOutCubic),
         themeTween = Oe3MotionSpec(300, standard),
+        cardEnterScaleFrom = 0.96f,
+        navSelectionSpring = SpringSpec(
+            dampingRatio = 0.85f,
+            stiffness = Spring.StiffnessMediumLow,
+        ),
     )
 
     fun reduced(): Oe3MotionTokens {
@@ -66,6 +71,8 @@ object Oe3Motion {
             cardEnter = base.cardEnter.instant(),
             dialog = base.dialog.instant(),
             themeTween = base.themeTween.instant(),
+            cardEnterScaleFrom = 1f,
+            navSelectionSpring = null,
         )
     }
 }

@@ -9,7 +9,6 @@ enum class HomePreviewBlockKind { Title, Meta, HeroCard, StorageRing, Metrics, R
 data class HomePreviewBlock(
     val kind: HomePreviewBlockKind,
     val heightFraction: Float,
-    val label: String,
 )
 
 /**
@@ -27,16 +26,13 @@ object HomePreviewSpec {
     const val ASPECT_RATIO = 9f / 19.5f
 
     val blocks: List<HomePreviewBlock> = listOf(
-        HomePreviewBlock(HomePreviewBlockKind.Title, 0.06f, "工作站"),
-        HomePreviewBlock(HomePreviewBlockKind.Meta, 0.03f, "状态摘要"),
-        HomePreviewBlock(HomePreviewBlockKind.HeroCard, 0.27f, "实例主卡"),
-        HomePreviewBlock(HomePreviewBlockKind.StorageRing, 0.28f, "存储圆环"),
-        HomePreviewBlock(HomePreviewBlockKind.Metrics, 0.16f, "CPU / RAM"),
-        HomePreviewBlock(HomePreviewBlockKind.RecentInstances, 0.20f, "最近实例"),
+        HomePreviewBlock(HomePreviewBlockKind.Title, 0.06f),
+        HomePreviewBlock(HomePreviewBlockKind.Meta, 0.03f),
+        HomePreviewBlock(HomePreviewBlockKind.HeroCard, 0.27f),
+        HomePreviewBlock(HomePreviewBlockKind.StorageRing, 0.28f),
+        HomePreviewBlock(HomePreviewBlockKind.Metrics, 0.16f),
+        HomePreviewBlock(HomePreviewBlockKind.RecentInstances, 0.20f),
     )
-
-    fun block(kind: HomePreviewBlockKind): HomePreviewBlock =
-        blocks.first { it.kind == kind }
 
     fun totalFraction(): Float = blocks.sumOf { it.heightFraction.toDouble() }.toFloat()
 }

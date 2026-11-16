@@ -24,6 +24,7 @@ data class Oe3ColorTokens(
     val primary: Int,
     val primaryContainer: Int,
     val onPrimary: Int,
+    val accent: Int,
     val error: Int,
     val onError: Int,
 )
@@ -70,6 +71,8 @@ object Oe3Colors {
 
         val onSurface = theme.text
         val onSurfaceVariant = ThemeColors.readable(theme.textDim, surface)
+        // AppTheme carries no error role; use the Material 3 baseline red for
+        // the current brightness so error copy stays legible on every palette.
         val error = if (theme.isDark) ERROR_DARK else ERROR_LIGHT
 
         return Oe3ColorTokens(
@@ -87,6 +90,7 @@ object Oe3Colors {
                 if (theme.isDark) 0.22f else 0.14f,
             ),
             onPrimary = ThemeColors.onColor(theme.primary),
+            accent = theme.accent,
             error = error,
             onError = ThemeColors.onColor(error),
         )

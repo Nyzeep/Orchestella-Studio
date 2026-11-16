@@ -40,11 +40,4 @@ class HomePreviewSpecTest {
         assertEquals(9f / 19.5f, HomePreviewSpec.ASPECT_RATIO, 0.0001f)
         assertEquals(1, HomePreviewSpec.VERSION)
     }
-
-    @Test
-    fun everyBlockKindIsReachableByLookup() {
-        HomePreviewBlockKind.entries.forEach { kind ->
-            assertEquals(kind, HomePreviewSpec.block(kind).kind)
-        }
-    }
 }

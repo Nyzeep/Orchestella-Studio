@@ -1,7 +1,6 @@
 package io.github.nyzeep.orchestella.ui.oe3
 
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Colors
-import io.github.nyzeep.orchestella.ui.theme.AppTheme
 import io.github.nyzeep.orchestella.ui.theme.ThemeColors
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -18,21 +17,13 @@ class Oe3ColorsTest {
         primary: Int,
         text: Int,
         textDim: Int,
-    ) = AppTheme(
-        id = "test",
-        displayName = "test",
-        isDark = dark,
+    ) = oe3TestTheme(
+        dark = dark,
         background = background,
         surface = surface,
-        surfaceTranslucent = surface,
         primary = primary,
-        accent = primary,
         text = text,
         textDim = textDim,
-        glow = primary,
-        terminalBackground = background,
-        terminalForeground = text,
-        ansi = List(16) { 0xFF000000.toInt() },
     )
 
     private val dark = theme(
@@ -67,6 +58,7 @@ class Oe3ColorsTest {
             ThemeColors.readable(dark.textDim, dark.surface),
             tokens.onSurfaceVariant,
         )
+        assertEquals(dark.accent, tokens.accent)
     }
 
     @Test

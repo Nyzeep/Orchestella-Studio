@@ -3,7 +3,6 @@ package io.github.nyzeep.orchestella.ui.oe3
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Motion
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3MotionTokens
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** Pure-JVM contract for the Oe3 motion scale (spec §2.5). */
@@ -33,7 +32,10 @@ class Oe3MotionTest {
 
     @Test
     fun navSelectionCarriesItsSpringDamping() {
-        assertEquals(0.85f, Oe3Motion.standard().navSelection.dampingRatio, 0.0001f)
+        val motion = Oe3Motion.standard()
+        assertEquals(0.85f, motion.navSelection.dampingRatio, 0.0001f)
+        assertEquals(0.85f, motion.press.dampingRatio, 0.0001f)
+        assertEquals(0.85f, motion.navSelectionSpring!!.dampingRatio, 0.0001f)
     }
 
     @Test
@@ -42,12 +44,18 @@ class Oe3MotionTest {
         durations(reduced).forEach { duration ->
             assertEquals(0, duration)
         }
+        assertEquals(1f, reduced.cardEnterScaleFrom, 0.0001f)
+        assertEquals(null, reduced.navSelectionSpring)
+    }
+
+    @Test
+    fun cardEntranceStartsAtTheDocumentedScale() {
+        assertEquals(0.96f, Oe3Motion.standard().cardEnterScaleFrom, 0.0001f)
     }
 
     @Test
     fun everyCurveStartsAtZeroAndEndsAtOne() {
         val motion = Oe3Motion.standard()
-        durations(motion)
         listOf(
             motion.navSelection,
             motion.press,
@@ -60,12 +68,5 @@ class Oe3MotionTest {
             assertEquals(0f, spec.easing.transform(0f), 0.0001f)
             assertEquals(1f, spec.easing.transform(1f), 0.0001f)
         }
-    }
-
-    @Test
-    fun reducedIsStillACompleteTokenSet() {
-        val reduced = Oe3Motion.reduced()
-        assertTrue(durations(reduced).size == 7)
-        assertEquals(0, reduced.pageFade.durationMillis)
     }
 }

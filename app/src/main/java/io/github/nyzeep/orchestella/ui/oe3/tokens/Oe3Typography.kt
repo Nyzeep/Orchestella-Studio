@@ -53,8 +53,10 @@ object Oe3Typography {
         displaySmall = style(Oe3TextRole.Brand),
         headlineMedium = style(Oe3TextRole.PageTitle),
         titleMedium = style(Oe3TextRole.Section),
-        bodyLarge = style(Oe3TextRole.BodyStrong),
+        titleSmall = style(Oe3TextRole.BodyStrong),
+        bodyLarge = style(Oe3TextRole.Body),
         bodyMedium = style(Oe3TextRole.Body),
+        bodySmall = style(Oe3TextRole.Caption),
         labelMedium = style(Oe3TextRole.Caption),
         labelSmall = style(Oe3TextRole.NavLabel),
     )

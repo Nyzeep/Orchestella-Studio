@@ -24,9 +24,8 @@ class Oe3GeometryTest {
     }
 
     @Test
-    fun pillIsAFullCapsuleAndRoundedBuildsFromTheToken() {
+    fun pillIsAFullCapsule() {
         assertEquals(RoundedCornerShape(percent = 50), Oe3Shapes.pill)
-        assertEquals(RoundedCornerShape(16.dp), Oe3Shapes.rounded(Oe3Shapes.md))
     }
 
     @Test
@@ -71,9 +70,23 @@ class Oe3GeometryTest {
             "minimum touch target must be at least 48dp",
             Oe3Sizes.minTouchTarget >= 48.dp,
         )
-        assertTrue("list rows exceed the floor", Oe3Spacing.rowHeight >= Oe3Sizes.minTouchTarget)
+        // A 32dp chip keeps its drawn size but gets a 48dp interactive box;
+        // rows and buttons are already above the floor.
+        assertEquals(48.dp, Oe3Sizes.interactiveMinHeight(Oe3Sizes.chip))
+        assertEquals(48.dp, Oe3Sizes.interactiveMinHeight(Oe3Sizes.button))
+        assertEquals(56.dp, Oe3Sizes.interactiveMinHeight(Oe3Spacing.rowHeight))
+        val row = Oe3Sizes.interactiveMinHeight(Oe3Spacing.rowHeight)
+        assertTrue("list rows exceed the floor", row >= Oe3Sizes.minTouchTarget)
         assertTrue("buttons exceed the floor", Oe3Sizes.button >= Oe3Sizes.minTouchTarget)
         assertTrue("the nav pill exceeds the floor", Oe3Sizes.navPill >= Oe3Sizes.minTouchTarget)
+    }
+
+    @Test
+    fun navigationBarUsesItsLabelGapAndSafeBottomInset() {
+        assertEquals(2.dp, Oe3Sizes.navIconLabelGap)
+        assertEquals(21.dp, Oe3Sizes.navBottomInset(0.dp))
+        assertEquals(21.dp, Oe3Sizes.navBottomInset(10.dp))
+        assertEquals(38.dp, Oe3Sizes.navBottomInset(30.dp))
     }
 
     @Test
