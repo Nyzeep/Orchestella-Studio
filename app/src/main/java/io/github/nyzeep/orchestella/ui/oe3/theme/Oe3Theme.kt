@@ -14,8 +14,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3BaseFontFamily
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3ColorTokens
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Colors
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Glass
@@ -147,7 +149,8 @@ object Oe3ThemeScheme {
         )
     }
 
-    fun typography(): Typography = Oe3Typography.materialTypography()
+    fun typography(baseFamily: FontFamily? = null): Typography =
+        Oe3Typography.materialTypography(baseFamily)
 }
 
 /**
@@ -169,6 +172,11 @@ object Oe3ThemeScheme {
  * and to expose [LocalOe3CornerRadius] to surfaces that opt into it; colors,
  * typography and text scaling keep their existing meaning. An explicit
  * [shapes] argument wins over the derived projection.
+ *
+ * [monoBody] (UI3-12) is the shell's wiring of Theme Studio's 等宽 choice: it
+ * overrides the base text family tree-wide through [LocalOe3BaseFontFamily]
+ * while leaving every size, weight, line height and the [Oe3TextRole.Mono]
+ * role untouched. The default `false` reproduces the shipped typography.
  */
 @Composable
 fun Oe3Theme(
@@ -179,6 +187,7 @@ fun Oe3Theme(
     reduceMotion: Boolean = false,
     cornerRadiusDp: Int? = null,
     shapes: Shapes? = null,
+    monoBody: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val colors = remember(theme, pureBlack) { Oe3Colors.resolve(theme, pureBlack) }
@@ -197,7 +206,13 @@ fun Oe3Theme(
     val resolvedShapes = remember(shapes, cornerRadius) {
         shapes ?: Oe3ThemeScheme.shapes(cornerRadius)
     }
-    val typography = remember { Oe3ThemeScheme.typography() }
+    // UI3-12 mono wiring: Theme Studio's 等宽 choice overrides the base family
+    // tree-wide; the Mono role keeps its own monospace either way. Default off
+    // keeps every documented style byte-identical.
+    val baseFamily = remember(monoBody) {
+        if (monoBody) FontFamily.Monospace else null
+    }
+    val typography = remember(baseFamily) { Oe3ThemeScheme.typography(baseFamily) }
 
     val density = LocalDensity.current
     val scaledDensity = remember(density, textScale) { Oe3TypeScale.density(density, textScale) }
@@ -219,6 +234,7 @@ fun Oe3Theme(
         LocalOe3Glass provides glass,
         LocalOe3CornerRadius provides cornerRadius,
         LocalOe3ThemeInfo provides info,
+        LocalOe3BaseFontFamily provides baseFamily,
     ) {
         MaterialTheme(
             colorScheme = scheme,

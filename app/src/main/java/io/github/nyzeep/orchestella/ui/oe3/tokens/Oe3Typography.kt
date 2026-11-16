@@ -1,7 +1,9 @@
 package io.github.nyzeep.orchestella.ui.oe3.tokens
 
 import androidx.compose.material3.Typography
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -10,6 +12,14 @@ import androidx.compose.ui.unit.sp
 
 /** The eight text roles Oe3 allows. Anything else is a page-local style. */
 enum class Oe3TextRole { Brand, PageTitle, Section, Body, BodyStrong, Caption, NavLabel, Mono }
+
+/**
+ * Base family the shell overrides for the whole tree (UI3-12 wires Theme
+ * Studio's 等宽 choice): `null` keeps the documented Default/Mono mapping.
+ * The [Oe3TextRole.Mono] role always stays monospace so terminal-adjacent
+ * copy never loses its shape.
+ */
+val LocalOe3BaseFontFamily = staticCompositionLocalOf<FontFamily?> { null }
 
 @Immutable
 data class Oe3TypeSpec(
@@ -38,10 +48,19 @@ object Oe3Typography {
 
     fun spec(role: Oe3TextRole): Oe3TypeSpec = specs.getValue(role)
 
-    fun style(role: Oe3TextRole): TextStyle {
+    /** Composition-aware read: the theme may override the base family (mono wiring). */
+    @Composable
+    fun style(role: Oe3TextRole): TextStyle = styleStatic(role, LocalOe3BaseFontFamily.current)
+
+    /** Pure mapping used outside composition (tests, Material typography). */
+    fun styleStatic(role: Oe3TextRole, baseFamily: FontFamily? = null): TextStyle {
         val spec = spec(role)
         return TextStyle(
-            fontFamily = if (role == Oe3TextRole.Mono) FontFamily.Monospace else FontFamily.Default,
+            fontFamily = when {
+                role == Oe3TextRole.Mono -> FontFamily.Monospace
+                baseFamily != null -> baseFamily
+                else -> FontFamily.Default
+            },
             fontSize = spec.sizeSp.sp,
             fontWeight = spec.weight,
             lineHeight = spec.lineHeightSp.sp,
@@ -49,16 +68,16 @@ object Oe3Typography {
     }
 
     /** Bridge for Material3 consumers; Oe3 primitives read [style] directly. */
-    fun materialTypography(): Typography = Typography(
-        displaySmall = style(Oe3TextRole.Brand),
-        headlineMedium = style(Oe3TextRole.PageTitle),
-        titleMedium = style(Oe3TextRole.Section),
-        titleSmall = style(Oe3TextRole.BodyStrong),
-        bodyLarge = style(Oe3TextRole.Body),
-        bodyMedium = style(Oe3TextRole.Body),
-        bodySmall = style(Oe3TextRole.Caption),
-        labelMedium = style(Oe3TextRole.Caption),
-        labelSmall = style(Oe3TextRole.NavLabel),
+    fun materialTypography(baseFamily: FontFamily? = null): Typography = Typography(
+        displaySmall = styleStatic(Oe3TextRole.Brand, baseFamily),
+        headlineMedium = styleStatic(Oe3TextRole.PageTitle, baseFamily),
+        titleMedium = styleStatic(Oe3TextRole.Section, baseFamily),
+        titleSmall = styleStatic(Oe3TextRole.BodyStrong, baseFamily),
+        bodyLarge = styleStatic(Oe3TextRole.Body, baseFamily),
+        bodyMedium = styleStatic(Oe3TextRole.Body, baseFamily),
+        bodySmall = styleStatic(Oe3TextRole.Caption, baseFamily),
+        labelMedium = styleStatic(Oe3TextRole.Caption, baseFamily),
+        labelSmall = styleStatic(Oe3TextRole.NavLabel, baseFamily),
     )
 }
 

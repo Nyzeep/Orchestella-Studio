@@ -49,7 +49,9 @@ import io.github.nyzeep.orchestella.ui.TouchTargets
 import io.github.nyzeep.orchestella.ui.motion.OrchestellaMotion
 import io.github.nyzeep.orchestella.ui.shell.Oe3App
 import io.github.nyzeep.orchestella.ui.shell.Oe3Feature
+import io.github.nyzeep.orchestella.ui.shell.Oe3NavStyle
 import io.github.nyzeep.orchestella.ui.shell.Oe3ShellController
+import io.github.nyzeep.orchestella.ui.shell.glassLevelFromKey
 import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
 import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
 import io.github.nyzeep.orchestella.runtime.capability.AvfAuthorizationWizardModel
@@ -118,8 +120,8 @@ class MainActivity : AppCompatActivity() {
     private var wizardModel: AvfAuthorizationWizardModel? = null
     private var pendingExportInstance: InstanceLifecycle.Instance? = null
     private var currentTabIndex = 0
-    /** UI3-02：Compose 壳层特性开关（默认关闭；旧壳路径不受影响）。 */
-    private var oe3Enabled = false
+    /** UI3-02：Compose 壳层。UI3-12 起为唯一界面；旧壳路径在删除前不再可达。 */
+    private var oe3Enabled = true
     private var oe3Shell: Oe3ShellController? = null
     /** False until the first switchTab painted every tab; later switches repaint the changed pair. */
     private var tabsInitialized = false
@@ -342,12 +344,10 @@ class MainActivity : AppCompatActivity() {
         window.statusBarColor = Color.TRANSPARENT
         window.navigationBarColor = Color.TRANSPARENT
 
-        // UI3-02: debug-only Compose shell. When the flag is off this branch is
-        // skipped and every statement below executes exactly as before.
-        oe3Enabled = Oe3Feature.resolve(
-            savedState = savedInstanceState?.getBoolean(Oe3Feature.STATE_KEY),
-            context = this,
-        )
+        // UI3-12: the Compose shell is the only interface. The legacy XML
+        // initialization below stays until the old shell is deleted and is
+        // unreachable since the flip.
+        oe3Enabled = Oe3Feature.enabled()
         if (oe3Enabled) {
             mountOe3Shell(savedInstanceState)
             return
@@ -537,12 +537,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * UI3-02：开关为真时只挂 Compose 壳层。旧壳根（root_coordinator）用 GONE
-     * 移出布局，不与 Compose 叠放；后续页面由 UI3-12 接真实实现。
+     * UI3-12：Compose 壳层为唯一界面。Theme Studio 的呈现偏好（纯黑/玻璃/
+     * 底栏样式/等宽字体）在这里读出并传入 [Oe3App]——读取放壳层桥（Activity），
+     * Oe3App 保持状态无知，兑现 UI3-13 文案的「全局生效」。
      */
     private fun mountOe3Shell(savedInstanceState: Bundle?) {
-        // root_coordinator 是旧壳的根（含空 masthead 与 root_container）；GONE 后
-        // ComposeView 作为 content 的兄弟层独占窗口，不与 NestedScrollView 叠放。
+        // 旧壳删除前的过渡（批次 C 移除）：把旧壳根移出布局，让 ComposeView 独占窗口。
         findViewById<View>(R.id.root_coordinator)?.visibility = View.GONE
         val controller = Oe3ShellController(
             Oe3ShellController.restore(savedInstanceState?.getString(Oe3ShellController.STATE_KEY)),
@@ -551,7 +551,11 @@ class MainActivity : AppCompatActivity() {
 
         val theme = themeStore.resolve()
         val textScale = themeStore.textScaleFactor()
-        val reduceMotion = !ValueAnimator.areAnimatorsEnabled()
+        val animatorsEnabled = ValueAnimator.areAnimatorsEnabled()
+        val reduceMotion = !animatorsEnabled
+        // UI3-10 玻璃层的运行时闸：动效被系统关闭或省电模式时退到实色 scrim 面。
+        val powerManager = getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+        val glassEnabled = animatorsEnabled && powerManager?.isPowerSaveMode != true
         val composeView = ComposeView(this).apply {
             setBackgroundColor(theme.background)
             setContent {
@@ -561,6 +565,11 @@ class MainActivity : AppCompatActivity() {
                     theme = theme,
                     textScale = textScale,
                     reduceMotion = reduceMotion,
+                    pureBlack = themeStore.uiPureBlack(),
+                    glassLevel = glassLevelFromKey(themeStore.uiGlassLevel()),
+                    glassEnabled = glassEnabled,
+                    navStyle = Oe3NavStyle.fromKey(themeStore.uiNavStyle()),
+                    monoBody = themeStore.uiFontChoice() == "mono",
                 )
             }
         }
@@ -1535,7 +1544,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         oe3Shell?.let { outState.putString(Oe3ShellController.STATE_KEY, it.selectedTab.key) }
-        if (oe3Enabled) outState.putBoolean(Oe3Feature.STATE_KEY, true)
         outState.putInt("dashboard_tab", currentTabIndex)
         super.onSaveInstanceState(outState)
     }
