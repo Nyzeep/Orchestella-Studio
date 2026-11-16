@@ -347,12 +347,11 @@ private fun ThemeStudioContent(
                     // Font import does not exist yet (随字体导入开放): the row stays
                     // disabled so a selection can never persist an unloadable font.
                     enabled = choice != FontChoice.Imported,
+                    // No-op for Imported: the row is disabled, and never wiring a
+                    // callback here makes "a font can never persist" structural.
+                    // onPickFont can be re-wired when the font-import ticket lands.
                     onSelect = {
-                        if (choice == FontChoice.Imported) {
-                            // Inert while disabled; onPickFont stays wired for the
-                            // font-import ticket and no event reaches the store.
-                            onPickFont?.invoke()
-                        } else {
+                        if (choice != FontChoice.Imported) {
                             onEvent(ThemeStudioEvent.SetFontChoice(choice))
                         }
                     },
