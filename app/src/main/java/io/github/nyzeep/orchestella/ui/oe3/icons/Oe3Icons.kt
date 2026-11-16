@@ -151,7 +151,7 @@ object Oe3Icons {
     val Update: ImageVector by lazy {
         lineIcon(
             name = "Oe3.Update",
-            pathData = "M20 12a8 8 0 1 1-2.35-5.65 M20 4v4.5h-4.5",
+            pathData = "M20 12a8 8 0 1 1-2.35-5.65L21.5 9.5 M21.5 4.5v5h-5",
         )
     }
 

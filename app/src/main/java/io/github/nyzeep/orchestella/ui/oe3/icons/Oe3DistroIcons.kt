@@ -13,7 +13,7 @@ import java.util.Locale
  */
 enum class Oe3IconLicense(val label: String, val url: String) {
     Cc0("CC0-1.0", "https://creativecommons.org/publicdomain/zero/1.0/"),
-    CcBySa30("CC-BY-SA-3.0", "https://creativecommons.org/licenses/by-sa/3.0/"),
+    Lgpl30("LGPL-3.0-or-later", "https://www.gnu.org/licenses/lgpl-3.0.html"),
     CcBySa40("CC-BY-SA-4.0", "https://creativecommons.org/licenses/by-sa/4.0/"),
     FedoraBrand("Fedora brand terms", "https://docs.fedoraproject.org/en-US/project/brand/"),
 }
@@ -78,9 +78,9 @@ object Oe3DistroIcons {
             id = "debian",
             slug = "debian",
             displayName = "Debian",
-            license = Oe3IconLicense.CcBySa30,
+            license = Oe3IconLicense.Lgpl30,
             aliases = emptyList(),
-            pathData = Oe3BrandPathsShareAlike.Oe3DebianPath,
+            pathData = Oe3BrandPathsRestricted.Oe3DebianPath,
         ),
         Oe3BrandIcon(
             id = "fedora",
@@ -88,7 +88,7 @@ object Oe3DistroIcons {
             displayName = "Fedora",
             license = Oe3IconLicense.FedoraBrand,
             aliases = emptyList(),
-            pathData = Oe3BrandPathsShareAlike.Oe3FedoraPath,
+            pathData = Oe3BrandPathsRestricted.Oe3FedoraPath,
         ),
         Oe3BrandIcon(
             id = "arch",
@@ -120,7 +120,7 @@ object Oe3DistroIcons {
             displayName = "Rocky Linux",
             license = Oe3IconLicense.CcBySa40,
             aliases = listOf("rockylinux"),
-            pathData = Oe3BrandPathsShareAlike.Oe3RockylinuxPath,
+            pathData = Oe3BrandPathsRestricted.Oe3RockylinuxPath,
         ),
         // Not in the current catalogue, but old instances and the setup wizard
         // still carry these ids; they must not fall back while such a record

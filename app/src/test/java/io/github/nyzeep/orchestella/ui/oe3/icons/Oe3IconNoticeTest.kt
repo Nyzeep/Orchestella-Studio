@@ -37,6 +37,31 @@ class Oe3IconNoticeTest {
     }
 
     @Test
+    fun upstreamLicenseExpectationsArePinned() {
+        // Evidence: simple-icons 16.38.0 data/simple-icons.json records Debian
+        // as CC-BY-SA-3.0, Rocky as CC-BY-SA-4.0 and Fedora as "custom"; the
+        // rest carry no separate entry and ship under the package's CC0-1.0.
+        // Debian also offers LGPL-3.0-or-later, which this project takes.
+        val expected = mapOf(
+            "ubuntu" to "CC0-1.0",
+            "debian" to "LGPL-3.0-or-later",
+            "fedora" to "Fedora brand terms",
+            "archlinux" to "CC0-1.0",
+            "alpinelinux" to "CC0-1.0",
+            "kalilinux" to "CC0-1.0",
+            "opensuse" to "CC0-1.0",
+            "almalinux" to "CC0-1.0",
+            "rockylinux" to "CC-BY-SA-4.0",
+            "linux" to "CC0-1.0",
+        )
+        assertEquals(
+            "the shipped licence table must not drift from the pinned upstream facts",
+            expected,
+            Oe3DistroIcons.entries.associate { it.slug to it.license.label },
+        )
+    }
+
+    @Test
     fun noticeRecordsTheRealLicensePerBrand() {
         val bySlug = Oe3DistroIcons.entries.associateBy { it.slug }
         for (row in noticeRows()) {

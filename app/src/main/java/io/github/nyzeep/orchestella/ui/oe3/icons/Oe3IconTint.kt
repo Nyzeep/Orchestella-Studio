@@ -27,14 +27,6 @@ object Oe3IconTint {
         } else {
             MaterialTheme.colorScheme.onSurfaceVariant
         }
-
-    /**
-     * Variant for chrome that already propagates a content colour (a pill, a
-     * filled button). Selection still wins with `primary`.
-     */
-    @Composable
-    fun inherit(selected: Boolean, contentColor: Color): Color =
-        if (selected) MaterialTheme.colorScheme.primary else contentColor
 }
 
 /**
@@ -45,8 +37,8 @@ object Oe3IconTint {
  *
  * When the glyph sits inside a Material component that owns its content colour
  * (a disabled `IconButton`, a filled `Button`, a `NavigationBarItem`), pass
- * `tint = Oe3IconTint.inherit(selected, LocalContentColor.current)` so the
- * component's disabled alpha and container contrast survive.
+ * `tint = LocalContentColor.current` so the component's disabled alpha and
+ * container contrast survive.
  */
 @Composable
 fun Oe3Icon(
