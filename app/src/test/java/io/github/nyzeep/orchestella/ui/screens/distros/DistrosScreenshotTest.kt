@@ -20,8 +20,8 @@ import org.robolectric.annotation.GraphicsMode
 /**
  * 票面要求的三张暗色截图：折叠 / 展开 / 空目录。
  *
- * 输出到 `build/screenshots/ui3-08/`，不作为 golden 入库（goldens 由
- * UI3-11 的截图车道持有）；本用例只证明页面在零设备下可渲染、可取证。
+ * 输出到 `src/test/screenshots/ui3/distros/`，与 UI3-06/11 的 golden 约定一致；
+ * 只新增本页的 3 张，不改 UI3-11 已有的 8 张。
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -67,7 +67,7 @@ class DistrosScreenshotTest {
             }
         }
         compose.onNodeWithTag("distros-shot").captureRoboImage(
-            "build/screenshots/ui3-08/$name.png",
+            "src/test/screenshots/ui3/distros/$name.png",
         )
     }
 }
