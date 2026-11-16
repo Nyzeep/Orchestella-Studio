@@ -64,7 +64,14 @@ class Oe3BrandIcon internal constructor(
  */
 object Oe3DistroIcons {
 
-    /** Brand entries, one per distinct mark. Aliases are not repeated here. */
+    /**
+     * Brand entries, one per distinct mark. Aliases are not repeated here.
+     *
+     * This is the provenance list used by NOTICE-icons.md and the tests. It is
+     * not a grid data source: it also holds the legacy Alpine/Kali marks and
+     * the generic Linux fallback. Drive the distro grid from
+     * `DistroCatalogRegistry` and resolve each id with [of].
+     */
     val entries: List<Oe3BrandIcon> = listOf(
         Oe3BrandIcon(
             id = "ubuntu",
