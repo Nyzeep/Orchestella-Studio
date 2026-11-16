@@ -18,7 +18,7 @@
 
     <!-- 目录行 -->
     <string name="config_entry_theme_studio">外观与主题</string>
-    <string name="config_entry_theme_studio_desc">主题、预设与终端个性化（Theme Studio 施工中）</string>
+    <string name="config_entry_theme_studio_desc">主题、预设与终端个性化（Theme Studio）</string>
     <string name="config_entry_wallpaper">壁纸与透明度</string>
     <string name="config_entry_wallpaper_desc">背景图、明暗模式与界面表面不透明度</string>
     <string name="config_entry_ssh">SSH 管理</string>
@@ -74,7 +74,7 @@
     <string name="config_dialog_cancel">取消</string>
     <string name="config_dialog_ok">知道了</string>
     <string name="config_theme_studio_title">外观与主题</string>
-    <string name="config_theme_studio_message">Theme Studio 施工中（UI3-09）。当前可先用「壁纸与透明度」调整背景、明暗与表面不透明度。</string>
+    <string name="config_theme_studio_message">Theme Studio 已全面可用：主界面「配置 → 外观与主题」，主题、预设、玻璃、底栏、字体与终端个性化都在那里。</string>
     <string name="config_licenses_title">第三方开源许可</string>
     <string name="config_licenses_unavailable">许可文件暂时不可读，请稍后重试。</string>
     <string name="config_backup_dialog_title">备份与恢复</string>
