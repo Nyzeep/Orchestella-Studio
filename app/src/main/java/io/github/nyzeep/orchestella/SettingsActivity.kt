@@ -348,19 +348,9 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    /** Same cold-backup guard as the instance action sheet (no rewrite of the rule). */
-    private fun requireColdBackup(instanceId: String): InstanceLifecycle.Instance {
-        val current = instanceStore.load(instanceId) ?: throw IOException("实例已不存在")
-        if (current.state() == InstanceLifecycle.State.RUNNING ||
-            current.state() == InstanceLifecycle.State.PROVISIONING ||
-            current.state() == InstanceLifecycle.State.SUSPENDED ||
-            ExecutionSessionRegistry.get(instanceId) != null ||
-            InstanceLaunchGuard.isInFlight(instanceId)
-        ) {
-            throw IOException(getString(R.string.config_export_running))
-        }
-        return current
-    }
+    /** Same cold-backup guard as the instance action sheet, now the shared gate. */
+    private fun requireColdBackup(instanceId: String): InstanceLifecycle.Instance =
+        ColdBackupGuard.requireExportable(instanceId, instanceStore, getString(R.string.config_export_running))
 
     private fun openPortForwarding() {
         val instances = runCatching { instanceStore.list() }.getOrDefault(emptyList())

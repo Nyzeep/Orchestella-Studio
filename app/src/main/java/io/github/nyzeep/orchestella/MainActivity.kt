@@ -1470,16 +1470,8 @@ class MainActivity : AppCompatActivity() {
         ThemeApplier.apply(dialog)
     }
 
-    private fun requireColdBackup(instanceId: String): InstanceLifecycle.Instance {
-        val current = instanceStore.load(instanceId) ?: throw IOException("实例已不存在")
-        if (current.state() == InstanceLifecycle.State.RUNNING ||
-            current.state() == InstanceLifecycle.State.PROVISIONING ||
-            current.state() == InstanceLifecycle.State.SUSPENDED ||
-            ExecutionSessionRegistry.get(instanceId) != null || InstanceLaunchGuard.isInFlight(instanceId)) {
-            throw IOException("请先关闭实例，再导出完整冷备份")
-        }
-        return current
-    }
+    private fun requireColdBackup(instanceId: String): InstanceLifecycle.Instance =
+        ColdBackupGuard.requireExportable(instanceId, instanceStore, "请先关闭实例，再导出完整冷备份")
 
     private fun exportStoppedInstance(instance: InstanceLifecycle.Instance) {
         try {
