@@ -257,7 +257,7 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
      * "system"|"mono" only, and "imported" is deliberately not accepted: font
      * import does not exist yet, so persisting a chosen font file (or any
      * unloadable URI) would restore a font the app cannot load. Corrupt or
-     * unknown values fall back to "system" — 随字体导入开放.
+     * unknown values fall back to "system" — 暂不支持导入字体.
      */
     fun uiFontChoice(): String {
         val stored = prefs.getString(KEY_UI_FONT_CHOICE, null) ?: return DEFAULT_UI_FONT_CHOICE

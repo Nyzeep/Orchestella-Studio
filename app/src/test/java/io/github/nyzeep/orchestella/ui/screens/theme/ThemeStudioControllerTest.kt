@@ -185,7 +185,7 @@ class ThemeStudioControllerTest {
         controller.handle(ThemeStudioEvent.SelectTheme(ThemeCatalog.constructivistWorkstation.id))
         val before = prefs.all.keys.toSet()
 
-        // The Imported row is disabled until font import ships (随字体导入开放),
+        // The Imported row is disabled until font import ships (暂不支持导入字体),
         // so production UI cannot reach these events; they stay spec-compatible
         // and memory-only, and no unloadable font is ever written to the file.
         val labeled = controller.handle(ThemeStudioEvent.SetImportedFontLabel("inter.ttf"))

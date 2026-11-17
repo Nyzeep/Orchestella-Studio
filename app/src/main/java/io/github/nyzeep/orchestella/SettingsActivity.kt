@@ -252,7 +252,10 @@ class SettingsActivity : AppCompatActivity() {
             is ConfigDestination.SettingsSection ->
                 startActivity(SettingsSubActivity.intent(this, destination.section))
 
-            ConfigDestination.ThemeStudio -> showThemeStudioPlaceholder()
+            // ZD-W2（gap 16）：主题入口收敛后的说明弹窗已移除。新壳
+            // （MainActivity）的配置页直达 Theme Studio（壳内 oe3ThemeStudioOpen）；
+            // 本 Activity 无壳内工坊承载，此处不再展示引导。
+            ConfigDestination.ThemeStudio -> Unit
             ConfigDestination.SshManager -> SshManagerDialog.show(this)
             ConfigDestination.PortForwarding -> openPortForwarding()
             ConfigDestination.Logs -> openRuntimeLogs()
@@ -267,15 +270,6 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun openAbout() {
         startActivity(Intent(this, AboutActivity::class.java))
-    }
-
-    private fun showThemeStudioPlaceholder() {
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.config_theme_studio_title)
-            .setMessage(R.string.config_theme_studio_message)
-            .setPositiveButton(R.string.config_dialog_ok, null)
-            .show()
-            .also(ThemeApplier::apply)
     }
 
     private fun showLicensesDialog() {

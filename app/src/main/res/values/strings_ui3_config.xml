@@ -73,8 +73,8 @@
     <!-- 对话框 -->
     <string name="config_dialog_cancel">取消</string>
     <string name="config_dialog_ok">知道了</string>
-    <string name="config_theme_studio_title">外观与主题</string>
-    <string name="config_theme_studio_message">Theme Studio 已全面可用：主界面「配置 → 外观与主题」，主题、预设、玻璃、底栏、字体与终端个性化都在那里。</string>
+    <!-- ZD-W2（gap 16）：config_theme_studio_title / config_theme_studio_message
+         随 SettingsActivity 主题说明弹窗一并移除；新壳配置页直达 Theme Studio。 -->
     <string name="config_licenses_title">第三方开源许可</string>
     <string name="config_licenses_unavailable">许可文件暂时不可读，请稍后重试。</string>
     <string name="config_backup_dialog_title">备份与恢复</string>

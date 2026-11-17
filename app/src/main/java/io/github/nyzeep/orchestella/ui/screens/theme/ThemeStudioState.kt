@@ -18,7 +18,7 @@ import io.github.nyzeep.orchestella.ui.theme.ThemeStore
  * [ThemeStore] after every event. Since UI3-13 the four presentation options
  * (pure black, glass, bottom-bar style and app font family) are real
  * preferences too; only the imported-font label stays page-local, because
- * font import does not exist yet (随字体导入开放) and a chosen font file must
+ * font import does not exist yet (暂不支持导入字体) and a chosen font file must
  * never be persisted as an unloadable URI.
  */
 @Immutable
@@ -131,7 +131,7 @@ class ThemeStudioController(
                 store.setTextScale(OeTextScaleMode.Custom, event.percent)
             is ThemeStudioEvent.SetSurfaceOpacity -> store.setUiSurfaceOpacityPercent(event.percent)
             is ThemeStudioEvent.SetFontChoice -> {
-                // "Imported" stays inert (随字体导入开放): persisting it would
+                // "Imported" stays inert (暂不支持导入字体): persisting it would
                 // save a font the app cannot load, and the store would coerce
                 // it back to system anyway; skipping keeps the file untouched.
                 if (event.choice != FontChoice.Imported) {

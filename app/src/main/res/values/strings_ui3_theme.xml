@@ -67,7 +67,7 @@
     <string name="ui3_theme_font_system">系统</string>
     <string name="ui3_theme_font_mono">等宽</string>
     <string name="ui3_theme_font_imported">导入</string>
-    <string name="ui3_theme_font_import_hint">随字体导入开放</string>
+    <string name="ui3_theme_font_import_hint">暂不支持导入字体</string>
     <string name="ui3_theme_font_imported_value">已选择：%1$s（预览仍用系统字体）</string>
     <string name="ui3_theme_font_note">已全局生效</string>
 

@@ -72,7 +72,7 @@ import kotlin.math.roundToInt
  * [ThemeStudioController] onto ThemeStore/SettingsManager setters. Pure black,
  * glass, bottom-bar style and app font family are real preferences since
  * UI3-13; the shell still applies them page-wide once it wires the store, and
- * the imported-font row stays disabled until font import ships (随字体导入开放).
+ * the imported-font row stays disabled (暂不支持导入字体).
  */
 @Composable
 fun ThemeStudioScreen(
@@ -344,7 +344,7 @@ private fun ThemeStudioContent(
                         else -> null
                     },
                     selected = state.fontChoice == choice,
-                    // Font import does not exist yet (随字体导入开放): the row stays
+                    // Font import does not exist yet (暂不支持导入字体): the row stays
                     // disabled so a selection can never persist an unloadable font.
                     enabled = choice != FontChoice.Imported,
                     // No-op for Imported: the row is disabled, and never wiring a

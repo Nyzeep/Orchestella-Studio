@@ -409,4 +409,30 @@
     <string name="terminal_drawer_new">+ 新建终端</string>
     <string name="terminal_drawer_rename_title">重命名终端</string>
     <string name="terminal_drawer_close_title">关闭终端</string>
+
+    <!-- ZD-W2 Toast 全文化（gap 12 + wave4 P3 漂移）：MainActivity 硬编码中文
+         Toast 全部进资源。拼异常串的失败提示改为中性文案（现象 + 下一步，
+         按 voice.md §5 兜底句式），异常详情写 OrchestellaLaunch/MainActivity
+         日志，不再进用户文案。备份导出成功复用 config_export_success（同动作
+         同文案，与 SettingsActivity 共享）。触发场景逐条标注：
+         - toast_backup_export_failed：备份导出（SAF CreateDocument）写入失败。
+         - toast_background_updated / toast_terminal_background_updated：
+           Theme Studio 壁纸与终端背景 SAF 选择成功落库后。
+         - toast_background_permission_lost：SAF 持久化图片读权限失败
+           （壁纸与终端背景两条选择器共用）。
+         - toast_hardware_refreshed：硬件页手动刷新遥测完成。
+         - toast_instance_missing：动作目标实例读取不到（已删除或加载失败）。
+         - toast_port_forwarding_open_failed：端口转发面板构造/打开失败。
+         - toast_operation_failed：实例停止请求链路失败（电源管理）。
+         - toast_instance_read_failed：启动 intent / 通知恢复路径读取实例失败；
+           状态条与 Toast 共用同一份全文（583ec531 语义，不漂移成短句）。 -->
+    <string name="toast_backup_export_failed">备份导出失败。请重试；若持续失败请查看应用运行日志</string>
+    <string name="toast_background_updated">背景图片已更新</string>
+    <string name="toast_terminal_background_updated">终端背景图片已更新</string>
+    <string name="toast_background_permission_lost">无法保留图片访问权限，请重新选择本地图片</string>
+    <string name="toast_hardware_refreshed">硬件遥测状态已刷新</string>
+    <string name="toast_instance_missing">实例不存在或已被删除</string>
+    <string name="toast_port_forwarding_open_failed">无法打开端口转发。请重试；若持续失败请查看应用运行日志</string>
+    <string name="toast_operation_failed">操作失败。请重试；若持续失败请查看应用运行日志</string>
+    <string name="toast_instance_read_failed">读取实例失败。请重试；若持续失败请查看应用运行日志</string>
 </resources>

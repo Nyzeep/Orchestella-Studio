@@ -260,11 +260,14 @@ class MainActivity : AppCompatActivity() {
                         }, Clock.systemUTC())
                     adapter.exportToDocumentUri(current, destUri)
                     runOnUiThread {
-                        Toast.makeText(this, "实例备份导出成功", Toast.LENGTH_SHORT).show()
+                        // ZD-W2：与 SettingsActivity 同一动作同文案，复用 config_export_success。
+                        Toast.makeText(this, R.string.config_export_success, Toast.LENGTH_SHORT).show()
                     }
                 } catch (e: Exception) {
+                    // 异常详情只进日志，不进用户文案（voice.md §5）。
+                    android.util.Log.w("MainActivity", "backup export failed", e)
                     runOnUiThread {
-                        Toast.makeText(this, "导出失败: ${e.message}", Toast.LENGTH_LONG).show()
+                        Toast.makeText(this, R.string.toast_backup_export_failed, Toast.LENGTH_LONG).show()
                     }
                 } finally {
                     pendingExportInstance = null
@@ -318,9 +321,9 @@ class MainActivity : AppCompatActivity() {
         if (themeStore.persistBackgroundPermission(this, uri)) {
             themeStore.setBackgroundUri(uri.toString())
             refreshOe3ShellSnapshot()
-            Toast.makeText(this, "背景图片已更新", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, R.string.toast_background_updated, Toast.LENGTH_SHORT).show()
         } else {
-            Toast.makeText(this, "无法保留图片访问权限，请重新选择本地图片", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, R.string.toast_background_permission_lost, Toast.LENGTH_LONG).show()
         }
     }
 
@@ -330,9 +333,9 @@ class MainActivity : AppCompatActivity() {
         uri ?: return@registerForActivityResult
         if (themeStore.persistBackgroundPermission(this, uri)) {
             themeStore.setTerminalBackgroundUri(uri.toString())
-            Toast.makeText(this, "终端背景图片已更新", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, R.string.toast_terminal_background_updated, Toast.LENGTH_SHORT).show()
         } else {
-            Toast.makeText(this, "无法保留图片访问权限，请重新选择本地图片", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, R.string.toast_background_permission_lost, Toast.LENGTH_LONG).show()
         }
     }
 
@@ -669,7 +672,7 @@ class MainActivity : AppCompatActivity() {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 oe3HostUiFacts.value = facts
                 refreshOe3HardwareState()
-                Toast.makeText(this, "硬件遥测状态已刷新", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, R.string.toast_hardware_refreshed, Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -765,7 +768,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun toastInstanceMissing() {
-        Toast.makeText(this, "实例不存在或已被删除", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, R.string.toast_instance_missing, Toast.LENGTH_SHORT).show()
     }
 
     private fun openInstanceDetail(id: String) {
@@ -920,7 +923,9 @@ class MainActivity : AppCompatActivity() {
             val manager = PortForwardingManager(instance.id(), store, PortConflictDetector())
             PortForwardingBottomSheet(this, instance.id(), manager).show()
         } catch (e: Exception) {
-            Toast.makeText(this, "打开端口转发管理失败: ${e.message}", Toast.LENGTH_SHORT).show()
+            // 异常详情只进日志，不进用户文案（voice.md §5）。
+            android.util.Log.w("MainActivity", "open port forwarding failed", e)
+            Toast.makeText(this, R.string.toast_port_forwarding_open_failed, Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -1053,8 +1058,10 @@ class MainActivity : AppCompatActivity() {
                     setCreateStatusLine("关机请求已发送，等待实例退出")
                 }
             } catch (e: Exception) {
+                // 异常详情只进日志，不进用户文案（voice.md §5；ZD-W2 wave4 P3 漂移）。
+                android.util.Log.w("MainActivity", "instance stop request failed", e)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "操作失败: ${e.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this@MainActivity, R.string.toast_operation_failed, Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -1253,11 +1260,12 @@ class MainActivity : AppCompatActivity() {
                 } catch (failure: Exception) {
                     runOnUiThread {
                         if (isFinishing || isDestroyed) return@runOnUiThread
-                        val detail = failure.message ?: failure.javaClass.simpleName
-                        setCreateStatusLine("读取实例失败：$detail")
-                        // Oe3 壳没有可见状态条：toast 承载同一份全文（复核 P3 修订，
-                        // 旧壳语义=状态条全文，不漂移成短句）。
-                        Toast.makeText(this@MainActivity, "读取实例失败：$detail", Toast.LENGTH_LONG).show()
+                        // ZD-W2：用户文案中性化（voice.md §5），异常详情写日志不进 UI；
+                        // toast 与状态条仍共用同一份全文（583ec531 语义，不漂移成短句）。
+                        android.util.Log.w("MainActivity", "instance read failed for launch intent", failure)
+                        val message = getString(R.string.toast_instance_read_failed)
+                        setCreateStatusLine(message)
+                        Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
                     }
                     null
                 }

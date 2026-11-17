@@ -198,12 +198,12 @@ class ThemeStudioScreenTest {
         compose.setContent {
             ThemeStudioScreen(state = fixture(), onEvent = {}, renderTerminalView = false, reduceMotion = true, presets = testPresets)
         }
-        // 随字体导入开放: no font can be picked yet, so the row must not accept
+        // 暂不支持导入字体: no font can be picked yet, so the row must not accept
         // a selection that would persist an unloadable font choice.
         compose.onNodeWithTag("theme-row:font:imported")
             .performScrollTo()
             .assertIsNotEnabled()
-            .assertTextContains("随字体导入开放")
+            .assertTextContains("暂不支持导入字体")
         compose.onNodeWithTag("theme-row:font:system")
             .performScrollTo()
             .assertIsEnabled()
