@@ -1,5 +1,7 @@
 package io.github.nyzeep.orchestella
 
+import android.os.BatteryManager
+import io.github.nyzeep.orchestella.ui.screens.hardware.HardwareBatteryCharging
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -103,5 +105,18 @@ class BatteryFactProviderTest {
     fun absentBroadcastStillKeepsTheCapacityProperty() {
         assertEquals(76, BatteryFactProvider.factsFromIntent(null, 76).percent)
         assertNull(BatteryFactProvider.factsFromIntent(null, 76).temperatureCelsius)
+    }
+
+    @Test
+    fun chargingStatusMapsToTheProductStates() {
+        fun charging(status: Int?) = BatteryFactProvider.factsFrom(50, 100, null, null, status).charging
+
+        assertEquals(HardwareBatteryCharging.Charging, charging(BatteryManager.BATTERY_STATUS_CHARGING))
+        assertEquals(HardwareBatteryCharging.Full, charging(BatteryManager.BATTERY_STATUS_FULL))
+        assertEquals(HardwareBatteryCharging.Discharging, charging(BatteryManager.BATTERY_STATUS_DISCHARGING))
+        // Plugged but not charging, or no status at all: the page must not invent a label.
+        assertEquals(HardwareBatteryCharging.Unknown, charging(BatteryManager.BATTERY_STATUS_NOT_CHARGING))
+        assertEquals(HardwareBatteryCharging.Unknown, charging(BatteryManager.BATTERY_STATUS_UNKNOWN))
+        assertEquals(HardwareBatteryCharging.Unknown, charging(null))
     }
 }

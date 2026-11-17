@@ -123,6 +123,22 @@ class HardwareUiStateTest {
         assertEquals("31.5 °C", ready.summary.temperature)
     }
 
+    /** UI-08：插拔充电器改变的是广播里的 status，环模型必须随之带上产品状态。 */
+    @Test
+    fun chargingStateReachesTheBatteryRing() {
+        val charging = BatteryFactProvider.factsFrom(
+            level = 100,
+            scale = 100,
+            temperatureTenths = 300,
+            capacityPercent = 100,
+            status = android.os.BatteryManager.BATTERY_STATUS_CHARGING,
+        )
+        val ready = HardwareTestFixtures.ready(batteryFacts = charging)
+
+        assertEquals(HardwareBatteryCharging.Charging, ready.rings.battery.charging)
+        assertEquals("30.0 °C", ready.rings.battery.detail)
+    }
+
     @Test
     fun avfMapsSevenEvaluatorStatusesOntoFiveProductStates() {
         assertEquals(5, HardwareAvfState.entries.size)

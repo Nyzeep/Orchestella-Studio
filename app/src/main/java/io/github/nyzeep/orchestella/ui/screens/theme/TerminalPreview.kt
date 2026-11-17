@@ -87,7 +87,9 @@ fun TerminalPreview(
     modifier: Modifier = Modifier,
     renderAndroidView: Boolean = true,
     backgroundUri: String? = null,
-    scrimColor: Color = Color(theme.terminalBackground),
+    // Transparent by default: a caller that supplies an image but forgets the scrim
+    // should still see that image, never a solid terminal color painted over it.
+    scrimColor: Color = Color.Transparent,
 ) {
     val session = remember { FakeTerminalShell() }
     var input by remember { mutableStateOf("") }
@@ -107,6 +109,9 @@ fun TerminalPreview(
         // A command's plain-text output (notably `theme`) must not outlive the
         // palette it described; the preview restarts from a fresh banner.
         session.resetForTheme()
+        // Opens on a prompt, a typed command and its colour strip, so the very
+        // first screen already demonstrates what the sliders change.
+        session.seedSample(theme)
     }
 
     LaunchedEffect(view, theme, fontSizeSp, letterSpacingEm, lineSpacingPx, cursorBlink, replayKey) {

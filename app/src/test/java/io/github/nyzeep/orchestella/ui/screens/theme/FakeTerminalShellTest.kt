@@ -20,6 +20,21 @@ class FakeTerminalShellTest {
     }
 
     @Test
+    fun seededSampleOpensOnACommandAndItsColourStrip() {
+        val shell = FakeTerminalShell()
+        shell.seedSample(theme)
+        val screen = shell.render(theme)
+
+        assertTrue("sample must echo a typed command", screen.contains("theme"))
+        assertTrue("sample must show the 16-colour strip", screen.contains("■"))
+        assertTrue("seeding must not pollute the user's history", shell.historySnapshot().isEmpty())
+
+        val rows = shell.transcriptSnapshot().size
+        shell.seedSample(theme)
+        assertEquals("seeding twice must not stack a second copy", rows, shell.transcriptSnapshot().size)
+    }
+
+    @Test
     fun helpListsExactlyTheFiveSupportedCommands() {
         val output = FakeTerminalShell().submit("help", theme).output
         listOf("help", "echo", "ls", "theme", "clear").forEach {

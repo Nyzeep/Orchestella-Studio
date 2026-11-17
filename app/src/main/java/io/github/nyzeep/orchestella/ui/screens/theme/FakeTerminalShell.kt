@@ -20,6 +20,7 @@ class FakeTerminalShell {
     private val transcript = mutableListOf<String>()
     private val history = ArrayDeque<String>()
     private var showBanner = true
+    private var hasSeeded = false
 
     fun submit(raw: String, theme: AppTheme): FakeShellResult {
         val line = raw.trim()
@@ -63,10 +64,25 @@ class FakeTerminalShell {
         return builder.toString()
     }
 
+    /**
+     * First-run sample: echoes a real `theme` command so the preview opens on a
+     * prompt, a typed command and its 16-colour output instead of a banner-only
+     * block. Never touches the user's history, and never re-seeds after `clear`
+     * (the transcript is only empty then, not at boot).
+     */
+    fun seedSample(theme: AppTheme) {
+        if (hasSeeded || transcript.isNotEmpty()) return
+        hasSeeded = true
+        transcript += "${prompt()}theme"
+        transcript += themeText(theme).lines()
+    }
+
     /** Theme changes restart the sample screen; history survives. */
     fun resetForTheme() {
         transcript.clear()
         showBanner = true
+        // The sample repaints the new palette, so a theme switch re-seeds it.
+        hasSeeded = false
     }
 
     fun historySnapshot(): List<String> = history.toList()

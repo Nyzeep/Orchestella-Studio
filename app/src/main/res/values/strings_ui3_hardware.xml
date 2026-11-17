@@ -20,6 +20,8 @@
     <string name="ui3_hardware_ring_battery">电池</string>
     <string name="ui3_hardware_ring_description">%1$s：%2$s，%3$s</string>
     <string name="ui3_hardware_ring_unavailable">%1$s：读数不可用</string>
+    <string name="ui3_hardware_charging">充电中</string>
+    <string name="ui3_hardware_charged">已充满</string>
 
     <string name="ui3_hardware_section_engines">引擎就绪</string>
     <string name="ui3_hardware_engine_avf">AVF 硬件虚拟化</string>

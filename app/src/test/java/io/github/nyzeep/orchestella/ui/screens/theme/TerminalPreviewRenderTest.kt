@@ -41,6 +41,10 @@ class TerminalPreviewRenderTest {
         val snapshot = model.displaySnapshot()
         val colours = snapshot.spans.map { it.effectiveForegroundColor }.distinct()
         assertTrue("16-colour strip lost in session mode: $colours", colours.size >= 16)
+        assertTrue(
+            "every ANSI slot must survive the parser, not just 16 arbitrary colours: $colours",
+            colours.containsAll(theme.ansi.toSet()),
+        )
         assertTrue("prompt missing from the session transcript", snapshot.text().contains("$"))
     }
 

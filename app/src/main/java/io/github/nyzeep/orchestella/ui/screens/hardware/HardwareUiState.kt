@@ -110,6 +110,7 @@ sealed interface HardwareUiState {
                     fraction = batteryFraction,
                     percent = batteryPercent,
                     detail = temperature,
+                    charging = battery.charging,
                 ),
             )
 
@@ -266,6 +267,8 @@ data class HardwareRingUi(
     val fraction: Float,
     val percent: Int?,
     val detail: String?,
+    /** Only the battery ring carries it; the page turns it into a localized note. */
+    val charging: HardwareBatteryCharging = HardwareBatteryCharging.Unknown,
 )
 
 data class HardwareEnginesUi(
@@ -405,10 +408,14 @@ data class HardwareDeviceFacts(
     val selinuxStatus: String? = null,
 )
 
+/** 充电状态；[Unknown] 表示本次读数没有携带该信息，页面不臆测。 */
+enum class HardwareBatteryCharging { Unknown, Charging, Full, Discharging }
+
 /** 电池读数；呼入方把 `EXTRA_TEMPERATURE` 的 0.1°C 单位换算后再传入。 */
 data class HardwareBatteryFacts(
     val percent: Int? = null,
     val temperatureCelsius: Float? = null,
+    val charging: HardwareBatteryCharging = HardwareBatteryCharging.Unknown,
 )
 
 /**

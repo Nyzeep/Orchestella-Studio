@@ -299,7 +299,14 @@ private fun RowScope.RingColumn(
     val colors = Oe3ThemeValues.colors
     val placeholder = stringResource(R.string.ui3_hardware_value_placeholder)
     val percentText = ring.percent?.let(HardwareFormat::percent)
-    val detailText = ring.detail ?: placeholder
+    // Charging is a live state the user can change by plugging the cable, so it rides
+    // the same broadcast refresh as the percentage rather than a separate probe.
+    val chargingText = when (ring.charging) {
+        HardwareBatteryCharging.Charging -> stringResource(R.string.ui3_hardware_charging)
+        HardwareBatteryCharging.Full -> stringResource(R.string.ui3_hardware_charged)
+        else -> null
+    }
+    val detailText = listOfNotNull(ring.detail, chargingText).joinToString(" · ").ifEmpty { placeholder }
     val description = if (percentText == null) {
         stringResource(R.string.ui3_hardware_ring_unavailable, label)
     } else {

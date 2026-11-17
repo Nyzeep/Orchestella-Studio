@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
 import androidx.core.content.ContextCompat
+import io.github.nyzeep.orchestella.ui.screens.hardware.HardwareBatteryCharging
 import io.github.nyzeep.orchestella.ui.screens.hardware.HardwareBatteryFacts
 import kotlin.math.roundToInt
 
@@ -42,9 +43,11 @@ object BatteryFactProvider {
         scale: Int?,
         temperatureTenths: Int?,
         capacityPercent: Int?,
+        status: Int? = null,
     ): HardwareBatteryFacts = HardwareBatteryFacts(
         percent = percentFrom(level, scale, capacityPercent),
         temperatureCelsius = temperatureCelsius(temperatureTenths),
+        charging = chargingFrom(status),
     )
 
     /** 从一次 `ACTION_BATTERY_CHANGED` 里取原始值；`intent` 为 null 时各字段按缺失处理。 */
@@ -58,6 +61,7 @@ object BatteryFactProvider {
             temperatureTenths = intent.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, UNKNOWN_INT)
                 .takeIf { it != UNKNOWN_INT },
             capacityPercent = capacityPercent,
+            status = intent.getIntExtra(BatteryManager.EXTRA_STATUS, UNKNOWN_INT).takeIf { it != UNKNOWN_INT },
         )
     }
 
@@ -104,5 +108,13 @@ object BatteryFactProvider {
             return null
         }
         return tenths / 10f
+    }
+
+    /** 只在系统明确给出状态时下结论；`NOT_CHARGING`/`UNKNOWN` 一律不下判断。 */
+    private fun chargingFrom(status: Int?): HardwareBatteryCharging = when (status) {
+        BatteryManager.BATTERY_STATUS_CHARGING -> HardwareBatteryCharging.Charging
+        BatteryManager.BATTERY_STATUS_FULL -> HardwareBatteryCharging.Full
+        BatteryManager.BATTERY_STATUS_DISCHARGING -> HardwareBatteryCharging.Discharging
+        else -> HardwareBatteryCharging.Unknown
     }
 }
