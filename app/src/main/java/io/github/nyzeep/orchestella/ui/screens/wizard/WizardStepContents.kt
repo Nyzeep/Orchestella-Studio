@@ -47,6 +47,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import java.util.Locale
 import io.github.nyzeep.orchestella.InstanceCreationWizardModel
 import io.github.nyzeep.orchestella.R
 import io.github.nyzeep.orchestella.ui.design.components.OeSlider
@@ -303,7 +304,7 @@ private fun StorageQuotaCard(state: WizardUiState, controller: WizardScreenModel
         Text(
             text = stringResource(
                 R.string.wizard_storage_available,
-                String.format("%.1f GB", state.storage.availableGb),
+                String.format(Locale.US, "%.1f GB", state.storage.availableGb),
             ),
             style = Oe3Typography.style(Oe3TextRole.Body),
             color = colors.onSurface.oe3Color(),

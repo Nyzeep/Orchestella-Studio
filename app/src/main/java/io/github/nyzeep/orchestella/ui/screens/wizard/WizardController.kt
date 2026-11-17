@@ -45,6 +45,7 @@ import io.github.nyzeep.orchestella.runtime.network.download.ResilientDownloadEn
 import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.net.URI
+import java.util.Locale
 import java.nio.file.Files
 import java.time.Clock
 import java.time.Instant
@@ -571,9 +572,9 @@ class WizardController(
             currentMirror: String,
         ) {
             val percent = if (totalBytes > 0) ((downloadedBytes * 100) / totalBytes).toInt() else null
-            val downloadedStr = String.format("%.1f MB", downloadedBytes.toDouble() / (1024.0 * 1024.0))
+            val downloadedStr = String.format(Locale.US, "%.1f MB", downloadedBytes.toDouble() / (1024.0 * 1024.0))
             val totalStr = if (totalBytes > 0) {
-                String.format("%.1f MB", totalBytes.toDouble() / (1024.0 * 1024.0))
+                String.format(Locale.US, "%.1f MB", totalBytes.toDouble() / (1024.0 * 1024.0))
             } else {
                 "--"
             }
