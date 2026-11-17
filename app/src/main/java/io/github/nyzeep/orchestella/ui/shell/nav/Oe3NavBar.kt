@@ -1,5 +1,9 @@
 package io.github.nyzeep.orchestella.ui.shell.nav
 
+import android.graphics.BlurMaskFilter
+import android.graphics.Paint
+import android.graphics.RectF
+import android.os.Build
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.SpringSpec
@@ -40,13 +44,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.HazeState
 import io.github.nyzeep.orchestella.ui.oe3.glass.Oe3GlassSurface
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icon
@@ -110,6 +119,28 @@ object Oe3NavPillSpec {
     const val REST_SCALE = 1f
 }
 
+/**
+ * 浮动坞的两层投影（v4 spec §1.3 / 工单 UI-03）：black@0.08 blur24 y8 +
+ * black@0.04 blur3 y1。坞与卡片的辨识度三要素「高一个色阶 + 阴影 +
+ * 外露 21dp」中，阴影由这里给出数值真源；固定坞贴边，无投影。
+ *
+ * 硬件画布自 API 28 起支持 `BlurMaskFilter`；26/27 上直接跳过投影，
+ * 不画硬边黑块。
+ */
+object Oe3NavShadowSpec {
+
+    /** 一层投影：颜色恒黑，alpha/模糊半径/纵向位移按规格。 */
+    data class Layer(val alpha: Float, val blur: Dp, val offsetY: Dp)
+
+    val layers: List<Layer> = listOf(
+        Layer(alpha = 0.08f, blur = 24.dp, offsetY = 8.dp),
+        Layer(alpha = 0.04f, blur = 3.dp, offsetY = 1.dp),
+    )
+
+    /** 投影只属于浮动形态。 */
+    fun appliesTo(style: Oe3NavStyle): Boolean = style == Oe3NavStyle.Floating
+}
+
 /** Top corners of the docked (fixed) bar; the bottom edge stays square. */
 private val FixedBarShape = RoundedCornerShape(
     topStart = Oe3Shapes.md,
@@ -151,6 +182,24 @@ fun Oe3NavBar(
     val density = LocalDensity.current
     val fixed = style == Oe3NavStyle.Fixed
 
+    // 浮动坞的双层投影：画在本节点的盒子后面（blur 会越出边界，宿主不裁剪）。
+    // 数值来自 [Oe3NavShadowSpec]；API < 28 的硬件画布不支持 BlurMaskFilter，
+    // 直接不画，避免硬边黑块冒充阴影。
+    val drawShadow = Oe3NavShadowSpec.appliesTo(style) && Build.VERSION.SDK_INT >= 28
+    val shadowPaints = remember(drawShadow, density) {
+        Oe3NavShadowSpec.layers.map { layer ->
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = android.graphics.Color.argb((layer.alpha * 255).toInt(), 0, 0, 0)
+                maskFilter = BlurMaskFilter(
+                    with(density) { layer.blur.toPx() },
+                    BlurMaskFilter.Blur.NORMAL,
+                )
+            }
+            paint to with(density) { layer.offsetY.toPx() }
+        }
+    }
+    val shadowRect = remember { RectF() }
+
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
@@ -161,6 +210,17 @@ fun Oe3NavBar(
                     Modifier
                         .padding(horizontal = Oe3Sizes.navSideMargin)
                         .padding(bottom = Oe3Sizes.navBottomInset(systemBottom))
+                        .drawBehind {
+                            if (!drawShadow) return@drawBehind
+                            drawIntoCanvas { canvas ->
+                                val native = canvas.nativeCanvas
+                                val radius = size.height / 2f
+                                shadowPaints.forEach { (paint, dy) ->
+                                    shadowRect.set(0f, dy, size.width, size.height + dy)
+                                    native.drawRoundRect(shadowRect, radius, radius, paint)
+                                }
+                            }
+                        }
                 },
             )
             .height(if (fixed) Oe3Sizes.navBar + systemBottom else Oe3Sizes.navBar),
@@ -193,6 +253,9 @@ fun Oe3NavBar(
             level = info.glassLevel,
             modifier = Modifier
                 .fillMaxSize()
+                // 测试锚点挂在玻璃背板（视觉坞体）上：语义边界即坞体几何，
+                // 不含悬浮形态的外边距（透传测试量 21dp 边距时依赖这一点）。
+                .testTag("shell:nav-bar")
                 .clip(if (fixed) FixedBarShape else Oe3Shapes.pill),
             state = glassState,
         ) {

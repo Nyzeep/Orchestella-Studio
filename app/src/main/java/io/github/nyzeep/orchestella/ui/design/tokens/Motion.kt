@@ -37,6 +37,22 @@ object OeMotion {
     const val CARD_ENTER_SCALE_FROM = 0.96f
     const val REDUCED_CARD_ENTER_SCALE_FROM = 1f
 
+    // --- Page push (v4 spec §1.5, ticket UI-03) ---
+    // spring(300ms, bounce 0): bounce 0 is a critically damped spring; the
+    // stiffness below settles in ≈9.5/√k ≈ 300ms (same estimate that maps
+    // MediumLow≈400ms for the nav pill). The entering page is launched with an
+    // initial velocity of 9×distance per second, expressed once in progress
+    // units (offset = (1−progress)×pageWidth, so progress-velocity is
+    // width-independent). Pushing also scales the previous page to 80% and
+    // dims it by 15% — the stacked "previous page" treatment.
+    const val PAGE_PUSH_MS = 300
+    const val PAGE_PUSH_DAMPING = 1f
+    const val PAGE_PUSH_STIFFNESS = 1000f
+    const val PAGE_PUSH_VELOCITY_FACTOR = 9f
+    const val PAGE_PUSH_UNDER_SCALE = 0.8f
+    const val PAGE_PUSH_UNDER_DIM = 0.15f
+    const val PAGE_PUSH_SCALE_DELTA = 0.2f
+
     // --- Shared cubic bezier control points ---
 
     const val STANDARD_X1 = 0.2f

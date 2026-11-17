@@ -894,6 +894,9 @@ dependencies {
     implementation(libs.compose.ui)
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
+    // UI-03 back stack (plan B): BackHandler lives in activity-compose; the
+    // Compose BOM owns its version, matching the single-upgrade-point rule.
+    implementation(libs.compose.activity.compose)
     // Glass/blur layer for UI3-10 (ticket UI3-11 owns the dependency lock).
     // No production file imports Haze yet; the structure gate below forbids
     // card files from importing it.

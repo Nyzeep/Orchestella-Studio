@@ -26,10 +26,20 @@ data class Oe3MotionTokens(
     val cardEnter: Oe3MotionSpec,
     val dialog: Oe3MotionSpec,
     val themeTween: Oe3MotionSpec,
+    /**
+     * v4 (UI-03): page push, spring(300ms, bounce 0) nominally. The spring is
+     * what settles; [Oe3MotionSpec.durationMillis] stays the outward number.
+     */
+    val pagePush: Oe3MotionSpec,
     /** Starting scale of the card entrance; 1.0 under reduced motion. */
     val cardEnterScaleFrom: Float,
     /** Null under reduced motion, so the pill lands instead of springing. */
     val navSelectionSpring: SpringSpec<Float>?,
+    /**
+     * Null under reduced motion, so a push lands instantly: the entering page
+     * rests in place and the previous page keeps its scaled/dimmed final state.
+     */
+    val pagePushSpring: SpringSpec<Float>?,
 )
 
 /**
@@ -49,10 +59,19 @@ object Oe3Motion {
         cardEnter = Oe3MotionSpec(OeMotion.CARD_ENTER_MS, OeMotion.decelerateEasing),
         dialog = Oe3MotionSpec(OeMotion.DIALOG_MS, OeMotion.easeOutCubicEasing),
         themeTween = Oe3MotionSpec(OeMotion.THEME_TWEEN_MS, OeMotion.standardEasing),
+        pagePush = Oe3MotionSpec(
+            OeMotion.PAGE_PUSH_MS,
+            OeMotion.standardEasing,
+            dampingRatio = OeMotion.PAGE_PUSH_DAMPING,
+        ),
         cardEnterScaleFrom = OeMotion.CARD_ENTER_SCALE_FROM,
         navSelectionSpring = SpringSpec(
             dampingRatio = OeMotion.SPRING_DAMPING,
             stiffness = OeMotion.NAV_SELECTION_STIFFNESS,
+        ),
+        pagePushSpring = SpringSpec(
+            dampingRatio = OeMotion.PAGE_PUSH_DAMPING,
+            stiffness = OeMotion.PAGE_PUSH_STIFFNESS,
         ),
     )
 
@@ -67,8 +86,10 @@ object Oe3Motion {
             cardEnter = base.cardEnter.instant(),
             dialog = base.dialog.instant(),
             themeTween = base.themeTween.instant(),
+            pagePush = base.pagePush.instant(),
             cardEnterScaleFrom = OeMotion.REDUCED_CARD_ENTER_SCALE_FROM,
             navSelectionSpring = null,
+            pagePushSpring = null,
         )
     }
 }
