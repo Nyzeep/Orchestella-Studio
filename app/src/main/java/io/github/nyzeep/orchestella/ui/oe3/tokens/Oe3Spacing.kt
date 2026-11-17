@@ -1,30 +1,31 @@
 package io.github.nyzeep.orchestella.ui.oe3.tokens
 
-import androidx.compose.ui.unit.dp
+import io.github.nyzeep.orchestella.ui.design.tokens.OeSpacing
 
 /**
- * Oe3 spacing rhythm. [pageInset] is the only page gutter; [contentBottom]
- * reserves room for the floating navigation bar (62dp bar + 21dp margin).
+ * Legacy entry point for the spacing rhythm. The values live in [OeSpacing]
+ * (`ui/design/tokens`) since UI-01; this object only delegates so existing
+ * call sites keep their names and numbers unchanged.
  */
 object Oe3Spacing {
-    val xxs = 4.dp
-    val xs = 8.dp
-    val sm = 12.dp
-    val md = 16.dp
-    val lg = 20.dp
-    val xl = 24.dp
-    val xxl = 32.dp
+    val xxs = OeSpacing.xxs
+    val xs = OeSpacing.xs
+    val sm = OeSpacing.sm
+    val md = OeSpacing.md
+    val lg = OeSpacing.lg
+    val xl = OeSpacing.xl
+    val xxl = OeSpacing.xxl
 
-    val pageInset = 20.dp
-    val contentBottom = 83.dp
-    val cardPadding = 20.dp
+    val pageInset = OeSpacing.pageInset
+    val contentBottom = OeSpacing.contentBottom
+    val cardPadding = OeSpacing.cardPadding
 
-    val rowHeight = 56.dp
-    val rowHorizontal = 16.dp
-    val iconTextGap = 16.dp
+    val rowHeight = OeSpacing.rowHeight
+    val rowHorizontal = OeSpacing.rowHorizontal
+    val iconTextGap = OeSpacing.iconTextGap
 
-    val sectionTop = 24.dp
-    val sectionBottom = 8.dp
+    val sectionTop = OeSpacing.sectionTop
+    val sectionBottom = OeSpacing.sectionBottom
 
-    val gridGap = 8.dp
+    val gridGap = OeSpacing.gridGap
 }
