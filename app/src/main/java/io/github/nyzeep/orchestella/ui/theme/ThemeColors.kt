@@ -193,10 +193,18 @@ object ThemeColors {
         return (max(a, b) + 0.05) / (min(a, b) + 0.05)
     }
 
+    /**
+     * Channel-wise linear blend, rounded half-up per channel (the same
+     * `(x * 255 + 0.5).toInt()` convention as SurfaceOpacity's compositing). Rounding is what keeps the pure-black contract honest: with
+     * two opaque endpoints the alpha channel sums to 255 (±float epsilon), and
+     * truncation could shave that to 254, silently painting a translucent
+     * pixel where the spec demands an opaque one. Endpoints stay byte-exact
+     * (fraction 0 → [first], fraction 1 → [second]).
+     */
     fun blend(first: Int, second: Int, fraction: Float): Int {
         val f = fraction.coerceIn(0f, 1f)
         fun channel(shift: Int): Int =
-            (((first ushr shift and 255) * (1f - f)) + ((second ushr shift and 255) * f)).toInt()
+            (((first ushr shift and 255) * (1f - f)) + ((second ushr shift and 255) * f) + 0.5f).toInt()
         return (channel(24) shl 24) or (channel(16) shl 16) or (channel(8) shl 8) or channel(0)
     }
 
