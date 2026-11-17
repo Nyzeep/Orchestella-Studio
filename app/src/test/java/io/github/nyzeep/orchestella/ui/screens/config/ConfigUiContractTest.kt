@@ -66,6 +66,33 @@ class ConfigUiContractTest {
     }
 
     @Test
+    fun metaInfoTextUsesTheThirteenEighteenPageLocalStyle() {
+        val text = source("src/main/java/io/github/nyzeep/orchestella/ui/screens/config/ConfigScreen.kt")
+        assertTrue(
+            "MetaTextStyle must be the 13/18 page-local style (spec §2.3), not the mono role",
+            text.contains("private val MetaTextStyle = TextStyle(fontSize = 13.sp, lineHeight = 18.sp)"),
+        )
+        assertEquals(
+            "four meta positions pinned to 13/18: page meta, update badge, options label, choice row value",
+            4,
+            Regex("style = MetaTextStyle").findAll(text).count(),
+        )
+        assertFalse(
+            "ConfigScreen keeps no Caption: all four Caption usages were meta info and got upgraded",
+            text.contains("Oe3TextRole.Caption"),
+        )
+    }
+
+    @Test
+    fun choiceDialogPlaysTheOe3DialogEnterMotion() {
+        val text = source("src/main/java/io/github/nyzeep/orchestella/ui/screens/config/ConfigScreen.kt")
+        assertTrue(
+            "ChoiceDialog content layer must be wrapped in Oe3DialogEnterMotion (spec §2.5)",
+            text.contains("Oe3DialogEnterMotion {"),
+        )
+    }
+
+    @Test
     fun newSettingsPageUsesNoCardOutlineOrDepth() {
         val layout = source("src/main/res/layout/layout_settings_section_system.xml")
         listOf("MaterialCardView", "strokeWidth", "cardElevation").forEach { token ->

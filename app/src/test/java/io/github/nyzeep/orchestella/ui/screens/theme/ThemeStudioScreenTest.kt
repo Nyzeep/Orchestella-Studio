@@ -3,6 +3,7 @@ package io.github.nyzeep.orchestella.ui.screens.theme
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
@@ -70,6 +71,37 @@ class ThemeStudioScreenTest {
         ThemeStudioSpec.sectionOrder.forEach { section ->
             compose.onNodeWithTag("theme-section:${section.key}").assertExists()
         }
+    }
+
+    @Test
+    fun backButtonIsVisibleClickableAndDescribed() {
+        var backInvoked = 0
+        compose.setContent {
+            ThemeStudioScreen(
+                state = fixturePureBlack(),
+                onEvent = {},
+                renderTerminalView = false,
+                reduceMotion = true,
+                presets = testPresets,
+                onBack = { backInvoked++ },
+            )
+        }
+        // 子页头返回钮（navigation.md §5）：48dp 命中盒 + 非空 contentDescription。
+        val back = compose.onNodeWithTag("theme-studio:back")
+        back.assertContentDescriptionEquals("返回")
+        val floor = with(compose.density) { 48.dp.toPx() }
+        val bounds = back.fetchSemanticsNode().boundsInRoot
+        assertTrue("back hit box is only ${bounds.height} px tall", bounds.height >= floor)
+        back.performClick()
+        assertEquals(1, backInvoked)
+    }
+
+    @Test
+    fun backButtonIsAbsentWithoutOnBack() {
+        compose.setContent {
+            ThemeStudioScreen(state = fixturePureBlack(), onEvent = {}, renderTerminalView = false, reduceMotion = true, presets = testPresets)
+        }
+        compose.onNodeWithTag("theme-studio:back").assertDoesNotExist()
     }
 
     @Test

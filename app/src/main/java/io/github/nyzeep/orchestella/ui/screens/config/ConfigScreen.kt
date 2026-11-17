@@ -39,9 +39,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.github.nyzeep.orchestella.R
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Card
 import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
@@ -49,6 +51,7 @@ import io.github.nyzeep.orchestella.ui.oe3.components.Oe3ListRow
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3SectionHeader
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3SwitchRow
 import io.github.nyzeep.orchestella.ui.oe3.components.oe3Color
+import io.github.nyzeep.orchestella.ui.oe3.motion.Oe3DialogEnterMotion
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3Theme
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Shapes
@@ -57,6 +60,9 @@ import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
 import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
+
+/** 页面标题下的元信息与「当前值」读数（spec §2.3：13/18）。 */
+private val MetaTextStyle = TextStyle(fontSize = 13.sp, lineHeight = 18.sp)
 
 /** Live values the page needs besides [ConfigOptions]. */
 @Immutable
@@ -170,7 +176,7 @@ private fun ConfigPageHeader(meta: String, onBack: (() -> Unit)?) {
             )
             Text(
                 text = meta,
-                style = Oe3Typography.style(Oe3TextRole.Caption),
+                style = MetaTextStyle,
                 color = colors.onSurfaceVariant.oe3Color(),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -242,7 +248,7 @@ private fun UpdateBadge() {
     val colors = Oe3ThemeValues.colors
     Text(
         text = stringResource(R.string.config_update_badge),
-        style = Oe3Typography.style(Oe3TextRole.Caption),
+        style = MetaTextStyle,
         color = colors.primary.oe3Color(),
         modifier = Modifier
             .background(
@@ -258,7 +264,7 @@ private fun OptionLabel() {
     val colors = Oe3ThemeValues.colors
     Text(
         text = stringResource(R.string.config_options_label),
-        style = Oe3Typography.style(Oe3TextRole.Caption),
+        style = MetaTextStyle,
         color = colors.onSurfaceVariant.oe3Color(),
         modifier = Modifier.padding(
             start = Oe3Spacing.rowHorizontal,
@@ -381,7 +387,7 @@ private fun ChoiceRow(
             ) {
                 Text(
                     text = value,
-                    style = Oe3Typography.style(Oe3TextRole.Caption),
+                    style = MetaTextStyle,
                     color = colors.onSurfaceVariant.oe3Color(),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -403,51 +409,56 @@ private fun <T> ChoiceDialog(
     onDismiss: () -> Unit,
 ) {
     val colors = Oe3ThemeValues.colors
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = title,
-                style = Oe3Typography.style(Oe3TextRole.Section),
-                color = colors.onSurface.oe3Color(),
-            )
-        },
-        text = {
-            Column {
-                choices.forEach { (labelRes, value) ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = Oe3Sizes.minTouchTarget)
-                            .selectable(
-                                selected = value == current,
-                                role = Role.RadioButton,
-                                onClick = { onPick(value) },
+    // 对话框进场接 Oe3Motion.dialog（spec §2.5：250ms easeOutCubic，fade + scale
+    // 0.96→1）。Material3 AlertDialog 本体不 fork：token 走内容层进出场，减少动态
+    // 时首帧即终态（对照 CustomSlotEditorDialog 的接法）。
+    Oe3DialogEnterMotion {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = {
+                Text(
+                    text = title,
+                    style = Oe3Typography.style(Oe3TextRole.Section),
+                    color = colors.onSurface.oe3Color(),
+                )
+            },
+            text = {
+                Column {
+                    choices.forEach { (labelRes, value) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = Oe3Sizes.minTouchTarget)
+                                .selectable(
+                                    selected = value == current,
+                                    role = Role.RadioButton,
+                                    onClick = { onPick(value) },
+                                )
+                                .semantics(mergeDescendants = true) {},
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = value == current, onClick = null)
+                            Spacer(Modifier.width(Oe3Spacing.sm))
+                            Text(
+                                text = stringResource(labelRes),
+                                style = Oe3Typography.style(Oe3TextRole.Body),
+                                color = colors.onSurface.oe3Color(),
                             )
-                            .semantics(mergeDescendants = true) {},
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RadioButton(selected = value == current, onClick = null)
-                        Spacer(Modifier.width(Oe3Spacing.sm))
-                        Text(
-                            text = stringResource(labelRes),
-                            style = Oe3Typography.style(Oe3TextRole.Body),
-                            color = colors.onSurface.oe3Color(),
-                        )
+                        }
                     }
                 }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(
-                    text = stringResource(R.string.config_dialog_cancel),
-                    color = colors.primary.oe3Color(),
-                )
-            }
-        },
-        containerColor = colors.surfaceHigh.oe3Color(),
-    )
+            },
+            confirmButton = {
+                TextButton(onClick = onDismiss) {
+                    Text(
+                        text = stringResource(R.string.config_dialog_cancel),
+                        color = colors.primary.oe3Color(),
+                    )
+                }
+            },
+            containerColor = colors.surfaceHigh.oe3Color(),
+        )
+    }
 }
 
 /**

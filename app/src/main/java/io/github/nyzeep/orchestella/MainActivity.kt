@@ -477,6 +477,9 @@ class MainActivity : AppCompatActivity() {
             state = handle.state,
             onEvent = handle.onEvent,
             reduceMotion = reduceMotion,
+            // 可见返回钮与 OnBackPressedCallback 的系统返回同语义：关闭工坊，
+            // 壳层回到原 selectedTab（配置页打开时即配置 tab）。
+            onBack = { oe3ThemeStudioOpen.value = false },
             onPickBackground = { backgroundPicker.launch(arrayOf("image/*")) },
             onPickTerminalBackground = { terminalBackgroundPicker.launch(arrayOf("image/*")) },
         )

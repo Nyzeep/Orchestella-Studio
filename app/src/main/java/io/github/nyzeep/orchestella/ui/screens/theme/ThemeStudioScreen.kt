@@ -1,5 +1,6 @@
 package io.github.nyzeep.orchestella.ui.screens.theme
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -31,7 +32,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -39,9 +42,11 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.github.nyzeep.orchestella.R
 import io.github.nyzeep.orchestella.ui.theme.OeTextScaleMode
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Button
@@ -54,6 +59,7 @@ import io.github.nyzeep.orchestella.ui.oe3.theme.LocalOe3CornerRadius
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3Theme
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Shapes
+import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Sizes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
@@ -61,6 +67,9 @@ import io.github.nyzeep.orchestella.ui.theme.CustomThemeSlot
 import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
 import io.github.nyzeep.orchestella.ui.theme.ThemeStore
 import kotlin.math.roundToInt
+
+/** 页面标题下的元信息与「当前值」读数（spec §2.3：13/18）。 */
+private val MetaTextStyle = TextStyle(fontSize = 13.sp, lineHeight = 18.sp)
 
 /**
  * Theme Studio (UI3-09). Root-only: it owns the [Oe3Theme] wrapper because the
@@ -82,6 +91,7 @@ fun ThemeStudioScreen(
     renderTerminalView: Boolean = true,
     reduceMotion: Boolean = false,
     presets: List<io.github.nyzeep.orchestella.ui.theme.AppTheme> = ThemeCatalog.all,
+    onBack: (() -> Unit)? = null,
     onPickBackground: (() -> Unit)? = null,
     onPickTerminalBackground: (() -> Unit)? = null,
     onPickFont: (() -> Unit)? = null,
@@ -101,6 +111,7 @@ fun ThemeStudioScreen(
             renderTerminalView = renderTerminalView,
             reduceMotion = reduceMotion,
             presets = presets,
+            onBack = onBack,
             onPickBackground = onPickBackground,
             onPickTerminalBackground = onPickTerminalBackground,
             onPickFont = onPickFont,
@@ -116,6 +127,7 @@ private fun ThemeStudioContent(
     renderTerminalView: Boolean,
     reduceMotion: Boolean,
     presets: List<io.github.nyzeep.orchestella.ui.theme.AppTheme>,
+    onBack: (() -> Unit)?,
     onPickBackground: (() -> Unit)?,
     onPickTerminalBackground: (() -> Unit)?,
     onPickFont: (() -> Unit)?,
@@ -136,16 +148,7 @@ private fun ThemeStudioContent(
             .padding(horizontal = Oe3Spacing.pageInset)
             .padding(top = Oe3Spacing.xl, bottom = Oe3Spacing.contentBottom),
     ) {
-        Text(
-            text = stringResource(R.string.ui3_theme_title),
-            style = Oe3Typography.style(Oe3TextRole.PageTitle),
-            color = colors.onSurface.oe3Color(),
-        )
-        Text(
-            text = stringResource(R.string.ui3_theme_meta),
-            style = Oe3Typography.style(Oe3TextRole.Caption),
-            color = colors.onSurfaceVariant.oe3Color(),
-        )
+        ThemeStudioPageHeader(onBack = onBack)
 
         // 1. Full home preview.
         ThemeSectionHeader(
@@ -192,7 +195,7 @@ private fun ThemeStudioContent(
                 Text(
                     text = stringResource(R.string.ui3_theme_mode_fixed_note),
                     modifier = Modifier.padding(horizontal = Oe3Spacing.rowHorizontal, vertical = 10.dp),
-                    style = Oe3Typography.style(Oe3TextRole.Caption),
+                    style = MetaTextStyle,
                     color = colors.onSurfaceVariant.oe3Color(),
                 )
             }
@@ -415,6 +418,73 @@ private fun ThemeStudioContent(
     }
 }
 
+/**
+ * 子页头（patterns/navigation.md §5 / page-templates §5 工具页）：返回 48dp + 4dp +
+ * 标题 30/36 + 元信息 13/18，标题仍留在内容区。[onBack] 为空时不渲染返回钮，
+ * 页面保持可复用（预览/嵌入宿主）。返回语义与系统返回键一致（MainActivity 的
+ * OnBackPressedCallback：工坊打开时返回即关闭工坊，壳层回到配置 tab）。
+ */
+@Composable
+private fun ThemeStudioPageHeader(onBack: (() -> Unit)?) {
+    val colors = Oe3ThemeValues.colors
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (onBack != null) {
+            val back = stringResource(R.string.ui3_theme_back)
+            Box(
+                modifier = Modifier
+                    .size(Oe3Sizes.minTouchTarget)
+                    .testTag("theme-studio:back")
+                    .clickable(role = Role.Button, onClick = onBack)
+                    .semantics { contentDescription = back },
+                contentAlignment = Alignment.Center,
+            ) {
+                BackChevron()
+            }
+            Spacer(Modifier.width(Oe3Spacing.xxs))
+        }
+        Column {
+            Text(
+                text = stringResource(R.string.ui3_theme_title),
+                style = Oe3Typography.style(Oe3TextRole.PageTitle),
+                color = colors.onSurface.oe3Color(),
+            )
+            Text(
+                text = stringResource(R.string.ui3_theme_meta),
+                style = MetaTextStyle,
+                color = colors.onSurfaceVariant.oe3Color(),
+            )
+        }
+    }
+}
+
+/** 子页头返回箭头：方向 chevron，与 ConfigScreen 的 DirectionChevron 同形。 */
+@Composable
+private fun BackChevron() {
+    val color = Oe3ThemeValues.colors.onSurface.oe3Color()
+    Canvas(modifier = Modifier.size(Oe3Sizes.icon)) {
+        val stroke = 1.75.dp.toPx()
+        val nearX = size.width * 0.38f
+        val farX = size.width * 0.62f
+        drawLine(
+            color,
+            Offset(farX, size.height * 0.28f),
+            Offset(nearX, size.height * 0.5f),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round,
+        )
+        drawLine(
+            color,
+            Offset(nearX, size.height * 0.5f),
+            Offset(farX, size.height * 0.72f),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round,
+        )
+    }
+}
+
 @Composable
 private fun PresetGrid(
     presets: List<io.github.nyzeep.orchestella.ui.theme.AppTheme>,
@@ -464,7 +534,7 @@ private fun PresetCard(
             Text(
                 text = theme.displayName,
                 modifier = Modifier.weight(1f),
-                style = Oe3Typography.style(Oe3TextRole.Caption),
+                style = MetaTextStyle,
                 color = colors.onSurface.oe3Color(),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -480,7 +550,7 @@ private fun PresetCard(
                 theme.isDark -> stringResource(R.string.ui3_theme_preset_dark)
                 else -> stringResource(R.string.ui3_theme_preset_light)
             },
-            style = Oe3Typography.style(Oe3TextRole.Caption),
+            style = MetaTextStyle,
             color = colors.onSurfaceVariant.oe3Color(),
         )
     }
@@ -633,7 +703,7 @@ private fun CustomSlotCard(
                             active -> "${slot.name} · ${stringResource(R.string.ui3_theme_slot_current)}"
                             else -> slot.name
                         },
-                        style = Oe3Typography.style(Oe3TextRole.Caption),
+                        style = MetaTextStyle,
                         color = colors.onSurfaceVariant.oe3Color(),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -753,7 +823,7 @@ private fun WallpaperCard(
                 )
                 Text(
                     text = wallpaper,
-                    style = Oe3Typography.style(Oe3TextRole.Caption),
+                    style = MetaTextStyle,
                     color = colors.onSurfaceVariant.oe3Color(),
                 )
             }
@@ -788,7 +858,7 @@ private fun WallpaperCard(
         )
         Text(
             text = opacityText,
-            style = Oe3Typography.style(Oe3TextRole.Caption),
+            style = MetaTextStyle,
             color = colors.onSurfaceVariant.oe3Color(),
         )
     }
@@ -871,7 +941,7 @@ private fun TerminalCard(
                     stringResource(R.string.ui3_theme_terminal_bg_set)
                 },
                 modifier = Modifier.weight(1f),
-                style = Oe3Typography.style(Oe3TextRole.Caption),
+                style = MetaTextStyle,
                 color = colors.onSurfaceVariant.oe3Color(),
             )
             Oe3Button(
