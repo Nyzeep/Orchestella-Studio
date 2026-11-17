@@ -84,7 +84,7 @@ import io.github.nyzeep.orchestella.ui.shell.OeScaffold
  */
 @Composable
 fun WizardScreen(
-    controller: WizardController,
+    controller: WizardScreenModel,
     onExit: () -> Unit,
     modifier: Modifier = Modifier,
 ) {

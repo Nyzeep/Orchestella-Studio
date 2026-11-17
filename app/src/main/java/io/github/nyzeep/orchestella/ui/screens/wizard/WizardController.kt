@@ -82,7 +82,7 @@ class WizardController(
     targetDistroId: String,
     private val callbacks: Callbacks,
     savedDraft: Map<String, String>? = null,
-) {
+) : WizardScreenModel {
 
     /** 宿主接线点：由 MainActivity 提供（壳内导航回跳与既有系统对话框复用）。 */
     data class Callbacks(
@@ -124,7 +124,7 @@ class WizardController(
 
     /** 创建门禁的身份校验结论（视图按字段渲染行内错误）。 */
     private val _identityError = mutableStateOf<IdentityError?>(null)
-    val identityError: State<IdentityError?> get() = _identityError
+    override val identityError: State<IdentityError?> get() = _identityError
 
     /** AVF 详情折叠态（旧 avfDetailCollapse；动画由视图层 AnimatedVisibility 承担）。 */
     var avfDetailExpanded: Boolean by mutableStateOf(false)
@@ -134,7 +134,7 @@ class WizardController(
      * 自定义磁盘输入的原文（旧 editCustomDiskGb 的文本腿）。模型只收合法值；
      * 非法输入以 gate=InvalidInput 显式关门前门，文本保留在输入框。
      */
-    var diskInputText: String by mutableStateOf("")
+    override var diskInputText: String by mutableStateOf("")
         private set
 
     private var authWizardModel: AvfAuthorizationWizardModel? = null
@@ -146,10 +146,10 @@ class WizardController(
     private var model: InstanceCreationWizardModel = createInitialModel(targetDistroId)
 
     private val _state = mutableStateOf(WizardUiState.of(model, currentFacts()))
-    val state: State<WizardUiState> = _state
+    override val state: State<WizardUiState> = _state
 
     private val _authDialog = mutableStateOf<AuthDialog>(AuthDialog.None)
-    val authDialog: State<AuthDialog> = _authDialog
+    override val authDialog: State<AuthDialog> = _authDialog
 
     init {
         if (savedDraft != null) {
@@ -192,7 +192,7 @@ class WizardController(
     // ------------------------------------------------------------------
 
     /** 旧 spinner 的 onItemSelected：发行版切换 = 重建模型 + 草稿骑乘。 */
-    fun selectDistro(distroId: String) {
+    override fun selectDistro(distroId: String) {
         if (model.isCreating || model.distroId == distroId) return
         val manifest = DistroCatalogRegistry.getInstance().get(distroId)
         val version = manifest?.version() ?: "latest"
@@ -211,7 +211,7 @@ class WizardController(
         render()
     }
 
-    fun selectDiskPreset(gb: Int) {
+    override fun selectDiskPreset(gb: Int) {
         if (model.isCreating) return
         model.selectDiskPresetGb(gb)
         diskInputText = gb.toString()
@@ -223,7 +223,7 @@ class WizardController(
      * 自定义容量键入（旧 TextWatcher 语义）：非法输入模型不动、门显式关闭；
      * 合法输入进模型并调度 300ms 防抖预检（检查未落时门保持关闭）。
      */
-    fun onCustomDiskInput(raw: String) {
+    override fun onCustomDiskInput(raw: String) {
         if (model.isCreating) return
         diskInputText = raw
         val gb = WizardDraftFields.diskSizeGb.parse(raw)
@@ -243,7 +243,7 @@ class WizardController(
     // ------------------------------------------------------------------
 
     /** 旧 chkMountSharedDir 监听：取消勾选清路径；勾选且无路径 → 拉 SAF 选择器。 */
-    fun onSharedDirToggled(checked: Boolean) {
+    override fun onSharedDirToggled(checked: Boolean) {
         if (model.isCreating) return
         if (!checked) model.setHostSharedDirectoryPath(null)
         model.setMountHostSharedDirectory(checked)
@@ -252,7 +252,7 @@ class WizardController(
     }
 
     /** 旧 OpenDocumentTree 回调（含取消腿与 takePersistableUriPermission 尽力语义）。 */
-    fun onSharedDirPicked(uri: Uri?) {
+    override fun onSharedDirPicked(uri: Uri?) {
         if (uri != null) {
             try {
                 context.contentResolver.takePersistableUriPermission(
@@ -276,7 +276,7 @@ class WizardController(
     // 命令：网络步
     // ------------------------------------------------------------------
 
-    fun selectMirror(ordinal: Int) {
+    override fun selectMirror(ordinal: Int) {
         if (model.isCreating) return
         val sources = DistroMirrorProvisioner.MirrorSource.values()
         if (ordinal !in sources.indices) return
@@ -285,7 +285,7 @@ class WizardController(
     }
 
     /** 旧 btnWizardSpeedTest：并发测速 → 最优节点回填 MULTI_TIER。 */
-    fun runMirrorSpeedTest() {
+    override fun runMirrorSpeedTest() {
         if (model.isCreating) return
         speedTestSummary = "正在对主流云镜像源进行并发测速..."
         networkFacts = networkFacts.copy(testResult = NetworkTestResult.Testing)
@@ -319,7 +319,7 @@ class WizardController(
     }
 
     /** 旧 btnTestNetwork：系统声明连通性自检（后台）。 */
-    fun testNetworkConnectivity() {
+    override fun testNetworkConnectivity() {
         networkFacts = networkFacts.copy(testResult = NetworkTestResult.Testing)
         render()
         scope.launch {
@@ -333,19 +333,19 @@ class WizardController(
     // 命令：硬件步
     // ------------------------------------------------------------------
 
-    fun onCpuCoresChange(cores: Int) {
+    override fun onCpuCoresChange(cores: Int) {
         if (model.isCreating) return
         model.updateCpuCores(cores)
         render()
     }
 
-    fun onRamMbChange(mb: Int) {
+    override fun onRamMbChange(mb: Int) {
         if (model.isCreating) return
         model.updateRamMegabytes(mb)
         render()
     }
 
-    fun toggleAvfDetails() {
+    override fun toggleAvfDetails() {
         avfDetailExpanded = !avfDetailExpanded
         render()
     }
@@ -354,25 +354,25 @@ class WizardController(
     // 命令：启动任务步
     // ------------------------------------------------------------------
 
-    fun onIdentityChange(username: String, hostname: String) {
+    override fun onIdentityChange(username: String, hostname: String) {
         if (model.isCreating) return
         model.updateGuestIdentityDraft(username, hostname, model.guestSudoDraft)
         render()
     }
 
-    fun onSudoChange(enabled: Boolean) {
+    override fun onSudoChange(enabled: Boolean) {
         if (model.isCreating) return
         model.updateGuestIdentityDraft(model.guestUsernameDraft, model.guestHostnameDraft, enabled)
         render()
     }
 
-    fun onOptionalProfileChange(desktop: Boolean, podman: Boolean, editor: Boolean) {
+    override fun onOptionalProfileChange(desktop: Boolean, podman: Boolean, editor: Boolean) {
         if (model.isCreating) return
         model.setOptionalProfiles(desktop, podman, editor)
         render()
     }
 
-    fun onAutoUpdateChange(enabled: Boolean) {
+    override fun onAutoUpdateChange(enabled: Boolean) {
         if (model.isCreating) return
         model.setAutoUpdateOnFirstBoot(enabled)
         render()
@@ -383,7 +383,7 @@ class WizardController(
     // ------------------------------------------------------------------
 
     /** 上一步（底部操作条；返回键的逐级回退同路）。 */
-    fun goBack() {
+    override fun goBack() {
         if (model.canGoBack()) {
             model.previousStep()
             render()
@@ -394,7 +394,7 @@ class WizardController(
      * 下一步。存储步先落账发行版切换（旧 btnStep1Next 的双跳语义）；
      * 硬件步先验安全门（旧 btnStep3Next）。
      */
-    fun goNext() {
+    override fun goNext() {
         if (!model.canGoNext()) return
         when (model.currentStep) {
             InstanceCreationWizardModel.CreationStep.STEP_STORAGE -> {
@@ -434,7 +434,7 @@ class WizardController(
      * root 冲突 → 硬件门 → 最终存储门（含已承诺占用）→ tryBeginCreation →
      * 后台下载与装配。
      */
-    fun startCreation() {
+    override fun startCreation() {
         if (model.isCreating) return
         val username = model.guestUsernameDraft.trim()
         val hostname = model.guestHostnameDraft.trim()
@@ -658,7 +658,7 @@ class WizardController(
     // ------------------------------------------------------------------
 
     /** 硬件步「获取授权指引」入口（旧 showAvfAuthorizationWizard）。 */
-    fun openAvfAuthorization() {
+    override fun openAvfAuthorization() {
         refreshAvfCard()
         val readiness = avfReadiness ?: return
         val wizard = AvfAuthorizationWizardModel.fromAssessment(readiness)
@@ -667,21 +667,21 @@ class WizardController(
         _authDialog.value = AuthDialog.ShizukuSteps
     }
 
-    fun authUseShizukuClient() {
+    override fun authUseShizukuClient() {
         callbacks.onShowShizukuClient()
     }
 
-    fun authChooseAdbFallback() {
+    override fun authChooseAdbFallback() {
         authWizardModel = authWizardModel?.chooseAdbFallback()
         _authDialog.value = AuthDialog.AdbSteps(adbCommand())
     }
 
-    fun authBackToShizuku() {
+    override fun authBackToShizuku() {
         authWizardModel = authWizardModel?.backToShizuku()
         _authDialog.value = AuthDialog.ShizukuSteps
     }
 
-    fun authCopyCommand() {
+    override fun authCopyCommand() {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
         clipboard?.setPrimaryClip(
             ClipData.newPlainText(context.getString(R.string.wizard_copy_command), adbCommand()),
@@ -689,11 +689,11 @@ class WizardController(
         toast(R.string.wizard_command_copied)
     }
 
-    fun authDone() {
+    override fun authDone() {
         recheckAuthorization()
     }
 
-    fun dismissAuthDialog() {
+    override fun dismissAuthDialog() {
         _authDialog.value = AuthDialog.None
     }
 
@@ -731,7 +731,7 @@ class WizardController(
     }
 
     /** 同步预检（预设点击 / 步骤重入）。 */
-    fun revalidateStorage() {
+    override fun revalidateStorage() {
         lastAvailableBytes = try {
             StatFs(context.filesDir.path).availableBytes
         } catch (_: Exception) {
@@ -1027,12 +1027,12 @@ class WizardController(
     }
 
     /** 身份输入变更时清除行内错误（旧 error = null 语义的输入侧）。 */
-    fun clearIdentityError() {
+    override fun clearIdentityError() {
         _identityError.value = null
     }
 
     /** 恢复提示的消费点：首次渲染后由视图层取走（Toast 一次）。 */
-    fun consumeDraftNotice(): String? {
+    override fun consumeDraftNotice(): String? {
         val notice = draftNotice
         draftNotice = null
         return notice

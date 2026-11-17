@@ -71,7 +71,7 @@ import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
 
 /**
  * 四步内容（UI-12 步骤 2）。每个可组合件只读 [WizardUiState]，交互以命令
- * 进 [WizardController]；控件全部走 Oe3 token —— 卡片 24dp、卡内 well 16dp、
+ * 进 [WizardScreenModel]；控件全部走 Oe3 token —— 卡片 24dp、卡内 well 16dp、
  * 胶囊按钮、UI-05 唯一滑块 [OeSlider]、输入框 16dp（shape.md 输入框档）。
  *
  * 宽度适配一律用 `weight` / `fillMaxWidth` / `FlowRow` 换行，不写硬编码 dp。
@@ -84,7 +84,7 @@ import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
 @Composable
 fun StorageStepContent(
     state: WizardUiState,
-    controller: WizardController,
+    controller: WizardScreenModel,
     onPickSharedDir: () -> Unit,
 ) {
     WizardAvfCard(state = state, controller = controller)
@@ -102,7 +102,7 @@ fun StorageStepContent(
 
 /** 步骤 1 顶部：AVF 平台预检卡（结论行默认收起，详情可展开）。 */
 @Composable
-private fun WizardAvfCard(state: WizardUiState, controller: WizardController) {
+private fun WizardAvfCard(state: WizardUiState, controller: WizardScreenModel) {
     val colors = Oe3ThemeValues.colors
     val severityColor = when (state.avf.severity) {
         AvfSeverity.Green -> colorResource(R.color.zone_green)
@@ -282,7 +282,7 @@ private fun DistroSelectionCard(
 
 /** 存储配额卡：可用空间读数、预设胶囊、自定义输入、预检结论、共享目录开关。 */
 @Composable
-private fun StorageQuotaCard(state: WizardUiState, controller: WizardController) {
+private fun StorageQuotaCard(state: WizardUiState, controller: WizardScreenModel) {
     val colors = Oe3ThemeValues.colors
     Oe3Card(
         modifier = Modifier
@@ -418,13 +418,13 @@ private fun SharedDirectoryCard(state: WizardUiState, onPickSharedDir: () -> Uni
 // ---------------------------------------------------------------------------
 
 @Composable
-fun NetworkStepContent(state: WizardUiState, controller: WizardController) {
+fun NetworkStepContent(state: WizardUiState, controller: WizardScreenModel) {
     NetworkDiagnosisCard(state = state, controller = controller)
     MirrorSourceCard(state = state, controller = controller)
 }
 
 @Composable
-private fun NetworkDiagnosisCard(state: WizardUiState, controller: WizardController) {
+private fun NetworkDiagnosisCard(state: WizardUiState, controller: WizardScreenModel) {
     val colors = Oe3ThemeValues.colors
     Oe3Card(
         modifier = Modifier
@@ -490,7 +490,7 @@ private fun NetworkFactLine(line: String) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun MirrorSourceCard(state: WizardUiState, controller: WizardController) {
+private fun MirrorSourceCard(state: WizardUiState, controller: WizardScreenModel) {
     val colors = Oe3ThemeValues.colors
     Oe3Card(
         modifier = Modifier
@@ -549,7 +549,7 @@ private fun MirrorSourceCard(state: WizardUiState, controller: WizardController)
 // ---------------------------------------------------------------------------
 
 @Composable
-fun HardwareStepContent(state: WizardUiState, controller: WizardController) {
+fun HardwareStepContent(state: WizardUiState, controller: WizardScreenModel) {
     val colors = Oe3ThemeValues.colors
     Oe3Card(
         modifier = Modifier
@@ -695,15 +695,16 @@ private fun StepperRow(
 // ---------------------------------------------------------------------------
 
 @Composable
-fun StartupStepContent(state: WizardUiState, controller: WizardController) {
+fun StartupStepContent(state: WizardUiState, controller: WizardScreenModel) {
     IdentityCard(state = state, controller = controller)
     OptionalFeaturesCard(state = state, controller = controller)
-    CreationSummaryCard(state = state)
+    // 进行中的进度面板在摘要卡之前：创建中的用户先看活进度，再看静态摘要。
     CreationProgressPanel(state = state)
+    CreationSummaryCard(state = state)
 }
 
 @Composable
-private fun IdentityCard(state: WizardUiState, controller: WizardController) {
+private fun IdentityCard(state: WizardUiState, controller: WizardScreenModel) {
     val colors = Oe3ThemeValues.colors
     val error = controller.identityError.value
     Oe3Card(
@@ -783,7 +784,7 @@ private fun IdentityCard(state: WizardUiState, controller: WizardController) {
 }
 
 @Composable
-private fun OptionalFeaturesCard(state: WizardUiState, controller: WizardController) {
+private fun OptionalFeaturesCard(state: WizardUiState, controller: WizardScreenModel) {
     val colors = Oe3ThemeValues.colors
     Oe3Card(
         modifier = Modifier
