@@ -1,7 +1,5 @@
 package io.github.nyzeep.orchestella.ui.shell
 
-import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3GlassLevel
-
 /**
  * Bottom-bar geometry (Theme Studio "底栏样式", spec §3.3 item 6): floating is
  * the default capsule; fixed docks the bar flush to the screen bottom. The
@@ -25,14 +23,4 @@ enum class Oe3NavStyle {
         fun fromKey(key: String?): Oe3NavStyle =
             entries.firstOrNull { it.key == key } ?: Floating
     }
-}
-
-/**
- * Glass level mapped from ThemeStore's normalized `ui_glass_level` value;
- * unknown values fall back to [Oe3GlassLevel.None] exactly like the store.
- */
-fun glassLevelFromKey(key: String?): Oe3GlassLevel = when (key) {
-    "standard" -> Oe3GlassLevel.Standard
-    "ultra" -> Oe3GlassLevel.Ultra
-    else -> Oe3GlassLevel.None
 }
