@@ -15,8 +15,8 @@ import java.io.IOException
  * this object only decides WHICH entry a throwable belongs to, so the table
  * itself stays a pure JVM decision with unit-test coverage.
  *
- * Consumers today: SetupWizardActivity (creation failure path), TerminalActivity
- * (reconcile error line) and MainActivity (launch-failure status row). Since the
+ * Consumers today: the creation wizard (WizardController, UI-12 Compose 版),
+ * TerminalActivity (reconcile error line) and MainActivity (launch-failure status row). Since the
  * 2026-11-08 unification (T1) the former launch-path table
  * [io.github.nyzeep.orchestella.startup.LaunchFailureCopy] delegates here, so
  * this is the single source: the codes are contract-stable — never rename a

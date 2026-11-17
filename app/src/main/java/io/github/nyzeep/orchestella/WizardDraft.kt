@@ -19,8 +19,8 @@ import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig
  * <ul>
  *   <li>[WizardDraft] property + [WizardDraftFields] row — value semantics
  *       (parse/clamp) and model application, JVM-contract-tested here;</li>
- *   <li>one [io.github.nyzeep.orchestella.SetupWizardActivity] widget row —
- *       pure view wiring (readView/renderView).</li>
+ *   <li>one command path in the Compose wizard controller (UI-12) — pure view
+ *       wiring; the Compose single-way flow keeps the model as the only truth.</li>
  * </ul>
  *
  * <p>The versioned persistence map stays in
