@@ -1,7 +1,6 @@
 package io.github.nyzeep.orchestella.ui.screens.theme
 
 import android.content.Context
-import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.github.nyzeep.orchestella.ModernTerminalView
@@ -11,9 +10,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import java.time.Duration
 
 /**
  * The Theme Studio preview feeds a [FakeTerminalShell] transcript into the real
@@ -37,8 +34,9 @@ class TerminalPreviewRenderTest {
         val view = ModernTerminalView(context)
         val model = TerminalScreenModel(80, 24)
         view.setSessionScreen(model)
-        view.appendOutput(shell.render(theme))
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(64))
+        // The preview owns this model, so it writes through the session entry point;
+        // appendOutput is a repaint-only tick on session screens (live PTY contract).
+        view.appendSessionOutput(shell.render(theme))
 
         val snapshot = model.displaySnapshot()
         val colours = snapshot.spans.map { it.effectiveForegroundColor }.distinct()
