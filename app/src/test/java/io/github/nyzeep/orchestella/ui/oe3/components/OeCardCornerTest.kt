@@ -24,6 +24,7 @@ import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3Theme
 import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
 import org.junit.After
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -55,18 +56,29 @@ class OeCardCornerTest {
 
     private val recordProperty = "roborazzi.test.record"
 
+    /** 插件接管（record/verify/compare 任务）时像素断言让位给 golden 门。 */
+    private fun pluginOwnsCaptureMode(): Boolean =
+        System.getProperty("roborazzi.test.record") != null ||
+            System.getProperty("roborazzi.test.verify") != null ||
+            System.getProperty("roborazzi.test.compare") != null
+
     @Before
     fun enableTemporaryCapture() {
-        System.setProperty(recordProperty, "true")
+        if (!pluginOwnsCaptureMode()) {
+            System.setProperty(recordProperty, "true")
+        }
     }
 
     @After
     fun disableTemporaryCapture() {
-        System.clearProperty(recordProperty)
+        if (!pluginOwnsCaptureMode()) {
+            System.clearProperty(recordProperty)
+        }
     }
 
     @Test
     fun cardCornerFollowsTheThemeCornerPreference() {
+        assumeTrue("像素断言只在非 golden 门模式下运行", !pluginOwnsCaptureMode())
         val preferred = captureCornerLuminance(cornerRadius = 8.dp)
         assertTrue(
             "LocalOe3CornerRadius=8dp 时，(5,5) 应落入 8dp 圆角之内露出卡面（luminance=$preferred）",
@@ -76,6 +88,7 @@ class OeCardCornerTest {
 
     @Test
     fun cardCornerStaysOnThe24dpLadderWithoutAPreference() {
+        assumeTrue("像素断言只在非 golden 门模式下运行", !pluginOwnsCaptureMode())
         val fallback = captureCornerLuminance(cornerRadius = null)
         assertTrue(
             "未注入偏好时保持 24dp：(5,5) 应仍被圆角裁掉而露出黑底（luminance=$fallback）",

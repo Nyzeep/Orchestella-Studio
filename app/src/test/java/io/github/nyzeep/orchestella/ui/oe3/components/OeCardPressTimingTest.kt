@@ -25,6 +25,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -54,14 +55,28 @@ class OeCardPressTimingTest {
 
     private val recordProperty = "roborazzi.test.record"
 
+    /**
+     * 本类不是 golden：只在普通 testDebugUnitTest（record/verify/compare 均未
+     * 由插件接管）里临时开启 record 写临时位图。校验任务里像素断言让位给
+     * golden 门，仅保留常量钉值。
+     */
+    private fun pluginOwnsCaptureMode(): Boolean =
+        System.getProperty("roborazzi.test.record") != null ||
+            System.getProperty("roborazzi.test.verify") != null ||
+            System.getProperty("roborazzi.test.compare") != null
+
     @Before
     fun enableTemporaryCapture() {
-        System.setProperty(recordProperty, "true")
+        if (!pluginOwnsCaptureMode()) {
+            System.setProperty(recordProperty, "true")
+        }
     }
 
     @After
     fun disableTemporaryCapture() {
-        System.clearProperty(recordProperty)
+        if (!pluginOwnsCaptureMode()) {
+            System.clearProperty(recordProperty)
+        }
     }
 
     @Test
@@ -74,6 +89,7 @@ class OeCardPressTimingTest {
 
     @Test
     fun pressInWaitsOutTheRevealDelayThenFadesToTheInkWash() {
+        assumeTrue("像素断言只在非 golden 门模式下运行", !pluginOwnsCaptureMode())
         val colors = renderPressingCard()
 
         compose.onNodeWithTag("press-card").performTouchInput { down(center) }
@@ -94,6 +110,7 @@ class OeCardPressTimingTest {
 
     @Test
     fun releaseSettlesBackOver250ms() {
+        assumeTrue("像素断言只在非 golden 门模式下运行", !pluginOwnsCaptureMode())
         val colors = renderPressingCard()
 
         compose.onNodeWithTag("press-card").performTouchInput { down(center) }
