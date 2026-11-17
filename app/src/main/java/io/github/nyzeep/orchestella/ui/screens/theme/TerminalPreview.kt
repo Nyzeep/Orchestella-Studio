@@ -235,6 +235,17 @@ private fun AndroidTerminal(
     val lineHeight = (fontDp * 1.25f) + (lineSpacingPx / density.density)
     val naturalWidth = (charWidth * ThemeStudioSpec.terminalColumns + 12f).dp
     val naturalHeight = (lineHeight * ThemeStudioSpec.terminalRows + 12f).dp
+    // The 80x24 grid is taller than the 200dp window, so the view itself must be
+    // clamped to the window: ModernTerminalView.updateTerminalSize() then rebuilds
+    // the screen model at the rows that actually fit. Without the clamp the native
+    // ScrollView follows the bottom of the 24-row transcript and the window shows
+    // the blank rows below the banner — i.e. a black box even though the model has
+    // text. A bigger font still shows fewer rows, which is the intended zoom.
+    val previewHeight = if (naturalHeight > ThemeStudioSpec.terminalHeight) {
+        ThemeStudioSpec.terminalHeight
+    } else {
+        naturalHeight
+    }
 
     BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.TopStart) {
         AndroidView(
@@ -266,7 +277,7 @@ private fun AndroidTerminal(
             },
             modifier = Modifier
                 .requiredWidth(naturalWidth)
-                .requiredHeight(naturalHeight),
+                .requiredHeight(previewHeight),
         )
     }
 }
