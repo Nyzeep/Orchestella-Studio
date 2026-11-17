@@ -46,6 +46,10 @@ import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
  * 五个主页面一律不动。演示页统一按目标形态呈现——[OeScaffold]（leading =
  * 返回）+ 单标题 + 底部坞避让——用来验证 push/pop、系统返回键与留白。
  * 文案硬编码中文：演示页不进生产信息架构，不占 strings.xml。
+ *
+ * 源集位置（code-review 收口裁决）：本文件只在 `src/test`，生产 main 源集
+ * 对它零引用——生产 APK 不再携带演示页；栈行为用例与金样在测试侧继续
+ * 经 [Oe3App] 的真实组合驱动它。
  */
 object OeBackStackDemo {
 
