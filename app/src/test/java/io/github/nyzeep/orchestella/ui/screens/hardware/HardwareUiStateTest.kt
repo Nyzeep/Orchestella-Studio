@@ -1,5 +1,6 @@
 package io.github.nyzeep.orchestella.ui.screens.hardware
 
+import io.github.nyzeep.orchestella.BatteryFactProvider
 import io.github.nyzeep.orchestella.R
 import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator
 import io.github.nyzeep.orchestella.ui.screens.common.StorageFacts
@@ -102,6 +103,24 @@ class HardwareUiStateTest {
         assertNull(missing.rings.battery.detail)
         assertNull(missing.summary.batteryPercent)
         assertNull(missing.summary.temperature)
+    }
+
+    /** UI-08：采集口径折出的事实直接点亮环弧与温度，不再是 0f / `—`。 */
+    @Test
+    fun collectedBatteryFactsDriveTheRingInsteadOfPlaceholders() {
+        val facts = BatteryFactProvider.factsFrom(
+            level = 76,
+            scale = 100,
+            temperatureTenths = 315,
+            capacityPercent = 76,
+        )
+        val ready = HardwareTestFixtures.ready(batteryFacts = facts)
+
+        assertEquals(0.76f, ready.rings.battery.fraction, 0.0001f)
+        assertEquals(76, ready.rings.battery.percent)
+        assertEquals("31.5 °C", ready.rings.battery.detail)
+        assertEquals(76, ready.summary.batteryPercent)
+        assertEquals("31.5 °C", ready.summary.temperature)
     }
 
     @Test
