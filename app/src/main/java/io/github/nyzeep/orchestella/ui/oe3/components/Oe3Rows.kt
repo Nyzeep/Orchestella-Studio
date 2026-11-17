@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Sizes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
@@ -126,21 +127,26 @@ fun Oe3SwitchRow(
     }
 }
 
-/** Shared title/subtitle/slot geometry for both row variants. */
+/**
+ * Shared title/subtitle/slot geometry for the row variants. [verticalPadding]
+ * lets the grouped-list row ([OeListGroupRow]) run its own 10dp rhythm while
+ * [Oe3ListRow] and [Oe3SwitchRow] keep the documented 8dp default.
+ */
 @Composable
-private fun Oe3RowBody(
+internal fun Oe3RowBody(
     title: String,
     subtitle: String?,
     leading: (@Composable () -> Unit)?,
     trailing: (@Composable () -> Unit)?,
     modifier: Modifier = Modifier,
+    verticalPadding: Dp = Oe3Spacing.xs,
 ) {
     val colors = Oe3ThemeValues.colors
     Row(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = Oe3Sizes.interactiveMinHeight(Oe3Spacing.rowHeight))
-            .padding(horizontal = Oe3Spacing.rowHorizontal, vertical = Oe3Spacing.xs),
+            .padding(horizontal = Oe3Spacing.rowHorizontal, vertical = verticalPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (leading != null) {
