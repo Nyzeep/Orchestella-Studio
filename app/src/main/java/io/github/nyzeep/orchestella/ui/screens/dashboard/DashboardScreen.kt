@@ -44,6 +44,8 @@ import io.github.nyzeep.orchestella.ui.oe3.components.oe3Color
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3DistroIcons
 import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
 import io.github.nyzeep.orchestella.ui.screens.common.formatGigabytes
+import io.github.nyzeep.orchestella.ui.shell.OeScaffold
+import io.github.nyzeep.orchestella.ui.shell.oeCardShape
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icon
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3IconTint
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icons
@@ -87,6 +89,9 @@ private val FigureTextStyle = TextStyle(
  * 页面只读 [DashboardUiState]；路由、真实动作与 3 秒刷新由 UI3-12 接线。
  * 独立可预览，不依赖壳层。旧壳的页码、遥测条、控制矩阵、SSH well 与引擎
  * 选择都不在这里出现。
+ *
+ * v4（UI-02）：整页 `background` 与页内 30sp 标题已删除 —— 标题交给
+ * [OeScaffold]，页面本体保持透明，壳层背景层才有机会露出来。
  */
 @Composable
 fun DashboardScreen(
@@ -95,51 +100,49 @@ fun DashboardScreen(
     modifier: Modifier = Modifier,
 ) {
     val colors = Oe3ThemeValues.colors
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(colors.background.oe3Color())
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = Oe3Spacing.pageInset)
-            .padding(top = Oe3Spacing.xl, bottom = LocalOe3PageBottomPadding.current),
+    OeScaffold(
+        title = stringResource(R.string.ui3_dashboard_title),
+        modifier = modifier,
     ) {
-        Text(
-            text = stringResource(R.string.ui3_dashboard_title),
-            style = Oe3Typography.style(Oe3TextRole.PageTitle),
-            color = colors.onSurface.oe3Color(),
-        )
-        Spacer(Modifier.height(Oe3Spacing.xxs))
-        Text(
-            text = metaLine(state),
-            style = MetaTextStyle,
-            color = colors.onSurfaceVariant.oe3Color(),
-        )
-        Spacer(Modifier.height(Oe3Spacing.md))
-
-        val primary = state.primary
-        if (primary == null) {
-            EmptyPrimaryCard(actions = actions)
-        } else {
-            PrimaryInstanceCard(
-                instance = primary,
-                onOpenTerminal = { actions.openTerminal(primary.id) },
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = Oe3Spacing.pageInset)
+                .padding(top = Oe3Spacing.xl, bottom = LocalOe3PageBottomPadding.current),
+        ) {
+            Text(
+                text = metaLine(state),
+                style = MetaTextStyle,
+                color = colors.onSurfaceVariant.oe3Color(),
             )
+            Spacer(Modifier.height(Oe3Spacing.md))
+
+            val primary = state.primary
+            if (primary == null) {
+                EmptyPrimaryCard(actions = actions)
+            } else {
+                PrimaryInstanceCard(
+                    instance = primary,
+                    onOpenTerminal = { actions.openTerminal(primary.id) },
+                )
+            }
+
+            Oe3SectionHeader(title = stringResource(R.string.ui3_dashboard_section_storage))
+            StorageCard(state = state.storage, onOpenSettings = actions.openStorageSettings)
+
+            Oe3SectionHeader(title = stringResource(R.string.ui3_dashboard_section_metrics))
+            MetricsRow(state = state)
+            Spacer(Modifier.height(Oe3Spacing.xs))
+            Text(
+                text = stringResource(R.string.ui3_dashboard_metric_refresh, DashboardSpec.refreshSeconds),
+                style = Oe3Typography.style(Oe3TextRole.Caption),
+                color = colors.onSurfaceVariant.oe3Color(),
+            )
+
+            Oe3SectionHeader(title = stringResource(R.string.ui3_dashboard_section_recent))
+            RecentCard(state = state, onOpenInstance = actions.openInstance)
         }
-
-        Oe3SectionHeader(title = stringResource(R.string.ui3_dashboard_section_storage))
-        StorageCard(state = state.storage, onOpenSettings = actions.openStorageSettings)
-
-        Oe3SectionHeader(title = stringResource(R.string.ui3_dashboard_section_metrics))
-        MetricsRow(state = state)
-        Spacer(Modifier.height(Oe3Spacing.xs))
-        Text(
-            text = stringResource(R.string.ui3_dashboard_metric_refresh, DashboardSpec.refreshSeconds),
-            style = Oe3Typography.style(Oe3TextRole.Caption),
-            color = colors.onSurfaceVariant.oe3Color(),
-        )
-
-        Oe3SectionHeader(title = stringResource(R.string.ui3_dashboard_section_recent))
-        RecentCard(state = state, onOpenInstance = actions.openInstance)
     }
 }
 
@@ -156,7 +159,7 @@ private fun PrimaryInstanceCard(
     onOpenTerminal: () -> Unit,
 ) {
     val colors = Oe3ThemeValues.colors
-    Oe3Card(modifier = Modifier.fillMaxWidth()) {
+    Oe3Card(modifier = Modifier.fillMaxWidth(), shape = oeCardShape()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             DistroMark(distroId = instance.distroId)
             Spacer(Modifier.width(Oe3Spacing.iconTextGap))
@@ -216,7 +219,7 @@ private fun PrimaryInstanceCard(
 
 @Composable
 private fun EmptyPrimaryCard(actions: DashboardActions) {
-    Oe3Card(modifier = Modifier.fillMaxWidth()) {
+    Oe3Card(modifier = Modifier.fillMaxWidth(), shape = oeCardShape()) {
         Oe3EmptyState(
             title = stringResource(R.string.ui3_dashboard_empty_title),
             description = stringResource(R.string.ui3_dashboard_empty_body),
@@ -239,7 +242,7 @@ private fun StorageCard(state: DashboardStorageUi, onOpenSettings: () -> Unit) {
     val colors = Oe3ThemeValues.colors
     val usedText = formatGigabytes(state.usedBytes)
     val totalText = formatGigabytes(state.totalBytes)
-    Oe3Card(modifier = Modifier.fillMaxWidth()) {
+    Oe3Card(modifier = Modifier.fillMaxWidth(), shape = oeCardShape()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Oe3Ring(
                 progress = state.fraction,
@@ -331,6 +334,7 @@ private fun MetricCard(
     Oe3Card(
         modifier = modifier,
         contentPadding = PaddingValues(Oe3Spacing.md),
+        shape = oeCardShape(),
     ) {
         Text(
             text = label,
@@ -386,6 +390,7 @@ private fun RecentCard(state: DashboardUiState, onOpenInstance: (String) -> Unit
     Oe3Card(
         modifier = Modifier.fillMaxWidth(),
         contentPadding = PaddingValues(0.dp),
+        shape = oeCardShape(),
     ) {
         if (state.recent.isEmpty()) {
             Text(
