@@ -1,12 +1,16 @@
 package io.github.nyzeep.orchestella.ui.screens.instances
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.captureRoboImage
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3Theme
+import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.theme.AppTheme
 import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
 import org.junit.Rule
@@ -118,11 +122,18 @@ class InstancesScreenshotTest {
     private fun capture(name: String, theme: AppTheme, state: InstancesUiState) {
         compose.setContent {
             Oe3Theme(theme = theme, reduceMotion = true) {
-                InstancesScreen(
-                    state = state,
-                    actions = InstancesActions(),
-                    modifier = Modifier.fillMaxSize(),
-                )
+                // UI-02 起页面本体透明：页级 golden 补壳层底色。
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(Color(Oe3ThemeValues.colors.background)),
+                ) {
+                    InstancesScreen(
+                        state = state,
+                        actions = InstancesActions(),
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             }
         }
         compose.onRoot().captureRoboImage("src/test/screenshots/ui3/instances/$name.png")
