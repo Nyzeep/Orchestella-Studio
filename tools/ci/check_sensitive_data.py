@@ -120,16 +120,19 @@ MEDIA_SUFFIXES = (
     ".avi",
 )
 
-# Product artwork that ships inside the APK or documents the app itself. It is
-# not developer-local media: launcher icons, the branding sheet and the curated
-# UI screenshots are part of
-# the release artifact and have to be tracked. Keep this list at two literal
-# prefixes; anything wider turns the media rule into decoration.
+# Product artwork that ships inside the APK or documents the app itself, plus
+# the zero-device Roborazzi goldens: none of these are developer-local media.
+# Launcher icons, the mascot, the branding sheet, the curated README UI
+# screenshots and the JVM-rendered screenshot goldens are all part of the
+# release/verification artifacts and have to be tracked. Keep this list to
+# literal path prefixes with one artifact family each; anything wider turns
+# the media rule into decoration.
 PRODUCT_MEDIA_PREFIXES = (
     "app/src/main/res/mipmap-",
     "app/src/main/res/drawable-nodpi/mascot_original.png",
     "docs/assets/branding/",
     "docs/assets/screenshots/",
+    "app/src/test/screenshots/",
 )
 
 KEY_SUFFIXES = (".jks", ".keystore", ".p12", ".pfx", ".pem", ".key")
@@ -533,6 +536,7 @@ def run_self_test() -> bool:
             "app/src/main/res/drawable-nodpi/mascot_original.png": "fixture",
             "docs/assets/branding/app-icon-512.png": "fixture",
             "docs/assets/screenshots/dashboard.jpg": "fixture",
+            "app/src/test/screenshots/ui3/dashboard/overview-dark.png": "fixture",
             "signing/release.jks": "fixture",
             "keys/app.pem": "fixture",
             ".env": "fixture",
