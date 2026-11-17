@@ -1,8 +1,10 @@
 package io.github.nyzeep.orchestella.ui.screens.distros
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -10,6 +12,7 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.captureRoboImage
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3Theme
+import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
 import org.junit.Rule
 import org.junit.Test
@@ -56,6 +59,8 @@ class DistrosScreenshotTest {
                 Box(
                     modifier = Modifier
                         .size(width = 412.dp, height = 1400.dp)
+                        // UI-02 起页面本体透明：golden 自己补壳层底色。
+                        .background(Color(Oe3ThemeValues.colors.background))
                         .testTag("distros-shot"),
                 ) {
                     DistrosScreen(

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- UI-07: Material alert dialog enter. Shape is unchanged from the library's
+     m3_motion_fade_enter (fade + 0.8 -> 1.0 centre scale, emphasized
+     decelerate); only the clock moved to the dialog token (250 ms) so the
+     View-side floating layer shares OeMotion.DIALOG_MS with Compose. -->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:duration="@integer/oe_motion_duration_dialog_enter"
+    android:interpolator="@anim/oe_emphasized_decelerate"
+    android:shareInterpolator="true">
+    <alpha
+        android:fromAlpha="0.0"
+        android:toAlpha="1.0" />
+    <scale
+        android:fromXScale="0.8"
+        android:fromYScale="0.8"
+        android:pivotX="50%"
+        android:pivotY="50%"
+        android:toXScale="1"
+        android:toYScale="1" />
+</set>

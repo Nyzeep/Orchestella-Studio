@@ -791,7 +791,7 @@
                                 android:textSize="18sp"
                                 android:textStyle="bold" />
 
-                            <com.google.android.material.slider.Slider
+                            <io.github.nyzeep.orchestella.ui.design.components.OeSliderView
                                 android:id="@+id/slider_vcpu"
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
@@ -830,7 +830,7 @@
                             android:textStyle="bold"
                             android:textColor="?attr/colorOnSurface" />
 
-                        <com.google.android.material.slider.Slider
+                        <io.github.nyzeep.orchestella.ui.design.components.OeSliderView
                             android:id="@+id/slider_ram"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"

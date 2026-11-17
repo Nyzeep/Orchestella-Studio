@@ -216,6 +216,19 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
         prefs.edit().putInt(KEY_CORNER_RADIUS_DP, dp.coerceIn(0, MAX_CORNER_RADIUS_DP)).apply()
     }
 
+    /**
+     * Corner radius for Compose surfaces, or null while the user is still on the
+     * shipped default.
+     *
+     * [DEFAULT_CORNER_RADIUS_DP] predates the v4 card ladder: it is the legacy
+     * View button radius ("全局按钮圆角" in Settings). Compose page cards have
+     * their own authority (`Oe3Shape.xl` = 24dp, shape.md), so the default has
+     * to stay "no override" and only an explicit pick may move them (UI-02).
+     * Without this split a fresh install would render 16dp cards, silently
+     * contradicting the design system.
+     */
+    fun cornerRadiusDpOrNull(): Int? = cornerRadiusDp().takeIf { it != DEFAULT_CORNER_RADIUS_DP }
+
     // --- Theme Studio presentation options (ticket 13: pure black / glass / bottom bar / app font) ---
 
     /**

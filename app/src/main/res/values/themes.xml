@@ -8,6 +8,40 @@
         <!-- Session 19 (T-D): one Material Motion transition vocabulary for every
              Activity instead of each window using the platform default fade. -->
         <item name="android:windowAnimationStyle">@style/Animation.Orchestella.Activity</item>
+        <!-- UI-07: the two dialog families were the last windows on library
+             defaults (400/300 ms). Both now resolve through Orchestella
+             overlays so their window animation reads oe_motion_duration_*
+             like every other surface. Shape is unchanged; only the clock. -->
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.Orchestella.MaterialAlertDialog</item>
+        <item name="bottomSheetDialogTheme">@style/ThemeOverlay.Orchestella.BottomSheetDialog</item>
+    </style>
+
+
+    <!-- ==================================================== -->
+    <!-- UI-07 floating layers: AppCompat/Material dialogs and modal bottom
+         sheets. The overlay keeps every Material default (alertDialogStyle,
+         button bar styles, scrim opacity); only android:windowAnimationStyle
+         is replaced, so the tokens reach res/anim without touching call sites
+         (MaterialAlertDialogBuilder / BottomSheetDialog read these two theme
+         attributes on their own). -->
+    <!-- ==================================================== -->
+
+    <style name="ThemeOverlay.Orchestella.MaterialAlertDialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="android:windowAnimationStyle">@style/Animation.Orchestella.Dialog</item>
+    </style>
+
+    <style name="ThemeOverlay.Orchestella.BottomSheetDialog" parent="ThemeOverlay.Material3.BottomSheetDialog">
+        <item name="android:windowAnimationStyle">@style/Animation.Orchestella.BottomSheetDialog</item>
+    </style>
+
+    <style name="Animation.Orchestella.Dialog" parent="@android:style/Animation.Dialog">
+        <item name="android:windowEnterAnimation">@anim/oe_dialog_fade_enter</item>
+        <item name="android:windowExitAnimation">@anim/oe_dialog_fade_exit</item>
+    </style>
+
+    <style name="Animation.Orchestella.BottomSheetDialog" parent="@android:style/Animation.Dialog">
+        <item name="android:windowEnterAnimation">@anim/oe_bottom_sheet_slide_enter</item>
+        <item name="android:windowExitAnimation">@anim/oe_bottom_sheet_slide_exit</item>
     </style>
 
 

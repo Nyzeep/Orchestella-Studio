@@ -9,6 +9,7 @@ import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -140,6 +141,9 @@ class InstancesScreenSemanticsTest {
 
         compose.onNodeWithText("运行中", useUnmergedTree = true).assertExists()
         compose.onNodeWithText("装配中", useUnmergedTree = true).assertExists()
+        // UI-02 起页面有 72dp 单标题栏，可视区变短：末组必须先滚进来，
+        // 断言本身不变（仍是「状态 chip 文本可读」）。
+        compose.onNodeWithTag("instances-list").performScrollToNode(hasText("已停止"))
         compose.onNodeWithText("已停止", useUnmergedTree = true).assertExists()
         compose.onNodeWithText("QEMU 软件虚拟化", useUnmergedTree = true).assertExists()
     }
