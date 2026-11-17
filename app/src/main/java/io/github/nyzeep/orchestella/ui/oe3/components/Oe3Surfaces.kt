@@ -51,9 +51,13 @@ object Oe3CardSpec {
  * The canonical Oe3 card: one tonal surface, 24dp corners, no outline and no
  * depth effect. Press feedback is a 10% ink wash, not a moving shadow.
  *
+ * [title] renders inside the card as the first row (v4: a card's title lives
+ * in the card, never as an outside section label). It participates in
+ * [contentPadding]; pair it with [OeCardHeader] when the padding is zero.
  * [content] is a [ColumnScope], so pages compose their own internal rhythm;
  * the primitive owns only the surface, clipping and padding. A clickable card
- * is one accessibility node, so [content] must not add a second click target.
+ * is one accessibility node, so [title] and [content] must not add a second
+ * click target.
  *
  * The default [shape] is not a fixed constant: it resolves through
  * [LocalOe3CornerRadius] so every card follows the Theme Studio radius
@@ -65,6 +69,7 @@ fun Oe3Card(
     onClick: (() -> Unit)? = null,
     contentPadding: PaddingValues = PaddingValues(Oe3Spacing.cardPadding),
     shape: Shape? = null,
+    title: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val resolvedShape = shape ?: Oe3CardSpec.cornerShape(LocalOe3CornerRadius.current)
@@ -110,8 +115,10 @@ fun Oe3Card(
                 if (onClick != null) Modifier.semantics(mergeDescendants = true) {} else Modifier,
             )
             .padding(contentPadding),
-        content = content,
-    )
+    ) {
+        title?.invoke()
+        content()
+    }
 }
 
 /** 20dp grid tile used by the two-column distro and preset grids. */
