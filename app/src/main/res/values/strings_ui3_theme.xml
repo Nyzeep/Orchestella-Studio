@@ -105,7 +105,7 @@
     <string name="ui3_theme_terminal_bg_pick">选择终端背景图</string>
     <string name="ui3_theme_terminal_bg_clear">清除终端背景图</string>
     <string name="ui3_theme_terminal_bg_set">已选择终端背景图</string>
-    <string name="ui3_theme_terminal_bg_note">背景图与遮罩作用于真实终端；预览保持纯色</string>
+    <string name="ui3_theme_terminal_bg_note">背景图与遮罩同时作用于真实终端与下方预览</string>
     <string name="ui3_theme_terminal_scrim">背景遮罩</string>
     <string name="ui3_theme_terminal_scrim_value">%1$d%%</string>
     <string name="ui3_theme_terminal_scrim_desc">背景遮罩 %1$d%%</string>
