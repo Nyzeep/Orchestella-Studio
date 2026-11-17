@@ -67,6 +67,31 @@ object OeMotion {
     const val PAGE_PUSH_UNDER_DIM = 0.15f
     const val PAGE_PUSH_SCALE_DELTA = 0.2f
 
+    // --- Dashboard edit mode (UI-09; reference prism_ui edit-mode specs) ---
+
+    /** Idle wiggle: rotation amplitude in degrees (±0.7°). */
+    const val EDIT_WIGGLE_ROTATION_DEG = 0.7f
+
+    /** Idle wiggle: translation amplitude in dp (±1.25dp). */
+    const val EDIT_WIGGLE_SHIFT_DP = 1.25f
+
+    /** Idle wiggle cycle; every card shares it, phases differ via start offsets. */
+    const val EDIT_WIGGLE_PERIOD_MS = 3600
+
+    /** Phase step between neighbouring cards so the wiggle never syncs up. */
+    const val EDIT_WIGGLE_PHASE_STEP_MS = 600
+
+    /** Displacement settle for the neighbours when a card changes slot. */
+    const val EDIT_REORDER_SETTLE_MS = 260
+
+    /** Appearance of a (re-)added card: scale 0.92→1 + fade. */
+    const val EDIT_APPEAR_MS = 200
+    const val EDIT_APPEAR_SCALE_FROM = 0.92f
+
+    /** Drag lift: transient scale and settle-back duration (spec pins easeOut). */
+    const val EDIT_DRAG_LIFT_SCALE_DELTA = 0.03f
+    const val EDIT_DRAG_LIFT_MS = 200
+
     // --- Shared cubic bezier control points ---
 
     const val STANDARD_X1 = 0.2f

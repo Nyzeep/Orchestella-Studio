@@ -155,6 +155,36 @@ object Oe3Icons {
         )
     }
 
+    // --- Edit-mode glyphs (v4 / UI-09, dashboard action slot & badges) ------
+    // Standalone vals, deliberately not members of [actions]/[all]: the icon
+    // sheet golden and the pinned action order stay untouched, and the
+    // dashboard contract test pins these three instead.
+
+    /** Edit: pencil — enters the dashboard edit mode. */
+    val Edit: ImageVector by lazy {
+        lineIcon(
+            name = "Oe3.Edit",
+            pathData = "M4.5 19.5h4l11-11a2 2 0 0 0 0-2.9l-1.1-1.1a2 2 0 0 0-2.9 0l-11 11v4Z " +
+                "M13.5 6.5l4 4",
+        )
+    }
+
+    /** Check: confirmation tick — saves and leaves the edit mode. */
+    val Check: ImageVector by lazy {
+        lineIcon(
+            name = "Oe3.Check",
+            pathData = "M4.5 12.5l5 5 10-11",
+        )
+    }
+
+    /** Remove: minus in a circle — hides a dashboard card while editing. */
+    val Remove: ImageVector by lazy {
+        lineIcon(
+            name = "Oe3.Remove",
+            pathData = "M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17 M8 12h8",
+        )
+    }
+
     /** Destinations in bottom-bar order. */
     val navigation: List<ImageVector> by lazy {
         listOf(Workstation, Instances, Hardware, Distros, Config)

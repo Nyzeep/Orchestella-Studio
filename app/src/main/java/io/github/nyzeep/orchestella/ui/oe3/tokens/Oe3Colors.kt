@@ -27,6 +27,9 @@ data class Oe3ColorTokens(
     val accent: Int,
     val error: Int,
     val onError: Int,
+    /** v4（UI-09）：删除徽标的容器底，Material 3 baseline errorContainer。 */
+    val errorContainer: Int,
+    val onErrorContainer: Int,
 )
 
 /**
@@ -50,6 +53,13 @@ object Oe3Colors {
 
     private const val ERROR_DARK = 0xFFFFB4AB.toInt()
     private const val ERROR_LIGHT = 0xFFBA1A1A.toInt()
+
+    // Material 3 baseline errorContainer / onErrorContainer, matched to the
+    // brightness convention above (UI-09 delete badge).
+    private const val ERROR_CONTAINER_DARK = 0xFF8C1D18.toInt()
+    private const val ERROR_CONTAINER_LIGHT = 0xFFF9DEDC.toInt()
+    private const val ON_ERROR_CONTAINER_DARK = 0xFFF9DEDC.toInt()
+    private const val ON_ERROR_CONTAINER_LIGHT = 0xFF410E0B.toInt()
 
     fun resolve(theme: AppTheme, pureBlack: Boolean = false): Oe3ColorTokens {
         val black = pureBlack && theme.isDark
@@ -93,6 +103,8 @@ object Oe3Colors {
             accent = theme.accent,
             error = error,
             onError = ThemeColors.onColor(error),
+            errorContainer = if (theme.isDark) ERROR_CONTAINER_DARK else ERROR_CONTAINER_LIGHT,
+            onErrorContainer = if (theme.isDark) ON_ERROR_CONTAINER_DARK else ON_ERROR_CONTAINER_LIGHT,
         )
     }
 }
