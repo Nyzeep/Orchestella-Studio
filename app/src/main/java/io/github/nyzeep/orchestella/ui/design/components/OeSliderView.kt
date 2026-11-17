@@ -88,6 +88,7 @@ class OeSliderView @JvmOverloads constructor(
     private var scaleAnimator: ValueAnimator? = null
     private var pressedScale = 1f
 
+    private var integerMode = false
     private var progressListener: OnProgressChangeListener? = null
     private var valueListener: OnValueChangeListener? = null
 
@@ -95,6 +96,7 @@ class OeSliderView @JvmOverloads constructor(
     var max: Int = 100
         set(value) {
             field = value.coerceAtLeast(0)
+            integerMode = true
             valueTo = field.toFloat()
         }
 
@@ -155,6 +157,7 @@ class OeSliderView @JvmOverloads constructor(
         try {
             val hasMax = a.hasValue(R.styleable.OeSliderView_android_max)
             val hasProgress = a.hasValue(R.styleable.OeSliderView_android_progress)
+            integerMode = hasMax || hasProgress
             val hasFrom = a.hasValue(R.styleable.OeSliderView_android_valueFrom)
             val hasTo = a.hasValue(R.styleable.OeSliderView_android_valueTo)
             if (hasMax) max = a.getInt(R.styleable.OeSliderView_android_max, 100)
@@ -333,10 +336,17 @@ class OeSliderView @JvmOverloads constructor(
         val snapped = snap(raw)
         if (snapped == currentValue) return
         val previousStep = stepIndex(currentValue)
+        val previousProgress = currentValue.roundToInt()
         currentValue = snapped
         invalidate()
         val nextStep = stepIndex(currentValue)
-        if (fromUser && stepSize > 0f && nextStep != previousStep) {
+        val crossedStep = if (stepSize > 0f) {
+            nextStep != previousStep
+        } else {
+            // SeekBar-shaped sliders have an implicit step of one integer unit.
+            integerMode && currentValue.roundToInt() != previousProgress
+        }
+        if (fromUser && crossedStep) {
             performHapticFeedback(
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                     HapticFeedbackConstants.SEGMENT_TICK
