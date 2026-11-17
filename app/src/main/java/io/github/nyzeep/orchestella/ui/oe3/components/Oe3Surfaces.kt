@@ -28,6 +28,8 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import io.github.nyzeep.orchestella.ui.oe3.theme.LocalOe3CornerRadius
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Shapes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
@@ -36,21 +38,36 @@ import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
 import io.github.nyzeep.orchestella.ui.theme.ThemeColors
 
 /**
+ * Card corner resolution (UI-04): the radius is a decision, not a constant.
+ * A caller-provided shape always wins; otherwise the theme's corner preference
+ * ([LocalOe3CornerRadius], Theme Studio's 8–24dp choice) decides, and the
+ * fallback stays the documented 24dp page-card step of the shape ladder.
+ */
+object Oe3CardSpec {
+    fun cornerShape(cornerRadius: Dp?): Shape = RoundedCornerShape(cornerRadius ?: Oe3Shapes.xl)
+}
+
+/**
  * The canonical Oe3 card: one tonal surface, 24dp corners, no outline and no
  * depth effect. Press feedback is a 10% ink wash, not a moving shadow.
  *
  * [content] is a [ColumnScope], so pages compose their own internal rhythm;
  * the primitive owns only the surface, clipping and padding. A clickable card
  * is one accessibility node, so [content] must not add a second click target.
+ *
+ * The default [shape] is not a fixed constant: it resolves through
+ * [LocalOe3CornerRadius] so every card follows the Theme Studio radius
+ * preference (fallback [Oe3Shapes.xl]). Pass [shape] explicitly to opt out.
  */
 @Composable
 fun Oe3Card(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
     contentPadding: PaddingValues = PaddingValues(Oe3Spacing.cardPadding),
-    shape: Shape = RoundedCornerShape(Oe3Shapes.xl),
+    shape: Shape? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val resolvedShape = shape ?: Oe3CardSpec.cornerShape(LocalOe3CornerRadius.current)
     val colors = Oe3ThemeValues.colors
     val press = Oe3ThemeValues.motion.press
     val interaction = remember { MutableInteractionSource() }
@@ -75,7 +92,7 @@ fun Oe3Card(
 
     Column(
         modifier = modifier
-            .clip(shape)
+            .clip(resolvedShape)
             .background(fill)
             .then(
                 if (onClick != null) {
