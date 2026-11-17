@@ -1332,7 +1332,12 @@ class MainActivity : AppCompatActivity() {
      */
     private val batteryReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            batteryFacts = BatteryFactProvider.read(this@MainActivity)
+            // Use the delivered snapshot instead of re-reading the sticky broadcast:
+            // this is the same reading, without a second binder round-trip per change.
+            batteryFacts = BatteryFactProvider.factsFromIntent(
+                intent = intent,
+                capacityPercent = BatteryFactProvider.capacityPercent(this@MainActivity),
+            )
             if (oe3HardwareProfile != null) refreshOe3HardwareState()
         }
     }

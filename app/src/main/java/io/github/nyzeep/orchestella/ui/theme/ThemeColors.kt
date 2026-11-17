@@ -285,6 +285,16 @@ object ThemeColors {
         if (value.isFinite()) value.coerceIn(0f, maximum) else 0f
 
     /**
+     * Terminal background-image scrim: the theme's terminal color at [alpha] (0..255).
+     *
+     * Single definition for both callers — the live terminal resolves it from
+     * [ThemeStore], the Theme Studio preview from the draft state — so the preview
+     * cannot drift from what the real terminal renders.
+     */
+    fun terminalScrimArgb(terminalBackground: Int, alpha: Int): Int =
+        (terminalBackground and 0x00FFFFFF) or (alpha.coerceIn(0, 255) shl 24)
+
+    /**
      * Monotonic corner-radius merge: the token may only grow existing geometry.
      *
      * Session 25 moved [ThemeStore.DEFAULT_CORNER_RADIUS_DP] from 0 to 16, so an

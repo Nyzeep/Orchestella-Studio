@@ -63,6 +63,8 @@ import io.github.nyzeep.orchestella.R
 import io.github.nyzeep.orchestella.terminal.TerminalScreenModel
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Button
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3ButtonStyle
+import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
+import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.theme.AppTheme
 import io.github.nyzeep.orchestella.ui.theme.ThemeColors
@@ -158,7 +160,7 @@ fun TerminalPreview(
                             .align(Alignment.BottomCenter)
                             .padding(8.dp)
                             .testTag("theme-terminal:bg-failed"),
-                        style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, lineHeight = 13.sp),
+                        style = Oe3Typography.style(Oe3TextRole.Caption),
                         color = Color(theme.terminalForeground),
                     )
                 }

@@ -191,7 +191,7 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
 
     /** Scrim color for the terminal background image: theme terminal background at the chosen alpha. */
     fun terminalScrimArgb(theme: AppTheme): Int =
-        (theme.terminalBackground and 0x00FFFFFF) or (terminalScrimAlpha() shl 24)
+        ThemeColors.terminalScrimArgb(theme.terminalBackground, terminalScrimAlpha())
 
     // --- UI surface opacity token (cards and terminal chrome, 70..100 percent) ---
 

@@ -65,6 +65,7 @@ import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
 import io.github.nyzeep.orchestella.ui.theme.CustomThemeSlot
 import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
+import io.github.nyzeep.orchestella.ui.theme.ThemeColors
 import io.github.nyzeep.orchestella.ui.theme.ThemeStore
 import kotlin.math.roundToInt
 
@@ -1002,7 +1003,10 @@ private fun TerminalCard(
             backgroundUri = state.terminalBackgroundUri,
             // Same scrim the real terminal gets: theme color at the chosen alpha.
             scrimColor = Color(
-                (state.theme.terminalBackground and 0x00FFFFFF) or (state.terminalScrimAlpha shl 24),
+                ThemeColors.terminalScrimArgb(
+                    terminalBackground = state.theme.terminalBackground,
+                    alpha = state.terminalScrimAlpha,
+                ),
             ),
         )
     }
