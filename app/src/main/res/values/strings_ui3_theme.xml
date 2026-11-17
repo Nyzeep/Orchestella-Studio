@@ -6,7 +6,7 @@
 -->
 <resources>
     <string name="ui3_theme_title">外观与主题</string>
-    <string name="ui3_theme_meta">所见即所得 · 41 套预设 · 终端实时预览</string>
+    <string name="ui3_theme_meta">所见即所得 · %1$d 套预设 · 终端实时预览</string>
 
     <!-- 1. 主页预览 -->
     <string name="ui3_theme_section_preview">主页预览</string>

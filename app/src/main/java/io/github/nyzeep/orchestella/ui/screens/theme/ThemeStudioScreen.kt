@@ -451,7 +451,9 @@ private fun ThemeStudioPageHeader(onBack: (() -> Unit)?) {
                 color = colors.onSurface.oe3Color(),
             )
             Text(
-                text = stringResource(R.string.ui3_theme_meta),
+                // 预设数从 ThemeStudioSpec 取数：UI-14 拆分后目录随代码演进，
+                // 硬编码字面量会在下次目录变化时再过期（真机走查发现 41≠42）。
+                text = stringResource(R.string.ui3_theme_meta, ThemeStudioSpec.expectedPresetCount),
                 style = MetaTextStyle,
                 color = colors.onSurfaceVariant.oe3Color(),
             )
