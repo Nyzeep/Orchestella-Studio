@@ -66,9 +66,19 @@ python3 tools/terminal-bench/run.py --logcat /tmp/oe-bench.log --dry-run
 
 # 给发布 checklist 留一份结果
 python3 tools/terminal-bench/run.py --json-out /tmp/terminal-bench-result.json
+
+# 发布闸门：必须在真实设备上跑；基线未抓取时以 BASELINE_PENDING 退出 2（不再 report-only）
+python3 tools/terminal-bench/run.py --require-baseline --model <稳定别名> --fixture all
+
+# 离线回放：synthetic 夹具 → synthetic 基线，只验证判定链，不是设备结果
+python3 tools/terminal-bench/run.py --dry-run --fixture all \
+  --baseline tools/terminal-bench/fixtures/baseline.ci.json \
+  --logcat tools/terminal-bench/fixtures/golden.log
 ```
 
 `--dry-run` 会打印解析出的 adb、serial、包名、APK 是否存在、基线状态、阈值与超时，然后退出。给了 `--logcat` 时，它还会真正跑对比；否则只校验基线并返回 0。
+
+`--require-baseline` 供发布检查清单使用：只有 `status: "captured"` 且桶非空的基线才能继续；`pending-device`、空桶、synthetic 回放夹具或实测设备缺桶都会以退出码 2（`BASELINE_PENDING`）失败。不加该 flag 时行为不变，仍是 report-only。
 
 ## 4. 夹具
 
@@ -161,6 +171,13 @@ python3 tools/terminal-bench/run.py --json-out /tmp/terminal-bench-result.json
 
 分桶规则：桶键是 `<别名>/<api>`；`--model` 原样写入（其中的 `/` 会替换成 `_`），`api` 必须是正整数。对比时只用实测结果里 `alias`/`api` 对应的那个桶，绝不跨别名或跨 API 比较。捕获时还会一并写入 `cols`/`rows`/`historyRows`/`refreshHz`/`durationMs`/`drawP95`/`layoutP95`/`dropped` 供人工诊断，这些字段不参与回归判定。
 
+### 7.1 离线回放夹具（不是基线）
+
+`fixtures/baseline.ci.json` 与 `fixtures/golden.log` 只服务于 CI 与本地自测：前者 `status: "synthetic"`、`synthetic: true`、桶为 `ci-replay/34`，后者的结果行不带 `device` 字段。它们用来证明判定链既能 PASS 也能 FAIL，**不是任何设备的测量结果**，不得作为发布依据：
+
+- `--require-baseline` 只接受 `status: "captured"` 的基线，synthetic 文件会被 `BASELINE_PENDING` 拒绝；
+- `--update-baseline` 指向带 `synthetic: true` 的文件时直接报 `BASELINE_SYNTHETIC_READONLY`，防止把真机数字写进回放夹具。
+
 ## 8. 更新基线
 
 ```bash
@@ -179,27 +196,27 @@ python3 tools/terminal-bench/run.py \
 
 ## 9. 无基线时
 
-以下情况打印 `NO_BASELINE bucket=<key>` 和本次实测指标，然后退出 0（report only，不判定）：
+默认仍是 report-only。以下情况打印 `NO_BASELINE bucket=<key>` 和本次实测指标，然后退出 0（不判定）：
 
 - 基线里没有该 `<别名>/<api>` 桶；
 - 桶存在但 `fixtures` 为空；
 - `baseline.json` 仍是 `pending-device` 空桶。
 
-这是刻意的：没有基线就没有回归判断的依据。要把它当发布闸门用，先在同一设备上抓一份基线。
+这是刻意的：没有基线就没有回归判断的依据。发布闸门必须加 `--require-baseline`：基线不是 `status: "captured"` 或 `buckets` 为空时退出 2，stderr 打印 `ERROR=BASELINE_PENDING`；即使基线整体已捕获，实测设备对应的桶缺失、`fixtures` 为空，或桶里只覆盖部分夹具导致其余被 `SKIP`，也同样按 `BASELINE_PENDING` 处理——`--require-baseline` 要求每个预期夹具都拿到可比较的基线指标，`SKIP` 不再算通过。默认（不加 flag）仍是 report-only。
 
 ## 10. 退出码
 
 | 退出码 | 含义 |
 | --- | --- |
-| `0` | 全部夹具在阈值内；或无基线 / 缺夹具，只报告 |
+| `0` | 全部夹具在阈值内；默认模式下无基线/缺夹具只报告（`--require-baseline` 下为 2） |
 | `1` | 至少一个夹具判回归（p95、janky 比例或 fps） |
-| `2` | 环境或 harness 失败：无 adb、无设备、安装失败、启动失败、超时、`OE_BENCH_ERROR`、基线/参数错误 |
+| `2` | 环境或 harness 失败：无 adb、无设备、安装失败、启动失败、超时、`OE_BENCH_ERROR`、基线/参数错误；`--require-baseline` 下基线未捕获或缺桶（`BASELINE_PENDING`）、试图写入 synthetic 夹具（`BASELINE_SYNTHETIC_READONLY`） |
 
-退出码 2 会在 stderr 打印 ASCII token，例如 `ERROR=ADB_UNAVAILABLE`、`ERROR=NO_DEVICE`、`ERROR=INSTALL_FAILED`、`ERROR=BENCH_TIMEOUT`、`ERROR=BENCH_ERROR`、`ERROR=BENCH_NO_RESULTS`、`ERROR=BENCH_INCOMPLETE`、`ERROR=API_MISMATCH`、`ERROR=ALIAS_MISMATCH`、`ERROR=ARTIFACT_ROOT_REJECTED`，并附上解释失败的原始 adb 输出。
+退出码 2 会在 stderr 打印 ASCII token，例如 `ERROR=ADB_UNAVAILABLE`、`ERROR=NO_DEVICE`、`ERROR=INSTALL_FAILED`、`ERROR=BENCH_TIMEOUT`、`ERROR=BENCH_ERROR`、`ERROR=BENCH_NO_RESULTS`、`ERROR=BENCH_INCOMPLETE`、`ERROR=API_MISMATCH`、`ERROR=ALIAS_MISMATCH`、`ERROR=ARTIFACT_ROOT_REJECTED`、`ERROR=BASELINE_PENDING`、`ERROR=BASELINE_SYNTHETIC_READONLY`，并附上解释失败的原始 adb 输出。
 
 ## 11. 结果贴到哪里
 
-- **发版前人工跑一次**：在有代表性的设备上执行 `run.py --model <稳定别名> --fixture all --json-out /tmp/terminal-bench-result.json`，把结果 JSON 贴进 release checklist 对应条目。设备基线本身走 `--update-baseline` 提交。
+- **发版前人工跑一次**：在有代表性的设备上执行 `run.py --require-baseline --model <稳定别名> --fixture all --json-out /tmp/terminal-bench-result.json`，把结果 JSON 贴进 release checklist 对应条目。设备基线本身走 `--update-baseline` 提交。
 - 本仓库的 `docs/` 目录默认被 `.gitignore` 忽略；本 README 是 terminal-bench 的唯一入口，结果与基线变更都引用这里。
 - `--json-out` 拒绝写入仓库内（结果里有 `Build.MODEL`）；只写外部 artifact 根或 `/tmp`。
 - 不要提交完整 logcat、设备序列号、截图或录屏；这些只留在本地或外部 artifact 根。
@@ -227,8 +244,16 @@ python3 -m py_compile tools/terminal-bench/run.py
 python3 -B -m unittest discover -s tools/terminal-bench -p 'test_*.py'
 
 python3 tools/terminal-bench/run.py --dry-run --fixture all
+
+# 判定链回放：synthetic 基线 + golden 日志必须 PASS
+python3 tools/terminal-bench/run.py --dry-run --fixture all \
+  --baseline tools/terminal-bench/fixtures/baseline.ci.json \
+  --logcat tools/terminal-bench/fixtures/golden.log
+
+# 发布门反向用例：对未捕获基线必须退出 2（当前仓库基线尚未捕获，可直接复现）
+python3 tools/terminal-bench/run.py --dry-run --require-baseline
 ```
 
-测试覆盖：brief 格式解析（含 CRLF）、`OE_BENCH_DONE` 不被当成夹具、p95/janky/fps 三条回归规则、缺桶与缺指标的 report-only 行为、`--update-baseline` 的分桶/保留旧桶/diff、`--dry-run` 无设备退出 0。
+测试覆盖：brief 格式解析（含 CRLF）、`OE_BENCH_DONE` 不被当成夹具、p95/janky/fps 三条回归规则、缺桶与缺指标的 report-only 行为、`--update-baseline` 的分桶/保留旧桶/diff、`--dry-run` 无设备退出 0、synthetic 回放 PASS 与 p95 调坏 20% 退出 1、`--require-baseline` 对 pending-device/空桶/缺桶/部分夹具 SKIP/synthetic 的拒绝与对已捕获基线的放行。
 
-这套测试已接进 GitHub Actions：`.github/workflows/terminal-bench.yml` 会在 push / PR 改到 `tools/terminal-bench/**` 或该 workflow 时自动跑上面三条命令。该 job 不接设备、不装 adb、不需要 secrets，因此只验证 harness 与基线文件；真机夹具与 `--update-baseline` 仍是人工步骤（见 §8）。
+这套测试已接进 GitHub Actions：`.github/workflows/terminal-bench.yml` 会在 push / PR 改到 `tools/terminal-bench/**` 或该 workflow 时自动跑单测、synthetic 回放和 `--require-baseline` 反向用例，并把桶与夹具判定写进 job summary。该 job 不接设备、不装 adb、不需要 secrets，因此只验证 harness 与基线文件；真机夹具与 `--update-baseline` 仍是人工步骤（见 §8）。

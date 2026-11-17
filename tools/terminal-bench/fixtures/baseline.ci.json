@@ -1,0 +1,76 @@
+{
+  "schema": "terminal-bench-baseline-v1",
+  "status": "synthetic",
+  "synthetic": true,
+  "note": "Synthetic replay fixture for CI only; not a device baseline. Never run --update-baseline against this file and never use it for a release gate.",
+  "capturedAt": null,
+  "thresholds": {
+    "p95MaxRegressionRatio": 0.15,
+    "jankyMaxRegressionPoints": 5.0,
+    "fpsMaxDrop": 3.0
+  },
+  "buckets": {
+    "ci-replay/34": {
+      "alias": "ci-replay",
+      "api": 34,
+      "capturedAt": null,
+      "fixtures": {
+        "flood_seq": {
+          "frames": 500,
+          "janky": 10,
+          "p50": 9.1,
+          "p95": 14.8,
+          "p99": 21.3,
+          "max": 38.0,
+          "fps": 58.2,
+          "javaKb": 123,
+          "nativeKb": 456
+        },
+        "flood_color": {
+          "frames": 400,
+          "janky": 4,
+          "p50": 8.0,
+          "p95": 12.0,
+          "p99": 18.0,
+          "max": 30.0,
+          "fps": 59.0,
+          "javaKb": 100,
+          "nativeKb": 400
+        },
+        "scroll_2000": {
+          "frames": 300,
+          "janky": 3,
+          "p50": 10.0,
+          "p95": 16.0,
+          "p99": 22.0,
+          "max": 40.0,
+          "fps": 57.0,
+          "javaKb": 90,
+          "nativeKb": 380
+        },
+        "type_100": {
+          "frames": 200,
+          "janky": 2,
+          "p50": 7.0,
+          "p95": 11.0,
+          "p99": 15.0,
+          "max": 25.0,
+          "fps": 60.0,
+          "javaKb": 80,
+          "nativeKb": 360
+        },
+        "resize_font": {
+          "frames": 150,
+          "janky": 1,
+          "p50": 8.0,
+          "p95": 13.0,
+          "p99": 17.0,
+          "max": 28.0,
+          "fps": 59.5,
+          "javaKb": 70,
+          "nativeKb": 340
+        }
+      }
+    }
+  }
+}

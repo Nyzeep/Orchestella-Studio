@@ -22,6 +22,10 @@ import run as bench
 DEVICE = "Test Model"
 ALIAS = "bench-a"
 API = 34
+FIXTURES_DIR = bench.SCRIPT_DIR / "fixtures"
+SYNTHETIC_BASELINE = FIXTURES_DIR / "baseline.ci.json"
+GOLDEN_LOG = FIXTURES_DIR / "golden.log"
+REPLAY_BUCKET = "ci-replay/34"
 
 
 def sample_results() -> dict:
@@ -570,6 +574,300 @@ class DryRunTests(unittest.TestCase):
 
         self.assertEqual(code, bench.EXIT_ENV)
         self.assertIn("ERROR=BASELINE_MISSING", err)
+
+
+def synthetic_baseline_document() -> dict:
+    """Load the committed CI replay baseline (synthetic, never a device capture)."""
+    return json.loads(SYNTHETIC_BASELINE.read_text(encoding="utf-8"))
+
+
+class SyntheticReplayTests(unittest.TestCase):
+    """The offline replay must judge instead of only printing a report."""
+
+    def setUp(self) -> None:
+        self.tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tempdir.cleanup)
+        self.root = Path(self.tempdir.name)
+
+    def replay(self, baseline_path: Path) -> tuple[int, str, str]:
+        return call_main(
+            [
+                "--dry-run",
+                "--fixture",
+                "all",
+                "--baseline",
+                str(baseline_path),
+                "--logcat",
+                str(GOLDEN_LOG),
+            ]
+        )
+
+    def test_golden_replay_against_synthetic_baseline_passes(self) -> None:
+        code, out, err = self.replay(SYNTHETIC_BASELINE)
+
+        self.assertEqual(code, bench.EXIT_OK, err)
+        self.assertIn(f"BUCKET {REPLAY_BUCKET}", out)
+        self.assertEqual(
+            len([line for line in out.splitlines() if line.startswith("PASS ")]), 5
+        )
+        self.assertIn("RESULT=PASS judged=5", out)
+
+    def test_p95_plus_twenty_percent_replay_exits_one(self) -> None:
+        """The golden log degraded by 20% must be a regression, not a report."""
+        marker = "I/OE_BENCH ( 4242): "
+        lines = []
+        for line in GOLDEN_LOG.read_text(encoding="utf-8").splitlines():
+            if line.startswith(marker):
+                payload = json.loads(line[len(marker):])
+                payload["p95"] = round(payload["p95"] * 1.2, 3)
+                line = marker + json.dumps(payload)
+            lines.append(line)
+        degraded = self.root / "golden.degraded.log"
+        degraded.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+        code, out, _ = call_main(
+            [
+                "--dry-run",
+                "--fixture",
+                "all",
+                "--baseline",
+                str(SYNTHETIC_BASELINE),
+                "--logcat",
+                str(degraded),
+            ]
+        )
+
+        self.assertEqual(code, bench.EXIT_REGRESSION)
+        self.assertIn("RESULT=REGRESSION failures=5", out)
+        self.assertEqual(
+            len([line for line in out.splitlines() if line.startswith("FAIL ")]), 5
+        )
+
+    def test_synthetic_fixture_is_marked_and_covers_every_fixture(self) -> None:
+        synthetic = synthetic_baseline_document()
+
+        self.assertTrue(synthetic["synthetic"])
+        self.assertEqual(synthetic["status"], "synthetic")
+        self.assertEqual(SYNTHETIC_BASELINE.name, "baseline.ci.json")
+        self.assertEqual(
+            set(synthetic["buckets"][REPLAY_BUCKET]["fixtures"]), set(bench.FIXTURES)
+        )
+
+
+class RequireBaselineTests(unittest.TestCase):
+    """``--require-baseline`` is the release gate; the default stays report-only."""
+
+    def setUp(self) -> None:
+        self.tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tempdir.cleanup)
+        self.root = Path(self.tempdir.name)
+        self.baseline_path = self.root / "baseline.json"
+
+    def write_baseline(self, document: dict) -> None:
+        self.baseline_path.write_text(json.dumps(document), encoding="utf-8")
+
+    def captured_document(self) -> dict:
+        document = synthetic_baseline_document()
+        document.pop("synthetic")
+        document["status"] = "captured"
+        return document
+
+    def run_gate(self, *, extra: list[str] | None = None) -> tuple[int, str, str]:
+        return call_main(
+            [
+                "--dry-run",
+                "--fixture",
+                "all",
+                "--baseline",
+                str(self.baseline_path),
+                "--logcat",
+                str(GOLDEN_LOG),
+            ]
+            + (extra or [])
+        )
+
+    def test_require_baseline_rejects_pending_device(self) -> None:
+        self.write_baseline(bench.default_baseline())
+
+        code, _, err = self.run_gate(extra=["--require-baseline"])
+
+        self.assertEqual(code, bench.EXIT_ENV)
+        self.assertIn("ERROR=BASELINE_PENDING", err)
+        self.assertIn("pending-device", err)
+
+    def test_require_baseline_rejects_empty_buckets(self) -> None:
+        document = baseline_document()
+        document["buckets"] = {}
+        self.write_baseline(document)
+
+        code, _, err = self.run_gate(extra=["--require-baseline"])
+
+        self.assertEqual(code, bench.EXIT_ENV)
+        self.assertIn("ERROR=BASELINE_PENDING", err)
+
+    def test_require_baseline_rejects_synthetic_fixture(self) -> None:
+        code, _, err = call_main(
+            [
+                "--dry-run",
+                "--fixture",
+                "all",
+                "--baseline",
+                str(SYNTHETIC_BASELINE),
+                "--logcat",
+                str(GOLDEN_LOG),
+                "--require-baseline",
+            ]
+        )
+
+        self.assertEqual(code, bench.EXIT_ENV)
+        self.assertIn("ERROR=BASELINE_PENDING", err)
+        self.assertIn("synthetic", err)
+
+    def test_require_baseline_rejects_missing_device_bucket(self) -> None:
+        self.write_baseline(baseline_document())  # captured bucket is bench-a/34
+
+        code, _, err = self.run_gate(extra=["--require-baseline"])
+
+        self.assertEqual(code, bench.EXIT_ENV)
+        self.assertIn("ERROR=BASELINE_PENDING", err)
+        self.assertIn(REPLAY_BUCKET, err)
+
+    def test_require_baseline_rejects_bucket_without_fixtures(self) -> None:
+        document = self.captured_document()
+        document["buckets"][REPLAY_BUCKET]["fixtures"] = {}
+        self.write_baseline(document)
+
+        code, _, err = self.run_gate(extra=["--require-baseline"])
+
+        self.assertEqual(code, bench.EXIT_ENV)
+        self.assertIn("ERROR=BASELINE_PENDING", err)
+
+    def test_require_baseline_rejects_partial_bucket(self) -> None:
+        document = self.captured_document()
+        fixtures = document["buckets"][REPLAY_BUCKET]["fixtures"]
+        for fixture in list(fixtures)[1:]:
+            del fixtures[fixture]
+        self.write_baseline(document)
+
+        code, out, err = self.run_gate(extra=["--require-baseline"])
+
+        self.assertEqual(code, bench.EXIT_ENV)
+        self.assertIn("ERROR=BASELINE_PENDING", err)
+        self.assertIn("only 1/5 fixtures", err)
+        self.assertIn("SKIP flood_color", out)
+
+    def test_require_baseline_rejects_bucket_without_metrics(self) -> None:
+        document = self.captured_document()
+        document["buckets"][REPLAY_BUCKET]["fixtures"] = {"flood_seq": {}}
+        self.write_baseline(document)
+
+        code, out, err = self.run_gate(extra=["--require-baseline"])
+
+        self.assertEqual(code, bench.EXIT_ENV)
+        self.assertIn("ERROR=BASELINE_PENDING", err)
+        self.assertIn("only 0/5 fixtures", err)
+        self.assertIn("SKIP flood_seq", out)
+
+    def test_partial_bucket_without_flag_stays_report_only(self) -> None:
+        document = self.captured_document()
+        fixtures = document["buckets"][REPLAY_BUCKET]["fixtures"]
+        for fixture in list(fixtures)[1:]:
+            del fixtures[fixture]
+        self.write_baseline(document)
+
+        code, out, err = self.run_gate()
+
+        self.assertEqual(code, bench.EXIT_OK, err)
+        self.assertIn("RESULT=PASS judged=1", out)
+        self.assertIn("SKIP flood_color", out)
+
+    def test_require_baseline_rejects_synthetic_even_if_status_captured(self) -> None:
+        document = synthetic_baseline_document()
+        document["status"] = "captured"
+        self.write_baseline(document)
+
+        code, _, err = self.run_gate(extra=["--require-baseline"])
+
+        self.assertEqual(code, bench.EXIT_ENV)
+        self.assertIn("ERROR=BASELINE_PENDING", err)
+        self.assertIn("synthetic", err)
+
+    def test_require_baseline_cannot_combine_with_update_baseline(self) -> None:
+        self.write_baseline(self.captured_document())
+
+        code, _, err = call_main(
+            [
+                "--require-baseline",
+                "--update-baseline",
+                "--model",
+                "ci-replay",
+                "--api",
+                str(API),
+                "--baseline",
+                str(self.baseline_path),
+                "--logcat",
+                str(GOLDEN_LOG),
+            ]
+        )
+
+        self.assertEqual(code, bench.EXIT_ENV)
+        self.assertIn("ERROR=BAD_ARGUMENT", err)
+
+    def test_require_baseline_accepts_captured_bucket(self) -> None:
+        self.write_baseline(self.captured_document())
+
+        code, out, err = self.run_gate(extra=["--require-baseline"])
+
+        self.assertEqual(code, bench.EXIT_OK, err)
+        self.assertIn("RESULT=PASS judged=5", out)
+
+    def test_require_baseline_works_without_device_or_logcat(self) -> None:
+        self.write_baseline(bench.default_baseline())
+
+        code, _, err = call_main(
+            [
+                "--dry-run",
+                "--require-baseline",
+                "--baseline",
+                str(self.baseline_path),
+            ]
+        )
+
+        self.assertEqual(code, bench.EXIT_ENV)
+        self.assertIn("ERROR=BASELINE_PENDING", err)
+
+    def test_default_pending_baseline_stays_report_only(self) -> None:
+        self.write_baseline(bench.default_baseline())
+
+        code, out, err = self.run_gate()
+
+        self.assertEqual(code, bench.EXIT_OK, err)
+        self.assertIn(f"NO_BASELINE bucket={REPLAY_BUCKET}", out)
+        self.assertIn("NOTE report only", out)
+
+    def test_update_baseline_refuses_synthetic_fixture(self) -> None:
+        copy_path = self.root / "baseline.ci.copy.json"
+        copy_path.write_text(
+            SYNTHETIC_BASELINE.read_text(encoding="utf-8"), encoding="utf-8"
+        )
+
+        code, _, err = call_main(
+            [
+                "--update-baseline",
+                "--model",
+                "ci-replay",
+                "--api",
+                str(API),
+                "--baseline",
+                str(copy_path),
+                "--logcat",
+                str(GOLDEN_LOG),
+            ]
+        )
+
+        self.assertEqual(code, bench.EXIT_ENV)
+        self.assertIn("ERROR=BASELINE_SYNTHETIC_READONLY", err)
+        self.assertTrue(json.loads(copy_path.read_text(encoding="utf-8"))["synthetic"])
 
 
 if __name__ == "__main__":

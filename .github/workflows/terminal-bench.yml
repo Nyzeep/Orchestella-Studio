@@ -26,7 +26,7 @@ concurrency:
 
 jobs:
   offline:
-    name: Offline unit tests and dry-run
+    name: Offline unit tests, replay and gate
     runs-on: ubuntu-24.04
     timeout-minutes: 10
 
@@ -47,3 +47,76 @@ jobs:
 
       - name: Dry-run all fixtures against the baseline
         run: python3 tools/terminal-bench/run.py --dry-run --fixture all
+
+      # The replay proves the judging chain still passes on known-good input.
+      # fixtures/baseline.ci.json is synthetic and can never satisfy --require-baseline.
+      - name: Replay the golden log against the synthetic baseline
+        run: |
+          set -euo pipefail
+          python3 tools/terminal-bench/run.py \
+            --dry-run --fixture all \
+            --baseline tools/terminal-bench/fixtures/baseline.ci.json \
+            --logcat tools/terminal-bench/fixtures/golden.log \
+            | tee "$RUNNER_TEMP/terminal-bench-replay.txt"
+          grep -q '^RESULT=PASS' "$RUNNER_TEMP/terminal-bench-replay.txt"
+          grep -q '^BUCKET ci-replay/34$' "$RUNNER_TEMP/terminal-bench-replay.txt"
+
+      # Negative case with a throwaway pending-device baseline, so this step stays
+      # valid after a real device baseline is captured into the repository file.
+      - name: Require-baseline refuses a pending device baseline
+        run: |
+          python3 - "$RUNNER_TEMP/pending-baseline.json" <<'PY'
+          import json
+          import sys
+
+          json.dump(
+              {
+                  "schema": "terminal-bench-baseline-v1",
+                  "status": "pending-device",
+                  "capturedAt": None,
+                  "thresholds": {
+                      "p95MaxRegressionRatio": 0.15,
+                      "jankyMaxRegressionPoints": 5.0,
+                      "fpsMaxDrop": 3.0,
+                  },
+                  "buckets": {},
+              },
+              open(sys.argv[1], "w", encoding="utf-8"),
+              indent=2,
+          )
+          PY
+          set +e
+          python3 tools/terminal-bench/run.py --dry-run --require-baseline \
+            --baseline "$RUNNER_TEMP/pending-baseline.json" \
+            > "$RUNNER_TEMP/terminal-bench-require.out" \
+            2> "$RUNNER_TEMP/terminal-bench-require.err"
+          status=$?
+          set -e
+          echo "$status" > "$RUNNER_TEMP/terminal-bench-require.code"
+          echo "exit=$status"
+          cat "$RUNNER_TEMP/terminal-bench-require.err"
+          test "$status" -eq 2
+          grep -q 'ERROR=BASELINE_PENDING' "$RUNNER_TEMP/terminal-bench-require.err"
+
+      - name: Write the job summary
+        if: always()
+        run: |
+          {
+            echo '## terminal-bench offline gate'
+            echo
+            echo '- Replay: `fixtures/golden.log` against `fixtures/baseline.ci.json` (synthetic; not a device baseline)'
+            if [ -f "$RUNNER_TEMP/terminal-bench-replay.txt" ]; then
+              echo '```'
+              grep -E '^(BUCKET|PASS |FAIL |SKIP |RESULT=)' "$RUNNER_TEMP/terminal-bench-replay.txt" || true
+              echo '```'
+            else
+              echo '- Replay output: missing'
+            fi
+            echo
+            echo "- Require-baseline negative exit: \`$(cat "$RUNNER_TEMP/terminal-bench-require.code" 2>/dev/null || echo missing)\`"
+            if [ -f "$RUNNER_TEMP/terminal-bench-require.err" ]; then
+              echo '```'
+              cat "$RUNNER_TEMP/terminal-bench-require.err"
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
