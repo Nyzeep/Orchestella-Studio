@@ -58,6 +58,8 @@ import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Shapes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
+import io.github.nyzeep.orchestella.ui.shell.OeScaffold
+import io.github.nyzeep.orchestella.ui.shell.oeCardShape
 
 /** 页面级几何常量；语义与命中区断言直接读这里。 */
 object HardwareSpec {
@@ -94,29 +96,26 @@ fun HardwareScreen(
     val colors = Oe3ThemeValues.colors
     var showDetails by remember { mutableStateOf(false) }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(colors.background.oe3Color())
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = Oe3Spacing.pageInset)
-            .padding(top = Oe3Spacing.xl, bottom = LocalOe3PageBottomPadding.current)
-            .testTag("hardware:screen"),
+    OeScaffold(
+        title = stringResource(R.string.ui3_hardware_title),
+        modifier = modifier,
     ) {
-        Text(
-            text = stringResource(R.string.ui3_hardware_title),
-            style = Oe3Typography.style(Oe3TextRole.PageTitle),
-            color = colors.onSurface.oe3Color(),
-        )
-        Spacer(Modifier.height(Oe3Spacing.md))
-
-        when (state) {
-            is HardwareUiState.Ready -> HardwareContent(
-                state = state,
-                actions = actions,
-                onOpenDetails = { showDetails = true },
-            )
-            is HardwareUiState.Failed -> FailureContent(state = state, actions = actions)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = Oe3Spacing.pageInset)
+                .padding(top = Oe3Spacing.xl, bottom = LocalOe3PageBottomPadding.current)
+                .testTag("hardware:screen"),
+        ) {
+            when (state) {
+                is HardwareUiState.Ready -> HardwareContent(
+                    state = state,
+                    actions = actions,
+                    onOpenDetails = { showDetails = true },
+                )
+                is HardwareUiState.Failed -> FailureContent(state = state, actions = actions)
+            }
         }
     }
 
@@ -166,6 +165,7 @@ private fun SummaryCard(summary: HardwareSummaryUi, onRefresh: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .testTag("hardware:summary"),
+        shape = oeCardShape(),
     ) {
         Row(verticalAlignment = Alignment.Top) {
             Column(modifier = Modifier.weight(1f)) {
@@ -266,7 +266,7 @@ private fun SummaryFact(
 
 @Composable
 private fun RingsCard(rings: HardwareRingsUi) {
-    Oe3Card(modifier = Modifier.fillMaxWidth()) {
+    Oe3Card(modifier = Modifier.fillMaxWidth(), shape = oeCardShape()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(Oe3Spacing.xs),
@@ -377,6 +377,7 @@ private fun EngineCard(engines: HardwareEnginesUi, actions: HardwareActions) {
     Oe3Card(
         modifier = Modifier.fillMaxWidth(),
         contentPadding = PaddingValues(0.dp),
+        shape = oeCardShape(),
     ) {
         Oe3ListRow(
             title = stringResource(R.string.ui3_hardware_engine_avf),
@@ -446,6 +447,7 @@ private fun FailureContent(state: HardwareUiState.Failed, actions: HardwareActio
         modifier = Modifier
             .fillMaxWidth()
             .testTag("hardware:probe-failed"),
+        shape = oeCardShape(),
     ) {
         Oe3EmptyState(
             title = stringResource(R.string.ui3_hardware_probe_failed_title),

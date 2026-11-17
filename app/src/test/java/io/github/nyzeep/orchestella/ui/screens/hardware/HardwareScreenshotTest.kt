@@ -1,10 +1,16 @@
 package io.github.nyzeep.orchestella.ui.screens.hardware
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onRoot
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.captureRoboImage
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3Theme
+import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.theme.AppTheme
 import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
 import org.junit.Rule
@@ -42,13 +48,21 @@ class HardwareScreenshotTest {
     private fun capture(name: String, theme: AppTheme) {
         compose.setContent {
             Oe3Theme(theme = theme, reduceMotion = true) {
-                HardwareScreen(
-                    state = HardwareTestFixtures.ready(),
-                    actions = HardwareActions(),
-                )
+                // UI-02 起页面本体透明：页级 golden 补壳层底色并整窗捕获，
+                // 这样单标题栏也在基线里。
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(Color(Oe3ThemeValues.colors.background)),
+                ) {
+                    HardwareScreen(
+                        state = HardwareTestFixtures.ready(),
+                        actions = HardwareActions(),
+                    )
+                }
             }
         }
-        compose.onNodeWithTag("hardware:screen").captureRoboImage(
+        compose.onRoot().captureRoboImage(
             "src/test/screenshots/ui3/hardware/$name.png",
         )
     }
