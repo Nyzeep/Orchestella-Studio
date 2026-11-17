@@ -1,11 +1,114 @@
 {
   "schema": "terminal-bench-baseline-v1",
-  "status": "pending-device",
-  "capturedAt": null,
+  "status": "captured",
+  "capturedAt": "2026-11-17T00:06:05Z",
   "thresholds": {
     "p95MaxRegressionRatio": 0.15,
     "jankyMaxRegressionPoints": 5.0,
     "fpsMaxDrop": 3.0
   },
-  "buckets": {}
+  "buckets": {
+    "bench-a/35": {
+      "alias": "bench-a",
+      "api": 35,
+      "capturedAt": "2026-11-17T00:06:05Z",
+      "fixtures": {
+        "flood_seq": {
+          "frames": 122,
+          "janky": 80,
+          "p50": 295.6,
+          "p95": 312.4,
+          "p99": 322.2,
+          "max": 405.5,
+          "fps": 4,
+          "javaKb": 96134,
+          "nativeKb": 29582,
+          "cols": 46,
+          "rows": 55,
+          "historyRows": 2000,
+          "refreshHz": 120,
+          "durationMs": 30136,
+          "drawP95": 137.9,
+          "layoutP95": 0.3,
+          "dropped": 0
+        },
+        "flood_color": {
+          "frames": 51,
+          "janky": 26,
+          "p50": 44.6,
+          "p95": 720.7,
+          "p99": 939.7,
+          "max": 939.7,
+          "fps": 2.2,
+          "javaKb": -1236,
+          "nativeKb": -7234,
+          "cols": 46,
+          "rows": 55,
+          "historyRows": 2000,
+          "refreshHz": 120,
+          "durationMs": 23041,
+          "drawP95": 406.2,
+          "layoutP95": 0.9,
+          "dropped": 0
+        },
+        "scroll_2000": {
+          "frames": 266,
+          "janky": 0,
+          "p50": 6.5,
+          "p95": 9.6,
+          "p99": 12.5,
+          "max": 15.7,
+          "fps": 39.7,
+          "javaKb": 6076,
+          "nativeKb": 3632,
+          "cols": 46,
+          "rows": 55,
+          "historyRows": 2000,
+          "refreshHz": 120,
+          "durationMs": 6708,
+          "drawP95": 1.1,
+          "layoutP95": 0.8,
+          "dropped": 0
+        },
+        "type_100": {
+          "frames": 67,
+          "janky": 3,
+          "p50": 12,
+          "p95": 16.6,
+          "p99": 32.3,
+          "max": 32.3,
+          "fps": 24.9,
+          "javaKb": 1280,
+          "nativeKb": 601,
+          "cols": 46,
+          "rows": 55,
+          "historyRows": 0,
+          "refreshHz": 120,
+          "durationMs": 2688,
+          "drawP95": 2.5,
+          "layoutP95": 5.4,
+          "dropped": 0
+        },
+        "resize_font": {
+          "frames": 21,
+          "janky": 11,
+          "p50": 17.4,
+          "p95": 22.3,
+          "p99": 26.6,
+          "max": 26.6,
+          "fps": 4.3,
+          "javaKb": 384,
+          "nativeKb": 103,
+          "cols": 56,
+          "rows": 66,
+          "historyRows": 0,
+          "refreshHz": 120,
+          "durationMs": 4838,
+          "drawP95": 1.5,
+          "layoutP95": 6.4,
+          "dropped": 0
+        }
+      }
+    }
+  }
 }

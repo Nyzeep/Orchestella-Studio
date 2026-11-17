@@ -44,6 +44,13 @@ import org.junit.Test;
  */
 public final class UmlCompileChannelTest {
 
+    /**
+     * Explicit per-job budget. The jobs themselves complete in milliseconds;
+     * the budget exists so a stalled pump fails the test instead of hanging
+     * it, with enough headroom for a loaded full-suite worker.
+     */
+    private static final long JOB_TIMEOUT_MS = 15_000L;
+
     private final ExecutorService jobs = Executors.newCachedThreadPool();
 
     @After
@@ -137,7 +144,7 @@ public final class UmlCompileChannelTest {
         assertSame(State.OPEN, channel.state());
     }
 
-    @Test
+    @Test(timeout = 30000)
     public void laneFailureMidResponseThrowsAndKeepsStateOpen() throws Exception {
         UmlChannel channel = UmlChannels.overTcpLane(() -> new FastLaneChannel() {
             @Override public InputStream inputStream() {
@@ -162,7 +169,12 @@ public final class UmlCompileChannelTest {
             }
         });
         channel.open();
-        PipedInputStream requestRead = new PipedInputStream(16 * 1024);
+        // A live, silent request client. PipedInputStream.close() does not
+        // reliably wake a blocked reader (it only flags closedByReader), so a
+        // pipe can leave the upstream pump stuck after a lane failure. This
+        // stream blocks until close() and then fails the read, which is the
+        // socket-like contract the pump's teardown relies on.
+        InputStream requestRead = new SilentRequestStream();
         PipedInputStream responseRead = new PipedInputStream(16 * 1024);
         FabricCompileItem item = new FabricCompileItem(
                 requestRead, new PipedOutputStream(responseRead));
@@ -174,7 +186,7 @@ public final class UmlCompileChannelTest {
             }
         });
         try {
-            job.get(5, TimeUnit.SECONDS);
+            job.get(JOB_TIMEOUT_MS, TimeUnit.MILLISECONDS);
             fail("a guest dying mid-response must fail the job");
         } catch (java.util.concurrent.ExecutionException wrapped) {
             assertTrue(wrapped.getCause() instanceof AssertionError);
@@ -185,9 +197,40 @@ public final class UmlCompileChannelTest {
         assertSame(State.OPEN, channel.state());
     }
 
+    /**
+     * A request client that stays silent until the channel tears it down.
+     * Unlike PipedInputStream, close() reliably wakes a blocked read.
+     */
+    private static final class SilentRequestStream extends InputStream {
+        private final CountDownLatch closed = new CountDownLatch(1);
+
+        @Override public int read() throws IOException {
+            awaitClose();
+            throw new IOException("request stream closed");
+        }
+
+        @Override public int read(byte[] buffer, int offset, int length) throws IOException {
+            awaitClose();
+            throw new IOException("request stream closed");
+        }
+
+        private void awaitClose() throws IOException {
+            try {
+                closed.await();
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new IOException("request stream interrupted", interrupted);
+            }
+        }
+
+        @Override public void close() {
+            closed.countDown();
+        }
+    }
+
     // --- the byte pipe pump ----------------------------------------------------------
 
-    @Test(timeout = 10000)
+    @Test(timeout = 30000)
     public void pumpsTheBytePipeBothDirectionsThroughTheLane() throws Exception {
         AtomicInteger laneOpens = new AtomicInteger();
         UmlChannel channel = UmlChannels.overTcpLane(new DistccTcpVsockBridge.ChannelFactory() {
@@ -257,12 +300,12 @@ public final class UmlCompileChannelTest {
         byte[] echoed = responseRead.readNBytes("compile-me".length());
         assertEquals("compile-me", new String(echoed, StandardCharsets.UTF_8));
         assertEquals("the answer's EOF closes with the job", -1, responseRead.read());
-        job.get(5, TimeUnit.SECONDS);
+        job.get(JOB_TIMEOUT_MS, TimeUnit.MILLISECONDS);
         assertEquals("one lane connection per admitted job", 1, laneOpens.get());
         channel.close();
     }
 
-    @Test(timeout = 10000)
+    @Test(timeout = 30000)
     public void roundTripOverARealTcpLoopbackLane() throws Exception {
         try (EchoServer server = new EchoServer()) {
             UmlChannel channel = UmlChannels.overTcpLane(
@@ -287,14 +330,14 @@ public final class UmlCompileChannelTest {
             requestWrite.close();
             byte[] echoed = responseRead.readNBytes("uml-tcp-ping".length());
             assertEquals("uml-tcp-ping", new String(echoed, StandardCharsets.UTF_8));
-            job.get(5, TimeUnit.SECONDS);
+            job.get(JOB_TIMEOUT_MS, TimeUnit.MILLISECONDS);
             channel.close();
         }
     }
 
     // --- the two shapes that must NOT fail the face -----------------------------------
 
-    @Test(timeout = 10000)
+    @Test(timeout = 30000)
     public void itemSideGoneEndsTheJobQuietlySoTheFaceStaysRoutable() throws Exception {
         UmlChannel channel = UmlChannels.overTcpLane(echoLaneFactory());
         channel.open();
@@ -316,12 +359,12 @@ public final class UmlCompileChannelTest {
         // channel's request read fails on the ITEM side, which is cancellation,
         // never a channel failure.
         requestRead.close();
-        job.get(5, TimeUnit.SECONDS);
+        job.get(JOB_TIMEOUT_MS, TimeUnit.MILLISECONDS);
         assertSame(State.OPEN, channel.state());
         channel.close();
     }
 
-    @Test(timeout = 10000)
+    @Test(timeout = 30000)
     public void laneHangUpAfterTheFullResponseReturnsNormally() throws Exception {
         // The bridge's own normal shape: the payload answers, closes the
         // transport, and the client may still be flushing. A lane-side write
@@ -367,15 +410,20 @@ public final class UmlCompileChannelTest {
                 throw new AssertionError("the hang-up must not fail the face", failure);
             }
         });
-        // The answer is already on the pipe; read it BEFORE sending anything so
-        // responseComplete is settled deterministically.
+        // The answer is already on the pipe; read it to EOF BEFORE sending
+        // anything. The response pump sets responseComplete before it closes
+        // the response pipe, so observing the pipe's EOF proves the lane-side
+        // hang-up classification is settled — a late request byte then hits
+        // the closed lane deterministically instead of racing that read.
         byte[] answer = responseRead.readNBytes("done".length());
         assertEquals("done", new String(answer, StandardCharsets.UTF_8));
+        assertEquals("the response pipe reaches EOF before the late request bytes",
+                -1, responseRead.read());
         // Now the request direction's write hits the closed lane — swallowed.
         requestWrite.write("late bytes".getBytes(StandardCharsets.UTF_8));
         requestWrite.flush();
         requestWrite.close();
-        job.get(5, TimeUnit.SECONDS);
+        job.get(JOB_TIMEOUT_MS, TimeUnit.MILLISECONDS);
         assertSame(State.OPEN, channel.state());
         channel.close();
     }

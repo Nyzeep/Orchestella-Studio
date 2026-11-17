@@ -102,9 +102,8 @@ public final class NetworkGatewayDaemonTest {
         String id = "gw-port";
         int port = NetworkGatewayDaemon.listenPortFor(id);
         Process owner = new ProcessBuilder(
-                TestProcesses.javaExecutable(),
-                "-cp", System.getProperty("java.class.path"), PortHolder.class.getName(),
-                String.valueOf(port)).redirectErrorStream(true).start();
+                TestProcesses.javaChildCommand(PortHolder.class.getName(),
+                        String.valueOf(port))).redirectErrorStream(true).start();
         try {
             BufferedReader output = new BufferedReader(new InputStreamReader(owner.getInputStream()));
             assertEquals("the fixture must bind before the stop", "BOUND", output.readLine());

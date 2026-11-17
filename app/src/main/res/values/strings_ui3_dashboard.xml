@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  工作站页（UI3-05）文案。页面工单各自持有 strings_ui3_<area>.xml，
+  避免与 res/values/strings.xml 的独占所有权冲突（spec §5）。
+-->
+<resources>
+    <string name="ui3_dashboard_title">工作站</string>
+
+    <string name="ui3_dashboard_meta_summary">%1$d 个实例 · %2$d 个运行中</string>
+    <string name="ui3_dashboard_meta_empty">暂无实例</string>
+
+    <string name="ui3_dashboard_open_terminal">打开终端</string>
+    <string name="ui3_dashboard_create_instance">创建实例</string>
+    <string name="ui3_dashboard_empty_title">还没有实例</string>
+    <string name="ui3_dashboard_empty_body">创建第一个 Linux 实例后，这里会显示它的状态、存储与宿主指标。</string>
+    <string name="ui3_dashboard_instance_specs">%1$d vCPU · %2$d MB · %3$d GB</string>
+
+    <string name="ui3_dashboard_section_storage">存储</string>
+    <string name="ui3_dashboard_storage_ring_description">存储已用 %1$d%%，%2$s / %3$s</string>
+    <string name="ui3_dashboard_storage_used">已用 %1$s</string>
+    <string name="ui3_dashboard_storage_total">共 %1$s</string>
+    <string name="ui3_dashboard_storage_settings">存储设置</string>
+
+    <string name="ui3_dashboard_section_metrics">指标</string>
+    <string name="ui3_dashboard_metric_cpu">CPU</string>
+    <string name="ui3_dashboard_metric_ram">内存</string>
+    <string name="ui3_dashboard_metric_cpu_caption">vCPU · 宿主 %1$d 核</string>
+    <string name="ui3_dashboard_metric_ram_caption">已用 / 共 %1$s</string>
+    <string name="ui3_dashboard_metric_placeholder">—</string>
+    <string name="ui3_dashboard_metric_placeholder_caption">暂无实例</string>
+    <string name="ui3_dashboard_metric_refresh">每 %1$d 秒刷新</string>
+
+    <string name="ui3_dashboard_section_recent">最近实例</string>
+    <string name="ui3_dashboard_recent_empty">暂无其他实例</string>
+
+    <string name="ui3_dashboard_status_running">运行中</string>
+    <string name="ui3_dashboard_status_provisioning">装配中</string>
+    <string name="ui3_dashboard_status_stopped">已停止</string>
+    <string name="ui3_dashboard_status_suspended">已挂起</string>
+    <string name="ui3_dashboard_status_interrupted">运行中断</string>
+    <string name="ui3_dashboard_status_crashed">异常终止</string>
+    <string name="ui3_dashboard_status_created">已创建</string>
+</resources>

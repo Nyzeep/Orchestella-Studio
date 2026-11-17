@@ -97,6 +97,12 @@ tasks.register<JavaExec>("reflectiveAvfVirtualMachineApiTest") {
     mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.ReflectiveAvfVirtualMachineApiTest")
 }
 
+// OPT-05: shared stop vocabulary mapping contract (pure adapters, no behavior change).
+tasks.register<JavaExec>("avfStopOutcomeAdapterTest") {
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.AvfStopOutcomeAdapterTest")
+}
+
 tasks.register<JavaExec>("avf9pShareLifecycleTest") {
     classpath = sourceSets["test"].runtimeClasspath
     mainClass.set("io.github.nyzeep.orchestella.runtime.engineavf.Avf9pShareLifecycleTest")
@@ -173,6 +179,7 @@ tasks.register<JavaExec>("avfPlatformAccessTest") {
 
 val avfAllTestTasks = listOf(
     "reflectiveAvfVirtualMachineApiTest",
+    "avfStopOutcomeAdapterTest",
     "avfPlatformAccessTest",
     "avfRuntimeOwnershipTest",
     "avfLaunchAdmissionTest",

@@ -21,9 +21,14 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.activity.result.contract.ActivityResultContracts
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
-import io.github.nyzeep.orchestella.ui.design.OeTextScale
-import io.github.nyzeep.orchestella.ui.design.OeTextScaleMode
+import io.github.nyzeep.orchestella.ui.theme.OeTextScale
+import io.github.nyzeep.orchestella.ui.theme.OeTextScaleMode
 import io.github.nyzeep.orchestella.ui.motion.OrchestellaMotion
+import io.github.nyzeep.orchestella.ui.screens.config.ConfigPreferences
+import io.github.nyzeep.orchestella.ui.screens.config.ConfigSections
+import io.github.nyzeep.orchestella.ui.screens.config.DefaultMirror
+import io.github.nyzeep.orchestella.ui.screens.config.SectionMotion
+import io.github.nyzeep.orchestella.ui.screens.config.SharedPreferencesConfigStore
 import io.github.nyzeep.orchestella.ui.theme.CustomThemeSlot
 import io.github.nyzeep.orchestella.ui.theme.SurfaceOpacity
 import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
@@ -34,6 +39,7 @@ import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.Acce
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorMode
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorPolicy
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorReasonCode
+import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator
 
 /** Logcat tag for the accelerator-lane verdict (enum names only, no paths). */
 private const val ACCEL_LANE_TAG = "AccelLane"
@@ -64,22 +70,28 @@ class SettingsSubActivity : AppCompatActivity() {
         const val EXTRA_SECTION = "extra_settings_section"
 
         /** 「外观与主题」：8 选择按钮 + 5 滑条 + 终端光标偏好（并入）。 */
-        const val SECTION_APPEARANCE = "appearance"
+        const val SECTION_APPEARANCE = ConfigSections.APPEARANCE
 
         /** 「镜像源与加速」：软件源策略 Spinner + 测速优选 + Docker 加速源。 */
-        const val SECTION_MIRROR = "mirror"
+        const val SECTION_MIRROR = ConfigSections.MIRROR
 
         /** 「关于与合规」：版本 + 商标与合规声明（折叠块）。 */
-        const val SECTION_ABOUT = "about"
+        const val SECTION_ABOUT = ConfigSections.ABOUT
 
         /** 「高级」：pVM 编译加速（加速与性能）+ 启动阶段诊断（合并节）。 */
-        const val SECTION_ADVANCED = "advanced"
+        const val SECTION_ADVANCED = ConfigSections.ADVANCED
+
+        /** 「引擎与授权」：AVF 预检、QEMU 回退与 UML 门控摘要。 */
+        const val SECTION_SYSTEM = ConfigSections.SYSTEM
 
         /** Container-transform approximation: entry scale (and alpha 0→1). */
         private const val TRANSFORM_START_SCALE = 0.96f
 
-        /** Low-RAM tier duration: oe_motion_duration_medium3. */
+        /** Low-RAM tier duration (350ms, between short4 and medium1). */
         private const val TRANSFORM_LOW_TIER_MS = 350L
+
+        /** Fade-only tier for the user's 「精简」 choice. */
+        private const val TRANSFORM_REDUCED_MS = 120L
 
         fun intent(context: Context, section: String): Intent =
             Intent(context, SettingsSubActivity::class.java).putExtra(EXTRA_SECTION, section)
@@ -87,6 +99,11 @@ class SettingsSubActivity : AppCompatActivity() {
 
     private lateinit var settingsManager: SettingsManager
     private lateinit var themeStore: ThemeStore
+    private lateinit var configPreferences: ConfigPreferences
+
+    /** Engine/authorization page views (bound only for [SECTION_SYSTEM]). */
+    private lateinit var txtAvfBadge: TextView
+    private lateinit var txtAvfDetails: TextView
 
     /** Mirror speed-test probe runs off the main thread; shutdown in onDestroy. */
     private val backgroundExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
@@ -147,6 +164,7 @@ class SettingsSubActivity : AppCompatActivity() {
         toolbar.navigationContentDescription = "返回"
 
         settingsManager = SettingsManager(this)
+        configPreferences = ConfigPreferences(SharedPreferencesConfigStore(this))
 
         val container = findViewById<LinearLayout>(R.id.settings_sub_container)
         when (intent?.getStringExtra(EXTRA_SECTION)) {
@@ -154,6 +172,7 @@ class SettingsSubActivity : AppCompatActivity() {
             SECTION_MIRROR -> bindMirror(container)
             SECTION_ABOUT -> bindAbout(container)
             SECTION_ADVANCED -> bindAdvanced(container)
+            SECTION_SYSTEM -> bindSystem(container)
             // Sections land here as their migration commits land; anything
             // unknown must not linger as an empty shell.
             else -> {
@@ -173,6 +192,7 @@ class SettingsSubActivity : AppCompatActivity() {
             // Status mirrors the launch-time decision; re-probe on return so the
             // verdict never goes stale while the page is backgrounded.
             SECTION_ADVANCED -> setupAcceleratorSection()
+            SECTION_SYSTEM -> setupSystemSection()
         }
     }
 
@@ -231,21 +251,49 @@ class SettingsSubActivity : AppCompatActivity() {
         val container = findViewById<View>(R.id.settings_sub_container) ?: return
         val lowRamDevice = (getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager)
             ?.isLowRamDevice == true
-        container.pivotY = 0f
-        container.scaleX = TRANSFORM_START_SCALE
-        container.scaleY = TRANSFORM_START_SCALE
-        container.alpha = 0f
-        container.animate()
-            .scaleX(1f)
-            .scaleY(1f)
-            .alpha(1f)
-            .setDuration(
-                if (lowRamDevice) TRANSFORM_LOW_TIER_MS
-                else OrchestellaMotion.DURATION_CONTAINER_TRANSFORM_MS.toLong()
-            )
-            .setInterpolator(PathInterpolator(0.05f, 0.7f, 0.1f, 1.0f))
-            .setListener(null)
-            .start()
+
+        // The user's motion choice is a second signal on top of the system
+        // animator scale: standard keeps the container transform, reduced keeps
+        // only the fade, off snaps. ValueAnimator still collapses every tier to
+        // 0 ms when the system "remove animations" setting is active.
+        when (configPreferences.sectionMotion()) {
+            SectionMotion.Standard -> {
+                container.pivotY = 0f
+                container.scaleX = TRANSFORM_START_SCALE
+                container.scaleY = TRANSFORM_START_SCALE
+                container.alpha = 0f
+                container.animate()
+                    .scaleX(1f)
+                    .scaleY(1f)
+                    .alpha(1f)
+                    .setDuration(
+                        if (lowRamDevice) TRANSFORM_LOW_TIER_MS
+                        else OrchestellaMotion.DURATION_CONTAINER_TRANSFORM_MS.toLong()
+                    )
+                    .setInterpolator(PathInterpolator(0.05f, 0.7f, 0.1f, 1.0f))
+                    .setListener(null)
+                    .start()
+            }
+
+            SectionMotion.Reduced -> {
+                container.pivotY = 0f
+                container.scaleX = 1f
+                container.scaleY = 1f
+                container.alpha = 0f
+                container.animate()
+                    .alpha(1f)
+                    .setDuration(TRANSFORM_REDUCED_MS)
+                    .setInterpolator(PathInterpolator(0.2f, 0f, 0f, 1f))
+                    .setListener(null)
+                    .start()
+            }
+
+            SectionMotion.Off -> {
+                container.scaleX = 1f
+                container.scaleY = 1f
+                container.alpha = 1f
+            }
+        }
     }
 
     private fun refreshAppearance() {
@@ -296,11 +344,6 @@ class SettingsSubActivity : AppCompatActivity() {
         val lineLabel = findViewById<TextView>(R.id.tv_line_spacing_label)
         val lineSeek = findViewById<android.widget.SeekBar>(R.id.seek_terminal_line_spacing)
         if (btnPickTheme == null || fontSeek == null) return
-        // Compose 主题画廊（迁移第一批）：预览卡 + 即时套用。原「选择主题」
-        // 列表对话框保留，自定义槽位仍在那里增删。
-        findViewById<MaterialButton?>(R.id.btn_open_theme_gallery)?.setOnClickListener {
-            startActivity(io.github.nyzeep.orchestella.ui.compose.ThemeGalleryActivity.intent(this))
-        }
 
         fun refreshLabels() {
             fontLabel?.text = "终端字号：${themeStore.terminalFontSizeSp()}sp"
@@ -717,13 +760,33 @@ class SettingsSubActivity : AppCompatActivity() {
             sources.map { it.displayName() }
         )
         spinnerMirrorSource.adapter = adapter
-        spinnerMirrorSource.setSelection(0) // Default: MULTI_TIER
+        // Persisted default (UI3-04): the selected policy survives reopening the
+        // page instead of resetting to MULTI_TIER every time. Unknown values fall
+        // back to MULTI_TIER through ConfigPreferences.
+        val savedMirror = configPreferences.defaultMirror()
+        spinnerMirrorSource.setSelection(
+            sources.indexOfFirst { it.name == savedMirror.key }.coerceAtLeast(0)
+        )
+        spinnerMirrorSource.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: android.widget.AdapterView<*>?,
+                view: View?,
+                position: Int,
+                id: Long,
+            ) {
+                val picked = DefaultMirror.fromKey(sources[position].name)
+                configPreferences.setDefaultMirror(picked)
+            }
+
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+        }
 
         btnSpeedTest.setOnClickListener {
             runMirrorSpeedTest(btnSpeedTest, spinnerMirrorSource, txtSpeedTestResults)
         }
 
         btnResetMirror.setOnClickListener {
+            configPreferences.setDefaultMirror(DefaultMirror.MultiTier)
             spinnerMirrorSource.setSelection(0)
             txtSpeedTestResults.text = "已恢复为默认多层级回退配置 (国内云源 -> 教育网 -> 官方源)"
             Toast.makeText(this, "已恢复默认镜像源策略", Toast.LENGTH_SHORT).show()
@@ -807,6 +870,121 @@ class SettingsSubActivity : AppCompatActivity() {
         val content = findViewById<View?>(R.id.layout_settings_trademark_content) ?: return
         val indicator = findViewById<TextView?>(R.id.txt_settings_trademark_indicator)
         var expanded = false
+        var toggleGeneration = 0
+        fun repaintIndicator() {
+            indicator?.text = if (expanded) "▾" else "▸"
+        }
+        repaintIndicator()
+        header.setOnClickListener {
+            toggleGeneration++
+            val generation = toggleGeneration
+            expanded = !expanded
+            if (expanded) {
+                OrchestellaMotion.expandSection(content)
+            } else {
+                OrchestellaMotion.collapseSection(content) {
+                    if (generation == toggleGeneration) content.visibility = View.GONE
+                }
+            }
+            repaintIndicator()
+        }
+    }
+
+    // =====================================================================
+    // 引擎与授权（UI3-04）：原 SettingsActivity 一级页的 AVF 摘要卡与
+    // 「启动验证与回退」折叠块整体迁入；探测逻辑与阈值不变，徽章与详情
+    // id 保持，旧入口删除后配置页仍能两级内到达。
+    // =====================================================================
+
+    private fun bindSystem(container: LinearLayout) {
+        currentSection = SECTION_SYSTEM
+        toolbarTitle(R.string.config_system_section_title)
+        layoutInflater.inflate(R.layout.layout_settings_section_system, container, true)
+        txtAvfBadge = findViewById(R.id.txt_settings_avf_badge)
+        txtAvfDetails = findViewById(R.id.txt_settings_avf_details)
+        findViewById<MaterialButton>(R.id.btn_settings_shizuku).setOnClickListener {
+            ShizukuClientDialog().show(supportFragmentManager, "shizuku-client")
+        }
+        setupSystemSection()
+        setupFallbackExplanationSection()
+    }
+
+    private fun setupSystemSection() {
+        val facts = AvfHostFactsProbe.probe(this)
+        val readiness = AvfCapabilityEvaluator.evaluate(facts)
+        findViewById<MaterialButton>(R.id.btn_settings_shizuku).visibility =
+            if (readiness.wizardEligible()) View.VISIBLE else View.GONE
+        val factsSummary = """
+            • 硬件平台：${facts.socModel() ?: facts.deviceModel() ?: "ARM64 设备"}
+            • Android 版本：API ${facts.sdkInt()}
+            • AVF feature：${if (facts.virtualizationFrameworkFeature()) "已声明" else "未声明"}
+            • 虚拟化属性：${facts.virtualizationProperty()?.takeIf { it.isNotBlank() } ?: "无法读取或未提供"}
+            • VM 模式：${AvfHostFactsProbe.modeSummary(facts.modeFacts())}
+            • 平台访问：${AvfHostFactsProbe.platformSummary(facts.platformFacts())}
+            • MANAGE_VIRTUAL_MACHINE：${AvfHostFactsProbe.permissionLabel(facts.manageVirtualMachinePermissionState())}
+            • USE_CUSTOM_VIRTUAL_MACHINE：${AvfHostFactsProbe.permissionLabel(facts.useCustomVirtualMachinePermissionState())}
+        """.trimIndent()
+        val launchNotice = getString(R.string.avf_preflight_boundary)
+
+        when (readiness.status()) {
+            AvfCapabilityEvaluator.AvfStatus.READY -> {
+                txtAvfBadge.text = "硬件虚拟化权限预检满足"
+                txtAvfBadge.setTextColor(getColor(R.color.zone_green))
+                txtAvfDetails.text = "$factsSummary\n• 预检：声明与权限条件满足\n$launchNotice"
+            }
+            AvfCapabilityEvaluator.AvfStatus.NEEDS_AUTHORIZATION -> {
+                txtAvfBadge.text = "AVF 尚未授权"
+                txtAvfBadge.setTextColor(getColor(R.color.zone_yellow))
+                txtAvfDetails.text = "$factsSummary\n• 预检：${readiness.reasons().joinToString("；")}\n$launchNotice"
+            }
+            AvfCapabilityEvaluator.AvfStatus.MODE_UNSUPPORTED -> {
+                // Session-18 W-B: the unsupported verdict is a capability
+                // statement, not a device defect — the badge becomes a neutral
+                // entry point to the compatibility explanation page instead of
+                // a red dead end.
+                txtAvfBadge.text = BadgeCopy.avfUnsupportedEntryLabel()
+                txtAvfBadge.setTextColor(getColor(R.color.zone_neutral))
+                txtAvfBadge.setOnClickListener {
+                    startActivity(Intent(this, CompatExplanationActivity::class.java))
+                }
+                txtAvfDetails.text = "$factsSummary\n• 此功能依赖设备的硬件虚拟化能力，你的设备上不可用（不影响其他功能）\n• 点击上方徽章查看兼容性说明\n$launchNotice"
+            }
+            AvfCapabilityEvaluator.AvfStatus.MODE_UNKNOWN -> {
+                txtAvfBadge.text = "AVF 模式未验证"
+                txtAvfBadge.setTextColor(getColor(R.color.zone_yellow))
+                txtAvfDetails.text = "$factsSummary\n• 预检原因：${readiness.reasons().joinToString("；")}\n• 授权不会改变 VM 模式；当前使用 QEMU\n$launchNotice"
+            }
+            AvfCapabilityEvaluator.AvfStatus.HIDDEN_API_BLOCKED -> {
+                txtAvfBadge.text = "AVF 平台接口受限"
+                txtAvfBadge.setTextColor(getColor(R.color.zone_red))
+                txtAvfDetails.text = "$factsSummary\n• 预检原因：${readiness.reasons().joinToString("；")}\n• 这是系统隐藏 API 限制，不是权限问题；当前使用 QEMU\n$launchNotice"
+            }
+            AvfCapabilityEvaluator.AvfStatus.REFLECTION_UNAVAILABLE -> {
+                txtAvfBadge.text = "AVF 平台接口缺失"
+                txtAvfBadge.setTextColor(getColor(R.color.zone_red))
+                txtAvfDetails.text = "$factsSummary\n• 预检原因：${readiness.reasons().joinToString("；")}\n• 当前系统未提供该平台接口；当前使用 QEMU\n$launchNotice"
+            }
+            AvfCapabilityEvaluator.AvfStatus.UNSUPPORTED -> {
+                txtAvfBadge.text = "AVF 预检未满足"
+                txtAvfBadge.setTextColor(getColor(R.color.zone_red))
+                val reasons = readiness.reasons().joinToString("；")
+                txtAvfDetails.text = "$factsSummary\n• 预检原因：$reasons\n• 启动路径：QEMU\n$launchNotice"
+            }
+        }
+    }
+
+    /**
+     * Lane B motion consumption: the "启动验证与回退" explanation card becomes a
+     * toggleable section via [OrchestellaMotion.expandSection]/[collapseSection].
+     * Default state stays expanded so first-open behavior is unchanged; a
+     * generation counter stops a stale collapse-end action from GONE-ing a
+     * section that was re-expanded meanwhile.
+     */
+    private fun setupFallbackExplanationSection() {
+        val header = findViewById<View?>(R.id.layout_settings_fallback_header) ?: return
+        val content = findViewById<View?>(R.id.layout_settings_fallback_content) ?: return
+        val indicator = findViewById<TextView?>(R.id.txt_settings_fallback_expand_indicator)
+        var expanded = true
         var toggleGeneration = 0
         fun repaintIndicator() {
             indicator?.text = if (expanded) "▾" else "▸"

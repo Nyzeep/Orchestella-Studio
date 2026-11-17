@@ -1,11 +1,20 @@
 plugins {
     `java-library`
+    // OPT-05: StopOutcome is a Kotlin sealed type by ticket mandate; this is the
+    // only runtime module with a Kotlin source file. The Kotlin Gradle plugin is
+    // already on the build classpath (root declares it `apply false`), so it is
+    // applied here by id only, at the shared catalog version (2.2.21).
+    kotlin("jvm")
 }
 
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(17)
     }
+}
+
+kotlin {
+    jvmToolchain(17)
 }
 
 dependencies {

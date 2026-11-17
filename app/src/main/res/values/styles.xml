@@ -22,18 +22,6 @@
     <!-- Typography 权重节奏: Title / SectionHeader / Body / Label -->
     <!-- ==================================================== -->
 
-    <style name="TextAppearance.Orchestella.Title" parent="TextAppearance.Material3.TitleMedium">
-        <item name="android:letterSpacing">0.01</item>
-    </style>
-
-    <style name="TextAppearance.Orchestella.SectionHeader" parent="TextAppearance.Material3.TitleSmall">
-        <item name="android:letterSpacing">0.02</item>
-    </style>
-
-    <style name="TextAppearance.Orchestella.Body" parent="TextAppearance.Material3.BodyMedium" />
-
-    <style name="TextAppearance.Orchestella.Label" parent="TextAppearance.Material3.BodySmall" />
-
     <style name="TextAppearance.Orchestella.LabelEmphasized" parent="TextAppearance.Material3.LabelMedium">
         <item name="android:letterSpacing">0.02</item>
     </style>
@@ -41,16 +29,6 @@
     <!-- ==================================================== -->
     <!-- 按钮状态样式族: geometry/type only, states stay in ThemeApplier -->
     <!-- ==================================================== -->
-
-    <style name="Widget.Orchestella.Button" parent="">
-        <item name="cornerRadius">@dimen/oe_corner_md</item>
-        <item name="android:textAppearance">@style/TextAppearance.Orchestella.LabelEmphasized</item>
-    </style>
-
-    <style name="Widget.Orchestella.Button.Filled" parent="Widget.Material3.Button">
-        <item name="cornerRadius">@dimen/oe_corner_md</item>
-        <item name="android:textAppearance">@style/TextAppearance.Orchestella.LabelEmphasized</item>
-    </style>
 
     <style name="Widget.Orchestella.Button.Tonal" parent="Widget.Material3.Button.TonalButton">
         <item name="cornerRadius">@dimen/oe_corner_md</item>
