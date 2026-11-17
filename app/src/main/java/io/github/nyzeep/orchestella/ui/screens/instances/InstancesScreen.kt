@@ -69,6 +69,8 @@ import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Sizes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
+import io.github.nyzeep.orchestella.ui.shell.OeScaffold
+import io.github.nyzeep.orchestella.ui.shell.oeCardShape
 
 /** 页面级几何常量；语义与命中区断言直接读这里。 */
 object InstancesSpec {
@@ -109,7 +111,6 @@ fun InstancesScreen(
     actions: InstancesActions,
     modifier: Modifier = Modifier,
 ) {
-    val colors = Oe3ThemeValues.colors
     var sheetInstanceId by rememberSaveable { mutableStateOf<String?>(null) }
     // 卡片入场只播一次（spec §2.5 cardEnter，motion.md 的「列表首屏卡片」）：
     // rememberSaveable 让 tab 切换回来不重播；首帧之后新组合（滚动）的卡片
@@ -122,66 +123,69 @@ fun InstancesScreen(
             .firstOrNull { it.id == id }
     }
 
-    PullToRefreshBox(
-        isRefreshing = state.isRefreshing,
-        onRefresh = actions.refresh,
-        modifier = modifier
-            .fillMaxSize()
-            .background(colors.background.oe3Color()),
+    OeScaffold(
+        title = stringResource(R.string.ui3_instances_title),
+        modifier = modifier,
     ) {
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .testTag("instances-list"),
-            contentPadding = PaddingValues(
-                start = Oe3Spacing.pageInset,
-                end = Oe3Spacing.pageInset,
-                top = Oe3Spacing.xl,
-                bottom = LocalOe3PageBottomPadding.current,
-            ),
+        PullToRefreshBox(
+            isRefreshing = state.isRefreshing,
+            onRefresh = actions.refresh,
+            modifier = Modifier.fillMaxSize(),
         ) {
-            item(key = "instances:header") {
-                PageHeader(actions = actions)
-            }
-            item(key = "instances:meta") {
-                MetaLine(state = state)
-            }
-            state.progress?.let { progress ->
-                item(key = "instances:progress") {
-                    ProgressBanner(progress = progress)
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .testTag("instances-list"),
+                contentPadding = PaddingValues(
+                    start = Oe3Spacing.pageInset,
+                    end = Oe3Spacing.pageInset,
+                    top = Oe3Spacing.xl,
+                    bottom = LocalOe3PageBottomPadding.current,
+                ),
+            ) {
+                item(key = "instances:header") {
+                    PageHeader(actions = actions)
                 }
-            }
-            if (!state.hasInstances) {
-                item(key = "instances:empty") {
-                    EmptyCard(actions = actions)
+                item(key = "instances:meta") {
+                    MetaLine(state = state)
                 }
-            } else {
-                state.groups.forEach { group ->
-                    item(key = InstancesListKeys.group(group.kind)) {
-                        GroupHeader(group = group)
+                state.progress?.let { progress ->
+                    item(key = "instances:progress") {
+                        ProgressBanner(progress = progress)
                     }
-                    items(
-                        items = group.items,
-                        key = { item -> InstancesListKeys.item(item.id) },
-                    ) { item ->
-                        Oe3CardEnterMotion(
-                            entered = cardsEntered,
-                            modifier = Modifier
-                                .animateItem()
-                                .padding(bottom = Oe3Spacing.xs),
-                        ) {
-                            InstanceCard(
-                                item = item,
-                                onOpen = { actions.openInstance(item.id) },
-                                onPrimary = {
-                                    when (item.primaryAction) {
-                                        InstancePrimaryAction.Terminal -> actions.openTerminal(item.id)
-                                        InstancePrimaryAction.Launch -> actions.launch(item.id)
-                                        InstancePrimaryAction.Resume -> actions.resume(item.id)
-                                    }
-                                },
-                                onMore = { sheetInstanceId = item.id },
-                            )
+                }
+                if (!state.hasInstances) {
+                    item(key = "instances:empty") {
+                        EmptyCard(actions = actions)
+                    }
+                } else {
+                    state.groups.forEach { group ->
+                        item(key = InstancesListKeys.group(group.kind)) {
+                            GroupHeader(group = group)
+                        }
+                        items(
+                            items = group.items,
+                            key = { item -> InstancesListKeys.item(item.id) },
+                        ) { item ->
+                            Oe3CardEnterMotion(
+                                entered = cardsEntered,
+                                modifier = Modifier
+                                    .animateItem()
+                                    .padding(bottom = Oe3Spacing.xs),
+                            ) {
+                                InstanceCard(
+                                    item = item,
+                                    onOpen = { actions.openInstance(item.id) },
+                                    onPrimary = {
+                                        when (item.primaryAction) {
+                                            InstancePrimaryAction.Terminal -> actions.openTerminal(item.id)
+                                            InstancePrimaryAction.Launch -> actions.launch(item.id)
+                                            InstancePrimaryAction.Resume -> actions.resume(item.id)
+                                        }
+                                    },
+                                    onMore = { sheetInstanceId = item.id },
+                                )
+                            }
                         }
                     }
                 }
@@ -198,21 +202,21 @@ fun InstancesScreen(
     }
 }
 
+/**
+ * 页内动作行（UI-02）：标题上移后只剩「新建 / 导入」两个按钮。
+ *
+ * 两个入口仍留在列表内而不是顶栏动作槽：`instances-create` /
+ * `instances-import` 是既有语义用例的锚点，移到栏外会让
+ * `performScrollToNode` 失真；顶栏动作槽留给后续页面级动作。
+ */
 @Composable
 private fun PageHeader(actions: InstancesActions) {
-    val colors = Oe3ThemeValues.colors
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = Oe3Spacing.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = stringResource(R.string.ui3_instances_title),
-            style = Oe3Typography.style(Oe3TextRole.PageTitle),
-            color = colors.onSurface.oe3Color(),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
         Oe3Button(
             text = stringResource(R.string.ui3_instances_create),
             onClick = actions.createInstance,
@@ -259,6 +263,7 @@ private fun ProgressBanner(progress: InstancesProgressUi) {
             .fillMaxWidth()
             .padding(bottom = Oe3Spacing.sm)
             .testTag("instances-progress"),
+        shape = oeCardShape(),
         contentPadding = PaddingValues(Oe3Spacing.md),
     ) {
         Text(
@@ -307,7 +312,7 @@ private fun GroupHeader(group: InstanceGroupUi) {
 @Composable
 private fun EmptyCard(actions: InstancesActions) {
     val colors = Oe3ThemeValues.colors
-    Oe3Card(modifier = Modifier.fillMaxWidth()) {
+    Oe3Card(modifier = Modifier.fillMaxWidth(), shape = oeCardShape()) {
         Oe3EmptyState(
             title = stringResource(R.string.ui3_instances_empty_title),
             description = stringResource(R.string.ui3_instances_empty_body),
@@ -383,6 +388,7 @@ private fun InstanceCard(
             .fillMaxWidth()
             .testTag("instances-card-${item.id}")
             .semantics { contentDescription = description },
+        shape = oeCardShape(),
         onClick = onOpen,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {

@@ -59,6 +59,8 @@ import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Sizes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
+import io.github.nyzeep.orchestella.ui.shell.OeScaffold
+import io.github.nyzeep.orchestella.ui.shell.oeCardShape
 import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
 
 /** 页面标题下的元信息与「当前值」读数（spec §2.3：13/18）。 */
@@ -95,49 +97,53 @@ fun ConfigScreen(
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
 ) {
-    val colors = Oe3ThemeValues.colors
-    LazyColumn(
-        modifier = modifier
-            .fillMaxSize()
-            .testTag("config:screen")
-            .background(colors.background.oe3Color()),
-        contentPadding = PaddingValues(
-            start = Oe3Spacing.pageInset,
-            end = Oe3Spacing.pageInset,
-            top = Oe3Spacing.xs,
-            bottom = LocalOe3PageBottomPadding.current,
-        ),
+    OeScaffold(
+        title = stringResource(R.string.config_page_title),
+        modifier = modifier,
+        leading = onBack?.let { back ->
+            { ConfigBackButton(onBack = back) }
+        },
     ) {
-        item(key = "config-header") {
-            ConfigPageHeader(
-                meta = stringResource(R.string.config_page_meta),
-                onBack = onBack,
-            )
-        }
-        ConfigCatalog.groups().forEach { spec ->
-            item(key = "config-header:${spec.group.name}") {
-                Oe3SectionHeader(title = stringResource(spec.group.titleRes))
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .testTag("config:screen"),
+            contentPadding = PaddingValues(
+                start = Oe3Spacing.pageInset,
+                end = Oe3Spacing.pageInset,
+                top = Oe3Spacing.xs,
+                bottom = LocalOe3PageBottomPadding.current,
+            ),
+        ) {
+            item(key = "config-header") {
+                ConfigPageHeader(meta = stringResource(R.string.config_page_meta))
             }
-            item(key = "config-card:${spec.group.name}") {
-                Oe3Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    contentPadding = PaddingValues(0.dp),
-                ) {
-                    spec.entries.forEachIndexed { index, entry ->
-                        ConfigRow(
-                            entry = entry,
-                            state = state,
-                            showDivider = index < spec.entries.lastIndex || spec.group.hasOptions,
-                            onClick = { onRoute(entry.route) },
-                        )
-                    }
-                    if (spec.group.hasOptions) {
-                        OptionLabel()
-                        GroupOptions(
-                            group = spec.group,
-                            options = state.options,
-                            onOptionsChange = onOptionsChange,
-                        )
+            ConfigCatalog.groups().forEach { spec ->
+                item(key = "config-header:${spec.group.name}") {
+                    Oe3SectionHeader(title = stringResource(spec.group.titleRes))
+                }
+                item(key = "config-card:${spec.group.name}") {
+                    Oe3Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentPadding = PaddingValues(0.dp),
+                        shape = oeCardShape(),
+                    ) {
+                        spec.entries.forEachIndexed { index, entry ->
+                            ConfigRow(
+                                entry = entry,
+                                state = state,
+                                showDivider = index < spec.entries.lastIndex || spec.group.hasOptions,
+                                onClick = { onRoute(entry.route) },
+                            )
+                        }
+                        if (spec.group.hasOptions) {
+                            OptionLabel()
+                            GroupOptions(
+                                group = spec.group,
+                                options = state.options,
+                                onOptionsChange = onOptionsChange,
+                            )
+                        }
                     }
                 }
             }
@@ -145,43 +151,38 @@ fun ConfigScreen(
     }
 }
 
+/**
+ * 页头只剩一行说明：标题在 OeScaffold 顶栏，返回入口在顶栏 leading 槽
+ * （配置页被宿主当二级页打开时才有返回）。UI-02。
+ */
 @Composable
-private fun ConfigPageHeader(meta: String, onBack: (() -> Unit)?) {
+private fun ConfigPageHeader(meta: String) {
     val colors = Oe3ThemeValues.colors
-    Row(
+    Text(
+        text = meta,
+        style = MetaTextStyle,
+        color = colors.onSurfaceVariant.oe3Color(),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = Oe3Spacing.xs, bottom = Oe3Spacing.xxs),
-        verticalAlignment = Alignment.CenterVertically,
+    )
+}
+
+/** 顶栏 leading 槽里的返回钮；视觉 44dp，命中 48dp 由槽位保证。 */
+@Composable
+private fun ConfigBackButton(onBack: () -> Unit) {
+    val back = stringResource(R.string.config_back_desc)
+    Box(
+        modifier = Modifier
+            .size(Oe3Sizes.interactiveVisual)
+            .testTag("config:back")
+            .clickable(role = Role.Button, onClick = onBack)
+            .semantics { contentDescription = back },
+        contentAlignment = Alignment.Center,
     ) {
-        if (onBack != null) {
-            val back = stringResource(R.string.config_back_desc)
-            Box(
-                modifier = Modifier
-                    .size(Oe3Sizes.minTouchTarget)
-                    .testTag("config:back")
-                    .clickable(role = Role.Button, onClick = onBack)
-                    .semantics { contentDescription = back },
-                contentAlignment = Alignment.Center,
-            ) {
-                DirectionChevron(pointsLeft = true)
-            }
-            Spacer(Modifier.width(Oe3Spacing.xxs))
-        }
-        Column {
-            Text(
-                text = stringResource(R.string.config_page_title),
-                style = Oe3Typography.style(Oe3TextRole.PageTitle),
-                color = colors.onSurface.oe3Color(),
-            )
-            Text(
-                text = meta,
-                style = MetaTextStyle,
-                color = colors.onSurfaceVariant.oe3Color(),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+        DirectionChevron(pointsLeft = true)
     }
 }
 

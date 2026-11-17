@@ -41,7 +41,10 @@ class DashboardScreenContractTest {
             "battery",
             "StatFs",
             "MainActivity",
-            "ui.shell",
+            // UI-02：v4 把页内标题上移到 ui/shell/OeScaffold，页面允许引用壳层
+            // 的页面壳原语；仍然禁止页面碰路由根与分页器（壳层状态归宿主）。
+            "ui.shell.Oe3App",
+            "ui.shell.Oe3Pages",
         )
         sources().forEach { file ->
             val text = file.readText()

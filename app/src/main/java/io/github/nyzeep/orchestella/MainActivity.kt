@@ -37,6 +37,7 @@ import io.github.nyzeep.orchestella.ui.shell.Oe3NavStyle
 import io.github.nyzeep.orchestella.ui.shell.Oe3Pages
 import io.github.nyzeep.orchestella.ui.shell.Oe3ShellController
 import io.github.nyzeep.orchestella.ui.shell.Oe3Tab
+import io.github.nyzeep.orchestella.ui.shell.OeAppBackgroundSpec
 import io.github.nyzeep.orchestella.ui.shell.glassLevelFromKey
 import io.github.nyzeep.orchestella.ui.theme.AppTheme
 import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
@@ -404,6 +405,9 @@ class MainActivity : AppCompatActivity() {
                         glassEnabled = prefs.glassEnabled,
                         navStyle = prefs.navStyle,
                         monoBody = prefs.monoBody,
+                        cornerRadiusDp = prefs.cornerRadiusDp,
+                        surfaceAlpha = prefs.surfaceAlpha,
+                        backgroundUri = prefs.backgroundUri,
                         pages = buildOe3Pages(),
                     )
                 }
@@ -451,6 +455,9 @@ class MainActivity : AppCompatActivity() {
             textScale = themeStore.textScaleFactor(),
             reduceMotion = !animatorsEnabled,
             glassEnabled = animatorsEnabled && powerManager?.isPowerSaveMode != true,
+            cornerRadiusDp = themeStore.cornerRadiusDp(),
+            surfaceAlpha = OeAppBackgroundSpec.surfaceAlpha(themeStore.uiSurfaceOpacityPercent()),
+            backgroundUri = themeStore.backgroundUri(),
         )
     }
 
@@ -1746,4 +1753,10 @@ private data class Oe3ShellPrefs(
     val textScale: Float = 1f,
     val reduceMotion: Boolean = false,
     val glassEnabled: Boolean = true,
+    /** UI-02：圆角偏好真正下发到 Oe3Theme（此前 Oe3App 丢掉了它）。 */
+    val cornerRadiusDp: Int? = null,
+    /** UI-02：界面表面不透明度，0.55..1.0，供玻璃与半透明表面消费。 */
+    val surfaceAlpha: Float = 1f,
+    /** UI-02：壳层背景三态的壁纸输入（SAF content://）。 */
+    val backgroundUri: String? = null,
 )

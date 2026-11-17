@@ -128,6 +128,10 @@ fun Oe3Pager(
  * Page stand-in for Wave 2. Page tickets replace this with their own Composable
  * which UI3-12 wires into the pager; this ticket must not create files under
  * `ui/screens`.
+ *
+ * v4 (UI-02): the placeholder now runs inside the same [OeScaffold] as the real
+ * pages, so the shell golden proves the single-title rule instead of the old
+ * "brand bar + in-page PageTitle" pair.
  */
 @Composable
 fun Oe3Placeholder(
@@ -136,31 +140,27 @@ fun Oe3Placeholder(
     bottomReserve: Dp = Oe3Spacing.contentBottom,
 ) {
     val colors = Oe3ThemeValues.colors
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = Oe3Spacing.pageInset)
-            .padding(top = Oe3Spacing.lg, bottom = bottomReserve),
-    ) {
-        Text(
-            text = title,
-            style = Oe3Typography.style(Oe3TextRole.PageTitle),
-            color = Color(colors.onSurface),
-        )
-        Spacer(Modifier.height(Oe3Spacing.md))
-        Oe3Card(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                text = "页面占位",
-                style = Oe3Typography.style(Oe3TextRole.BodyStrong),
-                color = Color(colors.onSurface),
-            )
-            Spacer(Modifier.height(Oe3Spacing.xs))
-            Text(
-                text = "内容由后续工单接入。",
-                style = Oe3Typography.style(Oe3TextRole.Body),
-                color = Color(colors.onSurfaceVariant),
-            )
+    OeScaffold(title = title, modifier = modifier) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = Oe3Spacing.pageInset)
+                .padding(top = Oe3Spacing.lg, bottom = bottomReserve),
+        ) {
+            Oe3Card(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "页面占位",
+                    style = Oe3Typography.style(Oe3TextRole.BodyStrong),
+                    color = Color(colors.onSurface),
+                )
+                Spacer(Modifier.height(Oe3Spacing.xs))
+                Text(
+                    text = "内容由后续工单接入。",
+                    style = Oe3Typography.style(Oe3TextRole.Body),
+                    color = Color(colors.onSurfaceVariant),
+                )
+            }
         }
     }
 }
