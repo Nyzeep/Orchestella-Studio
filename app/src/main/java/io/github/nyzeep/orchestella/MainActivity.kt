@@ -1,10 +1,12 @@
 package io.github.nyzeep.orchestella
 
 import android.app.ActivityManager
+import android.content.BroadcastReceiver
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.os.Build
 import android.os.Bundle
@@ -21,6 +23,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -56,6 +59,7 @@ import io.github.nyzeep.orchestella.ui.screens.distros.DistrosActions
 import io.github.nyzeep.orchestella.ui.screens.distros.DistrosScreen
 import io.github.nyzeep.orchestella.ui.screens.distros.DistrosUiState
 import io.github.nyzeep.orchestella.ui.screens.hardware.HardwareActions
+import io.github.nyzeep.orchestella.ui.screens.hardware.HardwareBatteryFacts
 import io.github.nyzeep.orchestella.ui.screens.hardware.HardwareDeviceFacts
 import io.github.nyzeep.orchestella.ui.screens.hardware.HardwareEngineFacts
 import io.github.nyzeep.orchestella.ui.screens.hardware.HardwareScreen
@@ -136,6 +140,14 @@ class MainActivity : AppCompatActivity() {
     @Volatile
     private var oe3Storage: StorageFacts = StorageFacts.None
     private val oe3HostUiFacts = mutableStateOf(HostUiFacts.empty())
+
+    /**
+     * 电池读数缓存（UI-08）。onStart 先同步读一次（首帧即有值），之后由
+     * `ACTION_BATTERY_CHANGED` 广播刷新；硬件页的圆环与温度只消费这里的事实。
+     * 布尔门让 onStart/onStop 的注册与注销各只发生一次。
+     */
+    private var batteryFacts = HardwareBatteryFacts()
+    private var batteryReceiverRegistered = false
 
     // Lane A（2026-11-13）：随行 UML face 的 Android 侧绑定。face 经装配槽的
     // spawner 注入重载构造（drain 线程消费内置 initramfs 的 §4 契约串），生命
@@ -715,6 +727,7 @@ class MainActivity : AppCompatActivity() {
             hardware = profile,
             storage = oe3Storage,
             engines = engines,
+            battery = batteryFacts,
         )
     }
 
@@ -1300,12 +1313,47 @@ class MainActivity : AppCompatActivity() {
         super.onStart()
         getSharedPreferences(ThemeStore.PREFS_NAME, Context.MODE_PRIVATE)
             .registerOnSharedPreferenceChangeListener(surfaceOpacityListener)
+        startBatteryMonitoring()
     }
 
     override fun onStop() {
+        stopBatteryMonitoring()
         getSharedPreferences(ThemeStore.PREFS_NAME, Context.MODE_PRIVATE)
             .unregisterOnSharedPreferenceChangeListener(surfaceOpacityListener)
         super.onStop()
+    }
+
+    /**
+     * 电池广播（UI-08）。`ACTION_BATTERY_CHANGED` 是受保护的系统广播，注册即先收到
+     * 一条粘性快照；这里只更新缓存并重算硬件页状态，不另立数据源、不做重活。
+     *
+     * 冷启动时快照周期还没落地 `oe3HardwareProfile`，`refreshOe3HardwareState()` 会
+     * 在主线程补一次宿主探测——所以此处等剖面就绪再刷新，首帧由快照周期带上缓存值。
+     */
+    private val batteryReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            batteryFacts = BatteryFactProvider.read(this@MainActivity)
+            if (oe3HardwareProfile != null) refreshOe3HardwareState()
+        }
+    }
+
+    /** 注册电池监听；先同步读一次，首份硬件页状态落地时就已经带着电量与温度。 */
+    private fun startBatteryMonitoring() {
+        if (batteryReceiverRegistered) return
+        batteryFacts = BatteryFactProvider.read(this)
+        ContextCompat.registerReceiver(
+            this,
+            batteryReceiver,
+            IntentFilter(Intent.ACTION_BATTERY_CHANGED),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        batteryReceiverRegistered = true
+    }
+
+    private fun stopBatteryMonitoring() {
+        if (!batteryReceiverRegistered) return
+        unregisterReceiver(batteryReceiver)
+        batteryReceiverRegistered = false
     }
 
     override fun onResume() {
