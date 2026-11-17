@@ -26,6 +26,15 @@ The first Robolectric run downloads `android-all-instrumented` (~207 MB). The
 Aliyun flag also points Robolectric's resolver at the mirror, because Maven
 Central rate-limits the out-of-band download.
 
+**Running plain `testDebugUnitTest` silently re-records goldens.** Any Gradle
+invocation whose task graph reaches Roborazzi without an explicit verify or
+record property will rewrite the golden PNGs in place — including partial,
+working-tree-state captures from parallel builds. When running screenshot-adjacent
+tests outside the two commands above, always pass
+`-Proborazzi.test.verify=true`; if `git status` shows unexpected PNG changes,
+restore them from `HEAD` and re-run the record command on a quiet tree. Golden
+files are gitignored (`*.png`) — committing updates requires `git add -f`.
+
 ## Layout and naming
 
 ```
