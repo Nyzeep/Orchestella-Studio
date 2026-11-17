@@ -999,6 +999,11 @@ private fun TerminalCard(
             lineSpacingPx = state.terminalLineSpacingPx,
             cursorBlink = state.cursorBlink,
             renderAndroidView = renderTerminalView,
+            backgroundUri = state.terminalBackgroundUri,
+            // Same scrim the real terminal gets: theme color at the chosen alpha.
+            scrimColor = Color(
+                (state.theme.terminalBackground and 0x00FFFFFF) or (state.terminalScrimAlpha shl 24),
+            ),
         )
     }
 }
