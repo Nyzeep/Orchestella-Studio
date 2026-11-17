@@ -77,9 +77,11 @@ fun OeSlider(
     var widthPx by remember { mutableFloatStateOf(0f) }
     var pressed by remember { mutableStateOf(false) }
 
+    // Keep the phase as State and read it inside the draw lambda: the glow
+    // animates without recomposing this composable on every frame.
     val phase = if (themeInfo.reducedMotion) {
         // Deterministic mid-travel band: screenshots never chase the animation.
-        0.35f
+        remember { mutableFloatStateOf(0.35f) }
     } else {
         val transition = rememberInfiniteTransition(label = "oe-slider-glow")
         transition.animateFloat(
@@ -90,7 +92,7 @@ fun OeSlider(
                 repeatMode = RepeatMode.Restart,
             ),
             label = "oe-slider-glow-phase",
-        ).value
+        )
     }
 
     val pressedScale by animateFloatAsState(
@@ -137,7 +139,6 @@ fun OeSlider(
     val jitter = remember { OeSliderSpec.dotJitter(OeSliderSpec.DotSeed, OeSliderSpec.DotCount) }
 
     val fraction = OeSliderSpec.fractionOf(value, valueRange)
-    val glowAlpha = OeSliderSpec.glowAlpha(phase)
     val controlAlpha = if (enabled) 1f else OeSliderSpec.DisabledAlpha
 
     val trackPath = remember(widthPx, trackHeightPx, controlHeightPx) {
@@ -211,6 +212,8 @@ fun OeSlider(
                 }
             },
     ) {
+        val phaseValue = phase.value
+        val glowAlpha = OeSliderSpec.glowAlpha(phaseValue)
         val trackTop = (size.height - trackHeightPx) / 2f
         val centerY = size.height / 2f
         val filledWidth = (fraction * size.width).coerceAtLeast(0f)
@@ -228,7 +231,7 @@ fun OeSlider(
         }
 
         clipPath(trackPath) {
-            val glowLeft = phase * (size.width + bandPx) - bandPx
+            val glowLeft = phaseValue * (size.width + bandPx) - bandPx
             translate(left = glowLeft) {
                 drawRect(
                     brush = glowBrush,
@@ -239,7 +242,7 @@ fun OeSlider(
             }
             val maxJitter = ((trackHeightPx - 2f * dotRadiusPx) / 2f) * 0.6f
             repeat(OeSliderSpec.DotCount) { index ->
-                val dotX = OeSliderSpec.dotPhase(phase, index) * size.width
+                val dotX = OeSliderSpec.dotPhase(phaseValue, index) * size.width
                 val dotY = centerY + jitter[index] * maxJitter
                 drawCircle(
                     color = Color.White,
