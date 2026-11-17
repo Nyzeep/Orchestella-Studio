@@ -23,6 +23,11 @@ import org.robolectric.annotation.GraphicsMode
  * 栈式导航的 golden（工单 UI-03）：真实壳根里 push 演示目的地后的落位帧——
  * 二级页以 `OeScaffold(leading=返回)` 覆盖 pager，浮动坞保持原几何。
  * 减动效开启，帧即终态（motion.md：截图断言终态，不等动画）。
+ *
+ * 2026-11-18 语义订正（UI-12 真机走查裁决）：栈静止态宿主不再渲染 base 与
+ * 更深层——v4 页面体透明，静止时目的地直接落在背景层上；旧语义（pager 垫底）
+ * 会让透明页体透出栈下页面（真机残影）。本帧钉新语义：demo 目的地之下是
+ * 背景层，无 pager 内容。
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -33,7 +38,7 @@ class OeBackStackScreenshotTest {
     val compose = createComposeRule()
 
     @Test
-    fun pushedDemoDestinationRestsOverThePager() {
+    fun pushedDemoDestinationRestsOnBackgroundLayer() {
         compose.setContent {
             Oe3App(
                 selectedTab = Oe3Tab.Workstation,
