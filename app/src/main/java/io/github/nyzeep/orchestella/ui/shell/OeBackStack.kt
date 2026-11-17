@@ -226,16 +226,23 @@ fun OeBackStackHost(
         val movingOffset = OeBackStackTransitionSpec.movingOffsetPx(pageWidthPx, p)
 
         // 渲染序：base → 更深的目的地（静态层叠态）→ 其下一层（随进度）→ 移动层。
+        // 栈静止（有目的地且动画已落定）时不渲染 base 与更深层：v4 页面体是
+        // 透明的（背景层在栈宿主之后统一供给），若静止态仍垫着上一页，透明
+        // 页体透出的会是栈下内容而不是背景层（UI-12 真机走查抓到的残影）。
+        // 转场期间照常渲染——被压暗缩放的下一层正是栈转场的观感来源。
+        val stackIdle = depth > 0 && flight.value == StackFlight.None && p >= 1f
         Box(Modifier.fillMaxSize()) {
-            if (underIndex.intValue == -1) {
-                UnderLayer(scale = underScale, dim = underDim) { base() }
-            } else {
-                StaticLayer { base() }
-                for (index in 0 until underIndex.intValue) {
-                    StaticLayer { backStack[index].content() }
-                }
-                UnderLayer(scale = underScale, dim = underDim) {
-                    backStack[underIndex.intValue].content()
+            if (!stackIdle) {
+                if (underIndex.intValue == -1) {
+                    UnderLayer(scale = underScale, dim = underDim) { base() }
+                } else {
+                    StaticLayer { base() }
+                    for (index in 0 until underIndex.intValue) {
+                        StaticLayer { backStack[index].content() }
+                    }
+                    UnderLayer(scale = underScale, dim = underDim) {
+                        backStack[underIndex.intValue].content()
+                    }
                 }
             }
             val movingDestination = when (flight.value) {
