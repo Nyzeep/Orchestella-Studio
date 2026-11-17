@@ -182,8 +182,14 @@ fun OeSlider(
                     pressed = true
                     var lastStep = stepIndex(value, valueRange, steps)
                     fun emit(x: Float) {
+                        // 拇指圆心被内缩一个半径：0%/100% 时圆不再被画布切掉一半，
+                        // 触摸映射与绘制用同一段可用行程。
+                        val travel = (size.width - 2f * thumbRadiusPx).coerceAtLeast(1f)
                         val target = OeSliderSpec.snap(
-                            OeSliderSpec.valueAt((x / size.width).coerceIn(0f, 1f), valueRange),
+                            OeSliderSpec.valueAt(
+                                ((x - thumbRadiusPx) / travel).coerceIn(0f, 1f),
+                                valueRange,
+                            ),
                             valueRange,
                             steps,
                         )
@@ -216,7 +222,9 @@ fun OeSlider(
         val glowAlpha = OeSliderSpec.glowAlpha(phaseValue)
         val trackTop = (size.height - trackHeightPx) / 2f
         val centerY = size.height / 2f
-        val filledWidth = (fraction * size.width).coerceAtLeast(0f)
+        val thumbTravel = (size.width - 2f * thumbRadiusPx).coerceAtLeast(1f)
+        val thumbX = thumbRadiusPx + fraction * thumbTravel
+        val filledWidth = thumbX.coerceAtLeast(0f)
 
         drawPath(trackPath, color = surfaceHigh, alpha = controlAlpha)
 
@@ -253,7 +261,6 @@ fun OeSlider(
             }
         }
 
-        val thumbX = fraction * size.width
         drawCircle(
             brush = shadowBrush,
             radius = thumbRadiusPx * 1.35f * pressedScale,

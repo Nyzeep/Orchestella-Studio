@@ -8,12 +8,14 @@ import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RadialGradient
+import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Shader
 import android.os.Build
 import android.util.AttributeSet
 import android.view.HapticFeedbackConstants
 import android.view.View
+import android.view.ViewTreeObserver
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.animation.DecelerateInterpolator
 import io.github.nyzeep.orchestella.R
@@ -73,6 +75,8 @@ class OeSliderView @JvmOverloads constructor(
     private val trackPath = Path()
     private val trackRect = RectF()
     private val matrix = Matrix()
+    private val visibleRect = Rect()
+    private val scrollListener = ViewTreeObserver.OnScrollChangedListener { syncGlow() }
     private val jitter = OeSliderSpec.dotJitter(OeSliderSpec.DotSeed, OeSliderSpec.DotCount)
 
     private var fillShader: Shader? = null
@@ -243,7 +247,7 @@ class OeSliderView @JvmOverloads constructor(
         val alpha = if (isEnabled) 1f else OeSliderSpec.DisabledAlpha
         val centerY = height / 2f
         val fraction = OeSliderSpec.fractionOf(value, valueFrom..valueTo)
-        val filledRight = fraction * width
+        val filledRight = thumbRadiusPx + fraction * (width - 2f * thumbRadiusPx).coerceAtLeast(1f)
 
         // Unfilled capsule.
         trackPaint.color = surfaceHigh
@@ -327,7 +331,9 @@ class OeSliderView @JvmOverloads constructor(
 
     private fun updateFromTouch(x: Float, fromUser: Boolean) {
         if (width <= 0) return
-        val fraction = (x / width).coerceIn(0f, 1f)
+        // 与绘制同一段可用行程：拇指圆心内缩一个半径，0%/100% 时圆不被切边。
+        val travel = (width - 2f * thumbRadiusPx).coerceAtLeast(1f)
+        val fraction = ((x - thumbRadiusPx) / travel).coerceIn(0f, 1f)
         val target = OeSliderSpec.valueAt(fraction, valueFrom..valueTo)
         setValueInternal(target, fromUser)
     }
@@ -394,7 +400,7 @@ class OeSliderView @JvmOverloads constructor(
     }
 
     private fun startGlowIfVisible() {
-        if (!shouldAnimateGlow() || !ValueAnimator.areAnimatorsEnabled()) {
+        if (!shouldAnimateGlow() || !isOnScreen() || !ValueAnimator.areAnimatorsEnabled()) {
             stopGlow()
             return
         }
@@ -423,13 +429,27 @@ class OeSliderView @JvmOverloads constructor(
         windowVisibility == VISIBLE &&
         isEnabled
 
+    /**
+     * 容器裁切后的可见性：滚出屏幕的滑块仍然 attached/visible，单看那三个标志会
+     * 让 4s 流光继续以 60fps 唤醒 UI 线程（UI-05 的耗电红线）。
+     */
+    private fun isOnScreen(): Boolean = isAttachedToWindow && getLocalVisibleRect(visibleRect)
+
+    /** 滚动/布局后重新裁决：进屏启动，出屏停表。 */
+    private fun syncGlow() {
+        if (isOnScreen()) startGlowIfVisible() else stopGlow()
+    }
+
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         resolveThemeColors()
-        startGlowIfVisible()
+        viewTreeObserver.addOnScrollChangedListener(scrollListener)
+        // 首帧布局前 getLocalVisibleRect 还没有结果，布局完成后再裁决一次。
+        post { syncGlow() }
     }
 
     override fun onDetachedFromWindow() {
+        viewTreeObserver.removeOnScrollChangedListener(scrollListener)
         stopGlow()
         scaleAnimator?.cancel()
         super.onDetachedFromWindow()
