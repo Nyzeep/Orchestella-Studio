@@ -68,6 +68,8 @@ import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Shapes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
+import io.github.nyzeep.orchestella.ui.shell.OeScaffold
+import io.github.nyzeep.orchestella.ui.shell.oeCardShape
 import java.util.Locale
 
 /** 页面级几何常量；语义与命中区断言直接读这里。 */
@@ -119,74 +121,70 @@ fun DistrosScreen(
     val animationMillis = motion.pageFade.durationMillis
     val expansionEasing = motion.pageFade.easing
 
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(DistrosSpec.GRID_COLUMNS),
-        modifier = modifier
-            .fillMaxSize()
-            .background(colors.background.oe3Color())
-            .testTag("distros-grid"),
-        contentPadding = PaddingValues(
-            start = Oe3Spacing.pageInset,
-            end = Oe3Spacing.pageInset,
-            top = Oe3Spacing.xl,
-            bottom = LocalOe3PageBottomPadding.current,
-        ),
-        horizontalArrangement = Arrangement.spacedBy(Oe3Spacing.gridGap),
-        verticalArrangement = Arrangement.spacedBy(Oe3Spacing.gridGap),
+    OeScaffold(
+        title = stringResource(R.string.ui3_distros_title),
+        modifier = modifier,
     ) {
-        item(key = "header", span = { GridItemSpan(maxLineSpan) }) {
-            DistrosHeader()
-        }
-
-        if (state.distros.isEmpty()) {
-            item(key = "empty", span = { GridItemSpan(maxLineSpan) }) {
-                EmptyCatalogCard()
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(DistrosSpec.GRID_COLUMNS),
+            modifier = Modifier
+                .fillMaxSize()
+                .testTag("distros-grid"),
+            contentPadding = PaddingValues(
+                start = Oe3Spacing.pageInset,
+                end = Oe3Spacing.pageInset,
+                top = Oe3Spacing.xl,
+                bottom = LocalOe3PageBottomPadding.current,
+            ),
+            horizontalArrangement = Arrangement.spacedBy(Oe3Spacing.gridGap),
+            verticalArrangement = Arrangement.spacedBy(Oe3Spacing.gridGap),
+        ) {
+            item(key = "header", span = { GridItemSpan(maxLineSpan) }) {
+                DistrosHeader()
             }
-        } else {
-            items(items = state.distros, key = { it.id }) { distro ->
-                DistroGridCard(
-                    distro = distro,
-                    expanded = expandedId == distro.id,
-                    animationMillis = animationMillis,
-                    easing = expansionEasing,
-                    onToggle = { openId = DistrosAccordion.toggle(openId, distro.id) },
-                    onInstall = { actions.install(distro.id) },
-                )
-            }
-        }
 
-        val uml = state.uml
-        if (uml != null && uml.visible) {
-            item(key = "uml", span = { GridItemSpan(maxLineSpan) }) {
-                Column {
-                    Oe3SectionHeader(title = stringResource(R.string.ui3_distros_uml_section))
-                    UmlRootfsCard(uml = uml, onProvision = actions.provisionUmlRootfs)
+            if (state.distros.isEmpty()) {
+                item(key = "empty", span = { GridItemSpan(maxLineSpan) }) {
+                    EmptyCatalogCard()
+                }
+            } else {
+                items(items = state.distros, key = { it.id }) { distro ->
+                    DistroGridCard(
+                        distro = distro,
+                        expanded = expandedId == distro.id,
+                        animationMillis = animationMillis,
+                        easing = expansionEasing,
+                        onToggle = { openId = DistrosAccordion.toggle(openId, distro.id) },
+                        onInstall = { actions.install(distro.id) },
+                    )
+                }
+            }
+
+            val uml = state.uml
+            if (uml != null && uml.visible) {
+                item(key = "uml", span = { GridItemSpan(maxLineSpan) }) {
+                    Column {
+                        Oe3SectionHeader(title = stringResource(R.string.ui3_distros_uml_section))
+                        UmlRootfsCard(uml = uml, onProvision = actions.provisionUmlRootfs)
+                    }
                 }
             }
         }
     }
 }
 
+/** 页头只剩目录说明；标题已在 OeScaffold 顶栏（UI-02）。 */
 @Composable
 private fun DistrosHeader() {
     val colors = Oe3ThemeValues.colors
-    Column(
+    Text(
+        text = stringResource(R.string.ui3_distros_meta_line),
+        style = MetaTextStyle,
+        color = colors.onSurfaceVariant.oe3Color(),
         modifier = Modifier
             .fillMaxWidth()
             .padding(bottom = Oe3Spacing.xs),
-    ) {
-        Text(
-            text = stringResource(R.string.ui3_distros_title),
-            style = Oe3Typography.style(Oe3TextRole.PageTitle),
-            color = colors.onSurface.oe3Color(),
-        )
-        Spacer(Modifier.height(Oe3Spacing.xxs))
-        Text(
-            text = stringResource(R.string.ui3_distros_meta_line),
-            style = MetaTextStyle,
-            color = colors.onSurfaceVariant.oe3Color(),
-        )
-    }
+    )
 }
 
 @Composable
@@ -288,7 +286,7 @@ private fun DistroGridCard(
 
 @Composable
 private fun EmptyCatalogCard() {
-    Oe3Card(modifier = Modifier.fillMaxWidth()) {
+    Oe3Card(modifier = Modifier.fillMaxWidth(), shape = oeCardShape()) {
         Oe3EmptyState(
             title = stringResource(R.string.ui3_distros_empty_title),
             description = stringResource(R.string.ui3_distros_empty_body),
@@ -317,6 +315,7 @@ private fun UmlRootfsCard(uml: UmlRootfsUi, onProvision: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .testTag("uml-rootfs-card"),
+        shape = oeCardShape(),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Oe3Chip(label = stringResource(R.string.engine_uml_rootfs_tag), selected = true)
