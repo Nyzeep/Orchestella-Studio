@@ -40,7 +40,9 @@ import io.github.nyzeep.orchestella.ui.oe3.components.Oe3EmptyState
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3ListRow
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Ring
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3SectionHeader
+import io.github.nyzeep.orchestella.ui.oe3.components.OeCardHeader
 import io.github.nyzeep.orchestella.ui.oe3.components.oe3Color
+import io.github.nyzeep.orchestella.ui.oe3.components.oeCardTitleStyle
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3DistroIcons
 import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
 import io.github.nyzeep.orchestella.ui.screens.common.formatGigabytes
@@ -92,6 +94,12 @@ private val FigureTextStyle = TextStyle(
  *
  * v4（UI-02）：整页 `background` 与页内 30sp 标题已删除 —— 标题交给
  * [OeScaffold]，页面本体保持透明，壳层背景层才有机会露出来。
+ *
+ * v4（UI-04）：卡片标题画在卡内。存储卡与最近实例卡原先把标题画在卡外
+ * （`Oe3SectionHeader`），现改为卡内 `title` 槽（存储卡 20dp 内边距下直接
+ * 排 [oeCardTitleStyle] 文本，最近实例卡零内边距下排 [OeCardHeader]）；
+ * 指标分区标题服务两张指标卡这一组，是分组头，按设计系统的 section-header
+ * 规则保留在卡外。
  */
 @Composable
 fun DashboardScreen(
@@ -128,7 +136,7 @@ fun DashboardScreen(
                 )
             }
 
-            Oe3SectionHeader(title = stringResource(R.string.ui3_dashboard_section_storage))
+            Spacer(Modifier.height(Oe3Spacing.xxl))
             StorageCard(state = state.storage, onOpenSettings = actions.openStorageSettings)
 
             Oe3SectionHeader(title = stringResource(R.string.ui3_dashboard_section_metrics))
@@ -140,7 +148,7 @@ fun DashboardScreen(
                 color = colors.onSurfaceVariant.oe3Color(),
             )
 
-            Oe3SectionHeader(title = stringResource(R.string.ui3_dashboard_section_recent))
+            Spacer(Modifier.height(Oe3Spacing.xxl))
             RecentCard(state = state, onOpenInstance = actions.openInstance)
         }
     }
@@ -242,7 +250,19 @@ private fun StorageCard(state: DashboardStorageUi, onOpenSettings: () -> Unit) {
     val colors = Oe3ThemeValues.colors
     val usedText = formatGigabytes(state.usedBytes)
     val totalText = formatGigabytes(state.totalBytes)
-    Oe3Card(modifier = Modifier.fillMaxWidth(), shape = oeCardShape()) {
+    Oe3Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = oeCardShape(),
+        // v4（UI-04）：卡内标题。20dp 内边距下直接排标题文本，与环行同缩进。
+        title = {
+            Text(
+                text = stringResource(R.string.ui3_dashboard_section_storage),
+                style = oeCardTitleStyle(),
+                color = colors.onSurface.oe3Color(),
+            )
+        },
+    ) {
+        Spacer(Modifier.height(Oe3Spacing.xs))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Oe3Ring(
                 progress = state.fraction,
@@ -391,6 +411,10 @@ private fun RecentCard(state: DashboardUiState, onOpenInstance: (String) -> Unit
         modifier = Modifier.fillMaxWidth(),
         contentPadding = PaddingValues(0.dp),
         shape = oeCardShape(),
+        // v4（UI-04）：零内边距卡用 OeCardHeader 作卡内标题，16dp 与行对齐。
+        title = {
+            OeCardHeader(title = stringResource(R.string.ui3_dashboard_section_recent))
+        },
     ) {
         if (state.recent.isEmpty()) {
             Text(

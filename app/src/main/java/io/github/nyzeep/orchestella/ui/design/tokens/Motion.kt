@@ -34,6 +34,20 @@ object OeMotion {
     const val SPRING_DAMPING = 0.85f
     const val NAV_SELECTION_STIFFNESS = Spring.StiffnessMediumLow
 
+    // --- Card press timing (UI-04; reference press_surface 150/200/250/200) ---
+
+    /** Reveal delay: the wash waits this long before the tint starts fading in. */
+    const val CARD_PRESS_REVEAL_DELAY_MS = 150
+
+    /** Tint fade-in once the reveal delay has elapsed. */
+    const val CARD_PRESS_TINT_FADE_IN_MS = 200
+
+    /** Release settle: a wash that reached full ink retreats to rest over this. */
+    const val CARD_PRESS_RELEASE_MS = 250
+
+    /** Ink fade-out: a wash interrupted before it settled fades out over this. */
+    const val CARD_PRESS_INK_FADE_MS = 200
+
     const val CARD_ENTER_SCALE_FROM = 0.96f
     const val REDUCED_CARD_ENTER_SCALE_FROM = 1f
 
