@@ -15,11 +15,14 @@ import org.robolectric.annotation.Config
 import java.time.Duration
 
 /**
- * The Theme Studio preview owns its own [TerminalScreenModel] and feeds it text
- * through [ModernTerminalView.appendOutput]. That ingestion path must reach the
- * model in session mode too: the old `if (!sessionScreen)` guard in the flush
- * task silently dropped every chunk, which is why the preview rendered an
- * empty block.
+ * Two different writers share the session screen, and the view must keep them apart:
+ *
+ * - The Theme Studio preview owns its model, so [ModernTerminalView.appendSessionOutput]
+ *   writes the text into it (the old `if (!sessionScreen)` guard in the flush task made
+ *   `appendOutput` a no-op there, which is why the preview rendered an empty block).
+ * - The live shell shares its model with the session pool's pump, which appends every
+ *   chunk itself; [ModernTerminalView.appendOutput] is only a repaint request there and
+ *   must never append a second time.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35], qualifiers = "w412dp-h9000dp-mdpi")
@@ -33,22 +36,40 @@ class ModernTerminalViewSessionTest {
     }
 
     @Test
-    fun sessionModelReceivesAppendedOutput() {
+    fun appendSessionOutputWritesIntoTheSessionModel() {
         val view = ModernTerminalView(context)
         val model = TerminalScreenModel(80, 24)
         view.setSessionScreen(model)
-        view.appendOutput("hello session\r\nsecond line")
-
-        assertFalse(
-            "output must not be consumed before the throttled flush runs",
-            model.displaySnapshot().text().contains("hello session"),
-        )
-
-        idleMainLooper()
+        view.appendSessionOutput("hello session\r\nsecond line")
 
         val text = model.displaySnapshot().text()
         assertTrue("session model dropped the appended chunk: <$text>", text.contains("hello session"))
         assertTrue("session model dropped the second chunk line: <$text>", text.contains("second line"))
+    }
+
+    /**
+     * The live terminal shares its model with [PersistentTerminalSessionPool], which
+     * appends every PTY chunk itself; TerminalActivity then forwards the chunk to
+     * [ModernTerminalView.appendOutput] only to request a repaint. Appending there again
+     * would duplicate every line of real shell output.
+     */
+    @Test
+    fun appendOutputInSessionModeRepaintsWithoutDuplicatingTheSharedModel() {
+        val view = ModernTerminalView(context)
+        val model = TerminalScreenModel(80, 24)
+        // What the session pool's pump loop already did before the view hears about it.
+        model.append("from the pty pump\r\n")
+        view.setSessionScreen(model)
+
+        view.appendOutput("from the pty pump\r\n")
+        idleMainLooper()
+
+        val text = model.displaySnapshot().text()
+        assertEquals(
+            "session-mode appendOutput must be a render tick, not a second write: <$text>",
+            1,
+            Regex("from the pty pump").findAll(text).count(),
+        )
     }
 
     @Test
@@ -61,9 +82,7 @@ class ModernTerminalViewSessionTest {
         view.layout(0, 0, 1080, 1600)
         val model = TerminalScreenModel(80, 24)
         view.setSessionScreen(model)
-        view.appendOutput("\u001b[32mcolor-band\u001b[0m\r\n")
-
-        idleMainLooper()
+        view.appendSessionOutput("\u001b[32mcolor-band\u001b[0m\r\n")
 
         val rendered = view.getChildAt(0) as android.widget.TextView
         assertTrue(

@@ -390,16 +390,38 @@ public class ModernTerminalView extends ScrollView {
         if (flushScheduled.compareAndSet(false, true)) mainHandler.postDelayed(flushTask, FLUSH_INTERVAL_MS);
     }
 
+    /**
+     * Writes text that this view itself owns into the session model and repaints.
+     *
+     * This is the preview's entry point: Theme Studio hands the view a model that no
+     * PTY pump feeds, so the text must land in the model rather than ride the
+     * {@link #appendOutput(String)} render-tick path (which deliberately does not append
+     * while {@code sessionScreen} is true — the pool already owns that model).
+     * A no-op outside session mode, so it can never double-write a live shell.
+     */
+    public void appendSessionOutput(String text) {
+        if (text == null || text.isEmpty()) return;
+        Runnable append = () -> {
+            if (!sessionScreen) return;
+            screen.append(text);
+            renderScreen();
+        };
+        if (Looper.myLooper() == Looper.getMainLooper()) append.run();
+        else mainHandler.post(append);
+    }
+
     private void flushPendingOutput() {
         flushScheduled.set(false);
         String chunk;
         boolean changed = false;
         while ((chunk = pendingChunks.poll()) != null) {
-            // Session screens (Theme Studio preview) own the model handed to
-            // setSessionScreen and receive their text through this same queue. The old
-            // !sessionScreen guard dropped every chunk there, leaving the preview blank.
-            // The PTY path (sessionScreen == false) is unchanged.
-            screen.append(chunk);
+            // Session screens share a model that their owner already writes to:
+            // PersistentTerminalSessionPool.pumpLoop() appends every PTY chunk to the
+            // same TerminalScreenModel handed to setSessionScreen(), and TerminalActivity
+            // forwards the chunk here only to request a repaint. Appending again would
+            // duplicate the live shell output, so session mode stays a render tick.
+            // Owned screens (sessionScreen == false) still ingest the text here.
+            if (!sessionScreen) screen.append(chunk);
             changed = true;
         }
         if (changed) renderScreen();

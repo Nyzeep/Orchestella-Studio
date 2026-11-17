@@ -116,7 +116,10 @@ fun TerminalPreview(
         terminal.setSessionScreen(
             TerminalScreenModel(ThemeStudioSpec.terminalColumns, ThemeStudioSpec.terminalRows),
         )
-        terminal.appendOutput(session.render(theme))
+        // The preview owns this model, so the text must be written into it. appendOutput
+        // is a render tick only: the live PTY path shares a model the session pool has
+        // already appended to, and appending there again would duplicate its output.
+        terminal.appendSessionOutput(session.render(theme))
     }
 
     fun submit() {
