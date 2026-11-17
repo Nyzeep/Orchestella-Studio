@@ -1,10 +1,9 @@
 package io.github.nyzeep.orchestella.ui.oe3.tokens
 
-import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Easing
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.SpringSpec
 import androidx.compose.runtime.Immutable
+import io.github.nyzeep.orchestella.ui.design.tokens.OeMotion
 
 /**
  * One motion rule. [dampingRatio] is non-zero only for spring-driven
@@ -34,29 +33,26 @@ data class Oe3MotionTokens(
 )
 
 /**
- * Oe3 motion scale. [reduced] is the global "reduce motion" result: every
- * duration becomes 0 and the navigation spring is withdrawn, so state changes
- * land instantly while the token shape stays identical for call sites.
+ * Legacy Compose entry point for the motion scale. Every number and curve comes
+ * from [OeMotion] (`ui/design/tokens`, UI-01); this object only shapes them into
+ * the tokens the shell consumes. [reduced] is the global "reduce motion"
+ * result: every duration becomes 0 and the navigation spring is withdrawn, so
+ * state changes land instantly while the token shape stays identical.
  */
 object Oe3Motion {
 
-    private val standard = CubicBezierEasing(0.2f, 0f, 0f, 1f)
-    private val decelerate = CubicBezierEasing(0f, 0f, 0f, 1f)
-    private val easeInOut = CubicBezierEasing(0.4f, 0f, 0.2f, 1f)
-    private val easeOutCubic = CubicBezierEasing(0.215f, 0.61f, 0.355f, 1f)
-
     fun standard(): Oe3MotionTokens = Oe3MotionTokens(
-        navSelection = Oe3MotionSpec(400, standard, dampingRatio = 0.85f),
-        press = Oe3MotionSpec(250, decelerate, dampingRatio = 0.85f),
-        pageFade = Oe3MotionSpec(220, easeInOut),
-        pageSlide = Oe3MotionSpec(300, decelerate),
-        cardEnter = Oe3MotionSpec(300, decelerate),
-        dialog = Oe3MotionSpec(250, easeOutCubic),
-        themeTween = Oe3MotionSpec(300, standard),
-        cardEnterScaleFrom = 0.96f,
+        navSelection = Oe3MotionSpec(OeMotion.NAV_SELECTION_MS, OeMotion.standardEasing, dampingRatio = OeMotion.SPRING_DAMPING),
+        press = Oe3MotionSpec(OeMotion.PRESS_MS, OeMotion.decelerateEasing, dampingRatio = OeMotion.SPRING_DAMPING),
+        pageFade = Oe3MotionSpec(OeMotion.PAGE_FADE_MS, OeMotion.easeInOutEasing),
+        pageSlide = Oe3MotionSpec(OeMotion.PAGE_SLIDE_MS, OeMotion.decelerateEasing),
+        cardEnter = Oe3MotionSpec(OeMotion.CARD_ENTER_MS, OeMotion.decelerateEasing),
+        dialog = Oe3MotionSpec(OeMotion.DIALOG_MS, OeMotion.easeOutCubicEasing),
+        themeTween = Oe3MotionSpec(OeMotion.THEME_TWEEN_MS, OeMotion.standardEasing),
+        cardEnterScaleFrom = OeMotion.CARD_ENTER_SCALE_FROM,
         navSelectionSpring = SpringSpec(
-            dampingRatio = 0.85f,
-            stiffness = Spring.StiffnessMediumLow,
+            dampingRatio = OeMotion.SPRING_DAMPING,
+            stiffness = OeMotion.NAV_SELECTION_STIFFNESS,
         ),
     )
 
@@ -71,7 +67,7 @@ object Oe3Motion {
             cardEnter = base.cardEnter.instant(),
             dialog = base.dialog.instant(),
             themeTween = base.themeTween.instant(),
-            cardEnterScaleFrom = 1f,
+            cardEnterScaleFrom = OeMotion.REDUCED_CARD_ENTER_SCALE_FROM,
             navSelectionSpring = null,
         )
     }

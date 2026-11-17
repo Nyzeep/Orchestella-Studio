@@ -1,5 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
+  LEGACY (UI-01, 2026-11-17): this file is the pre-Oe3 XML token mirror and is
+  no longer a source of truth. Compose geometry/typography tokens live in
+  `ui/design/tokens` (OeShape / OeSpacing / OeType / OeMotion). The dims below
+  survive only for the remaining View-system screens; treat them as frozen and
+  delete this file once those screens migrate to Compose.
+  Migration complete → delete this file.
+-->
+<!--
   B-lane (round 2026-11-09) design tokens, oe_-prefixed, continuing the
   oe_motion_tokens.xml naming convention. XML carries the static geometry /
   typography tokens; color tokens stay derived in ThemeColors (hairline family)

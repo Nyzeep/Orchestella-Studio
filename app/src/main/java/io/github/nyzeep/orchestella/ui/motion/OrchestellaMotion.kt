@@ -5,6 +5,7 @@ import android.view.ViewGroup
 import android.view.animation.PathInterpolator
 import androidx.core.view.OneShotPreDrawListener
 import androidx.core.view.children
+import io.github.nyzeep.orchestella.ui.design.tokens.OeMotion
 
 /**
  * Round 2026-11-07 Lane B: View-system motion helpers matching the XML token
@@ -57,44 +58,58 @@ import androidx.core.view.children
  */
 object OrchestellaMotion {
 
-    // Values were originally mirrored from res/values/oe_motion_tokens.xml;
-    // the UI3 cleanup removed the XML aliases that had no View-system
-    // consumers, so these constants are now the code-side source for the
-    // legacy animation hooks (no re-inflating animations from XML).
-    const val DURATION_ENTER_MS = 300
-    const val DURATION_EXIT_MS = 150           // = oe_motion_duration_short3
-    const val DURATION_ACTIVITY_ENTER_MS = 210 // = oe_motion_duration_emphasized_enter
+    // Values come from the single motion source (ui/design/tokens/Motion.kt,
+    // UI-01). The names stay here because the legacy View hooks import them;
+    // they are compile-time aliases, not a second set of numbers.
+    const val DURATION_ENTER_MS = OeMotion.VIEW_ENTER_MS
+    const val DURATION_EXIT_MS = OeMotion.VIEW_EXIT_MS
+    const val DURATION_ACTIVITY_ENTER_MS = OeMotion.VIEW_ACTIVITY_ENTER_MS
 
     // Lane D (2026-11-10) semantic duration aliases.
-    const val DURATION_CONTAINER_TRANSFORM_MS = 500
-    const val DURATION_DIALOG_ENTER_MS = 250
-    const val DURATION_DIALOG_EXIT_MS = 150
-    const val DURATION_LIST_ITEM_ENTER_MS = 300
-    const val DURATION_LIST_ITEM_REORDER_MS = 250
+    const val DURATION_CONTAINER_TRANSFORM_MS = OeMotion.VIEW_CONTAINER_TRANSFORM_MS
+    const val DURATION_DIALOG_ENTER_MS = OeMotion.VIEW_DIALOG_ENTER_MS
+    const val DURATION_DIALOG_EXIT_MS = OeMotion.VIEW_DIALOG_EXIT_MS
+    const val DURATION_LIST_ITEM_ENTER_MS = OeMotion.VIEW_LIST_ITEM_ENTER_MS
+    const val DURATION_LIST_ITEM_REORDER_MS = OeMotion.VIEW_LIST_ITEM_REORDER_MS
 
     // Lane D (2026-11-10) stagger rhythm tokens (UI3 cleanup moved them
     // code-side only). Also consumed by the pure [staggeredDelayMs].
-    const val STAGGER_LIST_ITEM_MS = 40
-    const val STAGGER_LIST_MAX_STEPS = 5
-    const val STAGGER_SECTION_MS = 45
+    const val STAGGER_LIST_ITEM_MS = OeMotion.VIEW_STAGGER_LIST_ITEM_MS
+    const val STAGGER_LIST_MAX_STEPS = OeMotion.VIEW_STAGGER_LIST_MAX_STEPS
+    const val STAGGER_SECTION_MS = OeMotion.VIEW_STAGGER_SECTION_MS
 
     // Existing press-feedback / ambient-loop durations, previously bare
     // literals at their call sites (session 19 press tuning, dashboard
     // breathing); now token-named. Press-in/out land on the M3 short scale
     // (short3 survives in XML), the breathing cycle on extra_long4.
-    const val DURATION_PRESS_IN_MS = 100
-    const val DURATION_PRESS_OUT_MS = 150      // = oe_motion_duration_short3
-    const val DURATION_BREATH_CYCLE_MS = 1000
+    const val DURATION_PRESS_IN_MS = OeMotion.VIEW_PRESS_IN_MS
+    const val DURATION_PRESS_OUT_MS = OeMotion.VIEW_PRESS_OUT_MS
+    const val DURATION_BREATH_CYCLE_MS = OeMotion.VIEW_BREATH_CYCLE_MS
 
     // Mirror of res/anim/oe_emphasized_decelerate.xml (0.05, 0.7, 0.1, 1.0).
-    private val emphasizedDecelerate = PathInterpolator(0.05f, 0.7f, 0.1f, 1.0f)
+    private val emphasizedDecelerate = PathInterpolator(
+        OeMotion.EMPHASIZED_DECELERATE_X1,
+        OeMotion.EMPHASIZED_DECELERATE_Y1,
+        OeMotion.EMPHASIZED_DECELERATE_X2,
+        OeMotion.EMPHASIZED_DECELERATE_Y2,
+    )
 
     // Mirror of res/anim/oe_standard_accelerate.xml (0.3, 0, 1, 1).
-    private val standardAccelerate = PathInterpolator(0.3f, 0.0f, 1.0f, 1.0f)
+    private val standardAccelerate = PathInterpolator(
+        OeMotion.STANDARD_ACCELERATE_X1,
+        OeMotion.STANDARD_ACCELERATE_Y1,
+        OeMotion.STANDARD_ACCELERATE_X2,
+        OeMotion.STANDARD_ACCELERATE_Y2,
+    )
 
     // Mirror of res/anim/oe_standard.xml (0.2, 0, 0, 1) — the utilitarian M3
     // default for content that arrives without a directional gesture.
-    private val standard = PathInterpolator(0.2f, 0.0f, 0.0f, 1.0f)
+    private val standard = PathInterpolator(
+        OeMotion.STANDARD_X1,
+        OeMotion.STANDARD_Y1,
+        OeMotion.STANDARD_X2,
+        OeMotion.STANDARD_Y2,
+    )
 
     /** In-place content state enter: fade + short rise, hardware layer. */
     fun stateChangeEnter(view: View) {
@@ -263,13 +278,13 @@ object OrchestellaMotion {
         }
     }
 
-    private const val RISE_FRACTION_STATE = 0.02f
+    private const val RISE_FRACTION_STATE = OeMotion.VIEW_RISE_FRACTION_STATE
 
     /** List rise matches oe_list_item_enter's 4% vocabulary, item-relative. */
-    private const val RISE_FRACTION_LIST = 0.04f
+    private const val RISE_FRACTION_LIST = OeMotion.VIEW_RISE_FRACTION_LIST
 
     /** Dashboard scale-settle start point (sub-perceptual at a glance, present on arrival). */
-    private const val SCALE_FRACTION_DASHBOARD = 0.975f
+    private const val SCALE_FRACTION_DASHBOARD = OeMotion.VIEW_SCALE_FROM_DASHBOARD
 }
 
 /**

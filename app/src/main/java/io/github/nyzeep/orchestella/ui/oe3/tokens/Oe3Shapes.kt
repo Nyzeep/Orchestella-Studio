@@ -1,26 +1,29 @@
 package io.github.nyzeep.orchestella.ui.oe3.tokens
 
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.unit.dp
+import io.github.nyzeep.orchestella.ui.design.tokens.OeShape
 
 /**
- * Oe3 corner ladder. Structure is expressed by surface tone, never by an
- * outline, so these radii carry all of the shape language.
+ * Legacy entry point for the corner ladder. The values live in
+ * [OeShape] (`ui/design/tokens`) since UI-01; this object only delegates so
+ * existing call sites keep their names and numbers unchanged.
  *
  * [groupedOuter] / [groupedInner] encode the grouped-list rule: one clipped
  * container with the outer radius, rows themselves stay square.
  */
 object Oe3Shapes {
-    val xs = 8.dp
-    val sm = 12.dp
-    val md = 16.dp
-    val lg = 20.dp
-    val xl = 24.dp
+    val xs = OeShape.xs
+    val sm = OeShape.sm
+    val md = OeShape.md
+    val lg = OeShape.lg
+    val xl = OeShape.xl
 
-    val groupedOuter = xl
-    val groupedInner = 0.dp
+    /** v4 dialog radius, forwarded from the single source. */
+    val alert = OeShape.alert
+
+    val groupedOuter = OeShape.groupedOuter
+    val groupedInner = OeShape.groupedInner
 
     /** A true capsule for the floating bar, action bubbles and switches. */
-    val pill: Shape = RoundedCornerShape(percent = 50)
+    val pill: Shape = OeShape.pill
 }
