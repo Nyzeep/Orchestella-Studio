@@ -13,7 +13,8 @@
   removed the aliases and off-scale tokens that only served legacy View
   animations deleted with the old shell; their values now live in
   ui/motion/OrchestellaMotion.kt next to their consumers. What survives here
-  is the XML-referenced subset (short3, emphasized enter). M3 scale reference:
+  is the XML-referenced subset (short3, emphasized enter, and the two UI-07
+  dialog durations). M3 scale reference:
     https://m3.material.io/styles/motion/easing-and-duration/tokens-specs
 -->
 <resources>
@@ -22,4 +23,11 @@
 
     <!-- Session 19 tuned value: activity emphasized enter/close-enter. -->
     <integer name="oe_motion_duration_emphasized_enter">210</integer>
+
+    <!-- UI-07: floating-layer windows (AppCompat/Material dialogs, bottom
+         sheets). Mirrors OeMotion.DIALOG_MS (the Compose dialog token) and
+         OeMotion.VIEW_DIALOG_EXIT_MS, so both halves of the app settle the
+         same overlay on the same clock. -->
+    <integer name="oe_motion_duration_dialog_enter">250</integer>
+    <integer name="oe_motion_duration_dialog_exit">150</integer>
 </resources>
