@@ -395,7 +395,11 @@ public class ModernTerminalView extends ScrollView {
         String chunk;
         boolean changed = false;
         while ((chunk = pendingChunks.poll()) != null) {
-            if (!sessionScreen) screen.append(chunk);
+            // Session screens (Theme Studio preview) own the model handed to
+            // setSessionScreen and receive their text through this same queue. The old
+            // !sessionScreen guard dropped every chunk there, leaving the preview blank.
+            // The PTY path (sessionScreen == false) is unchanged.
+            screen.append(chunk);
             changed = true;
         }
         if (changed) renderScreen();

@@ -1,5 +1,6 @@
 package io.github.nyzeep.orchestella.ui.screens.theme
 
+import android.graphics.Bitmap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -82,12 +84,17 @@ fun TerminalPreview(
     cursorBlink: Boolean,
     modifier: Modifier = Modifier,
     renderAndroidView: Boolean = true,
+    backgroundUri: String? = null,
+    scrimColor: Color = Color(theme.terminalBackground),
 ) {
     val session = remember { FakeTerminalShell() }
     var input by remember { mutableStateOf("") }
     var historyCursor by remember { mutableIntStateOf(-1) }
     var replayKey by remember { mutableIntStateOf(0) }
     var view by remember { mutableStateOf<ModernTerminalView?>(null) }
+    // Decoded once per URI, off the main thread; a revoked grant falls back to
+    // the solid terminal color and only shows an in-preview hint.
+    val background by rememberTerminalBackground(backgroundUri)
 
     LaunchedEffect(theme, renderAndroidView) {
         // The parser resolves ANSI through this static palette; refresh it
@@ -137,8 +144,21 @@ fun TerminalPreview(
                     letterSpacingEm = letterSpacingEm,
                     lineSpacingPx = lineSpacingPx,
                     cursorBlink = cursorBlink,
+                    background = background,
+                    scrimColor = scrimColor,
                     onCreated = { view = it },
                 )
+                if (background is TerminalBackgroundState.Failed) {
+                    Text(
+                        text = stringResource(R.string.ui3_theme_terminal_background_failed),
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(8.dp)
+                            .testTag("theme-terminal:bg-failed"),
+                        style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, lineHeight = 13.sp),
+                        color = Color(theme.terminalForeground),
+                    )
+                }
             } else {
                 TerminalPaletteSketch(
                     theme = theme,
@@ -192,10 +212,16 @@ private fun AndroidTerminal(
     letterSpacingEm: Float,
     lineSpacingPx: Float,
     cursorBlink: Boolean,
+    background: TerminalBackgroundState,
+    scrimColor: Color,
     onCreated: (ModernTerminalView) -> Unit,
 ) {
     val configuration = LocalConfiguration.current
     val density = LocalDensity.current
+    // Which bitmap the native view already holds. A plain holder, not Compose
+    // state: re-applying the same drawable on every recomposition is wasted work.
+    val applied = remember { AppliedTerminalBackground() }
+    val scrimArgb = scrimColor.toArgb()
     // The preview is a 1:1 crop of the real 80x24 view, not a fit-to-box
     // miniature: scaling the whole grid down would cancel every font-size,
     // letter-spacing and line-spacing change the sliders make. The view is
@@ -217,18 +243,37 @@ private fun AndroidTerminal(
                     setTerminalInputEnabled(false)
                     setCursorBlinkEnabled(cursorBlink)
                     applyTheme(theme, fontSizeSp, letterSpacingEm, lineSpacingPx)
+                    applied.bitmap = null
                     onCreated(this)
                 }
             },
             update = { terminal ->
                 terminal.applyTheme(theme, fontSizeSp, letterSpacingEm, lineSpacingPx)
                 terminal.setCursorBlinkEnabled(cursorBlink)
+                val bitmap = (background as? TerminalBackgroundState.Loaded)?.bitmap
+                when {
+                    // Revoked grant / corrupt file: keep the solid terminal color.
+                    bitmap == null -> if (applied.bitmap != null) {
+                        terminal.clearTerminalBackgroundImage(theme.terminalBackground)
+                        applied.bitmap = null
+                    }
+                    applied.bitmap !== bitmap -> {
+                        terminal.setTerminalBackgroundImage(bitmap, scrimArgb)
+                        applied.bitmap = bitmap
+                    }
+                }
+                terminal.setTerminalScrimColor(scrimArgb)
             },
             modifier = Modifier
                 .requiredWidth(naturalWidth)
                 .requiredHeight(naturalHeight),
         )
     }
+}
+
+/** Bitmap currently installed on the native view; identity check avoids redundant redraws. */
+private class AppliedTerminalBackground {
+    var bitmap: Bitmap? = null
 }
 
 @Composable

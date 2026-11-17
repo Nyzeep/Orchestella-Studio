@@ -435,4 +435,5 @@
     <string name="toast_port_forwarding_open_failed">无法打开端口转发。请重试；若持续失败请查看应用运行日志</string>
     <string name="toast_operation_failed">操作失败。请重试；若持续失败请查看应用运行日志</string>
     <string name="toast_instance_read_failed">读取实例失败。请重试；若持续失败请查看应用运行日志</string>
+    <string name="ui3_theme_terminal_background_failed">背景图无法读取，已回退为纯色显示；可重新选择图片</string>
 </resources>
