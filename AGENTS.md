@@ -34,7 +34,7 @@ Orchestella Studio（曾用工作名 DroidLayer）：无需 Root 的 Android 原
 
 ### Domain docs
 
-single-context：根目录 `CONTEXT.md` + `docs/adr/`。见 `docs/agents/domain.md`。
+single-context：根目录 `GLOSSARY.md`（原名 `CONTEXT.md`）+ `docs/adr/`。见 `docs/agents/domain.md`。
 
 ## 零设备本地验证命令
 
