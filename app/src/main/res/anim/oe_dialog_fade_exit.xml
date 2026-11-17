@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- UI-07: Material alert dialog exit. Same fade-out shape as the library's
+     m3_motion_fade_exit (emphasized accelerate); duration comes from
+     OeMotion.VIEW_DIALOG_EXIT_MS so the View dialog vocabulary stays intact. -->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:duration="@integer/oe_motion_duration_dialog_exit"
+    android:interpolator="@anim/oe_emphasized_accelerate"
+    android:shareInterpolator="true">
+    <alpha
+        android:fromAlpha="1.0"
+        android:toAlpha="0.0" />
+</set>

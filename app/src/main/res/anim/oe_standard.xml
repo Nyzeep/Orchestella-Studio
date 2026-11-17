@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- UI-07: Material 3 "emphasized" easing (cubic-bezier 0.2, 0, 0, 1).
+     This is the curve the Material library uses for floating-layer windows
+     (m3_sys_motion_easing_emphasized); it lives here again because the dialog
+     and bottom-sheet window animations reference it, and because
+     OrchestellaMotion's KDoc already names this file as the mirror of the
+     (0.2, 0, 0, 1) control points in OeMotion.STANDARD_*. -->
+<pathInterpolator xmlns:android="http://schemas.android.com/apk/res/android"
+    android:controlX1="0.2"
+    android:controlY1="0.0"
+    android:controlX2="0.0"
+    android:controlY2="1.0" />
