@@ -24,6 +24,9 @@ object Oe3Sizes {
     /** WCAG 2.5.5 / Material minimum; every interactive primitive meets it. */
     val minTouchTarget = 48.dp
 
+    /** Visual-only minimum: spec §2.2 allows 44dp drawn size; hit area is still floored to 48dp by [interactiveMinHeight]. */
+    val interactiveVisual = 44.dp
+
     val button = 48.dp
     val chip = 32.dp
 

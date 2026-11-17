@@ -82,6 +82,18 @@ class Oe3GeometryTest {
     }
 
     @Test
+    fun visualMinimumIs44dpButTheHitFloorStaysAt48dp() {
+        assertEquals(44.dp, Oe3Sizes.interactiveVisual)
+        // Spec §2.2: the drawn size may be 44dp, but the hit area is still
+        // floored to the 48dp touch target via interactiveMinHeight().
+        assertTrue(
+            "visual minimum must stay below the touch target",
+            Oe3Sizes.interactiveVisual < Oe3Sizes.minTouchTarget,
+        )
+        assertEquals(48.dp, Oe3Sizes.interactiveMinHeight(Oe3Sizes.interactiveVisual))
+    }
+
+    @Test
     fun navigationBarUsesItsLabelGapAndSafeBottomInset() {
         assertEquals(2.dp, Oe3Sizes.navIconLabelGap)
         assertEquals(21.dp, Oe3Sizes.navBottomInset(0.dp))
