@@ -1,8 +1,7 @@
 package io.github.nyzeep.orchestella.ui.oe3.components
 
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.TweenSpec
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -18,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -32,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import io.github.nyzeep.orchestella.ui.oe3.theme.LocalOe3CornerRadius
+import io.github.nyzeep.orchestella.ui.design.tokens.OeMotion
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Shapes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
@@ -51,7 +52,13 @@ object Oe3CardSpec {
 
 /**
  * The canonical Oe3 card: one tonal surface, 24dp corners, no outline and no
- * depth effect. Press feedback is a 10% ink wash, not a moving shadow.
+ * depth effect.
+ *
+ * Press feedback (v4/UI-04) is the 10% ink wash on the spec clock: a 150ms
+ * reveal delay, a 200ms tint fade-in, a 250ms release settle and a 200ms fade
+ * for a wash interrupted before it settled — every duration comes from
+ * [OeMotion], reduced motion collapses all of them through the injected
+ * `motion.press` token.
  *
  * [title] renders inside the card as the first row (v4: a card's title lives
  * in the card, never as an outside section label). It participates in
@@ -79,22 +86,31 @@ fun Oe3Card(
     val press = Oe3ThemeValues.motion.press
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val pressFraction by animateFloatAsState(
-        targetValue = if (pressed) 1f else 0f,
-        animationSpec = if (press.durationMillis == 0) {
-            tween(0)
-        } else {
-            spring(
-                dampingRatio = press.dampingRatio.coerceAtLeast(0.1f),
-                stiffness = Spring.StiffnessMediumLow,
+    val pressFraction = remember { Animatable(0f) }
+    LaunchedEffect(pressed) {
+        val spec: TweenSpec<Float> = when {
+            // Reduced motion lands instantly (token-driven zero duration).
+            press.durationMillis == 0 -> tween(durationMillis = 0)
+            pressed -> tween(
+                durationMillis = OeMotion.CARD_PRESS_TINT_FADE_IN_MS,
+                delayMillis = OeMotion.CARD_PRESS_REVEAL_DELAY_MS,
+                easing = OeMotion.decelerateEasing,
             )
-        },
-        label = "oe3CardPress",
-    )
+            pressFraction.value >= 1f -> tween(
+                durationMillis = OeMotion.CARD_PRESS_RELEASE_MS,
+                easing = OeMotion.decelerateEasing,
+            )
+            else -> tween(
+                durationMillis = OeMotion.CARD_PRESS_INK_FADE_MS,
+                easing = OeMotion.decelerateEasing,
+            )
+        }
+        pressFraction.animateTo(if (pressed) 1f else 0f, spec)
+    }
     val fill = lerp(
         colors.surface.oe3Color(),
         ThemeColors.pressedFill(colors.surface, colors.onSurface).oe3Color(),
-        pressFraction,
+        pressFraction.value,
     )
 
     Column(
