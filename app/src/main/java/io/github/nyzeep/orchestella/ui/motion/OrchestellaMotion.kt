@@ -1,5 +1,6 @@
 package io.github.nyzeep.orchestella.ui.motion
 
+import android.animation.ValueAnimator
 import android.view.View
 import android.view.ViewGroup
 import android.view.animation.PathInterpolator
@@ -111,8 +112,30 @@ object OrchestellaMotion {
         OeMotion.STANDARD_Y2,
     )
 
+    /**
+     * Views animate only while the platform agrees to animate. With
+     * `ANIMATOR_DURATION_SCALE == 0` (Settings → Remove animations, battery
+     * saver) `areAnimatorsEnabled()` is false and every helper below lands its
+     * final state synchronously instead of starting from `alpha = 0f` and
+     * hoping an end frame arrives. Same signal the Compose half reads through
+     * `Oe3Motion.reduced()`.
+     */
+    private fun animationsEnabled(): Boolean = ValueAnimator.areAnimatorsEnabled()
+
+    /** The end state of every entry vocabulary: fully visible, no offset, no scale. */
+    private fun landVisible(view: View) {
+        view.alpha = 1f
+        view.translationY = 0f
+        view.scaleX = 1f
+        view.scaleY = 1f
+    }
+
     /** In-place content state enter: fade + short rise, hardware layer. */
     fun stateChangeEnter(view: View) {
+        if (!animationsEnabled()) {
+            landVisible(view)
+            return
+        }
         view.alpha = 0f
         OneShotPreDrawListener.add(view) {
             view.translationY = view.height * RISE_FRACTION_STATE
@@ -130,6 +153,10 @@ object OrchestellaMotion {
 
     /** In-place content state exit: short fade-out, no movement, hardware layer. */
     fun stateChangeExit(view: View) {
+        if (!animationsEnabled()) {
+            view.alpha = 0f
+            return
+        }
         view.animate()
             .withLayer()
             .alpha(0f)
@@ -152,6 +179,10 @@ object OrchestellaMotion {
         if (view.visibility != View.VISIBLE) {
             view.visibility = View.VISIBLE
         }
+        if (!animationsEnabled()) {
+            landVisible(view)
+            return
+        }
         view.alpha = 0f
         OneShotPreDrawListener.add(view) {
             view.translationY = -(view.height * RISE_FRACTION_STATE).coerceIn(0f, 24f)
@@ -169,6 +200,11 @@ object OrchestellaMotion {
 
     /** Collapse counterpart of [expandSection]: fade out, then caller may GONE it. */
     fun collapseSection(view: View, onEnd: () -> Unit = {}) {
+        if (!animationsEnabled()) {
+            view.alpha = 0f
+            onEnd()
+            return
+        }
         view.animate()
             .withLayer()
             .alpha(0f)
@@ -226,6 +262,10 @@ object OrchestellaMotion {
      * back to a code cascade when no XML controller is attached.
      */
     fun playSectionStagger(group: ViewGroup) {
+        if (!animationsEnabled()) {
+            group.children.forEach { child -> landVisible(child) }
+            return
+        }
         val childAnim = group.layoutAnimation?.animation
         if (childAnim == null) {
             group.children.forEachIndexed { index, child ->
@@ -252,6 +292,10 @@ object OrchestellaMotion {
         interpolator: android.view.animation.Interpolator,
         scaleFrom: Float = 1f,
     ) {
+        if (!animationsEnabled()) {
+            group.children.forEach { child -> landVisible(child) }
+            return
+        }
         group.children.forEachIndexed { index, child ->
             child.alpha = 0f
             OneShotPreDrawListener.add(child) {
