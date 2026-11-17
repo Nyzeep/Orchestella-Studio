@@ -197,6 +197,20 @@ class ThemeCustomizationTest {
         assertEquals(16, ThemeStore(prefs).cornerRadiusDp())
     }
 
+    @Test fun cornerRadiusOverrideStaysNullWhileTheShippedDefaultStands() {
+        val prefs = FakeSharedPreferences()
+        // 默认 = 不覆盖：Compose 卡片继续走 Oe3Shape.xl（24dp），不再被 16dp 按钮 token 拉低。
+        assertNull(ThemeStore(prefs).cornerRadiusDpOrNull())
+        // 显式选中「默认」也仍然是不覆盖，避免同一选项产生两种卡片半径。
+        ThemeStore(prefs).setCornerRadiusDp(ThemeStore.DEFAULT_CORNER_RADIUS_DP)
+        assertNull(ThemeStore(prefs).cornerRadiusDpOrNull())
+        // 其余取值（含遗留的直角 0）都是显式覆盖，卡片必须跟随。
+        ThemeStore(prefs).setCornerRadiusDp(8)
+        assertEquals(8, ThemeStore(prefs).cornerRadiusDpOrNull())
+        ThemeStore(prefs).setCornerRadiusDp(0)
+        assertEquals(0, ThemeStore(prefs).cornerRadiusDpOrNull())
+    }
+
     // --- E2: terminal background image keys ---
 
     @Test fun terminalBackgroundUriRejectsNonContentUris() {

@@ -455,7 +455,9 @@ class MainActivity : AppCompatActivity() {
             textScale = themeStore.textScaleFactor(),
             reduceMotion = !animatorsEnabled,
             glassEnabled = animatorsEnabled && powerManager?.isPowerSaveMode != true,
-            cornerRadiusDp = themeStore.cornerRadiusDp(),
+            // 默认 16dp 是遗留的按钮 token（见 ThemeStore.cornerRadiusDpOrNull）：传给
+            // Compose 壳层时按 null 处理，卡片才会落在 shape.md 的 24dp 阶梯上。
+            cornerRadiusDp = themeStore.cornerRadiusDpOrNull(),
             surfaceAlpha = OeAppBackgroundSpec.surfaceAlpha(themeStore.uiSurfaceOpacityPercent()),
             backgroundUri = themeStore.backgroundUri(),
         )
