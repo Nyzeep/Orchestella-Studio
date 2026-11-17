@@ -52,6 +52,7 @@ import io.github.nyzeep.orchestella.ui.oe3.components.Oe3SectionHeader
 import io.github.nyzeep.orchestella.ui.oe3.components.oe3Color
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icon
 import io.github.nyzeep.orchestella.ui.oe3.icons.Oe3Icons
+import io.github.nyzeep.orchestella.ui.oe3.motion.Oe3DialogEnterMotion
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Shapes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
@@ -475,7 +476,12 @@ private fun HardwareDetailsSheet(
         shape = RoundedCornerShape(topStart = Oe3Shapes.xl, topEnd = Oe3Shapes.xl),
         modifier = Modifier.testTag("hardware:details-sheet"),
     ) {
-        HardwareDetailsContent(groups = groups)
+        // 底部表也属 spec §2.5 的对话框/底部表事件面：sheet 本体的滑入仍是
+        // Material3 原生行为（不 fork），token 在内容层按 250ms easeOutCubic
+        // 播 fade + scale 0.96→1，减少动态时首帧即终态。
+        Oe3DialogEnterMotion {
+            HardwareDetailsContent(groups = groups)
+        }
     }
 }
 

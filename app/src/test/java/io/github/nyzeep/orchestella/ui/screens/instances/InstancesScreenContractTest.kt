@@ -1,5 +1,6 @@
 package io.github.nyzeep.orchestella.ui.screens.instances
 
+import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Motion
 import java.io.File
 import javax.xml.parsers.DocumentBuilderFactory
 import org.junit.Assert.assertEquals
@@ -85,6 +86,20 @@ class InstancesScreenContractTest {
         assertTrue(screen.contains("heightIn(min = InstancesSpec.headerActionHeight)"))
         // 下拉刷新接注入回调，不自己造刷新循环。
         assertTrue(screen.contains("onRefresh = actions.refresh"))
+    }
+
+    @Test
+    fun cardsEnterOnTheCardTokenExactlyOnce() {
+        val screen = File(sourceRoot, "InstancesScreen.kt").readText()
+        // 入场动画是页面消费点（components/card.md：卡原语不做入场动画），
+        // 且只在首屏播一次——滚动进来的卡片不得重播。
+        assertTrue(screen.contains("Oe3CardEnterMotion("))
+        assertTrue(screen.contains("rememberSaveable"))
+        // 防回退钉：300ms cardEnter + 0.96 scale-from，reduced 下 0ms / 1f。
+        assertEquals(300, Oe3Motion.standard().cardEnter.durationMillis)
+        assertEquals(0, Oe3Motion.reduced().cardEnter.durationMillis)
+        assertEquals(0.96f, Oe3Motion.standard().cardEnterScaleFrom, 0.0001f)
+        assertEquals(1f, Oe3Motion.reduced().cardEnterScaleFrom, 0.0001f)
     }
 
     @Test

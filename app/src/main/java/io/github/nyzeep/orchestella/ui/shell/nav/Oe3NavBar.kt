@@ -96,10 +96,14 @@ object Oe3NavPillSpec {
         stiffness = Spring.StiffnessMedium,
     )
 
-    /** Icon/label colour transition: the 220ms easeInOut page curve (spec §2.5). */
+    /**
+     * Icon/label colour transition: the 300ms standard themeTween colour
+     * curve (spec §2.5 主题切换行), instead of the page fade curve it
+     * borrowed before the token had a consumer.
+     */
     fun colorTransition(motion: Oe3MotionTokens) = tween<Color>(
-        durationMillis = motion.pageFade.durationMillis,
-        easing = motion.pageFade.easing,
+        durationMillis = motion.themeTween.durationMillis,
+        easing = motion.themeTween.easing,
     )
 
     const val PRESS_SCALE = 0.96f
@@ -120,7 +124,7 @@ private val FixedBarShape = RoundedCornerShape(
  * `Standard`/`Ultra` blur the content behind the bar through the shared
  * [glassState], and any environment without real blur renders the scrimmed
  * fallback. The selected pill now springs between cells, the icon/label
- * colours cross-fade on the 220ms page curve, and pressing a tab dips the
+ * colours cross-fade on the themeTween colour curve, and pressing a tab dips the
  * content on the ≈250ms press spring. Geometry, `Role.Tab` semantics and the
  * 48dp hit floor are owned here; [glassState] is optional so existing callers
  * (previews, goldens) keep compiling.

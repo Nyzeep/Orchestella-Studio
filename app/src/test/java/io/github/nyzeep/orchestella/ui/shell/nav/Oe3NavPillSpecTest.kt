@@ -63,10 +63,12 @@ class Oe3NavPillSpecTest {
     }
 
     @Test
-    fun theLabelColorTransitionIsThe220MillisecondPageCurve() {
+    fun theLabelColorTransitionIsTheThemeTweenColourCurve() {
         val tokens = Oe3Motion.standard()
-        assertEquals(220, Oe3NavPillSpec.colorTransition(tokens).durationMillis)
-        assertEquals(220, tokens.pageFade.durationMillis)
+        val transition = Oe3NavPillSpec.colorTransition(tokens)
+        assertEquals(300, transition.durationMillis)
+        assertEquals(tokens.themeTween.durationMillis, transition.durationMillis)
+        assertEquals(tokens.themeTween.easing, transition.easing)
         // Reduced motion: the same spec collapses to 0ms.
         assertEquals(0, Oe3NavPillSpec.colorTransition(Oe3Motion.reduced()).durationMillis)
     }

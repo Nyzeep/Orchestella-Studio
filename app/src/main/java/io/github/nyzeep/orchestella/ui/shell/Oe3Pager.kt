@@ -3,6 +3,7 @@ package io.github.nyzeep.orchestella.ui.shell
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Column
@@ -22,18 +23,59 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Card
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
+import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3MotionTokens
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Sizes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
 
 /**
- * Fade-only page container (ticket UI3-02 §4): no horizontal swipe, no shared
- * element, and the duration/easing comes from the Oe3 motion token so reduced
- * motion collapses it to 0ms.
+ * Pure mapping from the Oe3 motion tokens to the page transition curves
+ * (spec §2.5, ticket ZD-W1). The entering page fades on the pageFade curve
+ * and slides on the pageSlide curve; the leaving page keeps the plain fade.
+ * The spec pins duration and easing only — the slide distance is a quarter of
+ * the page width, kept subtle so the fade stays the leading motion.
+ */
+object Oe3PageTransitionSpec {
+
+    /** Slide distance as a fraction of the page width. */
+    const val SLIDE_DISTANCE_FRACTION = 0.25f
+
+    /** The 220ms easeInOut page fade, from the token. */
+    fun fade(motion: Oe3MotionTokens) = tween<Float>(
+        durationMillis = motion.pageFade.durationMillis,
+        easing = motion.pageFade.easing,
+    )
+
+    /** The 300ms decelerate page slide, from the token. */
+    fun slide(motion: Oe3MotionTokens) = tween<IntOffset>(
+        durationMillis = motion.pageSlide.durationMillis,
+        easing = motion.pageSlide.easing,
+    )
+
+    /**
+     * Travel direction between two tabs: +1 when the target tab sits to the
+     * right, -1 to the left, 0 when the tab does not change.
+     */
+    fun slideDirection(fromOrdinal: Int, toOrdinal: Int): Int =
+        (toOrdinal - fromOrdinal).coerceIn(-1, 1)
+
+    /** Start offset of the entering page, toward the direction of travel. */
+    fun slideOffsetX(pageWidth: Int, direction: Int): Int =
+        (pageWidth * SLIDE_DISTANCE_FRACTION).toInt() * direction
+}
+
+/**
+ * Page container (ticket UI3-02 §4, motion per spec §2.5): the entering page
+ * fades on the pageFade curve and slides in from the direction of the tab
+ * change on the pageSlide curve; the leaving page keeps the plain fade-out, so
+ * the existing fade semantics are preserved rather than stacked twice. No
+ * horizontal swipe, no shared element. Reduced motion collapses both tokens
+ * to 0ms through [Oe3ThemeValues.motion].
  *
  * UI3-12: [pages] carries the real screens wired by the host activity; `null`
  * keeps the placeholder page so previews and goldens render the bare shell.
@@ -47,7 +89,7 @@ fun Oe3Pager(
     navStyle: Oe3NavStyle = Oe3NavStyle.Floating,
     pages: Oe3Pages? = null,
 ) {
-    val fade = Oe3ThemeValues.motion.pageFade
+    val motion = Oe3ThemeValues.motion
     val systemBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val bottomReserve = pageBottomReserve(navStyle, systemBottom)
 
@@ -55,8 +97,19 @@ fun Oe3Pager(
         targetState = selected,
         modifier = modifier.fillMaxSize(),
         transitionSpec = {
-            fadeIn(tween(durationMillis = fade.durationMillis, easing = fade.easing)) togetherWith
-                fadeOut(tween(durationMillis = fade.durationMillis, easing = fade.easing))
+            val direction = Oe3PageTransitionSpec.slideDirection(
+                initialState.ordinal,
+                targetState.ordinal,
+            )
+            val enter = if (direction == 0) {
+                fadeIn(Oe3PageTransitionSpec.fade(motion))
+            } else {
+                fadeIn(Oe3PageTransitionSpec.fade(motion)) +
+                    slideInHorizontally(Oe3PageTransitionSpec.slide(motion)) { pageWidth ->
+                        Oe3PageTransitionSpec.slideOffsetX(pageWidth, direction)
+                    }
+            }
+            enter togetherWith fadeOut(Oe3PageTransitionSpec.fade(motion))
         },
         label = "oe3Pager",
     ) { tab ->
