@@ -9,9 +9,9 @@ import org.junit.Test
 
 /**
  * UI-01: the catalog is now preset-driven. Brightness variants pair through
- * `familyId`, so the handwritten `darkToLightMap` / `lightToDarkMap` tables are
- * gone. These tests assert the *behaviour* those tables used to provide, not
- * any replacement data structure.
+ * `familyId`, so the old handwritten dark/light lookup tables are gone. These
+ * tests assert the *behaviour* those tables used to provide, not any
+ * replacement data structure.
  */
 class ThemeFamilyPairingTest {
 
