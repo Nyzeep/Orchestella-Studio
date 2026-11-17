@@ -1,6 +1,7 @@
 package io.github.nyzeep.orchestella.ui.oe3.tokens
 
 import androidx.compose.animation.core.Easing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.SpringSpec
 import androidx.compose.runtime.Immutable
 import io.github.nyzeep.orchestella.ui.design.tokens.OeMotion
@@ -33,6 +34,12 @@ data class Oe3MotionTokens(
     val pagePush: Oe3MotionSpec,
     /** Starting scale of the card entrance; 1.0 under reduced motion. */
     val cardEnterScaleFrom: Float,
+    /**
+     * v4 (UI-09): edit-mode idle wiggle cycle. [Oe3MotionSpec.durationMillis] is
+     * the cycle length; pages drive sin/cos from the progress themselves. Zero
+     * under reduced motion, so cards stand still while editing.
+     */
+    val editWiggle: Oe3MotionSpec,
     /** Null under reduced motion, so the pill lands instead of springing. */
     val navSelectionSpring: SpringSpec<Float>?,
     /**
@@ -65,6 +72,7 @@ object Oe3Motion {
             dampingRatio = OeMotion.PAGE_PUSH_DAMPING,
         ),
         cardEnterScaleFrom = OeMotion.CARD_ENTER_SCALE_FROM,
+        editWiggle = Oe3MotionSpec(OeMotion.EDIT_WIGGLE_PERIOD_MS, LinearEasing),
         navSelectionSpring = SpringSpec(
             dampingRatio = OeMotion.SPRING_DAMPING,
             stiffness = OeMotion.NAV_SELECTION_STIFFNESS,
@@ -88,6 +96,7 @@ object Oe3Motion {
             themeTween = base.themeTween.instant(),
             pagePush = base.pagePush.instant(),
             cardEnterScaleFrom = OeMotion.REDUCED_CARD_ENTER_SCALE_FROM,
+            editWiggle = base.editWiggle.instant(),
             navSelectionSpring = null,
             pagePushSpring = null,
         )

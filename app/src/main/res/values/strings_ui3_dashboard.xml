@@ -33,7 +33,18 @@
     <string name="ui3_dashboard_section_recent">最近实例</string>
     <string name="ui3_dashboard_recent_empty">暂无其他实例</string>
 
+    <!-- v4（UI-09）：编辑工作台。动作语义写结果，不写图标名。 -->
+    <string name="ui3_dashboard_edit_title">编辑工作台</string>
+    <string name="ui3_dashboard_edit_enter">编辑卡片布局</string>
+    <string name="ui3_dashboard_edit_save">保存并退出编辑</string>
+    <string name="ui3_dashboard_edit_hide">隐藏此卡片</string>
+    <string name="ui3_dashboard_edit_restore_hint">点按恢复显示</string>
+    <string name="ui3_dashboard_edit_move_up">上移卡片</string>
+    <string name="ui3_dashboard_edit_move_down">下移卡片</string>
+    <string name="ui3_dashboard_card_primary">实例</string>
+
     <string name="ui3_dashboard_status_running">运行中</string>
+
     <string name="ui3_dashboard_status_provisioning">装配中</string>
     <string name="ui3_dashboard_status_stopped">已停止</string>
     <string name="ui3_dashboard_status_suspended">已挂起</string>

@@ -149,6 +149,20 @@ fun DashboardEmptyBlackLargePreview() {
     DashboardPreview(ThemeCatalog.moonshotDark, pureBlack = true, textScale = 1.3f, state = previewWithoutInstances)
 }
 
+// --- 编辑态（UI-09）-----------------------------------------------------
+
+@Preview(name = "Editing · Dark · 1.0x", group = "dashboard", widthDp = 393, heightDp = 1080, showBackground = true)
+@Composable
+fun DashboardEditingDarkPreview() {
+    Oe3Theme(theme = ThemeCatalog.moonshotDark, pureBlack = false, textScale = 1f) {
+        DashboardScreen(
+            state = previewWithInstances,
+            actions = DashboardActions(),
+            edit = DashboardEditState(store = null).apply { setEditing(true) },
+        )
+    }
+}
+
 // --- 非运行主卡（禁用终端 + 错误 chip）---------------------------------
 
 private fun primaryWith(status: DashboardStatus) = previewWithInstances.copy(

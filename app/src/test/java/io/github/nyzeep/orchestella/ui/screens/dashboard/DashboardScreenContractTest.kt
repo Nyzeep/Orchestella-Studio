@@ -1,5 +1,6 @@
 package io.github.nyzeep.orchestella.ui.screens.dashboard
 
+import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Sizes
 import io.github.nyzeep.orchestella.ui.screens.common.formatGigabytes
 import java.io.File
 import javax.xml.parsers.DocumentBuilderFactory
@@ -33,7 +34,10 @@ class DashboardScreenContractTest {
         val forbidden = listOf(
             "MaterialCardView",
             "strokeWidth",
-            "shadowElevation",
+            // UI-09：与 token 校验器同款规则——卡片不得用 Modifier.shadow 静态投影
+            // 表达层级（色阶负责层级）；拖起瞬态投影走 graphicsLayer.shadowElevation，
+            // 由 DashboardEditContractTest 钉死为全页仅一处。
+            "Modifier.shadow(",
             "01/",
             "ORCHESTELLA //",
             "电量",
@@ -63,12 +67,14 @@ class DashboardScreenContractTest {
 
         listOf(
             "Oe3Card(",
-            "Oe3SectionHeader(",
+            // UI-09：卡外分区标题退役，Oe3SectionHeader 不再是首页消费的原语。
             "Oe3Ring(",
             "Oe3DistroIcons.of(",
             "Oe3EmptyState(",
             "Oe3Button(",
             "Oe3ListRow(",
+            "Oe3Chip(",
+            "OeScaffoldAction(",
             "instance.status.labelRes",
         ).forEach { token ->
             assertTrue("DashboardScreen must use $token", screen.contains(token))
@@ -158,6 +164,16 @@ class DashboardScreenContractTest {
         assertEquals(120, DashboardSpec.ringDiameter.value.toInt())
         assertEquals(12, DashboardSpec.ringStroke.value.toInt())
         assertEquals(3, DashboardSpec.refreshSeconds)
+    }
+
+    @Test
+    fun specPinsTheEditModeGeometry() {
+        // UI-09 参考规格：28dp 圆形删除徽标 + 16dp 图标 + 48dp 命中区。
+        assertEquals(28, DashboardSpec.editBadgeVisual.value.toInt())
+        assertEquals(16, DashboardSpec.editBadgeIcon.value.toInt())
+        assertEquals(48, Oe3Sizes.minTouchTarget.value.toInt())
+        // 拖起投影是瞬态近似值（FlClash e2 的单层 elevation 近似）。
+        assertEquals(8, DashboardSpec.editDragElevation.value.toInt())
     }
 
     @Test

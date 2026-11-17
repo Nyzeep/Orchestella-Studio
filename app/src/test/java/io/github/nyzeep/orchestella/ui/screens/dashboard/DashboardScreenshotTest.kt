@@ -20,14 +20,16 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * 工作站页截图（UI3-11A 补录）：概览态（有实例）暗/亮各一张。
+ * 工作站页截图（UI3-11A 补录，UI-09 扩充）：概览态（有实例）暗/亮 + 编辑态
+ * 暗色，共三张。
  *
  * golden 收进 `src/test/screenshots/ui3/dashboard/`，命名与 UI3-06/08 的
  * `<state>-<mode>` 约定一致；样本为纯静态 [DashboardUiState] 字面量
  * （与 `DashboardPreviews.kt` 的「有实例」矩阵同源，仅把示例实例 id
  * `preview-ubuntu` 改名 `golden-ubuntu`、第二条最近实例 Fedora 41 换成
- * Rocky Linux 9），动作全为空实现，动效
- * 关闭，所以干净检出重放得到同一批像素。页面未暴露 screen testTag，
+ * Rocky Linux 9），动作全为空实现，动效关闭（编辑态摆动随 reduceMotion
+ * 静止），所以干净检出重放得到同一批像素。编辑态用显式的内存
+ * [DashboardEditState]，不读真实偏好。页面未暴露 screen testTag，
  * 按既有约定捕获整窗根节点（UI3-06 同款）。
  */
 @RunWith(AndroidJUnit4::class)
@@ -40,15 +42,20 @@ class DashboardScreenshotTest {
 
     @Test
     fun overviewDark() {
-        capture("overview-dark", ThemeCatalog.moonshotDark)
+        capture("overview-dark", ThemeCatalog.moonshotDark, editing = false)
     }
 
     @Test
     fun overviewLight() {
-        capture("overview-light", ThemeCatalog.moonshotLight)
+        capture("overview-light", ThemeCatalog.moonshotLight, editing = false)
     }
 
-    private fun capture(name: String, theme: AppTheme) {
+    @Test
+    fun editingDark() {
+        capture("editing-dark", ThemeCatalog.moonshotDark, editing = true)
+    }
+
+    private fun capture(name: String, theme: AppTheme, editing: Boolean) {
         compose.setContent {
             Oe3Theme(theme = theme, reduceMotion = true) {
                 // UI-02 起页面本体透明：页级 golden 必须自己补上壳层背景，
@@ -61,6 +68,7 @@ class DashboardScreenshotTest {
                     DashboardScreen(
                         state = overviewState(),
                         actions = DashboardActions(),
+                        edit = DashboardEditState(store = null).apply { setEditing(editing) },
                     )
                 }
             }
