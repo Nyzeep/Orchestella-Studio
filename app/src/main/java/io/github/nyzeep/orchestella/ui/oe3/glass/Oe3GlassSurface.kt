@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.HazeState
@@ -97,7 +98,10 @@ object Oe3GlassFallback {
  * - `L1` ([GlassTier.L1]/[GlassTier.L2]) with the layer enabled and a [state]
  *   provided: the Haze 1.x child effect, one layer, bounded by this surface's
  *   node (the bar), so the blurred region never exceeds the chrome that
- *   composes it.
+ *   composes it. Before handing the style to Haze, the blur radius is probed
+ *   with the exact framework call Haze makes ([Oe3GlassBlurSafety]); a device
+ *   that rejects the radius walks the fallback ladder (16 → 8dp) and lands on
+ *   the L0 surface when nothing is supported (hard constraint ⑤).
  * - `L0` ([GlassTier.L0]): the fake-glass recipe — α0.96 fill, 24dp top scrim,
  *   1dp top highlight rim, 0.02 noise — the shared token set with the blur
  *   tiers so the degradation never reads as a different material.
@@ -149,28 +153,79 @@ fun Oe3GlassSurface(
 
         is Oe3GlassRender.Blurred -> {
             val state = requireNotNull(state) { "Blurred glass requires the shared glass state" }
-            val style = remember(render) { render.toHazeStyle(tokens) }
-            Box(
-                modifier
-                    .clip(shape)
-                    .hazeChild(state = state, style = style),
-                content = content,
-            )
-        }
-
-        Oe3GlassRender.Fallback -> {
-            val style = remember(tokens) { GlassStyle.of(tokens) }
-            Box(
-                modifier
-                    .clip(shape)
-                    .background(Color(tokens.fallbackTint)),
-            ) {
-                NoiseOverlay()
-                Scrim(tokens = tokens)
-                TopRim(style = style)
-                content()
+            val density = LocalDensity.current
+            // 硬约束 ⑤：Haze 内部的 createBlurEffect 在节点绘制期才执行，组合期
+            // 抓不到——把 style 交给 Haze 之前先用同参探针验证设备支持（相同
+            // 半径 px + CLAMP），IAE 按半径阶梯回退，非 IAE 记录后放弃模糊。
+            // 探针通过才进入 Haze，Haze 内部对已验证半径不会再踩 IAE。
+            val usableRadius = remember(render, density) {
+                // 探针只碰 API 31+ 框架调用；能力闸已保证 Blurred 分支必然
+                // API ≥ 31，这里加静态卫语句兜底（lint NewApi 需要静态可见）。
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    Oe3GlassBlurSafety.resolveBlurRadius(
+                        requested = render.blurRadius,
+                        probe = { radius -> Oe3GlassBlurSafety.probeCreateBlurEffect(radius, density) },
+                    )
+                } else {
+                    null
+                }
+            }
+            if (usableRadius == null) {
+                // 全部档位失败 / 非 IAE 异常：放弃模糊，落到共享 token 的 L0 面
+                // （回退配方，与 API<31 同一材质，不突兀）。
+                FallbackSurface(
+                    tokens = tokens,
+                    modifier = modifier,
+                    shape = shape,
+                    content = content,
+                )
+            } else {
+                val blurred = if (usableRadius == render.blurRadius) {
+                    render
+                } else {
+                    render.copy(blurRadius = usableRadius)
+                }
+                val style = remember(blurred) { blurred.toHazeStyle(tokens) }
+                Box(
+                    modifier
+                        .clip(shape)
+                        .hazeChild(state = state, style = style),
+                    content = content,
+                )
             }
         }
+
+        Oe3GlassRender.Fallback -> FallbackSurface(
+            tokens = tokens,
+            modifier = modifier,
+            shape = shape,
+            content = content,
+        )
+    }
+}
+
+/**
+ * L0 回退面（假玻璃配方）：α0.96 填充 + 噪点 + 24dp 顶 scrim + 1dp 顶高光。
+ * API<31/省电/低内存/性能门降档与「模糊探针全档失败」共用同一材质，保证
+ * 任何降档路径的观感都由同一套 token 驱动。
+ */
+@Composable
+private fun FallbackSurface(
+    tokens: Oe3GlassTokens,
+    modifier: Modifier,
+    shape: Shape,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    val style = remember(tokens) { GlassStyle.of(tokens) }
+    Box(
+        modifier
+            .clip(shape)
+            .background(Color(tokens.fallbackTint)),
+    ) {
+        NoiseOverlay()
+        Scrim(tokens = tokens)
+        TopRim(style = style)
+        content()
     }
 }
 
