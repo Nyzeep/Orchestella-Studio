@@ -27,6 +27,9 @@ skills-lock.json
 探讨文档*.md
 .scratch/
 
+# Agent workspace state (local-only; may contain device identifiers and host paths)
+/.workbuddy/
+
 # Developer-local assets remain ignored. Reviewed task documents may be
 # explicitly tracked; do not force-add these directories as a whole.
 /docs/
