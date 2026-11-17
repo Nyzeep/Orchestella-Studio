@@ -28,6 +28,18 @@ class MotionTokenEquivalenceTest {
     }
 
     @Test
+    fun pagePushValuesArePinnedInTheSingleSource() {
+        // v4 spec §1.5：spring(300ms, bounce 0) + 初速 9×距离/s；前一页缩至
+        // 80% 并压暗 15%（UI-03 切片 2）。数值只落在 [OeMotion] 一处。
+        assertEquals(300, OeMotion.PAGE_PUSH_MS)
+        assertEquals(1f, OeMotion.PAGE_PUSH_DAMPING, 0.0001f)
+        assertEquals(9f, OeMotion.PAGE_PUSH_VELOCITY_FACTOR, 0.0001f)
+        assertEquals(0.8f, OeMotion.PAGE_PUSH_UNDER_SCALE, 0.0001f)
+        assertEquals(0.15f, OeMotion.PAGE_PUSH_UNDER_DIM, 0.0001f)
+        assertEquals(1f - OeMotion.PAGE_PUSH_UNDER_SCALE, OeMotion.PAGE_PUSH_SCALE_DELTA, 0.0001f)
+    }
+
+    @Test
     fun composeSpringAndEntranceValuesArePinnedInTheSingleSource() {
         assertEquals(0.85f, OeMotion.SPRING_DAMPING, 0.0001f)
         assertEquals(Spring.StiffnessMediumLow, OeMotion.NAV_SELECTION_STIFFNESS, 0.0001f)

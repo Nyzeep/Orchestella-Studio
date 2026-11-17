@@ -54,6 +54,22 @@ class Oe3MotionTest {
     }
 
     @Test
+    fun pagePushIsACriticallyDampedSpring() {
+        // v4 spec §1.5：页面 push = spring(300ms, bounce 0)——bounce 0 即临界阻尼。
+        val motion = Oe3Motion.standard()
+        assertEquals(300, motion.pagePush.durationMillis)
+        assertEquals(1f, motion.pagePush.dampingRatio, 0.0001f)
+        assertEquals(1f, motion.pagePushSpring!!.dampingRatio, 0.0001f)
+    }
+
+    @Test
+    fun reducedMotionWithdrawsThePushSpring() {
+        val reduced = Oe3Motion.reduced()
+        assertEquals(0, reduced.pagePush.durationMillis)
+        assertEquals(null, reduced.pagePushSpring)
+    }
+
+    @Test
     fun everyCurveStartsAtZeroAndEndsAtOne() {
         val motion = Oe3Motion.standard()
         listOf(
