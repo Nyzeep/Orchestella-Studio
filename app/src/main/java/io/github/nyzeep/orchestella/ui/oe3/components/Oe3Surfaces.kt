@@ -27,6 +27,8 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import io.github.nyzeep.orchestella.ui.oe3.theme.LocalOe3CornerRadius
@@ -118,6 +120,61 @@ fun Oe3Card(
     ) {
         title?.invoke()
         content()
+    }
+}
+
+/**
+ * The in-card title style: the Section scale (17sp / 22sp line height) at
+ * weight 600 (UI-04). [OeCardHeader] renders it; pages that draw a card title
+ * straight into the default 20dp card padding reuse it so the two stay
+ * identical. Composition-aware: it follows the theme's base family wiring.
+ */
+@Composable
+fun oeCardTitleStyle(): TextStyle =
+    Oe3Typography.style(Oe3TextRole.Section).copy(fontWeight = FontWeight.SemiBold)
+
+/**
+ * In-card title row (UI-04): 16dp inner padding, a 17/22 w600 title in the
+ * primary ink, an optional subtitle in the secondary ink and an optional
+ * trailing slot aligned to the row's end. Designed as the [Oe3Card] `title`
+ * slot content for zero-padding cards (grouped lists); a card with the
+ * default 20dp padding renders its title directly with [oeCardTitleStyle]
+ * instead, so the insets never stack.
+ */
+@Composable
+fun OeCardHeader(
+    title: String,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    trailing: (@Composable () -> Unit)? = null,
+) {
+    val colors = Oe3ThemeValues.colors
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(Oe3Spacing.md),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = oeCardTitleStyle(),
+                color = colors.onSurface.oe3Color(),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    style = Oe3Typography.style(Oe3TextRole.Caption),
+                    color = colors.onSurfaceVariant.oe3Color(),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        trailing?.invoke()
     }
 }
 
