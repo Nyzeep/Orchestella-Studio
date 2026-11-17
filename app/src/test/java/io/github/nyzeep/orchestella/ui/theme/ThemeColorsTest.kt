@@ -255,13 +255,13 @@ class ThemeColorsTest {
     }
 
     @Test fun surfaceTierDerivationsKeepTheFourIdentityThemesOnPalette() {
-        // 旗舰淡紫工控 (light) + 构成主义三色 (dark): exact blends, hand-computed
-        // so a regression in the derivation constants fails loudly. The mascot
-        // surfaceHigh red channel (surface 0xDC → ink 0x1D at 0.06) sums to
-        // 208.54 and now rounds to 209 — the one visible ZD-W4 rounding step.
-        val mascot = ThemeCatalog.mascotLavender
-        assertEquals(0xFFCFBCD3.toInt(), ThemeColors.surfaceLow(mascot))
-        assertEquals(0xFFD1C5D4.toInt(), ThemeColors.surfaceHigh(mascot))
+        // 旗舰淡紫工控浅色 (UI-14 白底紫强调) + 构成主义三色 (dark): exact blends,
+        // hand-computed so a regression in the derivation constants fails loudly.
+        // mascot-light surfaceLow 是 background #FFFFFF → surface #F6F4F8 的 0.5
+        // 中点 0xFBFAFC；surfaceHigh 以 ink #1A1720 按 0.06 混入 surface 得 0xE9E7EB。
+        val mascot = ThemeCatalog.mascotLight
+        assertEquals(0xFFFBFAFC.toInt(), ThemeColors.surfaceLow(mascot))
+        assertEquals(0xFFE9E7EB.toInt(), ThemeColors.surfaceHigh(mascot))
         for (id in listOf("constructivist-workstation", "constructivist-cobalt", "constructivist-amber")) {
             val theme = ThemeCatalog.resolve(id)
             val low = ThemeColors.surfaceLow(theme)
@@ -289,7 +289,7 @@ class ThemeColorsTest {
             val delta = ThemeColors.contrast(pressed, theme.primary)
             assertTrue("${theme.id}: pressed visible", delta > 1.0)
             // M3 state layers land near ~1.3-1.4 contrast on dark primaries
-            // (mascot lavender primary measures 1.35); anything beyond ~1.5
+            // (mascot-light primary measures ~1.38); anything beyond ~1.5
             // would read as a repaint instead of a press.
             assertTrue("${theme.id}: pressed subtle", delta < 1.50)
             val ghost = ThemeColors.pressedFill(theme.surface, ThemeColors.color(theme, ThemeColors.Role.TEXT))

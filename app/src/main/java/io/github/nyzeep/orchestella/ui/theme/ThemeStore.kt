@@ -12,9 +12,12 @@ import io.github.nyzeep.orchestella.ui.theme.OeTextScaleMode
 class ThemeStore(private val prefs: SharedPreferences, private val context: Context? = null) {
     /**
      * [FIXED] means "the theme decides, not the system". It is not a manual override:
-     * a palette that only exists in one brightness (the mascot lavender) owns the
-     * decision, and [applyNightMode] honours it so resources inflate in that brightness
-     * too. Picking any ordinary preset replaces it with that preset's own brightness.
+     * a palette that only exists in one brightness owns the decision, and
+     * [applyNightMode] honours it so resources inflate in that brightness too.
+     * Since UI-14 the mascot ships as a paired family and no shipped preset is
+     * fixed; the value remains only as a stored-preference compatibility path —
+     * a stale `fixed` pin on a non-fixed theme locks to that theme's own
+     * brightness, and on a migrated legacy id (see [themeId]) it decays to SYSTEM.
      */
     enum class Mode(val value: String, val displayName: String) {
         SYSTEM("system", "跟随系统"), LIGHT("light", "浅色"), DARK("dark", "深色"),
@@ -31,16 +34,22 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
         ThemeApplier.install(context)
     }
 
-    /** Missing/obsolete ids resolve through the catalog, without overwriting saved preferences. */
+    /**
+     * Missing/obsolete ids resolve through the catalog, without overwriting saved
+     * preferences. Ids renamed between releases (UI-14: `mascot-lavender` →
+     * `mascot-light`) map forward on this read path, so an upgrading user keeps
+     * their theme instead of losing it to the unknown-id fallback.
+     */
     fun themeId(): String {
         val stored = prefs.getString(KEY_THEME_ID, null) ?: return ThemeCatalog.resolve(null).id
         if (stored.startsWith(CustomThemeSlot.ID_PREFIX)) return stored
-        return ThemeCatalog.resolve(stored).id
+        return ThemeCatalog.migratedId(stored) ?: ThemeCatalog.resolve(stored).id
     }
 
     /** Choosing a labeled light/dark preset also selects its mode, atomically with its colors. */
     fun setThemeId(id: String) {
-        val theme = ThemeCatalog.byId(id)
+        // A legacy id is stored under its current name, never re-persisted as obsolete.
+        val theme = ThemeCatalog.byId(ThemeCatalog.migratedId(id) ?: id)
         if (theme == null) {
             if (!id.startsWith(CustomThemeSlot.ID_PREFIX)) return
             val slot = resolveCustomSlot(id) ?: return
@@ -63,11 +72,22 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
 
     /**
      * Existing preferences retain their follow-system behavior until the user makes a
-     * selection. A fresh install boots into the mascot theme, which only exists in one
-     * brightness, so it defaults to [Mode.FIXED] instead of following the system.
+     * selection. A fresh install boots into the mascot light palette, which pairs with
+     * the mode like every other family, so it defaults to [Mode.SYSTEM].
+     *
+     * UI-14 migration: the pre-UI-14 mascot stored [Mode.FIXED] because the old
+     * single-form palette owned its brightness. `FIXED` was never user-selectable,
+     * so that pin reflects the old theme's shape, not a user choice — when it
+     * surfaces on a migrated legacy id it decays to [Mode.SYSTEM] on the read
+     * path (no preference rewrite), letting the paired family follow the mode.
      */
-    fun mode(): Mode = Mode.entries.firstOrNull { it.value == prefs.getString(KEY_THEME_MODE, null) }
-        ?: if (ThemeCatalog.resolve(themeId()).isFixed) Mode.FIXED else Mode.SYSTEM
+    fun mode(): Mode {
+        val stored = Mode.entries.firstOrNull { it.value == prefs.getString(KEY_THEME_MODE, null) }
+        if (stored == Mode.FIXED && ThemeCatalog.migratedId(prefs.getString(KEY_THEME_ID, null)) != null) {
+            return Mode.SYSTEM
+        }
+        return stored ?: if (ThemeCatalog.resolve(themeId()).isFixed) Mode.FIXED else Mode.SYSTEM
+    }
 
     fun setMode(mode: Mode) {
         prefs.edit().putString(KEY_THEME_MODE, mode.value).apply()

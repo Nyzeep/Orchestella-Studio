@@ -62,9 +62,10 @@ class ThemeStudioSpecTest {
     }
 
     @Test
-    fun catalogHasFortyOnePresets() {
+    fun catalogHasFortyTwoPresets() {
         assertEquals(ThemeStudioSpec.expectedPresetCount, ThemeCatalog.all.size)
-        assertEquals(41, ThemeCatalog.all.size)
+        // UI-14 split the single-form mascot into a light/dark pair: 41 → 42.
+        assertEquals(42, ThemeCatalog.all.size)
     }
 
     @Test
