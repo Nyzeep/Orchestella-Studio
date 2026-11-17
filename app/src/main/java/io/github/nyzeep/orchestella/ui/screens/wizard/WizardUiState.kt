@@ -38,16 +38,19 @@ data class WizardUiState(
     val isCreating: Boolean,
     val canGoBack: Boolean,
     val shouldConfirmExit: Boolean,
+    /** 键入防抖预检未落（旧按钮禁用语义）；上一次判定仍留在屏上。 */
+    val storageCheckPending: Boolean,
 ) {
 
     /**
      * 每步的通行门（旧 Activity 的按钮 isEnabled 语义）：
-     * 存储步要求预检通过，硬件步要求分配安全，其余步无额外门槛；
-     * 创建进行中一律阻断。
+     * 存储步要求预检通过（防抖检查未落时门保持关闭），硬件步要求分配安全，
+     * 其余步无额外门槛；创建进行中一律阻断。
      */
     val canProceed: Boolean
         get() = when (step) {
-            InstanceCreationWizardModel.CreationStep.STEP_STORAGE -> storage.gate == StorageGate.Ready
+            InstanceCreationWizardModel.CreationStep.STEP_STORAGE ->
+                storage.gate == StorageGate.Ready && !storageCheckPending
             InstanceCreationWizardModel.CreationStep.STEP_NETWORK_MIRROR -> true
             InstanceCreationWizardModel.CreationStep.STEP_HARDWARE -> hardware.badge !is HardwareBadge.Error
             InstanceCreationWizardModel.CreationStep.STEP_STARTUP_TASKS -> true
@@ -81,6 +84,7 @@ data class WizardUiState(
                 isCreating = model.isCreating,
                 canGoBack = model.canGoBack(),
                 shouldConfirmExit = model.shouldConfirmExit(),
+                storageCheckPending = facts.storageCheckPending,
             )
         }
 
@@ -155,6 +159,7 @@ data class WizardUiState(
                 gatewayLine = facts.network.gatewayLine,
                 dnsLine = facts.network.dnsLine,
                 testResult = facts.network.testResult,
+                speedTestSummary = facts.network.speedTestSummary,
                 mirrorOptions = DistroMirrorProvisioner.MirrorSource.values()
                     .map { it.displayName() },
                 selectedMirrorOrdinal = model.selectedMirror.ordinal,
@@ -430,6 +435,8 @@ data class WizardNetworkFacts(
     val gatewayLine: String = "",
     val dnsLine: String = "",
     val testResult: NetworkTestResult = NetworkTestResult.Idle,
+    /** 测速结果块；null = 尚未测速（旧 txtWizardSpeedTestResults 隐藏态）。 */
+    val speedTestSummary: String? = null,
 )
 
 /** 下载/装配进度的活事实；`progressPercent = null` 表示不确定进度。 */
@@ -448,6 +455,8 @@ data class WizardFacts(
     val existingCommittedBytes: Long = 0L,
     /** 自定义容量输入非法（空/非正数）；模型保持不动，门显式关闭。 */
     val diskInputInvalid: Boolean = false,
+    /** 键入防抖预检未落：上次判定留在屏上，通行门关闭。 */
+    val storageCheckPending: Boolean = false,
     val network: WizardNetworkFacts = WizardNetworkFacts(),
     val avf: WizardAvfFacts? = null,
     /** 控制器持有的活相位；null 表示无活工作（恢复出 creating → KeptRunning）。 */
@@ -474,6 +483,7 @@ data class NetworkUi(
     val gatewayLine: String,
     val dnsLine: String,
     val testResult: NetworkTestResult,
+    val speedTestSummary: String?,
     val mirrorOptions: List<String>,
     val selectedMirrorOrdinal: Int,
     val mirrorPreview: String,

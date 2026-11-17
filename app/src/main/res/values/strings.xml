@@ -332,6 +332,78 @@
     <string name="wizard_exit_while_creating_leave">仍要退出</string>
     <string name="wizard_exit_while_creating_stay">留在本页</string>
 
+    <!-- UI-12 Compose 向导（壳内二级页）。页面标题与返回语义（spec §1.2 单标题）。 -->
+    <string name="wizard_page_title">新建实例</string>
+    <string name="wizard_cancel_create">取消创建</string>
+    <string name="wizard_cancel_create_desc">取消创建并返回</string>
+    <string name="wizard_back_desc">返回</string>
+
+    <!-- 首次返回退出向导的确认（v4 spec：OeShape.alert 32dp 对话框）。 -->
+    <string name="wizard_exit_confirm_title">退出新建实例？</string>
+    <string name="wizard_exit_confirm_message">已填写的配置不会被保存，重新进入后需要重新选择。</string>
+    <string name="wizard_exit_confirm_leave">退出</string>
+    <string name="wizard_exit_confirm_stay">继续配置</string>
+
+    <!-- 创建成功 / 重试。 -->
+    <string name="wizard_created_toast">实例已创建。首次启动将安装并验证基础环境。</string>
+    <string name="wizard_create_with_distro">立即创建 %1$s</string>
+    <string name="wizard_create_retry">重试创建与部署</string>
+
+    <!-- 步骤 1 存储与挂载（共享目录通道现状说明沿用旧文案）。 -->
+    <string name="wizard_shared_dir_disabled">共享目录通道尚未接通，可通过 SSH / SFTP 传输文件</string>
+    <string name="wizard_disk_label">虚拟磁盘容量（GB）</string>
+
+    <!-- 步骤 4 启动任务与部署：身份与可选功能（旧动态构建文案的结构化迁移）。 -->
+    <string name="wizard_identity_section_title">Linux 用户与主机名</string>
+    <string name="wizard_identity_section_desc">桌面和开发服务需要普通用户；密码沿用本实例随机生成的凭据，可在实例详情查看。</string>
+    <string name="wizard_identity_username_hint">Linux 用户名</string>
+    <string name="wizard_identity_hostname_hint">主机名</string>
+    <string name="wizard_identity_sudo">允许此用户使用 sudo</string>
+    <string name="wizard_identity_username_error">用户名须以小写字母或下划线开头，仅包含小写字母、数字、下划线和连字符。</string>
+    <string name="wizard_identity_hostname_blank">请填写主机名。</string>
+    <string name="wizard_identity_hostname_invalid">主机名须为有效的字母、数字或连字符标签。</string>
+    <string name="wizard_identity_root_conflict">所选桌面和开发服务需要普通用户，请填写新的 Linux 用户名。</string>
+    <string name="wizard_optional_section_title">图形与开发环境（默认仅终端）</string>
+    <string name="wizard_optional_section_desc">可选功能在基础 Linux 启动后下载并安装，实际进度在实例的“桌面与开发工具”页查看。实验功能尚未取得本设备运行验收。</string>
+    <string name="wizard_optional_desktop">labwc 轻量 Wayland · Debian 13 · 实验 CPU 拷贝通路\n需联网安装桌面、字体与会话组件；建议 2 GB 以上 guest RAM、至少 2 GB 额外磁盘预算。实际下载量由签名仓库计划确定。</string>
+    <string name="wizard_optional_podman">Rootless Podman · 需普通用户与内核探针验证（另需下载容器镜像）</string>
+    <string name="wizard_optional_editor">code-server 本机开发服务 · ARM64 固定包约 224 MiB，另需依赖和工作空间</string>
+    <string name="wizard_auto_update_label">额外系统升级（可选）</string>
+    <string name="wizard_update_desc">基础环境在首次启动时安装并验证，失败可重试。此复选项仅控制额外系统升级；开启后执行下方升级指令。</string>
+    <string name="wizard_update_preview_off">额外系统升级已关闭；基础环境仍需安装与验证。</string>
+
+    <!-- 创建摘要（结构化字段 → 视图组装，旧 bullet 列表的逐行迁移）。 -->
+    <string name="wizard_summary_distro">• 目标发行版：%1$s</string>
+    <string name="wizard_summary_disk">• 虚拟磁盘容量：%1$d GB 稀疏磁盘</string>
+    <string name="wizard_summary_shared">• 宿主共享目录：%1$s</string>
+    <string name="wizard_summary_shared_mounted">已挂载 (/mnt/shared)</string>
+    <string name="wizard_summary_shared_unmounted">未挂载</string>
+    <string name="wizard_summary_hardware">• 硬件资源规格：%1$d vCPU · %2$d MB RAM</string>
+    <string name="wizard_summary_mirror">• 镜像软件源：%1$s</string>
+    <string name="wizard_summary_identity">• Linux 用户：%1$s · 主机名：%2$s</string>
+    <string name="wizard_summary_sudo">• sudo：%1$s</string>
+    <string name="wizard_summary_sudo_on">允许</string>
+    <string name="wizard_summary_sudo_off">关闭</string>
+    <string name="wizard_summary_features">• 可选功能：%1$s</string>
+    <string name="wizard_summary_features_none">仅终端</string>
+    <string name="wizard_summary_feature_desktop">桌面</string>
+    <string name="wizard_summary_first_boot">• 首次启动任务：%1$s</string>
+    <string name="wizard_summary_first_boot_on">基础环境安装与验证，额外系统升级开启</string>
+    <string name="wizard_summary_first_boot_off">基础环境安装与验证，额外系统升级关闭</string>
+    <string name="wizard_summary_retriable">• 安装失败：可重试</string>
+
+    <string name="wizard_distro_section_title">选择发行版</string>
+    <string name="wizard_avf_expand_desc">AVF 平台声明详情，点按展开或折叠</string>
+    <string name="wizard_speed_test_btn">镜像测速</string>
+    <string name="wizard_config_ram_minimum">该镜像首次装配至少需要 %1$d MB。</string>
+    <string name="wizard_config_ram_unavailable">宿主可用内存装不下该镜像的首次装配要求，请选择较小的镜像。</string>
+    <string name="wizard_kept_running_line">已保留创建中状态，不会重复下载或创建。请返回实例列表确认任务结果。</string>
+
+    <!-- 下载流水线的连接段文案（旧硬编码的结构化迁移）。 -->
+    <string name="wizard_download_connecting">正在连接就近镜像节点…</string>
+    <string name="wizard_download_mirror_pending">镜像节点：--</string>
+    <string name="wizard_download_probing">已探测 %1$d 个镜像节点，优先使用最快的一个</string>
+
     <!-- Terminal empty state: no instance id was provided at all. -->
     <string name="terminal_empty_no_instance_title">还没有可打开的实例</string>
     <string name="terminal_empty_no_instance_message">请返回实例列表创建或选择一个实例。</string>

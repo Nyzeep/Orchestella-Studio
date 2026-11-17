@@ -153,6 +153,20 @@ class WizardUiStateContractTest {
     }
 
     @Test
+    fun canProceedStorageDisabledWhileDebouncedCheckPending() {
+        // 旧 scheduleDebouncedStorageValidation 语义：键入防抖检查未落时，
+        // 上一次判定仍留在屏上（gate=Ready），但下一步门是关的——
+        // 未经验证的请求还不是已证明的请求。
+        val state = WizardUiState.of(
+            model,
+            WizardFacts(availableBytes = 128L * GB, storageCheckPending = true),
+        )
+        assertEquals(StorageGate.Ready, state.storage.gate)
+        assertFalse(state.canProceed)
+        assertTrue(state.storageCheckPending)
+    }
+
+    @Test
     fun canProceedHardwareBlockedWhenAllocationUnsafe() {
         model.nextStep(); model.nextStep()
         // 把 RAM 压到镜像最低要求之下 → DistroResourceRequirements.requireBootRam 拒绝
@@ -178,6 +192,15 @@ class WizardUiStateContractTest {
         model.nextStep()
         val state = WizardUiState.of(model, WizardFacts())
         assertTrue(state.canProceed)
+    }
+
+    @Test
+    fun speedTestSummaryPassesThrough() {
+        val state = WizardUiState.of(
+            model,
+            WizardFacts(network = WizardNetworkFacts(speedTestSummary = "测速完成")),
+        )
+        assertEquals("测速完成", state.network.speedTestSummary)
     }
 
     // ---------- 磁盘预设高亮 ----------
