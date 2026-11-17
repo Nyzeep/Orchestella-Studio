@@ -38,6 +38,57 @@ sealed interface Oe3GlassRender {
 }
 
 /**
+ * UI-06 分层降级阶梯（v4 spec §1.7，research/03 §A7）：
+ *
+ * - [Solid]：用户显式关闭，纯实色，与玻璃引入前的基线像素一致。
+ * - [L0]：假玻璃配方（96% 表面 + 24dp 顶 scrim + 1dp 顶高光描边 + noise 0.02），
+ *   API < 31、省电/减少动态、低内存设备、性能门降档时使用；无 GPU 模糊成本。
+ * - [L1]：L0 + Haze 16dp 真模糊（tint α0.72/0.55），API ≥ 31 且性能门未降档。
+ * - [L2]：L1 + 仅边缘 AGSL 折射（ds≤0.5、shader 缓存、capture outset）——
+ *   **本波不实施**（UI-06b 另排）：真机补测显示 L1 的 P90 已达 60Hz 预算×0.7
+ *   阈值边界（research/04），AGSL 折射无余量。保留枚举位以稳定档位语义。
+ */
+enum class GlassTier { Solid, L0, L1, L2 }
+
+/**
+ * UI-06 用户三档设置（Theme Studio 的玻璃模式）：关闭 / 自动 / 始终。
+ *
+ * - [Off]：用户显式关闭玻璃（保留的关闭能力，优先于一切）。
+ * - [Auto]：默认档——按设备能力解析渲染档位（31+ → L1，<31 → L0），并尊重
+ *   用户在旧档位选择里的显式关闭；从未选择过旧档位时给出自动玻璃（Standard）。
+ * - [Always]：始终上最强玻璃（Ultra 风格），并绕过性能门的设备降档缓存——
+ *   这是用户对「我就是要玻璃」的显式意志，硬闸（省电/低内存/API）仍然生效。
+ */
+enum class GlassMode(val key: String) {
+    Off("off"),
+    Auto("auto"),
+    Always("always"),
+    ;
+
+    companion object {
+        /** Maps ThemeStore's normalized `ui_glass_mode` value; unknown falls back to [Auto]. */
+        fun fromKey(key: String?): GlassMode = entries.firstOrNull { it.key == key } ?: Auto
+    }
+}
+
+/**
+ * 性能门的设备级降档缓存（UI-06）：首 60 帧采样超预算时，把该设备持久化到
+ * [L0]，之后每次启动都直接从 L0 开始，不再反复踩模糊。由 Activity 读写
+ * ThemeStore 并经 CompositionLocal 下发；[Unlimited] 表示未降档。
+ */
+enum class GlassDeviceCap(val key: String) {
+    Unlimited("unlimited"),
+    L0("l0"),
+    ;
+
+    companion object {
+        /** Maps ThemeStore's normalized `ui_glass_device_cap` value; unknown falls back to [Unlimited]. */
+        fun fromKey(key: String?): GlassDeviceCap =
+            entries.firstOrNull { it.key == key } ?: Unlimited
+    }
+}
+
+/**
  * Branching only; the blur/tint numbers stay in `Oe3Glass.resolve` so there
  * is exactly one owner of the spec values.
  */
@@ -72,5 +123,62 @@ object Oe3GlassStrategy {
             backgroundArgb = tokens.tint,
             fallbackTintArgb = tokens.fallbackTint,
         )
+    }
+
+    /**
+     * UI-06：把「用户模式 + 显式旧档位」解析为请求的玻璃风格档位。能力判定
+     * （API/省电/低内存/性能门）不在这里——那是 [resolveTier] 的事，两层各管
+     * 一段，风格层永远不知道设备快慢。
+     *
+     * [chosenLevelKey] 是旧键 `ui_glass_level` 的原始存储值；`null` 表示用户
+     * 从未写过该键（区别于显式写过 `"none"`——后者是明确的关闭意志，必须保留）。
+     */
+    fun resolveLevel(mode: GlassMode, chosenLevelKey: String?): Oe3GlassLevel = when (mode) {
+        GlassMode.Off -> Oe3GlassLevel.None
+        GlassMode.Always -> when (chosenLevelKey) {
+            "standard" -> Oe3GlassLevel.Standard
+            "ultra" -> Oe3GlassLevel.Ultra
+            // 始终 = 用户要最强玻璃；与旧档位 "none" 的矛盾以新模式为准。
+            else -> Oe3GlassLevel.Ultra
+        }
+        GlassMode.Auto -> when (chosenLevelKey) {
+            // 从未选择 → 自动玻璃默认档（Standard）：31+ 渲染 L1，<31 渲染 L0。
+            null -> Oe3GlassLevel.Standard
+            // 用户显式关闭 → 尊重（关闭能力不经自动模式抹掉）。
+            "none" -> Oe3GlassLevel.None
+            "standard" -> Oe3GlassLevel.Standard
+            "ultra" -> Oe3GlassLevel.Ultra
+            else -> Oe3GlassLevel.Standard
+        }
+    }
+
+    /**
+     * UI-06 能力判定：按「全局开关 → 省电/减少动态 → 低内存 → API → 设备档位
+     * 缓存」的顺序把请求档位落到渲染阶梯上。纯函数，输入全部由调用方探测
+     * （Activity 读系统信号，Compose 侧经 CompositionLocal 下发）。
+     *
+     * [level] 是请求的玻璃风格（[resolveLevel] 的输出）；[enabled] 是运行期
+     * 闸（动效开关 && 非省电 && 有 haze 源）；[deviceCap] 是性能门持久化结果。
+     * [L2] 本波不可达（UI-06b 接管后在此追加折射探测分支）。
+     */
+    fun resolveTier(
+        level: Oe3GlassLevel,
+        enabled: Boolean,
+        apiLevel: Int,
+        isLowRamDevice: Boolean,
+        deviceCap: GlassDeviceCap,
+    ): GlassTier = when {
+        // 全局开关：显式关闭与基线像素一致，不进任何玻璃配方。
+        level == Oe3GlassLevel.None -> GlassTier.Solid
+        // 省电/减少动态/缺 haze 源：降为假玻璃配方，不开模糊。
+        !enabled -> GlassTier.L0
+        // 低内存设备：模糊背后的离屏采样不可负担，L0 配方保观感。
+        isLowRamDevice -> GlassTier.L0
+        // API 能力：31 以下没有 RenderEffect。
+        apiLevel < MIN_REAL_BLUR_API -> GlassTier.L0
+        // 设备档位缓存：性能门在该设备上判过不合格，直接从 L0 开始。
+        deviceCap == GlassDeviceCap.L0 -> GlassTier.L0
+        // 通过全部闸门 → 真模糊档（本波上限 L1；L2 待 UI-06b）。
+        else -> GlassTier.L1
     }
 }

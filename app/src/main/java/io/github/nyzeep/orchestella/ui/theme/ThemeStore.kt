@@ -254,6 +254,50 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
             .apply()
     }
 
+    /**
+     * UI-06：旧档位键的显式选择探测——返回归一化值，用户从未写过该键（或值
+     * 损坏）时返回 `null`。与 [uiGlassLevel] 的区别在于：`null` =「从未表达过
+     * 意见」（玻璃模式按 auto 解析为默认玻璃），而旧键显式 `"none"` =「用户
+     * 明确关闭」（自动模式也必须尊重）。
+     */
+    fun uiGlassLevelKeyOrNull(): String? =
+        prefs.getString(KEY_UI_GLASS_LEVEL, null)?.takeIf { it in UI_GLASS_LEVELS }
+
+    /**
+     * UI-06：「关闭(off)/自动(auto)/始终(always)」三档玻璃模式，默认 auto。
+     * auto = 按设备能力解析渲染档位（31+ 真模糊，<31 假玻璃配方）并尊重旧键
+     * 的显式关闭；always = 上最强玻璃并绕过性能门的设备降档缓存。
+     */
+    fun uiGlassMode(): String {
+        val stored = prefs.getString(KEY_UI_GLASS_MODE, null) ?: return DEFAULT_UI_GLASS_MODE
+        return if (stored in UI_GLASS_MODES) stored else DEFAULT_UI_GLASS_MODE
+    }
+
+    fun setUiGlassMode(mode: String) {
+        prefs.edit()
+            .putString(KEY_UI_GLASS_MODE, if (mode in UI_GLASS_MODES) mode else DEFAULT_UI_GLASS_MODE)
+            .apply()
+    }
+
+    /**
+     * UI-06：性能门的设备级降档缓存（unlimited/l0）。首 60 帧采样超预算时由
+     * Activity 持久化为 l0，之后每次启动直接从降档起步，不再反复踩模糊。
+     * 这是设备本地缓存，不是用户设置；损坏值回落 unlimited。
+     */
+    fun uiGlassDeviceCap(): String {
+        val stored = prefs.getString(KEY_UI_GLASS_DEVICE_CAP, null) ?: return DEFAULT_UI_GLASS_DEVICE_CAP
+        return if (stored in UI_GLASS_DEVICE_CAPS) stored else DEFAULT_UI_GLASS_DEVICE_CAP
+    }
+
+    fun setUiGlassDeviceCap(cap: String) {
+        prefs.edit()
+            .putString(
+                KEY_UI_GLASS_DEVICE_CAP,
+                if (cap in UI_GLASS_DEVICE_CAPS) cap else DEFAULT_UI_GLASS_DEVICE_CAP,
+            )
+            .apply()
+    }
+
     /** "floating"|"fixed"; a corrupt or unknown value falls back to "floating". */
     fun uiNavStyle(): String {
         val stored = prefs.getString(KEY_UI_NAV_STYLE, null) ?: return DEFAULT_UI_NAV_STYLE
@@ -448,8 +492,14 @@ class ThemeStore(private val prefs: SharedPreferences, private val context: Cont
         private const val TEXT_SCALE_MODE_CUSTOM = "custom"
 
         /** Accepted values for the ticket-13 presentation keys; everything else coerces to the default. */
+        const val KEY_UI_GLASS_MODE = "ui_glass_mode"
+        const val KEY_UI_GLASS_DEVICE_CAP = "ui_glass_device_cap"
         private const val DEFAULT_UI_GLASS_LEVEL = "none"
         private val UI_GLASS_LEVELS = setOf("none", "standard", "ultra")
+        private const val DEFAULT_UI_GLASS_MODE = "auto"
+        private val UI_GLASS_MODES = setOf("off", "auto", "always")
+        private const val DEFAULT_UI_GLASS_DEVICE_CAP = "unlimited"
+        private val UI_GLASS_DEVICE_CAPS = setOf("unlimited", "l0")
         private const val DEFAULT_UI_NAV_STYLE = "floating"
         private val UI_NAV_STYLES = setOf("floating", "fixed")
         private const val DEFAULT_UI_FONT_CHOICE = "system"

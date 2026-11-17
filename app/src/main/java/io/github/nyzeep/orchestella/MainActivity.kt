@@ -18,6 +18,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -30,6 +31,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorMode
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorPolicy
+import io.github.nyzeep.orchestella.ui.oe3.glass.GlassDeviceCap
+import io.github.nyzeep.orchestella.ui.oe3.glass.GlassMode
+import io.github.nyzeep.orchestella.ui.oe3.glass.LocalOe3GlassDeviceCap
+import io.github.nyzeep.orchestella.ui.oe3.glass.LocalOe3GlassLowRam
+import io.github.nyzeep.orchestella.ui.oe3.glass.Oe3GlassFrameGate
+import io.github.nyzeep.orchestella.ui.oe3.glass.Oe3GlassStrategy
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3GlassLevel
 import io.github.nyzeep.orchestella.ui.shell.Oe3App
 import io.github.nyzeep.orchestella.ui.shell.Oe3Feature
@@ -38,7 +45,6 @@ import io.github.nyzeep.orchestella.ui.shell.Oe3Pages
 import io.github.nyzeep.orchestella.ui.shell.Oe3ShellController
 import io.github.nyzeep.orchestella.ui.shell.Oe3Tab
 import io.github.nyzeep.orchestella.ui.shell.OeAppBackgroundSpec
-import io.github.nyzeep.orchestella.ui.shell.glassLevelFromKey
 import io.github.nyzeep.orchestella.ui.theme.AppTheme
 import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
 import io.github.nyzeep.orchestella.ui.theme.ThemeStore
@@ -118,6 +124,17 @@ class MainActivity : AppCompatActivity() {
     /** 壳层主题与呈现偏好快照；ThemeStore 变更经 onStart 注册的监听刷新。 */
     private val oe3ThemeState = mutableStateOf<AppTheme?>(null)
     private val oe3PrefsState = mutableStateOf(Oe3ShellPrefs())
+
+    /** UI-06：性能门的设备级降档缓存（持久化值的活动副本，降档时即时生效）。 */
+    private val oe3GlassDeviceCapState = mutableStateOf(GlassDeviceCap.Unlimited)
+
+    /** UI-06：性能门每进程只采样一次；启动后由快照刷新按需武装。 */
+    private val oe3GlassGateArmed = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** UI-06：设备是否为低内存（isLowRamDevice）；onCreate 探测一次。 */
+    private val oe3GlassLowRamDevice by lazy {
+        (getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager)?.isLowRamDevice ?: false
+    }
 
     /** 五页状态；null 期间壳层渲染占位页（首帧快照落地前短暂存在）。 */
     private val oe3DashboardState = mutableStateOf<DashboardUiState?>(null)
@@ -391,25 +408,39 @@ class MainActivity : AppCompatActivity() {
             setContent {
                 val theme = oe3ThemeState.value ?: themeStore.resolve()
                 val prefs = oe3PrefsState.value
-                if (oe3ThemeStudioOpen.value) {
-                    Oe3ThemeStudioHost(reduceMotion = prefs.reduceMotion)
-                } else {
-                    Oe3App(
-                        selectedTab = controller.selectedTab,
-                        onTabSelected = { tab -> controller.select(tab) },
-                        theme = theme,
-                        textScale = prefs.textScale,
-                        reduceMotion = prefs.reduceMotion,
-                        pureBlack = prefs.pureBlack,
-                        glassLevel = prefs.glassLevel,
-                        glassEnabled = prefs.glassEnabled,
-                        navStyle = prefs.navStyle,
-                        monoBody = prefs.monoBody,
-                        cornerRadiusDp = prefs.cornerRadiusDp,
-                        surfaceAlpha = prefs.surfaceAlpha,
-                        backgroundUri = prefs.backgroundUri,
-                        pages = buildOe3Pages(),
-                    )
+                // UI-06 玻璃闸运行期信号：低内存设备与设备档位缓存经 CompositionLocal
+                // 下发（预览/测试默认不降档）。「始终」模式绕过降档缓存——用户显式
+                // 意志优先于性能门，硬闸（省电/低内存/API）仍在策略层生效。
+                val effectiveCap =
+                    if (prefs.glassMode == GlassMode.Always) {
+                        GlassDeviceCap.Unlimited
+                    } else {
+                        oe3GlassDeviceCapState.value
+                    }
+                CompositionLocalProvider(
+                    LocalOe3GlassLowRam provides oe3GlassLowRamDevice,
+                    LocalOe3GlassDeviceCap provides effectiveCap,
+                ) {
+                    if (oe3ThemeStudioOpen.value) {
+                        Oe3ThemeStudioHost(reduceMotion = prefs.reduceMotion)
+                    } else {
+                        Oe3App(
+                            selectedTab = controller.selectedTab,
+                            onTabSelected = { tab -> controller.select(tab) },
+                            theme = theme,
+                            textScale = prefs.textScale,
+                            reduceMotion = prefs.reduceMotion,
+                            pureBlack = prefs.pureBlack,
+                            glassLevel = prefs.glassLevel,
+                            glassEnabled = prefs.glassEnabled,
+                            navStyle = prefs.navStyle,
+                            monoBody = prefs.monoBody,
+                            cornerRadiusDp = prefs.cornerRadiusDp,
+                            surfaceAlpha = prefs.surfaceAlpha,
+                            backgroundUri = prefs.backgroundUri,
+                            pages = buildOe3Pages(),
+                        )
+                    }
                 }
             }
         }
@@ -447,9 +478,17 @@ class MainActivity : AppCompatActivity() {
         // UI3-10 玻璃层的运行时闸：动效被系统关闭或省电模式时退到实色 scrim 面。
         val animatorsEnabled = android.animation.ValueAnimator.areAnimatorsEnabled()
         val powerManager = getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+        // UI-06 玻璃模式：off/auto/always 三档；auto 按设备能力解析渲染档位，
+        // 并尊重旧档位键的显式关闭（从未写过旧键才给自动玻璃）。
+        val glassMode = GlassMode.fromKey(themeStore.uiGlassMode())
+        oe3GlassDeviceCapState.value = GlassDeviceCap.fromKey(themeStore.uiGlassDeviceCap())
         oe3PrefsState.value = Oe3ShellPrefs(
             pureBlack = themeStore.uiPureBlack(),
-            glassLevel = glassLevelFromKey(themeStore.uiGlassLevel()),
+            glassLevel = Oe3GlassStrategy.resolveLevel(
+                mode = glassMode,
+                chosenLevelKey = themeStore.uiGlassLevelKeyOrNull(),
+            ),
+            glassMode = glassMode,
             navStyle = Oe3NavStyle.fromKey(themeStore.uiNavStyle()),
             monoBody = themeStore.uiFontChoice() == "mono",
             textScale = themeStore.textScaleFactor(),
@@ -461,6 +500,48 @@ class MainActivity : AppCompatActivity() {
             surfaceAlpha = OeAppBackgroundSpec.surfaceAlpha(themeStore.uiSurfaceOpacityPercent()),
             backgroundUri = themeStore.backgroundUri(),
         )
+        startGlassFrameGateIfNeeded()
+    }
+
+    /**
+     * UI-06 运行时性能门控：玻璃 L1 真实渲染时，首帧起连续 60 帧采样**帧耗时**
+     * （`FrameMetrics.TOTAL_DURATION`）；P90 > 预算×0.7 或掉帧率 > 2% → 降档为
+     * L0 并持久化到本设备（ThemeStore 设备缓存）。已降档/玻璃关闭/省电/低内存/
+     * API < 31 时不动采样——避免把与玻璃无关的卡顿误记到玻璃头上。「始终」
+     * 模式在 CompositionLocal 侧绕过降档缓存，但采样照常跳过（没有可降的模糊层）。
+     */
+    private fun startGlassFrameGateIfNeeded() {
+        if (oe3GlassGateArmed.get()) return
+        val prefs = oe3PrefsState.value
+        if (prefs.glassLevel == Oe3GlassLevel.None || !prefs.glassEnabled) return
+        if (oe3GlassDeviceCapState.value != GlassDeviceCap.Unlimited) return
+        if (oe3GlassLowRamDevice) return
+        if (Build.VERSION.SDK_INT < Oe3GlassStrategy.MIN_REAL_BLUR_API) return
+        if (!oe3GlassGateArmed.compareAndSet(false, true)) return
+
+        val refreshRate = display?.refreshRate?.coerceAtLeast(60f) ?: 60f
+        val budgetMs = 1000.0 / refreshRate.toDouble()
+
+        val gate = Oe3GlassFrameGate(budgetMs = budgetMs) { verdict ->
+            if (verdict.downgrade) {
+                themeStore.setUiGlassDeviceCap(GlassDeviceCap.L0.key)
+                oe3GlassDeviceCapState.value = GlassDeviceCap.L0
+            }
+        }
+        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        val listener = object : android.view.Window.OnFrameMetricsAvailableListener {
+            override fun onFrameMetricsAvailable(
+                window: android.view.Window,
+                frameMetrics: android.view.FrameMetrics,
+                eventType: Int,
+            ) {
+                val durationMs = frameMetrics.getMetric(android.view.FrameMetrics.TOTAL_DURATION) / 1_000_000.0
+                if (gate.onFrame(durationMs)) {
+                    window.removeOnFrameMetricsAvailableListener(this)
+                }
+            }
+        }
+        window.addOnFrameMetricsAvailableListener(listener, handler)
     }
 
     private fun buildOe3Pages(): Oe3Pages = Oe3Pages(
@@ -1750,6 +1831,8 @@ class MainActivity : AppCompatActivity() {
 private data class Oe3ShellPrefs(
     val pureBlack: Boolean = false,
     val glassLevel: Oe3GlassLevel = Oe3GlassLevel.None,
+    /** UI-06：off/auto/always 三档玻璃模式；CompositionLocal 侧据此决定是否绕过降档缓存。 */
+    val glassMode: GlassMode = GlassMode.Auto,
     val navStyle: Oe3NavStyle = Oe3NavStyle.Floating,
     val monoBody: Boolean = false,
     val textScale: Float = 1f,

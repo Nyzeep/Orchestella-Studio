@@ -4,6 +4,7 @@ import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
@@ -12,10 +13,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageShader
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.ShaderBrush
+import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.HazeState
@@ -39,11 +44,27 @@ import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3GlassTokens
 val LocalOe3GlassEnabled = staticCompositionLocalOf { true }
 
 /**
- * Fallback decoration constants (spec §2.6): the almost-solid surface plus
- * the top scrim that keeps the chrome readable when backdrop blur cannot
- * render. `SURFACE_ALPHA` mirrors the 245/255 alpha `Oe3Glass.resolve` bakes
- * into [Oe3GlassTokens.fallbackTint]; both spellings exist so the scrim math
- * and the token layer stay honest about the same 96%.
+ * UI-06：设备是否为低内存（`ActivityManager.isLowRamDevice`）。低内存设备上
+ * 模糊的离屏采样不可负担，能力判定把它作为独立硬闸（L1 及以上禁用）。由
+ * Activity 探测后提供；预览/测试默认 `false`（非低内存）。
+ */
+val LocalOe3GlassLowRam = staticCompositionLocalOf { false }
+
+/**
+ * UI-06：设备档位缓存（性能门降档持久化）。Activity 从 ThemeStore 读出后
+ * 提供（「始终」模式绕过降档缓存）；预览/测试默认 [GlassDeviceCap.Unlimited]。
+ */
+val LocalOe3GlassDeviceCap = staticCompositionLocalOf { GlassDeviceCap.Unlimited }
+
+/**
+ * Fallback decoration constants (spec §2.6 + v4 UI-06 L0 配方): the almost-solid
+ * surface plus the top scrim that keeps the chrome readable when backdrop blur
+ * cannot render. `SURFACE_ALPHA` mirrors the 245/255 alpha `Oe3Glass.resolve`
+ * bakes into [Oe3GlassTokens.fallbackTint]; both spellings exist so the scrim
+ * math and the token layer stay honest about the same 96%.
+ *
+ * UI-06 新增 L0 装饰常量（描边 + 噪点）：与既有常量并列，既有值不动（金样
+ * 与 [Oe3GlassLocalTest] 钉定的契约保持）。
  */
 @Immutable
 object Oe3GlassFallback {
@@ -51,10 +72,17 @@ object Oe3GlassFallback {
     const val SURFACE_ALPHA_8BIT = 245
     val SCRIM_HEIGHT: Dp = 24.dp
     const val SCRIM_TOP_ALPHA = 0.7f
+
+    /** UI-06 L0：1dp 顶部高光渐变描边的高度与峰值 alpha。 */
+    val RIM_HEIGHT: Dp = 1.dp
+    const val RIM_HIGHLIGHT_ALPHA = 0.28f
+
+    /** UI-06 L0：噪点 alpha 峰值（spec noise 0.02）。 */
+    const val NOISE_ALPHA = 0.02f
 }
 
 /**
- * The liquid-glass surface (spec §2.6, ticket UI3-10).
+ * The liquid-glass surface (spec §2.6, ticket UI3-10; tier ladder v4 UI-06).
  *
  * [level] selects the draw path; the palette numbers come from the composed
  * `Oe3Theme` (its resolved glass tokens), so callers must compose the surface
@@ -62,13 +90,17 @@ object Oe3GlassFallback {
  * theme's own level. A mismatched call deliberately renders [Oe3GlassRender.Solid]:
  * an inconsistent caller must not get half-configured blur.
  *
- * Paths:
- * - `None`: opaque surface, no blur — pixel-identical to the pre-glass shell.
- * - `Standard` / `Ultra` with real blur available (API 31+, RenderEffect, a
- *   [state] provided, layer enabled): the Haze 1.x child effect, one layer,
- *   bounded by this surface's node (the bar), so the blurred region never
- *   exceeds the chrome that composes it.
- * - Otherwise: the [Oe3GlassFallback] surface — α0.96 fill plus a 24dp top scrim.
+ * Paths (tier 判定见 [Oe3GlassStrategy.resolveTier]，顺序：全局开关 → 省电 →
+ * 低内存 → API → 设备档位缓存):
+ * - `Solid` ([GlassTier.Solid]): opaque surface, no blur — pixel-identical to
+ *   the pre-glass shell.
+ * - `L1` ([GlassTier.L1]/[GlassTier.L2]) with the layer enabled and a [state]
+ *   provided: the Haze 1.x child effect, one layer, bounded by this surface's
+ *   node (the bar), so the blurred region never exceeds the chrome that
+ *   composes it.
+ * - `L0` ([GlassTier.L0]): the fake-glass recipe — α0.96 fill, 24dp top scrim,
+ *   1dp top highlight rim, 0.02 noise — the shared token set with the blur
+ *   tiers so the degradation never reads as a different material.
  */
 @Composable
 fun Oe3GlassSurface(
@@ -85,12 +117,26 @@ fun Oe3GlassSurface(
     val render = if (level != info.glassLevel) {
         Oe3GlassRender.Solid
     } else {
-        Oe3GlassStrategy.resolve(
-            level = level,
-            enabled = enabled,
-            supportsRealBlur = Oe3GlassStrategy.supportsRealBlur(Build.VERSION.SDK_INT) && state != null,
-            tokens = tokens,
-        )
+        when (
+            Oe3GlassStrategy.resolveTier(
+                level = level,
+                enabled = enabled && state != null,
+                apiLevel = Build.VERSION.SDK_INT,
+                isLowRamDevice = LocalOe3GlassLowRam.current,
+                deviceCap = LocalOe3GlassDeviceCap.current,
+            )
+        ) {
+            GlassTier.Solid -> Oe3GlassRender.Solid
+            GlassTier.L0 -> Oe3GlassRender.Fallback
+            // 本波 L2 不可达（UI-06b 接管）；与 L1 共用模糊绘制路径。
+            GlassTier.L1, GlassTier.L2 ->
+                Oe3GlassStrategy.resolve(
+                    level = level,
+                    enabled = true,
+                    supportsRealBlur = true,
+                    tokens = tokens,
+                )
+        }
     }
 
     when (render) {
@@ -112,13 +158,18 @@ fun Oe3GlassSurface(
             )
         }
 
-        Oe3GlassRender.Fallback -> Box(
-            modifier
-                .clip(shape)
-                .background(Color(tokens.fallbackTint)),
-        ) {
-            Scrim(tokens = tokens)
-            content()
+        Oe3GlassRender.Fallback -> {
+            val style = remember(tokens) { GlassStyle.of(tokens) }
+            Box(
+                modifier
+                    .clip(shape)
+                    .background(Color(tokens.fallbackTint)),
+            ) {
+                NoiseOverlay()
+                Scrim(tokens = tokens)
+                TopRim(style = style)
+                content()
+            }
         }
     }
 }
@@ -139,6 +190,48 @@ private fun Scrim(tokens: Oe3GlassTokens) {
             .height(Oe3GlassFallback.SCRIM_HEIGHT)
             .background(brush = brush),
     )
+}
+
+/**
+ * UI-06 L0 顶高光描边：沿顶边的 1dp 水平渐变，模拟玻璃上缘的高光反射。
+ * alpha 以 [Oe3GlassFallback.RIM_HIGHLIGHT_ALPHA] 为峰值，两端收窄，克制到
+ * 「看到质感但抢不过内容」的强度。Brush 按 style 记忆，无每帧重建。
+ */
+@Composable
+private fun TopRim(style: GlassStyle) {
+    val brush = remember(style) {
+        val peak = style.rimHighlightAlpha
+        Brush.horizontalGradient(
+            0f to Color.White.copy(alpha = peak * 0.25f),
+            0.4f to Color.White.copy(alpha = peak),
+            1f to Color.White.copy(alpha = peak * 0.35f),
+        )
+    }
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(style.rimHeight)
+            .background(brush = brush),
+    )
+}
+
+/**
+ * UI-06 L0 噪点：确定性噪点纹理以 repeated tile 平铺在整块背板上（α 峰值
+ * 0.02 已烘进位图像素，绘制层不再叠加 alpha）。位图全局缓存，Brush 只在进入
+ * 组合时创建一次，无逐帧成本。
+ */
+@Composable
+private fun NoiseOverlay() {
+    val brush = remember {
+        ShaderBrush(
+            ImageShader(
+                image = Oe3GlassNoise.bitmap,
+                tileModeX = TileMode.Repeated,
+                tileModeY = TileMode.Repeated,
+            ),
+        )
+    }
+    Box(Modifier.fillMaxSize().drawBehind { drawRect(brush = brush) })
 }
 
 private fun Oe3GlassRender.Blurred.toHazeStyle(tokens: Oe3GlassTokens): HazeStyle = HazeStyle(
