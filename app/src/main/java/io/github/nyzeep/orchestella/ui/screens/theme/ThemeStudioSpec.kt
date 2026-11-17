@@ -60,7 +60,8 @@ object ThemeStudioSpec {
         0xFF8E929B.toInt(), 0xFFD62828.toInt(), 0xFF22C55E.toInt(), 0xFF0047AB.toInt(),
     )
 
-    val expectedPresetCount = 41
+    /** UI-14 split the single-form mascot into a light/dark pair: 41 presets became 42. */
+    val expectedPresetCount = 42
 }
 
 /** Page sections in reading order; the test pins this exact sequence. */

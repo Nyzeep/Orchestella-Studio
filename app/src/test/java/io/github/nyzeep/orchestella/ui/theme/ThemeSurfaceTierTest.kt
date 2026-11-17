@@ -103,7 +103,7 @@ class ThemeSurfaceTierTest {
     @Test fun wellTierKeepsRealContrastAgainstItsOwnCardNeighborOnTheFourIdentityThemes() {
         // The well step must be visible but subordinate: a real step below the
         // card fill, and never an ink-heavy repaint of it.
-        for (id in listOf("mascot-lavender", "constructivist-workstation",
+        for (id in listOf("mascot-light", "constructivist-workstation",
                 "constructivist-cobalt", "constructivist-amber")) {
             val theme = ThemeCatalog.resolve(id)
             val well = ThemeColors.cardSurfaceFill(SurfaceTier.CARD_WELL, theme, theme.surface)

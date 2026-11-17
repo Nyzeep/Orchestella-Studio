@@ -44,13 +44,30 @@ class ThemeStudioControllerTest {
         assertEquals(ThemeCatalog.github, dark.theme)
     }
 
+    /**
+     * UI-14: the mascot became a paired family, so selecting it pins the picked
+     * half's brightness like every ordinary preset — no shipped palette reaches
+     * FIXED mode anymore.
+     */
     @Test
-    fun fixedPalettePinsItsOwnBrightness() {
+    fun selectingMascotLightPinsLightMode() {
         val controller = ThemeStudioController(store())
-        val state = controller.handle(ThemeStudioEvent.SelectTheme(ThemeCatalog.mascotLavender.id))
-        assertEquals(ThemeStore.Mode.FIXED, state.mode)
-        assertTrue(state.isFixedBrightness)
-        assertEquals(ThemeCatalog.mascotLavender, state.theme)
+        val state = controller.handle(ThemeStudioEvent.SelectTheme(ThemeCatalog.mascotLight.id))
+        assertEquals(ThemeStore.Mode.LIGHT, state.mode)
+        assertFalse(state.isFixedBrightness)
+        assertEquals(ThemeCatalog.mascotLight, state.theme)
+    }
+
+    @Test
+    fun legacyMascotIdReadsBackAsTheMappedLightVariant() {
+        val prefs = FakeSharedPreferences()
+        prefs.edit().putString(ThemeStore.KEY_THEME_ID, "mascot-lavender")
+            .putString(ThemeStore.KEY_THEME_MODE, ThemeStore.Mode.FIXED.value).apply()
+        val state = ThemeStudioController(ThemeStore(prefs)).read()
+        assertEquals("mascot-light", state.theme.id)
+        assertEquals("the stale fixed pin decays to follow-system for the paired family",
+            ThemeStore.Mode.SYSTEM, state.mode)
+        assertEquals(ThemeCatalog.mascotLight, state.theme)
     }
 
     @Test

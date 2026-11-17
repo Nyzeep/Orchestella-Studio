@@ -149,7 +149,10 @@ class ThemeCustomizationTest {
         store.setThemeId("custom:1")
         store.setCustomSlot(0, null)
         assertEquals("custom:1", prefs.getString(ThemeStore.KEY_THEME_ID, null))
-        assertEquals(ThemeCatalog.default, store.resolveForMode(false))
+        // UI-14: the default is the paired mascot family, so the base falls back
+        // to it and the persisted DARK mode (chosen with the slot) pairs the
+        // family's dark member even on a light system.
+        assertEquals(ThemeCatalog.mascotDark, store.resolveForMode(false))
         assertNull(store.resolveCustomSlot("custom:1"))
     }
 

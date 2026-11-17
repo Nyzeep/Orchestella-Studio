@@ -1,7 +1,6 @@
 package io.github.nyzeep.orchestella.ui.theme
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -16,9 +15,9 @@ import org.junit.Test
 class ThemeFamilyPairingTest {
 
     @Test
-    fun catalogStillCarriesExactlyFortyOnePresetsInTheSameOrder() {
-        assertEquals(41, ThemeCatalog.presets.size)
-        assertEquals(41, ThemeCatalog.all.size)
+    fun catalogStillCarriesExactlyFortyTwoPresetsInTheSameOrder() {
+        assertEquals(42, ThemeCatalog.presets.size)
+        assertEquals(42, ThemeCatalog.all.size)
         assertEquals(ThemeCatalog.all.map { it.id }, ThemeCatalog.presets.map { it.id })
     }
 
@@ -36,8 +35,8 @@ class ThemeFamilyPairingTest {
 
     @Test
     fun runtimeCatalogKeepsItsIdentityContract() {
-        assertSame(ThemeCatalog.mascotLavender, ThemeCatalog.all.first())
-        assertSame(ThemeCatalog.mascotLavender, ThemeCatalog.resolve(ThemeCatalog.mascotLavender.id))
+        assertSame(ThemeCatalog.mascotLight, ThemeCatalog.all.first())
+        assertSame(ThemeCatalog.mascotLight, ThemeCatalog.resolve(ThemeCatalog.mascotLight.id))
         assertEquals(ThemeCatalog.all.size, ThemeCatalog.all.map { it.id }.toSet().size)
     }
 
@@ -52,13 +51,14 @@ class ThemeFamilyPairingTest {
                 assertTrue("a paired family cannot be fixed", members.none { it.isFixed })
             }
         }
-        assertEquals("exactly the 20 documented dark/light pairs", 20, families.count { it.value.size == 2 })
+        assertEquals("exactly the 21 documented dark/light pairs (UI-14 added the mascot family)",
+            21, families.count { it.value.size == 2 })
     }
 
     @Test
     fun pairedFamiliesResolveSymmetricallyInBothModes() {
         val families = ThemeCatalog.presets.groupBy { it.familyId }.filterValues { it.size == 2 }
-        assertEquals(20, families.size)
+        assertEquals(21, families.size)
         families.forEach { (familyId, members) ->
             val dark = members.first { it.isDark }
             val light = members.first { !it.isDark }
@@ -79,29 +79,35 @@ class ThemeFamilyPairingTest {
         }
     }
 
+    /**
+     * UI-14 retired the last fixed palette: the mascot became a paired family.
+     * The `isFixed` flag and the FIXED-mode machinery stay for stored-preference
+     * compatibility, but no catalog row may pin its own brightness anymore.
+     */
     @Test
-    fun fixedPresetsHaveNoTwinAndIgnoreTheMode() {
-        val fixed = ThemeCatalog.presets.filter { it.isFixed }
-        assertEquals("only the mascot palette is fixed", 1, fixed.size)
-        val mascot = fixed.single()
-        assertEquals(1, ThemeCatalog.presets.count { it.familyId == mascot.familyId })
-        val theme = ThemeCatalog.resolve(mascot.id)
-        assertSame(theme, ThemeCatalog.resolveForMode(mascot.id, isDark = true))
-        assertSame(theme, ThemeCatalog.resolveForMode(mascot.id, isDark = false))
-        assertFalse(theme.isDark)
+    fun noShippedPresetIsFixedAnymore() {
+        assertEquals("UI-14 turned the single-form mascot into a paired family",
+            0, ThemeCatalog.presets.count { it.isFixed })
+        assertTrue("the mascot family carries both brightnesses",
+            ThemeCatalog.presets.count { it.familyId == "mascot" } == 2)
     }
 
     @Test
-    fun unpairedBrightnessReturnsTheBaseThemeInsteadOfNull() {
-        ThemeCatalog.presets.filter { it.isFixed }.forEach { preset ->
-            assertSame(ThemeCatalog.resolve(preset.id), ThemeCatalog.resolveForMode(preset.id, !preset.isDark))
-        }
+    fun legacyMascotIdResolvesLikeItsSuccessorAndPairsWithTheMode() {
+        assertSame("the renamed preset must keep resolving for old stored ids",
+            ThemeCatalog.mascotLight, ThemeCatalog.resolve("mascot-lavender"))
+        assertSame(ThemeCatalog.mascotLight, ThemeCatalog.resolveForMode("mascot-lavender", isDark = false))
+        assertSame(ThemeCatalog.mascotDark, ThemeCatalog.resolveForMode("mascot-lavender", isDark = true))
+        assertEquals("mascot-light", ThemeCatalog.migratedId("mascot-lavender"))
+        assertEquals(null, ThemeCatalog.migratedId("github"))
+        assertEquals(null, ThemeCatalog.migratedId(null))
     }
 
     @Test
     fun unknownOrMissingIdsStillFallBackToTheMascot() {
-        assertSame(ThemeCatalog.mascotLavender, ThemeCatalog.resolveForMode(null, isDark = true))
-        assertSame(ThemeCatalog.mascotLavender, ThemeCatalog.resolveForMode("no-such-theme", isDark = false))
+        assertSame("a missing id follows the requested mode into the mascot family",
+            ThemeCatalog.mascotDark, ThemeCatalog.resolveForMode(null, isDark = true))
+        assertSame(ThemeCatalog.mascotLight, ThemeCatalog.resolveForMode("no-such-theme", isDark = false))
         assertEquals(null, ThemeCatalog.presetById("no-such-theme"))
     }
 

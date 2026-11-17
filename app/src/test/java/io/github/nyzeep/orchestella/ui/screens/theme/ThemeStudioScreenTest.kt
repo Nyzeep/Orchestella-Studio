@@ -38,7 +38,7 @@ class ThemeStudioScreenTest {
     private val testPresets = listOf(
         ThemeCatalog.constructivistWorkstation,
         ThemeCatalog.github,
-        ThemeCatalog.mascotLavender,
+        ThemeCatalog.mascotLight,
     )
 
     private fun fixture(
@@ -209,11 +209,16 @@ class ThemeStudioScreenTest {
         assertEquals(ThemeStudioEvent.SetTextScaleMode(OeTextScaleMode.Custom), events.last())
     }
 
+    /**
+     * UI-14 retired the shipped fixed palette, so the disable-behaviour is pinned
+     * with a synthetic fixed theme: no catalog row may reach FIXED mode, but the
+     * screen must still honour the flag if one ever reappears.
+     */
     @Test
     fun fixedThemeDisablesModeSelection() {
         compose.setContent {
             ThemeStudioScreen(
-                state = fixture(theme = ThemeCatalog.mascotLavender),
+                state = fixture(theme = ThemeCatalog.mascotLight.copy(isFixed = true)),
                 onEvent = {},
                 renderTerminalView = false,
                 reduceMotion = true,

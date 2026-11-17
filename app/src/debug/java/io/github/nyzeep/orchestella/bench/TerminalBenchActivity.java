@@ -119,7 +119,7 @@ public final class TerminalBenchActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        benchTheme = ThemeCatalog.INSTANCE.getMascotLavender();
+        benchTheme = ThemeCatalog.INSTANCE.getMascotLight();
 
         String requested = getIntent() == null ? null : getIntent().getStringExtra(EXTRA_FIXTURE);
         if (requested == null || requested.trim().isEmpty()) requested = FIXTURE_ALL;

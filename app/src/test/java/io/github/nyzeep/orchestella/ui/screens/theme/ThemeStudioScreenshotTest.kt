@@ -13,7 +13,9 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * Six page goldens: dark / light / pure black x 1.0 / 1.3 text scale.
+ * Eight page goldens: dark / light / pure black x 1.0 / 1.3 text scale, plus the
+ * UI-14 mascot pair (the two screenshots are the "independent dark design, not an
+ * inversion" evidence pair).
  * The terminal inside the page is the labelled Compose palette sketch; the real
  * AndroidView terminal is a device-stage check, never a fabricated screenshot.
  */
@@ -55,6 +57,23 @@ class ThemeStudioScreenshotTest {
         theme = ThemeCatalog.constructivistWorkstationLight,
         pureBlack = false,
         textScalePercent = 130,
+    )
+
+    /** UI-14: the mascot pair — compare the two to see the dark half's own design. */
+    @Test
+    fun mascotLightAt100Percent() = capture(
+        name = "mascot-light-100",
+        theme = ThemeCatalog.mascotLight,
+        pureBlack = false,
+        textScalePercent = 100,
+    )
+
+    @Test
+    fun mascotDarkAt100Percent() = capture(
+        name = "mascot-dark-100",
+        theme = ThemeCatalog.mascotDark,
+        pureBlack = false,
+        textScalePercent = 100,
     )
 
     @Test
@@ -116,6 +135,13 @@ class TerminalPreviewScreenshotTest {
 
     @Test
     fun lightPaletteSketch() = capture("light-100", ThemeCatalog.constructivistWorkstationLight)
+
+    /** UI-14: both mascot ANSI sets on their own purple-black terminal fields. */
+    @Test
+    fun mascotLightPaletteSketch() = capture("mascot-light-100", ThemeCatalog.mascotLight)
+
+    @Test
+    fun mascotDarkPaletteSketch() = capture("mascot-dark-100", ThemeCatalog.mascotDark)
 
     private fun capture(name: String, theme: io.github.nyzeep.orchestella.ui.theme.AppTheme) {
         compose.setContent { TerminalPreviewScreenshotBoard(theme) }

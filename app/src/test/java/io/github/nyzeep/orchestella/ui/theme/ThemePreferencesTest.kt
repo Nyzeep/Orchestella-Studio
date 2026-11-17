@@ -155,20 +155,25 @@ class ThemePreferencesTest {
     @Test fun freshAndUnknownThemeIdsUseCatalogDefaultWithoutRewritingUserData() {
         val prefs = FakeSharedPreferences()
         assertEquals(ThemeCatalog.default, ThemeStore(prefs).resolve())
-        assertEquals("a fresh install boots into the mascot palette", ThemeCatalog.mascotLavender, ThemeCatalog.default)
+        assertEquals("a fresh install boots into the mascot palette", ThemeCatalog.mascotLight, ThemeCatalog.default)
         prefs.edit().putString(ThemeStore.KEY_THEME_ID, "removed-theme").putString("instance", "keep-me").apply()
         assertEquals(ThemeCatalog.default.id, ThemeStore(prefs).themeId())
         assertEquals("removed-theme", prefs.getString(ThemeStore.KEY_THEME_ID, null))
         assertEquals("keep-me", prefs.getString("instance", null))
     }
 
-    @Test fun freshInstallDefaultsToFixedModeBecauseTheDefaultPaletteHasOneBrightness() {
+    /** UI-14: the default mascot is a paired family, so a fresh install follows the system. */
+    @Test fun freshInstallDefaultsToSystemModeAndPairsTheMascotFamilyWithTheMode() {
         val prefs = FakeSharedPreferences()
-        assertEquals(ThemeStore.Mode.FIXED, ThemeStore(prefs).mode())
+        assertEquals(ThemeStore.Mode.SYSTEM, ThemeStore(prefs).mode())
         assertFalse(prefs.contains(ThemeStore.KEY_THEME_MODE))
         // An explicitly saved follow-system choice is never overridden by the default palette.
         prefs.edit().putString(ThemeStore.KEY_THEME_MODE, ThemeStore.Mode.SYSTEM.value).apply()
         assertEquals(ThemeStore.Mode.SYSTEM, ThemeStore(prefs).mode())
+        // And the family answers the mode: light field on light, purple-black on dark.
+        val store = ThemeStore(prefs)
+        assertEquals(ThemeCatalog.mascotLight, store.resolveForMode(false))
+        assertEquals(ThemeCatalog.mascotDark, store.resolveForMode(true))
     }
 
     @Test fun themeSelectionPersistsAcrossStoreInstancesAndPreservesWallpaperTypographyAndSettings() {

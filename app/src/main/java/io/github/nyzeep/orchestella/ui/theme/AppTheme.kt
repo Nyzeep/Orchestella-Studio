@@ -7,8 +7,10 @@ package io.github.nyzeep.orchestella.ui.theme
  *
  * @param terminalBackground distinct from [background] so the console can keep a
  *        denser, more opaque surface even under translucent UI chrome.
- * @param isFixed the palette exists in exactly one brightness (the mascot lavender).
- *        Fixed themes ignore the system dark/light setting and never swap variants.
+ * @param isFixed the palette exists in exactly one brightness and ignores the system
+ *        dark/light setting. No shipped preset sets this since UI-14 — the mascot
+ *        became the `mascot` paired family — but the flag and the [ThemeStore.Mode.FIXED]
+ *        machinery stay so stored preferences from older releases keep resolving.
  */
 data class AppTheme(
     val id: String,
@@ -67,7 +69,7 @@ data class ThemePalette(
  * @param familyId ties the dark and light variants of the same visual family
  *        together. Mode resolution derives the twin from this id instead of a
  *        handwritten lookup table; a family has at most one dark and one light
- *        member. A fixed palette (the mascot) is its own only member.
+ *        member. A fixed palette (none shipped since UI-14) is its own only member.
  * @param isFixed the palette exists in exactly one brightness and never swaps.
  */
 data class ThemePreset(

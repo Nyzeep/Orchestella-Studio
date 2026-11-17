@@ -1,14 +1,18 @@
 package io.github.nyzeep.orchestella.ui.theme
 
 /**
- * Built-in theme catalog: the mascot lavender flagship, Constructivist industrial
- * controls, Claude, Moonshot, and the 15 modern developer suites (Catppuccin, GitHub,
- * Linear, Raycast, Rose Pine, Vercel, VS Code Plus, Xcode, etc.).
+ * Built-in theme catalog: the mascot flagship pair (light white field + independent
+ * purple-black dark half, UI-14), Constructivist industrial controls, Claude, Moonshot,
+ * and the 15 modern developer suites (Catppuccin, GitHub, Linear, Raycast, Rose Pine,
+ * Vercel, VS Code Plus, Xcode, etc.).
  *
  * Since UI-01 this file is data-driven: [presets] is the single source and the public
- * `AppTheme` values are projections of it, so the 41 runtime themes, the picker order
+ * `AppTheme` values are projections of it, so the runtime themes, the picker order
  * and every public val name stay exactly as they were. Dark/light variants pair through
- * [ThemePreset.familyId] — the old handwritten brightness lookup table is gone.
+ * [ThemePreset.familyId] — the old handwritten brightness lookup table is gone. Since
+ * UI-14 the mascot is a paired family too: the old single-form `mascot-lavender`
+ * preset became `mascot-light` + `mascot-dark`, and stored ids from older releases
+ * map forward through [migratedId].
  *
  * The ANSI arrays follow the standard 16-color order: black, red, green, yellow, blue,
  * magenta, cyan, white, then the bright eight.
@@ -48,35 +52,60 @@ object ThemeCatalog {
 
     /** The single source: one row per shipped preset, in picker order. */
     val presets: List<ThemePreset> = listOf(
-    // --- Flagship mascot theme (first in the picker: it is the product's face) ---
+    // --- Flagship mascot family (first in the picker: it is the product's face) ---
     //
-    // Lavender industrial-control palette sampled from the mascot artwork by
-    // `tools/branding/sample_palette.py`. Fixed to a single brightness: the
-    // artwork only exists on a light lavender field, so it has no paired dark
-    // twin. Re-run the script after any artwork or palette change and paste its
-    // measured hex values here — do not hand-tune by eye.
+    // UI-14 redesign: the old single-form lavender preset (`mascot-lavender`,
+    // sampled from the artwork onto a #C2A8C7 field) became a light/dark pair.
+    // The light half is a pure white field with the mascot purple kept as the
+    // accent; the dark half is an independent purple-black design, not an
+    // inversion. The light ANSI palette keeps the artwork-measured values —
+    // re-verified ≥4.5:1 on the new #1C1A20 terminal field (minimum 5.02) —
+    // while the dark half carries its own purple-tinted set tuned for #0B0910.
         ThemePreset(
-            id = "mascot-lavender",
+            id = "mascot-light",
             displayName = "看板娘 · 淡紫工控",
-            familyId = "mascot-lavender",
+            familyId = "mascot",
             isDark = false,
-            isFixed = true,
             palette = ThemePalette(
-                background = 0xFFC2A8C7.toInt(),
-                surface = 0xFFDCD0DF.toInt(),
-                surfaceTranslucent = 0xE6DCD0DF.toInt(),
-                primary = 0xFF41375A.toInt(),
+                background = 0xFFFFFFFF.toInt(),
+                surface = 0xFFF6F4F8.toInt(),
+                surfaceTranslucent = 0xE6F6F4F8.toInt(),
+                primary = 0xFF5B4B78.toInt(),
                 accent = 0xFF675775.toInt(),
-                text = 0xFF1D1928.toInt(),
-                textDim = 0xFF4A3F57.toInt(),
+                text = 0xFF1A1720.toInt(),
+                textDim = 0xFF5A5266.toInt(),
                 glow = 0xFF675775.toInt(),
-                terminalBackground = 0xFF242424.toInt(),
+                terminalBackground = 0xFF1C1A20.toInt(),
                 terminalForeground = 0xFFFDF1DB.toInt(),
                 ansi = ansi(
                     0xFF38314A.toInt(), 0xFFCC7070.toInt(), 0xFF839C7C.toInt(), 0xFFCDA870.toInt(),
                     0xFF7B8FC2.toInt(), 0xFFB47BBC.toInt(), 0xFF78A9B0.toInt(), 0xFFD0C7D6.toInt(),
                     0xFFA89DA1.toInt(), 0xFFDD9C94.toInt(), 0xFFACB99C.toInt(), 0xFFDDC194.toInt(),
                     0xFFA7B0CA.toInt(), 0xFFCDA3C7.toInt(), 0xFFA5C1BF.toInt(), 0xFFDFD5D8.toInt(),
+                ),
+            ),
+        ),
+        ThemePreset(
+            id = "mascot-dark",
+            displayName = "看板娘 · 淡紫工控",
+            familyId = "mascot",
+            isDark = true,
+            palette = ThemePalette(
+                background = 0xFF0E0C12.toInt(),
+                surface = 0xFF1A1620.toInt(),
+                surfaceTranslucent = 0xE61A1620.toInt(),
+                primary = 0xFF9B87C4.toInt(),
+                accent = 0xFFB9A6DC.toInt(),
+                text = 0xFFEFEAF5.toInt(),
+                textDim = 0xFFA79FB5.toInt(),
+                glow = 0xFFB9A6DC.toInt(),
+                terminalBackground = 0xFF0B0910.toInt(),
+                terminalForeground = 0xFFEFEAF5.toInt(),
+                ansi = ansi(
+                    0xFF2A2433.toInt(), 0xFFD98A8E.toInt(), 0xFF8FBF9A.toInt(), 0xFFD9BC8A.toInt(),
+                    0xFF8FA8D9.toInt(), 0xFFC093D9.toInt(), 0xFF8FC4C9.toInt(), 0xFFD9D2E0.toInt(),
+                    0xFF857B90.toInt(), 0xFFE8A0A4.toInt(), 0xFFA3CFAE.toInt(), 0xFFE8CFA0.toInt(),
+                    0xFFA3BDE8.toInt(), 0xFFD0AEE8.toInt(), 0xFFA3D6DA.toInt(), 0xFFF2EFF5.toInt(),
                 ),
             ),
         ),
@@ -949,12 +978,13 @@ object ThemeCatalog {
 
     /**
      * Runtime projections, built once per id. Keeping them in one map is what
-     * lets `assertSame(ThemeCatalog.mascotLavender, ThemeCatalog.all.first())`
+     * lets `assertSame(ThemeCatalog.mascotLight, ThemeCatalog.all.first())`
      * keep holding: the public vals and [all] are the very same instances.
      */
     private val themesById: Map<String, AppTheme> = presets.associate { it.id to it.toAppTheme() }
 
-    val mascotLavender: AppTheme get() = themesById.getValue("mascot-lavender")
+    val mascotLight: AppTheme get() = themesById.getValue("mascot-light")
+    val mascotDark: AppTheme get() = themesById.getValue("mascot-dark")
     val constructivistWorkstation: AppTheme get() = themesById.getValue("constructivist-workstation")
     val constructivistWorkstationLight: AppTheme get() = themesById.getValue("constructivist-workstation-light")
     val constructivistCobalt: AppTheme get() = themesById.getValue("constructivist-cobalt")
@@ -1001,10 +1031,21 @@ object ThemeCatalog {
     fun byId(id: String?): AppTheme? = all.firstOrNull { it.id == id }
 
     /** The palette a fresh install boots into, and the fallback for unknown or removed ids. */
-    val default: AppTheme get() = mascotLavender
+    val default: AppTheme get() = mascotLight
 
-    /** Resolves a stored theme id, falling back to [default] (the flagship mascot lavender). */
-    fun resolve(id: String?): AppTheme = byId(id) ?: default
+    /**
+     * Ids stored by earlier releases that must keep resolving after the UI-14 rename.
+     * The old single-form mascot preset became [mascotLight]; a user whose saved
+     * preferences still carry `mascot-lavender` keeps their theme instead of falling
+     * into the unknown-id default by coincidence.
+     */
+    private val legacyIds: Map<String, String> = mapOf("mascot-lavender" to "mascot-light")
+
+    /** The replacement id for a stored id from an earlier release, or null when current. */
+    fun migratedId(id: String?): String? = id?.let { legacyIds[it] }
+
+    /** Resolves a stored theme id, mapping legacy ids first and falling back to [default]. */
+    fun resolve(id: String?): AppTheme = byId(migratedId(id) ?: id) ?: default
 
     /** Default 16-color ANSI palette for custom theme slots without a terminal palette of their own. */
     fun defaultAnsi(isDark: Boolean): List<Int> =
@@ -1015,7 +1056,9 @@ object ThemeCatalog {
     /**
      * Resolves a stored theme id for the given target dark/light mode. The twin
      * is derived from [ThemePreset.familyId]; a family with no member in the
-     * requested brightness (including every fixed palette) resolves to itself.
+     * requested brightness resolves to itself. No shipped preset is fixed since
+     * UI-14, but the fixed short-circuit stays so a future single-form palette
+     * (or a hand-built one) still ignores the mode.
      */
     fun resolveForMode(id: String?, isDark: Boolean): AppTheme {
         val base = resolve(id)
