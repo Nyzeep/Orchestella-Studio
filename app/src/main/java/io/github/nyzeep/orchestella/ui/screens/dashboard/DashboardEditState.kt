@@ -45,7 +45,9 @@ class SharedPreferencesDashboardEditStore(context: Context) : DashboardEditStore
     override fun getString(key: String): String? = preferences.getString(key, null)
 
     override fun putString(key: String, value: String) {
-        preferences.edit().putString(key, value).apply()
+        // commit 而非 apply：验收标准是杀进程后状态仍在，apply 的落盘是异步的，
+        // force-stop 有丢失窗口（code-review Wave 3 裁决）。
+        preferences.edit().putString(key, value).commit()
     }
 }
 
