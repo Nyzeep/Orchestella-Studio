@@ -52,28 +52,30 @@ class OeListGroupTest {
     private val recordProperty = "roborazzi.test.record"
 
     /** 插件接管（record/verify/compare 任务）时像素断言让位给 golden 门。 */
-    private fun pluginOwnsCaptureMode(): Boolean =
-        System.getProperty("roborazzi.test.record") != null ||
-            System.getProperty("roborazzi.test.verify") != null ||
-            System.getProperty("roborazzi.test.compare") != null
+    private var pluginOwnsCaptureMode = false
 
     @Before
     fun enableTemporaryCapture() {
-        if (!pluginOwnsCaptureMode()) {
+        // 先于自身写入读取插件属性，避免 @Before 设置的 record 被自己的
+        // @Test 守卫误读为“插件接管”。
+        pluginOwnsCaptureMode = System.getProperty("roborazzi.test.record") != null ||
+            System.getProperty("roborazzi.test.verify") != null ||
+            System.getProperty("roborazzi.test.compare") != null
+        if (!pluginOwnsCaptureMode) {
             System.setProperty(recordProperty, "true")
         }
     }
 
     @After
     fun disableTemporaryCapture() {
-        if (!pluginOwnsCaptureMode()) {
+        if (!pluginOwnsCaptureMode) {
             System.clearProperty(recordProperty)
         }
     }
 
     @Test
     fun groupClipsFirstAndLastRowCornersAndKeepsMiddleRowsSquare() {
-        assumeTrue("像素断言只在非 golden 门模式下运行", !pluginOwnsCaptureMode())
+        assumeTrue("像素断言只在非 golden 门模式下运行", !pluginOwnsCaptureMode)
         renderGroup(rowCount = 3)
         val group = compose.onNodeWithTag("group").fetchSemanticsNode().boundsInRoot
         val bitmap = captureWindow()

@@ -60,21 +60,23 @@ class OeCardPressTimingTest {
      * 由插件接管）里临时开启 record 写临时位图。校验任务里像素断言让位给
      * golden 门，仅保留常量钉值。
      */
-    private fun pluginOwnsCaptureMode(): Boolean =
-        System.getProperty("roborazzi.test.record") != null ||
-            System.getProperty("roborazzi.test.verify") != null ||
-            System.getProperty("roborazzi.test.compare") != null
+    private var pluginOwnsCaptureMode = false
 
     @Before
     fun enableTemporaryCapture() {
-        if (!pluginOwnsCaptureMode()) {
+        // 先于自身写入读取插件属性，避免 @Before 设置的 record 被自己的
+        // @Test 守卫误读为“插件接管”。
+        pluginOwnsCaptureMode = System.getProperty("roborazzi.test.record") != null ||
+            System.getProperty("roborazzi.test.verify") != null ||
+            System.getProperty("roborazzi.test.compare") != null
+        if (!pluginOwnsCaptureMode) {
             System.setProperty(recordProperty, "true")
         }
     }
 
     @After
     fun disableTemporaryCapture() {
-        if (!pluginOwnsCaptureMode()) {
+        if (!pluginOwnsCaptureMode) {
             System.clearProperty(recordProperty)
         }
     }
@@ -89,7 +91,7 @@ class OeCardPressTimingTest {
 
     @Test
     fun pressInWaitsOutTheRevealDelayThenFadesToTheInkWash() {
-        assumeTrue("像素断言只在非 golden 门模式下运行", !pluginOwnsCaptureMode())
+        assumeTrue("像素断言只在非 golden 门模式下运行", !pluginOwnsCaptureMode)
         val colors = renderPressingCard()
 
         compose.onNodeWithTag("press-card").performTouchInput { down(center) }
@@ -110,7 +112,7 @@ class OeCardPressTimingTest {
 
     @Test
     fun releaseSettlesBackOver250ms() {
-        assumeTrue("像素断言只在非 golden 门模式下运行", !pluginOwnsCaptureMode())
+        assumeTrue("像素断言只在非 golden 门模式下运行", !pluginOwnsCaptureMode)
         val colors = renderPressingCard()
 
         compose.onNodeWithTag("press-card").performTouchInput { down(center) }
