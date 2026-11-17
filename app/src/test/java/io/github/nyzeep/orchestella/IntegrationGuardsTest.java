@@ -40,7 +40,11 @@ public final class IntegrationGuardsTest {
                 "AvfAudioChannel.java",
                 "AvfAudioVsockProtocol.java",
                 "AvfVsockPortForwarder.java",
-                "QemuWaylandChannel.java")) {
+                "QemuWaylandChannel.java",
+                // UI-12（2026-11-18）：旧 XML 向导已重写为 Compose 壳内二级页，
+                // 旧 Activity 必须保持删除状态，不得经便利 import 复活。
+                "SetupWizardActivity.java",
+                "SetupWizardActivity.kt")) {
             assertFalse(missing + " is a dead path and must not return",
                     Files.exists(repoRoot().resolve("app/src/main/java/io/github/nyzeep/orchestella")
                             .resolve(missing)));
@@ -49,13 +53,20 @@ public final class IntegrationGuardsTest {
 
     @Test
     public void avfSingleVcpuConstraintIsVisibleBeforeLaunch() throws IOException {
-        String activity = read("app/src/main/java/io/github/nyzeep/orchestella/SetupWizardActivity.kt");
+        // UI-12 迁移：守卫从旧 SetupWizardActivity.kt 改指 Compose 向导的投影与
+        // 步骤内容，三条不变量原样保留（问 admission 层 / 分支单 vCPU 拒绝 /
+        // 渲染专用提示）。
+        String projection = read(
+                "app/src/main/java/io/github/nyzeep/orchestella/ui/screens/wizard/WizardUiState.kt");
         assertTrue("the wizard must ask the admission layer",
-                activity.contains("AvfLaunchAdmission.cpuSupport"));
+                projection.contains("AvfLaunchAdmission.cpuSupport"));
         assertTrue("the wizard must branch on the single-vCPU refusal",
-                activity.contains("NEEDS_SINGLE_VCPU"));
+                projection.contains("NEEDS_SINGLE_VCPU"));
+
+        String stepContents = read(
+                "app/src/main/java/io/github/nyzeep/orchestella/ui/screens/wizard/WizardStepContents.kt");
         assertTrue("the wizard must render the dedicated notice",
-                activity.contains("wizard_config_vcpu_avf_notice"));
+                stepContents.contains("wizard_config_vcpu_avf_notice"));
 
         String strings = read("app/src/main/res/values/strings.xml");
         assertTrue("the notice must state the 1 vCPU constraint in user terms",

@@ -34,16 +34,30 @@ class OeSliderLayoutInflationTest {
         assertEquals(6, ram.progress)
     }
 
+    /**
+     * UI-12 迁移注记：`activity_setup_wizard.xml` 是浮点属性（valueFrom /
+     * valueTo / stepSize / value）唯一的 XML 消费者，随向导 Compose 化删除
+     * （Compose 侧改走 UI-05 的 OeSlider）。浮点区间不变量改以同样的数值
+     * （旧 XML 的 vCPU 1..8 步 1 值 4 / RAM 512..6144 步 256 值 2048）钉在
+     * [OeSliderView] 的编程 API 上——这正是 XML 解析器喂给它的同一组 setter。
+     */
     @Test
-    fun materialSliderLayoutKeepsFloatRangeAndStep() {
-        val root = LayoutInflater.from(context).inflate(R.layout.activity_setup_wizard, null)
-        val vcpu = root.findViewById<OeSliderView>(R.id.slider_vcpu)
+    fun floatRangeSemanticsMatchFormerWizardXml() {
+        val vcpu = OeSliderView(context)
+        vcpu.valueFrom = 1f
+        vcpu.valueTo = 8f
+        vcpu.stepSize = 1f
+        vcpu.value = 4f
         assertEquals(1f, vcpu.valueFrom, 0f)
         assertEquals(8f, vcpu.valueTo, 0f)
         assertEquals(1f, vcpu.stepSize, 0f)
         assertEquals(4f, vcpu.value, 0f)
 
-        val ram = root.findViewById<OeSliderView>(R.id.slider_ram)
+        val ram = OeSliderView(context)
+        ram.valueFrom = 512f
+        ram.valueTo = 6144f
+        ram.stepSize = 256f
+        ram.value = 2048f
         assertEquals(512f, ram.valueFrom, 0f)
         assertEquals(6144f, ram.valueTo, 0f)
         assertEquals(256f, ram.stepSize, 0f)

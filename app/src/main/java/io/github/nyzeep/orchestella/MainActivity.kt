@@ -38,11 +38,15 @@ import io.github.nyzeep.orchestella.ui.oe3.glass.LocalOe3GlassLowRam
 import io.github.nyzeep.orchestella.ui.oe3.glass.Oe3GlassFrameGate
 import io.github.nyzeep.orchestella.ui.oe3.glass.Oe3GlassStrategy
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3GlassLevel
+import io.github.nyzeep.orchestella.ui.screens.wizard.WizardController
+import io.github.nyzeep.orchestella.ui.screens.wizard.WizardScreen
+import io.github.nyzeep.orchestella.ui.shell.OeBackStack
 import io.github.nyzeep.orchestella.ui.shell.Oe3App
 import io.github.nyzeep.orchestella.ui.shell.Oe3Feature
 import io.github.nyzeep.orchestella.ui.shell.Oe3NavStyle
 import io.github.nyzeep.orchestella.ui.shell.Oe3Pages
 import io.github.nyzeep.orchestella.ui.shell.Oe3ShellController
+import io.github.nyzeep.orchestella.ui.shell.OeDestination
 import io.github.nyzeep.orchestella.ui.shell.Oe3Tab
 import io.github.nyzeep.orchestella.ui.shell.OeAppBackgroundSpec
 import io.github.nyzeep.orchestella.ui.theme.AppTheme
@@ -115,6 +119,11 @@ class MainActivity : AppCompatActivity() {
     private var pendingExportInstance: InstanceLifecycle.Instance? = null
     private var oe3Shell: Oe3ShellController? = null
     private var oe3ComposeView: ComposeView? = null
+
+    // UI-12 向导：壳内导航栈由 Activity 持有（旋转不丢；进程级栈恢复由 UI-13
+    // 提升进 Oe3ShellController 时收口），向导引擎随 Activity 存续。
+    private var oe3BackStack: OeBackStack? = null
+    private var wizardController: WizardController? = null
     private var fullyDrawnReported = false
 
     // ==================== Oe3 页面状态（Compose 壳层的渲染输入） ====================
@@ -257,6 +266,10 @@ class MainActivity : AppCompatActivity() {
          * 通知权限改为进程首个首帧后请求一次；不再挂在每次 VM 启动路径上。
          */
         private val notificationPromptShownThisProcess = java.util.concurrent.atomic.AtomicBoolean(false)
+
+        /** UI-12：向导目的地键与草稿恢复键（旧 SetupWizardActivity STATE_DRAFT 的壳内对应）。 */
+        private const val WIZARD_DESTINATION_KEY = "creation-wizard"
+        private const val STATE_WIZARD_DRAFT = "creation_draft_v1"
     }
 
     private val dashboardHandler = Handler(Looper.getMainLooper())
@@ -401,6 +414,8 @@ class MainActivity : AppCompatActivity() {
             Oe3ShellController.restore(savedInstanceState?.getString(Oe3ShellController.STATE_KEY)),
         )
         oe3Shell = controller
+        val backStack = OeBackStack()
+        oe3BackStack = backStack
         refreshOe3ShellSnapshot()
 
         val composeView = ComposeView(this).apply {
@@ -438,6 +453,7 @@ class MainActivity : AppCompatActivity() {
                             cornerRadiusDp = prefs.cornerRadiusDp,
                             surfaceAlpha = prefs.surfaceAlpha,
                             backgroundUri = prefs.backgroundUri,
+                            backStack = backStack,
                             pages = buildOe3Pages(),
                         )
                     }
@@ -467,6 +483,19 @@ class MainActivity : AppCompatActivity() {
             if (isFinishing || isDestroyed) return@post
             if (!notificationPromptShownThisProcess.compareAndSet(false, true)) return@post
             NotificationPermissionPrompt.requestIfNeeded(this)
+        }
+        // UI-12：进程死亡恢复——旧 SetupWizardActivity 以「重进 Activity」恢复，
+        // 壳内导航下改为「草稿恢复 + 自动回到向导目的地」，语义等价。
+        savedInstanceState?.getBundle(STATE_WIZARD_DRAFT)?.let { bundle ->
+            val draft = bundle.keySet().associateWith { key -> requireNotNull(bundle.getString(key)) }
+            val restored = WizardController(
+                context = applicationContext,
+                targetDistroId = draft["distro"] ?: "ubuntu",
+                callbacks = wizardCallbacks(),
+                savedDraft = draft,
+            )
+            wizardController = restored
+            backStack.push(wizardDestination(restored, backStack))
         }
         initUmlRootfsCardState()
         dashboardHandler.post(refreshDashboard)
@@ -1338,11 +1367,54 @@ class MainActivity : AppCompatActivity() {
 
     // ==================== 装配向导与启动 intent ====================
 
+    /**
+     * UI-12：向导入口从「启动 SetupWizardActivity」改为壳内导航目的地
+     * （push [OeDestination]）。创建进行中的引擎复用（不重复起下载）；
+     * 空闲重进 = 新引擎（与旧「每次启动新 Activity」语义一致）。
+     */
     private fun launchCreationWizard(distroId: String) {
-        val intent = Intent(this, SetupWizardActivity::class.java).apply {
-            putExtra(SetupWizardActivity.EXTRA_TARGET_DISTRO, distroId)
+        val stack = oe3BackStack ?: return
+        val existing = wizardController
+        if (existing == null || !existing.state.value.isCreating) {
+            existing?.dispose()
+            wizardController = WizardController(
+                context = applicationContext,
+                targetDistroId = distroId,
+                callbacks = wizardCallbacks(),
+            ).also { wizardController = it }
         }
-        startActivity(intent)
+        val active = requireNotNull(wizardController)
+        if (stack.top?.key != WIZARD_DESTINATION_KEY) {
+            stack.push(wizardDestination(active, stack))
+        }
+    }
+
+    private fun wizardCallbacks(): WizardController.Callbacks = WizardController.Callbacks(
+        onCreated = { onWizardCreated() },
+        onShowShizukuClient = {
+            ShizukuClientDialog().show(supportFragmentManager, "shizuku-client")
+        },
+    )
+
+    private fun wizardDestination(
+        controller: WizardController,
+        stack: OeBackStack,
+    ): OeDestination = OeDestination(
+        key = WIZARD_DESTINATION_KEY,
+        title = getString(R.string.wizard_page_title),
+        content = {
+            WizardScreen(controller = controller, onExit = { stack.pop() })
+        },
+    )
+
+    /** 创建成功：壳层回到实例页并刷新（旧 startActivity(MainActivity, CLEAR_TOP) 语义）。 */
+    private fun onWizardCreated() {
+        wizardController?.dispose()
+        wizardController = null
+        oe3BackStack?.popAll()
+        oe3Shell?.select(Oe3Tab.Instances)
+        oe3InstancesRefreshingState.value = true
+        loadDashboardSnapshot { snapshot -> updateOe3Pages(snapshot) }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -1480,6 +1552,12 @@ class MainActivity : AppCompatActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         oe3Shell?.let { outState.putString(Oe3ShellController.STATE_KEY, it.selectedTab.key) }
+        // UI-12：向导草稿随 Activity 状态持久（旧 SetupWizardActivity STATE_DRAFT 语义）。
+        wizardController?.let { controller ->
+            val draft = Bundle()
+            controller.saveDraft().forEach { (key, value) -> draft.putString(key, value) }
+            outState.putBundle(STATE_WIZARD_DRAFT, draft)
+        }
         super.onSaveInstanceState(outState)
     }
 
