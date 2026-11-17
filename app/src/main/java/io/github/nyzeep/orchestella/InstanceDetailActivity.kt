@@ -13,7 +13,6 @@ import android.os.SystemClock
 import android.view.View
 import android.widget.EditText
 import android.widget.ImageView
-import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -37,6 +36,7 @@ import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
 import io.github.nyzeep.orchestella.ui.InstanceDetailViewModel
+import io.github.nyzeep.orchestella.ui.design.components.OeSliderView
 import io.github.nyzeep.orchestella.ui.InstanceDetailViewModel.InstanceDetailUiState
 import io.github.nyzeep.orchestella.ui.InstanceDetailViewModel.UpdateHardwareResult
 import io.github.nyzeep.orchestella.ui.motion.OrchestellaMotion
@@ -97,9 +97,9 @@ class InstanceDetailActivity : AppCompatActivity() {
     // Views - Section 2
     private lateinit var hwLockedHint: TextView
     private lateinit var vcpuLabel: TextView
-    private lateinit var vcpuSeekBar: SeekBar
+    private lateinit var vcpuSlider: OeSliderView
     private lateinit var ramLabel: TextView
-    private lateinit var ramSeekBar: SeekBar
+    private lateinit var ramSlider: OeSliderView
     private lateinit var ramSafetyZone: TextView
     private lateinit var btnSaveHardware: MaterialButton
 
@@ -300,9 +300,9 @@ class InstanceDetailActivity : AppCompatActivity() {
         // Section 2
         hwLockedHint = findViewById(R.id.tv_hw_locked_hint)
         vcpuLabel = findViewById(R.id.tv_detail_vcpu_label)
-        vcpuSeekBar = findViewById(R.id.seek_detail_vcpu)
+        vcpuSlider = findViewById(R.id.seek_detail_vcpu)
         ramLabel = findViewById(R.id.tv_detail_ram_label)
-        ramSeekBar = findViewById(R.id.seek_detail_ram)
+        ramSlider = findViewById(R.id.seek_detail_ram)
         ramSafetyZone = findViewById(R.id.tv_detail_ram_safety_zone)
         btnSaveHardware = findViewById(R.id.btn_save_hardware)
 
@@ -342,34 +342,34 @@ class InstanceDetailActivity : AppCompatActivity() {
     private fun initHardwareSliders(state: InstanceDetailUiState) {
         val profile = hostProfile ?: HostHardwareDetector.detect(this)
         val maxCores = Math.min(VmHardwareConfig.MAX_CPU_CORES, profile.totalCores())
-        vcpuSeekBar.max = Math.max(0, maxCores - 1)
+        vcpuSlider.max = Math.max(0, maxCores - 1)
         selectedVcpu = Math.min(state.vCpu, maxCores)
-        vcpuSeekBar.progress = Math.max(0, selectedVcpu - 1)
+        vcpuSlider.progress = Math.max(0, selectedVcpu - 1)
         vcpuLabel.text = getString(R.string.hardware_vcpu_label, selectedVcpu)
 
         val maxRamMb = Math.min(VmHardwareConfig.MAX_RAM_MEGABYTES, profile.totalRamMb())
         val ramSteps = Math.max(1, (maxRamMb - minRamMb) / stepRamMb)
-        ramSeekBar.max = ramSteps
+        ramSlider.max = ramSteps
         selectedRamMb = Math.max(minRamMb, Math.min(state.ramMb, maxRamMb))
-        ramSeekBar.progress = Math.max(0, (selectedRamMb - minRamMb) / stepRamMb)
+        ramSlider.progress = Math.max(0, (selectedRamMb - minRamMb) / stepRamMb)
         updateRamZoneUi(selectedRamMb, profile)
 
-        vcpuSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+        vcpuSlider.setOnProgressChangeListener(object : OeSliderView.OnProgressChangeListener {
+            override fun onProgressChanged(seekBar: OeSliderView?, progress: Int, fromUser: Boolean) {
                 selectedVcpu = progress + 1
                 vcpuLabel.text = getString(R.string.hardware_vcpu_label, selectedVcpu)
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStartTrackingTouch(seekBar: OeSliderView?) {}
+            override fun onStopTrackingTouch(seekBar: OeSliderView?) {}
         })
 
-        ramSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+        ramSlider.setOnProgressChangeListener(object : OeSliderView.OnProgressChangeListener {
+            override fun onProgressChanged(seekBar: OeSliderView?, progress: Int, fromUser: Boolean) {
                 selectedRamMb = minRamMb + progress * stepRamMb
                 updateRamZoneUi(selectedRamMb, profile)
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStartTrackingTouch(seekBar: OeSliderView?) {}
+            override fun onStopTrackingTouch(seekBar: OeSliderView?) {}
         })
     }
 
@@ -460,16 +460,16 @@ class InstanceDetailActivity : AppCompatActivity() {
         // Section 2: Hardware Lock
         if (state.canModifyHardware && inactive) {
             hwLockedHint.visibility = View.GONE
-            vcpuSeekBar.isEnabled = true
-            ramSeekBar.isEnabled = true
+            vcpuSlider.isEnabled = true
+            ramSlider.isEnabled = true
             val profile = hostProfile ?: HostHardwareDetector.detect(this)
             val zone = profile.evaluateRamZone(selectedRamMb)
             btnSaveHardware.isEnabled = zone != HostHardwareProfile.SafetyZone.RED
         } else {
             hwLockedHint.visibility = View.VISIBLE
             hwLockedHint.text = state.hardwareModificationRejectionReason ?: getString(R.string.console_hw_running_hint)
-            vcpuSeekBar.isEnabled = false
-            ramSeekBar.isEnabled = false
+            vcpuSlider.isEnabled = false
+            ramSlider.isEnabled = false
             btnSaveHardware.isEnabled = false
         }
 

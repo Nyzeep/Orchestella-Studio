@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -20,8 +19,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -48,6 +45,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.nyzeep.orchestella.R
+import io.github.nyzeep.orchestella.ui.design.components.OeSlider
 import io.github.nyzeep.orchestella.ui.theme.OeTextScaleMode
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Button
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3ButtonStyle
@@ -781,17 +779,18 @@ private fun TextScaleCard(state: ThemeStudioState, onEvent: (ThemeStudioEvent) -
                 color = colors.onSurface.oe3Color(),
             )
         }
-        Oe3Slider(
+        OeSlider(
             value = state.textScalePercent.toFloat(),
             onValueChange = { raw ->
                 val snapped = ((raw / 5f).roundToInt() * 5)
                     .coerceIn(ThemeStudioSpec.textScaleRange.first, ThemeStudioSpec.textScaleRange.last)
                 onEvent(ThemeStudioEvent.SetTextScalePercent(snapped))
             },
-            range = ThemeStudioSpec.textScaleRange.first.toFloat()..ThemeStudioSpec.textScaleRange.last.toFloat(),
+            valueRange = ThemeStudioSpec.textScaleRange.first.toFloat()..
+                ThemeStudioSpec.textScaleRange.last.toFloat(),
             enabled = custom,
-            description = sliderText,
-            tag = "theme-slider:text-scale",
+            stateDescription = sliderText,
+            modifier = Modifier.testTag("theme-slider:text-scale"),
         )
     }
 }
@@ -849,13 +848,13 @@ private fun WallpaperCard(
             style = Oe3Typography.style(Oe3TextRole.Body),
             color = colors.onSurface.oe3Color(),
         )
-        Oe3Slider(
+        OeSlider(
             value = state.surfaceOpacityPercent.toFloat(),
             onValueChange = { onEvent(ThemeStudioEvent.SetSurfaceOpacity(it.roundToInt())) },
-            range = ThemeStudioSpec.surfaceOpacityRange.first.toFloat()..
+            valueRange = ThemeStudioSpec.surfaceOpacityRange.first.toFloat()..
                 ThemeStudioSpec.surfaceOpacityRange.last.toFloat(),
-            description = opacityText,
-            tag = "theme-slider:surface-opacity",
+            stateDescription = opacityText,
+            modifier = Modifier.testTag("theme-slider:surface-opacity"),
         )
         Text(
             text = opacityText,
@@ -895,7 +894,7 @@ private fun TerminalCard(
         Spacer(Modifier.height(4.dp))
         TerminalBaseSwatches(state.theme)
 
-        TerminalSlider(
+        TerminalSliderRow(
             title = stringResource(R.string.ui3_theme_terminal_font),
             valueText = stringResource(R.string.ui3_theme_terminal_font_value, state.terminalFontSizeSp),
             description = stringResource(R.string.ui3_theme_terminal_font_desc, state.terminalFontSizeSp),
@@ -906,7 +905,7 @@ private fun TerminalCard(
             tag = "theme-slider:terminal-font-size",
             onChange = { onEvent(ThemeStudioEvent.SetTerminalFontSizeSp(it.roundToInt())) },
         )
-        TerminalSlider(
+        TerminalSliderRow(
             title = stringResource(R.string.ui3_theme_terminal_letter),
             valueText = stringResource(R.string.ui3_theme_terminal_letter_value, state.terminalLetterSpacingEm),
             description = stringResource(R.string.ui3_theme_terminal_letter_desc, state.terminalLetterSpacingEm),
@@ -916,7 +915,7 @@ private fun TerminalCard(
             tag = "theme-slider:terminal-letter-spacing",
             onChange = { onEvent(ThemeStudioEvent.SetTerminalLetterSpacing(it)) },
         )
-        TerminalSlider(
+        TerminalSliderRow(
             title = stringResource(R.string.ui3_theme_terminal_line),
             valueText = stringResource(R.string.ui3_theme_terminal_line_value, state.terminalLineSpacingPx),
             description = stringResource(R.string.ui3_theme_terminal_line_desc, state.terminalLineSpacingPx),
@@ -967,7 +966,7 @@ private fun TerminalCard(
             color = colors.onSurfaceVariant.oe3Color(),
         )
 
-        TerminalSlider(
+        TerminalSliderRow(
             title = stringResource(R.string.ui3_theme_terminal_scrim),
             valueText = stringResource(
                 R.string.ui3_theme_terminal_scrim_value,
@@ -1013,7 +1012,7 @@ private fun TerminalCard(
 }
 
 @Composable
-private fun TerminalSlider(
+private fun TerminalSliderRow(
     title: String,
     valueText: String,
     description: String,
@@ -1037,67 +1036,13 @@ private fun TerminalSlider(
             color = colors.onSurfaceVariant.oe3Color(),
         )
     }
-    Oe3Slider(
+    OeSlider(
         value = value,
         onValueChange = onChange,
-        range = range,
-        description = description,
-        tag = tag,
-    )
-}
-
-/**
- * A 4dp track + 20dp round thumb. Material's stepped/expressive defaults draw
- * a tick dot per step and a tall bar thumb, which is noise at 44 steps and
- * does not match the Oe3 shape language.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun Oe3Slider(
-    value: Float,
-    onValueChange: (Float) -> Unit,
-    range: ClosedFloatingPointRange<Float>,
-    description: String,
-    tag: String,
-    enabled: Boolean = true,
-) {
-    val colors = Oe3ThemeValues.colors
-    val alpha = if (enabled) 1f else 0.4f
-    Slider(
-        value = value,
-        onValueChange = onValueChange,
         valueRange = range,
-        steps = 0,
-        enabled = enabled,
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag(tag)
-            .semantics { stateDescription = description },
-        thumb = {
-            Box(
-                modifier = Modifier
-                    .size(20.dp)
-                    .clip(CircleShape)
-                    .background(Color(colors.primary).copy(alpha = alpha)),
-            )
-        },
-        track = { sliderState ->
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(Color(colors.surfaceHigh).copy(alpha = alpha)),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(sliderState.coercedValueAsFraction)
-                        .fillMaxHeight()
-                        .clip(RoundedCornerShape(50))
-                        .background(Color(colors.primary).copy(alpha = alpha)),
-                )
-            }
-        },
+        steps = steps,
+        stateDescription = description,
+        modifier = Modifier.testTag(tag),
     )
 }
 

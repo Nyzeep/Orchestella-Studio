@@ -557,7 +557,7 @@
                             android:textStyle="bold"
                             android:textColor="?attr/colorOnSurface" />
 
-                        <SeekBar
+                        <io.github.nyzeep.orchestella.ui.design.components.OeSliderView
                             android:id="@+id/seek_detail_vcpu"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
@@ -576,7 +576,7 @@
                             android:textStyle="bold"
                             android:textColor="?attr/colorOnSurface" />
 
-                        <SeekBar
+                        <io.github.nyzeep.orchestella.ui.design.components.OeSliderView
                             android:id="@+id/seek_detail_ram"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
