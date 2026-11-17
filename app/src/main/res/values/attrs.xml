@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      OeSliderView reads the same framework attributes its two predecessors used,
+      so the four legacy layouts keep their call-site semantics:
+      SeekBar layouts use android:max / android:progress, the wizard layouts use
+      android:valueFrom / android:valueTo / android:stepSize / android:value.
+    -->
+    <declare-styleable name="OeSliderView">
+        <attr name="android:max" />
+        <attr name="android:progress" />
+        <attr name="android:valueFrom" />
+        <attr name="android:valueTo" />
+        <attr name="android:stepSize" />
+        <attr name="android:value" />
+    </declare-styleable>
+</resources>

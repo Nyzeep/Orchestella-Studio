@@ -59,7 +59,7 @@
                 android:textColor="?attr/colorPrimary" />
         </LinearLayout>
 
-        <SeekBar
+        <io.github.nyzeep.orchestella.ui.design.components.OeSliderView
             android:id="@+id/hw_vcpu_seekbar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -109,7 +109,7 @@
             android:textSize="11sp"
             android:textColor="@color/zone_green" />
 
-        <SeekBar
+        <io.github.nyzeep.orchestella.ui.design.components.OeSliderView
             android:id="@+id/hw_ram_seekbar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -153,7 +153,7 @@
             android:textSize="11sp"
             android:textColor="?attr/colorOutline" />
 
-        <SeekBar
+        <io.github.nyzeep.orchestella.ui.design.components.OeSliderView
             android:id="@+id/hw_disk_seekbar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

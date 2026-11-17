@@ -35,9 +35,9 @@ import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.checkbox.MaterialCheckBox
 import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
+import io.github.nyzeep.orchestella.ui.design.components.OeSliderView
 import io.github.nyzeep.orchestella.ui.theme.ThemeStore
 import com.google.android.material.progressindicator.LinearProgressIndicator
-import com.google.android.material.slider.Slider
 import com.google.android.material.textfield.TextInputEditText
 import io.github.nyzeep.orchestella.ui.motion.OrchestellaMotion
 import io.github.nyzeep.orchestella.runtime.capability.AvfAuthorizationWizardModel
@@ -181,11 +181,11 @@ class SetupWizardActivity : AppCompatActivity() {
 
     // Step 3 Views (Hardware)
     private lateinit var txtCfgVcpu: TextView
-    private lateinit var sliderVcpu: Slider
+    private lateinit var sliderVcpu: OeSliderView
     private lateinit var btnVcpuMinus: MaterialButton
     private lateinit var btnVcpuPlus: MaterialButton
     private lateinit var txtCfgRam: TextView
-    private lateinit var sliderRam: Slider
+    private lateinit var sliderRam: OeSliderView
     private lateinit var badgeCfgZone: TextView
     private lateinit var btnAvfAuthWizard: MaterialButton
     private lateinit var btnStep3Prev: MaterialButton

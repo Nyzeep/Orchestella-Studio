@@ -5,12 +5,12 @@ import android.content.Context
 import android.content.res.ColorStateList
 import android.view.LayoutInflater
 import android.widget.Button
-import android.widget.SeekBar
 import android.widget.TextView
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.materialswitch.MaterialSwitch
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
+import io.github.nyzeep.orchestella.ui.design.components.OeSliderView
 import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
 
 /**
@@ -37,7 +37,7 @@ class VmHardwareConfigDialog(
         val maxCores = Math.min(VmHardwareConfig.MAX_CPU_CORES, hostProfile.totalCores())
         val vcpuLabel = view.findViewById<TextView>(R.id.hw_vcpu_label)
         val vcpuRecBadge = view.findViewById<TextView>(R.id.hw_vcpu_rec_badge)
-        val vcpuSeekbar = view.findViewById<SeekBar>(R.id.hw_vcpu_seekbar)
+        val vcpuSeekbar = view.findViewById<OeSliderView>(R.id.hw_vcpu_seekbar)
 
         vcpuRecBadge.text = context.getString(R.string.hardware_vcpu_recommended, hostProfile.recommendedCpuCores())
         vcpuSeekbar.max = Math.max(0, maxCores - 1)
@@ -45,13 +45,13 @@ class VmHardwareConfigDialog(
         vcpuSeekbar.progress = Math.max(0, selectedCores - 1)
         vcpuLabel.text = context.getString(R.string.hardware_vcpu_label, selectedCores)
 
-        vcpuSeekbar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+        vcpuSeekbar.setOnProgressChangeListener(object : OeSliderView.OnProgressChangeListener {
+            override fun onProgressChanged(seekBar: OeSliderView?, progress: Int, fromUser: Boolean) {
                 selectedCores = progress + 1
                 vcpuLabel.text = context.getString(R.string.hardware_vcpu_label, selectedCores)
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStartTrackingTouch(seekBar: OeSliderView?) {}
+            override fun onStopTrackingTouch(seekBar: OeSliderView?) {}
         })
 
         // 2. RAM Size
@@ -64,7 +64,7 @@ class VmHardwareConfigDialog(
         val ramRecBadge = view.findViewById<TextView>(R.id.hw_ram_rec_badge)
         val ramZoneStatus = view.findViewById<TextView>(R.id.hw_ram_zone_status)
         ThemeApplier.setRole(ramZoneStatus, ThemeApplier.Role.PRESERVE)
-        val ramSeekbar = view.findViewById<SeekBar>(R.id.hw_ram_seekbar)
+        val ramSeekbar = view.findViewById<OeSliderView>(R.id.hw_ram_seekbar)
         val btnSave = view.findViewById<Button>(R.id.hw_btn_save)
 
         val recRam = hostProfile.recommendedRamMegabytesAligned(stepMb)
@@ -100,13 +100,13 @@ class VmHardwareConfigDialog(
         }
         updateRamZoneUi(selectedRamMb)
 
-        ramSeekbar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+        ramSeekbar.setOnProgressChangeListener(object : OeSliderView.OnProgressChangeListener {
+            override fun onProgressChanged(seekBar: OeSliderView?, progress: Int, fromUser: Boolean) {
                 selectedRamMb = minRamMb + progress * stepMb
                 updateRamZoneUi(selectedRamMb)
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStartTrackingTouch(seekBar: OeSliderView?) {}
+            override fun onStopTrackingTouch(seekBar: OeSliderView?) {}
         })
 
         // 3. Disk Expansion
@@ -114,7 +114,7 @@ class VmHardwareConfigDialog(
         val maxDiskGb = 64
         val diskLabel = view.findViewById<TextView>(R.id.hw_disk_label)
         val diskStatus = view.findViewById<TextView>(R.id.hw_disk_status)
-        val diskSeekbar = view.findViewById<SeekBar>(R.id.hw_disk_seekbar)
+        val diskSeekbar = view.findViewById<OeSliderView>(R.id.hw_disk_seekbar)
 
         val diskSteps = Math.max(0, maxDiskGb - currentDiskGb)
         diskSeekbar.max = diskSteps
@@ -124,8 +124,8 @@ class VmHardwareConfigDialog(
         diskLabel.text = context.getString(R.string.hardware_disk_label, currentDiskGb)
         diskStatus.text = "当前容量: ${currentDiskGb} GB"
 
-        diskSeekbar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+        diskSeekbar.setOnProgressChangeListener(object : OeSliderView.OnProgressChangeListener {
+            override fun onProgressChanged(seekBar: OeSliderView?, progress: Int, fromUser: Boolean) {
                 selectedDiskGb = currentDiskGb + progress
                 diskLabel.text = context.getString(R.string.hardware_disk_label, selectedDiskGb)
                 diskStatus.text = if (selectedDiskGb > currentDiskGb) {
@@ -134,8 +134,8 @@ class VmHardwareConfigDialog(
                     "保持当前容量: ${currentDiskGb} GB"
                 }
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStartTrackingTouch(seekBar: OeSliderView?) {}
+            override fun onStopTrackingTouch(seekBar: OeSliderView?) {}
         })
 
         // 4. GPU 3D Switch

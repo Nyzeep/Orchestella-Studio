@@ -22,6 +22,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import io.github.nyzeep.orchestella.ui.theme.OeTextScale
+import io.github.nyzeep.orchestella.ui.design.components.OeSliderView
 import io.github.nyzeep.orchestella.ui.theme.OeTextScaleMode
 import io.github.nyzeep.orchestella.ui.motion.OrchestellaMotion
 import io.github.nyzeep.orchestella.ui.screens.config.ConfigPreferences
@@ -338,11 +339,11 @@ class SettingsSubActivity : AppCompatActivity() {
         val btnPickBackground = findViewById<MaterialButton?>(R.id.btn_pick_background)
         val btnClearBackground = findViewById<MaterialButton?>(R.id.btn_clear_background)
         val fontLabel = findViewById<android.widget.TextView?>(R.id.tv_font_size_label)
-        val fontSeek = findViewById<android.widget.SeekBar?>(R.id.seek_terminal_font)
+        val fontSeek = findViewById<OeSliderView?>(R.id.seek_terminal_font)
         val spacingLabel = findViewById<android.widget.TextView?>(R.id.tv_letter_spacing_label)
-        val spacingSeek = findViewById<android.widget.SeekBar?>(R.id.seek_letter_spacing)
+        val spacingSeek = findViewById<OeSliderView?>(R.id.seek_letter_spacing)
         val lineLabel = findViewById<TextView>(R.id.tv_line_spacing_label)
-        val lineSeek = findViewById<android.widget.SeekBar>(R.id.seek_terminal_line_spacing)
+        val lineSeek = findViewById<OeSliderView>(R.id.seek_terminal_line_spacing)
         if (btnPickTheme == null || fontSeek == null) return
 
         fun refreshLabels() {
@@ -518,7 +519,7 @@ class SettingsSubActivity : AppCompatActivity() {
         }
 
         val scrimLabel = findViewById<TextView?>(R.id.tv_terminal_scrim_label)
-        val scrimSeek = findViewById<android.widget.SeekBar?>(R.id.seek_terminal_scrim)
+        val scrimSeek = findViewById<OeSliderView?>(R.id.seek_terminal_scrim)
         findViewById<MaterialButton?>(R.id.btn_pick_terminal_background)?.setOnClickListener {
             terminalBackgroundPicker.launch(arrayOf("image/*"))
         }
@@ -530,66 +531,66 @@ class SettingsSubActivity : AppCompatActivity() {
         scrimSeek?.max = 90
         scrimSeek?.progress = themeStore.terminalScrimAlpha() * 90 / 230
         scrimLabel?.text = "背景遮罩浓度：${scrimSeek?.progress ?: 0}%"
-        scrimSeek?.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
+        scrimSeek?.setOnProgressChangeListener(object : OeSliderView.OnProgressChangeListener {
+            override fun onProgressChanged(seekBar: OeSliderView?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
                 themeStore.setTerminalScrimAlpha(progress * 230 / 90)
                 scrimLabel?.text = "背景遮罩浓度：${progress}%"
             }
-            override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {
+            override fun onStartTrackingTouch(seekBar: OeSliderView?) {}
+            override fun onStopTrackingTouch(seekBar: OeSliderView?) {
                 Toast.makeText(this@SettingsSubActivity, "遮罩浓度已保存", Toast.LENGTH_SHORT).show()
             }
         })
 
         val opacityLabel = findViewById<TextView?>(R.id.tv_ui_surface_opacity_label)
-        val opacitySeek = findViewById<android.widget.SeekBar?>(R.id.seek_ui_surface_opacity)
+        val opacitySeek = findViewById<OeSliderView?>(R.id.seek_ui_surface_opacity)
         opacitySeek?.max = SurfaceOpacity.MAX_PERCENT - SurfaceOpacity.MIN_PERCENT
         opacitySeek?.progress = themeStore.surfaceOpacityPercent() - SurfaceOpacity.MIN_PERCENT
         opacityLabel?.text = "界面表面不透明度：${themeStore.surfaceOpacityPercent()}%"
-        opacitySeek?.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
+        opacitySeek?.setOnProgressChangeListener(object : OeSliderView.OnProgressChangeListener {
+            override fun onProgressChanged(seekBar: OeSliderView?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
                 val percent = progress + SurfaceOpacity.MIN_PERCENT
                 themeStore.setUiSurfaceOpacityPercent(percent)
                 opacityLabel?.text = "界面表面不透明度：$percent%"
                 ThemeApplier.bind(this@SettingsSubActivity)
             }
-            override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {
+            override fun onStartTrackingTouch(seekBar: OeSliderView?) {}
+            override fun onStopTrackingTouch(seekBar: OeSliderView?) {
                 Toast.makeText(this@SettingsSubActivity, "界面表面不透明度已应用", Toast.LENGTH_SHORT).show()
             }
         })
 
-        fontSeek.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
+        fontSeek.setOnProgressChangeListener(object : OeSliderView.OnProgressChangeListener {
+            override fun onProgressChanged(seekBar: OeSliderView?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
                 val sp = ThemeColors.fontSize(progress)
                 themeStore.setTerminalFontSizeSp(sp)
                 fontLabel?.text = "终端字号：${themeStore.terminalFontSizeSp()}sp"
             }
-            override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {}
+            override fun onStartTrackingTouch(seekBar: OeSliderView?) {}
+            override fun onStopTrackingTouch(seekBar: OeSliderView?) {}
         })
 
-        spacingSeek?.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
+        spacingSeek?.setOnProgressChangeListener(object : OeSliderView.OnProgressChangeListener {
+            override fun onProgressChanged(seekBar: OeSliderView?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
                 val em = progress / 100f
                 themeStore.setTerminalLetterSpacingEm(em)
                 spacingLabel?.text = "终端字间距：%.2fem".format(em)
             }
-            override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {}
+            override fun onStartTrackingTouch(seekBar: OeSliderView?) {}
+            override fun onStopTrackingTouch(seekBar: OeSliderView?) {}
         })
-        lineSeek.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
+        lineSeek.setOnProgressChangeListener(object : OeSliderView.OnProgressChangeListener {
+            override fun onProgressChanged(seekBar: OeSliderView?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
                 themeStore.setTerminalLineSpacingPx(progress.toFloat())
                 lineLabel.text = "终端额外行距：${progress}px"
             }
-            override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {}
+            override fun onStartTrackingTouch(seekBar: OeSliderView?) {}
+            override fun onStopTrackingTouch(seekBar: OeSliderView?) {}
         })
     }
 

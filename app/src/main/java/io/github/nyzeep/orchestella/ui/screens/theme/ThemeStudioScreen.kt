@@ -894,7 +894,7 @@ private fun TerminalCard(
         Spacer(Modifier.height(4.dp))
         TerminalBaseSwatches(state.theme)
 
-        TerminalSlider(
+        TerminalSliderRow(
             title = stringResource(R.string.ui3_theme_terminal_font),
             valueText = stringResource(R.string.ui3_theme_terminal_font_value, state.terminalFontSizeSp),
             description = stringResource(R.string.ui3_theme_terminal_font_desc, state.terminalFontSizeSp),
@@ -905,7 +905,7 @@ private fun TerminalCard(
             tag = "theme-slider:terminal-font-size",
             onChange = { onEvent(ThemeStudioEvent.SetTerminalFontSizeSp(it.roundToInt())) },
         )
-        TerminalSlider(
+        TerminalSliderRow(
             title = stringResource(R.string.ui3_theme_terminal_letter),
             valueText = stringResource(R.string.ui3_theme_terminal_letter_value, state.terminalLetterSpacingEm),
             description = stringResource(R.string.ui3_theme_terminal_letter_desc, state.terminalLetterSpacingEm),
@@ -915,7 +915,7 @@ private fun TerminalCard(
             tag = "theme-slider:terminal-letter-spacing",
             onChange = { onEvent(ThemeStudioEvent.SetTerminalLetterSpacing(it)) },
         )
-        TerminalSlider(
+        TerminalSliderRow(
             title = stringResource(R.string.ui3_theme_terminal_line),
             valueText = stringResource(R.string.ui3_theme_terminal_line_value, state.terminalLineSpacingPx),
             description = stringResource(R.string.ui3_theme_terminal_line_desc, state.terminalLineSpacingPx),
@@ -966,7 +966,7 @@ private fun TerminalCard(
             color = colors.onSurfaceVariant.oe3Color(),
         )
 
-        TerminalSlider(
+        TerminalSliderRow(
             title = stringResource(R.string.ui3_theme_terminal_scrim),
             valueText = stringResource(
                 R.string.ui3_theme_terminal_scrim_value,
@@ -1012,7 +1012,7 @@ private fun TerminalCard(
 }
 
 @Composable
-private fun TerminalSlider(
+private fun TerminalSliderRow(
     title: String,
     valueText: String,
     description: String,
