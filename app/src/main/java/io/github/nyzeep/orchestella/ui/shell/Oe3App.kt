@@ -42,6 +42,13 @@ import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
  * nav bar (and UI-06's panels) have something to sample. [cornerRadiusDp] is
  * now forwarded into [Oe3Theme] instead of being silently dropped, and
  * [navStyle] reaches [Oe3Pager], which turns it into the page bottom reserve.
+ *
+ * v4 (UI-03) wraps the pager in [OeBackStackHost]: pushed secondary pages
+ * ([OeDestination]) overlay the pager while the system back (and the
+ * predictive-back gesture, via the dispatcher) pops them. [backStack] lets a
+ * host supply its own stack (Wave 4 hoists it into `Oe3ShellController` for
+ * restoration); `null` keeps a shell-owned stack. Secondary pages obtain the
+ * handle through [LocalOeBackStack]; tapping a dock tab clears the stack.
  */
 @Composable
 fun Oe3App(
@@ -59,6 +66,7 @@ fun Oe3App(
     cornerRadiusDp: Int? = null,
     surfaceAlpha: Float = 1f,
     backgroundUri: String? = null,
+    backStack: OeBackStack? = null,
     pages: Oe3Pages? = null,
 ) {
     Oe3Theme(
@@ -80,10 +88,15 @@ fun Oe3App(
             } else {
                 Modifier
             }
+        // UI-03 栈式导航：宿主 Activity 可显式提供栈（ Wave 4 由 Oe3ShellController
+        // 提升并做恢复）；缺省时壳层自持一份。二级页面覆盖在 pager 之上、
+        // 背景层之上、坞之下——背景不随栈转场缩放，坞持续采样玻璃源。
+        val stack = backStack ?: rememberOeBackStack()
         val backgroundMode = OeAppBackgroundSpec.resolve(backgroundUri, pureBlack)
         CompositionLocalProvider(
             LocalOe3GlassEnabled provides glassEnabled,
             LocalOeSurfaceAlpha provides surfaceAlpha,
+            LocalOeBackStack provides stack,
         ) {
             Box(
                 modifier = modifier
@@ -100,16 +113,25 @@ fun Oe3App(
                         .then(glassSourceModifier),
                 ) {
                     OeAppBackground(mode = backgroundMode)
-                    Oe3Pager(
-                        selected = selectedTab,
+                    OeBackStackHost(
+                        backStack = stack,
                         modifier = Modifier.fillMaxSize(),
-                        navStyle = navStyle,
-                        pages = pages,
-                    )
+                    ) {
+                        Oe3Pager(
+                            selected = selectedTab,
+                            modifier = Modifier.fillMaxSize(),
+                            navStyle = navStyle,
+                            pages = pages,
+                        )
+                    }
                 }
+                // 二级页面压栈时点坞 tab：先清栈再切页，栈语义不跨 tab 拖尾。
                 Oe3NavBar(
                     selected = selectedTab,
-                    onSelect = onTabSelected,
+                    onSelect = { tab ->
+                        stack.popAll()
+                        onTabSelected(tab)
+                    },
                     style = navStyle,
                     modifier = Modifier.align(Alignment.BottomCenter),
                     glassState = glassState,
