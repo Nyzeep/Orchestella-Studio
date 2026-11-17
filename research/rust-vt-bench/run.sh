@@ -44,6 +44,7 @@ else
   ( cd "$SCRIPT_DIR" && python3 fixtures/gen.py )
 fi
 ( cd "$GEN_DIR" && sha256sum -c SHA256SUMS )
+( cd "$GEN_DIR" && sha256sum -c ../expected-sha256.txt )
 
 step "2/6 cargo test"
 if ! command -v cargo >/dev/null 2>&1; then
@@ -76,7 +77,7 @@ else
   echo "SKIP: kotlin baseline disabled (pass --kotlin to run; it is slow)"
 fi
 
-step "5/6 compare"
+step "5/6 compare (gates median alloc/MB against out/alloc_baseline.json)"
 if [ -f "$OUT_DIR/kotlin.json" ] && [ -f "$OUT_DIR/rust.json" ]; then
   ( cd "$SCRIPT_DIR" && python3 compare.py )
 else

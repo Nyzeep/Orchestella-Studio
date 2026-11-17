@@ -1,0 +1,46 @@
+{
+  "schema": "orchestella.vtbench/1",
+  "impl": "rust",
+  "note": "Frozen median allocation per MB from the 2026-11-15 reference run (out/rust.json). Allocation counts are deterministic for a given toolchain and input bytes, so compare.py gates them; throughput is recorded for the advisory delta only and is never compared against a threshold.",
+  "captured_at_utc": "2026-11-15T08:14:00Z",
+  "toolchain": "rustc 1.91.0 (f8297e351 2025-10-28)",
+  "host": "x86_64",
+  "metric": "alloc_bytes_per_mb, median of 5 iterations, lower is better",
+  "fixtures": [
+    {
+      "id": "plain",
+      "bytes": 10485760,
+      "sha256": "7c48831495b8dec788fb7b9058c966a99cb2165edfefc011787e1d4cc5c4b7ee",
+      "mb_per_s": 74.790144,
+      "alloc_bytes_per_mb": 143092.8
+    },
+    {
+      "id": "ansi_color",
+      "bytes": 10485760,
+      "sha256": "8908cc829f0c2cf2797b0af6567dc5d6be8686bcd4879ef84f36241f33730583",
+      "mb_per_s": 75.710188,
+      "alloc_bytes_per_mb": 154360.0
+    },
+    {
+      "id": "cursor",
+      "bytes": 5242880,
+      "sha256": "2537132b305ba5f445a77e69bc75c03f8e2ce0edd1c559edcebd56d79489887e",
+      "mb_per_s": 19.810804,
+      "alloc_bytes_per_mb": 1.6
+    },
+    {
+      "id": "wide",
+      "bytes": 5242880,
+      "sha256": "3276523ef8c7d66f9cbf159ffcfdb70d84744befa78809ab3900a6dd0a1a29a4",
+      "mb_per_s": 94.859785,
+      "alloc_bytes_per_mb": 328932.8
+    },
+    {
+      "id": "osc",
+      "bytes": 2097152,
+      "sha256": "54f50c9961190c3e5b9ee1b0ccc207b46080210c615ec23759d346f296aa2054",
+      "mb_per_s": 131.184772,
+      "alloc_bytes_per_mb": 737032.0
+    }
+  ]
+}
