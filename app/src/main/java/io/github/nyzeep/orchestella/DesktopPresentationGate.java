@@ -66,4 +66,9 @@ public final class DesktopPresentationGate {
         confirmed = false;
         inFlight = false;
     }
+
+    /** Test seam (G-03): the guest generation currently held, or null. */
+    synchronized String observedGenerationForTest() {
+        return generation;
+    }
 }
