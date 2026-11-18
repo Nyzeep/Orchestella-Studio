@@ -232,7 +232,8 @@ class InstanceDetailViewModel(
             diskPhysicalBytes = diskPhysicalBytes,
             gpuAccelerationEnabled = hw.gpuAccelerationEnabled(),
             canOpenTerminal = isRunning,
-            canLaunchDesktop = isRunning && supportsDesktop,
+            // G-04：enabled 合取式收敛到 DesktopEntryPolicy（与 instances sheet / 终端抽屉同源）。
+            canLaunchDesktop = io.github.nyzeep.orchestella.DesktopEntryPolicy.canLaunchDesktop(isRunning, supportsDesktop),
             canPowerOn = isStopped || isCreated || isInterrupted || state == InstanceLifecycle.State.SUSPENDED,
             canPowerOff = isRunning || state == InstanceLifecycle.State.SUSPENDED,
             canModifyHardware = canModifyHw,

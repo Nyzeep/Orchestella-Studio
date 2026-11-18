@@ -198,6 +198,12 @@
     <string name="desktop_headless_message">当前实例使用的是轻量命令行根文件系统（Headless），尚未安装或配置 Wayland / Labwc 图形桌面。请点击「打开终端」在 Linux 终端中进行操作。</string>
     <string name="dialog_close">我知道了</string>
 
+    <!-- G-04 双向入口：三档入口（instances sheet / 终端抽屉 / GuestFeatures）共用
+         的禁用原因文案，资源键由 DesktopEntryPolicy 单源引用（UI-10 三档一致性）。 -->
+    <string name="desktop_entry_reason_channel_not_ready">图形桌面通道尚未就绪：真实 guest 图形帧与输入通道仍在 Phase 5 开发中（未真机验收）</string>
+    <string name="desktop_entry_reason_instance_not_running">实例未运行，请先启动实例再进入桌面模式</string>
+    <string name="desktop_entry_token_missing">桌面通道凭据缺失，请从实例列表重新进入</string>
+
     <!-- Ticket 04: 二级实例详情控制台与极简卡片 -->
     <string name="instance_detail_title">虚拟机详情控制台</string>
     <string name="console_btn_terminal">打开终端</string>
@@ -480,6 +486,8 @@
     <string name="terminal_drawer_new">+ 新建终端</string>
     <string name="terminal_drawer_rename_title">重命名终端</string>
     <string name="terminal_drawer_close_title">关闭终端</string>
+    <string name="terminal_drawer_desktop">桌面模式</string>
+    <string name="terminal_drawer_desktop_content_desc">切换到桌面模式（可用性由 DesktopEntryPolicy 单源判定）</string>
 
     <!-- ZD-W2 Toast 全文化（gap 12 + wave4 P3 漂移）：MainActivity 硬编码中文
          Toast 全部进资源。拼异常串的失败提示改为中性文案（现象 + 下一步，

@@ -26,7 +26,9 @@ import java.util.List;
  *
  * <p>Includes:
  * <ul>
- *   <li>Top: "+ 新建终端" prominent action button;</li>
+ *   <li>Top: "+ 新建终端" prominent action button, then the G-04 "桌面模式"
+ *       entry (Terminal→Desktop; visibility/enabled/disabled-reason all decided
+ *       by {@link io.github.nyzeep.orchestella.DesktopEntryPolicy});</li>
  *   <li>Center: RecyclerView of terminal sessions with live status lights,
  *       current active indicator, long-press rename dialog, and close "✕" button;</li>
  *   <li>Bottom: Total session count and quick collapse action button.</li>
@@ -40,6 +42,8 @@ public final class TerminalDrawerPanel extends LinearLayout {
         void onSessionRenamed(TerminalSessionInstance session, String newTitle);
         void onSessionClosed(TerminalSessionInstance session);
         void onCloseDrawerRequested();
+        /** G-04：桌面模式入口（Terminal→Desktop 方向），enabled 由 DesktopEntryPolicy 单源判定。 */
+        void onDesktopModeRequested();
     }
 
     private String instanceId;
@@ -51,8 +55,18 @@ public final class TerminalDrawerPanel extends LinearLayout {
     private final TextView tvHeader;
     private final TextView tvHeaderHint;
     private final Button btnNewTerminal;
+    private final Button btnDesktopMode;
+    private final TextView tvDesktopReason;
     private final Button btnCollapse;
     private AppTheme theme;
+    /** G-04：实例运行判定由 TerminalActivity 注入（ExecutionSessionRegistry，与实例详情页入口同源）。 */
+    private java.util.function.BooleanSupplier instanceRunningProvider;
+
+    /** G-04：注入实例运行判定；不注入时入口按未运行处理（诚实禁用态）。 */
+    public void setInstanceRunningProvider(java.util.function.BooleanSupplier provider) {
+        this.instanceRunningProvider = provider;
+        refreshDesktopEntry();
+    }
 
     /** Semantic danger red shared with the audit exemption list (#EF4444). */
     private static final int DANGER_RED = 0xFFEF4444;
@@ -104,8 +118,37 @@ public final class TerminalDrawerPanel extends LinearLayout {
         });
         LinearLayout.LayoutParams newBtnLp = new LinearLayout.LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
-        newBtnLp.setMargins(0, 0, 0, dpToPx(12));
+        newBtnLp.setMargins(0, 0, 0, dpToPx(4));
         addView(btnNewTerminal, newBtnLp);
+
+        // G-04：桌面模式入口（Terminal→Desktop）。可见性/enabled/禁用原因全部走
+        // DesktopEntryPolicy 单一来源（与 instances sheet、GuestFeatures 同源）；
+        // 通道未就绪或实例未运行时呈现诚实禁用态 + 统一原因文案。
+        btnDesktopMode = new Button(context, null, android.R.attr.buttonStyleSmall);
+        btnDesktopMode.setText(context.getString(io.github.nyzeep.orchestella.R.string.terminal_drawer_desktop));
+        btnDesktopMode.setContentDescription(context.getString(
+                io.github.nyzeep.orchestella.R.string.terminal_drawer_desktop_content_desc));
+        btnDesktopMode.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        btnDesktopMode.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        btnDesktopMode.setTextColor(ThemeColors.INSTANCE.onColor(theme.getPrimary()));
+        btnDesktopMode.setBackground(createPillBackground(
+                alphaDerive(theme.getPrimary(), 0x22000000), theme.getPrimary(), 10f));
+        btnDesktopMode.setPadding(dpToPx(12), dpToPx(8), dpToPx(12), dpToPx(8));
+        btnDesktopMode.setOnClickListener(v -> {
+            if (this.callback != null && btnDesktopMode.isEnabled()) {
+                this.callback.onDesktopModeRequested();
+            }
+        });
+        addView(btnDesktopMode, new LinearLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+
+        tvDesktopReason = new TextView(context);
+        tvDesktopReason.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
+        tvDesktopReason.setTextColor(theme.getTextDim());
+        LinearLayout.LayoutParams reasonLp = new LinearLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
+        reasonLp.setMargins(0, dpToPx(4), 0, dpToPx(12));
+        addView(tvDesktopReason, reasonLp);
 
         // Center: Sessions RecyclerView
         RecyclerView recyclerView = new RecyclerView(context);
@@ -152,6 +195,7 @@ public final class TerminalDrawerPanel extends LinearLayout {
     }
 
     public void refresh() {
+        refreshDesktopEntry();
         if (instanceId == null) {
             return;
         }
@@ -159,6 +203,28 @@ public final class TerminalDrawerPanel extends LinearLayout {
                 MultiTerminalSessionManager.getInstance().listSessions(instanceId);
         adapter.setSessions(sessions);
         tvSessionCount.setText(String.format(java.util.Locale.getDefault(), "共 %d 个视图", sessions.size()));
+    }
+
+    /**
+     * G-04：桌面模式入口条件渲染。判定本体在 {@link io.github.nyzeep.orchestella.DesktopEntryPolicy}
+     * （纯 JVM，可测）；这里只做视图映射——未绑定实例整块隐藏，禁用时展示统一原因文案，
+     * 置灰口径对齐 instances sheet（alpha 0.45 ≈ sheet 的 onSurfaceVariant 0.4）。
+     */
+    private void refreshDesktopEntry() {
+        boolean hasBoundInstance = instanceId != null;
+        boolean running = instanceRunningProvider != null && instanceRunningProvider.getAsBoolean();
+        io.github.nyzeep.orchestella.DesktopEntryPolicy.EntryState state =
+                io.github.nyzeep.orchestella.DesktopEntryPolicy.drawerEntry(hasBoundInstance, running);
+        int visibility = state.visible ? View.VISIBLE : View.GONE;
+        btnDesktopMode.setVisibility(visibility);
+        btnDesktopMode.setEnabled(state.enabled);
+        btnDesktopMode.setAlpha(state.enabled ? 1f : 0.45f);
+        if (state.reasonRes != null) {
+            tvDesktopReason.setText(getContext().getString(state.reasonRes));
+            tvDesktopReason.setVisibility(visibility);
+        } else {
+            tvDesktopReason.setVisibility(View.GONE);
+        }
     }
 
     /**
@@ -173,6 +239,10 @@ public final class TerminalDrawerPanel extends LinearLayout {
         tvHeaderHint.setTextColor(theme.getTextDim());
         btnNewTerminal.setTextColor(ThemeColors.INSTANCE.onColor(theme.getPrimary()));
         btnNewTerminal.setBackground(createPillBackground(theme.getPrimary(), theme.getPrimary(), 10f));
+        btnDesktopMode.setTextColor(ThemeColors.INSTANCE.onColor(theme.getPrimary()));
+        btnDesktopMode.setBackground(createPillBackground(
+                alphaDerive(theme.getPrimary(), 0x22000000), theme.getPrimary(), 10f));
+        tvDesktopReason.setTextColor(theme.getTextDim());
         tvSessionCount.setTextColor(theme.getTextDim());
         btnCollapse.setTextColor(theme.getAccent());
         btnCollapse.setBackground(createPillBackground(
