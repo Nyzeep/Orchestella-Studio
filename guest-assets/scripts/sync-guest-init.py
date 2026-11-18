@@ -34,6 +34,7 @@ optional = "\ninstall_guest_optional_features() {\n    mkdir -p \"$1/usr/local/l
 feature_inputs = [("features/" + name, name, "0755" if name != "inputs.json" else "0644")
                   for name in ("profilectl", "profilectl.py", "inputs.json", "bootstrap-python.sh", "feature-session.py", "rootless-probe.py")]
 feature_inputs.append(("display/display-relay.py", "display-relay.py", "0755"))
+feature_inputs.append(("audio/audio-relay.py", "audio-relay.py", "0755"))
 for relative, destination, mode in feature_inputs:
     content = (assets / relative).read_text(encoding="utf-8")
     delimiter = "ORCHESTELLA_FEATURE_" + hashlib.sha256(content.encode()).hexdigest()[:16].upper()

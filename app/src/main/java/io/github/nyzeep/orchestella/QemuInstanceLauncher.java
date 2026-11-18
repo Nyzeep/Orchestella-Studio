@@ -58,6 +58,11 @@ public final class QemuInstanceLauncher {
         private final ControlChannelLifecycle controlLifecycle;
         private final java.util.Set<SessionServiceForward> serviceForwards =
                 new java.util.concurrent.CopyOnWriteArraySet<>();
+        /**
+         * G-05 engine-owned audio loop. Null unless the launcher wired it; closed with
+         * the other channels. Audio playback itself stays UI-driven (see capabilityMatrix).
+         */
+        private volatile AudioHostRelay audioRelay;
 
         /**
          * One live forward. {@link #close()} keeps the API contract for a single
@@ -423,6 +428,11 @@ public final class QemuInstanceLauncher {
                 forward.releaseForStop();
             }
             serviceForwards.clear();
+            AudioHostRelay relay = audioRelay;
+            if (relay != null) {
+                relay.close();
+                audioRelay = null;
+            }
             if (displayChannel != null) {
                 displayChannel.close();
             }
@@ -441,6 +451,20 @@ public final class QemuInstanceLauncher {
                     terminalSocket = null;
                 }
             }
+        }
+
+        /**
+         * G-05: installs the engine-owned audio relay started by the launcher. The
+         * relay owns the @droidlayer-audio abstract listener; this session only
+         * carries its lifetime. Never called by tests with a real listener.
+         */
+        void attachAudioRelay(AudioHostRelay relay) {
+            this.audioRelay = relay;
+        }
+
+        /** Package-visible for stop-path tests: the wired audio relay, or null. */
+        AudioHostRelay audioRelayForTest() {
+            return audioRelay;
         }
 
         @Override
@@ -698,6 +722,12 @@ public final class QemuInstanceLauncher {
         String displaySocketPath = displayDirectory.resolve(
                 java.util.UUID.nameUUIDFromBytes(parameters.instanceId.getBytes(java.nio.charset.StandardCharsets.UTF_8))
                         .toString().substring(0, 16) + ".sock").toString();
+        // G-05: per-instance audio chardev socket, same UUID derivation as the display socket.
+        java.nio.file.Path audioDirectory = context.getFilesDir().toPath().resolve("audio");
+        java.nio.file.Files.createDirectories(audioDirectory);
+        String audioSocketPath = audioDirectory.resolve(
+                java.util.UUID.nameUUIDFromBytes(parameters.instanceId.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+                        .toString().substring(0, 16) + ".sock").toString();
 
         String[] spec = QemuLaunchSpec.buildWithPasst(
                 // Same payload-build gap as the gateway: the QEMU binary may
@@ -713,6 +743,7 @@ public final class QemuInstanceLauncher {
                 guestKernelArgs);
 
         String[] sanitizedSpec = QemuLaunchSpec.withDisplayChannel(sanitizeSpecForTargetBinary(spec), displaySocketPath);
+        String[] audioWiredSpec = QemuLaunchSpec.withAudioChannel(sanitizedSpec, audioSocketPath);
         Log.i(TAG, "Launching QEMU process with sanitized arguments");
 
         QemuProcessLauncher.ProcessFactory factory = currentSpec -> {
@@ -767,7 +798,7 @@ public final class QemuInstanceLauncher {
         };
 
         QemuProcessLauncher launcher = new QemuProcessLauncher(factory);
-        QemuProcessLauncher.Launched launched = launcher.launch(sanitizedSpec);
+        QemuProcessLauncher.Launched launched = launcher.launch(audioWiredSpec);
         timeline.mark(LaunchTimeline.Stage.QEMU_STARTED);
         stageTrace.onGate(ProductionStageRecorder.Stage.VM_CREATED);
         QemuProcessLauncher.ProcessHandle handle = launched.handle();
@@ -777,6 +808,18 @@ public final class QemuInstanceLauncher {
                 parameters.bridgeToken, handle, parameters.instanceId, gateway, timeline,
                 stageTrace);
         startingSession.set(session);
+        // G-05: the engine assembly layer owns the @droidlayer-audio listener (never the
+        // Activity). The relay is best-effort: failure tears itself down and consumers
+        // fall back via FallbackAudioSource; the audio loop stays unverified on devices.
+        try {
+            AudioHostRelay audioRelay = AudioHostRelay.forLocalSockets(
+                    AudioHostRelay.DEFAULT_CONSUMER_SOCKET_NAME, audioSocketPath, parameters.bridgeToken,
+                    (event, detail) -> Log.i(TAG, "audio-relay " + event + " " + detail));
+            audioRelay.start();
+            session.attachAudioRelay(audioRelay);
+        } catch (RuntimeException | Error unavailable) {
+            Log.w(TAG, "audio-relay-unavailable " + unavailable.getClass().getSimpleName());
+        }
         Thread watcher = new Thread(() -> {
             try {
                 handle.waitFor();

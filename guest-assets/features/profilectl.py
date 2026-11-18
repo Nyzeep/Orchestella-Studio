@@ -35,7 +35,7 @@ PACKAGES = {
     "docker-cli": ("python3", "docker-cli"),
 }
 UNITS = {
-    "desktop-labwc": ("orchestella-desktop-compositor.service", "orchestella-desktop-wayvnc.service", "orchestella-display-relay.service"),
+    "desktop-labwc": ("orchestella-desktop-compositor.service", "orchestella-desktop-wayvnc.service", "orchestella-display-relay.service", "orchestella-audio-relay.service"),
     "code-server": ("orchestella-code-server.service", "orchestella-code-server-relay.service"),
     "podman": (), "docker-cli": (),
 }
@@ -557,6 +557,11 @@ class Controller:
             self.unit(UNITS[self.profile][0], self.service_body("/usr/bin/dbus-run-session -- /usr/bin/labwc -C " + self.home + "/.config/labwc -S '/usr/bin/python3 -B /usr/local/lib/orchestella/feature-session.py desktop-apps'", extra))
             self.unit(UNITS[self.profile][1], self.service_body("/usr/bin/python3 -B /usr/local/lib/orchestella/feature-session.py wayvnc", dependency="Requires=orchestella-desktop-compositor.service\nAfter=orchestella-desktop-compositor.service\nBindsTo=orchestella-desktop-compositor.service\n"))
             self.unit(UNITS[self.profile][2], self.service_body("/usr/bin/python3 -B /usr/local/lib/orchestella/display-relay.py --user " + self.username + " --transport " + self.display_transport(), user=False, restart=True, dependency="Requires=orchestella-desktop-wayvnc.service\nAfter=orchestella-desktop-wayvnc.service\nBindsTo=orchestella-desktop-wayvnc.service\n"))
+            # G-05: audio data plane. Same root supervisor + privilege drop as the display
+            # relay; the worker exits with "unavailable" until the guest PulseAudio endpoint
+            # (127.0.0.1:9104) exists, and systemd restarts it. Not a readiness gate:
+            # the audio closure is unverified on real devices.
+            self.unit(UNITS[self.profile][3], self.service_body("/usr/bin/python3 -B /usr/local/lib/orchestella/audio-relay.py --user " + self.username, user=False, restart=True))
         elif self.profile == "podman":
             self.configure_subids()
         elif self.profile == "code-server":
@@ -1076,7 +1081,14 @@ class Controller:
             self.wait_socket("/run/user/%d/orchestella/wayvnc.sock" % uid, UNITS[self.profile][1])
             self.prepare_display_transport()
             self.run(["systemctl", "start", UNITS[self.profile][2]], timeout=20, reason="display-relay-start-failed")
-            for unit in UNITS[self.profile]:
+            # G-05: start the audio relay best-effort (unit Restart=always keeps probing
+            # the guest PulseAudio endpoint). It is deliberately NOT in the readiness
+            # gate below: the audio loop is unverified on real devices and must never
+            # block the desktop from becoming ready.
+            self.save(phase="audio-relay")
+            self.run(["systemctl", "start", UNITS[self.profile][3]], timeout=20, required=False,
+                     reason="audio-relay-start-failed")
+            for unit in UNITS[self.profile][:3]:
                 self.run(["systemctl", "is-active", "--quiet", unit], reason="service-not-active")
             self.check_cancel()
             self.save(state="awaiting-frame", phase="host-frame-confirmation", reason="awaiting-host-frame")
