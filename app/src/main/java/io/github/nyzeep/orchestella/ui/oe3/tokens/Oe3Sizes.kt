@@ -7,6 +7,13 @@ import androidx.compose.ui.unit.dp
 object Oe3Sizes {
     val topBar = 72.dp
 
+    /**
+     * UI-15 复验：零调用点，但 `docs/design-system` 的 token 清单声明了
+     * `size.brandLeft = 20`，校验器要求双侧对齐。删它属于设计系统变更，
+     * 不在清扫范围——保留并在 BACKLOG 记「候选退役」。
+     */
+    val brandLeft = 20.dp
+
     val navBar = 62.dp
     val navSideMargin = 21.dp
     val navBottomMargin = 21.dp
