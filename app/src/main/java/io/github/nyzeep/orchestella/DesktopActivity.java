@@ -1,5 +1,6 @@
 package io.github.nyzeep.orchestella;
 
+import android.annotation.SuppressLint;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -277,6 +278,9 @@ public class DesktopActivity extends ComponentActivity
         peripheralController.onWindowFocusChanged(hasFocus);
     }
 
+    // 事件路由语义自 DesktopActivity 原实现逐字保留（G-03）；ComponentActivity 场景下
+    // super.dispatchKeyEvent 对 app 层是 RestrictedApi 误报类限制，有意抑制。
+    @SuppressLint("RestrictedApi")
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
         Boolean handled = inputController.dispatchKeyEvent(event);
