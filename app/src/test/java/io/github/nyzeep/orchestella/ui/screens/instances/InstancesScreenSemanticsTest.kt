@@ -1,7 +1,11 @@
 package io.github.nyzeep.orchestella.ui.screens.instances
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assert
@@ -26,6 +30,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 /**
  * 实例页的零设备语义契约（UI3-06）。
@@ -35,6 +40,7 @@ import org.robolectric.annotation.Config
  * 不需要真机。
  */
 @RunWith(AndroidJUnit4::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-mdpi")
 class InstancesScreenSemanticsTest {
 
@@ -146,6 +152,45 @@ class InstancesScreenSemanticsTest {
         compose.onNodeWithTag("instances-list").performScrollToNode(hasText("已停止"))
         compose.onNodeWithText("已停止", useUnmergedTree = true).assertExists()
         compose.onNodeWithText("QEMU 软件虚拟化", useUnmergedTree = true).assertExists()
+    }
+
+    @Test
+    fun longEngineBadgeWrapsBelowTheStatusChipInsteadOfBeingTruncated() {
+        val badged = row(
+            id = "badge-5",
+            name = "Debian 13",
+            status = InstanceStatus.Created,
+            engine = "完整 Linux · 软件模拟（较慢）",
+            terminal = false,
+            launch = true,
+        )
+        compose.setContent {
+            Oe3Theme(theme = ThemeCatalog.constructivistWorkstation, reduceMotion = true) {
+                // 真机（AGT-AN00 ≈343dp 宽）上状态 chip 与长引擎徽标放不进同一行；
+                // 320dp 复现该量级：契约是徽标换行独占一行，而不是原地省略。
+                Box(Modifier.width(320.dp)) {
+                    InstancesScreen(
+                        state = InstancesUiState(
+                            groups = listOf(
+                                InstanceGroupUi(InstanceGroup.Stopped, listOf(badged)),
+                            ),
+                            totalCount = 1,
+                            runningCount = 0,
+                        ),
+                        actions = InstancesActions(),
+                    )
+                }
+            }
+        }
+
+        val status = compose.onNodeWithTag("instances-status-created-badge-5", useUnmergedTree = true)
+            .fetchSemanticsNode()
+        val engine = compose.onNodeWithTag("instances-engine-badge-5", useUnmergedTree = true)
+            .fetchSemanticsNode()
+        assertTrue(
+            "engine badge must wrap below the status chip instead of being ellipsized",
+            engine.positionInRoot.y >= status.positionInRoot.y + status.size.height,
+        )
     }
 
     @Test

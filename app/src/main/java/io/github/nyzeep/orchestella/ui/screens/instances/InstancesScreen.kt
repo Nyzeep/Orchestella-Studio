@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -46,6 +47,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.nyzeep.orchestella.R
@@ -429,18 +431,17 @@ private fun InstanceCard(
         }
 
         Spacer(Modifier.height(Oe3Spacing.xs))
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(Oe3Spacing.xs),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            StatusChip(status = item.status, instanceId = item.id)
-            item.engineLabel?.let { engine ->
-                Oe3Chip(
-                    label = engine,
-                    modifier = Modifier.testTag("instances-engine-${item.id}"),
-                )
-            }
-        }
+        BadgeRow(
+            statusChip = { StatusChip(status = item.status, instanceId = item.id) },
+            engineBadge = item.engineLabel?.let { engine ->
+                {
+                    Oe3Chip(
+                        label = engine,
+                        modifier = Modifier.testTag("instances-engine-${item.id}"),
+                    )
+                }
+            },
+        )
 
         Spacer(Modifier.height(Oe3Spacing.sm))
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -501,6 +502,56 @@ private fun StatusChip(status: InstanceStatus, instanceId: String) {
             )
         },
     )
+}
+
+/**
+ * 状态 chip 与引擎徽标的自适应行。chip 内 Text 的单行省略会把测量宽度压回
+ * 剩余空间，FlowRow 的换行判断因此失效（UI-16 真机复现：窄宽设备上徽标被
+ * 挤在同一行截断）；这里先按理想宽度显式两段测量，放得下同行（与旧行为
+ * 逐像素一致），放不下徽标换行独占一行。无徽标时保持旧行为。
+ */
+@Composable
+private fun BadgeRow(
+    statusChip: @Composable () -> Unit,
+    engineBadge: (@Composable () -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    if (engineBadge == null) {
+        Row(modifier = modifier) { statusChip() }
+        return
+    }
+    SubcomposeLayout(modifier = modifier) { constraints ->
+        val gap = Oe3Spacing.xs.roundToPx()
+        val statusMeasurable = subcompose("badge-row-status", statusChip)
+        val engineMeasurable = subcompose("badge-row-engine", engineBadge)
+        // 内在宽度才是理想宽度：测量宽度会被剩余空间压窄（chip 内 Text 单行省略
+        // 会“装进”约束），换行判断必须用 intrinsic。
+        val statusNatural = statusMeasurable.first().maxIntrinsicWidth(Constraints.Infinity)
+        val engineNatural = engineMeasurable.first().maxIntrinsicWidth(Constraints.Infinity)
+        val rowConstraints = constraints.copy(minWidth = 0)
+
+        if (statusNatural + gap + engineNatural <= constraints.maxWidth) {
+            val statusPlaceable = statusMeasurable.first().measure(rowConstraints)
+            val enginePlaceable = engineMeasurable.first().measure(rowConstraints)
+            val height = maxOf(statusPlaceable.height, enginePlaceable.height)
+            layout(statusPlaceable.width + gap + enginePlaceable.width, height) {
+                statusPlaceable.placeRelative(0, (height - statusPlaceable.height) / 2)
+                enginePlaceable.placeRelative(
+                    statusPlaceable.width + gap,
+                    (height - enginePlaceable.height) / 2,
+                )
+            }
+        } else {
+            // 徽标独占一行；若连一行都放不下，退回约束宽度由 chip 自身省略。
+            val statusPlaceable = statusMeasurable.first().measure(rowConstraints)
+            val enginePlaced = engineMeasurable.first().measure(rowConstraints)
+            val height = statusPlaceable.height + gap + enginePlaced.height
+            layout(maxOf(statusPlaceable.width, enginePlaced.width), height) {
+                statusPlaceable.placeRelative(0, 0)
+                enginePlaced.placeRelative(0, statusPlaceable.height + gap)
+            }
+        }
+    }
 }
 
 @Composable

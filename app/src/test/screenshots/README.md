@@ -1,4 +1,4 @@
-# Oe3 screenshot goldens
+# UI screenshot goldens
 
 Zero-device visual regression for the Compose UI migration (ticket UI3-11).
 Tests render the real composables through Robolectric's native graphics on the
@@ -34,6 +34,33 @@ tests outside the two commands above, always pass
 `-Proborazzi.test.verify=true`; if `git status` shows unexpected PNG changes,
 restore them from `HEAD` and re-run the record command on a quiet tree. Golden
 files are gitignored (`*.png`) — committing updates requires `git add -f`.
+
+## UI/UX v4 matrix
+
+UI-16 adds 29 captures under `v4/`. Each filename follows
+`{page}_{mode}_{variant}.png` and matches one test method under `ui.v4`.
+
+| Coverage | Fixtures | Captures |
+| --- | --- | ---: |
+| Main pages | Workstation, instances, hardware, distros, config. First viewport of the production shell in the two mascot themes | 10 |
+| Theme Studio | Entry list, presets, terminal customization, background and transparency | 4 |
+| Instance creation | Storage, network, hardware, startup | 4 |
+| Secondary pages | Port forwarding, VM hardware, SSH | 3 |
+| Slider | Default, dragging with pointer held, disabled, minimum, maximum | 5 |
+| Glass | Injected L0, L1, and L2. L2 uses the current L1 renderer pending UI-06b | 3 |
+
+The older `oe3/`, `ui3/`, and `ui4/` files still participate in verification.
+Use filtered recording to add or intentionally change a v4 baseline after
+reviewing the rendered output.
+
+```sh
+./gradlew :app:recordRoborazziDebug --tests 'io.github.nyzeep.orchestella.ui.v4.*' \
+  -Porchestella.assets.allowMissingPayload=true \
+  -Porchestella.repositories.useAliyunMirror=true
+```
+
+Inspect the PNGs and stage only the intended files in `v4/`. Run unfiltered
+`:app:verifyRoborazziDebug` afterward to compare all committed baselines.
 
 ## Layout and naming
 
@@ -121,7 +148,7 @@ Ownership notes (UI3-10):
    ```
 
 5. Keep new golden batches at 40 files or fewer per PR (ticket limit). The
-   current inventory is 37 goldens: 8 foundation (tokens + icons), 6 shell
+   original UI3 inventory included 8 foundation goldens (tokens + icons), 6 shell
    (UI3-11A), 2 nav glass fallback (UI3-10), 6 config/dashboard/hardware pages
    (UI3-11A), 8 theme studio + terminal (UI3-09, owner: UI3-13), 4 instances
    (UI3-06) and 3 distros (UI3-08). The UI3-11A batch adds 12 files (6 shell +

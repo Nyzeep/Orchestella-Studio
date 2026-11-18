@@ -34,89 +34,6 @@ class InstancesScreenshotTest {
     @get:Rule
     val compose = createComposeRule()
 
-    private fun row(
-        id: String,
-        distroId: String,
-        name: String,
-        status: InstanceStatus,
-        engine: String?,
-        ip: String?,
-        terminal: Boolean,
-        launch: Boolean,
-        delete: Boolean,
-    ) = InstanceRowUi(
-        id = id,
-        shortId = id.take(8),
-        distroId = distroId,
-        name = name,
-        status = status,
-        engineLabel = engine,
-        specsText = "2 vCPU · 2048 MB · 8 GB",
-        ipAddress = ip,
-        canOpenTerminal = terminal,
-        canLaunch = launch,
-        canLaunchDesktop = false,
-        canPowerOff = terminal,
-        canShowLogs = true,
-        canExport = !terminal,
-        canDelete = delete,
-    )
-
-    private fun withInstances() = InstancesUiState(
-        groups = listOf(
-            InstanceGroupUi(
-                InstanceGroup.Running,
-                listOf(
-                    row(
-                        id = "a1b2c3d4-running",
-                        distroId = "ubuntu",
-                        name = "Ubuntu 24.04",
-                        status = InstanceStatus.Running,
-                        engine = "QEMU 软件虚拟化",
-                        ip = "192.0.2.42",
-                        terminal = true,
-                        launch = false,
-                        delete = false,
-                    ),
-                ),
-            ),
-            InstanceGroupUi(
-                InstanceGroup.Stopped,
-                listOf(
-                    row(
-                        id = "e5f6a7b8-stopped",
-                        distroId = "debian",
-                        name = "Debian 12",
-                        status = InstanceStatus.Stopped,
-                        engine = "QEMU 软件虚拟化",
-                        ip = null,
-                        terminal = false,
-                        launch = true,
-                        delete = true,
-                    ),
-                ),
-            ),
-            InstanceGroupUi(
-                InstanceGroup.Error,
-                listOf(
-                    row(
-                        id = "c9d0e1f2-crashed",
-                        distroId = "rocky",
-                        name = "Rocky Linux 9",
-                        status = InstanceStatus.Crashed,
-                        engine = null,
-                        ip = null,
-                        terminal = false,
-                        launch = false,
-                        delete = true,
-                    ),
-                ),
-            ),
-        ),
-        totalCount = 3,
-        runningCount = 1,
-    )
-
     private fun empty() = InstancesUiState(emptyList(), totalCount = 0, runningCount = 0)
 
     private fun capture(name: String, theme: AppTheme, state: InstancesUiState) {
@@ -141,12 +58,12 @@ class InstancesScreenshotTest {
 
     @Test
     fun runningDark() {
-        capture("running-dark", ThemeCatalog.moonshotDark, withInstances())
+        capture("running-dark", ThemeCatalog.moonshotDark, instancesWithRowsScreenshotState())
     }
 
     @Test
     fun runningLight() {
-        capture("running-light", ThemeCatalog.moonshotLight, withInstances())
+        capture("running-light", ThemeCatalog.moonshotLight, instancesWithRowsScreenshotState())
     }
 
     @Test
@@ -159,3 +76,86 @@ class InstancesScreenshotTest {
         capture("empty-light", ThemeCatalog.moonshotLight, empty())
     }
 }
+
+private fun row(
+    id: String,
+    distroId: String,
+    name: String,
+    status: InstanceStatus,
+    engine: String?,
+    ip: String?,
+    terminal: Boolean,
+    launch: Boolean,
+    delete: Boolean,
+) = InstanceRowUi(
+    id = id,
+    shortId = id.take(8),
+    distroId = distroId,
+    name = name,
+    status = status,
+    engineLabel = engine,
+    specsText = "2 vCPU · 2048 MB · 8 GB",
+    ipAddress = ip,
+    canOpenTerminal = terminal,
+    canLaunch = launch,
+    canLaunchDesktop = false,
+    canPowerOff = terminal,
+    canShowLogs = true,
+    canExport = !terminal,
+    canDelete = delete,
+)
+
+internal fun instancesWithRowsScreenshotState() = InstancesUiState(
+    groups = listOf(
+        InstanceGroupUi(
+            InstanceGroup.Running,
+            listOf(
+                row(
+                    id = "a1b2c3d4-running",
+                    distroId = "ubuntu",
+                    name = "Ubuntu 24.04",
+                    status = InstanceStatus.Running,
+                    engine = "QEMU 软件虚拟化",
+                    ip = "192.0.2.42",
+                    terminal = true,
+                    launch = false,
+                    delete = false,
+                ),
+            ),
+        ),
+        InstanceGroupUi(
+            InstanceGroup.Stopped,
+            listOf(
+                row(
+                    id = "e5f6a7b8-stopped",
+                    distroId = "debian",
+                    name = "Debian 12",
+                    status = InstanceStatus.Stopped,
+                    engine = "QEMU 软件虚拟化",
+                    ip = null,
+                    terminal = false,
+                    launch = true,
+                    delete = true,
+                ),
+            ),
+        ),
+        InstanceGroupUi(
+            InstanceGroup.Error,
+            listOf(
+                row(
+                    id = "c9d0e1f2-crashed",
+                    distroId = "rocky",
+                    name = "Rocky Linux 9",
+                    status = InstanceStatus.Crashed,
+                    engine = null,
+                    ip = null,
+                    terminal = false,
+                    launch = false,
+                    delete = true,
+                ),
+            ),
+        ),
+    ),
+    totalCount = 3,
+    runningCount = 1,
+)

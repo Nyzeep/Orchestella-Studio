@@ -1,16 +1,22 @@
 package io.github.nyzeep.orchestella.ui.screens.theme
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Color
+import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.github.nyzeep.orchestella.ModernTerminalView
 import io.github.nyzeep.orchestella.terminal.TerminalScreenModel
 import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
+import java.io.File
 
 /**
  * The Theme Studio preview feeds a [FakeTerminalShell] transcript into the real
@@ -46,6 +52,31 @@ class TerminalPreviewRenderTest {
             colours.containsAll(theme.ansi.toSet()),
         )
         assertTrue("prompt missing from the session transcript", snapshot.text().contains("$"))
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun readableBackgroundUriDecodesTheImageAfterProbingItsDimensions() {
+        val file = File.createTempFile("terminal-background", ".png", context.cacheDir)
+        val fixture = Bitmap.createBitmap(8, 4, Bitmap.Config.ARGB_8888)
+        try {
+            fixture.eraseColor(Color.MAGENTA)
+            file.outputStream().use { stream ->
+                assertTrue(fixture.compress(Bitmap.CompressFormat.PNG, 100, stream))
+            }
+
+            val decoded = requireNotNull(decodeTerminalBackground(context, Uri.fromFile(file).toString()))
+            try {
+                assertEquals(8, decoded.width)
+                assertEquals(4, decoded.height)
+                assertEquals(Color.MAGENTA, decoded.getPixel(4, 2))
+            } finally {
+                decoded.recycle()
+            }
+        } finally {
+            fixture.recycle()
+            file.delete()
+        }
     }
 
     @Test

@@ -12,6 +12,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
@@ -181,7 +182,7 @@ class MainActivity : AppCompatActivity() {
      * 布尔门让 onStart/onStop 的注册与注销各只发生一次。
      */
     private var batteryFacts = HardwareBatteryFacts()
-    private var batteryReceiverRegistered = false
+    private var powerReceiverRegistered = false
 
     // Lane A（2026-11-13）：随行 UML face 的 Android 侧绑定。face 经装配槽的
     // spawner 注入重载构造（drain 线程消费内置 initramfs 的 §4 契约串），生命
@@ -510,7 +511,7 @@ class MainActivity : AppCompatActivity() {
         oe3ThemeState.value = themeStore.resolve()
         // UI3-10 玻璃层的运行时闸：动效被系统关闭或省电模式时退到实色 scrim 面。
         val animatorsEnabled = android.animation.ValueAnimator.areAnimatorsEnabled()
-        val powerManager = getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+        val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
         // UI-06 玻璃模式：off/auto/always 三档；auto 按设备能力解析渲染档位，
         // 并尊重旧档位键的显式关闭（从未写过旧键才给自动玻璃）。
         val glassMode = GlassMode.fromKey(themeStore.uiGlassMode())
@@ -1583,52 +1584,54 @@ class MainActivity : AppCompatActivity() {
         super.onStart()
         getSharedPreferences(ThemeStore.PREFS_NAME, Context.MODE_PRIVATE)
             .registerOnSharedPreferenceChangeListener(surfaceOpacityListener)
-        startBatteryMonitoring()
+        startPowerMonitoring()
     }
 
     override fun onStop() {
-        stopBatteryMonitoring()
+        stopPowerMonitoring()
         getSharedPreferences(ThemeStore.PREFS_NAME, Context.MODE_PRIVATE)
             .unregisterOnSharedPreferenceChangeListener(surfaceOpacityListener)
         super.onStop()
     }
 
     /**
-     * 电池广播（UI-08）。`ACTION_BATTERY_CHANGED` 是受保护的系统广播，注册即先收到
-     * 一条粘性快照；这里只更新缓存并重算硬件页状态，不另立数据源、不做重活。
-     *
-     * 冷启动时快照周期还没落地 `oe3HardwareProfile`，`refreshOe3HardwareState()` 会
-     * 在主线程补一次宿主探测——所以此处等剖面就绪再刷新，首帧由快照周期带上缓存值。
+     * 电池广播带着粘性读数，直接更新硬件页缓存。剖面尚未就绪时由首份快照带上读数，
+     * 避免在广播处理里同步探测宿主。省电模式变更另外刷新壳层的玻璃能力。
      */
-    private val batteryReceiver = object : BroadcastReceiver() {
+    private val powerReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            // Use the delivered snapshot instead of re-reading the sticky broadcast:
-            // this is the same reading, without a second binder round-trip per change.
-            batteryFacts = BatteryFactProvider.factsFromIntent(
-                intent = intent,
-                capacityPercent = BatteryFactProvider.capacityPercent(this@MainActivity),
-            )
-            if (oe3HardwareProfile != null) refreshOe3HardwareState()
+            when (intent?.action) {
+                PowerManager.ACTION_POWER_SAVE_MODE_CHANGED -> refreshOe3ShellSnapshot()
+                Intent.ACTION_BATTERY_CHANGED -> {
+                    batteryFacts = BatteryFactProvider.factsFromIntent(
+                        intent = intent,
+                        capacityPercent = BatteryFactProvider.capacityPercent(this@MainActivity),
+                    )
+                    if (oe3HardwareProfile != null) refreshOe3HardwareState()
+                }
+            }
         }
     }
 
-    /** 注册电池监听；先同步读一次，首份硬件页状态落地时就已经带着电量与温度。 */
-    private fun startBatteryMonitoring() {
-        if (batteryReceiverRegistered) return
+    /** 首份硬件页状态需要电池读数，注册省电和电池广播前先同步读取一次。 */
+    private fun startPowerMonitoring() {
+        if (powerReceiverRegistered) return
         batteryFacts = BatteryFactProvider.read(this)
         ContextCompat.registerReceiver(
             this,
-            batteryReceiver,
-            IntentFilter(Intent.ACTION_BATTERY_CHANGED),
+            powerReceiver,
+            IntentFilter(Intent.ACTION_BATTERY_CHANGED).apply {
+                addAction(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
+            },
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
-        batteryReceiverRegistered = true
+        powerReceiverRegistered = true
     }
 
-    private fun stopBatteryMonitoring() {
-        if (!batteryReceiverRegistered) return
-        unregisterReceiver(batteryReceiver)
-        batteryReceiverRegistered = false
+    private fun stopPowerMonitoring() {
+        if (!powerReceiverRegistered) return
+        unregisterReceiver(powerReceiver)
+        powerReceiverRegistered = false
     }
 
     override fun onResume() {

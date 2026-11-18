@@ -10,9 +10,6 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.captureRoboImage
-import io.github.nyzeep.orchestella.HostHardwareProfile
-import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig
-import io.github.nyzeep.orchestella.ssh.SshProfile
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3Theme
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.theme.AppTheme
@@ -36,8 +33,6 @@ class ConnectionsScreenshotTest {
     @get:Rule
     val compose = createComposeRule()
 
-    private val gib = 1024L * 1024L * 1024L
-
     private fun capture(name: String, theme: AppTheme, content: @Composable () -> Unit) {
         compose.setContent {
             Oe3Theme(theme = theme, reduceMotion = true) {
@@ -55,121 +50,33 @@ class ConnectionsScreenshotTest {
         )
     }
 
-    @Composable
-    private fun portForwardingSample() {
-        PortForwardingContent(
-            state = PortForwardingPageUiState(
-                hasLiveEngine = true,
-                rules = listOf(
-                    PortForwardingRuleRow(
-                        id = "rule-web",
-                        protocol = "TCP",
-                        hostPort = 8080,
-                        guestPort = 80,
-                        description = "Web service · 已应用到 QEMU 网关",
-                        enabled = true,
-                        canToggle = true,
-                    ),
-                    PortForwardingRuleRow(
-                        id = "rule-ssh",
-                        protocol = "TCP",
-                        hostPort = 2222,
-                        guestPort = 22,
-                        description = "SSH · 已保存配置，当前未确认生效",
-                        enabled = false,
-                        canToggle = true,
-                    ),
-                ),
-            ),
-            onBack = {},
-            onHostPortChange = {},
-            onGuestPortChange = {},
-            onDescriptionChange = {},
-            onAddRule = {},
-            onToggleRule = { _, _ -> },
-            onDeleteRule = {},
-        )
-    }
-
-    @Composable
-    private fun sshSample() {
-        SshManagerContent(
-            profiles = listOf(
-                SshProfile(
-                    id = "ssh-local",
-                    label = "本地 Linux 实例",
-                    host = "127.0.0.1",
-                    port = 2222,
-                    username = "root",
-                ),
-                SshProfile(
-                    id = "ssh-remote",
-                    label = "构建服务器",
-                    host = "192.0.2.10",
-                    port = 22,
-                    username = "builder",
-                ),
-            ),
-            onBack = {},
-            onNew = {},
-            onConnect = {},
-            onCopy = {},
-            onEdit = {},
-            onDelete = {},
-        )
-    }
-
-    @Composable
-    private fun vmSample() {
-        val profile = HostHardwareProfile(
-            8,
-            8L * 1024L * 1024L * 1024L,
-            4L * 1024L * 1024L * 1024L,
-            512L * 1024L * 1024L,
-            false,
-        )
-        val state = VmHardwarePageState(
-            VmHardwareConfig(4, 4096, 16L * gib, true, null),
-            profile,
-        )
-        VmHardwareContent(
-            state = state,
-            onBack = {},
-            onCpuChange = state::setCpuCores,
-            onRamChange = state::setRamMegabytes,
-            onDiskChange = state::setDiskGb,
-            onGpuChange = state::setGpuAcceleration,
-            onSave = {},
-        )
-    }
-
     @Test
     fun portForwardingDark() {
-        capture("port-forwarding-dark", ThemeCatalog.moonshotDark) { portForwardingSample() }
+        capture("port-forwarding-dark", ThemeCatalog.moonshotDark) { PortForwardingScreenshotSample() }
     }
 
     @Test
     fun portForwardingLight() {
-        capture("port-forwarding-light", ThemeCatalog.moonshotLight) { portForwardingSample() }
+        capture("port-forwarding-light", ThemeCatalog.moonshotLight) { PortForwardingScreenshotSample() }
     }
 
     @Test
     fun sshManagerDark() {
-        capture("ssh-manager-dark", ThemeCatalog.moonshotDark) { sshSample() }
+        capture("ssh-manager-dark", ThemeCatalog.moonshotDark) { SshScreenshotSample() }
     }
 
     @Test
     fun sshManagerLight() {
-        capture("ssh-manager-light", ThemeCatalog.moonshotLight) { sshSample() }
+        capture("ssh-manager-light", ThemeCatalog.moonshotLight) { SshScreenshotSample() }
     }
 
     @Test
     fun vmHardwareDark() {
-        capture("vm-hardware-dark", ThemeCatalog.moonshotDark) { vmSample() }
+        capture("vm-hardware-dark", ThemeCatalog.moonshotDark) { VmHardwareScreenshotSample() }
     }
 
     @Test
     fun vmHardwareLight() {
-        capture("vm-hardware-light", ThemeCatalog.moonshotLight) { vmSample() }
+        capture("vm-hardware-light", ThemeCatalog.moonshotLight) { VmHardwareScreenshotSample() }
     }
 }
