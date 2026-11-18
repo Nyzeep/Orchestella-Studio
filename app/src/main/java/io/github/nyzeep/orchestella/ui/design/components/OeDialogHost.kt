@@ -55,6 +55,7 @@ import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
 import io.github.nyzeep.orchestella.ui.theme.ThemeStore
+import java.lang.ref.WeakReference
 import java.util.WeakHashMap
 import java.util.function.Consumer
 import java.util.function.IntConsumer
@@ -77,15 +78,21 @@ import java.util.function.IntConsumer
  *
  * 覆层只在有对话框时挂载，关闭即摘除；不常驻，因此不干扰页面触摸。
  */
-class OeDialogHost private constructor(private val activity: Activity) {
+class OeDialogHost private constructor(activity: Activity) {
+
+    // 宿主用弱引用：hosts 是静态 WeakHashMap，若 value 强持 key（Activity），
+    // 整条链会让 key 永远可达，Activity 泄漏。弱引用后 entry 随 Activity 一起回收。
+    private val activityRef = WeakReference(activity)
 
     private val current = mutableStateOf<OeDialogSpec?>(null)
     private var overlay: ComposeView? = null
 
     fun show(spec: OeDialogSpec) {
+        val activity = activityRef.get() ?: return
         activity.runOnUiThread {
-            if (activity.isFinishing) return@runOnUiThread
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && activity.isDestroyed) {
+            val host = activityRef.get() ?: return@runOnUiThread
+            if (host.isFinishing) return@runOnUiThread
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && host.isDestroyed) {
                 return@runOnUiThread
             }
             current.value = spec
@@ -104,6 +111,7 @@ class OeDialogHost private constructor(private val activity: Activity) {
 
     private fun ensureOverlay() {
         if (overlay != null) return
+        val activity = activityRef.get() ?: return
         val root = activity.findViewById<ViewGroup>(android.R.id.content) ?: return
         val themeStore = ThemeStore(activity)
         val view = ComposeView(activity).apply {
