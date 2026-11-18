@@ -15,11 +15,11 @@ import android.os.Looper
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -41,6 +41,7 @@ import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3GlassLevel
 import io.github.nyzeep.orchestella.ui.screens.wizard.WizardController
 import io.github.nyzeep.orchestella.ui.screens.wizard.WizardScreen
 import io.github.nyzeep.orchestella.ui.shell.OeBackStack
+import io.github.nyzeep.orchestella.ui.shell.LocalOeBackStack
 import io.github.nyzeep.orchestella.ui.shell.Oe3App
 import io.github.nyzeep.orchestella.ui.shell.Oe3Feature
 import io.github.nyzeep.orchestella.ui.shell.Oe3NavStyle
@@ -79,7 +80,11 @@ import io.github.nyzeep.orchestella.ui.screens.instances.InstancesActions
 import io.github.nyzeep.orchestella.ui.screens.instances.InstancesProgressUi
 import io.github.nyzeep.orchestella.ui.screens.instances.InstancesScreen
 import io.github.nyzeep.orchestella.ui.screens.instances.InstancesUiState
+import io.github.nyzeep.orchestella.ui.screens.theme.ThemeAccentScreen
+import io.github.nyzeep.orchestella.ui.screens.theme.ThemeBackgroundScreen
+import io.github.nyzeep.orchestella.ui.screens.theme.ThemePresetScreen
 import io.github.nyzeep.orchestella.ui.screens.theme.ThemeStudioScreen
+import io.github.nyzeep.orchestella.ui.screens.theme.ThemeTerminalScreen
 import io.github.nyzeep.orchestella.ui.screens.theme.rememberThemeStudioHandle
 import io.github.nyzeep.orchestella.update.UpdateCenter
 import io.github.nyzeep.orchestella.update.UpdateCoordinator
@@ -154,9 +159,6 @@ class MainActivity : AppCompatActivity() {
 
     /** 创建/导入等异步进度的文字（launchFeedback 链路的 Compose 侧出口）。 */
     private val oe3ProgressText = mutableStateOf("")
-
-    /** 配置页 → 主题工坊的壳内推入状态；返回键与关闭回调共同驱动。 */
-    private val oe3ThemeStudioOpen = mutableStateOf(false)
 
     /** UML rootfs 卡状态机输出；state 承载让发行版页随下载进度重组。 */
     private var umlRootfsCardModel: UmlRootfsCardState.CardModel? by mutableStateOf(null)
@@ -269,6 +271,9 @@ class MainActivity : AppCompatActivity() {
 
         /** UI-12：向导目的地键与草稿恢复键（旧 SetupWizardActivity STATE_DRAFT 的壳内对应）。 */
         private const val WIZARD_DESTINATION_KEY = "creation-wizard"
+
+        /** 主题工坊根页的栈内标识（子页 key 见 `ThemeStudioPage`）。 */
+        private const val THEME_STUDIO_DESTINATION_KEY = "theme-studio"
         private const val STATE_WIZARD_DRAFT = "creation_draft_v1"
     }
 
@@ -436,43 +441,37 @@ class MainActivity : AppCompatActivity() {
                     LocalOe3GlassLowRam provides oe3GlassLowRamDevice,
                     LocalOe3GlassDeviceCap provides effectiveCap,
                 ) {
-                    if (oe3ThemeStudioOpen.value) {
-                        Oe3ThemeStudioHost(reduceMotion = prefs.reduceMotion)
-                    } else {
-                        Oe3App(
-                            selectedTab = controller.selectedTab,
-                            onTabSelected = { tab -> controller.select(tab) },
-                            theme = theme,
-                            textScale = prefs.textScale,
-                            reduceMotion = prefs.reduceMotion,
-                            pureBlack = prefs.pureBlack,
-                            glassLevel = prefs.glassLevel,
-                            glassEnabled = prefs.glassEnabled,
-                            navStyle = prefs.navStyle,
-                            monoBody = prefs.monoBody,
-                            cornerRadiusDp = prefs.cornerRadiusDp,
-                            surfaceAlpha = prefs.surfaceAlpha,
-                            backgroundUri = prefs.backgroundUri,
-                            backStack = backStack,
-                            pages = buildOe3Pages(),
-                        )
-                    }
+                    Oe3App(
+                        selectedTab = controller.selectedTab,
+                        onTabSelected = { tab -> controller.select(tab) },
+                        theme = theme,
+                        textScale = prefs.textScale,
+                        reduceMotion = prefs.reduceMotion,
+                        pureBlack = prefs.pureBlack,
+                        glassLevel = prefs.glassLevel,
+                        glassEnabled = prefs.glassEnabled,
+                        navStyle = prefs.navStyle,
+                        monoBody = prefs.monoBody,
+                        cornerRadiusDp = prefs.cornerRadiusDp,
+                        surfaceAlpha = prefs.surfaceAlpha,
+                        backgroundUri = prefs.backgroundUri,
+                        backStack = backStack,
+                        pages = buildOe3Pages(),
+                    )
                 }
             }
         }
         oe3ComposeView = composeView
         setContentView(composeView)
 
-        // 返回键：主题工坊先关工坊；非首 tab 回工作站；工作站上放行给系统（退出）。
+        // 返回键：非首 tab 回工作站；工作站上放行给系统（退出）。
+        // 二级页（含主题工坊）由 OeBackStackHost 的 BackHandler 先消费。
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                when {
-                    oe3ThemeStudioOpen.value -> oe3ThemeStudioOpen.value = false
-                    !controller.back() -> {
-                        isEnabled = false
-                        onBackPressedDispatcher.onBackPressed()
-                        isEnabled = true
-                    }
+                if (!controller.back()) {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                    isEnabled = true
                 }
             }
         })
@@ -600,25 +599,83 @@ class MainActivity : AppCompatActivity() {
         },
     )
 
-    /** 主题工坊的壳内承载：独立根（页面自带 Oe3Theme 包装，不得嵌套复刻）。 */
+    /**
+     * 主题工坊（v4 UI-10）：根页与四个子页都作为二级页推入同一个 [OeBackStack]，
+     * 返回即逐层 pop。页面自身不带 `Oe3Theme`，统一消费壳层主题，避免应用内
+     * 字号被乘两次。
+     */
+    private fun themeStudioDestination(): OeDestination = OeDestination(
+        key = THEME_STUDIO_DESTINATION_KEY,
+        title = getString(R.string.ui3_theme_title),
+        content = { ThemeStudioRootRoute() },
+    )
+
     @Composable
-    private fun Oe3ThemeStudioHost(reduceMotion: Boolean) {
+    private fun ThemeStudioRootRoute() {
+        val stack = requireNotNull(LocalOeBackStack.current) {
+            "theme studio must run inside the shell back stack"
+        }
         val handle = rememberThemeStudioHandle(themeStore)
         ThemeStudioScreen(
             state = handle.state,
             onEvent = handle.onEvent,
-            reduceMotion = reduceMotion,
-            // 可见返回钮与 OnBackPressedCallback 的系统返回同语义：关闭工坊，
-            // 壳层回到原 selectedTab（配置页打开时即配置 tab）。
-            onBack = { oe3ThemeStudioOpen.value = false },
-            onPickBackground = { backgroundPicker.launch(arrayOf("image/*")) },
-            onPickTerminalBackground = { terminalBackgroundPicker.launch(arrayOf("image/*")) },
+            reduceMotion = oe3PrefsState.value.reduceMotion,
+            onBack = { stack.pop() },
+            onOpenPresets = { stack.push(themeStudioSubDestination(ThemeStudioPage.Presets)) },
+            onOpenAccent = { stack.push(themeStudioSubDestination(ThemeStudioPage.Accent)) },
+            onOpenBackground = { stack.push(themeStudioSubDestination(ThemeStudioPage.Background)) },
+            onOpenTerminal = { stack.push(themeStudioSubDestination(ThemeStudioPage.Terminal)) },
         )
-        // 工坊改动即时反映到壳层偏好（返回时壳层已用新值重组）。
-        DisposableEffect(handle.state) {
-            refreshOe3ShellSnapshot()
-            onDispose { }
+    }
+
+    private fun themeStudioSubDestination(page: ThemeStudioPage): OeDestination = OeDestination(
+        key = page.key,
+        title = getString(page.titleRes),
+        content = { ThemeStudioSubRoute(page) },
+    )
+
+    @Composable
+    private fun ThemeStudioSubRoute(page: ThemeStudioPage) {
+        val stack = requireNotNull(LocalOeBackStack.current) {
+            "theme studio pages must run inside the shell back stack"
         }
+        val handle = rememberThemeStudioHandle(themeStore)
+        val onBack: () -> Unit = { stack.pop() }
+        when (page) {
+            ThemeStudioPage.Presets -> ThemePresetScreen(
+                state = handle.state,
+                onEvent = handle.onEvent,
+                onBack = onBack,
+            )
+
+            ThemeStudioPage.Accent -> ThemeAccentScreen(
+                state = handle.state,
+                onEvent = handle.onEvent,
+                onBack = onBack,
+            )
+
+            ThemeStudioPage.Background -> ThemeBackgroundScreen(
+                state = handle.state,
+                onEvent = handle.onEvent,
+                onBack = onBack,
+                onPickBackground = { backgroundPicker.launch(arrayOf("image/*")) },
+            )
+
+            ThemeStudioPage.Terminal -> ThemeTerminalScreen(
+                state = handle.state,
+                onEvent = handle.onEvent,
+                onBack = onBack,
+                onPickTerminalBackground = { terminalBackgroundPicker.launch(arrayOf("image/*")) },
+            )
+        }
+    }
+
+    /** 主题工坊子页的路由标识与标题；key 稳定，供栈内判等。 */
+    private enum class ThemeStudioPage(val key: String, @StringRes val titleRes: Int) {
+        Presets("theme-studio.presets", R.string.ui3_theme_page_presets),
+        Accent("theme-studio.accent", R.string.ui3_theme_page_accent),
+        Background("theme-studio.background", R.string.ui3_theme_page_background),
+        Terminal("theme-studio.terminal", R.string.ui3_theme_page_terminal),
     }
 
     // ==================== Oe3 五页动作（全部路由到既有入口） ====================
@@ -718,7 +775,15 @@ class MainActivity : AppCompatActivity() {
         when (val destination = route.destination) {
             is ConfigDestination.SettingsSection ->
                 startActivity(SettingsSubActivity.intent(this, destination.section))
-            ConfigDestination.ThemeStudio -> oe3ThemeStudioOpen.value = true
+            ConfigDestination.ThemeStudio -> {
+                // 已在工坊内（根页或任一子页）时不重复压栈，避免返回两层同一根。
+                val stack = oe3BackStack
+                if (stack != null &&
+                    stack.top?.key?.startsWith("theme-studio") != true
+                ) {
+                    stack.push(themeStudioDestination())
+                }
+            }
             ConfigDestination.SshManager ->
                 io.github.nyzeep.orchestella.ssh.SshManagerDialog.show(this)
             ConfigDestination.PortForwarding -> openOe3PortForwarding()

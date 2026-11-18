@@ -253,7 +253,7 @@ class SettingsActivity : AppCompatActivity() {
                 startActivity(SettingsSubActivity.intent(this, destination.section))
 
             // ZD-W2（gap 16）：主题入口收敛后的说明弹窗已移除。新壳
-            // （MainActivity）的配置页直达 Theme Studio（壳内 oe3ThemeStudioOpen）；
+            // （MainActivity）的配置页把 Theme Studio 压入壳层 OeBackStack；
             // 本 Activity 无壳内工坊承载，此处不再展示引导。
             ConfigDestination.ThemeStudio -> Unit
             ConfigDestination.SshManager -> SshManagerDialog.show(this)
