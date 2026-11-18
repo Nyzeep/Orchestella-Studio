@@ -47,6 +47,12 @@ public final class VirglJniBridge {
     /**
      * Initializes the in-process VirGL 3D renderer context with specified memory quota and EGL robustness.
      *
+     * <p>G-06: with the native library loaded, a refusal or a throw from
+     * {@code nativeInit} now reports {@code false} honestly (the launcher falls
+     * back to the 2D device with {@code INIT_FAILED}) instead of silently
+     * claiming the JVM-mock path succeeded. The JVM-mock fallback stays
+     * exclusive to the no-native unit-test environment.
+     *
      * @param quotaMb memory quota limit in megabytes (default: 1024)
      * @param enableRobustness whether to request EGL robustness extension attributes
      * @return {@code true} if initialized successfully, {@code false} otherwise
@@ -56,18 +62,25 @@ public final class VirglJniBridge {
         robustnessActive = enableRobustness;
 
         if (isNativeLoaded) {
+            boolean ok;
             try {
-                boolean ok = nativeInit(configuredQuotaMb, enableRobustness);
-                if (ok) {
-                    isInitialized = true;
-                    LOGGER.info(String.format(
-                            "virgl_renderer_init succeeded: in-process VirGL 3D context initialized with EGL robustness (memory quota: %d MB)",
-                            configuredQuotaMb));
-                    return true;
-                }
+                ok = nativeInit(configuredQuotaMb, enableRobustness);
             } catch (Throwable t) {
                 LOGGER.log(Level.WARNING, "Failed to call nativeInit on virglrenderer", t);
+                ok = false;
             }
+            if (ok) {
+                isInitialized = true;
+                LOGGER.info(String.format(
+                        "virgl_renderer_init succeeded: in-process VirGL 3D context initialized with EGL robustness (memory quota: %d MB)",
+                        configuredQuotaMb));
+                return true;
+            }
+            isInitialized = false;
+            LOGGER.warning(String.format(
+                    "virgl_renderer_init failed: native renderer refused init, caller must fall back to 2D (memory quota: %d MB)",
+                    configuredQuotaMb));
+            return false;
         }
 
         // JVM fallback (unit tests / mock)

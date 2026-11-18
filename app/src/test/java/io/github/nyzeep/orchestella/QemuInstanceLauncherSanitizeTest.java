@@ -209,5 +209,183 @@ public class QemuInstanceLauncherSanitizeTest {
     public void testSanitizeSpecHandlesNullAndEmpty() {
         assertEquals(0, QemuInstanceLauncher.sanitizeSpecForTargetBinary(null).length);
         assertEquals(0, QemuInstanceLauncher.sanitizeSpecForTargetBinary(new String[0]).length);
+        assertEquals(0, QemuInstanceLauncher.sanitizeSpecForTargetBinary(null, false).length);
+        assertEquals(0, QemuInstanceLauncher.sanitizeSpecForTargetBinary(new String[0], true).length);
+    }
+
+    // ---- G-06: GPU 生命周期接线 · 无 native 逐字节一致锁定 ----
+
+    /**
+     * The flag-on spec used by the G-06 lock tests: identical payload shape to
+     * production {@code buildWithPasst} output where the GPU toggle emits
+     * {@code virtio-gpu-gl-device}.
+     */
+    private static String[] gpuEnabledSpec() {
+        return new String[]{
+                "/path/to/libdroidlayer_qemu.so",
+                "-machine", "virt,gic-version=3",
+                "-m", "1024M",
+                "-device", "virtio-gpu-gl-device",
+                "-netdev", "stream,id=orchestella-net,server=off,addr.type=unix,addr.path=/x/passt.sock",
+                "-device", "virtio-net-pci,netdev=orchestella-net",
+                "-device", "virtio-serial-device"
+        };
+    }
+
+    /**
+     * Lock: without an active GPU context the new decision-aware pipeline must
+     * produce the same bytes as the pre-G-06 silent downgrade (the legacy
+     * signature stays the golden reference).
+     */
+    @Test
+    public void gpuFallbackDowngradeMatchesLegacySanitizeByteForByte() {
+        String[] legacy = QemuInstanceLauncher.sanitizeSpecForTargetBinary(gpuEnabledSpec());
+        String[] fallback = QemuInstanceLauncher.sanitizeSpecForTargetBinary(gpuEnabledSpec(), false);
+        assertArrayEquals(legacy, fallback);
+    }
+
+    /** Lock: with an ACTIVE GPU context the gl-device args survive untouched. */
+    @Test
+    public void gpuActivePipelineKeepsGlDeviceArgsByteExact() {
+        assertArrayEquals(gpuEnabledSpec(),
+                QemuInstanceLauncher.sanitizeSpecForTargetBinary(gpuEnabledSpec(), true));
+    }
+
+    /**
+     * Mirrors the production assembly order (buildWithPasst → GPU decision →
+     * display channel → audio channel) so the no-native byte-exact lock runs
+     * against the same pipeline the launcher executes.
+     */
+    private static String[] assembleLaunchArgs(boolean gpuAccelerationEnabled) {
+        io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig config =
+                io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig.builder()
+                        .cpuCores(2)
+                        .ramMegabytes(2048)
+                        .gpuAccelerationEnabled(gpuAccelerationEnabled)
+                        .build();
+        String[] spec = io.github.nyzeep.orchestella.runtime.engineqemu.QemuLaunchSpec.buildWithPasst(
+                "/native/lib/arm64-v8a/libdroidlayer_qemu.so",
+                "/data/runtime/Image",
+                "/data/runtime/initramfs-embedded.cpio.gz",
+                "/data/instances/i1/root-volume.raw",
+                "droidlayer-control-i1",
+                "droidlayer-terminal-i1",
+                config,
+                "38221",
+                "orchestella.guest_ip=10.53.53.2 orchestella.guest_gw=10.53.53.1"
+                        + " orchestella.guest_mask=255.255.255.0"
+                        + " orchestella.guest_dns=10.53.53.1 orchestella.proxy_enabled=0");
+        // gpuAccelerationActive=false is exactly what the launcher passes whenever
+        // the GPU gate did not reach ACTIVE (flag off, native missing, init failed).
+        String[] sanitized = QemuInstanceLauncher.sanitizeSpecForTargetBinary(spec, false);
+        String[] withDisplay = io.github.nyzeep.orchestella.runtime.engineqemu.QemuLaunchSpec
+                .withDisplayChannel(sanitized, "/data/display/display.sock");
+        return io.github.nyzeep.orchestella.runtime.engineqemu.QemuLaunchSpec
+                .withAudioChannel(withDisplay, "/data/audio/audio.sock");
+    }
+
+    /**
+     * Lock: in a no-native environment (this checkout has no libvirglrenderer.so)
+     * the flag-on pipeline output must equal the flag-off pipeline output
+     * byte-for-byte — the GPU toggle adds no argument drift beyond the one
+     * device token the fallback downgrades.
+     */
+    @Test
+    public void fullPipelineWithoutNativeMatchesFlagOffSpecByteForByte() {
+        String[] flagOff = assembleLaunchArgs(false);
+        String[] flagOnFallback = assembleLaunchArgs(true);
+        assertArrayEquals(flagOff, flagOnFallback);
+    }
+
+    /** Lock: the fallback pipeline still carries the 2D device and never the gl one. */
+    @Test
+    public void assembledFallbackArgsCarry2dDeviceOnly() {
+        for (String arg : assembleLaunchArgs(true)) {
+            if ("virtio-gpu-gl-device".equals(arg)) {
+                org.junit.Assert.fail("fallback pipeline must not emit virtio-gpu-gl-device");
+            }
+        }
+        boolean has2dDevice = false;
+        for (String arg : assembleLaunchArgs(true)) {
+            has2dDevice |= "virtio-gpu-device".equals(arg);
+        }
+        org.junit.Assert.assertTrue("2D device must stay wired", has2dDevice);
+    }
+
+    /**
+     * Golden literal: the exact 55-argument array the pre-G-06 pipeline produced
+     * for this launch payload (captured from the legacy sanitize path, which the
+     * fallback output matches byte-for-byte). Guards against silent drift of the
+     * no-native launch argument sequence.
+     */
+    private static final String[] GOLDEN_NO_NATIVE_LAUNCH_ARGS = {
+            "/native/lib/arm64-v8a/libdroidlayer_qemu.so",
+            "-machine",
+            "virt,gic-version=3",
+            "-accel",
+            "tcg,thread=multi",
+            "-cpu",
+            "cortex-a57",
+            "-smp",
+            "2",
+            "-m",
+            "2048M",
+            "-nodefaults",
+            "-display",
+            "none",
+            "-monitor",
+            "none",
+            "-no-reboot",
+            "-chardev",
+            "socket,id=terminal,path=droidlayer-terminal-i1,abstract=on,server=on,wait=off",
+            "-serial",
+            "chardev:terminal",
+            "-kernel",
+            "/data/runtime/Image",
+            "-initrd",
+            "/data/runtime/initramfs-embedded.cpio.gz",
+            "-append",
+            "console=ttyAMA0 rdinit=/init panic=-1 droidlayer.root_device=/dev/vda"
+                    + " droidlayer.input_tag=droidlayer-input"
+                    + " droidlayer.bridge_device=/dev/vport0p1"
+                    + " droidlayer.terminal_device=/dev/ttyAMA0"
+                    + " orchestella.guest_ip=10.53.53.2 orchestella.guest_gw=10.53.53.1"
+                    + " orchestella.guest_mask=255.255.255.0"
+                    + " orchestella.guest_dns=10.53.53.1 orchestella.proxy_enabled=0",
+            "-drive",
+            "if=none,id=root,file=/data/instances/i1/root-volume.raw,format=raw,cache=writeback",
+            "-device",
+            "virtio-blk-device,drive=root",
+            "-device",
+            "virtio-gpu-device",
+            "-netdev",
+            "socket,id=orchestella-net,connect=127.0.0.1:38221",
+            "-device",
+            "virtio-net-device,netdev=orchestella-net",
+            "-device",
+            "virtio-serial-device",
+            "-chardev",
+            "socket,id=control,path=droidlayer-control-i1,abstract=on,server=on,wait=off",
+            "-device",
+            "virtserialport,chardev=control,name=droidlayer.bridge",
+            "-chardev",
+            "socket,id=netproxy,path=orchestella-proxy-i1,abstract=on,server=on,wait=off",
+            "-device",
+            "virtserialport,chardev=netproxy,name=orchestella.proxy",
+            "-chardev",
+            "socket,id=display,path=/data/display/display.sock,server=on,wait=off",
+            "-device",
+            "virtserialport,chardev=display,name=orchestella.display",
+            "-chardev",
+            "socket,id=audio,path=/data/audio/audio.sock,server=on,wait=off",
+            "-device",
+            "virtserialport,chardev=audio,name=orchestella.audio",
+    };
+
+    /** Lock: the fallback pipeline output equals the pre-G-06 golden bytes. */
+    @Test
+    public void fallbackPipelineMatchesPreG06GoldenLiteralByteForByte() {
+        assertArrayEquals(GOLDEN_NO_NATIVE_LAUNCH_ARGS, assembleLaunchArgs(true));
+        assertArrayEquals(GOLDEN_NO_NATIVE_LAUNCH_ARGS, assembleLaunchArgs(false));
     }
 }

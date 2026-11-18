@@ -146,5 +146,17 @@ public interface ExecutionSession {
     default LaunchStageObserver launchStageObserver() {
         return null;
     }
+
+    /**
+     * G-06: the launch's GPU acceleration decision (enum single-source in
+     * engine-qemu: {@code ACTIVE} keeps the gl-device arguments, {@code FALLBACK}
+     * carries a grep-able {@code GpuFallbackReason}, {@code DISABLED} means the
+     * acceleration flag was off). Never null; strategies without a GPU gate
+     * report {@code DISABLED}. Honesty note: {@code ACTIVE} is wired-but-未验证
+     * on real devices (G-08 owns the benchmark).
+     */
+    default io.github.nyzeep.orchestella.runtime.engineqemu.GpuAccelerationStatus gpuAccelerationStatus() {
+        return io.github.nyzeep.orchestella.runtime.engineqemu.GpuAccelerationStatus.disabled();
+    }
 }
 
