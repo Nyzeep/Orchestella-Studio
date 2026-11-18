@@ -56,7 +56,15 @@
     <string name="connections_vm_disk_target">扩容至 %1$d GB（+%2$d GB）</string>
     <string name="connections_vm_disk_keep">保持当前容量 %1$d GB</string>
     <string name="connections_vm_gpu">GPU 3D 加速</string>
-    <string name="connections_vm_gpu_desc">关闭后使用软件渲染，可能降低桌面流畅度</string>
+    <!-- G-07 GPU 开关诚实副文案：三态（静态可用 / 静态不可用 / 会话实时）。
+         "已启用"指本次启动挂了 gl-device 参数（wired），不冒充真机渲染已验收。 -->
+    <string name="connections_vm_gpu_desc_available">GPU 加速（virgl）</string>
+    <string name="connections_vm_gpu_desc_unavailable">GPU 加速（驱动未打包，将回退 2D 渲染）</string>
+    <string name="connections_vm_gpu_desc_session_active">GPU 加速（virgl · 当前会话已启用）</string>
+    <string name="connections_vm_gpu_desc_session_fallback">GPU 加速（当前会话已回退 2D 渲染 · %1$s）</string>
+    <string name="connections_vm_gpu_reason_native_unavailable">驱动未打包</string>
+    <string name="connections_vm_gpu_reason_init_failed">驱动初始化失败</string>
+    <string name="connections_vm_gpu_reason_unknown">原因未知</string>
     <string name="connections_vm_save">保存硬件配置</string>
     <string name="connections_vm_instance_missing">无法读取实例信息，请返回后重试</string>
 </resources>

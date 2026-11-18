@@ -146,6 +146,13 @@ class ConnectionPagesActivity : AppCompatActivity() {
         } else {
             null
         }
+        // G-07：实例运行中时带实时 GPU 决策（G-06 状态源，进程内注册表直读，
+        // 无磁盘 IO）；无会话为 null，副文案按能力声明单源给静态文案。
+        val gpuAccelerationStatus = if (page == PAGE_VM_HARDWARE) {
+            instanceId?.let { ExecutionSessionRegistry.get(it) }?.gpuAccelerationStatus()
+        } else {
+            null
+        }
 
         if (page == PAGE_PORT_FORWARDING && (instanceId == null || portForwardingManager == null)) {
             finish()
@@ -191,6 +198,7 @@ class ConnectionPagesActivity : AppCompatActivity() {
                                 instance = requireNotNull(hardwareInstance),
                                 hostProfile = requireNotNull(hardwareProfile),
                                 onBack = back,
+                                gpuAccelerationStatus = gpuAccelerationStatus,
                                 onSaved = { selection ->
                                     setResult(
                                         RESULT_OK,

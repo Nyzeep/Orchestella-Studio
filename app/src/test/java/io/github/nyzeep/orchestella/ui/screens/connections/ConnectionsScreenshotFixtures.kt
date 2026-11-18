@@ -83,6 +83,7 @@ internal fun VmHardwareScreenshotSample(onBack: () -> Unit = {}) {
     val state = VmHardwarePageState(
         VmHardwareConfig(4, 4096, 16L * GIB, true, null),
         profile,
+        gpuNativeAvailable = true,
     )
     VmHardwareContent(
         state = state,
