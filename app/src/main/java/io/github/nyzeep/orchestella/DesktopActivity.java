@@ -1,504 +1,197 @@
 package io.github.nyzeep.orchestella;
 
-import android.app.Activity;
-import android.content.Context;
-import android.hardware.input.InputManager;
+import android.content.res.ColorStateList;
+import android.graphics.Color;
+import android.graphics.Typeface;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.view.InputDevice;
+import android.util.TypedValue;
+import android.view.Gravity;
 import android.view.KeyEvent;
-import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
-import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
-import android.widget.TextView;
-import android.widget.Toast;
-import androidx.appcompat.app.AlertDialog;
-import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle;
-import java.io.IOException;
-import io.github.nyzeep.orchestella.ModifierKeyStateMachine.ModifierKey;
-import io.github.nyzeep.orchestella.audio.AndroidAudioFocusAdapter;
-import io.github.nyzeep.orchestella.audio.AndroidAudioTrackAdapter;
-import io.github.nyzeep.orchestella.audio.AudioDriftCompensator;
-import io.github.nyzeep.orchestella.audio.AudioFocusSeam;
-import io.github.nyzeep.orchestella.audio.AudioSourceSeam;
-import io.github.nyzeep.orchestella.audio.AudioTrackSeam;
-import io.github.nyzeep.orchestella.audio.FallbackAudioSource;
-import io.github.nyzeep.orchestella.audio.LocalSocketAudioSource;
-import io.github.nyzeep.orchestella.audio.LowLatencyAudioPlayer;
-import io.github.nyzeep.orchestella.audio.TcpAudioSource;
-import io.github.nyzeep.orchestella.clipboard.ClipboardBridgeManager;
-import io.github.nyzeep.orchestella.peripherals.FileDropTargetListener;
-import io.github.nyzeep.orchestella.peripherals.PointerCaptureHandler;
-import io.github.nyzeep.orchestella.runtime.contract.AudioStreamContract;
+import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import androidx.activity.ComponentActivity;
+import com.google.android.material.button.MaterialButton;
 import io.github.nyzeep.orchestella.runtime.contract.BridgeClient;
-import io.github.nyzeep.orchestella.runtime.contract.BridgeControl;
-import io.github.nyzeep.orchestella.runtime.contract.DisplayControl;
-import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract;
 import io.github.nyzeep.orchestella.runtime.contract.DisplayChannel;
+import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract;
+import io.github.nyzeep.orchestella.ui.design.components.OeDialogs;
+import io.github.nyzeep.orchestella.ui.theme.ThemeApplier;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 
 /**
  * Main Android host activity presenting the Wayland graphical desktop environment.
  *
- * <p>Conforms to ADR-0017 and Ticket 43:
- * <ul>
- *   <li>Integrates {@link WaylandSurfaceView} as hardware double-buffered presentation surface;</li>
- *   <li>Enables Android Immersive Sticky full-screen mode;</li>
- *   <li>Provides semi-transparent collapsible {@link DesktopHudOverlay};</li>
- *   <li>Embeds floating {@link VirtualKeyBar} for Linux modifiers and shortcuts;</li>
- *   <li>Enables seamless dual-mode switching to {@link TerminalActivity};</li>
- *   <li>Binds and safely unbinds live session and graphics channels across lifecycle.</li>
- * </ul>
+ * <p>Conforms to ADR-0017 and Ticket 43, restructured by G-03: this activity only owns
+ * lifecycle wiring, the fixed view assembly and window chrome; the session control plane
+ * lives in {@link DesktopSessionCoordinator}, the surface plane in
+ * {@link DesktopSurfaceController}, input in {@link DesktopInputController}, clipboard /
+ * file-drop / audio in {@link DesktopPeripheralController} and HUD copy in
+ * {@link DesktopHudController}.
  */
-public class DesktopActivity extends Activity {
+public class DesktopActivity extends ComponentActivity
+        implements DesktopSessionCoordinator.Host, DesktopHudController.Host {
 
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
+    private final ScheduledExecutorService displayEvidence = Executors.newSingleThreadScheduledExecutor();
 
     private String instanceId;
     private String bridgeToken;
     private ExecutionSession session;
 
-    private WaylandSurfaceView surfaceView;
-    private DesktopHudOverlay hudOverlay;
-    private VirtualKeyBar virtualKeyBar;
+    private DesktopSessionCoordinator sessionCoordinator;
+    private DesktopSurfaceController surfaceController;
+    private DesktopHudController hudController;
+    private DesktopInputController inputController;
+    private DesktopPeripheralController peripheralController;
     private Button btnSwitchTerminal;
-
-    private Button btnCtrl;
-    private Button btnAlt;
-    private Button btnShift;
-    private Button btnSuper;
-
-    private LowLatencyAudioPlayer audioPlayer;
-    private ClipboardBridgeManager clipboardManager;
-    private PointerCaptureHandler pointerCaptureHandler;
-    private FileDropTargetListener fileDropTargetListener;
-    private Button btnPointerCapture;
-    private Button btnToggleTouchMode;
-    private InputManager.InputDeviceListener inputDeviceListener;
-
-    private Runnable hudUpdater;
-    private boolean isHudUpdating = false;
-    private final DesktopPresentationGate presentationGate = new DesktopPresentationGate();
-    private final java.util.concurrent.ScheduledExecutorService displayEvidence = java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
-    private volatile boolean displayForeground;
-    private volatile long displayGeneration;
-    private Runnable displayStartup;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_desktop);
-        enableImmersiveMode();
-
+        ThemeApplier.prepare(this);
         instanceId = getIntent() != null ? getIntent().getStringExtra(DesktopLaunchIntent.EXTRA_INSTANCE_ID) : null;
         bridgeToken = getIntent() != null ? getIntent().getStringExtra(DesktopLaunchIntent.EXTRA_BRIDGE_TOKEN) : null;
         session = ExecutionSessionRegistry.get(instanceId);
-
-        surfaceView = findViewById(R.id.wayland_surface_view);
-        btnSwitchTerminal = findViewById(R.id.btn_switch_terminal);
-        btnPointerCapture = findViewById(R.id.btn_pointer_capture);
-        View hudContainer = findViewById(R.id.desktop_hud_overlay);
-        TextView hudTextView = findViewById(R.id.desktop_hud_text);
-
-        FullLinuxContract.CapabilityMatrix capabilityMatrix = resolveCapabilityMatrix();
-        hudOverlay = new DesktopHudOverlay(hudContainer, hudTextView, capabilityMatrix);
+        DisplayChannel waylandChannel = session != null ? session.waylandChannel() : null;
+        BridgeClient bridgeClient = session != null ? session.bridgeClient() : null;
 
         int densityDpi = getResources().getConfiguration().densityDpi;
         int screenWidth = getResources().getDisplayMetrics().widthPixels;
         int screenHeight = getResources().getDisplayMetrics().heightPixels;
         double targetScale = DisplayDpiCalculator.calculateScale(densityDpi, screenWidth, screenHeight);
 
-        DisplayControl displayControl = session != null ? session.displayControl() : null;
-        DisplayChannel waylandChannel = session != null ? session.waylandChannel() : null;
-        if (surfaceView != null) {
-            surfaceView.getController().setTargetScale(targetScale);
-            surfaceView.bind(displayControl, waylandChannel);
-            surfaceView.getController().getRenderer().setPresentationObserver(frame -> {
-                ExecutionSession target = session;
-                BridgeClient client = target != null ? target.bridgeClient() : null;
-                long lifecycle = displayGeneration;
-                if (client == null || !isCurrentDisplay(target, client, lifecycle)) return;
-                DesktopPresentationGate.Confirmation ticket = presentationGate.begin(frame);
-                if (ticket == null) return;
-                try {
-                    displayEvidence.execute(() -> {
-                        boolean accepted = false;
-                        try {
-                            if (isCurrentDisplay(target, client, lifecycle) && presentationGate.isCurrent(ticket)) {
-                                accepted = client.confirmDesktopFrame(ticket.generation()).accepted()
-                                        && isCurrentDisplay(target, client, lifecycle);
-                            }
-                        } catch (Exception ignored) {
-                            // The failed confirm is not silent: finish(ticket, accepted=false)
-                            // below is the failure surface the presentation gate already records.
-                        }
-                        presentationGate.finish(ticket, accepted);
-                    });
-                } catch (java.util.concurrent.RejectedExecutionException stopped) {
-                    presentationGate.finish(ticket, false);
-                }
-            });
-        }
+        sessionCoordinator = new DesktopSessionCoordinator(session, instanceId, waylandChannel,
+                screenWidth, screenHeight, targetScale, this, this::showNegotiationFailure, displayEvidence);
+        surfaceController = new DesktopSurfaceController(this, session, waylandChannel, targetScale,
+                sessionCoordinator);
+        hudController = new DesktopHudController(this, this,
+                () -> session != null ? session.displayStatus() : "实例未运行",
+                DesktopHudController.onHandler(uiHandler), resolveCapabilityMatrix());
+        hudController.setSurfaceView(surfaceController.view());
+        peripheralController = new DesktopPeripheralController(this, session, bridgeClient, bridgeToken,
+                target -> DesktopControlClient.of(target.bridgeClient()));
+        inputController = new DesktopInputController(this, waylandChannel,
+                () -> session != null ? session.waylandChannel() : null, uiHandler);
+        inputController.attachSurface(surfaceController.view());
 
-        virtualKeyBar = new VirtualKeyBar(waylandChannel);
-        setupVirtualKeyBar();
-
-        btnToggleTouchMode = findViewById(R.id.btn_toggle_touch_mode);
-        if (btnToggleTouchMode != null && surfaceView != null) {
-            updateTouchModeButtonText();
-            btnToggleTouchMode.setText("触控板灵敏度");
-            btnToggleTouchMode.setContentDescription("当前触摸转换为鼠标事件，调整触控板灵敏度");
-            btnToggleTouchMode.setOnClickListener(v -> showSensitivityAdjustmentDialog());
-            btnToggleTouchMode.setOnLongClickListener(v -> {
-                showSensitivityAdjustmentDialog();
-                return true;
-            });
-        }
-
-        if (isHeadlessInstance(instanceId)) {
-            new AlertDialog.Builder(this)
-                    .setTitle(R.string.desktop_headless_title)
-                    .setMessage(R.string.desktop_headless_message)
-                    .setPositiveButton(R.string.instance_open_terminal, (dialog, which) -> {
-                        DualModeNavigation.navigateToTerminal(DesktopActivity.this, instanceId, bridgeToken);
-                        finish();
-                    })
-                    .setNegativeButton(R.string.dialog_close, null)
-                    .show();
-        }
-
-        if (btnSwitchTerminal != null) {
-            btnSwitchTerminal.setOnClickListener(v -> {
-                DualModeNavigation.navigateToTerminal(DesktopActivity.this, instanceId, bridgeToken);
-            });
-        }
-
-        // 1. LowLatencyAudioPlayer assembly
-        try {
-            AudioSourceSeam audioSource = new FallbackAudioSource(
-                    new LocalSocketAudioSource(LocalSocketAudioSource.DEFAULT_SOCKET_NAME),
-                    new TcpAudioSource(TcpAudioSource.DEFAULT_HOST, TcpAudioSource.DEFAULT_PORT)
-            );
-            AudioTrackSeam audioTrack = new AndroidAudioTrackAdapter();
-            AudioDriftCompensator compensator = new AudioDriftCompensator();
-            AudioFocusSeam focusSeam = new AndroidAudioFocusAdapter(this);
-            audioPlayer = new LowLatencyAudioPlayer(audioSource, audioTrack, compensator, focusSeam);
-        } catch (Exception ignored) {
-            audioPlayer = null;
-        }
-
-        // 2. ClipboardBridgeManager assembly
-        BridgeClient bridgeClient = session != null ? session.bridgeClient() : null;
-        if (bridgeClient != null) {
-            clipboardManager = new ClipboardBridgeManager(this, bridgeClient);
-        } else {
-            clipboardManager = new ClipboardBridgeManager(
-                    new ClipboardBridgeManager.AndroidSystemClipboard(this),
-                    text -> {
-                        BridgeClient client = session != null ? session.bridgeClient() : null;
-                        if (client != null) {
-                            try {
-                                return client.clipboardPut(text).accepted();
-                            } catch (IOException ignored) {
-                                return false;
-                            }
-                        }
-                        return false;
-                    }
-            );
-        }
-        if (session != null) {
-            session.registerClipboardBridge(clipboardManager);
-            if (bridgeToken != null && session.markBridgeServing()) {
-                new Thread(() -> {
-                    try {
-                        AndroidNotificationAdapter notificationAdapter =
-                                new AndroidNotificationAdapter(DesktopActivity.this);
-                        AndroidUrlOpenerAdapter urlOpenerAdapter =
-                                new AndroidUrlOpenerAdapter(DesktopActivity.this);
-                        new BridgeConnector().serveSession(
-                                session, bridgeToken,
-                                0, 0, new BridgeConnector.Events() {
-                                    @Override public void onReady() {}
-                                    @Override public void onPong() {}
-                                    @Override public void onResize(int c, int r) {}
-                                },
-                                notificationAdapter, urlOpenerAdapter, clipboardManager);
-                    } catch (Exception failure) {
-                        // The desktop bridge has no failure callback (Events carries onReady/onPong/
-                        // onResize only), so a dead serve loop would otherwise be indistinguishable
-                        // from a guest that simply never calls. Log the ending, keep the semantics.
-                        android.util.Log.w("DesktopBridge", "desktop bridge serving ended: "
-                                + failure.getClass().getSimpleName());
-                    }
-                }, "desktop-bridge-serve").start();
-            }
-        }
-
-        displayStartup = () -> {
-            ExecutionSession target = session;
-            long lifecycle = displayGeneration;
-            if (target == null) return;
-            new Thread(() -> {
-                BridgeClient client = target.bridgeClient();
-                if (client == null) return;
-                try {
-                    long startupDeadline = System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS
-                            .toNanos(BridgeClient.DEFAULT_STARTUP_TIMEOUT_MS);
-                    while (isCurrentDisplay(target, client, lifecycle) && !client.isReady()
-                            && System.nanoTime() < startupDeadline) {
-                        client.awaitReady(1000L);
-                    }
-                    if (!isCurrentDisplay(target, client, lifecycle) || !client.isReady()) return;
-                    if (waylandChannel == null) throw new IOException("显示通道在当前实例不可用");
-                    if (!waylandChannel.isConnected()) {
-                        BridgeClient.Result launched = client.desktopLaunch();
-                        if (!launched.accepted()) throw new IOException(launched.responseKind());
-                        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(120);
-                        boolean attached = false;
-                        while (isCurrentDisplay(target, client, lifecycle) && System.nanoTime() < deadline) {
-                            BridgeClient.Result result = client.feature("STATUS", "desktop-labwc");
-                            if (!result.accepted()) throw new IOException(result.responseKind());
-                            org.json.JSONObject guest = new org.json.JSONObject(result.payload());
-                            String state = guest.optString("state");
-                            if ("failed".equals(state) || "cancelled".equals(state))
-                                throw new IOException(guest.optString("reason", "桌面启动失败"));
-                            if ("awaiting-frame".equals(state) || "ready".equals(state)) {
-                                attached = applyDesktopEvidence(guest, target, client, lifecycle);
-                                if (!attached && isCurrentDisplay(target, client, lifecycle))
-                                    throw new IOException("显示连接请求未受理");
-                                break;
-                            }
-                            Thread.sleep(500);
-                        }
-                        if (!isCurrentDisplay(target, client, lifecycle)) return;
-                        if (!attached) throw new IOException("桌面启动超过期限，请返回终端查看 guest 状态");
-                    }
-                    if (!isCurrentDisplay(target, client, lifecycle)) return;
-                    int width = Math.min(1920, Math.max(100, screenWidth));
-                    int height = Math.min(1080, Math.max(100, screenHeight));
-                    BridgeClient.Result mode = client.displayMode(width, height, targetScale);
-                    if (!mode.accepted()) throw new IOException(mode.responseKind());
-                } catch (Exception failure) {
-                    uiHandler.post(() -> {
-                        if (isCurrentDisplay(target, client, lifecycle))
-                            hudTextView.setText("桌面连接失败：" + failure.getMessage() + "。可返回终端查看日志。");
-                    });
-                }
-            }, "desktop-launch-and-mode-negotiation").start();
-        };
-
-        // 3. PointerCaptureHandler assembly
-        pointerCaptureHandler = new PointerCaptureHandler(surfaceView, waylandChannel);
-        if (surfaceView != null) {
-            surfaceView.setPointerCaptureHandler(pointerCaptureHandler);
-            surfaceView.setOnClickListener(v -> {
-                if (pointerCaptureHandler != null && !pointerCaptureHandler.isCaptured()) {
-                    pointerCaptureHandler.requestCapture();
-                }
-            });
-        }
-        if (btnPointerCapture != null) {
-            btnPointerCapture.setOnClickListener(v -> {
-                if (pointerCaptureHandler == null) return;
-                if (pointerCaptureHandler.isCaptured()) {
-                    pointerCaptureHandler.releaseCapture();
-                } else {
-                    pointerCaptureHandler.requestCapture();
-                }
-            });
-        }
-        pointerCaptureHandler.addCaptureStateListener(isCaptured -> {
-            uiHandler.post(() -> {
-                if (btnPointerCapture != null) {
-                    btnPointerCapture.setText(isCaptured ? R.string.mouse_release : R.string.mouse_capture);
-                }
-            });
-        });
-        setupMouseDetection();
-
-        // 4. FileDropTargetListener assembly
-        fileDropTargetListener = new FileDropTargetListener(this, bridgeClient);
-        View desktopRoot = findViewById(R.id.desktop_root);
-        if (desktopRoot != null) {
-            fileDropTargetListener.attach(desktopRoot);
-        }
-        if (surfaceView != null) {
-            fileDropTargetListener.attach(surfaceView);
-        }
-
-        displayEvidence.scheduleWithFixedDelay(() -> {
-            ExecutionSession target = session;
-            BridgeClient client = target != null ? target.bridgeClient() : null;
-            long lifecycle = displayGeneration;
-            if (client == null || !client.isReady() || !isCurrentDisplay(target, client, lifecycle)) return;
-            try {
-                BridgeClient.Result state = client.feature("STATUS", "desktop-labwc");
-                if (state.accepted())
-                    applyDesktopEvidence(new org.json.JSONObject(state.payload()), target, client, lifecycle);
-            } catch (Exception ignored) {
-                // Polling probe: a failed round only skips one evidence refresh and the
-                // next tick retries, so no error path or state reset belongs here.
-            }
-        }, 1, 1, java.util.concurrent.TimeUnit.SECONDS);
-
-        hudUpdater = new Runnable() {
-            @Override
-            public void run() {
-                if (isHudUpdating && surfaceView != null && !isFinishing()) {
-                    hudOverlay.update(surfaceView.getHudBadgeInfo());
-                    hudTextView.append("\nWayland CPU 拷贝实验通路 · " + (session != null ? session.displayStatus() : "实例未运行")
-                            + "\n触摸使用鼠标回退；Unicode 输入未验证。帧流连接不代表 GPU 加速或设备验收");
-                    uiHandler.postDelayed(this, 500);
-                }
-            }
-        };
+        setContentView(buildContentView());
+        enableImmersiveMode();
+        showHeadlessRedirectIfNeeded();
+        sessionCoordinator.startEvidencePolling();
     }
 
-
-    private boolean isCurrentDisplay(ExecutionSession target, BridgeClient client, long lifecycle) {
-        return displayForeground && displayGeneration == lifecycle && session == target
-                && ExecutionSessionRegistry.get(instanceId) == target && target.bridgeClient() == client
-                && !isFinishing() && !isDestroyed();
+    /** Fixed view assembly: surface layer, top bar and bottom key bar, plus drop targets. */
+    private View buildContentView() {
+        FrameLayout root = new FrameLayout(this);
+        root.setBackgroundColor(0xFF000000);
+        root.setFitsSystemWindows(false);
+        WaylandSurfaceView surface = surfaceController.view();
+        root.addView(surface, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        root.addView(buildTopBar(surface), new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP));
+        root.addView(inputController.buildKeyBar(), new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM));
+        peripheralController.attachFileDropTargets(root, surface);
+        return root;
     }
 
-    private synchronized boolean applyDesktopEvidence(org.json.JSONObject guest, ExecutionSession target,
-            BridgeClient client, long lifecycle) {
-        if (!isCurrentDisplay(target, client, lifecycle)) return false;
-        String state = guest.optString("state");
-        if (!"awaiting-frame".equals(state) && !"ready".equals(state)) {
-            presentationGate.invalidate();
-            return false;
-        }
-        boolean changed = presentationGate.observe(guest.optString("generation"), guest.optString("capture_generation"),
-                guest.optInt("capture_width"), guest.optInt("capture_height"), System.nanoTime());
-        if (changed) {
-            org.json.JSONObject inputs = guest.optJSONObject("input");
-            return session.reconnectDisplay(inputs != null && inputs.optBoolean("keyboard"),
-                    inputs != null && inputs.optBoolean("unicodeText"), inputs != null && inputs.optBoolean("pointer"));
-        }
-        return session.waylandChannel() != null;
+    /** Top bar: terminal switch, pointer capture, touch sensitivity and the HUD badge. */
+    private LinearLayout buildTopBar(WaylandSurfaceView surface) {
+        LinearLayout topBar = new LinearLayout(this);
+        topBar.setOrientation(LinearLayout.HORIZONTAL);
+        topBar.setGravity(Gravity.CENTER_VERTICAL);
+        int barPad = getResources().getDimensionPixelSize(R.dimen.oe_space_sm);
+        int gap = getResources().getDimensionPixelSize(R.dimen.oe_space_sm);
+        topBar.setPadding(barPad, barPad, barPad, barPad);
+
+        btnSwitchTerminal = topBarButton(R.string.desktop_open_terminal, false);
+        Button btnPointerCapture = topBarButton(R.string.mouse_capture, true);
+        Button btnToggleTouchMode = topBarButton(R.string.touch_mode_trackpad_label, false);
+
+        btnSwitchTerminal.setOnClickListener(v ->
+                DualModeNavigation.navigateToTerminal(DesktopActivity.this, instanceId, bridgeToken));
+        inputController.attachPointerCaptureButton(btnPointerCapture);
+        inputController.attachTouchModeButton(btnToggleTouchMode);
+
+        LinearLayout.LayoutParams switchParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        LinearLayout.LayoutParams gapParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        gapParams.leftMargin = gap;
+        LinearLayout.LayoutParams hudParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        hudParams.leftMargin = gap;
+        topBar.addView(btnSwitchTerminal, switchParams);
+        topBar.addView(btnPointerCapture, gapParams);
+        topBar.addView(btnToggleTouchMode, gapParams);
+        topBar.addView(hudController.hudContainer(), hudParams);
+        return topBar;
     }
 
-    private void setupVirtualKeyBar() {
-        btnCtrl = findViewById(R.id.btn_key_ctrl);
-        btnAlt = findViewById(R.id.btn_key_alt);
-        btnShift = findViewById(R.id.btn_key_shift);
-        btnSuper = findViewById(R.id.btn_key_super);
+    /**
+     * Material top-bar button. Material 1.12 exposes no style-res constructor, so the
+     * XML looks (Tonal / Outlined) are reproduced through the exact attributes
+     * {@code ThemeApplier} role inference reads: fill for the tonal pair, a 1dp
+     * outline stroke for the pointer-capture toggle (SECONDARY_ACTION).
+     */
+    private MaterialButton topBarButton(int labelRes, boolean outlined) {
+        MaterialButton button = new MaterialButton(this, null,
+                com.google.android.material.R.attr.materialButtonStyle);
+        button.setText(labelRes);
+        button.setTextSize(12f);
+        button.setTypeface(Typeface.defaultFromStyle(Typeface.BOLD));
+        button.setMinimumHeight(dp(48));
+        button.setCornerRadius(getResources().getDimensionPixelSize(R.dimen.oe_corner_md));
+        int pad = getResources().getDimensionPixelSize(R.dimen.oe_space_md);
+        button.setPadding(pad, 0, pad, 0);
+        if (outlined) {
+            button.setStrokeWidth(Math.max(1, dp(1)));
+            button.setStrokeColor(ColorStateList.valueOf(resolveThemeColor(
+                    com.google.android.material.R.attr.colorOutline)));
+            button.setBackgroundTintList(ColorStateList.valueOf(Color.TRANSPARENT));
+        }
+        button.setTextAppearance(R.style.TextAppearance_Orchestella_LabelEmphasized);
+        return button;
+    }
 
-        Button btnEsc = findViewById(R.id.btn_key_esc);
-        Button btnTab = findViewById(R.id.btn_key_tab);
-        Button btnUp = findViewById(R.id.btn_key_up);
-        Button btnDown = findViewById(R.id.btn_key_down);
-        Button btnLeft = findViewById(R.id.btn_key_left);
-        Button btnRight = findViewById(R.id.btn_key_right);
-        Button btnToggleIme = findViewById(R.id.btn_toggle_ime);
+    private int resolveThemeColor(int attr) {
+        TypedValue value = new TypedValue();
+        getTheme().resolveAttribute(attr, value, true);
+        return value.data;
+    }
 
-        if (btnEsc != null) {
-            btnEsc.setOnClickListener(v -> {
-                virtualKeyBar.pressEsc();
-                updateModifierButtons();
-            });
-        }
-        if (btnTab != null) {
-            btnTab.setOnClickListener(v -> {
-                virtualKeyBar.pressTab();
-                updateModifierButtons();
-            });
-        }
-        if (btnUp != null) {
-            btnUp.setOnClickListener(v -> {
-                virtualKeyBar.pressUp();
-                updateModifierButtons();
-            });
-        }
-        if (btnDown != null) {
-            btnDown.setOnClickListener(v -> {
-                virtualKeyBar.pressDown();
-                updateModifierButtons();
-            });
-        }
-        if (btnLeft != null) {
-            btnLeft.setOnClickListener(v -> {
-                virtualKeyBar.pressLeft();
-                updateModifierButtons();
-            });
-        }
-        if (btnRight != null) {
-            btnRight.setOnClickListener(v -> {
-                virtualKeyBar.pressRight();
-                updateModifierButtons();
-            });
-        }
+    private int dp(int dp) {
+        return Math.round(dp * getResources().getDisplayMetrics().density);
+    }
 
-        if (btnCtrl != null) {
-            btnCtrl.setOnClickListener(v -> {
-                virtualKeyBar.pressModifier(ModifierKey.CTRL);
-                updateModifierButtons();
-            });
-        }
-        if (btnAlt != null) {
-            btnAlt.setOnClickListener(v -> {
-                virtualKeyBar.pressModifier(ModifierKey.ALT);
-                updateModifierButtons();
-            });
-        }
-        if (btnShift != null) {
-            btnShift.setOnClickListener(v -> {
-                virtualKeyBar.pressModifier(ModifierKey.SHIFT);
-                updateModifierButtons();
-            });
-        }
-        if (btnSuper != null) {
-            btnSuper.setOnClickListener(v -> {
-                virtualKeyBar.pressModifier(ModifierKey.SUPER);
-                updateModifierButtons();
-            });
-        }
+    /** Headless instances cannot host the desktop; offer the terminal hand-off instead. */
+    private void showHeadlessRedirectIfNeeded() {
+        if (!sessionCoordinator.isHeadlessInstance()) return;
+        OeDialogs.confirm(this, getString(R.string.desktop_headless_title),
+                getString(R.string.desktop_headless_message), getString(R.string.instance_open_terminal),
+                getString(R.string.dialog_close), false, () -> {
+                    DualModeNavigation.navigateToTerminal(DesktopActivity.this, instanceId, bridgeToken);
+                    finish();
+                });
+    }
 
-        virtualKeyBar.setOnSoftKeyboardToggleListener(() -> {
-            InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-            if (imm != null && surfaceView != null) {
-                imm.toggleSoftInput(InputMethodManager.SHOW_FORCED, 0);
+    /** Negotiation failure: re-check guard liveness on the UI thread before replacing HUD copy. */
+    private void showNegotiationFailure(ExecutionSession target, DesktopControlClient client, long lifecycle,
+            String message) {
+        uiHandler.post(() -> {
+            if (sessionCoordinator.isCurrentDisplay(target, client, lifecycle)) {
+                hudController.showNegotiationFailure(message);
             }
         });
-
-        if (btnToggleIme != null) {
-            btnToggleIme.setOnClickListener(v -> virtualKeyBar.toggleSoftKeyboard());
-        }
-    }
-
-    private void updateModifierButtons() {
-        if (virtualKeyBar == null) return;
-        ModifierKeyStateMachine sm = virtualKeyBar.getStateMachine();
-        if (btnCtrl != null) {
-            btnCtrl.setText(modifierLabel("CTRL", sm.getState(ModifierKey.CTRL)));
-        }
-        if (btnAlt != null) {
-            btnAlt.setText(modifierLabel("ALT", sm.getState(ModifierKey.ALT)));
-        }
-        if (btnShift != null) {
-            btnShift.setText(modifierLabel("SHIFT", sm.getState(ModifierKey.SHIFT)));
-        }
-        if (btnSuper != null) {
-            btnSuper.setText(modifierLabel("SUPER", sm.getState(ModifierKey.SUPER)));
-        }
-    }
-
-    private String modifierLabel(String base, ModifierKeyStateMachine.ModifierState state) {
-        switch (state) {
-            case LATCHED:
-                return base + "*";
-            case LOCKED:
-                return base + "#";
-            case RELEASED:
-            default:
-                return base;
-        }
     }
 
     private FullLinuxContract.CapabilityMatrix resolveCapabilityMatrix() {
@@ -534,132 +227,44 @@ public class DesktopActivity extends Activity {
         }
     }
 
-    private void startHudUpdates() {
-        if (!isHudUpdating) {
-            isHudUpdating = true;
-            uiHandler.post(hudUpdater);
-        }
-    }
-
-    private void stopHudUpdates() {
-        isHudUpdating = false;
-        uiHandler.removeCallbacks(hudUpdater);
-    }
-
-    private void setupMouseDetection() {
-        InputManager inputManager = (InputManager) getSystemService(Context.INPUT_SERVICE);
-        if (inputManager != null) {
-            updateMouseAvailability(hasMouseConnected(inputManager));
-            inputDeviceListener = new InputManager.InputDeviceListener() {
-                @Override
-                public void onInputDeviceAdded(int deviceId) {
-                    updateMouseAvailability(hasMouseConnected(inputManager));
-                }
-
-                @Override
-                public void onInputDeviceRemoved(int deviceId) {
-                    updateMouseAvailability(hasMouseConnected(inputManager));
-                }
-
-                @Override
-                public void onInputDeviceChanged(int deviceId) {
-                    updateMouseAvailability(hasMouseConnected(inputManager));
-                }
-            };
-            inputManager.registerInputDeviceListener(inputDeviceListener, uiHandler);
-        }
-    }
-
-    private boolean hasMouseConnected(InputManager inputManager) {
-        int[] deviceIds = inputManager.getInputDeviceIds();
-        for (int id : deviceIds) {
-            InputDevice device = inputManager.getInputDevice(id);
-            if (device != null && (device.getSources() & InputDevice.SOURCE_MOUSE) == InputDevice.SOURCE_MOUSE) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private void updateMouseAvailability(boolean hasMouse) {
-        if (btnPointerCapture != null) {
-            btnPointerCapture.setVisibility(View.VISIBLE);
-        }
-    }
-
     @Override
     protected void onResume() {
         super.onResume();
-        displayGeneration++;
-        displayForeground = true;
-        if (displayStartup != null) displayStartup.run();
+        // Order preserved from the pre-split activity: guard re-arm first, then the
+        // per-foreground-entry negotiation thread.
+        sessionCoordinator.onForeground();
+        sessionCoordinator.runStartupNegotiation();
         enableImmersiveMode();
-        if (surfaceView != null) {
-            surfaceView.onResume();
-        }
-        startHudUpdates();
-        if (audioPlayer != null) {
-            if (audioPlayer.state() == AudioStreamContract.State.PAUSED) {
-                audioPlayer.resume();
-            } else if (audioPlayer.state() == AudioStreamContract.State.IDLE) {
-                audioPlayer.start();
-            }
-        }
+        surfaceController.onResume();
+        hudController.start();
+        peripheralController.onForeground();
     }
 
     @Override
     protected void onPause() {
-        displayForeground = false;
-        displayGeneration++;
-        presentationGate.invalidate();
-        stopHudUpdates();
-        if (audioPlayer != null) {
-            audioPlayer.pause();
-        }
-        if (surfaceView != null) {
-            surfaceView.onPause();
-        }
+        sessionCoordinator.onBackground();
+        hudController.stop();
+        peripheralController.onBackground();
+        surfaceController.onPause();
         super.onPause();
     }
 
     @Override
     protected void onStop() {
-        if (surfaceView != null) {
-            surfaceView.onStop();
-        }
+        surfaceController.onStop();
         super.onStop();
     }
 
     @Override
     protected void onDestroy() {
-        displayForeground = false;
-        displayEvidence.shutdown();
-        presentationGate.invalidate();
-        if (surfaceView != null) surfaceView.getController().getRenderer().setPresentationObserver(null);
-        stopHudUpdates();
-        if (audioPlayer != null) {
-            audioPlayer.release();
-            audioPlayer = null;
-        }
-        if (clipboardManager != null) {
-            clipboardManager.detach();
-            clipboardManager = null;
-        }
-        if (pointerCaptureHandler != null) {
-            pointerCaptureHandler.detach();
-            pointerCaptureHandler = null;
-        }
-        if (inputDeviceListener != null) {
-            InputManager inputManager = (InputManager) getSystemService(Context.INPUT_SERVICE);
-            if (inputManager != null) {
-                inputManager.unregisterInputDeviceListener(inputDeviceListener);
-            }
-            inputDeviceListener = null;
-        }
-        if (surfaceView != null) {
-            surfaceView.onDestroy();
-            surfaceView.unbind();
-        }
+        // Teardown order mirrors the pre-split activity: coordinator state, renderer
+        // observer, HUD loop, peripherals, input, surface last.
+        sessionCoordinator.onActivityDestroyed();
+        surfaceController.clearPresentationObserver();
+        hudController.stop();
+        peripheralController.onActivityDestroyed();
+        inputController.detach();
+        surfaceController.onActivityDestroyed();
         super.onDestroy();
     }
 
@@ -669,88 +274,18 @@ public class DesktopActivity extends Activity {
         if (hasFocus) {
             enableImmersiveMode();
         }
-        if (clipboardManager != null) {
-            clipboardManager.onWindowFocusChanged(hasFocus);
-        }
+        peripheralController.onWindowFocusChanged(hasFocus);
     }
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
-        if (pointerCaptureHandler != null && pointerCaptureHandler.isCaptured()) {
-            if (event.getAction() == KeyEvent.ACTION_DOWN) {
-                if (pointerCaptureHandler.onKeyDown(event.getKeyCode(), event)) {
-                    return true;
-                }
-            }
-        }
-        DisplayChannel channel = session != null ? session.waylandChannel() : null;
-        int linuxCode = DesktopKeyMapper.linuxCode(event.getKeyCode());
-        if (channel != null && linuxCode != 0 && (event.getAction() == KeyEvent.ACTION_DOWN || event.getAction() == KeyEvent.ACTION_UP)) {
-            int modifiers = DesktopKeyMapper.modifiers(event.getMetaState());
-            io.github.nyzeep.orchestella.runtime.contract.KeyEvent input = event.getAction() == KeyEvent.ACTION_DOWN
-                    ? io.github.nyzeep.orchestella.runtime.contract.KeyEvent.press(linuxCode, modifiers, System.nanoTime())
-                    : io.github.nyzeep.orchestella.runtime.contract.KeyEvent.release(linuxCode, modifiers, System.nanoTime());
-            return channel.sendInputEvent(input);
-        }
-        return super.dispatchKeyEvent(event);
+        Boolean handled = inputController.dispatchKeyEvent(event);
+        return handled != null ? handled : super.dispatchKeyEvent(event);
     }
 
     @Override
     public void onPointerCaptureChanged(boolean hasCapture) {
         super.onPointerCaptureChanged(hasCapture);
-        if (pointerCaptureHandler != null && !hasCapture && pointerCaptureHandler.isCaptured()) {
-            pointerCaptureHandler.releaseCapture();
-        }
-    }
-
-    private boolean isHeadlessInstance(String instanceId) {
-        return session == null || session.waylandChannel() == null;
-    }
-
-    private void updateTouchModeButtonText() {
-        if (btnToggleTouchMode == null) {
-            return;
-        }
-        TouchGestureMapper mapper = surfaceView != null ? surfaceView.getTouchGestureMapper() : null;
-        if (mapper != null && mapper.getTouchMode() == TouchGestureMapper.TouchMode.TOUCHSCREEN) {
-            btnToggleTouchMode.setText(R.string.touch_mode_touchscreen_label);
-        } else {
-            btnToggleTouchMode.setText(R.string.touch_mode_trackpad_label);
-        }
-    }
-
-    private void showSensitivityAdjustmentDialog() {
-        TouchGestureMapper mapper = surfaceView != null ? surfaceView.getTouchGestureMapper() : null;
-        if (mapper == null) {
-            return;
-        }
-        final String[] options = {
-                "0.6x (高阻尼/平稳防抖)",
-                "0.8x (柔和阻尼)",
-                "1.0x (默认平衡)",
-                "1.3x (轻微阻尼/轻快)",
-                "1.6x (超低阻尼/极速滑动)"
-        };
-        final double[] factors = {0.6, 0.8, 1.0, 1.3, 1.6};
-        int selectedIndex = 2;
-        double currentDamping = mapper.getDampingFactor();
-        for (int i = 0; i < factors.length; i++) {
-            if (Math.abs(factors[i] - currentDamping) < 0.1) {
-                selectedIndex = i;
-                break;
-            }
-        }
-        new AlertDialog.Builder(this)
-                .setTitle(R.string.trackpad_sensitivity_title)
-                .setSingleChoiceItems(options, selectedIndex, (dialog, which) -> {
-                    mapper.setDampingFactor(factors[which]);
-                    Toast.makeText(
-                            DesktopActivity.this,
-                            getString(R.string.trackpad_sensitivity_updated, options[which]),
-                            Toast.LENGTH_SHORT).show();
-                    dialog.dismiss();
-                })
-                .setNegativeButton(R.string.dialog_close, null)
-                .show();
+        inputController.onHostPointerCaptureChanged(hasCapture);
     }
 }
