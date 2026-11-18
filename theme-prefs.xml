@@ -1,0 +1,8 @@
+* daemon not running. starting it now on port 5037 *
+* daemon started successfully *
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <string name="ui_font_choice">mono</string>
+    <string name="ui_glass_device_cap">l0</string>
+    <int name="terminal_scrim_alpha" value="177" />
+</map>
