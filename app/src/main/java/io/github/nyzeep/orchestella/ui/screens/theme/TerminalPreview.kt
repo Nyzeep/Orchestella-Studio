@@ -4,7 +4,6 @@ import android.graphics.Bitmap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,6 +17,7 @@ import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -257,7 +257,7 @@ private fun AndroidTerminal(
         naturalHeight
     }
 
-    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.TopStart) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopStart) {
         AndroidView(
             factory = { ctx ->
                 ModernTerminalView(ctx).apply {
@@ -286,6 +286,8 @@ private fun AndroidTerminal(
                 terminal.setTerminalScrimColor(scrimArgb)
             },
             modifier = Modifier
+                // Anchor the oversized terminal grid before the viewport clips the right edge.
+                .wrapContentWidth(Alignment.Start, unbounded = true)
                 .requiredWidth(naturalWidth)
                 .requiredHeight(previewHeight),
         )

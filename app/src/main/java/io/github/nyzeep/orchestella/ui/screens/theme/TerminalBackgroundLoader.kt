@@ -61,9 +61,11 @@ internal fun decodeTerminalBackground(
         if (uri.isBlank()) return null
         val parsed = Uri.parse(uri)
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        context.contentResolver.openInputStream(parsed)?.use { stream ->
+        val boundsStream = context.contentResolver.openInputStream(parsed) ?: return null
+        // The bounds-only pass reports dimensions in Options and returns no bitmap.
+        boundsStream.use { stream ->
             BitmapFactory.decodeStream(stream, null, bounds)
-        } ?: return null
+        }
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
             null
         } else {
