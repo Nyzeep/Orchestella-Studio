@@ -44,6 +44,6 @@ single-context：根目录 `GLOSSARY.md`（原名 `CONTEXT.md`）+ `docs/adr/`�
 
 ## 已知缺口与禁止补造
 
-- `docs/adr/0015-release-channels.md`、`docs/agent-handoff/GPL_RELEASE_DELIVERY_POLICY.md` 以及 ADR-0017/0018/0019 引用的部分研究文档不存在；只能记录缺口，不能根据标题编造正文。
+- `docs/adr/0015-release-channels.md`、`docs/agent-handoff/GPL_RELEASE_DELIVERY_POLICY.md` 以及 ADR-0018/0019 引用的部分研究文档不存在；只能记录缺口，不能根据标题编造正文。ADR-0017 已于 2026-11-19 以现状裁决型正文补齐（`docs/adr/0017-desktop-presentation-wayland-first.md`，GUI 桌面线工单 G-01；不重建历史正文，历史正文仍在主仓 git 历史）。
 - ADR-0010 关于 protected VM 双向通信的绝对表述与官方 vsock 证据冲突，等待 ACR-02 裁定；不要直接改写 accepted 正文。
 - 历史报告中的测试数量、版本号、签名状态和 AVF 结论只覆盖当时范围；当前事实以 0.6.2 源码（`app/build.gradle.kts`）、当前 main 与 `docs/standards/VERSIONING.md` 第 4 节的版本状态为准（截至 2026-11-10）。
