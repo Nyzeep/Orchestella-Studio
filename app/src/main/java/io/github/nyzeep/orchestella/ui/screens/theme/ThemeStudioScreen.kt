@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
@@ -349,26 +350,21 @@ private fun CornerChooser(selectedDp: Int, onSelect: (Int) -> Unit) {
     } else {
         ThemeStudioSpec.cornerOptions + selectedDp
     }
+    // 真机（411dp）上五档 + 遗留档会超出单行宽度：chips 行必须可横向滚动，
+    // 否则最后一档被裁掉（Wave 4 真机走查发现）。
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
             .padding(horizontal = Oe3Spacing.rowHorizontal, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(Oe3Spacing.xs),
     ) {
-        options.take(ThemeStudioSpec.cornerOptions.size).forEach { dp ->
+        options.forEach { dp ->
             Oe3Chip(
                 label = stringResource(R.string.ui3_theme_corner_value, dp),
                 selected = selectedDp == dp,
                 onClick = { onSelect(dp) },
                 modifier = Modifier.testTag("theme-corner:$dp"),
-            )
-        }
-        if (options.size > ThemeStudioSpec.cornerOptions.size) {
-            Oe3Chip(
-                label = stringResource(R.string.ui3_theme_corner_value, selectedDp),
-                selected = true,
-                onClick = { onSelect(selectedDp) },
-                modifier = Modifier.testTag("theme-corner:$selectedDp"),
             )
         }
     }
