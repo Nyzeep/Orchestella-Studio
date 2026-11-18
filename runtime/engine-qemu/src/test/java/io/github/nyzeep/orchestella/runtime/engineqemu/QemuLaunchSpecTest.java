@@ -17,6 +17,7 @@ public final class QemuLaunchSpecTest {
         testLaunchSpecWithVmHardwareConfig();
         testLaunchSpecWithVmHardwareConfigAndExtraKernelArgs();
         testLaunchSpecWithVmHardwareConfigFullOptions();
+        testLaunchSpecWithAudioChannel();
     }
 
     private static void testDefaultLaunchSpecWithOutboundNetwork() {
@@ -360,6 +361,60 @@ public final class QemuLaunchSpecTest {
         requireArg(spec, "-fsdev", "local,id=fsdev0,path=/sdcard/Download,security_model=none,readonly=on");
         requireArg(spec, "-device", "virtio-9p-pci,fsdev=fsdev0,mount_tag=downloads");
         System.out.println("LAUNCH_SPEC_WITH_FULL_OPTIONS_OK");
+    }
+
+    /** G-05: the audio channel mirrors the display channel shape with its own id and port name. */
+    private static void testLaunchSpecWithAudioChannel() {
+        String[] base = QemuLaunchSpec.build(
+                "/native/lib/arm64-v8a/libdroidlayer_qemu.so",
+                "/data/runtime/Image",
+                "/data/runtime/initramfs-embedded.cpio.gz",
+                "/data/instances/i1/root-volume.raw",
+                "droidlayer-control-i1",
+                "droidlayer-terminal-i1",
+                512L);
+
+        String[] withDisplay = QemuLaunchSpec.withDisplayChannel(base, "/data/display/0123456789abcdef.sock");
+        String[] spec = QemuLaunchSpec.withAudioChannel(withDisplay, "/data/audio/0123456789abcdef.sock");
+
+        requireArg(spec, "-chardev", "socket,id=audio,path=/data/audio/0123456789abcdef.sock,server=on,wait=off");
+        requireArg(spec, "-device", "virtserialport,chardev=audio,name=orchestella.audio");
+        // The display channel must stay intact when the audio channel is appended.
+        requireArg(spec, "-chardev", "socket,id=display,path=/data/display/0123456789abcdef.sock,server=on,wait=off");
+        requireArg(spec, "-device", "virtserialport,chardev=display,name=orchestella.display");
+        requireArg(spec, "-device", "virtio-serial-device");
+
+        // Exactly one virtserialport per channel name; no accidental duplicates.
+        int audioPorts = 0;
+        int displayPorts = 0;
+        for (String s : spec) {
+            if (s.equals("virtserialport,chardev=audio,name=orchestella.audio")) audioPorts++;
+            if (s.equals("virtserialport,chardev=display,name=orchestella.display")) displayPorts++;
+        }
+        if (audioPorts != 1 || displayPorts != 1) {
+            fail("audio/display virtserialport count mismatch: audio=" + audioPorts + " display=" + displayPorts);
+        }
+
+        // Invalid paths are rejected before any argument is assembled.
+        String[] invalidPaths = {null, "relative/audio.sock", "/data/audio/,.sock", "/data/audio/\\.sock",
+                "/" + "x".repeat(101), "/data/audio/bad\u0001char.sock"};
+        for (String invalid : invalidPaths) {
+            try {
+                QemuLaunchSpec.withAudioChannel(base, invalid);
+                fail("invalid audio socket path accepted: " + invalid);
+            } catch (IllegalArgumentException expected) {
+                // required
+            }
+        }
+
+        // The channel requires an existing virtio-serial controller, like the display channel.
+        try {
+            QemuLaunchSpec.withAudioChannel(new String[] {"qemu-system", "-nodefaults"}, "/data/audio/a.sock");
+            fail("audio channel accepted without virtio-serial-device");
+        } catch (IllegalArgumentException expected) {
+            // required
+        }
+        System.out.println("LAUNCH_SPEC_WITH_AUDIO_CHANNEL_OK");
     }
 
     private static void requireArg(String[] spec, String flag, String value) {

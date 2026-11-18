@@ -590,6 +590,27 @@ public final class QemuLaunchSpec {
         return arguments.toArray(new String[0]);
     }
 
+    /**
+     * Adds an independent audio data plane to an existing virtio-serial controller
+     * (G-05): the guest audio relay writes PCM into the orchestella.audio port and
+     * the host consumes the QEMU-served chardev socket. The PCM loop is code-complete
+     * but unverified on real devices.
+     */
+    public static String[] withAudioChannel(String[] launch, String privateSocketPath) {
+        Objects.requireNonNull(launch, "launch");
+        if (privateSocketPath == null || !privateSocketPath.startsWith("/")
+                || privateSocketPath.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 100
+                || privateSocketPath.indexOf(',') >= 0 || privateSocketPath.indexOf('\\') >= 0
+                || privateSocketPath.chars().anyMatch(value -> value < 0x20)) {
+            throw new IllegalArgumentException("invalid private audio socket path");
+        }
+        List<String> arguments = new ArrayList<>(java.util.Arrays.asList(launch));
+        if (!arguments.contains("virtio-serial-device")) throw new IllegalArgumentException("virtio serial is absent");
+        Collections.addAll(arguments, "-chardev", "socket,id=audio,path=" + privateSocketPath + ",server=on,wait=off",
+                "-device", "virtserialport,chardev=audio,name=orchestella.audio");
+        return arguments.toArray(new String[0]);
+    }
+
     private static String[] buildInternal(
             String qemuExecutable,
             String kernel,

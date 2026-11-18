@@ -23,7 +23,7 @@ inputs = [
     "shell/orchestella-prompt.sh", "scripts/orchestella-guest-provision.sh",
     "features/profilectl", "features/profilectl.py", "features/inputs.json",
     "features/bootstrap-python.sh", "features/feature-session.py", "features/rootless-probe.py",
-    "display/display-relay.py",
+    "display/display-relay.py", "audio/audio-relay.py",
 ]
 
 

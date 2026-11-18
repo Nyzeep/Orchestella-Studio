@@ -10,6 +10,12 @@ import java.util.Objects;
 /**
  * Android LocalSocket audio source connecting to QEMU / PulseAudio UNIX domain socket
  * (default "@droidlayer-audio" in abstract namespace).
+ *
+ * <p>G-05: the source can also be fed by an already-established connection via
+ * {@link #attach(StreamConnection)} — the engine assembly layer (QemuInstanceLauncher)
+ * accepts local consumer links and bridges them to the guest's virtio-serial audio
+ * port. The legacy client-connect path keeps its exact semantics when no connection
+ * is attached. PCM loop closure is unverified on real devices.
  */
 public final class LocalSocketAudioSource implements AudioSourceSeam {
 
@@ -18,6 +24,7 @@ public final class LocalSocketAudioSource implements AudioSourceSeam {
     private final String socketName;
     private LocalSocket localSocket;
     private InputStream inputStream;
+    private StreamConnection attached;
     private boolean closed = false;
 
     public LocalSocketAudioSource() {
@@ -28,10 +35,44 @@ public final class LocalSocketAudioSource implements AudioSourceSeam {
         this.socketName = Objects.requireNonNull(socketName, "socketName");
     }
 
+    /**
+     * Feeds the source from an established connection instead of the client connect
+     * path. The legacy constructor/openStream semantics are unchanged for sources
+     * that never attach. Attach is one-shot: a later attach replaces the previous
+     * connection (the old one is closed), and the next openStream returns the new
+     * attached stream.
+     */
+    public synchronized void attach(StreamConnection connection) throws IOException {
+        if (closed) {
+            throw new IOException("LocalSocketAudioSource already closed");
+        }
+        // Reject null before the identity shortcut: attach(null) is a programming error.
+        Objects.requireNonNull(connection, "connection");
+        if (connection == attached) {
+            return;
+        }
+        StreamConnection previous = attached;
+        attached = connection;
+        inputStream = null;
+        if (previous != null) {
+            try {
+                previous.close();
+            } catch (IOException ignored) {
+                // Replacing a dead consumer link is best-effort; the new attach wins.
+            }
+        }
+    }
+
     @Override
     public synchronized InputStream openStream() throws IOException {
         if (closed) {
             throw new IOException("LocalSocketAudioSource already closed");
+        }
+        if (attached != null) {
+            if (inputStream == null) {
+                inputStream = attached.inputStream();
+            }
+            return inputStream;
         }
         if (localSocket == null || !localSocket.isConnected()) {
             LocalSocket ls = new LocalSocket();
@@ -58,6 +99,9 @@ public final class LocalSocketAudioSource implements AudioSourceSeam {
 
     @Override
     public synchronized boolean isConnected() {
+        if (attached != null) {
+            return !closed;
+        }
         return localSocket != null && localSocket.isConnected();
     }
 
@@ -72,6 +116,14 @@ public final class LocalSocketAudioSource implements AudioSourceSeam {
                 // field must happen regardless of how the stream close ended.
             }
             inputStream = null;
+        }
+        if (attached != null) {
+            try {
+                attached.close();
+            } catch (IOException ignored) {
+                // Same best-effort contract for the attached transport.
+            }
+            attached = null;
         }
         if (localSocket != null) {
             try {
