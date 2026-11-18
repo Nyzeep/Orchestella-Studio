@@ -27,8 +27,6 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator
 import io.github.nyzeep.orchestella.runtime.capability.DeviceCapabilityEvaluator
 import io.github.nyzeep.orchestella.runtime.network.FilePortForwardingStore
-import io.github.nyzeep.orchestella.runtime.network.PortConflictDetector
-import io.github.nyzeep.orchestella.runtime.network.PortForwardingManager
 import io.github.nyzeep.orchestella.runtime.contract.BridgeControl
 import io.github.nyzeep.orchestella.runtime.contract.PortForwardingRule
 import io.github.nyzeep.orchestella.runtime.contract.Protocol
@@ -171,6 +169,43 @@ class InstanceDetailActivity : AppCompatActivity() {
                         Toast.makeText(this, message, Toast.LENGTH_LONG).show()
                         viewModel.loadInstance(instanceId)
                     }
+                }
+            }
+        }
+    }
+
+    /**
+     * VM hardware page returns its selection; the Activity applies it through
+     * the existing ViewModel so safety checks and disk-edit rules stay in one
+     * place (the page only renders).
+     */
+    private val vmHardwareLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode != RESULT_OK || result.data == null || !::viewModel.isInitialized) {
+            return@registerForActivityResult
+        }
+        val data = result.data!!
+        val cpu = data.getIntExtra(ConnectionPagesActivity.RESULT_CPU_CORES, -1)
+        val ram = data.getIntExtra(ConnectionPagesActivity.RESULT_RAM_MEGABYTES, -1)
+        if (cpu <= 0 || ram <= 0) return@registerForActivityResult
+        val diskBytes = data.getLongExtra(ConnectionPagesActivity.RESULT_DISK_BYTES, -1L)
+        val gpuEnabled = data.getBooleanExtra(ConnectionPagesActivity.RESULT_GPU_ENABLED, false)
+        operations.execute {
+            val update = viewModel.updateHardwareConfig(
+                cpu,
+                ram,
+                expandedDiskBytes = diskBytes.takeIf { it > 0 },
+                gpuAccelerationEnabled = gpuEnabled,
+            )
+            runOnUiThread {
+                when (update) {
+                    is UpdateHardwareResult.Success ->
+                        Toast.makeText(this, update.message, Toast.LENGTH_SHORT).show()
+                    is UpdateHardwareResult.Rejected ->
+                        Toast.makeText(this, update.reason, Toast.LENGTH_LONG).show()
+                    is UpdateHardwareResult.Error ->
+                        Toast.makeText(this, update.message, Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -547,25 +582,21 @@ class InstanceDetailActivity : AppCompatActivity() {
             if (rule == null) {
                 showPortForwarding(state.instanceId)
             } else {
-                io.github.nyzeep.orchestella.ssh.SshManagerDialog.show(
-                    this,
-                    defaultInstanceId = state.instanceId,
-                    defaultHost = InstanceDetailActionRules.sshHost(rule),
-                    defaultUser = state.defaultUser,
-                    defaultPort = rule.hostPort()
+                startActivity(
+                    ConnectionPagesActivity.sshIntent(
+                        this,
+                        defaultInstanceId = state.instanceId,
+                        defaultHost = InstanceDetailActionRules.sshHost(rule),
+                        defaultUser = state.defaultUser,
+                        defaultPort = rule.hostPort(),
+                    )
                 )
             }
         }
     }
 
     private fun showPortForwarding(instanceId: String) {
-        try {
-            val store = FilePortForwardingStore(filesDir.toPath().resolve("network"))
-            val manager = PortForwardingManager(instanceId, store, PortConflictDetector())
-            PortForwardingBottomSheet(this, instanceId, manager).show()
-        } catch (_: Exception) {
-            Toast.makeText(this, "无法读取端口转发配置，请稍后重试", Toast.LENGTH_SHORT).show()
-        }
+        startActivity(ConnectionPagesActivity.portForwardingIntent(this, instanceId))
     }
 
     private fun requireColdBackup(instanceId: String): InstanceLifecycle.Instance {
@@ -689,23 +720,9 @@ class InstanceDetailActivity : AppCompatActivity() {
                 Toast.makeText(this, R.string.console_hw_running_hint, Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-            val profile = hostProfile ?: HostHardwareDetector.detect(this)
-            VmHardwareConfigDialog(this, state.instance, profile) { newConfig, expandedDiskBytes ->
-                operations.execute {
-                    val result = viewModel.updateHardwareConfig(
-                        newConfig.cpuCores(),
-                        newConfig.ramMegabytes(),
-                        expandedDiskBytes
-                    )
-                    runOnUiThread {
-                        when (result) {
-                            is UpdateHardwareResult.Success -> Toast.makeText(this, result.message, Toast.LENGTH_SHORT).show()
-                            is UpdateHardwareResult.Rejected -> Toast.makeText(this, result.reason, Toast.LENGTH_LONG).show()
-                            is UpdateHardwareResult.Error -> Toast.makeText(this, result.message, Toast.LENGTH_LONG).show()
-                        }
-                    }
-                }
-            }.show()
+            vmHardwareLauncher.launch(
+                ConnectionPagesActivity.vmHardwareIntent(this, state.instanceId),
+            )
         }
 
         btnExportBackup.setOnClickListener {

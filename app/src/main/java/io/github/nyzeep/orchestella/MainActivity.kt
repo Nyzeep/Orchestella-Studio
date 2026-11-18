@@ -63,6 +63,9 @@ import io.github.nyzeep.orchestella.ui.screens.config.ConfigRoute
 import io.github.nyzeep.orchestella.ui.screens.config.ConfigScreen
 import io.github.nyzeep.orchestella.ui.screens.config.ConfigScreenState
 import io.github.nyzeep.orchestella.ui.screens.config.SharedPreferencesConfigStore
+import io.github.nyzeep.orchestella.ui.screens.connections.ConnectionsPage
+import io.github.nyzeep.orchestella.ui.screens.connections.PortForwardingPage
+import io.github.nyzeep.orchestella.ui.screens.connections.SshManagerPage
 import io.github.nyzeep.orchestella.ui.screens.dashboard.DashboardActions
 import io.github.nyzeep.orchestella.ui.screens.dashboard.DashboardScreen
 import io.github.nyzeep.orchestella.ui.screens.dashboard.DashboardUiState
@@ -719,8 +722,7 @@ class MainActivity : AppCompatActivity() {
             is ConfigDestination.SettingsSection ->
                 startActivity(SettingsSubActivity.intent(this, destination.section))
             ConfigDestination.ThemeStudio -> oe3ThemeStudioOpen.value = true
-            ConfigDestination.SshManager ->
-                io.github.nyzeep.orchestella.ssh.SshManagerDialog.show(this)
+            ConfigDestination.SshManager -> pushOe3SshManager()
             ConfigDestination.PortForwarding -> openOe3PortForwarding()
             ConfigDestination.Logs -> openRuntimeLogs()
             ConfigDestination.Backup -> showOe3BackupDialog()
@@ -1045,18 +1047,48 @@ class MainActivity : AppCompatActivity() {
                     Toast.makeText(this, R.string.config_no_instances, Toast.LENGTH_SHORT).show()
                     return@runOnUiThread
                 }
-                openPortForwarding(target)
+                pushOe3PortForwarding(target)
             }
         }
     }
 
-    private fun openPortForwarding(instance: InstanceLifecycle.Instance) {
+    /**
+     * SSH 与端口转发是「列表 + 表单」类页面（spec §2.3），壳内一律 push
+     * 二级页；旧对话框/底部表已删除。返回由栈统一 pop。
+     */
+    private fun pushOe3SshManager() {
+        val stack = oe3BackStack ?: return
+        if (stack.top?.key == ConnectionsPage.SSH_KEY) return
+        stack.push(
+            OeDestination(
+                key = ConnectionsPage.SSH_KEY,
+                title = getString(R.string.connections_ssh_title),
+                content = { SshManagerPage(onBack = { stack.pop() }) },
+            ),
+        )
+    }
+
+    private fun pushOe3PortForwarding(instance: InstanceLifecycle.Instance) {
+        val stack = oe3BackStack ?: return
         try {
             val netPath = filesDir.toPath().resolve("network")
             java.nio.file.Files.createDirectories(netPath)
             val store = FilePortForwardingStore(netPath)
             val manager = PortForwardingManager(instance.id(), store, PortConflictDetector())
-            PortForwardingBottomSheet(this, instance.id(), manager).show()
+            if (stack.top?.key == ConnectionsPage.PORT_FORWARDING_KEY) return
+            stack.push(
+                OeDestination(
+                    key = ConnectionsPage.PORT_FORWARDING_KEY,
+                    title = getString(R.string.connections_port_forwarding_title),
+                    content = {
+                        PortForwardingPage(
+                            instanceId = instance.id(),
+                            manager = manager,
+                            onBack = { stack.pop() },
+                        )
+                    },
+                ),
+            )
         } catch (e: Exception) {
             // 异常详情只进日志，不进用户文案（voice.md §5）。
             android.util.Log.w("MainActivity", "open port forwarding failed", e)

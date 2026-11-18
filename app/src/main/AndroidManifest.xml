@@ -82,6 +82,14 @@
             android:exported="false"
             android:theme="@style/Theme.Orchestella" />
 
+        <!-- UI-13: Compose host for the connection secondary pages reached
+             from the legacy View Activities (SSH / port forwarding / VM hardware). -->
+        <activity
+            android:name=".ConnectionPagesActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Orchestella"
+            android:windowSoftInputMode="adjustResize" />
+
         <activity
             android:name=".TerminalActivity"
             android:exported="true"

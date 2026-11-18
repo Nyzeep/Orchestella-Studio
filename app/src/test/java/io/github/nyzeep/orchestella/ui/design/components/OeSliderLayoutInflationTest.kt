@@ -1,18 +1,23 @@
 package io.github.nyzeep.orchestella.ui.design.components
 
 import android.content.Context
-import android.view.LayoutInflater
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.github.nyzeep.orchestella.R
+import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 
 /**
- * The layouts still speak their original attributes; this proves the XML side
- * actually lands in [OeSliderView] rather than only the programmatic setters.
+ * UI-13: the VM hardware sheet layout was deleted, so its inflation contract
+ * is replaced by a structural check — the layout is gone and the Compose page
+ * uses the single UI-05 [io.github.nyzeep.orchestella.ui.design.components.OeSlider]
+ * instead. The programmatic OeSliderView range test stays: it still guards the
+ * setter semantics shared by any remaining XML consumer.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35])
@@ -22,16 +27,24 @@ class OeSliderLayoutInflationTest {
         setTheme(R.style.Theme_Orchestella)
     }
 
-    @Test
-    fun seekBarLayoutKeepsMaxAndProgress() {
-        val root = LayoutInflater.from(context).inflate(R.layout.layout_vm_hardware_config_dialog, null)
-        val vcpu = root.findViewById<OeSliderView>(R.id.hw_vcpu_seekbar)
-        assertEquals(7, vcpu.max)
-        assertEquals(1, vcpu.progress)
+    private val mainSrc: File = listOf(File("src/main"), File("app/src/main"))
+        .firstOrNull { it.isDirectory }
+        ?: error("cannot locate src/main from ${File(".").absolutePath}")
 
-        val ram = root.findViewById<OeSliderView>(R.id.hw_ram_seekbar)
-        assertEquals(30, ram.max)
-        assertEquals(6, ram.progress)
+    @Test
+    fun vmHardwareSheetLayoutIsGoneAndTheComposePageOwnsTheSliders() {
+        assertFalse(
+            "UI-13 deleted the sheet layout; it must not come back as a fallback",
+            mainSrc.resolve("res/layout/layout_vm_hardware_config_dialog.xml").exists(),
+        )
+        val page = mainSrc.resolve(
+            "java/io/github/nyzeep/orchestella/ui/screens/connections/VmHardwarePage.kt",
+        )
+        assertTrue("the VM hardware page must use the single OeSlider", page.isFile)
+        assertTrue(
+            "the page must compose OeSlider rather than a platform SeekBar",
+            page.readText().contains("OeSlider("),
+        )
     }
 
     /**

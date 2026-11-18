@@ -443,7 +443,7 @@
     <string name="settings_accel_lane_subtitle">QEMU 车道内的 pVM 编译加速；关闭后实例始终走普通编译，UML 编译面同受此开关控制。</string>
 
     <!-- 05/配置 tab 入口分组行（UI 重新设计轮）：行标题沿用原三枚入口按钮
-         文案逐字不改，跳转目标不变（SshManagerDialog / SettingsActivity /
+         文案逐字不改，跳转目标不变（ConnectionPagesActivity / SettingsActivity /
          AboutActivity）。 -->
 
     <!-- 设置页分节目录 + 子页（T3 settings IA redesign）：一级页收敛为
