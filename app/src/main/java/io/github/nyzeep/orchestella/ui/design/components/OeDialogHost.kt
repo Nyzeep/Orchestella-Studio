@@ -62,7 +62,7 @@ import java.util.function.IntConsumer
 /**
  * 全项目唯一的对话框实现（UI-15 §2）。
  *
- * 为什么不是 `MaterialAlertDialogBuilder`：v4 之后弹窗语言只有一种——32dp
+ * 为什么不用 Material 的对话框构建器：v4 之后弹窗语言只有一种——32dp
  * 圆角（`OeShape.alert`）、`surface` 底、Oe3 字体与间距。平台 Dialog 的
  * 圆角与排版由系统主题决定，改一处控件要连带动整个 overlay，正是本波要
  * 清掉的第四套语言。
