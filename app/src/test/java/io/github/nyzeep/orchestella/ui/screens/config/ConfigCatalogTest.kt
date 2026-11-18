@@ -34,6 +34,13 @@ class ConfigCatalogTest {
     }
 
     @Test
+    fun appearanceGroupHasExactlyOneEntry() {
+        // v4 §2.2：删掉第二个外观入口，外观组只剩「外观与主题」。
+        val appearance = ConfigCatalog.groups().first { it.group == ConfigGroup.APPEARANCE }
+        assertEquals(listOf(ConfigRoute.THEME_STUDIO), appearance.entries.map { it.route })
+    }
+
+    @Test
     fun everyDirectoryEntryHasAUniqueRoute() {
         val entries = ConfigCatalog.groups().flatMap { it.entries }
         val routes = entries.map { it.route }
@@ -58,7 +65,6 @@ class ConfigCatalogTest {
     fun catalogCarriesEveryTicketEntry() {
         val expected = setOf(
             ConfigRoute.THEME_STUDIO,
-            ConfigRoute.WALLPAPER,
             ConfigRoute.SSH,
             ConfigRoute.PORT_FORWARD,
             ConfigRoute.ENGINE,

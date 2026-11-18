@@ -64,20 +64,22 @@ object ThemeStudioSpec {
     val expectedPresetCount = 42
 }
 
-/** Page sections in reading order; the test pins this exact sequence. */
+/**
+ * Page sections in reading order (v4 §2.2). The root page is the entry list:
+ * seven named entries — four of them push a dedicated page, three stay inline —
+ * with the kept legacy capabilities folded into one 「更多」 group. The test
+ * pins this exact sequence.
+ */
 enum class ThemeStudioSection(val key: String) {
     HomePreview("home-preview"),
-    Mode("mode"),
-    PureBlack("pure-black"),
     Presets("presets"),
-    AccentSlots("accent-slots"),
-    NavStyle("nav-style"),
-    Glass("glass"),
+    Mode("mode"),
+    Accent("accent"),
     Corner("corner"),
-    Font("font"),
     TextScale("text-scale"),
-    WallpaperOpacity("wallpaper-opacity"),
+    Background("background"),
     Terminal("terminal"),
+    More("more"),
 }
 
 enum class PureBlackOption(val labelKey: String) {

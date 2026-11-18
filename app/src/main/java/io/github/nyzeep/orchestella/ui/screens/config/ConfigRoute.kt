@@ -14,7 +14,6 @@ import io.github.nyzeep.orchestella.R
  * not listed in [all] — the single mapping the ticket asked for.
  */
 object ConfigSections {
-    const val APPEARANCE = "appearance"
     const val MIRROR = "mirror"
     const val ABOUT = "about"
     const val ADVANCED = "advanced"
@@ -22,7 +21,7 @@ object ConfigSections {
     /** Engine/authorization page: AVF preflight, QEMU fallback, UML gate. */
     const val SYSTEM = "system"
 
-    val all: List<String> = listOf(APPEARANCE, MIRROR, ABOUT, ADVANCED, SYSTEM)
+    val all: List<String> = listOf(MIRROR, ABOUT, ADVANCED, SYSTEM)
 }
 
 /**
@@ -97,10 +96,6 @@ enum class ConfigRoute(
     val destination: ConfigDestination,
 ) {
     THEME_STUDIO("appearance.theme_studio", ConfigDestination.ThemeStudio),
-    WALLPAPER(
-        "appearance.wallpaper",
-        ConfigDestination.SettingsSection(ConfigSections.APPEARANCE),
-    ),
     SSH("connection.ssh", ConfigDestination.SshManager),
     PORT_FORWARD("connection.port_forward", ConfigDestination.PortForwarding),
     ENGINE(
@@ -139,12 +134,6 @@ object ConfigCatalog {
                     R.string.config_entry_theme_studio,
                     R.string.config_entry_theme_studio_desc,
                     R.drawable.ic_oe_theme,
-                ),
-                ConfigEntry(
-                    ConfigRoute.WALLPAPER,
-                    R.string.config_entry_wallpaper,
-                    R.string.config_entry_wallpaper_desc,
-                    R.drawable.ic_oe_palette,
                 ),
             ),
         ),

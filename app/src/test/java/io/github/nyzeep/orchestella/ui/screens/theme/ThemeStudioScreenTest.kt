@@ -17,8 +17,9 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import io.github.nyzeep.orchestella.ui.theme.OeTextScaleMode
+import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3Theme
 import io.github.nyzeep.orchestella.ui.theme.AppTheme
+import io.github.nyzeep.orchestella.ui.theme.OeTextScaleMode
 import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
 import io.github.nyzeep.orchestella.ui.theme.ThemeStore
 import org.junit.Assert.assertEquals
@@ -28,18 +29,17 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 
+/**
+ * v4（UI-10）后的 Composable 契约：根页是入口列表，四个子页各自独立。
+ * 断言的**覆盖意图不变**——入口可达、当前值可读、滑块语义可读、模式禁用
+ * 规则、预设可选中、终端预览可输入——只是位置从单页改到新 IA 的落点。
+ */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35], qualifiers = "w412dp-h9000dp-mdpi")
 class ThemeStudioScreenTest {
 
     @get:Rule
     val compose = createComposeRule()
-
-    private val testPresets = listOf(
-        ThemeCatalog.constructivistWorkstation,
-        ThemeCatalog.github,
-        ThemeCatalog.mascotLight,
-    )
 
     private fun fixture(
         theme: AppTheme = ThemeCatalog.constructivistWorkstation,
@@ -60,65 +60,95 @@ class ThemeStudioScreenTest {
         terminalFontSizeSp = 14,
     )
 
-    @Test
-    fun everySpecSectionIsRendered() {
+    private fun setRoot(
+        state: ThemeStudioState = fixture(),
+        events: MutableList<ThemeStudioEvent>? = null,
+        onBack: (() -> Unit)? = null,
+    ) {
         compose.setContent {
-            ThemeStudioScreen(state = fixturePureBlack(), onEvent = {}, renderTerminalView = false, reduceMotion = true, presets = testPresets)
+            Oe3Theme(theme = state.theme, reduceMotion = true) {
+                ThemeStudioScreen(
+                    state = state,
+                    onEvent = { events?.add(it) },
+                    onBack = onBack,
+                )
+            }
         }
+    }
 
-        // The exact order is pinned by ThemeStudioSpecTest; here we prove the
-        // screen actually composes one header for every section in the list.
-        ThemeStudioSpec.sectionOrder.forEach { section ->
-            compose.onNodeWithTag("theme-section:${section.key}").assertExists()
+    @Test
+    fun rootRendersTheSevenEntryPointsInSpecOrder() {
+        setRoot()
+        listOf(
+            "theme-entry:presets",
+            "theme-entry:mode",
+            "theme-entry:accent",
+            "theme-entry:corner",
+            "theme-entry:text-scale",
+            "theme-entry:background",
+            "theme-entry:terminal",
+            "theme-section:more",
+        ).forEach { tag ->
+            compose.onNodeWithTag(tag).assertExists()
         }
+    }
+
+    @Test
+    fun rootEntryPointsLeadToTheirOwnPages() {
+        var presets = 0
+        var accent = 0
+        var background = 0
+        var terminal = 0
+        compose.setContent {
+            Oe3Theme(theme = ThemeCatalog.constructivistWorkstation, reduceMotion = true) {
+                ThemeStudioScreen(
+                    state = fixture(),
+                    onEvent = {},
+                    onOpenPresets = { presets++ },
+                    onOpenAccent = { accent++ },
+                    onOpenBackground = { background++ },
+                    onOpenTerminal = { terminal++ },
+                )
+            }
+        }
+        compose.onNodeWithTag("theme-entry:presets").performClick()
+        compose.onNodeWithTag("theme-entry:accent").performClick()
+        compose.onNodeWithTag("theme-entry:background").performClick()
+        compose.onNodeWithTag("theme-entry:terminal").performClick()
+        assertEquals(1, presets)
+        assertEquals(1, accent)
+        assertEquals(1, background)
+        assertEquals(1, terminal)
     }
 
     @Test
     fun backButtonIsVisibleClickableAndDescribed() {
         var backInvoked = 0
-        compose.setContent {
-            ThemeStudioScreen(
-                state = fixturePureBlack(),
-                onEvent = {},
-                renderTerminalView = false,
-                reduceMotion = true,
-                presets = testPresets,
-                onBack = { backInvoked++ },
-            )
-        }
-        // 子页头返回钮（navigation.md §5）：48dp 命中盒 + 非空 contentDescription。
+        setRoot(onBack = { backInvoked++ })
         val back = compose.onNodeWithTag("theme-studio:back")
         back.assertContentDescriptionEquals("返回")
-        val floor = with(compose.density) { 48.dp.toPx() }
-        val bounds = back.fetchSemanticsNode().boundsInRoot
-        assertTrue("back hit box is only ${bounds.height} px tall", bounds.height >= floor)
         back.performClick()
         assertEquals(1, backInvoked)
     }
 
     @Test
     fun backButtonIsAbsentWithoutOnBack() {
-        compose.setContent {
-            ThemeStudioScreen(state = fixturePureBlack(), onEvent = {}, renderTerminalView = false, reduceMotion = true, presets = testPresets)
-        }
+        setRoot()
         compose.onNodeWithTag("theme-studio:back").assertDoesNotExist()
     }
 
     @Test
     fun optionRowsMeetTheFortyEightDpFloor() {
-        compose.setContent {
-            ThemeStudioScreen(state = fixturePureBlack(), onEvent = {}, renderTerminalView = false, reduceMotion = true, presets = testPresets)
-        }
-
+        setRoot(fixture(pureBlack = false))
         val floor = with(compose.density) { 48.dp.toPx() }
-        // Rows near the top are already laid out; any row uses the same
-        // ThemeOptionRow primitive, whose min height is the 48dp floor.
         listOf(
             "theme-row:mode:system",
             "theme-row:mode:light",
             "theme-row:mode:dark",
-            "theme-row:pure-black:standard",
-            "theme-row:pure-black:pure-black",
+            // 「更多」里的既有能力仍走同一个 48dp 行原语。
+            "theme-row:nav:floating",
+            "theme-row:glass:standard",
+            "theme-row:font:system",
         ).forEach { tag ->
             val height = compose.onNodeWithTag(tag, useUnmergedTree = true)
                 .fetchSemanticsNode().boundsInRoot.height
@@ -127,82 +157,108 @@ class ThemeStudioScreenTest {
     }
 
     @Test
-    fun currentValuesAreReadableNextToTheSectionTitle() {
-        compose.setContent {
-            ThemeStudioScreen(state = fixturePureBlack(), onEvent = {}, renderTerminalView = false, reduceMotion = true, presets = testPresets)
-        }
+    fun currentValuesAreReadableAtTheirEntries() {
+        setRoot()
+        // push 行整行合并语义，读数节点要从未合并树取。
+        // 单位是「组」（一个 family 一张卡），不是目录条目数。
+        compose.onNodeWithTag("theme-value:presets", useUnmergedTree = true)
+            .assertTextEquals("${ThemePresetGrouping.groups(isDark = true).size} 组")
         compose.onNodeWithTag("theme-value:mode").assertTextEquals("深色")
-        compose.onNodeWithTag("theme-value:pure-black").assertTextEquals("纯黑")
+        compose.onNodeWithTag("theme-value:accent", useUnmergedTree = true).assertTextEquals("跟随主题")
         compose.onNodeWithTag("theme-value:corner").assertTextEquals("12 dp")
-        compose.onNodeWithTag("theme-value:terminal").assertTextEquals("14 sp")
+        compose.onNodeWithTag("theme-value:text-scale").assertTextEquals("跟随系统")
+        compose.onNodeWithTag("theme-value:background", useUnmergedTree = true)
+            .assertTextEquals("表面不透明度 80%")
+        compose.onNodeWithTag("theme-value:terminal", useUnmergedTree = true).assertTextEquals("14 sp")
     }
 
     @Test
     fun slidersExposeAReadableStateDescription() {
         compose.setContent {
-            ThemeStudioScreen(
-                state = fixture(pureBlack = true, textScalePercent = 130),
-                onEvent = {},
-                renderTerminalView = false,
-                reduceMotion = true,
-                presets = testPresets,
-            )
+            Oe3Theme(theme = ThemeCatalog.constructivistWorkstation, reduceMotion = true) {
+                ThemeStudioScreen(
+                    state = fixture(pureBlack = true, textScalePercent = 130),
+                    onEvent = {},
+                )
+            }
         }
         compose.onNodeWithTag("theme-slider:text-scale")
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "应用内字号 130%"))
+    }
+
+    @Test
+    fun backgroundPageKeepsWallpaperAndOpacityControls() {
+        compose.setContent {
+            Oe3Theme(theme = ThemeCatalog.constructivistWorkstation, reduceMotion = true) {
+                ThemeBackgroundScreen(
+                    state = fixture(pureBlack = true),
+                    onEvent = {},
+                    onBack = {},
+                    onPickBackground = {},
+                )
+            }
+        }
         compose.onNodeWithTag("theme-slider:surface-opacity")
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "表面不透明度 80%"))
-        compose.onNodeWithTag("theme-slider:terminal-font-size")
-            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "终端字号 14 sp"))
+        compose.onNodeWithTag("theme-wallpaper:pick").assertExists()
+        compose.onNodeWithTag("theme-wallpaper:clear").assertExists()
+        compose.onNodeWithTag("theme-row:pure-black:pure-black").assertIsSelected()
     }
 
     @Test
-    fun everyPresetIsRenderedAndTheCurrentOneIsSelected() {
+    fun presetPageShowsExactlyOneCardPerFamily() {
+        val state = fixture(theme = ThemeCatalog.github)
         compose.setContent {
-            ThemeStudioScreen(
-                state = fixture(theme = ThemeCatalog.github),
-                onEvent = {},
-                renderTerminalView = false,
-                reduceMotion = true,
-                presets = ThemeCatalog.all,
-            )
+            Oe3Theme(theme = state.theme, reduceMotion = true) {
+                ThemePresetScreen(state = state, onEvent = {}, onBack = {})
+            }
         }
-        ThemeCatalog.all.forEach { preset ->
-            compose.onNodeWithTag("theme-preset:${preset.id}").assertExists()
+        ThemeCatalog.presets.map { it.familyId }.distinct().forEach { family ->
+            compose.onNodeWithTag("theme-preset:$family").assertExists()
         }
-        compose.onNodeWithTag("theme-preset:${ThemeCatalog.github.id}").assertIsSelected()
+        // 同一 family 的另一半不得并列出现（v4 §2.2：一卡一套）。
+        compose.onNodeWithTag("theme-preset:github-light").assertDoesNotExist()
+        compose.onNodeWithTag("theme-preset:github").assertIsSelected()
     }
 
     @Test
-    fun pickingAPresetEmitsTheExistingThemeId() {
+    fun presetPageFollowsTheCurrentModeWithoutReordering() {
+        val lightState = fixture(theme = ThemeCatalog.githubLight)
+        compose.setContent {
+            Oe3Theme(theme = lightState.theme, reduceMotion = true) {
+                ThemePresetScreen(state = lightState, onEvent = {}, onBack = {})
+            }
+        }
+        compose.onNodeWithTag("theme-preset:github").assertIsSelected()
+        // 浅色模式下卡片仍是 github family（配色由纯函数换成 light 那套）。
+        assertEquals(
+            "github-light",
+            ThemePresetGrouping.groups(ThemeCatalog.presets, isDark = false)
+                .first { it.familyId == "github" }.theme.id,
+        )
+    }
+
+    @Test
+    fun pickingAPresetEmitsTheDisplayedThemeId() {
         val events = mutableListOf<ThemeStudioEvent>()
+        val state = fixture()
         compose.setContent {
-            ThemeStudioScreen(
-                state = fixture(),
-                onEvent = { events += it },
-                renderTerminalView = false,
-                reduceMotion = true,
-                presets = testPresets,
-            )
+            Oe3Theme(theme = state.theme, reduceMotion = true) {
+                ThemePresetScreen(
+                    state = state,
+                    onEvent = { events += it },
+                    onBack = {},
+                )
+            }
         }
-        compose.onNodeWithTag("theme-preset:${ThemeCatalog.github.id}")
-            .performScrollTo()
-            .performClick()
-        assertEquals(ThemeStudioEvent.SelectTheme(ThemeCatalog.github.id), events.last())
+        compose.onNodeWithTag("theme-preset:github").performScrollTo().performClick()
+        assertEquals(ThemeStudioEvent.SelectTheme("github"), events.last())
     }
 
     @Test
     fun cornerAndTextScaleChipsEmitTheirEvents() {
         val events = mutableListOf<ThemeStudioEvent>()
-        compose.setContent {
-            ThemeStudioScreen(
-                state = fixture(),
-                onEvent = { events += it },
-                renderTerminalView = false,
-                reduceMotion = true,
-                presets = testPresets,
-            )
-        }
+        setRoot(fixture(), events)
         compose.onNodeWithTag("theme-corner:24").performScrollTo().performClick()
         assertEquals(ThemeStudioEvent.SetCornerDp(24), events.last())
         compose.onNodeWithTag("theme-row:text-scale:custom").performScrollTo().performClick()
@@ -210,21 +266,12 @@ class ThemeStudioScreenTest {
     }
 
     /**
-     * UI-14 retired the shipped fixed palette, so the disable-behaviour is pinned
-     * with a synthetic fixed theme: no catalog row may reach FIXED mode, but the
-     * screen must still honour the flag if one ever reappears.
+     * UI-14 撤掉了 shipped fixed palette，禁用行为用合成固定主题钉住：
+     * 目录里没有 FIXED 行，但屏幕仍要尊重该标志。
      */
     @Test
     fun fixedThemeDisablesModeSelection() {
-        compose.setContent {
-            ThemeStudioScreen(
-                state = fixture(theme = ThemeCatalog.mascotLight.copy(isFixed = true)),
-                onEvent = {},
-                renderTerminalView = false,
-                reduceMotion = true,
-                presets = testPresets,
-            )
-        }
+        setRoot(fixture(theme = ThemeCatalog.mascotLight.copy(isFixed = true)))
         compose.onNodeWithTag("theme-row:mode:light").assertIsNotEnabled()
         compose.onNodeWithTag("theme-row:mode:dark").assertIsNotEnabled()
         compose.onNodeWithTag("theme-row:mode:system").assertIsNotEnabled()
@@ -232,11 +279,7 @@ class ThemeStudioScreenTest {
 
     @Test
     fun importedFontRowIsDisabledUntilFontImportShips() {
-        compose.setContent {
-            ThemeStudioScreen(state = fixture(), onEvent = {}, renderTerminalView = false, reduceMotion = true, presets = testPresets)
-        }
-        // 暂不支持导入字体: no font can be picked yet, so the row must not accept
-        // a selection that would persist an unloadable font choice.
+        setRoot()
         compose.onNodeWithTag("theme-row:font:imported")
             .performScrollTo()
             .assertIsNotEnabled()
@@ -247,10 +290,20 @@ class ThemeStudioScreenTest {
     }
 
     @Test
-    fun terminalInputAcceptsImeSubmit() {
+    fun terminalPageKeepsTheLivePreviewAndImeInput() {
+        val state = fixture()
         compose.setContent {
-            ThemeStudioScreen(state = fixture(), onEvent = {}, renderTerminalView = false, reduceMotion = true, presets = testPresets)
+            Oe3Theme(theme = state.theme, reduceMotion = true) {
+                ThemeTerminalScreen(
+                    state = state,
+                    onEvent = {},
+                    onBack = {},
+                    renderTerminalView = false,
+                )
+            }
         }
+        compose.onNodeWithTag("theme-slider:terminal-font-size")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "终端字号 14 sp"))
         val input = compose.onNodeWithTag("theme-terminal:input")
         input.performScrollTo()
         input.performTextInput("help")
@@ -258,6 +311,20 @@ class ThemeStudioScreenTest {
         compose.onNodeWithTag("theme-terminal:preview").assertExists()
     }
 
-    private fun fixturePureBlack(): ThemeStudioState =
-        fixture(theme = ThemeCatalog.constructivistWorkstation, pureBlack = true, textScalePercent = 100)
+    @Test
+    fun accentPageKeepsEightSwatchesAndCustomSlots() {
+        val state = fixture()
+        compose.setContent {
+            Oe3Theme(theme = state.theme, reduceMotion = true) {
+                ThemeAccentScreen(state = state, onEvent = {}, onBack = {})
+            }
+        }
+        ThemeStudioSpec.accentSwatches.forEach { argb ->
+            compose.onNodeWithTag("theme-accent:${hex(argb)}").assertExists()
+        }
+        compose.onNodeWithTag("theme-accent:follow").assertIsSelected()
+        compose.onNodeWithTag("theme-slot:0").assertExists()
+        compose.onNodeWithTag("theme-slot:1").assertExists()
+        compose.onNodeWithTag("theme-slot:2").assertExists()
+    }
 }

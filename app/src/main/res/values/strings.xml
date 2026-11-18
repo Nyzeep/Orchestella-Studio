@@ -450,7 +450,6 @@
          分节目录（行几何 oe_list_item_min_h + chevron），四个子节进
          SettingsSubActivity（外观与主题 / 镜像源与加速 / 关于与合规 / 高级）；
          「虚拟化与架构」摘要卡保留一级（决策项）。行标题与子页标题同源。 -->
-    <string name="settings_section_appearance_title">外观与主题</string>
     <string name="settings_section_mirror_title">镜像源与加速</string>
     <string name="settings_section_about_title">关于与合规</string>
     <string name="settings_section_advanced_title">高级</string>

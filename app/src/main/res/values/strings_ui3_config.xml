@@ -19,8 +19,6 @@
     <!-- 目录行 -->
     <string name="config_entry_theme_studio">外观与主题</string>
     <string name="config_entry_theme_studio_desc">主题、预设与终端个性化（Theme Studio）</string>
-    <string name="config_entry_wallpaper">壁纸与透明度</string>
-    <string name="config_entry_wallpaper_desc">背景图、明暗模式与界面表面不透明度</string>
     <string name="config_entry_ssh">SSH 管理</string>
     <string name="config_entry_ssh_desc">连接配置、主机地址与凭据命令</string>
     <string name="config_entry_port_forward">端口转发</string>
