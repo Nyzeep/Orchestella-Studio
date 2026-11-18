@@ -54,7 +54,9 @@ app/src/test/screenshots/
   oe3/shell/pure-black-100.png     shell chrome / pure black / 100%
   oe3/shell/pure-black-130.png     shell chrome / pure black / 130%
   oe3/nav/fallback-<mode>.png      nav bar glass fallback / α0.96 + top scrim (UI3-10)
-  oe3/screens/theme-studio-<mode>-<scale>.png   UI3-09 theme studio, 6 files (own test)
+  oe3/screens/theme-studio-root-<mode>.png      v4 UI-10 root entry list, 2 files
+  oe3/screens/theme-studio-presets-<mode>.png   v4 UI-10 preset page, 2 files
+  oe3/screens/theme-studio-<page>-dark.png      v4 UI-10 accent/background/terminal, 3 files
   oe3/screens/theme-terminal-<mode>-100.png     UI3-09 terminal sketch, 2 files (own test)
   ui3/dashboard/overview-<mode>.png     UI3-05 workstation page (UI3-11A)
   ui3/instances/<state>-<mode>.png      UI3-06 instance page states (own test)
@@ -79,10 +81,9 @@ Ownership notes (UI3-11A):
   `config` = 04 配置, `hardware` = 07 硬件), one dark + one light file each;
   their tests sit beside the screens in `ui/screens/<page>/`. The existing
   `ui3/instances/` (UI3-06) and `ui3/distros/` (UI3-08) sets stay untouched.
-- The theme-studio and theme-terminal goldens under `oe3/screens/` were
-  recorded by UI3-09 and are owned by the theme-studio lane (UI3-13); they
-  are listed here for inventory only — do not re-record or rename them from
-  this lane.
+- The theme-studio goldens under `oe3/screens/` were re-recorded by UI-10 after
+  the single-page studio became an entry list plus four independent pages; the
+  old `theme-studio-<mode>-<scale>.png` files are retired, not renamed.
 - When a page exposes no stable test tag, capturing `onRoot()` under a fixed
   window is the accepted fallback (dashboard does this); prefer a `testTag`
   when the page offers one.

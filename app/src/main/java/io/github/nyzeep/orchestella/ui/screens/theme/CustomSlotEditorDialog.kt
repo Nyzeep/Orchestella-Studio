@@ -246,4 +246,3 @@ private fun SlotColorRow(label: String, argb: Int, onClick: () -> Unit) {
     }
 }
 
-private fun hex(argb: Int): String = String.format("#%06X", argb and 0x00FFFFFF)

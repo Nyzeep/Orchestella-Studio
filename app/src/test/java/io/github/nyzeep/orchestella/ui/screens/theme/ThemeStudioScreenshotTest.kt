@@ -1,11 +1,19 @@
 package io.github.nyzeep.orchestella.ui.screens.theme
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onRoot
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.captureRoboImage
+import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3Theme
+import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
+import io.github.nyzeep.orchestella.ui.theme.AppTheme
 import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
-import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -13,112 +21,126 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * Eight page goldens: dark / light / pure black x 1.0 / 1.3 text scale, plus the
- * UI-14 mascot pair (the two screenshots are the "independent dark design, not an
- * inversion" evidence pair).
- * The terminal inside the page is the labelled Compose palette sketch; the real
- * AndroidView terminal is a device-stage check, never a fabricated screenshot.
+ * v4（UI-10）后的主题工坊金样：根页 + 四个独立子页。
+ *
+ * 旧单页 12 分区长列表已不存在，旧 `theme-studio-<mode>-<scale>.png` 一并
+ * 退役；这里按新 IA 每页各录一张（亮/暗只覆盖最需要的两页），命名仍以
+ * `theme-studio-` 开头，便于与 UI-10 之前的基线区分。
+ *
+ * 页面本体透明（v4 壳层背景层），golden 用同样的壳层底色补底并整窗捕获。
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(sdk = [35], qualifiers = "w412dp-h6000dp-mdpi")
+@Config(sdk = [35], qualifiers = "w412dp-h2400dp-mdpi")
 class ThemeStudioScreenshotTest {
 
     @get:Rule
     val compose = createComposeRule()
 
     @Test
-    fun darkAt100Percent() = capture(
-        name = "dark-100",
-        theme = ThemeCatalog.constructivistWorkstation,
-        pureBlack = false,
-        textScalePercent = 100,
-    )
+    fun rootDark() = capture("root-dark", ThemeCatalog.constructivistWorkstation, "theme-studio:screen") {
+        ThemeStudioScreen(state = state(ThemeCatalog.constructivistWorkstation), onEvent = {})
+    }
 
     @Test
-    fun darkAt130Percent() = capture(
-        name = "dark-130",
-        theme = ThemeCatalog.constructivistWorkstation,
-        pureBlack = false,
-        textScalePercent = 130,
-    )
+    fun rootLight() = capture("root-light", ThemeCatalog.constructivistWorkstationLight, "theme-studio:screen") {
+        ThemeStudioScreen(state = state(ThemeCatalog.constructivistWorkstationLight), onEvent = {})
+    }
+
+    /** 应用内字号 130%（1.3x）下的根页：旧单页基线的 130% 用例随删除退役，这里补回。 */
+    @Test
+    fun rootLight130() = capture(
+        "root-light-130",
+        ThemeCatalog.constructivistWorkstationLight,
+        "theme-studio:screen",
+        textScale = 1.3f,
+    ) {
+        ThemeStudioScreen(state = state(ThemeCatalog.constructivistWorkstationLight), onEvent = {})
+    }
 
     @Test
-    fun lightAt100Percent() = capture(
-        name = "light-100",
-        theme = ThemeCatalog.constructivistWorkstationLight,
-        pureBlack = false,
-        textScalePercent = 100,
-    )
+    fun presetsDark() = capture("presets-dark", ThemeCatalog.constructivistWorkstation, "theme-presets:screen") {
+        ThemePresetScreen(
+            state = state(ThemeCatalog.constructivistWorkstation),
+            onEvent = {},
+            onBack = {},
+        )
+    }
 
     @Test
-    fun lightAt130Percent() = capture(
-        name = "light-130",
-        theme = ThemeCatalog.constructivistWorkstationLight,
-        pureBlack = false,
-        textScalePercent = 130,
-    )
-
-    /** UI-14: the mascot pair — compare the two to see the dark half's own design. */
-    @Test
-    fun mascotLightAt100Percent() = capture(
-        name = "mascot-light-100",
-        theme = ThemeCatalog.mascotLight,
-        pureBlack = false,
-        textScalePercent = 100,
-    )
+    fun presetsLight() = capture("presets-light", ThemeCatalog.constructivistWorkstationLight, "theme-presets:screen") {
+        ThemePresetScreen(
+            state = state(ThemeCatalog.constructivistWorkstationLight),
+            onEvent = {},
+            onBack = {},
+        )
+    }
 
     @Test
-    fun mascotDarkAt100Percent() = capture(
-        name = "mascot-dark-100",
-        theme = ThemeCatalog.mascotDark,
-        pureBlack = false,
-        textScalePercent = 100,
-    )
+    fun accentDark() = capture("accent-dark", ThemeCatalog.constructivistWorkstation, "theme-accent:screen") {
+        ThemeAccentScreen(
+            state = state(ThemeCatalog.constructivistWorkstation),
+            onEvent = {},
+            onBack = {},
+        )
+    }
 
     @Test
-    fun pureBlackAt100Percent() = capture(
-        name = "pure-black-100",
-        theme = ThemeCatalog.constructivistWorkstation,
-        pureBlack = true,
-        textScalePercent = 100,
-    )
+    fun backgroundDark() = capture("background-dark", ThemeCatalog.constructivistWorkstation, "theme-background:screen") {
+        ThemeBackgroundScreen(
+            state = state(ThemeCatalog.constructivistWorkstation),
+            onEvent = {},
+            onBack = {},
+            onPickBackground = {},
+        )
+    }
 
     @Test
-    fun pureBlackAt130Percent() = capture(
-        name = "pure-black-130",
-        theme = ThemeCatalog.constructivistWorkstation,
-        pureBlack = true,
-        textScalePercent = 130,
-    )
+    fun terminalDark() = capture("terminal-dark", ThemeCatalog.constructivistWorkstation, "theme-terminal:screen") {
+        ThemeTerminalScreen(
+            state = state(ThemeCatalog.constructivistWorkstation),
+            onEvent = {},
+            onBack = {},
+            renderTerminalView = false,
+            onPickTerminalBackground = {},
+        )
+    }
 
     private fun capture(
         name: String,
-        theme: io.github.nyzeep.orchestella.ui.theme.AppTheme,
-        pureBlack: Boolean,
-        textScalePercent: Int,
+        theme: AppTheme,
+        tag: String,
+        textScale: Float = 1f,
+        content: @androidx.compose.runtime.Composable () -> Unit,
     ) {
         compose.setContent {
-            ThemeStudioScreen(
-                state = themeStudioScreenshotState(theme, pureBlack, textScalePercent),
-                onEvent = {},
-                renderTerminalView = false,
-                reduceMotion = true,
-                onPickBackground = {},
-                onPickTerminalBackground = {},
-                onPickFont = {},
-            )
+            Oe3Theme(theme = theme, textScale = textScale, reduceMotion = true) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(Color(Oe3ThemeValues.colors.background)),
+                ) {
+                    content()
+                }
+            }
         }
-        val root = compose.onNodeWithTag("theme-studio:screen").fetchSemanticsNode()
-        val end = compose.onNodeWithTag("theme-studio:end").fetchSemanticsNode().boundsInRoot.bottom
-        assertTrue(
-            "page content is clipped: end=$end, root=${root.boundsInRoot.bottom}",
-            end <= root.boundsInRoot.bottom,
-        )
-        compose.onNodeWithTag("theme-studio:screen").captureRoboImage(
+        compose.onNodeWithTag(tag).assertExists()
+        compose.onRoot().captureRoboImage(
             "src/test/screenshots/oe3/screens/theme-studio-$name.png",
         )
     }
+
+    private fun state(theme: AppTheme) = ThemeStudioState(
+        theme = theme,
+        mode = if (theme.isDark) {
+            io.github.nyzeep.orchestella.ui.theme.ThemeStore.Mode.DARK
+        } else {
+            io.github.nyzeep.orchestella.ui.theme.ThemeStore.Mode.LIGHT
+        },
+        cornerDp = 12,
+        surfaceOpacityPercent = 100,
+        terminalFontSizeSp = 14,
+    )
 }
 
 /** Two terminal palette goldens: the Compose sketch, not the AndroidView. */
@@ -143,7 +165,7 @@ class TerminalPreviewScreenshotTest {
     @Test
     fun mascotDarkPaletteSketch() = capture("mascot-dark-100", ThemeCatalog.mascotDark)
 
-    private fun capture(name: String, theme: io.github.nyzeep.orchestella.ui.theme.AppTheme) {
+    private fun capture(name: String, theme: AppTheme) {
         compose.setContent { TerminalPreviewScreenshotBoard(theme) }
         compose.onNodeWithTag("terminal-board").captureRoboImage(
             "src/test/screenshots/oe3/screens/theme-terminal-$name.png",

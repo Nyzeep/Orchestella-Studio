@@ -78,7 +78,12 @@ class InstanceDetailViewModel(
         return newState
     }
 
-    fun updateHardwareConfig(vCpu: Int, ramMb: Int, expandedDiskBytes: Long? = null): UpdateHardwareResult {
+    fun updateHardwareConfig(
+        vCpu: Int,
+        ramMb: Int,
+        expandedDiskBytes: Long? = null,
+        gpuAccelerationEnabled: Boolean? = null,
+    ): UpdateHardwareResult {
         val currentInstance = uiState?.instance ?: return UpdateHardwareResult.Error("实例未加载")
         if (!InstanceActionSafety.canUpdateHardware(currentInstance.state())) {
             return UpdateHardwareResult.Rejected("请先关机后再调整硬件参数")
@@ -90,7 +95,7 @@ class InstanceDetailViewModel(
                 .cpuCores(vCpu)
                 .ramMegabytes(ramMb)
                 .diskCapacityBytes(currentHw.diskCapacityBytes())
-                .gpuAccelerationEnabled(currentHw.gpuAccelerationEnabled())
+                .gpuAccelerationEnabled(gpuAccelerationEnabled ?: currentHw.gpuAccelerationEnabled())
                 .extraKernelArguments(currentHw.extraKernelArguments())
                 .build()
 

@@ -187,7 +187,10 @@ fun OeScaffoldBar(
     ) {
         if (leading != null) {
             Box(
-                modifier = Modifier.size(Oe3Sizes.interactiveVisual),
+                // 槽位必须是命中区下限 48dp（shape.md §3），44dp 只是返回字形的
+                // 视觉尺寸——槽位钳 44 会把里面任何 48dp 原语一起压到 44
+                //（Wave 4 code-review 抓到的真实命中区损失）。
+                modifier = Modifier.size(Oe3Sizes.minTouchTarget),
                 contentAlignment = Alignment.Center,
             ) {
                 leading()

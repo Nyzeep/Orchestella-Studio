@@ -6,7 +6,19 @@
 -->
 <resources>
     <string name="ui3_theme_title">外观与主题</string>
-    <string name="ui3_theme_meta">所见即所得 · %1$d 套预设 · 终端实时预览</string>
+
+    <!-- v4 IA（UI-10）：根页入口列表 + 四个独立子页 -->
+    <string name="ui3_theme_entry_mode">明暗模式</string>
+    <string name="ui3_theme_entry_accent">强调色</string>
+    <string name="ui3_theme_entry_text_scale">界面字号</string>
+    <string name="ui3_theme_entry_background">背景与透明度</string>
+    <string name="ui3_theme_section_more">更多</string>
+    <string name="ui3_theme_page_presets">主题预设</string>
+    <string name="ui3_theme_page_accent">强调色</string>
+    <string name="ui3_theme_page_background">背景与透明度</string>
+    <string name="ui3_theme_page_terminal">终端个性化</string>
+    <string name="ui3_theme_group_mascot">看板娘</string>
+    <string name="ui3_theme_group_other">其他预设</string>
 
     <!-- 1. 主页预览 -->
     <string name="ui3_theme_section_preview">主页预览</string>
@@ -14,7 +26,6 @@
     <string name="ui3_theme_preview_caption">168dp · 9:19.5 · 实时</string>
 
     <!-- 2. 主题模式 -->
-    <string name="ui3_theme_section_mode">主题模式</string>
     <string name="ui3_theme_mode_auto">自动（跟随系统）</string>
     <string name="ui3_theme_mode_light">浅色</string>
     <string name="ui3_theme_mode_dark">深色</string>
@@ -30,13 +41,10 @@
 
     <!-- 4. 主题预设 -->
     <string name="ui3_theme_section_presets">主题预设</string>
-    <string name="ui3_theme_presets_count">%1$d 套</string>
-    <string name="ui3_theme_preset_fixed">固定</string>
-    <string name="ui3_theme_preset_dark">暗色</string>
-    <string name="ui3_theme_preset_light">浅色</string>
+    <string name="ui3_theme_presets_count">%1$d 组</string>
 
     <!-- 5. 主色与自定义槽 -->
-    <string name="ui3_theme_section_accent">主色与自定义槽</string>
+    <string name="ui3_theme_custom_slots">自定义配色</string>
     <string name="ui3_theme_accent_title">主色</string>
     <string name="ui3_theme_accent_follow">跟随主题</string>
     <string name="ui3_theme_slot">自定义 %1$d</string>
@@ -72,14 +80,12 @@
     <string name="ui3_theme_font_note">已全局生效</string>
 
     <!-- 10. 文本缩放 -->
-    <string name="ui3_theme_section_text_scale">文本缩放</string>
     <string name="ui3_theme_text_follow">跟随系统</string>
     <string name="ui3_theme_text_custom">自定义</string>
     <string name="ui3_theme_text_percent">%1$d%%</string>
     <string name="ui3_theme_text_slider_desc">应用内字号 %1$d%%</string>
 
     <!-- 11. 壁纸与表面不透明度 -->
-    <string name="ui3_theme_section_wallpaper">壁纸与表面不透明度</string>
     <string name="ui3_theme_wallpaper_title">壁纸</string>
     <string name="ui3_theme_wallpaper_pick">选择壁纸</string>
     <string name="ui3_theme_wallpaper_clear">清除</string>
@@ -91,6 +97,8 @@
     <!-- 12. 终端个性化 -->
     <string name="ui3_theme_section_terminal">终端个性化</string>
     <string name="ui3_theme_terminal_palette">ANSI 16 色</string>
+    <string name="ui3_theme_terminal_display">字体与间距</string>
+    <string name="ui3_theme_terminal_background_section">终端背景图</string>
     <string name="ui3_theme_terminal_base">终端底色与前景</string>
     <string name="ui3_theme_terminal_font">字号</string>
     <string name="ui3_theme_terminal_font_value">%1$d sp</string>

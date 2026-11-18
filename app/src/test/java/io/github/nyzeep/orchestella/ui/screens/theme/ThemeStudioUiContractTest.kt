@@ -1,15 +1,18 @@
 package io.github.nyzeep.orchestella.ui.screens.theme
 
 import java.io.File
-import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Source-level gates for ZD-W3（零设备收尾）：Theme Studio 子页头返回钮接线与
- * 元信息 13/18 字号分类。13/18 是逐处判断的结果（交付 4 的纪律），这里钉住
- * 「元信息升级、caption 语义保持」的分类不被机械替换回退；返回钮语义本身由
- * [ThemeStudioScreenTest] 在 compose 层验证。
+ * 源码级门（零设备收尾）：v4 IA 的结构性红线。
+ *
+ * - 根页与四个子页都走 `OeScaffold` 单标题 + `ThemeBackButton`；
+ * - 主题工坊不再自带 `Oe3Theme`（壳内二次字号缩放）；
+ * - 页面不再出现页内 30sp `PageTitle`（v4 §0.1 单标题）；
+ * - 宿主把根页 push 进 `OeBackStack`，并彻底删掉 overlay 开关；
+ * - 预设页的「一卡一套」由纯函数驱动，而不是页面内临时判断。
  */
 class ThemeStudioUiContractTest {
 
@@ -20,49 +23,98 @@ class ThemeStudioUiContractTest {
         return file.readText()
     }
 
+    private fun themeSource(name: String): String =
+        source("src/main/java/io/github/nyzeep/orchestella/ui/screens/theme/$name")
+
     @Test
-    fun screenAcceptsAnOptionalBackCallback() {
-        val text = source("src/main/java/io/github/nyzeep/orchestella/ui/screens/theme/ThemeStudioScreen.kt")
+    fun rootPageUsesScaffoldAndTheSharedBackButton() {
+        val text = themeSource("ThemeStudioScreen.kt")
+        assertTrue("root page must use OeScaffold (single title bar)", text.contains("OeScaffold("))
         assertTrue(
-            "ThemeStudioScreen must take onBack: (() -> Unit)? = null (absent → no back button, page stays reusable)",
+            "root page must take onBack: (() -> Unit)? = null",
             text.contains("onBack: (() -> Unit)? = null"),
         )
-        assertTrue(
-            "the back button must expose a stable testTag for semantics tests",
-            text.contains("testTag(\"theme-studio:back\")"),
-        )
-        assertTrue(
-            "contentDescription must come from the existing 返回 string",
-            text.contains("R.string.ui3_theme_back"),
+        assertTrue("root page must delegate its leading slot to ThemeBackButton", text.contains("ThemeBackButton("))
+        assertFalse(
+            "root page must not wrap itself in Oe3Theme (the shell already provides it)",
+            text.contains("Oe3Theme("),
         )
     }
 
     @Test
-    fun metaInfoUsesThirteenEighteenAndCaptionSemanticsStayCaption() {
-        val text = source("src/main/java/io/github/nyzeep/orchestella/ui/screens/theme/ThemeStudioScreen.kt")
+    fun theFourIndependentPagesEachOwnScaffoldAndBack() {
+        listOf(
+            "ThemePresetScreen.kt",
+            "ThemeAccentScreen.kt",
+            "ThemeBackgroundScreen.kt",
+            "ThemeTerminalScreen.kt",
+        ).forEach { name ->
+            val text = themeSource(name)
+            assertTrue("$name must be a real page with OeScaffold", text.contains("OeScaffold("))
+            assertTrue("$name must expose the shared back button", text.contains("ThemeBackButton("))
+            assertTrue("$name must take an explicit onBack", text.contains("onBack: () -> Unit"))
+        }
+    }
+
+    @Test
+    fun themePagesDrawNoInPageThirtySpTitle() {
+        listOf(
+            "ThemeStudioScreen.kt",
+            "ThemePresetScreen.kt",
+            "ThemeAccentScreen.kt",
+            "ThemeBackgroundScreen.kt",
+            "ThemeTerminalScreen.kt",
+        ).forEach { name ->
+            val text = themeSource(name)
+            assertFalse("$name must not reintroduce Oe3TextRole.PageTitle", text.contains("Oe3TextRole.PageTitle"))
+        }
+    }
+
+    @Test
+    fun metaStyleHasOneDefinitionAndPagesConsumeIt() {
+        val shared = themeSource("ThemeOptionRow.kt")
         assertTrue(
-            "MetaTextStyle must be the 13/18 page-local style (spec §2.3), not the mono role",
-            text.contains("private val MetaTextStyle = TextStyle(fontSize = 13.sp, lineHeight = 18.sp)"),
+            "MetaTextStyle must be the shared 13/18 style (spec §2.3)",
+            shared.contains("internal val MetaTextStyle = TextStyle(fontSize = 13.sp, lineHeight = 18.sp)"),
         )
-        assertEquals(
-            "meta-info positions pinned to 13/18: page meta, fixed-mode note, preset title, " +
-                "preset tag, slot meta, wallpaper state, opacity value, terminal background state",
-            8,
-            Regex("style = MetaTextStyle").findAll(text).count(),
+        listOf(
+            "ThemeStudioScreen.kt",
+            "ThemePresetScreen.kt",
+            "ThemeBackgroundScreen.kt",
+            "ThemeTerminalScreen.kt",
+            "ThemeAccentComponents.kt",
+        ).forEach { name ->
+            assertTrue("$name must consume the shared 13/18 meta style", themeSource(name).contains("style = MetaTextStyle"))
+        }
+    }
+
+    @Test
+    fun presetPageIsDrivenByThePureGroupingFunction() {
+        val text = themeSource("ThemePresetScreen.kt")
+        assertTrue(
+            "preset page must group via ThemePresetGrouping.groups (one card per family)",
+            text.contains("ThemePresetGrouping.groups("),
         )
-        assertEquals(
-            "caption semantics stay Caption: 编辑 action link + terminal background note",
-            2,
-            Regex("""Oe3TextRole\.Caption""").findAll(text).count(),
+        assertTrue(
+            "preset strip must come from the 4-colour pure function",
+            text.contains("ThemePresetGrouping.stripColors("),
         )
     }
 
     @Test
-    fun hostWiresTheBackCallbackAtTheThemeStudioCallSite() {
+    fun hostPushesTheStudioOntoTheBackStackAndDropsTheOverlaySwitch() {
         val text = source("src/main/java/io/github/nyzeep/orchestella/MainActivity.kt")
         assertTrue(
-            "the call site must close the studio on back, matching the OnBackPressedCallback (shell returns to the config tab)",
-            Regex("onBack = \\{ oe3ThemeStudioOpen\\.value = false \\}").containsMatchIn(text),
+            "ConfigDestination.ThemeStudio must push a destination onto the shell stack",
+            text.contains("stack.push(themeStudioDestination())"),
+        )
+        assertTrue(
+            "the root destination key must be stable",
+            text.contains("THEME_STUDIO_DESTINATION_KEY"),
+        )
+        assertFalse(
+            "the overlay path must be gone (no oe3ThemeStudioOpen anywhere)",
+            text.contains("oe3ThemeStudioOpen"),
         )
     }
 }

@@ -17,10 +17,6 @@ import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
-import io.github.nyzeep.orchestella.runtime.network.FilePortForwardingStore
-import io.github.nyzeep.orchestella.runtime.network.PortConflictDetector
-import io.github.nyzeep.orchestella.runtime.network.PortForwardingManager
-import io.github.nyzeep.orchestella.ssh.SshManagerDialog
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3Theme
 import io.github.nyzeep.orchestella.ui.screens.config.ConfigDestination
 import io.github.nyzeep.orchestella.ui.screens.config.ConfigOptions
@@ -35,7 +31,6 @@ import io.github.nyzeep.orchestella.ui.theme.ThemeStore
 import io.github.nyzeep.orchestella.update.UpdateCenter
 import io.github.nyzeep.orchestella.update.UpdateCoordinator
 import java.io.IOException
-import java.nio.file.Files
 import java.time.Clock
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -253,10 +248,10 @@ class SettingsActivity : AppCompatActivity() {
                 startActivity(SettingsSubActivity.intent(this, destination.section))
 
             // ZD-W2（gap 16）：主题入口收敛后的说明弹窗已移除。新壳
-            // （MainActivity）的配置页直达 Theme Studio（壳内 oe3ThemeStudioOpen）；
+            // （MainActivity）的配置页把 Theme Studio 压入壳层 OeBackStack；
             // 本 Activity 无壳内工坊承载，此处不再展示引导。
             ConfigDestination.ThemeStudio -> Unit
-            ConfigDestination.SshManager -> SshManagerDialog.show(this)
+            ConfigDestination.SshManager -> startActivity(ConnectionPagesActivity.sshIntent(this))
             ConfigDestination.PortForwarding -> openPortForwarding()
             ConfigDestination.Logs -> openRuntimeLogs()
             ConfigDestination.Backup -> showBackupDialog()
@@ -355,15 +350,7 @@ class SettingsActivity : AppCompatActivity() {
             Toast.makeText(this, R.string.config_no_instances, Toast.LENGTH_SHORT).show()
             return
         }
-        try {
-            val netPath = filesDir.toPath().resolve("network")
-            Files.createDirectories(netPath)
-            val store = FilePortForwardingStore(netPath)
-            val manager = PortForwardingManager(target.id(), store, PortConflictDetector())
-            PortForwardingBottomSheet(this, target.id(), manager).show()
-        } catch (e: Exception) {
-            Toast.makeText(this, "打开端口转发管理失败: ${e.message}", Toast.LENGTH_SHORT).show()
-        }
+        startActivity(ConnectionPagesActivity.portForwardingIntent(this, target.id()))
     }
 
     private fun openRuntimeLogs() {

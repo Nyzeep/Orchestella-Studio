@@ -2,20 +2,25 @@ package io.github.nyzeep.orchestella.ui.motion
 
 import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
  * UI-07: floating layers were the last motion surface the app theme did not
- * own. `MaterialAlertDialogBuilder` and `BottomSheetDialog` resolved their
- * window animation from Material defaults (300/400 ms, library curves), so the
- * documented floating-layer token never reached them.
+ * own. `MaterialAlertDialogBuilder` resolved its window animation from Material
+ * defaults (300/400 ms, library curves), so the documented floating-layer token
+ * never reached it.
  *
- * These assertions pin the wiring: the app theme routes both dialog families
- * to Orchestella overlays, and those overlays point at `res/anim` resources
- * whose durations come from `oe_motion_duration_dialog_*`. The motion *shape*
- * is intentionally the one the theme already showed (a fade for alerts, a
- * 20% slide + fade for bottom sheets) — only the clock becomes token-driven.
+ * These assertions pin the wiring: the app theme routes the alert family to an
+ * Orchestella overlay, and that overlay points at `res/anim` resources whose
+ * durations come from `oe_motion_duration_dialog_*`.
+ *
+ * UI-13 (2026-11-18): the AppCompat `BottomSheetDialog` family is gone — the
+ * three remaining sheets became Compose pages — so its overlay, animation and
+ * animation resources were deleted. The bottom-sheet half of this test now
+ * pins that absence instead of a slide shape.
  */
 class MotionWindowAnimationTest {
 
@@ -40,13 +45,13 @@ class MotionWindowAnimationTest {
     ).find(styleBody(style))?.groupValues?.get(1)
 
     @Test
-    fun appThemeRoutesBothDialogFamiliesThroughOrchestellaOverlays() {
+    fun appThemeRoutesTheAlertDialogFamilyThroughItsOverlay() {
         assertEquals(
             "@style/ThemeOverlay.Orchestella.MaterialAlertDialog",
             itemValue("Theme.Orchestella", "materialAlertDialogTheme"),
         )
-        assertEquals(
-            "@style/ThemeOverlay.Orchestella.BottomSheetDialog",
+        assertNull(
+            "no BottomSheetDialog remains, so the theme must not keep its overlay hook",
             itemValue("Theme.Orchestella", "bottomSheetDialogTheme"),
         )
     }
@@ -57,20 +62,17 @@ class MotionWindowAnimationTest {
         ?.groupValues?.get(1)
 
     @Test
-    fun dialogOverlaysOverrideOnlyTheWindowAnimationStyle() {
-        listOf(
-            "ThemeOverlay.Orchestella.MaterialAlertDialog" to
-                ("Animation.Orchestella.Dialog" to "ThemeOverlay.Material3.MaterialAlertDialog"),
-            "ThemeOverlay.Orchestella.BottomSheetDialog" to
-                ("Animation.Orchestella.BottomSheetDialog" to "ThemeOverlay.Material3.BottomSheetDialog"),
-        ).forEach { (overlay, expected) ->
-            val (animation, parent) = expected
-            assertEquals("$overlay must keep the Material overlay parent", parent, styleParent(overlay))
-            assertEquals(
-                "@style/$animation",
-                itemValue(overlay, "android:windowAnimationStyle"),
-            )
-        }
+    fun dialogOverlayOverridesOnlyTheWindowAnimationStyle() {
+        val overlay = "ThemeOverlay.Orchestella.MaterialAlertDialog"
+        assertEquals(
+            "Material overlay parent must be kept",
+            "ThemeOverlay.Material3.MaterialAlertDialog",
+            styleParent(overlay),
+        )
+        assertEquals(
+            "@style/Animation.Orchestella.Dialog",
+            itemValue(overlay, "android:windowAnimationStyle"),
+        )
     }
 
     @Test
@@ -103,29 +105,12 @@ class MotionWindowAnimationTest {
     }
 
     @Test
-    fun bottomSheetWindowAnimationsKeepTheSlideShape() {
-        assertEquals(
-            "@anim/oe_bottom_sheet_slide_enter",
-            itemValue("Animation.Orchestella.BottomSheetDialog", "android:windowEnterAnimation"),
-        )
-        assertEquals(
-            "@anim/oe_bottom_sheet_slide_exit",
-            itemValue("Animation.Orchestella.BottomSheetDialog", "android:windowExitAnimation"),
-        )
-
-        val enter = xml("anim/oe_bottom_sheet_slide_enter.xml")
-        assertTrue("bottom sheets still slide up 20%", enter.contains("""android:fromYDelta="20%p""""))
-        assertTrue("bottom sheets still fade in", enter.contains("<alpha"))
-        assertTrue(
-            "slide duration comes from the dialog token",
-            enter.contains("""android:duration="@integer/oe_motion_duration_dialog_enter""""),
-        )
-
-        val exit = xml("anim/oe_bottom_sheet_slide_exit.xml")
-        assertTrue("bottom sheets still slide down 20%", exit.contains("""android:toYDelta="20%p""""))
-        assertTrue(
-            "slide-out duration comes from the dialog exit token",
-            exit.contains("""android:duration="@integer/oe_motion_duration_dialog_exit""""),
+    fun bottomSheetDialogFamilyIsGone() {
+        val styles = listOf("values/themes.xml", "values/styles.xml")
+            .joinToString("\n") { xml(it) }
+        assertFalse(
+            "UI-13 removed every AppCompat BottomSheetDialog; no style may survive",
+            styles.contains("BottomSheetDialog"),
         )
     }
 
