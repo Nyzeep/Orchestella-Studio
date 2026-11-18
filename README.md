@@ -48,6 +48,23 @@
 - **网络与端口映射**：用户态网络栈（gvproxy），显式端口转发规则管理。
 - **工作台仪表**：MACH-ID、CPU / RAM 实时环、电池温度、存储余量、网络状态。
 
+### 桌面模式（实验通路 · 2026-11-19 立项，真机验收待设备窗）
+
+- **链路形态**：guest 内 labwc 合成器 → wayvnc → RFB 3.8 CPU 拷贝，经 virtio-serial
+  `orchestella.display` 中继到宿主呈现（架构裁决见 ADR-0017：Wayland-first 为目标形态，
+  RFB CPU-copy 为当前生产数据面）。
+- **入口三档**：实例卡片「桌面」/ 终端抽屉「桌面模式」/ 桌面与开发工具页「查看真实桌面」，
+  判定单源（`DesktopEntryPolicy`），通道未就绪时诚实禁用并说明原因。
+- **GPU 加速开关已接生产**：`gpuAccelerationEnabled` 真正驱动 virgl 生命周期
+  （native 未打包/初始化失败时显式回退 2D 并记原因码）；开关副文案三态诚实标注，
+  「已启用」指通道 wired，不冒充真机已验收。
+- **音频通路**：guest audio-relay → virtio-serial `orchestella.audio` → 宿主回环 →
+  低延迟播放器（代码闭环已建，PCM 实听未验收；desktop-labwc profile 暂不含
+  pulseaudio 包，验收时需补装或记为已知缺口）。
+- **诚实边界**：桌面体验、virgl 效果、音频实听、指针/IME 真 ROM 行为均**未真机验收**；
+  验收探针与人工走查清单已预装（`tools/device-validation/gui_desktop_acceptance.py`），
+  下一个设备窗按单执行。
+
 ### 界面主题（0.6.0 新增）
 
 - **30+ 内置主题**（构成主义工控 / Claude / Catppuccin / GitHub / Gruvbox / Rose Pine…），
@@ -243,6 +260,10 @@ cd Orchestella-Studio
   传参开启，`docs/NOTICE.UML-DRAFT.md` 保持 DRAFT（正式化=资产真实入发布 APK，
   release 流水线工单）。遗留边界：guest 工具链预装策略未裁决、QEMU guest 侧
   编译客户端→submitter 链路未测；full profile（systemd / 网络 / Docker）未验证。
+- **桌面模式为实验通路**：RFB 3.8 CPU 拷贝呈现（ADR-0017），桌面体验/virgl 效果/
+  音频实听/指针与 IME 行为未真机验收；`gpuAccelerationEnabled=true` 且 virgl native
+  打包时挂 `virtio-gpu-gl-device`，真机 QEMU 是否接受该参数未验证（验收脚本 gpu 节）；
+  desktop-labwc profile 暂不含 pulseaudio 包（audio-relay 以 unavailable+重试等待）。
 - **16 KB 页**：真机执行未测。
 - **签名**：仓库不含密钥；0.6.0 的发布证书指纹在 Release 页记录后才算数。
 
