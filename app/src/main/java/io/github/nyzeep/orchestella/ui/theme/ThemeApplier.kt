@@ -44,7 +44,6 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
 import androidx.core.view.WindowCompat
 import com.google.android.material.appbar.MaterialToolbar
-import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.navigation.NavigationBarView
@@ -115,8 +114,7 @@ object ThemeApplier {
     fun apply(dialog: Dialog) {
         val theme = ThemeStore(dialog.context).resolve(dialog.context)
         dialog.window?.let { window ->
-            // Sheets need transparent window space outside their themed content and existing scrim.
-            window.setBackgroundDrawable(ColorDrawable(if (dialog is BottomSheetDialog) Color.TRANSPARENT else theme.surface))
+            window.setBackgroundDrawable(ColorDrawable(theme.surface))
             val root = window.decorView as? ViewGroup ?: return@let
             val binding = dialogs[dialog]?.takeIf { it.root.get() === root } ?: RootBinding(root, theme).also {
                 dialogs[dialog] = it
