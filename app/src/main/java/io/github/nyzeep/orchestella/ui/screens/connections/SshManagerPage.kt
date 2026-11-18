@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,6 +33,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
 import io.github.nyzeep.orchestella.R
 import io.github.nyzeep.orchestella.ssh.SshProfile
 import io.github.nyzeep.orchestella.ssh.SshProfileStore
@@ -346,9 +346,8 @@ fun SshManagerContent(
                     start = Oe3Spacing.pageInset,
                     end = Oe3Spacing.pageInset,
                     top = Oe3Spacing.sm,
-                    bottom = Oe3Spacing.xxl,
-                )
-                .navigationBarsPadding(),
+                    bottom = LocalOe3PageBottomPadding.current,
+                ),
             verticalArrangement = Arrangement.spacedBy(Oe3Spacing.sm),
         ) {
             if (profiles.isEmpty()) {

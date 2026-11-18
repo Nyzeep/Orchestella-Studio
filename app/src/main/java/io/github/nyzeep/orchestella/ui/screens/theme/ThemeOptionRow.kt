@@ -35,7 +35,9 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.nyzeep.orchestella.ui.design.tokens.OeSpacing
 import io.github.nyzeep.orchestella.R
+import io.github.nyzeep.orchestella.ui.oe3.components.Oe3BackButton
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Card
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Divider
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3ListRow
@@ -78,7 +80,7 @@ fun ThemeOptionRow(
                 onClick = onSelect,
             )
             .semantics(mergeDescendants = true) {}
-            .padding(horizontal = Oe3Spacing.rowHorizontal, vertical = 7.dp),
+            .padding(horizontal = Oe3Spacing.rowHorizontal, vertical = OeSpacing.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -183,36 +185,12 @@ fun CheckMark(tint: Color, modifier: Modifier = Modifier) {
  */
 @Composable
 fun ThemeBackButton(onBack: () -> Unit, modifier: Modifier = Modifier) {
-    val back = stringResource(R.string.ui3_theme_back)
-    Box(
-        modifier = modifier
-            .size(Oe3Sizes.interactiveVisual)
-            .testTag("theme-studio:back")
-            .clickable(role = Role.Button, onClick = onBack)
-            .semantics { contentDescription = back },
-        contentAlignment = Alignment.Center,
-    ) {
-        val color = Oe3ThemeValues.colors.onSurface.oe3Color()
-        Canvas(modifier = Modifier.size(Oe3Sizes.icon)) {
-            val stroke = 1.75.dp.toPx()
-            val nearX = size.width * 0.38f
-            val farX = size.width * 0.62f
-            drawLine(
-                color,
-                Offset(farX, size.height * 0.28f),
-                Offset(nearX, size.height * 0.5f),
-                strokeWidth = stroke,
-                cap = StrokeCap.Round,
-            )
-            drawLine(
-                color,
-                Offset(nearX, size.height * 0.5f),
-                Offset(farX, size.height * 0.72f),
-                strokeWidth = stroke,
-                cap = StrokeCap.Round,
-            )
-        }
-    }
+    Oe3BackButton(
+        onBack = onBack,
+        contentDescription = stringResource(R.string.ui3_theme_back),
+        modifier = modifier,
+        testTag = "theme-studio:back",
+    )
 }
 
 /**

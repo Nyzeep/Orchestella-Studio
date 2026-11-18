@@ -28,6 +28,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import io.github.nyzeep.orchestella.ui.design.tokens.OeShape
 import io.github.nyzeep.orchestella.R
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Card
 import io.github.nyzeep.orchestella.ui.oe3.components.oe3Color
@@ -94,11 +95,11 @@ fun ThemePresetScreen(
                 title = stringResource(R.string.ui3_theme_group_other),
                 value = stringResource(R.string.ui3_theme_presets_count, others.size),
             )
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(Oe3Spacing.gridGap)) {
                 others.chunked(2).forEach { row ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(Oe3Spacing.gridGap),
                     ) {
                         row.forEach { group ->
                             PresetCard(
@@ -143,11 +144,11 @@ private fun PresetCard(
     Oe3Card(
         modifier = modifier.semantics { this.selected = selected },
         onClick = onClick,
-        contentPadding = PaddingValues(10.dp),
+        contentPadding = PaddingValues(Oe3Spacing.sm),
         shape = RoundedCornerShape(radius),
     ) {
         PresetStrip(group.theme)
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(Oe3Spacing.xs))
         Row(verticalAlignment = Alignment.Top) {
             Text(
                 text = group.title,
@@ -171,7 +172,7 @@ private fun PresetStrip(theme: AppTheme) {
         modifier = Modifier
             .fillMaxWidth()
             .height(18.dp)
-            .clip(RoundedCornerShape(5.dp)),
+            .clip(RoundedCornerShape(OeShape.sm)),
     ) {
         ThemePresetGrouping.stripColors(theme).forEach { argb ->
             Box(Modifier.weight(1f).fillMaxSize().background(Color(argb)))

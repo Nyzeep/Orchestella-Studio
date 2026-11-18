@@ -33,6 +33,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
 import io.github.nyzeep.orchestella.NetworkGatewayDaemon
 import io.github.nyzeep.orchestella.PortForwardingPresenter
 import io.github.nyzeep.orchestella.R
@@ -42,6 +43,7 @@ import io.github.nyzeep.orchestella.ui.design.tokens.OeShape
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Button
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3ButtonStyle
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Card
+import io.github.nyzeep.orchestella.ui.oe3.components.Oe3SectionHeader
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Chip
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3EmptyState
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3SwitchRow
@@ -322,7 +324,7 @@ fun PortForwardingContent(
                     start = Oe3Spacing.pageInset,
                     end = Oe3Spacing.pageInset,
                     top = Oe3Spacing.sm,
-                    bottom = Oe3Spacing.xxl,
+                    bottom = LocalOe3PageBottomPadding.current,
                 ),
             verticalArrangement = Arrangement.spacedBy(Oe3Spacing.sm),
         ) {
@@ -335,11 +337,7 @@ fun PortForwardingContent(
                 color = colors.onSurfaceVariant.oe3Color(),
             )
 
-            Text(
-                text = stringResource(R.string.connections_pf_section_rules),
-                style = Oe3Typography.style(Oe3TextRole.Section),
-                color = colors.onSurface.oe3Color(),
-            )
+            Oe3SectionHeader(title = stringResource(R.string.connections_pf_section_rules))
 
             if (PortForwardingPageSpec.emptyStateVisible(state.rules.size)) {
                 Oe3Card(contentPadding = PaddingValues(0.dp)) {

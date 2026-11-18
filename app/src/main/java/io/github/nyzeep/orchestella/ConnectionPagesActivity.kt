@@ -7,14 +7,20 @@ import android.graphics.Color
 import android.os.Bundle
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
 import io.github.nyzeep.orchestella.runtime.network.FilePortForwardingStore
 import io.github.nyzeep.orchestella.runtime.network.PortConflictDetector
 import io.github.nyzeep.orchestella.runtime.network.PortForwardingManager
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3Theme
+import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
 import io.github.nyzeep.orchestella.ui.screens.connections.PortForwardingPage
 import io.github.nyzeep.orchestella.ui.screens.connections.SshManagerPage
 import io.github.nyzeep.orchestella.ui.screens.connections.VmHardwarePage
@@ -169,39 +175,47 @@ class ConnectionPagesActivity : AppCompatActivity() {
                 textScale = textScaleState.value,
                 reduceMotion = reduceMotion,
             ) {
-                when (page) {
-                    PAGE_SSH -> SshManagerPage(
-                        onBack = back,
-                        defaultInstanceId = instanceId,
-                        defaultHost = intent.getStringExtra(EXTRA_DEFAULT_HOST) ?: "127.0.0.1",
-                        defaultPort = intent.getIntExtra(EXTRA_DEFAULT_PORT, 2222),
-                        defaultUser = intent.getStringExtra(EXTRA_DEFAULT_USER) ?: "root",
-                    )
-                    PAGE_PORT_FORWARDING -> PortForwardingPage(
-                        instanceId = requireNotNull(instanceId),
-                        manager = requireNotNull(portForwardingManager),
-                        onBack = back,
-                    )
-                    PAGE_VM_HARDWARE -> VmHardwarePage(
-                        instance = requireNotNull(hardwareInstance),
-                        hostProfile = requireNotNull(hardwareProfile),
-                        onBack = back,
-                        onSaved = { selection ->
-                            setResult(
-                                RESULT_OK,
-                                Intent().apply {
-                                    putExtra(RESULT_CPU_CORES, selection.cpuCores)
-                                    putExtra(RESULT_RAM_MEGABYTES, selection.ramMegabytes)
-                                    selection.expandedDiskBytes?.let {
-                                        putExtra(RESULT_DISK_BYTES, it)
-                                    }
-                                    putExtra(RESULT_GPU_ENABLED, selection.gpuAccelerationEnabled)
+                // 本宿主没有底部坞：页面读的底部预留必须归零，否则会空出 83dp
+                // 的坞位；系统导航条的内边距由这一层统一补（页面自身不再各自
+                // 调 navigationBarsPadding，避免两套口径）。
+                CompositionLocalProvider(LocalOe3PageBottomPadding provides 0.dp) {
+                    Box(modifier = Modifier.navigationBarsPadding()) {
+                        when (page) {
+                            PAGE_SSH -> SshManagerPage(
+                                onBack = back,
+                                defaultInstanceId = instanceId,
+                                defaultHost = intent.getStringExtra(EXTRA_DEFAULT_HOST) ?: "127.0.0.1",
+                                defaultPort = intent.getIntExtra(EXTRA_DEFAULT_PORT, 2222),
+                                defaultUser = intent.getStringExtra(EXTRA_DEFAULT_USER) ?: "root",
+                            )
+
+                            PAGE_PORT_FORWARDING -> PortForwardingPage(
+                                instanceId = requireNotNull(instanceId),
+                                manager = requireNotNull(portForwardingManager),
+                                onBack = back,
+                            )
+
+                            PAGE_VM_HARDWARE -> VmHardwarePage(
+                                instance = requireNotNull(hardwareInstance),
+                                hostProfile = requireNotNull(hardwareProfile),
+                                onBack = back,
+                                onSaved = { selection ->
+                                    setResult(
+                                        RESULT_OK,
+                                        Intent().apply {
+                                            putExtra(RESULT_CPU_CORES, selection.cpuCores)
+                                            putExtra(RESULT_RAM_MEGABYTES, selection.ramMegabytes)
+                                            selection.expandedDiskBytes?.let {
+                                                putExtra(RESULT_DISK_BYTES, it)
+                                            }
+                                            putExtra(RESULT_GPU_ENABLED, selection.gpuAccelerationEnabled)
+                                        },
+                                    )
+                                    finish()
                                 },
                             )
-                            finish()
-                        },
-                    )
-                    else -> Unit
+                        }
+                    }
                 }
             }
         }

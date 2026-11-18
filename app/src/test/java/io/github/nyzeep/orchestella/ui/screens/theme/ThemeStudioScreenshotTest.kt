@@ -47,6 +47,17 @@ class ThemeStudioScreenshotTest {
         ThemeStudioScreen(state = state(ThemeCatalog.constructivistWorkstationLight), onEvent = {})
     }
 
+    /** 应用内字号 130%（1.3x）下的根页：旧单页基线的 130% 用例随删除退役，这里补回。 */
+    @Test
+    fun rootLight130() = capture(
+        "root-light-130",
+        ThemeCatalog.constructivistWorkstationLight,
+        "theme-studio:screen",
+        textScale = 1.3f,
+    ) {
+        ThemeStudioScreen(state = state(ThemeCatalog.constructivistWorkstationLight), onEvent = {})
+    }
+
     @Test
     fun presetsDark() = capture("presets-dark", ThemeCatalog.constructivistWorkstation, "theme-presets:screen") {
         ThemePresetScreen(
@@ -99,10 +110,11 @@ class ThemeStudioScreenshotTest {
         name: String,
         theme: AppTheme,
         tag: String,
+        textScale: Float = 1f,
         content: @androidx.compose.runtime.Composable () -> Unit,
     ) {
         compose.setContent {
-            Oe3Theme(theme = theme, reduceMotion = true) {
+            Oe3Theme(theme = theme, textScale = textScale, reduceMotion = true) {
                 Box(
                     Modifier
                         .fillMaxSize()

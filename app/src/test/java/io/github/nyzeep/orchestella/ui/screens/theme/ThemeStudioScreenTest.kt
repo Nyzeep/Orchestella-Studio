@@ -132,6 +132,19 @@ class ThemeStudioScreenTest {
     }
 
     @Test
+    fun interactiveChromeMeetsTheFortyEightDpFloor() {
+        setRoot(onBack = {})
+        val floor = with(compose.density) { 48.dp.toPx() }
+        // shape.md §3「命中区 ≥48dp」：返回钮（Oe3BackButton）与入口行是本页
+        // 仅有的可点原语，把两者的实测高度钉在 48dp 上——44dp 只是视觉尺寸。
+        listOf("theme-studio:back", "theme-entry:presets").forEach { tag ->
+            val height = compose.onNodeWithTag(tag, useUnmergedTree = true)
+                .fetchSemanticsNode().boundsInRoot.height
+            assertTrue("$tag is only $height px tall", height >= floor)
+        }
+    }
+
+    @Test
     fun backButtonIsAbsentWithoutOnBack() {
         setRoot()
         compose.onNodeWithTag("theme-studio:back").assertDoesNotExist()

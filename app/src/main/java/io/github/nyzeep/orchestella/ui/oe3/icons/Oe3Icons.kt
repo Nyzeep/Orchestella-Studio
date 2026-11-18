@@ -155,6 +155,18 @@ object Oe3Icons {
         )
     }
 
+    // --- Standalone page glyphs -------------------------------------------
+    // Same discipline as the edit-mode glyphs below: standalone vals so the
+    // icon-sheet golden and the pinned action order stay untouched.
+
+    /** Back: the secondary-page return chevron (v4 / Wave 4 shared button). */
+    val Back: ImageVector by lazy {
+        lineIcon(
+            name = "Oe3.Back",
+            pathData = "M14.9 6.7L9.1 12l5.8 5.3",
+        )
+    }
+
     // --- Edit-mode glyphs (v4 / UI-09, dashboard action slot & badges) ------
     // Standalone vals, deliberately not members of [actions]/[all]: the icon
     // sheet golden and the pinned action order stay untouched, and the

@@ -7,12 +7,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -23,6 +25,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import io.github.nyzeep.orchestella.R
 import io.github.nyzeep.orchestella.ui.design.tokens.OeShape
+import io.github.nyzeep.orchestella.ui.oe3.components.Oe3BackButton
 import io.github.nyzeep.orchestella.ui.oe3.components.oe3Color
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Sizes
@@ -38,9 +41,13 @@ object ConnectionsPage {
 
     const val SSH_KEY = "connections.ssh"
     const val PORT_FORWARDING_KEY = "connections.port_forwarding"
-    const val VM_HARDWARE_KEY = "connections.vm_hardware"
 
-    val allKeys: List<String> = listOf(SSH_KEY, PORT_FORWARDING_KEY, VM_HARDWARE_KEY)
+    /**
+     * VM 硬件没有壳内路由（只从实例详情页经 [io.github.nyzeep.orchestella.ConnectionPagesActivity]
+     * 进入），所以它不在栈键清单里；强行占位一个没人消费的 key 只会让
+     * 「唯一性」测试锁住一个假路由（code-review 2026-11-18 删除）。
+     */
+    val allKeys: List<String> = listOf(SSH_KEY, PORT_FORWARDING_KEY)
 }
 
 /**
@@ -55,36 +62,12 @@ fun ConnectionsBackButton(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val description = stringResource(R.string.connections_back_desc)
-    val color = Oe3ThemeValues.colors.onSurface.oe3Color()
-    Box(
-        modifier = modifier
-            .size(Oe3Sizes.interactiveVisual)
-            .testTag("connections:back")
-            .clickable(role = Role.Button, onClick = onBack)
-            .semantics { contentDescription = description },
-        contentAlignment = Alignment.Center,
-    ) {
-        Canvas(modifier = Modifier.size(Oe3Sizes.icon)) {
-            val stroke = 1.75.dp.toPx()
-            val nearX = size.width * 0.38f
-            val farX = size.width * 0.62f
-            drawLine(
-                color = color,
-                start = Offset(farX, size.height * 0.28f),
-                end = Offset(nearX, size.height * 0.5f),
-                strokeWidth = stroke,
-                cap = StrokeCap.Round,
-            )
-            drawLine(
-                color = color,
-                start = Offset(nearX, size.height * 0.5f),
-                end = Offset(farX, size.height * 0.72f),
-                strokeWidth = stroke,
-                cap = StrokeCap.Round,
-            )
-        }
-    }
+    Oe3BackButton(
+        onBack = onBack,
+        contentDescription = stringResource(R.string.connections_back_desc),
+        modifier = modifier,
+        testTag = "connections:back",
+    )
 }
 
 /**
@@ -105,7 +88,8 @@ fun ConnectionsTextField(
     enabled: Boolean = true,
     testTag: String? = null,
 ) {
-    OutlinedTextField(
+    val colors = Oe3ThemeValues.colors
+    TextField(
         value = value,
         onValueChange = onValueChange,
         modifier = modifier
@@ -117,5 +101,18 @@ fun ConnectionsTextField(
         isError = isError,
         enabled = enabled,
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+        // shape.md §2.1：输入框是 surfaceHigh 底、无描边。Material3 的
+        // Outlined 变体默认画一圈 outline，与规范冲突，所以这里把四条指示线
+        // 全部置透明，只留填充与标签。
+        colors = TextFieldDefaults.colors(
+            focusedContainerColor = colors.surfaceHigh.oe3Color(),
+            unfocusedContainerColor = colors.surfaceHigh.oe3Color(),
+            disabledContainerColor = colors.surfaceHigh.oe3Color(),
+            errorContainerColor = colors.surfaceHigh.oe3Color(),
+            focusedIndicatorColor = Color.Transparent,
+            unfocusedIndicatorColor = Color.Transparent,
+            disabledIndicatorColor = Color.Transparent,
+            errorIndicatorColor = Color.Transparent,
+        ),
     )
 }

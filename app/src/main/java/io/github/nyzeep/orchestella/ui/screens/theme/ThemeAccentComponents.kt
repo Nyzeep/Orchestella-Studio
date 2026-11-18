@@ -35,6 +35,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import io.github.nyzeep.orchestella.ui.design.tokens.OeShape
 import io.github.nyzeep.orchestella.R
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Card
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Chip
@@ -161,7 +162,7 @@ fun CustomSlotSection(
                     Row(
                         modifier = Modifier
                             .size(24.dp)
-                            .clip(RoundedCornerShape(6.dp)),
+                            .clip(RoundedCornerShape(OeShape.xs)),
                     ) {
                         listOf(slot.background, slot.surface, slot.primary, slot.accent).forEach {
                             Box(Modifier.weight(1f).fillMaxSize().background(Color(it)))
@@ -171,7 +172,7 @@ fun CustomSlotSection(
                     Box(
                         modifier = Modifier
                             .size(24.dp)
-                            .clip(RoundedCornerShape(6.dp))
+                            .clip(RoundedCornerShape(OeShape.xs))
                             .background(colors.surfaceHigh.oe3Color()),
                     )
                 }

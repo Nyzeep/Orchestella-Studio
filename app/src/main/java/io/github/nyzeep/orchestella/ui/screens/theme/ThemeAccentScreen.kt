@@ -40,12 +40,8 @@ fun ThemeAccentScreen(
                 .padding(horizontal = Oe3Spacing.pageInset)
                 .padding(top = Oe3Spacing.xs, bottom = LocalOe3PageBottomPadding.current),
         ) {
-            ThemeSectionHeader(
-                key = "accent",
-                title = stringResource(R.string.ui3_theme_page_accent),
-                value = state.customAccent?.let { hex(it) }
-                    ?: stringResource(R.string.ui3_theme_accent_follow),
-            )
+            // AccentSection 自带「当前强调色」标题与激活态（跟随主题 chip /
+            // 色板勾选），页头再加一个同名分区会与顶栏标题三重重复（code-review）。
             AccentSection(customAccent = state.customAccent, onEvent = onEvent)
 
             Spacer(Modifier.height(Oe3Spacing.md))
