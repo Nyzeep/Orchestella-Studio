@@ -11,7 +11,7 @@ import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.InputContentInfo;
 import android.view.inputmethod.SurroundingText;
 import io.github.nyzeep.orchestella.runtime.contract.TextCommitEvent;
-import io.github.nyzeep.orchestella.runtime.contract.WaylandChannel;
+import io.github.nyzeep.orchestella.runtime.contract.DisplayChannel;
 import java.util.Objects;
 
 /**
@@ -34,7 +34,7 @@ public class ImeBridgeInputConnection implements InputConnection {
     public static final int LINUX_KEY_DELETE = 111;
     public static final int MAX_SAFE_CHUNK_CHARS = 400;
 
-    private WaylandChannel channel;
+    private DisplayChannel channel;
     private final io.github.nyzeep.orchestella.terminal.ImeCompositionBuffer composition =
             new io.github.nyzeep.orchestella.terminal.ImeCompositionBuffer();
     private boolean closed;
@@ -44,16 +44,16 @@ public class ImeBridgeInputConnection implements InputConnection {
         unsupportedInput = listener == null ? ignored -> { } : listener;
     }
 
-    public ImeBridgeInputConnection(WaylandChannel channel) {
+    public ImeBridgeInputConnection(DisplayChannel channel) {
         this.channel = channel;
     }
 
-    public void setChannel(WaylandChannel channel) {
+    public void setChannel(DisplayChannel channel) {
         if (this.channel != channel) composition.clear();
         this.channel = channel;
     }
 
-    public WaylandChannel getChannel() {
+    public DisplayChannel getChannel() {
         return channel;
     }
 

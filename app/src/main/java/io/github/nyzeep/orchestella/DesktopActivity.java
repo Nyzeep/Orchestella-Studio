@@ -39,7 +39,7 @@ import io.github.nyzeep.orchestella.runtime.contract.BridgeClient;
 import io.github.nyzeep.orchestella.runtime.contract.BridgeControl;
 import io.github.nyzeep.orchestella.runtime.contract.DisplayControl;
 import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract;
-import io.github.nyzeep.orchestella.runtime.contract.WaylandChannel;
+import io.github.nyzeep.orchestella.runtime.contract.DisplayChannel;
 
 /**
  * Main Android host activity presenting the Wayland graphical desktop environment.
@@ -113,7 +113,7 @@ public class DesktopActivity extends Activity {
         double targetScale = DisplayDpiCalculator.calculateScale(densityDpi, screenWidth, screenHeight);
 
         DisplayControl displayControl = session != null ? session.displayControl() : null;
-        WaylandChannel waylandChannel = session != null ? session.waylandChannel() : null;
+        DisplayChannel waylandChannel = session != null ? session.waylandChannel() : null;
         if (surfaceView != null) {
             surfaceView.getController().setTargetScale(targetScale);
             surfaceView.bind(displayControl, waylandChannel);
@@ -683,7 +683,7 @@ public class DesktopActivity extends Activity {
                 }
             }
         }
-        WaylandChannel channel = session != null ? session.waylandChannel() : null;
+        DisplayChannel channel = session != null ? session.waylandChannel() : null;
         int linuxCode = DesktopKeyMapper.linuxCode(event.getKeyCode());
         if (channel != null && linuxCode != 0 && (event.getAction() == KeyEvent.ACTION_DOWN || event.getAction() == KeyEvent.ACTION_UP)) {
             int modifiers = DesktopKeyMapper.modifiers(event.getMetaState());

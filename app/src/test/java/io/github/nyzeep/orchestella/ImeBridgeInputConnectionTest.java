@@ -8,7 +8,7 @@ import static org.junit.Assert.assertTrue;
 import io.github.nyzeep.orchestella.runtime.contract.InputEvent;
 import io.github.nyzeep.orchestella.runtime.contract.KeyEvent;
 import io.github.nyzeep.orchestella.runtime.contract.TextCommitEvent;
-import io.github.nyzeep.orchestella.runtime.contract.WaylandChannel;
+import io.github.nyzeep.orchestella.runtime.contract.DisplayChannel;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.Before;
@@ -22,10 +22,10 @@ import org.junit.Test;
  */
 public final class ImeBridgeInputConnectionTest {
 
-    private FakeWaylandChannel channel;
+    private FakeDisplayChannel channel;
     private ImeBridgeInputConnection inputConnection;
 
-    private static class FakeWaylandChannel implements WaylandChannel {
+    private static class FakeDisplayChannel implements DisplayChannel {
         final List<InputEvent> sentEvents = new ArrayList<>();
         ConnectionState state = ConnectionState.CONNECTED;
 
@@ -63,7 +63,7 @@ public final class ImeBridgeInputConnectionTest {
 
     @Before
     public void setUp() {
-        channel = new FakeWaylandChannel();
+        channel = new FakeDisplayChannel();
         inputConnection = new ImeBridgeInputConnection(channel);
     }
 
@@ -183,7 +183,7 @@ public final class ImeBridgeInputConnectionTest {
 
     @Test public void failedChunkStopsFurtherSends() {
         final int[] sends = {0};
-        WaylandChannel failing = new FakeWaylandChannel() {
+        DisplayChannel failing = new FakeDisplayChannel() {
             @Override public boolean sendInputEvent(InputEvent event) { return ++sends[0] < 2; }
         };
         ImeBridgeInputConnection connection = new ImeBridgeInputConnection(failing);

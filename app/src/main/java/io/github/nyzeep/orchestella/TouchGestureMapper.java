@@ -3,7 +3,7 @@ package io.github.nyzeep.orchestella;
 import android.view.MotionEvent;
 import io.github.nyzeep.orchestella.runtime.contract.PointerEvent;
 import io.github.nyzeep.orchestella.runtime.contract.TouchEvent;
-import io.github.nyzeep.orchestella.runtime.contract.WaylandChannel;
+import io.github.nyzeep.orchestella.runtime.contract.DisplayChannel;
 import java.util.Objects;
 
 /**
@@ -41,7 +41,7 @@ public final class TouchGestureMapper {
     public static final double DEFAULT_DAMPING_FACTOR = 1.0;
     public static final double DEFAULT_JITTER_DEADZONE_PX = 0.5;
 
-    private WaylandChannel channel;
+    private DisplayChannel channel;
     private ViewportAspectCalculator.ViewportMapping mapping;
     private TouchMode touchMode = TouchMode.TRACKPAD;
     private double dampingFactor = DEFAULT_DAMPING_FACTOR;
@@ -84,7 +84,7 @@ public final class TouchGestureMapper {
         this.pinchListener = pinchListener;
     }
 
-    public TouchGestureMapper(WaylandChannel channel, ViewportAspectCalculator.ViewportMapping mapping) {
+    public TouchGestureMapper(DisplayChannel channel, ViewportAspectCalculator.ViewportMapping mapping) {
         this.channel = channel;
         setViewportMapping(mapping);
     }
@@ -104,11 +104,11 @@ public final class TouchGestureMapper {
         return mapping;
     }
 
-    public void setChannel(WaylandChannel channel) {
+    public void setChannel(DisplayChannel channel) {
         this.channel = channel;
     }
 
-    public WaylandChannel getChannel() {
+    public DisplayChannel getChannel() {
         return channel;
     }
 

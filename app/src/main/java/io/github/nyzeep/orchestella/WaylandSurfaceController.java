@@ -9,7 +9,7 @@ import android.os.Build;
 import android.view.Choreographer;
 import android.view.SurfaceHolder;
 import io.github.nyzeep.orchestella.runtime.contract.DisplayControl;
-import io.github.nyzeep.orchestella.runtime.contract.WaylandChannel;
+import io.github.nyzeep.orchestella.runtime.contract.DisplayChannel;
 import java.util.Locale;
 import java.util.Objects;
 
@@ -17,7 +17,8 @@ import java.util.Objects;
  * Controller and presentation coordinator decoupling Android view lifecycle, SurfaceHolder state,
  * and display mode renegotiation from the underlying Wayland graphics channel and hardware renderer.
  *
- * <p>Conforms to ADR-0017 and Ticket 39.
+ * <p>Conforms to ADR-0017 and Ticket 39. The class name is retained for historical product
+ * naming (View layer); the data channel abstraction is {@link DisplayChannel} (see ADR-0017).
  */
 public final class WaylandSurfaceController {
 
@@ -41,7 +42,7 @@ public final class WaylandSurfaceController {
      */
     public static final class HudBadgeInfo {
         private final int fps;
-        private final WaylandChannel.ConnectionState connectionState;
+        private final DisplayChannel.ConnectionState connectionState;
         private final int viewportWidth;
         private final int viewportHeight;
         private final int contentWidth;
@@ -52,7 +53,7 @@ public final class WaylandSurfaceController {
 
         public HudBadgeInfo(
                 int fps,
-                WaylandChannel.ConnectionState connectionState,
+                DisplayChannel.ConnectionState connectionState,
                 int viewportWidth,
                 int viewportHeight,
                 int contentWidth,
@@ -64,7 +65,7 @@ public final class WaylandSurfaceController {
 
         public HudBadgeInfo(
                 int fps,
-                WaylandChannel.ConnectionState connectionState,
+                DisplayChannel.ConnectionState connectionState,
                 int viewportWidth,
                 int viewportHeight,
                 int contentWidth,
@@ -91,7 +92,7 @@ public final class WaylandSurfaceController {
             return fps;
         }
 
-        public WaylandChannel.ConnectionState connectionState() {
+        public DisplayChannel.ConnectionState connectionState() {
             return connectionState;
         }
 
@@ -279,11 +280,11 @@ public final class WaylandSurfaceController {
     private LifecycleState lifecycleState = LifecycleState.RESUMED;
 
     private DisplayControl displayControl = null;
-    private WaylandChannel waylandChannel = null;
-    private WaylandChannel.StateListener channelStateListener;
-    private WaylandChannel.FrameListener channelFrameListener;
+    private DisplayChannel waylandChannel = null;
+    private DisplayChannel.StateListener channelStateListener;
+    private DisplayChannel.FrameListener channelFrameListener;
     private long bindingEpoch;
-    private WaylandChannel.ConnectionState connectionState = WaylandChannel.ConnectionState.DISCONNECTED;
+    private DisplayChannel.ConnectionState connectionState = DisplayChannel.ConnectionState.DISCONNECTED;
     private boolean isBound = false;
     private double targetScale = 1.0;
 
@@ -339,7 +340,7 @@ public final class WaylandSurfaceController {
     /**
      * Binds the Wayland channel and display control contract to this presentation controller.
      */
-    public synchronized void bind(DisplayControl displayControl, WaylandChannel waylandChannel) {
+    public synchronized void bind(DisplayControl displayControl, DisplayChannel waylandChannel) {
         if (isBound) {
             unbind();
         }
@@ -382,7 +383,7 @@ public final class WaylandSurfaceController {
         if (waylandChannel != null) {
             waylandChannel.unregisterFrameListener(channelFrameListener);
             waylandChannel.removeStateListener(channelStateListener);
-            this.connectionState = WaylandChannel.ConnectionState.DISCONNECTED;
+            this.connectionState = DisplayChannel.ConnectionState.DISCONNECTED;
         }
         channelFrameListener = null;
         channelStateListener = null;
@@ -484,12 +485,12 @@ public final class WaylandSurfaceController {
         return displayControl;
     }
 
-    public synchronized WaylandChannel getWaylandChannel() {
+    public synchronized DisplayChannel getDisplayChannel() {
         return waylandChannel;
     }
 
     public synchronized HudBadgeInfo getHudBadgeInfo() {
-        WaylandChannel.FrameData front = renderer.getFrontBuffer();
+        DisplayChannel.FrameData front = renderer.getFrontBuffer();
         int contentWidth = front != null ? front.width() : 0;
         int contentHeight = front != null ? front.height() : 0;
 

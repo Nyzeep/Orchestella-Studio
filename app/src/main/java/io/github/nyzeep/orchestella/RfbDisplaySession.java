@@ -5,7 +5,7 @@ import io.github.nyzeep.orchestella.runtime.contract.DisplayControl;
 import io.github.nyzeep.orchestella.runtime.contract.DisplayListener;
 import io.github.nyzeep.orchestella.runtime.contract.DisplayMode;
 import io.github.nyzeep.orchestella.runtime.contract.InputEvent;
-import io.github.nyzeep.orchestella.runtime.contract.WaylandChannel;
+import io.github.nyzeep.orchestella.runtime.contract.DisplayChannel;
 import io.github.nyzeep.orchestella.runtime.contract.display.RfbDisplayChannel;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -16,11 +16,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
 /**
- * The neutral RFB display session shared by QEMU and AVF: authenticated
- * CPU-copy frames plus keyboard/pointer input over an engine-supplied stream.
- * The name carries the real protocol; RFB is never presented as Wayland.
+ * The neutral RFB display session shared by QEMU and AVF, implementing {@link DisplayChannel}.
+ * The current production data plane is authenticated RFB 3.8 CPU-copy frames plus
+ * keyboard/pointer input over an engine-supplied stream (see ADR-0017); the channel
+ * abstraction stays protocol-neutral.
  */
-public final class RfbDisplaySession implements WaylandChannel, DisplayControl {
+public final class RfbDisplaySession implements DisplayChannel, DisplayControl {
     private final RfbDisplayChannel.StreamConnector connector;
     private final String token;
     private final Supplier<BridgeClient> control;

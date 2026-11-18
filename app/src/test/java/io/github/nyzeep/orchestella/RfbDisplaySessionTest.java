@@ -2,7 +2,7 @@ package io.github.nyzeep.orchestella;
 
 import static org.junit.Assert.*;
 import io.github.nyzeep.orchestella.runtime.contract.TextCommitEvent;
-import io.github.nyzeep.orchestella.runtime.contract.WaylandChannel;
+import io.github.nyzeep.orchestella.runtime.contract.DisplayChannel;
 import io.github.nyzeep.orchestella.runtime.contract.display.RfbDisplayChannel;
 import java.io.IOException;
 import java.util.concurrent.CountDownLatch;
@@ -15,7 +15,7 @@ public class RfbDisplaySessionTest {
                 "a".repeat(64), () -> null)) {
             CountDownLatch frame = new CountDownLatch(1);
             channel.registerFrameListener(ignored -> frame.countDown());
-            assertEquals(WaylandChannel.ConnectionState.DISCONNECTED, channel.state());
+            assertEquals(DisplayChannel.ConnectionState.DISCONNECTED, channel.state());
             assertFalse(channel.isConnected());
             assertFalse(frame.await(50, TimeUnit.MILLISECONDS));
             assertFalse(channel.sendInputEvent(new TextCommitEvent("guest text", 1)));
@@ -47,7 +47,7 @@ public class RfbDisplaySessionTest {
             assertTrue(channel.connect(RfbDisplayChannel.InputCapabilities.NONE));
             assertTrue("literal authenticated RFB frame must arrive", first.await(2, TimeUnit.SECONDS));
             assertFalse("retired stream must stop notifying the remaining listeners", stale.await(150, TimeUnit.MILLISECONDS));
-            assertEquals(WaylandChannel.ConnectionState.DISCONNECTED, channel.state());
+            assertEquals(DisplayChannel.ConnectionState.DISCONNECTED, channel.state());
             assertFalse(channel.connect(RfbDisplayChannel.InputCapabilities.NONE));
         }
     }
@@ -56,7 +56,7 @@ public class RfbDisplaySessionTest {
         try (RfbDisplaySession channel = new RfbDisplaySession(() -> { throw new IOException("unavailable"); },
                 "a".repeat(64), () -> null)) {
             CountDownLatch error = new CountDownLatch(1);
-            channel.addStateListener((state, message) -> { if (state == WaylandChannel.ConnectionState.ERROR) error.countDown(); });
+            channel.addStateListener((state, message) -> { if (state == DisplayChannel.ConnectionState.ERROR) error.countDown(); });
             assertTrue(channel.connect(RfbDisplayChannel.InputCapabilities.NONE));
             assertTrue(error.await(2, TimeUnit.SECONDS));
             assertFalse(channel.isConnected());

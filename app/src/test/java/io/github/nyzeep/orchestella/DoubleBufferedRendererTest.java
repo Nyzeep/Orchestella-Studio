@@ -5,7 +5,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
-import io.github.nyzeep.orchestella.runtime.contract.WaylandChannel;
+import io.github.nyzeep.orchestella.runtime.contract.DisplayChannel;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.Test;
@@ -80,8 +80,8 @@ public final class DoubleBufferedRendererTest {
         }
     }
 
-    private WaylandChannel.FrameData createFrame(int width, int height, int format, byte[] data, long frameId) {
-        return new WaylandChannel.FrameData(
+    private DisplayChannel.FrameData createFrame(int width, int height, int format, byte[] data, long frameId) {
+        return new DisplayChannel.FrameData(
                 width,
                 height,
                 width * 4,
@@ -100,7 +100,7 @@ public final class DoubleBufferedRendererTest {
         renderer.setViewportSize(1920, 1080);
 
         byte[] pixels1 = new byte[4 * 4]; // 2x2
-        WaylandChannel.FrameData frame1 = createFrame(2, 2, WaylandChannel.FrameData.FORMAT_RGBA_8888, pixels1, 101);
+        DisplayChannel.FrameData frame1 = createFrame(2, 2, DisplayChannel.FrameData.FORMAT_RGBA_8888, pixels1, 101);
 
         renderer.onFrameAvailable(frame1);
         assertTrue(renderer.hasNewFrame());
@@ -114,7 +114,7 @@ public final class DoubleBufferedRendererTest {
 
         // Frame 2
         byte[] pixels2 = new byte[4 * 4];
-        WaylandChannel.FrameData frame2 = createFrame(2, 2, WaylandChannel.FrameData.FORMAT_RGBA_8888, pixels2, 102);
+        DisplayChannel.FrameData frame2 = createFrame(2, 2, DisplayChannel.FrameData.FORMAT_RGBA_8888, pixels2, 102);
 
         renderer.onFrameAvailable(frame2);
         assertTrue(renderer.hasNewFrame());
@@ -133,7 +133,7 @@ public final class DoubleBufferedRendererTest {
         renderer.setViewportSize(1920, 1080);
 
         byte[] pixels = new byte[4 * 4];
-        renderer.onFrameAvailable(createFrame(2, 2, WaylandChannel.FrameData.FORMAT_RGBA_8888, pixels, 1));
+        renderer.onFrameAvailable(createFrame(2, 2, DisplayChannel.FrameData.FORMAT_RGBA_8888, pixels, 1));
         scheduler.triggerVsync();
         assertEquals(1, presenter.presentations.size());
 
@@ -159,10 +159,10 @@ public final class DoubleBufferedRendererTest {
         byte[] p4 = new byte[]{4, 4, 4, (byte) 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
         // Producer pushes 4 frames before VSYNC fires
-        renderer.onFrameAvailable(createFrame(2, 2, WaylandChannel.FrameData.FORMAT_RGBA_8888, p1, 1));
-        renderer.onFrameAvailable(createFrame(2, 2, WaylandChannel.FrameData.FORMAT_RGBA_8888, p2, 2));
-        renderer.onFrameAvailable(createFrame(2, 2, WaylandChannel.FrameData.FORMAT_RGBA_8888, p3, 3));
-        renderer.onFrameAvailable(createFrame(2, 2, WaylandChannel.FrameData.FORMAT_RGBA_8888, p4, 4));
+        renderer.onFrameAvailable(createFrame(2, 2, DisplayChannel.FrameData.FORMAT_RGBA_8888, p1, 1));
+        renderer.onFrameAvailable(createFrame(2, 2, DisplayChannel.FrameData.FORMAT_RGBA_8888, p2, 2));
+        renderer.onFrameAvailable(createFrame(2, 2, DisplayChannel.FrameData.FORMAT_RGBA_8888, p3, 3));
+        renderer.onFrameAvailable(createFrame(2, 2, DisplayChannel.FrameData.FORMAT_RGBA_8888, p4, 4));
 
         assertEquals(3, renderer.getDroppedFrameCount());
         assertTrue(renderer.hasNewFrame());
@@ -193,8 +193,8 @@ public final class DoubleBufferedRendererTest {
                 (byte) 255, 0, 0, (byte) 255,
                 0, (byte) 255, 0, (byte) 128
         };
-        renderer.onFrameAvailable(new WaylandChannel.FrameData(
-                1, 2, 4, WaylandChannel.FrameData.FORMAT_RGBA_8888, bytes, 1, 0));
+        renderer.onFrameAvailable(new DisplayChannel.FrameData(
+                1, 2, 4, DisplayChannel.FrameData.FORMAT_RGBA_8888, bytes, 1, 0));
         scheduler.triggerVsync();
 
         assertEquals(1, presenter.presentations.size());
@@ -214,8 +214,8 @@ public final class DoubleBufferedRendererTest {
         byte[] bytes = new byte[]{
                 (byte) 255, (byte) 128, 0, 0 // R=255, G=128, B=0, X=0
         };
-        renderer.onFrameAvailable(new WaylandChannel.FrameData(
-                1, 1, 4, WaylandChannel.FrameData.FORMAT_RGBX_8888, bytes, 1, 0));
+        renderer.onFrameAvailable(new DisplayChannel.FrameData(
+                1, 1, 4, DisplayChannel.FrameData.FORMAT_RGBX_8888, bytes, 1, 0));
         scheduler.triggerVsync();
 
         int[] pixels = presenter.presentations.get(0).pixels;
@@ -233,8 +233,8 @@ public final class DoubleBufferedRendererTest {
         byte[] bytes = new byte[]{
                 (byte) 255, 0, 0, (byte) 255
         };
-        renderer.onFrameAvailable(new WaylandChannel.FrameData(
-                1, 1, 4, WaylandChannel.FrameData.FORMAT_BGRA_8888, bytes, 1, 0));
+        renderer.onFrameAvailable(new DisplayChannel.FrameData(
+                1, 1, 4, DisplayChannel.FrameData.FORMAT_BGRA_8888, bytes, 1, 0));
         scheduler.triggerVsync();
 
         int[] pixels = presenter.presentations.get(0).pixels;
@@ -252,8 +252,8 @@ public final class DoubleBufferedRendererTest {
         byte[] bytes = new byte[]{
                 0, (byte) 255, (byte) 255, 12
         };
-        renderer.onFrameAvailable(new WaylandChannel.FrameData(
-                1, 1, 4, WaylandChannel.FrameData.FORMAT_BGRX_8888, bytes, 1, 0));
+        renderer.onFrameAvailable(new DisplayChannel.FrameData(
+                1, 1, 4, DisplayChannel.FrameData.FORMAT_BGRX_8888, bytes, 1, 0));
         scheduler.triggerVsync();
 
         int[] pixels = presenter.presentations.get(0).pixels;
@@ -273,8 +273,8 @@ public final class DoubleBufferedRendererTest {
                 0, 0, (byte) 255, (byte) 255, 88, 88, 88, 88  // row 1 + padding
         };
 
-        renderer.onFrameAvailable(new WaylandChannel.FrameData(
-                1, 2, 8, WaylandChannel.FrameData.FORMAT_RGBA_8888, bytes, 1, 0));
+        renderer.onFrameAvailable(new DisplayChannel.FrameData(
+                1, 2, 8, DisplayChannel.FrameData.FORMAT_RGBA_8888, bytes, 1, 0));
         scheduler.triggerVsync();
 
         int[] pixels = presenter.presentations.get(0).pixels;
@@ -293,8 +293,8 @@ public final class DoubleBufferedRendererTest {
 
         // Push and render 1000 frames
         for (int i = 0; i < 1000; i++) {
-            renderer.onFrameAvailable(new WaylandChannel.FrameData(
-                    64, 64, 64 * 4, WaylandChannel.FrameData.FORMAT_RGBA_8888, frameBytes, i, i * 16_666_666L));
+            renderer.onFrameAvailable(new DisplayChannel.FrameData(
+                    64, 64, 64 * 4, DisplayChannel.FrameData.FORMAT_RGBA_8888, frameBytes, i, i * 16_666_666L));
             scheduler.triggerVsync();
         }
 
@@ -310,7 +310,7 @@ public final class DoubleBufferedRendererTest {
         DoubleBufferedRenderer renderer = new DoubleBufferedRenderer(presenter, scheduler);
         int[] confirmations = {0};
         renderer.setPresentationObserver(frame -> confirmations[0]++);
-        WaylandChannel.FrameData frame = createFrame(2, 2, 1, new byte[16], 1);
+        DisplayChannel.FrameData frame = createFrame(2, 2, 1, new byte[16], 1);
         renderer.onFrameAvailable(frame);
         Runnable staleVsync = scheduler.registeredCallback;
         renderer.setActive(false);
@@ -346,8 +346,8 @@ public final class DoubleBufferedRendererTest {
 
         // Content is 1920x1080 (16:9)
         byte[] bytes = new byte[1920 * 1080 * 4];
-        renderer.onFrameAvailable(new WaylandChannel.FrameData(
-                1920, 1080, 1920 * 4, WaylandChannel.FrameData.FORMAT_RGBA_8888, bytes, 1, 0));
+        renderer.onFrameAvailable(new DisplayChannel.FrameData(
+                1920, 1080, 1920 * 4, DisplayChannel.FrameData.FORMAT_RGBA_8888, bytes, 1, 0));
         scheduler.triggerVsync();
 
         assertEquals(1, presenter.presentations.size());

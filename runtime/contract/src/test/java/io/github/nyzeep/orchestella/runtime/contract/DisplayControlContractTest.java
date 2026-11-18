@@ -216,55 +216,55 @@ public final class DisplayControlContractTest {
     }
 
     private static void waylandChannelManagesLifecycleAndStateTransitions() {
-        SimpleWaylandChannel channel = new SimpleWaylandChannel();
-        assertEquals(WaylandChannel.ConnectionState.DISCONNECTED, channel.state(), "initial state");
+        SimpleDisplayChannel channel = new SimpleDisplayChannel();
+        assertEquals(DisplayChannel.ConnectionState.DISCONNECTED, channel.state(), "initial state");
         assertFalse(channel.isConnected(), "initially not connected");
 
-        AtomicReference<WaylandChannel.ConnectionState> stateRef = new AtomicReference<>();
+        AtomicReference<DisplayChannel.ConnectionState> stateRef = new AtomicReference<>();
         AtomicReference<String> msgRef = new AtomicReference<>();
         channel.addStateListener((newState, message) -> {
             stateRef.set(newState);
             msgRef.set(message);
         });
 
-        channel.transitionTo(WaylandChannel.ConnectionState.CONNECTED, "Wayland socket connected");
-        assertEquals(WaylandChannel.ConnectionState.CONNECTED, channel.state(), "connected state");
+        channel.transitionTo(DisplayChannel.ConnectionState.CONNECTED, "Wayland socket connected");
+        assertEquals(DisplayChannel.ConnectionState.CONNECTED, channel.state(), "connected state");
         assertTrue(channel.isConnected(), "isConnected returns true");
-        assertEquals(WaylandChannel.ConnectionState.CONNECTED, stateRef.get(), "state listener notified");
+        assertEquals(DisplayChannel.ConnectionState.CONNECTED, stateRef.get(), "state listener notified");
         assertEquals("Wayland socket connected", msgRef.get(), "state listener message");
 
-        channel.transitionTo(WaylandChannel.ConnectionState.ERROR, "Transport error");
-        assertEquals(WaylandChannel.ConnectionState.ERROR, channel.state(), "error state");
+        channel.transitionTo(DisplayChannel.ConnectionState.ERROR, "Transport error");
+        assertEquals(DisplayChannel.ConnectionState.ERROR, channel.state(), "error state");
         assertFalse(channel.isConnected(), "not connected in error");
 
         channel.close();
-        assertEquals(WaylandChannel.ConnectionState.DISCONNECTED, channel.state(), "disconnected on close");
+        assertEquals(DisplayChannel.ConnectionState.DISCONNECTED, channel.state(), "disconnected on close");
     }
 
     private static void waylandChannelDispatchesFramesAndInputEvents() {
-        SimpleWaylandChannel channel = new SimpleWaylandChannel();
-        channel.transitionTo(WaylandChannel.ConnectionState.CONNECTED, "ready");
+        SimpleDisplayChannel channel = new SimpleDisplayChannel();
+        channel.transitionTo(DisplayChannel.ConnectionState.CONNECTED, "ready");
 
-        AtomicReference<WaylandChannel.FrameData> frameRef = new AtomicReference<>();
+        AtomicReference<DisplayChannel.FrameData> frameRef = new AtomicReference<>();
         channel.registerFrameListener(frameRef::set);
 
         byte[] pixels = new byte[1920 * 1080 * 4];
         pixels[0] = 1; pixels[1] = 2; pixels[2] = 3; pixels[3] = 4;
-        WaylandChannel.FrameData frame = new WaylandChannel.FrameData(
-                1920, 1080, 7680, WaylandChannel.FrameData.FORMAT_RGBA_8888, pixels, 1L, 1000000L);
+        DisplayChannel.FrameData frame = new DisplayChannel.FrameData(
+                1920, 1080, 7680, DisplayChannel.FrameData.FORMAT_RGBA_8888, pixels, 1L, 1000000L);
         channel.dispatchFrame(frame);
 
         assertEquals(1920, frameRef.get().width(), "frame width");
         assertEquals(1080, frameRef.get().height(), "frame height");
         assertEquals(7680, frameRef.get().stride(), "frame stride");
-        assertEquals(WaylandChannel.FrameData.FORMAT_RGBA_8888, frameRef.get().format(), "frame format");
+        assertEquals(DisplayChannel.FrameData.FORMAT_RGBA_8888, frameRef.get().format(), "frame format");
         assertEquals(1L, frameRef.get().frameId(), "frame index");
 
         PointerEvent event = PointerEvent.motion(100.0, 200.0, 5.0, -3.0, 5000L);
         assertTrue(channel.sendInputEvent(event), "sendInputEvent must succeed when connected");
         assertEquals(event, channel.lastInputEvent(), "channel received sent input event");
 
-        channel.transitionTo(WaylandChannel.ConnectionState.DISCONNECTED, "closed");
+        channel.transitionTo(DisplayChannel.ConnectionState.DISCONNECTED, "closed");
         assertFalse(channel.sendInputEvent(event), "sendInputEvent must fail when disconnected");
     }
 
@@ -332,7 +332,7 @@ public final class DisplayControlContractTest {
         }
     }
 
-    private static final class SimpleWaylandChannel implements WaylandChannel {
+    private static final class SimpleDisplayChannel implements DisplayChannel {
         private ConnectionState state = ConnectionState.DISCONNECTED;
         private final List<StateListener> stateListeners = new ArrayList<>();
         private final List<FrameListener> frameListeners = new ArrayList<>();

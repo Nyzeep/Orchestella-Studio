@@ -2,7 +2,7 @@ package io.github.nyzeep.orchestella.runtime.engineavf;
 
 import io.github.nyzeep.orchestella.runtime.contract.KeyEvent;
 import io.github.nyzeep.orchestella.runtime.contract.PointerEvent;
-import io.github.nyzeep.orchestella.runtime.contract.WaylandChannel;
+import io.github.nyzeep.orchestella.runtime.contract.DisplayChannel;
 import io.github.nyzeep.orchestella.runtime.contract.display.RfbDisplayChannel;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
@@ -54,7 +54,7 @@ public final class AvfRfbOverVsockTest {
             assertTrue(display.connect(), "the RFB handshake completes over vsock");
             assertTrue(firstFrame.await(2, TimeUnit.SECONDS),
                     "a literal RFB frame arrives over the vsock stream");
-            assertEquals(WaylandChannel.ConnectionState.CONNECTED, display.state(),
+            assertEquals(DisplayChannel.ConnectionState.CONNECTED, display.state(),
                     "the display is connected after a frame");
             display.close();
 

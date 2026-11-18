@@ -1,14 +1,14 @@
 package io.github.nyzeep.orchestella;
 
 import static org.junit.Assert.*;
-import io.github.nyzeep.orchestella.runtime.contract.WaylandChannel;
+import io.github.nyzeep.orchestella.runtime.contract.DisplayChannel;
 import org.junit.Test;
 
 public class DesktopPresentationGateTest {
-    private WaylandChannel.FrameData frame(int width, int height, long time) {
+    private DisplayChannel.FrameData frame(int width, int height, long time) {
         byte[] pixels = new byte[width * height * 4];
         if (pixels.length > 4) pixels[4] = (byte) 255;
-        return new WaylandChannel.FrameData(width, height, width * 4, 1, pixels, 1, time);
+        return new DisplayChannel.FrameData(width, height, width * 4, 1, pixels, 1, time);
     }
 
     @Test public void resizeRequiresFreshMatchingCaptureAndIgnoresOldCompletion() {
@@ -37,7 +37,7 @@ public class DesktopPresentationGateTest {
             placeholder[index] = 0x60; placeholder[index + 1] = 0x60; placeholder[index + 2] = 0x60;
             placeholder[index + 3] = (byte) 255;
         }
-        assertNull(gate.begin(new WaylandChannel.FrameData(2, 2, 8, 1, placeholder, 1, 101)));
+        assertNull(gate.begin(new DisplayChannel.FrameData(2, 2, 8, 1, placeholder, 1, 101)));
         assertEquals(generation, gate.begin(frame(2, 2, 102)).generation());
     }
 

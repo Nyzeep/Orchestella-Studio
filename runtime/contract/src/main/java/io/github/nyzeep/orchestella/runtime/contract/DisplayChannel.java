@@ -4,12 +4,14 @@ import java.util.Arrays;
 import java.util.Objects;
 
 /**
- * Transport-neutral abstraction for a Wayland graphics and control channel.
+ * Transport-neutral abstraction for the guest graphics output channel presented on the host
+ * (decoded frames plus guest-bound input control). The interface name does not imply a wire
+ * protocol: the current production data plane is RFB 3.8 CPU-copy (see ADR-0017).
  *
  * <p>Conforms to ADR-0002 and ADR-0017: decouples UX display rendering from whether the underlying
  * data channel is transported over UNIX LocalSockets (QEMU software mode) or vsock port 9103 (AVF hardware mode).
  */
-public interface WaylandChannel extends AutoCloseable {
+public interface DisplayChannel extends AutoCloseable {
     /** Connection lifecycle states. */
     enum ConnectionState {
         CONNECTED,

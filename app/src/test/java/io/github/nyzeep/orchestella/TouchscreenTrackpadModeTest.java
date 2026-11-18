@@ -9,7 +9,7 @@ import io.github.nyzeep.orchestella.TouchGestureMapper.TouchMode;
 import io.github.nyzeep.orchestella.runtime.contract.InputEvent;
 import io.github.nyzeep.orchestella.runtime.contract.PointerEvent;
 import io.github.nyzeep.orchestella.runtime.contract.TouchEvent;
-import io.github.nyzeep.orchestella.runtime.contract.WaylandChannel;
+import io.github.nyzeep.orchestella.runtime.contract.DisplayChannel;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.Before;
@@ -21,11 +21,11 @@ import org.junit.Test;
  */
 public final class TouchscreenTrackpadModeTest {
 
-    private FakeWaylandChannel channel;
+    private FakeDisplayChannel channel;
     private ViewportAspectCalculator.ViewportMapping mapping;
     private TouchGestureMapper mapper;
 
-    private static final class FakeWaylandChannel implements WaylandChannel {
+    private static final class FakeDisplayChannel implements DisplayChannel {
         final List<InputEvent> events = new ArrayList<>();
         ConnectionState state = ConnectionState.CONNECTED;
 
@@ -60,7 +60,7 @@ public final class TouchscreenTrackpadModeTest {
 
     @Before
     public void setUp() {
-        channel = new FakeWaylandChannel();
+        channel = new FakeDisplayChannel();
         // Content: 1920x1080, Viewport: 1920x1080 (Exact fit 1:1)
         mapping = ViewportAspectCalculator.calculate(1920, 1080, 1920, 1080);
         mapper = new TouchGestureMapper(channel, mapping);

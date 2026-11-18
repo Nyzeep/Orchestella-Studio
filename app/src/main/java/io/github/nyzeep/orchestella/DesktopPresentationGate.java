@@ -1,6 +1,6 @@
 package io.github.nyzeep.orchestella;
 
-import io.github.nyzeep.orchestella.runtime.contract.WaylandChannel;
+import io.github.nyzeep.orchestella.runtime.contract.DisplayChannel;
 
 /** Binds a successful presentation to fresh pixels of one verified guest capture generation. */
 public final class DesktopPresentationGate {
@@ -31,7 +31,7 @@ public final class DesktopPresentationGate {
         return true;
     }
 
-    public synchronized Confirmation begin(WaylandChannel.FrameData frame) {
+    public synchronized Confirmation begin(DisplayChannel.FrameData frame) {
         if (generation == null || confirmed || inFlight || frame == null || frame.timestampNs() < notBeforeNs
                 || frame.width() != width || frame.height() != height) return null;
         byte[] pixels = frame.data();

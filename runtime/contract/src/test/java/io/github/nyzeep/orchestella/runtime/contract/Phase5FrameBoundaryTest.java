@@ -6,7 +6,7 @@ import static org.junit.Assert.*;
 public class Phase5FrameBoundaryTest {
     private void rejected(int width, int height, int stride, int format, byte[] bytes) {
         try {
-            new WaylandChannel.FrameData(width, height, stride, format, bytes, 1, 1);
+            new DisplayChannel.FrameData(width, height, stride, format, bytes, 1, 1);
             fail("untrusted frame was accepted");
         } catch (IllegalArgumentException expected) { }
     }
@@ -24,7 +24,7 @@ public class Phase5FrameBoundaryTest {
     @Test public void preservesValidPaddedRowsAndOwnsItsPixels() {
         byte[] pixels = new byte[24];
         pixels[8] = 21;
-        WaylandChannel.FrameData frame = new WaylandChannel.FrameData(2, 2, 12, 3, pixels, 1, 1);
+        DisplayChannel.FrameData frame = new DisplayChannel.FrameData(2, 2, 12, 3, pixels, 1, 1);
         pixels[8] = 31;
         assertEquals(21, frame.data()[8]);
         byte[] copy = frame.data();

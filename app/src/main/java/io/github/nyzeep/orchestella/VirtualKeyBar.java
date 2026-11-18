@@ -2,7 +2,7 @@ package io.github.nyzeep.orchestella;
 
 import io.github.nyzeep.orchestella.ModifierKeyStateMachine.ModifierKey;
 import io.github.nyzeep.orchestella.runtime.contract.KeyEvent;
-import io.github.nyzeep.orchestella.runtime.contract.WaylandChannel;
+import io.github.nyzeep.orchestella.runtime.contract.DisplayChannel;
 import java.util.Objects;
 
 /**
@@ -12,7 +12,7 @@ import java.util.Objects;
  * <ul>
  *   <li>Coordinates Esc, Tab, Ctrl, Alt, Shift, Super, Arrow keys (↑, ↓, ←, →);</li>
  *   <li>Integrates with {@link ModifierKeyStateMachine} for latching and locking;</li>
- *   <li>Dispatches serialized {@link KeyEvent} pairs (press + release) to {@link WaylandChannel};</li>
+ *   <li>Dispatches serialized {@link KeyEvent} pairs (press + release) to {@link DisplayChannel};</li>
  *   <li>Supports toggling the Android host soft keyboard.</li>
  * </ul>
  */
@@ -23,24 +23,24 @@ public final class VirtualKeyBar {
         void onToggleSoftKeyboard();
     }
 
-    private WaylandChannel channel;
+    private DisplayChannel channel;
     private final ModifierKeyStateMachine stateMachine;
     private SoftKeyboardToggleListener keyboardToggleListener;
 
-    public VirtualKeyBar(WaylandChannel channel) {
+    public VirtualKeyBar(DisplayChannel channel) {
         this(channel, new ModifierKeyStateMachine());
     }
 
-    public VirtualKeyBar(WaylandChannel channel, ModifierKeyStateMachine stateMachine) {
+    public VirtualKeyBar(DisplayChannel channel, ModifierKeyStateMachine stateMachine) {
         this.channel = channel;
         this.stateMachine = Objects.requireNonNull(stateMachine, "stateMachine");
     }
 
-    public void setChannel(WaylandChannel channel) {
+    public void setChannel(DisplayChannel channel) {
         this.channel = channel;
     }
 
-    public WaylandChannel getChannel() {
+    public DisplayChannel getChannel() {
         return channel;
     }
 

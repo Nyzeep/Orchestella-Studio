@@ -8,7 +8,7 @@ import io.github.nyzeep.orchestella.ModifierKeyStateMachine.ModifierKey;
 import io.github.nyzeep.orchestella.ModifierKeyStateMachine.ModifierState;
 import io.github.nyzeep.orchestella.runtime.contract.InputEvent;
 import io.github.nyzeep.orchestella.runtime.contract.KeyEvent;
-import io.github.nyzeep.orchestella.runtime.contract.WaylandChannel;
+import io.github.nyzeep.orchestella.runtime.contract.DisplayChannel;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.Before;
@@ -20,12 +20,12 @@ import org.junit.Test;
  */
 public final class VirtualKeyBarTest {
 
-    private FakeWaylandChannel channel;
+    private FakeDisplayChannel channel;
     private ModifierKeyStateMachine stateMachine;
     private VirtualKeyBar keyBar;
     private boolean keyboardToggled;
 
-    private static final class FakeWaylandChannel implements WaylandChannel {
+    private static final class FakeDisplayChannel implements DisplayChannel {
         final List<InputEvent> events = new ArrayList<>();
         ConnectionState state = ConnectionState.CONNECTED;
 
@@ -60,7 +60,7 @@ public final class VirtualKeyBarTest {
 
     @Before
     public void setUp() {
-        channel = new FakeWaylandChannel();
+        channel = new FakeDisplayChannel();
         stateMachine = new ModifierKeyStateMachine();
         keyBar = new VirtualKeyBar(channel, stateMachine);
         keyboardToggled = false;

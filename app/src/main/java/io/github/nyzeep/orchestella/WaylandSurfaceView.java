@@ -10,7 +10,7 @@ import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
 import io.github.nyzeep.orchestella.peripherals.PointerCaptureHandler;
 import io.github.nyzeep.orchestella.runtime.contract.DisplayControl;
-import io.github.nyzeep.orchestella.runtime.contract.WaylandChannel;
+import io.github.nyzeep.orchestella.runtime.contract.DisplayChannel;
 
 /**
  * Custom SurfaceView widget presenting high-performance Wayland compositor graphics.
@@ -22,6 +22,9 @@ import io.github.nyzeep.orchestella.runtime.contract.WaylandChannel;
  *   <li>Delegates dynamic resolution renegotiation to {@link DisplayControl};</li>
  *   <li>Integrates with Activity foreground/background lifecycle.</li>
  * </ul>
+ *
+ * <p>The class name is retained for historical product naming (View layer); the data channel
+ * it consumes is {@link DisplayChannel} (see ADR-0017).
  */
 public class WaylandSurfaceView extends SurfaceView implements SurfaceHolder.Callback {
 
@@ -29,12 +32,12 @@ public class WaylandSurfaceView extends SurfaceView implements SurfaceHolder.Cal
     private TouchGestureMapper touchGestureMapper;
     private ImeBridgeInputConnection imeBridge;
     private PointerCaptureHandler pointerCaptureHandler;
-    private volatile WaylandChannel boundChannel;
-    private WaylandChannel.FrameListener sizeObserver;
+    private volatile DisplayChannel boundChannel;
+    private DisplayChannel.FrameListener sizeObserver;
     private final java.util.concurrent.atomic.AtomicBoolean mappingPending = new java.util.concurrent.atomic.AtomicBoolean();
     private volatile int pendingWidth, pendingHeight;
 
-    private void updateFrameSize(int frameWidth, int frameHeight, WaylandChannel expected) {
+    private void updateFrameSize(int frameWidth, int frameHeight, DisplayChannel expected) {
         if (boundChannel != expected || pendingWidth == frameWidth && pendingHeight == frameHeight) return;
         pendingWidth = frameWidth;
         pendingHeight = frameHeight;
@@ -127,7 +130,7 @@ public class WaylandSurfaceView extends SurfaceView implements SurfaceHolder.Cal
         this.pointerCaptureHandler = pointerCaptureHandler;
     }
 
-    public void bind(DisplayControl displayControl, WaylandChannel waylandChannel) {
+    public void bind(DisplayControl displayControl, DisplayChannel waylandChannel) {
         if (waylandChannel == null) { unbind(); return; }
         if (imeBridge != null) imeBridge.closeConnection();
         if (boundChannel != null) boundChannel.unregisterFrameListener(sizeObserver);

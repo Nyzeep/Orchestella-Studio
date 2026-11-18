@@ -5,7 +5,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract;
-import io.github.nyzeep.orchestella.runtime.contract.WaylandChannel;
+import io.github.nyzeep.orchestella.runtime.contract.DisplayChannel;
 import org.junit.Test;
 
 /**
@@ -34,9 +34,9 @@ public final class DesktopHudFormatterTest {
 
     @Test
     public void testFormatConnectionState() {
-        assertEquals("CONNECTED", DesktopHudFormatter.formatConnectionState(WaylandChannel.ConnectionState.CONNECTED));
-        assertEquals("DISCONNECTED", DesktopHudFormatter.formatConnectionState(WaylandChannel.ConnectionState.DISCONNECTED));
-        assertEquals("ERROR", DesktopHudFormatter.formatConnectionState(WaylandChannel.ConnectionState.ERROR));
+        assertEquals("CONNECTED", DesktopHudFormatter.formatConnectionState(DisplayChannel.ConnectionState.CONNECTED));
+        assertEquals("DISCONNECTED", DesktopHudFormatter.formatConnectionState(DisplayChannel.ConnectionState.DISCONNECTED));
+        assertEquals("ERROR", DesktopHudFormatter.formatConnectionState(DisplayChannel.ConnectionState.ERROR));
         assertEquals("DISCONNECTED", DesktopHudFormatter.formatConnectionState(null));
     }
 
@@ -62,7 +62,7 @@ public final class DesktopHudFormatterTest {
     public void testFormatExpandedComposite() {
         String formatted = DesktopHudFormatter.formatExpanded(
                 60, 1920, 1080, 1.0,
-                WaylandChannel.ConnectionState.CONNECTED,
+                DisplayChannel.ConnectionState.CONNECTED,
                 "Wayland 原生通道（共享内存）"
         );
         assertEquals("60 FPS | 1920x1080 @ 1.0x | CONNECTED | Wayland 原生通道（共享内存）", formatted);
@@ -71,12 +71,12 @@ public final class DesktopHudFormatterTest {
     @Test
     public void testFormatCollapsedComposite() {
         String formatted = DesktopHudFormatter.formatCollapsed(
-                60, WaylandChannel.ConnectionState.CONNECTED
+                60, DisplayChannel.ConnectionState.CONNECTED
         );
         assertEquals("60 FPS | CONNECTED", formatted);
 
         String disconnected = DesktopHudFormatter.formatCollapsed(
-                0, WaylandChannel.ConnectionState.DISCONNECTED
+                0, DisplayChannel.ConnectionState.DISCONNECTED
         );
         assertEquals("0 FPS | DISCONNECTED", disconnected);
     }
@@ -85,7 +85,7 @@ public final class DesktopHudFormatterTest {
     public void testFormatFromBadgeInfo() {
         WaylandSurfaceController.HudBadgeInfo info = new WaylandSurfaceController.HudBadgeInfo(
                 60,
-                WaylandChannel.ConnectionState.CONNECTED,
+                DisplayChannel.ConnectionState.CONNECTED,
                 1080,
                 2400,
                 1920,
@@ -104,7 +104,7 @@ public final class DesktopHudFormatterTest {
 
         WaylandSurfaceController.HudBadgeInfo scaledInfo = new WaylandSurfaceController.HudBadgeInfo(
                 60,
-                WaylandChannel.ConnectionState.CONNECTED,
+                DisplayChannel.ConnectionState.CONNECTED,
                 1264,
                 2736,
                 1264,

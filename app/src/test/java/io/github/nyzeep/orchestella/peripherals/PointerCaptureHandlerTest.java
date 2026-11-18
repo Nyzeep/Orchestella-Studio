@@ -7,7 +7,7 @@ import static org.junit.Assert.assertTrue;
 
 import io.github.nyzeep.orchestella.runtime.contract.InputEvent;
 import io.github.nyzeep.orchestella.runtime.contract.PointerEvent;
-import io.github.nyzeep.orchestella.runtime.contract.WaylandChannel;
+import io.github.nyzeep.orchestella.runtime.contract.DisplayChannel;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.Before;
@@ -17,15 +17,15 @@ import org.junit.Test;
  * Unit tests for PointerCaptureHandler:
  * - requestCapture / releaseCapture lifecycle
  * - Automatic cursor hiding (TYPE_NULL) and restoration
- * - Captured relative motion dispatched to WaylandChannel
- * - Captured scroll wheel dispatched to WaylandChannel
+ * - Captured relative motion dispatched to DisplayChannel
+ * - Captured scroll wheel dispatched to DisplayChannel
  * - Ctrl + Alt shortcut triggers deterministic release
  * - Capture state change listener notifications
  */
 public final class PointerCaptureHandlerTest {
 
     private FakeViewSeam viewSeam;
-    private FakeWaylandChannel waylandChannel;
+    private FakeDisplayChannel waylandChannel;
     private PointerCaptureHandler handler;
     private final List<Boolean> stateHistory = new ArrayList<>();
 
@@ -63,7 +63,7 @@ public final class PointerCaptureHandlerTest {
         }
     }
 
-    private static final class FakeWaylandChannel implements WaylandChannel {
+    private static final class FakeDisplayChannel implements DisplayChannel {
         final List<InputEvent> events = new ArrayList<>();
         ConnectionState state = ConnectionState.CONNECTED;
 
@@ -99,7 +99,7 @@ public final class PointerCaptureHandlerTest {
     @Before
     public void setUp() {
         viewSeam = new FakeViewSeam();
-        waylandChannel = new FakeWaylandChannel();
+        waylandChannel = new FakeDisplayChannel();
         stateHistory.clear();
 
         handler = new PointerCaptureHandler(viewSeam, waylandChannel::sendInputEvent);

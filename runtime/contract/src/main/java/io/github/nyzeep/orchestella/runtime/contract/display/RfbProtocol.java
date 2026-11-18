@@ -1,6 +1,6 @@
 package io.github.nyzeep.orchestella.runtime.contract.display;
 
-import io.github.nyzeep.orchestella.runtime.contract.WaylandChannel.FrameData;
+import io.github.nyzeep.orchestella.runtime.contract.DisplayChannel.FrameData;
 import java.io.DataInputStream;
 import java.io.EOFException;
 import java.io.IOException;

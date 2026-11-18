@@ -1,7 +1,7 @@
 package io.github.nyzeep.orchestella.runtime.contract.display;
 
 import io.github.nyzeep.orchestella.runtime.contract.InputEvent;
-import io.github.nyzeep.orchestella.runtime.contract.WaylandChannel;
+import io.github.nyzeep.orchestella.runtime.contract.DisplayChannel;
 import java.io.DataInputStream;
 import java.io.EOFException;
 import java.io.FilterInputStream;
@@ -36,7 +36,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * Closing the supplied transport MUST unblock both stream operations. A connector must honor
  * interruption or impose its own connection timeout; cancellation closes a late returned transport.
  */
-public final class RfbDisplayChannel implements WaylandChannel {
+public final class RfbDisplayChannel implements DisplayChannel {
     private static final int HISTORY_LIMIT = 64;
     private final Object lifecycle = new Object();
     private final StreamConnector connector;

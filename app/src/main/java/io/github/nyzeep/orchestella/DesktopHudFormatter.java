@@ -1,7 +1,7 @@
 package io.github.nyzeep.orchestella;
 
 import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract;
-import io.github.nyzeep.orchestella.runtime.contract.WaylandChannel;
+import io.github.nyzeep.orchestella.runtime.contract.DisplayChannel;
 import java.util.Locale;
 
 /**
@@ -35,9 +35,9 @@ public final class DesktopHudFormatter {
     /**
      * Formats connection lifecycle state into display badge text.
      */
-    public static String formatConnectionState(WaylandChannel.ConnectionState state) {
+    public static String formatConnectionState(DisplayChannel.ConnectionState state) {
         if (state == null) {
-            return WaylandChannel.ConnectionState.DISCONNECTED.name();
+            return DisplayChannel.ConnectionState.DISCONNECTED.name();
         }
         return state.name();
     }
@@ -70,7 +70,7 @@ public final class DesktopHudFormatter {
             int width,
             int height,
             double scale,
-            WaylandChannel.ConnectionState state,
+            DisplayChannel.ConnectionState state,
             String graphicsBadge) {
         return String.format(
                 Locale.ROOT,
@@ -88,7 +88,7 @@ public final class DesktopHudFormatter {
             WaylandSurfaceController.HudBadgeInfo info,
             FullLinuxContract.CapabilityMatrix matrix) {
         if (info == null) {
-            return formatExpanded(0, 0, 0, 1.0, WaylandChannel.ConnectionState.DISCONNECTED, formatBadge(matrix));
+            return formatExpanded(0, 0, 0, 1.0, DisplayChannel.ConnectionState.DISCONNECTED, formatBadge(matrix));
         }
         int w = info.contentWidth() > 0 ? info.contentWidth() : info.viewportWidth();
         int h = info.contentHeight() > 0 ? info.contentHeight() : info.viewportHeight();
@@ -99,7 +99,7 @@ public final class DesktopHudFormatter {
     /**
      * Formats compact/collapsed HUD badge text to minimize screen obstruction.
      */
-    public static String formatCollapsed(int fps, WaylandChannel.ConnectionState state) {
+    public static String formatCollapsed(int fps, DisplayChannel.ConnectionState state) {
         return String.format(
                 Locale.ROOT,
                 "%s | %s",
@@ -112,7 +112,7 @@ public final class DesktopHudFormatter {
      */
     public static String formatCollapsed(WaylandSurfaceController.HudBadgeInfo info) {
         if (info == null) {
-            return formatCollapsed(0, WaylandChannel.ConnectionState.DISCONNECTED);
+            return formatCollapsed(0, DisplayChannel.ConnectionState.DISCONNECTED);
         }
         return formatCollapsed(info.fps(), info.connectionState());
     }

@@ -2,7 +2,7 @@ package io.github.nyzeep.orchestella.runtime.contract.display;
 
 import static org.junit.Assert.*;
 
-import io.github.nyzeep.orchestella.runtime.contract.WaylandChannel;
+import io.github.nyzeep.orchestella.runtime.contract.DisplayChannel;
 import io.github.nyzeep.orchestella.runtime.contract.KeyEvent;
 import io.github.nyzeep.orchestella.runtime.contract.TextCommitEvent;
 import io.github.nyzeep.orchestella.runtime.contract.PointerEvent;
@@ -31,19 +31,19 @@ public final class RfbDisplayChannelTest {
         try (Wire wire = new Wire()) {
             assertTrue(wire.channel.connect());
             wire.handshake(2, 1);
-            assertEquals(WaylandChannel.ConnectionState.DISCONNECTED, wire.channel.state());
+            assertEquals(DisplayChannel.ConnectionState.DISCONNECTED, wire.channel.state());
             assertEquals(0, wire.channel.statistics().frames());
             wire.expectRequest(false, 2, 1);
             wire.raw(0, 0, 2, 1, new byte[] {0, 0, (byte) 255, 0, 0, (byte) 255, 0, 0});
-            WaylandChannel.FrameData frame = wire.frame();
-            assertEquals(WaylandChannel.ConnectionState.CONNECTED, wire.channel.state());
+            DisplayChannel.FrameData frame = wire.frame();
+            assertEquals(DisplayChannel.ConnectionState.CONNECTED, wire.channel.state());
             assertEquals(2, frame.width());
             assertEquals(8, frame.stride());
-            assertEquals(WaylandChannel.FrameData.FORMAT_RGBA_8888, frame.format());
+            assertEquals(DisplayChannel.FrameData.FORMAT_RGBA_8888, frame.format());
             assertArrayEquals(new byte[] {(byte) 255, 0, 0, (byte) 255, 0, (byte) 255, 0, (byte) 255}, frame.data());
             wire.expectRequest(true, 2, 1);
             wire.raw(1, 0, 1, 1, new byte[] {(byte) 255, 0, 0, 0});
-            WaylandChannel.FrameData changed = wire.frame();
+            DisplayChannel.FrameData changed = wire.frame();
             assertArrayEquals(new byte[] {(byte) 255, 0, 0, (byte) 255, 0, 0, (byte) 255, (byte) 255}, changed.data());
             assertTrue(changed.frameId() > frame.frameId());
             assertEquals(2, wire.channel.statistics().frames());
@@ -99,7 +99,7 @@ public final class RfbDisplayChannelTest {
             wire.expectRequest(false, 2, 1);
             wire.raw(0, 0, 1, 1, new byte[] {0, 0, (byte) 255, 0});
             wire.expectRequest(false, 2, 1);
-            assertEquals(WaylandChannel.ConnectionState.DISCONNECTED, wire.channel.state());
+            assertEquals(DisplayChannel.ConnectionState.DISCONNECTED, wire.channel.state());
             assertTrue(wire.frames.isEmpty());
             wire.raw(1, 0, 1, 1, new byte[] {0, (byte) 255, 0, 0});
             wire.frame();
@@ -108,10 +108,10 @@ public final class RfbDisplayChannelTest {
             wire.rectangle(0, 0, 1, 2, -223);
             wire.out.flush();
             wire.expectRequest(false, 1, 2);
-            assertEquals(WaylandChannel.ConnectionState.DISCONNECTED, wire.channel.state());
+            assertEquals(DisplayChannel.ConnectionState.DISCONNECTED, wire.channel.state());
             assertTrue(wire.frames.isEmpty());
             wire.raw(0, 0, 1, 2, new byte[] {(byte) 255, 0, 0, 0, (byte) 255, (byte) 255, (byte) 255, 0});
-            WaylandChannel.FrameData resized = wire.frame();
+            DisplayChannel.FrameData resized = wire.frame();
             assertEquals(1, resized.width());
             assertEquals(2, resized.height());
             assertArrayEquals(new byte[] {0, 0, (byte) 255, (byte) 255, (byte) 255, (byte) 255, (byte) 255, (byte) 255}, resized.data());
@@ -252,18 +252,18 @@ public final class RfbDisplayChannelTest {
                 Wire target = opens.getAndIncrement() == 0 ? first : second;
                 return new RfbDisplayChannel.Streams(target.clientInput, target.clientOutput);
             }, TOKEN)) {
-                BlockingQueue<WaylandChannel.ConnectionState> states = new LinkedBlockingQueue<>();
+                BlockingQueue<DisplayChannel.ConnectionState> states = new LinkedBlockingQueue<>();
                 channel.addStateListener((state, detail) -> states.add(state));
                 channel.registerFrameListener(first.frames::add);
                 channel.connect(); first.handshake(1, 1); first.expectRequest(false, 1, 1);
                 first.raw(0, 0, 1, 1, new byte[] {0, 0, (byte) 255, 0});
                 long id = first.frame().frameId(); first.expectRequest(true, 1, 1);
                 first.serverOutput.close();
-                WaylandChannel.ConnectionState observed;
+                DisplayChannel.ConnectionState observed;
                 do {
                     observed = states.poll(1, TimeUnit.SECONDS);
                     assertNotNull("EOF did not produce an error", observed);
-                } while (observed != WaylandChannel.ConnectionState.ERROR);
+                } while (observed != DisplayChannel.ConnectionState.ERROR);
                 assertEquals(1, opens.get());
                 assertTrue(channel.reconnect());
                 assertFalse(channel.connect());
@@ -272,9 +272,9 @@ public final class RfbDisplayChannelTest {
                 assertTrue(first.frames.isEmpty());
                 second.raw(0, 0, 1, 1, new byte[] {(byte) 255, 0, 0, 0});
                 assertTrue(first.frame().frameId() > id);
-                assertTrue(channel.history().stream().anyMatch(change -> change.state() == WaylandChannel.ConnectionState.ERROR));
+                assertTrue(channel.history().stream().anyMatch(change -> change.state() == DisplayChannel.ConnectionState.ERROR));
                 channel.close(); channel.close();
-                assertEquals(WaylandChannel.ConnectionState.DISCONNECTED, channel.state());
+                assertEquals(DisplayChannel.ConnectionState.DISCONNECTED, channel.state());
             }
         }
     }
@@ -291,7 +291,7 @@ public final class RfbDisplayChannelTest {
         try (Wire wire = new Wire()) {
             wire.channel.addStateListener((state, detail) -> wire.channel.close());
             wire.channel.connect();
-            assertEquals(WaylandChannel.ConnectionState.DISCONNECTED, wire.channel.state());
+            assertEquals(DisplayChannel.ConnectionState.DISCONNECTED, wire.channel.state());
         }
     }
 
@@ -379,7 +379,7 @@ public final class RfbDisplayChannelTest {
             assertEquals(0, wire.in.available()); // next request waits for consumer; no frame queue
             release.countDown(); wire.expectRequest(true, 1, 1);
             assertEquals(1, wire.channel.statistics().listenerFailures());
-            assertEquals(WaylandChannel.ConnectionState.CONNECTED, wire.channel.state());
+            assertEquals(DisplayChannel.ConnectionState.CONNECTED, wire.channel.state());
         }
     }
 
@@ -391,7 +391,7 @@ public final class RfbDisplayChannelTest {
             byte[] row = new byte[16384]; row[2] = (byte) 255;
             for (int y = 0; y < 1024; y++) { wire.out.write(row); }
             wire.out.flush();
-            WaylandChannel.FrameData frame = wire.frame();
+            DisplayChannel.FrameData frame = wire.frame();
             assertEquals(16_777_216, frame.data().length);
             assertEquals(16_777_216, wire.channel.statistics().pixelBytes());
             wire.expectRequest(true, 4096, 1024);
@@ -411,7 +411,7 @@ public final class RfbDisplayChannelTest {
             // Drain prior notifications, then allow a genuinely idle desktop without a timeout.
             wire.states.clear();
             assertNull(wire.states.poll(150, TimeUnit.MILLISECONDS));
-            assertEquals(WaylandChannel.ConnectionState.CONNECTED, wire.channel.state());
+            assertEquals(DisplayChannel.ConnectionState.CONNECTED, wire.channel.state());
             wire.out.write(new byte[] {0, 0, 0, 1}); wire.rectangle(0, 0, 1, 1, 0);
             wire.out.writeByte(0); wire.out.flush(); // truncated, but deliberately keeps the pipe open
             wire.error("update timed out");
@@ -469,7 +469,7 @@ public final class RfbDisplayChannelTest {
         static final byte[] FORMAT = {32, 24, 0, 1, 0, (byte) 255, 0, (byte) 255, 0, (byte) 255, 16, 8, 0, 0, 0, 0};
         final DataInputStream in = new DataInputStream(serverInput);
         final DataOutputStream out = new DataOutputStream(serverOutput);
-        final BlockingQueue<WaylandChannel.FrameData> frames = new LinkedBlockingQueue<>();
+        final BlockingQueue<DisplayChannel.FrameData> frames = new LinkedBlockingQueue<>();
         final RfbDisplayChannel channel;
 
         Wire() throws IOException {
@@ -491,9 +491,9 @@ public final class RfbDisplayChannelTest {
             do {
                 change = states.poll(2, TimeUnit.SECONDS);
                 assertNotNull("missing error: " + channel.message(), change);
-            } while (change.state() != WaylandChannel.ConnectionState.ERROR);
+            } while (change.state() != DisplayChannel.ConnectionState.ERROR);
             assertTrue(change.message(), change.message().contains(expected));
-            assertEquals(WaylandChannel.ConnectionState.ERROR, channel.state());
+            assertEquals(DisplayChannel.ConnectionState.ERROR, channel.state());
         }
 
         void key(boolean down, int keysym) throws IOException {
@@ -582,8 +582,8 @@ public final class RfbDisplayChannelTest {
             out.writeInt(encoding);
         }
 
-        WaylandChannel.FrameData frame() throws InterruptedException {
-            WaylandChannel.FrameData result = frames.poll(2, TimeUnit.SECONDS);
+        DisplayChannel.FrameData frame() throws InterruptedException {
+            DisplayChannel.FrameData result = frames.poll(2, TimeUnit.SECONDS);
             assertNotNull("frame missing: " + channel.message(), result);
             return result;
         }

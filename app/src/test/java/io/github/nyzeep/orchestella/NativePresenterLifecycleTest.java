@@ -7,7 +7,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import android.view.SurfaceHolder;
-import io.github.nyzeep.orchestella.runtime.contract.WaylandChannel;
+import io.github.nyzeep.orchestella.runtime.contract.DisplayChannel;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -58,14 +58,14 @@ public final class NativePresenterLifecycleTest {
         assertEquals(1, nativeAdapter.destroyCalls);
     }
 
-    private WaylandChannel.FrameData coloredFrame() {
+    private DisplayChannel.FrameData coloredFrame() {
         byte[] pixels = {
                 (byte) 255, 0, 0, (byte) 255,
                 0, (byte) 255, 0, (byte) 255,
                 0, 0, (byte) 255, (byte) 255,
                 (byte) 255, (byte) 255, 0, (byte) 255
         };
-        return new WaylandChannel.FrameData(2, 2, 8, WaylandChannel.FrameData.FORMAT_RGBA_8888, pixels, 1, 0);
+        return new DisplayChannel.FrameData(2, 2, 8, DisplayChannel.FrameData.FORMAT_RGBA_8888, pixels, 1, 0);
     }
 
     @Test public void testDoubleBufferedRendererEndToEndPresentation() {

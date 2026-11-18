@@ -7,7 +7,7 @@ import android.view.PointerIcon;
 import android.view.View;
 import io.github.nyzeep.orchestella.runtime.contract.InputEvent;
 import io.github.nyzeep.orchestella.runtime.contract.PointerEvent;
-import io.github.nyzeep.orchestella.runtime.contract.WaylandChannel;
+import io.github.nyzeep.orchestella.runtime.contract.DisplayChannel;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -62,16 +62,16 @@ public class PointerCaptureHandler {
     }
 
     /**
-     * Constructs a handler for an Android View and strategy-neutral WaylandChannel.
+     * Constructs a handler for an Android View and strategy-neutral DisplayChannel.
      */
-    public PointerCaptureHandler(View view, WaylandChannel waylandChannel) {
+    public PointerCaptureHandler(View view, DisplayChannel waylandChannel) {
         attach(view, waylandChannel);
     }
 
     /**
-     * Attaches an Android View and WaylandChannel to this handler.
+     * Attaches an Android View and DisplayChannel to this handler.
      */
-    public void attach(View view, WaylandChannel waylandChannel) {
+    public void attach(View view, DisplayChannel waylandChannel) {
         if (view != null) {
             this.viewSeam = new AndroidViewPointerCaptureSeam(view);
         }

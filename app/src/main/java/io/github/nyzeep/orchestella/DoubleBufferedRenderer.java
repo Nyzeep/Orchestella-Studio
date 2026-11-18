@@ -1,6 +1,6 @@
 package io.github.nyzeep.orchestella;
 
-import io.github.nyzeep.orchestella.runtime.contract.WaylandChannel;
+import io.github.nyzeep.orchestella.runtime.contract.DisplayChannel;
 import java.util.Objects;
 
 /**
@@ -15,8 +15,11 @@ import java.util.Objects;
  *   <li>Drops stale intermediate frames if production outpaces presentation;</li>
  *   <li>Bounded reusable pixel buffers to prevent memory leaks and GC pressure.</li>
  * </ul>
+ *
+ * <p>The class name is retained for historical product naming (View layer); the frame data it
+ * renders is {@link DisplayChannel.FrameData} (see ADR-0017).
  */
-public class DoubleBufferedRenderer implements WaylandChannel.FrameListener {
+public class DoubleBufferedRenderer implements DisplayChannel.FrameListener {
 
     /**
      * Strategy-neutral seam for actual presentation to the underlying surface (Hardware Canvas / GLES).
@@ -46,8 +49,8 @@ public class DoubleBufferedRenderer implements WaylandChannel.FrameListener {
     private int viewportHeight = 1080;
 
     // Buffer slots for double-buffering ping-pong
-    private WaylandChannel.FrameData backBuffer = null;
-    private WaylandChannel.FrameData frontBuffer = null;
+    private DisplayChannel.FrameData backBuffer = null;
+    private DisplayChannel.FrameData frontBuffer = null;
     private boolean hasNewFrame = false;
 
     // Pre-allocated reusable int[] pixel buffers to avoid GC allocations during 60 FPS streaming
@@ -67,9 +70,9 @@ public class DoubleBufferedRenderer implements WaylandChannel.FrameListener {
     private boolean isVsyncRequested = false;
     private boolean active = true;
     private boolean released;
-    private java.util.function.Consumer<WaylandChannel.FrameData> presentationObserver;
+    private java.util.function.Consumer<DisplayChannel.FrameData> presentationObserver;
 
-    public synchronized void setPresentationObserver(java.util.function.Consumer<WaylandChannel.FrameData> observer) {
+    public synchronized void setPresentationObserver(java.util.function.Consumer<DisplayChannel.FrameData> observer) {
         presentationObserver = observer;
     }
 
@@ -106,7 +109,7 @@ public class DoubleBufferedRenderer implements WaylandChannel.FrameListener {
      * Enqueues into back-buffer; if previous back-buffer was unconsumed, discards it to prevent latency.
      */
     @Override
-    public synchronized void onFrameAvailable(WaylandChannel.FrameData frame) {
+    public synchronized void onFrameAvailable(DisplayChannel.FrameData frame) {
         if (frame == null || !active || released) {
             return;
         }
@@ -189,7 +192,7 @@ public class DoubleBufferedRenderer implements WaylandChannel.FrameListener {
     /**
      * Unpacks raw FrameData byte array into 32-bit packed ARGB integers (0xAARRGGBB).
      */
-    private static void unpackFrameData(WaylandChannel.FrameData frame, int[] outPixels) {
+    private static void unpackFrameData(DisplayChannel.FrameData frame, int[] outPixels) {
         int width = frame.width();
         int height = frame.height();
         int stride = frame.stride();
@@ -210,19 +213,19 @@ public class DoubleBufferedRenderer implements WaylandChannel.FrameListener {
 
                 int argb;
                 switch (format) {
-                    case WaylandChannel.FrameData.FORMAT_RGBA_8888:
+                    case DisplayChannel.FrameData.FORMAT_RGBA_8888:
                         // b0=R, b1=G, b2=B, b3=A
                         argb = (b3 << 24) | (b0 << 16) | (b1 << 8) | b2;
                         break;
-                    case WaylandChannel.FrameData.FORMAT_RGBX_8888:
+                    case DisplayChannel.FrameData.FORMAT_RGBX_8888:
                         // b0=R, b1=G, b2=B, b3=X (force A=0xFF)
                         argb = (0xFF << 24) | (b0 << 16) | (b1 << 8) | b2;
                         break;
-                    case WaylandChannel.FrameData.FORMAT_BGRA_8888:
+                    case DisplayChannel.FrameData.FORMAT_BGRA_8888:
                         // b0=B, b1=G, b2=R, b3=A
                         argb = (b3 << 24) | (b2 << 16) | (b1 << 8) | b0;
                         break;
-                    case WaylandChannel.FrameData.FORMAT_BGRX_8888:
+                    case DisplayChannel.FrameData.FORMAT_BGRX_8888:
                         // b0=B, b1=G, b2=R, b3=X (force A=0xFF)
                         argb = (0xFF << 24) | (b2 << 16) | (b1 << 8) | b0;
                         break;
@@ -255,11 +258,11 @@ public class DoubleBufferedRenderer implements WaylandChannel.FrameListener {
         return hasNewFrame;
     }
 
-    public synchronized WaylandChannel.FrameData getFrontBuffer() {
+    public synchronized DisplayChannel.FrameData getFrontBuffer() {
         return frontBuffer;
     }
 
-    public synchronized WaylandChannel.FrameData getBackBuffer() {
+    public synchronized DisplayChannel.FrameData getBackBuffer() {
         return backBuffer;
     }
 

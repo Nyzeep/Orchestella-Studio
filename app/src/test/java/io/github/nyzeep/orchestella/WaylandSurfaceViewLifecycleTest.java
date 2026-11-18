@@ -10,7 +10,7 @@ import io.github.nyzeep.orchestella.runtime.contract.DisplayControl;
 import io.github.nyzeep.orchestella.runtime.contract.DisplayListener;
 import io.github.nyzeep.orchestella.runtime.contract.DisplayMode;
 import io.github.nyzeep.orchestella.runtime.contract.InputEvent;
-import io.github.nyzeep.orchestella.runtime.contract.WaylandChannel;
+import io.github.nyzeep.orchestella.runtime.contract.DisplayChannel;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.Test;
@@ -64,7 +64,7 @@ public final class WaylandSurfaceViewLifecycleTest {
         }
     }
 
-    private static final class FakeWaylandChannel implements WaylandChannel {
+    private static final class FakeDisplayChannel implements DisplayChannel {
         ConnectionState state = ConnectionState.CONNECTED;
         final List<StateListener> stateListeners = new ArrayList<>();
         final List<FrameListener> frameListeners = new ArrayList<>();
@@ -185,14 +185,14 @@ public final class WaylandSurfaceViewLifecycleTest {
     }
 
     @Test
-    public void dynamicBindingAndUnbindingOfWaylandChannelAndDisplayControl() {
+    public void dynamicBindingAndUnbindingOfDisplayChannelAndDisplayControl() {
         TestPresenter presenter = new TestPresenter();
         TestScheduler scheduler = new TestScheduler();
         DoubleBufferedRenderer renderer = new DoubleBufferedRenderer(presenter, (cb) -> {});
         WaylandSurfaceController controller = new WaylandSurfaceController(renderer, scheduler);
 
         FakeDisplayControl displayControl = new FakeDisplayControl();
-        FakeWaylandChannel channel = new FakeWaylandChannel();
+        FakeDisplayChannel channel = new FakeDisplayChannel();
 
         assertFalse(controller.isBound());
 
@@ -217,7 +217,7 @@ public final class WaylandSurfaceViewLifecycleTest {
         WaylandSurfaceController controller = new WaylandSurfaceController(renderer, scheduler);
 
         FakeDisplayControl displayControl = new FakeDisplayControl();
-        FakeWaylandChannel channel = new FakeWaylandChannel();
+        FakeDisplayChannel channel = new FakeDisplayChannel();
         controller.bind(displayControl, channel);
 
         FakeSurfaceHolder holder = new FakeSurfaceHolder();
@@ -242,7 +242,7 @@ public final class WaylandSurfaceViewLifecycleTest {
         WaylandSurfaceController controller = new WaylandSurfaceController(renderer, scheduler);
 
         FakeDisplayControl displayControl = new FakeDisplayControl();
-        FakeWaylandChannel channel = new FakeWaylandChannel();
+        FakeDisplayChannel channel = new FakeDisplayChannel();
         controller.bind(displayControl, channel);
 
         FakeSurfaceHolder holder = new FakeSurfaceHolder();
@@ -275,7 +275,7 @@ public final class WaylandSurfaceViewLifecycleTest {
         WaylandSurfaceController controller = new WaylandSurfaceController(renderer, scheduler);
 
         FakeDisplayControl displayControl = new FakeDisplayControl();
-        FakeWaylandChannel channel = new FakeWaylandChannel();
+        FakeDisplayChannel channel = new FakeDisplayChannel();
         controller.bind(displayControl, channel);
 
         FakeSurfaceHolder holder = new FakeSurfaceHolder();
@@ -284,16 +284,16 @@ public final class WaylandSurfaceViewLifecycleTest {
 
         WaylandSurfaceController.HudBadgeInfo badge = controller.getHudBadgeInfo();
         assertNotNull(badge);
-        assertEquals(WaylandChannel.ConnectionState.CONNECTED, badge.connectionState());
+        assertEquals(DisplayChannel.ConnectionState.CONNECTED, badge.connectionState());
         assertEquals(2400, badge.viewportWidth());
         assertEquals(1080, badge.viewportHeight());
         assertTrue(badge.toBadgeText().contains("CONNECTED"));
         assertTrue(badge.toBadgeText().contains("2400x1080"));
 
         // Disconnect channel
-        channel.notifyState(WaylandChannel.ConnectionState.DISCONNECTED, "Socket closed");
+        channel.notifyState(DisplayChannel.ConnectionState.DISCONNECTED, "Socket closed");
         WaylandSurfaceController.HudBadgeInfo disconnectedBadge = controller.getHudBadgeInfo();
-        assertEquals(WaylandChannel.ConnectionState.DISCONNECTED, disconnectedBadge.connectionState());
+        assertEquals(DisplayChannel.ConnectionState.DISCONNECTED, disconnectedBadge.connectionState());
         assertTrue(disconnectedBadge.toBadgeText().contains("DISCONNECTED"));
     }
 
@@ -302,12 +302,12 @@ public final class WaylandSurfaceViewLifecycleTest {
         TestPresenter presenter = new TestPresenter();
         DoubleBufferedRenderer renderer = new DoubleBufferedRenderer(presenter, Runnable::run);
         WaylandSurfaceController controller = new WaylandSurfaceController(renderer, new TestScheduler());
-        FakeWaylandChannel first = new FakeWaylandChannel();
+        FakeDisplayChannel first = new FakeDisplayChannel();
         controller.bind(new FakeDisplayControl(), first);
         controller.onSurfaceCreated(new FakeSurfaceHolder());
-        WaylandChannel.FrameListener retiredFrame = first.frameListeners.get(0);
-        WaylandChannel.StateListener retiredState = first.stateListeners.get(0);
-        WaylandChannel.FrameData frame = new WaylandChannel.FrameData(2, 2, 8, 1, new byte[16], 1, 1);
+        DisplayChannel.FrameListener retiredFrame = first.frameListeners.get(0);
+        DisplayChannel.StateListener retiredState = first.stateListeners.get(0);
+        DisplayChannel.FrameData frame = new DisplayChannel.FrameData(2, 2, 8, 1, new byte[16], 1, 1);
         retiredFrame.onFrameAvailable(frame);
         assertEquals(1, presenter.presentCount);
         controller.onPause();
@@ -318,15 +318,15 @@ public final class WaylandSurfaceViewLifecycleTest {
         assertEquals(1, first.frameListeners.size());
         retiredFrame.onFrameAvailable(frame);
         assertEquals(2, presenter.presentCount);
-        FakeWaylandChannel current = new FakeWaylandChannel();
+        FakeDisplayChannel current = new FakeDisplayChannel();
         controller.bind(new FakeDisplayControl(), current);
         retiredFrame.onFrameAvailable(frame);
-        retiredState.onStateChanged(WaylandChannel.ConnectionState.ERROR, "late retired stream");
+        retiredState.onStateChanged(DisplayChannel.ConnectionState.ERROR, "late retired stream");
         assertEquals(2, presenter.presentCount);
-        assertEquals(WaylandChannel.ConnectionState.CONNECTED, controller.getHudBadgeInfo().connectionState());
+        assertEquals(DisplayChannel.ConnectionState.CONNECTED, controller.getHudBadgeInfo().connectionState());
         current.frameListeners.get(0).onFrameAvailable(frame);
         assertEquals(3, presenter.presentCount);
-        WaylandChannel.FrameListener lateAfterDestroy = current.frameListeners.get(0);
+        DisplayChannel.FrameListener lateAfterDestroy = current.frameListeners.get(0);
         controller.onDestroy();
         lateAfterDestroy.onFrameAvailable(frame);
         assertEquals(3, presenter.presentCount);
@@ -339,11 +339,11 @@ public final class WaylandSurfaceViewLifecycleTest {
         WaylandSurfaceController controller = new WaylandSurfaceController(
                 new DoubleBufferedRenderer(presenter, Runnable::run), new TestScheduler());
         WaylandSurfaceView view = new WaylandSurfaceView(null, controller);
-        FakeWaylandChannel first = new FakeWaylandChannel();
+        FakeDisplayChannel first = new FakeDisplayChannel();
         view.bind(new FakeDisplayControl(), first);
         ImeBridgeInputConnection previous = view.getImeBridgeInputConnection();
         assertTrue(previous.commitText("first", 1));
-        view.bind(new FakeDisplayControl(), new FakeWaylandChannel());
+        view.bind(new FakeDisplayControl(), new FakeDisplayChannel());
         assertFalse(previous.commitText("late input for the old instance", 1));
         ImeBridgeInputConnection current = view.getImeBridgeInputConnection();
         assertTrue(current.commitText("current", 1));
@@ -351,7 +351,7 @@ public final class WaylandSurfaceViewLifecycleTest {
         assertFalse(current.commitText("late input after unbind", 1));
         assertNull(view.getTouchGestureMapper());
         assertNull(view.getImeBridgeInputConnection());
-        view.bind(new FakeDisplayControl(), new FakeWaylandChannel());
+        view.bind(new FakeDisplayControl(), new FakeDisplayChannel());
         ImeBridgeInputConnection destroyed = view.getImeBridgeInputConnection();
         view.onDestroy();
         assertFalse(destroyed.commitText("late input after destroy", 1));
