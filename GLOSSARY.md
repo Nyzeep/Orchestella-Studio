@@ -177,5 +177,5 @@ App 重启后从持久化实例状态一键重建实例运行环境的恢复方�
 _Avoid_: 热恢复（未做）、快照恢复（无快照）
 
 **显示通道 (Display Channel)**:
-guest 图形输出到宿主呈现的数据通道。呈现架构目标为 Wayland-first（ADR-0017，2026-11-19 现状裁决版）；当前生产数据面是 labwc→wayvnc→RFB 3.8 CPU-copy（virtio-serial `orchestella.display` / vsock 9103 中继），`WaylandChannel` 是传输中立的历史接口名（2026-11-19 立项轮 G-02 将正名为 DisplayChannel）；VNC-first 已被 ADR-0012 的 2026-10-01 修订废除。桌面线 2026-11-19 立项：代码链路完整、真机验收待设备窗；GPU 加速与桌面体验截至 2026-11-04 未完成真机验收，本轮零设备轮不改变该状态。
+guest 图形输出到宿主呈现的数据通道。呈现架构目标为 Wayland-first（ADR-0017，2026-11-19 现状裁决版）；当前生产数据面是 labwc→wayvnc→RFB 3.8 CPU-copy（virtio-serial `orchestella.display` / vsock 9103 中继），`WaylandChannel` 是传输中立的历史接口名（2026-11-19 立项轮 G-02 已正名为 DisplayChannel，语义零变更）；VNC-first 已被 ADR-0012 的 2026-10-01 修订废除。桌面线 2026-11-19 立项：代码链路完整、真机验收待设备窗；GPU 加速与桌面体验截至 2026-11-04 未完成真机验收，本轮零设备轮不改变该状态。
 _Avoid_: 屏幕（含混）、远程桌面（夸大）、把目标架构写成已验收能力、把 RFB 数据面说成 Wayland 通道
