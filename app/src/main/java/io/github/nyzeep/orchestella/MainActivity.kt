@@ -1239,7 +1239,8 @@ class MainActivity : AppCompatActivity() {
             else -> strategyBadge
         }
         val guestIp = (session as? QemuInstanceLauncher.Session)?.let { NetworkGatewayDaemon.GUEST_IP }
-        return InstanceCardUiModel.from(instance, runningStrategy, supportsDesktop = false, guestIp)
+        // G-04：卡片/sheet 的桌面能力位与三档入口共用 DesktopEntryPolicy 单源判定。
+        return InstanceCardUiModel.from(instance, runningStrategy, supportsDesktop = DesktopEntryPolicy.supportsDesktop(), guestIp)
     }
 
     // ==================== 电源 / 终端 / 删除（既有对话框链） ====================
@@ -1305,8 +1306,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun isHeadless(@Suppress("UNUSED_PARAMETER") instance: InstanceLifecycle.Instance): Boolean {
-        // The production channel does not yet carry guest frames and input.
-        return true
+        // G-04：headless 兜底判定与三档入口 enabled 同源（DesktopEntryPolicy）——
+        // 生产通道尚不携带 guest 图形帧与输入（Phase 5 开发中，未真机验收），
+        // 通道未就绪时入口禁用，这里保留同一判定驱动的 headless 引导弹窗。
+        return !DesktopEntryPolicy.supportsDesktop()
     }
 
     private fun showHeadlessDesktopDialog(instance: InstanceLifecycle.Instance) {

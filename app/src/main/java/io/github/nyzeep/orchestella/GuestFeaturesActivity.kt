@@ -68,10 +68,26 @@ class GuestFeaturesActivity : AppCompatActivity() {
                 row.addView(button, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             }
             content.addView(row)
-            if (profile == "desktop-labwc") content.addView(MaterialButton(this).apply {
-                text = "查看真实桌面"
-                setOnClickListener { startActivity(DesktopLaunchIntent.create(this@GuestFeaturesActivity, this@GuestFeaturesActivity.id, token, false)) }
-            })
+            if (profile == "desktop-labwc") {
+                // G-04：桌面入口 enabled 与 instances sheet / 终端抽屉同源（DesktopEntryPolicy），
+                // 禁用时展示统一原因文案（诚实禁用态；UI-10 三档一致性教训）。
+                // 运行判定与实例详情页 btnDesktop 同源（ExecutionSessionRegistry）。
+                val desktopRunning = ExecutionSessionRegistry.get(this@GuestFeaturesActivity.id) != null
+                val desktopEnabled = io.github.nyzeep.orchestella.DesktopEntryPolicy.canLaunchDesktop(desktopRunning)
+                content.addView(MaterialButton(this).apply {
+                    text = "查看真实桌面"
+                    isEnabled = desktopEnabled
+                    if (!desktopEnabled) alpha = 0.45f
+                    setOnClickListener {
+                        startActivity(DesktopLaunchIntent.create(this@GuestFeaturesActivity, this@GuestFeaturesActivity.id, token, false))
+                    }
+                })
+                content.addView(TextView(this).apply {
+                    text = getString(io.github.nyzeep.orchestella.DesktopEntryPolicy.disabledReasonRes(desktopRunning))
+                    textSize = 12f
+                    visibility = if (desktopEnabled) android.view.View.GONE else android.view.View.VISIBLE
+                })
+            }
             if (profile == "code-server") {
                 content.addView(TextView(this).apply { text = "认证密码在 guest 普通用户的私有配置中。请在终端查看后输入登录页；密码不进入访问地址或状态记录。" })
                 content.addView(MaterialButton(this).apply {

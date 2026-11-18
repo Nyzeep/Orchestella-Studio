@@ -243,6 +243,11 @@ public class TerminalActivity extends ComponentActivity {
 
         drawerPanel = new TerminalDrawerPanel(this, instanceId, new TerminalDrawerPanel.DrawerCallback() {
             @Override
+            public void onDesktopModeRequested() {
+                launchDesktopFromTerminal();
+            }
+
+            @Override
             public void onSessionSelected(TerminalSessionInstance targetSession) {
                 if (multiManager != null && instanceId != null) {
                     multiManager.switchActiveSession(instanceId, targetSession.getSessionId());
@@ -319,6 +324,11 @@ public class TerminalActivity extends ComponentActivity {
                 }
             }
         });
+
+        // G-04：桌面入口的运行判定与实例详情页/主列表同源（ExecutionSessionRegistry），
+        // 经 provider 注入保持抽屉与 Activity 的会话状态解耦。
+        drawerPanel.setInstanceRunningProvider(() ->
+                instanceId != null && ExecutionSessionRegistry.get(instanceId) != null);
 
         int drawerWidth = Math.min(dpToPx(300), (int) (getResources().getDisplayMetrics().widthPixels * 0.82f));
         DrawerLayout.LayoutParams drawerLp = new DrawerLayout.LayoutParams(
@@ -672,12 +682,15 @@ public class TerminalActivity extends ComponentActivity {
 
             switch (result.status()) {
                 case ATTACHED:
+                    captureBridgeToken(result.instance());
                     showTerminalSession(result.sessionHolder());
                     break;
                 case OFFLINE:
+                    captureBridgeToken(result.instance());
                     showOfflinePlaceholder(result.instance(), false);
                     break;
                 case CRASHED:
+                    captureBridgeToken(result.instance());
                     showOfflinePlaceholder(result.instance(), true);
                     break;
                 case STORE_ERROR:
@@ -935,6 +948,39 @@ public class TerminalActivity extends ComponentActivity {
         intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
         startActivity(intent);
         finish();
+    }
+
+    /**
+     * G-04（双向入口）：Terminal→Desktop 方向的生产调用点。enabled 已由抽屉入口的
+     * {@link DesktopEntryPolicy} 单源判定把关（与 instances sheet / GuestFeatures 同源）。
+     * 凭据链：直启路径 intent 不带 bridgeToken 时，凭据已在 reconcile 阶段从实例存储
+     * 补齐（见 {@link #captureBridgeToken}，不新增点击路径磁盘 IO）；仍缺失时不猜、诚实提示。
+     */
+    private void launchDesktopFromTerminal() {
+        if (instanceId == null || instanceId.isEmpty()) return;
+        if (drawerLayout != null) {
+            drawerLayout.closeDrawer(GravityCompat.END);
+        }
+        if (bridgeToken == null || bridgeToken.trim().isEmpty()) {
+            android.widget.Toast.makeText(this,
+                    getString(R.string.desktop_entry_token_missing), android.widget.Toast.LENGTH_LONG).show();
+            return;
+        }
+        DualModeNavigation.navigateToDesktop(this, instanceId, bridgeToken);
+    }
+
+    /**
+     * G-04：直启路径 intent 缺 bridgeToken 时，从 reconcile 已加载的实例补齐凭据。
+     * 复用 reconcile 既有的一次 store 读取，点击路径零新增磁盘 IO（AGENT-BRIEF 主线程纪律）。
+     */
+    private void captureBridgeToken(InstanceLifecycle.Instance instance) {
+        if (instance == null) return;
+        if (bridgeToken == null || bridgeToken.trim().isEmpty()) {
+            String stored = instance.bridgeToken();
+            if (stored != null && !stored.trim().isEmpty()) {
+                bridgeToken = stored;
+            }
+        }
     }
 
     private ExecutionSession probeAndRecoverSession(InstanceLifecycle.Instance instance) throws Exception {

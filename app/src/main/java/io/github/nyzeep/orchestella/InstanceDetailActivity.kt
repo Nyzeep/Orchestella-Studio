@@ -1023,8 +1023,9 @@ class InstanceDetailActivity : AppCompatActivity() {
     }
 
     private fun currentSupportsDesktop(): Boolean {
-        // Phase 5 must verify actual guest frames and input before enabling this gate.
-        return false
+        // G-04：判定收敛到 DesktopEntryPolicy 单源（与 instances sheet / 终端抽屉 /
+        // GuestFeatures 同源）。Phase 5 真机验收 guest 图形帧与输入前，本门恒为 false。
+        return DesktopEntryPolicy.supportsDesktop()
     }
 
     private fun deviceProfile(): DeviceCapabilityEvaluator.DeviceProfile {

@@ -112,7 +112,8 @@ data class InstanceCardUiModel(
                 gpuEnabled = gpuEnabled,
                 canLaunch = isStopped || isCreated || state == InstanceLifecycle.State.INTERRUPTED,
                 canOpenTerminal = isRunning,
-                canLaunchDesktop = isRunning && supportsDesktop,
+                // G-04：enabled 合取式收敛到 DesktopEntryPolicy（与终端抽屉 / GuestFeatures 同源）。
+                canLaunchDesktop = DesktopEntryPolicy.canLaunchDesktop(isRunning, supportsDesktop),
                 canConfigureHardware = isStopped || isCreated,
                 canClone = isStopped || isCreated,
                 canDelete = isStopped || isCreated || isCrashed,
