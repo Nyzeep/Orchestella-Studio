@@ -143,7 +143,6 @@ class ConfigUiContractTest {
     fun settingsSubActivityHandlesEverySectionKey() {
         val text = source("src/main/java/io/github/nyzeep/orchestella/SettingsSubActivity.kt")
         val bindings = mapOf(
-            "SECTION_APPEARANCE" to "bindAppearance",
             "SECTION_MIRROR" to "bindMirror",
             "SECTION_ABOUT" to "bindAbout",
             "SECTION_ADVANCED" to "bindAdvanced",
@@ -158,7 +157,6 @@ class ConfigUiContractTest {
         // One mapping: the constants delegate to ConfigSections instead of
         // duplicating string literals at both ends of the switch.
         val delegations = mapOf(
-            "SECTION_APPEARANCE" to "ConfigSections.APPEARANCE",
             "SECTION_MIRROR" to "ConfigSections.MIRROR",
             "SECTION_ABOUT" to "ConfigSections.ABOUT",
             "SECTION_ADVANCED" to "ConfigSections.ADVANCED",
@@ -170,6 +168,11 @@ class ConfigUiContractTest {
                 text.contains("const val $constant = $sectionSource"),
             )
         }
+        // v4 UI-10：旧外观子页连同分支一起删除，不再有双入口。
+        assertFalse(
+            "the legacy appearance section must be gone",
+            text.contains("SECTION_APPEARANCE") || text.contains("bindAppearance"),
+        )
     }
 
     @Test

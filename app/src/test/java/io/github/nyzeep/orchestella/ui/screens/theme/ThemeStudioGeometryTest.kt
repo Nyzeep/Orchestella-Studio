@@ -7,6 +7,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3Theme
 import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -30,14 +31,15 @@ class ThemeStudioGeometryTest {
 
     @Test
     fun homePreviewKeepsTheTicketGeometry() {
+        val state = themeStudioPreviewState(ThemeCatalog.constructivistWorkstation)
         compose.setContent {
-            ThemeStudioScreen(
-                state = themeStudioPreviewState(ThemeCatalog.constructivistWorkstation),
-                onEvent = {},
-                renderTerminalView = false,
-                reduceMotion = true,
-                presets = ThemeCatalog.all.take(3),
-            )
+            Oe3Theme(theme = state.theme, reduceMotion = true) {
+                ThemeStudioScreen(
+                    state = state,
+                    onEvent = {},
+                    reduceMotion = true,
+                )
+            }
         }
         val preview = compose.onNodeWithTag("theme-preview:home").fetchSemanticsNode().boundsInRoot
         assertEquals(168f, preview.width, 0.5f)
@@ -48,14 +50,16 @@ class ThemeStudioGeometryTest {
 
     @Test
     fun terminalPreviewKeepsItsHeightAndAllSixteenAnsiIndices() {
+        val state = themeStudioPreviewState(ThemeCatalog.github)
         compose.setContent {
-            ThemeStudioScreen(
-                state = themeStudioPreviewState(ThemeCatalog.github),
-                onEvent = {},
-                renderTerminalView = false,
-                reduceMotion = true,
-                presets = ThemeCatalog.all.take(3),
-            )
+            Oe3Theme(theme = state.theme, reduceMotion = true) {
+                ThemeTerminalScreen(
+                    state = state,
+                    onEvent = {},
+                    onBack = {},
+                    renderTerminalView = false,
+                )
+            }
         }
         val preview = compose.onNodeWithTag("theme-terminal:preview").fetchSemanticsNode().boundsInRoot
         assertEquals(200f, preview.height, 0.5f)

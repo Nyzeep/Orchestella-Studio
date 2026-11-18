@@ -11,21 +11,19 @@ import org.junit.Test
 class ThemeStudioSpecTest {
 
     @Test
-    fun sectionOrderMatchesSpec33() {
+    fun sectionOrderMatchesTheV4EntryList() {
+        // v4 §2.2：七行入口按规格顺序；主页预览在最前，「更多」收尾。
         assertEquals(
             listOf(
                 ThemeStudioSection.HomePreview,
-                ThemeStudioSection.Mode,
-                ThemeStudioSection.PureBlack,
                 ThemeStudioSection.Presets,
-                ThemeStudioSection.AccentSlots,
-                ThemeStudioSection.NavStyle,
-                ThemeStudioSection.Glass,
+                ThemeStudioSection.Mode,
+                ThemeStudioSection.Accent,
                 ThemeStudioSection.Corner,
-                ThemeStudioSection.Font,
                 ThemeStudioSection.TextScale,
-                ThemeStudioSection.WallpaperOpacity,
+                ThemeStudioSection.Background,
                 ThemeStudioSection.Terminal,
+                ThemeStudioSection.More,
             ),
             ThemeStudioSpec.sectionOrder,
         )
