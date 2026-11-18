@@ -13,11 +13,13 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
 import io.github.nyzeep.orchestella.runtime.contract.services.EndpointPolicy
 import io.github.nyzeep.orchestella.runtime.contract.services.LocalTcpRelay
+import io.github.nyzeep.orchestella.ui.design.components.OeDialogAction
+import io.github.nyzeep.orchestella.ui.design.components.OeDialogHost
+import io.github.nyzeep.orchestella.ui.design.components.OeDialogSpec
 import io.github.nyzeep.orchestella.ui.theme.ThemeApplier
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
@@ -94,11 +96,16 @@ class LocalEditorActivity : AppCompatActivity() {
             setOnClickListener {
                 if (lan?.binding() != null) {
                     work.execute { closeLan() }
-                } else AlertDialog.Builder(this@LocalEditorActivity)
-                    .setTitle("开启十分钟局域网协作")
-                    .setMessage("将临时监听 0.0.0.0:18081。局域网设备可访问开发服务，仍需实例密码登录；关闭页面、服务失败或到期会撤销监听。当前传输未启用 TLS，使用可信网络。")
-                    .setNegativeButton("取消", null)
-                    .setPositiveButton("明确开启") { _, _ -> enableLan() }.show().also(ThemeApplier::apply)
+                } else OeDialogHost.attach(this@LocalEditorActivity).show(
+                    OeDialogSpec(
+                        title = "开启十分钟局域网协作",
+                        message = "将临时监听 0.0.0.0:18081。局域网设备可访问开发服务，" +
+                            "仍需实例密码登录；关闭页面、服务失败或到期会撤销监听。" +
+                            "当前传输未启用 TLS，使用可信网络。",
+                        positive = OeDialogAction("明确开启") { enableLan() },
+                        negative = OeDialogAction("取消"),
+                    ),
+                )
             }
         }
         web = WebView(this)

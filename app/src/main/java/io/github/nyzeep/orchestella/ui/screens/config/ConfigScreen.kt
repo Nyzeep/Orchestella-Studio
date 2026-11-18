@@ -1,6 +1,5 @@
 package io.github.nyzeep.orchestella.ui.screens.config
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -31,8 +30,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -45,6 +42,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.nyzeep.orchestella.R
+import io.github.nyzeep.orchestella.ui.design.tokens.OeShape
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Card
 import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3ListRow
@@ -55,6 +53,7 @@ import io.github.nyzeep.orchestella.ui.oe3.motion.Oe3DialogEnterMotion
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3Theme
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Shapes
+import io.github.nyzeep.orchestella.ui.screens.common.OeChevron
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Sizes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
@@ -416,6 +415,7 @@ private fun <T> ChoiceDialog(
     Oe3DialogEnterMotion {
         AlertDialog(
             onDismissRequest = onDismiss,
+            shape = RoundedCornerShape(OeShape.alert),
             title = {
                 Text(
                     text = title,
@@ -470,35 +470,13 @@ private fun <T> ChoiceDialog(
 private fun ConfigChevron(title: String) {
     val description = stringResource(R.string.config_chevron_desc, title)
     val color = Oe3ThemeValues.colors.onSurfaceVariant.oe3Color()
-    Canvas(
-        modifier = Modifier
-            .size(Oe3Sizes.icon)
-            .semantics { contentDescription = description },
-    ) {
-        drawChevron(color = color, pointsLeft = false)
-    }
+    OeChevron(color = color, contentDescription = description)
 }
 
 @Composable
 private fun DirectionChevron(pointsLeft: Boolean) {
     val color = Oe3ThemeValues.colors.onSurface.oe3Color()
-    Canvas(modifier = Modifier.size(Oe3Sizes.icon)) {
-        drawChevron(color = color, pointsLeft = pointsLeft)
-    }
-}
-
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawChevron(
-    color: androidx.compose.ui.graphics.Color,
-    pointsLeft: Boolean,
-) {
-    val stroke = 1.75.dp.toPx()
-    val nearX = size.width * 0.38f
-    val farX = size.width * 0.62f
-    val top = Offset(if (pointsLeft) farX else nearX, size.height * 0.28f)
-    val middle = Offset(if (pointsLeft) nearX else farX, size.height * 0.5f)
-    val bottom = Offset(if (pointsLeft) farX else nearX, size.height * 0.72f)
-    drawLine(color, top, middle, strokeWidth = stroke, cap = StrokeCap.Round)
-    drawLine(color, middle, bottom, strokeWidth = stroke, cap = StrokeCap.Round)
+    OeChevron(color = color, pointsLeft = pointsLeft)
 }
 
 @Preview(name = "配置 · 暗色", showBackground = true, widthDp = 390, heightDp = 900)

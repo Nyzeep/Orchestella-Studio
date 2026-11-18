@@ -68,11 +68,6 @@
             android:exported="false"
             android:theme="@style/Theme.Orchestella" />
 
-        <activity
-            android:name=".SettingsActivity"
-            android:exported="true"
-            android:theme="@style/Theme.Orchestella" />
-
         <!-- T3 settings IA redesign: generic per-section sub-page (no Fragment;
              section layout selected by intent extra). Not exported: launched
              only from the settings home directory rows. -->
@@ -116,8 +111,11 @@
         <activity android:name=".LocalEditorActivity" android:exported="false"
             android:launchMode="singleTask" android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.Orchestella" />
+        <!-- UI-15: the legacy SettingsActivity home directory was deleted; the
+             Compose shell (MainActivity) is the only config entry. No
+             parentActivityName here — up navigation follows the real task stack
+             (CompatExplanation is launched from SettingsSubActivity). -->
         <activity android:name=".CompatExplanationActivity" android:exported="false"
-            android:parentActivityName=".SettingsActivity"
             android:theme="@style/Theme.Orchestella" />
 
         <!-- ADR-0011: Persistent foreground service for ongoing guest execution -->

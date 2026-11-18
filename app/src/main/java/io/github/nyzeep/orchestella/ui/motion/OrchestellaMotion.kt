@@ -29,10 +29,10 @@ import io.github.nyzeep.orchestella.ui.design.tokens.OeMotion
  *    Both sites carry a generation-counter guard so a stale exit timer never
  *    GONEs a container switched back to mid-fade — rapid taps leave no
  *    half-transparent residue.
- *  - [expandSection]/[collapseSection] -> WIRED at SettingsActivity
+ *  - [expandSection]/[collapseSection] -> WIRED at SettingsSubActivity
  *    setupFallbackExplanationSection (layout_settings_fallback_explanation
  *    toggle, with the same generation guard on the collapse-end action).
- *  - [playSectionStagger] -> WIRED at SettingsActivity.runMirrorSpeedTest
+ *  - [playSectionStagger] -> WIRED at SettingsSubActivity (section bind)
  *    completion: the mirror speed test is the page's explicit data-refresh
  *    moment and replays the settings_root_container stagger. (The old one-shot
  *    XML layoutAnimation hook was removed with the old settings shell in the

@@ -16,8 +16,6 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle
-import io.github.nyzeep.orchestella.runtime.network.FilePortForwardingStore
-import io.github.nyzeep.orchestella.runtime.network.PortConflictDetector
 import io.github.nyzeep.orchestella.runtime.network.PortForwardingManager
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3Theme
 import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
@@ -32,8 +30,8 @@ import java.nio.file.Files
 
 /**
  * Host for the connection pages reached from the legacy Activities
- * (`InstanceDetailActivity`, `SettingsActivity`) that still live in the View
- * world.
+ * (`InstanceDetailActivity` and the settings sub-pages) that still live in the
+ * View world.
  *
  * The pages themselves stay host-agnostic: they take `onBack`, and this
  * Activity passes `finish()`. The shell host passes `OeBackStack.pop()` to the
@@ -115,13 +113,7 @@ class ConnectionPagesActivity : AppCompatActivity() {
         val portForwardingManager = if (page == PAGE_PORT_FORWARDING) {
             instanceId?.let { id ->
                 try {
-                    val netPath = filesDir.toPath().resolve("network")
-                    Files.createDirectories(netPath)
-                    PortForwardingManager(
-                        id,
-                        FilePortForwardingStore(netPath),
-                        PortConflictDetector(),
-                    )
+                    PortForwardingManager.forInstance(id, filesDir.toPath().resolve("network"))
                 } catch (_: IOException) {
                     Toast.makeText(
                         this,

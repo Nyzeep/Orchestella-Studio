@@ -19,7 +19,7 @@ import io.github.nyzeep.orchestella.runtime.capability.AvfCapabilityEvaluator
  *       recognizable token itself intact.</li>
  *   <li>(d) kv wall burying the storage task — the block renders collapsed by
  *       default behind a one-line conclusion ([summaryLine]/[CollapseState]),
- *       following the SettingsActivity expand-section vocabulary.</li>
+ *       following the settings sub-page expand-section vocabulary.</li>
  * </ul>
  */
 object WizardAvfDiagnostics {
@@ -99,7 +99,7 @@ object WizardAvfDiagnostics {
     /**
      * W2(d): collapse state machine. Folded by default; every toggle bumps the
      * generation so a stale collapse-end callback cannot GONE a section that
-     * was re-expanded meanwhile (same guard as SettingsActivity's section).
+     * was re-expanded meanwhile (same guard as the settings sub-page section).
      */
     data class CollapseState(val expanded: Boolean = false, val generation: Int = 0)
 

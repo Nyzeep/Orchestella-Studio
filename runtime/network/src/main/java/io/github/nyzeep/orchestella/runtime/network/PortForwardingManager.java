@@ -4,6 +4,8 @@ import io.github.nyzeep.orchestella.runtime.contract.PortConflictException;
 import io.github.nyzeep.orchestella.runtime.contract.PortForwardingEngine;
 import io.github.nyzeep.orchestella.runtime.contract.PortForwardingRule;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -41,6 +43,19 @@ public final class PortForwardingManager {
         synchronized (lock) {
             activeRules.addAll(store.loadRules(instanceId));
         }
+    }
+
+    /**
+     * UI-15 §7：应用内两个宿主（Compose 壳的 push 与 ConnectionPagesActivity）
+     * 原先各自拼「建目录 + FilePortForwardingStore + PortConflictDetector」三步，
+     * 任何一处漏掉目录创建都会在首启崩溃。收敛为唯一构造入口，模块边界不变。
+     */
+    public static PortForwardingManager forInstance(String instanceId, Path netRoot)
+            throws IOException {
+        Objects.requireNonNull(netRoot, "netRoot");
+        Files.createDirectories(netRoot);
+        return new PortForwardingManager(
+                instanceId, new FilePortForwardingStore(netRoot), new PortConflictDetector());
     }
 
     /**

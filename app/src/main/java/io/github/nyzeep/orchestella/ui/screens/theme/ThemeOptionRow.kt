@@ -20,7 +20,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -45,7 +44,7 @@ import io.github.nyzeep.orchestella.ui.oe3.components.Oe3SectionHeader
 import io.github.nyzeep.orchestella.ui.oe3.theme.LocalOe3CornerRadius
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Shapes
-import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Sizes
+import io.github.nyzeep.orchestella.ui.screens.common.OeChevron
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
@@ -226,26 +225,10 @@ fun ThemeEntryRow(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                Canvas(modifier = Modifier.size(Oe3Sizes.icon)) {
-                    drawChevron(color = colors.onSurfaceVariant.oe3Color(), pointsLeft = false)
-                }
+                OeChevron(color = colors.onSurfaceVariant.oe3Color())
             }
         },
     )
-}
-
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawChevron(
-    color: Color,
-    pointsLeft: Boolean,
-) {
-    val stroke = 1.75.dp.toPx()
-    val nearX = size.width * 0.38f
-    val farX = size.width * 0.62f
-    val top = Offset(if (pointsLeft) farX else nearX, size.height * 0.28f)
-    val middle = Offset(if (pointsLeft) nearX else farX, size.height * 0.5f)
-    val bottom = Offset(if (pointsLeft) farX else nearX, size.height * 0.72f)
-    drawLine(color, top, middle, strokeWidth = stroke, cap = StrokeCap.Round)
-    drawLine(color, middle, bottom, strokeWidth = stroke, cap = StrokeCap.Round)
 }
 
 private fun Int.oe3Color(): Color = Color(this)

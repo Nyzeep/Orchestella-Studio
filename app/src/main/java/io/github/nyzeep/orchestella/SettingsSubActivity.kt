@@ -39,8 +39,9 @@ private const val ACCEL_LANE_TAG = "AccelLane"
 /**
  * Generic Settings sub-page (T3 settings IA redesign, ADR-0006 follow-up).
  *
- * <p>The settings home page ([SettingsActivity]) is a section directory; each
- * section's content lives in one instance of this activity. There is no
+ * <p>UI-15 deleted the legacy settings home page; the Compose shell is now the
+ * only config directory, and each section's content still lives in one instance
+ * of this activity. There is no
  * Fragment: the section layout chosen by [EXTRA_SECTION] is inflated into the
  * shared [R.id.settings_sub_container] and wired here, one binder per section.
  *
@@ -48,7 +49,7 @@ private const val ACCEL_LANE_TAG = "AccelLane"
  * ([ThemeApplier.prepare] before super.onCreate, [ThemeApplier.bind] after the
  * section is wired) so the custom wallpaper, corner radius and surface opacity
  * stay alive on sub-pages. Preference keys are untouched — only UI and
- * listeners moved here from [SettingsActivity].
+ * listeners moved here from the deleted settings home page.
  *
  * <p>Level-1 → level-2 transition: a scale+alpha approximation of a container
  * transform played on the section container (alpha/scale only, no layout
