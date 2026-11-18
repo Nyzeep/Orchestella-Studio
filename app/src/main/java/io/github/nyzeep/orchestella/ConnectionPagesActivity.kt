@@ -1,5 +1,6 @@
 package io.github.nyzeep.orchestella
 
+import android.animation.ValueAnimator
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -83,6 +84,7 @@ class ConnectionPagesActivity : AppCompatActivity() {
 
     private val themeState = mutableStateOf(ThemeCatalog.default)
     private val textScaleState = mutableStateOf(1f)
+    private var reduceMotion = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         ThemeApplier.prepare(this)
@@ -102,6 +104,7 @@ class ConnectionPagesActivity : AppCompatActivity() {
         val themeStore = ThemeStore(this)
         themeState.value = themeStore.resolve()
         textScaleState.value = themeStore.textScaleFactor()
+        reduceMotion = !ValueAnimator.areAnimatorsEnabled()
 
         val portForwardingManager = if (page == PAGE_PORT_FORWARDING) {
             instanceId?.let { id ->
@@ -161,7 +164,11 @@ class ConnectionPagesActivity : AppCompatActivity() {
         }
         setContentView(compose)
         compose.setContent {
-            Oe3Theme(theme = themeState.value, textScale = textScaleState.value) {
+            Oe3Theme(
+                theme = themeState.value,
+                textScale = textScaleState.value,
+                reduceMotion = reduceMotion,
+            ) {
                 when (page) {
                     PAGE_SSH -> SshManagerPage(
                         onBack = back,
@@ -206,6 +213,7 @@ class ConnectionPagesActivity : AppCompatActivity() {
         val themeStore = ThemeStore(this)
         themeState.value = themeStore.resolve()
         textScaleState.value = themeStore.textScaleFactor()
+        reduceMotion = !ValueAnimator.areAnimatorsEnabled()
     }
 
     /** Single back action for the page's visible button (system back also finishes). */
