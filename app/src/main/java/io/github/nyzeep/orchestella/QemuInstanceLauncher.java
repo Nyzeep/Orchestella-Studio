@@ -9,9 +9,11 @@ import io.github.nyzeep.orchestella.runtime.contract.BridgeControl;
 import io.github.nyzeep.orchestella.runtime.contract.FullLinuxContract;
 import io.github.nyzeep.orchestella.runtime.contract.SessionCapabilities;
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig;
+import io.github.nyzeep.orchestella.runtime.engineqemu.GpuAccelerationStatus;
 import io.github.nyzeep.orchestella.runtime.engineqemu.QemuLaunchSpec;
 import io.github.nyzeep.orchestella.runtime.engineqemu.QemuProcessLauncher;
 import io.github.nyzeep.orchestella.runtime.engineqemu.RuntimeArtifactManifest;
+import io.github.nyzeep.orchestella.runtime.engineqemu.VirglGpuLifecycle;
 import io.github.nyzeep.orchestella.runtime.engineqemu.VirglJniBridge;
 import io.github.nyzeep.orchestella.runtime.instance.InstanceLifecycle;
 import java.io.IOException;
@@ -63,6 +65,12 @@ public final class QemuInstanceLauncher {
          * the other channels. Audio playback itself stays UI-driven (see capabilityMatrix).
          */
         private volatile AudioHostRelay audioRelay;
+        /**
+         * G-06 GPU decision for this launch (enum single-source in engine-qemu).
+         * Disabled until the launcher attaches the real gate outcome; G-07 reads
+         * it through {@link #gpuAccelerationStatus()}.
+         */
+        private volatile GpuAccelerationStatus gpuAccelerationStatus = GpuAccelerationStatus.disabled();
 
         /**
          * One live forward. {@link #close()} keeps the API contract for a single
@@ -467,6 +475,20 @@ public final class QemuInstanceLauncher {
             return audioRelay;
         }
 
+        /**
+         * G-06: attaches the launch's GPU gate outcome (ACTIVE / explicit
+         * fallback with reason code / flag-off DISABLED). Best-effort wiring,
+         * same shape as {@link #attachAudioRelay(AudioHostRelay)}; never null.
+         */
+        void attachGpuStatus(GpuAccelerationStatus status) {
+            this.gpuAccelerationStatus = status == null ? GpuAccelerationStatus.disabled() : status;
+        }
+
+        /** G-07 consumption point: the launch's GPU decision (never null). */
+        public GpuAccelerationStatus gpuAccelerationStatus() {
+            return gpuAccelerationStatus;
+        }
+
         @Override
         public io.github.nyzeep.orchestella.runtime.contract.DisplayControl displayControl() {
             return displayChannel;
@@ -710,6 +732,14 @@ public final class QemuInstanceLauncher {
                 new java.util.concurrent.atomic.AtomicReference<>();
         return completeLaunch(() -> {
         stageTrace.onGate(ProductionStageRecorder.Stage.RUN_BEGIN);
+        // G-06: first production caller of the VirGL lifecycle gate. activate() is
+        // best-effort and isolated (never throws); a non-ACTIVE outcome downgrades
+        // the spec to the 2D device below with a structured reason code instead of
+        // the old silent rebind. Cleanup keeps the pre-G-06 sequencing (exit-watcher
+        // finally); the G-05 audio relay wiring further below is untouched by it.
+        GpuAccelerationStatus gpuStatus = VirglGpuLifecycle.activate(
+                config.gpuAccelerationEnabled(), config.ramMegabytes());
+        Log.i(TAG, gpuStatus.structuredLogLine());
         String guestKernelArgs = "orchestella.guest_ip=" + NetworkGatewayDaemon.GUEST_IP
                 + " orchestella.guest_gw=" + NetworkGatewayDaemon.GUEST_GATEWAY
                 + " orchestella.guest_mask=" + NetworkGatewayDaemon.GUEST_NETMASK
@@ -742,7 +772,10 @@ public final class QemuInstanceLauncher {
                 String.valueOf(gateway.tcpPort),
                 guestKernelArgs);
 
-        String[] sanitizedSpec = QemuLaunchSpec.withDisplayChannel(sanitizeSpecForTargetBinary(spec), displaySocketPath);
+        // G-06: the GPU decision (not the hardcoded downgrade) owns the gl-device →
+        // 2D rebind; with an ACTIVE gate the gl-device arguments pass through.
+        String[] sanitizedSpec = QemuLaunchSpec.withDisplayChannel(
+                sanitizeSpecForTargetBinary(spec, gpuStatus.gpuDeviceActive()), displaySocketPath);
         String[] audioWiredSpec = QemuLaunchSpec.withAudioChannel(sanitizedSpec, audioSocketPath);
         Log.i(TAG, "Launching QEMU process with sanitized arguments");
 
@@ -808,6 +841,9 @@ public final class QemuInstanceLauncher {
                 parameters.bridgeToken, handle, parameters.instanceId, gateway, timeline,
                 stageTrace);
         startingSession.set(session);
+        // G-06: carry the launch's GPU gate outcome for the UI layer (G-07 reads it
+        // through ExecutionSession). Attach is best-effort and never null.
+        session.attachGpuStatus(gpuStatus);
         // G-05: the engine assembly layer owns the @droidlayer-audio listener (never the
         // Activity). The relay is best-effort: failure tears itself down and consumers
         // fall back via FallbackAudioSource; the audio loop stays unverified on devices.
@@ -846,6 +882,15 @@ public final class QemuInstanceLauncher {
             StopResult cleanupResult = cleanupFailedLaunch(
                     startingSession.get(), startingHandle.get(), gateway);
             LAST_FAILED_CLEANUP.put(parameters.instanceId, cleanupResult);
+            // G-06: a launch that died after the GPU gate activated must not leak the
+            // native context (the exit watcher owning the normal cleanup never ran).
+            // Best-effort and isolated from the stop/gateway cleanup above.
+            try {
+                VirglJniBridge.cleanup();
+            } catch (RuntimeException | Error gpuCleanupFailure) {
+                Log.w(TAG, "gpu-acceleration-cleanup-failed "
+                        + gpuCleanupFailure.getClass().getSimpleName());
+            }
             timeline.finish();
         });
     }
@@ -1052,10 +1097,29 @@ public final class QemuInstanceLauncher {
      * Adapts abstract hypervisor arguments to the physical arm64 QEMU binary packaged in APK:
      * virtio-gpu-gl-device is bound to virtio-gpu-device in this binary build. The passt
      * -netdev/-device pair is no longer stripped: the passt stream backend is the network plane.
+     *
+     * <p>G-06 compatibility overload: the legacy signature keeps the
+     * unconditional downgrade byte-for-byte (golden reference for the no-native
+     * lock tests). Production must call the decision-aware overload below.
      */
     static String[] sanitizeSpecForTargetBinary(String[] spec) {
+        return sanitizeSpecForTargetBinary(spec, false);
+    }
+
+    /**
+     * G-06 decision-aware overload: {@code gpuAccelerationActive} is the
+     * {@link GpuAccelerationStatus#gpuDeviceActive()} outcome of the launch's GPU
+     * gate. {@code true} keeps the {@code virtio-gpu-gl-device} arguments
+     * (gate reached ACTIVE); {@code false} reproduces the legacy downgrade for
+     * flag-off, native-missing (NATIVE_UNAVAILABLE) and init-failure
+     * (INIT_FAILED) launches byte-for-byte.
+     */
+    static String[] sanitizeSpecForTargetBinary(String[] spec, boolean gpuAccelerationActive) {
         if (spec == null) {
             return new String[0];
+        }
+        if (gpuAccelerationActive) {
+            return spec.clone();
         }
         java.util.List<String> list = new java.util.ArrayList<>();
         for (int i = 0; i < spec.length; i++) {
