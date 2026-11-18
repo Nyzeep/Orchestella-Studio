@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
@@ -22,8 +23,10 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import io.github.nyzeep.orchestella.ui.design.components.OeSlider
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Button
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Chip
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3ListRow
@@ -197,6 +200,25 @@ class Oe3SemanticsTest {
         // The tag on the wrapper would measure the wrong node: the toggleable
         // semantics live on the inner row (Oe3Rows.kt).
         assertTouchTarget(compose.onNode(isToggleable()))
+    }
+
+    @Test
+    fun sliderAccessibilityActionUsesTheActualRangeValue() {
+        var selected = 2f
+        compose.setContent {
+            Oe3Theme(theme = ThemeCatalog.constructivistWorkstation, reduceMotion = true) {
+                OeSlider(
+                    value = 2f,
+                    onValueChange = { selected = it },
+                    modifier = Modifier.testTag("a11y-slider"),
+                    valueRange = 1f..8f,
+                    steps = 6,
+                )
+            }
+        }
+
+        compose.onNodeWithTag("a11y-slider").performSemanticsAction(SemanticsActions.SetProgress) { it(4f) }
+        compose.runOnIdle { assertEquals(4f, selected, 0f) }
     }
 
     @Test

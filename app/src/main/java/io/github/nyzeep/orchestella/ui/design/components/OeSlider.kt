@@ -168,7 +168,7 @@ fun OeSlider(
                 progressBarRangeInfo = ProgressBarRangeInfo(value, valueRange, steps)
                 if (enabled) {
                     setProgress { target ->
-                        onValueChange(OeSliderSpec.snap(OeSliderSpec.valueAt(target, valueRange), valueRange, steps))
+                        onValueChange(OeSliderSpec.snap(target, valueRange, steps))
                         true
                     }
                 } else {
