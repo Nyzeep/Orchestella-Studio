@@ -12,6 +12,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -30,7 +31,6 @@ import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
 import io.github.nyzeep.orchestella.ui.shell.OeScaffold
 import io.github.nyzeep.orchestella.ui.theme.OeTextScaleMode
-import io.github.nyzeep.orchestella.ui.theme.ThemeCatalog
 import io.github.nyzeep.orchestella.ui.theme.ThemeStore
 import kotlin.math.roundToInt
 
@@ -57,7 +57,6 @@ fun ThemeStudioScreen(
     onOpenBackground: (() -> Unit)? = null,
     onOpenTerminal: (() -> Unit)? = null,
     reduceMotion: Boolean = false,
-    presets: List<io.github.nyzeep.orchestella.ui.theme.AppTheme> = ThemeCatalog.all,
 ) {
     val colors = Oe3ThemeValues.colors
     val fontFamily = when (state.fontChoice) {
@@ -103,7 +102,6 @@ fun ThemeStudioScreen(
             EntryCard(
                 state = state,
                 onEvent = onEvent,
-                presets = presets,
                 onOpenPresets = onOpenPresets,
                 onOpenAccent = onOpenAccent,
                 onOpenBackground = onOpenBackground,
@@ -129,7 +127,6 @@ fun ThemeStudioScreen(
 private fun EntryCard(
     state: ThemeStudioState,
     onEvent: (ThemeStudioEvent) -> Unit,
-    presets: List<io.github.nyzeep.orchestella.ui.theme.AppTheme>,
     onOpenPresets: (() -> Unit)?,
     onOpenAccent: (() -> Unit)?,
     onOpenBackground: (() -> Unit)?,
@@ -138,7 +135,15 @@ private fun EntryCard(
     ThemeOptionGroup {
         ThemeEntryRow(
             title = stringResource(R.string.ui3_theme_section_presets),
-            value = stringResource(R.string.ui3_theme_presets_count, presets.size),
+            // 计数单位是「组」：一张卡 = 一个 family（亮暗成对），与预设页
+            // 的两个分区（看板娘 1 + 其他 N）能对上；用目录条目数会显示 42，
+            // 与页面上数得出的卡片数不符。
+            value = stringResource(
+                R.string.ui3_theme_presets_count,
+                remember(state.theme.isDark) {
+                    ThemePresetGrouping.groups(isDark = state.theme.isDark).size
+                },
+            ),
             onClick = { onOpenPresets?.invoke() },
             tag = "theme-entry:presets",
             valueTag = "theme-value:presets",

@@ -160,7 +160,9 @@ class ThemeStudioScreenTest {
     fun currentValuesAreReadableAtTheirEntries() {
         setRoot()
         // push 行整行合并语义，读数节点要从未合并树取。
-        compose.onNodeWithTag("theme-value:presets", useUnmergedTree = true).assertTextEquals("42 套")
+        // 单位是「组」（一个 family 一张卡），不是目录条目数。
+        compose.onNodeWithTag("theme-value:presets", useUnmergedTree = true)
+            .assertTextEquals("${ThemePresetGrouping.groups(isDark = true).size} 组")
         compose.onNodeWithTag("theme-value:mode").assertTextEquals("深色")
         compose.onNodeWithTag("theme-value:accent", useUnmergedTree = true).assertTextEquals("跟随主题")
         compose.onNodeWithTag("theme-value:corner").assertTextEquals("12 dp")

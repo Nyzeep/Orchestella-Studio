@@ -12,7 +12,11 @@ import io.github.nyzeep.orchestella.ui.theme.ThemePreset
  */
 data class ThemePresetGroup(
     val familyId: String,
-    /** 目录里的展示名（同一 family 的亮/暗成员同名）。 */
+    /**
+     * 当前模式那一套的展示名。同一 family 的亮/暗成员**未必同名**
+     * （`moonshot` 暗面深空 / 昼面晨曦），所以名字必须跟着 [theme] 走：
+     * 取目录里先见成员的名字会在另一模式下留一个与配色对不上的旧名。
+     */
     val title: String,
     val isMascot: Boolean,
     val theme: AppTheme,
@@ -47,11 +51,12 @@ object ThemePresetGrouping {
         val groups = ArrayList<ThemePresetGroup>(presets.size)
         presets.forEach { preset ->
             if (!seen.add(preset.familyId)) return@forEach
+            val theme = resolve(preset, isDark)
             groups += ThemePresetGroup(
                 familyId = preset.familyId,
-                title = preset.displayName,
+                title = theme.displayName,
                 isMascot = preset.familyId == MASCOT_FAMILY_ID,
-                theme = resolve(preset, isDark),
+                theme = theme,
             )
         }
         // 稳定排序：看板娘在前，其余保持目录顺序。

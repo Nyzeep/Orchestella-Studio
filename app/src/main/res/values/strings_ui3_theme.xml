@@ -41,7 +41,7 @@
 
     <!-- 4. 主题预设 -->
     <string name="ui3_theme_section_presets">主题预设</string>
-    <string name="ui3_theme_presets_count">%1$d 套</string>
+    <string name="ui3_theme_presets_count">%1$d 组</string>
 
     <!-- 5. 主色与自定义槽 -->
     <string name="ui3_theme_custom_slots">自定义配色</string>

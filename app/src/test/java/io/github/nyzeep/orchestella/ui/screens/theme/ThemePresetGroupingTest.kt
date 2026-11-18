@@ -122,6 +122,29 @@ class ThemePresetGroupingTest {
         )
     }
 
+    @Test
+    fun cardTitleFollowsTheResolvedMemberNotTheFirstSeenOne() {
+        // 找一个亮/暗成员名字不同的 family（moonshot 即如此，且暗成员在目录里
+        // 排在前面）。取「首见者」的名字会让浅色模式顶着一个深色名。
+        val pair = ThemeCatalog.presets.groupBy { it.familyId }
+            .entries
+            .first { (_, members) -> members.map { it.displayName }.distinct().size > 1 }
+        val light = ThemePresetGrouping.groups(ThemeCatalog.presets, isDark = false)
+            .first { it.familyId == pair.key }
+        val dark = ThemePresetGrouping.groups(ThemeCatalog.presets, isDark = true)
+            .first { it.familyId == pair.key }
+
+        assertEquals(light.theme.displayName, light.title)
+        assertEquals(dark.theme.displayName, dark.title)
+        assertNotEquals(
+            "亮/暗成员名字不同时，卡片名必须跟着当前模式换",
+            light.title,
+            dark.title,
+        )
+        assertEquals(pair.value.first { !it.isDark }.displayName, light.title)
+        assertEquals(pair.value.first { it.isDark }.displayName, dark.title)
+    }
+
     private fun preset(
         id: String,
         familyId: String,
