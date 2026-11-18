@@ -13,6 +13,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 /**
  * G-05 probe-walk FSM tests for {@link FallbackAudioSource}: phase transitions,
@@ -187,13 +189,27 @@ public class FallbackAudioSourceProbeTest {
         primary.shouldFail = true;
         MockAudioSource secondary = new MockAudioSource();
         secondary.shouldFail = true;
-        FallbackAudioSource fallback = new FallbackAudioSource(primary, secondary, 2, 60_000);
+        // Deterministic phase sync: the interrupter is released by the FSM observer
+        // exactly when the walk enters BACKOFF (immediately followed by the backoff
+        // sleep), so the interrupt can only land at-or-inside that sleep. A blind
+        // timed delay could fire while the probe thread was still descheduled before
+        // openStream's first interrupt check, letting the loop-top guard consume the
+        // flag as an early bail-out (EXHAUSTED, no InterruptedException cause).
+        CountDownLatch backoffEntered = new CountDownLatch(1);
+        FallbackAudioSource fallback = new FallbackAudioSource(primary, secondary, 2, 60_000,
+                (phase, detail) -> {
+                    if (phase == FallbackAudioSource.Phase.BACKOFF) {
+                        backoffEntered.countDown();
+                    }
+                });
 
         // Interrupt while the walk is parked in the backoff sleep (not before it starts).
         Thread probe = Thread.currentThread();
         Thread interrupter = new Thread(() -> {
             try {
-                Thread.sleep(200);
+                // The walk reaches BACKOFF within microseconds; the bound only keeps
+                // the interrupter from lingering forever if the probe wedges.
+                backoffEntered.await(10, TimeUnit.SECONDS);
             } catch (InterruptedException ignored) {
                 // best-effort interrupter
             }
@@ -208,9 +224,14 @@ public class FallbackAudioSourceProbeTest {
             assertNotNull(expected.getCause());
             assertTrue(expected.getCause() instanceof InterruptedException);
         } finally {
-            interrupter.join(2_000);
-            // Clear the flag so later tests in the same JVM stay unaffected.
+            // Clear the flag BEFORE joining: the source under test re-set the probe
+            // thread's interrupt status before throwing, and join() is interruptible
+            // — joining with the flag still set threw InterruptedException out of
+            // this finally whenever the interrupter had not fully exited yet (the
+            // load-dependent half of this flake). Clearing first makes the cleanup
+            // deterministic; the join afterwards only reaps the interrupter.
             Thread.interrupted();
+            interrupter.join(2_000);
         }
     }
 
