@@ -12,12 +12,15 @@ import java.util.function.Supplier;
  * HUD text-plane controller split out of DesktopActivity (G-03): builds the badge
  * overlay views, owns the 500 ms refresh loop and the negotiation-failure line.
  *
- * <p>{@link #REFRESH_INTERVAL_MS} is the seam G-10 throttling will tighten; the refresh
- * semantics stay unchanged this round (badge update + status suffix append per tick).
+ * <p>G-10: the per-tick {@code setText(badge) + append(suffix)} pair became one
+ * diff-gated {@code setText} over the full text ({@link DesktopHudTextPlane}):
+ * the suffix's invariant segments are pre-assembled and cached, and a tick whose
+ * badge and status are both unchanged skips the view write entirely. The copy and
+ * the {@link #REFRESH_INTERVAL_MS} beat stay unchanged.
  */
 public final class DesktopHudController {
 
-    /** HUD refresh cadence; G-10's throttle seam (not tightened in this ticket). */
+    /** HUD refresh cadence; G-10 kept the beat and gated the per-tick work instead. */
     public static final long REFRESH_INTERVAL_MS = 500L;
 
     /** Host liveness the refresh loop checks before re-scheduling itself. */
@@ -53,6 +56,7 @@ public final class DesktopHudController {
     private final UiScheduler scheduler;
     private final Host host;
     private final Supplier<String> displayStatusSupplier;
+    private final DesktopHudTextPlane textPlane = new DesktopHudTextPlane();
     private final LinearLayout hudContainer;
     private final DesktopHudOverlay hudOverlay;
     private final TextView hudTextView;
@@ -68,7 +72,7 @@ public final class DesktopHudController {
         this.hudTextView = buildHudTextView(context);
         this.hudContainer = buildHudContainer(context);
         this.hudContainer.addView(this.hudTextView);
-        this.hudOverlay = new DesktopHudOverlay(this.hudContainer, this.hudTextView, capabilityMatrix);
+        this.hudOverlay = new DesktopHudOverlay(this.hudContainer, capabilityMatrix);
     }
 
     /** Test constructor: null views are allowed; only the loop gating and copy are exercised. */
@@ -82,10 +86,9 @@ public final class DesktopHudController {
         this.hudContainer = hudContainer;
     }
 
-    /** The status suffix appended below the badge on every refresh tick. */
+    /** The status suffix appended below the badge on every refresh tick (G-10: canonical segments live in the text plane). */
     public static String composeStatusSuffix(String displayStatus) {
-        return "\nWayland CPU 拷贝实验通路 · " + displayStatus
-                + "\n触摸使用鼠标回退；Unicode 输入未验证。帧流连接不代表 GPU 加速或设备验收";
+        return DesktopHudTextPlane.composeStatusSuffix(displayStatus);
     }
 
     /** Badge container: semi-transparent collapsible pill inside the top bar. */
@@ -146,8 +149,9 @@ public final class DesktopHudController {
         scheduler.removeCallbacks(hudUpdater);
     }
 
-    /** Negotiation-failure line: replaces the HUD copy outright. */
+    /** Negotiation-failure line: replaces the HUD copy outright (next tick re-applies badge+suffix). */
     public void showNegotiationFailure(String message) {
+        textPlane.invalidate();
         if (hudTextView != null) {
             hudTextView.setText(message);
         }
@@ -157,8 +161,13 @@ public final class DesktopHudController {
         @Override
         public void run() {
             if (isHudUpdating && surfaceView != null && !host.isFinishing()) {
-                hudOverlay.update(surfaceView.getHudBadgeInfo());
-                hudTextView.append(composeStatusSuffix(displayStatusSupplier.get()));
+                // G-10：文案预组装 + diff 门控——状态串不变时复用缓存后缀，全文不变时
+                // 跳过 setText；节拍与最终文案内容与 pre-G-10 逐字节一致。
+                String badgeText = hudOverlay.formatBadge(surfaceView.getHudBadgeInfo());
+                String fullText = textPlane.composeTickText(badgeText, displayStatusSupplier.get());
+                if (fullText != null && hudTextView != null) {
+                    hudTextView.setText(fullText);
+                }
                 scheduler.postDelayed(this, REFRESH_INTERVAL_MS);
             }
         }

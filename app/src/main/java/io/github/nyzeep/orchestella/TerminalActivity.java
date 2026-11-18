@@ -120,6 +120,17 @@ public class TerminalActivity extends ComponentActivity {
     private int terminalBgGeneration;
     /** Session-18 W-C.3: set when a direct launch must ask which instance. */
     private java.util.List<InstanceLifecycle.Instance> pendingInstancePicker;
+    /**
+     * G-10：直启路径的异步实例解析状态机与专用后台 executor。store 读取不再占用
+     * 主线程；解析期间主线程渲染占位卡（占位卡族同款），结果回主线程 bind。
+     */
+    private TerminalDirectLaunchCoordinator<InstanceLifecycle.Instance> directLaunchCoordinator;
+    private final java.util.concurrent.ExecutorService directLaunchExecutor =
+            java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "terminal-directlaunch-store");
+                t.setDaemon(true);
+                return t;
+            });
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -128,27 +139,14 @@ public class TerminalActivity extends ComponentActivity {
         bridgeToken = getIntent().getStringExtra("bridgeToken");
         instanceId = getIntent().getStringExtra("instanceId");
         commandDraft = getIntent().getStringExtra(EXTRA_COMMAND_DRAFT);
-        if (instanceId == null || instanceId.isEmpty()) {
-            // Direct launch (desktop shortcut / notification) may carry no
-            // instanceId. Exactly one stored instance is unambiguous, so bind
-            // it and enter the terminal normally; zero instances keeps the
-            // existing missing-instance card (never guess), and several
-            // instances show an explicit picker (session-18 W-C.3) instead of
-            // silently dropping the user on the offline card.
-            java.util.List<InstanceLifecycle.Instance> stored = null;
-            try {
-                stored = new InstanceLifecycle.FileStore(
-                        getFilesDir().toPath().resolve("instances")).list();
-                if (stored.size() == 1) {
-                    instanceId = stored.get(0).id();
-                }
-            } catch (Exception ignored) {
-                // Store unreadable: fall through to the offline card.
-            }
-            if (instanceId == null && stored != null && stored.size() > 1) {
-                pendingInstancePicker = stored;
-            }
-        }
+        // Direct launch (desktop shortcut / notification) may carry no instanceId.
+        // The store read used to run synchronously here on the main thread; since
+        // G-10 it runs on the background executor (startDirectLaunchResolution below):
+        // the resolving placeholder card renders first, and the outcomes keep the
+        // pre-G-10 semantics — one stored instance binds it, several ask via the
+        // picker (session-18 W-C.3), zero instances or an unreadable store keeps
+        // the missing-instance card (never guess).
+        final boolean directLaunchResolutionRequired = instanceId == null || instanceId.isEmpty();
         session = ExecutionSessionRegistry.get(instanceId);
         ui = new Handler(Looper.getMainLooper());
         stickyStateMachine = new StickyModifierStateMachine();
@@ -362,9 +360,13 @@ public class TerminalActivity extends ComponentActivity {
 
         applyAppearance();
 
-        showInstancePickerIfNeeded();
-        reconcileAndConnect();
-        handleCommandExtra(getIntent());
+        if (directLaunchResolutionRequired) {
+            startDirectLaunchResolution();
+        } else {
+            showInstancePickerIfNeeded();
+            reconcileAndConnect();
+            handleCommandExtra(getIntent());
+        }
     }
 
     /**
@@ -387,6 +389,74 @@ public class TerminalActivity extends ComponentActivity {
             startActivity(self);
             finish();
         });
+    }
+
+    /**
+     * G-10：直启解析的后台化装配。store 读取绑定专用 executor（沿用既有
+     * single-thread daemon executor 模式），结果经 UI Handler 回主线程 bind；
+     * 终态分发与 pre-G-10 同步路径逐项对齐（单实例绑定 / 多实例选择器 /
+     * 零实例与读失败回落占位卡），指令 extra 的 consume-once 语义延后到 bind 阶段。
+     */
+    private void startDirectLaunchResolution() {
+        directLaunchCoordinator = new TerminalDirectLaunchCoordinator<>(
+                () -> new InstanceLifecycle.FileStore(
+                        getFilesDir().toPath().resolve("instances")).list(),
+                InstanceLifecycle.Instance::id,
+                directLaunchExecutor::execute,
+                // Destroyed/finishing hosts drop the delivery instead of binding a dead activity.
+                task -> { if (!isDestroyed() && !isFinishing()) ui.post(task); },
+                new TerminalDirectLaunchCoordinator.Callbacks<InstanceLifecycle.Instance>() {
+                    @Override
+                    public void onResolving() {
+                        showResolvingPlaceholder();
+                    }
+
+                    @Override
+                    public void onSingleInstance(String resolvedId) {
+                        instanceId = resolvedId;
+                        session = ExecutionSessionRegistry.get(instanceId);
+                        if (drawerPanel != null) drawerPanel.setInstanceId(instanceId);
+                        resumeBindAfterResolution();
+                    }
+
+                    @Override
+                    public void onPicker(java.util.List<InstanceLifecycle.Instance> candidates) {
+                        pendingInstancePicker = candidates;
+                        // Same pre-G-10 order: ask first, then reconcile renders behind the dialog.
+                        showInstancePickerIfNeeded();
+                        resumeBindAfterResolution();
+                    }
+
+                    @Override
+                    public void onNoInstance() {
+                        // instanceId stays null: the same missing-instance card as before.
+                        resumeBindAfterResolution();
+                    }
+
+                    @Override
+                    public void onStoreError() {
+                        // Same fall-through as the pre-G-10 catch: no guess, placeholder card.
+                        resumeBindAfterResolution();
+                    }
+                });
+        directLaunchCoordinator.start();
+    }
+
+    /**
+     * 解析终态后的统一 bind：先还原 pre-G-10 的 reconcile 前卡片状态（GONE，
+     * 终态渲染由 reconcile 决定；其外层 catch 异常时回落终端追加，同旧路径），
+     * 再走既有 reconcileAndConnect 与指令 extra 消费（consume-once 时序延后，
+     * 与旧「onCreate 尾部消费」等价）。
+     */
+    private void resumeBindAfterResolution() {
+        if (offlineCardView != null) offlineCardView.setVisibility(View.GONE);
+        reconcileAndConnect();
+        handleCommandExtra(getIntent());
+    }
+
+    /** G-10：直启后台解析期间的过渡占位卡（占位卡族同款；结果回来由 reconcile 覆盖渲染）。 */
+    private void showResolvingPlaceholder() {
+        showTerminalPlaceholder("正在解析实例", "正在读取本地实例列表…");
     }
 
     private void applyAppearance() {
@@ -607,6 +677,8 @@ public class TerminalActivity extends ComponentActivity {
         if (intent != null) {
             String newInstanceId = intent.getStringExtra("instanceId");
             if (newInstanceId != null && !newInstanceId.isEmpty() && !newInstanceId.equals(this.instanceId)) {
+                // G-10 重入：显式 instanceId 使在途直启解析失效（generation 防护）。
+                if (directLaunchCoordinator != null) directLaunchCoordinator.cancel();
                 detachTerminalListener();
                 terminalConnected = false;
                 this.instanceId = newInstanceId;
@@ -652,12 +724,20 @@ public class TerminalActivity extends ComponentActivity {
         if (ui != null) ui.removeCallbacksAndMessages(null);
         sendExecutor.shutdownNow();
         terminalBgExecutor.shutdownNow();
+        // G-10：直启解析 executor 与同族 executor 一并关闭；在途投递由 cancel 失效。
+        directLaunchExecutor.shutdownNow();
+        if (directLaunchCoordinator != null) directLaunchCoordinator.cancel();
         // The client belongs to the persistent session. Rotation must not interrupt an
         // in-flight request and thereby close that session's authenticated control stream.
         resizeExecutor.shutdown();
     }
 
     private void reconcileAndConnect() {
+        if (directLaunchCoordinator != null && directLaunchCoordinator.isResolutionPending()) {
+            // G-10：直启解析仍在后台进行时，onStart/onNewIntent 的提前 reconcile 会在
+            // 结果回来前先画错卡；绑定由解析回调统一驱动。
+            return;
+        }
         if (instanceId == null || instanceId.isEmpty()) {
             showMissingPlaceholder("未提供实例 ID");
             return;
