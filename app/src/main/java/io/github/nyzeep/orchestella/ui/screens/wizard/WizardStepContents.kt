@@ -50,6 +50,8 @@ import androidx.compose.ui.unit.sp
 import java.util.Locale
 import io.github.nyzeep.orchestella.InstanceCreationWizardModel
 import io.github.nyzeep.orchestella.R
+import io.github.nyzeep.orchestella.runtime.capability.GpuCapabilityEvaluator
+import io.github.nyzeep.orchestella.runtime.engineqemu.VirglJniBridge
 import io.github.nyzeep.orchestella.ui.design.components.OeSlider
 import io.github.nyzeep.orchestella.ui.design.tokens.OeShape
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Button
@@ -566,6 +568,24 @@ fun HardwareStepContent(state: WizardUiState, controller: WizardScreenModel) {
             text = stringResource(R.string.wizard_hardware_card_desc),
             style = Oe3Typography.style(Oe3TextRole.Caption),
             color = colors.onSurfaceVariant.oe3Color(),
+        )
+        // G-07：GPU 诚实标注（能力声明单源）。向导本步没有 GPU 开关（开关在
+        // 创建后的实例硬件页），这里只按 native 打包状态标注可用性，不冒充
+        // "已开启即加速"；native 状态在 UI 进程同 JVM 直接可读。
+        val gpuNativeAvailable = androidx.compose.runtime.remember {
+            GpuCapabilityEvaluator.evaluate(VirglJniBridge.isAvailable()).virglNativeAvailable()
+        }
+        Text(
+            text = stringResource(
+                if (gpuNativeAvailable) {
+                    R.string.wizard_gpu_note_available
+                } else {
+                    R.string.wizard_gpu_note_unavailable
+                },
+            ),
+            style = Oe3Typography.style(Oe3TextRole.Caption),
+            color = colors.onSurfaceVariant.oe3Color(),
+            modifier = Modifier.testTag("wizard:gpu-note"),
         )
         Spacer(Modifier.height(Oe3Spacing.sm))
 

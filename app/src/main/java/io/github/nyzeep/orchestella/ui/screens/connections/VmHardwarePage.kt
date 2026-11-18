@@ -28,7 +28,11 @@ import androidx.compose.ui.unit.dp
 import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
 import io.github.nyzeep.orchestella.HostHardwareProfile
 import io.github.nyzeep.orchestella.R
+import io.github.nyzeep.orchestella.runtime.capability.GpuCapabilityEvaluator
 import io.github.nyzeep.orchestella.runtime.contract.VmHardwareConfig
+import io.github.nyzeep.orchestella.runtime.engineqemu.GpuAccelerationStatus
+import io.github.nyzeep.orchestella.runtime.engineqemu.GpuFallbackReason
+import io.github.nyzeep.orchestella.runtime.engineqemu.VirglJniBridge
 import io.github.nyzeep.orchestella.ui.design.components.OeSlider
 import io.github.nyzeep.orchestella.ui.design.tokens.OeShape
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3Button
@@ -54,6 +58,39 @@ data class VmHardwareSelection(
 )
 
 /**
+ * G-07: the honest state behind the GPU toggle subtitle. The toggle itself
+ * stays a pure config field (runtime fallback is decided by the G-06 gate at
+ * launch); this enum only picks what the UI may honestly claim.
+ *
+ * Resolution order: a live session's [GpuAccelerationStatus] wins
+ * (ACTIVE / FALLBACK carry the launch's real outcome); DISABLED means the flag
+ * was off at launch, so the subtitle falls back to the static copy. Without a
+ * session the static capability declaration rules
+ * ([GpuCapabilityEvaluator.virglNativeAvailable]).
+ */
+enum class GpuToggleStatus {
+    /** No session: the VirGL driver is packaged, enabling the toggle may use it. */
+    NATIVE_AVAILABLE,
+    /** No session: the driver is not packaged, enabling falls back to 2D at launch. */
+    NATIVE_UNAVAILABLE,
+    /** Session running: this launch kept the gl-device arguments (wired, 未验证). */
+    SESSION_ACTIVE,
+    /** Session running: this launch fell back to the 2D device (reason in the subtitle). */
+    SESSION_FALLBACK,
+    ;
+
+    companion object {
+        fun resolve(nativeAvailable: Boolean, sessionStatus: GpuAccelerationStatus?): GpuToggleStatus {
+            val status = sessionStatus
+            if (status != null && status.state() != GpuAccelerationStatus.State.DISABLED) {
+                return if (status.gpuDeviceActive()) SESSION_ACTIVE else SESSION_FALLBACK
+            }
+            return if (nativeAvailable) NATIVE_AVAILABLE else NATIVE_UNAVAILABLE
+        }
+    }
+}
+
+/**
  * Form state for the VM hardware page.
  *
  * Deliberately plain Kotlin over [VmHardwareConfig] + [HostHardwareProfile]:
@@ -63,6 +100,10 @@ data class VmHardwareSelection(
 class VmHardwarePageState(
     current: VmHardwareConfig,
     private val host: HostHardwareProfile,
+    /** G-07 能力声明单源输出：virgl native 静态可用性（驱动是否打包在 UI 进程同 JVM 直接可读）。 */
+    gpuNativeAvailable: Boolean,
+    /** G-07 会话运行中的实时 GPU 决策快照；null = 无会话，副文案落回静态两态。 */
+    val gpuSessionStatus: GpuAccelerationStatus? = null,
 ) {
 
     companion object {
@@ -95,6 +136,14 @@ class VmHardwarePageState(
         private set
     var gpuAccelerationEnabled by mutableStateOf(current.gpuAccelerationEnabled())
         private set
+
+    /** G-07 副文案三态（构造时定一次；会话快照与静态能力声明在页内不变）。 */
+    val gpuToggleStatus: GpuToggleStatus =
+        GpuToggleStatus.resolve(gpuNativeAvailable, gpuSessionStatus)
+
+    /** [GpuToggleStatus.SESSION_FALLBACK] 时的降级原因；其余状态为 null。 */
+    val gpuFallbackReason: GpuFallbackReason? =
+        if (gpuToggleStatus == GpuToggleStatus.SESSION_FALLBACK) gpuSessionStatus?.reason() else null
 
     val ramIntervals: Int =
         ((maxRamMegabytes - minRamMegabytes) / RAM_STEP_MB).coerceAtLeast(1)
@@ -146,6 +195,12 @@ class VmHardwarePageState(
  * Save is disabled while RAM sits in the profile's RED zone; the label and
  * colour come straight from [HostHardwareProfile.SafetyZone], so the old
  * "RED blocks saving" promise is preserved rather than re-invented.
+ *
+ * G-07: the GPU toggle's subtitle is honest — the host may pass the live
+ * session's [GpuAccelerationStatus] (when the instance is running); without a
+ * session the static capability declaration
+ * ([GpuCapabilityEvaluator] + [VirglJniBridge], same JVM as the engine) picks
+ * the copy. The toggle never pretends a checked box equals GPU acceleration.
  */
 @Composable
 fun VmHardwarePage(
@@ -154,10 +209,16 @@ fun VmHardwarePage(
     onBack: () -> Unit,
     onSaved: (VmHardwareSelection) -> Unit,
     modifier: Modifier = Modifier,
+    gpuAccelerationStatus: GpuAccelerationStatus? = null,
 ) {
     val current = instance.hardwareConfig() ?: VmHardwareConfig.defaultConfig()
-    val state = androidx.compose.runtime.remember(current, hostProfile) {
-        VmHardwarePageState(current, hostProfile)
+    val gpuNativeAvailable = androidx.compose.runtime.remember {
+        GpuCapabilityEvaluator.evaluate(VirglJniBridge.isAvailable()).virglNativeAvailable()
+    }
+    val state = androidx.compose.runtime.remember(
+        current, hostProfile, gpuNativeAvailable, gpuAccelerationStatus,
+    ) {
+        VmHardwarePageState(current, hostProfile, gpuNativeAvailable, gpuAccelerationStatus)
     }
     VmHardwareContent(
         state = state,
@@ -326,9 +387,10 @@ fun VmHardwareContent(
             Oe3Card {
                 Oe3SwitchRow(
                     title = stringResource(R.string.connections_vm_gpu),
-                    subtitle = stringResource(R.string.connections_vm_gpu_desc),
+                    subtitle = gpuToggleSubtitle(state),
                     checked = state.gpuAccelerationEnabled,
                     onCheckedChange = onGpuChange,
+                    modifier = Modifier.testTag("connections:vm:gpu"),
                 )
             }
         }
@@ -362,6 +424,33 @@ fun VmHardwareContent(
             )
         }
     }
+}
+
+/** G-07: honest GPU toggle subtitle, keyed by [GpuToggleStatus] (strings stay in resources). */
+@Composable
+private fun gpuToggleSubtitle(state: VmHardwarePageState): String = when (state.gpuToggleStatus) {
+    GpuToggleStatus.NATIVE_AVAILABLE ->
+        stringResource(R.string.connections_vm_gpu_desc_available)
+    GpuToggleStatus.NATIVE_UNAVAILABLE ->
+        stringResource(R.string.connections_vm_gpu_desc_unavailable)
+    GpuToggleStatus.SESSION_ACTIVE ->
+        stringResource(R.string.connections_vm_gpu_desc_session_active)
+    GpuToggleStatus.SESSION_FALLBACK ->
+        stringResource(
+            R.string.connections_vm_gpu_desc_session_fallback,
+            gpuFallbackReasonText(state.gpuFallbackReason),
+        )
+}
+
+/** Fallback reason → human text; NONE/null is defensive only (FALLBACK always carries a reason). */
+@Composable
+private fun gpuFallbackReasonText(reason: GpuFallbackReason?): String = when (reason) {
+    GpuFallbackReason.NATIVE_UNAVAILABLE ->
+        stringResource(R.string.connections_vm_gpu_reason_native_unavailable)
+    GpuFallbackReason.INIT_FAILED ->
+        stringResource(R.string.connections_vm_gpu_reason_init_failed)
+    GpuFallbackReason.NONE, null ->
+        stringResource(R.string.connections_vm_gpu_reason_unknown)
 }
 
 @Composable
