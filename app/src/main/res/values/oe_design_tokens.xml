@@ -6,6 +6,19 @@
   survive only for the remaining View-system screens; treat them as frozen and
   delete this file once those screens migrate to Compose.
   Migration complete → delete this file.
+
+  UI-15 sweep (2026-11-18) — what is left, and why each dim still exists:
+    oe_corner_md / oe_space_* / oe_icon_inline_gap / oe_icon_inline /
+    oe_stroke_hairline / oe_card_gap / oe_btn_h_secondary
+      consumed only by the un-migrated View screens (activity_about,
+      activity_desktop, activity_instance_detail, activity_settings_sub,
+      layout_settings_section_*) and by styles.xml button styles those screens
+      reuse. They are the "未迁移 Activity 所需项" the ticket allows.
+    oe_corner_card (new in UI-15)
+      XML mirror of OeShape.xl = 24dp; the four View layouts cannot read the
+      Kotlin token, so the card radius needs a dimen to stop being 0dp.
+    oe_space_xxxl (32dp)
+      deleted in UI-15 — zero consumers in src.
 -->
 <!--
   B-lane (round 2026-11-09) design tokens, oe_-prefixed, continuing the
@@ -28,6 +41,11 @@
          oversized cards / sheets 28. ThemeApplier merges these only-grow at
          runtime, so a user's larger corner setting always wins. -->
     <dimen name="oe_corner_md">12dp</dimen>
+    <!-- 页面卡圆角：OeShape.xl = 24dp 的 XML 镜像。UI-15 清扫引入——
+         旧 Activity 的 MaterialCardView 原先显式 0dp，是 v4 前的直角语言；
+         Compose 侧真源仍是 ui/design/tokens/Shape.kt，此处只为 View 系统
+         无法读 Kotlin token 而镜像一个值。 -->
+    <dimen name="oe_corner_card">24dp</dimen>
 
     <!-- 间距 scale: 4dp baseline grid (M3 spacing guidance). The one non-multiple
          below is an optical half-step for icon-to-text gaps, matching the tuned
@@ -38,7 +56,6 @@
     <dimen name="oe_space_lg">16dp</dimen>
     <dimen name="oe_space_xl">20dp</dimen>
     <dimen name="oe_space_xxl">24dp</dimen>
-    <dimen name="oe_space_xxxl">32dp</dimen>
     <dimen name="oe_icon_inline_gap">6dp</dimen>
 
     <!-- 发丝线 stroke: one device-density pixel, matching ThemeApplier's

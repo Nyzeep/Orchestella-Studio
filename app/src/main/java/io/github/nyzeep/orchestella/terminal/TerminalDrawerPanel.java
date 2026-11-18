@@ -1,6 +1,5 @@
 package io.github.nyzeep.orchestella.terminal;
 
-import android.app.AlertDialog;
 import android.content.Context;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -9,12 +8,12 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
-import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+import io.github.nyzeep.orchestella.ui.design.components.OeDialogs;
 import io.github.nyzeep.orchestella.ui.theme.AppTheme;
 import io.github.nyzeep.orchestella.ui.theme.SurfaceOpacity;
 import io.github.nyzeep.orchestella.ui.theme.ThemeColors;
@@ -322,36 +321,37 @@ public final class TerminalDrawerPanel extends LinearLayout {
 
         private void showRenameDialog(TerminalSessionInstance session) {
             Context ctx = itemView.getContext();
-            EditText input = new EditText(ctx);
-            input.setText(session.getTitle());
-            input.setSelection(session.getTitle().length());
-            input.setTextColor(theme.getText());
-
-            new AlertDialog.Builder(ctx)
-                    .setTitle(io.github.nyzeep.orchestella.R.string.terminal_drawer_rename_title)
-                    .setView(input)
-                    .setPositiveButton("确定", (dialog, which) -> {
-                        String newTitle = input.getText().toString().trim();
+            OeDialogs.input(
+                    ctx,
+                    ctx.getString(io.github.nyzeep.orchestella.R.string.terminal_drawer_rename_title),
+                    null,
+                    session.getTitle(),
+                    "确定",
+                    "取消",
+                    false,
+                    false,
+                    raw -> {
+                        String newTitle = raw.trim();
                         if (!newTitle.isEmpty() && callback != null) {
                             callback.onSessionRenamed(session, newTitle);
                         }
-                    })
-                    .setNegativeButton("取消", null)
-                    .show();
+                    });
         }
 
         private void showCloseConfirmDialog(TerminalSessionInstance session) {
             Context ctx = itemView.getContext();
-            new AlertDialog.Builder(ctx)
-                    .setTitle(io.github.nyzeep.orchestella.R.string.terminal_drawer_close_title)
-                    .setMessage("关闭 \"" + session.getTitle() + "\"？Shell 会话继续运行。")
-                    .setPositiveButton("关闭", (dialog, which) -> {
+            OeDialogs.confirm(
+                    ctx,
+                    ctx.getString(io.github.nyzeep.orchestella.R.string.terminal_drawer_close_title),
+                    "关闭 \"" + session.getTitle() + "\"？Shell 会话继续运行。",
+                    "关闭",
+                    "取消",
+                    true,
+                    () -> {
                         if (callback != null) {
                             callback.onSessionClosed(session);
                         }
-                    })
-                    .setNegativeButton("取消", null)
-                    .show();
+                    });
         }
     }
 

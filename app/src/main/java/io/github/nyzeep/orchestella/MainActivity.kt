@@ -16,7 +16,6 @@ import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -31,6 +30,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorMode
 import io.github.nyzeep.orchestella.runtime.fastlane.capability.accelerator.AcceleratorPolicy
+import io.github.nyzeep.orchestella.ui.design.components.OeDialogAction
+import io.github.nyzeep.orchestella.ui.design.components.OeDialogHost
+import io.github.nyzeep.orchestella.ui.design.components.OeDialogSpec
 import io.github.nyzeep.orchestella.ui.oe3.glass.GlassDeviceCap
 import io.github.nyzeep.orchestella.ui.oe3.glass.GlassMode
 import io.github.nyzeep.orchestella.ui.oe3.glass.LocalOe3GlassDeviceCap
@@ -311,7 +313,7 @@ class MainActivity : AppCompatActivity() {
                         }, Clock.systemUTC())
                     adapter.exportToDocumentUri(current, destUri)
                     runOnUiThread {
-                        // ZD-W2：与 SettingsActivity 同一动作同文案，复用 config_export_success。
+                        // ZD-W2：与配置页同一动作同文案，复用 config_export_success。
                         Toast.makeText(this, R.string.config_export_success, Toast.LENGTH_SHORT).show()
                     }
                 } catch (e: Exception) {
@@ -928,7 +930,7 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
-    /** 引擎与授权行的一句话判定（与 SettingsActivity 同源同文案）。 */
+    /** 引擎与授权行的一句话判定（配置页与详情页共用同一套判定）。 */
     private fun engineSummaryLine(): String {
         val readiness = avfReadiness
             ?: AvfCapabilityEvaluator.evaluate(AvfHostFactsProbe.probe(this)).also {
@@ -1044,14 +1046,16 @@ class MainActivity : AppCompatActivity() {
                         val labels = instances
                             .map { "${it.hostname()} · ${it.id()}" }
                             .toTypedArray()
-                        AlertDialog.Builder(this)
-                            .setTitle(R.string.config_choose_instance)
-                            .setItems(labels) { _, which ->
-                                exportStoppedInstance(instances[which])
-                            }
-                            .setNegativeButton(R.string.config_dialog_cancel, null)
-                            .show()
-                            .also { ThemeApplier.apply(it) }
+                        OeDialogHost.attach(this@MainActivity).show(
+                            OeDialogSpec(
+                                title = getString(R.string.config_choose_instance),
+                                items = labels.toList(),
+                                onItemSelected = { which ->
+                                    exportStoppedInstance(instances[which])
+                                },
+                                negative = OeDialogAction(getString(R.string.config_dialog_cancel)),
+                            ),
+                        )
                     }
                 }
             }
@@ -1059,20 +1063,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showOe3BackupDialog() {
-        AlertDialog.Builder(this)
-            .setTitle(R.string.config_backup_dialog_title)
-            .setMessage(R.string.config_backup_dialog_message)
-            .setItems(
-                arrayOf(
+        OeDialogHost.attach(this).show(
+            OeDialogSpec(
+                title = getString(R.string.config_backup_dialog_title),
+                message = getString(R.string.config_backup_dialog_message),
+                items = listOf(
                     getString(R.string.config_backup_export),
                     getString(R.string.config_backup_import),
                 ),
-            ) { _, which ->
-                if (which == 0) chooseAndExportOe3Instance() else oe3ImportArchive()
-            }
-            .setNegativeButton(R.string.config_dialog_cancel, null)
-            .show()
-            .also { ThemeApplier.apply(it) }
+                onItemSelected = { which ->
+                    if (which == 0) chooseAndExportOe3Instance() else oe3ImportArchive()
+                },
+                negative = OeDialogAction(getString(R.string.config_dialog_cancel)),
+            ),
+        )
     }
 
     private fun showOe3LicensesDialog() {
@@ -1081,19 +1085,13 @@ class MainActivity : AppCompatActivity() {
         } catch (_: IOException) {
             getString(R.string.config_licenses_unavailable)
         }
-        val padding = (20 * resources.displayMetrics.density).toInt()
-        val text = android.widget.TextView(this).apply {
-            this.text = notice
-            setTextIsSelectable(true)
-            setPadding(padding, padding, padding, padding)
-        }
-        val scroll = android.widget.ScrollView(this).apply { addView(text) }
-        AlertDialog.Builder(this)
-            .setTitle(R.string.config_licenses_title)
-            .setView(scroll)
-            .setPositiveButton(R.string.config_dialog_ok, null)
-            .show()
-            .also { ThemeApplier.apply(it) }
+        OeDialogHost.attach(this).show(
+            OeDialogSpec(
+                title = getString(R.string.config_licenses_title),
+                longText = notice,
+                positive = OeDialogAction(getString(R.string.config_dialog_ok)),
+            ),
+        )
     }
 
     private fun openOe3PortForwarding() {
@@ -1136,10 +1134,8 @@ class MainActivity : AppCompatActivity() {
     private fun pushOe3PortForwarding(instance: InstanceLifecycle.Instance) {
         val stack = oe3BackStack ?: return
         try {
-            val netPath = filesDir.toPath().resolve("network")
-            java.nio.file.Files.createDirectories(netPath)
-            val store = FilePortForwardingStore(netPath)
-            val manager = PortForwardingManager(instance.id(), store, PortConflictDetector())
+            val manager =
+                PortForwardingManager.forInstance(instance.id(), filesDir.toPath().resolve("network"))
             if (stack.top?.key == ConnectionsPage.PORT_FORWARDING_KEY) return
             stack.push(
                 OeDestination(
@@ -1249,22 +1245,30 @@ class MainActivity : AppCompatActivity() {
 
     private fun showPowerDialog(instance: InstanceLifecycle.Instance) {
         val options = arrayOf("正常关机", "强制断电（可能丢失未写入的数据）")
-        AlertDialog.Builder(this)
-            .setTitle("电源管理 · ${instance.hostname()}")
-            .setItems(options) { _, which ->
-                if (which == 1) {
-                    AlertDialog.Builder(this)
-                        .setTitle("强制关闭实例")
-                        .setMessage("这会直接停止虚拟机。建议先在 Linux 中保存文件并正常关机。")
-                        .setPositiveButton("确认断电") { _, _ -> requestInstanceStop(instance, true) }
-                        .setNegativeButton("取消", null)
-                        .show().also { ThemeApplier.apply(it) }
-                } else {
-                    requestInstanceStop(instance, false)
-                }
-            }
-            .setNegativeButton("取消", null)
-            .show().also { ThemeApplier.apply(it) }
+        val host = OeDialogHost.attach(this)
+        host.show(
+            OeDialogSpec(
+                title = "电源管理 · ${instance.hostname()}",
+                items = options.toList(),
+                onItemSelected = { which ->
+                    if (which == 1) {
+                        host.show(
+                            OeDialogSpec(
+                                title = "强制关闭实例",
+                                message = "这会直接停止虚拟机。建议先在 Linux 中保存文件并正常关机。",
+                                positive = OeDialogAction("确认断电", destructive = true) {
+                                    requestInstanceStop(instance, true)
+                                },
+                                negative = OeDialogAction("取消"),
+                            ),
+                        )
+                    } else {
+                        requestInstanceStop(instance, false)
+                    }
+                },
+                negative = OeDialogAction("取消"),
+            ),
+        )
     }
 
     private fun requestInstanceStop(instance: InstanceLifecycle.Instance, force: Boolean) {
@@ -1305,14 +1309,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showHeadlessDesktopDialog(instance: InstanceLifecycle.Instance) {
-        AlertDialog.Builder(this)
-            .setTitle("图形桌面通道尚未就绪")
-            .setMessage("当前基础 Linux 环境可在终端使用。App 的真实 guest 图形帧与输入通道仍在独立 Phase 5 开发中，安装桌面软件包后也需要该通道才能在 App 内交互。")
-            .setPositiveButton(R.string.instance_open_terminal) { _, _ ->
-                openTerminal(instance)
-            }
-            .setNegativeButton(R.string.dialog_close, null)
-            .show().also { ThemeApplier.apply(it) }
+        OeDialogHost.attach(this).show(
+            OeDialogSpec(
+                title = "图形桌面通道尚未就绪",
+                message = "当前基础 Linux 环境可在终端使用。App 的真实 guest 图形帧与输入通道仍在独立 Phase 5 开发中，安装桌面软件包后也需要该通道才能在 App 内交互。",
+                positive = OeDialogAction(getString(R.string.instance_open_terminal)) {
+                    openTerminal(instance)
+                },
+                negative = OeDialogAction(getString(R.string.dialog_close)),
+            ),
+        )
     }
 
     private fun openTerminal(instance: InstanceLifecycle.Instance) {
@@ -1344,35 +1350,40 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        AlertDialog.Builder(this)
-            .setTitle(R.string.action_delete_confirm_title)
-            .setMessage(getString(R.string.action_delete_confirm_message, instance.id()))
-            .setPositiveButton(R.string.action_delete_confirm_btn) { _, _ ->
-                operations.execute {
-                    try {
-                        val controller = InstanceLifecycle.Controller(instanceStore, Clock.systemUTC())
-                        controller.delete(instance.id())
-                        runOnUiThread {
-                            Toast.makeText(
-                                this@MainActivity,
-                                getString(R.string.action_delete_success, instance.id()),
-                                Toast.LENGTH_SHORT
-                            ).show()
-                            refreshInstanceListAfterMutation()
-                        }
-                    } catch (e: Exception) {
-                        runOnUiThread {
-                            Toast.makeText(
-                                this@MainActivity,
-                                getString(R.string.action_delete_failed, e.message),
-                                Toast.LENGTH_LONG
-                            ).show()
+        OeDialogHost.attach(this).show(
+            OeDialogSpec(
+                title = getString(R.string.action_delete_confirm_title),
+                message = getString(R.string.action_delete_confirm_message, instance.id()),
+                positive = OeDialogAction(
+                    getString(R.string.action_delete_confirm_btn),
+                    destructive = true,
+                ) {
+                    operations.execute {
+                        try {
+                            val controller = InstanceLifecycle.Controller(instanceStore, Clock.systemUTC())
+                            controller.delete(instance.id())
+                            runOnUiThread {
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    getString(R.string.action_delete_success, instance.id()),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                                refreshInstanceListAfterMutation()
+                            }
+                        } catch (e: Exception) {
+                            runOnUiThread {
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    getString(R.string.action_delete_failed, e.message),
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
                         }
                     }
-                }
-            }
-            .setNegativeButton(R.string.action_delete_cancel_btn, null)
-            .show().also { ThemeApplier.apply(it) }
+                },
+                negative = OeDialogAction(getString(R.string.action_delete_cancel_btn)),
+            ),
+        )
     }
 
     private fun reconcileOrphanInstances() {
@@ -1725,39 +1736,45 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showShizukuStep() {
-        AlertDialog.Builder(this)
-            .setTitle(R.string.wizard_title)
-            .setMessage(R.string.wizard_shizuku_steps)
-            .setPositiveButton(R.string.shizuku_client_entry) { _, _ ->
-                ShizukuClientDialog().show(supportFragmentManager, "shizuku-client")
-            }
-            .setNeutralButton(R.string.wizard_use_adb) { _, _ ->
-                wizardModel = wizardModel!!.chooseAdbFallback()
-                showAdbStep()
-            }
-            .setNegativeButton(R.string.wizard_recheck_permissions) { _, _ -> recheckAuthorization() }
-            .show().also { ThemeApplier.apply(it) }
+        OeDialogHost.attach(this).show(
+            OeDialogSpec(
+                title = getString(R.string.wizard_title),
+                message = getString(R.string.wizard_shizuku_steps),
+                positive = OeDialogAction(getString(R.string.shizuku_client_entry)) {
+                    ShizukuClientDialog().show(supportFragmentManager, "shizuku-client")
+                },
+                neutral = OeDialogAction(getString(R.string.wizard_use_adb)) {
+                    wizardModel = wizardModel!!.chooseAdbFallback()
+                    showAdbStep()
+                },
+                negative = OeDialogAction(getString(R.string.wizard_recheck_permissions)) {
+                    recheckAuthorization()
+                },
+            ),
+        )
     }
 
     private fun showAdbStep() {
-        AlertDialog.Builder(this)
-            .setTitle(R.string.wizard_title)
-            .setMessage(
-                getString(
+        OeDialogHost.attach(this).show(
+            OeDialogSpec(
+                title = getString(R.string.wizard_title),
+                message = getString(
                     R.string.wizard_adb_steps,
                     AvfAuthorizationWizardModel.adbGrantCommand(packageName)
-                )
-            )
-            .setPositiveButton(R.string.wizard_authorization_done) { _, _ -> recheckAuthorization() }
-            .setNeutralButton(R.string.wizard_copy_command) { _, _ ->
-                copyAdbCommand()
-                showAdbStep()
-            }
-            .setNegativeButton(R.string.wizard_back_to_shizuku) { _, _ ->
-                wizardModel = wizardModel!!.backToShizuku()
-                showShizukuStep()
-            }
-            .show().also { ThemeApplier.apply(it) }
+                ),
+                positive = OeDialogAction(getString(R.string.wizard_authorization_done)) {
+                    recheckAuthorization()
+                },
+                neutral = OeDialogAction(getString(R.string.wizard_copy_command)) {
+                    copyAdbCommand()
+                    showAdbStep()
+                },
+                negative = OeDialogAction(getString(R.string.wizard_back_to_shizuku)) {
+                    wizardModel = wizardModel!!.backToShizuku()
+                    showShizukuStep()
+                },
+            ),
+        )
     }
 
     private fun copyAdbCommand() {
@@ -1780,17 +1797,21 @@ class MainActivity : AppCompatActivity() {
         refreshOe3HardwareState()
         refreshOe3ConfigState()
         if (grantedNow) {
-            AlertDialog.Builder(this)
-                .setTitle(R.string.wizard_authorized_success_title)
-                .setMessage(R.string.wizard_authorized_success_msg)
-                .setPositiveButton(R.string.credentials_close, null)
-                .show().also { ThemeApplier.apply(it) }
+            OeDialogHost.attach(this).show(
+                OeDialogSpec(
+                    title = getString(R.string.wizard_authorized_success_title),
+                    message = getString(R.string.wizard_authorized_success_msg),
+                    positive = OeDialogAction(getString(R.string.credentials_close)),
+                ),
+            )
         } else {
-            AlertDialog.Builder(this)
-                .setTitle(R.string.wizard_vendor_failure_title)
-                .setMessage(R.string.wizard_vendor_failure_steps)
-                .setPositiveButton(R.string.credentials_close, null)
-                .show().also { ThemeApplier.apply(it) }
+            OeDialogHost.attach(this).show(
+                OeDialogSpec(
+                    title = getString(R.string.wizard_vendor_failure_title),
+                    message = getString(R.string.wizard_vendor_failure_steps),
+                    positive = OeDialogAction(getString(R.string.credentials_close)),
+                ),
+            )
         }
     }
 

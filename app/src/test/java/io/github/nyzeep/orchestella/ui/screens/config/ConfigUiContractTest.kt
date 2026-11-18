@@ -116,8 +116,12 @@ class ConfigUiContractTest {
     }
 
     @Test
-    fun settingsActivityDispatchesEveryDestination() {
-        val text = source("src/main/java/io/github/nyzeep/orchestella/SettingsActivity.kt")
+    fun shellConfigDirectoryDispatchesEveryDestination() {
+        // UI-15：旧 SettingsActivity 一级页已删除，配置目录只剩壳层一个入口。
+        // 这条不变式跟着搬到 MainActivity.navigateOe3Config —— 枚举穷尽由 when
+        // 保证，但「每个目的地真的接到了既有通道」仍需要一条断言，否则新增
+        // ConfigDestination 时可以只写一个空分支就编译通过。
+        val text = source("src/main/java/io/github/nyzeep/orchestella/MainActivity.kt")
         val destinations = listOf(
             "SettingsSection",
             "ThemeStudio",
@@ -133,7 +137,7 @@ class ConfigUiContractTest {
         )
         destinations.forEach { name ->
             assertTrue(
-                "SettingsActivity.navigate must route ConfigDestination.$name",
+                "MainActivity.navigateOe3Config must route ConfigDestination.$name",
                 text.contains("ConfigDestination.$name"),
             )
         }
@@ -176,9 +180,16 @@ class ConfigUiContractTest {
     }
 
     @Test
-    fun oldFourRowDirectoryIsGoneAndComposeHostIsPresent() {
-        val layout = source("src/main/res/layout/activity_settings.xml")
-        assertFalse("old directory rows must be removed", layout.contains("row_settings_"))
-        assertTrue("activity_settings.xml must host ConfigScreen", layout.contains("settings_compose_host"))
+    fun oldSettingsDirectoryIsDeleted() {
+        // UI-15：旧一级页（Activity + 布局）整体删除。文件不存在就是最强断言——
+        // 任何「又把它加回来」的改动都会让这条转红。
+        listOf(
+            "src/main/res/layout/activity_settings.xml",
+            "src/main/java/io/github/nyzeep/orchestella/SettingsActivity.kt",
+        ).forEach { relative ->
+            val direct = File(relative)
+            val file = if (direct.exists()) direct else File("app/$relative")
+            assertFalse("UI-15 deleted $relative", file.exists())
+        }
     }
 }

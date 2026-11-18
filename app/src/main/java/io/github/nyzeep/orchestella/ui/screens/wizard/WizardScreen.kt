@@ -11,7 +11,6 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.togetherWith
 import androidx.compose.ui.unit.IntOffset
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -41,9 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -65,6 +62,7 @@ import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Shapes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Sizes
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Spacing
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3TextRole
+import io.github.nyzeep.orchestella.ui.screens.common.OeChevron
 import io.github.nyzeep.orchestella.ui.oe3.tokens.Oe3Typography
 import io.github.nyzeep.orchestella.ui.shell.OeScaffold
 
@@ -315,25 +313,7 @@ private fun WizardBackButton(onBack: () -> Unit) {
             .semantics { contentDescription = back },
         contentAlignment = Alignment.Center,
     ) {
-        WizardChevron()
-    }
-}
-
-@Composable
-private fun WizardChevron() {
-    val color = Oe3ThemeValues.colors.onSurface.oe3Color()
-    Canvas(modifier = Modifier.size(Oe3Sizes.icon)) {
-        val stroke = 1.75.dp.toPx()
-        val nearX = size.width * 0.38f
-        val farX = size.width * 0.62f
-        drawLine(
-            color, Offset(farX, size.height * 0.28f), Offset(nearX, size.height * 0.5f),
-            strokeWidth = stroke, cap = StrokeCap.Round,
-        )
-        drawLine(
-            color, Offset(nearX, size.height * 0.5f), Offset(farX, size.height * 0.72f),
-            strokeWidth = stroke, cap = StrokeCap.Round,
-        )
+        OeChevron(color = Oe3ThemeValues.colors.onSurface.oe3Color(), pointsLeft = true)
     }
 }
 

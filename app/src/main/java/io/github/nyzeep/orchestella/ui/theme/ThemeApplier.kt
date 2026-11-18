@@ -36,7 +36,6 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.ListAdapter
 import android.widget.ProgressBar
-import android.widget.SeekBar
 import android.widget.Spinner
 import android.widget.SpinnerAdapter
 import android.widget.TextView
@@ -50,7 +49,6 @@ import com.google.android.material.navigation.NavigationBarView
 import com.google.android.material.navigation.NavigationView
 import com.google.android.material.progressindicator.BaseProgressIndicator
 import com.google.android.material.shape.MaterialShapeDrawable
-import com.google.android.material.slider.Slider
 import com.google.android.material.textfield.TextInputLayout
 import java.lang.ref.WeakReference
 import java.util.WeakHashMap
@@ -451,12 +449,6 @@ object ThemeApplier {
                 view.defaultHintTextColor = ColorStateList.valueOf(muted)
                 view.hintTextColor = ColorStateList.valueOf(ThemeColors.readable(theme.primary, theme.surface))
             }
-            is Slider -> {
-                view.thumbTintList = ColorStateList.valueOf(theme.primary)
-                view.trackActiveTintList = ColorStateList.valueOf(theme.primary)
-                view.trackInactiveTintList = ColorStateList.valueOf(outline)
-                view.haloTintList = ColorStateList.valueOf((theme.primary and 0x00FFFFFF) or 0x33000000)
-            }
             else -> {
                 if (hasWallpaperWrapperAncestor(view, name)) {
                     // root_coordinator alone owns page color/wallpaper. Keep theming the wrapper's children.
@@ -507,7 +499,6 @@ object ThemeApplier {
                 view.progressBackgroundTintList = ColorStateList.valueOf(outline)
                 view.indeterminateTintList = ColorStateList.valueOf(theme.primary)
             }
-            if (view is SeekBar) view.thumbTintList = ColorStateList.valueOf(theme.primary)
         }
         if (view is ImageView && !ThemeColors.isArtworkName(name) && (view is ImageButton || view.imageTintList != null)) {
             view.imageTintList = states(disabled, normalInk, normalInk)

@@ -47,7 +47,7 @@ object ThemeColors {
         "card_storage_manager" to SurfaceTier.CARD_WELL,
         "card_network_port_forwarding" to SurfaceTier.CARD_WELL,
         // "card_danger_zone": 语义特例（红描边），不参与三档归一 → 不注册。
-        // activity_settings: 全部为决策/表单区卡（一级）
+        // settings section layouts（一级目录删除后仍由 SettingsSubActivity 复用）
         "card_settings_mirrors" to SurfaceTier.CARD_PRIMARY,
         "card_settings_virtualization" to SurfaceTier.CARD_PRIMARY,
         "card_settings_terminal" to SurfaceTier.CARD_PRIMARY,

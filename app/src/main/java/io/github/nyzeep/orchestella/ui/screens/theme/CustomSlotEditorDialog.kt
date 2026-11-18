@@ -36,6 +36,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.annotation.StringRes
 import io.github.nyzeep.orchestella.R
+import io.github.nyzeep.orchestella.ui.design.tokens.OeShape
 import io.github.nyzeep.orchestella.ui.oe3.components.Oe3SwitchRow
 import io.github.nyzeep.orchestella.ui.oe3.motion.Oe3DialogEnterMotion
 import io.github.nyzeep.orchestella.ui.oe3.theme.Oe3ThemeValues
@@ -100,6 +101,7 @@ fun CustomSlotEditorDialog(
     Oe3DialogEnterMotion {
         AlertDialog(
             onDismissRequest = onDismiss,
+            shape = RoundedCornerShape(OeShape.alert),
             title = {
                 Text(
                     text = if (editingRole < 0) {

@@ -6,7 +6,6 @@ import androidx.compose.ui.unit.dp
 /** Fixed component sizes shared by the Oe3 primitives (spec §2.3). */
 object Oe3Sizes {
     val topBar = 72.dp
-    val brandLeft = 20.dp
 
     val navBar = 62.dp
     val navSideMargin = 21.dp

@@ -1,6 +1,5 @@
 package io.github.nyzeep.orchestella;
 
-import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Typeface;
 import android.os.Bundle;
@@ -13,6 +12,7 @@ import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import androidx.activity.ComponentActivity;
 import androidx.core.graphics.Insets;
 import androidx.core.view.GravityCompat;
 import androidx.core.view.ViewCompat;
@@ -20,6 +20,7 @@ import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.drawerlayout.widget.DrawerLayout;
 import io.github.nyzeep.orchestella.runtime.engineqemu.QemuProcessLauncher;
+import io.github.nyzeep.orchestella.ui.design.components.OeDialogs;
 import io.github.nyzeep.orchestella.ui.theme.AppTheme;
 import io.github.nyzeep.orchestella.ui.theme.SurfaceOpacity;
 import io.github.nyzeep.orchestella.ui.theme.ThemeStore;
@@ -40,7 +41,7 @@ import java.util.function.Consumer;
  * </ul>
  * Conforms to ADR-0002, US-26, and US-27.
  */
-public class TerminalActivity extends Activity {
+public class TerminalActivity extends ComponentActivity {
 
     /**
      * Optional command handed over by another screen (for example the developer-toolchain
@@ -370,16 +371,12 @@ public class TerminalActivity extends Activity {
             InstanceLifecycle.Instance candidate = candidates.get(index);
             labels[index] = candidate.hostname() + "  (" + candidate.id() + ")";
         }
-        new android.app.AlertDialog.Builder(this)
-                .setTitle("选择要打开的实例")
-                .setItems(labels, (dialog, which) -> {
-                    Intent self = new Intent(this, TerminalActivity.class)
-                            .putExtra("instanceId", candidates.get(which).id());
-                    startActivity(self);
-                    finish();
-                })
-                .setCancelable(true)
-                .show();
+        OeDialogs.choose(this, "选择要打开的实例", labels, which -> {
+            Intent self = new Intent(this, TerminalActivity.class)
+                    .putExtra("instanceId", candidates.get(which).id());
+            startActivity(self);
+            finish();
+        });
     }
 
     private void applyAppearance() {
@@ -1126,39 +1123,24 @@ public class TerminalActivity extends Activity {
     private void showCommandEntryDialog(String draft) {
         if (!terminalConnected) return;
         final ExecutionSession commandSession = session;
-        android.widget.EditText input = new android.widget.EditText(this);
-        input.setHint("输入要发送给当前 Shell 的命令");
-        input.setInputType(android.text.InputType.TYPE_CLASS_TEXT
-                | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
-                | android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        input.setTypeface(Typeface.MONOSPACE);
-        input.setMinLines(2);
-        input.setMaxLines(6);
-        input.setPadding(dpToPx(16), dpToPx(12), dpToPx(16), dpToPx(12));
-        if (draft != null && !draft.isEmpty()) {
-            input.setText(draft);
-            input.setSelection(draft.length());
-        }
-        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
-                .setTitle("发送命令")
-                .setMessage("命令将发送到当前 Shell；输出由 Shell 返回。")
-                .setView(input)
-                .setPositiveButton("发送", (owner, which) -> {
-                    if (!terminalConnected || session != commandSession || input.length() == 0) return;
+        // UI-15：命令输入框归到全项目唯一的 32dp 弹窗；输入仍走同一个
+        // OeSliderView 之前的粘贴通道（pasteText + ENTER），语义未变。
+        OeDialogs.input(
+                this,
+                "发送命令",
+                "命令将发送到当前 Shell；输出由 Shell 返回。",
+                draft == null ? "" : draft,
+                "发送",
+                "取消",
+                true,
+                true,
+                text -> {
+                    if (!terminalConnected || session != commandSession || text.isEmpty()) return;
                     TerminalInputConnection connection = terminalView.getCurrentInputConnection();
-                    if (connection != null && connection.pasteText(input.getText()))
+                    if (connection != null && connection.pasteText(text))
                         terminalView.sendTerminalKey(android.view.KeyEvent.KEYCODE_ENTER);
                     terminalView.requestTerminalFocus();
-                })
-                .setNegativeButton("取消", null).create();
-        dialog.setOnShowListener(owner -> {
-            io.github.nyzeep.orchestella.ui.theme.ThemeApplier.apply(dialog);
-            input.requestFocus();
-            android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager)
-                    getSystemService(INPUT_METHOD_SERVICE);
-            if (imm != null) imm.showSoftInput(input, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
-        });
-        dialog.show();
+                });
     }
 
     private void send(String line) {
