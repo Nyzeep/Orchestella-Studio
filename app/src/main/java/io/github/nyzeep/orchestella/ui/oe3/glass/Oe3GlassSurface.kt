@@ -57,6 +57,9 @@ val LocalOe3GlassLowRam = staticCompositionLocalOf { false }
  */
 val LocalOe3GlassDeviceCap = staticCompositionLocalOf { GlassDeviceCap.Unlimited }
 
+// Lets visual tests exercise the tier renderer with fixed tier inputs.
+internal val LocalOe3GlassTierOverride = staticCompositionLocalOf<GlassTier?> { null }
+
 /**
  * Fallback decoration constants (spec §2.6 + v4 UI-06 L0 配方): the almost-solid
  * surface plus the top scrim that keeps the chrome readable when backdrop blur
@@ -122,7 +125,7 @@ fun Oe3GlassSurface(
         Oe3GlassRender.Solid
     } else {
         when (
-            Oe3GlassStrategy.resolveTier(
+            LocalOe3GlassTierOverride.current ?: Oe3GlassStrategy.resolveTier(
                 level = level,
                 enabled = enabled && state != null,
                 apiLevel = Build.VERSION.SDK_INT,

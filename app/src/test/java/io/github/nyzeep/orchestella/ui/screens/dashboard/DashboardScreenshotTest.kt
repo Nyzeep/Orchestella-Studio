@@ -66,7 +66,7 @@ class DashboardScreenshotTest {
                         .background(Color(Oe3ThemeValues.colors.background)),
                 ) {
                     DashboardScreen(
-                        state = overviewState(),
+                        state = dashboardOverviewScreenshotState(),
                         actions = DashboardActions(),
                         edit = DashboardEditState(store = null).apply { setEditing(editing) },
                     )
@@ -77,42 +77,40 @@ class DashboardScreenshotTest {
             "src/test/screenshots/ui3/dashboard/$name.png",
         )
     }
-
-    /** 概览样本：一台运行中的主实例 + 存储环 + 紧凑指标 + 两条最近实例。 */
-    private fun overviewState() = DashboardUiState(
-        instanceCount = 3,
-        runningCount = 1,
-        primary = DashboardInstanceUi(
-            id = "golden-ubuntu",
-            distroId = "ubuntu",
-            name = "Ubuntu 24.04",
-            status = DashboardStatus.Running,
-            engineLabel = "QEMU 软件虚拟化",
-            cpuCores = 4,
-            ramMb = 4096,
-            diskGb = 16,
-            canOpenTerminal = true,
-        ),
-        storage = DashboardStorageUi(
-            totalBytes = 128L * GIB,
-            usedBytes = 66L * GIB,
-            fraction = 0.5156f,
-            percent = 52,
-        ),
-        cpu = DashboardCpuUi(hostCores = 8, instanceCores = 4, fraction = 0.5f, enabled = true),
-        ram = DashboardRamUi(
-            usedBytes = 5L * GIB,
-            totalBytes = 8L * GIB,
-            fraction = 0.625f,
-            enabled = true,
-        ),
-        recent = listOf(
-            DashboardRecentUi("golden-debian", "debian", "Debian 12", DashboardStatus.Stopped),
-            DashboardRecentUi("golden-rocky", "rocky", "Rocky Linux 9", DashboardStatus.Crashed),
-        ),
-    )
-
-    private companion object {
-        const val GIB = 1024L * 1024L * 1024L
-    }
 }
+
+private const val GIB = 1024L * 1024L * 1024L
+
+/** 概览样本：一台运行中的主实例 + 存储环 + 紧凑指标 + 两条最近实例。 */
+internal fun dashboardOverviewScreenshotState() = DashboardUiState(
+    instanceCount = 3,
+    runningCount = 1,
+    primary = DashboardInstanceUi(
+        id = "golden-ubuntu",
+        distroId = "ubuntu",
+        name = "Ubuntu 24.04",
+        status = DashboardStatus.Running,
+        engineLabel = "QEMU 软件虚拟化",
+        cpuCores = 4,
+        ramMb = 4096,
+        diskGb = 16,
+        canOpenTerminal = true,
+    ),
+    storage = DashboardStorageUi(
+        totalBytes = 128L * GIB,
+        usedBytes = 66L * GIB,
+        fraction = 0.5156f,
+        percent = 52,
+    ),
+    cpu = DashboardCpuUi(hostCores = 8, instanceCores = 4, fraction = 0.5f, enabled = true),
+    ram = DashboardRamUi(
+        usedBytes = 5L * GIB,
+        totalBytes = 8L * GIB,
+        fraction = 0.625f,
+        enabled = true,
+    ),
+    recent = listOf(
+        DashboardRecentUi("golden-debian", "debian", "Debian 12", DashboardStatus.Stopped),
+        DashboardRecentUi("golden-rocky", "rocky", "Rocky Linux 9", DashboardStatus.Crashed),
+    ),
+)
