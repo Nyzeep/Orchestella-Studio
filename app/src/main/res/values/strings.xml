@@ -191,10 +191,13 @@
 
     <string name="wizard_hardware_card_title">vCPU 与 RAM 资源配置</string>
     <string name="wizard_hardware_card_desc">手动指定虚拟机规格，动态感知宿主安全红黄绿阈值</string>
-    <!-- G-07 向导硬件步的 GPU 诚实标注：向导本步没有 GPU 开关（开关在创建后的
-         实例硬件页），这里只按能力声明单源标注可用性，不冒充"已开启即加速"。 -->
+    <!-- G-07 + DW-02 向导硬件步的 GPU 诚实标注：向导本步没有 GPU 开关（开关在创建后的
+         实例硬件页），这里只按能力声明单源标注可用性，不冒充"已开启即加速"。DW-02
+         增补 QEMU 设备模型三态：驱动已打包但打包 QEMU 缺 virtio-gpu-gl-device 设备
+         模型时，不得许诺"可用"（该链路开不了机）。 -->
     <string name="wizard_gpu_note_available">GPU 加速（virgl），创建后可在实例硬件页开关</string>
     <string name="wizard_gpu_note_unavailable">GPU 加速（驱动未打包，创建后开启将回退 2D 渲染）</string>
+    <string name="wizard_gpu_note_device_model_unsupported">GPU 加速（QEMU 设备模型不支持，创建后开启将回退 2D 渲染）</string>
     <string name="wizard_btn_create_instance">立即创建并部署实例</string>
 
     <!-- Headless desktop guard & user guidance -->

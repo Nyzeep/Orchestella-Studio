@@ -48,6 +48,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.util.Locale
+import io.github.nyzeep.orchestella.GpuDeviceModelProbeOwner
 import io.github.nyzeep.orchestella.InstanceCreationWizardModel
 import io.github.nyzeep.orchestella.R
 import io.github.nyzeep.orchestella.runtime.capability.GpuCapabilityEvaluator
@@ -555,6 +556,17 @@ private fun MirrorSourceCard(state: WizardUiState, controller: WizardScreenModel
 // 步骤 3 · 硬件配额分配
 // ---------------------------------------------------------------------------
 
+/**
+ * DW-02：向导 GPU 标注三态取词（strings 单源，禁硬编码）。判定来自
+ * [GpuCapabilityEvaluator.Assessment.available]——只有 VirGL 驱动已打包且
+ * QEMU 设备模型受支持，才允许文案许诺「可用」。
+ */
+internal fun wizardGpuNoteRes(assessment: GpuCapabilityEvaluator.Assessment): Int = when {
+    assessment.available() -> R.string.wizard_gpu_note_available
+    !assessment.virglNativeAvailable() -> R.string.wizard_gpu_note_unavailable
+    else -> R.string.wizard_gpu_note_device_model_unsupported
+}
+
 @Composable
 fun HardwareStepContent(state: WizardUiState, controller: WizardScreenModel) {
     val colors = Oe3ThemeValues.colors
@@ -573,20 +585,18 @@ fun HardwareStepContent(state: WizardUiState, controller: WizardScreenModel) {
             style = Oe3Typography.style(Oe3TextRole.Caption),
             color = colors.onSurfaceVariant.oe3Color(),
         )
-        // G-07：GPU 诚实标注（能力声明单源）。向导本步没有 GPU 开关（开关在
-        // 创建后的实例硬件页），这里只按 native 打包状态标注可用性，不冒充
-        // "已开启即加速"；native 状态在 UI 进程同 JVM 直接可读。
-        val gpuNativeAvailable = androidx.compose.runtime.remember {
-            GpuCapabilityEvaluator.evaluate(VirglJniBridge.isAvailable()).virglNativeAvailable()
+        // G-07 + DW-02：GPU 诚实标注（能力声明单源 + QEMU 设备模型因子）。
+        // 向导本步没有 GPU 开关（开关在创建后的实例硬件页），这里按真实链路
+        // 三态取词：native 打包 + 设备模型支持 → 可用；native 缺失 → 驱动未
+        // 打包；native 有但设备模型缺失 → 设备模型不支持。设备模型探测由
+        // GpuDeviceModelProbeOwner 在后台线程预热（严禁主线程 exec），读取
+        // Compose State 响应式跟随探测结论；未完成/失败保守按不支持处理。
+        val gpuDeviceModelSupported = GpuDeviceModelProbeOwner.supportedOrConservativeFalse()
+        val gpuAssessment = androidx.compose.runtime.remember(gpuDeviceModelSupported) {
+            GpuCapabilityEvaluator.evaluate(VirglJniBridge.isAvailable(), gpuDeviceModelSupported)
         }
         Text(
-            text = stringResource(
-                if (gpuNativeAvailable) {
-                    R.string.wizard_gpu_note_available
-                } else {
-                    R.string.wizard_gpu_note_unavailable
-                },
-            ),
+            text = stringResource(wizardGpuNoteRes(gpuAssessment)),
             style = Oe3Typography.style(Oe3TextRole.Caption),
             color = colors.onSurfaceVariant.oe3Color(),
             modifier = Modifier.testTag("wizard:gpu-note"),

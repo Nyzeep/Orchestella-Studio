@@ -732,13 +732,23 @@ public final class QemuInstanceLauncher {
                 new java.util.concurrent.atomic.AtomicReference<>();
         return completeLaunch(() -> {
         stageTrace.onGate(ProductionStageRecorder.Stage.RUN_BEGIN);
+        // DW-01: materialize the packaged QEMU binary before the GPU gate. The
+        // gate now probes that exact binary for the virtio-gpu-gl-device model,
+        // so the exec path must be resolved first (NativeExecutableStore.ensure
+        // is idempotent; the buildWithPasst call below reuses this path).
+        String qemuExecutablePath = NativeExecutableStore.ensure(context, "libdroidlayer_qemu.so");
         // G-06: first production caller of the VirGL lifecycle gate. activate() is
         // best-effort and isolated (never throws); a non-ACTIVE outcome downgrades
         // the spec to the 2D device below with a structured reason code instead of
-        // the old silent rebind. Cleanup keeps the pre-G-06 sequencing (exit-watcher
-        // finally); the G-05 audio relay wiring further below is untouched by it.
+        // the old silent rebind. DW-01 adds the QEMU device-model probe: a binary
+        // without virtio-gpu-gl-device now yields an explicit
+        // QEMU_DEVICE_MODEL_UNSUPPORTED fallback instead of a false ACTIVE that
+        // QEMU exited 1 on. The probe runs here on the launcher's worker thread
+        // and is cached process-wide. Cleanup keeps the pre-G-06 sequencing
+        // (exit-watcher finally); the G-05 audio relay wiring further below is
+        // untouched by it.
         GpuAccelerationStatus gpuStatus = VirglGpuLifecycle.activate(
-                config.gpuAccelerationEnabled(), config.ramMegabytes());
+                config.gpuAccelerationEnabled(), config.ramMegabytes(), qemuExecutablePath);
         Log.i(TAG, gpuStatus.structuredLogLine());
         String guestKernelArgs = "orchestella.guest_ip=" + NetworkGatewayDaemon.GUEST_IP
                 + " orchestella.guest_gw=" + NetworkGatewayDaemon.GUEST_GATEWAY
@@ -760,9 +770,8 @@ public final class QemuInstanceLauncher {
                         .toString().substring(0, 16) + ".sock").toString();
 
         String[] spec = QemuLaunchSpec.buildWithPasst(
-                // Same payload-build gap as the gateway: the QEMU binary may
-                // live only inside the APK and must be materialized first.
-                NativeExecutableStore.ensure(context, "libdroidlayer_qemu.so").toString(),
+                // DW-01: same materialized binary the GPU gate probed above.
+                qemuExecutablePath,
                 paths.kernel.toString(),
                 paths.initramfs.toString(),
                 parameters.instanceRootVolume,
@@ -1111,8 +1120,9 @@ public final class QemuInstanceLauncher {
      * {@link GpuAccelerationStatus#gpuDeviceActive()} outcome of the launch's GPU
      * gate. {@code true} keeps the {@code virtio-gpu-gl-device} arguments
      * (gate reached ACTIVE); {@code false} reproduces the legacy downgrade for
-     * flag-off, native-missing (NATIVE_UNAVAILABLE) and init-failure
-     * (INIT_FAILED) launches byte-for-byte.
+     * flag-off, native-missing (NATIVE_UNAVAILABLE), device-model-unsupported
+     * (QEMU_DEVICE_MODEL_UNSUPPORTED, DW-01) and init-failure (INIT_FAILED)
+     * launches byte-for-byte.
      */
     static String[] sanitizeSpecForTargetBinary(String[] spec, boolean gpuAccelerationActive) {
         if (spec == null) {

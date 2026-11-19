@@ -10,8 +10,14 @@ package io.github.nyzeep.orchestella.runtime.engineqemu;
  *       never touched and the spec stays on the 2D device;</li>
  *   <li>flag on + {@code isAvailable()==false} → fallback
  *       {@code NATIVE_UNAVAILABLE} without calling init;</li>
- *   <li>flag on + init ok → {@link GpuAccelerationStatus.State#ACTIVE}, the
- *       launch keeps the {@code virtio-gpu-gl-device} arguments;</li>
+ *   <li>flag on + QEMU device model probe unsupported (DW-01) → fallback
+ *       {@code QEMU_DEVICE_MODEL_UNSUPPORTED} without calling init: the
+ *       packaged binary would exit 1 on the gl-device arguments, so the
+ *       launch downgrades to the 2D device and the structured log states the
+ *       real reason instead of a false ACTIVE;</li>
+ *   <li>flag on + probe supported + init ok →
+ *       {@link GpuAccelerationStatus.State#ACTIVE}, the launch keeps the
+ *       {@code virtio-gpu-gl-device} arguments;</li>
  *   <li>flag on + init false/throw → fallback {@code INIT_FAILED} (code -1);
  *       a throwing bridge never breaks the launch.</li>
  * </ul>
@@ -68,17 +74,38 @@ public final class VirglGpuLifecycle {
     }
 
     /**
-     * Runs the activation gate for one launch. Never throws: bridge failures are
-     * converted into an {@code INIT_FAILED} fallback so the launch continues on
-     * the 2D device.
+     * Legacy two-argument gate without the DW-01 device-model probe: the
+     * decision contract is identical except the QEMU device model is assumed
+     * supported. Kept byte-for-byte compatible for existing callers/tests;
+     * production launches must use {@link #activate(boolean, int, String)}
+     * with the packaged QEMU path.
      */
     public static GpuAccelerationStatus activate(boolean gpuAccelerationRequested, int ramMb) {
+        return activate(gpuAccelerationRequested, ramMb, null);
+    }
+
+    /**
+     * DW-01: runs the activation gate for one launch, including the QEMU
+     * device-model probe when {@code qemuBinaryPath} is supplied (the packaged
+     * {@code libdroidlayer_qemu.so} path the launch will exec). Never throws:
+     * bridge failures are converted into an {@code INIT_FAILED} fallback and a
+     * failing probe fail-closes to {@code QEMU_DEVICE_MODEL_UNSUPPORTED}, so
+     * the launch continues on the 2D device. The probe execs a process and is
+     * cached process-wide — callers must be off the Android main thread, which
+     * the launcher's worker-thread launch path already guarantees.
+     */
+    public static GpuAccelerationStatus activate(boolean gpuAccelerationRequested, int ramMb,
+            String qemuBinaryPath) {
         if (!gpuAccelerationRequested) {
             return GpuAccelerationStatus.disabled();
         }
         int quotaMb = quotaMbForRam(ramMb);
         if (!bridge.isAvailable()) {
             return GpuAccelerationStatus.fallback(GpuFallbackReason.NATIVE_UNAVAILABLE, 0, quotaMb);
+        }
+        if (qemuBinaryPath != null && !deviceModelSupported(qemuBinaryPath)) {
+            return GpuAccelerationStatus.fallback(
+                    GpuFallbackReason.QEMU_DEVICE_MODEL_UNSUPPORTED, 0, quotaMb);
         }
         boolean initialized;
         try {
@@ -90,5 +117,21 @@ public final class VirglGpuLifecycle {
             return GpuAccelerationStatus.fallback(GpuFallbackReason.INIT_FAILED, -1, quotaMb);
         }
         return GpuAccelerationStatus.active(quotaMb);
+    }
+
+    /**
+     * DW-01 fail-closed read of the probe: any unexpected failure (the probe
+     * already swallows its own failure modes, this only keeps the
+     * "activate() never throws" contract intact against Errors) is treated as
+     * unsupported — see {@link QemuDeviceModelProbe} for the asymmetric-cost
+     * rationale.
+     */
+    private static boolean deviceModelSupported(String qemuBinaryPath) {
+        try {
+            return QemuDeviceModelProbe.probeOutcome(qemuBinaryPath)
+                    == QemuDeviceModelProbe.Outcome.SUPPORTED;
+        } catch (RuntimeException | Error failure) {
+            return false;
+        }
     }
 }

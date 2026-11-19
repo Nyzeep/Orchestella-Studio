@@ -27,6 +27,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageBottomPadding
 import io.github.nyzeep.orchestella.ui.oe3.tokens.LocalOe3PageTopPadding
+import io.github.nyzeep.orchestella.GpuDeviceModelProbeOwner
 import io.github.nyzeep.orchestella.HostHardwareProfile
 import io.github.nyzeep.orchestella.R
 import io.github.nyzeep.orchestella.runtime.capability.GpuCapabilityEvaluator
@@ -60,7 +61,7 @@ data class VmHardwareSelection(
 )
 
 /**
- * G-07: the honest state behind the GPU toggle subtitle. The toggle itself
+ * G-07 + DW-02: the honest state behind the GPU toggle subtitle. The toggle itself
  * stays a pure config field (runtime fallback is decided by the G-06 gate at
  * launch); this enum only picks what the UI may honestly claim.
  *
@@ -68,13 +69,16 @@ data class VmHardwareSelection(
  * (ACTIVE / FALLBACK carry the launch's real outcome); DISABLED means the flag
  * was off at launch, so the subtitle falls back to the static copy. Without a
  * session the static capability declaration rules
- * ([GpuCapabilityEvaluator.virglNativeAvailable]).
+ * ([GpuCapabilityEvaluator.available] — driver packaged AND QEMU device model
+ * supported, DW-02).
  */
 enum class GpuToggleStatus {
-    /** No session: the VirGL driver is packaged, enabling the toggle may use it. */
+    /** No session: the full GL chain (driver + QEMU device model) is available. */
     NATIVE_AVAILABLE,
     /** No session: the driver is not packaged, enabling falls back to 2D at launch. */
     NATIVE_UNAVAILABLE,
+    /** No session: driver packaged but the packaged QEMU lacks the gl-device model (DW-01). */
+    DEVICE_MODEL_UNSUPPORTED,
     /** Session running: this launch kept the gl-device arguments (wired, 未验证). */
     SESSION_ACTIVE,
     /** Session running: this launch fell back to the 2D device (reason in the subtitle). */
@@ -82,12 +86,28 @@ enum class GpuToggleStatus {
     ;
 
     companion object {
+        /** Legacy two-argument resolution: the device-model factor is assumed supported. */
         fun resolve(nativeAvailable: Boolean, sessionStatus: GpuAccelerationStatus?): GpuToggleStatus {
+            return resolve(nativeAvailable, true, sessionStatus)
+        }
+
+        /**
+         * DW-02: three-factor resolution. [deviceModelSupported] is the QEMU
+         * device-model probe verdict (a pending/failed probe must arrive as
+         * `false` — fail-closed); the static copy never promises a chain the
+         * packaged binary cannot boot.
+         */
+        fun resolve(
+            nativeAvailable: Boolean,
+            deviceModelSupported: Boolean,
+            sessionStatus: GpuAccelerationStatus?,
+        ): GpuToggleStatus {
             val status = sessionStatus
             if (status != null && status.state() != GpuAccelerationStatus.State.DISABLED) {
                 return if (status.gpuDeviceActive()) SESSION_ACTIVE else SESSION_FALLBACK
             }
-            return if (nativeAvailable) NATIVE_AVAILABLE else NATIVE_UNAVAILABLE
+            if (!nativeAvailable) return NATIVE_UNAVAILABLE
+            return if (deviceModelSupported) NATIVE_AVAILABLE else DEVICE_MODEL_UNSUPPORTED
         }
     }
 }
@@ -104,6 +124,12 @@ class VmHardwarePageState(
     private val host: HostHardwareProfile,
     /** G-07 能力声明单源输出：virgl native 静态可用性（驱动是否打包在 UI 进程同 JVM 直接可读）。 */
     gpuNativeAvailable: Boolean,
+    /**
+     * DW-02 QEMU 设备模型探测因子：true 仅当探测明确支持；未探测/失败必须传
+     * false（fail-closed）。默认 true 仅保留给不知情的旧调用/测试——生产入口
+     * [VmHardwarePage] 始终显式传入探测结论。
+     */
+    gpuDeviceModelSupported: Boolean = true,
     /** G-07 会话运行中的实时 GPU 决策快照；null = 无会话，副文案落回静态两态。 */
     val gpuSessionStatus: GpuAccelerationStatus? = null,
 ) {
@@ -139,9 +165,9 @@ class VmHardwarePageState(
     var gpuAccelerationEnabled by mutableStateOf(current.gpuAccelerationEnabled())
         private set
 
-    /** G-07 副文案三态（构造时定一次；会话快照与静态能力声明在页内不变）。 */
+    /** G-07 + DW-02 副文案多态（构造时定一次；会话快照与静态能力声明在页内不变）。 */
     val gpuToggleStatus: GpuToggleStatus =
-        GpuToggleStatus.resolve(gpuNativeAvailable, gpuSessionStatus)
+        GpuToggleStatus.resolve(gpuNativeAvailable, gpuDeviceModelSupported, gpuSessionStatus)
 
     /** [GpuToggleStatus.SESSION_FALLBACK] 时的降级原因；其余状态为 null。 */
     val gpuFallbackReason: GpuFallbackReason? =
@@ -217,10 +243,17 @@ fun VmHardwarePage(
     val gpuNativeAvailable = androidx.compose.runtime.remember {
         GpuCapabilityEvaluator.evaluate(VirglJniBridge.isAvailable()).virglNativeAvailable()
     }
+    // DW-02：QEMU 设备模型因子来自 GpuDeviceModelProbeOwner 的后台预热快照
+    // （严禁主线程 exec）；Compose State 读取让探测完成后副文案自动刷新，
+    // 未完成/失败保守按不支持处理。
+    val gpuDeviceModelSupported = GpuDeviceModelProbeOwner.supportedOrConservativeFalse()
     val state = androidx.compose.runtime.remember(
-        current, hostProfile, gpuNativeAvailable, gpuAccelerationStatus,
+        current, hostProfile, gpuNativeAvailable, gpuDeviceModelSupported, gpuAccelerationStatus,
     ) {
-        VmHardwarePageState(current, hostProfile, gpuNativeAvailable, gpuAccelerationStatus)
+        VmHardwarePageState(
+            current, hostProfile, gpuNativeAvailable, gpuDeviceModelSupported,
+            gpuAccelerationStatus,
+        )
     }
     VmHardwareContent(
         state = state,
@@ -430,13 +463,15 @@ fun VmHardwareContent(
     }
 }
 
-/** G-07: honest GPU toggle subtitle, keyed by [GpuToggleStatus] (strings stay in resources). */
+/** G-07 + DW-02: honest GPU toggle subtitle, keyed by [GpuToggleStatus] (strings stay in resources). */
 @Composable
 private fun gpuToggleSubtitle(state: VmHardwarePageState): String = when (state.gpuToggleStatus) {
     GpuToggleStatus.NATIVE_AVAILABLE ->
         stringResource(R.string.connections_vm_gpu_desc_available)
     GpuToggleStatus.NATIVE_UNAVAILABLE ->
         stringResource(R.string.connections_vm_gpu_desc_unavailable)
+    GpuToggleStatus.DEVICE_MODEL_UNSUPPORTED ->
+        stringResource(R.string.connections_vm_gpu_desc_device_model_unsupported)
     GpuToggleStatus.SESSION_ACTIVE ->
         stringResource(R.string.connections_vm_gpu_desc_session_active)
     GpuToggleStatus.SESSION_FALLBACK ->
@@ -453,6 +488,8 @@ private fun gpuFallbackReasonText(reason: GpuFallbackReason?): String = when (re
         stringResource(R.string.connections_vm_gpu_reason_native_unavailable)
     GpuFallbackReason.INIT_FAILED ->
         stringResource(R.string.connections_vm_gpu_reason_init_failed)
+    GpuFallbackReason.QEMU_DEVICE_MODEL_UNSUPPORTED ->
+        stringResource(R.string.connections_vm_gpu_reason_device_model_unsupported)
     GpuFallbackReason.NONE, null ->
         stringResource(R.string.connections_vm_gpu_reason_unknown)
 }

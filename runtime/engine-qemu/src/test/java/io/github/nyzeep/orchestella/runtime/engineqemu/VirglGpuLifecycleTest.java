@@ -21,6 +21,8 @@ public final class VirglGpuLifecycleTest {
     @After
     public void restoreDefaultBridge() {
         VirglGpuLifecycle.useBridgeForTest(null);
+        QemuDeviceModelProbe.useRunnerForTest(null);
+        QemuDeviceModelProbe.resetForTest();
     }
 
     /** Records seam interactions so tests can prove when init is (not) called. */
@@ -205,5 +207,115 @@ public final class VirglGpuLifecycleTest {
         assertEquals(GpuAccelerationStatus.State.FALLBACK, fallback.state());
         assertEquals(GpuFallbackReason.NATIVE_UNAVAILABLE, fallback.reason());
         assertEquals(512, fallback.quotaMb());
+    }
+
+    // ---- DW-01: QEMU 设备模型探测门（打包 QEMU 缺 virtio-gpu-gl-device 时
+    // 不得声称 ACTIVE，也不得把 QEMU exit 1 的死链路当加速链路）----
+
+    private static final String PACKAGED_QEMU = "/native/lib/arm64-v8a/libdroidlayer_qemu.so";
+
+    private static QemuDeviceModelProbe.CommandRunner stdoutOf(String stdout) {
+        return (command, timeoutMs) -> stdout;
+    }
+
+    @Test
+    public void deviceModelUnsupportedFallsBackWithoutCallingInit() {
+        RecordingBridge bridge = new RecordingBridge(true, true, false);
+        VirglGpuLifecycle.useBridgeForTest(bridge);
+        QemuDeviceModelProbe.useRunnerForTest(
+                stdoutOf("Supported devices:\nvirtio-gpu-device\nvirtio-net-device\n"));
+
+        GpuAccelerationStatus status = VirglGpuLifecycle.activate(true, 2048, PACKAGED_QEMU);
+
+        assertEquals(GpuAccelerationStatus.State.FALLBACK, status.state());
+        assertEquals(GpuFallbackReason.QEMU_DEVICE_MODEL_UNSUPPORTED, status.reason());
+        assertEquals(0, status.failureCode());
+        assertEquals("the spec must downgrade to the 2D device", "virtio-gpu-device",
+                status.deviceArg());
+        assertFalse(status.gpuDeviceActive());
+        assertEquals("init must not run against a binary that cannot boot the gl device",
+                0, bridge.initCalls);
+    }
+
+    @Test
+    public void deviceModelUnsupportedStructuredLogStatesTheRealReason() {
+        RecordingBridge bridge = new RecordingBridge(true, true, false);
+        VirglGpuLifecycle.useBridgeForTest(bridge);
+        QemuDeviceModelProbe.useRunnerForTest(stdoutOf("virtio-gpu-device only"));
+
+        String log = VirglGpuLifecycle.activate(true, 2048, PACKAGED_QEMU).structuredLogLine();
+
+        assertTrue(log.contains("gpu-acceleration"));
+        assertTrue("the log must never claim ACTIVE for a binary the gl device cannot boot on",
+                log.contains("state=FALLBACK"));
+        assertTrue(log.contains("reason=QEMU_DEVICE_MODEL_UNSUPPORTED"));
+        assertTrue(log.contains("device=virtio-gpu-device"));
+        assertTrue(log.contains("quotaMb=1024"));
+    }
+
+    @Test
+    public void deviceModelSupportedKeepsTheOriginalActiveContract() {
+        RecordingBridge bridge = new RecordingBridge(true, true, false);
+        VirglGpuLifecycle.useBridgeForTest(bridge);
+        QemuDeviceModelProbe.useRunnerForTest(
+                stdoutOf("Supported devices:\nvirtio-gpu-gl-device\n"));
+
+        GpuAccelerationStatus status = VirglGpuLifecycle.activate(true, 2048, PACKAGED_QEMU);
+
+        assertEquals(GpuAccelerationStatus.State.ACTIVE, status.state());
+        assertEquals("virtio-gpu-gl-device", status.deviceArg());
+        assertTrue(status.gpuDeviceActive());
+        assertEquals(1, bridge.initCalls);
+        assertEquals(1024, bridge.lastQuotaMb);
+    }
+
+    @Test
+    public void deviceModelProbeFailureFailsClosedWithoutInit() {
+        RecordingBridge bridge = new RecordingBridge(true, true, false);
+        VirglGpuLifecycle.useBridgeForTest(bridge);
+        QemuDeviceModelProbe.CommandRunner failing = (command, timeoutMs) -> {
+            throw new java.io.IOException("synthetic probe failure");
+        };
+        QemuDeviceModelProbe.useRunnerForTest(failing);
+
+        GpuAccelerationStatus status = VirglGpuLifecycle.activate(true, 2048, PACKAGED_QEMU);
+
+        assertEquals(GpuAccelerationStatus.State.FALLBACK, status.state());
+        assertEquals(GpuFallbackReason.QEMU_DEVICE_MODEL_UNSUPPORTED, status.reason());
+        assertEquals("a failed probe must not risk the QEMU exit-1 dead path", 0, bridge.initCalls);
+    }
+
+    @Test
+    public void legacyTwoArgumentActivateSkipsTheDeviceModelGate() {
+        // Compat contract for callers/tests that cannot supply the QEMU path:
+        // the 2-arg overload keeps the pre-DW-01 behavior (probe never runs).
+        RecordingBridge bridge = new RecordingBridge(true, true, false);
+        VirglGpuLifecycle.useBridgeForTest(bridge);
+        QemuDeviceModelProbe.useRunnerForTest(stdoutOf("virtio-gpu-device only"));
+
+        GpuAccelerationStatus status = VirglGpuLifecycle.activate(true, 2048);
+
+        assertEquals(GpuAccelerationStatus.State.ACTIVE, status.state());
+        assertEquals("virtio-gpu-gl-device", status.deviceArg());
+    }
+
+    @Test
+    public void nativeUnavailableStillWinsTheReasonSlotOverTheDeviceModel() {
+        RecordingBridge bridge = new RecordingBridge(false, true, false);
+        VirglGpuLifecycle.useBridgeForTest(bridge);
+        QemuDeviceModelProbe.useRunnerForTest(stdoutOf("virtio-gpu-device only"));
+
+        GpuAccelerationStatus status = VirglGpuLifecycle.activate(true, 2048, PACKAGED_QEMU);
+
+        assertEquals(GpuFallbackReason.NATIVE_UNAVAILABLE, status.reason());
+        assertEquals("the bridge availability check must stay the first gate",
+                1, bridge.availabilityCalls);
+        assertEquals(0, bridge.initCalls);
+    }
+
+    @Test
+    public void qemuDeviceModelUnsupportedReasonLiteralIsPinnedForLogs() {
+        assertEquals("QEMU_DEVICE_MODEL_UNSUPPORTED",
+                GpuFallbackReason.QEMU_DEVICE_MODEL_UNSUPPORTED.name());
     }
 }

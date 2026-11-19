@@ -2,7 +2,11 @@ package io.github.nyzeep.orchestella;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
+import io.github.nyzeep.orchestella.runtime.engineqemu.GpuAccelerationStatus;
+import io.github.nyzeep.orchestella.runtime.engineqemu.GpuFallbackReason;
 import org.junit.Test;
 
 public class QemuInstanceLauncherSanitizeTest {
@@ -387,5 +391,67 @@ public class QemuInstanceLauncherSanitizeTest {
     public void fallbackPipelineMatchesPreG06GoldenLiteralByteForByte() {
         assertArrayEquals(GOLDEN_NO_NATIVE_LAUNCH_ARGS, assembleLaunchArgs(true));
         assertArrayEquals(GOLDEN_NO_NATIVE_LAUNCH_ARGS, assembleLaunchArgs(false));
+    }
+
+    // ---- DW-01: QEMU 设备模型探测门接入参数链路 ----
+
+    /**
+     * DW-01: the device-model-unsupported fallback (packaged QEMU lacks
+     * virtio-gpu-gl-device) must travel the exact same non-ACTIVE pipeline as
+     * every other fallback: gpuDeviceActive()==false drives
+     * {@link QemuInstanceLauncher#sanitizeSpecForTargetBinary(String[], boolean)}
+     * to the legacy downgrade bytes, and the structured log names the real
+     * reason instead of claiming ACTIVE.
+     */
+    @Test
+    public void deviceModelUnsupportedFallbackDowngradesLikeEveryOtherFallback() {
+        GpuAccelerationStatus status = GpuAccelerationStatus.fallback(
+                GpuFallbackReason.QEMU_DEVICE_MODEL_UNSUPPORTED, 0, 1024);
+
+        assertFalse("a device-model-unsupported launch must not keep the gl-device args",
+                status.gpuDeviceActive());
+        assertEquals("the spec must carry the 2D device",
+                "virtio-gpu-device", status.deviceArg());
+        assertTrue(status.structuredLogLine().contains("reason=QEMU_DEVICE_MODEL_UNSUPPORTED"));
+        assertFalse(status.structuredLogLine().contains("state=ACTIVE"));
+
+        String[] legacy = QemuInstanceLauncher.sanitizeSpecForTargetBinary(gpuEnabledSpec());
+        String[] downgraded = QemuInstanceLauncher.sanitizeSpecForTargetBinary(
+                gpuEnabledSpec(), status.gpuDeviceActive());
+        assertArrayEquals("the DW-01 fallback reuses the byte-exact legacy downgrade",
+                legacy, downgraded);
+    }
+
+    /**
+     * DW-01: with the probe reporting support (gate reaches ACTIVE), the
+     * gl-device arguments pass through byte-for-byte — the probe never
+     * perturbs the launch argument sequence itself.
+     */
+    @Test
+    public void deviceModelSupportedActiveKeepsGlArgsByteExact() {
+        GpuAccelerationStatus status = GpuAccelerationStatus.active(1024);
+        assertTrue(status.gpuDeviceActive());
+        assertArrayEquals(gpuEnabledSpec(),
+                QemuInstanceLauncher.sanitizeSpecForTargetBinary(
+                        gpuEnabledSpec(), status.gpuDeviceActive()));
+    }
+
+    /**
+     * DW-01: the pipeline mirroring the production launcher order
+     * (buildWithPasst → gate outcome → display → audio) with a
+     * device-model-unsupported gate equals the no-native golden bytes —
+     * the 55-argument lock regression covers the new reason too.
+     */
+    @Test
+    public void fullPipelineWithDeviceModelUnsupportedGateMatchesGolden() {
+        // Production: gpuStatus.gpuDeviceActive()==false for the
+        // QEMU_DEVICE_MODEL_UNSUPPORTED fallback, exactly like the
+        // no-native path the golden literal was captured from.
+        String[] fallback = assembleLaunchArgs(true);
+        assertArrayEquals(GOLDEN_NO_NATIVE_LAUNCH_ARGS, fallback);
+        GpuAccelerationStatus gate = GpuAccelerationStatus.fallback(
+                GpuFallbackReason.QEMU_DEVICE_MODEL_UNSUPPORTED, 0, 1024);
+        assertFalse("the pipeline above must be the non-ACTIVE path the DW-01 gate yields",
+                gate.gpuDeviceActive());
     }
 }

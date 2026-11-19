@@ -33,8 +33,9 @@ class VmHardwarePageStateTest {
 
     private fun state(
         nativeAvailable: Boolean = true,
+        deviceModelSupported: Boolean = true,
         sessionStatus: GpuAccelerationStatus? = null,
-    ) = VmHardwarePageState(current, profile, nativeAvailable, sessionStatus)
+    ) = VmHardwarePageState(current, profile, nativeAvailable, deviceModelSupported, sessionStatus)
 
     @Test
     fun currentConfigAndHostCapacitySeedTheForm() {
@@ -177,5 +178,59 @@ class VmHardwarePageStateTest {
         assertTrue("the toggle stays usable even when the driver is missing", state.gpuAccelerationEnabled)
         assertTrue(state.selection().gpuAccelerationEnabled)
         assertEquals(GpuToggleStatus.NATIVE_UNAVAILABLE, state.gpuToggleStatus)
+    }
+
+    // ---- DW-02: QEMU 设备模型因子进入静态三态 ----
+
+    @Test
+    fun deviceModelUnsupportedGetsItsOwnStaticState() {
+        assertEquals(
+            "driver packaged but the packaged QEMU lacks the gl-device model",
+            GpuToggleStatus.DEVICE_MODEL_UNSUPPORTED,
+            GpuToggleStatus.resolve(nativeAvailable = true, deviceModelSupported = false, sessionStatus = null),
+        )
+        assertEquals(
+            GpuToggleStatus.NATIVE_AVAILABLE,
+            GpuToggleStatus.resolve(nativeAvailable = true, deviceModelSupported = true, sessionStatus = null),
+        )
+        assertEquals(
+            "a missing driver still wins the static slot",
+            GpuToggleStatus.NATIVE_UNAVAILABLE,
+            GpuToggleStatus.resolve(nativeAvailable = false, deviceModelSupported = false, sessionStatus = null),
+        )
+    }
+
+    @Test
+    fun sessionStatusStillWinsOverTheDeviceModelFactor() {
+        assertEquals(
+            GpuToggleStatus.SESSION_FALLBACK,
+            GpuToggleStatus.resolve(
+                true,
+                false,
+                GpuAccelerationStatus.fallback(GpuFallbackReason.QEMU_DEVICE_MODEL_UNSUPPORTED, 0, 1024),
+            ),
+        )
+        assertEquals(
+            GpuToggleStatus.SESSION_ACTIVE,
+            GpuToggleStatus.resolve(true, false, GpuAccelerationStatus.active(1024)),
+        )
+        assertEquals(
+            "DISABLED falls back to the static copy, which now reads the device model",
+            GpuToggleStatus.DEVICE_MODEL_UNSUPPORTED,
+            GpuToggleStatus.resolve(true, false, GpuAccelerationStatus.disabled()),
+        )
+    }
+
+    @Test
+    fun stateProjectsTheDeviceModelUnsupportedStaticState() {
+        val state = state(nativeAvailable = true, deviceModelSupported = false)
+        assertEquals(GpuToggleStatus.DEVICE_MODEL_UNSUPPORTED, state.gpuToggleStatus)
+        assertNull("no session means no per-launch fallback reason", state.gpuFallbackReason)
+    }
+
+    @Test
+    fun legacyTwoArgumentResolveKeepsThePreDw02Contract() {
+        assertEquals(GpuToggleStatus.NATIVE_AVAILABLE, GpuToggleStatus.resolve(true, null))
+        assertEquals(GpuToggleStatus.NATIVE_UNAVAILABLE, GpuToggleStatus.resolve(false, null))
     }
 }
